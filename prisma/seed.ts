@@ -40,6 +40,25 @@ const SEED = [
     ],
   },
   {
+    // 기술스택 결정 16의 폼팩터 3종: 관리 웹 / POP 패널 PC / 모바일 스캐너
+    groupCode: 'TERMINAL_TYPE',
+    groupName: '단말 유형',
+    values: [
+      { code: 'ADMIN_WEB', codeName: '관리 웹', order: 10 },
+      { code: 'POP', codeName: 'POP 단말', order: 20 },
+      { code: 'MOBILE', codeName: '모바일 스캐너', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'TERMINAL_STATUS',
+    groupName: '단말 상태',
+    values: [
+      { code: 'NORMAL', codeName: '정상', order: 10 },
+      { code: 'MAINTENANCE', codeName: '점검중', order: 20 },
+      { code: 'DISPOSED', codeName: '폐기', order: 30 },
+    ],
+  },
+  {
     groupCode: 'WORKER_STATUS',
     groupName: '재직 상태',
     values: [

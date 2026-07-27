@@ -22,6 +22,12 @@ import { PartnerController } from './partner/partner.controller';
 import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
 import { PartnerService } from './partner/partner.service';
+import { ShiftService } from './terminal/shift.service';
+import {
+  ShiftController,
+  TerminalController,
+} from './terminal/terminal.controller';
+import { TerminalService } from './terminal/terminal.service';
 import { DepartmentService } from './worker/department.service';
 import {
   DepartmentController,
@@ -49,6 +55,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     MoldController,
     DepartmentController,
     WorkerController,
+    ShiftController,
+    TerminalController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
@@ -66,6 +74,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     MoldService,
     DepartmentService,
     WorkerService,
+    ShiftService,
+    TerminalService,
     OrganizationService,
     WarehouseService,
   ],

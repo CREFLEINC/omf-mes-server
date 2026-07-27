@@ -156,6 +156,11 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 부서 | `/api/master/departments/:departmentCode` | `department_code` (전역) |
 | 작업자 | `/api/master/workers/:workerNo` | `worker_no` 사번 (전역) |
 | └ 자격 | `/api/master/workers/:w/qualifications/:id` | (작업자, 유형, 공정, 시작일) |
+| 작업조 | `/api/master/shifts/:shiftCode` | (공장, 작업조코드) |
+| 단말 | `/api/master/terminals/:terminalCode` | `terminal_code` (전역) |
+| └ 공정 기능 | `/api/master/terminals/:t/processes/:processCode` | (단말, 공정) |
+
+**`mdm` 스키마의 마스터는 이것으로 전부 구현했다.**
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
@@ -173,7 +178,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`,
 생산라인은 `plantCode`·`lineTypeCode`, 설비는 `plantCode`·`equipmentTypeCode`·`statusCode`·
 `calibrationDueBefore`(교정 만료 임박·경과), 금형은 `plantCode`·`statusCode`·`shotCountGte`,
-작업자는 `plantCode`·`departmentCode`·`statusCode`로 추가로 좁힐 수 있다.
+작업자는 `plantCode`·`departmentCode`·`statusCode`, 작업조는 `plantCode`,
+단말은 `plantCode`·`terminalTypeCode`·`statusCode`로 추가로 좁힐 수 있다.
 자격 목록은 `validOn`(기준일 유효분만)·`qualificationTypeCode`를 받는다 —
 검사자 자격 만료 통제(NFR-QM-008)의 기반 조회다.
 
@@ -223,6 +229,10 @@ DDL에 없어 **앱만 막는 것**:
 - 로케이션 상위 지정의 자기참조·순환
 - 공장의 사업부가 같은 법인 소속인지
 - 생산라인·부서 상위 지정의 순환(DDL은 자기참조만 막는다)
+- **작업조의 자정 넘김 표기 정합** — `crosses_midnight`는 시각으로 결정된다. 야간조(22:00~06:00)를
+  `false`로 저장하면 근무 길이가 음수가 되어 이후 집계가 조용히 틀어지므로, 시각과 어긋나면 거부한다.
+  시작·종료가 같으면 근무 길이를 판정할 수 없어 역시 거부한다
+- 단말 설치 위치는 창고와 로케이션을 함께 지정해야 한다(로케이션 코드가 창고 범위 유니크)
 - **설비 교정 만료일 ≥ 최종 교정일**
 - **FEFO 품목은 유효기간(`shelf_life_days`) 필수** — 유효기간이 없으면 '임박 우선'이 성립하지 않는다.
   근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)". 등록·수정 모두
@@ -231,6 +241,19 @@ DDL에 없어 **앱만 막는 것**:
 > `item_external_code`의 유니크는 DDL에서 `COALESCE(partner_id, 0)`을 쓰는 부분 인덱스라
 > Prisma 모델로 표현되지 않는다. 앱이 먼저 확인하고, 경합으로 빠져나간 건은 DB가 막아
 > `PrismaExceptionFilter`가 P2002 → 409로 변환한다.
+
+### 시각(`time`) 컬럼 취급
+
+`shift.start_time`/`end_time`은 정본이 `time`이라 Prisma가 `DateTime`으로 다루고, 값을 **UTC 축**으로
+읽고 쓴다. 그대로 내보내면 응답이 `1970-01-01T22:00:00.000Z`가 되어 혼란스러우므로,
+저장은 `HH:MM[:SS]` → UTC epoch Date, 응답은 `HH:MM:SS` 문자열로 변환한다
+(`shift.service.ts`의 `toTimeValue`/`fromTimeValue`). 왕복 무손실을 테스트로 고정했다.
+
+### 단말-공정 매핑은 덮어쓰기(PUT)
+
+`(단말, 공정)`이 유니크라 등록/수정을 나눌 이유가 없어 `PUT`으로 저장한다. **지정하지 않은 기능
+플래그는 `false`로 저장한다** — 화면의 체크박스 묶음을 그대로 저장하는 형태라, 이전 값이 남으면
+"껐는데 켜져 있다"가 된다.
 
 ### 설정형 코드 검증 (패턴 P1)
 
