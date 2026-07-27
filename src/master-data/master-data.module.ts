@@ -9,6 +9,8 @@ import {
 import { EquipmentService } from './equipment/equipment.service';
 import { ProductionLineService } from './equipment/production-line.service';
 import { ItemController } from './item/item.controller';
+import { MoldController } from './mold/mold.controller';
+import { MoldService } from './mold/mold.service';
 import { ItemService } from './item/item.service';
 import {
   BusinessUnitController,
@@ -38,6 +40,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ProcessController,
     ProductionLineController,
     EquipmentController,
+    MoldController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
@@ -52,6 +55,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ProcessService,
     ProductionLineService,
     EquipmentService,
+    MoldService,
     OrganizationService,
     WarehouseService,
   ],

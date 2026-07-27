@@ -152,6 +152,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 공정 | `/api/master/processes/:processCode` | `process_code` (전역) |
 | 생산라인 | `/api/master/production-lines/:lineCode` | (공장, 라인코드) |
 | 설비 | `/api/master/equipments/:equipmentCode` | (공장, 설비코드) |
+| 툴·금형 | `/api/master/molds/:moldCode` | (공장, 금형코드) |
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
@@ -168,7 +169,16 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
 품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`,
 생산라인은 `plantCode`·`lineTypeCode`, 설비는 `plantCode`·`equipmentTypeCode`·`statusCode`·
-`calibrationDueBefore`(교정 만료 임박·경과)로 추가로 좁힐 수 있다.
+`calibrationDueBefore`(교정 만료 임박·경과), 금형은 `plantCode`·`statusCode`·`shotCountGte`로
+추가로 좁힐 수 있다.
+
+> **금형의 `current_shot_count`**: 운영 중 누적은 생산 실적이 갱신할 몫이고, 마스터 API에서는
+> **초기값(DX 이관)·보정용**으로만 다룬다. 금형 정비 후 리셋 같은 조작이 이 경로로 들어오므로
+> 이력이 필요해지면 별도 조정 이벤트로 분리해야 한다.
+>
+> `current_shot_count >= guaranteed_shot_count`(타발수 한도 도달) 조회는 **컬럼 간 비교라
+> Prisma `where`로 표현되지 않는다.** 지금은 절대값 필터(`shotCountGte`)만 제공하며, 툴 PM 화면이
+> 필요로 하면 원시 SQL이나 생성 컬럼으로 붙인다.
 거래처 검색(`keyword`)은 코드·명칭과 함께 `erp_partner_code`도 본다.
 
 > **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
@@ -202,6 +212,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 개봉 후 사용시간 > 0 | `opened_shelf_life_hours` CHECK |
 | 출발·도착 사업부 상이 | `ck_item_bu_map_distinct` |
 | 라인 자기참조 금지 | `ck_production_line_parent` |
+| Cavity 수 > 0 · 타발수 >= 0 | `mold` CHECK 3종 |
 
 DDL에 없어 **앱만 막는 것**:
 - 로케이션 상위 지정의 자기참조·순환

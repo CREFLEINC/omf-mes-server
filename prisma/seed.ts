@@ -40,6 +40,17 @@ const SEED = [
     ],
   },
   {
+    // 개념모델 v2 §1 툴/금형의 '신규입고/폐기 상태'를 축으로 삼았다.
+    groupCode: 'MOLD_STATUS',
+    groupName: '금형 상태',
+    values: [
+      { code: 'NEW', codeName: '신규입고', order: 10 },
+      { code: 'NORMAL', codeName: '정상', order: 20 },
+      { code: 'REPAIR', codeName: '수리중', order: 30 },
+      { code: 'DISPOSED', codeName: '폐기', order: 40 },
+    ],
+  },
+  {
     groupCode: 'EQUIPMENT_TYPE',
     groupName: '설비 유형',
     values: [
