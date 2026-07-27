@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 
 import { CodeValidatorService } from './common-code/code-validator.service';
 import { CommonCodeModule } from './common-code/common-code.module';
+import {
+  EquipmentController,
+  ProductionLineController,
+} from './equipment/equipment.controller';
+import { EquipmentService } from './equipment/equipment.service';
+import { ProductionLineService } from './equipment/production-line.service';
 import { ItemController } from './item/item.controller';
 import { ItemService } from './item/item.service';
 import {
@@ -30,6 +36,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ItemController,
     PartnerController,
     ProcessController,
+    ProductionLineController,
+    EquipmentController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
@@ -42,6 +50,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ItemService,
     PartnerService,
     ProcessService,
+    ProductionLineService,
+    EquipmentService,
     OrganizationService,
     WarehouseService,
   ],

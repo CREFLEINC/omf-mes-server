@@ -150,6 +150,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | --- | --- | --- |
 | 단위(UoM) | `/api/master/uoms/:uomCode` | `uom_code` (전역) |
 | 공정 | `/api/master/processes/:processCode` | `process_code` (전역) |
+| 생산라인 | `/api/master/production-lines/:lineCode` | (공장, 라인코드) |
+| 설비 | `/api/master/equipments/:equipmentCode` | (공장, 설비코드) |
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
@@ -164,8 +166,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 
 각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
-품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`로
-추가로 좁힐 수 있다.
+품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`,
+생산라인은 `plantCode`·`lineTypeCode`, 설비는 `plantCode`·`equipmentTypeCode`·`statusCode`·
+`calibrationDueBefore`(교정 만료 임박·경과)로 추가로 좁힐 수 있다.
 거래처 검색(`keyword`)은 코드·명칭과 함께 `erp_partner_code`도 본다.
 
 > **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
@@ -174,9 +177,14 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 > **조직 계층이 함께 들어간 이유**: `mdm.warehouse`가 `plant_id`·`business_unit_id`를
 > NOT NULL로 요구한다. 창고를 만들려면 법인→사업부/공장이 먼저 있어야 해서 선행 마스터로 포함했다.
 
-> **창고코드는 전역 유니크가 아니다** — `(plant_id, warehouse_code)`가 유니크다.
+> **창고·생산라인·설비 코드는 전역 유니크가 아니다** — `(plant_id, *_code)`가 유니크다.
 > 지금은 단일 공장 전제로 코드만으로 조회하고, 같은 코드가 여러 공장에 있으면 409로 명시적으로
-> 거부한다(조용히 첫 건을 고르지 않는다). 다공장 운영이 확정되면 경로에 공장을 넣어야 한다.
+> 거부한다(조용히 첫 건을 고르지 않는다 — `master-crud.ts`의 `exactlyOne`).
+> 다공장 운영이 확정되면 경로에 공장을 넣어야 한다.
+
+> **생산라인이 설비와 함께 들어간 이유**: `equipment.production_line_id`가 참조하는 마스터라,
+> 없으면 그 필드를 쓸 수 없다. 창고 때 조직 계층을 함께 넣은 것과 같다.
+> `line_type_code = LINE | WORK_AREA`는 DDL 주석이 값을 명시한 드문 경우라 그대로 따랐다.
 
 ### DB 제약을 앱에서도 먼저 검사하는 것
 
@@ -193,10 +201,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 환산 전·후 단위 상이 · 환산율 > 0 | `ck_item_uom_distinct` · `conversion_rate` CHECK |
 | 개봉 후 사용시간 > 0 | `opened_shelf_life_hours` CHECK |
 | 출발·도착 사업부 상이 | `ck_item_bu_map_distinct` |
+| 라인 자기참조 금지 | `ck_production_line_parent` |
 
 DDL에 없어 **앱만 막는 것**:
 - 로케이션 상위 지정의 자기참조·순환
 - 공장의 사업부가 같은 법인 소속인지
+- 생산라인 상위 지정의 순환(DDL은 자기참조만 막는다)
+- **설비 교정 만료일 ≥ 최종 교정일**
 - **FEFO 품목은 유효기간(`shelf_life_days`) 필수** — 유효기간이 없으면 '임박 우선'이 성립하지 않는다.
   근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)". 등록·수정 모두
   **저장될 최종 상태**로 검사한다(정책만 바꿔 우회할 수 없게).

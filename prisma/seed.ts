@@ -31,6 +31,36 @@ const SEED = [
     ],
   },
   {
+    // DDL 주석이 값을 명시한다: line_type_code = LINE | WORK_AREA
+    groupCode: 'LINE_TYPE',
+    groupName: '라인 유형',
+    values: [
+      { code: 'LINE', codeName: '라인', order: 10 },
+      { code: 'WORK_AREA', codeName: '작업구역', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'EQUIPMENT_TYPE',
+    groupName: '설비 유형',
+    values: [
+      { code: 'MACHINE', codeName: '생산설비', order: 10 },
+      { code: 'INSPECTION', codeName: '검사장비', order: 20 },
+      { code: 'UTILITY', codeName: '유틸리티설비', order: 30 },
+    ],
+  },
+  {
+    // 개념모델 v2 §1 설비의 '신규입고/폐기 상태'를 축으로 삼았다.
+    groupCode: 'EQUIPMENT_STATUS',
+    groupName: '설비 상태',
+    values: [
+      { code: 'NEW', codeName: '신규입고', order: 10 },
+      { code: 'NORMAL', codeName: '정상', order: 20 },
+      { code: 'MAINTENANCE', codeName: '점검중', order: 30 },
+      { code: 'BREAKDOWN', codeName: '고장', order: 40 },
+      { code: 'DISPOSED', codeName: '폐기', order: 50 },
+    ],
+  },
+  {
     // 확정된 축은 '외주공정 구분'(개념모델 v2 §1 공정) 하나뿐이라 그 축만 넣는다.
     // 사출/조립/검사 같은 공정 분류축이 필요하면 값을 추가하거나 별도 코드그룹으로 뺀다.
     groupCode: 'PROCESS_TYPE',

@@ -53,3 +53,22 @@ export function orFail<T>(entity: T | null, label: string): T {
 export function orConflict(exists: unknown, message: string): void {
   if (exists) throw new ConflictException(message);
 }
+
+/**
+ * 공장 범위로만 유니크한 코드(창고·생산라인·설비)를 코드만으로 조회할 때 쓴다.
+ *
+ * 정본 모델은 이들을 `(plant_id, *_code)`로 유니크하게 두었다 — 전역 유니크가 아니다.
+ * 단일 공장 전제로 코드만 받아 조회하되, 여러 공장에 같은 코드가 있으면
+ * 조용히 첫 건을 고르지 않고 명시적으로 거부한다.
+ */
+export function exactlyOne<T>(rows: T[], label: string, code: string): T {
+  if (rows.length === 0) {
+    throw new NotFoundException(`${label}(${code})을(를) 찾을 수 없습니다.`);
+  }
+  if (rows.length > 1) {
+    throw new ConflictException(
+      `${label} 코드 ${code}가 여러 공장에 존재합니다. 공장을 함께 지정해 조회하십시오.`,
+    );
+  }
+  return rows[0];
+}
