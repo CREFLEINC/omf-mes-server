@@ -129,13 +129,46 @@ describe('CodeGroupService', () => {
       await expect(service.update('NOPE', { nameKo: 'x' })).rejects.toThrow(NotFoundException);
     });
 
-    it('ERP 연계 수신본은 수정 불가 — 409 (개념모델 §1 · QA #34)', async () => {
-      prisma.codeGroup.findFirst.mockResolvedValue({ ...baseGroup, source: DataSource.ERP });
+    // ERP 연계분 규칙은 레코드 단위가 아니라 필드 단위다.
+    // 근거: 2026-07-08-ERP-MES-수신정보-정리.md §4 — 원본 필드 읽기 전용 + MES 확장 속성 편집 가능
+    describe('ERP 연계 수신본', () => {
+      beforeEach(() => {
+        prisma.codeGroup.findFirst.mockResolvedValue({ ...baseGroup, source: DataSource.ERP });
+      });
 
-      await expect(service.update('ITEM_TYPE', { nameKo: 'x' })).rejects.toThrow(
-        ConflictException,
-      );
-      expect(prisma.codeGroup.update).not.toHaveBeenCalled();
+      it('원본 필드(코드명 ko)를 고치려 하면 409', async () => {
+        await expect(service.update('ITEM_TYPE', { nameKo: '수정시도' })).rejects.toThrow(
+          ConflictException,
+        );
+        expect(prisma.codeGroup.update).not.toHaveBeenCalled();
+      });
+
+      it('원본 필드(정렬순서·사용여부)를 고치려 하면 409', async () => {
+        await expect(service.update('ITEM_TYPE', { sortOrder: 5 })).rejects.toThrow(
+          ConflictException,
+        );
+        await expect(service.update('ITEM_TYPE', { useYn: false })).rejects.toThrow(
+          ConflictException,
+        );
+      });
+
+      it('MES 확장 속성(베트남어 명칭)은 편집할 수 있다', async () => {
+        prisma.codeGroup.update.mockResolvedValue(baseGroup);
+
+        await service.update('ITEM_TYPE', { nameVi: 'Phân loại hàng hóa' });
+
+        expect(prisma.codeGroup.update).toHaveBeenCalledWith({
+          where: { code: 'ITEM_TYPE' },
+          data: expect.objectContaining({ nameVi: 'Phân loại hàng hóa' }),
+        });
+      });
+
+      it('확장 속성과 원본 필드를 섞어 보내면 거부한다', async () => {
+        await expect(
+          service.update('ITEM_TYPE', { nameVi: 'ok', nameKo: '안됨' }),
+        ).rejects.toThrow(ConflictException);
+        expect(prisma.codeGroup.update).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -161,10 +194,11 @@ describe('CodeGroupService', () => {
       });
     });
 
-    it('ERP 연계 수신본은 삭제 불가 — 409', async () => {
+    it('ERP 연계 수신본은 삭제 불가 — 409 (원본 필드 한정 완화가 삭제에는 적용되지 않는다)', async () => {
       prisma.codeGroup.findFirst.mockResolvedValue({ ...baseGroup, source: DataSource.ERP });
 
       await expect(service.remove('ITEM_TYPE')).rejects.toThrow(ConflictException);
+      expect(prisma.codeGroup.update).not.toHaveBeenCalled();
     });
   });
 });

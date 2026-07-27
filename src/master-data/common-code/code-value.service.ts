@@ -4,6 +4,11 @@ import { CodeValue, DataSource, Prisma } from '@prisma/client';
 import { PageDto } from '../../common/dto/page.dto';
 import { PageQueryDto } from '../../common/dto/page-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  assertDeletable,
+  assertErpOriginFieldsUntouched,
+  CODE_VALUE_MES_FIELDS,
+} from '../erp-linked.policy';
 import { CreateCodeValueDto, UpdateCodeValueDto } from './dto/code-value.dto';
 
 @Injectable()
@@ -77,7 +82,14 @@ export class CodeValueService {
     dto: UpdateCodeValueDto,
     actor?: string,
   ): Promise<CodeValue> {
-    const value = await this.getEditable(groupCode, code);
+    const value = await this.findOne(groupCode, code);
+    // ERP 연계분은 원본 필드만 잠근다 — 다국어 명칭 등 MES 확장 속성은 편집 가능하다.
+    assertErpOriginFieldsUntouched(
+      value.source,
+      { ...dto },
+      CODE_VALUE_MES_FIELDS,
+      `${groupCode}.${code}`,
+    );
 
     return this.prisma.codeValue.update({
       where: { id: value.id },
@@ -86,26 +98,13 @@ export class CodeValueService {
   }
 
   async remove(groupCode: string, code: string, actor?: string): Promise<void> {
-    const value = await this.getEditable(groupCode, code);
+    const value = await this.findOne(groupCode, code);
+    assertDeletable(value.source, `${groupCode}.${code}`);
 
     await this.prisma.codeValue.update({
       where: { id: value.id },
       data: { deletedAt: new Date(), updatedBy: actor },
     });
-  }
-
-  /**
-   * ERP 연계 수신본은 MES에서 수정·삭제할 수 없다
-   * (개념모델 v2 §1 — 연계분 기준정보 MES 수정/삭제 불가, QA #34).
-   */
-  private async getEditable(groupCode: string, code: string): Promise<CodeValue> {
-    const value = await this.findOne(groupCode, code);
-    if (value.source === DataSource.ERP) {
-      throw new ConflictException(
-        `ERP 연계 수신본은 MES에서 수정·삭제할 수 없습니다: ${groupCode}.${code}`,
-      );
-    }
-    return value;
   }
 
   private async assertGroupExists(groupCode: string): Promise<void> {

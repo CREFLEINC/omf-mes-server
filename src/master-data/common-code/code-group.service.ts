@@ -4,6 +4,11 @@ import { CodeGroup, DataSource, Prisma } from '@prisma/client';
 import { PageDto } from '../../common/dto/page.dto';
 import { PageQueryDto } from '../../common/dto/page-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  assertDeletable,
+  assertErpOriginFieldsUntouched,
+  CODE_GROUP_MES_FIELDS,
+} from '../erp-linked.policy';
 import { CreateCodeGroupDto, UpdateCodeGroupDto } from './dto/code-group.dto';
 
 @Injectable()
@@ -72,7 +77,9 @@ export class CodeGroupService {
   }
 
   async update(code: string, dto: UpdateCodeGroupDto, actor?: string): Promise<CodeGroup> {
-    const group = await this.getEditable(code);
+    const group = await this.getOrFail(code);
+    // ERP 연계분은 원본 필드만 잠근다 — 다국어 명칭 등 MES 확장 속성은 편집 가능하다.
+    assertErpOriginFieldsUntouched(group.source, { ...dto }, CODE_GROUP_MES_FIELDS, code);
 
     return this.prisma.codeGroup.update({
       where: { code: group.code },
@@ -82,7 +89,8 @@ export class CodeGroupService {
 
   /** 소프트 삭제 — 사용중인 하위 코드값이 남아 있으면 거부한다 */
   async remove(code: string, actor?: string): Promise<void> {
-    const group = await this.getEditable(code);
+    const group = await this.getOrFail(code);
+    assertDeletable(group.source, code);
 
     const activeValues = await this.prisma.codeValue.count({
       where: { groupCode: group.code, deletedAt: null },
@@ -99,19 +107,10 @@ export class CodeGroupService {
     });
   }
 
-  /**
-   * 수정·삭제 대상을 조회하고 편집 가능 여부를 검증한다.
-   * ERP 연계 수신본은 MES에서 수정·삭제할 수 없다
-   * (개념모델 v2 §1 — 연계분 기준정보 MES 수정/삭제 불가, QA #34).
-   */
-  private async getEditable(code: string): Promise<CodeGroup> {
+  /** 유효한(삭제되지 않은) 코드그룹을 가져온다. 정본 출처에 따른 제약은 호출부가 검사한다. */
+  private async getOrFail(code: string): Promise<CodeGroup> {
     const group = await this.prisma.codeGroup.findFirst({ where: { code, deletedAt: null } });
     if (!group) throw new NotFoundException(`코드그룹을 찾을 수 없습니다: ${code}`);
-    if (group.source === DataSource.ERP) {
-      throw new ConflictException(
-        `ERP 연계 수신본은 MES에서 수정·삭제할 수 없습니다: ${code}`,
-      );
-    }
     return group;
   }
 
