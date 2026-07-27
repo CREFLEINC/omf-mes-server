@@ -149,6 +149,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 리소스 | 경로 | 자연키 |
 | --- | --- | --- |
 | 단위(UoM) | `/api/master/uoms/:uomCode` | `uom_code` (전역) |
+| 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
+| ├ 단위환산 | `/api/master/items/:item/uom-conversions/:id` | (품목,from,to,시작일) |
+| ├ 외부코드 | `/api/master/items/:item/external-codes/:id` | (품목,시스템,거래처,코드) |
+| └ 사업부매핑 | `/api/master/items/:item/bu-mappings/:id` | (출발BU,품목,도착BU,시작일) |
 | 법인 | `/api/master/legal-entities/:legalEntityCode` | `legal_entity_code` (전역) |
 | 사업부 | `/api/master/legal-entities/:le/business-units/:businessUnitCode` | (법인, 사업부코드) |
 | 공장 | `/api/master/legal-entities/:le/plants/:plantCode` | (법인, 공장코드) |
@@ -157,6 +161,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 
 각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
+품목은 `itemTypeCode`, 창고는 `plantCode`로 추가로 좁힐 수 있다.
+
+> **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
+> `forbidNonWhitelisted`라, `@Query('x')`로만 받고 DTO에 없으면 `property x should not exist` 400이 난다.
 
 > **조직 계층이 함께 들어간 이유**: `mdm.warehouse`가 `plant_id`·`business_unit_id`를
 > NOT NULL로 요구한다. 창고를 만들려면 법인→사업부/공장이 먼저 있어야 해서 선행 마스터로 포함했다.
@@ -177,7 +185,20 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 유효 종료일 ≥ 시작일 | `ck_code_value_dates` |
 | 소수 자릿수 0~6 | `uom.decimal_scale` CHECK |
 
-DDL에 없어 **앱만 막는 것**: 로케이션 상위 지정의 자기참조·순환, 공장의 사업부가 같은 법인 소속인지.
+| 환산 전·후 단위 상이 · 환산율 > 0 | `ck_item_uom_distinct` · `conversion_rate` CHECK |
+| 개봉 후 사용시간 > 0 | `opened_shelf_life_hours` CHECK |
+| 출발·도착 사업부 상이 | `ck_item_bu_map_distinct` |
+
+DDL에 없어 **앱만 막는 것**:
+- 로케이션 상위 지정의 자기참조·순환
+- 공장의 사업부가 같은 법인 소속인지
+- **FEFO 품목은 유효기간(`shelf_life_days`) 필수** — 유효기간이 없으면 '임박 우선'이 성립하지 않는다.
+  근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)". 등록·수정 모두
+  **저장될 최종 상태**로 검사한다(정책만 바꿔 우회할 수 없게).
+
+> `item_external_code`의 유니크는 DDL에서 `COALESCE(partner_id, 0)`을 쓰는 부분 인덱스라
+> Prisma 모델로 표현되지 않는다. 앱이 먼저 확인하고, 경합으로 빠져나간 건은 DB가 막아
+> `PrismaExceptionFilter`가 P2002 → 409로 변환한다.
 
 ### 설정형 코드 검증 (패턴 P1)
 

@@ -11,7 +11,7 @@ import {
   Min,
 } from 'class-validator';
 
-import { toOptionalBoolean } from '../../common/dto/page-query.dto';
+import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
 import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
@@ -176,3 +176,12 @@ export class CreateLocationDto {
 export class UpdateLocationDto extends PartialType(
   OmitType(CreateLocationDto, ['locationCode'] as const),
 ) {}
+
+/** 창고 목록 쿼리 — 추가 필터는 PageQueryDto를 확장해 선언해야 400을 피한다. */
+export class WarehouseQueryDto extends PageQueryDto {
+  @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  plantCode?: string;
+}

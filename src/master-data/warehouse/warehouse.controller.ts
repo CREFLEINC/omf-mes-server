@@ -10,7 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { PageQueryDto } from '../../common/dto/page-query.dto';
 import {
@@ -18,6 +18,7 @@ import {
   CreateWarehouseDto,
   UpdateLocationDto,
   UpdateWarehouseDto,
+  WarehouseQueryDto,
 } from './warehouse.dto';
 import { WarehouseService } from './warehouse.service';
 
@@ -36,9 +37,8 @@ export class WarehouseController {
 
   @Get()
   @ApiOperation({ summary: '창고 목록' })
-  @ApiQuery({ name: 'plantCode', required: false, description: '공장으로 좁혀 조회' })
-  findAll(@Query() query: PageQueryDto, @Query('plantCode') plantCode?: string) {
-    return this.service.findAll(query, plantCode);
+  findAll(@Query() query: WarehouseQueryDto) {
+    return this.service.findAll(query, query.plantCode);
   }
 
   @Get(':warehouseCode')

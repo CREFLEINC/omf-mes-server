@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { CodeValidatorService } from './common-code/code-validator.service';
 import { CommonCodeModule } from './common-code/common-code.module';
+import { ItemController } from './item/item.controller';
+import { ItemService } from './item/item.service';
 import {
   BusinessUnitController,
   LegalEntityController,
@@ -21,13 +23,14 @@ import { WarehouseService } from './warehouse/warehouse.service';
   imports: [CommonCodeModule],
   controllers: [
     UomController,
+    ItemController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
     WarehouseController,
     LocationController,
   ],
-  providers: [CodeValidatorService, UomService, OrganizationService, WarehouseService],
+  providers: [CodeValidatorService, UomService, ItemService, OrganizationService, WarehouseService],
   exports: [OrganizationService],
 })
 export class MasterDataModule {}

@@ -31,6 +31,30 @@ const SEED = [
     ],
   },
   {
+    groupCode: 'LOT_CONTROL_TYPE',
+    groupName: 'LOT 관리방식',
+    values: [
+      { code: 'NONE', codeName: 'LOT 미관리', order: 10 },
+      { code: 'LOT', codeName: 'LOT 관리', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'SERIAL_CONTROL_TYPE',
+    groupName: '일련번호 관리방식',
+    values: [
+      { code: 'NONE', codeName: '미관리', order: 10 },
+      { code: 'SERIAL', codeName: '개별 일련번호 관리', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'FIFO_POLICY',
+    groupName: '선출 정책',
+    values: [
+      { code: 'FIFO', codeName: '선입선출', order: 10 },
+      { code: 'FEFO', codeName: '유효기간 임박 우선', order: 20 },
+    ],
+  },
+  {
     groupCode: 'MANAGEMENT_LEVEL',
     groupName: '창고 관리수준',
     values: [
