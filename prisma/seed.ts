@@ -59,6 +59,28 @@ const SEED = [
     ],
   },
   {
+    groupCode: 'USER_STATUS',
+    groupName: '계정 상태',
+    values: [
+      { code: 'ACTIVE', codeName: '사용', order: 10 },
+      { code: 'SUSPENDED', codeName: '정지', order: 20 },
+      { code: 'DISABLED', codeName: '해지', order: 30 },
+    ],
+  },
+  {
+    // 기능권한 코드. 지금은 마스터 API만 있어 그 범위로 시작한다.
+    // 주의: 어떤 엔드포인트도 아직 이 권한을 강제하지 않는다(가드 미구현) — README 참조.
+    groupCode: 'PERMISSION',
+    groupName: '기능 권한',
+    values: [
+      { code: 'MASTER_READ', codeName: '기준정보 조회', order: 10 },
+      { code: 'MASTER_WRITE', codeName: '기준정보 등록·수정', order: 20 },
+      { code: 'MASTER_DEACTIVATE', codeName: '기준정보 비활성화', order: 30 },
+      { code: 'ACCESS_READ', codeName: '접근권한 조회', order: 40 },
+      { code: 'ACCESS_WRITE', codeName: '접근권한 관리', order: 50 },
+    ],
+  },
+  {
     groupCode: 'WORKER_STATUS',
     groupName: '재직 상태',
     values: [

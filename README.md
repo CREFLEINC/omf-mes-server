@@ -161,6 +161,42 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | └ 공정 기능 | `/api/master/terminals/:t/processes/:processCode` | (단말, 공정) |
 
 **`mdm` 스키마의 마스터는 이것으로 전부 구현했다.**
+
+## 엔드포인트 — 접근권한 (app)
+
+| 리소스 | 경로 |
+| --- | --- |
+| 역할 | `/api/access/roles/:roleCode` |
+| └ 기능권한 | `/api/access/roles/:r/permissions/:permissionCode` |
+| 사용자 | `/api/access/users/:loginId` |
+| ├ 역할 배정 | `/api/access/users/:u/roles/:roleCode` |
+| ├ 유효 권한 | `GET /api/access/users/:u/permissions` (역할 경유 집계·중복 제거) |
+| └ 데이터 접근범위 | `/api/access/users/:u/data-scopes/:id` |
+
+### 지금은 **인가 데이터 관리**까지다 — 인증도, 권한 강제도 없다
+
+| 항목 | 상태 |
+| --- | --- |
+| 계정·역할·기능권한·데이터 접근범위 **관리** | ✅ 구현 |
+| **인증**(로그인 검증) | ❌ **정본 모델에 저장소가 없다** — 아래 참조 |
+| **권한 강제**(가드) | ❌ 미구현. 어떤 엔드포인트도 `PERMISSION`을 검사하지 않는다 |
+| 데이터 접근범위 **적용**(RLS 등) | ❌ 미구현. 범위를 저장할 뿐 조회를 걸러내지 않는다 |
+
+> **인증 미결 — 결정 필요**
+>
+> 정본 물리 모델(129 테이블)을 전부 훑어도 **비밀번호 해시·토큰·세션 컬럼이 하나도 없다.**
+> `app.app_user`는 `login_id`·이름·부서·이메일·상태만 갖는다. 즉 **인가만 모델링돼 있고
+> 인증 수단은 설계되지 않았다.** 모델링 문서에도 로그인·비밀번호 언급이 없다.
+>
+> 자격증명 컬럼을 임의로 추가하지 않았다 — 인증 방식(자체 비밀번호 / 고객사 LDAP·AD 연동 /
+> SSO)에 따라 필요한 스키마가 전혀 달라지고, 잘못 만들면 보안 부채가 된다.
+>
+> 참고로 **현장 POP은 사번 경량 인증**이라 관리 화면 계정과 이원화된다(REQ-PR-0023).
+> 즉 이 결정은 관리 화면 로그인에 한정된다.
+
+> `PERMISSION` 코드값은 현재 마스터 API 범위(`MASTER_READ`·`MASTER_WRITE`·`MASTER_DEACTIVATE`·
+> `ACCESS_READ`·`ACCESS_WRITE`)로 시작했다. **엔드포인트가 늘면 함께 늘려야 하며, 지금은
+> 어디에서도 강제되지 않으므로 "권한을 부여했다 = 통제된다"가 아니다.**
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |

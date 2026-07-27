@@ -79,6 +79,6 @@ import { WarehouseService } from './warehouse/warehouse.service';
     OrganizationService,
     WarehouseService,
   ],
-  exports: [OrganizationService],
+  exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
 export class MasterDataModule {}
