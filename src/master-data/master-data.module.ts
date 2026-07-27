@@ -22,6 +22,12 @@ import { PartnerController } from './partner/partner.controller';
 import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
 import { PartnerService } from './partner/partner.service';
+import { DepartmentService } from './worker/department.service';
+import {
+  DepartmentController,
+  WorkerController,
+} from './worker/worker.controller';
+import { WorkerService } from './worker/worker.service';
 import { UomController } from './uom/uom.controller';
 import { UomService } from './uom/uom.service';
 import {
@@ -41,6 +47,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ProductionLineController,
     EquipmentController,
     MoldController,
+    DepartmentController,
+    WorkerController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
@@ -56,6 +64,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ProductionLineService,
     EquipmentService,
     MoldService,
+    DepartmentService,
+    WorkerService,
     OrganizationService,
     WarehouseService,
   ],

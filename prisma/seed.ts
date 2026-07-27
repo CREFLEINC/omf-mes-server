@@ -40,6 +40,24 @@ const SEED = [
     ],
   },
   {
+    groupCode: 'WORKER_STATUS',
+    groupName: '재직 상태',
+    values: [
+      { code: 'ACTIVE', codeName: '재직', order: 10 },
+      { code: 'LEAVE', codeName: '휴직', order: 20 },
+      { code: 'RESIGNED', codeName: '퇴직', order: 30 },
+    ],
+  },
+  {
+    // DDL 주석이 용도를 명시한다: 공정 수행 자격(FR-WO-009/022) · 검사자 자격(FR-QM-014)
+    groupCode: 'QUALIFICATION_TYPE',
+    groupName: '자격 유형',
+    values: [
+      { code: 'PROCESS_OPERATION', codeName: '공정 수행', order: 10 },
+      { code: 'INSPECTOR', codeName: '검사자', order: 20 },
+    ],
+  },
+  {
     // 개념모델 v2 §1 툴/금형의 '신규입고/폐기 상태'를 축으로 삼았다.
     groupCode: 'MOLD_STATUS',
     groupName: '금형 상태',

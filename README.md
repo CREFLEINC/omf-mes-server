@@ -153,6 +153,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 생산라인 | `/api/master/production-lines/:lineCode` | (공장, 라인코드) |
 | 설비 | `/api/master/equipments/:equipmentCode` | (공장, 설비코드) |
 | 툴·금형 | `/api/master/molds/:moldCode` | (공장, 금형코드) |
+| 부서 | `/api/master/departments/:departmentCode` | `department_code` (전역) |
+| 작업자 | `/api/master/workers/:workerNo` | `worker_no` 사번 (전역) |
+| └ 자격 | `/api/master/workers/:w/qualifications/:id` | (작업자, 유형, 공정, 시작일) |
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
@@ -169,8 +172,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
 품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`,
 생산라인은 `plantCode`·`lineTypeCode`, 설비는 `plantCode`·`equipmentTypeCode`·`statusCode`·
-`calibrationDueBefore`(교정 만료 임박·경과), 금형은 `plantCode`·`statusCode`·`shotCountGte`로
-추가로 좁힐 수 있다.
+`calibrationDueBefore`(교정 만료 임박·경과), 금형은 `plantCode`·`statusCode`·`shotCountGte`,
+작업자는 `plantCode`·`departmentCode`·`statusCode`로 추가로 좁힐 수 있다.
+자격 목록은 `validOn`(기준일 유효분만)·`qualificationTypeCode`를 받는다 —
+검사자 자격 만료 통제(NFR-QM-008)의 기반 조회다.
 
 > **금형의 `current_shot_count`**: 운영 중 누적은 생산 실적이 갱신할 몫이고, 마스터 API에서는
 > **초기값(DX 이관)·보정용**으로만 다룬다. 금형 정비 후 리셋 같은 조작이 이 경로로 들어오므로
@@ -205,7 +210,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | --- | --- |
 | 외부창고면 거래처 필수 | `ck_external_warehouse_partner` |
 | 수용량과 단위는 함께 지정 | `ck_location_capacity` |
-| 유효 종료일 ≥ 시작일 | `ck_code_value_dates` |
+| 유효 종료일 ≥ 시작일 | `ck_code_value_dates` · `ck_worker_qualification_dates` |
 | 소수 자릿수 0~6 | `uom.decimal_scale` CHECK |
 
 | 환산 전·후 단위 상이 · 환산율 > 0 | `ck_item_uom_distinct` · `conversion_rate` CHECK |
@@ -217,7 +222,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 DDL에 없어 **앱만 막는 것**:
 - 로케이션 상위 지정의 자기참조·순환
 - 공장의 사업부가 같은 법인 소속인지
-- 생산라인 상위 지정의 순환(DDL은 자기참조만 막는다)
+- 생산라인·부서 상위 지정의 순환(DDL은 자기참조만 막는다)
 - **설비 교정 만료일 ≥ 최종 교정일**
 - **FEFO 품목은 유효기간(`shelf_life_days`) 필수** — 유효기간이 없으면 '임박 우선'이 성립하지 않는다.
   근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)". 등록·수정 모두
@@ -303,6 +308,11 @@ pnpm test           # 단위 테스트
 ## 남은 과제
 
 - **인증·인가 미적용** — `created_by`/`updated_by`(bigint, `app.app_user` FK)를 채울 주체가 없어 null로 기록된다. WBS **CORE-6**에서 연결한다.
+  `worker.app_user_id`(작업자↔관리 화면 계정 연결)도 같은 이유로 이 API에서 다루지 않는다.
+  현장 실적 귀속은 사번 경량 인증이고 관리 화면 계정과 이원화된다(REQ-PR-0023).
+- **트랜잭션 참조 검사 미적용** — 금형·작업자·거래처는 참조처가 대부분 트랜잭션이라
+  '미결 작업지시/발주가 쓰면 막는다'를 지금 판정할 수 없다. 단순 존재 검사를 걸면 한 번이라도
+  쓰인 마스터가 영영 비활성화되지 않으므로, 해당 모듈의 상태 의미가 정해질 때 함께 붙인다.
 - **변경 이력 미연결** — 정본에 `audit.audit_event`가 있으나 아직 쓰지 않는다. 확정 패턴 **P2**(현재 1행 + 이력 1:N)를 WBS **CORE-3**에서 라이브러리로 구현하며 연결한다.
 - **낙관적 락 미완성** — `version_no`를 증가만 시킨다. 클라이언트가 기대 버전을 보내 충돌을 409로 거르는 부분이 남았다.
 - **ERP 연계 수신 파이프라인 미구현** — X-ERP 트랙. 위 '미결 2건'의 출처 마커 결정이 선행돼야 한다.
