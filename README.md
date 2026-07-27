@@ -144,6 +144,51 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 목록 공통 쿼리: `page`(기본 1) · `size`(기본 20, 최대 200) · `keyword`(코드·명칭 부분일치) · `isActive`.
 응답 봉투: `{ items, total, page, size, totalPages }`.
 
+## 엔드포인트 — 기준정보 마스터 (mdm)
+
+| 리소스 | 경로 | 자연키 |
+| --- | --- | --- |
+| 단위(UoM) | `/api/master/uoms/:uomCode` | `uom_code` (전역) |
+| 법인 | `/api/master/legal-entities/:legalEntityCode` | `legal_entity_code` (전역) |
+| 사업부 | `/api/master/legal-entities/:le/business-units/:businessUnitCode` | (법인, 사업부코드) |
+| 공장 | `/api/master/legal-entities/:le/plants/:plantCode` | (법인, 공장코드) |
+| 창고 | `/api/master/warehouses/:warehouseCode` | (공장, 창고코드) |
+| 로케이션 | `/api/master/warehouses/:wh/locations/:locationCode` | (창고, 로케이션코드) |
+
+각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
+목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
+
+> **조직 계층이 함께 들어간 이유**: `mdm.warehouse`가 `plant_id`·`business_unit_id`를
+> NOT NULL로 요구한다. 창고를 만들려면 법인→사업부/공장이 먼저 있어야 해서 선행 마스터로 포함했다.
+
+> **창고코드는 전역 유니크가 아니다** — `(plant_id, warehouse_code)`가 유니크다.
+> 지금은 단일 공장 전제로 코드만으로 조회하고, 같은 코드가 여러 공장에 있으면 409로 명시적으로
+> 거부한다(조용히 첫 건을 고르지 않는다). 다공장 운영이 확정되면 경로에 공장을 넣어야 한다.
+
+### DB 제약을 앱에서도 먼저 검사하는 것
+
+정본 DDL의 CHECK 제약은 최후 방어선이고, 앱이 먼저 걸러 쓸 만한 메시지를 준다
+(`3-3 §7 애플리케이션과 DB 양쪽에서 중복 검증할 항목`과 같은 취지).
+
+| 규칙 | DDL 제약 |
+| --- | --- |
+| 외부창고면 거래처 필수 | `ck_external_warehouse_partner` |
+| 수용량과 단위는 함께 지정 | `ck_location_capacity` |
+| 유효 종료일 ≥ 시작일 | `ck_code_value_dates` |
+| 소수 자릿수 0~6 | `uom.decimal_scale` CHECK |
+
+DDL에 없어 **앱만 막는 것**: 로케이션 상위 지정의 자기참조·순환, 공장의 사업부가 같은 법인 소속인지.
+
+### 설정형 코드 검증 (패턴 P1)
+
+`warehouse_type_code`·`location_type_code` 등은 DDL에서 `app.code_t` 문자열일 뿐 `code_value`로
+FK가 걸려 있지 않다. 관리자가 코드를 추가·변경하는 설정형 코드(확정 패턴 **P1**)이기 때문이며,
+값의 유효성은 `CodeValidatorService`가 책임진다 — 해당 코드그룹에 **활성** 코드값으로 존재하는지 확인하고,
+없으면 사용 가능한 코드 목록을 담아 400을 낸다.
+
+> 코드그룹 이름(`WAREHOUSE_TYPE`·`MANAGEMENT_LEVEL`·`LOCATION_TYPE`·`QUALITY_ZONE`·`STORAGE_CONDITION`)은
+> 정본 문서가 지정하지 않아 **컬럼명을 따라 정한 관례**다. 모델링 측에서 다른 이름을 쓰기로 하면 시드와 함께 바꾸면 된다.
+
 ## 적용한 도메인 규칙
 
 정본 물리 모델의 구조를 그대로 따른다. 이후 마스터도 같은 골격을 재사용한다.

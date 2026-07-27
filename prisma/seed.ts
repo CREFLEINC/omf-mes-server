@@ -31,6 +31,46 @@ const SEED = [
     ],
   },
   {
+    groupCode: 'MANAGEMENT_LEVEL',
+    groupName: '창고 관리수준',
+    values: [
+      { code: 'WAREHOUSE', codeName: '창고', order: 10 },
+      { code: 'ZONE', codeName: '구역', order: 20 },
+      { code: 'RACK', codeName: '랙', order: 30 },
+      { code: 'CELL', codeName: '셀', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'LOCATION_TYPE',
+    groupName: '로케이션 유형',
+    values: [
+      { code: 'ZONE', codeName: '구역', order: 10 },
+      { code: 'RACK', codeName: '랙', order: 20 },
+      { code: 'CELL', codeName: '셀', order: 30 },
+      { code: 'DOCK', codeName: '입하장', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'QUALITY_ZONE',
+    groupName: '품질구역',
+    values: [
+      { code: 'AVAILABLE', codeName: '가용', order: 10 },
+      { code: 'INSPECTION', codeName: '검사대기', order: 20 },
+      { code: 'HOLD', codeName: '보류', order: 30 },
+      { code: 'QUARANTINE', codeName: '격리', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'STORAGE_CONDITION',
+    groupName: '보관조건',
+    values: [
+      { code: 'NORMAL', codeName: '상온', order: 10 },
+      { code: 'COLD', codeName: '냉장', order: 20 },
+      { code: 'FROZEN', codeName: '냉동', order: 30 },
+      { code: 'HAZARD', codeName: '위험물', order: 40 },
+    ],
+  },
+  {
     groupCode: 'WAREHOUSE_TYPE',
     groupName: '창고유형',
     values: [
@@ -45,7 +85,30 @@ const SEED = [
   },
 ];
 
+/**
+ * 기본 단위(UoM). 품목·로케이션 수용량이 참조한다.
+ * decimal_scale = 수량 소수 자릿수(DB 제약 0~6).
+ */
+const UOMS = [
+  { code: 'EA', name: '개', scale: 0 },
+  { code: 'KG', name: '킬로그램', scale: 3 },
+  { code: 'G', name: '그램', scale: 3 },
+  { code: 'M', name: '미터', scale: 3 },
+  { code: 'BOX', name: '박스', scale: 0 },
+  { code: 'PLT', name: '파렛트', scale: 0 },
+];
+
 async function main(): Promise<void> {
+  for (const uom of UOMS) {
+    await prisma.uom.upsert({
+      where: { uom_code: uom.code },
+      update: { uom_name: uom.name, decimal_scale: uom.scale, is_active: true },
+      create: { uom_code: uom.code, uom_name: uom.name, decimal_scale: uom.scale },
+    });
+  }
+  // eslint-disable-next-line no-console
+  console.log(`seeded UOM (${UOMS.length})`);
+
   for (const group of SEED) {
     const saved = await prisma.code_group.upsert({
       where: { group_code: group.groupCode },
