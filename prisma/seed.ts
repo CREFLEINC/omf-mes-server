@@ -31,6 +31,16 @@ const SEED = [
     ],
   },
   {
+    // 확정된 축은 '외주공정 구분'(개념모델 v2 §1 공정) 하나뿐이라 그 축만 넣는다.
+    // 사출/조립/검사 같은 공정 분류축이 필요하면 값을 추가하거나 별도 코드그룹으로 뺀다.
+    groupCode: 'PROCESS_TYPE',
+    groupName: '공정 유형',
+    values: [
+      { code: 'INTERNAL', codeName: '자체공정', order: 10 },
+      { code: 'OUTSOURCED', codeName: '외주공정', order: 20 },
+    ],
+  },
+  {
     groupCode: 'PARTNER_ROLE_TYPE',
     groupName: '거래처 역할',
     values: [

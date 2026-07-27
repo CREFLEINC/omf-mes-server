@@ -149,6 +149,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 리소스 | 경로 | 자연키 |
 | --- | --- | --- |
 | 단위(UoM) | `/api/master/uoms/:uomCode` | `uom_code` (전역) |
+| 공정 | `/api/master/processes/:processCode` | `process_code` (전역) |
 | 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
 | └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
@@ -163,7 +164,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 
 각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
-품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`로 추가로 좁힐 수 있다.
+품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`로
+추가로 좁힐 수 있다.
 거래처 검색(`keyword`)은 코드·명칭과 함께 `erp_partner_code`도 본다.
 
 > **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
@@ -210,8 +212,16 @@ FK가 걸려 있지 않다. 관리자가 코드를 추가·변경하는 설정�
 값의 유효성은 `CodeValidatorService`가 책임진다 — 해당 코드그룹에 **활성** 코드값으로 존재하는지 확인하고,
 없으면 사용 가능한 코드 목록을 담아 400을 낸다.
 
-> 코드그룹 이름(`WAREHOUSE_TYPE`·`MANAGEMENT_LEVEL`·`LOCATION_TYPE`·`QUALITY_ZONE`·`STORAGE_CONDITION`)은
+> 코드그룹 이름(`WAREHOUSE_TYPE`·`MANAGEMENT_LEVEL`·`LOCATION_TYPE`·`QUALITY_ZONE`·`STORAGE_CONDITION`·
+> `LOT_CONTROL_TYPE`·`SERIAL_CONTROL_TYPE`·`FIFO_POLICY`·`PARTNER_ROLE_TYPE`·`PROCESS_TYPE`)은
 > 정본 문서가 지정하지 않아 **컬럼명을 따라 정한 관례**다. 모델링 측에서 다른 이름을 쓰기로 하면 시드와 함께 바꾸면 된다.
+
+> **`PROCESS_TYPE`의 값 범위**: 문서에서 확정된 공정 축은 '외주공정 구분'(개념모델 v2 §1) 하나뿐이라
+> `INTERNAL`/`OUTSOURCED`만 넣었다. 사출·조립·검사 같은 **공정 분류축**은 문서 근거가 없어 임의로 만들지 않았다 —
+> 필요하면 값을 추가하거나 별도 코드그룹으로 분리한다.
+
+> 공정별 세부 속성(MES 관리 여부·설비/금형 필수·표준 C/T·수율)은 `mdm.process`가 아니라
+> 라우팅 라인(`planning.routing_operation`)이 갖는다. 같은 공정도 품목·라우팅에 따라 운영 방식이 다르기 때문이다.
 
 ## 적용한 도메인 규칙
 

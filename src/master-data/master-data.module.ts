@@ -11,6 +11,8 @@ import {
 } from './organization/organization.controller';
 import { OrganizationService } from './organization/organization.service';
 import { PartnerController } from './partner/partner.controller';
+import { ProcessController } from './process/process.controller';
+import { ProcessService } from './process/process.service';
 import { PartnerService } from './partner/partner.service';
 import { UomController } from './uom/uom.controller';
 import { UomService } from './uom/uom.service';
@@ -27,6 +29,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     UomController,
     ItemController,
     PartnerController,
+    ProcessController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
@@ -38,6 +41,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     UomService,
     ItemService,
     PartnerService,
+    ProcessService,
     OrganizationService,
     WarehouseService,
   ],
