@@ -149,6 +149,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 리소스 | 경로 | 자연키 |
 | --- | --- | --- |
 | 단위(UoM) | `/api/master/uoms/:uomCode` | `uom_code` (전역) |
+| 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
+| └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
 | 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
 | ├ 단위환산 | `/api/master/items/:item/uom-conversions/:id` | (품목,from,to,시작일) |
 | ├ 외부코드 | `/api/master/items/:item/external-codes/:id` | (품목,시스템,거래처,코드) |
@@ -161,7 +163,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 
 각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
 목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
-품목은 `itemTypeCode`, 창고는 `plantCode`로 추가로 좁힐 수 있다.
+품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`로 추가로 좁힐 수 있다.
+거래처 검색(`keyword`)은 코드·명칭과 함께 `erp_partner_code`도 본다.
 
 > **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
 > `forbidNonWhitelisted`라, `@Query('x')`로만 받고 DTO에 없으면 `property x should not exist` 400이 난다.

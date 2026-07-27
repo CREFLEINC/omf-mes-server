@@ -10,6 +10,8 @@ import {
   PlantController,
 } from './organization/organization.controller';
 import { OrganizationService } from './organization/organization.service';
+import { PartnerController } from './partner/partner.controller';
+import { PartnerService } from './partner/partner.service';
 import { UomController } from './uom/uom.controller';
 import { UomService } from './uom/uom.service';
 import {
@@ -24,13 +26,21 @@ import { WarehouseService } from './warehouse/warehouse.service';
   controllers: [
     UomController,
     ItemController,
+    PartnerController,
     LegalEntityController,
     BusinessUnitController,
     PlantController,
     WarehouseController,
     LocationController,
   ],
-  providers: [CodeValidatorService, UomService, ItemService, OrganizationService, WarehouseService],
+  providers: [
+    CodeValidatorService,
+    UomService,
+    ItemService,
+    PartnerService,
+    OrganizationService,
+    WarehouseService,
+  ],
   exports: [OrganizationService],
 })
 export class MasterDataModule {}

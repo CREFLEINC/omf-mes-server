@@ -31,6 +31,16 @@ const SEED = [
     ],
   },
   {
+    groupCode: 'PARTNER_ROLE_TYPE',
+    groupName: '거래처 역할',
+    values: [
+      { code: 'SUPPLIER', codeName: '공급사', order: 10 },
+      { code: 'CUSTOMER', codeName: '고객', order: 20 },
+      { code: 'SUBCONTRACTOR', codeName: '외주처', order: 30 },
+      { code: 'CARRIER', codeName: '운송업체', order: 40 },
+    ],
+  },
+  {
     groupCode: 'LOT_CONTROL_TYPE',
     groupName: 'LOT 관리방식',
     values: [
