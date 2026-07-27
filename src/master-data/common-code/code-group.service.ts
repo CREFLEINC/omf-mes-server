@@ -1,141 +1,122 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CodeGroup, DataSource, Prisma } from '@prisma/client';
+import { code_group, Prisma } from '@prisma/client';
 
 import { PageDto } from '../../common/dto/page.dto';
 import { PageQueryDto } from '../../common/dto/page-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  assertDeletable,
-  assertErpOriginFieldsUntouched,
-  CODE_GROUP_MES_FIELDS,
-} from '../erp-linked.policy';
 import { CreateCodeGroupDto, UpdateCodeGroupDto } from './dto/code-group.dto';
 
 @Injectable()
 export class CodeGroupService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateCodeGroupDto, actor?: string): Promise<CodeGroup> {
-    const existing = await this.prisma.codeGroup.findUnique({ where: { code: dto.code } });
-    if (existing && !existing.deletedAt) {
-      throw new ConflictException(`이미 존재하는 코드그룹입니다: ${dto.code}`);
-    }
-
-    // 신규 등록 필드 — 미지정 값은 기본값으로 채운다.
-    const data = {
-      nameKo: dto.nameKo,
-      nameVi: dto.nameVi ?? null,
-      description: dto.description ?? null,
-      sortOrder: dto.sortOrder ?? 0,
-      useYn: dto.useYn ?? true,
-      source: dto.source ?? DataSource.MES,
-    };
-
-    // 소프트 삭제된 코드는 되살려 재사용한다 — 자연키라 신규 행 생성이 불가능하다.
-    // 이때도 '신규 등록'이므로 미지정 필드는 삭제 전 값을 물려받지 않고 기본값으로 되돌린다.
+  async create(dto: CreateCodeGroupDto, actor?: bigint): Promise<code_group> {
+    const existing = await this.prisma.code_group.findUnique({
+      where: { group_code: dto.groupCode },
+    });
     if (existing) {
-      return this.prisma.codeGroup.update({
-        where: { code: dto.code },
-        data: { ...data, deletedAt: null, createdBy: actor, updatedBy: actor },
-      });
+      throw new ConflictException(`이미 존재하는 코드그룹입니다: ${dto.groupCode}`);
     }
 
-    return this.prisma.codeGroup.create({
-      data: { code: dto.code, ...data, createdBy: actor, updatedBy: actor },
+    return this.prisma.code_group.create({
+      data: {
+        group_code: dto.groupCode,
+        group_name: dto.groupName,
+        description: dto.description ?? null,
+        is_active: dto.isActive ?? true,
+        created_by: actor,
+        updated_by: actor,
+      },
     });
   }
 
-  async findAll(query: PageQueryDto): Promise<PageDto<CodeGroup>> {
+  async findAll(query: PageQueryDto): Promise<PageDto<code_group>> {
     const where = this.buildWhere(query);
 
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.codeGroup.findMany({
+      this.prisma.code_group.findMany({
         where,
-        orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+        orderBy: [{ group_code: 'asc' }],
         skip: query.skip,
         take: query.size,
       }),
-      this.prisma.codeGroup.count({ where }),
+      this.prisma.code_group.count({ where }),
     ]);
 
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 하위 코드값(사용중)을 함께 반환한다 */
-  async findOne(code: string): Promise<CodeGroup & { values: unknown[] }> {
-    const group = await this.prisma.codeGroup.findFirst({
-      where: { code, deletedAt: null },
+  /** 단건 조회 — 하위 코드값을 정렬순서대로 함께 반환한다 */
+  async findOne(groupCode: string) {
+    const group = await this.prisma.code_group.findUnique({
+      where: { group_code: groupCode },
       include: {
-        values: {
-          where: { deletedAt: null },
-          orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-        },
+        code_value: { orderBy: [{ display_order: 'asc' }, { code: 'asc' }] },
       },
     });
-    if (!group) throw new NotFoundException(`코드그룹을 찾을 수 없습니다: ${code}`);
+    if (!group) throw new NotFoundException(`코드그룹을 찾을 수 없습니다: ${groupCode}`);
     return group;
   }
 
-  async update(code: string, dto: UpdateCodeGroupDto, actor?: string): Promise<CodeGroup> {
-    const group = await this.getOrFail(code);
-    // ERP 연계분은 원본 필드만 잠근다 — 다국어 명칭 등 MES 확장 속성은 편집 가능하다.
-    assertErpOriginFieldsUntouched(group.source, { ...dto }, CODE_GROUP_MES_FIELDS, code);
+  async update(
+    groupCode: string,
+    dto: UpdateCodeGroupDto,
+    actor?: bigint,
+  ): Promise<code_group> {
+    const group = await this.getOrFail(groupCode);
 
-    return this.prisma.codeGroup.update({
-      where: { code: group.code },
-      data: { ...this.toWriteData(dto), updatedBy: actor },
+    return this.prisma.code_group.update({
+      where: { code_group_id: group.code_group_id },
+      data: {
+        group_name: dto.groupName,
+        description: dto.description,
+        is_active: dto.isActive,
+        updated_by: actor,
+        // 낙관적 락 컬럼 — 지금은 증가만 시킨다. 클라이언트가 기대 버전을 보내는
+        // 완전한 낙관적 락은 후속 과제(README '남은 과제').
+        version_no: { increment: 1 },
+      },
     });
   }
 
-  /** 소프트 삭제 — 사용중인 하위 코드값이 남아 있으면 거부한다 */
-  async remove(code: string, actor?: string): Promise<void> {
-    const group = await this.getOrFail(code);
-    assertDeletable(group.source, code);
+  /**
+   * 비활성화(is_active=false).
+   * 정본 물리 모델에는 소프트 삭제 컬럼이 없고 `is_active`가 수명주기 플래그다.
+   * 마스터는 타 테이블이 FK로 참조하므로 물리 삭제하지 않는다.
+   */
+  async deactivate(groupCode: string, actor?: bigint): Promise<void> {
+    const group = await this.getOrFail(groupCode);
 
-    const activeValues = await this.prisma.codeValue.count({
-      where: { groupCode: group.code, deletedAt: null },
+    const activeValues = await this.prisma.code_value.count({
+      where: { code_group_id: group.code_group_id, is_active: true },
     });
     if (activeValues > 0) {
       throw new ConflictException(
-        `하위 코드값 ${activeValues}건이 남아 있어 삭제할 수 없습니다: ${code}`,
+        `사용중인 하위 코드값 ${activeValues}건이 남아 있어 비활성화할 수 없습니다: ${groupCode}`,
       );
     }
 
-    await this.prisma.codeGroup.update({
-      where: { code: group.code },
-      data: { deletedAt: new Date(), updatedBy: actor },
+    await this.prisma.code_group.update({
+      where: { code_group_id: group.code_group_id },
+      data: { is_active: false, updated_by: actor, version_no: { increment: 1 } },
     });
   }
 
-  /** 유효한(삭제되지 않은) 코드그룹을 가져온다. 정본 출처에 따른 제약은 호출부가 검사한다. */
-  private async getOrFail(code: string): Promise<CodeGroup> {
-    const group = await this.prisma.codeGroup.findFirst({ where: { code, deletedAt: null } });
-    if (!group) throw new NotFoundException(`코드그룹을 찾을 수 없습니다: ${code}`);
+  private async getOrFail(groupCode: string): Promise<code_group> {
+    const group = await this.prisma.code_group.findUnique({ where: { group_code: groupCode } });
+    if (!group) throw new NotFoundException(`코드그룹을 찾을 수 없습니다: ${groupCode}`);
     return group;
   }
 
-  private buildWhere(query: PageQueryDto): Prisma.CodeGroupWhereInput {
-    const where: Prisma.CodeGroupWhereInput = {};
-    if (!query.includeDeleted) where.deletedAt = null;
-    if (query.useYn !== undefined) where.useYn = query.useYn;
+  private buildWhere(query: PageQueryDto): Prisma.code_groupWhereInput {
+    const where: Prisma.code_groupWhereInput = {};
+    if (query.isActive !== undefined) where.is_active = query.isActive;
     if (query.keyword) {
       where.OR = [
-        { code: { contains: query.keyword, mode: 'insensitive' } },
-        { nameKo: { contains: query.keyword, mode: 'insensitive' } },
-        { nameVi: { contains: query.keyword, mode: 'insensitive' } },
+        { group_code: { contains: query.keyword, mode: 'insensitive' } },
+        { group_name: { contains: query.keyword, mode: 'insensitive' } },
       ];
     }
     return where;
-  }
-
-  /** 수정 가능 필드만 추린다 — undefined인 필드는 Prisma가 무변경으로 처리한다 */
-  private toWriteData(dto: UpdateCodeGroupDto) {
-    return {
-      nameKo: dto.nameKo,
-      nameVi: dto.nameVi,
-      description: dto.description,
-      sortOrder: dto.sortOrder,
-      useYn: dto.useYn,
-    };
   }
 }

@@ -44,7 +44,6 @@ export class CodeValueController {
 
   @Patch(':code')
   @ApiOperation({ summary: '코드값 수정' })
-  @ApiResponse({ status: 409, description: 'ERP 연계 수신본은 수정 불가' })
   update(
     @Param('groupCode') groupCode: string,
     @Param('code') code: string,
@@ -55,9 +54,8 @@ export class CodeValueController {
 
   @Delete(':code')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '코드값 삭제 (소프트 삭제)' })
-  @ApiResponse({ status: 409, description: 'ERP 연계 수신본은 삭제 불가' })
+  @ApiOperation({ summary: '코드값 비활성화 (is_active=false)' })
   remove(@Param('groupCode') groupCode: string, @Param('code') code: string) {
-    return this.service.remove(groupCode, code);
+    return this.service.deactivate(groupCode, code);
   }
 }

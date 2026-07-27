@@ -35,26 +35,25 @@ export class CodeGroupController {
     return this.service.findAll(query);
   }
 
-  @Get(':code')
-  @ApiOperation({ summary: '코드그룹 단건 조회 (사용중 코드값 포함)' })
-  @ApiParam({ name: 'code', description: '코드그룹', example: 'ITEM_TYPE' })
+  @Get(':groupCode')
+  @ApiOperation({ summary: '코드그룹 단건 조회 (하위 코드값 포함)' })
+  @ApiParam({ name: 'groupCode', description: '코드그룹', example: 'ITEM_TYPE' })
   @ApiResponse({ status: 404, description: '코드그룹 없음' })
-  findOne(@Param('code') code: string) {
-    return this.service.findOne(code);
+  findOne(@Param('groupCode') groupCode: string) {
+    return this.service.findOne(groupCode);
   }
 
-  @Patch(':code')
+  @Patch(':groupCode')
   @ApiOperation({ summary: '코드그룹 수정' })
-  @ApiResponse({ status: 409, description: 'ERP 연계 수신본은 수정 불가' })
-  update(@Param('code') code: string, @Body() dto: UpdateCodeGroupDto) {
-    return this.service.update(code, dto);
+  update(@Param('groupCode') groupCode: string, @Body() dto: UpdateCodeGroupDto) {
+    return this.service.update(groupCode, dto);
   }
 
-  @Delete(':code')
+  @Delete(':groupCode')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '코드그룹 삭제 (소프트 삭제)' })
-  @ApiResponse({ status: 409, description: '하위 코드값 잔존 또는 ERP 연계 수신본' })
-  remove(@Param('code') code: string) {
-    return this.service.remove(code);
+  @ApiOperation({ summary: '코드그룹 비활성화 (is_active=false)' })
+  @ApiResponse({ status: 409, description: '사용중인 하위 코드값 잔존' })
+  remove(@Param('groupCode') groupCode: string) {
+    return this.service.deactivate(groupCode);
   }
 }

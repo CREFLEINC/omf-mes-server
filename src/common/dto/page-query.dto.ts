@@ -29,7 +29,7 @@ export class PageQueryDto {
   @Max(200)
   size: number = 20;
 
-  @ApiPropertyOptional({ description: '검색어 — 코드·명칭(ko/vi) 부분 일치' })
+  @ApiPropertyOptional({ description: '검색어 — 코드·명칭 부분 일치' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -39,13 +39,7 @@ export class PageQueryDto {
   @IsOptional()
   @Transform(toOptionalBoolean)
   @IsBoolean()
-  useYn?: boolean;
-
-  @ApiPropertyOptional({ description: '삭제된 항목 포함 여부', default: false })
-  @IsOptional()
-  @Transform(toOptionalBoolean)
-  @IsBoolean()
-  includeDeleted: boolean = false;
+  isActive?: boolean;
 
   get skip(): number {
     return (this.page - 1) * this.size;
