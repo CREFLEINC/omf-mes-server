@@ -1,0 +1,12 @@
+# pnpm 11 설정 파일. (pnpm 10까지 쓰던 package.json의 "pnpm" 필드는 더 이상 읽지 않는다.)
+
+# 설치 스크립트는 기본 차단이다 — 실행이 꼭 필요한 패키지만 명시 허용한다.
+allowBuilds:
+  # Prisma Client 생성·쿼리 엔진 바이너리 배치에 필요
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  # SWC 네이티브 바이너리
+  '@swc/core': true
+  # 사용 분석 전송 — 대외비 프로젝트라 차단한다
+  '@scarf/scarf': false

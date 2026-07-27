@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    // 증분 빌드 정보를 dist 안에 둔다 — nest-cli의 deleteOutDir이 dist를 지울 때
+    // 함께 지워지지 않으면 "변경 없음"으로 판단해 파일을 다시 내보내지 않는다(모듈 누락).
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  // include는 src만 둔다 — 빌더(SWC/tsc)가 이 값으로 출력 루트를 정하므로,
+  // prisma/ 같은 형제 디렉토리가 들어가면 산출물이 dist/src/…로 한 단계 깊어진다.
+  // prisma/seed.ts는 ts-node가 진입점으로 직접 컴파일하고, 전체 타입 검사는 `pnpm typecheck`가 담당한다.
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.log
+.swc
+*.tsbuildinfo
+.eslintcache
+README.md
+docker-compose*.yml
+Dockerfile
+.dockerignore

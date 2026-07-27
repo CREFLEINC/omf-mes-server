@@ -1,0 +1,11 @@
+{
+  // 타입 검사 전용 — 빌드 산출물 루트에 영향을 주지 않도록 tsconfig.json과 분리한다.
+  // `pnpm typecheck`가 src뿐 아니라 prisma/seed.ts·test/까지 한 번에 검사한다.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": ["src/**/*", "prisma/**/*", "test/**/*", "prisma.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

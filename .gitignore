@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.prod
+.env.*.local
+*.log
+.eslintcache
+.swc/
+*.tsbuildinfo

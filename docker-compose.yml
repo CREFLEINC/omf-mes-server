@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: omf-mes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: omf
+      POSTGRES_PASSWORD: omf
+      POSTGRES_DB: omf_mes
+      TZ: Asia/Seoul
+    ports:
+      - '5432:5432'
+    volumes:
+      - omf-mes-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U omf -d omf_mes']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  omf-mes-pgdata:

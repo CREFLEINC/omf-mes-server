@@ -1,0 +1,90 @@
+// OMF MES — Prisma 스키마
+// 근거: docs/research/2026-07-03-개념데이터모델-v2-요구사항통합.md §1 기준정보(Master)
+//       docs/research/2026-07-09-기술스택-배포모델-결정서.md 결정 16(PostgreSQL·NestJS)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 데이터 정본 출처.
+/// ERP = UNIERP 연계 수신본(원본 필드 읽기 전용 — QA #34) · MES = MES 직접 등록(정본)
+enum DataSource {
+  ERP
+  MES
+}
+
+/// 공통코드 — 코드그룹
+/// 개념모델 §1: 키 = 코드그룹+코드값, 속성 = 코드명(다국어 ko/vi)·정렬순서·사용여부
+model CodeGroup {
+  /// 코드그룹 (자연키)
+  code        String     @id @map("code_group") @db.VarChar(50)
+  /// 코드그룹명 (한국어)
+  nameKo      String     @map("name_ko") @db.VarChar(200)
+  /// 코드그룹명 (베트남어) — REQ-PR-0012 다국어 전범위 확정
+  nameVi      String?    @map("name_vi") @db.VarChar(200)
+  /// 설명
+  description String?    @db.VarChar(500)
+  /// 정렬순서
+  sortOrder   Int        @default(0) @map("sort_order")
+  /// 사용여부
+  useYn       Boolean    @default(true) @map("use_yn")
+  /// 정본 출처 — ERP 연계분은 원본 필드 수정/삭제 불가
+  source      DataSource @default(MES)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.VarChar(50)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?   @map("updated_by") @db.VarChar(50)
+  /// 소프트 삭제 시각 — null이면 유효 데이터
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  values CodeValue[]
+
+  @@index([useYn, sortOrder])
+  @@index([deletedAt])
+  @@map("mst_code_group")
+}
+
+/// 공통코드 — 코드값
+model CodeValue {
+  /// 내부 서로게이트 키 (복합 자연키는 @@unique로 강제)
+  id        String @id @default(uuid()) @db.Uuid
+  /// 코드그룹 (FK)
+  groupCode String @map("code_group") @db.VarChar(50)
+  /// 코드값
+  code      String @map("code_value") @db.VarChar(50)
+
+  /// 코드명 (한국어)
+  nameKo      String     @map("name_ko") @db.VarChar(200)
+  /// 코드명 (베트남어)
+  nameVi      String?    @map("name_vi") @db.VarChar(200)
+  /// 설명
+  description String?    @db.VarChar(500)
+  /// 코드별 부가 속성 — 코드 체계마다 다른 확장 값을 담는다
+  attr1       String?    @map("attr1") @db.VarChar(200)
+  attr2       String?    @map("attr2") @db.VarChar(200)
+  /// 정렬순서
+  sortOrder   Int        @default(0) @map("sort_order")
+  /// 사용여부
+  useYn       Boolean    @default(true) @map("use_yn")
+  /// 정본 출처
+  source      DataSource @default(MES)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?   @map("created_by") @db.VarChar(50)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?   @map("updated_by") @db.VarChar(50)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  group CodeGroup @relation(fields: [groupCode], references: [code], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([groupCode, code], name: "uq_code_value")
+  @@index([groupCode, useYn, sortOrder])
+  @@index([deletedAt])
+  @@map("mst_code_value")
+}
