@@ -15,16 +15,14 @@ import {
 } from 'class-validator';
 
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 export class CreateItemDto {
   @ApiProperty({ description: '품목코드', example: 'ITEM_0001', maxLength: 50 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   itemCode!: string;
 
   @ApiProperty({ description: '품목명', example: '사출 커버', maxLength: 200 })

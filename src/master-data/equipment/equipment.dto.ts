@@ -11,9 +11,7 @@ import {
 } from 'class-validator';
 
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 /** `line_type_code` 값은 DDL 주석이 명시한다: LINE | WORK_AREA. */
 export class CreateProductionLineDto {
@@ -33,7 +31,7 @@ export class CreateProductionLineDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   lineCode!: string;
 
   @ApiProperty({ description: '라인명', example: 'A라인', maxLength: 200 })
@@ -85,7 +83,7 @@ export class CreateEquipmentDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   equipmentCode!: string;
 
   @ApiProperty({ description: '설비명', example: '사출기 1호', maxLength: 200 })

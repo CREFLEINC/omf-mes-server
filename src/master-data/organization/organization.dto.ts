@@ -10,16 +10,14 @@ import {
 } from 'class-validator';
 
 import { toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 export class CreateLegalEntityDto {
   @ApiProperty({ description: '법인 코드', example: 'OMF_VN', maxLength: 50 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   legalEntityCode!: string;
 
   @ApiProperty({ description: '법인명', example: 'OMF Vietnam', maxLength: 200 })
@@ -62,7 +60,7 @@ export class CreateBusinessUnitDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   businessUnitCode!: string;
 
   @ApiProperty({ description: '사업부명', example: '부품사업부', maxLength: 200 })
@@ -102,7 +100,7 @@ export class CreatePlantDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   plantCode!: string;
 
   @ApiProperty({ description: '공장명', example: '1공장', maxLength: 200 })

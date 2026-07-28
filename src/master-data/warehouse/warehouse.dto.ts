@@ -12,9 +12,7 @@ import {
 } from 'class-validator';
 
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 export class CreateWarehouseDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
@@ -39,7 +37,7 @@ export class CreateWarehouseDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   warehouseCode!: string;
 
   @ApiProperty({ description: '창고명', example: '자재창고', maxLength: 200 })

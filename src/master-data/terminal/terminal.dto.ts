@@ -10,9 +10,7 @@ import {
 } from 'class-validator';
 
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 /** `HH:MM` 또는 `HH:MM:SS` */
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
@@ -34,7 +32,7 @@ export class CreateShiftDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   shiftCode!: string;
 
   @ApiProperty({ description: '작업조명', example: '주간조', maxLength: 200 })
@@ -92,7 +90,7 @@ export class CreateTerminalDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   terminalCode!: string;
 
   @ApiProperty({

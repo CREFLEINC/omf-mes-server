@@ -11,16 +11,14 @@ import {
 } from 'class-validator';
 
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
-import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
-
-const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
+import { CODE_PATTERN, CODE_RULE } from '../common-code/dto/code-group.dto';
 
 export class CreateDepartmentDto {
   @ApiProperty({ description: '부서 코드', example: 'DEPT_PROD', maxLength: 50 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   departmentCode!: string;
 
   @ApiProperty({ description: '부서명', example: '생산부', maxLength: 200 })
@@ -62,7 +60,7 @@ export class CreateWorkerDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Matches(CODE_PATTERN, codeRule)
+  @Matches(CODE_PATTERN, CODE_RULE)
   workerNo!: string;
 
   @ApiProperty({ description: '성명', example: '홍길동', maxLength: 200 })
