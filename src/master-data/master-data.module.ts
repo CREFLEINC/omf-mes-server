@@ -22,6 +22,11 @@ import { PartnerController } from './partner/partner.controller';
 import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
 import { PartnerService } from './partner/partner.service';
+import {
+  RoutingController,
+  RoutingOperationController,
+} from './routing/routing.controller';
+import { RoutingService } from './routing/routing.service';
 import { ShiftService } from './terminal/shift.service';
 import {
   ShiftController,
@@ -61,6 +66,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     PlantController,
     WarehouseController,
     LocationController,
+    RoutingController,
+    RoutingOperationController,
   ],
   providers: [
     CodeValidatorService,
@@ -77,6 +84,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     TerminalService,
     OrganizationService,
     WarehouseService,
+    RoutingService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
