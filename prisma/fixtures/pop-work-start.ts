@@ -5,21 +5,28 @@
  * 아직 없다. 그 앞단을 대신해 최소 한 벌을 직접 심는다 — 조직·품목·라우팅부터
  * 배포된 W/O·단말·작업자까지.
  *
- * 실행: `npx ts-node -r tsconfig-paths/register prisma/fixtures/pop-work-start.ts`
+ * 실행: `npm run fixtures:pop` · e2e(test/pop-work-start.e2e-spec.ts)도 같은 함수를 쓴다.
  * 여러 번 돌려도 같은 결과가 되도록 전부 upsert다.
  */
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+export const PLANT_CODE = 'PLANT_1';
+export const PROCESS_CODE = 'INJECTION';
+export const ITEM_CODE = 'ITEM_HOUSING';
+export const TERMINAL_CODE = 'POP_INJ_01';
+export const WORKER_NO = 'EMP-1043';
+export const WORK_ORDER_NO = 'WO-FIXTURE-0001';
 
-const PLANT_CODE = 'PLANT_1';
-const PROCESS_CODE = 'INJECTION';
-const ITEM_CODE = 'ITEM_HOUSING';
-const TERMINAL_CODE = 'POP_INJ_01';
-const WORKER_NO = 'EMP-1043';
-const WORK_ORDER_NO = 'WO-FIXTURE-0001';
+export interface PopWorkStartFixture {
+  plantId: bigint;
+  processId: bigint;
+  workOrderId: bigint;
+  shiftId: bigint;
+}
 
-async function main(): Promise<void> {
+export async function seedPopWorkStartFixture(
+  prisma: PrismaClient,
+): Promise<PopWorkStartFixture> {
   const uom = await prisma.uom.findUniqueOrThrow({ where: { uom_code: 'EA' } });
 
   const legalEntity = await prisma.legal_entity.upsert({
@@ -235,21 +242,59 @@ async function main(): Promise<void> {
     },
   });
 
-  // eslint-disable-next-line no-console
-  console.log(
-    [
-      'POP 작업 시작 픽스처 준비 완료',
-      `  단말   ${TERMINAL_CODE} (${PROCESS_CODE} 시작 허용)`,
-      `  사번   ${WORKER_NO}`,
-      `  작업지시 ${WORK_ORDER_NO} (id=${workOrder.work_order_id}, RELEASED)`,
-    ].join('\n'),
-  );
+  return {
+    plantId: plant.plant_id,
+    processId: process.process_id,
+    workOrderId: workOrder.work_order_id,
+    shiftId: shift.shift_id,
+  };
 }
 
-main()
-  .catch((error) => {
-    // eslint-disable-next-line no-console
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+/**
+ * 픽스처 W/O를 「막 배포된」 상태로 되돌린다 — 열린 세션을 지우고 상태를 RELEASED로.
+ *
+ * **픽스처 W/O에 달린 것만 지운다.** work_session 전체를 비우면 같은 DB를 쓰는
+ * 다른 작업의 데이터까지 날아간다.
+ */
+export async function resetPopWorkStartState(prisma: PrismaClient): Promise<void> {
+  const sessions = await prisma.work_session.findMany({
+    where: { work_order: { work_order_no: WORK_ORDER_NO } },
+    select: { work_session_id: true },
+  });
+  const ids = sessions.map((session) => session.work_session_id);
+
+  if (ids.length > 0) {
+    await prisma.$transaction([
+      prisma.work_session_event.deleteMany({ where: { work_session_id: { in: ids } } }),
+      prisma.work_session_worker.deleteMany({ where: { work_session_id: { in: ids } } }),
+      prisma.work_session.deleteMany({ where: { work_session_id: { in: ids } } }),
+    ]);
+  }
+
+  await prisma.work_order.updateMany({
+    where: { work_order_no: WORK_ORDER_NO },
+    data: { status_code: 'RELEASED' },
+  });
+}
+
+if (require.main === module) {
+  const prisma = new PrismaClient();
+  seedPopWorkStartFixture(prisma)
+    .then((fixture) => {
+      // eslint-disable-next-line no-console
+      console.log(
+        [
+          'POP 작업 시작 픽스처 준비 완료',
+          `  단말     ${TERMINAL_CODE} (${PROCESS_CODE} 시작 허용)`,
+          `  사번     ${WORKER_NO}`,
+          `  작업지시 ${WORK_ORDER_NO} (id=${fixture.workOrderId}, RELEASED)`,
+        ].join('\n'),
+      );
+    })
+    .catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
