@@ -11,14 +11,14 @@ import {
   EquipmentController,
   ProductionLineController,
 } from './equipment/equipment.controller';
-import { EquipmentService } from './equipment/equipment.service';
-import { ProductionLineService } from './equipment/production-line.service';
 import {
   InspectionItemSpecController,
   InspectionPlanController,
   InspectionPlanVersionController,
 } from './inspection/inspection-plan.controller';
 import { InspectionPlanService } from './inspection/inspection-plan.service';
+import { EquipmentService } from './equipment/equipment.service';
+import { ProductionLineService } from './equipment/production-line.service';
 import { ItemController } from './item/item.controller';
 import { MoldController } from './mold/mold.controller';
 import { MoldService } from './mold/mold.service';
@@ -33,6 +33,12 @@ import { PartnerController } from './partner/partner.controller';
 import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
 import { PartnerService } from './partner/partner.service';
+import { CauseCodeService } from './quality-code/cause-code.service';
+import { DefectCodeService } from './quality-code/defect-code.service';
+import {
+  CauseCodeController,
+  DefectCodeController,
+} from './quality-code/quality-code.controller';
 import {
   RoutingController,
   RoutingOperationController,
@@ -84,6 +90,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     InspectionPlanController,
     InspectionPlanVersionController,
     InspectionItemSpecController,
+    DefectCodeController,
+    CauseCodeController,
   ],
   providers: [
     CodeValidatorService,
@@ -103,6 +111,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     RoutingService,
     BomService,
     InspectionPlanService,
+    DefectCodeService,
+    CauseCodeService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
