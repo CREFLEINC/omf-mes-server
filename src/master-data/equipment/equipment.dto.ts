@@ -193,3 +193,40 @@ export class ProductionLineQueryDto extends PageQueryDto {
   @MaxLength(50)
   lineTypeCode?: string;
 }
+
+/**
+ * 설비 검교정 이력. 설비 마스터의 last_calibration_date·calibration_due_date가
+ * "언제 했고 언제까지 유효한가"의 요약이라면, 이 이력은 매 회차의 결과·성적서를 남긴다.
+ */
+export class CreateCalibrationDto {
+  @ApiProperty({ description: '검교정일 (YYYY-MM-DD)', example: '2026-07-01' })
+  @Type(() => Date)
+  @IsDate()
+  calibrationDate!: Date;
+
+  @ApiProperty({
+    description: '검교정 결과 — 코드그룹 CALIBRATION_RESULT (PASS/ADJUSTED/FAIL)',
+    example: 'PASS',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  resultCode!: string;
+
+  @ApiPropertyOptional({ description: '유효기한 (YYYY-MM-DD) — 검교정일 이후여야 한다' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  validUntil?: Date;
+
+  @ApiPropertyOptional({ description: '성적서 번호', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  certificateNo?: string;
+
+  @ApiPropertyOptional({ description: '비고' })
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+}

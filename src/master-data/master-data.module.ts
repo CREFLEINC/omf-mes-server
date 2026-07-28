@@ -5,7 +5,9 @@ import {
   BomController,
 } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
-import { ApprovalRouteController } from './approval-route/approval-route.controller';
+import {
+  ApprovalRouteController,
+} from './approval-route/approval-route.controller';
 import { ApprovalRouteService } from './approval-route/approval-route.service';
 import { CodeValidatorService } from './common-code/code-validator.service';
 import { CommonCodeModule } from './common-code/common-code.module';
@@ -39,6 +41,8 @@ import { NumberingRuleService } from './numbering/numbering-rule.service';
 import { OperationPolicyController } from './operation-policy/operation-policy.controller';
 import { OperationPolicyService } from './operation-policy/operation-policy.service';
 import { PartnerService } from './partner/partner.service';
+import { PutawayRuleController } from './putaway-rule/putaway-rule.controller';
+import { PutawayRuleService } from './putaway-rule/putaway-rule.service';
 import { CauseCodeService } from './quality-code/cause-code.service';
 import { DefectCodeService } from './quality-code/defect-code.service';
 import {
@@ -101,6 +105,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     OperationPolicyController,
     NumberingRuleController,
     ApprovalRouteController,
+    PutawayRuleController,
   ],
   providers: [
     CodeValidatorService,
@@ -125,6 +130,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     OperationPolicyService,
     NumberingRuleService,
     ApprovalRouteService,
+    PutawayRuleService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })

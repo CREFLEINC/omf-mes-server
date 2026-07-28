@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { equipment, Prisma } from '@prisma/client';
+import { equipment, equipment_calibration, Prisma } from '@prisma/client';
 
 import { PageDto } from '../../common/dto/page.dto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,7 +13,12 @@ import {
   updateStamp,
 } from '../common/master-crud';
 import { OrganizationService } from '../organization/organization.service';
-import { CreateEquipmentDto, EquipmentQueryDto, UpdateEquipmentDto } from './equipment.dto';
+import {
+  CreateCalibrationDto,
+  CreateEquipmentDto,
+  EquipmentQueryDto,
+  UpdateEquipmentDto,
+} from './equipment.dto';
 import { ProductionLineService } from './production-line.service';
 
 @Injectable()
@@ -183,6 +188,74 @@ export class EquipmentService {
       `공정(${processCode})`,
     );
     return found.process_id;
+  }
+
+  /**
+   * 검교정 이력 등록. 같은 설비·같은 날짜는 1건이다(uq_equipment_calibration) —
+   * 하루에 두 번 재면 나중 값이 이전 값을 덮는 게 아니라 거부된다.
+   */
+  async addCalibration(
+    equipmentCode: string,
+    dto: CreateCalibrationDto,
+    actor?: bigint,
+  ): Promise<equipment_calibration> {
+    const found = await this.getEquipment(equipmentCode);
+    await this.codes.assertValid('CALIBRATION_RESULT', dto.resultCode);
+
+    if (dto.validUntil && dto.validUntil < dto.calibrationDate) {
+      throw new BadRequestException('유효기한은 검교정일보다 빠를 수 없습니다.');
+    }
+
+    orConflict(
+      await this.prisma.equipment_calibration.findUnique({
+        where: {
+          equipment_id_calibration_date: {
+            equipment_id: found.equipment_id,
+            calibration_date: dto.calibrationDate,
+          },
+        },
+      }),
+      `같은 날짜의 검교정 기록이 이미 있습니다: ${equipmentCode}`,
+    );
+
+    return this.prisma.equipment_calibration.create({
+      data: {
+        equipment_id: found.equipment_id,
+        calibration_date: dto.calibrationDate,
+        result_code: dto.resultCode,
+        valid_until: dto.validUntil ?? null,
+        certificate_no: dto.certificateNo ?? null,
+        calibrated_by: actor ?? null,
+        remarks: dto.remarks ?? null,
+        created_by: actor,
+      },
+    });
+  }
+
+  async findCalibrations(equipmentCode: string): Promise<equipment_calibration[]> {
+    const found = await this.getEquipment(equipmentCode);
+    return this.prisma.equipment_calibration.findMany({
+      where: { equipment_id: found.equipment_id },
+      orderBy: { calibration_date: 'desc' },
+    });
+  }
+
+  /** 이력 테이블이라 비활성 플래그가 없다 — 잘못 넣은 기록만 지운다. */
+  async removeCalibration(equipmentCode: string, calibrationId: bigint): Promise<void> {
+    const found = await this.getEquipment(equipmentCode);
+    const row = orFail(
+      await this.prisma.equipment_calibration.findFirst({
+        where: {
+          equipment_calibration_id: calibrationId,
+          equipment_id: found.equipment_id,
+        },
+      }),
+      `검교정 기록(${calibrationId})`,
+    );
+
+    await this.prisma.equipment_calibration.delete({
+      where: { equipment_calibration_id: row.equipment_calibration_id },
+    });
   }
 
   private async getEquipment(equipmentCode: string): Promise<equipment> {

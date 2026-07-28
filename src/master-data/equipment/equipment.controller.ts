@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -14,6 +15,7 @@ import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import {
+  CreateCalibrationDto,
   CreateEquipmentDto,
   CreateProductionLineDto,
   EquipmentQueryDto,
@@ -117,5 +119,36 @@ export class EquipmentController {
   @ApiResponse({ status: 409, description: '검사항목 기준이 기본 검사장비로 참조 중' })
   deactivate(@Param('equipmentCode') equipmentCode: string, @ActorId() actor?: bigint) {
     return this.service.deactivate(equipmentCode, actor);
+  }
+
+  @RequirePermissions('MASTER_WRITE')
+  @Post(':equipmentCode/calibrations')
+  @ApiOperation({ summary: '검교정 이력 등록 — 검교정자는 호출한 사용자로 기록된다' })
+  @ApiResponse({ status: 400, description: '결과 코드값 오류 · 유효기한이 검교정일보다 빠름' })
+  @ApiResponse({ status: 409, description: '같은 날짜의 검교정 기록 중복' })
+  addCalibration(
+    @Param('equipmentCode') equipmentCode: string,
+    @Body() dto: CreateCalibrationDto,
+    @ActorId() actor?: bigint,
+  ) {
+    return this.service.addCalibration(equipmentCode, dto, actor);
+  }
+
+  @RequirePermissions('MASTER_READ')
+  @Get(':equipmentCode/calibrations')
+  @ApiOperation({ summary: '검교정 이력 목록 — 최근순' })
+  findCalibrations(@Param('equipmentCode') equipmentCode: string) {
+    return this.service.findCalibrations(equipmentCode);
+  }
+
+  @RequirePermissions('MASTER_DEACTIVATE')
+  @Delete(':equipmentCode/calibrations/:calibrationId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '검교정 기록 삭제 (이력 테이블이라 물리 삭제)' })
+  removeCalibration(
+    @Param('equipmentCode') equipmentCode: string,
+    @Param('calibrationId', ParseIntPipe) calibrationId: number,
+  ) {
+    return this.service.removeCalibration(equipmentCode, BigInt(calibrationId));
   }
 }

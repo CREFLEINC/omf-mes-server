@@ -35,6 +35,7 @@ describe('EquipmentService', () => {
     equipment: Record<string, jest.Mock>;
     process: Record<string, jest.Mock>;
     inspection_item_spec: Record<string, jest.Mock>;
+    equipment_calibration: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
   const org = { findPlant: jest.fn() };
@@ -49,6 +50,13 @@ describe('EquipmentService', () => {
       equipment: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
       process: { findUnique: jest.fn() },
       inspection_item_spec: { count: jest.fn() },
+      equipment_calibration: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        delete: jest.fn(),
+      },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
 
@@ -178,6 +186,47 @@ describe('EquipmentService', () => {
       expect(prisma.equipment.update).toHaveBeenCalledWith({
         where: { equipment_id: 1n },
         data: expect.objectContaining({ is_active: false }),
+      });
+    });
+  });
+
+  describe('addCalibration', () => {
+    const dto = { calibrationDate: new Date('2026-07-01'), resultCode: 'PASS' };
+
+    beforeEach(() => {
+      prisma.equipment.findMany.mockResolvedValue([baseEquipment]);
+    });
+
+    it('검교정 결과 코드값을 검증한다', async () => {
+      prisma.equipment_calibration.findUnique.mockResolvedValue(null);
+      prisma.equipment_calibration.create.mockResolvedValue({ equipment_calibration_id: 1n });
+
+      await service.addCalibration('EQ_INJ_01', dto);
+
+      expect(codes.assertValid).toHaveBeenCalledWith('CALIBRATION_RESULT', 'PASS');
+    });
+
+    it('유효기한이 검교정일보다 빠르면 400', async () => {
+      await expect(
+        service.addCalibration('EQ_INJ_01', { ...dto, validUntil: new Date('2026-06-01') }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    // uq_equipment_calibration — 하루에 두 번 재면 덮어쓰는 게 아니라 거부된다.
+    it('같은 날짜 기록이 있으면 409', async () => {
+      prisma.equipment_calibration.findUnique.mockResolvedValue({ equipment_calibration_id: 1n });
+
+      await expect(service.addCalibration('EQ_INJ_01', dto)).rejects.toThrow(ConflictException);
+    });
+
+    it('검교정자를 호출자로 박는다', async () => {
+      prisma.equipment_calibration.findUnique.mockResolvedValue(null);
+      prisma.equipment_calibration.create.mockResolvedValue({ equipment_calibration_id: 1n });
+
+      await service.addCalibration('EQ_INJ_01', dto, 77n);
+
+      expect(prisma.equipment_calibration.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ calibrated_by: 77n }),
       });
     });
   });
