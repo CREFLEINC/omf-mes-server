@@ -30,6 +30,7 @@ describe('WorkerService', () => {
   let service: WorkerService;
   let prisma: {
     worker: Record<string, jest.Mock>;
+    app_user: Record<string, jest.Mock>;
     worker_qualification: Record<string, jest.Mock>;
     process: Record<string, jest.Mock>;
     $transaction: jest.Mock;
@@ -44,7 +45,8 @@ describe('WorkerService', () => {
     departments.resolveId.mockResolvedValue(null);
     codes.assertValid.mockResolvedValue(undefined);
     prisma = {
-      worker: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
+      worker: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn() },
+      app_user: { findUnique: jest.fn() },
       worker_qualification: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
       process: { findUnique: jest.fn() },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -157,6 +159,65 @@ describe('WorkerService', () => {
           }),
         }),
       );
+    });
+  });
+
+  // 개념모델 §5.10·§5.15 — 작업자(현장 수행 주체)와 사용자(시스템 입력 주체)는 별개이고
+  // 1:1로 강제하지 않는다. 다만 계정 하나는 한 사람이라 여러 작업자에 붙일 수 없다.
+  describe('관리 화면 계정 연결', () => {
+    beforeEach(() => {
+      prisma.worker.findUnique.mockResolvedValue(null);
+      prisma.worker.create.mockResolvedValue(baseWorker);
+      prisma.app_user.findUnique.mockResolvedValue({ app_user_id: 7n });
+      prisma.worker.findFirst.mockResolvedValue(null);
+    });
+
+    it('로그인 ID를 계정 FK로 바꿔 저장한다', async () => {
+      await service.create({ ...newWorker, appUserLoginId: 'hong.gildong' });
+
+      expect(prisma.worker.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ app_user_id: 7n }),
+      });
+    });
+
+    it('미지정이면 연결하지 않는다', async () => {
+      await service.create(newWorker);
+
+      expect(prisma.worker.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ app_user_id: null }),
+      });
+      expect(prisma.app_user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('없는 계정이면 404', async () => {
+      prisma.app_user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create({ ...newWorker, appUserLoginId: 'nobody' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('이미 다른 작업자에 연결된 계정이면 409', async () => {
+      prisma.worker.findFirst.mockResolvedValue({ worker_no: 'W9999' });
+
+      await expect(
+        service.create({ ...newWorker, appUserLoginId: 'hong.gildong' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('수정 시 자기 자신은 중복으로 보지 않는다', async () => {
+      prisma.worker.findUnique.mockResolvedValue(baseWorker);
+      prisma.worker.update.mockResolvedValue(baseWorker);
+
+      await service.update('W0001', { appUserLoginId: 'hong.gildong' });
+
+      // 중복 검사에서 자기 worker_id를 제외해야 한다.
+      expect(prisma.worker.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ worker_id: { not: 1n } }),
+        }),
+      );
+      expect(prisma.worker.update).toHaveBeenCalled();
     });
   });
 

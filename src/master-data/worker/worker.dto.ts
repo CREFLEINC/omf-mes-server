@@ -56,8 +56,10 @@ export class UpdateDepartmentDto extends PartialType(
 /**
  * 작업자 — mdm.worker. 자연키 = worker_no (사번, 전역 유니크)
  *
- * `app_user_id`(관리 화면 계정 연결)는 인증·권한 마스터가 아직 없어 이 API에서 다루지 않는다.
- * 현장 실적 귀속은 사번 경량 인증이고 관리 화면 계정과 이원화된다(REQ-PR-0023).
+ * 관리 화면 계정(`app_user`)과는 **별개 엔티티**다. 작업자는 현장 수행 주체,
+ * 사용자는 시스템 입력 주체이며 1:1로 강제하지 않는다(개념모델 §5.10·§5.15).
+ * 한 사람이 둘 다인 경우에만 `appUserLoginId`로 연결한다 — "실제 작업자"와
+ * "입력·처리한 사용자"를 분리 기록하기 위한 선택적 링크다.
  */
 export class CreateWorkerDto {
   @ApiProperty({ description: '사번', example: 'W0001', maxLength: 50 })
@@ -96,6 +98,16 @@ export class CreateWorkerDto {
   @IsString()
   @MaxLength(50)
   departmentCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '연결할 관리 화면 계정의 로그인 ID — 이 작업자가 시스템 입력 주체이기도 한 경우만',
+    example: 'hong.gildong',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  appUserLoginId?: string;
 
   @ApiProperty({
     description: '재직 상태 — 코드그룹 WORKER_STATUS (재직/휴직/퇴직)',
@@ -168,6 +180,12 @@ export class WorkerQueryDto extends PageQueryDto {
   @IsString()
   @MaxLength(50)
   departmentCode?: string;
+
+  @ApiPropertyOptional({ description: '관리 화면 계정이 연결된 작업자만 / 없는 작업자만' })
+  @IsOptional()
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  hasAppUser?: boolean;
 
   @ApiPropertyOptional({ description: '재직 상태로 좁혀 조회' })
   @IsOptional()

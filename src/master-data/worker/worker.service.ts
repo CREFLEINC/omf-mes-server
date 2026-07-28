@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Prisma, worker, worker_qualification } from '@prisma/client';
 
 import { PageDto } from '../../common/dto/page.dto';
@@ -33,10 +33,11 @@ export class WorkerService {
       `이미 존재하는 사번입니다: ${dto.workerNo}`,
     );
 
-    const [plant, unit, departmentId] = await Promise.all([
+    const [plant, unit, departmentId, appUserId] = await Promise.all([
       this.org.findPlant(dto.legalEntityCode, dto.plantCode),
       this.org.findBusinessUnit(dto.legalEntityCode, dto.businessUnitCode),
       this.departments.resolveId(dto.departmentCode),
+      this.resolveAppUser(dto.appUserLoginId),
     ]);
 
     return this.prisma.worker.create({
@@ -46,6 +47,7 @@ export class WorkerService {
         plant_id: plant.plant_id,
         business_unit_id: unit.business_unit_id,
         department_id: departmentId,
+        app_user_id: appUserId,
         status_code: dto.statusCode,
         is_active: dto.isActive ?? true,
         ...createStamp(actor),
@@ -58,6 +60,9 @@ export class WorkerService {
     if (query.plantCode) extra.plant = { plant_code: query.plantCode };
     if (query.departmentCode) extra.department = { department_code: query.departmentCode };
     if (query.statusCode) extra.status_code = query.statusCode;
+    if (query.hasAppUser !== undefined) {
+      extra.app_user_id = query.hasAppUser ? { not: null } : null;
+    }
 
     const where = baseWhere(query, ['worker_no', 'worker_name'], extra) as Prisma.workerWhereInput;
 
@@ -79,6 +84,7 @@ export class WorkerService {
       where: { worker_no: workerNo },
       include: {
         department: true,
+        app_user: true,
         worker_qualification: { orderBy: { valid_from: 'desc' } },
       },
     });
@@ -93,12 +99,17 @@ export class WorkerService {
       dto.departmentCode === undefined
         ? undefined
         : await this.departments.resolveId(dto.departmentCode);
+    const appUserId =
+      dto.appUserLoginId === undefined
+        ? undefined
+        : await this.resolveAppUser(dto.appUserLoginId, found.worker_id);
 
     return this.prisma.worker.update({
       where: { worker_id: found.worker_id },
       data: {
         worker_name: dto.workerName,
         department_id: departmentId,
+        app_user_id: appUserId,
         status_code: dto.statusCode,
         is_active: dto.isActive,
         ...updateStamp(actor),
@@ -209,6 +220,37 @@ export class WorkerService {
       await this.prisma.worker.findUnique({ where: { worker_no: workerNo } }),
       `작업자(${workerNo})`,
     );
+  }
+
+  /**
+   * 관리 화면 계정 연결.
+   *
+   * 계정 하나는 한 사람이므로 여러 작업자에 붙일 수 없다 — DDL에 유니크 제약이 없어
+   * 앱에서 막는다. 계정 상태(정지·해지)는 보지 않는다: 이 링크는 권한 부여가 아니라
+   * "이 작업자가 곧 그 계정 사용자"라는 신원 기록이다.
+   */
+  private async resolveAppUser(loginId?: string, selfWorkerId?: bigint): Promise<bigint | null> {
+    if (!loginId) return null;
+
+    const user = orFail(
+      await this.prisma.app_user.findUnique({ where: { login_id: loginId } }),
+      `사용자(${loginId})`,
+    );
+
+    const linked = await this.prisma.worker.findFirst({
+      where: {
+        app_user_id: user.app_user_id,
+        ...(selfWorkerId === undefined ? {} : { worker_id: { not: selfWorkerId } }),
+      },
+      select: { worker_no: true },
+    });
+    if (linked) {
+      throw new ConflictException(
+        `이미 다른 작업자(${linked.worker_no})에 연결된 계정입니다: ${loginId}`,
+      );
+    }
+
+    return user.app_user_id;
   }
 
   private async resolveProcess(processCode?: string): Promise<bigint | null> {

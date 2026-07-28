@@ -154,7 +154,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | 설비 | `/api/master/equipments/:equipmentCode` | (공장, 설비코드) |
 | 툴·금형 | `/api/master/molds/:moldCode` | (공장, 금형코드) |
 | 부서 | `/api/master/departments/:departmentCode` | `department_code` (전역) |
-| 작업자 | `/api/master/workers/:workerNo` | `worker_no` 사번 (전역) |
+| 작업자 | `/api/master/workers/:workerNo` | `worker_no` **사번** (전역) |
 | └ 자격 | `/api/master/workers/:w/qualifications/:id` | (작업자, 유형, 공정, 시작일) |
 | 작업조 | `/api/master/shifts/:shiftCode` | (공장, 작업조코드) |
 | 단말 | `/api/master/terminals/:terminalCode` | `terminal_code` (전역) |
@@ -218,6 +218,29 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 단말은 `plantCode`·`terminalTypeCode`·`statusCode`로 추가로 좁힐 수 있다.
 자격 목록은 `validOn`(기준일 유효분만)·`qualificationTypeCode`를 받는다 —
 검사자 자격 만료 통제(NFR-QM-008)의 기반 조회다.
+작업자 목록은 `hasAppUser`로 관리 화면 계정 연결 여부를 걸러낼 수 있다.
+
+### 작업자(사번) ↔ 사용자(로그인 ID)는 별개 엔티티다
+
+혼동하기 쉬워 근거와 함께 적어 둔다.
+
+| | `mdm.worker` | `app.app_user` |
+| --- | --- | --- |
+| 식별자 | **`worker_no` = 사번** | `login_id` = 로그인 ID |
+| 성격 | 현장 수행 주체 | 시스템 입력 주체 |
+| 참조하는 곳 | 작업세션·생산실적·검사·피킹 (11곳) | 승인자·확정자·처리자 (`approver_id`·`confirmed_by`·`decided_by` 등 23곳) |
+| 인증 | POP **사번 경량 인증** (비밀번호 없음) | 관리 화면 계정 |
+
+> 개념모델 §5.10: "작업자와 MES 입력자는 구분할 수 있어야 한다. … **'실제 작업자'와
+> '입력·처리한 사용자'를 분리 기록**한다."
+> §5.15: "작업자는 현장 수행 주체, 사용자는 시스템 입력 주체로 역할이 다르며
+> **두 개념은 1:1로 강제하지 않는다.**"
+
+작업자 A가 작업하고 반장 B가 대신 입력하는 상황, 계정 없는 작업자, 작업자가 아닌 사무직 계정을
+모두 표현하기 위한 분리다. 한 사람이 둘 다인 경우에만 `appUserLoginId`로 연결한다.
+
+**계정 하나는 여러 작업자에 연결할 수 없다**(계정 = 한 사람). DDL에 유니크 제약이 없어 앱이 막는다.
+계정 상태(정지·해지)는 보지 않는다 — 이 링크는 권한 부여가 아니라 신원 기록이다.
 
 > **금형의 `current_shot_count`**: 운영 중 누적은 생산 실적이 갱신할 몫이고, 마스터 API에서는
 > **초기값(DX 이관)·보정용**으로만 다룬다. 금형 정비 후 리셋 같은 조작이 이 경로로 들어오므로
@@ -367,8 +390,7 @@ pnpm test           # 단위 테스트
 ## 남은 과제
 
 - **인증·인가 미적용** — `created_by`/`updated_by`(bigint, `app.app_user` FK)를 채울 주체가 없어 null로 기록된다. WBS **CORE-6**에서 연결한다.
-  `worker.app_user_id`(작업자↔관리 화면 계정 연결)도 같은 이유로 이 API에서 다루지 않는다.
-  현장 실적 귀속은 사번 경량 인증이고 관리 화면 계정과 이원화된다(REQ-PR-0023).
+  (`worker.app_user_id` 연결 자체는 구현했다 — 아래 참조.)
 - **트랜잭션 참조 검사 미적용** — 금형·작업자·거래처는 참조처가 대부분 트랜잭션이라
   '미결 작업지시/발주가 쓰면 막는다'를 지금 판정할 수 없다. 단순 존재 검사를 걸면 한 번이라도
   쓰인 마스터가 영영 비활성화되지 않으므로, 해당 모듈의 상태 의미가 정해질 때 함께 붙인다.
