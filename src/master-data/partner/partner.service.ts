@@ -12,7 +12,6 @@ import {
   UpdatePartnerDto,
 } from './partner.dto';
 
-/** 거래처 마스터 — mdm.partner + mdm.partner_role */
 @Injectable()
 export class PartnerService {
   constructor(
@@ -68,7 +67,6 @@ export class PartnerService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 부여된 역할을 함께 준다. */
   async findOne(partnerCode: string) {
     const found = await this.prisma.partner.findUnique({
       where: { partner_code: partnerCode },
@@ -93,11 +91,8 @@ export class PartnerService {
   }
 
   /**
-   * 비활성화.
-   *
-   * 마스터 참조(외부창고·품목 외부코드)만 검사한다. 거래처는 구매발주·출하 등
-   * 트랜잭션에서도 참조되지만 해당 모듈이 아직 없어, 미결 발주 검사는 그 모듈과 함께 붙인다
-   * (README '남은 과제').
+   * 마스터 참조(외부창고·품목 외부코드)만 검사한다.
+   * 구매발주·출하 등 트랜잭션 참조는 해당 모듈과 함께 붙인다.
    */
   async deactivate(partnerCode: string, actor?: bigint): Promise<void> {
     const found = await this.getPartner(partnerCode);
@@ -118,8 +113,6 @@ export class PartnerService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 역할 ──────────────────────────────────────────────────────────────
 
   async addRole(
     partnerCode: string,
@@ -158,7 +151,7 @@ export class PartnerService {
     });
   }
 
-  /** 역할 회수 — partner_role은 비활성 플래그가 없는 단순 매핑이라 물리 삭제한다. */
+  /** 단순 매핑이라 비활성 플래그가 없다. */
   async removeRole(partnerCode: string, roleTypeCode: string): Promise<void> {
     const found = await this.getPartner(partnerCode);
     const role = orFail(

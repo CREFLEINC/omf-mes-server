@@ -7,7 +7,6 @@ import { CodeValidatorService } from '../common-code/code-validator.service';
 import { baseWhere, createStamp, orConflict, orFail, updateStamp } from '../common/master-crud';
 import { CreateProcessDto, ProcessQueryDto, UpdateProcessDto } from './process.dto';
 
-/** 표준 공정 마스터 — mdm.process */
 @Injectable()
 export class ProcessService {
   constructor(
@@ -76,13 +75,7 @@ export class ProcessService {
     });
   }
 
-  /**
-   * 비활성화.
-   *
-   * 공정은 라우팅 라인·설비·작업자 자격·단말 매핑이 참조한다.
-   * routing_operation·worker_qualification·terminal_process에는 is_active가 없어
-   * 존재 자체를 참조로 본다.
-   */
+  /** routing_operation·worker_qualification·terminal_process에는 is_active가 없어 존재 자체를 참조로 본다. */
   async deactivate(processCode: string, actor?: bigint): Promise<void> {
     const found = await this.getProcess(processCode);
 

@@ -117,8 +117,6 @@ export class WorkerController {
     return this.service.deactivate(workerNo, actor);
   }
 
-  // ── 자격 ──────────────────────────────────────────────────────────────
-
   @RequirePermissions('MASTER_WRITE')
   @Post(':workerNo/qualifications')
   @ApiOperation({ summary: '자격 부여 — 공정 수행·검사자 자격' })

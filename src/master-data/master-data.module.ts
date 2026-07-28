@@ -42,7 +42,6 @@ import {
 } from './warehouse/warehouse.controller';
 import { WarehouseService } from './warehouse/warehouse.service';
 
-/** 기준정보(마스터) 도메인 — 정본 물리 모델의 mdm 스키마 */
 @Module({
   imports: [CommonCodeModule],
   controllers: [

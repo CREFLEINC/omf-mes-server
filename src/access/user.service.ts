@@ -22,7 +22,6 @@ import {
 } from './access.dto';
 import { RoleService } from './role.service';
 
-/** 사용자 계정·역할 배정·데이터 접근범위 — app.app_user / user_role / user_data_scope */
 @Injectable()
 export class UserService {
   constructor(
@@ -77,7 +76,6 @@ export class UserService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 부여된 역할과 데이터 접근범위를 함께 준다. */
   async findOne(loginId: string) {
     const found = await this.prisma.app_user.findUnique({
       where: { login_id: loginId },
@@ -112,10 +110,7 @@ export class UserService {
     });
   }
 
-  /**
-   * 비활성화.
-   * 부여된 역할·접근범위는 지우지 않는다 — 재활성화 시 그대로 살아나야 한다.
-   */
+  /** 역할·접근범위는 지우지 않는다 — 재활성화 시 그대로 살아나야 한다. */
   async deactivate(loginId: string, actor?: bigint): Promise<void> {
     const found = await this.getUser(loginId);
 
@@ -124,8 +119,6 @@ export class UserService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 역할 배정 ─────────────────────────────────────────────────────────
 
   async assignRole(loginId: string, dto: AssignRoleDto, actor?: bigint): Promise<user_role> {
     const [user, role] = await Promise.all([
@@ -174,10 +167,7 @@ export class UserService {
     await this.prisma.user_role.delete({ where: { user_role_id: row.user_role_id } });
   }
 
-  /**
-   * 사용자가 가진 기능권한을 역할 경유로 모아 준다.
-   * 비활성 역할의 권한은 제외한다 — 역할을 끄면 권한도 꺼져야 한다.
-   */
+  /** 비활성 역할의 권한은 제외한다 — 역할을 끄면 권한도 꺼져야 한다. */
   async findEffectivePermissions(loginId: string): Promise<string[]> {
     const user = await this.getUser(loginId);
 
@@ -195,8 +185,6 @@ export class UserService {
 
     return rows.map((r) => r.permission_code);
   }
-
-  // ── 데이터 접근범위 ───────────────────────────────────────────────────
 
   async addDataScope(
     loginId: string,

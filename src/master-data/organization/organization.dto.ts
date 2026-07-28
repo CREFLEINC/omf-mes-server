@@ -14,7 +14,6 @@ import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/** 법인 — mdm.legal_entity. 자연키 = legal_entity_code (전역 유니크) */
 export class CreateLegalEntityDto {
   @ApiProperty({ description: '법인 코드', example: 'OMF_VN', maxLength: 50 })
   @IsString()
@@ -52,7 +51,6 @@ export class UpdateLegalEntityDto extends PartialType(
   OmitType(CreateLegalEntityDto, ['legalEntityCode'] as const),
 ) {}
 
-/** 사업부 — mdm.business_unit. 자연키 = (legal_entity_id, business_unit_code) */
 export class CreateBusinessUnitDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -84,7 +82,6 @@ export class UpdateBusinessUnitDto extends PartialType(
   OmitType(CreateBusinessUnitDto, ['legalEntityCode', 'businessUnitCode'] as const),
 ) {}
 
-/** 공장 — mdm.plant. 자연키 = (legal_entity_id, plant_code) */
 export class CreatePlantDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()

@@ -15,7 +15,6 @@ import {
   WorkerQueryDto,
 } from './worker.dto';
 
-/** 작업자 마스터 — mdm.worker + mdm.worker_qualification */
 @Injectable()
 export class WorkerService {
   constructor(
@@ -78,7 +77,6 @@ export class WorkerService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 소속 부서와 보유 자격을 함께 준다. */
   async findOne(workerNo: string) {
     const found = await this.prisma.worker.findUnique({
       where: { worker_no: workerNo },
@@ -118,11 +116,8 @@ export class WorkerService {
   }
 
   /**
-   * 비활성화(퇴직 처리 등).
-   *
-   * 보유 자격은 이력이라 지우지 않고, 자격이 있다고 비활성화를 막지도 않는다.
-   * 작업자를 참조하는 나머지는 전부 트랜잭션(작업세션·실적·검사·피킹 등)이라
-   * '미완료 작업이 있으면 막는다'는 판정은 생산 모듈과 함께 붙인다.
+   * 보유 자격은 이력이라 지우지 않고, 자격이 있다고 막지도 않는다.
+   * 나머지 참조는 전부 트랜잭션이라 '미완료 작업이 있으면 막는다'는 생산 모듈과 함께 붙인다.
    */
   async deactivate(workerNo: string, actor?: bigint): Promise<void> {
     const found = await this.getWorker(workerNo);
@@ -132,8 +127,6 @@ export class WorkerService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 자격 ──────────────────────────────────────────────────────────────
 
   async addQualification(
     workerNo: string,
@@ -198,7 +191,7 @@ export class WorkerService {
     });
   }
 
-  /** 자격 삭제 — 비활성 플래그가 없는 이력 테이블이라 물리 삭제한다. */
+  /** 이력 테이블이라 비활성 플래그가 없다. */
   async removeQualification(workerNo: string, qualificationId: bigint): Promise<void> {
     const found = await this.getWorker(workerNo);
     const row = orFail(
@@ -213,8 +206,6 @@ export class WorkerService {
     });
   }
 
-  // ── 내부 ──────────────────────────────────────────────────────────────
-
   private async getWorker(workerNo: string): Promise<worker> {
     return orFail(
       await this.prisma.worker.findUnique({ where: { worker_no: workerNo } }),
@@ -223,11 +214,8 @@ export class WorkerService {
   }
 
   /**
-   * 관리 화면 계정 연결.
-   *
-   * 계정 하나는 한 사람이므로 여러 작업자에 붙일 수 없다 — DDL에 유니크 제약이 없어
-   * 앱에서 막는다. 계정 상태(정지·해지)는 보지 않는다: 이 링크는 권한 부여가 아니라
-   * "이 작업자가 곧 그 계정 사용자"라는 신원 기록이다.
+   * 계정 하나는 한 사람이라 여러 작업자에 붙일 수 없다 — DDL에 유니크 제약이 없어 앱이 막는다.
+   * 계정 상태는 보지 않는다: 권한 부여가 아니라 신원 기록이다.
    */
   private async resolveAppUser(loginId?: string, selfWorkerId?: bigint): Promise<bigint | null> {
     if (!loginId) return null;

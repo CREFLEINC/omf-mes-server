@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-/** 목록 조회 공통 응답 봉투 */
 export class PageDto<T> {
   @ApiProperty({ description: '조회 결과 목록', isArray: true })
   readonly items: T[];

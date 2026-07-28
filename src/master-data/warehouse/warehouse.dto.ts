@@ -16,7 +16,6 @@ import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/** 창고 — mdm.warehouse. 자연키 = (plant_id, warehouse_code) */
 export class CreateWarehouseDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -93,7 +92,6 @@ export class UpdateWarehouseDto extends PartialType(
   OmitType(CreateWarehouseDto, ['legalEntityCode', 'plantCode', 'warehouseCode'] as const),
 ) {}
 
-/** 로케이션 — mdm.location. 자연키 = (warehouse_id, location_code) */
 export class CreateLocationDto {
   @ApiProperty({ description: '로케이션 코드', example: 'A-01-01', maxLength: 50 })
   @IsString()
@@ -177,7 +175,6 @@ export class UpdateLocationDto extends PartialType(
   OmitType(CreateLocationDto, ['locationCode'] as const),
 ) {}
 
-/** 창고 목록 쿼리 — 추가 필터는 PageQueryDto를 확장해 선언해야 400을 피한다. */
 export class WarehouseQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()

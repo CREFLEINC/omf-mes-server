@@ -15,11 +15,7 @@ import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/**
- * 생산라인 — mdm.production_line. 자연키 = (plant_id, line_code)
- * `line_type_code`는 DDL 주석이 값을 명시한다: LINE | WORK_AREA.
- * 작업구역은 parent로 라인 하위에 계층 구성한다.
- */
+/** `line_type_code` 값은 DDL 주석이 명시한다: LINE | WORK_AREA. */
 export class CreateProductionLineDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -72,7 +68,6 @@ export class UpdateProductionLineDto extends PartialType(
   OmitType(CreateProductionLineDto, ['legalEntityCode', 'plantCode', 'lineCode'] as const),
 ) {}
 
-/** 설비 — mdm.equipment. 자연키 = (plant_id, equipment_code) */
 export class CreateEquipmentDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -161,7 +156,6 @@ export class UpdateEquipmentDto extends PartialType(
   OmitType(CreateEquipmentDto, ['legalEntityCode', 'plantCode', 'equipmentCode'] as const),
 ) {}
 
-/** 설비 목록 쿼리 — 추가 필터는 PageQueryDto를 확장해 선언해야 400을 피한다. */
 export class EquipmentQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()
@@ -188,7 +182,6 @@ export class EquipmentQueryDto extends PageQueryDto {
   calibrationDueBefore?: Date;
 }
 
-/** 생산라인 목록 쿼리 */
 export class ProductionLineQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()

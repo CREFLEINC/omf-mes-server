@@ -66,8 +66,6 @@ export class PartnerController {
     return this.service.deactivate(partnerCode, actor);
   }
 
-  // ── 역할 ──────────────────────────────────────────────────────────────
-
   @RequirePermissions('MASTER_WRITE')
   @Post(':partnerCode/roles')
   @ApiOperation({ summary: '역할 부여' })

@@ -11,9 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto, LoginDto } from './auth.dto';
 import { PasswordService } from './password.service';
 
-/** 연속 실패 이 횟수를 넘기면 계정을 잠근다. */
 const MAX_FAILED_ATTEMPTS = 5;
-/** 잠금 지속 시간(분). */
 const LOCK_MINUTES = 15;
 
 export interface AuthPrincipal {
@@ -47,8 +45,6 @@ export class AuthService {
   ) {}
 
   /**
-   * 로그인.
-   *
    * 실패 사유(없는 계정 / 틀린 비밀번호 / 자격증명 미발급)를 구분해 알려주지 않는다 —
    * 계정 존재 여부가 새어나가면 열거 공격의 출발점이 된다. 잠금만 별도로 안내한다.
    */
@@ -77,7 +73,6 @@ export class AuthService {
       throw new UnauthorizedException('로그인 ID 또는 비밀번호가 올바르지 않습니다.');
     }
 
-    // 계정 자체가 막혀 있으면 비밀번호가 맞아도 들여보내지 않는다.
     if (!user.is_active || user.status_code !== 'ACTIVE') {
       throw new UnauthorizedException('사용할 수 없는 계정입니다. 관리자에게 문의하십시오.');
     }
@@ -126,7 +121,6 @@ export class AuthService {
     };
   }
 
-  /** 본인 비밀번호 변경. 성공하면 변경 강제 플래그를 내린다. */
   async changePassword(appUserId: bigint, dto: ChangePasswordDto): Promise<void> {
     const credential = await this.prisma.user_credential.findUnique({
       where: { app_user_id: appUserId },
@@ -157,10 +151,7 @@ export class AuthService {
     });
   }
 
-  /**
-   * 관리자가 타인의 비밀번호를 발급·재발급한다.
-   * 발급된 비밀번호는 관리자가 아는 값이므로 다음 로그인에서 변경을 강제한다.
-   */
+  /** 관리자가 아는 값이므로 다음 로그인에서 변경을 강제한다. */
   async setPassword(targetUserId: bigint, plain: string, actor?: bigint): Promise<void> {
     const hash = await this.passwords.hash(plain);
 

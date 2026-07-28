@@ -69,8 +69,6 @@ export class ItemController {
     return this.service.deactivate(itemCode, actor);
   }
 
-  // ── 단위환산 ──────────────────────────────────────────────────────────
-
   @RequirePermissions('MASTER_WRITE')
   @Post(':itemCode/uom-conversions')
   @ApiOperation({ summary: '단위환산 추가' })
@@ -97,8 +95,6 @@ export class ItemController {
     return this.service.removeUomConversion(itemCode, BigInt(conversionId));
   }
 
-  // ── 외부 시스템 품목코드 ──────────────────────────────────────────────
-
   @RequirePermissions('MASTER_WRITE')
   @Post(':itemCode/external-codes')
   @ApiOperation({ summary: '외부 시스템 품목코드 추가' })
@@ -124,8 +120,6 @@ export class ItemController {
   ) {
     return this.service.removeExternalCode(itemCode, BigInt(externalCodeId));
   }
-
-  // ── 사업부 간 품목 매핑 ───────────────────────────────────────────────
 
   @RequirePermissions('MASTER_WRITE')
   @Post(':itemCode/bu-mappings')

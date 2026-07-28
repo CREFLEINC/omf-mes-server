@@ -115,8 +115,6 @@ export class TerminalController {
     return this.service.deactivate(terminalCode, actor);
   }
 
-  // ── 공정별 기능 매핑 ──────────────────────────────────────────────────
-
   @RequirePermissions('MASTER_WRITE')
   @Put(':terminalCode/processes')
   @ApiOperation({

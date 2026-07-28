@@ -15,7 +15,6 @@ import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/** 부서 — mdm.department. 자연키 = department_code (전역 유니크) */
 export class CreateDepartmentDto {
   @ApiProperty({ description: '부서 코드', example: 'DEPT_PROD', maxLength: 50 })
   @IsString()
@@ -54,12 +53,9 @@ export class UpdateDepartmentDto extends PartialType(
 ) {}
 
 /**
- * 작업자 — mdm.worker. 자연키 = worker_no (사번, 전역 유니크)
- *
- * 관리 화면 계정(`app_user`)과는 **별개 엔티티**다. 작업자는 현장 수행 주체,
- * 사용자는 시스템 입력 주체이며 1:1로 강제하지 않는다(개념모델 §5.10·§5.15).
- * 한 사람이 둘 다인 경우에만 `appUserLoginId`로 연결한다 — "실제 작업자"와
- * "입력·처리한 사용자"를 분리 기록하기 위한 선택적 링크다.
+ * `worker_no`(사번)는 관리 화면 계정(`app_user.login_id`)과 별개다.
+ * 작업자는 현장 수행 주체, 사용자는 시스템 입력 주체이며 1:1로 강제하지 않는다
+ * (개념모델 §5.10·§5.15). 한 사람이 둘 다일 때만 `appUserLoginId`로 잇는다.
  */
 export class CreateWorkerDto {
   @ApiProperty({ description: '사번', example: 'W0001', maxLength: 50 })
@@ -167,7 +163,6 @@ export class CreateQualificationDto {
   validTo?: Date;
 }
 
-/** 작업자 목록 쿼리 */
 export class WorkerQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()
@@ -194,7 +189,6 @@ export class WorkerQueryDto extends PageQueryDto {
   statusCode?: string;
 }
 
-/** 자격 목록 쿼리 */
 export class QualificationQueryDto {
   @ApiPropertyOptional({
     description: '이 날짜에 유효한 자격만 (YYYY-MM-DD). 만료·미개시 자격을 제외한다',

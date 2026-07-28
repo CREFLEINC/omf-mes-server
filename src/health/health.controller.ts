@@ -9,7 +9,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** 컨테이너 healthcheck·로드밸런서가 호출한다. DB 연결까지 확인해야 '기동 완료'로 본다. */
   @Public()
   @Get()
   @ApiOperation({ summary: '서비스 상태 — DB 연결 포함' })

@@ -14,7 +14,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AddPermissionDto, CreateRoleDto, UpdateRoleDto } from './access.dto';
 
-/** 역할·기능권한 — app.role + app.role_permission */
 @Injectable()
 export class RoleService {
   constructor(
@@ -54,7 +53,6 @@ export class RoleService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 부여된 기능권한을 함께 준다. */
   async findOne(roleCode: string) {
     const found = await this.prisma.role.findUnique({
       where: { role_code: roleCode },
@@ -77,7 +75,6 @@ export class RoleService {
     });
   }
 
-  /** 비활성화 — 이 역할을 가진 사용자가 있으면 막는다. */
   async deactivate(roleCode: string, actor?: bigint): Promise<void> {
     const found = await this.getRole(roleCode);
 
@@ -93,8 +90,6 @@ export class RoleService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 기능권한 ──────────────────────────────────────────────────────────
 
   async addPermission(
     roleCode: string,
@@ -133,7 +128,7 @@ export class RoleService {
     });
   }
 
-  /** 권한 회수 — 비활성 플래그가 없는 단순 매핑이라 물리 삭제한다. */
+  /** 단순 매핑이라 비활성 플래그가 없다. */
   async removePermission(roleCode: string, permissionCode: string): Promise<void> {
     const found = await this.getRole(roleCode);
     const row = orFail(
@@ -150,7 +145,6 @@ export class RoleService {
     });
   }
 
-  /** 사용자에게 역할을 부여할 때 쓰는 조회. */
   async getRole(roleCode: string): Promise<role> {
     return orFail(
       await this.prisma.role.findUnique({ where: { role_code: roleCode } }),

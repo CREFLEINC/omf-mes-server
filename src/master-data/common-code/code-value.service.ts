@@ -90,7 +90,7 @@ export class CodeValueService {
     });
   }
 
-  /** 비활성화 — 정본 모델에 소프트 삭제 컬럼이 없고 is_active가 수명주기 플래그다. */
+  /** 정본 모델에 소프트 삭제 컬럼이 없다 — is_active가 수명주기 플래그다. */
   async deactivate(groupCode: string, code: string, actor?: bigint): Promise<void> {
     const value = await this.findOne(groupCode, code);
 
@@ -100,7 +100,7 @@ export class CodeValueService {
     });
   }
 
-  /** DB의 ck_code_value_dates 제약과 같은 규칙 — 400으로 먼저 걸러 준다. */
+  /** DDL ck_code_value_dates와 같은 규칙 — 앱이 먼저 걸러 메시지를 준다. */
   private assertEffectiveRange(from?: Date | null, to?: Date | null): void {
     if (from && to && to < from) {
       throw new ConflictException('유효 종료일은 유효 시작일보다 빠를 수 없습니다.');

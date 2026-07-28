@@ -7,7 +7,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { baseWhere, createStamp, orConflict, orFail, updateStamp } from '../common/master-crud';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './worker.dto';
 
-/** 부서 마스터 — mdm.department. 작업자의 소속 부서가 참조한다. */
 @Injectable()
 export class DepartmentService {
   constructor(private readonly prisma: PrismaService) {}
@@ -108,7 +107,6 @@ export class DepartmentService {
     });
   }
 
-  /** 작업자 등록에서 쓰는 조회. */
   async resolveId(departmentCode?: string): Promise<bigint | null> {
     if (!departmentCode) return null;
     return (await this.getDepartment(departmentCode)).department_id;
@@ -137,7 +135,7 @@ export class DepartmentService {
     return rows[0].business_unit_id;
   }
 
-  /** 상위 부서는 자기 자신이나 자손을 가리킬 수 없다(DDL은 자기참조만 막는다). */
+  /** DDL은 자기참조만 막는다 — 자손을 가리키는 순환은 앱이 막는다. */
   private async resolveParent(parentCode?: string, selfId?: bigint): Promise<bigint | null> {
     if (!parentCode) return null;
 

@@ -40,7 +40,6 @@ export class CreateCodeGroupDto {
   isActive?: boolean;
 }
 
-/** 수정 — 자연키(groupCode)는 변경 대상이 아니라 페이로드에서 제외한다 */
 export class UpdateCodeGroupDto extends PartialType(
   OmitType(CreateCodeGroupDto, ['groupCode'] as const),
 ) {}

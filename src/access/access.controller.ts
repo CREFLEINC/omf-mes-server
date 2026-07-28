@@ -164,8 +164,6 @@ export class UserController {
     return this.service.deactivate(loginId, actor);
   }
 
-  // ── 역할 배정 ─────────────────────────────────────────────────────────
-
   @RequirePermissions('ACCESS_WRITE')
   @Post(':loginId/roles')
   @ApiOperation({ summary: '역할 부여' })
@@ -198,8 +196,6 @@ export class UserController {
   findPermissions(@Param('loginId') loginId: string) {
     return this.service.findEffectivePermissions(loginId);
   }
-
-  // ── 데이터 접근범위 ───────────────────────────────────────────────────
 
   @RequirePermissions('ACCESS_WRITE')
   @Post(':loginId/data-scopes')

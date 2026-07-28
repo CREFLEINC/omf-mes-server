@@ -15,7 +15,6 @@ import {
 import { PageQueryDto, toOptionalBoolean } from '../../common/dto/page-query.dto';
 import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
-/** 툴·금형 — mdm.mold. 자연키 = (plant_id, mold_code) */
 export class CreateMoldDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -91,7 +90,6 @@ export class UpdateMoldDto extends PartialType(
   OmitType(CreateMoldDto, ['legalEntityCode', 'plantCode', 'moldCode'] as const),
 ) {}
 
-/** 금형 목록 쿼리 — 추가 필터는 PageQueryDto를 확장해 선언해야 400을 피한다. */
 export class MoldQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()

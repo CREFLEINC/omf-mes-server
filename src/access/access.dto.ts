@@ -15,12 +15,7 @@ import { CODE_PATTERN } from '../master-data/common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/**
- * 사용자 계정 — app.app_user. 자연키 = login_id (전역 유니크)
- *
- * 정본 모델에는 비밀번호·토큰 컬럼이 없다. 이 리소스는 **인가(권한) 대상으로서의 계정**을
- * 관리할 뿐, 로그인 자격증명은 다루지 않는다(README '인증 미결' 참조).
- */
+/** 자격증명은 여기서 다루지 않는다 — app.user_credential과 /auth 소관. */
 export class CreateUserDto {
   @ApiProperty({ description: '로그인 ID', example: 'hong.gildong', maxLength: 100 })
   @IsString()
@@ -64,7 +59,6 @@ export class CreateUserDto {
 
 export class UpdateUserDto extends PartialType(OmitType(CreateUserDto, ['loginId'] as const)) {}
 
-/** 역할 — app.role. 자연키 = role_code (전역 유니크) */
 export class CreateRoleDto {
   @ApiProperty({ description: '역할 코드', example: 'PROD_MANAGER', maxLength: 50 })
   @IsString()
@@ -93,7 +87,6 @@ export class CreateRoleDto {
 
 export class UpdateRoleDto extends PartialType(OmitType(CreateRoleDto, ['roleCode'] as const)) {}
 
-/** 역할에 부여할 기능 권한 — app.role_permission */
 export class AddPermissionDto {
   @ApiProperty({
     description: '권한 코드 — 코드그룹 PERMISSION',
@@ -105,7 +98,6 @@ export class AddPermissionDto {
   permissionCode!: string;
 }
 
-/** 사용자에게 부여할 역할 — app.user_role */
 export class AssignRoleDto {
   @ApiProperty({ description: '역할 코드', example: 'PROD_MANAGER' })
   @IsString()
@@ -114,10 +106,7 @@ export class AssignRoleDto {
   roleCode!: string;
 }
 
-/**
- * 데이터 접근범위 — app.user_data_scope.
- * 사업부·공장 중 최소 하나는 지정해야 한다(DDL ck_user_data_scope_target).
- */
+/** 사업부·공장 중 최소 하나 필수 — DDL ck_user_data_scope_target. */
 export class AddDataScopeDto {
   @ApiPropertyOptional({ description: '소속 법인 코드 — 사업부·공장 조회에 쓴다' })
   @IsOptional()
@@ -138,7 +127,6 @@ export class AddDataScopeDto {
   plantCode?: string;
 }
 
-/** 사용자 목록 쿼리 */
 export class UserQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '계정 상태로 좁혀 조회' })
   @IsOptional()

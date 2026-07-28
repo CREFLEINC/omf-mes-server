@@ -2,7 +2,6 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-/** 'true'/'1' 같은 쿼리스트링 값을 boolean으로 변환한다. 빈 값은 undefined로 남긴다. */
 export const toOptionalBoolean = ({ value }: { value: unknown }): boolean | undefined => {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'boolean') return value;
@@ -12,7 +11,11 @@ export const toOptionalBoolean = ({ value }: { value: unknown }): boolean | unde
   return undefined;
 };
 
-/** 목록 조회 공통 쿼리 — 페이징 · 키워드 검색 · 사용여부 필터 */
+/**
+ * 추가 필터는 이 클래스를 확장해 **필드로 선언**해야 한다.
+ * ValidationPipe가 forbidNonWhitelisted라, `@Query('x')`로만 받으면
+ * `property x should not exist` 400이 난다.
+ */
 export class PageQueryDto {
   @ApiPropertyOptional({ description: '페이지 번호 (1부터)', default: 1, minimum: 1 })
   @IsOptional()

@@ -19,7 +19,6 @@ import { CODE_PATTERN } from '../common-code/dto/code-group.dto';
 
 const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어만 사용합니다.' };
 
-/** 품목 — mdm.item. 자연키 = item_code (전역 유니크) */
 export class CreateItemDto {
   @ApiProperty({ description: '품목코드', example: 'ITEM_0001', maxLength: 50 })
   @IsString()
@@ -111,7 +110,6 @@ export class CreateItemDto {
 
 export class UpdateItemDto extends PartialType(OmitType(CreateItemDto, ['itemCode'] as const)) {}
 
-/** 단위환산 — mdm.item_uom_conversion */
 export class CreateUomConversionDto {
   @ApiProperty({ description: '환산 전 단위 코드', example: 'BOX' })
   @IsString()
@@ -143,7 +141,6 @@ export class CreateUomConversionDto {
   effectiveTo?: Date;
 }
 
-/** 외부 시스템 품목코드 — mdm.item_external_code */
 export class CreateExternalCodeDto {
   @ApiProperty({ description: '외부 시스템 구분 코드', example: 'ERP' })
   @IsString()
@@ -164,7 +161,6 @@ export class CreateExternalCodeDto {
   partnerCode?: string;
 }
 
-/** 사업부 간 품목 매핑 — mdm.item_bu_item_map */
 export class CreateBuItemMapDto {
   @ApiProperty({ description: '출발 사업부 코드', example: 'PARTS' })
   @IsString()

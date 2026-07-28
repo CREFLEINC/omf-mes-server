@@ -46,7 +46,6 @@ export class CodeGroupService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 하위 코드값을 정렬순서대로 함께 반환한다 */
   async findOne(groupCode: string) {
     const group = await this.prisma.code_group.findUnique({
       where: { group_code: groupCode },

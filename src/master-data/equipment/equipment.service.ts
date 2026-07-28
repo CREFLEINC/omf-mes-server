@@ -16,7 +16,6 @@ import { OrganizationService } from '../organization/organization.service';
 import { CreateEquipmentDto, EquipmentQueryDto, UpdateEquipmentDto } from './equipment.dto';
 import { ProductionLineService } from './production-line.service';
 
-/** 설비 마스터 — mdm.equipment */
 @Injectable()
 export class EquipmentService {
   constructor(
@@ -32,7 +31,7 @@ export class EquipmentService {
       ['EQUIPMENT_TYPE', dto.equipmentTypeCode],
       ['EQUIPMENT_STATUS', dto.statusCode],
     ]);
-    this.assertCalibrationDates(dto.lastCalibrationDate, dto.calibrationDueDate);
+    this.assertCalibrationDueAfterLast(dto.lastCalibrationDate, dto.calibrationDueDate);
 
     const [processId, lineId] = await Promise.all([
       this.resolveProcess(dto.processCode),
@@ -97,7 +96,6 @@ export class EquipmentService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 담당 공정·소속 라인을 함께 준다. */
   async findOne(equipmentCode: string) {
     const found = await this.getEquipment(equipmentCode);
     return this.prisma.equipment.findUnique({
@@ -117,8 +115,7 @@ export class EquipmentService {
       ['EQUIPMENT_STATUS', dto.statusCode],
     ]);
 
-    // 한쪽만 보내는 경우가 있어 저장될 최종 상태로 검사한다.
-    this.assertCalibrationDates(
+    this.assertCalibrationDueAfterLast(
       dto.lastCalibrationDate ?? found.last_calibration_date ?? undefined,
       dto.calibrationDueDate ?? found.calibration_due_date ?? undefined,
     );
@@ -171,10 +168,8 @@ export class EquipmentService {
     });
   }
 
-  // ── 내부 ──────────────────────────────────────────────────────────────
-
-  /** 교정 만료일이 최종 교정일보다 빠를 수 없다. DDL에 제약이 없어 앱에서 막는다. */
-  private assertCalibrationDates(last?: Date | null, due?: Date | null): void {
+  /** DDL에 제약이 없어 앱에서만 막는다. */
+  private assertCalibrationDueAfterLast(last?: Date | null, due?: Date | null): void {
     if (last && due && due < last) {
       throw new BadRequestException('교정 만료일은 최종 교정일보다 빠를 수 없습니다.');
     }

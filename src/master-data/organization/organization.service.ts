@@ -24,8 +24,6 @@ import {
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── 법인 ──────────────────────────────────────────────────────────────
-
   async createLegalEntity(dto: CreateLegalEntityDto, actor?: bigint): Promise<legal_entity> {
     orConflict(
       await this.prisma.legal_entity.findUnique({
@@ -112,8 +110,6 @@ export class OrganizationService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 사업부 ────────────────────────────────────────────────────────────
 
   async createBusinessUnit(dto: CreateBusinessUnitDto, actor?: bigint): Promise<business_unit> {
     const entity = await this.findLegalEntity(dto.legalEntityCode);
@@ -216,8 +212,6 @@ export class OrganizationService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 공장 ──────────────────────────────────────────────────────────────
 
   async createPlant(dto: CreatePlantDto, actor?: bigint): Promise<plant> {
     const entity = await this.findLegalEntity(dto.legalEntityCode);
@@ -337,7 +331,6 @@ export class OrganizationService {
     return unit.business_unit_id;
   }
 
-  /** 창고 등록 시 쓰는 조회 — 사업부가 해당 법인 소속인지 함께 검증한다. */
   async resolveForWarehouse(
     legalEntityCode: string,
     plantCode: string,

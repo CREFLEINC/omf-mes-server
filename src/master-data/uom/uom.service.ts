@@ -7,7 +7,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { baseWhere, createStamp, orConflict, orFail, updateStamp } from '../common/master-crud';
 import { CreateUomDto, UpdateUomDto } from './uom.dto';
 
-/** 단위(UoM) 마스터 — mdm.uom. 자연키 = uom_code (전역 유니크) */
 @Injectable()
 export class UomService {
   constructor(private readonly prisma: PrismaService) {}
@@ -61,11 +60,10 @@ export class UomService {
     });
   }
 
-  /** 비활성화 — 재고·품목이 FK로 참조하므로 물리 삭제하지 않는다. */
+  /** 재고·품목이 FK로 참조하므로 물리 삭제하지 않는다. */
   async deactivate(uomCode: string, actor?: bigint): Promise<void> {
     const found = await this.findOne(uomCode);
 
-    // 이 단위를 참조 중인 곳이 있으면 막는다. 참조 지점이 늘면 여기에 추가한다.
     const [itemCount, locationCount] = await this.prisma.$transaction([
       this.prisma.item.count({ where: { base_uom_id: found.uom_id, is_active: true } }),
       this.prisma.location.count({ where: { capacity_uom_id: found.uom_id, is_active: true } }),

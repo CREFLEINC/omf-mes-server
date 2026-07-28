@@ -37,7 +37,6 @@ const SALT_LENGTH = 16;
  */
 const scryptMaxmem = (n: number, r: number): number => 128 * n * r * 2;
 
-/** 저장 형식 — 알고리즘과 파라미터를 함께 담아 자기서술적으로 만든다. */
 const PREFIX = 'scrypt';
 
 /**

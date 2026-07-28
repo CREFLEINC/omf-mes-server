@@ -20,15 +20,12 @@ import {
   UpdateItemDto,
 } from './item.dto';
 
-/** 품목 마스터 — mdm.item + 단위환산·외부코드·사업부간 매핑 */
 @Injectable()
 export class ItemService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly codes: CodeValidatorService,
   ) {}
-
-  // ── 품목 ──────────────────────────────────────────────────────────────
 
   async create(dto: CreateItemDto, actor?: bigint): Promise<item> {
     await this.validateCodes(dto);
@@ -76,7 +73,6 @@ export class ItemService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 단위환산·외부코드를 함께 준다. */
   async findOne(itemCode: string) {
     const found = await this.prisma.item.findUnique({
       where: { item_code: itemCode },
@@ -97,7 +93,6 @@ export class ItemService {
       ? (await this.getUom(dto.baseUomCode)).uom_id
       : undefined;
 
-    // 저장될 최종 상태로 검사한다 — 한쪽만 보내는 경우가 있다.
     this.assertFefoHasShelfLife(
       dto.fifoPolicyCode ?? found.fifo_policy_code,
       dto.shelfLifeDays ?? found.shelf_life_days ?? undefined,
@@ -123,7 +118,6 @@ export class ItemService {
     });
   }
 
-  /** 비활성화 — 재고가 남아 있으면 막는다. */
   async deactivate(itemCode: string, actor?: bigint): Promise<void> {
     const found = await this.getItem(itemCode);
 
@@ -141,8 +135,6 @@ export class ItemService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 단위환산 ──────────────────────────────────────────────────────────
 
   async addUomConversion(
     itemCode: string,
@@ -198,7 +190,7 @@ export class ItemService {
     });
   }
 
-  /** 환산 정의는 이력성이라 비활성 플래그가 없다 — 물리 삭제한다. */
+  /** 이력 테이블이라 비활성 플래그가 없다. */
   async removeUomConversion(itemCode: string, conversionId: bigint): Promise<void> {
     const found = await this.getItem(itemCode);
     const row = orFail(
@@ -212,8 +204,6 @@ export class ItemService {
       where: { item_uom_conversion_id: row.item_uom_conversion_id },
     });
   }
-
-  // ── 외부 시스템 품목코드 ──────────────────────────────────────────────
 
   async addExternalCode(
     itemCode: string,
@@ -269,8 +259,6 @@ export class ItemService {
       where: { item_external_code_id: row.item_external_code_id },
     });
   }
-
-  // ── 사업부 간 품목 매핑 ───────────────────────────────────────────────
 
   async addBuItemMap(
     itemCode: string,
@@ -341,8 +329,6 @@ export class ItemService {
     });
   }
 
-  // ── 내부 ──────────────────────────────────────────────────────────────
-
   private async validateCodes(dto: CreateItemDto | UpdateItemDto): Promise<void> {
     await this.codes.assertAllValid([
       ['ITEM_TYPE', dto.itemTypeCode],
@@ -354,9 +340,8 @@ export class ItemService {
   }
 
   /**
-   * FEFO(선입선출이 아닌 '유효기간 임박 우선')는 유효기간이 있어야 성립한다.
-   * 근거: QA #28 — "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)".
-   * DDL에는 이 제약이 없어 앱에서만 막는다.
+   * FEFO는 유효기간이 있어야 성립한다. DDL에 제약이 없어 앱에서만 막는다.
+   * 근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)".
    */
   private assertFefoHasShelfLife(fifoPolicyCode?: string, shelfLifeDays?: number | null): void {
     if (fifoPolicyCode === 'FEFO' && (shelfLifeDays === undefined || shelfLifeDays === null)) {

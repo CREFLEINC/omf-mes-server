@@ -13,29 +13,25 @@ import {
 import { OrganizationService } from '../organization/organization.service';
 import { CreateShiftDto, ShiftQueryDto, UpdateShiftDto } from './terminal.dto';
 
-/** 응답용 작업조 — 시각을 HH:MM:SS 문자열로 준다. */
 export type ShiftView = Omit<shift, 'start_time' | 'end_time'> & {
   start_time: string;
   end_time: string;
 };
 
 /**
- * `HH:MM[:SS]` → epoch 날짜의 Date.
- *
- * 정본이 `time` 컬럼이라 Prisma는 DateTime으로 다룬다. Prisma는 time 값을 UTC 기준으로
- * 읽고 쓰므로, 원하는 시:분:초가 그대로 저장되도록 UTC로 만든다.
+ * 정본이 `time` 컬럼이라 Prisma는 DateTime으로 다루고 값을 UTC 기준으로 읽고 쓴다.
+ * 원하는 시:분:초가 그대로 저장되도록 UTC로 만든다.
  */
 export function toTimeValue(hhmmss: string): Date {
   const [h, m, s = '00'] = hhmmss.split(':');
   return new Date(Date.UTC(1970, 0, 1, Number(h), Number(m), Number(s)));
 }
 
-/** Date → `HH:MM:SS` (UTC 기준 — 저장할 때와 같은 축). */
+/** 저장할 때와 같은 UTC 축으로 읽는다. */
 export function fromTimeValue(value: Date): string {
   return value.toISOString().slice(11, 19);
 }
 
-/** 작업조 마스터 — mdm.shift */
 @Injectable()
 export class ShiftService {
   constructor(
@@ -98,7 +94,6 @@ export class ShiftService {
   async update(shiftCode: string, dto: UpdateShiftDto, actor?: bigint): Promise<ShiftView> {
     const found = await this.getShift(shiftCode);
 
-    // 한쪽만 보내는 경우가 있어 저장될 최종 상태로 검사한다.
     const startTime = dto.startTime ?? fromTimeValue(found.start_time);
     const endTime = dto.endTime ?? fromTimeValue(found.end_time);
     const crossesMidnight = this.resolveCrossesMidnight(startTime, endTime, dto.crossesMidnight);
@@ -117,10 +112,7 @@ export class ShiftService {
     return this.toView(updated);
   }
 
-  /**
-   * 비활성화.
-   * 작업조 참조처는 전부 트랜잭션(작업지시·작업세션·생산실적)이라 검사하지 않는다.
-   */
+  /** 참조처가 전부 트랜잭션(작업지시·작업세션·생산실적)이라 검사하지 않는다. */
   async deactivate(shiftCode: string, actor?: bigint): Promise<void> {
     const found = await this.getShift(shiftCode);
 
@@ -131,7 +123,6 @@ export class ShiftService {
   }
 
   /**
-   * 자정 넘김 여부는 시각으로 결정된다 — 사용자가 보낸 값과 어긋나면 거부한다.
    * DDL에 제약이 없어 앱에서만 막는다. 22:00~06:00을 crossesMidnight=false로 저장하면
    * 근무 길이가 음수가 되어 이후 집계가 조용히 틀어진다.
    */

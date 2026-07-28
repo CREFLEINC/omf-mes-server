@@ -14,7 +14,6 @@ import {
   UpsertTerminalProcessDto,
 } from './terminal.dto';
 
-/** 단말 마스터 — mdm.terminal + mdm.terminal_process */
 @Injectable()
 export class TerminalService {
   constructor(
@@ -70,7 +69,6 @@ export class TerminalService {
     return new PageDto(items, total, query.page, query.size);
   }
 
-  /** 단건 조회 — 설치 위치와 공정별 기능 매핑을 함께 준다. */
   async findOne(terminalCode: string) {
     const found = await this.prisma.terminal.findUnique({
       where: { terminal_code: terminalCode },
@@ -116,13 +114,7 @@ export class TerminalService {
     });
   }
 
-  // ── 공정별 기능 매핑 ──────────────────────────────────────────────────
-
-  /**
-   * 매핑 등록·갱신.
-   * (단말, 공정)이 유니크라 이미 있으면 기능 플래그를 덮어쓴다 — 화면에서 체크박스를
-   * 저장하는 형태라 등록/수정을 나눌 이유가 없다.
-   */
+  /** 화면의 체크박스 묶음을 그대로 저장하는 형태라 등록/수정을 나누지 않고 덮어쓴다. */
   async upsertProcess(
     terminalCode: string,
     dto: UpsertTerminalProcessDto,
@@ -170,7 +162,7 @@ export class TerminalService {
     });
   }
 
-  /** 매핑 해제 — 비활성 플래그가 없는 단순 매핑이라 물리 삭제한다. */
+  /** 단순 매핑이라 비활성 플래그가 없다. */
   async removeProcess(terminalCode: string, processCode: string): Promise<void> {
     const found = await this.getTerminal(terminalCode);
     const process = orFail(
@@ -195,9 +187,7 @@ export class TerminalService {
     });
   }
 
-  // ── 내부 ──────────────────────────────────────────────────────────────
-
-  /** 설치 위치는 창고와 로케이션을 함께 지정해야 특정된다 — 로케이션 코드는 창고 범위 유니크다. */
+  /** 로케이션 코드가 창고 범위 유니크라 창고 없이는 특정되지 않는다. */
   private async resolveLocation(
     warehouseCode?: string,
     locationCode?: string,

@@ -14,7 +14,6 @@ import {
 import { OrganizationService } from '../organization/organization.service';
 import { CreateMoldDto, MoldQueryDto, UpdateMoldDto } from './mold.dto';
 
-/** 툴·금형 마스터 — mdm.mold */
 @Injectable()
 export class MoldService {
   constructor(
@@ -94,11 +93,8 @@ export class MoldService {
   }
 
   /**
-   * 비활성화.
-   *
-   * 금형을 참조하는 곳은 전부 트랜잭션이다(작업지시·작업세션·생산실적·불량기록).
-   * 마스터 참조가 없어 지금은 검사하지 않는다. '미결 작업지시가 쓰는 금형은 막는다'는
-   * 작업지시 상태 의미가 정해진 뒤라야 옳게 판정할 수 있어, 생산 모듈과 함께 붙인다.
+   * 참조처가 전부 트랜잭션(작업지시·작업세션·생산실적·불량기록)이라 검사하지 않는다.
+   * '미결 작업지시가 쓰는 금형은 막는다'는 작업지시 상태 의미가 정해진 뒤라야 옳다.
    */
   async deactivate(moldCode: string, actor?: bigint): Promise<void> {
     const found = await this.getMold(moldCode);

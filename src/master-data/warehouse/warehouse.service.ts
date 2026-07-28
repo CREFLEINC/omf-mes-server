@@ -19,7 +19,6 @@ import {
   UpdateWarehouseDto,
 } from './warehouse.dto';
 
-/** 창고·로케이션 마스터 — mdm.warehouse / mdm.location */
 @Injectable()
 export class WarehouseService {
   constructor(
@@ -27,8 +26,6 @@ export class WarehouseService {
     private readonly org: OrganizationService,
     private readonly codes: CodeValidatorService,
   ) {}
-
-  // ── 창고 ──────────────────────────────────────────────────────────────
 
   async create(dto: CreateWarehouseDto, actor?: bigint): Promise<warehouse> {
     const { plantId, businessUnitId } = await this.org.resolveForWarehouse(
@@ -101,7 +98,6 @@ export class WarehouseService {
       ['MANAGEMENT_LEVEL', dto.managementLevelCode],
     ]);
 
-    // 외부창고 여부는 거래처와 짝이다 — 저장될 최종 상태로 검사한다(DDL ck_external_warehouse_partner).
     const isExternal = dto.isExternal ?? found.is_external;
     const partnerId =
       dto.partnerCode === undefined && dto.isExternal === undefined
@@ -139,8 +135,6 @@ export class WarehouseService {
       data: { is_active: false, ...updateStamp(actor) },
     });
   }
-
-  // ── 로케이션 ──────────────────────────────────────────────────────────
 
   async createLocation(
     warehouseCode: string,
@@ -233,7 +227,6 @@ export class WarehouseService {
       ['STORAGE_CONDITION', dto.storageConditionCode],
     ]);
 
-    // 수용량·단위는 둘 다 있거나 둘 다 없어야 한다 — 저장될 최종 상태로 검사한다.
     const finalQty = dto.capacityQty ?? (found.capacity_qty ? Number(found.capacity_qty) : undefined);
     const capacityUomId =
       dto.capacityQty === undefined && dto.capacityUomCode === undefined
@@ -285,12 +278,6 @@ export class WarehouseService {
     });
   }
 
-  // ── 내부 ──────────────────────────────────────────────────────────────
-
-  /**
-   * 창고코드는 (plant_id, warehouse_code)로만 유니크하다 — 전역 유니크가 아니다.
-   * 공장이 여럿이면 같은 창고코드가 중복될 수 있어, 그 경우 명시적으로 거부한다.
-   */
   private async getWarehouse(warehouseCode: string): Promise<warehouse> {
     const rows = await this.prisma.warehouse.findMany({
       where: { warehouse_code: warehouseCode },
@@ -307,7 +294,7 @@ export class WarehouseService {
     return rows[0];
   }
 
-  /** DDL ck_external_warehouse_partner — 외부창고면 거래처가 필수. */
+  /** DDL ck_external_warehouse_partner. */
   private async resolvePartner(
     isExternal: boolean,
     partnerCode?: string,
@@ -327,7 +314,7 @@ export class WarehouseService {
     return partner.partner_id;
   }
 
-  /** DDL ck_location_capacity — 수용량과 단위는 둘 다 있거나 둘 다 없어야 한다. */
+  /** DDL ck_location_capacity — 둘 다 있거나 둘 다 없어야 한다. */
   private async resolveCapacity(
     capacityQty?: number,
     capacityUomCode?: string,
@@ -347,7 +334,7 @@ export class WarehouseService {
     return uomId;
   }
 
-  /** 상위 로케이션은 같은 창고 안이어야 하고, 자기 자신이나 자손을 가리킬 수 없다. */
+  /** DDL에 순환 방지가 없어 앱에서 막는다. */
   private async resolveParent(
     warehouseId: bigint,
     parentCode?: string,
@@ -368,7 +355,6 @@ export class WarehouseService {
       if (parent.location_id === selfId) {
         throw new BadRequestException('자기 자신을 상위 로케이션으로 지정할 수 없습니다.');
       }
-      // 자손을 상위로 지정하면 순환이 된다. DDL에 순환 방지 제약이 없어 앱이 막는다.
       let cursor: bigint | null = parent.parent_location_id;
       const seen = new Set<string>();
       while (cursor !== null) {

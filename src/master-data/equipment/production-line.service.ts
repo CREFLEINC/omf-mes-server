@@ -130,7 +130,6 @@ export class ProductionLineService {
     });
   }
 
-  /** 설비 등록에서 쓰는 조회 — 같은 공장 소속인지 확인한다. */
   async resolveForPlant(plantId: bigint, lineCode?: string): Promise<bigint | null> {
     if (!lineCode) return null;
 
@@ -151,7 +150,7 @@ export class ProductionLineService {
     return exactlyOne(rows, '생산라인', lineCode);
   }
 
-  /** 상위 라인은 같은 공장이어야 하고, 자기 자신이나 자손을 가리킬 수 없다(DDL은 자기참조만 막는다). */
+  /** DDL은 자기참조만 막는다 — 자손을 가리키는 순환은 앱이 막는다. */
   private async resolveParent(
     plantId: bigint,
     parentCode?: string,

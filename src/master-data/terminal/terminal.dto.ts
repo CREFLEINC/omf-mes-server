@@ -17,7 +17,6 @@ const codeRule = { message: '코드는 영문 대문자·숫자·언더스코어
 /** `HH:MM` 또는 `HH:MM:SS` */
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
-/** 작업조 — mdm.shift. 자연키 = (plant_id, shift_code) */
 export class CreateShiftDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -75,10 +74,7 @@ export class UpdateShiftDto extends PartialType(
   OmitType(CreateShiftDto, ['legalEntityCode', 'plantCode', 'shiftCode'] as const),
 ) {}
 
-/**
- * 단말 — mdm.terminal. 자연키 = terminal_code (전역 유니크)
- * 유형은 기술스택 결정 16의 폼팩터(관리 웹 / POP 패널 PC / 모바일 스캐너)를 따른다.
- */
+/** 유형은 기술스택 결정 16의 폼팩터(관리 웹 / POP 패널 PC / 모바일 스캐너)를 따른다. */
 export class CreateTerminalDto {
   @ApiProperty({ description: '소속 법인 코드', example: 'OMF_VN' })
   @IsString()
@@ -140,10 +136,6 @@ export class UpdateTerminalDto extends PartialType(
   OmitType(CreateTerminalDto, ['legalEntityCode', 'plantCode', 'terminalCode'] as const),
 ) {}
 
-/**
- * 단말-공정 매핑 — mdm.terminal_process.
- * 이 단말이 해당 공정에서 무엇을 할 수 있는지를 기능 단위로 켠다.
- */
 export class UpsertTerminalProcessDto {
   @ApiProperty({ description: '대상 공정 코드', example: 'MOLDING' })
   @IsString()
@@ -200,7 +192,6 @@ export class UpsertTerminalProcessDto {
   canReturnMaterial?: boolean;
 }
 
-/** 작업조 목록 쿼리 */
 export class ShiftQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()
@@ -209,7 +200,6 @@ export class ShiftQueryDto extends PageQueryDto {
   plantCode?: string;
 }
 
-/** 단말 목록 쿼리 */
 export class TerminalQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: '공장으로 좁혀 조회' })
   @IsOptional()
