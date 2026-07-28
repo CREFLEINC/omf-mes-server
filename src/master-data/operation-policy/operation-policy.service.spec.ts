@@ -230,4 +230,129 @@ describe('OperationPolicyService', () => {
       expect(call.data.effective_to).toBeInstanceOf(Date);
     });
   });
+
+  describe('resolve — 겹치는 정책 중 무엇이 이기나', () => {
+    /** 스코프만 다른 후보들을 준다. 서비스가 그중 하나를 골라야 한다. */
+    const candidates = (...rows: Partial<operation_policy>[]) =>
+      prisma.operation_policy.findMany.mockResolvedValue(
+        rows.map((row, i) => ({ ...basePolicy, operation_policy_id: BigInt(i + 1), ...row })),
+      );
+
+    it('후보가 없으면 null', async () => {
+      candidates();
+
+      await expect(service.resolve('FIFO_VIOLATION_POLICY')).resolves.toBeNull();
+    });
+
+    // 전역 OFF · 1공장 WARN · 1공장+사출 BLOCK 이 모두 해당될 때
+    it('구체적일수록 이긴다', async () => {
+      candidates(
+        { value_text: 'OFF' },
+        { value_text: 'WARN', plant_id: 2n },
+        { value_text: 'BLOCK', plant_id: 2n, process_id: 3n },
+      );
+
+      const found = await service.resolve('FIFO_VIOLATION_POLICY', {
+        plantId: 2n,
+        processId: 3n,
+      });
+
+      expect(found?.value_text).toBe('BLOCK');
+    });
+
+    it('공정이 품목보다 우선한다', async () => {
+      candidates({ value_text: 'ITEM', item_id: 5n }, { value_text: 'PROCESS', process_id: 3n });
+
+      const found = await service.resolve('X', { itemId: 5n, processId: 3n });
+
+      expect(found?.value_text).toBe('PROCESS');
+    });
+
+    it('품목이 공장보다 우선한다', async () => {
+      candidates({ value_text: 'PLANT', plant_id: 2n }, { value_text: 'ITEM', item_id: 5n });
+
+      const found = await service.resolve('X', { plantId: 2n, itemId: 5n });
+
+      expect(found?.value_text).toBe('ITEM');
+    });
+
+    // 같은 축 조합은 시작일만 다르다(uq_operation_policy).
+    it('같은 스코프면 늦은 시작일이 이긴다', async () => {
+      candidates(
+        { value_text: 'OLD', plant_id: 2n, effective_from: new Date('2026-01-01') },
+        { value_text: 'NEW', plant_id: 2n, effective_from: new Date('2026-06-01') },
+      );
+
+      const found = await service.resolve('X', { plantId: 2n });
+
+      expect(found?.value_text).toBe('NEW');
+    });
+
+    it('축을 주면 그 값 또는 전역 행만 후보로 넣는다', async () => {
+      candidates({ value_text: 'OFF' });
+
+      await service.resolve('X', { plantId: 2n });
+
+      const where = prisma.operation_policy.findMany.mock.calls[0][0].where as {
+        AND: unknown[];
+      };
+      expect(where.AND).toContainEqual({ OR: [{ plant_id: 2n }, { plant_id: null }] });
+    });
+
+    // 적용 대상인지 확인할 수 없는 정책을 적용하면 안 된다.
+    it('축을 주지 않으면 그 축이 지정된 행은 후보에서 뺀다', async () => {
+      candidates({ value_text: 'OFF' });
+
+      await service.resolve('X', {});
+
+      const where = prisma.operation_policy.findMany.mock.calls[0][0].where as {
+        AND: unknown[];
+      };
+      expect(where.AND).toContainEqual({ item_id: null });
+    });
+
+    it('유효기간이 지난 정책은 후보에서 뺀다', async () => {
+      candidates({ value_text: 'OFF' });
+
+      await service.resolve('X', { on: new Date('2026-06-01') });
+
+      const where = prisma.operation_policy.findMany.mock.calls[0][0].where as {
+        effective_from: unknown;
+        AND: unknown[];
+      };
+      expect(where.effective_from).toEqual({ lte: new Date('2026-06-01') });
+      expect(where.AND).toContainEqual({
+        OR: [{ effective_to: null }, { effective_to: { gte: new Date('2026-06-01') } }],
+      });
+    });
+  });
+
+  describe('타입별 조회', () => {
+    it('정책이 없으면 fallback을 돌려준다', async () => {
+      prisma.operation_policy.findMany.mockResolvedValue([]);
+
+      await expect(service.resolveText('X', 'OFF')).resolves.toBe('OFF');
+      await expect(service.resolveNumber('X', 5)).resolves.toBe(5);
+      await expect(service.resolveBoolean('X', false)).resolves.toBe(false);
+    });
+
+    it('값이 있으면 그 값을 돌려준다', async () => {
+      prisma.operation_policy.findMany.mockResolvedValue([
+        { ...basePolicy, value_text: 'BLOCK', value_numeric: new Prisma.Decimal(7), value_boolean: true },
+      ]);
+
+      await expect(service.resolveText('X', 'OFF')).resolves.toBe('BLOCK');
+      await expect(service.resolveNumber('X', 5)).resolves.toBe(7);
+      await expect(service.resolveBoolean('X', false)).resolves.toBe(true);
+    });
+
+    // 정책값 false가 fallback true로 덮이면 설정이 무시된다.
+    it('불리언 false를 fallback으로 덮지 않는다', async () => {
+      prisma.operation_policy.findMany.mockResolvedValue([
+        { ...basePolicy, value_boolean: false },
+      ]);
+
+      await expect(service.resolveBoolean('X', true)).resolves.toBe(false);
+    });
+  });
 });

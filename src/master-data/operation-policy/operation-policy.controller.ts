@@ -16,6 +16,7 @@ import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import {
   CreateOperationPolicyDto,
+  EffectivePolicyQueryDto,
   OperationPolicyQueryDto,
   UpdateOperationPolicyDto,
 } from './operation-policy.dto';
@@ -45,6 +46,20 @@ export class OperationPolicyController {
   @ApiOperation({ summary: '운영정책 목록 — 정책코드·공장·기준일로 좁혀 조회' })
   findAll(@Query() query: OperationPolicyQueryDto) {
     return this.service.findAll(query);
+  }
+
+  // ':policyId'(ParseIntPipe)보다 먼저 선언해야 한다 — 뒤에 두면 'effective'가
+  // policyId로 잡혀 400이 난다.
+  @RequirePermissions('MASTER_READ')
+  @Get('effective')
+  @ApiOperation({
+    summary: '실제 적용값 조회 — 겹치는 정책 중 무엇이 이기는지',
+    description:
+      '구체적일수록 이긴다: 공정 > 품목 > 공장 > 사업부 > 전역. 같은 스코프면 늦은 시작일이 이긴다. ' +
+      '해당하는 정책이 없으면 null을 돌려준다(호출 측이 기본값을 쓴다).',
+  })
+  effective(@Query() query: EffectivePolicyQueryDto) {
+    return this.service.resolveByCodes(query);
   }
 
   @RequirePermissions('MASTER_READ')

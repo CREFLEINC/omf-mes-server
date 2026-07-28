@@ -97,6 +97,48 @@ export class UpdateOperationPolicyDto extends PartialType(
   ] as const),
 ) {}
 
+/**
+ * 「지금 이 상황에서 실제 적용되는 값」 조회.
+ * 스코프가 겹치는 정책을 여러 개 등록해 두고 무엇이 이길지 확인할 때 쓴다.
+ */
+export class EffectivePolicyQueryDto {
+  @ApiProperty({ description: '정책코드', example: 'WORKER_QUALIFICATION_ENFORCEMENT' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  policyCode!: string;
+
+  @ApiPropertyOptional({ description: '적용 사업부 코드' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  businessUnitCode?: string;
+
+  @ApiPropertyOptional({ description: '적용 공장 코드' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  plantCode?: string;
+
+  @ApiPropertyOptional({ description: '적용 품목 코드' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  itemCode?: string;
+
+  @ApiPropertyOptional({ description: '적용 공정 코드' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  processCode?: string;
+
+  @ApiPropertyOptional({ description: '기준일 (YYYY-MM-DD) — 미지정 시 오늘' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  on?: Date;
+}
+
 export class OperationPolicyQueryDto extends BasePageQueryDto {
   @ApiPropertyOptional({ description: '정책코드로 좁혀 조회' })
   @IsOptional()

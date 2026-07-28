@@ -14,6 +14,7 @@ import { CodeValidatorService } from '../common-code/code-validator.service';
 import { createStamp, exactlyOne, orConflict, orFail, updateStamp } from '../common/master-crud';
 import {
   CreateOperationPolicyDto,
+  EffectivePolicyQueryDto,
   OperationPolicyQueryDto,
   UpdateOperationPolicyDto,
 } from './operation-policy.dto';
@@ -25,6 +26,25 @@ interface PolicyScope {
   itemId: bigint | null;
   processId: bigint | null;
 }
+
+/** 정책값을 물을 때 넘기는 상황. 모르는 축은 생략한다. */
+export interface PolicyContext {
+  businessUnitId?: bigint;
+  plantId?: bigint;
+  itemId?: bigint;
+  processId?: bigint;
+  /** 기준 시각 — 생략 시 지금. 유효기간이 지난 정책은 후보에서 빠진다. */
+  on?: Date;
+}
+
+/**
+ * 스코프 구체성 가중치. 좁은 축일수록 크다.
+ *
+ * 2의 거듭제곱이라 축 조합마다 합이 유일하다 — 「지정한 축이 많을수록, 좁은 축일수록
+ * 이긴다」가 한 번의 비교로 결정된다. 같은 점수는 같은 축 조합뿐이고, 그건
+ * uq_operation_policy상 시작일만 다르므로 늦은 시작일이 이긴다.
+ */
+const SCOPE_WEIGHT = { process: 8, item: 4, plant: 2, businessUnit: 1 } as const;
 
 @Injectable()
 export class OperationPolicyService {
@@ -156,6 +176,105 @@ export class OperationPolicyService {
       where: { operation_policy_id: found.operation_policy_id },
       data: { effective_to: new Date(), ...updateStamp(actor) },
     });
+  }
+
+  /**
+   * 주어진 상황에 적용할 정책 1건을 고른다. 없으면 null.
+   *
+   * 같은 정책코드에 스코프가 겹치는 행이 여럿 있을 수 있다(전역 OFF · 1공장 WARN ·
+   * 1공장+사출 BLOCK). **구체적일수록 이긴다** — 공정 > 품목 > 공장 > 사업부 > 전역.
+   *
+   * 축이 null인 행은 그 축에 대해 '전역'이라 어떤 값에도 맞는다. 반대로 요청이 축을
+   * 주지 않으면(예: 품목을 모르는 상황) 그 축이 지정된 행은 후보에서 뺀다 —
+   * 적용 대상인지 확인할 수 없는 정책을 적용하면 안 된다.
+   */
+  async resolve(policyCode: string, context: PolicyContext = {}): Promise<operation_policy | null> {
+    const on = context.on ?? new Date();
+
+    const candidates = await this.prisma.operation_policy.findMany({
+      where: {
+        policy_code: policyCode,
+        effective_from: { lte: on },
+        AND: [
+          { OR: [{ effective_to: null }, { effective_to: { gte: on } }] },
+          this.axisFilter('business_unit_id', context.businessUnitId),
+          this.axisFilter('plant_id', context.plantId),
+          this.axisFilter('item_id', context.itemId),
+          this.axisFilter('process_id', context.processId),
+        ],
+      },
+    });
+
+    return candidates.reduce<operation_policy | null>((best, row) => {
+      if (!best) return row;
+      const diff = this.specificity(row) - this.specificity(best);
+      if (diff !== 0) return diff > 0 ? row : best;
+      return row.effective_from > best.effective_from ? row : best;
+    }, null);
+  }
+
+  /** 코드로 받은 스코프를 내부 ID로 바꿔 resolve한다 — 관리 화면의 「실제 적용값」 확인용. */
+  async resolveByCodes(query: EffectivePolicyQueryDto): Promise<operation_policy | null> {
+    const [businessUnit, plant, item, process] = await Promise.all([
+      query.businessUnitCode ? this.getBusinessUnit(query.businessUnitCode) : null,
+      query.plantCode ? this.getPlant(query.plantCode) : null,
+      query.itemCode ? this.getItem(query.itemCode) : null,
+      query.processCode ? this.getProcess(query.processCode) : null,
+    ]);
+
+    return this.resolve(query.policyCode, {
+      businessUnitId: businessUnit?.business_unit_id,
+      plantId: plant?.plant_id,
+      itemId: item?.item_id,
+      processId: process?.process_id,
+      on: query.on,
+    });
+  }
+
+  /** 문자값으로 읽는다. 정책이 없으면 fallback. */
+  async resolveText(
+    policyCode: string,
+    fallback: string,
+    context: PolicyContext = {},
+  ): Promise<string> {
+    const found = await this.resolve(policyCode, context);
+    return found?.value_text ?? fallback;
+  }
+
+  async resolveNumber(
+    policyCode: string,
+    fallback: number,
+    context: PolicyContext = {},
+  ): Promise<number> {
+    const found = await this.resolve(policyCode, context);
+    return found?.value_numeric?.toNumber() ?? fallback;
+  }
+
+  async resolveBoolean(
+    policyCode: string,
+    fallback: boolean,
+    context: PolicyContext = {},
+  ): Promise<boolean> {
+    const found = await this.resolve(policyCode, context);
+    return found?.value_boolean ?? fallback;
+  }
+
+  /** 요청이 축을 주면 「그 값 또는 전역」, 주지 않으면 「전역만」. */
+  private axisFilter(
+    column: 'business_unit_id' | 'plant_id' | 'item_id' | 'process_id',
+    value?: bigint,
+  ): Prisma.operation_policyWhereInput {
+    if (value === undefined) return { [column]: null };
+    return { OR: [{ [column]: value }, { [column]: null }] };
+  }
+
+  private specificity(row: operation_policy): number {
+    return (
+      (row.process_id === null ? 0 : SCOPE_WEIGHT.process) +
+      (row.item_id === null ? 0 : SCOPE_WEIGHT.item) +
+      (row.plant_id === null ? 0 : SCOPE_WEIGHT.plant) +
+      (row.business_unit_id === null ? 0 : SCOPE_WEIGHT.businessUnit)
+    );
   }
 
   private assertHasValue(dto: {
