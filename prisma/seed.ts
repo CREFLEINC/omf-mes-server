@@ -1,3 +1,5 @@
+import { randomBytes, scrypt } from 'node:crypto';
+
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -278,6 +280,74 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log(`seeded ${group.groupCode} (${group.values.length} values)`);
   }
+
+  await seedAdmin();
+}
+
+/**
+ * 최초 관리자 부트스트랩.
+ *
+ * 비밀번호는 ADMIN_INITIAL_PASSWORD로 주고, 없으면 무작위 생성해 **1회만** 출력한다.
+ * 하드코딩된 기본 비밀번호를 두지 않기 위해서다 — 그런 값은 운영까지 그대로 살아남는다.
+ * 어느 경우든 must_change_password=true라 첫 로그인에서 변경해야 한다.
+ *
+ * 해시 형식은 src/auth/password.service.ts와 같아야 한다(scrypt$N$r$p$salt$hash).
+ */
+async function seedAdmin(): Promise<void> {
+  const LOGIN_ID = 'admin';
+  const existing = await prisma.app_user.findUnique({
+    where: { login_id: LOGIN_ID },
+    include: { user_credential: true },
+  });
+  if (existing?.user_credential) {
+    // eslint-disable-next-line no-console
+    console.log('admin 계정·자격증명이 이미 있어 건너뜀');
+    return;
+  }
+
+  const password = process.env.ADMIN_INITIAL_PASSWORD ?? randomBytes(12).toString('base64url');
+  const salt = randomBytes(16);
+  const derived = await new Promise<Buffer>((resolve, reject) =>
+    scrypt(password, salt, 64, { N: 2 ** 15, r: 8, p: 1, maxmem: 128 * 2 ** 15 * 8 * 2 }, (e, d) =>
+      e ? reject(e) : resolve(d),
+    ),
+  );
+  const hash = ['scrypt', 2 ** 15, 8, 1, salt.toString('base64'), derived.toString('base64')].join('$');
+
+  const admin =
+    existing ??
+    (await prisma.app_user.create({
+      data: { login_id: LOGIN_ID, user_name: '시스템 관리자', status_code: 'ACTIVE' },
+    }));
+
+  await prisma.user_credential.create({
+    data: { app_user_id: admin.app_user_id, password_hash: hash, must_change_password: true },
+  });
+
+  const role = await prisma.role.upsert({
+    where: { role_code: 'SYSTEM_ADMIN' },
+    update: { is_active: true },
+    create: { role_code: 'SYSTEM_ADMIN', role_name: '시스템 관리자' },
+  });
+  for (const code of ['MASTER_READ', 'MASTER_WRITE', 'MASTER_DEACTIVATE', 'ACCESS_READ', 'ACCESS_WRITE']) {
+    await prisma.role_permission.upsert({
+      where: { role_id_permission_code: { role_id: role.role_id, permission_code: code } },
+      update: {},
+      create: { role_id: role.role_id, permission_code: code },
+    });
+  }
+  await prisma.user_role.upsert({
+    where: { app_user_id_role_id: { app_user_id: admin.app_user_id, role_id: role.role_id } },
+    update: {},
+    create: { app_user_id: admin.app_user_id, role_id: role.role_id },
+  });
+
+  // eslint-disable-next-line no-console
+  console.log(
+    process.env.ADMIN_INITIAL_PASSWORD
+      ? 'seeded admin (비밀번호=ADMIN_INITIAL_PASSWORD, 첫 로그인에서 변경 필요)'
+      : `seeded admin — 초기 비밀번호: ${password}  ← 지금 기록하십시오. 다시 표시되지 않습니다.`,
+  );
 }
 
 main()

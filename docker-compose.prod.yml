@@ -53,6 +53,9 @@ services:
       PORT: 3100
       API_PREFIX: api
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      # 없거나 32자 미만이면 서버가 기동하지 않는다 — 약한 키로 조용히 뜨는 것보다 낫다.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요 — openssl rand -base64 48}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
       TZ: Asia/Seoul
     ports:
       - '${API_PORT:-3100}:3100'

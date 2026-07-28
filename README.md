@@ -20,7 +20,7 @@ cp .env.example .env       # 기본값: DB=localhost:5432, API=3100
 pnpm install
 docker compose up -d       # PostgreSQL 기동
 pnpm exec prisma migrate deploy
-pnpm run db:seed           # 초기 공통코드 시드
+pnpm run db:seed           # 초기 공통코드 + admin 계정 (초기 비밀번호가 1회 출력된다)
 pnpm run start:dev
 ```
 
@@ -173,164 +173,56 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | ├ 유효 권한 | `GET /api/access/users/:u/permissions` (역할 경유 집계·중복 제거) |
 | └ 데이터 접근범위 | `/api/access/users/:u/data-scopes/:id` |
 
-### 지금은 **인가 데이터 관리**까지다 — 인증도, 권한 강제도 없다
+## 인증
+
+**자체 비밀번호 인증**을 쓴다(2026-07-28 확정). 정본 물리 모델에는 자격증명 저장소가 없었고 —
+요구사항 `1-2 사용자·권한 관리`가 권한만 다루고 로그인 수단을 언급하지 않아 설계에서 빠졌다 —
+`app.user_credential`을 **후속 마이그레이션으로 보완**했다.
+
+> ⚠ `app.user_credential`은 **OMF-MES 구현 측 추가분**이다. 모델링 정본 SQL에 역반영이 필요하다.
+> `app_user`에 컬럼을 더하지 않고 별도 테이블로 둔 이유: 자격증명의 수명주기가 계정 정보와 다르고,
+> 정본 테이블 형태를 건드리지 않아 모델링 측 갱신과 충돌이 적으며, 나중에 LDAP/AD로 전환하면
+> 이 테이블만 걷어내면 된다.
+
+| 엔드포인트 | 설명 |
+| --- | --- |
+| `POST /api/auth/login` | 로그인 → 액세스 토큰(JWT) |
+| `GET /api/auth/me` | 내 정보·유효 기능권한·비밀번호 변경 필요 여부 |
+| `POST /api/auth/password` | 내 비밀번호 변경 |
+| `PUT /api/access/users/:loginId/password` | 관리자의 비밀번호 발급·재발급 |
+
+### 보호 방식
+
+**`@Public()`이 붙지 않은 모든 엔드포인트가 토큰을 요구한다** — 화이트리스트라 새 엔드포인트를
+만들며 보호를 깜빡해도 막힌 상태로 시작한다. 현재 공개는 `POST /auth/login`과 `GET /health`뿐이다
+(헬스체크는 컨테이너가 토큰 없이 호출한다).
+
+`@RequirePermissions('MASTER_WRITE')`로 기능권한까지 요구할 수 있다. **다만 아직 어느 엔드포인트에도
+붙이지 않았다** — 엔드포인트별 권한 매핑은 다음 작업이다.
+
+### 설계 판단
+
+| 항목 | 선택 | 이유 |
+| --- | --- | --- |
+| 해시 | **Node 내장 `scrypt`** (N=2^15·r=8·p=1) | argon2id가 최신 권고지만 npm 구현이 네이티브 빌드를 요구한다. 배포가 **오프라인 설치 패키지**(결정 15)라 빌드 툴체인 의존을 늘리지 않는 편이 낫다. scrypt도 메모리 하드 KDF다 |
+| `maxmem` 명시 | 필수 | `128*N*r`=32MB가 Node 기본 maxmem과 같아 지정하지 않으면 `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`로 **해싱이 통째로 실패**한다 |
+| 해시 저장 형식 | `scrypt$N$r$p$salt$hash` | 자기서술적이라 파라미터·알고리즘을 바꿔도 옛 해시를 읽으며 점진 재해싱할 수 있다 |
+| 실패 응답 | 사유를 구분하지 않음 | 없는 계정 / 틀린 비밀번호 / 자격증명 미발급이 **같은 메시지**다. 계정 존재 여부가 새어나가면 열거 공격의 출발점이 된다. 없는 계정도 해시 검증에 준하는 시간을 쓴다 |
+| 계정 잠금 | 연속 5회 실패 → 15분 | 잠금만은 별도로 안내한다(사용자가 원인을 알아야 한다) |
+| 토큰 검증 | 매 요청 계정 재확인 | 토큰 발급 뒤 계정이 정지·해지될 수 있다 |
+| `JWT_SECRET` | 없거나 32자 미만이면 **기동 실패** | 기본값을 두면 약한 키로 조용히 운영에 올라간다 |
+| 최초 관리자 | 시드가 `admin` 생성. 비밀번호는 `ADMIN_INITIAL_PASSWORD` 또는 **무작위 생성 후 1회 출력** | 하드코딩된 기본 비밀번호는 운영까지 살아남는다. 어느 경우든 첫 로그인에서 변경을 강제한다 |
+
+### 아직 안 된 것
 
 | 항목 | 상태 |
 | --- | --- |
-| 계정·역할·기능권한·데이터 접근범위 **관리** | ✅ 구현 |
-| **인증**(로그인 검증) | ❌ **정본 모델에 저장소가 없다** — 아래 참조 |
-| **권한 강제**(가드) | ❌ 미구현. 어떤 엔드포인트도 `PERMISSION`을 검사하지 않는다 |
-| 데이터 접근범위 **적용**(RLS 등) | ❌ 미구현. 범위를 저장할 뿐 조회를 걸러내지 않는다 |
-
-> **인증 미결 — 결정 필요**
->
-> 정본 물리 모델(129 테이블)을 전부 훑어도 **비밀번호 해시·토큰·세션 컬럼이 하나도 없다.**
-> `app.app_user`는 `login_id`·이름·부서·이메일·상태만 갖는다. 즉 **인가만 모델링돼 있고
-> 인증 수단은 설계되지 않았다.** 모델링 문서에도 로그인·비밀번호 언급이 없다.
->
-> 자격증명 컬럼을 임의로 추가하지 않았다 — 인증 방식(자체 비밀번호 / 고객사 LDAP·AD 연동 /
-> SSO)에 따라 필요한 스키마가 전혀 달라지고, 잘못 만들면 보안 부채가 된다.
->
-> 참고로 **현장 POP은 사번 경량 인증**이라 관리 화면 계정과 이원화된다(REQ-PR-0023).
-> 즉 이 결정은 관리 화면 로그인에 한정된다.
-
-> `PERMISSION` 코드값은 현재 마스터 API 범위(`MASTER_READ`·`MASTER_WRITE`·`MASTER_DEACTIVATE`·
-> `ACCESS_READ`·`ACCESS_WRITE`)로 시작했다. **엔드포인트가 늘면 함께 늘려야 하며, 지금은
-> 어디에서도 강제되지 않으므로 "권한을 부여했다 = 통제된다"가 아니다.**
-| 거래처 | `/api/master/partners/:partnerCode` | `partner_code` (전역) |
-| └ 역할 | `/api/master/partners/:p/roles/:roleTypeCode` | (거래처, 역할) |
-| 품목 | `/api/master/items/:itemCode` | `item_code` (전역) |
-| ├ 단위환산 | `/api/master/items/:item/uom-conversions/:id` | (품목,from,to,시작일) |
-| ├ 외부코드 | `/api/master/items/:item/external-codes/:id` | (품목,시스템,거래처,코드) |
-| └ 사업부매핑 | `/api/master/items/:item/bu-mappings/:id` | (출발BU,품목,도착BU,시작일) |
-| 법인 | `/api/master/legal-entities/:legalEntityCode` | `legal_entity_code` (전역) |
-| 사업부 | `/api/master/legal-entities/:le/business-units/:businessUnitCode` | (법인, 사업부코드) |
-| 공장 | `/api/master/legal-entities/:le/plants/:plantCode` | (법인, 공장코드) |
-| 창고 | `/api/master/warehouses/:warehouseCode` | (공장, 창고코드) |
-| 로케이션 | `/api/master/warehouses/:wh/locations/:locationCode` | (창고, 로케이션코드) |
-
-각 리소스는 `POST`(등록) · `GET`(목록·단건) · `PATCH`(수정) · `DELETE`(비활성화)를 갖는다.
-목록 공통 쿼리는 공통코드와 같다(`page`·`size`·`keyword`·`isActive`).
-품목은 `itemTypeCode`, 창고는 `plantCode`, 거래처는 `roleTypeCode`, 공정은 `processTypeCode`,
-생산라인은 `plantCode`·`lineTypeCode`, 설비는 `plantCode`·`equipmentTypeCode`·`statusCode`·
-`calibrationDueBefore`(교정 만료 임박·경과), 금형은 `plantCode`·`statusCode`·`shotCountGte`,
-작업자는 `plantCode`·`departmentCode`·`statusCode`, 작업조는 `plantCode`,
-단말은 `plantCode`·`terminalTypeCode`·`statusCode`로 추가로 좁힐 수 있다.
-자격 목록은 `validOn`(기준일 유효분만)·`qualificationTypeCode`를 받는다 —
-검사자 자격 만료 통제(NFR-QM-008)의 기반 조회다.
-작업자 목록은 `hasAppUser`로 관리 화면 계정 연결 여부를 걸러낼 수 있다.
-
-### 작업자(사번) ↔ 사용자(로그인 ID)는 별개 엔티티다
-
-혼동하기 쉬워 근거와 함께 적어 둔다.
-
-| | `mdm.worker` | `app.app_user` |
-| --- | --- | --- |
-| 식별자 | **`worker_no` = 사번** | `login_id` = 로그인 ID |
-| 성격 | 현장 수행 주체 | 시스템 입력 주체 |
-| 참조하는 곳 | 작업세션·생산실적·검사·피킹 (11곳) | 승인자·확정자·처리자 (`approver_id`·`confirmed_by`·`decided_by` 등 23곳) |
-| 인증 | POP **사번 경량 인증** (비밀번호 없음) | 관리 화면 계정 |
-
-> 개념모델 §5.10: "작업자와 MES 입력자는 구분할 수 있어야 한다. … **'실제 작업자'와
-> '입력·처리한 사용자'를 분리 기록**한다."
-> §5.15: "작업자는 현장 수행 주체, 사용자는 시스템 입력 주체로 역할이 다르며
-> **두 개념은 1:1로 강제하지 않는다.**"
-
-작업자 A가 작업하고 반장 B가 대신 입력하는 상황, 계정 없는 작업자, 작업자가 아닌 사무직 계정을
-모두 표현하기 위한 분리다. 한 사람이 둘 다인 경우에만 `appUserLoginId`로 연결한다.
-
-**계정 하나는 여러 작업자에 연결할 수 없다**(계정 = 한 사람). DDL에 유니크 제약이 없어 앱이 막는다.
-계정 상태(정지·해지)는 보지 않는다 — 이 링크는 권한 부여가 아니라 신원 기록이다.
-
-> **금형의 `current_shot_count`**: 운영 중 누적은 생산 실적이 갱신할 몫이고, 마스터 API에서는
-> **초기값(DX 이관)·보정용**으로만 다룬다. 금형 정비 후 리셋 같은 조작이 이 경로로 들어오므로
-> 이력이 필요해지면 별도 조정 이벤트로 분리해야 한다.
->
-> `current_shot_count >= guaranteed_shot_count`(타발수 한도 도달) 조회는 **컬럼 간 비교라
-> Prisma `where`로 표현되지 않는다.** 지금은 절대값 필터(`shotCountGte`)만 제공하며, 툴 PM 화면이
-> 필요로 하면 원시 SQL이나 생성 컬럼으로 붙인다.
-거래처 검색(`keyword`)은 코드·명칭과 함께 `erp_partner_code`도 본다.
-
-> **추가 쿼리 파라미터는 반드시 `PageQueryDto`를 확장해 선언해야 한다.** `ValidationPipe`가
-> `forbidNonWhitelisted`라, `@Query('x')`로만 받고 DTO에 없으면 `property x should not exist` 400이 난다.
-
-> **조직 계층이 함께 들어간 이유**: `mdm.warehouse`가 `plant_id`·`business_unit_id`를
-> NOT NULL로 요구한다. 창고를 만들려면 법인→사업부/공장이 먼저 있어야 해서 선행 마스터로 포함했다.
-
-> **창고·생산라인·설비 코드는 전역 유니크가 아니다** — `(plant_id, *_code)`가 유니크다.
-> 지금은 단일 공장 전제로 코드만으로 조회하고, 같은 코드가 여러 공장에 있으면 409로 명시적으로
-> 거부한다(조용히 첫 건을 고르지 않는다 — `master-crud.ts`의 `exactlyOne`).
-> 다공장 운영이 확정되면 경로에 공장을 넣어야 한다.
-
-> **생산라인이 설비와 함께 들어간 이유**: `equipment.production_line_id`가 참조하는 마스터라,
-> 없으면 그 필드를 쓸 수 없다. 창고 때 조직 계층을 함께 넣은 것과 같다.
-> `line_type_code = LINE | WORK_AREA`는 DDL 주석이 값을 명시한 드문 경우라 그대로 따랐다.
-
-### DB 제약을 앱에서도 먼저 검사하는 것
-
-정본 DDL의 CHECK 제약은 최후 방어선이고, 앱이 먼저 걸러 쓸 만한 메시지를 준다
-(`3-3 §7 애플리케이션과 DB 양쪽에서 중복 검증할 항목`과 같은 취지).
-
-| 규칙 | DDL 제약 |
-| --- | --- |
-| 외부창고면 거래처 필수 | `ck_external_warehouse_partner` |
-| 수용량과 단위는 함께 지정 | `ck_location_capacity` |
-| 유효 종료일 ≥ 시작일 | `ck_code_value_dates` · `ck_worker_qualification_dates` |
-| 소수 자릿수 0~6 | `uom.decimal_scale` CHECK |
-
-| 환산 전·후 단위 상이 · 환산율 > 0 | `ck_item_uom_distinct` · `conversion_rate` CHECK |
-| 개봉 후 사용시간 > 0 | `opened_shelf_life_hours` CHECK |
-| 출발·도착 사업부 상이 | `ck_item_bu_map_distinct` |
-| 라인 자기참조 금지 | `ck_production_line_parent` |
-| Cavity 수 > 0 · 타발수 >= 0 | `mold` CHECK 3종 |
-
-DDL에 없어 **앱만 막는 것**:
-- 로케이션 상위 지정의 자기참조·순환
-- 공장의 사업부가 같은 법인 소속인지
-- 생산라인·부서 상위 지정의 순환(DDL은 자기참조만 막는다)
-- **작업조의 자정 넘김 표기 정합** — `crosses_midnight`는 시각으로 결정된다. 야간조(22:00~06:00)를
-  `false`로 저장하면 근무 길이가 음수가 되어 이후 집계가 조용히 틀어지므로, 시각과 어긋나면 거부한다.
-  시작·종료가 같으면 근무 길이를 판정할 수 없어 역시 거부한다
-- 단말 설치 위치는 창고와 로케이션을 함께 지정해야 한다(로케이션 코드가 창고 범위 유니크)
-- **설비 교정 만료일 ≥ 최종 교정일**
-- **FEFO 품목은 유효기간(`shelf_life_days`) 필수** — 유효기간이 없으면 '임박 우선'이 성립하지 않는다.
-  근거: QA #28 "유효기한 관리 플래그+선출 정책(관리 품목=FEFO, 나머지=FIFO)". 등록·수정 모두
-  **저장될 최종 상태**로 검사한다(정책만 바꿔 우회할 수 없게).
-
-> `item_external_code`의 유니크는 DDL에서 `COALESCE(partner_id, 0)`을 쓰는 부분 인덱스라
-> Prisma 모델로 표현되지 않는다. 앱이 먼저 확인하고, 경합으로 빠져나간 건은 DB가 막아
-> `PrismaExceptionFilter`가 P2002 → 409로 변환한다.
-
-### 시각(`time`) 컬럼 취급
-
-`shift.start_time`/`end_time`은 정본이 `time`이라 Prisma가 `DateTime`으로 다루고, 값을 **UTC 축**으로
-읽고 쓴다. 그대로 내보내면 응답이 `1970-01-01T22:00:00.000Z`가 되어 혼란스러우므로,
-저장은 `HH:MM[:SS]` → UTC epoch Date, 응답은 `HH:MM:SS` 문자열로 변환한다
-(`shift.service.ts`의 `toTimeValue`/`fromTimeValue`). 왕복 무손실을 테스트로 고정했다.
-
-### 단말-공정 매핑은 덮어쓰기(PUT)
-
-`(단말, 공정)`이 유니크라 등록/수정을 나눌 이유가 없어 `PUT`으로 저장한다. **지정하지 않은 기능
-플래그는 `false`로 저장한다** — 화면의 체크박스 묶음을 그대로 저장하는 형태라, 이전 값이 남으면
-"껐는데 켜져 있다"가 된다.
-
-### 설정형 코드 검증 (패턴 P1)
-
-`warehouse_type_code`·`location_type_code` 등은 DDL에서 `app.code_t` 문자열일 뿐 `code_value`로
-FK가 걸려 있지 않다. 관리자가 코드를 추가·변경하는 설정형 코드(확정 패턴 **P1**)이기 때문이며,
-값의 유효성은 `CodeValidatorService`가 책임진다 — 해당 코드그룹에 **활성** 코드값으로 존재하는지 확인하고,
-없으면 사용 가능한 코드 목록을 담아 400을 낸다.
-
-> 코드그룹 이름(`WAREHOUSE_TYPE`·`MANAGEMENT_LEVEL`·`LOCATION_TYPE`·`QUALITY_ZONE`·`STORAGE_CONDITION`·
-> `LOT_CONTROL_TYPE`·`SERIAL_CONTROL_TYPE`·`FIFO_POLICY`·`PARTNER_ROLE_TYPE`·`PROCESS_TYPE`)은
-> 정본 문서가 지정하지 않아 **컬럼명을 따라 정한 관례**다. 모델링 측에서 다른 이름을 쓰기로 하면 시드와 함께 바꾸면 된다.
-
-> **`PROCESS_TYPE`의 값 범위**: 문서에서 확정된 공정 축은 '외주공정 구분'(개념모델 v2 §1) 하나뿐이라
-> `INTERNAL`/`OUTSOURCED`만 넣었다. 사출·조립·검사 같은 **공정 분류축**은 문서 근거가 없어 임의로 만들지 않았다 —
-> 필요하면 값을 추가하거나 별도 코드그룹으로 분리한다.
-
-> 공정별 세부 속성(MES 관리 여부·설비/금형 필수·표준 C/T·수율)은 `mdm.process`가 아니라
-> 라우팅 라인(`planning.routing_operation`)이 갖는다. 같은 공정도 품목·라우팅에 따라 운영 방식이 다르기 때문이다.
+| 계정·역할·권한·접근범위 관리 | ✅ |
+| 로그인·토큰·비밀번호 변경·잠금 | ✅ |
+| **엔드포인트별 권한 강제** | ❌ 가드는 있으나 `@RequirePermissions`를 아직 안 붙였다 |
+| **데이터 접근범위 적용**(RLS 등) | ❌ 범위를 저장할 뿐 조회를 걸러내지 않는다 |
+| 토큰 무효화(로그아웃·강제 만료) | ❌ JWT라 만료 전까지 유효하다. 계정 정지는 매 요청 확인으로 즉시 반영된다 |
+| POP 사번 경량 인증 | ❌ 별도 경로. `worker_no` 기반이며 관리 화면 계정과 이원화된다(REQ-PR-0023) |
 
 ## 적용한 도메인 규칙
 
@@ -389,8 +281,8 @@ pnpm test           # 단위 테스트
 
 ## 남은 과제
 
-- **인증·인가 미적용** — `created_by`/`updated_by`(bigint, `app.app_user` FK)를 채울 주체가 없어 null로 기록된다. WBS **CORE-6**에서 연결한다.
-  (`worker.app_user_id` 연결 자체는 구현했다 — 아래 참조.)
+- **감사 컬럼 미연결** — 인증은 붙었으나 `created_by`/`updated_by`에 주체를 아직 넣지 않는다.
+  마스터 컨트롤러들이 `@ActorId()`를 받도록 고쳐야 한다(데코레이터는 준비돼 있다).
 - **트랜잭션 참조 검사 미적용** — 금형·작업자·거래처는 참조처가 대부분 트랜잭션이라
   '미결 작업지시/발주가 쓰면 막는다'를 지금 판정할 수 없다. 단순 존재 검사를 걸면 한 번이라도
   쓰인 마스터가 영영 비활성화되지 않으므로, 해당 모듈의 상태 의미가 정해질 때 함께 붙인다.

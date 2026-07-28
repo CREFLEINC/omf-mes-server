@@ -1,6 +1,7 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+import { Public } from '../auth/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('운영 — 헬스체크')
@@ -9,6 +10,7 @@ export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
   /** 컨테이너 healthcheck·로드밸런서가 호출한다. DB 연결까지 확인해야 '기동 완료'로 본다. */
+  @Public()
   @Get()
   @ApiOperation({ summary: '서비스 상태 — DB 연결 포함' })
   @ApiResponse({ status: 200, description: '정상' })

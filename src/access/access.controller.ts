@@ -9,10 +9,14 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+import { ActorId } from '../auth/auth.decorators';
+import { SetPasswordDto } from '../auth/auth.dto';
+import { AuthService } from '../auth/auth.service';
 import { PageQueryDto } from '../common/dto/page-query.dto';
 import {
   AddDataScopeDto,
@@ -94,7 +98,24 @@ export class RoleController {
 @ApiTags('접근권한 — 사용자')
 @Controller('access/users')
 export class UserController {
-  constructor(private readonly service: UserService) {}
+  constructor(
+    private readonly service: UserService,
+    private readonly auth: AuthService,
+  ) {}
+
+  @Put(':loginId/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: '비밀번호 발급·재발급 — 다음 로그인에서 변경을 강제한다',
+  })
+  async setPassword(
+    @Param('loginId') loginId: string,
+    @Body() dto: SetPasswordDto,
+    @ActorId() actor?: bigint,
+  ) {
+    const user = await this.service.findOne(loginId);
+    await this.auth.setPassword(user.app_user_id, dto.password, actor);
+  }
 
   @Post()
   @ApiOperation({ summary: '사용자 계정 등록 — 로그인 자격증명은 다루지 않는다' })
