@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
+import { TerminalAuthService } from '../../auth/terminal-auth.service';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ShiftService } from './shift.service';
@@ -74,7 +75,10 @@ export class ShiftController {
 @ApiTags('기준정보 — 단말')
 @Controller('master/terminals')
 export class TerminalController {
-  constructor(private readonly service: TerminalService) {}
+  constructor(
+    private readonly service: TerminalService,
+    private readonly terminalAuth: TerminalAuthService,
+  ) {}
 
   @RequirePermissions('MASTER_WRITE')
   @Post()
@@ -110,9 +114,23 @@ export class TerminalController {
   @RequirePermissions('MASTER_DEACTIVATE')
   @Delete(':terminalCode')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: '단말 비활성화' })
+  @ApiOperation({ summary: '단말 비활성화 — 발급된 단말 토큰도 즉시 무효가 된다' })
   deactivate(@Param('terminalCode') terminalCode: string, @ActorId() actor?: bigint) {
     return this.service.deactivate(terminalCode, actor);
+  }
+
+  @RequirePermissions('MASTER_WRITE')
+  @Post(':terminalCode/token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '단말 토큰 발급 — 현장 단말 설치 시 1회',
+    description:
+      '발급된 토큰은 장기이며 만료가 아니라 **폐기**로 통제한다(단말 비활성화·상태 전이 시 즉시 무효). ' +
+      '응답의 토큰은 다시 조회할 수 없으므로 설치 시점에 단말에 주입해야 한다.',
+  })
+  @ApiResponse({ status: 401, description: '단말 없음 · 사용 중지 · 사용 불가 상태' })
+  issueToken(@Param('terminalCode') terminalCode: string) {
+    return this.terminalAuth.issueToken(terminalCode);
   }
 
   @RequirePermissions('MASTER_WRITE')

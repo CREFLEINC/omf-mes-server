@@ -7,6 +7,8 @@ import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
+import { TerminalAuthGuard } from './terminal-auth.guard';
+import { TerminalAuthService } from './terminal-auth.service';
 
 @Global()
 @Module({
@@ -29,9 +31,13 @@ import { PasswordService } from './password.service';
   providers: [
     AuthService,
     PasswordService,
-    // 전역 가드 — @Public()이 없는 모든 엔드포인트가 인증을 요구한다.
+    TerminalAuthService,
+    // 전역 가드 2종 — 서로 배타적이다.
+    // AuthGuard: @Public()·@TerminalAuth()가 없는 모든 엔드포인트 = 사람 토큰
+    // TerminalAuthGuard: @TerminalAuth()가 붙은 엔드포인트 = 단말 토큰
     { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: TerminalAuthGuard },
   ],
-  exports: [AuthService, PasswordService],
+  exports: [AuthService, PasswordService, TerminalAuthService],
 })
 export class AuthModule {}

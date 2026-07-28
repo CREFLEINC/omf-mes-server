@@ -5,6 +5,8 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { PERMISSIONS_KEY, PUBLIC_KEY } from './auth.decorators';
+import { TERMINAL_AUTH_KEY } from './terminal-auth.decorators';
+import { TERMINAL_TOKEN_KIND } from './terminal-auth.service';
 
 describe('AuthGuard', () => {
   let guard: AuthGuard;
@@ -114,6 +116,32 @@ describe('AuthGuard', () => {
       await expect(
         guard.canActivate(contextWith({ authorization: 'Bearer x' })),
       ).rejects.toThrow(/MASTER_WRITE/);
+    });
+  });
+
+  describe('단말 토큰과의 경계', () => {
+    const metaWithTerminal = (opts: { isTerminal?: boolean }) => {
+      reflector.getAllAndOverride.mockImplementation((key: string) =>
+        key === TERMINAL_AUTH_KEY ? opts.isTerminal : undefined,
+      );
+    };
+
+    it('@TerminalAuth() 엔드포인트는 TerminalAuthGuard에 맡기고 비켜선다', async () => {
+      metaWithTerminal({ isTerminal: true });
+
+      await expect(guard.canActivate(contextWith())).resolves.toBe(true);
+      expect(jwt.verifyAsync).not.toHaveBeenCalled();
+    });
+
+    // 단말 토큰은 1년짜리라, 관리 API까지 통과시키면 사실상 만료 없는 관리자 키가 된다.
+    it('단말 토큰으로 관리 API는 통과할 수 없다', async () => {
+      metaWithTerminal({});
+      jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND });
+
+      await expect(
+        guard.canActivate(contextWith({ authorization: 'Bearer terminal-token' })),
+      ).rejects.toThrow('단말 토큰으로는 사용할 수 없는 엔드포인트입니다.');
+      expect(auth.resolvePrincipal).not.toHaveBeenCalled();
     });
   });
 });
