@@ -197,8 +197,15 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 만들며 보호를 깜빡해도 막힌 상태로 시작한다. 현재 공개는 `POST /auth/login`과 `GET /health`뿐이다
 (헬스체크는 컨테이너가 토큰 없이 호출한다).
 
-`@RequirePermissions('MASTER_WRITE')`로 기능권한까지 요구할 수 있다. **다만 아직 어느 엔드포인트에도
-붙이지 않았다** — 엔드포인트별 권한 매핑은 다음 작업이다.
+**기능권한도 강제한다.** 매핑 규칙은 단순하다:
+
+| 대상 | GET | POST·PATCH·PUT | DELETE |
+| --- | --- | --- | --- |
+| 기준정보(`/master/**`) | `MASTER_READ` | `MASTER_WRITE` | `MASTER_DEACTIVATE` |
+| 접근권한(`/access/**`) | `ACCESS_READ` | `ACCESS_WRITE` | `ACCESS_WRITE` |
+
+`/auth/me`·`/auth/password`는 권한을 요구하지 않는다 — 인증된 사용자라면 누구나 자기 정보를 보고
+자기 비밀번호를 바꿀 수 있어야 한다.
 
 ### 설계 판단
 
@@ -219,7 +226,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | --- | --- |
 | 계정·역할·권한·접근범위 관리 | ✅ |
 | 로그인·토큰·비밀번호 변경·잠금 | ✅ |
-| **엔드포인트별 권한 강제** | ❌ 가드는 있으나 `@RequirePermissions`를 아직 안 붙였다 |
+| **엔드포인트별 권한 강제** | ✅ 118개 핸들러 전부 |
 | **데이터 접근범위 적용**(RLS 등) | ❌ 범위를 저장할 뿐 조회를 걸러내지 않는다 |
 | 토큰 무효화(로그아웃·강제 만료) | ❌ JWT라 만료 전까지 유효하다. 계정 정지는 매 요청 확인으로 즉시 반영된다 |
 | POP 사번 경량 인증 | ❌ 별도 경로. `worker_no` 기반이며 관리 화면 계정과 이원화된다(REQ-PR-0023) |
@@ -234,7 +241,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | **참조 무결성** | 사용중(`is_active=true`) 코드값이 남은 코드그룹은 비활성화 거부 (409) |
 | **유효기간** | `code_value.effective_from/to`. DB의 `ck_code_value_dates` 제약과 같은 규칙을 앱에서 먼저 검사해 메시지를 준다 |
 | **낙관적 락** | 수정 시 `version_no` 증가. 클라이언트가 기대 버전을 보내는 완전한 낙관적 락은 미구현(아래 남은 과제) |
-| **감사 컬럼** | `created_at/by` · `updated_at/by`. 변경 이력 자체는 `audit.audit_event`(jsonb before/after·파티션)가 담당하며 아직 연결하지 않았다 |
+| **감사 컬럼** | `created_at/by` · `updated_at/by`에 **인증된 주체의 `app_user_id`가 기록된다**. 변경 이력 자체는 `audit.audit_event`(jsonb before/after·파티션)가 담당하며 아직 연결하지 않았다 |
 
 ### 정본 모델과 요구사항 사이의 미결 2건
 
@@ -281,8 +288,9 @@ pnpm test           # 단위 테스트
 
 ## 남은 과제
 
-- **감사 컬럼 미연결** — 인증은 붙었으나 `created_by`/`updated_by`에 주체를 아직 넣지 않는다.
-  마스터 컨트롤러들이 `@ActorId()`를 받도록 고쳐야 한다(데코레이터는 준비돼 있다).
+- **물리 삭제 행위자 미기록** — 매핑·이력 테이블(품목 환산·외부코드·사업부매핑, 거래처 역할,
+  단말-공정, 작업자 자격, 역할 권한·배정, 접근범위)은 물리 삭제라 감사 컬럼이 없다.
+  DDL에 기록할 자리가 없어 "누가 지웠나"가 남지 않는다 — `audit.audit_event` 연동(CORE-3) 시 함께 다룬다.
 - **트랜잭션 참조 검사 미적용** — 금형·작업자·거래처는 참조처가 대부분 트랜잭션이라
   '미결 작업지시/발주가 쓰면 막는다'를 지금 판정할 수 없다. 단순 존재 검사를 걸면 한 번이라도
   쓰인 마스터가 영영 비활성화되지 않으므로, 해당 모듈의 상태 의미가 정해질 때 함께 붙인다.

@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { PageQueryDto } from '../../common/dto/page-query.dto';
@@ -22,19 +23,22 @@ import { CreateCodeValueDto, UpdateCodeValueDto } from './dto/code-value.dto';
 export class CodeValueController {
   constructor(private readonly service: CodeValueService) {}
 
+  @RequirePermissions('MASTER_WRITE')
   @Post()
   @ApiOperation({ summary: '코드값 등록' })
   @ApiResponse({ status: 409, description: '코드값 중복' })
-  create(@Param('groupCode') groupCode: string, @Body() dto: CreateCodeValueDto) {
-    return this.service.create(groupCode, dto);
+  create(@Param('groupCode') groupCode: string, @Body() dto: CreateCodeValueDto, @ActorId() actor?: bigint) {
+    return this.service.create(groupCode, dto, actor);
   }
 
+  @RequirePermissions('MASTER_READ')
   @Get()
   @ApiOperation({ summary: '코드값 목록 조회 (페이징·검색)' })
   findAll(@Param('groupCode') groupCode: string, @Query() query: PageQueryDto) {
     return this.service.findAll(groupCode, query);
   }
 
+  @RequirePermissions('MASTER_READ')
   @Get(':code')
   @ApiOperation({ summary: '코드값 단건 조회' })
   @ApiParam({ name: 'code', description: '코드값', example: 'RAW' })
@@ -42,20 +46,23 @@ export class CodeValueController {
     return this.service.findOne(groupCode, code);
   }
 
+  @RequirePermissions('MASTER_WRITE')
   @Patch(':code')
   @ApiOperation({ summary: '코드값 수정' })
   update(
     @Param('groupCode') groupCode: string,
     @Param('code') code: string,
     @Body() dto: UpdateCodeValueDto,
+    @ActorId() actor?: bigint,
   ) {
-    return this.service.update(groupCode, code, dto);
+    return this.service.update(groupCode, code, dto, actor);
   }
 
+  @RequirePermissions('MASTER_DEACTIVATE')
   @Delete(':code')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '코드값 비활성화 (is_active=false)' })
-  remove(@Param('groupCode') groupCode: string, @Param('code') code: string) {
-    return this.service.deactivate(groupCode, code);
+  remove(@Param('groupCode') groupCode: string, @Param('code') code: string, @ActorId() actor?: bigint) {
+    return this.service.deactivate(groupCode, code, actor);
   }
 }
