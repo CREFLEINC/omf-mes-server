@@ -5,6 +5,8 @@ import {
   BomController,
 } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
+import { ApprovalRouteController } from './approval-route/approval-route.controller';
+import { ApprovalRouteService } from './approval-route/approval-route.service';
 import { CodeValidatorService } from './common-code/code-validator.service';
 import { CommonCodeModule } from './common-code/common-code.module';
 import {
@@ -98,6 +100,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     CauseCodeController,
     OperationPolicyController,
     NumberingRuleController,
+    ApprovalRouteController,
   ],
   providers: [
     CodeValidatorService,
@@ -121,6 +124,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     CauseCodeService,
     OperationPolicyService,
     NumberingRuleService,
+    ApprovalRouteService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
