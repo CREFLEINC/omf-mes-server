@@ -1,6 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
-import { PageQueryDto } from '../../common/dto/page-query.dto';
+import { BasePageQueryDto } from '../../common/dto/page-query.dto';
 
 export function keywordFilter<T>(keyword: string | undefined, fields: string[]): T[] | undefined {
   if (!keyword) return undefined;
@@ -10,7 +10,7 @@ export function keywordFilter<T>(keyword: string | undefined, fields: string[]):
 }
 
 export function baseWhere<T extends Record<string, unknown>>(
-  query: PageQueryDto,
+  query: BasePageQueryDto & { isActive?: boolean },
   keywordFields: string[],
   extra?: T,
 ): Record<string, unknown> {

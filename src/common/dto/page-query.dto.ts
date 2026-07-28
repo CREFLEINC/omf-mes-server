@@ -15,8 +15,11 @@ export const toOptionalBoolean = ({ value }: { value: unknown }): boolean | unde
  * 추가 필터는 이 클래스를 확장해 **필드로 선언**해야 한다.
  * ValidationPipe가 forbidNonWhitelisted라, `@Query('x')`로만 받으면
  * `property x should not exist` 400이 난다.
+ *
+ * 라우팅·BOM처럼 is_active 컬럼이 없고 상태코드로 수명주기를 관리하는 테이블은
+ * 이 클래스를 쓴다 — PageQueryDto를 쓰면 동작하지 않는 필터가 문서에 노출된다.
  */
-export class PageQueryDto {
+export class BasePageQueryDto {
   @ApiPropertyOptional({ description: '페이지 번호 (1부터)', default: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)
@@ -38,13 +41,15 @@ export class PageQueryDto {
   @MaxLength(100)
   keyword?: string;
 
+  get skip(): number {
+    return (this.page - 1) * this.size;
+  }
+}
+
+export class PageQueryDto extends BasePageQueryDto {
   @ApiPropertyOptional({ description: '사용여부 필터 — 미지정 시 전체' })
   @IsOptional()
   @Transform(toOptionalBoolean)
   @IsBoolean()
   isActive?: boolean;
-
-  get skip(): number {
-    return (this.page - 1) * this.size;
-  }
 }
