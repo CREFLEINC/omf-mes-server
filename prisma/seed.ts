@@ -299,6 +299,65 @@ const SEED = [
       { code: 'FUNCTION', codeName: '기능검사', order: 40 },
     ],
   },
+  {
+    // numbering_rule.document_type_code — 채번 대상 문서. 물리 모델의 *_no 컬럼 보유
+    // 트랜잭션과 LOT이 대상이다(예: 'WO-{PLANT}-{YYMMDD}-{SEQ4}').
+    groupCode: 'DOCUMENT_TYPE',
+    groupName: '채번 문서유형',
+    values: [
+      { code: 'LOT', codeName: 'LOT 번호', order: 10 },
+      { code: 'WORK_ORDER', codeName: '작업지시', order: 20 },
+      { code: 'PRODUCTION_RESULT', codeName: '생산실적', order: 30 },
+      { code: 'INSPECTION_REQUEST', codeName: '검사요청', order: 40 },
+      { code: 'INSPECTION_RESULT', codeName: '검사결과', order: 50 },
+      { code: 'GOODS_RECEIPT', codeName: '입고', order: 60 },
+      { code: 'GOODS_ISSUE', codeName: '출고', order: 70 },
+      { code: 'SHIPMENT', codeName: '출하', order: 80 },
+      { code: 'STOCK_TRANSFER', codeName: '재고이동', order: 90 },
+      { code: 'NONCONFORMANCE', codeName: '부적합', order: 100 },
+    ],
+  },
+  {
+    // 채번 시퀀스를 언제 1로 되돌리나. numbering_counter.period_key의 산출 단위가 된다.
+    groupCode: 'RESET_CYCLE',
+    groupName: '채번 리셋주기',
+    values: [
+      { code: 'NONE', codeName: '리셋 없음(연속)', order: 10 },
+      { code: 'DAILY', codeName: '일 단위', order: 20 },
+      { code: 'MONTHLY', codeName: '월 단위', order: 30 },
+      { code: 'YEARLY', codeName: '연 단위', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'APPROVAL_TYPE',
+    groupName: '결재 유형',
+    values: [
+      { code: 'CONCESSION', codeName: '특채(수리 없이 사용)', order: 10 },
+      { code: 'DISPOSITION', codeName: '부적합 처리 판정', order: 20 },
+      { code: 'MATERIAL_SUBSTITUTION', codeName: '대체자재 사용', order: 30 },
+      { code: 'INVENTORY_ADJUSTMENT', codeName: '재고 조정', order: 40 },
+      { code: 'LATE_ENTRY', codeName: '마감 후 정정', order: 50 },
+    ],
+  },
+  {
+    // approval_route_step.approver_type_code — DDL 주석이 값을 명시한다: USER | ROLE | DEPARTMENT
+    groupCode: 'APPROVER_TYPE',
+    groupName: '승인자 지정 방식',
+    values: [
+      { code: 'USER', codeName: '지정 사용자', order: 10 },
+      { code: 'ROLE', codeName: '역할', order: 20 },
+      { code: 'DEPARTMENT', codeName: '부서', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'CALIBRATION_RESULT',
+    groupName: '검교정 결과',
+    values: [
+      { code: 'PASS', codeName: '적합', order: 10 },
+      { code: 'ADJUSTED', codeName: '조정 후 적합', order: 20 },
+      { code: 'FAIL', codeName: '부적합', order: 30 },
+    ],
+  },
 ];
 
 /**
