@@ -229,6 +229,76 @@ const SEED = [
       { code: 'REWORK', codeName: '재작업공간', order: 70 },
     ],
   },
+  {
+    // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.
+    groupCode: 'REVISION_STATUS',
+    groupName: '개정 상태',
+    values: [
+      { code: 'DRAFT', codeName: '작성중', order: 10 },
+      { code: 'ACTIVE', codeName: '적용중', order: 20 },
+      { code: 'OBSOLETE', codeName: '폐기', order: 30 },
+    ],
+  },
+  {
+    // v2에서 required_completion_rate를 뺐으므로 선후행 관계는 유형만 남는다.
+    groupCode: 'DEPENDENCY_TYPE',
+    groupName: '공정 선후행 유형',
+    values: [
+      { code: 'FINISH_TO_START', codeName: '선행 완료 후 착수', order: 10 },
+      { code: 'START_TO_START', codeName: '동시 착수', order: 20 },
+      { code: 'FINISH_TO_FINISH', codeName: '동시 완료', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'SAMPLING_METHOD',
+    groupName: '샘플링 방식',
+    values: [
+      { code: 'FULL', codeName: '전수검사', order: 10 },
+      { code: 'FIXED', codeName: '고정 수량 샘플링', order: 20 },
+      { code: 'AQL', codeName: 'AQL 샘플링', order: 30 },
+    ],
+  },
+  {
+    // PQC 초중종·자주검사는 '주기' 축이다 — 검사유형(INSPECTION_TYPE)과 섞지 않는다.
+    groupCode: 'INSPECTION_FREQUENCY',
+    groupName: '검사 주기',
+    values: [
+      { code: 'EVERY_LOT', codeName: 'LOT 단위', order: 10 },
+      { code: 'FIRST_MIDDLE_LAST', codeName: '초·중·종물', order: 20 },
+      { code: 'SELF', codeName: '자주검사', order: 30 },
+      { code: 'PERIODIC', codeName: '주기(시간·수량)', order: 40 },
+    ],
+  },
+  {
+    // inspection_plan_version.frequency_interval_value의 단위 — 주기가 PERIODIC일 때만 쓴다.
+    groupCode: 'FREQUENCY_INTERVAL_UOM',
+    groupName: '검사주기 단위',
+    values: [
+      { code: 'HOUR', codeName: '시간', order: 10 },
+      { code: 'MINUTE', codeName: '분', order: 20 },
+      { code: 'QTY', codeName: '수량', order: 30 },
+      { code: 'SHIFT', codeName: '교대', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_DATA_TYPE',
+    groupName: '검사항목 데이터유형',
+    values: [
+      { code: 'NUMERIC', codeName: '계량형(수치)', order: 10 },
+      { code: 'BOOLEAN', codeName: '계수형(합·부)', order: 20 },
+      { code: 'TEXT', codeName: '서술형', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_METHOD',
+    groupName: '검사 방법',
+    values: [
+      { code: 'VISUAL', codeName: '육안검사', order: 10 },
+      { code: 'MEASURE', codeName: '계측', order: 20 },
+      { code: 'GAUGE', codeName: '게이지', order: 30 },
+      { code: 'FUNCTION', codeName: '기능검사', order: 40 },
+    ],
+  },
 ];
 
 /**
