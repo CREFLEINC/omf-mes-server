@@ -32,6 +32,8 @@ import { OrganizationService } from './organization/organization.service';
 import { PartnerController } from './partner/partner.controller';
 import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
+import { NumberingRuleController } from './numbering/numbering-rule.controller';
+import { NumberingRuleService } from './numbering/numbering-rule.service';
 import { OperationPolicyController } from './operation-policy/operation-policy.controller';
 import { OperationPolicyService } from './operation-policy/operation-policy.service';
 import { PartnerService } from './partner/partner.service';
@@ -95,6 +97,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     DefectCodeController,
     CauseCodeController,
     OperationPolicyController,
+    NumberingRuleController,
   ],
   providers: [
     CodeValidatorService,
@@ -117,6 +120,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     DefectCodeService,
     CauseCodeService,
     OperationPolicyService,
+    NumberingRuleService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
