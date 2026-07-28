@@ -132,6 +132,12 @@ import { WarehouseService } from './warehouse/warehouse.service';
     ApprovalRouteService,
     PutawayRuleService,
   ],
-  exports: [OrganizationService, DepartmentService, CodeValidatorService],
+  exports: [
+    OrganizationService,
+    DepartmentService,
+    CodeValidatorService,
+    // POP이 작업 시작 시 자격 강제 수준을 묻는다.
+    OperationPolicyService,
+  ],
 })
 export class MasterDataModule {}

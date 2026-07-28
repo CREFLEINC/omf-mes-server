@@ -399,6 +399,48 @@ const SEED = [
       { code: 'FAIL', codeName: '부적합', order: 30 },
     ],
   },
+  {
+    /**
+     * work_order.status_code — WF02 S1~S12의 작업지시 수명주기.
+     *
+     * POP은 이 중 **RELEASED(배포됨)만 집어 든다**. 배포 = 생산관리자가 W/O를 확정해
+     * 현장에 내린 상태(released_at 세팅)이고, 첫 작업 시작이 IN_PROGRESS로 올린다.
+     * 홀드(02-S-A)·취소·마감 정정은 각 사이드 흐름을 개발할 때 값을 보탠다.
+     */
+    groupCode: 'WORK_ORDER_STATUS',
+    groupName: '작업지시 상태',
+    values: [
+      { code: 'PLANNED', codeName: '계획', order: 10 },
+      { code: 'RELEASED', codeName: '배포됨', order: 20 },
+      { code: 'IN_PROGRESS', codeName: '작업중', order: 30 },
+      { code: 'HOLD', codeName: '홀드', order: 40 },
+      { code: 'COMPLETED', codeName: '생산완료', order: 50 },
+      { code: 'CLOSED', codeName: '마감', order: 60 },
+      { code: 'CANCELLED', codeName: '취소', order: 70 },
+    ],
+  },
+  {
+    // work_session.status_code — 한 작업지시를 실제로 돌린 구간. 비가동(02-S-H)이
+    // 미정 골격이라 PAUSED의 사유코드 체계는 그쪽에서 확정한다.
+    groupCode: 'WORK_SESSION_STATUS',
+    groupName: '작업세션 상태',
+    values: [
+      { code: 'OPEN', codeName: '작업중', order: 10 },
+      { code: 'PAUSED', codeName: '일시중지', order: 20 },
+      { code: 'CLOSED', codeName: '종료', order: 30 },
+    ],
+  },
+  {
+    // work_session_event.event_type_code — 세션에 일어난 일의 시각 기록.
+    groupCode: 'WORK_SESSION_EVENT_TYPE',
+    groupName: '작업세션 이벤트 유형',
+    values: [
+      { code: 'START', codeName: '작업 시작', order: 10 },
+      { code: 'PAUSE', codeName: '일시중지', order: 20 },
+      { code: 'RESUME', codeName: '재개', order: 30 },
+      { code: 'END', codeName: '작업 종료', order: 40 },
+    ],
+  },
 ];
 
 /**

@@ -24,7 +24,8 @@
     "db:pull": "prisma db pull && prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "fixtures:pop": "ts-node -r tsconfig-paths/register prisma/fixtures/pop-work-start.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
