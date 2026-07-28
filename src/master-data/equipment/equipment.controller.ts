@@ -31,7 +31,7 @@ import { ProductionLineService } from './production-line.service';
 export class ProductionLineController {
   constructor(private readonly service: ProductionLineService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: '생산라인·작업구역 등록' })
   @ApiResponse({ status: 400, description: '라인 유형 코드값 오류 · 상위 순환' })
@@ -56,14 +56,14 @@ export class ProductionLineController {
     return this.service.findOne(lineCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':lineCode')
   @ApiOperation({ summary: '생산라인 수정' })
   update(@Param('lineCode') lineCode: string, @Body() dto: UpdateProductionLineDto, @ActorId() actor?: bigint) {
     return this.service.update(lineCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':lineCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '생산라인 비활성화' })
@@ -78,7 +78,7 @@ export class ProductionLineController {
 export class EquipmentController {
   constructor(private readonly service: EquipmentService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_EQUIPMENT_WRITE')
   @Post()
   @ApiOperation({ summary: '설비 등록' })
   @ApiResponse({ status: 400, description: '코드값 오류 · 교정일 역전' })
@@ -105,14 +105,14 @@ export class EquipmentController {
     return this.service.findOne(equipmentCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_EQUIPMENT_WRITE')
   @Patch(':equipmentCode')
   @ApiOperation({ summary: '설비 수정' })
   update(@Param('equipmentCode') equipmentCode: string, @Body() dto: UpdateEquipmentDto, @ActorId() actor?: bigint) {
     return this.service.update(equipmentCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_EQUIPMENT_DEACTIVATE')
   @Delete(':equipmentCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '설비 비활성화' })
@@ -121,7 +121,7 @@ export class EquipmentController {
     return this.service.deactivate(equipmentCode, actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_EQUIPMENT_WRITE')
   @Post(':equipmentCode/calibrations')
   @ApiOperation({ summary: '검교정 이력 등록 — 검교정자는 호출한 사용자로 기록된다' })
   @ApiResponse({ status: 400, description: '결과 코드값 오류 · 유효기한이 검교정일보다 빠름' })
@@ -141,7 +141,7 @@ export class EquipmentController {
     return this.service.findCalibrations(equipmentCode);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_EQUIPMENT_DEACTIVATE')
   @Delete(':equipmentCode/calibrations/:calibrationId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '검교정 기록 삭제 (이력 테이블이라 물리 삭제)' })

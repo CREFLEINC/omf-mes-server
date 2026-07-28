@@ -32,7 +32,7 @@ import { TerminalService } from './terminal.service';
 export class ShiftController {
   constructor(private readonly service: ShiftService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '작업조 등록 — 시각은 HH:MM 또는 HH:MM:SS' })
   @ApiResponse({ status: 400, description: '시각 형식 오류 · 자정 넘김 표기 불일치' })
@@ -56,14 +56,14 @@ export class ShiftController {
     return this.service.findOne(shiftCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':shiftCode')
   @ApiOperation({ summary: '작업조 수정' })
   update(@Param('shiftCode') shiftCode: string, @Body() dto: UpdateShiftDto, @ActorId() actor?: bigint) {
     return this.service.update(shiftCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':shiftCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '작업조 비활성화' })
@@ -80,7 +80,7 @@ export class TerminalController {
     private readonly terminalAuth: TerminalAuthService,
   ) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '단말 등록' })
   @ApiResponse({ status: 400, description: '코드값 오류 · 설치 위치 지정 불완전' })
@@ -104,14 +104,14 @@ export class TerminalController {
     return this.service.findOne(terminalCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':terminalCode')
   @ApiOperation({ summary: '단말 수정' })
   update(@Param('terminalCode') terminalCode: string, @Body() dto: UpdateTerminalDto, @ActorId() actor?: bigint) {
     return this.service.update(terminalCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':terminalCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '단말 비활성화 — 발급된 단말 토큰도 즉시 무효가 된다' })
@@ -119,7 +119,8 @@ export class TerminalController {
     return this.service.deactivate(terminalCode, actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  // 토큰 발급은 마스터 편집이 아니라 자격증명 발급이다 — 접근권한 관리 쪽으로 묶는다.
+  @RequirePermissions('ACCESS_WRITE')
   @Post(':terminalCode/token')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -133,7 +134,7 @@ export class TerminalController {
     return this.terminalAuth.issueToken(terminalCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Put(':terminalCode/processes')
   @ApiOperation({
     summary: '공정별 기능 매핑 저장 — 이미 있으면 기능 플래그를 덮어쓴다',
@@ -154,7 +155,7 @@ export class TerminalController {
     return this.service.findProcesses(terminalCode);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':terminalCode/processes/:processCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '공정별 기능 매핑 해제 (단순 매핑이라 물리 삭제)' })

@@ -27,7 +27,7 @@ import { OperationPolicyService } from './operation-policy.service';
 export class OperationPolicyController {
   constructor(private readonly service: OperationPolicyService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({
     summary: '운영정책 등록',
@@ -70,7 +70,7 @@ export class OperationPolicyController {
     return this.service.findOne(BigInt(policyId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':policyId')
   @ApiOperation({ summary: '운영정책 수정 — 정책코드·스코프·시작일은 바꿀 수 없다' })
   update(
@@ -81,7 +81,7 @@ export class OperationPolicyController {
     return this.service.update(BigInt(policyId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':policyId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '운영정책 종료 — 삭제가 아니라 종료일을 오늘로 닫는다' })

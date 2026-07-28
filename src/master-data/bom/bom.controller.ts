@@ -29,7 +29,7 @@ import { BomService } from './bom.service';
 export class BomController {
   constructor(private readonly service: BomService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: 'BOM Rev 등록' })
   @ApiResponse({ status: 400, description: '상태 코드값 오류 · 유효기간 역전' })
@@ -53,7 +53,7 @@ export class BomController {
     return this.service.findOne(BigInt(bomId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':bomId')
   @ApiOperation({ summary: 'BOM 수정 — 부모품목·코드·Rev는 바꿀 수 없다' })
   update(
@@ -64,7 +64,7 @@ export class BomController {
     return this.service.update(BigInt(bomId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':bomId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'BOM 폐기 — status_code=OBSOLETE, 기본 BOM 지정도 해제' })
@@ -80,7 +80,7 @@ export class BomController {
 export class BomComponentController {
   constructor(private readonly service: BomService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: 'BOM 구성 라인 등록' })
   @ApiResponse({ status: 400, description: '부모=구성 품목 · 타 품목 라우팅 공정 지정' })
@@ -111,7 +111,7 @@ export class BomComponentController {
     return this.service.findComponent(BigInt(bomId), sequenceNo);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':sequenceNo')
   @ApiOperation({ summary: 'BOM 구성 라인 수정 — 소요량·손실률·추적 플래그' })
   update(
@@ -123,7 +123,7 @@ export class BomComponentController {
     return this.service.updateComponent(BigInt(bomId), sequenceNo, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':sequenceNo')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'BOM 구성 라인 삭제 (비활성 플래그가 없어 물리 삭제)' })
@@ -135,7 +135,7 @@ export class BomComponentController {
     return this.service.removeComponent(BigInt(bomId), sequenceNo);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post(':sequenceNo/substitutions')
   @ApiOperation({ summary: '대체자재 규칙 등록' })
   @ApiResponse({ status: 400, description: '대체=원래 품목 · 유효기간 역전' })
@@ -159,7 +159,7 @@ export class BomComponentController {
     return this.service.findSubstitutionRules(BigInt(bomId), sequenceNo);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':sequenceNo/substitutions/:ruleId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '대체자재 규칙 삭제 (수정 이력 컬럼이 없어 물리 삭제)' })

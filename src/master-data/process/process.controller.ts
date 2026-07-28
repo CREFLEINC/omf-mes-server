@@ -21,7 +21,7 @@ import { ProcessService } from './process.service';
 export class ProcessController {
   constructor(private readonly service: ProcessService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: '공정 등록' })
   @ApiResponse({ status: 400, description: '공정 유형 코드값 오류' })
@@ -45,14 +45,14 @@ export class ProcessController {
     return this.service.findOne(processCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':processCode')
   @ApiOperation({ summary: '공정 수정' })
   update(@Param('processCode') processCode: string, @Body() dto: UpdateProcessDto, @ActorId() actor?: bigint) {
     return this.service.update(processCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':processCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '공정 비활성화' })

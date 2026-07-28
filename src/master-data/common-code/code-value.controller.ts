@@ -23,7 +23,7 @@ import { CreateCodeValueDto, UpdateCodeValueDto } from './dto/code-value.dto';
 export class CodeValueController {
   constructor(private readonly service: CodeValueService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({ summary: '코드값 등록' })
   @ApiResponse({ status: 409, description: '코드값 중복' })
@@ -46,7 +46,7 @@ export class CodeValueController {
     return this.service.findOne(groupCode, code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':code')
   @ApiOperation({ summary: '코드값 수정' })
   update(
@@ -58,7 +58,7 @@ export class CodeValueController {
     return this.service.update(groupCode, code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':code')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '코드값 비활성화 (is_active=false)' })

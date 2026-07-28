@@ -88,7 +88,7 @@ export class UpdateRoleDto extends PartialType(OmitType(CreateRoleDto, ['roleCod
 export class AddPermissionDto {
   @ApiProperty({
     description: '권한 코드 — 코드그룹 PERMISSION',
-    example: 'MASTER_WRITE',
+    example: 'MASTER_PRODUCTION_WRITE',
   })
   @IsString()
   @IsNotEmpty()

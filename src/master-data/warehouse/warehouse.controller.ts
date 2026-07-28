@@ -28,7 +28,7 @@ import { WarehouseService } from './warehouse.service';
 export class WarehouseController {
   constructor(private readonly service: WarehouseService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Post()
   @ApiOperation({ summary: '창고 등록' })
   @ApiResponse({ status: 400, description: '코드값 오류 · 외부창고인데 거래처 미지정' })
@@ -52,14 +52,14 @@ export class WarehouseController {
     return this.service.findOne(code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Patch(':warehouseCode')
   @ApiOperation({ summary: '창고 수정' })
   update(@Param('warehouseCode') code: string, @Body() dto: UpdateWarehouseDto, @ActorId() actor?: bigint) {
     return this.service.update(code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
   @Delete(':warehouseCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '창고 비활성화' })
@@ -75,7 +75,7 @@ export class WarehouseController {
 export class LocationController {
   constructor(private readonly service: WarehouseService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Post()
   @ApiOperation({ summary: '로케이션 등록' })
   @ApiResponse({ status: 400, description: '코드값 오류 · 수용량/단위 불일치 · 상위 순환' })
@@ -97,7 +97,7 @@ export class LocationController {
     return this.service.findLocation(wh, code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Patch(':locationCode')
   @ApiOperation({ summary: '로케이션 수정' })
   update(
@@ -109,7 +109,7 @@ export class LocationController {
     return this.service.updateLocation(wh, code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
   @Delete(':locationCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '로케이션 비활성화' })

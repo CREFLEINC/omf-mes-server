@@ -22,7 +22,7 @@ import { UomService } from './uom.service';
 export class UomController {
   constructor(private readonly service: UomService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({ summary: '단위 등록' })
   @ApiResponse({ status: 409, description: '단위 코드 중복' })
@@ -45,14 +45,14 @@ export class UomController {
     return this.service.findOne(uomCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':uomCode')
   @ApiOperation({ summary: '단위 수정' })
   update(@Param('uomCode') uomCode: string, @Body() dto: UpdateUomDto, @ActorId() actor?: bigint) {
     return this.service.update(uomCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':uomCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '단위 비활성화 (is_active=false)' })

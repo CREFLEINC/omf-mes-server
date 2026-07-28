@@ -28,7 +28,7 @@ import {
 export class DefectCodeController {
   constructor(private readonly service: DefectCodeService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post()
   @ApiOperation({ summary: '불량코드 등록 — 상위를 주면 하위(2계층)가 된다' })
   @ApiResponse({ status: 400, description: '상위가 이미 하위 코드 (3계층 금지)' })
@@ -52,7 +52,7 @@ export class DefectCodeController {
     return this.service.findOne(defectCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Patch(':defectCode')
   @ApiOperation({ summary: '불량코드 수정' })
   @ApiResponse({ status: 400, description: '자기 자신을 상위로 지정 · 하위가 있는데 이동' })
@@ -64,7 +64,7 @@ export class DefectCodeController {
     return this.service.update(defectCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_QUALITY_DEACTIVATE')
   @Delete(':defectCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '불량코드 비활성화' })
@@ -79,7 +79,7 @@ export class DefectCodeController {
 export class CauseCodeController {
   constructor(private readonly service: CauseCodeService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post()
   @ApiOperation({ summary: '원인코드 등록 — 상위를 주면 하위(2계층)가 된다' })
   @ApiResponse({ status: 400, description: '상위가 이미 하위 코드 (3계층 금지)' })
@@ -103,7 +103,7 @@ export class CauseCodeController {
     return this.service.findOne(causeCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Patch(':causeCode')
   @ApiOperation({ summary: '원인코드 수정' })
   @ApiResponse({ status: 400, description: '자기 자신을 상위로 지정 · 하위가 있는데 이동' })
@@ -115,7 +115,7 @@ export class CauseCodeController {
     return this.service.update(causeCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_QUALITY_DEACTIVATE')
   @Delete(':causeCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '원인코드 비활성화' })

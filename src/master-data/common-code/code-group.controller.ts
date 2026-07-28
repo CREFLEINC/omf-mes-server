@@ -22,7 +22,7 @@ import { CreateCodeGroupDto, UpdateCodeGroupDto } from './dto/code-group.dto';
 export class CodeGroupController {
   constructor(private readonly service: CodeGroupService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({ summary: '코드그룹 등록' })
   @ApiResponse({ status: 201, description: '등록 성공' })
@@ -47,14 +47,14 @@ export class CodeGroupController {
     return this.service.findOne(groupCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':groupCode')
   @ApiOperation({ summary: '코드그룹 수정' })
   update(@Param('groupCode') groupCode: string, @Body() dto: UpdateCodeGroupDto, @ActorId() actor?: bigint) {
     return this.service.update(groupCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':groupCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '코드그룹 비활성화 (is_active=false)' })

@@ -29,7 +29,7 @@ import { RoutingService } from './routing.service';
 export class RoutingController {
   constructor(private readonly service: RoutingService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: '라우팅 Rev 등록' })
   @ApiResponse({ status: 400, description: '상태 코드값 오류 · 유효기간 역전' })
@@ -53,7 +53,7 @@ export class RoutingController {
     return this.service.findOne(BigInt(routingId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':routingId')
   @ApiOperation({ summary: '라우팅 수정 — 품목·코드·Rev는 바꿀 수 없다' })
   update(
@@ -64,7 +64,7 @@ export class RoutingController {
     return this.service.update(BigInt(routingId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':routingId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '라우팅 폐기 — status_code=OBSOLETE' })
@@ -73,7 +73,7 @@ export class RoutingController {
     return this.service.obsolete(BigInt(routingId), actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post(':routingId/dependencies')
   @ApiOperation({ summary: '공정 선후행 등록' })
   @ApiResponse({ status: 400, description: '선행=후행 · 선후행 순환' })
@@ -93,7 +93,7 @@ export class RoutingController {
     return this.service.findDependencies(BigInt(routingId));
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':routingId/dependencies/:dependencyId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '공정 선후행 삭제' })
@@ -111,7 +111,7 @@ export class RoutingController {
 export class RoutingOperationController {
   constructor(private readonly service: RoutingService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: '공정 라인 등록' })
   @ApiResponse({ status: 409, description: '공정 순서 중복' })
@@ -141,7 +141,7 @@ export class RoutingOperationController {
     return this.service.findOperation(BigInt(routingId), operationSeq);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':operationSeq')
   @ApiOperation({ summary: '공정 라인 수정 — 표준 C/T·수율·관리 플래그' })
   update(
@@ -153,7 +153,7 @@ export class RoutingOperationController {
     return this.service.updateOperation(BigInt(routingId), operationSeq, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':operationSeq')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '공정 라인 삭제 (비활성 플래그가 없어 물리 삭제)' })

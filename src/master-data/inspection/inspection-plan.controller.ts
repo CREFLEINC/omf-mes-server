@@ -31,7 +31,7 @@ import { InspectionPlanService } from './inspection-plan.service';
 export class InspectionPlanController {
   constructor(private readonly service: InspectionPlanService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post()
   @ApiOperation({ summary: '검사기준 등록' })
   @ApiResponse({ status: 400, description: '검사유형 코드값 오류' })
@@ -55,7 +55,7 @@ export class InspectionPlanController {
     return this.service.findOne(planCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Patch(':planCode')
   @ApiOperation({ summary: '검사기준 수정' })
   update(
@@ -66,14 +66,14 @@ export class InspectionPlanController {
     return this.service.update(planCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post(':planCode/approval')
   @ApiOperation({ summary: '검사기준 승인 — 승인자는 호출한 사용자로 기록된다' })
   approve(@Param('planCode') planCode: string, @ActorId() actor?: bigint) {
     return this.service.approve(planCode, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_QUALITY_DEACTIVATE')
   @Delete(':planCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '검사기준 비활성화' })
@@ -89,7 +89,7 @@ export class InspectionPlanController {
 export class InspectionPlanVersionController {
   constructor(private readonly service: InspectionPlanService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post()
   @ApiOperation({ summary: '기준 버전 등록 — 샘플링·주기·판정개수' })
   @ApiResponse({
@@ -123,7 +123,7 @@ export class InspectionPlanVersionController {
     return this.service.findVersion(planCode, planVersion);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Patch(':planVersion')
   @ApiOperation({ summary: '기준 버전 수정 — 버전 번호는 바꿀 수 없다' })
   update(
@@ -135,7 +135,7 @@ export class InspectionPlanVersionController {
     return this.service.updateVersion(planCode, planVersion, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_QUALITY_DEACTIVATE')
   @Delete(':planVersion')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '기준 버전 삭제 (검사항목을 먼저 비워야 한다)' })
@@ -155,7 +155,7 @@ export class InspectionPlanVersionController {
 export class InspectionItemSpecController {
   constructor(private readonly service: InspectionPlanService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Post()
   @ApiOperation({ summary: '검사항목 등록 — UCL·LCL·Target·측정횟수' })
   @ApiResponse({ status: 400, description: 'UCL < LCL · 계량형 자동판정인데 규격 없음' })
@@ -191,7 +191,7 @@ export class InspectionItemSpecController {
     return this.service.findItemSpec(planCode, planVersion, sequenceNo);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_QUALITY_WRITE')
   @Patch(':sequenceNo')
   @ApiOperation({ summary: '검사항목 수정' })
   @ApiResponse({ status: 409, description: '측정 실적이 있어 수정 불가 — 새 버전을 만들어야 한다' })
@@ -204,7 +204,7 @@ export class InspectionItemSpecController {
     return this.service.updateItemSpec(planCode, planVersion, sequenceNo, dto);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_QUALITY_DEACTIVATE')
   @Delete(':sequenceNo')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '검사항목 삭제 (수정 이력 컬럼이 없어 물리 삭제)' })

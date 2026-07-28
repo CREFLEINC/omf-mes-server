@@ -29,7 +29,7 @@ import { ItemService } from './item.service';
 export class ItemController {
   constructor(private readonly service: ItemService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post()
   @ApiOperation({ summary: '품목 등록' })
   @ApiResponse({ status: 400, description: '코드값 오류 · FEFO인데 유효기간 미지정' })
@@ -53,14 +53,14 @@ export class ItemController {
     return this.service.findOne(itemCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Patch(':itemCode')
   @ApiOperation({ summary: '품목 수정' })
   update(@Param('itemCode') itemCode: string, @Body() dto: UpdateItemDto, @ActorId() actor?: bigint) {
     return this.service.update(itemCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':itemCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '품목 비활성화' })
@@ -69,7 +69,7 @@ export class ItemController {
     return this.service.deactivate(itemCode, actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post(':itemCode/uom-conversions')
   @ApiOperation({ summary: '단위환산 추가' })
   @ApiResponse({ status: 400, description: '동일 단위 · 유효기간 역전' })
@@ -84,7 +84,7 @@ export class ItemController {
     return this.service.findUomConversions(itemCode);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':itemCode/uom-conversions/:conversionId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '단위환산 삭제 (이력 테이블이라 물리 삭제)' })
@@ -95,7 +95,7 @@ export class ItemController {
     return this.service.removeUomConversion(itemCode, BigInt(conversionId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post(':itemCode/external-codes')
   @ApiOperation({ summary: '외부 시스템 품목코드 추가' })
   @ApiResponse({ status: 409, description: '동일 (시스템·거래처·코드) 중복' })
@@ -110,7 +110,7 @@ export class ItemController {
     return this.service.findExternalCodes(itemCode);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':itemCode/external-codes/:externalCodeId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '외부 시스템 품목코드 삭제' })
@@ -121,7 +121,7 @@ export class ItemController {
     return this.service.removeExternalCode(itemCode, BigInt(externalCodeId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Post(':itemCode/bu-mappings')
   @ApiOperation({ summary: '사업부 간 품목 매핑 추가 — 매핑이 없으면 사업부 간 이동입고가 막힌다' })
   @ApiResponse({ status: 400, description: '동일 사업부 · 유효기간 역전' })
@@ -136,7 +136,7 @@ export class ItemController {
     return this.service.findBuItemMaps(itemCode);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_PRODUCTION_DEACTIVATE')
   @Delete(':itemCode/bu-mappings/:mapId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '사업부 간 품목 매핑 삭제' })

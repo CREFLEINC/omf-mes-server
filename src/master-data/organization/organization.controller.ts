@@ -29,7 +29,7 @@ import { OrganizationService } from './organization.service';
 export class LegalEntityController {
   constructor(private readonly service: OrganizationService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '법인 등록' })
   create(@Body() dto: CreateLegalEntityDto, @ActorId() actor?: bigint) {
@@ -50,14 +50,14 @@ export class LegalEntityController {
     return this.service.findLegalEntity(code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':legalEntityCode')
   @ApiOperation({ summary: '법인 수정' })
   update(@Param('legalEntityCode') code: string, @Body() dto: UpdateLegalEntityDto, @ActorId() actor?: bigint) {
     return this.service.updateLegalEntity(code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':legalEntityCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '법인 비활성화' })
@@ -73,7 +73,7 @@ export class LegalEntityController {
 export class BusinessUnitController {
   constructor(private readonly service: OrganizationService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '사업부 등록' })
   create(@Param('legalEntityCode') le: string, @Body() dto: CreateBusinessUnitBodyDto, @ActorId() actor?: bigint) {
@@ -94,7 +94,7 @@ export class BusinessUnitController {
     return this.service.findBusinessUnit(le, code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':businessUnitCode')
   @ApiOperation({ summary: '사업부 수정' })
   update(
@@ -106,7 +106,7 @@ export class BusinessUnitController {
     return this.service.updateBusinessUnit(le, code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':businessUnitCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '사업부 비활성화' })
@@ -122,7 +122,7 @@ export class BusinessUnitController {
 export class PlantController {
   constructor(private readonly service: OrganizationService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '공장 등록' })
   create(@Param('legalEntityCode') le: string, @Body() dto: CreatePlantBodyDto, @ActorId() actor?: bigint) {
@@ -143,7 +143,7 @@ export class PlantController {
     return this.service.findPlant(le, code);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':plantCode')
   @ApiOperation({ summary: '공장 수정' })
   update(
@@ -155,7 +155,7 @@ export class PlantController {
     return this.service.updatePlant(le, code, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':plantCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '공장 비활성화' })

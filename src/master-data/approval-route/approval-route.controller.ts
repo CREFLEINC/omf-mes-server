@@ -27,7 +27,7 @@ import { ApprovalRouteService } from './approval-route.service';
 export class ApprovalRouteController {
   constructor(private readonly service: ApprovalRouteService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({
     summary: '결재선 등록',
@@ -53,7 +53,7 @@ export class ApprovalRouteController {
     return this.service.findOne(BigInt(routeId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':routeId')
   @ApiOperation({ summary: '결재선 수정 — 승인유형은 바꿀 수 없다' })
   update(
@@ -64,7 +64,7 @@ export class ApprovalRouteController {
     return this.service.update(BigInt(routeId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':routeId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '결재선 비활성화' })
@@ -72,7 +72,7 @@ export class ApprovalRouteController {
     return this.service.deactivate(BigInt(routeId), actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post(':routeId/steps')
   @ApiOperation({
     summary: '결재 단계 추가',
@@ -95,7 +95,7 @@ export class ApprovalRouteController {
     return this.service.findSteps(BigInt(routeId));
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':routeId/steps/:stepNo')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '결재 단계 삭제 (수정 이력 컬럼이 없어 물리 삭제)' })

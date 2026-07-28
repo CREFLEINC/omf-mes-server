@@ -26,7 +26,7 @@ import { NumberingRuleService } from './numbering-rule.service';
 export class NumberingRuleController {
   constructor(private readonly service: NumberingRuleService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Post()
   @ApiOperation({
     summary: '채번규칙 등록',
@@ -55,7 +55,7 @@ export class NumberingRuleController {
     return this.service.findOne(BigInt(ruleId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_SYSTEM_WRITE')
   @Patch(':ruleId')
   @ApiOperation({ summary: '채번규칙 수정 — 문서유형·공장·LOT유형은 바꿀 수 없다' })
   @ApiResponse({ status: 409, description: '이미 발번이 시작돼 패턴·리셋주기 변경 불가' })
@@ -67,7 +67,7 @@ export class NumberingRuleController {
     return this.service.update(BigInt(ruleId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_SYSTEM_DEACTIVATE')
   @Delete(':ruleId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '채번규칙 비활성화' })

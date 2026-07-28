@@ -70,16 +70,41 @@ const SEED = [
     ],
   },
   {
-    // 기능권한 코드. 지금은 마스터 API만 있어 그 범위로 시작한다.
-    // 주의: 어떤 엔드포인트도 아직 이 권한을 강제하지 않는다(가드 미구현) — README 참조.
+    /**
+     * 기능 권한 — REQ-PR-0015(사용자별 접근 기능 분리)의 **임시 체계**.
+     *
+     * 요구사항 명세서 §미결 9 「사용자 유형/권한/접근 범위 정의」가 고객 액션 대기라,
+     * 확정 전까지 쓸 최소 골격이다. 워크플로우 문서의 실제 담당 주체(전산담당·생산관리자·
+     * 품질담당·설비담당·물류담당)를 그대로 축으로 삼았다.
+     *
+     * **조회는 하나로 둔다.** 기준정보를 못 보게 막을 실익이 거의 없고, 나누면 담당자가
+     * 남의 도메인 코드를 참조할 때마다 막힌다. 쓰기·비활성화만 도메인별로 나눈다.
+     */
     groupCode: 'PERMISSION',
     groupName: '기능 권한',
     values: [
-      { code: 'MASTER_READ', codeName: '기준정보 조회', order: 10 },
-      { code: 'MASTER_WRITE', codeName: '기준정보 등록·수정', order: 20 },
-      { code: 'MASTER_DEACTIVATE', codeName: '기준정보 비활성화', order: 30 },
-      { code: 'ACCESS_READ', codeName: '접근권한 조회', order: 40 },
-      { code: 'ACCESS_WRITE', codeName: '접근권한 관리', order: 50 },
+      { code: 'MASTER_READ', codeName: '기준정보 조회(전체)', order: 10 },
+
+      { code: 'MASTER_PRODUCTION_WRITE', codeName: '생산 기준정보 등록·수정', order: 20 },
+      { code: 'MASTER_PRODUCTION_DEACTIVATE', codeName: '생산 기준정보 비활성화', order: 21 },
+
+      { code: 'MASTER_QUALITY_WRITE', codeName: '품질 기준정보 등록·수정', order: 30 },
+      { code: 'MASTER_QUALITY_DEACTIVATE', codeName: '품질 기준정보 비활성화', order: 31 },
+
+      { code: 'MASTER_EQUIPMENT_WRITE', codeName: '설비·금형 등록·수정', order: 40 },
+      { code: 'MASTER_EQUIPMENT_DEACTIVATE', codeName: '설비·금형 비활성화', order: 41 },
+
+      { code: 'MASTER_LOGISTICS_WRITE', codeName: '물류 기준정보 등록·수정', order: 50 },
+      { code: 'MASTER_LOGISTICS_DEACTIVATE', codeName: '물류 기준정보 비활성화', order: 51 },
+
+      { code: 'MASTER_ORGANIZATION_WRITE', codeName: '조직·인원 기준정보 등록·수정', order: 60 },
+      { code: 'MASTER_ORGANIZATION_DEACTIVATE', codeName: '조직·인원 기준정보 비활성화', order: 61 },
+
+      { code: 'MASTER_SYSTEM_WRITE', codeName: '시스템 설정 등록·수정', order: 70 },
+      { code: 'MASTER_SYSTEM_DEACTIVATE', codeName: '시스템 설정 비활성화', order: 71 },
+
+      { code: 'ACCESS_READ', codeName: '접근권한 조회', order: 80 },
+      { code: 'ACCESS_WRITE', codeName: '접근권한 관리(단말 토큰 발급 포함)', order: 81 },
     ],
   },
   {
@@ -377,6 +402,56 @@ const SEED = [
 ];
 
 /**
+ * 역할 프리셋 — REQ-PR-0015 확정 전까지 쓸 임시 골격.
+ * 워크플로우 문서의 실제 담당 주체를 그대로 옮겼다. 고객이 부서·권한 범위를 확정하면
+ * 이 표를 갈아끼운다.
+ */
+const ROLES = [
+  {
+    code: 'SYSTEM_ADMIN',
+    name: '시스템 관리자(전산담당)',
+    permissions: [
+      'MASTER_READ',
+      'MASTER_PRODUCTION_WRITE',
+      'MASTER_PRODUCTION_DEACTIVATE',
+      'MASTER_QUALITY_WRITE',
+      'MASTER_QUALITY_DEACTIVATE',
+      'MASTER_EQUIPMENT_WRITE',
+      'MASTER_EQUIPMENT_DEACTIVATE',
+      'MASTER_LOGISTICS_WRITE',
+      'MASTER_LOGISTICS_DEACTIVATE',
+      'MASTER_ORGANIZATION_WRITE',
+      'MASTER_ORGANIZATION_DEACTIVATE',
+      'MASTER_SYSTEM_WRITE',
+      'MASTER_SYSTEM_DEACTIVATE',
+      'ACCESS_READ',
+      'ACCESS_WRITE',
+    ],
+  },
+  {
+    code: 'PRODUCTION_MANAGER',
+    name: '생산관리자',
+    permissions: ['MASTER_READ', 'MASTER_PRODUCTION_WRITE', 'MASTER_PRODUCTION_DEACTIVATE'],
+  },
+  {
+    code: 'QUALITY_MANAGER',
+    name: '품질담당',
+    permissions: ['MASTER_READ', 'MASTER_QUALITY_WRITE', 'MASTER_QUALITY_DEACTIVATE'],
+  },
+  {
+    code: 'EQUIPMENT_MANAGER',
+    name: '설비담당',
+    permissions: ['MASTER_READ', 'MASTER_EQUIPMENT_WRITE', 'MASTER_EQUIPMENT_DEACTIVATE'],
+  },
+  {
+    code: 'LOGISTICS_MANAGER',
+    name: '물류담당',
+    permissions: ['MASTER_READ', 'MASTER_LOGISTICS_WRITE', 'MASTER_LOGISTICS_DEACTIVATE'],
+  },
+  { code: 'VIEWER', name: '조회 전용', permissions: ['MASTER_READ'] },
+];
+
+/**
  * 기본 단위(UoM). 품목·로케이션 수용량이 참조한다.
  * decimal_scale = 수량 소수 자릿수(DB 제약 0~6).
  */
@@ -426,6 +501,7 @@ async function main(): Promise<void> {
     console.log(`seeded ${group.groupCode} (${group.values.length} values)`);
   }
 
+  await seedRoles();
   await seedAdmin();
 }
 
@@ -438,6 +514,36 @@ async function main(): Promise<void> {
  *
  * 해시 형식은 src/auth/password.service.ts와 같아야 한다(scrypt$N$r$p$salt$hash).
  */
+/**
+ * 역할·권한 매핑. **admin 존재 여부와 무관하게 매번 돌아야 한다** —
+ * 권한 코드가 바뀌었는데 seedAdmin의 early-return에 묶여 있으면 기존 설치가 갱신되지 않는다.
+ *
+ * 목록에 없는 권한은 지운다. 그러지 않으면 권한을 회수해도 예전 부여가 남는다.
+ */
+async function seedRoles(): Promise<void> {
+  for (const role of ROLES) {
+    const saved = await prisma.role.upsert({
+      where: { role_code: role.code },
+      update: { role_name: role.name, is_active: true },
+      create: { role_code: role.code, role_name: role.name },
+    });
+
+    for (const code of role.permissions) {
+      await prisma.role_permission.upsert({
+        where: { role_id_permission_code: { role_id: saved.role_id, permission_code: code } },
+        update: {},
+        create: { role_id: saved.role_id, permission_code: code },
+      });
+    }
+    await prisma.role_permission.deleteMany({
+      where: { role_id: saved.role_id, permission_code: { notIn: role.permissions } },
+    });
+
+    // eslint-disable-next-line no-console
+    console.log(`seeded role ${role.code} (${role.permissions.length} permissions)`);
+  }
+}
+
 async function seedAdmin(): Promise<void> {
   const LOGIN_ID = 'admin';
   const existing = await prisma.app_user.findUnique({
@@ -469,22 +575,11 @@ async function seedAdmin(): Promise<void> {
     data: { app_user_id: admin.app_user_id, password_hash: hash, must_change_password: true },
   });
 
-  const role = await prisma.role.upsert({
-    where: { role_code: 'SYSTEM_ADMIN' },
-    update: { is_active: true },
-    create: { role_code: 'SYSTEM_ADMIN', role_name: '시스템 관리자' },
-  });
-  for (const code of ['MASTER_READ', 'MASTER_WRITE', 'MASTER_DEACTIVATE', 'ACCESS_READ', 'ACCESS_WRITE']) {
-    await prisma.role_permission.upsert({
-      where: { role_id_permission_code: { role_id: role.role_id, permission_code: code } },
-      update: {},
-      create: { role_id: role.role_id, permission_code: code },
-    });
-  }
+  const adminRole = await prisma.role.findUniqueOrThrow({ where: { role_code: 'SYSTEM_ADMIN' } });
   await prisma.user_role.upsert({
-    where: { app_user_id_role_id: { app_user_id: admin.app_user_id, role_id: role.role_id } },
+    where: { app_user_id_role_id: { app_user_id: admin.app_user_id, role_id: adminRole.role_id } },
     update: {},
-    create: { app_user_id: admin.app_user_id, role_id: role.role_id },
+    create: { app_user_id: admin.app_user_id, role_id: adminRole.role_id },
   });
 
   // eslint-disable-next-line no-console

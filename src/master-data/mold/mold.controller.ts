@@ -21,7 +21,7 @@ import { MoldService } from './mold.service';
 export class MoldController {
   constructor(private readonly service: MoldService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_EQUIPMENT_WRITE')
   @Post()
   @ApiOperation({ summary: '금형 등록' })
   @ApiResponse({ status: 400, description: '상태 코드값 오류 · Cavity 수 0 이하' })
@@ -46,14 +46,14 @@ export class MoldController {
     return this.service.findOne(moldCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_EQUIPMENT_WRITE')
   @Patch(':moldCode')
   @ApiOperation({ summary: '금형 수정' })
   update(@Param('moldCode') moldCode: string, @Body() dto: UpdateMoldDto, @ActorId() actor?: bigint) {
     return this.service.update(moldCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_EQUIPMENT_DEACTIVATE')
   @Delete(':moldCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '금형 비활성화' })

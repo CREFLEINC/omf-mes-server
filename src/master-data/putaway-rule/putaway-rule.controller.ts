@@ -26,7 +26,7 @@ import { PutawayRuleService } from './putaway-rule.service';
 export class PutawayRuleController {
   constructor(private readonly service: PutawayRuleService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Post()
   @ApiOperation({
     summary: '적치규칙 등록',
@@ -53,7 +53,7 @@ export class PutawayRuleController {
     return this.service.findOne(BigInt(ruleId));
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
   @Patch(':ruleId')
   @ApiOperation({ summary: '적치규칙 수정 — 품목·창고·로케이션은 바꿀 수 없다' })
   update(
@@ -64,7 +64,7 @@ export class PutawayRuleController {
     return this.service.update(BigInt(ruleId), dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
   @Delete(':ruleId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '적치규칙 비활성화' })

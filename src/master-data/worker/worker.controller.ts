@@ -32,7 +32,7 @@ import { WorkerService } from './worker.service';
 export class DepartmentController {
   constructor(private readonly service: DepartmentService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '부서 등록' })
   @ApiResponse({ status: 400, description: '상위 부서 순환' })
@@ -56,14 +56,14 @@ export class DepartmentController {
     return this.service.findOne(departmentCode);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':departmentCode')
   @ApiOperation({ summary: '부서 수정' })
   update(@Param('departmentCode') departmentCode: string, @Body() dto: UpdateDepartmentDto, @ActorId() actor?: bigint) {
     return this.service.update(departmentCode, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':departmentCode')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '부서 비활성화' })
@@ -78,7 +78,7 @@ export class DepartmentController {
 export class WorkerController {
   constructor(private readonly service: WorkerService) {}
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post()
   @ApiOperation({ summary: '작업자 등록' })
   @ApiResponse({ status: 400, description: '재직 상태 코드값 오류' })
@@ -102,14 +102,14 @@ export class WorkerController {
     return this.service.findOne(workerNo);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Patch(':workerNo')
   @ApiOperation({ summary: '작업자 수정' })
   update(@Param('workerNo') workerNo: string, @Body() dto: UpdateWorkerDto, @ActorId() actor?: bigint) {
     return this.service.update(workerNo, dto, actor);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':workerNo')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '작업자 비활성화 (퇴직 처리 등)' })
@@ -117,7 +117,7 @@ export class WorkerController {
     return this.service.deactivate(workerNo, actor);
   }
 
-  @RequirePermissions('MASTER_WRITE')
+  @RequirePermissions('MASTER_ORGANIZATION_WRITE')
   @Post(':workerNo/qualifications')
   @ApiOperation({ summary: '자격 부여 — 공정 수행·검사자 자격' })
   @ApiResponse({ status: 400, description: '자격 유형 코드값 오류 · 유효기간 역전' })
@@ -133,7 +133,7 @@ export class WorkerController {
     return this.service.findQualifications(workerNo, query);
   }
 
-  @RequirePermissions('MASTER_DEACTIVATE')
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
   @Delete(':workerNo/qualifications/:qualificationId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '자격 삭제 (이력 테이블이라 물리 삭제)' })
