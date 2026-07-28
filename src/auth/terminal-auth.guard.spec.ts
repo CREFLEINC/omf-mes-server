@@ -65,14 +65,25 @@ describe('TerminalAuthGuard', () => {
 
   it('단말 토큰이면 principal을 request에 싣는다', async () => {
     meta({ isTerminal: true });
-    jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND });
+    jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND, tv: 3 });
     terminals.resolvePrincipal.mockResolvedValue({ terminalId: 5n, terminalCode: 'POP_INJ_01' });
 
     const context = contextWith({ authorization: 'Bearer terminal-token' });
     await expect(guard.canActivate(context)).resolves.toBe(true);
 
-    expect(terminals.resolvePrincipal).toHaveBeenCalledWith(5n);
+    expect(terminals.resolvePrincipal).toHaveBeenCalledWith(5n, 3);
     expect(context.__request.terminal).toMatchObject({ terminalCode: 'POP_INJ_01' });
+  });
+
+  // 세대를 모르면 폐기 여부를 판정할 수 없다 — 통과시키면 폐기가 뚫린다.
+  it('tv 클레임이 없는 토큰은 거부한다', async () => {
+    meta({ isTerminal: true });
+    jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND });
+
+    await expect(
+      guard.canActivate(contextWith({ authorization: 'Bearer legacy-token' })),
+    ).rejects.toThrow('세대 정보가 없는 토큰입니다. 단말 토큰을 재발급하십시오.');
+    expect(terminals.resolvePrincipal).not.toHaveBeenCalled();
   });
 
   it('만료·위조 토큰은 401', async () => {
@@ -87,7 +98,7 @@ describe('TerminalAuthGuard', () => {
   // 폐기된 단말은 resolvePrincipal에서 걸린다 — 캐시가 없어 다음 요청에서 바로 막힌다.
   it('폐기된 단말이면 서비스가 던진 401이 그대로 나간다', async () => {
     meta({ isTerminal: true });
-    jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND });
+    jwt.verifyAsync.mockResolvedValue({ sub: '5', kind: TERMINAL_TOKEN_KIND, tv: 1 });
     terminals.resolvePrincipal.mockRejectedValue(new UnauthorizedException('사용 중지된 단말입니다.'));
 
     await expect(

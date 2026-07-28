@@ -46,19 +46,27 @@ export class TerminalAuthGuard implements CanActivate {
     }
 
     let terminalId: bigint;
+    let tokenVersion: number;
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; kind?: string }>(token);
+      const payload = await this.jwt.verifyAsync<{ sub: string; kind?: string; tv?: number }>(
+        token,
+      );
       if (payload.kind !== TERMINAL_TOKEN_KIND) {
         // 사람 토큰으로 현장 실적을 올릴 수 있으면 worker_id 귀속이 무의미해진다.
         throw new UnauthorizedException('현장 단말 토큰이 필요합니다. 사용자 토큰은 쓸 수 없습니다.');
       }
+      if (typeof payload.tv !== 'number') {
+        // 세대를 모르면 폐기 여부를 판정할 수 없다 — 통과시키면 폐기가 뚫린다.
+        throw new UnauthorizedException('세대 정보가 없는 토큰입니다. 단말 토큰을 재발급하십시오.');
+      }
       terminalId = BigInt(payload.sub);
+      tokenVersion = payload.tv;
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('단말 토큰이 유효하지 않거나 만료되었습니다.');
     }
 
-    request.terminal = await this.terminals.resolvePrincipal(terminalId);
+    request.terminal = await this.terminals.resolvePrincipal(terminalId, tokenVersion);
     return true;
   }
 }

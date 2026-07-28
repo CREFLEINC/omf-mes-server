@@ -15,6 +15,7 @@ const baseTerminal: terminal = {
   terminal_type_code: 'POP',
   status_code: 'NORMAL',
   is_active: true,
+  token_version: 1,
   created_at: new Date(),
   created_by: null,
   updated_at: new Date(),
@@ -53,10 +54,15 @@ describe('TerminalAuthService', () => {
     jwt.signAsync.mockResolvedValue('signed-token');
     config.get.mockImplementation((_key: string, fallback: number) => fallback);
     prisma = {
-      terminal: { findUnique: jest.fn() },
+      terminal: { findUnique: jest.fn(), update: jest.fn() },
       terminal_process: { findFirst: jest.fn() },
       worker: { findUnique: jest.fn() },
     };
+    // 발급은 세대를 올린 뒤 그 값으로 서명한다.
+    prisma.terminal.update.mockImplementation(
+      ({ where }: { where: { terminal_id: bigint } }) =>
+        Promise.resolve({ ...baseTerminal, terminal_id: where.terminal_id, token_version: 2 }),
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -106,6 +112,38 @@ describe('TerminalAuthService', () => {
 
       await expect(service.issueToken('POP_INJ_01')).rejects.toThrow(UnauthorizedException);
     });
+
+    // is_active는 스위치일 뿐이라 단말을 다시 켜면 유출 토큰도 되살아난다.
+    // 폐기는 세대를 올려서 한다.
+    it('발급할 때마다 세대를 올린다', async () => {
+      prisma.terminal.findUnique.mockResolvedValue(baseTerminal);
+
+      const result = await service.issueToken('POP_INJ_01');
+
+      expect(prisma.terminal.update).toHaveBeenCalledWith({
+        where: { terminal_id: 5n },
+        data: { token_version: { increment: 1 } },
+      });
+      expect(result.tokenVersion).toBe(2);
+    });
+
+    it('올라간 세대를 tv 클레임에 담는다', async () => {
+      prisma.terminal.findUnique.mockResolvedValue(baseTerminal);
+
+      await service.issueToken('POP_INJ_01');
+
+      expect(jwt.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ tv: 2 }),
+        expect.anything(),
+      );
+    });
+
+    it('발급 불가 단말에는 세대를 올리지 않는다', async () => {
+      prisma.terminal.findUnique.mockResolvedValue({ ...baseTerminal, is_active: false });
+
+      await expect(service.issueToken('POP_INJ_01')).rejects.toThrow(UnauthorizedException);
+      expect(prisma.terminal.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('resolvePrincipal', () => {
@@ -127,7 +165,7 @@ describe('TerminalAuthService', () => {
         ],
       });
 
-      const principal = await service.resolvePrincipal(5n);
+      const principal = await service.resolvePrincipal(5n, 1);
 
       expect(principal.processes).toEqual([
         {
@@ -146,7 +184,32 @@ describe('TerminalAuthService', () => {
         terminal_process: [],
       });
 
-      await expect(service.resolvePrincipal(5n)).rejects.toThrow(UnauthorizedException);
+      await expect(service.resolvePrincipal(5n, 1)).rejects.toThrow(UnauthorizedException);
+    });
+
+    // 재발급으로 세대가 2로 올라간 뒤, 세대 1로 서명된 구 토큰이 오는 상황.
+    it('구 세대 토큰은 거부한다', async () => {
+      prisma.terminal.findUnique.mockResolvedValue({
+        ...baseTerminal,
+        token_version: 2,
+        terminal_process: [],
+      });
+
+      await expect(service.resolvePrincipal(5n, 1)).rejects.toThrow(
+        '재발급으로 폐기된 토큰입니다. 단말에 최신 토큰을 다시 주입하십시오.',
+      );
+    });
+
+    it('현 세대 토큰은 통과한다', async () => {
+      prisma.terminal.findUnique.mockResolvedValue({
+        ...baseTerminal,
+        token_version: 2,
+        terminal_process: [],
+      });
+
+      await expect(service.resolvePrincipal(5n, 2)).resolves.toMatchObject({
+        terminalCode: 'POP_INJ_01',
+      });
     });
   });
 

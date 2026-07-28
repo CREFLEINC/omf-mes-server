@@ -16,6 +16,7 @@ const baseTerminal: terminal = {
   terminal_type_code: 'POP',
   status_code: 'NORMAL',
   is_active: true,
+  token_version: 1,
   created_at: new Date(),
   created_by: null,
   updated_at: new Date(),

@@ -1983,6 +1983,7 @@ model terminal {
   updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by           BigInt?
   version_no           Int                    @default(1)
+  token_version        Int                    @default(1)
   document_issue_log   document_issue_log[]
   audit_event          audit_event[]
   location             location?              @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)

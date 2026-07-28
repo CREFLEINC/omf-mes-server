@@ -44,6 +44,8 @@ export interface TerminalTokenResult {
   accessToken: string;
   expiresInSeconds: number;
   terminalCode: string;
+  /** 이 발급으로 올라간 세대. 이전 세대 토큰은 이 시점부터 거부된다. */
+  tokenVersion: number;
 }
 
 /** 사람 토큰과 구분하는 클레임. 이 값이 없으면 사람 토큰으로 본다(기존 토큰 호환). */
@@ -74,7 +76,10 @@ export class TerminalAuthService {
    * 사람 토큰(8시간)과 달리 장기다. 현장에서 토큰이 만료되면 작업이 멈추고 그걸 푸는
    * 방법이 결국 '누군가 로그인'이라 REQ-PR-0023으로 되돌아가기 때문이다. 오프라인
    * 구간(결정 17)을 넘겨 outbox를 전송할 때도 살아 있어야 한다.
-   * 통제는 만료가 아니라 폐기로 한다 — terminal.is_active=false 또는 status_code 전이.
+   *
+   * **재발급이 곧 이전 토큰 전부의 폐기다** — token_version을 올려 구 세대를 끊는다.
+   * is_active만으로는 폐기가 되지 않는다. 스위치라서 단말을 다시 켜면 유출된 토큰도
+   * 함께 되살아난다.
    */
   async issueToken(terminalCode: string): Promise<TerminalTokenResult> {
     const found = await this.prisma.terminal.findUnique({
@@ -85,20 +90,31 @@ export class TerminalAuthService {
     }
     this.assertUsable(found);
 
+    const issued = await this.prisma.terminal.update({
+      where: { terminal_id: found.terminal_id },
+      data: { token_version: { increment: 1 } },
+    });
+
     const days = this.config.get<number>('TERMINAL_TOKEN_EXPIRES_IN_DAYS', DEFAULT_TOKEN_DAYS);
     const expiresInSeconds = days * 24 * 60 * 60;
 
     const accessToken = await this.jwt.signAsync(
       {
-        sub: found.terminal_id.toString(),
+        sub: issued.terminal_id.toString(),
         kind: TERMINAL_TOKEN_KIND,
-        terminalCode: found.terminal_code,
-        plantId: found.plant_id.toString(),
+        tv: issued.token_version,
+        terminalCode: issued.terminal_code,
+        plantId: issued.plant_id.toString(),
       },
       { expiresIn: expiresInSeconds },
     );
 
-    return { accessToken, expiresInSeconds, terminalCode: found.terminal_code };
+    return {
+      accessToken,
+      expiresInSeconds,
+      terminalCode: issued.terminal_code,
+      tokenVersion: issued.token_version,
+    };
   }
 
   /**
@@ -107,7 +123,7 @@ export class TerminalAuthService {
    * 캐시를 두면 조회는 줄지만 폐기 반영이 늦어진다. 분실 단말을 즉시 끊는 쪽이
    * 지금 단계에서 더 중요해 캐시 없이 간다 — 부하가 문제가 되면 그때 넣는다.
    */
-  async resolvePrincipal(terminalId: bigint): Promise<TerminalPrincipal> {
+  async resolvePrincipal(terminalId: bigint, tokenVersion: number): Promise<TerminalPrincipal> {
     const found = await this.prisma.terminal.findUnique({
       where: { terminal_id: terminalId },
       include: {
@@ -120,6 +136,12 @@ export class TerminalAuthService {
       throw new UnauthorizedException('등록되지 않은 단말입니다.');
     }
     this.assertUsable(found);
+
+    if (tokenVersion !== found.token_version) {
+      throw new UnauthorizedException(
+        '재발급으로 폐기된 토큰입니다. 단말에 최신 토큰을 다시 주입하십시오.',
+      );
+    }
 
     return {
       terminalId: found.terminal_id,
