@@ -31,6 +31,18 @@ export function createStamp(actor?: bigint) {
   return { created_by: actor, updated_by: actor };
 }
 
+/**
+ * 부분 수정 DTO를 기존 값 위에 덮는다. 보내지 않은 필드는 undefined로 들어오는데,
+ * 그대로 스프레드하면 기존 값을 지워 버려 교차 필드 검증이 헛돈다.
+ */
+export function mergeDefined<T extends object>(base: T, patch: Record<string, unknown>): T {
+  const merged: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged as T;
+}
+
 export function orFail<T>(entity: T | null, label: string): T {
   if (!entity) throw new NotFoundException(`${label}을(를) 찾을 수 없습니다.`);
   return entity;

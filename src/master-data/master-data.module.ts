@@ -13,6 +13,12 @@ import {
 } from './equipment/equipment.controller';
 import { EquipmentService } from './equipment/equipment.service';
 import { ProductionLineService } from './equipment/production-line.service';
+import {
+  InspectionItemSpecController,
+  InspectionPlanController,
+  InspectionPlanVersionController,
+} from './inspection/inspection-plan.controller';
+import { InspectionPlanService } from './inspection/inspection-plan.service';
 import { ItemController } from './item/item.controller';
 import { MoldController } from './mold/mold.controller';
 import { MoldService } from './mold/mold.service';
@@ -75,6 +81,9 @@ import { WarehouseService } from './warehouse/warehouse.service';
     RoutingOperationController,
     BomController,
     BomComponentController,
+    InspectionPlanController,
+    InspectionPlanVersionController,
+    InspectionItemSpecController,
   ],
   providers: [
     CodeValidatorService,
@@ -93,6 +102,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     WarehouseService,
     RoutingService,
     BomService,
+    InspectionPlanService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
