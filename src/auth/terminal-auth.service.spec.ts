@@ -46,6 +46,7 @@ describe('TerminalAuthService', () => {
     terminal: Record<string, jest.Mock>;
     terminal_process: Record<string, jest.Mock>;
     worker: Record<string, jest.Mock>;
+    worker_qualification: Record<string, jest.Mock>;
   };
   const jwt = { signAsync: jest.fn() };
   const config = { get: jest.fn() };
@@ -57,6 +58,7 @@ describe('TerminalAuthService', () => {
       terminal: { findUnique: jest.fn(), update: jest.fn() },
       terminal_process: { findFirst: jest.fn() },
       worker: { findUnique: jest.fn() },
+      worker_qualification: { findMany: jest.fn() },
     };
     // 발급은 세대를 올린 뒤 그 값으로 서명한다.
     prisma.terminal.update.mockImplementation(
@@ -272,6 +274,52 @@ describe('TerminalAuthService', () => {
       await expect(
         service.assertCapability(5n, 'MOLDING', 'can_input_result'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('findValidQualifications', () => {
+    it('기준일에 유효한 것만 본다', async () => {
+      prisma.worker_qualification.findMany.mockResolvedValue([]);
+      const on = new Date('2026-06-01');
+
+      await service.findValidQualifications(30n, on);
+
+      expect(prisma.worker_qualification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            worker_id: 30n,
+            valid_from: { lte: on },
+            OR: [{ valid_to: null }, { valid_to: { gte: on } }],
+          },
+        }),
+      );
+    });
+
+    it('공정 무관 자격은 processCode가 null이다', async () => {
+      prisma.worker_qualification.findMany.mockResolvedValue([
+        { qualification_type_code: 'INSPECTOR', process: null, valid_to: null },
+        {
+          qualification_type_code: 'PROCESS_OPERATION',
+          process: { process_code: 'MOLDING' },
+          valid_to: new Date('2027-01-01'),
+        },
+      ]);
+
+      await expect(service.findValidQualifications(30n)).resolves.toEqual([
+        { qualificationTypeCode: 'INSPECTOR', processCode: null, validTo: null },
+        {
+          qualificationTypeCode: 'PROCESS_OPERATION',
+          processCode: 'MOLDING',
+          validTo: new Date('2027-01-01'),
+        },
+      ]);
+    });
+
+    // 강제 수준은 운영정책이 정한다 — 여기서는 사실만 돌려준다.
+    it('자격이 없어도 예외를 던지지 않는다', async () => {
+      prisma.worker_qualification.findMany.mockResolvedValue([]);
+
+      await expect(service.findValidQualifications(30n)).resolves.toEqual([]);
     });
   });
 });

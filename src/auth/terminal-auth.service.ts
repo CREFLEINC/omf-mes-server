@@ -33,6 +33,14 @@ export interface TerminalProcessCapability {
   capabilities: TerminalCapability[];
 }
 
+export interface WorkerQualification {
+  qualificationTypeCode: string;
+  /** 공정 무관 자격이면 null. */
+  processCode: string | null;
+  /** 만료 없음이면 null. */
+  validTo: Date | null;
+}
+
 export interface TerminalPrincipal {
   terminalId: bigint;
   terminalCode: string;
@@ -169,6 +177,32 @@ export class TerminalAuthService {
       throw new ForbiddenException(`재직 중이 아닌 사번입니다: ${workerNo}`);
     }
     return found;
+  }
+
+  /**
+   * 기준일에 유효한 작업자 자격.
+   *
+   * **판정하지 않고 사실만 돌려준다.** 자격 없는 작업을 막을지는 운영정책
+   * `WORKER_QUALIFICATION_ENFORCEMENT`(BLOCK|WARN|OFF)가 정하고, 그 강제는 「작업 시작」·
+   * 「검사결과 입력」 같은 행위 시점의 일이다 — 단말 컨텍스트 조회를 막으면 자격 하나 없다고
+   * 화면 전체가 닫힌다.
+   */
+  async findValidQualifications(workerId: bigint, on: Date = new Date()): Promise<WorkerQualification[]> {
+    const rows = await this.prisma.worker_qualification.findMany({
+      where: {
+        worker_id: workerId,
+        valid_from: { lte: on },
+        OR: [{ valid_to: null }, { valid_to: { gte: on } }],
+      },
+      include: { process: { select: { process_code: true } } },
+      orderBy: { valid_from: 'desc' },
+    });
+
+    return rows.map((row) => ({
+      qualificationTypeCode: row.qualification_type_code,
+      processCode: row.process?.process_code ?? null,
+      validTo: row.valid_to,
+    }));
   }
 
   /**

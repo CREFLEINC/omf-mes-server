@@ -350,6 +350,22 @@ const SEED = [
     ],
   },
   {
+    // OPERATION_POLICY 14종은 baseline 마이그레이션이 시드한다. 여기서는 그 뒤에 생긴
+    // 정책코드만 더한다(값 upsert라 기존 14종은 건드리지 않는다).
+    //
+    // 자격 검증을 처음부터 강제하면 worker_qualification이 비어 있어 전원이 무자격이 되고
+    // 현장이 선다. 점검 통제(QA #9)와 같은 3단계 설정형으로 두고 기본은 끈다.
+    groupCode: 'OPERATION_POLICY',
+    groupName: '운영정책 코드',
+    values: [
+      {
+        code: 'WORKER_QUALIFICATION_ENFORCEMENT',
+        codeName: '작업자 자격 검증 수준(BLOCK|WARN|OFF)',
+        order: 150,
+      },
+    ],
+  },
+  {
     groupCode: 'CALIBRATION_RESULT',
     groupName: '검교정 결과',
     values: [

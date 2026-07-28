@@ -31,6 +31,11 @@ export class PopController {
   @ApiResponse({ status: 403, description: '등록되지 않았거나 재직 중이 아닌 사번' })
   async context(@CurrentTerminal() terminal: TerminalPrincipal, @WorkerNo() workerNo?: string) {
     const worker = workerNo ? await this.terminals.resolveWorker(workerNo) : null;
+    // 자격은 사실만 싣는다 — 없다고 막지 않는다. 강제 수준은 운영정책이 정하고,
+    // 적용 시점은 「작업 시작」·「검사결과 입력」이다(설계검토 §6-④).
+    const qualifications = worker
+      ? await this.terminals.findValidQualifications(worker.worker_id)
+      : null;
 
     return {
       terminal: {
@@ -41,6 +46,7 @@ export class PopController {
       worker: worker && {
         workerNo: worker.worker_no,
         workerName: worker.worker_name,
+        qualifications,
       },
     };
   }
