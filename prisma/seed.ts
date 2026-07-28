@@ -441,6 +441,41 @@ const SEED = [
       { code: 'END', codeName: '작업 종료', order: 40 },
     ],
   },
+  {
+    // production_result.result_source_code — 실적이 어디서 들어왔나.
+    // 지금 쓰는 건 POP뿐이다. 설비 자동수집·관리 화면 수기는 자리만 잡아 둔다.
+    groupCode: 'RESULT_SOURCE',
+    groupName: '실적 입력 원천',
+    values: [
+      { code: 'POP', codeName: '현장 단말 입력', order: 10 },
+      { code: 'EQUIPMENT', codeName: '설비 자동수집', order: 20 },
+      { code: 'MANUAL', codeName: '관리 화면 수기', order: 30 },
+    ],
+  },
+  {
+    // production_result.status_code — 정정·취소(FR-PR-033/034/045)가 이 상태에서 갈린다.
+    groupCode: 'PRODUCTION_RESULT_STATUS',
+    groupName: '생산실적 상태',
+    values: [
+      { code: 'CONFIRMED', codeName: '확정', order: 10 },
+      { code: 'CORRECTED', codeName: '정정됨', order: 20 },
+      { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+];
+
+/**
+ * 기본 채번규칙 — 공장을 가리지 않는 전역 규칙(plant_id=null)이다.
+ *
+ * 공장별로 다른 번호 체계가 필요해지면 관리 화면에서 공장 지정 규칙을 더한다.
+ * 발번기가 「지정된 축이 많을수록 이긴다」로 고르므로 전역 규칙은 그대로 둬도 된다.
+ */
+const NUMBERING_RULES = [
+  {
+    documentTypeCode: 'PRODUCTION_RESULT',
+    pattern: 'PR-{YYMMDD}-{SEQ4}',
+    resetCycleCode: 'DAILY',
+  },
 ];
 
 /**
@@ -543,8 +578,43 @@ async function main(): Promise<void> {
     console.log(`seeded ${group.groupCode} (${group.values.length} values)`);
   }
 
+  await seedNumberingRules();
   await seedRoles();
   await seedAdmin();
+}
+
+/**
+ * 전역 채번규칙. numbering_rule에는 유니크 제약이 없어 upsert를 쓸 수 없으므로
+ * (문서유형 × 전역) 조합을 직접 찾아 없을 때만 만든다 — 시드를 다시 돌려도 늘지 않는다.
+ */
+async function seedNumberingRules(): Promise<void> {
+  for (const rule of NUMBERING_RULES) {
+    const existing = await prisma.numbering_rule.findFirst({
+      where: {
+        document_type_code: rule.documentTypeCode,
+        plant_id: null,
+        lot_type_code: null,
+      },
+    });
+
+    if (existing) {
+      await prisma.numbering_rule.update({
+        where: { numbering_rule_id: existing.numbering_rule_id },
+        data: { pattern: rule.pattern, reset_cycle_code: rule.resetCycleCode, is_active: true },
+      });
+    } else {
+      await prisma.numbering_rule.create({
+        data: {
+          document_type_code: rule.documentTypeCode,
+          pattern: rule.pattern,
+          reset_cycle_code: rule.resetCycleCode,
+        },
+      });
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`seeded 채번규칙 ${rule.documentTypeCode} (${rule.pattern})`);
+  }
 }
 
 /**

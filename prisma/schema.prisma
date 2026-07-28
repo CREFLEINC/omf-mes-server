@@ -2762,6 +2762,7 @@ model work_session {
   ended_at             DateTime?              @db.Timestamptz(6)
   status_code          String                 @db.VarChar(50)
   stop_reason_code     String?                @db.VarChar(50)
+  idempotency_key      String                 @unique(map: "uq_work_session_idempotency_key") @db.VarChar(150)
   remarks              String?
   created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by           BigInt?

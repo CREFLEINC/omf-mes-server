@@ -8,6 +8,10 @@ import {
   WORKER_NO_HEADER,
 } from '../auth/terminal-auth.decorators';
 import { TerminalPrincipal } from '../auth/terminal-auth.service';
+import {
+  IdempotencyKey,
+  IDEMPOTENCY_KEY_HEADER,
+} from '../common/idempotency/idempotency.decorators';
 import { PopWorkOrderQueryDto, StartWorkDto } from './work-start.dto';
 import { WorkStartService } from './work-start.service';
 
@@ -51,16 +55,28 @@ export class WorkStartController {
     description: '작업자 사번 — 실적 귀속 대상',
     example: 'EMP-1043',
   })
-  @ApiResponse({ status: 400, description: '사번 헤더 없음 · 근무조 미결정 · 필수 설비/금형 미지정' })
+  @ApiHeader({
+    name: IDEMPOTENCY_KEY_HEADER,
+    required: true,
+    description:
+      '재전송 식별자(클라이언트 UUID). 같은 키로 다시 보내면 새 세션을 만들지 않고 처음 연 ' +
+      '세션을 그대로 돌려준다(응답의 replayed=true). 오프라인 구간 재전송에 필요하다.',
+    example: '9f1c0f6e-6a2b-4a5e-9c3d-0b1f2a3d4e5f',
+  })
+  @ApiResponse({
+    status: 400,
+    description: '사번·멱등 키 헤더 없음 · 근무조 미결정 · 필수 설비/금형 미지정',
+  })
   @ApiResponse({ status: 403, description: '다른 공장·미허용 공정 · 배포되지 않은 상태 · 자격 미달(BLOCK)' })
   @ApiResponse({ status: 404, description: '작업지시·근무조·설비·금형 없음' })
-  @ApiResponse({ status: 409, description: '이미 진행 중인 작업' })
+  @ApiResponse({ status: 409, description: '이미 진행 중인 작업 · 다른 요청에 쓰인 멱등 키' })
   start(
     @CurrentTerminal() terminal: TerminalPrincipal,
     @WorkerNo() workerNo: string | undefined,
     @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() dto: StartWorkDto,
   ) {
-    return this.service.start(terminal, workerNo, BigInt(workOrderId), dto);
+    return this.service.start(terminal, workerNo, BigInt(workOrderId), idempotencyKey, dto);
   }
 }

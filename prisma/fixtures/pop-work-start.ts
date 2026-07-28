@@ -265,6 +265,10 @@ export async function resetPopWorkStartState(prisma: PrismaClient): Promise<void
 
   if (ids.length > 0) {
     await prisma.$transaction([
+      // 실적이 세션을 참조하므로 먼저 지운다 — 순서가 뒤바뀌면 FK가 막는다.
+      prisma.production_result.deleteMany({
+        where: { work_order: { work_order_no: WORK_ORDER_NO } },
+      }),
       prisma.work_session_event.deleteMany({ where: { work_session_id: { in: ids } } }),
       prisma.work_session_worker.deleteMany({ where: { work_session_id: { in: ids } } }),
       prisma.work_session.deleteMany({ where: { work_session_id: { in: ids } } }),

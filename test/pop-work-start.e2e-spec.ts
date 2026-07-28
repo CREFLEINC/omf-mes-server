@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -13,6 +15,7 @@ import {
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { WORKER_NO_HEADER } from '../src/auth/terminal-auth.decorators';
+import { IDEMPOTENCY_KEY_HEADER } from '../src/common/idempotency/idempotency.decorators';
 import { TerminalAuthService } from '../src/auth/terminal-auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -55,10 +58,12 @@ describe('POP 작업 시작 (e2e)', () => {
 
   const asTerminal = () => request(app.getHttpServer()).get(WORK_ORDERS).auth(token, { type: 'bearer' });
 
-  const startRequest = () =>
+  // 재전송 검증 외에는 매번 새 키를 쓴다 — 실제 클라이언트가 요청마다 UUID를 만드는 것과 같다.
+  const startRequest = (idempotencyKey: string = randomUUID()) =>
     request(app.getHttpServer())
       .post(`${WORK_ORDERS}/${fixture.workOrderId}/start`)
-      .auth(token, { type: 'bearer' });
+      .auth(token, { type: 'bearer' })
+      .set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
 
   describe('인증', () => {
     it('토큰 없이는 401', async () => {
@@ -163,9 +168,24 @@ describe('POP 작업 시작 (e2e)', () => {
       await request(app.getHttpServer())
         .post(`${WORK_ORDERS}/99999999/start`)
         .auth(token, { type: 'bearer' })
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .set(WORKER_NO_HEADER, WORKER_NO)
         .send({})
         .expect(404);
+    });
+
+    it('멱등 키 헤더가 없으면 400이고 세션을 만들지 않는다', async () => {
+      await request(app.getHttpServer())
+        .post(`${WORK_ORDERS}/${fixture.workOrderId}/start`)
+        .auth(token, { type: 'bearer' })
+        .set(WORKER_NO_HEADER, WORKER_NO)
+        .send({})
+        .expect(400);
+
+      const sessions = await prisma.work_session.count({
+        where: { work_order_id: fixture.workOrderId },
+      });
+      expect(sessions).toBe(0);
     });
 
     it('없는 근무조를 지정하면 404', async () => {
@@ -182,6 +202,38 @@ describe('POP 작업 시작 (e2e)', () => {
       });
 
       await startRequest().set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(403);
+    });
+  });
+
+  /**
+   * 오프라인 버퍼링(결정 17) 때문에 재전송이 실제로 일어난다. 재전송이 새 세션을 열면
+   * 한 작업지시에 세션이 둘 생기고, 그 뒤 실적이 어디 붙었느냐로 집계가 갈린다.
+   */
+  describe('멱등 재전송 — Idempotency-Key', () => {
+    it('같은 키로 다시 보내면 처음 연 세션을 그대로 돌려준다', async () => {
+      const key = randomUUID();
+
+      const first = await startRequest(key).set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(201);
+      const retry = await startRequest(key).set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(201);
+
+      expect(first.body.replayed).toBe(false);
+      expect(retry.body.replayed).toBe(true);
+      expect(retry.body.workSessionId).toBe(first.body.workSessionId);
+
+      const sessions = await prisma.work_session.count({
+        where: { work_order_id: fixture.workOrderId },
+      });
+      expect(sessions).toBe(1);
+    });
+
+    // 오프라인에서 돌아온 단말은 자기 요청이 반영됐는지 모른 채 재전송한다.
+    it('재전송은 「이미 진행 중」 409로 떨어지지 않는다', async () => {
+      const key = randomUUID();
+      await startRequest(key).set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(201);
+
+      // 다른 키로 보내면 중복 시작이라 409, 같은 키면 멱등이라 201.
+      await startRequest().set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(409);
+      await startRequest(key).set(WORKER_NO_HEADER, WORKER_NO).send({}).expect(201);
     });
   });
 

@@ -38,6 +38,7 @@ import { ProcessController } from './process/process.controller';
 import { ProcessService } from './process/process.service';
 import { NumberingRuleController } from './numbering/numbering-rule.controller';
 import { NumberingRuleService } from './numbering/numbering-rule.service';
+import { NumberingService } from './numbering/numbering.service';
 import { OperationPolicyController } from './operation-policy/operation-policy.controller';
 import { OperationPolicyService } from './operation-policy/operation-policy.service';
 import { PartnerService } from './partner/partner.service';
@@ -129,6 +130,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     CauseCodeService,
     OperationPolicyService,
     NumberingRuleService,
+    NumberingService,
     ApprovalRouteService,
     PutawayRuleService,
   ],
@@ -136,8 +138,9 @@ import { WarehouseService } from './warehouse/warehouse.service';
     OrganizationService,
     DepartmentService,
     CodeValidatorService,
-    // POP이 작업 시작 시 자격 강제 수준을 묻는다.
+    // POP이 작업 시작 시 자격 강제 수준을 묻고, 실적 등록 시 번호를 받아 간다.
     OperationPolicyService,
+    NumberingService,
   ],
 })
 export class MasterDataModule {}

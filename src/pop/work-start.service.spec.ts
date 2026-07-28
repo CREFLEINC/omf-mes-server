@@ -106,6 +106,8 @@ describe('WorkStartService', () => {
       work_order: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
       work_session: {
         findFirst: jest.fn().mockResolvedValue(null),
+        // 멱등 재전송 조회 — 기본은 「처음 보는 키」다.
+        findUnique: jest.fn().mockResolvedValue(null),
         aggregate: jest.fn().mockResolvedValue({ _max: { session_no: null } }),
       },
       shift: { findFirst: jest.fn() },
@@ -184,7 +186,9 @@ describe('WorkStartService', () => {
   });
 
   describe('start', () => {
-    const start = (dto: StartWorkDto = {}) => service.start(terminal, 'EMP-1043', 11n, dto);
+    const IDEMPOTENCY_KEY = 'req-0001';
+    const start = (dto: StartWorkDto = {}) =>
+      service.start(terminal, 'EMP-1043', 11n, IDEMPOTENCY_KEY, dto);
 
     it('세션·작업자 귀속·시작 이벤트를 함께 만든다', async () => {
       const result = await start();
@@ -237,9 +241,72 @@ describe('WorkStartService', () => {
     });
 
     it('사번 헤더가 없으면 400', async () => {
-      await expect(service.start(terminal, undefined, 11n, {})).rejects.toThrow(
+      await expect(service.start(terminal, undefined, 11n, IDEMPOTENCY_KEY, {})).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    describe('멱등 재전송', () => {
+      const replayedSession = {
+        work_session_id: 100n,
+        work_order_id: 11n,
+        session_no: 1,
+        started_at: new Date('2026-07-28T01:00:00Z'),
+        status_code: 'OPEN',
+        work_order: workOrderWith({ status_code: 'IN_PROGRESS' }),
+        shift: dayShift,
+        equipment: null,
+        mold: null,
+        work_session_worker: [{ left_at: null, worker }],
+      };
+
+      it('같은 키의 재전송은 처음 연 세션을 그대로 돌려준다', async () => {
+        prisma.work_session.findUnique.mockResolvedValue(replayedSession);
+
+        const result = await start();
+
+        expect(result.replayed).toBe(true);
+        expect(result.workSessionId).toBe(100n);
+        // 재전송이 새 세션을 만들면 한 작업지시에 세션이 둘 열린다.
+        expect(tx.work_session.create).not.toHaveBeenCalled();
+      });
+
+      // 오프라인에서 돌아온 단말은 자기 요청이 반영됐는지 모른다 — 409로 답하면 실패로 읽는다.
+      it('재전송은 「이미 진행 중」 409보다 먼저 판정한다', async () => {
+        prisma.work_session.findUnique.mockResolvedValue(replayedSession);
+        prisma.work_session.findFirst.mockResolvedValue({ work_session_id: 100n });
+
+        const result = await start();
+
+        expect(result.replayed).toBe(true);
+      });
+
+      it('다른 작업지시에 쓰인 키면 409', async () => {
+        prisma.work_session.findUnique.mockResolvedValue({
+          ...replayedSession,
+          work_order_id: 99n,
+        });
+
+        await expect(start()).rejects.toThrow(ConflictException);
+      });
+
+      it('경합으로 진 요청은 이긴 쪽의 세션을 돌려준다', async () => {
+        tx.work_session.create.mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError('duplicate', {
+            code: 'P2002',
+            clientVersion: 'test',
+            meta: { target: ['idempotency_key'] },
+          }),
+        );
+        prisma.work_session.findUnique
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(replayedSession);
+
+        const result = await start();
+
+        expect(result.replayed).toBe(true);
+        expect(result.workSessionId).toBe(100n);
+      });
     });
 
     it('이미 진행 중이면 409', async () => {

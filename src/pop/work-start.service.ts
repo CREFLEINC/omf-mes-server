@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import {
   equipment as equipmentModel,
   mold as moldModel,
@@ -10,6 +15,7 @@ import {
 import { WORKER_NO_HEADER } from '../auth/terminal-auth.decorators';
 import { TerminalAuthService, TerminalPrincipal } from '../auth/terminal-auth.service';
 import { PageDto } from '../common/dto/page.dto';
+import { isDuplicateIdempotencyKey } from '../common/idempotency/idempotency.util';
 import { orConflict, orFail } from '../master-data/common/master-crud';
 import { OperationPolicyService } from '../master-data/operation-policy/operation-policy.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -147,6 +153,7 @@ export class WorkStartService {
     terminal: TerminalPrincipal,
     workerNo: string | undefined,
     workOrderId: bigint,
+    idempotencyKey: string,
     dto: StartWorkDto,
   ) {
     if (!workerNo) {
@@ -154,6 +161,12 @@ export class WorkStartService {
         `작업자 사번이 필요합니다. ${WORKER_NO_HEADER} 헤더로 보내십시오.`,
       );
     }
+
+    // 재전송이 「이미 진행 중」 409보다 먼저다. 오프라인에서 돌아온 단말은 자기 요청이
+    // 반영됐는지 모른 채 재전송하는데, 409로 답하면 그걸 실패로 읽는다.
+    const replayed = await this.findReplay(idempotencyKey, workOrderId);
+    if (replayed) return replayed;
+
     const worker = await this.terminals.resolveWorker(workerNo);
     const workOrder = await this.getStartable(workOrderId, terminal);
     const processCode = workOrder.routing_operation.process.process_code;
@@ -178,62 +191,120 @@ export class WorkStartService {
     const startedAt = new Date();
     const sessionNo = await this.nextSessionNo(workOrder.work_order_id);
 
-    const session = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.work_session.create({
-        data: {
-          work_order_id: workOrder.work_order_id,
-          session_no: sessionNo,
-          shift_id: shift.shift_id,
-          equipment_id: equipment?.equipment_id ?? null,
-          mold_id: mold?.mold_id ?? null,
-          terminal_id: terminal.terminalId,
-          started_at: startedAt,
-          status_code: OPEN_SESSION_STATUS,
-          remarks: dto.remarks ?? null,
-        },
-      });
-
-      await tx.work_session_worker.create({
-        data: {
-          work_session_id: created.work_session_id,
-          worker_id: worker.worker_id,
-          worker_role_code: OPERATOR_ROLE,
-          joined_at: startedAt,
-        },
-      });
-
-      // performed_by는 app_user를 가리킨다 — 단말에는 사람 계정이 없어 비운다.
-      // 누가 시작했는지는 work_session_worker가 갖는다.
-      await tx.work_session_event.create({
-        data: {
-          work_session_id: created.work_session_id,
-          event_type_code: SESSION_START_EVENT,
-          occurred_at: startedAt,
-          terminal_id: terminal.terminalId,
-        },
-      });
-
-      if (workOrder.status_code === RELEASED) {
-        await tx.work_order.update({
-          where: { work_order_id: workOrder.work_order_id },
-          data: { status_code: IN_PROGRESS, version_no: { increment: 1 } },
+    try {
+      const session = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.work_session.create({
+          data: {
+            work_order_id: workOrder.work_order_id,
+            session_no: sessionNo,
+            shift_id: shift.shift_id,
+            equipment_id: equipment?.equipment_id ?? null,
+            mold_id: mold?.mold_id ?? null,
+            terminal_id: terminal.terminalId,
+            started_at: startedAt,
+            status_code: OPEN_SESSION_STATUS,
+            idempotency_key: idempotencyKey,
+            remarks: dto.remarks ?? null,
+          },
         });
-      }
 
-      return created;
+        await tx.work_session_worker.create({
+          data: {
+            work_session_id: created.work_session_id,
+            worker_id: worker.worker_id,
+            worker_role_code: OPERATOR_ROLE,
+            joined_at: startedAt,
+          },
+        });
+
+        // performed_by는 app_user를 가리킨다 — 단말에는 사람 계정이 없어 비운다.
+        // 누가 시작했는지는 work_session_worker가 갖는다.
+        await tx.work_session_event.create({
+          data: {
+            work_session_id: created.work_session_id,
+            event_type_code: SESSION_START_EVENT,
+            occurred_at: startedAt,
+            terminal_id: terminal.terminalId,
+          },
+        });
+
+        if (workOrder.status_code === RELEASED) {
+          await tx.work_order.update({
+            where: { work_order_id: workOrder.work_order_id },
+            data: { status_code: IN_PROGRESS, version_no: { increment: 1 } },
+          });
+        }
+
+        return created;
+      });
+
+      return {
+        workSessionId: session.work_session_id,
+        sessionNo: session.session_no,
+        startedAt: session.started_at,
+        statusCode: session.status_code,
+        workOrder: { ...toSummary(workOrder), statusCode: IN_PROGRESS },
+        worker: { workerNo: worker.worker_no, workerName: worker.worker_name },
+        shift: { shiftCode: shift.shift_code, shiftName: shift.shift_name },
+        equipment: equipment && { equipmentCode: equipment.equipment_code },
+        mold: mold && { moldCode: mold.mold_code },
+        warnings,
+        replayed: false,
+      };
+    } catch (error) {
+      // 같은 키의 요청 둘이 동시에 들어오면 둘 다 선제 조회를 통과한다 — 진 쪽이 여기다.
+      if (isDuplicateIdempotencyKey(error)) {
+        const winner = await this.findReplay(idempotencyKey, workOrder.work_order_id);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 같은 키로 이미 연 세션. **다른 작업지시의 것이면 거부한다** — 클라이언트가 키를
+   * 재사용한 것이라, 남의 세션을 돌려주면 「시작됐다」는 거짓 응답이 된다.
+   *
+   * 자격 경고(warnings)는 처음 응답에만 실린다 — 판정 시점의 사실이라 재구성하지 않는다.
+   */
+  private async findReplay(idempotencyKey: string, workOrderId: bigint) {
+    const session = await this.prisma.work_session.findUnique({
+      where: { idempotency_key: idempotencyKey },
+      include: {
+        work_order: { include: WORK_ORDER_DETAIL },
+        shift: true,
+        equipment: true,
+        mold: true,
+        work_session_worker: { include: { worker: true } },
+      },
     });
+    if (!session) return null;
+
+    if (session.work_order_id !== workOrderId) {
+      throw new ConflictException(
+        '다른 요청에 이미 사용된 Idempotency-Key입니다. 요청마다 새 키를 생성하십시오.',
+      );
+    }
+
+    const joined = session.work_session_worker.find((row) => row.left_at === null);
+    const worker = (joined ?? session.work_session_worker[0]).worker;
+    const warnings: string[] = [];
 
     return {
       workSessionId: session.work_session_id,
       sessionNo: session.session_no,
       startedAt: session.started_at,
       statusCode: session.status_code,
-      workOrder: { ...toSummary(workOrder), statusCode: IN_PROGRESS },
+      workOrder: {
+        ...toSummary(session.work_order),
+        statusCode: session.work_order.status_code,
+      },
       worker: { workerNo: worker.worker_no, workerName: worker.worker_name },
-      shift: { shiftCode: shift.shift_code, shiftName: shift.shift_name },
-      equipment: equipment && { equipmentCode: equipment.equipment_code },
-      mold: mold && { moldCode: mold.mold_code },
+      shift: { shiftCode: session.shift.shift_code, shiftName: session.shift.shift_name },
+      equipment: session.equipment && { equipmentCode: session.equipment.equipment_code },
+      mold: session.mold && { moldCode: session.mold.mold_code },
       warnings,
+      replayed: true,
     };
   }
 
