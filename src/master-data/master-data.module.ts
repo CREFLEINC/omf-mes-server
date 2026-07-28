@@ -1,5 +1,10 @@
 import { Module } from '@nestjs/common';
 
+import {
+  BomComponentController,
+  BomController,
+} from './bom/bom.controller';
+import { BomService } from './bom/bom.service';
 import { CodeValidatorService } from './common-code/code-validator.service';
 import { CommonCodeModule } from './common-code/common-code.module';
 import {
@@ -68,6 +73,8 @@ import { WarehouseService } from './warehouse/warehouse.service';
     LocationController,
     RoutingController,
     RoutingOperationController,
+    BomController,
+    BomComponentController,
   ],
   providers: [
     CodeValidatorService,
@@ -85,6 +92,7 @@ import { WarehouseService } from './warehouse/warehouse.service';
     OrganizationService,
     WarehouseService,
     RoutingService,
+    BomService,
   ],
   exports: [OrganizationService, DepartmentService, CodeValidatorService],
 })
