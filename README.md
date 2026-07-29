@@ -14,20 +14,62 @@
 
 ## 실행
 
+처음이라면 아래를 위에서부터 그대로 따라 하면 된다. **마지막 `pnpm run postman`이 통과하면
+환경이 다 선 것이다** — 서버가 뜬 것에 그치지 않고, 현장 흐름(사번 입력 → 작업지시 선택 →
+작업 시작 → 실적 등록)이 실제로 도는 것까지 확인된다.
+
 ```bash
-corepack enable            # package.json의 packageManager 버전 사용
-cp .env.example .env       # 기본값: DB=localhost:5432, API=3100
+git clone git@github.com:CREFLEINC/omf-mes.git
+cd omf-mes/apps/api
+
+corepack enable                   # package.json의 packageManager 버전 사용
+cp .env.example .env              # ① JWT_SECRET을 채운다: openssl rand -base64 48
 pnpm install
-docker compose up -d       # PostgreSQL 기동
-pnpm exec prisma migrate deploy
-pnpm run db:seed           # 초기 공통코드 + admin 계정 (초기 비밀번호가 1회 출력된다)
-pnpm run start:dev
+
+docker compose up -d              # PostgreSQL 기동
+pnpm exec prisma migrate deploy   # 스키마 적용
+pnpm run db:seed                  # 공통코드·채번규칙·역할 + admin 계정
+
+pnpm run fixtures:pop             # 배포된 W/O·단말·작업자 한 벌 (없으면 POP 화면이 빈다)
+pnpm run fixtures:postman-admin   # 검증용 계정 — 비밀번호를 1회 출력한다
+
+cp test/postman/local.postman_environment.example.json \
+   test/postman/local.postman_environment.json
+                                  # ② 위에서 출력된 비밀번호를 adminPassword에 넣는다
+
+pnpm run start:dev                # ③ 다른 터미널에서 — 서버는 띄워 둔 채로
+pnpm run postman                  # 21요청 · 58단언이 모두 통과하면 정상
 ```
+
+손이 가는 곳은 위 셋뿐이다.
+
+| | 무엇을 | 안 하면 |
+| --- | --- | --- |
+| ① | `.env`의 `JWT_SECRET` (32자 이상) | 서버가 기동하지 않는다 |
+| ② | 환경 파일의 `adminPassword` | `adminPassword가 비어 있습니다` 로 즉시 멈춘다 |
+| ③ | 서버를 띄운 채로 다음 명령 | `ECONNREFUSED` |
+
+> **3100을 이미 뭔가 쓰고 있으면** 서버가 조용히 죽고(`EADDRINUSE`) 요청이 엉뚱한 곳으로 간다 —
+> 앞서 띄워 둔 서버가 남아 있는 경우가 흔하다. `lsof -ti:3100`으로 확인하고 정리한다.
 
 - API: http://localhost:3100/api
 - Swagger: http://localhost:3100/api/docs
 
 > 포트 기본값이 3100인 이유: 로컬 3000은 Grafana 등이 점유하는 경우가 많다.
+> `PORT`를 바꾸면 Postman 환경 파일의 `baseUrl`도 함께 고쳐야 한다.
+
+> **두 번째 실행부터는** 시나리오가 남긴 상태를 되돌린다 — `pnpm run fixtures:pop:reset`.
+> 자세한 내용은 [시나리오 검증 (Postman)](#시나리오-검증-postman).
+
+문서가 길다. 필요한 곳으로 바로 간다:
+
+| 하려는 일 | 어디로 |
+| --- | --- |
+| 처음 세팅하고 동작까지 확인 | 위 명령 → [시나리오 검증 (Postman)](#시나리오-검증-postman) |
+| 어떤 API가 있는지 | [엔드포인트 — 기준정보](#엔드포인트--기준정보-마스터-mdm) · [POP 현장 단말](#엔드포인트--pop-현장-단말) |
+| 토큰이 어떻게 도는지 | [인증](#인증) |
+| 스키마를 고쳐야 할 때 | [스키마는 DB 우선](#스키마는-db-우선database-first이다) |
+| 테스트를 돌릴 때 | [검증](#검증) |
 
 ## 구조
 
@@ -173,6 +215,25 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down   # 볼륨�
 | ├ 유효 권한 | `GET /api/access/users/:u/permissions` (역할 경유 집계·중복 제거) |
 | └ 데이터 접근범위 | `/api/access/users/:u/data-scopes/:id` |
 
+## 엔드포인트 — POP 현장 단말
+
+생산실행(WF02) S5~S7. **사람 토큰이 아니라 단말 토큰으로 인증한다** — 사번(`X-Worker-No`)은
+인증이 아니라 실적 귀속 정보다(REQ-PR-0023).
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| GET | `/api/pop/context` | 단말 부팅 — 내 공정·허용 행위, 사번을 주면 자격까지 |
+| GET | `/api/pop/work-orders` | 시작 가능한 작업지시 목록 (배포됨 + 이 단말이 시작 가능한 공정) |
+| POST | `/api/pop/work-orders/:id/start` | 작업 시작 — 작업 세션을 연다 |
+| POST | `/api/pop/work-sessions/:id/results` | 생산실적 등록 (양품 수량) |
+
+- **쓰기에는 `Idempotency-Key` 헤더가 필수다**(결정서 §160). 같은 키로 다시 보내면 새로 만들지
+  않고 처음 만든 것을 돌려준다(응답 `replayed: true`) — 오프라인 구간 재전송용이다.
+- 4M(작업자·근무조·설비·금형)은 작업지시·세션에서 승계한다. 계획과 다를 때만 본문에 넣는다.
+- 자격 강제 수준은 운영정책 `WORKER_QUALIFICATION_ENFORCEMENT`(BLOCK·WARN·OFF)가 정한다.
+
+흐름 전체를 실제로 돌려 보려면 → [시나리오 검증 (Postman)](#시나리오-검증-postman)
+
 ## 인증
 
 **자체 비밀번호 인증**을 쓴다(2026-07-28 확정). 정본 물리 모델에는 자격증명 저장소가 없었고 —
@@ -283,8 +344,70 @@ SWC는 타입을 보지 않으므로 이 옵션을 끄면 타입 오류가 그�
 ```bash
 pnpm run build      # SWC 트랜스파일 + tsc 타입 검사
 pnpm run typecheck  # src + prisma/seed.ts + test 전체 타입 검사
-pnpm test           # 단위 테스트
+pnpm test           # 단위 테스트 (Prisma를 목킹한다 — SQL은 검증되지 않는다)
+pnpm run test:e2e   # 실제 앱·실제 DB. 중첩 관계 필터·FK·트랜잭션은 여기서만 증명된다
 ```
+
+### 시나리오 검증 (Postman)
+
+단위·e2e가 엔드포인트를 하나씩 본다면, 이쪽은 **현장 순서대로 이어지는지**를 본다 —
+사번 입력 → 작업지시 선택 → 작업 시작 → 실적 등록. 컬렉션은 `test/postman/`에 있다.
+
+준비와 실행 명령은 [실행](#실행)에 있다. 여기서는 그 뒤에 알아야 할 것만 적는다.
+
+폴더는 5개이고 순서대로 돈다.
+
+| 폴더 | 내용 |
+| --- | --- |
+| 0. 준비 | 관리자 로그인 → 단말 토큰 발급 (실제로는 단말 설치 시 1회) |
+| 1. 단말 부팅 | 컨텍스트 조회 — 내 공정·허용 행위·작업자 자격 |
+| 2. 작업 시작 | 목록 → 시작 → 같은 키 재전송(멱등) → 다른 키 재시작(409) |
+| 3. 생산실적 | 등록 → 재전송(멱등) → 2회차 → 지시수량 초과 |
+| 4. 거부 | 사람 토큰·사번 없음·멱등 키 없음·불량 수량·없는 세션·못 하는 공정 |
+
+앞 단계가 실패하면 뒤는 의미가 없으므로 `--bail`로 첫 실패에서 멈춘다.
+
+**두 번째 실행부터는 출발선을 되돌린다.** 시나리오가 세션과 실적을 남기므로, 그대로 다시
+돌리면 「이미 진행 중」 409로 막힌다(단언 2건 실패).
+
+```bash
+pnpm run fixtures:pop:reset
+```
+
+실 환경 파일(`local.postman_environment.json`)은 비밀번호가 들어가므로 `.gitignore` 대상이다.
+커밋되는 건 `*.example.json`뿐이다.
+
+### Postman 앱에서 보기
+
+응답을 눈으로 확인하거나 값을 바꿔 가며 실험할 때는 앱이 편하다. newman으로 돌리는 것과
+같은 파일을 쓴다.
+
+1. **Import** → `test/postman/`의 파일 2개를 함께 넣는다.
+   - `omf-mes-pop.postman_collection.json` (컬렉션)
+   - `local.postman_environment.json` (환경 — [실행](#실행)에서 만든, 비밀번호를 채운 쪽)
+2. 우측 상단 환경 선택기에서 **OMF MES — 로컬**을 고른다. 이걸 빠뜨리면 `{{baseUrl}}`이
+   풀리지 않아 요청이 나가지 않는다.
+3. 컬렉션 우클릭 → **Run collection** → Run. 폴더 0부터 순서대로 돌며 단언 결과가 함께 나온다.
+
+**요청을 하나씩 눌러 볼 때는 순서를 지켜야 한다.** 토큰·작업지시 ID·세션 ID를 앞 요청의
+테스트 스크립트가 뒤 요청에 넘겨주기 때문이다. `0 → 1 → 2 → 3` 순으로 누르면 되고, 중간부터
+누르면 `{{workSessionId}}`가 비어 404가 난다.
+
+- **재실행 전에는** 터미널에서 `pnpm run fixtures:pop:reset`. 앱에는 리셋 기능이 없다.
+- **Runner의 「Stop run if an error occurs」를 켜 두면** newman의 `--bail`과 같아진다.
+- 이미 단말 토큰이 있다면 환경의 `terminalToken`만 채우고 `1`번 폴더부터 실행해도 된다.
+- 앱에서 채운 비밀번호를 파일로 **Export하면 실 환경 파일에 평문으로 남는다.** 그 파일은
+  `.gitignore` 대상이라 커밋되지 않지만, 예시본(`*.example.json`)에 덮어쓰지 않도록 주의한다.
+
+### 검증 전용 계정을 따로 두는 이유
+
+단말 토큰 발급은 `ACCESS_WRITE`를 요구하는데, 시드가 만드는 `admin`의 초기 비밀번호는
+**1회만 출력되고 다시 볼 수 없다.** 그 값을 놓치면 컬렉션의 `0`번 폴더를 돌릴 방법이 없다.
+`fixtures:postman-admin`은 `postman-tester` 계정을 따로 만들어 `admin` 자격증명을 건드리지
+않으며, 여러 번 돌려 비밀번호를 다시 받을 수 있다. `NODE_ENV=production`에서는 만들지 않는다.
+
+> 이미 쓸 수 있는 관리자 계정이 있다면 이 픽스처 대신 `PUT /api/access/users/:loginId/password`로
+> 비밀번호를 재발급해도 된다. 픽스처는 **쓸 수 있는 관리자가 하나도 없는 상태**를 푸는 용도다.
 
 ## 남은 과제
 
