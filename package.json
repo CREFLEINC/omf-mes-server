@@ -25,7 +25,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "fixtures:pop": "ts-node -r tsconfig-paths/register prisma/fixtures/pop-work-start.ts"
+    "fixtures:pop": "ts-node -r tsconfig-paths/register prisma/fixtures/pop-work-start.ts",
+    "fixtures:pop:reset": "ts-node -r tsconfig-paths/register prisma/fixtures/pop-reset.ts",
+    "fixtures:postman-admin": "ts-node -r tsconfig-paths/register prisma/fixtures/postman-tester.ts",
+    "postman": "newman run test/postman/omf-mes-pop.postman_collection.json -e test/postman/local.postman_environment.json --bail"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -58,6 +61,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.8.0",
     "jest": "^29.7.0",
+    "newman": "^6.2.2",
     "prettier": "^3.4.2",
     "supertest": "^7.0.0",
     "ts-node": "^10.9.2",

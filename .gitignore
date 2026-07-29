@@ -8,3 +8,6 @@ coverage/
 .eslintcache
 .swc/
 *.tsbuildinfo
+
+# Postman 환경 파일 — 관리자 비밀번호가 들어간다(예시본은 *.example.json)
+test/postman/local.postman_environment.json

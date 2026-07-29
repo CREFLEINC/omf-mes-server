@@ -1,0 +1,1146 @@
+{
+  "info": {
+    "name": "OMF MES — POP 현장 단말",
+    "_postman_id": "omf-mes-pop-0001",
+    "description": "현장 작업자가 POP 패널 PC 앞에서 하는 일을 순서대로 따라간다.\n\n**사번 입력 → 작업지시 선택 → 작업 시작 → 실적 등록**\n\n---\n\n## 실행 전 준비\n\n```bash\ncd apps/api\ndocker compose up -d          # PostgreSQL\nnpm run prisma:migrate        # 스키마\nnpm run db:seed               # 공통코드·채번규칙·역할\nnpm run fixtures:pop          # 조직·품목·라우팅·배포된 W/O·단말·작업자\nnpm run fixtures:postman-admin  # 검증용 계정 (비밀번호 출력)\ncp test/postman/local.postman_environment{.example,}.json  # 환경 파일 (gitignore 대상)\nnpm run start:dev             # API (기본 http://localhost:3100/api)\n```\n\n## 두 번째 실행부터\n\n시나리오가 작업을 시작하고 실적을 올려 상태를 남기므로, 그대로 다시 돌리면 「이미 진행 중」 409로 막힌다. 매 회차를 같은 출발선에서 시작하려면:\n\n```bash\nnpm run fixtures:pop:reset\n```\n\n## 인증 구조\n\nPOP은 **사람 토큰이 아니라 단말 토큰**으로 인증한다. 사번(`X-Worker-No`)은 인증이 아니라 실적 귀속 정보다 — 도용 리스크는 확정 설계가 수용했다(REQ-PR-0023).\n\n`0. 준비` 폴더가 관리자 로그인으로 단말 토큰을 받아 `terminalToken`에 저장한다. 실제로는 단말 설치 시 1회만 하는 일이다. 이미 토큰이 있으면 `terminalToken` 환경변수에 넣고 `1`번 폴더부터 실행해도 된다.\n\n## 전체 자동 실행\n\n```bash\nnpm run postman        # newman으로 전 시나리오 + 단언 실행\n```\n\n앞 단계가 실패하면 뒤는 의미가 없으므로 `--bail`로 즉시 멈춘다 — 실패 하나가 수십 개의 401로 번지지 않는다.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3100/api"
+    },
+    {
+      "key": "adminLoginId",
+      "value": "postman-tester"
+    },
+    {
+      "key": "terminalCode",
+      "value": "POP_INJ_01"
+    },
+    {
+      "key": "workerNo",
+      "value": "EMP-1043"
+    },
+    {
+      "key": "workOrderNo",
+      "value": "WO-FIXTURE-0001"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "terminalToken",
+      "value": ""
+    },
+    {
+      "key": "workOrderId",
+      "value": ""
+    },
+    {
+      "key": "workSessionId",
+      "value": ""
+    },
+    {
+      "key": "startKey",
+      "value": ""
+    },
+    {
+      "key": "resultKey",
+      "value": ""
+    },
+    {
+      "key": "productionResultId",
+      "value": ""
+    },
+    {
+      "key": "productionResultNo",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 준비 — 관리자 인증",
+      "description": "단말 토큰은 관리자만 발급할 수 있다(ACCESS_WRITE). 현장 단말에는 설치 시 1회 주입하는 값이라, 이 폴더는 「설치 담당자」의 몫이고 아래 POP 폴더가 「현장」의 몫이다.\n\n`adminPassword` 환경변수를 채워야 실행된다. `npm run fixtures:postman-admin`이 검증 전용 계정을 만들고 비밀번호를 출력한다 — 시드가 만드는 admin 계정(초기 비밀번호가 1회만 출력된다)은 건드리지 않는다.",
+      "item": [
+        {
+          "name": "관리자 로그인",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"loginId\": \"{{adminLoginId}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 비밀번호 없이 돌리면 이후 요청이 전부 401로 무너져 원인이 묻힌다. 여기서 세운다.",
+                  "const password = pm.environment.get('adminPassword') || pm.collectionVariables.get('adminPassword');",
+                  "if (!password) {",
+                  "  throw new Error(",
+                  "    'adminPassword가 비어 있습니다. test/postman/local.postman_environment.json에 관리자 ' +",
+                  "    '비밀번호를 넣으십시오. 이미 단말 토큰이 있다면 terminalToken을 채우고 1번 폴더부터 실행해도 됩니다.'",
+                  "  );",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200으로 로그인된다', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('액세스 토큰이 온다', () => pm.expect(body.accessToken).to.be.a('string'));",
+                  "// 환경변수가 컬렉션 변수보다 우선한다 — 환경 파일에 같은 키가 비어 있으면 그쪽이 이겨",
+                  "// 발급받은 토큰이 가려진다. 두 곳 모두에 심는다.",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "pm.environment.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "단말 토큰 발급",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/master/terminals/{{terminalCode}}/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "master",
+                "terminals",
+                "{{terminalCode}}",
+                "token"
+              ]
+            },
+            "description": "발급할 때마다 token_version이 올라가 이전 토큰은 즉시 폐기된다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200으로 발급된다', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('단말 토큰이 온다', () => pm.expect(body.accessToken).to.be.a('string'));",
+                  "pm.test('요청한 단말의 토큰이다', () => pm.expect(body.terminalCode).to.eql(pm.collectionVariables.get('terminalCode')));",
+                  "pm.collectionVariables.set('terminalToken', body.accessToken);",
+                  "pm.environment.set('terminalToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. 단말 부팅 — 내가 누구고 무엇을 할 수 있나",
+      "description": "단말이 켜질 때 1회 호출해 화면에 노출할 기능을 결정한다. 사번을 함께 보내면 그 작업자의 귀속 가능 여부와 자격까지 실어 준다 — 다만 여기서 막지는 않는다.",
+      "item": [
+        {
+          "name": "단말 컨텍스트 (사번 포함)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "X-Worker-No",
+                "value": "{{workerNo}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "context"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('내 단말 정보가 온다', () => pm.expect(body.terminal.terminalCode).to.eql(pm.collectionVariables.get('terminalCode')));",
+                  "pm.test('담당 공정이 실린다', () => pm.expect(body.terminal.processes).to.be.an('array').that.is.not.empty);",
+                  "pm.test('사번이 확인된다', () => pm.expect(body.worker.workerNo).to.eql(pm.collectionVariables.get('workerNo')));",
+                  "pm.test('작업 시작이 허용된 공정이 있다', () => {",
+                  "  const startable = body.terminal.processes.filter((p) => p.capabilities.includes('can_start_work'));",
+                  "  pm.expect(startable).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "단말 컨텍스트 (사번 없이)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "context"
+              ]
+            },
+            "description": "사번을 안 보내면 작업자 정보 없이 단말 정보만 온다 — 사번 입력 화면을 그리기 전 상태."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('작업자는 비어 있다', () => pm.expect(pm.response.json().worker).to.be.null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. 작업 시작 — 작업지시를 집어 들고 세션을 연다",
+      "description": "WF02 S5·S6. 여기서 열린 작업 세션에 이후의 실적·불량·자재투입이 매달린다.",
+      "item": [
+        {
+          "name": "시작 가능한 작업지시 목록",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('픽스처 작업지시가 보인다', () => pm.expect(body.items).to.be.an('array').that.is.not.empty);",
+                  "const target = body.items.find((i) => i.workOrderNo === pm.collectionVariables.get('workOrderNo'));",
+                  "pm.test('배포 상태다', () => pm.expect(target.statusCode).to.eql('RELEASED'));",
+                  "pm.test('아직 열린 세션이 없다', () => pm.expect(target.hasOpenSession).to.be.false);",
+                  "pm.test('bigint는 문자열로 온다', () => pm.expect(target.workOrderId).to.be.a('string'));",
+                  "pm.collectionVariables.set('workOrderId', target.workOrderId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "작업 시작",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Worker-No",
+                "value": "{{workerNo}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{startKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders/{{workOrderId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders",
+                "{{workOrderId}}",
+                "start"
+              ]
+            },
+            "description": "4M은 작업지시의 계획값을 승계한다. 계획과 다르게 투입할 때만 shiftCode·equipmentCode·moldCode를 본문에 넣는다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 재전송 검증에 쓰려고 키를 저장해 둔다. 실제 단말도 요청마다 UUID를 만들어 보관한다.",
+                  "pm.collectionVariables.set('startKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201로 세션이 열린다', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('첫 회차다', () => pm.expect(body.sessionNo).to.eql(1));",
+                  "pm.test('세션이 OPEN이다', () => pm.expect(body.statusCode).to.eql('OPEN'));",
+                  "pm.test('작업지시가 작업중으로 올라간다', () => pm.expect(body.workOrder.statusCode).to.eql('IN_PROGRESS'));",
+                  "pm.test('사번이 귀속된다', () => pm.expect(body.worker.workerNo).to.eql(pm.collectionVariables.get('workerNo')));",
+                  "pm.test('계획 근무조를 승계한다', () => pm.expect(body.shift.shiftCode).to.eql('DAY'));",
+                  "pm.test('처음 등록이라 replayed=false', () => pm.expect(body.replayed).to.be.false);",
+                  "pm.collectionVariables.set('workSessionId', body.workSessionId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키로 재전송 → 멱등",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Worker-No",
+                "value": "{{workerNo}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{startKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders/{{workOrderId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders",
+                "{{workOrderId}}",
+                "start"
+              ]
+            },
+            "description": "오프라인 구간에서 돌아온 단말이 같은 요청을 다시 보낸 상황. 새 세션을 만들지 않고 처음 연 세션을 그대로 돌려준다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('실패가 아니라 201이다', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('재전송임을 알려 준다', () => pm.expect(body.replayed).to.be.true);",
+                  "pm.test('처음 연 세션과 같다', () => pm.expect(body.workSessionId).to.eql(pm.collectionVariables.get('workSessionId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "다른 키로 재시작 → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Worker-No",
+                "value": "{{workerNo}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders/{{workOrderId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders",
+                "{{workOrderId}}",
+                "start"
+              ]
+            },
+            "description": "재전송이 아니라 진짜 중복 시작이다. 한 작업지시에 세션이 둘 열리면 안 된다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409로 막힌다', () => pm.response.to.have.status(409));",
+                  "pm.test('이유를 말해 준다', () => pm.expect(pm.response.json().message).to.include('이미 진행 중'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "목록 재조회 — 상태가 바뀌었다",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const target = pm.response.json().items.find((i) => i.workOrderNo === pm.collectionVariables.get('workOrderNo'));",
+                  "pm.test('작업중으로 보인다', () => pm.expect(target.statusCode).to.eql('IN_PROGRESS'));",
+                  "pm.test('열린 세션이 표시된다', () => pm.expect(target.hasOpenSession).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. 생산실적 — 만든 만큼을 세션에 매단다",
+      "description": "WF02 S7. 작업자·근무조·설비·금형은 세션에서 승계하므로 수량만 보낸다. 불량·손실은 PQC(02-S-E) 소관이라 여기서 받지 않는다.",
+      "item": [
+        {
+          "name": "실적 등록 (양품 300)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{resultKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('resultKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201로 등록된다', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('첫 회차다', () => pm.expect(body.resultSequence).to.eql(1));",
+                  "pm.test('수량이 그대로다', () => pm.expect(body.goodQty).to.eql(300));",
+                  "pm.test('확정 상태다', () => pm.expect(body.statusCode).to.eql('CONFIRMED'));",
+                  "pm.test('채번규칙 패턴대로다 (PR-YYMMDD-0000)', () => pm.expect(body.productionResultNo).to.match(/^PR-\\d{6}-\\d{4}$/));",
+                  "pm.test('처음 등록이라 replayed=false', () => pm.expect(body.replayed).to.be.false);",
+                  "pm.collectionVariables.set('productionResultId', body.productionResultId);",
+                  "pm.collectionVariables.set('productionResultNo', body.productionResultNo);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "같은 키로 재전송 → 멱등",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{resultKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "description": "재전송이 새 실적을 만들면 생산량이 그대로 부풀려진다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('재전송임을 알려 준다', () => pm.expect(body.replayed).to.be.true);",
+                  "pm.test('처음 만든 실적과 같다', () => pm.expect(body.productionResultId).to.eql(pm.collectionVariables.get('productionResultId')));",
+                  "pm.test('번호도 그대로다', () => pm.expect(body.productionResultNo).to.eql(pm.collectionVariables.get('productionResultNo')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "두 번째 실적 (양품 150 · 발생 시각 지정)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "description": "occurredAt은 오프라인 구간에서 만든 실적의 시각이 전송 시각으로 뭉개지지 않게 한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 150,\n  \"occurredAt\": \"2026-07-28T09:30:00.000Z\",\n  \"remarks\": \"오프라인 구간에서 만든 분\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('회차가 이어진다', () => pm.expect(body.resultSequence).to.eql(2));",
+                  "pm.test('번호가 새로 나온다', () => pm.expect(body.productionResultNo).to.not.eql(pm.collectionVariables.get('productionResultNo')));",
+                  "pm.test('보낸 발생 시각으로 남는다', () => pm.expect(new Date(body.occurredAt).toISOString()).to.eql('2026-07-28T09:30:00.000Z'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "지시수량 초과 — 막지 않는다",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "description": "초과분은 추가 생산LOT 발행으로 처리하는 것이 확정 설계다(도식 02 태그 464:6653). 여기서 막으면 현장이 이미 만든 물건을 올리지 못한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 999999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 — 초과 생산도 통과한다', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. 거부 시나리오 — 막아야 할 것들",
+      "description": "정상 흐름만 도는 것으로는 부족하다. 막혀야 할 것이 실제로 막히는지 확인한다.",
+      "item": [
+        {
+          "name": "토큰 없이 목록 → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "사람 토큰으로 POP 호출 → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders"
+              ]
+            },
+            "description": "관리자 토큰으로 현장 실적을 올릴 수 있으면 작업자 귀속이 무의미해진다. ※ 0번 폴더를 실행해 accessToken이 있어야 의미 있는 검증이 된다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "사번 없이 작업 시작 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders/{{workOrderId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders",
+                "{{workOrderId}}",
+                "start"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('사번을 요구한다', () => pm.expect(pm.response.json().message).to.include('사번'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "멱등 키 없이 실적 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('멱등 키를 요구한다', () => pm.expect(pm.response.json().message).to.include('idempotency-key'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "수량 0 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "불량 수량은 받지 않는다 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/{{workSessionId}}/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "{{workSessionId}}",
+                "results"
+              ]
+            },
+            "description": "불량은 PQC(02-S-E) 소관이다. DTO에 없는 필드는 조용히 무시하지 않고 400으로 막는다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 10,\n  \"defectQty\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('모르는 필드를 지적한다', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('defectQty'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "없는 작업 세션 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-sessions/99999999/results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-sessions",
+                "99999999",
+                "results"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"goodQty\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "단말이 못 하는 공정 지정 → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{terminalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pop/work-orders?processCode=PACKING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pop",
+                "work-orders"
+              ],
+              "query": [
+                {
+                  "key": "processCode",
+                  "value": "PACKING"
+                }
+              ]
+            },
+            "description": "이 단말은 PACKING 공정에서 실적 입력만 되고 작업 시작은 안 된다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
