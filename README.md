@@ -1,13 +1,14 @@
 # OMF MES — 백엔드 API
 
-기준정보(마스터) 관리 API. 기술 스택은 `docs/research/2026-07-09-기술스택-배포모델-결정서.md` 결정 16을 따른다.
+기준정보(마스터) 관리 API. 기술 스택은 문서 저장소([CREFLEINC/omf-mes](https://github.com/CREFLEINC/omf-mes))의
+`docs/research/2026-07-09-기술스택-배포모델-결정서.md` 결정 16을 따른다.
 
 | 항목 | 선택 |
 | --- | --- |
 | 언어·프레임워크 | TypeScript · NestJS 11 |
 | DB | PostgreSQL 16 |
 | ORM | **Prisma** (결정서 §6 미결 #6 택일 — 2026-07-27 확정) |
-| DB 스키마 정본 | `docs/research/2026-07-23-데이터모델링/mes_postgresql_physical_model.sql` (v3, 129 테이블·10 스키마) |
+| DB 스키마 정본 | 문서 저장소 `docs/research/2026-07-23-데이터모델링/mes_postgresql_physical_model.sql` (v3, 129 테이블·10 스키마) |
 | 패키지 매니저 | **pnpm 11** (`packageManager` 필드로 고정) |
 | 빌드·테스트 변환 | **SWC** (`nest build` 빌더 + `@swc/jest`) |
 | API 문서 | Swagger (`/api/docs`) |
@@ -19,8 +20,8 @@
 작업 시작 → 실적 등록)이 실제로 도는 것까지 확인된다.
 
 ```bash
-git clone git@github.com:CREFLEINC/omf-mes.git
-cd omf-mes/apps/api
+git clone git@github.com:CREFLEINC/omf-mes-server.git
+cd omf-mes-server
 
 corepack enable                   # package.json의 packageManager 버전 사용
 cp .env.example .env              # ① JWT_SECRET을 채운다: openssl rand -base64 48
