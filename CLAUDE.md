@@ -111,7 +111,9 @@ sudo chown -R hulk:hulk /opt/omf-mes
 | `deploy/rollback.sh` | `IMAGE_TAG` 를 바꾸고 배포 (릴리스 적용에도 사용) |
 | `deploy/RUNNER.md` | 개발 서버 runner 구성 절차 |
 | `deploy/RELEASE.md` | 하노이 현장 배포 런북 |
+| `deploy/HANDOFF.md` | 남은 작업 인계 (T-5 이후) |
 | `deploy/omf-mes-deploy.crontab` | 러너를 못 쓸 때의 대안 (현재 미사용) |
+| `CI-CD.md` | 무엇을 왜 만들었는지의 기록 + 적용 진행표 |
 
 ## 알아둘 동작
 

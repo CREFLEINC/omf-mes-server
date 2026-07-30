@@ -221,7 +221,7 @@ PR #1 머지 시 `Build & Push to Harbor` 가 돌았을 텐데 결과를 확인�
 
 - Harbor 에 `mes` 프로젝트가 있는지, `mes/backend` 에 `main`·`sha-xxxxxxx` 태그가 있는지
 - 레포 Secrets 에 `HARBOR_USERNAME`(`robot$mes+github-actions`), `HARBOR_PASSWORD` 가 있는지
-- 없으면 `deploy/RUNNER.md` 가 아니라 프로젝트 문서의 Phase C·D 를 먼저 수행
+- 없으면 `deploy/RUNNER.md` 가 아니라 `CI-CD.md` 의 Phase 1·2(Harbor 프로젝트·로봇 계정, GitHub Secrets)를 먼저 수행
 
 실패했다면 대부분 `Log in to Harbor` 단계이고, 원인은 Secret 오타 또는 Harbor 프로젝트 부재입니다.
 
