@@ -1,0 +1,102 @@
+name: CI
+
+# PR 검증 전용 — 이미지는 만들지 않는다.
+# main 브랜치 보호 규칙에서 verify 를 required 로 걸어두면
+# 깨진 코드가 main 에 못 들어가고, 따라서 Harbor 에도 올라가지 않는다.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Lint · Typecheck · Unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # packageManager 필드(pnpm@11.17.0)를 읽어 그 버전을 설치한다 — 로컬과 동일 버전 보장
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # [필수] install 만으로는 Prisma Client 가 생성되지 않는다.
+      # 이 단계가 없으면 아래 typecheck 가 모델 타입을 못 찾아 전부 실패한다.
+      - name: Generate Prisma Client
+        run: pnpm exec prisma generate
+
+      # package.json 의 lint 스크립트는 --fix 가 붙어 있어 CI 에서는 문제를 고쳐버리고 통과한다.
+      # 검증 목적이므로 --fix 없이 직접 호출한다.
+      - name: Lint
+        run: pnpm exec eslint "{src,test}/**/*.ts" --max-warnings=0
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit test
+        run: pnpm test
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # 푸시 없이 이미지가 실제로 빌드되는지만 확인한다.
+      # Dockerfile 안에서 pnpm install → prisma generate → nest build 가 모두 돌아가므로
+      # 사실상 통합 검증 역할을 한다.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  e2e:
+    name: E2E (실제 DB)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: omf
+          POSTGRES_PASSWORD: omf
+          POSTGRES_DB: omf_mes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omf -d omf_mes"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://omf:omf@localhost:5432/omf_mes?schema=public
+      # setup-e2e.ts 가 32자 미만이면 던진다
+      JWT_SECRET: ci-only-secret-value-not-used-in-production-0123456789
+      JWT_EXPIRES_IN_SECONDS: 28800
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma generate
+
+      - name: Migrate
+        run: pnpm exec prisma migrate deploy
+
+      - name: Seed
+        run: pnpm run db:seed
+
+      - name: E2E test
+        run: pnpm run test:e2e

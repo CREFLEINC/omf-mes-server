@@ -1,12 +1,20 @@
 # OMF MES — 최소 배포 구성 (단일 서버, API + DB)
 #
-# 실행:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# 이미지는 서버에서 빌드하지 않고 Harbor 에서 받아온다.
+# 배포 서버에는 소스코드가 없어도 되고, 개발자 PC 와 운영 서버가 "같은 바이너리"를 쓴다는 게 보장된다.
+#
+# 실행:  ./deploy.sh                 (권장 — pull · 헬스체크 · 실패 시 자동 롤백)
+# 수동:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 # 중지:  docker compose -f docker-compose.prod.yml --env-file .env.prod down
 #
 # 범위 밖(인프라 확정 후 별도 작업): 웜 스탠바이 이중화 · NAS 백업 · 오프라인 설치 패키지
 # — 기술스택 결정서 결정 15 참조.
 
 name: omf-mes
+
+# migrate 와 api 가 반드시 같은 이미지를 쓰도록 앵커로 묶는다.
+# 따로 적으면 한쪽 태그만 고치는 사고가 난다 — 구버전 코드가 신버전 스키마를 보게 된다.
+x-api-image: &api-image ${REGISTRY:-hub.crefle.com}/mes/backend:${IMAGE_TAG:-main}
 
 services:
   postgres:
@@ -30,10 +38,7 @@ services:
   # 스키마 반영 전용 1회성 컨테이너. API와 같은 이미지를 쓴다.
   # 여러 인스턴스가 동시에 마이그레이션하는 사고를 막으려면 이 서비스만 스키마를 건드려야 한다.
   migrate:
-    build:
-      context: .
-      target: runtime
-    image: omf-mes-api:${IMAGE_TAG:-latest}
+    image: *api-image
     restart: 'no'
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
@@ -43,10 +48,7 @@ services:
         condition: service_healthy
 
   api:
-    build:
-      context: .
-      target: runtime
-    image: omf-mes-api:${IMAGE_TAG:-latest}
+    image: *api-image
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -78,6 +80,11 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: '20m'
+        max-file: '5'
 
 volumes:
   pgdata:
