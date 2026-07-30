@@ -192,6 +192,16 @@ done
 log "배포 기록: $APP_DIR/DEPLOYED"
 
 # --- 6) 정리 (롤백 여지를 위해 7일치는 남긴다) ---
-docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
+#
+# 반드시 라벨로 우리 이미지에 한정한다. `docker image prune` 은 데몬 전역에서
+# 도는 명령이라, 다른 서비스와 도커를 공유하는 서버(개발 서버가 그렇다)에서
+# 범위를 안 좁히면 남의 dangling 이미지까지 -f 로 지운다.
+#
+# 이 라벨은 build-push.yml 의 metadata-action 이 모든 빌드에 붙인다.
+# 라벨이 바뀌면 이 줄은 아무것도 못 지우게 될 뿐 사고는 나지 않는다.
+PRUNE_LABEL="org.opencontainers.image.source=https://github.com/CREFLEINC/omf-mes-server"
+docker image prune -f \
+  --filter "until=168h" \
+  --filter "label=${PRUNE_LABEL}" >/dev/null 2>&1 || true
 
 log "===== 배포 완료 ====="
