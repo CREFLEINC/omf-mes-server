@@ -3,7 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
-import { configureApp, enableBigIntSerialization } from './app.setup';
+import { configureApp, enableBigIntSerialization, orderApiTags } from './app.setup';
+import { toPositiveInt } from './common/config.util';
 
 enableBigIntSerialization();
 
@@ -31,15 +32,18 @@ async function bootstrap() {
     // 개별 컨트롤러마다 @ApiBearerAuth()를 붙이는 대신 전역으로 건다 — 붙이는 걸 깜빡할 여지를 없앤다.
     .addSecurityRequirements('bearer')
     .build();
-  SwaggerModule.setup(`${prefix}/docs`, app, SwaggerModule.createDocument(app, swaggerConfig), {
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  orderApiTags(document);
+
+  SwaggerModule.setup(`${prefix}/docs`, app, document, {
     swaggerOptions: {
       // 새로고침해도 토큰이 유지된다 — 문서를 보며 여러 번 호출할 때 매번 붙이지 않게.
       persistAuthorization: true,
-      tagsSorter: 'alpha',
+      // tagsSorter 를 주면 문서의 tags 순서를 무시한다 — orderTags 가 정한 순서를 쓴다.
     },
   });
 
-  const port = config.get<number>('PORT', 3000);
+  const port = toPositiveInt(config.get('PORT'), 3000);
   await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(`OMF MES API listening on http://localhost:${port}/${prefix} (docs: /${prefix}/docs)`);

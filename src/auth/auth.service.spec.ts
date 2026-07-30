@@ -16,6 +16,12 @@ describe('AuthService', () => {
   };
   const passwords = { verify: jest.fn(), hash: jest.fn() };
   const jwt = { signAsync: jest.fn() };
+  /**
+   * 실제 ConfigService 는 환경변수를 **문자열로** 돌려준다.
+   * 기본값만 돌려주는 목을 쓰면 숫자 경로만 지나서 문자열 버그를 못 잡는다 —
+   * 그래서 테스트별로 값을 갈아끼울 수 있게 둔다.
+   */
+  let configValues: Record<string, unknown>;
 
   const activeUser = {
     app_user_id: 1n,
@@ -32,6 +38,7 @@ describe('AuthService', () => {
   };
 
   beforeEach(async () => {
+    configValues = {};
     passwords.verify.mockResolvedValue(true);
     passwords.hash.mockResolvedValue('hashed');
     jwt.signAsync.mockResolvedValue('token');
@@ -47,7 +54,12 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: PasswordService, useValue: passwords },
         { provide: JwtService, useValue: jwt },
-        { provide: ConfigService, useValue: { get: (_k: string, d: unknown) => d } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (k: string, d: unknown) => (k in configValues ? configValues[k] : d),
+          },
+        },
       ],
     }).compile();
 
@@ -63,6 +75,31 @@ describe('AuthService', () => {
 
       expect(result.accessToken).toBe('token');
       expect(result.user.permissions).toEqual(['MASTER_READ']);
+    });
+
+    /**
+     * 회귀 — ConfigService 는 환경변수를 문자열로 돌려준다. 그 문자열을 그대로
+     * expiresIn 에 넘기면 jsonwebtoken 이 ms() 로 해석해 '28800' 을 28800밀리초
+     * (=28.8초)로 읽는다. .env 는 8시간인데 토큰이 28초 만료가 됐던 버그다.
+     */
+    it('문자열로 온 JWT_EXPIRES_IN_SECONDS 를 초 단위 숫자로 넘긴다', async () => {
+      configValues = { JWT_EXPIRES_IN_SECONDS: '28800' };
+      prisma.app_user.findUnique.mockResolvedValue(activeUser);
+
+      const result = await service.login({ loginId: 'admin', password: 'pw' });
+
+      expect(jwt.signAsync).toHaveBeenCalledWith(expect.anything(), { expiresIn: 28800 });
+      expect(result.expiresIn).toBe(28800);
+      expect(typeof result.expiresIn).toBe('number');
+    });
+
+    it('JWT_EXPIRES_IN_SECONDS 가 쓸 수 없는 값이면 8시간으로 떨어진다', async () => {
+      configValues = { JWT_EXPIRES_IN_SECONDS: '' };
+      prisma.app_user.findUnique.mockResolvedValue(activeUser);
+
+      const result = await service.login({ loginId: 'admin', password: 'pw' });
+
+      expect(result.expiresIn).toBe(8 * 60 * 60);
     });
 
     // 계정 존재 여부가 새어나가면 열거 공격의 출발점이 된다.
