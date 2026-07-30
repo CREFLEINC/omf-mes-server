@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OMF MES CI/CD 구축 가이드</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1d21;
+    --fg-dim: #5c6470;
+    --border: #e2e5e9;
+    --border-strong: #c8cdd4;
+    --code-bg: #f6f7f9;
+    --accent: #1f6feb;
+    --warn-bg: #fff8e6;
+    --warn-border: #e0a800;
+    --danger-bg: #fdf0ef;
+    --danger-border: #d1342f;
+    --ok-bg: #eef8f0;
+    --ok-border: #2da44e;
+    --info-bg: #eff5fd;
+    --info-border: #1f6feb;
+    --th-bg: #f6f7f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a;
+      --fg: #e4e7ea;
+      --fg-dim: #9aa3ad;
+      --border: #2b3037;
+      --border-strong: #3d444d;
+      --code-bg: #1c2024;
+      --accent: #58a6ff;
+      --warn-bg: #2a2313;
+      --warn-border: #9e7700;
+      --danger-bg: #2b1817;
+      --danger-border: #b5423d;
+      --ok-bg: #14261a;
+      --ok-border: #2da44e;
+      --info-bg: #131f2e;
+      --info-border: #2b6cb0;
+      --th-bg: #1c2024;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171a; --fg: #e4e7ea; --fg-dim: #9aa3ad; --border: #2b3037;
+    --border-strong: #3d444d; --code-bg: #1c2024; --accent: #58a6ff;
+    --warn-bg: #2a2313; --warn-border: #9e7700; --danger-bg: #2b1817;
+    --danger-border: #b5423d; --ok-bg: #14261a; --ok-border: #2da44e;
+    --info-bg: #131f2e; --info-border: #2b6cb0; --th-bg: #1c2024;
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --fg: #1a1d21; --fg-dim: #5c6470; --border: #e2e5e9;
+    --border-strong: #c8cdd4; --code-bg: #f6f7f9; --accent: #1f6feb;
+    --warn-bg: #fff8e6; --warn-border: #e0a800; --danger-bg: #fdf0ef;
+    --danger-border: #d1342f; --ok-bg: #eef8f0; --ok-border: #2da44e;
+    --info-bg: #eff5fd; --info-border: #1f6feb; --th-bg: #f6f7f9;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Pretendard", "Malgun Gothic", "Segoe UI", sans-serif;
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+
+  h1 { font-size: 2rem; line-height: 1.25; margin: 0 0 .5rem; letter-spacing: -.02em; }
+  h2 {
+    font-size: 1.4rem; line-height: 1.3; margin: 3.5rem 0 1rem;
+    padding-bottom: .4rem; border-bottom: 2px solid var(--border-strong);
+    letter-spacing: -.01em;
+  }
+  h3 { font-size: 1.1rem; margin: 2.25rem 0 .6rem; }
+  h4 { font-size: .98rem; margin: 1.5rem 0 .4rem; color: var(--fg-dim); }
+  p, ul, ol { margin: .7rem 0; }
+  li { margin: .3rem 0; }
+  a { color: var(--accent); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .875em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .1em .35em;
+    word-break: break-word;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .9rem 1rem;
+    overflow-x: auto;
+    margin: .8rem 0;
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: .84rem; line-height: 1.6; }
+
+  .lede { color: var(--fg-dim); font-size: 1.05rem; margin-bottom: 2rem; }
+  .meta {
+    font-size: .82rem; color: var(--fg-dim);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    padding: .7rem 0; margin: 1.5rem 0 2.5rem;
+  }
+
+  .tablewrap { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 34rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 600; }
+  td code { white-space: nowrap; }
+
+  .box { border-left: 4px solid; border-radius: 4px; padding: .8rem 1rem; margin: 1.2rem 0; }
+  .box > :first-child { margin-top: 0; }
+  .box > :last-child { margin-bottom: 0; }
+  .box .label { font-weight: 700; font-size: .82rem; letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: .35rem; }
+  .warn   { background: var(--warn-bg);   border-color: var(--warn-border); }
+  .danger { background: var(--danger-bg); border-color: var(--danger-border); }
+  .ok     { background: var(--ok-bg);     border-color: var(--ok-border); }
+  .info   { background: var(--info-bg);   border-color: var(--info-border); }
+
+  nav.toc {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1rem 1.2rem; margin: 2rem 0 3rem;
+  }
+  nav.toc p { margin: 0 0 .5rem; font-weight: 700; font-size: .9rem; }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; font-size: .92rem; }
+  nav.toc li { margin: .2rem 0; }
+
+  .flow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .8rem; line-height: 1.65; white-space: pre;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0;
+  }
+
+  .pill {
+    display: inline-block; font-size: .72rem; font-weight: 700;
+    padding: .1rem .45rem; border-radius: 3px; vertical-align: middle;
+    border: 1px solid var(--border-strong); color: var(--fg-dim);
+  }
+  .pill-req { background: var(--danger-bg); border-color: var(--danger-border); color: inherit; }
+  .pill-once { background: var(--info-bg); border-color: var(--info-border); color: inherit; }
+
+  hr { border: 0; border-top: 1px solid var(--border); margin: 3rem 0; }
+  .small { font-size: .85rem; color: var(--fg-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>OMF MES CI/CD 구축 가이드</h1>
+<p class="lede">
+  코드를 push 하면 이미지가 만들어져 Harbor 에 올라가고, 사내 서버가 그것을 받아 배포하는
+  파이프라인을 처음부터 구성하는 절차입니다. 실제 구축 과정에서 밟은 함정을 모두 포함했습니다.
+</p>
+
+<div class="meta">
+  대상 저장소 <code>CREFLEINC/omf-mes-server</code> ·
+  이미지 <code>hub.crefle.com/mes/backend</code> ·
+  개발 서버 <code>192.168.1.111</code> ·
+  최종 갱신 2026-07-30
+</div>
+
+<nav class="toc">
+  <p>목차</p>
+  <ol>
+    <li><a href="#arch">전체 구조</a></li>
+    <li><a href="#perm">필요한 권한 총정리</a> — 먼저 확보할 것</li>
+    <li><a href="#p1">Phase 1 · Harbor 준비</a></li>
+    <li><a href="#p2">Phase 2 · GitHub Secrets</a></li>
+    <li><a href="#p3">Phase 3 · 파이프라인 검증</a></li>
+    <li><a href="#p4">Phase 4 · 서버 배포 디렉터리</a></li>
+    <li><a href="#p5">Phase 5 · self-hosted runner</a></li>
+    <li><a href="#p6">Phase 6 · 동작 확인과 리허설</a></li>
+    <li><a href="#verify">배포된 버전 확인법</a></li>
+    <li><a href="#security">보안 — 반드시 읽을 것</a></li>
+    <li><a href="#traps">함정 모음</a></li>
+    <li><a href="#trouble">트러블슈팅</a></li>
+  </ol>
+</nav>
+
+<h2 id="arch">1. 전체 구조</h2>
+
+<p>
+  사내 서버는 내부망에 있습니다. 그래서 GitHub 이 서버로 <em>들어오는</em> 경로를 만들지 않고,
+  <strong>서버가 Harbor 에서 당겨오는(pull)</strong> 방향으로만 구성합니다.
+  self-hosted runner 도 GitHub 으로 바깥을 향해 폴링합니다.
+</p>
+
+<div class="flow">개발자 ──push──▶ GitHub Actions (ubuntu-latest)
+                    │  pnpm install → prisma generate → nest build → docker build
+                    ▼
+              hub.crefle.com/mes/backend   (Harbor)
+                    │
+      ┌─────────────┴──────────────┐
+      ▼                            ▼
+개발 서버(한국)               하노이 운영 서버
+self-hosted runner 가         합의된 창에 사람이
+머지 직후 자동 배포            deploy.sh 실행
+IMAGE_TAG=main                IMAGE_TAG=stable 또는 vX.Y.Z</div>
+
+<h3>이미지 태그 규칙</h3>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>이벤트</th><th>붙는 태그</th><th>성격</th></tr></thead>
+  <tbody>
+    <tr><td><code>main</code> push/merge</td><td><code>:main</code>, <code>:sha-a1b2c3d</code></td><td><code>:main</code> 은 가변, <code>:sha-</code> 는 불변</td></tr>
+    <tr><td><code>git tag v1.2.3</code></td><td><code>:v1.2.3</code>, <code>:stable</code>, <code>:sha-a1b2c3d</code></td><td><code>:stable</code> 은 가변</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="small">
+  불변 태그(<code>sha-</code>, <code>vX.Y.Z</code>)는 “무엇이었는지”를 기록하고,
+  가변 태그(<code>main</code>, <code>stable</code>)는 “무엇을 배포할지”를 가리킵니다.
+</p>
+
+<h3>워크플로 세 개</h3>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>파일</th><th>트리거</th><th>실행 위치</th><th>하는 일</th></tr></thead>
+  <tbody>
+    <tr><td><code>ci.yml</code></td><td><code>pull_request</code> → main</td><td>GitHub 호스팅</td><td>lint · typecheck · unit / docker build / e2e</td></tr>
+    <tr><td><code>build-push.yml</code></td><td>main push, <code>v*.*.*</code> 태그</td><td>GitHub 호스팅</td><td>이미지 빌드 → Harbor push</td></tr>
+    <tr><td><code>deploy-dev.yml</code></td><td><code>workflow_run</code>(위 성공), 수동</td><td><strong>사내 서버</strong></td><td>자산 동기화 → <code>deploy.sh</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="danger box">
+  <span class="label">깨뜨리면 안 되는 성질</span>
+  <p><code>deploy-dev.yml</code> 에 <strong><code>pull_request</code> 트리거를 추가하지 마세요.</strong>
+  PR 검증(<code>ci.yml</code>)은 GitHub 호스팅 러너에서 돌기 때문에 외부 기여자의 코드가 사내 서버에서
+  실행될 경로가 없습니다. 트리거를 늘리면 이 성질이 깨집니다.</p>
+</div>
+
+<hr>
+
+<h2 id="perm">2. 필요한 권한 총정리</h2>
+
+<p>
+  <strong>여기서 막히면 이후 전부가 무의미합니다.</strong> 시작 전에 확보 여부를 확인하세요.
+  실제 구축에서 가장 많은 시간을 잡아먹은 것이 권한이었습니다.
+</p>
+
+<h3>GitHub</h3>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>권한</th><th>필요한 작업</th><th>없으면</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Repo Write</strong></td>
+      <td>브랜치 push, PR 생성</td>
+      <td>기여 자체가 불가</td>
+    </tr>
+    <tr>
+      <td><strong>Repo Admin</strong> <span class="pill pill-req">필수</span></td>
+      <td>Secrets 등록, <strong>self-hosted runner 등록</strong>, 브랜치 보호</td>
+      <td>Settings 사이드바에 <em>Actions → Runners</em> 항목이 <strong>보이지 않습니다.</strong>
+          REST API 도 <code>404 Not Found</code> 를 반환합니다 (403 이 아니라 404 라 “없는 것”처럼 보입니다)</td>
+    </tr>
+    <tr>
+      <td><strong>Org Owner</strong></td>
+      <td>조직 수준 runner group, 플랜 변경</td>
+      <td>조직 공용 러너를 만들 수 없음</td>
+    </tr>
+    <tr>
+      <td><strong>유료 플랜</strong><br>(Team 이상)</td>
+      <td><strong>private 레포의 브랜치 보호 / Ruleset</strong>, 환경 보호 규칙</td>
+      <td><code>403 "Upgrade to GitHub Pro or make this repository public"</code><br>
+          → <a href="#security">보안 절</a>을 반드시 읽으세요</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="info box">
+  <span class="label">권한 확인 방법</span>
+<pre><code># 내 레포 권한
+gh api repos/OWNER/REPO -q '.permissions'
+# {"admin":true,"maintain":true,"pull":true,"push":true,"triage":true}
+
+# 조직 플랜 (브랜치 보호 가능 여부를 결정)
+gh api orgs/OWNER -q '.plan.name'
+
+# 러너 등록 토큰을 만들 수 있는가 = admin 인가
+gh api -X POST repos/OWNER/REPO/actions/runners/registration-token -q .expires_at</code></pre>
+</div>
+
+<h3>Harbor</h3>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>권한</th><th>필요한 작업</th><th>비고</th></tr></thead>
+  <tbody>
+    <tr><td>프로젝트 생성</td><td><code>mes</code> 프로젝트 생성 (Private)</td><td>이미지 경로가 <code>mes/backend</code> 이므로 프로젝트명은 반드시 <code>mes</code></td></tr>
+    <tr><td>Robot Account 생성</td><td><code>github-actions</code>(Push+Pull), <code>server-pull</code>(Pull만)</td><td>권한을 나눠야 서버 유출 시 push 를 막습니다</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>서버 (개발 서버)</h3>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>권한</th><th>필요한 작업</th><th>횟수</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>sudo</code></td>
+      <td><code>/opt/omf-mes</code> 생성 + <code>chown</code>, <code>usermod -aG docker</code></td>
+      <td><span class="pill pill-once">최초 1회</span> 이후 일상 운영에는 불필요</td>
+    </tr>
+    <tr>
+      <td><code>docker</code> 그룹</td>
+      <td>배포 전체 (pull, up, inspect)</td>
+      <td>상시 · <strong>재로그인해야 반영됩니다</strong></td>
+    </tr>
+    <tr>
+      <td>사용자 systemd<br>+ <code>Linger=yes</code></td>
+      <td>러너 상주</td>
+      <td>상시. <code>loginctl enable-linger</code> 는 root 필요</td>
+    </tr>
+    <tr>
+      <td>아웃바운드 HTTPS</td>
+      <td><code>hub.crefle.com</code>, <code>github.com</code></td>
+      <td>상시. 막혀 있으면 인프라팀 요청부터</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="danger box">
+  <span class="label">알고 있어야 할 사실</span>
+  <p><strong><code>docker</code> 그룹은 root 와 사실상 동등합니다.</strong>
+  <code>docker run -v /:/host</code> 한 줄이면 호스트 파일시스템 전체에 접근합니다.
+  러너를 어느 계정으로 돌리든 이 사실은 변하지 않습니다. 자세한 함의는 <a href="#security">보안 절</a>에 있습니다.</p>
+</div>
+
+<h4>사전 점검 스크립트</h4>
+<pre><code># 서버에서 실행
+uname -m                                                    # x86_64
+docker info &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "docker OK" || echo "✗ docker 그룹 필요"
+sudo -n true 2&gt;/dev/null &amp;&amp; echo "sudo OK" || echo "sudo 비밀번호 필요"
+systemctl is-system-running                                 # running
+curl -sI -m 8 https://github.com | head -1                  # HTTP/2 200
+curl -sI -m 8 https://hub.crefle.com/api/v2.0/ping | head -1 # 200
+loginctl show-user "$USER" | grep Linger                     # Linger=yes
+docker --version &amp;&amp; docker compose version</code></pre>
+
+<hr>
+
+<h2 id="p1">3. Phase 1 · Harbor 준비</h2>
+<p class="small">필요 권한: Harbor 프로젝트 생성 · Robot Account 생성</p>
+
+<ol>
+  <li>
+    <p><code>hub.crefle.com</code> → Projects → <strong>+ NEW PROJECT</strong> → 이름 <code>mes</code>, <strong>Private</strong></p>
+    <div class="warn box">이미지 경로가 <code>mes/backend</code> 이므로 <strong>프로젝트명은 반드시 <code>mes</code></strong> 여야 합니다.</div>
+  </li>
+  <li>
+    <p><code>mes</code> → Robot Accounts → <code>github-actions</code> 생성, <strong>Push + Pull</strong></p>
+    <div class="danger box">
+      <span class="label">주의</span>
+      <p><strong>생성 직후 토큰을 즉시 복사하세요. 다시 볼 수 없습니다.</strong><br>
+      계정명은 <code>robot$mes+github-actions</code> 형태입니다 — <code>$</code> 와 <code>+</code> 를 포함한 전체를 복사해야 합니다.</p>
+    </div>
+  </li>
+  <li><p>같은 화면에서 <code>server-pull</code> 생성, <strong>Pull 만</strong>. 서버는 이 계정을 씁니다.</p></li>
+</ol>
+
+<div class="ok box">
+  <span class="label">확인</span>
+  Harbor 에 <code>mes</code> 프로젝트가 보이고, Robot Accounts 에 두 계정이 있습니다.
+</div>
+
+<hr>
+
+<h2 id="p2">4. Phase 2 · GitHub Secrets</h2>
+<p class="small">필요 권한: <strong>Repo Admin</strong></p>
+
+<p>레포 → Settings → Secrets and variables → Actions → <strong>New repository secret</strong></p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Name</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>HARBOR_USERNAME</code></td><td><code>robot$mes+github-actions</code></td></tr>
+    <tr><td><code>HARBOR_PASSWORD</code></td><td>Phase 1-2 에서 복사한 토큰</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="ok box">
+  <span class="label">확인</span>
+  main 에 아무 커밋이나 머지하면 <code>Build &amp; Push to Harbor</code> 가 돌고,
+  로그에 <code>Login Succeeded!</code> 와
+  <code>pushing manifest for hub.crefle.com/mes/backend:main@sha256:…</code> 가 보입니다.
+</div>
+
+<div class="warn box">
+  실패하면 대부분 <code>Log in to Harbor</code> 단계입니다. 원인은 Secret 오타(특히 <code>$</code>·<code>+</code> 누락)
+  또는 Harbor 프로젝트 부재입니다.
+</div>
+
+<hr>
+
+<h2 id="p3">5. Phase 3 · 파이프라인 검증</h2>
+<p class="small">필요 권한: Repo Write</p>
+
+<p>서버를 건드리기 전에 <strong>로컬에서 Docker 빌드가 통과하는지</strong> 먼저 확인합니다. Actions 를 기다리는 것보다 훨씬 빠릅니다.</p>
+
+<pre><code>docker build --target runtime -t omf-mes-server:test .</code></pre>
+
+<div class="danger box">
+  <span class="label">함정 · Prisma Client 가 생성되지 않는다</span>
+  <p><code>pnpm install</code> 만으로는 Prisma Client 가 <strong>생성되지 않습니다.</strong>
+  <code>@prisma/client</code> 의 postinstall 이 자기 패키지 안에서 prisma CLI 를 찾는데,
+  pnpm 의 격리 링킹(<code>node-linker=isolated</code>) 때문에 보이지 않아 경고만 남기고 건너뜁니다.</p>
+<pre><code>warning In order to use "@prisma/client", please install Prisma CLI.</code></pre>
+  <p>결과물은 스텁입니다 — <code>index.d.ts</code> 가 4KB(정상은 수 MB), 쿼리 엔진 바이너리 없음.
+  <strong>그래서 <code>Dockerfile</code> 의 <code>deps</code> 와 <code>prod-deps</code> 양쪽 모두에
+  <code>RUN pnpm exec prisma generate</code> 가 필요합니다.</strong>
+  <code>runtime</code> 스테이지가 <code>prod-deps</code> 의 <code>node_modules</code> 를 복사해 가므로
+  <code>deps</code> 만으로는 런타임에서 죽습니다. <strong>이 두 줄을 지우면 조용히 깨집니다.</strong></p>
+</div>
+
+<p>그다음 PR 을 만들어 세 job 이 초록인지 확인하고 main 에 머지합니다.</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>job id</th><th>보고되는 체크 이름</th></tr></thead>
+  <tbody>
+    <tr><td><code>verify</code></td><td><code>Lint · Typecheck · Unit test</code></td></tr>
+    <tr><td><code>docker</code></td><td><code>Docker build</code></td></tr>
+    <tr><td><code>e2e</code></td><td><code>E2E (실제 DB)</code></td></tr>
+  </tbody>
+</table>
+</div>
+<div class="warn box">
+  필수 상태 검사를 지정할 때는 <strong>job id 가 아니라 체크 이름</strong>을 씁니다.
+  <code>verify</code> 로 걸면 영영 충족되지 않아 PR 이 머지 불가 상태가 됩니다.
+</div>
+
+<hr>
+
+<h2 id="p4">6. Phase 4 · 서버 배포 디렉터리</h2>
+<p class="small">필요 권한: <code>sudo</code> <span class="pill pill-once">1회</span> · <code>docker</code> 그룹</p>
+
+<h3>6-1. docker 그룹</h3>
+<pre><code>id -nG | tr ' ' '\n' | grep -qx docker &amp;&amp; echo OK || sudo usermod -aG docker hulk
+# 반영에는 재로그인이 필요합니다</code></pre>
+
+<h3>6-2. 디렉터리 생성</h3>
+<p>디렉터리만 root 로 만들고 <strong>소유자를 배포 계정으로 넘깁니다.</strong> 이후 배포·롤백·로그는 전부 sudo 없이 돕니다.</p>
+<pre><code>sudo mkdir -p /opt/omf-mes/logs
+sudo chown -R hulk:hulk /opt/omf-mes
+cd /opt/omf-mes</code></pre>
+
+<div class="info box">
+  <p>홈 디렉터리가 아니라 <code>/opt</code> 를 쓰는 이유는 <code>.env.prod</code>(DB 비밀번호, JWT 서명 키)와
+  <code>DEPLOYED</code> 기록이 <strong>개인 계정 수명에 묶이지 않게</strong> 하기 위해서입니다.
+  계정이 정리되면 홈과 함께 사라집니다.</p>
+  <p><code>deploy.sh</code>·<code>rollback.sh</code> 는 <strong>자기가 놓인 위치를 배포 디렉터리로 인식</strong>하므로
+  경로를 바꿔도 스크립트는 그대로입니다. 워크플로의 <code>DEPLOY_DIR</code> 과 이 경로만 맞으면 됩니다.</p>
+</div>
+
+<h3>6-3. 자산 복사</h3>
+<p>레포에서 아래 5개를 복사합니다. 러너를 붙인 뒤에는 워크플로가 자동 동기화하므로 <strong>이 수동 복사는 최초 1회뿐</strong>입니다.</p>
+<pre><code>docker-compose.prod.yml
+.env.prod.example
+deploy/deploy.sh
+deploy/rollback.sh
+deploy/omf-mes-deploy.logrotate</code></pre>
+<pre><code># 워크플로의 install -m 값과 같은 권한으로 맞춰두면 나중에 바뀌지 않습니다
+chmod 644 docker-compose.prod.yml .env.prod.example omf-mes-deploy.logrotate
+chmod 755 deploy.sh rollback.sh</code></pre>
+
+<h3>6-4. <code>.env.prod</code> 작성</h3>
+<pre><code>cp .env.prod.example .env.prod
+vi .env.prod
+chmod 600 .env.prod</code></pre>
+
+<div class="danger box">
+  <span class="label">함정 · 비밀번호에 URL 특수문자를 넣지 말 것</span>
+  <p><code>POSTGRES_PASSWORD</code> 는 compose 에서 <strong>URL 안에</strong> 들어갑니다.</p>
+<pre><code>DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public</code></pre>
+  <p><code>/</code> <code>@</code> <code>:</code> <code>?</code> <code>#</code> <code>%</code> 가 들어가면 URL 이 깨져
+  Prisma 가 엉뚱한 호스트를 찾습니다. <strong><code>openssl rand -base64</code> 는 <code>/</code> 를 만들어내니 쓰지 마세요.</strong></p>
+<pre><code>openssl rand -hex 24        # POSTGRES_PASSWORD — 안전 (16진수만)
+openssl rand -base64 48     # JWT_SECRET — URL 에 안 들어가므로 무관</code></pre>
+</div>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>키</th><th>개발 서버</th><th>하노이 운영</th></tr></thead>
+  <tbody>
+    <tr><td><code>IMAGE_TAG</code></td><td><code>main</code></td><td><code>stable</code> 또는 <code>vX.Y.Z</code></td></tr>
+    <tr><td><code>LOG_TZ</code></td><td><code>Asia/Seoul</code></td><td><code>Asia/Ho_Chi_Minh</code></td></tr>
+    <tr><td><code>API_PORT</code></td><td><code>3100</code></td><td><code>3100</code></td></tr>
+    <tr><td><code>ADMIN_INITIAL_PASSWORD</code></td><td colspan="2">지정하면 시드 출력을 놓쳐도 안전 (빈 값이면 무작위 1회 출력)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="warn box">
+  <code>.env.prod</code> 는 <strong>서버에만 존재합니다.</strong> 커밋하지 않고, 배포 워크플로도 이 파일을 건드리지 않습니다.
+  기존 서버를 갱신할 때도 덮어쓰이지 않으므로, <code>.env.prod.example</code> 에 새 키가 생기면 <strong>손으로 추가</strong>해야 합니다.
+</div>
+
+<h3>6-5. Harbor 로그인</h3>
+<div class="danger box">
+  <span class="label">함정 · 로그인 위치</span>
+  <p><code>deploy.sh</code> 는 자격증명을 <strong><code>~/.docker</code> 가 아니라 배포 디렉터리 안</strong>(<code>$APP_DIR/.docker</code>)에서 찾습니다.
+  배포 디렉터리마다 다른 로봇 계정을 쓸 수 있게 한 설계입니다.</p>
+</div>
+<pre><code>docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-pull'
+#   Password: &lt;Phase 1-3 의 토큰&gt;
+chmod 700 /opt/omf-mes/.docker</code></pre>
+
+<div class="warn box">
+  <p><strong>사용자명은 작은따옴표로 감싸세요.</strong> 큰따옴표나 따옴표 없이 쓰면 셸이 <code>$mes</code> 를
+  빈 변수로 해석해 <code>robot+server-pull</code> 로 로그인을 시도합니다.</p>
+  <p><code>config.json</code> 은 암호화가 아니라 <strong>base64</strong> 입니다. 그래서 <code>700</code> 으로 잠급니다.</p>
+</div>
+
+<div class="info box">
+  <span class="label">왜 <code>--config</code> 가 아니라 환경변수인가</span>
+  <p><code>deploy.sh</code> 는 <code>DOCKER_CONFIG</code> <strong>환경변수</strong>로 겁니다.
+  <code>docker --config</code> 플래그는 compose 플러그인에 <strong>인자로만</strong> 전달되고
+  <code>DOCKER_CONFIG</code> 를 설정하지 않기 때문입니다. 실측:</p>
+<pre><code>$ docker --config &lt;dir&gt; envprobe
+ARGS              : --config &lt;dir&gt; envprobe
+DOCKER_CONFIG env : &lt;unset&gt;</code></pre>
+  <p>플래그 방식이면 같은 스크립트의 <code>docker inspect</code>·<code>tag</code>·<code>prune</code> 이
+  각자 <code>~/.docker</code> 를 봅니다.</p>
+  <p class="small"><strong>부작용 주의:</strong> <code>DOCKER_CONFIG</code> 는 CLI 플러그인 탐색 경로도 바꿉니다.
+  compose 가 사용자 플러그인(<code>~/.docker/cli-plugins/</code>)으로 깔려 있으면 <code>docker compose</code> 자체가 사라집니다.
+  시스템 경로(<code>/usr/libexec/docker/cli-plugins/</code>)에 있으면 무관합니다.
+  확인: <code>docker info --format '{{range .ClientInfo.Plugins}}{{.Name}} {{.Path}}{{"\n"}}{{end}}'</code></p>
+</div>
+
+<h3>6-6. 첫 배포 — 손으로 한 번</h3>
+<p><strong>러너를 붙이기 전에 배포 자체가 되는지 확인하는 것이 순서입니다.</strong></p>
+<pre><code>cd /opt/omf-mes &amp;&amp; ./deploy.sh</code></pre>
+<p><code>deploy.sh</code> 의 동작 순서:</p>
+<ol>
+  <li>현재 <code>api</code> 이미지 ID 기록 (롤백용)</li>
+  <li>Harbor 에서 <code>IMAGE_TAG</code> 이미지 pull</li>
+  <li><code>migrate</code>(1회성) → <code>api</code> 기동</li>
+  <li><code>api</code> 가 healthy 가 될 때까지 대기 (최대 180초)</li>
+  <li>실패하면 <strong>직전 이미지로 자동 롤백</strong></li>
+</ol>
+<div class="ok box">
+  <span class="label">확인</span>
+  시작 로그에 <code>자격증명: /opt/omf-mes/.docker</code>, 마지막 줄에 <code>===== 배포 완료 =====</code>.
+  <code>DEPLOYED</code> 파일이 생깁니다.
+</div>
+
+<h3>6-7. 최초 시드 <span class="pill pill-once">1회</span></h3>
+<p><code>deploy.sh</code> 는 마이그레이션만 돌리고 시드는 돌리지 않습니다 — 자동 실행되면 안 되는 작업이라 분리했습니다.</p>
+<pre><code>cd /opt/omf-mes &amp;&amp; docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm -e NODE_ENV=production api node dist/seed.js</code></pre>
+<div class="warn box">
+  <p><strong>한 줄로 실행하세요.</strong> 여러 줄로 나눠 붙여넣다 <code>\</code> 가 깨지면
+  <code>unknown docker command: "compose  run"</code> 처럼 빈 인자가 낀 오류가 납니다.</p>
+  <p><code>ADMIN_INITIAL_PASSWORD</code> 를 지정하지 않았다면 <strong>관리자 초기 비밀번호가 이때 한 번만 출력됩니다.</strong></p>
+</div>
+<div class="ok box">
+  <span class="label">확인</span>
+<pre><code>curl -s localhost:3100/api/health
+# {"status":"ok","db":"up","uptime":...}
+
+# 로그인이 되면 DB·Prisma·JWT·해시·권한 매핑이 한 번에 확인됩니다
+curl -sS -X POST http://192.168.1.111:3100/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"loginId":"admin","password":"&lt;시드 출력 비밀번호&gt;"}'</code></pre>
+  Swagger UI: <code>http://192.168.1.111:3100/api/docs</code>
+</div>
+<p class="small">
+  <code>/api/health</code> 는 <code>SELECT 1</code> 만 합니다 — 통과해도 업무 로직 정상을 보장하지 않습니다.
+  비밀번호 변경은 최소 10자 제약이 있습니다.
+</p>
+
+<hr>
+
+<h2 id="p5">7. Phase 5 · self-hosted runner</h2>
+<p class="small">필요 권한: <strong>Repo Admin</strong>(등록 토큰) · 사용자 systemd · <code>Linger=yes</code></p>
+
+<div class="danger box">
+  <span class="label">가장 먼저 확인할 것</span>
+  <p><strong>서버에 다른 러너가 이미 돌고 있는지 보세요.</strong> 한 서버에 여러 레포의 러너를 붙일 수 있는데,
+  <strong>기존 디렉터리에서 <code>config.sh</code> 를 돌리면 그 레포의 등록이 날아갑니다.</strong></p>
+<pre><code>ls -d ~/actions-runner* 2&gt;/dev/null
+cat ~/actions-runner/.runner 2&gt;/dev/null | grep gitHubUrl   # 어느 레포 것인지
+systemctl --user list-units 'gh-runner-*'
+pgrep -af Runner.Listener</code></pre>
+  <p class="small">예: 이 서버의 <code>~/actions-runner</code> 는 <code>CREFLEINC/reports</code> 용이고
+  <code>gh-runner-reports.service</code> 로 상주 중입니다. 그래서 우리 것은 <code>~/actions-runner-omf</code> 를 씁니다.</p>
+</div>
+
+<h3>7-1. 내려받기 (별도 디렉터리)</h3>
+<pre><code>mkdir -p ~/actions-runner-omf &amp;&amp; cd ~/actions-runner-omf
+
+# 버전·체크섬은 https://github.com/actions/runner/releases 최신 릴리스에서 확인
+curl -O -L https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz
+echo "04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d  actions-runner-linux-x64-2.336.0.tar.gz" | sha256sum -c
+tar xzf ./actions-runner-linux-x64-2.336.0.tar.gz &amp;&amp; rm -f actions-runner-linux-x64-2.336.0.tar.gz</code></pre>
+
+<h3>7-2. 등록 토큰 <span class="pill pill-req">Repo Admin 필요</span></h3>
+<p>UI: Settings → Actions → Runners → <strong>New self-hosted runner</strong> → Linux / x64 화면의 <code>--token</code> 값</p>
+<pre><code>gh api -X POST repos/CREFLEINC/omf-mes-server/actions/runners/registration-token -q .token</code></pre>
+<p class="small">토큰은 <strong>1시간 만료</strong>입니다. 내려받기·전개를 먼저 끝내고 토큰은 마지막에 받으세요.</p>
+<div class="warn box">
+  UI 화면의 다운로드·전개 명령을 그대로 따라 하면 <strong>현재 디렉터리에 풀립니다.</strong>
+  다른 러너와 섞이지 않도록 7-1 의 디렉터리에서만 작업하세요.
+</div>
+
+<h3>7-3. 등록</h3>
+<pre><code>cd ~/actions-runner-omf
+./config.sh \
+  --url https://github.com/CREFLEINC/omf-mes-server \
+  --token &lt;등록 토큰&gt; \
+  --name omf-dev-01 \
+  --labels omf-dev \
+  --work _work \
+  --unattended</code></pre>
+<p><strong><code>--labels omf-dev</code> 가 핵심입니다.</strong> 워크플로의
+<code>runs-on: [self-hosted, omf-dev]</code> 와 짝이 맞아야 합니다.
+하노이에 추가할 때는 <code>omf-hanoi</code> 로 구분합니다.</p>
+<p class="small">중간에 실패해 다시 할 때는 새 토큰을 받고 <code>--replace</code> 를 붙입니다.
+이 단계를 마쳐야 <code>svc.sh</code> 가 생깁니다 — 압축 푼 직후에는 없습니다.</p>
+
+<h3>7-4. 상주</h3>
+<p>상주 방법은 두 가지입니다. <strong>한 서버에서 둘을 동시에 켜지 마세요</strong> — 같은 등록을 두 프로세스가 잡을 수 없어 충돌합니다.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>방법</th><th>root</th><th>언제 쓰나</th></tr></thead>
+  <tbody>
+    <tr><td><strong>사용자 systemd</strong></td><td>불필요<br>(<code>Linger</code> 설정에만 필요)</td><td>이 서버의 방식. 기존 러너와 통일, sudo 없이 start/stop/status</td></tr>
+    <tr><td><code>svc.sh</code> (상류 표준)</td><td>필요 (매 명령)</td><td>러너가 하나뿐이고 sudo 가 자유로운 서버</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>사용자 systemd (권장)</h4>
+<pre><code>cat &gt; ~/.config/systemd/user/gh-runner-omf.service &lt;&lt;'EOF'
+[Unit]
+Description=GitHub Actions self-hosted runner (CREFLEINC/omf-mes-server)
+
+[Service]
+ExecStart=/home/hulk/actions-runner-omf/run.sh
+WorkingDirectory=/home/hulk/actions-runner-omf
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now gh-runner-omf
+systemctl --user list-units 'gh-runner-*'      # 기존 러너도 함께 running 인지 확인
+loginctl show-user "$USER" | grep Linger        # Linger=yes 여야 재부팅 후에도 산다</code></pre>
+
+<h4><code>svc.sh</code> 를 쓸 경우</h4>
+<pre><code>sudo ./svc.sh install hulk      # ← 사용자명을 반드시 명시</code></pre>
+<div class="danger box">
+  <span class="label">함정 · 러너가 root 로 뜬다</span>
+  <p><code>svc.sh</code> 는 <code>run_as_user=${arg_2:-$SUDO_USER}</code> 로 동작합니다.
+  <code>sudo</code> 로 부르면 호출자 계정이 들어가지만, <strong>root 셸에 들어가 있는 상태에서 인자 없이</strong>
+  실행하면 <code>$SUDO_USER</code> 가 비어 <strong>러너가 root 로 뜹니다.</strong>
+  help 텍스트가 <code>Install runner service as Root or specified user</code> 라 root 가 기본인 것처럼 읽히는 것도 함정입니다.</p>
+  <p>또한 공식 유닛 템플릿에는 <strong><code>Restart=</code> 가 없습니다</strong> — 러너가 죽어도 되살아나지 않습니다.
+  drop-in 으로 <code>Restart=always</code> 를 보강하세요.</p>
+<pre><code>systemctl show -p User    --value 'actions.runner.*.service'   # hulk 여야 함
+systemctl show -p Restart --value 'actions.runner.*.service'   # always</code></pre>
+</div>
+
+<div class="ok box">
+  <span class="label">확인</span>
+<pre><code>gh api repos/CREFLEINC/omf-mes-server/actions/runners \
+  -q '.runners[] | "\(.name) \(.status) \([.labels[].name]|join(","))"'
+# omf-dev-01 online self-hosted,Linux,X64,omf-dev</code></pre>
+  서버에서 로그아웃한 뒤 재접속해도 <code>online</code> 이어야 합니다. <code>offline</code> 이면 상주 실패입니다.
+</div>
+
+<hr>
+
+<h2 id="p6">8. Phase 6 · 동작 확인과 리허설</h2>
+
+<h3>8-1. 수동 실행으로 먼저</h3>
+<pre><code>Actions → Deploy to dev server → Run workflow → (image_tag 비움) → 실행</code></pre>
+<p>4개 스텝(사전 점검 · 자산 동기화 · 배포 · 요약)이 모두 초록이어야 합니다. Summary 에 <code>DEPLOYED</code> 내용이 표시됩니다.</p>
+
+<h3>8-2. 자동 연쇄 확인</h3>
+<pre><code>main 에 커밋 머지  →  Build &amp; Push to Harbor 성공  →  Deploy to dev server 자동 시작</code></pre>
+<div class="warn box">
+  <p><code>workflow_run</code> 트리거는 <strong>기본 브랜치에 있는 워크플로 파일만</strong> 동작합니다.
+  브랜치에 두고 테스트해도 자동 트리거가 걸리지 않습니다 — 머지 후에 확인하세요.</p>
+  <p>문서만 바뀌는 PR 이 첫 시험용으로 적당합니다. 실패해도 잃을 것이 없습니다.</p>
+</div>
+
+<h3>8-3. 릴리스·롤백 리허설</h3>
+<pre><code>git tag v0.1.0 &amp;&amp; git push origin v0.1.0     # Harbor 에 v0.1.0, stable 확인
+
+# 서버에서
+./rollback.sh v0.1.0 &amp;&amp; curl -s localhost:3100/api/health
+./rollback.sh main                            # ← 반드시 되돌리기</code></pre>
+<div class="warn box">
+  <code>rollback.sh</code> 는 이름과 달리 “<code>IMAGE_TAG</code> 를 바꾸고 배포”입니다.
+  특정 버전으로 <strong>올릴 때도</strong> 씁니다. <code>.env.prod</code> 를 <strong>영구히</strong> 바꾸므로
+  고정한 채 잊으면 그 뒤로 계속 같은 버전만 배포됩니다.
+</div>
+<pre><code>IMAGE_TAG=v1.2.0 ./deploy.sh    # 일회성 — .env.prod 는 그대로
+./rollback.sh v1.2.0            # 영구 변경</code></pre>
+
+<hr>
+
+<h2 id="verify">9. 배포된 버전 확인법</h2>
+
+<div class="danger box">
+  <p><strong>“태그가 같다”는 “코드가 같다”를 뜻하지 않습니다.</strong>
+  <code>:main</code> 과 <code>:stable</code> 은 가변 태그라 언제든 다른 것을 가리킵니다.</p>
+</div>
+
+<p>이미지에 박힌 git 커밋으로 대조하는 것이 유일하게 확실한 방법입니다.
+<code>build-push.yml</code> 의 metadata-action 이 OCI 라벨을 붙여줍니다.</p>
+
+<pre><code># 서버
+grep git_revision /opt/omf-mes/DEPLOYED
+# git_revision=145e8cccad0d97137a22a1dfbc52587459c5868c
+
+# 로컬 — 같아야 한다
+git rev-parse origin/main
+
+# 릴리스 태그와 대조할 때
+git rev-list -n1 v1.2.0</code></pre>
+
+<p><code>DEPLOYED</code> 를 직접 읽지 않고 컨테이너에서 뽑을 수도 있습니다.</p>
+<pre><code>cid=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps -q api)
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$cid"</code></pre>
+
+<div class="warn box">
+  <span class="label">함정 · digest 두 종류</span>
+  <p>같은 이미지인데도 값이 다릅니다. <strong>서로 대조하면 안 됩니다.</strong></p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>값</th><th>정체</th><th>어디에 있나</th></tr></thead>
+    <tbody>
+      <tr><td><code>api_image_id</code></td><td>config blob digest</td><td><code>DEPLOYED</code>, <code>docker inspect</code></td></tr>
+      <tr><td><code>image_digest</code></td><td><strong>manifest digest</strong></td><td>Harbor UI, 빌드 로그, <code>RepoDigests</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  Harbor 와 맞춰볼 값은 <code>image_digest</code> 입니다.
+</div>
+
+<hr>
+
+<h2 id="security">10. 보안 — 반드시 읽을 것</h2>
+
+<div class="danger box">
+  <span class="label">self-hosted runner 를 붙이면 생기는 등식</span>
+  <div class="flow">.github/workflows/ 수정 권한
+  → main 의 워크플로가 러너에서 실행
+  → 러너 계정으로 임의 셸 명령
+  → docker 그룹 = root  (docker run -v /:/host)
+  → 그 서버의 root</div>
+  <p><strong>러너를 어느 계정으로 돌리든 마찬가지입니다.</strong> 서버에 다른 팀 서비스가 함께 돌고 있다면
+  그 전부가 사정권에 들어갑니다.</p>
+</div>
+
+<h3>브랜치 보호가 그 관문입니다 — 러너보다 <em>먼저</em> 거세요</h3>
+<p>
+  러너를 붙이기 전에는 사람이 손으로 배포하는 것이 관문이었습니다.
+  자동화가 그 사람을 없앴고, 브랜치 보호가 그 자리를 메웁니다.
+</p>
+<p>추가로, <code>prisma migrate deploy</code> 는 <strong>forward-only</strong> 입니다.
+리뷰 없이 main 에 들어간 마이그레이션이 몇 분 뒤 자동 적용되고 되돌릴 명령이 없습니다.
+<code>deploy.sh</code> 의 자동 롤백은 <strong>이미지만</strong> 되돌립니다.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>설정 위치</th><th>내용</th></tr></thead>
+  <tbody>
+    <tr><td>Settings → <strong>Rules</strong> → Rulesets <span class="pill">신규</span></td>
+        <td>패턴으로 여러 브랜치 지정, 조직 단위 적용, <code>Evaluate</code> 로 시험 가동, bypass 목록</td></tr>
+    <tr><td>Settings → Branches <span class="pill">구</span></td>
+        <td>브랜치별 규칙 하나씩. Ruleset 으로 대체되는 중</td></tr>
+  </tbody>
+</table>
+</div>
+<p>걸어야 할 항목: <strong>Require a pull request before merging</strong> +
+<strong>Require status checks</strong> → <code>Lint · Typecheck · Unit test</code>
+(<a href="#p3">job id <code>verify</code> 가 아님</a>).</p>
+
+<div class="danger box">
+  <span class="label">이 저장소의 현재 상태 — 미해결</span>
+  <p>조직이 <strong>GitHub Free</strong> 라 private 레포에는 브랜치 보호도 Ruleset 도 걸리지 않습니다.</p>
+<pre><code>$ gh api repos/CREFLEINC/omf-mes-server/rulesets
+403 "Upgrade to GitHub Pro or make this repository public to enable this feature."</code></pre>
+  <p>즉 <strong>러너는 붙었는데 관문이 비어 있습니다.</strong> 쓰기 권한자가 8명(admin 3명)이고,
+  개발 서버에는 다른 팀 서비스가 30개 넘게 함께 돕니다. 미룰 문제가 아니라 결정할 문제입니다.</p>
+  <ol>
+    <li><strong>조직을 GitHub Team 으로 업그레이드</strong> — Ruleset·환경 보호 규칙이 열립니다</li>
+    <li><strong>러너의 폭발 반경 축소</strong> — 플랜과 무관하고 사실 이것이 근본 해법입니다.
+        러너 전용 호스트로 분리, 또는 rootless Docker / docker socket proxy 로 데몬 접근을 우리 프로젝트에 한정</li>
+    <li><strong>쓰기 권한 인원 축소</strong> — 지금 당장 무료로 할 수 있는 조치</li>
+  </ol>
+  <p class="small">환경(<code>environment: dev</code>) required reviewer 도 private 레포에서는 유료이고,
+  main 에 푸시할 수 있는 사람은 워크플로에서 그 줄을 지우면 그만이라 <strong>악의적 사용자에게는 통제가 못 됩니다</strong> —
+  사고 방지용일 뿐입니다.</p>
+</div>
+
+<h3>그 외</h3>
+<ul>
+  <li><strong>레포가 private 인지 확인하세요.</strong> public 레포에 self-hosted runner 를 붙이면
+      외부인이 fork PR 로 그 서버에서 임의 코드를 실행할 수 있습니다.</li>
+  <li><strong>러너를 root 로 돌리지 마세요.</strong> 얻는 것이 없고 감사 로그에서 실행 주체만 흐려집니다.</li>
+  <li><strong><code>deploy.sh</code>·<code>rollback.sh</code> 에 <code>sudo</code> 를 넣지 마세요.</strong>
+      두 서버가 같은 스크립트를 쓰고, 다른 서버의 권한 상황은 다를 수 있습니다.</li>
+  <li><strong>로봇 계정 토큰 만료</strong>를 달력에 적어두세요. 만료되면 어느 날 갑자기 배포가 조용히 실패합니다.</li>
+</ul>
+
+<hr>
+
+<h2 id="traps">11. 함정 모음</h2>
+
+<h3>Prisma · 스키마</h3>
+<ul>
+  <li><strong><code>Dockerfile</code> 의 <code>prisma generate</code> 두 곳을 지우지 마세요.</strong>
+      <code>deps</code>(빌드 타입검사용)와 <code>prod-deps</code>(런타임용) <em>양쪽</em> 모두 필요합니다.
+      <a href="#p3">Phase 3</a> 참조.</li>
+  <li><strong>마이그레이션은 하위 호환으로.</strong> 컬럼·테이블 삭제는 두 릴리스로 나눕니다 —
+      먼저 코드에서 사용을 제거해 배포하고, 다음 릴리스에서 컬럼을 지웁니다.
+      한 릴리스에 둘을 합치면 그 배포는 되돌릴 수 없습니다.</li>
+  <li>이 프로젝트는 <strong>Prisma multiSchema</strong> 를 씁니다. 테이블이
+      <code>app</code>·<code>mdm</code>·<code>production</code>·<code>logistics</code> 등 10개 스키마에 나뉘어 있고
+      <code>public</code> 에는 <code>_prisma_migrations</code> 만 있습니다.
+      <code>public</code> 만 보고 “테이블이 없다”고 오판하기 쉽습니다.</li>
+</ul>
+
+<h3>타임존</h3>
+<div class="warn box">
+  <p><strong>컨테이너 타임존은 UTC 입니다. <code>Asia/Seoul</code> 등으로 바꾸지 마세요.</strong>
+  공장 로컬 시각이 필요한 계산은 <code>plant.timezone_code</code>(IANA 이름)를 씁니다.
+  서버 TZ 에 의존하면 공장이 둘 이상이 되는 순간 어느 쪽에도 맞지 않습니다.</p>
+  <p><code>postgres</code> 는 <code>command: postgres -c timezone=UTC -c log_timezone=UTC</code> 로 명시합니다 —
+  <code>initdb</code> 가 감지한 타임존을 <code>postgresql.conf</code> 에 <strong>구워버려서</strong>
+  환경변수만으로는 기존 클러스터를 못 바꿉니다. <code>-c</code> 는 초기화 순서와 무관하게 항상 이깁니다.</p>
+</div>
+
+<div class="danger box">
+  <span class="label"><code>business_date</code> 는 타임존 캐스팅으로 구할 수 없습니다</span>
+  <p><code>shift.crosses_midnight</code> 때문에 “실적이 속한 교대의 시작일”은 로컬 날짜 캐스팅으로 얻을 수 없습니다.
+  하노이 야간 교대(22:00~06:00)를 예로 들면:</p>
+  <div class="flow">02-02 05:30 실적 → business_date 는 02-01 이어야 함  ·  로컬 캐스팅은 02-02 (틀림)
+02-02 06:30 실적 → business_date 는 02-02 여야 함  ·  UTC  캐스팅은 02-01 (틀림)</div>
+  <p><strong>어떤 TZ 로도 맞지 않습니다.</strong> 도출 순서는 이렇습니다.</p>
+  <div class="flow">실적 timestamptz
+  → plant.timezone_code 로 로컬 시각 변환
+  → 그 로컬 시각이 속한 shift 판정 (start_time / end_time / crosses_midnight)
+  → 그 shift 가 시작된 로컬 날짜 = business_date</div>
+  <p class="small"><code>@db.Timestamptz</code> 컬럼은 절대 시각이라 안전합니다. 위험한 것은 <code>@db.Date</code> 입니다.</p>
+</div>
+
+<h3>compose · 배포</h3>
+<ul>
+  <li><strong><code>docker-compose.prod.yml</code> 의 이미지 YAML 앵커를 분리하지 마세요.</strong>
+      <code>migrate</code> 와 <code>api</code> 가 반드시 같은 이미지를 써야 합니다.
+      따로 적으면 한쪽 태그만 고치는 사고가 나고, 구버전 코드가 신버전 스키마를 보게 됩니다.
+      <pre><code>x-api-image: &amp;api-image ${REGISTRY:-hub.crefle.com}/mes/backend:${IMAGE_TAG:-main}</code></pre></li>
+  <li><strong><code>docker compose</code> 는 셸 환경변수를 <code>--env-file</code> 보다 우선합니다.</strong>
+      <code>deploy.sh</code> 도 같은 규칙을 따르게 맞춰뒀습니다. 두 쪽이 어긋나면 롤백 시 엉뚱한 태그에 이미지를 붙입니다.</li>
+  <li><code>docker-compose.prod.yml</code> 에 <code>name: omf-mes</code> 가 박혀 있어
+      <strong>배포 디렉터리를 옮겨도 컨테이너·볼륨이 그대로 붙습니다.</strong></li>
+  <li><strong><code>docker image prune</code> 은 데몬 전역에서 돕니다.</strong>
+      다른 서비스와 도커를 공유하는 서버에서는 라벨로 범위를 좁혀야 남의 dangling 이미지를 지우지 않습니다.
+      <pre><code>docker image prune -f --filter "until=168h" \
+  --filter "label=org.opencontainers.image.source=https://github.com/CREFLEINC/omf-mes-server"</code></pre></li>
+  <li><code>deploy.sh</code> 는 <code>flock</code> 을 씁니다 — <strong>macOS 에는 없어서</strong> 로컬에서 돌리면
+      잠금 단계에서 멈춥니다. 리눅스 서버 전용입니다.</li>
+</ul>
+
+<h3>GitHub Actions</h3>
+<ul>
+  <li><strong>러너가 죽으면 배포가 조용히 멈춥니다.</strong> Actions 는 러너가 없으면
+      실패가 아니라 <strong>큐 대기</strong> 상태가 되어 알림이 오지 않습니다.
+      Settings → Actions → Runners 를 가끔 확인하거나 큐 대기 시간에 알림을 걸어두세요.
+      <pre><code>gh run list --workflow=deploy-dev.yml --status queued</code></pre></li>
+  <li><strong>배포 자산은 항상 main 기준으로 동기화됩니다.</strong> 워크플로가 <code>ref: main</code> 을
+      체크아웃해 스크립트를 덮어씁니다. 그래서 <em>브랜치의 파일을 서버에 손으로 복사해두면
+      러너가 처음 도는 순간 main 버전으로 되돌립니다.</em> 머지를 먼저 하세요.</li>
+  <li><code>image_tag: v1.0.0</code> 으로 수동 배포하면 <strong>이미지는 v1.0.0, compose 는 main 기준</strong>이 됩니다.</li>
+</ul>
+
+<hr>
+
+<h2 id="trouble">12. 트러블슈팅</h2>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>증상</th><th>원인 · 조치</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Settings 에 <em>Actions → Runners</em> 가 안 보인다</td>
+      <td>Repo Admin 이 아님. <code>gh api repos/O/R -q '.permissions'</code> 로 확인</td>
+    </tr>
+    <tr>
+      <td>runners API 가 <code>404 Not Found</code></td>
+      <td>권한 부족. GitHub 은 권한 문제에 403 대신 404 를 반환합니다</td>
+    </tr>
+    <tr>
+      <td>Rules 화면에 업그레이드 안내만 나온다</td>
+      <td>Free 플랜 + private 레포. <a href="#security">보안 절</a> 참조</td>
+    </tr>
+    <tr>
+      <td><code>Log in to Harbor</code> 실패</td>
+      <td>Secret 오타(<code>$</code>·<code>+</code> 누락) 또는 Harbor <code>mes</code> 프로젝트 부재</td>
+    </tr>
+    <tr>
+      <td>배포 시 <code>pull 실패</code></td>
+      <td>로그인 위치 불일치. <code>~/.docker</code> 가 아니라 <code>&lt;배포디렉터리&gt;/.docker</code> 에 로그인해야 합니다</td>
+    </tr>
+    <tr>
+      <td><code>robot+server-pull</code> 로 로그인 시도됨</td>
+      <td>사용자명을 작은따옴표로 감싸지 않아 셸이 <code>$mes</code> 를 변수로 해석</td>
+    </tr>
+    <tr>
+      <td><code>unknown docker command: "compose  run"</code></td>
+      <td>여러 줄 붙여넣기에서 <code>\</code> 가 깨져 빈 인자가 낀 것. 한 줄로 실행</td>
+    </tr>
+    <tr>
+      <td><code>docker compose</code> 가 아예 없다고 나온다</td>
+      <td><code>DOCKER_CONFIG</code> 가 플러그인 탐색 경로도 바꿉니다. compose 가 사용자 플러그인으로 깔린 경우 발생</td>
+    </tr>
+    <tr>
+      <td>Prisma 가 엉뚱한 호스트를 찾는다</td>
+      <td><code>POSTGRES_PASSWORD</code> 에 <code>/</code> 등 URL 특수문자. <code>openssl rand -hex 24</code> 로 재생성</td>
+    </tr>
+    <tr>
+      <td>기동은 되는데 <code>JWT_SECRET 필요</code> 로 죽는다</td>
+      <td><code>.env.prod</code> 의 <code>JWT_SECRET</code> 이 빈 값. compose 의 <code>:?</code> 가드에 걸린 것</td>
+    </tr>
+    <tr>
+      <td>테이블이 1개만 보인다</td>
+      <td>multiSchema. <code>public</code> 에는 <code>_prisma_migrations</code> 만 있습니다</td>
+    </tr>
+    <tr>
+      <td>러너가 <code>offline</code> 이 된다</td>
+      <td><code>Linger=yes</code> 확인. 또는 유닛에 <code>Restart=always</code> 가 없음</td>
+    </tr>
+    <tr>
+      <td>다른 레포의 러너가 사라졌다</td>
+      <td>그 러너 디렉터리에서 <code>config.sh</code> 를 실행한 것. 별도 디렉터리를 써야 합니다</td>
+    </tr>
+    <tr>
+      <td>브랜치에서 <code>workflow_run</code> 이 안 걸린다</td>
+      <td>정상입니다. 기본 브랜치의 워크플로 파일만 동작합니다. <code>workflow_dispatch</code> 로 시험하세요</td>
+    </tr>
+    <tr>
+      <td>필수 상태 검사가 영원히 pending</td>
+      <td>job id(<code>verify</code>)를 지정한 것. 체크 이름(<code>Lint · Typecheck · Unit test</code>)을 써야 합니다</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<hr>
+<p class="small">
+  관련 문서 — <code>CLAUDE.md</code>(규칙과 함정) ·
+  <code>deploy/RUNNER.md</code>(러너 구성) ·
+  <code>deploy/RELEASE.md</code>(하노이 배포 런북) ·
+  <code>deploy/HANDOFF.md</code>(남은 작업) ·
+  <code>CI-CD.md</code>(적용 진행표)
+</p>
+
+</div>
+</body>
+</html>
