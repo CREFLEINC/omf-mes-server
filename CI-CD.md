@@ -146,7 +146,10 @@ migrate 와 api 에 각각 이미지를 적으면 한쪽 태그만 고치는 사
 - [ ] **4-3.** `sudo usermod -aG docker hulk` — **재로그인해야 반영됩니다**
 - [ ] **4-4.** 배포 디렉터리 `/opt/omf-mes` 생성, 소유자를 배포 계정으로
 - [ ] **4-5.** `.env.prod` 작성 — `반드시_교체할_것` 문자열이 남아 있지 않을 것
-- [ ] **4-6.** `docker login hub.crefle.com` (`robot$mes+server-pull`)
+- [ ] **4-6.** Harbor 로그인 — **배포 디렉터리 안으로** (`~/.docker` 아님)
+  - `docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-pull'`
+  - 사용자명은 작은따옴표 필수 — 안 감싸면 셸이 `$mes` 를 변수로 먹습니다
+  - `chmod 700` — `config.json` 은 암호화가 아니라 base64 입니다
 - [ ] **4-7.** `./deploy.sh` 를 **손으로 한 번 성공시킬 것** — 러너를 붙이기 전에 배포 자체가 되는지 확인하는 게 순서입니다
 - [ ] **4-8.** 초기 시드 1회
 

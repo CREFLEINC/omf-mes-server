@@ -50,10 +50,19 @@ vi .env.prod          # POSTGRES_PASSWORD, JWT_SECRET 채우기
 chmod 600 .env.prod
 chmod +x deploy.sh rollback.sh
 
-docker login hub.crefle.com
-#   Username: robot$mes+server-pull
+# ⚠️ 로그인 경로에 주의 — ~/.docker 가 아니라 배포 디렉터리 안입니다
+docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-pull'
 #   Password: <토큰>
+chmod 700 /opt/omf-mes/.docker
 ```
+
+**`--config` 경로를 빠뜨리면 `~/.docker` 에 로그인되고, `deploy.sh` 는 그걸 못 봅니다.** `deploy.sh` 는 자격증명도 배포 디렉터리를 따라가게 되어 있어서(`$APP_DIR/.docker`), 디렉터리마다 다른 로봇 계정을 쓸 수 있습니다. 시작할 때 `자격증명: ...` 로 실제 경로를 찍고, 로그인이 없으면 pull 전에 멈춥니다.
+
+`robot$mes+server-pull` 은 **작은따옴표로 감싸세요.** 큰따옴표나 따옴표 없이 쓰면 셸이 `$mes` 를 변수로 해석해 사용자명이 `robot+server-pull` 이 됩니다.
+
+홈 기준 경로(`~/.docker-server-pull` 등)를 쓰고 싶다면 `.env.prod` 에 `DOCKER_CONFIG` 를 적으면 됩니다.
+
+> `config.json` 은 암호화가 아니라 base64 입니다. 디렉터리를 `700` 으로 잠그세요.
 
 > 홈 디렉터리가 아니라 `/opt` 를 쓰는 이유는 `.env.prod`(DB 비밀번호, JWT 서명 키)와 `DEPLOYED` 기록이 **개인 계정 수명에 묶이지 않게** 하기 위해서입니다. `deploy.sh`·`rollback.sh` 는 자기가 놓인 위치를 배포 디렉터리로 인식하므로 경로를 바꿔도 스크립트는 그대로입니다. 워크플로의 `DEPLOY_DIR` 과 이 경로만 맞으면 됩니다.
 

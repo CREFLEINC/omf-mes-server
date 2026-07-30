@@ -239,7 +239,9 @@ cp .env.prod.example .env.prod
 vi .env.prod           # POSTGRES_PASSWORD, JWT_SECRET, IMAGE_TAG=main, LOG_TZ=Asia/Seoul
 chmod 600 .env.prod
 chmod +x deploy.sh rollback.sh
-docker login hub.crefle.com      # robot$mes+server-pull
+# 로그인은 배포 디렉터리 안으로 — ~/.docker 에 하면 deploy.sh 가 못 본다
+docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-pull'
+chmod 700 /opt/omf-mes/.docker
 ./deploy.sh                      # 손으로 한 번 성공시킬 것
 ```
 

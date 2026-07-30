@@ -17,6 +17,10 @@
 # 배포 디렉터리는 이 스크립트가 놓인 위치로 자동 결정된다.
 # 다른 곳을 쓰려면 APP_DIR 환경변수로 넘긴다.
 #
+# Harbor 자격증명도 배포 디렉터리를 따라간다($APP_DIR/.docker). 배포 디렉터리마다
+# 다른 로봇 계정을 쓸 수 있다. 로그인은 반드시 같은 경로로 해야 한다:
+#   docker --config <배포디렉터리>/.docker login hub.crefle.com -u 'robot$mes+server-pull'
+#
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,6 +54,7 @@ flock -n 9 || die "다른 배포가 이미 진행 중입니다."
 #   IMAGE_TAG=v1.2.0 ./deploy.sh     # .env.prod 는 그대로, 이번 배포만 v1.2.0
 #   ./rollback.sh v1.2.0             # .env.prod 를 영구히 바꾼다
 IMAGE_TAG_OVERRIDE="${IMAGE_TAG:-}"
+DOCKER_CONFIG_OVERRIDE="${DOCKER_CONFIG:-}"
 
 # IMAGE_TAG / REGISTRY / LOG_TZ 를 셸에서도 쓰기 위해 읽는다.
 # (docker 확인보다 먼저 읽어야 이후 로그가 지정한 LOG_TZ 로 찍힌다)
@@ -59,6 +64,18 @@ set -a
 set +a
 
 REGISTRY="${REGISTRY:-hub.crefle.com}"
+
+# --- Harbor 자격증명 위치 ---
+# 배포 디렉터리마다 다른 로봇 계정을 쓸 수 있도록 자격증명을 디렉터리 안에 둔다.
+#
+# 반드시 환경변수로 걸어야 한다. `docker --config` 플래그는 compose 플러그인에
+# **인자로만** 전달되고 DOCKER_CONFIG 를 설정하지 않는다. 그래서 플래그 방식이면
+# 아래 docker inspect/tag/prune 호출이 각자 ~/.docker 를 보게 된다.
+#
+#   기본값     $APP_DIR/.docker
+#   덮어쓰기   .env.prod 의 DOCKER_CONFIG, 또는 셸에서 넘긴 값(이쪽이 우선)
+DOCKER_CONFIG="${DOCKER_CONFIG_OVERRIDE:-${DOCKER_CONFIG:-$APP_DIR/.docker}}"
+export DOCKER_CONFIG
 if [[ -n "$IMAGE_TAG_OVERRIDE" ]]; then
   IMAGE_TAG="$IMAGE_TAG_OVERRIDE"
   export IMAGE_TAG          # compose 하위 프로세스도 같은 값을 보게 한다
@@ -72,10 +89,18 @@ API_IMAGE="${REGISTRY}/mes/backend:${IMAGE_TAG}"
 # 무엇을 배포하려 했는지를 먼저 남긴다 — 아래 점검에서 죽어도 로그에 의도가 보인다
 log "===== 배포 시작 (image=${API_IMAGE}) ====="
 log "태그 출처: ${TAG_SOURCE}"
+log "자격증명: ${DOCKER_CONFIG}"
 
 # docker 접근 권한 확인 — 여기서 걸러야 원인이 명확하다.
 # root 는 필요 없지만 실행 사용자가 docker 그룹에 속해 있어야 한다.
 docker info >/dev/null 2>&1 || die "docker 에 접근할 수 없습니다. 실행 사용자가 docker 그룹에 속해 있는지 확인하세요 (id -nG)."
+
+# Harbor 로그인 여부를 pull 전에 확인한다 — 여기서 안 걸러면 pull 이
+# "not found" 나 "unauthorized" 로 죽어서 원인이 자격증명인지 태그인지 헷갈린다.
+if [[ ! -f "$DOCKER_CONFIG/config.json" ]]; then
+  die "Harbor 로그인이 없습니다 ($DOCKER_CONFIG/config.json 없음).
+       docker --config '$DOCKER_CONFIG' login $REGISTRY -u 'robot\$mes+server-pull'"
+fi
 
 mkdir -p "$APP_DIR/logs"
 
@@ -110,7 +135,9 @@ rollback() {
 # --- 2) pull ---
 log "Harbor 에서 이미지 pull..."
 if ! "${COMPOSE[@]}" pull api; then
-  die "pull 실패 — Harbor 접속/로그인 상태를 확인하세요 (docker login ${REGISTRY})"
+  die "pull 실패 — Harbor 접속/로그인 상태를 확인하세요.
+       자격증명 위치: ${DOCKER_CONFIG}   (~/.docker 가 아닙니다)
+       docker --config '${DOCKER_CONFIG}' login ${REGISTRY} -u 'robot\$mes+server-pull'"
 fi
 
 # --- 3) 기동 (migrate 가 먼저 완료된 뒤 api 가 뜬다) ---

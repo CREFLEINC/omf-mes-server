@@ -124,6 +124,14 @@ IMAGE_TAG=v1.2.0 ./deploy.sh    # 일회성, .env.prod 는 그대로
 ./rollback.sh v1.2.0            # .env.prod 를 영구히 변경
 ```
 
+**Harbor 자격증명은 `~/.docker` 가 아니라 배포 디렉터리 안(`$APP_DIR/.docker`)입니다.** 디렉터리마다 다른 로봇 계정을 쓸 수 있게 한 것입니다. 로그인도 같은 경로로 해야 합니다.
+
+```bash
+docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-pull'
+```
+
+`deploy.sh` 는 이걸 **`DOCKER_CONFIG` 환경변수로** 겁니다. `docker --config` 플래그로 바꾸지 마세요 — 플래그는 compose 플러그인에 **인자로만** 전달되고 `DOCKER_CONFIG` 를 설정하지 않아서, 같은 스크립트의 `docker inspect`·`tag`·`prune` 이 각자 `~/.docker` 를 보게 됩니다.
+
 **헬스체크(`/api/health`)는 DB 까지 찌릅니다**(`SELECT 1`). Prisma 초기화 실패도 여기서 걸리고, `deploy.sh` 가 자동 롤백합니다. 다만 업무 로직 정상까지 보장하지는 않습니다.
 
 **개발 서버 배포는 `workflow_run` 으로 연쇄됩니다.** 이 트리거는 기본 브랜치에 있는 워크플로 파일만 동작하므로, 브랜치에서 테스트해도 자동 실행은 안 걸립니다. `workflow_dispatch`(수동 버튼)로 시험하세요.
