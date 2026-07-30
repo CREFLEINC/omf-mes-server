@@ -8,8 +8,8 @@
 # 중지:  docker compose -f docker-compose.prod.yml --env-file .env.prod down
 #
 # 배포 대상은 .env.prod 의 IMAGE_TAG 로 갈린다.
-#   개발 서버(한국)   IMAGE_TAG=main    — cron 으로 매일 자동 배포
-#   하노이 운영 서버  IMAGE_TAG=stable  — cron 없음, 합의된 창에 수동 (deploy/RELEASE.md)
+#   개발 서버(한국)   IMAGE_TAG=main    — main 머지 후 self-hosted runner 가 자동 배포
+#   하노이 운영 서버  IMAGE_TAG=stable  — 자동 배포 없음, 합의된 창에 수동 (deploy/RELEASE.md)
 #
 # ─── 타임존 정책 ─────────────────────────────────────────────
 # 컨테이너는 전부 UTC 로 돌린다. 공장 로컬 시각이 필요한 계산은
