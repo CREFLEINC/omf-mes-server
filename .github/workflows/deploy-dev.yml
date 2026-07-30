@@ -1,0 +1,96 @@
+name: Deploy to dev server
+
+# 개발 서버(한국) 배포. cron 을 대체한다.
+#
+# 트리거 두 가지:
+#   1) "Build & Push to Harbor" 가 main 브랜치에서 성공하면 자동 실행
+#   2) Actions 탭에서 수동 실행 (image_tag 지정 가능)
+#
+# 하노이 운영 서버는 이 워크플로 대상이 아니다 — deploy/RELEASE.md 절차를 따른다.
+#
+# 보안: 이 워크플로는 pull_request 로 트리거되지 않는다. PR 검증(ci.yml)은
+# GitHub 호스팅 러너에서 돌기 때문에, 외부 기여자의 코드가 사내 서버에서
+# 실행될 경로가 없다. 이 성질을 깨지 않도록 트리거를 늘릴 때 주의할 것.
+
+on:
+  workflow_run:
+    workflows: ['Build & Push to Harbor']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '배포할 이미지 태그 (비우면 .env.prod 의 IMAGE_TAG 사용)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 개발 서버 배포
+    # 자동 트리거는 main 브랜치의 성공한 빌드만 받는다.
+    # 태그 push 로 만들어진 빌드는 :main 을 갱신하지 않으므로 배포할 것이 없다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+
+    runs-on: [self-hosted, omf-dev]
+    environment: dev
+
+    env:
+      DEPLOY_DIR: /home/hulk/working/omf-mes
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 사전 점검
+        run: |
+          set -euo pipefail
+          test -d "$DEPLOY_DIR"            || { echo "::error::$DEPLOY_DIR 가 없습니다. 최초 1회는 수동으로 구성해야 합니다."; exit 1; }
+          test -f "$DEPLOY_DIR/.env.prod"  || { echo "::error::$DEPLOY_DIR/.env.prod 가 없습니다."; exit 1; }
+          docker info >/dev/null 2>&1      || { echo "::error::러너 사용자가 docker 그룹에 속해 있지 않습니다."; exit 1; }
+          echo "점검 통과"
+
+      - name: 배포 자산 동기화
+        run: |
+          set -euo pipefail
+          # .env.prod 는 절대 건드리지 않는다 — 서버에만 있는 시크릿이다.
+          install -m 644 docker-compose.prod.yml         "$DEPLOY_DIR/"
+          install -m 644 deploy/omf-mes-deploy.logrotate "$DEPLOY_DIR/"
+          install -m 755 deploy/deploy.sh                "$DEPLOY_DIR/"
+          install -m 755 deploy/rollback.sh              "$DEPLOY_DIR/"
+          echo "동기화 완료"
+
+      - name: 배포
+        env:
+          # workflow_run 으로 들어오면 빈 문자열이 된다 → 아래에서 unset 처리.
+          # 빈 값을 그대로 두면 compose 가 .env.prod 의 IMAGE_TAG 를 무시한다.
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${IMAGE_TAG:-}" ]]; then
+            unset IMAGE_TAG
+            echo "IMAGE_TAG 미지정 → .env.prod 값을 사용합니다"
+          else
+            echo "IMAGE_TAG=$IMAGE_TAG (일회성 지정, .env.prod 는 변경하지 않음)"
+          fi
+          cd "$DEPLOY_DIR"
+          ./deploy.sh
+
+      - name: 배포 결과 요약
+        if: always()
+        run: |
+          {
+            echo "### 개발 서버 배포 결과"
+            echo ""
+            echo '```'
+            cat "$DEPLOY_DIR/DEPLOYED" 2>/dev/null || echo "(DEPLOYED 기록 없음 — 배포가 완료되지 않았습니다)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

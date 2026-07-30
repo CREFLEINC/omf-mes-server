@@ -1,11 +1,24 @@
-# /etc/logrotate.d/omf-mes-deploy
-# 설치: sudo cp omf-mes-deploy.logrotate /etc/logrotate.d/omf-mes-deploy
+# 배포 로그 로테이션 — root 없이 사용자 권한으로 동작한다.
+#
+# /etc/logrotate.d 에 넣지 않는다(root 권한 필요). 대신 사용자 crontab 에서
+# 상태파일을 지정해 직접 호출한다 — omf-mes-deploy.crontab 참조.
+#
+#   logrotate -s ~/working/omf-mes/logs/.logrotate.state \
+#             ~/working/omf-mes/omf-mes-deploy.logrotate
+#
+# 동작 확인 (실제로 돌리지 않고 검사만):
+#   logrotate -d -s ~/working/omf-mes/logs/.logrotate.state \
+#                ~/working/omf-mes/omf-mes-deploy.logrotate
+#
+# 경로는 실제 배포 디렉터리에 맞게 고치세요.
 
-/var/log/omf-mes-deploy.log {
+/home/hulk/working/omf-mes/logs/deploy.log {
     weekly
     rotate 8
     compress
     missingok
     notifempty
+    # deploy.sh 가 append 로 쓰므로 파일을 옮기지 않고 잘라낸다.
+    # (rename 방식이면 실행 중인 리다이렉트가 사라진 파일을 계속 붙잡는다)
     copytruncate
 }

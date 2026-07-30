@@ -1,4 +1,4 @@
-# OMF MES — 최소 배포 구성 (단일 서버, API + DB)
+# OMF MES — 배포 구성 (단일 서버, API + DB)
 #
 # 이미지는 서버에서 빌드하지 않고 Harbor 에서 받아온다.
 # 배포 서버에는 소스코드가 없어도 되고, 개발자 PC 와 운영 서버가 "같은 바이너리"를 쓴다는 게 보장된다.
@@ -6,6 +6,22 @@
 # 실행:  ./deploy.sh                 (권장 — pull · 헬스체크 · 실패 시 자동 롤백)
 # 수동:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 # 중지:  docker compose -f docker-compose.prod.yml --env-file .env.prod down
+#
+# 배포 대상은 .env.prod 의 IMAGE_TAG 로 갈린다.
+#   개발 서버(한국)   IMAGE_TAG=main    — cron 으로 매일 자동 배포
+#   하노이 운영 서버  IMAGE_TAG=stable  — cron 없음, 합의된 창에 수동 (deploy/RELEASE.md)
+#
+# ─── 타임존 정책 ─────────────────────────────────────────────
+# 컨테이너는 전부 UTC 로 돌린다. 공장 로컬 시각이 필요한 계산은
+# plant.timezone_code 를 명시적으로 사용한다 (하노이 = Asia/Ho_Chi_Minh).
+#
+# 서버 TZ 를 현장에 맞춰도 business_date 는 맞지 않는다 — shift.crosses_midnight
+# 때문에 "실적이 속한 교대의 시작일"은 로컬 날짜 캐스팅으로 얻을 수 없다.
+# 어차피 명시적 로직이 필요하므로, 서버 TZ 가 우연히 답을 맞춰주는 상황을
+# 만들지 않는 편이 낫다. 잘못 쓴 코드가 개발단에서 바로 틀리게 나온다.
+#
+# 로그 가독성은 .env.prod 의 LOG_TZ 로 사이트별로 맞춘다.
+# ─────────────────────────────────────────────────────────────
 #
 # 범위 밖(인프라 확정 후 별도 작업): 웜 스탠바이 이중화 · NAS 백업 · 오프라인 설치 패키지
 # — 기술스택 결정서 결정 15 참조.
@@ -24,11 +40,21 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER 필요}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 필요}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB 필요}
-      TZ: Asia/Seoul
+      TZ: UTC
+    # initdb 는 감지한 시스템 타임존을 postgresql.conf 에 구워버린다. 한 번 초기화된
+    # 클러스터는 나중에 TZ 환경변수를 바꿔도 그 값이 그대로 남는다.
+    # -c 로 넘기면 postgresql.conf 를 덮어쓰므로 초기화 순서와 무관하게 항상 이긴다.
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - log_timezone=UTC
     volumes:
       - pgdata:/var/lib/postgresql/data
     # 포트를 호스트로 노출하지 않는다 — API만 내부 네트워크로 접근한다.
     # DB 직접 접속이 필요하면 `docker compose exec postgres psql`을 쓴다.
+    #   조회 시 현장 시각으로 보려면: SET TIME ZONE 'Asia/Ho_Chi_Minh';
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
@@ -41,6 +67,7 @@ services:
     image: *api-image
     restart: 'no'
     environment:
+      TZ: UTC
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
     command: ['node_modules/.bin/prisma', 'migrate', 'deploy']
     depends_on:
@@ -58,7 +85,7 @@ services:
       # 없거나 32자 미만이면 서버가 기동하지 않는다 — 약한 키로 조용히 뜨는 것보다 낫다.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요 — openssl rand -base64 48}
       JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
-      TZ: Asia/Seoul
+      TZ: UTC
     ports:
       - '${API_PORT:-3100}:3100'
     depends_on:
@@ -69,6 +96,7 @@ services:
         condition: service_completed_successfully
     healthcheck:
       # 이미지에 curl이 없다 — Node 22의 내장 fetch를 쓴다.
+      # 이 엔드포인트는 DB까지 찌른다(SELECT 1) — Prisma 초기화 실패도 여기서 걸린다.
       test:
         [
           'CMD',

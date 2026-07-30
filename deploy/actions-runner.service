@@ -1,0 +1,43 @@
+# GitHub Actions self-hosted runner — 사용자 systemd 유닛 (root 불필요)
+#
+# 정식 설치(./svc.sh install)는 시스템 유닛을 만들어 root 가 필요하다.
+# 이 파일은 그 대안으로, 사용자 세션에서 러너를 상주시킨다.
+#
+# ─── 설치 ────────────────────────────────────────────────────
+#   mkdir -p ~/.config/systemd/user
+#   cp actions-runner.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now actions-runner
+#
+# ⚠️ 로그아웃해도 살아 있게 하려면 linger 가 필요하다:
+#   loginctl enable-linger hulk
+#
+#   권한이 없어 실패하면 인프라 담당자에게 아래 중 하나를 요청하세요.
+#     loginctl enable-linger hulk          (사용자 서비스 상시 실행 허용)
+#     또는 러너 디렉터리에서 ./svc.sh install hulk  (시스템 유닛으로 정식 설치)
+#
+# ─── 확인 ────────────────────────────────────────────────────
+#   systemctl --user status actions-runner
+#   journalctl --user -u actions-runner -f
+#   loginctl show-user hulk | grep Linger      # Linger=yes 여야 재부팅 후에도 산다
+#
+# 경로는 실제 러너 설치 위치에 맞게 고치세요.
+
+[Unit]
+Description=GitHub Actions Runner (omf-dev)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hulk/actions-runner
+ExecStart=/home/hulk/actions-runner/run.sh
+Restart=always
+RestartSec=10
+# 러너는 작업을 자식 프로세스로 돌린다. KillMode=process 로 두면
+# 러너 재시작이 진행 중인 배포를 죽이지 않는다.
+KillMode=process
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=default.target
