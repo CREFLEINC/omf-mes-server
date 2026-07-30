@@ -113,6 +113,12 @@ curl -s localhost:3100/api/health
 cat /opt/omf-mes/DEPLOYED
 ```
 
+`git_revision` 이 릴리스 태그의 커밋과 같은지 확인하세요. `image_tag` 만 보면 안 됩니다 — `stable` 은 가변 태그라 무엇을 가리키는지 기록으로 남지 않습니다.
+
+```bash
+git rev-list -n1 v1.2.0        # 이 값과 DEPLOYED 의 git_revision 이 같아야 한다
+```
+
 그리고 **POP 단말 1대에서 실제 트랜잭션을 한 번 돌려보세요.** 헬스체크는 `SELECT 1` 만 하므로 통과해도 업무 로직이 정상이라는 보장은 없습니다.
 
 ### 7. 실패 시 롤백
