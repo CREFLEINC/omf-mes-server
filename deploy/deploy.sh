@@ -181,15 +181,39 @@ while :; do
 done
 
 # --- 5) 배포 기록 ---
+#
+# 이미지가 스스로 들고 있는 출처를 함께 남긴다. `image_tag=main` 만으로는
+# "지금 무엇이 돌고 있나"에 답할 수 없다 — 가변 태그는 언제든 다른 것을 가리킨다.
+# git_revision 과 image_digest 가 태그를 신뢰하지 않고 대조할 수 있는 값이다.
+#
+# 주의: api_image_id 는 config blob digest 이고, Harbor·빌드 로그가 보여주는 것은
+#       manifest digest 다. 같은 이미지인데도 값이 다르므로 서로 대조하면 안 된다.
+cid=$("${COMPOSE[@]}" ps -q api)
+img_id=$(docker inspect --format '{{.Image}}' "$cid")
+
+# build-push.yml 의 metadata-action 이 붙이는 OCI 라벨. 라벨이 없으면 <no value> 가 나온다.
+GIT_REV=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$cid" 2>/dev/null || true)
+if [[ -z "$GIT_REV" || "$GIT_REV" == "<no value>" ]]; then GIT_REV=none; fi
+
+# RepoDigests 는 레지스트리에서 받아온 이미지에만 있다. 롤백에서 docker tag 로
+# 붙인 태그나 로컬 빌드에는 없을 수 있으므로 그때는 none 으로 남긴다.
+IMG_DIGEST=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$img_id" 2>/dev/null \
+  | grep -m1 -F "${REGISTRY}/mes/backend@" || true)
+IMG_DIGEST="${IMG_DIGEST#*@}"
+if [[ -z "$IMG_DIGEST" ]]; then IMG_DIGEST=none; fi
+
 {
   echo "deployed_at=$(TZ="$LOG_TZ" date -Iseconds)"
   echo "image_tag=${IMAGE_TAG}"
-  cid=$("${COMPOSE[@]}" ps -q api)
+  echo "git_revision=${GIT_REV}"
+  echo "image_digest=${IMG_DIGEST}"
   echo "api_image=$(docker inspect --format '{{.Config.Image}}' "$cid")"
-  echo "api_image_id=$(docker inspect --format '{{.Image}}' "$cid")"
+  echo "api_image_id=${img_id}"
   echo "prev_api_image_id=${PREV_API:-none}"
 } > "$APP_DIR/DEPLOYED"
 log "배포 기록: $APP_DIR/DEPLOYED"
+log "  git_revision=${GIT_REV}"
+log "  image_digest=${IMG_DIGEST}"
 
 # --- 6) 정리 (롤백 여지를 위해 7일치는 남긴다) ---
 #

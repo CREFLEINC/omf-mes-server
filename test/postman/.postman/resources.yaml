@@ -1,0 +1,10 @@
+# Use this workspace to collaborate
+workspace:
+  id: 439d6436-d000-4a22-8771-551886ea3c00
+
+localResources:
+  collections:
+    - ../omf-mes-pop.postman_collection.json
+  environments:
+    - ../local.postman_environment.example.json
+    - ../local.postman_environment.json

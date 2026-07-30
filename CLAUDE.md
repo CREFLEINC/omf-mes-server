@@ -132,6 +132,15 @@ docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-p
 
 `deploy.sh` 는 이걸 **`DOCKER_CONFIG` 환경변수로** 겁니다. `docker --config` 플래그로 바꾸지 마세요 — 플래그는 compose 플러그인에 **인자로만** 전달되고 `DOCKER_CONFIG` 를 설정하지 않아서, 같은 스크립트의 `docker inspect`·`tag`·`prune` 이 각자 `~/.docker` 를 보게 됩니다.
 
+**"서버에 뭐가 돌고 있나"는 태그로 답할 수 없습니다.** `:main` 은 가변 태그라 배포 당시의 main 과 지금의 main 이 다릅니다. `DEPLOYED` 의 `git_revision`(이미지에 박힌 커밋 해시)으로 대조하세요.
+
+```bash
+grep git_revision /opt/omf-mes/DEPLOYED     # 서버
+git rev-parse origin/main                   # 로컬 — 같아야 함
+```
+
+`api_image_id` 는 **config blob digest** 이고 Harbor·빌드 로그가 보여주는 것은 **manifest digest** 입니다. 같은 이미지인데도 값이 달라서 서로 대조하면 안 됩니다. Harbor 와 맞춰볼 값은 `image_digest` 입니다.
+
 **헬스체크(`/api/health`)는 DB 까지 찌릅니다**(`SELECT 1`). Prisma 초기화 실패도 여기서 걸리고, `deploy.sh` 가 자동 롤백합니다. 다만 업무 로직 정상까지 보장하지는 않습니다.
 
 **개발 서버 배포는 `workflow_run` 으로 연쇄됩니다.** 이 트리거는 기본 브랜치에 있는 워크플로 파일만 동작하므로, 브랜치에서 테스트해도 자동 실행은 안 걸립니다. `workflow_dispatch`(수동 버튼)로 시험하세요.
