@@ -80,14 +80,21 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 
 | | 개발 서버 (한국) | 하노이 운영 서버 |
 |---|---|---|
-| 배포 경로 | `/home/hulk/working/omf-mes` | (미구성) |
-| 계정 | `hulk` — **sudo 없음**, docker 그룹 | |
+| 배포 경로 | `/opt/omf-mes` | `/opt/omf-mes` (미구성) |
+| 계정 | `hulk` — docker 그룹, sudo 가능 | |
 | 서버 TZ | `Etc/UTC` | |
 | `IMAGE_TAG` | `main` | `stable` / `vX.Y.Z` |
 | `LOG_TZ` | `Asia/Seoul` | `Asia/Ho_Chi_Minh` |
 | 배포 | runner 자동 + 수동 버튼 | `deploy.sh` 수동 |
 
-`sudo` 를 쓸 수 없어서 `/opt` 대신 홈 디렉터리를 씁니다. `deploy.sh`·`rollback.sh` 는 **자신이 놓인 위치를 배포 디렉터리로 인식**하므로 경로 하드코딩이 없습니다.
+배포 디렉터리는 `/opt/omf-mes` 이고, 소유자를 배포 계정으로 넘겨 **일상 운영에는 sudo 가 필요 없습니다.**
+
+```bash
+sudo mkdir -p /opt/omf-mes/logs
+sudo chown -R hulk:hulk /opt/omf-mes
+```
+
+`sudo` 가 필요한 것은 최초 디렉터리 생성과 러너 서비스 등록(`svc.sh install`) 두 번뿐입니다. `deploy.sh`·`rollback.sh` 에는 `sudo` 를 넣지 마세요 — **두 서버가 같은 스크립트를 쓰고**, 스크립트는 **자신이 놓인 위치를 배포 디렉터리로 인식**하므로 경로 하드코딩도 없습니다.
 
 ## 파일 지도
 
@@ -104,7 +111,6 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 | `deploy/rollback.sh` | `IMAGE_TAG` 를 바꾸고 배포 (릴리스 적용에도 사용) |
 | `deploy/RUNNER.md` | 개발 서버 runner 구성 절차 |
 | `deploy/RELEASE.md` | 하노이 현장 배포 런북 |
-| `deploy/actions-runner.service` | root 없이 러너 상주 (사용자 systemd) |
 | `deploy/omf-mes-deploy.crontab` | 러너를 못 쓸 때의 대안 (현재 미사용) |
 
 ## 알아둘 동작
@@ -121,3 +127,7 @@ IMAGE_TAG=v1.2.0 ./deploy.sh    # 일회성, .env.prod 는 그대로
 **개발 서버 배포는 `workflow_run` 으로 연쇄됩니다.** 이 트리거는 기본 브랜치에 있는 워크플로 파일만 동작하므로, 브랜치에서 테스트해도 자동 실행은 안 걸립니다. `workflow_dispatch`(수동 버튼)로 시험하세요.
 
 **러너가 죽으면 배포가 조용히 멈춥니다.** Actions 는 러너가 없으면 실패가 아니라 큐 대기 상태가 되어 알림이 오지 않습니다.
+
+**러너는 `hulk` 로 돌립니다 — root 로 올리지 마세요.** 배포에 필요한 건 docker 접근뿐이고, root 로 올려도 얻는 게 없습니다. `svc.sh` 는 `run_as_user=${arg_2:-$SUDO_USER}` 라서 **root 셸에서 인자 없이** `./svc.sh install` 을 치면 러너가 root 로 뜹니다. 사용자명을 명시하고 확인하세요 — `systemctl show -p User --value 'actions.runner.*.service'`.
+
+다만 **docker 그룹은 이미 root 와 사실상 동등합니다**(`docker run -v /:/host`). 러너를 어느 계정으로 돌리든 "`.github/workflows/` 를 고칠 수 있는 사람 = 그 서버의 root" 라는 사실은 변하지 않습니다. 이걸 실제로 끊으려면 rootless Docker 나 socket proxy 가 필요하고, 그전까지는 **main 브랜치 보호가 유일한 실질 통제**입니다.

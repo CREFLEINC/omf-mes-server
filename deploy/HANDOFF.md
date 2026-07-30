@@ -13,7 +13,7 @@ main            8bbf5c1  Merge PR #1 (chore/ci-cd)      ← Harbor 파이프라�
 현재 브랜치      fix/deploy-timezone                     ← T-1~T-4 커밋·푸시 완료
 ```
 
-브랜치에 담긴 변경 (타임존 정책 + sudo 없는 환경 + runner 전환):
+브랜치에 담긴 변경 (타임존 정책 + 배포 경로 정리 + runner 전환):
 
 ```
  M docker-compose.yml                 TZ UTC 통일, postgres -c timezone
@@ -22,13 +22,30 @@ main            8bbf5c1  Merge PR #1 (chore/ci-cd)      ← Harbor 파이프라�
  M deploy/rollback.sh                 경로 자동 인식
  M deploy/omf-mes-deploy.logrotate    사용자 권한용 경로/상태파일
  M .env.prod.example                  LOG_TZ 추가 (T-1)
- D deploy/omf-mes-deploy.cron         /etc/cron.d 전용 — sudo 없어 사용 불가 (T-3)
+ D deploy/omf-mes-deploy.cron         러너가 대체 (T-3)
  A .github/workflows/deploy-dev.yml   self-hosted runner 배포 (T-2)
  A deploy/RELEASE.md                  하노이 현장 배포 런북
  A deploy/RUNNER.md                   개발 서버 runner 구성 절차
- A deploy/actions-runner.service      root 없이 러너 상주
  A deploy/omf-mes-deploy.crontab      러너 대안 (현재 미사용)
 ```
+
+### root 취득에 따른 재구성 (2026-07-30 추가)
+
+배포 계정 `hulk` 가 **sudo 를 쓸 수 있게 되어** 아래를 되돌렸습니다. 러너 방식 자체는 그대로입니다 — root 는 상주 방법과 디렉터리 선택만 바꿉니다.
+
+```
+ M .github/workflows/deploy-dev.yml   DEPLOY_DIR → /opt/omf-mes
+ M deploy/RUNNER.md                   svc.sh 정식 설치로 전환, /opt 경로
+ M deploy/RELEASE.md                  /opt 경로, cron 언급 제거
+ M deploy/omf-mes-deploy.logrotate    /opt 경로, /etc/logrotate.d 설치 안내
+ M deploy/omf-mes-deploy.crontab      /opt 경로
+ M CLAUDE.md                          서버 표, 러너 실행 계정 주의
+ D deploy/actions-runner.service      svc.sh 가 대체 (사용자 systemd 우회 불필요)
+```
+
+**개발 서버·하노이 모두 배포 디렉터리는 `/opt/omf-mes` 입니다.** 소유자를 `hulk` 로 넘기므로 일상 운영에는 sudo 가 필요 없습니다. `.env.prod`(DB 비밀번호·JWT 키)가 개인 계정 홈 수명에 묶이지 않게 하려는 것이 목적입니다.
+
+**바꾸지 않은 것** — `deploy.sh`·`rollback.sh` 에는 여전히 `sudo` 가 없습니다. 두 서버가 같은 스크립트를 쓰고 하노이 권한 상황은 아직 모릅니다. cron 으로 되돌리지도 않았습니다(`/etc/cron.d` 가 가능해졌지만 cron 의 단점은 권한 문제가 아니었습니다).
 
 이미 확인된 사항:
 
@@ -114,7 +131,7 @@ jobs:
     environment: dev
 
     env:
-      DEPLOY_DIR: /home/hulk/working/omf-mes
+      DEPLOY_DIR: /opt/omf-mes      # 원문은 /home/hulk/working/omf-mes — root 취득 후 변경
 
     steps:
       - name: Checkout
@@ -213,8 +230,9 @@ PR #1 머지 시 `Build & Push to Harbor` 가 돌았을 텐데 결과를 확인�
 `deploy/RUNNER.md` 의 1번 절 참조. 요점:
 
 ```bash
-mkdir -p /home/hulk/working/omf-mes/logs
-cd /home/hulk/working/omf-mes
+sudo mkdir -p /opt/omf-mes/logs
+sudo chown -R hulk:hulk /opt/omf-mes     # 이후 운영은 sudo 없이
+cd /opt/omf-mes
 # 레포에서 복사: docker-compose.prod.yml, .env.prod.example,
 #                deploy/deploy.sh, deploy/rollback.sh, deploy/omf-mes-deploy.logrotate
 cp .env.prod.example .env.prod
@@ -238,24 +256,30 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 
 `deploy/RUNNER.md` 전체 참조. 라벨은 `omf-dev` 여야 워크플로의 `runs-on: [self-hosted, omf-dev]` 와 맞습니다.
 
-### T-8. 인프라 담당자 요청 (T-6·T-7 의 선행 조건일 수 있음)
+주의할 두 가지:
 
-```
-usermod -aG docker hulk        # docker 접근 — 없으면 배포 자체가 불가
-loginctl enable-linger hulk    # 러너 상주 (또는 ./svc.sh install 을 root 로 1회)
-```
+- `svc.sh` 는 **`./config.sh` 등록을 마쳐야 생깁니다.** 압축 푼 직후에는 없습니다
+- `sudo ./svc.sh install hulk` — **사용자명을 반드시 붙이세요.** root 셸에서 인자 없이 실행하면 러너가 root 로 뜹니다. 설치 후 `systemctl show -p User --value 'actions.runner.*.service'` 로 확인
 
-현재 `hulk` 가 docker 그룹인지 확인:
+공식 유닛 템플릿에 `Restart=` 가 없으므로 drop-in 으로 `Restart=always` 를 보강합니다(RUNNER.md 3번 절).
+
+### T-8. docker 그룹 (T-6·T-7 의 선행 조건)
+
+sudo 를 쓸 수 있으므로 직접 처리합니다. **재로그인해야 반영됩니다.**
 
 ```bash
-id -nG | tr ' ' '\n' | grep -qx docker && echo OK || echo "docker 그룹 필요"
+id -nG | tr ' ' '\n' | grep -qx docker && echo OK || sudo usermod -aG docker hulk
 ```
+
+`loginctl enable-linger` 는 더 이상 필요 없습니다 — `svc.sh` 가 시스템 유닛을 만들므로 사용자 세션과 무관하게 뜹니다.
 
 ### T-9. main 브랜치 보호
 
 Settings → Branches → `main` → Require PR + Require status checks(`verify`).
 
 self-hosted runner 를 붙인 뒤에는 이게 **보안 통제**가 됩니다 — `.github/workflows/` 를 고칠 수 있는 사람은 사내 서버에서 임의 명령을 실행할 수 있습니다.
+
+러너를 `hulk` 로 돌리든 root 로 돌리든 마찬가지입니다. **docker 그룹이 이미 root 와 사실상 동등**하기 때문입니다(`docker run -v /:/host`). 이 등식을 실제로 끊으려면 rootless Docker 나 socket proxy 가 필요하고, 그전까지 T-9 가 유일한 실질 통제입니다. **T-7 보다 먼저 하는 편이 낫습니다.**
 
 ### T-10. 릴리스·롤백 리허설
 

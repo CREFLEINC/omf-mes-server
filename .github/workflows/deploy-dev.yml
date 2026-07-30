@@ -42,7 +42,7 @@ jobs:
     environment: dev
 
     env:
-      DEPLOY_DIR: /home/hulk/working/omf-mes
+      DEPLOY_DIR: /opt/omf-mes
 
     steps:
       - name: Checkout

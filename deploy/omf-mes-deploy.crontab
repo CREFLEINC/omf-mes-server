@@ -9,10 +9,11 @@
 #     동안 POP 단말이 서버를 잃습니다 — 절차는 deploy/RELEASE.md 참조.
 #
 # ─── 설치 ────────────────────────────────────────────────────
-# /etc/cron.d 는 root 권한이 필요하므로 사용자 crontab 을 쓴다.
+# root 가 있어도 /etc/cron.d 대신 사용자 crontab 을 쓴다. 배포는 root 없이
+# 도는 작업이고, 등록/해제에 sudo 가 필요 없는 편이 대안 경로로서 낫다.
 #
-#   crontab ~/working/omf-mes/omf-mes-deploy.crontab     # 파일로 통째 등록
-#   crontab -l                                            # 등록 확인
+#   crontab /opt/omf-mes/omf-mes-deploy.crontab     # 파일로 통째 등록
+#   crontab -l                                       # 등록 확인
 #
 # ⚠️ `crontab <파일>` 은 기존 등록을 통째로 덮어씁니다.
 #    이미 등록된 다른 작업이 있으면 먼저 백업하세요:
@@ -36,7 +37,7 @@
 #   KST 월~금 04:00  =  UTC 일~목 19:00  →  0 19 * * 0-4
 #
 # ─── 경로 ────────────────────────────────────────────────────
-# 아래 경로는 실제 배포 디렉터리에 맞게 고치세요. 기본값은 /home/hulk/working/omf-mes 입니다.
+# 아래 경로는 실제 배포 디렉터리에 맞게 고치세요. 기본값은 /opt/omf-mes 입니다.
 # ─────────────────────────────────────────────────────────────
 
 SHELL=/bin/bash
@@ -44,7 +45,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
 
 # 매일 19:00 UTC = 04:00 KST — 개발 서버가 :main 최신 코드를 반영한다
-0 19 * * * cd /home/hulk/working/omf-mes && ./deploy.sh >> logs/deploy.log 2>&1
+0 19 * * * cd /opt/omf-mes && ./deploy.sh >> logs/deploy.log 2>&1
 
-# 매주 일요일 20:00 UTC — 로그 로테이션 (root 없이 사용자 상태파일로 동작)
-0 20 * * 0 /usr/sbin/logrotate -s /home/hulk/working/omf-mes/logs/.logrotate.state /home/hulk/working/omf-mes/omf-mes-deploy.logrotate
+# 매주 일요일 20:00 UTC — 로그 로테이션 (사용자 상태파일로 동작)
+# ⚠️ omf-mes-deploy.logrotate 의 `su hulk hulk` 줄을 지운 사본이어야 합니다 — root 전용 지시자입니다.
+0 20 * * 0 /usr/sbin/logrotate -s /opt/omf-mes/logs/.logrotate.state /opt/omf-mes/omf-mes-deploy.logrotate

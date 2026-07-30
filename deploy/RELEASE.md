@@ -6,9 +6,10 @@
 
 | | 개발 서버 (한국) | 하노이 운영 서버 |
 |---|---|---|
+| 배포 경로 | `/opt/omf-mes` | `/opt/omf-mes` |
 | `IMAGE_TAG` | `main` | `stable` |
 | `LOG_TZ` | `Asia/Seoul` | `Asia/Ho_Chi_Minh` |
-| 배포 시점 | cron 매일 19:00 UTC (04:00 KST) | 합의된 창에 수동 |
+| 배포 시점 | main 머지 후 self-hosted runner 가 자동 | 합의된 창에 수동 |
 | 반영 대상 | main 브랜치 최신 코드 | `git tag` 로 릴리스한 버전 |
 | 목적 | 통합 검증 | 현장 가동 |
 
@@ -46,11 +47,11 @@ NestJS 부팅             5~15초
 
 ### 1. 개발 서버에서 검증
 
-main 에 머지된 코드는 다음 날 04:00 KST 에 개발 서버에 자동 반영됩니다. **최소 하루는 개발 서버에서 돌려보세요.**
+main 에 머지된 코드는 이미지 빌드가 끝나는 대로 개발 서버에 자동 반영됩니다(수 분). **최소 하루는 개발 서버에서 돌려보세요.**
 
 ```bash
 # 개발 서버
-cat ~/working/omf-mes/DEPLOYED
+cat /opt/omf-mes/DEPLOYED
 curl -s localhost:3100/api/health
 ```
 
@@ -80,7 +81,7 @@ git diff v1.1.0..v1.2.0 --stat -- prisma/migrations/
 - 배포 직전 DB 백업:
 
 ```bash
-cd ~/working/omf-mes
+cd /opt/omf-mes
 mkdir -p backup
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
   exec -T postgres pg_dump -U omf -d omf_mes -Fc \
@@ -95,7 +96,7 @@ ls -lh backup/
 ### 5. 배포
 
 ```bash
-cd ~/working/omf-mes
+cd /opt/omf-mes
 ./rollback.sh v1.2.0
 ```
 
@@ -109,7 +110,7 @@ cd ~/working/omf-mes
 
 ```bash
 curl -s localhost:3100/api/health
-cat ~/working/omf-mes/DEPLOYED
+cat /opt/omf-mes/DEPLOYED
 ```
 
 그리고 **POP 단말 1대에서 실제 트랜잭션을 한 번 돌려보세요.** 헬스체크는 `SELECT 1` 만 하므로 통과해도 업무 로직이 정상이라는 보장은 없습니다.
@@ -117,7 +118,7 @@ cat ~/working/omf-mes/DEPLOYED
 ### 7. 실패 시 롤백
 
 ```bash
-~/working/omf-mes/rollback.sh v1.1.0
+/opt/omf-mes/rollback.sh v1.1.0
 curl -s localhost:3100/api/health
 ```
 
