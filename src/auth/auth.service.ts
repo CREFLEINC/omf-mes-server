@@ -10,8 +10,10 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto, LoginDto } from './auth.dto';
 import { PasswordService } from './password.service';
+import { toPositiveInt } from '../common/config.util';
 
 const MAX_FAILED_ATTEMPTS = 5;
+const DEFAULT_JWT_EXPIRES_IN_SECONDS = 8 * 60 * 60;
 const LOCK_MINUTES = 15;
 
 export interface AuthPrincipal {
@@ -83,7 +85,12 @@ export class AuthService {
     });
 
     const permissions = await this.loadPermissions(user.app_user_id);
-    const expiresIn = this.config.get<number>('JWT_EXPIRES_IN_SECONDS', 8 * 60 * 60);
+    // 반드시 숫자로 변환한다 — 문자열이면 jsonwebtoken 이 ms() 로 해석해
+    // '28800' 을 8시간이 아니라 28.8초로 읽는다. toPositiveInt 주석 참조.
+    const expiresIn = toPositiveInt(
+      this.config.get('JWT_EXPIRES_IN_SECONDS'),
+      DEFAULT_JWT_EXPIRES_IN_SECONDS,
+    );
     const accessToken = await this.jwt.signAsync(
       { sub: user.app_user_id.toString(), loginId: user.login_id },
       { expiresIn },

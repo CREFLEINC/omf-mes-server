@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { terminal, worker } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { toPositiveInt } from '../common/config.util';
 
 /** 단말이 트랜잭션을 올릴 수 있는 유일한 상태. 점검중·폐기 단말은 거부한다. */
 const USABLE_STATUS = 'NORMAL';
@@ -103,7 +104,7 @@ export class TerminalAuthService {
       data: { token_version: { increment: 1 } },
     });
 
-    const days = this.config.get<number>('TERMINAL_TOKEN_EXPIRES_IN_DAYS', DEFAULT_TOKEN_DAYS);
+    const days = toPositiveInt(this.config.get('TERMINAL_TOKEN_EXPIRES_IN_DAYS'), DEFAULT_TOKEN_DAYS);
     const expiresInSeconds = days * 24 * 60 * 60;
 
     const accessToken = await this.jwt.signAsync(
