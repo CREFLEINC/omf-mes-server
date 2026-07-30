@@ -1,0 +1,52 @@
+# 사용자 crontab — sudo 없이 쓰는 버전
+#
+# ⚠️  현재는 사용하지 않습니다. 개발 서버 배포는 self-hosted runner 가 담당합니다
+#     (.github/workflows/deploy-dev.yml, 설정은 deploy/RUNNER.md).
+#     이 파일은 러너를 쓸 수 없게 될 때의 대안으로 남겨둡니다.
+#
+# ⚠️  개발 서버(한국) 전용입니다. 하노이 운영 서버에는 설치하지 마세요.
+#     하노이는 3교대 24시간 가동이라 무중단 창이 없습니다. 배포 시 30~60초
+#     동안 POP 단말이 서버를 잃습니다 — 절차는 deploy/RELEASE.md 참조.
+#
+# ─── 설치 ────────────────────────────────────────────────────
+# root 가 있어도 /etc/cron.d 대신 사용자 crontab 을 쓴다. 배포는 root 없이
+# 도는 작업이고, 등록/해제에 sudo 가 필요 없는 편이 대안 경로로서 낫다.
+#
+#   crontab /opt/omf-mes/omf-mes-deploy.crontab     # 파일로 통째 등록
+#   crontab -l                                       # 등록 확인
+#
+# ⚠️ `crontab <파일>` 은 기존 등록을 통째로 덮어씁니다.
+#    이미 등록된 다른 작업이 있으면 먼저 백업하세요:
+#      crontab -l > ~/crontab.backup
+#    또는 `crontab -e` 로 열어 아래 두 줄만 손으로 추가하세요.
+#
+# ⚠️ /etc/cron.d 형식과 달리 사용자 crontab 에는 **사용자 이름 칸이 없습니다.**
+#    (시간 5칸 다음이 바로 명령입니다. root 를 넣으면 명령으로 해석돼 실패합니다.)
+#
+# ─── 시각 주의 ───────────────────────────────────────────────
+# 서버 타임존은 Etc/UTC 다. cron 은 서버 타임존으로 스케줄을 해석하므로 UTC 로 적는다.
+#
+#   19:00 UTC  =  04:00 KST (다음 날)
+#
+# 시각을 바꿀 때는 KST 에서 9시간을 빼세요.
+#   KST 04:00 → UTC 19:00 (전날)
+#   KST 06:00 → UTC 21:00 (전날)
+#   KST 09:00 → UTC 00:00 (같은 날)
+#
+# 평일만 돌리려면 요일도 함께 밀어야 한다 — 흔한 실수 지점이다.
+#   KST 월~금 04:00  =  UTC 일~목 19:00  →  0 19 * * 0-4
+#
+# ─── 경로 ────────────────────────────────────────────────────
+# 아래 경로는 실제 배포 디렉터리에 맞게 고치세요. 기본값은 /opt/omf-mes 입니다.
+# ─────────────────────────────────────────────────────────────
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+
+# 매일 19:00 UTC = 04:00 KST — 개발 서버가 :main 최신 코드를 반영한다
+0 19 * * * cd /opt/omf-mes && ./deploy.sh >> logs/deploy.log 2>&1
+
+# 매주 일요일 20:00 UTC — 로그 로테이션 (사용자 상태파일로 동작)
+# ⚠️ omf-mes-deploy.logrotate 의 `su hulk hulk` 줄을 지운 사본이어야 합니다 — root 전용 지시자입니다.
+0 20 * * 0 /usr/sbin/logrotate -s /opt/omf-mes/logs/.logrotate.state /opt/omf-mes/omf-mes-deploy.logrotate

@@ -1,11 +1,39 @@
-# /etc/logrotate.d/omf-mes-deploy
-# 설치: sudo cp omf-mes-deploy.logrotate /etc/logrotate.d/omf-mes-deploy
+# 배포 로그 로테이션
+#
+# 러너 도입 후 배포 로그는 대부분 Actions 에 남습니다. logs/deploy.log 는
+# 손으로 ./deploy.sh 를 돌릴 때만 쌓이므로 이 파일의 실효는 크지 않습니다.
+# 수동 실행이 잦은 서버에만 설치하세요.
+#
+# ─── 설치 A. 시스템 logrotate (권장) ─────────────────────────
+#   sudo cp omf-mes-deploy.logrotate /etc/logrotate.d/omf-mes-deploy
+#   sudo chown root:root /etc/logrotate.d/omf-mes-deploy
+#   sudo chmod 644 /etc/logrotate.d/omf-mes-deploy
+#
+#   로그 디렉터리 소유자가 root 가 아니므로 아래 su 지시자가 필요합니다.
+#   빠뜨리면 logrotate 가 "parent directory has insecure permissions" 로 건너뜁니다.
+#
+#   검사만 (실제로 돌리지 않음):
+#     sudo logrotate -d /etc/logrotate.d/omf-mes-deploy
+#
+# ─── 설치 B. 사용자 crontab (sudo 없는 서버) ──────────────────
+#   omf-mes-deploy.crontab 참조. 상태파일을 직접 지정해 호출합니다.
+#
+#     logrotate -s /opt/omf-mes/logs/.logrotate.state \
+#               /opt/omf-mes/omf-mes-deploy.logrotate
+#
+#   이 경로에서는 su 지시자를 쓸 수 없습니다(root 전용). 아래 su 줄을
+#   지우고 쓰세요 — 자기 소유 파일을 자기가 돌리는 것이라 불필요합니다.
+#
+# 경로는 실제 배포 디렉터리에 맞게 고치세요.
 
-/var/log/omf-mes-deploy.log {
+/opt/omf-mes/logs/deploy.log {
+    su hulk hulk
     weekly
     rotate 8
     compress
     missingok
     notifempty
+    # deploy.sh 가 append 로 쓰므로 파일을 옮기지 않고 잘라낸다.
+    # (rename 방식이면 실행 중인 리다이렉트가 사라진 파일을 계속 붙잡는다)
     copytruncate
 }

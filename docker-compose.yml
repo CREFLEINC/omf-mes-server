@@ -1,3 +1,10 @@
+# 로컬 개발용 DB. API 는 호스트에서 pnpm start:dev 로 띄운다.
+#
+# 타임존은 배포 환경과 동일하게 UTC 로 맞춘다 — 로컬에서만 통과하는
+# 날짜 경계 버그를 만들지 않기 위함이다. 공장 로컬 시각이 필요한 계산은
+# plant.timezone_code 를 쓴다.
+#   psql 에서 현장 시각으로 보려면: SET TIME ZONE 'Asia/Ho_Chi_Minh';
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,7 +14,15 @@ services:
       POSTGRES_USER: omf
       POSTGRES_PASSWORD: omf
       POSTGRES_DB: omf_mes
-      TZ: Asia/Seoul
+      TZ: UTC
+    # initdb 가 postgresql.conf 에 타임존을 구워버리는 것을 -c 로 덮어쓴다.
+    # 이미 만들어진 볼륨이 있다면 이 설정이 기존 값을 이긴다.
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - log_timezone=UTC
     ports:
       - '5432:5432'
     volumes:
