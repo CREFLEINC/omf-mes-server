@@ -213,17 +213,32 @@ git push -u origin fix/deploy-timezone
 
 ---
 
+## 진행 상황
+
+| | 상태 |
+|---|---|
+| T-5 Harbor · Secrets | ✅ 확인됨 (아래) |
+| T-6 개발 서버 초기 구성 | 자산 배치·`.env.prod`·Harbor 로그인 완료. **`./deploy.sh` 첫 성공과 시드는 아직** |
+| T-7 러너 설치 | ✅ `omf-dev-01` online |
+| T-8 docker 그룹 | ✅ `hulk` 이미 docker·sudo 그룹 |
+| T-9 브랜치 보호 | ❌ **플랜 제약으로 불가** (아래) |
+| T-10 릴리스·롤백 리허설 | 미착수 |
+
+---
+
 ## 남은 작업
 
-### T-5. Harbor · GitHub Secrets 상태 확인
+### ~~T-5. Harbor · GitHub Secrets 상태 확인~~ ✅ 완료
 
-PR #1 머지 시 `Build & Push to Harbor` 가 돌았을 텐데 결과를 확인하지 못했습니다. 아래를 점검하세요.
+PR #1 빌드 로그(run 30504184498)에서 확인했습니다.
 
-- Harbor 에 `mes` 프로젝트가 있는지, `mes/backend` 에 `main`·`sha-xxxxxxx` 태그가 있는지
-- 레포 Secrets 에 `HARBOR_USERNAME`(`robot$mes+github-actions`), `HARBOR_PASSWORD` 가 있는지
-- 없으면 `deploy/RUNNER.md` 가 아니라 `CI-CD.md` 의 Phase 1·2(Harbor 프로젝트·로봇 계정, GitHub Secrets)를 먼저 수행
+```
+✓ Log in to Harbor  → Login Succeeded!
+✓ Build and push    → pushing manifest for hub.crefle.com/mes/backend:main
+                      pushing manifest for hub.crefle.com/mes/backend:sha-8bbf5c1
+```
 
-실패했다면 대부분 `Log in to Harbor` 단계이고, 원인은 Secret 오타 또는 Harbor 프로젝트 부재입니다.
+Harbor `mes` 프로젝트, `mes/backend` 저장소, 레포 Secrets(`HARBOR_USERNAME`/`HARBOR_PASSWORD`) 모두 정상입니다.
 
 ### T-6. 개발 서버 초기 구성 (수동, 1회)
 
@@ -254,34 +269,68 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 
 관리자 초기 비밀번호가 **이때 한 번만** 출력됩니다.
 
-### T-7. self-hosted runner 설치
+### ~~T-7. self-hosted runner 설치~~ ✅ 완료
 
-`deploy/RUNNER.md` 전체 참조. 라벨은 `omf-dev` 여야 워크플로의 `runs-on: [self-hosted, omf-dev]` 와 맞습니다.
+`omf-dev-01` 이 `online`, 라벨 `self-hosted, Linux, X64, omf-dev`.
 
-주의할 두 가지:
+**문서와 다르게 설치했습니다** — 서버 실태에 맞춘 것이니 다음 사람은 `RUNNER.md` 2·3번 절을 그대로 따르면 됩니다.
 
-- `svc.sh` 는 **`./config.sh` 등록을 마쳐야 생깁니다.** 압축 푼 직후에는 없습니다
-- `sudo ./svc.sh install hulk` — **사용자명을 반드시 붙이세요.** root 셸에서 인자 없이 실행하면 러너가 root 로 뜹니다. 설치 후 `systemctl show -p User --value 'actions.runner.*.service'` 로 확인
+- 디렉터리: `~/actions-runner-omf` — `~/actions-runner` 는 **`CREFLEINC/reports` 러너가 쓰고 있습니다.** 거기서 `config.sh` 를 돌리면 그쪽 등록이 날아갑니다
+- 상주: `svc.sh` 가 아니라 **사용자 systemd** (`~/.config/systemd/user/gh-runner-omf.service`). 같은 서버의 `gh-runner-reports.service` 와 방식을 맞췄고, `Linger=yes` 가 이미 켜져 있으며, `hulk` 의 sudo 가 비밀번호를 요구해 `svc.sh` 는 매번 대화형이 됩니다
 
-공식 유닛 템플릿에 `Restart=` 가 없으므로 drop-in 으로 `Restart=always` 를 보강합니다(RUNNER.md 3번 절).
+### ~~T-8. docker 그룹~~ ✅ 완료
 
-### T-8. docker 그룹 (T-6·T-7 의 선행 조건)
+`hulk` 는 이미 `docker`·`sudo` 그룹입니다 (`hulk adm cdrom sudo dip plugdev lxd docker`).
 
-sudo 를 쓸 수 있으므로 직접 처리합니다. **재로그인해야 반영됩니다.**
+### T-9. main 브랜치 보호 — ❌ 현재 플랜에서 불가
 
-```bash
-id -nG | tr ' ' '\n' | grep -qx docker && echo OK || sudo usermod -aG docker hulk
+**시도하기 전에 읽으세요. 지금은 설정할 수 없습니다.**
+
+```
+$ gh api repos/CREFLEINC/omf-mes-server/rulesets
+403  "Upgrade to GitHub Pro or make this repository public to enable this feature."
+$ gh api repos/CREFLEINC/omf-mes-server/branches/main/protection
+403  같은 메시지
+
+조직 CREFLEINC 플랜: free
 ```
 
-`loginctl enable-linger` 는 더 이상 필요 없습니다 — `svc.sh` 가 시스템 유닛을 만들므로 사용자 세션과 무관하게 뜹니다.
+GitHub Free 조직의 **private 레포에는 브랜치 보호도 Ruleset 도 걸리지 않습니다.** `Settings → Rules` 에 들어가도 업그레이드 안내만 나옵니다. (구 `Settings → Branches` 는 Ruleset 으로 대체되는 중입니다 — 새로 설정한다면 Rules 쪽이 맞습니다.)
 
-### T-9. main 브랜치 보호
+**왜 필요한가**
 
-Settings → Branches → `main` → Require PR + Require status checks(`verify`).
+러너를 붙이면서 생긴 등식입니다.
 
-self-hosted runner 를 붙인 뒤에는 이게 **보안 통제**가 됩니다 — `.github/workflows/` 를 고칠 수 있는 사람은 사내 서버에서 임의 명령을 실행할 수 있습니다.
+```
+.github/workflows/ 수정 권한  →  main 의 워크플로가 omf-dev 러너에서 실행
+                             →  hulk 로 임의 셸 명령  →  docker 그룹 = root
+                             →  192.168.1.111 의 root
+                             →  cvat · reporter · homepage · oapm · traefik 등 30여 개 서비스가 함께 있는 서버
+```
 
-러너를 `hulk` 로 돌리든 root 로 돌리든 마찬가지입니다. **docker 그룹이 이미 root 와 사실상 동등**하기 때문입니다(`docker run -v /:/host`). 이 등식을 실제로 끊으려면 rootless Docker 나 socket proxy 가 필요하고, 그전까지 T-9 가 유일한 실질 통제입니다. **T-7 보다 먼저 하는 편이 낫습니다.**
+**이 레포 쓰기 권한 8명** (2026-07-30 기준, admin 3명 포함): `jgkim0787`·`wooju-shin`·`wglee8320`(admin), `ys-ryu`·`seungyeon-ha`·`MyungJoongJeon`·`HyunjinCho010919`·`jisooshin01`.
+
+두 번째 이유는 마이그레이션입니다. `prisma migrate deploy` 는 forward-only 라, 리뷰 없이 main 에 들어간 마이그레이션이 몇 분 뒤 개발 DB 에 자동 적용되고 되돌릴 수 없습니다. `deploy.sh` 의 자동 롤백은 이미지만 되돌립니다.
+
+**러너를 붙이기 전에는 사람이 손으로 배포하는 것이 관문이었습니다. 자동화가 그 사람을 없앴고, T-9 이 그 자리를 메우기로 되어 있었는데 지금 비어 있습니다.**
+
+**대안 (우선순위 순)**
+
+1. **조직을 GitHub Team 으로 업그레이드** — Ruleset·환경 보호 규칙이 열립니다. 유료 결정
+2. **러너의 폭발 반경 축소** — 플랜과 무관하고 사실 이게 근본 해법입니다. 러너 전용 호스트로 분리하거나, rootless Docker / docker socket proxy 로 데몬 접근을 우리 프로젝트에 한정
+3. **쓰기 권한 인원 축소** — 8명이 다 필요한지 검토
+
+`dev` 환경은 존재하지만 `protection_rules: []` 입니다. required reviewer 도 private 레포에서는 유료이고, **main 에 푸시할 수 있는 사람은 워크플로에서 `environment: dev` 줄을 지우면 그만이라 악의적 사용자에겐 통제가 못 됩니다** — 사고 방지용일 뿐입니다.
+
+**업그레이드하고 설정할 때의 함정** — 필수 상태 검사 이름은 잡 **id** 가 아니라 `name:` 값입니다.
+
+| 잡 id | 체크 이름 (이걸 지정해야 함) |
+|---|---|
+| `verify` | `Lint · Typecheck · Unit test` |
+| `docker` | `Docker build` |
+| `e2e` | `E2E (실제 DB)` |
+
+`verify` 로 걸면 영영 충족되지 않아 PR 이 머지 불가 상태가 됩니다.
 
 ### T-10. 릴리스·롤백 리허설
 
