@@ -70,81 +70,110 @@ chmod 700 /opt/omf-mes/.docker
 
 ## 2. 러너 설치
 
-GitHub 레포 → **Settings → Actions → Runners → New self-hosted runner → Linux**
-
-화면에 다운로드·전개 명령이 현재 버전으로 나옵니다. **그 명령을 그대로 복사해서 실행하세요** (버전이 계속 올라가므로 여기 적어두면 낡습니다).
-
-`./config.sh` 단계만 아래처럼 라벨을 붙여 실행합니다.
+> **⚠️ 개발 서버에는 이미 다른 러너가 돌고 있습니다.** `~/actions-runner` 는 `CREFLEINC/reports` 용이고 `gh-runner-reports.service` 로 상주 중입니다. **그 디렉터리에서 `config.sh` 를 돌리면 그쪽 등록이 날아갑니다.** 반드시 별도 디렉터리를 쓰세요.
 
 ```bash
-cd ~/actions-runner
+mkdir -p ~/actions-runner-omf && cd ~/actions-runner-omf
+```
+
+버전과 체크섬은 https://github.com/actions/runner/releases 의 최신 릴리스에서 확인하세요. 2026-07-30 기준 v2.336.0 입니다.
+
+```bash
+curl -O -L https://github.com/actions/runner/releases/download/v2.336.0/actions-runner-linux-x64-2.336.0.tar.gz
+echo "04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d  actions-runner-linux-x64-2.336.0.tar.gz" | sha256sum -c
+tar xzf ./actions-runner-linux-x64-2.336.0.tar.gz && rm -f actions-runner-linux-x64-2.336.0.tar.gz
+```
+
+등록 토큰은 **레포 admin 권한**이 있어야 받을 수 있습니다. UI(Settings → Actions → Runners → New self-hosted runner) 또는 CLI:
+
+```bash
+gh api -X POST repos/CREFLEINC/omf-mes-server/actions/runners/registration-token -q .token
+```
+
+```bash
 ./config.sh \
   --url https://github.com/CREFLEINC/omf-mes-server \
-  --token <화면에 표시된 등록 토큰> \
+  --token <등록 토큰> \
   --name omf-dev-01 \
   --labels omf-dev \
   --work _work \
   --unattended
 ```
 
-`--labels omf-dev` 가 중요합니다. 워크플로의 `runs-on: [self-hosted, omf-dev]` 와 짝이 맞아야 합니다. 나중에 하노이에 러너를 추가할 때 `omf-hanoi` 라벨로 구분합니다.
+`--labels omf-dev` 가 중요합니다. 워크플로의 `runs-on: [self-hosted, omf-dev]` 와 짝이 맞아야 합니다. 하노이에 추가할 때는 `omf-hanoi` 로 구분합니다.
 
-**확인**: Settings → Actions → Runners 에 `omf-dev-01` 이 **Idle** 로 보입니다.
+등록 토큰은 **1시간 만료**입니다. 중간에 실패해 다시 하려면 새로 받고 `--replace` 를 붙이세요.
+
+**확인**:
+
+```bash
+gh api repos/CREFLEINC/omf-mes-server/actions/runners \
+  -q '.runners[] | "\(.name) \(.status) \([.labels[].name]|join(","))"'
+# omf-dev-01 online self-hosted,Linux,X64,omf-dev
+```
 
 ## 3. 러너 상주시키기
 
-러너 패키지가 들고 있는 `svc.sh` 로 systemd 서비스에 등록합니다.
+**이 서버는 사용자 systemd 를 씁니다.** 러너 패키지의 `svc.sh`(시스템 유닛 정식 설치)가 상류 표준이지만, 여기서는 쓰지 않습니다. 이유:
 
-> `svc.sh` 는 **`./config.sh` 를 마쳐야 생깁니다.** 서비스 이름(`actions.runner.<owner>-<repo>-<러너이름>`)이 등록 후에야 정해지기 때문에, 러너 루트의 `bin/systemd.svc.sh.template` 에서 그때 생성됩니다. 압축 푼 직후에는 이 파일이 없습니다 — 2번을 먼저 하세요.
+- 같은 서버의 `gh-runner-reports.service` 가 이미 사용자 systemd 로 3주 넘게 안정 가동 중 — 한 서버에 두 방식을 섞으면 관리가 갈립니다
+- `Linger=yes` 가 이미 켜져 있어 로그아웃·재부팅 후에도 삽니다
+- `hulk` 의 `sudo` 가 비밀번호를 요구해서, `svc.sh` 는 start/stop/status 마다 대화형 sudo 가 걸립니다
 
 ```bash
-cd ~/actions-runner
+cat > ~/.config/systemd/user/gh-runner-omf.service <<'EOF'
+[Unit]
+Description=GitHub Actions self-hosted runner (CREFLEINC/omf-mes-server)
+
+[Service]
+ExecStart=/home/hulk/actions-runner-omf/run.sh
+WorkingDirectory=/home/hulk/actions-runner-omf
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now gh-runner-omf
+```
+
+**확인 — 두 러너가 모두 살아 있어야 합니다.**
+
+```bash
+systemctl --user list-units 'gh-runner-*'
+loginctl show-user hulk | grep Linger      # Linger=yes
+```
+
+`sudo` 는 여기까지 한 번도 필요하지 않습니다.
+
+<details>
+<summary>svc.sh 로 가야 한다면 (다른 서버에 붙일 때)</summary>
+
+`svc.sh` 는 `./config.sh` 를 마쳐야 생깁니다 — 서비스 이름이 등록 후에야 정해지기 때문에 `bin/systemd.svc.sh.template` 에서 그때 생성됩니다.
+
+```bash
 sudo ./svc.sh install hulk     # ← 사용자명을 반드시 명시할 것
 ```
 
-**`install` 뒤의 사용자명을 빠뜨리지 마세요.** `svc.sh` 는 `run_as_user=${arg_2:-$SUDO_USER}` 로 동작합니다. `sudo` 로 부르면 호출자 계정이 들어가지만, **root 셸에 들어가 있는 상태에서 인자 없이** 실행하면 `$SUDO_USER` 가 비어 러너가 root 로 뜹니다. help 텍스트가 `Install runner service as Root or specified user` 라고 되어 있어 root 가 기본인 것처럼 읽히는 것도 함정입니다.
+**사용자명을 빠뜨리지 마세요.** `run_as_user=${arg_2:-$SUDO_USER}` 라서, root 셸에서 인자 없이 실행하면 `$SUDO_USER` 가 비어 **러너가 root 로 뜹니다.** help 텍스트가 `Install runner service as Root or specified user` 라 root 가 기본인 것처럼 읽히는 것도 함정입니다.
 
-공식 유닛 템플릿에는 `Restart=` 가 없어서 **러너 프로세스가 죽으면 systemd 가 되살리지 않습니다.** drop-in 으로 보강합니다.
+공식 유닛 템플릿에 `Restart=` 가 없어 죽어도 안 살아납니다. drop-in 으로 보강하세요.
 
 ```bash
 sudo systemctl edit actions.runner.CREFLEINC-omf-mes-server.omf-dev-01.service
+#   [Unit]
+#   Wants=network-online.target
+#   [Service]
+#   Restart=always
+#   RestartSec=10
+sudo systemctl daemon-reload && sudo ./svc.sh start
+systemctl show -p User --value 'actions.runner.*.service'    # hulk 여야 함
 ```
 
-```ini
-[Unit]
-Wants=network-online.target     # 템플릿에 After 만 있고 Wants 가 없다
-
-[Service]
-Restart=always
-RestartSec=10
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo ./svc.sh start
-sudo ./svc.sh status
-```
-
-**확인 — 실행 계정이 `hulk` 인지 반드시 보세요.**
-
-```bash
-systemctl show -p User --value 'actions.runner.*.service'     # hulk
-systemctl show -p Restart --value 'actions.runner.*.service'  # always
-```
-
-그다음 서버에서 로그아웃한 뒤 다시 접속해 Runners 화면이 여전히 **Idle** 인지 보세요. Offline 이면 상주에 실패한 것입니다.
-
-<details>
-<summary>사용자 systemd 로 이미 띄워둔 경우 (구 방식에서 전환)</summary>
-
-같은 러너 등록을 두 프로세스가 잡을 수 없습니다. **먼저 정리하고 `svc.sh` 로 넘어가세요.**
-
-```bash
-systemctl --user disable --now actions-runner
-rm -f ~/.config/systemd/user/actions-runner.service
-systemctl --user daemon-reload
-loginctl disable-linger hulk      # svc.sh 경로에서는 불필요
-```
+한 서버에서 사용자 systemd 와 `svc.sh` 를 **동시에 켜지 마세요.** 같은 등록을 두 프로세스가 잡을 수 없어 충돌합니다.
 </details>
 
 ## 4. 워크플로 배치

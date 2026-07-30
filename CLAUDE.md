@@ -140,4 +140,8 @@ docker --config /opt/omf-mes/.docker login hub.crefle.com -u 'robot$mes+server-p
 
 **러너는 `hulk` 로 돌립니다 — root 로 올리지 마세요.** 배포에 필요한 건 docker 접근뿐이고, root 로 올려도 얻는 게 없습니다. `svc.sh` 는 `run_as_user=${arg_2:-$SUDO_USER}` 라서 **root 셸에서 인자 없이** `./svc.sh install` 을 치면 러너가 root 로 뜹니다. 사용자명을 명시하고 확인하세요 — `systemctl show -p User --value 'actions.runner.*.service'`.
 
-다만 **docker 그룹은 이미 root 와 사실상 동등합니다**(`docker run -v /:/host`). 러너를 어느 계정으로 돌리든 "`.github/workflows/` 를 고칠 수 있는 사람 = 그 서버의 root" 라는 사실은 변하지 않습니다. 이걸 실제로 끊으려면 rootless Docker 나 socket proxy 가 필요하고, 그전까지는 **main 브랜치 보호가 유일한 실질 통제**입니다.
+다만 **docker 그룹은 이미 root 와 사실상 동등합니다**(`docker run -v /:/host`). 러너를 어느 계정으로 돌리든 "`.github/workflows/` 를 고칠 수 있는 사람 = 그 서버의 root" 라는 사실은 변하지 않습니다.
+
+**그리고 그 통제가 지금 비어 있습니다.** 조직이 GitHub Free 라 private 레포에 브랜치 보호도 Ruleset 도 걸리지 않습니다(API 가 `403 Upgrade to GitHub Pro`). 개발 서버에는 다른 팀 서비스가 30개 넘게 함께 돌고, 이 레포 쓰기 권한자는 8명입니다. 미결 사항이며 선택지는 `deploy/HANDOFF.md` T-9 에 정리해 두었습니다 — 플랜 업그레이드, 러너 격리(rootless Docker·socket proxy·전용 호스트), 쓰기 권한 축소.
+
+**개발 서버에는 러너가 둘입니다.** `~/actions-runner` 는 `CREFLEINC/reports` 용이고 `~/actions-runner-omf` 가 우리 것입니다. 앞의 디렉터리에서 `config.sh` 를 돌리면 남의 러너 등록이 날아갑니다.

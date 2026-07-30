@@ -159,10 +159,9 @@ migrate 와 api 에 각각 이미지를 적으면 한쪽 태그만 고치는 사
 
 절차: **`deploy/RUNNER.md` 2~5번 절**
 
-- [ ] **5-1.** 러너 등록 — 라벨 `omf-dev` (워크플로의 `runs-on: [self-hosted, omf-dev]` 와 짝)
-- [ ] **5-2.** `sudo ./svc.sh install hulk` + `Restart=always` drop-in
-  - `svc.sh` 는 `config.sh` 등록을 마쳐야 생깁니다
-  - **사용자명을 빠뜨리면 러너가 root 로 뜹니다** — `systemctl show -p User` 로 확인
+- [x] **5-1.** 러너 등록 — `omf-dev-01`, 라벨 `omf-dev`, `~/actions-runner-omf`
+  - **`~/actions-runner` 는 `CREFLEINC/reports` 러너입니다.** 거기서 `config.sh` 를 돌리면 그쪽이 날아갑니다
+- [x] **5-2.** 상주 — `gh-runner-omf.service` (사용자 systemd, `Restart=always`)
 - [ ] **5-3.** 수동 실행(`workflow_dispatch`) 으로 4개 스텝 초록 확인
 - [ ] **5-4.** main 에 커밋 하나 머지해서 자동 연쇄 확인
 - [ ] **5-5.** (선택) logrotate 등록 — 수동 배포가 잦은 경우에만
@@ -171,13 +170,15 @@ migrate 와 api 에 각각 이미지를 적으면 한쪽 태그만 고치는 사
 
 ### Phase 6 — 보호와 리허설
 
-- [ ] **6-1.** **main 브랜치 보호** — Settings → Branches → `main` → Require PR + Require status checks(`verify`)
+- [ ] ~~**6-1.** main 브랜치 보호~~ — **현재 플랜에서 불가.** `HANDOFF.md` T-9 참조
 - [ ] **6-2.** 릴리스 태그 리허설 — `git tag v0.1.0` → Harbor 에 `v0.1.0`, `stable` 생성 확인
 - [ ] **6-3.** 롤백 리허설 — `./rollback.sh v0.1.0` → 헬스체크 → `./rollback.sh main` 으로 **반드시 되돌리기**
 
 `rollback.sh` 는 `.env.prod` 의 `IMAGE_TAG` 를 영구히 바꿉니다. 고정한 채 잊으면 그 뒤로 계속 같은 버전만 배포됩니다.
 
-**6-1 은 5-2 보다 먼저 하세요.** self-hosted runner 를 붙인 뒤에는 이게 단순한 품질 장치가 아니라 **보안 통제**가 됩니다 — `.github/workflows/` 를 고칠 수 있는 사람은 사내 서버에서 임의 명령을 실행할 수 있습니다. 러너를 `hulk` 로 돌리든 root 로 돌리든 마찬가지입니다. **docker 그룹이 이미 root 와 사실상 동등**하기 때문입니다(`docker run -v /:/host`).
+**6-1 은 원래 5-2(러너 설치)보다 먼저 해야 했습니다.** 러너를 붙이면 `.github/workflows/` 수정 권한이 곧 그 서버의 root 권한이 되기 때문입니다(docker 그룹 = root). 그런데 조직이 GitHub Free 라 private 레포에는 브랜치 보호도 Ruleset 도 걸리지 않습니다 — API 가 `403 Upgrade to GitHub Pro` 를 반환합니다.
+
+**즉 러너는 붙었는데 그 관문은 비어 있는 상태입니다.** 미룰 문제가 아니라 결정할 문제입니다: 플랜 업그레이드 / 러너 격리(rootless Docker·socket proxy·전용 호스트) / 쓰기 권한 축소 중 하나. 상세한 위협 모델과 선택지는 `HANDOFF.md` T-9 에 정리해 두었습니다.
 
 ---
 
