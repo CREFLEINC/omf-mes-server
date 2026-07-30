@@ -6,40 +6,63 @@
 
 # Prisma 쿼리 엔진이 OpenSSL을 요구한다. alpine(musl)은 엔진 바이너리 타깃이 갈리므로
 # 트러블이 적은 debian slim을 쓴다.
+# node:22-bookworm-slim 에는 libssl 도 CA 번들도 들어 있지 않다 — 직접 넣어야 한다.
 FROM node:22-bookworm-slim AS base
-ENV PNPM_HOME=/pnpm \
-    PATH=/pnpm:$PATH
-RUN corepack enable \
- && apt-get update \
+RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 
+# ── 0. 빌드 전용 베이스
+# pnpm은 설치·빌드에서만 쓴다. 운영 이미지(runtime)는 base에서 바로 갈라져 나가므로
+# 패키지 매니저를 싣지 않는다.
+FROM base AS toolchain
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
+RUN corepack enable
+
+
 # ── 1. 전체 의존성 (빌드용 — devDependencies 포함)
-FROM base AS deps
+FROM toolchain AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-# @prisma/client의 postinstall이 스키마를 읽어 클라이언트를 생성한다 — 설치 전에 있어야 한다.
-COPY prisma ./prisma
-COPY prisma.config.ts ./
 RUN pnpm install --frozen-lockfile
+# prisma 파일은 install '뒤에' 복사한다 — 스키마를 한 줄 고칠 때마다
+# 의존성 설치 레이어까지 다시 도는 것을 막는다.
+COPY prisma/schema.prisma ./prisma/
+COPY prisma.config.ts ./
+# [필수] Prisma Client는 install 만으로 생성되지 않는다.
+# @prisma/client 의 postinstall 은 자기 패키지 안에서 prisma CLI 를 찾지 못하면
+# "In order to use @prisma/client, please install Prisma CLI" 경고만 남기고 조용히 건너뛴다.
+# (pnpm 의 격리 링킹에서 특히 그렇다 — .npmrc 의 node-linker=isolated)
+# 생성하지 않으면 다음 build 단계의 tsc 타입검사가 모델 타입을 못 찾아 실패한다.
+RUN pnpm exec prisma generate
 
 
 # ── 2. 빌드 (SWC 트랜스파일 + tsc 타입 검사)
 FROM deps AS build
-COPY tsconfig.json tsconfig.build.json tsconfig.all.json nest-cli.json .swcrc ./
+# tsconfig.all.json 은 `pnpm typecheck` 전용이다. nest build 는 tsconfig.build.json 을
+# 쓰므로 여기서는 복사하지 않는다 — 넣어봐야 캐시만 헛되이 깨진다.
+COPY tsconfig.json tsconfig.build.json nest-cli.json .swcrc ./
 COPY src ./src
 RUN pnpm run build
 # 운영 이미지에는 ts-node가 없다 — 시드를 미리 JS로 컴파일해 둔다(prisma.config.ts 참조).
+# nest build 가 dist를 지우므로(deleteOutDir) 반드시 그 뒤에 온다.
+COPY prisma/seed.ts ./prisma/
 RUN pnpm exec swc prisma/seed.ts -o dist/seed.js
 
 
 # ── 3. 운영 의존성만 (devDependencies 제외)
-FROM base AS prod-deps
+FROM toolchain AS prod-deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY prisma ./prisma
-COPY prisma.config.ts ./
 RUN pnpm install --frozen-lockfile --prod
+COPY prisma/schema.prisma ./prisma/
+COPY prisma.config.ts ./
+# [필수] 런타임 이미지는 이 단계의 node_modules 를 그대로 복사해 간다.
+# 여기서 생성하지 않으면 운영에서 첫 쿼리에 다음 에러로 죽는다:
+#   "@prisma/client did not initialize yet. Please run 'prisma generate'"
+# prisma CLI 가 dependencies 에 있으므로 --prod 설치에서도 실행 가능하다.
+RUN pnpm exec prisma generate
 
 
 # ── 4. 런타임
@@ -49,9 +72,12 @@ ENV NODE_ENV=production \
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# migrate deploy가 스키마·마이그레이션 이력을 읽는다
-COPY prisma ./prisma
+# 락파일·워크스페이스 설정은 설치 시점 파일이라 런타임에는 읽는 주체가 없다.
+COPY package.json ./
+# migrate deploy가 스키마·마이그레이션 이력을 읽는다.
+# fixtures/ 는 ts-node 로 도는 개발 전용이라 넣지 않는다 — 운영 이미지에서는 실행도 안 된다.
+COPY prisma/schema.prisma ./prisma/
+COPY prisma/migrations ./prisma/migrations
 COPY prisma.config.ts ./
 
 # node 이미지에 기본 포함된 비루트 사용자로 실행한다

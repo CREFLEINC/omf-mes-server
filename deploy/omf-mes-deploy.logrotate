@@ -1,0 +1,11 @@
+# /etc/logrotate.d/omf-mes-deploy
+# 설치: sudo cp omf-mes-deploy.logrotate /etc/logrotate.d/omf-mes-deploy
+
+/var/log/omf-mes-deploy.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
