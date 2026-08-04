@@ -75,7 +75,6 @@ COPY --from=build /app/dist ./dist
 # 락파일·워크스페이스 설정은 설치 시점 파일이라 런타임에는 읽는 주체가 없다.
 COPY package.json ./
 # migrate deploy가 스키마·마이그레이션 이력을 읽는다.
-# fixtures/ 는 ts-node 로 도는 개발 전용이라 넣지 않는다 — 운영 이미지에서는 실행도 안 된다.
 COPY prisma/schema.prisma ./prisma/
 COPY prisma/migrations ./prisma/migrations
 COPY prisma.config.ts ./
