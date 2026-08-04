@@ -1,6 +1,6 @@
 # CI/CD 구축 인계 문서
 
-작성: 2026-07-30 · 전체 배경과 규칙은 저장소 루트의 `CLAUDE.md` 참조.
+작성: 2026-07-30 · 전역 규칙은 저장소 루트의 `CLAUDE.md`, 배포·운영 상세는 `docs/deployment.md` 참조.
 
 이 문서는 **남은 작업 목록**입니다. 다 끝나면 삭제하세요.
 
@@ -351,6 +351,6 @@ git tag v0.1.0 && git push origin v0.1.0     # Harbor 에 v0.1.0, stable 확인
 
 **하노이 서버 자체** — 아직 구성 전입니다. Harbor 직접 접속은 가능하다고 확인됐습니다. 나중에 러너를 붙일 경우 라벨은 `omf-hanoi`, GitHub Environment 에 required reviewer 를 걸면 승인 기록이 남는 배포가 됩니다.
 
-**`business_date` 로직** — 아직 미구현입니다(`src` 에 참조 없음). `CLAUDE.md` 의 3번 항목을 반드시 읽고 착수하세요. 타임존 캐스팅으로 구하면 야간 교대 실적이 하루 밀립니다.
+**`business_date` 로직** — 아직 미구현입니다(`src` 에 참조 없음). `CLAUDE.md` 의 "도메인" 절 business_date 규칙을 반드시 읽고 착수하세요. 타임존 캐스팅으로 구하면 야간 교대 실적이 하루 밀립니다.
 
 **프론트엔드** — 아직 없습니다. 같은 패턴으로 `hub.crefle.com/mes/web` 을 추가하고 compose 에 nginx 서비스를 붙이면 됩니다. 백엔드 안정화 후에 하세요.
