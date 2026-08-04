@@ -113,7 +113,7 @@ PR-4: material_issue 전표 + e2e
 | 단계 | 범위 | 비고 |
 |---|---|---|
 | **M1 — tracer bullet** | PO → GR → 불출 → 실적 → balance 한 줄 | posting 서비스와 lot 생성이 여기서 태어난다. pop 이 만드는 실적이 원장·lot 에 연결되는 것이 완성 조건 |
-| **M2 — 실행 보강** | work_session, 자재 소비/loss/반납, handover | POP 시나리오가 3교대에서 실제로 돌아가는 수준 |
+| **M2 — 실행 보강** | work_session, 자재 소비/loss/반납, handover | POP 시나리오가 현장에서 실제로 돌아가는 수준 |
 | **M3 — 품질** | 검사 요청/결과, 불량, nonconformance → lot hold | 원장·출하와 연동 |
 | **M4 — 출하** | SO → shipment → GI, lot allocation | |
 | **M5 — 주변부** | 실사, ASN/putaway/picking 고도화, 외주, 승인 워크플로, 시리얼 | |
