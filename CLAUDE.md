@@ -39,3 +39,17 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 - `deploy-dev.yml` 에 `pull_request` 트리거 금지.
 - `.env.prod` 커밋 금지. 템플릿: `.env.prod.example`.
 - `deploy.sh`·`rollback.sh` 에 `sudo` 금지.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (`gh` CLI). 상세: `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+기본 5종 라벨 그대로 사용. 상세: `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+단일 컨텍스트 — 루트 `CONTEXT.md` + `docs/adr/`. 상세: `docs/agents/domain.md`.
