@@ -9,7 +9,8 @@
 >
 > | 문서 | 내용 |
 > |---|---|
-> | `CLAUDE.md` | 배포 구조, 타임존 정책, 건드리면 깨지는 것들 |
+> | `CLAUDE.md` | 전역 규칙 요약 (개발 단위·도메인·배포 금지 목록) |
+> | `docs/deployment.md` | 배포 구조, 서버 정보, 건드리면 깨지는 것들, 운영 동작 |
 > | `deploy/RUNNER.md` | 개발 서버 구성 + self-hosted runner 설치 |
 > | `deploy/RELEASE.md` | 하노이 현장 배포 런북 |
 > | `deploy/HANDOFF.md` | 남은 작업 인계 목록 (T-5 이후) |
@@ -54,7 +55,7 @@ please install Prisma CLI. You can install it with "npm add -D prisma".
 
 `deps` 만으로는 부족합니다 — 런타임이 가져가는 건 `prod-deps` 쪽이기 때문입니다. `prisma` CLI 가 devDependencies 가 아니라 dependencies 에 있어서 `--prod` 설치 후에도 실행 가능한 점은 별도로 확인했습니다. `prisma.config.ts` 가 TypeScript 인데도 devDependencies 없이 로드되는 것(`Loaded Prisma config from prisma.config.ts`)까지 확인했으니, 런타임의 `migrate deploy` 도 문제없습니다.
 
-> 이 두 `prisma generate` 는 지우면 조용히 깨집니다. `CLAUDE.md` 의 1번 항목에도 적어두었습니다.
+> 이 두 `prisma generate` 는 지우면 조용히 깨집니다. `docs/deployment.md` 의 "건드리면 깨지는 것들" 1번에도 적어두었습니다.
 
 ---
 
