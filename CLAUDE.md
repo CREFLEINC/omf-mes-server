@@ -1,7 +1,7 @@
 # omf-mes-server
 
 OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
-현장: 베트남 하노이(UTC+7, 3교대 24시간). 개발 서버: 한국.
+현장: 베트남 하노이(UTC+7). 개발 서버: 한국.
 
 ## 문서
 
