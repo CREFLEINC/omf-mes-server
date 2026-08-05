@@ -71,7 +71,12 @@ jobs:
       - name: 이미지에 영향을 주는 변경인가
         id: changed
         run: |
-          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+          # diff 를 먼저 변수에 담는다. `if git diff … | grep -q …` 로 쓰면 git 이 실패해도
+          # 빈 입력이 grep 으로 흘러가 run=false 가 되고, 빌드가 조용히 건너뛰어진 채
+          # required check 가 통과한다 — 판정이 깨지면 건너뛰는 게 아니라 죽어야 한다.
+          # (`if` 조건절 안에서는 bash -e 가 꺼져 파이프 실패를 잡지 못한다.)
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          if printf '%s\n' "$changed" \
              | grep -qE '^(Dockerfile|\.dockerignore|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.swcrc|nest-cli\.json|tsconfig.*\.json|prisma/|contracts/|src/)'; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
           else
