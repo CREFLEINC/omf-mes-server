@@ -61,20 +61,33 @@ export class IdempotencyStore {
       };
     }
 
-    const ageSeconds = (Date.now() - existing.created_at.getTime()) / 1000;
-    if (ageSeconds < STALE_SECONDS) return { kind: 'inProgress' };
+    const staleBefore = new Date(Date.now() - STALE_SECONDS * 1000);
+    if (existing.created_at >= staleBefore) return { kind: 'inProgress' };
 
     // 처리하던 주체가 죽었다. 시작 시각을 갱신해 이어받는다.
-    await this.prisma.idempotency_record.update({
-      where: { idempotency_key: key },
+    //
+    // 조건 없이 갱신하면 죽은 기록을 동시에 본 둘이 **함께 이어받아 핸들러가 두 번
+    // 돈다** — 멱등이 깨지는 바로 그 경우다. WHERE 에 상태와 시각을 넣어 행 단위
+    // 비교-교환으로 만든다. 진 쪽은 갱신 건수가 0 이다.
+    //
+    // **이 조건절은 테스트로 덮이지 않는다.** 조회와 갱신 사이의 창이 좁아 요청 둘로는
+    // 재현되지 않고, 재현되더라도 조건절이 없는 판본과 결과가 같아 보인다. 두 트랜잭션의
+    // 순서를 손으로 엮어야 갈리는데 claim 에 그 이음매가 없다. 고치는 비용이 0 이라 둔다.
+    const { count } = await this.prisma.idempotency_record.updateMany({
+      where: {
+        idempotency_key: key,
+        status: 'IN_PROGRESS',
+        created_at: { lt: staleBefore },
+      },
       data: { created_at: new Date(), app_user_id: appUserId ?? null },
     });
 
-    return { kind: 'fresh' };
+    return count === 1 ? { kind: 'fresh' } : { kind: 'inProgress' };
   }
 
+  /** 기록이 사라졌으면 아무 일도 하지 않는다 — `update` 는 P2025 를 던져 성공한 쓰기가 404 가 된다. */
   async complete(key: string, response: StoredResponse): Promise<void> {
-    await this.prisma.idempotency_record.update({
+    await this.prisma.idempotency_record.updateMany({
       where: { idempotency_key: key },
       data: {
         status: 'COMPLETED',
