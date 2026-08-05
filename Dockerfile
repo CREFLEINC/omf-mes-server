@@ -45,6 +45,10 @@ FROM deps AS build
 # 쓰므로 여기서는 복사하지 않는다 — 넣어봐야 캐시만 헛되이 깨진다.
 COPY tsconfig.json tsconfig.build.json nest-cli.json .swcrc ./
 COPY src ./src
+# [필수] 계약 타입은 커밋하지 않는다(.gitignore) — Prisma Client 와 같다.
+# 생성하지 않으면 아래 build 의 tsc 타입검사가 계약 스키마를 못 찾아 실패한다.
+COPY contracts ./contracts
+RUN pnpm run contracts:generate
 RUN pnpm run build
 # 운영 이미지에는 ts-node가 없다 — 시드를 미리 JS로 컴파일해 둔다(prisma.config.ts 참조).
 # nest build 가 dist를 지우므로(deleteOutDir) 반드시 그 뒤에 온다.
