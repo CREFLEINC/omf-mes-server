@@ -44,11 +44,13 @@ FROM deps AS build
 # tsconfig.all.json 은 `pnpm typecheck` 전용이다. nest build 는 tsconfig.build.json 을
 # 쓰므로 여기서는 복사하지 않는다 — 넣어봐야 캐시만 헛되이 깨진다.
 COPY tsconfig.json tsconfig.build.json nest-cli.json .swcrc ./
-COPY src ./src
 # [필수] 계약 타입은 커밋하지 않는다(.gitignore) — Prisma Client 와 같다.
 # 생성하지 않으면 아래 build 의 tsc 타입검사가 계약 스키마를 못 찾아 실패한다.
+# src 보다 '앞에' 복사한다 — 계약은 src 보다 훨씬 덜 바뀌므로, 코드를 한 줄 고칠 때마다
+# 생성 레이어까지 다시 도는 것을 막는다(위 deps 스테이지의 prisma 복사와 같은 이유).
 COPY contracts ./contracts
 RUN pnpm run contracts:generate
+COPY src ./src
 RUN pnpm run build
 # 운영 이미지에는 ts-node가 없다 — 시드를 미리 JS로 컴파일해 둔다(prisma.config.ts 참조).
 # nest build 가 dist를 지우므로(deleteOutDir) 반드시 그 뒤에 온다.

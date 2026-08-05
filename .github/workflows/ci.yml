@@ -96,6 +96,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma generate
+      # e2e 는 @swc/jest 라 타입을 벗겨내므로 `import type` 만 쓰는 한 없어도 돈다.
+      # 값 import 로 잘못 쓰면 모듈을 못 찾아 죽으므로 보험으로 둔다.
       - run: pnpm run contracts:generate
 
       - name: Migrate
