@@ -1,8 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 
 import { AppModule } from '../src/app.module';
-import { UNIQUE_VIOLATIONS } from '../src/common/errors/unique-violations';
+import { UNIQUE_VIOLATIONS } from '../src/mdm/unique-violations';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
 
@@ -50,7 +51,8 @@ describe('Prisma 오류 형태 (e2e)', () => {
     await prisma.warehouse.create({ data });
     const caught: unknown = await prisma.warehouse.create({ data }).catch((error: unknown) => error);
 
-    const { code, meta } = caught as { code: string; meta?: { target?: unknown } };
+    expect(caught).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    const { code, meta } = caught as Prisma.PrismaClientKnownRequestError;
 
     expect(code).toBe('P2002');
     // uq_warehouse 를 위반했는데 제약 이름이 오지 않는다 — 컬럼 목록이 온다.

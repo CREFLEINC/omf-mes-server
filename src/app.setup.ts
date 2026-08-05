@@ -1,8 +1,8 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 
 import { PrismaExceptionFilter } from './common/errors/prisma-exception.filter';
-import { UNIQUE_VIOLATIONS } from './common/errors/unique-violations';
 import { contractValidationException } from './common/errors/validation.error';
+import { UNIQUE_VIOLATIONS } from './mdm/unique-violations';
 
 /**
  * 요청 파이프라인. **운영 부팅(main.ts)과 e2e 가 같은 함수를 쓴다** — 프리픽스나 파이프가
