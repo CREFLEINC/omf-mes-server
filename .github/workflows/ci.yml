@@ -22,9 +22,20 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # setup-node 의 `cache: pnpm` 은 pnpm store 만 캐시한다 — 링킹은 매번 다시 돈다(약 18초).
+      # node_modules 자체를 lockfile 해시로 캐시해 그 시간을 없앤다.
+      - uses: actions/cache@v4
+        id: node-modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml') }}
+
       - run: pnpm install --frozen-lockfile
+        if: steps.node-modules.outputs.cache-hit != 'true'
 
       # [필수] install 만으로는 Prisma Client 가 생성되지 않는다.
+      # 캐시가 맞았을 때도 반드시 돈다 — 캐시 키가 lockfile 이라 schema.prisma 변경을
+      # 감지하지 못해, 건너뛰면 옛 Client 로 검사하게 된다.
       # 이 단계가 없으면 아래 typecheck 가 모델 타입을 못 찾아 전부 실패한다.
       - name: Generate Prisma Client
         run: pnpm exec prisma generate
@@ -49,19 +60,42 @@ jobs:
     name: Docker build
     runs-on: ubuntu-latest
     steps:
+      # base 브랜치와 비교해야 하므로 전체 히스토리를 받는다.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 문서만 고친 PR 에서 이미지를 다시 빌드해도 검증되는 게 없다.
+      # 잡 자체는 항상 돌려 required check 를 만족시키고, 안쪽 단계만 건너뛴다
+      # (잡을 통째로 skip 하면 required check 가 채워지지 않아 머지가 막힌다).
+      - name: 이미지에 영향을 주는 변경인가
+        id: changed
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+             | grep -qE '^(Dockerfile|\.dockerignore|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.swcrc|nest-cli\.json|tsconfig.*\.json|prisma/|contracts/|src/)'; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo '이미지에 영향을 주는 변경이 없어 빌드를 건너뛴다.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: docker/setup-buildx-action@v3
+        if: steps.changed.outputs.run == 'true'
 
       # 푸시 없이 이미지가 실제로 빌드되는지만 확인한다.
       # Dockerfile 안에서 pnpm install → prisma generate → nest build 가 모두 돌아가므로
       # 사실상 통합 검증 역할을 한다.
+      #
+      # cache-to 를 두지 않는다. GHA 캐시는 ref 격리라 PR 이 쓴 캐시는 그 PR 에서만 읽히고
+      # 다른 PR 도 main 도 못 읽는다 — 업로드 시간만 쓰고 저장소 한도(10GB)를 채워
+      # main 캐시를 LRU 로 축출시킨다. 캐시는 build-push.yml(main push)이 채운다.
       - uses: docker/build-push-action@v6
+        if: steps.changed.outputs.run == 'true'
         with:
           context: .
           target: runtime
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   e2e:
     name: E2E (실제 DB)
@@ -94,7 +128,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - uses: actions/cache@v4
+        id: node-modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml') }}
+
       - run: pnpm install --frozen-lockfile
+        if: steps.node-modules.outputs.cache-hit != 'true'
+
       - run: pnpm exec prisma generate
       # e2e 는 @swc/jest 라 타입을 벗겨내므로 `import type` 만 쓰는 한 없어도 돈다.
       # 값 import 로 잘못 쓰면 모듈을 못 찾아 죽으므로 보험으로 둔다.
