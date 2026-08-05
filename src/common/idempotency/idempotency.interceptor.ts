@@ -22,6 +22,9 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEADER = 'idempotency-key';
 
+/** 재생 때 되돌려줄 헤더. 계약이 쓰기 응답에 요구하는 것만 담는다. */
+const REPLAYED_HEADERS = ['etag'];
+
 /**
  * 응답이 유실된 뒤의 재전송을 처음 응답으로 되돌려준다.
  *
@@ -85,6 +88,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
   /** 저장된 응답을 그대로 되돌려준다. 핸들러는 돌지 않는다. */
   private replay(response: Response, stored: StoredResponse): unknown {
     response.status(stored.status);
+    for (const [name, value] of Object.entries(stored.headers ?? {})) {
+      response.setHeader(name, value);
+    }
 
     return stored.body;
   }
@@ -94,7 +100,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
       // 기록 갱신을 기다린 뒤에 응답을 내보낸다. 흘려보내면 응답이 먼저 나가고,
       // 아주 빠른 재전송이 아직 IN_PROGRESS 인 기록을 보고 409 를 받는다.
       switchMap(async (body) => {
-        await this.store.complete(key, { status: response.statusCode, body });
+        await this.store.complete(key, {
+          status: response.statusCode,
+          body,
+          headers: capturedHeaders(response),
+        });
         void this.sweep();
 
         return body;
@@ -148,4 +158,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     return key.toLowerCase();
   }
+}
+
+/** 핸들러가 심은 헤더 중 재생 대상만 거둔다. 전부 담으면 Date·Content-Length 까지 굳는다. */
+function capturedHeaders(response: Response): Record<string, string> {
+  const captured: Record<string, string> = {};
+  for (const name of REPLAYED_HEADERS) {
+    const value = response.getHeader(name);
+    if (value !== undefined) captured[name] = String(value);
+  }
+
+  return captured;
 }

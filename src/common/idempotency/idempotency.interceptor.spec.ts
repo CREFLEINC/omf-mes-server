@@ -17,7 +17,16 @@ function context(
   headers: Record<string, string> = { 'idempotency-key': KEY },
 ): ExecutionContext {
   const request = { method, path: '/api/mdm/warehouses', body: { a: 1 }, headers };
-  const response = { statusCode: 201, status: jest.fn() };
+  const sent: Record<string, string> = {};
+  const response = {
+    statusCode: 201,
+    status: jest.fn(),
+    setHeader: jest.fn((name: string, value: string) => {
+      sent[name] = value;
+    }),
+    getHeader: jest.fn((name: string) => (name === 'etag' ? '4' : undefined)),
+    sentHeaders: sent,
+  };
 
   return {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
@@ -77,7 +86,11 @@ describe('IdempotencyInterceptor', () => {
 
       const result = await firstValueFrom(interceptor.intercept(context(), handler('created')));
 
-      expect(store.complete).toHaveBeenCalledWith(KEY, { status: 201, body: 'created' });
+      expect(store.complete).toHaveBeenCalledWith(KEY, {
+        status: 201,
+        body: 'created',
+        headers: { etag: '4' },
+      });
       expect(result).toBe('created');
     });
   });
@@ -128,5 +141,18 @@ describe('IdempotencyInterceptor', () => {
 
     expect(spy).not.toHaveBeenCalled();
     expect(result).toEqual({ warehouseId: 7 });
+  });
+
+  it('재생 시 저장된 헤더도 되돌려준다 — ETag 가 없으면 다음 쓰기를 못 한다', async () => {
+    const { interceptor } = build({
+      kind: 'replay',
+      response: { status: 200, body: {}, headers: { etag: '9' } },
+    });
+    const ctx = context();
+
+    await firstValueFrom(interceptor.intercept(ctx, handler()));
+
+    const response = ctx.switchToHttp().getResponse<{ sentHeaders: Record<string, string> }>();
+    expect(response.sentHeaders).toEqual({ etag: '9' });
   });
 });

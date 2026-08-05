@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ErrorCode, ErrorItem, fieldError } from '../../common/errors/contract-error';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateWarehouseDto } from './warehouse.create.dto';
+import { UpdateWarehouseDto } from './warehouse.update.dto';
 
 /** 코드 필드가 어느 공통코드 그룹에 속해야 하는지. 값 목록은 `mdm.code_value` 가 정본이다. */
 const CODE_GROUPS = {
@@ -31,6 +32,46 @@ export class WarehouseValidator {
     return [...organization, ...codes, ...partner, ...duplicate];
   }
 
+  /**
+   * 수정은 공장이 바뀌지 않는다(등록 후 변경 불가). 유일성은 **자기 자신을 뺀** 범위에서
+   * 본다 — 코드를 그대로 두고 이름만 고치는 것이 가장 흔한 수정이다.
+   */
+  async validateUpdate(
+    warehouseId: bigint,
+    plantId: bigint,
+    dto: UpdateWarehouseDto,
+  ): Promise<ErrorItem[]> {
+    const [businessUnit, codes, partner, duplicate] = await Promise.all([
+      this.checkBusinessUnit(dto.businessUnitId),
+      this.checkCodes(dto),
+      this.checkPartner(dto),
+      this.checkDuplicateExcept(warehouseId, plantId, dto.warehouseCode),
+    ]);
+
+    return [...businessUnit, ...codes, ...partner, ...duplicate];
+  }
+
+  private async checkBusinessUnit(businessUnitId: number): Promise<ErrorItem[]> {
+    const found = await this.prisma.business_unit.findUnique({
+      where: { business_unit_id: BigInt(businessUnitId) },
+    });
+
+    return found ? [] : [fieldError('businessUnitId', ErrorCode.RANGE, '없는 사업부입니다.')];
+  }
+
+  private async checkDuplicateExcept(
+    warehouseId: bigint,
+    plantId: bigint,
+    warehouseCode: string,
+  ): Promise<ErrorItem[]> {
+    const existing = await this.prisma.warehouse.findUnique({
+      where: { plant_id_warehouse_code: { plant_id: plantId, warehouse_code: warehouseCode } },
+      select: { warehouse_id: true },
+    });
+
+    return existing && existing.warehouse_id !== warehouseId ? [duplicateWarehouseCode()] : [];
+  }
+
   /** 공장·사업부가 실재하는가. FK 라 DB 도 잡지만, 그러면 어느 필드가 문제인지 못 알려준다. */
   private async checkOrganization(dto: CreateWarehouseDto): Promise<ErrorItem[]> {
     const [plant, businessUnit] = await Promise.all([
@@ -49,7 +90,7 @@ export class WarehouseValidator {
   }
 
   /** 코드 필드가 해당 공통코드 그룹에 등재된 값인가. */
-  private async checkCodes(dto: CreateWarehouseDto): Promise<ErrorItem[]> {
+  private async checkCodes(dto: CreateWarehouseDto | UpdateWarehouseDto): Promise<ErrorItem[]> {
     const pairs = Object.entries(CODE_GROUPS) as [keyof typeof CODE_GROUPS, string][];
 
     const results = await Promise.all(
@@ -67,7 +108,7 @@ export class WarehouseValidator {
   }
 
   /** ck_external_warehouse_partner — 외부창고면 거래처가 있어야 한다. */
-  private async checkPartner(dto: CreateWarehouseDto): Promise<ErrorItem[]> {
+  private async checkPartner(dto: CreateWarehouseDto | UpdateWarehouseDto): Promise<ErrorItem[]> {
     if (!dto.isExternal) return [];
 
     if (dto.partnerId === undefined || dto.partnerId === null) {
