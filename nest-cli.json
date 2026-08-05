@@ -9,7 +9,7 @@
       "type": "swc",
       "options": {
         "stripLeadingPaths": true,
-        "ignore": ["**/*.spec.ts", "**/*.e2e-spec.ts"]
+        "ignore": ["**/*.spec.ts", "**/*.e2e-spec.ts", "**/*.d.ts"]
       }
     }
   }

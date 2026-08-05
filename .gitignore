@@ -15,5 +15,8 @@ coverage/
 .swc/
 *.tsbuildinfo
 
+# 계약 사본(contracts/*.json)에서 만들어지는 파생물 — Prisma Client 와 같은 취급이다.
+src/contracts/*.d.ts
+
 # Postman 환경 파일 — 관리자 비밀번호가 들어간다(예시본은 *.example.json)
 test/postman/local.postman_environment.json

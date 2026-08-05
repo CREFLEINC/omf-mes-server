@@ -29,6 +29,11 @@ jobs:
       - name: Generate Prisma Client
         run: pnpm exec prisma generate
 
+      # [필수] 계약 타입도 커밋하지 않는다(.gitignore). 이 단계가 없으면 계약을 참조하는
+      # 코드가 typecheck 에서 모듈을 못 찾는다. 계약 json 이 깨져도 여기서 걸린다.
+      - name: Generate contract types
+        run: pnpm run contracts:generate
+
       # package.json 의 lint 스크립트는 --fix 가 붙어 있어 CI 에서는 문제를 고쳐버리고 통과한다.
       # 검증 목적이므로 --fix 없이 직접 호출한다.
       - name: Lint
@@ -91,6 +96,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma generate
+      # e2e 는 @swc/jest 라 타입을 벗겨내므로 `import type` 만 쓰는 한 없어도 돈다.
+      # 값 import 로 잘못 쓰면 모듈을 못 찾아 죽으므로 보험으로 둔다.
+      - run: pnpm run contracts:generate
 
       - name: Migrate
         run: pnpm exec prisma migrate deploy
