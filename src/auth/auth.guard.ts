@@ -39,8 +39,12 @@ export class AuthGuard implements CanActivate {
   }
 
   private async authenticate(request: Request): Promise<AuthPrincipal> {
+    // RFC 7235 는 인증 스킴을 대소문자 무시로 다루라고 정한다. 표준을 따르는 클라이언트나
+    // 프록시가 스킴을 정규화하면, 엄격히 비교할 경우 원인을 찾기 어려운 401 이 난다.
     const [scheme, token] = (request.headers.authorization ?? '').split(' ');
-    if (scheme !== 'Bearer' || !token) throw new UnauthorizedException('인증이 필요합니다.');
+    if (scheme?.toLowerCase() !== 'bearer' || !token) {
+      throw new UnauthorizedException('인증이 필요합니다.');
+    }
 
     let payload: JwtPayload;
     try {

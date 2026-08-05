@@ -67,6 +67,7 @@ describe('AuthGuard', () => {
       ['헤더가 없으면', undefined],
       ['Bearer 가 아니면', 'Basic abc'],
       ['토큰이 비어 있으면', 'Bearer '],
+      ['스킴만 있으면', 'Bearer'],
     ])('%s 401 이다', async (_label, authorization) => {
       const { guard } = build();
 
@@ -74,6 +75,15 @@ describe('AuthGuard', () => {
         UnauthorizedException,
       );
     });
+
+    it.each([['Bearer'], ['bearer'], ['BEARER'], ['BeArEr']])(
+      '스킴 %s 를 모두 받는다 — RFC 7235 는 대소문자를 무시하라고 정한다',
+      async (scheme) => {
+        const { guard } = build();
+
+        await expect(guard.canActivate(context(`${scheme} some-token`))).resolves.toBe(true);
+      },
+    );
 
     it('서명이 맞지 않으면 401 이다', async () => {
       const { guard } = build({
