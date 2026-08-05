@@ -13,6 +13,58 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
+  /**
+   * 창고는 공장·사업부를 FK 로 요구하는데 시드는 조직 계층을 만들지 않는다.
+   * 이미 있는 행을 찾아 쓰면 개발자 DB 에서만 통과하고 깨끗한 CI 에서 깨지므로
+   * 테스트가 자기 것을 만든다.
+   */
+  async function seedOrganization(): Promise<{ plantId: bigint; businessUnitId: bigint }> {
+    const legalEntity = await prisma.legal_entity.upsert({
+      where: { legal_entity_code: `${PREFIX}-LE` },
+      update: {},
+      create: {
+        legal_entity_code: `${PREFIX}-LE`,
+        legal_entity_name: 'e2e 법인',
+        country_code: 'VNM',
+        timezone_code: 'Asia/Ho_Chi_Minh',
+      },
+    });
+
+    const businessUnit = await prisma.business_unit.upsert({
+      where: {
+        legal_entity_id_business_unit_code: {
+          legal_entity_id: legalEntity.legal_entity_id,
+          business_unit_code: `${PREFIX}-BU`,
+        },
+      },
+      update: {},
+      create: {
+        legal_entity_id: legalEntity.legal_entity_id,
+        business_unit_code: `${PREFIX}-BU`,
+        business_unit_name: 'e2e 사업부',
+      },
+    });
+
+    const plant = await prisma.plant.upsert({
+      where: {
+        legal_entity_id_plant_code: {
+          legal_entity_id: legalEntity.legal_entity_id,
+          plant_code: `${PREFIX}-PLT`,
+        },
+      },
+      update: {},
+      create: {
+        legal_entity_id: legalEntity.legal_entity_id,
+        business_unit_id: businessUnit.business_unit_id,
+        plant_code: `${PREFIX}-PLT`,
+        plant_name: 'e2e 공장',
+        timezone_code: 'Asia/Ho_Chi_Minh',
+      },
+    });
+
+    return { plantId: plant.plant_id, businessUnitId: businessUnit.business_unit_id };
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -20,31 +72,30 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
-    const plant = await prisma.plant.findFirstOrThrow();
-    const businessUnit = await prisma.business_unit.findFirstOrThrow();
+    const { plantId, businessUnitId } = await seedOrganization();
 
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.warehouse.createMany({
       data: [
         {
-          plant_id: plant.plant_id,
-          business_unit_id: businessUnit.business_unit_id,
+          plant_id: plantId,
+          business_unit_id: businessUnitId,
           warehouse_code: `${PREFIX}-01`,
           warehouse_name: '자재창고',
           warehouse_type_code: 'MATERIAL',
           management_level_code: 'WAREHOUSE',
         },
         {
-          plant_id: plant.plant_id,
-          business_unit_id: businessUnit.business_unit_id,
+          plant_id: plantId,
+          business_unit_id: businessUnitId,
           warehouse_code: `${PREFIX}-02`,
           warehouse_name: '완제품창고',
           warehouse_type_code: 'PRODUCT',
           management_level_code: 'ZONE',
         },
         {
-          plant_id: plant.plant_id,
-          business_unit_id: businessUnit.business_unit_id,
+          plant_id: plantId,
+          business_unit_id: businessUnitId,
           warehouse_code: `${PREFIX}-03`,
           warehouse_name: '폐쇄창고',
           warehouse_type_code: 'MATERIAL',
@@ -56,7 +107,11 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
   });
 
   afterAll(async () => {
+    // FK 순서대로 지운다 — 창고 → 공장 → 사업부 → 법인.
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
+    await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
+    await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
     await app.close();
   });
 
