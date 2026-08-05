@@ -3,9 +3,11 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -14,9 +16,11 @@ import { Response } from 'express';
 
 import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import type { components } from '../../contracts/mdm';
+import { ContractBadRequest, ErrorCode, fieldError } from '../../common/errors/contract-error';
 import { CreateWarehouseDto } from './warehouse.create.dto';
 import { WarehouseQueryDto } from './warehouse.query.dto';
 import { WarehouseService } from './warehouse.service';
+import { UpdateWarehouseDto } from './warehouse.update.dto';
 
 @ApiTags('기준정보')
 @RequirePermissions('MASTER_READ')
@@ -33,6 +37,30 @@ export class WarehouseController {
     @ActorId() actorId: bigint,
   ): Promise<components['schemas']['Warehouse']> {
     return this.service.create(dto, actorId);
+  }
+
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
+  @Put(':warehouseId')
+  @ApiOperation({ summary: '창고 수정 — 전체 교체' })
+  @ApiResponse({ status: 409, description: '낙관적 잠금 충돌 — ConflictResponse' })
+  async update(
+    @Param('warehouseId', ParseIntPipe) warehouseId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: UpdateWarehouseDto,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Warehouse']> {
+    const { body, versionNo } = await this.service.update(
+      BigInt(warehouseId),
+      parseIfMatch(ifMatch),
+      dto,
+      actorId,
+    );
+
+    // 다음 쓰기가 이 값을 If-Match 에 담는다. 재전송 시 멱등 인터셉터가 이 헤더까지 재생한다.
+    response.setHeader('ETag', String(versionNo));
+
+    return body;
   }
 
   @Get()
@@ -59,4 +87,19 @@ export class WarehouseController {
 
     return body;
   }
+}
+
+/**
+ * `If-Match` 는 계약이 필수로 정했다. 없으면 낙관적 잠금이 성립하지 않으므로
+ * 통과시키지 않는다 — `Idempotency-Key` 와 같은 처리다.
+ */
+function parseIfMatch(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!value || !Number.isInteger(parsed) || parsed <= 0) {
+    throw new ContractBadRequest([
+      fieldError('If-Match', ErrorCode.REQUIRED, '수정하려면 If-Match 에 버전을 담아야 합니다.'),
+    ]);
+  }
+
+  return parsed;
 }

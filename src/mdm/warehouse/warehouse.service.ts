@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { components } from '../../contracts/mdm';
@@ -9,6 +9,7 @@ import { toEditability } from './warehouse.editability';
 import { toWarehouse } from './warehouse.mapper';
 import { WarehouseQueryDto } from './warehouse.query.dto';
 import { countWarehouseReferences } from './warehouse.references';
+import { UpdateWarehouseDto } from './warehouse.update.dto';
 import { WarehouseValidator } from './warehouse.validator';
 
 type WarehouseList = {
@@ -91,6 +92,59 @@ export class WarehouseService {
       body: { warehouse: toWarehouse(row), editability: toEditability(referenceCount) },
       versionNo: row.version_no,
     };
+  }
+
+  /**
+   * 낙관적 잠금은 **조건부 갱신**으로 건다. 읽고 나서 쓰면 그 사이에 남이 고친다 —
+   * WHERE 에 기대 버전을 넣어 행 단위 비교-교환으로 만든다(공유계약 B-1).
+   *
+   * 덮어쓰기 강제는 제공하지 않는다. 계약이 그렇게 정했다.
+   */
+  async update(
+    warehouseId: bigint,
+    expectedVersion: number,
+    dto: UpdateWarehouseDto,
+    actorId: bigint,
+  ): Promise<{ body: components['schemas']['Warehouse']; versionNo: number }> {
+    const current = await this.prisma.warehouse.findUnique({
+      where: { warehouse_id: warehouseId },
+      select: { plant_id: true },
+    });
+    if (!current) throw new NotFoundException(`창고(${warehouseId})를 찾을 수 없습니다.`);
+
+    const errors = await this.validator.validateUpdate(warehouseId, current.plant_id, dto);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    const { count } = await this.prisma.warehouse.updateMany({
+      where: { warehouse_id: warehouseId, version_no: expectedVersion },
+      data: {
+        business_unit_id: BigInt(dto.businessUnitId),
+        warehouse_code: dto.warehouseCode,
+        warehouse_name: dto.warehouseName,
+        warehouse_type_code: dto.warehouseTypeCode,
+        management_level_code: dto.managementLevelCode,
+        is_external: dto.isExternal,
+        // 전체 교체다. 외부창고가 아니거나 안 보냈으면 지운다.
+        partner_id: dto.isExternal && dto.partnerId ? BigInt(dto.partnerId) : null,
+        updated_by: actorId,
+        updated_at: new Date(),
+        version_no: { increment: 1 },
+      },
+    });
+
+    if (count === 0) {
+      // erpSync·workerLease 는 판정할 근거가 스키마에 없다 — 리스 개념도 출처 컬럼도 없다.
+      throw new ConflictException({
+        conflictCause: 'user',
+        message: '다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도하십시오.',
+      });
+    }
+
+    const row = await this.prisma.warehouse.findUniqueOrThrow({
+      where: { warehouse_id: warehouseId },
+    });
+
+    return { body: toWarehouse(row), versionNo: row.version_no };
   }
 
   private buildWhere(query: WarehouseQueryDto): Prisma.warehouseWhereInput {

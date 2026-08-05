@@ -17,7 +17,12 @@ const STALE_SECONDS = 60;
 /** 정리 한 번에 지우는 최대 행수. 쓰기 응답을 붙잡지 않을 만큼만 지운다. */
 const SWEEP_LIMIT = 100;
 
-export type StoredResponse = { status: number; body: unknown };
+export type StoredResponse = {
+  status: number;
+  body: unknown;
+  /** 재생 시 되돌려줄 헤더. PUT 의 ETag 가 여기 담긴다 — 없으면 다음 쓰기의 If-Match 를 못 채운다. */
+  headers?: Record<string, string>;
+};
 
 export type Lookup =
   | { kind: 'fresh' }
@@ -57,7 +62,11 @@ export class IdempotencyStore {
     if (existing.status === 'COMPLETED') {
       return {
         kind: 'replay',
-        response: { status: existing.response_status ?? 200, body: existing.response_body },
+        response: {
+          status: existing.response_status ?? 200,
+          body: existing.response_body,
+          headers: (existing.response_headers ?? undefined) as Record<string, string> | undefined,
+        },
       };
     }
 
@@ -93,6 +102,7 @@ export class IdempotencyStore {
         status: 'COMPLETED',
         response_status: response.status,
         response_body: response.body as Prisma.InputJsonValue,
+        response_headers: (response.headers ?? {}) as Prisma.InputJsonValue,
         completed_at: new Date(),
       },
     });

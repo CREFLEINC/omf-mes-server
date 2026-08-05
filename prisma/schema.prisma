@@ -3468,6 +3468,7 @@ model idempotency_record {
   created_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   completed_at        DateTime? @db.Timestamptz(6)
   expires_at          DateTime  @db.Timestamptz(6)
+  response_headers    Json?
   app_user            app_user? @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([expires_at], map: "ix_idempotency_expires")
