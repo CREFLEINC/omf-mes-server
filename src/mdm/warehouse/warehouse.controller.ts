@@ -2,11 +2,13 @@ import { Controller, Get, Header, Param, ParseIntPipe, Query, Res } from '@nestj
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
+import { RequirePermissions } from '../../auth/auth.decorators';
 import type { components } from '../../contracts/mdm';
 import { WarehouseQueryDto } from './warehouse.query.dto';
 import { WarehouseService } from './warehouse.service';
 
 @ApiTags('기준정보')
+@RequirePermissions('MASTER_READ')
 @Controller('mdm/warehouses')
 export class WarehouseController {
   constructor(private readonly service: WarehouseService) {}

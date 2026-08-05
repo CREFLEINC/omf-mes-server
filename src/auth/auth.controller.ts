@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+import { Public } from './auth.decorators';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResponseDto } from './auth.dto';
 
@@ -9,6 +10,7 @@ import { LoginDto, LoginResponseDto } from './auth.dto';
 export class AuthController {
   constructor(private readonly service: AuthService) {}
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '로그인' })

@@ -9,6 +9,7 @@ import {
   referenceKey,
 } from '../src/mdm/warehouse/warehouse.references';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { createUserWithPermissions, deleteUserWithPermissions } from './support/auth.fixture';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
 
 const PREFIX = 'E2E-WHD';
@@ -16,6 +17,7 @@ const PREFIX = 'E2E-WHD';
 describe('GET /api/mdm/warehouses/{warehouseId} (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let token: string;
   let warehouseId: bigint;
 
   beforeAll(async () => {
@@ -25,6 +27,7 @@ describe('GET /api/mdm/warehouses/{warehouseId} (e2e)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    ({ token } = await createUserWithPermissions(app, PREFIX, ['MASTER_READ']));
     const { plantId, businessUnitId } = await createOrganization(prisma, PREFIX);
 
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
@@ -46,11 +49,14 @@ describe('GET /api/mdm/warehouses/{warehouseId} (e2e)', () => {
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await deleteOrganization(prisma, PREFIX);
+    await deleteUserWithPermissions(app, PREFIX);
     await app.close();
   });
 
   function detail(id: bigint | number | string) {
-    return request(app.getHttpServer()).get(`/api/mdm/warehouses/${id}`);
+    return request(app.getHttpServer())
+      .get(`/api/mdm/warehouses/${id}`)
+      .set('Authorization', `Bearer ${token}`);
   }
 
   it('참조 목록이 정본 물리 모델과 일치한다', async () => {
