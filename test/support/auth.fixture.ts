@@ -79,6 +79,9 @@ export async function deleteUserWithPermissions(
     await prisma.role.delete({ where: { role_id: role.role_id } });
   }
   if (user) {
+    // 멱등 기록이 사용자를 FK 로 잡는다. 운영에서는 사용자를 물리 삭제하지 않지만
+    // (is_active 로 중지) 테스트는 지우므로 여기서 먼저 끊는다.
+    await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
     await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
     await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
   }

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -72,11 +74,12 @@ describe('POST /api/mdm/warehouses (e2e)', () => {
     await app.close();
   });
 
-  function post(body: Record<string, unknown>, bearer = token) {
+  /** 키를 매번 새로 만든다 — 고정하면 두 번째 요청부터 첫 응답이 재생된다. */
+  function post(body: Record<string, unknown>, bearer = token, key = randomUUID()) {
     return request(app.getHttpServer())
       .post('/api/mdm/warehouses')
       .set('Authorization', `Bearer ${bearer}`)
-      .set('Idempotency-Key', '00000000-0000-4000-8000-000000000000')
+      .set('Idempotency-Key', key)
       .send(body);
   }
 
@@ -240,7 +243,7 @@ describe('POST /api/mdm/warehouses (e2e)', () => {
     it('토큰이 없으면 401 이다', async () => {
       await request(app.getHttpServer())
         .post('/api/mdm/warehouses')
-        .set('Idempotency-Key', '00000000-0000-4000-8000-000000000000')
+        .set('Idempotency-Key', randomUUID())
         .send(valid())
         .expect(401);
     });
