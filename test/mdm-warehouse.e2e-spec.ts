@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { createUserWithPermissions, deleteUserWithPermissions } from './support/auth.fixture';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
 
 /** 이 테스트가 만든 행만 지우기 위한 표식. `q` 로 검색 범위를 좁히는 데도 쓴다. */
@@ -13,6 +14,7 @@ const PREFIX = 'E2E-WH';
 describe('GET /api/mdm/warehouses (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let token: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -21,6 +23,7 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    ({ token } = await createUserWithPermissions(app, PREFIX, ['MASTER_READ']));
     const { plantId, businessUnitId } = await createOrganization(prisma, PREFIX);
 
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
@@ -58,12 +61,14 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
   afterAll(async () => {
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await deleteOrganization(prisma, PREFIX);
+    await deleteUserWithPermissions(app, PREFIX);
     await app.close();
   });
 
   function list(query: Record<string, string> = {}) {
     return request(app.getHttpServer())
       .get('/api/mdm/warehouses')
+      .set('Authorization', `Bearer ${token}`)
       .query({ q: PREFIX, ...query });
   }
 
@@ -133,6 +138,7 @@ describe('GET /api/mdm/warehouses (e2e)', () => {
   it('정의되지 않은 쿼리 파라미터는 400 이다', async () => {
     await request(app.getHttpServer())
       .get('/api/mdm/warehouses')
+      .set('Authorization', `Bearer ${token}`)
       .query({ unknownParam: 'x' })
       .expect(400);
   });
