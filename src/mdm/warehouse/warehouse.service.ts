@@ -3,10 +3,13 @@ import { Prisma } from '@prisma/client';
 
 import type { components } from '../../contracts/mdm';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractBadRequest } from '../../common/errors/contract-error';
+import { CreateWarehouseDto } from './warehouse.create.dto';
 import { toEditability } from './warehouse.editability';
 import { toWarehouse } from './warehouse.mapper';
 import { WarehouseQueryDto } from './warehouse.query.dto';
 import { countWarehouseReferences } from './warehouse.references';
+import { WarehouseValidator } from './warehouse.validator';
 
 type WarehouseList = {
   items: components['schemas']['Warehouse'][];
@@ -24,7 +27,38 @@ type WarehouseDetail = {
 
 @Injectable()
 export class WarehouseService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly validator: WarehouseValidator,
+  ) {}
+
+  async create(
+    dto: CreateWarehouseDto,
+    actorId: bigint,
+  ): Promise<components['schemas']['Warehouse']> {
+    const errors = await this.validator.validateCreate(dto);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    const row = await this.prisma.warehouse.create({
+      data: {
+        plant_id: BigInt(dto.plantId),
+        business_unit_id: BigInt(dto.businessUnitId),
+        warehouse_code: dto.warehouseCode,
+        warehouse_name: dto.warehouseName,
+        warehouse_type_code: dto.warehouseTypeCode,
+        management_level_code: dto.managementLevelCode,
+        is_external: dto.isExternal,
+        // 외부창고가 아니면 거래처를 지운다 — 화면이 체크를 껐는데 값이 남아 오면
+        // ck_external_warehouse_partner 는 통과하지만 데이터가 앞뒤가 안 맞는다.
+        partner_id: dto.isExternal && dto.partnerId ? BigInt(dto.partnerId) : null,
+        // is_active 는 받지 않는다 — 신규는 항상 사용 중이다(계약 WarehouseCreate).
+        created_by: actorId,
+        updated_by: actorId,
+      },
+    });
+
+    return toWarehouse(row);
+  }
 
   async findAll(query: WarehouseQueryDto): Promise<WarehouseList> {
     const where = this.buildWhere(query);

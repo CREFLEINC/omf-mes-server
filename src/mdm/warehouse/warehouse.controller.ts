@@ -1,9 +1,20 @@
-import { Controller, Get, Header, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { RequirePermissions } from '../../auth/auth.decorators';
+import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import type { components } from '../../contracts/mdm';
+import { CreateWarehouseDto } from './warehouse.create.dto';
 import { WarehouseQueryDto } from './warehouse.query.dto';
 import { WarehouseService } from './warehouse.service';
 
@@ -12,6 +23,17 @@ import { WarehouseService } from './warehouse.service';
 @Controller('mdm/warehouses')
 export class WarehouseController {
   constructor(private readonly service: WarehouseService) {}
+
+  @RequirePermissions('MASTER_LOGISTICS_WRITE')
+  @Post()
+  @ApiOperation({ summary: '창고 등록' })
+  @ApiResponse({ status: 400, description: '검증 실패 — 계약 오류 봉투' })
+  create(
+    @Body() dto: CreateWarehouseDto,
+    @ActorId() actorId: bigint,
+  ): Promise<components['schemas']['Warehouse']> {
+    return this.service.create(dto, actorId);
+  }
 
   @Get()
   @ApiOperation({ summary: '창고 목록' })
