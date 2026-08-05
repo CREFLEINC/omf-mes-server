@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
+import { configureApp } from './app.setup';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -10,7 +11,7 @@ async function bootstrap(): Promise<void> {
 
   // 계약(mdm-기준정보.json)의 servers 가 /api 다. 프리픽스를 바꾸면 전 경로가 어긋난다.
   const prefix = config.get<string>('API_PREFIX') ?? 'api';
-  app.setGlobalPrefix(prefix);
+  configureApp(app, prefix);
 
   const document = SwaggerModule.createDocument(
     app,

@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 
 describe('GET /api/health (e2e)', () => {
   let app: INestApplication;
@@ -10,8 +11,7 @@ describe('GET /api/health (e2e)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    // 운영 부팅(main.ts)과 같은 프리픽스를 쓴다 — 어긋나면 e2e 가 통과해도 경로가 다르다.
-    app.setGlobalPrefix('api');
+    configureApp(app, 'api');
     await app.init();
   });
 
