@@ -63,6 +63,11 @@ export class AuthService {
   /**
    * 없는 계정 · 자격증명 미발급 · 정지된 계정에서도 해시 검증만큼 시간을 쓴다.
    * 미끼 해시는 한 번만 만들어 재사용한다 — 매번 만들면 검증보다 오히려 느려진다.
+   *
+   * **완전히 같아지지는 않는다.** 실제 계정 경로에는 실패 카운터 UPDATE 가 한 번 더
+   * 있어 측정상 약 4ms 느리다(scrypt 50ms 기준). 그 정도는 네트워크 지터에 묻히므로
+   * 응답을 비동기로 흘려보내면서까지 맞추지는 않는다 — 얻는 1.5ms 보다 카운트 유실
+   * 위험이 크다.
    */
   private async burnTime(password: string): Promise<void> {
     this.dummyHash ??= await this.passwords.hash(DUMMY_PASSWORD);

@@ -6,7 +6,10 @@ describe('기동 시 JWT_SECRET 검증', () => {
   const original = process.env.JWT_SECRET;
 
   afterEach(() => {
-    process.env.JWT_SECRET = original;
+    // process.env 에 undefined 를 넣으면 문자열 'undefined' 가 된다 — 32자 미만이라
+    // 뒤따르는 테스트의 기동이 실패한다. 없던 값은 지워서 복원한다.
+    if (original === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = original;
   });
 
   it.each([
