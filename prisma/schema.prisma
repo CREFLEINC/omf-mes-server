@@ -396,6 +396,7 @@ model handling_unit {
   inventory_transaction_line inventory_transaction_line[]
   shipment_lot_allocation    shipment_lot_allocation[]
 
+  @@index([warehouse_id], map: "ix_handling_unit_warehouse")
   @@schema("inventory")
 }
 
@@ -495,6 +496,7 @@ model inventory_count {
   warehouse            warehouse              @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_count_line inventory_count_line[]
 
+  @@index([warehouse_id], map: "ix_inventory_count_warehouse")
   @@schema("inventory")
 }
 
@@ -555,6 +557,7 @@ model inventory_reservation {
   picking_line              picking_line[]
 
   @@index([source_document_type_code, source_document_id, status_code], map: "ix_reservation_source")
+  @@index([warehouse_id], map: "ix_inventory_reservation_warehouse")
   @@schema("inventory")
 }
 
@@ -632,6 +635,8 @@ model inventory_transaction_line {
 
   @@unique([inventory_transaction_id, business_date, line_no], map: "uq_inventory_transaction_line")
   @@index([lot_id, business_date(sort: Desc)], map: "ix_inventory_line_lot")
+  @@index([from_warehouse_id], map: "ix_inventory_line_from_warehouse")
+  @@index([to_warehouse_id], map: "ix_inventory_line_to_warehouse")
   @@schema("inventory")
 }
 
@@ -706,6 +711,7 @@ model goods_issue {
   subcontract_issue         subcontract_issue[]
 
   @@index([source_document_type_code, source_document_id, issued_at(sort: Desc)], map: "ix_goods_issue_source")
+  @@index([source_warehouse_id], map: "ix_goods_issue_source_warehouse")
   @@schema("logistics")
 }
 
@@ -760,6 +766,7 @@ model goods_receipt {
   goods_receipt_line        goods_receipt_line[]
   subcontract_receipt       subcontract_receipt[]
 
+  @@index([warehouse_id], map: "ix_goods_receipt_warehouse")
   @@schema("logistics")
 }
 
@@ -1049,6 +1056,7 @@ model putaway_rule {
   warehouse       warehouse      @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   putaway_task    putaway_task[]
 
+  @@index([warehouse_id], map: "ix_putaway_rule_warehouse")
   @@schema("logistics")
 }
 
@@ -1164,6 +1172,7 @@ model shipment {
   warehouse             warehouse        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_line         shipment_line[]
 
+  @@index([warehouse_id], map: "ix_shipment_warehouse")
   @@schema("logistics")
 }
 
@@ -1334,6 +1343,8 @@ model stock_transfer {
   warehouse_stock_transfer_to_warehouse_idTowarehouse               warehouse             @relation("stock_transfer_to_warehouse_idTowarehouse", fields: [to_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   stock_transfer_line                                               stock_transfer_line[]
 
+  @@index([from_warehouse_id], map: "ix_stock_transfer_from_warehouse")
+  @@index([to_warehouse_id], map: "ix_stock_transfer_to_warehouse")
   @@schema("logistics")
 }
 
@@ -2493,6 +2504,7 @@ model material_return {
   work_order               work_order             @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   material_return_line     material_return_line[]
 
+  @@index([destination_warehouse_id], map: "ix_material_return_destination_warehouse")
   @@schema("production")
 }
 
@@ -2762,13 +2774,13 @@ model work_session {
   ended_at             DateTime?              @db.Timestamptz(6)
   status_code          String                 @db.VarChar(50)
   stop_reason_code     String?                @db.VarChar(50)
-  idempotency_key      String                 @unique(map: "uq_work_session_idempotency_key") @db.VarChar(150)
   remarks              String?
   created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by           BigInt?
   updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by           BigInt?
   version_no           Int                    @default(1)
+  idempotency_key      String                 @unique(map: "uq_work_session_idempotency_key") @db.VarChar(150)
   material_consumption material_consumption[]
   production_result    production_result[]
   equipment            equipment?             @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
