@@ -1,4 +1,4 @@
-import type { components } from '../../contracts/mdm';
+import type { components } from '../contracts/mdm';
 
 export type Editability = components['schemas']['Editability'];
 

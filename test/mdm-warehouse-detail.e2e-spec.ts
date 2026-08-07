@@ -4,10 +4,8 @@ import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
-import {
-  WAREHOUSE_REFERENCES,
-  referenceKey,
-} from '../src/mdm/warehouse/warehouse.references';
+import { referenceKey } from '../src/mdm/reference-count';
+import { WAREHOUSE_REFERENCES } from '../src/mdm/warehouse/warehouse.references';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { createUserWithPermissions, deleteUserWithPermissions } from './support/auth.fixture';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
