@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractBadRequest } from '../../common/errors/contract-error';
 import type { components } from '../../contracts/mdm';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toEditability } from '../editability';
 import { countReferences } from '../reference-count';
+import { CreateLocationDto } from './location.create.dto';
 import { LOCATION_REFERENCES } from './location.references';
 import { toLocation } from './location.mapper';
 import { LocationQueryDto } from './location.query.dto';
+import { UpdateLocationDto } from './location.update.dto';
+import { LocationValidator } from './location.validator';
 
 type LocationList = {
   items: components['schemas']['Location'][];
@@ -20,9 +24,102 @@ type LocationDetail = {
   versionNo: number;
 };
 
+/** 쓰기 응답. `versionNo` 는 같은 이유로 본문이 아니라 ETag 로 나간다. */
+type LocationWritten = {
+  body: components['schemas']['Location'];
+  versionNo: number;
+};
+
 @Injectable()
 export class LocationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly validator: LocationValidator,
+  ) {}
+
+  async create(dto: CreateLocationDto, actorId: bigint): Promise<components['schemas']['Location']> {
+    const errors = await this.validator.validateCreate(dto);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    const row = await this.prisma.location.create({
+      data: {
+        warehouse_id: BigInt(dto.warehouseId),
+        ...this.writableFields(dto),
+        // is_active 는 받지 않는다 — 신규는 항상 사용 중이다(계약 LocationCreate).
+        created_by: actorId,
+        updated_by: actorId,
+      },
+    });
+
+    return toLocation(row);
+  }
+
+  async update(
+    locationId: bigint,
+    expectedVersion: number,
+    dto: UpdateLocationDto,
+    actorId: bigint,
+  ): Promise<LocationWritten> {
+    const current = await this.prisma.location.findUnique({
+      where: { location_id: locationId },
+      select: { warehouse_id: true },
+    });
+    if (!current) throw new NotFoundException(`로케이션(${locationId})을 찾을 수 없습니다.`);
+
+    const errors = await this.validator.validateUpdate(locationId, current.warehouse_id, dto);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    return this.applyVersioned(locationId, expectedVersion, actorId, this.writableFields(dto));
+  }
+
+  /**
+   * 등록과 수정이 같은 필드를 쓴다 — `PUT` 이 전체 교체라서다. 한쪽에만 필드를 더하면
+   * 수정으로는 못 넣는 값이 생긴다.
+   *
+   * 선택 필드는 안 보내면 `null` 로 지운다. `?? null` 이 그 뜻이다.
+   */
+  private writableFields(dto: CreateLocationDto | UpdateLocationDto) {
+    return {
+      parent_location_id: dto.parentLocationId ? BigInt(dto.parentLocationId) : null,
+      location_code: dto.locationCode,
+      location_name: dto.locationName,
+      location_type_code: dto.locationTypeCode,
+      quality_zone_code: dto.qualityZoneCode ?? null,
+      storage_condition_code: dto.storageConditionCode ?? null,
+      allow_mixed_item: dto.allowMixedItem,
+      allow_mixed_lot: dto.allowMixedLot,
+      capacity_qty: dto.capacityQty ?? null,
+      capacity_uom_id: dto.capacityUomId ? BigInt(dto.capacityUomId) : null,
+    };
+  }
+
+  /**
+   * 낙관적 잠금은 **조건부 갱신**으로 건다 — WHERE 에 기대 버전을 넣어 행 단위
+   * 비교-교환으로 만든다(공유계약 B-1). 창고와 같은 규칙이다.
+   */
+  private async applyVersioned(
+    locationId: bigint,
+    expectedVersion: number,
+    actorId: bigint,
+    data: Prisma.locationUncheckedUpdateManyInput,
+  ): Promise<LocationWritten> {
+    const { count } = await this.prisma.location.updateMany({
+      where: { location_id: locationId, version_no: expectedVersion },
+      data: { ...data, updated_by: actorId, updated_at: new Date(), version_no: { increment: 1 } },
+    });
+
+    if (count === 0) {
+      // erpSync·workerLease 는 판정할 근거가 스키마에 없다.
+      throw new ConflictException({
+        conflictCause: 'user',
+        message: '다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도하십시오.',
+      });
+    }
+
+    const row = await this.prisma.location.findUniqueOrThrow({ where: { location_id: locationId } });
+
+    return { body: toLocation(row), versionNo: row.version_no };
+  }
 
   async findAll(query: LocationQueryDto): Promise<LocationList> {
     const where = this.buildWhere(query);

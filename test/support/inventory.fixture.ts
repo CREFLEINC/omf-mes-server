@@ -45,7 +45,7 @@ export async function createLocation(
       warehouse_id: warehouseId,
       location_code: locationCode,
       location_name: 'e2e 로케이션',
-      location_type_code: 'BIN',
+      location_type_code: 'RACK',
       is_active: isActive,
     },
   });
