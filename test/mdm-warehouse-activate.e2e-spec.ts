@@ -176,6 +176,26 @@ describe('POST /api/mdm/warehouses/{warehouseId}:activate (e2e)', () => {
   });
 
   describe('그 외', () => {
+    it('중지된 창고의 코드는 중지 중에도 잠겨 있다 — 그래서 되살릴 때 중복을 보지 않는다', async () => {
+      // activate 가 중복 검사를 생략하는 근거가 uq_warehouse 다. 부분 인덱스(WHERE is_active)
+      // 였다면 중지된 사이에 같은 코드가 생기고, 되살리기가 제약 위반으로 떨어진다.
+      const { id } = await given();
+      const row = await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: id } });
+
+      await expect(
+        prisma.warehouse.create({
+          data: {
+            plant_id: plantId,
+            business_unit_id: businessUnitId,
+            warehouse_code: row.warehouse_code,
+            warehouse_name: '같은 코드',
+            warehouse_type_code: 'MATERIAL',
+            management_level_code: 'WAREHOUSE',
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'P2002' });
+    });
+
     it('없는 창고는 404 다', async () => {
       await activate(999999999, { etag: '1' }).expect(404);
     });
