@@ -1,4 +1,4 @@
-import { referenceKey } from '../reference-count';
+import { countReferences, referenceKey } from '../reference-count';
 import { LOCATION_REFERENCES } from './location.references';
 import { WAREHOUSE_REFERENCES } from '../warehouse/warehouse.references';
 
@@ -44,4 +44,26 @@ describe('WAREHOUSE_REFERENCES', () => {
     expect(keys).toContain('logistics.stock_transfer.from_warehouse_id');
     expect(keys).toContain('logistics.stock_transfer.to_warehouse_id');
   });
+});
+
+describe('countReferences 식별자 검사', () => {
+  it('식별자가 아닌 것이 섞이면 질의를 만들지 않고 던진다', async () => {
+    const prisma = { $queryRawUnsafe: jest.fn() } as unknown as Parameters<typeof countReferences>[0];
+
+    await expect(
+      countReferences(prisma, [{ schema: 'mdm', table: 'location; DROP TABLE x', column: 'id' }], 1n),
+    ).rejects.toThrow('쓸 수 없는 식별자');
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it.each([[WAREHOUSE_REFERENCES], [LOCATION_REFERENCES]])(
+    '실제 목록은 전부 통과한다',
+    async (references) => {
+      const prisma = {
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ total: 0n }]),
+      } as unknown as Parameters<typeof countReferences>[0];
+
+      await expect(countReferences(prisma, references, 1n)).resolves.toBe(0);
+    },
+  );
 });
