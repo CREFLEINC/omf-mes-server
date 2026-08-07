@@ -110,11 +110,11 @@ export class WarehouseService {
   ): Promise<WarehouseWritten> {
     const current = await this.prisma.warehouse.findUnique({
       where: { warehouse_id: warehouseId },
-      select: { plant_id: true },
+      select: { plant_id: true, warehouse_code: true },
     });
     if (!current) throw new NotFoundException(`창고(${warehouseId})를 찾을 수 없습니다.`);
 
-    const errors = await this.validator.validateUpdate(warehouseId, current.plant_id, dto);
+    const errors = await this.validator.validateUpdate(warehouseId, current, dto);
     if (errors.length > 0) throw new ContractBadRequest(errors);
 
     return this.applyVersioned(warehouseId, expectedVersion, actorId, {

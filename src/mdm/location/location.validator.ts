@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 
 import { ErrorCode, ErrorItem, fieldError } from '../../common/errors/contract-error';
 import { PrismaService } from '../../prisma/prisma.service';
+import { checkCodeLock } from '../editability';
 import { CreateLocationDto } from './location.create.dto';
+import { LOCATION_REFERENCES } from './location.references';
 import { UpdateLocationDto } from './location.update.dto';
 
 /** 코드 필드가 어느 공통코드 그룹에 속해야 하는지. 값 목록은 `mdm.code_value` 가 정본이다. */
@@ -54,17 +56,25 @@ export class LocationValidator {
    */
   async validateUpdate(
     locationId: bigint,
-    warehouseId: bigint,
+    current: { warehouse_id: bigint; location_code: string },
     dto: UpdateLocationDto,
   ): Promise<ErrorItem[]> {
-    const [codes, capacity, parent, duplicate] = await Promise.all([
+    const [codes, capacity, parent, duplicate, codeLock] = await Promise.all([
       this.checkCodes(dto),
       this.checkCapacity(dto),
-      this.checkParent(warehouseId, dto.parentLocationId, locationId),
-      this.checkDuplicateExcept(locationId, warehouseId, dto.locationCode),
+      this.checkParent(current.warehouse_id, dto.parentLocationId, locationId),
+      this.checkDuplicateExcept(locationId, current.warehouse_id, dto.locationCode),
+      checkCodeLock(
+        this.prisma,
+        LOCATION_REFERENCES,
+        locationId,
+        'locationCode',
+        current.location_code,
+        dto.locationCode,
+      ),
     ]);
 
-    return [...codes, ...capacity, ...parent, ...duplicate];
+    return [...codes, ...capacity, ...parent, ...duplicate, ...codeLock];
   }
 
   /** 창고가 실재하고 사용 중인가. 중지된 창고에 자리를 새로 만들면 갈 수 없는 자리가 된다. */

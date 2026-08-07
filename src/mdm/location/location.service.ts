@@ -63,11 +63,11 @@ export class LocationService {
   ): Promise<LocationWritten> {
     const current = await this.prisma.location.findUnique({
       where: { location_id: locationId },
-      select: { warehouse_id: true },
+      select: { warehouse_id: true, location_code: true },
     });
     if (!current) throw new NotFoundException(`로케이션(${locationId})을 찾을 수 없습니다.`);
 
-    const errors = await this.validator.validateUpdate(locationId, current.warehouse_id, dto);
+    const errors = await this.validator.validateUpdate(locationId, current, dto);
     if (errors.length > 0) throw new ContractBadRequest(errors);
 
     return this.applyVersioned(locationId, expectedVersion, actorId, this.writableFields(dto));

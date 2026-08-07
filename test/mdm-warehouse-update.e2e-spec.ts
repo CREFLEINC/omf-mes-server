@@ -188,6 +188,56 @@ describe('PUT /api/mdm/warehouses/{warehouseId} (e2e)', () => {
       await put(id, payload(code, { warehouseName: '이름만 변경' }), { etag }).expect(200);
     });
 
+    it('쓰이고 있으면 코드를 바꿀 수 없다 — 상세가 잠갔다고 한 것을 쓰기도 지킨다', async () => {
+      const { id, etag, code } = await given();
+      // 로케이션 하나가 이 창고를 가리키면 참조 건수가 0 이 아니게 된다.
+      await prisma.location.create({
+        data: {
+          warehouse_id: BigInt(id),
+          location_code: `${PREFIX}-LOCK`,
+          location_name: '참조 만들기',
+          location_type_code: 'RACK',
+        },
+      });
+
+      try {
+        const { body } = await put(id, payload(`${code}-NEW`), { etag }).expect(400);
+
+        expect(body.errors[0]).toMatchObject({
+          field: 'warehouseCode',
+          code: 'STATE_LOCKED',
+        });
+      } finally {
+        await prisma.location.deleteMany({ where: { location_code: `${PREFIX}-LOCK` } });
+      }
+    });
+
+    it('쓰이고 있어도 이름은 고칠 수 있다 — 잠그는 것은 코드뿐이다', async () => {
+      const { id, etag, code } = await given();
+      await prisma.location.create({
+        data: {
+          warehouse_id: BigInt(id),
+          location_code: `${PREFIX}-LOCK`,
+          location_name: '참조 만들기',
+          location_type_code: 'RACK',
+        },
+      });
+
+      try {
+        await put(id, payload(code, { warehouseName: '이름만 변경' }), { etag }).expect(200);
+      } finally {
+        await prisma.location.deleteMany({ where: { location_code: `${PREFIX}-LOCK` } });
+      }
+    });
+
+    it('아무도 안 쓰면 코드를 바꿀 수 있다', async () => {
+      const { id, etag, code } = await given();
+
+      const { body } = await put(id, payload(`${code}-NEW`), { etag }).expect(200);
+
+      expect(body.warehouseCode).toBe(`${code}-NEW`);
+    });
+
     it('다른 창고의 코드로 바꾸려 하면 UNIQUE_VIOLATION 이다', async () => {
       const other = await given();
       const { id, etag } = await given();
