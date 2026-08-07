@@ -191,7 +191,7 @@ describe('GET /api/mdm/locations (e2e)', () => {
           parent_location_id: locationId,
           location_code: `${PREFIX}-A-01-CHILD`,
           location_name: '하위 자리',
-          location_type_code: 'BIN',
+          location_type_code: 'RACK',
         },
       });
 
