@@ -15,6 +15,7 @@ describe('코드그룹 · 코드값 조회 (e2e)', () => {
   let token: string;
   let groupId: bigint;
   let otherGroupId: bigint;
+  let tieGroupId: bigint;
   let valueId: bigint;
 
   beforeAll(async () => {
@@ -35,6 +36,7 @@ describe('코드그룹 · 코드값 조회 (e2e)', () => {
 
     groupId = await group('G1');
     otherGroupId = await group('G2');
+    tieGroupId = await group('G3');
 
     valueId = (
       await prisma.code_value.create({
@@ -62,6 +64,12 @@ describe('코드그룹 · 코드값 조회 (e2e)', () => {
     await prisma.code_value.create({
       data: { code_group_id: otherGroupId, code: 'ALPHA', code_name: '다른 그룹의 알파' },
     });
+    // display_order 에는 유일 제약이 없다 — 동점만 모은 그룹으로 페이지 안정성을 본다.
+    for (const code of ['TIE-B', 'TIE-A', 'TIE-C']) {
+      await prisma.code_value.create({
+        data: { code_group_id: tieGroupId, code, code_name: `동점 ${code}`, display_order: 5 },
+      });
+    }
   });
 
   afterAll(async () => {
@@ -117,8 +125,8 @@ describe('코드그룹 · 코드값 조회 (e2e)', () => {
     it('목록이 계약 봉투로 내려온다', async () => {
       const { body } = await get(`code-groups?q=${PREFIX}`).expect(200);
 
-      expect(body.items).toHaveLength(2);
-      expect(body.page).toEqual({ page: 1, size: 50, total: 2 });
+      expect(body.items).toHaveLength(3);
+      expect(body.page).toEqual({ page: 1, size: 50, total: 3 });
       expect(Object.keys(body.items[0]).sort()).toEqual([
         'codeGroupId',
         'description',
@@ -192,6 +200,24 @@ describe('코드그룹 · 코드값 조회 (e2e)', () => {
       ).expect(200);
 
       expect(body.items.map((v: { displayOrder: number }) => v.displayOrder)).toEqual([10, 20, 30]);
+    });
+
+    it('display_order 가 같으면 code 로 차례가 정해진다 — 유일 제약이 없어 동점이 생긴다', async () => {
+      const { body } = await get(`code-values?codeGroupId=${tieGroupId}`).expect(200);
+
+      expect(body.items.map((v: { code: string }) => v.code)).toEqual(['TIE-A', 'TIE-B', 'TIE-C']);
+    });
+
+    it('동점이 있어도 페이지를 넘길 때 같은 행이 두 번 나오지 않는다', async () => {
+      const seen: string[] = [];
+      for (const page of [1, 2, 3]) {
+        const { body } = await get(
+          `code-values?codeGroupId=${tieGroupId}&size=1&page=${page}`,
+        ).expect(200);
+        seen.push(body.items[0].code);
+      }
+
+      expect(new Set(seen).size).toBe(3);
     });
 
     it('코드·코드명으로 검색된다', async () => {
