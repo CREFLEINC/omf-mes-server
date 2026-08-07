@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Headers,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -63,6 +64,34 @@ export class WarehouseController {
     return body;
   }
 
+  /**
+   * `:deactivate` 의 콜론은 Express 5(path-to-regexp 8)에서 파라미터 시작 기호다.
+   * 이스케이프하지 않으면 `Missing text before "deactivate" param` 으로 부팅이 실패한다.
+   */
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
+  @Post(':warehouseId\\:deactivate')
+  // POST 의 Nest 기본값은 201 이다. 새로 만드는 것이 아니라 있는 행을 바꾸므로 계약은 200 이다.
+  @HttpCode(200)
+  @ApiOperation({ summary: '창고 사용 중지 — 물리 삭제는 제공하지 않는다' })
+  @ApiResponse({ status: 400, description: '재고 잔량·사용 중 로케이션 — STATE_LOCKED' })
+  @ApiResponse({ status: 409, description: '낙관적 잠금 충돌 — ConflictResponse' })
+  async deactivate(
+    @Param('warehouseId', ParseIntPipe) warehouseId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Warehouse']> {
+    const { body, versionNo } = await this.service.deactivate(
+      BigInt(warehouseId),
+      parseIfMatch(ifMatch),
+      actorId,
+    );
+
+    response.setHeader('ETag', String(versionNo));
+
+    return body;
+  }
+
   @Get()
   @ApiOperation({ summary: '창고 목록' })
   findAll(@Query() query: WarehouseQueryDto) {
@@ -97,7 +126,7 @@ function parseIfMatch(value: string | undefined): number {
   const parsed = Number(value);
   if (!value || !Number.isInteger(parsed) || parsed <= 0) {
     throw new ContractBadRequest([
-      fieldError('If-Match', ErrorCode.REQUIRED, '수정하려면 If-Match 에 버전을 담아야 합니다.'),
+      fieldError('If-Match', ErrorCode.REQUIRED, '변경하려면 If-Match 에 버전을 담아야 합니다.'),
     ]);
   }
 
