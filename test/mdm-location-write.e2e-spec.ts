@@ -8,7 +8,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { createUserWithPermissions, deleteUserWithPermissions } from './support/auth.fixture';
-import { createLocation, deleteWarehouseContents } from './support/inventory.fixture';
+import { deleteWarehouseContents } from './support/inventory.fixture';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
 
 const PREFIX = 'E2E-LCW';

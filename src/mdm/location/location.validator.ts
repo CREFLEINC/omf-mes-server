@@ -108,9 +108,9 @@ export class LocationValidator {
    */
   private async checkCapacity(dto: LocationDto): Promise<ErrorItem[]> {
     const hasQty = dto.capacityQty !== undefined && dto.capacityQty !== null;
-    const hasUom = dto.capacityUomId !== undefined && dto.capacityUomId !== null;
+    const uomId = dto.capacityUomId ?? null;
 
-    if (hasQty !== hasUom) {
+    if (hasQty !== (uomId !== null)) {
       return [
         fieldError(
           hasQty ? 'capacityUomId' : 'capacityQty',
@@ -120,9 +120,9 @@ export class LocationValidator {
       ];
     }
 
-    if (!hasUom) return [];
+    if (uomId === null) return [];
 
-    const uom = await this.prisma.uom.findUnique({ where: { uom_id: BigInt(dto.capacityUomId!) } });
+    const uom = await this.prisma.uom.findUnique({ where: { uom_id: BigInt(uomId) } });
 
     return uom ? [] : [fieldError('capacityUomId', ErrorCode.RANGE, '없는 단위입니다.')];
   }
