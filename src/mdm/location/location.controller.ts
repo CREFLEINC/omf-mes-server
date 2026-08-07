@@ -6,6 +6,7 @@ import {
   Headers,
   Param,
   ParseIntPipe,
+  HttpCode,
   Post,
   Put,
   Query,
@@ -57,6 +58,53 @@ export class LocationController {
       dto,
       actorId,
     );
+
+    response.setHeader('ETag', String(versionNo));
+
+    return body;
+  }
+
+  /**
+   * `:deactivate` 의 콜론은 Express 5(path-to-regexp 8)에서 파라미터 시작 기호다.
+   * 이스케이프하지 않으면 부팅이 실패한다.
+   */
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
+  @Post(':locationId\\:deactivate')
+  // POST 의 Nest 기본값은 201 이다. 있는 행을 바꾸므로 계약은 200 이다.
+  @HttpCode(200)
+  @ApiOperation({ summary: '로케이션 사용 중지 — 물리 삭제는 제공하지 않는다' })
+  @ApiResponse({ status: 400, description: '재고 잔량·사용 중 하위 자리 — STATE_LOCKED' })
+  @ApiResponse({ status: 409, description: '낙관적 잠금 충돌 — ConflictResponse' })
+  deactivate(
+    @Param('locationId', ParseIntPipe) locationId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Location']> {
+    return this.writeActiveFlag(response, this.service.deactivate(BigInt(locationId), parseIfMatch(ifMatch), actorId));
+  }
+
+  /** 계약에 없다 — 중지를 되돌릴 길이 없어 서버가 먼저 만든다. 계약 소유자에게 되돌릴 항목. */
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
+  @Post(':locationId\\:activate')
+  @HttpCode(200)
+  @ApiOperation({ summary: '로케이션 다시 사용 — 계약에 없는 서버 추가분' })
+  @ApiResponse({ status: 400, description: '창고·상위 자리가 중지 상태 — STATE_LOCKED' })
+  activate(
+    @Param('locationId', ParseIntPipe) locationId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Location']> {
+    return this.writeActiveFlag(response, this.service.activate(BigInt(locationId), parseIfMatch(ifMatch), actorId));
+  }
+
+  /** 중지와 되살리기가 응답을 만드는 방식이 같다 — ETag 를 붙이는 자리를 한 곳에 둔다. */
+  private async writeActiveFlag(
+    response: Response,
+    written: Promise<{ body: components['schemas']['Location']; versionNo: number }>,
+  ): Promise<components['schemas']['Location']> {
+    const { body, versionNo } = await written;
 
     response.setHeader('ETag', String(versionNo));
 

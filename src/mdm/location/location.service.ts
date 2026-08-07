@@ -1,11 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractBadRequest } from '../../common/errors/contract-error';
+import { ContractBadRequest, ErrorCode, screenError } from '../../common/errors/contract-error';
 import type { components } from '../../contracts/mdm';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toEditability } from '../editability';
 import { countReferences } from '../reference-count';
+import { checkActivable, checkDeactivable } from './location.activation';
 import { CreateLocationDto } from './location.create.dto';
 import { LOCATION_REFERENCES } from './location.references';
 import { toLocation } from './location.mapper';
@@ -70,6 +71,51 @@ export class LocationService {
     if (errors.length > 0) throw new ContractBadRequest(errors);
 
     return this.applyVersioned(locationId, expectedVersion, actorId, this.writableFields(dto));
+  }
+
+  /**
+   * 물리 삭제는 제공하지 않는다 — 과거 전표가 이 자리를 가리키고 있어, 지우면 그 전표가
+   * 어디를 가리키는지 알 수 없어진다.
+   */
+  async deactivate(
+    locationId: bigint,
+    expectedVersion: number,
+    actorId: bigint,
+  ): Promise<LocationWritten> {
+    const current = await this.prisma.location.findUnique({
+      where: { location_id: locationId },
+      select: { is_active: true },
+    });
+    if (!current) throw new NotFoundException(`로케이션(${locationId})을 찾을 수 없습니다.`);
+
+    // STATE_LOCKED 인 이유: 새로고침해도 풀리지 않는다. 재고를 빼거나 하위 자리를
+    // 중지해야 풀리므로, 재로드로 풀리는 저장 충돌(409)과 다르다(공유계약 G-1).
+    const errors = current.is_active
+      ? await checkDeactivable(this.prisma, locationId)
+      : [screenError(ErrorCode.STATE_LOCKED, '이미 중지된 로케이션입니다.')];
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    return this.applyVersioned(locationId, expectedVersion, actorId, { is_active: false });
+  }
+
+  /** 계약에 없다 — 창고의 `:activate` 와 같은 이유로 서버가 먼저 만든다. */
+  async activate(
+    locationId: bigint,
+    expectedVersion: number,
+    actorId: bigint,
+  ): Promise<LocationWritten> {
+    const current = await this.prisma.location.findUnique({
+      where: { location_id: locationId },
+      select: { is_active: true, warehouse_id: true, parent_location_id: true },
+    });
+    if (!current) throw new NotFoundException(`로케이션(${locationId})을 찾을 수 없습니다.`);
+
+    const errors = current.is_active
+      ? [screenError(ErrorCode.STATE_LOCKED, '이미 사용 중인 로케이션입니다.')]
+      : await checkActivable(this.prisma, current);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    return this.applyVersioned(locationId, expectedVersion, actorId, { is_active: true });
   }
 
   /**
