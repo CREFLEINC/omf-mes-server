@@ -5,7 +5,7 @@ import type { components } from '../../contracts/mdm';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractBadRequest, ErrorCode, screenError } from '../../common/errors/contract-error';
 import { CreateWarehouseDto } from './warehouse.create.dto';
-import { checkDeactivable } from './warehouse.deactivation';
+import { checkActivable, checkDeactivable } from './warehouse.activation';
 import { toEditability } from './warehouse.editability';
 import { toWarehouse } from './warehouse.mapper';
 import { WarehouseQueryDto } from './warehouse.query.dto';
@@ -151,6 +151,29 @@ export class WarehouseService {
     if (errors.length > 0) throw new ContractBadRequest(errors);
 
     return this.applyVersioned(warehouseId, expectedVersion, actorId, { is_active: false });
+  }
+
+  /**
+   * 계약에 없다. `:deactivate` 만 있고 `PUT` 도 `isActive` 를 받지 않아, 잘못 중지하면
+   * API 로 되돌릴 길이 없다 — 서버가 먼저 만들고 계약 소유자에게 되돌린다.
+   */
+  async activate(
+    warehouseId: bigint,
+    expectedVersion: number,
+    actorId: bigint,
+  ): Promise<WarehouseWritten> {
+    const current = await this.prisma.warehouse.findUnique({
+      where: { warehouse_id: warehouseId },
+      select: { is_active: true, plant_id: true, business_unit_id: true },
+    });
+    if (!current) throw new NotFoundException(`창고(${warehouseId})를 찾을 수 없습니다.`);
+
+    const errors = current.is_active
+      ? [screenError(ErrorCode.STATE_LOCKED, '이미 사용 중인 창고입니다.')]
+      : await checkActivable(this.prisma, current);
+    if (errors.length > 0) throw new ContractBadRequest(errors);
+
+    return this.applyVersioned(warehouseId, expectedVersion, actorId, { is_active: true });
   }
 
   /**

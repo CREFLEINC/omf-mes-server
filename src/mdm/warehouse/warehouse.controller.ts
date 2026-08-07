@@ -92,6 +92,30 @@ export class WarehouseController {
     return body;
   }
 
+  /** 계약에 없다 — 중지를 되돌릴 길이 없어 서버가 먼저 만든다. 계약 소유자에게 되돌릴 항목. */
+  @RequirePermissions('MASTER_LOGISTICS_DEACTIVATE')
+  @Post(':warehouseId\\:activate')
+  @HttpCode(200)
+  @ApiOperation({ summary: '창고 다시 사용 — 계약에 없는 서버 추가분' })
+  @ApiResponse({ status: 400, description: '공장·사업부가 중지 상태 — STATE_LOCKED' })
+  @ApiResponse({ status: 409, description: '낙관적 잠금 충돌 — ConflictResponse' })
+  async activate(
+    @Param('warehouseId', ParseIntPipe) warehouseId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Warehouse']> {
+    const { body, versionNo } = await this.service.activate(
+      BigInt(warehouseId),
+      parseIfMatch(ifMatch),
+      actorId,
+    );
+
+    response.setHeader('ETag', String(versionNo));
+
+    return body;
+  }
+
   @Get()
   @ApiOperation({ summary: '창고 목록' })
   findAll(@Query() query: WarehouseQueryDto) {

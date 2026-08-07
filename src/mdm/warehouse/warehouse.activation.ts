@@ -2,6 +2,54 @@ import { ErrorCode, ErrorItem, screenError } from '../../common/errors/contract-
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
+ * 창고를 다시 쓰려면 **위쪽이 살아 있어야** 한다 — 중지가 안쪽을 보는 것과 정반대다.
+ *
+ * 꺼진 공장 안에 켜진 창고가 있으면 갈 수 없는 창고가 된다. 법인은 보지 않는다 —
+ * 창고가 직접 가리키는 것은 공장과 사업부 둘이고, 법인이 꺼졌는데 그 공장이 켜져
+ * 있다면 그것은 이 API 가 아니라 공장 쪽에서 이미 깨진 데이터다.
+ *
+ * 로케이션은 함께 켜지 않는다. 중지할 때 하나씩 껐으니 켤 때도 골라서 켜야 한다 —
+ * 한꺼번에 켜면 원래 꺼두려던 로케이션까지 살아난다.
+ *
+ * 코드 중복은 보지 않는다. 코드가 바뀌지 않았고 `uq_warehouse` 는 중지된 행도 포함하므로
+ * 중지된 동안에도 그 코드를 아무도 쓸 수 없다.
+ */
+export async function checkActivable(
+  prisma: PrismaService,
+  warehouse: { plant_id: bigint; business_unit_id: bigint },
+): Promise<ErrorItem[]> {
+  const [plant, businessUnit] = await Promise.all([
+    prisma.plant.findUnique({
+      where: { plant_id: warehouse.plant_id },
+      select: { is_active: true },
+    }),
+    prisma.business_unit.findUnique({
+      where: { business_unit_id: warehouse.business_unit_id },
+      select: { is_active: true },
+    }),
+  ]);
+
+  return [
+    ...(plant?.is_active
+      ? []
+      : [
+          screenError(
+            ErrorCode.STATE_LOCKED,
+            '중지된 공장의 창고는 다시 사용할 수 없습니다. 공장을 먼저 사용 상태로 되돌리십시오.',
+          ),
+        ]),
+    ...(businessUnit?.is_active
+      ? []
+      : [
+          screenError(
+            ErrorCode.STATE_LOCKED,
+            '중지된 사업부의 창고는 다시 사용할 수 없습니다. 사업부를 먼저 사용 상태로 되돌리십시오.',
+          ),
+        ]),
+  ];
+}
+
+/**
  * 사용 중지를 막는 것은 **지금 살아 있는 것**뿐이다.
  *
  * 창고를 가리키는 FK 는 15개지만 여기서 보는 것은 둘이다. 과거 전표(입출고·출하·이송·
