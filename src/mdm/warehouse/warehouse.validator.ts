@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { ErrorCode, ErrorItem, fieldError } from '../../common/errors/contract-error';
 import { PrismaService } from '../../prisma/prisma.service';
+import { checkCodeLock } from '../editability';
+import { WAREHOUSE_REFERENCES } from './warehouse.references';
 import { CreateWarehouseDto } from './warehouse.create.dto';
 import { UpdateWarehouseDto } from './warehouse.update.dto';
 
@@ -38,17 +40,25 @@ export class WarehouseValidator {
    */
   async validateUpdate(
     warehouseId: bigint,
-    plantId: bigint,
+    current: { plant_id: bigint; warehouse_code: string },
     dto: UpdateWarehouseDto,
   ): Promise<ErrorItem[]> {
-    const [businessUnit, codes, partner, duplicate] = await Promise.all([
+    const [businessUnit, codes, partner, duplicate, codeLock] = await Promise.all([
       this.checkBusinessUnit(dto.businessUnitId),
       this.checkCodes(dto),
       this.checkPartner(dto),
-      this.checkDuplicateExcept(warehouseId, plantId, dto.warehouseCode),
+      this.checkDuplicateExcept(warehouseId, current.plant_id, dto.warehouseCode),
+      checkCodeLock(
+        this.prisma,
+        WAREHOUSE_REFERENCES,
+        warehouseId,
+        'warehouseCode',
+        current.warehouse_code,
+        dto.warehouseCode,
+      ),
     ]);
 
-    return [...businessUnit, ...codes, ...partner, ...duplicate];
+    return [...businessUnit, ...codes, ...partner, ...duplicate, ...codeLock];
   }
 
   private async checkBusinessUnit(businessUnitId: number): Promise<ErrorItem[]> {

@@ -424,6 +424,43 @@ describe('로케이션 등록·수정 (e2e)', () => {
       expect(etag).toBeDefined();
     });
 
+    it('쓰이고 있으면 코드를 바꿀 수 없다 — 상세가 잠갔다고 한 것을 쓰기도 지킨다', async () => {
+      const parent = await given();
+      // 하위 자리가 부모를 가리키면 참조 건수가 0 이 아니게 된다.
+      await given(parent.id);
+
+      const { body } = await put(
+        parent.id,
+        { locationCode: `${parent.code}-NEW`, locationName: 'x', locationTypeCode: 'RACK' },
+        { etag: parent.etag },
+      ).expect(400);
+
+      expect(body.errors[0]).toMatchObject({ field: 'locationCode', code: 'STATE_LOCKED' });
+    });
+
+    it('쓰이고 있어도 이름은 고칠 수 있다 — 잠그는 것은 코드뿐이다', async () => {
+      const parent = await given();
+      await given(parent.id);
+
+      await put(
+        parent.id,
+        { locationCode: parent.code, locationName: '이름만 변경', locationTypeCode: 'RACK' },
+        { etag: parent.etag },
+      ).expect(200);
+    });
+
+    it('아무도 안 쓰면 코드를 바꿀 수 있다', async () => {
+      const { id, etag, code: locationCode } = await given();
+
+      const { body } = await put(
+        id,
+        { locationCode: `${locationCode}-NEW`, locationName: 'x', locationTypeCode: 'RACK' },
+        { etag },
+      ).expect(200);
+
+      expect(body.locationCode).toBe(`${locationCode}-NEW`);
+    });
+
     it('자기 코드를 그대로 두고 이름만 고칠 수 있다', async () => {
       const { id, etag, code: locationCode } = await given();
 

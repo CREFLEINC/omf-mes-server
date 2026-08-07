@@ -1,4 +1,7 @@
+import { ErrorCode, ErrorItem, fieldError } from '../common/errors/contract-error';
 import type { components } from '../contracts/mdm';
+import { PrismaService } from '../prisma/prisma.service';
+import { countReferences, ReferenceColumn } from './reference-count';
 
 export type Editability = components['schemas']['Editability'];
 
@@ -14,4 +17,37 @@ export function toEditability(referenceCount: number): Editability {
   return referenceCount === 0
     ? { codeEditable: true, reason: 'EDITABLE', referenceCount: 0 }
     : { codeEditable: false, reason: 'REFERENCED', referenceCount };
+}
+
+/**
+ * 상세가 「이 코드는 못 고친다」고 판정한 것을 **쓰기에서도 지킨다.**
+ *
+ * `toEditability` 가 만드는 것은 화면에 주는 안내일 뿐이고, 계약이 「유효성 판정은
+ * 서버가 한다」(공유계약 G-8)고 정한 이상 같은 판정이 저장 경로에도 걸려야 한다.
+ * 걸지 않으면 화면이 잠그는 것에만 의존하게 되어, 화면이 여럿이 되는 순간 갈라진다.
+ *
+ * 코드를 **바꾸려 할 때만** 센다. 이름만 고치는 가장 흔한 수정은 조회가 늘지 않는다.
+ */
+export async function checkCodeLock(
+  prisma: PrismaService,
+  references: readonly ReferenceColumn[],
+  id: bigint,
+  field: string,
+  currentCode: string,
+  nextCode: string,
+): Promise<ErrorItem[]> {
+  if (currentCode === nextCode) return [];
+
+  const referenceCount = await countReferences(prisma, references, id);
+  if (referenceCount === 0) return [];
+
+  // STATE_LOCKED 인 이유: 새로고침해도 풀리지 않는다. 참조가 사라져야 풀리므로
+  // 재로드로 풀리는 저장 충돌(409)과 다르다(공유계약 G-1).
+  return [
+    fieldError(
+      field,
+      ErrorCode.STATE_LOCKED,
+      `${referenceCount}곳에서 사용 중이라 코드를 바꿀 수 없습니다.`,
+    ),
+  ];
 }
