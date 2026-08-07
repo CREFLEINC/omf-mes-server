@@ -6,10 +6,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ContractBadRequest, ErrorCode, screenError } from '../../common/errors/contract-error';
 import { CreateWarehouseDto } from './warehouse.create.dto';
 import { checkActivable, checkDeactivable } from './warehouse.activation';
-import { toEditability } from './warehouse.editability';
+import { toEditability } from '../editability';
 import { toWarehouse } from './warehouse.mapper';
 import { WarehouseQueryDto } from './warehouse.query.dto';
-import { countWarehouseReferences } from './warehouse.references';
+import { countReferences } from '../reference-count';
+import { WAREHOUSE_REFERENCES } from './warehouse.references';
 import { UpdateWarehouseDto } from './warehouse.update.dto';
 import { WarehouseValidator } from './warehouse.validator';
 
@@ -93,7 +94,7 @@ export class WarehouseService {
     const row = await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId } });
     if (!row) throw new NotFoundException(`창고(${warehouseId})를 찾을 수 없습니다.`);
 
-    const referenceCount = await countWarehouseReferences(this.prisma, warehouseId);
+    const referenceCount = await countReferences(this.prisma, WAREHOUSE_REFERENCES, warehouseId);
 
     return {
       body: { warehouse: toWarehouse(row), editability: toEditability(referenceCount) },

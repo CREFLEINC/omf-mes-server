@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { HealthModule } from './health/health.module';
+import { LocationModule } from './mdm/location/location.module';
 import { WarehouseModule } from './mdm/warehouse/warehouse.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -15,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module';
     IdempotencyModule,
     AuthModule,
     HealthModule,
+    LocationModule,
     WarehouseModule,
   ],
 })

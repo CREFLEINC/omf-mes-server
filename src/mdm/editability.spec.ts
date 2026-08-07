@@ -1,4 +1,4 @@
-import { toEditability } from './warehouse.editability';
+import { toEditability } from './editability';
 
 describe('toEditability', () => {
   it('참조가 없으면 코드를 고칠 수 있다', () => {
