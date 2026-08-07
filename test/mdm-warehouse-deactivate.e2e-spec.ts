@@ -194,9 +194,11 @@ describe('POST /api/mdm/warehouses/{warehouseId}:deactivate (e2e)', () => {
       await deactivate(id, { etag }).expect(200);
     });
 
-    it('과거 입고 기록이 있어도 중지된다 — 한 번 쓴 창고가 영영 남으면 안 된다', async () => {
+    it('참조 건수가 0 이 아니어도 중지된다 — 중지는 참조 건수를 보지 않는다', async () => {
       const { id, etag } = await given();
-      // 코드 편집을 잠글 때 쓰는 참조 건수는 이것을 센다. 중지는 세지 않는다.
+      // 참조를 만드는 데 로케이션을 쓴다. 창고를 가리키는 15개 중 전표 8종은 픽스처가
+      // 없어(그 모듈이 아직 없다) 여기서 만들지 못한다 — 「과거 전표는 막지 않는다」는
+      // 이 테스트가 아니라 checkDeactivable 이 그 목록을 아예 조회하지 않는다는 사실로 선다.
       await createLocation(prisma, id, `${PREFIX}-L${counter}`, false);
 
       const referenceCount = await request(app.getHttpServer())
