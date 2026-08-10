@@ -36,7 +36,8 @@ export class LookupService {
 
   async findUoms(query: LookupQueryDto): Promise<Page<components['schemas']['Uom']>> {
     const where: Prisma.uomWhereInput = active(query);
-    if (query.q) where.OR = search(query.q, ['uom_code', 'uom_name']);
+    const F = Prisma.UomScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.uom_code, F.uom_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.uom.findMany({ where, orderBy: { uom_code: 'asc' }, ...window(query) }),
@@ -48,7 +49,8 @@ export class LookupService {
 
   async findPartners(query: LookupQueryDto): Promise<Page<components['schemas']['Partner']>> {
     const where: Prisma.partnerWhereInput = active(query);
-    if (query.q) where.OR = search(query.q, ['partner_code', 'partner_name']);
+    const F = Prisma.PartnerScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.partner_code, F.partner_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.partner.findMany({ where, orderBy: { partner_code: 'asc' }, ...window(query) }),
@@ -62,7 +64,8 @@ export class LookupService {
     query: LookupQueryDto,
   ): Promise<Page<components['schemas']['LegalEntity']>> {
     const where: Prisma.legal_entityWhereInput = active(query);
-    if (query.q) where.OR = search(query.q, ['legal_entity_code', 'legal_entity_name']);
+    const F = Prisma.Legal_entityScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.legal_entity_code, F.legal_entity_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.legal_entity.findMany({
@@ -81,7 +84,8 @@ export class LookupService {
   ): Promise<Page<components['schemas']['BusinessUnit']>> {
     const where: Prisma.business_unitWhereInput = active(query);
     if (query.legalEntityId) where.legal_entity_id = BigInt(query.legalEntityId);
-    if (query.q) where.OR = search(query.q, ['business_unit_code', 'business_unit_name']);
+    const F = Prisma.Business_unitScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.business_unit_code, F.business_unit_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.business_unit.findMany({
@@ -100,7 +104,8 @@ export class LookupService {
     const where: Prisma.plantWhereInput = active(query);
     if (query.legalEntityId) where.legal_entity_id = BigInt(query.legalEntityId);
     if (query.businessUnitId) where.business_unit_id = BigInt(query.businessUnitId);
-    if (query.q) where.OR = search(query.q, ['plant_code', 'plant_name']);
+    const F = Prisma.PlantScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.plant_code, F.plant_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.plant.findMany({
@@ -119,7 +124,8 @@ export class LookupService {
   ): Promise<Page<components['schemas']['ProductionLine']>> {
     const where: Prisma.production_lineWhereInput = active(query);
     if (query.plantId) where.plant_id = BigInt(query.plantId);
-    if (query.q) where.OR = search(query.q, ['line_code', 'line_name']);
+    const F = Prisma.Production_lineScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.line_code, F.line_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.production_line.findMany({
@@ -135,7 +141,8 @@ export class LookupService {
 
   async findProcesses(query: LookupQueryDto): Promise<Page<components['schemas']['Process']>> {
     const where: Prisma.processWhereInput = active(query);
-    if (query.q) where.OR = search(query.q, ['process_code', 'process_name']);
+    const F = Prisma.ProcessScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.process_code, F.process_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.process.findMany({ where, orderBy: { process_code: 'asc' }, ...window(query) }),
@@ -149,7 +156,8 @@ export class LookupService {
     const where: Prisma.equipmentWhereInput = active(query);
     if (query.plantId) where.plant_id = BigInt(query.plantId);
     if (query.processId) where.process_id = BigInt(query.processId);
-    if (query.q) where.OR = search(query.q, ['equipment_code', 'equipment_name']);
+    const F = Prisma.EquipmentScalarFieldEnum;
+    if (query.q) where.OR = search(query.q, [F.equipment_code, F.equipment_name]);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.equipment.findMany({
@@ -169,7 +177,13 @@ function active(query: PagedQueryDto): { is_active?: boolean } {
   return query.includeInactive ? {} : { is_active: true };
 }
 
-/** 코드·명칭 두 칸을 대소문자 구분 없이 본다. */
+/**
+ * 코드·명칭 두 칸을 대소문자 구분 없이 본다.
+ *
+ * 컬럼을 문자열이 아니라 `Prisma.*ScalarFieldEnum` 으로 받는다. 문자열이면 오타가
+ * **컴파일을 통과한다** — `where.OR` 이 인덱스 시그니처를 받아들여 런타임에야 깨진다.
+ * 실제로 `uom_cod` 로 바꿔보니 typecheck 는 0 이고 e2e 만 4개 깨졌다.
+ */
 function search(q: string, columns: [string, string]) {
   return columns.map((column) => ({ [column]: { contains: q, mode: 'insensitive' as const } }));
 }
