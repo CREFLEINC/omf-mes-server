@@ -167,6 +167,13 @@ describe('부서 중지·되살리기 (e2e)', () => {
         },
       });
 
+      // 참조 건수는 0 이 아니다 — 중지된 사용자도 이 부서를 가리킨다. 코드 편집을
+      // 잠글 때 쓰는 그 값과 중지 판단이 다르다는 것을 여기서 못 박는다.
+      const detail = await request(app.getHttpServer())
+        .get(`/api/mdm/departments/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(detail.body.editability.referenceCount).toBeGreaterThan(0);
+
       await act('deactivate', id, { etag }).expect(200);
     });
 
