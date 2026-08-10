@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { ErrorCode, ErrorItem, fieldError } from '../../common/errors/contract-error';
+import { checkDateRange, findDuplicates, rowError } from '../collection-replace';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   BuItemMapRowDto,
@@ -28,12 +29,12 @@ export class ItemChildValidator {
       if (row.fromUomId === row.toUomId) {
         errors.push(rowError(index, 'toUomId', '출발 단위와 도착 단위가 같을 수 없습니다.'));
       }
-      errors.push(...checkDates(index, row.effectiveFrom, row.effectiveTo));
+      errors.push(...checkDateRange(index, row.effectiveFrom, row.effectiveTo, 'effectiveTo'));
     });
 
     // uq_item_uom_conversion (item_id, from_uom_id, to_uom_id, effective_from)
     errors.push(
-      ...duplicates(rows, (row) => `${row.fromUomId}|${row.toUomId}|${row.effectiveFrom}`, 'fromUomId'),
+      ...findDuplicates(rows, (row) => `${row.fromUomId}|${row.toUomId}|${row.effectiveFrom}`, 'fromUomId'),
     );
 
     const uomIds = [...new Set(rows.flatMap((row) => [row.fromUomId, row.toUomId]))];
@@ -48,7 +49,7 @@ export class ItemChildValidator {
     // uq_item_external_code 는 COALESCE(partner_id, 0) 으로 유일 판정한다 —
     // 거래처를 비우면 「(전체)」 한 자리로 접힌다(공유계약 A-7). 여기서도 같게 접는다.
     errors.push(
-      ...duplicates(
+      ...findDuplicates(
         rows,
         (row) => `${row.externalSystemCode}|${row.partnerId ?? 0}|${row.externalItemCode}`,
         'externalItemCode',
@@ -72,13 +73,13 @@ export class ItemChildValidator {
           rowError(index, 'toBusinessUnitId', '출발 사업부와 도착 사업부가 같을 수 없습니다.'),
         );
       }
-      errors.push(...checkDates(index, row.effectiveFrom, row.effectiveTo));
+      errors.push(...checkDateRange(index, row.effectiveFrom, row.effectiveTo, 'effectiveTo'));
     });
 
     // uq_item_bu_item_map (from_business_unit_id, from_item_id, to_business_unit_id, effective_from)
     // from_item_id 는 경로로 고정되므로 키에 넣지 않는다.
     errors.push(
-      ...duplicates(
+      ...findDuplicates(
         rows,
         (row) => `${row.fromBusinessUnitId}|${row.toBusinessUnitId}|${row.effectiveFrom}`,
         'toBusinessUnitId',
@@ -129,40 +130,4 @@ export class ItemChildValidator {
         return this.prisma.item.count({ where: { item_id: { in: values } } });
     }
   }
-}
-
-/** 몇 번째 행이 문제인지 알려준다 — 목록을 통째로 보내므로 필드 이름만으로는 못 찾는다. */
-function rowError(index: number, field: string, message: string): ErrorItem {
-  return fieldError(`[${index}].${field}`, ErrorCode.RANGE, message);
-}
-
-/** `2026-08-07` 형태라 문자열 비교로 충분하다 — 자릿수가 고정이다. */
-function checkDates(index: number, from: string, to: string | null | undefined): ErrorItem[] {
-  if (!to) return [];
-
-  return to >= from
-    ? []
-    : [rowError(index, 'effectiveTo', '종료일이 시작일보다 앞설 수 없습니다.')];
-}
-
-/**
- * 보낸 목록 안의 중복. DB 유일 제약에 맡기면 트랜잭션 한복판에서 터지고, 어느 행이
- * 문제인지 알려주기 어렵다.
- */
-function duplicates<T>(rows: T[], key: (row: T) => string, field: string): ErrorItem[] {
-  const seen = new Map<string, number>();
-  const errors: ErrorItem[] = [];
-
-  rows.forEach((row, index) => {
-    const value = key(row);
-    const first = seen.get(value);
-
-    if (first === undefined) {
-      seen.set(value, index);
-    } else {
-      errors.push(rowError(index, field, `${first} 번째 행과 중복됩니다.`));
-    }
-  });
-
-  return errors;
 }

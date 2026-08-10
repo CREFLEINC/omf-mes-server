@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractBadRequest, ErrorCode, ErrorItem, fieldError } from '../../common/errors/contract-error';
+import { checkDateRange, findDuplicates } from '../collection-replace';
 import type { components } from '../../contracts/mdm';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkerQualificationRowDto } from './worker-qualification.dto';
@@ -114,36 +115,18 @@ export class WorkerService {
     const errors: ErrorItem[] = [];
 
     rows.forEach((row, index) => {
-      if (row.validTo && row.validTo < row.validFrom) {
-        errors.push(
-          fieldError(
-            `[${index}].validTo`,
-            ErrorCode.RANGE,
-            '종료일이 시작일보다 앞설 수 없습니다.',
-          ),
-        );
-      }
+      errors.push(...checkDateRange(index, row.validFrom, row.validTo, 'validTo'));
     });
 
     // uq_worker_qualification 은 COALESCE(process_id, 0) 으로 접는다 — 비운 것과 null 이
-    // 같은 자리다(공유계약 A-7). DB 에 맡기면 트랜잭션 한복판에서 터진다.
-    const seen = new Map<string, number>();
-    rows.forEach((row, index) => {
-      const key = `${row.qualificationTypeCode}|${row.processId ?? 0}|${row.validFrom}`;
-      const first = seen.get(key);
-
-      if (first === undefined) {
-        seen.set(key, index);
-      } else {
-        errors.push(
-          fieldError(
-            `[${index}].qualificationTypeCode`,
-            ErrorCode.RANGE,
-            `${first} 번째 행과 중복됩니다.`,
-          ),
-        );
-      }
-    });
+    // 같은 자리다(공유계약 A-7).
+    errors.push(
+      ...findDuplicates(
+        rows,
+        (row) => `${row.qualificationTypeCode}|${row.processId ?? 0}|${row.validFrom}`,
+        'qualificationTypeCode',
+      ),
+    );
 
     const processIds = [...new Set(rows.map((row) => row.processId).filter((id): id is number => !!id))];
     if (processIds.length > 0) {
