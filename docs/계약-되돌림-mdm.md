@@ -128,13 +128,20 @@ item.validator.ts        fifoPolicyCode:    'FIFO_POLICY'
 계약에 정렬이 없다. 불안정하면 **페이지를 넘길 때 같은 행이 두 번 나오거나 빠진다.**
 마스터마다 유일키로 못 박았다.
 
-```
-창고            (plant_id, warehouse_code)
-로케이션         (warehouse_id, location_code)
-부서 · 품목 · 작업자 · 코드그룹     전역 유일키 한 칸
-코드값           (display_order, code)      ← display_order 에 유일 제약이 없어 code 로 동점을 깬다
-사업부 · 공장 · 생산라인 · 설비      (부모, 코드)
-```
+| 마스터 | 정렬 |
+|---|---|
+| 창고 | `(plant_id, warehouse_code)` |
+| 로케이션 | `(warehouse_id, location_code)` |
+| 사업부 · 공장 | `(legal_entity_id, 코드)` |
+| 생산라인 · 설비 | `(plant_id, 코드)` |
+| 부서 · 품목 · 작업자 · 코드그룹 · 단위 · 거래처 · 법인 · 공정 | 전역 유일키 한 칸 |
+| 코드값 | `(display_order, code)` |
+
+`display_order` 에는 유일 제약이 없어 **`code` 로 동점을 깬다** — 안 그러면 순서가 같은
+값들이 페이지를 넘길 때 흔들린다.
+
+부속 컬렉션(품목 3종·작업자 자격)은 페이지가 없어 흔들릴 여지가 없지만, 화면이 매번 같은
+차례로 보도록 각 테이블의 유일키를 따라 정렬한다.
 
 ### 7. 목록 `size` 상한 200
 
@@ -151,10 +158,23 @@ item.validator.ts        fifoPolicyCode:    'FIFO_POLICY'
 ```
 조회        MASTER_READ
 쓰기·중지    MASTER_{LOGISTICS|SYSTEM|ORGANIZATION|PRODUCTION|EQUIPMENT|QUALITY}_{WRITE|DEACTIVATE}
-
-창고 · 로케이션   LOGISTICS      부서 · 작업자   ORGANIZATION
-코드그룹 · 코드값  SYSTEM         품목           PRODUCTION
 ```
+
+`mdm` 에서 **실제로 쓰는 것은 넷**이다.
+
+| 권한 | 붙은 곳 |
+|---|---|
+| `MASTER_READ` | 조회 전부 |
+| `MASTER_LOGISTICS_{WRITE,DEACTIVATE}` | 창고 · 로케이션 |
+| `MASTER_ORGANIZATION_{WRITE,DEACTIVATE}` | 부서 · 작업자 자격 |
+| `MASTER_PRODUCTION_WRITE` | 품목 · 품목 부속 |
+
+`SYSTEM` 은 코드그룹·코드값 몫이나 **쓰기를 만들지 않아 쓰이지 않는다**(위 1번).
+`EQUIPMENT`·`QUALITY` 는 `mdm` 밖이다.
+
+**한 가지 더.** 계약의 `RolePermission.permissionCode` 예시가 `MASTER_EDIT` 로 적혀 있다.
+시드가 쓰는 이름 체계와 다르다. `mdm` 에서는 문제가 없지만, `/app` 라운드에서 권한 코드가
+API 로 오가기 시작하면 **이름이 서로 맞아야 한다** — 그때 한 번 맞춰야 할 항목이다.
 
 ### 10. 중지 응답에 `ETag` 를 붙였다
 
