@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Headers,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -57,6 +58,59 @@ export class DepartmentController {
       dto,
       actorId,
     );
+
+    response.setHeader('ETag', String(versionNo));
+
+    return body;
+  }
+
+  /**
+   * `:deactivate` 의 콜론은 Express 5(path-to-regexp 8)에서 파라미터 시작 기호다.
+   * 이스케이프하지 않으면 부팅이 실패한다.
+   */
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
+  @Post(':departmentId\\:deactivate')
+  // POST 의 Nest 기본값은 201 이다. 있는 행을 바꾸므로 계약은 200 이다.
+  @HttpCode(200)
+  @ApiOperation({ summary: '부서 사용 중지 — 물리 삭제는 제공하지 않는다' })
+  @ApiResponse({ status: 400, description: '하위 부서·소속 인원 — STATE_LOCKED' })
+  @ApiResponse({ status: 409, description: '낙관적 잠금 충돌 — ConflictResponse' })
+  deactivate(
+    @Param('departmentId', ParseIntPipe) departmentId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Department']> {
+    return this.writeActiveFlag(
+      response,
+      this.service.deactivate(BigInt(departmentId), parseIfMatch(ifMatch), actorId),
+    );
+  }
+
+  /** 계약에 없다 — 중지를 되돌릴 길이 없어 서버가 먼저 만든다. 계약 소유자에게 되돌릴 항목. */
+  @RequirePermissions('MASTER_ORGANIZATION_DEACTIVATE')
+  @Post(':departmentId\\:activate')
+  @HttpCode(200)
+  @ApiOperation({ summary: '부서 다시 사용 — 계약에 없는 서버 추가분' })
+  @ApiResponse({ status: 400, description: '상위 부서·사업부가 중지 상태 — STATE_LOCKED' })
+  activate(
+    @Param('departmentId', ParseIntPipe) departmentId: number,
+    @Headers('if-match') ifMatch: string | undefined,
+    @ActorId() actorId: bigint,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<components['schemas']['Department']> {
+    return this.writeActiveFlag(
+      response,
+      this.service.activate(BigInt(departmentId), parseIfMatch(ifMatch), actorId),
+    );
+  }
+
+  /** 중지와 되살리기가 응답을 만드는 방식이 같다 — ETag 를 붙이는 자리를 한 곳에 둔다. */
+  private async writeActiveFlag(
+    response: Response,
+    written: Promise<{ body: components['schemas']['Department']; versionNo: number }>,
+  ): Promise<components['schemas']['Department']> {
+    const { body, versionNo } = await written;
 
     response.setHeader('ETag', String(versionNo));
 
