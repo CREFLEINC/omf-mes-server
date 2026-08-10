@@ -11,6 +11,8 @@
  * 이 프로젝트의 `@db.Date` 는 41개다. `business_date` 도 같은 함정을 공유한다
  * (타임존 캐스팅 금지).
  */
+export function toDateOnly(value: Date): string;
+export function toDateOnly(value: Date | null): string | null;
 export function toDateOnly(value: Date | null): string | null {
   return value === null ? null : value.toISOString().slice(0, 10);
 }

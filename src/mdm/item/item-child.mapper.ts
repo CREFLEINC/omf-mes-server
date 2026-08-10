@@ -17,8 +17,8 @@ export function toUomConversion(row: item_uom_conversion): Schemas['ItemUomConve
     toUomId: Number(row.to_uom_id),
     // numeric(18,8) 이라 Prisma 가 Decimal 로 준다 — 그대로 내리면 객체가 나간다.
     conversionRate: row.conversion_rate.toNumber(),
-    // @db.Date 다. effectiveFrom 은 필수라 null 이 오지 않는다.
-    effectiveFrom: toDateOnly(row.effective_from) as string,
+    // @db.Date 다. effective_from 은 NOT NULL 이라 오버로드가 string 을 준다.
+    effectiveFrom: toDateOnly(row.effective_from),
     effectiveTo: toDateOnly(row.effective_to),
   };
 }
@@ -40,7 +40,7 @@ export function toBuItemMap(row: item_bu_item_map): Schemas['ItemBuItemMap'] {
     fromItemId: Number(row.from_item_id),
     toBusinessUnitId: Number(row.to_business_unit_id),
     toItemId: Number(row.to_item_id),
-    effectiveFrom: toDateOnly(row.effective_from) as string,
+    effectiveFrom: toDateOnly(row.effective_from),
     effectiveTo: toDateOnly(row.effective_to),
   };
 }
