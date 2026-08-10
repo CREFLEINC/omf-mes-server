@@ -1,7 +1,7 @@
 import { code_value } from '@prisma/client';
 
-import { toCodeValue } from './code.mapper';
 import { codeEditability } from './code.editability';
+import { toCodeValue } from './code.mapper';
 
 function row(overrides: Partial<code_value> = {}): code_value {
   return {
@@ -23,36 +23,37 @@ function row(overrides: Partial<code_value> = {}): code_value {
 }
 
 describe('toCodeValue', () => {
-  it('@db.Date 를 넣은 날짜 그대로 내린다', () => {
-    // Prisma 가 @db.Date 를 주는 형태 — UTC 자정이다.
-    const mapped = toCodeValue(row({ effective_from: new Date('2026-08-07T00:00:00.000Z') }));
-
-    expect(mapped.effectiveFrom).toBe('2026-08-07');
+  it('계약 필드만 내린다 — 감사 컬럼과 version_no 는 빠진다', () => {
+    // version_no 는 본문 노출 금지(공유계약 A-4). ETag 로만 나간다.
+    expect(Object.keys(toCodeValue(row())).sort()).toEqual([
+      'code',
+      'codeGroupId',
+      'codeName',
+      'codeValueId',
+      'displayOrder',
+      'effectiveFrom',
+      'effectiveTo',
+      'isActive',
+    ]);
   });
 
-  it('로컬이 아니라 UTC 로 포맷한다', () => {
-    // 위 테스트만으로는 부족하다. UTC 자정을 양수 오프셋(서버 UTC·한국 +9·하노이 +7)으로
-    // 읽으면 같은 날이 나와, 로컬 포맷으로 짜도 통과한다. 음수 오프셋에서만 갈리는데
-    // 그런 환경이 우리에게 없다.
-    //
-    // 그래서 둘이 갈리는 값으로 「어느 기준으로 포맷하는가」를 직접 본다.
-    // Prisma 가 이 시각을 줄 일은 없지만, 검사하려는 것은 날짜가 아니라 그 성질이다.
-    const mapped = toCodeValue(row({ effective_from: new Date('2026-08-07T20:00:00.000Z') }));
-
-    expect(mapped.effectiveFrom).toBe('2026-08-07');
-  });
-
-  it('연말 경계에서도 밀리지 않는다', () => {
-    const mapped = toCodeValue(row({ effective_from: new Date('2026-01-01T00:00:00.000Z') }));
-
-    expect(mapped.effectiveFrom).toBe('2026-01-01');
-  });
-
-  it('날짜가 없으면 null 이다', () => {
+  it('유효기간이 없으면 null 이다', () => {
     const mapped = toCodeValue(row());
 
     expect(mapped.effectiveFrom).toBeNull();
     expect(mapped.effectiveTo).toBeNull();
+  });
+
+  it('유효기간을 날짜 문자열로 내린다', () => {
+    const mapped = toCodeValue(
+      row({
+        effective_from: new Date('2026-08-07T00:00:00.000Z'),
+        effective_to: new Date('2026-12-31T00:00:00.000Z'),
+      }),
+    );
+
+    expect(mapped.effectiveFrom).toBe('2026-08-07');
+    expect(mapped.effectiveTo).toBe('2026-12-31');
   });
 });
 

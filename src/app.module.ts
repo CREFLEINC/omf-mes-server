@@ -6,6 +6,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { HealthModule } from './health/health.module';
 import { CodeModule } from './mdm/code/code.module';
 import { DepartmentModule } from './mdm/department/department.module';
+import { LookupModule } from './mdm/lookup/lookup.module';
 import { LocationModule } from './mdm/location/location.module';
 import { WarehouseModule } from './mdm/warehouse/warehouse.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
     CodeModule,
     DepartmentModule,
     LocationModule,
+    LookupModule,
     WarehouseModule,
   ],
 })
