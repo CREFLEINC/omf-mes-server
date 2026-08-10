@@ -8,6 +8,7 @@ import { DEPARTMENT_REFERENCES } from '../src/mdm/department/department.referenc
 import { referenceKey } from '../src/mdm/reference-count';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { createUserWithPermissions, deleteUserWithPermissions } from './support/auth.fixture';
+import { deleteDepartments } from './support/department.fixture';
 import { createOrganization, deleteOrganization } from './support/organization.fixture';
 
 const PREFIX = 'E2E-DEP';
@@ -53,9 +54,7 @@ describe('부서 조회 (e2e)', () => {
   });
 
   afterAll(async () => {
-    // 자식이 부모를 가리키므로 깊은 것부터 지운다.
-    await prisma.department.deleteMany({ where: { parent_department_id: { not: null } } });
-    await prisma.department.deleteMany({ where: { department_code: { startsWith: PREFIX } } });
+    await deleteDepartments(prisma, PREFIX);
     await deleteOrganization(prisma, PREFIX);
     await deleteUserWithPermissions(app, PREFIX);
     await app.close();
