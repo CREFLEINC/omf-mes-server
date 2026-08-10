@@ -16,6 +16,12 @@ import { Response } from 'express';
 import { ActorId, RequirePermissions } from '../../auth/auth.decorators';
 import { ContractBadRequest, ErrorCode, fieldError } from '../../common/errors/contract-error';
 import type { components } from '../../contracts/mdm';
+import {
+  ReplaceBuItemMapsDto,
+  ReplaceExternalCodesDto,
+  ReplaceUomConversionsDto,
+} from './item-child.dto';
+import { ItemChildService } from './item-child.service';
 import { ItemQueryDto } from './item.query.dto';
 import { ItemService } from './item.service';
 import { UpdateItemDto } from './item.update.dto';
@@ -28,7 +34,10 @@ import { UpdateItemDto } from './item.update.dto';
 @RequirePermissions('MASTER_READ')
 @Controller('mdm/items')
 export class ItemController {
-  constructor(private readonly service: ItemService) {}
+  constructor(
+    private readonly service: ItemService,
+    private readonly children: ItemChildService,
+  ) {}
 
   @RequirePermissions('MASTER_PRODUCTION_WRITE')
   @Put(':itemId')
@@ -52,6 +61,70 @@ export class ItemController {
     response.setHeader('ETag', String(versionNo));
 
     return body;
+  }
+
+  @Get(':itemId/uom-conversions')
+  @ApiOperation({ summary: '단위 환산 목록' })
+  findUomConversions(
+    @Param('itemId', ParseIntPipe) itemId: number,
+  ): Promise<components['schemas']['ItemUomConversionListResponse']> {
+    return this.children.findUomConversions(BigInt(itemId));
+  }
+
+  /**
+   * 최종 상태를 통째로 받는다 — 안 보낸 행은 지워진다(공유계약 B-6).
+   * `If-Match` 를 받지 않는다: 이 테이블에는 `version_no` 가 없다.
+   */
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
+  @Put(':itemId/uom-conversions')
+  @ApiOperation({ summary: '단위 환산 전체 치환' })
+  @ApiResponse({ status: 400, description: '검증 실패 — 목록 안 중복 포함' })
+  replaceUomConversions(
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: ReplaceUomConversionsDto,
+    @ActorId() actorId: bigint,
+  ): Promise<components['schemas']['ItemUomConversionListResponse']> {
+    return this.children.replaceUomConversions(BigInt(itemId), dto.conversions, actorId);
+  }
+
+  @Get(':itemId/external-codes')
+  @ApiOperation({ summary: '외부 코드 목록' })
+  findExternalCodes(
+    @Param('itemId', ParseIntPipe) itemId: number,
+  ): Promise<components['schemas']['ItemExternalCodeListResponse']> {
+    return this.children.findExternalCodes(BigInt(itemId));
+  }
+
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
+  @Put(':itemId/external-codes')
+  @ApiOperation({ summary: '외부 코드 전체 치환' })
+  @ApiResponse({ status: 400, description: '검증 실패 — 거래처를 비우면 (전체)로 접어 중복 판정' })
+  replaceExternalCodes(
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: ReplaceExternalCodesDto,
+    @ActorId() actorId: bigint,
+  ): Promise<components['schemas']['ItemExternalCodeListResponse']> {
+    return this.children.replaceExternalCodes(BigInt(itemId), dto.externalCodes, actorId);
+  }
+
+  @Get(':itemId/bu-item-maps')
+  @ApiOperation({ summary: '사업부 매핑 목록 — 경로의 품목을 fromItemId 로 고정' })
+  findBuItemMaps(
+    @Param('itemId', ParseIntPipe) itemId: number,
+  ): Promise<components['schemas']['ItemBuItemMapListResponse']> {
+    return this.children.findBuItemMaps(BigInt(itemId));
+  }
+
+  @RequirePermissions('MASTER_PRODUCTION_WRITE')
+  @Put(':itemId/bu-item-maps')
+  @ApiOperation({ summary: '사업부 매핑 전체 치환' })
+  @ApiResponse({ status: 400, description: '검증 실패 — 목록 안 중복 포함' })
+  replaceBuItemMaps(
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: ReplaceBuItemMapsDto,
+    @ActorId() actorId: bigint,
+  ): Promise<components['schemas']['ItemBuItemMapListResponse']> {
+    return this.children.replaceBuItemMaps(BigInt(itemId), dto.maps, actorId);
   }
 
   @Get()
