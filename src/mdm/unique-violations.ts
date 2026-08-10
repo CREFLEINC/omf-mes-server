@@ -1,4 +1,5 @@
 import { ErrorItem } from '../common/errors/contract-error';
+import { duplicateDepartmentCode } from './department/department.validator';
 import { duplicateLocationCode } from './location/location.validator';
 import { duplicateWarehouseCode } from './warehouse/warehouse.validator';
 
@@ -16,4 +17,5 @@ import { duplicateWarehouseCode } from './warehouse/warehouse.validator';
 export const UNIQUE_VIOLATIONS = new Map<string, () => ErrorItem>([
   ['plant_id,warehouse_code', duplicateWarehouseCode],
   ['warehouse_id,location_code', duplicateLocationCode],
+  ['department_code', duplicateDepartmentCode],
 ]);
