@@ -127,6 +127,19 @@ describe('품목 (e2e)', () => {
       expect(body.page).toEqual({ page: 1, size: 50, total: 2 });
     });
 
+    it('품목명으로도 검색된다 — 코드만 보면 화면에서 못 찾는다', async () => {
+      // 검색어는 **명칭에만** 있어야 한다. `q=E2E-ITM` 은 코드에도 걸려, 코드만
+      // 검색하는 구현으로 바꿔도 통과한다(O 에서 같은 실수를 했다).
+      expect(`${PREFIX}-`).not.toContain('품목');
+
+      const { body } = await get('?q=품목').expect(200);
+
+      expect(body.items.length).toBeGreaterThan(0);
+      expect(
+        body.items.every((row: { itemName: string; itemCode: string }) => row.itemName.includes('품목') && !row.itemCode.includes('품목')),
+      ).toBe(true);
+    });
+
     it('품목구분으로 거른다', async () => {
       const { body } = await get(`?q=${PREFIX}&itemTypeCode=FG`).expect(200);
 
@@ -239,10 +252,14 @@ describe('품목 (e2e)', () => {
     it('isActive 를 여기서 바꾼다 — 품목에는 :deactivate 가 없다', async () => {
       const etag = await etagOf(plainItemId);
 
-      const { body } = await put(plainItemId, payload({ isActive: false }), { etag }).expect(200);
+      try {
+        const { body } = await put(plainItemId, payload({ isActive: false }), { etag }).expect(200);
 
-      expect(body.isActive).toBe(false);
-      await prisma.item.update({ where: { item_id: plainItemId }, data: { is_active: true } });
+        expect(body.isActive).toBe(false);
+      } finally {
+        // 단언이 깨져도 되돌린다 — 안 그러면 뒤 테스트와 다음 실행이 함께 무너진다.
+        await prisma.item.update({ where: { item_id: plainItemId }, data: { is_active: true } });
+      }
     });
 
     it.each([
