@@ -1,0 +1,487 @@
+"""Build and validate OpenAPI-to-table mappings."""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any, Iterable
+
+from catalog import table_index
+
+
+# Longest path match wins.  The first table is the aggregate root; following
+# tables are contractually coupled detail/history/configuration stores.
+RESOURCE_TABLES: dict[str, list[str]] = {
+    "/app/approval-routes/{approvalRouteId}/steps": [
+        "app.approval_route_step",
+        "app.approval_route",
+    ],
+    "/app/approval-routes": ["app.approval_route", "app.approval_route_step"],
+    "/app/approval-requests": ["app.approval_request", "app.approval_step"],
+    "/app/document-issues": ["app.document_issue_log", "app.printer", "app.attachment"],
+    "/app/notification-subscriptions": ["app.notification_subscription"],
+    "/app/notification-events": ["app.notification_event", "app.notification"],
+    "/app/notifications": ["app.notification", "app.notification_event"],
+    "/app/notices": ["app.notice", "app.notice_acknowledgement"],
+    "/app/operation-policies": ["app.operation_policy"],
+    "/app/printers": ["app.printer"],
+    "/app/roles/{roleId}/permissions": ["app.role_permission", "app.role"],
+    "/app/roles": ["app.role", "app.role_permission"],
+    "/app/users/{userId}/data-scopes": ["app.user_data_scope", "app.app_user"],
+    "/app/users/{userId}/roles": ["app.user_role", "app.app_user", "app.role"],
+    "/app/users": ["app.app_user", "app.user_credential"],
+    "/app/sessions": ["app.app_user", "app.user_credential"],
+    "/app/dashboard-summary": [
+        "production.work_order",
+        "inventory.inventory_balance",
+        "quality.inspection_request",
+        "maintenance.equipment_downtime",
+    ],
+    "/audit/events": ["audit.audit_event"],
+    "/integration/interface-definitions": ["integration.interface_definition"],
+    "/integration/outbound-item-settings": [
+        "integration.outbound_item_setting",
+        "integration.interface_definition",
+        "mdm.item",
+    ],
+    "/integration/messages": ["integration.integration_message"],
+    "/inventory/adjustments/{inventoryAdjustmentId}/lines": [
+        "inventory.inventory_adjustment_line",
+        "inventory.inventory_adjustment",
+    ],
+    "/inventory/adjustments": [
+        "inventory.inventory_adjustment",
+        "inventory.inventory_adjustment_line",
+    ],
+    "/inventory/balances": ["inventory.inventory_balance"],
+    "/inventory/counts/{inventoryCountId}/lines": [
+        "inventory.inventory_count_line",
+        "inventory.inventory_count",
+    ],
+    "/inventory/counts": [
+        "inventory.inventory_count",
+        "inventory.inventory_count_line",
+    ],
+    "/inventory/handling-units/{handlingUnitId}/contents": [
+        "inventory.handling_unit_content",
+        "inventory.handling_unit",
+    ],
+    "/inventory/handling-units": [
+        "inventory.handling_unit",
+        "inventory.handling_unit_content",
+        "inventory.handling_unit_reconfiguration",
+    ],
+    "/inventory/reservations": ["inventory.inventory_reservation"],
+    "/inventory/transactions": [
+        "inventory.inventory_transaction",
+        "inventory.inventory_transaction_line",
+    ],
+    "/logistics/asns": ["logistics.asn", "logistics.asn_line"],
+    "/logistics/document-progress": [
+        "logistics.purchase_order",
+        "logistics.asn",
+        "logistics.inbound_receipt",
+        "logistics.goods_receipt",
+    ],
+    "/logistics/goods-issues/{goodsIssueId}/lines": [
+        "logistics.goods_issue_line",
+        "logistics.goods_issue",
+    ],
+    "/logistics/goods-issues": ["logistics.goods_issue", "logistics.goods_issue_line"],
+    "/logistics/goods-receipts/{goodsReceiptId}/lines": [
+        "logistics.goods_receipt_line",
+        "logistics.goods_receipt",
+    ],
+    "/logistics/goods-receipts": [
+        "logistics.goods_receipt",
+        "logistics.goods_receipt_line",
+    ],
+    "/logistics/inbound-receipt-lines": [
+        "logistics.inbound_variance",
+        "logistics.inbound_receipt_line",
+    ],
+    "/logistics/inbound-receipts/{inboundReceiptId}/lines": [
+        "logistics.inbound_receipt_line",
+        "logistics.inbound_receipt",
+        "logistics.inbound_variance",
+    ],
+    "/logistics/inbound-receipts": [
+        "logistics.inbound_receipt",
+        "logistics.inbound_receipt_line",
+    ],
+    "/logistics/material-issue-requests": [
+        "logistics.material_issue_request",
+        "logistics.material_issue_request_line",
+    ],
+    "/logistics/picking-orders": [
+        "logistics.picking_order",
+        "logistics.picking_line",
+        "inventory.inventory_reservation",
+    ],
+    "/logistics/purchase-orders/{purchaseOrderId}/lines": [
+        "logistics.purchase_order_line",
+        "logistics.purchase_order",
+    ],
+    "/logistics/purchase-orders": [
+        "logistics.purchase_order",
+        "logistics.purchase_order_line",
+    ],
+    "/logistics/putaway-rules": ["logistics.putaway_rule"],
+    "/logistics/putaway-tasks": ["logistics.putaway_task", "logistics.putaway_rule"],
+    "/logistics/recycle-entries": ["logistics.recycle_entry"],
+    "/logistics/sales-orders": ["logistics.sales_order", "logistics.sales_order_line"],
+    "/logistics/shipment-lot-allocations": [
+        "logistics.shipment_lot_allocation",
+        "logistics.shipment_line",
+    ],
+    "/logistics/shipment-requests": [
+        "logistics.shipment_request",
+        "logistics.shipment_request_line",
+    ],
+    "/logistics/shipments": [
+        "logistics.shipment",
+        "logistics.shipment_line",
+        "logistics.shipment_lot_allocation",
+    ],
+    "/logistics/shopfloor-receipts": [
+        "logistics.shopfloor_receipt",
+        "logistics.shopfloor_receipt_line",
+    ],
+    "/logistics/stock-transfers/{stockTransferId}/lines": [
+        "logistics.stock_transfer_line",
+        "logistics.stock_transfer",
+    ],
+    "/logistics/stock-transfers": [
+        "logistics.stock_transfer",
+        "logistics.stock_transfer_line",
+    ],
+    "/maintenance/breakdowns": [
+        "maintenance.breakdown",
+        "maintenance.equipment_downtime",
+        "app.attachment",
+    ],
+    "/maintenance/calibrations": ["quality.equipment_calibration", "mdm.equipment"],
+    "/maintenance/collection-channels/{collectionChannelId}/observations": [
+        "maintenance.collection_observation",
+        "maintenance.collection_channel",
+    ],
+    "/maintenance/collection-channels": ["maintenance.collection_channel"],
+    "/maintenance/downtimes": [
+        "maintenance.equipment_downtime",
+        "maintenance.breakdown",
+    ],
+    "/maintenance/inspections": [
+        "maintenance.equipment_inspection",
+        "maintenance.equipment_inspection_result",
+    ],
+    "/maintenance/orders": ["maintenance.maintenance_order", "maintenance.breakdown"],
+    "/maintenance/results": [
+        "maintenance.maintenance_result",
+        "maintenance.maintenance_order",
+    ],
+    "/maintenance/tool-usages": ["maintenance.tool_usage", "mdm.mold"],
+    "/mdm/equipment-groups/{equipmentGroupId}/inspection-items": [
+        "mdm.equipment_group_inspection_item",
+        "mdm.equipment_group",
+    ],
+    "/mdm/equipment-groups": ["mdm.equipment_group", "mdm.equipment_group_member"],
+    "/mdm/equipment-inspection-items": ["mdm.equipment_inspection_item"],
+    "/mdm/equipments/{equipmentId}/inspection-items": [
+        "mdm.equipment_inspection_item_assignment",
+        "mdm.equipment",
+    ],
+    "/mdm/equipments": ["mdm.equipment"],
+    "/mdm/items/{itemId}/bu-item-maps": ["mdm.item_bu_item_map", "mdm.item"],
+    "/mdm/items/{itemId}/external-codes": ["mdm.item_external_code", "mdm.item"],
+    "/mdm/items/{itemId}/uom-conversions": ["mdm.item_uom_conversion", "mdm.item"],
+    "/mdm/items": ["mdm.item"],
+    "/mdm/code-groups": ["mdm.code_group"],
+    "/mdm/code-values": ["mdm.code_value"],
+    "/mdm/departments": ["mdm.department"],
+    "/mdm/business-units": ["mdm.business_unit"],
+    "/mdm/legal-entities": ["mdm.legal_entity"],
+    "/mdm/locations": ["mdm.location"],
+    "/mdm/molds": ["mdm.mold"],
+    "/mdm/partners/{partnerId}/roles": ["mdm.partner_role", "mdm.partner"],
+    "/mdm/partners": ["mdm.partner"],
+    "/mdm/plants": ["mdm.plant"],
+    "/mdm/processes": ["mdm.process"],
+    "/mdm/production-lines": ["mdm.production_line"],
+    "/mdm/shifts": ["mdm.shift"],
+    "/mdm/spare-parts/{sparePartId}/equipments": [
+        "mdm.spare_part_equipment",
+        "mdm.spare_part",
+    ],
+    "/mdm/spare-parts": ["mdm.spare_part", "mdm.spare_part_equipment"],
+    "/mdm/terminals/{terminalId}/processes": ["mdm.terminal_process", "mdm.terminal"],
+    "/mdm/terminals": ["mdm.terminal"],
+    "/mdm/uoms": ["mdm.uom"],
+    "/mdm/warehouses/{warehouseId}/layout": ["mdm.warehouse_layout", "mdm.warehouse"],
+    "/mdm/warehouses": ["mdm.warehouse"],
+    "/mdm/work-calendar-applications": [
+        "mdm.work_calendar_application",
+        "mdm.work_calendar",
+    ],
+    "/mdm/work-calendars/{workCalendarId}/days": [
+        "mdm.work_calendar_day",
+        "mdm.work_calendar",
+    ],
+    "/mdm/work-calendars": ["mdm.work_calendar", "mdm.work_calendar_day"],
+    "/mdm/workers/{workerId}/qualifications": [
+        "mdm.worker_qualification",
+        "mdm.worker",
+    ],
+    "/mdm/workers": ["mdm.worker"],
+    "/planning/boms/{bomId}/components": ["planning.bom_component", "planning.bom"],
+    "/planning/boms": ["planning.bom", "planning.bom_component"],
+    "/planning/production-orders": [
+        "planning.production_order",
+        "production.production_order_acknowledgement",
+    ],
+    "/planning/production-plans": ["planning.production_plan"],
+    "/planning/routings/{routingId}/operation-dependencies": [
+        "planning.routing_operation_dependency",
+        "planning.routing",
+    ],
+    "/planning/routings/{routingId}/operations": [
+        "planning.routing_operation",
+        "planning.routing",
+    ],
+    "/planning/routings": ["planning.routing", "planning.routing_operation"],
+    "/production/material-consumptions": [
+        "production.material_consumption",
+        "production.material_usage_allocation",
+    ],
+    "/production/material-returns": [
+        "production.material_return",
+        "production.material_return_line",
+    ],
+    "/production/operation-handovers": [
+        "production.operation_handover",
+        "production.operation_handover_line",
+    ],
+    "/production/production-results": [
+        "production.production_result",
+        "production.production_result_lot_allocation",
+    ],
+    "/production/work-orders": [
+        "production.work_order",
+        "production.work_order_resource_assignment",
+    ],
+    "/production/work-sessions/{workSessionId}/events": [
+        "production.work_session_event",
+        "production.work_session",
+    ],
+    "/production/work-sessions/{workSessionId}/workers": [
+        "production.work_session_worker",
+        "production.work_session",
+    ],
+    "/production/work-sessions": ["production.work_session"],
+    "/quality/cause-codes": ["quality.cause_code"],
+    "/quality/concessions": ["quality.concession"],
+    "/quality/defect-codes": ["quality.defect_code", "quality.defect_code_process"],
+    "/quality/defect-records": ["quality.defect_record"],
+    "/quality/disposition-decisions": ["quality.disposition_decision"],
+    "/quality/inspection-plan-versions/{inspectionPlanVersionId}/items": [
+        "quality.inspection_item_spec",
+        "quality.inspection_plan_version",
+    ],
+    "/quality/inspection-plan-versions": [
+        "quality.inspection_plan_version",
+        "quality.inspection_item_spec",
+    ],
+    "/quality/inspection-plans": [
+        "quality.inspection_plan",
+        "quality.inspection_plan_version",
+    ],
+    "/quality/inspection-requests": ["quality.inspection_request"],
+    "/quality/inspection-results": [
+        "quality.inspection_result",
+        "quality.inspection_measurement",
+        "quality.defect_record",
+    ],
+    "/quality/lot-hold-events": ["trace.lot_hold", "trace.lot_status_event"],
+    "/quality/lot-holds": ["trace.lot_hold", "trace.lot_status_event"],
+    "/quality/lot-status": ["trace.lot_status_event", "inventory.inventory_balance"],
+    "/quality/nonconformances": [
+        "quality.nonconformance",
+        "quality.nonconformance_lot",
+        "quality.disposition_decision",
+    ],
+    "/trace/lots/{lotId}/external-identifiers": [
+        "trace.lot_external_identifier",
+        "trace.lot",
+    ],
+    "/trace/lots/{lotId}/holds": ["trace.lot_hold", "trace.lot"],
+    "/trace/lots": ["trace.lot", "trace.lot_relation"],
+    "/trace/serial-numbers": ["trace.serial_number", "trace.serial_component_relation"],
+}
+
+METHODS = {"get", "post", "put", "patch", "delete"}
+
+
+def _resolve_ref(document: dict[str, Any], ref: str) -> Any:
+    value: Any = document
+    for token in ref.removeprefix("#/").split("/"):
+        value = value[token.replace("~1", "/").replace("~0", "~")]
+    return value
+
+
+def _source_tables(
+    document: dict[str, Any], value: Any, seen: set[str] | None = None
+) -> set[str]:
+    seen = set() if seen is None else seen
+    result: set[str] = set()
+    if isinstance(value, list):
+        for item in value:
+            result.update(_source_tables(document, item, seen))
+    elif isinstance(value, dict):
+        declared = value.get("x-source-table")
+        if isinstance(declared, str):
+            result.add(declared)
+        elif isinstance(declared, list):
+            result.update(str(item) for item in declared)
+        ref = value.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/") and ref not in seen:
+            seen.add(ref)
+            result.update(_source_tables(document, _resolve_ref(document, ref), seen))
+        for key, item in value.items():
+            if key != "$ref":
+                result.update(_source_tables(document, item, seen))
+    return result
+
+
+def _resource_tables(path: str) -> list[str]:
+    matches = [
+        (len(prefix), tables)
+        for prefix, tables in RESOURCE_TABLES.items()
+        if path.startswith(prefix)
+    ]
+    if not matches:
+        raise ValueError(f"No resource mapping rule for {path}")
+    return max(matches, key=lambda item: item[0])[1]
+
+
+def _has_header(parameters: Iterable[dict[str, Any]], name: str) -> bool:
+    return any(
+        param.get("in") == "header" and param.get("name", "").lower() == name.lower()
+        for param in parameters
+    )
+
+
+def _main_access(method: str, path: str) -> str:
+    if method == "GET":
+        return "READ"
+    if method == "DELETE":
+        return "DELETE"
+    if (
+        method in {"PUT", "PATCH"}
+        or ":" in path
+        or re.search(
+            r"/(approve|reject|confirm|cancel|close|publish|ack|retry|post|release|hold|resume|complete|start|end|read)(/|$|:)",
+            path,
+        )
+    ):
+        return "UPDATE"
+    return "INSERT"
+
+
+def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, Any]:
+    known = table_index(catalog)
+    operations: list[dict[str, Any]] = []
+    for file_path in sorted(openapi_dir.glob("*.json")):
+        with file_path.open(encoding="utf-8") as stream:
+            document = json.load(stream)
+        for path, path_item in document.get("paths", {}).items():
+            for method, operation in path_item.items():
+                if method.lower() not in METHODS:
+                    continue
+                method_upper = method.upper()
+                roots = _resource_tables(path)
+                declared = _source_tables(document, operation)
+                tables: list[dict[str, str]] = []
+                for index, qualified_name in enumerate(roots):
+                    tables.append(
+                        {
+                            "table": qualified_name,
+                            "role": "PRIMARY" if index == 0 else "SUPPORTING",
+                            "access": _main_access(method_upper, path)
+                            if index == 0
+                            else "READ",
+                            "basis": "RESOURCE_RULE",
+                        }
+                    )
+                for qualified_name in sorted(declared):
+                    if qualified_name in known and qualified_name not in {
+                        item["table"] for item in tables
+                    }:
+                        tables.append(
+                            {
+                                "table": qualified_name,
+                                "role": "DECLARED",
+                                "access": "READ",
+                                "basis": "X_SOURCE_TABLE",
+                            }
+                        )
+
+                parameters = list(path_item.get("parameters", [])) + list(
+                    operation.get("parameters", [])
+                )
+                mutation = method_upper != "GET"
+                if mutation and _has_header(parameters, "Idempotency-Key"):
+                    tables.append(
+                        {
+                            "table": "app.idempotency_record",
+                            "role": "CROSS_CUTTING",
+                            "access": "UPSERT",
+                            "basis": "HEADER_CONTRACT",
+                        }
+                    )
+                if mutation:
+                    tables.append(
+                        {
+                            "table": "audit.audit_event",
+                            "role": "CROSS_CUTTING",
+                            "access": "APPEND",
+                            "basis": "AUDIT_POLICY",
+                        }
+                    )
+
+                unique_tables: list[dict[str, str]] = []
+                seen_tables: set[str] = set()
+                for relation in tables:
+                    if relation["table"] not in seen_tables:
+                        unique_tables.append(relation)
+                        seen_tables.add(relation["table"])
+                missing = sorted(seen_tables - known.keys())
+                if missing:
+                    raise ValueError(
+                        f"Unknown table(s) for {method_upper} {path}: {missing}"
+                    )
+                operations.append(
+                    {
+                        "id": f"{method_upper} {path}",
+                        "domain": file_path.stem,
+                        "method": method_upper,
+                        "path": path,
+                        "summary": operation.get("summary")
+                        or operation.get("description")
+                        or "",
+                        "tags": operation.get("tags", []),
+                        "deprecated": bool(operation.get("deprecated", False)),
+                        "idempotency_key": _has_header(parameters, "Idempotency-Key"),
+                        "if_match": _has_header(parameters, "If-Match"),
+                        "tables": unique_tables,
+                    }
+                )
+    operations.sort(key=lambda item: (item["domain"], item["path"], item["method"]))
+    if not operations:
+        raise ValueError("No OpenAPI operations discovered")
+    return {
+        "mapping_version": "4.0",
+        "design_reference_commit": catalog["design_reference_commit"],
+        "operation_count": len(operations),
+        "coverage": "100%",
+        "operations": operations,
+    }

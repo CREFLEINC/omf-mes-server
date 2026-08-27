@@ -5,74 +5,95 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["app", "audit", "integration", "inventory", "logistics", "mdm", "planning", "production", "quality", "trace"]
+  schemas  = ["app", "audit", "integration", "inventory", "logistics", "maintenance", "mdm", "planning", "production", "quality", "trace"]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model app_user {
-  app_user_id                             BigInt                       @id @default(autoincrement())
-  login_id                                String                       @unique @db.VarChar(100)
-  user_name                               String                       @db.VarChar(200)
-  department_id                           BigInt?
-  email                                   String?                      @db.VarChar(200)
-  status_code                             String                       @default("ACTIVE") @db.VarChar(50)
-  is_active                               Boolean                      @default(true)
-  created_at                              DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by                              BigInt?
-  updated_at                              DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by                              BigInt?
-  version_no                              Int                          @default(1)
-  department                              department?                  @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
-  approval_request                        approval_request[]
-  approval_route_step                     approval_route_step[]
-  approval_step                           approval_step[]
-  attachment                              attachment[]
-  document_issue_log                      document_issue_log[]
-  exception_case                          exception_case[]
-  idempotency_record                      idempotency_record[]
-  user_credential                         user_credential?
-  user_data_scope                         user_data_scope[]
-  user_role                               user_role[]
-  inventory_count_line                    inventory_count_line[]
-  inbound_receipt                         inbound_receipt[]
-  material_issue_request                  material_issue_request[]
-  shopfloor_receipt                       shopfloor_receipt[]
-  subcontract_reconciliation              subcontract_reconciliation[]
-  worker                                  worker[]
-  production_plan                         production_plan[]
-  work_session_event                      work_session_event[]
-  disposition_decision                    disposition_decision[]
-  equipment_calibration                   equipment_calibration[]
-  inspection_plan                         inspection_plan[]
-  nonconformance                          nonconformance[]
-  impact_analysis                         impact_analysis[]
-  lot_hold_lot_hold_held_byToapp_user     lot_hold[]                   @relation("lot_hold_held_byToapp_user")
-  lot_hold_lot_hold_released_byToapp_user lot_hold[]                   @relation("lot_hold_released_byToapp_user")
+  app_user_id                                            BigInt                          @id @default(autoincrement())
+  login_id                                               String                          @unique @db.VarChar(100)
+  user_name                                              String                          @db.VarChar(200)
+  department_id                                          BigInt?
+  email                                                  String?                         @db.VarChar(200)
+  status_code                                            String                          @default("ACTIVE") @db.VarChar(50)
+  is_active                                              Boolean                         @default(true)
+  created_at                                             DateTime                        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                             BigInt?
+  updated_at                                             DateTime                        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                             BigInt?
+  version_no                                             Int                             @default(1)
+  department                                             department?                     @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  approval_request_approval_request_decided_byToapp_user approval_request[]              @relation("approval_request_decided_byToapp_user")
+  approval_request                                       approval_request[]
+  approval_route_step                                    approval_route_step[]
+  approval_step                                          approval_step[]
+  attachment                                             attachment[]
+  document_cancellation                                  document_cancellation[]
+  document_issue_log                                     document_issue_log[]
+  exception_case                                         exception_case[]
+  idempotency_record                                     idempotency_record[]
+  notice_notice_closed_byToapp_user                      notice[]                        @relation("notice_closed_byToapp_user")
+  notice_notice_published_byToapp_user                   notice[]                        @relation("notice_published_byToapp_user")
+  notice_acknowledgement                                 notice_acknowledgement[]
+  notification                                           notification[]
+  notification_subscription                              notification_subscription[]
+  user_credential                                        user_credential?
+  user_data_scope                                        user_data_scope[]
+  user_role                                              user_role[]
+  worker_lease                                           worker_lease[]
+  handling_unit_reconfiguration                          handling_unit_reconfiguration[]
+  inventory_count_line                                   inventory_count_line[]
+  goods_issue                                            goods_issue[]
+  inbound_receipt                                        inbound_receipt[]
+  material_issue_request                                 material_issue_request[]
+  shipment_shipment_cancelled_byToapp_user               shipment[]                      @relation("shipment_cancelled_byToapp_user")
+  shipment_shipment_confirmed_byToapp_user               shipment[]                      @relation("shipment_confirmed_byToapp_user")
+  shopfloor_receipt                                      shopfloor_receipt[]
+  subcontract_reconciliation                             subcontract_reconciliation[]
+  breakdown                                              breakdown[]
+  equipment_downtime                                     equipment_downtime[]
+  worker                                                 worker[]
+  production_plan                                        production_plan[]
+  work_session_event                                     work_session_event[]
+  disposition_decision                                   disposition_decision[]
+  equipment_calibration                                  equipment_calibration[]
+  inspection_plan                                        inspection_plan[]
+  nonconformance                                         nonconformance[]
+  impact_analysis                                        impact_analysis[]
+  lot_hold_lot_hold_held_byToapp_user                    lot_hold[]                      @relation("lot_hold_held_byToapp_user")
+  lot_hold_lot_hold_released_byToapp_user                lot_hold[]                      @relation("lot_hold_released_byToapp_user")
+  lot_status_event                                       lot_status_event[]
 
+  @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model approval_request {
-  approval_request_id  BigInt                 @id @default(autoincrement())
-  approval_request_no  String                 @unique @db.VarChar(100)
-  approval_type_code   String                 @db.VarChar(50)
-  target_type_code     String                 @db.VarChar(50)
-  target_id            BigInt
-  requested_by         BigInt
-  requested_at         DateTime               @db.Timestamptz(6)
-  status_code          String                 @db.VarChar(50)
-  reason               String
-  created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  version_no           Int                    @default(1)
-  app_user             app_user               @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  approval_step        approval_step[]
-  inventory_adjustment inventory_adjustment[]
-  inbound_receipt      inbound_receipt[]
-  inbound_variance     inbound_variance[]
-  concession           concession[]
-  disposition_decision disposition_decision[]
+  approval_request_id                            BigInt                 @id @default(autoincrement())
+  approval_request_no                            String                 @unique @db.VarChar(100)
+  approval_type_code                             String                 @db.VarChar(50)
+  target_type_code                               String                 @db.VarChar(50)
+  target_id                                      BigInt
+  requested_by                                   BigInt
+  requested_at                                   DateTime               @db.Timestamptz(6)
+  status_code                                    String                 @db.VarChar(50)
+  reason                                         String
+  created_at                                     DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                                     DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  version_no                                     Int                    @default(1)
+  target_summary                                 Json?
+  decided_at                                     DateTime?              @db.Timestamptz(6)
+  decided_by                                     BigInt?
+  app_user_approval_request_decided_byToapp_user app_user?              @relation("approval_request_decided_byToapp_user", fields: [decided_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                                       app_user               @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  approval_step                                  approval_step[]
+  inventory_adjustment                           inventory_adjustment[]
+  goods_issue                                    goods_issue[]
+  inbound_receipt                                inbound_receipt[]
+  inbound_variance                               inbound_variance[]
+  concession                                     concession[]
+  disposition_decision                           disposition_decision[]
 
   @@schema("app")
 }
@@ -113,6 +134,7 @@ model approval_route_step {
   app_user               app_user?      @relation(fields: [approver_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([approval_route_id, step_no], map: "uq_approval_route_step")
+  @@index([approver_department_id], map: "ix_approval_route_step_approver_department")
   @@schema("app")
 }
 
@@ -194,6 +216,7 @@ model exception_case {
   department             department? @relation(fields: [assigned_department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
   app_user               app_user?   @relation(fields: [assigned_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([assigned_department_id], map: "ix_exception_case_assigned_department")
   @@schema("app")
 }
 
@@ -298,10 +321,13 @@ model user_data_scope {
   plant_id           BigInt?
   created_at         DateTime       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by         BigInt?
+  legal_entity_id    BigInt?
   app_user           app_user       @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit      business_unit? @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  legal_entity       legal_entity?  @relation(fields: [legal_entity_id], references: [legal_entity_id], onDelete: NoAction, onUpdate: NoAction)
   plant              plant?         @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([legal_entity_id], map: "ix_user_data_scope_legal_entity")
   @@schema("app")
 }
 
@@ -354,22 +380,24 @@ model external_document_reference {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model integration_message {
-  integration_message_id BigInt    @id @default(autoincrement())
-  message_key            String    @unique @db.VarChar(150)
-  interface_code         String    @db.VarChar(50)
-  direction_code         String    @db.VarChar(50)
-  target_type_code       String    @db.VarChar(50)
-  target_id              BigInt
-  payload                Json
-  status_code            String    @db.VarChar(50)
-  retry_count            Int       @default(0)
-  last_error_message     String?
-  created_at             DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  available_at           DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  sent_at                DateTime? @db.Timestamptz(6)
-  completed_at           DateTime? @db.Timestamptz(6)
-  locked_at              DateTime? @db.Timestamptz(6)
-  locked_by              String?   @db.VarChar(100)
+  integration_message_id           BigInt                             @id @default(autoincrement())
+  message_key                      String                             @unique @db.VarChar(150)
+  interface_code                   String                             @db.VarChar(50)
+  direction_code                   String                             @db.VarChar(50)
+  target_type_code                 String                             @db.VarChar(50)
+  target_id                        BigInt
+  payload                          Json
+  status_code                      String                             @db.VarChar(50)
+  retry_count                      Int                                @default(0)
+  last_error_message               String?
+  created_at                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  available_at                     DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  sent_at                          DateTime?                          @db.Timestamptz(6)
+  completed_at                     DateTime?                          @db.Timestamptz(6)
+  locked_at                        DateTime?                          @db.Timestamptz(6)
+  locked_by                        String?                            @db.VarChar(100)
+  record_provenance                record_provenance[]
+  production_order_acknowledgement production_order_acknowledgement[]
 
   @@index([target_type_code, target_id, created_at(sort: Desc)], map: "ix_integration_target")
   @@schema("integration")
@@ -377,27 +405,30 @@ model integration_message {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model handling_unit {
-  handling_unit_id           BigInt                       @id @default(autoincrement())
-  handling_unit_no           String                       @unique @db.VarChar(100)
-  handling_unit_type_code    String                       @db.VarChar(50)
-  parent_handling_unit_id    BigInt?
-  warehouse_id               BigInt?
-  location_id                BigInt?
-  status_code                String                       @db.VarChar(50)
-  created_at                 DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by                 BigInt?
-  updated_at                 DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by                 BigInt?
-  version_no                 Int                          @default(1)
-  location                   location?                    @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  parent_handling_unit       handling_unit?               @relation("handling_unitTohandling_unit", fields: [parent_handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  child_handling_units       handling_unit[]              @relation("handling_unitTohandling_unit")
-  warehouse                  warehouse?                   @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-  handling_unit_content      handling_unit_content[]
-  inventory_transaction_line inventory_transaction_line[]
-  shipment_lot_allocation    shipment_lot_allocation[]
+  handling_unit_id                                                                                   BigInt                          @id @default(autoincrement())
+  handling_unit_no                                                                                   String                          @unique @db.VarChar(100)
+  handling_unit_type_code                                                                            String                          @db.VarChar(50)
+  parent_handling_unit_id                                                                            BigInt?
+  warehouse_id                                                                                       BigInt?
+  location_id                                                                                        BigInt?
+  status_code                                                                                        String                          @db.VarChar(50)
+  created_at                                                                                         DateTime                        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                                                                         BigInt?
+  updated_at                                                                                         DateTime                        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                                                                         BigInt?
+  version_no                                                                                         Int                             @default(1)
+  location                                                                                           location?                       @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  parent_handling_unit                                                                               handling_unit?                  @relation("handling_unitTohandling_unit", fields: [parent_handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  child_handling_units                                                                               handling_unit[]                 @relation("handling_unitTohandling_unit")
+  warehouse                                                                                          warehouse?                      @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  handling_unit_content                                                                              handling_unit_content[]
+  handling_unit_reconfiguration_handling_unit_reconfiguration_source_handling_unit_idTohandling_unit handling_unit_reconfiguration[] @relation("handling_unit_reconfiguration_source_handling_unit_idTohandling_unit")
+  handling_unit_reconfiguration_handling_unit_reconfiguration_target_handling_unit_idTohandling_unit handling_unit_reconfiguration[] @relation("handling_unit_reconfiguration_target_handling_unit_idTohandling_unit")
+  inventory_transaction_line                                                                         inventory_transaction_line[]
+  shipment_lot_allocation                                                                            shipment_lot_allocation[]
 
   @@index([warehouse_id], map: "ix_handling_unit_warehouse")
+  @@index([location_id], map: "ix_handling_unit_location")
   @@schema("inventory")
 }
 
@@ -422,20 +453,21 @@ model handling_unit_content {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model inventory_adjustment {
-  inventory_adjustment_id BigInt            @id @default(autoincrement())
-  inventory_adjustment_no String            @unique @db.VarChar(100)
-  inventory_count_id      BigInt?
-  reason_code             String            @db.VarChar(50)
-  approval_request_id     BigInt?
-  status_code             String            @db.VarChar(50)
-  adjusted_at             DateTime?         @db.Timestamptz(6)
-  created_at              DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by              BigInt?
-  updated_at              DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by              BigInt?
-  version_no              Int               @default(1)
-  approval_request        approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_adjustment_approval")
-  inventory_count         inventory_count?  @relation(fields: [inventory_count_id], references: [inventory_count_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_adjustment_id   BigInt                      @id @default(autoincrement())
+  inventory_adjustment_no   String                      @unique @db.VarChar(100)
+  inventory_count_id        BigInt?
+  reason_code               String                      @db.VarChar(50)
+  approval_request_id       BigInt?
+  status_code               String                      @db.VarChar(50)
+  adjusted_at               DateTime?                   @db.Timestamptz(6)
+  created_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int                         @default(1)
+  approval_request          approval_request?           @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_adjustment_approval")
+  inventory_count           inventory_count?            @relation(fields: [inventory_count_id], references: [inventory_count_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_adjustment_line inventory_adjustment_line[]
 
   @@schema("inventory")
 }
@@ -476,6 +508,8 @@ model inventory_balance {
   warehouse             warehouse     @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([plant_id, warehouse_id, item_id, lot_id, quality_status_code, inventory_status_code], map: "ix_inventory_balance_lookup")
+  @@index([location_id], map: "ix_inventory_balance_location")
+  @@index([warehouse_id], map: "ix_inventory_balance_warehouse")
   @@schema("inventory")
 }
 
@@ -526,6 +560,7 @@ model inventory_count_line {
   uom                     uom             @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([inventory_count_id, line_no], map: "uq_inventory_count_line")
+  @@index([location_id], map: "ix_inventory_count_line_location")
   @@schema("inventory")
 }
 
@@ -559,6 +594,7 @@ model inventory_reservation {
 
   @@index([source_document_type_code, source_document_id, status_code], map: "ix_reservation_source")
   @@index([warehouse_id], map: "ix_inventory_reservation_warehouse")
+  @@index([location_id], map: "ix_inventory_reservation_location")
   @@schema("inventory")
 }
 
@@ -594,50 +630,53 @@ model inventory_transaction {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model inventory_transaction_line {
-  inventory_transaction_line_id                                                                   BigInt                 @id @default(autoincrement())
+  inventory_transaction_line_id                                                                   BigInt                      @id @default(autoincrement())
   inventory_transaction_id                                                                        BigInt
-  business_date                                                                                   DateTime               @db.Date
+  business_date                                                                                   DateTime                    @db.Date
   line_no                                                                                         Int
   item_id                                                                                         BigInt
   lot_id                                                                                          BigInt?
-  qty                                                                                             Decimal                @db.Decimal(20, 6)
+  qty                                                                                             Decimal                     @db.Decimal(20, 6)
   uom_id                                                                                          BigInt
   from_warehouse_id                                                                               BigInt?
   from_location_id                                                                                BigInt?
-  from_quality_status_code                                                                        String?                @db.VarChar(50)
-  from_inventory_status_code                                                                      String?                @db.VarChar(50)
+  from_quality_status_code                                                                        String?                     @db.VarChar(50)
+  from_inventory_status_code                                                                      String?                     @db.VarChar(50)
   to_warehouse_id                                                                                 BigInt?
   to_location_id                                                                                  BigInt?
-  to_quality_status_code                                                                          String?                @db.VarChar(50)
-  to_inventory_status_code                                                                        String?                @db.VarChar(50)
-  ownership_type_code                                                                             String                 @db.VarChar(50)
+  to_quality_status_code                                                                          String?                     @db.VarChar(50)
+  to_inventory_status_code                                                                        String?                     @db.VarChar(50)
+  ownership_type_code                                                                             String                      @db.VarChar(50)
   owner_partner_id                                                                                BigInt?
   handling_unit_id                                                                                BigInt?
-  from_qty_after_transaction                                                                      Decimal?               @db.Decimal(20, 6)
-  to_qty_after_transaction                                                                        Decimal?               @db.Decimal(20, 6)
-  created_at                                                                                      DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  from_qty_after_transaction                                                                      Decimal?                    @db.Decimal(20, 6)
+  to_qty_after_transaction                                                                        Decimal?                    @db.Decimal(20, 6)
+  created_at                                                                                      DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                                                      BigInt?
-  inventory_transaction                                                                           inventory_transaction  @relation(fields: [inventory_transaction_id, business_date], references: [inventory_transaction_id, business_date], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_transaction_line_header")
-  handling_unit                                                                                   handling_unit?         @relation(fields: [handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_transaction_line_hu")
-  location_inventory_transaction_line_from_location_idTolocation                                  location?              @relation("inventory_transaction_line_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse_inventory_transaction_line_from_warehouse_idTowarehouse                               warehouse?             @relation("inventory_transaction_line_from_warehouse_idTowarehouse", fields: [from_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-  item                                                                                            item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  lot                                                                                             lot?                   @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
-  partner                                                                                         partner?               @relation(fields: [owner_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
-  location_inventory_transaction_line_to_location_idTolocation                                    location?              @relation("inventory_transaction_line_to_location_idTolocation", fields: [to_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse_inventory_transaction_line_to_warehouse_idTowarehouse                                 warehouse?             @relation("inventory_transaction_line_to_warehouse_idTowarehouse", fields: [to_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                                                                                             uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_adjustment_line                                                                       inventory_adjustment_line[]
+  inventory_transaction                                                                           inventory_transaction       @relation(fields: [inventory_transaction_id, business_date], references: [inventory_transaction_id, business_date], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_transaction_line_header")
+  handling_unit                                                                                   handling_unit?              @relation(fields: [handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_transaction_line_hu")
+  location_inventory_transaction_line_from_location_idTolocation                                  location?                   @relation("inventory_transaction_line_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse_inventory_transaction_line_from_warehouse_idTowarehouse                               warehouse?                  @relation("inventory_transaction_line_from_warehouse_idTowarehouse", fields: [from_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                                                                            item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                                                                                             lot?                        @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  partner                                                                                         partner?                    @relation(fields: [owner_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  location_inventory_transaction_line_to_location_idTolocation                                    location?                   @relation("inventory_transaction_line_to_location_idTolocation", fields: [to_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse_inventory_transaction_line_to_warehouse_idTowarehouse                                 warehouse?                  @relation("inventory_transaction_line_to_warehouse_idTowarehouse", fields: [to_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                                                                             uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue_line                                                                                goods_issue_line[]
   goods_receipt_line                                                                              goods_receipt_line[]
   putaway_task                                                                                    putaway_task[]
-  stock_transfer_line_stock_transfer_line_issue_transaction_line_idToinventory_transaction_line   stock_transfer_line[]  @relation("stock_transfer_line_issue_transaction_line_idToinventory_transaction_line")
-  stock_transfer_line_stock_transfer_line_receipt_transaction_line_idToinventory_transaction_line stock_transfer_line[]  @relation("stock_transfer_line_receipt_transaction_line_idToinventory_transaction_line")
+  stock_transfer_line_stock_transfer_line_issue_transaction_line_idToinventory_transaction_line   stock_transfer_line[]       @relation("stock_transfer_line_issue_transaction_line_idToinventory_transaction_line")
+  stock_transfer_line_stock_transfer_line_receipt_transaction_line_idToinventory_transaction_line stock_transfer_line[]       @relation("stock_transfer_line_receipt_transaction_line_idToinventory_transaction_line")
   material_return_line                                                                            material_return_line[]
 
   @@unique([inventory_transaction_id, business_date, line_no], map: "uq_inventory_transaction_line")
   @@index([lot_id, business_date(sort: Desc)], map: "ix_inventory_line_lot")
   @@index([from_warehouse_id], map: "ix_inventory_line_from_warehouse")
   @@index([to_warehouse_id], map: "ix_inventory_line_to_warehouse")
+  @@index([from_location_id], map: "ix_inventory_line_from_location")
+  @@index([to_location_id], map: "ix_inventory_line_to_location")
   @@schema("inventory")
 }
 
@@ -706,6 +745,12 @@ model goods_issue {
   updated_at                DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
   version_no                Int                 @default(1)
+  approval_request_id       BigInt?
+  cancelled_at              DateTime?           @db.Timestamptz(6)
+  cancelled_by              BigInt?
+  cancellation_reason_code  String?             @db.VarChar(50)
+  approval_request          approval_request?   @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                  app_user?           @relation(fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse                 warehouse           @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue_line          goods_issue_line[]
   shopfloor_receipt         shopfloor_receipt[]
@@ -713,6 +758,7 @@ model goods_issue {
 
   @@index([source_document_type_code, source_document_id, issued_at(sort: Desc)], map: "ix_goods_issue_source")
   @@index([source_warehouse_id], map: "ix_goods_issue_source_warehouse")
+  @@index([approval_request_id], map: "ix_goods_issue_approval_request")
   @@schema("logistics")
 }
 
@@ -741,6 +787,7 @@ model goods_issue_line {
   shopfloor_receipt_line        shopfloor_receipt_line[]
 
   @@unique([goods_issue_id, line_no], map: "uq_goods_issue_line")
+  @@index([source_location_id], map: "ix_goods_issue_line_source_location")
   @@schema("logistics")
 }
 
@@ -788,6 +835,9 @@ model goods_receipt_line {
   inventory_transaction_line_id       BigInt?
   created_at                          DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                          BigInt?
+  expected_qty                        Decimal?                    @db.Decimal(20, 6)
+  variance_reason_code                String?                     @db.VarChar(50)
+  variance_note                       String?
   shipment_lot_allocation             shipment_lot_allocation?    @relation(fields: [original_shipment_lot_allocation_id], references: [shipment_lot_allocation_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_goods_receipt_line_orig_shipment")
   location                            location                    @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   goods_receipt                       goods_receipt               @relation(fields: [goods_receipt_id], references: [goods_receipt_id], onDelete: NoAction, onUpdate: NoAction)
@@ -799,6 +849,7 @@ model goods_receipt_line {
   putaway_task                        putaway_task[]
 
   @@unique([goods_receipt_id, line_no], map: "uq_goods_receipt_line")
+  @@index([destination_location_id], map: "ix_goods_receipt_line_destination_location")
   @@schema("logistics")
 }
 
@@ -831,6 +882,7 @@ model inbound_receipt {
   inbound_receipt_line inbound_receipt_line[]
 
   @@index([supplier_id, receipt_datetime(sort: Desc)], map: "ix_inbound_receipt_supplier_date")
+  @@index([dock_location_id], map: "ix_inbound_receipt_dock_location")
   @@schema("logistics")
 }
 
@@ -903,11 +955,13 @@ model material_issue_request {
   updated_at                  DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                  BigInt?
   version_no                  Int                           @default(1)
+  reason_code                 String?                       @db.VarChar(50)
   location                    location                      @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   app_user                    app_user?                     @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                  work_order                    @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request_line material_issue_request_line[]
 
+  @@index([destination_location_id], map: "ix_material_issue_request_destination_location")
   @@schema("logistics")
 }
 
@@ -959,6 +1013,7 @@ model picking_line {
   uom                      uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([picking_order_id, line_no], map: "uq_picking_line")
+  @@index([location_id], map: "ix_picking_line_location")
   @@schema("logistics")
 }
 
@@ -981,6 +1036,7 @@ model picking_order {
   worker                    worker?        @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse                 warehouse      @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([warehouse_id], map: "ix_picking_order_warehouse")
   @@schema("logistics")
 }
 
@@ -1058,6 +1114,7 @@ model putaway_rule {
   putaway_task    putaway_task[]
 
   @@index([warehouse_id], map: "ix_putaway_rule_warehouse")
+  @@index([location_id], map: "ix_putaway_rule_location")
   @@schema("logistics")
 }
 
@@ -1085,6 +1142,7 @@ model putaway_task {
   updated_at                                              DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                              BigInt?
   version_no                                              Int                         @default(1)
+  reason_code                                             String?                     @db.VarChar(50)
   location_putaway_task_actual_location_idTolocation      location?                   @relation("putaway_task_actual_location_idTolocation", fields: [actual_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   putaway_rule                                            putaway_rule?               @relation(fields: [applied_putaway_rule_id], references: [putaway_rule_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                                  worker?                     @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1097,6 +1155,9 @@ model putaway_task {
   uom                                                     uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([goods_receipt_line_id], map: "ix_putaway_receipt_line")
+  @@index([actual_location_id], map: "ix_putaway_task_actual_location")
+  @@index([from_location_id], map: "ix_putaway_task_from_location")
+  @@index([recommended_location_id], map: "ix_putaway_task_recommended_location")
   @@schema("logistics")
 }
 
@@ -1147,31 +1208,38 @@ model sales_order_line {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model shipment {
-  shipment_id           BigInt           @id @default(autoincrement())
-  shipment_no           String           @unique @db.VarChar(100)
-  shipment_request_id   BigInt
-  warehouse_id          BigInt
-  vehicle_no            String?          @db.VarChar(50)
-  driver_name           String?          @db.VarChar(100)
-  seal_no               String?          @db.VarChar(50)
-  transport_document_no String?          @db.VarChar(100)
-  loading_worker_id     BigInt?
-  carrier_id            BigInt?
-  loaded_at             DateTime?        @db.Timestamptz(6)
-  shipped_at            DateTime?        @db.Timestamptz(6)
-  status_code           String           @db.VarChar(50)
-  erp_delivery_no       String?          @db.VarChar(100)
-  remarks               String?
-  created_at            DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by            BigInt?
-  updated_at            DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by            BigInt?
-  version_no            Int              @default(1)
-  partner               partner?         @relation(fields: [carrier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
-  worker                worker?          @relation(fields: [loading_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
-  shipment_request      shipment_request @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse             warehouse        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
-  shipment_line         shipment_line[]
+  shipment_id                              BigInt           @id @default(autoincrement())
+  shipment_no                              String           @unique @db.VarChar(100)
+  shipment_request_id                      BigInt
+  warehouse_id                             BigInt
+  vehicle_no                               String?          @db.VarChar(50)
+  driver_name                              String?          @db.VarChar(100)
+  seal_no                                  String?          @db.VarChar(50)
+  transport_document_no                    String?          @db.VarChar(100)
+  loading_worker_id                        BigInt?
+  carrier_id                               BigInt?
+  loaded_at                                DateTime?        @db.Timestamptz(6)
+  shipped_at                               DateTime?        @db.Timestamptz(6)
+  status_code                              String           @db.VarChar(50)
+  erp_delivery_no                          String?          @db.VarChar(100)
+  remarks                                  String?
+  created_at                               DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                               BigInt?
+  updated_at                               DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                               BigInt?
+  version_no                               Int              @default(1)
+  confirmed_at                             DateTime?        @db.Timestamptz(6)
+  confirmed_by                             BigInt?
+  cancelled_at                             DateTime?        @db.Timestamptz(6)
+  cancelled_by                             BigInt?
+  cancellation_reason_code                 String?          @db.VarChar(50)
+  app_user_shipment_cancelled_byToapp_user app_user?        @relation("shipment_cancelled_byToapp_user", fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  partner                                  partner?         @relation(fields: [carrier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_shipment_confirmed_byToapp_user app_user?        @relation("shipment_confirmed_byToapp_user", fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                                   worker?          @relation(fields: [loading_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment_request                         shipment_request @relation(fields: [shipment_request_id], references: [shipment_request_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse                                warehouse        @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  shipment_line                            shipment_line[]
 
   @@index([warehouse_id], map: "ix_shipment_warehouse")
   @@schema("logistics")
@@ -1234,6 +1302,8 @@ model shipment_request {
   updated_at                                           DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                           BigInt?
   version_no                                           Int                     @default(1)
+  ship_time_slot_start                                 DateTime?               @db.Time(6)
+  ship_time_slot_end                                   DateTime?               @db.Time(6)
   shipment                                             shipment[]
   partner_shipment_request_customer_idTopartner        partner                 @relation("shipment_request_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_shipment_request_ship_to_partner_idTopartner partner                 @relation("shipment_request_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1293,6 +1363,7 @@ model shopfloor_receipt {
   work_order              work_order               @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   shopfloor_receipt_line  shopfloor_receipt_line[]
 
+  @@index([destination_location_id], map: "ix_shopfloor_receipt_destination_location")
   @@schema("logistics")
 }
 
@@ -1376,6 +1447,8 @@ model stock_transfer_line {
   uom                                                                                                    uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([stock_transfer_id, line_no], map: "uq_stock_transfer_line")
+  @@index([from_location_id], map: "ix_stock_transfer_line_from_location")
+  @@index([to_location_id], map: "ix_stock_transfer_line_to_location")
   @@schema("logistics")
 }
 
@@ -1386,6 +1459,8 @@ model subcontract_issue {
   issued_at            DateTime          @db.Timestamptz(6)
   created_at           DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by           BigInt?
+  status_code          String            @default("COMPLETED") @db.VarChar(50)
+  version_no           Int               @default(1)
   goods_issue          goods_issue       @relation(fields: [goods_issue_id], references: [goods_issue_id], onDelete: NoAction, onUpdate: NoAction)
   subcontract_order    subcontract_order @relation(fields: [subcontract_order_id], references: [subcontract_order_id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1430,6 +1505,8 @@ model subcontract_receipt {
   received_at            DateTime          @db.Timestamptz(6)
   created_at             DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by             BigInt?
+  status_code            String            @default("COMPLETED") @db.VarChar(50)
+  version_no             Int               @default(1)
   goods_receipt          goods_receipt     @relation(fields: [goods_receipt_id], references: [goods_receipt_id], onDelete: NoAction, onUpdate: NoAction)
   subcontract_order      subcontract_order @relation(fields: [subcontract_order_id], references: [subcontract_order_id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1559,66 +1636,88 @@ model department {
   defect_record        defect_record[]
   nonconformance       nonconformance[]
 
+  @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model equipment {
-  equipment_id           BigInt                   @id @default(autoincrement())
-  plant_id               BigInt
-  equipment_code         String                   @db.VarChar(50)
-  equipment_name         String                   @db.VarChar(200)
-  equipment_type_code    String                   @db.VarChar(50)
-  process_id             BigInt?
-  production_line_id     BigInt?
-  status_code            String                   @db.VarChar(50)
-  calibration_required   Boolean                  @default(false)
-  last_calibration_date  DateTime?                @db.Date
-  calibration_due_date   DateTime?                @db.Date
-  is_active              Boolean                  @default(true)
-  created_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by             BigInt?
-  updated_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by             BigInt?
-  version_no             Int                      @default(1)
-  plant                  plant                    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  process                process?                 @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
-  production_line        production_line?         @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
-  production_result      production_result[]
-  work_order             work_order[]
-  work_session           work_session[]
-  defect_record          defect_record[]
-  equipment_calibration  equipment_calibration[]
-  inspection_item_spec   inspection_item_spec[]
-  inspection_measurement inspection_measurement[]
+  equipment_id                         BigInt                                 @id @default(autoincrement())
+  plant_id                             BigInt
+  equipment_code                       String                                 @db.VarChar(50)
+  equipment_name                       String                                 @db.VarChar(200)
+  equipment_type_code                  String                                 @db.VarChar(50)
+  process_id                           BigInt?
+  production_line_id                   BigInt?
+  status_code                          String                                 @db.VarChar(50)
+  calibration_required                 Boolean                                @default(false)
+  last_calibration_date                DateTime?                              @db.Date
+  calibration_due_date                 DateTime?                              @db.Date
+  is_active                            Boolean                                @default(true)
+  created_at                           DateTime                               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                           BigInt?
+  updated_at                           DateTime                               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                           BigInt?
+  version_no                           Int                                    @default(1)
+  location_id                          BigInt?
+  breakdown                            breakdown[]
+  collection_channel                   collection_channel[]
+  equipment_downtime                   equipment_downtime[]
+  equipment_inspection                 equipment_inspection[]
+  maintenance_order                    maintenance_order[]
+  planned_stop                         planned_stop[]
+  tool_usage                           tool_usage[]
+  location                             location?                              @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                                plant                                  @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  process                              process?                               @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+  production_line                      production_line?                       @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_group_member               equipment_group_member[]
+  equipment_inspection_item_assignment equipment_inspection_item_assignment[]
+  spare_part_equipment                 spare_part_equipment[]
+  production_result                    production_result[]
+  work_order                           work_order[]
+  work_order_resource_assignment       work_order_resource_assignment[]
+  work_session                         work_session[]
+  defect_record                        defect_record[]
+  equipment_calibration                equipment_calibration[]
+  inspection_item_spec                 inspection_item_spec[]
+  inspection_measurement               inspection_measurement[]
 
   @@unique([plant_id, equipment_code], map: "uq_equipment")
+  @@index([location_id], map: "ix_equipment_location")
   @@schema("mdm")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model item {
-  item_id                                              BigInt                        @id @default(autoincrement())
-  item_code                                            String                        @unique @db.VarChar(50)
-  item_name                                            String                        @db.VarChar(200)
-  item_type_code                                       String                        @db.VarChar(50)
+  item_id                                              BigInt                               @id @default(autoincrement())
+  item_code                                            String                               @unique @db.VarChar(50)
+  item_name                                            String                               @db.VarChar(200)
+  item_type_code                                       String                               @db.VarChar(50)
   base_uom_id                                          BigInt
-  lot_control_type_code                                String                        @db.VarChar(50)
-  serial_control_type_code                             String                        @default("NONE") @db.VarChar(50)
+  lot_control_type_code                                String                               @db.VarChar(50)
+  serial_control_type_code                             String                               @default("NONE") @db.VarChar(50)
   shelf_life_days                                      Int?
-  inspection_required                                  Boolean                       @default(false)
-  fifo_policy_code                                     String                        @default("FIFO") @db.VarChar(50)
-  negative_stock_allowed                               Boolean                       @default(false)
-  storage_condition_code                               String?                       @db.VarChar(50)
+  inspection_required                                  Boolean                              @default(false)
+  fifo_policy_code                                     String                               @default("FIFO") @db.VarChar(50)
+  negative_stock_allowed                               Boolean                              @default(false)
+  storage_condition_code                               String?                              @db.VarChar(50)
   opened_shelf_life_hours                              Int?
-  is_active                                            Boolean                       @default(true)
-  created_at                                           DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  is_active                                            Boolean                              @default(true)
+  created_at                                           DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                           BigInt?
-  updated_at                                           DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                                           DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                           BigInt?
-  version_no                                           Int                           @default(1)
+  version_no                                           Int                                  @default(1)
+  lot_storage_uom_id                                   BigInt?
+  default_lot_size                                     Decimal?                             @db.Decimal(20, 6)
+  is_development_item                                  Boolean                              @default(false)
+  recycle_type_code                                    String?                              @db.VarChar(50)
   operation_policy                                     operation_policy[]
+  outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]
+  handling_unit_reconfiguration_line                   handling_unit_reconfiguration_line[]
+  inventory_adjustment_line                            inventory_adjustment_line[]
   inventory_balance                                    inventory_balance[]
   inventory_count_line                                 inventory_count_line[]
   inventory_reservation                                inventory_reservation[]
@@ -1632,17 +1731,20 @@ model item {
   purchase_order_line                                  purchase_order_line[]
   putaway_rule                                         putaway_rule[]
   putaway_task                                         putaway_task[]
+  recycle_entry                                        recycle_entry[]
   sales_order_line                                     sales_order_line[]
   shipment_line                                        shipment_line[]
   shipment_request_line                                shipment_request_line[]
   shopfloor_receipt_line                               shopfloor_receipt_line[]
   stock_transfer_line                                  stock_transfer_line[]
   subcontract_order                                    subcontract_order[]
-  uom                                                  uom                           @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  item_bu_item_map_item_bu_item_map_from_item_idToitem item_bu_item_map[]            @relation("item_bu_item_map_from_item_idToitem")
-  item_bu_item_map_item_bu_item_map_to_item_idToitem   item_bu_item_map[]            @relation("item_bu_item_map_to_item_idToitem")
+  uom                                                  uom                                  @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  uom_item_lot_storage_uom_idTouom                     uom?                                 @relation("item_lot_storage_uom_idTouom", fields: [lot_storage_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  item_bu_item_map_item_bu_item_map_from_item_idToitem item_bu_item_map[]                   @relation("item_bu_item_map_from_item_idToitem")
+  item_bu_item_map_item_bu_item_map_to_item_idToitem   item_bu_item_map[]                   @relation("item_bu_item_map_to_item_idToitem")
   item_external_code                                   item_external_code[]
   item_uom_conversion                                  item_uom_conversion[]
+  spare_part                                           spare_part[]
   bom                                                  bom[]
   bom_component                                        bom_component[]
   material_substitution_rule                           material_substitution_rule[]
@@ -1679,6 +1781,7 @@ model item_bu_item_map {
   item_item_bu_item_map_to_item_idToitem                              item          @relation("item_bu_item_map_to_item_idToitem", fields: [to_item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([from_business_unit_id, from_item_id, to_business_unit_id, effective_from], map: "uq_item_bu_item_map")
+  @@index([from_item_id], map: "ix_item_bu_item_map_from_item")
   @@schema("mdm")
 }
 
@@ -1729,6 +1832,7 @@ model legal_entity {
   updated_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by        BigInt?
   version_no        Int                 @default(1)
+  user_data_scope   user_data_scope[]
   inventory_balance inventory_balance[]
   business_unit     business_unit[]
   plant             plant[]
@@ -1757,6 +1861,7 @@ model location {
   updated_by                                                                        BigInt?
   version_no                                                                        Int                          @default(1)
   handling_unit                                                                     handling_unit[]
+  inventory_adjustment_line                                                         inventory_adjustment_line[]
   inventory_balance                                                                 inventory_balance[]
   inventory_count_line                                                              inventory_count_line[]
   inventory_reservation                                                             inventory_reservation[]
@@ -1771,9 +1876,11 @@ model location {
   putaway_task_putaway_task_actual_location_idTolocation                            putaway_task[]               @relation("putaway_task_actual_location_idTolocation")
   putaway_task_putaway_task_from_location_idTolocation                              putaway_task[]               @relation("putaway_task_from_location_idTolocation")
   putaway_task_putaway_task_recommended_location_idTolocation                       putaway_task[]               @relation("putaway_task_recommended_location_idTolocation")
+  recycle_entry                                                                     recycle_entry[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
   stock_transfer_line_stock_transfer_line_from_location_idTolocation                stock_transfer_line[]        @relation("stock_transfer_line_from_location_idTolocation")
   stock_transfer_line_stock_transfer_line_to_location_idTolocation                  stock_transfer_line[]        @relation("stock_transfer_line_to_location_idTolocation")
+  equipment                                                                         equipment[]
   uom                                                                               uom?                         @relation(fields: [capacity_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   parent_location                                                                   location?                    @relation("locationTolocation", fields: [parent_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   child_locations                                                                   location[]                   @relation("locationTolocation")
@@ -1785,6 +1892,7 @@ model location {
   work_order_work_order_default_fg_location_idTolocation                            work_order[]                 @relation("work_order_default_fg_location_idTolocation")
   work_order_work_order_default_scrap_location_idTolocation                         work_order[]                 @relation("work_order_default_scrap_location_idTolocation")
   work_order_work_order_default_wip_location_idTolocation                           work_order[]                 @relation("work_order_default_wip_location_idTolocation")
+  lot_status_event                                                                  lot_status_event[]
 
   @@unique([warehouse_id, location_code], map: "uq_location")
   @@index([parent_location_id], map: "ix_location_parent")
@@ -1793,25 +1901,27 @@ model location {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model mold {
-  mold_id               BigInt              @id @default(autoincrement())
-  plant_id              BigInt
-  mold_code             String              @db.VarChar(50)
-  mold_name             String              @db.VarChar(200)
-  cavity_count          Int                 @default(1)
-  guaranteed_shot_count BigInt?
-  current_shot_count    BigInt              @default(0)
-  status_code           String              @db.VarChar(50)
-  is_active             Boolean             @default(true)
-  created_at            DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by            BigInt?
-  updated_at            DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by            BigInt?
-  version_no            Int                 @default(1)
-  plant                 plant               @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  production_result     production_result[]
-  work_order            work_order[]
-  work_session          work_session[]
-  defect_record         defect_record[]
+  mold_id                        BigInt                           @id @default(autoincrement())
+  plant_id                       BigInt
+  mold_code                      String                           @db.VarChar(50)
+  mold_name                      String                           @db.VarChar(200)
+  cavity_count                   Int                              @default(1)
+  guaranteed_shot_count          BigInt?
+  current_shot_count             BigInt                           @default(0)
+  status_code                    String                           @db.VarChar(50)
+  is_active                      Boolean                          @default(true)
+  created_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  updated_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                     BigInt?
+  version_no                     Int                              @default(1)
+  tool_usage                     tool_usage[]
+  plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  production_result              production_result[]
+  work_order                     work_order[]
+  work_order_resource_assignment work_order_resource_assignment[]
+  work_session                   work_session[]
+  defect_record                  defect_record[]
 
   @@unique([plant_id, mold_code], map: "uq_mold")
   @@schema("mdm")
@@ -1879,6 +1989,7 @@ model plant {
   version_no            Int                     @default(1)
   numbering_rule        numbering_rule[]
   operation_policy      operation_policy[]
+  printer               printer[]
   user_data_scope       user_data_scope[]
   inventory_balance     inventory_balance[]
   inventory_transaction inventory_transaction[]
@@ -1886,7 +1997,9 @@ model plant {
   goods_receipt         goods_receipt[]
   inbound_receipt       inbound_receipt[]
   purchase_order        purchase_order[]
+  recycle_entry         recycle_entry[]
   equipment             equipment[]
+  equipment_group       equipment_group[]
   mold                  mold[]
   business_unit         business_unit?          @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   legal_entity          legal_entity            @relation(fields: [legal_entity_id], references: [legal_entity_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1894,6 +2007,7 @@ model plant {
   shift                 shift[]
   terminal              terminal[]
   warehouse             warehouse[]
+  work_calendar         work_calendar[]
   worker                worker[]
   production_order      production_order[]
   lot                   lot[]
@@ -1925,6 +2039,7 @@ model process {
   cause_code                                                 cause_code[]
   concession                                                 concession[]
   defect_code                                                defect_code[]
+  defect_code_process                                        defect_code_process[]
   defect_record_defect_record_detection_process_idToprocess  defect_record[]        @relation("defect_record_detection_process_idToprocess")
   defect_record_defect_record_occurrence_process_idToprocess defect_record[]        @relation("defect_record_occurrence_process_idToprocess")
   inspection_plan                                            inspection_plan[]
@@ -1946,6 +2061,7 @@ model production_line {
   updated_at             DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by             BigInt?
   version_no             Int               @default(1)
+  planned_stop           planned_stop[]
   equipment              equipment[]
   parent_production_line production_line?  @relation("production_lineToproduction_line", fields: [parent_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
   child_production_lines production_line[] @relation("production_lineToproduction_line")
@@ -1959,23 +2075,24 @@ model production_line {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model shift {
-  shift_id          BigInt              @id @default(autoincrement())
-  plant_id          BigInt
-  shift_code        String              @db.VarChar(50)
-  shift_name        String              @db.VarChar(200)
-  start_time        DateTime            @db.Time(6)
-  end_time          DateTime            @db.Time(6)
-  crosses_midnight  Boolean             @default(false)
-  is_active         Boolean             @default(true)
-  created_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by        BigInt?
-  updated_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by        BigInt?
-  version_no        Int                 @default(1)
-  plant             plant               @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  production_result production_result[]
-  work_order        work_order[]
-  work_session      work_session[]
+  shift_id                       BigInt                           @id @default(autoincrement())
+  plant_id                       BigInt
+  shift_code                     String                           @db.VarChar(50)
+  shift_name                     String                           @db.VarChar(200)
+  start_time                     DateTime                         @db.Time(6)
+  end_time                       DateTime                         @db.Time(6)
+  crosses_midnight               Boolean                          @default(false)
+  is_active                      Boolean                          @default(true)
+  created_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  updated_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                     BigInt?
+  version_no                     Int                              @default(1)
+  plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  production_result              production_result[]
+  work_order                     work_order[]
+  work_order_resource_assignment work_order_resource_assignment[]
+  work_session                   work_session[]
 
   @@unique([plant_id, shift_code], map: "uq_shift")
   @@schema("mdm")
@@ -2007,6 +2124,7 @@ model terminal {
   work_session_event   work_session_event[]
   inspection_result    inspection_result[]
 
+  @@index([location_id], map: "ix_terminal_location")
   @@schema("mdm")
 }
 
@@ -2033,17 +2151,19 @@ model terminal_process {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model uom {
-  uom_id                                                        BigInt                             @id @default(autoincrement())
-  uom_code                                                      String                             @unique @db.VarChar(50)
-  uom_name                                                      String                             @db.VarChar(200)
-  decimal_scale                                                 Int                                @default(0) @db.SmallInt
-  is_active                                                     Boolean                            @default(true)
-  created_at                                                    DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  uom_id                                                        BigInt                               @id @default(autoincrement())
+  uom_code                                                      String                               @unique @db.VarChar(50)
+  uom_name                                                      String                               @db.VarChar(200)
+  decimal_scale                                                 Int                                  @default(0) @db.SmallInt
+  is_active                                                     Boolean                              @default(true)
+  created_at                                                    DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                    BigInt?
-  updated_at                                                    DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                                                    DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                    BigInt?
-  version_no                                                    Int                                @default(1)
+  version_no                                                    Int                                  @default(1)
   handling_unit_content                                         handling_unit_content[]
+  handling_unit_reconfiguration_line                            handling_unit_reconfiguration_line[]
+  inventory_adjustment_line                                     inventory_adjustment_line[]
   inventory_balance                                             inventory_balance[]
   inventory_count_line                                          inventory_count_line[]
   inventory_reservation                                         inventory_reservation[]
@@ -2058,6 +2178,7 @@ model uom {
   purchase_order_line                                           purchase_order_line[]
   putaway_rule                                                  putaway_rule[]
   putaway_task                                                  putaway_task[]
+  recycle_entry                                                 recycle_entry[]
   sales_order_line                                              sales_order_line[]
   shipment_line                                                 shipment_line[]
   shipment_lot_allocation                                       shipment_lot_allocation[]
@@ -2066,16 +2187,20 @@ model uom {
   stock_transfer_line                                           stock_transfer_line[]
   subcontract_order                                             subcontract_order[]
   subcontract_reconciliation                                    subcontract_reconciliation[]
+  collection_channel                                            collection_channel[]
+  equipment_inspection_item                                     equipment_inspection_item[]
   item                                                          item[]
-  item_uom_conversion_item_uom_conversion_from_uom_idTouom      item_uom_conversion[]              @relation("item_uom_conversion_from_uom_idTouom")
-  item_uom_conversion_item_uom_conversion_to_uom_idTouom        item_uom_conversion[]              @relation("item_uom_conversion_to_uom_idTouom")
+  item_item_lot_storage_uom_idTouom                             item[]                               @relation("item_lot_storage_uom_idTouom")
+  item_uom_conversion_item_uom_conversion_from_uom_idTouom      item_uom_conversion[]                @relation("item_uom_conversion_from_uom_idTouom")
+  item_uom_conversion_item_uom_conversion_to_uom_idTouom        item_uom_conversion[]                @relation("item_uom_conversion_to_uom_idTouom")
   location                                                      location[]
+  spare_part                                                    spare_part[]
   bom                                                           bom[]
   bom_component                                                 bom_component[]
   production_order                                              production_order[]
   production_plan                                               production_plan[]
-  material_consumption_material_consumption_entered_uom_idTouom material_consumption[]             @relation("material_consumption_entered_uom_idTouom")
-  material_consumption_material_consumption_uom_idTouom         material_consumption[]             @relation("material_consumption_uom_idTouom")
+  material_consumption_material_consumption_entered_uom_idTouom material_consumption[]               @relation("material_consumption_entered_uom_idTouom")
+  material_consumption_material_consumption_uom_idTouom         material_consumption[]               @relation("material_consumption_uom_idTouom")
   material_loss                                                 material_loss[]
   material_return_line                                          material_return_line[]
   material_usage_allocation                                     material_usage_allocation[]
@@ -2090,6 +2215,7 @@ model uom {
   inspection_request                                            inspection_request[]
   inspection_result                                             inspection_result[]
   nonconformance_lot                                            nonconformance_lot[]
+  repair_result                                                 repair_result[]
   sorting_result                                                sorting_result[]
   lot                                                           lot[]
   lot_hold                                                      lot_hold[]
@@ -2132,6 +2258,7 @@ model warehouse {
   business_unit                                                                      business_unit                @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   partner                                                                            partner?                     @relation(fields: [partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   plant                                                                              plant                        @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse_layout                                                                   warehouse_layout[]
   material_return                                                                    material_return[]
 
   @@unique([plant_id, warehouse_code], map: "uq_warehouse")
@@ -2140,36 +2267,43 @@ model warehouse {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model worker {
-  worker_id            BigInt                 @id @default(autoincrement())
-  worker_no            String                 @unique @db.VarChar(50)
-  worker_name          String                 @db.VarChar(200)
-  business_unit_id     BigInt
-  plant_id             BigInt
-  department_id        BigInt?
-  app_user_id          BigInt?
-  status_code          String                 @db.VarChar(50)
-  is_active            Boolean                @default(true)
-  created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by           BigInt?
-  updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by           BigInt?
-  version_no           Int                    @default(1)
-  picking_order        picking_order[]
-  putaway_task         putaway_task[]
-  shipment             shipment[]
-  app_user             app_user?              @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  business_unit        business_unit          @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  department           department?            @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
-  plant                plant                  @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  worker_qualification worker_qualification[]
-  material_consumption material_consumption[]
-  production_result    production_result[]
-  work_order           work_order[]
-  work_session_worker  work_session_worker[]
-  defect_record        defect_record[]
-  inspection_result    inspection_result[]
-  sorting_result       sorting_result[]
+  worker_id                      BigInt                           @id @default(autoincrement())
+  worker_no                      String                           @unique @db.VarChar(50)
+  worker_name                    String                           @db.VarChar(200)
+  business_unit_id               BigInt
+  plant_id                       BigInt
+  department_id                  BigInt?
+  app_user_id                    BigInt?
+  status_code                    String                           @db.VarChar(50)
+  is_active                      Boolean                          @default(true)
+  created_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  updated_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                     BigInt?
+  version_no                     Int                              @default(1)
+  picking_order                  picking_order[]
+  putaway_task                   putaway_task[]
+  shipment                       shipment[]
+  equipment_inspection           equipment_inspection[]
+  maintenance_order              maintenance_order[]
+  maintenance_result             maintenance_result[]
+  tool_usage                     tool_usage[]
+  app_user                       app_user?                        @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  business_unit                  business_unit                    @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  department                     department?                      @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  worker_qualification           worker_qualification[]
+  material_consumption           material_consumption[]
+  production_result              production_result[]
+  work_order                     work_order[]
+  work_order_resource_assignment work_order_resource_assignment[]
+  work_session_worker            work_session_worker[]
+  defect_record                  defect_record[]
+  inspection_result              inspection_result[]
+  repair_result                  repair_result[]
+  sorting_result                 sorting_result[]
 
+  @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
 }
 
@@ -2214,6 +2348,7 @@ model bom {
   item            item              @relation(fields: [parent_item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   bom_component   bom_component[]
   production_plan production_plan[]
+  lot             lot[]
 
   @@unique([parent_item_id, bom_code, bom_version], map: "uq_bom")
   @@index([parent_item_id, status_code, effective_from(sort: Desc)], map: "ix_bom_parent_status")
@@ -2275,31 +2410,32 @@ model material_substitution_rule {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model production_order {
-  production_order_id        BigInt             @id @default(autoincrement())
-  production_order_no        String             @unique @db.VarChar(100)
-  erp_order_no               String?            @db.VarChar(100)
-  parent_production_order_id BigInt?
-  bom_level                  Int                @default(0) @db.SmallInt
-  business_unit_id           BigInt
-  plant_id                   BigInt
-  item_id                    BigInt
-  order_qty                  Decimal            @db.Decimal(20, 6)
-  uom_id                     BigInt
-  due_date                   DateTime?          @db.Date
-  status_code                String             @db.VarChar(50)
-  remarks                    String?
-  created_at                 DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by                 BigInt?
-  updated_at                 DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by                 BigInt?
-  version_no                 Int                @default(1)
-  business_unit              business_unit      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  item                       item               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  parent_production_order    production_order?  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
-  child_production_orders    production_order[] @relation("production_orderToproduction_order")
-  plant                      plant              @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                        uom                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  production_plan            production_plan[]
+  production_order_id              BigInt                             @id @default(autoincrement())
+  production_order_no              String                             @unique @db.VarChar(100)
+  erp_order_no                     String?                            @db.VarChar(100)
+  parent_production_order_id       BigInt?
+  bom_level                        Int                                @default(0) @db.SmallInt
+  business_unit_id                 BigInt
+  plant_id                         BigInt
+  item_id                          BigInt
+  order_qty                        Decimal                            @db.Decimal(20, 6)
+  uom_id                           BigInt
+  due_date                         DateTime?                          @db.Date
+  status_code                      String                             @db.VarChar(50)
+  remarks                          String?
+  created_at                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                       BigInt?
+  updated_at                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                       BigInt?
+  version_no                       Int                                @default(1)
+  business_unit                    business_unit                      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  item                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  parent_production_order          production_order?                  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
+  child_production_orders          production_order[]                 @relation("production_orderToproduction_order")
+  plant                            plant                              @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                              uom                                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  production_plan                  production_plan[]
+  production_order_acknowledgement production_order_acknowledgement[]
 
   @@schema("planning")
 }
@@ -2349,6 +2485,7 @@ model routing {
   updated_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by        BigInt?
   version_no        Int                 @default(1)
+  is_default        Boolean             @default(false)
   production_plan   production_plan[]
   item              item                @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   routing_operation routing_operation[]
@@ -2380,6 +2517,7 @@ model routing_operation {
   updated_at                                                                                            DateTime                       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                                                            BigInt?
   version_no                                                                                            Int                            @default(1)
+  is_subcontract                                                                                        Boolean                        @default(false)
   bom_component                                                                                         bom_component[]
   process                                                                                               process                        @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   routing                                                                                               routing                        @relation(fields: [routing_id], references: [routing_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2506,6 +2644,7 @@ model material_return {
   material_return_line     material_return_line[]
 
   @@index([destination_warehouse_id], map: "ix_material_return_destination_warehouse")
+  @@index([source_location_id], map: "ix_material_return_source_location")
   @@schema("production")
 }
 
@@ -2597,6 +2736,8 @@ model operation_handover_line {
   uom                                                                uom                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([operation_handover_id, line_no], map: "uq_operation_handover_line")
+  @@index([destination_location_id], map: "ix_operation_handover_line_destination_location")
+  @@index([source_location_id], map: "ix_operation_handover_line_source_location")
   @@schema("production")
 }
 
@@ -2671,78 +2812,86 @@ model production_result_lot_allocation {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model work_order {
-  work_order_id                                                                     BigInt                      @id @default(autoincrement())
-  work_order_no                                                                     String                      @unique @db.VarChar(100)
-  production_plan_id                                                                BigInt
+  work_order_id                                                                     BigInt                           @id @default(autoincrement())
+  work_order_no                                                                     String                           @unique @db.VarChar(100)
+  production_plan_id                                                                BigInt?
   routing_operation_id                                                              BigInt
   item_id                                                                           BigInt
-  order_qty                                                                         Decimal                     @db.Decimal(20, 6)
+  order_qty                                                                         Decimal                          @db.Decimal(20, 6)
   uom_id                                                                            BigInt
-  work_order_type_code                                                              String                      @default("NORMAL") @db.VarChar(50)
+  work_order_type_code                                                              String                           @default("NORMAL") @db.VarChar(50)
   parent_work_order_id                                                              BigInt?
   rework_source_work_order_id                                                       BigInt?
   rework_source_lot_id                                                              BigInt?
   rework_source_nonconformance_id                                                   BigInt?
   production_line_id                                                                BigInt?
   responsible_worker_id                                                             BigInt?
-  planned_start_at                                                                  DateTime?                   @db.Timestamptz(6)
-  planned_end_at                                                                    DateTime?                   @db.Timestamptz(6)
+  planned_start_at                                                                  DateTime?                        @db.Timestamptz(6)
+  planned_end_at                                                                    DateTime?                        @db.Timestamptz(6)
   planned_equipment_id                                                              BigInt?
   planned_mold_id                                                                   BigInt?
   planned_shift_id                                                                  BigInt?
-  priority_no                                                                       Int                         @default(100)
+  priority_no                                                                       Int                              @default(100)
   default_wip_location_id                                                           BigInt?
   default_fg_location_id                                                            BigInt?
   default_scrap_location_id                                                         BigInt?
   operation_settings_snapshot                                                       Json?
-  status_code                                                                       String                      @db.VarChar(50)
-  released_at                                                                       DateTime?                   @db.Timestamptz(6)
-  completed_at                                                                      DateTime?                   @db.Timestamptz(6)
-  completion_variance_reason_code                                                   String?                     @db.VarChar(50)
-  closed_at                                                                         DateTime?                   @db.Timestamptz(6)
+  status_code                                                                       String                           @db.VarChar(50)
+  released_at                                                                       DateTime?                        @db.Timestamptz(6)
+  completed_at                                                                      DateTime?                        @db.Timestamptz(6)
+  completion_variance_reason_code                                                   String?                          @db.VarChar(50)
+  closed_at                                                                         DateTime?                        @db.Timestamptz(6)
   remarks                                                                           String?
-  created_at                                                                        DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_at                                                                        DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                                        BigInt?
-  updated_at                                                                        DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                                                                        DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                                        BigInt?
-  version_no                                                                        Int                         @default(1)
+  version_no                                                                        Int                              @default(1)
+  close_disposition_code                                                            String?                          @db.VarChar(50)
+  cancellation_reason_code                                                          String?                          @db.VarChar(50)
   material_issue_request                                                            material_issue_request[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
   subcontract_order                                                                 subcontract_order[]
+  tool_usage                                                                        tool_usage[]
   material_consumption                                                              material_consumption[]
   material_loss                                                                     material_loss[]
   material_return                                                                   material_return[]
-  operation_handover_operation_handover_from_work_order_idTowork_order              operation_handover[]        @relation("operation_handover_from_work_order_idTowork_order")
-  operation_handover_operation_handover_to_work_order_idTowork_order                operation_handover[]        @relation("operation_handover_to_work_order_idTowork_order")
+  operation_handover_operation_handover_from_work_order_idTowork_order              operation_handover[]             @relation("operation_handover_from_work_order_idTowork_order")
+  operation_handover_operation_handover_to_work_order_idTowork_order                operation_handover[]             @relation("operation_handover_to_work_order_idTowork_order")
   production_result                                                                 production_result[]
-  lot                                                                               lot?                        @relation(fields: [rework_source_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_lot")
-  nonconformance_work_order_rework_source_nonconformance_idTononconformance         nonconformance?             @relation("work_order_rework_source_nonconformance_idTononconformance", fields: [rework_source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_nc")
-  location_work_order_default_fg_location_idTolocation                              location?                   @relation("work_order_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  location_work_order_default_scrap_location_idTolocation                           location?                   @relation("work_order_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  location_work_order_default_wip_location_idTolocation                             location?                   @relation("work_order_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  item                                                                              item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order_work_order_parent_work_order_idTowork_order                            work_order?                 @relation("work_order_parent_work_order_idTowork_order", fields: [parent_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
-  other_work_order_work_order_parent_work_order_idTowork_order                      work_order[]                @relation("work_order_parent_work_order_idTowork_order")
-  equipment                                                                         equipment?                  @relation(fields: [planned_equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
-  mold                                                                              mold?                       @relation(fields: [planned_mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
-  shift                                                                             shift?                      @relation(fields: [planned_shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
-  production_line                                                                   production_line?            @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
-  production_plan                                                                   production_plan             @relation(fields: [production_plan_id], references: [production_plan_id], onDelete: NoAction, onUpdate: NoAction)
-  worker                                                                            worker?                     @relation(fields: [responsible_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order_work_order_rework_source_work_order_idTowork_order                     work_order?                 @relation("work_order_rework_source_work_order_idTowork_order", fields: [rework_source_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
-  other_work_order_work_order_rework_source_work_order_idTowork_order               work_order[]                @relation("work_order_rework_source_work_order_idTowork_order")
-  routing_operation                                                                 routing_operation           @relation(fields: [routing_operation_id], references: [routing_operation_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                                                                               uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order_dependency_work_order_dependency_predecessor_work_order_idTowork_order work_order_dependency[]     @relation("work_order_dependency_predecessor_work_order_idTowork_order")
-  work_order_dependency_work_order_dependency_successor_work_order_idTowork_order   work_order_dependency[]     @relation("work_order_dependency_successor_work_order_idTowork_order")
+  lot                                                                               lot?                             @relation(fields: [rework_source_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_lot")
+  nonconformance_work_order_rework_source_nonconformance_idTononconformance         nonconformance?                  @relation("work_order_rework_source_nonconformance_idTononconformance", fields: [rework_source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_nc")
+  location_work_order_default_fg_location_idTolocation                              location?                        @relation("work_order_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  location_work_order_default_scrap_location_idTolocation                           location?                        @relation("work_order_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  location_work_order_default_wip_location_idTolocation                             location?                        @relation("work_order_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                                                              item                             @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order_work_order_parent_work_order_idTowork_order                            work_order?                      @relation("work_order_parent_work_order_idTowork_order", fields: [parent_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  other_work_order_work_order_parent_work_order_idTowork_order                      work_order[]                     @relation("work_order_parent_work_order_idTowork_order")
+  equipment                                                                         equipment?                       @relation(fields: [planned_equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                                                                              mold?                            @relation(fields: [planned_mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  shift                                                                             shift?                           @relation(fields: [planned_shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
+  production_line                                                                   production_line?                 @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
+  production_plan                                                                   production_plan?                 @relation(fields: [production_plan_id], references: [production_plan_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                                                                            worker?                          @relation(fields: [responsible_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order_work_order_rework_source_work_order_idTowork_order                     work_order?                      @relation("work_order_rework_source_work_order_idTowork_order", fields: [rework_source_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  other_work_order_work_order_rework_source_work_order_idTowork_order               work_order[]                     @relation("work_order_rework_source_work_order_idTowork_order")
+  routing_operation                                                                 routing_operation                @relation(fields: [routing_operation_id], references: [routing_operation_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                                                               uom                              @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order_dependency_work_order_dependency_predecessor_work_order_idTowork_order work_order_dependency[]          @relation("work_order_dependency_predecessor_work_order_idTowork_order")
+  work_order_dependency_work_order_dependency_successor_work_order_idTowork_order   work_order_dependency[]          @relation("work_order_dependency_successor_work_order_idTowork_order")
+  work_order_resource_assignment                                                    work_order_resource_assignment[]
   work_session                                                                      work_session[]
   concession                                                                        concession[]
   defect_record                                                                     defect_record[]
   inspection_request                                                                inspection_request[]
-  nonconformance_nonconformance_work_order_idTowork_order                           nonconformance[]            @relation("nonconformance_work_order_idTowork_order")
+  nonconformance_nonconformance_work_order_idTowork_order                           nonconformance[]                 @relation("nonconformance_work_order_idTowork_order")
+  repair_result                                                                     repair_result[]
   serial_component_relation                                                         serial_component_relation[]
 
   @@index([production_plan_id, routing_operation_id], map: "ix_work_order_plan")
+  @@index([default_fg_location_id], map: "ix_work_order_default_fg_location")
+  @@index([default_scrap_location_id], map: "ix_work_order_default_scrap_location")
+  @@index([default_wip_location_id], map: "ix_work_order_default_wip_location")
   @@schema("production")
 }
 
@@ -2886,20 +3035,22 @@ model concession {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model defect_code {
-  defect_code_id        BigInt          @id @default(autoincrement())
-  defect_code           String          @unique @db.VarChar(50)
-  defect_name           String          @db.VarChar(200)
+  defect_code_id        BigInt                @id @default(autoincrement())
+  defect_code           String                @unique @db.VarChar(50)
+  defect_name           String                @db.VarChar(200)
   parent_defect_code_id BigInt?
   process_id            BigInt?
-  is_active             Boolean         @default(true)
-  created_at            DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  is_active             Boolean               @default(true)
+  created_at            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by            BigInt?
-  updated_at            DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by            BigInt?
-  version_no            Int             @default(1)
-  parent_defect_code    defect_code?    @relation("defect_codeTodefect_code", fields: [parent_defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
-  child_defect_codes    defect_code[]   @relation("defect_codeTodefect_code")
-  process               process?        @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+  version_no            Int                   @default(1)
+  disposition_type_code String?               @db.VarChar(50)
+  parent_defect_code    defect_code?          @relation("defect_codeTodefect_code", fields: [parent_defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
+  child_defect_codes    defect_code[]         @relation("defect_codeTodefect_code")
+  process               process?              @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+  defect_code_process   defect_code_process[]
   defect_record         defect_record[]
 
   @@schema("quality")
@@ -2910,7 +3061,7 @@ model defect_record {
   defect_record_id                                             BigInt             @id @default(autoincrement())
   production_result_id                                         BigInt?
   inspection_result_id                                         BigInt?
-  work_order_id                                                BigInt
+  work_order_id                                                BigInt?
   lot_id                                                       BigInt?
   defect_code_id                                               BigInt
   suspected_cause_code_id                                      BigInt?
@@ -2929,6 +3080,11 @@ model defect_record {
   detected_at                                                  DateTime           @db.Timestamptz(6)
   created_at                                                   DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                   BigInt?
+  source_type_code                                             String?            @db.VarChar(50)
+  source_document_id                                           BigInt?
+  updated_at                                                   DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                                   BigInt?
+  version_no                                                   Int                @default(1)
   cause_code_defect_record_confirmed_cause_code_idTocause_code cause_code?        @relation("defect_record_confirmed_cause_code_idTocause_code", fields: [confirmed_cause_code_id], references: [cause_code_id], onDelete: NoAction, onUpdate: NoAction)
   defect_code                                                  defect_code        @relation(fields: [defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
   process_defect_record_detection_process_idToprocess          process            @relation("defect_record_detection_process_idToprocess", fields: [detection_process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2941,9 +3097,11 @@ model defect_record {
   department                                                   department?        @relation(fields: [responsible_department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
   cause_code_defect_record_suspected_cause_code_idTocause_code cause_code?        @relation("defect_record_suspected_cause_code_idTocause_code", fields: [suspected_cause_code_id], references: [cause_code_id], onDelete: NoAction, onUpdate: NoAction)
   uom                                                          uom                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order                                                   work_order         @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                                                   work_order?        @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   worker                                                       worker?            @relation(fields: [worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  repair_result                                                repair_result[]
 
+  @@index([responsible_department_id], map: "ix_defect_record_responsible_department")
   @@schema("quality")
 }
 
@@ -3054,6 +3212,9 @@ model inspection_plan {
   updated_at              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by              BigInt?
   version_no              Int                       @default(1)
+  pqc_skip_allowed        Boolean                   @default(false)
+  skip_reason_code        String?                   @db.VarChar(50)
+  simple_judgment_allowed Boolean                   @default(false)
   app_user                app_user?                 @relation(fields: [approved_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item?                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   process                 process?                  @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3084,6 +3245,7 @@ model inspection_plan_version {
   updated_at                  DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                  BigInt?
   version_no                  Int                    @default(1)
+  sampling_ratio              Decimal?               @db.Decimal(9, 6)
   inspection_item_spec        inspection_item_spec[]
   inspection_plan             inspection_plan        @relation(fields: [inspection_plan_id], references: [inspection_plan_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_request          inspection_request[]
@@ -3198,6 +3360,7 @@ model nonconformance {
   work_order_nonconformance_work_order_idTowork_order                   work_order?            @relation("nonconformance_work_order_idTowork_order", fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance_lot                                                    nonconformance_lot[]
 
+  @@index([responsible_department_id], map: "ix_nonconformance_responsible_department")
   @@schema("quality")
 }
 
@@ -3270,27 +3433,32 @@ model impact_analysis {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model lot {
-  lot_id                                           BigInt                             @id @default(autoincrement())
-  lot_no                                           String                             @db.VarChar(100)
+  lot_id                                           BigInt                               @id @default(autoincrement())
+  lot_no                                           String                               @db.VarChar(100)
   item_id                                          BigInt
-  lot_type_code                                    String                             @db.VarChar(50)
+  lot_type_code                                    String                               @db.VarChar(50)
   plant_id                                         BigInt
-  initial_qty                                      Decimal                            @db.Decimal(20, 6)
+  initial_qty                                      Decimal                              @db.Decimal(20, 6)
   uom_id                                           BigInt
-  manufactured_at                                  DateTime?                          @db.Timestamptz(6)
-  expiry_date                                      DateTime?                          @db.Date
-  source_type_code                                 String                             @db.VarChar(50)
+  manufactured_at                                  DateTime?                            @db.Timestamptz(6)
+  expiry_date                                      DateTime?                            @db.Date
+  source_type_code                                 String                               @db.VarChar(50)
   source_id                                        BigInt
-  status_code                                      String                             @default("ACTIVE") @db.VarChar(50)
+  status_code                                      String                               @default("ACTIVE") @db.VarChar(50)
   parent_lot_id                                    BigInt?
   remarks                                          String?
-  created_at                                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_at                                       DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                       BigInt?
-  updated_at                                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                                       DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                       BigInt?
-  version_no                                       Int                                @default(1)
+  version_no                                       Int                                  @default(1)
+  bom_id                                           BigInt?
+  bom_version                                      Int?
+  work_order_lot_seq                               Int?
   document_issue_log                               document_issue_log[]
   handling_unit_content                            handling_unit_content[]
+  handling_unit_reconfiguration_line               handling_unit_reconfiguration_line[]
+  inventory_adjustment_line                        inventory_adjustment_line[]
   inventory_balance                                inventory_balance[]
   inventory_count_line                             inventory_count_line[]
   inventory_reservation                            inventory_reservation[]
@@ -3299,6 +3467,7 @@ model lot {
   goods_receipt_line                               goods_receipt_line[]
   picking_line                                     picking_line[]
   putaway_task                                     putaway_task[]
+  recycle_entry                                    recycle_entry[]
   shipment_lot_allocation                          shipment_lot_allocation[]
   shopfloor_receipt_line                           shopfloor_receipt_line[]
   stock_transfer_line                              stock_transfer_line[]
@@ -3313,22 +3482,26 @@ model lot {
   defect_record                                    defect_record[]
   inspection_request                               inspection_request[]
   nonconformance_lot                               nonconformance_lot[]
-  sorting_result_sorting_result_defect_lot_idTolot sorting_result[]                   @relation("sorting_result_defect_lot_idTolot")
-  sorting_result_sorting_result_good_lot_idTolot   sorting_result[]                   @relation("sorting_result_good_lot_idTolot")
+  repair_result                                    repair_result[]
+  sorting_result_sorting_result_defect_lot_idTolot sorting_result[]                     @relation("sorting_result_defect_lot_idTolot")
+  sorting_result_sorting_result_good_lot_idTolot   sorting_result[]                     @relation("sorting_result_good_lot_idTolot")
   impact_analysis                                  impact_analysis[]
-  item                                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  parent_lot                                       lot?                               @relation("lotTolot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
-  child_lots                                       lot[]                              @relation("lotTolot")
-  plant                                            plant                              @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                                              uom                                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  bom                                              bom?                                 @relation(fields: [bom_id], references: [bom_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                             item                                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  parent_lot                                       lot?                                 @relation("lotTolot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  child_lots                                       lot[]                                @relation("lotTolot")
+  plant                                            plant                                @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                              uom                                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   lot_external_identifier                          lot_external_identifier[]
   lot_hold                                         lot_hold[]
-  lot_relation_lot_relation_source_lot_idTolot     lot_relation[]                     @relation("lot_relation_source_lot_idTolot")
-  lot_relation_lot_relation_target_lot_idTolot     lot_relation[]                     @relation("lot_relation_target_lot_idTolot")
+  lot_relation_lot_relation_source_lot_idTolot     lot_relation[]                       @relation("lot_relation_source_lot_idTolot")
+  lot_relation_lot_relation_target_lot_idTolot     lot_relation[]                       @relation("lot_relation_target_lot_idTolot")
+  lot_status_event                                 lot_status_event[]
   serial_number                                    serial_number[]
 
   @@unique([plant_id, lot_no], map: "uq_lot")
   @@index([item_id, created_at(sort: Desc)], map: "ix_lot_item")
+  @@index([bom_id], map: "ix_lot_bom")
   @@schema("trace")
 }
 
@@ -3364,6 +3537,7 @@ model lot_hold {
   remarks                                 String?
   created_at                              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                              BigInt?
+  release_reason_code                     String?   @db.VarChar(50)
   app_user_lot_hold_held_byToapp_user     app_user? @relation("lot_hold_held_byToapp_user", fields: [held_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                     lot       @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_lot_hold_released_byToapp_user app_user? @relation("lot_hold_released_byToapp_user", fields: [released_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3473,4 +3647,847 @@ model idempotency_record {
 
   @@index([expires_at], map: "ix_idempotency_expires")
   @@schema("app")
+}
+
+model document_cancellation {
+  document_cancellation_id BigInt   @id @default(autoincrement())
+  document_type_code       String   @db.VarChar(50)
+  document_id              BigInt
+  previous_status_code     String?  @db.VarChar(50)
+  reason_code              String   @db.VarChar(50)
+  reason_detail            String?
+  cancelled_at             DateTime @db.Timestamptz(6)
+  cancelled_by             BigInt
+  created_at               DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  app_user                 app_user @relation(fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([document_type_code, document_id, cancelled_at(sort: Desc)], map: "ix_document_cancellation_target")
+  @@schema("app")
+}
+
+model entity_type_registry {
+  entity_type_code  String              @id @db.VarChar(50)
+  schema_name       String              @db.VarChar(63)
+  table_name        String              @db.VarChar(63)
+  id_column_name    String              @db.VarChar(63)
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by        BigInt?
+  localized_text    localized_text[]
+  record_provenance record_provenance[]
+
+  @@unique([schema_name, table_name], map: "uq_entity_type_table")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model localized_text {
+  localized_text_id    BigInt               @id @default(autoincrement())
+  entity_type_code     String               @db.VarChar(50)
+  entity_id            BigInt
+  field_code           String               @db.VarChar(50)
+  language_code        String               @db.VarChar(10)
+  localized_value      String
+  created_at           DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by           BigInt?
+  updated_at           DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by           BigInt?
+  version_no           Int                  @default(1)
+  entity_type_registry entity_type_registry @relation(fields: [entity_type_code], references: [entity_type_code], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([entity_type_code, entity_id, field_code, language_code], map: "uq_localized_text")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model notice {
+  notice_id                              BigInt                   @id @default(autoincrement())
+  notice_no                              String                   @unique @db.VarChar(100)
+  title                                  String                   @db.VarChar(300)
+  content                                String
+  audience_scope                         Json                     @default("{}")
+  status_code                            String                   @default("DRAFT") @db.VarChar(50)
+  published_at                           DateTime?                @db.Timestamptz(6)
+  published_by                           BigInt?
+  closed_at                              DateTime?                @db.Timestamptz(6)
+  closed_by                              BigInt?
+  created_at                             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                             BigInt?
+  updated_at                             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                             BigInt?
+  version_no                             Int                      @default(1)
+  app_user_notice_closed_byToapp_user    app_user?                @relation("notice_closed_byToapp_user", fields: [closed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_notice_published_byToapp_user app_user?                @relation("notice_published_byToapp_user", fields: [published_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  notice_acknowledgement                 notice_acknowledgement[]
+
+  @@schema("app")
+}
+
+model notice_acknowledgement {
+  notice_acknowledgement_id BigInt   @id @default(autoincrement())
+  notice_id                 BigInt
+  app_user_id               BigInt
+  acknowledged_at           DateTime @db.Timestamptz(6)
+  created_at                DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  app_user                  app_user @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  notice                    notice   @relation(fields: [notice_id], references: [notice_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([notice_id, app_user_id], map: "uq_notice_acknowledgement")
+  @@schema("app")
+}
+
+model notification {
+  notification_id       BigInt             @id @default(autoincrement())
+  notification_event_id BigInt
+  recipient_user_id     BigInt
+  title                 String             @db.VarChar(300)
+  message               String
+  read_at               DateTime?          @db.Timestamptz(6)
+  created_at            DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  notification_event    notification_event @relation(fields: [notification_event_id], references: [notification_event_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user              app_user           @relation(fields: [recipient_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([notification_event_id, recipient_user_id], map: "uq_notification_recipient")
+  @@schema("app")
+}
+
+model notification_event {
+  notification_event_id BigInt         @id @default(autoincrement())
+  event_type_code       String         @db.VarChar(50)
+  aggregate_type_code   String         @db.VarChar(50)
+  aggregate_id          BigInt
+  occurred_at           DateTime       @db.Timestamptz(6)
+  payload               Json           @default("{}")
+  created_at            DateTime       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  notification          notification[]
+
+  @@unique([event_type_code, aggregate_type_code, aggregate_id, occurred_at], map: "uq_notification_event")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model notification_subscription {
+  notification_subscription_id BigInt   @id @default(autoincrement())
+  app_user_id                  BigInt
+  event_type_code              String   @db.VarChar(50)
+  channel_code                 String   @db.VarChar(50)
+  is_enabled                   Boolean  @default(true)
+  created_at                   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  version_no                   Int      @default(1)
+  app_user                     app_user @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([app_user_id, event_type_code, channel_code], map: "uq_notification_subscription")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model printer {
+  printer_id        BigInt   @id @default(autoincrement())
+  plant_id          BigInt
+  printer_code      String   @db.VarChar(50)
+  printer_name      String   @db.VarChar(200)
+  printer_type_code String   @db.VarChar(50)
+  connection_uri    String
+  dpi               Int?
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by        BigInt?
+  updated_at        DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by        BigInt?
+  version_no        Int      @default(1)
+  plant             plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([plant_id, printer_code], map: "uq_printer")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model worker_lease {
+  worker_lease_id    BigInt    @id @default(autoincrement())
+  resource_type_code String    @db.VarChar(50)
+  resource_id        BigInt
+  owner_user_id      BigInt
+  lease_token        String    @unique @db.Uuid
+  acquired_at        DateTime  @db.Timestamptz(6)
+  expires_at         DateTime  @db.Timestamptz(6)
+  released_at        DateTime? @db.Timestamptz(6)
+  app_user           app_user  @relation(fields: [owner_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model interface_definition {
+  interface_definition_id BigInt                  @id @default(autoincrement())
+  interface_code          String                  @unique @db.VarChar(50)
+  interface_name          String                  @db.VarChar(200)
+  direction_code          String                  @db.VarChar(50)
+  transport_code          String                  @db.VarChar(50)
+  endpoint_uri            String?
+  message_schema          Json?
+  retry_policy            Json                    @default("{}")
+  is_active               Boolean                 @default(true)
+  created_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by              BigInt?
+  updated_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by              BigInt?
+  version_no              Int                     @default(1)
+  outbound_item_setting   outbound_item_setting[]
+
+  @@schema("integration")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model outbound_item_setting {
+  outbound_item_setting_id BigInt               @id @default(autoincrement())
+  interface_definition_id  BigInt
+  item_id                  BigInt
+  is_enabled               Boolean              @default(true)
+  effective_from           DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  effective_to             DateTime?            @db.Timestamptz(6)
+  created_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by               BigInt?
+  interface_definition     interface_definition @relation(fields: [interface_definition_id], references: [interface_definition_id], onDelete: NoAction, onUpdate: NoAction)
+  item                     item                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([interface_definition_id, item_id, effective_from], map: "uq_outbound_item_setting")
+  @@schema("integration")
+}
+
+model record_provenance {
+  record_provenance_id   BigInt               @id @default(autoincrement())
+  entity_type_code       String               @db.VarChar(50)
+  entity_id              BigInt
+  source_system_code     String               @db.VarChar(50)
+  source_record_key      String?              @db.VarChar(300)
+  received_at            DateTime             @db.Timestamptz(6)
+  integration_message_id BigInt?
+  attributes             Json                 @default("{}")
+  entity_type_registry   entity_type_registry @relation(fields: [entity_type_code], references: [entity_type_code], onDelete: NoAction, onUpdate: NoAction)
+  integration_message    integration_message? @relation(fields: [integration_message_id], references: [integration_message_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([entity_type_code, entity_id, source_system_code], map: "uq_record_provenance")
+  @@index([integration_message_id], map: "ix_record_provenance_message")
+  @@schema("integration")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model handling_unit_reconfiguration {
+  handling_unit_reconfiguration_id                                                   BigInt                               @id @default(autoincrement())
+  reconfiguration_no                                                                 String                               @unique @db.VarChar(100)
+  reconfiguration_type_code                                                          String                               @db.VarChar(50)
+  source_handling_unit_id                                                            BigInt
+  target_handling_unit_id                                                            BigInt
+  reason_code                                                                        String                               @db.VarChar(50)
+  performed_at                                                                       DateTime                             @db.Timestamptz(6)
+  performed_by                                                                       BigInt?
+  created_at                                                                         DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  app_user                                                                           app_user?                            @relation(fields: [performed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  handling_unit_handling_unit_reconfiguration_source_handling_unit_idTohandling_unit handling_unit                        @relation("handling_unit_reconfiguration_source_handling_unit_idTohandling_unit", fields: [source_handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  handling_unit_handling_unit_reconfiguration_target_handling_unit_idTohandling_unit handling_unit                        @relation("handling_unit_reconfiguration_target_handling_unit_idTohandling_unit", fields: [target_handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  handling_unit_reconfiguration_line                                                 handling_unit_reconfiguration_line[]
+
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model handling_unit_reconfiguration_line {
+  handling_unit_reconfiguration_line_id BigInt                        @id @default(autoincrement())
+  handling_unit_reconfiguration_id      BigInt
+  line_no                               Int
+  item_id                               BigInt
+  lot_id                                BigInt
+  moved_qty                             Decimal                       @db.Decimal(20, 6)
+  uom_id                                BigInt
+  created_at                            DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  handling_unit_reconfiguration         handling_unit_reconfiguration @relation(fields: [handling_unit_reconfiguration_id], references: [handling_unit_reconfiguration_id], onDelete: NoAction, onUpdate: NoAction, map: "handling_unit_reconfiguration_handling_unit_reconfiguratio_fkey")
+  item                                  item                          @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                                   lot                           @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                   uom                           @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([handling_unit_reconfiguration_id, line_no], map: "uq_handling_unit_reconfiguration_line")
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventory_adjustment_line {
+  inventory_adjustment_line_id  BigInt                      @id @default(autoincrement())
+  inventory_adjustment_id       BigInt
+  line_no                       Int
+  location_id                   BigInt
+  item_id                       BigInt
+  lot_id                        BigInt?
+  quality_status_code           String                      @db.VarChar(50)
+  inventory_status_code         String                      @db.VarChar(50)
+  adjustment_qty                Decimal                     @db.Decimal(20, 6)
+  uom_id                        BigInt
+  reason_code                   String                      @db.VarChar(50)
+  inventory_transaction_line_id BigInt?
+  created_at                    DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                    BigInt?
+  inventory_adjustment          inventory_adjustment        @relation(fields: [inventory_adjustment_id], references: [inventory_adjustment_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_transaction_line    inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
+  item                          item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  location                      location                    @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                           lot?                        @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                           uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inventory_adjustment_id, line_no], map: "uq_inventory_adjustment_line")
+  @@index([inventory_adjustment_id], map: "ix_inventory_adjustment_line_header")
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recycle_entry {
+  recycle_entry_id          BigInt    @id @default(autoincrement())
+  recycle_entry_no          String    @unique @db.VarChar(100)
+  plant_id                  BigInt
+  item_id                   BigInt
+  lot_id                    BigInt?
+  source_document_type_code String    @db.VarChar(50)
+  source_document_id        BigInt
+  recycle_type_code         String    @db.VarChar(50)
+  recycle_qty               Decimal   @db.Decimal(20, 6)
+  uom_id                    BigInt
+  destination_location_id   BigInt?
+  status_code               String    @db.VarChar(50)
+  processed_at              DateTime? @db.Timestamptz(6)
+  created_at                DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int       @default(1)
+  location                  location? @relation(fields: [destination_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  item                      item      @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                       lot?      @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                     plant     @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                       uom       @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([source_document_type_code, source_document_id], map: "ix_recycle_entry_source")
+  @@schema("logistics")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model breakdown {
+  breakdown_id       BigInt               @id @default(autoincrement())
+  breakdown_no       String               @unique @db.VarChar(100)
+  equipment_id       BigInt
+  reported_at        DateTime             @db.Timestamptz(6)
+  reported_by        BigInt?
+  symptom_code       String?              @db.VarChar(50)
+  description        String
+  severity_code      String               @db.VarChar(50)
+  status_code        String               @db.VarChar(50)
+  started_at         DateTime?            @db.Timestamptz(6)
+  completed_at       DateTime?            @db.Timestamptz(6)
+  root_cause         String?
+  created_at         DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by         BigInt?
+  updated_at         DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by         BigInt?
+  version_no         Int                  @default(1)
+  equipment          equipment            @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user           app_user?            @relation(fields: [reported_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_downtime equipment_downtime[]
+  maintenance_order  maintenance_order[]
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model collection_channel {
+  collection_channel_id   BigInt                   @id @default(autoincrement())
+  equipment_id            BigInt
+  channel_code            String                   @db.VarChar(50)
+  channel_name            String                   @db.VarChar(200)
+  data_type_code          String                   @db.VarChar(50)
+  uom_id                  BigInt?
+  collection_interval_sec Int?
+  lower_limit             Decimal?                 @db.Decimal(20, 6)
+  upper_limit             Decimal?                 @db.Decimal(20, 6)
+  is_active               Boolean                  @default(true)
+  created_at              DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by              BigInt?
+  updated_at              DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by              BigInt?
+  version_no              Int                      @default(1)
+  equipment               equipment                @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                     uom?                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  collection_observation  collection_observation[]
+
+  @@unique([equipment_id, channel_code], map: "uq_collection_channel")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model collection_observation {
+  collection_observation_id BigInt             @id @default(autoincrement())
+  collection_channel_id     BigInt
+  observed_at               DateTime           @db.Timestamptz(6)
+  numeric_value             Decimal?           @db.Decimal(20, 6)
+  text_value                String?
+  boolean_value             Boolean?
+  quality_code              String?            @db.VarChar(50)
+  source_message_id         String?            @db.VarChar(200)
+  created_at                DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  collection_channel        collection_channel @relation(fields: [collection_channel_id], references: [collection_channel_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([collection_channel_id, observed_at, source_message_id], map: "uq_collection_observation")
+  @@index([collection_channel_id, observed_at(sort: Desc)], map: "ix_collection_observation_channel_time")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_downtime {
+  equipment_downtime_id BigInt     @id @default(autoincrement())
+  equipment_id          BigInt
+  breakdown_id          BigInt?
+  downtime_type_code    String     @db.VarChar(50)
+  started_at            DateTime   @db.Timestamptz(6)
+  ended_at              DateTime?  @db.Timestamptz(6)
+  reason_code           String?    @db.VarChar(50)
+  closed_by             BigInt?
+  created_at            DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  breakdown             breakdown? @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user              app_user?  @relation(fields: [closed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment             equipment  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_inspection {
+  equipment_inspection_id     BigInt                        @id @default(autoincrement())
+  inspection_no               String                        @unique @db.VarChar(100)
+  equipment_id                BigInt
+  inspection_type_code        String                        @db.VarChar(50)
+  scheduled_at                DateTime?                     @db.Timestamptz(6)
+  inspected_at                DateTime?                     @db.Timestamptz(6)
+  inspected_by                BigInt?
+  judgment_code               String?                       @db.VarChar(50)
+  status_code                 String                        @db.VarChar(50)
+  remarks                     String?
+  created_at                  DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                  BigInt?
+  updated_at                  DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                  BigInt?
+  version_no                  Int                           @default(1)
+  equipment                   equipment                     @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                      worker?                       @relation(fields: [inspected_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_inspection_result equipment_inspection_result[]
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_inspection_result {
+  equipment_inspection_result_id BigInt                    @id @default(autoincrement())
+  equipment_inspection_id        BigInt
+  equipment_inspection_item_id   BigInt
+  numeric_value                  Decimal?                  @db.Decimal(20, 6)
+  text_value                     String?
+  boolean_value                  Boolean?
+  judgment_code                  String                    @db.VarChar(50)
+  remarks                        String?
+  created_at                     DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  equipment_inspection           equipment_inspection      @relation(fields: [equipment_inspection_id], references: [equipment_inspection_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_inspection_item      equipment_inspection_item @relation(fields: [equipment_inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([equipment_inspection_id, equipment_inspection_item_id], map: "uq_equipment_inspection_result")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model maintenance_order {
+  maintenance_order_id     BigInt               @id @default(autoincrement())
+  maintenance_order_no     String               @unique @db.VarChar(100)
+  equipment_id             BigInt
+  breakdown_id             BigInt?
+  order_type_code          String               @db.VarChar(50)
+  priority_code            String               @db.VarChar(50)
+  scheduled_start_at       DateTime?            @db.Timestamptz(6)
+  scheduled_end_at         DateTime?            @db.Timestamptz(6)
+  assigned_worker_id       BigInt?
+  status_code              String               @db.VarChar(50)
+  cancellation_reason_code String?              @db.VarChar(50)
+  created_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by               BigInt?
+  updated_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by               BigInt?
+  version_no               Int                  @default(1)
+  worker                   worker?              @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  breakdown                breakdown?           @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                equipment            @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_result       maintenance_result[]
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model maintenance_result {
+  maintenance_result_id BigInt            @id @default(autoincrement())
+  maintenance_order_id  BigInt
+  result_seq            Int
+  action_code           String            @db.VarChar(50)
+  action_description    String
+  started_at            DateTime          @db.Timestamptz(6)
+  completed_at          DateTime          @db.Timestamptz(6)
+  performed_by          BigInt?
+  result_code           String            @db.VarChar(50)
+  created_at            DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  maintenance_order     maintenance_order @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                worker?           @relation(fields: [performed_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([maintenance_order_id, result_seq], map: "uq_maintenance_result")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model planned_stop {
+  planned_stop_id    BigInt           @id @default(autoincrement())
+  equipment_id       BigInt?
+  production_line_id BigInt?
+  stop_type_code     String           @db.VarChar(50)
+  planned_start_at   DateTime         @db.Timestamptz(6)
+  planned_end_at     DateTime         @db.Timestamptz(6)
+  reason             String?
+  created_at         DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by         BigInt?
+  updated_at         DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by         BigInt?
+  version_no         Int              @default(1)
+  equipment          equipment?       @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  production_line    production_line? @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tool_usage {
+  tool_usage_id   BigInt      @id @default(autoincrement())
+  mold_id         BigInt
+  equipment_id    BigInt?
+  work_order_id   BigInt?
+  usage_type_code String      @db.VarChar(50)
+  shot_count      BigInt?
+  used_from       DateTime    @db.Timestamptz(6)
+  used_to         DateTime?   @db.Timestamptz(6)
+  recorded_by     BigInt?
+  created_at      DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  equipment       equipment?  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold            mold        @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  worker          worker?     @relation(fields: [recorded_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order      work_order? @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_group {
+  equipment_group_id              BigInt                            @id @default(autoincrement())
+  plant_id                        BigInt
+  equipment_group_code            String                            @db.VarChar(50)
+  equipment_group_name            String                            @db.VarChar(200)
+  is_active                       Boolean                           @default(true)
+  created_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                      BigInt?
+  updated_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                      BigInt?
+  version_no                      Int                               @default(1)
+  plant                           plant                             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_group_inspection_item equipment_group_inspection_item[]
+  equipment_group_member          equipment_group_member[]
+
+  @@unique([plant_id, equipment_group_code], map: "uq_equipment_group")
+  @@schema("mdm")
+}
+
+model equipment_group_inspection_item {
+  equipment_group_inspection_item_id BigInt                    @id @default(autoincrement())
+  equipment_group_id                 BigInt
+  equipment_inspection_item_id       BigInt
+  display_order                      Int                       @default(100)
+  is_required_override               Boolean?
+  created_at                         DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                         BigInt?
+  equipment_inspection_item          equipment_inspection_item @relation(fields: [equipment_inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction, map: "equipment_group_inspection_it_equipment_inspection_item_id_fkey")
+  equipment_group                    equipment_group           @relation(fields: [equipment_group_id], references: [equipment_group_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([equipment_group_id, equipment_inspection_item_id], map: "uq_equipment_group_inspection_item")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_group_member {
+  equipment_group_member_id BigInt          @id @default(autoincrement())
+  equipment_group_id        BigInt
+  equipment_id              BigInt
+  effective_from            DateTime        @db.Date
+  effective_to              DateTime?       @db.Date
+  created_at                DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  equipment_group           equipment_group @relation(fields: [equipment_group_id], references: [equipment_group_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                 equipment       @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([equipment_group_id, equipment_id, effective_from], map: "uq_equipment_group_member")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model equipment_inspection_item {
+  equipment_inspection_item_id         BigInt                                 @id @default(autoincrement())
+  inspection_item_code                 String                                 @unique @db.VarChar(50)
+  inspection_item_name                 String                                 @db.VarChar(200)
+  data_type_code                       String                                 @db.VarChar(50)
+  uom_id                               BigInt?
+  lower_limit                          Decimal?                               @db.Decimal(20, 6)
+  upper_limit                          Decimal?                               @db.Decimal(20, 6)
+  is_required                          Boolean                                @default(true)
+  is_active                            Boolean                                @default(true)
+  created_at                           DateTime                               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                           BigInt?
+  updated_at                           DateTime                               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                           BigInt?
+  version_no                           Int                                    @default(1)
+  equipment_inspection_result          equipment_inspection_result[]
+  equipment_group_inspection_item      equipment_group_inspection_item[]
+  uom                                  uom?                                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_inspection_item_assignment equipment_inspection_item_assignment[]
+
+  @@schema("mdm")
+}
+
+model equipment_inspection_item_assignment {
+  equipment_inspection_item_assignment_id BigInt                    @id @default(autoincrement())
+  equipment_id                            BigInt
+  equipment_inspection_item_id            BigInt
+  display_order                           Int                       @default(100)
+  is_required_override                    Boolean?
+  created_at                              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                              BigInt?
+  equipment_inspection_item               equipment_inspection_item @relation(fields: [equipment_inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction, map: "equipment_inspection_item_ass_equipment_inspection_item_id_fkey")
+  equipment                               equipment                 @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([equipment_id, equipment_inspection_item_id], map: "uq_equipment_inspection_item_assignment")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model spare_part {
+  spare_part_id        BigInt                 @id @default(autoincrement())
+  spare_part_code      String                 @unique @db.VarChar(50)
+  spare_part_name      String                 @db.VarChar(200)
+  item_id              BigInt?
+  base_uom_id          BigInt
+  minimum_stock_qty    Decimal?               @db.Decimal(20, 6)
+  is_active            Boolean                @default(true)
+  created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by           BigInt?
+  updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by           BigInt?
+  version_no           Int                    @default(1)
+  uom                  uom                    @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  item                 item?                  @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  spare_part_equipment spare_part_equipment[]
+
+  @@schema("mdm")
+}
+
+model spare_part_equipment {
+  spare_part_equipment_id BigInt     @id @default(autoincrement())
+  spare_part_id           BigInt
+  equipment_id            BigInt
+  recommended_qty         Decimal?   @db.Decimal(20, 6)
+  created_at              DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by              BigInt?
+  equipment               equipment  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  spare_part              spare_part @relation(fields: [spare_part_id], references: [spare_part_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([spare_part_id, equipment_id], map: "uq_spare_part_equipment")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model warehouse_layout {
+  warehouse_layout_id BigInt    @id @default(autoincrement())
+  warehouse_id        BigInt
+  layout_version      Int
+  layout_data         Json
+  status_code         String    @default("DRAFT") @db.VarChar(50)
+  effective_from      DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by          BigInt?
+  updated_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by          BigInt?
+  version_no          Int       @default(1)
+  warehouse           warehouse @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([warehouse_id, layout_version], map: "uq_warehouse_layout")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model work_calendar {
+  work_calendar_id          BigInt                      @id @default(autoincrement())
+  plant_id                  BigInt
+  calendar_code             String                      @db.VarChar(50)
+  calendar_name             String                      @db.VarChar(200)
+  timezone_name             String                      @db.VarChar(100)
+  is_active                 Boolean                     @default(true)
+  created_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int                         @default(1)
+  plant                     plant                       @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  work_calendar_application work_calendar_application[]
+  work_calendar_day         work_calendar_day[]
+
+  @@unique([plant_id, calendar_code], map: "uq_work_calendar")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model work_calendar_application {
+  work_calendar_application_id BigInt        @id @default(autoincrement())
+  work_calendar_id             BigInt
+  target_type_code             String        @db.VarChar(50)
+  target_id                    BigInt
+  effective_from               DateTime      @db.Date
+  effective_to                 DateTime?     @db.Date
+  created_at                   DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                   BigInt?
+  work_calendar                work_calendar @relation(fields: [work_calendar_id], references: [work_calendar_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([work_calendar_id, target_type_code, target_id, effective_from], map: "uq_work_calendar_application")
+  @@schema("mdm")
+}
+
+model work_calendar_day {
+  work_calendar_day_id BigInt        @id @default(autoincrement())
+  work_calendar_id     BigInt
+  calendar_date        DateTime      @db.Date
+  day_type_code        String        @db.VarChar(50)
+  work_start_time      DateTime?     @db.Time(6)
+  work_end_time        DateTime?     @db.Time(6)
+  remarks              String?
+  created_at           DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by           BigInt?
+  work_calendar        work_calendar @relation(fields: [work_calendar_id], references: [work_calendar_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([work_calendar_id, calendar_date], map: "uq_work_calendar_day")
+  @@schema("mdm")
+}
+
+model production_order_acknowledgement {
+  production_order_acknowledgement_id BigInt               @id @default(autoincrement())
+  production_order_id                 BigInt
+  acknowledgement_type_code           String               @db.VarChar(50)
+  upstream_version                    String?              @db.VarChar(100)
+  received_at                         DateTime             @db.Timestamptz(6)
+  acknowledged_at                     DateTime?            @db.Timestamptz(6)
+  status_code                         String               @db.VarChar(50)
+  details                             Json                 @default("{}")
+  integration_message_id              BigInt?
+  integration_message                 integration_message? @relation(fields: [integration_message_id], references: [integration_message_id], onDelete: NoAction, onUpdate: NoAction)
+  production_order                    production_order     @relation(fields: [production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([production_order_id, acknowledgement_type_code, received_at], map: "uq_production_order_ack")
+  @@schema("production")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model work_order_resource_assignment {
+  work_order_resource_assignment_id BigInt     @id @default(autoincrement())
+  work_order_id                     BigInt
+  resource_type_code                String     @db.VarChar(50)
+  equipment_id                      BigInt?
+  mold_id                           BigInt?
+  worker_id                         BigInt?
+  shift_id                          BigInt?
+  planned_start_at                  DateTime?  @db.Timestamptz(6)
+  planned_end_at                    DateTime?  @db.Timestamptz(6)
+  assignment_status_code            String     @default("PLANNED") @db.VarChar(50)
+  created_at                        DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                        BigInt?
+  updated_at                        DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                        BigInt?
+  version_no                        Int        @default(1)
+  equipment                         equipment? @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                              mold?      @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  shift                             shift?     @relation(fields: [shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                        work_order @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                            worker?    @relation(fields: [worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([work_order_id, resource_type_code], map: "ix_work_order_resource_assignment")
+  @@schema("production")
+}
+
+model defect_code_process {
+  defect_code_process_id BigInt      @id @default(autoincrement())
+  defect_code_id         BigInt
+  process_id             BigInt
+  is_primary             Boolean     @default(false)
+  created_at             DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by             BigInt?
+  defect_code            defect_code @relation(fields: [defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
+  process                process     @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([defect_code_id, process_id], map: "uq_defect_code_process")
+  @@schema("quality")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model repair_result {
+  repair_result_id BigInt        @id @default(autoincrement())
+  repair_result_no String        @unique @db.VarChar(100)
+  defect_record_id BigInt
+  work_order_id    BigInt?
+  lot_id           BigInt?
+  repair_type_code String        @db.VarChar(50)
+  repair_qty       Decimal       @db.Decimal(20, 6)
+  uom_id           BigInt
+  result_code      String        @db.VarChar(50)
+  repaired_at      DateTime      @db.Timestamptz(6)
+  repaired_by      BigInt?
+  remarks          String?
+  created_at       DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by       BigInt?
+  updated_at       DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by       BigInt?
+  version_no       Int           @default(1)
+  defect_record    defect_record @relation(fields: [defect_record_id], references: [defect_record_id], onDelete: NoAction, onUpdate: NoAction)
+  lot              lot?          @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  worker           worker?       @relation(fields: [repaired_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  uom              uom           @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order       work_order?   @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([defect_record_id], map: "ix_repair_result_defect")
+  @@schema("quality")
+}
+
+model lot_status_event {
+  lot_status_event_id       BigInt    @id @default(autoincrement())
+  lot_id                    BigInt
+  location_id               BigInt?
+  quality_status_code       String?   @db.VarChar(50)
+  inventory_status_code     String?   @db.VarChar(50)
+  previous_status_code      String?   @db.VarChar(50)
+  new_status_code           String    @db.VarChar(50)
+  reason_code               String?   @db.VarChar(50)
+  source_document_type_code String    @db.VarChar(50)
+  source_document_id        BigInt
+  changed_at                DateTime  @db.Timestamptz(6)
+  changed_by                BigInt?
+  created_at                DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  app_user                  app_user? @relation(fields: [changed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  location                  location? @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                       lot       @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([lot_id, changed_at(sort: Desc)], map: "ix_lot_status_event_lot")
+  @@schema("trace")
 }
