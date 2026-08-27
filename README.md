@@ -8,7 +8,7 @@
 | 언어·프레임워크 | TypeScript · NestJS 11 |
 | DB | PostgreSQL 16 |
 | ORM | **Prisma** (결정서 §6 미결 #6 택일 — 2026-07-27 확정) |
-| DB 스키마 정본 | 문서 저장소 `docs/research/2026-07-23-데이터모델링/mes_postgresql_physical_model.sql` (v3, 129 테이블·10 스키마) |
+| DB 스키마 정본 | `prisma/schema.prisma` + 순방향 마이그레이션 (v4, 논리 172·물리 174 테이블·11 스키마). 산출물: [`docs/data-model/`](docs/data-model/) |
 | 패키지 매니저 | **pnpm 11** (`packageManager` 필드로 고정) |
 | 빌드·테스트 변환 | **SWC** (`nest build` 빌더 + `@swc/jest`) |
 | API 문서 | Swagger (`/api/docs`) |
@@ -32,25 +32,26 @@ pnpm run db:seed                  # 공통코드·채번규칙·역할 + admin �
 
 포트 기본값은 3100이다. 로컬 3000은 Grafana 등이 점유하는 경우가 많다.
 
-## 스키마는 DB 우선(database-first)이다
+## 스키마는 백엔드가 정본이다
 
-**`schema.prisma`를 손으로 고치지 않는다.** 정본은 기획 산출물의 물리 모델 SQL이다.
+**정본은 `prisma/schema.prisma`와 그 위에 쌓이는 순방향 마이그레이션이다.** 설계 저장소의
+물리 모델(v3)은 v4 설계의 출발점으로만 쓰였다 — 데이터 모델 소유권이 백엔드로 이관됐다
+([근거](docs/data-model/00-design-basis-and-decisions.md)).
 
 ```
-정본 SQL  →  baseline 마이그레이션  →  DB  →  prisma db pull  →  schema.prisma
+스키마 변경  →  schema.prisma 수정 + 순방향 마이그레이션 작성  →  prisma migrate deploy
 ```
 
-이유: 정본 DDL에는 Prisma가 표현하지 못하는 것이 들어 있다 — 도메인 타입(`app.qty_t` 등),
-무결성 트리거, posting 함수, 파티션, 스키마 간 FK. Prisma 스키마에서 마이그레이션을 생성하면
-이것들이 유실된다. 그래서 DDL을 정본으로 두고 Prisma는 읽기만 한다.
+기존 도메인 타입(`app.qty_t` 등)·무결성 트리거·posting 함수·파티션·스키마 간 FK는 이전
+baseline 마이그레이션이 정의해 둔 것을 그대로 유지한다 — 이후 변경도 Prisma가 표현하지
+못하는 것을 자동 생성으로 유실하지 않도록 스키마와 마이그레이션 SQL을 맞춰 검토한다.
 
-스키마 변경 절차: 정본 SQL 갱신 → 후속 마이그레이션 작성 → `pnpm run db:pull`로 재생성.
+v4 전체 산출물(논리 명세·전체 DDL·API 매핑·검증 리포트)은 [`docs/data-model/`](docs/data-model/)에 있다.
 
 > `schema.prisma`에 **수동으로 이름을 바꾼 관계 필드가 있다**(자기참조 10건 — 인트로스펙션
 > 기본 이름이 스칼라 컬럼과 충돌한다: `lot.parent_lot`, `defect_code.parent_defect_code` 등).
-> Prisma는 재인트로스펙션 시 관계 필드의 수동 명명을 보존하므로 `db pull`을 다시 돌려도 유지된다.
 
-> **bigint 식별자**: 정본의 PK·FK가 전부 bigint다. `JSON.stringify`가 BigInt에서 예외를 던지므로
+> **bigint 식별자**: PK·FK가 전부 bigint다. `JSON.stringify`가 BigInt에서 예외를 던지므로
 > 직렬화 방식을 정해야 한다. 계약이 `type: integer` 를 요구하므로 `/mdm` 응답은 숫자로 내린다.
 
 ### Prisma 설정
