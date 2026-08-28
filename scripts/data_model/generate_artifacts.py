@@ -17,6 +17,7 @@ from html_renderer import render_html
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs" / "data-model"
 CATALOG_PATH = DOCS / "model-catalog.json"
+REVIEW_PATH = DOCS / "review-findings.json"
 OPENAPI_DIR = (
     ROOT
     / ".design-reference"
@@ -104,12 +105,16 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 
 ## 1. 설계 기준선
 
-- 설계 자료: `CREFLEINC/omf-mes` commit `{catalog["design_reference_commit"]}` (2026-08-25)
+- 모델 기준선: `CREFLEINC/omf-mes` commit `{catalog["design_reference_commit"]}` (2026-08-25) — 물리 모델이 보고 만들어진 계약
+- 매핑 기준선: 같은 저장소 commit `{mapping.get("contract_reference_commit", "unknown")}` — 아래 API 수치가 대조한 계약
 - 계약 우선순위: 최신 Wiki 결정·공유계약 → OpenAPI → 화면 상세명세 → 과거 v3 모델
 - 구현 기준선: 현재 `prisma/schema.prisma`와 모든 순방향 마이그레이션
 - 대상 DBMS: PostgreSQL 16
 - 결과 모델: v4.0, 물리 테이블 {summary["table_count"]}개(논리 {summary["logical_table_count"]}개, 파티션 {summary["partition_count"]}개), 컬럼 {summary["column_count"]}개, FK {summary["relationship_count"]}개
-- API 추적성: OpenAPI 작업 {mapping["operation_count"]}개, 테이블 매핑 커버리지 {mapping["coverage"]}
+- API 추적성: OpenAPI 작업 {mapping["operation_count"]}개 중 {mapping["mapped_operation_count"]}개 매핑, 커버리지 {mapping["coverage"]}
+
+FK {summary["relationship_count"]}개는 `pg_catalog` 행 수다. 선언된 `FOREIGN KEY` 문장은 528개이며,
+차이 5건은 파티션 부모·자식에 복제된 제약이다.
 
 설계 저장소의 최신 결정은 데이터 모델의 소유권을 백엔드로 이관한다. 과거 v3 모델은 출발점으로만 사용하고, 최신 계약에서 확정된 필드·관계·상태 전이를 v4 순방향 확장으로 반영했다.
 
@@ -131,7 +136,12 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 
 ## 4. 계약 차이 해소표
 
-| No. | 확인된 차이 | v4 반영 | 상태 |
+아래 「상태」는 **v4 동결 시점(2026-08-25)의 판정**이다. 그 뒤 계약이 바뀌어 판정이 달라진
+항목이 있다 — 2026-08-28 재검토가 6·16·18·28번의 재판정과 미등재 1건(판정유형 통제속성)을
+확인했다. 현재 판정은 `05-재검토-2026-08-28.md` 와 `03-data-model-api-map.html` 의
+「재검토 결과」 탭을 본다.
+
+| No. | 확인된 차이 | v4 반영 | 상태(동결 시점) |
 |---:|---|---|---|
 {gap_rows}
 
@@ -150,6 +160,7 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 - 배포용 순방향 SQL: `prisma/migrations/20260826000000_data_model_v4/migration.sql`
 - API 관계 명세: `api-table-map.yaml`
 - 대화형 검증 자료: `03-data-model-api-map.html`
+- 재검토 결과: `05-재검토-2026-08-28.md` · 기계 판독본 `review-findings.json`
 """
 
 
@@ -211,7 +222,9 @@ def render_mapping_yaml(mapping: dict[str, Any]) -> str:
     lines = [
         f"mapping_version: {yaml_quote(mapping['mapping_version'])}",
         f"design_reference_commit: {yaml_quote(mapping['design_reference_commit'])}",
+        f"contract_reference_commit: {yaml_quote(mapping['contract_reference_commit'])}",
         f"operation_count: {mapping['operation_count']}",
+        f"mapped_operation_count: {mapping['mapped_operation_count']}",
         f"coverage: {yaml_quote(mapping['coverage'])}",
         "operations:",
     ]
@@ -226,6 +239,7 @@ def render_mapping_yaml(mapping: dict[str, Any]) -> str:
             f"    deprecated: {str(operation['deprecated']).lower()}",
             f"    idempotency_key: {str(operation['idempotency_key']).lower()}",
             f"    if_match: {str(operation['if_match']).lower()}",
+            f"    missing_tables: {yaml_quote(operation['missing_tables'])}",
             "    tables:",
         ]
         for relation in operation["tables"]:
@@ -273,23 +287,35 @@ def validate(catalog: dict[str, Any], mapping: dict[str, Any]) -> dict[str, Any]
         + unknown_api_tables
         + duplicate_operations
     )
+    # 계약이 선언했으나 물리 모델에 없는 테이블. 생성기 결함이 아니라 모델 결손이므로
+    # 실패로 죽이지 않고 상태와 목록으로 남긴다 — 죽이면 보고서 갱신 자체가 막힌다.
+    gap_operations = [
+        {"id": operation["id"], "missing_tables": operation["missing_tables"]}
+        for operation in mapping["operations"]
+        if operation.get("missing_tables")
+    ]
+    contract_model_gaps = sorted(
+        {table for gap in gap_operations for table in gap["missing_tables"]}
+    )
     report = {
-        "status": "PASS"
-        if not errors and mapping["operation_count"] == 437
-        else "FAIL",
+        "status": "FAIL"
+        if errors
+        else ("PASS_WITH_GAPS" if contract_model_gaps else "PASS"),
         "model_version": catalog["model_version"],
         "design_reference_commit": catalog["design_reference_commit"],
+        "contract_reference_commit": mapping.get("contract_reference_commit", "unknown"),
         **catalog_summary(catalog),
         "api_operation_count": mapping["operation_count"],
-        "mapped_operation_count": sum(
-            bool(operation["tables"]) for operation in mapping["operations"]
-        ),
+        "mapped_operation_count": mapping["mapped_operation_count"],
+        "coverage": mapping["coverage"],
+        "contract_model_gaps": contract_model_gaps,
+        "gap_operations": gap_operations,
         "unknown_api_tables": unknown_api_tables,
         "unknown_relationship_tables": unknown_relation_tables,
         "duplicate_operations": duplicate_operations,
         "errors": errors,
     }
-    if report["status"] != "PASS":
+    if errors:
         raise ValueError(
             f"Artifact validation failed: {json.dumps(report, ensure_ascii=False)}"
         )
@@ -404,6 +430,7 @@ def main() -> None:
     args = parser.parse_args()
     catalog = load_catalog(CATALOG_PATH)
     mapping = build_api_mapping(catalog, OPENAPI_DIR)
+    review = json.loads(REVIEW_PATH.read_text(encoding="utf-8"))
     report = validate(catalog, mapping)
     write_or_check(
         DOCS / "00-design-basis-and-decisions.md",
@@ -432,7 +459,9 @@ def main() -> None:
         args.check,
     )
     write_or_check(
-        DOCS / "03-data-model-api-map.html", render_html(catalog, mapping), args.check
+        DOCS / "03-data-model-api-map.html",
+        render_html(catalog, mapping, review),
+        args.check,
     )
     write_or_check(
         DOCS / "validation-report.json",

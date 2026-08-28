@@ -318,6 +318,14 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     "/trace/serial-numbers": ["trace.serial_number", "trace.serial_component_relation"],
 }
 
+# 계약이 `x-source-table` 로 선언했으나 물리 모델에 아직 없는 테이블.
+# 규칙을 비워 두면 생성기가 죽고, 아무 테이블에나 붙이면 결손이 사라진다 —
+# 둘 다 하지 않고 결손인 채로 매핑에 남긴다.
+PENDING_TABLES: dict[str, list[str]] = {
+    "/production/precheck-decisions": ["production.precheck_decision"],
+    "/production/repair-executions": ["production.repair_execution"],
+}
+
 METHODS = {"get", "post", "put", "patch", "delete"}
 
 
@@ -359,15 +367,35 @@ def _resource_tables(path: str) -> list[str]:
         if path.startswith(prefix)
     ]
     if not matches:
+        if _pending_tables(path):
+            return []
         raise ValueError(f"No resource mapping rule for {path}")
     return max(matches, key=lambda item: item[0])[1]
 
 
-def _has_header(parameters: Iterable[dict[str, Any]], name: str) -> bool:
-    return any(
-        param.get("in") == "header" and param.get("name", "").lower() == name.lower()
-        for param in parameters
-    )
+def _pending_tables(path: str) -> list[str]:
+    matches = [
+        (len(prefix), tables)
+        for prefix, tables in PENDING_TABLES.items()
+        if path.startswith(prefix)
+    ]
+    return max(matches, key=lambda item: item[0])[1] if matches else []
+
+
+def _has_header(
+    document: dict[str, Any], parameters: Iterable[dict[str, Any]], name: str
+) -> bool:
+    # 계약은 공통 헤더를 components/parameters 의 $ref 로 쓴다. 참조를 풀지 않으면
+    # Idempotency-Key·If-Match 를 선언한 오퍼레이션이 전부 「해당 없음」으로 기록된다.
+    for param in parameters:
+        ref = param.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/"):
+            param = _resolve_ref(document, ref)
+        if param.get("in") != "header":
+            continue
+        if param.get("name", "").lower() == name.lower():
+            return True
+    return False
 
 
 def _main_access(method: str, path: str) -> str:
@@ -400,6 +428,9 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
                 method_upper = method.upper()
                 roots = _resource_tables(path)
                 declared = _source_tables(document, operation)
+                missing_tables = sorted(
+                    set(_pending_tables(path)) | {t for t in declared if t not in known}
+                )
                 tables: list[dict[str, str]] = []
                 for index, qualified_name in enumerate(roots):
                     tables.append(
@@ -429,7 +460,7 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
                     operation.get("parameters", [])
                 )
                 mutation = method_upper != "GET"
-                if mutation and _has_header(parameters, "Idempotency-Key"):
+                if mutation and _has_header(document, parameters, "Idempotency-Key"):
                     tables.append(
                         {
                             "table": "app.idempotency_record",
@@ -470,18 +501,37 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
                         or "",
                         "tags": operation.get("tags", []),
                         "deprecated": bool(operation.get("deprecated", False)),
-                        "idempotency_key": _has_header(parameters, "Idempotency-Key"),
-                        "if_match": _has_header(parameters, "If-Match"),
+                        "idempotency_key": _has_header(
+                            document, parameters, "Idempotency-Key"
+                        ),
+                        "if_match": _has_header(document, parameters, "If-Match"),
                         "tables": unique_tables,
+                        "missing_tables": missing_tables,
                     }
                 )
     operations.sort(key=lambda item: (item["domain"], item["path"], item["method"]))
     if not operations:
         raise ValueError("No OpenAPI operations discovered")
+    # 커버리지는 상수가 아니라 계산값이다 — 100%를 적어 두면 결손이 생겨도 100%로 보인다.
+    # 쓰기는 audit·멱등 테이블이 항상 붙으므로 PRIMARY 유무로 센다.
+    mapped = sum(
+        any(relation["role"] == "PRIMARY" for relation in operation["tables"])
+        for operation in operations
+    )
     return {
-        "mapping_version": "4.0",
+        "mapping_version": "4.1",
         "design_reference_commit": catalog["design_reference_commit"],
+        "contract_reference_commit": _contract_commit(openapi_dir),
         "operation_count": len(operations),
-        "coverage": "100%",
+        "mapped_operation_count": mapped,
+        "coverage": f"{mapped / len(operations) * 100:.1f}%",
         "operations": operations,
     }
+
+
+def _contract_commit(openapi_dir: Path) -> str:
+    marker = openapi_dir.parents[3] / "COMMIT.txt"
+    if not marker.exists():
+        return "unknown"
+    text = marker.read_text(encoding="utf-8").strip()
+    return text.removeprefix("REV=").strip() or "unknown"
