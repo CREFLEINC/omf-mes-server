@@ -269,11 +269,19 @@ def add_summary(wb: Workbook, payload: dict[str, Any]) -> Any:
     ws.column_dimensions["E"].width = 24
     ws.column_dimensions["F"].width = 14
 
+    # 수치를 손으로 적으면 계약이 늘어도 옛 숫자가 남는다 — 집계에서 끌어 쓴다.
+    summary = payload["summary"]
+    mapped = summary["mapped_operation_count"]
+    total = summary["api_operation_count"]
     gates = [
         ("PostgreSQL 마이그레이션", "PASS", "12개 순차 적용"),
-        ("전체 DDL 재설치", "PASS", "174 tables"),
-        ("Prisma 정합성", "PASS", "172 models"),
-        ("OpenAPI 매핑", "PASS", "437/437"),
+        ("전체 DDL 재설치", "PASS", f"{summary['table_count']} tables"),
+        ("Prisma 정합성", "PASS", f"{summary['logical_table_count']} models"),
+        (
+            "OpenAPI 매핑",
+            "PASS" if mapped == total else "GAP",
+            f"{mapped}/{total}",
+        ),
         ("서버 회귀", "PASS", "19 suites · 140 tests"),
     ]
     for column, value in enumerate(["검증 게이트", "상태", "근거"], start=8):
@@ -520,7 +528,10 @@ def build_workbook(payload: dict[str, Any]) -> Workbook:
         wb,
         name="API Operations",
         title="OpenAPI 작업 목록",
-        subtitle="7개 계약 파일의 437개 path operation과 매핑 상태입니다.",
+        subtitle=(
+            f"7개 계약 파일의 {payload['summary']['api_operation_count']}개 "
+            "path operation과 매핑 상태입니다."
+        ),
         headers=[
             "Operation",
             "Domain",

@@ -1,7 +1,9 @@
-mapping_version: "4.0"
+mapping_version: "4.1"
 design_reference_commit: "a8f46f2"
-operation_count: 437
-coverage: "100%"
+contract_reference_commit: "6a811ea (2026-08-27)"
+operation_count: 444
+mapped_operation_count: 439
+coverage: "98.9%"
 operations:
   - id: "GET /app/approval-requests"
     domain: "app-공통"
@@ -12,6 +14,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_request"
         role: PRIMARY
@@ -30,6 +33,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_request"
         role: PRIMARY
@@ -46,8 +50,9 @@ operations:
     summary: "승인"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_request"
         role: PRIMARY
@@ -57,6 +62,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -68,8 +77,9 @@ operations:
     summary: "반려"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_request"
         role: PRIMARY
@@ -79,6 +89,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -92,6 +106,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -108,8 +123,9 @@ operations:
     summary: "결재선 등록"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -119,6 +135,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -132,6 +152,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -148,8 +169,9 @@ operations:
     summary: "결재선 수정"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -159,6 +181,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -172,6 +198,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.approval_route_step"
         role: PRIMARY
@@ -188,8 +215,9 @@ operations:
     summary: "결재 단계 전체 치환 (순서 포함)"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_route_step"
         role: PRIMARY
@@ -199,6 +227,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -210,8 +242,9 @@ operations:
     summary: "결재선 다시 사용"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -221,6 +254,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -232,8 +269,9 @@ operations:
     summary: "결재선 사용 중지"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.approval_route"
         role: PRIMARY
@@ -243,6 +281,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -256,6 +298,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -282,6 +325,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -302,8 +346,9 @@ operations:
     summary: "발행 · 재발행"
     tags: ["document-issue"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -317,6 +362,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -330,6 +379,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -352,6 +402,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -374,6 +425,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -394,8 +446,9 @@ operations:
     summary: "인쇄 결과 보고"
     tags: ["document-issue"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.document_issue_log"
         role: PRIMARY
@@ -409,6 +462,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -422,6 +479,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -438,8 +496,9 @@ operations:
     summary: "공지 작성"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -449,6 +508,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -462,6 +525,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -478,8 +542,9 @@ operations:
     summary: "공지 수정"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -489,6 +554,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -502,6 +571,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -518,8 +588,9 @@ operations:
     summary: "공지 확인"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -529,6 +600,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -540,8 +615,9 @@ operations:
     summary: "공지 종료"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -551,6 +627,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -562,8 +642,9 @@ operations:
     summary: "공지 게시"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.notice"
         role: PRIMARY
@@ -573,6 +654,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -586,6 +671,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification_event"
         role: PRIMARY
@@ -604,6 +690,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification_subscription"
         role: PRIMARY
@@ -616,13 +703,18 @@ operations:
     summary: "알림 수신자 설정 저장"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.notification_subscription"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -636,6 +728,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification"
         role: PRIMARY
@@ -654,6 +747,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification"
         role: PRIMARY
@@ -670,8 +764,9 @@ operations:
     summary: "알림 읽음 처리"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification"
         role: PRIMARY
@@ -681,6 +776,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -692,8 +791,9 @@ operations:
     summary: "모두 읽음"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.notification"
         role: PRIMARY
@@ -703,6 +803,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -716,6 +820,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.operation_policy"
         role: PRIMARY
@@ -728,13 +833,18 @@ operations:
     summary: "운영 정책 등록"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.operation_policy"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -748,6 +858,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.operation_policy"
         role: PRIMARY
@@ -762,6 +873,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.operation_policy"
         role: PRIMARY
@@ -774,13 +886,18 @@ operations:
     summary: "운영 정책 수정"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.operation_policy"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -794,6 +911,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.printer"
         role: PRIMARY
@@ -806,8 +924,9 @@ operations:
     summary: "로그인"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -817,6 +936,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -828,8 +951,9 @@ operations:
     summary: "로그아웃"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -839,6 +963,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -852,6 +980,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -868,8 +997,9 @@ operations:
     summary: "내 비밀번호 변경"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -879,6 +1009,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -892,6 +1026,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -912,8 +1047,9 @@ operations:
     summary: "고장 보고 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -927,6 +1063,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -940,6 +1080,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -960,8 +1101,9 @@ operations:
     summary: "처리 내역 저장"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -975,6 +1117,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -986,8 +1132,9 @@ operations:
     summary: "고장 사진 붙이기"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -1001,6 +1148,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1012,8 +1163,9 @@ operations:
     summary: "고장 완료"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -1027,6 +1179,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1038,8 +1194,9 @@ operations:
     summary: "처리 중으로"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.breakdown"
         role: PRIMARY
@@ -1053,6 +1210,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1066,6 +1227,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.equipment_calibration"
         role: PRIMARY
@@ -1082,8 +1244,9 @@ operations:
     summary: "계측기 이력 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.equipment_calibration"
         role: PRIMARY
@@ -1093,6 +1256,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1106,6 +1273,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.equipment_calibration"
         role: PRIMARY
@@ -1124,6 +1292,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.collection_channel"
         role: PRIMARY
@@ -1136,13 +1305,18 @@ operations:
     summary: "수집 채널 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.collection_channel"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1156,6 +1330,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.collection_channel"
         role: PRIMARY
@@ -1170,6 +1345,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.collection_channel"
         role: PRIMARY
@@ -1182,13 +1358,18 @@ operations:
     summary: "수집 채널 수정"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.collection_channel"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1202,6 +1383,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1218,8 +1400,9 @@ operations:
     summary: "비가동 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1229,6 +1412,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1242,6 +1429,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1260,6 +1448,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1276,8 +1465,9 @@ operations:
     summary: "비가동 수정"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1287,6 +1477,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1298,8 +1492,9 @@ operations:
     summary: "비가동 지금 종료"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_downtime"
         role: PRIMARY
@@ -1309,6 +1504,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1322,6 +1521,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_inspection"
         role: PRIMARY
@@ -1338,8 +1538,9 @@ operations:
     summary: "점검 기록 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_inspection"
         role: PRIMARY
@@ -1349,6 +1550,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1362,6 +1567,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.equipment_inspection"
         role: PRIMARY
@@ -1380,6 +1586,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_order"
         role: PRIMARY
@@ -1396,8 +1603,9 @@ operations:
     summary: "보전 지시 발행"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_order"
         role: PRIMARY
@@ -1407,6 +1615,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1420,6 +1632,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_order"
         role: PRIMARY
@@ -1436,8 +1649,9 @@ operations:
     summary: "보전 지시 취소"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_order"
         role: PRIMARY
@@ -1447,6 +1661,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1460,6 +1678,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_result"
         role: PRIMARY
@@ -1476,8 +1695,9 @@ operations:
     summary: "보전 실적 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_result"
         role: PRIMARY
@@ -1487,6 +1707,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1500,6 +1724,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_result"
         role: PRIMARY
@@ -1516,8 +1741,9 @@ operations:
     summary: "보전 실적 수정"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "maintenance.maintenance_result"
         role: PRIMARY
@@ -1527,6 +1753,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1540,6 +1770,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.tool_usage"
         role: PRIMARY
@@ -1556,8 +1787,9 @@ operations:
     summary: "툴 사용실적 등록"
     tags: ["maintenance"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.tool_usage"
         role: PRIMARY
@@ -1567,6 +1799,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1580,6 +1816,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "maintenance.tool_usage"
         role: PRIMARY
@@ -1598,6 +1835,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment"
         role: PRIMARY
@@ -1614,8 +1852,9 @@ operations:
     summary: "재고 조정 등록"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment"
         role: PRIMARY
@@ -1625,6 +1864,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1638,6 +1881,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment"
         role: PRIMARY
@@ -1656,6 +1900,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment_line"
         role: PRIMARY
@@ -1672,8 +1917,9 @@ operations:
     summary: "조정 라인 치환"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment_line"
         role: PRIMARY
@@ -1683,6 +1929,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1694,8 +1944,9 @@ operations:
     summary: "재고 조정 전기"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment"
         role: PRIMARY
@@ -1705,6 +1956,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1716,8 +1971,9 @@ operations:
     summary: "재고 조정 상신"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.inventory_adjustment"
         role: PRIMARY
@@ -1727,6 +1983,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1740,6 +2000,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_balance"
         role: PRIMARY
@@ -1754,6 +2015,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count"
         role: PRIMARY
@@ -1770,8 +2032,9 @@ operations:
     summary: "실사 개시"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count"
         role: PRIMARY
@@ -1781,6 +2044,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1794,6 +2061,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count"
         role: PRIMARY
@@ -1812,6 +2080,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count_line"
         role: PRIMARY
@@ -1828,8 +2097,9 @@ operations:
     summary: "한 위치의 실사 라인 치환"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count_line"
         role: PRIMARY
@@ -1839,6 +2109,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1850,8 +2124,9 @@ operations:
     summary: "실사 마감"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.inventory_count"
         role: PRIMARY
@@ -1861,6 +2136,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1874,6 +2153,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit"
         role: PRIMARY
@@ -1894,8 +2174,9 @@ operations:
     summary: "취급 단위 등록"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit"
         role: PRIMARY
@@ -1909,6 +2190,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1922,6 +2207,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit"
         role: PRIMARY
@@ -1944,6 +2230,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit_content"
         role: PRIMARY
@@ -1960,8 +2247,9 @@ operations:
     summary: "취급 단위 구성 치환"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit_content"
         role: PRIMARY
@@ -1971,6 +2259,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -1982,8 +2274,9 @@ operations:
     summary: "포장 확정"
     tags: ["inventory"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "inventory.handling_unit"
         role: PRIMARY
@@ -1997,6 +2290,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2010,6 +2307,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_reservation"
         role: PRIMARY
@@ -2024,6 +2322,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_transaction"
         role: PRIMARY
@@ -2042,6 +2341,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "inventory.inventory_transaction"
         role: PRIMARY
@@ -2060,6 +2360,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.asn"
         role: PRIMARY
@@ -2078,6 +2379,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.asn"
         role: PRIMARY
@@ -2096,6 +2398,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.asn"
         role: PRIMARY
@@ -2114,6 +2417,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2140,6 +2444,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2166,6 +2471,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2182,8 +2488,9 @@ operations:
     summary: "출고 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2193,6 +2500,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2206,6 +2517,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2224,6 +2536,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue_line"
         role: PRIMARY
@@ -2240,8 +2553,9 @@ operations:
     summary: "출고 라인 치환"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue_line"
         role: PRIMARY
@@ -2251,6 +2565,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2262,8 +2580,9 @@ operations:
     summary: "출고 취소 실행"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2273,6 +2592,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2284,8 +2607,9 @@ operations:
     summary: "출고 전기"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2295,6 +2619,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2306,8 +2634,9 @@ operations:
     summary: "기타 출고 품의 상신"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2317,6 +2646,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2328,8 +2661,9 @@ operations:
     summary: "출고 취소 요청"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_issue"
         role: PRIMARY
@@ -2339,6 +2673,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2352,6 +2690,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt"
         role: PRIMARY
@@ -2368,8 +2707,9 @@ operations:
     summary: "입고 처리"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt"
         role: PRIMARY
@@ -2379,6 +2719,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2392,6 +2736,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt"
         role: PRIMARY
@@ -2410,6 +2755,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt_line"
         role: PRIMARY
@@ -2426,8 +2772,9 @@ operations:
     summary: "입고 취소 실행"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt"
         role: PRIMARY
@@ -2437,6 +2784,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2448,8 +2799,9 @@ operations:
     summary: "입고 취소 요청"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.goods_receipt"
         role: PRIMARY
@@ -2459,6 +2811,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2472,6 +2828,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_variance"
         role: PRIMARY
@@ -2488,8 +2845,9 @@ operations:
     summary: "입하 차이 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_variance"
         role: PRIMARY
@@ -2499,6 +2857,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2512,6 +2874,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2528,8 +2891,9 @@ operations:
     summary: "입하 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2539,6 +2903,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2552,6 +2920,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2568,8 +2937,9 @@ operations:
     summary: "입하 헤더 수정"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2579,6 +2949,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2592,6 +2966,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt_line"
         role: PRIMARY
@@ -2612,8 +2987,9 @@ operations:
     summary: "입하 라인 치환"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt_line"
         role: PRIMARY
@@ -2627,6 +3003,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2638,8 +3018,9 @@ operations:
     summary: "입하 취소 실행"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2649,6 +3030,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2660,8 +3045,9 @@ operations:
     summary: "입하 취소 요청"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2671,6 +3057,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2682,8 +3072,9 @@ operations:
     summary: "초과 입하 분리 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.inbound_receipt"
         role: PRIMARY
@@ -2693,6 +3084,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2706,6 +3101,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.material_issue_request"
         role: PRIMARY
@@ -2722,8 +3118,9 @@ operations:
     summary: "추가 자재 출고 요청 발행"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.material_issue_request"
         role: PRIMARY
@@ -2733,6 +3130,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2746,6 +3147,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.material_issue_request"
         role: PRIMARY
@@ -2764,6 +3166,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.picking_order"
         role: PRIMARY
@@ -2786,6 +3189,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.picking_order"
         role: PRIMARY
@@ -2806,8 +3210,9 @@ operations:
     summary: "라인 피킹"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.picking_order"
         role: PRIMARY
@@ -2821,6 +3226,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2834,6 +3243,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2850,8 +3260,9 @@ operations:
     summary: "P/O 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2861,6 +3272,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2874,6 +3289,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2890,8 +3306,9 @@ operations:
     summary: "P/O 헤더 수정"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2901,6 +3318,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2914,6 +3335,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order_line"
         role: PRIMARY
@@ -2930,8 +3352,9 @@ operations:
     summary: "P/O 라인 치환"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order_line"
         role: PRIMARY
@@ -2941,6 +3364,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2952,8 +3379,9 @@ operations:
     summary: "P/O 승인 요청"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.purchase_order"
         role: PRIMARY
@@ -2963,6 +3391,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -2976,6 +3408,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_task"
         role: PRIMARY
@@ -2994,6 +3427,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_task"
         role: PRIMARY
@@ -3010,8 +3444,9 @@ operations:
     summary: "적치 완료"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.putaway_task"
         role: PRIMARY
@@ -3021,6 +3456,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3032,8 +3471,9 @@ operations:
     summary: "임시 위치 적재"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.putaway_task"
         role: PRIMARY
@@ -3043,6 +3483,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3054,8 +3498,9 @@ operations:
     summary: "재생재 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.recycle_entry"
         role: PRIMARY
@@ -3069,6 +3514,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3082,6 +3531,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shopfloor_receipt"
         role: PRIMARY
@@ -3098,8 +3548,9 @@ operations:
     summary: "생산창고 입고 확정"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.shopfloor_receipt"
         role: PRIMARY
@@ -3109,6 +3560,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3122,6 +3577,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shopfloor_receipt"
         role: PRIMARY
@@ -3140,6 +3596,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer"
         role: PRIMARY
@@ -3156,8 +3613,9 @@ operations:
     summary: "반출 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer"
         role: PRIMARY
@@ -3167,6 +3625,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3180,6 +3642,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer"
         role: PRIMARY
@@ -3198,6 +3661,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer_line"
         role: PRIMARY
@@ -3214,8 +3678,9 @@ operations:
     summary: "이동 라인 치환"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer_line"
         role: PRIMARY
@@ -3225,6 +3690,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3236,8 +3705,9 @@ operations:
     summary: "도착 확정"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.stock_transfer"
         role: PRIMARY
@@ -3247,6 +3717,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3260,6 +3734,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot"
         role: PRIMARY
@@ -3276,8 +3751,9 @@ operations:
     summary: "LOT 등록"
     tags: ["trace"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.lot"
         role: PRIMARY
@@ -3295,6 +3771,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3308,6 +3788,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot"
         role: PRIMARY
@@ -3332,8 +3813,9 @@ operations:
     summary: "LOT 수정"
     tags: ["trace"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.lot"
         role: PRIMARY
@@ -3343,6 +3825,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3356,6 +3842,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_external_identifier"
         role: PRIMARY
@@ -3372,8 +3859,9 @@ operations:
     summary: "LOT 외부 식별자 치환"
     tags: ["trace"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.lot_external_identifier"
         role: PRIMARY
@@ -3383,6 +3871,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3396,6 +3888,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -3412,8 +3905,9 @@ operations:
     summary: "생산 LOT 완료"
     tags: ["trace"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.lot"
         role: PRIMARY
@@ -3423,6 +3917,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3436,6 +3934,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.role"
         role: PRIMARY
@@ -3452,8 +3951,9 @@ operations:
     summary: "역할 등록"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.role"
         role: PRIMARY
@@ -3463,6 +3963,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3476,6 +3980,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.role"
         role: PRIMARY
@@ -3492,8 +3997,9 @@ operations:
     summary: "역할 수정"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.role"
         role: PRIMARY
@@ -3503,6 +4009,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3516,6 +4026,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.role_permission"
         role: PRIMARY
@@ -3532,8 +4043,9 @@ operations:
     summary: "기능 권한 전체 치환"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.role_permission"
         role: PRIMARY
@@ -3543,6 +4055,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3554,8 +4070,9 @@ operations:
     summary: "역할 사용 중지"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.role"
         role: PRIMARY
@@ -3565,6 +4082,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3578,6 +4099,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3594,8 +4116,9 @@ operations:
     summary: "사용자 등록"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3605,6 +4128,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3618,6 +4145,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3634,8 +4162,9 @@ operations:
     summary: "사용자 수정"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3645,6 +4174,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3658,6 +4191,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3678,8 +4212,9 @@ operations:
     summary: "데이터 접근범위 전체 치환"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3693,6 +4228,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3706,6 +4245,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3726,8 +4266,9 @@ operations:
     summary: "역할 전체 치환"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3741,6 +4282,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3752,8 +4297,9 @@ operations:
     summary: "사용자 사용 중지"
     tags: ["app"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "app.app_user"
         role: PRIMARY
@@ -3763,6 +4309,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3776,6 +4326,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "audit.audit_event"
         role: PRIMARY
@@ -3790,6 +4341,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
@@ -3802,13 +4354,18 @@ operations:
     summary: "연계 정의 등록"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3822,6 +4379,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
@@ -3834,13 +4392,18 @@ operations:
     summary: "연계 정의 수정"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3852,13 +4415,18 @@ operations:
     summary: "연계 정의 사용 중지"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3870,13 +4438,18 @@ operations:
     summary: "연결 시험"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.interface_definition"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3890,6 +4463,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.integration_message"
         role: PRIMARY
@@ -3904,6 +4478,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.integration_message"
         role: PRIMARY
@@ -3916,13 +4491,18 @@ operations:
     summary: "연계 메시지 재처리 (단건)"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.integration_message"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3934,13 +4514,18 @@ operations:
     summary: "연계 메시지 재처리 (선택 일괄)"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.integration_message"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -3954,6 +4539,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.outbound_item_setting"
         role: PRIMARY
@@ -3974,8 +4560,9 @@ operations:
     summary: "송신 항목 설정 저장"
     tags: ["integration"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "integration.outbound_item_setting"
         role: PRIMARY
@@ -3989,6 +4576,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4002,6 +4593,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
@@ -4014,13 +4606,18 @@ operations:
     summary: "적치 규칙 등록"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4034,6 +4631,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
@@ -4048,6 +4646,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
@@ -4060,13 +4659,18 @@ operations:
     summary: "적치 규칙 수정"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4078,13 +4682,18 @@ operations:
     summary: "적치 규칙 다시 사용"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4096,13 +4705,18 @@ operations:
     summary: "적치 규칙 사용 중지"
     tags: ["logistics"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.putaway_rule"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4116,6 +4730,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.business_unit"
         role: PRIMARY
@@ -4130,6 +4745,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_group"
         role: PRIMARY
@@ -4142,13 +4758,18 @@ operations:
     summary: "코드그룹 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_group"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4162,6 +4783,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_group"
         role: PRIMARY
@@ -4174,13 +4796,18 @@ operations:
     summary: "코드그룹 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.code_group"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4192,13 +4819,18 @@ operations:
     summary: "코드그룹 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.code_group"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4212,6 +4844,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_value"
         role: PRIMARY
@@ -4224,13 +4857,18 @@ operations:
     summary: "코드값 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_value"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4244,6 +4882,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.code_value"
         role: PRIMARY
@@ -4256,13 +4895,18 @@ operations:
     summary: "코드값 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.code_value"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4274,13 +4918,18 @@ operations:
     summary: "코드값 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.code_value"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4294,6 +4943,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.department"
         role: PRIMARY
@@ -4306,13 +4956,18 @@ operations:
     summary: "부서 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.department"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4326,6 +4981,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.department"
         role: PRIMARY
@@ -4338,13 +4994,18 @@ operations:
     summary: "부서 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.department"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4356,13 +5017,18 @@ operations:
     summary: "부서 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.department"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4376,6 +5042,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group"
         role: PRIMARY
@@ -4396,8 +5063,9 @@ operations:
     summary: "설비 그룹 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group"
         role: PRIMARY
@@ -4411,6 +5079,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4424,6 +5096,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group"
         role: PRIMARY
@@ -4444,8 +5117,9 @@ operations:
     summary: "설비 그룹 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group"
         role: PRIMARY
@@ -4459,6 +5133,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4472,6 +5150,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group_inspection_item"
         role: PRIMARY
@@ -4488,8 +5167,9 @@ operations:
     summary: "설비 그룹의 점검 항목 부여 교체"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group_inspection_item"
         role: PRIMARY
@@ -4499,6 +5179,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4510,8 +5194,9 @@ operations:
     summary: "설비 그룹 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment_group"
         role: PRIMARY
@@ -4525,6 +5210,10 @@ operations:
         role: DECLARED
         access: READ
         basis: X_SOURCE_TABLE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4538,6 +5227,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item"
         role: PRIMARY
@@ -4550,13 +5240,18 @@ operations:
     summary: "설비 점검 항목 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4570,6 +5265,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item"
         role: PRIMARY
@@ -4582,13 +5278,18 @@ operations:
     summary: "설비 점검 항목 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4602,6 +5303,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
@@ -4614,13 +5316,18 @@ operations:
     summary: "설비 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4634,6 +5341,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
@@ -4646,13 +5354,18 @@ operations:
     summary: "설비 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4666,6 +5379,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item_assignment"
         role: PRIMARY
@@ -4682,8 +5396,9 @@ operations:
     summary: "설비의 점검 항목 부여 교체"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment_inspection_item_assignment"
         role: PRIMARY
@@ -4693,6 +5408,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4704,13 +5423,18 @@ operations:
     summary: "설비 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4722,13 +5446,18 @@ operations:
     summary: "설비 폐기 처리"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.equipment"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4742,6 +5471,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item"
         role: PRIMARY
@@ -4756,6 +5486,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item"
         role: PRIMARY
@@ -4768,13 +5499,18 @@ operations:
     summary: "품목 MES 확장 속성 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.item"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4788,6 +5524,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_bu_item_map"
         role: PRIMARY
@@ -4804,8 +5541,9 @@ operations:
     summary: "사업부 매핑 전체 치환"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_bu_item_map"
         role: PRIMARY
@@ -4815,6 +5553,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4828,6 +5570,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_external_code"
         role: PRIMARY
@@ -4844,8 +5587,9 @@ operations:
     summary: "외부 코드 전체 치환"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_external_code"
         role: PRIMARY
@@ -4855,6 +5599,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4868,6 +5616,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_uom_conversion"
         role: PRIMARY
@@ -4884,8 +5633,9 @@ operations:
     summary: "단위 환산 전체 치환"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.item_uom_conversion"
         role: PRIMARY
@@ -4895,6 +5645,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4908,6 +5662,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.legal_entity"
         role: PRIMARY
@@ -4922,6 +5677,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.location"
         role: PRIMARY
@@ -4934,13 +5690,18 @@ operations:
     summary: "Location 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.location"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4954,6 +5715,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.location"
         role: PRIMARY
@@ -4966,13 +5728,18 @@ operations:
     summary: "Location 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.location"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -4984,13 +5751,18 @@ operations:
     summary: "Location 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.location"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5004,6 +5776,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
@@ -5016,13 +5789,18 @@ operations:
     summary: "툴 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5036,6 +5814,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
@@ -5048,13 +5827,18 @@ operations:
     summary: "툴 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5066,13 +5850,18 @@ operations:
     summary: "툴 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5084,13 +5873,18 @@ operations:
     summary: "툴 폐기 처리"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5102,13 +5896,18 @@ operations:
     summary: "툴 엑셀 올리기"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.mold"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5122,6 +5921,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.partner"
         role: PRIMARY
@@ -5136,6 +5936,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.partner"
         role: PRIMARY
@@ -5150,6 +5951,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.partner_role"
         role: PRIMARY
@@ -5166,8 +5968,9 @@ operations:
     summary: "거래처 역할 교체"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.partner_role"
         role: PRIMARY
@@ -5177,6 +5980,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5190,6 +5997,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.plant"
         role: PRIMARY
@@ -5204,6 +6012,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.process"
         role: PRIMARY
@@ -5218,6 +6027,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.production_line"
         role: PRIMARY
@@ -5232,6 +6042,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.shift"
         role: PRIMARY
@@ -5246,6 +6057,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5262,8 +6074,9 @@ operations:
     summary: "예비품 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5273,6 +6086,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5286,6 +6103,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5302,8 +6120,9 @@ operations:
     summary: "예비품 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5313,6 +6132,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5326,6 +6149,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.spare_part_equipment"
         role: PRIMARY
@@ -5342,8 +6166,9 @@ operations:
     summary: "예비품-설비 매핑 교체"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.spare_part_equipment"
         role: PRIMARY
@@ -5353,6 +6178,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5364,8 +6193,9 @@ operations:
     summary: "예비품 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5375,6 +6205,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5386,8 +6220,9 @@ operations:
     summary: "예비품 엑셀 올리기"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.spare_part"
         role: PRIMARY
@@ -5397,6 +6232,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5410,6 +6249,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
@@ -5422,13 +6262,18 @@ operations:
     summary: "단말 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5442,6 +6287,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
@@ -5454,13 +6300,18 @@ operations:
     summary: "단말 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5474,6 +6325,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.terminal_process"
         role: PRIMARY
@@ -5490,8 +6342,9 @@ operations:
     summary: "단말 기능 구성 저장"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.terminal_process"
         role: PRIMARY
@@ -5501,6 +6354,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5512,13 +6369,18 @@ operations:
     summary: "단말 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5530,13 +6392,18 @@ operations:
     summary: "단말 등록 토큰 발급"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.terminal"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5550,6 +6417,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.uom"
         role: PRIMARY
@@ -5564,6 +6432,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.warehouse"
         role: PRIMARY
@@ -5576,13 +6445,18 @@ operations:
     summary: "창고 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.warehouse"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5596,6 +6470,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.warehouse"
         role: PRIMARY
@@ -5608,13 +6483,18 @@ operations:
     summary: "창고 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.warehouse"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5628,6 +6508,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.warehouse_layout"
         role: PRIMARY
@@ -5644,8 +6525,9 @@ operations:
     summary: "창고 배치도 저장"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.warehouse_layout"
         role: PRIMARY
@@ -5655,6 +6537,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5666,13 +6552,18 @@ operations:
     summary: "창고 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.warehouse"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5686,6 +6577,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar_application"
         role: PRIMARY
@@ -5702,8 +6594,9 @@ operations:
     summary: "캘린더 적용 지정·해제"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar_application"
         role: PRIMARY
@@ -5713,6 +6606,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5726,6 +6623,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar_application"
         role: PRIMARY
@@ -5744,6 +6642,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar"
         role: PRIMARY
@@ -5760,8 +6659,9 @@ operations:
     summary: "작업 캘린더 등록"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar"
         role: PRIMARY
@@ -5771,6 +6671,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5784,6 +6688,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar"
         role: PRIMARY
@@ -5800,8 +6705,9 @@ operations:
     summary: "작업 캘린더 수정"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar"
         role: PRIMARY
@@ -5811,6 +6717,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5824,6 +6734,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar_day"
         role: PRIMARY
@@ -5840,8 +6751,9 @@ operations:
     summary: "캘린더 일자 덮어쓰기"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar_day"
         role: PRIMARY
@@ -5851,6 +6763,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5862,8 +6778,9 @@ operations:
     summary: "작업 캘린더 사용 중지"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "mdm.work_calendar"
         role: PRIMARY
@@ -5873,6 +6790,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5886,6 +6807,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.worker"
         role: PRIMARY
@@ -5900,6 +6822,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.worker"
         role: PRIMARY
@@ -5914,6 +6837,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.worker_qualification"
         role: PRIMARY
@@ -5930,8 +6854,9 @@ operations:
     summary: "자격·인증 전체 치환"
     tags: ["mdm"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "mdm.worker_qualification"
         role: PRIMARY
@@ -5941,6 +6866,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -5954,6 +6883,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.bom"
         role: PRIMARY
@@ -5972,6 +6902,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.bom"
         role: PRIMARY
@@ -5990,6 +6921,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.bom_component"
         role: PRIMARY
@@ -6008,6 +6940,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.bom_component"
         role: PRIMARY
@@ -6024,8 +6957,9 @@ operations:
     summary: "BOM 구성품 MES 확장 열 수정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "planning.bom_component"
         role: PRIMARY
@@ -6035,6 +6969,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6046,8 +6984,9 @@ operations:
     summary: "기본 BOM 지정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.bom"
         role: PRIMARY
@@ -6057,6 +6996,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6070,6 +7013,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6086,8 +7030,9 @@ operations:
     summary: "Routing 최초 등록 (Rev 1)"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6097,6 +7042,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6110,6 +7059,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6126,8 +7076,9 @@ operations:
     summary: "Routing 헤더 수정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6137,6 +7088,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6150,6 +7105,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing_operation_dependency"
         role: PRIMARY
@@ -6166,8 +7122,9 @@ operations:
     summary: "공정 선후행 전체 치환"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing_operation_dependency"
         role: PRIMARY
@@ -6177,6 +7134,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6190,6 +7151,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing_operation"
         role: PRIMARY
@@ -6206,8 +7168,9 @@ operations:
     summary: "공정 라인 전체 치환 (순서 포함)"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing_operation"
         role: PRIMARY
@@ -6217,6 +7180,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6228,8 +7195,9 @@ operations:
     summary: "Rev 확정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6239,6 +7207,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6250,8 +7222,9 @@ operations:
     summary: "신규 Rev 발행 (최신 Rev 복사)"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6261,6 +7234,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6272,8 +7249,9 @@ operations:
     summary: "Rev 폐기"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.routing"
         role: PRIMARY
@@ -6283,6 +7261,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6296,6 +7278,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.cause_code"
         role: PRIMARY
@@ -6308,13 +7291,18 @@ operations:
     summary: "원인코드 등록"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.cause_code"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6328,6 +7316,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.cause_code"
         role: PRIMARY
@@ -6340,13 +7329,18 @@ operations:
     summary: "원인코드 수정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.cause_code"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6358,13 +7352,18 @@ operations:
     summary: "원인코드 사용 중지"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.cause_code"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6378,6 +7377,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.defect_code"
         role: PRIMARY
@@ -6394,8 +7394,9 @@ operations:
     summary: "불량코드 등록"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.defect_code"
         role: PRIMARY
@@ -6405,6 +7406,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6418,6 +7423,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.defect_code"
         role: PRIMARY
@@ -6434,8 +7440,9 @@ operations:
     summary: "불량코드 수정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.defect_code"
         role: PRIMARY
@@ -6445,6 +7452,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6456,8 +7467,9 @@ operations:
     summary: "불량코드 사용 중지"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.defect_code"
         role: PRIMARY
@@ -6467,6 +7479,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6480,6 +7496,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6496,8 +7513,9 @@ operations:
     summary: "검사기준 버전 최초 등록 (버전 1)"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6507,6 +7525,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6520,6 +7542,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6536,8 +7559,9 @@ operations:
     summary: "검사기준 버전 수정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6547,6 +7571,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6560,6 +7588,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_item_spec"
         role: PRIMARY
@@ -6576,8 +7605,9 @@ operations:
     summary: "검사 항목 전체 치환 (순서 포함)"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_item_spec"
         role: PRIMARY
@@ -6587,6 +7617,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6598,8 +7632,9 @@ operations:
     summary: "버전 확정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6609,6 +7644,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6620,8 +7659,9 @@ operations:
     summary: "신규 버전 발행 (최신 버전 복사)"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6631,6 +7671,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6642,8 +7686,9 @@ operations:
     summary: "버전 폐기"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan_version"
         role: PRIMARY
@@ -6653,6 +7698,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6666,6 +7715,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6682,8 +7732,9 @@ operations:
     summary: "검사기준 등록"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6693,6 +7744,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6706,6 +7761,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6722,8 +7778,9 @@ operations:
     summary: "검사기준 헤더 수정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6733,6 +7790,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6744,8 +7805,9 @@ operations:
     summary: "검사기준 승인"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6755,6 +7817,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6766,8 +7832,9 @@ operations:
     summary: "검사기준 사용 중지"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_plan"
         role: PRIMARY
@@ -6777,6 +7844,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6790,6 +7861,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_order"
         role: PRIMARY
@@ -6808,6 +7880,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_order"
         role: PRIMARY
@@ -6824,8 +7897,9 @@ operations:
     summary: "P/O 변경 확인 처리"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_order"
         role: PRIMARY
@@ -6835,6 +7909,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6846,8 +7924,9 @@ operations:
     summary: "ERP 재동기 요청"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_order"
         role: PRIMARY
@@ -6857,6 +7936,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6870,6 +7953,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
@@ -6882,13 +7966,18 @@ operations:
     summary: "생산 계획 추가"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6900,13 +7989,18 @@ operations:
     summary: "생산 계획 삭제"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
         access: DELETE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6920,6 +8014,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
@@ -6932,13 +8027,18 @@ operations:
     summary: "생산 계획 수정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6950,13 +8050,18 @@ operations:
     summary: "전개 확정"
     tags: ["planning"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "planning.production_plan"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -6970,6 +8075,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.material_consumption"
         role: PRIMARY
@@ -6986,8 +8092,9 @@ operations:
     summary: "자재 투입 등록"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.material_consumption"
         role: PRIMARY
@@ -6997,6 +8104,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7010,6 +8121,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.material_consumption"
         role: PRIMARY
@@ -7028,6 +8140,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.material_return"
         role: PRIMARY
@@ -7044,8 +8157,9 @@ operations:
     summary: "자재 반출 등록"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.material_return"
         role: PRIMARY
@@ -7055,6 +8169,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7068,6 +8186,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.material_return"
         role: PRIMARY
@@ -7086,6 +8205,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.operation_handover"
         role: PRIMARY
@@ -7102,8 +8222,9 @@ operations:
     summary: "공정 인계 확정"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.operation_handover"
         role: PRIMARY
@@ -7113,6 +8234,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7126,6 +8251,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.operation_handover"
         role: PRIMARY
@@ -7135,6 +8261,36 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+  - id: "GET /production/precheck-decisions"
+    domain: "production-02생산실행"
+    method: GET
+    path: "/production/precheck-decisions"
+    summary: "작업 전 점검 통제 판정 이력 조회"
+    tags: ["production"]
+    deprecated: false
+    idempotency_key: false
+    if_match: false
+    missing_tables: ["production.precheck_decision"]
+    tables:
+  - id: "POST /production/precheck-decisions"
+    domain: "production-02생산실행"
+    method: POST
+    path: "/production/precheck-decisions"
+    summary: "작업 전 점검 통제 판정 기록"
+    tags: ["production"]
+    deprecated: false
+    idempotency_key: true
+    if_match: false
+    missing_tables: ["production.precheck_decision"]
+    tables:
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
+      - table: "audit.audit_event"
+        role: CROSS_CUTTING
+        access: APPEND
+        basis: AUDIT_POLICY
   - id: "GET /production/production-results"
     domain: "production-02생산실행"
     method: GET
@@ -7144,6 +8300,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.production_result"
         role: PRIMARY
@@ -7160,8 +8317,9 @@ operations:
     summary: "생산 실적 등록"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.production_result"
         role: PRIMARY
@@ -7171,6 +8329,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7184,6 +8346,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.production_result"
         role: PRIMARY
@@ -7200,8 +8363,9 @@ operations:
     summary: "실적 정정"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.production_result"
         role: PRIMARY
@@ -7211,6 +8375,59 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
+      - table: "audit.audit_event"
+        role: CROSS_CUTTING
+        access: APPEND
+        basis: AUDIT_POLICY
+  - id: "GET /production/repair-executions"
+    domain: "production-02생산실행"
+    method: GET
+    path: "/production/repair-executions"
+    summary: "수리 실행 목록"
+    tags: ["production"]
+    deprecated: false
+    idempotency_key: false
+    if_match: false
+    missing_tables: ["production.repair_execution"]
+    tables:
+  - id: "POST /production/repair-executions"
+    domain: "production-02생산실행"
+    method: POST
+    path: "/production/repair-executions"
+    summary: "수리 투입 등록"
+    tags: ["production"]
+    deprecated: false
+    idempotency_key: true
+    if_match: false
+    missing_tables: ["production.repair_execution"]
+    tables:
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
+      - table: "audit.audit_event"
+        role: CROSS_CUTTING
+        access: APPEND
+        basis: AUDIT_POLICY
+  - id: "POST /production/repair-executions/{repairExecutionId}:return"
+    domain: "production-02생산실행"
+    method: POST
+    path: "/production/repair-executions/{repairExecutionId}:return"
+    summary: "수리 반출 등록"
+    tags: ["production"]
+    deprecated: false
+    idempotency_key: true
+    if_match: false
+    missing_tables: ["production.repair_execution"]
+    tables:
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7224,6 +8441,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7240,8 +8458,9 @@ operations:
     summary: "W/O 발행"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7251,6 +8470,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7264,6 +8487,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7280,8 +8504,9 @@ operations:
     summary: "W/O 수정 · 4M 자원배정"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7291,6 +8516,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7304,6 +8533,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7320,8 +8550,9 @@ operations:
     summary: "W/O 취소"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7331,6 +8562,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7342,8 +8577,9 @@ operations:
     summary: "마감 · ERP 실적 송신"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7353,6 +8589,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7364,8 +8604,9 @@ operations:
     summary: "작업 중단"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7375,6 +8616,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7386,8 +8631,9 @@ operations:
     summary: "확정·배포 · 생산LOT 선발행"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7397,6 +8643,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7408,8 +8658,9 @@ operations:
     summary: "작업 재개"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_order"
         role: PRIMARY
@@ -7419,6 +8670,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7432,6 +8687,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_session"
         role: PRIMARY
@@ -7444,13 +8700,18 @@ operations:
     summary: "작업 시작 — 세션 열기"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_session"
         role: PRIMARY
         access: INSERT
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7464,6 +8725,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_session"
         role: PRIMARY
@@ -7478,6 +8740,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_session_event"
         role: PRIMARY
@@ -7494,8 +8757,9 @@ operations:
     summary: "세션 이벤트 적재"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_session_event"
         role: PRIMARY
@@ -7505,6 +8769,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7518,6 +8786,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_session_worker"
         role: PRIMARY
@@ -7534,8 +8803,9 @@ operations:
     summary: "작업자 참여"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_session_worker"
         role: PRIMARY
@@ -7545,6 +8815,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7556,8 +8830,9 @@ operations:
     summary: "작업자 이탈"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "production.work_session_worker"
         role: PRIMARY
@@ -7567,6 +8842,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7578,13 +8857,18 @@ operations:
     summary: "세션 닫기"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "production.work_session"
         role: PRIMARY
         access: UPDATE
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7598,6 +8882,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.serial_number"
         role: PRIMARY
@@ -7614,8 +8899,9 @@ operations:
     summary: "제품 개체 대량 발번"
     tags: ["production"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.serial_number"
         role: PRIMARY
@@ -7625,6 +8911,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7638,6 +8928,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.concession"
         role: PRIMARY
@@ -7652,6 +8943,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.concession"
         role: PRIMARY
@@ -7666,6 +8958,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.defect_record"
         role: PRIMARY
@@ -7680,6 +8973,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.defect_record"
         role: PRIMARY
@@ -7694,6 +8988,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.disposition_decision"
         role: PRIMARY
@@ -7708,6 +9003,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.disposition_decision"
         role: PRIMARY
@@ -7722,6 +9018,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_request"
         role: PRIMARY
@@ -7736,6 +9033,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_request"
         role: PRIMARY
@@ -7750,6 +9048,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7770,8 +9069,9 @@ operations:
     summary: "검사 결과 저장"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7785,6 +9085,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7798,6 +9102,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7820,6 +9125,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7842,6 +9148,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7862,8 +9169,9 @@ operations:
     summary: "검사 결과 수정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7877,6 +9185,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7890,6 +9202,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7912,6 +9225,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7932,8 +9246,9 @@ operations:
     summary: "검사 판정 확정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.inspection_result"
         role: PRIMARY
@@ -7947,6 +9262,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -7960,6 +9279,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -7978,6 +9298,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -7994,8 +9315,9 @@ operations:
     summary: "LOT 보류 등록"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -8005,6 +9327,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8018,6 +9344,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -8034,8 +9361,9 @@ operations:
     summary: "LOT 보류 해제·재판정"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "trace.lot_hold"
         role: PRIMARY
@@ -8045,6 +9373,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8058,6 +9390,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_status_event"
         role: PRIMARY
@@ -8076,6 +9409,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_status_event"
         role: PRIMARY
@@ -8094,6 +9428,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "trace.lot_status_event"
         role: PRIMARY
@@ -8112,6 +9447,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8132,8 +9468,9 @@ operations:
     summary: "처분 판정 저장"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8147,6 +9484,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8160,6 +9501,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.sales_order"
         role: PRIMARY
@@ -8178,6 +9520,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.sales_order"
         role: PRIMARY
@@ -8196,6 +9539,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment_lot_allocation"
         role: PRIMARY
@@ -8212,8 +9556,9 @@ operations:
     summary: "배분에 포장 단위 연결"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment_lot_allocation"
         role: PRIMARY
@@ -8223,6 +9568,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8236,6 +9585,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment_request"
         role: PRIMARY
@@ -8252,8 +9602,9 @@ operations:
     summary: "출하작업지시 편성"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment_request"
         role: PRIMARY
@@ -8263,19 +9614,24 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
         basis: AUDIT_POLICY
-  - id: "GET /logistics/shipment-requests/{shipmentRequestId}"
+  - id: "GET /logistics/shipment-requests/summary"
     domain: "shipment-04제품출하"
     method: GET
-    path: "/logistics/shipment-requests/{shipmentRequestId}"
-    summary: "출하작업지시 한 건"
+    path: "/logistics/shipment-requests/summary"
+    summary: "출하작업지시 요약"
     tags: ["shipment"]
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment_request"
         role: PRIMARY
@@ -8285,6 +9641,52 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+  - id: "GET /logistics/shipment-requests/{shipmentRequestId}"
+    domain: "shipment-04제품출하"
+    method: GET
+    path: "/logistics/shipment-requests/{shipmentRequestId}"
+    summary: "출하작업지시 한 건"
+    tags: ["shipment"]
+    deprecated: false
+    idempotency_key: false
+    if_match: false
+    missing_tables: []
+    tables:
+      - table: "logistics.shipment_request"
+        role: PRIMARY
+        access: READ
+        basis: RESOURCE_RULE
+      - table: "logistics.shipment_request_line"
+        role: SUPPORTING
+        access: READ
+        basis: RESOURCE_RULE
+  - id: "POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick"
+    domain: "shipment-04제품출하"
+    method: POST
+    path: "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick"
+    summary: "제품 LOT 피킹 확정"
+    tags: ["shipment"]
+    deprecated: false
+    idempotency_key: true
+    if_match: false
+    missing_tables: []
+    tables:
+      - table: "logistics.shipment_request"
+        role: PRIMARY
+        access: UPDATE
+        basis: RESOURCE_RULE
+      - table: "logistics.shipment_request_line"
+        role: SUPPORTING
+        access: READ
+        basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
+      - table: "audit.audit_event"
+        role: CROSS_CUTTING
+        access: APPEND
+        basis: AUDIT_POLICY
   - id: "GET /logistics/shipments"
     domain: "shipment-04제품출하"
     method: GET
@@ -8294,6 +9696,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8314,8 +9717,9 @@ operations:
     summary: "출하 처리"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8329,6 +9733,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8342,6 +9750,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8362,8 +9771,9 @@ operations:
     summary: "출하 취소 실행"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8377,6 +9787,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8388,8 +9802,9 @@ operations:
     summary: "출하 확정"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8403,6 +9818,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8414,8 +9833,9 @@ operations:
     summary: "출하 취소 요청"
     tags: ["shipment"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "logistics.shipment"
         role: PRIMARY
@@ -8429,6 +9849,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8442,6 +9866,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8462,8 +9887,9 @@ operations:
     summary: "부적합 등록"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
+    idempotency_key: true
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8477,6 +9903,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
@@ -8490,6 +9920,7 @@ operations:
     deprecated: false
     idempotency_key: false
     if_match: false
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8510,8 +9941,9 @@ operations:
     summary: "처분 판정 의뢰"
     tags: ["quality"]
     deprecated: false
-    idempotency_key: false
-    if_match: false
+    idempotency_key: true
+    if_match: true
+    missing_tables: []
     tables:
       - table: "quality.nonconformance"
         role: PRIMARY
@@ -8525,6 +9957,10 @@ operations:
         role: SUPPORTING
         access: READ
         basis: RESOURCE_RULE
+      - table: "app.idempotency_record"
+        role: CROSS_CUTTING
+        access: UPSERT
+        basis: HEADER_CONTRACT
       - table: "audit.audit_event"
         role: CROSS_CUTTING
         access: APPEND
