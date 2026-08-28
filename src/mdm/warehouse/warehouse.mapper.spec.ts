@@ -19,6 +19,8 @@ function row(overrides: Partial<warehouse> = {}): warehouse {
     updated_at: new Date('2026-08-05T00:00:00Z'),
     updated_by: 7n,
     version_no: 3,
+    // 계약의 isDefect 를 아직 내려주지 않는다 — 매퍼 반영은 계약 사본 갱신과 함께 온다(#47).
+    is_defect: false,
     ...overrides,
   };
 }

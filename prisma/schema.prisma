@@ -2241,6 +2241,7 @@ model warehouse {
   updated_at                                                                         DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                                         BigInt?
   version_no                                                                         Int                          @default(1)
+  is_defect                                                                          Boolean                      @default(false)
   handling_unit                                                                      handling_unit[]
   inventory_balance                                                                  inventory_balance[]
   inventory_count                                                                    inventory_count[]
