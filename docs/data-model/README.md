@@ -26,9 +26,16 @@
 
 ## 재생성·검증
 
-최종 마이그레이션을 적용한 PostgreSQL에서 카탈로그를 내보낸 뒤 다음 명령으로 파생 산출물을 생성한다.
+파생 산출물은 모두 `model-catalog.json` 에서 나온다. 그것부터 살아 있는 DB 에서 내보낸다.
 
 ```bash
+# 마이그레이션을 모두 적용한 DB 에서 카탈로그를 내보낸다.
+# _prisma_migrations 는 먼저 지운다 — export_catalog.sql 이 시스템 스키마만 빼고 전부
+# 담으므로, 남겨 두면 175번째 테이블로 섞여 표·수치가 통째로 어긋난다.
+psql -d omf_mes -c 'DROP TABLE IF EXISTS public._prisma_migrations'
+psql -d omf_mes -tA -X -f scripts/data_model/export_catalog.sql \
+  > docs/data-model/model-catalog.json
+
 python3 scripts/data_model/generate_artifacts.py
 python3 scripts/data_model/generate_artifacts.py --check
 
@@ -37,16 +44,26 @@ python3 scripts/data_model/generate_artifacts.py --check
 node scripts/data_model/verify_html_report.mjs
 ```
 
-XLSX 를 다시 만들었으면 **수식 재계산을 반드시 함께 돌린다** — 빠뜨리면 계산 캐시가
-빈 채로 전달된다. 자세한 항목별 재현 조건은 `04-verification-report.md` 를 본다.
+전체 DDL(`02-omf-mes-postgresql-v4.sql`)은 카탈로그와 별개로 `pg_dump` 로 뜬다.
+명령은 그 파일 머리말에 적혀 있다.
 
-XLSX는 공식 XLSX 작업 런타임의 `openpyxl` 절차로 생성한다. 수식이 포함되므로 생성 후 같은 런타임이 제공하는 `recalc.py`를 LibreOffice와 함께 실행해야 한다.
+XLSX 를 다시 만들었으면 **수식 재계산을 반드시 함께 돌린다** — openpyxl 은 수식만 쓰고
+값을 남기지 않아, 빠뜨리면 계산 캐시가 빈 채로 전달된다. 자세한 항목별 재현 조건은
+`04-verification-report.md` 를 본다.
 
 ```bash
 python3 scripts/data_model/build_logical_spec_workbook.py
-python /path/to/xlsx-skill/scripts/recalc.py \
-  outputs/01a0376d-9b7c-7ce0-be72-2df4ecd65d94/omf-mes-logical-table-spec-v4.xlsx 120
+
+# LibreOffice 는 OOXML 을 열 때 재계산하므로 변환만으로 캐시가 채워진다.
+# 왕복해도 시트·표·조건부서식·주석·틀고정은 보존된다.
+soffice --headless --norestore --convert-to xlsx --outdir /tmp/omf-xlsx \
+  outputs/01a0376d-9b7c-7ce0-be72-2df4ecd65d94/omf-mes-logical-table-spec-v4.xlsx
+cp /tmp/omf-xlsx/omf-mes-logical-table-spec-v4.xlsx \
+  outputs/01a0376d-9b7c-7ce0-be72-2df4ecd65d94/omf-mes-logical-table-spec-v4.xlsx
 ```
+
+재계산됐는지는 Validation 시트로 확인한다. 게이트 7개가 모두 PASS 로 보여야 하며,
+Actual 칸이 비어 있으면 재계산이 안 된 것이다.
 
 `--check`는 테이블·FK·API 매핑 참조 무결성과 생성 파일의 최신 상태를 함께 검사한다.
 
