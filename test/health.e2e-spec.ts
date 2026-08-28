@@ -11,6 +11,7 @@ describe('GET /api/health (e2e)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
+    // 운영 부팅(main.ts)과 같은 함수를 쓴다 — 프리픽스를 따로 적으면 둘이 어긋난다.
     configureApp(app, 'api');
     await app.init();
   });

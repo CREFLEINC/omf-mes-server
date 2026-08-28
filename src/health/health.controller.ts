@@ -1,7 +1,6 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
-import { Public } from '../auth/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('운영')
@@ -9,8 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 컨테이너 healthcheck 가 토큰 없이 호출한다(docker-compose.prod.yml).
-  @Public()
   @Get()
   @ApiOperation({ summary: '서비스 상태 — DB 연결 포함' })
   @ApiResponse({ status: 200, description: '정상' })
