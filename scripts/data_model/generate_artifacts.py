@@ -388,7 +388,14 @@ def build_workbook_payload(
             "idempotency_key": operation["idempotency_key"],
             "if_match": operation["if_match"],
             "relation_count": len(operation["tables"]),
-            "mapping_status": "PASS" if operation["tables"] else "FAIL",
+            # 계약이 선언한 테이블이 모델에 없으면 나머지가 매핑됐어도 「완료」가 아니다.
+            # PASS 는 보고서의 mapped_operation_count 와 같은 정의여야 한다 — 정의가
+            # 갈리면 Validation 시트의 Expected/Actual 이 영원히 어긋난다.
+            "mapping_status": (
+                "FAIL"
+                if not operation["tables"]
+                else ("PARTIAL" if operation["missing_tables"] else "PASS")
+            ),
         }
         for operation in mapping["operations"]
     ]

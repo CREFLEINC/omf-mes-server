@@ -36029,7 +36029,7 @@
       "idempotency_key": true,
       "if_match": false,
       "relation_count": 2,
-      "mapping_status": "PASS"
+      "mapping_status": "PARTIAL"
     },
     {
       "id": "GET /production/production-results",
@@ -36107,7 +36107,7 @@
       "idempotency_key": true,
       "if_match": false,
       "relation_count": 2,
-      "mapping_status": "PASS"
+      "mapping_status": "PARTIAL"
     },
     {
       "id": "POST /production/repair-executions/{repairExecutionId}:return",
@@ -36120,7 +36120,7 @@
       "idempotency_key": true,
       "if_match": false,
       "relation_count": 2,
-      "mapping_status": "PASS"
+      "mapping_status": "PARTIAL"
     },
     {
       "id": "GET /production/work-orders",
