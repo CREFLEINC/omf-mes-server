@@ -9,7 +9,7 @@
     "table_count": 174,
     "logical_table_count": 172,
     "partition_count": 2,
-    "column_count": 2254,
+    "column_count": 2255,
     "relationship_count": 533,
     "schemas": {
       "app": 27,
@@ -1492,7 +1492,7 @@
       "logical_name": "창고",
       "lifecycle": "MASTER",
       "purpose": "창고의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 15,
+      "column_count": 16,
       "primary_key": "warehouse_id",
       "foreign_key_count": 3,
       "is_partition": false
@@ -18207,6 +18207,17 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "mdm.warehouse",
+      "schema": "mdm",
+      "table": "warehouse",
+      "ordinal": 16,
+      "column": "is_defect",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
     },
     {
       "qualified_table": "mdm.warehouse_layout",
