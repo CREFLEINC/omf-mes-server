@@ -19260,6 +19260,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "is_defect",
+                    "default": "false",
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "불량창고 여부. 창고 유형(warehouse_type_code)과 별개의 품질 축이다 — 자재 불량창고와 제품 불량창고가 모두 성립한다. 근거: DR-012 3-C(2026-08-13)."
                 }
             ],
             "description": null,

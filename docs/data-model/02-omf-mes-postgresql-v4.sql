@@ -2,17 +2,27 @@
 -- Design reference: CREFLEINC/omf-mes @ a8f46f2 (2026-08-25)
 -- Target: PostgreSQL 16
 -- Generated from a database with every migration through
--- prisma/migrations/20260826000000_data_model_v4 applied.
+-- prisma/migrations/20260828000000_add_warehouse_is_defect applied.
 -- This file creates the complete schema on an empty database; use the Prisma
--- migration above for an existing installation.
+-- migrations above for an existing installation.
+--
+-- Reproduce:
+--   createdb omf_mes
+--   DATABASE_URL=postgresql://omf:omf@localhost:5432/omf_mes pnpm exec prisma migrate deploy
+--   pg_dump -d omf_mes --schema-only --no-owner --no-privileges \
+--     -n app -n audit -n integration -n inventory -n logistics -n maintenance \
+--     -n mdm -n planning -n production -n quality -n trace
+--   (public._prisma_migrations 는 -n 목록에서 자연히 빠진다. \restrict 토큰은
+--    pg_dump 가 실행마다 새로 만들므로 그 두 줄만 매번 달라진다.)
+--
 --
 -- PostgreSQL database dump
 --
 
-\restrict o2L1aojqP5sgEsg2OnaGZjZwwa8txiPGjNnyIJ52Zejb07F4UNvePoAQeyODuwW
+\restrict S18Cp2LuhfUrg19m1fWC6aO47R0wFK81GLCjxnN80NfDX29bWzNKFbUwIqghSt4
 
--- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
--- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
+-- Dumped from database version 16.15 (Homebrew)
+-- Dumped by pg_dump version 16.15 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -4662,9 +4672,17 @@ CREATE TABLE mdm.warehouse (
     updated_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     updated_by bigint,
     version_no integer DEFAULT 1 NOT NULL,
+    is_defect boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_external_warehouse_partner CHECK (((NOT is_external) OR (partner_id IS NOT NULL))),
     CONSTRAINT warehouse_version_no_check CHECK ((version_no > 0))
 );
+
+
+--
+-- Name: COLUMN warehouse.is_defect; Type: COMMENT; Schema: mdm; Owner: -
+--
+
+COMMENT ON COLUMN mdm.warehouse.is_defect IS '불량창고 여부. 창고 유형(warehouse_type_code)과 별개의 품질 축이다 — 자재 불량창고와 제품 불량창고가 모두 성립한다. 근거: DR-012 3-C(2026-08-13).';
 
 
 --
@@ -15143,4 +15161,5 @@ ALTER TABLE ONLY trace.serial_number
 -- PostgreSQL database dump complete
 --
 
-\unrestrict o2L1aojqP5sgEsg2OnaGZjZwwa8txiPGjNnyIJ52Zejb07F4UNvePoAQeyODuwW
+\unrestrict S18Cp2LuhfUrg19m1fWC6aO47R0wFK81GLCjxnN80NfDX29bWzNKFbUwIqghSt4
+

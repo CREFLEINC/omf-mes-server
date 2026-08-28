@@ -577,8 +577,13 @@ def build_workbook(payload: dict[str, Any]) -> Workbook:
         method.fill = PatternFill("solid", fgColor=palette[0])
         method.font = Font(name="Arial", size=9, bold=True, color=palette[1])
         status = api_operations.cell(row=row, column=11)
-        status.fill = PatternFill("solid", fgColor=COLORS["green_light"])
-        status.font = Font(name="Arial", size=9, bold=True, color=COLORS["green"])
+        status_palette = {
+            "PASS": (COLORS["green_light"], COLORS["green"]),
+            "PARTIAL": (COLORS["orange_light"], COLORS["orange"]),
+            "FAIL": (COLORS["red_light"], COLORS["red"]),
+        }.get(str(status.value), (COLORS["canvas"], COLORS["ink"]))
+        status.fill = PatternFill("solid", fgColor=status_palette[0])
+        status.font = Font(name="Arial", size=9, bold=True, color=status_palette[1])
 
     api_mapping = add_data_sheet(
         wb,

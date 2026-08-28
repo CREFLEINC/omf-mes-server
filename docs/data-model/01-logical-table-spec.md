@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 172개 · 물리 파티션 2개 · 컬럼 2254개
+> 설계 기준 `a8f46f2` · 논리 테이블 172개 · 물리 파티션 2개 · 컬럼 2255개
 
 ## 범례
 
@@ -2278,7 +2278,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.terminal` | 단말 | MASTER | 13 | `terminal_id` | 2 | 단말의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.terminal_process` | 단말 공정 | MASTER | 13 | `terminal_process_id` | 2 | 단말 공정의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.uom` | 단위 | MASTER | 10 | `uom_id` | 0 | 단위의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.warehouse` | 창고 | MASTER | 15 | `warehouse_id` | 3 | 창고의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.warehouse` | 창고 | MASTER | 16 | `warehouse_id` | 3 | 창고의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.warehouse_layout` | 창고 레이아웃 | MASTER | 11 | `warehouse_layout_id` | 1 | 창고 레이아웃의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar` | 작업 달력 | MASTER | 11 | `work_calendar_id` | 1 | 작업 달력의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar_application` | 작업 달력 적용 | MASTER | 8 | `work_calendar_application_id` | 1 | 작업 달력 적용의 업무 기준과 유효 상태를 관리한다. |
@@ -2934,6 +2934,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 13 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 14 | `updated_by` | `bigint` | N | - | `-` |
 | 15 | `version_no` | `integer` | Y | - | `1` |
+| 16 | `is_defect` | `boolean` | Y | - | `false` |
 
 ### mdm.warehouse_layout — 창고 레이아웃
 
