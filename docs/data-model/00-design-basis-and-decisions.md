@@ -3,7 +3,7 @@
 ## 1. 설계 기준선
 
 - 모델 기준선: `CREFLEINC/omf-mes` commit `a8f46f2` (2026-08-25) — 물리 모델이 보고 만들어진 계약
-- 매핑 기준선: 같은 저장소 commit `6a811ea (2026-08-27)` — 아래 API 수치가 대조한 계약
+- 매핑 기준선: 같은 저장소 commit `9eb50eb` — 아래 API 수치가 대조한 계약
 - 계약 우선순위: 최신 Wiki 결정·공유계약 → OpenAPI → 화면 상세명세 → 과거 v3 모델
 - 구현 기준선: 현재 `prisma/schema.prisma`와 모든 순방향 마이그레이션
 - 대상 DBMS: PostgreSQL 16

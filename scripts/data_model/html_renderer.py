@@ -69,7 +69,7 @@ const tableMap=new Map(catalog.tables.map(t=>[t.qualified_name,t]));
 const bySchema=Object.groupBy?Object.groupBy(catalog.tables,t=>t.schema):catalog.tables.reduce((a,t)=>((a[t.schema]??=[]).push(t),a),{});
 const mappedCount=mapping.operations.filter(o=>o.tables.some(t=>t.role==='PRIMARY')).length;
 const summary={tables:catalog.tables.length,logical:catalog.tables.filter(t=>!t.is_partition).length,columns:catalog.tables.reduce((n,t)=>n+t.columns.length,0),relations:catalog.relationships.length,apis:mapping.operations.length};
-document.getElementById('subtitle').textContent=`모델 커밋 ${catalog.design_reference_commit} · 계약 커밋 ${mapping.contract_reference_commit||'unknown'} · PostgreSQL 16 · 모델 v${catalog.model_version}`;
+document.getElementById('subtitle').textContent=`모델 커밋 ${catalog.design_reference_commit} · 계약 커밋 ${(mapping.contract_reference_commit||'unknown').slice(0,7)} · PostgreSQL 16 · 모델 v${catalog.model_version}`;
 document.getElementById('metrics').innerHTML=[['테이블',summary.tables],['컬럼',summary.columns.toLocaleString()],['FK',summary.relations],['API',summary.apis],['매핑',`${mappedCount}/${summary.apis}`]].map(([k,v])=>`<span class="metric">${k} <strong>${v}</strong></span>`).join('');
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab,.view').forEach(e=>e.classList.remove('active'));btn.classList.add('active');document.getElementById(btn.dataset.view).classList.add('active');if(btn.dataset.view==='modelView')setTimeout(fitGraph,30)}));
 const schemaSelect=document.getElementById('schemaFilter');Object.keys(bySchema).sort().forEach(s=>schemaSelect.add(new Option(`${s} · ${bySchema[s].length}`,s)));

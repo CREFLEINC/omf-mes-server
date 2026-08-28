@@ -1,0 +1,4398 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "omf-mes 05 설비·툴 도메인 API (초안)",
+  "version": "0.1.0",
+  "description": "05 설비·툴 도메인의 보전 계약이다. 점검 기록, 고장 기록과 처리, 보전 지시, 보전 실적, 비가동 구간과 집계, 툴 사용실적, 수집 채널 연결, 계측기 이력 여덟을 덮는다. 설비·툴·계측기·예비품·작업 캘린더 같은 마스터는 기준정보 계약이 갖고, 타발수 환산 정책은 공통 계약이 갖는다. 고장 처리는 접수에서 처리 중을 거쳐 완료로만 가고 되돌리지 않는다 — 잘못됐으면 새 건으로 등록한다. 비가동은 구간이라 진행 중이라는 상태 값을 두지 않고 끝 시각이 비어 있는 것으로 판정한다. 보전 지시는 한 번에 한 건만 만든다 — 여러 대상을 고른 화면이 대상 수만큼 부른다. 툴 누계는 서버가 더해 응답에 담고 기준 시각을 함께 낸다. ⛔ 오프라인에서 202 를 쓰지 않는다 — 요청 자체가 일어나지 않기 때문이다.",
+  "x-internal-note": "선행 문서: uiux/2026-08-18-API스펙-05설비툴/ 0~3단계. 저장 측 물리 표가 여덟 다 아직 없다 — 계약이 앞서고 모델 쪽은 omf-mes#67 에 작업 통지로 넘긴다. 물리 모델은 설계 결정을 앞설 수 없다(2026-08-18 사용자 확정 · 00-서식.md v1.1)."
+ },
+ "servers": [
+  {
+   "url": "/api",
+   "description": "온프레미스 설치형"
+  }
+ ],
+ "tags": [
+  {
+   "name": "maintenance",
+   "description": "보전 — 점검 · 고장 · 지시 · 실적 · 비가동 · 툴 사용 · 수집 채널 · 계측기 이력"
+  }
+ ],
+ "paths": {
+  "/maintenance/inspections": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "점검 기록 목록",
+    "description": "설비 점검 이력을 조회한다. 기간이 필수다(공유계약 L-3). 작업 전 점검 통제가 이 목록을 근거로 삼는다. 단말에 아직 남아 있는 입력분은 여기 포함되지 않는다.",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "inspectionTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "DAILY"
+      }
+     },
+     {
+      "name": "inspectedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "필수 — 공유계약 L-3"
+     },
+     {
+      "name": "inspectedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Inspection"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "점검 기록 등록",
+    "description": "설비 점검 입력 화면이 부른다. 헤더 1건과 항목별 라인 N건을 한 번에 만든다. 오프라인에서 큐에 쌓였다가 올라올 수 있어 멱등키가 필수다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InspectionCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "만들어진 점검 기록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Inspection"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/inspections/{inspectionId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "점검 기록 한 건",
+    "description": "점검 한 건의 헤더와 라인 전부.",
+    "parameters": [
+     {
+      "name": "inspectionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "점검 기록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Inspection"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/breakdowns": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "고장 기록 목록",
+    "description": "설비고장 상세처리 화면의 목록이다. 기본은 처리되지 않은 전건이고 경과일이 긴 순으로 온다(공유계약 L-12).",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "RECEIVED"
+      }
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "완료되지 않은 건만"
+     },
+     {
+      "name": "reportedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      }
+     },
+     {
+      "name": "reportedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "elapsedDesc"
+      },
+      "description": "경과일 긴 순이 기본"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Breakdown"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "고장 보고 등록",
+    "description": "설비고장 현장보고 화면이 부른다. 사진은 이 요청에 싣지 않는다 — 만들어진 건에 따로 붙인다. 오프라인 큐에서 올라올 수 있어 멱등키가 필수다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BreakdownCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "접수된 고장 기록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/breakdowns/{breakdownId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "고장 기록 한 건",
+    "description": "현장이 적은 내용과 처리 내역, 사진을 함께 낸다.",
+    "parameters": [
+     {
+      "name": "breakdownId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "고장 기록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "처리 내역 저장",
+    "description": "원인 코드와 처리 내역만 고친다. 현장이 적은 증상·발생 상태·정지 시각·사진은 고칠 수 없다.",
+    "parameters": [
+     {
+      "name": "breakdownId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BreakdownHandlingUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "저장된 고장 기록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/breakdowns/{breakdownId}/attachments": {
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "고장 사진 붙이기",
+    "description": "고장 건이 만들어진 뒤에 사진을 한 장씩 붙인다. 최대 세 장이다. 본문이 먼저 올라가야 하므로 사진만 따로 보내는 길은 없다.",
+    "parameters": [
+     {
+      "name": "breakdownId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary",
+          "example": "(바이너리)"
+         }
+        },
+        "required": [
+         "file"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "붙은 사진",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BreakdownAttachment"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/breakdowns/{breakdownId}:start-handling": {
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "처리 중으로",
+    "description": "접수된 고장을 처리 중으로 옮긴다. 되돌리는 길은 없다.",
+    "parameters": [
+     {
+      "name": "breakdownId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "처리 중이 된 고장",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/breakdowns/{breakdownId}:complete": {
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "고장 완료",
+    "description": "원인 코드와 처리 내역이 있어야 완료된다. 경미한 건은 처리 중을 거치지 않고 바로 완료할 수 있다. 완료된 건은 잠기며 되돌리는 길은 없다 — 잘못됐으면 새 고장 건으로 등록한다.",
+    "parameters": [
+     {
+      "name": "breakdownId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BreakdownComplete"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "완료된 고장",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/orders": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 지시 목록",
+    "description": "발행된 보전 지시를 조회한다.",
+    "parameters": [
+     {
+      "name": "targetTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "EQUIPMENT"
+      }
+     },
+     {
+      "name": "targetId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "ISSUED"
+      }
+     },
+     {
+      "name": "maintenanceTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "PREVENTIVE"
+      }
+     },
+     {
+      "name": "plannedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      }
+     },
+     {
+      "name": "plannedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-31"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaintenanceOrder"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 지시 발행",
+    "description": "한 번에 한 건을 만든다. 여러 대상을 고른 화면은 대상 수만큼 부른다 — 일부만 성공하는 경우를 화면이 다룰 수 있어야 하기 때문이다. 보전 유형은 보내지 않는다 — 트리거 조합이 정한다(고장이 하나라도 섞이면 사후다).",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaintenanceOrderCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "발행된 지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceOrder"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/orders/{maintenanceOrderId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 지시 한 건",
+    "description": "지시 항목과 트리거 연결을 함께 낸다.",
+    "parameters": [
+     {
+      "name": "maintenanceOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "보전 지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceOrder"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/orders/{maintenanceOrderId}:cancel": {
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 지시 취소",
+    "description": "실적이 하나도 없을 때만 취소된다.",
+    "parameters": [
+     {
+      "name": "maintenanceOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "취소된 지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceOrder"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/results": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 실적 목록",
+    "description": "설비와 툴의 보전 실적을 조회한다.",
+    "parameters": [
+     {
+      "name": "maintenanceOrderId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "targetTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "MOLD"
+      }
+     },
+     {
+      "name": "targetId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "startedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      }
+     },
+     {
+      "name": "startedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/MaintenanceResult"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 실적 등록",
+    "description": "지시에서 이어받거나 고장에서 바로 등록한다. 지시가 없어도 성립한다 — 현장에서 이미 조치한 건이 있기 때문이다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaintenanceResultCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록된 실적",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/results/{maintenanceResultId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 실적 한 건",
+    "description": "쓴 예비품까지 함께 낸다.",
+    "parameters": [
+     {
+      "name": "maintenanceResultId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "보전 실적",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceResult"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "보전 실적 수정",
+    "description": "마감 전까지 고칠 수 있다.",
+    "parameters": [
+     {
+      "name": "maintenanceResultId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MaintenanceResultUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "수정된 실적",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaintenanceResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/downtimes": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 목록",
+    "description": "기간이 필수다(공유계약 L-3). 아직 끝나지 않은 구간만, 또는 겹친 구간만 걸러 볼 수 있다 — 집계 화면의 두 안내가 이 필터를 부른다.",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "reasonCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "MOLD-CHANGE"
+      }
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "끝나지 않은 구간만"
+     },
+     {
+      "name": "overlappingOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "다른 구간과 겹치는 것만"
+     },
+     {
+      "name": "startedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "필수 — 공유계약 L-3"
+     },
+     {
+      "name": "startedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Downtime"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 등록",
+    "description": "시작 시각과 사유로 만든다. 끝 시각을 비우면 진행 중으로 남는다 — 진행 중이라는 상태 값을 따로 두지 않는다. 오프라인 큐에서 올라올 수 있어 멱등키가 필수다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DowntimeCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록된 비가동",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/downtimes/{downtimeId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 한 건",
+    "description": "구간 하나의 상세.",
+    "parameters": [
+     {
+      "name": "downtimeId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "비가동",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 수정",
+    "description": "사유와 끝 시각을 고친다. 끝이 시작보다 앞설 수 없다.",
+    "parameters": [
+     {
+      "name": "downtimeId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DowntimeUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "수정된 비가동",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/downtimes/{downtimeId}:close": {
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 지금 종료",
+    "description": "진행 중인 구간을 지금 시각으로 끝낸다.",
+    "parameters": [
+     {
+      "name": "downtimeId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "끝난 비가동",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/downtimes/summary": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "비가동 집계",
+    "description": "요약과 사유별 분포를 낸다. 끝나지 않은 구간과 겹친 구간은 «건수»만 내고 목록은 담지 않는다 — 목록이 필요하면 비가동 목록을 필터로 부른다. 설비종합효율은 내지 않는다.",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "equipmentGroupId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "groupBy",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "REASON",
+        "EQUIPMENT",
+        "PERIOD"
+       ],
+       "default": "REASON",
+       "example": "EQUIPMENT"
+      },
+      "description": "사유별 · 설비별 · 추이. 화면의 세 탭에 하나씩 대응하며 응답의 by… 배열 하나만 채워진다"
+     },
+     {
+      "name": "startedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "필수 — 공유계약 L-3"
+     },
+     {
+      "name": "startedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "bucket",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "DAY",
+        "WEEK",
+        "MONTH"
+       ],
+       "default": "DAY",
+       "example": "DAY"
+      },
+      "description": "groupBy=PERIOD 일 때 칸의 크기. 그 밖에는 무시된다"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "집계",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DowntimeSummary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/tool-usages": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "툴 사용실적 목록",
+    "description": "툴별 타발수 입력 이력이다.",
+    "parameters": [
+     {
+      "name": "moldId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "workOrderId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "occurredFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      }
+     },
+     {
+      "name": "occurredTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ToolUsage"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "툴 사용실적 등록",
+    "description": "이번 타발수만 보낸다. 누계는 서버가 더해서 응답에 담고 기준 시각을 함께 낸다 — 화면이 누계를 계산하거나 덮어쓰지 않는다. 오프라인 큐에서 올라올 수 있어 멱등키가 필수다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ToolUsageCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록된 실적과 더해진 누계",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ToolUsage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/tool-usages/{toolUsageId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "툴 사용실적 한 건",
+    "description": "입력 한 건의 상세.",
+    "parameters": [
+     {
+      "name": "toolUsageId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "툴 사용실적",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ToolUsage"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/collection-channels": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "수집 채널 목록",
+    "description": "설비가 보내오는 신호와 검사 항목의 연결을 조회한다.",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "isActive",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/CollectionChannel"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "수집 채널 등록",
+    "description": "채널을 손으로 더하거나, 최근 수신 목록에서 골라 더한다.\n\n⭐유일 범위는 (설비 + 채널명 + 품목 조건 + 공정 조건)이다 — 조건이 비어 있을 수 있어 일반 UNIQUE 가 아니라 부분 유일 인덱스 형태다(공유계약 A-7 · COALESCE). 같은 채널에 조건이 다른 행이 여럿 설 수 있다 — 「품목 A 면 외경, 품목 B 면 두께」. 409 문구에 유일 범위를 담는다(A-1): 「이 설비의 <채널명> 채널에 품목·공정 조건이 같은 매핑이 이미 있습니다」. 근거: W-05-07 §5-3·§6 · omf-mes#203 질문1",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CollectionChannelCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록된 채널",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CollectionChannel"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/collection-channels/{collectionChannelId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "수집 채널 한 건",
+    "description": "채널 하나의 상세.",
+    "parameters": [
+     {
+      "name": "collectionChannelId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "수집 채널",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CollectionChannel"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "수집 채널 수정",
+    "description": "신호 이름·단위·검사 항목 연결을 고치고 사용 여부를 내린다. 지우는 길은 없다.\n\n⭐유일 범위는 (설비 + 채널명 + 품목 조건 + 공정 조건)이다 — 조건이 비어 있을 수 있어 일반 UNIQUE 가 아니라 부분 유일 인덱스 형태다(공유계약 A-7 · COALESCE). 같은 채널에 조건이 다른 행이 여럿 설 수 있다 — 「품목 A 면 외경, 품목 B 면 두께」. 409 문구에 유일 범위를 담는다(A-1): 「이 설비의 <채널명> 채널에 품목·공정 조건이 같은 매핑이 이미 있습니다」. 근거: W-05-07 §5-3·§6 · omf-mes#203 질문1\n\n⭐ isActive = false 의 뜻 — 매핑이 «적용되지 않는다». 이 채널로 들어오는 값은 저장되지 않고 버려진다(미매핑과 같아진다 · W-05-07 §5-2). ⛔ 「목록에서만 빠지고 값은 그대로 담긴다」가 아니다 — 이 행이 곧 「이 신호를 어느 검사항목에 담는가」의 규칙이라, 끄면 담을 곳이 정해지지 않는다. 이어 둔 검사 항목은 지워지지 않으며 같은 요청으로 다시 켤 수 있다 — 끄는 것도 켜는 것도 이 PUT 하나다(:activate 를 따로 두지 않는 이유). B-4 는 물리 삭제를 금지하는 조항이지 되살리기를 금지하지 않는다. 근거: omf-mes#203 질문4",
+    "parameters": [
+     {
+      "name": "collectionChannelId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CollectionChannelUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "수정된 채널",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CollectionChannel"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/collection-channels/observations": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "최근 수신 신호",
+    "description": "아직 연결되지 않은 신호를 포함해 최근 들어온 것을 보인다 — 수집 채널 등록 화면의 「수신 로그에서 가져오기」가 부른다.",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "unmappedOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "연결 안 된 것만"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "최근 수신",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/CollectionChannelObservation"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/calibrations": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "계측기 이력 목록",
+    "description": "계측기의 검교정·점검 이력을 조회한다. 만료가 임박한 것을 거를 수 있다.",
+    "parameters": [
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "계측기. 계측기는 설비의 한 종류라 /mdm/equipments 의 equipmentId 그대로다 — 계측기 전용 자원을 두지 않는다"
+     },
+     {
+      "name": "historyTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "CALIBRATION"
+      }
+     },
+     {
+      "name": "dueBefore",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-09-30"
+      },
+      "description": "다음 기한이 이 날 이전인 것"
+     },
+     {
+      "name": "performedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-01-01"
+      }
+     },
+     {
+      "name": "performedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-18"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Calibration"
+           }
+          },
+          "totalCount": {
+           "type": "integer",
+           "description": "전체 건수",
+           "example": 42
+          }
+         },
+         "required": [
+          "items"
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "계측기 이력 등록",
+    "description": "한 번 적으면 고치거나 지울 수 없다 — 잘못 적었으면 새 이력을 덧붙인다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CalibrationCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록된 이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Calibration"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "입력이 규칙에 어긋난다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "업무 규칙에 걸린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/maintenance/calibrations/{calibrationId}": {
+   "get": {
+    "tags": [
+     "maintenance"
+    ],
+    "summary": "계측기 이력 한 건",
+    "description": "이력 하나의 상세. 고치는 길은 두지 않는다.",
+    "parameters": [
+     {
+      "name": "calibrationId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "계측기 이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Calibration"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상을 찾을 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "parameters": {
+   "IdempotencyKey": {
+    "name": "Idempotency-Key",
+    "in": "header",
+    "required": true,
+    "schema": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "description": "전 쓰기 API 필수. 같은 키로 다시 보내면 같은 기록을 두 번 만들지 않는다.",
+    "x-internal-note": "근거: 공유계약 C-1 · C-8. 현장 단말 넷(M-05-01·M-05-02·P-05-01·P-05-02)이 오프라인 큐에서 재전송하므로 특히 중요하다. 저장 측 유일 제약은 모델 쪽 작업 통지 대상이다(#67)."
+   },
+   "IfMatchVersion": {
+    "name": "If-Match",
+    "in": "header",
+    "required": true,
+    "schema": {
+     "type": "string"
+    },
+    "description": "낙관적 잠금용 version_no. 값은 같은 리소스의 상세 GET 200 이 내려주는 ETag 응답 헤더에서 받는다 — version_no 는 공유계약 A-4 에 따라 본문 필드로 노출하지 않는다. 근거: 공유계약 B-1"
+   },
+   "WorkerNo": {
+    "name": "X-Worker-No",
+    "in": "header",
+    "required": true,
+    "schema": {
+     "type": "string",
+     "maxLength": 50
+    },
+    "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2",
+    "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178."
+   }
+  },
+  "schemas": {
+   "ErrorItem": {
+    "type": "object",
+    "required": [
+     "scope",
+     "code",
+     "message"
+    ],
+    "properties": {
+     "scope": {
+      "type": "string",
+      "enum": [
+       "field",
+       "screen"
+      ],
+      "description": "오류의 범위. 근거: 공유계약 G-1 — 한 필드의 문제는 인라인, 화면 수준 문제는 배너",
+      "example": "field"
+     },
+     "field": {
+      "type": "string",
+      "description": "scope=field 일 때 대상 프로퍼티명",
+      "example": "문자열"
+     },
+     "code": {
+      "type": "string",
+      "description": "UNIQUE_VIOLATION · REQUIRED · RANGE · PAIR · PERMISSION_DENIED · STATE_LOCKED 등. STATE_LOCKED 는 확정·폐기 상태라 수정이 잠긴 것으로, 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다(공유계약 G-1)",
+      "example": "STANDARD"
+     },
+     "uniqueScope": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "code=UNIQUE_VIOLATION 일 때 어느 유일키 범위에서 중복인지. 근거: 공유계약 A-1 — 범위 없이 「중복」만 오면 화면이 문구를 만들 수 없다"
+     },
+     "message": {
+      "type": "string",
+      "example": "문자열"
+     }
+    }
+   },
+   "ErrorResponse": {
+    "type": "object",
+    "required": [
+     "errors"
+    ],
+    "properties": {
+     "errors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErrorItem"
+      }
+     }
+    }
+   },
+   "InspectionLine": {
+    "type": "object",
+    "properties": {
+     "inspectionItemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "점검 항목 마스터",
+      "example": 1001
+     },
+     "itemName": {
+      "type": "string",
+      "example": "유압 누유 확인"
+     },
+     "judgeMethodCode": {
+      "type": "string",
+      "description": "육안(VISUAL) 또는 측정(MEASURE)",
+      "example": "VISUAL"
+     },
+     "resultCode": {
+      "type": "string",
+      "description": "합격(OK) 또는 불합격(NG)",
+      "example": "OK"
+     },
+     "measuredValue": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "측정 방식일 때만",
+      "example": 12.5
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "실린더 하부"
+     }
+    },
+    "required": [
+     "inspectionItemId",
+     "resultCode"
+    ]
+   },
+   "InspectionLineCreate": {
+    "type": "object",
+    "properties": {
+     "inspectionItemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "resultCode": {
+      "type": "string",
+      "example": "OK"
+     },
+     "measuredValue": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "example": 12.5
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "실린더 하부"
+     }
+    },
+    "required": [
+     "inspectionItemId",
+     "resultCode"
+    ]
+   },
+   "Inspection": {
+    "type": "object",
+    "properties": {
+     "inspectionId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inspectionNo": {
+      "type": "string",
+      "example": "EQI-2026-0088"
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "inspectionTypeCode": {
+      "type": "string",
+      "description": "점검 유형 — 일상(DAILY)·정기(MONTHLY)·보전(MAINTENANCE). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=EQUIPMENT_INSPECTION_TYPE 로 받는다. ⚠ 품질 검사의 inspectionTypeCode(IQC·PQC·OQC)와 «같은 이름 다른 값» 이다 — 그룹을 가른다(공유계약 B-28 과 같은 원리). ⭐ 보전 항목은 이 마스터에 함께 있고 보전 지시(W-05-05)가 FK 로 참조한다 — 점검 입력 화면은 앞 둘만 보인다. 근거: 확정 QA #10 · omf-mes#186",
+      "example": "DAILY"
+     },
+     "overallResultCode": {
+      "type": "string",
+      "description": "라인이 하나라도 불합격이면 불합격이다",
+      "example": "NG"
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "단말이 찍은 시각",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "inspectorWorkerNo": {
+      "type": "string",
+      "description": "사번 인증에서 온다",
+      "example": "3391"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionLine"
+      }
+     }
+    },
+    "required": [
+     "inspectionId",
+     "equipmentId",
+     "inspectionTypeCode",
+     "overallResultCode",
+     "inspectedAt",
+     "inspectorWorkerNo"
+    ]
+   },
+   "InspectionCreate": {
+    "type": "object",
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "inspectionTypeCode": {
+      "type": "string",
+      "example": "DAILY",
+      "description": "점검 유형 — 일상(DAILY)·정기(MONTHLY)·보전(MAINTENANCE). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=EQUIPMENT_INSPECTION_TYPE 로 받는다. ⚠ 품질 검사의 inspectionTypeCode(IQC·PQC·OQC)와 «같은 이름 다른 값» 이다 — 그룹을 가른다(공유계약 B-28 과 같은 원리). ⭐ 보전 항목은 이 마스터에 함께 있고 보전 지시(W-05-05)가 FK 로 참조한다 — 점검 입력 화면은 앞 둘만 보인다. 근거: 확정 QA #10 · omf-mes#186"
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "단말 시각을 그대로 싣는다",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionLineCreate"
+      }
+     }
+    },
+    "required": [
+     "equipmentId",
+     "inspectionTypeCode",
+     "inspectedAt",
+     "lines"
+    ]
+   },
+   "BreakdownAttachment": {
+    "type": "object",
+    "properties": {
+     "attachmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "storageKey": {
+      "type": "string",
+      "example": "breakdown/2026/08/0088-1.jpg"
+     },
+     "mimeType": {
+      "type": "string",
+      "example": "image/jpeg"
+     },
+     "uploadedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     }
+    },
+    "required": [
+     "attachmentId",
+     "storageKey"
+    ]
+   },
+   "BreakdownHandling": {
+    "type": "object",
+    "properties": {
+     "causeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "원인 코드 — 완료로 갈 때 필요하다",
+      "example": "HYD-LEAK"
+     },
+     "handlingNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "실린더 씰 교체"
+     },
+     "handledByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "handledAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "서버 시각",
+      "example": "2026-08-18T11:20:00+07:00"
+     },
+     "maintenanceOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "보전 지시를 발행했으면 연결된다",
+      "example": 1001
+     }
+    }
+   },
+   "Breakdown": {
+    "type": "object",
+    "properties": {
+     "breakdownId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "breakdownNo": {
+      "type": "string",
+      "example": "MLF-2026-0088"
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "symptom": {
+      "type": "string",
+      "description": "현장이 적은 자유 서술이다",
+      "example": "유압 누유 · 실린더 하부"
+     },
+     "occurrenceStateCode": {
+      "type": "string",
+      "description": "멈췄다(STOPPED) 또는 돌지만 이상하다(ABNORMAL)",
+      "example": "STOPPED"
+     },
+     "stoppedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "모르면 비어 있다",
+      "example": "2026-08-18T14:20:00+07:00"
+     },
+     "reportedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "reporterWorkerNo": {
+      "type": "string",
+      "example": "3391"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "접수(RECEIVED) · 처리중(HANDLING) · 완료(DONE)",
+      "example": "RECEIVED"
+     },
+     "notifyAssignee": {
+      "type": "boolean",
+      "description": "설비담당에게 알릴지",
+      "example": true
+     },
+     "handling": {
+      "$ref": "#/components/schemas/BreakdownHandling"
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BreakdownAttachment"
+      }
+     }
+    },
+    "required": [
+     "breakdownId",
+     "equipmentId",
+     "symptom",
+     "occurrenceStateCode",
+     "reportedAt",
+     "reporterWorkerNo",
+     "statusCode"
+    ]
+   },
+   "BreakdownCreate": {
+    "type": "object",
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "symptom": {
+      "type": "string",
+      "example": "유압 누유 · 실린더 하부"
+     },
+     "occurrenceStateCode": {
+      "type": "string",
+      "example": "STOPPED"
+     },
+     "stoppedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-08-18T14:20:00+07:00"
+     },
+     "reportedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "단말 시각",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "notifyAssignee": {
+      "type": "boolean",
+      "description": "기본 참 — 연결이 끊겨도 끄지 않는다",
+      "example": true
+     }
+    },
+    "required": [
+     "equipmentId",
+     "symptom",
+     "occurrenceStateCode",
+     "reportedAt"
+    ]
+   },
+   "BreakdownHandlingUpdate": {
+    "type": "object",
+    "properties": {
+     "causeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "HYD-LEAK"
+     },
+     "handlingNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "실린더 씰 교체"
+     }
+    }
+   },
+   "BreakdownComplete": {
+    "type": "object",
+    "properties": {
+     "causeCode": {
+      "type": "string",
+      "description": "완료에는 반드시 있어야 한다",
+      "example": "HYD-LEAK"
+     },
+     "handlingNote": {
+      "type": "string",
+      "example": "실린더 씰 교체"
+     }
+    },
+    "required": [
+     "causeCode",
+     "handlingNote"
+    ]
+   },
+   "MaintenanceOrderItem": {
+    "type": "object",
+    "properties": {
+     "orderItemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemName": {
+      "type": "string",
+      "example": "분해 청소"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "계획(PLANNED) · 완료(DONE) · 해당없음(NA)",
+      "example": "PLANNED"
+     }
+    },
+    "required": [
+     "orderItemId",
+     "itemName"
+    ]
+   },
+   "MaintenanceOrderTrigger": {
+    "type": "object",
+    "properties": {
+     "triggerTypeCode": {
+      "type": "string",
+      "description": "고장(BREAKDOWN) · 점검 불합격(INSPECTION_NG) · 주기 도래(PM_DUE)",
+      "example": "BREAKDOWN"
+     },
+     "sourceId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "트리거가 가리키는 기록",
+      "example": 1001
+     },
+     "snapshotNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "발행 시점의 트리거 축과 누계를 그대로 남긴다",
+      "example": "타발수 512,400 / 500,000"
+     }
+    },
+    "required": [
+     "triggerTypeCode",
+     "sourceId"
+    ]
+   },
+   "MaintenanceOrder": {
+    "type": "object",
+    "properties": {
+     "maintenanceOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "maintenanceOrderNo": {
+      "type": "string",
+      "example": "MO-2026-0141"
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "description": "설비(EQUIPMENT) 또는 툴(MOLD)",
+      "example": "EQUIPMENT"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "targetCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "maintenanceTypeCode": {
+      "type": "string",
+      "description": "사후(CORRECTIVE) 또는 예방(PREVENTIVE) — 트리거 조합이 정한다",
+      "example": "CORRECTIVE"
+     },
+     "plannedDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-19"
+     },
+     "assigneeUserId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "발행(ISSUED) · 완료(DONE) · 취소(CANCELLED)",
+      "example": "ISSUED"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceOrderItem"
+      }
+     },
+     "triggers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceOrderTrigger"
+      }
+     },
+     "baseDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2026-08-18",
+      "description": "주기를 세는 기준일. 다음 주기가 이 날부터 시작한다 — 예방보전 지시에 필요하고 사후 보전에는 비어 있다"
+     }
+    },
+    "required": [
+     "maintenanceOrderId",
+     "targetTypeCode",
+     "targetId",
+     "maintenanceTypeCode",
+     "plannedDate",
+     "statusCode"
+    ]
+   },
+   "MaintenanceOrderCreate": {
+    "type": "object",
+    "properties": {
+     "targetTypeCode": {
+      "type": "string",
+      "example": "EQUIPMENT"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plannedDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-19"
+     },
+     "assigneeUserId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemNames": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "example": "분해 청소"
+      },
+      "description": "항목 마스터가 없으면 자유 입력을 받는다"
+     },
+     "triggers": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceOrderTrigger"
+      }
+     },
+     "baseDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2026-08-18",
+      "description": "주기를 세는 기준일. 다음 주기가 이 날부터 시작한다 — 예방보전 지시에 필요하고 사후 보전에는 비어 있다"
+     }
+    },
+    "required": [
+     "targetTypeCode",
+     "targetId",
+     "plannedDate",
+     "assigneeUserId"
+    ]
+   },
+   "MaintenanceResultPart": {
+    "type": "object",
+    "properties": {
+     "sparePartId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "partName": {
+      "type": "string",
+      "example": "유압 실린더 씰"
+     },
+     "usedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 2
+     },
+     "goodsIssueId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "예비품 출고 건과 연결된다",
+      "example": 1001
+     }
+    },
+    "required": [
+     "sparePartId",
+     "usedQty"
+    ]
+   },
+   "MaintenanceResult": {
+    "type": "object",
+    "properties": {
+     "maintenanceResultId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "maintenanceOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "지시 없이 처리한 건은 비어 있다",
+      "example": 1001
+     },
+     "breakdownId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "example": "EQUIPMENT"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-08-18T13:10:00+07:00"
+     },
+     "resultNote": {
+      "type": "string",
+      "example": "씰 교체 후 시운전 정상"
+     },
+     "resetCounter": {
+      "type": "boolean",
+      "description": "툴 정기보전에서 누계를 되돌릴지",
+      "example": false
+     },
+     "closed": {
+      "type": "boolean",
+      "description": "지시를 마감했는지",
+      "example": false
+     },
+     "parts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultPart"
+      }
+     }
+    },
+    "required": [
+     "maintenanceResultId",
+     "targetTypeCode",
+     "targetId",
+     "startedAt",
+     "resultNote"
+    ]
+   },
+   "MaintenanceResultCreate": {
+    "type": "object",
+    "properties": {
+     "maintenanceOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "breakdownId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "targetTypeCode": {
+      "type": "string",
+      "example": "EQUIPMENT"
+     },
+     "targetId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-08-18T13:10:00+07:00"
+     },
+     "resultNote": {
+      "type": "string",
+      "example": "씰 교체 후 시운전 정상"
+     },
+     "resetCounter": {
+      "type": "boolean",
+      "example": false
+     },
+     "closed": {
+      "type": "boolean",
+      "example": false
+     },
+     "parts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultPart"
+      }
+     }
+    },
+    "required": [
+     "targetTypeCode",
+     "targetId",
+     "startedAt",
+     "resultNote"
+    ]
+   },
+   "MaintenanceResultUpdate": {
+    "type": "object",
+    "properties": {
+     "finishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-08-18T13:10:00+07:00"
+     },
+     "resultNote": {
+      "type": "string",
+      "example": "씰 교체 후 시운전 정상"
+     },
+     "closed": {
+      "type": "boolean",
+      "example": true
+     },
+     "parts": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultPart"
+      }
+     }
+    }
+   },
+   "Downtime": {
+    "type": "object",
+    "properties": {
+     "downtimeId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "reasonCode": {
+      "type": "string",
+      "example": "MOLD-CHANGE"
+     },
+     "reasonName": {
+      "type": "string",
+      "example": "금형 교체"
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "endedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "비어 있으면 아직 진행 중이다",
+      "example": "2026-08-18T13:20:00+07:00"
+     },
+     "durationMinutes": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "끝난 구간에만 값이 있다",
+      "example": 75
+     },
+     "breakdownId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "workSessionId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "recordedByWorkerNo": {
+      "type": "string",
+      "example": "3391"
+     }
+    },
+    "required": [
+     "downtimeId",
+     "equipmentId",
+     "reasonCode",
+     "startedAt",
+     "recordedByWorkerNo"
+    ]
+   },
+   "DowntimeCreate": {
+    "type": "object",
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "reasonCode": {
+      "type": "string",
+      "example": "MOLD-CHANGE"
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "단말 시각",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "endedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "비워 두면 진행 중으로 남는다",
+      "example": "2026-08-18T13:20:00+07:00"
+     },
+     "breakdownId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     }
+    },
+    "required": [
+     "equipmentId",
+     "reasonCode",
+     "startedAt"
+    ]
+   },
+   "DowntimeUpdate": {
+    "type": "object",
+    "properties": {
+     "reasonCode": {
+      "type": "string",
+      "example": "MOLD-CHANGE"
+     },
+     "endedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "example": "2026-08-18T13:20:00+07:00"
+     },
+     "breakdownId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   },
+   "DowntimeReasonSummary": {
+    "type": "object",
+    "properties": {
+     "reasonCode": {
+      "type": "string",
+      "example": "MOLD-CHANGE"
+     },
+     "reasonName": {
+      "type": "string",
+      "example": "금형 교체"
+     },
+     "count": {
+      "type": "integer",
+      "example": 31
+     },
+     "totalMinutes": {
+      "type": "integer",
+      "example": 2320
+     },
+     "sharePercent": {
+      "type": "number",
+      "format": "double",
+      "example": 30.2
+     },
+     "averageMinutes": {
+      "type": "number",
+      "format": "double",
+      "example": 74.8
+     }
+    },
+    "required": [
+     "reasonCode",
+     "count",
+     "totalMinutes"
+    ]
+   },
+   "DowntimeSummary": {
+    "type": "object",
+    "properties": {
+     "operatingMinutes": {
+      "type": "integer",
+      "description": "조업 시간",
+      "example": 105600
+     },
+     "plannedDowntimeMinutes": {
+      "type": "integer",
+      "example": 14400
+     },
+     "actualDowntimeMinutes": {
+      "type": "integer",
+      "example": 7680
+     },
+     "availabilityPercent": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "조업 시간이 0 이면 비어 있다 — 화면은 산출 불가로 그린다",
+      "example": 92.7
+     },
+     "openIntervalCount": {
+      "type": "integer",
+      "description": "아직 끝나지 않아 합계에서 빠진 구간 수",
+      "example": 3
+     },
+     "overlappingIntervalCount": {
+      "type": "integer",
+      "description": "겹쳐서 한 번만 센 구간 수",
+      "example": 2
+     },
+     "minorStopCount": {
+      "type": "integer",
+      "description": "경미 정지 건수. 임계보다 짧은 구간이며 위 합계에 들어 있다 — 걸러서 빼지 않고 줄을 나눠 보인다. 잦다는 것 자체가 신호라 감추면 안 된다",
+      "example": 84
+     },
+     "minorStopMinutes": {
+      "type": "integer",
+      "description": "경미 정지 시간 합",
+      "example": 372
+     },
+     "minorStopThresholdMinutes": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "경미 정지로 본 임계. 운영 정책이 정하며 기본은 5 다. 화면이 「경미 정지(<5분)」처럼 판정 근거를 함께 보이도록 응답이 값을 함께 내린다",
+      "example": 5,
+      "x-internal-note": "저장처는 app.operation_policy 의 MINOR_STOP_THRESHOLD_MINUTES 다. 근거: W-05-08 §5-5·§8-3"
+     },
+     "byReason": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DowntimeReasonSummary"
+      }
+     },
+     "byEquipment": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DowntimeEquipmentSummary"
+      },
+      "description": "groupBy=EQUIPMENT 일 때 채워진다"
+     },
+     "byPeriod": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DowntimePeriodSummary"
+      },
+      "description": "groupBy=PERIOD 일 때 채워진다"
+     },
+     "sessionsWithoutEquipmentCount": {
+      "type": "integer",
+      "example": 4,
+      "description": "설비가 붙지 않은 작업 세션 수. 조업 시간에는 들어가지만 설비별 묶음에서는 빠진다 — 화면이 그 사실을 요약에 보인다. 0 과 「모른다」를 같은 모양으로 그리지 않기 위해 «건수» 로 내린다"
+     }
+    },
+    "required": [
+     "operatingMinutes",
+     "actualDowntimeMinutes",
+     "openIntervalCount",
+     "overlappingIntervalCount"
+    ]
+   },
+   "ToolUsage": {
+    "type": "object",
+    "properties": {
+     "toolUsageId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "moldId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "moldCode": {
+      "type": "string",
+      "example": "MLD-0207"
+     },
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shotCount": {
+      "type": "integer",
+      "description": "이번에 더할 타발수",
+      "example": 1250
+     },
+     "collectionMethodCode": {
+      "type": "string",
+      "description": "직접 입력(DIRECT) 또는 환산(CONVERTED)",
+      "example": "DIRECT"
+     },
+     "conversionBaseQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "example": 5000
+     },
+     "conversionRatio": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "example": 0.25
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "recordedByWorkerNo": {
+      "type": "string",
+      "example": "3391"
+     },
+     "cumulativeShotCount": {
+      "type": "integer",
+      "description": "서버가 더한 뒤의 누계다",
+      "example": 413550
+     },
+     "cumulativeAsOf": {
+      "type": "string",
+      "format": "date-time",
+      "description": "누계가 어느 시각 기준인지",
+      "example": "2026-08-18T09:40:00+07:00"
+     }
+    },
+    "required": [
+     "toolUsageId",
+     "moldId",
+     "workOrderId",
+     "shotCount",
+     "collectionMethodCode",
+     "occurredAt",
+     "recordedByWorkerNo"
+    ]
+   },
+   "ToolUsageCreate": {
+    "type": "object",
+    "properties": {
+     "moldId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shotCount": {
+      "type": "integer",
+      "description": "이번 값만 보낸다 — 누계를 보내지 않는다",
+      "example": 1250
+     },
+     "collectionMethodCode": {
+      "type": "string",
+      "example": "DIRECT"
+     },
+     "conversionBaseQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "example": 5000
+     },
+     "conversionRatio": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "example": 0.25
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "단말 시각",
+      "example": "2026-08-18T09:40:00+07:00"
+     }
+    },
+    "required": [
+     "moldId",
+     "workOrderId",
+     "shotCount",
+     "collectionMethodCode",
+     "occurredAt"
+    ]
+   },
+   "CollectionChannel": {
+    "type": "object",
+    "properties": {
+     "collectionChannelId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "channelKey": {
+      "type": "string",
+      "description": "설비가 보내오는 신호의 이름",
+      "example": "PRS01.TEMP.01"
+     },
+     "signalName": {
+      "type": "string",
+      "example": "히터 온도"
+     },
+     "unitCode": {
+      "type": "string",
+      "example": "CELSIUS"
+     },
+     "inspectionItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "연결된 검사 항목",
+      "example": 1001
+     },
+     "itemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "품목 조건 — 비면 「전체」다(이 설비의 이 채널은 언제나 그 항목으로 간다). 지정하면 그 품목을 생산할 때만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     },
+     "itemCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "품목 조건의 표시용 코드 — 비면 「전체」",
+      "example": "ABC-123"
+     },
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "공정 조건 — 비면 「전체」다. 지정하면 그 공정에서만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     },
+     "processCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "공정 조건의 표시용 코드 — 비면 「전체」",
+      "example": "PRS"
+     },
+     "inspectionItemName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "연결된 검사 항목의 이름. inspectionItemId 가 비면 함께 빈다(「미매핑」). ⭐ 이 값이 없으면 화면이 「연결됨」까지만 말할 수 있어 무엇에 이었는지 보일 수 없다. 근거: W-05-07 §4 · omf-mes#203 질문2",
+      "example": "사이클타임"
+     },
+     "inspectionItemCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "연결된 검사 항목의 코드",
+      "example": "CYCLE_TIME"
+     },
+     "inspectionItemUnitCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "연결된 검사 항목의 «저장» 단위. 이 행의 unitCode(수신값의 단위)와 다르면 화면이 경고한다 — ⛔ 자동 변환하지 않는다(W-05-07 §5-5 · A-8). 이 값이 없으면 그 경고를 판정할 수 없다",
+      "example": "SECOND"
+     },
+     "inspectionPlanVersionId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "연결된 검사 항목이 속한 검사기준 버전(Rev). 검사기준 Rev 가 오르면 매핑은 옛 항목을 가리킨 채 남는다(W-05-07 §5-2)"
+     },
+     "inspectionPlanVersion": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "그 버전의 Rev 번호 — 경고 문구에 함께 보인다",
+      "example": 2
+     },
+     "inspectionItemIsCurrentRevision": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "연결된 검사 항목이 «최신» Rev 의 것인가. ⛔ 서버가 판정한다 — 화면이 버전을 따로 불러 statusCode 를 해석하면 판정 규칙을 화면이 소유하게 된다. 거짓이면 화면이 「이 검사항목은 이전 Rev 입니다」를 경고한다. ⛔ 자동으로 옮기지 않는다 — 새 Rev 의 어느 항목에 대응하는지 기계가 모른다(W-05-07 §6·§8-2). inspectionItemId 가 비면 함께 빈다",
+      "example": true
+     },
+     "isActive": {
+      "type": "boolean",
+      "example": true
+     }
+    },
+    "required": [
+     "collectionChannelId",
+     "equipmentId",
+     "channelKey",
+     "isActive"
+    ]
+   },
+   "CollectionChannelCreate": {
+    "type": "object",
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "channelKey": {
+      "type": "string",
+      "example": "PRS01.TEMP.01"
+     },
+     "signalName": {
+      "type": "string",
+      "example": "히터 온도"
+     },
+     "unitCode": {
+      "type": "string",
+      "example": "CELSIUS"
+     },
+     "inspectionItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "itemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "품목 조건 — 비면 「전체」다(이 설비의 이 채널은 언제나 그 항목으로 간다). 지정하면 그 품목을 생산할 때만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     },
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "공정 조건 — 비면 「전체」다. 지정하면 그 공정에서만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     }
+    },
+    "required": [
+     "equipmentId",
+     "channelKey"
+    ]
+   },
+   "CollectionChannelUpdate": {
+    "type": "object",
+    "properties": {
+     "signalName": {
+      "type": "string",
+      "example": "히터 온도"
+     },
+     "unitCode": {
+      "type": "string",
+      "example": "CELSIUS"
+     },
+     "inspectionItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "itemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "품목 조건 — 비면 「전체」다(이 설비의 이 채널은 언제나 그 항목으로 간다). 지정하면 그 품목을 생산할 때만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     },
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "공정 조건 — 비면 「전체」다. 지정하면 그 공정에서만 적용된다. 유일 범위를 이룬다. 근거: W-05-07 §5-3 · omf-mes#203"
+     },
+     "isActive": {
+      "type": "boolean",
+      "example": true
+     }
+    }
+   },
+   "CollectionChannelObservation": {
+    "type": "object",
+    "properties": {
+     "channelKey": {
+      "type": "string",
+      "example": "PRS01.TEMP.01"
+     },
+     "lastValue": {
+      "type": "string",
+      "example": "182.4"
+     },
+     "observedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-18T09:40:00+07:00"
+     },
+     "alreadyMapped": {
+      "type": "boolean",
+      "example": false
+     }
+    },
+    "required": [
+     "channelKey",
+     "observedAt"
+    ]
+   },
+   "Calibration": {
+    "type": "object",
+    "properties": {
+     "calibrationId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "historyTypeCode": {
+      "type": "string",
+      "description": "검교정(CALIBRATION) 또는 점검(CHECK)",
+      "example": "CALIBRATION"
+     },
+     "performedOn": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-18"
+     },
+     "resultCode": {
+      "type": "string",
+      "description": "합격(PASS) 또는 불합격(FAIL)",
+      "example": "PASS"
+     },
+     "certificateNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "CAL-2026-0031"
+     },
+     "agencyName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "한국계측인증"
+     },
+     "nextDueOn": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2027-08-18"
+     },
+     "toleranceNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "±0.02 mm"
+     },
+     "recordedByUserId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "계측기. 계측기는 설비의 한 종류라 /mdm/equipments 의 equipmentId 그대로다 — 계측기 전용 자원을 두지 않는다"
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "GAU-0031"
+     }
+    },
+    "required": [
+     "calibrationId",
+     "equipmentId",
+     "historyTypeCode",
+     "performedOn",
+     "resultCode"
+    ]
+   },
+   "CalibrationCreate": {
+    "type": "object",
+    "properties": {
+     "historyTypeCode": {
+      "type": "string",
+      "example": "CALIBRATION"
+     },
+     "performedOn": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-18"
+     },
+     "resultCode": {
+      "type": "string",
+      "example": "PASS"
+     },
+     "certificateNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "CAL-2026-0031"
+     },
+     "agencyName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "한국계측인증"
+     },
+     "nextDueOn": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2027-08-18"
+     },
+     "toleranceNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "±0.02 mm"
+     },
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "계측기. 계측기는 설비의 한 종류라 /mdm/equipments 의 equipmentId 그대로다 — 계측기 전용 자원을 두지 않는다"
+     }
+    },
+    "required": [
+     "equipmentId",
+     "historyTypeCode",
+     "performedOn",
+     "resultCode"
+    ]
+   },
+   "DowntimeEquipmentSummary": {
+    "type": "object",
+    "required": [
+     "equipmentId",
+     "equipmentCode",
+     "count",
+     "totalMinutes"
+    ],
+    "description": "설비별 묶음 한 줄. 근거: W-05-08 §4 ③ 설비별 탭",
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "equipmentCode": {
+      "type": "string",
+      "example": "PRS-01"
+     },
+     "equipmentName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "프레스 1호기"
+     },
+     "count": {
+      "type": "integer",
+      "example": 12
+     },
+     "totalMinutes": {
+      "type": "integer",
+      "example": 3130
+     },
+     "sharePercent": {
+      "type": "number",
+      "format": "double",
+      "example": 40.7
+     },
+     "averageMinutes": {
+      "type": "number",
+      "format": "double",
+      "example": 260.8
+     }
+    }
+   },
+   "DowntimePeriodSummary": {
+    "type": "object",
+    "required": [
+     "periodStart",
+     "count",
+     "totalMinutes"
+    ],
+    "description": "추이 한 칸. 칸의 크기는 요청의 bucket 이 정한다. 근거: W-05-08 §4 ③ 추이 탭",
+    "properties": {
+     "periodStart": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-01",
+      "description": "이 칸이 시작하는 날"
+     },
+     "count": {
+      "type": "integer",
+      "example": 9
+     },
+     "totalMinutes": {
+      "type": "integer",
+      "example": 640
+     }
+    }
+   },
+   "ConflictResponse": {
+    "type": "object",
+    "required": [
+     "conflictCause",
+     "message"
+    ],
+    "properties": {
+     "conflictCause": {
+      "type": "string",
+      "enum": [
+       "user",
+       "erpSync",
+       "workerLease"
+      ],
+      "description": "충돌 원인. 근거: 공유계약 B-1 확장 — user=다른 사용자, erpSync=ERP 재동기화 배치, workerLease=워커가 처리 중. 구분 없이 내려주면 화면이 「다른 사용자가 먼저 수정했습니다」라는 사실과 다른 안내를 하게 된다",
+      "example": "user"
+     },
+     "message": {
+      "type": "string",
+      "example": "문자열"
+     }
+    }
+   }
+  }
+ }
+}

@@ -18,15 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs" / "data-model"
 CATALOG_PATH = DOCS / "model-catalog.json"
 REVIEW_PATH = DOCS / "review-findings.json"
-OPENAPI_DIR = (
-    ROOT
-    / ".design-reference"
-    / "omf-mes"
-    / "design"
-    / "wiki"
-    / "api-contracts"
-    / "openapi"
-)
+# 계약 사본은 contracts/ 하나뿐이다. 설계 저장소에서 받아오는 것은
+# scripts/contracts/update.mjs 소관이고, 여기서는 받아온 결과만 읽는다.
+OPENAPI_DIR = ROOT / "contracts"
 
 GAPS = [
     ("다국어 명칭", "app.localized_text + entity_type_registry", "해결"),
@@ -106,7 +100,7 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 ## 1. 설계 기준선
 
 - 모델 기준선: `CREFLEINC/omf-mes` commit `{catalog["design_reference_commit"]}` (2026-08-25) — 물리 모델이 보고 만들어진 계약
-- 매핑 기준선: 같은 저장소 commit `{mapping.get("contract_reference_commit", "unknown")}` — 아래 API 수치가 대조한 계약
+- 매핑 기준선: 같은 저장소 commit `{mapping.get("contract_reference_commit", "unknown")[:7]}` — 아래 API 수치가 대조한 계약
 - 계약 우선순위: 최신 Wiki 결정·공유계약 → OpenAPI → 화면 상세명세 → 과거 v3 모델
 - 구현 기준선: 현재 `prisma/schema.prisma`와 모든 순방향 마이그레이션
 - 대상 DBMS: PostgreSQL 16
