@@ -26,7 +26,7 @@
 
 | # | 항목 | 명령 | 결과 |
 |---:|---|---|---|
-| A1 | 설계 원본 격리 | `git check-ignore -v .design-reference/omf-mes/COMMIT.txt` | PASS — `.gitignore:28` 이 잡는다. `git status` 에 0건 |
+| A1 | 계약 사본 신선도 | `pnpm contracts:check` | PASS — 7개 전부 설계 저장소 `9eb50eb` 와 일치. 어긋나면 종료 코드 1, `gh` 없으면 2(SKIP) |
 | A2 | 카탈로그 ↔ DDL 정합 | `02-*.sql` 과 `model-catalog.json` 대조 (A2 주석 참조) | PASS — 테이블 174/174 차집합 0 · 컬럼 2,254 일치 · **컬럼 집합 불일치 0표** |
 | A3 | Prisma 스키마 유효성 | `DATABASE_URL='postgresql://u:p@localhost:5432/db' npx prisma validate` | PASS — `The schema at prisma/schema.prisma is valid` |
 | A4 | Prisma Client 생성 | `npx prisma generate` | PASS — v6.19.3 생성. 모델 수 `grep -cE '^model ' prisma/schema.prisma` = **172** |
@@ -151,8 +151,8 @@ XLSX 도 다시 만들었다(`build_logical_spec_workbook.py`). 고정값은 최
   `05-재검토-2026-08-28.md` §4 가 다룬다.
 - **A 항목도 문서·소스 수준이다.** 운영 DB 의 실데이터는 보지 않았다 —
   백필이 필요한 변경의 비용은 이 표로 산정할 수 없다.
-- **A5 의 수치는 재생성 시점 계약에 딸린다.** `.design-reference/omf-mes/COMMIT.txt` 가
-  기준을 적는다. 계약이 바뀌면 숫자도 바뀐다.
+- **A5 의 수치는 사본 시점 계약에 딸린다.** `contracts/COMMIT.txt` 가 기준을 적는다.
+  계약이 바뀌면 숫자도 바뀌므로, 인용 전에 A1(`contracts:check`)을 먼저 돌린다.
 
 ## 이번 검사를 돌린 환경
 

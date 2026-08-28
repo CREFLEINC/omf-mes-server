@@ -530,8 +530,8 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
 
 
 def _contract_commit(openapi_dir: Path) -> str:
-    marker = openapi_dir.parents[3] / "COMMIT.txt"
+    """사본이 어느 설계 커밋에서 왔는지. scripts/contracts/update.mjs 가 적는다."""
+    marker = openapi_dir / "COMMIT.txt"
     if not marker.exists():
         return "unknown"
-    text = marker.read_text(encoding="utf-8").strip()
-    return text.removeprefix("REV=").strip() or "unknown"
+    return marker.read_text(encoding="utf-8").strip() or "unknown"

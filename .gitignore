@@ -23,6 +23,3 @@ test/postman/local.postman_environment.json
 
 # 산출물 생성 스크립트가 만드는 것
 __pycache__/
-
-# 설계 저장소 로컬 사본 — 재생성 입력이며 커밋 대상이 아니다 (docs/data-model/README.md)
-.design-reference/
