@@ -3167,7 +3167,7 @@
      "reason": {
       "type": "string",
       "minLength": 1,
-      "description": "⭐ 비울 수 없다 — 물리 모델이 NOT NULL 이다. 왜 그렇게 정했는지가 근거로 남는다. 공백만 있는 문자열도 받지 않는다(공유계약 A-12 — 같은 계약의 NonconformanceCreate.description 과 같은 처리)",
+      "description": "⭐ 비울 수 없다 — 남이 읽고 판단할 자유 텍스트라 화면이 필수로 만든다. 왜 그렇게 정했는지가 근거로 남는다. 공백만 있는 문자열도 받지 않는다(공유계약 A-12 — 같은 계약의 NonconformanceCreate.description 과 같은 처리)",
       "example": "변형 손상이 커 재작업으로 회복되지 않는다"
      }
     },
@@ -4114,7 +4114,7 @@
      "lotNo",
      "actorId"
     ],
-    "x-internal-note": "⛔ 이것은 «전체 전이 이력이 아니다» — 보류 등록·해제만이다. 변경이력 테이블이 물리 모델에 없어 전이 9건 중 5건이 아예 남지 않는다(W-03-01 §5-1 실측). 그래서 경로 이름이 lot-status-events 가 아니라 lot-hold-events 이고, 화면은 A-11 대로 「보류 이력만 보입니다」를 문구로 밝힌다. ⭐ 새 테이블을 요구하지 않는다 — trace.lot_hold 한 행이 held_by/held_at 와 released_by/released_at 를 둘 다 가지므로 서버가 한 행을 최대 두 사건으로 편다(공유계약 L-2 파생은 서버 계산). 이슈 #176."
+    "x-internal-note": "⛔ 이것은 «전체 전이 이력이 아니다» — 보류 등록·해제만이다. ⛔ 되살리기 잔여 — 전이 9건 중 5건이 남지 않아(W-03-01 §5-1 실측) 경로 이름이 lot-status-events 가 아니라 lot-hold-events 이고, 화면은 「보류 이력만 보입니다」를 문구로 밝힌다. 이 축소의 근거였던 «변경이력 테이블이 물리 모델에 없다»는 A-11 v4.6 이 철회했다 — omf-mes#299(LOT 생명주기 전이 이력)가 계약 쪽 자리를 세우기 시작했다. ⭐ 새 테이블을 요구하지 않는다 — trace.lot_hold 한 행이 held_by/held_at 와 released_by/released_at 를 둘 다 가지므로 서버가 한 행을 최대 두 사건으로 편다(공유계약 L-2 파생은 서버 계산). 이슈 #176."
    },
    "LotHoldRelease": {
     "type": "object",
