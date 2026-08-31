@@ -5,7 +5,7 @@
     "status": "PASS_WITH_GAPS",
     "model_version": "4.0",
     "design_reference_commit": "a8f46f2",
-    "contract_reference_commit": "9eb50ebaa0a61536757dcbf0254de1a8994ed67c",
+    "contract_reference_commit": "bfe50b07101ae986052f96ffa75ba0743f6196e7",
     "table_count": 174,
     "logical_table_count": 172,
     "partition_count": 2,
@@ -24,14 +24,34 @@
       "quality": 17,
       "trace": 8
     },
-    "api_operation_count": 444,
-    "mapped_operation_count": 439,
-    "coverage": "98.9%",
+    "api_operation_count": 480,
+    "mapped_operation_count": 472,
+    "coverage": "98.3%",
     "contract_model_gaps": [
+      "mdm.judgment_type_control",
       "production.precheck_decision",
-      "production.repair_execution"
+      "production.repair_execution",
+      "trace.lot_lifecycle_history"
     ],
     "gap_operations": [
+      {
+        "id": "GET /trace/lot-lifecycle-events",
+        "missing_tables": [
+          "trace.lot_lifecycle_history"
+        ]
+      },
+      {
+        "id": "GET /mdm/judgment-type-controls",
+        "missing_tables": [
+          "mdm.judgment_type_control"
+        ]
+      },
+      {
+        "id": "PUT /mdm/judgment-type-controls/{codeValueId}",
+        "missing_tables": [
+          "mdm.judgment_type_control"
+        ]
+      },
       {
         "id": "GET /production/precheck-decisions",
         "missing_tables": [
@@ -31389,6 +31409,45 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "GET /app/attachments",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/attachments",
+      "summary": "첨부 목록",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 1,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /app/attachments",
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/attachments",
+      "summary": "첨부 올리기",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "GET /app/attachments/{attachmentId}/content",
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/attachments/{attachmentId}/content",
+      "summary": "첨부 파일 내려받기",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 1,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /app/dashboard-summary",
       "domain": "app-공통",
       "method": "GET",
@@ -31571,6 +31630,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /app/notices/{noticeId}:dismiss",
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notices/{noticeId}:dismiss",
+      "summary": "공지 확인 없이 닫기",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /app/notices/{noticeId}:publish",
       "domain": "app-공통",
       "method": "POST",
@@ -31619,6 +31691,19 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /app/notification-subscriptions/recipients:preview",
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notification-subscriptions/recipients:preview",
+      "summary": "지금 받는 사람 미리보기",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "relation_count": 3,
       "mapping_status": "PASS"
     },
@@ -32190,7 +32275,7 @@
       "tags": "maintenance",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -32504,6 +32589,19 @@
       "idempotency_key": true,
       "if_match": true,
       "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "GET /inventory/handling-units/{handlingUnitId}/repack-events",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/inventory/handling-units/{handlingUnitId}/repack-events",
+      "summary": "포장 재구성 이력",
+      "tags": "inventory",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 3,
       "mapping_status": "PASS"
     },
     {
@@ -32988,6 +33086,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "GET /logistics/material-issue-requests/shortage",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/material-issue-requests/shortage",
+      "summary": "W/O 품목별 소요·기출고·부족",
+      "tags": "logistics",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 2,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /logistics/material-issue-requests/{materialIssueRequestId}",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -33313,6 +33424,32 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "GET /trace/lot-lifecycle-events",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lot-lifecycle-events",
+      "summary": "LOT 생명주기 변경이력 조회 — 전이 3종 전건",
+      "tags": "trace",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 0,
+      "mapping_status": "FAIL"
+    },
+    {
+      "id": "GET /trace/lot-status-events",
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lot-status-events",
+      "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
+      "tags": "trace",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 2,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /trace/lots",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -33417,6 +33554,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /trace/lots/{lotId}:request-iqc-skip",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:request-iqc-skip",
+      "summary": "긴급 IQC 생략 요청",
+      "tags": "trace",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /app/roles",
       "domain": "mdm-기준정보",
       "method": "GET",
@@ -33491,6 +33641,19 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /app/roles/{roleId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/roles/{roleId}:activate",
+      "summary": "역할 다시 사용",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -33612,6 +33775,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /app/users/{appUserId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:activate",
+      "summary": "사용자 다시 사용",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /app/users/{appUserId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -33621,6 +33797,19 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /app/users/{appUserId}:reset-password",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:reset-password",
+      "summary": "비밀번호 관리자 초기화",
+      "tags": "app",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -33682,6 +33871,19 @@
       "method": "PUT",
       "path": "/integration/interface-definitions/{interfaceDefinitionId}",
       "summary": "연계 정의 수정",
+      "tags": "integration",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /integration/interface-definitions/{interfaceDefinitionId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/interface-definitions/{interfaceDefinitionId}:activate",
+      "summary": "연계 정의 다시 사용",
       "tags": "integration",
       "deprecated": false,
       "idempotency_key": true,
@@ -33950,6 +34152,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/code-groups/{codeGroupId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-groups/{codeGroupId}:activate",
+      "summary": "코드그룹 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/code-groups/{codeGroupId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -34015,6 +34230,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/code-values/{codeValueId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-values/{codeValueId}:activate",
+      "summary": "코드값 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/code-values/{codeValueId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -34072,6 +34300,19 @@
       "method": "PUT",
       "path": "/mdm/departments/{departmentId}",
       "summary": "부서 수정",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /mdm/departments/{departmentId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/departments/{departmentId}:activate",
+      "summary": "부서 다시 사용",
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
@@ -34168,6 +34409,19 @@
       "idempotency_key": true,
       "if_match": true,
       "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /mdm/equipment-groups/{equipmentGroupId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 5,
       "mapping_status": "PASS"
     },
     {
@@ -34314,6 +34568,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/equipments/{equipmentId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipments/{equipmentId}:activate",
+      "summary": "설비 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/equipments/{equipmentId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -34400,7 +34667,7 @@
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -34426,7 +34693,7 @@
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -34452,9 +34719,35 @@
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
+    },
+    {
+      "id": "GET /mdm/judgment-type-controls",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/mdm/judgment-type-controls",
+      "summary": "판정유형별 통제 속성 목록",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 0,
+      "mapping_status": "FAIL"
+    },
+    {
+      "id": "PUT /mdm/judgment-type-controls/{codeValueId}",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/judgment-type-controls/{codeValueId}",
+      "summary": "판정유형 통제 속성 편집",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 2,
+      "mapping_status": "PARTIAL"
     },
     {
       "id": "GET /mdm/legal-entities",
@@ -34522,6 +34815,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/locations/{locationId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/locations/{locationId}:activate",
+      "summary": "Location 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/locations/{locationId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -34579,6 +34885,19 @@
       "method": "PUT",
       "path": "/mdm/molds/{moldId}",
       "summary": "툴 수정",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /mdm/molds/{moldId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/molds/{moldId}:activate",
+      "summary": "툴 다시 사용",
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
@@ -34808,6 +35127,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/spare-parts/{sparePartId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/spare-parts/{sparePartId}:activate",
+      "summary": "예비품 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/spare-parts/{sparePartId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -35029,6 +35361,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /mdm/warehouses/{warehouseId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/warehouses/{warehouseId}:activate",
+      "summary": "창고 다시 사용",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /mdm/warehouses/{warehouseId}:deactivate",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -35219,8 +35564,21 @@
       "tags": "mdm",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "PUT /mdm/workers/{workerId}:update-name-translation",
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/workers/{workerId}:update-name-translation",
+      "summary": "작업자 다국어 명칭 편집",
+      "tags": "mdm",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
       "mapping_status": "PASS"
     },
     {
@@ -35445,6 +35803,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /planning/routings/{routingId}:set-default",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/planning/routings/{routingId}:set-default",
+      "summary": "기본 Rev 지정",
+      "tags": "planning",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /quality/cause-codes",
       "domain": "mdm-기준정보",
       "method": "GET",
@@ -35489,6 +35860,19 @@
       "method": "PUT",
       "path": "/quality/cause-codes/{causeCodeId}",
       "summary": "원인코드 수정",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 3,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /quality/cause-codes/{causeCodeId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/cause-codes/{causeCodeId}:activate",
+      "summary": "원인코드 다시 사용",
       "tags": "quality",
       "deprecated": false,
       "idempotency_key": true,
@@ -35554,6 +35938,58 @@
       "method": "PUT",
       "path": "/quality/defect-codes/{defectCodeId}",
       "summary": "불량코드 수정",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "GET /quality/defect-codes/{defectCodeId}/processes",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 목록",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 2,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /quality/defect-codes/{defectCodeId}/processes",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 추가",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "DELETE /quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "summary": "불량코드-공정 매핑 해제",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /quality/defect-codes/{defectCodeId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}:activate",
+      "summary": "불량코드 다시 사용",
       "tags": "quality",
       "deprecated": false,
       "idempotency_key": true,
@@ -35744,6 +36180,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /quality/inspection-plans/{inspectionPlanId}:activate",
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-plans/{inspectionPlanId}:activate",
+      "summary": "검사기준 다시 사용",
+      "tags": "quality",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "POST /quality/inspection-plans/{inspectionPlanId}:approve",
       "domain": "mdm-기준정보",
       "method": "POST",
@@ -35804,7 +36253,7 @@
       "tags": "planning",
       "deprecated": false,
       "idempotency_key": true,
-      "if_match": false,
+      "if_match": true,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -36182,6 +36631,45 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "GET /production/work-orders/{workOrderId}/resource-plans",
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 목록",
+      "tags": "production",
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "relation_count": 2,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "POST /production/work-orders/{workOrderId}/resource-plans",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 추가",
+      "tags": "production",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 4,
+      "mapping_status": "PASS"
+    },
+    {
+      "id": "DELETE /production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "domain": "production-02생산실행",
+      "method": "DELETE",
+      "path": "/production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "summary": "4M 계획 배정 해제",
+      "tags": "production",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
       "relation_count": 4,
       "mapping_status": "PASS"
     },
@@ -37465,6 +37953,66 @@
     {
       "domain": "app-공통",
       "method": "GET",
+      "path": "/app/attachments",
+      "summary": "첨부 목록",
+      "table": "app.attachment",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/attachments",
+      "summary": "첨부 올리기",
+      "table": "app.attachment",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/attachments",
+      "summary": "첨부 올리기",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/attachments",
+      "summary": "첨부 올리기",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "GET",
+      "path": "/app/attachments/{attachmentId}/content",
+      "summary": "첨부 파일 내려받기",
+      "table": "app.attachment",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "GET",
       "path": "/app/dashboard-summary",
       "summary": "통합 대시보드 집계",
       "table": "production.work_order",
@@ -38041,6 +38589,54 @@
     {
       "domain": "app-공통",
       "method": "POST",
+      "path": "/app/notices/{noticeId}:dismiss",
+      "summary": "공지 확인 없이 닫기",
+      "table": "app.notice",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notices/{noticeId}:dismiss",
+      "summary": "공지 확인 없이 닫기",
+      "table": "app.notice_acknowledgement",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notices/{noticeId}:dismiss",
+      "summary": "공지 확인 없이 닫기",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notices/{noticeId}:dismiss",
+      "summary": "공지 확인 없이 닫기",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
       "path": "/app/notices/{noticeId}:publish",
       "summary": "공지 게시",
       "table": "app.notice",
@@ -38157,6 +38753,42 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": true
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notification-subscriptions/recipients:preview",
+      "summary": "지금 받는 사람 미리보기",
+      "table": "app.notification_subscription",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notification-subscriptions/recipients:preview",
+      "summary": "지금 받는 사람 미리보기",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "app-공통",
+      "method": "POST",
+      "path": "/app/notification-subscriptions/recipients:preview",
+      "summary": "지금 받는 사람 미리보기",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
     },
     {
       "domain": "app-공통",
@@ -39656,7 +40288,7 @@
       "access": "INSERT",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "equipment-05설비툴",
@@ -39668,7 +40300,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "equipment-05설비툴",
@@ -39680,7 +40312,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "equipment-05설비툴",
@@ -39692,7 +40324,7 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "equipment-05설비툴",
@@ -40557,6 +41189,42 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": true
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/inventory/handling-units/{handlingUnitId}/repack-events",
+      "summary": "포장 재구성 이력",
+      "table": "inventory.handling_unit",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/inventory/handling-units/{handlingUnitId}/repack-events",
+      "summary": "포장 재구성 이력",
+      "table": "inventory.handling_unit_content",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/inventory/handling-units/{handlingUnitId}/repack-events",
+      "summary": "포장 재구성 이력",
+      "table": "inventory.handling_unit_reconfiguration",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
     },
     {
       "domain": "logistics-01자재창고",
@@ -41953,6 +42621,30 @@
     {
       "domain": "logistics-01자재창고",
       "method": "GET",
+      "path": "/logistics/material-issue-requests/shortage",
+      "summary": "W/O 품목별 소요·기출고·부족",
+      "table": "logistics.material_issue_request",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/logistics/material-issue-requests/shortage",
+      "summary": "W/O 품목별 소요·기출고·부족",
+      "table": "logistics.material_issue_request_line",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
       "path": "/logistics/material-issue-requests/{materialIssueRequestId}",
       "summary": "자재 출고 요청 상세",
       "table": "logistics.material_issue_request",
@@ -42889,6 +43581,30 @@
     {
       "domain": "logistics-01자재창고",
       "method": "GET",
+      "path": "/trace/lot-status-events",
+      "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
+      "table": "trace.lot_status_event",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lot-status-events",
+      "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
+      "table": "trace.lot",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
       "path": "/trace/lots",
       "summary": "LOT 목록",
       "table": "trace.lot",
@@ -43223,6 +43939,54 @@
       "if_match": true
     },
     {
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:request-iqc-skip",
+      "summary": "긴급 IQC 생략 요청",
+      "table": "trace.lot",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:request-iqc-skip",
+      "summary": "긴급 IQC 생략 요청",
+      "table": "trace.lot_relation",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:request-iqc-skip",
+      "summary": "긴급 IQC 생략 요청",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/trace/lots/{lotId}:request-iqc-skip",
+      "summary": "긴급 IQC 생략 요청",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
       "domain": "mdm-기준정보",
       "method": "GET",
       "path": "/app/roles",
@@ -43437,6 +44201,54 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/roles/{roleId}:activate",
+      "summary": "역할 다시 사용",
+      "table": "app.role",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/roles/{roleId}:activate",
+      "summary": "역할 다시 사용",
+      "table": "app.role_permission",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/roles/{roleId}:activate",
+      "summary": "역할 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/roles/{roleId}:activate",
+      "summary": "역할 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -43825,6 +44637,54 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/app/users/{appUserId}:activate",
+      "summary": "사용자 다시 사용",
+      "table": "app.app_user",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:activate",
+      "summary": "사용자 다시 사용",
+      "table": "app.user_credential",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:activate",
+      "summary": "사용자 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:activate",
+      "summary": "사용자 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/app/users/{appUserId}:deactivate",
       "summary": "사용자 사용 중지",
       "table": "app.app_user",
@@ -43869,6 +44729,54 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:reset-password",
+      "summary": "비밀번호 관리자 초기화",
+      "table": "app.app_user",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:reset-password",
+      "summary": "비밀번호 관리자 초기화",
+      "table": "app.user_credential",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:reset-password",
+      "summary": "비밀번호 관리자 초기화",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/app/users/{appUserId}:reset-password",
+      "summary": "비밀번호 관리자 초기화",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
     },
     {
       "domain": "mdm-기준정보",
@@ -43971,6 +44879,42 @@
       "method": "PUT",
       "path": "/integration/interface-definitions/{interfaceDefinitionId}",
       "summary": "연계 정의 수정",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/interface-definitions/{interfaceDefinitionId}:activate",
+      "summary": "연계 정의 다시 사용",
+      "table": "integration.interface_definition",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/interface-definitions/{interfaceDefinitionId}:activate",
+      "summary": "연계 정의 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/integration/interface-definitions/{interfaceDefinitionId}:activate",
+      "summary": "연계 정의 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -44533,6 +45477,42 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/mdm/code-groups/{codeGroupId}:activate",
+      "summary": "코드그룹 다시 사용",
+      "table": "mdm.code_group",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-groups/{codeGroupId}:activate",
+      "summary": "코드그룹 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-groups/{codeGroupId}:activate",
+      "summary": "코드그룹 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/mdm/code-groups/{codeGroupId}:deactivate",
       "summary": "코드그룹 사용 중지",
       "table": "mdm.code_group",
@@ -44655,6 +45635,42 @@
       "method": "PUT",
       "path": "/mdm/code-values/{codeValueId}",
       "summary": "코드값 수정",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-values/{codeValueId}:activate",
+      "summary": "코드값 다시 사용",
+      "table": "mdm.code_value",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-values/{codeValueId}:activate",
+      "summary": "코드값 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/code-values/{codeValueId}:activate",
+      "summary": "코드값 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -44797,6 +45813,42 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/mdm/departments/{departmentId}:activate",
+      "summary": "부서 다시 사용",
+      "table": "mdm.department",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/departments/{departmentId}:activate",
+      "summary": "부서 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/departments/{departmentId}:activate",
+      "summary": "부서 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/mdm/departments/{departmentId}:deactivate",
       "summary": "부서 사용 중지",
       "table": "mdm.department",
@@ -45087,6 +46139,66 @@
       "method": "PUT",
       "path": "/mdm/equipment-groups/{equipmentGroupId}/inspection-items",
       "summary": "설비 그룹의 점검 항목 부여 교체",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
+      "table": "mdm.equipment_group",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
+      "table": "mdm.equipment_group_member",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
+      "table": "mdm.production_line",
+      "role": "DECLARED",
+      "access": "READ",
+      "basis": "X_SOURCE_TABLE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipment-groups/{equipmentGroupId}:activate",
+      "summary": "설비 그룹 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -45421,6 +46533,42 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/mdm/equipments/{equipmentId}:activate",
+      "summary": "설비 다시 사용",
+      "table": "mdm.equipment",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipments/{equipmentId}:activate",
+      "summary": "설비 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/equipments/{equipmentId}:activate",
+      "summary": "설비 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/mdm/equipments/{equipmentId}:deactivate",
       "summary": "설비 사용 중지",
       "table": "mdm.equipment",
@@ -45584,7 +46732,7 @@
       "access": "UPDATE",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45596,7 +46744,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45608,7 +46756,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45620,7 +46768,7 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45656,7 +46804,7 @@
       "access": "UPDATE",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45668,7 +46816,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45680,7 +46828,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45692,7 +46840,7 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45728,7 +46876,7 @@
       "access": "UPDATE",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45740,7 +46888,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45752,7 +46900,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45764,7 +46912,31 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/judgment-type-controls/{codeValueId}",
+      "summary": "판정유형 통제 속성 편집",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/judgment-type-controls/{codeValueId}",
+      "summary": "판정유형 통제 속성 편집",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -45867,6 +47039,42 @@
       "method": "PUT",
       "path": "/mdm/locations/{locationId}",
       "summary": "Location 수정",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/locations/{locationId}:activate",
+      "summary": "Location 다시 사용",
+      "table": "mdm.location",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/locations/{locationId}:activate",
+      "summary": "Location 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/locations/{locationId}:activate",
+      "summary": "Location 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -45999,6 +47207,42 @@
       "method": "PUT",
       "path": "/mdm/molds/{moldId}",
       "summary": "툴 수정",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/molds/{moldId}:activate",
+      "summary": "툴 다시 사용",
+      "table": "mdm.mold",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/molds/{moldId}:activate",
+      "summary": "툴 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/molds/{moldId}:activate",
+      "summary": "툴 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -46467,6 +47711,54 @@
       "method": "PUT",
       "path": "/mdm/spare-parts/{sparePartId}/equipments",
       "summary": "예비품-설비 매핑 교체",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/spare-parts/{sparePartId}:activate",
+      "summary": "예비품 다시 사용",
+      "table": "mdm.spare_part",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/spare-parts/{sparePartId}:activate",
+      "summary": "예비품 다시 사용",
+      "table": "mdm.spare_part_equipment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/spare-parts/{sparePartId}:activate",
+      "summary": "예비품 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/spare-parts/{sparePartId}:activate",
+      "summary": "예비품 다시 사용",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -46993,6 +48285,42 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/mdm/warehouses/{warehouseId}:activate",
+      "summary": "창고 다시 사용",
+      "table": "mdm.warehouse",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/warehouses/{warehouseId}:activate",
+      "summary": "창고 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/mdm/warehouses/{warehouseId}:activate",
+      "summary": "창고 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/mdm/warehouses/{warehouseId}:deactivate",
       "summary": "창고 사용 중지",
       "table": "mdm.warehouse",
@@ -47444,7 +48772,7 @@
       "access": "UPDATE",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -47456,7 +48784,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -47468,7 +48796,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -47480,7 +48808,43 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/workers/{workerId}:update-name-translation",
+      "summary": "작업자 다국어 명칭 편집",
+      "table": "mdm.worker",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/workers/{workerId}:update-name-translation",
+      "summary": "작업자 다국어 명칭 편집",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/workers/{workerId}:update-name-translation",
+      "summary": "작업자 다국어 명칭 편집",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
     },
     {
       "domain": "mdm-기준정보",
@@ -48099,6 +49463,54 @@
       "method": "POST",
       "path": "/planning/routings/{routingId}:obsolete",
       "summary": "Rev 폐기",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/planning/routings/{routingId}:set-default",
+      "summary": "기본 Rev 지정",
+      "table": "planning.routing",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/planning/routings/{routingId}:set-default",
+      "summary": "기본 Rev 지정",
+      "table": "planning.routing_operation",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/planning/routings/{routingId}:set-default",
+      "summary": "기본 Rev 지정",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/planning/routings/{routingId}:set-default",
+      "summary": "기본 Rev 지정",
       "table": "audit.audit_event",
       "role": "CROSS_CUTTING",
       "access": "APPEND",
@@ -48205,6 +49617,42 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/quality/cause-codes/{causeCodeId}:activate",
+      "summary": "원인코드 다시 사용",
+      "table": "quality.cause_code",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/cause-codes/{causeCodeId}:activate",
+      "summary": "원인코드 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/cause-codes/{causeCodeId}:activate",
+      "summary": "원인코드 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/quality/cause-codes/{causeCodeId}:deactivate",
       "summary": "원인코드 사용 중지",
       "table": "quality.cause_code",
@@ -48384,6 +49832,174 @@
     },
     {
       "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 목록",
+      "table": "quality.defect_code",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 목록",
+      "table": "quality.defect_code_process",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 추가",
+      "table": "quality.defect_code",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 추가",
+      "table": "quality.defect_code_process",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 추가",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}/processes",
+      "summary": "불량코드-공정 매핑 추가",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "summary": "불량코드-공정 매핑 해제",
+      "table": "quality.defect_code",
+      "role": "PRIMARY",
+      "access": "DELETE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "summary": "불량코드-공정 매핑 해제",
+      "table": "quality.defect_code_process",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "summary": "불량코드-공정 매핑 해제",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "DELETE",
+      "path": "/quality/defect-codes/{defectCodeId}/processes/{processId}",
+      "summary": "불량코드-공정 매핑 해제",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}:activate",
+      "summary": "불량코드 다시 사용",
+      "table": "quality.defect_code",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}:activate",
+      "summary": "불량코드 다시 사용",
+      "table": "quality.defect_code_process",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}:activate",
+      "summary": "불량코드 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/defect-codes/{defectCodeId}:activate",
+      "summary": "불량코드 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
       "method": "POST",
       "path": "/quality/defect-codes/{defectCodeId}:deactivate",
       "summary": "불량코드 사용 중지",
@@ -48937,6 +50553,54 @@
     {
       "domain": "mdm-기준정보",
       "method": "POST",
+      "path": "/quality/inspection-plans/{inspectionPlanId}:activate",
+      "summary": "검사기준 다시 사용",
+      "table": "quality.inspection_plan",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-plans/{inspectionPlanId}:activate",
+      "summary": "검사기준 다시 사용",
+      "table": "quality.inspection_plan_version",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-plans/{inspectionPlanId}:activate",
+      "summary": "검사기준 다시 사용",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
+      "path": "/quality/inspection-plans/{inspectionPlanId}:activate",
+      "summary": "검사기준 다시 사용",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "POST",
       "path": "/quality/inspection-plans/{inspectionPlanId}:approve",
       "summary": "검사기준 승인",
       "table": "quality.inspection_plan",
@@ -49088,7 +50752,7 @@
       "access": "UPDATE",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "production-02생산실행",
@@ -49100,7 +50764,7 @@
       "access": "READ",
       "basis": "RESOURCE_RULE",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "production-02생산실행",
@@ -49112,7 +50776,7 @@
       "access": "UPSERT",
       "basis": "HEADER_CONTRACT",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "production-02생산실행",
@@ -49124,7 +50788,7 @@
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
-      "if_match": false
+      "if_match": true
     },
     {
       "domain": "production-02생산실행",
@@ -49989,6 +51653,126 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": true
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 목록",
+      "table": "production.work_order",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 목록",
+      "table": "production.work_order_resource_assignment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 추가",
+      "table": "production.work_order",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 추가",
+      "table": "production.work_order_resource_assignment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 추가",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/work-orders/{workOrderId}/resource-plans",
+      "summary": "4M 계획 배정 추가",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "DELETE",
+      "path": "/production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "summary": "4M 계획 배정 해제",
+      "table": "production.work_order",
+      "role": "PRIMARY",
+      "access": "DELETE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "DELETE",
+      "path": "/production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "summary": "4M 계획 배정 해제",
+      "table": "production.work_order_resource_assignment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "DELETE",
+      "path": "/production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "summary": "4M 계획 배정 해제",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "DELETE",
+      "path": "/production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}",
+      "summary": "4M 계획 배정 해제",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
     },
     {
       "domain": "production-02생산실행",

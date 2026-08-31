@@ -4,7 +4,7 @@
   "title": "omf-mes 05 설비·툴 도메인 API (초안)",
   "version": "0.1.0",
   "description": "05 설비·툴 도메인의 보전 계약이다. 점검 기록, 고장 기록과 처리, 보전 지시, 보전 실적, 비가동 구간과 집계, 툴 사용실적, 수집 채널 연결, 계측기 이력 여덟을 덮는다. 설비·툴·계측기·예비품·작업 캘린더 같은 마스터는 기준정보 계약이 갖고, 타발수 환산 정책은 공통 계약이 갖는다. 고장 처리는 접수에서 처리 중을 거쳐 완료로만 가고 되돌리지 않는다 — 잘못됐으면 새 건으로 등록한다. 비가동은 구간이라 진행 중이라는 상태 값을 두지 않고 끝 시각이 비어 있는 것으로 판정한다. 보전 지시는 한 번에 한 건만 만든다 — 여러 대상을 고른 화면이 대상 수만큼 부른다. 툴 누계는 서버가 더해 응답에 담고 기준 시각을 함께 낸다. ⛔ 오프라인에서 202 를 쓰지 않는다 — 요청 자체가 일어나지 않기 때문이다.",
-  "x-internal-note": "선행 문서: uiux/2026-08-18-API스펙-05설비툴/ 0~3단계. 저장 측 물리 표가 여덟 다 아직 없다 — 계약이 앞서고 모델 쪽은 omf-mes#67 에 작업 통지로 넘긴다. 물리 모델은 설계 결정을 앞설 수 없다(2026-08-18 사용자 확정 · 00-서식.md v1.1)."
+  "x-internal-note": "선행 문서: uiux/2026-08-18-API스펙-05설비툴/ 0~3단계. 저장 측 물리 표가 여덟 다 아직 없다 — 계약이 앞서고 모델 쪽은 omf-mes#67 에 작업 통지로 넘긴다. 물리 모델은 설계 결정을 앞설 수 없다(2026-08-18 사용자 확정 · 00-서식.md v1.1). 05 의 POP 두 장(P-05-01·P-05-02)은 전용 플래그가 없어 can_input_result 로 포섭돼 있다. 그 포섭이 어긋날 때 막는 것은 이 계약의 403 이다 — 공유계약 F-5 세 번째 역할."
  },
  "servers": [
   {
@@ -25,7 +25,7 @@
      "maintenance"
     ],
     "summary": "점검 기록 목록",
-    "description": "설비 점검 이력을 조회한다. 기간이 필수다(공유계약 L-3). 작업 전 점검 통제가 이 목록을 근거로 삼는다. 단말에 아직 남아 있는 입력분은 여기 포함되지 않는다.",
+    "description": "설비 점검 이력을 조회한다. 작업 전 점검 통제처럼 전 이력을 훑을 때는 기간이 필수다(공유계약 L-3). 보전 지시 발행의 미발행 트리거 목록은 예외다(공유계약 L-12) — 기본이 미처리 전건이고 정렬은 경과일 긴 순이다. 작업 전 점검 통제가 이 목록을 근거로 삼는다. 단말에 아직 남아 있는 입력분은 여기 포함되지 않는다. ⭐ 기본 정렬이 점검 시각 내림차순이라, equipmentId·inspectionTypeCode 로 좁히고 size=1 로 부르면 통제 판정이 쓰는 「가장 최근 한 건」이 된다(P-02-02 §5-5).",
     "parameters": [
      {
       "name": "equipmentId",
@@ -52,7 +52,7 @@
        "format": "date",
        "example": "2026-08-01"
       },
-      "description": "필수 — 공유계약 L-3"
+      "description": "기간 시작. ⭐ 조건부 필수 — 전 이력을 훑는 호출에서는 반드시 싣는다(공유계약 L-3). 미발행 트리거 목록처럼 미처리 전건을 부르는 호출은 예외다(공유계약 L-12)"
      },
      {
       "name": "inspectedTo",
@@ -80,6 +80,35 @@
        "example": 50
       },
       "description": "기본 50"
+     },
+     {
+      "name": "overallResultCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "종합 판정으로 거른다 — 합격(OK) 또는 불합격(NG). 보전 지시 발행 화면이 불합격만 트리거 목록으로 부른다(W-05-05 §4)"
+     },
+     {
+      "name": "withoutMaintenanceOrder",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "참이면 아직 보전 지시로 발행되지 않은 건만 낸다. 「미발행 트리거」가 그 화면의 기본 목록이다(W-05-05 §7)"
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "inspectedAtDesc",
+        "inspectedAtAsc"
+       ],
+       "default": "inspectedAtDesc"
+      },
+      "description": "정렬 키를 제한한다(공유계약 L-4). 기본은 점검 시각 내림차순이다 — 작업 전 점검 통제(P-02-02 §5-5)가 「여러 건 있으면 가장 최근 것」으로 판정하고 점검 입력(M-05-01 §6-2)도 같은 규약을 세웠다. ⚠ 반대 방향도 있다 — 보전 지시 발행의 미발행 트리거 목록은 오름차순을 명시해 부른다(W-05-05 §4 「경과일 긴 순」 · 공유계약 L-12). ⛔ 응답을 화면이 정렬해 고르는 것으로는 성립하지 않는다 — 목록이 쪽 단위라 쪽 안에서만 정렬된다"
      }
     ],
     "responses": {
@@ -98,8 +127,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -152,6 +184,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Inspection"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -300,6 +342,14 @@
        "example": 50
       },
       "description": "기본 50"
+     },
+     {
+      "name": "withoutMaintenanceOrder",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "참이면 아직 보전 지시로 발행되지 않은 건만 낸다. ⭐ openOnly(고장 자신이 완료됐는가)와 다른 축이다 — 지시가 나간 고장도 완료 전이면 openOnly 에 걸린다. 근거: W-05-05 §7"
      }
     ],
     "responses": {
@@ -318,8 +368,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -372,6 +425,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -495,6 +558,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -594,6 +667,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -663,6 +746,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "404": {
       "description": "대상을 찾을 수 없다",
       "content": {
@@ -702,7 +795,7 @@
      "maintenance"
     ],
     "summary": "고장 완료",
-    "description": "원인 코드와 처리 내역이 있어야 완료된다. 경미한 건은 처리 중을 거치지 않고 바로 완료할 수 있다. 완료된 건은 잠기며 되돌리는 길은 없다 — 잘못됐으면 새 고장 건으로 등록한다.",
+    "description": "원인 코드와 처리 내역이 있어야 완료된다. 경미한 건은 처리 중을 거치지 않고 바로 완료할 수 있다. 완료된 건은 잠기며 되돌리는 길은 없다 — 잘못됐으면 새 고장 건으로 등록한다. ⛔ 이 호출은 작업지시를 재개시키지도, 연결된 비가동을 종료시키지도 않는다 — 멈춘 작업을 다시 돌리는 것은 현장 작업자의 판단이고, 비가동 종료는 현장 단말의 몫이다. 되돌릴 수 없는 행위를 자동화하지 않는다.",
     "parameters": [
      {
       "name": "breakdownId",
@@ -738,6 +831,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Breakdown"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -782,7 +885,8 @@
        }
       }
      }
-    }
+    },
+    "x-internal-note": "도메인 간 «무효과»를 계약이 명시한 자리다 — W-05-04 §5-6·§5-8 이 둘을 각각 확정했고(186행 「고장 완료가 W/O 를 자동 재개시키지 않는다」 · 187행 「비가동을 종료시키지 않는다 — 종료는 P-05-02 몫」), P-02-02 §3 이월표와 181행이 받았다. 근거: 공유계약 B-15 취지 · W-05-04 §5-6·§5-8"
    }
   },
   "/maintenance/orders": {
@@ -824,7 +928,8 @@
       "schema": {
        "type": "string",
        "example": "PREVENTIVE"
-      }
+      },
+      "description": "보전 유형으로 거른다 — 사후(CORRECTIVE)·예방(PREVENTIVE). 사람이 고르는 값이 아니라 발행 시 트리거 조합이 정한 값이다."
      },
      {
       "name": "plannedFrom",
@@ -879,8 +984,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -930,6 +1038,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/MaintenanceOrder"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1041,6 +1159,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/MaintenanceOrder"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1165,8 +1293,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -1193,10 +1324,13 @@
      "maintenance"
     ],
     "summary": "보전 실적 등록",
-    "description": "지시에서 이어받거나 고장에서 바로 등록한다. 지시가 없어도 성립한다 — 현장에서 이미 조치한 건이 있기 때문이다.",
+    "description": "지시에서 이어받거나 고장에서 바로 등록한다. 지시가 없어도 성립한다 — 현장에서 이미 조치한 건이 있기 때문이다. ⭐ resetCounter=true 이면 If-Match 가 필수다 — 누계 리셋은 증분이 아니라 치환이라 충돌 감지가 필요하고, 값은 대상 툴의 상세 조회 200 이 내려주는 ETag 를 그대로 싣는다(공유계약 B-1). 없으면 422 로 거부한다. ⭐ closed=true 는 lines 가 전부 완료 또는 해당없음일 때만 받는다(W-05-06 §5-6).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
      }
     ],
     "requestBody": {
@@ -1220,6 +1354,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -1236,6 +1380,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌 — 되돌릴 대상 툴의 누계가 그 사이 바뀌었다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
         }
        }
       }
@@ -1339,6 +1493,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -1388,7 +1552,7 @@
      "maintenance"
     ],
     "summary": "비가동 목록",
-    "description": "기간이 필수다(공유계약 L-3). 아직 끝나지 않은 구간만, 또는 겹친 구간만 걸러 볼 수 있다 — 집계 화면의 두 안내가 이 필터를 부른다.",
+    "description": "기간이 필수다(공유계약 L-3) — 다만 openOnly=true 로 「열린 구간만」 부르는 호출은 기간을 비울 수 있다. 전날부터 이어진 구간을 놓치면 안 되기 때문이고, 미처리 전건을 보이는 목록과 같은 갈래다(공유계약 L-12). 아직 끝나지 않은 구간만, 또는 겹친 구간만 걸러 볼 수 있다 — 집계 화면의 두 안내가 이 필터를 부른다. 현장 단말의 「진행 중 비가동」 구획도 이 호출을 쓴다(P-05-02 §3).",
     "parameters": [
      {
       "name": "equipmentId",
@@ -1404,8 +1568,9 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "MOLD-CHANGE"
-      }
+       "example": "MOLD_CHANGE"
+      },
+      "description": "비가동 사유로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=DOWNTIME_REASON 로 받는다"
      },
      {
       "name": "openOnly",
@@ -1433,7 +1598,7 @@
        "format": "date",
        "example": "2026-08-01"
       },
-      "description": "필수 — 공유계약 L-3"
+      "description": "기간 시작. ⭐ 조건부 필수 — openOnly=true 로 「열린 구간만」 부르는 호출이 아니면 반드시 싣는다(공유계약 L-3)"
      },
      {
       "name": "startedTo",
@@ -1479,8 +1644,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -1533,6 +1701,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1656,6 +1834,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -1705,7 +1893,7 @@
      "maintenance"
     ],
     "summary": "비가동 지금 종료",
-    "description": "진행 중인 구간을 지금 시각으로 끝낸다.",
+    "description": "진행 중인 구간을 지금 시각으로 끝낸다. ⚠ 현장 단말(P-05-02)이 오프라인 큐로 보내는 자리라 잠금 토큰은 선택이다 — 큐에 쌓인 요청은 토큰을 싣지 않는다(공유계약 C-9).",
     "parameters": [
      {
       "name": "downtimeId",
@@ -1721,7 +1909,7 @@
       "$ref": "#/components/parameters/IdempotencyKey"
      },
      {
-      "$ref": "#/components/parameters/IfMatchVersion"
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
      },
      {
       "$ref": "#/components/parameters/WorkerNo"
@@ -1734,6 +1922,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Downtime"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -1777,7 +1975,7 @@
      "maintenance"
     ],
     "summary": "비가동 집계",
-    "description": "요약과 사유별 분포를 낸다. 끝나지 않은 구간과 겹친 구간은 «건수»만 내고 목록은 담지 않는다 — 목록이 필요하면 비가동 목록을 필터로 부른다. 설비종합효율은 내지 않는다.",
+    "description": "기간이 필수다(공유계약 L-3). 요약과 사유별 분포를 낸다. 끝나지 않은 구간과 겹친 구간은 «건수»만 내고 목록은 담지 않는다 — 목록이 필요하면 비가동 목록을 필터로 부른다. 설비종합효율은 내지 않는다. ⭐ 조업 시간은 작업 세션에서, 계획 비가동은 작업 캘린더에서 온다 — 이 오퍼레이션은 그 둘을 읽어 시간가동률까지만 낸다. 보전 건수 셋은 비가동이 아니지만 같은 사람이 같은 시점에 보므로 요약에 함께 낸다 — 탭을 늘리지 않는다(W-05-08 §5-6).",
     "parameters": [
      {
       "name": "plantId",
@@ -1829,7 +2027,8 @@
        "format": "date",
        "example": "2026-08-01"
       },
-      "description": "필수 — 공유계약 L-3"
+      "description": "필수 — 공유계약 L-3",
+      "required": true
      },
      {
       "name": "startedTo",
@@ -1838,7 +2037,8 @@
        "type": "string",
        "format": "date",
        "example": "2026-08-18"
-      }
+      },
+      "required": true
      },
      {
       "name": "bucket",
@@ -1877,7 +2077,8 @@
        }
       }
      }
-    }
+    },
+    "x-envelope-exempt": "집계 축(groupBy·bucket)을 갖는 뷰라 목록과 질의 축이 다르다 — 끝나지 않은 구간·겹친 구간은 건수만 내고 목록을 담지 않으므로(openOnly·overlappingOnly) 그 축이 요약에 뜻이 없다."
    }
   },
   "/maintenance/tool-usages": {
@@ -1959,8 +2160,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -2013,6 +2217,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ToolUsage"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2143,8 +2357,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -2194,6 +2411,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/CollectionChannel"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2317,6 +2544,16 @@
        }
       }
      },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
      "400": {
       "description": "입력이 규칙에 어긋난다",
       "content": {
@@ -2403,8 +2640,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -2433,7 +2673,7 @@
      "maintenance"
     ],
     "summary": "계측기 이력 목록",
-    "description": "계측기의 검교정·점검 이력을 조회한다. 만료가 임박한 것을 거를 수 있다.",
+    "description": "계측기의 검교정·점검·수리·폐기 이력을 조회한다. 만료가 임박한 것을 거를 수 있다.",
     "parameters": [
      {
       "name": "equipmentId",
@@ -2451,7 +2691,8 @@
       "schema": {
        "type": "string",
        "example": "CALIBRATION"
-      }
+      },
+      "description": "이력 유형으로 거른다. 값은 Calibration.historyTypeCode 와 같다."
      },
      {
       "name": "dueBefore",
@@ -2516,8 +2757,11 @@
           },
           "totalCount": {
            "type": "integer",
-           "description": "전체 건수",
+           "description": "전체 건수. ⚠ page.total 과 같은 값이다 — 새로 만드는 화면은 page.total 을 읽는다(공유계약 L-1)",
            "example": 42
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
           }
          },
          "required": [
@@ -2544,7 +2788,7 @@
      "maintenance"
     ],
     "summary": "계측기 이력 등록",
-    "description": "한 번 적으면 고치거나 지울 수 없다 — 잘못 적었으면 새 이력을 덧붙인다.",
+    "description": "한 번 적으면 고치거나 지울 수 없다 — 잘못 적었으면 새 이력을 덧붙인다.\n\n⭐ 이력 유형이 검교정이고 결과가 합격 계열이면 서버가 같은 트랜잭션에서 설비 마스터의 최근 검교정일과 차기 검교정 기한을 갱신한다 — 값은 performedOn 과 nextDueOn 이다. ⛔ 화면이 설비 마스터를 따로 부르지 않는다(공유계약 B-13 · W-05-10 §5-3). ⛔ 이 오퍼레이션만이 그 두 칸을 쓴다 — 설비 마스터 수정 본문은 두 칸을 받지 않는다. 불합격이면 갱신하지 않는다 — 유효기한이 늘어나면 안 된다. 점검·수리·폐기 유형도 갱신하지 않는다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2567,6 +2811,16 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Calibration"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -2659,6 +2913,16 @@
      "type": "string"
     },
     "description": "낙관적 잠금용 version_no. 값은 같은 리소스의 상세 GET 200 이 내려주는 ETag 응답 헤더에서 받는다 — version_no 는 공유계약 A-4 에 따라 본문 필드로 노출하지 않는다. 근거: 공유계약 B-1"
+   },
+   "IfMatchVersionOptional": {
+    "name": "If-Match",
+    "in": "header",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "오프라인에서도 쓰는 오퍼레이션에서는 선택이다 — 없으면 낙관적 잠금 검사를 건너뛴다. 큐에 쌓인 요청은 토큰을 싣지 않는다. 근거: 공유계약 C-9",
+    "x-internal-note": "관리웹 전용 오퍼레이션에는 IfMatchVersion(required)을 그대로 쓴다 — 이 완화는 오프라인 대상에만 적용한다(02-URL동작규약.md §5)."
    },
    "WorkerNo": {
     "name": "X-Worker-No",
@@ -2782,7 +3046,8 @@
      },
      "resultCode": {
       "type": "string",
-      "example": "OK"
+      "example": "OK",
+      "description": "합격(OK) 또는 불합격(NG)"
      },
      "measuredValue": {
       "type": [
@@ -2833,7 +3098,7 @@
      },
      "overallResultCode": {
       "type": "string",
-      "description": "라인이 하나라도 불합격이면 불합격이다",
+      "description": "라인이 하나라도 불합격이면 불합격이다. 값은 합격(OK)·불합격(NG) 둘이다. ⛔ 작업 전 점검 통제(P-02-02 §5-7)가 이 값으로 «수준과 무관한 차단»을 판정하므로 화면이 문자열을 흩어 박지 않는다",
       "example": "NG"
      },
      "inspectedAt": {
@@ -2846,6 +3111,14 @@
       "type": "string",
       "description": "사번 인증에서 온다",
       "example": "3391"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "점검 전체에 대한 비고. ⚠ 라인에 불합격(NG)이 하나라도 있으면 화면이 필수로 올린다 — 남이 읽고 판단할 자유 텍스트다(공유계약 A-12). 근거: M-05-01 §4-A·§5-3",
+      "example": "3번 항목 누유 — 씰 교체 필요, 보전 요청함"
      },
      "lines": {
       "type": "array",
@@ -2881,6 +3154,14 @@
       "format": "date-time",
       "description": "단말 시각을 그대로 싣는다",
       "example": "2026-08-18T09:40:00+07:00"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "점검 전체에 대한 비고. ⚠ 라인에 불합격(NG)이 하나라도 있으면 화면이 필수로 올린다 — 남이 읽고 판단할 자유 텍스트다(공유계약 A-12). 근거: M-05-01 §4-A·§5-3",
+      "example": "3번 항목 누유 — 씰 교체 필요, 보전 요청함"
      },
      "lines": {
       "type": "array",
@@ -2932,7 +3213,7 @@
        "null"
       ],
       "description": "원인 코드 — 완료로 갈 때 필요하다",
-      "example": "HYD-LEAK"
+      "example": "HYD_LEAK"
      },
      "handlingNote": {
       "type": [
@@ -3028,6 +3309,24 @@
       "description": "설비담당에게 알릴지",
       "example": true
      },
+     "linkedDowntimeCount": {
+      "type": "integer",
+      "description": "이 고장에 연결된 비가동 건수. ⚠ 상세 응답에서만 채운다 — 목록에서는 0 이다",
+      "example": 3
+     },
+     "linkedDowntimeMinutes": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "연결된 비가동의 합계 분. 끝나지 않은 구간이 있으면 그 몫은 빠지고 openLinkedDowntimeCount 로 따로 센다. ⚠ 상세 응답에서만 채운다",
+      "example": 112
+     },
+     "openLinkedDowntimeCount": {
+      "type": "integer",
+      "description": "연결된 비가동 중 아직 끝나지 않은 건수. 화면이 완료 전에 경고한다(W-05-04 §6). ⚠ 상세 응답에서만 채운다",
+      "example": 1
+     },
      "handling": {
       "$ref": "#/components/schemas/BreakdownHandling"
      },
@@ -3099,7 +3398,7 @@
        "string",
        "null"
       ],
-      "example": "HYD-LEAK"
+      "example": "HYD_LEAK"
      },
      "handlingNote": {
       "type": [
@@ -3116,7 +3415,7 @@
      "causeCode": {
       "type": "string",
       "description": "완료에는 반드시 있어야 한다",
-      "example": "HYD-LEAK"
+      "example": "HYD_LEAK"
      },
      "handlingNote": {
       "type": "string",
@@ -3144,12 +3443,56 @@
       "type": "string",
       "description": "계획(PLANNED) · 완료(DONE) · 해당없음(NA)",
       "example": "PLANNED"
+     },
+     "inspectionItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "가리키는 점검·보전 항목 마스터. 자유 입력 항목이면 비어 있다",
+      "example": 1001
+     },
+     "sequenceNo": {
+      "type": "integer",
+      "description": "표시 순서",
+      "example": 1
      }
     },
     "required": [
      "orderItemId",
      "itemName"
     ]
+   },
+   "MaintenanceOrderItemInput": {
+    "type": "object",
+    "required": [
+     "sequenceNo"
+    ],
+    "properties": {
+     "inspectionItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "점검·보전 항목 마스터를 가리킨다. targetTypeCode=EQUIPMENT 이면 반드시 채운다 — 부여가 없으면 발행할 수 없다. 근거: W-05-05 §5-B",
+      "example": 1001
+     },
+     "itemName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "항목 마스터가 없을 때의 자유 입력. 툴 예방보전이 이쪽이다. ⭐ inspectionItemId 와 itemName 중 적어도 하나는 있어야 한다 — 짝 제약은 화면이 진다(공유계약 A-2)",
+      "example": "분해 청소"
+     },
+     "sequenceNo": {
+      "type": "integer",
+      "description": "표시 순서",
+      "example": 1
+     }
+    }
    },
    "MaintenanceOrderTrigger": {
     "type": "object",
@@ -3160,9 +3503,12 @@
       "example": "BREAKDOWN"
      },
      "sourceId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "description": "트리거가 가리키는 기록",
+      "description": "트리거가 가리키는 기록. ⛔ triggerTypeCode=PM_DUE 이면 가리킬 행이 없어 비운다 — 주기 도래는 저장된 사건이 아니라 파생 조건이다(W-05-05 §6-3 · 공유계약 A-15). 나머지 두 유형에서는 반드시 채운다",
       "example": 1001
      },
      "snapshotNote": {
@@ -3172,11 +3518,36 @@
       ],
       "description": "발행 시점의 트리거 축과 누계를 그대로 남긴다",
       "example": "타발수 512,400 / 500,000"
+     },
+     "pmDueAxisCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "먼저 도달한 축 — SHOT 또는 DATE. triggerTypeCode=PM_DUE 일 때만 채운다. 근거: W-05-02 §5-A",
+      "example": "SHOT"
+     },
+     "shotCountAtDue": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "발행 시점의 누계 타발수 스냅샷. 뒤에 리셋되므로 얼려 둔다. 근거: W-05-02 §5-2",
+      "example": 512400
+     },
+     "guaranteedShotCountAtDue": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "발행 시점의 적정타수 스냅샷",
+      "example": 500000
      }
     },
     "required": [
-     "triggerTypeCode",
-     "sourceId"
+     "triggerTypeCode"
     ]
    },
    "MaintenanceOrder": {
@@ -3245,6 +3616,32 @@
       "format": "date",
       "example": "2026-08-18",
       "description": "주기를 세는 기준일. 다음 주기가 이 날부터 시작한다 — 예방보전 지시에 필요하고 사후 보전에는 비어 있다"
+     },
+     "orderNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "지시 내용. 담당자가 읽고 판단하는 자유 서술이라 화면이 형식을 유도한다(공유계약 A-12). 근거: W-05-05 §5-A",
+      "example": "유압 유닛 분해 청소 후 누유 재점검"
+     },
+     "issuedByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "발행자. 근거: W-05-05 §5-A",
+      "example": 1001
+     },
+     "issuedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "발행 시각. 서버가 채운다",
+      "example": "2026-08-18T09:40:00+07:00"
      }
     },
     "required": [
@@ -3284,7 +3681,14 @@
        "type": "string",
        "example": "분해 청소"
       },
-      "description": "항목 마스터가 없으면 자유 입력을 받는다"
+      "description": "항목 마스터가 없을 때만 쓰는 옛 표현이다. ⭐ 새로 만드는 화면은 items 를 쓴다 — 둘을 함께 실으면 items 가 이긴다"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceOrderItemInput"
+      },
+      "description": "지시 항목. 설비 보전은 점검·보전 항목 마스터를 가리키고(W-05-05 §5-B) 툴 예방보전은 마스터가 없어 이름만 담는다(W-05-02 §7-2). ⭐ items 와 itemNames 를 함께 실으면 items 가 이긴다"
      },
      "triggers": {
       "type": "array",
@@ -3300,6 +3704,14 @@
       "format": "date",
       "example": "2026-08-18",
       "description": "주기를 세는 기준일. 다음 주기가 이 날부터 시작한다 — 예방보전 지시에 필요하고 사후 보전에는 비어 있다"
+     },
+     "orderNote": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "지시 내용. 담당자가 읽고 판단하는 자유 서술이라 화면이 형식을 유도한다(공유계약 A-12). 근거: W-05-05 §5-A",
+      "example": "유압 유닛 분해 청소 후 누유 재점검"
      }
     },
     "required": [
@@ -3308,6 +3720,44 @@
      "plannedDate",
      "assigneeUserId"
     ]
+   },
+   "MaintenanceResultLine": {
+    "type": "object",
+    "required": [
+     "resultCode"
+    ],
+    "properties": {
+     "orderItemId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "지시 항목과 이어질 때만 채운다. 설비 보전은 지시 항목을 따라가고(W-05-06 §5-B) 툴 예방보전은 비운다",
+      "example": 1001
+     },
+     "partName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "보전부위. 툴 예방보전은 항목 마스터가 없어 자유 입력이다. 근거: W-05-03 §5-B",
+      "example": "게이트 부시"
+     },
+     "resultCode": {
+      "type": "string",
+      "description": "항목·부위별 결과. ⚠ 값 집합이 대상에 따라 다르다 — 설비 보전은 완료·미완·해당없음(MaintenanceOrderItem.statusCode 의 PLANNED·DONE·NA 와 같은 집합), 툴 예방보전은 양호·조정·교체·불가다. ⛔ 값 이름은 아직 확정되지 않았다 — 공통코드 마스터(W-06-06)가 정하며 그때까지 화면은 선택칸을 비활성 + 사유로 둔다(공유계약 G-2). ⛔ enum 으로 못박지 않는다",
+      "x-no-example": true
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "라인 비고",
+      "example": "체결 토크 재조정"
+     }
+    }
    },
    "MaintenanceResultPart": {
     "type": "object",
@@ -3332,8 +3782,36 @@
        "null"
       ],
       "format": "int64",
-      "description": "예비품 출고 건과 연결된다",
+      "description": "예비품 출고 건과 연결된다. ⛔ 이 화면이 출고를 만들지 않는다 — 물류가 만든 건을 참조만 하고 재고를 자동으로 깎지 않는다. 근거: W-05-06 §5-1",
       "example": 1001
+     },
+     "goodsIssueNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "readOnly": true,
+      "description": "연결된 출고 건의 전표 번호. 화면이 표에 그대로 보인다. 근거: W-05-06 §4",
+      "example": "GI-2026-000402"
+     },
+     "issuedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "readOnly": true,
+      "description": "연결된 출고 건의 출고 시각. 화면은 날짜만 그린다",
+      "example": "2026-08-14T09:12:00+07:00"
+     },
+     "uomCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "readOnly": true,
+      "description": "사용 수량의 단위",
+      "example": "EA"
      }
     },
     "required": [
@@ -3392,15 +3870,64 @@
       "type": "string",
       "example": "씰 교체 후 시운전 정상"
      },
+     "performedByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "수행자. 외주면 비운다 — 짝 제약은 화면이 진다(공유계약 A-2). 근거: W-05-06 §5-5",
+      "example": 1001
+     },
+     "isOutsourced": {
+      "type": "boolean",
+      "default": false,
+      "description": "외주 보전인가. 참이면 performedByUserId 를 비우고 outsourceVendorName 을 채운다",
+      "example": false
+     },
+     "outsourceVendorName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "외주처 이름. ⛔ 거래처 마스터를 가리키지 않는다 — 보전 업체는 구매 협력사로 등록돼 있지 않을 가능성이 높고 등록을 강제하면 실적을 못 적는다. 근거: W-05-06 §5-5",
+      "example": "대성정밀"
+     },
      "resetCounter": {
       "type": "boolean",
-      "description": "툴 정기보전에서 누계를 되돌릴지",
+      "description": "툴 예방보전에서 누계를 되돌릴지. 참이면 shotCountAfterReset 을 함께 보낸다 — shotCountBeforeReset 은 서버가 채운다",
       "example": false
+     },
+     "shotCountBeforeReset": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "readOnly": true,
+      "description": "리셋 직전 누계 타발수 스냅샷. resetCounter=true 인 실적에 서버가 저장 시점 누계로 채운다 — 누계가 0 이 되면 「이번 예방보전까지 얼마나 썼는지」가 사라지고 그것이 수명 분석의 유일한 재료다. 근거: W-05-03 §3-3",
+      "example": 512400
+     },
+     "shotCountAfterReset": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "리셋 후 시작값. 보통 0 이고 오버홀이면 다를 수 있다. resetCounter=true 이면 채운다. 근거: W-05-03 §5-A",
+      "example": 0
      },
      "closed": {
       "type": "boolean",
       "description": "지시를 마감했는지",
       "example": false
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultLine"
+      },
+      "description": "부위·항목별 결과. 실적 저장과 한 번에 간다 — 별도 경로를 두지 않는다. 근거: W-05-03 §5-B · W-05-06 §5-B"
      },
      "parts": {
       "type": "array",
@@ -3462,13 +3989,53 @@
       "type": "string",
       "example": "씰 교체 후 시운전 정상"
      },
+     "performedByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "수행자. 외주면 비운다 — 짝 제약은 화면이 진다(공유계약 A-2). 근거: W-05-06 §5-5",
+      "example": 1001
+     },
+     "isOutsourced": {
+      "type": "boolean",
+      "default": false,
+      "description": "외주 보전인가. 참이면 performedByUserId 를 비우고 outsourceVendorName 을 채운다",
+      "example": false
+     },
+     "outsourceVendorName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "외주처 이름. ⛔ 거래처 마스터를 가리키지 않는다 — 보전 업체는 구매 협력사로 등록돼 있지 않을 가능성이 높고 등록을 강제하면 실적을 못 적는다. 근거: W-05-06 §5-5",
+      "example": "대성정밀"
+     },
      "resetCounter": {
       "type": "boolean",
-      "example": false
+      "example": false,
+      "description": "툴 예방보전에서 누계를 되돌릴지. 참이면 shotCountAfterReset 을 함께 보낸다 — shotCountBeforeReset 은 서버가 채운다"
+     },
+     "shotCountAfterReset": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "리셋 후 시작값. 보통 0 이고 오버홀이면 다를 수 있다. resetCounter=true 이면 채운다. 근거: W-05-03 §5-A",
+      "example": 0
      },
      "closed": {
       "type": "boolean",
       "example": false
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultLine"
+      },
+      "description": "부위·항목별 결과. 실적 저장과 한 번에 간다 — 별도 경로를 두지 않는다. 근거: W-05-03 §5-B · W-05-06 §5-B"
      },
      "parts": {
       "type": "array",
@@ -3503,11 +4070,40 @@
       "type": "boolean",
       "example": true
      },
+     "lines": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaintenanceResultLine"
+      },
+      "description": "부위·항목별 결과. 실적 저장과 한 번에 간다 — 별도 경로를 두지 않는다. 근거: W-05-03 §5-B · W-05-06 §5-B"
+     },
      "parts": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/MaintenanceResultPart"
       }
+     }
+    }
+   },
+   "PageMeta": {
+    "type": "object",
+    "required": [
+     "page",
+     "size",
+     "total"
+    ],
+    "properties": {
+     "page": {
+      "type": "integer",
+      "example": 1
+     },
+     "size": {
+      "type": "integer",
+      "example": 50
+     },
+     "total": {
+      "type": "integer",
+      "example": 137
      }
     }
    },
@@ -3530,7 +4126,8 @@
      },
      "reasonCode": {
       "type": "string",
-      "example": "MOLD-CHANGE"
+      "example": "MOLD_CHANGE",
+      "x-internal-note": "⚠ 대·소분류 2단 여부는 아직 정해지지 않았다 — P-05-02 §8-2 · W-06-06 소관(표지 G-2). 계약은 현재 1단이다. 그룹 이름의 출처는 design/raw/process/uiux/2026-08-13-공통코드값목록-제안안/01-2차-제안안.md §2 21번(2026-08-22 작업 통지) — wiki 정본에는 아직 없다."
      },
      "reasonName": {
       "type": "string",
@@ -3572,11 +4169,21 @@
        "null"
       ],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "⚠ 화면이 보내지 않는다 — 비가동 등록·수정 본문(DowntimeCreate·DowntimeUpdate)에 이 칸이 없다. ⛔ 비가동은 설비에 붙지 작업에 붙지 않는다(P-05-02 §4-A) — 이 칸을 작업지시 귀속으로 읽지 않는다.",
+      "x-internal-note": "⛔ 채우는 주체가 정해지지 않았다 — 쓰기 본문에도 질의 축에도 없고 05 요구서·화면 스펙 17장에 0건이다. 두 갈래 중 하나로 닫는다: (가) 서버가 startedAt·equipmentId 로 그 시각 열린 세션을 찾아 붙인다 (나) 칸을 걷는다(⛔ 필드 삭제). ⚠ 지금 이 칸을 요구하는 화면은 없다. P-05-02 §4-A 가 작업 축 FK 를 명시적으로 물렸으므로 (나)가 기본값이다. 근거: P-05-02 §4-A·§8-4"
      },
      "recordedByWorkerNo": {
       "type": "string",
       "example": "3391"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "현장이 남기는 메모. 사유 코드로 담기지 않는 사연을 적는다. 근거: P-05-02 §4-A",
+      "example": "유압 호스 교체 대기"
      }
     },
     "required": [
@@ -3597,7 +4204,8 @@
      },
      "reasonCode": {
       "type": "string",
-      "example": "MOLD-CHANGE"
+      "example": "MOLD_CHANGE",
+      "x-internal-note": "⚠ 대·소분류 2단 여부는 아직 정해지지 않았다 — P-05-02 §8-2 · W-06-06 소관(표지 G-2). 계약은 현재 1단이다. 그룹 이름의 출처는 design/raw/process/uiux/2026-08-13-공통코드값목록-제안안/01-2차-제안안.md §2 21번(2026-08-22 작업 통지) — wiki 정본에는 아직 없다."
      },
      "startedAt": {
       "type": "string",
@@ -3621,6 +4229,14 @@
       ],
       "format": "int64",
       "example": 1001
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "현장이 남기는 메모. 사유 코드로 담기지 않는 사연을 적는다. 근거: P-05-02 §4-A",
+      "example": "유압 호스 교체 대기"
      }
     },
     "required": [
@@ -3634,7 +4250,8 @@
     "properties": {
      "reasonCode": {
       "type": "string",
-      "example": "MOLD-CHANGE"
+      "example": "MOLD_CHANGE",
+      "x-internal-note": "⚠ 대·소분류 2단 여부는 아직 정해지지 않았다 — P-05-02 §8-2 · W-06-06 소관(표지 G-2). 계약은 현재 1단이다. 그룹 이름의 출처는 design/raw/process/uiux/2026-08-13-공통코드값목록-제안안/01-2차-제안안.md §2 21번(2026-08-22 작업 통지) — wiki 정본에는 아직 없다."
      },
      "endedAt": {
       "type": [
@@ -3651,6 +4268,14 @@
       ],
       "format": "int64",
       "example": 1001
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "현장이 남기는 메모. 사유 코드로 담기지 않는 사연을 적는다. 근거: P-05-02 §4-A",
+      "example": "유압 호스 교체 대기"
      }
     }
    },
@@ -3659,7 +4284,8 @@
     "properties": {
      "reasonCode": {
       "type": "string",
-      "example": "MOLD-CHANGE"
+      "example": "MOLD_CHANGE",
+      "x-internal-note": "⚠ 대·소분류 2단 여부는 아직 정해지지 않았다 — P-05-02 §8-2 · W-06-06 소관(표지 G-2). 계약은 현재 1단이다. 그룹 이름의 출처는 design/raw/process/uiux/2026-08-13-공통코드값목록-제안안/01-2차-제안안.md §2 21번(2026-08-22 작업 통지) — wiki 정본에는 아직 없다. 이 스키마는 응답 집계라 저장 문장을 담지 않는다."
      },
      "reasonName": {
       "type": "string",
@@ -3695,12 +4321,14 @@
     "properties": {
      "operatingMinutes": {
       "type": "integer",
-      "description": "조업 시간",
-      "example": 105600
+      "description": "조업 시간(분). 서버가 설비별·기간별로 작업 세션 구간을 더한 값이다(공유계약 L-2). 근거: W-05-08 §5-2",
+      "example": 105600,
+      "x-internal-note": "⚠ 끝나지 않은 세션(ended_at 이 빈 세션)의 처리가 아직 정해지지 않았다 — 빼면 분모만 줄어 availabilityPercent 가 흔들리고, 「지금까지」로 자르면 조회할 때마다 값이 바뀐다(공유계약 A-15). 열린 «비가동 구간»(W-05-08 §5-4)과 방향이 반대라 그 규약을 그대로 옮길 수 없다. 근거: W-05-08 §5-2·§5-4 · P-02-10 §8-5"
      },
      "plannedDowntimeMinutes": {
       "type": "integer",
-      "example": 14400
+      "example": 14400,
+      "description": "계획 비가동(분). 작업 캘린더가 정한 휴무·계획 정지다. ⛔ 이 오퍼레이션이 만들지 않는다 — 만드는 곳은 작업 캘린더 설정(W-05-09)이다. 근거: W-05-08 §5-2 · P-05-02 §5-5"
      },
      "actualDowntimeMinutes": {
       "type": "integer",
@@ -3768,6 +4396,21 @@
       "type": "integer",
       "example": 4,
       "description": "설비가 붙지 않은 작업 세션 수. 조업 시간에는 들어가지만 설비별 묶음에서는 빠진다 — 화면이 그 사실을 요약에 보인다. 0 과 「모른다」를 같은 모양으로 그리지 않기 위해 «건수» 로 내린다"
+     },
+     "correctiveMaintenanceCount": {
+      "type": "integer",
+      "example": 18,
+      "description": "이 기간·이 범위에서 완료된 사후 보전 건수"
+     },
+     "preventiveMaintenanceCount": {
+      "type": "integer",
+      "example": 7,
+      "description": "예방 보전 건수. 사후/예방 비율이 예방 계획의 부실을 보이는 지표라 요약이 함께 낸다. 근거: W-05-08 §5-6"
+     },
+     "breakdownsClosedWithoutOrderCount": {
+      "type": "integer",
+      "example": 6,
+      "description": "보전 지시 없이 완료된 고장 건수. 지시를 강제하지 않기로 한 대신 이 수를 세어 보인다. ⭐ 비율의 분모는 사후·예방 보전 건수의 합이다 — 완료 고장 전체가 아니다. 근거: W-05-04 §5-4 · W-05-08 §5-6"
      }
     },
     "required": [
@@ -4174,7 +4817,7 @@
      },
      "historyTypeCode": {
       "type": "string",
-      "description": "검교정(CALIBRATION) 또는 점검(CHECK)",
+      "description": "계측기 이력 유형. 확정된 유형은 넷이다 — 검교정(CALIBRATION) · 점검(CHECK) · 수리 · 폐기. ⚠ 뒤 둘의 코드값 이름은 아직 확정되지 않았다 — 관리자 설정형이라 값이 늘 수 있고 공통코드 마스터(W-06-06)가 정한다. ⚠ 「열린 수리 이력이 없다」가 설비 사용 가부 판정식의 한 항이므로 수리 유형을 뺄 수 없다(W-05-11 §5-2). ⛔ enum 으로 좁히지 않는다",
       "example": "CALIBRATION"
      },
      "performedOn": {
@@ -4184,7 +4827,7 @@
      },
      "resultCode": {
       "type": "string",
-      "description": "합격(PASS) 또는 불합격(FAIL)",
+      "description": "이력 결과. ⚠ 값 집합이 이력 유형마다 다르다 — 검교정은 합격·조정 후 합격·불합격, 점검은 정상·이상, 수리는 완료·불가다. 화면은 historyTypeCode 로 걸러 보인다. ⚠ 합격(PASS)·불합격(FAIL) 밖의 코드값 이름은 아직 확정되지 않았다 — 공통코드 마스터(W-06-06)가 정하며 그때까지 화면은 선택칸을 비활성 + 사유로 둔다(공유계약 G-2). ⭐ 설비 마스터의 검교정일 갱신은 검교정 유형의 합격 계열에서만 일어난다. ⛔ enum 으로 못박지 않는다. 근거: W-05-10 §5-2·§5-3",
       "example": "PASS"
      },
      "certificateNo": {
@@ -4194,12 +4837,21 @@
       ],
       "example": "CAL-2026-0031"
      },
+     "agencyTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "교정 기관 구분 — 내부 교정인가 외부 기관 교정인가. historyTypeCode 가 검교정일 때만 쓴다. ⛔ 값 이름은 아직 확정되지 않았다 — 공통코드 마스터(W-06-06)가 정하며 그때까지 화면은 선택칸을 비활성 + 사유로 둔다(공유계약 G-2). 근거: W-05-10 §3-2·§5-4",
+      "x-no-example": true
+     },
      "agencyName": {
       "type": [
        "string",
        "null"
       ],
-      "example": "한국계측인증"
+      "example": "한국계측인증",
+      "description": "교정 기관 이름. 외부 기관 교정일 때 필수다 — 짝 제약은 화면이 진다(공유계약 A-2). ⛔ 거래처 마스터를 가리키지 않는다 — 교정 기관은 구매 협력사로 등록돼 있지 않을 수 있고 등록을 강제하면 이력을 못 적는다. 근거: W-05-10 §5-4"
      },
      "nextDueOn": {
       "type": [
@@ -4219,6 +4871,16 @@
      "recordedByUserId": {
       "type": "integer",
       "format": "int64",
+      "example": 1001,
+      "description": "기록자 — 이력을 입력한 계정. 서버가 인증 주체에서 채우며 요청 본문으로 받지 않는다(CalibrationCreate 에 없다). ⚠ 수행자(performedByUserId)와 다른 축이다 — 외부 기관 검교정은 수행자가 비어도 기록자는 남는다"
+     },
+     "performedByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "수행자. 외부 기관 교정이면 비우고 agencyName 을 채운다(공유계약 A-2 짝 제약)",
       "example": 1001
      },
      "equipmentId": {
@@ -4230,6 +4892,14 @@
      "equipmentCode": {
       "type": "string",
       "example": "GAU-0031"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "비고",
+      "example": "정정 재검교정 — 1차 성적서 오기"
      }
     },
     "required": [
@@ -4245,7 +4915,8 @@
     "properties": {
      "historyTypeCode": {
       "type": "string",
-      "example": "CALIBRATION"
+      "example": "CALIBRATION",
+      "description": "계측기 이력 유형. 확정된 유형은 넷이다 — 검교정(CALIBRATION) · 점검(CHECK) · 수리 · 폐기. ⚠ 뒤 둘의 코드값 이름은 아직 확정되지 않았다 — 관리자 설정형이라 값이 늘 수 있고 공통코드 마스터(W-06-06)가 정한다. ⚠ 「열린 수리 이력이 없다」가 설비 사용 가부 판정식의 한 항이므로 수리 유형을 뺄 수 없다(W-05-11 §5-2). ⛔ enum 으로 좁히지 않는다"
      },
      "performedOn": {
       "type": "string",
@@ -4254,7 +4925,8 @@
      },
      "resultCode": {
       "type": "string",
-      "example": "PASS"
+      "example": "PASS",
+      "description": "이력 결과. ⚠ 값 집합이 이력 유형마다 다르다 — 검교정은 합격·조정 후 합격·불합격, 점검은 정상·이상, 수리는 완료·불가다. 화면은 historyTypeCode 로 걸러 보인다. ⚠ 합격(PASS)·불합격(FAIL) 밖의 코드값 이름은 아직 확정되지 않았다 — 공통코드 마스터(W-06-06)가 정하며 그때까지 화면은 선택칸을 비활성 + 사유로 둔다(공유계약 G-2). ⭐ 설비 마스터의 검교정일 갱신은 검교정 유형의 합격 계열에서만 일어난다. ⛔ enum 으로 못박지 않는다. 근거: W-05-10 §5-2·§5-3"
      },
      "certificateNo": {
       "type": [
@@ -4263,12 +4935,21 @@
       ],
       "example": "CAL-2026-0031"
      },
+     "agencyTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "교정 기관 구분 — 내부 교정인가 외부 기관 교정인가. historyTypeCode 가 검교정일 때만 쓴다. ⛔ 값 이름은 아직 확정되지 않았다 — 공통코드 마스터(W-06-06)가 정하며 그때까지 화면은 선택칸을 비활성 + 사유로 둔다(공유계약 G-2). 근거: W-05-10 §3-2·§5-4",
+      "x-no-example": true
+     },
      "agencyName": {
       "type": [
        "string",
        "null"
       ],
-      "example": "한국계측인증"
+      "example": "한국계측인증",
+      "description": "교정 기관 이름. 외부 기관 교정일 때 필수다 — 짝 제약은 화면이 진다(공유계약 A-2). ⛔ 거래처 마스터를 가리키지 않는다 — 교정 기관은 구매 협력사로 등록돼 있지 않을 수 있고 등록을 강제하면 이력을 못 적는다. 근거: W-05-10 §5-4"
      },
      "nextDueOn": {
       "type": [
@@ -4285,11 +4966,28 @@
       ],
       "example": "±0.02 mm"
      },
+     "performedByUserId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "수행자. 외부 기관 교정이면 비우고 agencyName 을 채운다(공유계약 A-2 짝 제약)",
+      "example": 1001
+     },
      "equipmentId": {
       "type": "integer",
       "format": "int64",
       "example": 1001,
       "description": "계측기. 계측기는 설비의 한 종류라 /mdm/equipments 의 equipmentId 그대로다 — 계측기 전용 자원을 두지 않는다"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "비고",
+      "example": "정정 재검교정 — 1차 성적서 오기"
      }
     },
     "required": [

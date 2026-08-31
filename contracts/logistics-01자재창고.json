@@ -273,7 +273,7 @@
      "inventory"
     ],
     "summary": "조정 라인 치환",
-    "description": "전기된 조정은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1",
+    "description": "전기된 조정은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /inventory/adjustments/{inventoryAdjustmentId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -306,6 +306,15 @@
     "responses": {
      "200": {
       "description": "치환됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다 라인을 고치면 이 헤더의 값이 오르므로 다음 상태 전이(:request-approval·:post)는 이 값을 쓴다 — 상세 GET 을 다시 돌지 않는다.",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다."
+       }
+      },
       "content": {
        "application/json": {
         "schema": {
@@ -445,7 +454,7 @@
      "inventory"
     ],
     "summary": "재고 조정 상신",
-    "description": "근거: W-01-12 §5-6 · 공유계약 J-4",
+    "description": "결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 전표에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 근거: W-01-12 §5-6 · 공유계약 J-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -595,6 +604,43 @@
       "description": "잔액이 0 인 줄도 내릴지"
      },
      {
+      "name": "expiryDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "이 날짜까지 만료되는 LOT 을 가진 줄만. 경과·임박 조회용이다. 근거: W-01-07 §5-5"
+     },
+     {
+      "name": "heldOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "heldLotCount 가 0 보다 큰 줄만. 근거: W-01-07 §3 필터"
+     },
+     {
+      "name": "mesCategoryCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "신재·재생재 구분으로 거른다. ⚠ 값 목록이 아직 확정되지 않았다 — 서버가 내려주는 선택지를 그대로 쓴다(공유계약 G-2)",
+      "x-internal-note": "근거: M-01-12 §8 미결 2 · 공유계약 L-15. 구분은 mdm.item.mes_category_code 에 선다. ⛔ enum 을 만들지 마라 — 만드는 순간 ⚠ 가 ⛔(자유 문자열→enum)로 뛴다."
+     },
+     {
+      "name": "expiryWithinDays",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "오늘부터 이 일수 안에 유효기간이 도래하는 LOT 만 — W-04-08 「유효기간 임박」 필터다. ⚠ 유효기한이 없는 LOT 은 이 필터로 판정할 수 없어 결과에서 빠지고, 응답이 그 건수를 함께 낸다(공유계약 L-8 · W-04-08 §5-3)",
+      "x-no-example": true
+     },
+     {
       "name": "sort",
       "in": "query",
       "schema": {
@@ -604,10 +650,12 @@
         "lotNo",
         "locationCode",
         "onHandQty",
-        "availableQty"
+        "availableQty",
+        "earliestExpiryDate",
+        "manufacturedAt"
        ]
       },
-      "description": "정렬. 지정된 열만 받는다"
+      "description": "정렬. 지정된 열만 받는다. ⭐ earliestExpiryDate 오름차순이 FEFO 권장 순서다(M-04-01 §5-1). ⚠ earliestExpiryDate·manufacturedAt 은 groupBy=LOT 일 때만 뜻이 있다 — 접힌 줄에는 유효기한이 여럿이다. ⚠ 유효기한이 없는 LOT 은 항상 맨 뒤에 따로 모은다 — 섞지 않는다(공유계약 L-10 · M-04-01 §5-2)"
      },
      {
       "name": "page",
@@ -634,10 +682,14 @@
         "schema": {
          "type": "object",
          "required": [
+          "summary",
           "items",
           "page"
          ],
          "properties": {
+          "summary": {
+           "$ref": "#/components/schemas/InventoryBalanceSummary"
+          },
           "items": {
            "type": "array",
            "items": {
@@ -646,6 +698,11 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "expiryUnknownCount": {
+           "type": "integer",
+           "description": "유효기한이 없어 임박 판정을 할 수 없는 LOT 수. ⭐ 「판정 불가」를 「정상」으로 보이지 않기 위해 화면이 이 수를 함께 적는다(공유계약 L-8)",
+           "example": 4
           }
          }
         }
@@ -663,7 +720,7 @@
       }
      }
     },
-    "x-internal-note": "정렬을 지정 열로 제한하는 것은 공유계약 §L ④ 다 — 임의 열 정렬은 인덱스가 없다."
+    "x-internal-note": "정렬을 지정 열로 제한하는 것은 공유계약 L-4 다 — 임의 열 정렬은 인덱스가 없다. ⛔ 이 enum 값에는 방향이 없다 — 서버가 어느 방향으로 정렬하는지 계약이 말하지 않는다. L-4-1 의 키Asc/키Desc 표기로 옮기려면 값 교체(⛔ 협착 · check-enum-narrowing.py 가 잡는다)가 되고 W-01-07(#21 CLOSED)·M-01-04(#131 CLOSED)에 ⛔ 변경 통지가 나가므로, 두 화면이 실제로 보내는 값을 확인한 뒤 별건으로 처리한다. 품목 → LOT 2계층 표시는 groupBy=LOT 평면 응답을 itemId 로 그룹 지어 그리거나, groupBy=ITEM 목록 + 행 확장 시 itemId 필터로 그린다. 중첩 응답을 두지 않는다 — 공유계약 L-9·L-1."
    }
   },
   "/inventory/counts": {
@@ -1215,7 +1272,7 @@
      "inventory"
     ],
     "summary": "취급 단위 등록",
-    "description": "근거: M-01-10 §5-2",
+    "description": "근거: P-02-08 §5-2 · P-04-01 §5 · M-04-03 §5",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1364,13 +1421,13 @@
      "inventory"
     ],
     "summary": "취급 단위 구성 치환",
-    "description": "근거: 공유계약 A-5",
+    "description": "근거: 공유계약 A-5. ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /inventory/handling-units/{handlingUnitId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1. ⭐ 오프라인 대상 오퍼레이션이다 — 큐에 쌓인 요청은 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). 중복은 멱등키가 막고, 이미 처리된 건은 서버가 거부한다. ⭐ 결정 13 되살림(2026-08-30) — 이 치환은 서버가 HandlingUnitRepackEvent(헤더) + Line(수량 변경 전/후)을 함께 기록한다. 신규 발번·새 라벨 대상은 이 이벤트가 아니라 POST /inventory/handling-units(P-04-04)가 별도로 만든다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: M-04-03 §5-2",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
      },
      {
-      "$ref": "#/components/parameters/IfMatchVersion"
+      "$ref": "#/components/parameters/IfMatchVersionOptional"
      },
      {
       "$ref": "#/components/parameters/WorkerNo"
@@ -1434,6 +1491,49 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/inventory/handling-units/{handlingUnitId}/repack-events": {
+   "parameters": [
+    {
+     "name": "handlingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "inventory"
+    ],
+    "summary": "포장 재구성 이력",
+    "description": "결정 13 「이벤트 헤더–라인 계보」를 되살린 자원(2026-08-30) — 누가·언제·왜 재구성했는지와 수량 변경 전/후를 담는다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: M-04-03 §5-2",
+    "responses": {
+     "200": {
+      "description": "재구성 이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/HandlingUnitRepackEvent"
+           }
+          }
+         }
         }
        }
       }
@@ -2015,7 +2115,7 @@
      "logistics"
     ],
     "summary": "물류 문서 진행현황",
-    "description": "문서 유형마다 테이블이 다른데 화면은 한 목록으로 본다 — 서버가 한 형태로 맞춰 내린다.\n\n⭐ successorCount·cancellable 을 서버가 판정해 내린다. 원천 참조가 다형이라(source_document_type_code + source_document_id) 유형↔테이블 규약이 아직 없는데, 프런트가 「입고 → 출고·이동·투입」 관계표를 하드코딩하면 유형이 늘 때마다 취소 판정이 조용히 틀린다(공유계약 A-10 보강).\n\n⚠ 이 화면이 덮는 것은 6유형이다 — 발주·입하·입고·출고요청·피킹·이동요청. 외주 2문서는 상태 컬럼 자체가 없고 출하·생산품 입고는 다른 도메인이다. 근거: W-01-13 §5-2·§5-3",
+    "description": "문서 유형마다 테이블이 다른데 화면은 한 목록으로 본다 — 서버가 한 형태로 맞춰 내린다.\n\n⭐ successorCount·cancellable 을 서버가 판정해 내린다. 원천 참조가 다형이라(source_document_type_code + source_document_id) 유형↔테이블 규약이 아직 없는데, 프런트가 「입고 → 출고·이동·투입」 관계표를 하드코딩하면 유형이 늘 때마다 취소 판정이 조용히 틀린다(공유계약 A-10 보강).\n\n이 화면이 덮는 것은 8유형이다 — 발주·입하·입고·출고요청·피킹·이동요청·외주출고·외주입고(2026-08-30 되살림 — subcontract_issue/receipt 도 동형으로 status_code 를 둔다). 출하·생산품 입고는 다른 도메인이라 범위 밖이다. 근거: W-01-13 §5-2·§5-3·§5-6",
     "parameters": [
      {
       "name": "documentTypeCode",
@@ -2172,7 +2272,7 @@
      "logistics"
     ],
     "summary": "물류 문서 진행현황 상세",
-    "description": "처리 경과와 후속 목록을 함께 내린다. 후속이 있으면 그것을 역순으로 먼저 취소해야 이 문서를 취소할 수 있다. 근거: W-01-13 §3·§5-3",
+    "description": "처리 경과와 후속 목록을 함께 내린다. 후속이 있으면 그것을 역순으로 먼저 취소해야 이 문서를 취소할 수 있다. 근거: W-01-13 §3·§5-3 취소 요청·실행의 If-Match 토큰은 이 응답이 아니라 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.",
     "responses": {
      "200": {
       "description": "상세",
@@ -2263,12 +2363,21 @@
       "description": "반품 대상 공급사. 근거: W-01-05 §3"
      },
      {
+      "name": "goodsIssueLineId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "라인 단위 출고 QR 을 스캔했을 때. 그 라인이 속한 출고 전표를 낸다. 근거: P-01-02 §5-2 · M-01-09 §5-6"
+     },
+     {
       "name": "q",
       "in": "query",
       "schema": {
        "type": "string"
       },
-      "description": "출고번호 검색"
+      "description": "출고번호 검색. ⛔ 발행된 출고 QR 은 라인을 가리키므로 이 축으로는 풀리지 않는다 — goodsIssueLineId 를 쓴다(P-01-02 §5-2)"
      },
      {
       "name": "page",
@@ -2483,7 +2592,7 @@
      "logistics"
     ],
     "summary": "출고 라인 치환",
-    "description": "전기된 전표의 라인은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1",
+    "description": "전기된 전표의 라인은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/goods-issues/{goodsIssueId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2734,7 +2843,7 @@
      "logistics"
     ],
     "summary": "기타 출고 품의 상신",
-    "description": "결재선이 없으면 400 이다 — 상신할 곳이 없는 품의를 만들지 않는다. 근거: W-01-06 §5-7 · 공유계약 J-4",
+    "description": "결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 전표에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 근거: W-01-06 §5-7 · 공유계약 J-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -3002,7 +3111,7 @@
      "logistics"
     ],
     "summary": "입고 처리",
-    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8",
+    "description": "입고 전표 생성과 전기가 한 번에 일어난다. LOT 상태 전이·수불 원장·잔액·ERP 송신 적재가 같은 트랜잭션이며 ERP 실제 전송만 밖이다. 근거: W-01-10 §5-4 · 공유계약 B-8 ⭐ 적치 지시는 라인마다 서버가 함께 만들고, 응답의 GoodsReceiptLine.putawayTaskId 가 그 식별자를 싣는다 — 화면은 그 값으로 라인 수만큼 적치 완료를 부른다. ⛔ 입고와 적치 완료는 한 트랜잭션이 아니다 — 입고만 성공하고 적치가 남는 상태는 오류가 아니라 표현 가능한 상태이고, GET /logistics/putaway-tasks?goodsReceiptId= 로 되찾는다(공유계약 B-8 의 경계는 전표 안까지다).",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -3458,7 +3567,9 @@
      {
       "name": "supplierLotMissing",
       "in": "query",
-      "schema": { "type": "boolean" },
+      "schema": {
+       "type": "boolean"
+      },
       "description": "라인 중 supplier_lot_missing 이 이 값인 라인을 하나 이상 가진 건만. true = 미부착 건(MES 가 채번한다) · false = 사전부착 건. ⚠ 헤더 목록인데 판정은 라인 단위다 — 건 안에 두 종류가 섞여 있을 수 있으므로 라인을 고를 때 GET .../lines 의 같은 이름 필터를 함께 쓴다. 근거: P-01-01 §6"
      },
      {
@@ -3745,13 +3856,17 @@
      {
       "name": "supplierLotMissing",
       "in": "query",
-      "schema": { "type": "boolean" },
+      "schema": {
+       "type": "boolean"
+      },
       "description": "미부착 라인만 거른다. LOT 발번 단위가 라인이기 때문이다 — 한 건에 미부착 라인이 여럿이면 LOT 도 여럿이다. 근거: P-01-01 §4-B·§6"
      },
      {
       "name": "labelIssued",
       "in": "query",
-      "schema": { "type": "boolean" },
+      "schema": {
+       "type": "boolean"
+      },
       "description": "라벨이 발행된 라인을 뺄지. false 이면서 lotId 가 채워진 라인 = 「LOT 은 생겼는데 발행 기록이 없는」 상태다 — 화면은 그 라인에 「인쇄」만 보인다. 근거: P-01-01 §5-2·§6"
      }
     ],
@@ -3773,7 +3888,7 @@
      "logistics"
     ],
     "summary": "입하 라인 치환",
-    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1",
+    "description": "LOT 이 이미 만들어진 라인은 지울 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/inbound-receipts/{inboundReceiptId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4173,7 +4288,7 @@
      "logistics"
     ],
     "summary": "추가 자재 출고 요청 발행",
-    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6",
+    "description": "현장이 BOM 소요량 밖의 자재를 수동으로 요청한다. 라인 1건 이상이고 각 수량이 0 보다 커야 한다. BOM 밖 품목도 담을 수 있다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 추가 자재 출고 요청(W-02-10)은 관리웹이고, 관리웹 셸에는 오프라인이 없다(공유계약 C-5 · W-02-10 §1). Idempotency-Key 는 필수이나 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(C-8) — Idempotency-Key 는 필수이고 If-Match 는 선택이다(공유계약 C-9). 근거: W-02-10 §5-6",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4237,6 +4352,49 @@
     "x-internal-note": "02 요구서 §3-9 가 이 오퍼레이션을 「01 계약」이라 적었는데 01 에 GET 만 있었다. 역방향 ② 검사기가 찾아 2026-08-12 에 더했다(client #72). ⛔ 요청 사유 코드 컬럼이 아직 없어 reasonCode 가 remarks 로 저장된다(omf-mes#87)."
    }
   },
+  "/logistics/material-issue-requests/shortage": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "W/O 품목별 소요·기출고·부족",
+    "description": "추가 자재 출고 요청 화면(W-02-10 §3 ②)의 표를 이 한 호출이 채운다 — 「BOM 소요량 불러오기」 버튼이 부르는 것이 이 경로다. 자재 명세(BOM) 조회를 화면이 따로 하지 않는다. 근거: W-02-10 §5 · 공유계약 L-2",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 W/O 의 품목별 집계를 낸다"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MaterialIssueShortageList"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/material-issue-requests/{materialIssueRequestId}": {
    "parameters": [
     {
@@ -4294,7 +4452,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "비우면 요청자 본인"
+      "description": "담당자로 거른다. ⛔ 「비우면 본인」이 아니다 — 모바일·POP 은 계정 로그인이 없고 서버가 사번 세션을 갖지 않아 「본인」을 풀 근거가 없다(공유계약 D-5·F-2). 현장 셸은 사번으로 GET /mdm/workers?q=<사번> 을 한 번 받아 얻은 workerId 를 여기에 싣는다. 근거: M-01-08 §5-3"
      },
      {
       "name": "warehouseId",
@@ -4852,7 +5010,7 @@
      "logistics"
     ],
     "summary": "P/O 라인 치환",
-    "description": "라인 배열을 통째로 치환한다. 이미 입하가 붙은 라인은 지울 수 없다. 근거: W-01-11 §5-1 · 공유계약 A-5",
+    "description": "라인 배열을 통째로 치환한다. 이미 입하가 붙은 라인은 지울 수 없다. 근거: W-01-11 §5-1 · 공유계약 A-5 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/purchase-orders/{purchaseOrderId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4885,6 +5043,15 @@
     "responses": {
      "200": {
       "description": "치환됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다 라인을 고치면 이 헤더의 값이 오르므로 다음 상태 전이(:request-approval·:post)는 이 값을 쓴다 — 상세 GET 을 다시 돌지 않는다.",
+        "schema": {
+         "type": "string"
+        },
+        "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다."
+       }
+      },
       "content": {
        "application/json": {
         "schema": {
@@ -4943,7 +5110,7 @@
      "logistics"
     ],
     "summary": "P/O 승인 요청",
-    "description": "등록이 끝난 P/O 에 승인을 건다. 근거: W-01-11 §5-1 · 공유계약 J-4",
+    "description": "등록이 끝난 P/O 에 승인을 건다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 전표에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 근거: W-01-11 §5-1 · 공유계약 J-4",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -5022,7 +5189,7 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "비우면 요청자 본인"
+      "description": "담당자로 거른다. ⛔ 「비우면 본인」이 아니다 — 모바일·POP 은 계정 로그인이 없고 서버가 사번 세션을 갖지 않아 「본인」을 풀 근거가 없다(공유계약 D-5·F-2). 현장 셸은 사번으로 GET /mdm/workers?q=<사번> 을 한 번 받아 얻은 workerId 를 여기에 싣는다."
      },
      {
       "name": "warehouseId",
@@ -5071,6 +5238,15 @@
        "type": "integer",
        "default": 50
       }
+     },
+     {
+      "name": "goodsReceiptId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 입고 전표가 만든 적치 지시만. ⭐ 제품 입고(M-04-04)는 한 포장 단위를 인수해 LOT 마다 라인을 만들므로 적치 지시가 라인 수만큼 생긴다 — 부분 완료 상태에서 재진입할 때 남은 지시와 그 상태를 이 축으로 되찾는다"
      }
     ],
     "responses": {
@@ -5773,7 +5949,7 @@
       }
      }
     },
-    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). 도출 단계의 :depart 를 두지 않는다 — 화면에 「반출 스캔」 버튼 하나뿐이고, 생성과 반출을 나누면 오프라인 큐에 반출 전 상태가 남는다."
+    "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). 도출 단계의 :depart 를 두지 않는다 — 화면에 「반출 스캔」 버튼 하나뿐이고, 생성과 반출을 나누면 오프라인 큐에 반출 전 상태가 남는다. ⚠ 이 오퍼레이션은 M-01-10(모바일)과 W-04-11(관리웹) 두 셸이 부른다 — 그래서 WorkerNoOptional 이다(#178)."
    }
   },
   "/logistics/stock-transfers/{stockTransferId}": {
@@ -5863,7 +6039,7 @@
      "logistics"
     ],
     "summary": "이동 라인 치환",
-    "description": "반출이 끝난 라인은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1",
+    "description": "반출이 끝난 라인은 바꿀 수 없다. 근거: 공유계약 A-5 · G-1 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /logistics/stock-transfers/{stockTransferId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6050,14 +6226,16 @@
       "in": "query",
       "schema": {
        "type": "string"
-      }
+      },
+      "description": "LOT 유형으로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_TYPE 로 받는다(MATERIAL·PRODUCTION·PRODUCT) — 생산LOT 만 볼 때는 PRODUCTION 이다. 근거: 공유계약 G-32"
      },
      {
       "name": "statusCode",
       "in": "query",
       "schema": {
        "type": "string"
-      }
+      },
+      "description": "품질 판정 축으로 거른다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). ⛔ 이 축으로는 「완료」·「폐번」을 고를 수 없다 — 완료는 completed, 폐번은 생명주기 축이다. 근거: 공유계약 G-32 · omf-mes#269"
      },
      {
       "name": "heldOnly",
@@ -6085,6 +6263,14 @@
        "format": "date"
       },
       "description": "유효기간 종료"
+     },
+     {
+      "name": "lotNo",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호 정확 일치. 스캔 화면이 쓴다 — 스캔값 하나로 한 건을 집어야 하므로 부분 검색(q)으로는 성립하지 않는다(여러 건이 온다). 공장 안에서 유일하다. 근거: P-02-03 §5-1 · P-02-08 §5-2 · 공유계약 D-2"
      },
      {
       "name": "q",
@@ -6117,7 +6303,42 @@
        "type": "integer",
        "format": "int64"
       },
-      "description": "이 W/O 를 원천으로 발행된 LOT 만. 선발행 슬롯을 빠짐없이 훑는 경로다(W-02-05 §3). ⭐ 저장된 형태는 다형 참조 짝(sourceTypeCode + sourceId)이지만 판별자 값 목록이 아직 미확정이라 짝 필터를 열지 않았다 — 값을 모르는 채 열면 눌러도 아무것도 안 걸린다(공유계약 G-23). 서버가 W/O 원천으로 풀어 준다"
+      "description": "이 W/O 를 원천으로 발행된 LOT 만. 선발행 슬롯을 빠짐없이 훑는 경로다 — 마감(W-02-05 §3)과 POP 의 실적 대상 LOT 선택(P-02-04 §5)·생산LOT 완료(P-02-06 §3 좌단 LOT 목록)가 같은 축을 쓴다. ⭐ 저장된 형태는 다형 참조 짝(sourceTypeCode + sourceId)이지만 판별자 값 목록이 아직 미확정이라 짝 필터를 열지 않았다 — 값을 모르는 채 열면 눌러도 아무것도 안 걸린다(공유계약 G-23). 서버가 W/O 원천으로 풀어 준다"
+     },
+     {
+      "name": "receiptDispositionCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입고 확정 대기 큐의 판정 축 — IQC 합격 · 샘플링 미대상 · 긴급 IQC 생략 한도승인 세 갈래다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 서버가 판정한다 — 화면이 검사 결과·승인 요청을 따로 조회해 조합하면 세 갈래가 화면마다 갈린다. 근거: W-01-10 §3·§5-1·§5-5",
+      "x-internal-note": "코드 그룹 신설 필요 — 후보 INSPECTION_PASSED·SAMPLING_EXEMPT·CONCESSION_APPROVED."
+     },
+     {
+      "name": "awaitingReceiptOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "입고 확정이 아직 안 된 것만. 참이면 IQC 미완료 LOT 이 빠진다 — 화면 §6 이 「진입 자체가 막힌다」로 못박은 규칙을 서버가 집행한다. heldOnly 로 갈음할 수 없다 — 의심자재 보류가 섞인다. 근거: W-01-10 §5-1"
+     },
+     {
+      "name": "completed",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "완료 처리됐는가로 거른다 — false 면 completedAt 이 비어 있는 것만, true 면 값이 있는 것만 낸다. LOT 라벨 출력(P-02-07 §4-B)의 완료 LOT 목록과 긴급 직행 출하(W-04-05 §3)의 생산 완료분 선택이 이 축으로 선다. ⭐ 상태 코드 문자열을 몰라도 판정된다. ⛔ statusCode(품질 판정 축)로는 완료를 고를 수 없다. ⛔ 응답을 화면이 거르는 것으로는 성립하지 않는다 — 목록이 쪽 단위다(공유계약 L-11). 근거: P-02-07 §4-B·§5-4 · omf-mes#269"
+     },
+     {
+      "name": "unreceivedOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "아직 입고 전표에 실리지 않은 LOT 만. ⭐ W-04-05 긴급 직행 출하가 「창고에 아직 안 들어온 생산 완료분」을 고르는 축이다(W-04-05 §5-7). 이미 입고된 LOT 은 정상 출하 흐름으로 가야 한다. ⭐ M-04-04 제품입고·적치가 오프라인 진입 전 「인수 대기 제품 LOT 목록」을 미리 받는 축이기도 하다(공유계약 C-11)"
      }
     ],
     "responses": {
@@ -6247,6 +6468,17 @@
     ],
     "summary": "LOT 상세",
     "description": "외부 식별자와 해제되지 않은 보류를 함께 내린다. 근거: M-01-04 · W-01-07",
+    "parameters": [
+     {
+      "name": "withProgress",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "생산 진척을 함께 받는다. 목록에서는 LOT 마다 세게 되므로 기본은 끈다"
+     }
+    ],
     "responses": {
      "200": {
       "description": "상세",
@@ -6393,7 +6625,7 @@
      "trace"
     ],
     "summary": "LOT 외부 식별자 치환",
-    "description": "근거: 공유계약 A-5",
+    "description": "근거: 공유계약 A-5 ⭐ 이 경로의 조회는 ETag 를 내리지 않는다 — If-Match 에 담을 토큰은 부모 자원 GET /trace/lots/{lotId} 200 의 ETag 다. 잠그는 단위가 부모이기 때문이다. 근거: 공유계약 B-1-1",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6510,6 +6742,245 @@
     }
    }
   },
+  "/trace/lot-status-events": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
+    "description": "결정 10 「현재 1행 + 변경이력 1:N」을 되살린 전용 이력(2026-08-30). 도식스펙03 §1.3 공통 범례가 요구하는 상태 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15) 전건을 사건별 행으로 낸다 — 기존 GET /quality/lot-hold-events(보류 등록·해제 2종만)를 대체하는 상위 자원이다. 저장 테이블은 데이터 모델 담당에게 통지한다 — 기다리지 않는다(data-model-boundary.md). 근거: W-03-01 §5-1·§5-2 · W-01-02 · M-01-08",
+    "parameters": [
+     {
+      "name": "occurredFrom",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "사건 기간 시작 — 감사 조회는 기간을 강제한다(공유계약 L-3)"
+     },
+     {
+      "name": "occurredTo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "사건 기간 끝"
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "「LOT으로 찾기」 모드"
+     },
+     {
+      "name": "transitionCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10",
+        "C14",
+        "C15"
+       ]
+      },
+      "description": "「이력으로 찾기」의 판정유형 축"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 상태 변경이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/LotStatusHistoryEvent"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trace/lot-lifecycle-events": {
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "LOT 생명주기 변경이력 조회 — 전이 3종 전건",
+    "description": "선발행 LOT 번호 슬롯(trace.lot.lifecycleStatusCode — 대기/활성/폐번)의 전이 3종(L1·L2·L3)을 사건별 행으로 낸다. LotStatusHistoryEvent(품질 판정 축 — 정상/불량/검사대기/폐기)와는 다른 축이다 — 섞지 않는다. 저장 테이블은 데이터 모델 담당에게 통지한다 — 기다리지 않는다(data-model-boundary.md). 근거: omf-mes-server#50 정정 회신(2026-08-31) · W-02-05 §5-3 · W-02-06 §5-5 · DR-007",
+    "parameters": [
+     {
+      "name": "occurredFrom",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "사건 기간 시작 — 감사 조회는 기간을 강제한다(공유계약 L-3)"
+     },
+     {
+      "name": "occurredTo",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "사건 기간 끝"
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "「LOT으로 찾기」 모드"
+     },
+     {
+      "name": "transitionCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "L1",
+        "L2",
+        "L3"
+       ]
+      },
+      "description": "「이력으로 찾기」의 전이유형 축"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "LOT 생명주기 변경이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/LotLifecycleHistoryEvent"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trace/lots/{lotId}:request-iqc-skip": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "긴급 IQC 생략 요청",
+    "description": "입하돼 수입검사 대기인 LOT 에 대해 현장이 검사 생략을 요청한다. 요청을 만들기만 하고 한도는 승인자가 정한다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 근거: M-01-13 §5-A · 공유계약 J-4",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "요청됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApprovalRequestRef"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id 로 서버가 채운다(M-01-13 §5-A · 공유계약 A-16 등재 대상)."
+   }
+  },
   "/trace/lots/{lotId}:complete": {
    "parameters": [
     {
@@ -6551,7 +7022,7 @@
     },
     "responses": {
      "200": {
-      "description": "완료됨",
+      "description": "완료됨 — 결과가 Lot.completedAt 에 실려 돌아온다",
       "content": {
        "application/json": {
         "schema": {
@@ -6750,7 +7221,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "PLANNED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "remarks": {
@@ -6849,9 +7320,27 @@
       "maxLength": 100,
       "description": "공급사가 부여한 LOT 번호",
       "example": "SL-2026-0001"
+     },
+     "orderedQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "readOnly": true,
+      "example": 500.0,
+      "description": "이 라인이 가리키는 P/O 라인의 발주 수량. purchaseOrderLineId 가 비면(무발주) 널이다"
+     },
+     "receivedQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "readOnly": true,
+      "example": 0.0,
+      "description": "그 P/O 라인의 누적 입하 수량. 화면의 「진행」 열은 receivedQty ÷ orderedQty 다 — 화면이 라인마다 P/O 를 따로 부르지 않는다(공유계약 L-2). 무발주 행은 널이고 화면은 「—」로 그린다(W-01-09 §5-2)"
      }
     },
-    "x-internal-note": "asn_line 에 version_no 가 없다 — 낙관적 잠금 대상이 아니다(W-01-09 §5-3)."
+    "x-internal-note": "asn_line 에 version_no 가 없다 — 낙관적 잠금 대상이 아니다(W-01-09 §5-3). orderedQty·receivedQty 는 asn_line 의 컬럼이 아니라 purchase_order_line 을 조인해 내리는 파생값이다 — W-01-09 §4-B 가 그 출처를 지정했다."
    },
    "AsnLineListResponse": {
     "type": "object",
@@ -7168,7 +7657,7 @@
      },
      "code": {
       "type": "string",
-      "description": "UNIQUE_VIOLATION · REQUIRED · RANGE · PAIR · PERMISSION_DENIED · STATE_LOCKED 등. STATE_LOCKED 는 확정·전기 상태라 수정이 잠긴 것으로, 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다. 근거: 공유계약 G-1",
+      "description": "UNIQUE_VIOLATION · REQUIRED · RANGE · PAIR · PERMISSION_DENIED · ROUTE_NOT_FOUND · ROUTE_AMBIGUOUS · STATE_LOCKED 등. STATE_LOCKED 는 확정·전기 상태라 수정이 잠긴 것으로, 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다. 근거: 공유계약 G-1",
       "example": "STATE_LOCKED"
      },
      "uniqueScope": {
@@ -7230,7 +7719,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "출고 유형. 일반 출고·반품·기타 출고를 가른다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "MATERIAL",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentTypeCode": {
@@ -7238,7 +7727,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "PICKING_ORDER",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentId": {
@@ -7292,7 +7781,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "DRAFT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "reasonCode": {
@@ -7302,7 +7791,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "반품·폐기 등의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "반품·폐기 등의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=GOODS_ISSUE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SUPPLIER_RETURN",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -7321,7 +7810,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "이 출고가 어느 승인 요청에서 나왔는지 되짚는 식별자. 비어 있으면 승인을 타지 않은 출고다. 폐기 출고 화면이 이 값으로 승인 이력을 보이고, 승인 없이 나간 건을 가려낸다.",
+      "description": "이 출고가 어느 승인 요청에서 나왔는지 되짚는 식별자. 비어 있으면 승인을 타지 않은 출고다. 폐기 출고 화면이 이 값으로 승인을 보이고, 승인 없이 나간 건을 가려낸다.",
       "example": 1001,
       "x-internal-note": "⛔ 「품의」가 아니라 «MES 내부 승인 요청» 참조다 — DR-009(2026-08-13)가 품의서 기안을 없앴지만 요청→승인은 오히려 명시했다. 📨 모델에 이 컬럼이 아직 없다(작업 통지 · #87 4번) — 계약은 화면 요구대로 쓰고 기다리지 않는다. 화면이 이 값을 «보여야 한다»는 것은 2026-08-18 사용자 확정이다: 되짚을 길이 없으면 승인 없이 나간 폐기 출고를 화면에서 찾을 수 없어 통제가 성립하지 않는다."
      },
@@ -7360,16 +7849,16 @@
       "type": "string",
       "maxLength": 50,
       "description": "출고 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "MATERIAL",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentTypeCode": {
       "x-source-column": "source_document_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "원천 문서 유형. 유형마다 sourceDocumentId 가 가리키는 대상이 다르다 — 피킹 지시(생산 투입) · 입고 전표(공급사 반품 · 자재 폐기) · 처분 결정(제품 폐기) 셋이다. 확정된 값 목록은 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 A-10 · G-2",
       "example": "PICKING_ORDER",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다. ⚠ 「화면이 이 짝을 못 채운다」는 오독이 세 번 반복됐다(A2-17·A6-15·B7-03 전부 REFUTED). 화면의 1단 선택이 실재하는 업무 문서다 — 제품 폐기는 GET /quality/disposition-decisions, 자재 폐기는 불량창고 입고 전표. A-10 다형이 이미 허용하므로 계약 diff 0 이다."
      },
      "sourceDocumentId": {
       "x-source-column": "source_document_id",
@@ -7424,7 +7913,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "사유. 반품·기타 출고에서는 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "사유. 반품·기타 출고에서는 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=GOODS_ISSUE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SUPPLIER_RETURN",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -7439,7 +7928,7 @@
      "sendToErp": {
       "type": "boolean",
       "default": true,
-      "description": "ERP 송신 여부. 화면의 송신 토글이 이 값이다. 근거: W-01-05 §5-7",
+      "description": "ERP 송신 여부. 화면의 송신 토글이 이 값이다. 근거: W-01-05 §5-7. ⭐ 전역 송신 설정과 논리곱이다 — 전역이 꺼져 있으면 이 값이 참이어도 보내지 않고, 전역이 켜져 있을 때 이 값으로 이 건만 끈다. 켜고 끄기의 정본은 전역 설정이다.",
       "example": true
      },
      "postImmediately": {
@@ -7688,7 +8177,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "입고 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "PURCHASE",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "plantId": {
@@ -7715,7 +8204,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "POSTED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentTypeCode": {
@@ -7723,7 +8212,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "원천 문서의 유형. 유형 코드와 대응 테이블의 규약이 함께 와야 화면이 원천을 표시할 수 있다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "INBOUND_RECEIPT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentId": {
@@ -7741,7 +8230,7 @@
       ],
       "maxLength": 50,
       "description": "반품 입고 등의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "RETURN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "remarks": {
@@ -7780,7 +8269,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "입고 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "PURCHASE",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "plantId": {
@@ -7805,9 +8294,9 @@
       "x-source-column": "source_document_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⚠ 반품·클레임 입고(W-04-06)에서는 부적합/클레임 접수 문서를 가리킨다.",
       "example": "INBOUND_RECEIPT",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다. A-10 규칙1(유형 코드 ↔ 대상 테이블 대응표)이 goods_receipt 원천에 대해 미이행 — 유형 코드가 확정될 때까지 G-2 유예. 근거: W-04-06 §5-3"
      },
      "sourceDocumentId": {
       "x-source-column": "source_document_id",
@@ -7823,7 +8312,7 @@
       ],
       "maxLength": 50,
       "description": "사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "RETURN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "remarks": {
@@ -7940,9 +8429,9 @@
       "x-source-column": "quality_status_code",
       "type": "string",
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다.",
-      "example": "RELEASED",
-      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이다 — 코드 문자열 확정 시 교체한다. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "example": "NORMAL",
+      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
      },
      "inventoryStatusCode": {
       "x-source-column": "inventory_status_code",
@@ -7974,6 +8463,16 @@
       "format": "int64",
       "description": "전기로 생긴 원장 라인",
       "example": 1001
+     },
+     "putawayTaskId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "readOnly": true,
+      "example": 1001,
+      "description": "이 라인으로 서버가 만든 적치 지시. 화면은 이 값으로 바로 적치 완료를 부른다 — 입고 응답이 라인마다 지시 식별자를 실어 왕복 하나를 없앤다. 아직 만들어지지 않았으면 비어 온다. 근거: M-04-04 §5-6 · W-01-10 §5-4"
      }
     }
    },
@@ -8028,9 +8527,9 @@
       "x-source-column": "quality_status_code",
       "type": "string",
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다.",
-      "example": "RELEASED",
-      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이다 — 코드 문자열 확정 시 교체한다. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "example": "NORMAL",
+      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
      },
      "inventoryStatusCode": {
       "x-source-column": "inventory_status_code",
@@ -8050,6 +8549,7 @@
       "x-source-column": "destination_location_id",
       "type": "integer",
       "format": "int64",
+      "description": "이 값은 입고 전기 시점의 장부 위치다 — 적치 판정에는 쓰이지 않는다. 적치 지시의 권장 위치는 적치 규칙(putaway_rule)만이 낸다(M-01-05 §5-2-1 · 2026-08-06 확정). 실물이 권장 위치로 가서 이 값과 달라지면 M-01-07·M-01-10 으로 조정한다(W-01-10 §5-2).",
       "example": 1001
      }
     }
@@ -8095,7 +8595,7 @@
       "x-source-column": "handling_unit_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "취급 단위 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "취급 단위 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=HANDLING_UNIT_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "PALLET",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8131,7 +8631,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "ACTIVE",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     }
@@ -8250,7 +8750,7 @@
       "x-source-column": "handling_unit_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "취급 단위 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "취급 단위 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=HANDLING_UNIT_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "PALLET",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8305,6 +8805,98 @@
       "items": {
        "$ref": "#/components/schemas/HandlingUnitContent"
       }
+     }
+    }
+   },
+   "HandlingUnitRepackEvent": {
+    "type": "object",
+    "description": "포장 재구성 사건 헤더. 결정 13 「이벤트 헤더–라인 계보」를 되살린 자원(2026-08-30) — 신규 생성분(신규 발번)은 이 이벤트가 아니라 POST /inventory/handling-units가 별도로 만든다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: M-04-03 §5-2",
+    "required": [
+     "repackEventId",
+     "repackTypeCode",
+     "performedBy",
+     "occurredAt",
+     "lines"
+    ],
+    "properties": {
+     "repackEventId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "repackTypeCode": {
+      "type": "string",
+      "enum": [
+       "MERGE",
+       "SPLIT",
+       "RECONFIGURE"
+      ],
+      "description": "합병(MERGE)·분할(SPLIT)·재구성(RECONFIGURE) — M-04-03 §3 유형 선택",
+      "example": "SPLIT"
+     },
+     "performedBy": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-06T09:12:00+09:00"
+     },
+     "lines": {
+      "type": "array",
+      "description": "결정 13 규칙 2 — 수량 변경은 이벤트 한정 + 이력",
+      "items": {
+       "$ref": "#/components/schemas/HandlingUnitRepackEventLine"
+      }
+     }
+    }
+   },
+   "HandlingUnitRepackEventLine": {
+    "type": "object",
+    "required": [
+     "handlingUnitId",
+     "roleCode",
+     "itemId",
+     "lotId",
+     "qtyBefore",
+     "qtyAfter"
+    ],
+    "properties": {
+     "handlingUnitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "roleCode": {
+      "type": "string",
+      "enum": [
+       "SOURCE",
+       "RESULT"
+      ],
+      "description": "이 취급 단위가 이 사건의 원본인지 결과인지",
+      "example": "SOURCE"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "qtyBefore": {
+      "type": "number",
+      "format": "double",
+      "example": 500.0
+     },
+     "qtyAfter": {
+      "type": "number",
+      "format": "double",
+      "example": 300.0
      }
     }
    },
@@ -8436,7 +9028,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "P/O 없이 도착한 예외 입하의 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "P/O 없이 도착한 예외 입하의 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INBOUND_RECEIPT_EXCEPTION_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NO_PO",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8464,7 +9056,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "DRAFT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "receivedBy": {
@@ -8497,8 +9089,8 @@
      "occurredAt",
      "lines"
     ],
-    "description": "입하 등록. 헤더·라인·자재 LOT 이 한 트랜잭션으로 만들어진다 — 입하는 저장됐는데 LOT 이 없으면 이후 흐름이 통째로 막힌다. 근거: M-01-01 §5-4",
-    "x-internal-note": "⚠ 거래명세서 촬영본의 OCR 파싱 결과(인식된 품목·수량·명세서 번호)를 담을 곳이 없다 — 첨부(attachment) 스키마는 파일 자체만 보관하고, 인식 결과 필드는 이 요청 본문에도 물리 모델에도 없다(실측). 근거: M-01-01 §4·§8-2 · omf-mes#75",
+    "description": "입하 등록. 헤더·라인이 한 트랜잭션으로 만들어지고, 자재 LOT 은 공급사 LOT 이 부착된 라인에만 함께 생긴다. supplierLotMissing=true 인 라인은 LOT 없이 저장되고 P-01-01 이 POST /trace/lots(numberSourceCode=MES)로 나중에 채운다. 부착 라인의 LOT 이 없으면 이후 흐름이 통째로 막힌다. 근거: M-01-01 §5-4 · P-01-01 §3-6 · 공유계약 B-8",
+    "x-internal-note": "⚠ 거래명세서 촬영본의 OCR 파싱 결과(인식된 품목·수량·명세서 번호)를 담을 곳이 없다 — 첨부(attachment) 스키마는 파일 자체만 보관하고, 인식 결과 필드는 이 요청 본문에도 물리 모델에도 없다(실측). 근거: M-01-01 §4·§8-2 · omf-mes#75 ⚠ 승인 절차 자체(누가·언제)는 아직 정해지지 않았다 — M-01-01 §8-4. 계약은 approvalRequestId 자리만 갖는다.",
     "properties": {
      "supplierId": {
       "x-source-column": "supplier_id",
@@ -8552,7 +9144,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "P/O 를 고르지 않고 진행할 때 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "P/O 를 고르지 않고 진행할 때 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INBOUND_RECEIPT_EXCEPTION_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NO_PO",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8594,8 +9186,7 @@
       },
       "description": "최소 1행"
      }
-    },
-    "x-internal-note": "승인 절차 자체(누가·언제)는 아직 정해지지 않았다 — M-01-01 §8-4. 계약은 approvalRequestId 자리만 갖는다."
+    }
    },
    "InboundReceiptDetailResponse": {
     "type": "object",
@@ -8721,7 +9312,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "supplierLotMissing 이 참일 때의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "supplierLotMissing 이 참일 때의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SUBSTITUTE_LOT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NO_LABEL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8747,15 +9338,16 @@
      "inspectionRequired": {
       "x-source-column": "inspection_required",
       "type": "boolean",
-      "description": "이 라인이 수입검사 대상인지. 입하 라인 단위로 갈린다. 근거: M-01-01 §5-4",
-      "example": true
+      "description": "이 라인이 수입검사 대상인지. 입하 라인 단위로 갈린다. 서버가 채운다 — 요청 스키마 InboundReceiptLineUpsert 에 이 칸이 없다. 근거: M-01-01 §5-4",
+      "example": true,
+      "x-internal-note": "판정 원천 미확정 — 미결 대장 M-01-01 #3(품목 속성·공급사·정책 중 미정). 계약에 이미 있는 후보는 mdm-기준정보.json Item.inspectionRequired(default false · 「MES 확장 · W-01-01 IQC 대상 판정의 입력」)이고 W-06-05 §4 가 편집 화면을 둔다(근거 강도 [추정]). 초과분 승계 여부는 미결 대장 W-01-03 #3."
      },
      "statusCode": {
       "x-source-column": "status_code",
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "DRAFT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "lotId": {
@@ -8764,7 +9356,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "이 라인으로 만들어진 자재 LOT. 등록과 같은 트랜잭션에서 생긴다. 근거: M-01-01 §5-4",
+      "description": "이 라인으로 만들어진 자재 LOT. 사전부착 라인은 입하 등록과 같은 트랜잭션에서 생기고, 미부착 라인은 P-01-01 이 채울 때까지 비어 있다. 근거: M-01-01 §5-4",
       "example": 1001
      }
     }
@@ -8868,7 +9460,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "supplierLotMissing 이 참일 때 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "supplierLotMissing 이 참일 때 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SUBSTITUTE_LOT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NO_LABEL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -8946,7 +9538,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "초과분 쪽에서 쓰는 예외 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "초과분 쪽에서 쓰는 예외 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INBOUND_RECEIPT_EXCEPTION_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "OVER_DELIVERY",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9099,8 +9691,7 @@
      "inboundReceiptLineId",
      "varianceTypeCode",
      "varianceQty",
-     "uomId",
-     "reasonCode"
+     "uomId"
     ],
     "description": "입하 차이 기록. 한 번 등록하면 고치지 않는다. 근거: M-01-06 §5-1",
     "properties": {
@@ -9120,9 +9711,8 @@
       "x-source-column": "variance_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "차이 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "SHORTAGE",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "description": "차이 유형(GET /mdm/code-values?codeGroupCode=INBOUND_VARIANCE_TYPE). 근거: 공유계약 G-32",
+      "example": "SHORTAGE"
      },
      "varianceQty": {
       "x-source-column": "variance_qty",
@@ -9138,9 +9728,12 @@
      },
      "reasonCode": {
       "x-source-column": "reason_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
-      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⛔ 선택이다 — 「무엇이 틀렸나」는 varianceTypeCode 가 이미 필수로 받는다. 현장이 사유를 모를 때 오류 기록 자체가 막히면 안 된다. 근거: M-01-06 §4-A(2026-08-18 정정) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INBOUND_VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "DAMAGED",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9161,8 +9754,7 @@
     "required": [
      "varianceTypeCode",
      "varianceQty",
-     "uomId",
-     "reasonCode"
+     "uomId"
     ],
     "description": "입하 차이 등록. 등록 후 수정·삭제 경로를 두지 않는다 — 화면이 한 번 등록하면 고칠 수 없다고 정했다. 근거: M-01-06 §5-1",
     "properties": {
@@ -9170,9 +9762,8 @@
       "x-source-column": "variance_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "차이 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "SHORTAGE",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "description": "차이 유형(GET /mdm/code-values?codeGroupCode=INBOUND_VARIANCE_TYPE). 근거: 공유계약 G-32",
+      "example": "SHORTAGE"
      },
      "varianceQty": {
       "x-source-column": "variance_qty",
@@ -9188,9 +9779,12 @@
      },
      "reasonCode": {
       "x-source-column": "reason_code",
-      "type": "string",
+      "type": [
+       "string",
+       "null"
+      ],
       "maxLength": 50,
-      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⛔ 선택이다 — 「무엇이 틀렸나」는 varianceTypeCode 가 이미 필수로 받는다. 현장이 사유를 모를 때 오류 기록 자체가 막히면 안 된다. 근거: M-01-06 §4-A(2026-08-18 정정) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INBOUND_VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "DAMAGED",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
@@ -9247,7 +9841,7 @@
       "x-source-column": "reason_code",
       "type": "string",
       "maxLength": 50,
-      "description": "헤더 사유. 비울 수 없다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "헤더 사유. 비울 수 없다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INVENTORY_ADJUSTMENT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "COUNT_VARIANCE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9265,7 +9859,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "REQUESTED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "adjustedAt": {
@@ -9308,14 +9902,14 @@
       "x-source-column": "reason_code",
       "type": "string",
       "maxLength": 50,
-      "description": "헤더 사유. 비울 수 없다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "헤더 사유. 비울 수 없다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INVENTORY_ADJUSTMENT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "COUNT_VARIANCE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sendToErp": {
       "type": "boolean",
       "default": true,
-      "description": "ERP 송신 여부. 화면의 송신 토글이 이 값이다",
+      "description": "ERP 송신 여부. 화면의 송신 토글이 이 값이다. ⭐ 전역 송신 설정과 논리곱이다 — 전역이 꺼져 있으면 이 값이 참이어도 보내지 않고, 전역이 켜져 있을 때 이 값으로 이 건만 끈다. 켜고 끄기의 정본은 전역 설정이다.",
       "example": true
      },
      "lines": {
@@ -9418,7 +10012,7 @@
       ],
       "maxLength": 50,
       "description": "라인 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "COUNT_VARIANCE",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     },
@@ -9496,7 +10090,7 @@
       ],
       "maxLength": 50,
       "description": "라인 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "COUNT_VARIANCE",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     },
@@ -9597,7 +10191,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "groupBy 가 LOT 일 때 채워진다",
+      "description": "groupBy 가 ITEM·LOCATION 이면 축이 접혀 비고, groupBy 가 LOT 이어도 LOT 단위로 나누지 않는 재고는 비어 온다 — 두 경우는 groupBy 값으로 갈린다. 화면은 후자를 「(LOT 무관)」 으로 적는다(공유계약 A-7 · W-01-07 §5-2 · M-01-04 §5-1).",
       "example": 1001
      },
      "qualityStatusCode": {
@@ -9607,9 +10201,9 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다.",
-      "example": "RELEASED",
-      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이다 — 코드 문자열 확정 시 교체한다. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
+      "description": "품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "example": "NORMAL",
+      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
      },
      "inventoryStatusCode": {
       "x-source-column": "inventory_status_code",
@@ -9633,7 +10227,7 @@
       "x-source-column": "ownership_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "소유 구분. 묶는 축과 무관하게 항상 채워진다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "소유 구분. 묶는 축과 무관하게 항상 채워진다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=OWNERSHIP_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "OWNED",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9644,7 +10238,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "소유가 자사가 아닐 때의 거래처",
+      "description": "소유가 자사가 아닐 때의 거래처. 비면 자사 소유다 — 화면은 「(자사 소유)」 로 적는다(공유계약 A-7).",
       "example": 1001
      },
      "onHandQty": {
@@ -9657,18 +10251,21 @@
       "x-source-column": "reserved_qty",
       "type": "number",
       "minimum": 0,
+      "description": "출고요청 생성 시 걸리는 예약분. 서버 전기가 올리고 소진되면 내린다 — 화면은 계산하지 않는다. 근거: M-01-08 §5-5",
       "example": 20.0
      },
      "pickedQty": {
       "x-source-column": "picked_qty",
       "type": "number",
       "minimum": 0,
+      "description": "피킹으로 예약분에서 옮겨 온 수량. 서버 전기가 옮긴다. 근거: M-01-08 §5-5",
       "example": 0.0
      },
      "blockedQty": {
       "x-source-column": "blocked_qty",
       "type": "number",
       "minimum": 0,
+      "description": "내보낼 수 없게 묶인 수량. ⚠ 출고·출하·피킹의 차단 판정 정본은 이 값이 아니라 Lot Status 단일 지점이다(결정 10 · M-01-08 §5-2). 근거: M-01-08 §5-5",
       "example": 0.0
      },
      "availableQty": {
@@ -9697,9 +10294,119 @@
       ],
       "format": "date-time",
       "example": "2026-08-06T09:12:00+09:00"
+     },
+     "earliestExpiryDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "readOnly": true,
+      "example": "2026-09-30",
+      "description": "이 줄에 포함된 LOT 중 가장 이른 유효기한. 축이 접힌 줄에서는 최솟값이다 — 「이 줄이 경과다」가 아니라 「이 줄에 가장 이른 것이 이 날짜다」로 읽는다. 유효기한 관리 품목이 아니면 비어 온다 — 「판정 불가」이지 「경과 아님」이 아니다. 근거: W-01-07 §5-5"
+     },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "ABC-123",
+      "description": "화면이 보이는 값. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다. 근거: W-01-07 §3"
+     },
+     "itemName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "외장 커버",
+      "description": "화면이 보이는 값. 근거: W-01-07 §3"
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 100,
+      "readOnly": true,
+      "example": "0001234500000012002607310001230007",
+      "description": "화면이 보이는 값. 축이 접힌 줄에서는 비어 온다. 근거: W-01-07 §3"
+     },
+     "locationCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "A-01-03",
+      "description": "화면이 보이는 값. 축이 접힌 줄에서는 비어 온다. 근거: W-01-07 §3"
+     },
+     "warehouseName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "1공장 자재창고",
+      "description": "화면이 보이는 값. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다 — ⛔ 이 값이 있으므로 GET /mdm/warehouses/{warehouseId} 를 부르지 않는다. 축이 접힌 줄에서는 비어 온다. 근거: M-01-04 §3 · W-01-07 §3"
+     },
+     "locationName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "A구역 01열 03단",
+      "description": "화면이 보이는 값. ⛔ 이 값이 있으므로 GET /mdm/locations/{locationId} 를 부르지 않는다. groupBy 가 LOCATION 이 아니거나 축이 접힌 줄에서는 비어 온다 — locationId·locationCode 와 같은 조건이다. 근거: M-01-04 §3 · W-01-07 §3"
      }
     },
     "x-internal-note": "available_qty 는 GENERATED STORED 다 — 공유계약 L-2. 소유 축을 합치지 않는 규칙은 L-7. heldLotCount 는 B-4 와 같은 원리로 서버가 센다."
+   },
+   "InventoryBalanceSummary": {
+    "type": "object",
+    "required": [
+     "itemCount",
+     "lotCount",
+     "onHandQty",
+     "availableQty",
+     "blockedQty",
+     "asOf"
+    ],
+    "description": "필터 조건 전체의 집계다 — 목록 한 쪽의 합이 아니다. 근거: W-01-07 §3·§5-1 · 공유계약 L-1",
+    "properties": {
+     "itemCount": {
+      "type": "integer",
+      "description": "조건에 걸린 품목 수",
+      "example": 342
+     },
+     "lotCount": {
+      "type": "integer",
+      "description": "조건에 걸린 LOT 수",
+      "example": 1308
+     },
+     "onHandQty": {
+      "type": "number",
+      "description": "보유 합계",
+      "example": 128400.0
+     },
+     "availableQty": {
+      "type": "number",
+      "description": "가용 합계",
+      "example": 121200.0
+     },
+     "blockedQty": {
+      "type": "number",
+      "description": "묶인 수량 합계",
+      "example": 7200.0
+     },
+     "asOf": {
+      "type": "string",
+      "format": "date-time",
+      "description": "서버 집계 기준 시각 — 화면이 「기준 HH:MM」 으로 보인다. 브라우저 수신 시각이 아니다. 근거: W-01-07 §3·§5-3 · 공유계약 L-5",
+      "example": "2026-08-05T09:12:00+09:00"
+     }
+    },
+    "x-internal-note": "목록과 같은 트랜잭션에서 낸다 — 아니면 기준 시각을 나눠 표시해야 한다(L-1 단서). InventoryCountSummary 와 같은 형태다."
    },
    "InventoryCount": {
     "x-source-table": "inventory.inventory_count",
@@ -9731,7 +10438,7 @@
       "x-source-column": "count_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "실사 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "실사 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INVENTORY_COUNT_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "CYCLE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9759,7 +10466,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "IN_PROGRESS",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     }
@@ -9793,7 +10500,7 @@
       "x-source-column": "count_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "실사 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "실사 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INVENTORY_COUNT_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "CYCLE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9845,7 +10552,8 @@
      "countedQty",
      "varianceQty",
      "uomId",
-     "countedAt"
+     "countedAt",
+     "counted"
     ],
     "description": "실사 라인. 차이 수량은 서버가 계산한다. 근거: 공유계약 L-2",
     "properties": {
@@ -9900,13 +10608,14 @@
       "x-source-column": "counted_qty",
       "type": "number",
       "minimum": 0,
+      "description": "실물 수량. counted 가 참일 때만 뜻이 있다",
       "example": 98.0
      },
      "varianceQty": {
       "x-source-column": "variance_qty",
       "type": "number",
       "readOnly": true,
-      "description": "실물 − 장부. 서버가 계산한다",
+      "description": "실물 − 장부. 서버가 계산한다. counted 가 참일 때만 뜻이 있다 — 거짓인 줄의 0 을 「차이 없음」으로 읽지 않는다",
       "example": -2.0
      },
      "uomId": {
@@ -9922,7 +10631,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "MISPLACED",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -9933,6 +10642,7 @@
        "null"
       ],
       "format": "int64",
+      "description": "누가 세었나. counted 가 거짓이면 널이다 — 미실사 판정은 counted 로 하고 이 필드로 하지 않는다",
       "example": 1001
      },
      "countedAt": {
@@ -9940,6 +10650,43 @@
       "type": "string",
       "format": "date-time",
       "example": "2026-08-06T09:12:00+09:00"
+     },
+     "counted": {
+      "type": "boolean",
+      "readOnly": true,
+      "description": "이 라인을 실제로 세었는가. 거짓이면 countedQty·countedAt·varianceQty 는 뜻이 없다 — 화면은 「미실사」로 보이고 0 으로 읽지 않는다. uncountedOnly=true 로 거른 줄은 전부 거짓이다. 근거: M-01-11 §5-2 · W-01-04 §5-4",
+      "example": false
+     },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "ABC-123",
+      "description": "화면이 보이는 값. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다 — 모바일은 오프라인에서 그 마스터를 갱신할 수 없다. 근거: M-01-11 §3"
+     },
+     "itemName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "외장 커버",
+      "description": "화면이 보이는 값. 근거: M-01-11 §3"
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 100,
+      "readOnly": true,
+      "example": "0001234500000012002607310001230007",
+      "description": "화면이 보이는 값. LOT 로 관리하지 않는 재고는 비어 온다. 근거: M-01-11 §3"
+     },
+     "locationCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "A-01-03",
+      "description": "화면이 보이는 값. 근거: M-01-11 §3"
      }
     },
     "x-internal-note": "블라인드 실사에서 systemQty 를 내려보내지 않는 것은 W-01-04 §5-2. 계약은 필드를 두되 서버가 생략한다."
@@ -10059,7 +10806,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "MISPLACED",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10077,7 +10824,8 @@
      "plannedCount",
      "countedCount",
      "uncountedCount",
-     "varianceCount"
+     "varianceCount",
+     "closable"
     ],
     "description": "실사 진행 요약. 서버가 계산해 내려보낸다 — 화면이 전체 라인을 받아 세면 페이지네이션과 어긋난다. 근거: W-01-04 §5-6",
     "properties": {
@@ -10100,6 +10848,19 @@
       "type": "integer",
       "description": "차이가 있는 라인 수",
       "example": 12
+     },
+     "closable": {
+      "type": "boolean",
+      "description": "지금 마감할 수 있는가. 미실사 0 이고 차이가 없거나 모두 조정된 상태인지를 서버가 함께 본 결과다 — 화면이 조정 목록을 따로 조회해 판정하지 않는다(공유계약 L-2). 근거: W-01-04 §5-5·§5-7",
+      "example": false
+     },
+     "closeBlockedReasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "closable 이 거짓인 이유 — 미실사 잔여 · 차이 미조정 · 이미 마감 · 상태 잠김. 화면은 이 값으로 안내 문구와 「조정 등록」 경로를 가른다(공유계약 G-3). ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다",
+      "example": "값"
      }
     }
    },
@@ -10138,7 +10899,7 @@
       "x-source-column": "reservation_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "예약 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "예약 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=RESERVATION_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "MATERIAL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10147,7 +10908,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "MATERIAL_ISSUE_REQUEST",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentId": {
@@ -10215,7 +10976,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "OPEN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     }
@@ -10261,7 +11022,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "거래 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "RECEIPT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "plantId": {
@@ -10289,7 +11050,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "원천 전표 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "GOODS_RECEIPT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentId": {
@@ -10303,7 +11064,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "POSTED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "reversalOfTransactionId": {
@@ -10439,9 +11200,9 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "RELEASED",
-      "description": "전이 전 품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다.",
-      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이다 — 코드 문자열 확정 시 교체한다. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
+      "example": "NORMAL",
+      "description": "전이 전 품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
      },
      "fromInventoryStatusCode": {
       "x-source-column": "from_inventory_status_code",
@@ -10486,9 +11247,9 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "RELEASED",
-      "description": "전이 후 품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다.",
-      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이다 — 코드 문자열 확정 시 교체한다. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
+      "example": "NORMAL",
+      "description": "전이 후 품질 상태. 정상 · 불량 · 검사 대기 · 폐기 네 가지다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32",
+      "x-internal-note": "값 집합 출처 = 회신 E-3 확정(정상·불량·검사 대기·폐기). E-3 는 이 축이 재고의 차원임을 확인했다 — uq_inventory_balance_dim 에 quality_status_code 가 들어 있어 같은 LOT 이 같은 위치에 있어도 품질 상태가 다르면 재고 행이 갈린다. ⚠ example 'RELEASED' 는 확정 4값 어디에도 없는 잠정값이었다 — 2026-08-29 교체 완료. 구 서술 「확정된 값 목록이 아직 없다(G-2)」는 오기였다."
      },
      "toInventoryStatusCode": {
       "x-source-column": "to_inventory_status_code",
@@ -10512,6 +11273,7 @@
       "x-source-column": "ownership_type_code",
       "type": "string",
       "maxLength": 50,
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=OWNERSHIP_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "OWNED"
      },
      "ownerPartnerId": {
@@ -10594,7 +11356,7 @@
       "maxLength": 50,
       "description": "LOT 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
       "example": "MATERIAL",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "x-internal-note": "⛔ PRODUCTION → PRODUCT 전이 쓰기가 계약 7벌에 0건이다(실측). 갈래가 둘이다 — ⓐ 동일 행 유지(제품LOT 은 완제품 창고에 선 PRODUCTION LOT 을 부르는 이름) ⓑ 제품 LOT 별도 발번(발번 화면·POST 경로·W-03-01 유형별 분리 집계를 함께 세워야 한다). 사람 결정 대기 — 경계 B6-01. CLOSED 영향: W-01-07·W-01-04·W-02-04·W-02-05·W-03-01·W-03-02·W-03-03·M-01-04."
      },
      "plantId": {
       "x-source-column": "plant_id",
@@ -10636,7 +11398,7 @@
       "x-source-column": "source_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "LOT 을 만든 원천의 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "LOT 을 만든 원천의 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 확정된 값 하나 — RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다). 근거: 공유계약 A-16 · M-01-12 §5-2",
       "example": "INBOUND_RECEIPT",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10651,7 +11413,7 @@
       "x-source-column": "status_code",
       "type": "string",
       "maxLength": 50,
-      "description": "품질 판정 축 — 정상·불량·검사 대기·폐기(공유계약 G-2 표기: NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다. ⚠ 보류 건의 진행 상태(lot_hold.status_code)·생산LOT 생명주기(lifecycleStatusCode)와는 다른 축이다. 근거: 회신 E-3 종결 2026-08-07 · 공유계약 §I-32 · omf-mes#227",
+      "description": "품질 판정 축 — 정상·불량·검사 대기·폐기(공유계약 G-2 표기: NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다. ⚠ 보류 건의 진행 상태(lot_hold.status_code)·생산LOT 생명주기(lifecycleStatusCode)와는 다른 축이다. 근거: 회신 E-3 종결 2026-08-07 · 공유계약 §I-32 · omf-mes#227 ⛔ 「완료」·「미달 마감」·「폐번」은 이 축의 값이 아니다 — 완료는 completedAt(시각)이, 폐번은 lifecycleStatusCode 가 담는다. 근거: omf-mes#269",
       "example": "NORMAL"
      },
      "lifecycleStatusCode": {
@@ -10661,7 +11423,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "⭐ 생명주기 축(대기·활성·폐번 — 영문 표기 미정, 후보 WAITING·ACTIVE·VOIDED) — statusCode(품질 판정)와는 다른 축이다. 생산LOT 선발행(W-02-04)에서만 쓴다 — 대기: 번호 슬롯만 예약(R26 「완료 전 실물 미귀속」) · 활성: 실적이 붙어 실물에 귀속 · 폐번: 마감 시 미달 슬롯 자동 폐번(R27). 자재·제품 LOT 은 null. ⛔ 물리 컬럼 신설 대상 — 값 목록도 함께 확정 필요. 근거: 02-SW설계사양서 §4.6 · W-02-04 §5-3 · W-02-05 §5-3 · omf-mes#46",
+      "description": "⭐ 생명주기 축(대기·활성·폐번 — 영문 표기 미정, 후보 WAITING·ACTIVE·VOIDED) — statusCode(품질 판정)와는 다른 축이다. 생산LOT 선발행(W-02-04)에서만 쓴다 — 대기: 번호 슬롯만 예약(R26 「완료 전 실물 미귀속」) · 활성: 실적이 붙어 실물에 귀속 · 폐번: 마감 시 미달 슬롯 자동 폐번(R27). 자재·제품 LOT 은 null. ⛔ 물리 컬럼 신설 대상 — 값 목록도 함께 확정 필요. 근거: 02-SW설계사양서 §4.6 · W-02-04 §5-3 · W-02-05 §5-3 · omf-mes#46 ⛔ 「완료」·「미달 마감」도 이 축에 넣지 않는다 — 폐번은 「실적이 붙지 않은 슬롯」이고 미달 마감은 「실적이 붙었는데 계획에 못 미친 것」이라 뜻이 겹치지 않는다. 완료 축은 completedAt 이 담는다. 근거: omf-mes#269",
       "example": "WAITING"
      },
      "parentLotId": {
@@ -10672,7 +11434,41 @@
       ],
       "format": "int64",
       "description": "분할 조회 편의용 표시 값. 계보의 원천은 아니다",
-      "example": 1001
+      "example": 1001,
+      "x-internal-note": "계보(trace.lot_relation)의 전체 지도. ⭐ 시작 = 자재LOT → 생산LOT(투입 확정). ⭐ 종결 = 출하 LOT 배분. ⭐ 회귀 = 반품 입고 — 원 LOT 을 그대로 쓰므로 관계가 생기지 않는다(W-04-06 §5-3). ⛔ 계보가 생기지 않는 자리 넷 — ①포장 재구성(M-04-03 §5-3) ②재생재 등록(M-01-12 · DR-006) ③재고 재등록(W-04-11 §5-1) ④예비품 출고(W-05-06 §8-5). ⚠ LOT 이 갈리는데 담을 자리가 없는 자리 둘 — ①선별(W-04-07 §5-4) ②수리 왕복 재투입 참조(M-02-02 §4 · R75). ⚠ 러닝체인지의 생산LOT별 BOM 스냅샷(R42·R43)은 2026-08-30 `bomSnapshot`(위)으로 되살렸다 — 더 이상 이 목록에 없다. ⚠ 일부만 채워진 계보가 빈 계보보다 위험하다 — 한 경로에만 부모가 있으면 계보 조회 화면이 「추적 가능」으로 오해한다(공유계약 G-24 의 데이터 판)."
+     },
+     "completedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "생산 LOT 완료 처리(P-02-06)가 찍는 시각. 비어 있으면 아직 완료되지 않았다. ⭐ 상태 코드 문자열을 몰라도 완료 여부가 판정된다 — 완료 시각이 있고 없고로 갈리기 때문이다. ⛔ 「완료」·「미달 마감」은 statusCode(품질 판정)에도 lifecycleStatusCode(생명주기)에도 값으로 넣지 않는다. 자재·제품 LOT 은 null. 근거: P-02-06 §5-5 · 공유계약 §I-32·§I-49",
+      "example": "2026-08-11T17:40:00+09:00",
+      "x-internal-note": "⛔ 물리 컬럼 신설 대상 — trace.lot 에 대응 컬럼이 없어 x-source-column 을 달 수 없다. lifecycleStatusCode 와 한 묶음으로 데이터모델 담당에 통지한다. ⛔ Lot 에 두 번째 판정값을 두지 않는다 — 완료/미달 배지의 판정값은 W/O 진행 스키마의 completionJudgmentCode 와 같은 어휘로 서버가 한 곳에서만 낸다(W-02-08 §5-2). 근거: omf-mes#269"
+     },
+     "bomSnapshot": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "생산LOT 선발행(W-02-04) 확정 시점의 BOM을 굳혀 둔 것 — 러닝체인지로 LOT마다 다른 BOM 버전을 쓸 수 있다(R42 「W/O 무분할 · 생산LOT만 BOM 스냅샷별 분할」). 서버가 선발행 시점에 자동으로 채운다 — 화면·클라이언트가 값을 만들어 보내지 않는다(LotCreate 에 없다). 자재·제품 LOT 은 null. 이 값이 있으면 투입 오투입 판정(P-02-03)이 해당 LOT의 BOM 기준으로 선다(R43) — 없으면 W/O BOM 기준으로 물러난다(공유계약 A-11). 2026-08-30 되살림. 근거: 공유계약 A-11 · §I-16 · P-02-11 §5-3 · W-02-04 §5-2",
+      "example": {
+       "bomId": 1001,
+       "bomVersion": 2,
+       "components": [
+        {
+         "componentItemId": 2001,
+         "requiredQty": 4,
+         "uomId": 1001
+        }
+       ]
+      },
+      "x-internal-note": "⚠ 물리 컬럼 신설 또는 확인 대상 — x-source-column 을 달지 않았다. omf-mes#76(2026-08-04 실측) 당시엔 trace.lot 에 대응 컬럼이 없었으나, omf-mes-server#50 코멘트가 trace.lot 의 CHECK 제약 중 ck_lot_bom_snapshot 이라는 이름을 인용한다 — 물리 모델이 그 사이 바뀌어 이미 있을 가능성이 있다(token_version 이 omf-mes-server#48 에서 같은 패턴으로 「이미 있음」 판정을 받은 전례). 신설이든 확인이든 데이터 모델 담당에 통지한다, 기다리지 않는다(A-11 규칙 3). 근거: 공유계약 §I-16 · omf-mes-server#50"
+     },
+     "progress": {
+      "$ref": "#/components/schemas/LotProgress",
+      "description": "생산 진척. withProgress=true 일 때만 채워진다"
      },
      "remarks": {
       "x-source-column": "remarks",
@@ -10686,6 +11482,15 @@
       "type": "boolean",
       "description": "지금 보류 중인지. 보류 기록은 별도 경로에서 읽는다",
       "example": true
+     },
+     "receiptDispositionCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "readOnly": true,
+      "example": "값",
+      "description": "입고 확정 대기 큐의 판정 축 — IQC 합격 · 샘플링 미대상 · 긴급 IQC 생략 한도승인 세 갈래다. 목록 배지 「⚠ 한도승인」의 원천이다. ⚠ 값 집합은 확정이나 코드 문자열이 아직 정해지지 않아 enum 을 못 박지 않는다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: W-01-10 §5-1"
      }
     },
     "x-internal-note": "입하 시점의 LOT 은 Hold 로 생긴다 — 가용 재고가 아니다(M-01-01 §5-4 · ✓확정 §재정의 #5). ⚠ 「W/O 내 순번」(별도 속성 — 선발행 슬롯 구간 지정용)을 담을 컬럼이 없다 — 하류 데이터모델 미보유. 근거: 02-SW설계사양서 §4.6 · omf-mes#46."
@@ -10703,8 +11508,9 @@
        "string",
        "null"
       ],
-      "description": "미달 마감 사유. 계획 수량에 미달하면 필수이고 서버가 400 으로 막는다. work_order.completion_variance_reason_code 로 간다. 근거: P-02-06 §5-5",
-      "example": "자재 부족"
+      "description": "미달 마감 사유. 계획 수량에 미달하면 필수이고 서버가 400 으로 막는다. work_order.completion_variance_reason_code 로 간다. 근거: P-02-06 §5-5 ⚠ 같은 칸을 W/O 마감(02 계약 POST /production/work-orders/{workOrderId}:close 본문 reasonCode)도 쓴다. 생산LOT 완료는 S10, W/O 마감은 S12 라 마감이 나중이다.",
+      "example": "MATERIAL_SHORTAGE",
+      "x-internal-note": "공유계약 B-13(한 컬럼을 여러 경로가 바꾸면 누가 정하고 누가 반영하나를 계약이 가른다)이 미충족이다. LOT 단위 사유를 보존하려면 trace.lot 쪽 칸이 필요하다 — 데이터모델 소관(P-02-06 §8 미결 2). ⚠ LOT 은 미달인데 W/O 합계는 정상인 조합에서 마감이 빈 값으로 앞 사유를 지우는지 유지하는지 아직 정해지지 않았다 — 서버가 한 곳에서 정한다."
      },
      "remarks": {
       "x-source-column": "remarks",
@@ -10748,7 +11554,10 @@
     "properties": {
      "numberSourceCode": {
       "type": "string",
-      "enum": ["SUPPLIER", "MES"],
+      "enum": [
+       "SUPPLIER",
+       "MES"
+      ],
       "description": "번호를 누가 매기는가. ⛔ 이 한 경로가 두 업무를 받으므로 화면이 반드시 밝힌다.\n\nSUPPLIER = 사전부착. 공급사가 MES 표준 양식대로 부여한 번호를 스캔해 수용한다. lotNo 가 필수이고, 같은 공장에 같은 번호가 있으면 400 이다 — 스캔값이 틀린 것이므로 사람이 고쳐야 풀린다.\n\nMES = 미부착. 서버가 채번한다. lotNo 를 주면 400 이다 — 빈 값이 조용히 서버 채번으로 흘러가는 것을 막기 위해 「안 준 것」과 「못 정한 것」을 가르지 않고 «누가 매기는가»를 직접 받는다(공유계약 G-9 의 계약 판).\n\n근거: MLOT #4(발번 경로 이원화 ✓확정 2026-07-20) · M-01-02 §5-1 · P-01-01 §1",
       "example": "SUPPLIER"
      },
@@ -10813,7 +11622,7 @@
       "x-source-column": "source_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "원천 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 확정된 값 하나 — RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다). 근거: 공유계약 A-16 · M-01-12 §5-2",
       "example": "INBOUND_RECEIPT",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10905,7 +11714,7 @@
       "x-source-column": "identifier_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "식별자 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "식별자 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_EXTERNAL_IDENTIFIER_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SUPPLIER_LOT",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10932,7 +11741,7 @@
       ],
       "maxLength": 50,
       "description": "외부 시스템. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "ERP",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     }
@@ -10964,7 +11773,7 @@
       "x-source-column": "identifier_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "식별자 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "식별자 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_EXTERNAL_IDENTIFIER_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SUPPLIER_LOT",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -10991,7 +11800,7 @@
       ],
       "maxLength": 50,
       "description": "외부 시스템. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "ERP",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
     }
@@ -11053,9 +11862,9 @@
       "x-source-column": "reason_code",
       "type": "string",
       "maxLength": 50,
-      "description": "보류 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "QUALITY_HOLD",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "description": "보류 사유. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_REASON 로 받는다. 고객이 운영 중 W-06-06 공통코드 마스터에서 정하는 실행 시점 자료라 계약에 enum 을 두지 않는다. 근거: 공유계약 G-31·G-32 · 시드 omf-mes#198",
+      "example": "INCOMING_INSPECTION_WAIT",
+      "x-internal-note": "omf-mes#198 로 초기 시드가 나간 마스터안전형 그룹(공유계약 G-31). enum 을 두지 않는 것이 정상이다 — 「미확정」이 아니다."
      },
      "releaseCondition": {
       "x-source-column": "release_condition",
@@ -11071,7 +11880,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "HELD",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "heldBy": {
@@ -11108,6 +11917,16 @@
       "description": "보류 시각보다 앞설 수 없다",
       "example": "2026-08-06T09:12:00+09:00"
      },
+     "releaseReasonCode": {
+      "x-source-column": "release_reason_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "해제 사유(코드형) — 2026-08-30 되살림. 등록 사유(reasonCode)와 대칭 축이다 — C7(재판정 합격)·C8(재판정 불합격)이 왜 갈렸는지를 이 값으로 가른다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON 로 받는다(공유계약 G-32). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-03-02 §5-4 · omf-mes#87",
+      "example": "RETEST_PASS"
+     },
      "remarks": {
       "x-source-column": "remarks",
       "type": [
@@ -11118,11 +11937,11 @@
      },
      "lotStatusCode": {
       "type": "string",
-      "description": "이 보류가 걸었을 때 LOT 이 간 상태",
-      "example": "IQC"
+      "description": "이 보류가 걸었을 때 LOT 이 간 상태 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32 · omf-mes#176",
+      "example": "NORMAL"
      }
     },
-    "x-internal-note": "해제 사유를 담을 자리가 없다 — 같은 테이블 안에서 등록 사유는 있고 해제 사유는 없다(#87 요청분). / ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 01 요구서 §7 · 03 계약 2단계 §4"
+    "x-internal-note": "해제 사유(releaseReasonCode)를 등록 사유와 대칭으로 되살렸다(2026-08-30) — 등록·해제 비대칭이 해소됐다(#87 요청분). / ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 01 요구서 §7 · 03 계약 2단계 §4"
    },
    "LotHoldListResponse": {
     "type": "object",
@@ -11135,6 +11954,202 @@
       "items": {
        "$ref": "#/components/schemas/LotHold"
       }
+     }
+    }
+   },
+   "LotStatusHistoryEvent": {
+    "type": "object",
+    "description": "LOT 상태 전이 사건 1건. 결정 10 「현재 1행 + 변경이력 1:N」을 되살린 전용 이력(2026-08-30) — 도식스펙03 §1.3 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15) 전건을 담는다. 저장 테이블(trace.lot_status_history 성격)은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-03-01 §5-1·§5-2",
+    "required": [
+     "lotStatusHistoryId",
+     "lotId",
+     "toStatusCode",
+     "transitionCode",
+     "changedBy",
+     "changedAt"
+    ],
+    "properties": {
+     "lotStatusHistoryId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "값"
+     },
+     "fromStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-no-example": true,
+      "description": "전이 전 상태. 최초 등록 전이(C4·C6·C14)는 null"
+     },
+     "toStatusCode": {
+      "type": "string",
+      "x-no-example": true
+     },
+     "transitionCode": {
+      "type": "string",
+      "enum": [
+       "C4",
+       "C5",
+       "C6",
+       "C7",
+       "C8",
+       "C9",
+       "C10",
+       "C14",
+       "C15"
+      ],
+      "description": "전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표",
+      "example": "C7"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "값"
+     },
+     "sourceDocumentTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-no-example": true,
+      "description": "이 전이를 일으킨 문서 유형 — 다형 참조(공유계약 A-10)"
+     },
+     "sourceDocumentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "changedBy": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "changedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-06T09:12:00+09:00"
+     }
+    }
+   },
+   "LotLifecycleHistoryEvent": {
+    "type": "object",
+    "description": "LOT 생명주기 전이 사건 1건(대기/활성/폐번). LotStatusHistoryEvent(품질 판정 축)와 형태를 맞춘 별도 이력 — 두 축을 한 이력에 섞지 않는다(과거 W-03-01 §8이 두 축을 헷갈려 적었던 사고 재발 방지). 저장 테이블(trace.lot_lifecycle_history 성격)은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: omf-mes-server#50 정정 회신(2026-08-31)",
+    "required": [
+     "lotLifecycleHistoryId",
+     "lotId",
+     "toLifecycleStatusCode",
+     "transitionCode",
+     "changedAt"
+    ],
+    "properties": {
+     "lotLifecycleHistoryId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "값"
+     },
+     "fromLifecycleStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-no-example": true,
+      "description": "전이 전 생명주기 상태. 최초 전이(L1)는 null"
+     },
+     "toLifecycleStatusCode": {
+      "type": "string",
+      "x-no-example": true
+     },
+     "transitionCode": {
+      "type": "string",
+      "enum": [
+       "L1",
+       "L2",
+       "L3"
+      ],
+      "description": "L1=대기→활성(첫 실적이 붙을 때, 해당 슬롯) · L2=대기→폐번(마감, 실적 없는 슬롯만) · L3=활성→폐번(작업지시 취소, 그 작업지시의 선발행 슬롯 전건 — DR-007). ⚠ L3를 여는 것은 취소 오퍼레이션 한 곳뿐이다 — 사람이 화면에서 직접 폐번하는 액션은 없다",
+      "example": "L1"
+     },
+     "sourceDocumentTypeCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "x-no-example": true,
+      "description": "이 전이를 일으킨 문서 유형 — 다형 참조(공유계약 A-10). L2=work_order_closing, L3=work_order"
+     },
+     "sourceDocumentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "changedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-06T09:12:00+09:00"
+     }
+    }
+   },
+   "LotProgress": {
+    "type": "object",
+    "description": "이 LOT 의 생산 진척. 서버가 계산해 내린다 — 화면이 각자 계산하면 완료 화면과 라벨 화면의 값이 갈린다(공유계약 L-2). 근거: P-02-04 §5 · P-02-06 §5-2",
+    "required": [
+     "goodQty",
+     "achievementRate",
+     "varianceQty",
+     "completionJudgmentCode"
+    ],
+    "properties": {
+     "goodQty": {
+      "type": "number",
+      "description": "이 LOT 에 배분된 양품 합계",
+      "example": 480.0
+     },
+     "achievementRate": {
+      "type": "number",
+      "description": "달성률 = goodQty ÷ 이 LOT 의 initialQty. ⚠ W/O 진행의 달성률과 분모가 다르다 — 그쪽은 W/O 지시 수량이다",
+      "example": 0.96
+     },
+     "varianceQty": {
+      "type": "number",
+      "description": "goodQty − 이 LOT 의 initialQty",
+      "example": -20.0
+     },
+     "completionJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "UNDER",
+       "NORMAL",
+       "OVER"
+      ],
+      "description": "미달·정상·초과. W/O 진행 스키마의 같은 이름과 값 집합이 같다",
+      "example": "UNDER"
      }
     }
    },
@@ -11230,7 +12245,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "OPEN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "requestedBy": {
@@ -11241,6 +12256,15 @@
       ],
       "format": "int64",
       "example": 1001
+     },
+     "reasonCode": {
+      "x-source-column": "reason_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "요청 사유(코드형) — 2026-08-30 되살림. GET /mdm/code-values?codeGroupCode=MATERIAL_ISSUE_REQUEST_REASON. 사유별 집계는 이 값으로 한다(§9-2 목록 요약). 근거: W-02-10 §5-1",
+      "example": "URGENT_WO_RESPONSE"
      },
      "remarks": {
       "x-source-column": "remarks",
@@ -11288,12 +12312,13 @@
       "example": "2026-08-12T14:00:00+09:00"
      },
      "reasonCode": {
+      "x-source-column": "reason_code",
       "type": [
        "string",
        "null"
       ],
-      "description": "요청 사유. ⛔ 담을 코드 컬럼이 아직 없어 remarks 로 저장된다 — 「무절차 반출 금지」를 화면이 말하지만 집계는 안 된다. 근거: omf-mes#87",
-      "example": "부족분 보충"
+      "description": "요청 사유(코드형) — 확정이 형태까지 지정했다(✓확정 2026-07-14 #4·#5·#7·#8 「사유 필드(코드형 — '긴급 W/O 대응' 포함) 신설」). 2026-08-30 되살림. 값 목록은 GET /mdm/code-values?codeGroupCode=MATERIAL_ISSUE_REQUEST_REASON 로 받는다 — 「긴급 W/O 대응」 포함(공유계약 G-32). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-02-10 §5-1 · omf-mes#87",
+      "example": "URGENT_WO_RESPONSE"
      },
      "remarks": {
       "x-source-column": "remarks",
@@ -11456,6 +12481,67 @@
      }
     }
    },
+   "MaterialIssueShortageLine": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "uomId",
+     "requiredQty",
+     "issuedQty",
+     "shortageQty"
+    ],
+    "description": "한 W/O 의 품목별 소요·기출고·부족 한 줄",
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "bomComponentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "requiredQty": {
+      "type": "number",
+      "description": "자재 명세(BOM) 소요량 — 이 W/O 의 지시수량 기준",
+      "example": 200.0
+     },
+     "issuedQty": {
+      "type": "number",
+      "description": "기출고 누계 — 이 W/O 앞으로 출고된 수량의 합. ⛔ 화면이 요청 건별 상세를 훑어 더하지 않는다(공유계약 L-2)",
+      "example": 120.0
+     },
+     "shortageQty": {
+      "type": "number",
+      "description": "부족 = 소요 − 기출고. 음수면 0 으로 낸다",
+      "example": 80.0
+     }
+    }
+   },
+   "MaterialIssueShortageList": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "description": "추가 자재 출고 요청 화면(W-02-10 §3 ②)의 표를 이 한 응답이 채운다 — 「BOM 소요량 불러오기」 버튼이 부르는 것이 이 경로다. 자재 명세(BOM) 조회를 화면이 따로 하지 않는다",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MaterialIssueShortageLine"
+      }
+     }
+    }
+   },
    "PageMeta": {
     "type": "object",
     "required": [
@@ -11564,7 +12650,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "OPEN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "held": {
@@ -11578,9 +12664,66 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "held 가 참일 때의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "held 가 참일 때의 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "QUALITY_HOLD",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+     },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "ABC-123",
+      "description": "화면이 보이는 값. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다 — 모바일은 오프라인에서 그 마스터를 갱신할 수 없다. 근거: M-01-08 §3"
+     },
+     "itemName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "외장 커버",
+      "description": "화면이 보이는 값. 근거: M-01-08 §3"
+     },
+     "lotNo": {
+      "type": "string",
+      "maxLength": 100,
+      "readOnly": true,
+      "example": "0001234500000012002607310001230007",
+      "description": "화면이 보이는 값. 근거: M-01-08 §3"
+     },
+     "locationCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "A-01-03",
+      "description": "화면이 보이는 값. 근거: M-01-08 §3"
+     },
+     "expiryDate": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "readOnly": true,
+      "example": "2027-07-31",
+      "description": "이 라인이 가리키는 LOT 의 유효기한. FEFO 정렬 키다. 근거: M-01-08 §4-C"
+     },
+     "manufacturedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "readOnly": true,
+      "example": "2026-07-31T09:00:00+09:00",
+      "description": "FIFO 품목 라인의 부제 표시값이자 FIFO 정렬 키. 근거: M-01-08 §4-C"
+     },
+     "pickSequenceRank": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "readOnly": true,
+      "example": 1,
+      "description": "이 품목의 선출 정책상 몇 번째인가. 1 이 우선이다. 품목의 선출 정책(유효기한 관리 품목은 FEFO, 나머지는 FIFO)을 서버가 적용해 낸다 — 화면이 다시 계산하지 않는다(공유계약 L-2). 정렬 근거가 없으면 비어 온다 — 「1순위」가 아니다"
      }
     },
     "x-internal-note": "held·holdReasonCode 는 trace.lot_hold 를 라인에 실어 내리는 파생 필드다 — 화면이 별도 호출로 세지 않게 한다(공유계약 B-4 와 같은 원리)."
@@ -11655,7 +12798,7 @@
       "x-source-column": "picking_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "피킹 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "피킹 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=PICKING_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "MATERIAL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -11664,7 +12807,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "원천 문서 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "MATERIAL_ISSUE_REQUEST",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceDocumentId": {
@@ -11684,7 +12827,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "OPEN",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "assignedWorkerId": {
@@ -11815,7 +12958,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "DRAFT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "approvalRequestId": {
@@ -12099,6 +13242,7 @@
      "taskQty",
      "uomId",
      "fromLocationId",
+     "warehouseId",
      "priorityNo",
      "statusCode"
     ],
@@ -12180,14 +13324,20 @@
        "null"
       ],
       "format": "int64",
-      "description": "실제 적치된 위치. 완료되면 반드시 채워진다",
+      "description": "실제 적치된 위치. 완료되면 반드시 채워지며, 재고 잔액의 위치 축이 이 값을 따른다",
+      "example": 1001
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "적치 «목적» 창고. GET /mdm/locations?warehouseId= 가 이 값을 required 로 받으므로 지시가 실어 내린다 — fromLocationId(입하장·하역장)는 다른 창고일 수 있어 대신 쓸 수 없다. 근거: M-01-05 §5-3 · M-01-07 §5-5",
       "example": 1001
      },
      "warehouseManagementLevelCode": {
       "type": "string",
       "maxLength": 50,
       "description": "이 지시가 속한 창고의 위치 관리 수준. 위치 스캔을 요구할지가 이 값으로 갈린다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "CELL",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "priorityNo": {
@@ -12210,7 +13360,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "ASSIGNED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "completedAt": {
@@ -12231,7 +13381,7 @@
       "example": "비고 문자열"
      }
     },
-    "x-internal-note": "warehouseManagementLevelCode 는 mdm.warehouse.management_level_code 를 지시에 실어 내리는 것이다 — M-01-05 §5-3 이 이 값으로 위치 스캔 유무를 가른다. 값 목록은 #64."
+    "x-internal-note": "warehouseManagementLevelCode 는 mdm.warehouse.management_level_code 를 지시에 실어 내리는 것이다 — M-01-05 §5-3 이 이 값으로 위치 스캔 유무를 가른다. 값 목록은 #64. warehouseId 도 같은 이유로 실어 내린다 — 화면이 창고를 따로 조회하면 부를 키가 없다. 원천은 goods_receipt.warehouse_id 다(W-01-10 §5-2 가 건별로 정한다)."
    },
    "PutawayTaskComplete": {
     "type": "object",
@@ -12292,7 +13442,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "임시 적재 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "임시 적재 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=PUTAWAY_TASK_TEMPORARY_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NO_SPACE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
@@ -12343,7 +13493,7 @@
      },
      "lotNo": {
       "type": "string",
-      "example": "LOT-2026-000045",
+      "example": "0001234500000012002607310001230007",
       "description": "서버가 매긴 번호"
      },
      "itemId": {
@@ -12507,8 +13657,16 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "CONFIRMED",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+     },
+     "lines": {
+      "type": "array",
+      "readOnly": true,
+      "items": {
+       "$ref": "#/components/schemas/ShopfloorReceiptLine"
+      },
+      "description": "이 수령 전표의 라인. 목록 응답도 라인을 함께 싣는다 — 한 W/O 에 수령 전표가 여러 건 서므로 라인을 보려고 전표마다 상세를 다시 부르면 1+N 왕복이 된다. 근거: P-02-03 §3 · M-01-09 §4-B"
      }
     }
    },
@@ -12636,6 +13794,27 @@
       "format": "int64",
       "example": 1001
      },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "example": "ABC-123",
+      "description": "화면이 보이는 값. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다 — POP 은 오프라인에서 그 마스터를 갱신할 수 없다. 근거: P-02-03 §3 · 공유계약 C-6"
+     },
+     "itemName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "example": "외장 커버",
+      "description": "화면이 보이는 값. 근거: P-02-03 §3 · 공유계약 C-6"
+     },
+     "lotNo": {
+      "type": "string",
+      "maxLength": 100,
+      "readOnly": true,
+      "example": "0001234500000012002607310001230007",
+      "description": "화면이 보이는 값. 근거: P-02-03 §3 · 공유계약 C-6"
+     },
      "issuedQty": {
       "x-source-column": "issued_qty",
       "type": "number",
@@ -12669,7 +13848,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "차이 사유. 차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이 사유. 차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SPILL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
@@ -12731,7 +13910,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
+      "description": "차이가 0 이 아니면 필수. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "SPILL",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      }
@@ -12770,7 +13949,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "이동 유형. 일반 이동과 불량 반출을 가른다. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "NORMAL",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "fromBusinessUnitId": {
@@ -12828,7 +14007,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "IN_TRANSIT",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "reasonCode": {
@@ -12839,7 +14018,7 @@
       ],
       "maxLength": 50,
       "description": "불량 반출·분실 사유. ⛔ 물리 모델에 아직 없다 — 같은 성격의 putaway_task(적치 사유)는 이미 있는데 이 테이블만 없다. 근거: 공유계약 §I-41 · omf-mes#84",
-      "example": "값"
+      "x-no-example": true
      }
     },
     "x-internal-note": "한 행에 shipped_at·received_at 이 둘 다 있다 — 두 문서가 아니라 한 문서의 두 전이다(02-URL동작규약 §2-4). ⚠ 창고 간(from_warehouse_id ≠ to_warehouse_id)만 받는다 — 창고 «안» Location·파렛트 간 이동을 담을 헤더가 없어 M-01-07 임시 적치의 복귀 경로가 막힌다. 후보 ① CHECK를 from_location_id ≠ to_location_id 로 완화 ② handling_unit_content 파렛트 재편성 이력 신설. 근거: 공유계약 §I-19 · M-01-10 §5-1 · omf-mes#82"
@@ -12922,7 +14101,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "이동 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "NORMAL",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "fromBusinessUnitId": {
