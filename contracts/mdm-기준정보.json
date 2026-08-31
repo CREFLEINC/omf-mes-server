@@ -3,7 +3,7 @@
   "info": {
     "title": "omf-mes 기준정보 도메인 API (초안)",
     "version": "0.1.0",
-    "description": "기준정보 도메인 API 계약. 필드 정의의 정본은 데이터베이스 물리 모델이며 이 문서는 그것을 옮긴 것이다. 마스터 형 패턴에 개별 「변경 이력」(/history) 엔드포인트는 두지 않는다 — 전 마스터의 변경 이력은 횡단 조회 GET /audit/events 하나로 받으며, 원본 컬럼(beforeValue·afterValue 포함)을 해석하지 않고 그대로 노출한다.",
+    "description": "기준정보 도메인 API 계약. 필드가 무엇을 받는지·필수 여부·값 목록은 이 계약이 정한다 — 물리 모델은 타입·길이만 따른다. 마스터 형 패턴에 개별 「변경 이력」(/history) 엔드포인트는 두지 않는다 — 전 마스터의 변경 이력은 횡단 조회 GET /audit/events 하나로 받으며, 원본 컬럼(beforeValue·afterValue 포함)을 해석하지 않고 그대로 노출한다.",
     "x-internal-note": "근거·맥락은 deliverables/06-API-요구서.md 를 본다. WBS P0.4 API 계약 v0 의 초안 입력이며 계약 확정·소유는 통합 Agent 소관이다. /history 를 두지 않는 이유는 이슈 #68 해소 전이기 때문이다 — target_id 가 FK 가 아니고 before_value/after_value jsonb 의 키 규약이 없어 지금 만들면 필드를 지어내게 된다. 횡단 조회 근거 = W-06-11 §4-A·§5-1."
   },
   "servers": [
@@ -77,6 +77,14 @@
               "type": "boolean"
             },
             "description": "불량창고만 거른다 — W-01-06 §3의 창고 선택(「불량창고」)이 이 조건으로 건다. 근거: DR-012 확정 3-C · omf-mes#147"
+          },
+          {
+            "name": "dividedOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "참이면 「창고 안을 나눈 창고」만 낸다 — 활성 위치가 둘 이상인 창고다. 재고를 한 번이라도 받은 창고는 기본 위치 한 행이 반드시 있으므로 「위치 행이 있는가」로는 갈리지 않는다. 배치도 화면이 대상 창고를 고를 때 참으로 보낸다. 판정을 화면이 세지 않는다."
           },
           {
             "name": "includeInactive",
@@ -371,6 +379,67 @@
         }
       }
     },
+    "/mdm/warehouses/{warehouseId}:activate": {
+      "parameters": [
+        {
+          "name": "warehouseId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "창고 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Warehouse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-07 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mdm/locations": {
       "get": {
         "tags": [
@@ -387,7 +456,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "필수. Location 은 창고를 고른 뒤에 본다 — W-06-07 §3"
+            "description": "필수. Location 은 창고를 고른 뒤에 본다 — W-06-07 §3 ⚠ 위치 «코드» 스캔은 locationCode 와 함께 보낸다 — 창고는 적치 지시·화면 문맥이 준다."
           },
           {
             "name": "q",
@@ -396,6 +465,16 @@
               "type": "string"
             },
             "description": "코드·명칭 검색"
+          },
+          {
+            "name": "locationCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "위치 코드 정확 일치. 스캔한 코드로 한 건을 집을 때 쓰며 0건 또는 1건이 나온다 — 부분 일치 검색은 q 를 쓴다. ⛔ q 로 받은 페이지를 화면이 걸러 쓰는 것으로는 성립하지 않는다 — 부분 일치가 여러 건을 낸다"
           },
           {
             "name": "includeInactive",
@@ -688,6 +767,67 @@
           }
         },
         "x-internal-note": "(허용 여부 자체는 §8-6 미결)"
+      }
+    },
+    "/mdm/locations/{locationId}:activate": {
+      "parameters": [
+        {
+          "name": "locationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "Location 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Location"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-07 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/app/users": {
@@ -1020,6 +1160,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/app/users/{appUserId}:activate": {
+      "parameters": [
+        {
+          "name": "appUserId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "사용자 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUser"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/app/users/{appUserId}:reset-password": {
+      "parameters": [
+        {
+          "name": "appUserId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "비밀번호 관리자 초기화",
+        "description": "DR-002 2-B ③ 「관리자 초기화」를 되살린 오퍼레이션(2026-08-30) — 만료·재사용 금지가 없는 것과 짝이라(자가 복구 경로를 안 만든다) 초기화가 유일한 복구 수단이다. 임시 비밀번호를 생성해 이 응답에서 한 번만 보인다 — 저장하지 않는다(단말 토큰 발급과 같은 규약). password_hash·failed_login_count·last_login_at 은 이미 계약에 있다(W-CO-01 §5-B) — 이 오퍼레이션이 새로 필요로 하는 컬럼은 없다. 근거: W-CO-02 §8-2",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "초기화됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppUserPasswordReset"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-CO-02 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1563,6 +1821,67 @@
         "x-internal-note": "(허용 여부 자체는 §8-6 미결)"
       }
     },
+    "/app/roles/{roleId}:activate": {
+      "parameters": [
+        {
+          "name": "roleId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "역할 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/app/roles/{roleId}/permissions": {
       "parameters": [
         {
@@ -2009,7 +2328,7 @@
           "planning"
         ],
         "summary": "Rev 폐기",
-        "description": "확정 → 폐기. 폐기 후에는 되돌릴 수 없고 편집도, 신규 Rev 발행의 원본으로도 쓸 수 없다(§5-4 상태표 — 폐기: (없음)). 상태≠확정이면 400(ErrorResponse, code=STATE_LOCKED). 근거: W-06-01 §5-4 · 설계 결정 07",
+        "description": "확정 → 폐기. 폐기 후에는 되돌릴 수 없고 편집도, 신규 Rev 발행의 원본으로도 쓸 수 없다(§5-4 상태표 — 폐기: (없음)). 상태≠확정이면 400(ErrorResponse, code=STATE_LOCKED). 근거: W-06-01 §5-4 · 설계 결정 07 ⛔ 마지막 확정 Rev 를 폐기하면 「신규 Rev 발행」이 쓸 원본이 없어진다 — 그 화면 버튼은 항상 켜져 있으나 부를 경로가 없다. 되돌아오는 길은 아직 정해지지 않았다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -2038,6 +2357,53 @@
           },
           "403": {
             "description": "권한 없음. 근거: W-06-01 §6 「권한 없음」(회신 E-9 대기)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/planning/routings/{routingId}:set-default": {
+      "parameters": [
+        {
+          "name": "routingId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "기본 Rev 지정",
+        "description": "결정 07 헤더 속성 「기본(default) Rev 플래그」를 되살린 오퍼레이션(2026-08-30) — Bom.isDefault·:set-default와 같은 형태(공유계약 A-6). uq_routing_default ON (item_id) WHERE is_default — 서버가 한 트랜잭션으로 지정한 Routing을 isDefault=true로 세우고 같은 품목의 기존 기본 Rev를 isDefault=false로 내린다. 유효 기간이 겹치는 Rev가 둘일 때 이 값으로 어느 것을 쓸지 정한다. 근거: W-06-01 §8-1",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "지정됨 — 응답은 지정한 Routing만 반환한다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routing"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-01 §6",
             "content": {
               "application/json": {
                 "schema": {
@@ -2570,6 +2936,67 @@
         }
       }
     },
+    "/mdm/code-groups/{codeGroupId}:activate": {
+      "parameters": [
+        {
+          "name": "codeGroupId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "코드그룹 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeGroup"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-06 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mdm/code-values": {
       "get": {
         "tags": [
@@ -2906,6 +3333,159 @@
         }
       }
     },
+    "/mdm/code-values/{codeValueId}:activate": {
+      "parameters": [
+        {
+          "name": "codeValueId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "코드값 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeValue"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-06 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/judgment-type-controls": {
+      "get": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "판정유형별 통제 속성 목록",
+        "description": "결정 10 「출고·출하·Picking 차단 판정은 이 단일 지점을 본다」를 되살린 자원(2026-08-30). 판정유형(code_value, codeGroupCode=JUDGMENT_TYPE)마다 물류 통제 속성 6종을 붙인다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-04 §4-B",
+        "responses": {
+          "200": {
+            "description": "판정유형 통제 속성",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JudgmentTypeControl"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/judgment-type-controls/{codeValueId}": {
+      "parameters": [
+        {
+          "name": "codeValueId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "판정유형 통제 속성 편집",
+        "description": "전사 고정 축 — 편집하면 상태 전이도·물류 통제 규칙이 함께 바뀐다(W-06-04 §5-1). 근거: W-06-04 §4-B",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgmentTypeControlUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgmentTypeControl"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mdm/departments": {
       "get": {
         "tags": [
@@ -3036,7 +3616,8 @@
             },
             "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
           }
-        }
+        },
+        "x-internal-note": "⛔ 부서는 기간계 수신본이라 MES 가 만들지 않는다 — 이 경로는 잠정 노출이며 화면(W-06-06 §5-4)이 부르지 않는다. 폐쇄(오퍼레이션 삭제)는 ⛔ 등급이고 사람 결정 사항이라 2026-08-29 반영 범위 밖으로 남긴다. 근거: 공유계약 B-4-1 · omf-mes#65(2026-08-25 답 없이 종결)."
       }
     },
     "/mdm/departments/{departmentId}": {
@@ -3084,7 +3665,7 @@
           "mdm"
         ],
         "summary": "부서 수정",
-        "description": "⚠ W-06-06 §5-4 는 부서를 ERP 수신본으로 규정해 전 필드를 읽기 전용으로 두어야 한다고 적었으나, 판정할 수신본 식별 컬럼이 없어(#65) 이 API 는 잠정적으로 마스터 형(전 필드 편집 가능)으로 노출한다 — 컬럼이 생기면 편집을 막아야 한다. ck_department_parent 는 자기 자신만 막고 순환은 막지 않으므로 서버가 검사한다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-06 §4-C·§5-4",
+        "description": "⛔ 조직(부서)은 기간계 수신본이라 읽기 전용이 확정이다(W-06-06 §5-4). 이 경로는 편집 본문에 원본 필드 넷(departmentCode·departmentName·parentDepartmentId·businessUnitId)을 그대로 담고 있어 그 확정과 어긋난다 — 잠정 노출이며 화면은 부르지 않는다. 폐쇄 여부는 결정 대기다. ck_department_parent 는 자기 자신만 막고 순환은 막지 않으므로 서버가 검사한다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-06 §4-C·§5-4",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -3218,6 +3799,67 @@
         }
       }
     },
+    "/mdm/departments/{departmentId}:activate": {
+      "parameters": [
+        {
+          "name": "departmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "부서 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Department"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-06 §6",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mdm/workers": {
       "get": {
         "tags": [
@@ -3233,6 +3875,15 @@
               "type": "string"
             },
             "description": "사번·성명 검색"
+          },
+          {
+            "name": "workerNo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "사번 정확 일치. 사번 경량 인증(P-CO-01·M-CO-01)이 부르는 축이며 0건 또는 1건이 나온다 — 부분 일치 검색은 q 를 쓴다. ⛔ 응답을 화면이 거르는 것으로는 성립하지 않는다 — 목록이 페이지 단위다. ⛔ 재직 여부를 판정하려면 includeInactive=true 와 함께 보낸다 — 기본값(false)으로는 퇴사자가 0건으로 떨어져 「등록되지 않은 사번」과 구분되지 않는다."
           },
           {
             "name": "departmentId",
@@ -3264,7 +3915,8 @@
             "schema": {
               "type": "boolean",
               "default": false
-            }
+            },
+            "description": "false(기본)면 재직자만 낸다. 「현재 재직 중이 아닌 사번입니다」 판정은 true 로 받아 isActive 를 본다."
           },
           {
             "name": "page",
@@ -3329,7 +3981,7 @@
           "mdm"
         ],
         "summary": "작업자 상세 (읽기 전용)",
-        "description": "쓰기 경로를 제공하지 않는다 — 작업자 기본 정보는 전부 ERP 수신본이다(W-06-06 §5-4). editability.reason 은 항상 RECEIVED_FROM_ERP 로 고정한다 — 이 테이블 전체가 ERP 수신본이라 행 단위 식별 플래그(#65)가 없어도 판정에 모호함이 없다. 자격·인증 편집은 GET/PUT .../qualifications 를 쓴다. 근거: W-06-06 §4-D·§5-4",
+        "description": "기본 정보(코드·이름 원본)는 쓰기 경로가 없다 — 전부 ERP 수신본이다(W-06-06 §5-4). editability.reason 은 항상 RECEIVED_FROM_ERP 로 고정한다. 다국어 명칭(nameKo·nameVi)만 예외로 PUT :update-name-translation 로 편집한다(QA #33·#34 — MES 확장 속성, 2026-08-30 되살림). 자격·인증 편집은 GET/PUT .../qualifications 를 쓴다. 근거: W-06-06 §4-D·§5-4",
         "responses": {
           "200": {
             "description": "상세",
@@ -3337,6 +3989,84 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkerDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/workers/{workerId}:update-name-translation": {
+      "parameters": [
+        {
+          "name": "workerId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "작업자 다국어 명칭 편집",
+        "description": "작업자 기본 정보는 전부 ERP 수신본이라 쓰기 경로가 없지만(GET /mdm/workers/{workerId} 참조), 다국어 명칭(nameKo·nameVi)은 QA #33·#34가 「MES 확장 속성」으로 확정해 예외로 둔다 — 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-06 §8-1",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nameKo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200,
+                    "example": "표시명"
+                  },
+                  "nameVi": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200,
+                    "example": "Ten hien thi"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Worker"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
                 }
               }
             }
@@ -3371,6 +4101,15 @@
                   "$ref": "#/components/schemas/WorkerQualificationListResponse"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           }
         }
@@ -3380,10 +4119,13 @@
           "mdm"
         ],
         "summary": "자격·인증 전체 치환",
-        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. uq_worker_qualification 이 COALESCE(process_id,0) 으로 접는다 — 빈 축은 (전체 공정)으로 표기(A-7). certified_by 는 FK 없는 bigint 라 무엇을 가리키는지 하류에 근거가 없다 — #64. valid_to 만료는 검사 확정을 막는다(공유계약 B-2). worker_qualification 은 created_at·created_by 만 있고 is_active·updated_at·version_no 가 없다 — 「물리 삭제 금지」(B-4)를 적용하지 않는다. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-06 §4-E·§5-1 「자격 추가/삭제」 · 공유계약 B-6",
+        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. uq_worker_qualification 이 COALESCE(process_id,0) 으로 접는다 — 빈 축은 (전체 공정)으로 표기(A-7). certified_by 는 FK 없는 bigint 라 무엇을 가리키는지 하류에 근거가 없다 — #64. valid_to 만료는 검사 확정을 막는다(공유계약 B-2). worker_qualification 은 created_at·created_by 만 있고 is_active·updated_at·version_no 가 없다 — 「물리 삭제 금지」(B-4)를 적용하지 않는다. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-06 §4-E·§5-1 「자격 추가/삭제」 · 공유계약 B-6 통째로 교체하는 저장이라 보호가 없으면 남이 방금 넣은 줄이 조용히 사라진다. 토큰은 같은 경로의 조회가 내려주는 ETag 다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
           }
         ],
         "requestBody": {
@@ -3484,6 +4226,16 @@
               }
             },
             "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "충돌 — 남이 먼저 고쳤다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3620,7 +4372,7 @@
           "mdm"
         ],
         "summary": "품목 MES 확장 속성 수정",
-        "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 그리고 수신본 식별 플래그 부재로 읽기 전용 판정 자체가 불가능하다 — #65. 「유효기한 관리」 토글은 별도 컬럼이 아니라 shelfLifeDays 의 NULL 여부로 표현한다(§8-2) — 화면이 토글 OFF 시 shelfLifeDays 를 null 로 보낸다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-05 §4-B·§5-1",
+        "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 원본 필드는 편집 본문(ItemUpdate)에 자리 자체를 두지 않아, 행 단위 출처 표시가 없어도 잠금이 성립한다. 「유효기한 관리」 토글은 별도 컬럼이 아니라 shelfLifeDays 의 NULL 여부로 표현한다(§8-2) — 화면이 토글 OFF 시 shelfLifeDays 를 null 로 보낸다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-05 §4-B·§5-1",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -3691,7 +4443,7 @@
             }
           }
         },
-        "x-internal-note": "미착지 넷: 자재LOT 보관단위·생산LOT 기본크기·개발품 플래그·재생재 하위코드 — #64"
+        "x-internal-note": "미착지 둘 — 자재LOT 보관단위·생산LOT 기본크기(#64). 개발품 플래그(developmentItem)·재생재 하위코드(mesCategoryCode)는 이미 계약에 있다(2026-08-30 재확인)."
       }
     },
     "/mdm/items/{itemId}/uom-conversions": {
@@ -3721,6 +4473,15 @@
                   "$ref": "#/components/schemas/ItemUomConversionListResponse"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           }
         }
@@ -3730,10 +4491,13 @@
           "mdm"
         ],
         "summary": "단위 환산 전체 치환",
-        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. ck_item_uom_distinct·ck_item_uom_dates 를 서버가 검증한다. is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §4-C·§5-1 「부속 행 추가/삭제」 · 공유계약 B-6",
+        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. ck_item_uom_distinct·ck_item_uom_dates 를 서버가 검증한다. is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §4-C·§5-1 「부속 행 추가/삭제」 · 공유계약 B-6 통째로 교체하는 저장이라 보호가 없으면 남이 방금 넣은 줄이 조용히 사라진다. 토큰은 같은 경로의 조회가 내려주는 ETag 다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
           }
         ],
         "requestBody": {
@@ -3822,6 +4586,16 @@
               }
             },
             "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "충돌 — 남이 먼저 고쳤다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3853,6 +4627,15 @@
                   "$ref": "#/components/schemas/ItemExternalCodeListResponse"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           }
         }
@@ -3862,10 +4645,13 @@
           "mdm"
         ],
         "summary": "외부 코드 전체 치환",
-        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. uq_item_external_code 의 COALESCE(partner_id,0) — 거래처를 비우면 (전체)로 접혀 유일 판정한다(A-7). external_item_code 는 고객 바코드 체계의 저장처(WF04 S6). is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §4-D·§5-1 · 공유계약 B-6",
+        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. uq_item_external_code 의 COALESCE(partner_id,0) — 거래처를 비우면 (전체)로 접혀 유일 판정한다(A-7). external_item_code 는 고객 바코드 체계의 저장처(WF04 S6). is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §4-D·§5-1 · 공유계약 B-6 통째로 교체하는 저장이라 보호가 없으면 남이 방금 넣은 줄이 조용히 사라진다. 토큰은 같은 경로의 조회가 내려주는 ETag 다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
           }
         ],
         "requestBody": {
@@ -3943,6 +4729,16 @@
               }
             },
             "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "충돌 — 남이 먼저 고쳤다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3974,6 +4770,15 @@
                   "$ref": "#/components/schemas/ItemBuItemMapListResponse"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           }
         }
@@ -3983,10 +4788,13 @@
           "mdm"
         ],
         "summary": "사업부 매핑 전체 치환",
-        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. fromItemId 는 경로의 itemId 로 고정한다. ck_item_bu_map_distinct — fromBusinessUnitId 와 toBusinessUnitId 가 같으면 불가. ck_item_bu_map_dates 짝 제약(A-2). 사업부 간 이동입고는 이 매핑이 없으면 차단된다(1-3 SCN-28). is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §3·§5-1 · 공유계약 B-6",
+        "description": "개별 부여·회수가 아니라 최종 상태를 통째로 보낸다. fromItemId 는 경로의 itemId 로 고정한다. ck_item_bu_map_distinct — fromBusinessUnitId 와 toBusinessUnitId 가 같으면 불가. ck_item_bu_map_dates 짝 제약(A-2). 사업부 간 이동입고는 이 매핑이 없으면 차단된다(1-3 SCN-28). is_active·version_no 없음 — 부여·회수 형태. 서버는 한 트랜잭션으로 반영한다. 근거: W-06-05 §3·§5-1 · 공유계약 B-6 통째로 교체하는 저장이라 보호가 없으면 남이 방금 넣은 줄이 조용히 사라진다. 토큰은 같은 경로의 조회가 내려주는 ETag 다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
           }
         ],
         "requestBody": {
@@ -4074,6 +4882,16 @@
               }
             },
             "x-internal-note": "§8-8(편집 권한 매트릭스는 미결)"
+          },
+          "409": {
+            "description": "충돌 — 남이 먼저 고쳤다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4303,7 +5121,7 @@
           "planning"
         ],
         "summary": "BOM 구성품 MES 확장 열 수정",
-        "description": "편집 가능한 것은 routingOperationId·actualUseProcessId·lotTraceRequired·backflushAllowed 넷뿐이다. scrapRate 는 0~1 비율이며 퍼센트가 아니다 — A-8. 나머지 열(sequenceNo·componentItemId·requiredQty·uomId·scrapRate·isMandatory)은 ERP 원본이라 이 API 로 바꾸지 않는다. BOM 상태가 작성중일 때만 허용한다 — 상태≠작성중이면 400(ErrorResponse, code=STATE_LOCKED). routingOperationId 선택은 Routing 등록(W-06-01)이 선행돼야 한다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-05 §4-F·§5-1 「구성품 확장 열 편집」",
+        "description": "편집 가능한 것은 routingOperationId·actualUseProcessId·lotTraceRequired·backflushAllowed 넷뿐이다. scrapRate 는 0~1 비율이며 퍼센트가 아니다 — A-8. 나머지 열(sequenceNo·componentItemId·requiredQty·uomId·scrapRate·isMandatory)은 ERP 원본이라 이 API 로 바꾸지 않는다. BOM 헤더는 기간계에서 받아 오므로 이 시스템이 상태를 바꾸지 않는다 — 확장 네 칸의 편집을 헤더 상태로 막지 않는다. routingOperationId 선택은 Routing 등록(W-06-01)이 선행돼야 한다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-05 §4-F·§5-1 「구성품 확장 열 편집」",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -4343,7 +5161,7 @@
             }
           },
           "400": {
-            "description": "검증 실패 또는 BOM 상태≠작성중(code=STATE_LOCKED) — W-06-05 §5-1",
+            "description": "검증 실패 — W-06-05 §5-1",
             "content": {
               "application/json": {
                 "schema": {
@@ -4373,7 +5191,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "W-06-05 §8 미결 5(확장 열을 Rev 에 묶을지)가 열려 있다 — 묶기로 하면 이 문장을 되돌린다. 되돌릴 근거가 필요하면 「기간계가 작성중 BOM 을 보내는가」를 사람에게 묻는다."
       }
     },
     "/quality/inspection-plans": {
@@ -4694,6 +5513,66 @@
         }
       }
     },
+    "/quality/inspection-plans/{inspectionPlanId}:activate": {
+      "parameters": [
+        {
+          "name": "inspectionPlanId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "검사기준 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InspectionPlan"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-02 §6 「권한 없음」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/quality/inspection-plans/{inspectionPlanId}:approve": {
       "parameters": [
         {
@@ -4884,7 +5763,7 @@
           "quality"
         ],
         "summary": "검사기준 버전 수정",
-        "description": "상태=작성중일 때만 허용한다 — W-06-01 §5-4 와 같은 규칙을 적용한다(다만 근거는 status_code 의 존재와 inspection_item_spec 에 version_no 가 없다는 구조에서 읽은 것이다 [추정] — W-06-02 §5-4). 상태≠작성중이면 400(ErrorResponse, code=STATE_LOCKED). planVersion·statusCode 는 이 API 로 바꾸지 않고 :new-revision·:confirm·:obsolete 로만 전이한다. ck_inspection_plan_version_dates — effectiveTo 는 있으면 effectiveFrom 이상. ⚠ sampling_qty 의 단위 해석(비율/수량)이 확정되지 않았다 — 규약 없이 개발하면 30%가 30개로 저장된다. 낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-B·§5-4",
+        "description": "상태=작성중일 때만 허용한다 — W-06-01 §5-4 와 같은 규칙을 적용한다(다만 근거는 status_code 의 존재와 inspection_item_spec 에 version_no 가 없다는 구조에서 읽은 것이다 [추정] — W-06-02 §5-4). 상태≠작성중이면 400(ErrorResponse, code=STATE_LOCKED). planVersion·statusCode 는 이 API 로 바꾸지 않고 :new-revision·:confirm·:obsolete 로만 전이한다. ck_inspection_plan_version_dates — effectiveTo 는 있으면 effectiveFrom 이상. 샘플 비율(%)이 정본이다(samplingRatio) — 확정 2026-07-15·재확인 2026-08-18. 낙관적 잠금은 공유계약 B-1. 근거: W-06-02 §4-B·§5-4",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -5089,7 +5968,7 @@
           "quality"
         ],
         "summary": "버전 폐기",
-        "description": "확정 → 폐기. 폐기 후에는 되돌릴 수 없다. 상태≠확정이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1 「폐기」",
+        "description": "확정 → 폐기. 폐기 후에는 되돌릴 수 없다. 상태≠확정이면 400(code=STATE_LOCKED). 근거: W-06-02 §5-1 「폐기」 ⛔ 마지막 확정 버전을 폐기하면 「신규 버전」이 복사할 원본이 없어진다 — 그 화면 버튼은 항상 켜져 있으나 부를 경로가 없다. 되돌아오는 길은 아직 정해지지 않았다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -5146,7 +6025,7 @@
           "quality"
         ],
         "summary": "검사 항목 목록",
-        "description": "sequenceNo 오름차순. 화면은 이 값을 그대로 보여주지 않고 목록 내 위치로 1부터 연속 표시한다. 근거: W-06-02 §4-C",
+        "description": "sequenceNo 오름차순. 화면은 이 값을 그대로 보여주지 않고 목록 내 위치로 1부터 연속 표시한다. ⭐ 검사 화면 P-02-13 이 이 경로로 항목 규격을 받는다 — 진입한 검사 의뢰의 inspectionPlanVersionId 로 부른다. 그 값이 비어 있으면 부르지 않는다(기준 없는 갈래 · P-02-13 §5-2). 근거: W-06-02 §4-C · P-02-13 §4-C·§5-11",
         "responses": {
           "200": {
             "description": "항목",
@@ -5537,6 +6416,212 @@
         }
       }
     },
+    "/quality/defect-codes/{defectCodeId}:activate": {
+      "parameters": [
+        {
+          "name": "defectCodeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "불량코드 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefectCode"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-03 §6 「권한 없음」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quality/defect-codes/{defectCodeId}/processes": {
+      "parameters": [
+        {
+          "name": "defectCodeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "불량코드-공정 매핑 목록",
+        "description": "결정 12 「공정—불량코드 연결 = N:M 매핑 테이블」을 되살린 자원(2026-08-30) — 상세 코드만 매핑한다(대분류는 전사 고정 축). POP 불량 입력 화면은 이 매핑으로 자기 공정의 불량코드만 본다. 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-03 §4-D",
+        "responses": {
+          "200": {
+            "description": "매핑된 공정",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DefectCodeProcess"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "불량코드-공정 매핑 추가",
+        "description": "부여 형태(created_at·created_by만) — uq(defect_code_id, process_id)로 중복을 막는다. 근거: W-06-03 §4-D·§5-1 「매핑 토글」",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "processId"
+                ],
+                "properties": {
+                  "processId": {
+                    "type": "integer",
+                    "format": "int64",
+                    "example": 1001
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "매핑됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefectCodeProcess"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "이미 매핑돼 있다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quality/defect-codes/{defectCodeId}/processes/{processId}": {
+      "parameters": [
+        {
+          "name": "defectCodeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        {
+          "name": "processId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "불량코드-공정 매핑 해제",
+        "description": "매핑 토글(셀 클릭)의 해제 쪽 — 즉시 반영. 근거: W-06-03 §5-1",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "해제됨"
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/quality/cause-codes": {
       "get": {
         "tags": [
@@ -5847,6 +6932,66 @@
         }
       }
     },
+    "/quality/cause-codes/{causeCodeId}:activate": {
+      "parameters": [
+        {
+          "name": "causeCodeId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "원인코드 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CauseCode"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음. 근거: W-06-03 §6 「권한 없음」",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "낙관적 잠금 충돌 — ConflictResponse.conflictCause 3값. 사용 중지도 is_active·version_no 를 쓰는 행 갱신이라 다른 쓰기와 같은 규칙을 적용한다(공유계약 A-4 「version_no 가 있으면 B-1 을 반드시 구현」). 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integration/messages": {
       "get": {
         "tags": [
@@ -5895,14 +7040,16 @@
             "in": "query",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "수신(INBOUND) 또는 송신(OUTBOUND). 연계 정의의 방향 값과 같은 어휘다"
           },
           {
             "name": "targetTypeCode",
             "in": "query",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "무엇을 나른 메시지인가. 값 목록은 아직 정해지지 않았다 — 확정 전에는 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions)."
           },
           {
             "name": "retryCountMin",
@@ -6194,7 +7341,8 @@
             "in": "query",
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "어떤 변경인가로 거른다. ⚠ 값 목록은 아직 정해지지 않았다 — 확정 전에는 화면이 이 선택칸을 비활성으로 두고 사유를 보인다."
           },
           {
             "name": "performedBy",
@@ -7419,7 +8567,7 @@
             }
           }
         },
-        "x-internal-note": "W-06-14 가 드러낸 결손이다 — 이 화면은 목록에 「사용 안 함」 행을 보이고 다시 켜는 것이 정상 운용인데 :deactivate 만 있었다. 다른 mdm 마스터에는 두지 않는다 — 그 화면들이 요구하지 않았다(W-06-07 액션은 「사용 중지」뿐)."
+        "x-internal-note": "W-06-14 가 드러낸 결손이다 — 이 화면은 목록에 「사용 안 함」 행을 보이고 다시 켜는 것이 정상 운용인데 :deactivate 만 있었다. 2026-08-29 재판정 — 「사용 중지」만 있고 「다시 사용」이 없는 자원이 15개였다. 되돌릴 수단이 없는 것은 화면이 요구하지 않아서가 아니라 아무도 세지 않아서였다. 15자원에 :activate 를 세웠다."
       }
     },
     "/logistics/putaway-rules/uncovered-items": {
@@ -7782,7 +8930,7 @@
             },
             "headers": {
               "ETag": {
-                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 표시하지 않되 전달한다",
                 "schema": {
                   "type": "string"
                 },
@@ -7965,7 +9113,7 @@
           "mdm"
         ],
         "summary": "단말 등록 토큰 발급",
-        "description": "⭐ 관리웹이 부르고, 받은 토큰을 화면에 «QR 로» 보인다. 기기는 그것을 스캔해 저장한다 — 기기가 서버를 부르지 않으므로 토큰 없이 열리는 경로가 생기지 않는다. ⚠ 재발급해도 «이전 기기가 끊기지 않는다» — 세대를 올릴 자리가 아직 없다. 화면이 그 사실을 경고한다. 근거: M-CO-01 §5-2 B안(2026-08-13 확정) · W-CO-06 §5-4",
+        "description": "⭐ 관리웹이 부르고, 받은 토큰을 화면에 «QR 로» 보인다. 기기는 그것을 스캔해 저장한다 — 기기가 서버를 부르지 않으므로 토큰 없이 열리는 경로가 생기지 않는다. **재발급하면 이전 기기 전부가 끊긴다** — 세대 번호(tokenVersion)를 올리고 클레임과 대조한다. 화면이 그 사실을 안내한다. 근거: M-CO-01 §5-2 B안(2026-08-13 확정) · W-CO-06 §5-4",
         "parameters": [
           {
             "name": "terminalId",
@@ -8057,11 +9205,11 @@
             },
             "headers": {
               "ETag": {
-                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "description": "낙관적 잠금 토큰. ⭐ 이 값은 «단말»의 판 번호다 — 부여 테이블에는 판 번호가 없어 마스터의 토큰을 대표로 쓴다. 저장 단위가 단말이기 때문이다. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
                 "schema": {
                   "type": "string"
                 },
-                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다 저장 단위 판정 근거는 W-CO-06 §5-3 · 공유계약 B-6."
               }
             }
           },
@@ -8205,6 +9353,15 @@
                   "$ref": "#/components/schemas/WarehouseLayout"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           },
           "404": {
@@ -8262,6 +9419,15 @@
                   "$ref": "#/components/schemas/WarehouseLayout"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
             }
           },
           "400": {
@@ -8304,7 +9470,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "⚠ 이 자리의 잠금 축이 세 갈래로 갈려 있다 — 계약 응답 본문은 WarehouseLayout.versionNo 를 싣고, W-CO-08 167행은 mdm.location.version_no 라 적고, check-lock-token-source.py 는 부모 /mdm/warehouses/{warehouseId} 의 ETag 를 원천으로 자동 인정한다. 공유계약 G-30(잠그는 대상과 버전 축을 일치시킨다) 기준으로 하나를 고르는 것은 별건이다. ⛔ 검사기 결함 — 이 검사기는 58~66행에서 자식 경로의 원천으로 부모 경로를 자동 인정해, 자식이 제 판 번호를 갖고 있는데도 초록이 된다. 오케스트레이터 O-1 의 「파일 경계를 못 넘는다」와 반대 방향의 결함이다."
       }
     },
     "/mdm/partners/{partnerId}": {
@@ -8690,6 +9857,85 @@
         }
       }
     },
+    "/mdm/equipment-groups/{equipmentGroupId}:activate": {
+      "parameters": [
+        {
+          "name": "equipmentGroupId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "설비 그룹 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "처리됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EquipmentGroup"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
+            }
+          },
+          "400": {
+            "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/mdm/equipments/{equipmentId}": {
       "parameters": [
         {
@@ -8825,6 +10071,85 @@
         ],
         "summary": "설비 사용 중지",
         "description": "물리 삭제는 제공하지 않는다. 참조가 있으면 확인 문구에 건수를 함께 보인 뒤 부른다. 근거: 공유계약 B-4",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "처리됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Equipment"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
+            }
+          },
+          "400": {
+            "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/equipments/{equipmentId}:activate": {
+      "parameters": [
+        {
+          "name": "equipmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "설비 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -9493,6 +10818,22 @@
             "description": "도구 유형으로 거른다"
           },
           {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "자산 수명주기로 거른다 — 운용(IN_SERVICE) 또는 폐기(DISPOSED). 사용 여부(includeInactive)와 «다른 축» 이다. 툴 보전오더 생성 화면이 폐기된 툴을 목록에서 버릴 때 건다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=EQUIPMENT_STATUS 로 받는다"
+          },
+          {
+            "name": "withOpenMaintenanceOrder",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "열린 보전오더가 있는 툴만/없는 툴만 거른다. 생략하면 거르지 않는다 · false 면 열린 오더가 없는 툴만 · true 면 있는 툴만. 툴 보전오더 생성 화면의 기본 목록은 false 이고 필터로 뒤집는다"
+          },
+          {
             "name": "guaranteedShotCountMissing",
             "in": "query",
             "schema": {
@@ -9568,6 +10909,38 @@
                     },
                     "page": {
                       "$ref": "#/components/schemas/PageMeta"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "description": "⭐ 필터 «전체» 기준 요약이다 — 페이지가 아니다. 툴 보전오더 생성 화면의 요약 구획이 그대로 보인다. ⚠ pmDueOnly 는 이 집계에 적용하지 않는다 — q·plantId·toolTypeCode·includeInactive 만 걸고 센다. 적용하면 「임박」이 항상 0 이 된다",
+                      "required": [
+                        "pmDueCount",
+                        "pmNearCount",
+                        "criteriaMissingCount",
+                        "pmNearThresholdPercent"
+                      ],
+                      "properties": {
+                        "pmDueCount": {
+                          "type": "integer",
+                          "example": 3,
+                          "description": "예방보전이 도래한 툴 수(초과 포함)"
+                        },
+                        "pmNearCount": {
+                          "type": "integer",
+                          "example": 5,
+                          "description": "임박한 툴 수 — 보증 타발수 대비 사용률이 pmNearThresholdPercent 이상인 툴이다"
+                        },
+                        "criteriaMissingCount": {
+                          "type": "integer",
+                          "example": 2,
+                          "description": "적정타수·주기가 둘 다 비어 판정이 서지 않는 툴 수. 숨기지 않고 세어 보인다"
+                        },
+                        "pmNearThresholdPercent": {
+                          "type": "integer",
+                          "example": 90,
+                          "description": "「임박」의 임계. 화면이 이 값을 그대로 문구에 쓴다 — 화면이 90 을 지어내지 않는다"
+                        }
+                      }
                     }
                   }
                 }
@@ -9766,6 +11139,85 @@
         ],
         "summary": "툴 사용 중지",
         "description": "물리 삭제는 제공하지 않는다. 참조가 있으면 확인 문구에 건수를 함께 보인 뒤 부른다. 근거: 공유계약 B-4",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "처리됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Mold"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
+            }
+          },
+          "400": {
+            "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/molds/{moldId}:activate": {
+      "parameters": [
+        {
+          "name": "moldId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "툴 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -10249,6 +11701,85 @@
         ],
         "summary": "예비품 사용 중지",
         "description": "물리 삭제는 제공하지 않는다. 참조가 있으면 확인 문구에 건수를 함께 보인 뒤 부른다. 근거: 공유계약 B-4",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "처리됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparePart"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4(version_no 는 화면에 노출하지 않는다)이고, 전송 자체는 A-4 가 함께 요구하는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
+            }
+          },
+          "400": {
+            "description": "업무 규칙 위반 — 상태 잠김·참조 존재",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다. 업무 규칙 위반(상태 잠김·참조 존재)은 409 가 아니라 400 이다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mdm/spare-parts/{sparePartId}:activate": {
+      "parameters": [
+        {
+          "name": "sparePartId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "mdm"
+        ],
+        "summary": "예비품 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -11441,6 +12972,85 @@
         }
       }
     },
+    "/integration/interface-definitions/{interfaceDefinitionId}:activate": {
+      "parameters": [
+        {
+          "name": "interfaceDefinitionId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "integration"
+        ],
+        "summary": "연계 정의 다시 사용",
+        "description": "사용 중지한 것을 다시 켠다. 물리 삭제를 두지 않으므로 되돌리는 경로가 이 하나다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "재사용됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterfaceDefinition"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다"
+              }
+            }
+          },
+          "400": {
+            "description": "업무 규칙 위반",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌 — 다른 사용자가 먼저 고쳤다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integration/interface-definitions/{interfaceDefinitionId}:test-connection": {
       "parameters": [
         {
@@ -11605,7 +13215,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "default": 1
             }
           },
           {
@@ -11613,7 +13224,8 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer"
+              "type": "integer",
+              "default": 50
             }
           }
         ],
@@ -11667,7 +13279,7 @@
         "schema": {
           "type": "string"
         },
-        "description": "낙관적 잠금용 version_no. 값은 같은 리소스의 상세 GET 200 이 내려주는 ETag 응답 헤더에서 받는다 — version_no 는 공유계약 A-4 에 따라 본문 필드로 노출하지 않는다. 근거: 공유계약 B-1"
+        "description": "낙관적 잠금용 version_no. 값은 그 쓰기가 «잠그는 대상»의 조회가 내려주는 ETag 응답 헤더에서 받는다 — 보통은 같은 리소스의 상세 GET 200 이고, 하위 자원이 자기 판 번호를 갖지 않으면 부모 마스터의 상세 GET 200 이다. 어느 쪽인지는 그 오퍼레이션의 설명이 밝힌다 — version_no 는 공유계약 A-4 에 따라 본문 필드로 노출하지 않는다. 근거: 공유계약 B-1 · B-1-1"
       }
     },
     "schemas": {
@@ -11696,7 +13308,7 @@
           "code": {
             "type": "string",
             "description": "UNIQUE_VIOLATION · REQUIRED · RANGE · PAIR · PERMISSION_DENIED · STATE_LOCKED 등. STATE_LOCKED 는 확정·폐기 상태라 수정이 잠긴 것으로, 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다(공유계약 G-1)",
-            "example": "STANDARD"
+            "example": "STATE_LOCKED"
           },
           "uniqueScope": {
             "type": "array",
@@ -11812,10 +13424,11 @@
               "REFERENCED",
               "NOT_COUNTABLE",
               "RECEIVED_FROM_ERP",
-              "LABEL_ISSUED"
+              "LABEL_ISSUED",
+              "SYSTEM_OWNED"
             ],
-            "description": "NOT_COUNTABLE = 참조가 FK 가 아니라 세지 못함(의도적 비-FK 또는 코드 문자열 참조) → 화면은 무조건 잠근다. RECEIVED_FROM_ERP = 수신본이라 항상 읽기 전용. LABEL_ISSUED = 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 → 참조 건수가 0이어도 잠근다",
-            "example": "라인 정지 임박. 검사 대기 불가."
+            "description": "NOT_COUNTABLE = 참조가 FK 가 아니라 세지 못함(의도적 비-FK 또는 코드 문자열 참조) → 화면은 무조건 잠근다. RECEIVED_FROM_ERP = 수신본이라 항상 읽기 전용. LABEL_ISSUED = 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 → 참조 건수가 0이어도 잠근다. SYSTEM_OWNED = 그룹 자체가 시스템 소유라 고객이 값을 편집할 수 없다(mdm.code_group 의 그룹 단위 플래그, 근거: omf-mes-server#45 정정 회신) → 화면은 그룹 단위로 잠근다(개별 값이 아니라 그룹 전체)",
+            "example": "REFERENCED"
           },
           "referenceCount": {
             "type": [
@@ -11900,6 +13513,7 @@
             "x-source-column": "warehouse_type_code",
             "type": "string",
             "maxLength": 50,
+            "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
             "example": "MATERIAL"
           },
           "managementLevelCode": {
@@ -11920,6 +13534,16 @@
             "default": false,
             "description": "불량창고 여부. isExternal 을 대체하지 않고 보완한다 — 창고 유형(자재·제품·반제품·상품·생산) 축과 별개로, 불량은 자재 불량창고도 제품 불량창고도 받을 수 있는 세 번째(품질) 축이다. W-01-06 §3의 창고 선택이 isDefect=true 로 걸러진다. 근거: DR-012 확정 3-C(2026-08-13) · 공유계약 §I-42 · omf-mes#147",
             "example": false
+          },
+          "partnerId": {
+            "x-source-column": "partner_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "외부창고이면 반드시 있다 — 외부창고가 아니면 비어 있다. 수정 화면이 지금 지정된 거래처를 그대로 보이는 데 쓴다.",
+            "example": 1001
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -11973,6 +13597,7 @@
             "x-source-column": "warehouse_type_code",
             "type": "string",
             "maxLength": 50,
+            "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
             "example": "MATERIAL"
           },
           "managementLevelCode": {
@@ -12044,6 +13669,7 @@
             "x-source-column": "warehouse_type_code",
             "type": "string",
             "maxLength": 50,
+            "description": "창고 유형(코드형). 값 목록은 GET /mdm/code-values?codeGroupCode=WAREHOUSE_TYPE 로 받는다 (공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 분류용이라 고객 마스터). 근거: W-05-06 §3-3",
             "example": "MATERIAL"
           },
           "managementLevelCode": {
@@ -12405,6 +14031,32 @@
           }
         }
       },
+      "AppUserPasswordReset": {
+        "type": "object",
+        "description": "비밀번호 관리자 초기화 응답(2026-08-30 되살림 — DR-002 2-B ③). 근거: W-CO-02 §8-2",
+        "required": [
+          "appUserId",
+          "temporaryPassword",
+          "resetAt"
+        ],
+        "properties": {
+          "appUserId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "temporaryPassword": {
+            "type": "string",
+            "x-no-example": "실제 임시 비밀번호 모양을 공개 계약에 남기지 않는다",
+            "description": "이 응답에서 한 번만 보인다 — 서버는 해시만 저장한다(단말 토큰 발급과 같은 규약)"
+          },
+          "resetAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-30T09:12:00+09:00"
+          }
+        }
+      },
       "AppUser": {
         "x-source-table": "app.app_user",
         "type": "object",
@@ -12415,7 +14067,7 @@
           "statusCode",
           "isActive"
         ],
-        "description": "사용자. 비밀번호 초기화 액션을 정의할 수 없다. loginId 는 참조를 셀 수 없어(created_by 류가 의도적 비-FK) editability.reason=NOT_COUNTABLE 로 무조건 잠근다 — 공유계약 B-4",
+        "description": "사용자. 비밀번호 관리자 초기화는 POST :reset-password 가 한다(2026-08-30 되살림 — DR-002 2-B ③). loginId 는 참조를 셀 수 없어(created_by 류가 의도적 비-FK) editability.reason=NOT_COUNTABLE 로 무조건 잠근다 — 공유계약 B-4",
         "properties": {
           "appUserId": {
             "x-source-column": "app_user_id",
@@ -12528,7 +14180,7 @@
           "userName",
           "statusCode"
         ],
-        "description": "사용자 수정 요청. loginId 는 항상 잠김(NOT_COUNTABLE)이라 요청에 포함하지 않는다. isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §5-2",
+        "description": "사용자 수정 요청. loginId 는 항상 잠김(NOT_COUNTABLE)이라 요청에 포함하지 않는다. isActive 는 별도 액션(:deactivate / :activate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §5-2",
         "properties": {
           "userName": {
             "x-source-column": "user_name",
@@ -12662,7 +14314,7 @@
           "roleCode",
           "roleName"
         ],
-        "description": "역할 수정 요청. isActive 는 별도 사용 중지 액션(:deactivate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §4-B",
+        "description": "역할 수정 요청. isActive 는 별도 액션(:deactivate / :activate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §4-B",
         "properties": {
           "roleCode": {
             "x-source-column": "role_code",
@@ -12691,7 +14343,8 @@
         "type": "object",
         "required": [
           "role",
-          "editability"
+          "editability",
+          "assignedUserCount"
         ],
         "properties": {
           "role": {
@@ -12699,6 +14352,11 @@
           },
           "editability": {
             "$ref": "#/components/schemas/Editability"
+          },
+          "assignedUserCount": {
+            "type": "integer",
+            "example": 3,
+            "description": "이 역할이 배정된 사용자 수. 사용 중지 확인 문구가 이 값을 쓴다"
           }
         }
       },
@@ -12909,9 +14567,16 @@
             "format": "date",
             "description": "ck_routing_dates — 있으면 effectiveFrom 이상",
             "example": "2026-08-04"
+          },
+          "isDefault": {
+            "x-source-column": "is_default",
+            "type": "boolean",
+            "default": false,
+            "description": "uq_routing_default ON (item_id) WHERE is_default — 부분 유일 인덱스, Bom.isDefault와 같은 형태(2026-08-30 되살림). :set-default 로만 바꾼다",
+            "example": true
           }
         },
-        "x-internal-note": "① 기본 개정(default Rev) 플래그가 모델에 없어 :set-default 오퍼레이션이 성립하지 않는다. 유효 기간이 겹치는 개정이 둘일 때 어느 것을 쓸지 정할 수 없다 — 📨 작업 통지 대상(#64). ② effectiveFrom 은 ✓설계확정 결정 07 이 「선택」이라 했고 «그것이 정본이다». 앞서 「모델이 NOT NULL 이니 하류를 따른다」로 필수로 두었던 것을 2026-08-18 되돌렸다 — 물리 모델은 설계 결정을 앞설 수 없다(사용자 확정). 모델의 NOT NULL 은 우리를 막지 않으며 작업 통지로 넘긴다."
+        "x-internal-note": "② effectiveFrom 은 ✓설계확정 결정 07 이 「선택」이라 했고 «그것이 정본이다». 앞서 「모델이 NOT NULL 이니 하류를 따른다」로 필수로 두었던 것을 2026-08-18 되돌렸다 — 물리 모델은 설계 결정을 앞설 수 없다(사용자 확정). 모델의 NOT NULL 은 우리를 막지 않으며 작업 통지로 넘긴다. ① 기본 개정(isDefault) 플래그는 2026-08-30 되살렸다 — 저장 컬럼은 데이터 모델 담당에게 통지, 기다리지 않는다."
       },
       "RoutingCreate": {
         "x-source-table": "planning.routing",
@@ -13067,6 +14732,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "공정 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "공정 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "mesManaged": {
             "x-source-column": "mes_managed",
             "type": "boolean",
@@ -13091,6 +14776,13 @@
             "default": false,
             "description": "PQC opt-in 의 근거 필드(결정 07) — 끄면 PQC 생략",
             "example": false
+          },
+          "isOutsourced": {
+            "type": "boolean",
+            "default": false,
+            "description": "이 공정은 외주로 나간다 — 결정 07 라인 속성(2026-08-03 사용자 확정 · 2026-08-30 되살림). 물리 컬럼은 이미 있다(omf-mes-server#42 2026-08-28 확인 — planning.routing_operation.is_subcontract) — 이름만 확정 이름(isOutsourced)과 다르다. 데이터 모델 담당에게 이름 정합화를 통지 — 기다리지 않는다. 근거: W-06-01 §4-B-1",
+            "example": false,
+            "x-internal-note": "⚠ x-source-column 을 달지 않았다 — 물리 이름(is_subcontract)과 확정 이름(isOutsourced)이 달라 어느 쪽으로 정할지 미정이다. 이름이 정해지면 채운다."
           },
           "outputLotRequired": {
             "x-source-column": "output_lot_required",
@@ -13184,6 +14876,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "공정 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "공정 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "mesManaged": {
             "x-source-column": "mes_managed",
             "type": "boolean",
@@ -13208,6 +14920,13 @@
             "default": false,
             "description": "PQC opt-in 의 근거 필드(결정 07) — 끄면 PQC 생략",
             "example": false
+          },
+          "isOutsourced": {
+            "type": "boolean",
+            "default": false,
+            "description": "이 공정은 외주로 나간다 — 결정 07 라인 속성(2026-08-03 사용자 확정 · 2026-08-30 되살림). 물리 컬럼은 이미 있다(omf-mes-server#42 2026-08-28 확인 — planning.routing_operation.is_subcontract) — 이름만 확정 이름(isOutsourced)과 다르다. 데이터 모델 담당에게 이름 정합화를 통지 — 기다리지 않는다. 근거: W-06-01 §4-B-1",
+            "example": false,
+            "x-internal-note": "⚠ x-source-column 을 달지 않았다 — 물리 이름(is_subcontract)과 확정 이름(isOutsourced)이 달라 어느 쪽으로 정할지 미정이다. 이름이 정해지면 채운다."
           },
           "outputLotRequired": {
             "x-source-column": "output_lot_required",
@@ -13301,7 +15020,7 @@
             "maxLength": 50,
             "default": "FINISH_TO_START",
             "description": "공통코드 — 값 목록 미정",
-            "example": "STANDARD"
+            "example": "FINISH_TO_START"
           }
         }
       },
@@ -13328,7 +15047,7 @@
           "groupName",
           "isActive"
         ],
-        "description": "코드그룹 — 공통코드 값 목록의 최상위 분류. 근거: W-06-06 §4-A. 잠정적으로 MES 등록을 허용한다",
+        "description": "코드그룹 — 공통코드 값 목록의 최상위 분류. 근거: W-06-06 §4-A. 공통코드는 이 시스템이 정본이라 여기서 등록·수정한다 — 기간계 수신 연계대상이 아니다. 값이 수동 등록으로 들어오든 연동 배치로 들어오든 구분하지 않는다",
         "properties": {
           "codeGroupId": {
             "x-source-column": "code_group_id",
@@ -13454,7 +15173,7 @@
           "displayOrder",
           "isActive"
         ],
-        "description": "ck_code_value_dates 짝 제약. display_order 에는 유일 제약이 없어 순서 재배치에 전체 치환이 불필요하다 — 공유계약 A-5 대상 아님. ERP 수신본이라 읽기 전용이어야 하는데 판정할 컬럼이 없다",
+        "description": "ck_code_value_dates 짝 제약. display_order 에는 유일 제약이 없어 순서 재배치에 전체 치환이 불필요하다 — 공유계약 A-5 대상 아님. 공통코드는 이 시스템이 정본이라 여기서 등록·수정한다 — 기간계와의 값 정합은 운영 주체의 몫이다",
         "properties": {
           "codeValueId": {
             "x-source-column": "code_value_id",
@@ -13480,6 +15199,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "표시명"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "displayOrder": {
             "x-source-column": "display_order",
@@ -13513,7 +15252,7 @@
             "example": true
           }
         },
-        "x-internal-note": "미착지: 다국어(한/베) 명칭 — #64 / 미착지: 수신본 식별 플래그 — #65"
+        "x-internal-note": "미착지: 다국어(한/베) 명칭 — #64"
       },
       "CodeValueCreate": {
         "x-source-table": "mdm.code_value",
@@ -13544,6 +15283,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "표시명"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "displayOrder": {
             "x-source-column": "display_order",
@@ -13594,6 +15353,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "코드값 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "displayOrder": {
             "x-source-column": "display_order",
             "type": "integer",
@@ -13617,6 +15396,108 @@
             "format": "date",
             "description": "ck_code_value_dates — 있으면 effectiveFrom 이상",
             "example": "2026-08-04"
+          }
+        }
+      },
+      "JudgmentTypeControl": {
+        "type": "object",
+        "description": "판정유형(codeValueId, codeGroupCode=JUDGMENT_TYPE)의 물류 통제 속성. 결정 10을 되살린 자원(2026-08-30). 저장 테이블은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-04 §4-B",
+        "required": [
+          "codeValueId",
+          "blocksIssue",
+          "blocksShipment",
+          "blocksPicking",
+          "requiresApproval",
+          "versionNo"
+        ],
+        "properties": {
+          "codeValueId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "blocksIssue": {
+            "type": "boolean",
+            "description": "출고 차단 — 결정 10",
+            "example": true
+          },
+          "blocksShipment": {
+            "type": "boolean",
+            "description": "출하 차단 — 한도승인·특채는 출하 허용 범위가 판정마다 다르다(결정 10)",
+            "example": true
+          },
+          "blocksPicking": {
+            "type": "boolean",
+            "description": "Picking 차단 — 결정 10",
+            "example": true
+          },
+          "requiresApproval": {
+            "type": "boolean",
+            "description": "승인 필요 — 한도승인·특채는 승인 행위 자체가 감사 대상(결정 10)",
+            "example": false
+          },
+          "approverRoleId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "승인 권한 — 「승인 주체 = MES 권한 보유 관리자」(REQ-PR-0027). requiresApproval 이 참일 때만 의미가 있다",
+            "example": 1001
+          },
+          "lotStatusCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-no-example": true,
+            "description": "판정유형 → 어떤 Lot Status로 전이하는가(결정 10 「상태 3축」)"
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "JudgmentTypeControlUpdate": {
+        "type": "object",
+        "required": [
+          "blocksIssue",
+          "blocksShipment",
+          "blocksPicking",
+          "requiresApproval"
+        ],
+        "properties": {
+          "blocksIssue": {
+            "type": "boolean",
+            "example": true
+          },
+          "blocksShipment": {
+            "type": "boolean",
+            "example": true
+          },
+          "blocksPicking": {
+            "type": "boolean",
+            "example": true
+          },
+          "requiresApproval": {
+            "type": "boolean",
+            "example": false
+          },
+          "approverRoleId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          },
+          "lotStatusCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-no-example": true
           }
         }
       },
@@ -13644,7 +15525,7 @@
           "departmentName",
           "isActive"
         ],
-        "description": "계층(parent_department_id). ck_department_parent 는 자기 자신만 막고 순환(A→B→A)은 막지 않으므로 서버가 검사한다. ERP 수신본이라 읽기 전용이어야 하는데 판정할 컬럼이 없다",
+        "description": "계층(parent_department_id). ck_department_parent 는 자기 자신만 막고 순환(A→B→A)은 막지 않으므로 서버가 검사한다. ERP 수신본이면 읽기 전용이다 — sourceSystemCode로 판정한다(2026-08-30 되살림).",
         "properties": {
           "departmentId": {
             "x-source-column": "department_id",
@@ -13663,6 +15544,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "생산1팀"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "parentDepartmentId": {
             "x-source-column": "parent_department_id",
@@ -13688,9 +15589,19 @@
             "type": "boolean",
             "default": true,
             "example": true
+          },
+          "sourceSystemCode": {
+            "x-source-column": "source_system_code",
+            "type": "string",
+            "enum": [
+              "ERP",
+              "MES"
+            ],
+            "description": "이 행의 출처 — ERP(Legacy 수신본, 수정/삭제 불가) · MES(자체 등록). WF06 S7 Result 「'Legacy 출처' 플래그 + MES 원천 등록분과 연계분의 구분 플래그」를 되살린 하나의 축이다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-09 §4-D · W-06-05 §9-1 · W-06-06 §5-4",
+            "example": "MES"
           }
         },
-        "x-internal-note": "미착지: 수신본 식별 플래그 — #65"
+        "x-internal-note": "미착지: 수신본 식별 플래그 — 되살렸다(sourceSystemCode, 2026-08-30). DepartmentUpdate가 노출하는 필드는 이 값으로 편집 잠금을 판정한다(editability). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다."
       },
       "DepartmentCreate": {
         "x-source-table": "mdm.department",
@@ -13713,6 +15624,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "생산1팀"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "parentDepartmentId": {
             "x-source-column": "parent_department_id",
@@ -13754,6 +15685,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "생산1팀"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "부서 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "parentDepartmentId": {
             "x-source-column": "parent_department_id",
@@ -13823,6 +15774,26 @@
             "maxLength": 200,
             "example": "홍길동"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "작업자 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "작업자 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "businessUnitId": {
             "x-source-column": "business_unit_id",
             "type": "integer",
@@ -13859,8 +15830,8 @@
             "x-source-column": "status_code",
             "type": "string",
             "maxLength": 50,
-            "description": "공통코드 — 값 목록 미정",
-            "example": "ACTIVE"
+            "description": "재직 상태 코드. ⛔ 화면은 이 값으로 재직 여부를 판정하지 않고 isActive 를 본다.",
+            "x-no-example": true
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -13869,7 +15840,7 @@
             "example": true
           }
         },
-        "x-internal-note": "미착지: 수신본 식별 플래그 — #65"
+        "x-internal-note": "정정(2026-08-30) — WorkerUpdate가 편집 가능한 필드를 하나도 노출하지 않아(전 필드 ERP 원본) 이미 구조적으로 잠겨 있다. 수신본 식별 플래그는 불필요하다 — Item과 같은 해법."
       },
       "WorkerDetailResponse": {
         "type": "object",
@@ -13993,7 +15964,7 @@
           "negativeStockAllowed",
           "isActive"
         ],
-        "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 그리고 수신본 식별 플래그 부재로 읽기 전용 판정 자체가 불가능하다 — #65",
+        "description": "ERP 수신본. 원본 필드(itemCode·itemName·itemTypeCode·baseUomId)는 읽기 전용이고 MES 확장 속성만 편집한다 — QA #34. 원본 필드는 편집 본문(ItemUpdate)에 자리 자체를 두지 않아, 행 단위 출처 표시가 없어도 잠금이 성립한다.",
         "properties": {
           "itemId": {
             "x-source-column": "item_id",
@@ -14013,6 +15984,26 @@
             "maxLength": 200,
             "description": "⚠ 한/베 두 언어를 담을 컬럼이 없다 — W-06-06 §8-1 과 같은 결함",
             "example": "하우징 커버 A"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "품목 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "품목 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "itemTypeCode": {
             "x-source-column": "item_type_code",
@@ -14040,7 +16031,7 @@
             "maxLength": 50,
             "default": "NONE",
             "description": "MES 확장 · 공통코드",
-            "example": "STANDARD"
+            "example": "NONE"
           },
           "shelfLifeDays": {
             "x-source-column": "shelf_life_days",
@@ -14065,7 +16056,7 @@
             "maxLength": 50,
             "default": "FIFO",
             "description": "MES 확장 · 확정(QA #28) — 유효기한 관리 품목=FEFO, 나머지=FIFO",
-            "example": "STANDARD"
+            "example": "FIFO"
           },
           "negativeStockAllowed": {
             "x-source-column": "negative_stock_allowed",
@@ -14113,9 +16104,30 @@
             "type": "boolean",
             "description": "개발품인가 — 참이면 생산 실적을 ERP 로 송신하지 않는다. ⭐ 「개발품 제외」의 판정 축은 «품목»이다(사용자 확정 2026-08-24 · omf-mes#70). 확정 문구(✓확정 QA #35 · WF06 S7)가 「생산 실적 송신 = 필수(개발품 제외)」라고만 적고 무엇이 개발품인지를 안 적어 품목 속성(화면 인벤토리)과 작업지시 유형(설계 결정 14)으로 갈려 읽히던 것을 품목으로 닫았다. ⛔ mdm.item 에 담을 컬럼이 아직 없다 — 데이터 모델 담당에게 통지했다(W-06-05 §8-1). 컬럼이 서기 전까지 서버는 이 값을 늘 거짓으로 내리고, W-06-12 는 그동안 전건 송신으로 물러나 있다(A-11). 근거: W-06-12 §4-B · W-06-05 §4-B",
             "example": false
+          },
+          "defaultLotStorageUomId": {
+            "x-source-column": "default_lot_storage_uom_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "MES 확장 — 자재LOT 보관 단위 기본값(수량·무게 등). 확정 QA #14 「자재별 LOT 보관 단위 기본값 사용 + 특이 시 개별 설정」 — 이 값은 기본값이고 LOT마다 개별 재정의를 막지 않는다. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-05 §4-B",
+            "example": 1001
+          },
+          "defaultProductionLotSize": {
+            "x-source-column": "default_production_lot_size",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "exclusiveMinimum": 0,
+            "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008 · E26 「기본값 + 수정 가능」. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-05 §4-B",
+            "example": 500.0
           }
         },
-        "x-internal-note": "미착지 넷: 자재LOT 보관단위·생산LOT 기본크기·개발품 플래그·재생재 하위코드 — #64"
+        "x-internal-note": "미착지 둘 — 자재LOT 보관단위·생산LOT 기본크기 되살림(2026-08-30, defaultLotStorageUomId·defaultProductionLotSize 신설 · #64). 개발품 플래그(developmentItem)·재생재 하위코드(mesCategoryCode)는 이미 계약에 있었다(재확인)."
       },
       "ItemUpdate": {
         "x-source-table": "mdm.item",
@@ -14161,7 +16173,9 @@
             "x-source-column": "fifo_policy_code",
             "type": "string",
             "maxLength": 50,
-            "example": "STANDARD"
+            "example": "FIFO",
+            "description": "MES 확장 · 확정(QA #28) — 유효기한 관리 품목=FEFO, 나머지=FIFO",
+            "x-internal-note": "값 목록의 정본은 Item.fifoPolicyCode 의 description 이다 — 편집 본문에만 값을 다시 적으면 두 벌이 되어 갈린다. 06-API-요구서.md v0.4 620행이 「동작이 걸릴 법한 이름」 후속을 남겼고 그 후속은 이번 회차 범위 밖이다."
           },
           "negativeStockAllowed": {
             "x-source-column": "negative_stock_allowed",
@@ -14195,6 +16209,47 @@
             "type": "boolean",
             "description": "개발품인가 — 참이면 생산 실적을 ERP 로 송신하지 않는다. ⭐ 「개발품 제외」의 판정 축은 «품목»이다(사용자 확정 2026-08-24 · omf-mes#70). 확정 문구(✓확정 QA #35 · WF06 S7)가 「생산 실적 송신 = 필수(개발품 제외)」라고만 적고 무엇이 개발품인지를 안 적어 품목 속성(화면 인벤토리)과 작업지시 유형(설계 결정 14)으로 갈려 읽히던 것을 품목으로 닫았다. ⛔ mdm.item 에 담을 컬럼이 아직 없다 — 데이터 모델 담당에게 통지했다(W-06-05 §8-1). 컬럼이 서기 전까지 서버는 이 값을 늘 거짓으로 내리고, W-06-12 는 그동안 전건 송신으로 물러나 있다(A-11). 근거: W-06-12 §4-B · W-06-05 §4-B",
             "example": false
+          },
+          "defaultLotStorageUomId": {
+            "x-source-column": "default_lot_storage_uom_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "MES 확장 — 자재LOT 보관 단위 기본값. 확정 QA #14. 2026-08-30 되살림",
+            "example": 1001
+          },
+          "defaultProductionLotSize": {
+            "x-source-column": "default_production_lot_size",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "exclusiveMinimum": 0,
+            "description": "MES 확장 — 생산LOT 기본크기. 확정 REQ-PR-0008·E26. 2026-08-30 되살림",
+            "example": 500.0
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "품목 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "품목 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           }
         }
       },
@@ -14757,6 +16812,26 @@
             "description": "⚠ 한/베 컬럼 없음",
             "example": "하우징 IQC 기준"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "itemId": {
             "x-source-column": "item_id",
             "type": [
@@ -14815,6 +16890,13 @@
             "description": "approvedBy 와 짝(CHECK 없음 — 서버가 항상 함께 기록해 보장)",
             "example": "2026-08-04T09:12:00+09:00"
           },
+          "pqcSkipAllowed": {
+            "x-source-column": "pqc_skip_allowed",
+            "type": "boolean",
+            "default": false,
+            "description": "PQC 생략 허용 — QA #4 「품목·공정 단위 생략 설정」(itemId·processId와 함께 축을 이룬다). Routing에 PQC 공정 미명시 시 생략(RoutingOperation.inspectionManaged)과는 다른 축이다. 2026-08-30 되살림. 물리 컬럼은 quality.inspection_plan 헤더에 이미 있다(omf-mes-server#42 2026-08-28 확인). 근거: W-06-02 §4-A",
+            "example": false
+          },
           "isActive": {
             "x-source-column": "is_active",
             "type": "boolean",
@@ -14846,6 +16928,26 @@
             "maxLength": 200,
             "example": "하우징 IQC 기준"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "itemId": {
             "x-source-column": "item_id",
             "type": [
@@ -14879,6 +16981,12 @@
             "maxLength": 50,
             "example": "IQC",
             "description": "공통코드 — IQC/PQC(공정·초중종·자주)/OQC ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_INSPECTION_TYPE 로 받는다(IQC·PQC·OQC). ⚠ 설비 점검의 inspectionTypeCode(DAILY·MONTHLY·MAINTENANCE)와 «같은 이름 다른 값» 이라 그룹을 가른다. 근거: omf-mes#186"
+          },
+          "pqcSkipAllowed": {
+            "x-source-column": "pqc_skip_allowed",
+            "type": "boolean",
+            "example": false,
+            "description": "PQC 생략 허용 — QA #4. 2026-08-30 되살림"
           }
         }
       },
@@ -14904,6 +17012,26 @@
             "maxLength": 200,
             "example": "하우징 IQC 기준"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사기준 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "itemId": {
             "x-source-column": "item_id",
             "type": [
@@ -14937,6 +17065,12 @@
             "maxLength": 50,
             "example": "IQC",
             "description": "공통코드 — IQC/PQC(공정·초중종·자주)/OQC ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=QUALITY_INSPECTION_TYPE 로 받는다(IQC·PQC·OQC). ⚠ 설비 점검의 inspectionTypeCode(DAILY·MONTHLY·MAINTENANCE)와 «같은 이름 다른 값» 이라 그룹을 가른다. 근거: omf-mes#186"
+          },
+          "pqcSkipAllowed": {
+            "x-source-column": "pqc_skip_allowed",
+            "type": "boolean",
+            "example": false,
+            "description": "PQC 생략 허용 — QA #4. 2026-08-30 되살림"
           }
         }
       },
@@ -14967,7 +17101,7 @@
           "inspectionFrequencyCode",
           "statusCode"
         ],
-        "description": "samplingQty 는 확정 문구가 「샘플 비율(%)」인데 컬럼은 수량(app.qty_t)이다 — 규약 없이 개발하면 30%가 30개로 저장된다(A-8·#64)",
+        "description": "샘플 비율(%)이 정본이다(samplingRatio) — 확정 문구가 「샘플 비율(%)」이고 수량은 로트 크기를 알아야 나오는 파생값이라 두지 않는다(A-8). 2026-08-30 되살림.",
         "properties": {
           "inspectionPlanVersionId": {
             "x-source-column": "inspection_plan_version_id",
@@ -15363,6 +17497,26 @@
             "description": "⚠ 한/베 컬럼 없음",
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사항목 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사항목 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "dataTypeCode": {
             "x-source-column": "data_type_code",
             "type": "string",
@@ -15444,6 +17598,7 @@
             "x-source-column": "automatic_judgment",
             "type": "boolean",
             "default": true,
+            "description": "이 항목의 합·불을 상·하한으로 자동 판정할지(W-06-02 §4-C). ⭐ 참이면 검사 화면이 측정값을 상·하한과 대조해 항목 판정을 «채운 채로» 시작하고, 사람이 바꿀 수 있다 — 채운 값은 시작점이지 확정이 아니다(P-02-13 §5-11). ⛔ 참이어도 세 조건이 모두 맞아야 판정이 선다: 데이터 유형이 NUMERIC 이고, 하한·상한 중 하나 이상이 있어야 한다. 텍스트·불리언 항목에는 상·하한이 없어 설 수 없다. ⚠ 참인데 상·하한이 둘 다 비면 화면은 저장을 막지 말고 「기준 없음 — 직접 판정」으로 그린다 — 공유계약 G-15. ⛔ 이 플래그는 항목 판정에만 걸린다 — 검사 결과의 종합 판정은 어떤 경우에도 자동으로 내리지 않는다. 근거: W-06-02 §4-C · P-02-13 §5-11 · omf-mes#257",
             "example": false
           }
         }
@@ -15496,6 +17651,26 @@
             "description": "⚠ 한/베 컬럼 없음",
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사항목 한국어 명칭 — QA #33 「다국어(한/베) 전범위(UI·마스터 명칭·출력물)」·QA #34 「다국어 명칭 = MES 확장 속성」을 되살렸다(2026-08-30). ERP 원본 필드의 편집 가능 여부와 무관하게 항상 편집 가능하다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "검사항목 베트남어 명칭 — QA #33·#34. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "dataTypeCode": {
             "x-source-column": "data_type_code",
             "type": "string",
@@ -15577,6 +17752,7 @@
             "x-source-column": "automatic_judgment",
             "type": "boolean",
             "default": true,
+            "description": "이 항목의 합·불을 상·하한으로 자동 판정할지(W-06-02 §4-C). ⭐ 참이면 검사 화면이 측정값을 상·하한과 대조해 항목 판정을 «채운 채로» 시작하고, 사람이 바꿀 수 있다 — 채운 값은 시작점이지 확정이 아니다(P-02-13 §5-11). ⛔ 참이어도 세 조건이 모두 맞아야 판정이 선다: 데이터 유형이 NUMERIC 이고, 하한·상한 중 하나 이상이 있어야 한다. 텍스트·불리언 항목에는 상·하한이 없어 설 수 없다. ⚠ 참인데 상·하한이 둘 다 비면 화면은 저장을 막지 말고 「기준 없음 — 직접 판정」으로 그린다 — 공유계약 G-15. ⛔ 이 플래그는 항목 판정에만 걸린다 — 검사 결과의 종합 판정은 어떤 경우에도 자동으로 내리지 않는다. 근거: W-06-02 §4-C · P-02-13 §5-11 · omf-mes#257",
             "example": false
           }
         }
@@ -15604,7 +17780,7 @@
           "defectName",
           "isActive"
         ],
-        "description": "2계층(parent_defect_code_id). ck_*_parent 자기참조 CHECK 가 없다 — department 에만 있고 location·defect_code 엔 둘 다 없다(#64). 3계층 이상은 결정 12 위반이라 서버가 차단한다. N:M 테이블이 없어 공정 매핑 엔드포인트가 성립하지 않는다",
+        "description": "2계층(parent_defect_code_id). ck_*_parent 자기참조 CHECK 가 없다 — department 에만 있고 location·defect_code 엔 둘 다 없다(#64). 3계층 이상은 결정 12 위반이라 서버가 차단한다. 공정 매핑은 GET·POST·DELETE /quality/defect-codes/{defectCodeId}/processes(N:M, 2026-08-30 되살림)로 한다",
         "properties": {
           "defectCodeId": {
             "x-source-column": "defect_code_id",
@@ -15625,6 +17801,26 @@
             "description": "⚠ 결정 12 가 「다국어 명칭(ko/vi)」으로 컬럼 형태까지 지정했는데 단일 컬럼이다 §8-2",
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "parentDefectCodeId": {
             "x-source-column": "parent_defect_code_id",
             "type": [
@@ -15642,8 +17838,18 @@
               "null"
             ],
             "format": "int64",
-            "description": "⚠ N:1 — 결정 12 가 N:M 으로 조정 승인했으나 물리 모델 미반영(§8-1). N:M 매핑 테이블이 없어 공정 매핑 엔드포인트를 만들 수 없다",
+            "description": "레거시 N:1 참조 — 결정 12가 N:M 매핑으로 대체를 승인했다. 정식 매핑은 /processes 자원을 쓴다",
             "example": 1001
+          },
+          "dispositionTypeCode": {
+            "x-source-column": "disposition_type_code",
+            "type": "string",
+            "enum": [
+              "REWORKABLE",
+              "SCRAP"
+            ],
+            "description": "처분구분(재작업가능/폐기) — ✅REQ-PR-0025·결정 12 확정. 2026-08-30 되살림. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-06-03 §4-A",
+            "example": "REWORKABLE"
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -15652,7 +17858,7 @@
             "example": true
           }
         },
-        "x-internal-note": "미착지: 처분구분·다국어(ko/vi)·공정 N:M 매핑 — #64"
+        "x-internal-note": "미착지 없음(2026-08-30 전부 되살림) — 다국어(nameKo/nameVi)·처분구분·공정 N:M 매핑."
       },
       "DefectCodeCreate": {
         "x-source-table": "quality.defect_code",
@@ -15676,6 +17882,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "parentDefectCodeId": {
             "x-source-column": "parent_defect_code_id",
             "type": [
@@ -15694,6 +17920,20 @@
             ],
             "format": "int64",
             "example": 1001
+          },
+          "dispositionTypeCode": {
+            "x-source-column": "disposition_type_code",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REWORKABLE",
+              "SCRAP",
+              null
+            ],
+            "description": "처분구분(재작업가능/폐기) — 결정 12. 상세 코드에만 의미가 있다. 2026-08-30 되살림",
+            "example": "REWORKABLE"
           }
         }
       },
@@ -15718,6 +17958,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "불량코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "parentDefectCodeId": {
             "x-source-column": "parent_defect_code_id",
             "type": [
@@ -15735,6 +17995,45 @@
             ],
             "format": "int64",
             "example": 1001
+          },
+          "dispositionTypeCode": {
+            "x-source-column": "disposition_type_code",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REWORKABLE",
+              "SCRAP",
+              null
+            ],
+            "example": "REWORKABLE"
+          }
+        }
+      },
+      "DefectCodeProcess": {
+        "x-source-table": "quality.defect_code_process",
+        "type": "object",
+        "description": "불량코드-공정 매핑 한 건. 결정 12 N:M을 되살린 자원(2026-08-30). 테이블은 이미 있다(omf-mes-server#42 2026-08-28 확인 — quality.defect_code_process, 5979행) — 없던 것은 API 쓰기 경로뿐이라 이번에 그것만 신설했다. 근거: W-06-03 §4-D",
+        "required": [
+          "defectCodeId",
+          "processId"
+        ],
+        "properties": {
+          "defectCodeId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "processId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "processName": {
+            "type": "string",
+            "description": "mdm.process.process_name 조인 — 화면 왕복을 없앤다",
+            "example": "사출"
           }
         }
       },
@@ -15782,6 +18081,26 @@
             "maxLength": 200,
             "description": "다국어 결함 동일 — W-06-06 §8-1",
             "example": "표시명"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "parentCauseCodeId": {
             "x-source-column": "parent_cause_code_id",
@@ -15833,6 +18152,26 @@
             "maxLength": 200,
             "example": "표시명"
           },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
+          },
           "parentCauseCodeId": {
             "x-source-column": "parent_cause_code_id",
             "type": [
@@ -15873,6 +18212,26 @@
             "type": "string",
             "maxLength": 200,
             "example": "표시명"
+          },
+          "nameKo": {
+            "x-source-column": "name_ko",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 한국어 명칭 — 결정 12 「다국어 명칭(ko/vi)」을 되살렸다(2026-08-30). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다.",
+            "example": "표시명"
+          },
+          "nameVi": {
+            "x-source-column": "name_vi",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "description": "원인코드 베트남어 명칭 — 결정 12. 2026-08-30 되살림.",
+            "example": "Ten hien thi"
           },
           "parentCauseCodeId": {
             "x-source-column": "parent_cause_code_id",
@@ -15950,14 +18309,16 @@
             "x-source-column": "direction_code",
             "type": "string",
             "maxLength": 50,
-            "description": "수신/송신",
+            "description": "수신(INBOUND) 또는 송신(OUTBOUND). 연계 정의의 방향 값과 같은 어휘다",
             "example": "OUTBOUND"
           },
           "targetTypeCode": {
             "x-source-column": "target_type_code",
             "type": "string",
             "maxLength": 50,
-            "example": "GOODS_RECEIPT"
+            "x-no-example": true,
+            "description": "무엇을 나른 메시지인가. 값 목록은 아직 정해지지 않았다 — 확정 전에는 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions).",
+            "x-internal-note": "감사 이벤트의 target_type_code 와 같은 어휘를 쓸지 미정 — 공유계약 A-10(다형 참조 대응표)이 서면 함께 정한다."
           },
           "targetId": {
             "x-source-column": "target_id",
@@ -16255,7 +18616,7 @@
               "null"
             ],
             "maxLength": 3,
-            "example": "STANDARD"
+            "x-no-example": true
           },
           "erpPartnerCode": {
             "x-source-column": "erp_partner_code",
@@ -16264,7 +18625,7 @@
               "null"
             ],
             "maxLength": 100,
-            "example": "STANDARD"
+            "x-no-example": true
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -16309,13 +18670,13 @@
             "x-source-column": "country_code",
             "type": "string",
             "maxLength": 3,
-            "example": "STANDARD"
+            "x-no-example": true
           },
           "timezoneCode": {
             "x-source-column": "timezone_code",
             "type": "string",
             "maxLength": 64,
-            "example": "STANDARD"
+            "x-no-example": true
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -16422,7 +18783,7 @@
             "x-source-column": "timezone_code",
             "type": "string",
             "maxLength": 64,
-            "example": "STANDARD"
+            "x-no-example": true
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -16486,7 +18847,7 @@
             "maxLength": 50,
             "default": "LINE",
             "description": "LINE | WORK_AREA",
-            "example": "STANDARD"
+            "example": "LINE"
           },
           "isActive": {
             "x-source-column": "is_active",
@@ -16589,6 +18950,16 @@
             "maxLength": 50,
             "description": "공통코드 — 계열마다 그룹이 다르다. ⭐ 계측기 계열은 GET /mdm/code-values?codeGroupCode=INSTRUMENT_TYPE 로 받는다(CALIPER·MICROMETER·GAUGE). 설비 계열은 codeGroupCode=EQUIPMENT_TYPE 이며 INJECTION_MOLDING(사출기)·PRESS(프레스)·WATER_HEATER(온수기) 세 값이다. ⚠ 한 컬럼에 두 계열이 착지하므로 화면은 «자기 계열의 그룹만» 부른다",
             "example": "CALIPER"
+          },
+          "locationId": {
+            "x-source-column": "location_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "이 설비에 매핑된 Location(호퍼 등). 결정 08 「호퍼=Location 모델링(설비—Location 매핑)」을 되살린 축(2026-08-30) — M-01-09가 이 값으로 「1호기 호퍼」처럼 설비 기준으로 호퍼를 지정하고 잔량을 설비 기준으로 집계한다. 비어 있을 수 있다 — 모든 설비가 호퍼를 갖지 않는다. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: M-01-09 §5-3 · P-02-03 §4",
+            "example": 1001
           },
           "processId": {
             "x-source-column": "process_id",
@@ -17031,6 +19402,33 @@
             "example": 1001,
             "description": "설치 위치. 비어 있을 수 있다"
           },
+          "equipmentId": {
+            "x-source-column": "equipment_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 2001,
+            "description": "이 단말이 붙어 있는 설비. POP 이 「이 설비」를 전제로 도는 화면들이 이 값을 쓴다 — P-02-01 의 기본 목록 필터와 P-05-02 의 헤더 고정이 그것이다. 비어 있을 수 있다 — 설비에 붙지 않은 단말이 있다."
+          },
+          "equipmentCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 50,
+            "example": "PRS-01",
+            "description": "설비 코드. 헤더가 「PRS-01 · 프레스 1호기」로 그리므로 함께 내린다 — 왕복 한 번을 없앤다."
+          },
+          "equipmentName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "프레스 1호기",
+            "description": "설비명. equipmentCode 와 짝이다."
+          },
           "terminalTypeCode": {
             "x-source-column": "terminal_type_code",
             "type": "string",
@@ -17052,12 +19450,18 @@
             "example": "2026-08-13T09:12:00+09:00",
             "description": "마지막으로 토큰을 발급한 시각"
           },
+          "tokenVersion": {
+            "x-source-column": "token_version",
+            "type": "integer",
+            "example": 3,
+            "description": "재발급마다 서버가 +1 — 이전 값의 토큰은 클레임 tv 가 이 값과 어긋나 거부된다(공유계약 F-4 · ✓확정 2026-07-28 §6-②)"
+          },
           "versionNo": {
             "type": "integer",
             "example": 1
           }
         },
-        "x-internal-note": "토큰 세대(token_version)와 기기 식별자가 물리 모델에 없다 (W-CO-06 §5-4 · M-CO-01 §5-2). 그래서 잃어버린 기기를 영구히 끊을 수 없다 — 화면도 그 기능을 그리지 않는다(A-11). 공통 트랙 묶음 이슈로 요청."
+        "x-internal-note": "토큰 세대(tokenVersion) — 재발급마다 +1, 토큰 클레임 tv 와 매 요청 대조해 이전 토큰 전부를 무효화한다(공유계약 F-4, 2026-08-30 되살림). 저장 컬럼은 데이터 모델 담당에게 통지한다 — 기다리지 않는다(data-model-boundary.md). equipmentId(설비 결속) 관련은 별건 — omf-mes#262(닫지 않는다)."
       },
       "TerminalCreate": {
         "type": "object",
@@ -17082,6 +19486,16 @@
             "type": "integer",
             "format": "int64",
             "example": 1001
+          },
+          "equipmentId": {
+            "x-source-column": "equipment_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 2001,
+            "description": "이 단말이 붙어 있는 설비. POP 이 「이 설비」를 전제로 도는 화면들이 이 값을 쓴다 — P-02-01 의 기본 목록 필터와 P-05-02 의 헤더 고정이 그것이다. 비어 있을 수 있다 — 설비에 붙지 않은 단말이 있다."
           },
           "terminalTypeCode": {
             "type": "string",
@@ -17111,6 +19525,16 @@
             "type": "integer",
             "format": "int64",
             "example": 1001
+          },
+          "equipmentId": {
+            "x-source-column": "equipment_id",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 2001,
+            "description": "이 단말이 붙어 있는 설비. POP 이 「이 설비」를 전제로 도는 화면들이 이 값을 쓴다 — P-02-01 의 기본 목록 필터와 P-05-02 의 헤더 고정이 그것이다. 비어 있을 수 있다 — 설비에 붙지 않은 단말이 있다."
           },
           "terminalTypeCode": {
             "type": "string",
@@ -17153,7 +19577,7 @@
             "description": "만료 1년"
           }
         },
-        "x-internal-note": "⛔ 재발급해도 이전 기기가 끊기지 않는다 — token_version 이 없어 세대를 올릴 수 없다. 화면이 「이전 기기를 끊는다」를 «그리지 않는» 이유다 (A-11 — 할 수 없는 것을 할 수 있는 것처럼 그리지 않는다)."
+        "x-internal-note": "✅ 재발급하면 이전 기기 전부가 끊긴다 — tokenVersion 을 발급마다 올리고 클레임 tv 와 대조한다(공유계약 F-4, 2026-08-30 되살림). 화면은 이 규칙대로 「재발급 시 이전 토큰 전부가 끊깁니다」를 그린다."
       },
       "TerminalProcess": {
         "x-source-table": "mdm.terminal_process",
@@ -17308,7 +19732,7 @@
             "type": "integer",
             "format": "int64",
             "example": 1001,
-            "description": "도면 이미지. 첨부의 다형 참조를 그대로 쓴다 — 대상 유형은 창고다. 비어 있으면 화면이 「도면을 올리세요」를 보인다"
+            "description": "도면 이미지. 첨부의 다형 참조를 그대로 쓴다 — 대상 유형은 창고다. 비어 있으면 화면이 「도면을 올리세요」를 보인다 이미지는 GET /app/attachments/{attachmentId}/content 로 받는다."
           },
           "markers": {
             "type": "array",
@@ -17318,7 +19742,8 @@
           },
           "versionNo": {
             "type": "integer",
-            "example": 1
+            "example": 1,
+            "description": "표시하지 않는다 — If-Match 에 담을 값은 ETag 응답 헤더에서 받는다."
           }
         }
       },
@@ -17628,7 +20053,7 @@
           "equipmentTypeCode",
           "calibrationRequired"
         ],
-        "description": "equipmentCode 는 참조가 0일 때만 보낼 수 있다 — 상세 조회의 editability 가 가부와 사유를 함께 내린다. statusCode 는 여기서 바꾸지 않는다 — 폐기는 :dispose 가, 사용 중지는 :deactivate 가 받는다. lastCalibrationDate·calibrationDueDate 도 받지 않는다 — 검교정 이력 등록(W-05-10)이 정한다. 근거: 공유계약 B-4·B-13·B-16",
+        "description": "equipmentCode 는 참조가 0일 때만 보낼 수 있다 — 상세 조회의 editability 가 가부와 사유를 함께 내린다. statusCode 는 여기서 바꾸지 않는다 — 폐기는 :dispose 가, 사용 중지는 :deactivate 가, 다시 사용은 :activate 가 받는다. lastCalibrationDate·calibrationDueDate 도 받지 않는다 — 검교정 이력 등록(W-05-10)이 정한다. 근거: 공유계약 B-4·B-13·B-16",
         "properties": {
           "equipmentCode": {
             "type": "string",
@@ -18364,7 +20789,7 @@
             "type": "string",
             "example": "IN_SERVICE",
             "maxLength": 50,
-            "description": "자산 수명주기 — 운용 또는 폐기 두 값. 고장·보전 중·비가동은 거래가 만드는 조건이라 마스터에 적지 않는다",
+            "description": "자산 수명주기 — 운용 또는 폐기 두 값. 고장·보전 중·비가동은 거래가 만드는 조건이라 마스터에 적지 않는다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=EQUIPMENT_STATUS 로 받는다 — 설비·툴·계측기가 같은 규칙을 쓴다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다",
             "x-source-column": "status_code"
           },
           "isActive": {
@@ -18396,7 +20821,7 @@
             ],
             "maxLength": 50,
             "example": "MONTH",
-            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH)"
+            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=CYCLE_TYPE 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다"
           },
           "lastPmDate": {
             "type": [
@@ -18511,7 +20936,7 @@
             ],
             "maxLength": 50,
             "example": "MONTH",
-            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH)"
+            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=CYCLE_TYPE 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다"
           }
         }
       },
@@ -18580,7 +21005,7 @@
             ],
             "maxLength": 50,
             "example": "MONTH",
-            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH)"
+            "description": "날짜 주기 단위 — 일(DAY) 또는 월(MONTH). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=CYCLE_TYPE 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다"
           }
         }
       },
@@ -19192,7 +21617,8 @@
             "type": "string",
             "example": "ITEM",
             "maxLength": 50,
-            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 공통코드 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다"
+            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 거래처 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다",
+            "x-internal-note": "공통코드는 2026-08-22 사용자 확정으로 수신 대상에서 제외(공유계약 B-4-3 · omf-mes#197) · 거래처는 2026-07-08 확정으로 승격(02-SW설계사양서 §5.2 · W-06-06 §5-4) — 수량 「여섯」은 유지되나 구성이 다르다."
           },
           "externalSystemCode": {
             "type": "string",
@@ -19288,7 +21714,8 @@
             "type": "string",
             "example": "ITEM",
             "maxLength": 50,
-            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 공통코드 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다"
+            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 거래처 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다",
+            "x-internal-note": "공통코드는 2026-08-22 사용자 확정으로 수신 대상에서 제외(공유계약 B-4-3 · omf-mes#197) · 거래처는 2026-07-08 확정으로 승격(02-SW설계사양서 §5.2 · W-06-06 §5-4) — 수량 「여섯」은 유지되나 구성이 다르다."
           },
           "externalSystemCode": {
             "type": "string",
@@ -19379,7 +21806,8 @@
             "type": "string",
             "example": "ITEM",
             "maxLength": 50,
-            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 공통코드 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다"
+            "description": "연계 대상. 확정된 수신 대상은 품목 · 자재명세 · 거래처 · 조직 · 작업자 · 구매발주 여섯이며 그 밖의 값도 받는다 — 막지 않고 표식만 한다. 확정 목록 안인지는 withinConfirmedScope 가 말한다",
+            "x-internal-note": "공통코드는 2026-08-22 사용자 확정으로 수신 대상에서 제외(공유계약 B-4-3 · omf-mes#197) · 거래처는 2026-07-08 확정으로 승격(02-SW설계사양서 §5.2 · W-06-06 §5-4) — 수량 「여섯」은 유지되나 구성이 다르다."
           },
           "externalSystemCode": {
             "type": "string",

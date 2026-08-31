@@ -300,7 +300,7 @@
       }
      }
     },
-    "x-internal-note": "등록 경로를 두지 않았다 — 03 화면 7장에 불량코드 입력이 0건이다. 만드는 화면은 M-02-02(omf-mes#83 로 막힘)와 P-04-03(04 계약 미착수)이다. ⛔ 04 트랙이 POST 를 더할 때 새 경로를 만들지 말고 이 경로에 얹는다 — 접두어는 공유해도 경로는 한 계약에만 둔다(03 계약 2단계 §3)."
+    "x-internal-note": "등록 경로를 두지 않았다 — 03 화면 7장에 불량코드 입력이 0건이다. 이 계약에 만드는 경로가 없다. M-02-02(수리 왕복)는 읽어 쓰는 쪽이고(POST /production/repair-executions 가 defectRecordId 를 필수로 받는다), P-04-03 은 04 계약 미착수다. omf-mes#83 은 2026-08-25 CLOSED — 「#83 로 막힘」 표기는 낡았다. ⛔ 04 트랙이 POST 를 더할 때 새 경로를 만들지 말고 이 경로에 얹는다 — 접두어는 공유해도 경로는 한 계약에만 둔다(03 계약 2단계 §3)."
    }
   },
   "/quality/defect-records/distribution": {
@@ -309,7 +309,7 @@
      "quality"
     ],
     "summary": "불량코드 분포",
-    "description": "2계층 분포. ⚠ 공정별로 나누면 중복 계상될 수 있어 duplicateRisk 를 함께 내린다 — 분포를 보고 개선 대상을 정하는 화면이라 왜곡이 곧 잘못된 판단이 된다. 근거: W-03-05 §5-5",
+    "description": "2계층 분포. ⚠ 공정별로 나누면 중복 계상될 수 있어 duplicateRisk 를 함께 내린다 — 분포를 보고 개선 대상을 정하는 화면이라 왜곡이 곧 잘못된 판단이 된다. 근거: W-03-05 §5-5 ⚠ 이 뷰는 검사 결과가 아니라 불량 레코드를 센다 — 판정·최종회차·교정만료 축이 없다(근거: W-03-05 §5-2 · omf-mes#192).",
     "parameters": [
      {
       "name": "groupBy",
@@ -330,7 +330,8 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "description": "현장 · PQC · OQC · 원천미상"
      },
      {
       "name": "itemId",
@@ -372,7 +373,8 @@
        }
       }
      }
-    }
+    },
+    "x-envelope-exempt": "모집단이 다르다 — 이 뷰는 검사 결과가 아니라 «불량 레코드»를 센다. 판정·최종회차·교정만료 축이 애초에 없다(omf-mes#192·#229 확정 · W-03-05 §5-2). 질의 축을 맞추면 그 확정을 뒤집는다."
    }
   },
   "/quality/disposition-decisions": {
@@ -381,7 +383,7 @@
      "quality"
     ],
     "summary": "처분 결정 목록",
-    "description": "W-03-10 의 처리 이력이고, 동시에 W-04-10(폐기) · W-04-11(재등록) · P-04-03(재작업)의 진입 목록이다 — 처분 유형으로 걸러 각자의 대상을 찾는다. 근거: W-03-10 §3 · 네 화면 §5",
+    "description": "W-03-10 의 처리 이력이고, 동시에 W-04-10(폐기) · W-04-11(재등록)의 진입 목록이다 — 처분 유형으로 걸러 각자의 대상을 찾는다. P-04-03(재작업 실적)은 진입이 02 W/O 목록이고 이 값을 상세의 「미처리 수량」으로 쓴다(P-04-03 §3 ④·§6). 근거: W-03-10 §3 · 네 화면 §5",
     "parameters": [
      {
       "name": "dispositionTypeCode",
@@ -437,6 +439,34 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       }
+     },
+     {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "보관 창고로 거른다. 형제 오퍼레이션 GET /quality/nonconformances 와 같은 축이다 — 응답을 화면이 거르는 것으로는 성립하지 않는다(목록이 페이지 단위다)"
+     },
+     {
+      "name": "reinstatable",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "재고로 되돌릴 수 있는 결정만. 처분이 정상이거나, 처분이 재작업이고 그 재작업이 끝난 것을 서버가 한 축으로 판정해 낸다 — 화면이 두 조건을 각각 질의해 합치지 않는다(공유계약 L-2). ⛔ 폐기 결정은 포함하지 않는다"
+     },
+     {
+      "name": "followUpPending",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "후속 처리가 남은 결정만. ⭐ W-04-10(폐기 요청)·W-04-11(재고 재등록)의 진입 목록이 이 오퍼레이션이다 — 처리한 건이 계속 남으면 같은 건을 두 번 처리한다. P-04-03(재작업 실적)은 진입이 02 W/O 목록이고 이 값을 상세의 「미처리 수량」으로 쓴다(P-04-03 §3 ④·§6). 근거: W-04-07 §5-5(부분 처분이 정상)"
      },
      {
       "name": "page",
@@ -665,7 +695,7 @@
      "quality"
     ],
     "summary": "검사 의뢰 한 건",
-    "description": "P-02-13 진입 시 기준 버전·대상 수량을 읽는다. 근거: P-02-13 §4-A",
+    "description": "P-02-13 진입 시 기준 버전·대상 수량을 읽는다. ⭐ 이 화면의 진입 인자는 inspectionRequestId 하나이고 화면 안에 대상 목록을 두지 않는다 — 인자가 없으면 「작업 화면에서 진입하세요」 안내만 그린다(P-02-13 §5-10). ⚠ 검사 대기 큐(GET /quality/inspection-requests 의 pendingOnly)는 W-01-01 의 것이다 — 이 화면이 부르지 않는다. 근거: P-02-13 §4-A·§5-10 · omf-mes#257",
     "parameters": [
      {
       "name": "inspectionRequestId",
@@ -875,7 +905,7 @@
      "quality"
     ],
     "summary": "검사 결과 저장",
-    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9",
+    "description": "임시 저장(statusCode=작성중)과 즉시 확정(=확정)을 한 경로로 받는다. ⭐ 오프라인 큐는 언제나 확정으로 온다 — 임시 저장은 단말에 남는다. 재검이면 previousResultId 를 실으면 서버가 회차를 +1 한다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). 근거: W-01-01 §5-2 · P-02-13 §5-9 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1132,6 +1162,23 @@
        ]
       },
       "description": "교정 만료 장비 측정분만 보거나 뺀다. ⛔ 기본은 섞어서 낸다 — 자동 제외는 정책이 미정이다(E-9 ①)"
+     },
+     {
+      "name": "inspectionRequestId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "값"
+      }
      }
     ],
     "responses": {
@@ -1390,7 +1437,7 @@
      "quality"
     ],
     "summary": "검사 판정 확정",
-    "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 합격이면 정상, 불합격이면 불량, 보류면 검사 대기다. 독립된 상태 전이 경로를 두지 않는다(결정 10 「상태 이중 보유 없음」 · 공유계약 B-8). ⛔ accepted + rejected + held = inspected 가 아니면 400 이다(A-3). 근거: W-01-01 §5-2 · P-02-13 §5-3",
+    "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 합격이면 정상, 불합격이면 불량, 보류면 검사 대기다. 독립된 상태 전이 경로를 두지 않는다(결정 10 「상태 이중 보유 없음」 · 공유계약 B-8). ⛔ accepted + rejected + held = inspected 가 아니면 400 이다(A-3). 근거: W-01-01 §5-2 · P-02-13 §5-3 ⭐ PQC 샘플 검사에서 불합격 수가 공정별 합격판정개수를 넘으면 서버가 «같은 W/O 의 생산LOT 전체»를 INSPECTION_PENDING(검사 대기)으로 일괄 전이하고 관리자 알람을 낸다 — 화면이 부르는 추가 액션은 없다(도식 C14 · 05 §5 S2 태스크 4 ✓확정 2026-07-15). 기준값은 06 계약 GET /quality/inspection-plan-versions/{inspectionPlanVersionId} 가 갖는다.",
     "parameters": [
      {
       "name": "inspectionResultId",
@@ -2063,6 +2110,26 @@
        "type": "string"
       },
       "description": "LOT 번호 검색"
+     },
+     {
+      "name": "transitionFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time",
+       "example": "2026-08-01T00:00:00+09:00"
+      },
+      "description": "기간 시작 — latestTransitionAt 기준. transitionTo 와 한 쌍이다(함께 보내거나 함께 생략한다). 근거: W-03-01 §5-7 · omf-mes#225"
+     },
+     {
+      "name": "transitionTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time",
+       "example": "2026-08-07T00:00:00+09:00"
+      },
+      "description": "기간 끝. transitionFrom 과 한 쌍이다. 근거: W-03-01 §5-7 · omf-mes#225 ⛔ 끝 경계는 «미만»이다(반열림 · 공유계약 L-3-1) — 「그날까지」는 23:59:59 가 아니라 «익일 00:00:00» 을 보낸다. 23:59:59 로 보내면 그 1초 안의 기록이 빠진다"
      }
     ],
     "responses": {
@@ -2077,7 +2144,7 @@
       }
      }
     },
-    "x-internal-note": "⭐ 질의는 목록(/quality/lot-statuses)과 «같다» — page·size·sort 만 뺀다. 요약은 필터 전체 기준, 목록은 페이지 기준이라(공유계약 L-1) 두 요청이 같은 모집단을 봐야 한다. ⛔ 한쪽에만 있는 필터를 두지 않는다 — 화면이 필터를 걸면 카드와 목록이 서로 다른 것을 세게 된다(omf-mes#175)."
+    "x-internal-note": "⭐ 질의는 목록(/quality/lot-statuses)과 «같다» — page·size·sort 만 뺀다. 요약은 필터 전체 기준, 목록은 페이지 기준이라(공유계약 L-1) 두 요청이 같은 모집단을 봐야 한다. ⛔ 한쪽에만 있는 필터를 두지 않는다 — 화면이 필터를 걸면 카드와 목록이 서로 다른 것을 세게 된다(omf-mes#175). ⚠ 목록에 질의를 더할 때 이 경로도 «같은 판»으로 고친다 — #175 로 맞춘 짝이 #225(transitionFrom·transitionTo 신설) 때 다시 갈렸다."
    }
   },
   "/quality/lot-status-transitions": {
@@ -2211,9 +2278,9 @@
       "schema": {
        "type": "string",
        "format": "date-time",
-       "example": "2026-08-06T23:59:59+09:00"
+       "example": "2026-08-07T00:00:00+09:00"
       },
-      "description": "기간 끝. transitionFrom 과 한 쌍이다. 근거: W-03-02 §3 · omf-mes#225"
+      "description": "기간 끝. transitionFrom 과 한 쌍이다. 근거: W-03-02 §3 · omf-mes#225 ⛔ 끝 경계는 «미만»이다(반열림 · 공유계약 L-3-1) — 「그날까지」는 23:59:59 가 아니라 «익일 00:00:00» 을 보낸다. 23:59:59 로 보내면 그 1초 안의 기록이 빠진다"
      },
      {
       "name": "q",
@@ -2355,7 +2422,7 @@
      "quality"
     ],
     "summary": "처분 판정 저장",
-    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1 · DR-008 확정 3-A",
+    "description": "W-03-10 「판정 저장」. 부적합 하나를 수량으로 갈라 여러 번 부를 수 있다 — 일부 재작업 · 일부 폐기가 성립한다. ⭐ 판정 저장과 Lot Status 전이는 한 트랜잭션이다(공유계약 B-8) — 처분만 남고 LOT 이 안 바뀌면 다음 화면이 잘못된 대상을 집는다. 근거: W-03-10 §5-1·§5-2 · DR-008 확정 3-A ⭐ 도착 상태는 처분에 따라 갈린다 — 재작업 → INSPECTION_PENDING(검사 대기) · 폐기 → SCRAPPED(폐기) · 정상 → NORMAL(정상). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 가 갖는다. ⭐ If-Match 값은 이 경로의 GET 이 아니라 부적합 상세(GET /quality/nonconformances/{nonconformanceId} · 제품출하 계약)의 ETag 를 담는다 — 잠그는 대상이 처분 결정 한 건이 아니라 부적합이기 때문이다. ⛔ 이 경로의 목록 GET 에는 ETag 가 없다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2377,6 +2444,14 @@
     "responses": {
      "201": {
       "description": "저장됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 부적합의 version_no. 판정을 저장하면 이 값이 오르므로 같은 부적합을 이어서 갈라 판정할 때 이 값을 쓴다 — 부적합 상세 GET 을 다시 돌지 않는다.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
       "content": {
        "application/json": {
         "schema": {
@@ -2554,8 +2629,8 @@
      },
      "nonconformanceNo": {
       "type": "string",
-      "description": "⚠ 번호만 내려준다 — 부적합 상세는 04 제품출하 계약(W-04-07) 소관이라 지금은 열 경로가 없다.",
-      "example": "IR-2026-0812-0412",
+      "description": "부적합 번호. ⭐ 상세는 처분 판정 처리 화면(W-03-10)이 소유한다 — W-03-09 「부적합 열기」는 같은 스키마의 nonconformanceId 를 ?nonconformanceId={id} 로 넘겨 그 화면으로 이동한다(조회 경로 GET /quality/nonconformances/{nonconformanceId} 는 04 제품출하 계약 · 부르는 쪽은 W-03-10). 근거: omf-mes#194 §3 · W-03-09 §5-1",
+      "example": "NC-2026-0813-0042",
       "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 1단계 §8-2"
      },
      "lotId": {
@@ -2715,7 +2790,7 @@
      },
      "duplicateRisk": {
       "type": "boolean",
-      "description": "⚠ 공정별로 나눌 때 같은 현상이 공정 수만큼 복제 등록됐을 수 있다는 표식이다. 결정 12 의 공정—불량코드 N:M 이 물리 모델에 착지하지 않아 defect_code.process_id 가 아직 N:1 이다. 화면이 경고를 상시 보인다. 근거: W-03-05 §5-5",
+      "description": "⚠ 공정별로 나눌 때 같은 현상이 공정 수만큼 복제 등록됐을 수 있다는 표식이다. 결정 12의 공정—불량코드 N:M을 되살렸다(DefectCodeProcess, 2026-08-30) — 신규 등록은 더 이상 공정마다 복제할 필요가 없다. 과거 데이터의 복제 흔적은 남을 수 있어 화면은 경고를 상시 보인다. 근거: W-03-05 §5-5",
       "example": true
      }
     },
@@ -2797,10 +2872,19 @@
       "format": "int64",
       "example": 1001
      },
+     "sourceCode": {
+      "x-source-column": "source_code",
+      "type": "string",
+      "x-no-example": true,
+      "description": "원천 축 — FIELD(현장)·PQC·OQC·REPAIR(수리)·CLAIM(클레임) 5종(공유계약 결정 09). REPAIR 는 M-02-02 착수 전까지 실적 0건. 2026-08-30 되살림 — productionResultId/inspectionResultId 2단 조인 대신 이 축으로 직접 필터한다"
+     },
      "workOrderId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
-      "description": "⛔ NOT NULL 이다. 그래서 W/O 없는 클레임 불량(고객 지급품·외주 가공품)이 들어오지 못한다 — 계약이 우회하지 않는다. 근거: W-03-05 §5-2 · 확정 QA #15",
+      "description": "NULL 허용 — 클레임 원천(sourceCode=CLAIM)은 W/O가 없다. 2026-08-30 되살림: NOT NULL 로 클레임을 막던 것이 원칙 위반이었다(data-model-boundary.md). 저장 제약 완화는 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-03-05 §5-2 · 확정 QA #15",
       "example": 1001
      },
      "lotId": {
@@ -2897,8 +2981,8 @@
      "detectionProcessId",
      "detectedAt"
     ],
-    "description": "불량 실적. ⛔ 등록 경로를 두지 않는다 — 03 화면 7장에 불량코드 입력이 0건이다. 만드는 화면은 M-02-02(#83 로 막힘) · P-04-03(04 계약 없음)이다.",
-    "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §6 · ⚠ quality.defect_record 에 updated_at·version_no 가 없다(created_at 만 있는 기록 전용) — 재판정(원 불량 레코드 갱신, 결정 09 규칙 ⓒ)에 B-1 낙관적 잠금을 걸 수 없고 언제 누가 고쳤는지 audit_event 규약도 없다(§I-5). 근거: 공유계약 §I-21 · M-02-02 §8-2 · omf-mes#83"
+    "description": "불량 실적. ⛔ 등록 경로를 두지 않는다 — 03 화면 7장에 불량코드 입력이 0건이다. 이 계약에 만드는 경로가 없고, M-02-02(수리 왕복)는 이 레코드를 읽어 쓰는 쪽이다 — POST /production/repair-executions 가 defectRecordId 를 필수로 받는다. P-04-03(재작업 실적 등록)은 계약 미착수다.",
+    "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §6 · ⚠ quality.defect_record 에 updated_at·version_no 가 없다(created_at 만 있는 기록 전용) — 재판정(원 불량 레코드 갱신, 결정 09 규칙 ⓒ)에 B-1 낙관적 잠금을 걸 수 없고 언제 누가 고쳤는지 audit_event 규약도 없다(§I-5). 근거: 공유계약 §I-21 · M-02-02 §8-2 · omf-mes#83 omf-mes#83 은 2026-08-25 CLOSED — 「#83 로 막힘」 표기는 낡았다. 03 요구서 §4-3(2026-08-26)이 M-02-02 를 소비자로 정정했다."
    },
    "DispositionDecision": {
     "type": "object",
@@ -2969,6 +3053,43 @@
       "type": "integer",
       "format": "int64",
       "example": 1001
+     },
+     "itemCode": {
+      "type": "string",
+      "maxLength": 50,
+      "readOnly": true,
+      "description": "화면이 보이는 품목 코드. 식별자를 사람이 읽는 값으로 바꾸려 마스터를 다시 부르지 않게 한다",
+      "example": "값"
+     },
+     "itemName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "description": "화면이 보이는 품목명",
+      "example": "값"
+     },
+     "decidedByName": {
+      "type": "string",
+      "maxLength": 200,
+      "readOnly": true,
+      "description": "판정자 이름. 목록·상세가 사번이 아니라 이름을 보인다",
+      "example": "값"
+     },
+     "followUpStatusCode": {
+      "type": "string",
+      "enum": [
+       "NOT_STARTED",
+       "PARTIAL",
+       "COMPLETED"
+      ],
+      "description": "후속 처리 진행. NOT_STARTED=아직 안 함 · PARTIAL=일부 수량 처리 · COMPLETED=처리 수량 = decisionQty. ⭐ 서버가 후속 전표를 롤업해 낸다(공유계약 L-2). ⛔ 화면이 후속 전표를 세어 판정하지 않는다",
+      "example": "NOT_STARTED"
+     },
+     "followUpQty": {
+      "type": "number",
+      "format": "double",
+      "description": "이미 후속 처리된 수량. 남은 수량 = decisionQty − followUpQty",
+      "example": 0
      }
     },
     "required": [
@@ -2979,9 +3100,12 @@
      "uomId",
      "reason",
      "decidedBy",
-     "decidedAt"
+     "decidedAt",
+     "followUpStatusCode",
+     "followUpQty"
     ],
-    "description": "처분 결정. 부적합 하나에 여러 건이 달릴 수 있다 — 같은 부적합을 수량으로 갈라 일부는 재작업, 일부는 폐기로 정할 수 있다(decisionQty)"
+    "description": "처분 결정. 부적합 하나에 여러 건이 달릴 수 있다 — 같은 부적합을 수량으로 갈라 일부는 재작업, 일부는 폐기로 정할 수 있다(decisionQty)",
+    "x-internal-note": "followUpStatusCode·followUpQty 는 결정 «건별» 롤업이 안 서는 자리다 — 후속 전표(폐기=logistics.goods_issue · 정상=logistics.stock_transfer · 재작업=production.production_result)와는 LOT 축까지만 이어지고, 한 LOT 에 처분 결정이 여럿 달릴 수 있어 건별 귀속이 갈리지 않는다. 서버가 그 갈래를 어떻게 정하는지는 아직 계약에 없다."
    },
    "DispositionRemainingSummary": {
     "type": "object",
@@ -3074,6 +3198,7 @@
      },
      "code": {
       "type": "string",
+      "description": "기계가 읽는 오류 코드. STATE_LOCKED 계열은 확정·종결된 것이라 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다(공유계약 G-1).",
       "example": "QTY_SUM_MISMATCH"
      },
      "uniqueScope": {
@@ -3140,12 +3265,12 @@
      "booleanValue": {
       "type": "boolean",
       "example": true,
-      "description": "dataTypeCode=BOOLEAN 인 항목만 채운다. ⚠ 판정(judgmentCode)과 다른 축이다 — 이 칸은 «측정 결과»이고 판정은 그것을 보고 사람이 정한다(규격 밖이어도 자동 불합격이 아니다 · P-02-13 §6). 근거: omf-mes#179"
+      "description": "dataTypeCode=BOOLEAN 인 항목만 채운다. ⚠ 판정(judgmentCode)과 다른 축이다 — 이 칸은 «측정 결과»이고 판정은 그것을 보고 사람이 정한다. ⭐ 불리언 항목에는 상·하한이 없어 자동 판정이 설 수 없다 — 판정은 언제나 사람이 고른다(P-02-13 §5-11). 근거: omf-mes#179 · omf-mes#257"
      },
      "judgmentCode": {
       "type": "string",
       "example": "ACCEPTED",
-      "description": "항목별 측정치의 판정. ⛔ enum 으로 못박지 않는다(공유계약 G-2·G-6). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_MEASUREMENT_JUDGMENT 로 받는다. 값은 ACCEPTED(합격)·REJECTED(불합격) «두 개»다. ⚠ 종합 판정과 그룹이 «다르다» — 항목 판정에는 「보류」가 없다. 보류는 검사 결과 수준의 개념이고(held_qty) 항목은 규격에 드는지 아닌지 둘뿐이다(P-02-13 §5 「항목 판정(합격/불합격)」). ⛔ 측정값이 규격 밖이어도 «자동 불합격이 아니다» — 표시하고 사람이 판정한다(P-02-13 §6). 근거: omf-mes#179"
+      "description": "항목별 측정치의 판정. ⛔ enum 으로 못박지 않는다(공유계약 G-2·G-6). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_MEASUREMENT_JUDGMENT 로 받는다. 값은 ACCEPTED(합격)·REJECTED(불합격) «두 개»다. ⚠ 종합 판정과 그룹이 «다르다» — 항목 판정에는 「보류」가 없다. 보류는 검사 결과 수준의 개념이고(held_qty) 항목은 규격에 드는지 아닌지 둘뿐이다(P-02-13 §5 「항목 판정(합격/불합격)」). ⛔ 측정값이 규격 밖이어도 판정이 «확정»되지는 않는다 — 항목 규격의 automaticJudgment 가 참이고 데이터 유형이 NUMERIC 이며 상·하한 중 하나 이상이 있으면 화면이 이 칸을 «채운 채로» 시작하되 사람이 바꿀 수 있고, 그 밖의 경우에는 비운 채로 사람이 고른다(P-02-13 §5-11). ⛔ 종합 판정(overallJudgmentCode)은 어떤 경우에도 자동으로 내리지 않는다(P-02-13 §6). 근거: omf-mes#179 · omf-mes#257"
      },
      "measuredAt": {
       "type": "string",
@@ -3199,12 +3324,12 @@
      "booleanValue": {
       "type": "boolean",
       "example": true,
-      "description": "dataTypeCode=BOOLEAN 인 항목만 채운다. ⚠ 판정(judgmentCode)과 다른 축이다 — 이 칸은 «측정 결과»이고 판정은 그것을 보고 사람이 정한다(규격 밖이어도 자동 불합격이 아니다 · P-02-13 §6). 근거: omf-mes#179"
+      "description": "dataTypeCode=BOOLEAN 인 항목만 채운다. ⚠ 판정(judgmentCode)과 다른 축이다 — 이 칸은 «측정 결과»이고 판정은 그것을 보고 사람이 정한다. ⭐ 불리언 항목에는 상·하한이 없어 자동 판정이 설 수 없다 — 판정은 언제나 사람이 고른다(P-02-13 §5-11). 근거: omf-mes#179 · omf-mes#257"
      },
      "judgmentCode": {
       "type": "string",
       "example": "ACCEPTED",
-      "description": "항목별 측정치의 판정. ⛔ enum 으로 못박지 않는다(공유계약 G-2·G-6). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_MEASUREMENT_JUDGMENT 로 받는다. 값은 ACCEPTED(합격)·REJECTED(불합격) «두 개»다. ⚠ 종합 판정과 그룹이 «다르다» — 항목 판정에는 「보류」가 없다. 보류는 검사 결과 수준의 개념이고(held_qty) 항목은 규격에 드는지 아닌지 둘뿐이다(P-02-13 §5 「항목 판정(합격/불합격)」). ⛔ 측정값이 규격 밖이어도 «자동 불합격이 아니다» — 표시하고 사람이 판정한다(P-02-13 §6). 근거: omf-mes#179"
+      "description": "항목별 측정치의 판정. ⛔ enum 으로 못박지 않는다(공유계약 G-2·G-6). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_MEASUREMENT_JUDGMENT 로 받는다. 값은 ACCEPTED(합격)·REJECTED(불합격) «두 개»다. ⚠ 종합 판정과 그룹이 «다르다» — 항목 판정에는 「보류」가 없다. 보류는 검사 결과 수준의 개념이고(held_qty) 항목은 규격에 드는지 아닌지 둘뿐이다(P-02-13 §5 「항목 판정(합격/불합격)」). ⛔ 측정값이 규격 밖이어도 판정이 «확정»되지는 않는다 — 항목 규격의 automaticJudgment 가 참이고 데이터 유형이 NUMERIC 이며 상·하한 중 하나 이상이 있으면 화면이 이 칸을 «채운 채로» 시작하되 사람이 바꿀 수 있고, 그 밖의 경우에는 비운 채로 사람이 고른다(P-02-13 §5-11). ⛔ 종합 판정(overallJudgmentCode)은 어떤 경우에도 자동으로 내리지 않는다(P-02-13 §6). 근거: omf-mes#179 · omf-mes#257"
      },
      "measuredAt": {
       "type": "string",
@@ -3244,14 +3369,18 @@
       "example": "IQC"
      },
      "inspectionPlanVersionId": {
-      "type": "integer",
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
+      "description": "이 의뢰가 따르는 검사 기준 버전. ⚠ 비어 있을 수 있다 — 검사 기준이 등록되지 않은 상태에서도 검사를 진행한다는 고객 확정이 있어(2026-07-15), 기준 없이 만들어진 의뢰가 이 칸을 비운 채 온다. 비면 화면은 항목별 규격 표 대신 판정 선택과 자유 입력만 그린다(P-02-13 §5-2). ⛔ 비어 있음을 「값을 못 읽었다」와 같은 모양으로 그리지 않는다 — 공유계약 G-9. ⚠ IQC·OQC 의뢰는 서버가 언제나 채워 내린다(W-01-01 §4 · W-04-03 §4) — 그 두 화면은 비는 경우를 방어만 하면 된다. 근거: P-02-13 §5-2 · omf-mes#251",
       "example": 1001
      },
      "targetTypeCode": {
       "type": "string",
-      "description": "다형 참조의 유형. 근거: 공유계약 A-10",
-      "example": "IQC"
+      "description": "다형 참조의 유형. ⬜ 유형 코드 ↔ 대상 테이블 대응표는 미정이다 — 공유계약 A-10 · omf-mes#68 과 함께 정한다. 값 목록이 정해지기 전까지 이 example 을 값으로 읽지 않는다. 근거: 공유계약 A-10",
+      "example": "값"
      },
      "targetId": {
       "type": "integer",
@@ -3276,6 +3405,7 @@
      "productionResultId": {
       "type": "integer",
       "format": "int64",
+      "description": "이 검사가 가리키는 작업실적. ⚠ PQC 의뢰에는 대개 비어 있다 — 공정검사는 실적 등록 «전»에 수행하므로(R54 ✓확정 2026-07-14 Q4 · P-02-04 ③→④) 의뢰가 만들어지는 시점에 실적이 아직 없다. ⛔ 이 칸의 유무로 검사와 실적의 선후를 읽지 않는다. 선후는 coverageFromAt·coverageToAt 가 말한다. 근거: P-02-13 §4-A·§5-5",
       "example": 1001
      },
      "targetQty": {
@@ -3321,7 +3451,6 @@
      "inspectionRequestId",
      "inspectionRequestNo",
      "inspectionTypeCode",
-     "inspectionPlanVersionId",
      "targetTypeCode",
      "targetId",
      "itemId",
@@ -3330,7 +3459,8 @@
      "statusCode",
      "requestedAt"
     ],
-    "description": "검사 의뢰. ⛔ 등록 경로를 두지 않는다 — 화면 7장에 「의뢰 등록」 버튼이 0건이고 P-02-13 §4-A 가 「대개 자동 생성」이라 한다. 서버가 입고·생산 실적에서 만든다."
+    "description": "검사 의뢰. ⛔ 등록 경로를 두지 않는다 — 화면 7장에 「의뢰 등록」 버튼이 0건이고 P-02-13 §4-A 가 「대개 자동 생성」이라 한다. 서버가 입고·생산 실적에서 만든다.",
+    "x-internal-note": "⚠ 물리 모델의 inspection_request.inspection_plan_version_id 는 아직 NOT NULL 이다. 계약을 화면대로 먼저 썼다 — schema/00-authoring-rules 규칙 2. 데이터 모델 담당 작업 통지 omf-mes#280. 소비자 3화면 P-02-13·W-01-01·W-04-03 · 근거 omf-mes#251"
    },
    "InspectionResult": {
     "type": "object",
@@ -3428,7 +3558,7 @@
      "statusCode": {
       "type": "string",
       "description": "작성중 · 확정. 임시 저장은 작성중으로 남는다",
-      "example": "IQC"
+      "example": "작성중"
      },
      "previousResultId": {
       "type": "integer",
@@ -3572,10 +3702,12 @@
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/InspectionMeasurementInput"
-      }
+      },
+      "description": "항목별 측정치. ⭐ 필수가 아니다 — 검사 기준이 없는 의뢰(inspectionPlanVersionId 가 빈 의뢰)에는 항목 자체가 없으므로 이 배열을 생략하거나 빈 배열로 보낸다. 그때 검사는 수량 세 칸과 종합 판정, 그리고 remarks 의 자유 입력만으로 성립한다(P-02-13 §5-2). 근거: omf-mes#251"
      },
      "remarks": {
       "type": "string",
+      "description": "검사 비고. ⭐ 검사 기준이 없는 의뢰에서는 이 칸이 「자유 입력」의 자리다 — 항목별 규격이 없으므로 무엇을 어떻게 보았는지가 여기에만 남는다(P-02-13 §5-2). 기준이 있는 정상 갈래에서는 선택 입력이다. 근거: omf-mes#251",
       "example": "값"
      }
     },
@@ -3756,9 +3888,9 @@
       "x-source-column": "reason_code",
       "type": "string",
       "maxLength": 50,
-      "description": "보류 사유. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2",
-      "example": "QUALITY_HOLD",
-      "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
+      "description": "보류 사유. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_REASON 로 받는다. 고객이 운영 중 W-06-06 공통코드 마스터에서 정하는 실행 시점 자료라 계약에 enum 을 두지 않는다. 근거: 공유계약 G-31·G-32 · 시드 omf-mes#198",
+      "example": "INCOMING_INSPECTION_WAIT",
+      "x-internal-note": "omf-mes#198 로 초기 시드가 나간 마스터안전형 그룹(공유계약 G-31). enum 을 두지 않는 것이 정상이다 — 「미확정」이 아니다."
      },
      "releaseCondition": {
       "x-source-column": "release_condition",
@@ -3774,7 +3906,7 @@
       "type": "string",
       "maxLength": 50,
       "description": "전표의 진행 상태. 확정된 값 목록이 아직 없으므로 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다. 근거: 공유계약 G-2",
-      "example": "HELD",
+      "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "heldBy": {
@@ -3811,6 +3943,16 @@
       "description": "보류 시각보다 앞설 수 없다",
       "example": "2026-08-06T09:12:00+09:00"
      },
+     "releaseReasonCode": {
+      "x-source-column": "release_reason_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "해제 사유(코드형) — 2026-08-30 되살림. 등록 사유(reasonCode)와 대칭 축이다 — C7(재판정 합격)·C8(재판정 불합격)이 왜 갈렸는지를 이 값으로 가른다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON 로 받는다(공유계약 G-32). 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-03-02 §5-4 · omf-mes#87",
+      "example": "RETEST_PASS"
+     },
      "remarks": {
       "x-source-column": "remarks",
       "type": [
@@ -3821,11 +3963,11 @@
      },
      "lotStatusCode": {
       "type": "string",
-      "description": "이 보류가 걸었을 때 LOT 이 간 상태",
+      "description": "이 보류가 걸었을 때 LOT 이 간 상태 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32 · omf-mes#176",
       "example": "NORMAL"
      }
     },
-    "x-internal-note": "해제 사유를 담을 자리가 없다 — 같은 테이블 안에서 등록 사유는 있고 해제 사유는 없다(#87 요청분). / ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 01 요구서 §7 · 03 계약 2단계 §4"
+    "x-internal-note": "해제 사유(releaseReasonCode)를 등록 사유와 대칭으로 되살렸다(2026-08-30) — 등록·해제 비대칭이 해소됐다(#87 요청분). / ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 01 요구서 §7 · 03 계약 2단계 §4"
    },
    "LotHoldCreate": {
     "type": "object",
@@ -3859,7 +4001,7 @@
      },
      "targetLotStatusCode": {
       "type": "string",
-      "description": "⭐ 도착 상태. 의심자재 등록(C10)은 INSPECTION_PENDING(검사 대기), 클레임·리콜 재Hold(C9)는 DEFECTIVE(불량)다. 두 화면이 같은 행을 만들고 도착 상태만 다르다. 「보류」는 lot.status_code 축에 없는 값이다 — Hold(보류 «문서»의 진행 상태)는 lot_hold.status_code 가 별도로 갖고 서버가 자동으로 채운다(공유계약 §I-32 · omf-mes#227).",
+      "description": "⭐ 도착 상태. 의심자재 등록(C10)은 INSPECTION_PENDING(검사 대기), 클레임·리콜 재Hold(C9)는 DEFECTIVE(불량)다. 두 화면이 같은 행을 만들고 도착 상태만 다르다. 「보류」는 lot.status_code 축에 없는 값이다 — Hold(보류 «문서»의 진행 상태)는 lot_hold.status_code 가 별도로 갖고 서버가 자동으로 채운다(공유계약 §I-32 · omf-mes#227). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32 · omf-mes#176",
       "example": "INSPECTION_PENDING",
       "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §5"
      },
@@ -3979,7 +4121,7 @@
     "properties": {
      "targetLotStatusCode": {
       "type": "string",
-      "description": "재판정 합격이면 정상, 재판정 불합격이면 불량이다(C7 · C8). 근거: W-03-02 §5-1",
+      "description": "재판정 합격이면 정상, 재판정 불합격이면 불량이다(C7 · C8). 근거: W-03-02 §5-1 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32 · omf-mes#176",
       "example": "NORMAL"
      },
      "releaseQty": {
@@ -3988,15 +4130,23 @@
       "description": "부분 해제. 원 행을 해제하고 남은 수량으로 새 보류 행을 만든다 — hold_qty 를 줄이지 않는다(공유계약 B-3). 근거: W-03-02 §5-7",
       "example": 30.0
      },
-     "remarks": {
+     "releaseReasonCode": {
       "type": "string",
-      "description": "⛔ 해제 사유를 담을 코드 컬럼이 lot_hold 에 없다 — 등록에는 reason_code 가 있는데 해제에는 없다. 자유 텍스트로 물러나므로 「재판정으로 풀린 건」을 셀 수 없다. 「기록하라는데 자리가 없다」 7번째(omf-mes#87). 근거: W-03-02 §5-4",
+      "description": "해제 사유(코드형) — 2026-08-30 되살림. 등록 사유(reasonCode)와 대칭 축이다 — C7(재판정 합격)·C8(재판정 불합격)이 왜 갈렸는지 이 값으로 센다(「기록하라는데 자리가 없다」 7번째, omf-mes#87 해소). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 저장 컬럼은 데이터 모델 담당에게 통지 — 기다리지 않는다. 근거: W-03-02 §5-4",
+      "example": "RETEST_PASS"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "부가 비고 — 사유는 releaseReasonCode 가 정본이다",
       "example": "값"
      }
     },
     "required": [
      "targetLotStatusCode",
-     "remarks"
+     "releaseReasonCode"
     ]
    },
    "LotQualityStatus": {
@@ -4088,9 +4238,10 @@
      "lotNo",
      "itemId",
      "lotStatusCode",
-     "fullyHeld"
+     "fullyHeld",
+     "versionNo"
     ],
-    "description": "품질 축의 LOT 목록. ⚠ 01 계약의 GET /trace/lots 는 물류 축이라 창고 필터·보류 요약·최근 전이를 갖지 않는다 — 세 화면(W-03-01·02·03)이 공통으로 요구해 03 이 낸다.",
+    "description": "품질 축의 LOT 목록. ⚠ 01 계약의 GET /trace/lots 는 물류 축이라 창고 필터·보류 요약·최근 전이를 갖지 않는다 — 세 화면(W-03-01·02·03)이 공통으로 요구해 03 이 낸다. ⭐ versionNo 는 필수다 — POST /quality/lot-holds 의 lots[].versionNo 가 required 인데, 그 본문을 한 번의 조회로 조립할 수 있는 자리가 이 목록이라 선택이면 화면이 토큰을 채우지 못하는 경우가 계약상 허용된다(공유계약 A-4-1).",
     "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §4-1"
    },
    "LotStatusCount": {
@@ -4147,7 +4298,8 @@
     "properties": {
      "targetLotStatusCode": {
       "type": "string",
-      "example": "값"
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(NORMAL·DEFECTIVE·INSPECTION_PENDING·SCRAPPED). 근거: 공유계약 G-32 · omf-mes#176",
+      "example": "NORMAL"
      },
      "allowed": {
       "type": "boolean",
@@ -4316,7 +4468,7 @@
      },
      "currentLotStatusCode": {
       "type": "string",
-      "description": "VERSION_CONFLICT 일 때 서버의 현재 lot.status_code — 충돌 문구에 최신 상태를 담는다(「다른 사용자가 먼저 전이했습니다. 현재 상태는 Hold입니다」 W-03-02 §6). ⛔ message 자유 텍스트에서 파싱하지 않는다 — 이 구조화 필드가 정본이다. 근거: W-03-02 §6 · omf-mes#225",
+      "description": "VERSION_CONFLICT 일 때 서버의 현재 lot.status_code — 충돌 문구에 최신 상태를 담는다(「다른 사용자가 먼저 전이했습니다. 현재 상태는 불량입니다」 W-03-02 §6). ⛔ message 자유 텍스트에서 파싱하지 않는다 — 이 구조화 필드가 정본이다. 근거: W-03-02 §6 · omf-mes#225",
       "example": "DEFECTIVE"
      },
      "conflictCause": {
@@ -4334,7 +4486,7 @@
      "code",
      "message"
     ],
-    "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166)."
+    "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166). ⚠ 이 계약에 400 STATE_LOCKED 가 0건인 것은 결손이 아니다 — 03 은 업무 사유 거부를 409 QualityConflictResponse.code 로 말한다(PUT /quality/inspection-results/{inspectionResultId} = 「작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE」 · 공유계약 B-10). 400 STATE_LOCKED 규약(공유계약 G-1)과 어느 쪽이 정본인지는 횡단 단일안 소관이다."
    },
    "MeasurementItemSummary": {
     "type": "object",

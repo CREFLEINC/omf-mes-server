@@ -3,7 +3,7 @@
  "info": {
   "title": "omf-mes 04 제품출하 도메인 API (초안)",
   "version": "0.1.0",
-  "description": "04 제품출하 도메인 API 계약. 출하 3층(고객사 지시서 수신본 - MES 출하작업지시 - 실물 출하)과 출하 LOT 배분, 부적합, 처분 결정 조회를 덮는다. 출하지시서는 연계 수신이 기본이라 등록 경로를 두지 않고, 상위 지시가 없는 단독 편성이 상시 구조다. 출하는 2단 확정이다 — 출하 처리가 미확정 출하까지 만들고 확정이 재고 차감과 연계 송신을 건다. 확정 취소 경로는 없다. 이 계약은 남의 계약을 많이 쓴다 — 검사는 품질, 입고·출고·재고·취급 단위는 자재창고, 실적은 생산실행, 승인과 출력물은 공통, 품목과 연계는 기준정보가 소유한다. ⛔ 오프라인 대상 오퍼레이션이 없다 — 이 계약의 테이블에 쓰는 현장 화면 하나가 판정값을 캐시할 수 없어 오프라인 진입을 차단하기 때문이다.",
+  "description": "04 제품출하 도메인 API 계약. 출하 3층(고객사 지시서 수신본 - MES 출하작업지시 - 실물 출하)과 출하 LOT 배분, 부적합, 처분 결정 조회를 덮는다. 출하지시서는 연계 수신이 기본이라 등록 경로를 두지 않고, 상위 지시가 없는 단독 편성이 상시 구조다. 출하는 2단 확정이다 — 출하 처리가 «재고 차감»과 미확정 출하 생성을 한 트랜잭션으로 하고, 확정이 연계 송신 적재를 건다. 확정 취소 경로는 없다. 이 계약은 남의 계약을 많이 쓴다 — 검사는 품질, 입고·출고·재고·취급 단위는 자재창고, 실적은 생산실행, 승인과 출력물은 공통, 품목과 연계는 기준정보가 소유한다. ⛔ 오프라인 대상 오퍼레이션이 없다 — 이 계약의 테이블에 쓰는 현장 화면 하나가 판정값을 캐시할 수 없어 오프라인 진입을 차단하기 때문이다.",
   "x-internal-note": "설계·도출 근거는 uiux/2026-08-13-API스펙-04제품출하/ 의 00~03 단계 문서다. 대상 화면 16 — 도메인 배지 18 에서 출력물 계약이 덮는 P-04-02·P-04-04 를 뺀 것이다. 리소스 5 · 라인 4 · 읽기만 1 · 액션 근거 147건(화면 액션 표 · 본문 도출 0). 미해소를 계약이 드러낸다 — ⛔⛔ 처분 결정을 만드는 화면이 인벤토리 116 전체에 0건이라 세 화면(W-04-10·W-04-11·P-04-03)의 진입 목록이 빈다. ⛔ 01 계약에 POST /inventory/reservations 가 없어 M-04-01 제품 피킹이 걸린다. omf-mes#117(재구성 이벤트 기록 테이블 부재)로 M-04-03 되돌리기 경로를 두지 않았다. omf-mes#118 로 선별 실행 경로를 두지 않았다."
  },
  "servers": [
@@ -239,6 +239,22 @@
       "description": "⭐ 출하검사 합격분만. 납품라벨 대상 목록이 「합격」만 활성하는 데 쓴다(P-04-02 §5)"
      },
      {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "스캔한 납품라벨 값으로 배분을 찾는다. ⛔ 범위는 납품라벨 번호 하나다 — LOT 번호는 lotId 를, 포장은 handlingUnitId 를 쓴다. ⭐ P-04-01 매칭 스캔의 진입이다(P-04-01 §5-1 · 공유계약 D-2). 일치하는 배분이 없으면 «빈 목록»이다 — 화면은 items 가 비었는지로 「없는 납품라벨」을 판정한다. ⛔ 404 를 내지 않는다 — 같은 오퍼레이션의 lotQ 가 이미 200 + match 로 판정을 내리므로, 파라미터에 따라 상태 코드가 갈리면 예외가 는다"
+     },
+     {
+      "name": "lotQ",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "스캔한 생산 LOT 값. shipmentId(납품라벨 스캔으로 정해진 출하)와 함께 주면 서버가 「이 출하의 배분에 이 LOT 이 있는가」를 판정한다 — 화면이 목록을 받아 비교하지 않는다(P-04-01 §5-1 · 공유계약 C-6)"
+     },
+     {
       "name": "page",
       "in": "query",
       "schema": {
@@ -273,6 +289,27 @@
           },
           "page": {
            "$ref": "#/components/schemas/PageMeta"
+          },
+          "match": {
+           "type": "object",
+           "description": "lotQ 를 준 요청에만 실린다. 서버의 매칭 판정 — 화면이 목록을 받아 비교하지 않는다(P-04-01 §5-1 · 공유계약 C-6)",
+           "properties": {
+            "matched": {
+             "type": "boolean",
+             "example": true
+            },
+            "reasonCode": {
+             "type": [
+              "string",
+              "null"
+             ],
+             "description": "matched 가 거짓일 때의 사유. LABEL_ITEM_MISMATCH=이 납품라벨은 다른 품목용이다 · LOT_NOT_ALLOCATED=이 출하에 배분되지 않은 LOT 이다",
+             "example": "LOT_NOT_ALLOCATED"
+            }
+           },
+           "required": [
+            "matched"
+           ]
           }
          },
          "required": [
@@ -414,6 +451,15 @@
       }
      },
      {
+      "name": "timeSlotCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "MORNING"
+      },
+      "description": "출하 희망 시간대 필터 — 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). W-04-02 시간대 필터 축. 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41)"
+     },
+     {
       "name": "shippingInspectionRequired",
       "in": "query",
       "schema": {
@@ -440,6 +486,24 @@
        "format": "date",
        "example": "2026-08-13"
       }
+     },
+     {
+      "name": "pickingCompleteOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "라인 전체가 pickedQty = allocatedQty 인 작업지시만. ⭐ W-04-04 출하 처리의 진입 필터다 — 출하는 이 화면이 만들므로 /logistics/shipments 로는 진입할 수 없다. 근거: W-04-04 §3·§5-4"
+     },
+     {
+      "name": "shippableRemainderOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "출하 잔여가 남은 작업지시만 — 라인 중 shippedQty < allocatedQty 인 것이 하나라도 있는 건. ⭐ 부분 출하 후 잔여도 다시 잡힌다(W-04-04 §5-7·§8-6)"
      },
      {
       "name": "sort",
@@ -568,7 +632,7 @@
      "shipment"
     ],
     "summary": "출하작업지시 요약",
-    "description": "W-04-02 요약 구획(작업지시 건수·요청/배정/출하 합계·미배정·검사 대기·피킹 미완) — 필터 전체 기준. 목록(GET /logistics/shipment-requests)과 같은 필터를 쓰되 page/size/sort 는 없다. ⛔ 화면이 페이지를 모아 더하지 않는다 — 필터 전체와 다른 수가 나온다(공유계약 L-2). 근거: W-04-02 §4-B · omf-mes#232",
+    "description": "W-04-02 요약 구획(작업지시 건수·요청/배정/출하 합계·미배정·검사 대기·피킹 미완) — 필터 전체 기준. 목록(GET /logistics/shipment-requests)과 같은 필터를 쓰되 page/size/sort 는 없다. ⛔ 화면이 페이지를 모아 더하지 않는다 — 필터 전체와 다른 수가 나온다(공유계약 L-2). 근거: W-04-02 §4-B · omf-mes#232 ⭐ 질의 축은 짝 목록(GET /logistics/shipment-requests)과 같다 — page·size·sort 만 뺀다(공유계약 L-1-1 ⑶).",
     "parameters": [
      {
       "name": "customerId",
@@ -597,6 +661,15 @@
       }
      },
      {
+      "name": "timeSlotCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "MORNING"
+      },
+      "description": "출하 희망 시간대 필터 — 목록(GET /logistics/shipment-requests)과 같은 축. 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41)"
+     },
+     {
       "name": "shippingInspectionRequired",
       "in": "query",
       "schema": {
@@ -623,6 +696,24 @@
        "format": "date",
        "example": "2026-08-13"
       }
+     },
+     {
+      "name": "pickingCompleteOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "라인 전체가 pickedQty = allocatedQty 인 작업지시만. ⭐ W-04-04 출하 처리의 진입 필터다 — 출하는 이 화면이 만들므로 /logistics/shipments 로는 진입할 수 없다. 근거: W-04-04 §3·§5-4"
+     },
+     {
+      "name": "shippableRemainderOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "출하 잔여가 남은 작업지시만 — 라인 중 shippedQty < allocatedQty 인 것이 하나라도 있는 건. ⭐ 부분 출하 후 잔여도 다시 잡힌다(W-04-04 §5-7·§8-6)"
      }
     ],
     "responses": {
@@ -833,7 +924,7 @@
        "type": "boolean",
        "example": true
       },
-      "description": "피킹이 끝난 건만 — W-04-04 진입 필터"
+      "description": "피킹이 끝난 건만"
      },
      {
       "name": "unconfirmedOnly",
@@ -862,6 +953,25 @@
        "format": "date",
        "example": "2026-08-13"
       }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "SH-2026-0813-0031"
+      },
+      "description": "출하 번호 검색. ⛔ 범위는 shipment_no 하나다 — 고객은 customerId 를, LOT 은 lotId 를 쓴다(omf-mes#170 과 같은 처리). 근거: W-04-06 §3"
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "이 제품 LOT 이 배분된 출하만. ⭐ 반품에서 라벨만 남았을 때 원 출하를 찾는 경로다(W-04-06 §5-3) — 조인은 서버 몫이다"
      },
      {
       "name": "sort",
@@ -982,7 +1092,7 @@
       }
      }
     },
-    "x-internal-note": "재고 차감(goods_issue)은 01 자재창고 계약이, ERP 송신 적재는 06 연계가 소유한다 — 2026-08-07 출하 2단 확정으로 둘 다 W-04-12 확정 시점으로 갔다. shipment_line.goods_issue_line_id 가 nullable 인 것이 그 구간을 표현한다."
+    "x-internal-note": "재고 차감(goods_issue)은 01 자재창고 계약이, ERP 송신 적재는 06 연계가 소유한다 — 2026-08-07 출하 2단 확정으로 «ERP 송신 적재만» W-04-12 확정 시점으로 갔고 재고 차감은 이 시점에 남았다(W-04-04 §5-1 도식). shipment_line.goods_issue_line_id 가 nullable 인 것은 1차 판정(출고 전표를 만든다)의 잔재다."
    }
   },
   "/logistics/shipments/{shipmentId}": {
@@ -1146,7 +1256,7 @@
      "shipment"
     ],
     "summary": "출하 확정",
-    "description": "미확정 → 확정. ⭐ 이 시점에 재고 차감과 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정). 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8",
+    "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1316,6 +1426,15 @@
        "example": "값"
       },
       "description": "의뢰 전 · 판정 대기 · 판정 완료"
+     },
+     {
+      "name": "sourceCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "PRODUCT"
+      },
+      "description": "PRODUCT(제품)·RETURN(반품). 2026-08-30 되살림 — W-03-10 §5-4"
      },
      {
       "name": "warehouseId",
@@ -1502,7 +1621,7 @@
      "quality"
     ],
     "summary": "부적합 한 건",
-    "description": "영향 LOT 을 함께 내린다. ⭐ 03 품질의 W-03-09 「부적합 열기」가 이 경로로 온다 — 특채는 부적합을 NOT NULL 로 참조하는데 03 계약에는 열 경로가 없었다",
+    "description": "영향 LOT 을 함께 내린다. ⭐ 부르는 화면은 W-03-10(처분 판정 처리)이다 — W-03-09 「부적합 열기」는 API 호출이 아니라 ?nonconformanceId={id} 로 W-03-10 으로 이동하는 화면 전환이다. ⭐ 이 응답의 ETag 는 품질 계약의 처분 판정 저장(POST /quality/nonconformances/{nonconformanceId}/disposition-decisions)이 If-Match 로 받는 토큰이다",
     "responses": {
      "200": {
       "description": "상세",
@@ -1533,7 +1652,8 @@
        }
       }
      }
-    }
+    },
+    "x-internal-note": "2026-08-13 에 이 경로를 세울 때의 근거는 「03 계약에 부적합을 열 경로가 없었다」였고 호출자를 W-03-09 로 적었다. 실제 호출자는 W-03-10 이다 — omf-mes#194 §3(2026-08-2x 회신)이 「부적합 상세를 소유한 화면은 W-03-10」·「W-03-09 는 ?nonconformanceId 로 이동한다」로 확정했다."
    }
   },
   "/quality/nonconformances/{nonconformanceId}:request-disposition": {
@@ -1720,6 +1840,7 @@
      },
      "code": {
       "type": "string",
+      "description": "기계가 읽는 오류 코드. STATE_LOCKED 계열은 확정·종결된 것이라 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다(공유계약 G-1).",
       "example": "QTY_EXCEEDS_ALLOCATION"
      },
      "uniqueScope": {
@@ -1785,6 +1906,12 @@
       "format": "int64",
       "description": "검사에서 나온 부적합이면 가리킨다. 검사 결과는 03 품질 계약이 소유한다",
       "example": 1001
+     },
+     "sourceCode": {
+      "x-source-column": "source_code",
+      "type": "string",
+      "x-no-example": true,
+      "description": "원천 축 — PRODUCT(04 제품 부적합 등록)·RETURN(04 반품 입고) 2종. 02 수리·01 자재는 이 경로로 들어오지 않아 대상이 아니다(W-03-10 §5-4). 2026-08-30 되살림 — W-04-07·W-04-06 이 같은 경로·스키마를 쓰던 것을 이 축으로 가른다"
      },
      "severityCode": {
       "type": "string",
@@ -1886,7 +2013,7 @@
      "dispositionProgressCode",
      "lots"
     ],
-    "description": "부적합. W-04-07 「부적합 등록」과 W-04-06 반품 등록이 만든다. 판정은 W-03-10 이 한다 — affectedQtyTotal·dispositionProgressCode 는 그 화면의 목록이 쓰는 서버 집계다"
+    "description": "부적합. W-04-07 「부적합 등록」이 만든다. 판정은 W-03-10 이 한다 — affectedQtyTotal·dispositionProgressCode 는 그 화면의 목록이 쓰는 서버 집계다"
    },
    "NonconformanceCreate": {
     "type": "object",
@@ -2225,6 +2352,20 @@
       "type": "string",
       "example": "값"
      },
+     "expedited": {
+      "type": "boolean",
+      "default": false,
+      "description": "긴급 직행 출하로 만들어진 건인가(W-04-05).",
+      "example": false
+     },
+     "expediteReason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "긴급 사유. expedited 가 참인 건에만 있다(공유계약 A-12).",
+      "example": "값"
+     },
      "lines": {
       "type": "array",
       "items": {
@@ -2241,9 +2382,10 @@
      "shipmentNo",
      "shipmentRequestId",
      "warehouseId",
-     "statusCode"
+     "statusCode",
+     "expedited"
     ],
-    "description": "실물 출하. ⭐ 2026-08-07 「출하 2단 확정」으로 재고 차감·ERP 송신 적재가 W-04-12 로 갔다 — 이 리소스를 만드는 것은 미확정 출하까지다(W-04-04 §5)"
+    "description": "실물 출하. ⭐ 2026-08-07 「출하 2단 확정」으로 ERP 송신 적재가 W-04-12 확정 시점으로 갔다 — 이 리소스를 만드는 것은 미확정 출하까지이고, 실물이 나갔으므로 재고는 그 시점에 차감한다(W-04-04 §5-1)"
    },
    "ShipmentCancel": {
     "type": "object",
@@ -2313,8 +2455,9 @@
      "expedited": {
       "type": "boolean",
       "default": false,
-      "description": "⭐ 긴급 직행 출하인가(W-04-05) — 피킹·검사를 건너뛴다",
-      "example": true
+      "description": "⭐ 긴급 직행 출하인가(W-04-05) — 창고 경유·피킹·Packing 을 건너뛴다. ⛔ 품질 게이트는 건너뛰지 않는다 — 배분 LOT 이 Release 가 아니면 400 이다(결정 10 · W-04-05 §5-3). ⭐ 참이면 서버가 제품 입고 전표와 입고 전기를 같은 트랜잭션에서 함께 만든다 — 화면이 01 계약을 따로 부르지 않는다. 입고 유형·원천 문서 유형은 서버가 정한다(01 계약 receiptTypeCode·sourceDocumentTypeCode · 공유계약 G-2 — 그 값 목록은 아직 확정되지 않았다). 장부상 입고 창고는 본문의 warehouseId 다(W-04-05 §5-1·§5-4)",
+      "example": true,
+      "x-internal-note": "receiptTypeCode·sourceDocumentTypeCode 의 값 목록 미확정 — 추적 omf-mes#145·#213. 서버가 정하므로 이 화면은 막히지 않는다."
      },
      "expediteReason": {
       "type": [
@@ -2341,7 +2484,7 @@
      "warehouseId",
      "lines"
     ],
-    "description": "출하 처리. 출하·라인·LOT 배분을 한 트랜잭션으로 만든다(공유계약 B-8). ⛔ 확정하지 않는다 — 미확정 출하까지다. 확정은 :confirm 이다"
+    "description": "출하 처리. 출하·라인·LOT 배분을 한 트랜잭션으로 만든다(공유계약 B-8). ⛔ 확정하지 않는다 — 미확정 출하까지다. 확정은 :confirm 이다 재고 차감(수불 원장 전기)은 이 오퍼레이션 안이다. expedited=true 이면 제품 입고 전표와 입고 전기를 여기서 함께 만든다. ⛔ 출고 전기·ERP 송신 적재는 여기가 아니라 :confirm 이다(2026-08-07 출하 2단 확정 · W-04-05 §5-1 · 공유계약 B-8)"
    },
    "ShipmentLine": {
     "type": "object",
@@ -2381,7 +2524,7 @@
        "null"
       ],
       "format": "int64",
-      "description": "⚠ 비어도 된다 — 재고 차감이 아직 안 걸린 구간이 있다(W-04-04 §5-2)",
+      "description": "⚠ 비어도 된다 — 출고 전표를 만들지 않고 원장에 직접 전기하는 구간이 있다(W-04-04 §5-2·§8-2)",
       "example": 1001
      },
      "allocations": {
@@ -2476,13 +2619,13 @@
      },
      "oqcPassed": {
       "type": "boolean",
-      "description": "⭐ 서버가 판정한 값 — 이 배분의 LOT 이 출하검사에 합격했는가. 납품라벨 대상 목록이 「합격」만 활성하는 데 쓴다(P-04-02 §5). 검사 결과는 03 품질 계약이 소유한다",
+      "description": "⭐ 서버가 판정한 값 — 이 배분의 LOT 이 출하검사에 합격했는가. 납품라벨 대상 목록이 「합격」만 활성하는 데 쓴다(P-04-02 §5). 검사 결과는 03 품질 계약이 소유한다 ⛔ 없으면 납품라벨 대상을 가릴 수 없다 — 항상 내린다(P-04-02 §5-1). ⛔ 검사 대상이 아닌 배분(해당 라인의 shippingInspectionRequired=false)은 true 로 내린다 — 「검사를 안 거쳤다」가 「발행하면 안 된다」가 아니다.",
       "example": true
      },
      "packedQty": {
       "type": "number",
       "format": "double",
-      "description": "이미 포장에 담긴 수량. 배분 잔여 = allocatedQty − packedQty 를 서버가 파생한다(L-2)",
+      "description": "이미 포장에 담긴 수량. 배분 잔여 = allocatedQty − packedQty 를 서버가 파생한다(L-2) ⛔ 없으면 화면이 잔여를 계산할 수 없다 — 항상 내린다(P-04-01 §5-6).",
       "example": 120.0
      }
     },
@@ -2491,7 +2634,9 @@
      "shipmentLineId",
      "lotId",
      "allocatedQty",
-     "uomId"
+     "uomId",
+     "packedQty",
+     "oqcPassed"
     ],
     "description": "출하 LOT 배분 — genealogy 종결점이다. ⛔ 등록 경로를 두지 않는다 — 출하 처리가 shipment·shipment_line 과 한 트랜잭션으로 만든다(W-04-04 §5 · 공유계약 B-8). shipment_line_id 가 NOT NULL 이라 출하보다 먼저 생길 수 없다"
    },
@@ -2578,6 +2723,14 @@
       "type": "string",
       "format": "date",
       "example": "2026-08-13"
+     },
+     "timeSlotCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터). 고객 확정 3값: `MORNING`·`AFTERNOON`·`NIGHT`(2026-08-31, omf-mes-server#41 회신).",
+      "example": "MORNING"
      },
      "statusCode": {
       "type": "string",
@@ -2702,6 +2855,14 @@
       "format": "date",
       "example": "2026-08-13"
      },
+     "timeSlotCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터).",
+      "example": "MORNING"
+     },
      "lines": {
       "type": "array",
       "minItems": 1,
@@ -2791,6 +2952,13 @@
       ],
       "description": "잔여 유효기간 하한. 피킹이 이것으로 LOT 을 거른다",
       "example": 1
+     },
+     "picks": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShipmentLinePickedLot"
+      },
+      "description": "이 라인에서 실제로 집은 제품 LOT 별 내역. ⭐ 서버가 유지한다 — W-04-04 출하 처리가 ShipmentCreate.lines[].allocations 를 채우는 원천이 이것이다(공유계약 L-2). 근거: M-04-01 §5-7 · W-04-04 §3"
      }
     },
     "required": [
@@ -2802,7 +2970,8 @@
      "shippedQty",
      "uomId",
      "shippingInspectionRequired",
-     "pickedQty"
+     "pickedQty",
+     "picks"
     ]
    },
    "ShipmentRequestLineCreate": {
@@ -2930,6 +3099,42 @@
       "example": 1001
      }
     }
+   },
+   "ShipmentLinePickedLot": {
+    "type": "object",
+    "description": "라인이 집은 제품 LOT 한 건. 서버가 유지하는 읽기 전용 기록이다",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "값"
+     },
+     "pickedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 120.0
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "pickedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-13T10:22:00+09:00"
+     }
+    },
+    "required": [
+     "lotId",
+     "pickedQty",
+     "uomId",
+     "pickedAt"
+    ]
    }
   }
  }

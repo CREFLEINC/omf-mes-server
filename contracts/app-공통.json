@@ -4,7 +4,7 @@
     "title": "omf-mes 공통 도메인 API — 승인 워크플로우 · 출력물 발행 (초안)",
     "version": "0.2.0",
     "description": "전 도메인이 함께 쓰는 승인 워크플로우 계약. 정의(결재선)와 실행(요청·결재)이 나뉘어 있고 화면도 그렇게 갈린다 — 정의는 W-06-15, 실행은 W-CO-09 다.\n\n요청 생성은 이 파일이 갖지 않는다. 각 도메인 계약의 :request-approval 이 만든다(logistics-01자재창고.json 에 세 곳). 이 파일은 그 뒤의 조회와 결재를 덮는다.\n\n1차 범위에서 정한 것 셋 — ① 결재선 승인자는 USER 만 쓴다(상신 시 사람을 고를 입력이 모델에 없다) ② 값 구간(min/max)은 쓰지 않는다(비교할 값이 없고 금액 컬럼이 0건이다) ③ 대리 결재·위임을 두지 않는다(승인자가 부재하면 결재가 멈추는 것을 감수한다).\n\n승인은 자물쇠를 풀 뿐 실행하지 않는다 — 전기·출고는 대상 화면이 별도로 한다.\n\n## 출력물 발행 (v0.2)\n\n라벨·검사성적서·추적보고서를 발행하고 그 사실을 회차로 쌓는다. 화면이 10장이고 도메인이 셋(01·02·04)에 걸치는데 발행·재발행 규약이 하나(공유계약 §K)라 계약도 하나여야 한다.\n\n지키는 규약 넷 — ① 발행은 회차로 쌓고 이전 것을 지우지 않는다(회차는 서버가 매긴다) ② 재발행에는 사유가 필수다 ③ 발행 기록에 단말과 프린터를 남긴다 ④ 인쇄는 트랜잭션 밖이다 — 발행 기록이 남고 물리 인쇄만 실패하는 경우가 정상적으로 생기며, 그것을 보고하는 경로를 따로 둔다.\n\n라벨 이미지는 서버가 그린다. 클라이언트는 받은 이미지를 프린터로 보낼 뿐이라 단말마다 라벨이 달라지지 않는다.\n\n대상 참조가 두 갈래다 — targetType+targetId 로 무엇을 발행했는지 가리키고, lotId 는 소속을 따로 가리킨다. 개체 단위 출력물은 이 둘이 서로 다른 것을 가리키므로 targetType 을 먼저 보고 판정한다.",
-    "x-internal-note": "근거·맥락은 deliverables/06-API-요구서-app공통승인.md 를 본다. 도출은 uiux/2026-08-07-화면상세스펙-확대7차/ 의 W-06-15·W-CO-09 두 장이다. 출력물 발행(app.document_issue_log)·첨부(app.attachment)는 이 파일이 아직 갖지 않는다 — POP·모바일 셸이 생길 때 같은 파일에 더한다. 재활성 경로(:activate)를 둔다 — 결재선은 목록에 「사용 안 함」 행을 보이고 다시 켜는 것이 정상 운용이다. 같은 이유로 mdm-기준정보.json 의 putaway-rules 에도 :activate 를 더했다(W-06-14). 나머지 mdm 마스터에는 두지 않는다 — 그 화면들이 요구하지 않았다. ▸ v0.2 출력물 편 — 근거는 deliverables/06-API-요구서-app공통출력물.md 다. 도출 화면 10장(P-01-01·P-01-02·P-02-05·P-02-07·P-02-09·M-02-01·W-04-03·P-04-01·P-04-02·P-04-04). 공유계약 §K-1~K-7 이 규약 정본이다. P-02-05·P-02-07·P-02-09 는 액션 표가 없어 §5 본문에서 사람이 읽어 옮겼다(생성기가 경고로 표시한다). 라벨 양식 마스터는 여기가 아니라 mdm 소관이다(W-06-07). 첨부(app.attachment)는 아직 갖지 않는다."
+    "x-internal-note": "근거·맥락은 deliverables/06-API-요구서-app공통승인.md 를 본다. 도출은 uiux/2026-08-07-화면상세스펙-확대7차/ 의 W-06-15·W-CO-09 두 장이다. 출력물 발행(app.document_issue_log)은 v0.2 에서 이 파일에 들어왔다 — 아래 ▸ v0.2 출력물 편 참조. 첨부(app.attachment)는 이번에 세 경로를 신설했다. 재활성 경로(:activate)를 둔다 — 결재선은 목록에 「사용 안 함」 행을 보이고 다시 켜는 것이 정상 운용이다. 같은 이유로 mdm-기준정보.json 의 putaway-rules 에도 :activate 를 더했다(W-06-14). 2026-08-29 재판정 — 「사용 중지」만 있고 「다시 사용」이 없는 자원이 mdm-기준정보.json 에 15개였다. 되돌릴 수단이 없는 것은 화면이 요구하지 않아서가 아니라 아무도 세지 않아서였다. 그 15자원에 :activate 를 세웠다. ▸ v0.2 출력물 편 — 근거는 deliverables/06-API-요구서-app공통출력물.md 다. 도출 화면 8장(P-01-01·P-01-02·P-02-05·P-02-07·P-02-09·P-04-02·P-04-04·W-05-13). M-02-01·P-04-01 은 출력 액션이 없고, W-04-03 은 04 요구서 §3-3 이 CoA 양식 미정으로 잡고 있다. W-06-07 은 mdm 요구서 §3-10 이 센다. 공유계약 §K-1~K-7 이 규약 정본이다. P-02-05·P-02-07·P-02-09 는 액션 표가 없어 §5 본문에서 사람이 읽어 옮겼다(생성기가 경고로 표시한다). 라벨 양식 마스터는 여기가 아니라 mdm 소관이다(W-06-07)."
   },
   "servers": [
     {
@@ -524,7 +524,7 @@
           "app"
         ],
         "summary": "결재 단계 전체 치환 (순서 포함)",
-        "description": "화면이 최종 순서를 통째로 보내고 서버가 한 트랜잭션으로 반영한다. uq_approval_route_step UNIQUE(route, step_no) 가 걸려 있어 두 단계를 맞바꾸면 중간 상태가 반드시 제약을 위반한다 — 행 단위 저장이 원리적으로 불가능하다(공유계약 A-5 · B-11).\n\napproval_route_step 에는 version_no 가 없으므로 낙관적 잠금은 마스터의 토큰으로 판정한다 — If-Match 는 approval_route.version_no 다.\n\n⚠ 이 치환은 진행 중인 요청에 소급하지 않는다. approval_step 은 상신 시점에 전개되고 기록 전용이다(공유계약 J-9).\n\n빈 배열은 400 이다 — 단계가 없는 결재선은 상신을 거부하게 된다. 근거: W-06-15 §5-5·§5-7 · §6",
+        "description": "화면이 최종 순서를 통째로 보내고 서버가 한 트랜잭션으로 반영한다. uq_approval_route_step UNIQUE(route, step_no) 가 걸려 있어 두 단계를 맞바꾸면 중간 상태가 반드시 제약을 위반한다 — 행 단위 저장이 원리적으로 불가능하다(공유계약 A-5 · B-11).\n\napproval_route_step 에는 version_no 가 없으므로 낙관적 잠금은 마스터의 토큰으로 판정한다 — If-Match 는 approval_route.version_no 다. 그 값은 부모 경로 GET /app/approval-routes/{approvalRouteId} 의 200 응답 ETag 헤더에서 받는다.\n\n⚠ 이 치환은 진행 중인 요청에 소급하지 않는다. approval_step 은 상신 시점에 전개되고 기록 전용이다(공유계약 J-9).\n\n빈 배열은 400 이다 — 단계가 없는 결재선은 상신을 거부하게 된다. 근거: W-06-15 §5-5·§5-7 · §6",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -603,7 +603,7 @@
           "app"
         ],
         "summary": "승인 요청 목록",
-        "description": "결재함이 쓰는 목록이다. assignedToMe 는 「로그인 사용자가 approver_id 인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — goods_issue·purchase_order 에는 approval_request_id 컬럼이 없어 이 경로가 유일한 방법이다.\n\n근거: W-CO-09 §3·§5-8",
+        "description": "결재함이 쓰는 목록이다. assignedToMe 는 「로그인 사용자가 approver_id 인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n근거: W-CO-09 §3·§5-8",
         "parameters": [
           {
             "name": "assignedToMe",
@@ -746,7 +746,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "⚠ 물류 출고 전표의 승인 요청 식별자는 계약이 앞서 갖고 물리 모델은 작업 통지 대기다 — 공유계약 #29(2026-08-18 사용자 확정). 이 문장을 description 으로 되돌리지 말 것 — 공개된다."
       }
     },
     "/app/approval-requests/{approvalRequestId}": {
@@ -1330,6 +1331,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
           }
         ],
         "requestBody": {
@@ -1373,7 +1377,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "귀속 필수판이다. 부르는 화면은 P-01-01·P-01-02·P-04-02 셋 전부 현장 단말이고 관리웹은 부르지 않는다 — W-05-13 은 QR 이미지 생성까지이고 물리 인쇄가 범위 밖이다(06-API-요구서-05설비툴.md §3-12). 같은 계열의 POST /app/document-issues 가 선택판인 것은 그쪽만 W-05-13 이 겸용하기 때문이다. 이 자리는 요구서가 POST …:report-print 로 축약해 적어 omf-mes#178 의 전수 스캔에 걸리지 않았다. 근거: 공유계약 D-5 · omf-mes#178."
       }
     },
     "/app/printers": {
@@ -1493,7 +1498,8 @@
               }
             }
           }
-        }
+        },
+        "x-envelope-exempt": "짝 목록의 «요약»이 아니라 targetIds 로 여러 대상을 한 번에 조회하는 «배치»다 — 발행한 적 없는 대상도 issueCount:0 으로 돌려주므로 목록의 필터 축(issuedFrom·lotId·printOutcome)이 뜻을 갖지 않는다."
       }
     },
     "/app/sessions": {
@@ -1559,7 +1565,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "관리웹 계정 세션의 운반 수단(쿠키 / Bearer)이 미확정이다 — 공유계약 F-2 · §I-3. 확정 전까지 securitySchemes 에 스킴을 두지 않는다."
       }
     },
     "/app/sessions/current": {
@@ -1636,7 +1643,7 @@
             }
           },
           "401": {
-            "description": "아이디 또는 비밀번호가 맞지 않는다",
+            "description": "현재 비밀번호가 맞지 않는다",
             "content": {
               "application/json": {
                 "schema": {
@@ -1870,7 +1877,7 @@
           "app"
         ],
         "summary": "알림 이벤트 목록",
-        "description": "⭐ 이 목록의 정본은 계약이다 — 공통코드 마스터에 두면 편집 가능해지고, 코드가 바뀌면 «보내는 쪽»이 조용히 깨진다. 근거: W-CO-03 §8-3 · W-CO-11 §8-3",
+        "description": "⭐ 이 목록의 정본은 계약이다 — 공통코드 마스터에 두면 편집 가능해지고, 코드가 바뀌면 «보내는 쪽»이 조용히 깨진다. 이벤트마다 「무엇이 일어나면 나는가」(발생 지점)도 이 계약이 갖는다 — 수신자를 발생 시점에 사람 목록으로 전개하고 본문을 서버가 만들기로 정했으므로, 어느 쓰기 뒤에 그 일이 일어나는지가 계약에 없으면 알림이 아예 나지 않는다. ⛔ 2026-08-29 실측 — 발생 지점 표가 아직 비어 있다. 근거: W-CO-03 §8-3 · W-CO-11 §8-3",
         "responses": {
           "200": {
             "description": "목록",
@@ -1893,7 +1900,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "발생 지점 — 설비 고장 발생 = POST /maintenance/breakdowns(equipment-05) 뒤 · 적정타수 초과 = POST /maintenance/tool-usages 저장 뒤 서버가 적정타수 대비 비율을 판정 · P/O 변경 수신 = ERP 수신 메시지가 P/O 변경을 담을 때 · 연계 실패 = 연계 메시지가 실패로 떨어질 때 · 승인 요청·결재 도착 = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. ⛔ 검교정 만료 임박 = 미확정 — 시간 트리거(배치)이고 임박 일수 기준이 정해진 적이 없다. 소관 화면 W-05-10 에는 「알림」이라는 낱말이 0건이다. ⛔ eventCode 에 enum 을 넣지 않는다 — 코드 문자열 자체가 아직 확정된 적이 없어 이 표는 «이벤트명»으로만 적는다. 각 쓰기 쪽 계약에 「이 쓰기 뒤에 이벤트 X 가 난다」를 적는 것은 이 지시서 밖(A7·A8 소관)이다."
       }
     },
     "/app/notification-subscriptions": {
@@ -1910,7 +1918,8 @@
             "schema": {
               "type": "string",
               "x-no-example": true
-            }
+            },
+            "description": "이벤트 하나로 좁힌다. 생략하면 전건을 내린다 — 이벤트 목록의 수신자 수 표시가 이것을 쓴다(응답 recipients 의 길이)."
           }
         ],
         "responses": {
@@ -1936,11 +1945,11 @@
             },
             "headers": {
               "ETag": {
-                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다",
+                "description": "낙관적 잠금 토큰. ⭐ eventCode 를 «지정해» 부른 응답에만 온다 — 그 이벤트 하나의 토큰이다. eventCode 없이 부르면(목록 전체 로드) ETag 를 내리지 «않는다» — 여러 이벤트의 판 번호를 하나로 표현할 수 없기 때문이다. 화면은 이벤트를 고른 뒤 ?eventCode= 로 한 번 더 부르고 그 ETag 를 저장의 If-Match 에 담는다.",
                 "schema": {
                   "type": "string"
                 },
-                "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다."
+                "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다. 공유계약 A-4-1 형(응답 본문에 versionNo 를 함께 내려 목록 한 번으로 끝내는 안)을 2026-08-29 에 검토했고 채택하지 않았다 — A-4-1 의 발동 조건이 「한 번의 쓰기가 대상을 여럿 잠글 때」인데 이 PUT 은 이벤트 하나를 잠근다. 다음 사람이 같은 길을 다시 파지 않도록 남긴다."
               }
             }
           },
@@ -2039,15 +2048,36 @@
           "app"
         ],
         "summary": "공지 목록",
-        "description": "근거: W-CO-04 §5",
+        "description": "⛔ 기간을 필수로 «받지 않는다» — 기간 필수 규약은 원장·파티션 테이블의 조항이고 공지는 둘 다 아니다. 화면 기본은 «게시 중»이며 기간은 비울 수 있다(기본 최근 1개월). 근거: W-CO-04 §5-4",
         "parameters": [
           {
             "name": "statusCode",
             "in": "query",
             "schema": {
               "type": "string",
+              "enum": [
+                "DRAFT",
+                "SCHEDULED",
+                "PUBLISHED",
+                "CLOSED"
+              ],
               "x-no-example": true
             }
+          },
+          {
+            "name": "scopeCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "COMPANY",
+                "WORK_ORDER",
+                "BUSINESS_UNIT",
+                "EQUIPMENT_GROUP",
+                "WORK_SHIFT"
+              ]
+            },
+            "description": "공지 범위로 거른다. 1차는 COMPANY·WORK_ORDER 만 유효하다"
           },
           {
             "name": "activeOnly",
@@ -2066,6 +2096,34 @@
             "description": "제목 검색"
           },
           {
+            "name": "overlapFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "이 날 이후와 «겹치는» 공지만. 게시 기간(시작일~종료일)이 조회 구간과 겹치면 걸린다 — 시작일 기준이 아니다. date 라 양끝 포함이다",
+            "example": "2026-08-13"
+          },
+          {
+            "name": "overlapTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "이 날 이전과 «겹치는» 공지만. 양끝 포함",
+            "example": "2026-08-31"
+          },
+          {
+            "name": "unacknowledgedByMe",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "참이면 «지금 귀속된 주체»가 아직 확인하지도 닫지도 않은 게시 중 공지만. 현장 셸이 진입할 때 이것으로 묻는다. ⚠ 현장 셸은 계정 세션이 없다 — 이 질의를 쓸 때는 X-Worker-No 로 주체를 싣는다. 관리웹은 계정 토큰에서 서버가 푼다"
+          },
+          {
             "name": "page",
             "in": "query",
             "schema": {
@@ -2080,6 +2138,9 @@
               "type": "integer",
               "default": 50
             }
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNoOptional"
           }
         ],
         "responses": {
@@ -2108,7 +2169,8 @@
               }
             }
           }
-        }
+        },
+        "x-internal-note": "표시 순서(확인 요구 먼저·최신순)는 W-CO-04 §8 미결 5 — 권고 단계이지 확정이 아니다."
       },
       "post": {
         "tags": [
@@ -2195,7 +2257,7 @@
             },
             "headers": {
               "ETag": {
-                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 ⭐ 확인(:acknowledge)은 이 판을 «올리지 않는다» — 잠그는 대상은 공지 «본문»이고 확인은 별개 기록이다. 확인이 쌓일 때마다 판이 오르면 관리자가 본문을 고치려 할 때 「남이 먼저 고쳤다」를 보게 된다. 고친 사람은 없고 읽은 사람만 있는데도. 근거: 공유계약 G-30 — 잠그는 대상과 버전 축을 일치시킨다.",
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 표시하지 않되 전달한다. ⭐ 확인(:acknowledge)은 이 판을 «올리지 않는다» — 잠그는 대상은 공지 «본문»이고 확인은 별개 기록이다. 확인이 쌓일 때마다 판이 오르면 관리자가 본문을 고치려 할 때 「남이 먼저 고쳤다」를 보게 된다. 고친 사람은 없고 읽은 사람만 있는데도. 근거: 공유계약 G-30 — 잠그는 대상과 버전 축을 일치시킨다.",
                 "schema": {
                   "type": "string"
                 },
@@ -2461,6 +2523,9 @@
           },
           {
             "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNoOptional"
           }
         ],
         "responses": {
@@ -2598,7 +2663,7 @@
           "app"
         ],
         "summary": "통합 대시보드 집계",
-        "description": "카드마다 소유 화면이 따로 있고 이 경로는 «숫자만» 모은다. ⛔ 자동 갱신을 두지 않는다 — 사람이 「갱신」을 누른다. ⛔ 설비종합효율(OEE)은 내지 않는다: 계획 조업 시간의 분모가 되는 휴일·계획 정지를 담을 자리가 아직 없다. 근거: W-CO-05 §5·§8-1",
+        "description": "카드마다 소유 화면이 따로 있고 이 경로는 «숫자만» 모은다. ⛔ 자동 갱신을 두지 않는다 — 사람이 「갱신」을 누른다. ✅ 설비종합효율(OEE)을 낸다(2026-08-30 되살림) — 계획 조업 시간의 분모는 mdm.WorkCalendar/WorkCalendarDay/WorkCalendarApplication(결정 03)에서 구한다. 근거: W-CO-05 §5·§8-1",
         "parameters": [
           {
             "name": "baseDate",
@@ -2661,7 +2726,8 @@
                 "SHOT_CONVERSION_ENABLED",
                 "SHOT_CONVERSION_RATIO",
                 "MINOR_STOP_THRESHOLD_MINUTES",
-                "PRECHECK_CONTROL_LEVEL"
+                "PRECHECK_CONTROL_LEVEL",
+                "FIFO_ENFORCEMENT_LEVEL"
               ]
             }
           },
@@ -2824,7 +2890,8 @@
                 "SHOT_CONVERSION_ENABLED",
                 "SHOT_CONVERSION_RATIO",
                 "MINOR_STOP_THRESHOLD_MINUTES",
-                "PRECHECK_CONTROL_LEVEL"
+                "PRECHECK_CONTROL_LEVEL",
+                "FIFO_ENFORCEMENT_LEVEL"
               ]
             }
           },
@@ -3001,6 +3068,367 @@
         },
         "x-internal-note": "저장 충돌 보호를 붙였다(omf-mes#210). app.operation_policy 에 version_no 가 실재하므로 공유계약 B-1(version_no 를 가진 «모든» 화면)의 주어에 그대로 들어간다. ⚠ 이전 주석은 G-30 의 두 조건을 근거로 붙이지 않았는데 «주어가 다른 조항»이었다 — G-30 은 「나가는 중인 저장」의 화면 잠금 범위를 정하는 조항이고 낙관적 잠금의 정본은 B-1 이다. 정책은 설비담당·생산관리가 «같은 표»를 보고 고치며 이 값이 타발수 계산의 입력이라, 없으면 나중 저장이 앞 사람 값을 조용히 덮는다. 근거: W-05-01 §5-5·§6"
       }
+    },
+    "/app/attachments": {
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "첨부 올리기",
+        "description": "파일을 올리고 첨부 식별자를 돌려준다. 다형 참조라 대상 유형과 대상 식별자를 함께 받는다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "targetTypeCode",
+                  "targetId",
+                  "file"
+                ],
+                "properties": {
+                  "targetTypeCode": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "targetId": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "올리기 완료.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "파일이 너무 크다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "app"
+        ],
+        "summary": "첨부 목록",
+        "description": "한 대상에 붙은 첨부를 낸다.",
+        "parameters": [
+          {
+            "name": "targetTypeCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "targetId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Attachment"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/app/attachments/{attachmentId}/content": {
+      "parameters": [
+        {
+          "name": "attachmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "example": 1001
+        }
+      ],
+      "get": {
+        "tags": [
+          "app"
+        ],
+        "summary": "첨부 파일 내려받기",
+        "description": "파일 내용을 그대로 내린다.",
+        "responses": {
+          "200": {
+            "description": "파일 내용.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "이 계약에서 application/json 이 아닌 두 번째 응답이다 — 첫째는 출력물 rendition 이다(06-API-요구서-app공통출력물.md §6 편차 2)."
+      }
+    },
+    "/app/notices/{noticeId}:dismiss": {
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "공지 확인 없이 닫기",
+        "description": "확인하지 «않고» 닫았다를 기록한다. 확인 요구가 켜진 공지에는 이 호출이 400 이다 — 그 공지는 닫을 수 없다. ⭐ 확인과 닫음을 나누는 이유는 「확인하지 않았다」가 이력에 남아야 하기 때문이고, 남기려면 닫은 것도 기록해야 한다.",
+        "parameters": [
+          {
+            "name": "noticeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNoOptional"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "기록됐다"
+          },
+          "400": {
+            "description": "확인 요구가 켜진 공지다 — 닫을 수 없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/app/notification-subscriptions/recipients:preview": {
+      "post": {
+        "tags": [
+          "app"
+        ],
+        "summary": "지금 받는 사람 미리보기",
+        "description": "저장 «전»의 규칙으로 수신자를 전개해 돌려준다 — 규칙만 보면 몇 명인지 모르고 중복도 안 보인다. 중복은 서버가 접어 한 번만 내린다. ⛔ 아무것도 저장하지 않는다 — 읽기지만 편집 중 규칙을 본문에 실어야 해서 POST 다. ⚠ 아무것도 저장하지 않지만 POST 라 전 쓰기 규약대로 Idempotency-Key 를 받는다 — 같은 키로 다시 보내면 같은 전개 결과를 돌려준다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSubscriptionReplace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "전개 결과",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "resolvedAt",
+                    "totalCount",
+                    "users"
+                  ],
+                  "properties": {
+                    "resolvedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "전개 기준 시각. 화면이 「ⓘ 08-11 16:30 기준」으로 적는다",
+                      "example": "2026-08-11T16:30:00+09:00"
+                    },
+                    "totalCount": {
+                      "type": "integer",
+                      "example": 7
+                    },
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "userId",
+                          "userName",
+                          "isActive"
+                        ],
+                        "properties": {
+                          "userId": {
+                            "type": "integer",
+                            "format": "int64",
+                            "example": 1001
+                          },
+                          "userName": {
+                            "type": "string",
+                            "example": "홍길동"
+                          },
+                          "departmentName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "품질보증팀"
+                          },
+                          "isActive": {
+                            "type": "boolean",
+                            "description": "거짓이면 화면이 「(비활성)」을 덧붙여 표시하고 설정은 지우지 않는다",
+                            "example": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "Zalo 수신처 컴럼 결정 후 missingContactCount 를 응답 최상위에 더한다 — W-CO-11 §8-2 · 미결-대장 W-CO-11 #2.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3023,7 +3451,18 @@
         "schema": {
           "type": "string"
         },
-        "description": "낙관적 잠금용 version_no. 값은 같은 리소스의 상세 GET 200 이 내려주는 ETag 응답 헤더에서 받는다. 근거: 공유계약 B-1"
+        "description": "낙관적 잠금용 version_no. 값은 그 쓰기가 «잠그는 대상»의 조회가 내려주는 ETag 응답 헤더에서 받는다 — 보통은 같은 리소스의 상세 GET 200 이고, 하위 자원이 자기 판 번호를 갖지 않으면 부모 마스터의 상세 GET 200 이다. 어느 쪽인지는 그 오퍼레이션의 설명이 밝힌다. 근거: 공유계약 B-1 · B-1-1"
+      },
+      "WorkerNo": {
+        "name": "X-Worker-No",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2",
+        "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178."
       },
       "WorkerNoOptional": {
         "name": "X-Worker-No",
@@ -3478,7 +3917,8 @@
           "screenId": {
             "type": "string",
             "description": "대상을 여는 화면 ID. 규약이 정해지면 이 값만 바뀐다 — 프런트는 화면 ID → 경로 매핑 하나만 갖는다. ⭐ 첫 확정 규칙 — 특채·한도승인 유형의 요청은 서버가 screenId = \"W-03-09\"(특채·한도승인 승인 처리)를 내린다: 이 유형의 「원문」은 승인 조건 5축이고 그것을 보이는 화면이 W-03-09 다. 근거: omf-mes#194",
-            "example": "W-01-06"
+            "example": "W-01-06",
+            "x-internal-note": "⚠ description 의 「특채·한도승인 유형의 요청은 서버가 screenId=W-03-09 를 내린다(omf-mes#194)」는 «특채»에서만 근거가 확인된다. 근거로 든 「원문 = 승인 조건 5축」이 한도승인에는 성립하지 않고(W-03-09 §0 — 한도승인은 전용 테이블 없이 approval_request 하나로 성립한다), 한도승인(IQC_SKIP)의 대상은 입하 LOT 이며 전용 승인 화면은 W-01-02 다. 값 목록 확정(omf-mes#145 · W-06-06) 때 함께 가른다."
           },
           "openable": {
             "type": "boolean",
@@ -3700,8 +4140,8 @@
           "targetTypeCode": {
             "type": "string",
             "maxLength": 40,
-            "description": "대상 유형. 이 값이 targetId 의 해석을 정한다.",
-            "example": "LOT"
+            "description": "대상 유형. 이 값이 targetId 의 해석을 정한다. LOT → 자재·생산·제품 로트 · 개체 → 개체 일련번호 · 포장 → 취급 단위 · 출고 라인 → 출고 전표 라인 · 툴 → 툴·금형 마스터 · Location → 위치 마스터 · 검사 결과 → 검사 결과. ⚠ 값 문자열은 아직 확정되지 않았다 — 화면은 유형 선택을 비활성으로 두고 사유를 보인다. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
+            "x-no-example": true
           },
           "targetId": {
             "type": "integer",
@@ -3717,8 +4157,8 @@
           "screenId": {
             "type": "string",
             "maxLength": 20,
-            "description": "이 대상을 여는 화면. 목록에서 원본으로 이동할 때 쓴다.",
-            "example": "P-02-07"
+            "description": "이 대상을 여는 화면. 목록에서 원본으로 이동할 때 쓴다. 값이 없으면 화면은 「대상으로 이동」을 열지 않는다 — 서버가 열 화면을 정하지 못하면 이 키를 생략한다(널을 보내지 않는다).",
+            "x-no-example": true
           }
         }
       },
@@ -3745,7 +4185,7 @@
             "type": "string",
             "maxLength": 40,
             "description": "출력물 종류(라벨·검사성적서·추적보고서 등).",
-            "example": "LABEL"
+            "x-no-example": true
           },
           "target": {
             "$ref": "#/components/schemas/DocumentTarget"
@@ -3779,8 +4219,8 @@
               "null"
             ],
             "maxLength": 40,
-            "description": "재발행 사유. 회차가 2 이상이면 반드시 있다.",
-            "example": "PRINT_FAILED"
+            "description": "재발행 사유. 회차가 2 이상이면 반드시 있다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=REISSUE_REASON 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "x-no-example": true
           },
           "reissueReasonName": {
             "type": [
@@ -3850,7 +4290,7 @@
       },
       "DocumentIssueCreate": {
         "type": "object",
-        "description": "발행 요청. 대상이 여럿이면 한 번에 보낸다 — 개체 단위 출력물은 수백 건이 한 작업이라 건별 호출로 나누면 부분 실패가 생긴다.",
+        "description": "발행 요청. 대상이 여럿이면 한 번에 보낸다 — 개체 단위 출력물은 수백 건이 한 작업이라 건별 호출로 나누면 부분 실패가 생긴다. 단말은 요청을 인증한 단말 토큰에서 서버가 푼다 — 화면이 보내지 않는다.",
         "required": [
           "documentTypeCode",
           "targets"
@@ -3860,7 +4300,7 @@
             "type": "string",
             "maxLength": 40,
             "minLength": 1,
-            "example": "LABEL"
+            "x-no-example": true
           },
           "targets": {
             "type": "array",
@@ -3878,7 +4318,7 @@
                   "type": "string",
                   "maxLength": 40,
                   "minLength": 1,
-                  "example": "SERIAL"
+                  "x-no-example": true
                 },
                 "targetId": {
                   "type": "integer",
@@ -3894,14 +4334,7 @@
                   "example": 90101
                 }
               }
-            },
-            "example": [
-              {
-                "targetTypeCode": "SERIAL",
-                "targetId": 771205,
-                "lotId": 90101
-              }
-            ]
+            }
           },
           "reissueReasonCode": {
             "type": [
@@ -3909,16 +4342,8 @@
               "null"
             ],
             "maxLength": 40,
-            "description": "재발행 사유. 대상 중 하나라도 이미 발행된 것이 있으면 **필수**다 — 없으면 422 다.\n\n신규와 재발행이 섞여 들어와도 **한 번만 받는다.** 서버는 회차가 2 이상인 기록에만 이 값을 남긴다 — 신규 기록에 재발행 사유가 붙으면 이력이 거짓이 된다.",
-            "example": "PRINT_FAILED"
-          },
-          "terminalId": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "example": 210
+            "description": "재발행 사유. 대상 중 하나라도 이미 발행된 것이 있으면 **필수**다 — 없으면 422 다.\n\n신규와 재발행이 섞여 들어와도 **한 번만 받는다.** 서버는 회차가 2 이상인 기록에만 이 값을 남긴다 — 신규 기록에 재발행 사유가 붙으면 이력이 거짓이 된다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=REISSUE_REASON 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "x-no-example": true
           },
           "printerName": {
             "type": [
@@ -3935,7 +4360,8 @@
             ],
             "example": null
           }
-        }
+        },
+        "x-internal-note": "값 목록·그룹 이름 소관 = omf-mes#145(OPEN). 이 한 축에 발행 화면 8장이 걸린다 — P-01-01·P-01-02·P-02-05·P-02-07·P-02-09·P-04-02·P-04-04 + W-05-13(구현 완료 · omf-mes-client#212). 대상 유형 대응표의 정본은 06-API-요구서-app공통출력물.md §3-7 이다. example 을 되살리지 마라 — omf-mes#191(example 오염) 대상이다. ⚠ reissueReasonCode 의 example 이던 PRINT_FAILED 는 우리 제안안(01-2차-제안안.md 492행)의 PRINT_FAILURE 와 한 단어 어긋난 값이었다 — 그래서 지웠다."
       },
       "DocumentIssueListResponse": {
         "type": "object",
@@ -4083,7 +4509,7 @@
           "targetTypeCode": {
             "type": "string",
             "maxLength": 40,
-            "example": "HANDLING_UNIT"
+            "x-no-example": true
           },
           "targetId": {
             "type": "integer",
@@ -4231,6 +4657,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "이 사용자가 지금 가진 기능 권한 코드 전부. 부여된 역할들의 권한을 서버가 합집합으로 풀어 내린다 — 화면이 역할에서 권한을 다시 계산하지 않는다. 화면은 이 배열로 액션을 활성·비활성한다: 403 을 받아 보고 아는 것이 아니라 «누르기 전에» 판정한다. ⚠ 이 필드가 «없으면» 값 목록이 아직 정해지지 않았다는 뜻이다 — 그때 화면은 판정하지 않고 컨트롤을 비활성으로 두고 사유를 보인다. 빈 배열은 「아무 기능 권한도 없다」이며 「모른다」가 아니다.",
+            "x-internal-note": "공유계약 G-9(모르는 값과 없는 값을 같은 모양으로 그리지 않는다) · F-2 관리웹 축(app.role_permission.permission_code) · W-02-07 §5-5 · W-CO-02 §9-3(관리웹은 role_permission, POP 은 terminal_process — 축을 섞지 않는다). ⚠ 값 목록 자체는 회신 E-9 대기다. 확정 전까지 서버는 이 필드를 «내리지 않는다» — 부재와 빈 배열이 다른 뜻이기 때문이다. E-9 확정 시 required 승격을 별건 ⛔ 로 올린다."
           }
         }
       },
@@ -4283,7 +4718,8 @@
           "eventCode",
           "message",
           "occurredAt",
-          "read"
+          "read",
+          "openable"
         ],
         "properties": {
           "notificationId": {
@@ -4294,11 +4730,12 @@
           "eventCode": {
             "type": "string",
             "x-no-example": true,
-            "description": "무슨 일이 일어났나. 목록은 이벤트 조회 경로가 준다"
+            "description": "무슨 일이 일어났나. 목록은 이벤트 조회 경로가 준다 목록 항목의 첫 줄(제목)은 이벤트명이다 — 이 코드로 GET /app/notification-events 의 eventName 을 찾아 쓴다."
           },
           "message": {
             "type": "string",
-            "example": "출하검사에서 불합격이 나왔습니다"
+            "example": "PRS-01 프레스 1호기 · 유압 누유",
+            "description": "목록 항목의 둘째 줄(본문). 서버가 만든다. ⛔ 화면이 한 문자열을 쪼개지도 조립하지도 않는다."
           },
           "occurredAt": {
             "type": "string",
@@ -4312,12 +4749,34 @@
           "targetTypeCode": {
             "type": "string",
             "x-no-example": true,
-            "description": "무엇에 대한 알림인가. LOT → trace.lot · WORK_ORDER → production.work_order · NONCONFORMANCE → quality.nonconformance · APPROVAL_REQUEST → app.approval_request. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다"
+            "description": "무엇에 대한 알림인가. EQUIPMENT → 설비(설비 고장 발생) · MOLD → 툴·금형(적정타수 초과) · INSTRUMENT → 계측기(검교정 만료 임박) · PURCHASE_ORDER → 구매발주(P/O 변경 수신) · INTEGRATION_SYNC → 연계 메시지(연계 실패) · APPROVAL_REQUEST → 승인 요청(승인 요청·결재 도착) · LOT / WORK_ORDER / NONCONFORMANCE — ⚠ 대응 이벤트가 알림센터 목록에 아직 없다. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다"
           },
           "targetId": {
             "type": "integer",
             "format": "int64",
             "example": 1001
+          },
+          "screenId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20,
+            "description": "대상을 여는 화면 ID. 프런트가 「유형 → 화면」 표를 갖지 않는다. 서버가 열 화면을 정하지 못하면 이 키를 생략한다",
+            "x-no-example": true
+          },
+          "openable": {
+            "type": "boolean",
+            "description": "열 화면이 없으면 거짓. 화면은 링크를 만들지 않고 원본 코드를 그대로 보인다",
+            "example": true
+          },
+          "locationPath": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "알람 위치를 «계층 텍스트»로 준다. 통합 대시보드의 알람 항목 둘째 줄이 이 값이다 — 평면 배치·도면 구획을 쓰지 않는다",
+            "example": "1공장 > A라인 > 사출기 3호"
           }
         },
         "x-internal-note": "알림 표가 물리 모델에 없다(W-CO-03 §2 검색 0건). 개념모델 §6.5 「알림」이 하류에 착지하지 않았다. 저장된 문장은 «발송 시점 언어»다 — 한/베 사용자가 같은 알림을 보는 경우는 W-CO-11 에서 수신자 언어를 볼 수 있는지 확인한 뒤 정한다(W-CO-03 §8-2)."
@@ -4423,7 +4882,8 @@
           "noticeId",
           "title",
           "statusCode",
-          "startDate"
+          "startDate",
+          "scopeCode"
         ],
         "properties": {
           "noticeId": {
@@ -4442,8 +4902,14 @@
           },
           "statusCode": {
             "type": "string",
-            "x-no-example": true,
-            "description": "작성 중 · 게시 중 · 종료"
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED",
+              "CLOSED"
+            ],
+            "description": "서버가 «파생»한다. 저장 컬럼이 아니다. DRAFT = 아직 게시하지 않았다(publishedAt 이 비어 있다) · SCHEDULED = 게시됐고 오늘 < 시작일 · PUBLISHED = 시작일 ≤ 오늘 ≤ 종료일 · CLOSED = 종료일 < 오늘. 「내려버리기」는 상태를 바꾸는 것이 아니라 종료일을 오늘로 당기는 것이다",
+            "example": "PUBLISHED"
           },
           "startDate": {
             "type": "string",
@@ -4465,8 +4931,12 @@
             "example": 12
           },
           "targetCount": {
-            "type": "integer",
-            "example": 30
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 30,
+            "description": "확인 대상 인원 수(분모). ⚠ scopeCode=WORK_ORDER 이면 «비운다» — 작업지시에 사람을 배정하는 자리가 없어 분모를 셀 수 없다. 화면은 분자만 「3명」으로 보인다. ⛔ 0 을 내려보내지 않는다 — 「셀 수 없음」과 「아무도 안 봤음」이 구분되지 않는다."
           },
           "publishedAt": {
             "type": "string",
@@ -4481,6 +4951,36 @@
           "versionNo": {
             "type": "integer",
             "example": 1
+          },
+          "scopeCode": {
+            "type": "string",
+            "enum": [
+              "COMPANY",
+              "WORK_ORDER",
+              "BUSINESS_UNIT",
+              "EQUIPMENT_GROUP",
+              "WORK_SHIFT"
+            ],
+            "description": "누가 대상인가. COMPANY = 전사(새 계정도 자동 포함된다) · WORK_ORDER = 그 작업지시에 걸린 사람. ⚠ 1차는 COMPANY·WORK_ORDER 만 유효하다 — 나머지는 400(code=SCOPE_NOT_SUPPORTED)",
+            "example": "COMPANY",
+            "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조)."
+          },
+          "targetWorkOrderId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "scopeCode=WORK_ORDER 일 때 필수. 둘의 짝이 어긋나면 400(code=PAIR)",
+            "example": 55021
+          },
+          "targetWorkOrderNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "표시용 작업지시 번호. 목록의 「W/O-…」 표기가 이 값이다",
+            "example": "W/O-2026-0812"
           }
         },
         "x-internal-note": "공지 표가 물리 모델에 없다(W-CO-04 §2 — notice·announce·bulletin 검색 0건). 첨부는 app.attachment 의 다형 참조를 그대로 쓴다."
@@ -4490,7 +4990,8 @@
         "required": [
           "title",
           "body",
-          "startDate"
+          "startDate",
+          "scopeCode"
         ],
         "properties": {
           "title": {
@@ -4515,6 +5016,28 @@
           "acknowledgeRequired": {
             "type": "boolean",
             "example": true
+          },
+          "scopeCode": {
+            "type": "string",
+            "enum": [
+              "COMPANY",
+              "WORK_ORDER",
+              "BUSINESS_UNIT",
+              "EQUIPMENT_GROUP",
+              "WORK_SHIFT"
+            ],
+            "description": "누가 대상인가. COMPANY = 전사(새 계정도 자동 포함된다) · WORK_ORDER = 그 작업지시에 걸린 사람. ⚠ 1차는 COMPANY·WORK_ORDER 만 유효하다 — 나머지는 400(code=SCOPE_NOT_SUPPORTED)",
+            "example": "COMPANY",
+            "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조)."
+          },
+          "targetWorkOrderId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "scopeCode=WORK_ORDER 일 때 필수. 둘의 짝이 어긋나면 400(code=PAIR)",
+            "example": 55021
           }
         }
       },
@@ -4525,7 +5048,7 @@
           "userName",
           "acknowledged"
         ],
-        "description": "누가 확인했고 누가 아직 안 했나. 근거: W-CO-04 「미확인자 보기」",
+        "description": "누가 확인했고 누가 아직 안 했나. 근거: W-CO-04 「미확인자 보기」 관리웹에서 확인하면 userId·userName 이, 현장 단말에서 확인하면 workerNo·workerName 이 온다 — 현장 작업자는 계정을 갖지 않는다. 서버가 인증 토큰의 종류로 가른다.",
         "properties": {
           "userId": {
             "type": "integer",
@@ -4543,7 +5066,25 @@
           "acknowledgedAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-08-13T09:12:00+09:00"
+            "example": "2026-08-13T09:12:00+09:00",
+            "description": "⭐ 이 시각은 «닫기»로 남은 행에도 찍힌다. 확인=참·시각 있음 = 확인 / 확인=거짓·시각 있음 = 열람(미확인) / 행이 없음 = 미확인. 셋을 같은 모양으로 그리지 않는다."
+          },
+          "workerNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 50,
+            "description": "현장 단말에서 확인했으면 사번이 온다",
+            "x-no-example": "사번은 고객 조직의 실제 값이라 예시를 지어내지 않는다 — 지어낸 사번이 확정값으로 읽힌 선례가 있다(omf-mes#191·#185)"
+          },
+          "workerName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "workerNo 와 짝이다",
+            "x-no-example": "실명이라 예시를 두지 않는다 — workerNo 와 짝이다"
           }
         }
       },
@@ -4551,7 +5092,8 @@
         "type": "object",
         "required": [
           "baseDate",
-          "cards"
+          "cards",
+          "asOf"
         ],
         "description": "경영·생산 한눈 보기. ⭐ 카드마다 소유 화면이 따로 있고 이 경로는 «숫자만» 모은다 — 클릭하면 그 화면으로 넘어간다. 근거: W-CO-05 §5",
         "properties": {
@@ -4577,9 +5119,69 @@
               "$ref": "#/components/schemas/Notification"
             },
             "description": "최근 알람 — 클릭하면 알림센터로 간다"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time",
+            "description": "서버 집계 기준 시각 — 화면이 「기준 HH:MM」 으로 보인다. 브라우저 수신 시각이 아니다",
+            "example": "2026-08-24T09:12:00+09:00"
+          },
+          "trend": {
+            "type": "object",
+            "description": "일일 생산실적 추이. 목표선은 targetValue 다",
+            "required": [
+              "points",
+              "asOf"
+            ],
+            "properties": {
+              "seriesName": {
+                "type": "string",
+                "example": "일일 생산실적"
+              },
+              "unit": {
+                "type": "string",
+                "example": "EA"
+              },
+              "targetValue": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double",
+                "example": 3000.0
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "label",
+                    "value"
+                  ],
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "example": "08-11"
+                    },
+                    "value": {
+                      "type": "number",
+                      "format": "double",
+                      "example": 2850.0
+                    }
+                  }
+                }
+              },
+              "asOf": {
+                "type": "string",
+                "format": "date-time",
+                "description": "서버 집계 기준 시각 — 화면이 「기준 HH:MM」 으로 보인다. 브라우저 수신 시각이 아니다",
+                "example": "2026-08-24T09:12:00+09:00"
+              }
+            },
+            "x-no-example": "하위 프로퍼티(seriesName·unit·targetValue·points·asOf)가 각각 example 을 갖는다 — 객체 통째 예시는 중복이다"
           }
         },
-        "x-internal-note": "⛔ 설비종합효율(OEE)을 내지 않는다. 계획 조업 시간의 분모가 되는 휴일·계획 정지를 담을 자리가 물리 모델에 없다(W-CO-05 §8-1). 정책 코드 ALLOW_PRODUCTION_ON_HOLIDAYS 는 시드에 있는데 어느 날이 휴일인지가 없다 — omf-mes#67 코멘트에 올라가 있다. 화면은 교대 기준으로 그리고 주석을 단다 — 자리가 생기면 주석만 뗀다."
+        "x-internal-note": "✅ 설비종합효율(OEE)을 되살렸다(2026-08-30) — 계획 조업 시간의 분모는 WorkCalendarDay.dayTypeCode(WORKING·HOLIDAY·PARTIAL) + startTime/endTime으로 구한다(공정 대상은 WorkCalendarApplication이 정한다 — 결정 03). 정책 코드 ALLOW_PRODUCTION_ON_HOLIDAYS(시드)와 함께 쓴다. 시간가동률 카드의 note는 이제 「교대 시간 기준」 캐비어트가 필요 없다 — 캘린더 기준으로 계산한다. OEE 카드(cardCode=OEE)를 cards 배열에 추가한다."
       },
       "DashboardCard": {
         "type": "object",
@@ -4610,6 +5212,33 @@
             "type": "number",
             "example": 0.08,
             "description": "직전 기준일 대비. 비교 대상이 없으면 비운다"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "카드 «아래 본문»으로 그릴 한 줄. 분모가 온전하지 않은 지표는 여기에 그 사실을 담는다(예: 「시간가동률은 교대 시간 기준입니다 — 휴일·계획 정지가 반영되지 않았습니다」). ⛔ 툴팁이 아니다",
+            "x-no-example": true
+          },
+          "valueStatusCode": {
+            "type": "string",
+            "enum": [
+              "AVAILABLE",
+              "NOT_YET",
+              "PARTIAL"
+            ],
+            "default": "AVAILABLE",
+            "description": "NOT_YET 이면 화면이 0 이 아니라 「아직 없음」을 그린다 · PARTIAL 이면 excludedCount 를 함께 보인다",
+            "example": "AVAILABLE"
+          },
+          "excludedCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "분모에서 제외한 건수. 화면이 「N품목 제외」로 적는다",
+            "example": 3
           }
         }
       },
@@ -4622,7 +5251,7 @@
           "effectiveFrom"
         ],
         "description": "운영 정책 한 건. 표 하나를 여러 화면이 쓰고 뜻은 policyCode 가 정한다. 범위 축은 넷 다 비울 수 있고 비면 전체를 뜻한다. 여럿이 동시에 맞으면 더 좁은 것이 이기며 축 우선순위는 품목 · 공정 · 공장 · 사업부 차례다. 이 판정은 서버가 하고 화면은 effective 경로로 결과를 받는다. 값 칸은 셋 중 하나만 쓴다. 물리 제약은 「셋 중 하나 이상」이라 셋 다 채워도 통과하지만, 어느 칸을 쓰는지는 정책 코드가 정한다 — 쓰지 않는 칸을 채우면 읽는 쪽이 헷갈린다. 근거: W-05-01 §5-A",
-        "x-internal-note": "코드 목록이 계약 자산이다 — W-05-01 §9-1. 작업 전 점검 통제 3단계(PRECHECK_CONTROL_LEVEL)를 2026-08-26 에 넣었다 — 소유 화면이 P-02-02 로 확정됐다(P-02-02 §5-1 · W-05-12 §8-7). 설정 전용 화면은 신설하지 않고 시드로 넣는다(P-02-02 §5-3).",
+        "x-internal-note": "코드 목록이 계약 자산이다 — W-05-01 §9-1. 작업 전 점검 통제 3단계(PRECHECK_CONTROL_LEVEL)를 2026-08-26 에 넣었다 — 소유 화면이 P-02-02 로 확정됐다(P-02-02 §5-1 · W-05-12 §8-7). 설정 전용 화면은 신설하지 않고 시드로 넣는다(P-02-02 §5-3). FIFO_ENFORCEMENT_LEVEL 은 2026-08-29 A2 체인 대조에서 더했다 — 소유 화면은 M-01-08 이고 설정 전용 화면은 없어 시드로 넣는다. ⚠ 이름이 시드 관례와 어긋나면 정정이 enum 값 «삭제»가 되어 ⛔ 다 — 신설 전 OPERATION_POLICY 시드 목록과 대조해야 하고, 물리 주석이 「FIFO 위반 정책」을 이미 명시하고 있어 중복 신설일 공산이 있다. 시드 코드 문자열 전문을 데이터 모델 담당에게 받는 것이 선행이다. ⚠ 정책 코드를 요구하는 자리가 아홉 있고 전부 소유 화면 미정이다 — 계정 잠금 실패 임계값(W-CO-01) · 비밀번호 최소 길이(W-CO-10) · 출하 자동 확정 on/off·경과 시간(W-04-12 — 화면은 표시만) · 재고 이동 단위(M-01-10 — W-06-06·omf-mes#145 소관) · 마감 허용 오차(W-02-05 — 「정확히 일치=정상」이라 당장은 불요) · 초과 생산(W-02-02 — 물리 주석에 이미 있다) · 작업자 자격 통제(P-CO-01 — 2026-07-28 사용자 판단으로 보류). ⛔ 코드를 enum 에 넣는 조건은 「소유 화면 확정」이다(2026-08-26 PRECHECK_CONTROL_LEVEL 선례).",
         "properties": {
           "operationPolicyId": {
             "type": "integer",
@@ -4638,9 +5267,10 @@
               "SHOT_CONVERSION_ENABLED",
               "SHOT_CONVERSION_RATIO",
               "MINOR_STOP_THRESHOLD_MINUTES",
-              "PRECHECK_CONTROL_LEVEL"
+              "PRECHECK_CONTROL_LEVEL",
+              "FIFO_ENFORCEMENT_LEVEL"
             ],
-            "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다",
+            "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다.",
             "x-source-column": "policy_code"
           },
           "businessUnitId": {
@@ -4738,9 +5368,10 @@
               "SHOT_CONVERSION_ENABLED",
               "SHOT_CONVERSION_RATIO",
               "MINOR_STOP_THRESHOLD_MINUTES",
-              "PRECHECK_CONTROL_LEVEL"
+              "PRECHECK_CONTROL_LEVEL",
+              "FIFO_ENFORCEMENT_LEVEL"
             ],
-            "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다"
+            "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다."
           },
           "businessUnitId": {
             "type": [
@@ -4887,7 +5518,8 @@
               "SHOT_CONVERSION_ENABLED",
               "SHOT_CONVERSION_RATIO",
               "MINOR_STOP_THRESHOLD_MINUTES",
-              "PRECHECK_CONTROL_LEVEL"
+              "PRECHECK_CONTROL_LEVEL",
+              "FIFO_ENFORCEMENT_LEVEL"
             ]
           },
           "resolved": {
@@ -4934,6 +5566,72 @@
             "description": "이긴 정책이 어느 축으로 맞았는가 — ITEM · PROCESS · PLANT · BUSINESS_UNIT · ALL 중 하나. resolved 가 거짓이면 비어 있다"
           }
         }
+      },
+      "Attachment": {
+        "type": "object",
+        "description": "다형 참조다 — 창고 도면과 공지 첨부가 현재 사용처다.",
+        "required": [
+          "attachmentId",
+          "targetTypeCode",
+          "targetId",
+          "fileName",
+          "contentType",
+          "byteSize",
+          "uploadedAt"
+        ],
+        "properties": {
+          "attachmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "targetTypeCode": {
+            "type": "string",
+            "maxLength": 40,
+            "x-no-example": true,
+            "description": "무엇에 붙은 첨부인가. ⚠ 값 문자열은 아직 확정되지 않았다."
+          },
+          "targetId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "fileName": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "layout.png"
+          },
+          "contentType": {
+            "type": "string",
+            "maxLength": 100,
+            "example": "image/png"
+          },
+          "byteSize": {
+            "type": "integer",
+            "format": "int64",
+            "example": 204800
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-13T09:12:00+09:00"
+          },
+          "uploadedBy": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "terminalToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "POP·모바일 단말 토큰. 단말 등록 때 발급한 값을 기기가 저장해 보낸다. 서버는 이 토큰의 «종류»로 X-Worker-No 필수 여부를 가른다."
       }
     }
   }

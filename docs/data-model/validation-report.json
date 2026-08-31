@@ -2,7 +2,7 @@
   "status": "PASS_WITH_GAPS",
   "model_version": "4.0",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "9eb50ebaa0a61536757dcbf0254de1a8994ed67c",
+  "contract_reference_commit": "bfe50b07101ae986052f96ffa75ba0743f6196e7",
   "table_count": 174,
   "logical_table_count": 172,
   "partition_count": 2,
@@ -21,14 +21,34 @@
     "quality": 17,
     "trace": 8
   },
-  "api_operation_count": 444,
-  "mapped_operation_count": 439,
-  "coverage": "98.9%",
+  "api_operation_count": 480,
+  "mapped_operation_count": 472,
+  "coverage": "98.3%",
   "contract_model_gaps": [
+    "mdm.judgment_type_control",
     "production.precheck_decision",
-    "production.repair_execution"
+    "production.repair_execution",
+    "trace.lot_lifecycle_history"
   ],
   "gap_operations": [
+    {
+      "id": "GET /trace/lot-lifecycle-events",
+      "missing_tables": [
+        "trace.lot_lifecycle_history"
+      ]
+    },
+    {
+      "id": "GET /mdm/judgment-type-controls",
+      "missing_tables": [
+        "mdm.judgment_type_control"
+      ]
+    },
+    {
+      "id": "PUT /mdm/judgment-type-controls/{codeValueId}",
+      "missing_tables": [
+        "mdm.judgment_type_control"
+      ]
+    },
     {
       "id": "GET /production/precheck-decisions",
       "missing_tables": [
