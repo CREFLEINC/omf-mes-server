@@ -1,7 +1,7 @@
 {
   "mapping_version": "4.1",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "bfe50b07101ae986052f96ffa75ba0743f6196e7",
+  "contract_reference_commit": "342a4149a76c37892309a71e5a69b6c8cbe60571",
   "operation_count": 480,
   "mapped_operation_count": 472,
   "coverage": "98.3%",
