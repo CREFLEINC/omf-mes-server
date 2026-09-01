@@ -11,7 +11,26 @@ const prisma = new PrismaClient();
  * 넣어 두므로, 여기서는 업무 도메인 코드만 추가한다.
  * 코드 체계 근거: research/2026-07-03-개념데이터모델-v2-요구사항통합.md §1
  */
-const SEED = [
+interface CodeValueSeed {
+  code: string;
+  codeName: string;
+  order: number;
+}
+
+interface CodeGroupSeed {
+  groupCode: string;
+  groupName: string;
+  values: CodeValueSeed[];
+  /** 참이면 값에 서버 동작·화면 분기가 걸려 고객이 값을 더하거나 지울 수 없다(공유계약 G-31 · 이슈 #62). */
+  isSystemOwned?: boolean;
+  /**
+   * 이 그룹에서 물러난 코드. 지우지 않고 is_active=false로 내린다 — 코드값을 가리키는
+   * FK가 물리에 0건이라 행을 지우면 그 문자열을 담고 있던 업무 행이 조용히 갈 곳을 잃는다.
+   */
+  retired?: string[];
+}
+
+const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'ITEM_TYPE',
     groupName: '품목구분',
@@ -242,17 +261,38 @@ const SEED = [
     ],
   },
   {
+    /**
+     * mdm.warehouse.warehouse_type_code — 2026-09-01 설계 회신이 6종으로 확정했다.
+     *
+     * DEFECT는 유형이 아니라 축이라 mdm.warehouse.is_defect(#47)로 옮겼다. 자재 불량창고와
+     * 제품 불량창고가 모두 성립하는데 유형 칸이 하나뿐이라 유형에 두면 둘 중 하나를 버려야
+     * 한다(DR-012 3-C). 유형에도 남기면 같은 뜻이 두 곳에 표현돼 축 섞임이 재발한다.
+     *
+     * REWORK는 설계 전체에서 '작업지시 유형' 값이고 재작업 *창고*라는 개념이 화면·계약·
+     * 결정서 어디에도 없다. is_defect로 옮기면 폐기요청 화면(W-01-06)의 불량창고 선택이
+     * 오염된다 — 그래서 옮기지 않고 내린다.
+     *
+     * SPARE_PART는 신설이다. goods_issue.source_warehouse_id가 NOT NULL로 mdm.warehouse를
+     * 가리키므로 예비품 창고도 창고 마스터의 한 행이다 — mdm.spare_part는 *부품 품목*
+     * 마스터이지 창고가 아니다(보전 화면 §3-3).
+     *
+     * ⚠ SEMI_FINISHED·MERCHANDISE는 영문 표기가 아직 확정 전이다. 계약 7벌에 창고유형
+     *   영문 코드가 0건이고(한글로만 '자재·제품·반제품·상품·생산'), 설계 회신이 이 표기를
+     *   쓴 근거는 #47 코멘트가 우리 시드를 SEMI·MDSE 대신 긴 이름으로 잘못 인용한 대목뿐이다.
+     *   2026-09-01에 어느 쪽이 정본인지 물어 두었고, 답이 오기 전까지 설계 회신 표기를
+     *   잠정으로 쓴다 — 바뀌면 여기와 mdm.warehouse.warehouse_type_code를 함께 고친다.
+     */
     groupCode: 'WAREHOUSE_TYPE',
     groupName: '창고유형',
     values: [
       { code: 'MATERIAL', codeName: '자재창고', order: 10 },
-      { code: 'SEMI', codeName: '반제품창고', order: 20 },
+      { code: 'SEMI_FINISHED', codeName: '반제품창고', order: 20 },
       { code: 'PRODUCT', codeName: '제품창고', order: 30 },
-      { code: 'MDSE', codeName: '상품창고', order: 40 },
+      { code: 'MERCHANDISE', codeName: '상품창고', order: 40 },
       { code: 'PRODUCTION', codeName: '생산창고', order: 50 },
-      { code: 'DEFECT', codeName: '불량창고', order: 60 },
-      { code: 'REWORK', codeName: '재작업공간', order: 70 },
+      { code: 'SPARE_PART', codeName: '예비품창고', order: 60 },
     ],
+    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK'],
   },
   {
     // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.
@@ -401,23 +441,38 @@ const SEED = [
   },
   {
     /**
-     * work_order.status_code — WF02 S1~S12의 작업지시 수명주기.
+     * work_order.status_code — 2026-09-01 설계 회신 확정 9값.
      *
-     * POP은 이 중 **RELEASED(배포됨)만 집어 든다**. 배포 = 생산관리자가 W/O를 확정해
-     * 현장에 내린 상태(released_at 세팅)이고, 첫 작업 시작이 IN_PROGRESS로 올린다.
-     * 홀드(02-S-A)·취소·마감 정정은 각 사이드 흐름을 개발할 때 값을 보탠다.
+     * ⚠ 이 그룹은 우리가 근거 없이 값을 만들어 뒀던 자리다. 계약 7벌에 그룹명도 값 enum도
+     * 0건인데 7값이 들어가 있었고, 설계팀이 '확정된 적 없으니 임의로 만들지 말라'고 통지한
+     * 뒤에야 드러났다. 아래가 확정본이며 우리 7값을 대체한다.
+     *
+     * 바뀐 것은 셋이다 — HOLD를 SUSPENDED로 갈고 CONFIRMED·BLOCKED를 더한다. 설계 정본의
+     * '8종' 표기가 BLOCKED를 떨어뜨린 것이 그동안 문서끼리 어긋난 원인이었고, 설계팀이
+     * 아홉으로 정정하며 클라이언트팀에도 같은 값을 보냈다.
+     *
+     * ⛔ '확정 대기'는 저장하는 상태 값이 아니다. 화면 용어이고 실제 게이트는 '배포 시각
+     * 없음 AND 계획 자원 배정 1건 이상 AND 4M 유효성 차단 0건'이라 서버가 질의로 판정한다.
+     *
+     * 낱말 여섯(PLANNED·RELEASED·IN_PROGRESS·COMPLETED·CANCELLED·BLOCKED)이 다른 그룹에도
+     * 있다. code_value가 그룹 FK를 갖고 화면이 그룹을 지정해 받으므로 저장·조회가 갈린다 —
+     * 설계 회신이 이 겹침을 알고 확정한 것이다.
      */
     groupCode: 'WORK_ORDER_STATUS',
     groupName: '작업지시 상태',
+    isSystemOwned: true,
     values: [
-      { code: 'PLANNED', codeName: '계획', order: 10 },
-      { code: 'RELEASED', codeName: '배포됨', order: 20 },
-      { code: 'IN_PROGRESS', codeName: '작업중', order: 30 },
-      { code: 'HOLD', codeName: '홀드', order: 40 },
-      { code: 'COMPLETED', codeName: '생산완료', order: 50 },
-      { code: 'CLOSED', codeName: '마감', order: 60 },
-      { code: 'CANCELLED', codeName: '취소', order: 70 },
+      { code: 'PLANNED', codeName: '편성', order: 10 },
+      { code: 'CONFIRMED', codeName: '확정', order: 20 },
+      { code: 'RELEASED', codeName: '배포', order: 30 },
+      { code: 'IN_PROGRESS', codeName: '진행', order: 40 },
+      { code: 'SUSPENDED', codeName: '중단', order: 50 },
+      { code: 'COMPLETED', codeName: '완료', order: 60 },
+      { code: 'CLOSED', codeName: '마감', order: 70 },
+      { code: 'BLOCKED', codeName: '진행불가', order: 80 },
+      { code: 'CANCELLED', codeName: '취소', order: 90 },
     ],
+    retired: ['HOLD'],
   },
   {
     // work_session.status_code — 한 작업지시를 실제로 돌린 구간. 비가동(02-S-H)이
@@ -432,8 +487,12 @@ const SEED = [
   },
   {
     // work_session_event.event_type_code — 세션에 일어난 일의 시각 기록.
+    //
+    // 잠근다. 값에 따라 세션 상태·사유 필수 여부·사유 목록이 갈리므로 고객이 값을 더하면
+    // 화면이 무엇을 해야 할지 정의되지 않는다(#62 — 이 플래그가 필요한 첫 그룹).
     groupCode: 'WORK_SESSION_EVENT_TYPE',
     groupName: '작업세션 이벤트 유형',
+    isSystemOwned: true,
     values: [
       { code: 'START', codeName: '작업 시작', order: 10 },
       { code: 'PAUSE', codeName: '일시중지', order: 20 },
@@ -461,6 +520,156 @@ const SEED = [
       { code: 'CORRECTED', codeName: '정정됨', order: 20 },
       { code: 'CANCELLED', codeName: '취소', order: 30 },
     ],
+  },
+
+  // ── 2026-09-01 설계 개정 반영 (#62 · #63 회신) ──────────────────────────────
+  // 아래 10그룹은 설계 회신이 값을 확정했거나, 저장 컬럼이 이미 있는데 시드가 비어
+  // 있던 자리다. 저장 컬럼이 아직 없는 셋(SHIPMENT_TIME_SLOT·LOT_LIFECYCLE_STATUS·
+  // LOT_STATUS_TRANSITION)은 후속 마이그레이션이 컬럼을 세운다 — 코드값은 컬럼과
+  // 독립이라 먼저 넣어도 무해하고, 값이 한자리에 모여 있는 편이 대조하기 낫다.
+
+  {
+    // logistics.goods_issue.issue_type_code — 2026-08-31 사용자 확정.
+    //
+    // ⛔ 폐기는 출고 *유형*이 아니라 기타출고의 *사유*다. issue_type_code=OTHER로 두고
+    //    reason_code로 가른다 — 승인 게이트도 유형이 아니라 사유를 보고 건다.
+    groupCode: 'ISSUE_TYPE',
+    groupName: '출고 유형',
+    values: [
+      { code: 'PRODUCTION', codeName: '생산투입', order: 10 },
+      { code: 'SUPPLIER_RETURN', codeName: '공급사반품', order: 20 },
+      { code: 'SHIPMENT', codeName: '출하', order: 30 },
+      { code: 'OTHER', codeName: '기타출고', order: 40 },
+    ],
+  },
+  {
+    // logistics.goods_receipt.receipt_type_code — 2026-08-31 사용자 확정.
+    groupCode: 'RECEIPT_TYPE',
+    groupName: '입고 유형',
+    values: [
+      { code: 'MATERIAL', codeName: '자재입고', order: 10 },
+      { code: 'PRODUCT', codeName: '제품입고', order: 20 },
+      { code: 'RETURN', codeName: '반품입고', order: 30 },
+      { code: 'TRANSFER', codeName: '창고간이동입고', order: 40 },
+    ],
+  },
+  {
+    // logistics.goods_receipt.reason_code — 고객이 운영 중에 설정하는 마스터다(G-31).
+    // 아래는 개발 시드일 뿐 확정 목록이 아니다. 설계 회신이 한글 라벨만 확정했고 영문
+    // 코드는 우리 명명에 맡겼다.
+    groupCode: 'GOODS_RECEIPT_REASON',
+    groupName: '입고 사유',
+    values: [
+      { code: 'CUSTOMER_RETURN', codeName: '고객반품', order: 10 },
+      { code: 'CLAIM', codeName: '클레임', order: 20 },
+      { code: 'SUPPLIER_REPLACEMENT', codeName: '공급사대체입고', order: 30 },
+      { code: 'REWORK_RETURN', codeName: '재작업후재입고', order: 40 },
+    ],
+  },
+  {
+    // logistics.inbound_variance.variance_type_code
+    //
+    // ⚠ 수량 *초과*는 이 그룹을 쓰지 않는다 — inbound_receipt.exception_type_code에
+    //   OVER_DELIVERY로 따로 간다(#62).
+    groupCode: 'INBOUND_VARIANCE_TYPE',
+    groupName: '입하 차이 유형',
+    values: [
+      { code: 'SHORTAGE', codeName: '수량 부족', order: 10 },
+      { code: 'ITEM_MISMATCH', codeName: '품목 불일치', order: 20 },
+      { code: 'UNREGISTERED_ITEM', codeName: '미등록 품목', order: 30 },
+    ],
+  },
+  {
+    // trace.lot_hold.release_reason_code
+    groupCode: 'LOT_HOLD_RELEASE_REASON',
+    groupName: 'LOT 보류 해제 사유',
+    values: [
+      { code: 'RETEST_PASS', codeName: '재검사 합격', order: 10 },
+      { code: 'RETEST_FAIL', codeName: '재검사 불합격', order: 20 },
+      { code: 'INVESTIGATION_CLEARED', codeName: '조사 종결', order: 30 },
+      { code: 'MANAGER_OVERRIDE', codeName: '관리자 직권 해제', order: 40 },
+    ],
+  },
+  {
+    // logistics.material_issue_request.reason_code
+    groupCode: 'MATERIAL_ISSUE_REQUEST_REASON',
+    groupName: '자재 출고요청 사유',
+    values: [
+      { code: 'URGENT_WO_RESPONSE', codeName: '긴급 작업지시 대응', order: 10 },
+      { code: 'SHORTAGE_SUPPLEMENT', codeName: '부족분 보충', order: 20 },
+      { code: 'DEFECT_REPLACEMENT', codeName: '불량 대체', order: 30 },
+      { code: 'OTHER', codeName: '기타', order: 40 },
+    ],
+  },
+  {
+    // 출하요청 시간대. 저장 컬럼은 후속 마이그레이션이 세우며, 기존
+    // shipment_request.ship_time_slot_start/end 시각 범위를 이 코드가 대체한다.
+    //
+    // 시각 경계는 담지 않는다. 코드값은 슬롯을 가리키는 이름일 뿐이고 시각을 요구하는
+    // 자리가 계약·화면 어디에도 없음을 설계팀이 전수 확인했다. 기존 CHECK가 end > start라
+    // 야간 슬롯(자정 넘김)을 담지 못하던 결함도 이 전환으로 함께 사라진다.
+    groupCode: 'SHIPMENT_TIME_SLOT',
+    groupName: '출하 시간대',
+    values: [
+      { code: 'MORNING', codeName: '오전', order: 10 },
+      { code: 'AFTERNOON', codeName: '오후', order: 20 },
+      { code: 'NIGHT', codeName: '야간', order: 30 },
+    ],
+  },
+  {
+    // trace.lot.lifecycle_status_code — 저장 컬럼은 후속 마이그레이션이 세운다.
+    //
+    // ⛔ 품질 판정 축(trace.lot.status_code)과 *다른 축*이다. 한 이력에 섞지 않는다는 것이
+    //    계약 명시 사항이고, 화면 스펙(W-03-01)에서 이 둘을 헷갈린 사고가 실제로 있었다.
+    //    생산LOT 선발행에서만 쓰고 자재·제품 LOT은 null이다.
+    //
+    // ⚠ 그룹명 LOT_LIFECYCLE_STATUS는 우리가 지은 잠정 이름이다 — 공유계약 G-32 등록부에
+    //   이 그룹이 없다. 값 셋은 2026-08-31 설계 회신(#50)이 확정한 것이다.
+    groupCode: 'LOT_LIFECYCLE_STATUS',
+    groupName: 'LOT 생명주기 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'WAITING', codeName: '대기', order: 10 },
+      { code: 'ACTIVE', codeName: '활성', order: 20 },
+      { code: 'VOIDED', codeName: '폐번', order: 30 },
+    ],
+  },
+  {
+    // trace.lot_status_event.transition_code — 저장 컬럼은 후속 마이그레이션이 세운다.
+    //
+    // 품질 판정 축의 전이 정본 9종이다. 판정 유입 경계·데이터 배선·경계 위임은 상태
+    // 전이가 아니라 제외했다고 설계팀이 밝혔다(2026-09-01 회신 E-9).
+    //
+    // ⚠ 그룹명 LOT_STATUS_TRANSITION은 우리가 지은 잠정 이름이다 — G-32 등록부에 없다.
+    groupCode: 'LOT_STATUS_TRANSITION',
+    groupName: 'LOT 상태 전이',
+    isSystemOwned: true,
+    values: [
+      { code: 'C4', codeName: '판정 → Release(합격)', order: 10 },
+      { code: 'C5', codeName: '판정 → 보류', order: 20 },
+      { code: 'C6', codeName: '판정 → Hold(불합격)', order: 30 },
+      { code: 'C7', codeName: '보류 → Release(재판정 합격)', order: 40 },
+      { code: 'C8', codeName: '보류 → Hold(재판정 불합격)', order: 50 },
+      { code: 'C9', codeName: 'Release → Hold(클레임·리콜·재판정)', order: 60 },
+      { code: 'C10', codeName: '의심자재등록 → 보류', order: 70 },
+      { code: 'C14', codeName: '판정 → PQC 검사 필요(합격판정개수 초과)', order: 80 },
+      { code: 'C15', codeName: 'PQC 검사 필요 → Release(전수 재검 양품)', order: 90 },
+    ],
+  },
+  {
+    // 판정유형. 통제 속성(mdm.judgment_type_control)이 이 그룹의 코드값에 붙는다.
+    //
+    // ⛔ 값을 넣지 않는다 — 설계팀이 통제 속성 7칸 사양은 보냈으나 *판정유형 값 목록*
+    //    자체는 아직 오지 않았다(2026-09-01 회신 E-1). 그룹만 세우는 이유는 후속
+    //    마이그레이션이 code_value를 가리키는 표를 붙이기 때문이고, 지금 잠가 두어야
+    //    목록이 오기 전에 고객이 임의 값을 넣지 못한다.
+    //
+    // 잠그는 근거: blocks_issue·blocks_shipment·blocks_picking이 출고·출하·피킹을 막고
+    // requires_approval이 결재를 태운다 — G-31 마스터안전형이 아니다.
+    groupCode: 'JUDGMENT_TYPE',
+    groupName: '판정 유형',
+    isSystemOwned: true,
+    values: [],
   },
 ];
 
@@ -553,10 +762,27 @@ async function main(): Promise<void> {
   console.log(`seeded UOM (${UOMS.length})`);
 
   for (const group of SEED) {
+    const isSystemOwned = group.isSystemOwned ?? false;
+    const retired = group.retired ?? [];
+
+    // 같은 코드가 values와 retired에 함께 있으면 방금 세운 값을 곧바로 내린다 — 물러남이
+    // upsert 뒤에 돌기 때문이다. 로그는 「9 values」로 정상처럼 보여 눈에 띄지 않으므로
+    // 여기서 세운다.
+    const conflicting = group.values.filter((value) => retired.includes(value.code));
+    if (conflicting.length > 0) {
+      throw new Error(
+        `${group.groupCode}: ${conflicting.map((value) => value.code).join(', ')} 가 values와 retired에 함께 있다`,
+      );
+    }
+
     const saved = await prisma.code_group.upsert({
       where: { group_code: group.groupCode },
-      update: { group_name: group.groupName, is_active: true },
-      create: { group_code: group.groupCode, group_name: group.groupName },
+      update: { group_name: group.groupName, is_active: true, is_system_owned: isSystemOwned },
+      create: {
+        group_code: group.groupCode,
+        group_name: group.groupName,
+        is_system_owned: isSystemOwned,
+      },
     });
 
     for (const value of group.values) {
@@ -574,8 +800,23 @@ async function main(): Promise<void> {
       });
     }
 
+    // 물러난 값을 내린다. upsert만으로는 목록에서 뺀 값이 DB에 그대로 남는다.
+    const retiredCount = retired.length
+      ? (
+          await prisma.code_value.updateMany({
+            where: { code_group_id: saved.code_group_id, code: { in: retired }, is_active: true },
+            data: { is_active: false },
+          })
+        ).count
+      : 0;
+
+    const marks = [isSystemOwned ? '시스템 소유' : '', retiredCount ? `물러남 ${retiredCount}` : '']
+      .filter(Boolean)
+      .join(' · ');
     // eslint-disable-next-line no-console
-    console.log(`seeded ${group.groupCode} (${group.values.length} values)`);
+    console.log(
+      `seeded ${group.groupCode} (${group.values.length} values${marks ? ` · ${marks}` : ''})`,
+    );
   }
 
   await seedNumberingRules();
