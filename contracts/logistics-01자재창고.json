@@ -8482,6 +8482,17 @@
       "readOnly": true,
       "example": 1001,
       "description": "이 라인으로 서버가 만든 적치 지시. 화면은 이 값으로 바로 적치 완료를 부른다 — 입고 응답이 라인마다 지시 식별자를 실어 왕복 하나를 없앤다. 아직 만들어지지 않았으면 비어 온다. 근거: M-04-04 §5-6 · W-01-10 §5-4"
+     },
+     "originalShipmentLotAllocationId": {
+      "x-source-column": "original_shipment_lot_allocation_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "되돌아온 물건이 어느 출하의 어느 배분이었나 — 반품 입고에서 genealogy 가 역방향으로 이어지는 자리다(W-04-06 §4-B · 머리말). ⭐ 비울 수 있다 — 원 출하를 못 찾는 갈래가 정상이다(W-04-06 §5-3 · omf-mes#302 ①과 같은 근거). ⭐ 서버가 lotId 만으로는 못 잇는다 — 한 LOT 이 여러 출하에 나뉘어 나가므로 «어느 배분»인지를 화면이 보낸다(W-04-06 §5-3 「여러 출하가 섞였을 때」). 화면이 그 값을 얻는 곳: GET /logistics/shipments/{shipmentId} 응답의 lines[].allocations[].shipmentLotAllocationId. ⚠ 가리키는 곳은 04 제품출하 계약의 ShipmentLotAllocation 이다 — 계약이 갈린다.",
+      "x-internal-note": "저장 컬럼은 late FK 로 이미 실재한다(goods_receipt_line.original_shipment_lot_allocation_id) — 데이터 모델 담당 대기 사항 없음. 근거: W-04-06 §2 · omf-mes#302"
      }
     }
    },
@@ -8560,6 +8571,17 @@
       "format": "int64",
       "description": "이 값은 입고 전기 시점의 장부 위치다 — 적치 판정에는 쓰이지 않는다. 적치 지시의 권장 위치는 적치 규칙(putaway_rule)만이 낸다(M-01-05 §5-2-1 · 2026-08-06 확정). 실물이 권장 위치로 가서 이 값과 달라지면 M-01-07·M-01-10 으로 조정한다(W-01-10 §5-2).",
       "example": 1001
+     },
+     "originalShipmentLotAllocationId": {
+      "x-source-column": "original_shipment_lot_allocation_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "되돌아온 물건이 어느 출하의 어느 배분이었나 — 반품 입고에서 genealogy 가 역방향으로 이어지는 자리다(W-04-06 §4-B · 머리말). ⭐ 비울 수 있다 — 원 출하를 못 찾는 갈래가 정상이다(W-04-06 §5-3 · omf-mes#302 ①과 같은 근거). ⭐ 서버가 lotId 만으로는 못 잇는다 — 한 LOT 이 여러 출하에 나뉘어 나가므로 «어느 배분»인지를 화면이 보낸다(W-04-06 §5-3 「여러 출하가 섞였을 때」). 화면이 그 값을 얻는 곳: GET /logistics/shipments/{shipmentId} 응답의 lines[].allocations[].shipmentLotAllocationId. ⚠ 가리키는 곳은 04 제품출하 계약의 ShipmentLotAllocation 이다 — 계약이 갈린다.",
+      "x-internal-note": "저장 컬럼은 late FK 로 이미 실재한다(goods_receipt_line.original_shipment_lot_allocation_id) — 데이터 모델 담당 대기 사항 없음. 근거: W-04-06 §2 · omf-mes#302"
      }
     }
    },
