@@ -1143,6 +1143,16 @@
        }
       }
      },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      },
+      "description": "업무 규칙 위반. ⛔ **code=LAST_ADMIN** — 이 사용자를 중지하면 「사용자·역할·권한 관리」 권한을 가진 사람이 0명이 된다. ⭐ **자기 자신도 막는다**(사용자 결정 2026-09-01 「둘 다 막는다」) — 관리자 교체는 «다른 관리자»가 한다: 새 관리자를 먼저 세우고 기존 관리자를 내린다. ⚠ 그래서 운영은 관리자를 **둘 이상** 두어야 한다 — 하나뿐이면 그 사람을 내릴 방법이 없다."
+     },
      "403": {
       "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
       "content": {
@@ -1361,7 +1371,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. ⛔ **code=LAST_ADMIN** — 이 사용자에게서 관리자 역할을 빼면 「사용자·역할·권한 관리」 권한 보유자가 0명이 된다(사용자 결정 2026-09-01 · W-CO-02 §8-6).",
       "content": {
        "application/json": {
         "schema": {
@@ -1498,6 +1508,27 @@
      }
     },
     "x-internal-note": "미착지: 법인 축(legal_entity_id)을 두지 않는다 — DR-002 2-C 확정(2026-08-10). 권한 범위는 창고·공정 축으로만 가른다"
+   }
+  },
+  "/app/permissions": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "기능 권한 목록 — 부여할 수 있는 «후보» 전부",
+    "description": "⭐ 권한 격자의 «열»을 만드는 목록이다.\n\n⛔ 이 경로가 없으면 화면은 「이미 부여된 권한」만 알아 **권한을 새로 줄 수 없다** — 최초 상태(부여 0건)에서는 격자가 통째로 비고 아무도 아무 권한을 받지 못한다. 실제로 그래서 프론트가 격자를 「보기 전용」으로 닫아 두었다(omf-mes-client#17).\n\n⛔ **공통코드가 아니다** — 앱 기능 목록이라 고객이 W-06-06 에서 늘리거나 지울 수 없다. 없는 코드를 만들면 그것을 검사하는 자리가 없어 «아무 효과 없는 권한»이 되고, 있는 코드를 지우면 그 기능이 조용히 잠긴다.\n\n⭐ **입도는 화면 단위다** — 값이 화면 코드와 1:1 이다(사용자 결정 2026-09-01). 한 화면 안에서 조회와 편집을 가르지 않는다.\n\n쪽을 나누지 않는다 — 목록이 화면 수만큼으로 닫혀 있고, 쪽이 나뉘면 둘째 쪽을 못 받았을 때 격자에서 열이 조용히 사라진다.\n\n근거: W-CO-02 §4-E · §8-7 사용자 결정 2026-09-01",
+    "responses": {
+     "200": {
+      "description": "권한 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PermissionListResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/app/roles": {
@@ -1776,7 +1807,7 @@
      "app"
     ],
     "summary": "역할 사용 중지",
-    "description": "물리 삭제는 제공하지 않는다. 배정된 사용자가 있는 역할은 확인 다이얼로그 + 배정 건수 표시가 선행된다. 근거: W-CO-02 §6 「참조 중인 역할 사용 중지」 · 공유계약 B-4",
+    "description": "물리 삭제는 제공하지 않는다. 배정된 사용자가 있는 역할은 확인 다이얼로그 + 배정 건수 표시가 선행된다. 근거: W-CO-02 §6 「참조 중인 역할 사용 중지」 · 공유계약 B-4\n\n⭐ **중지된 역할은 권한 «판정»에서 제외된다 — 부여 기록은 지우지 않는다**(사용자 결정 2026-09-01). 지우면 되돌릴 수 없어 다시 켰을 때 누구에게 줬는지가 사라지고, 반대로 그대로 두면 「중지했는데 안 중지된」 상태가 되어 관리자가 오해한다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1795,6 +1826,16 @@
         }
        }
       }
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      },
+      "description": "업무 규칙 위반. ⛔ **code=LAST_ADMIN** — 이 역할을 중지하면 「사용자·역할·권한 관리」 권한을 가진 사람이 0명이 되어 되돌릴 사람이 없어진다(사용자 결정 2026-09-01 · W-CO-02 §8-6). ⛔ 판정 기준은 «역할»이 아니라 «그 권한 보유자 수»다 — 고객이 새 역할을 만들어 같은 권한을 준 경우를 역할로 세면 못 센다."
      },
      "403": {
       "description": "권한 없음. 근거: W-CO-02 §6 「권한 없음」",
@@ -1957,7 +1998,7 @@
       }
      },
      "400": {
-      "description": "검증 실패",
+      "description": "검증 실패. ⛔ **code=LAST_ADMIN** — 이 역할에서 관리 권한을 빼면 「사용자·역할·권한 관리」 권한 보유자가 0명이 된다(사용자 결정 2026-09-01 · W-CO-02 §8-6).",
       "content": {
        "application/json": {
         "schema": {
@@ -7025,7 +7066,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "공통코드 — 값 목록 미정 §8-3. 최소 구분: 대기/처리중/완료/실패"
+      "description": "공통코드 — 값 목록이 아직 서지 않았다. 최소 구분: 대기/처리중/완료/실패. 추적처는 omf-mes#213(리소스별 상태값 코드 문자열)이다."
      },
      {
       "name": "interfaceCode",
@@ -7039,7 +7080,11 @@
       "name": "directionCode",
       "in": "query",
       "schema": {
-       "type": "string"
+       "type": "string",
+       "enum": [
+        "INBOUND",
+        "OUTBOUND"
+       ]
       },
       "description": "수신(INBOUND) 또는 송신(OUTBOUND). 연계 정의의 방향 값과 같은 어휘다"
      },
@@ -7049,7 +7094,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "무엇을 나른 메시지인가. 값 목록은 아직 정해지지 않았다 — 확정 전에는 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions)."
+      "description": "무엇을 나른 메시지인가. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 대상 표 이름이라 고객이 늘릴 수 있는 값이 아니다(공유계약 A-10 다형 참조 · A-16 「가르는 물음 넷」 — 「가」·「나」 참 · 2026-09-02 판정). ⬜ 값 집합은 아직 서지 않았다 — 그때까지 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions). ⚠ 이 판정은 이 자리에 한한다 — 같은 이름의 다른 자리(AuditEvent 등)는 값 집합이 다르고 자리마다 닫는다."
      },
      {
       "name": "retryCountMin",
@@ -7326,7 +7371,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "공통코드 — 값 목록 미정 §8-3"
+      "description": "공통코드 — 값 목록 미정 §8-3. ⭐ **두 값은 확정됐다 — APP_USER · ROLE**(사용자 결정 2026-09-01 · W-CO-02 §8-8). 사용자·역할의 마스터 수정뿐 아니라 **권한 부여·회수까지** 이 이력에 남는다 — 「누가 언제 권한을 줬나」가 남는 곳이 그동안 하나도 없었고, 그것이 이 결정의 이유다. ⚠ **나머지 값은 여전히 미정이다** — 둘이 들었다고 목록이 닫힌 것이 아니다(공유계약 A-21 — 일부만 채워진 것을 「전부」로 읽지 않는다)."
      },
      {
       "name": "targetId",
@@ -13789,7 +13834,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "allowMixedItem": {
       "x-source-column": "allow_mixed_item",
@@ -13893,7 +13939,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "allowMixedItem": {
       "x-source-column": "allow_mixed_item",
@@ -13986,7 +14033,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "allowMixedItem": {
       "x-source-column": "allow_mixed_item",
@@ -14113,14 +14161,15 @@
       "type": "string",
       "maxLength": 50,
       "default": "ACTIVE",
-      "description": "공통코드 — 값 목록 미정(§8-4) · isActive 와의 역할 분담 미정(§8-4)",
+      "description": "사용자의 «인사» 상태 — 재직·휴직·퇴사 등. ⛔ **계정을 쓸 수 있는가는 이 값이 아니라 isActive 가 정한다**(사용자 결정 2026-09-01 · W-CO-02 §8-4 해소). 둘이 겹쳐 읽히던 자리라 축을 갈랐다 — 휴직인데 계정은 살려 두는 경우가 실재하므로 하나로 합칠 수 없다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=APP_USER_STATUS 로 받는다(공유계약 G-31 마스터안전형 · G-32 · 2026-09-01 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "ACTIVE"
      },
      "isActive": {
       "x-source-column": "is_active",
       "type": "boolean",
       "default": true,
-      "example": true
+      "example": true,
+      "description": "계정을 쓸 수 있는가. ⛔ **로그인 차단의 정본이 이 값이다** — statusCode 는 인사 상태라 판정에 쓰지 않는다(사용자 결정 2026-09-01 · W-CO-02 §8-4)."
      }
     },
     "x-internal-note": "미착지: 인증 수단(password_hash·last_login_at·failed_login_count) 전무 — #155 §1"
@@ -14183,7 +14232,7 @@
      "userName",
      "statusCode"
     ],
-    "description": "사용자 수정 요청. loginId 는 항상 잠김(NOT_COUNTABLE)이라 요청에 포함하지 않는다. isActive 는 별도 액션(:deactivate / :activate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §5-2",
+    "description": "사용자 수정 요청. loginId 는 항상 잠김(NOT_COUNTABLE)이라 요청에 포함하지 않는다. isActive 는 별도 액션(:deactivate / :activate)으로만 바꾼다. 낙관적 잠금은 공유계약 B-1. 근거: W-CO-02 §5-2 ⛔ **loginId 는 이 본문에 없다 — 한 번 만들면 고치지 않는다**(사용자 결정 2026-09-01 · W-CO-02 §8-5 해소). B-4 의 「참조 건수 0 일 때만 코드 수정」 규칙을 loginId 에는 적용할 수 없다 — 작성자 기록류에 흩어져 있고 FK 를 의도적으로 걸지 않아 **참조를 셀 수 없기 때문**이다. 셀 수 없는 조건은 규칙이 될 수 없다. 바꿔야 하면 새 계정을 만든다. ⚠ roleCode 는 참조를 셀 수 있어 기존 B-4 규칙을 그대로 쓴다.",
     "properties": {
      "userName": {
       "x-source-column": "user_name",
@@ -14406,6 +14455,46 @@
      }
     }
    },
+   "Permission": {
+    "type": "object",
+    "required": [
+     "code",
+     "name"
+    ],
+    "description": "기능 권한 하나. ⛔ 앱이 소유한다 — 화면이 늘면 배포로 는다. 고객이 만들거나 지우지 않는다.",
+    "properties": {
+     "code": {
+      "type": "string",
+      "maxLength": 50,
+      "description": "role_permission.permission_code 에 그대로 들어간다. 화면 코드와 1:1 이다",
+      "example": "W-01-03"
+     },
+     "name": {
+      "type": "string",
+      "description": "격자 열 머리에 보일 이름. ⛔ 화면이 지어내지 않는다 — 서버가 준 것을 그대로 쓴다",
+      "example": "초과 입하 분리"
+     },
+     "groupCode": {
+      "type": "string",
+      "description": "격자를 묶는 축(도메인). ⭐ 열이 화면 수만큼(2026-09-01 실측 **117** — 폐지된 W-06-13 제외)이라 묶지 않으면 관리자가 격자를 옆으로 끝없이 스크롤한다",
+      "example": "01"
+     }
+    }
+   },
+   "PermissionListResponse": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Permission"
+      }
+     }
+    }
+   },
    "RolePermission": {
     "x-source-table": "app.role_permission",
     "type": "object",
@@ -14432,7 +14521,8 @@
       "x-source-column": "permission_code",
       "type": "string",
       "maxLength": 50,
-      "example": "MASTER_EDIT"
+      "example": "W-01-03",
+      "description": "부여된 기능 권한 코드. ⭐ **고를 수 있는 «후보» 전부는 GET /app/permissions 가 준다** — 이 경로의 응답은 「이미 부여된 것」뿐이라 그것만으로는 권한을 새로 줄 수 없다. ⛔ 공통코드가 아니다 — 앱 기능 목록이라 고객이 늘리거나 지우지 않는다. 값은 화면 코드와 1:1 이다(입도 = 화면 단위 · 사용자 결정 2026-09-01). 근거: W-CO-02 §4-E"
      }
     },
     "x-internal-note": "미착지: permission_code 값 목록이 회신 E-9 대기 — 화면은 비활성+사유로 둔다(공유계약 G-2·G-6)"
@@ -15887,7 +15977,7 @@
       "x-source-column": "qualification_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록 미정 §8-5",
+      "description": "공통코드 — 값 목록 미정 §8-5 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=QUALIFICATION_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "STANDARD"
      },
      "processId": {
@@ -16075,7 +16165,7 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "MES 확장 · 공통코드 — location.storage_condition_code 와 같은 코드계",
+      "description": "MES 확장 · 공통코드 — location.storage_condition_code 와 같은 코드계 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "STANDARD"
      },
      "openedShelfLifeHours": {
@@ -16192,7 +16282,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=STORAGE_CONDITION 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "openedShelfLifeHours": {
       "x-source-column": "opened_shelf_life_hours",
@@ -17145,7 +17236,7 @@
       "x-source-column": "sampling_method_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 「전수/샘플」+「제품 단위/LOT 단위」가 여기 들어간다. 값 목록 §8-2",
+      "description": "공통코드 — 「전수/샘플」+「제품 단위/LOT 단위」가 여기 들어간다. 값 목록 §8-2 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_SAMPLING_METHOD 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "STANDARD"
      },
      "aqlValue": {
@@ -17182,7 +17273,7 @@
       "x-source-column": "inspection_frequency_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록 미정",
+      "description": "공통코드 — 값 목록 미정 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "STANDARD"
      },
      "frequencyIntervalValue": {
@@ -17262,7 +17353,8 @@
       "x-source-column": "sampling_method_code",
       "type": "string",
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_SAMPLING_METHOD 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "aqlValue": {
       "x-source-column": "aql_value",
@@ -17294,7 +17386,8 @@
       "x-source-column": "inspection_frequency_code",
       "type": "string",
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "frequencyIntervalValue": {
       "x-source-column": "frequency_interval_value",
@@ -17356,7 +17449,8 @@
       "x-source-column": "sampling_method_code",
       "type": "string",
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_SAMPLING_METHOD 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "aqlValue": {
       "x-source-column": "aql_value",
@@ -17388,7 +17482,8 @@
       "x-source-column": "inspection_frequency_code",
       "type": "string",
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_FREQUENCY 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "frequencyIntervalValue": {
       "x-source-column": "frequency_interval_value",
@@ -17579,7 +17674,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_ITEM_SPEC_METHOD 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "defaultInspectionEquipmentId": {
       "x-source-column": "default_inspection_equipment_id",
@@ -17733,7 +17829,8 @@
        "null"
       ],
       "maxLength": 50,
-      "example": "STANDARD"
+      "example": "STANDARD",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_ITEM_SPEC_METHOD 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "defaultInspectionEquipmentId": {
       "x-source-column": "default_inspection_equipment_id",
@@ -18313,14 +18410,18 @@
       "type": "string",
       "maxLength": 50,
       "description": "수신(INBOUND) 또는 송신(OUTBOUND). 연계 정의의 방향 값과 같은 어휘다",
-      "example": "OUTBOUND"
+      "example": "OUTBOUND",
+      "enum": [
+       "INBOUND",
+       "OUTBOUND"
+      ]
      },
      "targetTypeCode": {
       "x-source-column": "target_type_code",
       "type": "string",
       "maxLength": 50,
       "x-no-example": true,
-      "description": "무엇을 나른 메시지인가. 값 목록은 아직 정해지지 않았다 — 확정 전에는 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions).",
+      "description": "무엇을 나른 메시지인가. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 대상 표 이름이라 고객이 늘릴 수 있는 값이 아니다(공유계약 A-10 다형 참조 · A-16 「가르는 물음 넷」 — 「가」·「나」 참 · 2026-09-02 판정). ⬜ 값 집합은 아직 서지 않았다 — 그때까지 이 조건 대신 interfaceCode 로 거른다(선택 목록은 GET /integration/interface-definitions). ⚠ 이 판정은 이 자리에 한한다 — 같은 이름의 다른 자리(AuditEvent 등)는 값 집합이 다르고 자리마다 닫는다.",
       "x-internal-note": "감사 이벤트의 target_type_code 와 같은 어휘를 쓸지 미정 — 공유계약 A-10(다형 참조 대응표)이 서면 함께 정한다."
      },
      "targetId": {
@@ -18334,7 +18435,7 @@
       "x-source-column": "status_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록 미정. 최소 구분: 대기/처리중/완료/실패",
+      "description": "공통코드 — 값 목록이 아직 서지 않았다. 최소 구분: 대기/처리중/완료/실패. 추적처는 omf-mes#213(리소스별 상태값 코드 문자열)이다.",
       "example": "FAILED"
      },
      "retryCount": {
@@ -18460,7 +18561,7 @@
       "x-source-column": "target_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록 미정 §8-3",
+      "description": "공통코드 — 값 목록 미정 §8-3. ⭐ **두 값은 확정됐다 — APP_USER · ROLE**(사용자 결정 2026-09-01 · W-CO-02 §8-8). 사용자·역할의 마스터 수정뿐 아니라 **권한 부여·회수까지** 이 이력에 남는다 — 「누가 언제 권한을 줬나」가 남는 곳이 그동안 하나도 없었고, 그것이 이 결정의 이유다. ⚠ **나머지 값은 여전히 미정이다** — 둘이 들었다고 목록이 닫힌 것이 아니다(공유계약 A-21 — 일부만 채워진 것을 「전부」로 읽지 않는다).",
       "example": "WAREHOUSE"
      },
      "targetId": {
@@ -18895,7 +18996,7 @@
       "x-source-column": "process_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록 미정",
+      "description": "공통코드 — 값 목록 미정 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=PROCESS_TYPE 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "STANDARD"
      },
      "isActive": {
@@ -21335,7 +21436,7 @@
       ],
       "example": "PUBLIC_HOLIDAY",
       "maxLength": 50,
-      "description": "공통코드 — 값 목록이 확정되지 않았다"
+      "description": "공통코드 — 값 목록이 확정되지 않았다 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_CALENDAR_DAY_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "remarks": {
       "type": [

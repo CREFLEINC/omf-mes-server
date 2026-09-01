@@ -1,10 +1,10 @@
 {
   "mapping_version": "4.1",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
-  "operation_count": 481,
+  "contract_reference_commit": "77a067b1202cdef09723287e956b064c3392e111",
+  "operation_count": 482,
   "mapped_operation_count": 481,
-  "coverage": "100.0%",
+  "coverage": "99.8%",
   "operations": [
     {
       "id": "GET /app/approval-requests",
@@ -6111,6 +6111,23 @@
         }
       ],
       "missing_tables": []
+    },
+    {
+      "id": "GET /app/permissions",
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/app/permissions",
+      "summary": "기능 권한 목록 — 부여할 수 있는 «후보» 전부",
+      "tags": [
+        "app"
+      ],
+      "deprecated": false,
+      "idempotency_key": false,
+      "if_match": false,
+      "tables": [],
+      "missing_tables": [
+        "app.permission"
+      ]
     },
     {
       "id": "GET /app/roles",

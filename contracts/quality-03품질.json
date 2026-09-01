@@ -390,7 +390,12 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "값"
+       "example": "값",
+       "enum": [
+        "REWORK",
+        "SCRAP",
+        "NORMAL"
+       ]
       },
       "description": "재작업 · 폐기 · 정상"
      },
@@ -3003,8 +3008,13 @@
      },
      "dispositionTypeCode": {
       "type": "string",
-      "description": "재작업 · 폐기 · 정상. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118)",
-      "x-no-example": "값 목록이 미확정이라 코드 문자열을 못 박지 않는다(2차 값 목록 제안안 대상). 임의 코드를 example 로 넣으면 목이 확정값처럼 보인다"
+      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31)",
+      "x-no-example": "값 목록이 미확정이라 코드 문자열을 못 박지 않는다(2차 값 목록 제안안 대상). 임의 코드를 example 로 넣으면 목이 확정값처럼 보인다",
+      "enum": [
+       "REWORK",
+       "SCRAP",
+       "NORMAL"
+      ]
      },
      "decisionQty": {
       "type": "number",
@@ -3149,8 +3159,13 @@
     "properties": {
      "dispositionTypeCode": {
       "type": "string",
-      "description": "재작업 · 폐기 · 정상. ⛔ 선별은 받지 않는다(omf-mes#118)",
-      "x-no-example": "값 목록 미확정 — 2차 값 목록 제안안 대상"
+      "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31)",
+      "x-no-example": "값 목록 미확정 — 2차 값 목록 제안안 대상",
+      "enum": [
+       "REWORK",
+       "SCRAP",
+       "NORMAL"
+      ]
      },
      "decisionQty": {
       "type": "number",
@@ -3433,7 +3448,7 @@
      "statusCode": {
       "type": "string",
       "example": "REQUESTED",
-      "description": "검사 의뢰의 진행 상태 — 확정 5값: REQUESTED(대기) · IN_PROGRESS(진행) · COMPLETED(완료) · SKIPPED(생략) · CANCELLED(취소). ⛔ enum 으로 못박지 않는다 — 값 목록은 공통코드가 갖고 늘 수 있다(공유계약 G-2·G-6). 표시명은 06 계약 GET /mdm/code-values 로 채운다. ⭐ 전이는 전부 «이미 있는 액션의 부수 효과»다 — 새 경로가 없다: 서버가 입하·실적·출하 시점에 REQUESTED 로 만들고 · 첫 임시 저장이 IN_PROGRESS (⛔ 「검사 시작」 액션을 두지 않는다 — 화면에 시작 버튼이 없다) · :confirm 이 COMPLETED · 재검사 회차 추가가 다시 IN_PROGRESS · W-01-02 긴급 IQC 생략 한도승인이 SKIPPED · 입고 취소(FR-IM-076)가 CANCELLED. ⚠ SKIPPED 와 CANCELLED 를 합치지 않는다 — 앞은 검사를 안 하기로 «승인»된 정상 종결이고(LOT 은 Release 로 입고된다) 뒤는 의뢰가 «무효»가 된 것이다. 합치면 「검사를 몇 건 생략했나」를 셀 수 없다. ⚠ LOT 품질 상태(정상·불량·검사 대기·폐기)와 «다른 축»이다 — 같이 움직이지 않는다. 근거: 확정 2026-08-21 · FR-QM-050 · omf-mes#170",
+      "description": "검사 의뢰의 진행 상태 — 확정 5값: REQUESTED(대기) · IN_PROGRESS(진행) · COMPLETED(완료) · SKIPPED(생략) · CANCELLED(취소). ⛔ enum 으로 못박지 않는다 — 값 목록은 공통코드가 갖고 늘 수 있다(공유계약 G-2·G-6). 표시명은 06 계약 GET /mdm/code-values 로 채운다. ⭐ 전이는 전부 «이미 있는 액션의 부수 효과»다 — 새 경로가 없다: 서버가 입하·실적·출하 시점에 REQUESTED 로 만들고 · 첫 임시 저장이 IN_PROGRESS (⛔ 「검사 시작」 액션을 두지 않는다 — 화면에 시작 버튼이 없다) · :confirm 이 COMPLETED · 재검사 회차 추가가 다시 IN_PROGRESS · W-01-02 긴급 IQC 생략 한도승인이 SKIPPED · 입고 취소(FR-IM-076)가 CANCELLED. ⚠ SKIPPED 와 CANCELLED 를 합치지 않는다 — 앞은 검사를 안 하기로 «승인»된 정상 종결이고(LOT 은 Release 로 입고된다) 뒤는 의뢰가 «무효»가 된 것이다. 합치면 「검사를 몇 건 생략했나」를 셀 수 없다. ⚠ LOT 품질 상태(정상·불량·검사 대기·폐기)와 «다른 축»이다 — 같이 움직이지 않는다. 근거: 확정 2026-08-21 · FR-QM-050 · omf-mes#170 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=INSPECTION_REQUEST_STATUS 로 받는다(공유계약 G-32 · omf-mes#170 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-internal-note": "확정 전문: uiux/2026-08-21-검사의뢰상태-확정/검사의뢰상태-확정기록.md — 표기 근거(계약 enum 76개 중 한글 1개) · SKIPPED/CANCELLED 분리 이유 · 공통코드 시드 요청문이 그 문서에 있다"
      },
      "requestedAt": {
