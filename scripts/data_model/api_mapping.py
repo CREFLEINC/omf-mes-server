@@ -201,6 +201,9 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     "/mdm/items": ["mdm.item"],
     "/mdm/code-groups": ["mdm.code_group"],
     "/mdm/code-values": ["mdm.code_value"],
+    # 판정유형 통제속성(`#42` §I-11). 코드값과 1:1 인 별표로 세웠다 — 통제 속성이
+    # 판정유형에만 붙어 code_value 에 컬럼으로 달면 나머지 전부에 NULL 이 생긴다.
+    "/mdm/judgment-type-controls": ["mdm.judgment_type_control", "mdm.code_value"],
     "/mdm/departments": ["mdm.department"],
     "/mdm/business-units": ["mdm.business_unit"],
     "/mdm/legal-entities": ["mdm.legal_entity"],
@@ -321,6 +324,9 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     # 없음 · `reason`(text) vs `reason_code` · `changed_by` 필수 여부 · 원전표 두 칸의
     # NULL 허용. 표 자체는 이것이므로 여기 두고, 컬럼 차이는 `#59` 에서 가른다.
     "/trace/lot-status-events": ["trace.lot_status_event", "trace.lot"],
+    # 생명주기 축(L1~L3). 품질 판정 축인 `trace.lot_status_event` 와 한 이력에 섞지
+    # 않는다는 것이 계약 명시 사항이라 표가 둘이다(`#63`).
+    "/trace/lot-lifecycle-events": ["trace.lot_lifecycle_history", "trace.lot"],
     "/trace/lots": ["trace.lot", "trace.lot_relation"],
     "/trace/serial-numbers": ["trace.serial_number", "trace.serial_component_relation"],
 }
@@ -334,12 +340,6 @@ RESOURCE_TABLES: dict[str, list[str]] = {
 PENDING_TABLES: dict[str, list[str]] = {
     "/production/precheck-decisions": ["production.precheck_decision"],
     "/production/repair-executions": ["production.repair_execution"],
-    # 생명주기 축(대기/활성/폐번, L1~L3). 품질 판정 축인 `trace.lot_status_event`
-    # 와 한 이력에 섞지 않는다는 것이 계약 명시 사항이다(`#63`).
-    "/trace/lot-lifecycle-events": ["trace.lot_lifecycle_history"],
-    # 판정유형 통제속성(`#42` §I-11). `mdm.code_value` 에 7칸을 붙일지 1:1 별표로
-    # 뺄지가 아직 안 갈렸다 — 갈릴 때까지 결손으로 둔다.
-    "/mdm/judgment-type-controls": ["mdm.judgment_type_control"],
 }
 
 METHODS = {"get", "post", "put", "patch", "delete"}

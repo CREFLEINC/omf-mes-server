@@ -1745,6 +1745,46 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "start_date",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": "게시 시작일. status_code 를 파생으로 옮기면 이 값과 end_date 가 DRAFT/SCHEDULED/PUBLISHED/CLOSED 를 가른다. 「내려버리기」는 end_date 를 오늘로 당기는 것이지 상태를 직접 쓰는 것이 아니다."
+                },
+                {
+                    "name": "end_date",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": null
+                },
+                {
+                    "name": "scope_code",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "공지 대상 범위(5값 enum — 1차는 COMPANY·WORK_ORDER 둘만 유효). WORK_ORDER 이면 target_work_order_id 가 필수이고, 짝이 어긋나면 서버가 400(code=PAIR)으로 막는다 — 값 문자열을 CHECK 에 박지 않는다."
+                },
+                {
+                    "name": "target_work_order_id",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "acknowledge_required",
+                    "default": "false",
+                    "ordinal": 20,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "참이면 읽은 사람이 확인을 눌러야 한다. 이 값이 켜진 공지는 :dismiss(확인 없이 닫기)가 400 이다."
                 }
             ],
             "description": null,
@@ -1777,6 +1817,19 @@
                     "target_columns": [
                         "app_user_id"
                     ]
+                },
+                {
+                    "name": "notice_target_work_order_id_fkey",
+                    "columns": [
+                        "target_work_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "work_order",
+                    "target_schema": "production",
+                    "target_columns": [
+                        "work_order_id"
+                    ]
                 }
             ],
             "is_partition": false,
@@ -1793,6 +1846,10 @@
         {
             "name": "notice_acknowledgement",
             "checks": [
+                {
+                    "name": "ck_notice_acknowledgement_worker",
+                    "expression": "CHECK ((worker_no IS NULL) = (worker_name IS NULL))"
+                }
             ],
             "schema": "app",
             "columns": [
@@ -1824,9 +1881,9 @@
                     "name": "acknowledged_at",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "timestamp with time zone",
-                    "description": null
+                    "description": "확인 또는 닫기가 일어난 시각. 계약이 선택 필드라 비어 있을 수 있다 — 확인=참·시각 있음은 확인, 확인=거짓·시각 있음은 열람(닫기)이며, 행이 아예 없으면 미확인이다."
                 },
                 {
                     "name": "created_at",
@@ -1834,6 +1891,30 @@
                     "ordinal": 5,
                     "nullable": false,
                     "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "acknowledged",
+                    "default": "false",
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "참이면 확인, 거짓이면 열람(닫기)이다. 행이 아예 없으면 미확인 — 셋을 같은 모양으로 그리지 않는다."
+                },
+                {
+                    "name": "worker_no",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "app.business_no_t",
+                    "description": "현장 단말에서 확인했으면 사번이 온다. FK 가 아니라 스냅샷 문자열인 것은 현장 작업자가 계정을 갖지 않기 때문이다 — 서버가 인증 토큰의 종류로 가른다. worker_name 과 짝이다."
+                },
+                {
+                    "name": "worker_name",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
@@ -7235,6 +7316,10 @@
             "name": "goods_issue",
             "checks": [
                 {
+                    "name": "ck_goods_issue_destination",
+                    "expression": "CHECK ((destination_type_code IS NULL) = (destination_id IS NULL))"
+                },
+                {
                     "name": "goods_issue_version_no_check",
                     "expression": "CHECK (version_no > 0)"
                 }
@@ -7293,15 +7378,15 @@
                     "name": "destination_type_code",
                     "default": null,
                     "ordinal": 7,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "도착지 유형 — 위치·거래처·폐기거래처·설비. destination_id 와 짝이며, 자체 폐기처럼 나가서 없어지는 물건에는 도착지가 없어 둘을 함께 비운다(2026-08-16 확정 · 공유계약 A-10)."
                 },
                 {
                     "name": "destination_id",
                     "default": null,
                     "ordinal": 8,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -7695,8 +7780,157 @@
             ]
         },
         {
+            "name": "goods_issue_spare_line",
+            "checks": [
+                {
+                    "name": "ck_goods_issue_spare_line_qty",
+                    "expression": "CHECK (issue_qty::numeric > 0::numeric)"
+                }
+            ],
+            "schema": "logistics",
+            "columns": [
+                {
+                    "name": "goods_issue_spare_line_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "goods_issue_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "line_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "spare_part_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": "예비품 마스터. 기존 라인이 품목 마스터를 가리키는 것과 다르다 — 한 표에 섞으면 조회하는 쪽이 매번 유형을 봐야 한다."
+                },
+                {
+                    "name": "issue_qty",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "app.qty_t",
+                    "description": null
+                },
+                {
+                    "name": "uom_id",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 7,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                }
+            ],
+            "description": "예비품 출고 라인. goods_issue_line 과 형제이며 헤더(goods_issue)는 공유한다. 기존 라인을 쓰지 않는 것은 item_id·lot_id 가 둘 다 NOT NULL 이고 자재 출고가 그 제약에 기대고 있어서다 — 예비품 때문에 풀면 자재 쪽 무결성이 함께 내려간다. 근거: 설계 확정 2026-08-11 · 회신 E-2 정리본.",
+            "primary_key": [
+                "goods_issue_spare_line_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "goods_issue_spare_line_created_by_fkey",
+                    "columns": [
+                        "created_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "goods_issue_spare_line_goods_issue_id_fkey",
+                    "columns": [
+                        "goods_issue_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "goods_issue",
+                    "target_schema": "logistics",
+                    "target_columns": [
+                        "goods_issue_id"
+                    ]
+                },
+                {
+                    "name": "goods_issue_spare_line_spare_part_id_fkey",
+                    "columns": [
+                        "spare_part_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "spare_part",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "spare_part_id"
+                    ]
+                },
+                {
+                    "name": "goods_issue_spare_line_uom_id_fkey",
+                    "columns": [
+                        "uom_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "uom",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "uom_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "logistics.goods_issue_spare_line",
+            "unique_constraints": [
+                {
+                    "name": "uq_goods_issue_spare_line",
+                    "columns": [
+                        "goods_issue_id",
+                        "line_no"
+                    ]
+                }
+            ]
+        },
+        {
             "name": "goods_receipt",
             "checks": [
+                {
+                    "name": "ck_goods_receipt_source",
+                    "expression": "CHECK ((source_document_type_code IS NULL) = (source_document_id IS NULL))"
+                },
                 {
                     "name": "goods_receipt_version_no_check",
                     "expression": "CHECK (version_no > 0)"
@@ -7764,7 +7998,7 @@
                     "name": "source_document_type_code",
                     "default": null,
                     "ordinal": 8,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -7772,7 +8006,7 @@
                     "name": "source_document_id",
                     "default": null,
                     "ordinal": 9,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -11782,7 +12016,7 @@
                     "ordinal": 12,
                     "nullable": true,
                     "data_type": "time without time zone",
-                    "description": null
+                    "description": "[사용 중지] ship_time_slot_code 로 대체됐다. 다음 릴리스에서 삭제한다 — 자정을 넘기는 야간 슬롯을 담지 못하는 결함이 있었다."
                 },
                 {
                     "name": "ship_time_slot_end",
@@ -11790,7 +12024,15 @@
                     "ordinal": 13,
                     "nullable": true,
                     "data_type": "time without time zone",
-                    "description": null
+                    "description": "[사용 중지] ship_time_slot_code 로 대체됐다. 다음 릴리스에서 삭제한다."
+                },
+                {
+                    "name": "ship_time_slot_code",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "출하 시간대(SHIPMENT_TIME_SLOT — MORNING·AFTERNOON·NIGHT). 시각 경계를 담지 않는다 — 슬롯을 가리키는 이름이다. ship_time_slot_start/end 를 대체하며 그 둘은 다음 릴리스에서 삭제한다."
                 }
             ],
             "description": null,
@@ -14726,6 +14968,226 @@
             ]
         },
         {
+            "name": "maintenance_order_item",
+            "checks": [
+                {
+                    "name": "ck_maintenance_order_item_seq",
+                    "expression": "CHECK (sequence_no > 0)"
+                },
+                {
+                    "name": "ck_maintenance_order_item_target",
+                    "expression": "CHECK (inspection_item_id IS NOT NULL OR item_name IS NOT NULL)"
+                }
+            ],
+            "schema": "maintenance",
+            "columns": [
+                {
+                    "name": "maintenance_order_item_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "maintenance_order_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "sequence_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "inspection_item_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "item_name",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": "항목 마스터가 없을 때의 자유 입력(툴 예방보전이 이쪽이다). inspection_item_id 와 둘 중 적어도 하나는 있어야 한다."
+                },
+                {
+                    "name": "status_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                }
+            ],
+            "description": "보전지시 항목 라인. 기존 자유텍스트 itemNames 를 대체한다 — 항목을 세거나 상태를 항목별로 갖게 하려면 행이어야 한다. 근거: 이슈 #44 · #63.",
+            "primary_key": [
+                "maintenance_order_item_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "maintenance_order_item_inspection_item_id_fkey",
+                    "columns": [
+                        "inspection_item_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment_inspection_item",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "equipment_inspection_item_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_order_item_maintenance_order_id_fkey",
+                    "columns": [
+                        "maintenance_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "maintenance_order",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "maintenance_order_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "maintenance.maintenance_order_item",
+            "unique_constraints": [
+                {
+                    "name": "uq_maintenance_order_item_seq",
+                    "columns": [
+                        "maintenance_order_id",
+                        "sequence_no"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "maintenance_order_trigger",
+            "checks": [
+                {
+                    "name": "ck_maintenance_order_trigger_shots",
+                    "expression": "CHECK ((shot_count_at_due IS NULL OR shot_count_at_due >= 0) AND (guaranteed_shot_count_at_due IS NULL OR guaranteed_shot_count_at_due >= 0))"
+                }
+            ],
+            "schema": "maintenance",
+            "columns": [
+                {
+                    "name": "maintenance_order_trigger_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "maintenance_order_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "trigger_type_code",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "source_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "트리거가 가리키는 기록. trigger_type_code=PM_DUE 이면 비어 있다 — 주기 도래는 저장된 사건이 아니라 파생 조건이라 가리킬 행이 없다. 고장·점검 불합격에서는 채운다."
+                },
+                {
+                    "name": "snapshot_note",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "pm_due_axis_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "shot_count_at_due",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "integer",
+                    "description": "발행 시점의 누계 타발수 스냅샷. 누계는 뒤에 리셋되므로 얼려 두지 않으면 왜 그때 발행했는지 되짚을 수 없다."
+                },
+                {
+                    "name": "guaranteed_shot_count_at_due",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": "보전지시를 발행시킨 트리거와 발행 시점 스냅샷. 보전지시 하나에 하나다. 근거: 이슈 #44 · #63 · 설계 회신 B-4.",
+            "primary_key": [
+                "maintenance_order_trigger_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "maintenance_order_trigger_maintenance_order_id_fkey",
+                    "columns": [
+                        "maintenance_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "maintenance_order",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "maintenance_order_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "maintenance.maintenance_order_trigger",
+            "unique_constraints": [
+                {
+                    "name": "uq_maintenance_order_trigger",
+                    "columns": [
+                        "maintenance_order_id"
+                    ]
+                }
+            ]
+        },
+        {
             "name": "maintenance_result",
             "checks": [
                 {
@@ -15393,6 +15855,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "is_system_owned",
+                    "default": "false",
+                    "ordinal": 11,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "시스템 소유 그룹 여부. 참이면 값에 서버 동작·화면 분기가 걸려 있어 고객이 값을 추가·삭제할 수 없다 — W-06-06 이 이 플래그를 보고 버튼을 잠근다. 거짓이면 G-31 마스터안전형(분류·필터용)이다. 근거: 공유계약 G-31 · 이슈 #62."
                 }
             ],
             "description": null,
@@ -17198,6 +17668,154 @@
             ]
         },
         {
+            "name": "judgment_type_control",
+            "checks": [
+                {
+                    "name": "ck_judgment_type_control_approver",
+                    "expression": "CHECK (requires_approval OR approver_role_id IS NULL)"
+                },
+                {
+                    "name": "judgment_type_control_version_no_check",
+                    "expression": "CHECK (version_no > 0)"
+                }
+            ],
+            "schema": "mdm",
+            "columns": [
+                {
+                    "name": "code_value_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "blocks_issue",
+                    "default": "false",
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "blocks_shipment",
+                    "default": "false",
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "blocks_picking",
+                    "default": "false",
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "requires_approval",
+                    "default": "false",
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "approver_role_id",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "lot_status_code",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "이 판정유형이 LOT 을 어느 품질 판정으로 전이시키는가(LOT_STATUS)."
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "updated_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 10,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "updated_by",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 12,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                }
+            ],
+            "description": "판정유형(JUDGMENT_TYPE 코드값)의 통제 속성. 코드값과 1:1 이며 PK 가 code_value_id 다. 값이 출고·출하·피킹을 막고 결재를 태우므로 G-31 마스터안전형이 아니다 — 그룹을 시스템 소유로 잠갔다. 근거: 이슈 #42 §I-11 · 설계 회신 E-1.",
+            "primary_key": [
+                "code_value_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "judgment_type_control_approver_role_id_fkey",
+                    "columns": [
+                        "approver_role_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "role",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "role_id"
+                    ]
+                },
+                {
+                    "name": "judgment_type_control_code_value_id_fkey",
+                    "columns": [
+                        "code_value_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "code_value",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "code_value_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "mdm.judgment_type_control",
+            "unique_constraints": [
+            ]
+        },
+        {
             "name": "legal_entity",
             "checks": [
                 {
@@ -18815,6 +19433,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": "단말 토큰 세대. 발급 시 증가하며 이전 세대 토큰은 즉시 무효가 된다. 정본 모델 미포함 — OMF-MES 구현 측 추가분(2026-07-28)."
+                },
+                {
+                    "name": "equipment_id",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "단말이 결속된 설비. 비어 있을 수 있다 — 설비에 붙지 않은 단말이 있다. 근거: omf-mes#262 · 우리 이슈 #60."
+                },
+                {
+                    "name": "token_issued_at",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "토큰을 마지막으로 발급한 시각. 한 번도 발급하지 않았으면 비어 있다. token_version 은 DEFAULT 1 로 시작해 발급 여부를 값으로 가르지 못하므로 이 칸이 필요하다. 근거: 우리 이슈 #58."
                 }
             ],
             "description": null,
@@ -18822,6 +19456,19 @@
                 "terminal_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "terminal_equipment_id_fkey",
+                    "columns": [
+                        "equipment_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "equipment_id"
+                    ]
+                },
                 {
                     "name": "terminal_location_id_fkey",
                     "columns": [
@@ -20885,6 +21532,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "last_change_received_at",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "ERP 가 보낸 마지막 변경을 수신한 시각. 비어 있으면 바뀐 적이 없다. GET /planning/production-orders 의 unacknowledgedOnly 가 확인 시각과 견주는 값이 이것이다. 근거: 이슈 #73."
                 }
             ],
             "description": null,
@@ -20965,6 +21620,96 @@
                     "name": "production_order_production_order_no_key",
                     "columns": [
                         "production_order_no"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "production_order_change_field",
+            "checks": [
+                {
+                    "name": "ck_po_change_field_single_value",
+                    "expression": "CHECK (num_nonnulls(before_order_qty, before_due_date, before_status_code) <= 1)"
+                }
+            ],
+            "schema": "planning",
+            "columns": [
+                {
+                    "name": "production_order_change_field_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "production_order_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "field_code",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "바뀐 항목 — ORDER_QTY · DUE_DATE · STATUS_CODE. 계약 enum 이 정본이라 코드값 그룹을 두지 않는다."
+                },
+                {
+                    "name": "before_order_qty",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": true,
+                    "data_type": "app.qty_t",
+                    "description": null
+                },
+                {
+                    "name": "before_due_date",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": null
+                },
+                {
+                    "name": "before_status_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": null
+                }
+            ],
+            "description": "ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값. 수신 시각은 planning.production_order.last_change_received_at 이 갖는다. 행이 없으면 열거한 세 항목(수량·납기·상태) 밖이 바뀐 것이다 — 계약이 빈 배열을 허용한다. 근거: 이슈 #73.",
+            "primary_key": [
+                "production_order_change_field_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "production_order_change_field_production_order_id_fkey",
+                    "columns": [
+                        "production_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "production_order",
+                    "target_schema": "planning",
+                    "target_columns": [
+                        "production_order_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "planning.production_order_change_field",
+            "unique_constraints": [
+                {
+                    "name": "uq_po_change_field",
+                    "columns": [
+                        "production_order_id",
+                        "field_code"
                     ]
                 }
             ]
@@ -23252,6 +23997,10 @@
         {
             "name": "production_order_acknowledgement",
             "checks": [
+                {
+                    "name": "ck_production_order_ack_decision",
+                    "expression": "CHECK (acknowledged_at IS NULL AND acknowledge_decision_code IS NULL AND acknowledged_by IS NULL OR acknowledged_at IS NOT NULL AND acknowledge_decision_code IS NOT NULL AND acknowledged_by IS NOT NULL)"
+                }
             ],
             "schema": "production",
             "columns": [
@@ -23326,6 +24075,30 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "acknowledged_by",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "acknowledge_decision_code",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "관리자의 확인 판정 — 반영 / 강행. 행의 진행 상태(status_code)나 ERP 변경의 종류(acknowledgement_type_code)와 다른 축이다."
+                },
+                {
+                    "name": "reason",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "판정 사유 자유문. 강행이면 필요하다 — 값에 따라 갈리는 규칙이라 CHECK 가 아니라 서버가 건다."
                 }
             ],
             "description": null,
@@ -23333,6 +24106,19 @@
                 "production_order_acknowledgement_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "production_order_acknowledgement_acknowledged_by_fkey",
+                    "columns": [
+                        "acknowledged_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
                 {
                     "name": "production_order_acknowledgement_integration_message_id_fkey",
                     "columns": [
@@ -24220,6 +25006,14 @@
                     "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
+                },
+                {
+                    "name": "po_mismatch",
+                    "default": "false",
+                    "ordinal": 38,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "P/O 와 어긋난 채 남은 작업지시인가. 서버가 두 자리에서 세운다 — 관리자가 「기존 유지(강행)」를 고를 때, 그리고 「변경 반영」을 골랐는데 그 작업지시를 조정하지 않았을 때. 뒤엣것을 더한 것은 표식 없이 남는 쪽이 더 위험해서다. 화면이 스스로 계산하지 않는다. 근거: W-02-06 §5-2·§6 · 이슈 #73."
                 }
             ],
             "description": null,
@@ -29080,7 +29874,7 @@
                 },
                 {
                     "name": "ck_lot_initial_qty",
-                    "expression": "CHECK (initial_qty::numeric > 0::numeric OR initial_qty::numeric = 0::numeric AND lot_type_code::text = 'PREISSUED'::text)"
+                    "expression": "CHECK (initial_qty::numeric > 0::numeric)"
                 },
                 {
                     "name": "ck_lot_parent",
@@ -29187,11 +29981,11 @@
                 },
                 {
                     "name": "status_code",
-                    "default": "'ACTIVE'::character varying",
+                    "default": null,
                     "ordinal": 12,
                     "nullable": false,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "품질 판정 축(정상·불량·검사 대기·폐기 — LOT_STATUS). 생명주기 축인 lifecycle_status_code 와 다른 축이다. 기본값을 두지 않는다 — LOT 이 생기는 흐름마다 초기 판정이 달라 부르는 쪽이 정한다. 근거: 공유계약 G-2 · §I-32."
                 },
                 {
                     "name": "parent_lot_id",
@@ -29272,6 +30066,22 @@
                     "nullable": true,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "lifecycle_status_code",
+                    "default": null,
+                    "ordinal": 23,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "생명주기 축(대기·활성·폐번 — LOT_LIFECYCLE_STATUS). 품질 판정 축인 status_code 와 다른 축이며 한 이력에 섞지 않는다. 생산LOT 선발행에서만 쓰고 자재·제품 LOT 은 null 이다. 근거: 이슈 #50 · 02-SW설계사양서 §4.6."
+                },
+                {
+                    "name": "completed_at",
+                    "default": null,
+                    "ordinal": 24,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "생산 LOT 완료 처리가 찍는 시각. 비어 있으면 아직 완료되지 않았다 — 완료 여부는 상태 문자열이 아니라 이 시각의 유무로 갈린다. 「완료」·「미달 마감」을 status_code 에도 lifecycle_status_code 에도 값으로 넣지 않는 이유다. 근거: 공유계약 §I-32·§I-49."
                 }
             ],
             "description": null,
@@ -29475,6 +30285,10 @@
                 {
                     "name": "ck_lot_hold_release",
                     "expression": "CHECK (released_at IS NULL OR released_at >= held_at)"
+                },
+                {
+                    "name": "ck_lot_hold_release_reason",
+                    "expression": "CHECK (released_at IS NULL OR release_reason_code IS NOT NULL)"
                 }
             ],
             "schema": "trace",
@@ -29597,7 +30411,7 @@
                     "ordinal": 15,
                     "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "보류 해제 사유(LOT_HOLD_RELEASE_REASON). 해제 전에는 비어 있고 해제되면 반드시 있다 — ck_lot_hold_release_reason 이 그 짝을 지킨다."
                 }
             ],
             "description": null,
@@ -29660,6 +30474,117 @@
             ],
             "is_partition": false,
             "qualified_name": "trace.lot_hold",
+            "unique_constraints": [
+            ]
+        },
+        {
+            "name": "lot_lifecycle_history",
+            "checks": [
+                {
+                    "name": "ck_lot_lifecycle_history_source",
+                    "expression": "CHECK ((source_document_type_code IS NULL) = (source_document_id IS NULL))"
+                },
+                {
+                    "name": "ck_lot_lifecycle_history_transition",
+                    "expression": "CHECK (from_lifecycle_status_code IS NULL OR from_lifecycle_status_code::text <> to_lifecycle_status_code::text)"
+                }
+            ],
+            "schema": "trace",
+            "columns": [
+                {
+                    "name": "lot_lifecycle_history_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "lot_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "from_lifecycle_status_code",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "전이 전 생명주기 상태. 최초 전이(L1)는 비어 있다."
+                },
+                {
+                    "name": "to_lifecycle_status_code",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "transition_code",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "L1=대기→활성(첫 실적) · L2=대기→폐번(마감, 실적 없는 슬롯) · L3=활성→폐번(작업지시 취소, DR-007). L3 를 여는 것은 취소 오퍼레이션 한 곳뿐이며 사람이 직접 폐번하는 액션은 없다."
+                },
+                {
+                    "name": "source_document_type_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "이 전이를 일으킨 문서 유형 — 다형 참조(공유계약 A-10). source_document_id 와 짝이다. L2=work_order_closing · L3=work_order."
+                },
+                {
+                    "name": "source_document_id",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "changed_at",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": "전이가 일어난 시각(업무 시각). created_at 은 행이 적재된 시각으로 별개다."
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": "LOT 생명주기 전이 이력(L1~L3). 품질 판정 축인 trace.lot_status_event 와 다른 축이며 한 이력에 섞지 않는다 — 계약 명시 사항이다. 근거: 이슈 #63 · DR-007.",
+            "primary_key": [
+                "lot_lifecycle_history_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "lot_lifecycle_history_lot_id_fkey",
+                    "columns": [
+                        "lot_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "lot",
+                    "target_schema": "trace",
+                    "target_columns": [
+                        "lot_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "trace.lot_lifecycle_history",
             "unique_constraints": [
             ]
         },
@@ -29845,6 +30770,10 @@
         {
             "name": "lot_status_event",
             "checks": [
+                {
+                    "name": "ck_lot_status_event_source",
+                    "expression": "CHECK ((source_document_type_code IS NULL) = (source_document_id IS NULL))"
+                }
             ],
             "schema": "trace",
             "columns": [
@@ -29916,7 +30845,7 @@
                     "name": "source_document_type_code",
                     "default": null,
                     "ordinal": 9,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -29924,7 +30853,7 @@
                     "name": "source_document_id",
                     "default": null,
                     "ordinal": 10,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -29940,7 +30869,7 @@
                     "name": "changed_by",
                     "default": null,
                     "ordinal": 12,
-                    "nullable": true,
+                    "nullable": false,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -29951,6 +30880,22 @@
                     "nullable": false,
                     "data_type": "timestamp with time zone",
                     "description": null
+                },
+                {
+                    "name": "transition_code",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "어느 전이였나 — C4~C15(LOT_STATUS_TRANSITION). 앞뒤 상태만으로는 서로 다른 전이가 구분되지 않아 필요하다. 생명주기 축의 L1~L3 와 다른 축이며 그 이력은 trace.lot_lifecycle_history 가 담는다."
+                },
+                {
+                    "name": "reason",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "전이 사유 자유문. reason_code 를 대체하지 않는다 — 코드는 세는 축이고 이 칸은 사람이 읽는 자리다."
                 }
             ],
             "description": null,
@@ -30565,6 +31510,20 @@
             ],
             "target_columns": [
                 "app_user_id"
+            ]
+        },
+        {
+            "name": "notice_target_work_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "notice",
+            "target_table": "work_order",
+            "source_schema": "app",
+            "target_schema": "production",
+            "source_columns": [
+                "target_work_order_id"
+            ],
+            "target_columns": [
+                "work_order_id"
             ]
         },
         {
@@ -31995,6 +32954,62 @@
             "name": "goods_issue_line_uom_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "goods_issue_line",
+            "target_table": "uom",
+            "source_schema": "logistics",
+            "target_schema": "mdm",
+            "source_columns": [
+                "uom_id"
+            ],
+            "target_columns": [
+                "uom_id"
+            ]
+        },
+        {
+            "name": "goods_issue_spare_line_created_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "goods_issue_spare_line",
+            "target_table": "app_user",
+            "source_schema": "logistics",
+            "target_schema": "app",
+            "source_columns": [
+                "created_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "goods_issue_spare_line_goods_issue_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "goods_issue_spare_line",
+            "target_table": "goods_issue",
+            "source_schema": "logistics",
+            "target_schema": "logistics",
+            "source_columns": [
+                "goods_issue_id"
+            ],
+            "target_columns": [
+                "goods_issue_id"
+            ]
+        },
+        {
+            "name": "goods_issue_spare_line_spare_part_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "goods_issue_spare_line",
+            "target_table": "spare_part",
+            "source_schema": "logistics",
+            "target_schema": "mdm",
+            "source_columns": [
+                "spare_part_id"
+            ],
+            "target_columns": [
+                "spare_part_id"
+            ]
+        },
+        {
+            "name": "goods_issue_spare_line_uom_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "goods_issue_spare_line",
             "target_table": "uom",
             "source_schema": "logistics",
             "target_schema": "mdm",
@@ -33924,6 +34939,48 @@
             ]
         },
         {
+            "name": "maintenance_order_item_inspection_item_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order_item",
+            "target_table": "equipment_inspection_item",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "inspection_item_id"
+            ],
+            "target_columns": [
+                "equipment_inspection_item_id"
+            ]
+        },
+        {
+            "name": "maintenance_order_item_maintenance_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order_item",
+            "target_table": "maintenance_order",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "maintenance_order_id"
+            ],
+            "target_columns": [
+                "maintenance_order_id"
+            ]
+        },
+        {
+            "name": "maintenance_order_trigger_maintenance_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order_trigger",
+            "target_table": "maintenance_order",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "maintenance_order_id"
+            ],
+            "target_columns": [
+                "maintenance_order_id"
+            ]
+        },
+        {
             "name": "maintenance_result_maintenance_order_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "maintenance_result",
@@ -34414,6 +35471,34 @@
             ]
         },
         {
+            "name": "judgment_type_control_approver_role_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "judgment_type_control",
+            "target_table": "role",
+            "source_schema": "mdm",
+            "target_schema": "app",
+            "source_columns": [
+                "approver_role_id"
+            ],
+            "target_columns": [
+                "role_id"
+            ]
+        },
+        {
+            "name": "judgment_type_control_code_value_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "judgment_type_control",
+            "target_table": "code_value",
+            "source_schema": "mdm",
+            "target_schema": "mdm",
+            "source_columns": [
+                "code_value_id"
+            ],
+            "target_columns": [
+                "code_value_id"
+            ]
+        },
+        {
             "name": "location_capacity_uom_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "location",
@@ -34607,6 +35692,20 @@
             ],
             "target_columns": [
                 "spare_part_id"
+            ]
+        },
+        {
+            "name": "terminal_equipment_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "terminal",
+            "target_table": "equipment",
+            "source_schema": "mdm",
+            "target_schema": "mdm",
+            "source_columns": [
+                "equipment_id"
+            ],
+            "target_columns": [
+                "equipment_id"
             ]
         },
         {
@@ -35055,6 +36154,20 @@
             ],
             "target_columns": [
                 "uom_id"
+            ]
+        },
+        {
+            "name": "production_order_change_field_production_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "production_order_change_field",
+            "target_table": "production_order",
+            "source_schema": "planning",
+            "target_schema": "planning",
+            "source_columns": [
+                "production_order_id"
+            ],
+            "target_columns": [
+                "production_order_id"
             ]
         },
         {
@@ -35727,6 +36840,20 @@
             ],
             "target_columns": [
                 "uom_id"
+            ]
+        },
+        {
+            "name": "production_order_acknowledgement_acknowledged_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "production_order_acknowledgement",
+            "target_table": "app_user",
+            "source_schema": "production",
+            "target_schema": "app",
+            "source_columns": [
+                "acknowledged_by"
+            ],
+            "target_columns": [
+                "app_user_id"
             ]
         },
         {
@@ -37589,6 +38716,20 @@
             ],
             "target_columns": [
                 "uom_id"
+            ]
+        },
+        {
+            "name": "lot_lifecycle_history_lot_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "lot_lifecycle_history",
+            "target_table": "lot",
+            "source_schema": "trace",
+            "target_schema": "trace",
+            "source_columns": [
+                "lot_id"
+            ],
+            "target_columns": [
+                "lot_id"
             ]
         },
         {
