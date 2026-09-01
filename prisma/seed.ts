@@ -657,6 +657,27 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // trace.lot.status_code — 품질 판정 축.
+    //
+    // 이 컬럼은 baseline부터 있었는데 값 집합이 어디에도 없었고, DEFAULT가 'ACTIVE'로
+    // 박혀 있었다. 'ACTIVE'는 이 넷 중 어느 것도 아닌 생명주기 축의 어휘다 — 같은
+    // 마이그레이션에서 DEFAULT를 없앴고, 여기서 실제 값 집합을 세운다.
+    //
+    // 값 표기는 공유계약 G-2가 정한 것을 그대로 쓴다.
+    //
+    // ⛔ '완료'·'미달 마감'·'폐번'은 이 축의 값이 아니다 — 완료는 trace.lot.completed_at
+    //    (시각)이, 폐번은 lifecycle_status_code가 담는다.
+    groupCode: 'LOT_STATUS',
+    groupName: 'LOT 품질 판정',
+    isSystemOwned: true,
+    values: [
+      { code: 'NORMAL', codeName: '정상', order: 10 },
+      { code: 'INSPECTION_PENDING', codeName: '검사 대기', order: 20 },
+      { code: 'DEFECTIVE', codeName: '불량', order: 30 },
+      { code: 'SCRAPPED', codeName: '폐기', order: 40 },
+    ],
+  },
+  {
     // 판정유형. 통제 속성(mdm.judgment_type_control)이 이 그룹의 코드값에 붙는다.
     //
     // ⛔ 값을 넣지 않는다 — 설계팀이 통제 속성 7칸 사양은 보냈으나 *판정유형 값 목록*
