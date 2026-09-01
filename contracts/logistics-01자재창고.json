@@ -11429,15 +11429,15 @@
       "x-source-column": "source_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "LOT 을 만든 원천의 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 확정된 값 하나 — RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다). 근거: 공유계약 A-16 · M-01-12 §5-2",
-      "example": "INBOUND_RECEIPT",
+      "description": "원천 유형. ⭐ 확정된 값 «둘» — INBOUND_RECEIPT_LINE(입하 라인 · sourceId 는 그 «라인»을 가리킨다 · P-01-01 §3-6 이 「발번 단위는 건이 아니라 라인」으로 확정했고 InboundReceiptLine.lotId 가 그 짝이다) · RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다 · M-01-12 §5-2). ⛔ 값은 언제나 sourceId 가 «가리키는 것»을 이름한다 — 건을 뜻하는 값에 라인 식별자를 넣지 않는다. 그 밖의 원천은 아직 확정 전이라 서버가 내려주는 선택지를 그대로 쓴다(공유계약 G-2). 근거: 공유계약 A-16 · omf-mes#326",
+      "example": "INBOUND_RECEIPT_LINE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceId": {
       "x-source-column": "source_id",
       "type": "integer",
       "format": "int64",
-      "description": "원천 식별자. 유형에 따라 가리키는 테이블이 다르다",
+      "description": "원천 식별자. 유형에 따라 가리키는 테이블이 다르다 — INBOUND_RECEIPT_LINE 이면 inboundReceiptLineId, RECYCLE_ENTRY 면 재생재 등록 건 식별자다. ⛔ 유형과 «짝»이 맞아야 한다. 근거: 공유계약 A-16 · omf-mes#326",
       "example": 1001
      },
      "statusCode": {
@@ -11653,15 +11653,16 @@
       "x-source-column": "source_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 유형. 확정된 값 목록이 아직 없다 — 서버가 내려주는 선택지를 그대로 쓴다. 근거: 공유계약 G-2 ⭐ 확정된 값 하나 — RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다). 근거: 공유계약 A-16 · M-01-12 §5-2",
-      "example": "INBOUND_RECEIPT",
+      "description": "원천 유형. ⭐ 확정된 값 «둘» — INBOUND_RECEIPT_LINE(입하 라인 · sourceId 는 그 «라인»을 가리킨다 · P-01-01 §3-6 이 「발번 단위는 건이 아니라 라인」으로 확정했고 InboundReceiptLine.lotId 가 그 짝이다) · RECYCLE_ENTRY(재생재 등록 건 · sourceId 는 등록 건 자체를 가리킨다 · M-01-12 §5-2). ⛔ 값은 언제나 sourceId 가 «가리키는 것»을 이름한다 — 건을 뜻하는 값에 라인 식별자를 넣지 않는다. 그 밖의 원천은 아직 확정 전이라 서버가 내려주는 선택지를 그대로 쓴다(공유계약 G-2). 근거: 공유계약 A-16 · omf-mes#326",
+      "example": "INBOUND_RECEIPT_LINE",
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다."
      },
      "sourceId": {
       "x-source-column": "source_id",
       "type": "integer",
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "원천 식별자. 유형에 따라 가리키는 테이블이 다르다 — INBOUND_RECEIPT_LINE 이면 inboundReceiptLineId, RECYCLE_ENTRY 면 재생재 등록 건 식별자다. ⛔ 유형과 «짝»이 맞아야 한다. 근거: 공유계약 A-16 · omf-mes#326"
      },
      "remarks": {
       "x-source-column": "remarks",

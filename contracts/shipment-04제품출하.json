@@ -4,7 +4,7 @@
   "title": "omf-mes 04 제품출하 도메인 API (초안)",
   "version": "0.1.0",
   "description": "04 제품출하 도메인 API 계약. 출하 3층(고객사 지시서 수신본 - MES 출하작업지시 - 실물 출하)과 출하 LOT 배분, 부적합, 처분 결정 조회를 덮는다. 출하지시서는 연계 수신이 기본이라 등록 경로를 두지 않고, 상위 지시가 없는 단독 편성이 상시 구조다. 출하는 2단 확정이다 — 출하 처리가 «재고 차감»과 미확정 출하 생성을 한 트랜잭션으로 하고, 확정이 연계 송신 적재를 건다. 확정 취소 경로는 없다. 이 계약은 남의 계약을 많이 쓴다 — 검사는 품질, 입고·출고·재고·취급 단위는 자재창고, 실적은 생산실행, 승인과 출력물은 공통, 품목과 연계는 기준정보가 소유한다. ⛔ 오프라인 대상 오퍼레이션이 없다 — 이 계약의 테이블에 쓰는 현장 화면 하나가 판정값을 캐시할 수 없어 오프라인 진입을 차단하기 때문이다.",
-  "x-internal-note": "설계·도출 근거는 uiux/2026-08-13-API스펙-04제품출하/ 의 00~03 단계 문서다. 대상 화면 16 — 도메인 배지 18 에서 출력물 계약이 덮는 P-04-02·P-04-04 를 뺀 것이다. 리소스 5 · 라인 4 · 읽기만 1 · 액션 근거 147건(화면 액션 표 · 본문 도출 0). 미해소를 계약이 드러낸다 — ⛔⛔ 처분 결정을 만드는 화면이 인벤토리 116 전체에 0건이라 세 화면(W-04-10·W-04-11·P-04-03)의 진입 목록이 빈다. ⛔ 01 계약에 POST /inventory/reservations 가 없어 M-04-01 제품 피킹이 걸린다. omf-mes#117(재구성 이벤트 기록 테이블 부재)로 M-04-03 되돌리기 경로를 두지 않았다. omf-mes#118 로 선별 실행 경로를 두지 않았다."
+  "x-internal-note": "설계·도출 근거는 uiux/2026-08-13-API스펙-04제품출하/ 의 00~03 단계 문서다. 대상 화면 16 — 도메인 배지 18 에서 출력물 계약이 덮는 P-04-02·P-04-04 를 뺀 것이다. 리소스 5 · 라인 4 · 읽기만 1 · 액션 근거 147건(화면 액션 표 · 본문 도출 0). 미해소를 계약이 드러낸다 — ⛔⛔ 처분 결정을 만드는 화면이 인벤토리 116 전체에 0건이라 세 화면(W-04-10·W-04-11·P-04-03)의 진입 목록이 빈다 «(정합주: 2026-09-01 — ⭐ 2026-08-13 DR-008 확정 3-A 로 처분 판정 화면 W-03-10 이 신설돼 해소됐다)». ⛔ 01 계약에 POST /inventory/reservations 가 없어 M-04-01 제품 피킹이 걸린다. omf-mes#117(재구성 이벤트 기록 테이블 부재)로 M-04-03 되돌리기 경로를 두지 않았다. omf-mes#118 로 선별 실행 경로를 두지 않았다."
  },
  "servers": [
   {
@@ -414,6 +414,73 @@
      }
     },
     "x-internal-note": "If-Match 를 쓰지 않는다 — shipment_lot_allocation 에 version_no 가 없다(기록 전용). 같은 배분에 다른 포장이 이미 붙어 있으면 409 다."
+   }
+  },
+  "/logistics/stock-reinstatements": {
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "재고 재등록 확정",
+    "description": "판정이 끝난 반품품을 판매 가능 재고로 되돌린다. 반출·도착·보류 해제·Lot Status 전이를 한 트랜잭션으로 처리한다 — 이 화면의 「재등록 확정」은 한 번의 확정이고 중간 상태를 남기지 않는다(공유계약 B-8 규칙 1 · B-8-1). ⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다 — 「Release 로 할 것인가」를 정하는 것은 W-03-02·W-04-03 이고 이 경로는 그 결정을 재고에 반영할 뿐이다(공유계약 B-13). ⛔ 창고 간 이동의 2단계 스캔(POST /logistics/stock-transfers → :arrive)을 쓰지 않는다 — 재등록은 이동 중 구간이 없는 한 번의 행위라 그 형태가 맞지 않는다. 근거: W-04-11 §0 · §5-3 · §5-6",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/StockReinstatementCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "재등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StockReinstatementResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StockReinstatementConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "WorkerNo 계열을 넣지 않는다 — 관리웹 전용이고 서버가 계정 토큰에서 행위자를 푼다(공유계약 D-5 · F-2) — POST /quality/lot-holds/{id}:release 와 같은 형태다. If-Match 헤더를 넣지 않는다 — 컬렉션 POST 라 헤더 토큰의 원천이 될 GET 이 없다(공유계약 B-1-1) — 토큰은 본문 lot.versionNo 로 싣는다(A-4-1). 201 에 ETag 를 두지 않는다 — 만들어진 이동 문서를 이 화면이 다시 고치지 않는다(W-04-11 §5-6 「되돌리기 ⛔ 두지 않는다」)."
    }
   },
   "/logistics/shipment-requests": {
@@ -3135,6 +3202,223 @@
      "uomId",
      "pickedAt"
     ]
+   },
+   "StockReinstatementCreate": {
+    "type": "object",
+    "properties": {
+     "dispositionDecisionId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "진입 목록에서 고른 처분 결정. 서버가 이 값으로 followUpPending 을 내린다 — 처리한 건이 목록에 남아 같은 LOT 을 두 번 재등록하는 것을 막는다. 근거: GET /quality/disposition-decisions 의 followUpPending",
+      "example": 1001
+     },
+     "lot": {
+      "type": "object",
+      "properties": {
+       "lotId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "versionNo": {
+        "type": "integer",
+        "example": 3
+       }
+      },
+      "required": [
+       "lotId",
+       "versionNo"
+      ],
+      "description": "낙관적 잠금 토큰을 본문으로 싣는다 — 원천은 GET /quality/lot-statuses 의 versionNo 다. POST /quality/lot-holds 의 lots[].versionNo 와 같은 축·같은 원천이다. 화면이 표시하지 않는다. 근거: 공유계약 A-4 · A-4-1",
+      "x-no-example": "하위 프로퍼티(lotId·versionNo)가 각각 example 을 갖는다 — 객체 통째 예시는 중복이다"
+     },
+     "lotHoldId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "닫을 보류 문서. GET /quality/lot-holds?lotId=&open=true 에서 얻는다 — 식별자이지 잠금 토큰이 아니다",
+      "example": 1001
+     },
+     "toWarehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "되돌릴 창고(완제품창고)",
+      "example": 1001
+     },
+     "toLocationId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "창고가 위치를 관리하면 필수 — 서버가 판정한다. 근거: W-04-11 §4-B",
+      "example": 1001
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "exclusiveMinimum": 0,
+      "description": "현재 보유 이하. 부분 재등록을 허용한다. 근거: W-04-11 §6",
+      "example": 200.0
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "releaseReasonCode": {
+      "type": "string",
+      "maxLength": 50,
+      "description": "보류 해제 사유 — 필수다. LotHoldRelease 와 같은 축을 유지한다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 근거: 공유계약 G-32 · omf-mes#293",
+      "example": "RETEST_PASS"
+     },
+     "reasonCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 50,
+      "description": "재등록 사유 — 「재등록이 몇 건인가」를 세려면 자유 텍스트가 아니라 코드 축이어야 한다. 근거: 공유계약 §I-41 · omf-mes#84",
+      "x-no-example": "값 목록이 아직 확정 전이다(공유계약 G-2) — 확정 전에는 예시를 지어내지 않는다.",
+      "x-internal-note": "만들어지는 이동 문서의 logistics.stock_transfer.reason_code 에 실린다."
+     },
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "근거: 공유계약 C-8",
+      "example": "2026-08-06"
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "재등록 확정 시각. 근거: 공유계약 C-1",
+      "example": "2026-08-06T09:12:00+09:00"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "부가 비고 — 사유는 releaseReasonCode·reasonCode 가 정본이다",
+      "example": "값"
+     }
+    },
+    "required": [
+     "dispositionDecisionId",
+     "lot",
+     "lotHoldId",
+     "toWarehouseId",
+     "qty",
+     "uomId",
+     "releaseReasonCode",
+     "businessDate",
+     "occurredAt"
+    ],
+    "x-internal-note": "⛔ transferTypeCode 를 받지 않는다 — 재등록의 이동 유형은 하나로 정해진 값이라 사람이 고를 것이 아니다. 서버가 정한다 — 미확정 업무 코드 목록(G-2) 노출을 이 화면에서 없앤다. ⛔ targetLotStatusCode 를 받지 않는다 — 재등록은 정의상 정상 복귀이고 무엇으로 갈지는 판정 화면 W-03-02·W-04-03 이 이미 정했다(B-13 「정한다 ↔ 반영한다」). 화면이 다시 고르면 그 구분이 무너진다."
+   },
+   "StockReinstatementResponse": {
+    "type": "object",
+    "properties": {
+     "stockTransferId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "만들어진 이동 문서",
+      "example": 1001
+     },
+     "stockTransferNo": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "receivedAt 이 채워진 상태로 만들어진다 — 반출과 도착이 이 한 번에 끝났다",
+      "example": "ST-2026-000260"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotStatusCode": {
+      "type": "string",
+      "description": "전이 결과 — 화면이 확정 후 「무엇이 풀렸는가」를 말할 근거다(공유계약 B-8 규칙 4). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS. 근거: 공유계약 G-32",
+      "example": "NORMAL"
+     },
+     "releasedLotHoldId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "닫힌 보류",
+      "example": 1001
+     },
+     "reinstatedQty": {
+      "type": "number",
+      "format": "double",
+      "example": 200.0
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "toWarehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-06T09:12:00+09:00"
+     },
+     "remainingHeldQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "format": "double",
+      "description": "부분 재등록 후 불량창고에 남은 수량. 근거: W-04-11 §6",
+      "example": 80.0
+     }
+    },
+    "required": [
+     "stockTransferId",
+     "stockTransferNo",
+     "lotId",
+     "lotStatusCode",
+     "releasedLotHoldId",
+     "reinstatedQty",
+     "uomId",
+     "toWarehouseId",
+     "occurredAt"
+    ]
+   },
+   "StockReinstatementConflictResponse": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string",
+      "enum": [
+       "VERSION_CONFLICT",
+       "DUPLICATE_KEY",
+       "INVALID_STATE",
+       "ALREADY_REINSTATED",
+       "HOLD_ALREADY_RELEASED",
+       "DISPOSITION_NOT_REINSTATABLE"
+      ],
+      "description": "ALREADY_REINSTATED 는 이 처분 결정이 이미 재등록됐다는 뜻이다 — followUpPending 이 이미 내려갔다. HOLD_ALREADY_RELEASED 는 다른 경로에서 보류가 먼저 풀렸다는 뜻이다(판정 화면 W-03-02 가 그럴 수 있다). DISPOSITION_NOT_REINSTATABLE 은 처분이 폐기이거나 아직 판정 대기라는 뜻이다. 근거: W-04-11 §5-2 · §6",
+      "example": "VERSION_CONFLICT"
+     },
+     "message": {
+      "type": "string",
+      "example": "값"
+     },
+     "currentVersion": {
+      "type": "string",
+      "description": "VERSION_CONFLICT 일 때 서버의 현재 version_no",
+      "example": "값"
+     }
+    },
+    "required": [
+     "code",
+     "message"
+    ],
+    "x-internal-note": "ShipmentConflictResponse 의 enum 을 넓히지 않고 따로 만들었다 — 그 스키마는 W-04-12 출하 확정·취소가 쓰는데, 응답 enum 이 넓어지면 그 화면이 모르는 값을 받는다."
    }
   }
  }
