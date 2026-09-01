@@ -3446,7 +3446,7 @@ model lot {
   expiry_date                                      DateTime?                            @db.Date
   source_type_code                                 String                               @db.VarChar(50)
   source_id                                        BigInt
-  status_code                                      String                               @default("ACTIVE") @db.VarChar(50)
+  status_code                                      String                               @db.VarChar(50)
   parent_lot_id                                    BigInt?
   remarks                                          String?
   created_at                                       DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -3457,6 +3457,8 @@ model lot {
   bom_id                                           BigInt?
   bom_version                                      Int?
   work_order_lot_seq                               Int?
+  lifecycle_status_code                            String?                              @db.VarChar(50)
+  completed_at                                     DateTime?                            @db.Timestamptz(6)
   document_issue_log                               document_issue_log[]
   handling_unit_content                            handling_unit_content[]
   handling_unit_reconfiguration_line               handling_unit_reconfiguration_line[]
