@@ -711,6 +711,366 @@ const SEED: CodeGroupSeed[] = [
     isSystemOwned: true,
     values: [],
   },
+
+  // ── 계약 지정 코드 그룹 시드 (#45 · #46) ─────────────────────────────────
+  // 계약이 codeGroupCode= 로 이름을 지정한 그룹 38개 중 시드가 비어 있던 자리다.
+  // 값은 설계가 #45(29그룹 133값) · #46(13그룹 40값) 본문에 확정해 둔 것을 그대로 쓴다.
+  // 이번 커밋은 «신설»만 담는다 — 이름이 겹치면서 값이 다른 7그룹은 별도 커밋이다.
+  {
+    groupCode: 'GOODS_ISSUE_REASON',
+    groupName: '출고 사유',
+    values: [
+      { code: 'IQC_FAIL', codeName: 'IQC 불합격', order: 10 },
+      { code: 'OVER_RECEIPT', codeName: '초과 입하', order: 20 },
+      { code: 'DEFECT_AFTER_RECEIPT', codeName: '입고 후 하자', order: 30 },
+      { code: 'WRONG_SHIPMENT', codeName: '오배송', order: 40 },
+      { code: 'OTHER', codeName: '기타', order: 50 },
+    ],
+  },
+  {
+    groupCode: 'INBOUND_VARIANCE_REASON',
+    groupName: '입하 차이 사유',
+    values: [
+      { code: 'DAMAGED', codeName: '파손', order: 10 },
+      { code: 'MISLABELED', codeName: '라벨 오류', order: 20 },
+      { code: 'SUPPLIER_MISSHIP', codeName: '공급사 오배송', order: 30 },
+      { code: 'PACKAGING_DEFECT', codeName: '포장 불량', order: 40 },
+      { code: 'OTHER', codeName: '기타', order: 50 },
+    ],
+  },
+  {
+    groupCode: 'INVENTORY_ADJUSTMENT_REASON',
+    groupName: '재고조정 사유',
+    values: [
+      { code: 'COUNT_VARIANCE', codeName: '정기 실사 차이 조정', order: 10 },
+      { code: 'TRANSPORT_DAMAGE', codeName: '운반 파손', order: 20 },
+      { code: 'HOPPER_MEASUREMENT', codeName: '호퍼 실측 반영', order: 30 },
+      { code: 'SYSTEM_ERROR_CORRECTION', codeName: '전산 오류 정정', order: 40 },
+      { code: 'OTHER', codeName: '기타', order: 50 },
+    ],
+  },
+  {
+    groupCode: 'PUTAWAY_TASK_TEMPORARY_REASON',
+    groupName: '임시 위치 적재 사유',
+    values: [
+      { code: 'NO_SPACE', codeName: '정위치 포화', order: 10 },
+      { code: 'INSPECTION_HOLD', codeName: '검사 대기', order: 20 },
+      { code: 'LOCATION_UNASSIGNED', codeName: '위치 미지정', order: 30 },
+      { code: 'OTHER', codeName: '기타', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'SUBSTITUTE_LOT_REASON',
+    groupName: '대체 LOT 입력 사유',
+    values: [
+      { code: 'NO_LABEL', codeName: '라벨 미부착', order: 10 },
+      { code: 'LABEL_DAMAGED', codeName: '라벨 훼손·식별 불가', order: 20 },
+      { code: 'FORMAT_UNRECOGNIZED', codeName: 'LOT 번호 형식 인식 불가', order: 30 },
+      { code: 'BULK_UNLABELED', codeName: '벌크 입고(개별 라벨 없음)', order: 40 },
+      { code: 'OTHER', codeName: '기타', order: 50 },
+    ],
+  },
+  {
+    groupCode: 'VARIANCE_REASON',
+    groupName: '재고실사·생산창고입고 차이 사유',
+    values: [
+      { code: 'MISPLACED', codeName: '오적치(위치 착오)', order: 10 },
+      { code: 'DAMAGED_IN_TRANSIT', codeName: '운반 중 파손', order: 20 },
+      { code: 'SPILL', codeName: '유출·누출', order: 30 },
+      { code: 'COUNT_ERROR', codeName: '카운트 오류', order: 40 },
+      { code: 'THEFT_LOSS', codeName: '도난·분실', order: 50 },
+      { code: 'EVAPORATION_LOSS', codeName: '증발·감모', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'INBOUND_RECEIPT_EXCEPTION_TYPE',
+    groupName: '입하 예외 유형',
+    values: [
+      { code: 'CUSTOMER_SUPPLY', codeName: '고객사급', order: 10 },
+      { code: 'FREE_SAMPLE', codeName: '무상샘플', order: 20 },
+      { code: 'URGENT_RECEIPT', codeName: '긴급입하', order: 30 },
+      { code: 'OVER_DELIVERY', codeName: '초과입하', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'HANDLING_UNIT_TYPE',
+    groupName: '취급단위 유형',
+    values: [
+      { code: 'BOX', codeName: '박스', order: 10 },
+      { code: 'CART', codeName: '대차', order: 20 },
+      { code: 'PALLET', codeName: '팔레트', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'LOT_EXTERNAL_IDENTIFIER_TYPE',
+    groupName: 'LOT 외부식별자 유형',
+    values: [
+      { code: 'SUPPLIER_LOT', codeName: '공급사LOT', order: 10 },
+      { code: 'ERP_LOT', codeName: 'ERP LOT', order: 20 },
+      { code: 'CUSTOMER_LOT', codeName: '고객LOT', order: 30 },
+      { code: 'SUBCONTRACTOR_LOT', codeName: '외주처LOT', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'OWNERSHIP_TYPE',
+    groupName: '재고 소유 구분',
+    values: [
+      { code: 'OWNED', codeName: '자사소유', order: 10 },
+      { code: 'CUSTOMER_SUPPLIED', codeName: '고객지급품', order: 20 },
+      { code: 'CONSIGNMENT', codeName: '위탁재고', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'PICKING_TYPE',
+    groupName: '피킹 유형',
+    values: [
+      { code: 'MATERIAL', codeName: '자재출고피킹', order: 10 },
+      { code: 'SHIPMENT', codeName: '제품출하피킹', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'RESERVATION_TYPE',
+    groupName: '재고예약 유형',
+    values: [
+      { code: 'MATERIAL', codeName: '자재출고예약', order: 10 },
+      { code: 'SHIPMENT', codeName: '출하예약', order: 20 },
+      { code: 'PRODUCTION', codeName: '생산투입예약', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'INVENTORY_COUNT_TYPE',
+    groupName: '재고실사 유형',
+    values: [
+      { code: 'PERIODIC', codeName: '정기', order: 10 },
+      { code: 'ADHOC', codeName: '수시', order: 20 },
+      { code: 'CYCLE', codeName: '순환', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'CONTROL_OVERRIDE_REASON',
+    groupName: '통제 우회 사유',
+    values: [
+      { code: 'EMERGENCY_WORK_ORDER', codeName: '긴급작업지시 우회', order: 10 },
+      { code: 'OTHER', codeName: '기타(관리자 승인 예외)', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'PRODUCTION_PLAN_SPLIT_REASON',
+    groupName: '생산계획 분할 사유',
+    values: [
+      { code: 'ENGINEERING_CHANGE', codeName: '설계변경(ECN) 반영', order: 10 },
+      { code: 'PART_SHORTAGE', codeName: '부품 결품 대체', order: 20 },
+      { code: 'QUALITY_ISSUE', codeName: '품질 이슈로 인한 부품 교체', order: 30 },
+      { code: 'SUPPLIER_CHANGE', codeName: '공급업체 변경', order: 40 },
+      { code: 'OTHER', codeName: '기타', order: 50 },
+    ],
+  },
+  {
+    groupCode: 'WORK_ORDER_CANCEL_REASON',
+    groupName: 'WO 취소 사유',
+    values: [
+      { code: 'CUSTOMER_ORDER_CHANGE', codeName: '고객 주문(P/O) 변경', order: 10 },
+      { code: 'PLAN_CHANGE', codeName: '생산계획 변경', order: 20 },
+      { code: 'MATERIAL_SHORTAGE', codeName: '자재 결품', order: 30 },
+      { code: 'EQUIPMENT_FAILURE', codeName: '설비 고장', order: 40 },
+      { code: 'QUALITY_ISSUE', codeName: '품질 이슈', order: 50 },
+      { code: 'OTHER', codeName: '기타', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'WORK_ORDER_COMPLETION_VARIANCE_REASON',
+    groupName: 'WO 완료 미달·초과 사유',
+    values: [
+      { code: 'MATERIAL_SHORTAGE', codeName: '자재 결품', order: 10 },
+      { code: 'EQUIPMENT_FAILURE', codeName: '설비 고장', order: 20 },
+      { code: 'QUALITY_DEFECT', codeName: '품질 불량 다발', order: 30 },
+      { code: 'PLAN_CHANGE', codeName: '생산계획 변경', order: 40 },
+      { code: 'OVER_PRODUCTION', codeName: '초과 생산(계획 대비 초과 달성)', order: 50 },
+      { code: 'OTHER', codeName: '기타', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'WORK_SESSION_EVENT_REASON',
+    groupName: '작업세션 이벤트 사유',
+    values: [
+      { code: 'URGENT_ORDER_INTERRUPT', codeName: '긴급 오더 끼어들기', order: 10 },
+      { code: 'EQUIPMENT_FAILURE', codeName: '설비 고장', order: 20 },
+      { code: 'TOOL_FAILURE', codeName: '도구 고장', order: 30 },
+      { code: 'MATERIAL_SHORTAGE', codeName: '자재 결품', order: 40 },
+      { code: 'MOLD_CHANGE', codeName: '금형 교체', order: 50 },
+      { code: 'QUALITY_ISSUE', codeName: '품질 이슈', order: 60 },
+      { code: 'OTHER', codeName: '기타', order: 70 },
+    ],
+  },
+  {
+    groupCode: 'WORK_CALENDAR_DAY_REASON',
+    groupName: '근무캘린더 예외일 사유',
+    values: [
+      { code: 'PUBLIC_HOLIDAY', codeName: '공휴일', order: 10 },
+      { code: 'COMPANY_FOUNDING_DAY', codeName: '창립기념일', order: 20 },
+      { code: 'SUMMER_VACATION', codeName: '하계휴가', order: 30 },
+      { code: 'PLANNED_MAINTENANCE', codeName: '설비 정기보전 휴무', order: 40 },
+      { code: 'MAKEUP_WORKING_DAY', codeName: '휴일 대체 근무일', order: 50 },
+      { code: 'OTHER', codeName: '기타', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'LOT_HOLD_REASON',
+    groupName: 'LOT 보류 사유',
+    values: [
+      { code: 'INCOMING_INSPECTION_WAIT', codeName: '수입검사 대기', order: 10 },
+      { code: 'FOREIGN_MATTER_SUSPECTED', codeName: '이물 혼입 의심', order: 20 },
+      { code: 'DIMENSION_ABNORMAL', codeName: '치수 이상', order: 30 },
+      { code: 'APPEARANCE_ABNORMAL', codeName: '외관 이상', order: 40 },
+      { code: 'CLAIM_RECALL', codeName: '클레임·리콜', order: 50 },
+      { code: 'OTHER', codeName: '기타', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'DOWNTIME_REASON',
+    groupName: '설비 비가동 사유',
+    values: [
+      { code: 'EQUIPMENT_FAILURE', codeName: '설비 고장', order: 10 },
+      { code: 'MOLD_CHANGE', codeName: '금형 교체', order: 20 },
+      { code: 'MATERIAL_WAIT', codeName: '자재 대기', order: 30 },
+      { code: 'LABOR_WAIT', codeName: '작업자 대기', order: 40 },
+      { code: 'PREVENTIVE_MAINTENANCE', codeName: '예방보전', order: 50 },
+      { code: 'OTHER', codeName: '기타', order: 60 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_ITEM_SPEC_METHOD',
+    groupName: '검사 항목 판정 방법',
+    values: [
+      { code: 'MEASUREMENT', codeName: '측정', order: 10 },
+      { code: 'VISUAL', codeName: '외관', order: 20 },
+      { code: 'FUNCTIONAL', codeName: '기능검사', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_SAMPLING_METHOD',
+    groupName: '검사 샘플링 방식',
+    values: [
+      { code: 'FULL_INSPECTION', codeName: '전수검사', order: 10 },
+      { code: 'SAMPLE_BY_UNIT', codeName: '샘플링(제품 단위)', order: 20 },
+      { code: 'SAMPLE_BY_LOT', codeName: '샘플링(LOT 단위)', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'REISSUE_REASON',
+    groupName: '출력물 재발행 사유',
+    values: [
+      { code: 'DAMAGED', codeName: '훼손', order: 10 },
+      { code: 'LOST', codeName: '분실', order: 20 },
+      { code: 'PRINT_FAILURE', codeName: '인쇄 실패', order: 30 },
+      { code: 'PACKAGING', codeName: '포장', order: 40 },
+      { code: 'QUANTITY_CHANGE', codeName: '재구성으로 수량 변경', order: 50 },
+    ],
+  },
+  {
+    // ⚠ 잠금은 «우리 판단»이다. 설계가 명시하지 않았으나 검사 의뢰 상태는 상태 기계이고,
+    // 설계가 WORK_ORDER_STATUS 를 같은 이유로 「G-31 이 아니다」로 못박았다. 과잉 잠금은
+    // 불편에 그치지만 놓친 잠금은 상태 기계를 깬다 — 이견 있으면 내린다.
+    groupCode: 'INSPECTION_REQUEST_STATUS',
+    groupName: '검사 의뢰 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'REQUESTED', codeName: '대기', order: 10 },
+      { code: 'IN_PROGRESS', codeName: '진행', order: 20 },
+      { code: 'COMPLETED', codeName: '완료', order: 30 },
+      { code: 'SKIPPED', codeName: '생략', order: 40 },
+      { code: 'CANCELLED', codeName: '취소', order: 50 },
+    ],
+  },
+  {
+    // 검사 결과의 수량 세 칸(accepted_qty·rejected_qty·held_qty)과 1:1이다.
+    // ck_inspection_result_qty(셋의 합 = 검사 수량)가 울타리라 값을 늘리면 그 제약이 깨진다.
+    groupCode: 'INSPECTION_RESULT_OVERALL_JUDGMENT',
+    groupName: '검사 종합 판정',
+    isSystemOwned: true,
+    values: [
+      { code: 'ACCEPTED', codeName: '합격', order: 10 },
+      { code: 'REJECTED', codeName: '불합격', order: 20 },
+      { code: 'HELD', codeName: '보류', order: 30 },
+    ],
+  },
+  {
+    // 항목 판정에는 「보류」가 없다 — 보류는 검사 «결과» 수준의 개념이고
+    // 항목은 규격에 드는지 아닌지 둘뿐이다. 종합 판정과 합치지 않는다.
+    groupCode: 'INSPECTION_MEASUREMENT_JUDGMENT',
+    groupName: '검사 항목 판정',
+    isSystemOwned: true,
+    values: [
+      { code: 'ACCEPTED', codeName: '합격', order: 10 },
+      { code: 'REJECTED', codeName: '불합격', order: 20 },
+    ],
+  },
+  {
+    // 측정치의 값 칸 셋(numeric_value·text_value·boolean_value)과 1:1이다.
+    // 넷째 값은 담을 칸이 없다 — ck_inspection_measurement 가 num_nonnulls <= 1 이다.
+    groupCode: 'INSPECTION_ITEM_SPEC_DATA_TYPE',
+    groupName: '검사 항목 데이터 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'NUMERIC', codeName: '수치', order: 10 },
+      { code: 'TEXT', codeName: '텍스트', order: 20 },
+      { code: 'BOOLEAN', codeName: '불리언', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'LOT_TYPE',
+    groupName: 'LOT 유형',
+    values: [
+      { code: 'MATERIAL', codeName: '자재', order: 10 },
+      { code: 'PRODUCTION', codeName: '생산', order: 20 },
+      { code: 'PRODUCT', codeName: '제품', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'EQUIPMENT_INSPECTION_TYPE',
+    groupName: '설비 점검 유형',
+    values: [
+      { code: 'DAILY', codeName: '일상', order: 10 },
+      { code: 'MONTHLY', codeName: '정기', order: 20 },
+      { code: 'MAINTENANCE', codeName: '보전', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'EQUIPMENT_INSPECTION_JUDGMENT_METHOD',
+    groupName: '설비 점검 판정 방식',
+    values: [
+      { code: 'VISUAL', codeName: '육안', order: 10 },
+      { code: 'MEASUREMENT', codeName: '측정값', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'QUALITY_INSPECTION_TYPE',
+    groupName: '품질 검사 유형',
+    values: [
+      { code: 'IQC', codeName: '수입검사', order: 10 },
+      { code: 'PQC', codeName: '공정검사', order: 20 },
+      { code: 'OQC', codeName: '출하검사', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'CYCLE_TYPE',
+    groupName: '주기 단위',
+    values: [
+      { code: 'DAY', codeName: '일', order: 10 },
+      { code: 'WEEK', codeName: '주', order: 20 },
+      { code: 'MONTH', codeName: '월', order: 30 },
+      { code: 'YEAR', codeName: '년', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'INSTRUMENT_TYPE',
+    groupName: '계측기 유형',
+    values: [
+      { code: 'CALIPER', codeName: '캘리퍼스', order: 10 },
+      { code: 'MICROMETER', codeName: '마이크로미터', order: 20 },
+      { code: 'GAUGE', codeName: '게이지', order: 30 },
+    ],
+  },
 ];
 
 /**
