@@ -2,7 +2,7 @@
   "status": "PASS_WITH_GAPS",
   "model_version": "4.0",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "342a4149a76c37892309a71e5a69b6c8cbe60571",
+  "contract_reference_commit": "de4203a49d15254d2da89cb4100807dd342e8e99",
   "table_count": 174,
   "logical_table_count": 172,
   "partition_count": 2,

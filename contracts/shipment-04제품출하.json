@@ -1434,7 +1434,7 @@
        "type": "string",
        "example": "PRODUCT"
       },
-      "description": "PRODUCT(제품)·RETURN(반품). 2026-08-30 되살림 — W-03-10 §5-4"
+      "description": "PRODUCT(제품)·RETURN(반품). ⭐ 서버가 대상 LOT 의 입고 유형으로 파생하는 축이다 — 화면이 보내지 않는다. W-03-10 §5-4 원천 필터가 쓴다. 이력: 2026-08-30 신설(W-03-10 원천 필터 되살리기) · 2026-09-01 서버 파생으로 재정의(omf-mes#303)"
      },
      {
       "name": "warehouseId",
@@ -1908,10 +1908,9 @@
       "example": 1001
      },
      "sourceCode": {
-      "x-source-column": "source_code",
       "type": "string",
       "x-no-example": true,
-      "description": "원천 축 — PRODUCT(04 제품 부적합 등록)·RETURN(04 반품 입고) 2종. 02 수리·01 자재는 이 경로로 들어오지 않아 대상이 아니다(W-03-10 §5-4). 2026-08-30 되살림 — W-04-07·W-04-06 이 같은 경로·스키마를 쓰던 것을 이 축으로 가른다"
+      "description": "⭐ 서버 파생 값이다 — 저장 컬럼이 아니고 화면이 보내지 않는다(W-CO-03 의 openable 과 같은 형태). 파생 규칙: 대상 LOT 이 receiptTypeCode=RETURN 인 입고 전표로 들어왔으면 RETURN, 그 밖은 전부 PRODUCT. ⛔ NonconformanceCreate 에 이 칸이 없는 것은 결손이 아니라 이 결정의 귀결이다 — 다음 사람이 또 「Create 에 칸이 없다」로 이슈를 열지 않도록 남긴다. 부적합을 만드는 화면은 W-04-07 하나다(요구서 §3-6 · 2026-08-29 확정). 쓰는 곳: W-03-10 의 원천 필터(§5-4) · W-04-07 상세의 「원천」 표시(§3). ⚠ 값 이름 충돌 주의 — GoodsReceipt.receiptTypeCode 의 PRODUCT(제품입고)와 뜻이 다르다. 이력: 2026-08-30 신설(W-03-10 원천 필터 되살리기) · 2026-09-01 서버 파생으로 재정의(omf-mes#303)"
      },
      "severityCode": {
       "type": "string",
@@ -2011,9 +2010,10 @@
      "affectedQtyTotal",
      "uomId",
      "dispositionProgressCode",
-     "lots"
+     "lots",
+     "sourceCode"
     ],
-    "description": "부적합. W-04-07 「부적합 등록」이 만든다. 판정은 W-03-10 이 한다 — affectedQtyTotal·dispositionProgressCode 는 그 화면의 목록이 쓰는 서버 집계다"
+    "description": "부적합. W-04-07 「부적합 등록」이 만든다. 판정은 W-03-10 이 한다 — affectedQtyTotal·dispositionProgressCode 는 그 화면의 목록이 쓰는 서버 집계다. sourceCode 는 서버가 항상 파생해 내린다 — lots 가 minItems:1 필수라 대상 LOT 이 반드시 있다"
    },
    "NonconformanceCreate": {
     "type": "object",

@@ -3890,7 +3890,7 @@
    },
    "ApprovalTarget": {
     "type": "object",
-    "description": "승인 대상. approval_request 는 target_type_code + target_id 다형 참조로 대상을 가리키고 유형↔테이블 규약이 아직 없다(#68). 그래서 계약이 표시명과 열 화면을 함께 내려 준다 — 화면이 「이 유형은 저 화면」 표를 갖지 않는다. 근거: W-CO-09 §5-2 · 공유계약 A-10 보강",
+    "description": "승인 대상. approval_request 는 target_type_code + target_id 다형 참조로 대상을 가리키고 유형↔테이블 규약이 아직 없다(omf-mes#68 — 그 이슈는 2026-08-25 후속 없이 닫혔고 지금 살아 있는 곳은 omf-mes-server#74 다). 그래서 계약이 표시명과 열 화면을 함께 내려 준다 — 화면이 「이 유형은 저 화면」 표를 갖지 않는다. 근거: W-CO-09 §5-2 · 공유계약 A-10 보강",
     "required": [
      "targetTypeCode",
      "targetId",
@@ -3997,7 +3997,7 @@
    "ApprovalRequest": {
     "x-source-table": "app.approval_request",
     "type": "object",
-    "description": "승인 요청. ⚠ 업무 값이 reason 하나뿐이라 목록에서는 사유가 요약을 겸한다 — 상신 화면이 사유 형식을 유도해야 하는 이유다(공유계약 A-12 보강). 대상 요약을 따로 싣는 것은 다형 참조 규약(omf-mes#68)이 서면 연다. 요청 생성(:request-approval)은 각 도메인 계약 소관이다 — 이 파일은 조회와 결재만 갖는다.",
+    "description": "승인 요청. ⚠ 업무 값이 reason 하나뿐이라 목록에서는 사유가 요약을 겸한다 — 상신 화면이 사유 형식을 유도해야 하는 이유다(공유계약 A-12 보강). 대상 요약을 따로 싣는 것은 다형 참조 규약(omf-mes#68 → 지금은 omf-mes-server#74)이 서면 연다. 요청 생성(:request-approval)은 각 도메인 계약 소관이다 — 이 파일은 조회와 결재만 갖는다.",
     "required": [
      "approvalRequestId",
      "approvalRequestNo",

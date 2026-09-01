@@ -4,7 +4,7 @@
   "title": "omf-mes 기준정보 도메인 API (초안)",
   "version": "0.1.0",
   "description": "기준정보 도메인 API 계약. 필드가 무엇을 받는지·필수 여부·값 목록은 이 계약이 정한다 — 물리 모델은 타입·길이만 따른다. 마스터 형 패턴에 개별 「변경 이력」(/history) 엔드포인트는 두지 않는다 — 전 마스터의 변경 이력은 횡단 조회 GET /audit/events 하나로 받으며, 원본 컬럼(beforeValue·afterValue 포함)을 해석하지 않고 그대로 노출한다.",
-  "x-internal-note": "근거·맥락은 deliverables/06-API-요구서.md 를 본다. WBS P0.4 API 계약 v0 의 초안 입력이며 계약 확정·소유는 통합 Agent 소관이다. /history 를 두지 않는 이유는 이슈 #68 해소 전이기 때문이다 — target_id 가 FK 가 아니고 before_value/after_value jsonb 의 키 규약이 없어 지금 만들면 필드를 지어내게 된다. 횡단 조회 근거 = W-06-11 §4-A·§5-1."
+  "x-internal-note": "근거·맥락은 deliverables/06-API-요구서.md 를 본다. WBS P0.4 API 계약 v0 의 초안 입력이며 계약 확정·소유는 통합 Agent 소관이다. /history 를 두지 않는 이유는 이슈 omf-mes#68(→ 지금은 omf-mes-server#74) 해소 전이기 때문이다 — target_id 가 FK 가 아니고 before_value/after_value jsonb 의 키 규약이 없어 지금 만들면 필드를 지어내게 된다. 횡단 조회 근거 = W-06-11 §4-A·§5-1."
  },
  "servers": [
   {
@@ -7299,7 +7299,7 @@
      "audit"
     ],
     "summary": "변경 이력 조회",
-    "description": "occurred_at RANGE 파티션이라 기간 조건이 없으면 전 파티션을 훑는다 — 공유계약 B-5. 이 결손 때문에 별도 /history 엔드포인트는 만들지 않는다(#68 해소 후 추가 — info.description 참고). 근거: W-06-11 §4-A·§5-1 「조회」",
+    "description": "occurred_at RANGE 파티션이라 기간 조건이 없으면 전 파티션을 훑는다 — 공유계약 B-5. 이 결손 때문에 별도 /history 엔드포인트는 만들지 않는다(omf-mes#68 → 지금은 omf-mes-server#74 · 해소 후 추가 — info.description 참고). 근거: W-06-11 §4-A·§5-1 「조회」",
     "parameters": [
      {
       "name": "occurredFrom",
@@ -7424,7 +7424,7 @@
       }
      }
     },
-    "x-internal-note": "미착지: target_id 가 FK 가 아니라 유형별로 다른 테이블을 가리키고 before/after jsonb 의 키 규약이 없어 응답을 사람이 읽게 만들 수 없다 — #68"
+    "x-internal-note": "미착지: target_id 가 FK 가 아니라 유형별로 다른 테이블을 가리키고 before/after jsonb 의 키 규약이 없어 응답을 사람이 읽게 만들 수 없다 — omf-mes#68(→ 지금은 omf-mes-server#74)"
    }
   },
   "/mdm/uoms": {
@@ -18484,7 +18484,7 @@
        "null"
       ],
       "description": "키·값 구조가 정해져 있지 않다 — 표시 규칙 §8-2. 모르는 키도 원문 그대로 표시(파싱 실패로 감추지 않는다)",
-      "x-no-example": "키 구조가 정해지지 않은 자유 형식 객체다. 예시를 만들면 없는 키를 지어내게 된다 — #68 해소 전까지 두지 않는다."
+      "x-no-example": "키 구조가 정해지지 않은 자유 형식 객체다. 예시를 만들면 없는 키를 지어내게 된다 — omf-mes#68(→ 지금은 omf-mes-server#74) 해소 전까지 두지 않는다."
      },
      "afterValue": {
       "x-source-column": "after_value",
@@ -18492,7 +18492,7 @@
        "object",
        "null"
       ],
-      "x-no-example": "키 구조가 정해지지 않은 자유 형식 객체다. 예시를 만들면 없는 키를 지어내게 된다 — #68 해소 전까지 두지 않는다."
+      "x-no-example": "키 구조가 정해지지 않은 자유 형식 객체다. 예시를 만들면 없는 키를 지어내게 된다 — omf-mes#68(→ 지금은 omf-mes-server#74) 해소 전까지 두지 않는다."
      },
      "reason": {
       "x-source-column": "reason",
@@ -18534,7 +18534,7 @@
       "example": "문자열"
      }
     },
-    "x-internal-note": "미착지: target_id 가 FK 가 아니라 유형별로 다른 테이블을 가리키고 before/after jsonb 의 키 규약이 없어 응답을 사람이 읽게 만들 수 없다 — #68"
+    "x-internal-note": "미착지: target_id 가 FK 가 아니라 유형별로 다른 테이블을 가리키고 before/after jsonb 의 키 규약이 없어 응답을 사람이 읽게 만들 수 없다 — omf-mes#68(→ 지금은 omf-mes-server#74)"
    },
    "Uom": {
     "x-source-table": "mdm.uom",

@@ -45,7 +45,8 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "ERP 변경이 도착했는데 관리자가 아직 확인하지 않은 P/O 만 낸다. 참이면 acknowledgedAt 이 비어 있고 마지막 변경 수신이 그 뒤인 것만 내린다. ⭐ 상태 코드 문자열을 몰라도 판정된다 — 확인 시각의 유무로 갈리기 때문이다(released 파라미터와 같은 형태다). ⛔ 응답을 화면이 거르는 것으로는 성립하지 않는다 — 목록이 쪽 단위라 쪽 안에서만 걸러진다. 근거: W-02-06 §3·§4-C·§6 · omf-mes#87"
+      "description": "ERP 변경이 도착했는데 관리자가 아직 확인하지 않은 P/O 만 낸다. 참이면 ⓐ acknowledgedAt 이 비었거나 ⓑ lastChange.receivedAt 이 acknowledgedAt 보다 뒤인 것을 낸다 — 둘 중 하나면 미확인이다. ⓑ 가 「확인한 뒤 ERP 가 또 보낸」 경우이고 이 화면이 존재하는 이유다. ⭐ 상태 코드 문자열을 몰라도 판정된다 — 확인 시각의 유무로 갈리기 때문이다(released 파라미터와 같은 형태다). ⛔ 응답을 화면이 거르는 것으로는 성립하지 않는다 — 목록이 쪽 단위라 쪽 안에서만 걸러진다. 근거: W-02-06 §3·§4-C·§6 · omf-mes#87",
+      "x-internal-note": "판정식의 두 조건이 「그리고」로 읽히던 문면을 「또는」으로 고쳤다(2026-09-01) — 앞 문면으로는 확인 뒤 재수신분이 목록에서 빠진다. lastChange.receivedAt 이 서면서 견주는 값을 이름으로 가리킬 수 있게 됐다. 근거: omf-mes#305"
      },
      {
       "name": "businessUnitId",
@@ -113,6 +114,15 @@
       "description": "하위 레벨 함께(계층 펼침용). 참이면 필터·page·size·total 은 «루트 P/O» 기준으로 세고, 각 루트의 하위 전체를 같은 페이지에 함께 내린다 — 부모와 자식이 페이지로 갈리지 않는다. 트리는 parentProductionOrderId·bomLevel 로 만든다(별도 hasChildren 불요 — 하위가 같은 응답에 있다). 기본 표시는 전체 펼침(W-02-01 §3 레이아웃). 근거: omf-mes#196"
      },
      {
+      "name": "withLastChange",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "마지막으로 수신한 ERP 변경 한 건을 함께 받는다 — 응답의 lastChange 다. P/O 변경 관리자 확인 화면(W-02-06)의 «변경 알림 목록»이 행마다 「무엇이 몇에서 몇으로」를 그리므로 이 축으로 선다. ⛔ 행마다 따로 부르는 것으로는 성립하지 않는다 — 목록이 쪽 단위라 호출이 쪽 크기만큼 는다. 켜지 않으면 채우지 않는다 — 같은 경로를 P/O 수신·조회 화면(W-02-01)이 변경 정보 없이 부른다(공유계약 L-1-1 ⑵). 변경을 한 번도 받지 않은 P/O 는 켜도 이 칸이 없다. 근거: W-02-06 §3"
+     },
+     {
       "name": "page",
       "in": "query",
       "schema": {
@@ -176,6 +186,15 @@
        "format": "int64",
        "example": 1001
       }
+     },
+     {
+      "name": "withLastChange",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "마지막으로 수신한 ERP 변경 한 건을 함께 받는다 — 응답의 lastChange 다. 켜지 않으면 채우지 않는다. 변경을 한 번도 받지 않은 P/O 는 켜도 이 칸이 없다. 판정 저장이 409 로 막힌 뒤 다시 불러올 때 «새 변경분»을 함께 받는다(W-02-06 §5-3)"
      }
     ],
     "responses": {
@@ -217,7 +236,7 @@
      "planning"
     ],
     "summary": "P/O 변경 확인 처리",
-    "description": "관리자가 ERP 변경을 반영할지 강행할지 판정한다. 근거: W-02-06 §5-5 · :동사 규약\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-orders/{productionOrderId} 의 ETag 를 그대로 싣는다. 409 가 나면 화면 문구는 「남이 고쳤다」가 아니라 「ERP 가 다시 보냈다」다.",
+    "description": "관리자가 ERP 변경을 반영할지 강행할지 판정한다. 근거: W-02-06 §5-5 · :동사 규약\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /planning/production-orders/{productionOrderId} 의 ETag 를 그대로 싣는다. 409 가 나면 화면 문구는 「남이 고쳤다」가 아니라 「ERP 가 다시 보냈다」다.\n\n⭐ 토큰이 둘이다 — P/O 는 If-Match 헤더(원천 = GET /planning/production-orders/{productionOrderId} 의 ETag), 함께 고치는 W/O 는 본문 workOrderAdjustments[].versionNo(원천 = GET /production/work-orders?productionOrderId= 응답의 versionNo)다. 하나라도 어긋나면 전체를 거부한다.\n\n⛔ 400 규칙 — ⓐ decisionCode=PROCEED 인데 workOrderAdjustments 가 비어 있지 않으면 400 ⓑ workOrderAdjustments[].workOrderId 가 이 P/O 의 영향 W/O 가 아니면 400 ⓒ 같은 workOrderId 가 두 번 오면 400 ⓓ orderQty·plannedStartAt·plannedEndAt 을 하나도 안 담은 조정 항목이 있으면 400(아무것도 안 고치는 항목이다).\n\n⛔ 중단·취소 반영의 W/O 취소는 이 본문에 싣지 않는다 — POST /production/work-orders/{workOrderId}:cancel 을 건별로 부른다. 그쪽은 선발행 생산LOT 슬롯을 «전건 즉시 폐번»하는 되돌릴 수 없는 부수 효과를 갖고(DR-007), 취소 사유(reasonCode)가 W/O 마다 다를 수 있어 건별 확인이 업무 요구다.",
     "parameters": [
      {
       "name": "productionOrderId",
@@ -2195,7 +2214,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "P/O 와 어긋난 채 강행된 W/O 만 거른다 — 응답의 poMismatch 와 같은 축이다"
+      "description": "P/O 와 어긋난 채 남은 W/O 만 거른다 — 응답의 poMismatch 와 같은 축이다"
      },
      {
       "name": "successorOfWorkOrderId",
@@ -2792,7 +2811,7 @@
      "production"
     ],
     "summary": "W/O 취소",
-    "description": "취소 상태로 옮기고 선발행된 생산LOT 슬롯을 전부 자동 폐번한다. 마감이 미달 슬롯을 폐번하는 것과 같은 모양이다 — ⛔ 다만 대상 집합은 다르다. 마감은 실적이 없는 슬롯만(R82 · 마감 시점 전용), 취소는 선발행 슬롯 전건이다(DR-007 3-A · 2026-08-12 확정). 근거: 예외 E-4 ④(2026-08-12 종결) · R27·R82 · W-02-06 §5-5\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /production/work-orders/{workOrderId} 의 ETag 를 그대로 싣는다. 취소는 관리웹(W-02-06) 온라인 전제이고 선발행 슬롯 자동 폐번이 붙는 되돌릴 수 없는 전이라 :close·:release 와 같은 정책이다. 근거: 형제 전이 정책 정렬 · omf-mes#205",
+    "description": "취소 상태로 옮기고 선발행된 생산LOT 슬롯을 전부 자동 폐번한다. 마감이 미달 슬롯을 폐번하는 것과 같은 모양이다 — ⛔ 다만 대상 집합은 다르다. 마감은 실적이 없는 슬롯만(R82 · 마감 시점 전용), 취소는 선발행 슬롯 전건이다(DR-007 3-A · 2026-08-12 확정). 근거: 예외 E-4 ④(2026-08-12 종결) · R27·R82 · W-02-06 §5-5\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /production/work-orders/{workOrderId} 의 ETag 를 그대로 싣는다. 취소는 관리웹(W-02-06) 온라인 전제이고 선발행 슬롯 자동 폐번이 붙는 되돌릴 수 없는 전이라 :close·:release 와 같은 정책이다. 근거: 형제 전이 정책 정렬 · omf-mes#205\n\n⚠ P/O 변경 관리자 확인(W-02-06)에서 중단·취소를 반영할 때는 영향 W/O 마다 이 오퍼레이션을 «건별로» 부른다 — 부분 성공이 생기고 화면이 성공·실패를 건별로 보인다. 수량·납기 반영이 :acknowledge 한 요청에 실리는 것과 다른데, 이쪽은 선발행 슬롯을 전건 즉시 폐번하는 되돌릴 수 없는 전이라 건별 확인이 업무 요구이기 때문이다(DR-007 · 공유계약 G-19).",
     "parameters": [
      {
       "name": "workOrderId",
@@ -5197,6 +5216,9 @@
       "type": "integer",
       "description": "파생 — 서버가 계산한다(공유계약 L-2). 계획 전건이 전개되면 생기는 W/O 총수(계획별 Routing 공정 수의 합). 목록 「W/O n/m」 열의 m — 0 이면 계획이 아직 없다. 근거: W-02-01 §3 · omf-mes#196",
       "example": 3
+     },
+     "lastChange": {
+      "$ref": "#/components/schemas/ProductionOrderChange"
      }
     },
     "required": [
@@ -5210,6 +5232,7 @@
    },
    "ProductionOrderAcknowledge": {
     "type": "object",
+    "description": "관리자의 판정 한 번. ⭐ 반영이면 W/O 조정을 «같은 요청에» 싣는다 — 「확인만 기록하고 W/O 는 나중에」를 만들지 않는다(공유계약 B-8 규칙 1). ⛔ 잠금 토큰이 둘로 갈린다 — P/O 는 헤더 If-Match, 함께 고치는 W/O 는 workOrderAdjustments[].versionNo 다. 잠그는 대상마다 그 대상의 버전 축을 쓴다(공유계약 B-1-1 ① · A-4-1).",
     "properties": {
      "decisionCode": {
       "type": "string",
@@ -5224,11 +5247,86 @@
       "type": "string",
       "description": "강행이면 사유가 필요하다",
       "example": "값"
+     },
+     "workOrderAdjustments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/WorkOrderAdjustment"
+      },
+      "description": "이 확인이 함께 고치는 W/O. ⭐ P/O 확인과 W/O 조정이 «한 트랜잭션»이다 — 하나라도 실패하면 전부 되돌린다(공유계약 B-8 규칙 1). ⛔ decisionCode=PROCEED(강행)이면 보내지 않는다 — 보내면 400 이다. 강행은 「기존을 유지한다」라 조정이 성립하지 않는다. ⭐ decisionCode=APPLY 인데 비워 보낼 수 있다 — 중단·취소 반영(후속이 :cancel 이라 조정할 수량이 없다)과 계획 시각이 아직 잡히지 않은 W/O 가 그 경우다. 그때 조정되지 않은 영향 W/O 에는 서버가 poMismatch 를 세운다 — 「반영했다고 적혔는데 실제로는 안 맞춘」 W/O 가 표식 없이 남지 않게 한다"
      }
     },
     "required": [
      "decisionCode"
     ]
+   },
+   "ProductionOrderChange": {
+    "type": "object",
+    "description": "마지막으로 수신한 ERP 변경 «한 건». ⛔ 이력을 쌓지 않는다 — 판정 중 ERP 가 다시 보내면 409 로 막고 다시 불러와 «새 변경분»으로 다시 판정하므로(W-02-06 §5-3) 관리자는 언제나 「지금 상태」로 판단한다. 지나간 변경은 판정 대상이 아니다. 저장 자리는 데이터 모델 담당에게 통지한다 — 기다리지 않는다(공유계약 A-11). 근거: W-02-06 §3·§5-1",
+    "required": [
+     "receivedAt",
+     "changedFields"
+    ],
+    "properties": {
+     "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "이 변경을 MES 가 수신한 시각. 목록 「수신시각」 열이 쓴다. ⭐ GET /planning/production-orders 의 unacknowledgedOnly 가 acknowledgedAt 과 견주는 값이 바로 이것이다",
+      "example": "2026-08-05T09:12:00+09:00"
+     },
+     "changedFields": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProductionOrderChangedField"
+      },
+      "description": "무엇이 몇에서 몇으로 바뀌었나. 서버가 «수량 → 납기 → 상태» 고정 순으로 낸다 — 화면이 정렬하지 않는다. ⛔ 빈 배열일 수 있다 — 열거한 세 항목 «밖»이 바뀐 경우다. 그때 화면은 그 사실을 그대로 말하고 항목을 지어내지 않는다(공유계약 G-9)"
+     }
+    },
+    "x-internal-note": "저장 자리가 물리 모델에 없다 — P/O 행을 덮어쓰므로 이전 값이 남지 않는다. 데이터 모델 담당에게 통지했다(omf-mes-server#73 · 기다리지 않는다 · data-model-boundary.md). 근거: omf-mes#305"
+   },
+   "ProductionOrderChangedField": {
+    "type": "object",
+    "description": "ERP 변경 한 항목의 전·후. 화면 2열 비교 표(W-02-06 §3)의 한 행이고 DS 컴포넌트 DiffRow(label·before·after)에 그대로 꽂힌다.",
+    "required": [
+     "field",
+     "label",
+     "beforeText",
+     "afterText"
+    ],
+    "properties": {
+     "field": {
+      "type": "string",
+      "enum": [
+       "ORDER_QTY",
+       "DUE_DATE",
+       "STATUS_CODE"
+      ],
+      "description": "ERP 가 바꾸는 P/O 항목 — 수량·납기·상태(중단·취소) 셋이다. ⭐ 값은 이 항목이 가리키는 ProductionOrder 필드 이름을 그대로 딴다(orderQty·dueDate·statusCode) — 물리 컬럼 이름 채택이 아니라 «이미 확정된 계약 필드명»을 재사용하는 것이다. 이 enum 은 업무 개념의 값 어휘가 아니라 「어느 계약 필드가 바뀌었나」를 가리키는 포인터이므로, 가리키는 대상의 이름과 같게 두는 것이 가장 명확하다(공유계약 §G 2026-09-01 신판 — 물리 이름 채택은 예외이고 출처 확인이 전제인데, 여기서 따르는 것은 물리 모델이 아니라 이미 확정된 계약 스키마다). ⛔ 공통코드가 아니다 — 설계가 닫은 값 집합이라 코드 그룹을 두지 않는다(같은 파일 ProductionOrderAcknowledge.decisionCode 와 같은 형태). ⛔ 그 밖의 항목이 바뀌어도 이 배열에 담지 않는다 — 없는 업무 개념을 만들지 않는다(공유계약 A-21). 넷째가 필요해지면 값을 «더한다» — 값 삭제만 막힌다(공유계약 L-4-1 ⑶). 근거: 요구 REQ-PR-0024 「① 중단 ② 수량 변경」 · W-02-06 §3·§5-5",
+      "example": "ORDER_QTY",
+      "x-internal-note": "⚠ DUE_DATE 의 근거는 확정문이 아니라 화면 스펙이다 — REQ-PR-0024 확정문(요구사항명세서 356행)은 「① 중단 ② 수량 변경」 둘만 든다. 납기는 W-02-06 §3 목업 42·49행과 §5-5 표가 근거이고 그 화면의 신뢰도는 «확정»이다. 결론이 맞아도 근거가 다르면 적는다 — 공유계약 B-20. ⭐ 세 번째 값은 지시서 초안이 STATUS 로 적었으나 ProductionOrder 의 실제 필드명은 statusCode 다(실측) — 이 enum 이 «계약 필드를 가리키는 포인터»라는 판단을 따르면 대상과 이름이 같아야 하므로 STATUS_CODE 로 정정했다. 근거: omf-mes#305 · 공유계약 §G v4.7(2026-09-01 재판정 — omf-mes#321)"
+     },
+     "label": {
+      "type": "string",
+      "description": "화면 2열 표 「항목」 열에 그대로 그리는 이름(「수량」·「납기」·「상태」). ⛔ 화면이 코드→이름 대응표를 갖지 않는다 — 계약이 표시명까지 내려 준다(공유계약 A-10 보강). 항목이 늘 때 관리웹을 다시 배포하지 않기 위해서다",
+      "example": "수량"
+     },
+     "beforeText": {
+      "type": "string",
+      "description": "변경 «전» 값의 표시 문자열 — 2열 표의 「기존(MES)」 칸이다. field=ORDER_QTY 면 십진 수치의 문자열이고 «단위는 붙이지 않는다»(단위는 ProductionOrder.uomId 다). DUE_DATE 면 YYYY-MM-DD. STATUS_CODE 면 상태의 표시명이다. ⛔ 자유 형식 객체로 두지 않는다 — 키·값 구조가 정해지지 않아 못 쓰게 된 자리가 이미 있다",
+      "example": "5000"
+     },
+     "afterText": {
+      "type": "string",
+      "description": "변경 «후» 값의 표시 문자열 — 2열 표의 「변경(ERP)」 칸이다. ⚠ P/O 행에는 이미 변경 후 값이 반영돼 있어(W-02-06 §5-1) field=ORDER_QTY 면 ProductionOrder.orderQty 와, DUE_DATE 면 dueDate 와 같은 값을 가리킨다. 표시 형식이 한 곳에서 정해지도록 두 칸을 다 내린다",
+      "example": "4000"
+     },
+     "beforeQty": {
+      "type": ["number", "null"],
+      "format": "double",
+      "description": "field=ORDER_QTY «일 때만» 채운다 — 나머지 항목에서는 null 이다. 화면 「▼ 1,000 감소」의 감소량을 내는 데만 쓰고 2열 표에는 그리지 않는다(그 칸은 beforeText 다). ⛔ afterQty 는 두지 않는다 — ProductionOrder.orderQty 가 그 값이다(같은 값을 두 자리에 두지 않는다 · 공유계약 L-2-1)",
+      "example": 5000.0
+     }
+    }
    },
    "ProductionPlan": {
     "type": "object",
@@ -6130,7 +6228,7 @@
      "poMismatch": {
       "type": "boolean",
       "example": false,
-      "description": "P/O 와 어긋난 채 강행된 W/O 인가. 관리자가 「기존 유지(강행)」를 고르면 서버가 참으로 세운다. 마감 화면이 이 값으로 경고를 낸다. ⛔ 화면이 스스로 계산하지 않는다"
+      "description": "P/O 와 어긋난 채 남은 W/O 인가. 서버가 두 자리에서 세운다 — ⓐ 관리자가 「기존 유지(강행)」를 고를 때 ⓑ 「변경 반영」을 골랐는데 그 W/O 를 workOrderAdjustments 로 조정하지 않았을 때. ⓑ 를 더한 것은 「반영했다고 적혔는데 실제로는 안 맞춘」 W/O 가 표식 없이 남지 않게 하기 위해서다 — 강행에는 표식이 서는데 반영의 미조정에는 안 서면 뒤엣것이 더 위험하다. 마감 화면이 이 값으로 경고를 낸다. ⛔ 화면이 스스로 계산하지 않는다. 근거: W-02-06 §5-2·§6"
      },
      "versionNo": {
       "type": "integer",
@@ -6159,6 +6257,44 @@
      "priorityNo"
     ],
     "x-internal-note": "표시용 파생 넷(productionOrderId·productionOrderNo·routingOperationName·itemCode)은 W-02-08 목록이 이름 열을 그리려고 요구한 것이다. 화면이 계획→오더를 타고 들어가 이름을 얻으면 50줄에 100호출이 된다(공유계약 L-2 · omf-mes#265 덧④). itemCode 는 요청 범위 밖이나 같은 조인에서 나오므로 함께 낸다 — 품목명은 화면이 GET /mdm/items 로 만든 이름표를 쓴다."
+   },
+   "WorkOrderAdjustment": {
+    "type": "object",
+    "description": "「변경 반영」이 W/O 하나를 어떻게 고치는가. ⭐ 헤더 If-Match 로 표현할 수 없는 잠금이다 — P/O 확인 한 번이 W/O 여럿을 함께 고쳐 토큰이 여럿이고, 하나라도 어긋나면 전체를 거부한다(공유계약 A-4-1). 토큰은 GET /production/work-orders?productionOrderId= 응답의 versionNo 를 그대로 싣는다 — 화면이 「영향 받는 W/O」 목록을 그릴 때 이미 받는 값이다. 근거: W-02-06 §3·§5-5",
+    "required": [
+     "workOrderId",
+     "versionNo"
+    ],
+    "properties": {
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "production.work_order 의 낙관적 잠금 토큰",
+      "example": 1
+     },
+     "orderQty": {
+      "type": "number",
+      "format": "double",
+      "description": "조정할 지시 수량. 보내지 않으면 이 W/O 의 수량은 그대로 둔다. ⚠ 이미 생산된 수량보다 작게 보낼 수 있다 — 계획이 실적보다 작아지는 상태를 업무가 허용하고 화면이 저장 전에 경고한다(W-02-06 §6 · 공유계약 A-9 ⓑ). ⛔ 서버가 스스로 나누지 않는다 — P/O 5,000→4,000 인데 영향 W/O 가 셋이면 「어느 것을 얼마나」는 업무 판단이고, 실적이 이미 붙은 W/O 가 섞인다",
+      "example": 4000.0
+     },
+     "plannedStartAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "조정할 계획 시작 시각 — 납기 변경을 반영할 때 쓴다. 보내지 않으면 그대로 둔다",
+      "example": "2026-08-20T09:00:00+09:00"
+     },
+     "plannedEndAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "조정할 계획 종료 시각 — 동상. ⛔ 납기를 여기에 담지 않는다. 뜻이 다르다(납기는 「언제까지」, 계획 종료는 「언제 끝날 것으로 잡았는가」 · W-02-07 §3-7 과 같은 판단)",
+      "example": "2026-08-25T18:00:00+09:00"
+     }
+    }
    },
    "WorkOrderCancel": {
     "type": "object",
