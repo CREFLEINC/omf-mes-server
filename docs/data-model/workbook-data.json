@@ -9,7 +9,7 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2350,
+    "column_count": 2352,
     "relationship_count": 557,
     "schemas": {
       "app": 27,
@@ -942,7 +942,7 @@
       "logical_name": "재고이동 이동",
       "lifecycle": "TRANSACTION",
       "purpose": "재고이동 이동의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 16,
+      "column_count": 18,
       "primary_key": "stock_transfer_id",
       "foreign_key_count": 4,
       "is_partition": false
@@ -12736,6 +12736,28 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "logistics.stock_transfer",
+      "schema": "logistics",
+      "table": "stock_transfer",
+      "ordinal": 17,
+      "column": "reason_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.stock_transfer",
+      "schema": "logistics",
+      "table": "stock_transfer",
+      "ordinal": 18,
+      "column": "remarks",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "logistics.stock_transfer_line",

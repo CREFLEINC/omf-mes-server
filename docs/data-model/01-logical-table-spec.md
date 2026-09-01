@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2350개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2352개
 
 ## 범례
 
@@ -1155,7 +1155,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `logistics.shipment_request_line` | 출하 요청 상세 | DETAIL | 17 | `shipment_request_line_id` | 4 | 출하 요청 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.shopfloor_receipt` | 현장 입고 | TRANSACTION | 13 | `shopfloor_receipt_id` | 4 | 현장 입고의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.shopfloor_receipt_line` | 현장 입고 상세 | DETAIL | 12 | `shopfloor_receipt_line_id` | 5 | 현장 입고 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
-| `logistics.stock_transfer` | 재고이동 이동 | TRANSACTION | 16 | `stock_transfer_id` | 4 | 재고이동 이동의 업무 진행 상태와 실행 결과를 관리한다. |
+| `logistics.stock_transfer` | 재고이동 이동 | TRANSACTION | 18 | `stock_transfer_id` | 4 | 재고이동 이동의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.stock_transfer_line` | 재고이동 이동 상세 | DETAIL | 15 | `stock_transfer_line_id` | 8 | 재고이동 이동 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.subcontract_issue` | 외주 출고 | TRANSACTION | 8 | `subcontract_issue_id` | 2 | 외주 출고의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.subcontract_order` | 외주 지시 | TRANSACTION | 15 | `subcontract_order_id` | 5 | 외주 지시의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -1904,6 +1904,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 14 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 15 | `updated_by` | `bigint` | N | - | `-` |
 | 16 | `version_no` | `integer` | Y | - | `1` |
+| 17 | `reason_code` | `app.code_t` | N | - | `-` |
+| 18 | `remarks` | `text` | N | - | `-` |
 
 ### logistics.stock_transfer_line — 재고이동 이동 상세
 
