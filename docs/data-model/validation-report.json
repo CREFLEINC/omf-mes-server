@@ -1,13 +1,13 @@
 {
-  "status": "PASS_WITH_GAPS",
+  "status": "PASS",
   "model_version": "4.0",
   "design_reference_commit": "a8f46f2",
   "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
-  "table_count": 180,
-  "logical_table_count": 178,
+  "table_count": 182,
+  "logical_table_count": 180,
   "partition_count": 2,
-  "column_count": 2326,
-  "relationship_count": 547,
+  "column_count": 2350,
+  "relationship_count": 557,
   "schemas": {
     "app": 27,
     "audit": 2,
@@ -17,49 +17,15 @@
     "maintenance": 12,
     "mdm": 36,
     "planning": 9,
-    "production": 16,
+    "production": 18,
     "quality": 17,
     "trace": 9
   },
   "api_operation_count": 481,
-  "mapped_operation_count": 476,
-  "coverage": "99.0%",
-  "contract_model_gaps": [
-    "production.precheck_decision",
-    "production.repair_execution"
-  ],
-  "gap_operations": [
-    {
-      "id": "GET /production/precheck-decisions",
-      "missing_tables": [
-        "production.precheck_decision"
-      ]
-    },
-    {
-      "id": "POST /production/precheck-decisions",
-      "missing_tables": [
-        "production.precheck_decision"
-      ]
-    },
-    {
-      "id": "GET /production/repair-executions",
-      "missing_tables": [
-        "production.repair_execution"
-      ]
-    },
-    {
-      "id": "POST /production/repair-executions",
-      "missing_tables": [
-        "production.repair_execution"
-      ]
-    },
-    {
-      "id": "POST /production/repair-executions/{repairExecutionId}:return",
-      "missing_tables": [
-        "production.repair_execution"
-      ]
-    }
-  ],
+  "mapped_operation_count": 481,
+  "coverage": "100.0%",
+  "contract_model_gaps": [],
+  "gap_operations": [],
   "unknown_api_tables": [],
   "unknown_relationship_tables": [],
   "duplicate_operations": [],

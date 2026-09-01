@@ -2,15 +2,15 @@
   "model_version": "4.0",
   "design_reference_commit": "a8f46f2",
   "summary": {
-    "status": "PASS_WITH_GAPS",
+    "status": "PASS",
     "model_version": "4.0",
     "design_reference_commit": "a8f46f2",
     "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
-    "table_count": 180,
-    "logical_table_count": 178,
+    "table_count": 182,
+    "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2326,
-    "relationship_count": 547,
+    "column_count": 2350,
+    "relationship_count": 557,
     "schemas": {
       "app": 27,
       "audit": 2,
@@ -20,49 +20,15 @@
       "maintenance": 12,
       "mdm": 36,
       "planning": 9,
-      "production": 16,
+      "production": 18,
       "quality": 17,
       "trace": 9
     },
     "api_operation_count": 481,
-    "mapped_operation_count": 476,
-    "coverage": "99.0%",
-    "contract_model_gaps": [
-      "production.precheck_decision",
-      "production.repair_execution"
-    ],
-    "gap_operations": [
-      {
-        "id": "GET /production/precheck-decisions",
-        "missing_tables": [
-          "production.precheck_decision"
-        ]
-      },
-      {
-        "id": "POST /production/precheck-decisions",
-        "missing_tables": [
-          "production.precheck_decision"
-        ]
-      },
-      {
-        "id": "GET /production/repair-executions",
-        "missing_tables": [
-          "production.repair_execution"
-        ]
-      },
-      {
-        "id": "POST /production/repair-executions",
-        "missing_tables": [
-          "production.repair_execution"
-        ]
-      },
-      {
-        "id": "POST /production/repair-executions/{repairExecutionId}:return",
-        "missing_tables": [
-          "production.repair_execution"
-        ]
-      }
-    ],
+    "mapped_operation_count": 481,
+    "coverage": "100.0%",
+    "contract_model_gaps": [],
+    "gap_operations": [],
     "unknown_api_tables": [],
     "unknown_relationship_tables": [],
     "duplicate_operations": [],
@@ -1811,6 +1777,18 @@
     },
     {
       "schema": "production",
+      "table": "precheck_decision",
+      "qualified_name": "production.precheck_decision",
+      "logical_name": "PRECHECK 판정",
+      "lifecycle": "TRANSACTION",
+      "purpose": "작업 전 점검 판정. 작업지시를 설비에 걸기 전 점검 상태를 보고 통과·차단·경고·우회를 정한 기록이다. 근거: P-02-02 §5-8.",
+      "column_count": 11,
+      "primary_key": "precheck_decision_id",
+      "foreign_key_count": 4,
+      "is_partition": false
+    },
+    {
+      "schema": "production",
       "table": "production_order_acknowledgement",
       "qualified_name": "production.production_order_acknowledgement",
       "logical_name": "생산 지시 확인응답",
@@ -1843,6 +1821,18 @@
       "column_count": 7,
       "primary_key": "production_result_lot_allocation_id",
       "foreign_key_count": 3,
+      "is_partition": false
+    },
+    {
+      "schema": "production",
+      "table": "repair_execution",
+      "qualified_name": "production.repair_execution",
+      "logical_name": "REPAIR EXECUTION",
+      "lifecycle": "TRANSACTION",
+      "purpose": "수리 투입·반출 기록. 원 불량(quality.defect_record)은 기록 전용이라 갱신하지 않고 여기에 쌓는다. 근거: M-02-02 §5-4.",
+      "column_count": 13,
+      "primary_key": "repair_execution_id",
+      "foreign_key_count": 6,
       "is_partition": false
     },
     {
@@ -22021,6 +22011,127 @@
       "default": ""
     },
     {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 1,
+      "column": "precheck_decision_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 2,
+      "column": "work_order_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→production.work_order",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 3,
+      "column": "equipment_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.equipment",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 4,
+      "column": "decided_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 5,
+      "column": "control_level_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 6,
+      "column": "decision_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 7,
+      "column": "basis_inspection_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→maintenance.equipment_inspection",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 8,
+      "column": "override_reason_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 9,
+      "column": "worker_no",
+      "data_type": "app.business_no_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 10,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "production.precheck_decision",
+      "schema": "production",
+      "table": "precheck_decision",
+      "ordinal": 11,
+      "column": "created_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→app.app_user",
+      "default": ""
+    },
+    {
       "qualified_table": "production.production_order_acknowledgement",
       "schema": "production",
       "table": "production_order_acknowledgement",
@@ -22546,6 +22657,149 @@
       "data_type": "bigint",
       "required": false,
       "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 1,
+      "column": "repair_execution_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 2,
+      "column": "defect_record_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→quality.defect_record",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 3,
+      "column": "repair_process_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→mdm.process",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 4,
+      "column": "started_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 5,
+      "column": "returned_at",
+      "data_type": "timestamp with time zone",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 6,
+      "column": "repair_qty",
+      "data_type": "app.qty_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 7,
+      "column": "uom_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.uom",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 8,
+      "column": "repair_result_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 9,
+      "column": "reintroduced_lot_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→trace.lot",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 10,
+      "column": "terminal_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→mdm.terminal",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 11,
+      "column": "worker_no",
+      "data_type": "app.business_no_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 12,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "production.repair_execution",
+      "schema": "production",
+      "table": "repair_execution",
+      "ordinal": 13,
+      "column": "created_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→app.app_user",
       "default": ""
     },
     {
@@ -31028,6 +31282,38 @@
       "on_delete": "NO ACTION"
     },
     {
+      "name": "precheck_decision_basis_inspection_id_fkey",
+      "source_table": "production.precheck_decision",
+      "source_columns": "basis_inspection_id",
+      "target_table": "maintenance.equipment_inspection",
+      "target_columns": "equipment_inspection_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "precheck_decision_created_by_fkey",
+      "source_table": "production.precheck_decision",
+      "source_columns": "created_by",
+      "target_table": "app.app_user",
+      "target_columns": "app_user_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "precheck_decision_equipment_id_fkey",
+      "source_table": "production.precheck_decision",
+      "source_columns": "equipment_id",
+      "target_table": "mdm.equipment",
+      "target_columns": "equipment_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "precheck_decision_work_order_id_fkey",
+      "source_table": "production.precheck_decision",
+      "source_columns": "work_order_id",
+      "target_table": "production.work_order",
+      "target_columns": "work_order_id",
+      "on_delete": "NO ACTION"
+    },
+    {
       "name": "production_order_acknowledgement_acknowledged_by_fkey",
       "source_table": "production.production_order_acknowledgement",
       "source_columns": "acknowledged_by",
@@ -31142,6 +31428,54 @@
     {
       "name": "production_result_lot_allocation_uom_id_fkey",
       "source_table": "production.production_result_lot_allocation",
+      "source_columns": "uom_id",
+      "target_table": "mdm.uom",
+      "target_columns": "uom_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_created_by_fkey",
+      "source_table": "production.repair_execution",
+      "source_columns": "created_by",
+      "target_table": "app.app_user",
+      "target_columns": "app_user_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_defect_record_id_fkey",
+      "source_table": "production.repair_execution",
+      "source_columns": "defect_record_id",
+      "target_table": "quality.defect_record",
+      "target_columns": "defect_record_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_reintroduced_lot_id_fkey",
+      "source_table": "production.repair_execution",
+      "source_columns": "reintroduced_lot_id",
+      "target_table": "trace.lot",
+      "target_columns": "lot_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_repair_process_id_fkey",
+      "source_table": "production.repair_execution",
+      "source_columns": "repair_process_id",
+      "target_table": "mdm.process",
+      "target_columns": "process_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_terminal_id_fkey",
+      "source_table": "production.repair_execution",
+      "source_columns": "terminal_id",
+      "target_table": "mdm.terminal",
+      "target_columns": "terminal_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "repair_execution_uom_id_fkey",
+      "source_table": "production.repair_execution",
       "source_columns": "uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
@@ -37420,8 +37754,8 @@
       "deprecated": false,
       "idempotency_key": false,
       "if_match": false,
-      "relation_count": 0,
-      "mapping_status": "FAIL"
+      "relation_count": 3,
+      "mapping_status": "PASS"
     },
     {
       "id": "POST /production/precheck-decisions",
@@ -37433,8 +37767,8 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": false,
-      "relation_count": 2,
-      "mapping_status": "PARTIAL"
+      "relation_count": 5,
+      "mapping_status": "PASS"
     },
     {
       "id": "GET /production/production-results",
@@ -37498,8 +37832,8 @@
       "deprecated": false,
       "idempotency_key": false,
       "if_match": false,
-      "relation_count": 0,
-      "mapping_status": "FAIL"
+      "relation_count": 2,
+      "mapping_status": "PASS"
     },
     {
       "id": "POST /production/repair-executions",
@@ -37511,8 +37845,8 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": false,
-      "relation_count": 2,
-      "mapping_status": "PARTIAL"
+      "relation_count": 4,
+      "mapping_status": "PASS"
     },
     {
       "id": "POST /production/repair-executions/{repairExecutionId}:return",
@@ -37524,8 +37858,8 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": false,
-      "relation_count": 2,
-      "mapping_status": "PARTIAL"
+      "relation_count": 4,
+      "mapping_status": "PASS"
     },
     {
       "id": "GET /production/work-orders",
@@ -52326,6 +52660,78 @@
     },
     {
       "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 이력 조회",
+      "table": "production.precheck_decision",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 이력 조회",
+      "table": "production.work_order",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 이력 조회",
+      "table": "mdm.equipment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 기록",
+      "table": "production.precheck_decision",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 기록",
+      "table": "production.work_order",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/precheck-decisions",
+      "summary": "작업 전 점검 통제 판정 기록",
+      "table": "mdm.equipment",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
       "method": "POST",
       "path": "/production/precheck-decisions",
       "summary": "작업 전 점검 통제 판정 기록",
@@ -52494,6 +52900,54 @@
     },
     {
       "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/repair-executions",
+      "summary": "수리 실행 목록",
+      "table": "production.repair_execution",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "GET",
+      "path": "/production/repair-executions",
+      "summary": "수리 실행 목록",
+      "table": "quality.defect_record",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/repair-executions",
+      "summary": "수리 투입 등록",
+      "table": "production.repair_execution",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/repair-executions",
+      "summary": "수리 투입 등록",
+      "table": "quality.defect_record",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
       "method": "POST",
       "path": "/production/repair-executions",
       "summary": "수리 투입 등록",
@@ -52513,6 +52967,30 @@
       "role": "CROSS_CUTTING",
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/repair-executions/{repairExecutionId}:return",
+      "summary": "수리 반출 등록",
+      "table": "production.repair_execution",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/repair-executions/{repairExecutionId}:return",
+      "summary": "수리 반출 등록",
+      "table": "quality.defect_record",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
       "idempotency_key": true,
       "if_match": false
     },

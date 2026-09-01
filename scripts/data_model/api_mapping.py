@@ -276,6 +276,18 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "production.operation_handover",
         "production.operation_handover_line",
     ],
+    # 작업 전 점검 판정. 계약이 x-source-table 로 표를, 필드마다 x-source-column 으로
+    # 컬럼을 확정해 두어 이름을 우리가 정할 것이 없었다.
+    "/production/precheck-decisions": [
+        "production.precheck_decision",
+        "production.work_order",
+        "mdm.equipment",
+    ],
+    # 수리 투입·반출. 원 불량은 기록 전용이라 갱신하지 않고 이쪽에 쌓는다.
+    "/production/repair-executions": [
+        "production.repair_execution",
+        "quality.defect_record",
+    ],
     "/production/production-results": [
         "production.production_result",
         "production.production_result_lot_allocation",
@@ -346,10 +358,7 @@ RESOURCE_TABLES: dict[str, list[str]] = {
 #
 # 2026-08-31 갱신(`231c43f`)으로 둘이 늘었다. 이 둘은 `x-source-table` 조차 없어
 # 물리 자리가 통째로 우리 판단이다 — 이름은 계약이 쓴 가칭을 그대로 뒀다.
-PENDING_TABLES: dict[str, list[str]] = {
-    "/production/precheck-decisions": ["production.precheck_decision"],
-    "/production/repair-executions": ["production.repair_execution"],
-}
+PENDING_TABLES: dict[str, list[str]] = {}
 
 METHODS = {"get", "post", "put", "patch", "delete"}
 

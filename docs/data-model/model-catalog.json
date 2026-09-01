@@ -23995,6 +23995,164 @@
             ]
         },
         {
+            "name": "precheck_decision",
+            "checks": [
+            ],
+            "schema": "production",
+            "columns": [
+                {
+                    "name": "precheck_decision_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "work_order_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "equipment_id",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "decided_at",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": "단말 시계가 정한다. 서버 수신 시각으로 덮지 않는다(공유계약 C-12)."
+                },
+                {
+                    "name": "control_level_code",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "판정 시점에 적용된 통제 수준의 스냅샷. app.operation_policy 의 PRECHECK_CONTROL_LEVEL 을 읽은 값이며, 정책이 나중에 바뀌어도 이 기록은 바뀌지 않는다 — 조인해 지금 값을 읽으면 과거 판정의 근거가 사라진다."
+                },
+                {
+                    "name": "decision_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "basis_inspection_id",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "override_reason_code",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "worker_no",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": true,
+                    "data_type": "app.business_no_t",
+                    "description": "판정 시점의 귀속 사번. FK 가 아니라 문자열인 것은 현장 작업자가 계정을 갖지 않기 때문이다 — 쓰기 요청의 X-Worker-No 를 서버가 옮겨 적는다."
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 10,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                }
+            ],
+            "description": "작업 전 점검 판정. 작업지시를 설비에 걸기 전 점검 상태를 보고 통과·차단·경고·우회를 정한 기록이다. 근거: P-02-02 §5-8.",
+            "primary_key": [
+                "precheck_decision_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "precheck_decision_basis_inspection_id_fkey",
+                    "columns": [
+                        "basis_inspection_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment_inspection",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "equipment_inspection_id"
+                    ]
+                },
+                {
+                    "name": "precheck_decision_created_by_fkey",
+                    "columns": [
+                        "created_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "precheck_decision_equipment_id_fkey",
+                    "columns": [
+                        "equipment_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "equipment_id"
+                    ]
+                },
+                {
+                    "name": "precheck_decision_work_order_id_fkey",
+                    "columns": [
+                        "work_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "work_order",
+                    "target_schema": "production",
+                    "target_columns": [
+                        "work_order_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "production.precheck_decision",
+            "unique_constraints": [
+            ]
+        },
+        {
             "name": "production_order_acknowledgement",
             "checks": [
                 {
@@ -24679,6 +24837,218 @@
                         "lot_id"
                     ]
                 }
+            ]
+        },
+        {
+            "name": "repair_execution",
+            "checks": [
+                {
+                    "name": "ck_repair_execution_period",
+                    "expression": "CHECK (returned_at IS NULL OR returned_at >= started_at)"
+                },
+                {
+                    "name": "ck_repair_execution_qty",
+                    "expression": "CHECK (repair_qty::numeric > 0::numeric)"
+                },
+                {
+                    "name": "ck_repair_execution_return",
+                    "expression": "CHECK ((returned_at IS NULL) = (repair_result_code IS NULL))"
+                }
+            ],
+            "schema": "production",
+            "columns": [
+                {
+                    "name": "repair_execution_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "defect_record_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "repair_process_id",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "started_at",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "returned_at",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "반출 시각. 비어 있으면 아직 수리 중이다 — 「투입 대기 목록」의 판정 축이며 상태 컬럼을 따로 두지 않는 이유다."
+                },
+                {
+                    "name": "repair_qty",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "app.qty_t",
+                    "description": null
+                },
+                {
+                    "name": "uom_id",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "repair_result_code",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "reintroduced_lot_id",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "수리분이 합류한 생산LOT. 원 LOT 이 아니다. ⚠ 지금은 채워지지 않는다 — 이 값을 실을 쓰기가 계약에 없고 재투입 등록을 어느 화면이 하는지가 정해지지 않았다. 경로가 서면 채워진다."
+                },
+                {
+                    "name": "terminal_id",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "worker_no",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "app.business_no_t",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 12,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                }
+            ],
+            "description": "수리 투입·반출 기록. 원 불량(quality.defect_record)은 기록 전용이라 갱신하지 않고 여기에 쌓는다. 근거: M-02-02 §5-4.",
+            "primary_key": [
+                "repair_execution_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "repair_execution_created_by_fkey",
+                    "columns": [
+                        "created_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "repair_execution_defect_record_id_fkey",
+                    "columns": [
+                        "defect_record_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "defect_record",
+                    "target_schema": "quality",
+                    "target_columns": [
+                        "defect_record_id"
+                    ]
+                },
+                {
+                    "name": "repair_execution_reintroduced_lot_id_fkey",
+                    "columns": [
+                        "reintroduced_lot_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "lot",
+                    "target_schema": "trace",
+                    "target_columns": [
+                        "lot_id"
+                    ]
+                },
+                {
+                    "name": "repair_execution_repair_process_id_fkey",
+                    "columns": [
+                        "repair_process_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "process",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "process_id"
+                    ]
+                },
+                {
+                    "name": "repair_execution_terminal_id_fkey",
+                    "columns": [
+                        "terminal_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "terminal",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "terminal_id"
+                    ]
+                },
+                {
+                    "name": "repair_execution_uom_id_fkey",
+                    "columns": [
+                        "uom_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "uom",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "uom_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "production.repair_execution",
+            "unique_constraints": [
             ]
         },
         {
@@ -36843,6 +37213,62 @@
             ]
         },
         {
+            "name": "precheck_decision_basis_inspection_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "precheck_decision",
+            "target_table": "equipment_inspection",
+            "source_schema": "production",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "basis_inspection_id"
+            ],
+            "target_columns": [
+                "equipment_inspection_id"
+            ]
+        },
+        {
+            "name": "precheck_decision_created_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "precheck_decision",
+            "target_table": "app_user",
+            "source_schema": "production",
+            "target_schema": "app",
+            "source_columns": [
+                "created_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "precheck_decision_equipment_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "precheck_decision",
+            "target_table": "equipment",
+            "source_schema": "production",
+            "target_schema": "mdm",
+            "source_columns": [
+                "equipment_id"
+            ],
+            "target_columns": [
+                "equipment_id"
+            ]
+        },
+        {
+            "name": "precheck_decision_work_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "precheck_decision",
+            "target_table": "work_order",
+            "source_schema": "production",
+            "target_schema": "production",
+            "source_columns": [
+                "work_order_id"
+            ],
+            "target_columns": [
+                "work_order_id"
+            ]
+        },
+        {
             "name": "production_order_acknowledgement_acknowledged_by_fkey",
             "on_delete": "NO ACTION",
             "source_table": "production_order_acknowledgement",
@@ -37042,6 +37468,90 @@
             "name": "production_result_lot_allocation_uom_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "production_result_lot_allocation",
+            "target_table": "uom",
+            "source_schema": "production",
+            "target_schema": "mdm",
+            "source_columns": [
+                "uom_id"
+            ],
+            "target_columns": [
+                "uom_id"
+            ]
+        },
+        {
+            "name": "repair_execution_created_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
+            "target_table": "app_user",
+            "source_schema": "production",
+            "target_schema": "app",
+            "source_columns": [
+                "created_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "repair_execution_defect_record_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
+            "target_table": "defect_record",
+            "source_schema": "production",
+            "target_schema": "quality",
+            "source_columns": [
+                "defect_record_id"
+            ],
+            "target_columns": [
+                "defect_record_id"
+            ]
+        },
+        {
+            "name": "repair_execution_reintroduced_lot_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
+            "target_table": "lot",
+            "source_schema": "production",
+            "target_schema": "trace",
+            "source_columns": [
+                "reintroduced_lot_id"
+            ],
+            "target_columns": [
+                "lot_id"
+            ]
+        },
+        {
+            "name": "repair_execution_repair_process_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
+            "target_table": "process",
+            "source_schema": "production",
+            "target_schema": "mdm",
+            "source_columns": [
+                "repair_process_id"
+            ],
+            "target_columns": [
+                "process_id"
+            ]
+        },
+        {
+            "name": "repair_execution_terminal_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
+            "target_table": "terminal",
+            "source_schema": "production",
+            "target_schema": "mdm",
+            "source_columns": [
+                "terminal_id"
+            ],
+            "target_columns": [
+                "terminal_id"
+            ]
+        },
+        {
+            "name": "repair_execution_uom_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "repair_execution",
             "target_table": "uom",
             "source_schema": "production",
             "target_schema": "mdm",
