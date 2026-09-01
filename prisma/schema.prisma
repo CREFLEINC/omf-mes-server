@@ -1577,17 +1577,18 @@ model business_unit {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model code_group {
-  code_group_id BigInt       @id @default(autoincrement())
-  group_code    String       @unique @db.VarChar(50)
-  group_name    String       @db.VarChar(200)
-  description   String?
-  is_active     Boolean      @default(true)
-  created_at    DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by    BigInt?
-  updated_at    DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by    BigInt?
-  version_no    Int          @default(1)
-  code_value    code_value[]
+  code_group_id   BigInt       @id @default(autoincrement())
+  group_code      String       @unique @db.VarChar(50)
+  group_name      String       @db.VarChar(200)
+  description     String?
+  is_active       Boolean      @default(true)
+  created_at      DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by      BigInt?
+  updated_at      DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by      BigInt?
+  version_no      Int          @default(1)
+  is_system_owned Boolean      @default(false)
+  code_value      code_value[]
 
   @@schema("mdm")
 }
