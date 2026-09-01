@@ -1416,6 +1416,8 @@ model stock_transfer {
   updated_at                                                        DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                        BigInt?
   version_no                                                        Int                   @default(1)
+  reason_code                                                       String?               @db.VarChar(50)
+  remarks                                                           String?
   business_unit_stock_transfer_from_business_unit_idTobusiness_unit business_unit         @relation("stock_transfer_from_business_unit_idTobusiness_unit", fields: [from_business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse_stock_transfer_from_warehouse_idTowarehouse             warehouse             @relation("stock_transfer_from_warehouse_idTowarehouse", fields: [from_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit_stock_transfer_to_business_unit_idTobusiness_unit   business_unit         @relation("stock_transfer_to_business_unit_idTobusiness_unit", fields: [to_business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)

@@ -12815,6 +12815,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "reason_code",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "이동 사유. 재고 재등록이 싣는다 — 「재등록이 몇 건인가」를 세려면 자유 텍스트가 아니라 코드 축이어야 한다(공유계약 §I-41). 창고 간 이동처럼 사유가 없는 이동도 있어 비어 있을 수 있다. ⚠ 참조할 코드 그룹은 아직 미정이다(omf-mes#84)."
+                },
+                {
+                    "name": "remarks",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "부가 비고. 사유는 reason_code 가 정본이다 — 계약이 그렇게 갈랐다."
                 }
             ],
             "description": null,

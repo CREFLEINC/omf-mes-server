@@ -1166,6 +1166,18 @@ const ENTITY_TYPES = [
     table: 'inbound_receipt',
     idColumn: 'inbound_receipt_id',
   },
+  // ⚠ INBOUND_RECEIPT(입하 «건»)와 다른 축이다. 첨부는 건에 붙고 LOT 원천은 라인을
+  //    가리킨다 — 계약이 「발번 단위는 건이 아니라 라인」으로 확정했고
+  //    InboundReceiptLine.lotId 가 그 짝이다(P-01-01 §3-6 · omf-mes#326).
+  //    둘을 갈지 않고 함께 둔다.
+  {
+    code: 'INBOUND_RECEIPT_LINE',
+    schema: 'logistics',
+    table: 'inbound_receipt_line',
+    idColumn: 'inbound_receipt_line_id',
+  },
+  // trace.lot.source_type_code 의 나머지 확정값. sourceId 는 등록 건 자체를 가리킨다.
+  { code: 'RECYCLE_ENTRY', schema: 'logistics', table: 'recycle_entry', idColumn: 'recycle_entry_id' },
   {
     code: 'MAINTENANCE_ORDER',
     schema: 'maintenance',
