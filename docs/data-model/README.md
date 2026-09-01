@@ -31,7 +31,7 @@
 ```bash
 # 마이그레이션을 모두 적용한 DB 에서 카탈로그를 내보낸다.
 # _prisma_migrations 는 먼저 지운다 — export_catalog.sql 이 시스템 스키마만 빼고 전부
-# 담으므로, 남겨 두면 175번째 테이블로 섞여 표·수치가 통째로 어긋난다.
+# 담으므로, 남겨 두면 업무 표 하나로 섞여 표·컬럼·FK 수가 통째로 어긋난다.
 psql -d omf_mes -c 'DROP TABLE IF EXISTS public._prisma_migrations'
 psql -d omf_mes -tA -X -f scripts/data_model/export_catalog.sql \
   > docs/data-model/model-catalog.json
