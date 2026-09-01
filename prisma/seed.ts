@@ -635,6 +635,25 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // trace.lot_lifecycle_history.transition_code — 생명주기 축의 전이 셋.
+    //
+    // ⛔ 아래 LOT_STATUS_TRANSITION(품질 판정 축 C4~C15)과 «다른 축»이다. 계약이 두 축을
+    //    한 이력에 섞지 말라고 못박았고 이력 표도 둘로 나뉜다 — 코드 그룹도 나눈다.
+    //
+    // ⚠ L3를 여는 것은 작업지시 취소 오퍼레이션 한 곳뿐이다. 사람이 화면에서 직접
+    //   폐번하는 액션이 없어 이력 표에 '누가'를 담는 칸을 두지 않았다.
+    //
+    // ⚠ 그룹명 LOT_LIFECYCLE_TRANSITION은 우리가 지은 잠정 이름이다 — G-32 등록부에 없다.
+    groupCode: 'LOT_LIFECYCLE_TRANSITION',
+    groupName: 'LOT 생명주기 전이',
+    isSystemOwned: true,
+    values: [
+      { code: 'L1', codeName: '대기 → 활성(첫 실적)', order: 10 },
+      { code: 'L2', codeName: '대기 → 폐번(마감, 실적 없는 슬롯)', order: 20 },
+      { code: 'L3', codeName: '활성 → 폐번(작업지시 취소)', order: 30 },
+    ],
+  },
+  {
     // trace.lot_status_event.transition_code — 저장 컬럼은 후속 마이그레이션이 세운다.
     //
     // 품질 판정 축의 전이 정본 9종이다. 판정 유입 경계·데이터 배선·경계 위임은 상태
