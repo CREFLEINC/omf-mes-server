@@ -55,7 +55,9 @@ model app_user {
   equipment_downtime                                     equipment_downtime[]
   worker                                                 worker[]
   production_plan                                        production_plan[]
+  precheck_decision                                      precheck_decision[]
   production_order_acknowledgement                       production_order_acknowledgement[]
+  repair_execution                                       repair_execution[]
   work_session_event                                     work_session_event[]
   disposition_decision                                   disposition_decision[]
   equipment_calibration                                  equipment_calibration[]
@@ -1682,6 +1684,7 @@ model equipment {
   equipment_inspection_item_assignment equipment_inspection_item_assignment[]
   spare_part_equipment                 spare_part_equipment[]
   terminal                             terminal[]
+  precheck_decision                    precheck_decision[]
   production_result                    production_result[]
   work_order                           work_order[]
   work_order_resource_assignment       work_order_resource_assignment[]
@@ -2044,6 +2047,7 @@ model process {
   bom_component                                              bom_component[]
   routing_operation                                          routing_operation[]
   material_consumption                                       material_consumption[]
+  repair_execution                                           repair_execution[]
   cause_code                                                 cause_code[]
   concession                                                 concession[]
   defect_code                                                defect_code[]
@@ -2131,6 +2135,7 @@ model terminal {
   terminal_process     terminal_process[]
   material_consumption material_consumption[]
   production_result    production_result[]
+  repair_execution     repair_execution[]
   work_session         work_session[]
   work_session_event   work_session_event[]
   inspection_result    inspection_result[]
@@ -2220,6 +2225,7 @@ model uom {
   operation_handover_line                                       operation_handover_line[]
   production_result                                             production_result[]
   production_result_lot_allocation                              production_result_lot_allocation[]
+  repair_execution                                              repair_execution[]
   work_order                                                    work_order[]
   concession                                                    concession[]
   defect_record                                                 defect_record[]
@@ -2876,6 +2882,7 @@ model work_order {
   material_return                                                                   material_return[]
   operation_handover_operation_handover_from_work_order_idTowork_order              operation_handover[]             @relation("operation_handover_from_work_order_idTowork_order")
   operation_handover_operation_handover_to_work_order_idTowork_order                operation_handover[]             @relation("operation_handover_to_work_order_idTowork_order")
+  precheck_decision                                                                 precheck_decision[]
   production_result                                                                 production_result[]
   lot                                                                               lot?                             @relation(fields: [rework_source_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_lot")
   nonconformance_work_order_rework_source_nonconformance_idTononconformance         nonconformance?                  @relation("work_order_rework_source_nonconformance_idTononconformance", fields: [rework_source_nonconformance_id], references: [nonconformance_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_order_rework_nc")
@@ -3103,6 +3110,7 @@ model defect_record {
   updated_at                                                   DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                   BigInt?
   version_no                                                   Int                @default(1)
+  repair_execution                                             repair_execution[]
   cause_code_defect_record_confirmed_cause_code_idTocause_code cause_code?        @relation("defect_record_confirmed_cause_code_idTocause_code", fields: [confirmed_cause_code_id], references: [cause_code_id], onDelete: NoAction, onUpdate: NoAction)
   defect_code                                                  defect_code        @relation(fields: [defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
   process_defect_record_detection_process_idToprocess          process            @relation("defect_record_detection_process_idToprocess", fields: [detection_process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3497,6 +3505,7 @@ model lot {
   material_usage_allocation                        material_usage_allocation[]
   operation_handover_line                          operation_handover_line[]
   production_result_lot_allocation                 production_result_lot_allocation[]
+  repair_execution                                 repair_execution[]
   work_order                                       work_order[]
   concession                                       concession[]
   defect_record                                    defect_record[]
@@ -4107,6 +4116,7 @@ model equipment_inspection {
   equipment                   equipment                     @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   worker                      worker?                       @relation(fields: [inspected_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   equipment_inspection_result equipment_inspection_result[]
+  precheck_decision           precheck_decision[]
 
   @@schema("maintenance")
 }
@@ -4645,4 +4655,54 @@ model goods_issue_spare_line {
   @@index([goods_issue_id, line_no], map: "ix_goods_issue_spare_line_issue")
   @@index([spare_part_id], map: "ix_goods_issue_spare_line_part")
   @@schema("logistics")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model precheck_decision {
+  precheck_decision_id BigInt                @id @default(autoincrement())
+  work_order_id        BigInt
+  equipment_id         BigInt
+  decided_at           DateTime              @db.Timestamptz(6)
+  control_level_code   String                @db.VarChar(50)
+  decision_code        String                @db.VarChar(50)
+  basis_inspection_id  BigInt?
+  override_reason_code String?               @db.VarChar(50)
+  worker_no            String?               @db.VarChar(100)
+  created_at           DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by           BigInt?
+  equipment_inspection equipment_inspection? @relation(fields: [basis_inspection_id], references: [equipment_inspection_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user             app_user?             @relation(fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment            equipment             @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order           work_order            @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([equipment_id, decided_at(sort: Desc)], map: "ix_precheck_decision_equipment")
+  @@index([work_order_id, decided_at(sort: Desc)], map: "ix_precheck_decision_work_order")
+  @@schema("production")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model repair_execution {
+  repair_execution_id BigInt        @id @default(autoincrement())
+  defect_record_id    BigInt
+  repair_process_id   BigInt?
+  started_at          DateTime      @db.Timestamptz(6)
+  returned_at         DateTime?     @db.Timestamptz(6)
+  repair_qty          Decimal       @db.Decimal(20, 6)
+  uom_id              BigInt
+  repair_result_code  String?       @db.VarChar(50)
+  reintroduced_lot_id BigInt?
+  terminal_id         BigInt?
+  worker_no           String?       @db.VarChar(100)
+  created_at          DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by          BigInt?
+  app_user            app_user?     @relation(fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  defect_record       defect_record @relation(fields: [defect_record_id], references: [defect_record_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                 lot?          @relation(fields: [reintroduced_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  process             process?      @relation(fields: [repair_process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+  terminal            terminal?     @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                 uom           @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([defect_record_id, started_at(sort: Desc)], map: "ix_repair_execution_defect")
+  @@schema("production")
 }

@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 178개 · 물리 파티션 2개 · 컬럼 2326개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2350개
 
 ## 범례
 
@@ -3409,9 +3409,11 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | `production.material_usage_allocation` | 자재 사용 배분 | DETAIL | 12 | `material_usage_allocation_id` | 4 | 자재 사용 배분의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `production.operation_handover` | 공정 인계 | TRANSACTION | 12 | `operation_handover_id` | 2 | 공정 인계의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.operation_handover_line` | 공정 인계 상세 | DETAIL | 11 | `operation_handover_line_id` | 5 | 공정 인계 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
+| `production.precheck_decision` | PRECHECK 판정 | TRANSACTION | 11 | `precheck_decision_id` | 4 | 작업 전 점검 판정. 작업지시를 설비에 걸기 전 점검 상태를 보고 통과·차단·경고·우회를 정한 기록이다. 근거: P-02-02 §5-8. |
 | `production.production_order_acknowledgement` | 생산 지시 확인응답 | TRANSACTION | 12 | `production_order_acknowledgement_id` | 3 | 생산 지시 확인응답의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.production_result` | 생산 실적 | TRANSACTION | 29 | `production_result_id` | 9 | 생산 실적의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.production_result_lot_allocation` | 생산 실적 LOT 배분 | DETAIL | 7 | `production_result_lot_allocation_id` | 3 | 생산 실적 LOT 배분의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
+| `production.repair_execution` | REPAIR EXECUTION | TRANSACTION | 13 | `repair_execution_id` | 6 | 수리 투입·반출 기록. 원 불량(quality.defect_record)은 기록 전용이라 갱신하지 않고 여기에 쌓는다. 근거: M-02-02 §5-4. |
 | `production.work_order` | 작업 지시 | TRANSACTION | 38 | `work_order_id` | 16 | 작업 지시의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.work_order_dependency` | 작업 지시 선후행 | TRANSACTION | 7 | `work_order_dependency_id` | 2 | 작업 지시 선후행의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.work_order_resource_assignment` | 작업 지시 RESOURCE 배정 | TRANSACTION | 15 | `work_order_resource_assignment_id` | 5 | 작업 지시 RESOURCE 배정의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -3600,6 +3602,28 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 10 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 11 | `created_by` | `bigint` | N | - | `-` |
 
+### production.precheck_decision — PRECHECK 판정
+
+작업 전 점검 판정. 작업지시를 설비에 걸기 전 점검 상태를 보고 통과·차단·경고·우회를 정한 기록이다. 근거: P-02-02 §5-8.
+
+- 유형: `TRANSACTION`
+- 기본키: `precheck_decision_id`
+- 직접 외래키: 4개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `precheck_decision_id` | `bigint` | Y | PK | `-` |
+| 2 | `work_order_id` | `bigint` | Y | FK→production.work_order | `-` |
+| 3 | `equipment_id` | `bigint` | Y | FK→mdm.equipment | `-` |
+| 4 | `decided_at` | `timestamp with time zone` | Y | - | `-` |
+| 5 | `control_level_code` | `app.code_t` | Y | - | `-` |
+| 6 | `decision_code` | `app.code_t` | Y | - | `-` |
+| 7 | `basis_inspection_id` | `bigint` | N | FK→maintenance.equipment_inspection | `-` |
+| 8 | `override_reason_code` | `app.code_t` | N | - | `-` |
+| 9 | `worker_no` | `app.business_no_t` | N | - | `-` |
+| 10 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 11 | `created_by` | `bigint` | N | FK→app.app_user | `-` |
+
 ### production.production_order_acknowledgement — 생산 지시 확인응답
 
 생산 지시 확인응답의 업무 진행 상태와 실행 결과를 관리한다.
@@ -3680,6 +3704,30 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 5 | `uom_id` | `bigint` | Y | FK→mdm.uom | `-` |
 | 6 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 7 | `created_by` | `bigint` | N | - | `-` |
+
+### production.repair_execution — REPAIR EXECUTION
+
+수리 투입·반출 기록. 원 불량(quality.defect_record)은 기록 전용이라 갱신하지 않고 여기에 쌓는다. 근거: M-02-02 §5-4.
+
+- 유형: `TRANSACTION`
+- 기본키: `repair_execution_id`
+- 직접 외래키: 6개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `repair_execution_id` | `bigint` | Y | PK | `-` |
+| 2 | `defect_record_id` | `bigint` | Y | FK→quality.defect_record | `-` |
+| 3 | `repair_process_id` | `bigint` | N | FK→mdm.process | `-` |
+| 4 | `started_at` | `timestamp with time zone` | Y | - | `-` |
+| 5 | `returned_at` | `timestamp with time zone` | N | - | `-` |
+| 6 | `repair_qty` | `app.qty_t` | Y | - | `-` |
+| 7 | `uom_id` | `bigint` | Y | FK→mdm.uom | `-` |
+| 8 | `repair_result_code` | `app.code_t` | N | - | `-` |
+| 9 | `reintroduced_lot_id` | `bigint` | N | FK→trace.lot | `-` |
+| 10 | `terminal_id` | `bigint` | N | FK→mdm.terminal | `-` |
+| 11 | `worker_no` | `app.business_no_t` | N | - | `-` |
+| 12 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 13 | `created_by` | `bigint` | N | FK→app.app_user | `-` |
 
 ### production.work_order — 작업 지시
 
