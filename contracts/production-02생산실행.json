@@ -4166,7 +4166,8 @@
     "properties": {
      "reasonCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=CONTROL_OVERRIDE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "note": {
       "type": "string",
@@ -5321,7 +5322,10 @@
       "example": "4000"
      },
      "beforeQty": {
-      "type": ["number", "null"],
+      "type": [
+       "number",
+       "null"
+      ],
       "format": "double",
       "description": "field=ORDER_QTY «일 때만» 채운다 — 나머지 항목에서는 null 이다. 화면 「▼ 1,000 감소」의 감소량을 내는 데만 쓰고 2열 표에는 그리지 않는다(그 칸은 beforeText 다). ⛔ afterQty 는 두지 않는다 — ProductionOrder.orderQty 가 그 값이다(같은 값을 두 자리에 두지 않는다 · 공유계약 L-2-1)",
       "example": 5000.0
@@ -5477,7 +5481,7 @@
      },
      "reasonCode": {
       "type": "string",
-      "description": "러닝체인지 분할 사유. 값 목록은 공통코드 마스터가 갖는다 — 공통코드 그룹 이름은 PRODUCTION_PLAN_SPLIT_REASON 이다. ⛔ 화면이 이 값을 로직에 박지 않는다.",
+      "description": "러닝체인지 분할 사유. 값 목록은 공통코드 마스터가 갖는다 — 공통코드 그룹 이름은 PRODUCTION_PLAN_SPLIT_REASON 이다. ⛔ 화면이 이 값을 로직에 박지 않는다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=PRODUCTION_PLAN_SPLIT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-no-example": "값 목록이 미확정이라 코드 문자열을 못 박지 않는다 — 임의 코드를 example 로 넣으면 확정값처럼 읽힌다",
       "x-internal-note": "example 이 'NORMAL' 이었다 — 이 자리 고유의 제안값이 아니라 작성자가 여러 무관한 칸에 반복 사용한 자리채움이고, 형제 칸 workOrderTypeCode 의 확정 기본값이기도 하다(2026-08-13 2차 제안안 §15 실측). 값 5종 제안·시드는 omf-mes#198(CLOSED). 그룹 이름은 공유계약 G-32·G-31."
      }
@@ -6301,7 +6305,8 @@
     "properties": {
      "reasonCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_ORDER_CANCEL_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "note": {
       "type": "string",
@@ -6328,7 +6333,7 @@
      "reasonCode": {
       "type": "string",
       "example": "값",
-      "description": "미달·초과 사유 — work_order.completion_variance_reason_code 에 실린다. ⭐ 미달·초과일 때 조건부 필수이고 정상이면 비운다(W-02-05 §5-7 · R80)"
+      "description": "미달·초과 사유 — work_order.completion_variance_reason_code 에 실린다. ⭐ 미달·초과일 때 조건부 필수이고 정상이면 비운다(W-02-05 §5-7 · R80) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_ORDER_COMPLETION_VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "erpSendItems": {
       "type": "array",
@@ -6805,7 +6810,7 @@
      },
      "eventTypeCode": {
       "type": "string",
-      "description": "중단·재개·통제 우회 등. 값 목록은 공통코드가 갖는다. 근거: P-02-10 §8-1 · 공유계약 A-16",
+      "description": "중단·재개·통제 우회 등. 값 목록은 공통코드가 갖는다. 근거: P-02-10 §8-1 · 공유계약 A-16 ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_SESSION_EVENT_TYPE 로 받는다(공유계약 G-32 · 2026-08-31 등재 · ⛔ 시스템 소유 — 고객이 값을 늘리지 않는다). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "example": "NORMAL"
      },
      "occurredAt": {
@@ -6822,7 +6827,8 @@
      },
      "reasonCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_SESSION_EVENT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "reasonName": {
       "type": "string",
@@ -6850,7 +6856,8 @@
     "properties": {
      "eventTypeCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_SESSION_EVENT_TYPE 로 받는다(공유계약 G-32 · 2026-08-31 등재 · ⛔ 시스템 소유 — 고객이 값을 늘리지 않는다). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "occurredAt": {
       "type": "string",
@@ -6859,7 +6866,8 @@
      },
      "reasonCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "description": "⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_SESSION_EVENT_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      }
     },
     "required": [

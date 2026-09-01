@@ -358,7 +358,13 @@ RESOURCE_TABLES: dict[str, list[str]] = {
 #
 # 2026-08-31 갱신(`231c43f`)으로 둘이 늘었다. 이 둘은 `x-source-table` 조차 없어
 # 물리 자리가 통째로 우리 판단이다 — 이름은 계약이 쓴 가칭을 그대로 뒀다.
-PENDING_TABLES: dict[str, list[str]] = {}
+PENDING_TABLES: dict[str, list[str]] = {
+    # 기능 권한 목록(격자의 «열»). 계약이 「공통코드가 아니다 — 앱 기능 목록이라 고객이
+    # 늘리거나 지우지 않는다」로 못박았으므로 mdm.code_value 가 아니다. 값이 화면 코드와
+    # 1:1 이고 117개다(2026-09-01 실측). 표로 둘지 애플리케이션 상수로 둘지가 안 갈렸다 —
+    # 갈릴 때까지 결손으로 둔다. 이름은 가칭이다.
+    "/app/permissions": ["app.permission"],
+}
 
 METHODS = {"get", "post", "put", "patch", "delete"}
 
