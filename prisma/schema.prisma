@@ -44,6 +44,7 @@ model app_user {
   handling_unit_reconfiguration                          handling_unit_reconfiguration[]
   inventory_count_line                                   inventory_count_line[]
   goods_issue                                            goods_issue[]
+  goods_issue_spare_line                                 goods_issue_spare_line[]
   inbound_receipt                                        inbound_receipt[]
   material_issue_request                                 material_issue_request[]
   shipment_shipment_cancelled_byToapp_user               shipment[]                         @relation("shipment_cancelled_byToapp_user")
@@ -729,32 +730,33 @@ model asn_line {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model goods_issue {
-  goods_issue_id            BigInt              @id @default(autoincrement())
-  goods_issue_no            String              @unique @db.VarChar(100)
-  issue_type_code           String              @db.VarChar(50)
-  source_document_type_code String              @db.VarChar(50)
+  goods_issue_id            BigInt                   @id @default(autoincrement())
+  goods_issue_no            String                   @unique @db.VarChar(100)
+  issue_type_code           String                   @db.VarChar(50)
+  source_document_type_code String                   @db.VarChar(50)
   source_document_id        BigInt
   source_warehouse_id       BigInt
-  destination_type_code     String              @db.VarChar(50)
-  destination_id            BigInt
-  issued_at                 DateTime            @db.Timestamptz(6)
-  status_code               String              @db.VarChar(50)
-  reason_code               String?             @db.VarChar(50)
+  destination_type_code     String?                  @db.VarChar(50)
+  destination_id            BigInt?
+  issued_at                 DateTime                 @db.Timestamptz(6)
+  status_code               String                   @db.VarChar(50)
+  reason_code               String?                  @db.VarChar(50)
   replacement_expected      Boolean?
   remarks                   String?
-  created_at                DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_at                DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                BigInt?
-  updated_at                DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
-  version_no                Int                 @default(1)
+  version_no                Int                      @default(1)
   approval_request_id       BigInt?
-  cancelled_at              DateTime?           @db.Timestamptz(6)
+  cancelled_at              DateTime?                @db.Timestamptz(6)
   cancelled_by              BigInt?
-  cancellation_reason_code  String?             @db.VarChar(50)
-  approval_request          approval_request?   @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction)
-  app_user                  app_user?           @relation(fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  warehouse                 warehouse           @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
+  cancellation_reason_code  String?                  @db.VarChar(50)
+  approval_request          approval_request?        @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                  app_user?                @relation(fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse                 warehouse                @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue_line          goods_issue_line[]
+  goods_issue_spare_line    goods_issue_spare_line[]
   shopfloor_receipt         shopfloor_receipt[]
   subcontract_issue         subcontract_issue[]
 
@@ -2180,6 +2182,7 @@ model uom {
   inventory_transaction_line                                    inventory_transaction_line[]
   asn_line                                                      asn_line[]
   goods_issue_line                                              goods_issue_line[]
+  goods_issue_spare_line                                        goods_issue_spare_line[]
   goods_receipt_line                                            goods_receipt_line[]
   inbound_receipt_line                                          inbound_receipt_line[]
   inbound_variance                                              inbound_variance[]
@@ -4308,21 +4311,22 @@ model equipment_inspection_item_assignment {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model spare_part {
-  spare_part_id        BigInt                 @id @default(autoincrement())
-  spare_part_code      String                 @unique @db.VarChar(50)
-  spare_part_name      String                 @db.VarChar(200)
-  item_id              BigInt?
-  base_uom_id          BigInt
-  minimum_stock_qty    Decimal?               @db.Decimal(20, 6)
-  is_active            Boolean                @default(true)
-  created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by           BigInt?
-  updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by           BigInt?
-  version_no           Int                    @default(1)
-  uom                  uom                    @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  item                 item?                  @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  spare_part_equipment spare_part_equipment[]
+  spare_part_id          BigInt                   @id @default(autoincrement())
+  spare_part_code        String                   @unique @db.VarChar(50)
+  spare_part_name        String                   @db.VarChar(200)
+  item_id                BigInt?
+  base_uom_id            BigInt
+  minimum_stock_qty      Decimal?                 @db.Decimal(20, 6)
+  is_active              Boolean                  @default(true)
+  created_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by             BigInt?
+  updated_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by             BigInt?
+  version_no             Int                      @default(1)
+  goods_issue_spare_line goods_issue_spare_line[]
+  uom                    uom                      @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  item                   item?                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  spare_part_equipment   spare_part_equipment[]
 
   @@schema("mdm")
 }
@@ -4619,4 +4623,26 @@ model judgment_type_control {
 
   @@index([approver_role_id], map: "ix_judgment_type_control_role")
   @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model goods_issue_spare_line {
+  goods_issue_spare_line_id BigInt      @id @default(autoincrement())
+  goods_issue_id            BigInt
+  line_no                   Int
+  spare_part_id             BigInt
+  issue_qty                 Decimal     @db.Decimal(20, 6)
+  uom_id                    BigInt
+  created_at                DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  app_user                  app_user?   @relation(fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  goods_issue               goods_issue @relation(fields: [goods_issue_id], references: [goods_issue_id], onDelete: NoAction, onUpdate: NoAction)
+  spare_part                spare_part  @relation(fields: [spare_part_id], references: [spare_part_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                       uom         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([goods_issue_id, line_no], map: "uq_goods_issue_spare_line")
+  @@index([goods_issue_id, line_no], map: "ix_goods_issue_spare_line_issue")
+  @@index([spare_part_id], map: "ix_goods_issue_spare_line_part")
+  @@schema("logistics")
 }
