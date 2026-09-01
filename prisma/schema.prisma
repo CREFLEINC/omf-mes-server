@@ -2437,12 +2437,14 @@ model production_order {
   updated_at                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                       BigInt?
   version_no                       Int                                @default(1)
+  last_change_received_at          DateTime?                          @db.Timestamptz(6)
   business_unit                    business_unit                      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   item                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   parent_production_order          production_order?                  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
   child_production_orders          production_order[]                 @relation("production_orderToproduction_order")
   plant                            plant                              @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   uom                              uom                                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  production_order_change_field    production_order_change_field[]
   production_plan                  production_plan[]
   production_order_acknowledgement production_order_acknowledgement[]
 
@@ -2858,6 +2860,7 @@ model work_order {
   version_no                                                                        Int                              @default(1)
   close_disposition_code                                                            String?                          @db.VarChar(50)
   cancellation_reason_code                                                          String?                          @db.VarChar(50)
+  po_mismatch                                                                       Boolean                          @default(false)
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
@@ -4539,4 +4542,19 @@ model lot_lifecycle_history {
   @@index([changed_at(sort: Desc)], map: "ix_lot_lifecycle_history_changed_at")
   @@index([lot_id, changed_at(sort: Desc)], map: "ix_lot_lifecycle_history_lot")
   @@schema("trace")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model production_order_change_field {
+  production_order_change_field_id BigInt           @id @default(autoincrement())
+  production_order_id              BigInt
+  field_code                       String           @db.VarChar(50)
+  before_order_qty                 Decimal?         @db.Decimal(20, 6)
+  before_due_date                  DateTime?        @db.Date
+  before_status_code               String?          @db.VarChar(50)
+  production_order                 production_order @relation(fields: [production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([production_order_id, field_code], map: "uq_po_change_field")
+  @@schema("planning")
 }
