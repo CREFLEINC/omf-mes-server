@@ -136,12 +136,14 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // DDL 주석이 용도를 명시한다: 공정 수행 자격(FR-WO-009/022) · 검사자 자격(FR-QM-014)
+    // 기존 2값이 설계 4값에 그대로 들어 있다. 순수 추가라 내릴 값이 없다.
     groupCode: 'QUALIFICATION_TYPE',
-    groupName: '자격 유형',
+    groupName: '작업자 자격 유형',
     values: [
-      { code: 'PROCESS_OPERATION', codeName: '공정 수행', order: 10 },
-      { code: 'INSPECTOR', codeName: '검사자', order: 20 },
+      { code: 'PROCESS_OPERATION', codeName: '공정수행자격', order: 10 },
+      { code: 'INSPECTOR', codeName: '검사자자격', order: 20 },
+      { code: 'SAFETY', codeName: '안전자격', order: 30 },
+      { code: 'EQUIPMENT_OPERATION', codeName: '설비운전자격', order: 40 },
     ],
   },
   {
@@ -156,35 +158,43 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // 계측기 계열이 INSTRUMENT_TYPE 으로 분리되면서 이 그룹은 설비 계열만 남는다.
+    // 우리 3값(MACHINE·INSPECTION·UTILITY)은 두 계열이 섞여 있던 것이라 전부 내린다.
+    // INSPECTION 계열은 새로 세운 INSTRUMENT_TYPE 이 받는다.
     groupCode: 'EQUIPMENT_TYPE',
     groupName: '설비 유형',
     values: [
-      { code: 'MACHINE', codeName: '생산설비', order: 10 },
-      { code: 'INSPECTION', codeName: '검사장비', order: 20 },
-      { code: 'UTILITY', codeName: '유틸리티설비', order: 30 },
+      { code: 'INJECTION_MOLDING', codeName: '사출기', order: 10 },
+      { code: 'PRESS', codeName: '프레스', order: 20 },
+      { code: 'WATER_HEATER', codeName: '온수기', order: 30 },
     ],
+    retired: ['MACHINE', 'INSPECTION', 'UTILITY'],
   },
   {
-    // 개념모델 v2 §1 설비의 '신규입고/폐기 상태'를 축으로 삼았다.
+    // 다섯을 둘로 줄인다. 설계가 이 컬럼을 «자산 수명주기» 축으로 확정했다 —
+    // 운용 중인가 폐기됐는가 둘뿐이고, 점검중·고장은 상태가 아니라 사건이다
+    // (maintenance.equipment_inspection · breakdown 이 담는다). 05-재검토 조치 13번.
     groupCode: 'EQUIPMENT_STATUS',
-    groupName: '설비 상태',
+    groupName: '설비 자산 수명주기',
     values: [
-      { code: 'NEW', codeName: '신규입고', order: 10 },
-      { code: 'NORMAL', codeName: '정상', order: 20 },
-      { code: 'MAINTENANCE', codeName: '점검중', order: 30 },
-      { code: 'BREAKDOWN', codeName: '고장', order: 40 },
-      { code: 'DISPOSED', codeName: '폐기', order: 50 },
+      { code: 'IN_SERVICE', codeName: '운용', order: 10 },
+      { code: 'DISPOSED', codeName: '폐기', order: 20 },
     ],
+    retired: ['NEW', 'NORMAL', 'MAINTENANCE', 'BREAKDOWN'],
   },
   {
-    // 확정된 축은 '외주공정 구분'(개념모델 v2 §1 공정) 하나뿐이라 그 축만 넣는다.
-    // 사출/조립/검사 같은 공정 분류축이 필요하면 값을 추가하거나 별도 코드그룹으로 뺀다.
+    // 축이 다르다. 우리 2값(INTERNAL·OUTSOURCED)은 외주 여부인데, 그 축은
+    // planning.routing_operation.is_subcontract 가 따로 갖고 있다(실측 확인). 이 컬럼은
+    // 공정을 «어떤 종류의 작업인지»로 분류하는 자리다 — 설계 4값이 그것이다.
     groupCode: 'PROCESS_TYPE',
     groupName: '공정 유형',
     values: [
-      { code: 'INTERNAL', codeName: '자체공정', order: 10 },
-      { code: 'OUTSOURCED', codeName: '외주공정', order: 20 },
+      { code: 'MACHINING', codeName: '가공', order: 10 },
+      { code: 'ASSEMBLY', codeName: '조립', order: 20 },
+      { code: 'INSPECTION', codeName: '검사', order: 30 },
+      { code: 'PACKAGING', codeName: '포장', order: 40 },
     ],
+    retired: ['INTERNAL', 'OUTSOURCED'],
   },
   {
     groupCode: 'PARTNER_ROLE_TYPE',
@@ -251,14 +261,19 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // 뜻은 겹치나 코드 문자열이 다르다 — NORMAL→ROOM_TEMPERATURE ·
+    // COLD→REFRIGERATED · HAZARD→HAZARDOUS. 설계 표기를 따르고 옛 코드는 내린다.
+    // MOISTURE_CONTROLLED 가 늘었다.
     groupCode: 'STORAGE_CONDITION',
-    groupName: '보관조건',
+    groupName: '보관 조건',
     values: [
-      { code: 'NORMAL', codeName: '상온', order: 10 },
-      { code: 'COLD', codeName: '냉장', order: 20 },
-      { code: 'FROZEN', codeName: '냉동', order: 30 },
-      { code: 'HAZARD', codeName: '위험물', order: 40 },
+      { code: 'REFRIGERATED', codeName: '냉장', order: 10 },
+      { code: 'FROZEN', codeName: '냉동', order: 20 },
+      { code: 'ROOM_TEMPERATURE', codeName: '상온', order: 30 },
+      { code: 'MOISTURE_CONTROLLED', codeName: '방습', order: 40 },
+      { code: 'HAZARDOUS', codeName: '위험물', order: 50 },
     ],
+    retired: ['NORMAL', 'COLD', 'HAZARD'],
   },
   {
     /**
@@ -324,15 +339,22 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // PQC 초중종·자주검사는 '주기' 축이다 — 검사유형(INSPECTION_TYPE)과 섞지 않는다.
+    // 축이 통째로 바뀐다. 우리 4값(EVERY_LOT·FIRST_MIDDLE_LAST·SELF·PERIODIC)은
+    // 「얼마나 자주」였는데 설계 8값은 「무엇이 검사를 촉발하나」다. 같은 컬럼에 다른 축을
+    // 담고 있었다. 우리 값은 하나도 살아남지 않는다.
     groupCode: 'INSPECTION_FREQUENCY',
     groupName: '검사 주기',
     values: [
-      { code: 'EVERY_LOT', codeName: 'LOT 단위', order: 10 },
-      { code: 'FIRST_MIDDLE_LAST', codeName: '초·중·종물', order: 20 },
-      { code: 'SELF', codeName: '자주검사', order: 30 },
-      { code: 'PERIODIC', codeName: '주기(시간·수량)', order: 40 },
+      { code: 'WORK_ORDER', codeName: '매 작업지시', order: 10 },
+      { code: 'PRODUCTION_LOT', codeName: '매 생산 LOT', order: 20 },
+      { code: 'MATERIAL_LOT', codeName: '매 자재 LOT', order: 30 },
+      { code: 'SHIFT', codeName: '근무조별', order: 40 },
+      { code: 'TIME_INTERVAL', codeName: '일정 시간별', order: 50 },
+      { code: 'QUANTITY_INTERVAL', codeName: '일정 생산수량별', order: 60 },
+      { code: 'EQUIPMENT_MOLD_CHANGE', codeName: '설비·금형 변경 시', order: 70 },
+      { code: 'USER_REQUEST', codeName: '사용자 요청 시', order: 80 },
     ],
+    retired: ['EVERY_LOT', 'FIRST_MIDDLE_LAST', 'SELF', 'PERIODIC'],
   },
   {
     // inspection_plan_version.frequency_interval_value의 단위 — 주기가 PERIODIC일 때만 쓴다.
@@ -486,19 +508,20 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // work_session_event.event_type_code — 세션에 일어난 일의 시각 기록.
-    //
-    // 잠근다. 값에 따라 세션 상태·사유 필수 여부·사유 목록이 갈리므로 고객이 값을 더하면
-    // 화면이 무엇을 해야 할지 정의되지 않는다(#62 — 이 플래그가 필요한 첫 그룹).
+    // PAUSE 를 STOP 으로 갈고 CONTROL_OVERRIDE 를 더한다. 계약이 STOP 을 쓴다 —
+    // 「세션의 status_code 를 「중단」으로 옮기는 것은 events 의 eventTypeCode=STOP 이다」.
+    // ⚠ 이 그룹은 시스템 소유다. 값에 따라 세션 상태·사유 필수 여부가 갈린다.
     groupCode: 'WORK_SESSION_EVENT_TYPE',
-    groupName: '작업세션 이벤트 유형',
+    groupName: '작업세션 사건 유형 ⛔ **시스템 소유 · 고객 편집 불가**',
     isSystemOwned: true,
     values: [
-      { code: 'START', codeName: '작업 시작', order: 10 },
-      { code: 'PAUSE', codeName: '일시중지', order: 20 },
+      { code: 'START', codeName: '시작', order: 10 },
+      { code: 'STOP', codeName: '중단', order: 20 },
       { code: 'RESUME', codeName: '재개', order: 30 },
-      { code: 'END', codeName: '작업 종료', order: 40 },
+      { code: 'END', codeName: '종료', order: 40 },
+      { code: 'CONTROL_OVERRIDE', codeName: '통제 우회', order: 50 },
     ],
+    retired: ['PAUSE'],
   },
   {
     // production_result.result_source_code — 실적이 어디서 들어왔나.
