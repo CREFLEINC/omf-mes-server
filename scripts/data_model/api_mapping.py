@@ -155,6 +155,15 @@ RESOURCE_TABLES: dict[str, list[str]] = {
         "logistics.stock_transfer_line",
         "logistics.stock_transfer",
     ],
+    # 재고 재등록. 새 표를 세우지 않는다 — 응답이 stockTransferId·stockTransferNo 를
+    # 내므로 이동 문서를 만들어 쓰고, 반출·도착이 한 번에 끝나 received_at 이 채워진
+    # 상태로 생긴다. 보류 해제와 LOT 상태 전이를 같은 트랜잭션에서 한다.
+    "/logistics/stock-reinstatements": [
+        "logistics.stock_transfer",
+        "trace.lot_hold",
+        "trace.lot",
+        "quality.disposition_decision",
+    ],
     "/logistics/stock-transfers": [
         "logistics.stock_transfer",
         "logistics.stock_transfer_line",

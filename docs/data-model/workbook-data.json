@@ -5,7 +5,7 @@
     "status": "PASS_WITH_GAPS",
     "model_version": "4.0",
     "design_reference_commit": "a8f46f2",
-    "contract_reference_commit": "de4203a49d15254d2da89cb4100807dd342e8e99",
+    "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
     "table_count": 180,
     "logical_table_count": 178,
     "partition_count": 2,
@@ -24,8 +24,8 @@
       "quality": 17,
       "trace": 9
     },
-    "api_operation_count": 480,
-    "mapped_operation_count": 475,
+    "api_operation_count": 481,
+    "mapped_operation_count": 476,
     "coverage": "99.0%",
     "contract_model_gaps": [
       "production.precheck_decision",
@@ -38386,6 +38386,19 @@
       "mapping_status": "PASS"
     },
     {
+      "id": "POST /logistics/stock-reinstatements",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "tags": "shipment",
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "relation_count": 6,
+      "mapping_status": "PASS"
+    },
+    {
       "id": "GET /quality/nonconformances",
       "domain": "shipment-04제품출하",
       "method": "GET",
@@ -54842,6 +54855,78 @@
       "basis": "AUDIT_POLICY",
       "idempotency_key": true,
       "if_match": true
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "logistics.stock_transfer",
+      "role": "PRIMARY",
+      "access": "INSERT",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "trace.lot_hold",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "trace.lot",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "quality.disposition_decision",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "app.idempotency_record",
+      "role": "CROSS_CUTTING",
+      "access": "UPSERT",
+      "basis": "HEADER_CONTRACT",
+      "idempotency_key": true,
+      "if_match": false
+    },
+    {
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "table": "audit.audit_event",
+      "role": "CROSS_CUTTING",
+      "access": "APPEND",
+      "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": false
     },
     {
       "domain": "shipment-04제품출하",

@@ -2,7 +2,7 @@
   "status": "PASS_WITH_GAPS",
   "model_version": "4.0",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "de4203a49d15254d2da89cb4100807dd342e8e99",
+  "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
   "table_count": 180,
   "logical_table_count": 178,
   "partition_count": 2,
@@ -21,8 +21,8 @@
     "quality": 17,
     "trace": 9
   },
-  "api_operation_count": 480,
-  "mapped_operation_count": 475,
+  "api_operation_count": 481,
+  "mapped_operation_count": 476,
   "coverage": "99.0%",
   "contract_model_gaps": [
     "production.precheck_decision",

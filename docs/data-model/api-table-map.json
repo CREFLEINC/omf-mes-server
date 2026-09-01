@@ -1,9 +1,9 @@
 {
   "mapping_version": "4.1",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "de4203a49d15254d2da89cb4100807dd342e8e99",
-  "operation_count": 480,
-  "mapped_operation_count": 475,
+  "contract_reference_commit": "f73673984bdf2da72b9e247f013e50cfd49c4594",
+  "operation_count": 481,
+  "mapped_operation_count": 476,
   "coverage": "99.0%",
   "operations": [
     {
@@ -15823,6 +15823,58 @@
         },
         {
           "table": "logistics.shipment_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/stock-reinstatements",
+      "domain": "shipment-04제품출하",
+      "method": "POST",
+      "path": "/logistics/stock-reinstatements",
+      "summary": "재고 재등록 확정",
+      "tags": [
+        "shipment"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "logistics.stock_transfer",
+          "role": "PRIMARY",
+          "access": "INSERT",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot_hold",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "trace.lot",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "quality.disposition_decision",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
