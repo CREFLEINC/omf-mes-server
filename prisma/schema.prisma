@@ -284,19 +284,20 @@ model operation_policy {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model role {
-  role_id             BigInt                @id @default(autoincrement())
-  role_code           String                @unique @db.VarChar(50)
-  role_name           String                @db.VarChar(200)
-  description         String?
-  is_active           Boolean               @default(true)
-  created_at          DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by          BigInt?
-  updated_at          DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by          BigInt?
-  version_no          Int                   @default(1)
-  approval_route_step approval_route_step[]
-  role_permission     role_permission[]
-  user_role           user_role[]
+  role_id               BigInt                  @id @default(autoincrement())
+  role_code             String                  @unique @db.VarChar(50)
+  role_name             String                  @db.VarChar(200)
+  description           String?
+  is_active             Boolean                 @default(true)
+  created_at            DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  updated_at            DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by            BigInt?
+  version_no            Int                     @default(1)
+  approval_route_step   approval_route_step[]
+  role_permission       role_permission[]
+  user_role             user_role[]
+  judgment_type_control judgment_type_control[]
 
   @@schema("app")
 }
@@ -1597,20 +1598,21 @@ model code_group {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model code_value {
-  code_value_id  BigInt     @id @default(autoincrement())
-  code_group_id  BigInt
-  code           String     @db.VarChar(50)
-  code_name      String     @db.VarChar(200)
-  display_order  Int        @default(0)
-  effective_from DateTime?  @db.Date
-  effective_to   DateTime?  @db.Date
-  is_active      Boolean    @default(true)
-  created_at     DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by     BigInt?
-  updated_at     DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by     BigInt?
-  version_no     Int        @default(1)
-  code_group     code_group @relation(fields: [code_group_id], references: [code_group_id], onDelete: NoAction, onUpdate: NoAction)
+  code_value_id         BigInt                 @id @default(autoincrement())
+  code_group_id         BigInt
+  code                  String                 @db.VarChar(50)
+  code_name             String                 @db.VarChar(200)
+  display_order         Int                    @default(0)
+  effective_from        DateTime?              @db.Date
+  effective_to          DateTime?              @db.Date
+  is_active             Boolean                @default(true)
+  created_at            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by            BigInt?
+  updated_at            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by            BigInt?
+  version_no            Int                    @default(1)
+  code_group            code_group             @relation(fields: [code_group_id], references: [code_group_id], onDelete: NoAction, onUpdate: NoAction)
+  judgment_type_control judgment_type_control?
 
   @@unique([code_group_id, code], map: "uq_code_value")
   @@schema("mdm")
@@ -4127,26 +4129,28 @@ model equipment_inspection_result {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model maintenance_order {
-  maintenance_order_id     BigInt               @id @default(autoincrement())
-  maintenance_order_no     String               @unique @db.VarChar(100)
-  equipment_id             BigInt
-  breakdown_id             BigInt?
-  order_type_code          String               @db.VarChar(50)
-  priority_code            String               @db.VarChar(50)
-  scheduled_start_at       DateTime?            @db.Timestamptz(6)
-  scheduled_end_at         DateTime?            @db.Timestamptz(6)
-  assigned_worker_id       BigInt?
-  status_code              String               @db.VarChar(50)
-  cancellation_reason_code String?              @db.VarChar(50)
-  created_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by               BigInt?
-  updated_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by               BigInt?
-  version_no               Int                  @default(1)
-  worker                   worker?              @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
-  breakdown                breakdown?           @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
-  equipment                equipment            @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
-  maintenance_result       maintenance_result[]
+  maintenance_order_id      BigInt                     @id @default(autoincrement())
+  maintenance_order_no      String                     @unique @db.VarChar(100)
+  equipment_id              BigInt
+  breakdown_id              BigInt?
+  order_type_code           String                     @db.VarChar(50)
+  priority_code             String                     @db.VarChar(50)
+  scheduled_start_at        DateTime?                  @db.Timestamptz(6)
+  scheduled_end_at          DateTime?                  @db.Timestamptz(6)
+  assigned_worker_id        BigInt?
+  status_code               String                     @db.VarChar(50)
+  cancellation_reason_code  String?                    @db.VarChar(50)
+  created_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int                        @default(1)
+  worker                    worker?                    @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  breakdown                 breakdown?                 @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                 equipment                  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_order_item    maintenance_order_item[]
+  maintenance_order_trigger maintenance_order_trigger?
+  maintenance_result        maintenance_result[]
 
   @@schema("maintenance")
 }
@@ -4279,6 +4283,7 @@ model equipment_inspection_item {
   updated_by                           BigInt?
   version_no                           Int                                    @default(1)
   equipment_inspection_result          equipment_inspection_result[]
+  maintenance_order_item               maintenance_order_item[]
   equipment_group_inspection_item      equipment_group_inspection_item[]
   uom                                  uom?                                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   equipment_inspection_item_assignment equipment_inspection_item_assignment[]
@@ -4557,4 +4562,61 @@ model production_order_change_field {
 
   @@unique([production_order_id, field_code], map: "uq_po_change_field")
   @@schema("planning")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model maintenance_order_item {
+  maintenance_order_item_id BigInt                     @id @default(autoincrement())
+  maintenance_order_id      BigInt
+  sequence_no               Int
+  inspection_item_id        BigInt?
+  item_name                 String?                    @db.VarChar(200)
+  status_code               String                     @db.VarChar(50)
+  equipment_inspection_item equipment_inspection_item? @relation(fields: [inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_order         maintenance_order          @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([maintenance_order_id, sequence_no], map: "uq_maintenance_order_item_seq")
+  @@index([inspection_item_id], map: "ix_maintenance_order_item_inspection")
+  @@index([maintenance_order_id, sequence_no], map: "ix_maintenance_order_item_order")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model maintenance_order_trigger {
+  maintenance_order_trigger_id BigInt            @id @default(autoincrement())
+  maintenance_order_id         BigInt            @unique(map: "uq_maintenance_order_trigger")
+  trigger_type_code            String            @db.VarChar(50)
+  source_id                    BigInt?
+  snapshot_note                String?
+  pm_due_axis_code             String?           @db.VarChar(50)
+  shot_count_at_due            Int?
+  guaranteed_shot_count_at_due Int?
+  created_at                   DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  maintenance_order            maintenance_order @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model judgment_type_control {
+  code_value_id     BigInt     @id
+  blocks_issue      Boolean    @default(false)
+  blocks_shipment   Boolean    @default(false)
+  blocks_picking    Boolean    @default(false)
+  requires_approval Boolean    @default(false)
+  approver_role_id  BigInt?
+  lot_status_code   String?    @db.VarChar(50)
+  created_at        DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by        BigInt?
+  updated_at        DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by        BigInt?
+  version_no        Int        @default(1)
+  role              role?      @relation(fields: [approver_role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  code_value        code_value @relation(fields: [code_value_id], references: [code_value_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([approver_role_id], map: "ix_judgment_type_control_role")
+  @@schema("mdm")
 }
