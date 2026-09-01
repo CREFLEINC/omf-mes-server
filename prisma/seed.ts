@@ -1102,6 +1102,78 @@ const SEED: CodeGroupSeed[] = [
  * 공장별로 다른 번호 체계가 필요해지면 관리 화면에서 공장 지정 규칙을 더한다.
  * 발번기가 「지정된 축이 많을수록 이긴다」로 고르므로 전역 규칙은 그대로 둬도 된다.
  */
+/**
+ * 다형 참조 대상 등록부 — app.entity_type_registry.
+ *
+ * 물리에 다형 참조 쌍이 27개 있다(`*_type_code` + `*_id`). 유형 코드가 어느 표의 어느
+ * 컬럼을 가리키는지 적어 두는 곳이 이 표인데 비어 있었다.
+ *
+ * 비어 있으면 두 가지가 막힌다 — app.localized_text·integration.record_provenance 가
+ * entity_type_code 로 이 표를 FK 참조하므로 «어떤 행도 INSERT 할 수 없다». 그리고
+ * 유형 목록이 없으면 target_id 만으로 걸러 다른 유형의 같은 번호가 섞인다.
+ *
+ * 값은 이미 확정된 것만 담는다 — 채번 문서유형 10종(DOCUMENT_TYPE 시드)과 설계가
+ * 첨부 대상으로 확정한 4종, 그리고 예비품 출고의 원천인 보전지시다. 완결 목록이
+ * 아니며 쓰이는 유형이 늘면 함께 는다.
+ */
+const ENTITY_TYPES = [
+  { code: 'LOT', schema: 'trace', table: 'lot', idColumn: 'lot_id' },
+  { code: 'WORK_ORDER', schema: 'production', table: 'work_order', idColumn: 'work_order_id' },
+  {
+    code: 'PRODUCTION_RESULT',
+    schema: 'production',
+    table: 'production_result',
+    idColumn: 'production_result_id',
+  },
+  {
+    code: 'INSPECTION_REQUEST',
+    schema: 'quality',
+    table: 'inspection_request',
+    idColumn: 'inspection_request_id',
+  },
+  {
+    code: 'INSPECTION_RESULT',
+    schema: 'quality',
+    table: 'inspection_result',
+    idColumn: 'inspection_result_id',
+  },
+  {
+    code: 'GOODS_RECEIPT',
+    schema: 'logistics',
+    table: 'goods_receipt',
+    idColumn: 'goods_receipt_id',
+  },
+  { code: 'GOODS_ISSUE', schema: 'logistics', table: 'goods_issue', idColumn: 'goods_issue_id' },
+  { code: 'SHIPMENT', schema: 'logistics', table: 'shipment', idColumn: 'shipment_id' },
+  {
+    code: 'STOCK_TRANSFER',
+    schema: 'logistics',
+    table: 'stock_transfer',
+    idColumn: 'stock_transfer_id',
+  },
+  {
+    code: 'NONCONFORMANCE',
+    schema: 'quality',
+    table: 'nonconformance',
+    idColumn: 'nonconformance_id',
+  },
+  { code: 'NOTICE', schema: 'app', table: 'notice', idColumn: 'notice_id' },
+  { code: 'WAREHOUSE', schema: 'mdm', table: 'warehouse', idColumn: 'warehouse_id' },
+  { code: 'BREAKDOWN', schema: 'maintenance', table: 'breakdown', idColumn: 'breakdown_id' },
+  {
+    code: 'INBOUND_RECEIPT',
+    schema: 'logistics',
+    table: 'inbound_receipt',
+    idColumn: 'inbound_receipt_id',
+  },
+  {
+    code: 'MAINTENANCE_ORDER',
+    schema: 'maintenance',
+    table: 'maintenance_order',
+    idColumn: 'maintenance_order_id',
+  },
+];
+
 const NUMBERING_RULES = [
   {
     documentTypeCode: 'PRODUCTION_RESULT',
@@ -1242,9 +1314,32 @@ async function main(): Promise<void> {
     );
   }
 
+  await seedEntityTypes();
   await seedNumberingRules();
   await seedRoles();
   await seedAdmin();
+}
+
+async function seedEntityTypes(): Promise<void> {
+  for (const entity of ENTITY_TYPES) {
+    await prisma.entity_type_registry.upsert({
+      where: { entity_type_code: entity.code },
+      update: {
+        schema_name: entity.schema,
+        table_name: entity.table,
+        id_column_name: entity.idColumn,
+        is_active: true,
+      },
+      create: {
+        entity_type_code: entity.code,
+        schema_name: entity.schema,
+        table_name: entity.table,
+        id_column_name: entity.idColumn,
+      },
+    });
+  }
+  // eslint-disable-next-line no-console
+  console.log(`seeded entity_type_registry (${ENTITY_TYPES.length})`);
 }
 
 /**
