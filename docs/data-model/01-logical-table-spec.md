@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 172개 · 물리 파티션 2개 · 컬럼 2255개
+> 설계 기준 `a8f46f2` · 논리 테이블 178개 · 물리 파티션 2개 · 컬럼 2326개
 
 ## 범례
 
@@ -23,8 +23,8 @@
 | `app.exception_case` | 예외 CASE | TRANSACTION | 16 | `exception_case_id` | 2 | 예외 CASE의 업무 진행 상태와 실행 결과를 관리한다. |
 | `app.idempotency_record` | 멱등 기록 | TRANSACTION | 10 | `idempotency_key` | 1 | 범용 멱등 저장소. 정본 모델 미포함 — OMF-MES 구현 측 추가분(2026-08-05). |
 | `app.localized_text` | 다국어 문구 | TRANSACTION | 11 | `localized_text_id` | 1 | 다국어 문구의 업무 진행 상태와 실행 결과를 관리한다. |
-| `app.notice` | 공지 | TRANSACTION | 15 | `notice_id` | 2 | 공지의 업무 진행 상태와 실행 결과를 관리한다. |
-| `app.notice_acknowledgement` | 공지 확인응답 | TRANSACTION | 5 | `notice_acknowledgement_id` | 2 | 공지 확인응답의 업무 진행 상태와 실행 결과를 관리한다. |
+| `app.notice` | 공지 | TRANSACTION | 20 | `notice_id` | 3 | 공지의 업무 진행 상태와 실행 결과를 관리한다. |
+| `app.notice_acknowledgement` | 공지 확인응답 | TRANSACTION | 8 | `notice_acknowledgement_id` | 2 | 공지 확인응답의 업무 진행 상태와 실행 결과를 관리한다. |
 | `app.notification` | 알림 | TRANSACTION | 7 | `notification_id` | 2 | 알림의 업무 진행 상태와 실행 결과를 관리한다. |
 | `app.notification_event` | 알림 이력 | EVENT | 7 | `notification_event_id` | 0 | 알림 이력의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `app.notification_subscription` | 알림 구독 | TRANSACTION | 8 | `notification_subscription_id` | 1 | 알림 구독의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -307,7 +307,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 
 - 유형: `TRANSACTION`
 - 기본키: `notice_id`
-- 직접 외래키: 2개
+- 직접 외래키: 3개
 
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
@@ -326,6 +326,11 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 13 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 14 | `updated_by` | `bigint` | N | - | `-` |
 | 15 | `version_no` | `integer` | Y | - | `1` |
+| 16 | `start_date` | `date` | N | - | `-` |
+| 17 | `end_date` | `date` | N | - | `-` |
+| 18 | `scope_code` | `app.code_t` | N | - | `-` |
+| 19 | `target_work_order_id` | `bigint` | N | FK→production.work_order | `-` |
+| 20 | `acknowledge_required` | `boolean` | Y | - | `false` |
 
 ### app.notice_acknowledgement — 공지 확인응답
 
@@ -340,8 +345,11 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 1 | `notice_acknowledgement_id` | `bigint` | Y | PK | `-` |
 | 2 | `notice_id` | `bigint` | Y | FK→app.notice | `-` |
 | 3 | `app_user_id` | `bigint` | Y | FK→app.app_user | `-` |
-| 4 | `acknowledged_at` | `timestamp with time zone` | Y | - | `-` |
+| 4 | `acknowledged_at` | `timestamp with time zone` | N | - | `-` |
 | 5 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 6 | `acknowledged` | `boolean` | Y | - | `false` |
+| 7 | `worker_no` | `app.business_no_t` | N | - | `-` |
+| 8 | `worker_name` | `app.name_t` | N | - | `-` |
 
 ### app.notification — 알림
 
@@ -1123,6 +1131,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `logistics.asn_line` | 입고예정 상세 | DETAIL | 10 | `asn_line_id` | 4 | 입고예정 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.goods_issue` | 물품 출고 | TRANSACTION | 22 | `goods_issue_id` | 3 | 물품 출고의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.goods_issue_line` | 물품 출고 상세 | DETAIL | 12 | `goods_issue_line_id` | 7 | 물품 출고 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
+| `logistics.goods_issue_spare_line` | 물품 출고 예비 상세 | DETAIL | 8 | `goods_issue_spare_line_id` | 4 | 예비품 출고 라인. goods_issue_line 과 형제이며 헤더(goods_issue)는 공유한다. 기존 라인을 쓰지 않는 것은 item_id·lot_id 가 둘 다 NOT NULL 이고 자재 출고가 그 제약에 기대고 있어서다 — 예비품 때문에 풀면 자재 쪽 무결성이 함께 내려간다. 근거: 설계 확정 2026-08-11 · 회신 E-2 정리본. |
 | `logistics.goods_receipt` | 입고 | TRANSACTION | 16 | `goods_receipt_id` | 2 | 입고의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.goods_receipt_line` | 입고 상세 | DETAIL | 18 | `goods_receipt_line_id` | 8 | 입고 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.inbound_receipt` | 입고 입고 | TRANSACTION | 19 | `inbound_receipt_id` | 5 | 입고 입고의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -1142,7 +1151,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `logistics.shipment` | 출하 | TRANSACTION | 25 | `shipment_id` | 6 | 출하의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.shipment_line` | 출하 상세 | DETAIL | 10 | `shipment_line_id` | 5 | 출하 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.shipment_lot_allocation` | 출하 LOT 배분 | DETAIL | 8 | `shipment_lot_allocation_id` | 4 | 출하 LOT 배분의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
-| `logistics.shipment_request` | 출하 요청 | TRANSACTION | 13 | `shipment_request_id` | 2 | 출하 요청의 업무 진행 상태와 실행 결과를 관리한다. |
+| `logistics.shipment_request` | 출하 요청 | TRANSACTION | 14 | `shipment_request_id` | 2 | 출하 요청의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.shipment_request_line` | 출하 요청 상세 | DETAIL | 17 | `shipment_request_line_id` | 4 | 출하 요청 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `logistics.shopfloor_receipt` | 현장 입고 | TRANSACTION | 13 | `shopfloor_receipt_id` | 4 | 현장 입고의 업무 진행 상태와 실행 결과를 관리한다. |
 | `logistics.shopfloor_receipt_line` | 현장 입고 상세 | DETAIL | 12 | `shopfloor_receipt_line_id` | 5 | 현장 입고 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
@@ -1214,8 +1223,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 4 | `source_document_type_code` | `app.code_t` | Y | - | `-` |
 | 5 | `source_document_id` | `bigint` | Y | - | `-` |
 | 6 | `source_warehouse_id` | `bigint` | Y | FK→mdm.warehouse | `-` |
-| 7 | `destination_type_code` | `app.code_t` | Y | - | `-` |
-| 8 | `destination_id` | `bigint` | Y | - | `-` |
+| 7 | `destination_type_code` | `app.code_t` | N | - | `-` |
+| 8 | `destination_id` | `bigint` | N | - | `-` |
 | 9 | `issued_at` | `timestamp with time zone` | Y | - | `-` |
 | 10 | `status_code` | `app.code_t` | Y | - | `-` |
 | 11 | `reason_code` | `app.code_t` | N | - | `-` |
@@ -1254,6 +1263,25 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 11 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 12 | `created_by` | `bigint` | N | - | `-` |
 
+### logistics.goods_issue_spare_line — 물품 출고 예비 상세
+
+예비품 출고 라인. goods_issue_line 과 형제이며 헤더(goods_issue)는 공유한다. 기존 라인을 쓰지 않는 것은 item_id·lot_id 가 둘 다 NOT NULL 이고 자재 출고가 그 제약에 기대고 있어서다 — 예비품 때문에 풀면 자재 쪽 무결성이 함께 내려간다. 근거: 설계 확정 2026-08-11 · 회신 E-2 정리본.
+
+- 유형: `DETAIL`
+- 기본키: `goods_issue_spare_line_id`
+- 직접 외래키: 4개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `goods_issue_spare_line_id` | `bigint` | Y | PK | `-` |
+| 2 | `goods_issue_id` | `bigint` | Y | FK→logistics.goods_issue | `-` |
+| 3 | `line_no` | `integer` | Y | - | `-` |
+| 4 | `spare_part_id` | `bigint` | Y | FK→mdm.spare_part | `-` |
+| 5 | `issue_qty` | `app.qty_t` | Y | - | `-` |
+| 6 | `uom_id` | `bigint` | Y | FK→mdm.uom | `-` |
+| 7 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 8 | `created_by` | `bigint` | N | FK→app.app_user | `-` |
+
 ### logistics.goods_receipt — 입고
 
 입고의 업무 진행 상태와 실행 결과를 관리한다.
@@ -1271,8 +1299,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 5 | `warehouse_id` | `bigint` | Y | FK→mdm.warehouse | `-` |
 | 6 | `receipt_datetime` | `timestamp with time zone` | Y | - | `-` |
 | 7 | `status_code` | `app.code_t` | Y | - | `-` |
-| 8 | `source_document_type_code` | `app.code_t` | Y | - | `-` |
-| 9 | `source_document_id` | `bigint` | Y | - | `-` |
+| 8 | `source_document_type_code` | `app.code_t` | N | - | `-` |
+| 9 | `source_document_id` | `bigint` | N | - | `-` |
 | 10 | `reason_code` | `app.code_t` | N | - | `-` |
 | 11 | `remarks` | `text` | N | - | `-` |
 | 12 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
@@ -1773,6 +1801,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 11 | `version_no` | `integer` | Y | - | `1` |
 | 12 | `ship_time_slot_start` | `time without time zone` | N | - | `-` |
 | 13 | `ship_time_slot_end` | `time without time zone` | N | - | `-` |
+| 14 | `ship_time_slot_code` | `app.code_t` | N | - | `-` |
 
 ### logistics.shipment_request_line — 출하 요청 상세
 
@@ -2007,6 +2036,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `maintenance.equipment_inspection` | 설비 검사 | TRANSACTION | 15 | `equipment_inspection_id` | 2 | 설비 검사의 업무 진행 상태와 실행 결과를 관리한다. |
 | `maintenance.equipment_inspection_result` | 설비 검사 실적 | TRANSACTION | 10 | `equipment_inspection_result_id` | 2 | 설비 검사 실적의 업무 진행 상태와 실행 결과를 관리한다. |
 | `maintenance.maintenance_order` | 보전 지시 | TRANSACTION | 16 | `maintenance_order_id` | 3 | 보전 지시의 업무 진행 상태와 실행 결과를 관리한다. |
+| `maintenance.maintenance_order_item` | 보전 지시 품목 | TRANSACTION | 6 | `maintenance_order_item_id` | 2 | 보전지시 항목 라인. 기존 자유텍스트 itemNames 를 대체한다 — 항목을 세거나 상태를 항목별로 갖게 하려면 행이어야 한다. 근거: 이슈 #44 · #63. |
+| `maintenance.maintenance_order_trigger` | 보전 지시 TRIGGER | TRANSACTION | 9 | `maintenance_order_trigger_id` | 1 | 보전지시를 발행시킨 트리거와 발행 시점 스냅샷. 보전지시 하나에 하나다. 근거: 이슈 #44 · #63 · 설계 회신 B-4. |
 | `maintenance.maintenance_result` | 보전 실적 | TRANSACTION | 11 | `maintenance_result_id` | 2 | 보전 실적의 업무 진행 상태와 실행 결과를 관리한다. |
 | `maintenance.planned_stop` | 계획 정지 | TRANSACTION | 12 | `planned_stop_id` | 2 | 계획 정지의 업무 진행 상태와 실행 결과를 관리한다. |
 | `maintenance.tool_usage` | 툴 사용 | TRANSACTION | 10 | `tool_usage_id` | 4 | 툴 사용의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -2180,6 +2211,43 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 15 | `updated_by` | `bigint` | N | - | `-` |
 | 16 | `version_no` | `integer` | Y | - | `1` |
 
+### maintenance.maintenance_order_item — 보전 지시 품목
+
+보전지시 항목 라인. 기존 자유텍스트 itemNames 를 대체한다 — 항목을 세거나 상태를 항목별로 갖게 하려면 행이어야 한다. 근거: 이슈 #44 · #63.
+
+- 유형: `TRANSACTION`
+- 기본키: `maintenance_order_item_id`
+- 직접 외래키: 2개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `maintenance_order_item_id` | `bigint` | Y | PK | `-` |
+| 2 | `maintenance_order_id` | `bigint` | Y | FK→maintenance.maintenance_order | `-` |
+| 3 | `sequence_no` | `integer` | Y | - | `-` |
+| 4 | `inspection_item_id` | `bigint` | N | FK→mdm.equipment_inspection_item | `-` |
+| 5 | `item_name` | `app.name_t` | N | - | `-` |
+| 6 | `status_code` | `app.code_t` | Y | - | `-` |
+
+### maintenance.maintenance_order_trigger — 보전 지시 TRIGGER
+
+보전지시를 발행시킨 트리거와 발행 시점 스냅샷. 보전지시 하나에 하나다. 근거: 이슈 #44 · #63 · 설계 회신 B-4.
+
+- 유형: `TRANSACTION`
+- 기본키: `maintenance_order_trigger_id`
+- 직접 외래키: 1개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `maintenance_order_trigger_id` | `bigint` | Y | PK | `-` |
+| 2 | `maintenance_order_id` | `bigint` | Y | FK→maintenance.maintenance_order | `-` |
+| 3 | `trigger_type_code` | `app.code_t` | Y | - | `-` |
+| 4 | `source_id` | `bigint` | N | - | `-` |
+| 5 | `snapshot_note` | `text` | N | - | `-` |
+| 6 | `pm_due_axis_code` | `app.code_t` | N | - | `-` |
+| 7 | `shot_count_at_due` | `integer` | N | - | `-` |
+| 8 | `guaranteed_shot_count_at_due` | `integer` | N | - | `-` |
+| 9 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+
 ### maintenance.maintenance_result — 보전 실적
 
 보전 실적의 업무 진행 상태와 실행 결과를 관리한다.
@@ -2251,7 +2319,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 물리 테이블 | 논리명 | 유형 | 컬럼 | PK | FK | 목적 |
 |---|---|---|---:|---|---:|---|
 | `mdm.business_unit` | 사업 단위 | MASTER | 10 | `business_unit_id` | 1 | 사업 단위의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.code_group` | 코드 그룹 | MASTER | 10 | `code_group_id` | 0 | 코드 그룹의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.code_group` | 코드 그룹 | MASTER | 11 | `code_group_id` | 0 | 코드 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.code_value` | 코드 값 | MASTER | 13 | `code_value_id` | 1 | 코드 값의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.department` | 부서 | MASTER | 11 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment` | 설비 | MASTER | 18 | `equipment_id` | 4 | 설비의 업무 기준과 유효 상태를 관리한다. |
@@ -2264,6 +2332,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.item_bu_item_map` | 품목 BU 품목 매핑 | MASTER | 9 | `item_bu_item_map_id` | 4 | 품목 BU 품목 매핑의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_external_code` | 품목 외부 코드 | MASTER | 7 | `item_external_code_id` | 2 | 품목 외부 코드의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_uom_conversion` | 품목 단위 CONVERSION | MASTER | 9 | `item_uom_conversion_id` | 3 | 품목 단위 CONVERSION의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.judgment_type_control` | JUDGMENT 유형 CONTROL | MASTER | 12 | `code_value_id` | 2 | 판정유형(JUDGMENT_TYPE 코드값)의 통제 속성. 코드값과 1:1 이며 PK 가 code_value_id 다. 값이 출고·출하·피킹을 막고 결재를 태우므로 G-31 마스터안전형이 아니다 — 그룹을 시스템 소유로 잠갔다. 근거: 이슈 #42 §I-11 · 설계 회신 E-1. |
 | `mdm.legal_entity` | 법인 ENTITY | MASTER | 11 | `legal_entity_id` | 0 | 법인 ENTITY의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.location` | 로케이션 | MASTER | 18 | `location_id` | 3 | 로케이션의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.mold` | 금형 | MASTER | 14 | `mold_id` | 1 | 금형의 업무 기준과 유효 상태를 관리한다. |
@@ -2275,7 +2344,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.shift` | 교대 | MASTER | 13 | `shift_id` | 1 | 교대의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.spare_part` | 예비 PART | MASTER | 12 | `spare_part_id` | 2 | 예비 PART의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.spare_part_equipment` | 예비 PART 설비 | MASTER | 6 | `spare_part_equipment_id` | 2 | 예비 PART 설비의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.terminal` | 단말 | MASTER | 13 | `terminal_id` | 2 | 단말의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.terminal` | 단말 | MASTER | 15 | `terminal_id` | 3 | 단말의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.terminal_process` | 단말 공정 | MASTER | 13 | `terminal_process_id` | 2 | 단말 공정의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.uom` | 단위 | MASTER | 10 | `uom_id` | 0 | 단위의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.warehouse` | 창고 | MASTER | 16 | `warehouse_id` | 3 | 창고의 업무 기준과 유효 상태를 관리한다. |
@@ -2327,6 +2396,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 8 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 9 | `updated_by` | `bigint` | N | - | `-` |
 | 10 | `version_no` | `integer` | Y | - | `1` |
+| 11 | `is_system_owned` | `boolean` | Y | - | `false` |
 
 ### mdm.code_value — 코드 값
 
@@ -2595,6 +2665,29 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 8 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 9 | `created_by` | `bigint` | N | - | `-` |
 
+### mdm.judgment_type_control — JUDGMENT 유형 CONTROL
+
+판정유형(JUDGMENT_TYPE 코드값)의 통제 속성. 코드값과 1:1 이며 PK 가 code_value_id 다. 값이 출고·출하·피킹을 막고 결재를 태우므로 G-31 마스터안전형이 아니다 — 그룹을 시스템 소유로 잠갔다. 근거: 이슈 #42 §I-11 · 설계 회신 E-1.
+
+- 유형: `MASTER`
+- 기본키: `code_value_id`
+- 직접 외래키: 2개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `code_value_id` | `bigint` | Y | PK, FK→mdm.code_value | `-` |
+| 2 | `blocks_issue` | `boolean` | Y | - | `false` |
+| 3 | `blocks_shipment` | `boolean` | Y | - | `false` |
+| 4 | `blocks_picking` | `boolean` | Y | - | `false` |
+| 5 | `requires_approval` | `boolean` | Y | - | `false` |
+| 6 | `approver_role_id` | `bigint` | N | FK→app.role | `-` |
+| 7 | `lot_status_code` | `app.code_t` | N | - | `-` |
+| 8 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 9 | `created_by` | `bigint` | N | - | `-` |
+| 10 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 11 | `updated_by` | `bigint` | N | - | `-` |
+| 12 | `version_no` | `integer` | Y | - | `1` |
+
 ### mdm.legal_entity — 법인 ENTITY
 
 법인 ENTITY의 업무 기준과 유효 상태를 관리한다.
@@ -2846,7 +2939,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 
 - 유형: `MASTER`
 - 기본키: `terminal_id`
-- 직접 외래키: 2개
+- 직접 외래키: 3개
 
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
@@ -2863,6 +2956,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 11 | `updated_by` | `bigint` | N | - | `-` |
 | 12 | `version_no` | `integer` | Y | - | `1` |
 | 13 | `token_version` | `integer` | Y | - | `1` |
+| 14 | `equipment_id` | `bigint` | N | FK→mdm.equipment | `-` |
+| 15 | `token_issued_at` | `timestamp with time zone` | N | - | `-` |
 
 ### mdm.terminal_process — 단말 공정
 
@@ -3072,7 +3167,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `planning.bom` | BOM | TRANSACTION | 15 | `bom_id` | 2 | BOM의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.bom_component` | BOM 구성품 | TRANSACTION | 17 | `bom_component_id` | 5 | BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.material_substitution_rule` | 자재 대체 규칙 | TRANSACTION | 11 | `substitution_rule_id` | 3 | 자재 대체 규칙의 업무 진행 상태와 실행 결과를 관리한다. |
-| `planning.production_order` | 생산 지시 | TRANSACTION | 18 | `production_order_id` | 5 | 생산 지시의 업무 진행 상태와 실행 결과를 관리한다. |
+| `planning.production_order` | 생산 지시 | TRANSACTION | 19 | `production_order_id` | 5 | 생산 지시의 업무 진행 상태와 실행 결과를 관리한다. |
+| `planning.production_order_change_field` | 생산 지시 CHANGE FIELD | TRANSACTION | 6 | `production_order_change_field_id` | 1 | ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값. 수신 시각은 planning.production_order.last_change_received_at 이 갖는다. 행이 없으면 열거한 세 항목(수량·납기·상태) 밖이 바뀐 것이다 — 계약이 빈 배열을 허용한다. 근거: 이슈 #73. |
 | `planning.production_plan` | 생산 계획 | TRANSACTION | 18 | `production_plan_id` | 6 | 생산 계획의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.routing` | 라우팅 | TRANSACTION | 13 | `routing_id` | 1 | 라우팅의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.routing_operation` | 라우팅 공정 | TRANSACTION | 20 | `routing_operation_id` | 2 | 라우팅 공정의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -3182,6 +3278,24 @@ BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다.
 | 16 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 17 | `updated_by` | `bigint` | N | - | `-` |
 | 18 | `version_no` | `integer` | Y | - | `1` |
+| 19 | `last_change_received_at` | `timestamp with time zone` | N | - | `-` |
+
+### planning.production_order_change_field — 생산 지시 CHANGE FIELD
+
+ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값. 수신 시각은 planning.production_order.last_change_received_at 이 갖는다. 행이 없으면 열거한 세 항목(수량·납기·상태) 밖이 바뀐 것이다 — 계약이 빈 배열을 허용한다. 근거: 이슈 #73.
+
+- 유형: `TRANSACTION`
+- 기본키: `production_order_change_field_id`
+- 직접 외래키: 1개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `production_order_change_field_id` | `bigint` | Y | PK | `-` |
+| 2 | `production_order_id` | `bigint` | Y | FK→planning.production_order | `-` |
+| 3 | `field_code` | `app.code_t` | Y | - | `-` |
+| 4 | `before_order_qty` | `app.qty_t` | N | - | `-` |
+| 5 | `before_due_date` | `date` | N | - | `-` |
+| 6 | `before_status_code` | `app.code_t` | N | - | `-` |
 
 ### planning.production_plan — 생산 계획
 
@@ -3295,10 +3409,10 @@ BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다.
 | `production.material_usage_allocation` | 자재 사용 배분 | DETAIL | 12 | `material_usage_allocation_id` | 4 | 자재 사용 배분의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
 | `production.operation_handover` | 공정 인계 | TRANSACTION | 12 | `operation_handover_id` | 2 | 공정 인계의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.operation_handover_line` | 공정 인계 상세 | DETAIL | 11 | `operation_handover_line_id` | 5 | 공정 인계 상세의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
-| `production.production_order_acknowledgement` | 생산 지시 확인응답 | TRANSACTION | 9 | `production_order_acknowledgement_id` | 2 | 생산 지시 확인응답의 업무 진행 상태와 실행 결과를 관리한다. |
+| `production.production_order_acknowledgement` | 생산 지시 확인응답 | TRANSACTION | 12 | `production_order_acknowledgement_id` | 3 | 생산 지시 확인응답의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.production_result` | 생산 실적 | TRANSACTION | 29 | `production_result_id` | 9 | 생산 실적의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.production_result_lot_allocation` | 생산 실적 LOT 배분 | DETAIL | 7 | `production_result_lot_allocation_id` | 3 | 생산 실적 LOT 배분의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
-| `production.work_order` | 작업 지시 | TRANSACTION | 37 | `work_order_id` | 16 | 작업 지시의 업무 진행 상태와 실행 결과를 관리한다. |
+| `production.work_order` | 작업 지시 | TRANSACTION | 38 | `work_order_id` | 16 | 작업 지시의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.work_order_dependency` | 작업 지시 선후행 | TRANSACTION | 7 | `work_order_dependency_id` | 2 | 작업 지시 선후행의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.work_order_resource_assignment` | 작업 지시 RESOURCE 배정 | TRANSACTION | 15 | `work_order_resource_assignment_id` | 5 | 작업 지시 RESOURCE 배정의 업무 진행 상태와 실행 결과를 관리한다. |
 | `production.work_session` | 작업 세션 | TRANSACTION | 18 | `work_session_id` | 5 | 작업 세션의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -3492,7 +3606,7 @@ BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다.
 
 - 유형: `TRANSACTION`
 - 기본키: `production_order_acknowledgement_id`
-- 직접 외래키: 2개
+- 직접 외래키: 3개
 
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
@@ -3505,6 +3619,9 @@ BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다.
 | 7 | `status_code` | `app.code_t` | Y | - | `-` |
 | 8 | `details` | `jsonb` | Y | - | `'{}'::jsonb` |
 | 9 | `integration_message_id` | `bigint` | N | FK→integration.integration_message | `-` |
+| 10 | `acknowledged_by` | `bigint` | N | FK→app.app_user | `-` |
+| 11 | `acknowledge_decision_code` | `app.code_t` | N | - | `-` |
+| 12 | `reason` | `text` | N | - | `-` |
 
 ### production.production_result — 생산 실적
 
@@ -3611,6 +3728,7 @@ BOM 구성품의 업무 진행 상태와 실행 결과를 관리한다.
 | 35 | `version_no` | `integer` | Y | - | `1` |
 | 36 | `close_disposition_code` | `app.code_t` | N | - | `-` |
 | 37 | `cancellation_reason_code` | `app.code_t` | N | - | `-` |
+| 38 | `po_mismatch` | `boolean` | Y | - | `false` |
 
 ### production.work_order_dependency — 작업 지시 선후행
 
@@ -4208,11 +4326,12 @@ REPAIR 실적의 업무 진행 상태와 실행 결과를 관리한다.
 | 물리 테이블 | 논리명 | 유형 | 컬럼 | PK | FK | 목적 |
 |---|---|---|---:|---|---:|---|
 | `trace.impact_analysis` | 영향 분석 | EVENT | 12 | `impact_analysis_id` | 2 | 영향 분석의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
-| `trace.lot` | LOT | EVENT | 22 | `lot_id` | 5 | LOT의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
+| `trace.lot` | LOT | EVENT | 24 | `lot_id` | 5 | LOT의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `trace.lot_external_identifier` | LOT 외부 IDENTIFIER | EVENT | 8 | `lot_external_identifier_id` | 2 | LOT 외부 IDENTIFIER의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `trace.lot_hold` | LOT 보류 | EVENT | 15 | `lot_hold_id` | 4 | LOT 보류의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
+| `trace.lot_lifecycle_history` | LOT LIFECYCLE HISTORY | EVENT | 9 | `lot_lifecycle_history_id` | 1 | LOT 생명주기 전이 이력(L1~L3). 품질 판정 축인 trace.lot_status_event 와 다른 축이며 한 이력에 섞지 않는다 — 계약 명시 사항이다. 근거: 이슈 #63 · DR-007. |
 | `trace.lot_relation` | LOT 관계 | EVENT | 13 | `lot_relation_id` | 3 | LOT 관계의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
-| `trace.lot_status_event` | LOT 상태 이력 | EVENT | 13 | `lot_status_event_id` | 3 | LOT 상태 이력의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
+| `trace.lot_status_event` | LOT 상태 이력 | EVENT | 15 | `lot_status_event_id` | 3 | LOT 상태 이력의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `trace.serial_component_relation` | 시리얼 구성품 관계 | EVENT | 7 | `serial_component_relation_id` | 3 | 시리얼 구성품 관계의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `trace.serial_number` | 시리얼 번호 | EVENT | 11 | `serial_number_id` | 2 | 시리얼 번호의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 
@@ -4260,7 +4379,7 @@ LOT의 발생 사실과 변경 이력을 불변 기록으로 보존한다.
 | 9 | `expiry_date` | `date` | N | - | `-` |
 | 10 | `source_type_code` | `app.code_t` | Y | - | `-` |
 | 11 | `source_id` | `bigint` | Y | - | `-` |
-| 12 | `status_code` | `app.code_t` | Y | - | `'ACTIVE'::character varying` |
+| 12 | `status_code` | `app.code_t` | Y | - | `-` |
 | 13 | `parent_lot_id` | `bigint` | N | FK→trace.lot | `-` |
 | 14 | `remarks` | `text` | N | - | `-` |
 | 15 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
@@ -4271,6 +4390,8 @@ LOT의 발생 사실과 변경 이력을 불변 기록으로 보존한다.
 | 20 | `bom_id` | `bigint` | N | FK→planning.bom | `-` |
 | 21 | `bom_version` | `integer` | N | - | `-` |
 | 22 | `work_order_lot_seq` | `integer` | N | - | `-` |
+| 23 | `lifecycle_status_code` | `app.code_t` | N | - | `-` |
+| 24 | `completed_at` | `timestamp with time zone` | N | - | `-` |
 
 ### trace.lot_external_identifier — LOT 외부 IDENTIFIER
 
@@ -4317,6 +4438,26 @@ LOT 보류의 발생 사실과 변경 이력을 불변 기록으로 보존한다
 | 14 | `created_by` | `bigint` | N | - | `-` |
 | 15 | `release_reason_code` | `app.code_t` | N | - | `-` |
 
+### trace.lot_lifecycle_history — LOT LIFECYCLE HISTORY
+
+LOT 생명주기 전이 이력(L1~L3). 품질 판정 축인 trace.lot_status_event 와 다른 축이며 한 이력에 섞지 않는다 — 계약 명시 사항이다. 근거: 이슈 #63 · DR-007.
+
+- 유형: `EVENT`
+- 기본키: `lot_lifecycle_history_id`
+- 직접 외래키: 1개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `lot_lifecycle_history_id` | `bigint` | Y | PK | `-` |
+| 2 | `lot_id` | `bigint` | Y | FK→trace.lot | `-` |
+| 3 | `from_lifecycle_status_code` | `app.code_t` | N | - | `-` |
+| 4 | `to_lifecycle_status_code` | `app.code_t` | Y | - | `-` |
+| 5 | `transition_code` | `app.code_t` | Y | - | `-` |
+| 6 | `source_document_type_code` | `app.code_t` | N | - | `-` |
+| 7 | `source_document_id` | `bigint` | N | - | `-` |
+| 8 | `changed_at` | `timestamp with time zone` | Y | - | `-` |
+| 9 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+
 ### trace.lot_relation — LOT 관계
 
 LOT 관계의 발생 사실과 변경 이력을 불변 기록으로 보존한다.
@@ -4359,11 +4500,13 @@ LOT 상태 이력의 발생 사실과 변경 이력을 불변 기록으로 보�
 | 6 | `previous_status_code` | `app.code_t` | N | - | `-` |
 | 7 | `new_status_code` | `app.code_t` | Y | - | `-` |
 | 8 | `reason_code` | `app.code_t` | N | - | `-` |
-| 9 | `source_document_type_code` | `app.code_t` | Y | - | `-` |
-| 10 | `source_document_id` | `bigint` | Y | - | `-` |
+| 9 | `source_document_type_code` | `app.code_t` | N | - | `-` |
+| 10 | `source_document_id` | `bigint` | N | - | `-` |
 | 11 | `changed_at` | `timestamp with time zone` | Y | - | `-` |
-| 12 | `changed_by` | `bigint` | N | FK→app.app_user | `-` |
+| 12 | `changed_by` | `bigint` | Y | FK→app.app_user | `-` |
 | 13 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 14 | `transition_code` | `app.code_t` | Y | - | `-` |
+| 15 | `reason` | `text` | N | - | `-` |
 
 ### trace.serial_component_relation — 시리얼 구성품 관계
 

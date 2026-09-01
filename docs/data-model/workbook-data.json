@@ -6,52 +6,32 @@
     "model_version": "4.0",
     "design_reference_commit": "a8f46f2",
     "contract_reference_commit": "de4203a49d15254d2da89cb4100807dd342e8e99",
-    "table_count": 174,
-    "logical_table_count": 172,
+    "table_count": 180,
+    "logical_table_count": 178,
     "partition_count": 2,
-    "column_count": 2255,
-    "relationship_count": 533,
+    "column_count": 2326,
+    "relationship_count": 547,
     "schemas": {
       "app": 27,
       "audit": 2,
       "integration": 5,
       "inventory": 13,
-      "logistics": 33,
-      "maintenance": 10,
-      "mdm": 35,
-      "planning": 8,
+      "logistics": 34,
+      "maintenance": 12,
+      "mdm": 36,
+      "planning": 9,
       "production": 16,
       "quality": 17,
-      "trace": 8
+      "trace": 9
     },
     "api_operation_count": 480,
-    "mapped_operation_count": 472,
-    "coverage": "98.3%",
+    "mapped_operation_count": 475,
+    "coverage": "99.0%",
     "contract_model_gaps": [
-      "mdm.judgment_type_control",
       "production.precheck_decision",
-      "production.repair_execution",
-      "trace.lot_lifecycle_history"
+      "production.repair_execution"
     ],
     "gap_operations": [
-      {
-        "id": "GET /trace/lot-lifecycle-events",
-        "missing_tables": [
-          "trace.lot_lifecycle_history"
-        ]
-      },
-      {
-        "id": "GET /mdm/judgment-type-controls",
-        "missing_tables": [
-          "mdm.judgment_type_control"
-        ]
-      },
-      {
-        "id": "PUT /mdm/judgment-type-controls/{codeValueId}",
-        "missing_tables": [
-          "mdm.judgment_type_control"
-        ]
-      },
       {
         "id": "GET /production/precheck-decisions",
         "missing_tables": [
@@ -240,9 +220,9 @@
       "logical_name": "공지",
       "lifecycle": "TRANSACTION",
       "purpose": "공지의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 15,
+      "column_count": 20,
       "primary_key": "notice_id",
-      "foreign_key_count": 2,
+      "foreign_key_count": 3,
       "is_partition": false
     },
     {
@@ -252,7 +232,7 @@
       "logical_name": "공지 확인응답",
       "lifecycle": "TRANSACTION",
       "purpose": "공지 확인응답의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 5,
+      "column_count": 8,
       "primary_key": "notice_acknowledgement_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -703,6 +683,18 @@
     },
     {
       "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "qualified_name": "logistics.goods_issue_spare_line",
+      "logical_name": "물품 출고 예비 상세",
+      "lifecycle": "DETAIL",
+      "purpose": "예비품 출고 라인. goods_issue_line 과 형제이며 헤더(goods_issue)는 공유한다. 기존 라인을 쓰지 않는 것은 item_id·lot_id 가 둘 다 NOT NULL 이고 자재 출고가 그 제약에 기대고 있어서다 — 예비품 때문에 풀면 자재 쪽 무결성이 함께 내려간다. 근거: 설계 확정 2026-08-11 · 회신 E-2 정리본.",
+      "column_count": 8,
+      "primary_key": "goods_issue_spare_line_id",
+      "foreign_key_count": 4,
+      "is_partition": false
+    },
+    {
+      "schema": "logistics",
       "table": "goods_receipt",
       "qualified_name": "logistics.goods_receipt",
       "logical_name": "입고",
@@ -936,7 +928,7 @@
       "logical_name": "출하 요청",
       "lifecycle": "TRANSACTION",
       "purpose": "출하 요청의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 13,
+      "column_count": 14,
       "primary_key": "shipment_request_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1135,6 +1127,30 @@
     },
     {
       "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "qualified_name": "maintenance.maintenance_order_item",
+      "logical_name": "보전 지시 품목",
+      "lifecycle": "TRANSACTION",
+      "purpose": "보전지시 항목 라인. 기존 자유텍스트 itemNames 를 대체한다 — 항목을 세거나 상태를 항목별로 갖게 하려면 행이어야 한다. 근거: 이슈 #44 · #63.",
+      "column_count": 6,
+      "primary_key": "maintenance_order_item_id",
+      "foreign_key_count": 2,
+      "is_partition": false
+    },
+    {
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "qualified_name": "maintenance.maintenance_order_trigger",
+      "logical_name": "보전 지시 TRIGGER",
+      "lifecycle": "TRANSACTION",
+      "purpose": "보전지시를 발행시킨 트리거와 발행 시점 스냅샷. 보전지시 하나에 하나다. 근거: 이슈 #44 · #63 · 설계 회신 B-4.",
+      "column_count": 9,
+      "primary_key": "maintenance_order_trigger_id",
+      "foreign_key_count": 1,
+      "is_partition": false
+    },
+    {
+      "schema": "maintenance",
       "table": "maintenance_result",
       "qualified_name": "maintenance.maintenance_result",
       "logical_name": "보전 실적",
@@ -1188,7 +1204,7 @@
       "logical_name": "코드 그룹",
       "lifecycle": "MASTER",
       "purpose": "코드 그룹의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 10,
+      "column_count": 11,
       "primary_key": "code_group_id",
       "foreign_key_count": 0,
       "is_partition": false
@@ -1339,6 +1355,18 @@
     },
     {
       "schema": "mdm",
+      "table": "judgment_type_control",
+      "qualified_name": "mdm.judgment_type_control",
+      "logical_name": "JUDGMENT 유형 CONTROL",
+      "lifecycle": "MASTER",
+      "purpose": "판정유형(JUDGMENT_TYPE 코드값)의 통제 속성. 코드값과 1:1 이며 PK 가 code_value_id 다. 값이 출고·출하·피킹을 막고 결재를 태우므로 G-31 마스터안전형이 아니다 — 그룹을 시스템 소유로 잠갔다. 근거: 이슈 #42 §I-11 · 설계 회신 E-1.",
+      "column_count": 12,
+      "primary_key": "code_value_id",
+      "foreign_key_count": 2,
+      "is_partition": false
+    },
+    {
+      "schema": "mdm",
       "table": "legal_entity",
       "qualified_name": "mdm.legal_entity",
       "logical_name": "법인 ENTITY",
@@ -1476,9 +1504,9 @@
       "logical_name": "단말",
       "lifecycle": "MASTER",
       "purpose": "단말의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 13,
+      "column_count": 15,
       "primary_key": "terminal_id",
-      "foreign_key_count": 2,
+      "foreign_key_count": 3,
       "is_partition": false
     },
     {
@@ -1632,9 +1660,21 @@
       "logical_name": "생산 지시",
       "lifecycle": "TRANSACTION",
       "purpose": "생산 지시의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 18,
+      "column_count": 19,
       "primary_key": "production_order_id",
       "foreign_key_count": 5,
+      "is_partition": false
+    },
+    {
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "qualified_name": "planning.production_order_change_field",
+      "logical_name": "생산 지시 CHANGE FIELD",
+      "lifecycle": "TRANSACTION",
+      "purpose": "ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값. 수신 시각은 planning.production_order.last_change_received_at 이 갖는다. 행이 없으면 열거한 세 항목(수량·납기·상태) 밖이 바뀐 것이다 — 계약이 빈 배열을 허용한다. 근거: 이슈 #73.",
+      "column_count": 6,
+      "primary_key": "production_order_change_field_id",
+      "foreign_key_count": 1,
       "is_partition": false
     },
     {
@@ -1776,9 +1816,9 @@
       "logical_name": "생산 지시 확인응답",
       "lifecycle": "TRANSACTION",
       "purpose": "생산 지시 확인응답의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 9,
+      "column_count": 12,
       "primary_key": "production_order_acknowledgement_id",
-      "foreign_key_count": 2,
+      "foreign_key_count": 3,
       "is_partition": false
     },
     {
@@ -1812,7 +1852,7 @@
       "logical_name": "작업 지시",
       "lifecycle": "TRANSACTION",
       "purpose": "작업 지시의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 37,
+      "column_count": 38,
       "primary_key": "work_order_id",
       "foreign_key_count": 16,
       "is_partition": false
@@ -2100,7 +2140,7 @@
       "logical_name": "LOT",
       "lifecycle": "EVENT",
       "purpose": "LOT의 발생 사실과 변경 이력을 불변 기록으로 보존한다.",
-      "column_count": 22,
+      "column_count": 24,
       "primary_key": "lot_id",
       "foreign_key_count": 5,
       "is_partition": false
@@ -2131,6 +2171,18 @@
     },
     {
       "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "qualified_name": "trace.lot_lifecycle_history",
+      "logical_name": "LOT LIFECYCLE HISTORY",
+      "lifecycle": "EVENT",
+      "purpose": "LOT 생명주기 전이 이력(L1~L3). 품질 판정 축인 trace.lot_status_event 와 다른 축이며 한 이력에 섞지 않는다 — 계약 명시 사항이다. 근거: 이슈 #63 · DR-007.",
+      "column_count": 9,
+      "primary_key": "lot_lifecycle_history_id",
+      "foreign_key_count": 1,
+      "is_partition": false
+    },
+    {
+      "schema": "trace",
       "table": "lot_relation",
       "qualified_name": "trace.lot_relation",
       "logical_name": "LOT 관계",
@@ -2148,7 +2200,7 @@
       "logical_name": "LOT 상태 이력",
       "lifecycle": "EVENT",
       "purpose": "LOT 상태 이력의 발생 사실과 변경 이력을 불변 기록으로 보존한다.",
-      "column_count": 13,
+      "column_count": 15,
       "primary_key": "lot_status_event_id",
       "foreign_key_count": 3,
       "is_partition": false
@@ -3775,6 +3827,61 @@
       "default": "1"
     },
     {
+      "qualified_table": "app.notice",
+      "schema": "app",
+      "table": "notice",
+      "ordinal": 16,
+      "column": "start_date",
+      "data_type": "date",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "app.notice",
+      "schema": "app",
+      "table": "notice",
+      "ordinal": 17,
+      "column": "end_date",
+      "data_type": "date",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "app.notice",
+      "schema": "app",
+      "table": "notice",
+      "ordinal": 18,
+      "column": "scope_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "app.notice",
+      "schema": "app",
+      "table": "notice",
+      "ordinal": 19,
+      "column": "target_work_order_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→production.work_order",
+      "default": ""
+    },
+    {
+      "qualified_table": "app.notice",
+      "schema": "app",
+      "table": "notice",
+      "ordinal": 20,
+      "column": "acknowledge_required",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
       "qualified_table": "app.notice_acknowledgement",
       "schema": "app",
       "table": "notice_acknowledgement",
@@ -3814,7 +3921,7 @@
       "ordinal": 4,
       "column": "acknowledged_at",
       "data_type": "timestamp with time zone",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -3828,6 +3935,39 @@
       "required": true,
       "key_reference": "-",
       "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "app.notice_acknowledgement",
+      "schema": "app",
+      "table": "notice_acknowledgement",
+      "ordinal": 6,
+      "column": "acknowledged",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
+      "qualified_table": "app.notice_acknowledgement",
+      "schema": "app",
+      "table": "notice_acknowledgement",
+      "ordinal": 7,
+      "column": "worker_no",
+      "data_type": "app.business_no_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "app.notice_acknowledgement",
+      "schema": "app",
+      "table": "notice_acknowledgement",
+      "ordinal": 8,
+      "column": "worker_name",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "app.notification",
@@ -8269,7 +8409,7 @@
       "ordinal": 7,
       "column": "destination_type_code",
       "data_type": "app.code_t",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -8280,7 +8420,7 @@
       "ordinal": 8,
       "column": "destination_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -8571,6 +8711,94 @@
       "default": ""
     },
     {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 1,
+      "column": "goods_issue_spare_line_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 2,
+      "column": "goods_issue_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→logistics.goods_issue",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 3,
+      "column": "line_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 4,
+      "column": "spare_part_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.spare_part",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 5,
+      "column": "issue_qty",
+      "data_type": "app.qty_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 6,
+      "column": "uom_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.uom",
+      "default": ""
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 7,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "logistics.goods_issue_spare_line",
+      "schema": "logistics",
+      "table": "goods_issue_spare_line",
+      "ordinal": 8,
+      "column": "created_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→app.app_user",
+      "default": ""
+    },
+    {
       "qualified_table": "logistics.goods_receipt",
       "schema": "logistics",
       "table": "goods_receipt",
@@ -8654,7 +8882,7 @@
       "ordinal": 8,
       "column": "source_document_type_code",
       "data_type": "app.code_t",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -8665,7 +8893,7 @@
       "ordinal": 9,
       "column": "source_document_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -11871,6 +12099,17 @@
       "default": ""
     },
     {
+      "qualified_table": "logistics.shipment_request",
+      "schema": "logistics",
+      "table": "shipment_request",
+      "ordinal": 14,
+      "column": "ship_time_slot_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "logistics.shipment_request_line",
       "schema": "logistics",
       "table": "shipment_request_line",
@@ -14236,6 +14475,171 @@
       "default": "1"
     },
     {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 1,
+      "column": "maintenance_order_item_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 2,
+      "column": "maintenance_order_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→maintenance.maintenance_order",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 3,
+      "column": "sequence_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 4,
+      "column": "inspection_item_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→mdm.equipment_inspection_item",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 5,
+      "column": "item_name",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_item",
+      "schema": "maintenance",
+      "table": "maintenance_order_item",
+      "ordinal": 6,
+      "column": "status_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 1,
+      "column": "maintenance_order_trigger_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 2,
+      "column": "maintenance_order_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→maintenance.maintenance_order",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 3,
+      "column": "trigger_type_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 4,
+      "column": "source_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 5,
+      "column": "snapshot_note",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 6,
+      "column": "pm_due_axis_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 7,
+      "column": "shot_count_at_due",
+      "data_type": "integer",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 8,
+      "column": "guaranteed_shot_count_at_due",
+      "data_type": "integer",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "maintenance.maintenance_order_trigger",
+      "schema": "maintenance",
+      "table": "maintenance_order_trigger",
+      "ordinal": 9,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
       "qualified_table": "maintenance.maintenance_result",
       "schema": "maintenance",
       "table": "maintenance_result",
@@ -14817,6 +15221,17 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "mdm.code_group",
+      "schema": "mdm",
+      "table": "code_group",
+      "ordinal": 11,
+      "column": "is_system_owned",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
     },
     {
       "qualified_table": "mdm.code_value",
@@ -16302,6 +16717,138 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 1,
+      "column": "code_value_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK, FK→mdm.code_value",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 2,
+      "column": "blocks_issue",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 3,
+      "column": "blocks_shipment",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 4,
+      "column": "blocks_picking",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 5,
+      "column": "requires_approval",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 6,
+      "column": "approver_role_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→app.role",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 7,
+      "column": "lot_status_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 8,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 9,
+      "column": "created_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 10,
+      "column": "updated_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 11,
+      "column": "updated_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.judgment_type_control",
+      "schema": "mdm",
+      "table": "judgment_type_control",
+      "ordinal": 12,
+      "column": "version_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": "1"
     },
     {
       "qualified_table": "mdm.legal_entity",
@@ -17809,6 +18356,28 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "mdm.terminal",
+      "schema": "mdm",
+      "table": "terminal",
+      "ordinal": 14,
+      "column": "equipment_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→mdm.equipment",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.terminal",
+      "schema": "mdm",
+      "table": "terminal",
+      "ordinal": 15,
+      "column": "token_issued_at",
+      "data_type": "timestamp with time zone",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "mdm.terminal_process",
@@ -19602,6 +20171,83 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "planning.production_order",
+      "schema": "planning",
+      "table": "production_order",
+      "ordinal": 19,
+      "column": "last_change_received_at",
+      "data_type": "timestamp with time zone",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 1,
+      "column": "production_order_change_field_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 2,
+      "column": "production_order_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→planning.production_order",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 3,
+      "column": "field_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 4,
+      "column": "before_order_qty",
+      "data_type": "app.qty_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 5,
+      "column": "before_due_date",
+      "data_type": "date",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.production_order_change_field",
+      "schema": "planning",
+      "table": "production_order_change_field",
+      "ordinal": 6,
+      "column": "before_status_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "planning.production_plan",
@@ -21474,6 +22120,39 @@
       "default": ""
     },
     {
+      "qualified_table": "production.production_order_acknowledgement",
+      "schema": "production",
+      "table": "production_order_acknowledgement",
+      "ordinal": 10,
+      "column": "acknowledged_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→app.app_user",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.production_order_acknowledgement",
+      "schema": "production",
+      "table": "production_order_acknowledgement",
+      "ordinal": 11,
+      "column": "acknowledge_decision_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "production.production_order_acknowledgement",
+      "schema": "production",
+      "table": "production_order_acknowledgement",
+      "ordinal": 12,
+      "column": "reason",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "production.production_result",
       "schema": "production",
       "table": "production_result",
@@ -22275,6 +22954,17 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "production.work_order",
+      "schema": "production",
+      "table": "work_order",
+      "ordinal": 38,
+      "column": "po_mismatch",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "false"
     },
     {
       "qualified_table": "production.work_order_dependency",
@@ -26135,7 +26825,7 @@
       "data_type": "app.code_t",
       "required": true,
       "key_reference": "-",
-      "default": "'ACTIVE'::character varying"
+      "default": ""
     },
     {
       "qualified_table": "trace.lot",
@@ -26243,6 +26933,28 @@
       "ordinal": 22,
       "column": "work_order_lot_seq",
       "data_type": "integer",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot",
+      "schema": "trace",
+      "table": "lot",
+      "ordinal": 23,
+      "column": "lifecycle_status_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot",
+      "schema": "trace",
+      "table": "lot",
+      "ordinal": 24,
+      "column": "completed_at",
+      "data_type": "timestamp with time zone",
       "required": false,
       "key_reference": "-",
       "default": ""
@@ -26501,6 +27213,105 @@
       "default": ""
     },
     {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 1,
+      "column": "lot_lifecycle_history_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 2,
+      "column": "lot_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→trace.lot",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 3,
+      "column": "from_lifecycle_status_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 4,
+      "column": "to_lifecycle_status_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 5,
+      "column": "transition_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 6,
+      "column": "source_document_type_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 7,
+      "column": "source_document_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 8,
+      "column": "changed_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_lifecycle_history",
+      "schema": "trace",
+      "table": "lot_lifecycle_history",
+      "ordinal": 9,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
       "qualified_table": "trace.lot_relation",
       "schema": "trace",
       "table": "lot_relation",
@@ -26738,7 +27549,7 @@
       "ordinal": 9,
       "column": "source_document_type_code",
       "data_type": "app.code_t",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -26749,7 +27560,7 @@
       "ordinal": 10,
       "column": "source_document_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -26771,7 +27582,7 @@
       "ordinal": 12,
       "column": "changed_by",
       "data_type": "bigint",
-      "required": false,
+      "required": true,
       "key_reference": "FK→app.app_user",
       "default": ""
     },
@@ -26785,6 +27596,28 @@
       "required": true,
       "key_reference": "-",
       "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "trace.lot_status_event",
+      "schema": "trace",
+      "table": "lot_status_event",
+      "ordinal": 14,
+      "column": "transition_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "trace.lot_status_event",
+      "schema": "trace",
+      "table": "lot_status_event",
+      "ordinal": 15,
+      "column": "reason",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "trace.serial_component_relation",
@@ -27152,6 +27985,14 @@
       "source_columns": "published_by",
       "target_table": "app.app_user",
       "target_columns": "app_user_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "notice_target_work_order_id_fkey",
+      "source_table": "app.notice",
+      "source_columns": "target_work_order_id",
+      "target_table": "production.work_order",
+      "target_columns": "work_order_id",
       "on_delete": "NO ACTION"
     },
     {
@@ -27965,6 +28806,38 @@
     {
       "name": "goods_issue_line_uom_id_fkey",
       "source_table": "logistics.goods_issue_line",
+      "source_columns": "uom_id",
+      "target_table": "mdm.uom",
+      "target_columns": "uom_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "goods_issue_spare_line_created_by_fkey",
+      "source_table": "logistics.goods_issue_spare_line",
+      "source_columns": "created_by",
+      "target_table": "app.app_user",
+      "target_columns": "app_user_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "goods_issue_spare_line_goods_issue_id_fkey",
+      "source_table": "logistics.goods_issue_spare_line",
+      "source_columns": "goods_issue_id",
+      "target_table": "logistics.goods_issue",
+      "target_columns": "goods_issue_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "goods_issue_spare_line_spare_part_id_fkey",
+      "source_table": "logistics.goods_issue_spare_line",
+      "source_columns": "spare_part_id",
+      "target_table": "mdm.spare_part",
+      "target_columns": "spare_part_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "goods_issue_spare_line_uom_id_fkey",
+      "source_table": "logistics.goods_issue_spare_line",
       "source_columns": "uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
@@ -29067,6 +29940,30 @@
       "on_delete": "NO ACTION"
     },
     {
+      "name": "maintenance_order_item_inspection_item_id_fkey",
+      "source_table": "maintenance.maintenance_order_item",
+      "source_columns": "inspection_item_id",
+      "target_table": "mdm.equipment_inspection_item",
+      "target_columns": "equipment_inspection_item_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "maintenance_order_item_maintenance_order_id_fkey",
+      "source_table": "maintenance.maintenance_order_item",
+      "source_columns": "maintenance_order_id",
+      "target_table": "maintenance.maintenance_order",
+      "target_columns": "maintenance_order_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "maintenance_order_trigger_maintenance_order_id_fkey",
+      "source_table": "maintenance.maintenance_order_trigger",
+      "source_columns": "maintenance_order_id",
+      "target_table": "maintenance.maintenance_order",
+      "target_columns": "maintenance_order_id",
+      "on_delete": "NO ACTION"
+    },
+    {
       "name": "maintenance_result_maintenance_order_id_fkey",
       "source_table": "maintenance.maintenance_result",
       "source_columns": "maintenance_order_id",
@@ -29347,6 +30244,22 @@
       "on_delete": "NO ACTION"
     },
     {
+      "name": "judgment_type_control_approver_role_id_fkey",
+      "source_table": "mdm.judgment_type_control",
+      "source_columns": "approver_role_id",
+      "target_table": "app.role",
+      "target_columns": "role_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "judgment_type_control_code_value_id_fkey",
+      "source_table": "mdm.judgment_type_control",
+      "source_columns": "code_value_id",
+      "target_table": "mdm.code_value",
+      "target_columns": "code_value_id",
+      "on_delete": "NO ACTION"
+    },
+    {
       "name": "location_capacity_uom_id_fkey",
       "source_table": "mdm.location",
       "source_columns": "capacity_uom_id",
@@ -29456,6 +30369,14 @@
       "source_columns": "spare_part_id",
       "target_table": "mdm.spare_part",
       "target_columns": "spare_part_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "terminal_equipment_id_fkey",
+      "source_table": "mdm.terminal",
+      "source_columns": "equipment_id",
+      "target_table": "mdm.equipment",
+      "target_columns": "equipment_id",
       "on_delete": "NO ACTION"
     },
     {
@@ -29712,6 +30633,14 @@
       "source_columns": "uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "production_order_change_field_production_order_id_fkey",
+      "source_table": "planning.production_order_change_field",
+      "source_columns": "production_order_id",
+      "target_table": "planning.production_order",
+      "target_columns": "production_order_id",
       "on_delete": "NO ACTION"
     },
     {
@@ -30096,6 +31025,14 @@
       "source_columns": "uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "production_order_acknowledgement_acknowledged_by_fkey",
+      "source_table": "production.production_order_acknowledgement",
+      "source_columns": "acknowledged_by",
+      "target_table": "app.app_user",
+      "target_columns": "app_user_id",
       "on_delete": "NO ACTION"
     },
     {
@@ -31160,6 +32097,14 @@
       "source_columns": "uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "lot_lifecycle_history_lot_id_fkey",
+      "source_table": "trace.lot_lifecycle_history",
+      "source_columns": "lot_id",
+      "target_table": "trace.lot",
+      "target_columns": "lot_id",
       "on_delete": "NO ACTION"
     },
     {
@@ -33433,8 +34378,8 @@
       "deprecated": false,
       "idempotency_key": false,
       "if_match": false,
-      "relation_count": 0,
-      "mapping_status": "FAIL"
+      "relation_count": 2,
+      "mapping_status": "PASS"
     },
     {
       "id": "GET /trace/lot-status-events",
@@ -34733,8 +35678,8 @@
       "deprecated": false,
       "idempotency_key": false,
       "if_match": false,
-      "relation_count": 0,
-      "mapping_status": "FAIL"
+      "relation_count": 2,
+      "mapping_status": "PASS"
     },
     {
       "id": "PUT /mdm/judgment-type-controls/{codeValueId}",
@@ -34746,8 +35691,8 @@
       "deprecated": false,
       "idempotency_key": true,
       "if_match": true,
-      "relation_count": 2,
-      "mapping_status": "PARTIAL"
+      "relation_count": 4,
+      "mapping_status": "PASS"
     },
     {
       "id": "GET /mdm/legal-entities",
@@ -43581,6 +44526,30 @@
     {
       "domain": "logistics-01자재창고",
       "method": "GET",
+      "path": "/trace/lot-lifecycle-events",
+      "summary": "LOT 생명주기 변경이력 조회 — 전이 3종 전건",
+      "table": "trace.lot_lifecycle_history",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
+      "path": "/trace/lot-lifecycle-events",
+      "summary": "LOT 생명주기 변경이력 조회 — 전이 3종 전건",
+      "table": "trace.lot",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "logistics-01자재창고",
+      "method": "GET",
       "path": "/trace/lot-status-events",
       "summary": "LOT 상태 변경이력 조회 — 전이 9종 전건",
       "table": "trace.lot_status_event",
@@ -46911,6 +47880,54 @@
       "role": "CROSS_CUTTING",
       "access": "APPEND",
       "basis": "AUDIT_POLICY",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/mdm/judgment-type-controls",
+      "summary": "판정유형별 통제 속성 목록",
+      "table": "mdm.judgment_type_control",
+      "role": "PRIMARY",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "GET",
+      "path": "/mdm/judgment-type-controls",
+      "summary": "판정유형별 통제 속성 목록",
+      "table": "mdm.code_value",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": false,
+      "if_match": false
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/judgment-type-controls/{codeValueId}",
+      "summary": "판정유형 통제 속성 편집",
+      "table": "mdm.judgment_type_control",
+      "role": "PRIMARY",
+      "access": "UPDATE",
+      "basis": "RESOURCE_RULE",
+      "idempotency_key": true,
+      "if_match": true
+    },
+    {
+      "domain": "mdm-기준정보",
+      "method": "PUT",
+      "path": "/mdm/judgment-type-controls/{codeValueId}",
+      "summary": "판정유형 통제 속성 편집",
+      "table": "mdm.code_value",
+      "role": "SUPPORTING",
+      "access": "READ",
+      "basis": "RESOURCE_RULE",
       "idempotency_key": true,
       "if_match": true
     },
