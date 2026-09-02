@@ -16,7 +16,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
-import { ROUTING_STATUS } from '../src/planning/routing/routing-status';
+import { REVISION_STATUS } from '../src/planning/revision-status';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-routingrev-probe';
@@ -113,7 +113,7 @@ describe('Routing Rev 전이 (e2e)', () => {
     const validate = validator('POST /planning/routings/{routingId}:confirm', '200');
     expect(validate(confirmed.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    expect(confirmed.body.statusCode).toBe(ROUTING_STATUS.CONFIRMED);
+    expect(confirmed.body.statusCode).toBe(REVISION_STATUS.CONFIRMED);
 
     // ⛔ 400 이다 — 계약이 이 자리에 409 를 «선언하지 않았다».
     const again = await request(app.getHttpServer())
@@ -142,7 +142,7 @@ describe('Routing Rev 전이 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .expect(200);
-    expect(obsoleted.body.statusCode).toBe(ROUTING_STATUS.OBSOLETE);
+    expect(obsoleted.body.statusCode).toBe(REVISION_STATUS.OBSOLETE);
 
     // ⛔ 되돌아오는 길이 없다 — 확정도, 신규 Rev 의 원본도 안 된다.
     for (const action of ['confirm', 'new-revision']) {
@@ -180,7 +180,7 @@ describe('Routing Rev 전이 (e2e)', () => {
     expect(validate(created.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(created.body.routingVersion).toBe(2);
-    expect(created.body.statusCode).toBe(ROUTING_STATUS.DRAFT);
+    expect(created.body.statusCode).toBe(REVISION_STATUS.DRAFT);
     // 헤더 속성을 물려받는다.
     expect(created.body.routingCode).toBe(`${PREFIX}-R${counter}`);
     // ⛔ 새 초안이 기본 Rev 를 빼앗지 않는다.
@@ -332,7 +332,7 @@ describe('Routing Rev 전이 (e2e)', () => {
         item_id: item.item_id,
         routing_code: `${PREFIX}-R${counter}`,
         routing_version: 1,
-        status_code: ROUTING_STATUS.DRAFT,
+        status_code: REVISION_STATUS.DRAFT,
       },
     });
     return Number(created.routing_id);

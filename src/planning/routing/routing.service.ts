@@ -12,7 +12,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ROUTING_STATUS } from './routing-status';
+import { REVISION_STATUS } from '../revision-status';
 
 /**
  * `planning.routing` 을 FK 로 가리키는 자리 전부. 실측(`pg_constraint`)이고 e2e 가 대조한다.
@@ -127,7 +127,7 @@ export class RoutingService {
           item_id: input.itemId,
           routing_code: input.routingCode,
           routing_version: 1,
-          status_code: ROUTING_STATUS.DRAFT,
+          status_code: REVISION_STATUS.DRAFT,
           ...optionalDate('effective_from', input.effectiveFrom),
           ...optionalDate('effective_to', input.effectiveTo),
         },
@@ -203,7 +203,7 @@ export class RoutingService {
       select: { status_code: true },
     });
     if (!row) throw new NotFoundException('없는 Routing 입니다.');
-    if (row.status_code === ROUTING_STATUS.DRAFT) return;
+    if (row.status_code === REVISION_STATUS.DRAFT) return;
 
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       {
@@ -238,7 +238,7 @@ export class RoutingService {
 function usableWhere(): Prisma.routingWhereInput {
   const today = new Date(new Date().toISOString().slice(0, 10));
   return {
-    status_code: ROUTING_STATUS.CONFIRMED,
+    status_code: REVISION_STATUS.CONFIRMED,
     AND: [
       { OR: [{ effective_from: null }, { effective_from: { lte: today } }] },
       { OR: [{ effective_to: null }, { effective_to: { gte: today } }] },
