@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
 import { ActionName, StateColumn, Transition, TransitionRegistry } from './document-state.types';
 import { TRANSITIONS } from './transitions';
 
@@ -47,12 +47,17 @@ export class DocumentStateService {
     }
 
     if (!transition.from.includes(currentStatus)) {
+      const message = `지금 상태(${currentStatus})에서는 할 수 없습니다.`;
+      // ⛔ 봉투가 상태마다 다르다. 409 는 계약이 `ConflictResponse` 를 선언했고,
+      // 400 은 `ErrorResponse` 다 — 같은 뜻을 두 모양으로 내는 것이 아니라 계약이
+      // 자리마다 다르게 선언한 것을 그대로 따른다.
+      if (conflictStatus === HttpStatus.CONFLICT) throw new ConflictException('user', message);
       throw new ContractException(conflictStatus, [
         {
           scope: 'screen',
-          // 재로드해도 풀리지 않는다 — 저장 충돌(409)과 구분한다(공유계약 G-1).
+          // 재로드해도 풀리지 않는다 — 저장 충돌과 구분한다(공유계약 G-1).
           code: ERROR_CODE.STATE_LOCKED,
-          message: `지금 상태(${currentStatus})에서는 할 수 없습니다.`,
+          message,
         },
       ]);
     }

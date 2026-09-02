@@ -190,7 +190,7 @@ describe('역할·기능 권한 (e2e)', () => {
       .set('If-Match', '1')
       .send({ roleCode: `${PREFIX}_B`, roleName: '또 고친 이름' })
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⛔ 역할코드 중복은 400 이고 유일키 범위를 담는다', async () => {

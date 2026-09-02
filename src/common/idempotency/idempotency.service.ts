@@ -1,8 +1,8 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 
-import { ContractException, ERROR_CODE } from '../errors';
+import { ConflictException } from '../errors';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -110,24 +110,15 @@ export class IdempotencyService {
   ): IdempotentOutcome<T> {
     if (record.request_fingerprint !== context.fingerprint) {
       // 같은 키로 «다른» 요청이 왔다. 앞의 응답을 주면 거짓말이 된다.
-      throw new ContractException(HttpStatus.CONFLICT, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: '같은 요청 키로 다른 내용이 왔습니다. 새 키로 보내세요.',
-        },
-      ]);
+      // ⛔ 봉투는 ConflictResponse 다 — 계약이 409 에 그것을 선언했다.
+      // 원인은 「사람」이다: 클라이언트가 키를 재사용했다.
+      throw new ConflictException('user', '같은 요청 키로 다른 내용이 왔습니다. 새 키로 보내세요.');
     }
 
     if (record.status !== 'COMPLETED') {
       // 앞의 처리가 아직 끝나지 않았다. 재로드로 풀릴 수 있으므로 저장 충돌 쪽이다.
-      throw new ContractException(HttpStatus.CONFLICT, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.STATE_LOCKED,
-          message: '같은 요청이 처리 중입니다. 잠시 뒤 다시 확인하세요.',
-        },
-      ]);
+      // 앞의 처리가 아직 «잡고 있다» — 계약 어휘로 workerLease 다.
+      throw new ConflictException('workerLease', '같은 요청이 처리 중입니다. 잠시 뒤 다시 확인하세요.');
     }
 
     return {

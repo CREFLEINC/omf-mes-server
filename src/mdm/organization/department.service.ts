@@ -173,7 +173,9 @@ export class DepartmentService {
     });
     if (!row) throw new NotFoundException('없는 부서입니다.');
     if (row.source_system_code === 'ERP') {
-      throw new ContractException(HttpStatus.CONFLICT, [
+      // ⛔ 400 이다. 계약이 50 오퍼레이션에 못박았다 — 「업무 규칙 위반(상태 잠김·참조
+      // 존재)은 409 가 아니라 400 이다」. 409 는 «재로드하면 풀리는» 저장 충돌 전용이다.
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
           scope: 'screen',
           code: ERROR_CODE.STATE_LOCKED,

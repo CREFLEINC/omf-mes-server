@@ -167,7 +167,8 @@ describe('부서 마스터 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', detail.headers.etag)
       .send({ departmentCode: `${PREFIX}-ERP`, departmentName: '덮어쓰기 시도' })
-      .expect(409);
+      // ⛔ 400 이다 — 「업무 규칙 위반(상태 잠김)은 409 가 아니라 400」(계약).
+      .expect(400);
     expect(rejected.body.errors[0].code).toBe('STATE_LOCKED');
 
     // 중지도 막는다 — 물리 삭제가 없으므로 중지가 곧 삭제 자리다.
@@ -176,7 +177,7 @@ describe('부서 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', detail.headers.etag)
-      .expect(409);
+      .expect(400);
   });
 
   it('⛔ 부서 계층에 순환을 만들 수 없다 — ck_department_parent 는 자기 자신만 막는다', async () => {
@@ -233,7 +234,7 @@ describe('부서 마스터 (e2e)', () => {
       .set('If-Match', etag)
       .send({ departmentCode: `${PREFIX}-V`, departmentName: '뒤늦게' })
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('중지·재개가 돌고, 중지된 것은 기본 목록에서 빠진다', async () => {

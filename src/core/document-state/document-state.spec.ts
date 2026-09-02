@@ -1,6 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
 import { ContractRegistry } from '../../common/contract';
 import { DocumentStateService } from './document-state.service';
 import { TRANSITIONS } from './transitions';
@@ -32,14 +32,14 @@ describe('DocumentStateService', () => {
 
     it('⛔ 마감은 활성 슬롯을 폐번하지 않는다 — R82 는 「실적 없는 슬롯만」이다', () => {
       expect(() => service.assertTransition(LIFECYCLE, 'work-order-close', 'ACTIVE')).toThrow(
-        ContractException,
+        ConflictException,
       );
     });
 
     it('⛔ 폐번에서는 아무 데도 못 간다 — 재사용 금지', () => {
       for (const action of ['production-result-recorded', 'work-order-close', 'work-order-cancel']) {
         expect(() => service.assertTransition(LIFECYCLE, action, 'VOIDED')).toThrow(
-          ContractException,
+          ConflictException,
         );
       }
     });
@@ -70,19 +70,35 @@ describe('DocumentStateService', () => {
     });
   });
 
-  describe('열리지 않은 전이는 409 STATE_LOCKED', () => {
-    it('지금 상태가 from 에 없으면 409 를 던진다', () => {
-      let caught: ContractException | undefined;
+  describe('열리지 않은 전이 — 봉투가 상태마다 다르다', () => {
+    it('409 는 계약 ConflictResponse 다 — errors 배열이 아니다', () => {
+      let caught: ConflictException | undefined;
       try {
         service.assertTransition(LIFECYCLE, 'production-result-recorded', 'ACTIVE');
+      } catch (error) {
+        caught = error as ConflictException;
+      }
+
+      expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
+      expect(caught?.conflict.conflictCause).toBe('user');
+      expect(caught?.getResponse()).not.toHaveProperty('errors');
+    });
+
+    it('⭐ 400 은 ErrorResponse 다 — 계약이 자리마다 다르게 선언했다', () => {
+      let caught: ContractException | undefined;
+      try {
+        service.assertTransition(
+          LIFECYCLE,
+          'production-result-recorded',
+          'ACTIVE',
+          HttpStatus.BAD_REQUEST,
+        );
       } catch (error) {
         caught = error as ContractException;
       }
 
-      expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
-      expect(caught?.errors).toMatchObject([
-        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED },
-      ]);
+      expect(caught?.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(caught?.errors).toMatchObject([{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED }]);
     });
 
     it('재로드로 풀리는 저장 충돌과 구분된다 — STATE_LOCKED 는 그 계열이다 (G-1)', () => {

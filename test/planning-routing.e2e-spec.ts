@@ -323,7 +323,7 @@ describe('Routing 헤더 (e2e)', () => {
       .set('If-Match', '1')
       .send({ routingCode: `${PREFIX}-V3` })
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⛔ 권한이 없으면 쓰기가 403 이고, 없는 Routing 은 404 다', async () => {

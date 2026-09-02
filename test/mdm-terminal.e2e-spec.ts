@@ -325,7 +325,7 @@ describe('단말 마스터 (e2e)', () => {
       .set('If-Match', etag)
       .send(updateBody())
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⛔ 없는 단말은 404 다', async () => {

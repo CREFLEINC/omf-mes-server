@@ -154,7 +154,9 @@ export class CodeService {
     });
     if (!existing) throw new NotFoundException('없는 코드 그룹입니다.');
     if (existing.is_system_owned && !isActive) {
-      throw new ContractException(HttpStatus.CONFLICT, [
+      // ⛔ 400 이다 — 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반은 409 가
+      // 아니라 400 이다」로 적었다.
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
           scope: 'screen',
           code: ERROR_CODE.STATE_LOCKED,

@@ -261,8 +261,9 @@ describe('설비 마스터 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', disposed.headers.etag)
       .send(updateBody(`${PREFIX}-DISP`))
-      .expect(409);
-    // ⛔ 재로드해도 풀리지 않는다 — STALE_VERSION 과 구분된다(G-1).
+      // ⛔ 400 이다 — 「업무 규칙 위반(상태 잠김)은 409 가 아니라 400」(계약).
+      // 409 는 «재로드하면 풀리는» 저장 충돌 전용이다(G-1).
+      .expect(400);
     expect(locked.body.errors[0].code).toBe('STATE_LOCKED');
   });
 
@@ -275,8 +276,13 @@ describe('설비 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', disposed.headers.etag)
+      // ⛔ 이쪽은 409 다 — 계약 `:dispose` 가 409 를 «선언했다». 봉투도 ErrorResponse 가
+      // 아니라 ConflictResponse 다.
       .expect(409);
-    expect(rejected.body.errors[0].code).toBe('STATE_LOCKED');
+    expect(rejected.body).toEqual({
+      conflictCause: 'user',
+      message: expect.stringContaining('상태'),
+    });
   });
 
   it('⭐ 수정이 If-Match 를 쓰고, 낡은 값은 409 STALE_VERSION 이다', async () => {
@@ -298,7 +304,7 @@ describe('설비 마스터 (e2e)', () => {
       .set('If-Match', etag)
       .send(updateBody(`${PREFIX}-V`))
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⭐ 참조가 붙으면 코드가 잠긴다', async () => {

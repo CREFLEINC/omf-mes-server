@@ -322,10 +322,12 @@ export class EquipmentService {
     });
     if (!row) throw new NotFoundException('없는 설비입니다.');
     if (row.status_code !== DISPOSED) return;
-    throw new ContractException(HttpStatus.CONFLICT, [
+    // ⛔ 400 이다 — 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반(상태 잠김·참조
+    // 존재)은 409 가 아니라 400 이다」로 적었다. 409 는 저장 충돌 전용이다.
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
       {
         scope: 'screen',
-        // ⛔ 재로드해도 풀리지 않는다 — 저장 충돌(STALE_VERSION)과 구분한다(G-1).
+        // ⛔ 재로드해도 풀리지 않는다 — 저장 충돌과 구분한다(G-1).
         code: ERROR_CODE.STATE_LOCKED,
         message: '폐기한 설비는 수정할 수 없습니다.',
       },

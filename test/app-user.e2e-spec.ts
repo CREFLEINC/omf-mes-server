@@ -306,7 +306,7 @@ describe('사용자 마스터 (e2e)', () => {
       .set('If-Match', '1')
       .send({ userName: '두 번', statusCode: 'ACTIVE' })
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⛔ 권한이 없으면 목록·등록·수정이 403 이고, 없는 사용자는 404 다', async () => {

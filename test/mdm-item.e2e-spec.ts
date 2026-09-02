@@ -258,7 +258,7 @@ describe('품목 마스터 (e2e)', () => {
       .set('If-Match', etag)
       .send(updateBody())
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⭐ :deactivate 가 없다 — isActive 를 PUT 본문으로 바꾼다', async () => {

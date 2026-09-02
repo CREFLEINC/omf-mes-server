@@ -251,7 +251,7 @@ describe('공통코드 마스터 (e2e)', () => {
       .send({ groupCode: `${PREFIX}-C`, groupName: '두번째' })
       .expect(409);
 
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⭐ 같은 멱등키로 다시 보내면 두 번 만들지 않는다', async () => {
@@ -311,7 +311,8 @@ describe('공통코드 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', detail.headers.etag)
-      .expect(409);
+      // ⛔ 400 이다 — 「업무 규칙 위반(상태 잠김)은 409 가 아니라 400」(계약).
+      .expect(400);
 
     expect(response.body.errors[0].code).toBe('STATE_LOCKED');
   });

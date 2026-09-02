@@ -8,15 +8,22 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 
+import { ConflictException } from './conflict.exception';
 import { ContractException } from './contract.exception';
 import { INTERNAL_ERROR_CODE } from './error-codes';
 import { ErrorItem, ErrorResponse } from './error-response';
 
 /**
- * 나가는 모든 오류를 계약 `ErrorResponse` 봉투 하나로 맞춘다.
+ * 나가는 오류를 계약이 정한 봉투로 맞춘다.
  *
- * 계약은 400·403·404·409·422 응답 전건이 이 봉투를 참조한다. 5xx 는 계약에 정의가
- * 없지만 **봉투를 바꾸지 않는다** — 클라이언트가 오류 처리 분기를 둘로 두지 않게 한다.
+ * ⛔ **봉투가 둘이다.** 400·403·404·422 는 `ErrorResponse`(`{ errors: [...] }`)이고
+ * **409 는 `ConflictResponse`(`{ conflictCause, message }`)** 다 — 실측으로 409 를
+ * 선언한 175 오퍼레이션 중 173 이 그쪽이다. 처음에 「전건이 같은 봉투」로 읽고 409 도
+ * `errors` 로 내렸는데, 그러면 화면이 `conflictCause` 를 못 찾아 「다른 사용자가 먼저
+ * 저장했다」와 「기간계 배치가 덮었다」를 같은 문구로 안내한다.
+ *
+ * 5xx 는 계약에 정의가 없지만 `ErrorResponse` 를 쓴다 — 클라이언트가 알 수 없는 오류를
+ * 다루는 분기를 하나로 둔다.
  */
 @Catch()
 export class ErrorResponseFilter implements ExceptionFilter {
@@ -24,8 +31,14 @@ export class ErrorResponseFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
-    const { status, errors } = this.toErrorResponse(exception);
 
+    // ⛔ 409 는 봉투가 다르다 — 여기서 씌우면 계약과 어긋난다.
+    if (exception instanceof ConflictException) {
+      response.status(exception.getStatus()).json(exception.conflict);
+      return;
+    }
+
+    const { status, errors } = this.toErrorResponse(exception);
     response.status(status).json({ errors } satisfies ErrorResponse);
   }
 

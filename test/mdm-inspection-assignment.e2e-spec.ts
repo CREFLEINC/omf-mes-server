@@ -299,7 +299,7 @@ describe('점검항목 부여 (e2e)', () => {
       .set('If-Match', stale)
       .send({ items: [] })
       .expect(409);
-    expect(rejected.body.errors[0].code).toBe('STALE_VERSION');
+    expect(rejected.body.conflictCause).toBe('user');
 
     const after = await request(app.getHttpServer())
       .get(`/api/mdm/equipment-groups/${groupId}/inspection-items`)
