@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ContractRegistry } from '../../common/contract';
 import { DocumentStateService } from './document-state.service';
 import { TRANSITIONS } from './transitions';
 
@@ -11,11 +12,9 @@ describe('DocumentStateService', () => {
 
   describe('LOT 생명주기 — 지금 등록된 유일한 상태기계', () => {
     it('대기 → 활성 (L1, 첫 실적)', () => {
-      expect(service.assertTransition(LIFECYCLE, 'production-result-recorded', 'WAITING')).toEqual({
-        from: ['WAITING'],
-        to: 'ACTIVE',
-        transitionCode: 'L1',
-      });
+      expect(service.assertTransition(LIFECYCLE, 'production-result-recorded', 'WAITING')).toMatchObject(
+        { from: ['WAITING'], to: 'ACTIVE', transitionCode: 'L1' },
+      );
     });
 
     it('대기 → 폐번 (L2, 마감 — 실적 없는 슬롯)', () => {
@@ -98,6 +97,18 @@ describe('DocumentStateService', () => {
 
       expect(actions).not.toContain('activate');
       expect(actions).not.toContain('deactivate');
+    });
+
+    it('⭐ 전이를 여는 계약 오퍼레이션이 전부 실재한다 — 이름이 계약과 이어져 있다', () => {
+      // 액션 이름은 설명적이라 계약의 동사와 다르다(전이를 «일으키는» 자원과 상태 칸을
+      // 가진 자원이 다르기 때문). 그 연결이 끊기지 않았는지 계약 원본으로 확인한다.
+      const registry = ContractRegistry.load();
+      const missing = service
+        .registered()
+        .map((entry) => entry.transition.sourceOperation)
+        .filter((operation) => !registry.has(operation));
+
+      expect(missing).toEqual([]);
     });
 
     it('지금 서 있는 것은 생명주기 축 하나다 — 늘면 이 수치가 오른다', () => {

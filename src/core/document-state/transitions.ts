@@ -30,15 +30,30 @@ export const TRANSITIONS: TransitionRegistry = {
    */
   'trace.lot.lifecycle_status_code': {
     /** 첫 실적이 붙는다 — 선발행 슬롯에 실물이 귀속된다. */
-    'production-result-recorded': { from: ['WAITING'], to: 'ACTIVE', transitionCode: 'L1' },
+    'production-result-recorded': {
+      from: ['WAITING'],
+      to: 'ACTIVE',
+      transitionCode: 'L1',
+      sourceOperation: 'POST /production/production-results',
+    },
     /** W/O 마감. 실적 없는 슬롯만 대상이다(`R82`). */
-    'work-order-close': { from: ['WAITING'], to: 'VOIDED', transitionCode: 'L2' },
+    'work-order-close': {
+      from: ['WAITING'],
+      to: 'VOIDED',
+      transitionCode: 'L2',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:close',
+    },
     /**
      * W/O 취소. ⭐ `R82` 와 **대상 집합이 다르다** — `:cancel` 은 선발행 슬롯을 «전건»
      * 즉시 폐번한다(`DR-007` · `W-02-06` §5-5). 그래서 `ACTIVE` 도 들어온다.
      * ⚠ `02-SW설계사양서` §4.4 는 「활성→폐번 없음」이라 적었는데 그것은 `PLOT`(2026-07-29)
      * 인용이고 `DR-007` 이 넘어섰다.
      */
-    'work-order-cancel': { from: ['WAITING', 'ACTIVE'], to: 'VOIDED', transitionCode: 'L3' },
+    'work-order-cancel': {
+      from: ['WAITING', 'ACTIVE'],
+      to: 'VOIDED',
+      transitionCode: 'L3',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel',
+    },
   },
 };

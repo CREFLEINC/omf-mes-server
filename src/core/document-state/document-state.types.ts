@@ -12,6 +12,15 @@ export interface Transition {
    * 없는 전이면 이력에 코드를 남기지 않는다.
    */
   readonly transitionCode?: string;
+  /**
+   * 이 전이를 여는 계약 오퍼레이션(`METHOD /path`).
+   *
+   * ⛔ 액션 이름을 계약의 `:cancel` 같은 동사로만 두지 않는 이유가 여기 있다 —
+   * **전이를 일으키는 자원과 상태 칸을 가진 자원이 다르다.** W/O 를 취소하면 그
+   * W/O 의 선발행 LOT 생명주기가 바뀐다. `cancel` 만으로는 어느 문서의 취소인지 모른다.
+   * 그래서 이름은 설명적으로 두고, 계약과의 연결은 이 칸이 진다(검사가 실재를 확인한다).
+   */
+  readonly sourceOperation: string;
 }
 
 /** `스키마.표.컬럼` — 상태 칸을 가리킨다. */
