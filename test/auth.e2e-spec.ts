@@ -22,6 +22,9 @@ describe('인증 (실 DB)', () => {
   let sessions: SessionService;
   let userId: bigint;
   const LOGIN_ID = 'e2e-auth-probe';
+  /** ⛔ 시드가 «빈 DB» 에는 비활성 역할을 남기지 않는다(폐기 6종은 업그레이드된 DB 에만
+   *  있다). 있는 것을 찾아 쓰면 검사가 마이그레이션 이력에 매인다 — 직접 만든다. */
+  const RETIRED_ROLE_CODE = 'E2E_RETIRED_PROBE';
   const PASSWORD = '테스트-비밀번호-1234';
 
   beforeAll(async () => {
@@ -58,6 +61,12 @@ describe('인증 (실 DB)', () => {
     await prisma.user_data_scope.deleteMany({ where: { app_user_id: existing.app_user_id } });
     await prisma.user_credential.deleteMany({ where: { app_user_id: existing.app_user_id } });
     await prisma.app_user.delete({ where: { app_user_id: existing.app_user_id } });
+
+    const probeRole = await prisma.role.findUnique({ where: { role_code: RETIRED_ROLE_CODE } });
+    if (probeRole) {
+      await prisma.role_permission.deleteMany({ where: { role_id: probeRole.role_id } });
+      await prisma.role.delete({ where: { role_id: probeRole.role_id } });
+    }
   }
 
   async function resetAttempts(): Promise<void> {
@@ -146,7 +155,19 @@ describe('인증 (실 DB)', () => {
 
     it('⭐ 권한은 활성 역할의 합집합이다 — 중지된 역할은 판정에서 빠진다', async () => {
       const active = await prisma.role.findUniqueOrThrow({ where: { role_code: 'ROLE_SYS_ADMIN' } });
-      const retired = await prisma.role.findFirstOrThrow({ where: { is_active: false } });
+      const retired = await prisma.role.upsert({
+        where: { role_code: RETIRED_ROLE_CODE },
+        update: { is_active: false },
+        create: { role_code: RETIRED_ROLE_CODE, role_name: '검사용 폐기 역할', is_active: false },
+      });
+      // 이 역할에 권한을 하나 붙여 둔다 — 붙은 것이 «없으면» 합집합에서 빠졌는지 알 수 없다.
+      await prisma.role_permission.upsert({
+        where: {
+          role_id_permission_code: { role_id: retired.role_id, permission_code: 'W-01-04' },
+        },
+        update: {},
+        create: { role_id: retired.role_id, permission_code: 'W-01-04' },
+      });
 
       await prisma.user_role.createMany({
         data: [
