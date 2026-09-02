@@ -136,13 +136,12 @@ describe('ErrorResponseFilter', () => {
       new Error('내부 오류'),
     ];
 
-    for (const [index, exception] of cases.entries()) {
+    for (const exception of cases) {
       json.mockClear();
       filter.catch(exception, host);
 
       expect(validate(json.mock.calls[0][0])).toBe(true);
       expect(validate.errors ?? []).toEqual([]);
-      expect(index).toBeGreaterThanOrEqual(0);
     }
   });
 });
