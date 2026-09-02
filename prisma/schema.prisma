@@ -2520,7 +2520,7 @@ model routing {
   routing_code      String              @db.VarChar(50)
   routing_version   Int
   status_code       String              @db.VarChar(50)
-  effective_from    DateTime            @db.Date
+  effective_from    DateTime?           @db.Date
   effective_to      DateTime?           @db.Date
   created_at        DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by        BigInt?

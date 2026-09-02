@@ -3371,7 +3371,7 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 3 | `routing_code` | `app.code_t` | Y | - | `-` |
 | 4 | `routing_version` | `integer` | Y | - | `-` |
 | 5 | `status_code` | `app.code_t` | Y | - | `-` |
-| 6 | `effective_from` | `date` | Y | - | `-` |
+| 6 | `effective_from` | `date` | N | - | `-` |
 | 7 | `effective_to` | `date` | N | - | `-` |
 | 8 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 9 | `created_by` | `bigint` | N | - | `-` |
