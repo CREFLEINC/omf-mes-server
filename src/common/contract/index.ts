@@ -3,6 +3,8 @@ export type { ContractBinding } from './contract-bindings';
 export { CONTRACT_OPERATION, Contract } from './contract.decorator';
 export { ContractRegistry, defaultContractsDir, jsonPointerToken } from './contract-registry';
 export type { ContractOperation, OpenApiDocument, OpenApiOperation } from './contract-registry';
+export { ContractModule } from './contract.module';
+export { ContractValidationGuard } from './contract-validation.guard';
 export { ContractValidator } from './contract-validator';
 export type { RequestParts } from './contract-validator';
 export { toErrorItems } from './validation-error.mapper';
