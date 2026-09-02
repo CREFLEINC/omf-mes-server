@@ -9,6 +9,8 @@ import { DepartmentService } from './organization/department.service';
 import { WorkerController } from './organization/worker.controller';
 import { EquipmentGroupController } from './equipment/equipment-group.controller';
 import { EquipmentGroupService } from './equipment/equipment-group.service';
+import { InspectionAssignmentController } from './equipment/inspection-assignment.controller';
+import { InspectionAssignmentService } from './equipment/inspection-assignment.service';
 import { InspectionItemController } from './equipment/inspection-item.controller';
 import { InspectionItemService } from './equipment/inspection-item.service';
 import { ItemDetailController } from './item/item-detail.controller';
@@ -27,7 +29,7 @@ import { ReferenceService } from './reference/reference.service';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService],
+  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController],
+  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService],
 })
 export class MdmModule {}

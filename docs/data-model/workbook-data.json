@@ -9,7 +9,7 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2376,
+    "column_count": 2384,
     "relationship_count": 558,
     "schemas": {
       "app": 27,
@@ -1231,7 +1231,7 @@
       "logical_name": "설비 그룹 검사 품목",
       "lifecycle": "MASTER",
       "purpose": "설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 7,
+      "column_count": 11,
       "primary_key": "equipment_group_inspection_item_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1267,7 +1267,7 @@
       "logical_name": "설비 검사 품목 배정",
       "lifecycle": "MASTER",
       "purpose": "설비 검사 품목 배정의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 7,
+      "column_count": 11,
       "primary_key": "equipment_inspection_item_assignment_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -15889,10 +15889,10 @@
       "schema": "mdm",
       "table": "equipment_group_inspection_item",
       "ordinal": 2,
-      "column": "equipment_group_id",
+      "column": "production_line_id",
       "data_type": "bigint",
       "required": true,
-      "key_reference": "FK→mdm.equipment_group",
+      "key_reference": "FK→mdm.production_line",
       "default": ""
     },
     {
@@ -15949,6 +15949,50 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_group_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_group_inspection_item",
+      "ordinal": 8,
+      "column": "cycle_type_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_group_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_group_inspection_item",
+      "ordinal": 9,
+      "column": "cycle_interval",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_group_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_group_inspection_item",
+      "ordinal": 10,
+      "column": "cycle_base_date",
+      "data_type": "date",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_group_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_group_inspection_item",
+      "ordinal": 11,
+      "column": "is_active",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "true"
     },
     {
       "qualified_table": "mdm.equipment_group_member",
@@ -16312,6 +16356,50 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item_assignment",
+      "schema": "mdm",
+      "table": "equipment_inspection_item_assignment",
+      "ordinal": 8,
+      "column": "cycle_type_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item_assignment",
+      "schema": "mdm",
+      "table": "equipment_inspection_item_assignment",
+      "ordinal": 9,
+      "column": "cycle_interval",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item_assignment",
+      "schema": "mdm",
+      "table": "equipment_inspection_item_assignment",
+      "ordinal": 10,
+      "column": "cycle_base_date",
+      "data_type": "date",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item_assignment",
+      "schema": "mdm",
+      "table": "equipment_inspection_item_assignment",
+      "ordinal": 11,
+      "column": "is_active",
+      "data_type": "boolean",
+      "required": true,
+      "key_reference": "-",
+      "default": "true"
     },
     {
       "qualified_table": "mdm.item",
@@ -30649,11 +30737,11 @@
       "on_delete": "NO ACTION"
     },
     {
-      "name": "equipment_group_inspection_item_equipment_group_id_fkey",
+      "name": "equipment_group_inspection_item_production_line_id_fkey",
       "source_table": "mdm.equipment_group_inspection_item",
-      "source_columns": "equipment_group_id",
-      "target_table": "mdm.equipment_group",
-      "target_columns": "equipment_group_id",
+      "source_columns": "production_line_id",
+      "target_table": "mdm.production_line",
+      "target_columns": "production_line_id",
       "on_delete": "NO ACTION"
     },
     {

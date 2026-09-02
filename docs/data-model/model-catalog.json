@@ -16588,6 +16588,10 @@
         {
             "name": "equipment_group_inspection_item",
             "checks": [
+                {
+                    "name": "equipment_group_inspection_item_cycle_interval_check",
+                    "expression": "CHECK (cycle_interval >= 1)"
+                }
             ],
             "schema": "mdm",
             "columns": [
@@ -16600,12 +16604,12 @@
                     "description": null
                 },
                 {
-                    "name": "equipment_group_id",
+                    "name": "production_line_id",
                     "default": null,
                     "ordinal": 2,
                     "nullable": false,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "설비 그룹. 그룹의 저장처가 mdm.production_line 이다 (계약 EquipmentGroup 의 x-source-column)."
                 },
                 {
                     "name": "equipment_inspection_item_id",
@@ -16646,6 +16650,38 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "cycle_type_code",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "cycle_interval",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "cycle_base_date",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": "주기 기준일. 비면 부여일이 기준이 된다."
+                },
+                {
+                    "name": "is_active",
+                    "default": "true",
+                    "ordinal": 11,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
                 }
             ],
             "description": null,
@@ -16667,16 +16703,16 @@
                     ]
                 },
                 {
-                    "name": "equipment_group_inspection_item_equipment_group_id_fkey",
+                    "name": "equipment_group_inspection_item_production_line_id_fkey",
                     "columns": [
-                        "equipment_group_id"
+                        "production_line_id"
                     ],
                     "on_delete": "NO ACTION",
                     "on_update": "NO ACTION",
-                    "target_table": "equipment_group",
+                    "target_table": "production_line",
                     "target_schema": "mdm",
                     "target_columns": [
-                        "equipment_group_id"
+                        "production_line_id"
                     ]
                 }
             ],
@@ -16686,7 +16722,7 @@
                 {
                     "name": "uq_equipment_group_inspection_item",
                     "columns": [
-                        "equipment_group_id",
+                        "production_line_id",
                         "equipment_inspection_item_id"
                     ]
                 }
@@ -17018,6 +17054,10 @@
         {
             "name": "equipment_inspection_item_assignment",
             "checks": [
+                {
+                    "name": "equipment_inspection_item_assignment_cycle_interval_check",
+                    "expression": "CHECK (cycle_interval >= 1)"
+                }
             ],
             "schema": "mdm",
             "columns": [
@@ -17075,6 +17115,38 @@
                     "ordinal": 7,
                     "nullable": true,
                     "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "cycle_type_code",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "cycle_interval",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "cycle_base_date",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": "주기 기준일. 비면 부여일이 기준이 된다."
+                },
+                {
+                    "name": "is_active",
+                    "default": "true",
+                    "ordinal": 11,
+                    "nullable": false,
+                    "data_type": "boolean",
                     "description": null
                 }
             ],
@@ -35829,17 +35901,17 @@
             ]
         },
         {
-            "name": "equipment_group_inspection_item_equipment_group_id_fkey",
+            "name": "equipment_group_inspection_item_production_line_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "equipment_group_inspection_item",
-            "target_table": "equipment_group",
+            "target_table": "production_line",
             "source_schema": "mdm",
             "target_schema": "mdm",
             "source_columns": [
-                "equipment_group_id"
+                "production_line_id"
             ],
             "target_columns": [
-                "equipment_group_id"
+                "production_line_id"
             ]
         },
         {
