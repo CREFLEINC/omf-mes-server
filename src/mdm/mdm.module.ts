@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
+import { DocumentStateModule } from '../core/document-state';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CodeController } from './code/code.controller';
 import { CodeService } from './code/code.service';
 import { DepartmentController } from './organization/department.controller';
 import { DepartmentService } from './organization/department.service';
 import { WorkerController } from './organization/worker.controller';
+import { EquipmentController } from './equipment/equipment.controller';
+import { EquipmentService } from './equipment/equipment.service';
 import { EquipmentGroupController } from './equipment/equipment-group.controller';
 import { EquipmentGroupService } from './equipment/equipment-group.service';
 import { InspectionAssignmentController } from './equipment/inspection-assignment.controller';
@@ -28,8 +31,8 @@ import { ReferenceController } from './reference/reference.controller';
 import { ReferenceService } from './reference/reference.service';
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService],
+  imports: [PrismaModule, IdempotencyModule, DocumentStateModule],
+  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController],
+  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService],
 })
 export class MdmModule {}

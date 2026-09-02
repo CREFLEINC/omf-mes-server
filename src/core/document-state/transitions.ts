@@ -25,6 +25,22 @@ import { TransitionRegistry } from './document-state.types';
  */
 export const TRANSITIONS: TransitionRegistry = {
   /**
+   * 설비 자산 수명주기. 시드 `EQUIPMENT_STATUS`(`IN_SERVICE`·`DISPOSED`)가 두 값을
+   * 확정했고 계약이 전이를 하나만 열었다(`:dispose`).
+   *
+   * ⛔ `is_active` 와 «다른 축»이다 — 사용 중지는 목록에서 감추는 것이고 폐기는 자산이
+   * 끝난 것이다(공유계약 `B-16`). 그래서 이 표는 두 축을 함께 갖는다.
+   * 되돌아오는 전이는 없다 — 계약에 `:restore` 가 없다.
+   */
+  'mdm.equipment.status_code': {
+    'equipment-dispose': {
+      from: ['IN_SERVICE'],
+      to: 'DISPOSED',
+      sourceOperation: 'POST /mdm/equipments/{equipmentId}:dispose',
+    },
+  },
+
+  /**
    * 생산LOT 생명주기. 설계 확정 2026-08-07(`omf-mes#46`) + `DR-007`(2026-08-12).
    * 전이 코드는 `trace.lot_lifecycle_history.transition_code` 에 들어간다.
    */

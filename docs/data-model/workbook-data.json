@@ -9,8 +9,8 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2384,
-    "relationship_count": 558,
+    "column_count": 2388,
+    "relationship_count": 559,
     "schemas": {
       "app": 27,
       "audit": 2,
@@ -1207,9 +1207,9 @@
       "logical_name": "설비",
       "lifecycle": "MASTER",
       "purpose": "설비의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 18,
+      "column_count": 22,
       "primary_key": "equipment_id",
-      "foreign_key_count": 4,
+      "foreign_key_count": 5,
       "is_partition": false
     },
     {
@@ -15761,6 +15761,50 @@
       "data_type": "bigint",
       "required": false,
       "key_reference": "FK→mdm.location",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment",
+      "schema": "mdm",
+      "table": "equipment",
+      "ordinal": 19,
+      "column": "calibration_cycle_type_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment",
+      "schema": "mdm",
+      "table": "equipment",
+      "ordinal": 20,
+      "column": "calibration_cycle_interval",
+      "data_type": "integer",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment",
+      "schema": "mdm",
+      "table": "equipment",
+      "ordinal": 21,
+      "column": "precision_value",
+      "data_type": "numeric(20,6)",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment",
+      "schema": "mdm",
+      "table": "equipment",
+      "ordinal": 22,
+      "column": "precision_uom_id",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "FK→mdm.uom",
       "default": ""
     },
     {
@@ -30702,6 +30746,14 @@
       "source_columns": "plant_id",
       "target_table": "mdm.plant",
       "target_columns": "plant_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "equipment_precision_uom_id_fkey",
+      "source_table": "mdm.equipment",
+      "source_columns": "precision_uom_id",
+      "target_table": "mdm.uom",
+      "target_columns": "uom_id",
       "on_delete": "NO ACTION"
     },
     {

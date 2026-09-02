@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2384개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2388개
 
 ## 범례
 
@@ -2324,7 +2324,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.code_group` | 코드 그룹 | MASTER | 11 | `code_group_id` | 0 | 코드 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.code_value` | 코드 값 | MASTER | 15 | `code_value_id` | 1 | 코드 값의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.department` | 부서 | MASTER | 14 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.equipment` | 설비 | MASTER | 18 | `equipment_id` | 4 | 설비의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.equipment` | 설비 | MASTER | 22 | `equipment_id` | 5 | 설비의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group` | 설비 그룹 | MASTER | 10 | `equipment_group_id` | 1 | 설비 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_inspection_item` | 설비 그룹 검사 품목 | MASTER | 11 | `equipment_group_inspection_item_id` | 2 | 설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_member` | 설비 그룹 구성원 | MASTER | 7 | `equipment_group_member_id` | 2 | 설비 그룹 구성원의 업무 기준과 유효 상태를 관리한다. |
@@ -2457,7 +2457,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 
 - 유형: `MASTER`
 - 기본키: `equipment_id`
-- 직접 외래키: 4개
+- 직접 외래키: 5개
 
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
@@ -2479,6 +2479,10 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 16 | `updated_by` | `bigint` | N | - | `-` |
 | 17 | `version_no` | `integer` | Y | - | `1` |
 | 18 | `location_id` | `bigint` | N | FK→mdm.location | `-` |
+| 19 | `calibration_cycle_type_code` | `app.code_t` | N | - | `-` |
+| 20 | `calibration_cycle_interval` | `integer` | N | - | `-` |
+| 21 | `precision_value` | `numeric(20,6)` | N | - | `-` |
+| 22 | `precision_uom_id` | `bigint` | N | FK→mdm.uom | `-` |
 
 ### mdm.equipment_group — 설비 그룹
 

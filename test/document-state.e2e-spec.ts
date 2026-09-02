@@ -33,13 +33,30 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     return values.map((value) => value.code).sort();
   }
 
-  it('⭐ 전이표가 쓰는 상태가 LOT_LIFECYCLE_STATUS 에 전부 있다', async () => {
-    const seeded = new Set(await activeCodes('LOT_LIFECYCLE_STATUS'));
-    const used = new Set(
-      service.registered().flatMap((entry) => [...entry.transition.from, entry.transition.to]),
-    );
+  /**
+   * 상태 칸마다 값 목록을 가진 코드 그룹이 따로 있다. 여기 없는 축이 전이표에 생기면
+   * 아래 검사가 「어느 그룹으로 볼지 모른다」로 깨진다 — 그것이 이 표의 뜻이다.
+   */
+  const STATUS_GROUPS: Record<string, string> = {
+    'trace.lot.lifecycle_status_code': 'LOT_LIFECYCLE_STATUS',
+    'mdm.equipment.status_code': 'EQUIPMENT_STATUS',
+  };
 
-    expect([...used].filter((code) => !seeded.has(code))).toEqual([]);
+  it('⭐ 전이표가 쓰는 상태가 축마다의 코드 그룹에 전부 있다', async () => {
+    const missing: string[] = [];
+    for (const entry of service.registered()) {
+      const groupCode = STATUS_GROUPS[entry.column];
+      if (groupCode === undefined) {
+        missing.push(`${entry.column}: 코드 그룹이 이 검사에 등록되지 않았다`);
+        continue;
+      }
+      const seeded = new Set(await activeCodes(groupCode));
+      for (const code of [...entry.transition.from, entry.transition.to]) {
+        if (!seeded.has(code)) missing.push(`${entry.column}/${code} — ${groupCode} 에 없다`);
+      }
+    }
+
+    expect(missing).toEqual([]);
   });
 
   it('⭐ 전이 코드가 LOT_LIFECYCLE_TRANSITION 에 전부 있다', async () => {
