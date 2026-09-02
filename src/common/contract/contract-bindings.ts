@@ -41,7 +41,11 @@ export async function collectContractBindings(root: string): Promise<ContractBin
 
       for (const name of Object.getOwnPropertyNames(prototype)) {
         if (name === 'constructor') continue;
-        const method = prototype[name];
+
+        // ⛔ prototype[name] 으로 읽으면 «getter 가 실행된다». 프로토타입에는 this 가
+        // 없으므로 컨트롤러가 접근자 프로퍼티를 하나 가지는 순간 계수기가 통째로 죽는다.
+        // 메서드 데코레이터의 메타데이터는 value 에 붙으므로 접근자는 볼 필요도 없다.
+        const method = Object.getOwnPropertyDescriptor(prototype, name)?.value as unknown;
         if (typeof method !== 'function') continue;
 
         const key = Reflect.getMetadata(CONTRACT_OPERATION, method) as string | undefined;

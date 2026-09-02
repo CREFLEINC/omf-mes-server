@@ -16,4 +16,12 @@ export class ProbeController {
   unbound(): string {
     return 'unbound';
   }
+
+  /**
+   * ⛔ 접근자. 프로토타입에서 값을 읽으면 이것이 «실행되고», this 가 없어 던진다.
+   * 계수기가 접근자를 건드리지 않는지 여기서 지킨다 — 실제로 이 형태에 죽은 적이 있다.
+   */
+  get exploding(): string {
+    return (this as unknown as { missing: { boom: string } }).missing.boom;
+  }
 }
