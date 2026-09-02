@@ -138,6 +138,19 @@ describe('멱등 (실 DB)', () => {
       expect(second.body).toEqual({ value: 'run-1' });
     });
 
+    it('⭐ 재생된 응답이 첫 응답과 같다 — 날짜까지', async () => {
+      // 재전송이 «다른» 값을 받으면 흡수의 뜻이 없다. 날짜는 jsonb 를 왕복하므로 특히 본다.
+      const key = randomUUID();
+      const at = new Date('2026-09-02T01:23:45.000Z');
+
+      const first = await service.run(context(key, { a: 1 }), async () => ({ at, n: 7 }));
+      const second = await service.run(context(key, { a: 1 }), async () => ({ at, n: 7 }));
+
+      expect(JSON.parse(JSON.stringify(second.body))).toEqual(
+        JSON.parse(JSON.stringify(first.body)),
+      );
+    });
+
     it('⛔ 같은 키로 다른 내용이면 409 다 — 앞의 응답을 주면 거짓말이 된다', async () => {
       const key = randomUUID();
       await service.run(context(key, { a: 1 }), async () => ({ value: 'x' }));
