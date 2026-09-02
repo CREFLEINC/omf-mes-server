@@ -1,7 +1,10 @@
 """오퍼레이션 → 필요한 기능 권한을 설계 자료에서 도출한다.
 
 근거 둘을 잇는다.
-  요구서 §3   화면 → 엔드포인트   (design/wiki/api-contracts/06-API-요구서-*.md)
+  요구서 §3   화면 → 엔드포인트   (design/wiki/api-contracts/06-API-요구서*.md)
+
+⚠ glob 에 접미사 없는 `06-API-요구서.md` 를 반드시 넣는다 — 화면 진도표가 여러 화면
+   (W-06-06 등)의 요구서로 그 파일을 가리킨다. 처음에 `-*.md` 로 적어 통째로 빠뜨렸다.
   권한목록    화면 코드 = 권한 코드 (「값이 화면 코드와 1:1」)
 
 ⛔ 손으로 고치지 않는다. 설계 저장소를 갱신한 뒤 이 스크립트를 다시 돌린다.
@@ -23,7 +26,7 @@ SECTION = re.compile(r"^## §3\..*?(?=^## §4\.|\Z)", re.M | re.S)
 
 def derive(design_root: Path, contracts_dir: Path) -> dict[str, list[str]]:
     mapping: dict[str, set[str]] = defaultdict(set)
-    for path in sorted((design_root / "design/wiki/api-contracts").glob("06-API-요구서-*.md")):
+    for path in sorted((design_root / "design/wiki/api-contracts").glob("06-API-요구서*.md")):
         section = SECTION.search(path.read_text(encoding="utf-8"))
         if not section:
             continue
