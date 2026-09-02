@@ -183,4 +183,15 @@ describe('세션 엔드포인트 (e2e)', () => {
       .set('Cookie', logout.headers['set-cookie'])
       .expect(401);
   });
+
+  it('⛔ JWT_SECRET 이 약하면 부팅에서 죽는다 — 기본값을 되살리면 세션을 위조할 수 있다', async () => {
+    const saved = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = 'too-short';
+
+    await expect(Test.createTestingModule({ imports: [AppModule] }).compile()).rejects.toThrow(
+      /JWT_SECRET/,
+    );
+
+    process.env.JWT_SECRET = saved;
+  });
 });
