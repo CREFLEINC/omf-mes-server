@@ -56,4 +56,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/spare-parts/{sparePartId}:activate': ['W-06-08'],
   'POST /mdm/spare-parts/{sparePartId}:deactivate': ['W-06-08'],
   'PUT /mdm/spare-parts/{sparePartId}/equipments': ['W-06-08'],
+
+  // `W-06-06` 「거래처 역할」 탭 — §3 이 탭만 적어 저장이 도출표에 안 들어왔다.
+  // 거래처 본체는 ERP 수신본이라 고칠 것이 역할뿐이고, 그것이 이 화면의 본체다.
+  'PUT /mdm/partners/{partnerId}/roles': ['W-06-06'],
 };
