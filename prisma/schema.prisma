@@ -1617,6 +1617,8 @@ model code_value {
   updated_at            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by            BigInt?
   version_no            Int                    @default(1)
+  name_ko               String?                @db.VarChar(200)
+  name_vi               String?                @db.VarChar(200)
   code_group            code_group             @relation(fields: [code_group_id], references: [code_group_id], onDelete: NoAction, onUpdate: NoAction)
   judgment_type_control judgment_type_control?
 
@@ -1637,6 +1639,8 @@ model department {
   updated_at           DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by           BigInt?
   version_no           Int                   @default(1)
+  name_ko              String?               @db.VarChar(200)
+  name_vi              String?               @db.VarChar(200)
   app_user             app_user[]
   approval_route_step  approval_route_step[]
   exception_case       exception_case[]
@@ -1726,6 +1730,8 @@ model item {
   default_lot_size                                     Decimal?                             @db.Decimal(20, 6)
   is_development_item                                  Boolean                              @default(false)
   recycle_type_code                                    String?                              @db.VarChar(50)
+  name_ko                                              String?                              @db.VarChar(200)
+  name_vi                                              String?                              @db.VarChar(200)
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]
@@ -2303,6 +2309,8 @@ model worker {
   updated_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                     BigInt?
   version_no                     Int                              @default(1)
+  name_ko                        String?                          @db.VarChar(200)
+  name_vi                        String?                          @db.VarChar(200)
   picking_order                  picking_order[]
   putaway_task                   putaway_task[]
   shipment                       shipment[]
@@ -2542,6 +2550,8 @@ model routing_operation {
   updated_by                                                                                            BigInt?
   version_no                                                                                            Int                            @default(1)
   is_subcontract                                                                                        Boolean                        @default(false)
+  name_ko                                                                                               String?                        @db.VarChar(200)
+  name_vi                                                                                               String?                        @db.VarChar(200)
   bom_component                                                                                         bom_component[]
   process                                                                                               process                        @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   routing                                                                                               routing                        @relation(fields: [routing_id], references: [routing_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3017,6 +3027,8 @@ model cause_code {
   updated_at                                                      DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                                      BigInt?
   version_no                                                      Int             @default(1)
+  name_ko                                                         String?         @db.VarChar(200)
+  name_vi                                                         String?         @db.VarChar(200)
   parent_cause_code                                               cause_code?     @relation("cause_codeTocause_code", fields: [parent_cause_code_id], references: [cause_code_id], onDelete: NoAction, onUpdate: NoAction)
   child_cause_codes                                               cause_code[]    @relation("cause_codeTocause_code")
   process                                                         process?        @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3074,6 +3086,8 @@ model defect_code {
   updated_by            BigInt?
   version_no            Int                   @default(1)
   disposition_type_code String?               @db.VarChar(50)
+  name_ko               String?               @db.VarChar(200)
+  name_vi               String?               @db.VarChar(200)
   parent_defect_code    defect_code?          @relation("defect_codeTodefect_code", fields: [parent_defect_code_id], references: [defect_code_id], onDelete: NoAction, onUpdate: NoAction)
   child_defect_codes    defect_code[]         @relation("defect_codeTodefect_code")
   process               process?              @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3192,6 +3206,8 @@ model inspection_item_spec {
   automatic_judgment              Boolean                  @default(true)
   created_at                      DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                      BigInt?
+  name_ko                         String?                  @db.VarChar(200)
+  name_vi                         String?                  @db.VarChar(200)
   equipment                       equipment?               @relation(fields: [default_inspection_equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_plan_version         inspection_plan_version  @relation(fields: [inspection_plan_version_id], references: [inspection_plan_version_id], onDelete: NoAction, onUpdate: NoAction)
   uom                             uom?                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3243,6 +3259,8 @@ model inspection_plan {
   pqc_skip_allowed        Boolean                   @default(false)
   skip_reason_code        String?                   @db.VarChar(50)
   simple_judgment_allowed Boolean                   @default(false)
+  name_ko                 String?                   @db.VarChar(200)
+  name_vi                 String?                   @db.VarChar(200)
   app_user                app_user?                 @relation(fields: [approved_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item?                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   process                 process?                  @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
