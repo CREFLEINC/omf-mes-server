@@ -9,6 +9,7 @@ import { OptimisticLockModule } from './common/optimistic-lock';
 import { PermissionModule } from './common/permissions';
 import { HealthModule } from './health/health.module';
 import { MdmModule } from './mdm/mdm.module';
+import { PlanningModule } from './planning/planning.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { PrismaModule } from './prisma/prisma.module';
     HealthModule,
     MdmModule,
     AppDomainModule,
+    PlanningModule,
   ],
 })
 export class AppModule {}
