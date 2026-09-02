@@ -98,4 +98,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 요구서가 `.../components/{id}` 로, 계약이 `.../components/{bomComponentId}` 로 써서
   // 도출기의 「계약에 실재하는 것만 남긴다」 걸러내기에 떨어졌다(실측).
   'PUT /planning/boms/{bomId}/components/{bomComponentId}': ['W-06-05'],
+
+  // `W-06-03` 불량·원인코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
+  // 수정·활성 전이와 원인코드 목록이 도출표에 안 들어왔다. 한 화면의 두 탭이다.
+  'GET /quality/cause-codes': ['W-06-03'],
+  'PUT /quality/defect-codes/{defectCodeId}': ['W-06-03'],
+  'POST /quality/defect-codes/{defectCodeId}:activate': ['W-06-03'],
+  'POST /quality/defect-codes/{defectCodeId}:deactivate': ['W-06-03'],
+  'PUT /quality/cause-codes/{causeCodeId}': ['W-06-03'],
+  'POST /quality/cause-codes/{causeCodeId}:activate': ['W-06-03'],
+  'POST /quality/cause-codes/{causeCodeId}:deactivate': ['W-06-03'],
 };

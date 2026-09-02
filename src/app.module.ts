@@ -10,6 +10,7 @@ import { PermissionModule } from './common/permissions';
 import { HealthModule } from './health/health.module';
 import { MdmModule } from './mdm/mdm.module';
 import { PlanningModule } from './planning/planning.module';
+import { QualityModule } from './quality/quality.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { PrismaModule } from './prisma/prisma.module';
     MdmModule,
     AppDomainModule,
     PlanningModule,
+    QualityModule,
   ],
 })
 export class AppModule {}
