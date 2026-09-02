@@ -38,6 +38,8 @@ describe('오퍼레이션 권한 매핑', () => {
   it('⭐ 두 표가 합집합으로 겹친다 — 덮어쓰기면 도출된 화면이 조용히 빠진다', () => {
     const shared = Object.keys(MANUAL_PERMISSIONS).filter((key) => key in DERIVED_PERMISSIONS);
 
+    // 겹치는 키가 하나도 없으면 아래 루프가 아무것도 검사하지 않는다 — 헛통과를 막는다.
+    expect(shared.length).toBeGreaterThan(0);
     for (const key of shared) {
       expect(OPERATION_PERMISSIONS[key]).toEqual(
         expect.arrayContaining([...DERIVED_PERMISSIONS[key], ...MANUAL_PERMISSIONS[key]]),
