@@ -194,4 +194,17 @@ describe('세션 엔드포인트 (e2e)', () => {
 
     process.env.JWT_SECRET = saved;
   });
+
+  it('⛔ 기본으로 Secure 를 붙이지 않는다 — 지금 운영은 평문 HTTP 로 API 를 노출한다', async () => {
+    // COOKIE_SECURE 를 켜지 않은 상태다. 여기서 Secure 가 붙으면 브라우저가 쿠키를
+    // 되보내지 않아 관리웹 로그인이 통째로 안 되고, 서버 로그에는 아무것도 안 남는다.
+    expect(process.env.COOKIE_SECURE).not.toBe('true');
+
+    const response = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .expect(200);
+
+    expect(response.headers['set-cookie'][0]).not.toContain('Secure');
+  });
 });
