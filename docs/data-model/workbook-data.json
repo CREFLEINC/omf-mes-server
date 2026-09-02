@@ -9,8 +9,8 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2371,
-    "relationship_count": 557,
+    "column_count": 2376,
+    "relationship_count": 558,
     "schemas": {
       "app": 27,
       "audit": 2,
@@ -1255,9 +1255,9 @@
       "logical_name": "설비 검사 품목",
       "lifecycle": "MASTER",
       "purpose": "설비 검사 품목의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 14,
+      "column_count": 19,
       "primary_key": "equipment_inspection_item_id",
-      "foreign_key_count": 1,
+      "foreign_key_count": 2,
       "is_partition": false
     },
     {
@@ -16182,6 +16182,61 @@
       "default": "1"
     },
     {
+      "qualified_table": "mdm.equipment_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_inspection_item",
+      "ordinal": 15,
+      "column": "plant_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.plant",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_inspection_item",
+      "ordinal": 16,
+      "column": "inspection_type_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_inspection_item",
+      "ordinal": 17,
+      "column": "judgment_method_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_inspection_item",
+      "ordinal": 18,
+      "column": "inspection_point",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.equipment_inspection_item",
+      "schema": "mdm",
+      "table": "equipment_inspection_item",
+      "ordinal": 19,
+      "column": "sequence_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "mdm.equipment_inspection_item_assignment",
       "schema": "mdm",
       "table": "equipment_inspection_item_assignment",
@@ -30615,6 +30670,14 @@
       "source_columns": "equipment_id",
       "target_table": "mdm.equipment",
       "target_columns": "equipment_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "equipment_inspection_item_plant_id_fkey",
+      "source_table": "mdm.equipment_inspection_item",
+      "source_columns": "plant_id",
+      "target_table": "mdm.plant",
+      "target_columns": "plant_id",
       "on_delete": "NO ACTION"
     },
     {
