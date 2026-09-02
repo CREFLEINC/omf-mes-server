@@ -583,6 +583,10 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
         operation for operation in operations if operation.get("tableless_reason")
     ]
     countable = len(operations) - len(tableless)
+    if countable == 0:
+        # 전건이 「표 없음이 정상」일 수는 없다. 규칙을 잘못 넓혔다는 뜻이므로
+        # 0으로 나누다 죽는 대신 이유를 말하고 멈춘다.
+        raise ValueError("All operations are tableless — TABLELESS_PATHS is too broad")
     mapped = sum(
         any(relation["role"] == "PRIMARY" for relation in operation["tables"])
         for operation in operations
