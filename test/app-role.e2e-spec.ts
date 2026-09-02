@@ -256,28 +256,78 @@ describe('역할·기능 권한 (e2e)', () => {
       .expect(200);
   });
 
+  // ── 역할 기능 권한 ──────────────────────────────────────────────────────
+
+  it('⭐ 기능 권한을 통째로 교체한다 — 목록에 없는 것은 회수된다', async () => {
+    const target = await create(`${PREFIX}_PERM`);
+
+    const saved = await putPermissions(target.roleId, ['W-01-03', 'W-06-07']);
+    const validate = validator('PUT /app/roles/{roleId}/permissions');
+    expect(validate(saved.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(saved.body.items.map((i: { permissionCode: string }) => i.permissionCode)).toEqual([
+      'W-01-03',
+      'W-06-07',
+    ]);
+
+    const shrunk = await putPermissions(target.roleId, ['W-06-07']);
+    expect(shrunk.body.items).toHaveLength(1);
+
+    const cleared = await putPermissions(target.roleId, []);
+    expect(cleared.body.items).toEqual([]);
+
+    const read = await request(app.getHttpServer())
+      .get(`/api/app/roles/${target.roleId}/permissions`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const readValidate = validator('GET /app/roles/{roleId}/permissions');
+    expect(readValidate(read.body)).toBe(true);
+    expect(read.body.items).toEqual([]);
+  });
+
+  it('⭐ 부여는 집합이라 중복을 접어 받는다', async () => {
+    const target = await create(`${PREFIX}_PERM2`);
+    const saved = await putPermissions(target.roleId, ['W-01-03', 'W-01-03', 'W-06-07']);
+
+    expect(saved.body.items).toHaveLength(2);
+  });
+
+  it('⛔ 어휘 밖 권한 코드는 400 이고 몇 번째인지 짚는다', async () => {
+    const target = await create(`${PREFIX}_PERM3`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/app/roles/${target.roleId}/permissions`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ permissionCodes: ['W-01-03', 'W-99-99'] })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'permissionCodes[1]',
+      code: 'INVALID',
+    });
+  });
+
+  it('⛔ 권한이 없으면 치환이 403 이고, 없는 역할은 404 다', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/app/roles/${adminRoleId}/permissions`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send({ permissionCodes: [] })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .get('/api/app/roles/999999999/permissions')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
   // ── 마지막 관리자 ───────────────────────────────────────────────────────
 
   it('⭐ 마지막 관리자 역할은 중지되지 않는다 — 400 LAST_ADMIN', async () => {
     // 시드 관리자가 같은 권한을 들고 있어 그대로는 「마지막」이 아니다. 그 계정을 잠시
     // 내려 검사 사용자만 관리자인 상태를 만든다 — API 를 거치지 않으므로 판정을 안 탄다.
-    const seeded = await prisma.app_user.findMany({
-      where: {
-        is_active: true,
-        login_id: { not: LOGIN_ID },
-        user_role: {
-          some: {
-            role: { is_active: true, role_permission: { some: { permission_code: 'W-CO-02' } } },
-          },
-        },
-      },
-      select: { app_user_id: true },
-    });
-    const ids = seeded.map((row) => row.app_user_id);
-    await prisma.app_user.updateMany({
-      where: { app_user_id: { in: ids } },
-      data: { is_active: false },
-    });
+    const others = await deactivateOtherAdmins();
 
     try {
       const rejected = await request(app.getHttpServer())
@@ -296,10 +346,7 @@ describe('역할·기능 권한 (e2e)', () => {
       expect(after.body.role.isActive).toBe(true);
       expect(after.headers.etag).toBe('1');
     } finally {
-      await prisma.app_user.updateMany({
-        where: { app_user_id: { in: ids } },
-        data: { is_active: true },
-      });
+      await restoreAdmins(others);
     }
   });
 
@@ -329,6 +376,30 @@ describe('역할·기능 권한 (e2e)', () => {
     // 자물쇠를 안 탔다면 400ms 를 기다릴 이유가 없어 released 가 아직 false 다.
     expect(released).toBe(true);
     await blocker;
+  });
+
+  it('⭐ 마지막 관리자의 관리 권한은 치환으로도 빠지지 않는다 — 400 LAST_ADMIN', async () => {
+    const others = await deactivateOtherAdmins();
+    try {
+      const rejected = await request(app.getHttpServer())
+        .put(`/api/app/roles/${adminRoleId}/permissions`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .send({ permissionCodes: ['W-01-03'] })
+        .expect(400);
+      expect(rejected.body.errors[0].code).toBe('LAST_ADMIN');
+
+      // ⛔ 막혔으면 부여가 그대로 남아 있어야 한다 — 치환은 지우고 다시 넣기 때문이다.
+      const after = await request(app.getHttpServer())
+        .get(`/api/app/roles/${adminRoleId}/permissions`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(after.body.items.map((i: { permissionCode: string }) => i.permissionCode)).toEqual([
+        'W-CO-02',
+      ]);
+    } finally {
+      await restoreAdmins(others);
+    }
   });
 
   it('관리자가 둘이면 하나를 중지할 수 있다', async () => {
@@ -386,6 +457,48 @@ describe('역할·기능 권한 (e2e)', () => {
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  async function putPermissions(
+    roleId: number,
+    permissionCodes: string[],
+  ): Promise<{ body: { items: { permissionCode: string }[] } }> {
+    const response = await request(app.getHttpServer())
+      .put(`/api/app/roles/${roleId}/permissions`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ permissionCodes })
+      .expect(200);
+    return { body: response.body };
+  }
+
+  /** 검사 사용자만 관리자인 상태를 만든다. API 를 거치지 않으므로 판정을 안 탄다. */
+  async function deactivateOtherAdmins(): Promise<bigint[]> {
+    const rows = await prisma.app_user.findMany({
+      where: {
+        is_active: true,
+        login_id: { not: LOGIN_ID },
+        user_role: {
+          some: {
+            role: { is_active: true, role_permission: { some: { permission_code: 'W-CO-02' } } },
+          },
+        },
+      },
+      select: { app_user_id: true },
+    });
+    const ids = rows.map((row) => row.app_user_id);
+    await prisma.app_user.updateMany({
+      where: { app_user_id: { in: ids } },
+      data: { is_active: false },
+    });
+    return ids;
+  }
+
+  async function restoreAdmins(ids: bigint[]): Promise<void> {
+    await prisma.app_user.updateMany({
+      where: { app_user_id: { in: ids } },
+      data: { is_active: true },
+    });
+  }
 
   async function create(roleCode: string): Promise<{ roleId: number }> {
     const response = await request(app.getHttpServer())
