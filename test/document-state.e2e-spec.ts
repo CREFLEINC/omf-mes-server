@@ -40,6 +40,9 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
   const STATUS_GROUPS: Record<string, string> = {
     'trace.lot.lifecycle_status_code': 'LOT_LIFECYCLE_STATUS',
     'mdm.equipment.status_code': 'EQUIPMENT_STATUS',
+    // ⚠ 확정의 코드 문자열이 `ACTIVE` 다 — 계약이 이름을 되돌리라 적었으나 값 집합은
+    // 정해져 있다(되돌림 §S-1). 이름이 바뀌면 이 검사가 먼저 깨진다.
+    'planning.routing.status_code': 'REVISION_STATUS',
   };
 
   it('⭐ 전이표가 쓰는 상태가 축마다의 코드 그룹에 전부 있다', async () => {

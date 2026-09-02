@@ -41,6 +41,34 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * Routing Rev 수명주기. 설계 결정 07 이 「작성중·확정·폐기」 셋으로 확정했고, 시드
+   * `REVISION_STATUS` 에 세 값이 있다 — 수가 같고 짝이 하나뿐이라 매핑에 재량이 없다.
+   *
+   * ⚠ 확정의 코드 문자열이 `ACTIVE` 다. 계약이 그 이름을 되돌리라 적어 두었으나
+   * (`G-32`) **값 집합은 정해져 있어** 전이를 세울 수 있다 — 금형(`MOLD_STATUS`)이
+   * 막힌 것과 갈리는 지점이 여기다. 되돌림 §S-1.
+   *
+   * ⛔ 폐기는 dead end 다 — 계약 §5-4 상태표가 「폐기 → (없음)」이라 되돌아오는 전이도,
+   * 신규 Rev 의 원본으로 쓰는 길도 없다.
+   *
+   * ⛔ `:new-revision` 은 여기 없다. 그것은 **원본 행의 상태를 안 바꾼다** — 확정 Rev 를
+   * 읽어 새 작성중 행을 만든다. 상태 전이가 아니라 「어느 상태에서 복사할 수 있는가」라
+   * 서비스가 직접 본다.
+   */
+  'planning.routing.status_code': {
+    'routing-confirm': {
+      from: ['DRAFT'],
+      to: 'ACTIVE',
+      sourceOperation: 'POST /planning/routings/{routingId}:confirm',
+    },
+    'routing-obsolete': {
+      from: ['ACTIVE'],
+      to: 'OBSOLETE',
+      sourceOperation: 'POST /planning/routings/{routingId}:obsolete',
+    },
+  },
+
+  /**
    * 생산LOT 생명주기. 설계 확정 2026-08-07(`omf-mes#46`) + `DR-007`(2026-08-12).
    * 전이 코드는 `trace.lot_lifecycle_history.transition_code` 에 들어간다.
    */
