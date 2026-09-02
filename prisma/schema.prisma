@@ -1641,6 +1641,7 @@ model department {
   version_no           Int                   @default(1)
   name_ko              String?               @db.VarChar(200)
   name_vi              String?               @db.VarChar(200)
+  source_system_code   String                @default("MES") @db.VarChar(50)
   app_user             app_user[]
   approval_route_step  approval_route_step[]
   exception_case       exception_case[]
