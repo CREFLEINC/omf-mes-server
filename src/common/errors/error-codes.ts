@@ -18,6 +18,8 @@ export const ERROR_CODE = {
   // 계약이 이름 붙인 값은 아니다. STATE_LOCKED 와 «반드시» 갈려야 한다 — 이쪽은
   // 재로드하면 풀리는 저장 충돌이고 저쪽은 안 풀린다(공유계약 G-1).
   STALE_VERSION: 'STALE_VERSION',
+  // 계약이 이름 붙인 값이다 — 「관리 권한 보유자가 0명이 되는 저장」(W-CO-02 §8-6).
+  LAST_ADMIN: 'LAST_ADMIN',
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',
   ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
   ROUTE_AMBIGUOUS: 'ROUTE_AMBIGUOUS',
