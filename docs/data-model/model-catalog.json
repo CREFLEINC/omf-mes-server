@@ -19364,9 +19364,9 @@
                     "name": "base_uom_id",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "계약이 받는 경로가 아직 없다 — 그래서 nullable 이다. 경로가 서면 다시 조인다."
                 },
                 {
                     "name": "minimum_stock_qty",
@@ -19423,6 +19423,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "plant_id",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": "예비품은 공장 단위다. 코드도 공장 안에서만 유일하다 (계약 SparePart)."
                 }
             ],
             "description": null,
@@ -19455,14 +19463,28 @@
                     "target_columns": [
                         "item_id"
                     ]
+                },
+                {
+                    "name": "spare_part_plant_id_fkey",
+                    "columns": [
+                        "plant_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "plant",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "plant_id"
+                    ]
                 }
             ],
             "is_partition": false,
             "qualified_name": "mdm.spare_part",
             "unique_constraints": [
                 {
-                    "name": "spare_part_spare_part_code_key",
+                    "name": "uq_spare_part",
                     "columns": [
+                        "plant_id",
                         "spare_part_code"
                     ]
                 }
@@ -36409,6 +36431,20 @@
             ],
             "target_columns": [
                 "item_id"
+            ]
+        },
+        {
+            "name": "spare_part_plant_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "spare_part",
+            "target_table": "plant",
+            "source_schema": "mdm",
+            "target_schema": "mdm",
+            "source_columns": [
+                "plant_id"
+            ],
+            "target_columns": [
+                "plant_id"
             ]
         },
         {

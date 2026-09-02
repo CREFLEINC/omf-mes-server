@@ -2031,6 +2031,7 @@ model plant {
   legal_entity              legal_entity                @relation(fields: [legal_entity_id], references: [legal_entity_id], onDelete: NoAction, onUpdate: NoAction)
   production_line           production_line[]
   shift                     shift[]
+  spare_part                spare_part[]
   terminal                  terminal[]
   warehouse                 warehouse[]
   work_calendar             work_calendar[]
@@ -4365,10 +4366,10 @@ model equipment_inspection_item_assignment {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model spare_part {
   spare_part_id          BigInt                   @id @default(autoincrement())
-  spare_part_code        String                   @unique @db.VarChar(50)
+  spare_part_code        String                   @db.VarChar(50)
   spare_part_name        String                   @db.VarChar(200)
   item_id                BigInt?
-  base_uom_id            BigInt
+  base_uom_id            BigInt?
   minimum_stock_qty      Decimal?                 @db.Decimal(20, 6)
   is_active              Boolean                  @default(true)
   created_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -4376,11 +4377,14 @@ model spare_part {
   updated_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by             BigInt?
   version_no             Int                      @default(1)
+  plant_id               BigInt
   goods_issue_spare_line goods_issue_spare_line[]
-  uom                    uom                      @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                    uom?                     @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   item                   item?                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                  plant                    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   spare_part_equipment   spare_part_equipment[]
 
+  @@unique([plant_id, spare_part_code], map: "uq_spare_part")
   @@schema("mdm")
 }
 
