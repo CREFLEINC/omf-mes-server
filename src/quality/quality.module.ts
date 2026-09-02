@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CauseCodeService } from './code/cause-code.service';
+import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
 
@@ -13,6 +14,6 @@ import { CauseCodeController, DefectCodeController } from './code/quality-code.c
 @Module({
   imports: [PrismaModule, IdempotencyModule],
   controllers: [DefectCodeController, CauseCodeController],
-  providers: [DefectCodeService, CauseCodeService],
+  providers: [DefectCodeService, CauseCodeService, DefectCodeProcessService],
 })
 export class QualityModule {}

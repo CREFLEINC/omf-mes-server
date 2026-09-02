@@ -319,6 +319,106 @@ describe('불량·원인코드 (e2e)', () => {
       .expect(200);
   });
 
+  // ── 불량코드-공정 매핑 ──────────────────────────────────────────────────
+
+  it('⭐ 상세 코드에 공정을 매핑하고 해제한다 — 셀 토글', async () => {
+    const major = await createDefect('M1');
+    const detail = await createDefect('M1A', major);
+
+    const added = await request(app.getHttpServer())
+      .post(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ processId })
+      .expect(201);
+    const createValidate = validator('POST /quality/defect-codes/{defectCodeId}/processes');
+    expect(createValidate(added.body)).toBe(true);
+    expect(createValidate.errors ?? []).toEqual([]);
+    // 화면 왕복을 없애려고 공정명을 함께 낸다(계약).
+    expect(added.body.processName).toBe('검사공정');
+
+    const list = await request(app.getHttpServer())
+      .get(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const listValidate = validator('GET /quality/defect-codes/{defectCodeId}/processes');
+    expect(listValidate(list.body)).toBe(true);
+    expect(list.body.items).toHaveLength(1);
+
+    await request(app.getHttpServer())
+      .delete(`/api/quality/defect-codes/${detail}/processes/${processId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(204);
+
+    const cleared = await request(app.getHttpServer())
+      .get(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(cleared.body.items).toEqual([]);
+  });
+
+  it('⛔ 대분류에는 매핑할 수 없다 — 전사 고정 축이다', async () => {
+    const major = await createDefect('M2');
+
+    const rejected = await request(app.getHttpServer())
+      .post(`/api/quality/defect-codes/${major}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ processId })
+      .expect(400);
+    expect(rejected.body.errors[0].message).toContain('대분류');
+  });
+
+  it('⛔ 같은 공정을 두 번 매핑하면 409 이고 봉투는 ErrorResponse 다', async () => {
+    const major = await createDefect('M3');
+    const detail = await createDefect('M3A', major);
+    await request(app.getHttpServer())
+      .post(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ processId })
+      .expect(201);
+
+    const again = await request(app.getHttpServer())
+      .post(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ processId })
+      .expect(409);
+    // ⛔ 이 자리만 다르다 — 계약이 409 를 `ErrorResponse` 로 선언한 둘 중 하나다.
+    // 저장 충돌이 아니라 「같은 항목이 이미 있다」라 `conflictCause` 가 없다.
+    expect(again.body.errors[0]).toMatchObject({
+      code: 'UNIQUE_VIOLATION',
+      uniqueScope: ['defectCodeId', 'processId'],
+    });
+    expect(again.body).not.toHaveProperty('conflictCause');
+  });
+
+  it('⛔ 없는 공정·없는 매핑은 400·404 다', async () => {
+    const major = await createDefect('M4');
+    const detail = await createDefect('M4A', major);
+
+    const noProcess = await request(app.getHttpServer())
+      .post(`/api/quality/defect-codes/${detail}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ processId: 999999999 })
+      .expect(400);
+    expect(noProcess.body.errors[0]).toMatchObject({ field: 'processId', code: 'INVALID' });
+
+    await request(app.getHttpServer())
+      .delete(`/api/quality/defect-codes/${detail}/processes/${processId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .get('/api/quality/defect-codes/999999999/processes')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
   // ── 원인코드 ────────────────────────────────────────────────────────────
 
   it('⭐ 원인코드가 같은 규칙으로 선다 — 계층 셋을 똑같이 막는다', async () => {
@@ -448,6 +548,13 @@ describe('불량·원인코드 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
+    const mapped = await prisma.defect_code.findMany({
+      where: { defect_code: { startsWith: PREFIX } },
+      select: { defect_code_id: true },
+    });
+    await prisma.defect_code_process.deleteMany({
+      where: { defect_code_id: { in: mapped.map((row) => row.defect_code_id) } },
+    });
     // 상세가 대분류를 가리키므로 자식부터 지운다.
     await prisma.defect_code.deleteMany({
       where: { defect_code: { startsWith: PREFIX }, parent_defect_code_id: { not: null } },
