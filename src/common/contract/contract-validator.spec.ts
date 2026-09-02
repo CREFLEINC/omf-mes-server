@@ -134,6 +134,34 @@ describe('ContractValidator', () => {
     });
   });
 
+
+  it('⭐ 본문 필수를 가진 오퍼레이션 전건이 빈 본문을 거른다 — 표본이 아니라 전수로 본다', () => {
+    // 위 검사들은 손으로 고른 몇 건이다. 스키마 해석이 «어떤 형태에서만» 맞고 나머지는
+    // 조용히 통과하는 상태일 수 있어, 계약 전면에 같은 질문을 한 번 던진다.
+    const silent: string[] = [];
+    let checked = 0;
+
+    for (const key of registry.keys()) {
+      const entry = registry.get(key);
+      const ref = (
+        entry?.operation as {
+          requestBody?: { content?: Record<string, { schema?: { $ref?: string } }> };
+        }
+      ).requestBody?.content?.['application/json']?.schema?.$ref;
+      if (!ref || !entry) continue;
+
+      const schemas = (entry.document.components as { schemas?: Record<string, unknown> }).schemas;
+      const schema = schemas?.[ref.split('/').pop() ?? ''] as { required?: string[] } | undefined;
+      if (!schema?.required?.length) continue;
+
+      checked += 1;
+      if (validator.validate(key, { body: {} }).length === 0) silent.push(key);
+    }
+
+    expect(checked).toBeGreaterThan(100);
+    expect(silent).toEqual([]);
+  });
+
   it('계약에 없는 키는 검증하지 않는다 — 유령 바인딩은 커버리지 검사가 잡는다', () => {
     expect(validator.validate('GET /없는/경로', { body: { x: 1 } })).toEqual([]);
   });
