@@ -13,9 +13,27 @@ export interface ContractOperation {
   /** 어느 계약 파일에서 왔나. 어긋났을 때 어디를 볼지 말해 준다. */
   source: string;
   operation: OpenApiOperation;
+  /**
+   * 이 오퍼레이션이 들어 있는 계약 문서 전체. 요청 스키마의 `$ref` 가
+   * `#/components/...` 로 문서 안을 가리키므로 문서째 있어야 풀 수 있다.
+   * 파일 하나당 한 벌을 공유한다 — 오퍼레이션마다 복사하지 않는다.
+   */
+  document: OpenApiDocument;
+  /** 이 오퍼레이션 객체를 문서 루트에서 가리키는 JSON 포인터. */
+  pointer: string;
+}
+
+export interface OpenApiDocument {
+  paths?: Record<string, Record<string, OpenApiOperation>>;
+  components?: Record<string, unknown>;
 }
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
+
+/** RFC 6901. `/` 와 `~` 를 escape 하지 않으면 경로에 `/` 가 든 순간 포인터가 어긋난다. */
+export function jsonPointerToken(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
 
 /**
  * 운영 이미지의 WORKDIR 이 `/app` 이고 계약이 `/app/contracts` 에 실린다(Dockerfile runtime).
@@ -42,9 +60,7 @@ export class ContractRegistry {
 
     const operations = new Map<string, ContractOperation>();
     for (const file of files) {
-      const document = JSON.parse(readFileSync(join(dir, file), 'utf8')) as {
-        paths?: Record<string, Record<string, OpenApiOperation>>;
-      };
+      const document = JSON.parse(readFileSync(join(dir, file), 'utf8')) as OpenApiDocument;
 
       for (const [path, item] of Object.entries(document.paths ?? {})) {
         for (const method of METHODS) {
@@ -62,6 +78,8 @@ export class ContractRegistry {
             path,
             source: file,
             operation,
+            document,
+            pointer: `/paths/${jsonPointerToken(path)}/${method}`,
           });
         }
       }

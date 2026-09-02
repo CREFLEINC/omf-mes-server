@@ -8,6 +8,9 @@
 export const ERROR_CODE = {
   REQUIRED: 'REQUIRED',
   RANGE: 'RANGE',
+  // 계약이 이름 붙인 값은 아니다(설명이 「등」으로 열어 두었다). 형식 위반 —
+  // 타입·enum·format·pattern — 을 하나로 모은다. 화면은 field 와 message 로 읽는다.
+  INVALID: 'INVALID',
   PAIR: 'PAIR',
   UNIQUE_VIOLATION: 'UNIQUE_VIOLATION',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
