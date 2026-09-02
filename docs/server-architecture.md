@@ -103,16 +103,40 @@ transition(문서유형, 현재상태, 사건) → 다음상태 | 거부(이유)
 - 취소는 상태 전이 + **취소 흔적 3컬럼**(`cancelled_at`·`cancelled_by`·
   `cancellation_reason_code`)이다. 지금 **2/14 표에만** 있다(`§I-38` — 우리 결손).
 
-### C-3. `business_date` — **함수 하나, 41자리가 쓴다**
+### C-3. `business_date` — ⛔ **서버가 잡지 않는다. 클라이언트가 보낸다**
 
 ```
-timestamptz → plant.timezone_code 로컬 시각 → shift 판정 → 그 shift 시작 로컬 날짜
+inventory_transaction:  UNIQUE (idempotency_key, business_date)   ← 날짜가 키의 일부
 ```
 
-- ⛔ **타임존 캐스팅 금지**(CLAUDE.md). `shift.crosses_midnight` 때문에 단순 캐스팅이 틀린다.
-- `@db.Date` **49자리**가 이 값을 받는다(2026-09-02 실측).
-  ⚠ `CLAUDE.md` 는 41 이라 적고 있다 — 표를 더하며 늘었다. 별건으로 고친다. 원장 라인(`inventory_transaction_line.business_date`)도 그중 하나다.
-- 서버·컨테이너·DB TZ = UTC 고정. 공장 로컬은 `plant.timezone_code` 로만 푼다.
+**공유계약 `C-8`**: 클라이언트가 `occurredAt` 과 함께 `businessDate`(발생일)를 보낸다.
+**서버는 수신 시각으로 다시 잡지 않는다.**
+
+⛔ 서버가 다시 잡으면 이렇게 뚫린다:
+
+```
+08-04 23:50  오프라인 저장 (키 K)
+08-05 00:10  연결 복구 → 전송 → 서버가 수신일로 잡으면 (K, 08-05)
+             (K, 08-04) 가 이미 있어도 둘 다 통과 = 이중 전기
+```
+
+**적용 범위는 좁다**(`C-8-1`) — `inventory_transaction` 을 지나는 쓰기만.
+계약 실물도 그렇다: `logistics-01` 22스키마 + `shipment-04` 3스키마 = **25자리**, 나머지 5벌 0건.
+
+| 우리 실측(2026-09-02) | |
+| --- | --- |
+| `business_date` 컬럼 | **3표** — `inventory_transaction` · 그 파티션 · `inventory_transaction_line` |
+| `idempotency_key` 를 가진 표 | **6표**(+파티션 1). ⚠ `C-8` 은 「4곳뿐」이라 적었는데 `production.work_session` · `app.idempotency_record` 가 빠졌다. **둘 다 전역 `UNIQUE` 라 `C-8` 의 결론은 그대로 참이다** — 날짜가 키에 든 것은 `inventory_transaction` 하나다 |
+
+⚠ **도출 규칙(야간조 경계)은 설계가 아직 안 정했다** — `C-8` 이 「여전히 미정」이라 적었고
+`C-12` 가 그 자리를 `C-8` 로 넘겼다. **그래서 도출 함수를 만들지 않는다** — 지금 만들면
+정해지지 않은 정책을 우리가 지어내는 것이고(`data-model-boundary.md`), 그 함수가 있으면
+쓰기 경로에서 다시 잡고 싶은 유혹이 생긴다.
+
+⇒ **지금 할 일은 「받은 값을 그대로 쓴다」를 지키는 것뿐이고, 그 자리는 C-1 이다.**
+
+⚠ `CLAUDE.md` 가 「위험 지점: `@db.Date` 49개」라 적은 것은 오해를 부른다 — 49 중
+`business_date` 는 **3개**고 나머지는 유효일자·납기 같은 다른 날짜다. 함께 고쳤다.
 
 ### C-4. lot 계보·상태 3축 — **섞지 않는다**
 
@@ -167,8 +191,9 @@ timestamptz → plant.timezone_code 로컬 시각 → shift 판정 → 그 shift
 ## 4. 구현 순서
 
 ```
-코어      C-3 business_date → C-1 재고 posting → C-2 전표 상태기계
+코어      C-1 재고 posting → C-2 전표 상태기계
           (각 전용 PR · diff ≤ 200줄 — CLAUDE.md 코어 규칙)
+          ⛔ C-3 은 만들 것이 없다 — 위 참조. 도출 규칙이 정해지면 그때 연다.
 남은 기반  Idempotency-Key → If-Match/ETag → 권한 게이트 → 페이징
 도메인     mdm(기준정보) → app(공통) → trace·inventory → logistics → production
           → quality → planning → maintenance → integration

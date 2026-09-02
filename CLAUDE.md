@@ -19,7 +19,7 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 
 - 구현 전 계약(인터페이스·DTO·마이그레이션 SQL·테스트 이름 목록) 제시 → 승인 후 구현.
 - PR diff ≤ 400줄. 초과 예상 시 분할 계획 먼저. 분할 단위: 전표 하나 + posting 연결 + e2e.
-- 코어(재고 posting, lot 계보, business_date 판정, 전표 상태기계)는 전용 PR, diff ≤ 200줄. 보일러플레이트와 커밋 분리.
+- 코어(재고 posting, lot 계보, 전표 상태기계)는 전용 PR, diff ≤ 200줄. 보일러플레이트와 커밋 분리.
 - 마이그레이션은 별도 선행 커밋.
 
 ## 코드 작성
@@ -30,7 +30,8 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 
 ## 도메인
 
-- `business_date` 타임존 캐스팅 금지 (`shift.crosses_midnight`). 도출: timestamptz → `plant.timezone_code` 로컬 시각 → shift 판정 → 그 shift 시작 로컬 날짜. 위험 지점: `@db.Date` 49개(2026-09-02 실측).
+- `business_date` 는 **클라이언트가 보낸다. 서버가 수신 시각으로 다시 잡지 않는다** (공유계약 C-8 — 자정을 넘긴 오프라인 재전송이 이중 전기가 된다). 실린 표는 3개뿐(`inventory_transaction`·그 파티션·`inventory_transaction_line`). ⚠ 도출 규칙(야간조 경계)은 **설계 미정**이라 도출 함수를 만들지 않는다. 상세: `docs/server-architecture.md` C-3.
+- 날짜 타임존 캐스팅 금지 (`shift.crosses_midnight`). 공장 로컬은 `plant.timezone_code` 로만 푼다. `@db.Date` 49자리.
 - 서버·컨테이너·DB TZ = UTC 고정. 공장 로컬 시각은 `plant.timezone_code` 사용.
 - 마이그레이션은 하위 호환(forward-only). 컬럼·테이블 삭제는 두 릴리스로 분리: 사용 제거 배포 → 다음 릴리스에서 삭제.
 
