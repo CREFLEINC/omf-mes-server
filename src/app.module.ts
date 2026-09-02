@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { ContractModule } from './common/contract';
 import { IdempotencyModule } from './common/idempotency';
+import { OptimisticLockModule } from './common/optimistic-lock';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -16,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     // ⛔ 계약 검증 가드 «뒤»에 온다 — 본문이 계약과 맞는지 먼저 보고, 그다음 멱등키를 본다.
     IdempotencyModule,
+    OptimisticLockModule,
     AuthModule,
     HealthModule,
   ],
