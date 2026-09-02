@@ -80,50 +80,16 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    groupCode: 'USER_STATUS',
-    groupName: '계정 상태',
+    // ⛔ 이름도 뜻도 갈렸다. 예전 USER_STATUS 는 「계정 상태」였는데, 계정을 쓸 수 있는가는
+    // app_user.is_active 가 정하는 것으로 축이 갈렸다(계약 AppUser.statusCode · 설계 확정
+    // 2026-09-01 · W-CO-02 §8-4). 남은 축은 «인사» 상태이고, 계약이 그 값 목록을
+    // codeGroupCode=APP_USER_STATUS 로 부른다.
+    groupCode: 'APP_USER_STATUS',
+    groupName: '사용자 인사 상태',
     values: [
-      { code: 'ACTIVE', codeName: '사용', order: 10 },
-      { code: 'SUSPENDED', codeName: '정지', order: 20 },
-      { code: 'DISABLED', codeName: '해지', order: 30 },
-    ],
-  },
-  {
-    /**
-     * 기능 권한 — REQ-PR-0015(사용자별 접근 기능 분리)의 **임시 체계**.
-     *
-     * 요구사항 명세서 §미결 9 「사용자 유형/권한/접근 범위 정의」가 고객 액션 대기라,
-     * 확정 전까지 쓸 최소 골격이다. 워크플로우 문서의 실제 담당 주체(전산담당·생산관리자·
-     * 품질담당·설비담당·물류담당)를 그대로 축으로 삼았다.
-     *
-     * **조회는 하나로 둔다.** 기준정보를 못 보게 막을 실익이 거의 없고, 나누면 담당자가
-     * 남의 도메인 코드를 참조할 때마다 막힌다. 쓰기·비활성화만 도메인별로 나눈다.
-     */
-    groupCode: 'PERMISSION',
-    groupName: '기능 권한',
-    values: [
-      { code: 'MASTER_READ', codeName: '기준정보 조회(전체)', order: 10 },
-
-      { code: 'MASTER_PRODUCTION_WRITE', codeName: '생산 기준정보 등록·수정', order: 20 },
-      { code: 'MASTER_PRODUCTION_DEACTIVATE', codeName: '생산 기준정보 비활성화', order: 21 },
-
-      { code: 'MASTER_QUALITY_WRITE', codeName: '품질 기준정보 등록·수정', order: 30 },
-      { code: 'MASTER_QUALITY_DEACTIVATE', codeName: '품질 기준정보 비활성화', order: 31 },
-
-      { code: 'MASTER_EQUIPMENT_WRITE', codeName: '설비·금형 등록·수정', order: 40 },
-      { code: 'MASTER_EQUIPMENT_DEACTIVATE', codeName: '설비·금형 비활성화', order: 41 },
-
-      { code: 'MASTER_LOGISTICS_WRITE', codeName: '물류 기준정보 등록·수정', order: 50 },
-      { code: 'MASTER_LOGISTICS_DEACTIVATE', codeName: '물류 기준정보 비활성화', order: 51 },
-
-      { code: 'MASTER_ORGANIZATION_WRITE', codeName: '조직·인원 기준정보 등록·수정', order: 60 },
-      { code: 'MASTER_ORGANIZATION_DEACTIVATE', codeName: '조직·인원 기준정보 비활성화', order: 61 },
-
-      { code: 'MASTER_SYSTEM_WRITE', codeName: '시스템 설정 등록·수정', order: 70 },
-      { code: 'MASTER_SYSTEM_DEACTIVATE', codeName: '시스템 설정 비활성화', order: 71 },
-
-      { code: 'ACCESS_READ', codeName: '접근권한 조회', order: 80 },
-      { code: 'ACCESS_WRITE', codeName: '접근권한 관리(단말 토큰 발급 포함)', order: 81 },
+      { code: 'ACTIVE', codeName: '재직', order: 10 },
+      { code: 'ON_LEAVE', codeName: '휴직', order: 20 },
+      { code: 'RETIRED', codeName: '퇴사', order: 30 },
     ],
   },
   {
@@ -1199,49 +1165,63 @@ const NUMBERING_RULES = [
  * 워크플로우 문서의 실제 담당 주체를 그대로 옮겼다. 고객이 부서·권한 범위를 확정하면
  * 이 표를 갈아끼운다.
  */
+/**
+ * 더는 쓰지 않는 코드 그룹. 값만 내리는 `retired` 와 달리 그룹째 내린다.
+ * ⛔ 지우지 않는다 — 이미 그 값을 쓰고 있는 행이 있을 수 있고, 코드 값에는 FK 가 없어
+ * 지우면 그 행이 가리키던 뜻이 사라진다.
+ */
+const RETIRED_GROUPS = [
+  // 「계정 상태」 축이 APP_USER_STATUS(인사 상태)와 app_user.is_active 둘로 갈렸다.
+  'USER_STATUS',
+  // ⛔ 기능 권한은 공통코드가 아니다 — 「앱 기능 목록이라 고객이 W-06-06 에서 늘리거나
+  // 지울 수 없다」(계약 GET /app/permissions). 값은 화면 코드와 1:1 이고 앱 상수에 있다
+  // (src/common/permissions/permissions.ts · 117건). 여기 두면 고객이 편집할 수 있는
+  // 것처럼 보이고, 편집해도 아무 효과가 없다.
+  'PERMISSION',
+];
+
+/**
+ * 역할. 설계 확정 4종(`design/schema/generators/권한목록.md` · 사용자 결정 2026-09-01).
+ * 고객이 운영 중 늘리고 고치고 지운다 — ⭐ 화면 동작은 역할 «이름»이 아니라 권한에 걸리므로
+ * 이 넷은 출발점일 뿐이다.
+ *
+ * ⛔ 권한은 부트스트랩에 필요한 것만 심는다. 역할별 권한 배분은 업무 결정이고 설계가 매트릭스를
+ * 내려 준 적이 없다 — 여기서 지어내면 그것이 사실상의 정책이 된다. 나머지는 관리자가
+ * `W-CO-02` 에서 부여한다.
+ */
 const ROLES = [
   {
-    code: 'SYSTEM_ADMIN',
-    name: '시스템 관리자(전산담당)',
-    permissions: [
-      'MASTER_READ',
-      'MASTER_PRODUCTION_WRITE',
-      'MASTER_PRODUCTION_DEACTIVATE',
-      'MASTER_QUALITY_WRITE',
-      'MASTER_QUALITY_DEACTIVATE',
-      'MASTER_EQUIPMENT_WRITE',
-      'MASTER_EQUIPMENT_DEACTIVATE',
-      'MASTER_LOGISTICS_WRITE',
-      'MASTER_LOGISTICS_DEACTIVATE',
-      'MASTER_ORGANIZATION_WRITE',
-      'MASTER_ORGANIZATION_DEACTIVATE',
-      'MASTER_SYSTEM_WRITE',
-      'MASTER_SYSTEM_DEACTIVATE',
-      'ACCESS_READ',
-      'ACCESS_WRITE',
-    ],
+    code: 'ROLE_WORKER',
+    name: '실무자',
+    permissions: [],
   },
   {
-    code: 'PRODUCTION_MANAGER',
-    name: '생산관리자',
-    permissions: ['MASTER_READ', 'MASTER_PRODUCTION_WRITE', 'MASTER_PRODUCTION_DEACTIVATE'],
+    code: 'ROLE_SITE_MGR',
+    name: '현장 관리자',
+    permissions: [],
   },
   {
-    code: 'QUALITY_MANAGER',
-    name: '품질담당',
-    permissions: ['MASTER_READ', 'MASTER_QUALITY_WRITE', 'MASTER_QUALITY_DEACTIVATE'],
+    code: 'ROLE_EXEC_MGR',
+    name: '경영 관리자',
+    permissions: [],
   },
   {
-    code: 'EQUIPMENT_MANAGER',
-    name: '설비담당',
-    permissions: ['MASTER_READ', 'MASTER_EQUIPMENT_WRITE', 'MASTER_EQUIPMENT_DEACTIVATE'],
+    // ⛔ 이 셋이 없으면 아무도 아무 권한을 줄 수 없다 — 로그인하고, 비밀번호를 바꾸고,
+    // 권한을 부여하는 최소 집합이다(권한목록.md 「최초 관리자」).
+    code: 'ROLE_SYS_ADMIN',
+    name: '시스템 운영자',
+    permissions: ['W-CO-01', 'W-CO-02', 'W-CO-10'],
   },
-  {
-    code: 'LOGISTICS_MANAGER',
-    name: '물류담당',
-    permissions: ['MASTER_READ', 'MASTER_LOGISTICS_WRITE', 'MASTER_LOGISTICS_DEACTIVATE'],
-  },
-  { code: 'VIEWER', name: '조회 전용', permissions: ['MASTER_READ'] },
+];
+
+/** 더는 쓰지 않는 역할. 부여 기록은 지우지 않고 역할만 내린다(계약 `:deactivate` 와 같은 뜻). */
+const RETIRED_ROLES = [
+  'SYSTEM_ADMIN',
+  'PRODUCTION_MANAGER',
+  'QUALITY_MANAGER',
+  'EQUIPMENT_MANAGER',
+  'LOGISTICS_MANAGER',
+  'VIEWER',
 ];
 
 /**
@@ -1324,6 +1304,17 @@ async function main(): Promise<void> {
     console.log(
       `seeded ${group.groupCode} (${group.values.length} values${marks ? ` · ${marks}` : ''})`,
     );
+  }
+
+  // 쓰지 않는 코드 그룹을 내린다. 값과 달리 그룹째다 — 값만 내리면 빈 그룹이 화면의
+  // 그룹 선택 목록에 남는다.
+  const retiredGroups = await prisma.code_group.updateMany({
+    where: { group_code: { in: RETIRED_GROUPS }, is_active: true },
+    data: { is_active: false },
+  });
+  if (retiredGroups.count > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`retired code group ${retiredGroups.count}`);
   }
 
   await seedEntityTypes();
@@ -1418,12 +1409,24 @@ async function seedRoles(): Promise<void> {
         create: { role_id: saved.role_id, permission_code: code },
       });
     }
-    await prisma.role_permission.deleteMany({
-      where: { role_id: saved.role_id, permission_code: { notIn: role.permissions } },
-    });
+    // ⛔ 목록에 없는 부여를 지우지 않는다. 역할별 권한은 고객이 W-CO-02 에서 정하는
+    // 것이고(설계 확정 2026-09-01), 지우면 시드를 다시 돌릴 때마다 그 설정이 날아간다.
+    // 시드는 부트스트랩에 필요한 것이 «있는지»만 본다.
 
     // eslint-disable-next-line no-console
     console.log(`seeded role ${role.code} (${role.permissions.length} permissions)`);
+  }
+
+  // 쓰지 않는 역할은 내리기만 한다. 계약이 그렇게 정했다 — 「중지된 역할은 권한 판정에서
+  // 제외되고 부여 기록은 지우지 않는다. 지우면 다시 켰을 때 누구에게 줬는지가 사라진다」
+  // (POST /app/roles/{roleId}:deactivate).
+  const retired = await prisma.role.updateMany({
+    where: { role_code: { in: RETIRED_ROLES }, is_active: true },
+    data: { is_active: false },
+  });
+  if (retired.count > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`retired role ${retired.count}`);
   }
 }
 
@@ -1433,9 +1436,25 @@ async function seedAdmin(): Promise<void> {
     where: { login_id: LOGIN_ID },
     include: { user_credential: true },
   });
+  const admin =
+    existing ??
+    (await prisma.app_user.create({
+      data: { login_id: LOGIN_ID, user_name: '시스템 관리자', status_code: 'ACTIVE' },
+    }));
+
+  // ⛔ 역할 부여는 «자격증명이 이미 있어도» 돈다. 역할 코드가 바뀐 판(6종 → 확정 4종)에서
+  // 여기서 돌아 나가면 기존 설치의 관리자가 내려간 역할만 쥔 채 유효 권한 0이 되고,
+  // 그러면 아무도 아무 권한을 줄 수 없다(권한목록.md 「최초 관리자」).
+  const adminRole = await prisma.role.findUniqueOrThrow({ where: { role_code: 'ROLE_SYS_ADMIN' } });
+  await prisma.user_role.upsert({
+    where: { app_user_id_role_id: { app_user_id: admin.app_user_id, role_id: adminRole.role_id } },
+    update: {},
+    create: { app_user_id: admin.app_user_id, role_id: adminRole.role_id },
+  });
+
   if (existing?.user_credential) {
     // eslint-disable-next-line no-console
-    console.log('admin 계정·자격증명이 이미 있어 건너뜀');
+    console.log('admin 자격증명이 이미 있어 비밀번호는 그대로 두고 역할만 맞췄다');
     return;
   }
 
@@ -1448,21 +1467,8 @@ async function seedAdmin(): Promise<void> {
   );
   const hash = ['scrypt', 2 ** 15, 8, 1, salt.toString('base64'), derived.toString('base64')].join('$');
 
-  const admin =
-    existing ??
-    (await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '시스템 관리자', status_code: 'ACTIVE' },
-    }));
-
   await prisma.user_credential.create({
     data: { app_user_id: admin.app_user_id, password_hash: hash, must_change_password: true },
-  });
-
-  const adminRole = await prisma.role.findUniqueOrThrow({ where: { role_code: 'SYSTEM_ADMIN' } });
-  await prisma.user_role.upsert({
-    where: { app_user_id_role_id: { app_user_id: admin.app_user_id, role_id: adminRole.role_id } },
-    update: {},
-    create: { app_user_id: admin.app_user_id, role_id: adminRole.role_id },
   });
 
   // eslint-disable-next-line no-console
