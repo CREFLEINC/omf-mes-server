@@ -16,7 +16,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
-import { ROUTING_STATUS } from '../src/planning/routing/routing-status';
+import { REVISION_STATUS } from '../src/planning/revision-status';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-routingop-probe';
@@ -306,7 +306,7 @@ describe('Routing 공정 라인·선후행 (e2e)', () => {
     const locked = await createRouting(3);
     await prisma.routing.update({
       where: { routing_id: locked },
-      data: { status_code: ROUTING_STATUS.CONFIRMED },
+      data: { status_code: REVISION_STATUS.CONFIRMED },
     });
 
     for (const [path, body] of [
@@ -421,7 +421,7 @@ describe('Routing 공정 라인·선후행 (e2e)', () => {
         item_id: item.item_id,
         routing_code: `${PREFIX}-R${suffix}`,
         routing_version: 1,
-        status_code: ROUTING_STATUS.DRAFT,
+        status_code: REVISION_STATUS.DRAFT,
       },
     });
     return Number(created.routing_id);

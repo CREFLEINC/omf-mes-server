@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ROUTING_STATUS } from './routing-status';
+import { REVISION_STATUS } from '../revision-status';
 
 /** 이 서비스가 다스리는 상태 칸. 전이표(`transitions.ts`)의 키와 같은 문자열이다. */
 const STATE_COLUMN = 'planning.routing.status_code';
@@ -82,7 +82,7 @@ export class RoutingRevisionService {
    */
   async newRevision(routingId: number): Promise<number> {
     const source = await this.load(routingId);
-    if (source.status_code !== ROUTING_STATUS.CONFIRMED) {
+    if (source.status_code !== REVISION_STATUS.CONFIRMED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
           scope: 'screen',
@@ -102,7 +102,7 @@ export class RoutingRevisionService {
           item_id: source.item_id,
           routing_code: source.routing_code,
           routing_version: (latest._max.routing_version ?? source.routing_version) + 1,
-          status_code: ROUTING_STATUS.DRAFT,
+          status_code: REVISION_STATUS.DRAFT,
           effective_from: source.effective_from,
           effective_to: source.effective_to,
           // 새 초안이 기본 Rev 를 빼앗지 않는다 — 지정은 `:set-default` 가 한다.

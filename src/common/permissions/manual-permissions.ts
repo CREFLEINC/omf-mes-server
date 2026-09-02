@@ -93,4 +93,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /planning/routings/{routingId}:confirm': ['W-06-01'],
   'POST /planning/routings/{routingId}:obsolete': ['W-06-01'],
   'POST /planning/routings/{routingId}:new-revision': ['W-06-01'],
+
+  // `W-06-05` 수신본 확장속성 편집 — §3-6 이 「구성품 확장 열 편집」으로 이 경로를 적었는데
+  // 요구서가 `.../components/{id}` 로, 계약이 `.../components/{bomComponentId}` 로 써서
+  // 도출기의 「계약에 실재하는 것만 남긴다」 걸러내기에 떨어졌다(실측).
+  'PUT /planning/boms/{bomId}/components/{bomComponentId}': ['W-06-05'],
 };

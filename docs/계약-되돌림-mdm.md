@@ -604,3 +604,38 @@ UTC 날짜로 읽는다 — 컨테이너 TZ 가 UTC 고정이기 때문이다.
 
 **필요한 답.** 「최신 확정 Rev 에서만 발행할 수 있다」를 서버가 막아야 하는가. 막으면 계약
 문구대로 `+1` 이 되고, 안 막으면 지금처럼 최댓값 다음이 맞다.
+
+## T. BOM — 알려둘 둘
+
+### T-1. `Bom.statusCode` 의 값 목록도 「미정」인데 `usableOnly` 는 그것을 봐야 한다
+
+계약 `Bom.statusCode` 는 「공통코드 — 값 목록 미정」이고, `x-internal-note` 가
+`Routing.statusCode` 와 **토씨까지 같다**(둘 다 `omf-mes#259`, 둘 다 `ACTIVE` 를 되돌리라
+적었다).
+
+`GET /planning/boms?usableOnly=true` 는 「지금 새 작업지시에 걸 수 있는 개정만」이라 확정
+상태를 알아야 한다. 시드 그룹 이름이 `REVISION_STATUS`(개정 상태)로 **자원 이름이 아닌**
+데다 Routing 과 계약 문구가 같아, 둘이 같은 축을 쓰는 것으로 읽고 같은 상수를 썼다.
+
+⚠ **BOM 상태는 서버가 «쓰지» 않는다** — ERP 정본이라 읽기만 한다. 그래서 이 판단이
+틀려도 손상은 `usableOnly` 필터 하나에 갇힌다.
+
+**필요한 답.** BOM 과 Routing 이 같은 코드 그룹을 쓰는가. 다르면 BOM 쪽 그룹 이름과 값.
+
+### T-2. `conflictCause` 를 `updated_by` 의 빈칸으로 갈랐다
+
+계약이 `PUT /planning/boms/{bomId}/components/{bomComponentId}` 의 409 에 이렇게 적었다.
+
+> `conflictCause=user` 는 다른 사용자, `erpSync` 는 ERP 재동기화 배치가 같은 BOM 을
+> 갱신했을 가능성이 높다(`bom_component` 도 원본 열을 통해 재동기화 대상이다).
+
+**서버가 그 둘을 가릴 근거가 `updated_by` 하나뿐이다.** 연계는 세션 없이 쓰므로 그 칸을
+채울 수 없고, 화면은 세션이 있으니 채운다. 그래서 「마지막 갱신자가 비어 있으면 `erpSync`」로
+읽었다. 이 PR 이 확장 열 수정에 `updated_by` 를 쓰도록 함께 고쳤다 — 안 채우면 판정이
+언제나 `erpSync` 가 된다(실제로 그렇게 나와서 드러났다).
+
+⚠ 완벽하지 않다. 연계가 «언제» 돌았는지는 여기서 모르므로, 사람이 고친 뒤 연계가 덮은
+경우와 연계가 덮은 뒤 사람이 고친 경우를 순서로 가리지 못한다.
+
+**필요한 답.** ERP 연계가 `bom_component` 를 갱신할 때 남길 표식이 따로 있는가
+(예: `updated_by` 에 연계 전용 계정, 또는 `source_system_code` 류 칸). 있으면 그것으로 가른다.

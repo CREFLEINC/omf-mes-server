@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues, optional } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ROUTING_STATUS } from './routing-status';
+import { REVISION_STATUS } from '../revision-status';
 
 /**
  * 순서를 통째로 바꿀 때 기존 행을 잠시 밀어 두는 거리.
@@ -231,7 +231,7 @@ export class RoutingOperationService {
       select: { status_code: true },
     });
     if (!row) throw new NotFoundException('없는 Routing 입니다.');
-    if (row.status_code === ROUTING_STATUS.DRAFT) return;
+    if (row.status_code === REVISION_STATUS.DRAFT) return;
 
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       {

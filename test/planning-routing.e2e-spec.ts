@@ -17,7 +17,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { ROUTING_REFERRERS } from '../src/planning/routing/routing.service';
-import { ROUTING_STATUS } from '../src/planning/routing/routing-status';
+import { REVISION_STATUS } from '../src/planning/revision-status';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-routing-probe';
@@ -121,7 +121,7 @@ describe('Routing 헤더 (e2e)', () => {
   it('등록·목록·상세가 계약 스키마를 만족하고 상세가 ETag 를 준다', async () => {
     const created = await create(itemIds[0]);
     expect(created.routingVersion).toBe(1);
-    expect(created.statusCode).toBe(ROUTING_STATUS.DRAFT);
+    expect(created.statusCode).toBe(REVISION_STATUS.DRAFT);
     expect(created.isDefault).toBe(false);
 
     const list = await request(app.getHttpServer())
@@ -183,7 +183,7 @@ describe('Routing 헤더 (e2e)', () => {
     const created = await create(itemIds[3]);
     await prisma.routing.update({
       where: { routing_id: created.routingId },
-      data: { status_code: ROUTING_STATUS.CONFIRMED },
+      data: { status_code: REVISION_STATUS.CONFIRMED },
     });
 
     const rejected = await request(app.getHttpServer())
@@ -204,7 +204,7 @@ describe('Routing 헤더 (e2e)', () => {
         item_id: itemIds[4],
         routing_code: `${PREFIX}-USABLE`,
         routing_version: 2,
-        status_code: ROUTING_STATUS.CONFIRMED,
+        status_code: REVISION_STATUS.CONFIRMED,
       },
     });
     const expired = await prisma.routing.create({
@@ -212,7 +212,7 @@ describe('Routing 헤더 (e2e)', () => {
         item_id: itemIds[4],
         routing_code: `${PREFIX}-EXPIRED`,
         routing_version: 3,
-        status_code: ROUTING_STATUS.CONFIRMED,
+        status_code: REVISION_STATUS.CONFIRMED,
         effective_to: new Date('2020-01-01'),
       },
     });
@@ -243,7 +243,7 @@ describe('Routing 헤더 (e2e)', () => {
         item_id: itemIds[5],
         routing_code: `${PREFIX}-D2`,
         routing_version: 2,
-        status_code: ROUTING_STATUS.CONFIRMED,
+        status_code: REVISION_STATUS.CONFIRMED,
       },
     });
 
