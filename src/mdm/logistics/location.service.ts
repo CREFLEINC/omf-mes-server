@@ -5,8 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertCodeValues } from '../code-reference';
-import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 로케이션을 FK 로 가리키는 자리 전부 — 서른 곳이다. `pg_constraint` 에서 뽑았고,

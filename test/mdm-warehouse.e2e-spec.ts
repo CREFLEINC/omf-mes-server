@@ -176,6 +176,17 @@ describe('창고 마스터 (e2e)', () => {
     });
   });
 
+  it('⛔ 창고코드가 공백만이면 400 이다 — 계약이 「공백만 불가」로 적었다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/warehouses')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ ...body(`${PREFIX}-BLANK`), warehouseCode: '   ' })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'warehouseCode', code: 'REQUIRED' });
+  });
+
   it('⛔ 마스터에 없는 공통코드는 400 이다 — 계약이 enum 을 안 적었다', async () => {
     const rejected = await request(app.getHttpServer())
       .post('/api/mdm/warehouses')

@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../common/errors';
-import { PrismaService } from '../prisma/prisma.service';
+import { ContractException, ERROR_CODE, ErrorItem } from '../errors';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /** 검사할 칸 하나 — 계약 필드 이름, 그 값, 값이 속해야 할 코드 그룹. */
 export interface CodeCheck {

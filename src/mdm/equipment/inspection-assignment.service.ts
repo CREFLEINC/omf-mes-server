@@ -4,8 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertCodeValues } from '../code-reference';
-import { toDateString } from '../../common/master';
+import { assertCodeValues, toDateString } from '../../common/master';
 
 /**
  * 점검항목 «부여» — 설비와 설비그룹 두 층에 같은 모양으로 붙는다.

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AppUserController } from './access/app-user.controller';
+import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
 import { RolePermissionService } from './access/role-permission.service';
 import { RoleController } from './access/role.controller';
@@ -18,7 +20,7 @@ import { RoleService } from './access/role.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [PermissionController, RoleController],
-  providers: [RoleService, RolePermissionService],
+  controllers: [PermissionController, RoleController, AppUserController],
+  providers: [RoleService, RolePermissionService, AppUserService],
 })
 export class AppDomainModule {}

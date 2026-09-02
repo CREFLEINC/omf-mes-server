@@ -1,11 +1,12 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import {
   Editability,
   ReferenceQuery,
   Referrer,
+  assertNotBlank,
   countReferences,
   optional,
   referencePage,
@@ -97,7 +98,10 @@ export class RoleService {
   }
 
   async create(input: RoleWrite): Promise<RoleView> {
-    assertPresent(input);
+    assertNotBlank([
+      ['roleCode', input.roleCode],
+      ['roleName', input.roleName],
+    ]);
     await this.assertCodeFree(input.roleCode, null);
 
     return view(
@@ -112,7 +116,10 @@ export class RoleService {
   }
 
   async update(roleId: number, version: number, input: RoleWrite): Promise<RoleResult> {
-    assertPresent(input);
+    assertNotBlank([
+      ['roleCode', input.roleCode],
+      ['roleName', input.roleName],
+    ]);
     await this.assertCodeFree(input.roleCode, roleId);
 
     const updated = await this.prisma.role.updateMany({
@@ -189,27 +196,6 @@ export class RoleService {
     if (!exists) throw new NotFoundException('없는 역할입니다.');
     assertUpdated(0);
   }
-}
-
-/**
- * 계약이 두 칸에 「공백만 불가」로 적었다. 계약 검증 가드는 타입·길이만 보므로
- * `" "` 는 통과한다 — 그대로 저장하면 목록에서 이름이 없는 역할이 된다.
- */
-function assertPresent(input: RoleWrite): void {
-  const errors: ErrorItem[] = (
-    [
-      ['roleCode', input.roleCode],
-      ['roleName', input.roleName],
-    ] as const
-  )
-    .filter(([, value]) => value.trim() === '')
-    .map(([field]) => ({
-      scope: 'field' as const,
-      field,
-      code: ERROR_CODE.REQUIRED,
-      message: '공백만으로는 채울 수 없습니다.',
-    }));
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 function view(row: RoleRow): RoleView {

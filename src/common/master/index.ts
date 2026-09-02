@@ -1,6 +1,9 @@
+export { assertCodeValues } from './code-reference';
+export type { CodeCheck } from './code-reference';
 export { optional, optionalDate, toDateString } from './column';
 export type { Editability } from './editability';
 export { runIdempotent, runVersioned } from './master-write';
+export { assertNotBlank } from './not-blank';
 export { filter, referencePage, referenceWhere } from './query';
 export type { ReferenceQuery } from './query';
 export { countReferences, referenceCountSql } from './reference-count';
