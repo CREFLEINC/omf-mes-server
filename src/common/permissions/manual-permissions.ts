@@ -35,4 +35,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `W-06-05` 품목 마스터(MES 확장 속성) — 도출표에 조회만 들어왔다(§3 이 좌측 목록만
   // 적었다). 편집이 그 화면의 본체다.
   'PUT /mdm/items/{itemId}': ['W-06-05'],
+  'PUT /mdm/items/{itemId}/bu-item-maps': ['W-06-05'],
+  'PUT /mdm/items/{itemId}/external-codes': ['W-06-05'],
+  'PUT /mdm/items/{itemId}/uom-conversions': ['W-06-05'],
 };
