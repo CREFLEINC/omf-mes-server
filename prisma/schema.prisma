@@ -4424,21 +4424,20 @@ model warehouse_layout {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model work_calendar {
   work_calendar_id          BigInt                      @id @default(autoincrement())
-  plant_id                  BigInt
-  calendar_code             String                      @db.VarChar(50)
+  plant_id                  BigInt?
+  calendar_code             String                      @unique(map: "uq_work_calendar") @db.VarChar(50)
   calendar_name             String                      @db.VarChar(200)
-  timezone_name             String                      @db.VarChar(100)
+  timezone_name             String?                     @db.VarChar(100)
   is_active                 Boolean                     @default(true)
   created_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                BigInt?
   updated_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
   version_no                Int                         @default(1)
-  plant                     plant                       @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                     plant?                      @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   work_calendar_application work_calendar_application[]
   work_calendar_day         work_calendar_day[]
 
-  @@unique([plant_id, calendar_code], map: "uq_work_calendar")
   @@schema("mdm")
 }
 
@@ -4468,6 +4467,7 @@ model work_calendar_day {
   remarks              String?
   created_at           DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by           BigInt?
+  reason_code          String?       @db.VarChar(50)
   work_calendar        work_calendar @relation(fields: [work_calendar_id], references: [work_calendar_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([work_calendar_id, calendar_date], map: "uq_work_calendar_day")
