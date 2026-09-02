@@ -32,6 +32,8 @@ import { SessionService } from './session.service';
     SessionResolver,
     { provide: APP_GUARD, useClass: AuthenticationGuard },
   ],
-  exports: [CredentialService, SessionService, SessionResolver],
+  // JwtModule 을 함께 내보낸다 — 단말 등록 토큰이 «같은 비밀키»로 서명돼야 한다.
+  // 따로 등록하면 키가 갈릴 수 있고, 갈린 사실이 드러나지 않는다.
+  exports: [CredentialService, SessionService, SessionResolver, JwtModule],
 })
 export class AuthModule {}

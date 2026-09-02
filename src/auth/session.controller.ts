@@ -17,7 +17,7 @@ import { Contract } from '../common/contract';
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { CredentialService } from './credential.service';
 import { clearSessionCookie, setSessionCookie } from './session-cookie';
-import { SessionResolver, SessionToken } from './session-resolver.service';
+import { SessionResolver, SessionToken, TOKEN_TYPE } from './session-resolver.service';
 import { SessionService } from './session.service';
 import { LoginFailure, Session } from './session.types';
 
@@ -85,6 +85,7 @@ export class SessionController {
 
     const payload: SessionToken = {
       sub: result.appUserId,
+      typ: TOKEN_TYPE.SESSION,
       ...(result.lastLoginAt === null ? {} : { lla: result.lastLoginAt.toISOString() }),
     };
     setSessionCookie(

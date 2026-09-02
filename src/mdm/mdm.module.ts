@@ -8,6 +8,7 @@ import { CodeService } from './code/code.service';
 import { DepartmentController } from './organization/department.controller';
 import { DepartmentService } from './organization/department.service';
 import { WorkerController } from './organization/worker.controller';
+import { AuthModule } from '../auth/auth.module';
 import { EquipmentController } from './equipment/equipment.controller';
 import { EquipmentService } from './equipment/equipment.service';
 import { EquipmentGroupController } from './equipment/equipment-group.controller';
@@ -16,6 +17,8 @@ import { InspectionAssignmentController } from './equipment/inspection-assignmen
 import { InspectionAssignmentService } from './equipment/inspection-assignment.service';
 import { InspectionItemController } from './equipment/inspection-item.controller';
 import { InspectionItemService } from './equipment/inspection-item.service';
+import { TerminalController } from './terminal/terminal.controller';
+import { TerminalService } from './terminal/terminal.service';
 import { ItemDetailController } from './item/item-detail.controller';
 import { ItemDetailService } from './item/item-detail.service';
 import { ItemController } from './item/item.controller';
@@ -31,8 +34,9 @@ import { ReferenceController } from './reference/reference.controller';
 import { ReferenceService } from './reference/reference.service';
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule, DocumentStateModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService],
+  // AuthModule 이 JwtModule 을 내보낸다 — 단말 등록 토큰이 세션과 같은 비밀키로 서명된다.
+  imports: [PrismaModule, IdempotencyModule, DocumentStateModule, AuthModule],
+  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, TerminalController],
+  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, TerminalService],
 })
 export class MdmModule {}

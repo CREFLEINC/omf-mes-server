@@ -44,4 +44,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/equipment-groups/{equipmentGroupId}:activate': ['W-05-12'],
   // 설비도 같다 — 도출표에 :deactivate·:dispose 만 들어왔다. 재개는 중지의 짝이다.
   'POST /mdm/equipments/{equipmentId}:activate': ['W-05-11', 'W-05-12'],
+
+  // `W-CO-06` 단말 관리 — §3 이 「등록·토큰 발급·공정 구성」만 적어 수정과 중지가
+  // 도출표에 안 들어왔다. 같은 화면의 같은 자원이다.
+  'PUT /mdm/terminals/{terminalId}': ['W-CO-06'],
+  'POST /mdm/terminals/{terminalId}:deactivate': ['W-CO-06'],
 };
