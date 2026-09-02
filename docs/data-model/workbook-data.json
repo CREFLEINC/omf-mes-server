@@ -9,7 +9,7 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2389,
+    "column_count": 2390,
     "relationship_count": 560,
     "schemas": {
       "app": 27,
@@ -1555,7 +1555,7 @@
       "logical_name": "작업 달력 일자",
       "lifecycle": "MASTER",
       "purpose": "작업 달력 일자의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 9,
+      "column_count": 10,
       "primary_key": "work_calendar_day_id",
       "foreign_key_count": 1,
       "is_partition": false
@@ -19235,7 +19235,7 @@
       "ordinal": 2,
       "column": "plant_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "FK→mdm.plant",
       "default": ""
     },
@@ -19268,7 +19268,7 @@
       "ordinal": 5,
       "column": "timezone_name",
       "data_type": "character varying(100)",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -19521,6 +19521,17 @@
       "ordinal": 9,
       "column": "created_by",
       "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.work_calendar_day",
+      "schema": "mdm",
+      "table": "work_calendar_day",
+      "ordinal": 10,
+      "column": "reason_code",
+      "data_type": "app.code_t",
       "required": false,
       "key_reference": "-",
       "default": ""

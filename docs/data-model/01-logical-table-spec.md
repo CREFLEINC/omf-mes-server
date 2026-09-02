@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2389개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2390개
 
 ## 범례
 
@@ -2353,7 +2353,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.warehouse_layout` | 창고 레이아웃 | MASTER | 11 | `warehouse_layout_id` | 1 | 창고 레이아웃의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar` | 작업 달력 | MASTER | 11 | `work_calendar_id` | 1 | 작업 달력의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar_application` | 작업 달력 적용 | MASTER | 8 | `work_calendar_application_id` | 1 | 작업 달력 적용의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.work_calendar_day` | 작업 달력 일자 | MASTER | 9 | `work_calendar_day_id` | 1 | 작업 달력 일자의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.work_calendar_day` | 작업 달력 일자 | MASTER | 10 | `work_calendar_day_id` | 1 | 작업 달력 일자의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.worker` | 작업자 | MASTER | 16 | `worker_id` | 4 | 작업자의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.worker_qualification` | 작업자 자격 | MASTER | 10 | `worker_qualification_id` | 2 | 작업자 자격의 업무 기준과 유효 상태를 관리한다. |
 
@@ -3091,10 +3091,10 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
 | 1 | `work_calendar_id` | `bigint` | Y | PK | `-` |
-| 2 | `plant_id` | `bigint` | Y | FK→mdm.plant | `-` |
+| 2 | `plant_id` | `bigint` | N | FK→mdm.plant | `-` |
 | 3 | `calendar_code` | `app.code_t` | Y | - | `-` |
 | 4 | `calendar_name` | `app.name_t` | Y | - | `-` |
-| 5 | `timezone_name` | `character varying(100)` | Y | - | `-` |
+| 5 | `timezone_name` | `character varying(100)` | N | - | `-` |
 | 6 | `is_active` | `boolean` | Y | - | `true` |
 | 7 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 8 | `created_by` | `bigint` | N | - | `-` |
@@ -3140,6 +3140,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 7 | `remarks` | `text` | N | - | `-` |
 | 8 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 9 | `created_by` | `bigint` | N | - | `-` |
+| 10 | `reason_code` | `app.code_t` | N | - | `-` |
 
 ### mdm.worker — 작업자
 

@@ -20403,9 +20403,9 @@
                     "name": "plant_id",
                     "default": null,
                     "ordinal": 2,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "계약이 캘린더를 공장에 매지 않는다 — 한 캘린더를 여러 공장이 따를 수 있고, 적용(work_calendar_application)이 대상을 정한다."
                 },
                 {
                     "name": "calendar_code",
@@ -20427,9 +20427,9 @@
                     "name": "timezone_name",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "character varying(100)",
-                    "description": null
+                    "description": "계약이 받는 경로가 없다. 공장 로컬 시각의 정본은 plant.timezone_code 다."
                 },
                 {
                     "name": "is_active",
@@ -20505,7 +20505,6 @@
                 {
                     "name": "uq_work_calendar",
                     "columns": [
-                        "plant_id",
                         "calendar_code"
                     ]
                 }
@@ -20696,6 +20695,14 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "reason_code",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "휴무·부분가동의 사유 (WORK_CALENDAR_DAY_REASON)."
                 }
             ],
             "description": null,

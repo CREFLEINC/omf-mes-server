@@ -60,4 +60,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `W-06-06` 「거래처 역할」 탭 — §3 이 탭만 적어 저장이 도출표에 안 들어왔다.
   // 거래처 본체는 ERP 수신본이라 고칠 것이 역할뿐이고, 그것이 이 화면의 본체다.
   'PUT /mdm/partners/{partnerId}/roles': ['W-06-06'],
+
+  // `W-05-09` 작업 캘린더 — §5-A 가 등록만 적어 수정·중지가 도출표에 안 들어왔다.
+  'PUT /mdm/work-calendars/{workCalendarId}': ['W-05-09'],
+  'POST /mdm/work-calendars/{workCalendarId}:deactivate': ['W-05-09'],
 };
