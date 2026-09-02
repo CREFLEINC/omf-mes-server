@@ -358,12 +358,18 @@ RESOURCE_TABLES: dict[str, list[str]] = {
 #
 # 2026-08-31 갱신(`231c43f`)으로 둘이 늘었다. 이 둘은 `x-source-table` 조차 없어
 # 물리 자리가 통째로 우리 판단이다 — 이름은 계약이 쓴 가칭을 그대로 뒀다.
-PENDING_TABLES: dict[str, list[str]] = {
-    # 기능 권한 목록(격자의 «열»). 계약이 「공통코드가 아니다 — 앱 기능 목록이라 고객이
-    # 늘리거나 지우지 않는다」로 못박았으므로 mdm.code_value 가 아니다. 값이 화면 코드와
-    # 1:1 이고 117개다(2026-09-01 실측). 표로 둘지 애플리케이션 상수로 둘지가 안 갈렸다 —
-    # 갈릴 때까지 결손으로 둔다. 이름은 가칭이다.
-    "/app/permissions": ["app.permission"],
+PENDING_TABLES: dict[str, list[str]] = {}
+
+# 표가 «없는 것이 정상»인 경로. PENDING_TABLES 와 다르다 — 저쪽은 있어야 하는데 없는 것이고
+# 이쪽은 애초에 표로 두지 않기로 갈린 것이다. 둘을 한 칸에 두면 「결손이 언제 닫히나」를
+# 물을 수 없다.
+TABLELESS_PATHS: dict[str, str] = {
+    # 기능 권한 목록(격자의 «열»)은 앱 상수다 — src/common/permissions/permissions.ts.
+    # 근거 넷: ① 계약 Permission 스키마에만 x-source-table 이 없다(Role·RolePermission 에는
+    # 있다) ② app.role_permission.permission_code 에 FK 가 없다(FK 는 role_id 하나뿐)
+    # ③ 계약 설명이 「앱이 소유한다 — 화면이 늘면 배포로 는다」로 못박았다
+    # ④ GET /app/permissions 에 파라미터도 페이징도 없다(화면 수만큼으로 닫힌 고정 목록).
+    "/app/permissions": "앱 상수 — 고객이 편집하지 않고 배포로만 는다 (2026-09-02 판정)",
 }
 
 METHODS = {"get", "post", "put", "patch", "delete"}
@@ -407,10 +413,19 @@ def _resource_tables(path: str) -> list[str]:
         if path.startswith(prefix)
     ]
     if not matches:
-        if _pending_tables(path):
+        if _pending_tables(path) or _tableless_reason(path):
             return []
         raise ValueError(f"No resource mapping rule for {path}")
     return max(matches, key=lambda item: item[0])[1]
+
+
+def _tableless_reason(path: str) -> str | None:
+    matches = [
+        (len(prefix), reason)
+        for prefix, reason in TABLELESS_PATHS.items()
+        if path.startswith(prefix)
+    ]
+    return max(matches, key=lambda item: item[0])[1] if matches else None
 
 
 def _pending_tables(path: str) -> list[str]:
@@ -530,6 +545,7 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
                     raise ValueError(
                         f"Unknown table(s) for {method_upper} {path}: {missing}"
                     )
+                tableless_reason = _tableless_reason(path)
                 operations.append(
                     {
                         "id": f"{method_upper} {path}",
@@ -547,6 +563,13 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
                         "if_match": _has_header(document, parameters, "If-Match"),
                         "tables": unique_tables,
                         "missing_tables": missing_tables,
+                        # 값이 있을 때만 싣는다 — 482건 전부에 null 을 적으면 산출물
+                        # diff 가 매번 481줄씩 흔들려 진짜 변화가 안 보인다.
+                        **(
+                            {"tableless_reason": tableless_reason}
+                            if tableless_reason
+                            else {}
+                        ),
                     }
                 )
     operations.sort(key=lambda item: (item["domain"], item["path"], item["method"]))
@@ -554,6 +577,16 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
         raise ValueError("No OpenAPI operations discovered")
     # 커버리지는 상수가 아니라 계산값이다 — 100%를 적어 두면 결손이 생겨도 100%로 보인다.
     # 쓰기는 audit·멱등 테이블이 항상 붙으므로 PRIMARY 유무로 센다.
+    # 표가 없는 것이 정상인 경로는 분모에서 뺀다 — 남겨 두면 「닫을 수 없는 결손」이 되어
+    # 커버리지가 영원히 100%에 못 닿고, 진짜 결손이 생겨도 눈에 띄지 않는다.
+    tableless = [
+        operation for operation in operations if operation.get("tableless_reason")
+    ]
+    countable = len(operations) - len(tableless)
+    if countable == 0:
+        # 전건이 「표 없음이 정상」일 수는 없다. 규칙을 잘못 넓혔다는 뜻이므로
+        # 0으로 나누다 죽는 대신 이유를 말하고 멈춘다.
+        raise ValueError("All operations are tableless — TABLELESS_PATHS is too broad")
     mapped = sum(
         any(relation["role"] == "PRIMARY" for relation in operation["tables"])
         for operation in operations
@@ -564,7 +597,8 @@ def build_api_mapping(catalog: dict[str, Any], openapi_dir: Path) -> dict[str, A
         "contract_reference_commit": _contract_commit(openapi_dir),
         "operation_count": len(operations),
         "mapped_operation_count": mapped,
-        "coverage": f"{mapped / len(operations) * 100:.1f}%",
+        "tableless_operation_count": len(tableless),
+        "coverage": f"{mapped / countable * 100:.1f}%",
         "operations": operations,
     }
 
