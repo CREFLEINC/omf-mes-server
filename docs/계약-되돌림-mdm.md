@@ -326,3 +326,36 @@ FK 가 `code_group_id`(숫자)로 걸려 있어, 코드 글자를 쓰는 곳은 
 
 부서만 세는 이유가 마지막 칸이다 — 코드 글자를 부르는 자리가 없어 FK 건수가 곧
 「이 코드를 고치면 곤란해지는 곳」의 수다.
+
+## G. 「설비 그룹」의 저장처가 `mdm.production_line` 이다 — 알려만 둔다
+
+계약 `EquipmentGroup` 의 다섯 칸이 `x-source-column` 으로 전부 생산라인 표를 가리킨다.
+
+| 계약 | 저장 컬럼 |
+|---|---|
+| `equipmentGroupId` | `production_line_id` |
+| `groupCode` | `line_code` (「`uq_production_line(plant_id, line_code)`」까지 적혀 있다) |
+| `groupName` | `line_name` |
+| `groupTypeCode` | `line_type_code` |
+| `parentGroupId` | `parent_line_id` |
+
+다섯이 일관되고 유일 제약까지 짚었으므로 옮겨 적은 실수로 보지 않았다. **그대로
+구현했다** — 「설비 그룹」과 「생산라인·작업구역」은 같은 나무의 같은 노드이고, `W-05-12`
+가 사실상 그 마스터의 관리 화면이다. 계약이 `/mdm/production-lines` 에 「관리 화면이
+인벤토리 108건에 없다 … 귀속 화면이 미정」이라 적은 것과 맞물린다.
+
+**따라오는 결과 둘.**
+
+1. `mdm.equipment_group`·`mdm.equipment_group_member` 는 계약 어느 스키마도 가리키지
+   않는 표가 됐다. 지금 지우지 않는다(하위 호환) — 두 릴리스 뒤 제거 후보다.
+2. `mdm.equipment_group_inspection_item.equipment_group_id` 는 `equipment_group` 을
+   가리키는데, API 의 `equipmentGroupId` 는 `production_line_id` 다. **그룹 점검항목
+   부여를 구현하려면 이 FK 를 옮겨야 한다** — 다음 PR 에서 다룬다.
+
+`groupTypeCode` 는 계약이 「값 목록이 확정되지 않았다」로 적었으나 시드에
+`LINE_TYPE`(LINE·WORK_AREA)이 있어 그 그룹으로 대조한다. 다르면 알려달라.
+
+## H. `equipment_inspection_item.data_type_code` 를 계약이 안 받는다
+
+물리 컬럼이 `NOT NULL` 이라 판정 방식에서 도출한다 — `MEASUREMENT`=`NUMERIC`,
+`VISUAL`=`BOOLEAN`. 계약이 이 칸을 쓰지 않으므로 두 릴리스 뒤 제거 후보이기도 하다.
