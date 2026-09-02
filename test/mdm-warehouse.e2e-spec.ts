@@ -259,7 +259,7 @@ describe('창고 마스터 (e2e)', () => {
         isDefect: false,
       })
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⭐ isDefect 로 불량창고만 거른다 — W-01-06 이 이 조건으로 건다', async () => {

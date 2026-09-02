@@ -172,7 +172,7 @@ describe('창고 배치도 (e2e)', () => {
       .set('If-Match', stale)
       .send({ markers: [] })
       .expect(409);
-    expect(rejected.body.errors[0].code).toBe('STALE_VERSION');
+    expect(rejected.body.conflictCause).toBe('user');
   });
 
   it('⭐ 저장은 통째로 바꾼다 — 점 하나만 보내면 나머지는 사라진다', async () => {

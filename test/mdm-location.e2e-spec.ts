@@ -275,7 +275,7 @@ describe('위치 마스터 (e2e)', () => {
       .set('If-Match', etag)
       .send(writeBody(`${PREFIX}-V`))
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('중지·재개가 돌고, 중지된 것은 기본 목록에서 빠진다', async () => {

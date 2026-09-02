@@ -251,7 +251,7 @@ describe('설비 점검항목 (e2e)', () => {
       .set('If-Match', etag)
       .send(updateBody(`${PREFIX}-V`))
       .expect(409);
-    expect(stale.body.errors[0].code).toBe('STALE_VERSION');
+    expect(stale.body.conflictCause).toBe('user');
   });
 
   it('⭐ 같은 코드를 다른 공장이 쓸 수 있다 — 유일 범위가 (공장, 코드)다', async () => {

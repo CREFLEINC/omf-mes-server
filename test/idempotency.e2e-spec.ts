@@ -15,7 +15,7 @@ import {
   IdempotencyService,
   requestFingerprint,
 } from '../src/common/idempotency';
-import { ContractException } from '../src/common/errors';
+import { ConflictException } from '../src/common/errors';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -155,17 +155,20 @@ describe('멱등 (실 DB)', () => {
       const key = randomUUID();
       await service.run(context(key, { a: 1 }), async () => ({ value: 'x' }));
 
-      // ContractException 의 message 는 ErrorItem 문구가 아니다 — 봉투를 본다.
-      let caught: ContractException | undefined;
+      // ⛔ 409 의 봉투는 계약 `ConflictResponse` 다 — `errors` 배열이 아니다.
+      let caught: ConflictException | undefined;
       try {
         await service.run(context(key, { a: 2 }), async () => ({ value: 'y' }));
       } catch (error) {
-        caught = error as ContractException;
+        caught = error as ConflictException;
       }
 
-      expect(caught).toBeInstanceOf(ContractException);
+      expect(caught).toBeInstanceOf(ConflictException);
       expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
-      expect(caught?.errors[0].message).toContain('다른 내용');
+      expect(caught?.conflict).toEqual({
+        conflictCause: 'user',
+        message: expect.stringContaining('다른 내용'),
+      });
     });
 
     it('⛔ 일이 실패하면 기록도 남지 않는다 — 재시도가 막히면 안 된다', async () => {

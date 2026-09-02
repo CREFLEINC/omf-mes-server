@@ -1,7 +1,6 @@
-import { HttpStatus } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { ContractException, ERROR_CODE } from '../errors';
+import { ConflictCause, ConflictException } from '../errors';
 
 export const IF_MATCH_HEADER = 'if-match';
 export const ETAG_HEADER = 'ETag';
@@ -47,17 +46,21 @@ export function rememberIfMatch(request: Request, version: number): void {
 /**
  * 조건부 UPDATE 가 0행이면 그 사이 누가 고친 것이다.
  *
- * ⛔ `STATE_LOCKED` 가 아니다 — 이것은 **재로드하면 풀리는** 저장 충돌이다(공유계약 G-1).
- * 상태 때문에 막힌 것과 구분해야 화면이 「다시 불러오세요」와 「할 수 없습니다」를 가른다.
+ * ⛔ 상태 때문에 막힌 것과 구분해야 화면이 「다시 불러오세요」와 「할 수 없습니다」를
+ * 가른다(공유계약 G-1). 이것은 **재로드하면 풀리는** 저장 충돌이다.
+ *
+ * ⛔ 봉투는 `ConflictResponse` 다 — `{ errors: [...] }` 가 아니다. 화면이 `conflictCause`
+ * 로 문구를 고르므로 원인을 함께 싣는다. 기본은 사람이고, ERP 재동기화 배치가 같은 행을
+ * 덮을 수 있는 자리(수신본 마스터)는 호출자가 `erpSync` 를 준다.
  */
-export function assertUpdated(affectedRows: number): void {
+export function assertUpdated(affectedRows: number, cause: ConflictCause = 'user'): void {
   if (affectedRows === 0) {
-    throw new ContractException(HttpStatus.CONFLICT, [
-      {
-        scope: 'screen',
-        code: ERROR_CODE.STALE_VERSION,
-        message: '다른 사용자가 먼저 저장했습니다. 다시 불러온 뒤 저장하세요.',
-      },
-    ]);
+    throw new ConflictException(cause, MESSAGE[cause]);
   }
 }
+
+const MESSAGE: Record<ConflictCause, string> = {
+  user: '다른 사용자가 먼저 저장했습니다. 다시 불러온 뒤 저장하세요.',
+  erpSync: '기간계 재동기화가 같은 자료를 갱신했습니다. 다시 불러온 뒤 저장하세요.',
+  workerLease: '같은 자료를 처리 중입니다. 잠시 뒤 다시 확인하세요.',
+};

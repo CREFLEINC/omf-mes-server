@@ -3,7 +3,17 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
 import { configureApp } from '../src/app.setup';
-import { ContractException, ERROR_CODE, INTERNAL_ERROR_CODE } from '../src/common/errors';
+import Ajv2020 from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import {
+  ConflictException,
+  ContractException,
+  ERROR_CODE,
+  INTERNAL_ERROR_CODE,
+} from '../src/common/errors';
 
 /**
  * AppModule 을 쓰지 않는다 — PrismaService 가 onModuleInit 에서 $connect() 하므로
@@ -17,6 +27,11 @@ class ProbeController {
     throw new ContractException(HttpStatus.CONFLICT, [
       { scope: 'field', field: 'orderQty', code: ERROR_CODE.RANGE, message: '1 이상이어야 합니다.' },
     ]);
+  }
+
+  @Get('conflict')
+  conflict(): never {
+    throw new ConflictException('erpSync', '기간계 재동기화가 같은 자료를 갱신했습니다.');
   }
 
   @Get('boom')
@@ -62,6 +77,44 @@ describe('오류 봉투 (e2e)', () => {
         { scope: 'field', field: 'orderQty', code: ERROR_CODE.RANGE, message: '1 이상이어야 합니다.' },
       ],
     });
+  });
+
+  it('⭐ 409 는 «다른» 봉투로 나간다 — 계약 ConflictResponse 를 스키마로 대조한다', async () => {
+    const response = await request(app.getHttpServer()).get('/api/probe/conflict').expect(409);
+
+    // ⛔ 계약 원본에서 스키마를 읽는다 — 손으로 옮겨 적으면 그 순간 드리프트한다.
+    const contract = JSON.parse(
+      readFileSync(join(__dirname, '../contracts/app-공통.json'), 'utf8'),
+    ) as { components: { schemas: Record<string, unknown> } };
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    addFormats(ajv);
+    ajv.addSchema({ $id: 'contract', components: contract.components });
+    const validate = ajv.compile({ $ref: 'contract#/components/schemas/ConflictResponse' });
+
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body).toEqual({
+      conflictCause: 'erpSync',
+      message: '기간계 재동기화가 같은 자료를 갱신했습니다.',
+    });
+    // ⛔ 여기가 이 검사의 핵심이다 — errors 배열로 싸면 화면이 원인을 못 찾는다.
+    expect(response.body).not.toHaveProperty('errors');
+  });
+
+  it('⛔ 검증기가 실제로 거른다 — 위 검사가 헛통과가 아님을 보인다', () => {
+    const contract = JSON.parse(
+      readFileSync(join(__dirname, '../contracts/app-공통.json'), 'utf8'),
+    ) as { components: { schemas: Record<string, unknown> } };
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    addFormats(ajv);
+    ajv.addSchema({ $id: 'contract', components: contract.components });
+    const validate = ajv.compile({ $ref: 'contract#/components/schemas/ConflictResponse' });
+
+    // 종전 봉투(`{ errors: [...] }`)는 이 스키마를 만족하지 못한다.
+    expect(validate({ errors: [{ scope: 'screen', code: 'STALE_VERSION', message: 'x' }] })).toBe(
+      false,
+    );
+    expect(validate({ conflictCause: '없는원인', message: 'x' })).toBe(false);
   });
 
   it('처리되지 않은 예외가 내부 메시지를 흘리지 않는다', async () => {

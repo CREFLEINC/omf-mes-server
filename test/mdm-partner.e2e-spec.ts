@@ -194,7 +194,7 @@ describe('거래처·판정유형 통제 (e2e)', () => {
       .set('If-Match', stale)
       .send({ roleTypeCodes: [] })
       .expect(409);
-    expect(rejected.body.errors[0].code).toBe('STALE_VERSION');
+    expect(rejected.body.conflictCause).toBe('user');
   });
 
   it('⛔ 없는 거래처는 404 다', async () => {
@@ -283,7 +283,7 @@ describe('거래처·판정유형 통제 (e2e)', () => {
         requiresApproval: false,
       })
       .expect(409);
-    expect(rejected.body.errors[0].code).toBe('STALE_VERSION');
+    expect(rejected.body.conflictCause).toBe('user');
   });
 
   it('⛔ 마스터에 없는 Lot 상태·역할은 400 이다', async () => {

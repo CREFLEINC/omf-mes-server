@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 
-import { ContractException, ERROR_CODE } from '../errors';
+import { ConflictException } from '../errors';
 import { assertUpdated, parseIfMatch, setEtag } from './optimistic-lock';
 
 describe('낙관적 잠금 도구', () => {
@@ -52,28 +52,43 @@ describe('낙관적 잠금 도구', () => {
     });
 
     it('⛔ 0행이면 409 다 — 그 사이 누가 먼저 저장했다', () => {
-      let caught: ContractException | undefined;
+      let caught: ConflictException | undefined;
       try {
         assertUpdated(0);
       } catch (error) {
-        caught = error as ContractException;
+        caught = error as ConflictException;
       }
 
       expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
-      expect(caught?.errors[0]).toMatchObject({ scope: 'screen', code: ERROR_CODE.STALE_VERSION });
+      // ⛔ 봉투가 `ErrorResponse` 가 아니다 — 계약 `ConflictResponse` 다.
+      expect(caught?.conflict).toEqual({
+        conflictCause: 'user',
+        message: expect.stringContaining('다시 불러온'),
+      });
     });
 
-    it('⛔ STATE_LOCKED 가 아니다 — 재로드하면 풀리는 충돌이라 화면이 달리 말해야 한다', () => {
-      let caught: ContractException | undefined;
+    it('⭐ 원인을 호출자가 고른다 — 화면 문구가 그것으로 갈린다', () => {
+      let caught: ConflictException | undefined;
+      try {
+        assertUpdated(0, 'erpSync');
+      } catch (error) {
+        caught = error as ConflictException;
+      }
+
+      expect(caught?.conflict.conflictCause).toBe('erpSync');
+      expect(caught?.conflict.message).toContain('기간계');
+    });
+
+    it('⛔ 응답 본문에 errors 배열이 없다 — 화면이 conflictCause 를 찾아야 한다', () => {
+      let caught: ConflictException | undefined;
       try {
         assertUpdated(0);
       } catch (error) {
-        caught = error as ContractException;
+        caught = error as ConflictException;
       }
 
-      expect(caught?.errors[0].code).not.toBe(ERROR_CODE.STATE_LOCKED);
-      expect(ERROR_CODE.STALE_VERSION).not.toBe(ERROR_CODE.STATE_LOCKED);
-      expect(caught?.errors[0].message).toContain('다시 불러온');
+      expect(caught?.getResponse()).not.toHaveProperty('errors');
+      expect(caught?.getResponse()).toHaveProperty('conflictCause');
     });
   });
 });
