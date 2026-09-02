@@ -7,6 +7,7 @@ import { IdempotencyModule } from './common/idempotency';
 import { OptimisticLockModule } from './common/optimistic-lock';
 import { PermissionModule } from './common/permissions';
 import { HealthModule } from './health/health.module';
+import { MdmModule } from './mdm/mdm.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { PrismaModule } from './prisma/prisma.module';
     IdempotencyModule,
     OptimisticLockModule,
     HealthModule,
+    MdmModule,
   ],
 })
 export class AppModule {}
