@@ -21,6 +21,9 @@ import { ContractValidator } from './contract-validator';
       useFactory: (registry: ContractRegistry) => new ContractValidator(registry),
       inject: [ContractRegistry],
     },
+    // ⛔ 인증 가드가 서면 «그것을 먼저» 등록한다. Nest 는 APP_GUARD 를 등록 순서대로
+    // 돌리므로, 이 가드가 앞서면 인증 안 된 호출자가 401 대신 400 과 함께 계약 스키마의
+    // 생김새를 돌려받는다.
     { provide: APP_GUARD, useClass: ContractValidationGuard },
   ],
   exports: [ContractRegistry, ContractValidator],
