@@ -7,7 +7,7 @@ import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
 
@@ -15,6 +15,8 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+const CONTRACTS_DIR = join(__dirname, '../contracts');
 
 const LOGIN_ID = 'e2e-mdmcode-probe';
 const NOPERM_ID = 'e2e-mdmcode-noperm';
@@ -147,33 +149,25 @@ describe('공통코드 마스터 (e2e)', () => {
     expect(validate(detail.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     expect(etag).toMatch(/^\d+$/);
-    // 값이 없는 새 그룹이라 참조가 0 이다 — 코드 칸을 고칠 수 있다(B-4).
+    // ⛔ 값이 «하나도 없는» 갓 만든 그룹인데도 잠긴다. FK 로 세면 0 이지만, 그 0 은
+    // 「값이 몇 개인가」이지 「그룹 코드 글자를 쓰는 곳이 어딘가」가 아니다.
     expect(detail.body.editability).toEqual({
-      codeEditable: true,
-      reason: 'EDITABLE',
-      referenceCount: 0,
+      codeEditable: false,
+      reason: 'NOT_COUNTABLE',
+      referenceCount: null,
     });
   });
 
-  it('⭐ 값이 붙으면 그룹 코드가 잠긴다 — B-4 참조 건수', async () => {
-    const { id } = await createGroup(`${PREFIX}-REF`);
-    await request(app.getHttpServer())
-      .post('/api/mdm/code-values')
-      .set('Cookie', cookie)
-      .set('Idempotency-Key', key())
-      .send({ codeGroupId: id, code: `${PREFIX}-REF1`, codeName: '값' })
-      .expect(201);
+  it('⭐ 그룹 코드 글자를 쓰는 곳은 계약 안에만 151곳이다 — 셀 수 없는 이유', () => {
+    // 위 검사가 「왜」 그렇게 되어야 하는지를 계약 자신에서 확인한다. 이 숫자가 0 이
+    // 되는 날이 오면 그때는 그룹을 셀 수 있는지 다시 따져야 한다.
+    const literals = readdirSync(CONTRACTS_DIR)
+      .filter((name) => name.endsWith('.json'))
+      .flatMap((name) => readFileSync(join(CONTRACTS_DIR, name), 'utf8').match(/codeGroupCode=[A-Z_]+/g) ?? []);
 
-    const detail = await request(app.getHttpServer())
-      .get(`/api/mdm/code-groups/${id}`)
-      .set('Cookie', cookie)
-      .expect(200);
-
-    expect(detail.body.editability).toEqual({
-      codeEditable: false,
-      reason: 'REFERENCED',
-      referenceCount: 1,
-    });
+    expect(literals.length).toBeGreaterThan(100);
+    // 이 리터럴들이 가리키는 그룹 코드를 바꾸면 그 호출은 조용히 빈 목록을 받는다.
+    expect(new Set(literals).size).toBeGreaterThan(30);
   });
 
   it('⛔ 코드 «값»의 참조는 셀 수 없다 — 174표 어디에도 FK 가 없다', async () => {
