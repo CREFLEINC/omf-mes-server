@@ -1676,6 +1676,10 @@ model equipment {
   updated_by                           BigInt?
   version_no                           Int                                    @default(1)
   location_id                          BigInt?
+  calibration_cycle_type_code          String?                                @db.VarChar(50)
+  calibration_cycle_interval           Int?
+  precision_value                      Decimal?                               @db.Decimal(20, 6)
+  precision_uom_id                     BigInt?
   breakdown                            breakdown[]
   collection_channel                   collection_channel[]
   equipment_downtime                   equipment_downtime[]
@@ -1685,6 +1689,7 @@ model equipment {
   tool_usage                           tool_usage[]
   location                             location?                              @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   plant                                plant                                  @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                                  uom?                                   @relation(fields: [precision_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   process                              process?                               @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   production_line                      production_line?                       @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
   equipment_group_member               equipment_group_member[]
@@ -2217,6 +2222,7 @@ model uom {
   subcontract_order                                             subcontract_order[]
   subcontract_reconciliation                                    subcontract_reconciliation[]
   collection_channel                                            collection_channel[]
+  equipment                                                     equipment[]
   equipment_inspection_item                                     equipment_inspection_item[]
   item                                                          item[]
   item_item_default_lot_storage_uom_idTouom                     item[]                               @relation("item_default_lot_storage_uom_idTouom")
