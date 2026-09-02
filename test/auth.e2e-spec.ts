@@ -4,6 +4,10 @@
  */
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { AuthModule } from '../src/auth/auth.module';
 import { CredentialService, MAX_FAILED_ATTEMPTS } from '../src/auth/credential.service';
@@ -138,6 +142,8 @@ describe('인증 (실 DB)', () => {
       });
     });
 
+    let builtSession: unknown;
+
     it('⭐ 권한은 활성 역할의 합집합이다 — 중지된 역할은 판정에서 빠진다', async () => {
       const active = await prisma.role.findUniqueOrThrow({ where: { role_code: 'ROLE_SYS_ADMIN' } });
       const retired = await prisma.role.findFirstOrThrow({ where: { is_active: false } });
@@ -154,6 +160,26 @@ describe('인증 (실 DB)', () => {
 
       expect(session?.roles).toEqual(['ROLE_SYS_ADMIN']);
       expect(session?.permissions).toEqual(['W-CO-01', 'W-CO-02', 'W-CO-10']);
+      builtSession = session;
+    });
+
+    it('⭐ 조립한 세션이 계약 Session 스키마를 만족한다', () => {
+      // 계약 원본에서 스키마를 꺼내 우리가 만든 값을 판정하게 한다. 손으로 옮겨 적으면
+      // 계약이 바뀐 순간 조용히 드리프트한다.
+      const contract = JSON.parse(
+        readFileSync(join(__dirname, '../contracts/app-공통.json'), 'utf8'),
+      ) as { components: Record<string, unknown> };
+      const ajv = new Ajv2020({ strict: false, allErrors: true });
+      addFormats(ajv);
+      ajv.addSchema({ $id: 'contract', components: contract.components });
+      const validate: ValidateFunction = ajv.compile({
+        $ref: 'contract#/components/schemas/Session',
+      });
+
+      expect(validate(builtSession)).toBe(true);
+      expect(validate.errors ?? []).toEqual([]);
+      // 헛통과가 아님을 보인다 — 필수 칸이 빠지면 걸러야 한다.
+      expect(validate({ userId: 1, loginId: 'x' })).toBe(false);
     });
 
     it('is_active 가 꺼진 사용자는 세션이 서지 않는다', async () => {
