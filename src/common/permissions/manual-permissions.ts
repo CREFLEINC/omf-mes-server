@@ -28,4 +28,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /mdm/warehouses/{warehouseId}': ['W-06-07'],
   'POST /mdm/warehouses/{warehouseId}:activate': ['W-06-07'],
   'POST /mdm/warehouses/{warehouseId}:deactivate': ['W-06-07'],
+  'PUT /mdm/locations/{locationId}': ['W-06-07'],
+  'POST /mdm/locations/{locationId}:activate': ['W-06-07'],
+  'POST /mdm/locations/{locationId}:deactivate': ['W-06-07'],
 };

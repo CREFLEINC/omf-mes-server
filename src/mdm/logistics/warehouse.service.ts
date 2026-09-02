@@ -5,6 +5,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues } from '../code-reference';
+import { optional } from '../column';
 import { Editability } from '../editability';
 import { Referrer, countReferences } from '../reference-count';
 import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
@@ -244,6 +245,3 @@ function view(row: WarehouseRow): WarehouseView {
   };
 }
 
-function optional<T>(column: string, value: T | undefined): Record<string, unknown> {
-  return value === undefined ? {} : { [column]: value };
-}
