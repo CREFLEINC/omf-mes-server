@@ -49,4 +49,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 도출표에 안 들어왔다. 같은 화면의 같은 자원이다.
   'PUT /mdm/terminals/{terminalId}': ['W-CO-06'],
   'POST /mdm/terminals/{terminalId}:deactivate': ['W-CO-06'],
+
+  // `W-06-08` 예비품 마스터 — §5 가 「등록·올리기」만 적어 나머지가 도출표에 안 들어왔다.
+  // 수정·전이·설비매핑은 같은 화면의 같은 자원이다.
+  'PUT /mdm/spare-parts/{sparePartId}': ['W-06-08'],
+  'POST /mdm/spare-parts/{sparePartId}:activate': ['W-06-08'],
+  'POST /mdm/spare-parts/{sparePartId}:deactivate': ['W-06-08'],
+  'PUT /mdm/spare-parts/{sparePartId}/equipments': ['W-06-08'],
 };

@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2388개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2389개
 
 ## 범례
 
@@ -2344,7 +2344,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.process` | 공정 | MASTER | 10 | `process_id` | 0 | 공정의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.production_line` | 생산 상세 | MASTER | 12 | `production_line_id` | 2 | 생산 상세의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.shift` | 교대 | MASTER | 13 | `shift_id` | 1 | 교대의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.spare_part` | 예비 PART | MASTER | 12 | `spare_part_id` | 2 | 예비 PART의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.spare_part` | 예비 PART | MASTER | 13 | `spare_part_id` | 3 | 예비 PART의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.spare_part_equipment` | 예비 PART 설비 | MASTER | 6 | `spare_part_equipment_id` | 2 | 예비 PART 설비의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.terminal` | 단말 | MASTER | 15 | `terminal_id` | 3 | 단말의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.terminal_process` | 단말 공정 | MASTER | 13 | `terminal_process_id` | 2 | 단말 공정의 업무 기준과 유효 상태를 관리한다. |
@@ -2925,7 +2925,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 
 - 유형: `MASTER`
 - 기본키: `spare_part_id`
-- 직접 외래키: 2개
+- 직접 외래키: 3개
 
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
@@ -2933,7 +2933,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 2 | `spare_part_code` | `app.code_t` | Y | - | `-` |
 | 3 | `spare_part_name` | `app.name_t` | Y | - | `-` |
 | 4 | `item_id` | `bigint` | N | FK→mdm.item | `-` |
-| 5 | `base_uom_id` | `bigint` | Y | FK→mdm.uom | `-` |
+| 5 | `base_uom_id` | `bigint` | N | FK→mdm.uom | `-` |
 | 6 | `minimum_stock_qty` | `app.qty_t` | N | - | `-` |
 | 7 | `is_active` | `boolean` | Y | - | `true` |
 | 8 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
@@ -2941,6 +2941,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 10 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 11 | `updated_by` | `bigint` | N | - | `-` |
 | 12 | `version_no` | `integer` | Y | - | `1` |
+| 13 | `plant_id` | `bigint` | Y | FK→mdm.plant | `-` |
 
 ### mdm.spare_part_equipment — 예비 PART 설비
 

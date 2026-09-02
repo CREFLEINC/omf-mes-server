@@ -9,8 +9,8 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2388,
-    "relationship_count": 559,
+    "column_count": 2389,
+    "relationship_count": 560,
     "schemas": {
       "app": 27,
       "audit": 2,
@@ -1447,9 +1447,9 @@
       "logical_name": "예비 PART",
       "lifecycle": "MASTER",
       "purpose": "예비 PART의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 12,
+      "column_count": 13,
       "primary_key": "spare_part_id",
-      "foreign_key_count": 2,
+      "foreign_key_count": 3,
       "is_partition": false
     },
     {
@@ -18344,7 +18344,7 @@
       "ordinal": 5,
       "column": "base_uom_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "FK→mdm.uom",
       "default": ""
     },
@@ -18424,6 +18424,17 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "mdm.spare_part",
+      "schema": "mdm",
+      "table": "spare_part",
+      "ordinal": 13,
+      "column": "plant_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→mdm.plant",
+      "default": ""
     },
     {
       "qualified_table": "mdm.spare_part_equipment",
@@ -31042,6 +31053,14 @@
       "source_columns": "item_id",
       "target_table": "mdm.item",
       "target_columns": "item_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "spare_part_plant_id_fkey",
+      "source_table": "mdm.spare_part",
+      "source_columns": "plant_id",
+      "target_table": "mdm.plant",
+      "target_columns": "plant_id",
       "on_delete": "NO ACTION"
     },
     {
