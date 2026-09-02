@@ -29,6 +29,9 @@ import { ReferenceQuery, referencePage, referenceWhere } from '../reference/refe
 export const EQUIPMENT_GROUP_REFERRERS: readonly Referrer[] = [
   ['maintenance.planned_stop', 'production_line_id'],
   ['mdm.equipment', 'production_line_id'],
+  // 점검항목 부여도 그룹을 가리킨다(#123 이 FK 를 이쪽으로 옮겼다). 부여가 붙은 그룹은
+  // 코드를 못 고친다 — 부여 화면이 그 코드로 그룹을 짚고 있다.
+  ['mdm.equipment_group_inspection_item', 'production_line_id'],
   ['mdm.production_line', 'parent_line_id'],
   ['planning.production_plan', 'planned_line_id'],
   ['production.work_order', 'production_line_id'],

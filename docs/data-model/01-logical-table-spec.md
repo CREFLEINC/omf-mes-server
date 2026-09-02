@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2376개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2384개
 
 ## 범례
 
@@ -2326,10 +2326,10 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.department` | 부서 | MASTER | 14 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment` | 설비 | MASTER | 18 | `equipment_id` | 4 | 설비의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group` | 설비 그룹 | MASTER | 10 | `equipment_group_id` | 1 | 설비 그룹의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.equipment_group_inspection_item` | 설비 그룹 검사 품목 | MASTER | 7 | `equipment_group_inspection_item_id` | 2 | 설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.equipment_group_inspection_item` | 설비 그룹 검사 품목 | MASTER | 11 | `equipment_group_inspection_item_id` | 2 | 설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_member` | 설비 그룹 구성원 | MASTER | 7 | `equipment_group_member_id` | 2 | 설비 그룹 구성원의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_inspection_item` | 설비 검사 품목 | MASTER | 19 | `equipment_inspection_item_id` | 2 | 설비 검사 품목의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.equipment_inspection_item_assignment` | 설비 검사 품목 배정 | MASTER | 7 | `equipment_inspection_item_assignment_id` | 2 | 설비 검사 품목 배정의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.equipment_inspection_item_assignment` | 설비 검사 품목 배정 | MASTER | 11 | `equipment_inspection_item_assignment_id` | 2 | 설비 검사 품목 배정의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item` | 품목 | MASTER | 25 | `item_id` | 2 | 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_bu_item_map` | 품목 BU 품목 매핑 | MASTER | 9 | `item_bu_item_map_id` | 4 | 품목 BU 품목 매핑의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_external_code` | 품목 외부 코드 | MASTER | 7 | `item_external_code_id` | 2 | 품목 외부 코드의 업무 기준과 유효 상태를 관리한다. |
@@ -2512,12 +2512,16 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
 | 1 | `equipment_group_inspection_item_id` | `bigint` | Y | PK | `-` |
-| 2 | `equipment_group_id` | `bigint` | Y | FK→mdm.equipment_group | `-` |
+| 2 | `production_line_id` | `bigint` | Y | FK→mdm.production_line | `-` |
 | 3 | `equipment_inspection_item_id` | `bigint` | Y | FK→mdm.equipment_inspection_item | `-` |
 | 4 | `display_order` | `integer` | Y | - | `100` |
 | 5 | `is_required_override` | `boolean` | N | - | `-` |
 | 6 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 7 | `created_by` | `bigint` | N | - | `-` |
+| 8 | `cycle_type_code` | `app.code_t` | Y | - | `-` |
+| 9 | `cycle_interval` | `integer` | Y | - | `-` |
+| 10 | `cycle_base_date` | `date` | N | - | `-` |
+| 11 | `is_active` | `boolean` | Y | - | `true` |
 
 ### mdm.equipment_group_member — 설비 그룹 구성원
 
@@ -2584,6 +2588,10 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 5 | `is_required_override` | `boolean` | N | - | `-` |
 | 6 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 7 | `created_by` | `bigint` | N | - | `-` |
+| 8 | `cycle_type_code` | `app.code_t` | Y | - | `-` |
+| 9 | `cycle_interval` | `integer` | Y | - | `-` |
+| 10 | `cycle_base_date` | `date` | N | - | `-` |
+| 11 | `is_active` | `boolean` | Y | - | `true` |
 
 ### mdm.item — 품목
 
