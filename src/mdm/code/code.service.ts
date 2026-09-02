@@ -76,27 +76,26 @@ export class CodeService {
 
     return {
       codeGroup: this.groupView(row),
-      editability: await this.groupEditability(row),
+      editability: this.groupEditability(row),
       versionNo: row.version_no,
     };
   }
 
   /**
-   * 그룹은 참조를 «셀 수 있다» — `code_value.code_group_id` 가 FK 다.
-   * 시스템 소유면 건수와 무관하게 잠근다.
+   * ⛔ 그룹도 «셀 수 없다». `code_value.code_group_id` 가 FK 로 걸려 있어 세는 것 자체는
+   * 되지만, 그것은 «그룹에 값이 몇 개인가»이지 «그룹 코드 «글자»를 쓰는 곳이 어딘가»가
+   * 아니다. 잠금이 물어야 할 것은 뒤쪽이다.
+   *
+   * 그리고 그 글자를 쓰는 곳은 세지 못한다 — 계약 자신이 151곳에서
+   * `GET /mdm/code-values?codeGroupCode=LOT_STATUS` 처럼 «리터럴로» 지시한다(실측).
+   * 화면 소스에 박히는 문자열이라 DB 에서 셀 방법이 없다. 값이 0개인 그룹이라도 코드를
+   * 바꾸면 그 호출들이 전부 빈 목록을 받는다 — 조용히.
    */
-  private async groupEditability(row: CodeGroupRow): Promise<Editability> {
+  private groupEditability(row: CodeGroupRow): Editability {
     if (row.is_system_owned) {
       return { codeEditable: false, reason: 'SYSTEM_OWNED', referenceCount: null };
     }
-    const referenceCount = await this.prisma.code_value.count({
-      where: { code_group_id: row.code_group_id },
-    });
-    return {
-      codeEditable: referenceCount === 0,
-      reason: referenceCount === 0 ? 'EDITABLE' : 'REFERENCED',
-      referenceCount,
-    };
+    return { codeEditable: false, reason: 'NOT_COUNTABLE', referenceCount: null };
   }
 
   /**
