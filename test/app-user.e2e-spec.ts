@@ -47,6 +47,8 @@ describe('사용자 마스터 (e2e)', () => {
   let cookie: string[];
   let noPermCookie: string[];
   let departmentId: number;
+  let businessUnitId: number;
+  let plantId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -84,6 +86,13 @@ describe('사용자 마스터 (e2e)', () => {
       data: { department_code: DEPARTMENT_CODE, department_name: '사용자검사부서' },
     });
     departmentId = Number(department.department_id);
+    businessUnitId = Number(
+      (await prisma.business_unit.findFirstOrThrow({ select: { business_unit_id: true } }))
+        .business_unit_id,
+    );
+    plantId = Number(
+      (await prisma.plant.findFirstOrThrow({ select: { plant_id: true } })).plant_id,
+    );
   });
 
   afterAll(async () => {
@@ -212,23 +221,7 @@ describe('사용자 마스터 (e2e)', () => {
 
   it('⭐ 마지막 관리자는 «자기 자신»도 중지하지 못한다 — 400 LAST_ADMIN', async () => {
     const me = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
-    const others = await prisma.app_user.findMany({
-      where: {
-        is_active: true,
-        login_id: { not: LOGIN_ID },
-        user_role: {
-          some: {
-            role: { is_active: true, role_permission: { some: { permission_code: 'W-CO-02' } } },
-          },
-        },
-      },
-      select: { app_user_id: true },
-    });
-    const ids = others.map((row) => row.app_user_id);
-    await prisma.app_user.updateMany({
-      where: { app_user_id: { in: ids } },
-      data: { is_active: false },
-    });
+    const others = await deactivateOtherAdmins();
 
     try {
       const rejected = await request(app.getHttpServer())
@@ -246,10 +239,7 @@ describe('사용자 마스터 (e2e)', () => {
       expect(after.is_active).toBe(true);
       expect(after.version_no).toBe(me.version_no);
     } finally {
-      await prisma.app_user.updateMany({
-        where: { app_user_id: { in: ids } },
-        data: { is_active: true },
-      });
+      await restoreAdmins(others);
     }
   });
 
@@ -343,7 +333,301 @@ describe('사용자 마스터 (e2e)', () => {
       .expect(404);
   });
 
+  // ── 역할 배정 ───────────────────────────────────────────────────────────
+
+  it('⭐ 역할을 통째로 교체한다 — 목록에 없는 역할은 해제된다', async () => {
+    const created = await create(`${PREFIX}-r1`);
+    const [first, second] = await Promise.all([spareRole('R1'), spareRole('R2')]);
+
+    const saved = await putRoles(created.appUserId, [first, second]);
+    const validate = validator('PUT /app/users/{appUserId}/roles');
+    expect(validate(saved.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(saved.body.items.map((i: { roleId: number }) => i.roleId).sort()).toEqual(
+      [first, second].sort(),
+    );
+
+    const shrunk = await putRoles(created.appUserId, [first]);
+    expect(shrunk.body.items).toHaveLength(1);
+
+    const cleared = await putRoles(created.appUserId, []);
+    expect(cleared.body.items).toEqual([]);
+  });
+
+  it('⭐ 배정은 집합이라 중복을 접어 받는다 — 경합을 유일 위반으로 거절하지 않는다', async () => {
+    const created = await create(`${PREFIX}-r2`);
+    const role = await spareRole('R3');
+
+    const saved = await putRoles(created.appUserId, [role, role]);
+    expect(saved.body.items).toHaveLength(1);
+
+    // 같은 목록을 다시 보내도 「이미 반영된 상태」로 조용히 끝난다(계약 §6).
+    const again = await putRoles(created.appUserId, [role]);
+    expect(again.body.items).toHaveLength(1);
+  });
+
+  it('⛔ 없는 역할은 400 이고 몇 번째인지 짚는다', async () => {
+    const created = await create(`${PREFIX}-r3`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/app/users/${created.appUserId}/roles`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ roleIds: [999999999] })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'roleIds[0]', code: 'INVALID' });
+  });
+
+  it('⭐ 마지막 관리자에게서 관리자 역할을 뺄 수 없다 — 400 LAST_ADMIN', async () => {
+    const me = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+    const others = await deactivateOtherAdmins();
+
+    try {
+      const rejected = await request(app.getHttpServer())
+        .put(`/api/app/users/${Number(me.app_user_id)}/roles`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .send({ roleIds: [] })
+        .expect(400);
+      expect(rejected.body.errors[0].code).toBe('LAST_ADMIN');
+
+      // ⛔ 막혔으면 배정이 그대로 남아 있어야 한다 — 치환은 「지우고 다시 넣기」다.
+      const after = await request(app.getHttpServer())
+        .get(`/api/app/users/${Number(me.app_user_id)}/roles`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(after.body.items).toHaveLength(1);
+    } finally {
+      await restoreAdmins(others);
+    }
+  });
+
+  // ── 데이터 접근범위 ─────────────────────────────────────────────────────
+
+  it('⭐ 접근범위를 통째로 교체한다 — 빈 축은 (전체)로 남는다', async () => {
+    const created = await create(`${PREFIX}-s1`);
+
+    const saved = await putScopes(created.appUserId, [
+      { businessUnitId },
+      { businessUnitId, plantId },
+    ]);
+    const validate = validator('PUT /app/users/{appUserId}/data-scopes');
+    expect(validate(saved.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // 「사업부만」 줄은 공장 축이 비어 있다 — 화면이 그것을 (전체)로 그린다.
+    expect(saved.body.items[0]).toMatchObject({ businessUnitId, plantId: null });
+    expect(saved.body.items[1]).toMatchObject({ businessUnitId, plantId });
+
+    const cleared = await putScopes(created.appUserId, []);
+    expect(cleared.body.items).toEqual([]);
+  });
+
+  it('⛔ 두 축이 다 비면 400 PAIR 다 — 「어디까지 보는가」가 없다', async () => {
+    const created = await create(`${PREFIX}-s2`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/app/users/${created.appUserId}/data-scopes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ scopes: [{}] })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'scopes[0]', code: 'PAIR' });
+  });
+
+  it('⛔ 같은 범위를 두 번 넣으면 400 이다 — 유일 인덱스가 빈 축을 접는다', async () => {
+    const created = await create(`${PREFIX}-s3`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/app/users/${created.appUserId}/data-scopes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      // 둘 다 「사업부만」이라 COALESCE 로 접히면 같은 줄이다.
+      .send({ scopes: [{ businessUnitId }, { businessUnitId, plantId: null }] })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'scopes[1]',
+      code: 'UNIQUE_VIOLATION',
+      uniqueScope: ['businessUnitId', 'plantId'],
+    });
+  });
+
+  it('⛔ 없는 사업부·공장은 400 이다', async () => {
+    const created = await create(`${PREFIX}-s4`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/app/users/${created.appUserId}/data-scopes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ scopes: [{ businessUnitId: 999999999 }] })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'scopes[0].businessUnitId',
+      code: 'INVALID',
+    });
+  });
+
+  // ── 비밀번호 관리자 초기화 ──────────────────────────────────────────────
+
+  it('⭐ 초기화한 임시 비밀번호로 «실제로» 로그인된다', async () => {
+    const created = await create(`${PREFIX}-p1`);
+
+    const reset = await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+    const validate = validator('POST /app/users/{appUserId}:reset-password');
+    expect(validate(reset.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    // ⛔ 서버는 해시만 갖는다 — 응답의 값이 실제로 통해야 「한 번만 보인다」가 뜻을 갖는다.
+    await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
+      .send({ loginId: `${PREFIX}-p1`, password: reset.body.temporaryPassword })
+      .expect(200);
+
+    const stored = await prisma.user_credential.findUniqueOrThrow({
+      where: { app_user_id: created.appUserId },
+    });
+    expect(stored.password_hash).not.toContain(reset.body.temporaryPassword);
+    expect(stored.must_change_password).toBe(true);
+  });
+
+  it('⭐ 잠긴 계정이 초기화로 풀린다 — 관리자가 푸는 경로가 이것뿐이다', async () => {
+    const created = await create(`${PREFIX}-p2`);
+    await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+    await prisma.user_credential.update({
+      where: { app_user_id: created.appUserId },
+      data: { failed_attempt_count: 5, locked_until: new Date('9999-12-31T00:00:00.000Z') },
+    });
+
+    const reset = await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
+      .send({ loginId: `${PREFIX}-p2`, password: reset.body.temporaryPassword })
+      .expect(200);
+  });
+
+  it('⭐ 같은 멱등키로 다시 부르면 «같은» 임시 비밀번호를 준다', async () => {
+    const created = await create(`${PREFIX}-p3`);
+    const idempotencyKey = key();
+
+    const first = await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .expect(200);
+    const again = await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .expect(200);
+
+    // 새로 뽑으면 앞에서 알려 준 값이 조용히 무효가 된다.
+    expect(again.body.temporaryPassword).toBe(first.body.temporaryPassword);
+  });
+
+  it('⛔ 하위 자원도 권한을 보고, 없는 사용자는 404 다', async () => {
+    await request(app.getHttpServer())
+      .put(`/api/app/users/1/roles`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send({ roleIds: [] })
+      .expect(403);
+
+    for (const path of ['roles', 'data-scopes']) {
+      await request(app.getHttpServer())
+        .get(`/api/app/users/999999999/${path}`)
+        .set('Cookie', cookie)
+        .expect(404);
+    }
+    await request(app.getHttpServer())
+      .post('/api/app/users/999999999:reset-password')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(404);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  async function spareRole(suffix: string): Promise<number> {
+    const role = await prisma.role.upsert({
+      where: { role_code: `${ROLE}_${suffix}` },
+      update: {},
+      create: { role_code: `${ROLE}_${suffix}`, role_name: suffix },
+    });
+    return Number(role.role_id);
+  }
+
+  async function putRoles(
+    appUserId: number,
+    roleIds: number[],
+  ): Promise<{ body: { items: { roleId: number }[] } }> {
+    const response = await request(app.getHttpServer())
+      .put(`/api/app/users/${appUserId}/roles`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ roleIds })
+      .expect(200);
+    return { body: response.body };
+  }
+
+  async function putScopes(
+    appUserId: number,
+    scopes: object[],
+  ): Promise<{ body: { items: object[] } }> {
+    const response = await request(app.getHttpServer())
+      .put(`/api/app/users/${appUserId}/data-scopes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ scopes })
+      .expect(200);
+    return { body: response.body };
+  }
+
+  /** 검사 사용자만 관리자인 상태를 만든다. API 를 거치지 않으므로 판정을 안 탄다. */
+  async function deactivateOtherAdmins(): Promise<bigint[]> {
+    const rows = await prisma.app_user.findMany({
+      where: {
+        is_active: true,
+        login_id: { not: LOGIN_ID },
+        user_role: {
+          some: {
+            role: { is_active: true, role_permission: { some: { permission_code: 'W-CO-02' } } },
+          },
+        },
+      },
+      select: { app_user_id: true },
+    });
+    const ids = rows.map((row) => row.app_user_id);
+    await prisma.app_user.updateMany({
+      where: { app_user_id: { in: ids } },
+      data: { is_active: false },
+    });
+    return ids;
+  }
+
+  async function restoreAdmins(ids: bigint[]): Promise<void> {
+    await prisma.app_user.updateMany({
+      where: { app_user_id: { in: ids } },
+      data: { is_active: true },
+    });
+  }
 
   async function create(loginId: string): Promise<{ appUserId: number }> {
     const response = await request(app.getHttpServer())
@@ -381,15 +665,19 @@ describe('사용자 마스터 (e2e)', () => {
     });
     const ids = [...made, ...generated].map((row) => row.app_user_id);
     await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: ids } } });
+    await prisma.user_data_scope.deleteMany({ where: { app_user_id: { in: ids } } });
     await prisma.user_role.deleteMany({ where: { app_user_id: { in: ids } } });
     await prisma.user_credential.deleteMany({ where: { app_user_id: { in: ids } } });
     await prisma.app_user.deleteMany({ where: { app_user_id: { in: ids } } });
 
     await prisma.department.deleteMany({ where: { department_code: DEPARTMENT_CODE } });
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
-      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
-      await prisma.role.delete({ where: { role_id: role.role_id } });
-    }
+    const roles = await prisma.role.findMany({
+      where: { role_code: { startsWith: ROLE } },
+      select: { role_id: true },
+    });
+    const roleIds = roles.map((row) => row.role_id);
+    await prisma.user_role.deleteMany({ where: { role_id: { in: roleIds } } });
+    await prisma.role_permission.deleteMany({ where: { role_id: { in: roleIds } } });
+    await prisma.role.deleteMany({ where: { role_id: { in: roleIds } } });
   }
 });

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -25,12 +26,14 @@ import {
   AppUserService,
   AppUserUpdate,
 } from './app-user.service';
+import { ScopeInput, UserAssignmentService } from './user-assignment.service';
 
 /** 사용자 마스터. 화면은 `W-CO-02`(사용자·역할·권한 관리)가 소유한다. */
 @Controller('app/users')
 export class AppUserController {
   constructor(
     private readonly users: AppUserService,
+    private readonly assignments: UserAssignmentService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -70,6 +73,65 @@ export class AppUserController {
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'appUser', (version) =>
       this.users.update(appUserId, version, body),
+    );
+  }
+
+  @Get(':appUserId/roles')
+  @Contract('GET /app/users/{appUserId}/roles')
+  async listRoles(@Param('appUserId', ParseIntPipe) appUserId: number): Promise<unknown> {
+    return { items: await this.assignments.listRoles(appUserId) };
+  }
+
+  @Put(':appUserId/roles')
+  @Contract('PUT /app/users/{appUserId}/roles')
+  async replaceRoles(
+    @Req() request: Request,
+    @Param('appUserId', ParseIntPipe) appUserId: number,
+    @Body() body: { roleIds: number[] },
+  ): Promise<unknown> {
+    // ⚠ 계약이 이 자리에 If-Match 를 선언하지 않았다 — 멱등 흡수만 탄다(되돌림 §Q).
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
+      items: await this.assignments.replaceRoles(
+        appUserId,
+        body.roleIds,
+        currentSession(request)?.userId,
+      ),
+    }));
+  }
+
+  @Get(':appUserId/data-scopes')
+  @Contract('GET /app/users/{appUserId}/data-scopes')
+  async listScopes(@Param('appUserId', ParseIntPipe) appUserId: number): Promise<unknown> {
+    return { items: await this.assignments.listScopes(appUserId) };
+  }
+
+  @Put(':appUserId/data-scopes')
+  @Contract('PUT /app/users/{appUserId}/data-scopes')
+  async replaceScopes(
+    @Req() request: Request,
+    @Param('appUserId', ParseIntPipe) appUserId: number,
+    @Body() body: { scopes: ScopeInput[] },
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
+      items: await this.assignments.replaceScopes(
+        appUserId,
+        body.scopes,
+        currentSession(request)?.userId,
+      ),
+    }));
+  }
+
+  @Post(':appUserId\\:reset-password')
+  @Contract('POST /app/users/{appUserId}:reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(
+    @Req() request: Request,
+    @Param('appUserId', ParseIntPipe) appUserId: number,
+  ): Promise<unknown> {
+    // ⛔ 임시 비밀번호는 «이 응답에서 한 번만» 보인다. 멱등 재전송은 저장된 앞의 응답을
+    // 그대로 돌려준다 — 새로 뽑으면 앞에 알려 준 값이 조용히 무효가 된다.
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.assignments.resetPassword(appUserId, currentSession(request)?.userId),
     );
   }
 
