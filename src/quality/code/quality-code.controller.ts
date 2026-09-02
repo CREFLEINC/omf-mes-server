@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,12 +15,14 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { CauseCodeQuery, CauseCodeService, CauseCodeWrite } from './cause-code.service';
+import { DefectCodeProcessService } from './defect-code-process.service';
 import { DefectCodeQuery, DefectCodeService, DefectCodeWrite } from './defect-code.service';
 
 /** 불량코드. 화면은 `W-06-03` 「불량코드」 탭이다. */
@@ -27,6 +30,7 @@ import { DefectCodeQuery, DefectCodeService, DefectCodeWrite } from './defect-co
 export class DefectCodeController {
   constructor(
     private readonly defectCodes: DefectCodeService,
+    private readonly mappings: DefectCodeProcessService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -66,6 +70,39 @@ export class DefectCodeController {
     return runVersioned(this.idempotency, request, response, 'defectCode', (version) =>
       this.defectCodes.update(defectCodeId, version, body),
     );
+  }
+
+  @Get(':defectCodeId/processes')
+  @Contract('GET /quality/defect-codes/{defectCodeId}/processes')
+  async listProcesses(@Param('defectCodeId', ParseIntPipe) defectCodeId: number): Promise<unknown> {
+    return { items: await this.mappings.list(defectCodeId) };
+  }
+
+  @Post(':defectCodeId/processes')
+  @Contract('POST /quality/defect-codes/{defectCodeId}/processes')
+  addProcess(
+    @Req() request: Request,
+    @Param('defectCodeId', ParseIntPipe) defectCodeId: number,
+    @Body() body: { processId: number },
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.mappings.add(defectCodeId, body.processId, currentSession(request)?.userId),
+    );
+  }
+
+  @Delete(':defectCodeId/processes/:processId')
+  @Contract('DELETE /quality/defect-codes/{defectCodeId}/processes/{processId}')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeProcess(
+    @Req() request: Request,
+    @Param('defectCodeId', ParseIntPipe) defectCodeId: number,
+    @Param('processId', ParseIntPipe) processId: number,
+  ): Promise<void> {
+    // ⛔ 204 다 — 본문이 없다. 멱등 기록에는 `undefined` 가 남는다.
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.mappings.remove(defectCodeId, processId);
+      return undefined;
+    });
   }
 
   @Post(':defectCodeId\\:activate')
