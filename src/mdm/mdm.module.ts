@@ -9,6 +9,8 @@ import { DepartmentService } from './organization/department.service';
 import { WorkerController } from './organization/worker.controller';
 import { LocationController } from './logistics/location.controller';
 import { LocationService } from './logistics/location.service';
+import { WarehouseLayoutController } from './logistics/warehouse-layout.controller';
+import { WarehouseLayoutService } from './logistics/warehouse-layout.service';
 import { WarehouseController } from './logistics/warehouse.controller';
 import { WarehouseService } from './logistics/warehouse.service';
 import { WorkerService } from './organization/worker.service';
@@ -17,7 +19,7 @@ import { ReferenceService } from './reference/reference.service';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, LocationController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, LocationService],
+  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController],
+  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService],
 })
 export class MdmModule {}
