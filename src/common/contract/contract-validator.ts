@@ -6,7 +6,6 @@ import {
   ContractOperation,
   ContractRegistry,
   OpenApiDocument,
-  OpenApiOperation,
   jsonPointerToken,
 } from './contract-registry';
 import { toErrorItems } from './validation-error.mapper';
@@ -206,5 +205,3 @@ export class ContractValidator {
     return compiled;
   }
 }
-
-export type { OpenApiOperation };
