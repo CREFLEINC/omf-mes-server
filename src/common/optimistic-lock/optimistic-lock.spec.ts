@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 
-import { ContractException } from '../errors';
+import { ContractException, ERROR_CODE } from '../errors';
 import { assertUpdated, parseIfMatch, setEtag } from './optimistic-lock';
 
 describe('낙관적 잠금 도구', () => {
@@ -60,7 +60,7 @@ describe('낙관적 잠금 도구', () => {
       }
 
       expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
-      expect(caught?.errors[0]).toMatchObject({ scope: 'screen', code: 'STALE_VERSION' });
+      expect(caught?.errors[0]).toMatchObject({ scope: 'screen', code: ERROR_CODE.STALE_VERSION });
     });
 
     it('⛔ STATE_LOCKED 가 아니다 — 재로드하면 풀리는 충돌이라 화면이 달리 말해야 한다', () => {
@@ -71,7 +71,8 @@ describe('낙관적 잠금 도구', () => {
         caught = error as ContractException;
       }
 
-      expect(caught?.errors[0].code).not.toBe('STATE_LOCKED');
+      expect(caught?.errors[0].code).not.toBe(ERROR_CODE.STATE_LOCKED);
+      expect(ERROR_CODE.STALE_VERSION).not.toBe(ERROR_CODE.STATE_LOCKED);
       expect(caught?.errors[0].message).toContain('다시 불러온');
     });
   });

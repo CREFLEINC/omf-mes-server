@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { ContractException } from '../errors';
+import { ContractException, ERROR_CODE } from '../errors';
 
 export const IF_MATCH_HEADER = 'if-match';
 export const ETAG_HEADER = 'ETag';
@@ -55,7 +55,7 @@ export function assertUpdated(affectedRows: number): void {
     throw new ContractException(HttpStatus.CONFLICT, [
       {
         scope: 'screen',
-        code: 'STALE_VERSION',
+        code: ERROR_CODE.STALE_VERSION,
         message: '다른 사용자가 먼저 저장했습니다. 다시 불러온 뒤 저장하세요.',
       },
     ]);
