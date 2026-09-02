@@ -17,6 +17,9 @@ import { InspectionAssignmentController } from './equipment/inspection-assignmen
 import { InspectionAssignmentService } from './equipment/inspection-assignment.service';
 import { InspectionItemController } from './equipment/inspection-item.controller';
 import { InspectionItemService } from './equipment/inspection-item.service';
+import { JudgmentTypeControlController, PartnerController } from './partner/partner.controller';
+import { JudgmentTypeControlService } from './partner/judgment-type-control.service';
+import { PartnerService } from './partner/partner.service';
 import { SparePartController } from './spare-part/spare-part.controller';
 import { SparePartService } from './spare-part/spare-part.service';
 import { TerminalController } from './terminal/terminal.controller';
@@ -38,7 +41,7 @@ import { ReferenceService } from './reference/reference.service';
 @Module({
   // AuthModule 이 JwtModule 을 내보낸다 — 단말 등록 토큰이 세션과 같은 비밀키로 서명된다.
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, AuthModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, TerminalController, SparePartController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, TerminalService, SparePartService],
+  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, TerminalController, SparePartController, PartnerController, JudgmentTypeControlController],
+  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, TerminalService, SparePartService, PartnerService, JudgmentTypeControlService],
 })
 export class MdmModule {}
