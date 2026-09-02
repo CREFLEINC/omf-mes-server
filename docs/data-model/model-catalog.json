@@ -22326,9 +22326,9 @@
                     "name": "effective_from",
                     "default": null,
                     "ordinal": 6,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "date",
-                    "description": null
+                    "description": "유효 시작일. 비면 시작 제한이 없다 (결정 07 — 선택)."
                 },
                 {
                     "name": "effective_to",

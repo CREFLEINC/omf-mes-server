@@ -20830,7 +20830,7 @@
       "ordinal": 6,
       "column": "effective_from",
       "data_type": "date",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
