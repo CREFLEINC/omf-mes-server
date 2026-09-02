@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -69,6 +70,7 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('⭐ 로그인이 200 과 계약 Session 을 주고 httpOnly 쿠키를 세운다', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
       .expect(200);
 
@@ -84,6 +86,7 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('⛔ 틀린 비밀번호는 401 과 계약 LoginFailure 다 — ErrorResponse 봉투가 아니다', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: '틀린값' })
       .expect(401);
 
@@ -98,10 +101,12 @@ describe('세션 엔드포인트 (e2e)', () => {
     // 문구를 글자로 검사하면 표현만 보게 되므로, 두 경우의 응답이 «같은가»를 본다.
     const wrongPassword = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: '틀린값' })
       .expect(401);
     const noSuchAccount = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: '없는-계정', password: '틀린값' })
       .expect(401);
 
@@ -111,6 +116,7 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('⛔ 없는 계정에는 remainingAttempts 가 오지 않는다', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: '없는-계정', password: '아무거나' })
       .expect(401);
 
@@ -120,6 +126,7 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('⭐ 계약 검증 가드가 로그인 본문을 거른다 — loginId 누락은 400', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ password: 'x' })
       .expect(400);
 
@@ -130,11 +137,13 @@ describe('세션 엔드포인트 (e2e)', () => {
     for (let i = 0; i < 5; i += 1) {
       await request(app.getHttpServer())
         .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
         .send({ loginId: LOGIN_ID, password: '틀린값' });
     }
 
     await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
       .expect(423);
   });
@@ -142,6 +151,7 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('쿠키로 현재 세션을 읽는다', async () => {
     const login = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
       .expect(200);
 
@@ -168,11 +178,13 @@ describe('세션 엔드포인트 (e2e)', () => {
   it('⭐ 로그아웃이 204 를 내고 쿠키를 지운 뒤에는 세션이 서지 않는다', async () => {
     const login = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
       .expect(200);
 
     const logout = await request(app.getHttpServer())
       .delete('/api/app/sessions/current')
+      .set('Idempotency-Key', randomUUID())
       .set('Cookie', login.headers['set-cookie'])
       .expect(204);
 
@@ -202,6 +214,7 @@ describe('세션 엔드포인트 (e2e)', () => {
 
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password: PASSWORD })
       .expect(200);
 
