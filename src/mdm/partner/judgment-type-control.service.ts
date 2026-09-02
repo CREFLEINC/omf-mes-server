@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertCodeValues } from '../code-reference';
+import { assertCodeValues } from '../../common/master';
 
 /**
  * 판정유형별 물류 통제. 결정 10 「출고·출하·Picking 차단 판정은 **이 단일 지점**을

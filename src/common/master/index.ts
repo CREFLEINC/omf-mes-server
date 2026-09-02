@@ -1,3 +1,5 @@
+export { assertCodeValues } from './code-reference';
+export type { CodeCheck } from './code-reference';
 export { optional, optionalDate, toDateString } from './column';
 export type { Editability } from './editability';
 export { runIdempotent, runVersioned } from './master-write';
