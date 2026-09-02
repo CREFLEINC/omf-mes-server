@@ -21,6 +21,31 @@ function maxmem(N: number, r: number): number {
   return 128 * N * r * 2;
 }
 
+/**
+ * 임시 비밀번호를 만든다 — 관리자 초기화가 응답에서 **한 번만** 보여 주고 서버는 해시만
+ * 저장한다(계약 `AppUserPasswordReset` · 단말 토큰 발급과 같은 규약).
+ *
+ * ⛔ 알파벳에서 `0`·`O`·`1`·`l`·`I` 를 뺐다. 관리자가 읽어 주고 작업자가 받아 적는 값이라
+ * 헷갈리는 글자가 섞이면 「비밀번호가 틀리다」가 실제 오류와 구분되지 않는다.
+ * ⛔ `%` 로 자르지 않고 «버리고 다시 뽑는다» — 256 이 알파벳 길이의 배수가 아니라
+ * 나머지 연산은 앞쪽 글자를 더 자주 뽑는다(모듈로 편향).
+ */
+const TEMPORARY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const TEMPORARY_LENGTH = 12;
+
+export function generateTemporaryPassword(): string {
+  const limit = 256 - (256 % TEMPORARY_ALPHABET.length);
+  let out = '';
+  while (out.length < TEMPORARY_LENGTH) {
+    for (const byte of randomBytes(TEMPORARY_LENGTH)) {
+      if (byte >= limit) continue;
+      out += TEMPORARY_ALPHABET[byte % TEMPORARY_ALPHABET.length];
+      if (out.length === TEMPORARY_LENGTH) break;
+    }
+  }
+  return out;
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
   const derived = await scrypt(password, salt, KEY_LENGTH, {
