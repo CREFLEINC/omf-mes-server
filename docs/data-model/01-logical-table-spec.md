@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2352개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2370개
 
 ## 범례
 
@@ -2322,15 +2322,15 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 |---|---|---|---:|---|---:|---|
 | `mdm.business_unit` | 사업 단위 | MASTER | 10 | `business_unit_id` | 1 | 사업 단위의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.code_group` | 코드 그룹 | MASTER | 11 | `code_group_id` | 0 | 코드 그룹의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.code_value` | 코드 값 | MASTER | 13 | `code_value_id` | 1 | 코드 값의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.department` | 부서 | MASTER | 11 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.code_value` | 코드 값 | MASTER | 15 | `code_value_id` | 1 | 코드 값의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.department` | 부서 | MASTER | 13 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment` | 설비 | MASTER | 18 | `equipment_id` | 4 | 설비의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group` | 설비 그룹 | MASTER | 10 | `equipment_group_id` | 1 | 설비 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_inspection_item` | 설비 그룹 검사 품목 | MASTER | 7 | `equipment_group_inspection_item_id` | 2 | 설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_member` | 설비 그룹 구성원 | MASTER | 7 | `equipment_group_member_id` | 2 | 설비 그룹 구성원의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_inspection_item` | 설비 검사 품목 | MASTER | 14 | `equipment_inspection_item_id` | 1 | 설비 검사 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_inspection_item_assignment` | 설비 검사 품목 배정 | MASTER | 7 | `equipment_inspection_item_assignment_id` | 2 | 설비 검사 품목 배정의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.item` | 품목 | MASTER | 23 | `item_id` | 2 | 품목의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.item` | 품목 | MASTER | 25 | `item_id` | 2 | 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_bu_item_map` | 품목 BU 품목 매핑 | MASTER | 9 | `item_bu_item_map_id` | 4 | 품목 BU 품목 매핑의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_external_code` | 품목 외부 코드 | MASTER | 7 | `item_external_code_id` | 2 | 품목 외부 코드의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_uom_conversion` | 품목 단위 CONVERSION | MASTER | 9 | `item_uom_conversion_id` | 3 | 품목 단위 CONVERSION의 업무 기준과 유효 상태를 관리한다. |
@@ -2354,7 +2354,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.work_calendar` | 작업 달력 | MASTER | 11 | `work_calendar_id` | 1 | 작업 달력의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar_application` | 작업 달력 적용 | MASTER | 8 | `work_calendar_application_id` | 1 | 작업 달력 적용의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.work_calendar_day` | 작업 달력 일자 | MASTER | 9 | `work_calendar_day_id` | 1 | 작업 달력 일자의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.worker` | 작업자 | MASTER | 14 | `worker_id` | 4 | 작업자의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.worker` | 작업자 | MASTER | 16 | `worker_id` | 4 | 작업자의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.worker_qualification` | 작업자 자격 | MASTER | 10 | `worker_qualification_id` | 2 | 작업자 자격의 업무 기준과 유효 상태를 관리한다. |
 
 ### mdm.business_unit — 사업 단위
@@ -2423,6 +2423,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 11 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 12 | `updated_by` | `bigint` | N | - | `-` |
 | 13 | `version_no` | `integer` | Y | - | `1` |
+| 14 | `name_ko` | `app.name_t` | N | - | `-` |
+| 15 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### mdm.department — 부서
 
@@ -2445,6 +2447,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 9 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 10 | `updated_by` | `bigint` | N | - | `-` |
 | 11 | `version_no` | `integer` | Y | - | `1` |
+| 12 | `name_ko` | `app.name_t` | N | - | `-` |
+| 13 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### mdm.equipment — 설비
 
@@ -2608,6 +2612,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 21 | `default_lot_size` | `app.qty_t` | N | - | `-` |
 | 22 | `is_development_item` | `boolean` | Y | - | `false` |
 | 23 | `recycle_type_code` | `app.code_t` | N | - | `-` |
+| 24 | `name_ko` | `app.name_t` | N | - | `-` |
+| 25 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### mdm.item_bu_item_map — 품목 BU 품목 매핑
 
@@ -3140,6 +3146,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 12 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 13 | `updated_by` | `bigint` | N | - | `-` |
 | 14 | `version_no` | `integer` | Y | - | `1` |
+| 15 | `name_ko` | `app.name_t` | N | - | `-` |
+| 16 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### mdm.worker_qualification — 작업자 자격
 
@@ -3173,7 +3181,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `planning.production_order_change_field` | 생산 지시 CHANGE FIELD | TRANSACTION | 6 | `production_order_change_field_id` | 1 | ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값. 수신 시각은 planning.production_order.last_change_received_at 이 갖는다. 행이 없으면 열거한 세 항목(수량·납기·상태) 밖이 바뀐 것이다 — 계약이 빈 배열을 허용한다. 근거: 이슈 #73. |
 | `planning.production_plan` | 생산 계획 | TRANSACTION | 18 | `production_plan_id` | 6 | 생산 계획의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.routing` | 라우팅 | TRANSACTION | 13 | `routing_id` | 1 | 라우팅의 업무 진행 상태와 실행 결과를 관리한다. |
-| `planning.routing_operation` | 라우팅 공정 | TRANSACTION | 20 | `routing_operation_id` | 2 | 라우팅 공정의 업무 진행 상태와 실행 결과를 관리한다. |
+| `planning.routing_operation` | 라우팅 공정 | TRANSACTION | 22 | `routing_operation_id` | 2 | 라우팅 공정의 업무 진행 상태와 실행 결과를 관리한다. |
 | `planning.routing_operation_dependency` | 라우팅 공정 선후행 | TRANSACTION | 6 | `routing_operation_dependency_id` | 2 | 라우팅 공정 선후행의 업무 진행 상태와 실행 결과를 관리한다. |
 
 ### planning.bom — BOM
@@ -3382,6 +3390,8 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 18 | `updated_by` | `bigint` | N | - | `-` |
 | 19 | `version_no` | `integer` | Y | - | `1` |
 | 20 | `is_subcontract` | `boolean` | Y | - | `false` |
+| 21 | `name_ko` | `app.name_t` | N | - | `-` |
+| 22 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### planning.routing_operation_dependency — 라우팅 공정 선후행
 
@@ -3895,16 +3905,16 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 
 | 물리 테이블 | 논리명 | 유형 | 컬럼 | PK | FK | 목적 |
 |---|---|---|---:|---|---:|---|
-| `quality.cause_code` | 원인 코드 | TRANSACTION | 11 | `cause_code_id` | 2 | 원인 코드의 업무 진행 상태와 실행 결과를 관리한다. |
+| `quality.cause_code` | 원인 코드 | TRANSACTION | 13 | `cause_code_id` | 2 | 원인 코드의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.concession` | 특채 | TRANSACTION | 20 | `concession_id` | 7 | 특채의 업무 진행 상태와 실행 결과를 관리한다. |
-| `quality.defect_code` | 불량 코드 | TRANSACTION | 12 | `defect_code_id` | 2 | 불량 코드의 업무 진행 상태와 실행 결과를 관리한다. |
+| `quality.defect_code` | 불량 코드 | TRANSACTION | 14 | `defect_code_id` | 2 | 불량 코드의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.defect_code_process` | 불량 코드 공정 | TRANSACTION | 6 | `defect_code_process_id` | 2 | 불량 코드 공정의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.defect_record` | 불량 기록 | TRANSACTION | 27 | `defect_record_id` | 14 | 불량 기록의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.disposition_decision` | 처리 판정 | TRANSACTION | 10 | `disposition_decision_id` | 4 | 처리 판정의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.equipment_calibration` | 설비 교정 | TRANSACTION | 10 | `equipment_calibration_id` | 2 | 설비 교정의 업무 진행 상태와 실행 결과를 관리한다. |
-| `quality.inspection_item_spec` | 검사 품목 SPEC | TRANSACTION | 17 | `inspection_item_spec_id` | 3 | 검사 품목 SPEC의 업무 진행 상태와 실행 결과를 관리한다. |
+| `quality.inspection_item_spec` | 검사 품목 SPEC | TRANSACTION | 19 | `inspection_item_spec_id` | 3 | 검사 품목 SPEC의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.inspection_measurement` | 검사 측정 | DETAIL | 12 | `inspection_measurement_id` | 3 | 검사 측정의 상위 업무 객체의 세부 항목과 수량·판정 정보를 관리한다. |
-| `quality.inspection_plan` | 검사 계획 | TRANSACTION | 18 | `inspection_plan_id` | 4 | 검사 계획의 업무 진행 상태와 실행 결과를 관리한다. |
+| `quality.inspection_plan` | 검사 계획 | TRANSACTION | 20 | `inspection_plan_id` | 4 | 검사 계획의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.inspection_plan_version` | 검사 계획 버전 | TRANSACTION | 20 | `inspection_plan_version_id` | 1 | 검사 계획 버전의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.inspection_request` | 검사 요청 | TRANSACTION | 21 | `inspection_request_id` | 6 | 검사 요청의 업무 진행 상태와 실행 결과를 관리한다. |
 | `quality.inspection_result` | 검사 실적 | TRANSACTION | 24 | `inspection_result_id` | 5 | 검사 실적의 업무 진행 상태와 실행 결과를 관리한다. |
@@ -3934,6 +3944,8 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 9 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 10 | `updated_by` | `bigint` | N | - | `-` |
 | 11 | `version_no` | `integer` | Y | - | `1` |
+| 12 | `name_ko` | `app.name_t` | N | - | `-` |
+| 13 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### quality.concession — 특채
 
@@ -3988,6 +4000,8 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 10 | `updated_by` | `bigint` | N | - | `-` |
 | 11 | `version_no` | `integer` | Y | - | `1` |
 | 12 | `disposition_type_code` | `app.code_t` | N | - | `-` |
+| 13 | `name_ko` | `app.name_t` | N | - | `-` |
+| 14 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### quality.defect_code_process — 불량 코드 공정
 
@@ -4113,6 +4127,8 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 15 | `automatic_judgment` | `boolean` | Y | - | `true` |
 | 16 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 17 | `created_by` | `bigint` | N | - | `-` |
+| 18 | `name_ko` | `app.name_t` | N | - | `-` |
+| 19 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### quality.inspection_measurement — 검사 측정
 
@@ -4165,6 +4181,8 @@ ERP 가 보낸 마지막 P/O 변경에서 바뀐 항목별 「변경 전」 값.
 | 16 | `pqc_skip_allowed` | `boolean` | Y | - | `false` |
 | 17 | `skip_reason_code` | `app.code_t` | N | - | `-` |
 | 18 | `simple_judgment_allowed` | `boolean` | Y | - | `false` |
+| 19 | `name_ko` | `app.name_t` | N | - | `-` |
+| 20 | `name_vi` | `app.name_t` | N | - | `-` |
 
 ### quality.inspection_plan_version — 검사 계획 버전
 

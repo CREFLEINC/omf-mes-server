@@ -9,7 +9,7 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2352,
+    "column_count": 2370,
     "relationship_count": 557,
     "schemas": {
       "app": 27,
@@ -1183,7 +1183,7 @@
       "logical_name": "코드 값",
       "lifecycle": "MASTER",
       "purpose": "코드 값의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 13,
+      "column_count": 15,
       "primary_key": "code_value_id",
       "foreign_key_count": 1,
       "is_partition": false
@@ -1195,7 +1195,7 @@
       "logical_name": "부서",
       "lifecycle": "MASTER",
       "purpose": "부서의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 11,
+      "column_count": 13,
       "primary_key": "department_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1279,7 +1279,7 @@
       "logical_name": "품목",
       "lifecycle": "MASTER",
       "purpose": "품목의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 23,
+      "column_count": 25,
       "primary_key": "item_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1567,7 +1567,7 @@
       "logical_name": "작업자",
       "lifecycle": "MASTER",
       "purpose": "작업자의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 14,
+      "column_count": 16,
       "primary_key": "worker_id",
       "foreign_key_count": 4,
       "is_partition": false
@@ -1675,7 +1675,7 @@
       "logical_name": "라우팅 공정",
       "lifecycle": "TRANSACTION",
       "purpose": "라우팅 공정의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 20,
+      "column_count": 22,
       "primary_key": "routing_operation_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1915,7 +1915,7 @@
       "logical_name": "원인 코드",
       "lifecycle": "TRANSACTION",
       "purpose": "원인 코드의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 11,
+      "column_count": 13,
       "primary_key": "cause_code_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1939,7 +1939,7 @@
       "logical_name": "불량 코드",
       "lifecycle": "TRANSACTION",
       "purpose": "불량 코드의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 12,
+      "column_count": 14,
       "primary_key": "defect_code_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -1999,7 +1999,7 @@
       "logical_name": "검사 품목 SPEC",
       "lifecycle": "TRANSACTION",
       "purpose": "검사 품목 SPEC의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 17,
+      "column_count": 19,
       "primary_key": "inspection_item_spec_id",
       "foreign_key_count": 3,
       "is_partition": false
@@ -2023,7 +2023,7 @@
       "logical_name": "검사 계획",
       "lifecycle": "TRANSACTION",
       "purpose": "검사 계획의 업무 진행 상태와 실행 결과를 관리한다.",
-      "column_count": 18,
+      "column_count": 20,
       "primary_key": "inspection_plan_id",
       "foreign_key_count": 4,
       "is_partition": false
@@ -15390,6 +15390,28 @@
       "default": "1"
     },
     {
+      "qualified_table": "mdm.code_value",
+      "schema": "mdm",
+      "table": "code_value",
+      "ordinal": 14,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.code_value",
+      "schema": "mdm",
+      "table": "code_value",
+      "ordinal": 15,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "mdm.department",
       "schema": "mdm",
       "table": "department",
@@ -15509,6 +15531,28 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "mdm.department",
+      "schema": "mdm",
+      "table": "department",
+      "ordinal": 12,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.department",
+      "schema": "mdm",
+      "table": "department",
+      "ordinal": 13,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "mdm.equipment",
@@ -16452,6 +16496,28 @@
       "ordinal": 23,
       "column": "recycle_type_code",
       "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.item",
+      "schema": "mdm",
+      "table": "item",
+      "ordinal": 24,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.item",
+      "schema": "mdm",
+      "table": "item",
+      "ordinal": 25,
+      "column": "name_vi",
+      "data_type": "app.name_t",
       "required": false,
       "key_reference": "-",
       "default": ""
@@ -19405,6 +19471,28 @@
       "default": "1"
     },
     {
+      "qualified_table": "mdm.worker",
+      "schema": "mdm",
+      "table": "worker",
+      "ordinal": 15,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "mdm.worker",
+      "schema": "mdm",
+      "table": "worker",
+      "ordinal": 16,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "mdm.worker_qualification",
       "schema": "mdm",
       "table": "worker_qualification",
@@ -20822,6 +20910,28 @@
       "required": true,
       "key_reference": "-",
       "default": "false"
+    },
+    {
+      "qualified_table": "planning.routing_operation",
+      "schema": "planning",
+      "table": "routing_operation",
+      "ordinal": 21,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "planning.routing_operation",
+      "schema": "planning",
+      "table": "routing_operation",
+      "ordinal": 22,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "planning.routing_operation_dependency",
@@ -23981,6 +24091,28 @@
       "default": "1"
     },
     {
+      "qualified_table": "quality.cause_code",
+      "schema": "quality",
+      "table": "cause_code",
+      "ordinal": 12,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "quality.cause_code",
+      "schema": "quality",
+      "table": "cause_code",
+      "ordinal": 13,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "quality.concession",
       "schema": "quality",
       "table": "concession",
@@ -24328,6 +24460,28 @@
       "ordinal": 12,
       "column": "disposition_type_code",
       "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "quality.defect_code",
+      "schema": "quality",
+      "table": "defect_code",
+      "ordinal": 13,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "quality.defect_code",
+      "schema": "quality",
+      "table": "defect_code",
+      "ordinal": 14,
+      "column": "name_vi",
+      "data_type": "app.name_t",
       "required": false,
       "key_reference": "-",
       "default": ""
@@ -25103,6 +25257,28 @@
       "default": ""
     },
     {
+      "qualified_table": "quality.inspection_item_spec",
+      "schema": "quality",
+      "table": "inspection_item_spec",
+      "ordinal": 18,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "quality.inspection_item_spec",
+      "schema": "quality",
+      "table": "inspection_item_spec",
+      "ordinal": 19,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "quality.inspection_measurement",
       "schema": "quality",
       "table": "inspection_measurement",
@@ -25431,6 +25607,28 @@
       "required": true,
       "key_reference": "-",
       "default": "false"
+    },
+    {
+      "qualified_table": "quality.inspection_plan",
+      "schema": "quality",
+      "table": "inspection_plan",
+      "ordinal": 19,
+      "column": "name_ko",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "quality.inspection_plan",
+      "schema": "quality",
+      "table": "inspection_plan",
+      "ordinal": 20,
+      "column": "name_vi",
+      "data_type": "app.name_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "quality.inspection_plan_version",
