@@ -31,4 +31,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /mdm/locations/{locationId}': ['W-06-07'],
   'POST /mdm/locations/{locationId}:activate': ['W-06-07'],
   'POST /mdm/locations/{locationId}:deactivate': ['W-06-07'],
+
+  // `W-06-05` 품목 마스터(MES 확장 속성) — 도출표에 조회만 들어왔다(§3 이 좌측 목록만
+  // 적었다). 편집이 그 화면의 본체다.
+  'PUT /mdm/items/{itemId}': ['W-06-05'],
 };
