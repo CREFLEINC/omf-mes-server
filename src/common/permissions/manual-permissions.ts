@@ -70,4 +70,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 정작 이 목록을 소유한 화면이 빠져 있다 — 요구서 §3-1 이 화면 «액션»(추가·저장·중지)만
   // 적어 좌측 목록이 도출되지 않는다. 그래서 두 표는 합집합으로 겹친다.
   'GET /app/users': ['W-CO-02'],
+
+  // 같은 화면의 역할 탭. §3-1 이 「역할 추가」·「저장」·「사용 중지」만 적어 목록·수정·전이가
+  // 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
+  'GET /app/roles': ['W-CO-02'],
+  'PUT /app/roles/{roleId}': ['W-CO-02'],
+  'POST /app/roles/{roleId}:activate': ['W-CO-02'],
+  'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
 };

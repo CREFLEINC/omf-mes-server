@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { AppDomainModule } from './app/app-domain.module';
 import { AuthModule } from './auth/auth.module';
 import { ContractModule } from './common/contract';
 import { IdempotencyModule } from './common/idempotency';
@@ -28,6 +29,7 @@ import { PrismaModule } from './prisma/prisma.module';
     OptimisticLockModule,
     HealthModule,
     MdmModule,
+    AppDomainModule,
   ],
 })
 export class AppModule {}
