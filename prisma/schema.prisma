@@ -1995,42 +1995,43 @@ model partner_role {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model plant {
-  plant_id              BigInt                  @id @default(autoincrement())
-  legal_entity_id       BigInt
-  business_unit_id      BigInt?
-  plant_code            String                  @db.VarChar(50)
-  plant_name            String                  @db.VarChar(200)
-  timezone_code         String                  @db.VarChar(64)
-  is_active             Boolean                 @default(true)
-  created_at            DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by            BigInt?
-  updated_at            DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by            BigInt?
-  version_no            Int                     @default(1)
-  numbering_rule        numbering_rule[]
-  operation_policy      operation_policy[]
-  printer               printer[]
-  user_data_scope       user_data_scope[]
-  inventory_balance     inventory_balance[]
-  inventory_transaction inventory_transaction[]
-  asn                   asn[]
-  goods_receipt         goods_receipt[]
-  inbound_receipt       inbound_receipt[]
-  purchase_order        purchase_order[]
-  recycle_entry         recycle_entry[]
-  equipment             equipment[]
-  equipment_group       equipment_group[]
-  mold                  mold[]
-  business_unit         business_unit?          @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  legal_entity          legal_entity            @relation(fields: [legal_entity_id], references: [legal_entity_id], onDelete: NoAction, onUpdate: NoAction)
-  production_line       production_line[]
-  shift                 shift[]
-  terminal              terminal[]
-  warehouse             warehouse[]
-  work_calendar         work_calendar[]
-  worker                worker[]
-  production_order      production_order[]
-  lot                   lot[]
+  plant_id                  BigInt                      @id @default(autoincrement())
+  legal_entity_id           BigInt
+  business_unit_id          BigInt?
+  plant_code                String                      @db.VarChar(50)
+  plant_name                String                      @db.VarChar(200)
+  timezone_code             String                      @db.VarChar(64)
+  is_active                 Boolean                     @default(true)
+  created_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                BigInt?
+  updated_at                DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                BigInt?
+  version_no                Int                         @default(1)
+  numbering_rule            numbering_rule[]
+  operation_policy          operation_policy[]
+  printer                   printer[]
+  user_data_scope           user_data_scope[]
+  inventory_balance         inventory_balance[]
+  inventory_transaction     inventory_transaction[]
+  asn                       asn[]
+  goods_receipt             goods_receipt[]
+  inbound_receipt           inbound_receipt[]
+  purchase_order            purchase_order[]
+  recycle_entry             recycle_entry[]
+  equipment                 equipment[]
+  equipment_group           equipment_group[]
+  equipment_inspection_item equipment_inspection_item[]
+  mold                      mold[]
+  business_unit             business_unit?              @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  legal_entity              legal_entity                @relation(fields: [legal_entity_id], references: [legal_entity_id], onDelete: NoAction, onUpdate: NoAction)
+  production_line           production_line[]
+  shift                     shift[]
+  terminal                  terminal[]
+  warehouse                 warehouse[]
+  work_calendar             work_calendar[]
+  worker                    worker[]
+  production_order          production_order[]
+  lot                       lot[]
 
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
@@ -4303,7 +4304,7 @@ model equipment_group_member {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model equipment_inspection_item {
   equipment_inspection_item_id         BigInt                                 @id @default(autoincrement())
-  inspection_item_code                 String                                 @unique @db.VarChar(50)
+  inspection_item_code                 String                                 @db.VarChar(50)
   inspection_item_name                 String                                 @db.VarChar(200)
   data_type_code                       String                                 @db.VarChar(50)
   uom_id                               BigInt?
@@ -4316,12 +4317,19 @@ model equipment_inspection_item {
   updated_at                           DateTime                               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                           BigInt?
   version_no                           Int                                    @default(1)
+  plant_id                             BigInt
+  inspection_type_code                 String                                 @db.VarChar(50)
+  judgment_method_code                 String                                 @db.VarChar(50)
+  inspection_point                     String?                                @db.VarChar(200)
+  sequence_no                          Int
   equipment_inspection_result          equipment_inspection_result[]
   maintenance_order_item               maintenance_order_item[]
   equipment_group_inspection_item      equipment_group_inspection_item[]
+  plant                                plant                                  @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   uom                                  uom?                                   @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   equipment_inspection_item_assignment equipment_inspection_item_assignment[]
 
+  @@unique([plant_id, inspection_item_code], map: "uq_equipment_inspection_item")
   @@schema("mdm")
 }
 

@@ -16848,7 +16848,7 @@
                     "ordinal": 4,
                     "nullable": false,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "judgment_method_code 에서 도출한다 — MEASUREMENT=NUMERIC, VISUAL=BOOLEAN. 계약이 이 칸을 받지 않는다."
                 },
                 {
                     "name": "uom_id",
@@ -16929,6 +16929,46 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "plant_id",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "inspection_type_code",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "judgment_method_code",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "육안(VISUAL) 또는 측정값(MEASUREMENT). MEASUREMENT 면 단위·상하한이 필수다."
+                },
+                {
+                    "name": "inspection_point",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "sequence_no",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
                 }
             ],
             "description": null,
@@ -16936,6 +16976,19 @@
                 "equipment_inspection_item_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "equipment_inspection_item_plant_id_fkey",
+                    "columns": [
+                        "plant_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "plant",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "plant_id"
+                    ]
+                },
                 {
                     "name": "equipment_inspection_item_uom_id_fkey",
                     "columns": [
@@ -16954,8 +17007,9 @@
             "qualified_name": "mdm.equipment_inspection_item",
             "unique_constraints": [
                 {
-                    "name": "equipment_inspection_item_inspection_item_code_key",
+                    "name": "uq_equipment_inspection_item",
                     "columns": [
+                        "plant_id",
                         "inspection_item_code"
                     ]
                 }
@@ -35814,6 +35868,20 @@
             ],
             "target_columns": [
                 "equipment_id"
+            ]
+        },
+        {
+            "name": "equipment_inspection_item_plant_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "equipment_inspection_item",
+            "target_table": "plant",
+            "source_schema": "mdm",
+            "target_schema": "mdm",
+            "source_columns": [
+                "plant_id"
+            ],
+            "target_columns": [
+                "plant_id"
             ]
         },
         {
