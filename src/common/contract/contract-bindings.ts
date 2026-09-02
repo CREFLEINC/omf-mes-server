@@ -26,6 +26,8 @@ function isConstructor(value: unknown): value is Constructor {
 export async function collectContractBindings(root: string): Promise<ContractBinding[]> {
   const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
     .filter((name) => name.endsWith('.controller.ts'))
+    // 계수기 자신을 시험하는 픽스처는 실제 계수에 섞지 않는다.
+    .filter((name) => !name.split(/[\\/]/).some((segment) => segment.startsWith('__')))
     .sort();
 
   const bindings: ContractBinding[] = [];
