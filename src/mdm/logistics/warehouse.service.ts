@@ -4,7 +4,17 @@ import { Prisma } from '@prisma/client';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import {
+  Editability,
+  ReferenceQuery,
+  Referrer,
+  assertCodeValues,
+  assertNotBlank,
+  countReferences,
+  optional,
+  referencePage,
+  referenceWhere,
+} from '../../common/master';
 
 /**
  * 창고를 FK 로 가리키는 자리 전부. `pg_constraint` 에서 뽑았고, e2e 가 같은 질의로
@@ -132,6 +142,8 @@ export class WarehouseService {
   }
 
   async create(input: WarehouseCreate): Promise<WarehouseView> {
+    // 계약이 `WarehouseCreate.warehouseCode` 에 「공백만 불가」로 적었다.
+    assertNotBlank([['warehouseCode', input.warehouseCode]]);
     await this.assertCodes(input);
     return view(
       await this.prisma.warehouse.create({

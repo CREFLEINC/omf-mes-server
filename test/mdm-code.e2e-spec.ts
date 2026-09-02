@@ -137,6 +137,17 @@ describe('공통코드 마스터 (e2e)', () => {
       .expect(403);
   });
 
+  it('⛔ 그룹코드가 공백만이면 400 이다 — 계약이 「공백만 불가」로 적었다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/code-groups')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ groupCode: '  ', groupName: '공백만' })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'groupCode', code: 'REQUIRED' });
+  });
+
   it('⭐ 등록하고, 상세가 계약 스키마와 ETag 를 준다', async () => {
     const { id, etag } = await createGroup(`${PREFIX}-A`);
 

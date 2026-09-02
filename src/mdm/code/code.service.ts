@@ -5,7 +5,17 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability, ReferenceQuery, filter, optional, optionalDate, referencePage, referenceWhere, toDateString } from '../../common/master';
+import {
+  Editability,
+  ReferenceQuery,
+  assertNotBlank,
+  filter,
+  optional,
+  optionalDate,
+  referencePage,
+  referenceWhere,
+  toDateString,
+} from '../../common/master';
 
 /** 계약 `CodeGroup`·`CodeValue` 와 동형. 필드는 `x-source-column` 을 그대로 따른다. */
 interface CodeGroupView {
@@ -100,6 +110,8 @@ export class CodeService {
     groupName: string;
     description?: string | null;
   }): Promise<CodeGroupView> {
+    // 계약이 `CodeGroupCreate.groupCode` 에 「공백만 불가」로 적었다.
+    assertNotBlank([['groupCode', input.groupCode]]);
     return this.groupView(
       await this.prisma.code_group.create({
         data: {

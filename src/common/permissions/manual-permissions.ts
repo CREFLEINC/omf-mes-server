@@ -78,4 +78,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /app/roles/{roleId}:activate': ['W-CO-02'],
   'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
   'PUT /app/roles/{roleId}/permissions': ['W-CO-02'],
+  'PUT /app/users/{appUserId}': ['W-CO-02'],
+  'POST /app/users/{appUserId}:activate': ['W-CO-02'],
+  'POST /app/users/{appUserId}:deactivate': ['W-CO-02'],
 };
