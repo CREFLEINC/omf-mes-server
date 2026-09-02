@@ -108,4 +108,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /quality/cause-codes/{causeCodeId}': ['W-06-03'],
   'POST /quality/cause-codes/{causeCodeId}:activate': ['W-06-03'],
   'POST /quality/cause-codes/{causeCodeId}:deactivate': ['W-06-03'],
+
+  // `W-06-02` 검사기준 등록 — §3-3 이 「기준 추가」·「승인」만 적어 수정·활성 전이가
+  // 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
+  'PUT /quality/inspection-plans/{inspectionPlanId}': ['W-06-02'],
+  'POST /quality/inspection-plans/{inspectionPlanId}:approve': ['W-06-02'],
+  'POST /quality/inspection-plans/{inspectionPlanId}:activate': ['W-06-02'],
+  'POST /quality/inspection-plans/{inspectionPlanId}:deactivate': ['W-06-02'],
 };
