@@ -24,10 +24,25 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(entries.filter(([, permissions]) => permissions.length === 0)).toEqual([]);
   });
 
-  it('⛔ 수동표가 도출표와 겹치지 않는다 — 겹치면 도출이 이미 답을 준 자리다', () => {
-    const overlap = Object.keys(MANUAL_PERMISSIONS).filter((key) => key in DERIVED_PERMISSIONS);
+  it('⛔ 수동표가 도출표의 권한을 되풀이하지 않는다 — 도출이 이미 답을 준 자리다', () => {
+    // 같은 «키»를 적는 것은 막지 않는다. 도출표는 요구서 §3 의 화면 «액션»만 담아
+    // 「그 목록을 소유한 화면」이 빠지는 자리가 있다(`GET /app/users` 의 `W-CO-02`).
+    // 막아야 하는 것은 같은 키에 같은 «권한»을 다시 적는 것 — 그건 순수한 중복이다.
+    const repeated = Object.entries(MANUAL_PERMISSIONS).flatMap(([key, permissions]) =>
+      permissions.filter((code) => (DERIVED_PERMISSIONS[key] ?? []).includes(code)),
+    );
 
-    expect(overlap).toEqual([]);
+    expect(repeated).toEqual([]);
+  });
+
+  it('⭐ 두 표가 합집합으로 겹친다 — 덮어쓰기면 도출된 화면이 조용히 빠진다', () => {
+    const shared = Object.keys(MANUAL_PERMISSIONS).filter((key) => key in DERIVED_PERMISSIONS);
+
+    for (const key of shared) {
+      expect(OPERATION_PERMISSIONS[key]).toEqual(
+        expect.arrayContaining([...DERIVED_PERMISSIONS[key], ...MANUAL_PERMISSIONS[key]]),
+      );
+    }
   });
 
   it('⚠ 계약이 403 을 선언한 자리 중 아직 절반쯤만 등록됐다 — 나머지는 게이트가 던진다', () => {
