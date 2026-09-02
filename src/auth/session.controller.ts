@@ -16,20 +16,14 @@ import type { Request, Response } from 'express';
 import { Contract } from '../common/contract';
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { CredentialService } from './credential.service';
-import { clearSessionCookie, readSessionCookie, setSessionCookie } from './session-cookie';
+import { clearSessionCookie, setSessionCookie } from './session-cookie';
+import { SessionResolver, SessionToken } from './session-resolver.service';
 import { SessionService } from './session.service';
 import { LoginFailure, Session } from './session.types';
 
 interface LoginRequest {
   loginId: string;
   password: string;
-}
-
-/** 쿠키에 실리는 것. 최소로 둔다 — 나머지는 요청마다 DB 에서 다시 푼다. */
-interface SessionToken {
-  sub: number;
-  /** 이번 로그인 «직전» 시각. 계약 `Session.lastLoginAt` 이 그 뜻이다. */
-  lla?: string;
 }
 
 @Controller('app/sessions')
@@ -39,6 +33,7 @@ export class SessionController {
     private readonly sessions: SessionService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly resolver: SessionResolver,
   ) {}
 
   private get maxAgeSeconds(): number {
@@ -104,7 +99,7 @@ export class SessionController {
   @Get('current')
   @Contract('GET /app/sessions/current')
   async current(@Req() request: Request): Promise<Session> {
-    const session = await this.resolve(request);
+    const session = await this.resolver.resolve(request);
     if (!session) {
       // ⚠ 계약이 이 경로에 200 만 선언했다 — 미인증 응답을 정하지 않았다.
       // 401 로 낸다(설계팀 확인 대상). 봉투는 ErrorResponse 로 맞춘다.
@@ -125,16 +120,4 @@ export class SessionController {
     clearSessionCookie(response);
   }
 
-  private async resolve(request: Request): Promise<Session | null> {
-    const token = readSessionCookie(request.headers.cookie);
-    if (!token) return null;
-
-    try {
-      const payload = await this.jwt.verifyAsync<SessionToken>(token);
-      return this.sessions.build(payload.sub, payload.lla ? new Date(payload.lla) : null);
-    } catch {
-      // 만료·위조·형식 오류를 가리지 않는다 — 어느 쪽이든 「로그인이 필요하다」로 같다.
-      return null;
-    }
-  }
 }

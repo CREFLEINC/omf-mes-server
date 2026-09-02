@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 
+import { AuthenticationGuard } from './authentication.guard';
 import { CredentialService } from './credential.service';
 import { SessionController } from './session.controller';
+import { SessionResolver } from './session-resolver.service';
 import { SessionService } from './session.service';
 
 @Module({
@@ -23,7 +26,12 @@ import { SessionService } from './session.service';
     }),
   ],
   controllers: [SessionController],
-  providers: [CredentialService, SessionService],
-  exports: [CredentialService, SessionService],
+  providers: [
+    CredentialService,
+    SessionService,
+    SessionResolver,
+    { provide: APP_GUARD, useClass: AuthenticationGuard },
+  ],
+  exports: [CredentialService, SessionService, SessionResolver],
 })
 export class AuthModule {}
