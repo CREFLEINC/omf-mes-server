@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
+import { RoutingOperationService } from './routing/routing-operation.service';
 import { RoutingController } from './routing/routing.controller';
 import { RoutingService } from './routing/routing.service';
 
@@ -12,6 +13,6 @@ import { RoutingService } from './routing/routing.service';
 @Module({
   imports: [PrismaModule, IdempotencyModule],
   controllers: [RoutingController],
-  providers: [RoutingService],
+  providers: [RoutingService, RoutingOperationService],
 })
 export class PlanningModule {}
