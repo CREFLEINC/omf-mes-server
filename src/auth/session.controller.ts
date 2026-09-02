@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 
 import { Contract } from '../common/contract';
 import { ContractException, ERROR_CODE } from '../common/errors';

@@ -6,7 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 
 import { ContractException } from './contract.exception';
 import { INTERNAL_ERROR_CODE } from './error-codes';
