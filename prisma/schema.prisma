@@ -2071,25 +2071,26 @@ model process {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model production_line {
-  production_line_id     BigInt            @id @default(autoincrement())
-  plant_id               BigInt
-  parent_line_id         BigInt?
-  line_code              String            @db.VarChar(50)
-  line_name              String            @db.VarChar(200)
-  line_type_code         String            @default("LINE") @db.VarChar(50)
-  is_active              Boolean           @default(true)
-  created_at             DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by             BigInt?
-  updated_at             DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by             BigInt?
-  version_no             Int               @default(1)
-  planned_stop           planned_stop[]
-  equipment              equipment[]
-  parent_production_line production_line?  @relation("production_lineToproduction_line", fields: [parent_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
-  child_production_lines production_line[] @relation("production_lineToproduction_line")
-  plant                  plant             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  production_plan        production_plan[]
-  work_order             work_order[]
+  production_line_id              BigInt                            @id @default(autoincrement())
+  plant_id                        BigInt
+  parent_line_id                  BigInt?
+  line_code                       String                            @db.VarChar(50)
+  line_name                       String                            @db.VarChar(200)
+  line_type_code                  String                            @default("LINE") @db.VarChar(50)
+  is_active                       Boolean                           @default(true)
+  created_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                      BigInt?
+  updated_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                      BigInt?
+  version_no                      Int                               @default(1)
+  planned_stop                    planned_stop[]
+  equipment                       equipment[]
+  equipment_group_inspection_item equipment_group_inspection_item[]
+  parent_production_line          production_line?                  @relation("production_lineToproduction_line", fields: [parent_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
+  child_production_lines          production_line[]                 @relation("production_lineToproduction_line")
+  plant                           plant                             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  production_plan                 production_plan[]
+  work_order                      work_order[]
 
   @@unique([plant_id, line_code], map: "uq_production_line")
   @@schema("mdm")
@@ -4252,19 +4253,18 @@ model tool_usage {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model equipment_group {
-  equipment_group_id              BigInt                            @id @default(autoincrement())
-  plant_id                        BigInt
-  equipment_group_code            String                            @db.VarChar(50)
-  equipment_group_name            String                            @db.VarChar(200)
-  is_active                       Boolean                           @default(true)
-  created_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by                      BigInt?
-  updated_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by                      BigInt?
-  version_no                      Int                               @default(1)
-  plant                           plant                             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  equipment_group_inspection_item equipment_group_inspection_item[]
-  equipment_group_member          equipment_group_member[]
+  equipment_group_id     BigInt                   @id @default(autoincrement())
+  plant_id               BigInt
+  equipment_group_code   String                   @db.VarChar(50)
+  equipment_group_name   String                   @db.VarChar(200)
+  is_active              Boolean                  @default(true)
+  created_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by             BigInt?
+  updated_at             DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by             BigInt?
+  version_no             Int                      @default(1)
+  plant                  plant                    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment_group_member equipment_group_member[]
 
   @@unique([plant_id, equipment_group_code], map: "uq_equipment_group")
   @@schema("mdm")
@@ -4272,16 +4272,20 @@ model equipment_group {
 
 model equipment_group_inspection_item {
   equipment_group_inspection_item_id BigInt                    @id @default(autoincrement())
-  equipment_group_id                 BigInt
+  production_line_id                 BigInt
   equipment_inspection_item_id       BigInt
   display_order                      Int                       @default(100)
   is_required_override               Boolean?
   created_at                         DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                         BigInt?
+  cycle_type_code                    String                    @db.VarChar(50)
+  cycle_interval                     Int
+  cycle_base_date                    DateTime?                 @db.Date
+  is_active                          Boolean                   @default(true)
   equipment_inspection_item          equipment_inspection_item @relation(fields: [equipment_inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction, map: "equipment_group_inspection_it_equipment_inspection_item_id_fkey")
-  equipment_group                    equipment_group           @relation(fields: [equipment_group_id], references: [equipment_group_id], onDelete: NoAction, onUpdate: NoAction)
+  production_line                    production_line           @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([equipment_group_id, equipment_inspection_item_id], map: "uq_equipment_group_inspection_item")
+  @@unique([production_line_id, equipment_inspection_item_id], map: "uq_equipment_group_inspection_item")
   @@schema("mdm")
 }
 
@@ -4341,6 +4345,10 @@ model equipment_inspection_item_assignment {
   is_required_override                    Boolean?
   created_at                              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                              BigInt?
+  cycle_type_code                         String                    @db.VarChar(50)
+  cycle_interval                          Int
+  cycle_base_date                         DateTime?                 @db.Date
+  is_active                               Boolean                   @default(true)
   equipment_inspection_item               equipment_inspection_item @relation(fields: [equipment_inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction, map: "equipment_inspection_item_ass_equipment_inspection_item_id_fkey")
   equipment                               equipment                 @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
 

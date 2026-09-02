@@ -202,15 +202,22 @@ describe('설비 점검항목 (e2e)', () => {
 
   it('⭐ 부여된 곳이 있으면 코드가 잠긴다 — 설비와 그룹을 함께 센다', async () => {
     const { id } = await create(visual(`${PREFIX}-REF`));
-    const group = await prisma.equipment_group.create({
+    // 설비 그룹의 저장처는 mdm.production_line 이다(#122).
+    const group = await prisma.production_line.create({
       data: {
         plant_id: plantId,
-        equipment_group_code: `${PREFIX}-G`,
-        equipment_group_name: `${PREFIX}-G`,
+        line_code: `${PREFIX}-G`,
+        line_name: `${PREFIX}-G`,
+        line_type_code: 'LINE',
       },
     });
     await prisma.equipment_group_inspection_item.create({
-      data: { equipment_group_id: group.equipment_group_id, equipment_inspection_item_id: id },
+      data: {
+        production_line_id: group.production_line_id,
+        equipment_inspection_item_id: id,
+        cycle_type_code: 'DAY',
+        cycle_interval: 1,
+      },
     });
 
     const detail = await request(app.getHttpServer())
@@ -330,9 +337,7 @@ describe('설비 점검항목 (e2e)', () => {
     await prisma.equipment_inspection_item.deleteMany({
       where: { inspection_item_code: { startsWith: PREFIX } },
     });
-    await prisma.equipment_group.deleteMany({
-      where: { equipment_group_code: { startsWith: PREFIX } },
-    });
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
