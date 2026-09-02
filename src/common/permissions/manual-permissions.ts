@@ -38,4 +38,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /mdm/items/{itemId}/bu-item-maps': ['W-06-05'],
   'PUT /mdm/items/{itemId}/external-codes': ['W-06-05'],
   'PUT /mdm/items/{itemId}/uom-conversions': ['W-06-05'],
+
+  // `W-05-12` 설비·그룹 마스터 — §5-1 이 「중지」만 적어 도출표에 :deactivate 만 들어왔다.
+  // 재개는 그 짝이고, 같은 화면의 같은 자원이다.
+  'POST /mdm/equipment-groups/{equipmentGroupId}:activate': ['W-05-12'],
 };
