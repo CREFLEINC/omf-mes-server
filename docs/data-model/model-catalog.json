@@ -16242,6 +16242,10 @@
             "name": "equipment",
             "checks": [
                 {
+                    "name": "ck_equipment_calibration_cycle",
+                    "expression": "CHECK (calibration_cycle_interval IS NULL OR calibration_cycle_interval >= 1)"
+                },
+                {
                     "name": "equipment_version_no_check",
                     "expression": "CHECK (version_no > 0)"
                 }
@@ -16391,6 +16395,38 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "calibration_cycle_type_code",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "검교정 주기 단위(CYCLE_TYPE). 점검 부여 주기와 같은 어휘를 쓴다 (omf-mes#188)."
+                },
+                {
+                    "name": "calibration_cycle_interval",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "integer",
+                    "description": "검교정 주기 간격. 단위와 함께 차기 검교정 예정일을 산출한다."
+                },
+                {
+                    "name": "precision_value",
+                    "default": null,
+                    "ordinal": 21,
+                    "nullable": true,
+                    "data_type": "numeric(20,6)",
+                    "description": null
+                },
+                {
+                    "name": "precision_uom_id",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
                 }
             ],
             "description": null,
@@ -16422,6 +16458,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "plant_id"
+                    ]
+                },
+                {
+                    "name": "equipment_precision_uom_id_fkey",
+                    "columns": [
+                        "precision_uom_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "uom",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "uom_id"
                     ]
                 },
                 {
@@ -35842,6 +35891,20 @@
             ],
             "target_columns": [
                 "plant_id"
+            ]
+        },
+        {
+            "name": "equipment_precision_uom_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "equipment",
+            "target_table": "uom",
+            "source_schema": "mdm",
+            "target_schema": "mdm",
+            "source_columns": [
+                "precision_uom_id"
+            ],
+            "target_columns": [
+                "uom_id"
             ]
         },
         {
