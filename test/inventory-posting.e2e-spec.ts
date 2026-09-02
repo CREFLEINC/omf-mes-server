@@ -18,6 +18,7 @@ describe('재고 posting (실 DB)', () => {
   let itemId: number;
   let uomId: number;
   let plantId: number;
+  let businessUnitId: bigint;
   let hereA: PostingEndpoint;
   let hereB: PostingEndpoint;
 
@@ -73,6 +74,7 @@ describe('재고 posting (실 DB)', () => {
     });
     itemId = Number(item.item_id);
 
+    businessUnitId = unit.business_unit_id;
     hereA = await makeEndpoint(unit.business_unit_id, plant.plant_id, 'A', 'NORMAL');
     hereB = await makeEndpoint(unit.business_unit_id, plant.plant_id, 'B', 'NORMAL');
   });
@@ -301,6 +303,21 @@ describe('재고 posting (실 DB)', () => {
         UPDATE inventory.inventory_transaction_line SET qty = 1
          WHERE inventory_transaction_id = ${result.inventoryTransactionId}`,
     ).rejects.toThrow(/역트랜잭션/);
+  });
+
+  it('⭐ 같은 «새» 차원에 동시에 전기해도 잃지 않는다 — 두 걸음의 경합 안전', async () => {
+    // ①(0 행 만들기)이 동시에 여러 번 도는 자리다. ON CONFLICT DO NOTHING 이 하나만
+    // 세우고 나머지는 ②의 UPDATE 가 그 행을 잠그며 줄을 선다.
+    const fresh = await makeEndpoint(businessUnitId, BigInt(plantId), 'RACE', 'NORMAL');
+    const concurrency = 20;
+
+    await Promise.all(
+      Array.from({ length: concurrency }, () =>
+        run(input({ lines: [{ itemId, qty: 1, uomId, to: fresh, ownershipTypeCode: 'OWNED' }] })),
+      ),
+    );
+
+    expect(await onHand(fresh)).toBe(concurrency);
   });
 
   it('⛔ 전기가 실패하면 잔량도 원장도 남지 않는다 — 한 트랜잭션이다', async () => {
