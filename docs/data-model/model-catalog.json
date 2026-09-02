@@ -16015,6 +16015,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": "한국어 명칭. 다국어는 MES 확장 속성이라 ERP 수신 원본 명칭을 덮지 않는다 (QA #34)."
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": "베트남어 명칭. 현장이 하노이라 라벨·출력물이 이 값을 쓴다 (C5 · QA #33)."
                 }
             ],
             "description": null,
@@ -16148,6 +16164,22 @@
                     "ordinal": 11,
                     "nullable": false,
                     "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
@@ -17228,6 +17260,22 @@
                     "ordinal": 23,
                     "nullable": true,
                     "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 24,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 25,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
@@ -20593,6 +20641,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
                 }
             ],
             "description": null,
@@ -22319,6 +22383,22 @@
                     "ordinal": 20,
                     "nullable": false,
                     "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 21,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
@@ -26535,6 +26615,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
                 }
             ],
             "description": null,
@@ -26975,6 +27071,22 @@
                     "ordinal": 12,
                     "nullable": true,
                     "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
@@ -27986,6 +28098,22 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
                 }
             ],
             "description": null,
@@ -28366,6 +28494,22 @@
                     "ordinal": 18,
                     "nullable": false,
                     "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "name_ko",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "app.name_t",
+                    "description": null
+                },
+                {
+                    "name": "name_vi",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "app.name_t",
                     "description": null
                 }
             ],
