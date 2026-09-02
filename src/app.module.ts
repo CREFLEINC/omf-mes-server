@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { AuthModule } from './auth/auth.module';
 import { ContractModule } from './common/contract';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -12,6 +13,7 @@ import { PrismaModule } from './prisma/prisma.module';
     // 계약 검증 가드를 전역으로 단다. @Contract 가 붙은 핸들러만 검사한다.
     ContractModule,
     PrismaModule,
+    AuthModule,
     HealthModule,
   ],
 })
