@@ -14,10 +14,16 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
+import {
+  DependencyInput,
+  RoutingOperationService,
+  RoutingOperationUpsert,
+} from './routing-operation.service';
 import {
   RoutingCreate,
   RoutingQuery,
@@ -30,6 +36,7 @@ import {
 export class RoutingController {
   constructor(
     private readonly routings: RoutingService,
+    private readonly operations: RoutingOperationService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -69,6 +76,47 @@ export class RoutingController {
     return runVersioned(this.idempotency, request, response, 'routing', (version) =>
       this.routings.update(routingId, version, body),
     );
+  }
+
+  @Get(':routingId/operations')
+  @Contract('GET /planning/routings/{routingId}/operations')
+  async listOperations(@Param('routingId', ParseIntPipe) routingId: number): Promise<unknown> {
+    return { items: await this.operations.list(routingId) };
+  }
+
+  @Put(':routingId/operations')
+  @Contract('PUT /planning/routings/{routingId}/operations')
+  async replaceOperations(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+    @Body() body: { operations: RoutingOperationUpsert[] },
+  ): Promise<unknown> {
+    // ⚠ 「컬렉션 전체 치환이라 IfMatchVersion 을 쓰지 않는다 — 409 는 없다」(계약).
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
+      items: await this.operations.replace(routingId, body.operations),
+    }));
+  }
+
+  @Get(':routingId/operation-dependencies')
+  @Contract('GET /planning/routings/{routingId}/operation-dependencies')
+  async listDependencies(@Param('routingId', ParseIntPipe) routingId: number): Promise<unknown> {
+    return { items: await this.operations.listDependencies(routingId) };
+  }
+
+  @Put(':routingId/operation-dependencies')
+  @Contract('PUT /planning/routings/{routingId}/operation-dependencies')
+  async replaceDependencies(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+    @Body() body: { dependencies: DependencyInput[] },
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => ({
+      items: await this.operations.replaceDependencies(
+        routingId,
+        body.dependencies,
+        currentSession(request)?.userId,
+      ),
+    }));
   }
 
   @Post(':routingId\\:set-default')
