@@ -6,6 +6,7 @@ import { DocumentStateService } from './document-state.service';
 import { TRANSITIONS } from './transitions';
 
 const LIFECYCLE = 'trace.lot.lifecycle_status_code';
+const ROUTING_STATUS = 'planning.routing.status_code';
 /** 설비 자산 수명주기 — 시드 EQUIPMENT_STATUS 가 두 값을 확정했다(#124). */
 const EQUIPMENT_STATUS = 'mdm.equipment.status_code';
 
@@ -118,8 +119,8 @@ describe('DocumentStateService', () => {
       // 값 목록 없이 전이를 지어내는 것을 F-6 이 금지하므로, 등록은 항상 의도적이어야 한다.
       const columns = new Set(service.registered().map((entry) => entry.column));
 
-      expect([...columns].sort()).toEqual([EQUIPMENT_STATUS, LIFECYCLE].sort());
-      expect(service.registered()).toHaveLength(4);
+      expect([...columns].sort()).toEqual([EQUIPMENT_STATUS, LIFECYCLE, ROUTING_STATUS].sort());
+      expect(service.registered()).toHaveLength(6);
     });
   });
 });
