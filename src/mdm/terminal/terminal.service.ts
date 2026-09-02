@@ -7,8 +7,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { optional } from '../column';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { ReferenceQuery, optional, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `Terminal` 과 동형. 설비 코드·명을 함께 실어 왕복 한 번을 없앤다(계약). */
 interface TerminalView {

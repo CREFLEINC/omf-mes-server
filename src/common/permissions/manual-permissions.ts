@@ -64,4 +64,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `W-05-09` 작업 캘린더 — §5-A 가 등록만 적어 수정·중지가 도출표에 안 들어왔다.
   'PUT /mdm/work-calendars/{workCalendarId}': ['W-05-09'],
   'POST /mdm/work-calendars/{workCalendarId}:deactivate': ['W-05-09'],
+
+  // `W-CO-02` 사용자·역할·권한 관리 — ⭐ 도출표에 «이미 있는» 키에 화면을 더하는 첫 자리다.
+  // 도출표는 결재선 정의·결재함(`W-06-15`·`W-CO-09`)이 사용자를 «고른다»고만 적었다.
+  // 정작 이 목록을 소유한 화면이 빠져 있다 — 요구서 §3-1 이 화면 «액션»(추가·저장·중지)만
+  // 적어 좌측 목록이 도출되지 않는다. 그래서 두 표는 합집합으로 겹친다.
+  'GET /app/users': ['W-CO-02'],
 };

@@ -5,8 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability } from '../editability';
-import { ReferenceQuery, filter, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, filter, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `Worker` 와 동형. */
 interface WorkerView {

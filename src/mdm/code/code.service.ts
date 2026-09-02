@@ -5,9 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { optional, optionalDate, toDateString } from '../column';
-import { Editability } from '../editability';
-import { ReferenceQuery, filter, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, filter, optional, optionalDate, referencePage, referenceWhere, toDateString } from '../../common/master';
 
 /** 계약 `CodeGroup`·`CodeValue` 와 동형. 필드는 `x-source-column` 을 그대로 따른다. */
 interface CodeGroupView {

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { toDateString } from '../column';
+import { toDateString } from '../../common/master';
 
 /**
  * 품목 「부속 정보」 세 탭 — 사업부매핑 · 외부코드 · 단위환산.

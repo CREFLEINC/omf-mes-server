@@ -6,10 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues } from '../code-reference';
-import { optional } from '../column';
-import { Editability } from '../editability';
-import { Referrer, countReferences } from '../reference-count';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * ⛔ 설비 그룹의 저장처는 `mdm.production_line` 이다 — `mdm.equipment_group` 이 아니다.

@@ -16,10 +16,9 @@ import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { runIdempotent, runVersioned } from '../../common/master-write';
+import { ReferenceQuery, runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { ReferenceQuery } from '../reference/reference.query';
 import { CodeService } from './code.service';
 
 /**

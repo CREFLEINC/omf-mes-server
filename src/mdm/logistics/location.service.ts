@@ -6,10 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues } from '../code-reference';
-import { optional } from '../column';
-import { Editability } from '../editability';
-import { Referrer, countReferences } from '../reference-count';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 로케이션을 FK 로 가리키는 자리 전부 — 서른 곳이다. `pg_constraint` 에서 뽑았고,

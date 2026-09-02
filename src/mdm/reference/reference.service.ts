@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ReferenceQuery, filter, referencePage, referenceWhere } from './reference.query';
+import { ReferenceQuery, filter, referencePage, referenceWhere } from '../../common/master';
 
 /**
  * 조회 전용 기준정보 7종. 계약이 이들에 **403 을 선언하지 않았다** — 다른 화면이

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { ReferenceQuery, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `Partner` 와 동형. ⛔ 본체는 ERP 수신 마스터라 MES 는 읽기만 한다. */
 interface PartnerView {
