@@ -4,7 +4,8 @@
   "contract_reference_commit": "77a067b1202cdef09723287e956b064c3392e111",
   "operation_count": 482,
   "mapped_operation_count": 481,
-  "coverage": "99.8%",
+  "tableless_operation_count": 1,
+  "coverage": "100.0%",
   "operations": [
     {
       "id": "GET /app/approval-requests",
@@ -6125,9 +6126,8 @@
       "idempotency_key": false,
       "if_match": false,
       "tables": [],
-      "missing_tables": [
-        "app.permission"
-      ]
+      "missing_tables": [],
+      "tableless_reason": "앱 상수 — 고객이 편집하지 않고 배포로만 는다 (2026-09-02 판정)"
     },
     {
       "id": "GET /app/roles",

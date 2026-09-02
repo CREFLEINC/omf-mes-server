@@ -95,6 +95,14 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
         f"| `{schema}` | {SCHEMA_TITLES.get(schema, schema)} | {count} |"
         for schema, count in summary["schemas"].items()
     )
+    # 매핑 수와 커버리지가 어긋나 보이는 자리를 문서가 스스로 설명하게 둔다 —
+    # 481/482 인데 100% 라고만 적으면 읽는 쪽이 「한 건이 빠졌다」로 읽는다.
+    tableless_count = mapping.get("tableless_operation_count", 0)
+    tableless_note = (
+        f"(나머지 {tableless_count}개는 표가 없는 것이 정상인 경로다)"
+        if tableless_count
+        else ""
+    )
     return f"""# OMF-MES 데이터 모델 v4 설계 기준
 
 ## 1. 설계 기준선
@@ -105,7 +113,7 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 - 구현 기준선: 현재 `prisma/schema.prisma`와 모든 순방향 마이그레이션
 - 대상 DBMS: PostgreSQL 16
 - 결과 모델: v4.0, 물리 테이블 {summary["table_count"]}개(논리 {summary["logical_table_count"]}개, 파티션 {summary["partition_count"]}개), 컬럼 {summary["column_count"]}개, FK {summary["relationship_count"]}개
-- API 추적성: OpenAPI 작업 {mapping["operation_count"]}개 중 {mapping["mapped_operation_count"]}개 매핑, 커버리지 {mapping["coverage"]}
+- API 추적성: OpenAPI 작업 {mapping["operation_count"]}개 중 {mapping["mapped_operation_count"]}개 매핑, 커버리지 {mapping["coverage"]}{tableless_note}
 
 FK {summary["relationship_count"]}개는 `pg_catalog` 행 수다. 선언된 `FOREIGN KEY` 문장은 528개이며,
 차이 5건은 파티션 부모·자식에 복제된 제약이다.
@@ -301,6 +309,9 @@ def validate(catalog: dict[str, Any], mapping: dict[str, Any]) -> dict[str, Any]
         **catalog_summary(catalog),
         "api_operation_count": mapping["operation_count"],
         "mapped_operation_count": mapping["mapped_operation_count"],
+        # 482 와 481 의 차이를 보고서 스스로 설명하게 둔다 — 안 적으면 읽는 쪽이
+        # 「한 건이 빠졌다」로 읽는다.
+        "tableless_operation_count": mapping["tableless_operation_count"],
         "coverage": mapping["coverage"],
         "contract_model_gaps": contract_model_gaps,
         "gap_operations": gap_operations,
@@ -392,7 +403,11 @@ def build_workbook_payload(
             # PASS 는 보고서의 mapped_operation_count 와 같은 정의여야 한다 — 정의가
             # 갈리면 Validation 시트의 Expected/Actual 이 영원히 어긋난다.
             "mapping_status": (
-                "FAIL"
+                # 표가 없는 것이 정상인 경로는 결손이 아니다 — FAIL 로 적으면 닫을 수
+                # 없는 항목이 보고서에 영원히 남는다.
+                "TABLELESS"
+                if operation.get("tableless_reason")
+                else "FAIL"
                 if not operation["tables"]
                 else ("PARTIAL" if operation["missing_tables"] else "PASS")
             ),

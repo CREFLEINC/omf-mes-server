@@ -196,8 +196,18 @@ try {
 
   await tab(2);
   const findings = await ev(`document.querySelectorAll('.finding').length`);
-  const gaps = await ev(`document.querySelectorAll('#gapRows tr').length`);
-  check('재검토 탭', findings > 0 && gaps > 0, `발견 ${findings} · 결손 ${gaps}`);
+  // 결손이 0이면 「결손 없음」 대체 행 하나가 선다 — 행 수만 세고 `> 0` 으로 보면
+  // 0건과 1건을 못 가르고 검사가 영원히 통과한다. 데이터 쪽 건수와 맞춰 본다.
+  const gapCount = await ev(
+    `mapping.operations.filter(o => o.missing_tables && o.missing_tables.length).length`,
+  );
+  const gapRows = await ev(`document.querySelectorAll('#gapRows tr').length`);
+  const gapsRendered =
+    gapCount === 0
+      ? gapRows === 1 &&
+        (await ev(`document.querySelector('#gapRows tr').textContent.trim()`)) === '결손 없음'
+      : gapRows === gapCount;
+  check('재검토 탭', findings > 0 && gapsRendered, `발견 ${findings} · 결손 ${gapCount}`);
 
   const filtered = await ev(`(() => {
     const b = [...document.querySelectorAll('#reviewFilters .pill')].find(x => x.textContent === '유효');
