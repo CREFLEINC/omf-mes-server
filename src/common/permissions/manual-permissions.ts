@@ -90,4 +90,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /planning/routings/{routingId}:set-default': ['W-06-01'],
   'PUT /planning/routings/{routingId}/operations': ['W-06-01'],
   'PUT /planning/routings/{routingId}/operation-dependencies': ['W-06-01'],
+  'POST /planning/routings/{routingId}:confirm': ['W-06-01'],
+  'POST /planning/routings/{routingId}:obsolete': ['W-06-01'],
+  'POST /planning/routings/{routingId}:new-revision': ['W-06-01'],
 };

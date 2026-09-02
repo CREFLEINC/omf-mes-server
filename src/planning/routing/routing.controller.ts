@@ -24,6 +24,7 @@ import {
   RoutingOperationService,
   RoutingOperationUpsert,
 } from './routing-operation.service';
+import { RoutingRevisionService } from './routing-revision.service';
 import {
   RoutingCreate,
   RoutingQuery,
@@ -37,6 +38,7 @@ export class RoutingController {
   constructor(
     private readonly routings: RoutingService,
     private readonly operations: RoutingOperationService,
+    private readonly revisions: RoutingRevisionService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -119,6 +121,44 @@ export class RoutingController {
     }));
   }
 
+  @Post(':routingId\\:confirm')
+  @Contract('POST /planning/routings/{routingId}:confirm')
+  @HttpCode(HttpStatus.OK)
+  confirm(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+  ): Promise<unknown> {
+    // ⚠ 계약이 이 자리에 If-Match 를 선언하지 않았다 — 상태 전이가 판정을 대신한다.
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
+      this.header(await this.revisions.confirm(routingId)),
+    );
+  }
+
+  @Post(':routingId\\:obsolete')
+  @Contract('POST /planning/routings/{routingId}:obsolete')
+  @HttpCode(HttpStatus.OK)
+  obsolete(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () =>
+      this.header(await this.revisions.obsolete(routingId)),
+    );
+  }
+
+  @Post(':routingId\\:new-revision')
+  @Contract('POST /planning/routings/{routingId}:new-revision')
+  @HttpCode(HttpStatus.CREATED)
+  newRevision(
+    @Req() request: Request,
+    @Param('routingId', ParseIntPipe) routingId: number,
+  ): Promise<unknown> {
+    // ⛔ 201 이다 — 새 Rev 가 «생긴다». 멱등 재전송이 같은 Rev 를 돌려줘야 한다.
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () =>
+      this.header(await this.revisions.newRevision(routingId)),
+    );
+  }
+
   @Post(':routingId\\:set-default')
   @Contract('POST /planning/routings/{routingId}:set-default')
   @HttpCode(HttpStatus.OK)
@@ -131,6 +171,12 @@ export class RoutingController {
     const { routing } = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.routings.setDefault(routingId),
     );
+    return routing;
+  }
+
+  /** 전이·발행은 헤더만 낸다 — 「응답은 헤더만 반환한다」(계약). */
+  private async header(routingId: number): Promise<unknown> {
+    const { routing } = await this.routings.get(routingId);
     return routing;
   }
 }

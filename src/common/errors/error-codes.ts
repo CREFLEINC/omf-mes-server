@@ -20,6 +20,8 @@ export const ERROR_CODE = {
   STALE_VERSION: 'STALE_VERSION',
   // 계약이 이름 붙인 값이다 — 「관리 권한 보유자가 0명이 되는 저장」(W-CO-02 §8-6).
   LAST_ADMIN: 'LAST_ADMIN',
+  // 계약이 이름 붙인 값이다 — 「라인이 1건 이상이어야 한다」(Routing Rev 확정).
+  LINE_REQUIRED: 'LINE_REQUIRED',
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',
   ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
   ROUTE_AMBIGUOUS: 'ROUTE_AMBIGUOUS',
