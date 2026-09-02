@@ -2609,10 +2609,10 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 17 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 18 | `updated_by` | `bigint` | N | - | `-` |
 | 19 | `version_no` | `integer` | Y | - | `1` |
-| 20 | `lot_storage_uom_id` | `bigint` | N | FK→mdm.uom | `-` |
-| 21 | `default_lot_size` | `app.qty_t` | N | - | `-` |
+| 20 | `default_lot_storage_uom_id` | `bigint` | N | FK→mdm.uom | `-` |
+| 21 | `default_production_lot_size` | `app.qty_t` | N | - | `-` |
 | 22 | `is_development_item` | `boolean` | Y | - | `false` |
-| 23 | `recycle_type_code` | `app.code_t` | N | - | `-` |
+| 23 | `mes_category_code` | `app.code_t` | N | - | `-` |
 | 24 | `name_ko` | `app.name_t` | N | - | `-` |
 | 25 | `name_vi` | `app.name_t` | N | - | `-` |
 

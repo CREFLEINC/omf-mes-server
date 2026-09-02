@@ -17072,8 +17072,8 @@
             "name": "item",
             "checks": [
                 {
-                    "name": "ck_item_default_lot_size",
-                    "expression": "CHECK (default_lot_size IS NULL OR default_lot_size::numeric > 0::numeric)"
+                    "name": "ck_item_default_production_lot_size",
+                    "expression": "CHECK (default_production_lot_size IS NULL OR default_production_lot_size::numeric > 0::numeric)"
                 },
                 {
                     "name": "item_opened_shelf_life_hours_check",
@@ -17243,20 +17243,20 @@
                     "description": null
                 },
                 {
-                    "name": "lot_storage_uom_id",
+                    "name": "default_lot_storage_uom_id",
                     "default": null,
                     "ordinal": 20,
                     "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "자재 LOT 보관 단위 기본값. 특이 시 LOT 별로 개별 설정한다 (확정 QA #14)."
                 },
                 {
-                    "name": "default_lot_size",
+                    "name": "default_production_lot_size",
                     "default": null,
                     "ordinal": 21,
                     "nullable": true,
                     "data_type": "app.qty_t",
-                    "description": null
+                    "description": "생산 LOT 기본크기. 화면이 이 값을 채우고 사용자가 고칠 수 있다 (REQ-PR-0008 · E26)."
                 },
                 {
                     "name": "is_development_item",
@@ -17267,12 +17267,12 @@
                     "description": null
                 },
                 {
-                    "name": "recycle_type_code",
+                    "name": "mes_category_code",
                     "default": null,
                     "ordinal": 23,
                     "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "신재와 재생재를 가르는 MES 안쪽 구분. 기간계로 보내지 않는다 (DR-006)."
                 },
                 {
                     "name": "name_ko",
@@ -17310,9 +17310,9 @@
                     ]
                 },
                 {
-                    "name": "item_lot_storage_uom_id_fkey",
+                    "name": "item_default_lot_storage_uom_id_fkey",
                     "columns": [
-                        "lot_storage_uom_id"
+                        "default_lot_storage_uom_id"
                     ],
                     "on_delete": "NO ACTION",
                     "on_update": "NO ACTION",
@@ -35873,14 +35873,14 @@
             ]
         },
         {
-            "name": "item_lot_storage_uom_id_fkey",
+            "name": "item_default_lot_storage_uom_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "item",
             "target_table": "uom",
             "source_schema": "mdm",
             "target_schema": "mdm",
             "source_columns": [
-                "lot_storage_uom_id"
+                "default_lot_storage_uom_id"
             ],
             "target_columns": [
                 "uom_id"

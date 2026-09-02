@@ -16472,7 +16472,7 @@
       "schema": "mdm",
       "table": "item",
       "ordinal": 20,
-      "column": "lot_storage_uom_id",
+      "column": "default_lot_storage_uom_id",
       "data_type": "bigint",
       "required": false,
       "key_reference": "FK→mdm.uom",
@@ -16483,7 +16483,7 @@
       "schema": "mdm",
       "table": "item",
       "ordinal": 21,
-      "column": "default_lot_size",
+      "column": "default_production_lot_size",
       "data_type": "app.qty_t",
       "required": false,
       "key_reference": "-",
@@ -16505,7 +16505,7 @@
       "schema": "mdm",
       "table": "item",
       "ordinal": 23,
-      "column": "recycle_type_code",
+      "column": "mes_category_code",
       "data_type": "app.code_t",
       "required": false,
       "key_reference": "-",
@@ -30650,9 +30650,9 @@
       "on_delete": "NO ACTION"
     },
     {
-      "name": "item_lot_storage_uom_id_fkey",
+      "name": "item_default_lot_storage_uom_id_fkey",
       "source_table": "mdm.item",
-      "source_columns": "lot_storage_uom_id",
+      "source_columns": "default_lot_storage_uom_id",
       "target_table": "mdm.uom",
       "target_columns": "uom_id",
       "on_delete": "NO ACTION"
