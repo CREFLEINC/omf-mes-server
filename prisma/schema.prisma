@@ -1727,10 +1727,10 @@ model item {
   updated_at                                           DateTime                             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                           BigInt?
   version_no                                           Int                                  @default(1)
-  lot_storage_uom_id                                   BigInt?
-  default_lot_size                                     Decimal?                             @db.Decimal(20, 6)
+  default_lot_storage_uom_id                           BigInt?
+  default_production_lot_size                          Decimal?                             @db.Decimal(20, 6)
   is_development_item                                  Boolean                              @default(false)
-  recycle_type_code                                    String?                              @db.VarChar(50)
+  mes_category_code                                    String?                              @db.VarChar(50)
   name_ko                                              String?                              @db.VarChar(200)
   name_vi                                              String?                              @db.VarChar(200)
   operation_policy                                     operation_policy[]
@@ -1759,7 +1759,7 @@ model item {
   stock_transfer_line                                  stock_transfer_line[]
   subcontract_order                                    subcontract_order[]
   uom                                                  uom                                  @relation(fields: [base_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
-  uom_item_lot_storage_uom_idTouom                     uom?                                 @relation("item_lot_storage_uom_idTouom", fields: [lot_storage_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  uom_item_default_lot_storage_uom_idTouom             uom?                                 @relation("item_default_lot_storage_uom_idTouom", fields: [default_lot_storage_uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   item_bu_item_map_item_bu_item_map_from_item_idToitem item_bu_item_map[]                   @relation("item_bu_item_map_from_item_idToitem")
   item_bu_item_map_item_bu_item_map_to_item_idToitem   item_bu_item_map[]                   @relation("item_bu_item_map_to_item_idToitem")
   item_external_code                                   item_external_code[]
@@ -2217,7 +2217,7 @@ model uom {
   collection_channel                                            collection_channel[]
   equipment_inspection_item                                     equipment_inspection_item[]
   item                                                          item[]
-  item_item_lot_storage_uom_idTouom                             item[]                               @relation("item_lot_storage_uom_idTouom")
+  item_item_default_lot_storage_uom_idTouom                     item[]                               @relation("item_default_lot_storage_uom_idTouom")
   item_uom_conversion_item_uom_conversion_from_uom_idTouom      item_uom_conversion[]                @relation("item_uom_conversion_from_uom_idTouom")
   item_uom_conversion_item_uom_conversion_to_uom_idTouom        item_uom_conversion[]                @relation("item_uom_conversion_to_uom_idTouom")
   location                                                      location[]
