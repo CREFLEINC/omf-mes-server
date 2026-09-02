@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { optional } from '../column';
 import { Editability } from '../editability';
 import { ReferenceQuery, filter, referencePage, referenceWhere } from '../reference/reference.query';
 
@@ -247,6 +248,3 @@ function view(row: DepartmentRow): DepartmentView {
   };
 }
 
-function optional<T>(column: string, value: T | undefined): Record<string, unknown> {
-  return value === undefined ? {} : { [column]: value };
-}

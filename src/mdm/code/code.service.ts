@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { optional, optionalDate, toDateString } from '../column';
 import { Editability } from '../editability';
 import { ReferenceQuery, filter, referencePage, referenceWhere } from '../reference/reference.query';
 
@@ -32,11 +33,6 @@ interface CodeValueView {
 
 type CodeGroupRow = Prisma.code_groupGetPayload<object>;
 type CodeValueRow = Prisma.code_valueGetPayload<object>;
-
-/** `@db.Date` 는 날짜다 — 시각을 붙이면 계약의 `format: date` 와 어긋난다. */
-function toDate(value: Date | null): string | null {
-  return value === null ? null : value.toISOString().slice(0, 10);
-}
 
 @Injectable()
 export class CodeService {
@@ -317,17 +313,10 @@ export class CodeService {
     nameKo: row.name_ko,
     nameVi: row.name_vi,
     displayOrder: row.display_order,
-    effectiveFrom: toDate(row.effective_from),
-    effectiveTo: toDate(row.effective_to),
+    effectiveFrom: toDateString(row.effective_from),
+    effectiveTo: toDateString(row.effective_to),
     isActive: row.is_active,
   });
 }
 
-function optional(column: string, value: string | null | undefined): Record<string, unknown> {
-  return value === undefined ? {} : { [column]: value };
-}
 
-function optionalDate(column: string, value: string | null | undefined): Record<string, unknown> {
-  if (value === undefined) return {};
-  return { [column]: value === null ? null : new Date(value) };
-}
