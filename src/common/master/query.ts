@@ -1,4 +1,4 @@
-import { PageRequest, pageRequest } from '../../common/pagination';
+import { PageRequest, pageRequest } from '../pagination';
 
 /** 계약이 조회 전용 마스터 7종에 똑같이 선언한 질의 축. */
 export interface ReferenceQuery {

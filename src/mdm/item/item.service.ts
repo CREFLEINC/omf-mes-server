@@ -6,9 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues } from '../code-reference';
-import { optional } from '../column';
-import { Editability } from '../editability';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, optional, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `Item` 과 동형. 위(ERP 원본)와 아래(MES 확장)를 화면이 나눠 그린다. */
 interface ItemView {

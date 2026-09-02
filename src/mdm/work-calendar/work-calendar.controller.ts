@@ -17,10 +17,9 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { runIdempotent, runVersioned } from '../../common/master-write';
+import { ReferenceQuery, runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { ReferenceQuery } from '../reference/reference.query';
 import { ApplicationQuery, DayInput, WorkCalendarService } from './work-calendar.service';
 
 /** 작업 캘린더. 화면은 `W-05-09` 다. */

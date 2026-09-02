@@ -6,9 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues } from '../code-reference';
-import { optional } from '../column';
-import { Editability } from '../editability';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, optional, referencePage, referenceWhere } from '../../common/master';
 
 /** 계약 `EquipmentInspectionItem` 과 동형. */
 interface InspectionItemView {

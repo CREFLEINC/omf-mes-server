@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { runVersioned } from '../../common/master-write';
+import { runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { LayoutReplace, WarehouseLayoutService } from './warehouse-layout.service';
 

@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /** 이 마스터를 FK 로 가리키는 자리 하나 — `['스키마.표', '컬럼']`. */
 export type Referrer = readonly [table: string, column: string];

@@ -2,7 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 
 import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
-import { ReferenceQuery } from './reference.query';
+import { ReferenceQuery } from '../../common/master';
 import { ReferenceService } from './reference.service';
 
 /**

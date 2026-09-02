@@ -5,10 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { optional } from '../column';
-import { Editability } from '../editability';
-import { Referrer, countReferences } from '../reference-count';
-import { ReferenceQuery, referencePage, referenceWhere } from '../reference/reference.query';
+import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /** 예비품을 FK 로 가리키는 자리. e2e 가 `pg_constraint` 로 대조한다. */
 export const SPARE_PART_REFERRERS: readonly Referrer[] = [
