@@ -22,4 +22,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /mdm/departments/{departmentId}:activate': ['W-06-06'],
   'POST /mdm/departments/{departmentId}:deactivate': ['W-06-06'],
   'PUT /mdm/workers/{workerId}/qualifications': ['W-06-06'],
+
+  // `W-06-07` 물류 마스터 — §3 이 「창고 등록」만 적어 도출표에 `POST` 만 들어왔다.
+  // 수정과 활성 전이는 같은 화면의 같은 자원이다.
+  'PUT /mdm/warehouses/{warehouseId}': ['W-06-07'],
+  'POST /mdm/warehouses/{warehouseId}:activate': ['W-06-07'],
+  'POST /mdm/warehouses/{warehouseId}:deactivate': ['W-06-07'],
 };
