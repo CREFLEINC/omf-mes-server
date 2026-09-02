@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Editability } from '../editability';
 import { ReferenceQuery, filter, referencePage, referenceWhere } from '../reference/reference.query';
 
 /** 계약 `CodeGroup`·`CodeValue` 와 동형. 필드는 `x-source-column` 을 그대로 따른다. */
@@ -27,16 +28,6 @@ interface CodeValueView {
   effectiveFrom: string | null;
   effectiveTo: string | null;
   isActive: boolean;
-}
-
-/**
- * 계약 `Editability` — 「코드 필드 수정 가능 여부」. 공유계약 `B-4`(참조 건수가 0일 때만
- * 수정 허용). ⛔ 화면이 따로 세면 화면마다 다르게 구현된다(계약이 그 이유를 적었다).
- */
-interface Editability {
-  codeEditable: boolean;
-  reason: 'EDITABLE' | 'REFERENCED' | 'NOT_COUNTABLE' | 'SYSTEM_OWNED';
-  referenceCount: number | null;
 }
 
 type CodeGroupRow = Prisma.code_groupGetPayload<object>;

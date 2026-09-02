@@ -16072,6 +16072,10 @@
                     "expression": "CHECK (parent_department_id IS NULL OR parent_department_id <> department_id)"
                 },
                 {
+                    "name": "ck_department_source_system",
+                    "expression": "CHECK (source_system_code::text = ANY (ARRAY['ERP'::character varying, 'MES'::character varying]::text[]))"
+                },
+                {
                     "name": "department_version_no_check",
                     "expression": "CHECK (version_no > 0)"
                 }
@@ -16181,6 +16185,14 @@
                     "nullable": true,
                     "data_type": "app.name_t",
                     "description": null
+                },
+                {
+                    "name": "source_system_code",
+                    "default": "'MES'::character varying",
+                    "ordinal": 14,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "ERP = Legacy 수신본(읽기 전용) · MES = 자체 등록. 편집 잠금의 근거다 (W-06-06 §5-4)."
                 }
             ],
             "description": null,

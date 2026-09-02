@@ -9,7 +9,7 @@
     "table_count": 182,
     "logical_table_count": 180,
     "partition_count": 2,
-    "column_count": 2370,
+    "column_count": 2371,
     "relationship_count": 557,
     "schemas": {
       "app": 27,
@@ -1195,7 +1195,7 @@
       "logical_name": "부서",
       "lifecycle": "MASTER",
       "purpose": "부서의 업무 기준과 유효 상태를 관리한다.",
-      "column_count": 13,
+      "column_count": 14,
       "primary_key": "department_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -15553,6 +15553,17 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "mdm.department",
+      "schema": "mdm",
+      "table": "department",
+      "ordinal": 14,
+      "column": "source_system_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": "'MES'::character varying"
     },
     {
       "qualified_table": "mdm.equipment",

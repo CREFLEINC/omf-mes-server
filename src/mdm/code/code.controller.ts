@@ -15,10 +15,10 @@ import {
 import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
-import { IdempotencyService, requestFingerprint } from '../../common/idempotency';
-import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
+import { IdempotencyService } from '../../common/idempotency';
+import { runIdempotent, runVersioned } from '../../common/master-write';
+import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
-import { currentSession } from '../../auth/session-resolver.service';
 import { ReferenceQuery } from '../reference/reference.query';
 import { CodeService } from './code.service';
 
@@ -59,7 +59,7 @@ export class CodeController {
   @Post('code-groups')
   @Contract('POST /mdm/code-groups')
   createGroup(@Req() request: Request, @Body() body: CodeGroupWrite): Promise<unknown> {
-    return this.run(request, HttpStatus.CREATED, () => this.codes.createGroup(body));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.codes.createGroup(body));
   }
 
   @Put('code-groups/:codeGroupId')
@@ -70,7 +70,7 @@ export class CodeController {
     @Param('codeGroupId', ParseIntPipe) codeGroupId: number,
     @Body() body: CodeGroupWrite,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeGroup', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeGroup', (version) =>
       this.codes.updateGroup(codeGroupId, version, body),
     );
   }
@@ -83,7 +83,7 @@ export class CodeController {
     @Res({ passthrough: true }) response: Response,
     @Param('codeGroupId', ParseIntPipe) codeGroupId: number,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeGroup', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeGroup', (version) =>
       this.codes.setGroupActive(codeGroupId, version, true),
     );
   }
@@ -96,7 +96,7 @@ export class CodeController {
     @Res({ passthrough: true }) response: Response,
     @Param('codeGroupId', ParseIntPipe) codeGroupId: number,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeGroup', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeGroup', (version) =>
       this.codes.setGroupActive(codeGroupId, version, false),
     );
   }
@@ -125,7 +125,7 @@ export class CodeController {
   @Post('code-values')
   @Contract('POST /mdm/code-values')
   createValue(@Req() request: Request, @Body() body: CodeValueCreate): Promise<unknown> {
-    return this.run(request, HttpStatus.CREATED, () => this.codes.createValue(body));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.codes.createValue(body));
   }
 
   @Put('code-values/:codeValueId')
@@ -136,7 +136,7 @@ export class CodeController {
     @Param('codeValueId', ParseIntPipe) codeValueId: number,
     @Body() body: CodeValueUpdate,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeValue', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeValue', (version) =>
       this.codes.updateValue(codeValueId, version, body),
     );
   }
@@ -149,7 +149,7 @@ export class CodeController {
     @Res({ passthrough: true }) response: Response,
     @Param('codeValueId', ParseIntPipe) codeValueId: number,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeValue', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeValue', (version) =>
       this.codes.setValueActive(codeValueId, version, true),
     );
   }
@@ -162,50 +162,11 @@ export class CodeController {
     @Res({ passthrough: true }) response: Response,
     @Param('codeValueId', ParseIntPipe) codeValueId: number,
   ): Promise<unknown> {
-    return this.runVersioned(request, response, 'codeValue', (version) =>
+    return runVersioned(this.idempotency, request, response, 'codeValue', (version) =>
       this.codes.setValueActive(codeValueId, version, false),
     );
   }
 
-  // ── 공통 ────────────────────────────────────────────────────────────────
-
-  /** 멱등 흡수. 같은 키로 다시 오면 앞의 응답을 그대로 준다. */
-  private async run<T>(
-    request: Request,
-    successStatus: number,
-    work: () => Promise<T>,
-  ): Promise<T> {
-    const outcome = await this.idempotency.run(
-      {
-        key: String(request.headers['idempotency-key']),
-        fingerprint: requestFingerprint(`${request.method} ${request.path}`, request.body),
-        successStatus,
-        ...(currentSession(request) === undefined
-          ? {}
-          : { appUserId: currentSession(request)?.userId }),
-      },
-      () => work(),
-    );
-    return outcome.body;
-  }
-
-  /** 멱등 + 낙관적 잠금. 새 `version_no` 를 ETag 로 돌려준다. */
-  private async runVersioned<T, K extends string>(
-    request: Request,
-    response: Response,
-    field: K,
-    work: (version: number) => Promise<{ versionNo: number } & Record<K, T>>,
-  ): Promise<T> {
-    // 가드가 이 자리들에서 If-Match 를 이미 필수로 막았다(`#107`) — 여기 오면 값이 있다.
-    const version = ifMatchVersion(request);
-    if (version === undefined) {
-      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
-    }
-
-    const result = await this.run(request, HttpStatus.OK, () => work(version));
-    setEtag(response, result.versionNo);
-    return result[field];
-  }
 }
 
 interface CodeGroupWrite {

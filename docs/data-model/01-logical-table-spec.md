@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2370개
+> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2371개
 
 ## 범례
 
@@ -2323,7 +2323,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.business_unit` | 사업 단위 | MASTER | 10 | `business_unit_id` | 1 | 사업 단위의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.code_group` | 코드 그룹 | MASTER | 11 | `code_group_id` | 0 | 코드 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.code_value` | 코드 값 | MASTER | 15 | `code_value_id` | 1 | 코드 값의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.department` | 부서 | MASTER | 13 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.department` | 부서 | MASTER | 14 | `department_id` | 2 | 부서의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment` | 설비 | MASTER | 18 | `equipment_id` | 4 | 설비의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group` | 설비 그룹 | MASTER | 10 | `equipment_group_id` | 1 | 설비 그룹의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_group_inspection_item` | 설비 그룹 검사 품목 | MASTER | 7 | `equipment_group_inspection_item_id` | 2 | 설비 그룹 검사 품목의 업무 기준과 유효 상태를 관리한다. |
@@ -2449,6 +2449,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 11 | `version_no` | `integer` | Y | - | `1` |
 | 12 | `name_ko` | `app.name_t` | N | - | `-` |
 | 13 | `name_vi` | `app.name_t` | N | - | `-` |
+| 14 | `source_system_code` | `app.code_t` | Y | - | `'MES'::character varying` |
 
 ### mdm.equipment — 설비
 
