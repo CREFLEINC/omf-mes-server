@@ -21,6 +21,11 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-approle-probe';
 const NOPERM_ID = 'e2e-approle-noperm';
+/**
+ * ⛔ 「관리자를 한 명 더 세운다」 용도 전용 계정. NOPERM 을 빌려 쓰면 그 순간 그 계정이
+ * `W-CO-02` 를 얻어, 뒤따르는 403 검사가 조용히 200 이 된다(실제로 그렇게 깨졌다).
+ */
+const HOLDER_ID = 'e2e-approle-holder';
 const PASSWORD = '역할-검사-비밀번호';
 const PREFIX = 'E2E_APPROLE';
 
@@ -67,6 +72,9 @@ describe('역할·기능 권한 (e2e)', () => {
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     noPermCookie = await login(NOPERM_ID);
+    await prisma.app_user.create({
+      data: { login_id: HOLDER_ID, user_name: '관리자보유', status_code: 'ACTIVE' },
+    });
 
     const role = await prisma.role.create({
       data: { role_code: `${PREFIX}_ADMIN`, role_name: '역할검사용 관리자' },
@@ -295,6 +303,34 @@ describe('역할·기능 권한 (e2e)', () => {
     }
   });
 
+  it('⭐ 중지는 관리자 자물쇠를 «지나간다» — 안 그러면 동시 저장이 서로를 못 본다', async () => {
+    // READ COMMITTED 에서 A 가 역할 하나를 내리고 세는 사이 B 가 다른 역할을 내리고 세면,
+    // 둘 다 상대의 미커밋 변경을 못 봐 각자 「아직 한 명 남았다」로 통과하고 0명이 된다.
+    // HTTP 로 둘을 동시에 쏘는 검사는 «겹치지 않으면» 그냥 통과해 버려 아무것도 못 가른다.
+    // 그래서 자물쇠 자체를 잡아 두고, 중지가 그 앞에 서는지를 본다.
+    const target = await create(`${PREFIX}_LOCK`);
+    let released = false;
+
+    const blocker = prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(20260901::bigint)');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      released = true;
+    });
+    // 요청이 자물쇠 앞에 서도록 먼저 잡히게 둔다.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    await request(app.getHttpServer())
+      .post(`/api/app/roles/${target.roleId}:deactivate`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', '1')
+      .expect(200);
+
+    // 자물쇠를 안 탔다면 400ms 를 기다릴 이유가 없어 released 가 아직 false 다.
+    expect(released).toBe(true);
+    await blocker;
+  });
+
   it('관리자가 둘이면 하나를 중지할 수 있다', async () => {
     const spare = await prisma.role.create({
       data: { role_code: `${PREFIX}_ADMIN2`, role_name: '예비 관리자' },
@@ -302,7 +338,7 @@ describe('역할·기능 권한 (e2e)', () => {
     await prisma.role_permission.create({
       data: { role_id: spare.role_id, permission_code: 'W-CO-02' },
     });
-    const holder = await prisma.app_user.findUniqueOrThrow({ where: { login_id: NOPERM_ID } });
+    const holder = await prisma.app_user.findUniqueOrThrow({ where: { login_id: HOLDER_ID } });
     await prisma.user_role.create({
       data: { app_user_id: holder.app_user_id, role_id: spare.role_id },
     });
@@ -375,7 +411,7 @@ describe('역할·기능 권한 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
-    for (const id of [LOGIN_ID, NOPERM_ID]) {
+    for (const id of [LOGIN_ID, NOPERM_ID, HOLDER_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
