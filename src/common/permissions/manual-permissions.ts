@@ -126,4 +126,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/putaway-rules/{putawayRuleId}': ['W-06-14'],
   'POST /logistics/putaway-rules/{putawayRuleId}:activate': ['W-06-14'],
   'POST /logistics/putaway-rules/{putawayRuleId}:deactivate': ['W-06-14'],
+
+  // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
+  // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
+  'PUT /integration/interface-definitions/{interfaceDefinitionId}': ['W-06-09'],
+  'POST /integration/interface-definitions/{interfaceDefinitionId}:activate': ['W-06-09'],
+  'POST /integration/interface-definitions/{interfaceDefinitionId}:deactivate': ['W-06-09'],
+  'POST /integration/interface-definitions/{interfaceDefinitionId}:test-connection': ['W-06-09'],
 };
