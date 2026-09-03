@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
+import { buildContractDocument, servedOperations } from './common/contract';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -13,19 +14,29 @@ async function bootstrap(): Promise<void> {
   const prefix = config.get<string>('API_PREFIX') ?? 'api';
   configureApp(app, prefix);
 
-  const document = SwaggerModule.createDocument(
+  // ⛔ 반사 문서는 «무엇이 떠 있는가»를 세는 데만 쓴다. 화면에 보이는 것은 계약 원본이다 —
+  // DTO 가 평범한 interface 라 반사 문서에는 스키마가 0개다(실측). 자세한 근거는
+  // `contract-document.ts` 머리말에 적었다.
+  const reflected = SwaggerModule.createDocument(
     app,
     new DocumentBuilder().setTitle('OMF MES API').setVersion('0.1.0').build(),
   );
-  SwaggerModule.setup(`${prefix}/docs`, app, document);
+  const contract = buildContractDocument(
+    servedOperations(reflected as unknown as { paths?: Record<string, Record<string, unknown>> }, prefix),
+  );
+  SwaggerModule.setup(`${prefix}/docs`, app, contract as never);
 
   // ConfigService 는 환경변수를 문자열로 돌려준다. 빈 문자열은 0, 잘못된 값은 NaN 이
   // 되는데 둘 다 포트로 쓰면 안 되므로 기본값으로 되돌린다.
   const port = Number(config.get('PORT')) || 3100;
   await app.listen(port);
 
+  const { implemented, total } = contract['x-coverage'];
   // eslint-disable-next-line no-console
-  console.log(`OMF MES API listening on http://localhost:${port}/${prefix} (docs: /${prefix}/docs)`);
+  console.log(
+    `OMF MES API listening on http://localhost:${port}/${prefix} ` +
+      `(docs: /${prefix}/docs — 계약 ${implemented}/${total} 구현)`,
+  );
 }
 
 void bootstrap();
