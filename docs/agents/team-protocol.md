@@ -27,9 +27,7 @@
 | 라벨 | 상태 | 용도 |
 | --- | --- | --- |
 | `Agent : Backend` | 신설 | 팀 유형 라벨 |
-| `status:in-progress` | 신설 | 진행 라벨. ⚠ 원문은 `in progress`지만 설계 저장소가 GH 예약어
-  충돌로 이미 `status:in-progress`로 대체해 운용 중이다(`.design-reference/omf-mes/CLAUDE.md`
-  변경 이력 2026-08-25). 저장소 간 신호를 맞추기 위해 이 저장소도 같은 문자열을 쓴다. |
+| `status:in-progress` | 신설 | 진행 라벨. ⚠ 원문은 `in progress`지만 설계 저장소가 GH 예약어 충돌로 이미 `status:in-progress`로 대체해 운용 중이다(`.design-reference/omf-mes/CLAUDE.md` 변경 이력 2026-08-25). 저장소 간 신호를 맞추기 위해 이 저장소도 같은 문자열을 쓴다. |
 | `help wanted` | 기존 | 중단(검토 중) 라벨 — 이미 저장소에 있다. |
 
 팀 번호 라벨(`Agent : T{n}`)은 지금 쓰지 않는다 — 백엔드가 하위 팀으로 나뉘면 그때 만든다.
