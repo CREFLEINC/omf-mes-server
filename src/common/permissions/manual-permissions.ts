@@ -133,4 +133,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /integration/interface-definitions/{interfaceDefinitionId}:activate': ['W-06-09'],
   'POST /integration/interface-definitions/{interfaceDefinitionId}:deactivate': ['W-06-09'],
   'POST /integration/interface-definitions/{interfaceDefinitionId}:test-connection': ['W-06-09'],
+
+  // `W-06-10` 연계 동기화 현황·실패 재처리 — §3 이 「재처리(선택 일괄)」만 적어 상세와
+  // 단건 재처리가 도출표에 안 들어왔다. 셋 다 한 화면의 같은 자리다.
+  'GET /integration/messages/{integrationMessageId}': ['W-06-10'],
+  'POST /integration/messages/{integrationMessageId}:retry': ['W-06-10'],
 };
