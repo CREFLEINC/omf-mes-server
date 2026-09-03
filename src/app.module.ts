@@ -8,6 +8,7 @@ import { IdempotencyModule } from './common/idempotency';
 import { OptimisticLockModule } from './common/optimistic-lock';
 import { PermissionModule } from './common/permissions';
 import { HealthModule } from './health/health.module';
+import { LogisticsModule } from './logistics/logistics.module';
 import { MdmModule } from './mdm/mdm.module';
 import { PlanningModule } from './planning/planning.module';
 import { QualityModule } from './quality/quality.module';
@@ -34,6 +35,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AppDomainModule,
     PlanningModule,
     QualityModule,
+    LogisticsModule,
   ],
 })
 export class AppModule {}

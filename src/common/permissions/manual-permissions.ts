@@ -120,4 +120,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:confirm': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:obsolete': ['W-06-02'],
   'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
+
+  // `W-06-14` 적치 규칙 마스터 — §3 이 「규칙 추가」만 적어 수정·활성 전이가 도출표에
+  // 안 들어왔다. 셋 다 이 화면이 소유한 자원의 같은 자리다.
+  'PUT /logistics/putaway-rules/{putawayRuleId}': ['W-06-14'],
+  'POST /logistics/putaway-rules/{putawayRuleId}:activate': ['W-06-14'],
+  'POST /logistics/putaway-rules/{putawayRuleId}:deactivate': ['W-06-14'],
 };
