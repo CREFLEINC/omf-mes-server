@@ -3,6 +3,11 @@ import { Module } from '@nestjs/common';
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
 import { InterfaceDefinitionController } from './interface/interface-definition.controller';
+import {
+  IntegrationMessageBatchController,
+  IntegrationMessageController,
+} from './message/integration-message.controller';
+import { IntegrationMessageService } from './message/integration-message.service';
 import { InterfaceDefinitionService } from './interface/interface-definition.service';
 
 /**
@@ -11,7 +16,11 @@ import { InterfaceDefinitionService } from './interface/interface-definition.ser
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [InterfaceDefinitionController],
-  providers: [InterfaceDefinitionService],
+  controllers: [
+    InterfaceDefinitionController,
+    IntegrationMessageBatchController,
+    IntegrationMessageController,
+  ],
+  providers: [InterfaceDefinitionService, IntegrationMessageService],
 })
 export class IntegrationModule {}
