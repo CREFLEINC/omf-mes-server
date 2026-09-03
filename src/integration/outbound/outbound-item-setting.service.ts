@@ -67,11 +67,11 @@ export class OutboundItemSettingService {
    * 「**묶음으로 저장한다** — 토글이 곧바로 반영되지 않는다. 끄는 순간 외부로 나가는
    * 전표가 끊기고 되돌려도 그 사이는 복구되지 않기 때문이다」(계약).
    *
-   * 0 「`locked` 인 항목을 끄려 하면 400 으로 거부한다 — **화면이 조작을 막는 것과 별개로
- *   계약도 막는다**」. 화면만 막으면 API 를 직접 부르는 쪽이 끌 수 있다.
+   * ⛔ 「`locked` 인 항목을 끄려 하면 400 으로 거부한다 — **화면이 조작을 막는 것과 별개로
+   *   계약도 막는다**」. 화면만 막으면 API 를 직접 부르는 쪽이 끌 수 있다.
    *
-   * 1 계약이 저장 충돌 보호를 두지 않았다 — 「항목이 다섯인 고정 목록이고 행을 오가며
- *   편집하는 형태가 아니다」. 그래서 `If-Match` 가 없다.
+   * ⚠ 계약이 저장 충돌 보호를 두지 않았다 — 「항목이 다섯인 고정 목록이고 행을 오가며
+   *   편집하는 형태가 아니다」. 그래서 `If-Match` 가 없다.
    */
   async replace(items: SettingUpdate[], actorId?: number): Promise<SettingView[]> {
     assertShape(items);
@@ -80,24 +80,18 @@ export class OutboundItemSettingService {
     await this.prisma.$transaction(async (tx) => {
       for (const item of items) {
         const definitionId = item.interfaceDefinitionId ?? null;
-        const existing = await tx.outbound_item_setting.findFirst({
+        // ⛔ 찾고-없으면-넣기가 아니라 upsert 다. 표가 «비어서» 시작하므로 첫 저장이 가장
+        //   흔한 경로인데, 둘이 동시에 첫 저장을 누르면 찾고-넣기는 둘 다 「없다」를 보고
+        //   둘 다 넣어 `uq_outbound_item_setting_code` 에 부딪힌다.
+        await tx.outbound_item_setting.upsert({
           where: { outbound_item_code: item.outboundItemCode },
-          select: { outbound_item_setting_id: true },
-        });
-        if (existing === null) {
-          await tx.outbound_item_setting.create({
-            data: {
-              outbound_item_code: item.outboundItemCode,
-              is_enabled: item.enabled,
-              interface_definition_id: definitionId,
-              ...(actorId === undefined ? {} : { created_by: actorId }),
-            },
-          });
-          continue;
-        }
-        await tx.outbound_item_setting.update({
-          where: { outbound_item_setting_id: existing.outbound_item_setting_id },
-          data: {
+          create: {
+            outbound_item_code: item.outboundItemCode,
+            is_enabled: item.enabled,
+            interface_definition_id: definitionId,
+            ...(actorId === undefined ? {} : { created_by: actorId, updated_by: actorId }),
+          },
+          update: {
             is_enabled: item.enabled,
             interface_definition_id: definitionId,
             version_no: { increment: 1 },
@@ -164,10 +158,10 @@ export class OutboundItemSettingService {
 function assertShape(items: SettingUpdate[]): void {
   const errors: ErrorItem[] = [];
   const seen = new Map<string, number>();
-  const locked = new Map(OUTBOUND_ITEMS.map((item) => [item.code, item]));
+  const catalog = new Map(OUTBOUND_ITEMS.map((item) => [item.code, item]));
 
   items.forEach((item, index) => {
-    const known = locked.get(item.outboundItemCode);
+    const known = catalog.get(item.outboundItemCode);
     if (known === undefined) {
       // 어휘는 계약이 enum 으로 못박아 가드가 거르지만, 「검사 결과」처럼 목록에 없는 값이
       // 새로 생기면 여기서 걸린다.

@@ -194,6 +194,17 @@ describe('송신 항목 설정 (e2e)', () => {
       .expect(200);
     const back = again.body.items.find((i: Setting) => i.outboundItemCode === 'GOODS_RECEIPT');
     expect(back.enabled).toBe(true);
+    // ⛔ 한 항목만 보낸 저장이 «다른 항목의 저장분»을 지우지 않는다. 화면은 바꾼 것만
+    //   보낼 수 있고, 그때 나머지가 기본값으로 되돌아가면 조용히 송신이 켜진다.
+    const kept = again.body.items.find((i: Setting) => i.outboundItemCode === 'SHIPMENT_PGI');
+    expect(kept).toMatchObject({ enabled: true, interfaceDefinitionId: definitionId });
+
+    // 같은 항목을 두 번 저장해도 줄은 하나다 — upsert 라 매번 넣지 않는다.
+    const rows = await prisma.outbound_item_setting.findMany({
+      where: { outbound_item_code: 'GOODS_RECEIPT' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].version_no).toBeGreaterThan(1);
   });
 
   it('⭐ 이어 둔 연계 정의의 「보내지 못한 건수」를 함께 낸다', async () => {
