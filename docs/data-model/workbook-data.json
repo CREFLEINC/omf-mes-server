@@ -6,15 +6,15 @@
     "model_version": "4.0",
     "design_reference_commit": "a8f46f2",
     "contract_reference_commit": "77a067b1202cdef09723287e956b064c3392e111",
-    "table_count": 182,
-    "logical_table_count": 180,
+    "table_count": 183,
+    "logical_table_count": 181,
     "partition_count": 2,
-    "column_count": 2390,
-    "relationship_count": 560,
+    "column_count": 2404,
+    "relationship_count": 561,
     "schemas": {
       "app": 27,
       "audit": 2,
-      "integration": 5,
+      "integration": 6,
       "inventory": 13,
       "logistics": 34,
       "maintenance": 12,
@@ -410,12 +410,24 @@
     },
     {
       "schema": "integration",
+      "table": "interface_column_mapping",
+      "qualified_name": "integration.interface_column_mapping",
+      "logical_name": "인터페이스 COLUMN MAPPING",
+      "lifecycle": "EVENT",
+      "purpose": "연계 정의의 칸 잇기. 계약 InterfaceColumnMapping 의 저장처 (omf-mes#66).",
+      "column_count": 8,
+      "primary_key": "interface_column_mapping_id",
+      "foreign_key_count": 1,
+      "is_partition": false
+    },
+    {
+      "schema": "integration",
       "table": "interface_definition",
       "qualified_name": "integration.interface_definition",
       "logical_name": "인터페이스 정의",
       "lifecycle": "EVENT",
       "purpose": "인터페이스 정의의 발생 사실과 변경 이력을 불변 기록으로 보존한다.",
-      "column_count": 14,
+      "column_count": 20,
       "primary_key": "interface_definition_id",
       "foreign_key_count": 0,
       "is_partition": false
@@ -5743,6 +5755,94 @@
       "default": ""
     },
     {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 1,
+      "column": "interface_column_mapping_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "PK",
+      "default": "nextval('integration.interface_column_mapping_interface_column_mapping_id_seq'::regclass)"
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 2,
+      "column": "interface_definition_id",
+      "data_type": "bigint",
+      "required": true,
+      "key_reference": "FK→integration.interface_definition",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 3,
+      "column": "sequence_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 4,
+      "column": "relay_column",
+      "data_type": "character varying(100)",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 5,
+      "column": "target_table",
+      "data_type": "character varying(100)",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 6,
+      "column": "target_column",
+      "data_type": "character varying(100)",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 7,
+      "column": "created_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "integration.interface_column_mapping",
+      "schema": "integration",
+      "table": "interface_column_mapping",
+      "ordinal": 8,
+      "column": "created_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
       "qualified_table": "integration.interface_definition",
       "schema": "integration",
       "table": "interface_definition",
@@ -5793,7 +5893,7 @@
       "ordinal": 5,
       "column": "transport_code",
       "data_type": "app.code_t",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": ""
     },
@@ -5826,7 +5926,7 @@
       "ordinal": 8,
       "column": "retry_policy",
       "data_type": "jsonb",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": "'{}'::jsonb"
     },
@@ -5895,6 +5995,72 @@
       "required": true,
       "key_reference": "-",
       "default": "1"
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 15,
+      "column": "target_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 16,
+      "column": "external_system_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 17,
+      "column": "trigger_type_code",
+      "data_type": "app.code_t",
+      "required": true,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 18,
+      "column": "schedule_expression",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 19,
+      "column": "event_condition",
+      "data_type": "text",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.interface_definition",
+      "schema": "integration",
+      "table": "interface_definition",
+      "ordinal": 20,
+      "column": "relay_table_name",
+      "data_type": "character varying(200)",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
     },
     {
       "qualified_table": "integration.outbound_item_setting",
@@ -28872,6 +29038,14 @@
       "source_columns": "terminal_id",
       "target_table": "mdm.terminal",
       "target_columns": "terminal_id",
+      "on_delete": "NO ACTION"
+    },
+    {
+      "name": "interface_column_mapping_interface_definition_id_fkey",
+      "source_table": "integration.interface_column_mapping",
+      "source_columns": "interface_definition_id",
+      "target_table": "integration.interface_definition",
+      "target_columns": "interface_definition_id",
       "on_delete": "NO ACTION"
     },
     {

@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 180개 · 물리 파티션 2개 · 컬럼 2390개
+> 설계 기준 `a8f46f2` · 논리 테이블 181개 · 물리 파티션 2개 · 컬럼 2404개
 
 ## 범례
 
@@ -667,7 +667,8 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 |---|---|---|---:|---|---:|---|
 | `integration.external_document_reference` | 외부 문서 REFERENCE | EVENT | 8 | `external_document_reference_id` | 0 | 외부 문서 REFERENCE의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `integration.integration_message` | 연계 메시지 | EVENT | 16 | `integration_message_id` | 0 | 연계 메시지의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
-| `integration.interface_definition` | 인터페이스 정의 | EVENT | 14 | `interface_definition_id` | 0 | 인터페이스 정의의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
+| `integration.interface_column_mapping` | 인터페이스 COLUMN MAPPING | EVENT | 8 | `interface_column_mapping_id` | 1 | 연계 정의의 칸 잇기. 계약 InterfaceColumnMapping 의 저장처 (omf-mes#66). |
+| `integration.interface_definition` | 인터페이스 정의 | EVENT | 20 | `interface_definition_id` | 0 | 인터페이스 정의의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `integration.outbound_item_setting` | 송신 품목 설정 | EVENT | 8 | `outbound_item_setting_id` | 2 | 송신 품목 설정의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `integration.record_provenance` | 기록 출처 | EVENT | 8 | `record_provenance_id` | 2 | 기록 출처의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 
@@ -717,6 +718,25 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 15 | `locked_at` | `timestamp with time zone` | N | - | `-` |
 | 16 | `locked_by` | `character varying(100)` | N | - | `-` |
 
+### integration.interface_column_mapping — 인터페이스 COLUMN MAPPING
+
+연계 정의의 칸 잇기. 계약 InterfaceColumnMapping 의 저장처 (omf-mes#66).
+
+- 유형: `EVENT`
+- 기본키: `interface_column_mapping_id`
+- 직접 외래키: 1개
+
+| No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
+|---:|---|---|:---:|---|---|
+| 1 | `interface_column_mapping_id` | `bigint` | Y | PK | `nextval('integration.interface_column_mapping_interface_column_mapping_id_seq'::regclass)` |
+| 2 | `interface_definition_id` | `bigint` | Y | FK→integration.interface_definition | `-` |
+| 3 | `sequence_no` | `integer` | Y | - | `-` |
+| 4 | `relay_column` | `character varying(100)` | Y | - | `-` |
+| 5 | `target_table` | `character varying(100)` | Y | - | `-` |
+| 6 | `target_column` | `character varying(100)` | Y | - | `-` |
+| 7 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 8 | `created_by` | `bigint` | N | - | `-` |
+
 ### integration.interface_definition — 인터페이스 정의
 
 인터페이스 정의의 발생 사실과 변경 이력을 불변 기록으로 보존한다.
@@ -731,16 +751,22 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 2 | `interface_code` | `app.code_t` | Y | - | `-` |
 | 3 | `interface_name` | `app.name_t` | Y | - | `-` |
 | 4 | `direction_code` | `app.code_t` | Y | - | `-` |
-| 5 | `transport_code` | `app.code_t` | Y | - | `-` |
+| 5 | `transport_code` | `app.code_t` | N | - | `-` |
 | 6 | `endpoint_uri` | `text` | N | - | `-` |
 | 7 | `message_schema` | `jsonb` | N | - | `-` |
-| 8 | `retry_policy` | `jsonb` | Y | - | `'{}'::jsonb` |
+| 8 | `retry_policy` | `jsonb` | N | - | `'{}'::jsonb` |
 | 9 | `is_active` | `boolean` | Y | - | `true` |
 | 10 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 11 | `created_by` | `bigint` | N | - | `-` |
 | 12 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 13 | `updated_by` | `bigint` | N | - | `-` |
 | 14 | `version_no` | `integer` | Y | - | `1` |
+| 15 | `target_code` | `app.code_t` | Y | - | `-` |
+| 16 | `external_system_code` | `app.code_t` | Y | - | `-` |
+| 17 | `trigger_type_code` | `app.code_t` | Y | - | `-` |
+| 18 | `schedule_expression` | `text` | N | - | `-` |
+| 19 | `event_condition` | `text` | N | - | `-` |
+| 20 | `relay_table_name` | `character varying(200)` | N | - | `-` |
 
 ### integration.outbound_item_setting — 송신 품목 설정
 

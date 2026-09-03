@@ -3966,6 +3966,112 @@
             ]
         },
         {
+            "name": "interface_column_mapping",
+            "checks": [
+                {
+                    "name": "interface_column_mapping_sequence_no_check",
+                    "expression": "CHECK (sequence_no > 0)"
+                }
+            ],
+            "schema": "integration",
+            "columns": [
+                {
+                    "name": "interface_column_mapping_id",
+                    "default": "nextval('integration.interface_column_mapping_interface_column_mapping_id_seq'::regclass)",
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "interface_definition_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "sequence_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": "화면이 보낸 순서. 계약에는 없고 정렬에만 쓴다 — 순서를 잃으면 저장할 때마다 줄이 뒤바뀐다."
+                },
+                {
+                    "name": "relay_column",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "character varying(100)",
+                    "description": null
+                },
+                {
+                    "name": "target_table",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "character varying(100)",
+                    "description": null
+                },
+                {
+                    "name": "target_column",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "character varying(100)",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 7,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                }
+            ],
+            "description": "연계 정의의 칸 잇기. 계약 InterfaceColumnMapping 의 저장처 (omf-mes#66).",
+            "primary_key": [
+                "interface_column_mapping_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "interface_column_mapping_interface_definition_id_fkey",
+                    "columns": [
+                        "interface_definition_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "interface_definition",
+                    "target_schema": "integration",
+                    "target_columns": [
+                        "interface_definition_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "integration.interface_column_mapping",
+            "unique_constraints": [
+                {
+                    "name": "uq_interface_column_mapping",
+                    "columns": [
+                        "interface_definition_id",
+                        "sequence_no"
+                    ]
+                }
+            ]
+        },
+        {
             "name": "interface_definition",
             "checks": [
                 {
@@ -4011,9 +4117,9 @@
                     "name": "transport_code",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "계약에 이 축이 없다 — 서버가 채울 근거가 없어 비워 둔다 (omf-mes#66)."
                 },
                 {
                     "name": "endpoint_uri",
@@ -4035,9 +4141,9 @@
                     "name": "retry_policy",
                     "default": "'{}'::jsonb",
                     "ordinal": 8,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "jsonb",
-                    "description": null
+                    "description": "계약에 이 축이 없다 — 서버가 채울 근거가 없어 비워 둔다 (omf-mes#66)."
                 },
                 {
                     "name": "is_active",
@@ -4085,6 +4191,54 @@
                     "ordinal": 14,
                     "nullable": false,
                     "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "target_code",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "연계 대상. 확정 다섯(품목·자재명세·조직·작업자·구매발주) 밖의 값도 받는다 — 막지 않고 표식만 한다."
+                },
+                {
+                    "name": "external_system_code",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "외부 시스템(UNIERP · TRACKING_SYSTEM · EQUIPMENT_STANDARD_IF). 성격이 달라 축을 나눈다."
+                },
+                {
+                    "name": "trigger_type_code",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": "주기(TIME_SCHEDULE)인가 사건(EVENT)인가. 짝이 되는 칸이 함께 채워져야 한다 — 서버가 본다."
+                },
+                {
+                    "name": "schedule_expression",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "event_condition",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "relay_table_name",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "character varying(200)",
                     "description": null
                 }
             ],
@@ -32592,6 +32746,20 @@
             ],
             "target_columns": [
                 "terminal_id"
+            ]
+        },
+        {
+            "name": "interface_column_mapping_interface_definition_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "interface_column_mapping",
+            "target_table": "interface_definition",
+            "source_schema": "integration",
+            "target_schema": "integration",
+            "source_columns": [
+                "interface_definition_id"
+            ],
+            "target_columns": [
+                "interface_definition_id"
             ]
         },
         {

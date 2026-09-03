@@ -3888,21 +3888,28 @@ model worker_lease {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model interface_definition {
-  interface_definition_id BigInt                  @id @default(autoincrement())
-  interface_code          String                  @unique @db.VarChar(50)
-  interface_name          String                  @db.VarChar(200)
-  direction_code          String                  @db.VarChar(50)
-  transport_code          String                  @db.VarChar(50)
-  endpoint_uri            String?
-  message_schema          Json?
-  retry_policy            Json                    @default("{}")
-  is_active               Boolean                 @default(true)
-  created_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by              BigInt?
-  updated_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by              BigInt?
-  version_no              Int                     @default(1)
-  outbound_item_setting   outbound_item_setting[]
+  interface_definition_id  BigInt                     @id @default(autoincrement())
+  interface_code           String                     @unique @db.VarChar(50)
+  interface_name           String                     @db.VarChar(200)
+  direction_code           String                     @db.VarChar(50)
+  transport_code           String?                    @db.VarChar(50)
+  endpoint_uri             String?
+  message_schema           Json?
+  retry_policy             Json?                      @default("{}")
+  is_active                Boolean                    @default(true)
+  created_at               DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by               BigInt?
+  updated_at               DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by               BigInt?
+  version_no               Int                        @default(1)
+  target_code              String                     @db.VarChar(50)
+  external_system_code     String                     @db.VarChar(50)
+  trigger_type_code        String                     @db.VarChar(50)
+  schedule_expression      String?
+  event_condition          String?
+  relay_table_name         String?                    @db.VarChar(200)
+  interface_column_mapping interface_column_mapping[]
+  outbound_item_setting    outbound_item_setting[]
 
   @@schema("integration")
 }
@@ -4752,4 +4759,21 @@ model repair_execution {
 
   @@index([defect_record_id, started_at(sort: Desc)], map: "ix_repair_execution_defect")
   @@schema("production")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model interface_column_mapping {
+  interface_column_mapping_id BigInt               @id @default(autoincrement())
+  interface_definition_id     BigInt
+  sequence_no                 Int
+  relay_column                String               @db.VarChar(100)
+  target_table                String               @db.VarChar(100)
+  target_column               String               @db.VarChar(100)
+  created_at                  DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                  BigInt?
+  interface_definition        interface_definition @relation(fields: [interface_definition_id], references: [interface_definition_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([interface_definition_id, sequence_no], map: "uq_interface_column_mapping")
+  @@schema("integration")
 }
