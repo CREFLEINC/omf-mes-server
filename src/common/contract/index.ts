@@ -1,5 +1,7 @@
 export { collectContractBindings } from './contract-bindings';
 export type { ContractBinding } from './contract-bindings';
+export { buildContractDocument, servedOperations } from './contract-document';
+export type { ContractDocument } from './contract-document';
 export { CONTRACT_OPERATION, Contract } from './contract.decorator';
 export { ContractRegistry, defaultContractsDir, jsonPointerToken } from './contract-registry';
 export type { ContractOperation, OpenApiDocument, OpenApiOperation } from './contract-registry';
