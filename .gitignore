@@ -4,6 +4,9 @@
 # 로컬 도구 상태
 **/settings.local.json
 
+# 워크플로 V3 로컬 상태 — 담당 팀/워크플로 버전/설계 고정 커밋 스냅샷 (pnpm workflow:bootstrap)
+.backend-dev/
+
 node_modules/
 dist/
 coverage/
