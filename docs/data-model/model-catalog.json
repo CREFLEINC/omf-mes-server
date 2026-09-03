@@ -4265,6 +4265,10 @@
                 {
                     "name": "ck_outbound_item_setting_dates",
                     "expression": "CHECK (effective_to IS NULL OR effective_to >= effective_from)"
+                },
+                {
+                    "name": "outbound_item_setting_version_no_check",
+                    "expression": "CHECK (version_no > 0)"
                 }
             ],
             "schema": "integration",
@@ -4281,7 +4285,7 @@
                     "name": "interface_definition_id",
                     "default": null,
                     "ordinal": 2,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -4289,9 +4293,9 @@
                     "name": "item_id",
                     "default": null,
                     "ordinal": 3,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "⚠ 대체된 설계의 흔적. 「개발품 제외」의 판정 축은 품목 마스터로 옮겼다 (omf-mes#70 종료)."
                 },
                 {
                     "name": "is_enabled",
@@ -4305,9 +4309,9 @@
                     "name": "effective_from",
                     "default": "clock_timestamp()",
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "timestamp with time zone",
-                    "description": null
+                    "description": "⚠ 대체된 설계의 흔적. 송신 항목 on/off 는 유효기간을 두지 않는다."
                 },
                 {
                     "name": "effective_to",
@@ -4331,6 +4335,38 @@
                     "ordinal": 8,
                     "nullable": true,
                     "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "outbound_item_code",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "송신 항목(PRODUCTION_RESULT·GOODS_RECEIPT·SHIPMENT_PGI·RETURN·STOCK_ADJUSTMENT). 앱이 소유한 고정 다섯."
+                },
+                {
+                    "name": "updated_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 10,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "updated_by",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 12,
+                    "nullable": false,
+                    "data_type": "integer",
                     "description": null
                 }
             ],

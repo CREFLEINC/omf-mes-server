@@ -9,7 +9,7 @@
     "table_count": 183,
     "logical_table_count": 181,
     "partition_count": 2,
-    "column_count": 2404,
+    "column_count": 2408,
     "relationship_count": 561,
     "schemas": {
       "app": 27,
@@ -439,7 +439,7 @@
       "logical_name": "송신 품목 설정",
       "lifecycle": "EVENT",
       "purpose": "송신 품목 설정의 발생 사실과 변경 이력을 불변 기록으로 보존한다.",
-      "column_count": 8,
+      "column_count": 12,
       "primary_key": "outbound_item_setting_id",
       "foreign_key_count": 2,
       "is_partition": false
@@ -6080,7 +6080,7 @@
       "ordinal": 2,
       "column": "interface_definition_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "FK→integration.interface_definition",
       "default": ""
     },
@@ -6091,7 +6091,7 @@
       "ordinal": 3,
       "column": "item_id",
       "data_type": "bigint",
-      "required": true,
+      "required": false,
       "key_reference": "FK→mdm.item",
       "default": ""
     },
@@ -6113,7 +6113,7 @@
       "ordinal": 5,
       "column": "effective_from",
       "data_type": "timestamp with time zone",
-      "required": true,
+      "required": false,
       "key_reference": "-",
       "default": "clock_timestamp()"
     },
@@ -6149,6 +6149,50 @@
       "required": false,
       "key_reference": "-",
       "default": ""
+    },
+    {
+      "qualified_table": "integration.outbound_item_setting",
+      "schema": "integration",
+      "table": "outbound_item_setting",
+      "ordinal": 9,
+      "column": "outbound_item_code",
+      "data_type": "app.code_t",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.outbound_item_setting",
+      "schema": "integration",
+      "table": "outbound_item_setting",
+      "ordinal": 10,
+      "column": "updated_at",
+      "data_type": "timestamp with time zone",
+      "required": true,
+      "key_reference": "-",
+      "default": "clock_timestamp()"
+    },
+    {
+      "qualified_table": "integration.outbound_item_setting",
+      "schema": "integration",
+      "table": "outbound_item_setting",
+      "ordinal": 11,
+      "column": "updated_by",
+      "data_type": "bigint",
+      "required": false,
+      "key_reference": "-",
+      "default": ""
+    },
+    {
+      "qualified_table": "integration.outbound_item_setting",
+      "schema": "integration",
+      "table": "outbound_item_setting",
+      "ordinal": 12,
+      "column": "version_no",
+      "data_type": "integer",
+      "required": true,
+      "key_reference": "-",
+      "default": "1"
     },
     {
       "qualified_table": "integration.record_provenance",

@@ -7,6 +7,8 @@ import {
   IntegrationMessageBatchController,
   IntegrationMessageController,
 } from './message/integration-message.controller';
+import { OutboundItemSettingController } from './outbound/outbound-item-setting.controller';
+import { OutboundItemSettingService } from './outbound/outbound-item-setting.service';
 import { IntegrationMessageService } from './message/integration-message.service';
 import { InterfaceDefinitionService } from './interface/interface-definition.service';
 
@@ -20,7 +22,12 @@ import { InterfaceDefinitionService } from './interface/interface-definition.ser
     InterfaceDefinitionController,
     IntegrationMessageBatchController,
     IntegrationMessageController,
+    OutboundItemSettingController,
   ],
-  providers: [InterfaceDefinitionService, IntegrationMessageService],
+  providers: [
+    InterfaceDefinitionService,
+    IntegrationMessageService,
+    OutboundItemSettingService,
+  ],
 })
 export class IntegrationModule {}
