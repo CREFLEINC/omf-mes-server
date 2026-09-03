@@ -24,6 +24,21 @@
 > **12번은 반대로 굳었다.** 계약에서 「셀 수 있다」 문구는 사라졌으나, 근거는 그대로다 —
 > 계약 자신이 `codeGroupCode=<리터럴>` 로 **151곳**에서 그룹 코드 글자를 지시한다.
 
+> ⚠ **2026-09-03 사본 `6d03a44`** (설계 변동 공지 #152)에서 더 풀린 것 — 판정과 수정 계획은
+> [`계약-재검토-2026-09-03.md`](./계약-재검토-2026-09-03.md) §6.
+>
+> | 항목 | 지금 |
+> |---|---|
+> | 4. `externalSystemCode` enum · `QUALIFICATION_TYPE` | enum `EQUIPMENT_STANDARD_IF`·`TRACKING_SYSTEM`·`UNIERP` 로 **확정** |
+> | C. 작업자 ETag | 계약이 **선언했다** |
+> | N. 설비 유형 그룹 | **등재됐다** |
+> | O-4. 금형 상태 | `EQUIPMENT_STATUS` 를 **준용한다** |
+> | S-1 / T-1 / V-1. 버전 상태 문자열 | `MASTER_VERSION_STATUS` DRAFT·**CONFIRMED**·OBSOLETE — 서버 `ACTIVE` 를 고친다 |
+> | X-1. 연계 대상 값 | `INTERFACE_TARGET` 5값 — 구현과 **같다** |
+> | X-4. 메시지 완료 문자열 | **`DONE`** — 서버 `COMPLETED` 를 고친다 |
+>
+> 3(`conflictCause`) · 5(`certifiedBy`) · S-2~4 · T-2 · U 는 그대로 열려 있다.
+
 ---
 
 ## 답이 필요한 것
