@@ -17499,9 +17499,9 @@
                     "name": "lot_control_type_code",
                     "default": null,
                     "ordinal": 6,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "⛔ 쓰지 않는다 — lot_controlled 로 접혔다. 다음 릴리스에서 삭제한다."
                 },
                 {
                     "name": "serial_control_type_code",
@@ -17654,6 +17654,14 @@
                     "nullable": true,
                     "data_type": "app.name_t",
                     "description": null
+                },
+                {
+                    "name": "lot_controlled",
+                    "default": "false",
+                    "ordinal": 26,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "LOT 단위로 재고를 관리하는 품목인가. 계약 Item.lotControlled — lot_control_type_code 를 boolean 으로 접었다(설계 결정 2026-09-02)."
                 }
             ],
             "description": null,
