@@ -2,19 +2,9 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { assertCodeValues, optional } from '../../common/master';
+import { SEQ_PARKING_OFFSET, assertCodeValues, optional } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REVISION_STATUS } from '../revision-status';
-
-/**
- * 순서를 통째로 바꿀 때 기존 행을 잠시 밀어 두는 거리.
- *
- * ⛔ `uq_routing_operation(routing_id, operation_seq)` 은 지연 가능(deferrable)이 아니다.
- * 두 줄의 순서를 맞바꾸면 **중간 상태가 반드시 유일 제약을 위반한다**(공유계약 `A-5` 가
- * 지목한 자리). 음수로 미는 흔한 수법은 `CHECK (operation_seq > 0)` 이 막으므로 «위로»
- * 민다. 최종 순서가 이 값보다 작으면 부딪히지 않는다 — 공정 백만 개짜리 Routing 은 없다.
- */
-const SEQ_PARKING_OFFSET = 1_000_000;
 
 /** 계약 `RoutingOperation` 과 동형. 필드는 `x-source-column` 을 그대로 따른다. */
 interface RoutingOperationView {

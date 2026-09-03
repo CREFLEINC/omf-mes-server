@@ -28803,7 +28803,7 @@
             "checks": [
                 {
                     "name": "ck_inspection_plan_sampling_ratio",
-                    "expression": "CHECK (sampling_ratio IS NULL OR sampling_ratio >= 0::numeric AND sampling_ratio <= 1::numeric)"
+                    "expression": "CHECK (sampling_ratio IS NULL OR sampling_ratio > 0::numeric AND sampling_ratio <= 100::numeric)"
                 },
                 {
                     "name": "ck_inspection_plan_version_dates",
@@ -28986,7 +28986,7 @@
                     "ordinal": 20,
                     "nullable": true,
                     "data_type": "numeric(9,6)",
-                    "description": null
+                    "description": "샘플 비율(%). 0 초과 100 이하 — 비율이 아니라 백분율이다 (✓확정 2026-07-15)."
                 }
             ],
             "description": null,

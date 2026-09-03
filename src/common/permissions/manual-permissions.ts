@@ -115,4 +115,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-plans/{inspectionPlanId}:approve': ['W-06-02'],
   'POST /quality/inspection-plans/{inspectionPlanId}:activate': ['W-06-02'],
   'POST /quality/inspection-plans/{inspectionPlanId}:deactivate': ['W-06-02'],
+  'PUT /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['W-06-02'],
+  'PUT /quality/inspection-plan-versions/{inspectionPlanVersionId}/items': ['W-06-02'],
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:confirm': ['W-06-02'],
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:obsolete': ['W-06-02'],
+  'POST /quality/inspection-plan-versions/{inspectionPlanVersionId}:new-revision': ['W-06-02'],
 };
