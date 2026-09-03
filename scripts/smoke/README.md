@@ -35,6 +35,19 @@ bash scripts/smoke/restart.sh
 
 API 가 늘 때마다 이것만 다시 돌리면 된다 — 뜬 뒤 `/api/health` 가 응답할 때까지 기다린다.
 
+⭐ **LAN 에서 부를 수 있다.** 서버는 `0.0.0.0:3100` 에 붙으므로 `http://<이 기계의 IP>:3100/api`
+로 바로 닿는다. 스크립트가 이 기계의 IP 를 찾아 `CORS_ORIGINS` 에 넣어 준다(`:5173`·`:3000`).
+
+⚠ **브라우저 화면이 «다른 기계»에서 뜨면 쿠키가 안 간다.** 쿠키가 `SameSite=Lax` 라
+교차 사이트 요청에 실리지 않는다(포트만 다른 것은 같은 사이트라 괜찮다). 그때는 둘 중 하나다.
+
+1. 화면 개발 서버에 프록시를 둔다 — 같은 오리진이 되어 CORS 도 쿠키도 문제가 없다.
+   ```js
+   // vite.config.ts
+   server: { proxy: { '/api': 'http://192.168.1.190:3100' } }
+   ```
+2. TLS 를 세우고 `COOKIE_SECURE=true` 로 띄운다 — `SameSite=None; Secure` 가 필요하다.
+
 ## 2-1. API 스펙 보기
 
 `http://localhost:3100/api/docs`
