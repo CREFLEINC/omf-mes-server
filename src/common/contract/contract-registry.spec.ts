@@ -7,8 +7,8 @@ import { ContractRegistry, defaultContractsDir } from './contract-registry';
 describe('ContractRegistry', () => {
   const registry = ContractRegistry.load();
 
-  it('계약 7파일에서 오퍼레이션 482건을 적재한다', () => {
-    expect(registry.size).toBe(482);
+  it('계약 7파일에서 오퍼레이션 490건을 적재한다', () => {
+    expect(registry.size).toBe(490);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {

@@ -46,7 +46,8 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02)."
      },
      {
       "name": "orderDateFrom",
@@ -303,8 +304,13 @@
               "string",
               "null"
              ],
-             "description": "matched 가 거짓일 때의 사유. LABEL_ITEM_MISMATCH=이 납품라벨은 다른 품목용이다 · LOT_NOT_ALLOCATED=이 출하에 배분되지 않은 LOT 이다",
-             "example": "LOT_NOT_ALLOCATED"
+             "description": "matched 가 거짓일 때의 사유 — LABEL_ITEM_MISMATCH(이 납품라벨은 다른 품목용이다) · LOT_NOT_ALLOCATED(이 출하에 배분되지 않은 LOT 이다). ⭐ 서버가 판정해 내리는 값이고 화면은 이 값으로 «문구»를 가른다 — 동작이 값에 걸리므로 설계가 닫는다(공유계약 G-31). ⛔ 공통코드 그룹이 아니다 — 고객이 늘리지 않는다(A-16 「가」 참). matched 가 참이면 null 이다.",
+             "example": "LOT_NOT_ALLOCATED",
+             "enum": [
+              "LABEL_ITEM_MISMATCH",
+              "LOT_NOT_ALLOCATED"
+             ],
+             "x-code-key": "CD-SHIPMENT-LOT-MATCH-FAIL-REASON"
             }
            },
            "required": [
@@ -525,7 +531,8 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
      },
      {
       "name": "timeSlotCode",
@@ -534,7 +541,8 @@
        "type": "string",
        "example": "MORNING"
       },
-      "description": "출하 희망 시간대 필터 — 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). W-04-02 시간대 필터 축. 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41)"
+      "description": "출하 희망 시간대 필터 — 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). W-04-02 시간대 필터 축. 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41) 값 = `MORNING`·`AFTERNOON`·`NIGHT`. 값 목록은 `GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31).",
+      "x-code-key": "CD-SHIPMENT-TIME-SLOT"
      },
      {
       "name": "shippingInspectionRequired",
@@ -735,7 +743,8 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
      },
      {
       "name": "timeSlotCode",
@@ -744,7 +753,8 @@
        "type": "string",
        "example": "MORNING"
       },
-      "description": "출하 희망 시간대 필터 — 목록(GET /logistics/shipment-requests)과 같은 축. 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41)"
+      "description": "출하 희망 시간대 필터 — 목록(GET /logistics/shipment-requests)과 같은 축. 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41) 값 = `MORNING`·`AFTERNOON`·`NIGHT`. 값 목록은 `GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31).",
+      "x-code-key": "CD-SHIPMENT-TIME-SLOT"
      },
      {
       "name": "shippingInspectionRequired",
@@ -993,7 +1003,9 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "x-code-key": "CD-SHIPMENT-STATUS",
+      "description": "출하의 진행 상태 — 미확정(UNCONFIRMED) · 확정(CONFIRMED) · 취소(CANCELLED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 확정이 PGI 송신을 부르고 취소가 그것을 되돌린다(W-04-04 §5-1 · W-04-12 §5-2). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      {
       "name": "warehouseId",
@@ -1497,6 +1509,133 @@
     }
    }
   },
+  "/quality/disposition-candidates": {
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "처분 판정 대상 목록",
+    "description": "처분 판정을 기다리는 대상 목록 — `W-04-07` 의 진입 목록이다. ⭐ **부적합 유무를 가리지 않고** 낸다: 아직 부적합을 만들지 않은 대상은 nonconformanceId 가 null 이고, 만든 것은 그 건의 상태(NOT_REQUESTED·PENDING_DECISION·DECIDED)를 함께 싣는다 — 화면 목업의 배지 넷이 이 한 목록에서 나온다. ⭐ 원천 둘을 한 목록으로 합쳐 낸다 — 반품 입고(RETURN)와 OQC 불합격(PRODUCT). 화면이 두 질의를 합치지 않는다(공유계약 L-2). ⛔ 화면이 응답을 걸러 「아직 안 만든 것」을 고르지 않는다 — 목록이 페이지 단위라 성립하지 않는다(형제 오퍼레이션 GET /quality/disposition-decisions 의 같은 경고). 그 축은 withoutNonconformanceOnly 가 서버에서 판정한다. 근거: W-04-07 §3·§5-7 · REQ-PR-0025 「판정은 불량창고 입고 후」 · 프로세스 05 S11",
+    "parameters": [
+     {
+      "name": "sourceCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "PRODUCT",
+        "RETURN"
+       ]
+      },
+      "description": "원천 — 제품(PRODUCT · OQC 불합격) · 반품(RETURN · 반품·클레임 입고). 비우면 둘 다.",
+      "x-code-key": "CD-NONCONFORMANCE-SOURCE"
+     },
+     {
+      "name": "withoutNonconformanceOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "참이면 **아직 부적합을 만들지 않은 대상만** 낸다. ⭐ 같은 대상을 두 번 등록하는 것을 막는 축이다 — 선례 GET /maintenance/inspections?withoutMaintenanceOrder=true(W-05-05 §7 「이미 지시가 있는 트리거는 목록에서 제외한다」). ⛔ 화면이 응답을 걸러 대신하지 않는다(페이지 단위)."
+     },
+     {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "불량창고로 좁힐 때 쓴다 — 목록은 GET /mdm/warehouses?isDefect=true 가 준다(DR-012 3-C)."
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "receivedFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "대상이 불량창고에 들어온 날. ⚠ 기간을 «필수»로 두지 않는다 — 이 목록은 「지금 판정을 기다리는 것」이라 재고성이고, 기간을 강제하면 오래된 미처리 건이 화면에서 사라진다. 양끝 포함(공유계약 L-3 — date 축)."
+     },
+     {
+      "name": "receivedTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "LOT 번호·입고번호·품목 검색"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/DispositionCandidate"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "신설 2026-09-03(사용자 확정) — `W-04-07` §8-6 차단 미결의 해소다. §5-7 이 진입 목록을 GET /quality/nonconformances 로 매핑해 두었는데 그것은 «이미 만들어진» 부적합만 내므로, 부적합을 만드는 화면이 이 화면 하나로 확정된 뒤(요구서 §3-6) **아직 부적합이 없는 대상은 목록에 뜰 수 없었다** — 자기 자신을 입력으로 요구하는 순환이었다. ⭐ 축을 04 에 세운 이유 — 원천이 01(반품 입고)과 03(OQC 검사 결과)으로 갈려 있어 어느 한쪽 계약에 「부적합 미생성」 축을 달면 그 계약이 quality.nonconformance 를 알아야 한다. nonconformance 는 04 소유이므로(요구서 §1-1) 여기서 합치는 것이 소관에 맞다. ⚠ W-05-05 는 반대로 갔지만(원천별 축 + 화면이 합침) 거기는 원천이 «같은 도메인» 안이었다."
+   }
+  },
   "/quality/nonconformances": {
    "get": {
     "tags": [
@@ -1512,16 +1651,22 @@
        "type": "string",
        "example": "값"
       },
-      "description": "의뢰 전 · 판정 대기 · 판정 완료"
+      "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "x-code-key": "CD-NONCONFORMANCE-STATUS"
      },
      {
       "name": "sourceCode",
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "PRODUCT"
+       "example": "PRODUCT",
+       "enum": [
+        "PRODUCT",
+        "RETURN"
+       ]
       },
-      "description": "PRODUCT(제품)·RETURN(반품). ⭐ 서버가 대상 LOT 의 입고 유형으로 파생하는 축이다 — 화면이 보내지 않는다. W-03-10 §5-4 원천 필터가 쓴다. 이력: 2026-08-30 신설(W-03-10 원천 필터 되살리기) · 2026-09-01 서버 파생으로 재정의(omf-mes#303)"
+      "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). ⭐ 서버가 대상 LOT 의 입고 유형으로 «파생»하는 축이라 화면이 보내지 않는다(2026-09-01). W-03-10 §5-4 원천 필터가 쓴다. ⛔ DefectRecord 의 sourceCode(CD-DEFECT-RECORD-SOURCE)와 이름만 같고 축이 다르다 — 저쪽은 «어디서 발견했나», 여기는 «어디서 들어온 물건인가»다",
+      "x-code-key": "CD-NONCONFORMANCE-SOURCE"
      },
      {
       "name": "warehouseId",
@@ -1556,7 +1701,9 @@
       "schema": {
        "type": "string",
        "example": "값"
-      }
+      },
+      "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+      "description": "부적합 심각도 — 중대(CRITICAL) · 중(MAJOR) · 경(MINOR). ⭐ 화면 목업이 「심각도 중대」(W-03-10 §3)·「심각도 중」(W-04-07 §3)을 그려 3단계 축이 이미 서 있다. ⭐ 고객이 늘릴 수 있다 — 아래는 초기값(기본값)이지 닫힌 목록이 아니다. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      {
       "name": "openedFrom",
@@ -1629,7 +1776,7 @@
      "quality"
     ],
     "summary": "부적합 등록",
-    "description": "W-04-07 「부적합 등록」과 W-04-06 반품 입고가 만든다. 심각도와 내용이 필수다 — 내용은 판정자의 유일한 입력이라 비울 수 없다(공유계약 A-12). 근거: W-04-07 §5-3",
+    "description": "W-04-07 「부적합 등록」과 W-04-07 «하나»가 만든다 «(정합주: 2026-09-01 확정 — 요구서 §3-6 · W-04-06 v0.3. 반품 입고는 부적합을 만들지 않는다)». 심각도와 내용이 필수다 — 내용은 판정자의 유일한 입력이라 비울 수 없다(공유계약 A-12). 근거: W-04-07 §5-3",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1875,8 +2022,9 @@
      "type": "string",
      "maxLength": 50
     },
-    "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2",
-    "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178."
+    "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+    "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178.",
+    "example": "100027"
    }
   },
   "schemas": {
@@ -1963,6 +2111,142 @@
      "errors"
     ]
    },
+   "DispositionCandidate": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "itemId",
+     "quantity",
+     "uomId",
+     "warehouseId",
+     "sourceCode"
+    ],
+    "description": "처분 판정 대상 한 건 — «LOT 단위»다. ⭐ 단위가 LOT 인 근거: 부적합 등록이 NonconformanceCreate.lots[](minItems 1)로 LOT 을 받고, W-04-07 §3 목업의 목록 행도 LOT 이다. 상세 머리의 입고번호·입고일·거래처는 «그 LOT 이 들어온 전표»의 정보다.",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "FG-1001-0288"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "FG-1001",
+      "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 · 2026-09-02 판정). 품목 마스터 «한 행»을 가리킨다. ⛔ 코드 사전 키를 붙이지 않는다 — 붙이면 «값의 목록»을 공통코드가 갖는다는 뜻이 되어, 실제로 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
+     },
+     "itemName": {
+      "type": "string",
+      "example": "표시명"
+     },
+     "quantity": {
+      "type": "number",
+      "format": "double",
+      "example": 200.0,
+      "description": "판정 대상 수량 — 그 LOT 이 불량창고에 들어온 수량이다"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "warehouseName": {
+      "type": "string",
+      "example": "표시명"
+     },
+     "sourceCode": {
+      "type": "string",
+      "enum": [
+       "PRODUCT",
+       "RETURN"
+      ],
+      "example": "RETURN",
+      "description": "원천 — 제품(PRODUCT · OQC 불합격) · 반품(RETURN · 반품·클레임 입고). ⭐ 서버가 그 LOT 이 들어온 경로로 파생한다 — 화면이 고르지 않는다.",
+      "x-code-key": "CD-NONCONFORMANCE-SOURCE"
+     },
+     "goodsReceiptId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "반품 갈래의 입고 전표. sourceCode=PRODUCT 면 null 이다"
+     },
+     "receiptNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "RT-2026-0044",
+      "description": "반품 갈래의 입고번호 — 화면 상세 머리가 그린다"
+     },
+     "receivedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "example": "2026-08-04",
+      "description": "불량창고에 들어온 날"
+     },
+     "partnerName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "표시명",
+      "description": "반품 갈래의 거래처 이름 — 원 출하 고객이다. ⭐ 서버가 원 출하를 거슬러 풀어 준다(화면이 따로 조회하지 않는다 · 공유계약 L-2)"
+     },
+     "inspectionResultId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "OQC 갈래의 검사 결과. sourceCode=RETURN 이면 null 이다 — 부적합 등록 시 NonconformanceCreate.inspectionResultId 로 그대로 넘긴다"
+     },
+     "nonconformanceId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "⭐ **이 대상에 이미 만들어진 부적합.** null 이면 아직 만들지 않았다 — 화면의 「부적합 없음」 상태다"
+     },
+     "nonconformanceNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "NC-2026-0031"
+     },
+     "nonconformanceStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "PENDING_DECISION",
+      "description": "이미 만든 부적합의 진행 상태 — 의뢰 전(NOT_REQUESTED)·판정 대기(PENDING_DECISION)·판정 완료(DECIDED). nonconformanceId 가 null 이면 이 값도 null 이다. 값 = `NOT_REQUESTED`·`PENDING_DECISION`·`DECIDED`. 값 목록은 `GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "x-code-key": "CD-NONCONFORMANCE-STATUS"
+     }
+    }
+   },
    "Nonconformance": {
     "type": "object",
     "properties": {
@@ -1996,12 +2280,19 @@
      },
      "sourceCode": {
       "type": "string",
-      "x-no-example": true,
-      "description": "⭐ 서버 파생 값이다 — 저장 컬럼이 아니고 화면이 보내지 않는다(W-CO-03 의 openable 과 같은 형태). 파생 규칙: 대상 LOT 이 receiptTypeCode=RETURN 인 입고 전표로 들어왔으면 RETURN, 그 밖은 전부 PRODUCT. ⛔ NonconformanceCreate 에 이 칸이 없는 것은 결손이 아니라 이 결정의 귀결이다 — 다음 사람이 또 「Create 에 칸이 없다」로 이슈를 열지 않도록 남긴다. 부적합을 만드는 화면은 W-04-07 하나다(요구서 §3-6 · 2026-08-29 확정). 쓰는 곳: W-03-10 의 원천 필터(§5-4) · W-04-07 상세의 「원천」 표시(§3). ⚠ 값 이름 충돌 주의 — GoodsReceipt.receiptTypeCode 의 PRODUCT(제품입고)와 뜻이 다르다. 이력: 2026-08-30 신설(W-03-10 원천 필터 되살리기) · 2026-09-01 서버 파생으로 재정의(omf-mes#303)"
+      "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). 서버가 대상 LOT 의 입고 유형으로 파생한다",
+      "x-code-key": "CD-NONCONFORMANCE-SOURCE",
+      "enum": [
+       "PRODUCT",
+       "RETURN"
+      ],
+      "example": "PRODUCT"
      },
      "severityCode": {
       "type": "string",
-      "example": "값"
+      "example": "CRITICAL",
+      "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+      "description": "부적합 심각도 — 중대 · 중 · 경. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "description": {
       "type": "string",
@@ -2034,9 +2325,10 @@
      },
      "statusCode": {
       "type": "string",
-      "description": "의뢰 전 · 판정 대기 · 판정 완료. ⭐ 세 값짜리 진행 단계라 구간 형이 아니다 — 끝 시각의 부재로는 앞의 둘을 못 가른다. ⭐ 코드 문자열이 아직 확정되지 않아 예시를 못 박지 않는다(omf-mes#145). ⚠ 판정 진행은 이 값으로 가르지 않는다 — dispositionProgressCode 가 그 자리다",
-      "example": "값",
-      "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 04 계약 1단계 §3. 값 목록 확정 추적은 W-03-10 §8 이 갖는다."
+      "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "example": "NOT_REQUESTED",
+      "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 04 계약 1단계 §3. 값 목록 확정 추적은 W-03-10 §8 이 갖는다.",
+      "x-code-key": "CD-NONCONFORMANCE-STATUS"
      },
      "openedAt": {
       "type": "string",
@@ -2072,7 +2364,8 @@
        "COMPLETED"
       ],
       "description": "⭐ W-03-10 ① 「판정 진행」 열의 판정 근거 — 대상 수량 합(04 nonconformance_lot)과 처분 결정 수량 합(03 품질 disposition-decisions)을 서버가 롤업해 하나로 낸다. NOT_STARTED=처분 결정 0건(「미판정」) · PARTIAL=결정이 있고 남은 수량 > 0(「⚠ 일부 판정」) · COMPLETED=남은 수량 0(「완료」). ⛔ 화면이 처분 결정을 세어 판정하지 않는다 — 03 계약과의 조인은 서버 몫이다. ⚠ statusCode 와 축이 다르다 — statusCode 의 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다. 근거: W-03-10 §4-A · omf-mes#253",
-      "example": "PARTIAL"
+      "example": "PARTIAL",
+      "x-code-key": "CD-DISPOSITION-PROGRESS"
      },
      "lots": {
       "type": "array",
@@ -2128,7 +2421,9 @@
      },
      "severityCode": {
       "type": "string",
-      "example": "값"
+      "example": "CRITICAL",
+      "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+      "description": "부적합 심각도 — 중대 · 중 · 경. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "description": {
       "type": "string",
@@ -2188,11 +2483,15 @@
      },
      "qualityStatusBeforeCode": {
       "type": "string",
-      "example": "값"
+      "example": "NORMAL",
+      "x-code-key": "CD-LOT-STATUS",
+      "description": "부적합 등록 «전» 의 LOT 품질 상태. LOT 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      },
      "qualityStatusAfterCode": {
       "type": "string",
-      "example": "값"
+      "example": "NORMAL",
+      "x-code-key": "CD-LOT-STATUS",
+      "description": "부적합 등록 «후» 의 LOT 품질 상태. LOT 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
      }
     },
     "required": [
@@ -2285,7 +2584,8 @@
      },
      "statusCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02)."
      },
      "lines": {
       "type": "array",
@@ -2306,7 +2606,7 @@
      "orderDate",
      "statusCode"
     ],
-    "description": "고객사 출하지시서 수신본. ⛔ 등록 경로를 두지 않는다 — 연계 수신이 기본이라 목록에 그냥 나타난다(W-04-01 §5-6). 파일 업로드는 고객사마다 형식이 달라 요청 본문을 정할 수 없고 화면도 비활성이다. ⭐ 상위지시는 nullable 이 확정이다 — 무지시 standalone 이 예외가 아니라 상시 구조다"
+    "description": "고객사 출하지시서 수신본. ⛔ 등록 경로를 두지 않는다 — ⭐ 원천이 «둘»이다 — 고객사 출하지시서(엑셀) import 와 ERP 연계 수신을 «모두» 쓴다(사용자 확정 2026-09-02). 어느 쪽이든 MES 는 받기만 하므로 목록에 그냥 나타난다(W-04-01 §5-6). 파일 업로드는 고객사마다 형식이 달라 요청 본문을 정할 수 없고 화면도 비활성이다. ⭐ 상위지시는 nullable 이 확정이다 — 무지시 standalone 이 예외가 아니라 상시 구조다"
    },
    "SalesOrderLine": {
     "type": "object",
@@ -2424,8 +2724,9 @@
      },
      "statusCode": {
       "type": "string",
-      "description": "생애주기는 여기가 갖는다 — 미확정 → 확정 / 취소. 근거: W-04-12 §5",
-      "example": "SHIPPED"
+      "description": "출하의 진행 상태 — 미확정(UNCONFIRMED) · 확정(CONFIRMED) · 취소(CANCELLED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 확정이 PGI 송신을 부르고 취소가 그것을 되돌린다(W-04-04 §5-1 · W-04-12 §5-2). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "example": "UNCONFIRMED",
+      "x-code-key": "CD-SHIPMENT-STATUS"
      },
      "erpDeliveryNo": {
       "type": [
@@ -2722,7 +3023,8 @@
       "type": "string",
       "maxLength": 50,
       "example": "ABC-123",
-      "description": "화면에 그대로 그리는 품목 코드. ⛔ 화면이 itemId→코드 대응을 따로 조회하지 않는다 — 계약이 표시 문자열까지 내려 준다(공유계약 A-10 보강 · W-02-06 ProductionOrderChangedField.label 과 같은 형태). P-04-01 §3 포장 구성 표의 「품목」 열과 불일치 문구(「이 납품라벨은 FG-1002 용입니다」)가 이 값이다. ⚠ itemName 은 두지 않는다 — POP 1024×768 의 세로·가로 예산(E-1·E-2)에 이름 열이 들어갈 자리가 없다"
+      "description": "화면에 그대로 그리는 품목 코드. ⛔ 화면이 itemId→코드 대응을 따로 조회하지 않는다 — 계약이 표시 문자열까지 내려 준다(공유계약 A-10 보강 · W-02-06 ProductionOrderChangedField.label 과 같은 형태). P-04-01 §3 포장 구성 표의 「품목」 열과 불일치 문구(「이 납품라벨은 FG-1002 용입니다」)가 이 값이다. ⚠ itemName 은 두지 않는다 — POP 1024×768 의 세로·가로 예산(E-1·E-2)에 이름 열이 들어갈 자리가 없다",
+      "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 · 2026-09-02 판정). 품목 마스터의 행을 가리킨다 — Item.itemCode 가 같은 판정으로 이미 닫혔다. ⛔ 코드 사전 키를 붙이지 않는다 — 값의 목록을 공통코드가 갖는다는 뜻이 되어, 실제로 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
      },
      "lotId": {
       "type": "integer",
@@ -2875,11 +3177,13 @@
        "null"
       ],
       "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터). 고객 확정 3값: `MORNING`·`AFTERNOON`·`NIGHT`(2026-08-31, omf-mes-server#41 회신).",
-      "example": "MORNING"
+      "example": "MORNING",
+      "x-code-key": "CD-SHIPMENT-TIME-SLOT"
      },
      "statusCode": {
       "type": "string",
-      "example": "값"
+      "example": "값",
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
      },
      "shippingInspectionStatusCode": {
       "type": "string",
@@ -2891,7 +3195,8 @@
        "HELD"
       ],
       "description": "⭐ W-04-02 「검사」 열의 판정 근거 — 라인 전체(shippingInspectionRequired + 03 품질 inspection-results)를 서버가 롤업해 하나로 낸다. NOT_REQUIRED=대상 라인 없음(「—」) · PENDING=대상인데 결과 없음(「● 대기」) · PASSED=전 대상 라인 합격(「✅ 합격」) · REJECTED=불합격 라인 존재(「⛔ 불합격」) · HELD=보류 라인 존재, 불합격 없음(「⚠ 보류」). ⭐ 롤업 우선순위(가장 나쁜 것이 이긴다): REJECTED > HELD > PENDING > PASSED > NOT_REQUIRED. ⛔ 화면이 라인을 순회해 판정하지 않는다(공유계약 G-8과 같은 결 — W-04-02 §5-3) — 03 계약과의 조인은 서버 몫이다. ⚠ 이 필드를 이미 소비 중인 코드는 PASSED 외 값을 몰라도 PENDING과 동일하게(대기 취급) 두면 당장은 안전하다. 근거: W-04-02 §5-3·§5-4 · omf-mes#232 · omf-mes#235",
-      "example": "PENDING"
+      "example": "PENDING",
+      "x-code-key": "CD-SHIPPING-INSPECTION-STATUS"
      },
      "lines": {
       "type": "array",
@@ -3006,7 +3311,8 @@
        "null"
       ],
       "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터).",
-      "example": "MORNING"
+      "example": "MORNING",
+      "x-code-key": "CD-SHIPMENT-TIME-SLOT"
      },
      "lines": {
       "type": "array",
@@ -3347,7 +3653,8 @@
       "type": "string",
       "maxLength": 50,
       "description": "보류 해제 사유 — 필수다. LotHoldRelease 와 같은 축을 유지한다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 근거: 공유계약 G-32 · omf-mes#293",
-      "example": "RETEST_PASS"
+      "example": "RETEST_PASS",
+      "x-code-key": "CD-LOT-HOLD-RELEASE-REASON"
      },
      "reasonCode": {
       "type": [
@@ -3355,9 +3662,10 @@
        "null"
       ],
       "maxLength": 50,
-      "description": "재등록 사유 — 「재등록이 몇 건인가」를 세려면 자유 텍스트가 아니라 코드 축이어야 한다. 근거: 공유계약 §I-41 · omf-mes#84",
+      "description": "재등록 사유. ⭐ 「재등록이 몇 건인가」를 세려면 코드 축이어야 한다(§I-41 · omf-mes#84). 값 목록은 GET /mdm/code-values?codeGroupCode=STOCK_REINSTATEMENT_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
       "x-no-example": "값 목록이 아직 확정 전이다(공유계약 G-2) — 확정 전에는 예시를 지어내지 않는다.",
-      "x-internal-note": "만들어지는 이동 문서의 logistics.stock_transfer.reason_code 에 실린다."
+      "x-internal-note": "만들어지는 이동 문서의 logistics.stock_transfer.reason_code 에 실린다.",
+      "x-code-key": "CD-STOCK-REINSTATEMENT-REASON"
      },
      "businessDate": {
       "type": "string",
@@ -3416,7 +3724,8 @@
      "lotStatusCode": {
       "type": "string",
       "description": "전이 결과 — 화면이 확정 후 「무엇이 풀렸는가」를 말할 근거다(공유계약 B-8 규칙 4). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS. 근거: 공유계약 G-32",
-      "example": "NORMAL"
+      "example": "NORMAL",
+      "x-code-key": "CD-LOT-STATUS"
      },
      "releasedLotHoldId": {
       "type": "integer",
