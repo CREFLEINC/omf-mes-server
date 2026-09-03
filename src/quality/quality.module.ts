@@ -6,6 +6,8 @@ import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
+import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
+import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
 
@@ -15,12 +17,18 @@ import { InspectionPlanService } from './inspection-plan/inspection-plan.service
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [DefectCodeController, CauseCodeController, InspectionPlanController],
+  controllers: [
+    DefectCodeController,
+    CauseCodeController,
+    InspectionPlanController,
+    InspectionPlanVersionController,
+  ],
   providers: [
     DefectCodeService,
     CauseCodeService,
     DefectCodeProcessService,
     InspectionPlanService,
+    InspectionPlanVersionService,
   ],
 })
 export class QualityModule {}

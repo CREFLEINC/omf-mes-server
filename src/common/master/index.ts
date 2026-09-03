@@ -7,4 +7,5 @@ export { assertNotBlank } from './not-blank';
 export { filter, referencePage, referenceWhere } from './query';
 export type { ReferenceQuery } from './query';
 export { countReferences, referenceCountSql } from './reference-count';
+export { SEQ_PARKING_OFFSET } from './sequence';
 export type { Referrer } from './reference-count';
