@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 181개 · 물리 파티션 2개 · 컬럼 2404개
+> 설계 기준 `a8f46f2` · 논리 테이블 181개 · 물리 파티션 2개 · 컬럼 2408개
 
 ## 범례
 
@@ -669,7 +669,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `integration.integration_message` | 연계 메시지 | EVENT | 16 | `integration_message_id` | 0 | 연계 메시지의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `integration.interface_column_mapping` | 인터페이스 COLUMN MAPPING | EVENT | 8 | `interface_column_mapping_id` | 1 | 연계 정의의 칸 잇기. 계약 InterfaceColumnMapping 의 저장처 (omf-mes#66). |
 | `integration.interface_definition` | 인터페이스 정의 | EVENT | 20 | `interface_definition_id` | 0 | 인터페이스 정의의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
-| `integration.outbound_item_setting` | 송신 품목 설정 | EVENT | 8 | `outbound_item_setting_id` | 2 | 송신 품목 설정의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
+| `integration.outbound_item_setting` | 송신 품목 설정 | EVENT | 12 | `outbound_item_setting_id` | 2 | 송신 품목 설정의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 | `integration.record_provenance` | 기록 출처 | EVENT | 8 | `record_provenance_id` | 2 | 기록 출처의 발생 사실과 변경 이력을 불변 기록으로 보존한다. |
 
 ### integration.external_document_reference — 외부 문서 REFERENCE
@@ -779,13 +779,17 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | No. | 컬럼 | 데이터 타입 | 필수 | 키/참조 | 기본값 |
 |---:|---|---|:---:|---|---|
 | 1 | `outbound_item_setting_id` | `bigint` | Y | PK | `-` |
-| 2 | `interface_definition_id` | `bigint` | Y | FK→integration.interface_definition | `-` |
-| 3 | `item_id` | `bigint` | Y | FK→mdm.item | `-` |
+| 2 | `interface_definition_id` | `bigint` | N | FK→integration.interface_definition | `-` |
+| 3 | `item_id` | `bigint` | N | FK→mdm.item | `-` |
 | 4 | `is_enabled` | `boolean` | Y | - | `true` |
-| 5 | `effective_from` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 5 | `effective_from` | `timestamp with time zone` | N | - | `clock_timestamp()` |
 | 6 | `effective_to` | `timestamp with time zone` | N | - | `-` |
 | 7 | `created_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
 | 8 | `created_by` | `bigint` | N | - | `-` |
+| 9 | `outbound_item_code` | `app.code_t` | N | - | `-` |
+| 10 | `updated_at` | `timestamp with time zone` | Y | - | `clock_timestamp()` |
+| 11 | `updated_by` | `bigint` | N | - | `-` |
+| 12 | `version_no` | `integer` | Y | - | `1` |
 
 ### integration.record_provenance — 기록 출처
 

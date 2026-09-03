@@ -3916,16 +3916,20 @@ model interface_definition {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model outbound_item_setting {
-  outbound_item_setting_id BigInt               @id @default(autoincrement())
-  interface_definition_id  BigInt
-  item_id                  BigInt
-  is_enabled               Boolean              @default(true)
-  effective_from           DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  effective_to             DateTime?            @db.Timestamptz(6)
-  created_at               DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  outbound_item_setting_id BigInt                @id @default(autoincrement())
+  interface_definition_id  BigInt?
+  item_id                  BigInt?
+  is_enabled               Boolean               @default(true)
+  effective_from           DateTime?             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  effective_to             DateTime?             @db.Timestamptz(6)
+  created_at               DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by               BigInt?
-  interface_definition     interface_definition @relation(fields: [interface_definition_id], references: [interface_definition_id], onDelete: NoAction, onUpdate: NoAction)
-  item                     item                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  outbound_item_code       String?               @unique(map: "uq_outbound_item_setting_code") @db.VarChar(50)
+  updated_at               DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by               BigInt?
+  version_no               Int                   @default(1)
+  interface_definition     interface_definition? @relation(fields: [interface_definition_id], references: [interface_definition_id], onDelete: NoAction, onUpdate: NoAction)
+  item                     item?                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([interface_definition_id, item_id, effective_from], map: "uq_outbound_item_setting")
   @@schema("integration")
