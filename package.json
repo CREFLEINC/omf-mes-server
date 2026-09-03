@@ -27,7 +27,9 @@
     "db:pull": "prisma db pull && prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "workflow:bootstrap": "node scripts/workflow/bootstrap.mjs",
+    "workflow:sync-design": "node scripts/workflow/bootstrap.mjs --sync-design"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

@@ -14,6 +14,7 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 | `deploy/RELEASE.md` | 하노이 배포 런북 |
 | `deploy/HANDOFF.md` | 남은 작업 인계 |
 | `CI-CD.md` | CI/CD 설계 배경 + 진행표 |
+| `multi-agent-team-workflow-v3.md` | 멀티 에이전트 팀 워크플로 정본 — 설계팀 우선주의·직접 소통 금지·설계 자료 고정. 이 저장소에서의 운영은 `docs/agents/team-protocol.md` |
 
 ## 개발 단위
 
@@ -56,3 +57,10 @@ GitHub Issues (`gh` CLI). 상세: `docs/agents/issue-tracker.md`.
 ### Domain docs
 
 단일 컨텍스트 — 루트 `CONTEXT.md` + `docs/adr/`. 상세: `docs/agents/domain.md`.
+
+### Team workflow
+
+설계팀·클라이언트 개발팀과의 소통은 `multi-agent-team-workflow-v3.md`를 따른다 — 직접 소통
+금지(예외: 설계팀이 여는 "설계 변동 공지"), 요청은 자료로 만들어 사용자를 통해 전달. 이 저장소의
+구체적 운영(라벨·요청 절차·설계 고정 커밋)은 `docs/agents/team-protocol.md`. 로컬 상태 확인/갱신:
+`pnpm workflow:bootstrap`.
