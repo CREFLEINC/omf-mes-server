@@ -362,7 +362,7 @@ describe('BOM (e2e)', () => {
         item_name: `검사품목${suffix}`,
         item_type_code: 'FG',
         base_uom_id: uomId,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
       },
     });
     return Number(item.item_id);

@@ -68,7 +68,7 @@ describe('재고 posting (실 DB)', () => {
         item_name: '검사품목',
         item_type_code: 'MATERIAL',
         base_uom_id: uom.uom_id,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
         negative_stock_allowed: false,
       },
     });

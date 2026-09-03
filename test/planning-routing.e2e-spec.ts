@@ -90,7 +90,7 @@ describe('Routing 헤더 (e2e)', () => {
           item_name: `검사품목${i}`,
           item_type_code: 'FG',
           base_uom_id: uom.uom_id,
-          lot_control_type_code: 'LOT',
+          lot_controlled: true,
         },
       });
       itemIds.push(Number(item.item_id));
