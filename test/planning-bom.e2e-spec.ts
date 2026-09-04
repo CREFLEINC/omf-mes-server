@@ -360,7 +360,7 @@ describe('BOM (e2e)', () => {
       data: {
         item_code: `${PREFIX}-I${suffix}`,
         item_name: `검사품목${suffix}`,
-        item_type_code: 'FG',
+        item_type_code: 'FINISHED',
         base_uom_id: uomId,
         lot_controlled: true,
       },

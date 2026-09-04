@@ -323,7 +323,7 @@ describe('Routing Rev 전이 (e2e)', () => {
       data: {
         item_code: `${PREFIX}-I${counter}`,
         item_name: `검사품목${counter}`,
-        item_type_code: 'FG',
+        item_type_code: 'FINISHED',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
       },

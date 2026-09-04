@@ -314,7 +314,7 @@ describe('설비 마스터 (e2e)', () => {
         plant_id: plantId,
         terminal_code: `${PREFIX}-T`,
         terminal_type_code: 'POP',
-        status_code: 'ACTIVE',
+        status_code: 'RUNNING',
         equipment_id: id,
       },
     });

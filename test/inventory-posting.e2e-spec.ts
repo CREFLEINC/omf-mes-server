@@ -66,7 +66,7 @@ describe('재고 posting (실 DB)', () => {
       data: {
         item_code: `${PREFIX}-IT`,
         item_name: '검사품목',
-        item_type_code: 'MATERIAL',
+        item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
         negative_stock_allowed: false,

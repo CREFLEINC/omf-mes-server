@@ -129,6 +129,21 @@ describe('단말 마스터 (e2e)', () => {
       .expect(403);
   });
 
+  it('⛔ 없는 단말 유형·상태 코드는 400 INVALID 다 — 두 그룹 다 시스템 소유다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/terminals')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-BAD`, { terminalTypeCode: 'ADMIN_WEB', statusCode: 'NORMAL' }))
+      .expect(400);
+
+    // ADMIN_WEB·NORMAL 은 옛 시드 값이다 — 사전에서 빠진 뒤로는 is_active=false 라 같이 걸린다.
+    expect(rejected.body.errors).toEqual([
+      { scope: 'field', field: 'terminalTypeCode', code: 'INVALID', message: expect.any(String) },
+      { scope: 'field', field: 'statusCode', code: 'INVALID', message: expect.any(String) },
+    ]);
+  });
+
   it('⭐ 설비를 달면 코드·명이 함께 온다 — 헤더가 왕복 없이 그린다', async () => {
     const { id, etag } = await create(`${PREFIX}-A`, { equipmentId });
 
@@ -338,7 +353,7 @@ describe('단말 마스터 (e2e)', () => {
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function updateBody(extra: Record<string, unknown> = {}): object {
-    return { plantId, terminalTypeCode: 'POP', statusCode: 'ACTIVE', ...extra };
+    return { plantId, terminalTypeCode: 'POP', statusCode: 'RUNNING', ...extra };
   }
 
   function body(terminalCode: string, extra: Record<string, unknown> = {}): object {

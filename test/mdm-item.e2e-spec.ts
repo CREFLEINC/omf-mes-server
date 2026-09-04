@@ -86,7 +86,7 @@ describe('품목 마스터 (e2e)', () => {
         item_id: routedItemId,
         routing_code: `${PREFIX}-RT`,
         routing_version: 1,
-        status_code: 'ACTIVE',
+        status_code: 'CONFIRMED',
         effective_from: new Date('2026-01-01'),
       },
     });
@@ -316,7 +316,7 @@ describe('품목 마스터 (e2e)', () => {
       data: {
         item_code: itemCode,
         item_name: itemCode,
-        item_type_code: 'RAW',
+        item_type_code: 'RAW_MATERIAL',
         base_uom_id: baseUomId,
         lot_controlled: true,
       },

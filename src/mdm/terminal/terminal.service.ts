@@ -7,7 +7,13 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ReferenceQuery, optional, referencePage, referenceWhere } from '../../common/master';
+import {
+  ReferenceQuery,
+  assertCodeValues,
+  optional,
+  referencePage,
+  referenceWhere,
+} from '../../common/master';
 
 /** 계약 `Terminal` 과 동형. 설비 코드·명을 함께 실어 왕복 한 번을 없앤다(계약). */
 interface TerminalView {
@@ -130,6 +136,7 @@ export class TerminalService {
   }
 
   async create(input: TerminalCreate): Promise<TerminalView> {
+    await this.assertCodes(input);
     const created = await this.prisma.terminal.create({
       data: {
         terminal_code: input.terminalCode,
@@ -150,6 +157,7 @@ export class TerminalService {
     version: number,
     input: TerminalUpdate,
   ): Promise<{ terminal: TerminalView; versionNo: number }> {
+    await this.assertCodes(input);
     const updated = await this.prisma.terminal.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { terminal_id: terminalId, version_no: version },
@@ -294,6 +302,14 @@ export class TerminalService {
       canCancelInput: row.can_cancel_input,
       canReturnMaterial: row.can_return_material,
     }));
+  }
+
+  /** 두 그룹 다 시스템 소유다 — 계약이 enum 을 안 적고 코드 그룹으로 부르므로 여기서 거른다. */
+  private assertCodes(input: { terminalTypeCode: string; statusCode: string }): Promise<void> {
+    return assertCodeValues(this.prisma, [
+      { field: 'terminalTypeCode', value: input.terminalTypeCode, groupCode: 'TERMINAL_TYPE' },
+      { field: 'statusCode', value: input.statusCode, groupCode: 'TERMINAL_STATUS' },
+    ]);
   }
 
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
