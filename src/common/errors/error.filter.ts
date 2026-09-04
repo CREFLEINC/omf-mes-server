@@ -12,6 +12,7 @@ import { ConflictException } from './conflict.exception';
 import { ContractException } from './contract.exception';
 import { INTERNAL_ERROR_CODE } from './error-codes';
 import { ErrorItem, ErrorResponse } from './error-response';
+import { prismaErrorResponse } from './prisma-error';
 
 /**
  * 나가는 오류를 계약이 정한 봉투로 맞춘다.
@@ -56,6 +57,11 @@ export class ErrorResponseFilter implements ExceptionFilter {
         errors: [{ scope: 'screen', code: HttpStatus[status] ?? 'ERROR', message: exception.message }],
       };
     }
+
+    // ⛔ Prisma 오류를 여기서 «가로챈다». 이 분기가 없으면 없는 FK id 하나가 500 으로
+    // 나가고, 화면은 고칠 수 있는 입력 오류를 서버 장애로 보인다.
+    const prisma = prismaErrorResponse(exception);
+    if (prisma) return prisma;
 
     // 여기까지 온 것은 우리가 의도한 적 없는 오류다. 내부 메시지·스택은 응답에 싣지 않고
     // 로그로만 남긴다 — 스택에 접속 문자열·파일 경로가 섞여 나간 사고가 흔하다.

@@ -510,6 +510,17 @@ describe('툴 마스터 (e2e)', () => {
       .expect(400);
   });
 
+  it('⛔ 없는 공장 id 는 400 이다 — 500 으로 새지 않는다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/molds')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ ...body(`${PREFIX}-NOPLANT`), plantId: 999999999 })
+      .expect(400);
+    // FK 제약 이름(`mold_plant_id_fkey`)에서 되뽑은 필드다 — 화면이 그 칸에 줄을 긋는다.
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'plantId', code: 'INVALID' });
+  });
+
   it('⛔ 없는 툴은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/mdm/molds/999999999')
