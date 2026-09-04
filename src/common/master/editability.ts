@@ -4,6 +4,13 @@
  */
 export interface Editability {
   codeEditable: boolean;
-  reason: 'EDITABLE' | 'REFERENCED' | 'NOT_COUNTABLE' | 'RECEIVED_FROM_ERP' | 'SYSTEM_OWNED';
+  reason:
+    | 'EDITABLE'
+    | 'REFERENCED'
+    | 'NOT_COUNTABLE'
+    | 'RECEIVED_FROM_ERP'
+    // 코드가 라벨로 발행돼 현장에 물리적으로 나가 있다 — 참조가 0이어도 잠근다(계약).
+    | 'LABEL_ISSUED'
+    | 'SYSTEM_OWNED';
   referenceCount: number | null;
 }
