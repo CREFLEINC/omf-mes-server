@@ -20,6 +20,8 @@ import { InspectionItemService } from './equipment/inspection-item.service';
 import { JudgmentTypeControlController, PartnerController } from './partner/partner.controller';
 import { JudgmentTypeControlService } from './partner/judgment-type-control.service';
 import { PartnerService } from './partner/partner.service';
+import { ProcessController } from './process/process.controller';
+import { ProcessService } from './process/process.service';
 import { SparePartController } from './spare-part/spare-part.controller';
 import {
   WorkCalendarApplicationController,
@@ -46,7 +48,7 @@ import { ReferenceService } from './reference/reference.service';
 @Module({
   // AuthModule 이 JwtModule 을 내보낸다 — 단말 등록 토큰이 세션과 같은 비밀키로 서명된다.
   imports: [PrismaModule, IdempotencyModule, DocumentStateModule, AuthModule],
-  controllers: [ReferenceController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, TerminalController, SparePartController, PartnerController, JudgmentTypeControlController, WorkCalendarController, WorkCalendarApplicationController],
-  providers: [ReferenceService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, TerminalService, SparePartService, PartnerService, JudgmentTypeControlService, WorkCalendarService],
+  controllers: [ReferenceController, ProcessController, CodeController, DepartmentController, WorkerController, WarehouseController, WarehouseLayoutController, LocationController, ItemController, ItemDetailController, InspectionItemController, EquipmentGroupController, InspectionAssignmentController, EquipmentController, TerminalController, SparePartController, PartnerController, JudgmentTypeControlController, WorkCalendarController, WorkCalendarApplicationController],
+  providers: [ReferenceService, ProcessService, CodeService, DepartmentService, WorkerService, WarehouseService, WarehouseLayoutService, LocationService, ItemService, ItemDetailService, InspectionItemService, EquipmentGroupService, InspectionAssignmentService, EquipmentService, TerminalService, SparePartService, PartnerService, JudgmentTypeControlService, WorkCalendarService],
 })
 export class MdmModule {}

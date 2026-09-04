@@ -51,12 +51,6 @@ export class ReferenceController {
     return this.reference.productionLines(query);
   }
 
-  @Get('processes')
-  @Contract('GET /mdm/processes')
-  processes(@Query() query: ReferenceQuery): Promise<PagedResponse<unknown>> {
-    return this.reference.processes(query);
-  }
-
   @Get('shifts')
   @Contract('GET /mdm/shifts')
   shifts(@Query() query: ReferenceQuery & { plantId?: number }): Promise<PagedResponse<unknown>> {
