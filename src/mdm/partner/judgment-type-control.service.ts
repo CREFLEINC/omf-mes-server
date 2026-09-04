@@ -137,6 +137,16 @@ export class JudgmentTypeControlService {
     return this.get(codeValueId);
   }
 
+  /**
+   * 편집 진입. ETag 는 «이 행의» `versionNo` 다 — 부모 코드값의 토큰을 쓰지 않는다. 판정유형
+   * «이름»을 고쳤다고 통제 저장이 튕기면 안 되고, 잠그는 대상과 버전 축을 맞춘다(공유계약 B-1-1 ①ⓐ).
+   * 통제 행이 없으면 목록과 같은 기본값(version 1)을 낸다 — 그 1 을 들고 PUT 하면 행이 생긴다.
+   */
+  async detail(codeValueId: number): Promise<ControlView> {
+    await this.assertJudgmentType(codeValueId);
+    return this.get(codeValueId);
+  }
+
   async get(codeValueId: number): Promise<ControlView> {
     const row = await this.prisma.judgment_type_control.findUnique({
       where: { code_value_id: codeValueId },

@@ -84,6 +84,17 @@ export class JudgmentTypeControlController {
     return { items: await this.controls.list() };
   }
 
+  @Get(':codeValueId')
+  @Contract('GET /mdm/judgment-type-controls/{codeValueId}')
+  async get(
+    @Param('codeValueId', ParseIntPipe) codeValueId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<unknown> {
+    const control = await this.controls.detail(codeValueId);
+    setEtag(response, control.versionNo);
+    return control;
+  }
+
   @Put(':codeValueId')
   @Contract('PUT /mdm/judgment-type-controls/{codeValueId}')
   update(
