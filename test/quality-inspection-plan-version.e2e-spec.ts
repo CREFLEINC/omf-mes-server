@@ -250,7 +250,8 @@ describe('검사기준 버전 (e2e)', () => {
     const versionId = await createVersion(planId);
     await putItems(versionId, [item(versionId, 1, 'A')]);
     const confirmed = await confirm(versionId);
-    expect(confirmed.body.statusCode).toBe(REVISION_STATUS.CONFIRMED);
+    // 계약 문자열로 고정한다 — 상수와 대조하면 상수가 틀려도 통과한다.
+    expect(confirmed.body.statusCode).toBe('CONFIRMED');
 
     const update = await request(app.getHttpServer())
       .put(`/api/quality/inspection-plan-versions/${versionId}`)
