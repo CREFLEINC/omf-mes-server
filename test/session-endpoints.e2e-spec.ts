@@ -38,7 +38,7 @@ describe('세션 엔드포인트 (e2e)', () => {
     prisma = app.get(PrismaService);
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '세션검사', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '세션검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },

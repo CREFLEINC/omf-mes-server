@@ -59,13 +59,13 @@ describe('사용자 마스터 (e2e)', () => {
 
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '사용자검사', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '사용자검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     const other = await prisma.app_user.create({
-      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'ACTIVE' },
+      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
@@ -158,7 +158,7 @@ describe('사용자 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', '2')
-      .send({ loginId: '바꿔보기', userName: '이름', statusCode: 'ACTIVE' })
+      .send({ loginId: '바꿔보기', userName: '이름', statusCode: 'EMPLOYED' })
       .expect(200);
     expect(ignored.body.loginId).toBe(`${PREFIX}-c`);
   });
@@ -296,7 +296,7 @@ describe('사용자 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
-      .send({ userName: '한 번', statusCode: 'ACTIVE' })
+      .send({ userName: '한 번', statusCode: 'EMPLOYED' })
       .expect(200);
 
     const stale = await request(app.getHttpServer())
@@ -304,7 +304,7 @@ describe('사용자 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
-      .send({ userName: '두 번', statusCode: 'ACTIVE' })
+      .send({ userName: '두 번', statusCode: 'EMPLOYED' })
       .expect(409);
     expect(stale.body.conflictCause).toBe('user');
   });
@@ -640,7 +640,7 @@ describe('사용자 마스터 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     // 안 보낸 상태코드는 물리 모델 DEFAULT 가 채운다(계약).
-    expect(response.body.statusCode).toBe('ACTIVE');
+    expect(response.body.statusCode).toBe('EMPLOYED');
     return { appUserId: response.body.appUserId };
   }
 

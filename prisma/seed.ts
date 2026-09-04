@@ -83,13 +83,14 @@ const SEED: CodeGroupSeed[] = [
     // ⛔ 이름도 뜻도 갈렸다. 예전 USER_STATUS 는 「계정 상태」였는데, 계정을 쓸 수 있는가는
     // app_user.is_active 가 정하는 것으로 축이 갈렸다(계약 AppUser.statusCode · 설계 확정
     // 2026-09-01 · W-CO-02 §8-4). 남은 축은 «인사» 상태이고, 계약이 그 값 목록을
-    // codeGroupCode=APP_USER_STATUS 로 부른다.
+    // codeGroupCode=APP_USER_STATUS 로 부른다. 재직에 ACTIVE 를 쓰지 않는다 — 사용 여부와
+    // 같은 낱말이면 두 축이 다시 섞인다(CD-APP-USER-STATUS · 마이그레이션 20260904120000).
     groupCode: 'APP_USER_STATUS',
     groupName: '사용자 인사 상태',
     values: [
-      { code: 'ACTIVE', codeName: '재직', order: 10 },
+      { code: 'EMPLOYED', codeName: '재직', order: 10 },
       { code: 'ON_LEAVE', codeName: '휴직', order: 20 },
-      { code: 'RETIRED', codeName: '퇴사', order: 30 },
+      { code: 'RESIGNED', codeName: '퇴사', order: 30 },
     ],
   },
   {
@@ -1443,7 +1444,7 @@ async function seedAdmin(): Promise<void> {
   const admin =
     existing ??
     (await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '시스템 관리자', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '시스템 관리자', status_code: 'EMPLOYED' },
     }));
 
   // ⛔ 역할 부여는 «자격증명이 이미 있어도» 돈다. 역할 코드가 바뀐 판(6종 → 확정 4종)에서

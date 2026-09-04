@@ -115,7 +115,7 @@ export class AppUserService {
           user_name: input.userName,
           ...optional('department_id', input.departmentId),
           ...optional('email', input.email),
-          // 안 보내면 물리 모델 DEFAULT('ACTIVE')가 채운다(계약).
+          // 안 보내면 물리 모델 DEFAULT('EMPLOYED')가 채운다(계약).
           ...optional('status_code', input.statusCode),
         },
       }),
