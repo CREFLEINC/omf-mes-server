@@ -38,11 +38,17 @@ export function prismaErrorResponse(
 
   if (exception.code === 'P2002') {
     const uniqueScope = columns(meta.target).map(camel);
-    return badRequest(uniqueScope[0], {
-      code: ERROR_CODE.UNIQUE_VIOLATION,
-      message: '이미 있는 값입니다.',
-      ...(uniqueScope.length === 0 ? {} : { uniqueScope }),
-    });
+    return badRequest(
+      // ⛔ 복합 유일에서는 «어느 칸이 틀렸는지 알 수 없다» — 공장과 코드가 함께 겹친
+      // 것이라 둘 중 하나를 고르면 절반은 엉뚱한 칸에 빨간 줄을 긋는다. 범위만 알린다.
+      // 도메인이 손으로 막으면 그쪽이 옳은 칸을 짚는다(`mold` 는 moldCode 를 짚는다).
+      uniqueScope.length === 1 ? uniqueScope[0] : undefined,
+      {
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        message: '이미 있는 값입니다.',
+        ...(uniqueScope.length === 0 ? {} : { uniqueScope }),
+      },
+    );
   }
 
   if (exception.code === 'P2025') {

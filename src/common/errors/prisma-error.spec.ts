@@ -74,13 +74,25 @@ describe('prismaErrorResponse', () => {
 
     expect(result?.status).toBe(HttpStatus.BAD_REQUEST);
     expect(result?.errors[0]).toEqual({
-      scope: 'field',
-      field: 'plantId',
+      // ⛔ 복합 유일은 어느 칸이 틀렸는지 알 수 없다 — 범위만 알리고 칸은 짚지 않는다.
+      scope: 'screen',
       code: ERROR_CODE.UNIQUE_VIOLATION,
       uniqueScope: ['plantId', 'moldCode'],
       message: '이미 있는 값입니다.',
     });
     expect(validate({ errors: result?.errors })).toBe(true);
+  });
+
+  it('유일 범위가 한 칸이면 그 칸을 짚는다 — 고를 여지가 없다', () => {
+    const result = prismaErrorResponse(known('P2002', { target: ['process_code'] }));
+
+    expect(result?.errors[0]).toEqual({
+      scope: 'field',
+      field: 'processCode',
+      code: ERROR_CODE.UNIQUE_VIOLATION,
+      uniqueScope: ['processCode'],
+      message: '이미 있는 값입니다.',
+    });
   });
 
   it('target 이 컬럼 배열이 아니면 배너로 내린다', () => {
