@@ -353,7 +353,7 @@ describe('적치 규칙 (e2e)', () => {
       data: {
         item_code: `${PREFIX}-${suffix}`,
         item_name: suffix,
-        item_type_code: 'RAW',
+        item_type_code: 'RAW_MATERIAL',
         base_uom_id: uomId,
         lot_controlled: true,
       },

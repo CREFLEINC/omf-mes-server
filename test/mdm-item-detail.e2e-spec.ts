@@ -430,7 +430,7 @@ describe('품목 부속 정보 (e2e)', () => {
       data: {
         item_code: itemCode,
         item_name: itemCode,
-        item_type_code: 'RAW',
+        item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
         lot_controlled: true,
       },

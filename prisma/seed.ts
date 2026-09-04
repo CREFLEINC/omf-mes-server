@@ -32,15 +32,17 @@ interface CodeGroupSeed {
 
 const SEED: CodeGroupSeed[] = [
   {
+    // 코드 사전 CD-ITEM-TYPE. 옛 RAW/SEMI/FG/MDSE 는 마이그레이션 20260904130000 이 제자리에서
+    // 개명했고, 사전에 없는 DEV(개발품)는 내린다. ⛔ 예비품은 여기 넣지 않는다(QA #7).
     groupCode: 'ITEM_TYPE',
     groupName: '품목구분',
     values: [
-      { code: 'RAW', codeName: '자재', order: 10 },
-      { code: 'SEMI', codeName: '반제품', order: 20 },
-      { code: 'FG', codeName: '제품', order: 30 },
-      { code: 'MDSE', codeName: '상품', order: 40 },
-      { code: 'DEV', codeName: '개발품(시제품)', order: 50 },
+      { code: 'RAW_MATERIAL', codeName: '원자재', order: 10 },
+      { code: 'SEMI_FINISHED', codeName: '반제품', order: 20 },
+      { code: 'FINISHED', codeName: '제품', order: 30 },
+      { code: 'MERCHANDISE', codeName: '상품', order: 40 },
     ],
+    retired: ['DEV'],
   },
   {
     groupCode: 'INSPECTION_TYPE',
@@ -61,23 +63,28 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // 기술스택 결정 16의 폼팩터 3종: 관리 웹 / POP 패널 PC / 모바일 스캐너
+    // 기술스택 결정 16의 폼팩터. ⛔ 관리웹은 단말 마스터에 등록하지 않는다 — 현장 단말만 든다
+    // (계약 Terminal.terminalTypeCode). 시스템 소유 — 폼팩터는 아키텍처 축이라 고객이 늘리지 않는다.
     groupCode: 'TERMINAL_TYPE',
     groupName: '단말 유형',
+    isSystemOwned: true,
     values: [
-      { code: 'ADMIN_WEB', codeName: '관리 웹', order: 10 },
-      { code: 'POP', codeName: 'POP 단말', order: 20 },
-      { code: 'MOBILE', codeName: '모바일 스캐너', order: 30 },
+      { code: 'POP', codeName: 'POP 단말', order: 10 },
+      { code: 'MOBILE', codeName: '모바일 스캐너', order: 20 },
     ],
+    retired: ['ADMIN_WEB'],
   },
   {
+    // 가동 상태. ⛔ is_active(켬/끔)와 다른 축이고 폐기는 재발급이 담당한다(W-CO-06 §5-4) —
+    // 그래서 점검중·폐기 값이 없다. 옛 NORMAL 은 마이그레이션 20260904130000 이 RUNNING 으로 개명했다.
     groupCode: 'TERMINAL_STATUS',
     groupName: '단말 상태',
+    isSystemOwned: true,
     values: [
-      { code: 'NORMAL', codeName: '정상', order: 10 },
-      { code: 'MAINTENANCE', codeName: '점검중', order: 20 },
-      { code: 'DISPOSED', codeName: '폐기', order: 30 },
+      { code: 'RUNNING', codeName: '가동', order: 10 },
+      { code: 'STOPPED', codeName: '정지', order: 20 },
     ],
+    retired: ['MAINTENANCE', 'DISPOSED'],
   },
   {
     // ⛔ 이름도 뜻도 갈렸다. 예전 USER_STATUS 는 「계정 상태」였는데, 계정을 쓸 수 있는가는
@@ -208,14 +215,19 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // 위치의 «물리적 형태» 한 축 — 계층 깊이는 MANAGEMENT_LEVEL 이 따로 갖는다(CD-LOCATION-TYPE).
+    // TEMP(M-01-07 임시) · HOPPER(M-01-09) · DEFAULT(M-01-04 흡수용)는 화면이 판정에 쓰는 값이다.
+    // 옛 ZONE/CELL/DOCK 은 사전에 대응값이 없어 내린다 — 기존 위치 행은 그대로 둔다.
     groupCode: 'LOCATION_TYPE',
     groupName: '로케이션 유형',
     values: [
-      { code: 'ZONE', codeName: '구역', order: 10 },
-      { code: 'RACK', codeName: '랙', order: 20 },
-      { code: 'CELL', codeName: '셀', order: 30 },
-      { code: 'DOCK', codeName: '입하장', order: 40 },
+      { code: 'RACK', codeName: '랙', order: 10 },
+      { code: 'FLOOR', codeName: '평치', order: 20 },
+      { code: 'TEMP', codeName: '임시', order: 30 },
+      { code: 'HOPPER', codeName: '호퍼', order: 40 },
+      { code: 'DEFAULT', codeName: '기본', order: 50 },
     ],
+    retired: ['ZONE', 'CELL', 'DOCK'],
   },
   {
     groupCode: 'QUALITY_ZONE',
@@ -258,23 +270,19 @@ const SEED: CodeGroupSeed[] = [
      * 가리키므로 예비품 창고도 창고 마스터의 한 행이다 — mdm.spare_part는 *부품 품목*
      * 마스터이지 창고가 아니다(보전 화면 §3-3).
      *
-     * ⚠ SEMI_FINISHED·MERCHANDISE는 영문 표기가 아직 확정 전이다. 계약 7벌에 창고유형
-     *   영문 코드가 0건이고(한글로만 '자재·제품·반제품·상품·생산'), 설계 회신이 이 표기를
-     *   쓴 근거는 #47 코멘트가 우리 시드를 SEMI·MDSE 대신 긴 이름으로 잘못 인용한 대목뿐이다.
-     *   2026-09-01에 어느 쪽이 정본인지 물어 두었고, 답이 오기 전까지 설계 회신 표기를
-     *   잠정으로 쓴다 — 바뀌면 여기와 mdm.warehouse.warehouse_type_code를 함께 고친다.
+     * 2026-09-03 코드 사전(CD-WAREHOUSE-TYPE)이 MATERIAL·PRODUCT·SPARE_PART·GENERAL 넷으로
+     * 닫았다. 잠정으로 쓰던 SEMI_FINISHED·MERCHANDISE·PRODUCTION 은 대응값이 없어 내린다 —
+     * 등록부라 고객이 필요하면 W-06-06 에서 다시 세운다. 기존 창고 행의 문자열은 그대로 둔다.
      */
     groupCode: 'WAREHOUSE_TYPE',
     groupName: '창고유형',
     values: [
       { code: 'MATERIAL', codeName: '자재창고', order: 10 },
-      { code: 'SEMI_FINISHED', codeName: '반제품창고', order: 20 },
-      { code: 'PRODUCT', codeName: '제품창고', order: 30 },
-      { code: 'MERCHANDISE', codeName: '상품창고', order: 40 },
-      { code: 'PRODUCTION', codeName: '생산창고', order: 50 },
-      { code: 'SPARE_PART', codeName: '예비품창고', order: 60 },
+      { code: 'PRODUCT', codeName: '제품창고', order: 20 },
+      { code: 'SPARE_PART', codeName: '예비품창고', order: 30 },
+      { code: 'GENERAL', codeName: '일반창고', order: 40 },
     ],
-    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK'],
+    retired: ['SEMI', 'MDSE', 'DEFECT', 'REWORK', 'SEMI_FINISHED', 'MERCHANDISE', 'PRODUCTION'],
   },
   {
     // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.
@@ -462,20 +470,23 @@ const SEED: CodeGroupSeed[] = [
       { code: 'SUSPENDED', codeName: '중단', order: 50 },
       { code: 'COMPLETED', codeName: '완료', order: 60 },
       { code: 'CLOSED', codeName: '마감', order: 70 },
-      { code: 'BLOCKED', codeName: '진행불가', order: 80 },
-      { code: 'CANCELLED', codeName: '취소', order: 90 },
+      { code: 'CANCELLED', codeName: '취소', order: 80 },
     ],
-    retired: ['HOLD'],
+    // ⛔ 진행불가(BLOCKED)는 상태가 아니라 확정 게이트다 — 사전이 8종으로 닫았다(CD-WORK-ORDER-STATUS).
+    retired: ['HOLD', 'BLOCKED'],
   },
   {
-    // work_session.status_code — 한 작업지시를 실제로 돌린 구간. 비가동(02-S-H)이
-    // 미정 골격이라 PAUSED의 사유코드 체계는 그쪽에서 확정한다.
+    // work_session.status_code — 한 작업지시를 실제로 돌린 구간. A-25 전이표가 뜻을 정했다:
+    // START·RESUME→RUNNING · STOP→STOPPED · END→ENDED. ⛔ 시스템 소유 — 전이 액션이 값을
+    // 정하므로 고객이 늘리면 갈 곳 없는 값이 생긴다. 옛 OPEN/PAUSED/CLOSED 는 마이그레이션
+    // 20260904130000 이 제자리에서 개명했다.
     groupCode: 'WORK_SESSION_STATUS',
     groupName: '작업세션 상태',
+    isSystemOwned: true,
     values: [
-      { code: 'OPEN', codeName: '작업중', order: 10 },
-      { code: 'PAUSED', codeName: '일시중지', order: 20 },
-      { code: 'CLOSED', codeName: '종료', order: 30 },
+      { code: 'RUNNING', codeName: '진행', order: 10 },
+      { code: 'STOPPED', codeName: '중단', order: 20 },
+      { code: 'ENDED', codeName: '종료', order: 30 },
     ],
   },
   {

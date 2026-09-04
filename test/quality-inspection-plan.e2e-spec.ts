@@ -91,7 +91,7 @@ describe('검사기준 헤더 (e2e)', () => {
           data: {
             item_code: `${PREFIX}-I`,
             item_name: '검사품목',
-            item_type_code: 'FG',
+            item_type_code: 'FINISHED',
             base_uom_id: uom.uom_id,
             lot_controlled: true,
           },
