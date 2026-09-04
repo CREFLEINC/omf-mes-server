@@ -55,8 +55,10 @@ describe('오퍼레이션 권한 매핑', () => {
     });
     const covered = declares403.filter((key) => key in OPERATION_PERMISSIONS);
 
-    // 이 수치가 오르면 도메인이 자기 권한을 등록했다는 뜻이다. 253 가 되면 게이트가 완성된다.
-    expect(declares403).toHaveLength(253);
+    // 이 수치가 오르면 도메인이 자기 권한을 등록했다는 뜻이다. 250 이 되면 게이트가 완성된다.
+    // 253 → 250(a6a87e1) — 403 을 선언하던 물류 취소 6건이 다형 2건으로, 실적 정정 승인
+    // 상신 1건이 늘어 합이 셋 줄었다.
+    expect(declares403).toHaveLength(250);
     expect(covered.length).toBeGreaterThanOrEqual(152);
   });
 });

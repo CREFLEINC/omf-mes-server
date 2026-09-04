@@ -2151,7 +2151,7 @@
      "logistics"
     ],
     "summary": "물류 문서 진행현황",
-    "description": "문서 유형마다 테이블이 다른데 화면은 한 목록으로 본다 — 서버가 한 형태로 맞춰 내린다.\n\n⭐ successorCount·cancellable 을 서버가 판정해 내린다. 원천 참조가 다형이라(source_document_type_code + source_document_id) 유형↔테이블 규약이 아직 없는데, 프런트가 「입고 → 출고·이동·투입」 관계표를 하드코딩하면 유형이 늘 때마다 취소 판정이 조용히 틀린다(공유계약 A-10 보강).\n\n이 화면이 덮는 것은 9종이다 — 발주·입하·입고·출고요청·피킹·이동요청·외주출고·외주입고(2026-08-30 되살림 — subcontract_issue/receipt 도 동형으로 status_code 를 둔다) + 출고(2026-09-02 — FR-IM-078 출고취소가 이 화면 소관이고, POST /logistics/goods-issues/{goodsIssueId}:request-cancel 이 후속 목록의 원천으로 이 경로를 지목한다). 셈 — 물류 12테이블 − 출하 2 = 10, 10 − 생산품 입고 1 = 9. 출하·생산품 입고는 다른 도메인이라 범위 밖이다. 근거: W-01-13 §5-2·§5-3·§5-6\n\n취소 실행 경로는 3종에만 있다 — INBOUND_RECEIPT 는 /logistics/inbound-receipts/{id}, GOODS_RECEIPT 는 /logistics/goods-receipts/{id}, GOODS_ISSUE 는 /logistics/goods-issues/{id} 의 :request-cancel · :cancel 을 쓴다. 그 밖 6종은 취소 경로가 없다. ⚠ 이 대응은 설명이라 생성 타입에 실리지 않는다 — 화면이 옮겨 적는 것은 한시적이고, 계약 필드로 내리는 안을 따로 세운다.",
+    "description": "문서 유형마다 테이블이 다른데 화면은 한 목록으로 본다 — 서버가 한 형태로 맞춰 내린다.\n\n⭐ successorCount·cancellable 을 서버가 판정해 내린다. 원천 참조가 다형이라(source_document_type_code + source_document_id) 유형↔테이블 규약이 아직 없는데, 프런트가 「입고 → 출고·이동·투입」 관계표를 하드코딩하면 유형이 늘 때마다 취소 판정이 조용히 틀린다(공유계약 A-10 보강).\n\n이 화면이 덮는 것은 9종이다 — 발주·입하·입고·출고요청·피킹·이동요청·외주출고·외주입고(2026-08-30 되살림 — subcontract_issue/receipt 도 동형으로 status_code 를 둔다) + 출고(2026-09-02 — FR-IM-078 출고취소가 이 화면 소관이고, POST /logistics/goods-issues/{goodsIssueId}:request-cancel 이 후속 목록의 원천으로 이 경로를 지목한다). 셈 — 물류 12테이블 − 출하 2 = 10, 10 − 생산품 입고 1 = 9. 출하·생산품 입고는 다른 도메인이라 범위 밖이다. 근거: W-01-13 §5-2·§5-3·§5-6\n\n취소 주소는 **하나다** — POST /logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel · :cancel. 어느 유형이 취소를 받는지는 그 경로의 값 목록 3개가 말한다 — 화면이 유형↔리소스 표를 갖지 않는다(공유계약 A-10 보강 · omf-mes#352).",
     "parameters": [
      {
       "name": "documentTypeCode",
@@ -2734,86 +2734,6 @@
     }
    }
   },
-  "/logistics/goods-issues/{goodsIssueId}:cancel": {
-   "parameters": [
-    {
-     "name": "goodsIssueId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "출고 취소 실행",
-    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다. 근거: W-01-13 §5-1·§5-4",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "취소됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/CancelResult"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
   "/logistics/goods-issues/{goodsIssueId}:post": {
    "parameters": [
     {
@@ -2973,96 +2893,6 @@
      }
     },
     "x-internal-note": "결재선 조회·결재 오퍼레이션은 app-공통 파일 소관이다. 이 트랙은 요청 생성까지만 덮는다."
-   }
-  },
-  "/logistics/goods-issues/{goodsIssueId}:request-cancel": {
-   "parameters": [
-    {
-     "name": "goodsIssueId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "출고 취소 요청",
-    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n근거: W-01-13 §5-1·§5-4·§5-5",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "responses": {
-     "202": {
-      "description": "상신됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ApprovalRequestRef"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
-        }
-       }
-      }
-     }
-    }
    }
   },
   "/logistics/goods-receipts": {
@@ -3313,176 +3143,6 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/GoodsReceiptLineListResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/logistics/goods-receipts/{goodsReceiptId}:cancel": {
-   "parameters": [
-    {
-     "name": "goodsReceiptId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "입고 취소 실행",
-    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다. 근거: W-01-13 §5-1·§5-4",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "취소됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/CancelResult"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/logistics/goods-receipts/{goodsReceiptId}:request-cancel": {
-   "parameters": [
-    {
-     "name": "goodsReceiptId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "입고 취소 요청",
-    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n근거: W-01-13 §5-1·§5-4·§5-5",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "responses": {
-     "202": {
-      "description": "상신됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ApprovalRequestRef"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
         }
        }
       }
@@ -4015,176 +3675,6 @@
      },
      "403": {
       "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/logistics/inbound-receipts/{inboundReceiptId}:cancel": {
-   "parameters": [
-    {
-     "name": "inboundReceiptId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "입하 취소 실행",
-    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다. 근거: W-01-13 §5-1·§5-4",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "responses": {
-     "200": {
-      "description": "취소됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/CancelResult"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "저장 충돌. 다시 읽어 오면 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ConflictResponse"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  "/logistics/inbound-receipts/{inboundReceiptId}:request-cancel": {
-   "parameters": [
-    {
-     "name": "inboundReceiptId",
-     "in": "path",
-     "required": true,
-     "schema": {
-      "type": "integer",
-      "format": "int64"
-     }
-    }
-   ],
-   "post": {
-    "tags": [
-     "logistics"
-    ],
-    "summary": "입하 취소 요청",
-    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n근거: W-01-13 §5-1·§5-4·§5-5",
-    "parameters": [
-     {
-      "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/IfMatchVersion"
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ApprovalRequestCreate"
-       }
-      }
-     }
-    },
-    "responses": {
-     "202": {
-      "description": "상신됨",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ApprovalRequestRef"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "권한 없음",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/ErrorResponse"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "대상 없음",
       "content": {
        "application/json": {
         "schema": {
@@ -7172,6 +6662,206 @@
     },
     "x-internal-note": "02 요구서 §3-16 이 이 오퍼레이션을 「01 계약」이라 적었는데 경로 자체가 없었다. 역방향 ② 검사기가 찾아 2026-08-12 에 더했다(client #75). 품질 판정 축(정상·불량 등)은 03 품질 계약이 옮긴다 — 여기서 바꾸는 것은 생산 LOT 의 수명주기 상태다."
    }
+  },
+  "/logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel": {
+   "parameters": [
+    {
+     "name": "documentTypeCode",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "enum": [
+       "INBOUND_RECEIPT",
+       "GOODS_RECEIPT",
+       "GOODS_ISSUE"
+      ]
+     },
+     "description": "취소할 수 있는 문서 유형만 받는다 — 입하·입고·출고 3종. ⛔ 조회 축(DocumentProgress)의 9종 중 취소 실행 경로가 있는 것만 닫았다 — 값 목록 자체가 「어느 유형이 취소를 받는가」를 말한다(공유계약 A-10 보강 · omf-mes#352).",
+     "x-code-key": "CD-CANCELABLE-DOCUMENT-TYPE"
+    },
+    {
+     "name": "documentId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "물류 문서 취소 요청",
+    "description": "취소 요청 상신. 문서 상태를 취소요청으로 옮기고 승인 요청을 만든다.\n\n⚠ 취소는 반드시 승인을 탄다 — 물류 문서 테이블에 취소 시각·취소자·취소 사유를 담을 컬럼이 하나도 없어(실측 0건), 승인 기록이 그 이력을 대신한다. 승인 없는 취소 경로를 두면 흔적 없는 취소가 생긴다(공유계약 A-11 보강).\n\n다음이면 400 이다 — 후속 문서·재고 사용이 있다(code=SUCCESSOR_EXISTS) · 이미 취소됐다 · 취소 요청이 이미 진행 중이다 · 취소 결재선이 없다. 후속 목록은 GET /logistics/document-progress/{documentTypeCode}/{documentId} 가 내려 준다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n근거: W-01-13 §5-1·§5-4·§5-5",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "상신됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApprovalRequestRef"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/document-progress/{documentTypeCode}/{documentId}:cancel": {
+   "parameters": [
+    {
+     "name": "documentTypeCode",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "enum": [
+       "INBOUND_RECEIPT",
+       "GOODS_RECEIPT",
+       "GOODS_ISSUE"
+      ]
+     },
+     "description": "취소할 수 있는 문서 유형만 받는다 — 입하·입고·출고 3종. ⛔ 조회 축(DocumentProgress)의 9종 중 취소 실행 경로가 있는 것만 닫았다 — 값 목록 자체가 「어느 유형이 취소를 받는가」를 말한다(공유계약 A-10 보강 · omf-mes#352).",
+     "x-code-key": "CD-CANCELABLE-DOCUMENT-TYPE"
+    },
+    {
+     "name": "documentId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "물류 문서 취소 실행",
+    "description": "취소 실행. 승인이 끝난 요청만 받는다.\n\n⭐ 서버가 후속 유무를 다시 판정한다 — 승인을 기다리는 사이에 후속이 생겼을 수 있고, 자동 실행이면 그것을 못 본다. 재판정에 걸리면 400(code=SUCCESSOR_EXISTS)이고 승인은 그대로 유효하다 — 새 요청을 다시 올리지 않는다(공유계약 J-8).\n\n전기된 문서는 원장에 역트랜잭션을 만든다. 전기 전이었으면 상태만 바뀌고 원장에는 아무것도 생기지 않는다. 역처리가 재고 잔액을 음수로 만들면 400 이다.\n\n승인 전이면 400 이다 — :post 가 승인 전이면 400 인 것과 같은 형태다.\n\n⭐ 취소 주소가 유형 축 하나다 — documentTypeCode 로 입하·입고·출고 3종을 함께 받는다. 리소스별 6경로(옛 /logistics/inbound-receipts·goods-receipts·goods-issues 의 :request-cancel·:cancel)는 이 경로로 흡수되며 폐기됐다(공유계약 A-10 보강 · omf-mes#352). ⚠ 파생 조회 뷰(document-progress)에 동사를 붙인 것은 리소스 축 규약의 예외다 — 유형이 늘어도 화면이 유형↔리소스 표를 갖지 않게 하려는 것이 그 이유다.\n\n⚠ If-Match 토큰은 이 경로가 «아니다» — 대상 문서 리소스의 상세 GET(입하 /logistics/inbound-receipts/{inboundReceiptId} · 입고 /logistics/goods-receipts/{goodsReceiptId} · 출고 /logistics/goods-issues/{goodsIssueId})이 내려주는 ETag 다 — 공유계약 B-1·A-4.\n\n근거: W-01-13 §5-1·§5-4",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "취소됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CancelResult"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다 — code=SUCCESSOR_EXISTS 는 후속을 먼저 취소해야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -7554,7 +7244,7 @@
     "properties": {
      "documentTypeCode": {
       "type": "string",
-      "description": "이 화면이 다루는 물류 문서의 종류 — 발주·입하·입고·출고요청·피킹·이동요청·외주출고·외주입고·출고 9종. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 리소스 이름이라 고객이 늘릴 수 있는 값이 아니다(공유계약 A-16 「가르는 물음 넷」 — 「가」 거짓 · 「라」 거짓 · 2026-09-02 판정). 선례는 같은 갈래에서 approval_type_code 8값을 enum 으로 닫은 omf-mes#336 이다. 새 대상이 생기면 화면이 문자열을 정하기 전에 이 목록에 등재한다. ⚠ 같은 이름의 다른 자리는 값 집합이 다르다 — 자리마다 닫는다.",
+      "description": "이 화면이 다루는 물류 문서의 종류 — 발주·입하·입고·출고요청·피킹·이동요청·외주출고·외주입고·출고 9종. ⛔ 공통코드 그룹으로 받지 않는다 — 값이 우리 계약의 리소스 이름이라 고객이 늘릴 수 있는 값이 아니다(공유계약 A-16 「가르는 물음 넷」 — 「가」 거짓 · 「라」 거짓 · 2026-09-02 판정). 선례는 같은 갈래에서 approval_type_code 8값을 enum 으로 닫은 omf-mes#336 이다. 새 대상이 생기면 화면이 문자열을 정하기 전에 이 목록에 등재한다. ⚠ 같은 이름의 다른 자리는 값 집합이 다르다 — 자리마다 닫는다. ⭐ **2026-09-04 재확정**(`omf-mes#352`) — 이 9값은 `enum` 으로 그대로 둔다. 문서 유형은 취소 리소스가 갈리는 «동작이 걸리는» 값이라 설계가 정한다(`G-31` · `#351`). ⛔ **표시명은 계약에 싣지 않는다** — 화면 문구·설계가 정하는 코드 값의 표시명은 별도 다국어 사전이 진다(`G-33`).",
       "example": "GOODS_RECEIPT",
       "enum": [
        "PURCHASE_ORDER",
@@ -7623,7 +7313,7 @@
      },
      "cancellable": {
       "type": "boolean",
-      "description": "지금 취소 요청을 낼 수 있는가. 후속 유무·상태·진행 중 취소 요청을 함께 본 결과다",
+      "description": "지금 취소 요청을 낼 수 있는가. 유형에 취소 경로가 있는가 · 후속 유무 · 상태 · 진행 중 취소 요청을 함께 본 결과다",
       "example": false
      },
      "cancelBlockedReasonCode": {
@@ -7631,14 +7321,15 @@
        "string",
        "null"
       ],
-      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다. ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다",
+      "description": "cancellable 이 «거짓인 이유» — 후속 문서가 있다 · 이미 취소됐다 · 취소 진행 중이다 · 상태가 잠겼다 · 이 문서 유형에 취소 경로가 없다(`TYPE_NOT_CANCELABLE` — 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이다). ⭐ 화면이 이 값으로 안내 문구와 다음 경로를 가른다(G-3). ⛔ 서버가 판정한다 — 화면이 조건을 따로 조합하면 화면마다 갈린다",
       "example": "SUCCESSOR_EXISTS",
       "x-code-key": "CD-CANCEL-BLOCKED-REASON",
       "enum": [
        "SUCCESSOR_EXISTS",
        "ALREADY_CANCELLED",
        "CANCEL_IN_PROGRESS",
-       "STATE_LOCKED"
+       "STATE_LOCKED",
+       "TYPE_NOT_CANCELABLE"
       ]
      },
      "cancelApprovalRequestId": {

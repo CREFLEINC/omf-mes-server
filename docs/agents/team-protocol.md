@@ -16,8 +16,11 @@
   읽기 전에 항상 `pnpm workflow:sync-design`으로 `main` 최신을 받는다.
 - ⭐ **2026-09-03 설계팀 방침 개정(설계 저장소 `CLAUDE.md` 확인)** : 설계팀은 더 이상 업무를
   배정하거나 개발팀 진행 상황을 보유하지 않는다. "설계 변동 공지"는 이 저장소로 오는 이슈가
-  아니라 `design/wiki/handover/변경-요약.md`(git 이력에서 자동 생성되는 "무엇이 언제
+  아니라 `design/wiki/progress/변경-요약.md`(git 이력에서 자동 생성되는 "무엇이 언제
   바뀌었나" 표, `design/schema/generators/build-change-digest.py`가 만든다) 하나로 대체됐다.
+  ⚠ 이 경로는 설계 저장소가 옮긴다 — 2026-09-04 에 `handover/` → `progress/` 로 옮겼다.
+  `bootstrap.mjs`는 후보를 여럿 두고 **하나도 못 찾으면 실패로 끝낸다**(회차 감시가 조용히
+  꺼진 채로 지나가지 않게 한다 — 실제로 그렇게 한 회차를 놓쳤다).
   우리가 **정기적으로 당겨서 확인**하는 것이 규칙 2·5의 실제 이행 방식이다 — 아래 참조.
 - **클라이언트 저장소** : `CREFLEINC/omf-mes-client` — 규칙 2의 직접 소통 금지 대상. 이 저장소
   에서 이슈를 열거나 코멘트하지 않는다.
@@ -67,7 +70,7 @@
 
 1. `pnpm workflow:sync-design`으로 `.design-reference/omf-mes`를 최신 main으로 새로고침한다.
 2. `pnpm workflow:bootstrap`을 다시 돌린다 — 회차가 바뀌었으면 경고가 뜬다.
-3. `.design-reference/omf-mes/design/wiki/handover/변경-요약.md`에서 직전에 확인한 회차 이후
+3. `.design-reference/omf-mes/design/wiki/progress/변경-요약.md`에서 직전에 확인한 회차 이후
    행만 읽는다. **"무엇이 바뀌었나"(사실)까지만** 보고, "어디를 보나"가 API 계약·물리 모델에
    걸리는지 판단한다 — 내용 추측은 하지 않고 가리키는 파일을 직접 연다.
 4. 계약이 걸리면 `pnpm contracts:check <새 커밋>`으로 실제 차이를 확인하고, 반영할 준비가 되면

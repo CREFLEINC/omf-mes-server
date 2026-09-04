@@ -530,9 +530,28 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "값"
+       "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
       },
+      "description": "⛔ 이 축으로는 거를 수 없다 — 「칸 불필요」로 닫힌 칸이다(A-21 · 사용자 결정 2026-09-02). 진행은 shipmentProgressCode, 검사 대상 여부는 shippingInspectionRequired 가 받는다. 근거: omf-mes#402",
       "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
+     },
+     {
+      "name": "shipmentProgressCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_ALLOCATED",
+        "PARTIALLY_ALLOCATED",
+        "PICKING",
+        "PICKED",
+        "PARTIALLY_SHIPPED",
+        "SHIPPED"
+       ],
+       "example": "PICKING"
+      },
+      "description": "진행 축 필터 — W-04-02 §3 「상태」 드롭다운이 이 축이다. ⛔ statusCode 로는 거를 수 없다(그 칸은 「칸 불필요」로 닫혔다). ⭐ 서버가 라인 수량으로 판정한다 — 같은 리소스의 pickingCompleteOnly·shippableRemainderOnly 와 같은 방식이고 저장 칸이 없다(공유계약 L-2 · A-17). 값 뜻은 응답 ShipmentRequest.shipmentProgressCode 의 설명이 정본이다. 근거: W-04-02 §5-5 · omf-mes#402",
+      "x-code-key": "CD-SHIPMENT-PROGRESS"
      },
      {
       "name": "timeSlotCode",
@@ -742,9 +761,28 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "example": "값"
+       "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
       },
+      "description": "⛔ 이 축으로는 거를 수 없다 — 「칸 불필요」로 닫힌 칸이다(A-21 · 사용자 결정 2026-09-02). 진행은 shipmentProgressCode, 검사 대상 여부는 shippingInspectionRequired 가 받는다. 근거: omf-mes#402",
       "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
+     },
+     {
+      "name": "shipmentProgressCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOT_ALLOCATED",
+        "PARTIALLY_ALLOCATED",
+        "PICKING",
+        "PICKED",
+        "PARTIALLY_SHIPPED",
+        "SHIPPED"
+       ],
+       "example": "PICKING"
+      },
+      "description": "진행 축 필터 — W-04-02 §3 「상태」 드롭다운이 이 축이다. ⛔ statusCode 로는 거를 수 없다(그 칸은 「칸 불필요」로 닫혔다). ⭐ 서버가 라인 수량으로 판정한다 — 같은 리소스의 pickingCompleteOnly·shippableRemainderOnly 와 같은 방식이고 저장 칸이 없다(공유계약 L-2 · A-17). 값 뜻은 응답 ShipmentRequest.shipmentProgressCode 의 설명이 정본이다. 근거: W-04-02 §5-5 · omf-mes#402",
+      "x-code-key": "CD-SHIPMENT-PROGRESS"
      },
      {
       "name": "timeSlotCode",
@@ -2584,8 +2622,8 @@
      },
      "statusCode": {
       "type": "string",
-      "example": "값",
-      "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02)."
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02).",
+      "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
      },
      "lines": {
       "type": "array",
@@ -3182,8 +3220,8 @@
      },
      "statusCode": {
       "type": "string",
-      "example": "값",
-      "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
+      "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02).",
+      "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
      },
      "shippingInspectionStatusCode": {
       "type": "string",
@@ -3197,6 +3235,20 @@
       "description": "⭐ W-04-02 「검사」 열의 판정 근거 — 라인 전체(shippingInspectionRequired + 03 품질 inspection-results)를 서버가 롤업해 하나로 낸다. NOT_REQUIRED=대상 라인 없음(「—」) · PENDING=대상인데 결과 없음(「● 대기」) · PASSED=전 대상 라인 합격(「✅ 합격」) · REJECTED=불합격 라인 존재(「⛔ 불합격」) · HELD=보류 라인 존재, 불합격 없음(「⚠ 보류」). ⭐ 롤업 우선순위(가장 나쁜 것이 이긴다): REJECTED > HELD > PENDING > PASSED > NOT_REQUIRED. ⛔ 화면이 라인을 순회해 판정하지 않는다(공유계약 G-8과 같은 결 — W-04-02 §5-3) — 03 계약과의 조인은 서버 몫이다. ⚠ 이 필드를 이미 소비 중인 코드는 PASSED 외 값을 몰라도 PENDING과 동일하게(대기 취급) 두면 당장은 안전하다. 근거: W-04-02 §5-3·§5-4 · omf-mes#232 · omf-mes#235",
       "example": "PENDING",
       "x-code-key": "CD-SHIPPING-INSPECTION-STATUS"
+     },
+     "shipmentProgressCode": {
+      "type": "string",
+      "enum": [
+       "NOT_ALLOCATED",
+       "PARTIALLY_ALLOCATED",
+       "PICKING",
+       "PICKED",
+       "PARTIALLY_SHIPPED",
+       "SHIPPED"
+      ],
+      "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402",
+      "example": "PICKING",
+      "x-code-key": "CD-SHIPMENT-PROGRESS"
      },
      "lines": {
       "type": "array",
@@ -3216,7 +3268,8 @@
      "shipToPartnerId",
      "requestedShipDate",
      "statusCode",
-     "shippingInspectionStatusCode"
+     "shippingInspectionStatusCode",
+     "shipmentProgressCode"
     ],
     "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
    },
