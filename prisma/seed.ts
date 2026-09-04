@@ -1076,6 +1076,356 @@ const SEED: CodeGroupSeed[] = [
       { code: 'GAUGE', codeName: '게이지', order: 30 },
     ],
   },
+
+  // ── 코드 사전(6d03a44) 등록부 그룹 ────────────────────────────────────────
+  // 계약이 codeGroupCode= 로 가리키는데 시드가 없던 그룹 37개. 값·소유는 code-dictionary.md 의
+  // CD-* 행을 그대로 옮겼다. registry-system(isSystemOwned) 은 서버 판정·화면 분기가 값에
+  // 걸린 그룹이고, 값이 빈 등록부 9개는 고객이 W-06-06 에서 채운다 — 그룹 행이 없으면
+  // GET /mdm/code-values 가 「그룹 없음」과 「값 없음」을 가르지 못한다.
+  // ⚠ 값에 서버 동작이 걸린 그룹의 기존 코드 리터럴은 별도 PR 이 맞춘다(INTEGRATION_MESSAGE_STATUS → PR E).
+  {
+    groupCode: 'APPROVAL_REQUEST_STATUS',
+    groupName: '결재 요청 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PENDING', codeName: '대기', order: 10 },
+      { code: 'APPROVED', codeName: '승인', order: 20 },
+      { code: 'REJECTED', codeName: '반려', order: 30 },
+    ],
+  },
+  {
+    // GRANT·REVOKE 는 「누가 언제 권한을 줬나」가 남는 자리(W-CO-02 §8-8).
+    groupCode: 'AUDIT_EVENT_TYPE',
+    groupName: '감사 이벤트 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'CREATE', codeName: '생성', order: 10 },
+      { code: 'UPDATE', codeName: '수정', order: 20 },
+      { code: 'DELETE', codeName: '삭제', order: 30 },
+      { code: 'GRANT', codeName: '권한 부여', order: 40 },
+      { code: 'REVOKE', codeName: '권한 회수', order: 50 },
+    ],
+  },
+  {
+    // 비가동 집계에 드는가가 이 값으로 갈린다(M-05-02).
+    groupCode: 'BREAKDOWN_OCCURRENCE_STATE',
+    groupName: '고장 시점 설비 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'STOPPED', codeName: '정지', order: 10 },
+      { code: 'ABNORMAL', codeName: '이상 가동', order: 20 },
+    ],
+  },
+  {
+    // 외부 기관이면 agencyName 필수·performedByUserId 비움(공유계약 A-2 짝 제약).
+    groupCode: 'CALIBRATION_AGENCY_TYPE',
+    groupName: '교정 기관 구분',
+    isSystemOwned: true,
+    values: [
+      { code: 'INTERNAL', codeName: '내부', order: 10 },
+      { code: 'EXTERNAL', codeName: '외부', order: 20 },
+    ],
+  },
+  {
+    // 등록부지만 CALIBRATION 하나는 서버가 이름으로 지목한다(사용 가부 판정 · 2026-09-02).
+    groupCode: 'CALIBRATION_HISTORY_TYPE',
+    groupName: '계측기 이력 유형',
+    values: [
+      { code: 'CALIBRATION', codeName: '교정', order: 10 },
+      { code: 'CHECK', codeName: '점검', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'DEFECT_RECORD_SOURCE',
+    groupName: '불량 기록 원천',
+    isSystemOwned: true,
+    values: [
+      { code: 'FIELD', codeName: '현장', order: 10 },
+      { code: 'PQC', codeName: '공정검사', order: 20 },
+      { code: 'OQC', codeName: '출하검사', order: 30 },
+      { code: 'REPAIR', codeName: '수리', order: 40 },
+      { code: 'CLAIM', codeName: '클레임', order: 50 },
+    ],
+  },
+  {
+    // 어디서 «발견»했나(DEFECT_RECORD_SOURCE)와 다른 축 — 누구 탓인가(W-03-05 §5-2).
+    groupCode: 'DEFECT_RESPONSIBILITY_TYPE',
+    groupName: '불량 귀책 구분',
+    values: [],
+  },
+  {
+    groupCode: 'EQUIPMENT_BREAKDOWN_STATUS',
+    groupName: '고장 접수 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'RECEIVED', codeName: '접수', order: 10 },
+      { code: 'HANDLING', codeName: '처리중', order: 20 },
+      { code: 'DONE', codeName: '완료', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'INSPECTION_RESULT_STATUS',
+    groupName: '검사 성적서 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'DRAFT', codeName: '작성중', order: 10 },
+      { code: 'CONFIRMED', codeName: '확정', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'INTEGRATION_MESSAGE_STATUS',
+    groupName: 'ERP 연계 메시지 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PENDING', codeName: '대기', order: 10 },
+      { code: 'PROCESSING', codeName: '처리중', order: 20 },
+      { code: 'DONE', codeName: '완료', order: 30 },
+      { code: 'FAILED', codeName: '실패', order: 40 },
+    ],
+  },
+  {
+    // 계약이 일부러 열어 둔 자리 — 이 밖의 값도 막지 않고 withinConfirmedScope 가 확정 목록 안인지 말한다.
+    groupCode: 'INTERFACE_TARGET',
+    groupName: '연계 대상',
+    values: [
+      { code: 'ITEM', codeName: '품목', order: 10 },
+      { code: 'BOM', codeName: 'BOM', order: 20 },
+      { code: 'ORGANIZATION', codeName: '조직', order: 30 },
+      { code: 'WORKER', codeName: '작업자', order: 40 },
+      { code: 'PURCHASE_ORDER', codeName: '발주', order: 50 },
+    ],
+  },
+  {
+    // 전표 상태와 다른 축 — 전기·취소가 없다(W-01-04 §3).
+    groupCode: 'INVENTORY_COUNT_STATUS',
+    groupName: '재고 실사 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PLANNED', codeName: '계획', order: 10 },
+      { code: 'IN_PROGRESS', codeName: '진행중', order: 20 },
+      { code: 'COMPLETED', codeName: '완료', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'LATE_ENTRY_REASON',
+    groupName: '지연 입력 사유',
+    values: [],
+  },
+  {
+    // 물류 전표 9종(LOGISTICS_DOCUMENT_TYPE 과 같은 집합) 공용 상태(W-01-13 §3).
+    groupCode: 'LOGISTICS_DOCUMENT_STATUS',
+    groupName: '물류 전표 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'REGISTERED', codeName: '등록', order: 10 },
+      { code: 'POSTED', codeName: '전기완료', order: 20 },
+      { code: 'CANCEL_REQUESTED', codeName: '취소요청', order: 30 },
+      { code: 'CANCELLED', codeName: '취소완료', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'LOT_SOURCE_TYPE',
+    groupName: 'LOT 발생 원천',
+    isSystemOwned: true,
+    values: [
+      { code: 'INBOUND_RECEIPT_LINE', codeName: '입하 라인', order: 10 },
+      { code: 'RECYCLE_ENTRY', codeName: '재생재 등록', order: 20 },
+    ],
+  },
+  {
+    // 지시 전체(MAINTENANCE_ORDER_STATUS)와 다른 축 — 항목 하나의 상태.
+    groupCode: 'MAINTENANCE_ORDER_ITEM_STATUS',
+    groupName: '보전 지시 항목 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PLANNED', codeName: '계획', order: 10 },
+      { code: 'DONE', codeName: '완료', order: 20 },
+      { code: 'NA', codeName: '해당 없음', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'MAINTENANCE_ORDER_STATUS',
+    groupName: '보전 지시 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'ISSUED', codeName: '발행', order: 10 },
+      { code: 'DONE', codeName: '완료', order: 20 },
+      { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+  {
+    // 연계 정의의 TRIGGER_TYPE(EVENT·TIME_SCHEDULE)과 이름만 같고 축이 다르다.
+    // 이 조합이 maintenanceTypeCode 를 정한다 — 고장이 섞이면 사후 보전(W-05-05 §5-3).
+    groupCode: 'MAINTENANCE_ORDER_TRIGGER_TYPE',
+    groupName: '보전 지시 촉발 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'BREAKDOWN', codeName: '고장', order: 10 },
+      { code: 'INSPECTION_NG', codeName: '점검 불합격', order: 20 },
+      { code: 'PM_DUE', codeName: '주기 도래', order: 30 },
+    ],
+  },
+  {
+    // 값 집합이 대상(설비 보전·툴 예방보전)에 따라 다르다 — 고객이 채운다.
+    groupCode: 'MAINTENANCE_RESULT_LINE_RESULT',
+    groupName: '보전 실적 항목 결과',
+    values: [],
+  },
+  {
+    groupCode: 'MATERIAL_CHANGE_REASON',
+    groupName: '러닝체인지 교체 사유',
+    values: [],
+  },
+  {
+    // (item_code, mes_category_code) 복합 유일 인덱스가 이 값에 걸린다(M-01-12 §5-B).
+    groupCode: 'MES_CATEGORY',
+    groupName: 'MES 구분',
+    isSystemOwned: true,
+    values: [
+      { code: 'NEW', codeName: '신재', order: 10 },
+      { code: 'RECYCLED', codeName: '재생재', order: 20 },
+    ],
+  },
+  {
+    // 툴마다 사용자가 고르는 «설정» — 값이 늘면 PM 도래 판정 규칙이 함께 늘어야 한다.
+    groupCode: 'MOLD_PM_TRIGGER_TYPE',
+    groupName: '툴 예방보전 판정 기준',
+    isSystemOwned: true,
+    values: [
+      { code: 'SHOT', codeName: '샷수', order: 10 },
+      { code: 'DATE', codeName: '날짜', order: 20 },
+      { code: 'BOTH', codeName: '겸용', order: 30 },
+      { code: 'NONE', codeName: '없음', order: 40 },
+    ],
+  },
+  {
+    groupCode: 'NONCONFORMANCE_SEVERITY',
+    groupName: '부적합 심각도',
+    values: [
+      { code: 'CRITICAL', codeName: '중대', order: 10 },
+      { code: 'MAJOR', codeName: '중', order: 20 },
+      { code: 'MINOR', codeName: '경', order: 30 },
+    ],
+  },
+  {
+    // 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3).
+    groupCode: 'NONCONFORMANCE_STATUS',
+    groupName: '부적합 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'NOT_REQUESTED', codeName: '의뢰 전', order: 10 },
+      { code: 'PENDING_DECISION', codeName: '판정 대기', order: 20 },
+      { code: 'DECIDED', codeName: '판정 완료', order: 30 },
+    ],
+  },
+  {
+    // UPDATED 는 W-02-06 의 P/O 변경 이벤트를 담는 값 — ERP 매핑 없음(2026-09-02).
+    groupCode: 'PRODUCTION_ORDER_STATUS',
+    groupName: 'P/O 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'RECEIVED', codeName: '수신', order: 10 },
+      { code: 'UPDATED', codeName: '수정됨', order: 20 },
+      { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+  {
+    // MASTER_VERSION_STATUS 와 같은 축이되 「폐기」가 이 리소스에 없어 둘이다.
+    groupCode: 'PRODUCTION_PLAN_STATUS',
+    groupName: '생산계획 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'DRAFT', codeName: '작성중', order: 10 },
+      { code: 'CONFIRMED', codeName: '확정', order: 20 },
+    ],
+  },
+  {
+    groupCode: 'PRODUCTION_RESULT_CORRECT_REASON',
+    groupName: '실적 정정 사유',
+    values: [],
+  },
+  {
+    // 임시 적치는 사유(PUTAWAY_TASK_TEMPORARY_REASON)가 함께 필수다.
+    groupCode: 'PUTAWAY_TASK_STATUS',
+    groupName: '적치 작업 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'PENDING', codeName: '적치 대기', order: 10 },
+      { code: 'COMPLETED', codeName: '적치 완료', order: 20 },
+      { code: 'COMPLETED_TEMPORARY', codeName: '임시 적치 완료', order: 30 },
+    ],
+  },
+  {
+    // 번복은 「수정」이 아니라 «재검사 회차» — 이 사유가 그 회차의 근거다.
+    groupCode: 'REINSPECTION_REASON',
+    groupName: '재검사 사유',
+    values: [],
+  },
+  {
+    // 확정이 PGI 송신을 부르고 취소가 되돌린다(W-04-04 §5-1 · W-04-12 §5-2).
+    groupCode: 'SHIPMENT_STATUS',
+    groupName: '출하 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'UNCONFIRMED', codeName: '미확정', order: 10 },
+      { code: 'CONFIRMED', codeName: '확정', order: 20 },
+      { code: 'CANCELLED', codeName: '취소', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'STOCK_REINSTATEMENT_REASON',
+    groupName: '재고 재등록 사유',
+    values: [],
+  },
+  {
+    groupCode: 'STOCK_TRANSFER_REASON',
+    groupName: '재고 이동 사유',
+    values: [],
+  },
+  {
+    // 불량 반출일 때만 사유 칸을 연다(M-01-10 §4) — 값이 늘면 화면 분기가 따라가지 못한다.
+    groupCode: 'STOCK_TRANSFER_TYPE',
+    groupName: '재고 이동 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'NORMAL', codeName: '일반', order: 10 },
+      { code: 'DEFECT_RETURN', codeName: '불량 반출', order: 20 },
+    ],
+  },
+  {
+    // REQ-PR-0003 「모든 도구」를 담는 축 — 테이블 이름(mdm.mold)은 바꾸지 않는다(W-05-13 §3-3).
+    groupCode: 'TOOL_TYPE',
+    groupName: '도구 유형',
+    values: [
+      { code: 'MOLD', codeName: '금형', order: 10 },
+      { code: 'JIG', codeName: '지그', order: 20 },
+      { code: 'OTHER', codeName: '그 밖의 도구', order: 30 },
+    ],
+  },
+  {
+    groupCode: 'WORK_ORDER_HOLD_REASON',
+    groupName: '작업지시 보류 사유',
+    values: [],
+  },
+  {
+    groupCode: 'WORK_ORDER_TYPE',
+    groupName: '작업지시 유형',
+    isSystemOwned: true,
+    values: [
+      { code: 'NORMAL', codeName: '일반', order: 10 },
+      { code: 'EMERGENCY', codeName: '긴급', order: 20 },
+      { code: 'REWORK', codeName: '재작업', order: 30 },
+    ],
+  },
+  {
+    // 세션에서 «맡은 역할» — 사람의 직위·권한 축이 아니다(app.role · L-2-1).
+    groupCode: 'WORK_SESSION_WORKER_ROLE',
+    groupName: '작업 세션 작업자 역할',
+    values: [
+      { code: 'MAIN', codeName: '주작업자', order: 10 },
+      { code: 'SUB', codeName: '부작업자', order: 20 },
+    ],
+  },
 ];
 
 /**

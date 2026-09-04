@@ -181,6 +181,29 @@ describe('공통코드 마스터 (e2e)', () => {
     expect(new Set(literals).size).toBeGreaterThan(30);
   });
 
+  it('⭐ 계약이 가리키는 코드 그룹은 전부 시드에 있다 — 없으면 화면이 빈 목록을 받는다', async () => {
+    // GET /mdm/code-values?codeGroupCode=X 는 그룹이 없어도 404 가 아니라 빈 목록이다(필터라서).
+    // 그래서 코드 사전에 있는 그룹이 시드에 빠지면 아무 검사도 못 잡는다 — 여기서 잡는다.
+    const pointed = new Set(
+      readdirSync(CONTRACTS_DIR)
+        .filter((name) => name.endsWith('.json'))
+        .flatMap((name) =>
+          [...readFileSync(join(CONTRACTS_DIR, name), 'utf8').matchAll(/codeGroupCode=([A-Z_]+)/g)].map(
+            (m) => m[1],
+          ),
+        ),
+    );
+    const seeded = new Set(
+      (await prisma.code_group.findMany({ where: { is_active: true }, select: { group_code: true } })).map(
+        (g) => g.group_code,
+      ),
+    );
+    const missing = [...pointed].filter((code) => !seeded.has(code)).sort();
+
+    // ⚠ 둘은 시드가 옛 이름(DEPENDENCY_TYPE · FREQUENCY_INTERVAL_UOM)으로 갖고 있다 — PR D-4 가 개명한다.
+    expect(missing).toEqual(['INSPECTION_FREQUENCY_INTERVAL_UOM', 'ROUTING_OPERATION_DEPENDENCY_TYPE']);
+  });
+
   it('⛔ 코드 «값»의 참조는 셀 수 없다 — 174표 어디에도 FK 가 없다', async () => {
     const { id } = await createGroup(`${PREFIX}-NC`);
     const created = await request(app.getHttpServer())
