@@ -15,7 +15,7 @@ model app_user {
   user_name                                              String                             @db.VarChar(200)
   department_id                                          BigInt?
   email                                                  String?                            @db.VarChar(200)
-  status_code                                            String                             @default("ACTIVE") @db.VarChar(50)
+  status_code                                            String                             @default("EMPLOYED") @db.VarChar(50)
   is_active                                              Boolean                            @default(true)
   created_at                                             DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                             BigInt?
