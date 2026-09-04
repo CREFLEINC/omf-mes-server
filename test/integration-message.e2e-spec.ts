@@ -86,6 +86,16 @@ describe('연계 메시지 (e2e)', () => {
     await app.close();
   });
 
+  it('⭐ 상수 넷이 시드 그룹 INTEGRATION_MESSAGE_STATUS 와 같다 — 화면은 그룹을 읽고 서버는 상수를 쓴다', async () => {
+    // 계약이 값 목록을 GET /mdm/code-values?codeGroupCode=INTEGRATION_MESSAGE_STATUS 로 받으라 했다.
+    // 둘이 어긋나면 화면 필터가 고른 값이 서버에 한 건도 없거나, 서버가 쓴 값이 이름 없이 보인다.
+    const rows = await prisma.code_value.findMany({
+      where: { code_group: { group_code: 'INTEGRATION_MESSAGE_STATUS' }, is_active: true },
+      select: { code: true },
+    });
+    expect(rows.map((r) => r.code).sort()).toEqual(Object.values(MESSAGE_STATUS).sort());
+  });
+
   it('⛔ 기간이 없으면 400 이다 — 「기간 미지정 조회는 제공하지 않는다」', async () => {
     const rejected = await request(app.getHttpServer())
       .get('/api/integration/messages')
@@ -163,7 +173,7 @@ describe('연계 메시지 (e2e)', () => {
   });
 
   it('⛔ 실패가 아니면 400 NOT_RETRYABLE 이다', async () => {
-    for (const statusCode of [MESSAGE_STATUS.PENDING, MESSAGE_STATUS.COMPLETED]) {
+    for (const statusCode of [MESSAGE_STATUS.PENDING, MESSAGE_STATUS.DONE]) {
       const id = await seed({ statusCode });
       const rejected = await request(app.getHttpServer())
         .post(`/api/integration/messages/${id}:retry`)
@@ -177,7 +187,7 @@ describe('연계 메시지 (e2e)', () => {
   it('⭐⭐ 일괄은 부분 실패를 허용한다 — 전체를 되돌리지 않는다', async () => {
     const ok = await seed({ statusCode: MESSAGE_STATUS.FAILED });
     const locked = await seed({ statusCode: MESSAGE_STATUS.FAILED, lockedBy: 'worker-2' });
-    const done = await seed({ statusCode: MESSAGE_STATUS.COMPLETED });
+    const done = await seed({ statusCode: MESSAGE_STATUS.DONE });
 
     const response = await request(app.getHttpServer())
       .post('/api/integration/messages:retry-batch')

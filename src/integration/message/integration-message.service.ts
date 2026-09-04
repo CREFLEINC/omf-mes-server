@@ -13,25 +13,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 /**
  * 연계 메시지 상태.
  *
- * ⚠ 계약이 「공통코드 — **값 목록이 아직 서지 않았다**. 최소 구분: 대기/처리중/완료/실패」
- * 로 적었다(추적처 `omf-mes#213`). 그런데 `:retry` 는 「`statusCode`=**실패** 이고
- * `lockedBy` 가 비어 있어야 한다」라 그 낱말이 어떤 문자열인지 알아야 선다.
- *
- * 근거 셋을 모아 넷을 적었다.
- *   1. 계약 자신이 `statusCode` 의 `example` 로 `FAILED` 를 보였다.
- *   2. 설계의 웹프론트 착수안내가 재처리 화면 목업에 `statusCode: FAILED` 를 썼다.
- *   3. 이 표에 쓰는 «워커»가 아직 없다 — 어긋날 기존 데이터가 없다.
- *
- * ⛔ **금형(`MOLD_STATUS`)과 갈리는 지점이 여기다.** 그쪽은 시드 4값이 계약 2값과
- * «어긋나» 어느 쪽도 고를 수 없었다. 여기는 시드도 CHECK 도 없고 계약의 예시와 설계
- * 목업이 같은 값을 가리킨다 — 모름이지 모순이 아니다.
- *
- * 값이 다르게 정해지면 **이 상수 한 줄**을 바꾼다. 되돌림 §X-4.
+ * 값 넷은 코드 사전(6d03a44 · CD-INTEGRATION-MESSAGE-STATUS)이 확정한 문자열이고 시드
+ * `INTEGRATION_MESSAGE_STATUS` 와 같다. `:retry` 는 FAILED 만 받고, 워커가 PENDING 으로 되돌린다.
+ * 계약이 값 목록을 세우기 전에는 완료를 COMPLETED 로 적었다 — 되돌림 §X-4, 마이그레이션
+ * 20260904150000 이 기존 행을 옮겼다.
  */
 export const MESSAGE_STATUS = {
   PENDING: 'PENDING',
   PROCESSING: 'PROCESSING',
-  COMPLETED: 'COMPLETED',
+  DONE: 'DONE',
   FAILED: 'FAILED',
 } as const;
 
