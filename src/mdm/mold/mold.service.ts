@@ -13,6 +13,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   MoldSort,
@@ -52,6 +53,10 @@ const LABEL_DOCUMENT_TYPE = 'TOOL_LABEL';
  */
 const CLOSED_ORDER_STATUSES = ['DONE', 'CANCELLED'];
 
+/** 자산 폐기는 사용 중지와 «다른 축»이다 — 공유계약 `B-16`. */
+const STATUS_COLUMN = 'mdm.mold.status_code';
+const DISPOSED = 'DISPOSED';
+
 export interface MoldQuery extends ReferenceQuery {
   plantId?: number;
   toolTypeCode?: string;
@@ -89,7 +94,10 @@ export type MoldResult = {
 
 @Injectable()
 export class MoldService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly documentState: DocumentStateService,
+  ) {}
 
   /**
    * ⚠ 페이지가 아니라 **필터 전체**를 읽는다. 요약(`summary`)이 전체 기준이고 정렬 축
@@ -162,6 +170,7 @@ export class MoldService {
   async update(moldId: number, version: number, input: MoldWrite): Promise<MoldResult> {
     await this.assertWritable(input);
     const current = await this.get(moldId);
+    assertNotDisposed(current.mold.statusCode);
 
     if (input.moldCode !== undefined && input.moldCode !== current.mold.moldCode) {
       // 공유계약 B-4 — 참조가 있거나 라벨이 나갔으면 코드를 못 바꾼다.
@@ -186,6 +195,47 @@ export class MoldService {
         ...optional('pm_cycle_unit_code', input.pmCycleUnitCode),
         version_no: { increment: 1 },
       },
+    });
+    await this.assertExists(moldId, updated.count);
+    return this.get(moldId);
+  }
+
+  /**
+   * 사용 중지·재개. 목록에서 감추는 것뿐이라 자산 상태(`status_code`)를 건드리지
+   * 않는다 — 물리 삭제를 두지 않으므로 되돌리는 경로가 `:activate` 하나다(계약).
+   */
+  async setActive(moldId: number, version: number, isActive: boolean): Promise<MoldResult> {
+    const updated = await this.prisma.mold.updateMany({
+      where: { mold_id: moldId, version_no: version },
+      data: { is_active: isActive, version_no: { increment: 1 } },
+    });
+    await this.assertExists(moldId, updated.count);
+    return this.get(moldId);
+  }
+
+  /**
+   * 자산을 폐기한다. 사용 중지와 «다른 축»이다 — 중지는 목록에서 감추는 것이고 폐기는
+   * 자산이 끝난 것이다(B-16). 전이는 상태기계 코어가 가른다.
+   */
+  async dispose(moldId: number, version: number): Promise<MoldResult> {
+    const current = await this.prisma.mold.findUnique({
+      where: { mold_id: moldId },
+      select: { status_code: true },
+    });
+    if (!current) throw new NotFoundException('없는 툴입니다.');
+    const transition = this.documentState.assertTransition(
+      STATUS_COLUMN,
+      'mold-dispose',
+      current.status_code,
+      // ⛔ 400 이다. 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반(상태 잠김·참조
+      // 존재)은 409 가 아니라 400 이다」로 적었다 — 409 는 저장 충돌 전용이다.
+      // ⚠ 형제인 설비 `:dispose` 는 지금 409 를 낸다. 계약 문구는 둘이 같다(되돌림 §O-8).
+      HttpStatus.BAD_REQUEST,
+    );
+
+    const updated = await this.prisma.mold.updateMany({
+      where: { mold_id: moldId, version_no: version },
+      data: { status_code: transition.to, version_no: { increment: 1 } },
     });
     await this.assertExists(moldId, updated.count);
     return this.get(moldId);
@@ -357,4 +407,19 @@ function bool(value: boolean | string | undefined): boolean | undefined {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return undefined;
+}
+
+/** 「폐기된 뒤에는 다시 불러와도 편집이 풀리지 않는다」(계약 · B-16). */
+function assertNotDisposed(statusCode: string): void {
+  if (statusCode !== DISPOSED) return;
+  // ⛔ 400 이다 — 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반(상태 잠김·참조
+  // 존재)은 409 가 아니라 400 이다」로 적었다. 409 는 저장 충돌 전용이다.
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      // ⛔ 재로드해도 풀리지 않는다 — 저장 충돌과 구분한다(G-1).
+      code: ERROR_CODE.STATE_LOCKED,
+      message: '폐기한 툴은 수정할 수 없습니다.',
+    },
+  ]);
 }

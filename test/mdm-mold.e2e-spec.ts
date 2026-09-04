@@ -404,6 +404,54 @@ describe('툴 마스터 (e2e)', () => {
     });
   });
 
+  it('⭐ 사용 중지는 감추기만 한다 — 재개하면 다시 보인다', async () => {
+    const { id, etag } = await create(`${PREFIX}-OFF`);
+
+    const off = await act(id, 'deactivate', etag);
+    expect(off.body.isActive).toBe(false);
+    // 자산 상태는 그대로다 — 중지와 폐기는 «다른 축»이다(B-16).
+    expect(off.body.statusCode).toBe('IN_SERVICE');
+
+    expect((await list(`q=${PREFIX}-OFF`)).items.map((m) => m.moldId)).not.toContain(id);
+    expect(
+      (await list(`q=${PREFIX}-OFF&includeInactive=true`)).items.map((m) => m.moldId),
+    ).toContain(id);
+
+    const on = await act(id, 'activate', off.headers.etag);
+    expect(on.body.isActive).toBe(true);
+  });
+
+  it('⭐ 폐기는 자산이 끝난 것이다 — 뒤에는 편집이 풀리지 않는다', async () => {
+    const { id, etag } = await create(`${PREFIX}-DISP`);
+
+    const disposed = await act(id, 'dispose', etag);
+    expect(disposed.body).toMatchObject({ statusCode: 'DISPOSED', isActive: true });
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/mdm/molds/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', disposed.headers.etag)
+      .send({ ...body(`${PREFIX}-DISP`), moldName: '고쳐 보기' })
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+  });
+
+  it('⛔ 이미 폐기한 툴을 다시 폐기할 수 없다 — 상태기계가 가른다', async () => {
+    const { id, etag } = await create(`${PREFIX}-TWICE`);
+    const once = await act(id, 'dispose', etag);
+
+    const rejected = await request(app.getHttpServer())
+      .post(`/api/mdm/molds/${id}:dispose`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', once.headers.etag)
+      // ⛔ 400 이다 — 계약이 409 설명에 「업무 규칙 위반(상태 잠김·참조 존재)은 409 가
+      // 아니라 400」이라 적었다. 409 봉투(ConflictResponse)는 저장 충돌 전용이다.
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+  });
+
   it('⛔ 없는 툴은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/mdm/molds/999999999')
@@ -439,6 +487,16 @@ describe('툴 마스터 (e2e)', () => {
     expect(validate(created.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return { id: created.body.moldId, etag: (await detailOf(created.body.moldId)).etag };
+  }
+
+  /** 상태 액션 하나. 전부 `Idempotency-Key` + `If-Match` 를 요구한다(계약). */
+  async function act(id: number, action: string, etag: string): Promise<request.Response> {
+    return request(app.getHttpServer())
+      .post(`/api/mdm/molds/${id}:${action}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .expect(200);
   }
 
   async function detailOf(

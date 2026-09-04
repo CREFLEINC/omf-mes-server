@@ -9,6 +9,8 @@ const LIFECYCLE = 'trace.lot.lifecycle_status_code';
 const ROUTING_COLUMN = 'planning.routing.status_code';
 /** 설비 자산 수명주기 — 시드 EQUIPMENT_STATUS 가 두 값을 확정했다(#124). */
 const EQUIPMENT_STATUS = 'mdm.equipment.status_code';
+/** 툴도 같은 값 목록을 쓴다 — 계약이 「설비·툴·계측기가 같은 규칙」이라 적었다. */
+const MOLD_STATUS = 'mdm.mold.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -135,8 +137,10 @@ describe('DocumentStateService', () => {
       // 값 목록 없이 전이를 지어내는 것을 F-6 이 금지하므로, 등록은 항상 의도적이어야 한다.
       const columns = new Set(service.registered().map((entry) => entry.column));
 
-      expect([...columns].sort()).toEqual([EQUIPMENT_STATUS, LIFECYCLE, ROUTING_COLUMN].sort());
-      expect(service.registered()).toHaveLength(6);
+      expect([...columns].sort()).toEqual(
+        [EQUIPMENT_STATUS, LIFECYCLE, MOLD_STATUS, ROUTING_COLUMN].sort(),
+      );
+      expect(service.registered()).toHaveLength(7);
     });
   });
 });

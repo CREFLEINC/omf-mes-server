@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -65,6 +66,45 @@ export class MoldController {
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'mold', (version) =>
       this.molds.update(moldId, version, body),
+    );
+  }
+
+  @Post(':moldId\\:activate')
+  @Contract('POST /mdm/molds/{moldId}:activate')
+  @HttpCode(HttpStatus.OK)
+  activate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('moldId', ParseIntPipe) moldId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'mold', (version) =>
+      this.molds.setActive(moldId, version, true),
+    );
+  }
+
+  @Post(':moldId\\:deactivate')
+  @Contract('POST /mdm/molds/{moldId}:deactivate')
+  @HttpCode(HttpStatus.OK)
+  deactivate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('moldId', ParseIntPipe) moldId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'mold', (version) =>
+      this.molds.setActive(moldId, version, false),
+    );
+  }
+
+  @Post(':moldId\\:dispose')
+  @Contract('POST /mdm/molds/{moldId}:dispose')
+  @HttpCode(HttpStatus.OK)
+  dispose(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('moldId', ParseIntPipe) moldId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'mold', (version) =>
+      this.molds.dispose(moldId, version),
     );
   }
 }
