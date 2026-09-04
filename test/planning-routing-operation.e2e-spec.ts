@@ -230,6 +230,22 @@ describe('Routing 공정 라인·선후행 (e2e)', () => {
     expect(cleared.body.items).toEqual([]);
   });
 
+  it('⭐ START_TO_FINISH 를 받는다 — 사전이 넷으로 닫은 축(CD-ROUTING-OPERATION-DEPENDENCY-TYPE)', async () => {
+    // 위 검사가 남긴 세 줄을 그대로 쓴다 — 뒤 검사들도 그 줄 수에 기댄다.
+    const ids = (await currentLines()).map((l) => l.routingOperationId);
+
+    const saved = await putDependencies([
+      {
+        predecessorOperationId: ids[0],
+        successorOperationId: ids[1],
+        dependencyTypeCode: 'START_TO_FINISH',
+      },
+    ]);
+    expect(saved.body.items[0].dependencyTypeCode).toBe('START_TO_FINISH');
+
+    await putDependencies([]);
+  });
+
   it('⛔ 순환은 400 이다 — DB 가 막지 않으므로 서버가 본다', async () => {
     const ids = (await currentLines()).map((l) => l.routingOperationId);
 
