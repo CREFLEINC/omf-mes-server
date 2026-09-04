@@ -1845,9 +1845,6 @@
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
-     },
-     {
-      "$ref": "#/components/parameters/WorkerNo"
      }
     ],
     "requestBody": {
@@ -1911,7 +1908,95 @@
        }
       }
      }
-    }
+    },
+    "x-internal-note": "⛔ X-Worker-No 를 걷었다(2026-09-04) — 이 오퍼레이션을 부르는 화면이 관리웹 W-02-05 하나로 확정되면서(omf-mes#61) 사번을 보낼 주체가 없어졌다. 공유계약 D-5 의 귀속 헤더는 «현장 단말·모바일» 조항이고 관리웹은 지어낼 사번이 없다 — 형제인 :request-approval 도 같은 이유로 두지 않는다. 정정한 사람은 인증 주체로 남는다. ⚠ 뒤에 현장 단말이 이 경로를 부르게 되면 그때 선택판을 얹는다."
+   }
+  },
+  "/production/production-results/{productionResultId}:request-approval": {
+   "post": {
+    "tags": [
+     "production"
+    ],
+    "summary": "실적 정정 상신",
+    "description": "A급 보정(수불·기간업무시스템에 영향을 주는 정정)을 승인에 올린다. **등급은 서버가 정정 내용으로 판정한다** — 화면이 등급을 보내지 않는다. 결재선이 없으면 400(code=ROUTE_NOT_FOUND)이다 — 상신할 곳이 없는 요청을 만들지 않는다. 진행 중인 승인 요청이 이미 있으면 400 이다 — 한 실적에 살아 있는 요청은 하나다. 반려된 요청은 진행 중이 아니므로 다시 상신할 수 있고 그때는 새 요청이 만들어진다(공유계약 J-6). 승인이 끝나면 정정은 `POST /production/production-results/{productionResultId}:correct` 로 기록한다 — 이 오퍼레이션은 «승인 요청»만 만든다. 근거: W-02-05 §5-4 · 공유계약 J-4 · G-18 · 2026-08-31 사용자 확정(A급 보정부터 승인)",
+    "parameters": [
+     {
+      "name": "productionResultId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "상신됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApprovalRequestRef"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다 — 결재선 부재·진행 중 요청 존재·B급이라 승인이 필요 없는 정정",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다 — 원본 실적이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "⛔ If-Match 를 받지 않는다 — 원본 실적을 고치지 않으므로 잠글 것이 없다(:correct 와 같은 이유). ⛔ X-Worker-No 를 받지 않는다 — 이 오퍼레이션을 부르는 것은 관리웹 W-02-05 다(2026-09-04 사용자 결정). 서버가 approval_type_code=PRODUCTION_RESULT_CORRECT · target_type_code=PRODUCTION_RESULT 를 채운다. 누가 승인하는지는 결재선 정의(W-06-15)가 정한다 — 계약은 요청 생성까지만 덮는다."
    }
   },
   "/production/repair-executions": {
@@ -4299,7 +4384,7 @@
       "type": "string",
       "description": "투입 유형. 물리 컬럼은 production.material_consumption.consumption_type_code 다. ⛔ 뜻 목록(정상·재생재·대체)은 축 정합화 전의 잠정 서술이라 코드값이 아니다 — 「재생재」는 품목 축, 「대체·교체」는 구조 축(replacedConsumptionId)에 이미 자리가 있다. 값 목록은 아직 확정 전이다 — 화면은 서버가 내려주는 값을 그대로 표시하고 값 자체로 분기하지 않는다.",
       "x-no-example": "값 목록이 미확정이라 코드 문자열을 못 박지 않는다 — 임의 코드를 example 로 넣으면 확정값처럼 읽힌다(omf-mes#252 가 실제로 그렇게 읽었다)",
-      "x-internal-note": "⛔ 이 자리가 omf-mes#252 오독의 원천이다 — 요청자가 이 «읽기» 스키마의 example: NORMAL 과 「정상·재생재·대체」를 정본으로 읽었고, 쓰기 스키마는 같은 기간 내내 미확정이었다(P-02-03 v0.3 변경 이력). 「재생재」는 품목 축(mdm.item.mes_category_code · 확정 기록 DR-006 · M-01-12)에, 「대체·교체」는 구조 축(replacedConsumptionId · P-02-11 §5-2)에 이미 자리가 있다 — 축을 정합화한 뒤에 문자열을 정한다. 추적은 P-02-03 §8 미결 1(omf-mes#252). example 자리채움 점검은 omf-mes#191 이 갖는다.",
+      "x-internal-note": "⛔ 이 자리가 omf-mes#252 오독의 원천이다 — 요청자가 이 «읽기» 스키마의 example: NORMAL 과 「정상·재생재·대체」를 정본으로 읽었고, 쓰기 스키마는 같은 기간 내내 미확정이었다(P-02-03 v0.3 변경 이력). 「재생재」는 품목 축(mdm.item.mes_category_code · 확정 기록 DR-006 · M-01-12)에, 「대체·교체」는 구조 축(replacedConsumptionId · P-02-11 §5-2)에 이미 자리가 있다 — 축을 정합화한 뒤에 문자열을 정한다. 추적은 P-02-03 §8 미결 8 이 갖는다(공유계약 A-21 — 2026-09-04 omf-mes#378 3회차 표지 교체. 미결 1 은 이미 닫힌 행이다). example 자리채움 점검은 omf-mes#191 이 갖는다.",
       "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 계약이 스스로 「뜻 목록 3종은 축 정합화 전의 잠정 서술이라 코드값이 아니다」로 무효화했고, 셋 중 둘이 이미 다른 축으로 빠져 남는 것이 하나다(A-21 · 2026-09-02 판정)."
      },
      "correctsConsumptionId": {
@@ -4441,7 +4526,7 @@
       "type": "string",
       "description": "투입 유형이며 물리 컬럼은 production.material_consumption.consumption_type_code 다. 보내지 않으면 서버가 기본 투입 유형으로 기록한다 — 화면이 값을 지어내지 않는다. 값 목록은 아직 확정 전이고, 확정 전에는 이 칸을 보내지 않는다.",
       "example": "값",
-      "x-internal-note": "뜻 목록 세 값 중 「재생재」는 품목 축(mdm.item.mes_category_code = NEW/RECYCLED · 확정 기록 DR-006 2026-08-10 · 재생재 등록 화면 M-01-12)에, 「대체·교체」는 구조 축(replacedConsumptionId + changeReasonCode · 러닝체인지 화면 P-02-11 §5-2)에 이미 자리가 있어 한 칸이 두 축을 겸하려는 상태다. 축을 정합화한 뒤에 문자열을 정한다(공유계약 A-21 — 일부만 채워진 것이 빈 것보다 위험하다). 추적은 P-02-03 §8 미결 1 이 갖는다(omf-mes#252).",
+      "x-internal-note": "뜻 목록 세 값 중 「재생재」는 품목 축(mdm.item.mes_category_code = NEW/RECYCLED · 확정 기록 DR-006 2026-08-10 · 재생재 등록 화면 M-01-12)에, 「대체·교체」는 구조 축(replacedConsumptionId + changeReasonCode · 러닝체인지 화면 P-02-11 §5-2)에 이미 자리가 있어 한 칸이 두 축을 겸하려는 상태다. 축을 정합화한 뒤에 문자열을 정한다(공유계약 A-21 — 일부만 채워진 것이 빈 것보다 위험하다). 추적은 P-02-03 §8 미결 8 이 갖는다(공유계약 A-21 — 2026-09-04 omf-mes#378 3회차 표지 교체. 미결 1 은 이미 닫힌 행이다).",
       "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 계약이 스스로 「뜻 목록 3종은 축 정합화 전의 잠정 서술이라 코드값이 아니다」로 무효화했고, 셋 중 둘이 이미 다른 축으로 빠져 남는 것이 「정상」 하나다. 값이 하나뿐인 축은 축이 아니다(A-21 · 2026-09-02 판정)."
      },
      "actualUseProcessId": {
@@ -6237,9 +6322,9 @@
      },
      "statusCode": {
       "type": "string",
-      "x-no-example": "상태 코드 문자열이 아직 확정되지 않았다 — 임의 코드를 example 로 넣으면 확정값처럼 읽힌다",
+      "x-no-example": "example 을 넣지 않는다 — 상태 코드는 여덟 값으로 확정됐지만(2026-09-02 사용자 확정 · 공유계약 G-32 WORK_ORDER_STATUS) 여덟 중 하나를 example 로 고르면 그 값이 «기본값»처럼 읽힌다. example 자리채움 여부는 계약 자리채움 점검(omf-mes#191) 소관이다.",
       "description": "작업지시의 진행 상태 — 편성(PLANNED) · 확정(CONFIRMED) · 배포(RELEASED) · 진행(IN_PROGRESS) · 완료(COMPLETED) · 마감(CLOSED) · 중단(SUSPENDED) · 취소(CANCELLED) «8종»(결정 14 · 사용자 확정 2026-09-02). ⛔ 「진행불가」는 상태가 «아니다» — 자원 Validation NG 는 확정 버튼을 막는 게이트이고 W/O 는 편성에 머문다(W-02-04 §5 · W-02-03 §5-3 A-9 3등급). 「재시작」을 상태에서 뺀 것과 같은 논리다(중단→진행 전이 이벤트). ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 상태 전이와 버튼 활성이 이 값에 걸린다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=WORK_ORDER_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-internal-note": "example 이 'NORMAL' 이었다 — 그것은 형제 칸 workOrderTypeCode 의 확정 기본값이고 상태 값이 아니다. 상태 칸에 유형 칸 값이 들어가 있어 「상태 기본값이 NORMAL」로 읽힐 자리였다(omf-mes#247 실측). ⚠ 결정 14 본문은 「상태 값 8종」이라 적었으나 같은 결정의 그래프 노드는 아홉이다(편성·확정·배포·진행·완료·마감·중단·진행불가·취소). 그 8 이 이 설명과 P-02-01 §2 에 그대로 복사되면서 「진행불가」가 두 하류에서 함께 탈락했다 — 코드 문자열 확정은 이 뜻 목록을 먼저 정합화한 뒤에 한다(공유계약 A-21 — 일부만 채워진 것이 빈 것보다 위험하다). 화면 쪽 추적은 P-02-01 §8 미결 7 이 갖는다(omf-mes#247). ⭐ 「확정 대기」의 실제 게이트는 「배포 시각 없음 AND 계획 자원 배정 1건 이상 AND 4M 유효성 BLOCK 0건」이고 서버가 releasable 질의축으로 판정한다(W-02-03 §5-6 · W-02-04 §3). 화면이 상태 문자열로 거르지 않는다.",
+      "x-internal-note": "example 이 'NORMAL' 이었다 — 그것은 형제 칸 workOrderTypeCode 의 확정 기본값이고 상태 값이 아니다. 상태 칸에 유형 칸 값이 들어가 있어 「상태 기본값이 NORMAL」로 읽힐 자리였다(omf-mes#247 실측). ⚠ 결정 14 본문은 「상태 값 8종」이라 적었으나 같은 결정의 그래프 노드는 아홉이다(편성·확정·배포·진행·완료·마감·중단·진행불가·취소). 그 8 이 이 설명과 P-02-01 §2 에 그대로 복사되면서 「진행불가」가 두 하류에서 함께 탈락했다 — 그 정합화는 2026-09-02 사용자 확정으로 닫혔다 — 「진행불가」를 상태에서 빼고 여덟 값으로 확정했다(공유계약 A-21 · G-32). 화면 쪽 P-02-01 §8 미결 7 도 같은 확정으로 닫혔다(2026-09-04 · omf-mes#378 3회차). ⭐ 「확정 대기」의 실제 게이트는 「배포 시각 없음 AND 계획 자원 배정 1건 이상 AND 4M 유효성 BLOCK 0건」이고 서버가 releasable 질의축으로 판정한다(W-02-03 §5-6 · W-02-04 §3). 화면이 상태 문자열로 거르지 않는다.",
       "x-code-key": "CD-WORK-ORDER-STATUS"
      },
      "releasedAt": {
@@ -7181,6 +7266,36 @@
      "withResultCount",
      "withoutResultCount"
     ]
+   },
+   "ApprovalRequestCreate": {
+    "type": "object",
+    "required": [
+     "reason"
+    ],
+    "description": "승인 요청. 사유는 비울 수 없다 — 데이터가 NOT NULL 로 강제하고, 결재함 목록에서 이 문장이 요약을 겸한다(approval_request 에 업무 값이 reason 하나뿐이다). 승인 진행 상태를 읽고 결재하는 경로는 app-공통 파일이 갖는다. 근거: W-02-05 §5-4 · 공유계약 J-4 · A-12 보강",
+    "properties": {
+     "reason": {
+      "type": "string",
+      "description": "이 정정을 왜 하는가. 결재함(W-CO-09)에 보이는 «유일한 업무 값»이라 승인자가 이 문장만으로 판단한다. 화면이 필수로 만든다(공유계약 A-12)",
+      "example": "교대 종료 후 집계에서 양품 150 EA 누락이 확인됨",
+      "minLength": 1
+     }
+    },
+    "x-internal-note": "app.approval_request 계약은 app-공통 파일 소관(01-리소스도출 §1-1). 이 오퍼레이션은 요청 생성만 하고 요청 식별자를 돌려준다."
+   },
+   "ApprovalRequestRef": {
+    "type": "object",
+    "required": [
+     "approvalRequestId"
+    ],
+    "properties": {
+     "approvalRequestId": {
+      "x-source-column": "approval_request_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
    }
   }
  }

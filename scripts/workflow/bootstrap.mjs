@@ -24,15 +24,28 @@ const STATE_FILE = join(STATE_DIR, 'state.json');
 const COMMIT_FILE = join(ROOT, 'contracts', 'COMMIT.txt');
 const DESIGN_REF = join(ROOT, '.design-reference', 'omf-mes');
 const DESIGN_REPO = 'git@github.com:CREFLEINC/omf-mes.git';
-// 규칙 5(설계 자료 고정)의 실제 전달 수단 — 설계팀은 개별 이슈를 이 저장소에 열지 않고,
-// git 이력에서 만든 이 표로 "무엇이 언제 바뀌었나"만 전한다(2026-09-03 방침 개정).
-const CHANGE_LOG = join(DESIGN_REF, 'design', 'wiki', 'handover', '변경-요약.md');
+/**
+ * 규칙 5(설계 자료 고정)의 실제 전달 수단 — 설계팀은 개별 이슈를 이 저장소에 열지 않고,
+ * git 이력에서 만든 이 표로 "무엇이 언제 바뀌었나"만 전한다(2026-09-03 방침 개정).
+ *
+ * ⛔ **경로는 설계 저장소가 옮긴다.** 2026-09-04 에 `handover/` → `progress/` 로 옮겼고
+ * 그동안 회차 감시가 «조용히» 꺼져 있었다 — 못 찾으면 회차가 null 이 되는데 그것을
+ * 정보성 한 줄로만 알렸기 때문이다. 그래서 후보를 여럿 두고, 클론이 있는데도 하나도
+ * 못 찾으면 **실패로 끝낸다**. 감시가 꺼진 것을 성공으로 보고하지 않는다.
+ */
+const CHANGE_LOG_CANDIDATES = [
+  join(DESIGN_REF, 'design', 'wiki', 'progress', '변경-요약.md'),
+  join(DESIGN_REF, 'design', 'wiki', 'handover', '변경-요약.md'),
+];
 
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 
-function readChangeRound() {
-  if (!existsSync(CHANGE_LOG)) return null;
-  const match = readFileSync(CHANGE_LOG, 'utf8').match(/변경 회차\s*\|\s*\*\*(\d+)\*\*/);
+function locateChangeLog() {
+  return CHANGE_LOG_CANDIDATES.find((path) => existsSync(path)) ?? null;
+}
+
+function readChangeRound(path) {
+  const match = readFileSync(path, 'utf8').match(/변경 회차\s*\|\s*\*\*(\d+)\*\*/);
   return match ? Number(match[1]) : null;
 }
 
@@ -46,7 +59,9 @@ function bootstrap() {
     ? readFileSync(COMMIT_FILE, 'utf8').trim()
     : null;
   const prev = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, 'utf8')) : null;
-  const designChangeRound = readChangeRound();
+  const changeLog = locateChangeLog();
+  const designChangeRound = changeLog === null ? null : readChangeRound(changeLog);
+  const changeLogPath = changeLog === null ? null : changeLog.slice(DESIGN_REF.length + 1);
 
   mkdirSync(STATE_DIR, { recursive: true });
   const state = {
@@ -57,21 +72,38 @@ function bootstrap() {
     designFixedCommit,
     designFixedCommitSource: 'contracts/COMMIT.txt',
     designChangeRound,
-    designChangeLogSource: 'design/wiki/handover/변경-요약.md (pnpm workflow:sync-design 으로 새로고침)',
+    designChangeLogSource:
+      changeLogPath === null
+        ? '(찾지 못했다 — pnpm workflow:sync-design 뒤 다시 돌린다)'
+        : `${changeLogPath} (pnpm workflow:sync-design 으로 새로고침)`,
     bootstrappedAt: new Date().toISOString(),
   };
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + '\n');
   console.log(`OK  ${STATE_FILE}`);
   console.log(JSON.stringify(state, null, 2));
 
-  if (designChangeRound === null) {
-    console.log(
-      '\n(설계 참고 클론이 없거나 변경-요약.md 를 못 찾아 변경 회차를 확인하지 못했다 — 먼저 `pnpm workflow:sync-design`)',
+  if (!existsSync(DESIGN_REF)) {
+    console.log('\n(설계 참고 클론이 없어 변경 회차를 확인하지 못했다 — 먼저 `pnpm workflow:sync-design`)');
+    return;
+  }
+  if (changeLog === null) {
+    console.error(
+      '\n⛔ 설계 저장소에서 변경-요약.md 를 찾지 못했다 — 경로가 또 옮겨졌다.\n' +
+        `   찾아본 곳: ${CHANGE_LOG_CANDIDATES.map((p) => p.slice(DESIGN_REF.length + 1)).join(' · ')}\n` +
+        '   회차 감시가 꺼진 채로 지나가지 않도록 실패로 끝낸다 — 새 경로를 이 파일의 후보에 더한다.',
     );
-  } else if (prev?.designChangeRound != null && prev.designChangeRound !== designChangeRound) {
+    process.exit(1);
+  }
+  if (designChangeRound === null) {
+    console.error(
+      `\n⛔ ${changeLogPath} 에서 「변경 회차」를 읽지 못했다 — 표 모양이 바뀌었다.`,
+    );
+    process.exit(1);
+  }
+  if (prev?.designChangeRound != null && prev.designChangeRound !== designChangeRound) {
     console.log(
       `\n⚠ 설계 변경 회차 ${prev.designChangeRound} → ${designChangeRound} — ` +
-        '.design-reference/omf-mes/design/wiki/handover/변경-요약.md 를 확인하고 규칙 5(설계 자료 고정)를 따른다.',
+        `.design-reference/omf-mes/${changeLogPath} 를 확인하고 규칙 5(설계 자료 고정)를 따른다.`,
     );
   }
 }

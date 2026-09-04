@@ -7,8 +7,12 @@ import { ContractRegistry, defaultContractsDir } from './contract-registry';
 describe('ContractRegistry', () => {
   const registry = ContractRegistry.load();
 
-  it('계약 7파일에서 오퍼레이션 490건을 적재한다', () => {
-    expect(registry.size).toBe(490);
+  // ⛔ 계약이 바뀌면 이 수치부터 깨진다 — 그것이 이 검사의 뜻이다. 고치기 전에
+  // 「무엇이 늘고 줄었나」를 `pnpm contracts:check` 로 확인한다.
+  // 490(6d03a44) → 487(a6a87e1) — 물류 문서별 취소 6건이 다형 2건으로 합쳐지고(-4)
+  // 실적 정정 승인 상신 1건이 늘었다(+1).
+  it('계약 7파일에서 오퍼레이션 487건을 적재한다', () => {
+    expect(registry.size).toBe(487);
   });
 
   it('METHOD path 키가 유일하다 — 파일이 겹쳐도 덮어쓰지 않는다', () => {
