@@ -55,8 +55,8 @@ describe('오퍼레이션 권한 매핑', () => {
     });
     const covered = declares403.filter((key) => key in OPERATION_PERMISSIONS);
 
-    // 이 수치가 오르면 도메인이 자기 권한을 등록했다는 뜻이다. 249 가 되면 게이트가 완성된다.
-    expect(declares403).toHaveLength(249);
+    // 이 수치가 오르면 도메인이 자기 권한을 등록했다는 뜻이다. 253 가 되면 게이트가 완성된다.
+    expect(declares403).toHaveLength(253);
     expect(covered.length).toBeGreaterThanOrEqual(152);
   });
 });

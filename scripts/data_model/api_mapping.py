@@ -309,6 +309,15 @@ RESOURCE_TABLES: dict[str, list[str]] = {
     "/quality/concessions": ["quality.concession"],
     "/quality/defect-codes": ["quality.defect_code", "quality.defect_code_process"],
     "/quality/defect-records": ["quality.defect_record"],
+    # 저장 표가 없는 읽기 전용 목록 — 불량창고 안의 LOT 을 뿌리로 반품 입고(RETURN)·OQC
+    # 불합격(PRODUCT) 원천과 이미 만든 부적합 상태를 붙여 낸다.
+    "/quality/disposition-candidates": [
+        "trace.lot",
+        "inventory.inventory_balance",
+        "logistics.goods_receipt",
+        "quality.inspection_result",
+        "quality.nonconformance",
+    ],
     "/quality/disposition-decisions": ["quality.disposition_decision"],
     "/quality/inspection-plan-versions/{inspectionPlanVersionId}/items": [
         "quality.inspection_item_spec",

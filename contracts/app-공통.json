@@ -47,7 +47,8 @@
         "IQC_SKIP"
        ]
       },
-      "description": "승인 유형"
+      "description": "승인 유형",
+      "x-code-key": "CD-APPROVAL-TYPE"
      },
      {
       "name": "businessUnitId",
@@ -613,7 +614,7 @@
      "app"
     ],
     "summary": "승인 요청 목록",
-    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「로그인 사용자가 approver_id 인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n근거: W-CO-09 §3·§5-8",
+    "description": "결재함이 쓰는 목록이다. assignedToMe 는 「approver_id 가 「나」인 단계가 있는 요청」이고, pendingOnly 와 함께 쓰면 「내 결재 대기」 탭이 된다(공유계약 J-3 — 역할 기반 필터가 아니다).\n\ntargetTypeCode·targetId 로 거르면 업무 화면이 「이 문서의 승인 상태」를 찾을 수 있다 — 업무 자원이 승인 요청 식별자를 싣지 않는 경우에는 이것이 유일한 방법이다.\n\n⭐ 부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면(M-01-13 의 「내가 올린 요청」 구획). 그래서 「나」를 묻는 세 질의(assignedToMe·requestedByMe·myTurnOnly)가 «누구»로 풀리는지가 셸마다 다르다: 관리웹은 계정 토큰에서 서버가 풀고, 현장 단말·모바일은 계정 세션이 없어 X-Worker-No 헤더로 주체를 싣는다(공유계약 D-5·F-2 · 같은 규칙의 선례가 GET /app/notices 의 unacknowledgedByMe 다). ⛔ 단말 토큰으로 풀지 않는다 — 한 단말을 여러 작업자가 «교대로» 쓰므로 남이 올린 요청이 섞인다.\n\n근거: W-CO-09 §3·§5-8 · M-01-13 §4 · omf-mes#335",
     "parameters": [
      {
       "name": "assignedToMe",
@@ -621,7 +622,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "로그인 사용자가 승인자인 요청만"
+      "description": "승인자가 「나」인 요청만 — approver_id 인 단계가 있는 요청이다(공유계약 J-3). ⚠ 승인 화면은 관리웹뿐이라(W-CO-09·W-01-02·W-03-09) 지금은 계정 토큰에서만 풀린다. 현장 셸이 이 질의를 쓰게 되면 requestedByMe 와 같은 규칙으로 X-Worker-No 에 주체를 싣는다"
      },
      {
       "name": "requestedByMe",
@@ -629,7 +630,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "로그인 사용자가 올린 요청만"
+      "description": "올린 사람이 「나」인 요청만. ⭐ 「나」는 셸마다 다르게 풀린다 — 관리웹은 계정 토큰의 로그인 사용자이고, 현장 단말·모바일은 X-Worker-No 헤더의 «사번»이다(모바일 셸에는 계정 로그인이 없다 · M-CO-01 §2). ⛔ 헤더를 싣지 않으면 서버가 단말로 풀 수밖에 없고, 한 단말을 여러 작업자가 교대로 쓰므로 «남이 올린 요청이 내 목록에 섞인다». 근거: 공유계약 D-5·F-2 · M-01-13 §4 · omf-mes#335"
      },
      {
       "name": "pendingOnly",
@@ -645,7 +646,7 @@
       "schema": {
        "type": "boolean"
       },
-      "description": "참이면 지금 내가 결재할 수 있는 것만 — 상단 대기 건수의 근거"
+      "description": "참이면 지금 「나」가 결재할 수 있는 것만 — 상단 대기 건수의 근거. ⚠ 「나」의 해석은 assignedToMe 와 같다"
      },
      {
       "name": "approvalTypeCode",
@@ -662,14 +663,17 @@
         "SHIPMENT_CANCEL",
         "IQC_SKIP"
        ]
-      }
+      },
+      "x-code-key": "CD-APPROVAL-TYPE"
      },
      {
       "name": "statusCode",
       "in": "query",
       "schema": {
        "type": "string"
-      }
+      },
+      "description": "결재 요청 상태로 거른다 — 대기(PENDING) · 승인(APPROVED) · 반려(REJECTED). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=APPROVAL_REQUEST_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "x-code-key": "CD-APPROVAL-REQUEST-STATUS"
      },
      {
       "name": "targetTypeCode",
@@ -686,7 +690,8 @@
         "INBOUND_LOT"
        ]
       },
-      "description": "업무 화면이 자기 문서의 승인 상태를 찾을 때 targetId 와 함께 쓴다"
+      "description": "업무 화면이 자기 문서의 승인 상태를 찾을 때 targetId 와 함께 쓴다",
+      "x-code-key": "CD-APPROVAL-TARGET-TYPE"
      },
      {
       "name": "targetId",
@@ -737,6 +742,9 @@
        "type": "integer",
        "default": 50
       }
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNoOptional"
      }
     ],
     "responses": {
@@ -1052,17 +1060,41 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "maxLength": 40
-      }
+       "maxLength": 40,
+       "enum": [
+        "MATERIAL_LOT_LABEL",
+        "GOODS_ISSUE_QR",
+        "PRODUCTION_LOT_LABEL",
+        "IDENTIFICATION_TAG",
+        "PACKING_LABEL",
+        "DELIVERY_LABEL",
+        "CERTIFICATE_OF_ANALYSIS",
+        "TOOL_LABEL",
+        "LOCATION_LABEL"
+       ]
+      },
+      "description": "출력물 종류로 거른다. 값은 DocumentIssue.documentTypeCode 와 같은 9종이다.",
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      },
      {
       "name": "targetTypeCode",
       "in": "query",
       "schema": {
        "type": "string",
-       "maxLength": 40
+       "maxLength": 40,
+       "enum": [
+        "LOT",
+        "SERIAL_NUMBER",
+        "HANDLING_UNIT",
+        "GOODS_ISSUE_LINE",
+        "MOLD",
+        "LOCATION",
+        "INSPECTION_RESULT"
+       ],
+       "example": "LOT"
       },
-      "description": "targetId 와 함께 준다. 하나만 주면 400 이다."
+      "description": "targetId 와 함께 준다. 하나만 주면 400 이다. 대상 유형. 이 값이 targetId 의 해석을 정한다 — LOT → 자재·생산·제품 로트 · SERIAL_NUMBER → 개체 일련번호 · HANDLING_UNIT → 취급 단위(포장) · GOODS_ISSUE_LINE → 출고 전표 라인 · MOLD → 툴·금형 마스터 · LOCATION → 위치 마스터 · INSPECTION_RESULT → 검사 결과. ⭐ 값 문자열을 확정했다(2026-09-02) — 뜻 일곱은 §3-7 대응표가 이미 못박았고 남은 것은 문자열뿐이었다(공유계약 §G — 확정된 뜻을 영문 SNAKE 로). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
+      "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE"
      },
      {
       "name": "targetId",
@@ -1433,9 +1465,21 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "maxLength": 40
+       "maxLength": 40,
+       "enum": [
+        "MATERIAL_LOT_LABEL",
+        "GOODS_ISSUE_QR",
+        "PRODUCTION_LOT_LABEL",
+        "IDENTIFICATION_TAG",
+        "PACKING_LABEL",
+        "DELIVERY_LABEL",
+        "CERTIFICATE_OF_ANALYSIS",
+        "TOOL_LABEL",
+        "LOCATION_LABEL"
+       ]
       },
-      "description": "이 종류를 찍을 수 있는 프린터만 거른다."
+      "description": "이 종류를 찍을 수 있는 프린터만 거른다.",
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      }
     ],
     "responses": {
@@ -1467,10 +1511,21 @@
       "required": true,
       "schema": {
        "type": "string",
-       "maxLength": 40
+       "maxLength": 40,
+       "enum": [
+        "LOT",
+        "SERIAL_NUMBER",
+        "HANDLING_UNIT",
+        "GOODS_ISSUE_LINE",
+        "MOLD",
+        "LOCATION",
+        "INSPECTION_RESULT"
+       ],
+       "example": "LOT"
       },
       "example": "HANDLING_UNIT",
-      "description": "대상 유형. 한 번에 한 유형만 묻는다 — 유형이 섞이면 `targetId` 의 뜻이 갈린다."
+      "description": "대상 유형. 한 번에 한 유형만 묻는다 — 유형이 섞이면 targetId 의 뜻이 갈린다. 대상 유형. 이 값이 targetId 의 해석을 정한다 — LOT → 자재·생산·제품 로트 · SERIAL_NUMBER → 개체 일련번호 · HANDLING_UNIT → 취급 단위(포장) · GOODS_ISSUE_LINE → 출고 전표 라인 · MOLD → 툴·금형 마스터 · LOCATION → 위치 마스터 · INSPECTION_RESULT → 검사 결과. ⭐ 값 문자열을 확정했다(2026-09-02) — 뜻 일곱은 §3-7 대응표가 이미 못박았고 남은 것은 문자열뿐이었다(공유계약 §G — 확정된 뜻을 영문 SNAKE 로). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
+      "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE"
      },
      {
       "name": "targetIds",
@@ -1500,10 +1555,22 @@
       "required": false,
       "schema": {
        "type": "string",
-       "maxLength": 40
+       "maxLength": 40,
+       "enum": [
+        "MATERIAL_LOT_LABEL",
+        "GOODS_ISSUE_QR",
+        "PRODUCTION_LOT_LABEL",
+        "IDENTIFICATION_TAG",
+        "PACKING_LABEL",
+        "DELIVERY_LABEL",
+        "CERTIFICATE_OF_ANALYSIS",
+        "TOOL_LABEL",
+        "LOCATION_LABEL"
+       ]
       },
-      "example": "LABEL",
-      "description": "주면 그 종류만 센다. 한 대상에 라벨과 성적서가 따로 붙을 수 있다."
+      "example": "PACKING_LABEL",
+      "description": "주면 그 종류만 센다. 한 대상에 라벨과 성적서가 따로 붙을 수 있다.",
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      }
     ],
     "responses": {
@@ -1706,7 +1773,8 @@
       "schema": {
        "type": "string",
        "x-no-example": true
-      }
+      },
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»가 목록을 갖는다. 계약 산문이 이미 「목록은 이벤트 조회 경로가 준다 … GET /app/notification-events 의 eventName 을 찾아 쓴다」로 출처를 지정했다. ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 되고, 이벤트마다 딸린 제목·수신자 규칙은 공통코드가 담지 못한다(L-2-1 · 2026-09-02 판정)."
      },
      {
       "name": "occurredFrom",
@@ -1948,7 +2016,8 @@
        "type": "string",
        "x-no-example": true
       },
-      "description": "이벤트 하나로 좁힌다. 생략하면 전건을 내린다 — 이벤트 목록의 수신자 수 표시가 이것을 쓴다(응답 recipients 의 길이)."
+      "description": "이벤트 하나로 좁힌다. 생략하면 전건을 내린다 — 이벤트 목록의 수신자 수 표시가 이것을 쓴다(응답 recipients 의 길이).",
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다. ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 된다(L-2-1 · 2026-09-02 판정)."
      }
     ],
     "responses": {
@@ -2008,7 +2077,8 @@
        "type": "string",
        "x-no-example": true
       },
-      "required": true
+      "required": true,
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다. ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 된다(L-2-1 · 2026-09-02 판정)."
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -2091,7 +2161,8 @@
         "CLOSED"
        ],
        "x-no-example": true
-      }
+      },
+      "x-code-key": "CD-STATUS"
      },
      {
       "name": "scopeCode",
@@ -2106,7 +2177,8 @@
         "WORK_SHIFT"
        ]
       },
-      "description": "공지 범위로 거른다. 1차는 COMPANY·WORK_ORDER 만 유효하다"
+      "description": "공지 범위로 거른다. 1차는 COMPANY·WORK_ORDER 만 유효하다",
+      "x-code-key": "CD-SCOPE"
      },
      {
       "name": "activeOnly",
@@ -2758,7 +2830,8 @@
         "PRECHECK_CONTROL_LEVEL",
         "FIFO_ENFORCEMENT_LEVEL"
        ]
-      }
+      },
+      "x-code-key": "CD-POLICY"
      },
      {
       "name": "businessUnitId",
@@ -2922,7 +2995,8 @@
         "PRECHECK_CONTROL_LEVEL",
         "FIFO_ENFORCEMENT_LEVEL"
        ]
-      }
+      },
+      "x-code-key": "CD-POLICY"
      },
      {
       "name": "businessUnitId",
@@ -3124,7 +3198,14 @@
         "properties": {
          "targetTypeCode": {
           "type": "string",
-          "maxLength": 40
+          "maxLength": 40,
+          "description": "무엇에 붙이는 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참). ⭐ 읽는 쪽 Attachment.targetTypeCode 와 같은 값집합이다.",
+          "enum": [
+           "WAREHOUSE",
+           "NOTICE"
+          ],
+          "example": "WAREHOUSE",
+          "x-code-key": "CD-ATTACHMENT-TARGET-TYPE"
          },
          "targetId": {
           "type": "integer",
@@ -3194,8 +3275,15 @@
       "in": "query",
       "schema": {
        "type": "string",
-       "maxLength": 40
-      }
+       "maxLength": 40,
+       "enum": [
+        "WAREHOUSE",
+        "NOTICE"
+       ],
+       "example": "WAREHOUSE"
+      },
+      "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⭐ 값 문자열을 확정했다(2026-09-02) — 두 화면이 이미 이 문자열을 스펙에 적어 두고 있었다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참)"
      },
      {
       "name": "targetId",
@@ -3490,8 +3578,9 @@
      "type": "string",
      "maxLength": 50
     },
-    "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2",
-    "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178."
+    "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+    "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178.",
+    "example": "100027"
    },
    "WorkerNoOptional": {
     "name": "X-Worker-No",
@@ -3501,8 +3590,9 @@
      "type": "string",
      "maxLength": 50
     },
-    "description": "관리웹도 같은 오퍼레이션을 부르는 자리에서는 선택이다 — 관리웹은 계정 토큰으로 오므로 서버가 인증 주체에서 행위자를 푼다. 단말 토큰으로 온 요청에 이 헤더가 없으면 서버가 거부한다. 근거: 공유계약 D-5 · F-2",
-    "x-internal-note": "현장 단말·모바일 전용 오퍼레이션에는 WorkerNo(required)를 그대로 쓴다 — 이 완화는 두 셸이 함께 부르는 오퍼레이션에만 적용한다. OpenAPI 로는 「단말 토큰이면 필수」를 표현할 수 없어 선택으로 두고 규칙을 설명에 적는다. 판정 근거는 인증 토큰의 종류(app_user / mdm.terminal)이지 헤더의 유무가 아니다. 이슈 #178."
+    "description": "관리웹도 같은 오퍼레이션을 부르는 자리에서는 선택이다 — 관리웹은 계정 토큰으로 오므로 서버가 인증 주체에서 행위자를 푼다. 단말 토큰으로 온 요청에 이 헤더가 없으면 서버가 거부한다. 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+    "x-internal-note": "현장 단말·모바일 전용 오퍼레이션에는 WorkerNo(required)를 그대로 쓴다 — 이 완화는 두 셸이 함께 부르는 오퍼레이션에만 적용한다. OpenAPI 로는 「단말 토큰이면 필수」를 표현할 수 없어 선택으로 두고 규칙을 설명에 적는다. 판정 근거는 인증 토큰의 종류(app_user / mdm.terminal)이지 헤더의 유무가 아니다. 이슈 #178.",
+    "example": "100027"
    }
   },
   "schemas": {
@@ -3637,7 +3727,8 @@
        "GOODS_ISSUE_CANCEL",
        "SHIPMENT_CANCEL",
        "IQC_SKIP"
-      ]
+      ],
+      "x-code-key": "CD-APPROVAL-TYPE"
      },
      "businessUnitId": {
       "x-source-column": "business_unit_id",
@@ -3707,7 +3798,8 @@
        "SHIPMENT_CANCEL",
        "IQC_SKIP"
       ],
-      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — 8값이다. ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 8개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16"
+      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — 8값이다. ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 8개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
+      "x-code-key": "CD-APPROVAL-TYPE"
      },
      "businessUnitId": {
       "x-source-column": "business_unit_id",
@@ -3807,7 +3899,8 @@
        "DEPARTMENT"
       ],
       "description": "1차는 USER 만 유효하다",
-      "example": "USER"
+      "example": "USER",
+      "x-code-key": "CD-APPROVER-TYPE"
      },
      "approverUserId": {
       "x-source-column": "approver_user_id",
@@ -3873,7 +3966,8 @@
        "DEPARTMENT"
       ],
       "description": "USER 외의 값은 400(code=APPROVER_TYPE_NOT_SUPPORTED)이다",
-      "example": "USER"
+      "example": "USER",
+      "x-code-key": "CD-APPROVER-TYPE"
      },
      "approverUserId": {
       "x-source-column": "approver_user_id",
@@ -3961,7 +4055,8 @@
        "PURCHASE_ORDER",
        "SHIPMENT",
        "INBOUND_LOT"
-      ]
+      ],
+      "x-code-key": "CD-APPROVAL-TARGET-TYPE"
      },
      "targetId": {
       "x-source-column": "target_id",
@@ -4021,8 +4116,13 @@
        "string",
        "null"
       ],
-      "description": "비어 있으면 아직 결재하지 않은 단계다. 값 목록은 공통코드 소관이다",
-      "example": "APPROVED"
+      "description": "결재 단계의 판정 — 승인(APPROVED) · 반려(REJECTED). ⚠ 비어 있으면 아직 결재하지 않은 단계다 — 「대기」를 값으로 두지 않는다(부재로 판정한다). ⛔ 생산 사전점검의 decisionCode(CD-DECISION · BLOCKED·OVERRIDDEN·PASSED·WARNED)와 이름만 같고 축이 다르다",
+      "example": "APPROVED",
+      "x-code-key": "CD-APPROVAL-STEP-DECISION",
+      "enum": [
+       "APPROVED",
+       "REJECTED"
+      ]
      },
      "decisionAt": {
       "x-source-column": "decision_at",
@@ -4044,7 +4144,7 @@
      },
      "isMine": {
       "type": "boolean",
-      "description": "로그인 사용자가 이 단계의 승인자인가",
+      "description": "이 단계의 승인자가 「나」인가. 「나」의 해석은 ApprovalRequest.isMyTurn 과 같다(관리웹 = 계정 토큰 · 현장 단말·모바일 = X-Worker-No · 공유계약 D-5)",
       "example": false
      },
      "isCurrent": {
@@ -4099,7 +4199,8 @@
        "SHIPMENT_CANCEL",
        "IQC_SKIP"
       ],
-      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — 8값이다. ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 8개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16"
+      "description": "승인 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — 8값이다. ⭐ 값 집합의 정본은 화면이 아니라 «상신 오퍼레이션»이다 — 승인 요청을 «만드는» 오퍼레이션이 8개이고 그 목록이 06-API-요구서-app공통승인.md §1-2 다. ⚠ 본문 스키마로 세지 않는다 — 7개는 ApprovalRequestCreate 를 쓰지만 출하 취소만 ShipmentCancelRequest 를 쓴다(모양은 같다 · required=[reason]). 스키마 이름으로 세면 7이 나와 SHIPMENT_CANCEL 이 근거 없어 보인다. GOODS_ISSUE_DISPOSAL 기타출고 품의(폐기) · INVENTORY_ADJUSTMENT 재고조정 · PURCHASE_ORDER 신규 P/O · INBOUND_RECEIPT_CANCEL 입하 취소 · GOODS_RECEIPT_CANCEL 입고 취소 · GOODS_ISSUE_CANCEL 출고 취소 · SHIPMENT_CANCEL 출하 취소 · IQC_SKIP 긴급 IQC 생략(공유계약 A-16 기확정). ⛔ 화면이 고르는 값이 아니다 — 서버가 상신 오퍼레이션에서 채운다. ⭐ 자재 폐기(W-01-06)와 제품 폐기(W-04-10)는 «같은» GOODS_ISSUE_DISPOSAL 이다 — 둘의 결재선을 가르는 것은 유형이 아니라 결재선 정의의 businessUnitId 축이고, 서버가 전표의 reasonCode 로 결재선을 파생한다(✓확정 2026-09-01 사용자 · 공유계약 G-31 이 「승인 게이트가 사유 값을 보고 걸린다」로 이 연결을 2026-08-31 에 이미 세웠다). ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 W-06-06 에서 값을 늘려도 상신할 오퍼레이션이 없어 «쓰이지 않는 결재선»만 생긴다. 근거: W-06-15 §8-2 · 공유계약 A-16",
+      "x-code-key": "CD-APPROVAL-TYPE"
      },
      "requestedBy": {
       "x-source-column": "requested_by",
@@ -4120,8 +4221,9 @@
      "statusCode": {
       "x-source-column": "status_code",
       "type": "string",
-      "description": "값 목록은 공통코드 소관이다",
-      "example": "IN_PROGRESS"
+      "description": "결재 요청의 진행 상태 — 대기(PENDING) · 승인(APPROVED) · 반려(REJECTED). ⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서 이 값을 편집하면 안 된다. 내 차례 판정과 버튼 활성이 이 값에 걸린다(W-CO-09 §5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=APPROVAL_REQUEST_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. 근거: W-CO-09 §3 목업(사용자 결정 2026-09-02).",
+      "example": "PENDING",
+      "x-code-key": "CD-APPROVAL-REQUEST-STATUS"
      },
      "reason": {
       "x-source-column": "reason",
@@ -4146,7 +4248,7 @@
      },
      "isMyTurn": {
       "type": "boolean",
-      "description": "로그인 사용자가 지금 결재할 수 있는가. 목록의 「내 결재 대기」 탭이 이 값으로 걸러진다",
+      "description": "이 요청의 지금 단계 승인자가 「나」인가. 목록의 「내 결재 대기」 탭이 이 값으로 걸러진다. ⚠ 「나」는 서버가 «요청 주체»에서 푼다 — 관리웹은 계정 토큰, 현장 단말·모바일은 X-Worker-No(공유계약 D-5). ⭐ 상신자로 보는 목록(requestedByMe)에서는 뜻이 없다 — 승인 화면은 관리웹뿐이다",
       "example": true
      }
     }
@@ -4211,8 +4313,19 @@
      "targetTypeCode": {
       "type": "string",
       "maxLength": 40,
-      "description": "대상 유형. 이 값이 targetId 의 해석을 정한다. LOT → 자재·생산·제품 로트 · 개체 → 개체 일련번호 · 포장 → 취급 단위 · 출고 라인 → 출고 전표 라인 · 툴 → 툴·금형 마스터 · Location → 위치 마스터 · 검사 결과 → 검사 결과. ⚠ 값 문자열은 아직 확정되지 않았다 — 화면은 유형 선택을 비활성으로 두고 사유를 보인다. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
-      "x-no-example": true
+      "description": "대상 유형. 이 값이 targetId 의 해석을 정한다 — LOT → 자재·생산·제품 로트 · SERIAL_NUMBER → 개체 일련번호 · HANDLING_UNIT → 취급 단위(포장) · GOODS_ISSUE_LINE → 출고 전표 라인 · MOLD → 툴·금형 마스터 · LOCATION → 위치 마스터 · INSPECTION_RESULT → 검사 결과. ⭐ 값 문자열을 확정했다(2026-09-02) — 뜻 일곱은 §3-7 대응표가 이미 못박았고 남은 것은 문자열뿐이었다(공유계약 §G — 확정된 뜻을 영문 SNAKE 로). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
+      "x-no-example": true,
+      "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE",
+      "enum": [
+       "LOT",
+       "SERIAL_NUMBER",
+       "HANDLING_UNIT",
+       "GOODS_ISSUE_LINE",
+       "MOLD",
+       "LOCATION",
+       "INSPECTION_RESULT"
+      ],
+      "example": "LOT"
      },
      "targetId": {
       "type": "integer",
@@ -4255,8 +4368,20 @@
      "documentTypeCode": {
       "type": "string",
       "maxLength": 40,
-      "description": "출력물 종류(라벨·검사성적서·추적보고서 등).",
-      "x-no-example": true
+      "enum": [
+       "MATERIAL_LOT_LABEL",
+       "GOODS_ISSUE_QR",
+       "PRODUCTION_LOT_LABEL",
+       "IDENTIFICATION_TAG",
+       "PACKING_LABEL",
+       "DELIVERY_LABEL",
+       "CERTIFICATE_OF_ANALYSIS",
+       "TOOL_LABEL",
+       "LOCATION_LABEL"
+      ],
+      "description": "출력물 종류. 라벨 6종·검사성적서·툴 QR·Location 라벨 — 값마다 «찍는 화면»과 «서버가 그리는 렌디션»이 다르다(공유계약 K-5). ⛔ 고객이 늘리는 공통코드 그룹이 아니다 — 값을 늘려도 렌디션이 없어 안 찍힌다(A-16 「가르는 물음 넷」: 가 거짓 + 다 참 ⇒ 설계가 정하는 업무 코드). MATERIAL_LOT_LABEL=자재 LOT 라벨(P-01-01) · GOODS_ISSUE_QR=출고 QR(P-01-02) · PRODUCTION_LOT_LABEL=생산 LOT 라벨(P-02-07) · IDENTIFICATION_TAG=인식표(P-02-05·P-02-09) · PACKING_LABEL=포장 라벨(P-02-09·P-04-02·P-04-04) · DELIVERY_LABEL=납품 라벨(P-04-02) · CERTIFICATE_OF_ANALYSIS=검사성적서(W-04-03) · TOOL_LABEL=툴 QR 라벨(W-05-13) · LOCATION_LABEL=Location 코드 라벨(W-06-07)",
+      "example": "PACKING_LABEL",
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      },
      "target": {
       "$ref": "#/components/schemas/DocumentTarget"
@@ -4291,7 +4416,8 @@
       ],
       "maxLength": 40,
       "description": "재발행 사유. 회차가 2 이상이면 반드시 있다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=REISSUE_REASON 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-no-example": true
+      "x-no-example": true,
+      "x-code-key": "CD-REISSUE-REASON"
      },
      "reissueReasonName": {
       "type": [
@@ -4371,7 +4497,20 @@
       "type": "string",
       "maxLength": 40,
       "minLength": 1,
-      "x-no-example": true
+      "enum": [
+       "MATERIAL_LOT_LABEL",
+       "GOODS_ISSUE_QR",
+       "PRODUCTION_LOT_LABEL",
+       "IDENTIFICATION_TAG",
+       "PACKING_LABEL",
+       "DELIVERY_LABEL",
+       "CERTIFICATE_OF_ANALYSIS",
+       "TOOL_LABEL",
+       "LOCATION_LABEL"
+      ],
+      "description": "찍을 출력물 종류. 값 ↔ 발행 화면 대응은 06-API-요구서-app공통출력물.md §3-8 이 정본이다.",
+      "example": "PACKING_LABEL",
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      },
      "targets": {
       "type": "array",
@@ -4389,7 +4528,19 @@
          "type": "string",
          "maxLength": 40,
          "minLength": 1,
-         "x-no-example": true
+         "x-no-example": true,
+         "description": "대상 유형. 이 값이 targetId 의 해석을 정한다 — LOT · SERIAL_NUMBER · HANDLING_UNIT · GOODS_ISSUE_LINE · MOLD · LOCATION · INSPECTION_RESULT. ⭐ 읽는 쪽 DocumentTarget.targetTypeCode 와 같은 값집합이다 — 대응표는 공유계약 A-10 이 갖는다. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다.",
+         "enum": [
+          "LOT",
+          "SERIAL_NUMBER",
+          "HANDLING_UNIT",
+          "GOODS_ISSUE_LINE",
+          "MOLD",
+          "LOCATION",
+          "INSPECTION_RESULT"
+         ],
+         "example": "LOT",
+         "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE"
         },
         "targetId": {
          "type": "integer",
@@ -4414,7 +4565,8 @@
       ],
       "maxLength": 40,
       "description": "재발행 사유. 대상 중 하나라도 이미 발행된 것이 있으면 **필수**다 — 없으면 422 다.\n\n신규와 재발행이 섞여 들어와도 **한 번만 받는다.** 서버는 회차가 2 이상인 기록에만 이 값을 남긴다 — 신규 기록에 재발행 사유가 붙으면 이력이 거짓이 된다. ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=REISSUE_REASON 로 받는다. ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
-      "x-no-example": true
+      "x-no-example": true,
+      "x-code-key": "CD-REISSUE-REASON"
      },
      "printerName": {
       "type": [
@@ -4432,7 +4584,7 @@
       "example": null
      }
     },
-    "x-internal-note": "값 목록·그룹 이름 소관 = omf-mes#145(OPEN). 이 한 축에 발행 화면 8장이 걸린다 — P-01-01·P-01-02·P-02-05·P-02-07·P-02-09·P-04-02·P-04-04 + W-05-13(구현 완료 · omf-mes-client#212). 대상 유형 대응표의 정본은 06-API-요구서-app공통출력물.md §3-7 이다. example 을 되살리지 마라 — omf-mes#191(example 오염) 대상이다. ⚠ reissueReasonCode 의 example 이던 PRINT_FAILED 는 우리 제안안(01-2차-제안안.md 492행)의 PRINT_FAILURE 와 한 단어 어긋난 값이었다 — 그래서 지웠다."
+    "x-internal-note": "⭐ documentTypeCode 는 2026-09-02 에 enum 9종으로 닫았다(omf-mes#145). A-16 「가르는 물음 넷」에서 «가 거짓 + 다 참» ⇒ 설계가 정하는 업무 코드다 — ⛔ 등록부(G-32)에 올리지 않는다. 값 ↔ 발행 화면 대응의 정본은 06-API-요구서-app공통출력물.md §3-8 이다. 이 한 축에 발행 화면 9장이 걸린다 — P-01-01·P-01-02·P-02-05·P-02-07·P-02-09·P-04-02·P-04-04 + W-05-13(구현 완료 · omf-mes-client#212) + W-06-07(Location 라벨). 예정 1장 = W-04-03(검사성적서 · 양식 미정이라 아직 안 부른다). ⚠ 아직 열린 것 둘 — reissueReasonCode 값 목록(omf-mes#145) · CoC(적합증명서)를 CoA 와 가를지(W-04-03 §8-3). TRACE_REPORT 는 발행 화면이 0건이라 값을 두지 않았다 — 생기면 enum 확장이다. 대상 유형(targetTypeCode) 대응표의 정본은 같은 문서 §3-7 이고 «다른 축»이다. ⛔ reissueReasonCode 의 example 은 되살리지 마라 — omf-mes#191(example 오염) 대상이다. ⚠ reissueReasonCode 의 example 이던 PRINT_FAILED 는 우리 제안안(01-2차-제안안.md 492행)의 PRINT_FAILURE 와 한 단어 어긋난 값이었다 — 그래서 지웠다."
    },
    "DocumentIssueListResponse": {
     "type": "object",
@@ -4546,11 +4698,25 @@
       "type": "array",
       "items": {
        "type": "string",
-       "maxLength": 40
+       "maxLength": 40,
+       "enum": [
+        "MATERIAL_LOT_LABEL",
+        "GOODS_ISSUE_QR",
+        "PRODUCTION_LOT_LABEL",
+        "IDENTIFICATION_TAG",
+        "PACKING_LABEL",
+        "DELIVERY_LABEL",
+        "CERTIFICATE_OF_ANALYSIS",
+        "TOOL_LABEL",
+        "LOCATION_LABEL"
+       ]
       },
+      "description": "이 프린터가 찍을 수 있는 출력물 종류. 값 집합은 DocumentIssue.documentTypeCode 와 같다.",
       "example": [
-       "LABEL"
-      ]
+       "PACKING_LABEL",
+       "DELIVERY_LABEL"
+      ],
+      "x-code-key": "CD-PRINT-DOCUMENT-TYPE"
      }
     }
    },
@@ -4580,7 +4746,19 @@
      "targetTypeCode": {
       "type": "string",
       "maxLength": 40,
-      "x-no-example": true
+      "x-no-example": true,
+      "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE",
+      "description": "대상 유형. 이 값이 targetId 의 해석을 정한다 — LOT → 자재·생산·제품 로트 · SERIAL_NUMBER → 개체 일련번호 · HANDLING_UNIT → 취급 단위(포장) · GOODS_ISSUE_LINE → 출고 전표 라인 · MOLD → 툴·금형 마스터 · LOCATION → 위치 마스터 · INSPECTION_RESULT → 검사 결과. ⭐ 값 문자열을 확정했다(2026-09-02) — 뜻 일곱은 §3-7 대응표가 이미 못박았고 남은 것은 문자열뿐이었다(공유계약 §G — 확정된 뜻을 영문 SNAKE 로). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다",
+      "enum": [
+       "LOT",
+       "SERIAL_NUMBER",
+       "HANDLING_UNIT",
+       "GOODS_ISSUE_LINE",
+       "MOLD",
+       "LOCATION",
+       "INSPECTION_RESULT"
+      ],
+      "example": "LOT"
      },
      "targetId": {
       "type": "integer",
@@ -4801,7 +4979,8 @@
      "eventCode": {
       "type": "string",
       "x-no-example": true,
-      "description": "무슨 일이 일어났나. 목록은 이벤트 조회 경로가 준다 목록 항목의 첫 줄(제목)은 이벤트명이다 — 이 코드로 GET /app/notification-events 의 eventName 을 찾아 쓴다."
+      "description": "무슨 일이 일어났나. 목록은 이벤트 조회 경로가 준다 목록 항목의 첫 줄(제목)은 이벤트명이다 — 이 코드로 GET /app/notification-events 의 eventName 을 찾아 쓴다.",
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»가 목록을 갖는다(GET /app/notification-events). ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 되고, 이벤트마다 딸린 제목·수신자 규칙은 공통코드가 담지 못한다(L-2-1 · 2026-09-02 판정)."
      },
      "message": {
       "type": "string",
@@ -4819,8 +4998,20 @@
      },
      "targetTypeCode": {
       "type": "string",
-      "x-no-example": true,
-      "description": "무엇에 대한 알림인가. EQUIPMENT → 설비(설비 고장 발생) · MOLD → 툴·금형(적정타수 초과) · INSTRUMENT → 계측기(검교정 만료 임박) · PURCHASE_ORDER → 구매발주(P/O 변경 수신) · INTEGRATION_SYNC → 연계 메시지(연계 실패) · APPROVAL_REQUEST → 승인 요청(승인 요청·결재 도착) · LOT / WORK_ORDER / NONCONFORMANCE — ⚠ 대응 이벤트가 알림센터 목록에 아직 없다. ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다 — 어디로 갈지 모른다"
+      "description": "무엇에 대한 알림인가 — EQUIPMENT → 설비(설비 고장 발생) · MOLD → 툴·금형(적정타수 초과) · INSTRUMENT → 계측기(검교정 만료 임박) · PURCHASE_ORDER → 구매발주(P/O 변경 수신) · INTEGRATION_SYNC → 연계 메시지(연계 실패) · APPROVAL_REQUEST → 승인 요청(승인·결재 도착) · LOT / WORK_ORDER / NONCONFORMANCE. ⚠ 뒤 셋은 대응 이벤트가 알림센터 목록에 아직 없다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 공통코드 그룹으로 받지 않는다(A-10 · A-16 · 2026-09-03 정정). ⚠ 대응표에 없는 유형은 화면이 「대상으로 이동」을 열지 않는다",
+      "x-code-key": "CD-NOTIFICATION-TARGET-TYPE",
+      "enum": [
+       "EQUIPMENT",
+       "MOLD",
+       "INSTRUMENT",
+       "PURCHASE_ORDER",
+       "INTEGRATION_SYNC",
+       "APPROVAL_REQUEST",
+       "LOT",
+       "WORK_ORDER",
+       "NONCONFORMANCE"
+      ],
+      "example": "EQUIPMENT"
      },
      "targetId": {
       "type": "integer",
@@ -4862,7 +5053,8 @@
     "properties": {
      "eventCode": {
       "type": "string",
-      "x-no-example": true
+      "x-no-example": true,
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»가 목록을 갖는다(GET /app/notification-events). ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 되고, 이벤트마다 딸린 제목·수신자 규칙은 공통코드가 담지 못한다(L-2-1 · 2026-09-02 판정)."
      },
      "eventName": {
       "type": "string",
@@ -4884,7 +5076,8 @@
     "properties": {
      "eventCode": {
       "type": "string",
-      "x-no-example": true
+      "x-no-example": true,
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»가 목록을 갖는다(GET /app/notification-events). ⛔ 공통코드에 같은 목록을 또 두면 두 벌이 되고, 이벤트마다 딸린 제목·수신자 규칙은 공통코드가 담지 못한다(L-2-1 · 2026-09-02 판정)."
      },
      "recipients": {
       "type": "array",
@@ -4908,8 +5101,13 @@
     "properties": {
      "recipientTypeCode": {
       "type": "string",
-      "x-no-example": true,
-      "description": "어떻게 지정했나. ROLE → 조직×역할 묶음 (businessUnitId + roleId) · USER → 사람 하나 (userId)"
+      "description": "수신자를 어떻게 지정했나 — ROLE → 조직×역할 묶음(businessUnitId + roleId) · USER → 사람 하나(userId). ⛔ 값이 어느 «짝 필드»를 채우는지 가르므로 계약이 닫는다",
+      "x-code-key": "CD-NOTIFICATION-RECIPIENT-TYPE",
+      "enum": [
+       "ROLE",
+       "USER"
+      ],
+      "example": "ROLE"
      },
      "businessUnitId": {
       "type": "integer",
@@ -4980,7 +5178,8 @@
        "CLOSED"
       ],
       "description": "서버가 «파생»한다. 저장 컬럼이 아니다. DRAFT = 아직 게시하지 않았다(publishedAt 이 비어 있다) · SCHEDULED = 게시됐고 오늘 < 시작일 · PUBLISHED = 시작일 ≤ 오늘 ≤ 종료일 · CLOSED = 종료일 < 오늘. 「내려버리기」는 상태를 바꾸는 것이 아니라 종료일을 오늘로 당기는 것이다",
-      "example": "PUBLISHED"
+      "example": "PUBLISHED",
+      "x-code-key": "CD-STATUS"
      },
      "startDate": {
       "type": "string",
@@ -5034,7 +5233,8 @@
       ],
       "description": "누가 대상인가. COMPANY = 전사(새 계정도 자동 포함된다) · WORK_ORDER = 그 작업지시에 걸린 사람. ⚠ 1차는 COMPANY·WORK_ORDER 만 유효하다 — 나머지는 400(code=SCOPE_NOT_SUPPORTED)",
       "example": "COMPANY",
-      "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조)."
+      "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조).",
+      "x-code-key": "CD-SCOPE"
      },
      "targetWorkOrderId": {
       "type": [
@@ -5099,7 +5299,8 @@
       ],
       "description": "누가 대상인가. COMPANY = 전사(새 계정도 자동 포함된다) · WORK_ORDER = 그 작업지시에 걸린 사람. ⚠ 1차는 COMPANY·WORK_ORDER 만 유효하다 — 나머지는 400(code=SCOPE_NOT_SUPPORTED)",
       "example": "COMPANY",
-      "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조)."
+      "x-internal-note": "값 문자열은 공통코드 확정 전 잠정 — DR-005 5-C(사업부·설비그룹·작업조).",
+      "x-code-key": "CD-SCOPE"
      },
      "targetWorkOrderId": {
       "type": [
@@ -5147,7 +5348,8 @@
       ],
       "maxLength": 50,
       "description": "현장 단말에서 확인했으면 사번이 온다",
-      "x-no-example": "사번은 고객 조직의 실제 값이라 예시를 지어내지 않는다 — 지어낸 사번이 확정값으로 읽힌 선례가 있다(omf-mes#191·#185)"
+      "x-no-example": "사번은 고객 조직의 실제 값이라 예시를 지어내지 않는다 — 지어낸 사번이 확정값으로 읽힌 선례가 있다(omf-mes#191·#185)",
+      "example": "100027"
      },
      "workerName": {
       "type": [
@@ -5264,8 +5466,17 @@
     "properties": {
      "cardCode": {
       "type": "string",
-      "x-no-example": true,
-      "description": "어느 지표인가. 화면이 이 코드로 드릴다운 대상을 안다"
+      "description": "어느 지표인가 — 생산량 · 양품률 · 성능가동률 · 시간가동률 · 미처리 알람 · OEE. ⭐ 화면이 이 코드로 «드릴다운 대상»을 안다 — 각 카드가 자기 소유 화면으로 간다(W-CO-05 §5). ⛔ 카드가 늘면 드릴다운 대상도 함께 정해야 하므로 계약이 닫는다",
+      "x-code-key": "CD-DASHBOARD-CARD",
+      "enum": [
+       "PRODUCTION_QTY",
+       "YIELD_RATE",
+       "PERFORMANCE_RATE",
+       "AVAILABILITY_RATE",
+       "UNHANDLED_ALARM",
+       "OEE"
+      ],
+      "example": "PRODUCTION_QTY"
      },
      "label": {
       "type": "string",
@@ -5301,7 +5512,8 @@
       ],
       "default": "AVAILABLE",
       "description": "NOT_YET 이면 화면이 0 이 아니라 「아직 없음」을 그린다 · PARTIAL 이면 excludedCount 를 함께 보인다",
-      "example": "AVAILABLE"
+      "example": "AVAILABLE",
+      "x-code-key": "CD-VALUE-STATUS"
      },
      "excludedCount": {
       "type": [
@@ -5342,7 +5554,8 @@
        "FIFO_ENFORCEMENT_LEVEL"
       ],
       "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다.",
-      "x-source-column": "policy_code"
+      "x-source-column": "policy_code",
+      "x-code-key": "CD-POLICY"
      },
      "businessUnitId": {
       "type": [
@@ -5442,7 +5655,8 @@
        "PRECHECK_CONTROL_LEVEL",
        "FIFO_ENFORCEMENT_LEVEL"
       ],
-      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다."
+      "description": "무엇을 정하는 정책인가. SHOT_CONVERSION_ENABLED = 생산 수량으로 타발수를 환산할지(valueBoolean). SHOT_CONVERSION_RATIO = 수량 대비 타발수 비율(valueNumeric · 0 보다 커야 한다). MINOR_STOP_THRESHOLD_MINUTES = 경미 정지로 볼 시간 임계(valueNumeric · 기본 5). PRECHECK_CONTROL_LEVEL = 작업 전 점검 통제 수준(valueText · BLOCK | WARN | OFF). ⭐ resolved 가 거짓이면 화면이 기본값을 지어내지 않고 WARN 으로 다룬다 — 통제 수준이 없다고 무통제로 열지 않는다(P-02-02 §6 확정). 코드는 화면이 붙인다 — 사용자가 만들지 않는다 FIFO_ENFORCEMENT_LEVEL = 선출(FEFO/FIFO) 위반을 어떻게 다루는가(valueText · BLOCK | WARN | OFF). 「선택적 적용 + 강제 옵션」 요구를 담고 화면은 기본 WARN 으로 시작한다.",
+      "x-code-key": "CD-POLICY"
      },
      "businessUnitId": {
       "type": [
@@ -5591,7 +5805,8 @@
        "MINOR_STOP_THRESHOLD_MINUTES",
        "PRECHECK_CONTROL_LEVEL",
        "FIFO_ENFORCEMENT_LEVEL"
-      ]
+      ],
+      "x-code-key": "CD-POLICY"
      },
      "resolved": {
       "type": "boolean",
@@ -5634,7 +5849,15 @@
        "null"
       ],
       "example": "ITEM",
-      "description": "이긴 정책이 어느 축으로 맞았는가 — ITEM · PROCESS · PLANT · BUSINESS_UNIT · ALL 중 하나. resolved 가 거짓이면 비어 있다"
+      "description": "이긴 정책이 «어느 축»으로 맞았는가 — 품목 · 공정 · 공장 · 사업부 · 전사. resolved 가 거짓이면 비어 있다. ⛔ 정책 우선순위 축이라 값이 늘면 판정 순서가 함께 늘어야 한다 — 계약이 닫는다",
+      "x-code-key": "CD-OPERATION-POLICY-MATCHED-SCOPE",
+      "enum": [
+       "ITEM",
+       "PROCESS",
+       "PLANT",
+       "BUSINESS_UNIT",
+       "ALL"
+      ]
      }
     }
    },
@@ -5660,7 +5883,13 @@
       "type": "string",
       "maxLength": 40,
       "x-no-example": true,
-      "description": "무엇에 붙은 첨부인가. ⚠ 값 문자열은 아직 확정되지 않았다."
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⭐ 값 문자열을 확정했다(2026-09-02) — 두 화면이 이미 이 문자열을 스펙에 적어 두고 있었다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참)",
+      "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
+      "enum": [
+       "WAREHOUSE",
+       "NOTICE"
+      ],
+      "example": "WAREHOUSE"
      },
      "targetId": {
       "type": "integer",

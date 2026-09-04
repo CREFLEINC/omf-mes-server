@@ -1,6 +1,6 @@
 /**
  * 권한 게이트는 «계약이 403 을 선언한 자리»에서만 돈다.
- * 선언하지 않은 곳에서 403 을 내면 계약과 어긋난다 — 실측: 선언 249 · 미선언 233.
+ * 선언하지 않은 곳에서 403 을 내면 계약과 어긋난다 — 실측: 선언 253 · 미선언 237.
  */
 import { Controller, Get, INestApplication, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';

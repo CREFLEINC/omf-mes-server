@@ -11,7 +11,7 @@ describe('ContractValidator', () => {
   const registry = ContractRegistry.load();
   const validator = new ContractValidator(registry);
 
-  it('⭐ 계약 482건이 전부 컴파일된다 — 스키마 결함이 부팅 때 드러난다', () => {
+  it('⭐ 계약 490건이 전부 컴파일된다 — 스키마 결함이 부팅 때 드러난다', () => {
     expect(validator.compileAll()).toBe(registry.size);
   });
 
