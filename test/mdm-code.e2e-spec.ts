@@ -200,8 +200,7 @@ describe('공통코드 마스터 (e2e)', () => {
     );
     const missing = [...pointed].filter((code) => !seeded.has(code)).sort();
 
-    // ⚠ 둘은 시드가 옛 이름(DEPENDENCY_TYPE · FREQUENCY_INTERVAL_UOM)으로 갖고 있다 — PR D-4 가 개명한다.
-    expect(missing).toEqual(['INSPECTION_FREQUENCY_INTERVAL_UOM', 'ROUTING_OPERATION_DEPENDENCY_TYPE']);
+    expect(missing).toEqual([]);
   });
 
   it('⛔ 코드 «값»의 참조는 셀 수 없다 — 174표 어디에도 FK 가 없다', async () => {

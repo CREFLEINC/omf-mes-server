@@ -162,7 +162,7 @@ export class RoutingOperationService {
       dependencies.map((dependency, index) => ({
         field: `dependencies[${index}].dependencyTypeCode`,
         value: dependency.dependencyTypeCode,
-        groupCode: 'DEPENDENCY_TYPE',
+        groupCode: 'ROUTING_OPERATION_DEPENDENCY_TYPE',
       })),
     );
 

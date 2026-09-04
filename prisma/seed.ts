@@ -45,18 +45,10 @@ const SEED: CodeGroupSeed[] = [
     retired: ['DEV'],
   },
   {
-    groupCode: 'INSPECTION_TYPE',
-    groupName: '검사유형',
-    values: [
-      { code: 'IQC', codeName: '수입검사', order: 10 },
-      { code: 'PQC', codeName: '공정검사', order: 20 },
-      { code: 'OQC', codeName: '출하검사', order: 30 },
-    ],
-  },
-  {
     // DDL 주석이 값을 명시한다: line_type_code = LINE | WORK_AREA
     groupCode: 'LINE_TYPE',
     groupName: '라인 유형',
+    isSystemOwned: true,
     values: [
       { code: 'LINE', codeName: '라인', order: 10 },
       { code: 'WORK_AREA', codeName: '작업구역', order: 20 },
@@ -101,15 +93,6 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    groupCode: 'WORKER_STATUS',
-    groupName: '재직 상태',
-    values: [
-      { code: 'ACTIVE', codeName: '재직', order: 10 },
-      { code: 'LEAVE', codeName: '휴직', order: 20 },
-      { code: 'RESIGNED', codeName: '퇴직', order: 30 },
-    ],
-  },
-  {
     // 기존 2값이 설계 4값에 그대로 들어 있다. 순수 추가라 내릴 값이 없다.
     groupCode: 'QUALIFICATION_TYPE',
     groupName: '작업자 자격 유형',
@@ -118,17 +101,6 @@ const SEED: CodeGroupSeed[] = [
       { code: 'INSPECTOR', codeName: '검사자자격', order: 20 },
       { code: 'SAFETY', codeName: '안전자격', order: 30 },
       { code: 'EQUIPMENT_OPERATION', codeName: '설비운전자격', order: 40 },
-    ],
-  },
-  {
-    // 개념모델 v2 §1 툴/금형의 '신규입고/폐기 상태'를 축으로 삼았다.
-    groupCode: 'MOLD_STATUS',
-    groupName: '금형 상태',
-    values: [
-      { code: 'NEW', codeName: '신규입고', order: 10 },
-      { code: 'NORMAL', codeName: '정상', order: 20 },
-      { code: 'REPAIR', codeName: '수리중', order: 30 },
-      { code: 'DISPOSED', codeName: '폐기', order: 40 },
     ],
   },
   {
@@ -150,6 +122,7 @@ const SEED: CodeGroupSeed[] = [
     // (maintenance.equipment_inspection · breakdown 이 담는다). 05-재검토 조치 13번.
     groupCode: 'EQUIPMENT_STATUS',
     groupName: '설비 자산 수명주기',
+    isSystemOwned: true,
     values: [
       { code: 'IN_SERVICE', codeName: '운용', order: 10 },
       { code: 'DISPOSED', codeName: '폐기', order: 20 },
@@ -171,26 +144,9 @@ const SEED: CodeGroupSeed[] = [
     retired: ['INTERNAL', 'OUTSOURCED'],
   },
   {
-    groupCode: 'PARTNER_ROLE_TYPE',
-    groupName: '거래처 역할',
-    values: [
-      { code: 'SUPPLIER', codeName: '공급사', order: 10 },
-      { code: 'CUSTOMER', codeName: '고객', order: 20 },
-      { code: 'SUBCONTRACTOR', codeName: '외주처', order: 30 },
-      { code: 'CARRIER', codeName: '운송업체', order: 40 },
-    ],
-  },
-  {
-    groupCode: 'LOT_CONTROL_TYPE',
-    groupName: 'LOT 관리방식',
-    values: [
-      { code: 'NONE', codeName: 'LOT 미관리', order: 10 },
-      { code: 'LOT', codeName: 'LOT 관리', order: 20 },
-    ],
-  },
-  {
     groupCode: 'SERIAL_CONTROL_TYPE',
     groupName: '일련번호 관리방식',
+    isSystemOwned: true,
     values: [
       { code: 'NONE', codeName: '미관리', order: 10 },
       { code: 'SERIAL', codeName: '개별 일련번호 관리', order: 20 },
@@ -199,6 +155,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'FIFO_POLICY',
     groupName: '선출 정책',
+    isSystemOwned: true,
     values: [
       { code: 'FIFO', codeName: '선입선출', order: 10 },
       { code: 'FEFO', codeName: '유효기간 임박 우선', order: 20 },
@@ -207,6 +164,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'MANAGEMENT_LEVEL',
     groupName: '창고 관리수준',
+    isSystemOwned: true,
     values: [
       { code: 'WAREHOUSE', codeName: '창고', order: 10 },
       { code: 'ZONE', codeName: '구역', order: 20 },
@@ -299,22 +257,16 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // v2에서 required_completion_rate를 뺐으므로 선후행 관계는 유형만 남는다.
-    groupCode: 'DEPENDENCY_TYPE',
-    groupName: '공정 선후행 유형',
+    // v2에서 required_completion_rate를 뺐으므로 선후행 관계는 유형만 남는다. 옛 이름
+    // DEPENDENCY_TYPE 은 마이그레이션 20260904140000 이 개명했다(CD-ROUTING-OPERATION-DEPENDENCY-TYPE).
+    groupCode: 'ROUTING_OPERATION_DEPENDENCY_TYPE',
+    groupName: '공정 선후관계 유형',
+    isSystemOwned: true,
     values: [
       { code: 'FINISH_TO_START', codeName: '선행 완료 후 착수', order: 10 },
       { code: 'START_TO_START', codeName: '동시 착수', order: 20 },
       { code: 'FINISH_TO_FINISH', codeName: '동시 완료', order: 30 },
-    ],
-  },
-  {
-    groupCode: 'SAMPLING_METHOD',
-    groupName: '샘플링 방식',
-    values: [
-      { code: 'FULL', codeName: '전수검사', order: 10 },
-      { code: 'FIXED', codeName: '고정 수량 샘플링', order: 20 },
-      { code: 'AQL', codeName: 'AQL 샘플링', order: 30 },
+      { code: 'START_TO_FINISH', codeName: '선행 착수 후 완료', order: 40 },
     ],
   },
   {
@@ -336,100 +288,17 @@ const SEED: CodeGroupSeed[] = [
     retired: ['EVERY_LOT', 'FIRST_MIDDLE_LAST', 'SELF', 'PERIODIC'],
   },
   {
-    // inspection_plan_version.frequency_interval_value의 단위 — 주기가 PERIODIC일 때만 쓴다.
-    groupCode: 'FREQUENCY_INTERVAL_UOM',
-    groupName: '검사주기 단위',
+    // inspection_plan_version.frequency_interval_value의 단위 — 두 축(시간·수량)으로 닫았다
+    // (CD-INSPECTION-FREQUENCY-INTERVAL-UOM · 2026-09-03). 기준단위(uomCode)와 다른 축이다.
+    // 옛 이름 FREQUENCY_INTERVAL_UOM 과 QTY 는 마이그레이션 20260904140000 이 개명했다.
+    groupCode: 'INSPECTION_FREQUENCY_INTERVAL_UOM',
+    groupName: '검사 주기 단위',
+    isSystemOwned: true,
     values: [
       { code: 'HOUR', codeName: '시간', order: 10 },
-      { code: 'MINUTE', codeName: '분', order: 20 },
-      { code: 'QTY', codeName: '수량', order: 30 },
-      { code: 'SHIFT', codeName: '교대', order: 40 },
+      { code: 'QUANTITY', codeName: '수량', order: 20 },
     ],
-  },
-  {
-    groupCode: 'INSPECTION_DATA_TYPE',
-    groupName: '검사항목 데이터유형',
-    values: [
-      { code: 'NUMERIC', codeName: '계량형(수치)', order: 10 },
-      { code: 'BOOLEAN', codeName: '계수형(합·부)', order: 20 },
-      { code: 'TEXT', codeName: '서술형', order: 30 },
-    ],
-  },
-  {
-    groupCode: 'INSPECTION_METHOD',
-    groupName: '검사 방법',
-    values: [
-      { code: 'VISUAL', codeName: '육안검사', order: 10 },
-      { code: 'MEASURE', codeName: '계측', order: 20 },
-      { code: 'GAUGE', codeName: '게이지', order: 30 },
-      { code: 'FUNCTION', codeName: '기능검사', order: 40 },
-    ],
-  },
-  {
-    // numbering_rule.document_type_code — 채번 대상 문서. 물리 모델의 *_no 컬럼 보유
-    // 트랜잭션과 LOT이 대상이다(예: 'WO-{PLANT}-{YYMMDD}-{SEQ4}').
-    groupCode: 'DOCUMENT_TYPE',
-    groupName: '채번 문서유형',
-    values: [
-      { code: 'LOT', codeName: 'LOT 번호', order: 10 },
-      { code: 'WORK_ORDER', codeName: '작업지시', order: 20 },
-      { code: 'PRODUCTION_RESULT', codeName: '생산실적', order: 30 },
-      { code: 'INSPECTION_REQUEST', codeName: '검사요청', order: 40 },
-      { code: 'INSPECTION_RESULT', codeName: '검사결과', order: 50 },
-      { code: 'GOODS_RECEIPT', codeName: '입고', order: 60 },
-      { code: 'GOODS_ISSUE', codeName: '출고', order: 70 },
-      { code: 'SHIPMENT', codeName: '출하', order: 80 },
-      { code: 'STOCK_TRANSFER', codeName: '재고이동', order: 90 },
-      { code: 'NONCONFORMANCE', codeName: '부적합', order: 100 },
-    ],
-  },
-  {
-    // 채번 시퀀스를 언제 1로 되돌리나. numbering_counter.period_key의 산출 단위가 된다.
-    groupCode: 'RESET_CYCLE',
-    groupName: '채번 리셋주기',
-    values: [
-      { code: 'NONE', codeName: '리셋 없음(연속)', order: 10 },
-      { code: 'DAILY', codeName: '일 단위', order: 20 },
-      { code: 'MONTHLY', codeName: '월 단위', order: 30 },
-      { code: 'YEARLY', codeName: '연 단위', order: 40 },
-    ],
-  },
-  {
-    groupCode: 'APPROVAL_TYPE',
-    groupName: '결재 유형',
-    values: [
-      { code: 'CONCESSION', codeName: '특채(수리 없이 사용)', order: 10 },
-      { code: 'DISPOSITION', codeName: '부적합 처리 판정', order: 20 },
-      { code: 'MATERIAL_SUBSTITUTION', codeName: '대체자재 사용', order: 30 },
-      { code: 'INVENTORY_ADJUSTMENT', codeName: '재고 조정', order: 40 },
-      { code: 'LATE_ENTRY', codeName: '마감 후 정정', order: 50 },
-    ],
-  },
-  {
-    // approval_route_step.approver_type_code — DDL 주석이 값을 명시한다: USER | ROLE | DEPARTMENT
-    groupCode: 'APPROVER_TYPE',
-    groupName: '승인자 지정 방식',
-    values: [
-      { code: 'USER', codeName: '지정 사용자', order: 10 },
-      { code: 'ROLE', codeName: '역할', order: 20 },
-      { code: 'DEPARTMENT', codeName: '부서', order: 30 },
-    ],
-  },
-  {
-    // OPERATION_POLICY 14종은 baseline 마이그레이션이 시드한다. 여기서는 그 뒤에 생긴
-    // 정책코드만 더한다(값 upsert라 기존 14종은 건드리지 않는다).
-    //
-    // 자격 검증을 처음부터 강제하면 worker_qualification이 비어 있어 전원이 무자격이 되고
-    // 현장이 선다. 점검 통제(QA #9)와 같은 3단계 설정형으로 두고 기본은 끈다.
-    groupCode: 'OPERATION_POLICY',
-    groupName: '운영정책 코드',
-    values: [
-      {
-        code: 'WORKER_QUALIFICATION_ENFORCEMENT',
-        codeName: '작업자 자격 검증 수준(BLOCK|WARN|OFF)',
-        order: 150,
-      },
-    ],
+    retired: ['MINUTE', 'SHIFT'],
   },
   {
     groupCode: 'CALIBRATION_RESULT',
@@ -505,27 +374,6 @@ const SEED: CodeGroupSeed[] = [
     ],
     retired: ['PAUSE'],
   },
-  {
-    // production_result.result_source_code — 실적이 어디서 들어왔나.
-    // 지금 쓰는 건 POP뿐이다. 설비 자동수집·관리 화면 수기는 자리만 잡아 둔다.
-    groupCode: 'RESULT_SOURCE',
-    groupName: '실적 입력 원천',
-    values: [
-      { code: 'POP', codeName: '현장 단말 입력', order: 10 },
-      { code: 'EQUIPMENT', codeName: '설비 자동수집', order: 20 },
-      { code: 'MANUAL', codeName: '관리 화면 수기', order: 30 },
-    ],
-  },
-  {
-    // production_result.status_code — 정정·취소(FR-PR-033/034/045)가 이 상태에서 갈린다.
-    groupCode: 'PRODUCTION_RESULT_STATUS',
-    groupName: '생산실적 상태',
-    values: [
-      { code: 'CONFIRMED', codeName: '확정', order: 10 },
-      { code: 'CORRECTED', codeName: '정정됨', order: 20 },
-      { code: 'CANCELLED', codeName: '취소', order: 30 },
-    ],
-  },
 
   // ── 2026-09-01 설계 개정 반영 (#62 · #63 회신) ──────────────────────────────
   // 아래 10그룹은 설계 회신이 값을 확정했거나, 저장 컬럼이 이미 있는데 시드가 비어
@@ -578,6 +426,7 @@ const SEED: CodeGroupSeed[] = [
     //   OVER_DELIVERY로 따로 간다(#62).
     groupCode: 'INBOUND_VARIANCE_TYPE',
     groupName: '입하 차이 유형',
+    isSystemOwned: true,
     values: [
       { code: 'SHORTAGE', codeName: '수량 부족', order: 10 },
       { code: 'ITEM_MISMATCH', codeName: '품목 불일치', order: 20 },
@@ -1025,6 +874,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'LOT_TYPE',
     groupName: 'LOT 유형',
+    isSystemOwned: true,
     values: [
       { code: 'MATERIAL', codeName: '자재', order: 10 },
       { code: 'PRODUCTION', codeName: '생산', order: 20 },
@@ -1043,6 +893,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'EQUIPMENT_INSPECTION_JUDGMENT_METHOD',
     groupName: '설비 점검 판정 방식',
+    isSystemOwned: true,
     values: [
       { code: 'VISUAL', codeName: '육안', order: 10 },
       { code: 'MEASUREMENT', codeName: '측정값', order: 20 },
@@ -1051,6 +902,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'QUALITY_INSPECTION_TYPE',
     groupName: '품질 검사 유형',
+    isSystemOwned: true,
     values: [
       { code: 'IQC', codeName: '수입검사', order: 10 },
       { code: 'PQC', codeName: '공정검사', order: 20 },
@@ -1060,6 +912,7 @@ const SEED: CodeGroupSeed[] = [
   {
     groupCode: 'CYCLE_TYPE',
     groupName: '주기 단위',
+    isSystemOwned: true,
     values: [
       { code: 'DAY', codeName: '일', order: 10 },
       { code: 'WEEK', codeName: '주', order: 20 },
@@ -1544,6 +1397,28 @@ const RETIRED_GROUPS = [
   // (src/common/permissions/permissions.ts · 117건). 여기 두면 고객이 편집할 수 있는
   // 것처럼 보이고, 편집해도 아무 효과가 없다.
   'PERMISSION',
+  // ── 코드 사전(6d03a44)에 없는 그룹 — 계약 포인터 0 · 서버 참조 0 (재검토 §2-4) ──
+  // enum 으로 승격돼 그룹이 필요 없어진 것. OPERATION_POLICY 의 정본은 계약 enum(CD-POLICY 5값)이고
+  // baseline 마이그레이션이 넣은 14값·app.operation_policy 행은 그대로 둔다.
+  'APPROVAL_TYPE',
+  'APPROVER_TYPE',
+  'DOCUMENT_TYPE',
+  'OPERATION_POLICY',
+  'PARTNER_ROLE_TYPE',
+  'RESULT_SOURCE',
+  // 사전에서 사라졌거나 다른 그룹과 겹치는 것 — INSPECTION_TYPE 은 QUALITY_INSPECTION_TYPE,
+  // WORKER_STATUS 는 APP_USER_STATUS 와 같은 축이다. LOT_CONTROL_TYPE 은 item.lot_controlled 가 대신한다.
+  'INSPECTION_DATA_TYPE',
+  'INSPECTION_METHOD',
+  'INSPECTION_TYPE',
+  'LOT_CONTROL_TYPE',
+  'MOLD_STATUS',
+  'PRODUCTION_RESULT_STATUS',
+  'RESET_CYCLE',
+  'SAMPLING_METHOD',
+  'WORKER_STATUS',
+  // ⚠ LINE_TYPE·SERIAL_CONTROL_TYPE 도 사전에서 enum 이지만 서버가 검증에 읽는다 — 시스템 소유로 두고
+  // 검증을 걷어 내는 날 함께 내린다. LOT_LIFECYCLE_TRANSITION·LOT_STATUS_TRANSITION 은 e2e 가 대조용으로 읽는다.
 ];
 
 /**
