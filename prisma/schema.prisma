@@ -1935,6 +1935,11 @@ model mold {
   guaranteed_shot_count          BigInt?
   current_shot_count             BigInt                           @default(0)
   status_code                    String                           @db.VarChar(50)
+  tool_type_code                 String                           @db.VarChar(50)
+  pm_trigger_type_code           String                           @default("NONE") @db.VarChar(50)
+  pm_cycle_interval              Int?
+  pm_cycle_unit_code             String?                          @db.VarChar(50)
+  last_pm_date                   DateTime?                        @db.Date
   is_active                      Boolean                          @default(true)
   created_at                     DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                     BigInt?
@@ -1942,6 +1947,7 @@ model mold {
   updated_by                     BigInt?
   version_no                     Int                              @default(1)
   tool_usage                     tool_usage[]
+  maintenance_order              maintenance_order[]
   plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   production_result              production_result[]
   work_order                     work_order[]
@@ -4186,7 +4192,9 @@ model equipment_inspection_result {
 model maintenance_order {
   maintenance_order_id      BigInt                     @id @default(autoincrement())
   maintenance_order_no      String                     @unique @db.VarChar(100)
-  equipment_id              BigInt
+  target_type_code          String                     @db.VarChar(50)
+  equipment_id              BigInt?
+  mold_id                   BigInt?
   breakdown_id              BigInt?
   order_type_code           String                     @db.VarChar(50)
   priority_code             String                     @db.VarChar(50)
@@ -4202,11 +4210,13 @@ model maintenance_order {
   version_no                Int                        @default(1)
   worker                    worker?                    @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   breakdown                 breakdown?                 @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
-  equipment                 equipment                  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                 equipment?                 @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                      mold?                      @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
   maintenance_order_item    maintenance_order_item[]
   maintenance_order_trigger maintenance_order_trigger?
   maintenance_result        maintenance_result[]
 
+  @@index([mold_id, status_code], map: "ix_maintenance_order_mold")
   @@schema("maintenance")
 }
 
