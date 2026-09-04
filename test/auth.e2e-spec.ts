@@ -41,7 +41,7 @@ describe('인증 (실 DB)', () => {
 
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '검사용', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '검사용', status_code: 'EMPLOYED' },
     });
     userId = user.app_user_id;
     await prisma.user_credential.create({

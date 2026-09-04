@@ -67,7 +67,7 @@ describe('기준정보 조회 (e2e)', () => {
 
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '기준정보검사', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '기준정보검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },

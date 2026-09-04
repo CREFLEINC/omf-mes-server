@@ -52,7 +52,7 @@ describe('공통코드 마스터 (e2e)', () => {
 
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '코드검사', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '코드검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
@@ -60,7 +60,7 @@ describe('공통코드 마스터 (e2e)', () => {
     // ⛔ 권한 없는 쪽은 «다른 사용자»여야 한다. 세션은 요청마다 DB 에서 다시 조립되므로
     // 같은 사용자의 옛 쿠키가 권한을 얼려 두지 않는다(그 성질은 아래 검사가 지킨다).
     const other = await prisma.app_user.create({
-      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'ACTIVE' },
+      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },

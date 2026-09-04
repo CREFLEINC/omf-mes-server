@@ -54,13 +54,13 @@ describe('부서 마스터 (e2e)', () => {
 
     await cleanup();
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '부서검사', status_code: 'ACTIVE' },
+      data: { login_id: LOGIN_ID, user_name: '부서검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     const other = await prisma.app_user.create({
-      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'ACTIVE' },
+      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
