@@ -355,7 +355,7 @@ describe('적치 규칙 (e2e)', () => {
         item_name: suffix,
         item_type_code: 'RAW',
         base_uom_id: uomId,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
       },
     });
     return Number(created.item_id);

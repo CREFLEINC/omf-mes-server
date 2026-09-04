@@ -1,6 +1,6 @@
 # OMF-MES 논리 테이블 명세서 v4.0
 
-> 설계 기준 `a8f46f2` · 논리 테이블 181개 · 물리 파티션 2개 · 컬럼 2408개
+> 설계 기준 `a8f46f2` · 논리 테이블 181개 · 물리 파티션 2개 · 컬럼 2409개
 
 ## 범례
 
@@ -2360,7 +2360,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | `mdm.equipment_group_member` | 설비 그룹 구성원 | MASTER | 7 | `equipment_group_member_id` | 2 | 설비 그룹 구성원의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_inspection_item` | 설비 검사 품목 | MASTER | 19 | `equipment_inspection_item_id` | 2 | 설비 검사 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.equipment_inspection_item_assignment` | 설비 검사 품목 배정 | MASTER | 11 | `equipment_inspection_item_assignment_id` | 2 | 설비 검사 품목 배정의 업무 기준과 유효 상태를 관리한다. |
-| `mdm.item` | 품목 | MASTER | 25 | `item_id` | 2 | 품목의 업무 기준과 유효 상태를 관리한다. |
+| `mdm.item` | 품목 | MASTER | 26 | `item_id` | 2 | 품목의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_bu_item_map` | 품목 BU 품목 매핑 | MASTER | 9 | `item_bu_item_map_id` | 4 | 품목 BU 품목 매핑의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_external_code` | 품목 외부 코드 | MASTER | 7 | `item_external_code_id` | 2 | 품목 외부 코드의 업무 기준과 유효 상태를 관리한다. |
 | `mdm.item_uom_conversion` | 품목 단위 CONVERSION | MASTER | 9 | `item_uom_conversion_id` | 3 | 품목 단위 CONVERSION의 업무 기준과 유효 상태를 관리한다. |
@@ -2642,7 +2642,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 3 | `item_name` | `app.name_t` | Y | - | `-` |
 | 4 | `item_type_code` | `app.code_t` | Y | - | `-` |
 | 5 | `base_uom_id` | `bigint` | Y | FK→mdm.uom | `-` |
-| 6 | `lot_control_type_code` | `app.code_t` | Y | - | `-` |
+| 6 | `lot_control_type_code` | `app.code_t` | N | - | `-` |
 | 7 | `serial_control_type_code` | `app.code_t` | Y | - | `'NONE'::character varying` |
 | 8 | `shelf_life_days` | `integer` | N | - | `-` |
 | 9 | `inspection_required` | `boolean` | Y | - | `false` |
@@ -2662,6 +2662,7 @@ ENTITY 유형 REGISTRY의 업무 기준과 유효 상태를 관리한다.
 | 23 | `mes_category_code` | `app.code_t` | N | - | `-` |
 | 24 | `name_ko` | `app.name_t` | N | - | `-` |
 | 25 | `name_vi` | `app.name_t` | N | - | `-` |
+| 26 | `lot_controlled` | `boolean` | Y | - | `false` |
 
 ### mdm.item_bu_item_map — 품목 BU 품목 매핑
 

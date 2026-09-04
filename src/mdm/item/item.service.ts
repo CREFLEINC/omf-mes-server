@@ -16,7 +16,7 @@ interface ItemView {
   nameVi: string | null;
   itemTypeCode: string;
   baseUomId: number;
-  lotControlTypeCode: string;
+  lotControlled: boolean;
   serialControlTypeCode: string;
   shelfLifeDays: number | null;
   inspectionRequired: boolean;
@@ -32,7 +32,7 @@ interface ItemView {
 }
 
 export interface ItemUpdate {
-  lotControlTypeCode: string;
+  lotControlled: boolean;
   serialControlTypeCode: string;
   shelfLifeDays?: number | null;
   inspectionRequired: boolean;
@@ -120,7 +120,7 @@ export class ItemService {
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
       where: { item_id: itemId, version_no: version },
       data: {
-        lot_control_type_code: input.lotControlTypeCode,
+        lot_controlled: input.lotControlled,
         serial_control_type_code: input.serialControlTypeCode,
         inspection_required: input.inspectionRequired,
         fifo_policy_code: input.fifoPolicyCode,
@@ -164,11 +164,6 @@ export class ItemService {
 
     await assertCodeValues(this.prisma, [
       {
-        field: 'lotControlTypeCode',
-        value: input.lotControlTypeCode,
-        groupCode: 'LOT_CONTROL_TYPE',
-      },
-      {
         field: 'serialControlTypeCode',
         value: input.serialControlTypeCode,
         groupCode: 'SERIAL_CONTROL_TYPE',
@@ -203,7 +198,7 @@ function view(row: ItemRow): ItemView {
     nameVi: row.name_vi,
     itemTypeCode: row.item_type_code,
     baseUomId: Number(row.base_uom_id),
-    lotControlTypeCode: row.lot_control_type_code,
+    lotControlled: row.lot_controlled,
     serialControlTypeCode: row.serial_control_type_code,
     shelfLifeDays: row.shelf_life_days,
     inspectionRequired: row.inspection_required,

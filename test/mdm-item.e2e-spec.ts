@@ -235,10 +235,10 @@ describe('품목 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', etag)
-      .send(updateBody({ lotControlTypeCode: '없는유형' }))
+      .send(updateBody({ storageConditionCode: '없는조건' }))
       .expect(400);
 
-    expect(rejected.body.errors[0]).toMatchObject({ field: 'lotControlTypeCode', code: 'INVALID' });
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'storageConditionCode', code: 'INVALID' });
   });
 
   it('⛔ 낡은 If-Match 는 409 STALE_VERSION 이다', async () => {
@@ -291,7 +291,7 @@ describe('품목 마스터 (e2e)', () => {
   /** 계약 `ItemUpdate` 의 필수 칸을 모두 담은 기본 본문. */
   function updateBody(extra: Record<string, unknown> = {}): object {
     return {
-      lotControlTypeCode: 'LOT',
+      lotControlled: true,
       serialControlTypeCode: 'NONE',
       inspectionRequired: false,
       fifoPolicyCode: 'FIFO',
@@ -318,7 +318,7 @@ describe('품목 마스터 (e2e)', () => {
         item_name: itemCode,
         item_type_code: 'RAW',
         base_uom_id: baseUomId,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
       },
     });
     return Number(created.item_id);

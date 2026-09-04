@@ -6,7 +6,7 @@
   "table_count": 183,
   "logical_table_count": 181,
   "partition_count": 2,
-  "column_count": 2408,
+  "column_count": 2409,
   "relationship_count": 561,
   "schemas": {
     "app": 27,

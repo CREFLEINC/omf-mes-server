@@ -102,7 +102,7 @@ describe('기준정보 조회 (e2e)', () => {
         plant_id: plant.plant_id,
         line_code: `${PREFIX}-LN`,
         line_name: '검사라인',
-        line_type_code: 'ASSEMBLY',
+        line_type_code: 'LINE',
       },
     });
     await prisma.process.create({

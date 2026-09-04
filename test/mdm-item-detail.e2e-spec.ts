@@ -214,8 +214,8 @@ describe('품목 부속 정보 (e2e)', () => {
       .set('If-Match', await etagOf('external-codes'))
       .send({
         externalCodes: [
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-E1` },
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-E2` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-E1` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-E2` },
         ],
       })
       .expect(200);
@@ -230,8 +230,8 @@ describe('품목 부속 정보 (e2e)', () => {
       .set('If-Match', await etagOf('external-codes'))
       .send({
         externalCodes: [
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-DUP` },
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-DUP` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-DUP` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-DUP` },
         ],
       })
       .expect(400);
@@ -251,8 +251,8 @@ describe('품목 부속 정보 (e2e)', () => {
       .set('If-Match', await etagOf('external-codes'))
       .send({
         externalCodes: [
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-X1` },
-          { externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-X2` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-X1` },
+          { externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-X2` },
         ],
       })
       .expect(200);
@@ -262,7 +262,7 @@ describe('품목 부속 정보 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', await etagOf('external-codes'))
-      .send({ externalCodes: [{ externalSystemCode: 'ERP', externalItemCode: `${PREFIX}-X1` }] })
+      .send({ externalCodes: [{ externalSystemCode: 'UNIERP', externalItemCode: `${PREFIX}-X1` }] })
       .expect(200);
 
     expect(shrunk.body.items).toHaveLength(1);
@@ -432,7 +432,7 @@ describe('품목 부속 정보 (e2e)', () => {
         item_name: itemCode,
         item_type_code: 'RAW',
         base_uom_id: uom.uom_id,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
       },
     });
     return Number(created.item_id);

@@ -1718,7 +1718,7 @@ model item {
   item_name                                            String                               @db.VarChar(200)
   item_type_code                                       String                               @db.VarChar(50)
   base_uom_id                                          BigInt
-  lot_control_type_code                                String                               @db.VarChar(50)
+  lot_control_type_code                                String?                              @db.VarChar(50)
   serial_control_type_code                             String                               @default("NONE") @db.VarChar(50)
   shelf_life_days                                      Int?
   inspection_required                                  Boolean                              @default(false)
@@ -1738,6 +1738,7 @@ model item {
   mes_category_code                                    String?                              @db.VarChar(50)
   name_ko                                              String?                              @db.VarChar(200)
   name_vi                                              String?                              @db.VarChar(200)
+  lot_controlled                                       Boolean                              @default(false)
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]

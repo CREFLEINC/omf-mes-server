@@ -413,7 +413,7 @@ describe('Routing 공정 라인·선후행 (e2e)', () => {
         item_name: `검사품목${suffix}`,
         item_type_code: 'FG',
         base_uom_id: uom.uom_id,
-        lot_control_type_code: 'LOT',
+        lot_controlled: true,
       },
     });
     const created = await prisma.routing.create({
