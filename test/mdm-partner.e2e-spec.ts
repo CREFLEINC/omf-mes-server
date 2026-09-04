@@ -234,6 +234,26 @@ describe('거래처·판정유형 통제 (e2e)', () => {
     });
   });
 
+  it('⭐ 단건이 계약 스키마를 만족하고 ETag 는 «자기» 판 번호다 — 부모 코드값의 토큰이 아니다', async () => {
+    // 부모 코드값의 판 번호를 올려 둔다 — 판정유형 «이름»을 고친 상황. 통제의 ETag 는 흔들리면 안 된다(B-1-1 ①ⓐ).
+    await prisma.code_value.update({
+      where: { code_value_id: judgmentValueId },
+      data: { version_no: { increment: 5 } },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/mdm/judgment-type-controls/${judgmentValueId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    const validate = validator('GET /mdm/judgment-type-controls/{codeValueId}');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // 통제 행이 아직 없다 — 목록과 같은 기본값이고, 그 1 이 뒤이을 PUT 의 If-Match 다.
+    expect(response.body).toMatchObject({ codeValueId: judgmentValueId, versionNo: 1 });
+    expect(response.headers.etag).toBe('1');
+  });
+
   it('⭐ 편집하면 통제 행이 생기고 버전이 오른다', async () => {
     const saved = await request(app.getHttpServer())
       .put(`/api/mdm/judgment-type-controls/${judgmentValueId}`)
@@ -268,6 +288,12 @@ describe('거래처·판정유형 통제 (e2e)', () => {
       .expect(200);
     expect(again.body.versionNo).toBe(saved.body.versionNo + 1);
     expect(again.body.blocksIssue).toBe(false);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/mdm/judgment-type-controls/${judgmentValueId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(detail.headers.etag).toBe(String(again.body.versionNo));
   });
 
   it('⛔ 낡은 If-Match 는 409 STALE_VERSION 이다', async () => {
@@ -318,6 +344,11 @@ describe('거래처·판정유형 통제 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
       .send(flags())
+      .expect(404);
+    // 단건도 같다 — 「전부 거짓」기본값을 내주면 화면이 편집을 시작해 버린다.
+    await request(app.getHttpServer())
+      .get(`/api/mdm/judgment-type-controls/${outsider.code_value_id}`)
+      .set('Cookie', cookie)
       .expect(404);
   });
 
