@@ -166,32 +166,6 @@ export class ReferenceService {
     );
   }
 
-  async processes(query: ReferenceQuery): Promise<PagedResponse<unknown>> {
-    const page = referencePage(query);
-    const where = referenceWhere(query, { code: 'process_code', name: 'process_name' });
-    const [rows, total] = await Promise.all([
-      this.prisma.process.findMany({
-        where,
-        orderBy: { process_code: 'asc' },
-        skip: page.skip,
-        take: page.take,
-      }),
-      this.prisma.process.count({ where }),
-    ]);
-
-    return pagedResponse(
-      rows.map((row) => ({
-        processId: Number(row.process_id),
-        processCode: row.process_code,
-        processName: row.process_name,
-        processTypeCode: row.process_type_code,
-        isActive: row.is_active,
-      })),
-      total,
-      page,
-    );
-  }
-
   async shifts(query: ReferenceQuery & { plantId?: number }): Promise<PagedResponse<unknown>> {
     const page = referencePage(query);
     const where = referenceWhere(
