@@ -113,7 +113,8 @@ describe('Routing Rev 전이 (e2e)', () => {
     const validate = validator('POST /planning/routings/{routingId}:confirm', '200');
     expect(validate(confirmed.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    expect(confirmed.body.statusCode).toBe(REVISION_STATUS.CONFIRMED);
+    // 계약 문자열로 고정한다 — 상수와 대조하면 상수가 틀려도 통과한다.
+    expect(confirmed.body.statusCode).toBe('CONFIRMED');
 
     // ⛔ 400 이다 — 계약이 이 자리에 409 를 «선언하지 않았다».
     const again = await request(app.getHttpServer())

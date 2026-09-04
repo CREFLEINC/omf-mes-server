@@ -277,11 +277,15 @@ const SEED: CodeGroupSeed[] = [
   },
   {
     // BOM·Routing·검사기준은 개정(Rev) 단위로 살아 있다 — 상태축이 곧 개정 수명주기다.
-    groupCode: 'REVISION_STATUS',
-    groupName: '개정 상태',
+    // ⛔ 시스템 소유 — 편집 가부가 이 값에 걸려 있어 고객이 지우면 잠금이 조용히 안 걸린다
+    // (계약 Routing.statusCode). 옛 이름 REVISION_STATUS·값 ACTIVE 는 마이그레이션
+    // 20260904110000 이 제자리에서 개명했다.
+    groupCode: 'MASTER_VERSION_STATUS',
+    groupName: '마스터 버전 상태',
+    isSystemOwned: true,
     values: [
       { code: 'DRAFT', codeName: '작성중', order: 10 },
-      { code: 'ACTIVE', codeName: '적용중', order: 20 },
+      { code: 'CONFIRMED', codeName: '확정', order: 20 },
       { code: 'OBSOLETE', codeName: '폐기', order: 30 },
     ],
   },

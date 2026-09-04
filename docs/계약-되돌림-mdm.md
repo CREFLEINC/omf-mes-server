@@ -33,7 +33,7 @@
 > | C. 작업자 ETag | 계약이 **선언했다** |
 > | N. 설비 유형 그룹 | **등재됐다** |
 > | O-4. 금형 상태 | `EQUIPMENT_STATUS` 를 **준용한다** |
-> | S-1 / T-1 / V-1. 버전 상태 문자열 | `MASTER_VERSION_STATUS` DRAFT·**CONFIRMED**·OBSOLETE — 서버 `ACTIVE` 를 고친다 |
+> | S-1 / T-1 / V-1. 버전 상태 문자열 | `MASTER_VERSION_STATUS` DRAFT·**CONFIRMED**·OBSOLETE — 서버 `ACTIVE` 를 **고쳤다**(마이그레이션 20260904110000) |
 > | X-1. 연계 대상 값 | `INTERFACE_TARGET` 5값 — 구현과 **같다** |
 > | X-4. 메시지 완료 문자열 | **`DONE`** — 서버 `COMPLETED` 를 고친다 |
 >

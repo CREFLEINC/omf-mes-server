@@ -42,11 +42,9 @@ export const TRANSITIONS: TransitionRegistry = {
 
   /**
    * Routing Rev 수명주기. 설계 결정 07 이 「작성중·확정·폐기」 셋으로 확정했고, 시드
-   * `REVISION_STATUS` 에 세 값이 있다 — 수가 같고 짝이 하나뿐이라 매핑에 재량이 없다.
-   *
-   * ⚠ 확정의 코드 문자열이 `ACTIVE` 다. 계약이 그 이름을 되돌리라 적어 두었으나
-   * (`G-32`) **값 집합은 정해져 있어** 전이를 세울 수 있다 — 금형(`MOLD_STATUS`)이
-   * 막힌 것과 갈리는 지점이 여기다. 되돌림 §S-1.
+   * `MASTER_VERSION_STATUS` 에 세 값이 있다 — 수가 같고 짝이 하나뿐이라 매핑에 재량이 없다.
+   * 값 집합이 정해져 있어 전이를 세울 수 있다 — 금형(`MOLD_STATUS`)이 막힌 것과 갈리는
+   * 지점이 여기다. 되돌림 §S-1.
    *
    * ⛔ 폐기는 dead end 다 — 계약 §5-4 상태표가 「폐기 → (없음)」이라 되돌아오는 전이도,
    * 신규 Rev 의 원본으로 쓰는 길도 없다.
@@ -58,11 +56,11 @@ export const TRANSITIONS: TransitionRegistry = {
   'planning.routing.status_code': {
     'routing-confirm': {
       from: ['DRAFT'],
-      to: 'ACTIVE',
+      to: 'CONFIRMED',
       sourceOperation: 'POST /planning/routings/{routingId}:confirm',
     },
     'routing-obsolete': {
-      from: ['ACTIVE'],
+      from: ['CONFIRMED'],
       to: 'OBSOLETE',
       sourceOperation: 'POST /planning/routings/{routingId}:obsolete',
     },
