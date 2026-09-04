@@ -41,6 +41,23 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * 툴 자산 수명주기. 설비와 «같은 값 목록»을 쓴다 — 계약이 `statusCode` 에
+   * 「값 목록은 `EQUIPMENT_STATUS` 로 받는다 — 설비·툴·계측기가 같은 규칙을 쓴다」로
+   * 적었다. 옛 `MOLD_STATUS`(NEW·NORMAL·REPAIR·DISPOSED)는 그룹째 내렸다 — 고장·보전
+   * 중은 거래가 만드는 조건이지 자산 상태가 아니다.
+   *
+   * 되돌아오는 전이는 없다 — 계약에 되살리는 경로가 없다. 「폐기된 뒤에는 다시
+   * 불러와도 편집이 풀리지 않는다」(계약).
+   */
+  'mdm.mold.status_code': {
+    'mold-dispose': {
+      from: ['IN_SERVICE'],
+      to: 'DISPOSED',
+      sourceOperation: 'POST /mdm/molds/{moldId}:dispose',
+    },
+  },
+
+  /**
    * Routing Rev 수명주기. 설계 결정 07 이 「작성중·확정·폐기」 셋으로 확정했고, 시드
    * `MASTER_VERSION_STATUS` 에 세 값이 있다 — 수가 같고 짝이 하나뿐이라 매핑에 재량이 없다.
    * 값 집합이 정해져 있어 전이를 세울 수 있다 — 금형(`MOLD_STATUS`)이 막힌 것과 갈리는

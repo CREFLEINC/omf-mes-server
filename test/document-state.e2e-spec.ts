@@ -40,6 +40,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
   const STATUS_GROUPS: Record<string, string> = {
     'trace.lot.lifecycle_status_code': 'LOT_LIFECYCLE_STATUS',
     'mdm.equipment.status_code': 'EQUIPMENT_STATUS',
+    // 툴도 같은 그룹을 쓴다 — 계약이 「설비·툴·계측기가 같은 규칙」이라 적었다.
+    'mdm.mold.status_code': 'EQUIPMENT_STATUS',
     'planning.routing.status_code': 'MASTER_VERSION_STATUS',
   };
 

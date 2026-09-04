@@ -13,6 +13,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
 
+import { Workbook } from 'exceljs';
+
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
@@ -404,6 +406,110 @@ describe('툴 마스터 (e2e)', () => {
     });
   });
 
+  it('⭐ 사용 중지는 감추기만 한다 — 재개하면 다시 보인다', async () => {
+    const { id, etag } = await create(`${PREFIX}-OFF`);
+
+    const off = await act(id, 'deactivate', etag);
+    expect(off.body.isActive).toBe(false);
+    // 자산 상태는 그대로다 — 중지와 폐기는 «다른 축»이다(B-16).
+    expect(off.body.statusCode).toBe('IN_SERVICE');
+
+    expect((await list(`q=${PREFIX}-OFF`)).items.map((m) => m.moldId)).not.toContain(id);
+    expect(
+      (await list(`q=${PREFIX}-OFF&includeInactive=true`)).items.map((m) => m.moldId),
+    ).toContain(id);
+
+    const on = await act(id, 'activate', off.headers.etag);
+    expect(on.body.isActive).toBe(true);
+  });
+
+  it('⭐ 폐기는 자산이 끝난 것이다 — 뒤에는 편집이 풀리지 않는다', async () => {
+    const { id, etag } = await create(`${PREFIX}-DISP`);
+
+    const disposed = await act(id, 'dispose', etag);
+    expect(disposed.body).toMatchObject({ statusCode: 'DISPOSED', isActive: true });
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/mdm/molds/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', disposed.headers.etag)
+      .send({ ...body(`${PREFIX}-DISP`), moldName: '고쳐 보기' })
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+  });
+
+  it('⛔ 이미 폐기한 툴을 다시 폐기할 수 없다 — 상태기계가 가른다', async () => {
+    const { id, etag } = await create(`${PREFIX}-TWICE`);
+    const once = await act(id, 'dispose', etag);
+
+    const rejected = await request(app.getHttpServer())
+      .post(`/api/mdm/molds/${id}:dispose`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', once.headers.etag)
+      // ⛔ 400 이다 — 계약이 409 설명에 「업무 규칙 위반(상태 잠김·참조 존재)은 409 가
+      // 아니라 400」이라 적었다. 409 봉투(ConflictResponse)는 저장 충돌 전용이다.
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+  });
+
+  it('⭐ 엑셀 한 장이 성공·실패를 나눠 돌려준다 — 실패 행 순번이 자료 행 기준이다', async () => {
+    const file = await workbook([
+      ['툴코드', '툴명', '도구유형', '캐비티', '적정타수'],
+      [`${PREFIX}-XL1`, '엑셀로 들어온 금형', 'MOLD', 2, 300000],
+      [`${PREFIX}-XL2`, '유형이 틀린 행', '없는유형', 1, null],
+      [`${PREFIX}-XL3`, '지그', 'JIG', 1, null],
+    ]);
+
+    const result = await upload(file);
+    expect(result.succeeded).toBe(2);
+    // 머리글을 뺀 0부터의 순번이다 — 엑셀 행 번호(3)가 아니다(계약).
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]).toMatchObject({ index: 1, key: `${PREFIX}-XL2` });
+    expect(result.failed[0].errors[0]).toMatchObject({ field: 'toolTypeCode', code: 'INVALID' });
+
+    const loaded = await list(`q=${PREFIX}-XL`);
+    expect(loaded.items).toHaveLength(2);
+  });
+
+  it('⭐ 올리기는 마스터 행만 만든다 — 라벨을 발행하지 않는다', async () => {
+    const before = await prisma.document_issue_log.count({
+      where: { document_type_code: 'TOOL_LABEL' },
+    });
+    await upload(await workbook([
+      ['툴코드', '툴명'],
+      [`${PREFIX}-NOLABEL`, '라벨 없이 들어온다'],
+    ]));
+
+    expect(
+      await prisma.document_issue_log.count({ where: { document_type_code: 'TOOL_LABEL' } }),
+    ).toBe(before);
+  });
+
+  it('⛔ 읽을 수 없는 파일은 400 이다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/molds:import')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .attach('file', Buffer.from('엑셀이 아니다'), 'tools.xlsx')
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen' });
+  });
+
+  it('⛔ 머리글에 코드·명칭 열이 없으면 읽을 수 없다', async () => {
+    const file = await workbook([
+      ['알 수 없는 열', '또 다른 열'],
+      ['가', '나'],
+    ]);
+    await request(app.getHttpServer())
+      .post('/api/mdm/molds:import')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .attach('file', file, 'tools.xlsx')
+      .expect(400);
+  });
+
   it('⛔ 없는 툴은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/mdm/molds/999999999')
@@ -439,6 +545,16 @@ describe('툴 마스터 (e2e)', () => {
     expect(validate(created.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return { id: created.body.moldId, etag: (await detailOf(created.body.moldId)).etag };
+  }
+
+  /** 상태 액션 하나. 전부 `Idempotency-Key` + `If-Match` 를 요구한다(계약). */
+  async function act(id: number, action: string, etag: string): Promise<request.Response> {
+    return request(app.getHttpServer())
+      .post(`/api/mdm/molds/${id}:${action}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .expect(200);
   }
 
   async function detailOf(
@@ -488,6 +604,29 @@ describe('툴 마스터 (e2e)', () => {
         status_code: statusCode,
       },
     });
+  }
+
+  /** 자료를 담은 엑셀 한 장. 현장 대장 대신 쓰는 최소 형태다. */
+  async function workbook(rows: (string | number | null)[][]): Promise<Buffer> {
+    const book = new Workbook();
+    const sheet = book.addWorksheet('툴');
+    for (const row of rows) sheet.addRow(row);
+    return Buffer.from(await book.xlsx.writeBuffer());
+  }
+
+  async function upload(
+    file: Buffer,
+  ): Promise<{ succeeded: number; failed: { index: number; key?: string; errors: { field?: string; code: string }[] }[] }> {
+    const response = await request(app.getHttpServer())
+      .post('/api/mdm/molds:import')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .attach('file', file, 'tools.xlsx')
+      .expect(200);
+    const validate = validator('POST /mdm/molds:import');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    return response.body;
   }
 
   async function login(loginId: string = LOGIN_ID): Promise<string[]> {

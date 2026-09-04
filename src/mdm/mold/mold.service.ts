@@ -13,7 +13,9 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ImportRow, parseMoldWorkbook } from './mold-import';
 import {
   MoldSort,
   MoldSummary,
@@ -52,6 +54,10 @@ const LABEL_DOCUMENT_TYPE = 'TOOL_LABEL';
  */
 const CLOSED_ORDER_STATUSES = ['DONE', 'CANCELLED'];
 
+/** 자산 폐기는 사용 중지와 «다른 축»이다 — 공유계약 `B-16`. */
+const STATUS_COLUMN = 'mdm.mold.status_code';
+const DISPOSED = 'DISPOSED';
+
 export interface MoldQuery extends ReferenceQuery {
   plantId?: number;
   toolTypeCode?: string;
@@ -80,6 +86,19 @@ export interface MoldCreate extends MoldWrite {
   moldCode: string;
 }
 
+/** 계약 `BatchFailure` — `index` 는 엑셀 «자료 행»의 순번이다(머리글 제외 0부터). */
+interface BatchFailure {
+  index: number;
+  key?: string;
+  errors: ErrorItem[];
+}
+
+/** 계약 `BatchResult` — 전체 롤백하지 않고 거부 건만 되돌린다(공유계약 C-2). */
+export interface BatchResult {
+  succeeded: number;
+  failed: BatchFailure[];
+}
+
 export type MoldResult = {
   mold: MoldView;
   editability: Editability;
@@ -89,7 +108,10 @@ export type MoldResult = {
 
 @Injectable()
 export class MoldService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly documentState: DocumentStateService,
+  ) {}
 
   /**
    * ⚠ 페이지가 아니라 **필터 전체**를 읽는다. 요약(`summary`)이 전체 기준이고 정렬 축
@@ -162,6 +184,7 @@ export class MoldService {
   async update(moldId: number, version: number, input: MoldWrite): Promise<MoldResult> {
     await this.assertWritable(input);
     const current = await this.get(moldId);
+    assertNotDisposed(current.mold.statusCode);
 
     if (input.moldCode !== undefined && input.moldCode !== current.mold.moldCode) {
       // 공유계약 B-4 — 참조가 있거나 라벨이 나갔으면 코드를 못 바꾼다.
@@ -189,6 +212,81 @@ export class MoldService {
     });
     await this.assertExists(moldId, updated.count);
     return this.get(moldId);
+  }
+
+  /**
+   * 사용 중지·재개. 목록에서 감추는 것뿐이라 자산 상태(`status_code`)를 건드리지
+   * 않는다 — 물리 삭제를 두지 않으므로 되돌리는 경로가 `:activate` 하나다(계약).
+   */
+  async setActive(moldId: number, version: number, isActive: boolean): Promise<MoldResult> {
+    const updated = await this.prisma.mold.updateMany({
+      where: { mold_id: moldId, version_no: version },
+      data: { is_active: isActive, version_no: { increment: 1 } },
+    });
+    await this.assertExists(moldId, updated.count);
+    return this.get(moldId);
+  }
+
+  /**
+   * 자산을 폐기한다. 사용 중지와 «다른 축»이다 — 중지는 목록에서 감추는 것이고 폐기는
+   * 자산이 끝난 것이다(B-16). 전이는 상태기계 코어가 가른다.
+   */
+  async dispose(moldId: number, version: number): Promise<MoldResult> {
+    const current = await this.prisma.mold.findUnique({
+      where: { mold_id: moldId },
+      select: { status_code: true },
+    });
+    if (!current) throw new NotFoundException('없는 툴입니다.');
+    const transition = this.documentState.assertTransition(
+      STATUS_COLUMN,
+      'mold-dispose',
+      current.status_code,
+      // ⛔ 400 이다. 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반(상태 잠김·참조
+      // 존재)은 409 가 아니라 400 이다」로 적었다 — 409 는 저장 충돌 전용이다.
+      // ⚠ 형제인 설비 `:dispose` 는 지금 409 를 낸다. 계약 문구는 둘이 같다(되돌림 §O-8).
+      HttpStatus.BAD_REQUEST,
+    );
+
+    const updated = await this.prisma.mold.updateMany({
+      where: { mold_id: moldId, version_no: version },
+      data: { status_code: transition.to, version_no: { increment: 1 } },
+    });
+    await this.assertExists(moldId, updated.count);
+    return this.get(moldId);
+  }
+
+  /**
+   * 엑셀 대장 한 장을 마스터 행으로 옮긴다.
+   *
+   * ⛔ 통째로 되돌리지 않는다 — 성공한 행은 남기고 거부한 행만 돌려준다(공유계약 C-2).
+   * ⛔ 라벨을 자동으로 발행하지 않는다 — 「올리기가 만드는 것은 마스터 행뿐」(계약).
+   */
+  async importWorkbook(buffer: Buffer): Promise<BatchResult> {
+    const parsed = await parseMoldWorkbook(buffer);
+    if (parsed.error) throw new ContractException(HttpStatus.BAD_REQUEST, [parsed.error]);
+
+    const plants = await this.prisma.plant.findMany({
+      select: { plant_id: true, plant_code: true },
+    });
+    const result: BatchResult = { succeeded: 0, failed: [] };
+
+    // ⛔ 한 행씩 차례로 넣는다. 병렬로 돌리면 같은 코드가 두 행에 있을 때 둘 다
+    // 유일 검사를 통과한다 — 실패 목록이 「무엇이 왜 거부됐는지」를 못 말하게 된다.
+    for (const row of parsed.rows) {
+      const plantId = resolvePlant(row, plants);
+      if (plantId === null) {
+        result.failed.push(failure(row, [plantNotResolved(row.plantCode)]));
+        continue;
+      }
+      try {
+        await this.create({ plantId, ...row.values });
+        result.succeeded += 1;
+      } catch (error) {
+        if (!(error instanceof ContractException)) throw error;
+        result.failed.push(failure(row, error.errors));
+      }
+    }
+    return result;
   }
 
   /** 코드가 라벨로 나갔는지 센다 — 1 이상이면 참조가 0이어도 코드를 잠근다(계약). */
@@ -357,4 +455,53 @@ function bool(value: boolean | string | undefined): boolean | undefined {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return undefined;
+}
+
+/** 「폐기된 뒤에는 다시 불러와도 편집이 풀리지 않는다」(계약 · B-16). */
+function assertNotDisposed(statusCode: string): void {
+  if (statusCode !== DISPOSED) return;
+  // ⛔ 400 이다 — 계약이 이 오퍼레이션의 409 설명에 「업무 규칙 위반(상태 잠김·참조
+  // 존재)은 409 가 아니라 400 이다」로 적었다. 409 는 저장 충돌 전용이다.
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      // ⛔ 재로드해도 풀리지 않는다 — 저장 충돌과 구분한다(G-1).
+      code: ERROR_CODE.STATE_LOCKED,
+      message: '폐기한 툴은 수정할 수 없습니다.',
+    },
+  ]);
+}
+
+function failure(row: ImportRow, errors: ErrorItem[]): BatchFailure {
+  return { index: row.index, key: row.values.moldCode, errors };
+}
+
+/**
+ * 어느 공장의 툴인가. 대장에 공장 열이 있으면 그것으로 찾고, **없으면 공장이 하나일
+ * 때만** 그 하나로 본다.
+ *
+ * ⚠ 계약의 올리기 경로에 공장을 받는 자리가 없는데 `MoldCreate` 는 공장을 필수로
+ * 받는다 — 열이 확정되면 다시 본다(되돌림 §P-3).
+ */
+function resolvePlant(
+  row: ImportRow,
+  plants: readonly { plant_id: bigint; plant_code: string }[],
+): number | null {
+  if (row.plantCode === null) {
+    return plants.length === 1 ? Number(plants[0].plant_id) : null;
+  }
+  const found = plants.find((plant) => plant.plant_code === row.plantCode);
+  return found === undefined ? null : Number(found.plant_id);
+}
+
+function plantNotResolved(plantCode: string | null): ErrorItem {
+  return {
+    scope: 'field',
+    field: 'plantId',
+    code: plantCode === null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID,
+    message:
+      plantCode === null
+        ? '공장 열이 없고 공장이 여럿이라 어느 공장인지 정할 수 없습니다.'
+        : `없는 공장 코드입니다: ${plantCode}`,
+  };
 }
