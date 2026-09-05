@@ -1,16 +1,16 @@
 slice	file	operation	tag	summary	forbidden	status
-I-1	app-공통.json	GET /app/approval-requests	app	승인 요청 목록	403	☐
-I-1	app-공통.json	GET /app/approval-requests/{approvalRequestId}	app	승인 요청 상세 (결재선 진행 포함)	403	☐
-I-1	app-공통.json	GET /app/approval-routes	app	결재선 목록		☐
-I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}	app	결재선 상세		☐
-I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 목록		☐
-I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:approve	app	승인	403	☐
-I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:reject	app	반려	403	☐
-I-1	app-공통.json	POST /app/approval-routes	app	결재선 등록	403	☐
-I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:activate	app	결재선 다시 사용	403	☐
-I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:deactivate	app	결재선 사용 중지	403	☐
-I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}	app	결재선 수정	403	☐
-I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 전체 치환 (순서 포함)	403	☐
+I-1	app-공통.json	GET /app/approval-requests	app	승인 요청 목록	403	☑
+I-1	app-공통.json	GET /app/approval-requests/{approvalRequestId}	app	승인 요청 상세 (결재선 진행 포함)	403	☑
+I-1	app-공통.json	GET /app/approval-routes	app	결재선 목록		☑
+I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}	app	결재선 상세		☑
+I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 목록		☑
+I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:approve	app	승인	403	☑
+I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:reject	app	반려	403	☑
+I-1	app-공통.json	POST /app/approval-routes	app	결재선 등록	403	☑
+I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:activate	app	결재선 다시 사용	403	☑
+I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:deactivate	app	결재선 사용 중지	403	☑
+I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}	app	결재선 수정	403	☑
+I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 전체 치환 (순서 포함)	403	☑
 I-2	logistics-01자재창고.json	GET /logistics/purchase-orders	logistics	P/O 목록		☐
 I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 상세		☐
 I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 목록		☐

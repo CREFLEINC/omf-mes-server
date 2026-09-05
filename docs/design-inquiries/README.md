@@ -21,7 +21,12 @@
 | 19 | `IQC_SKIP` 승인 화면 · `screenId` 규칙 걸리는 유형 없음 | 구현 예정(I-1 · `openable=false`) |
 | 21 | 승인 유형·대상 유형 표시명 원천 없음 | 구현 예정(I-1 · `"{type} #{id}"`) |
 | 22 | 폐기 품의 결재선 `businessUnitId` 파생 매핑 없음 | 구현 예정(I-1 시그니처 · I-4 사용 · 8자리 null) |
+| 23 | P/O 상태 축과 상신 뒤 잠금 — `REGISTERED` 밖으로 가는 오퍼레이션이 없다 | 구현 예정(I-2 · 계약 문자 그대로 · 전이 0) |
+| 25 | 등록한 P/O 를 다시 여는 화면이 없다 | 구현 예정(I-2 · 7건 전건 열어 둔다) |
 
 번호 20 은 결번 — 「`INBOUND_LOT` 대응 표 없음」으로 세웠다가 계약 안에 답이 있어(19 각주) 철회.
+번호 24 도 결번 — 「`erp_purchase_order_no` 유일 제약」으로 세웠다가 `W-01-11` §8 #3(「강제는 서버·DB 몫」 · 계약 반영 완료 · 이슈 재발행)과 §8 #4(「도메인 02 스펙 작성 시 함께 본다」)가 물음도 일정도 이미 세워 둔 것을 확인해 철회(I-2 재수립 R-9). 우리가 부분 유일을 걸었다는 사실은 아래 「알려둘 것」에 남긴다.
 
-**알려둘 것**(번호 없음 · 다음 전달분 말미): `PUT /app/approval-routes/{id}/steps` 200 에 ETag 를 내린다(계약 미선언 · 자식 치환 선례) · `GET /app/approval-requests?requestedByMe` 와 M-01-13 「내가 올린 요청」은 계정 세션이 있어야 한다(단말 토큰 부재 → 401).
+**알려둘 것**(번호 없음 · 다음 전달분 말미)
+- (I-1) `PUT /app/approval-routes/{id}/steps` 200 에 ETag 를 내린다(계약 미선언 · 자식 치환 선례) · `GET /app/approval-requests?requestedByMe` 와 M-01-13 「내가 올린 요청」은 계정 세션이 있어야 한다(단말 토큰 부재 → 401).
+- (I-2) `…:request-approval` 은 `purchase_order.approval_request_id` 를 쓰면서 `version_no` 를 올리지 않는다(202 에 ETag 가 없다) — 같은 판정이 나머지 8 상신자에 복사된다 · 대상이 있는 P/O 쓰기 3건이 전부 404 미선언인데 우리는 404 를 낸다 · `W-01-11` §5-6 의 `approver_type_code = DEPARTMENT` 는 계약이 「USER 외 400」이라 1차 결재선을 사람으로 심는다 · **`uq_purchase_order_erp_no` 부분 유일을 걸었다 — 02 P/O 수신 I/F 는 이 제약을 전제로 삼아 달라**(중복 수신은 400) · 문의 14 의 표에 `purchase_order_no` 한 행을 더한다.
