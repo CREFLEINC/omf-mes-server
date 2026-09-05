@@ -1,12 +1,22 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": "..",
   "testRegex": "\\.e2e-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": ["@swc/jest", { "swcrc": true }]
+    "^.+\\.(t|j)s$": [
+      "@swc/jest",
+      {
+        "swcrc": true
+      }
+    ]
   },
   "testEnvironment": "node",
   "testTimeout": 30000,
   "maxWorkers": 1,
-  "globalSetup": "<rootDir>/test/global-setup.ts"
+  "globalSetup": "<rootDir>/test/global-setup.ts",
+  "testSequencer": "<rootDir>/test/alphabetical-sequencer.js"
 }
