@@ -6,6 +6,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
+import { NoticeController } from './notice/notice.controller';
+import { NoticeService } from './notice/notice.service';
 import { OperationPolicyController } from './policy/operation-policy.controller';
 import { OperationPolicyService } from './policy/operation-policy.service';
 import { RolePermissionService } from './access/role-permission.service';
@@ -25,13 +27,14 @@ import { UserAssignmentService } from './access/user-assignment.service';
 @Module({
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
   imports: [PrismaModule, IdempotencyModule, AuthModule],
-  controllers: [PermissionController, RoleController, AppUserController, OperationPolicyController],
+  controllers: [PermissionController, RoleController, AppUserController, OperationPolicyController, NoticeController],
   providers: [
     RoleService,
     RolePermissionService,
     AppUserService,
     UserAssignmentService,
     OperationPolicyService,
+    NoticeService,
   ],
 })
 export class AppDomainModule {}
