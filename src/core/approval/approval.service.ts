@@ -19,6 +19,19 @@ export interface StepRow {
   decisionCode: string | null;
 }
 
+/** 상신 한 건. 9 상신 도메인이 같은 칸을 넘긴다 — 대상 표만 다르다. */
+export interface ApprovalRequestInput {
+  /** ⛔ 코어가 «만들지» 않는다 — 호출자가 `$transaction` 을 열기 «전»에 채번해 넘긴다(I-2.md R-2). */
+  approvalRequestNo: string;
+  approvalTypeCode: string;
+  targetTypeCode: string;
+  targetId: bigint;
+  /** ⚠ P/O 만 전표 값을 준다. 나머지 8자리는 `null`(공통본) — 설계 미정 · 문의 022. */
+  businessUnitId: bigint | null;
+  requestedBy: bigint;
+  reason: string;
+}
+
 /** ⚠ `steps` 는 판정에 쓴 세 칸뿐이다 — 응답 `ApprovalStep` 은 호출자가 다시 읽어 만든다. */
 export interface DecisionResult {
   requestId: bigint;
@@ -45,6 +58,66 @@ function badRequest(code: string, message: string): ContractException {
 @Injectable()
 export class ApprovalService {
   constructor(private readonly documentState: DocumentStateService) {}
+
+  /**
+   * 상신. 「진행 중 요청은 하나」를 보고, 결재선을 골라 요청과 단계를 한 트랜잭션으로 만든다.
+   *
+   * ⛔ 채번을 부르지 않는다 — 번호는 인자로 온다. 카운터가 업무 트랜잭션 «밖»에서 돌아야
+   *    롤백이 번호를 되돌리지 않는다(I-2.md R-2).
+   * ⛔ 대상 문서의 어떤 행도 건드리지 않는다 — 대상 표의 `approval_request_id` 를 채우는
+   *    것은 호출자다. 코어가 9 도메인의 표를 알면 그게 두 번째 라우팅표가 된다.
+   * ⚠ `requested_at` 은 서버 시각이다 — `business_date` 축이 아니다(C-8 대상 3표에
+   *   `approval_request` 가 없다).
+   */
+  async request(tx: Tx, input: ApprovalRequestInput): Promise<{ approvalRequestId: bigint }> {
+    await this.assertNoOpenRequest(tx, input.targetTypeCode, input.targetId, input.approvalTypeCode);
+    const { approvalRouteId } = await this.selectRoute(tx, input.approvalTypeCode, input.businessUnitId);
+    // `target_summary`·`decided_at`·`decided_by` 는 비운다 — 계약이 안 받는 칸(I-1.md §2-3).
+    const created = await tx.approval_request.create({
+      data: {
+        approval_request_no: input.approvalRequestNo,
+        approval_type_code: input.approvalTypeCode,
+        target_type_code: input.targetTypeCode,
+        target_id: input.targetId,
+        requested_by: input.requestedBy,
+        requested_at: new Date(),
+        status_code: 'PENDING',
+        reason: input.reason,
+      },
+      select: { approval_request_id: true },
+    });
+    await this.expandSteps(tx, approvalRouteId, created.approval_request_id);
+    return { approvalRequestId: created.approval_request_id };
+  }
+
+  /**
+   * 「한 전표에 살아 있는 요청은 하나다」. `PENDING` 하나만 본다 — 반려는 진행 중이 아니라
+   * 다시 상신할 수 있고 그때는 새 요청이 선다(공유계약 J-6). 승인도 계약이 막지 않았으므로
+   * 막지 않는다. 조회 축은 I-1 A6 이 깐 `ix_approval_request_target` 이다.
+   *
+   * ⚠ 동시 상신을 막는 것은 «호출자의 대상 행 잠금»이다 — 이 함수의 조회만으로는 같은
+   *   순간의 둘이 다 통과한다. 호출자가 트랜잭션 첫 문장에서 대상 행을 잠근다(I-2.md R-4).
+   *   부분 유일 인덱스로 되돌리려면 인덱스 한 줄이면 되고 코드는 그대로다.
+   */
+  async assertNoOpenRequest(
+    tx: Tx,
+    targetTypeCode: string,
+    targetId: bigint,
+    approvalTypeCode: string,
+  ): Promise<void> {
+    const open = await tx.approval_request.findFirst({
+      where: {
+        target_type_code: targetTypeCode,
+        target_id: targetId,
+        approval_type_code: approvalTypeCode,
+        status_code: 'PENDING',
+      },
+      select: { approval_request_id: true },
+    });
+    if (open !== null) {
+      throw badRequest(ERROR_CODE.APPROVAL_IN_PROGRESS, '진행 중인 승인 요청이 이미 있습니다.');
+    }
+  }
 
   /**
    * ① 사업부 지정본이 전 사업부 공통본을 이긴다 ② 그러고도 둘 이상이면 서버가 임의로

@@ -28,8 +28,8 @@ export async function seedRoute(
 }
 
 /**
- * 상신 행 + 단계 전개. 코어 `selectRoute`+`expandSteps` 로 만든다 — 손으로 단계를
- * 심으면 전개 규칙이 어긋나도 검사가 통과한다(I-1.md R-8).
+ * 상신 행 + 단계 전개. 코어 `request()` 로 만든다 — 손으로 심으면 전개 규칙이 어긋나도
+ * 검사가 통과한다(I-1.md R-8).
  * ⚠ `approval_request_no` 는 채번 코어가 뽑는다 — `$transaction` 을 «열기 전»이라야
  * 한 요청이 커넥션을 둘 쥐지 않는다(I-2.md R-2).
  */
@@ -52,21 +52,16 @@ export async function seedRequest(
   const numbering = new NumberingService(prisma as PrismaService);
   const today = new Date().toISOString().slice(0, 10);
   const approvalRequestNo = await numbering.next('APPROVAL_REQUEST', null, today);
-  return prisma.$transaction(async (tx) => {
-    const { approvalRouteId } = await service.selectRoute(tx, opts.approvalTypeCode, null);
-    const request = await tx.approval_request.create({
-      data: {
-        approval_request_no: approvalRequestNo,
-        approval_type_code: opts.approvalTypeCode,
-        target_type_code: opts.targetTypeCode,
-        target_id: opts.targetId,
-        requested_by: opts.requestedBy,
-        requested_at: new Date(),
-        status_code: 'PENDING',
-        reason: opts.reason ?? 'e2e 결재함 검사',
-      },
-    });
-    await service.expandSteps(tx, approvalRouteId, request.approval_request_id);
-    return { approvalRequestId: request.approval_request_id, approvalRequestNo };
-  });
+  const { approvalRequestId } = await prisma.$transaction((tx) =>
+    service.request(tx, {
+      approvalRequestNo,
+      approvalTypeCode: opts.approvalTypeCode,
+      targetTypeCode: opts.targetTypeCode,
+      targetId: opts.targetId,
+      businessUnitId: null,
+      requestedBy: opts.requestedBy,
+      reason: opts.reason ?? 'e2e 결재함 검사',
+    }),
+  );
+  return { approvalRequestId, approvalRequestNo };
 }
