@@ -98,6 +98,7 @@ model approval_request {
   inbound_variance                               inbound_variance[]
   concession                                     concession[]
   disposition_decision                           disposition_decision[]
+  purchase_order                                 purchase_order[]
 
   @@index([target_type_code, target_id], map: "ix_approval_request_target")
   @@schema("app")
@@ -923,6 +924,7 @@ model inbound_receipt_line {
   purchase_order_line        purchase_order_line? @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
   uom                        uom                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   inbound_variance           inbound_variance[]
+  purchase_order             purchase_order[]
 
   @@unique([inbound_receipt_id, line_no], map: "uq_inbound_receipt_line")
   @@index([purchase_order_line_id], map: "ix_inbound_line_po")
@@ -1049,24 +1051,28 @@ model picking_order {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model purchase_order {
-  purchase_order_id     BigInt                @id @default(autoincrement())
-  purchase_order_no     String                @unique @db.VarChar(100)
-  erp_purchase_order_no String?               @db.VarChar(100)
-  supplier_id           BigInt
-  business_unit_id      BigInt
-  plant_id              BigInt
-  order_date            DateTime              @db.Date
-  expected_receipt_date DateTime?             @db.Date
-  status_code           String                @db.VarChar(50)
-  created_at            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by            BigInt?
-  updated_at            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by            BigInt?
-  version_no            Int                   @default(1)
-  business_unit         business_unit         @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
-  plant                 plant                 @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
-  partner               partner               @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
-  purchase_order_line   purchase_order_line[]
+  purchase_order_id              BigInt                @id @default(autoincrement())
+  purchase_order_no              String                @unique @db.VarChar(100)
+  erp_purchase_order_no          String?               @db.VarChar(100)
+  supplier_id                    BigInt
+  business_unit_id               BigInt
+  plant_id                       BigInt
+  order_date                     DateTime              @db.Date
+  expected_receipt_date          DateTime?             @db.Date
+  status_code                    String                @db.VarChar(50)
+  created_at                     DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  updated_at                     DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                     BigInt?
+  version_no                     Int                   @default(1)
+  approval_request_id            BigInt?
+  source_inbound_receipt_line_id BigInt?
+  approval_request               approval_request?     @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction)
+  business_unit                  business_unit         @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  inbound_receipt_line           inbound_receipt_line? @relation(fields: [source_inbound_receipt_line_id], references: [inbound_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
+  plant                          plant                 @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  partner                        partner               @relation(fields: [supplier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  purchase_order_line            purchase_order_line[]
 
   @@schema("logistics")
 }

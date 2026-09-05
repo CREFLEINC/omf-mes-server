@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService } from '../document-state';
-import { ApprovalService } from './approval.service';
+import { ApprovalRequestInput, ApprovalService } from './approval.service';
 
 const KIM = 11n;
 const LEE = 22n;
@@ -14,7 +14,18 @@ type Args = Record<string, unknown>;
 type RouteStepSeed = { step_no: number; approver_type_code: string; approver_user_id: bigint | null };
 type RouteSeed = { approval_route_id: bigint; business_unit_id: bigint | null; approval_route_step: RouteStepSeed[] };
 type StepSeed = { step_no: number; approver_id: bigint; decision_code: string | null };
-type Seed = { routes?: RouteSeed[]; request?: { status_code: string; version_no: number }; steps?: StepSeed[] };
+type RequestSeed = {
+  target_type_code: string;
+  target_id: bigint;
+  approval_type_code: string;
+  status_code: string;
+};
+type Seed = {
+  routes?: RouteSeed[];
+  request?: { status_code: string; version_no: number };
+  steps?: StepSeed[];
+  requests?: RequestSeed[];
+};
 
 const by = (step_no: number, approver_user_id: bigint): RouteStepSeed => ({
   step_no,
@@ -33,9 +44,17 @@ const pending = (step_no: number, approver_id: bigint): StepSeed => ({
 });
 
 function fake(seed: Seed) {
-  const writes = { created: [] as Args[], stepUpdates: [] as Args[], requestUpdates: [] as Args[] };
+  const writes = {
+    created: [] as Args[],
+    stepUpdates: [] as Args[],
+    requestUpdates: [] as Args[],
+    requestCreates: [] as Args[],
+  };
   const record = (into: Args[]) => async (args: Args) => (into.push(args), { count: 1 });
-  const tx = {
+  const rows = [...(seed.requests ?? [])];
+  // 어떤 표를 만졌는지 센다 — 「대상 문서를 안 건드린다」는 목이 아니라 이 집합으로 본다.
+  const touched = new Set<string>();
+  const models = {
     approval_route: { findMany: async () => seed.routes ?? [] },
     approval_route_step: {
       // ⚠ `orderBy` 가 왔을 때만 정렬한다(#183 재리뷰 Nit) — 실서비스가 `orderBy:
@@ -62,10 +81,27 @@ function fake(seed: Seed) {
     },
     approval_request: {
       findUnique: async () => seed.request ?? null,
+      findFirst: async ({ where }: { where: RequestSeed }) =>
+        rows.find(
+          (row) =>
+            row.target_type_code === where.target_type_code &&
+            row.target_id === where.target_id &&
+            row.approval_type_code === where.approval_type_code &&
+            row.status_code === where.status_code,
+        ) ?? null,
+      // 만든 행이 곧바로 조회에 보인다 — 같은 트랜잭션의 둘째 상신을 시험할 수 있다.
+      create: async ({ data }: { data: Args }) => {
+        writes.requestCreates.push(data);
+        rows.push(data as unknown as RequestSeed);
+        return { approval_request_id: REQUEST_ID + BigInt(writes.requestCreates.length) };
+      },
       updateMany: record(writes.requestUpdates),
     },
-  } as unknown as Prisma.TransactionClient;
-  return { tx, writes };
+  };
+  const tx = new Proxy(models, {
+    get: (target: Args, prop: string | symbol) => (touched.add(String(prop)), target[String(prop)]),
+  }) as unknown as Prisma.TransactionClient;
+  return { tx, writes, touched };
 }
 
 /** 던진 `ContractException` 을 집어 온다 — 상태와 코드를 둘 다 봐야 하기 때문이다. */
@@ -161,6 +197,126 @@ describe('ApprovalService', () => {
 
       expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       expect(error.errors[0].code).toBe(ERROR_CODE.APPROVER_TYPE_NOT_SUPPORTED);
+    });
+  });
+
+  describe('상신', () => {
+    const twoStepRoute = [route(1n, null, [by(1, KIM), by(2, LEE)])];
+    const input = (over: Partial<ApprovalRequestInput> = {}): ApprovalRequestInput => ({
+      approvalRequestNo: 'AP-20260906-0001',
+      approvalTypeCode: 'PURCHASE_ORDER',
+      targetTypeCode: 'PURCHASE_ORDER',
+      targetId: 900n,
+      businessUnitId: null,
+      requestedBy: KIM,
+      reason: '자재 발주 승인 요청',
+      ...over,
+    });
+    const open = (status_code: string, approval_type_code = 'PURCHASE_ORDER'): RequestSeed => ({
+      target_type_code: 'PURCHASE_ORDER',
+      target_id: 900n,
+      approval_type_code,
+      status_code,
+    });
+
+    it('요청·단계가 한 트랜잭션에서 선다(step_no 1..N)', async () => {
+      const { tx, writes } = fake({ routes: twoStepRoute });
+
+      const { approvalRequestId } = await service.request(tx, input());
+
+      expect(writes.requestCreates[0]).toMatchObject({
+        approval_type_code: 'PURCHASE_ORDER',
+        target_id: 900n,
+        status_code: 'PENDING',
+      });
+      expect(writes.created).toEqual([
+        { approval_request_id: approvalRequestId, step_no: 1, approver_id: KIM },
+        { approval_request_id: approvalRequestId, step_no: 2, approver_id: LEE },
+      ]);
+    });
+
+    it('결재선이 없으면 400 ROUTE_NOT_FOUND 다(요청 행이 남지 않는다)', async () => {
+      const { tx, writes } = fake({ routes: [] });
+
+      const error = await thrown(() => service.request(tx, input()));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.ROUTE_NOT_FOUND);
+      expect(writes.requestCreates).toEqual([]);
+    });
+
+    it('진행 중(PENDING) 요청이 있으면 400 APPROVAL_IN_PROGRESS 다', async () => {
+      const { tx, writes } = fake({ routes: twoStepRoute, requests: [open('PENDING')] });
+
+      const error = await thrown(() => service.request(tx, input()));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_IN_PROGRESS);
+      expect(writes.requestCreates).toEqual([]);
+    });
+
+    it('반려(REJECTED)된 요청은 진행 중이 아니다(새 요청이 선다)', async () => {
+      const { tx, writes } = fake({ routes: twoStepRoute, requests: [open('REJECTED')] });
+
+      await service.request(tx, input());
+
+      expect(writes.requestCreates).toHaveLength(1);
+    });
+
+    it('승인(APPROVED)된 요청도 막지 않는다(계약이 막지 않았다)', async () => {
+      const { tx, writes } = fake({ routes: twoStepRoute, requests: [open('APPROVED')] });
+
+      await service.request(tx, input());
+
+      expect(writes.requestCreates).toHaveLength(1);
+    });
+
+    it('같은 대상이라도 승인 유형이 다르면 막지 않는다(goods_issue 두 유형)', async () => {
+      const disposal: RequestSeed = {
+        target_type_code: 'GOODS_ISSUE',
+        target_id: 900n,
+        approval_type_code: 'GOODS_ISSUE_DISPOSAL',
+        status_code: 'PENDING',
+      };
+      const { tx, writes } = fake({ routes: twoStepRoute, requests: [disposal] });
+
+      await service.request(
+        tx,
+        input({ targetTypeCode: 'GOODS_ISSUE', approvalTypeCode: 'GOODS_ISSUE_CANCEL' }),
+      );
+
+      expect(writes.requestCreates).toHaveLength(1);
+    });
+
+    it('approval_request_no 는 인자로 받은 값 그대로다(코어가 채번을 부르지 않는다)', async () => {
+      const { tx, writes } = fake({ routes: twoStepRoute });
+
+      await service.request(tx, input({ approvalRequestNo: 'AP-20260906-0042' }));
+
+      expect(writes.requestCreates[0]).toMatchObject({ approval_request_no: 'AP-20260906-0042' });
+    });
+
+    it('대상 문서의 어떤 행도 건드리지 않는다(approval_request_id 는 호출자 몫)', async () => {
+      const { tx, touched } = fake({ routes: twoStepRoute });
+
+      await service.request(tx, input());
+
+      expect([...touched].sort()).toEqual([
+        'approval_request',
+        'approval_route',
+        'approval_route_step',
+        'approval_step',
+      ]);
+    });
+
+    it('대상 행 잠금은 호출자 몫이다(코어의 조회만으로는 같은 순간의 둘이 다 통과한다)', async () => {
+      // 서로의 INSERT 를 보기 «전»에 둘 다 조회를 마치는 자리를 그대로 재현한다.
+      const { tx, writes } = fake({ routes: twoStepRoute });
+
+      await Promise.all([service.request(tx, input()), service.request(tx, input())]);
+
+      // 둘 다 선다 — 막는 것은 호출자가 트랜잭션 첫 문장에서 거는 대상 행 잠금이다(I-2.md R-4).
+      expect(writes.requestCreates).toHaveLength(2);
     });
   });
 

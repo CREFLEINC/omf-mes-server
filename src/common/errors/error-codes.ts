@@ -30,6 +30,10 @@ export const ERROR_CODE = {
   ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
   ROUTE_AMBIGUOUS: 'ROUTE_AMBIGUOUS',
   APPROVER_TYPE_NOT_SUPPORTED: 'APPROVER_TYPE_NOT_SUPPORTED',
+  // 계약이 이름을 안 준 자리다 — 「진행 중인 승인 요청이 이미 있으면 400 이다」(4 오퍼레이션에
+  // 같은 문장). `APPROVAL_REQUIRED`(승인을 «올려라»)와 «반드시» 갈려야 한다 — 이쪽은
+  // 「기다려라」다. 이름의 근거: plan-api.md §5.4.
+  APPROVAL_IN_PROGRESS: 'APPROVAL_IN_PROGRESS',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
