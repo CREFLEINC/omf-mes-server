@@ -67,6 +67,19 @@ describe('ApprovalRouteService', () => {
       expect(error.errors[0].code).toBe(ERROR_CODE.UNIQUE_VIOLATION);
     });
 
+    it('상한이 하한보다 작으면 400 PAIR 다(ck_approval_route_range 는 500 이라 먼저 막는다)', async () => {
+      const { prisma, writes } = writeStub();
+      const service = new ApprovalRouteService(prisma);
+
+      const error = await thrown(() =>
+        service.create({ approvalTypeCode: 'PURCHASE_ORDER', minValue: 500, maxValue: 100 }),
+      );
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0]).toMatchObject({ field: 'maxValue', code: ERROR_CODE.PAIR });
+      expect(writes.created).toBeUndefined();
+    });
+
     it('사업부 지정본과 전 사업부 공통본은 함께 활성일 수 있다', async () => {
       // 공통본(businessUnitId=null)이 이미 활성이어도 지정본(5) 등록은 다른 축이라 막히지
       // 않는다 — «엄격 일치» 판이라 businessUnitId 가 다르면 부딪히지 않는다.
@@ -95,6 +108,21 @@ describe('ApprovalRouteService', () => {
       } as unknown as ApprovalRouteUpdateInput);
 
       expect(writes.routeUpdate).not.toHaveProperty('approval_type_code');
+    });
+
+    it('활성본을 이미 활성인 사업부로 옮기면 400 UNIQUE_VIOLATION 이다 — 자기 자신은 충돌이 아니다', async () => {
+      const { prisma } = writeStub({
+        route: routeRow(10n, 4),
+        existingActiveRoutes: [
+          { approval_route_id: 10n, approval_type_code: 'GOODS_ISSUE_DISPOSAL', business_unit_id: 5 },
+          { approval_route_id: 11n, approval_type_code: 'GOODS_ISSUE_DISPOSAL', business_unit_id: 7 },
+        ],
+      });
+      const service = new ApprovalRouteService(prisma);
+
+      await expect(service.update(10, 3, { businessUnitId: 5 })).resolves.toBeDefined();
+      const error = await thrown(() => service.update(10, 3, { businessUnitId: 7 }));
+      expect(error.errors[0].code).toBe(ERROR_CODE.UNIQUE_VIOLATION);
     });
 
     it('보내지 않은 사업부는 비워진다(PUT 이다)', async () => {
@@ -166,6 +194,21 @@ describe('ApprovalRouteService', () => {
       expect(writes.order).toEqual(['delete']);
     });
 
+    it('USER 단계에 역할·부서 id 가 함께 와도 담지 않는다(ck_approval_route_step_target)', async () => {
+      const { prisma, writes } = writeStub({ route: routeRow(10n, 3) });
+      const service = new ApprovalRouteService(prisma);
+
+      await service.replaceSteps(10, 3, [
+        { approverTypeCode: 'USER', approverUserId: 11, approverRoleId: 7, approverDepartmentId: 3 },
+      ]);
+
+      expect(writes.stepCreate?.[0]).toMatchObject({
+        approver_user_id: 11,
+        approver_role_id: null,
+        approver_department_id: null,
+      });
+    });
+
     it('approverTypeCode 가 ROLE 이면 400 APPROVER_TYPE_NOT_SUPPORTED 다', async () => {
       const { prisma } = writeStub({});
       const service = new ApprovalRouteService(prisma);
@@ -197,7 +240,11 @@ describe('ApprovalRouteService', () => {
  */
 function writeStub(
   overrides: {
-    existingActiveRoutes?: { approval_type_code: string; business_unit_id: number | null }[];
+    existingActiveRoutes?: {
+      approval_route_id?: bigint;
+      approval_type_code: string;
+      business_unit_id: number | null;
+    }[];
     route?: Args | null;
     updateCount?: number;
     steps?: Args[];
@@ -213,12 +260,17 @@ function writeStub(
       findFirst: async ({
         where,
       }: {
-        where: { approval_type_code: string; business_unit_id: number | null };
+        where: {
+          approval_type_code: string;
+          business_unit_id: number | null;
+          NOT?: { approval_route_id: number };
+        };
       }) =>
         (overrides.existingActiveRoutes ?? []).find(
           (r) =>
             r.approval_type_code === where.approval_type_code &&
-            r.business_unit_id === where.business_unit_id,
+            r.business_unit_id === where.business_unit_id &&
+            (where.NOT === undefined || Number(r.approval_route_id) !== where.NOT.approval_route_id),
         ) ?? null,
       findUnique: async () => overrides.route ?? null,
       create: async ({ data }: { data: Args }) => {

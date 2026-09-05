@@ -92,6 +92,7 @@ export class ApprovalRouteService {
   /** 「같은 (approvalTypeCode, businessUnitId) 로 활성 결재선이 있으면 400」(계약). */
   async create(input: ApprovalRouteCreateInput): Promise<ApprovalRouteResult> {
     const businessUnitId = input.businessUnitId ?? null;
+    assertValueRange(input);
     await this.assertActiveRouteFree(input.approvalTypeCode, businessUnitId);
 
     const row = await this.prisma.approval_route.create({
@@ -114,6 +115,11 @@ export class ApprovalRouteService {
     version: number,
     input: ApprovalRouteUpdateInput,
   ): Promise<ApprovalRouteResult> {
+    assertValueRange(input);
+    const current = await this.loadRoute(routeId);
+    if (current.is_active) {
+      await this.assertActiveRouteFree(current.approval_type_code, input.businessUnitId ?? null, routeId);
+    }
     const updated = await this.prisma.approval_route.updateMany({
       where: { approval_route_id: routeId, version_no: version },
       data: {
@@ -167,8 +173,10 @@ export class ApprovalRouteService {
             step_no: index + 1,
             approver_type_code: step.approverTypeCode,
             approver_user_id: step.approverUserId ?? null,
-            approver_role_id: step.approverRoleId ?? null,
-            approver_department_id: step.approverDepartmentId ?? null,
+            // 1차는 USER 전용이라 나머지 두 칸은 담지 않는다 — `ck_approval_route_step_target`
+            // 이 셋 중 하나만 허용하므로 함께 오면 CHECK 위반(500)이 된다.
+            approver_role_id: null,
+            approver_department_id: null,
           })),
         });
       }
@@ -239,10 +247,7 @@ export class ApprovalRouteService {
     return row;
   }
 
-  /**
-   * 1차는 `USER` 만 지원한다(계약). DB `ck_approval_route_step_target` 이 짝을 강제하지만
-   * CHECK 위반은 500 이 되므로(`prisma-error.ts`) 여기서 먼저 손으로 막는다.
-   */
+  /** 1차는 `USER` 만 지원한다(계약). 유형과 `approverUserId` 의 짝만 여기서 본다. */
   private assertSteps(steps: ApprovalRouteStepInput[]): void {
     const errors: ErrorItem[] = [];
     steps.forEach((step, index) => {
@@ -275,9 +280,15 @@ export class ApprovalRouteService {
   private async assertActiveRouteFree(
     approvalTypeCode: string,
     businessUnitId: number | null,
+    excludeRouteId?: number,
   ): Promise<void> {
     const clash = await this.prisma.approval_route.findFirst({
-      where: { approval_type_code: approvalTypeCode, business_unit_id: businessUnitId, is_active: true },
+      where: {
+        approval_type_code: approvalTypeCode,
+        business_unit_id: businessUnitId,
+        is_active: true,
+        ...(excludeRouteId === undefined ? {} : { NOT: { approval_route_id: excludeRouteId } }),
+      },
       select: { approval_route_id: true },
     });
     if (!clash) return;
@@ -302,4 +313,12 @@ export class ApprovalRouteService {
     if (!exists) throw new NotFoundException('없는 결재선입니다.');
     assertUpdated(0);
   }
+}
+
+/** `ck_approval_route_range` — 둘 다 있을 때만 max >= min. CHECK 위반은 500 이라 먼저 막는다. */
+function assertValueRange(input: { minValue?: number | null; maxValue?: number | null }): void {
+  if (input.minValue == null || input.maxValue == null || input.maxValue >= input.minValue) return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field: 'maxValue', code: ERROR_CODE.PAIR, message: '상한은 하한보다 작을 수 없습니다.' },
+  ]);
 }
