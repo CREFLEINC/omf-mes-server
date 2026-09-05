@@ -160,4 +160,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /app/approval-routes/{approvalRouteId}/steps': ['W-06-15'],
   'POST /app/approval-routes/{approvalRouteId}:activate': ['W-06-15'],
   'POST /app/approval-routes/{approvalRouteId}:deactivate': ['W-06-15'],
+
+  // `W-01-11` 신규 P/O 등록 — 그 화면이 P/O 헤더·라인이라는 «자원의» 마스터를 소유한다
+  // (§0 범위: 「초과 입하분의 사후 P/O 등록」). 도출표는 화면 «액션»만 긁어 등록(POST)만
+  // 들어왔고 헤더 수정·라인 치환·승인 요청이 빠졌다.
+  // ⚠ 근거는 «자원 소유» 하나로 통일한다(재수립 R-9 · uiux 7-(1)) — §5-1 의 「라인 추가·
+  //   삭제」는 등록 폼 «안»의 행위라 `POST` 본문으로 가고 이 경로들이 아니다.
+  'PUT /logistics/purchase-orders/{purchaseOrderId}': ['W-01-11'],
 };
