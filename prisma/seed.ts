@@ -1369,6 +1369,20 @@ const ENTITY_TYPES = [
     table: 'maintenance_order',
     idColumn: 'maintenance_order_id',
   },
+  // 결재 대상(CD-APPROVAL-TARGET-TYPE) 8값 중 등록부에 없던 둘 — 실재하는 표를 적는다.
+  // `INBOUND_LOT` 은 대응 표가 아직 미정(omf-mes-server#74)이라 넣지 않는다(I-1.md §2-5).
+  {
+    code: 'INVENTORY_ADJUSTMENT',
+    schema: 'inventory',
+    table: 'inventory_adjustment',
+    idColumn: 'inventory_adjustment_id',
+  },
+  {
+    code: 'PURCHASE_ORDER',
+    schema: 'logistics',
+    table: 'purchase_order',
+    idColumn: 'purchase_order_id',
+  },
 ];
 
 const NUMBERING_RULES = [
