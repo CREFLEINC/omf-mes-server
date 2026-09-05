@@ -167,4 +167,6 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ 근거는 «자원 소유» 하나로 통일한다(재수립 R-9 · uiux 7-(1)) — §5-1 의 「라인 추가·
   //   삭제」는 등록 폼 «안»의 행위라 `POST` 본문으로 가고 이 경로들이 아니다.
   'PUT /logistics/purchase-orders/{purchaseOrderId}': ['W-01-11'],
+  'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
+  'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
 };

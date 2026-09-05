@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -18,7 +19,7 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
-import { setEtag } from '../../common/optimistic-lock';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
   PurchaseOrderQuery,
@@ -27,11 +28,12 @@ import {
 import { PurchaseOrderDetail, PurchaseOrderLineView, PurchaseOrderView } from './purchase-order-view';
 import {
   PurchaseOrderCreateInput,
+  PurchaseOrderLineWriteInput,
   PurchaseOrderService,
   PurchaseOrderUpdateInput,
 } from './purchase-order.service';
 
-/** P/O 조회 3건 + 등록·헤더 수정. 화면 `W-01-09`(목록)·`W-01-03`·`W-01-11`(상세·등록·수정). 라인 치환·상신은 뒤 PR(§8 ⑤)이 연다. */
+/** P/O 7 오퍼레이션 전건 — 조회 3 + 쓰기 4. 화면 `W-01-09`(목록)·`W-01-03`·`W-01-11`(상세·등록·수정·상신). */
 @Controller('logistics/purchase-orders')
 export class PurchaseOrderController {
   constructor(
@@ -97,6 +99,47 @@ export class PurchaseOrderController {
       response,
       'purchaseOrder',
       (version) => this.purchaseOrders.update(purchaseOrderId, version, body, appUserId),
+    );
+  }
+
+  @Put(':purchaseOrderId/lines')
+  @Contract('PUT /logistics/purchase-orders/{purchaseOrderId}/lines')
+  async replaceLines(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
+    @Body() body: { items: PurchaseOrderLineWriteInput[] },
+  ): Promise<{ items: PurchaseOrderLineView[] }> {
+    // If-Match 도 응답 ETag 도 «부모» purchase_order.version_no 다 — 이 경로의 GET 은 ETag
+    // 를 안 내린다(계약이 문장으로 적었다).
+    const appUserId = userOf(request);
+    const items = await runVersioned<PurchaseOrderLineView[], 'items'>(
+      this.idempotency,
+      request,
+      response,
+      'items',
+      (version) => this.purchaseOrders.replaceLines(purchaseOrderId, version, body.items, appUserId),
+    );
+    return { items };
+  }
+
+  @Post(':purchaseOrderId\\:request-approval')
+  @Contract('POST /logistics/purchase-orders/{purchaseOrderId}:request-approval')
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestApproval(
+    @Req() request: Request,
+    @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
+    @Body() body: { reason: string },
+  ): Promise<{ approvalRequestId: number }> {
+    // ⛔ `runVersioned` 를 못 쓴다 — 202 에 ETag 가 없어 새 토큰을 내릴 자리가 없다. 대신
+    //    가드가 파싱해 둔 If-Match 값을 직접 꺼내 서비스가 «비교만» 한다(I-2.md §6-2·§6-3).
+    const version = ifMatchVersion(request);
+    if (version === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.purchaseOrders.requestApproval(purchaseOrderId, version, body.reason, appUserId),
     );
   }
 }

@@ -1,6 +1,7 @@
 import { HttpStatus, NotFoundException } from '@nestjs/common';
 
 import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
+import { ApprovalService } from '../../core/approval';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PurchaseOrderQueryService } from './purchase-order-query.service';
@@ -19,6 +20,13 @@ const QUERY_STUB = {
     throw new Error('이 경로에서는 조회 서비스를 부르지 않는다');
   },
 } as unknown as PurchaseOrderQueryService;
+
+/** 쓰기 검사가 상신 코어까지 가면 스텁이 실패시킨다. */
+const APPROVAL_STUB = {
+  request: async () => {
+    throw new Error('이 경로에서는 상신 코어를 부르지 않는다');
+  },
+} as unknown as ApprovalService;
 
 type Args = Record<string, unknown>;
 
@@ -56,7 +64,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ current: orderRow({ status_code: 'POSTED' }) });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           1,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },
@@ -76,7 +84,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ current: null });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           999,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },
@@ -91,7 +99,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ updatedCount: 0 });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           1,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },

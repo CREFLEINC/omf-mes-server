@@ -1,9 +1,9 @@
 /**
- * P/O 등록·헤더 수정 — 화면 `W-01-11`. 조회 3건은 PR ③ 이 구현했고 여기서는 등록 응답·
- * 필터로만 함께 검사한다. 라인 치환·승인 요청은 PR ⑤(§8) 가 같은 파일에 더한다.
+ * P/O 쓰기 넷(등록·헤더 수정·라인 치환·승인 요청) — 화면 `W-01-11`. 조회 3건은 PR ③ 이
+ * 구현했고 여기서는 등록 응답·필터로만 함께 검사한다.
  *
  * cleanup 이 이 사용자의 `approval_request`(target `PURCHASE_ORDER`)도 미리 지운다 —
- * PR ⑤ 가 상신 e2e 를 더할 때 잔존 행이 `app_user` 삭제를 막지 않도록(#191 Minor).
+ * 잔존 행이 `app_user` 삭제를 막지 않도록(#191 Minor).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -18,6 +18,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-po-write-probe';
 const NOPERM_ID = 'e2e-po-write-noperm';
@@ -83,7 +84,7 @@ interface Draft {
   lines: LineDraft[];
 }
 
-describe('P/O 등록·헤더 수정 (e2e)', () => {
+describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -94,6 +95,11 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   let plantId: number;
   let itemId: number;
   let uomId: number;
+  let approverUserId: bigint;
+  let approvalRouteId: bigint;
+  let inboundReceiptId: bigint;
+  let asnId: bigint;
+  let successorLineNo = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -275,6 +281,294 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
       .expect(403);
   });
 
+  it('라인 — 배열 순서가 lineNo 1..N 이 된다(요청이 lineNo 를 보내지 않는다)', async () => {
+    const id = await newOrder();
+
+    const replaced = await putLines(id, await etagOf(id), [
+      { itemId, orderedQty: 7, uomId },
+      { itemId, orderedQty: 8, uomId },
+      { itemId, orderedQty: 9, uomId },
+    ]).expect(200);
+
+    const items = (replaced.body as { items: LineBody[] }).items;
+    expect(items.map((line) => line.lineNo)).toEqual([1, 2, 3]);
+    expect(items.map((line) => line.orderedQty)).toEqual([7, 8, 9]);
+
+    const validate = validator('PUT /logistics/purchase-orders/{purchaseOrderId}/lines', 200);
+    expect(validate(replaced.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  });
+
+  it('라인 — 1↔2 를 맞바꿔도 uq_purchase_order_line 을 위반하지 않는다(한 트랜잭션)', async () => {
+    const id = await newOrder();
+    const seeded = await putLines(id, await etagOf(id), [
+      { itemId, orderedQty: 11, uomId },
+      { itemId, orderedQty: 22, uomId },
+    ]).expect(200);
+    const [first, second] = (seeded.body as { items: LineBody[] }).items;
+
+    const swapped = await putLines(id, await etagOf(id), [
+      { purchaseOrderLineId: second.purchaseOrderLineId, itemId, orderedQty: 22, uomId },
+      { purchaseOrderLineId: first.purchaseOrderLineId, itemId, orderedQty: 11, uomId },
+    ]).expect(200);
+
+    const items = (swapped.body as { items: LineBody[] }).items;
+    expect(items.map((line) => line.purchaseOrderLineId)).toEqual([
+      second.purchaseOrderLineId,
+      first.purchaseOrderLineId,
+    ]);
+    expect(items.map((line) => line.lineNo)).toEqual([1, 2]);
+  });
+
+  it('라인 — 요청에서 빠진 기존 행은 지워진다', async () => {
+    const id = await newOrder();
+    const seeded = await putLines(id, await etagOf(id), [
+      { itemId, orderedQty: 11, uomId },
+      { itemId, orderedQty: 22, uomId },
+    ]).expect(200);
+    const [kept, dropped] = (seeded.body as { items: LineBody[] }).items;
+
+    const replaced = await putLines(id, await etagOf(id), [
+      { purchaseOrderLineId: kept.purchaseOrderLineId, itemId, orderedQty: 11, uomId },
+    ]).expect(200);
+
+    expect((replaced.body as { items: LineBody[] }).items).toHaveLength(1);
+    expect(
+      await prisma.purchase_order_line.count({
+        where: { purchase_order_line_id: BigInt(dropped.purchaseOrderLineId) },
+      }),
+    ).toBe(0);
+  });
+
+  it('라인 — 이미 입하가 붙은 라인을 지우면 400 SUCCESSOR_EXISTS 다', async () => {
+    const detail = await create();
+    const id = detail.purchaseOrder.purchaseOrderId;
+    await attachReceiptLine(detail.lines[0].purchaseOrderLineId);
+
+    const rejected = await putLines(id, await etagOf(id), [
+      { itemId, orderedQty: 5, uomId },
+    ]).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+  });
+
+  it('라인 — ASN 이 붙은 라인을 지우면 400 이다(FK 위반이 500 으로 새지 않는다)', async () => {
+    const detail = await create();
+    const id = detail.purchaseOrder.purchaseOrderId;
+    await attachAsnLine(detail.lines[0].purchaseOrderLineId);
+
+    const rejected = await putLines(id, await etagOf(id), [
+      { itemId, orderedQty: 5, uomId },
+    ]).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+  });
+
+  it('라인 — 치환은 부모 version_no 를 올리고 새 ETag 를 준다(계약이 선언한 헤더다)', async () => {
+    const id = await newOrder();
+    const before = await etagOf(id);
+
+    const replaced = await putLines(id, before, [{ itemId, orderedQty: 5, uomId }]).expect(200);
+
+    expect(replaced.headers.etag).toBe(String(Number(before) + 1));
+    expect(await etagOf(id)).toBe(replaced.headers.etag);
+  });
+
+  it('라인 — received_qty 를 밑도는 발주 수량은 400 이다(ck_po_line_received 가 500 으로 새지 않는다)', async () => {
+    const detail = await create();
+    const id = detail.purchaseOrder.purchaseOrderId;
+    const line = detail.lines[0];
+    // 누적 입하는 I-3 이 갱신하는 서버 값이라 API 로는 못 만든다 — 직접 심는다.
+    await prisma.purchase_order_line.update({
+      where: { purchase_order_line_id: BigInt(line.purchaseOrderLineId) },
+      data: { received_qty: 50 },
+    });
+
+    await putLines(id, await etagOf(id), [
+      { purchaseOrderLineId: line.purchaseOrderLineId, itemId, orderedQty: 10, uomId },
+    ]).expect(400);
+  });
+
+  it('상신 — 202 와 approvalRequestId 를 준다', async () => {
+    const id = await newOrder();
+
+    const accepted = await submit(id, await etagOf(id)).expect(202);
+
+    expect(accepted.body.approvalRequestId).toEqual(expect.any(Number));
+    const validate = validator(
+      'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval',
+      202,
+    );
+    expect(validate(accepted.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  });
+
+  it('상신 — approval_request 가 PURCHASE_ORDER 유형·대상으로 서고 단계가 전개된다', async () => {
+    const id = await newOrder();
+
+    const accepted = await submit(id, await etagOf(id)).expect(202);
+
+    const row = await prisma.approval_request.findUniqueOrThrow({
+      where: { approval_request_id: BigInt(accepted.body.approvalRequestId as number) },
+    });
+    expect(row.approval_type_code).toBe('PURCHASE_ORDER');
+    expect(row.target_type_code).toBe('PURCHASE_ORDER');
+    expect(Number(row.target_id)).toBe(id);
+    expect(row.status_code).toBe('PENDING');
+    expect(
+      await prisma.approval_step.count({ where: { approval_request_id: row.approval_request_id } }),
+    ).toBe(1);
+  });
+
+  it('상신 — P/O 의 status_code 는 REGISTERED 그대로다(승인 진행은 approval_request 가 진다)', async () => {
+    const id = await newOrder();
+
+    await submit(id, await etagOf(id)).expect(202);
+
+    const row = await prisma.purchase_order.findUniqueOrThrow({
+      where: { purchase_order_id: BigInt(id) },
+    });
+    expect(row.status_code).toBe('REGISTERED');
+  });
+
+  it('상신 — purchase_order.approval_request_id 가 채워진다', async () => {
+    const id = await newOrder();
+
+    const accepted = await submit(id, await etagOf(id)).expect(202);
+
+    const row = await prisma.purchase_order.findUniqueOrThrow({
+      where: { purchase_order_id: BigInt(id) },
+    });
+    expect(Number(row.approval_request_id)).toBe(accepted.body.approvalRequestId);
+  });
+
+  it('상신 — 반려 뒤 재상신하면 approval_request_id 가 «새» 요청으로 바뀐다', async () => {
+    const id = await newOrder();
+    const etag = await etagOf(id);
+    const first = await submit(id, etag).expect(202);
+    await reject(first.body.approvalRequestId as number);
+
+    const second = await submit(id, etag).expect(202);
+
+    expect(second.body.approvalRequestId).not.toBe(first.body.approvalRequestId);
+    const row = await prisma.purchase_order.findUniqueOrThrow({
+      where: { purchase_order_id: BigInt(id) },
+    });
+    expect(Number(row.approval_request_id)).toBe(second.body.approvalRequestId);
+  });
+
+  it('상신 — 같은 Idempotency-Key 재전송도 202 다', async () => {
+    const id = await newOrder();
+    const etag = await etagOf(id);
+    const idempotencyKey = key();
+
+    const first = await submit(id, etag, idempotencyKey).expect(202);
+    const second = await submit(id, etag, idempotencyKey).expect(202);
+
+    expect(second.body).toEqual(first.body);
+    expect(
+      await prisma.approval_request.count({
+        where: { target_type_code: 'PURCHASE_ORDER', target_id: BigInt(id) },
+      }),
+    ).toBe(1);
+  });
+
+  it('상신 — 등록 201 의 ETag 를 그대로 If-Match 로 써서 상신한다(상세 GET 을 다시 돌지 않는다)', async () => {
+    const created = await send(body()).expect(201);
+
+    await submit(
+      (created.body as Detail).purchaseOrder.purchaseOrderId,
+      created.headers.etag,
+    ).expect(202);
+  });
+
+  it('상신 — 결재선이 없으면 400 ROUTE_NOT_FOUND 이고 요청 행이 남지 않는다', async () => {
+    const id = await newOrder();
+    const before = await prisma.approval_request.count({
+      where: { target_type_code: 'PURCHASE_ORDER' },
+    });
+    // 이 스위트가 심은 사업부 지정본을 내린다 — 공통본을 심는 다른 스위트가 없다.
+    await prisma.approval_route.update({
+      where: { approval_route_id: approvalRouteId },
+      data: { is_active: false },
+    });
+    try {
+      const rejected = await submit(id, await etagOf(id)).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+      expect(
+        await prisma.approval_request.count({ where: { target_type_code: 'PURCHASE_ORDER' } }),
+      ).toBe(before);
+    } finally {
+      await prisma.approval_route.update({
+        where: { approval_route_id: approvalRouteId },
+        data: { is_active: true },
+      });
+    }
+  });
+
+  it('상신 — 진행 중 요청이 있으면 400 APPROVAL_IN_PROGRESS 다', async () => {
+    const id = await newOrder();
+    const etag = await etagOf(id);
+    await submit(id, etag).expect(202);
+
+    const rejected = await submit(id, etag).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+  });
+
+  it('상신 — 반려된 뒤에는 다시 상신된다(새 요청 번호)', async () => {
+    const id = await newOrder();
+    const etag = await etagOf(id);
+    const first = await submit(id, etag).expect(202);
+    await reject(first.body.approvalRequestId as number);
+
+    const second = await submit(id, etag).expect(202);
+
+    const numbers = await prisma.approval_request.findMany({
+      where: { target_type_code: 'PURCHASE_ORDER', target_id: BigInt(id) },
+      select: { approval_request_id: true, approval_request_no: true },
+    });
+    expect(numbers).toHaveLength(2);
+    expect(new Set(numbers.map((row) => row.approval_request_no)).size).toBe(2);
+    expect(numbers.map((row) => Number(row.approval_request_id))).toContain(
+      second.body.approvalRequestId,
+    );
+  });
+
+  it('상신 — 낡은 If-Match 로 상신하면 409 다(202 에 ETag 가 없는 것과 별개다)', async () => {
+    const id = await newOrder();
+    const stale = await etagOf(id);
+    await putHeader(id, stale, { supplierId, orderDate: '2026-08-07' }).expect(200);
+
+    const rejected = await submit(id, stale).expect(409);
+
+    expect(rejected.body.conflictCause).toBe('user');
+  });
+
+  it('상신 — 같은 If-Match 로 뒤이어 PUT 이 통한다(202 에 ETag 가 없어 버전을 올리지 않는다)', async () => {
+    const id = await newOrder();
+    const etag = await etagOf(id);
+
+    await submit(id, etag).expect(202);
+
+    const after = await prisma.purchase_order.findUniqueOrThrow({
+      where: { purchase_order_id: BigInt(id) },
+    });
+    expect(String(after.version_no)).toBe(etag);
+    await putHeader(id, etag, { supplierId, orderDate: ORDER_DATE }).expect(200);
+  });
+
+  it('⭐ 원장이 움직이지 않는다 — inventory_transaction 이 0건 그대로다', async () => {
+    const before = await prisma.inventory_transaction.count();
+    const id = await newOrder();
+
+    await putLines(id, await etagOf(id), [{ itemId, orderedQty: 3, uomId }]).expect(200);
+    await submit(id, await etagOf(id)).expect(202);
+
+    expect(await prisma.inventory_transaction.count()).toBe(before);
+  });
+
   function send(payload: object, idempotencyKey = key()): request.Test {
     return request(app.getHttpServer())
       .post('/api/logistics/purchase-orders')
@@ -295,6 +589,76 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
       .set('Idempotency-Key', idempotencyKey)
       .set('If-Match', etag)
       .send(payload);
+  }
+
+  function putLines(
+    purchaseOrderId: number,
+    etag: string,
+    items: LineDraft[],
+    idempotencyKey = key(),
+  ): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/logistics/purchase-orders/${purchaseOrderId}/lines`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .set('If-Match', etag)
+      .send({ items });
+  }
+
+  function submit(purchaseOrderId: number, etag: string, idempotencyKey = key()): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/logistics/purchase-orders/${purchaseOrderId}:request-approval`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .set('If-Match', etag)
+      .send({ reason: '초과 입하분 정산용 발주' });
+  }
+
+  /** 반려는 결재 오퍼레이션(app-공통) 몫이라 여기서는 상태만 직접 옮긴다. */
+  async function reject(approvalRequestId: number): Promise<void> {
+    await prisma.approval_request.update({
+      where: { approval_request_id: BigInt(approvalRequestId) },
+      data: { status_code: 'REJECTED' },
+    });
+  }
+
+  /**
+   * 입하 라인 — 「입하가 붙은」의 판정은 «행 존재»다. P/O 라인의 `received_qty` 는 0 그대로
+   * 두고(누계 갱신은 I-3 몫) 입하 라인만 심는다 — 그 표는 `received_qty > 0` CHECK 이 있다.
+   */
+  async function attachReceiptLine(purchaseOrderLineId: number): Promise<void> {
+    successorLineNo += 1;
+    await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: inboundReceiptId,
+        line_no: successorLineNo,
+        purchase_order_line_id: BigInt(purchaseOrderLineId),
+        item_id: BigInt(itemId),
+        received_qty: 1,
+        uom_id: BigInt(uomId),
+        inspection_required: false,
+        status_code: 'RECEIVED',
+      },
+    });
+  }
+
+  /** ASN 만 붙은 라인 — 이것을 안 보면 FK 위반이 500 으로 샌다(I-2.md R-6). */
+  async function attachAsnLine(purchaseOrderLineId: number): Promise<void> {
+    successorLineNo += 1;
+    await prisma.asn_line.create({
+      data: {
+        asn_id: asnId,
+        line_no: successorLineNo,
+        purchase_order_line_id: BigInt(purchaseOrderLineId),
+        item_id: BigInt(itemId),
+        expected_qty: 1,
+        uom_id: BigInt(uomId),
+      },
+    });
+  }
+
+  async function newOrder(): Promise<number> {
+    return (await create()).purchaseOrder.purchaseOrderId;
   }
 
   async function etagOf(purchaseOrderId: number): Promise<string> {
@@ -372,12 +736,38 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
       data: { partner_code: `${PREFIX}-SUP`, partner_name: 'PO검사공급사' },
     });
     supplierId = Number(supplier.partner_id);
+
+    // 후속 문서 헤더 둘 — 라인 삭제 가드가 보는 두 표(`inbound_receipt_line`·`asn_line`).
+    const receipt = await prisma.inbound_receipt.create({
+      data: {
+        inbound_receipt_no: `${PREFIX}-IR`,
+        supplier_id: supplier.partner_id,
+        plant_id: plant.plant_id,
+        receipt_datetime: new Date(),
+        status_code: 'RECEIVED',
+      },
+    });
+    inboundReceiptId = receipt.inbound_receipt_id;
+    const asn = await prisma.asn.create({
+      data: {
+        asn_no: `${PREFIX}-ASN`,
+        supplier_id: supplier.partner_id,
+        plant_id: plant.plant_id,
+        expected_arrival_date: new Date(`${ORDER_DATE}T00:00:00.000Z`),
+        status_code: 'EXPECTED',
+      },
+    });
+    asnId = asn.asn_id;
+
+    // 사업부 지정본이라 이 스위트의 상신만 이 결재선을 고른다(공통본을 이긴다).
+    approvalRouteId = await seedRoute(prisma, 'PURCHASE_ORDER', [approverUserId], unit.business_unit_id);
   }
 
   async function makeUsers(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: 'PO쓰기검사', status_code: 'EMPLOYED' },
     });
+    approverUserId = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
@@ -410,18 +800,41 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   /**
    * ⚠ 순환 FK — `purchase_order → inbound_receipt_line → purchase_order_line →
    * purchase_order`(I-2.md R-12 ①). 이 스위트는 `sourceInboundReceiptLineId` 를 채운
-   * P/O 를 만들지 않으므로 지금은 걸리지 않지만, 순서는 「라인 → 헤더」로 둔다.
+   * P/O 를 만들지 않으므로 후속 라인을 «먼저» 지울 수 있다(그 칸을 채우면 이 순서가 막힌다).
    */
   async function cleanup(): Promise<void> {
+    const ownPlants = `(SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.inbound_receipt_line
+       WHERE inbound_receipt_id IN (
+         SELECT inbound_receipt_id FROM logistics.inbound_receipt WHERE plant_id IN ${ownPlants}
+       )`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.asn_line
+       WHERE asn_id IN (SELECT asn_id FROM logistics.asn WHERE plant_id IN ${ownPlants})`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.purchase_order_line
        WHERE purchase_order_id IN (
-         SELECT purchase_order_id FROM logistics.purchase_order
-          WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')
+         SELECT purchase_order_id FROM logistics.purchase_order WHERE plant_id IN ${ownPlants}
        )`);
     await prisma.$executeRawUnsafe(`
-      DELETE FROM logistics.purchase_order
-       WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
+      DELETE FROM logistics.purchase_order WHERE plant_id IN ${ownPlants}`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.inbound_receipt WHERE plant_id IN ${ownPlants}`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.asn WHERE plant_id IN ${ownPlants}`);
+    // 결재선은 이 사업부 지정본이라 사업부와 함께 지운다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM app.approval_route_step
+       WHERE approval_route_id IN (
+         SELECT approval_route_id FROM app.approval_route
+          WHERE business_unit_id IN (
+            SELECT business_unit_id FROM mdm.business_unit
+             WHERE business_unit_code LIKE '${PREFIX}%')
+       )`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM app.approval_route
+       WHERE business_unit_id IN (
+         SELECT business_unit_id FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);

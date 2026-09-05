@@ -73,8 +73,12 @@ export class PurchaseOrderQueryService {
     };
   }
 
-  async lines(purchaseOrderId: number): Promise<PurchaseOrderLineView[]> {
-    const rows = await this.prisma.purchase_order_line.findMany({
+  /** `tx` 를 받는다 — 라인 치환이 «자기 트랜잭션 안에서» 응답을 조립한다(#192 Minor-2). */
+  async lines(
+    purchaseOrderId: number,
+    tx?: Prisma.TransactionClient,
+  ): Promise<PurchaseOrderLineView[]> {
+    const rows = await (tx ?? this.prisma).purchase_order_line.findMany({
       where: { purchase_order_id: purchaseOrderId },
       orderBy: { line_no: 'asc' },
     });

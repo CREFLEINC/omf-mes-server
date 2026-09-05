@@ -34,6 +34,10 @@ export const ERROR_CODE = {
   // 같은 문장). `APPROVAL_REQUIRED`(승인을 «올려라»)와 «반드시» 갈려야 한다 — 이쪽은
   // 「기다려라」다. 이름의 근거: plan-api.md §5.4.
   APPROVAL_IN_PROGRESS: 'APPROVAL_IN_PROGRESS',
+  // 계약이 이 자리(P/O 라인 치환)에 코드를 안 줬으나 같은 뜻의 이름을 다른 자리에서 이미
+  // 지었다 — `CD-…-CANCEL-BLOCKED-REASON` 「후속 문서가 있다」. 다형 취소(I-5)가 조회의
+  // 사유와 실행 오류에 같은 문자열을 쓴다(plan-api.md §5.4).
+  SUCCESSOR_EXISTS: 'SUCCESSOR_EXISTS',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
