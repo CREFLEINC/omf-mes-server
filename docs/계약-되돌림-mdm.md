@@ -879,6 +879,23 @@ UTC 날짜로 읽는다 — 컨테이너 TZ 가 UTC 고정이기 때문이다.
 
 # Y. 계약 전반의 패턴 — 도메인 하나에 매이지 않는 것 (2026-09-05)
 
+## Y-2. 운영 정책의 값 칸을 계약보다 «엄격하게» 받는다 — 알려만 둔다 (2026-09-05)
+
+계약은 `OperationPolicy` 의 required 를 `operationPolicyId`·`policyCode`·`effectiveFrom` 셋으로
+두었다. **값 칸 셋(`valueText`·`valueNumeric`·`valueBoolean`)은 전부 선택**이라, 계약상으로는
+값이 하나도 없는 정책이 유효하다.
+
+**그렇게 두지 않았다.** 코드마다 쓰는 칸을 계약이 `policyCode` 설명에 적어 두었으므로
+(`SHOT_CONVERSION_ENABLED`→`valueBoolean` 등) 그 칸이 비면 400 이고, 안 쓰는 칸을 함께
+채워도 400 이다.
+
+**왜.** 값 없는 정책은 `effective` 가 `resolved: true` 로 내리면서 값은 전부 `null` 인 응답을
+만든다 — 화면은 「정책이 있다」로 읽고 값을 못 쓴다. 「정책 없음」과 구분이 안 되는데
+`resolved` 는 참이라 더 나쁘다. 두 칸이 다른 말을 하는 것도 같은 이유로 막았다.
+
+**알려둘 것.** 계약이 이 짝을 required 로 못 박으면 서버 검사와 계약이 같아진다. 지금은
+서버가 계약보다 좁게 받고 있다.
+
 ## Y-1. `type: [..., "null"]` 인데 `enum` 에 `null` 이 없다 — **16자리**
 
 계약이 「값이 없으면 `null`」이라 설명해 놓고 스키마의 `enum` 에는 `null` 을 넣지 않은
