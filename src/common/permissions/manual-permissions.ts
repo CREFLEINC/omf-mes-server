@@ -150,4 +150,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 단건 재처리가 도출표에 안 들어왔다. 셋 다 한 화면의 같은 자리다.
   'GET /integration/messages/{integrationMessageId}': ['W-06-10'],
   'POST /integration/messages/{integrationMessageId}:retry': ['W-06-10'],
+
+  // `W-06-15` 결재선 정의 — 그 화면이 결재선·결재단계의 마스터를 소유한다(§0 범위:
+  // 「결재선 **정의**(`approval_route` + `approval_route_step`)만」). 도출표는 요구서 §3 의
+  // 화면 «액션»만 긁어 등록(POST)만 들어왔고, 수정·단계 치환·활성 전이가 빠졌다 —
+  // 요구서 §3-1 이 네 액션을 이 경로들에 직접 짝지었다(결재선 수정 / 단계 추가·삭제·재배치 /
+  // 사용·사용 안 함).
+  'PUT /app/approval-routes/{approvalRouteId}': ['W-06-15'],
+  'PUT /app/approval-routes/{approvalRouteId}/steps': ['W-06-15'],
+  'POST /app/approval-routes/{approvalRouteId}:activate': ['W-06-15'],
+  'POST /app/approval-routes/{approvalRouteId}:deactivate': ['W-06-15'],
 };
