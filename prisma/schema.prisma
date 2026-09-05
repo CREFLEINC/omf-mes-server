@@ -99,6 +99,7 @@ model approval_request {
   concession                                     concession[]
   disposition_decision                           disposition_decision[]
 
+  @@index([target_type_code, target_id], map: "ix_approval_request_target")
   @@schema("app")
 }
 

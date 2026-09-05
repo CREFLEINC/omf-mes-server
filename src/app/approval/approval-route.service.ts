@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ApprovalRouteView, ApprovalRouteStepView, toApprovalRoute, toApprovalRouteStep } from './approval.mapper';
@@ -19,14 +21,35 @@ export interface ApprovalRouteResult {
   versionNo: number;
 }
 
+export interface ApprovalRouteCreateInput {
+  approvalTypeCode: string;
+  businessUnitId?: number | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+}
+
+/** PUT — 보내지 않은 칸은 비운다(계약 `ApprovalRouteUpdate`). `approvalTypeCode`·`isActive` 는 없다. */
+export interface ApprovalRouteUpdateInput {
+  businessUnitId?: number | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+}
+
+/** 치환 요청 한 단계. `stepNo` 는 배열 순서로 다시 매기므로 안 받는다(계약). */
+export interface ApprovalRouteStepInput {
+  approverTypeCode: string;
+  approverUserId?: number | null;
+  approverRoleId?: number | null;
+  approverDepartmentId?: number | null;
+}
+
 type RouteRow = Prisma.approval_routeGetPayload<object>;
 
 /**
- * 결재선 정의 조회 3건(목록·상세·단계 목록). 화면은 `W-06-15`(결재선 정의)가 소유한다.
+ * 결재선 정의 CRUD + 결재 단계 치환. 화면은 `W-06-15`(결재선 정의)가 소유한다.
  *
- * ⛔ 등록·수정·단계 치환(쓰기 3건)은 이 서비스에 **덧붙는다**(뒤 PR, A6 마이그레이션과
- * 함께) — 아직 자리를 미리 비워 두지 않는다. 결재선 «선택»(우선순위·모호성 판정)은
- * 코어 `ApprovalService.selectRoute` 다 — 여기는 마스터를 읽기만 한다.
+ * ⛔ 결재선 «선택»(우선순위·모호성 판정)은 코어 `ApprovalService.selectRoute` 다 — 여기
+ * 서비스는 마스터를 고치기만 한다. 활성 전이(`:activate`/`:deactivate`)는 뒤 PR 이다.
  */
 @Injectable()
 export class ApprovalRouteService {
@@ -66,9 +89,100 @@ export class ApprovalRouteService {
     return { route: toApprovalRoute(row, { stepCount, inProgressCount }), versionNo: row.version_no };
   }
 
+  /** 「같은 (approvalTypeCode, businessUnitId) 로 활성 결재선이 있으면 400」(계약). */
+  async create(input: ApprovalRouteCreateInput): Promise<ApprovalRouteResult> {
+    const businessUnitId = input.businessUnitId ?? null;
+    assertValueRange(input);
+    await this.assertActiveRouteFree(input.approvalTypeCode, businessUnitId);
+
+    const row = await this.prisma.approval_route.create({
+      data: {
+        approval_type_code: input.approvalTypeCode,
+        business_unit_id: businessUnitId,
+        min_value: input.minValue ?? null,
+        max_value: input.maxValue ?? null,
+      },
+    });
+    return { route: toApprovalRoute(row, { stepCount: 0, inProgressCount: 0 }), versionNo: row.version_no };
+  }
+
+  /**
+   * `approvalTypeCode`·`isActive` 는 본문이 받지 않는다(계약 `ApprovalRouteUpdate`).
+   * PUT 이므로 보내지 않은 `businessUnitId`·`minValue`·`maxValue` 는 null 로 비운다.
+   */
+  async update(
+    routeId: number,
+    version: number,
+    input: ApprovalRouteUpdateInput,
+  ): Promise<ApprovalRouteResult> {
+    assertValueRange(input);
+    const current = await this.loadRoute(routeId);
+    if (current.is_active) {
+      await this.assertActiveRouteFree(current.approval_type_code, input.businessUnitId ?? null, routeId);
+    }
+    const updated = await this.prisma.approval_route.updateMany({
+      where: { approval_route_id: routeId, version_no: version },
+      data: {
+        business_unit_id: input.businessUnitId ?? null,
+        min_value: input.minValue ?? null,
+        max_value: input.maxValue ?? null,
+        version_no: { increment: 1 },
+      },
+    });
+    await this.assertExists(routeId, updated.count);
+    return this.get(routeId);
+  }
+
   async listSteps(routeId: number): Promise<ApprovalRouteStepView[]> {
     await this.loadRoute(routeId);
     return this.loadStepViews(routeId);
+  }
+
+  /**
+   * 단계 전체 치환 — 한 트랜잭션에서 삭제 후 재생성한다(계약 「행 단위 저장이 원리적으로
+   * 불가능하다」 — `uq_approval_route_step` 이 중간 상태를 막는다). If-Match 토큰은
+   * **부모** `approval_route.version_no` 다(`approval_route_step` 에는 없다) — 선례
+   * `item-detail.service.ts withBumpedItem` 그대로.
+   */
+  async replaceSteps(
+    routeId: number,
+    version: number,
+    steps: ApprovalRouteStepInput[],
+  ): Promise<{ items: ApprovalRouteStepView[]; versionNo: number }> {
+    this.assertSteps(steps);
+
+    await this.prisma.$transaction(async (tx) => {
+      const bumped = await tx.approval_route.updateMany({
+        where: { approval_route_id: routeId, version_no: version },
+        data: { version_no: { increment: 1 } },
+      });
+      if (bumped.count === 0) {
+        const exists = await tx.approval_route.findUnique({
+          where: { approval_route_id: routeId },
+          select: { approval_route_id: true },
+        });
+        if (!exists) throw new NotFoundException('없는 결재선입니다.');
+        assertUpdated(0);
+      }
+
+      await tx.approval_route_step.deleteMany({ where: { approval_route_id: routeId } });
+      if (steps.length > 0) {
+        await tx.approval_route_step.createMany({
+          data: steps.map((step, index) => ({
+            approval_route_id: routeId,
+            step_no: index + 1,
+            approver_type_code: step.approverTypeCode,
+            approver_user_id: step.approverUserId ?? null,
+            // 1차는 USER 전용이라 나머지 두 칸은 담지 않는다 — `ck_approval_route_step_target`
+            // 이 셋 중 하나만 허용하므로 함께 오면 CHECK 위반(500)이 된다.
+            approver_role_id: null,
+            approver_department_id: null,
+          })),
+        });
+      }
+    });
+
+    return { items: await this.loadStepViews(routeId), versionNo: version + 1 };
   }
 
   private listWhere(query: ApprovalRouteQuery): Prisma.approval_routeWhereInput {
@@ -132,4 +246,79 @@ export class ApprovalRouteService {
     if (!row) throw new NotFoundException('없는 결재선입니다.');
     return row;
   }
+
+  /** 1차는 `USER` 만 지원한다(계약). 유형과 `approverUserId` 의 짝만 여기서 본다. */
+  private assertSteps(steps: ApprovalRouteStepInput[]): void {
+    const errors: ErrorItem[] = [];
+    steps.forEach((step, index) => {
+      if (step.approverTypeCode !== 'USER') {
+        errors.push({
+          scope: 'field',
+          field: `steps[${index}].approverTypeCode`,
+          code: ERROR_CODE.APPROVER_TYPE_NOT_SUPPORTED,
+          message: 'USER 외의 결재자 유형은 1차 범위에서 지원하지 않습니다.',
+        });
+        return;
+      }
+      if (step.approverUserId == null) {
+        errors.push({
+          scope: 'field',
+          field: `steps[${index}].approverUserId`,
+          code: ERROR_CODE.REQUIRED,
+          message: 'approverTypeCode=USER 는 approverUserId 가 필요합니다.',
+        });
+      }
+    });
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  }
+
+  /**
+   * `selectRoute`(코어)의 선택 규칙(지정본이 공통본을 이긴다)과 다르다 — 여기는 등록이
+   * 막을 «엄격 일치» 판이다(같은 사업부 축에 이미 활성이 있는지만 본다, I-1.md §3-5).
+   * `uq_approval_route_active` 는 그물이다.
+   */
+  private async assertActiveRouteFree(
+    approvalTypeCode: string,
+    businessUnitId: number | null,
+    excludeRouteId?: number,
+  ): Promise<void> {
+    const clash = await this.prisma.approval_route.findFirst({
+      where: {
+        approval_type_code: approvalTypeCode,
+        business_unit_id: businessUnitId,
+        is_active: true,
+        ...(excludeRouteId === undefined ? {} : { NOT: { approval_route_id: excludeRouteId } }),
+      },
+      select: { approval_route_id: true },
+    });
+    if (!clash) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'approvalTypeCode',
+        code: ERROR_CODE.UNIQUE_VIOLATION,
+        uniqueScope: ['approvalTypeCode', 'businessUnitId'],
+        message: '같은 승인 유형·사업부로 이미 활성인 결재선이 있습니다.',
+      },
+    ]);
+  }
+
+  /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
+  private async assertExists(routeId: number, count: number): Promise<void> {
+    if (count > 0) return;
+    const exists = await this.prisma.approval_route.findUnique({
+      where: { approval_route_id: routeId },
+      select: { approval_route_id: true },
+    });
+    if (!exists) throw new NotFoundException('없는 결재선입니다.');
+    assertUpdated(0);
+  }
+}
+
+/** `ck_approval_route_range` — 둘 다 있을 때만 max >= min. CHECK 위반은 500 이라 먼저 막는다. */
+function assertValueRange(input: { minValue?: number | null; maxValue?: number | null }): void {
+  if (input.minValue == null || input.maxValue == null || input.maxValue >= input.minValue) return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field: 'maxValue', code: ERROR_CODE.PAIR, message: '상한은 하한보다 작을 수 없습니다.' },
+  ]);
 }
