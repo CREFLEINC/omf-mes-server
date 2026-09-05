@@ -14,6 +14,7 @@ import { LogisticsModule } from './logistics/logistics.module';
 import { MdmModule } from './mdm/mdm.module';
 import { PlanningModule } from './planning/planning.module';
 import { QualityModule } from './quality/quality.module';
+import { TraceModule } from './trace/trace.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { PrismaModule } from './prisma/prisma.module';
     QualityModule,
     LogisticsModule,
     InventoryModule,
+    TraceModule,
     IntegrationModule,
   ],
 })
