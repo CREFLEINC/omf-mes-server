@@ -142,6 +142,11 @@ export class PurchaseOrderService {
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다 — 열린 트랜잭션 안에서 부르면 이
     //    요청이 커넥션을 둘 쥐고, 동시 요청이 풀을 채우면 P2024 로 죽는다(I-2.md R-2).
+    // ⛔ 재시도 루프(입고 `NUMBER_RETRY`)를 두지 않는다 — 카운터가 `INSERT … ON
+    //    CONFLICT … RETURNING` 한 문장이라 동시 등록도 값이 안 겹친다. 남는 위험은
+    //    채번 밖의 «기존 행»뿐이다(이관·수기로 미리 심긴 purchase_order_no) — 그때는
+    //    재시도 없이 P2002 가 그대로 400 `UNIQUE_VIOLATION`(field=purchaseOrderNo) 으로
+    //    나간다(공용 `prismaErrorResponse`).
     const purchaseOrderNo = await this.numbering.next(
       'PURCHASE_ORDER',
       BigInt(input.plantId),
@@ -149,6 +154,9 @@ export class PurchaseOrderService {
     );
 
     const purchaseOrderId = await this.prisma.$transaction(async (tx) => {
+      // ⚠ businessUnitId × plantId 의 법인 정합은 보지 않는다(입고의 warehouse.plant_id
+      //   검사와 다른 자리 — 두 FK 가 각자 다른 legal_entity 에 달려도 그대로 저장된다.
+      //   이 PR 은 원장을 지나지 않아 파급이 작지만 다음 전달분 「알려둘 것」감이다).
       const created = await tx.purchase_order.create({
         data: {
           purchase_order_no: purchaseOrderNo,
@@ -164,6 +172,8 @@ export class PurchaseOrderService {
       });
       // 본문의 purchaseOrderLineId 는 무시한다 — 등록은 언제나 신규 행이다(R-8 ⓑ).
       // lineNo 는 배열 순서로 서버가 부여한다(계약 · uq_purchase_order_line).
+      // ⚠ 라인 FK 위반은 최상위 `uomId`/`itemId` 를 짚는다(`lines[i].*` 가 아니다) —
+      //   입고 선례(등록 전 라인별 조회)와 달리 이 PR 은 그 조회를 하지 않는다.
       await tx.purchase_order_line.createMany({
         data: input.lines.map((line, index) => ({
           purchase_order_id: created.purchase_order_id,
@@ -208,8 +218,9 @@ export class PurchaseOrderService {
       data: {
         supplier_id: input.supplierId,
         order_date: new Date(input.orderDate),
-        expected_receipt_date:
-          input.expectedReceiptDate == null ? null : new Date(input.expectedReceiptDate),
+        // 전체 치환이라 생략 = 비움이다(선례 notice.service.ts:203 `?? null` 과 같은 판정) —
+        // create 의 `optionalDate` 호출과 모양을 맞춘다.
+        ...optionalDate('expected_receipt_date', input.expectedReceiptDate ?? null),
         updated_by: BigInt(appUserId),
         version_no: { increment: 1 },
       },

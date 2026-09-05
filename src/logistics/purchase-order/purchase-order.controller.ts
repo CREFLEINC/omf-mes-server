@@ -80,7 +80,7 @@ export class PurchaseOrderController {
 
   @Put(':purchaseOrderId')
   @Contract('PUT /logistics/purchase-orders/{purchaseOrderId}')
-  update(
+  async update(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
     @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,

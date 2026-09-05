@@ -1,5 +1,7 @@
+import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { purchaseOrderLineView } from './purchase-order-view';
@@ -144,6 +146,71 @@ describe('PurchaseOrderService', () => {
     });
   });
 
+  describe('update', () => {
+    /** §7-4 — `STATE_LOCKED`·404·409 은 P/O 가 1차엔 도달 못 하는 자리라 e2e 로 못 세운다. */
+    function updateStub(overrides: { current?: Args | null; updatedCount?: number } = {}) {
+      const prisma = {
+        purchase_order: {
+          findUnique: async () => (overrides.current === undefined ? orderRow() : overrides.current),
+          updateMany: async () => ({ count: overrides.updatedCount ?? 1 }),
+          findUniqueOrThrow: async () => orderRow({ version_no: 2 }),
+        },
+      };
+      return { prisma: prisma as unknown as PrismaService };
+    }
+
+    it('작성중(REGISTERED)이 아니면 400 STATE_LOCKED 다', async () => {
+      const { prisma } = updateStub({ current: orderRow({ status_code: 'POSTED' }) });
+
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+          1,
+          1,
+          { supplierId: 10, orderDate: '2026-08-06' },
+          99,
+        ),
+      );
+
+      expect(error).toBeInstanceOf(ContractException);
+      expect((error as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'statusCode',
+        code: ERROR_CODE.STATE_LOCKED,
+      });
+    });
+
+    it('없는 P/O 면 404 다', async () => {
+      const { prisma } = updateStub({ current: null });
+
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+          999,
+          1,
+          { supplierId: 10, orderDate: '2026-08-06' },
+          99,
+        ),
+      );
+
+      expect(error).toBeInstanceOf(NotFoundException);
+    });
+
+    it('낡은 If-Match 로 updateMany 가 0행이면 409 다(user)', async () => {
+      const { prisma } = updateStub({ updatedCount: 0 });
+
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+          1,
+          1,
+          { supplierId: 10, orderDate: '2026-08-06' },
+          99,
+        ),
+      );
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).conflict.conflictCause).toBe('user');
+    });
+  });
+
   describe('매퍼', () => {
     it('매퍼 — orderedQty 는 number 다(Decimal 을 그대로 내리지 않는다)', () => {
       const view = purchaseOrderLineView(lineRow({ ordered_qty: new Prisma.Decimal('100.500000') }) as never);
@@ -169,3 +236,12 @@ describe('PurchaseOrderService', () => {
     });
   });
 });
+
+/** 던진 예외를 집어 온다 — `update` 는 자리마다 예외 종류가 갈린다(400/404/409). */
+const thrown = (run: () => Promise<unknown>): Promise<unknown> =>
+  run().then(
+    () => {
+      throw new Error('예외가 나지 않았다');
+    },
+    (error: unknown) => error,
+  );

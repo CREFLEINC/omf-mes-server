@@ -139,7 +139,7 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   });
 
   it('P/O — 라인이 빈 배열이면 400 LINE_REQUIRED 다(가드가 아니라 서비스가 막는다)', async () => {
-    const rejected = await send({ ...(await body()), lines: [] }).expect(400);
+    const rejected = await send({ ...body(), lines: [] }).expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'lines', code: 'LINE_REQUIRED' });
   });
 
@@ -149,13 +149,13 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   });
 
   it('P/O — 상태는 서버가 REGISTERED 로 정한다(본문이 statusCode 를 받지 않는다)', async () => {
-    const draft = await body();
+    const draft = body();
     const created = await send({ ...draft, statusCode: 'POSTED' } as object).expect(201);
     expect((created.body as Detail).purchaseOrder.statusCode).toBe('REGISTERED');
   });
 
   it('P/O — 같은 Idempotency-Key 재전송도 같은 ETag 를 준다(201)', async () => {
-    const draft = await body();
+    const draft = body();
     const idempotencyKey = key();
 
     const first = await send(draft, idempotencyKey).expect(201);
@@ -241,7 +241,7 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   });
 
   it('P/O — 등록 본문의 purchaseOrderLineId 는 무시되고 신규 라인으로 선다', async () => {
-    const draft = await body();
+    const draft = body();
     draft.lines[0] = { ...draft.lines[0], purchaseOrderLineId: 999999999 };
 
     const created = await send(draft).expect(201);
@@ -306,7 +306,7 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
   }
 
   async function create(): Promise<Detail> {
-    const draft = await body();
+    const draft = body();
     const created = await send(draft).expect(201);
     return created.body as Detail;
   }
@@ -319,7 +319,7 @@ describe('P/O 등록·헤더 수정 (e2e)', () => {
     return response.body as { items: OrderBody[] };
   }
 
-  async function body(): Promise<Draft> {
+  function body(): Draft {
     return {
       supplierId,
       businessUnitId,
