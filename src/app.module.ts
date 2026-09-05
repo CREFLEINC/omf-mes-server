@@ -9,6 +9,7 @@ import { OptimisticLockModule } from './common/optimistic-lock';
 import { PermissionModule } from './common/permissions';
 import { HealthModule } from './health/health.module';
 import { IntegrationModule } from './integration/integration.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { LogisticsModule } from './logistics/logistics.module';
 import { MdmModule } from './mdm/mdm.module';
 import { PlanningModule } from './planning/planning.module';
@@ -37,6 +38,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PlanningModule,
     QualityModule,
     LogisticsModule,
+    InventoryModule,
     IntegrationModule,
   ],
 })
