@@ -8,15 +8,17 @@ import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
+import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
+import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 
 /**
- * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하 요청.
+ * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하·P/O 요청.
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
   // ⭐ 원장 코어가 처음 물리는 자리다 — 입고가 재고를 «쓰는» 첫 도메인이다.
   imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule],
-  controllers: [GoodsReceiptController, PutawayRuleController],
-  providers: [GoodsReceiptService, PutawayRuleService],
+  controllers: [GoodsReceiptController, PutawayRuleController, PurchaseOrderController],
+  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService],
 })
 export class LogisticsModule {}
