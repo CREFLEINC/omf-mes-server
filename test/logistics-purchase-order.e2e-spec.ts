@@ -484,10 +484,11 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
 
   it('상신 — 결재선이 없으면 400 ROUTE_NOT_FOUND 이고 요청 행이 남지 않는다', async () => {
     const id = await newOrder();
-    const before = await prisma.approval_request.count({
-      where: { target_type_code: 'PURCHASE_ORDER' },
-    });
-    // 이 스위트가 심은 사업부 지정본을 내린다 — 공통본을 심는 다른 스위트가 없다.
+    const own = { target_type_code: 'PURCHASE_ORDER', target_id: BigInt(id) };
+    const before = await prisma.approval_request.count({ where: own });
+    // 이 스위트가 심은 사업부 지정본을 내린다. ⚠ 같은 유형의 «공통본»을 심는 스위트가 따로
+    // 있고(`app-approval-request.e2e-spec.ts` — 넷째 인자 없이 `seedRoute`) 그 스위트가
+    // `afterAll` 에서 지운다. 그것이 남으면 이 검사가 202 로 새므로 셈은 이 P/O 로 좁힌다.
     await prisma.approval_route.update({
       where: { approval_route_id: approvalRouteId },
       data: { is_active: false },
@@ -496,9 +497,7 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
       const rejected = await submit(id, await etagOf(id)).expect(400);
 
       expect(rejected.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
-      expect(
-        await prisma.approval_request.count({ where: { target_type_code: 'PURCHASE_ORDER' } }),
-      ).toBe(before);
+      expect(await prisma.approval_request.count({ where: own })).toBe(before);
     } finally {
       await prisma.approval_route.update({
         where: { approval_route_id: approvalRouteId },

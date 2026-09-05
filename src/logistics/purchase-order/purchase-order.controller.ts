@@ -110,8 +110,6 @@ export class PurchaseOrderController {
     @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
     @Body() body: { items: PurchaseOrderLineWriteInput[] },
   ): Promise<{ items: PurchaseOrderLineView[] }> {
-    // If-Match 도 응답 ETag 도 «부모» purchase_order.version_no 다 — 이 경로의 GET 은 ETag
-    // 를 안 내린다(계약이 문장으로 적었다).
     const appUserId = userOf(request);
     const items = await runVersioned<PurchaseOrderLineView[], 'items'>(
       this.idempotency,

@@ -176,9 +176,6 @@ export class PurchaseOrderService {
   }
 
   /**
-   * 라인 전체 치환. `purchaseOrderLineId` 가 있으면 갱신 · 없으면 신규 · 요청에서 빠진
-   * 기존 행은 삭제이고, `lineNo` 는 배열 순서로 서버가 다시 부여한다(계약).
-   *
    * ⛔ 잠그는 단위가 «부모»다 — If-Match 도 응답 ETag 도 `purchase_order.version_no` 이고
    *   계약이 그 헤더를 직접 선언했다(§1-3 · 선례 `approval-route.service.ts replaceSteps`).
    *   라인의 `version_no` 는 손대지 않는다.
@@ -237,6 +234,8 @@ export class PurchaseOrderService {
            SET line_no = line_no + ${LINE_NO_SHIFT}
          WHERE purchase_order_id = ${BigInt(purchaseOrderId)}`;
 
+      // ⚠ 라인 FK 위반은 최상위 `uomId`/`itemId` 를 짚는다(`items[i].*` 가 아니다) — 등록과
+      //   같은 자리다(#193 리뷰 Minor-1 · 공용 `prismaErrorResponse` 가 제약 이름만 본다).
       for (const [index, item] of items.entries()) {
         // ⛔ `received_qty` 는 담지 않는다 — 누적 입하는 I-3 이 갱신하는 서버 값이다.
         const values = {
@@ -265,9 +264,8 @@ export class PurchaseOrderService {
   }
 
   /**
-   * 「등록이 끝난 P/O 에 승인을 건다」(계약). 상태는 «안 옮긴다» — 옮길 값이 목록에 없고
-   * 승인 진행은 `approval_request.status_code` 가 진다(I-2.md §5-3).
-   *
+   * ⛔ 상태를 «안 옮긴다» — 옮길 값이 목록에 없고 승인 진행은 `approval_request.status_code`
+   *   가 진다(I-2.md §5-3).
    * ⛔ `version_no` 를 «올리지 않는다» — 202 에 ETag 가 없어 화면이 새 토큰을 받을 길이
    *   없고, 올리면 다음 `PUT` 이 상세 GET 을 다시 돌 때까지 영원히 409 다(§6-3).
    * ⛔ 그래도 «읽고 비교는 한다» — 안 그러면 계약이 선언한 409 가 도달 불가능한 응답이
@@ -289,6 +287,9 @@ export class PurchaseOrderService {
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다(R-2). `approval_request` 에 공장 축이
     //    없어 공장 지정 규칙을 찾지 않는다 — 픽스처와 같은 규칙을 탄다(§3-6).
+    // ⚠ 기간키가 UTC 라 하노이(UTC+7) 00:00–07:00 의 상신은 «전날» 번호를 받는다. 이 표는
+    //   `business_date` 를 안 실어 C-8 자리가 아니고 선례(`approval-request.fixture.ts`)와
+    //   같은 형태다 — AP 번호의 날짜를 현지 영업일로 읽지 말 것.
     const approvalRequestNo = await this.numbering.next(
       'APPROVAL_REQUEST',
       null,
@@ -330,12 +331,15 @@ export class PurchaseOrderService {
    * ⛔ `ck_po_line_received CHECK (received_qty <= ordered_qty + tolerance_over_qty)` 를
    * 손으로 먼저 본다 — CHECK 위반은 `PrismaClientUnknownRequestError` 라 공용 그물에 안
    * 걸리고 500 으로 샌다(I-2.md §2-2 · 입고에서 이미 한 번 고친 자리).
-   * 함께 — 이 P/O 것이 아닌 `purchaseOrderLineId` 는 조용한 무변경이 되므로 막는다.
+   * 함께 — 짚는 행이 «없거나»(다른 P/O 의 라인) «둘 이상 겹치면» 조용한 사고가 된다.
+   * 겹치면 같은 행에 `update` 가 두 번 걸려 요청 N건이 응답 N-1건으로 줄고도 200 이다 —
+   * 유일 제약도 CHECK 도 안 걸려 DB 가 못 잡는다(#194 리뷰 Major-1).
    */
   private assertLinesFit(
     items: PurchaseOrderLineWriteInput[],
     known: Map<number, { received_qty: Prisma.Decimal }>,
   ): void {
+    const seen = new Set<number>();
     for (const [index, item] of items.entries()) {
       const lineId = item.purchaseOrderLineId;
       if (lineId === undefined) continue;
@@ -345,6 +349,12 @@ export class PurchaseOrderService {
           field(`items.${index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '이 P/O 의 라인이 아닙니다.'),
         ]);
       }
+      if (seen.has(lineId)) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          field(`items.${index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '같은 라인을 두 번 실었습니다.'),
+        ]);
+      }
+      seen.add(lineId);
       if (item.orderedQty + (item.toleranceOverQty ?? 0) < Number(row.received_qty)) {
         throw new ContractException(HttpStatus.BAD_REQUEST, [
           field(
