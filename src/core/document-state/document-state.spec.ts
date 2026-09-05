@@ -11,6 +11,8 @@ const ROUTING_COLUMN = 'planning.routing.status_code';
 const EQUIPMENT_STATUS = 'mdm.equipment.status_code';
 /** 툴도 같은 값 목록을 쓴다 — 계약이 「설비·툴·계측기가 같은 규칙」이라 적었다. */
 const MOLD_STATUS = 'mdm.mold.status_code';
+/** 결재 요청 진행 — 시드 APPROVAL_REQUEST_STATUS(PENDING·APPROVED·REJECTED). */
+const APPROVAL_STATUS = 'app.approval_request.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -138,9 +140,9 @@ describe('DocumentStateService', () => {
       const columns = new Set(service.registered().map((entry) => entry.column));
 
       expect([...columns].sort()).toEqual(
-        [EQUIPMENT_STATUS, LIFECYCLE, MOLD_STATUS, ROUTING_COLUMN].sort(),
+        [APPROVAL_STATUS, EQUIPMENT_STATUS, LIFECYCLE, MOLD_STATUS, ROUTING_COLUMN].sort(),
       );
-      expect(service.registered()).toHaveLength(7);
+      expect(service.registered()).toHaveLength(9);
     });
   });
 });

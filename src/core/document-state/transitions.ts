@@ -9,8 +9,8 @@ import { TransitionRegistry } from './document-state.types';
  * 85건이 409 를 선언하는데, 값 목록이 없는 상태에서 그 판정을 흉내 내면 «아무 전이나»
  * 통과시키는 것과 같다.
  *
- * ⚠ **지금 등록된 것은 하나뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
- * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이것 하나다.
+ * ⚠ **여기 선 축은 다섯뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
+ * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 다섯이다.
  *
  * ⛔ **품질 판정 축(`trace.lot.status_code`)은 일부러 비워 두었다.**
  * `LOT_STATUS_TRANSITION` 이 가리키는 상태(`Release(합격)`·`Hold(불합격)`·`보류`·
@@ -113,6 +113,27 @@ export const TRANSITIONS: TransitionRegistry = {
       to: 'VOIDED',
       transitionCode: 'L3',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel',
+    },
+  },
+
+  /**
+   * 결재 요청 진행. 값은 시드 `APPROVAL_REQUEST_STATUS`(PENDING·APPROVED·REJECTED ·
+   * `isSystemOwned` · 2026-09-02 등재)가 확정했고 계약이 두 전이를 열었다.
+   *
+   * ⛔ 이력 표가 없다 — 기록은 `approval_step` 이 진다. 그래서 `transitionCode` 가 없다.
+   * ⛔ 중간 단계 승인은 «전이가 아니다» — 마지막 단계 승인에서만 이 표를 탄다.
+   * ⛔ 승인은 자물쇠만 푼다(공유계약 J-8) — 대상 문서의 상태는 이 전이가 건드리지 않는다.
+   */
+  'app.approval_request.status_code': {
+    'approval-approve': {
+      from: ['PENDING'],
+      to: 'APPROVED',
+      sourceOperation: 'POST /app/approval-requests/{approvalRequestId}:approve',
+    },
+    'approval-reject': {
+      from: ['PENDING'],
+      to: 'REJECTED',
+      sourceOperation: 'POST /app/approval-requests/{approvalRequestId}:reject',
     },
   },
 };
