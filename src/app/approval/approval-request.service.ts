@@ -109,6 +109,11 @@ export class ApprovalRequestService {
     if (query.assignedToMe === true) {
       conditions.push({ approval_step: { some: { approver_id: actorId } } });
     }
+    // myTurnOnly 의 정확한 판정은 메모리(list())에서 하고, 여기서는 그 상위집합
+    // 「내가 미결 단계로 걸린 PENDING 요청」으로 스캔 폭만 좁힌다.
+    if (query.myTurnOnly === true) {
+      conditions.push({ status_code: 'PENDING', approval_step: { some: { approver_id: actorId, decision_code: null } } });
+    }
     if (query.requestedAtFrom !== undefined) {
       conditions.push({ requested_at: { gte: dateStart('requestedAtFrom', query.requestedAtFrom) } });
     }
@@ -120,6 +125,10 @@ export class ApprovalRequestService {
 
   /** ApprovalRequest.currentStepNo·isMyTurn·ApprovalStep.isCurrent 가 같이 쓰는 계산 한 곳. */
   private currentStepInfo(row: RequestRow): { stepNo: number | null; approverId: number | null } {
+    // 반려는 그 단계만 찍고 뒤 단계를 NULL 로 남기므로 코어 currentStep 은 종료된 요청에서도
+    // 첫 미결 단계를 돌려준다. 계약은 「종료됐으면 비어 있다」(currentStepNo=null·isMyTurn=false)
+    // 라 상태로 먼저 가른다 — 코어를 안 고쳐 :approve 의 NOT_YOUR_TURN 판정과 같은 함수(R-2)다.
+    if (row.status_code !== 'PENDING') return { stepNo: null, approverId: null };
     const steps = row.approval_step.map((step) => ({
       stepNo: step.step_no,
       approverId: step.approver_id,

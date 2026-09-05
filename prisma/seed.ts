@@ -1370,7 +1370,9 @@ const ENTITY_TYPES = [
     idColumn: 'maintenance_order_id',
   },
   // 결재 대상(CD-APPROVAL-TARGET-TYPE) 8값 중 등록부에 없던 둘 — 실재하는 표를 적는다.
-  // `INBOUND_LOT` 은 대응 표가 아직 미정(omf-mes-server#74)이라 넣지 않는다(I-1.md §2-5).
+  // `INBOUND_LOT` 은 대응(trace.lot·lot_id)이 계약에 있지만 `uq_entity_type_table` 에 `LOT` 이
+  // 이미 그 표를 차지해 넣을 수 없다 — 등록부를 실제로 읽는 자리가 생길 때 `INBOUND_LOT → LOT`
+  // 별칭으로 푼다(I-1.md R-7).
   {
     code: 'INVENTORY_ADJUSTMENT',
     schema: 'inventory',

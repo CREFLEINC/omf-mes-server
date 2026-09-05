@@ -250,6 +250,41 @@ describe('결재함 조회 (e2e)', () => {
     expect(res.body.steps[0]).not.toHaveProperty('decisionCode');
   });
 
+  it('결재함 — 종료된(반려) 요청은 currentStepNo=null·isMyTurn=false·isCurrent=false 다(키 생략 아님)', async () => {
+    // 2단계 결재선의 1단계 반려 — 반려는 뒤 단계를 NULL 로 남기므로 「첫 미결 단계」가
+    // 여전히 존재한다. :reject 는 PR④ 몫이라 표를 직접 밀어 종료 상태를 만든다.
+    const req = await createRequest('GOODS_ISSUE_CANCEL', requesterId, 'GOODS_ISSUE', 900091n);
+    await prisma.approval_step.updateMany({
+      where: { approval_request_id: req.approvalRequestId, step_no: 1 },
+      data: { decision_code: 'REJECTED', decision_at: new Date(), decision_comment: '반려 검사' },
+    });
+    await prisma.approval_request.update({
+      where: { approval_request_id: req.approvalRequestId },
+      data: { status_code: 'REJECTED', version_no: { increment: 1 } },
+    });
+
+    // 2단계 승인자(thirdParty)가 보아도 「내 차례」가 아니다.
+    const detail = await request(app.getHttpServer())
+      .get(`/api/app/approval-requests/${req.approvalRequestId}`)
+      .set('Cookie', thirdPartyCookie)
+      .expect(200);
+    expect(detail.body.request).toHaveProperty('currentStepNo', null);
+    expect(detail.body.request.totalStepNo).toBe(2);
+    expect(detail.body.request.isMyTurn).toBe(false);
+    expect(detail.body.steps.map((s: { isCurrent: boolean }) => s.isCurrent)).toEqual([false, false]);
+    expect(detail.body.steps[0].decisionCode).toBe('REJECTED');
+    expect(detail.body.steps[1]).not.toHaveProperty('decisionCode');
+
+    // 목록 myTurnOnly(pendingOnly 없이)에도 잡히지 않는다.
+    const list = await request(app.getHttpServer())
+      .get('/api/app/approval-requests?myTurnOnly=true')
+      .set('Cookie', thirdPartyCookie)
+      .expect(200);
+    expect(list.body.items.map((i: { approvalRequestId: number }) => i.approvalRequestId)).not.toContain(
+      Number(req.approvalRequestId),
+    );
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function createRequest(
