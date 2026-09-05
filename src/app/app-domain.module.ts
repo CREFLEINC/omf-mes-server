@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
+import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ApprovalRequestController } from './approval/approval-request.controller';
 import { ApprovalRequestService } from './approval/approval-request.service';
@@ -33,7 +34,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
   // ApprovalModule(core) 은 결재함의 「현재 단계」 판정이 :approve/:reject 와 같은
   // 함수여야 해서 끌어온다(I-1.md R-2).
-  imports: [PrismaModule, IdempotencyModule, AuthModule, ApprovalModule],
+  imports: [PrismaModule, IdempotencyModule, AuthModule, ApprovalModule, NumberingModule],
   controllers: [
     PermissionController,
     RoleController,

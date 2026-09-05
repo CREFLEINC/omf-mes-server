@@ -54,13 +54,20 @@ export interface GoodsReceiptCreate {
   lines: GoodsReceiptLineCreate[];
 }
 
+/**
+ * ⛔ 번호 둘은 **밖에서 뽑아 받는다** — 채번 카운터가 이 트랜잭션에 걸리면 같은
+ * (유형·영업일) 입고가 전기·잔액·적치까지 한 줄로 서고, 롤백이 번호를 되돌려 호출자의
+ * 재시도가 «같은 번호»를 다시 뽑는다(I-2.md R-2). `putawayNos` 는 **라인 수만큼** —
+ * 적치 지시는 라인마다 하나다.
+ */
 export async function postReceipt(
   tx: Prisma.TransactionClient,
   posting: InventoryPostingService,
   input: GoodsReceiptCreate,
   appUserId: number,
+  receiptNo: string,
+  putawayNos: string[],
 ): Promise<bigint> {
-  const receiptNo = await nextReceiptNo(tx, input.businessDate);
   const receipt = await tx.goods_receipt.create({
     data: {
       goods_receipt_no: receiptNo,
@@ -154,7 +161,7 @@ export async function postReceipt(
       receipt,
       input.lines[index],
       goodsReceiptLineId,
-      input.businessDate,
+      putawayNos[index],
       appUserId,
     );
   }
@@ -175,7 +182,7 @@ async function createPutawayTask(
   receipt: { goods_receipt_id: bigint; warehouse_id: bigint },
   line: GoodsReceiptLineCreate,
   goodsReceiptLineId: bigint,
-  businessDate: string,
+  putawayTaskNo: string,
   appUserId: number,
 ): Promise<void> {
   const rule = await tx.putaway_rule.findFirst({
@@ -193,7 +200,7 @@ async function createPutawayTask(
 
   await tx.putaway_task.create({
     data: {
-      putaway_task_no: await nextPutawayTaskNo(tx, businessDate),
+      putaway_task_no: putawayTaskNo,
       goods_receipt_line_id: goodsReceiptLineId,
       item_id: line.itemId,
       lot_id: line.lotId,
@@ -206,32 +213,4 @@ async function createPutawayTask(
       created_by: BigInt(appUserId),
     },
   });
-}
-
-/**
- * `GR-YYYYMMDD-NNNN` · `PT-YYYYMMDD-NNNN` — 설계팀에 그대로 알린 형식이다.
- *
- * ⚠ **채번 규칙이 없다.** `app.numbering_rule` 에 실적(`PRODUCTION_RESULT`) 하나뿐이라 이
- * 둘의 형식이 정해져 있지 않다 — 서버가 고른 것이고, 규칙이 등재되면 이 함수만 바뀐다
- * (설계 문의 3차 14번).
- *
- * ⚠ 순번은 «연속을 보장하지 않는다» — 같은 순간 두 건이 들어오면 같은 값을 얻는다.
- * 부딪히면 유일 인덱스가 막고 호출자가 트랜잭션째 다시 돈다.
- */
-async function nextReceiptNo(
-  tx: Prisma.TransactionClient,
-  businessDate: string,
-): Promise<string> {
-  const prefix = `GR-${businessDate.replace(/-/g, '')}-`;
-  const used = await tx.goods_receipt.count({ where: { goods_receipt_no: { startsWith: prefix } } });
-  return prefix + String(used + 1).padStart(4, '0');
-}
-
-async function nextPutawayTaskNo(
-  tx: Prisma.TransactionClient,
-  businessDate: string,
-): Promise<string> {
-  const prefix = `PT-${businessDate.replace(/-/g, '')}-`;
-  const used = await tx.putaway_task.count({ where: { putaway_task_no: { startsWith: prefix } } });
-  return prefix + String(used + 1).padStart(4, '0');
 }

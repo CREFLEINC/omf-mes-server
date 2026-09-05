@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { NumberingService } from '../../core/numbering';
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
@@ -45,6 +46,7 @@ export class GoodsReceiptService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly posting: InventoryPostingService,
+    private readonly numbering: NumberingService,
   ) {}
 
   async list(query: GoodsReceiptQuery): Promise<PagedResponse<GoodsReceiptView>> {
@@ -98,8 +100,17 @@ export class GoodsReceiptService {
 
     for (let attempt = 0; ; attempt += 1) {
       try {
+        // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 열린 트랜잭션 안에서 부르면 한
+        //    요청이 커넥션을 둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2.md R-2).
+        //    적치 지시는 라인마다 하나라 `PUTAWAY_TASK` 는 라인 수만큼 부른다.
+        const plantId = BigInt(input.plantId);
+        const receiptNo = await this.numbering.next('GOODS_RECEIPT', plantId, input.businessDate);
+        const putawayNos: string[] = [];
+        for (let line = 0; line < input.lines.length; line += 1) {
+          putawayNos.push(await this.numbering.next('PUTAWAY_TASK', plantId, input.businessDate));
+        }
         const goodsReceiptId = await this.prisma.$transaction((tx) =>
-          postReceipt(tx, this.posting, input, appUserId),
+          postReceipt(tx, this.posting, input, appUserId, receiptNo, putawayNos),
         );
         return (await this.get(Number(goodsReceiptId))).detail;
       } catch (error) {

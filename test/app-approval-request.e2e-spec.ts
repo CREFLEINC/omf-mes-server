@@ -318,7 +318,8 @@ describe('결재함 조회 (e2e)', () => {
 
   async function cleanupData(): Promise<void> {
     const requests = await prisma.approval_request.findMany({
-      where: { approval_request_no: { startsWith: 'AP-E2E-' } },
+      // 채번 코어가 `AP-YYYYMMDD-NNNN` 를 매긴다 — `AP-E2E-` 리터럴이 사라졌다(I-2 PR ①).
+      where: { approval_request_no: { startsWith: 'AP-' } },
       select: { approval_request_id: true },
     });
     const requestIds = requests.map((r) => r.approval_request_id);
