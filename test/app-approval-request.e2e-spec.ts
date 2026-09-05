@@ -317,9 +317,12 @@ describe('결재함 조회 (e2e)', () => {
   }
 
   async function cleanupData(): Promise<void> {
+    // ⛔ 접두어(`AP-`)로 잡지 않는다 — 채번 코어가 `AP-E2E-` 리터럴을 없앴고(I-2 PR ①),
+    //    접두어로 쓸면 PR ⑤ 의 P/O 상신 e2e 가 남긴 행까지 지우려다
+    //    `purchase_order_approval_request_id_fkey` 위반으로 이 스위트가 깨진다.
+    const users = await prisma.app_user.findMany({ where: { login_id: { in: LOGIN_IDS } } });
     const requests = await prisma.approval_request.findMany({
-      // 채번 코어가 `AP-YYYYMMDD-NNNN` 를 매긴다 — `AP-E2E-` 리터럴이 사라졌다(I-2 PR ①).
-      where: { approval_request_no: { startsWith: 'AP-' } },
+      where: { requested_by: { in: users.map((user) => user.app_user_id) } },
       select: { approval_request_id: true },
     });
     const requestIds = requests.map((r) => r.approval_request_id);

@@ -133,6 +133,12 @@ describe('채번 코어', () => {
     await expect(service.next('GOODS_RECEIPT', PLANT, DAY)).rejects.toThrow('{PLANT}');
   });
 
+  it('채번 — 밑줄이 든 토큰({PLANT_CODE})도 리터럴로 새지 않고 던진다', async () => {
+    const { service } = fake([rule({ pattern: 'GR-{PLANT_CODE}-{SEQ4}' })]);
+
+    await expect(service.next('GOODS_RECEIPT', PLANT, DAY)).rejects.toThrow('{PLANT_CODE}');
+  });
+
   it('채번 — DAILY 가 아닌 리셋 주기는 던진다(값 목록이 없다)', async () => {
     const { service } = fake([
       rule({ pattern: 'GR-{YYYYMMDD}-{SEQ4}', reset_cycle_code: 'MONTHLY' }),

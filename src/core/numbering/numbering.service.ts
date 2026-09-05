@@ -14,8 +14,9 @@ const DEFAULT_PREFIX: Record<string, string> = {
   APPROVAL_REQUEST: 'AP',
 };
 
-/** 규칙이 없는 문서 유형의 기본 패턴(`plan.md` §0 #3). 접두어만 채워 등재한다. */
-const DEFAULT_PATTERN = '-{YYYYMMDD}-{SEQ4}';
+/** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
+ * 접두어는 «등재할 때» 풀어 넣으므로 여기 남는 것은 그 뒤 조각이다. */
+const DEFAULT_PATTERN_SUFFIX = '-{YYYYMMDD}-{SEQ4}';
 
 /** 값 목록이 없다 — 시드된 유일한 값이 이것이고, 그 밖은 던진다(I-2.md §7-2). */
 const DAILY = 'DAILY';
@@ -102,7 +103,7 @@ export class NumberingService {
     //    운영자가 내린 플래그를 켜는 것은 도출이 아니라 상태 쓰기다.
     // ⚠ `uq_numbering_rule` 은 제약이 아니라 **표현식 UNIQUE INDEX** 라 `ON CONSTRAINT`
     //    를 못 쓰고 표현식으로 추론한다(baseline:2595).
-    const pattern = prefixOf(documentTypeCode) + DEFAULT_PATTERN;
+    const pattern = prefixOf(documentTypeCode) + DEFAULT_PATTERN_SUFFIX;
     const created = await this.prisma.$queryRaw<RuleRow[]>`
       INSERT INTO app.numbering_rule (document_type_code, pattern, reset_cycle_code)
            VALUES (${documentTypeCode}, ${pattern}, ${DAILY})
@@ -119,7 +120,9 @@ export class NumberingService {
  * 넣은 사람이 즉시 안다(공유계약 F-6).
  */
 function render(pattern: string, documentTypeCode: string, day: string, value: bigint): string {
-  return pattern.replace(/\{([A-Za-z0-9]+)\}/g, (token, name: string) => {
+  // ⛔ 토큰 안을 `[^}]+` 로 «넓게» 잡는다 — `[A-Za-z0-9]+` 면 `{PLANT_CODE}` 처럼 `_` 든
+  //    토큰이 매치되지 않아 중괄호째 번호에 박힌다. 코드값 관례가 전부 SNAKE_CASE 다.
+  return pattern.replace(/\{([^}]+)\}/g, (token, name: string) => {
     if (name === 'YYYYMMDD') return day;
     if (name === 'YYMMDD') return day.slice(2);
     // 자리를 넘으면 그대로 늘어난다 — 잘라 내면 번호가 겹친다.
