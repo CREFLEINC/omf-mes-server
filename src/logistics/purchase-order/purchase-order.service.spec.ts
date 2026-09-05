@@ -58,32 +58,38 @@ describe('PurchaseOrderService', () => {
   describe('list', () => {
     it('목록 — openOnly 는 받은 수량이 발주 수량에 못 미치는 라인이 있는 P/O 만 준다', async () => {
       const { prisma, calls } = listStub();
-
       await new PurchaseOrderService(prisma).list({ openOnly: true }); // tolerance_under_qty 안 뺌(§6-4)
 
-      expect(calls.where?.purchase_order_line).toEqual({ some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } });
+      expect(calls.where?.AND).toEqual([{ purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } }]);
     });
 
     it('목록 — openOnly 를 안 주면 라인 조건을 안 건다', async () => {
       const { prisma, calls } = listStub();
       await new PurchaseOrderService(prisma).list({});
-      expect(calls.where).not.toHaveProperty('purchase_order_line');
+      expect(calls.where).not.toHaveProperty('AND');
     });
 
     it('목록 — itemId 는 라인에 그 품목이 있는 P/O 만 준다', async () => {
       const { prisma, calls } = listStub();
-      const service = new PurchaseOrderService(prisma);
+      await new PurchaseOrderService(prisma).list({ itemId: 42 });
 
-      await service.list({ itemId: 42 });
+      expect(calls.where?.AND).toEqual([{ purchase_order_line: { some: { item_id: 42 } } }]);
+    });
 
-      expect(calls.where?.purchase_order_line).toEqual({ some: { item_id: 42 } });
+    it('목록 — itemId 와 openOnly 를 같이 주면 둘 다 건다', async () => {
+      const { prisma, calls } = listStub();
+      await new PurchaseOrderService(prisma).list({ itemId: 42, openOnly: true });
+
+      // 스프레드로 합치면 뒤(openOnly)가 앞(itemId)을 덮어쓴다 — AND 로 둘 다 걸려야 한다.
+      expect(calls.where?.AND).toEqual([
+        { purchase_order_line: { some: { item_id: 42 } } },
+        { purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
+      ]);
     });
 
     it('목록 — orderDateFrom/To 는 날짜 그대로 비교한다(타임존 캐스팅 없음)', async () => {
       const { prisma, calls } = listStub();
-      const service = new PurchaseOrderService(prisma);
-
-      await service.list({ orderDateFrom: '2026-08-01', orderDateTo: '2026-08-31' });
+      await new PurchaseOrderService(prisma).list({ orderDateFrom: '2026-08-01', orderDateTo: '2026-08-31' });
 
       expect(calls.where?.order_date).toEqual({
         gte: new Date('2026-08-01T00:00:00.000Z'),
@@ -93,9 +99,7 @@ describe('PurchaseOrderService', () => {
 
     it('목록 — 기간 없이도 조회된다(기간 필수가 아니다)', async () => {
       const { prisma, calls } = listStub({ rows: [orderRow()] });
-      const service = new PurchaseOrderService(prisma);
-
-      const result = await service.list({});
+      const result = await new PurchaseOrderService(prisma).list({});
 
       expect(result.items).toHaveLength(1);
       expect(calls.where).not.toHaveProperty('order_date');
@@ -103,9 +107,7 @@ describe('PurchaseOrderService', () => {
 
     it('목록 — q 는 MES 발주번호만 검색한다(ERP 번호는 안 본다)', async () => {
       const { prisma, calls } = listStub();
-      const service = new PurchaseOrderService(prisma);
-
-      await service.list({ q: 'PO-2026' });
+      await new PurchaseOrderService(prisma).list({ q: 'PO-2026' });
 
       expect(calls.where?.purchase_order_no).toEqual({ contains: 'PO-2026', mode: 'insensitive' });
       expect(calls.where).not.toHaveProperty('erp_purchase_order_no');
@@ -150,17 +152,12 @@ describe('PurchaseOrderService', () => {
 
       const { detail } = await new PurchaseOrderService(prisma).get(1);
 
-      expect(detail.purchaseOrder).toHaveProperty('erpPurchaseOrderNo', null);
-      expect(detail.purchaseOrder).toHaveProperty('approvalRequestId', null);
+      expect(detail.purchaseOrder).toMatchObject({ erpPurchaseOrderNo: null, approvalRequestId: null });
     });
 
     it('매퍼 — 생략된 tolerance*Qty 는 0 이다(널이 아니다)', () => {
-      const view = purchaseOrderLineView(
-        lineRow({ tolerance_over_qty: new Prisma.Decimal(0), tolerance_under_qty: new Prisma.Decimal(0) }) as never,
-      );
-
-      expect(view.toleranceOverQty).toBe(0);
-      expect(view.toleranceUnderQty).toBe(0);
+      const row = lineRow({ tolerance_over_qty: new Prisma.Decimal(0), tolerance_under_qty: new Prisma.Decimal(0) });
+      expect(purchaseOrderLineView(row as never)).toMatchObject({ toleranceOverQty: 0, toleranceUnderQty: 0 });
     });
   });
 });

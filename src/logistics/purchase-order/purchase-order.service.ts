@@ -32,14 +32,17 @@ export class PurchaseOrderService {
 
   async list(query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
     const page = pageRequest(query);
+    // itemId·openOnly 는 둘 다 관계 필터라 스프레드로 합치면 뒤가 앞을 덮는다 — AND 로 합친다.
+    const lineFilters = [itemWhere(query.itemId), this.openWhere(query.openOnly)].filter(
+      (c) => Object.keys(c).length > 0,
+    );
     const where: Prisma.purchase_orderWhereInput = {
       ...filter('supplier_id', query.supplierId),
       ...filter('plant_id', query.plantId),
       // `statusCode` 는 `type: string` 이다(enum 아니다) — 값 목록 검사를 하지 않는다.
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
-      ...itemWhere(query.itemId),
       ...orderDateWhere(query.orderDateFrom, query.orderDateTo),
-      ...this.openWhere(query.openOnly),
+      ...(lineFilters.length === 0 ? {} : { AND: lineFilters }),
       // 「발주번호 검색」(계약) — MES 채번 번호만 본다. erp_purchase_order_no 는 안 본다
       // (번호가 둘이라 하나를 고른다 — I-2.md R-8 ⓓ).
       ...(query.q === undefined
