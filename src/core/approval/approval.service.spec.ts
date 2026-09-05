@@ -37,7 +37,10 @@ function fake(seed: Seed) {
   const record = (into: Args[]) => async (args: Args) => (into.push(args), { count: 1 });
   const tx = {
     approval_route: { findMany: async () => seed.routes ?? [] },
-    approval_route_step: { findMany: async () => seed.routes?.[0]?.approval_route_step ?? [] },
+    approval_route_step: {
+      findMany: async ({ where }: { where: { approval_route_id: bigint } }) =>
+        seed.routes?.find((r) => r.approval_route_id === where.approval_route_id)?.approval_route_step ?? [],
+    },
     approval_step: {
       findMany: async () => seed.steps ?? [],
       createMany: async ({ data }: { data: Args[] }) => void writes.created.push(...data),
@@ -124,6 +127,25 @@ describe('ApprovalService', () => {
         { approval_request_id: REQUEST_ID, step_no: 2, approver_id: LEE },
       ]);
     });
+
+    it('단계가 0개인 결재선은 400 ROUTE_NOT_FOUND 다(빈 요청을 만들지 않는다)', async () => {
+      const { tx, writes } = fake({ routes: [route(1n, null, [])] });
+
+      const error = await thrown(() => service.expandSteps(tx, 1n, REQUEST_ID));
+
+      expect(error.errors[0].code).toBe(ERROR_CODE.ROUTE_NOT_FOUND);
+      expect(writes.created).toEqual([]);
+    });
+
+    it('USER 가 아닌 결재자 유형은 400 APPROVER_TYPE_NOT_SUPPORTED 다', async () => {
+      const role: RouteStepSeed = { step_no: 1, approver_type_code: 'ROLE', approver_user_id: null };
+      const { tx } = fake({ routes: [route(1n, null, [role])] });
+
+      const error = await thrown(() => service.expandSteps(tx, 1n, REQUEST_ID));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.APPROVER_TYPE_NOT_SUPPORTED);
+    });
   });
 
   describe('현재 단계', () => {
@@ -169,6 +191,21 @@ describe('ApprovalService', () => {
       expect(first.writes.requestUpdates[0].data).not.toHaveProperty('status_code');
       expect(final).toMatchObject({ statusCode: 'APPROVED', versionNo: 5 });
       expect(last.writes.requestUpdates[0]).toMatchObject({ data: { status_code: 'APPROVED' } });
+      // decided_at/by 는 비운다 — 계약이 안 받는 칸(I-1.md §2-3).
+      expect(last.writes.requestUpdates[0].data).not.toHaveProperty('decided_at');
+    });
+
+    it('반려 — 마지막 단계가 아니어도 한 단계 반려로 요청이 REJECTED 가 된다(J-6)', async () => {
+      const { tx, writes } = fake(twoSteps);
+
+      const result = await service.reject(tx, REQUEST_ID, 3, KIM, '수량 근거 없음');
+
+      expect(result).toMatchObject({ statusCode: 'REJECTED', versionNo: 4 });
+      expect(writes.stepUpdates[0]).toMatchObject({
+        where: { step_no: 1 },
+        data: { decision_code: 'REJECTED', decision_comment: '수량 근거 없음' },
+      });
+      expect(writes.requestUpdates[0]).toMatchObject({ data: { status_code: 'REJECTED' } });
     });
   });
 

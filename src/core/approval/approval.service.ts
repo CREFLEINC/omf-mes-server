@@ -19,6 +19,7 @@ export interface StepRow {
   decisionCode: string | null;
 }
 
+/** ⚠ `steps` 는 판정에 쓴 세 칸뿐이다 — 응답 `ApprovalStep` 은 호출자가 다시 읽어 만든다. */
 export interface DecisionResult {
   requestId: bigint;
   statusCode: string;
@@ -91,6 +92,11 @@ export class ApprovalService {
       where: { approval_route_id: approvalRouteId },
       orderBy: { step_no: 'asc' },
     });
+    // 단계 0개 결재선은 `selectRoute` 가 이미 거른다 — 직접 부르는 픽스처·상신이 빈 요청을
+    // 만들면 이후 모든 결재가 403 으로 보여 원인이 권한 문제로 읽힌다.
+    if (rows.length === 0) {
+      throw badRequest(ERROR_CODE.ROUTE_NOT_FOUND, '단계가 없는 결재선입니다.');
+    }
     const data = rows.map((row, index) => {
       // 1차는 USER 만 결재한다 — ROLE·DEPARTMENT 는 누가 결재자인지 풀 규칙이 없다.
       if (row.approver_type_code !== 'USER' || row.approver_user_id === null) {
@@ -111,12 +117,15 @@ export class ApprovalService {
     return ordered.find((step) => step.decisionCode === null) ?? null;
   }
 
-  /** 마지막 단계 승인에서만 요청이 `APPROVED` 로 간다 — 중간 승인은 전이가 아니다. */
+  /**
+   * 마지막 단계 승인에서만 요청이 `APPROVED` 로 간다 — 중간 승인은 전이가 아니다.
+   * ⛔ `actorUserId` 는 세션 주체만 넘긴다 — 요청 본문·헤더의 사용자 id 를 그대로 싣지 않는다.
+   */
   approve(tx: Tx, id: bigint, version: number, actorUserId: bigint, comment?: string) {
     return this.decide(tx, id, version, actorUserId, 'APPROVED', comment ?? null);
   }
 
-  /** 한 단계라도 반려면 요청이 끝난다 — 번복은 새 요청이다(공유계약 J-6). */
+  /** 한 단계라도 반려면 요청이 끝난다 — 번복은 새 요청이다(공유계약 J-6). 주체는 `approve` 와 같다. */
   reject(tx: Tx, id: bigint, version: number, actorUserId: bigint, comment: string) {
     return this.decide(tx, id, version, actorUserId, 'REJECTED', comment);
   }
@@ -135,7 +144,7 @@ export class ApprovalService {
     });
     if (!request) throw new NotFoundException('없는 승인 요청입니다.');
 
-    // ⚠ 400 이다 — 계약이 이 자리에 409 를 선언하지 않았다. 409 는 If-Match 저장 충돌이 쓴다.
+    // ⚠ 400 이다 — 409 는 이 자리(STATE_LOCKED)가 아니라 If-Match 저장 충돌이 쓴다.
     const transition = this.documentState.assertTransition(
       STATUS_COLUMN,
       decisionCode === 'APPROVED' ? 'approval-approve' : 'approval-reject',
@@ -170,7 +179,8 @@ export class ApprovalService {
     });
 
     const closes = decisionCode === 'REJECTED' || current.stepNo === steps[steps.length - 1].stepNo;
-    const decided = { status_code: transition.to, decided_at: decidedAt, decided_by: actorUserId };
+    // `decided_at/by` 는 비운다 — 계약 `ApprovalRequest` 가 안 받는 칸을 조용히 채우지 않는다(I-1.md §2-3).
+    const decided = { status_code: transition.to };
     const updated = await tx.approval_request.updateMany({
       where: { approval_request_id: id, version_no: version },
       data: { version_no: { increment: 1 }, ...(closes ? decided : {}) },
