@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AppUserController } from './access/app-user.controller';
@@ -22,7 +23,8 @@ import { UserAssignmentService } from './access/user-assignment.service';
  * ⚠ `/app/sessions` 는 여기 있지 않다 — 인증 자신이라 `AuthModule` 이 소유한다.
  */
 @Module({
-  imports: [PrismaModule, IdempotencyModule],
+  // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
+  imports: [PrismaModule, IdempotencyModule, AuthModule],
   controllers: [PermissionController, RoleController, AppUserController, OperationPolicyController],
   providers: [
     RoleService,

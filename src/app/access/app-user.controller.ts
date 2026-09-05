@@ -11,9 +11,11 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { CredentialService } from '../../auth/credential.service';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
@@ -34,8 +36,31 @@ export class AppUserController {
   constructor(
     private readonly users: AppUserService,
     private readonly assignments: UserAssignmentService,
+    private readonly credentials: CredentialService,
     private readonly idempotency: IdempotencyService,
   ) {}
+
+  /**
+   * 내 비밀번호 변경. 경로가 `me:change-password` 한 마디라 컨트롤러 접두어 아래 그대로
+   * 붙는다 — 컬렉션 액션(`/molds:import`)처럼 한 단계 위로 뺄 필요가 없다.
+   *
+   * ⛔ 세션의 사용자로만 바꾼다. 대상 id 를 받지 않는 것이 「내」의 뜻이다 — 받으면 남의
+   * 비밀번호를 바꾸는 길이 열린다.
+   */
+  @Post('me\\:change-password')
+  @Contract('POST /app/users/me:change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @Req() request: Request,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ): Promise<void> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+    await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
+      await this.credentials.changePassword(session.userId, body.currentPassword, body.newPassword);
+      return null;
+    });
+  }
 
   @Get()
   @Contract('GET /app/users')
