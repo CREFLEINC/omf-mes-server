@@ -579,7 +579,7 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 |---|---|---|
 | **I-1 ∥ I-30** | `src/app/approval/` ∥ `src/maintenance/inspection·breakdown/` | 설비는 승인·원장·채번을 하나도 안 쓴다. 선행이 없다 |
 | **I-2 ∥ I-30/I-32** | `src/logistics/purchase-order/` ∥ `src/maintenance/` | 채번 코어를 설비가 쓰지 않는다(고장·비가동에 번호가 없다) |
-| **I-3 ∥ I-12** | `src/logistics/inbound-receipt/` ∥ `src/logistics/putaway/` | 적치는 **이미 선 입고**만 필요하다. 다만 둘 다 `logistics.module.ts` 를 건드린다 — **모듈 등록 줄만 충돌**하므로 한쪽이 먼저 머지되면 재베이스 1줄 |
+| **I-3 ∥ I-12** | `src/logistics/inbound-receipt/` ∥ `src/logistics/putaway/` | 적치는 **이미 선 입고**만 필요하다. 다만 둘 다 `logistics.module.ts` 를 건드린다 — **모듈 등록 줄만 충돌**하므로 한쪽이 먼저 머지되면 재베이스 1~2줄(I-3 은 `LotRegistryModule` import 가 하나 더 — 재수립 R-1) |
 | **I-6 ∥ I-19** | `src/production/work-order/` ∥ `src/quality/inspection/` | ⚠ I-19 가 실적을 시드로 필요로 하므로 I-7 뒤. I-6 과는 겹치지 않는다 |
 | **I-11 ∥ I-13** | `src/production/work-session/` ∥ `src/logistics/stock-transfer/` | 세션은 원장을 안 쓰고, 이동은 생산을 안 본다 |
 | **I-27 ∥ I-28** | `src/app/document-issue/` ∥ `src/app/notification/` | 둘 다 `app-domain.module.ts` 한 줄만 겹친다 |
@@ -589,7 +589,7 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 
 ### 6-3. 마이그레이션이 모이는 자리
 
-CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 「그 도메인 첫 PR 앞에」. 실측으로 필요한 것은 **7건**뿐이다.
+CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 「그 도메인 첫 PR 앞에」. 실측으로 필요한 것은 ~~7건~~ **8건**이다(M-h 는 I-3 재수립 R-9 에서 드러났다 — 계약이 「선택」이라 적은 칸이 물리에서 NOT NULL).
 
 | # | 슬라이스 | 무엇 | 하위 호환? |
 |---|---|---|---|
@@ -600,6 +600,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | M-e | I-19 | 검사 의뢰 기준 완화(#280) | ⭕ |
 | M-f | I-23 | 긴급 출하 사유 컬럼(§I-41) | ⭕ nullable |
 | M-g | I-33 | `collection_channel` 부분 유일 인덱스(`COALESCE` 형) | ⭕ |
+| M-h | I-3 | A3 `inbound_receipt_line.lot_id?` + `inbound_variance.reason_code` **NOT NULL 해제** + `ix_inbound_variance_line` — 한 파일, PR ②a 선행 커밋 | ⭕ 추가·완화 |
 
 ⭐ **전부 추가·완화다 — 두 릴리스 규칙(§3 멈춤 조건)에 걸리는 삭제가 하나도 없다.** 이 계획대로 가면 멈춤 조건 1번은 발생하지 않는다.
 ⚠ 반대로 **I-9 의 판정이 뒤집히면** `shopfloor_receipt_line.inventory_transaction_line_id` 가 새로 필요해지고, 그것은 이 표에 없는 8번째다 — 「차이가 크다」 조건 첫째에 걸리므로 그 슬라이스만 3관점 재수립.
