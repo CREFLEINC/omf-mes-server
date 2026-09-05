@@ -20,10 +20,13 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import {
+  PurchaseOrderQuery,
+  PurchaseOrderQueryService,
+} from './purchase-order-query.service';
 import { PurchaseOrderDetail, PurchaseOrderLineView, PurchaseOrderView } from './purchase-order-view';
 import {
   PurchaseOrderCreateInput,
-  PurchaseOrderQuery,
   PurchaseOrderService,
   PurchaseOrderUpdateInput,
 } from './purchase-order.service';
@@ -33,13 +36,14 @@ import {
 export class PurchaseOrderController {
   constructor(
     private readonly purchaseOrders: PurchaseOrderService,
+    private readonly queries: PurchaseOrderQueryService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
   @Contract('GET /logistics/purchase-orders')
   list(@Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
-    return this.purchaseOrders.list(query);
+    return this.queries.list(query);
   }
 
   @Get(':purchaseOrderId')
@@ -48,7 +52,7 @@ export class PurchaseOrderController {
     @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<PurchaseOrderDetail> {
-    const { detail, versionNo } = await this.purchaseOrders.get(purchaseOrderId);
+    const { detail, versionNo } = await this.queries.get(purchaseOrderId);
     setEtag(response, versionNo);
     return detail;
   }
@@ -58,7 +62,7 @@ export class PurchaseOrderController {
   async lines(
     @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
   ): Promise<{ items: PurchaseOrderLineView[] }> {
-    return { items: await this.purchaseOrders.lines(purchaseOrderId) };
+    return { items: await this.queries.lines(purchaseOrderId) };
   }
 
   @Post()

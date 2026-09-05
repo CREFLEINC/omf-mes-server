@@ -8,6 +8,7 @@ import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
+import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 
@@ -19,6 +20,6 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
   // ⭐ 원장 코어가 처음 물리는 자리다 — 입고가 재고를 «쓰는» 첫 도메인이다.
   imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule],
   controllers: [GoodsReceiptController, PutawayRuleController, PurchaseOrderController],
-  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService],
+  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService, PurchaseOrderQueryService],
 })
 export class LogisticsModule {}
