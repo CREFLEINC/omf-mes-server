@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
+import { InventoryBalanceController } from './balance/inventory-balance.controller';
+import { InventoryBalanceService } from './balance/inventory-balance.service';
 import { InventoryTransactionController } from './transaction/inventory-transaction.controller';
 import { InventoryTransactionService } from './transaction/inventory-transaction.service';
 
@@ -13,7 +15,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
  */
 @Module({
   imports: [PrismaModule],
-  controllers: [InventoryTransactionController],
-  providers: [InventoryTransactionService],
+  controllers: [InventoryTransactionController, InventoryBalanceController],
+  providers: [InventoryTransactionService, InventoryBalanceService],
 })
 export class InventoryModule {}
