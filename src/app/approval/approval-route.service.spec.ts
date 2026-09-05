@@ -231,6 +231,59 @@ describe('ApprovalRouteService', () => {
       expect(error.errors[0].code).toBe(ERROR_CODE.REQUIRED);
     });
   });
+
+  describe('활성 전이', () => {
+    it('단계 0개인 결재선을 :activate 하면 400 LINE_REQUIRED 다', async () => {
+      const { prisma, writes } = writeStub({ route: routeRow(10n, 3, { is_active: false }), steps: [] });
+      const service = new ApprovalRouteService(prisma);
+
+      const error = await thrown(() => service.activate(10, 3));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.LINE_REQUIRED);
+      expect(writes.routeUpdate).toBeUndefined();
+    });
+
+    it('같은 (유형, 사업부) 로 다른 활성본이 있으면 :activate 는 400 UNIQUE_VIOLATION 이다', async () => {
+      const { prisma, writes } = writeStub({
+        route: routeRow(10n, 3, { is_active: false }),
+        steps: [{}],
+        existingActiveRoutes: [{ approval_route_id: 20n, approval_type_code: 'GOODS_ISSUE_DISPOSAL', business_unit_id: null }],
+      });
+      const service = new ApprovalRouteService(prisma);
+
+      const error = await thrown(() => service.activate(10, 3));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.UNIQUE_VIOLATION);
+      expect(writes.routeUpdate).toBeUndefined();
+    });
+
+    it('이미 활성인 결재선의 :activate 는 자기 자신과 충돌하지 않는다', async () => {
+      // assertActiveRouteFree 가 excludeRouteId=자기자신으로 부르므로, 활성 상태로
+      // 「다시」 :activate 해도 자신이 자신과 부딪히지 않는다.
+      const { prisma, writes } = writeStub({
+        route: routeRow(10n, 3, { is_active: true }),
+        steps: [{}],
+        existingActiveRoutes: [{ approval_route_id: 10n, approval_type_code: 'GOODS_ISSUE_DISPOSAL', business_unit_id: null }],
+      });
+      const service = new ApprovalRouteService(prisma);
+
+      await service.activate(10, 3);
+
+      expect(writes.routeUpdate).toMatchObject({ is_active: true });
+    });
+
+    it(':deactivate 는 거부 조건이 없다(400 갈래 없음)', async () => {
+      // 이미 비활성이어도, 진행 중인 요청이 있어도 :deactivate 는 그대로 200 이다(J-9).
+      const { prisma, writes } = writeStub({ route: routeRow(10n, 3, { is_active: true }) });
+      const service = new ApprovalRouteService(prisma);
+
+      await service.deactivate(10, 3);
+
+      expect(writes.routeUpdate).toMatchObject({ is_active: false });
+    });
+  });
 });
 
 /**

@@ -38,8 +38,22 @@ function fake(seed: Seed) {
   const tx = {
     approval_route: { findMany: async () => seed.routes ?? [] },
     approval_route_step: {
-      findMany: async ({ where }: { where: { approval_route_id: bigint } }) =>
-        seed.routes?.find((r) => r.approval_route_id === where.approval_route_id)?.approval_route_step ?? [],
+      // ⚠ `orderBy` 가 왔을 때만 정렬한다(#183 재리뷰 Nit) — 실서비스가 `orderBy:
+      // {step_no:'asc'}` 를 정말로 거는지를 시험한다. 그 인자를 빼먹으면 시드 순서
+      // (아래서 7·3 역순) 그대로 나와 「단계 전개」 시험이 깨진다.
+      findMany: async ({
+        where,
+        orderBy,
+      }: {
+        where: { approval_route_id: bigint };
+        orderBy?: { step_no: 'asc' | 'desc' };
+      }) => {
+        const steps =
+          seed.routes?.find((r) => r.approval_route_id === where.approval_route_id)?.approval_route_step ?? [];
+        if (!orderBy) return steps;
+        const sign = orderBy.step_no === 'desc' ? -1 : 1;
+        return [...steps].sort((a, b) => sign * (a.step_no - b.step_no));
+      },
     },
     approval_step: {
       findMany: async () => seed.steps ?? [],
@@ -117,8 +131,10 @@ describe('ApprovalService', () => {
 
   describe('단계 전개', () => {
     it('결재선 단계가 step_no 1..N 의 approval_step 이 된다', async () => {
-      // 결재선의 step_no 가 3·7 이어도 전개는 1·2 로 다시 매긴다.
-      const { tx, writes } = fake({ routes: [route(1n, null, [by(3, KIM), by(7, LEE)])] });
+      // 결재선의 step_no 가 3·7 이어도 전개는 1·2 로 다시 매긴다. 시드를 역순(7·3)으로
+      // 넣어 — 위 findMany 목의 orderBy 시뮬레이션과 함께 「DB 정렬을 믿는다」를 고정한다
+      // (#183 재리뷰 Nit). 서비스가 orderBy 를 빼먹으면 이 시드 순서 그대로 나와 깨진다.
+      const { tx, writes } = fake({ routes: [route(1n, null, [by(7, LEE), by(3, KIM)])] });
 
       await service.expandSteps(tx, 1n, REQUEST_ID);
 
