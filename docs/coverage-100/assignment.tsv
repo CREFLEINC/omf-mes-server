@@ -11,13 +11,13 @@ I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:activate	app	결
 I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:deactivate	app	결재선 사용 중지	403	☑
 I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}	app	결재선 수정	403	☑
 I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 전체 치환 (순서 포함)	403	☑
-I-2	logistics-01자재창고.json	GET /logistics/purchase-orders	logistics	P/O 목록		☐
-I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 상세		☐
-I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 목록		☐
-I-2	logistics-01자재창고.json	POST /logistics/purchase-orders	logistics	P/O 등록	403	☐
-I-2	logistics-01자재창고.json	POST /logistics/purchase-orders/{purchaseOrderId}:request-approval	logistics	P/O 승인 요청	403	☐
-I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 헤더 수정	403	☐
-I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 치환	403	☐
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders	logistics	P/O 목록		☑
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 상세		☑
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 목록		☑
+I-2	logistics-01자재창고.json	POST /logistics/purchase-orders	logistics	P/O 등록	403	☑
+I-2	logistics-01자재창고.json	POST /logistics/purchase-orders/{purchaseOrderId}:request-approval	logistics	P/O 승인 요청	403	☑
+I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 헤더 수정	403	☑
+I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 치환	403	☑
 I-3	logistics-01자재창고.json	GET /logistics/asns	logistics	입하 예정 목록		☐
 I-3	logistics-01자재창고.json	GET /logistics/asns/{asnId}	logistics	입하 예정 상세		☐
 I-3	logistics-01자재창고.json	GET /logistics/asns/{asnId}/lines	logistics	입하 예정 라인		☐

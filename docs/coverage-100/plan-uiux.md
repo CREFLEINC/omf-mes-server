@@ -134,8 +134,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `GET /logistics/purchase-orders` | P/O 목록 | W-01-09,W-01-11 | - |
-| `GET /logistics/purchase-orders/{purchaseOrderId}` | P/O 상세 | W-01-03,W-01-09 | - |
+| `GET /logistics/purchase-orders` | P/O 목록 | W-01-09,W-01-11,**M-01-01**(도출표 `:58` 실측 · `openOnly` 의 실제 소비처 — I-3 재수립 R-14) | - |
+| `GET /logistics/purchase-orders/{purchaseOrderId}` | P/O 상세 | W-01-03,W-01-09,**M-01-01**(도출표 `:59` 실측) | - |
 | `GET /logistics/purchase-orders/{purchaseOrderId}/lines` | P/O 라인 목록 | — (025) | - |
 | `POST /logistics/purchase-orders` | P/O 등록 | W-01-03,W-01-11 | 멱등 |
 | `PUT /logistics/purchase-orders/{purchaseOrderId}` | P/O 헤더 수정 | — | 멱등, ETag |
@@ -153,8 +153,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /logistics/inbound-receipts` | 입하 목록 | M-01-06,P-01-01,W-01-03 | - |
 | `GET /logistics/inbound-receipts/{inboundReceiptId}` | 입하 상세 | M-01-06,P-01-01,W-01-03 | - |
 | `GET /logistics/inbound-receipts/{inboundReceiptId}/lines` | 입하 라인 목록 | P-01-01,W-01-03 | - |
-| `PUT /logistics/inbound-receipts/{inboundReceiptId}` | 입하 헤더 수정 | — | 멱등, ETag |
-| `PUT /logistics/inbound-receipts/{inboundReceiptId}/lines` | 입하 라인 치환 | — | 멱등, ETag |
+| `PUT /logistics/inbound-receipts/{inboundReceiptId}` | 입하 헤더 수정 | — (026) | 멱등, ETag |
+| `PUT /logistics/inbound-receipts/{inboundReceiptId}/lines` | 입하 라인 치환 | — (026) | 멱등, ETag |
 | `POST /logistics/inbound-receipts:split` | 초과 입하 분리 등록 | W-01-03 | 멱등 |
 | `GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances` | 입하 차이 목록 | M-01-06 | - |
 | `POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances` | 입하 차이 등록 | M-01-06 | 멱등, 사번 |
