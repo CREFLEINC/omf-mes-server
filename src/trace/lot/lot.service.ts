@@ -286,6 +286,11 @@ export class LotService {
     });
   }
 
+  /**
+   * ⚠ 순번은 «연속을 보장하지 않는다» — `count` 로 뽑으므로 같은 순간 두 건이면 같은
+   * 값을 얻는다. 뒤의 난수 13자리가 실제 충돌을 막고, 충돌해도 재시도가 받는다. 사람이
+   * 「몇 번째쯤인가」를 읽는 용도이지 빠짐없는 일련번호가 아니다.
+   */
   private async nextMesLotNo(input: LotCreate): Promise<string> {
     const day = input.businessDate.replace(/-/g, '');
     const used = await this.prisma.lot.count({
