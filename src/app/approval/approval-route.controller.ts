@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -27,11 +28,7 @@ import {
 } from './approval-route.service';
 import { ApprovalRouteStepView, ApprovalRouteView } from './approval.mapper';
 
-/**
- * 결재선 정의(마스터) + 결재 단계 치환. 화면은 `W-06-15`(결재선 정의)가 소유한다.
- * `:activate`/`:deactivate`(활성 전이)는 뒤 PR — 이 PR 만으로는 `is_active=false`
- * 행을 만들 수 없다(`ApprovalRouteUpdate` 에 `isActive` 가 없다).
- */
+/** 결재선 정의(마스터) + 결재 단계 치환 + 활성 전이. 화면은 `W-06-15`(결재선 정의)가 소유한다. */
 @Controller('app/approval-routes')
 export class ApprovalRouteController {
   constructor(
@@ -82,6 +79,32 @@ export class ApprovalRouteController {
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'route', (version) =>
       this.routes.update(approvalRouteId, version, body),
+    );
+  }
+
+  @Post(':approvalRouteId\\:activate')
+  @Contract('POST /app/approval-routes/{approvalRouteId}:activate')
+  @HttpCode(HttpStatus.OK)
+  activate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('approvalRouteId', ParseIntPipe) approvalRouteId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'route', (version) =>
+      this.routes.activate(approvalRouteId, version),
+    );
+  }
+
+  @Post(':approvalRouteId\\:deactivate')
+  @Contract('POST /app/approval-routes/{approvalRouteId}:deactivate')
+  @HttpCode(HttpStatus.OK)
+  deactivate(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('approvalRouteId', ParseIntPipe) approvalRouteId: number,
+  ): Promise<unknown> {
+    return runVersioned(this.idempotency, request, response, 'route', (version) =>
+      this.routes.deactivate(approvalRouteId, version),
     );
   }
 

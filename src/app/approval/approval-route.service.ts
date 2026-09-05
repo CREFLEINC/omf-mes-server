@@ -46,10 +46,10 @@ export interface ApprovalRouteStepInput {
 type RouteRow = Prisma.approval_routeGetPayload<object>;
 
 /**
- * 결재선 정의 CRUD + 결재 단계 치환. 화면은 `W-06-15`(결재선 정의)가 소유한다.
+ * 결재선 정의 CRUD + 결재 단계 치환 + 활성 전이. 화면은 `W-06-15`(결재선 정의)가 소유한다.
  *
  * ⛔ 결재선 «선택»(우선순위·모호성 판정)은 코어 `ApprovalService.selectRoute` 다 — 여기
- * 서비스는 마스터를 고치기만 한다. 활성 전이(`:activate`/`:deactivate`)는 뒤 PR 이다.
+ * 서비스는 마스터를 고치기만 한다.
  */
 @Injectable()
 export class ApprovalRouteService {
@@ -130,6 +130,53 @@ export class ApprovalRouteService {
       },
     });
     await this.assertExists(routeId, updated.count);
+    return this.get(routeId);
+  }
+
+  /**
+   * 「중지한 결재선을 되살린다」(계약). 검사 순서: 404 → 409(If-Match 를 업무 규칙보다
+   * 먼저 본다 — 낡은 화면이 재로드부터 하게 한다. `core/approval` `decide()`·`update()`
+   * 는 400 을 먼저 보는 반대 순서라 선례가 아니다) → LINE_REQUIRED(단계 0개면 되살려도
+   * 상신이 거부된다) →
+   * UNIQUE_VIOLATION(자기 자신은 `excludeRouteId` 로 제외 — 이미 활성인 것을 다시
+   * :activate 해도 충돌하지 않는다).
+   */
+  async activate(routeId: number, version: number): Promise<ApprovalRouteResult> {
+    const current = await this.loadRoute(routeId);
+    if (current.version_no !== version) assertUpdated(0);
+
+    const stepCount = await this.prisma.approval_route_step.count({ where: { approval_route_id: routeId } });
+    if (stepCount === 0) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        {
+          scope: 'screen',
+          code: ERROR_CODE.LINE_REQUIRED,
+          message: '결재 단계가 없는 결재선은 다시 사용할 수 없습니다.',
+        },
+      ]);
+    }
+    const businessUnitId = current.business_unit_id === null ? null : Number(current.business_unit_id);
+    await this.assertActiveRouteFree(current.approval_type_code, businessUnitId, routeId);
+
+    const updated = await this.prisma.approval_route.updateMany({
+      where: { approval_route_id: routeId, version_no: version },
+      data: { is_active: true, version_no: { increment: 1 } },
+    });
+    assertUpdated(updated.count);
+    return this.get(routeId);
+  }
+
+  /**
+   * 「사용 중지」(계약) — 물리 삭제는 없다(B-4). 진행 중인 요청은 그대로 진행된다
+   * (공유계약 J-9) — 거부 조건이 없다(400 갈래 없음). 이미 비활성이어도 200 이다.
+   */
+  async deactivate(routeId: number, version: number): Promise<ApprovalRouteResult> {
+    await this.loadRoute(routeId);
+    const updated = await this.prisma.approval_route.updateMany({
+      where: { approval_route_id: routeId, version_no: version },
+      data: { is_active: false, version_no: { increment: 1 } },
+    });
+    assertUpdated(updated.count);
     return this.get(routeId);
   }
 
