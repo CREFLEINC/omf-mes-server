@@ -5,6 +5,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
+import { OperationPolicyController } from './policy/operation-policy.controller';
+import { OperationPolicyService } from './policy/operation-policy.service';
 import { RolePermissionService } from './access/role-permission.service';
 import { RoleController } from './access/role.controller';
 import { RoleService } from './access/role.service';
@@ -21,7 +23,13 @@ import { UserAssignmentService } from './access/user-assignment.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule],
-  controllers: [PermissionController, RoleController, AppUserController],
-  providers: [RoleService, RolePermissionService, AppUserService, UserAssignmentService],
+  controllers: [PermissionController, RoleController, AppUserController, OperationPolicyController],
+  providers: [
+    RoleService,
+    RolePermissionService,
+    AppUserService,
+    UserAssignmentService,
+    OperationPolicyService,
+  ],
 })
 export class AppDomainModule {}
