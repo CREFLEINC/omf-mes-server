@@ -1,0 +1,250 @@
+slice	file	operation	tag	summary	forbidden	status
+I-1	app-공통.json	GET /app/approval-requests	app	승인 요청 목록	403	☐
+I-1	app-공통.json	GET /app/approval-requests/{approvalRequestId}	app	승인 요청 상세 (결재선 진행 포함)	403	☐
+I-1	app-공통.json	GET /app/approval-routes	app	결재선 목록		☐
+I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}	app	결재선 상세		☐
+I-1	app-공통.json	GET /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 목록		☐
+I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:approve	app	승인	403	☐
+I-1	app-공통.json	POST /app/approval-requests/{approvalRequestId}:reject	app	반려	403	☐
+I-1	app-공통.json	POST /app/approval-routes	app	결재선 등록	403	☐
+I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:activate	app	결재선 다시 사용	403	☐
+I-1	app-공통.json	POST /app/approval-routes/{approvalRouteId}:deactivate	app	결재선 사용 중지	403	☐
+I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}	app	결재선 수정	403	☐
+I-1	app-공통.json	PUT /app/approval-routes/{approvalRouteId}/steps	app	결재 단계 전체 치환 (순서 포함)	403	☐
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders	logistics	P/O 목록		☐
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 상세		☐
+I-2	logistics-01자재창고.json	GET /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 목록		☐
+I-2	logistics-01자재창고.json	POST /logistics/purchase-orders	logistics	P/O 등록	403	☐
+I-2	logistics-01자재창고.json	POST /logistics/purchase-orders/{purchaseOrderId}:request-approval	logistics	P/O 승인 요청	403	☐
+I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}	logistics	P/O 헤더 수정	403	☐
+I-2	logistics-01자재창고.json	PUT /logistics/purchase-orders/{purchaseOrderId}/lines	logistics	P/O 라인 치환	403	☐
+I-3	logistics-01자재창고.json	GET /logistics/asns	logistics	입하 예정 목록		☐
+I-3	logistics-01자재창고.json	GET /logistics/asns/{asnId}	logistics	입하 예정 상세		☐
+I-3	logistics-01자재창고.json	GET /logistics/asns/{asnId}/lines	logistics	입하 예정 라인		☐
+I-3	logistics-01자재창고.json	GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances	logistics	입하 차이 목록		☐
+I-3	logistics-01자재창고.json	GET /logistics/inbound-receipts	logistics	입하 목록		☐
+I-3	logistics-01자재창고.json	GET /logistics/inbound-receipts/{inboundReceiptId}	logistics	입하 상세		☐
+I-3	logistics-01자재창고.json	GET /logistics/inbound-receipts/{inboundReceiptId}/lines	logistics	입하 라인 목록		☐
+I-3	logistics-01자재창고.json	POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances	logistics	입하 차이 등록	403	☐
+I-3	logistics-01자재창고.json	POST /logistics/inbound-receipts	logistics	입하 등록	403	☐
+I-3	logistics-01자재창고.json	POST /logistics/inbound-receipts:split	logistics	초과 입하 분리 등록	403	☐
+I-3	logistics-01자재창고.json	PUT /logistics/inbound-receipts/{inboundReceiptId}	logistics	입하 헤더 수정	403	☐
+I-3	logistics-01자재창고.json	PUT /logistics/inbound-receipts/{inboundReceiptId}/lines	logistics	입하 라인 치환	403	☐
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues	logistics	출고 목록		☐
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}	logistics	출고 상세		☐
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 목록		☐
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues	logistics	출고 등록	403	☐
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:post	logistics	출고 전기	403	☐
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:request-approval	logistics	기타 출고 품의 상신	403	☐
+I-4	logistics-01자재창고.json	PUT /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 치환	403	☐
+I-5	logistics-01자재창고.json	GET /logistics/document-progress	logistics	물류 문서 진행현황		☐
+I-5	logistics-01자재창고.json	GET /logistics/document-progress/{documentTypeCode}/{documentId}	logistics	물류 문서 진행현황 상세		☐
+I-5	logistics-01자재창고.json	POST /logistics/document-progress/{documentTypeCode}/{documentId}:cancel	logistics	물류 문서 취소 실행	403	☐
+I-5	logistics-01자재창고.json	POST /logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel	logistics	물류 문서 취소 요청	403	☐
+I-6	production-02생산실행.json	DELETE /production/work-orders/{workOrderId}/resource-plans/{workOrderResourcePlanId}	production	4M 계획 배정 해제		☐
+I-6	production-02생산실행.json	GET /production/work-orders	production	W/O 목록·진행현황		☐
+I-6	production-02생산실행.json	GET /production/work-orders/{workOrderId}	production	W/O 한 건		☐
+I-6	production-02생산실행.json	GET /production/work-orders/{workOrderId}/resource-plans	production	4M 계획 배정 목록		☐
+I-6	production-02생산실행.json	GET /production/work-orders/{workOrderId}/validation	production	4M 배정 유효성 점검	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders	production	W/O 발행	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}/resource-plans	production	4M 계획 배정 추가		☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}:cancel	production	W/O 취소	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}:close	production	마감 · ERP 실적 송신	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}:hold	production	작업 중단	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}:release	production	확정·배포 · 생산LOT 선발행	403	☐
+I-6	production-02생산실행.json	POST /production/work-orders/{workOrderId}:resume	production	작업 재개	403	☐
+I-6	production-02생산실행.json	PUT /production/work-orders/{workOrderId}	production	W/O 수정 · 4M 자원배정	403	☐
+I-7	production-02생산실행.json	GET /production/production-results	production	생산 실적 목록		☐
+I-7	production-02생산실행.json	GET /production/production-results/{productionResultId}	production	생산 실적 한 건		☐
+I-7	logistics-01자재창고.json	GET /trace/lot-lifecycle-events	trace	LOT 생명주기 변경이력 조회 — 전이 3종 전건		☐
+I-7	production-02생산실행.json	POST /production/production-results	production	생산 실적 등록	403	☐
+I-7	production-02생산실행.json	POST /production/production-results/{productionResultId}:correct	production	실적 정정	403	☐
+I-7	production-02생산실행.json	POST /production/production-results/{productionResultId}:request-approval	production	실적 정정 상신	403	☐
+I-7	logistics-01자재창고.json	POST /trace/lots/{lotId}:complete	trace	생산 LOT 완료	403	☐
+I-8	logistics-01자재창고.json	GET /inventory/reservations	inventory	재고 예약 조회		☐
+I-8	logistics-01자재창고.json	GET /logistics/material-issue-requests	logistics	자재 출고 요청 목록		☐
+I-8	logistics-01자재창고.json	GET /logistics/material-issue-requests/shortage	logistics	W/O 품목별 소요·기출고·부족		☐
+I-8	logistics-01자재창고.json	GET /logistics/material-issue-requests/{materialIssueRequestId}	logistics	자재 출고 요청 상세		☐
+I-8	logistics-01자재창고.json	GET /logistics/picking-orders	logistics	피킹 지시 목록		☐
+I-8	logistics-01자재창고.json	GET /logistics/picking-orders/{pickingOrderId}	logistics	피킹 지시 상세		☐
+I-8	logistics-01자재창고.json	POST /logistics/material-issue-requests	logistics	추가 자재 출고 요청 발행	403	☐
+I-8	logistics-01자재창고.json	POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick	logistics	라인 피킹	403	☐
+I-9	logistics-01자재창고.json	GET /logistics/shopfloor-receipts	logistics	생산창고 입고 목록		☐
+I-9	logistics-01자재창고.json	GET /logistics/shopfloor-receipts/{shopfloorReceiptId}	logistics	생산창고 입고 상세		☐
+I-9	logistics-01자재창고.json	POST /logistics/shopfloor-receipts	logistics	생산창고 입고 확정	403	☐
+I-10	production-02생산실행.json	GET /production/material-consumptions	production	자재 투입 목록		☐
+I-10	production-02생산실행.json	GET /production/material-consumptions/{materialConsumptionId}	production	자재 투입 한 건		☐
+I-10	production-02생산실행.json	GET /production/material-returns	production	자재 반출 목록		☐
+I-10	production-02생산실행.json	GET /production/material-returns/{materialReturnId}	production	자재 반출 한 건		☐
+I-10	production-02생산실행.json	POST /production/material-consumptions	production	자재 투입 등록	403	☐
+I-10	production-02생산실행.json	POST /production/material-returns	production	자재 반출 등록	403	☐
+I-11	production-02생산실행.json	GET /production/precheck-decisions	production	작업 전 점검 통제 판정 이력 조회		☐
+I-11	production-02생산실행.json	GET /production/work-sessions	production	작업 세션 목록		☐
+I-11	production-02생산실행.json	GET /production/work-sessions/{workSessionId}	production	세션 한 건		☐
+I-11	production-02생산실행.json	GET /production/work-sessions/{workSessionId}/events	production	세션 이벤트 목록		☐
+I-11	production-02생산실행.json	GET /production/work-sessions/{workSessionId}/workers	production	세션 작업자 목록		☐
+I-11	production-02생산실행.json	POST /production/precheck-decisions	production	작업 전 점검 통제 판정 기록	403	☐
+I-11	production-02생산실행.json	POST /production/work-sessions	production	작업 시작 — 세션 열기	403	☐
+I-11	production-02생산실행.json	POST /production/work-sessions/{workSessionId}/events	production	세션 이벤트 적재	403	☐
+I-11	production-02생산실행.json	POST /production/work-sessions/{workSessionId}/workers	production	작업자 참여	403	☐
+I-11	production-02생산실행.json	POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave	production	작업자 이탈	403	☐
+I-11	production-02생산실행.json	POST /production/work-sessions/{workSessionId}:end	production	세션 닫기	403	☐
+I-12	logistics-01자재창고.json	GET /logistics/putaway-tasks	logistics	적치 지시 목록		☐
+I-12	logistics-01자재창고.json	GET /logistics/putaway-tasks/{putawayTaskId}	logistics	적치 지시 상세		☐
+I-12	logistics-01자재창고.json	POST /logistics/putaway-tasks/{putawayTaskId}:complete	logistics	적치 완료	403	☐
+I-12	logistics-01자재창고.json	POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary	logistics	임시 위치 적재	403	☐
+I-13	logistics-01자재창고.json	GET /logistics/stock-transfers	logistics	재고 이동 목록		☐
+I-13	logistics-01자재창고.json	GET /logistics/stock-transfers/{stockTransferId}	logistics	재고 이동 상세		☐
+I-13	logistics-01자재창고.json	GET /logistics/stock-transfers/{stockTransferId}/lines	logistics	이동 라인 목록		☐
+I-13	logistics-01자재창고.json	POST /logistics/stock-transfers	logistics	반출 등록	403	☐
+I-13	logistics-01자재창고.json	POST /logistics/stock-transfers/{stockTransferId}:arrive	logistics	도착 확정	403	☐
+I-13	logistics-01자재창고.json	PUT /logistics/stock-transfers/{stockTransferId}/lines	logistics	이동 라인 치환	403	☐
+I-14	logistics-01자재창고.json	GET /inventory/adjustments	inventory	재고 조정 목록		☐
+I-14	logistics-01자재창고.json	GET /inventory/adjustments/{inventoryAdjustmentId}	inventory	재고 조정 상세		☐
+I-14	logistics-01자재창고.json	GET /inventory/adjustments/{inventoryAdjustmentId}/lines	inventory	조정 라인 목록		☐
+I-14	logistics-01자재창고.json	POST /inventory/adjustments	inventory	재고 조정 등록	403	☐
+I-14	logistics-01자재창고.json	POST /inventory/adjustments/{inventoryAdjustmentId}:post	inventory	재고 조정 전기	403	☐
+I-14	logistics-01자재창고.json	POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval	inventory	재고 조정 상신	403	☐
+I-14	logistics-01자재창고.json	PUT /inventory/adjustments/{inventoryAdjustmentId}/lines	inventory	조정 라인 치환	403	☐
+I-15	logistics-01자재창고.json	GET /inventory/counts	inventory	실사 목록		☐
+I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}	inventory	실사 상세		☐
+I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}/lines	inventory	실사 라인 목록		☐
+I-15	logistics-01자재창고.json	POST /inventory/counts	inventory	실사 개시	403	☐
+I-15	logistics-01자재창고.json	POST /inventory/counts/{inventoryCountId}:close	inventory	실사 마감	403	☐
+I-15	logistics-01자재창고.json	PUT /inventory/counts/{inventoryCountId}/lines	inventory	한 위치의 실사 라인 치환	403	☐
+I-16	logistics-01자재창고.json	GET /inventory/handling-units	inventory	취급 단위 목록		☐
+I-16	logistics-01자재창고.json	GET /inventory/handling-units/{handlingUnitId}	inventory	취급 단위 상세		☐
+I-16	logistics-01자재창고.json	GET /inventory/handling-units/{handlingUnitId}/contents	inventory	취급 단위 구성 목록		☐
+I-16	logistics-01자재창고.json	GET /inventory/handling-units/{handlingUnitId}/repack-events	inventory	포장 재구성 이력		☐
+I-16	logistics-01자재창고.json	POST /inventory/handling-units	inventory	취급 단위 등록	403	☐
+I-16	logistics-01자재창고.json	POST /inventory/handling-units/{handlingUnitId}:pack	inventory	포장 확정	403	☐
+I-16	logistics-01자재창고.json	PUT /inventory/handling-units/{handlingUnitId}/contents	inventory	취급 단위 구성 치환	403	☐
+I-17	logistics-01자재창고.json	POST /logistics/recycle-entries	logistics	재생재 등록	403	☐
+I-18	logistics-01자재창고.json	GET /trace/lot-status-events	trace	LOT 상태 변경이력 조회 — 전이 9종 전건		☐
+I-18	logistics-01자재창고.json	GET /trace/lots/{lotId}/external-identifiers	trace	LOT 외부 식별자 목록		☐
+I-18	logistics-01자재창고.json	GET /trace/lots/{lotId}/holds	trace	LOT 보류 목록		☐
+I-18	logistics-01자재창고.json	POST /trace/lots/{lotId}:request-iqc-skip	trace	긴급 IQC 생략 요청	403	☐
+I-18	logistics-01자재창고.json	PUT /trace/lots/{lotId}/external-identifiers	trace	LOT 외부 식별자 치환	403	☐
+I-19	quality-03품질.json	GET /quality/inspection-requests	quality	검사 의뢰 목록		☐
+I-19	quality-03품질.json	GET /quality/inspection-requests/{inspectionRequestId}	quality	검사 의뢰 한 건		☐
+I-19	quality-03품질.json	GET /quality/inspection-results	quality	검사 결과 목록		☐
+I-19	quality-03품질.json	GET /quality/inspection-results/defect-rate-trend	quality	불량률 추이		☐
+I-19	quality-03품질.json	GET /quality/inspection-results/summary	quality	검사 요약		☐
+I-19	quality-03품질.json	GET /quality/inspection-results/{inspectionResultId}	quality	검사 결과 한 건		☐
+I-19	quality-03품질.json	GET /quality/inspection-results/{inspectionResultId}/measurement-summary	quality	검사 결과의 항목별 측정 요약		☐
+I-19	quality-03품질.json	GET /quality/inspection-results/{inspectionResultId}/measurements	quality	측정치 목록		☐
+I-19	quality-03품질.json	POST /quality/inspection-results	quality	검사 결과 저장	403	☐
+I-19	quality-03품질.json	POST /quality/inspection-results/{inspectionResultId}:confirm	quality	검사 판정 확정	403	☐
+I-19	quality-03품질.json	PUT /quality/inspection-results/{inspectionResultId}	quality	검사 결과 수정	403	☐
+I-20	quality-03품질.json	GET /quality/defect-records	quality	불량 실적 목록		☐
+I-20	quality-03품질.json	GET /quality/defect-records/distribution	quality	불량코드 분포		☐
+I-20	quality-03품질.json	GET /quality/lot-hold-events	quality	보류 등록·해제 사건 조회		☐
+I-20	quality-03품질.json	GET /quality/lot-holds	quality	LOT 보류 목록		☐
+I-20	quality-03품질.json	GET /quality/lot-holds/{lotHoldId}	quality	LOT 보류 한 건		☐
+I-20	quality-03품질.json	GET /quality/lot-status-summary	quality	LOT 상태 요약		☐
+I-20	quality-03품질.json	GET /quality/lot-status-transitions	quality	갈 수 있는 LOT 상태		☐
+I-20	quality-03품질.json	GET /quality/lot-statuses	quality	LOT 품질 상태 목록		☐
+I-20	quality-03품질.json	POST /quality/lot-holds	quality	LOT 보류 등록	403	☐
+I-20	quality-03품질.json	POST /quality/lot-holds/{lotHoldId}:release	quality	LOT 보류 해제·재판정	403	☐
+I-21	quality-03품질.json	GET /quality/concessions	quality	특채 목록		☐
+I-21	quality-03품질.json	GET /quality/concessions/{concessionId}	quality	특채 한 건		☐
+I-21	shipment-04제품출하.json	GET /quality/disposition-candidates	quality	처분 판정 대상 목록		☐
+I-21	quality-03품질.json	GET /quality/disposition-decisions	quality	처분 결정 목록		☐
+I-21	quality-03품질.json	GET /quality/disposition-decisions/{dispositionDecisionId}	quality	처분 결정 한 건		☐
+I-21	shipment-04제품출하.json	GET /quality/nonconformances	quality	부적합 목록		☐
+I-21	shipment-04제품출하.json	GET /quality/nonconformances/{nonconformanceId}	quality	부적합 한 건		☐
+I-21	quality-03품질.json	GET /quality/nonconformances/{nonconformanceId}/disposition-decisions	quality	이 부적합의 처분 결정		☐
+I-21	shipment-04제품출하.json	POST /quality/nonconformances	quality	부적합 등록	403	☐
+I-21	quality-03품질.json	POST /quality/nonconformances/{nonconformanceId}/disposition-decisions	quality	처분 판정 저장	403	☐
+I-21	shipment-04제품출하.json	POST /quality/nonconformances/{nonconformanceId}:request-disposition	quality	처분 판정 의뢰	403	☐
+I-22	shipment-04제품출하.json	GET /logistics/sales-orders	shipment	출하지시서 목록		☐
+I-22	shipment-04제품출하.json	GET /logistics/sales-orders/{salesOrderId}	shipment	출하지시서 한 건		☐
+I-22	shipment-04제품출하.json	GET /logistics/shipment-lot-allocations	shipment	출하 LOT 배분 목록		☐
+I-22	shipment-04제품출하.json	GET /logistics/shipment-requests	shipment	출하작업지시 목록		☐
+I-22	shipment-04제품출하.json	GET /logistics/shipment-requests/summary	shipment	출하작업지시 요약		☐
+I-22	shipment-04제품출하.json	GET /logistics/shipment-requests/{shipmentRequestId}	shipment	출하작업지시 한 건		☐
+I-22	shipment-04제품출하.json	POST /logistics/shipment-requests	shipment	출하작업지시 편성	403	☐
+I-22	shipment-04제품출하.json	POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick	shipment	제품 LOT 피킹 확정	403	☐
+I-22	shipment-04제품출하.json	PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}	shipment	배분에 포장 단위 연결	403	☐
+I-23	shipment-04제품출하.json	GET /logistics/shipments	shipment	출하 목록		☐
+I-23	shipment-04제품출하.json	GET /logistics/shipments/{shipmentId}	shipment	출하 한 건		☐
+I-23	shipment-04제품출하.json	POST /logistics/shipments	shipment	출하 처리	403	☐
+I-23	shipment-04제품출하.json	POST /logistics/shipments/{shipmentId}:cancel	shipment	출하 취소 실행	403	☐
+I-23	shipment-04제품출하.json	POST /logistics/shipments/{shipmentId}:confirm	shipment	출하 확정	403	☐
+I-23	shipment-04제품출하.json	POST /logistics/shipments/{shipmentId}:request-cancel	shipment	출하 취소 요청	403	☐
+I-23	shipment-04제품출하.json	POST /logistics/stock-reinstatements	shipment	재고 재등록 확정	403	☐
+I-24	production-02생산실행.json	DELETE /planning/production-plans/{productionPlanId}	planning	생산 계획 삭제	403	☐
+I-24	production-02생산실행.json	GET /planning/production-orders	planning	P/O 목록		☐
+I-24	production-02생산실행.json	GET /planning/production-orders/{productionOrderId}	planning	P/O 한 건		☐
+I-24	production-02생산실행.json	GET /planning/production-plans	planning	생산 계획 목록		☐
+I-24	production-02생산실행.json	GET /planning/production-plans/{productionPlanId}	planning	생산 계획 한 건		☐
+I-24	production-02생산실행.json	POST /planning/production-orders/{productionOrderId}:acknowledge	planning	P/O 변경 확인 처리	403	☐
+I-24	production-02생산실행.json	POST /planning/production-orders/{productionOrderId}:resync	planning	ERP 재동기 요청	403	☐
+I-24	production-02생산실행.json	POST /planning/production-plans	planning	생산 계획 추가	403	☐
+I-24	production-02생산실행.json	POST /planning/production-plans/{productionPlanId}:confirm	planning	전개 확정	403	☐
+I-24	production-02생산실행.json	PUT /planning/production-plans/{productionPlanId}	planning	생산 계획 수정	403	☐
+I-25	production-02생산실행.json	GET /production/operation-handovers	production	공정 인계 목록		☐
+I-25	production-02생산실행.json	GET /production/operation-handovers/{operationHandoverId}	production	공정 인계 한 건		☐
+I-25	production-02생산실행.json	GET /production/repair-executions	production	수리 실행 목록		☐
+I-25	production-02생산실행.json	POST /production/operation-handovers	production	공정 인계 확정	403	☐
+I-25	production-02생산실행.json	POST /production/repair-executions	production	수리 투입 등록	403	☐
+I-25	production-02생산실행.json	POST /production/repair-executions/{repairExecutionId}:return	production	수리 반출 등록		☐
+I-26	production-02생산실행.json	GET /trace/serial-numbers	production	제품 개체 목록		☐
+I-26	production-02생산실행.json	POST /trace/serial-numbers	production	제품 개체 대량 발번	403	☐
+I-27	app-공통.json	GET /app/document-issues	document-issue	발행 이력 조회		☐
+I-27	app-공통.json	GET /app/document-issues/summary	document-issue	대상별 발행 요약 — 목록 화면용		☐
+I-27	app-공통.json	GET /app/document-issues/{documentIssueLogId}	document-issue	발행 기록 한 건		☐
+I-27	app-공통.json	GET /app/document-issues/{documentIssueLogId}/rendition	document-issue	출력물 이미지 · 문서		☐
+I-27	app-공통.json	GET /app/printers	document-issue	프린터 목록 · 상태		☐
+I-27	app-공통.json	POST /app/document-issues	document-issue	발행 · 재발행	403	☐
+I-27	app-공통.json	POST /app/document-issues/{documentIssueLogId}:report-print	document-issue	인쇄 결과 보고		☐
+I-28	app-공통.json	GET /app/notification-events	app	알림 이벤트 목록		☐
+I-28	app-공통.json	GET /app/notification-subscriptions	app	알림 수신자 설정 조회	403	☐
+I-28	app-공통.json	GET /app/notifications	app	알림 목록		☐
+I-28	app-공통.json	GET /app/notifications/unread-count	app	안 읽은 알림 수		☐
+I-28	app-공통.json	POST /app/notification-subscriptions/recipients:preview	app	지금 받는 사람 미리보기	403	☐
+I-28	app-공통.json	POST /app/notifications/{notificationId}:read	app	알림 읽음 처리	403	☐
+I-28	app-공통.json	POST /app/notifications:read-all	app	모두 읽음		☐
+I-28	app-공통.json	PUT /app/notification-subscriptions	app	알림 수신자 설정 저장	403	☐
+I-29	app-공통.json	GET /app/dashboard-summary	app	통합 대시보드 집계	403	☐
+I-30	equipment-05설비툴.json	GET /maintenance/breakdowns	maintenance	고장 기록 목록		☐
+I-30	equipment-05설비툴.json	GET /maintenance/breakdowns/{breakdownId}	maintenance	고장 기록 한 건		☐
+I-30	equipment-05설비툴.json	GET /maintenance/inspections	maintenance	점검 기록 목록		☐
+I-30	equipment-05설비툴.json	GET /maintenance/inspections/{inspectionId}	maintenance	점검 기록 한 건		☐
+I-30	equipment-05설비툴.json	POST /maintenance/breakdowns	maintenance	고장 보고 등록	403	☐
+I-30	equipment-05설비툴.json	POST /maintenance/breakdowns/{breakdownId}:complete	maintenance	고장 완료	403	☐
+I-30	equipment-05설비툴.json	POST /maintenance/breakdowns/{breakdownId}:start-handling	maintenance	처리 중으로	403	☐
+I-30	equipment-05설비툴.json	POST /maintenance/inspections	maintenance	점검 기록 등록	403	☐
+I-30	equipment-05설비툴.json	PUT /maintenance/breakdowns/{breakdownId}	maintenance	처리 내역 저장	403	☐
+I-31	equipment-05설비툴.json	GET /maintenance/orders	maintenance	보전 지시 목록		☐
+I-31	equipment-05설비툴.json	GET /maintenance/orders/{maintenanceOrderId}	maintenance	보전 지시 한 건		☐
+I-31	equipment-05설비툴.json	GET /maintenance/results	maintenance	보전 실적 목록		☐
+I-31	equipment-05설비툴.json	GET /maintenance/results/{maintenanceResultId}	maintenance	보전 실적 한 건		☐
+I-31	equipment-05설비툴.json	POST /maintenance/orders	maintenance	보전 지시 발행	403	☐
+I-31	equipment-05설비툴.json	POST /maintenance/orders/{maintenanceOrderId}:cancel	maintenance	보전 지시 취소	403	☐
+I-31	equipment-05설비툴.json	POST /maintenance/results	maintenance	보전 실적 등록	403	☐
+I-31	equipment-05설비툴.json	PUT /maintenance/results/{maintenanceResultId}	maintenance	보전 실적 수정	403	☐
+I-32	equipment-05설비툴.json	GET /maintenance/downtimes	maintenance	비가동 목록		☐
+I-32	equipment-05설비툴.json	GET /maintenance/downtimes/summary	maintenance	비가동 집계		☐
+I-32	equipment-05설비툴.json	GET /maintenance/downtimes/{downtimeId}	maintenance	비가동 한 건		☐
+I-32	equipment-05설비툴.json	POST /maintenance/downtimes	maintenance	비가동 등록	403	☐
+I-32	equipment-05설비툴.json	POST /maintenance/downtimes/{downtimeId}:close	maintenance	비가동 지금 종료	403	☐
+I-32	equipment-05설비툴.json	PUT /maintenance/downtimes/{downtimeId}	maintenance	비가동 수정	403	☐
+I-33	equipment-05설비툴.json	GET /maintenance/calibrations	maintenance	계측기 이력 목록		☐
+I-33	equipment-05설비툴.json	GET /maintenance/calibrations/{calibrationId}	maintenance	계측기 이력 한 건		☐
+I-33	equipment-05설비툴.json	GET /maintenance/collection-channels	maintenance	수집 채널 목록		☐
+I-33	equipment-05설비툴.json	GET /maintenance/collection-channels/observations	maintenance	최근 수신 신호		☐
+I-33	equipment-05설비툴.json	GET /maintenance/collection-channels/{collectionChannelId}	maintenance	수집 채널 한 건		☐
+I-33	equipment-05설비툴.json	GET /maintenance/tool-usages	maintenance	툴 사용실적 목록		☐
+I-33	equipment-05설비툴.json	GET /maintenance/tool-usages/{toolUsageId}	maintenance	툴 사용실적 한 건		☐
+I-33	equipment-05설비툴.json	POST /maintenance/calibrations	maintenance	계측기 이력 등록	403	☐
+I-33	equipment-05설비툴.json	POST /maintenance/calibrations/{calibrationId}:clear	maintenance	계측기 이력의 사용 차단을 해소한다		☐
+I-33	equipment-05설비툴.json	POST /maintenance/collection-channels	maintenance	수집 채널 등록	403	☐
+I-33	equipment-05설비툴.json	POST /maintenance/tool-usages	maintenance	툴 사용실적 등록	403	☐
+I-33	equipment-05설비툴.json	PUT /maintenance/collection-channels/{collectionChannelId}	maintenance	수집 채널 수정	403	☐
+I-34	app-공통.json	GET /app/attachments	app	첨부 목록		☐
+I-34	app-공통.json	GET /app/attachments/{attachmentId}/content	app	첨부 파일 내려받기		☐
+I-34	app-공통.json	POST /app/attachments	app	첨부 올리기	403	☐
+I-34	equipment-05설비툴.json	POST /maintenance/breakdowns/{breakdownId}/attachments	maintenance	고장 사진 붙이기	403	☐
+I-35	mdm-기준정보.json	GET /audit/events	audit	변경 이력 조회	403	☐
+I-35	mdm-기준정보.json	POST /mdm/spare-parts:import	mdm	예비품 엑셀 올리기	403	☐
