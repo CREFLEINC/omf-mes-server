@@ -398,7 +398,11 @@ export class NoticeService {
   /**
    * `notice.notice_no` 는 NOT NULL·유일인데 **계약에 그 칸이 없다** — 주는 사람이 없어
    * 서버가 짓는다. 채번 규칙(`app.numbering_rule`)에는 실적 하나뿐이라 형식도 우리가 정했다.
-   * 되돌림 §Y-6 에 적었다. 같은 날 동시에 만들면 부딪히므로 몇 번 다시 뽑는다.
+   * 되돌림 §Y-6 에 적었다.
+   *
+   * ⚠ 같은 날 «동시에» 두 건을 만들면 같은 번호를 뽑아 유일 제약에 걸린다. 재시도를 두지
+   * 않았다 — 그때는 400 `UNIQUE_VIOLATION` 으로 떨어지고(오류 필터), 공지 작성은 사람이
+   * 누르는 드문 동작이라 다시 누르면 된다. 채번 규칙이 확정되면 이 함수를 통째로 바꾼다.
    */
   private async nextNoticeNo(): Promise<string> {
     const day = dateOf(todayUtc()).replace(/-/g, '');
