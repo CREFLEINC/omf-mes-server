@@ -11,7 +11,7 @@
 |---|---|---|---|---|---|---|
 | 1 | 슬라이스 단위 | 자원 축 25 | 화면 축 43 | 전표 체인 축 35 | **통합 35 를 뼈대로**. 화면 축의 「반쯤 열리는 화면」(M-01-08 등)은 배포 노트로 옮긴다 | 서버 순서는 코어 재작업 비용이 가른다. 화면 완결성은 클라이언트 롤아웃 문제 |
 | 2 | 승인 코어 위치 | 1번 | 1번 | 1번 | **I-1 맨 앞** | 셋이 일치 |
-| 3 | 채번 코어 | `core/numbering` 신설, 규칙 없으면 기본 패턴 | — | I-2 에서 승격 + 입고 두 함수 이관 | **I-2 안의 코어 전용 PR(≤200줄)**: `numbering_rule`·`numbering_counter` 를 읽고, 미등재 유형은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 기본값. 같은 PR 에서 `GR-`·`PT-` 두 함수를 코어로 옮긴다(사용처 2 확보 + `count()+1` 결함 제거) | API §5.5 ①②③ · 통합 §2 · 아키텍처 C-6 예고 |
+| 3 | 채번 코어 | `core/numbering` 신설, 규칙 없으면 기본 패턴 | — | I-2 에서 승격 + 입고 두 함수 이관 | **I-2 안의 코어 전용 PR(≤200줄)**: `numbering_rule`·`numbering_counter` 를 읽고, 미등재 유형은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 기본값. 같은 PR 에서 `GR-`·`PT-`·**`NTC-` 세 자리**를 코어로 옮긴다(사용처 3 확보 + `count()+1` 결함 제거 · `NTC-` 는 통합 §7 대기 10 이 「채번 코어가 이 자리를 흡수한다」라 적었다 — I-2 재수립 R-2) | API §5.5 ①②③ · 통합 §2 · 아키텍처 C-6 예고 |
 | 4 | 적치(I-12) 순서 | 4번으로 당김 | 9번 | M5, 단 I-3 과 병렬 가능 | **I-3 뒤 4번째** — 문의 017 권고안이 이미 있고 입고가 만든 미완 자원을 닫는다. sonnet 로 I-3 과 병렬 | API §2 ⚠ · 통합 §6-2 |
 | 5 | 다형 취소(I-5) 순서 | 5번 | 31번(전 유형이 선 뒤) | I-3·I-4 직후 | **I-4 직후 6번째** — 코어라 늦을수록 재작업(I-13·I-14·I-23). 화면 W-01-13 이 늦게 온전해지는 것은 배포 노트 | 통합 §2 「가장 비싼 되돌림」 |
 | 6 | 검사(I-19) 시점 | M3 | 6번(입하 LOT 이 검사 대기라 막힌다) | M3 | **M3 유지** — 「판정은 IQC, 전이는 입고 확정」(3차 문의 ②)이라 입고가 이미 전이를 진다. M1 체인은 기존 입고 e2e 픽스처를 쓴다 | 3차 문의 ② |
@@ -32,7 +32,7 @@
 | 순 | 슬라이스 | 건 | 선행 | 마이그(§4) | 코어 | 모델 | PR | 병렬 레인 |
 |---:|---|--:|---|---|---|---|--:|---|
 | 1 | **I-1** 승인 코어 — 결재선·결재함 | 12 | — | A6 | 승인(`src/core/approval/`) · `omitEmpty` 헬퍼 | opus(코어·결재) · sonnet(CRUD·조회) | 4 | ∥ I-30 |
-| 2 | **I-2** P/O + 채번 코어 + 승인 상신 코어 | 7 | I-1 | A1·A2·M-b | 채번 · 승인 `request`/`assertNoOpenRequest`/`assertApproved`(별도 코어 PR) | opus(코어 2) · sonnet(P/O CRUD) | 4 | ∥ I-30/I-32 |
+| 2 | **I-2** P/O + 채번 코어 + 승인 상신 코어 | 7 | I-1 | A1·A2·M-b | 채번 · 승인 `request`/`assertNoOpenRequest`(별도 코어 PR) — `assertApproved` 는 **I-4 로 이관**(첫 사용처가 `goods-issues:post` · I-2 재수립 R-9) | opus(코어 2 · 마이그) · sonnet(P/O 조회·CRUD) | 5 | ∥ I-30/I-32 |
 | 3 | **I-3** 입하 | 12 | I-2 | A3 | — | sonnet(조회) · opus(차이·초과분리) | 3 | ∥ I-12 |
 | 4 | **I-12** 적치 완료·임시적재 | 4 | 입고(구현됨) | — | — | opus(원장 STOCK_TRANSFER) | 2 | ∥ I-3 |
 | 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | M-c | — | opus | 3 | — |
@@ -93,9 +93,9 @@
 | 코어 | 시점 | 형태 |
 |---|---|---|
 | 승인 워크플로 | I-1 코어 PR ≤200줄 | **`src/core/approval/`**(도메인 간 service 호출 금지 — 9 상신자가 7 도메인) — `selectRoute`·`expandSteps`·`currentStep`·`approve`·`reject`. 컨트롤러·CRUD 는 `src/app/approval/`. `ROUTE_NOT_FOUND`·`ROUTE_AMBIGUOUS`·`NOT_YOUR_TURN`·`APPROVER_TYPE_NOT_SUPPORTED`·J-8(승인은 자물쇠만 푼다 — 후속은 상태 조회, 콜백 없음) |
-| 승인 상신 코어 | I-2 코어 PR(채번과 별도) | `request`·`assertNoOpenRequest`·`assertApproved` — 셋 다 `approvalTypeCode` 축(`goods_issue` 가 두 유형). `selectRoute(businessUnitId)` 는 P/O 만 값, 8자리 null(문의 022) |
+| 승인 상신 코어 | I-2 코어 PR(채번과 별도) | `request`·`assertNoOpenRequest` — 둘 다 `approvalTypeCode` 축(`goods_issue` 가 두 유형). `selectRoute(businessUnitId)` 는 P/O 만 값, 8자리 null(문의 022). ⛔ **`assertApproved` 는 I-4 다** — 첫 사용처가 `goods-issues:post` 이고 I-2 에는 사용처가 0이다(I-2 재수립 R-9 · §1 과 같은 값). ⛔ **`request()` 는 채번을 부르지 않는다** — 호출자가 트랜잭션 밖에서 받은 `approvalRequestNo` 를 넘긴다(아래 채번 칸) |
 | `omitEmpty` 헬퍼 | I-1 | `src/common/http/omit-empty.ts` — 값 없으면 키 생략(널 금지). 사용처 3(`ApprovalTarget`·`DocumentTarget`·`DocumentProgress`) |
-| 채번 | I-2 코어 PR ≤200줄 | `core/numbering` — `numbering_rule`·`numbering_counter`, 기본 패턴, GR·PT 이관 |
+| 채번 | I-2 코어 PR ≤200줄 | `core/numbering` — `numbering_rule`·`numbering_counter`, 기본 패턴, `GR-`·`PT-`·`NTC-` 이관. ⭐ **카운터 증가는 업무 트랜잭션 «밖»에서 돈다**(`next()` 가 `tx` 를 받지 않는다) — 안에서 올리면 ① 롤백이 번호를 되돌려 호출자의 재시도가 같은 번호를 다시 뽑고 ② 카운터 행 잠금이 전표 커밋까지 가서 같은 (유형·영업일)이 직렬화된다(Prisma 기본 5초 시한 → `P2028` 이 재시도 루프를 빠져나가 500). **결번은 허용한다** — 계약이 번호의 연속을 요구하지 않는다. ⭐ **그리고 `$transaction` 을 «열기 전»에 부르고 번호 «문자열»만 트랜잭션에 넘긴다** — 열린 트랜잭션 안에서 부르면 한 요청이 커넥션을 둘 쥐어 풀(기본 `cpu×2+1`) 고갈 시 `P2024` 로 죽는다(PR #189 리뷰 Major-1). 순서는 `검증 → next() → $transaction(…, 번호)`. 뒤 32 전표가 이 형태를 그대로 쓴다(I-2 재수립 R-2) |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 `app.entity_type_registry` 에서 읽음, 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | `src/integration/message` 에 적재 함수 하나. `message_key` 규약 한 곳 |
@@ -176,7 +176,10 @@
 | **019** `IQC_SKIP` 승인 화면 W-01-02/W-03-09 · 특채 9값 부재 · `screenId` 화면표 · `openable` 전건 false | I-1 | I-1 재수립 R-11 |
 | **021** 승인 유형·대상 유형 표시명 원천 없음(`displayName` required · 끄기 경고 화면 목록 · `?q`) | I-1 | I-1 재수립 R-11 |
 | **022** `GOODS_ISSUE_DISPOSAL` 결재선 `businessUnitId` 파생 매핑 없음 — 8자리 null | I-1(I-4 에서 드러남) | I-1 재수립 R-11 |
-| 알려둘 것(번호 없음): `PUT …/steps` ETag 내림(계약 미선언) · `?requestedByMe` 세션 필요 | I-1 | 다음 전달분 말미 |
+| **023** P/O 상태 축과 상신 뒤 잠금 — `REGISTERED` 밖으로 옮기는 오퍼레이션이 없다(화면의 상태 드롭다운도 갈 길이 없다 · 승인 대기 중 수정이 열려 있다) | I-2 | I-2 재수립 R-9 |
+| **025** 등록한 P/O 를 다시 여는 화면이 없다 — 수정·라인 치환·재상신·「ERP 미매칭 배지」가 갈 곳이 없다 | I-2 | I-2 재수립 R-9 |
+| ~~024~~ `erp_purchase_order_no` 유일 제약 → **철회·결번**(`W-01-11` §8 #3·#4 가 물음도 일정도 이미 세웠다). 우리가 부분 유일을 건 사실만 「알려둘 것」으로 | ~~I-2~~ | I-2 재수립 R-9 |
+| 알려둘 것(번호 없음): (I-1) `PUT …/steps` ETag 내림(계약 미선언) · `?requestedByMe` 세션 필요 / **(I-2) `:request-approval` 이 `version_no` 를 안 올린다(8 상신자에 복사) · P/O 쓰기 3건 404 미선언인데 404 를 낸다 · `DEPARTMENT` 결재선을 사람으로 심는다 · `uq_purchase_order_erp_no` 를 걸었다 · 문의 14 표에 `purchase_order_no` 한 행 추가** | I-1 · I-2 | 다음 전달분 말미 |
 | 처분 전이가 `transitionCode` 9종에 없음 | I-21 | UI/UX N |
 | `lot-hold-events` vs `lot-status-events` — W-03-01 이 어느 쪽 | I-20 | UI/UX §9-3 |
 | LOT 품질 판정 축(`lot.status_code` vs `inventory_balance.quality_status_code`) — #115 재판정 중 인용 | I-19/I-20 | UI/UX L · 아키텍처 §5 #1 |
@@ -200,4 +203,5 @@
 
 | 슬라이스 | 상태 | PR | 커버리지 |
 |---|---|---|---|
-| I-1 | ◐ | #182(계획) · #183(① 코어) | 238 (오퍼레이션 0건) |
+| I-1 | ✅ 2026-09-06 | #182(계획) · #183(① 코어) · #184(②a 조회 3) · #185(②b 쓰기 3 + A6) · #186(③b 결재함 2) · #187(③a 활성 전이 2) · #188(④ 결재 2) | **250** (12/12) |
+| I-2 | ◐ | 계획 중 | 250 |

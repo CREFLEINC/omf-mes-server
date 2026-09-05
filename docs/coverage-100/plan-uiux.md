@@ -130,14 +130,16 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 #### U4 P/O·ASN (W-01-11·W-01-09) — 10건
 
+⚠ **정정(2026-09-06 · I-2 재수립 R-9)** — 라인 두 칸의 「W-01-11」은 **등록 폼 «안»의 라인 그리드**(`W-01-11` §4-B 필드 표 · §5-1 「라인 추가·삭제」)를 오인한 것이다. 그 행위는 `POST /logistics/purchase-orders` 본문으로 가고, 등록한 P/O 를 다시 여는 화면은 인벤토리에 없다 → **문의 025**.
+
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
 | `GET /logistics/purchase-orders` | P/O 목록 | W-01-09,W-01-11 | - |
 | `GET /logistics/purchase-orders/{purchaseOrderId}` | P/O 상세 | W-01-03,W-01-09 | - |
-| `GET /logistics/purchase-orders/{purchaseOrderId}/lines` | P/O 라인 목록 | W-01-11 | - |
+| `GET /logistics/purchase-orders/{purchaseOrderId}/lines` | P/O 라인 목록 | — (025) | - |
 | `POST /logistics/purchase-orders` | P/O 등록 | W-01-03,W-01-11 | 멱등 |
 | `PUT /logistics/purchase-orders/{purchaseOrderId}` | P/O 헤더 수정 | — | 멱등, ETag |
-| `PUT /logistics/purchase-orders/{purchaseOrderId}/lines` | P/O 라인 치환 | W-01-11 | 멱등, ETag |
+| `PUT /logistics/purchase-orders/{purchaseOrderId}/lines` | P/O 라인 치환 | — (025) | 멱등, ETag |
 | `POST /logistics/purchase-orders/{purchaseOrderId}:request-approval` | P/O 승인 요청 | W-01-11 | 멱등, ETag |
 | `GET /logistics/asns` | 입하 예정 목록 | W-01-09 | - |
 | `GET /logistics/asns/{asnId}` | 입하 예정 상세 | W-01-09 | - |
