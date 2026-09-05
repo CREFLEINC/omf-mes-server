@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
+import { ApprovalModule } from '../core/approval';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ApprovalRequestController } from './approval/approval-request.controller';
+import { ApprovalRequestService } from './approval/approval-request.service';
 import { ApprovalRouteController } from './approval/approval-route.controller';
 import { ApprovalRouteService } from './approval/approval-route.service';
 import { AppUserController } from './access/app-user.controller';
@@ -28,7 +31,9 @@ import { UserAssignmentService } from './access/user-assignment.service';
  */
 @Module({
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
-  imports: [PrismaModule, IdempotencyModule, AuthModule],
+  // ApprovalModule(core) 은 결재함의 「현재 단계」 판정이 :approve/:reject 와 같은
+  // 함수여야 해서 끌어온다(I-1.md R-2).
+  imports: [PrismaModule, IdempotencyModule, AuthModule, ApprovalModule],
   controllers: [
     PermissionController,
     RoleController,
@@ -36,6 +41,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     OperationPolicyController,
     NoticeController,
     ApprovalRouteController,
+    ApprovalRequestController,
   ],
   providers: [
     RoleService,
@@ -45,6 +51,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     OperationPolicyService,
     NoticeService,
     ApprovalRouteService,
+    ApprovalRequestService,
   ],
 })
 export class AppDomainModule {}
