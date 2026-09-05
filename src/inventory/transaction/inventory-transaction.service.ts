@@ -87,13 +87,22 @@ export class InventoryTransactionService {
 
   async list(query: TransactionQuery): Promise<PagedResponse<TransactionView>> {
     const range = assertBusinessDateRange(query);
-    const page = pageRequest({ page: number(query.page), size: number(query.size) });
+    const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
+    // ⛔ 숫자 축은 여기서 «가른다». 질의 문자열을 그대로 Prisma 에 넘기면 글자가 섞였을 때
+    // PrismaClientValidationError 가 나는데, 그것은 «알려진» 오류가 아니라 오류 필터의
+    // 그물에도 안 걸리고 500 으로 샌다. 사용자가 고칠 수 있는 입력이라 400 이어야 한다.
+    const ids = {
+      itemId: assertId('itemId', query.itemId),
+      lotId: assertId('lotId', query.lotId),
+      warehouseId: assertId('warehouseId', query.warehouseId),
+      locationId: assertId('locationId', query.locationId),
+    };
 
     const where: Prisma.inventory_transactionWhereInput = {
       business_date: { gte: range.from, lte: range.to },
       ...optional('transaction_type_code', query.transactionTypeCode),
       ...optional('source_document_type_code', query.sourceDocumentTypeCode),
-      ...lineFilter(query),
+      ...lineFilter(ids),
     };
 
     const [rows, total] = await Promise.all([
@@ -140,24 +149,45 @@ export class InventoryTransactionService {
  * ⭐ 창고는 나간 쪽·들어온 쪽을 **둘 다** 본다. 창고에서 빠져나간 것도 그 창고의
  * 수불이라, 한쪽만 보면 출고가 이력에서 사라진다.
  */
-function lineFilter(query: TransactionQuery): Prisma.inventory_transactionWhereInput {
+function lineFilter(ids: LineIds): Prisma.inventory_transactionWhereInput {
   const line: Prisma.inventory_transaction_lineWhereInput = {
-    ...optional('item_id', query.itemId),
-    ...optional('lot_id', query.lotId),
-    ...(query.warehouseId === undefined
+    ...optional('item_id', ids.itemId),
+    ...optional('lot_id', ids.lotId),
+    ...(ids.warehouseId === undefined
       ? {}
-      : {
-          OR: [{ from_warehouse_id: query.warehouseId }, { to_warehouse_id: query.warehouseId }],
-        }),
-    ...(query.locationId === undefined
+      : { OR: [{ from_warehouse_id: ids.warehouseId }, { to_warehouse_id: ids.warehouseId }] }),
+    // ⚠ 두 번째 「양쪽 끝」 조건은 AND 로 감싼다 — OR 키를 또 쓰면 앞의 창고 조건을
+    // 덮어써서 창고 필터가 조용히 사라진다.
+    ...(ids.locationId === undefined
       ? {}
       : {
           AND: [
-            { OR: [{ from_location_id: query.locationId }, { to_location_id: query.locationId }] },
+            { OR: [{ from_location_id: ids.locationId }, { to_location_id: ids.locationId }] },
           ],
         }),
   };
   return Object.keys(line).length === 0 ? {} : { inventory_transaction_line: { some: line } };
+}
+
+interface LineIds {
+  itemId?: number;
+  lotId?: number;
+  warehouseId?: number;
+  locationId?: number;
+}
+
+/**
+ * 숫자 식별자 축. 없으면 거르지 않고, 글자가 섞였으면 **400** 이다.
+ * ⛔ 그냥 넘기면 Prisma 가 `PrismaClientValidationError` 를 던지는데 그것은 오류 필터가
+ * 계약 봉투로 옮기지 못하는 부류라 500 이 된다(`prisma-error.ts` 는 «알려진» 오류만 본다).
+ */
+function assertId(field: string, value: unknown): number | undefined {
+  if (value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field, code: ERROR_CODE.INVALID, message: '숫자 식별자여야 합니다.' },
+  ]);
 }
 
 /**
@@ -195,8 +225,8 @@ function assertDate(field: string, value: string): Date {
   ]);
 }
 
-/** 질의 문자열은 숫자가 아니다 — 전역 변환 파이프가 없어 여기서 가른다. */
-function number(value: unknown): number | undefined {
+/** 쪽·크기는 관대하게 본다 — 계약이 기본값을 정해 두어 못 읽으면 그 기본으로 간다. */
+function loose(value: unknown): number | undefined {
   if (value === undefined || value === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;

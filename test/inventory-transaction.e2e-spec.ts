@@ -104,6 +104,14 @@ describe('수불 이력 (e2e)', () => {
       .expect(400);
   });
 
+  it('⛔ 숫자 축에 글자가 오면 400 이다 — 500 으로 새지 않는다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/inventory/transactions?businessDateFrom=${D2}&businessDateTo=${D0}&itemId=abc`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'itemId', code: 'INVALID' });
+  });
+
   it('목록이 계약 스키마를 만족한다', async () => {
     const body = await list(`businessDateFrom=${D2}&businessDateTo=${D0}`);
     expect(body.items.length).toBeGreaterThanOrEqual(3);
