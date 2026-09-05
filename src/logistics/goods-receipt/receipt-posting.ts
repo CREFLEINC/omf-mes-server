@@ -138,6 +138,11 @@ export async function postReceipt(
     orderBy: { line_no: 'asc' },
     select: { inventory_transaction_line_id: true },
   });
+  // 전표 번호가 유일하고 멱등키가 거기서 나오므로 흡수가 일어날 수 없다. 그래도 어긋나면
+  // 라인이 «남의 원장»을 가리키게 되므로, 조용히 어긋나느니 트랜잭션을 되돌린다.
+  if (ledger.length !== lines.length) {
+    throw new Error(`원장 라인 수가 입고 라인과 다르다: ${ledger.length} ≠ ${lines.length}`);
+  }
 
   for (const [index, goodsReceiptLineId] of lines.entries()) {
     await tx.goods_receipt_line.update({
