@@ -34,13 +34,20 @@ const INCLUDE = {
 };
 type RequestRow = Prisma.approval_requestGetPayload<{ include: typeof INCLUDE }>;
 
+/** 상세 + 새 `version_no`. 컨트롤러가 `runVersioned` 로 ETag 를 내린다. */
+export interface ApprovalDecisionResult {
+  detail: ApprovalRequestDetailView;
+  versionNo: number;
+}
+
 /**
- * 결재함 조회 2건. 화면은 `W-CO-09`(결재함) · `W-01-13`·`W-03-09` 가 함께 부른다.
+ * 결재함 조회 2건 + 결재 2건. 화면은 `W-CO-09`(결재함) · `W-01-13`·`W-03-09` 가 함께 부른다.
  *
- * ⛔ `:approve`/`:reject`(뒤 PR)와 등록·활성 전이(③a)는 이 서비스에 없다. 「현재 단계」
- * 판정만 코어 `ApprovalService.currentStep` 을 그대로 쓴다 — 결재함의 `currentStepNo`·
- * `isMyTurn`·`isCurrent` 와 `:approve` 의 `NOT_YOUR_TURN` 판정이 같은 함수여야
- * 조용히 어긋나지 않는다(I-1.md R-2).
+ * ⛔ 결재 판정(순차·권한·전이)은 코어 `ApprovalService` 가 통째로 진다 — 이 서비스는
+ * 트랜잭션만 열어 넘기고 검사 순서를 다시 짜지 않는다. 조회의 「현재 단계」도 같은
+ * `currentStep` 을 쓴다 — 결재함의 `currentStepNo`·`isMyTurn`·`isCurrent` 와
+ * `:approve` 의 `NOT_YOUR_TURN` 판정이 같은 함수여야 조용히 어긋나지 않는다(I-1.md R-2).
+ * ⛔ 등록·활성 전이(결재선)는 `ApprovalRouteService` 몫이다.
  */
 @Injectable()
 export class ApprovalRequestService {
@@ -93,6 +100,46 @@ export class ApprovalRequestService {
     });
     const steps = row.approval_step.map((step) => toApprovalStep(step, actorId, info.stepNo));
     return { detail: { request, steps }, versionNo: row.version_no };
+  }
+
+  /** 승인. 의견은 선택이다(계약 `ApprovalDecision.required: []`). */
+  approve(
+    requestId: number,
+    version: number,
+    actorId: number,
+    comment?: string,
+  ): Promise<ApprovalDecisionResult> {
+    return this.decide(requestId, actorId, (tx) =>
+      this.approvalCore.approve(tx, BigInt(requestId), version, BigInt(actorId), comment),
+    );
+  }
+
+  /** 반려. 의견이 필수다 — 빈 값은 계약 가드가 400 으로 이미 막는다(`minLength: 1`). */
+  reject(
+    requestId: number,
+    version: number,
+    actorId: number,
+    comment: string,
+  ): Promise<ApprovalDecisionResult> {
+    return this.decide(requestId, actorId, (tx) =>
+      this.approvalCore.reject(tx, BigInt(requestId), version, BigInt(actorId), comment),
+    );
+  }
+
+  /**
+   * 코어에 위임하고 **상세를 다시 읽어** 응답을 만든다. 코어 `DecisionResult.steps` 로
+   * 조립하지 않는다 — 그 배열은 판정에 쓴 세 칸뿐이라(코어 주석) 계약 `ApprovalStep` 의
+   * `approverName`·`decisionAt` 을 못 채운다.
+   * ⛔ 트랜잭션은 여기서 연다 — `runIdempotent` 는 자기 tx 를 work 에 넘기지 않는다
+   * (`master-write.ts`). 선례 `approval-route.service.ts replaceSteps`.
+   */
+  private async decide(
+    requestId: number,
+    actorId: number,
+    run: (tx: Prisma.TransactionClient) => Promise<unknown>,
+  ): Promise<ApprovalDecisionResult> {
+    await this.prisma.$transaction((tx) => run(tx));
+    return this.get(requestId, actorId);
   }
 
   private listWhere(query: ApprovalRequestQuery, actorId: number): Prisma.approval_requestWhereInput {

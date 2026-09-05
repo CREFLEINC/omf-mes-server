@@ -134,6 +134,31 @@ describe('ContractValidator', () => {
     });
   });
 
+  describe('선택 본문', () => {
+    // 계약 전면에 `requestBody.required: false` 는 이 한 자리뿐이다(실측).
+    const key = 'POST /app/approval-requests/{approvalRequestId}:approve';
+
+    it('본문을 아예 안 보내도 통과한다 — 계약이 requestBody.required=false 로 열었다', () => {
+      // body-parser 2 는 본문 없는 요청에 `req.body` 를 undefined 로 둔다. 스키마로는
+      // 못 가른다 — `required: []` 인 객체 스키마도 undefined 는 「객체가 아니다」다.
+      expect(validator.validate(key, { params: { approvalRequestId: '7' } })).toEqual([]);
+    });
+
+    it('보낸 본문은 그대로 검증한다 — 열린 것은 «부재»뿐이다', () => {
+      expect(
+        validator.validate(key, { params: { approvalRequestId: '7' }, body: { comment: 1 } }),
+      ).toMatchObject([{ field: 'comment', code: ERROR_CODE.INVALID }]);
+    });
+
+    it('본문 필수 자리는 부재를 계속 막는다', () => {
+      expect(
+        validator.validate('POST /app/approval-requests/{approvalRequestId}:reject', {
+          params: { approvalRequestId: '7' },
+        }).length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
 
   it('⭐ 본문 필수를 가진 오퍼레이션 전건이 빈 본문을 거른다 — 표본이 아니라 전수로 본다', () => {
     // 위 검사들은 손으로 고른 몇 건이다. 스키마 해석이 «어떤 형태에서만» 맞고 나머지는

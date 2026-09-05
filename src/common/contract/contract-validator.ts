@@ -37,6 +37,8 @@ const ID_BASE = 'https://omf-mes.invalid/contract';
 
 interface CompiledOperation {
   body?: ValidateFunction;
+  /** 계약이 `requestBody.required: false` 라 적은 자리 — 본문이 아예 없어도 통과시킨다. */
+  bodyOptional?: boolean;
   query?: ValidateFunction;
   path?: ValidateFunction;
 }
@@ -124,10 +126,15 @@ function parameterSchema(
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 
-function bodySchemaPointer(entry: ContractOperation): string | undefined {
-  const requestBody = (entry.operation as { requestBody?: { content?: Record<string, unknown> } })
+function requestBodyOf(
+  entry: ContractOperation,
+): { required?: boolean; content?: Record<string, unknown> } | undefined {
+  return (entry.operation as { requestBody?: { required?: boolean; content?: Record<string, unknown> } })
     .requestBody;
-  const content = requestBody?.content;
+}
+
+function bodySchemaPointer(entry: ContractOperation): string | undefined {
+  const content = requestBodyOf(entry)?.content;
   if (!content) return undefined;
   // multipart 4자리는 파일 업로드다 — JSON 스키마로 볼 대상이 아니다.
   if (!content['application/json']) return undefined;
@@ -160,7 +167,11 @@ export class ContractValidator {
     if (compiled.query && !compiled.query(request.query ?? {})) {
       items.push(...toErrorItems(compiled.query.errors ?? []));
     }
-    if (compiled.body && !compiled.body(request.body)) {
+    // 본문 없는 요청(`req.body === undefined` — body-parser 2)은 계약이
+    // `requestBody.required: false` 로 연 자리에서만 통과한다. 스키마로 판정할 수
+    // 없다 — `required: []` 인 객체 스키마도 `undefined` 는 「객체가 아니다」로 막는다.
+    const bodyOmitted = request.body === undefined && compiled.bodyOptional === true;
+    if (compiled.body && !bodyOmitted && !compiled.body(request.body)) {
       items.push(...toErrorItems(compiled.body.errors ?? []));
     }
     return items;
@@ -200,6 +211,7 @@ export class ContractValidator {
       ...(pathSchema ? { path: ajv.params.compile(pathSchema) } : {}),
       ...(querySchema ? { query: ajv.params.compile(querySchema) } : {}),
       ...(bodyPointer ? { body: ajv.body.compile(refTo(ids.body, bodyPointer)) } : {}),
+      ...(requestBodyOf(entry)?.required === false ? { bodyOptional: true } : {}),
     };
     this.compiled.set(key, compiled);
     return compiled;
