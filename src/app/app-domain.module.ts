@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ApprovalRouteController } from './approval/approval-route.controller';
+import { ApprovalRouteService } from './approval/approval-route.service';
 import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
@@ -27,7 +29,14 @@ import { UserAssignmentService } from './access/user-assignment.service';
 @Module({
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
   imports: [PrismaModule, IdempotencyModule, AuthModule],
-  controllers: [PermissionController, RoleController, AppUserController, OperationPolicyController, NoticeController],
+  controllers: [
+    PermissionController,
+    RoleController,
+    AppUserController,
+    OperationPolicyController,
+    NoticeController,
+    ApprovalRouteController,
+  ],
   providers: [
     RoleService,
     RolePermissionService,
@@ -35,6 +44,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     UserAssignmentService,
     OperationPolicyService,
     NoticeService,
+    ApprovalRouteService,
   ],
 })
 export class AppDomainModule {}
