@@ -2,7 +2,7 @@
 
 > 계약 커버리지 238/487 → 487/487 을 목표로 자율 반복한다. 이 문서는 사용자와 합의한 규칙의 정본이다.
 > 컨텍스트가 정리되더라도 이 문서를 먼저 읽고 이어간다.
-> 같은 폴더: `uncovered.tsv`(시작 시점 미커버 249건) · `plan-api.md`·`plan-uiux.md`·`plan-integration.md`(3관점) · `plan.md`(통합 정본, 진행 표 포함).
+> 같은 폴더: `uncovered.tsv`(시작 시점 미커버 249건) · `plan-api.md`·`plan-uiux.md`·`plan-integration.md`(3관점) · `plan.md`(통합 정본, 진행 표 포함) · `assignment.tsv`(249건 → 슬라이스 배정, 기계 대조 249/249).
 > 검토 요청서: `../design-inquiries/NNN-제목.md` — 단건, 발생 시점마다 작성, 번호는 이미 보낸 1~15번(`~/omf-design-requests/설계-문의-2026-09-0*.md`)에 이어 **16번부터**. 루틴 끝에 일괄 전달.
 
 ## 0. 범위
