@@ -50,7 +50,7 @@ export function purchaseOrderView(row: PurchaseOrderRow): PurchaseOrderView {
     supplierId: Number(row.supplier_id),
     businessUnitId: Number(row.business_unit_id),
     plantId: Number(row.plant_id),
-    orderDate: row.order_date.toISOString().slice(0, 10),
+    orderDate: toDateString(row.order_date) as string,
     expectedReceiptDate: toDateString(row.expected_receipt_date),
     statusCode: row.status_code,
     approvalRequestId: id(row.approval_request_id),

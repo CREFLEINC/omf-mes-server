@@ -36,8 +36,10 @@ const lineRow = (overrides: Args = {}): Args => ({
   ...overrides,
 });
 
+const ORDERED_QTY_FIELD_REF = { modelName: 'purchase_order_line', name: 'ordered_qty' }; // Prisma `fields` 참조 스텁
+
 /** `list()` 하나가 필요로 하는 만큼만 답하는 최소 prisma 스텁 — 넘어온 `where` 를 그대로 잡는다. */
-function listStub(overrides: { rows?: Args[]; openIds?: bigint[] } = {}) {
+function listStub(overrides: { rows?: Args[] } = {}) {
   const calls: { where?: Args } = {};
   const prisma = {
     purchase_order: {
@@ -47,7 +49,7 @@ function listStub(overrides: { rows?: Args[]; openIds?: bigint[] } = {}) {
       },
       count: async () => (overrides.rows ?? []).length,
     },
-    $queryRaw: async () => (overrides.openIds ?? []).map((purchase_order_id) => ({ purchase_order_id })),
+    purchase_order_line: { fields: { ordered_qty: ORDERED_QTY_FIELD_REF } },
   };
   return { prisma: prisma as unknown as PrismaService, calls };
 }
@@ -55,14 +57,17 @@ function listStub(overrides: { rows?: Args[]; openIds?: bigint[] } = {}) {
 describe('PurchaseOrderService', () => {
   describe('list', () => {
     it('목록 — openOnly 는 받은 수량이 발주 수량에 못 미치는 라인이 있는 P/O 만 준다', async () => {
-      const { prisma, calls } = listStub({ openIds: [10n, 20n] });
-      const service = new PurchaseOrderService(prisma);
+      const { prisma, calls } = listStub();
 
-      await service.list({ openOnly: true });
+      await new PurchaseOrderService(prisma).list({ openOnly: true }); // tolerance_under_qty 안 뺌(§6-4)
 
-      // `received_qty < ordered_qty` 는 두 컬럼 비교라 Prisma where 로 못 걸어 원시 SQL로
-      // 뽑은 id 목록을 `in` 필터로 접는다(tolerance_under_qty 를 빼지 않는다 — I-2.md §6-4).
-      expect(calls.where?.purchase_order_id).toEqual({ in: [10n, 20n] });
+      expect(calls.where?.purchase_order_line).toEqual({ some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } });
+    });
+
+    it('목록 — openOnly 를 안 주면 라인 조건을 안 건다', async () => {
+      const { prisma, calls } = listStub();
+      await new PurchaseOrderService(prisma).list({});
+      expect(calls.where).not.toHaveProperty('purchase_order_line');
     });
 
     it('목록 — itemId 는 라인에 그 품목이 있는 P/O 만 준다', async () => {
@@ -119,9 +124,8 @@ describe('PurchaseOrderService', () => {
           },
         },
       } as unknown as PrismaService;
-      const service = new PurchaseOrderService(prisma);
 
-      const { detail, versionNo } = await service.get(1);
+      const { detail, versionNo } = await new PurchaseOrderService(prisma).get(1);
 
       expect(detail.purchaseOrder.purchaseOrderId).toBe(1);
       expect(detail.lines.map((line) => line.lineNo)).toEqual([1, 2]);
@@ -143,9 +147,8 @@ describe('PurchaseOrderService', () => {
         purchase_order: { findUnique: async () => orderRow({ erp_purchase_order_no: null, approval_request_id: null }) },
         purchase_order_line: { findMany: async () => [] },
       } as unknown as PrismaService;
-      const service = new PurchaseOrderService(prisma);
 
-      const { detail } = await service.get(1);
+      const { detail } = await new PurchaseOrderService(prisma).get(1);
 
       expect(detail.purchaseOrder).toHaveProperty('erpPurchaseOrderNo', null);
       expect(detail.purchaseOrder).toHaveProperty('approvalRequestId', null);

@@ -32,7 +32,6 @@ export class PurchaseOrderService {
 
   async list(query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
     const page = pageRequest(query);
-    const openIds = query.openOnly ? await this.openIds() : undefined;
     const where: Prisma.purchase_orderWhereInput = {
       ...filter('supplier_id', query.supplierId),
       ...filter('plant_id', query.plantId),
@@ -40,7 +39,7 @@ export class PurchaseOrderService {
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...itemWhere(query.itemId),
       ...orderDateWhere(query.orderDateFrom, query.orderDateTo),
-      ...(openIds === undefined ? {} : { purchase_order_id: { in: openIds } }),
+      ...this.openWhere(query.openOnly),
       // 「발주번호 검색」(계약) — MES 채번 번호만 본다. erp_purchase_order_no 는 안 본다
       // (번호가 둘이라 하나를 고른다 — I-2.md R-8 ⓓ).
       ...(query.q === undefined
@@ -81,15 +80,16 @@ export class PurchaseOrderService {
 
   /**
    * 「아직 입하가 끝나지 않은 건만」(계약) — 받은 수량이 발주 수량에 못 미치는 라인이
-   * 하나라도 있는 P/O. 두 컬럼 비교는 Prisma `where` 로 못 건다(필드 참조 프리뷰 기능
-   * 미사용 — `schema.prisma` 에 `previewFeatures` 가 없다) — 대상 id 를 원시 SQL 로 먼저
-   * 뽑는다. `tolerance_under_qty` 는 빼지 않는다(I-2.md §6-4).
+   * 하나라도 있는 P/O. 같은 표 두 컬럼 비교는 Prisma 5.0 GA `fields` 참조로 관계 필터
+   * 한 줄에 접는다(프리뷰 불필요). `tolerance_under_qty` 는 빼지 않는다(I-2.md §6-4).
    */
-  private async openIds(): Promise<bigint[]> {
-    const rows = await this.prisma.$queryRaw<{ purchase_order_id: bigint }[]>`
-      SELECT DISTINCT purchase_order_id FROM logistics.purchase_order_line
-       WHERE received_qty < ordered_qty`;
-    return rows.map((row) => row.purchase_order_id);
+  private openWhere(openOnly: boolean | undefined): Prisma.purchase_orderWhereInput {
+    if (!openOnly) return {};
+    return {
+      purchase_order_line: {
+        some: { received_qty: { lt: this.prisma.purchase_order_line.fields.ordered_qty } },
+      },
+    };
   }
 }
 
