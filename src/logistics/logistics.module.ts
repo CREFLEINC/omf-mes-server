@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
+import { ApprovalModule } from '../core/approval';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -8,6 +9,7 @@ import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
+import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 
@@ -17,8 +19,8 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
  */
 @Module({
   // ⭐ 원장 코어가 처음 물리는 자리다 — 입고가 재고를 «쓰는» 첫 도메인이다.
-  imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule],
+  imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule, ApprovalModule],
   controllers: [GoodsReceiptController, PutawayRuleController, PurchaseOrderController],
-  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService],
+  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService, PurchaseOrderQueryService],
 })
 export class LogisticsModule {}

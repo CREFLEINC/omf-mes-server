@@ -1,18 +1,34 @@
 import { HttpStatus, NotFoundException } from '@nestjs/common';
+
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
+import { ApprovalService } from '../../core/approval';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { purchaseOrderLineView } from './purchase-order-view';
+import { PurchaseOrderQueryService } from './purchase-order-query.service';
 import { PurchaseOrderService } from './purchase-order.service';
 
-/** 조회·매퍼 검사는 채번을 부르지 않는다 — 호출되면 스텁이 바로 실패시킨다. */
+/** 쓰기 검사는 채번을 부르지 않는다 — 호출되면 스텁이 바로 실패시킨다. */
 const NUMBERING_STUB = {
   next: async () => {
-    throw new Error('조회 경로에서는 채번을 부르지 않는다');
+    throw new Error('이 경로에서는 채번을 부르지 않는다');
   },
 } as unknown as NumberingService;
+
+/** 응답 조립(조회)은 다른 서비스 몫이다 — 쓰기 검사가 그 경로까지 가면 스텁이 실패시킨다. */
+const QUERY_STUB = {
+  get: async () => {
+    throw new Error('이 경로에서는 조회 서비스를 부르지 않는다');
+  },
+} as unknown as PurchaseOrderQueryService;
+
+/** 쓰기 검사가 상신 코어까지 가면 스텁이 실패시킨다. */
+const APPROVAL_STUB = {
+  request: async () => {
+    throw new Error('이 경로에서는 상신 코어를 부르지 않는다');
+  },
+} as unknown as ApprovalService;
 
 type Args = Record<string, unknown>;
 
@@ -32,120 +48,7 @@ const orderRow = (overrides: Args = {}): Args => ({
   ...overrides,
 });
 
-const lineRow = (overrides: Args = {}): Args => ({
-  purchase_order_line_id: 1n,
-  purchase_order_id: 1n,
-  line_no: 1,
-  item_id: 100n,
-  ordered_qty: new Prisma.Decimal('100'),
-  uom_id: 5n,
-  received_qty: new Prisma.Decimal('0'),
-  tolerance_over_qty: new Prisma.Decimal('0'),
-  tolerance_under_qty: new Prisma.Decimal('0'),
-  version_no: 1,
-  ...overrides,
-});
-
-const ORDERED_QTY_FIELD_REF = { modelName: 'purchase_order_line', name: 'ordered_qty' }; // Prisma `fields` 참조 스텁
-
-/** `list()` 하나가 필요로 하는 만큼만 답하는 최소 prisma 스텁 — 넘어온 `where` 를 그대로 잡는다. */
-function listStub(overrides: { rows?: Args[] } = {}) {
-  const calls: { where?: Args } = {};
-  const prisma = {
-    purchase_order: {
-      findMany: async ({ where }: { where: Args }) => {
-        calls.where = where;
-        return overrides.rows ?? [];
-      },
-      count: async () => (overrides.rows ?? []).length,
-    },
-    purchase_order_line: { fields: { ordered_qty: ORDERED_QTY_FIELD_REF } },
-  };
-  return { prisma: prisma as unknown as PrismaService, calls };
-}
-
 describe('PurchaseOrderService', () => {
-  describe('list', () => {
-    it('목록 — openOnly 는 받은 수량이 발주 수량에 못 미치는 라인이 있는 P/O 만 준다', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({ openOnly: true }); // tolerance_under_qty 안 뺌(§6-4)
-
-      expect(calls.where?.AND).toEqual([{ purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } }]);
-    });
-
-    it('목록 — openOnly 를 안 주면 라인 조건을 안 건다', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({});
-      expect(calls.where).not.toHaveProperty('AND');
-    });
-
-    it('목록 — itemId 는 라인에 그 품목이 있는 P/O 만 준다', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({ itemId: 42 });
-
-      expect(calls.where?.AND).toEqual([{ purchase_order_line: { some: { item_id: 42 } } }]);
-    });
-
-    it('목록 — itemId 와 openOnly 를 같이 주면 둘 다 건다', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({ itemId: 42, openOnly: true });
-
-      // 스프레드로 합치면 뒤(openOnly)가 앞(itemId)을 덮어쓴다 — AND 로 둘 다 걸려야 한다.
-      expect(calls.where?.AND).toEqual([
-        { purchase_order_line: { some: { item_id: 42 } } },
-        { purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
-      ]);
-    });
-
-    it('목록 — orderDateFrom/To 는 날짜 그대로 비교한다(타임존 캐스팅 없음)', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({ orderDateFrom: '2026-08-01', orderDateTo: '2026-08-31' });
-
-      expect(calls.where?.order_date).toEqual({
-        gte: new Date('2026-08-01T00:00:00.000Z'),
-        lte: new Date('2026-08-31T00:00:00.000Z'),
-      });
-    });
-
-    it('목록 — 기간 없이도 조회된다(기간 필수가 아니다)', async () => {
-      const { prisma, calls } = listStub({ rows: [orderRow()] });
-      const result = await new PurchaseOrderService(prisma, NUMBERING_STUB).list({});
-
-      expect(result.items).toHaveLength(1);
-      expect(calls.where).not.toHaveProperty('order_date');
-    });
-
-    it('목록 — q 는 MES 발주번호만 검색한다(ERP 번호는 안 본다)', async () => {
-      const { prisma, calls } = listStub();
-      await new PurchaseOrderService(prisma, NUMBERING_STUB).list({ q: 'PO-2026' });
-
-      expect(calls.where?.purchase_order_no).toEqual({ contains: 'PO-2026', mode: 'insensitive' });
-      expect(calls.where).not.toHaveProperty('erp_purchase_order_no');
-    });
-  });
-
-  describe('get', () => {
-    it('상세 — 헤더와 라인을 함께 준다(lineNo 오름차순)', async () => {
-      const orderByCalls: Args[] = [];
-      const prisma = {
-        purchase_order: { findUnique: async () => orderRow() },
-        purchase_order_line: {
-          findMany: async ({ orderBy }: { orderBy: Args }) => {
-            orderByCalls.push(orderBy);
-            return [lineRow({ line_no: 1 }), lineRow({ line_no: 2, purchase_order_line_id: 2n })];
-          },
-        },
-      } as unknown as PrismaService;
-
-      const { detail, versionNo } = await new PurchaseOrderService(prisma, NUMBERING_STUB).get(1);
-
-      expect(detail.purchaseOrder.purchaseOrderId).toBe(1);
-      expect(detail.lines.map((line) => line.lineNo)).toEqual([1, 2]);
-      expect(orderByCalls[0]).toEqual({ line_no: 'asc' });
-      expect(versionNo).toBe(1);
-    });
-  });
-
   describe('update', () => {
     /** §7-4 — `STATE_LOCKED`·404·409 은 P/O 가 1차엔 도달 못 하는 자리라 e2e 로 못 세운다. */
     function updateStub(overrides: { current?: Args | null; updatedCount?: number } = {}) {
@@ -163,7 +66,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ current: orderRow({ status_code: 'POSTED' }) });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           1,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },
@@ -183,7 +86,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ current: null });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           999,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },
@@ -198,7 +101,7 @@ describe('PurchaseOrderService', () => {
       const { prisma } = updateStub({ updatedCount: 0 });
 
       const error = await thrown(() =>
-        new PurchaseOrderService(prisma, NUMBERING_STUB).update(
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
           1,
           1,
           { supplierId: 10, orderDate: '2026-08-06' },
@@ -211,28 +114,177 @@ describe('PurchaseOrderService', () => {
     });
   });
 
-  describe('매퍼', () => {
-    it('매퍼 — orderedQty 는 number 다(Decimal 을 그대로 내리지 않는다)', () => {
-      const view = purchaseOrderLineView(lineRow({ ordered_qty: new Prisma.Decimal('100.500000') }) as never);
+  describe('replaceLines', () => {
+    /**
+     * `$transaction` 콜백을 그대로 돌리는 최소 스텁. 아래 넷은 전부 «쓰기 전»에 던지는
+     * 자리라 create/update/$executeRaw 까지 가지 않는다 — 가면 스텁이 실패시킨다.
+     */
+    function replaceStub(overrides: { current?: Args | null; lines?: Args[] } = {}) {
+      const tx = {
+        purchase_order: {
+          findUnique: async () => (overrides.current === undefined ? orderRow() : overrides.current),
+          updateMany: async () => ({ count: 1 }),
+        },
+        purchase_order_line: {
+          findMany: async () => overrides.lines ?? [],
+          deleteMany: async () => ({ count: 0 }),
+          create: async () => {
+            throw new Error('이 검사는 쓰기까지 가지 않는다');
+          },
+          update: async () => {
+            throw new Error('이 검사는 쓰기까지 가지 않는다');
+          },
+        },
+        $executeRaw: async () => {
+          throw new Error('이 검사는 쓰기까지 가지 않는다');
+        },
+      };
+      const prisma = {
+        $transaction: async (run: (client: unknown) => Promise<unknown>) => run(tx),
+      };
+      return { prisma: prisma as unknown as PrismaService };
+    }
 
-      expect(view.orderedQty).toBe(100.5);
-      expect(typeof view.orderedQty).toBe('number');
+    const service = (prisma: PrismaService): PurchaseOrderService =>
+      new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB);
+
+    const line = (lineId: bigint, receivedQty = '0'): Args => ({
+      purchase_order_line_id: lineId,
+      received_qty: new Prisma.Decimal(receivedQty),
     });
 
-    it('매퍼 — 비어 있는 erpPurchaseOrderNo·approvalRequestId 는 널이다(키를 생략하지 않는다)', async () => {
+    /** §7-4 — P/O 는 1차 내내 REGISTERED 라 이 가드는 e2e 로 못 세운다. */
+    it('치환 — 작성중(REGISTERED)이 아니면 400 STATE_LOCKED 다', async () => {
+      const { prisma } = replaceStub({ current: orderRow({ status_code: 'POSTED' }) });
+
+      const error = await thrown(() =>
+        service(prisma).replaceLines(1, 1, [{ itemId: 100, orderedQty: 1, uomId: 5 }], 99),
+      );
+
+      expect((error as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'statusCode',
+        code: ERROR_CODE.STATE_LOCKED,
+      });
+    });
+
+    /** 계약이 `minItems` 를 안 걸어 가드가 빈 배열을 통과시킨다 — 서비스가 막는다. */
+    it('치환 — 빈 배열이면 400 LINE_REQUIRED 다', async () => {
+      const { prisma } = replaceStub();
+
+      const error = await thrown(() => service(prisma).replaceLines(1, 1, [], 99));
+
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'items',
+        code: ERROR_CODE.LINE_REQUIRED,
+      });
+    });
+
+    it('치환 — 이 P/O 것이 아닌 purchaseOrderLineId 는 400 INVALID 다', async () => {
+      const { prisma } = replaceStub({ lines: [line(1n)] });
+
+      const error = await thrown(() =>
+        service(prisma).replaceLines(
+          1,
+          1,
+          [{ purchaseOrderLineId: 999, itemId: 100, orderedQty: 1, uomId: 5 }],
+          99,
+        ),
+      );
+
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'items.0.purchaseOrderLineId',
+        code: ERROR_CODE.INVALID,
+      });
+    });
+
+    /** 안 막으면 같은 행에 update 가 두 번 걸려 라인이 «조용히» 사라진다(#194 Major-1). */
+    it('치환 — 같은 purchaseOrderLineId 를 두 번 실으면 400 INVALID 다', async () => {
+      const { prisma } = replaceStub({ lines: [line(1n), line(2n)] });
+
+      const error = await thrown(() =>
+        service(prisma).replaceLines(
+          1,
+          1,
+          [
+            { purchaseOrderLineId: 1, itemId: 100, orderedQty: 1, uomId: 5 },
+            { purchaseOrderLineId: 1, itemId: 100, orderedQty: 2, uomId: 5 },
+          ],
+          99,
+        ),
+      );
+
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'items.1.purchaseOrderLineId',
+        code: ERROR_CODE.INVALID,
+      });
+    });
+
+    it('치환 — 이미 받은 수량을 밑도는 발주 수량은 400 RANGE 다(CHECK 이 500 으로 새지 않는다)', async () => {
+      const { prisma } = replaceStub({ lines: [line(1n, '50')] });
+
+      const error = await thrown(() =>
+        service(prisma).replaceLines(
+          1,
+          1,
+          [{ purchaseOrderLineId: 1, itemId: 100, orderedQty: 10, uomId: 5 }],
+          99,
+        ),
+      );
+
+      expect((error as ContractException).errors[0]).toMatchObject({
+        field: 'items.0.orderedQty',
+        code: ERROR_CODE.RANGE,
+      });
+    });
+  });
+
+  describe('requestApproval', () => {
+    const NUMBER_STUB = { next: async () => 'AP-20260906-0001' } as unknown as NumberingService;
+
+    it('상신 — 없는 P/O 면 404 다(계약 미선언 · R-1)', async () => {
       const prisma = {
-        purchase_order: { findUnique: async () => orderRow({ erp_purchase_order_no: null, approval_request_id: null }) },
-        purchase_order_line: { findMany: async () => [] },
+        purchase_order: { findUnique: async () => null },
       } as unknown as PrismaService;
 
-      const { detail } = await new PurchaseOrderService(prisma, NUMBERING_STUB).get(1);
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBER_STUB, QUERY_STUB, APPROVAL_STUB).requestApproval(
+          999,
+          1,
+          '사유',
+          99,
+        ),
+      );
 
-      expect(detail.purchaseOrder).toMatchObject({ erpPurchaseOrderNo: null, approvalRequestId: null });
+      expect(error).toBeInstanceOf(NotFoundException);
     });
 
-    it('매퍼 — 생략된 tolerance*Qty 는 0 이다(널이 아니다)', () => {
-      const row = lineRow({ tolerance_over_qty: new Prisma.Decimal(0), tolerance_under_qty: new Prisma.Decimal(0) });
-      expect(purchaseOrderLineView(row as never)).toMatchObject({ toleranceOverQty: 0, toleranceUnderQty: 0 });
+    /** 버전을 «안» 올리므로 조건부 UPDATE 가 없다 — 잠근 행과의 «비교»가 409 를 낸다. */
+    it('상신 — 잠근 행의 version_no 와 If-Match 가 어긋나면 409 다(user)', async () => {
+      const tx = {
+        $queryRaw: async () => [{ version_no: 2, business_unit_id: 20n }],
+        purchase_order: {
+          update: async () => {
+            throw new Error('비교에서 막혀 여기까지 오지 않는다');
+          },
+        },
+      };
+      const prisma = {
+        purchase_order: { findUnique: async () => ({ purchase_order_id: 1n }) },
+        $transaction: async (run: (client: unknown) => Promise<unknown>) => run(tx),
+      } as unknown as PrismaService;
+
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBER_STUB, QUERY_STUB, APPROVAL_STUB).requestApproval(
+          1,
+          1,
+          '사유',
+          99,
+        ),
+      );
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).conflict.conflictCause).toBe('user');
     });
   });
 });

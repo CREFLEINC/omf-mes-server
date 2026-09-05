@@ -12,9 +12,15 @@ export async function seedRoute(
   prisma: PrismaClient,
   approvalTypeCode: string,
   approverUserIds: bigint[],
+  /** 사업부 지정본. 주면 그 사업부의 상신이 «이 결재선»을 고른다(전 사업부 공통본을 이긴다). */
+  businessUnitId?: bigint,
 ): Promise<bigint> {
   const route = await prisma.approval_route.create({
-    data: { approval_type_code: approvalTypeCode, is_active: true },
+    data: {
+      approval_type_code: approvalTypeCode,
+      is_active: true,
+      business_unit_id: businessUnitId ?? null,
+    },
   });
   await prisma.approval_route_step.createMany({
     data: approverUserIds.map((approverUserId, index) => ({
