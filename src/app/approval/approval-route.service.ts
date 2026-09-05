@@ -134,9 +134,10 @@ export class ApprovalRouteService {
   }
 
   /**
-   * 「중지한 결재선을 되살린다」(계약). 검사 순서: 404 → 409(If-Match, 업무 규칙보다
-   * 먼저 본다 — 선례 `core/approval/approval.service.ts` `decide()` 「남의 저장을 덮은
-   * 뒤 검증까지 하지 않는다」) → LINE_REQUIRED(단계 0개면 되살려도 상신이 거부된다) →
+   * 「중지한 결재선을 되살린다」(계약). 검사 순서: 404 → 409(If-Match 를 업무 규칙보다
+   * 먼저 본다 — 낡은 화면이 재로드부터 하게 한다. `core/approval` `decide()`·`update()`
+   * 는 400 을 먼저 보는 반대 순서라 선례가 아니다) → LINE_REQUIRED(단계 0개면 되살려도
+   * 상신이 거부된다) →
    * UNIQUE_VIOLATION(자기 자신은 `excludeRouteId` 로 제외 — 이미 활성인 것을 다시
    * :activate 해도 충돌하지 않는다).
    */
@@ -148,8 +149,7 @@ export class ApprovalRouteService {
     if (stepCount === 0) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
-          scope: 'field',
-          field: 'approvalRouteId',
+          scope: 'screen',
           code: ERROR_CODE.LINE_REQUIRED,
           message: '결재 단계가 없는 결재선은 다시 사용할 수 없습니다.',
         },

@@ -426,7 +426,15 @@ describe('결재선 (e2e)', () => {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
-      await prisma.approval_route_step.deleteMany({ where: { approver_user_id: target.app_user_id } });
+      // businessUnitId=null 결재선은 아래 BU 그물에 안 잡힌다 — 이 사용자를 승인자로 둔
+      // 결재선째 지워야 강제 종료 뒤 다음 실행이 중복 활성 400 으로 깨지지 않는다.
+      const routes = await prisma.approval_route_step.findMany({
+        where: { approver_user_id: target.app_user_id },
+        select: { approval_route_id: true },
+      });
+      const routeIds = routes.map((r) => r.approval_route_id);
+      await prisma.approval_route_step.deleteMany({ where: { approval_route_id: { in: routeIds } } });
+      await prisma.approval_route.deleteMany({ where: { approval_route_id: { in: routeIds } } });
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
