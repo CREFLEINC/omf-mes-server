@@ -5,6 +5,7 @@ import { ConflictException, ContractException, ERROR_CODE } from '../../common/e
 import { optionalDate } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   NOTICE_STATUSES,
@@ -93,7 +94,10 @@ type NoticeRow = Prisma.noticeGetPayload<{ include: { notice_acknowledgement: tr
 
 @Injectable()
 export class NoticeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly numbering: NumberingService,
+  ) {}
 
   async list(query: NoticeQuery, actor: Actor): Promise<PagedResponse<NoticeView>> {
     const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
@@ -148,9 +152,11 @@ export class NoticeService {
 
   async create(input: NoticeWrite, actor: Actor): Promise<NoticeView> {
     assertScope(input.scopeCode, input.targetWorkOrderId);
+    // 계약에 `notice_no` 칸이 없어 서버가 짓는다(되돌림 §Y-6). 공지는 공장 축이 없다.
+    const noticeNo = await this.numbering.next('NOTICE', null, dateOf(todayUtc()));
     const row = await this.prisma.notice.create({
       data: {
-        notice_no: await this.nextNoticeNo(),
+        notice_no: noticeNo,
         title: input.title,
         content: input.body,
         start_date: date('startDate', input.startDate),
@@ -393,21 +399,6 @@ export class NoticeService {
     });
     if (!row) throw new NotFoundException('없는 공지입니다.');
     return row;
-  }
-
-  /**
-   * `notice.notice_no` 는 NOT NULL·유일인데 **계약에 그 칸이 없다** — 주는 사람이 없어
-   * 서버가 짓는다. 채번 규칙(`app.numbering_rule`)에는 실적 하나뿐이라 형식도 우리가 정했다.
-   * 되돌림 §Y-6 에 적었다.
-   *
-   * ⚠ 같은 날 «동시에» 두 건을 만들면 같은 번호를 뽑아 유일 제약에 걸린다. 재시도를 두지
-   * 않았다 — 그때는 400 `UNIQUE_VIOLATION` 으로 떨어지고(오류 필터), 공지 작성은 사람이
-   * 누르는 드문 동작이라 다시 누르면 된다. 채번 규칙이 확정되면 이 함수를 통째로 바꾼다.
-   */
-  private async nextNoticeNo(): Promise<string> {
-    const day = dateOf(todayUtc()).replace(/-/g, '');
-    const used = await this.prisma.notice.count({ where: { notice_no: { startsWith: `NTC-${day}-` } } });
-    return `NTC-${day}-${String(used + 1).padStart(4, '0')}`;
   }
 }
 

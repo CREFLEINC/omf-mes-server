@@ -175,7 +175,7 @@ describe('입고 (e2e)', () => {
     const detail = await create();
 
     expect(detail.goodsReceipt.statusCode).toBe('POSTED');
-    expect(detail.goodsReceipt.goodsReceiptNo).toMatch(/^GR-20260504-\d{4}$/);
+    expect(detail.goodsReceipt.goodsReceiptNo).toMatch(/^GR-20260504-\d{4,}$/);
     expect(detail.lines[0].inventoryTransactionLineId).not.toBeNull();
 
     const ledger = await prisma.inventory_transaction.findFirstOrThrow({
@@ -227,10 +227,47 @@ describe('입고 (e2e)', () => {
       where: { putaway_task_id: detail.lines[0].putawayTaskId as number },
     });
     expect(task.status_code).toBe('PENDING');
-    expect(task.putaway_task_no).toMatch(/^PT-20260504-\d{4}$/);
+    expect(task.putaway_task_no).toMatch(/^PT-20260504-\d{4,}$/);
     // 라인이 보낸 목적지는 「전기 시점의 장부 위치」라 지시의 «출발지»가 된다.
     expect(Number(task.from_location_id)).toBe(dockId);
     expect(Number(task.task_qty)).toBe(detail.lines[0].receiptQty);
+  });
+
+  it('입고 — 같은 영업일 두 건을 동시에 처리해도 번호가 겹치지 않고 타임아웃도 나지 않는다(count()+1 이 아니다)', async () => {
+    const drafts = [await body(), await body()];
+
+    const [first, second] = await Promise.all(drafts.map((draft) => send(draft)));
+
+    // `count()+1` 은 둘 다 같은 값을 뽑아 하나가 유일 제약에 걸렸다. 카운터가 업무
+    // 트랜잭션 «밖»이라 행 잠금이 전표 커밋까지 가지 않는다 — `P2028` 이면 500 이 된다.
+    expect([first.status, second.status]).toEqual([201, 201]);
+    expect(first.body.goodsReceipt.goodsReceiptNo).not.toBe(second.body.goodsReceipt.goodsReceiptNo);
+  });
+
+  it('입고 — 번호 형식이 GR-YYYYMMDD-NNNN 그대로다(정규식은 \\d{4,} 로 넓힌다 — 카운터가 회차마다 오른다)', async () => {
+    const detail = await create();
+
+    expect(detail.goodsReceipt.goodsReceiptNo).toMatch(/^GR-20260504-\d{4,}$/);
+    const task = await prisma.putaway_task.findUniqueOrThrow({
+      where: { putaway_task_id: detail.lines[0].putawayTaskId as number },
+    });
+    expect(task.putaway_task_no).toMatch(/^PT-20260504-\d{4,}$/);
+  });
+
+  it('입고 — 라인 2건이면 적치 지시 번호도 둘이고 서로 다르다', async () => {
+    const draft = await body();
+    draft.lines.push({ ...draft.lines[0], lotId: await makeLot(itemId) });
+
+    const created = await send(draft).expect(201);
+
+    const detail = created.body as Detail;
+    expect(detail.lines).toHaveLength(2);
+    const tasks = await prisma.putaway_task.findMany({
+      where: {
+        putaway_task_id: { in: detail.lines.map((line) => line.putawayTaskId as number) },
+      },
+    });
+    expect(new Set(tasks.map((task) => task.putaway_task_no)).size).toBe(2);
   });
 
   it('⭐ 권장 위치는 적치 규칙만이 낸다', async () => {
