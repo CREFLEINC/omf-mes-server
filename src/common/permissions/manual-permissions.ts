@@ -77,6 +77,13 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
   'GET /app/roles': ['W-CO-02'],
   'PUT /app/roles/{roleId}': ['W-CO-02'],
+  // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
+  // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
+  // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.
+  'PUT /app/notices/{noticeId}': ['W-CO-04'],
+  'POST /app/notices/{noticeId}:publish': ['W-CO-04'],
+  'POST /app/notices/{noticeId}:close': ['W-CO-04'],
+  'GET /app/notices/{noticeId}/acknowledgements': ['W-CO-04'],
   'POST /app/roles/{roleId}:activate': ['W-CO-02'],
   'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
   'PUT /app/roles/{roleId}/permissions': ['W-CO-02'],

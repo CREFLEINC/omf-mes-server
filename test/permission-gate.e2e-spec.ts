@@ -19,14 +19,20 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * 계약이 403 을 선언했는데 권한이 아직 등록되지 않은 오퍼레이션을 «찾아» 쓴다.
  *
  * ⛔ 하드코딩하면 그 자리를 구현하는 PR 마다 이 검사가 깨진다 — 실제로 `GET /app/roles`
- * 로 적어 두었다가 역할 마스터가 서면서 깨졌다. 남은 후보가 0이 되면 게이트가 완성된
- * 것이므로, 그때는 던지는 대신 이 검사 자체를 지운다.
+ * 로 적어 두었다가 역할 마스터가 서면서 깨졌다.
+ *
+ * ⚠ 2026-09-05 — 후보를 `GET` 으로만 좁혀 두었더니 공지 권한을 채운 순간 0이 되어 검사가
+ * 스스로 「게이트가 완성됐다」고 던졌다. **완성된 것이 아니라 GET 중에 없었을 뿐이다**
+ * (권한 미등록 403 자리는 다른 메서드에 여전히 남아 있다). 그래서 메서드를 가리지 않는다.
+ *
+ * ⭐ 고른 키가 `POST` 여도 아래 탐침은 `@Get` 으로 단다 — 권한 가드는 **계약 검증 가드보다
+ * 앞**에 서고(`app.module.ts` 의 등록 순서) 메타데이터만 보므로, 본문이 없어도 판정에
+ * 닿는다. 실제로 그 순서가 이 검사의 전제다.
  */
-function pickUnregistered(): { key: string; route: string } {
+function pickUnregistered(): { key: string; route: string; url: string } {
   const registry = ContractRegistry.load();
   const key = registry
     .keys()
-    .filter((candidate) => candidate.startsWith('GET '))
     .sort()
     .find((candidate) => {
       const responses = (registry.get(candidate)?.operation as {
@@ -37,11 +43,19 @@ function pickUnregistered(): { key: string; route: string } {
       );
     });
   if (key === undefined) {
-    throw new Error('권한 미등록 403 자리가 없다 — 게이트가 완성됐으므로 이 검사를 지운다');
+    throw new Error(
+      '권한 미등록 403 자리가 «메서드를 통틀어» 없다 — 게이트가 완성됐으므로 이 검사를 지운다',
+    );
   }
   // 실재 경로와 부딪히지 않게 접두어를 붙인다. 가드는 «메타데이터»만 보므로 경로가
   // 달라도 판정은 같다. 경로 파라미터는 이름을 그대로 살린다 — 계약 검증 가드가 본다.
-  return { key, route: `gate-probe${key.slice(4).replace(/\{(\w+)\}/g, ':$1')}` };
+  const path = key.slice(key.indexOf(' ') + 1);
+  // ⛔ 액션 콜론(`…{id}:activate`)을 먼저 이스케이프한 뒤 경로 파라미터를 바꾼다. 순서를
+  // 뒤집으면 `:id:activate` 가 되어 라우터가 「param 앞에 글자가 없다」로 죽는다.
+  const route = path.replace(/:/g, '\\:').replace(/\{(\w+)\}/g, ':$1');
+  // 부를 주소는 «경로 파라미터만» 값으로 바꾼다 — 액션 콜론은 그대로 둔다. 라우트
+  // 문자열에서 만들면 이스케이프한 콜론까지 값으로 바뀌어 주소가 어긋난다.
+  return { key, route: `gate-probe${route}`, url: `gate-probe${path.replace(/\{\w+\}/g, '1')}` };
 }
 
 const UNREGISTERED = pickUnregistered();
@@ -173,7 +187,7 @@ describe('권한 게이트 (e2e)', () => {
   it('⛔ 권한이 도출되지 않은 자리는 통과가 아니라 던짐이다 — F-6', async () => {
     // 500 이 난다. 사용자 문구가 아니라 «구현이 멈춰야 하는» 자리다.
     await request(app.getHttpServer())
-      .get(`/api/${UNREGISTERED.route.replace(/:\w+/g, '1')}`)
+      .get(`/api/${UNREGISTERED.url}`)
       .set('Cookie', cookie)
       .expect(500);
   });
