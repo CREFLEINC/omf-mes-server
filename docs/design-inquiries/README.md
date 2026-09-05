@@ -17,3 +17,11 @@
 |:-:|---|---|
 | 16 | 입고 라인의 소유 구분 칸 | 구현함(`OWNED` 고정) |
 | 17 | 적치 규칙 `capacityQty` 의 쓰임 | 구현함(한도 미적용) |
+| 18 | 결재선 `inProgressCount` 연결 칸 없음 | 구현 예정(I-1 · 유형 축 근사) |
+| 19 | `IQC_SKIP` 승인 화면 · `screenId` 규칙 걸리는 유형 없음 | 구현 예정(I-1 · `openable=false`) |
+| 21 | 승인 유형·대상 유형 표시명 원천 없음 | 구현 예정(I-1 · `"{type} #{id}"`) |
+| 22 | 폐기 품의 결재선 `businessUnitId` 파생 매핑 없음 | 구현 예정(I-1 시그니처 · I-4 사용 · 8자리 null) |
+
+번호 20 은 결번 — 「`INBOUND_LOT` 대응 표 없음」으로 세웠다가 계약 안에 답이 있어(19 각주) 철회.
+
+**알려둘 것**(번호 없음 · 다음 전달분 말미): `PUT /app/approval-routes/{id}/steps` 200 에 ETag 를 내린다(계약 미선언 · 자식 치환 선례) · `GET /app/approval-requests?requestedByMe` 와 M-01-13 「내가 올린 요청」은 계정 세션이 있어야 한다(단말 토큰 부재 → 401).
