@@ -31,8 +31,8 @@
 
 | 순 | 슬라이스 | 건 | 선행 | 마이그(§4) | 코어 | 모델 | PR | 병렬 레인 |
 |---:|---|--:|---|---|---|---|--:|---|
-| 1 | **I-1** 승인 코어 — 결재선·결재함 | 12 | — | A6 | 승인 · `screenId` 생략 헬퍼 | opus | 3 | ∥ I-30 |
-| 2 | **I-2** P/O + 채번 코어 | 7 | I-1 | A1·A2·M-b | 채번 | opus(코어) · sonnet(P/O CRUD) | 3 | ∥ I-30/I-32 |
+| 1 | **I-1** 승인 코어 — 결재선·결재함 | 12 | — | A6 | 승인(`src/core/approval/`) · `omitEmpty` 헬퍼 | opus(코어·결재) · sonnet(CRUD·조회) | 4 | ∥ I-30 |
+| 2 | **I-2** P/O + 채번 코어 + 승인 상신 코어 | 7 | I-1 | A1·A2·M-b | 채번 · 승인 `request`/`assertNoOpenRequest`/`assertApproved`(별도 코어 PR) | opus(코어 2) · sonnet(P/O CRUD) | 4 | ∥ I-30/I-32 |
 | 3 | **I-3** 입하 | 12 | I-2 | A3 | — | sonnet(조회) · opus(차이·초과분리) | 3 | ∥ I-12 |
 | 4 | **I-12** 적치 완료·임시적재 | 4 | 입고(구현됨) | — | — | opus(원장 STOCK_TRANSFER) | 2 | ∥ I-3 |
 | 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | M-c | — | opus | 3 | — |
@@ -79,7 +79,7 @@
 
 | M | 슬라이스 | 체인 e2e (끝점 셋만 단언 — 통합 §5-3) |
 |---|---|---|
-| **M1** | I-1 → I-2 → I-3 (∥ I-12) → I-4 → I-5 → I-6 → I-7 | P/O 승인 → 입하 → 입고(기존) → 기타출고(`GOODS_RECEIPT` source, 피킹 없이) → W/O 발행·확정배포(선발행) → 실적(L1) → 제품 입고(기존) → balance 3행 → 입고 취소 요청·승인·실행 → 역트랜잭션 → balance 원복 |
+| **M1** | I-1 → I-2 → I-3 (∥ I-12) → I-4 → I-5 → I-6 → I-7 (UI/UX U1 의 「상신 → 결재함 승인 → 전기」 한 줄 e2e 는 I-4 완료 시점에 선다 — I-1 은 원장 0건까지) | P/O 승인 → 입하 → 입고(기존) → 기타출고(`GOODS_RECEIPT` source, 피킹 없이) → W/O 발행·확정배포(선발행) → 실적(L1) → 제품 입고(기존) → balance 3행 → 입고 취소 요청·승인·실행 → 역트랜잭션 → balance 원복 |
 | **M2** | I-8 → I-9 → I-10 ∥ I-11 → I-24 → I-25 | 계획 `:confirm` → W/O `:release`(출고요청 자동) → 피킹 → 출고 → 생산창고 입고 → 투입 → 세션 → 실적 → W/O `:cancel` 로 선발행 전건 폐번 |
 | **M3** | I-19 → I-20 → I-21 ∥ I-18 | 실적 → 검사 의뢰 → 확정(전이) → 불합격 → 보류 → 부적합 → 처분 SCRAP → 폐기 출고(I-4 재사용) 원장 감소 |
 | **M4** | I-22 → I-23 | 출하작업지시 → 제품 피킹 → 출하 처리(원장 out) → 확정(아웃박스 행) / 미확정 취소 → 역트랜잭션 · 반품 → 처분 NORMAL → 재등록 |
@@ -92,8 +92,9 @@
 
 | 코어 | 시점 | 형태 |
 |---|---|---|
-| 승인 워크플로 | I-1 | `src/app/approval/` 서비스 — 9자리가 3줄 호출. `ROUTE_NOT_FOUND`·`ROUTE_AMBIGUOUS`·`NOT_YOUR_TURN`·`APPROVER_TYPE_NOT_SUPPORTED`·J-8(승인은 자물쇠만 푼다) |
-| `screenId` 생략 헬퍼 | I-1 | 한 줄 — 채울 표 없으면 키 생략(널 금지) |
+| 승인 워크플로 | I-1 코어 PR ≤200줄 | **`src/core/approval/`**(도메인 간 service 호출 금지 — 9 상신자가 7 도메인) — `selectRoute`·`expandSteps`·`currentStep`·`approve`·`reject`. 컨트롤러·CRUD 는 `src/app/approval/`. `ROUTE_NOT_FOUND`·`ROUTE_AMBIGUOUS`·`NOT_YOUR_TURN`·`APPROVER_TYPE_NOT_SUPPORTED`·J-8(승인은 자물쇠만 푼다 — 후속은 상태 조회, 콜백 없음) |
+| 승인 상신 코어 | I-2 코어 PR(채번과 별도) | `request`·`assertNoOpenRequest`·`assertApproved` — 셋 다 `approvalTypeCode` 축(`goods_issue` 가 두 유형). `selectRoute(businessUnitId)` 는 P/O 만 값, 8자리 null(문의 022) |
+| `omitEmpty` 헬퍼 | I-1 | `src/common/http/omit-empty.ts` — 값 없으면 키 생략(널 금지). 사용처 3(`ApprovalTarget`·`DocumentTarget`·`DocumentProgress`) |
 | 채번 | I-2 코어 PR ≤200줄 | `core/numbering` — `numbering_rule`·`numbering_counter`, 기본 패턴, GR·PT 이관 |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 `app.entity_type_registry` 에서 읽음, 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
@@ -110,7 +111,7 @@
 
 | # | 슬라이스 | 표 | 무엇 |
 |---|---|---|---|
-| A6 | I-1 | `app.approval_route` | 부분 유일 인덱스 `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` |
+| A6 | I-1 | `app.approval_route` · `app.approval_request` | 부분 유일 인덱스 `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` **+ `ix_approval_request_target (target_type_code, target_id)`**(J-8 상태 조회 축 — 모든 `:post` 의 자물쇠 경로) · 같은 선행 커밋 |
 | A1·A2·M-b | I-2 | `logistics.purchase_order` | `approval_request_id?` · `source_inbound_receipt_line_id?` · 유일 제약(§I-48) |
 | A3 | I-3 | `logistics.inbound_receipt_line` | `lot_id?` |
 | M-c | I-4 | `logistics.goods_issue` | `destination_id`·`destination_type_code` NOT NULL 해제(#147) |
@@ -145,7 +146,8 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(409)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **`X-Worker-No`** 41건 — 감사 칸이 아니라 주체. 「내 요청」 필터의 축.
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.
 
@@ -161,7 +163,7 @@
 부분 건너뜀(구현은 함): `:resync` 202+아웃박스까지 · `work-orders:close`/`shipments:confirm` ERP 아웃박스까지 · `zaloEnabled` 칸만.
 **목표 커버리지 483/487**(238 + 245).
 
-배포 노트에 적을 것: 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
+배포 노트에 적을 것: 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
 
 ## 7. 설계 문의 후보 — 발생 슬라이스에서 단건 작성 (`docs/design-inquiries/018~`)
 
@@ -169,7 +171,12 @@
 |---|---|---|
 | `CD-ATTACHMENT-TARGET-TYPE` 에 `BREAKDOWN` 없음 | I-34 | API §3 |
 | 프린터 상태를 올리는 주체·오퍼레이션 없음 | I-27 | §0 #7 |
-| 승인 유형 9값에 특채 없음 — 결재함으로 찾는 길 확인 | I-21 | UI/UX M |
+| ~~승인 유형 9값에 특채 없음 — 결재함으로 찾는 길 확인~~ → **019 에 흡수**(I-1 에서 발행) | ~~I-21~~ I-1 | UI/UX M |
+| **018** `inProgressCount` 연결 칸 없음 — 유형 축 근사 vs I-2 nullable `approval_route_id` | I-1 | I-1 재수립 R-11 |
+| **019** `IQC_SKIP` 승인 화면 W-01-02/W-03-09 · 특채 9값 부재 · `screenId` 화면표 · `openable` 전건 false | I-1 | I-1 재수립 R-11 |
+| **021** 승인 유형·대상 유형 표시명 원천 없음(`displayName` required · 끄기 경고 화면 목록 · `?q`) | I-1 | I-1 재수립 R-11 |
+| **022** `GOODS_ISSUE_DISPOSAL` 결재선 `businessUnitId` 파생 매핑 없음 — 8자리 null | I-1(I-4 에서 드러남) | I-1 재수립 R-11 |
+| 알려둘 것(번호 없음): `PUT …/steps` ETag 내림(계약 미선언) · `?requestedByMe` 세션 필요 | I-1 | 다음 전달분 말미 |
 | 처분 전이가 `transitionCode` 9종에 없음 | I-21 | UI/UX N |
 | `lot-hold-events` vs `lot-status-events` — W-03-01 이 어느 쪽 | I-20 | UI/UX §9-3 |
 | LOT 품질 판정 축(`lot.status_code` vs `inventory_balance.quality_status_code`) — #115 재판정 중 인용 | I-19/I-20 | UI/UX L · 아키텍처 §5 #1 |
