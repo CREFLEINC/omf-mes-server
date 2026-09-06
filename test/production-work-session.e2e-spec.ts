@@ -514,6 +514,264 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       const ended = await endSession(opened.body.workSessionId as number, { endedAt: END_AT }).expect(200);
       expect(parseIfMatch(String(ended.headers.etag ?? ''))).toBeNull();
     });
+
+    /**
+     * 세션 «구간 안»의 사건과 작업자 참여·이탈(PR ④). 전이 둘을 타는 자리라 열기·닫기와 같은
+     * 픽스처 위에서 본다 — 세션은 API 로만 연다.
+     */
+    describe('사건 적재 · 작업자 참여·이탈', () => {
+      const STOP_AT = '2026-09-07T03:30:00.000Z';
+      const RESUME_AT = '2026-09-07T04:00:00.000Z';
+      const LEAVE_AT = '2026-09-07T05:00:00.000Z';
+
+      function postEvent(
+        workSessionId: number,
+        payload: Record<string, unknown>,
+        options: { auth?: string[] } = {},
+      ) {
+        return request(app.getHttpServer())
+          .post(`${BASE}/${workSessionId}/events`)
+          .set('Cookie', options.auth ?? cookie)
+          .set('Idempotency-Key', idem())
+          .set('Authorization', `Bearer ${terminalToken}`)
+          .set('X-Worker-No', `${PREFIX}-W1`)
+          .send(payload);
+      }
+
+      // ⛔ `X-Worker-No` 를 안 싣는다 — 계약이 이 둘에 사번 헤더를 안 걸었다(R-13 ⓠ).
+      function joinWorker(workSessionId: number, payload: Record<string, unknown>, ifMatch?: string) {
+        const call = request(app.getHttpServer())
+          .post(`${BASE}/${workSessionId}/workers`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', idem());
+        if (ifMatch !== undefined) call.set('If-Match', ifMatch);
+        return call.send(payload);
+      }
+
+      function leaveWorker(workSessionId: number, workSessionWorkerId: number, payload: Record<string, unknown>) {
+        return request(app.getHttpServer())
+          .post(`${BASE}/${workSessionId}/workers/${workSessionWorkerId}:leave`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', idem())
+          .send(payload);
+      }
+
+      /** 열린 세션 하나 — 되돌아온 W/O 로 W/O 축 단언까지 한다. */
+      async function running(payload: Record<string, unknown> = {}): Promise<{ id: number; workOrderId: number }> {
+        const workOrderId = await workOrder('RELEASED');
+        const opened = await openSession({ workOrderId, startedAt: START_AT, ...payload }).expect(201);
+        return { id: opened.body.workSessionId as number, workOrderId };
+      }
+
+      const sessionOf = (workSessionId: number) =>
+        prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(workSessionId) } });
+
+      const workersOf = async (workSessionId: number, active?: boolean) =>
+        (
+          await request(app.getHttpServer())
+            .get(`${BASE}/${workSessionId}/workers${active === undefined ? '' : `?active=${active}`}`)
+            .set('Cookie', cookie)
+            .expect(200)
+        ).body as { workSessionWorkerId: number; workerId: number; leftAt?: string }[];
+
+      it('STOP 이 세션을 STOPPED 로 옮기고 RESUME 이 되돌린다 — session_no 는 그대로다', async () => {
+        const { id } = await running();
+        const stopped = await postEvent(id, {
+          eventTypeCode: 'STOP',
+          occurredAt: STOP_AT,
+          reasonCode: 'MOLD_CHANGE',
+        }).expect(201);
+        expect(validator('POST /production/work-sessions/{workSessionId}/events', 201)(stopped.body)).toBe(true);
+        expect(stopped.body).toMatchObject({
+          eventTypeCode: 'STOP',
+          occurredAt: STOP_AT,
+          reasonCode: 'MOLD_CHANGE',
+          reasonName: '금형 교체',
+          terminalId: Number(ids.terminalA),
+        });
+        expect(stopped.body.recordedAt).toBeDefined();
+        const afterStop = await sessionOf(id);
+        expect(afterStop).toMatchObject({ status_code: 'STOPPED', session_no: 1, version_no: 2 });
+
+        const resumed = await postEvent(id, { eventTypeCode: 'RESUME', occurredAt: RESUME_AT }).expect(201);
+        // `RESUME` 은 사유를 안 쓴다 — 파생 표시명도 키가 없다(널 금지).
+        expect(resumed.body.reasonCode).toBeUndefined();
+        expect(resumed.body.reasonName).toBeUndefined();
+        const afterResume = await sessionOf(id);
+        expect(afterResume).toMatchObject({ status_code: 'RUNNING', session_no: 1, version_no: 3 });
+      });
+
+      it('STOP 에 사유가 없으면 400 REQUIRED', async () => {
+        const { id } = await running();
+        const response = await postEvent(id, { eventTypeCode: 'STOP', occurredAt: STOP_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'REQUIRED' });
+        expect((await sessionOf(id)).status_code).toBe('RUNNING');
+      });
+
+      it('RESUME 에 사유를 보내면 400 INVALID', async () => {
+        const { id } = await running();
+        const response = await postEvent(id, {
+          eventTypeCode: 'RESUME',
+          occurredAt: RESUME_AT,
+          reasonCode: 'MOLD_CHANGE',
+        }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'INVALID' });
+      });
+
+      it('START·END·CONTROL_OVERRIDE 를 보내면 400 INVALID', async () => {
+        const { id } = await running();
+        for (const eventTypeCode of ['START', 'END', 'CONTROL_OVERRIDE']) {
+          const response = await postEvent(id, { eventTypeCode, occurredAt: STOP_AT }).expect(400);
+          expect(response.body.errors[0]).toMatchObject({ field: 'eventTypeCode', code: 'INVALID' });
+          expect(response.body.errors[0].message).toContain('세션을 열고 닫는 오퍼레이션');
+        }
+        // 그룹 밖 문자열도 같은 400 `INVALID` 다 — 코드값 검사가 가른다.
+        const unknown = await postEvent(id, { eventTypeCode: 'PAUSE', occurredAt: STOP_AT }).expect(400);
+        expect(unknown.body.errors[0]).toMatchObject({ field: 'eventTypeCode', code: 'INVALID' });
+      });
+
+      it('종료된 세션에 STOP 이면 400 STATE_LOCKED', async () => {
+        const { id } = await running();
+        await endSession(id, { endedAt: END_AT }).expect(200);
+        const response = await postEvent(id, {
+          eventTypeCode: 'STOP',
+          occurredAt: STOP_AT,
+          reasonCode: 'MOLD_CHANGE',
+        }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      });
+
+      it('⛔ events 가 work_order.status_code 를 건드리지 않는다', async () => {
+        const { id, workOrderId } = await running();
+        const before = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+        await postEvent(id, { eventTypeCode: 'STOP', occurredAt: STOP_AT, reasonCode: 'MOLD_CHANGE' }).expect(201);
+        const after = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+        expect(after.status_code).toBe(before.status_code);
+        expect(after.version_no).toBe(before.version_no);
+      });
+
+      it('W/O :hold 뒤 화면 [재개](events RESUME)가 400 STATE_LOCKED 다', async () => {
+        // 문의 035 — `:hold` 는 세션에 손대지 않아 세션이 `RUNNING` 그대로다. 화면의 유일한
+        // 재개 버튼이 `work-session-resume`(from: ['STOPPED'])에 막힌다 — 그대로 둔다(R-7 ⓐ).
+        const { id, workOrderId } = await running();
+        await request(app.getHttpServer())
+          .post(`${WORK_ORDERS}/${workOrderId}:hold`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', idem())
+          .send({ reasonCode: 'MATERIAL_SHORTAGE', occurredAt: STOP_AT })
+          .expect(200);
+        expect((await sessionOf(id)).status_code).toBe('RUNNING');
+        const response = await postEvent(id, { eventTypeCode: 'RESUME', occurredAt: RESUME_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      });
+
+      it('무권한 사용자는 events 를 적재하지 못한다 — 403', async () => {
+        const { id } = await running();
+        await postEvent(
+          id,
+          { eventTypeCode: 'STOP', occurredAt: STOP_AT, reasonCode: 'MOLD_CHANGE' },
+          { auth: noPermCookie },
+        ).expect(403);
+      });
+
+      it('작업자 참여 뒤 workers 목록에 뜬다', async () => {
+        const { id } = await running();
+        const response = await joinWorker(id, {
+          workerId: Number(ids.worker1),
+          workerRoleCode: 'MAIN',
+          joinedAt: START_AT,
+        }).expect(201);
+        expect(validator('POST /production/work-sessions/{workSessionId}/workers', 201)(response.body)).toBe(true);
+        expect(response.body).toMatchObject({
+          workerId: Number(ids.worker1),
+          workerRoleCode: 'MAIN',
+          joinedAt: START_AT,
+        });
+        expect(response.body.leftAt).toBeUndefined();
+        expect((await workersOf(id)).map((row) => row.workerId)).toEqual([Number(ids.worker1)]);
+      });
+
+      it('POST …/workers 는 If-Match 를 받되 version_no 를 올리지 않는다', async () => {
+        const { id } = await running();
+        expect((await sessionOf(id)).version_no).toBe(1);
+        await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }, '"1"').expect(201);
+        // 세션 행을 UPDATE 하지 않으므로 화면의 If-Match 토큰이 낡지 않는다(알려둘 것 ⓘ).
+        expect((await sessionOf(id)).version_no).toBe(1);
+      });
+
+      it('이미 참여 중인 작업자를 다시 넣으면 400 STATE_LOCKED', async () => {
+        const { id } = await running();
+        await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(201);
+        const response = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: RESUME_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'workerId', code: 'STATE_LOCKED' });
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(1);
+      });
+
+      it('떠난 작업자는 다시 참여할 수 있다', async () => {
+        const { id } = await running();
+        const first = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(201);
+        await leaveWorker(id, first.body.workSessionWorkerId as number, { leftAt: LEAVE_AT }).expect(200);
+        const again = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: LEAVE_AT }).expect(201);
+        expect(again.body.workSessionWorkerId).not.toBe(first.body.workSessionWorkerId);
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(2);
+      });
+
+      it('종료된 세션에 참여하면 400 STATE_LOCKED', async () => {
+        const { id } = await running();
+        await endSession(id, { endedAt: END_AT }).expect(200);
+        const response = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      });
+
+      it(':leave 가 left_at 만 찍고 행을 지우지 않는다', async () => {
+        const { id } = await running({ workerIds: [Number(ids.worker1)] });
+        const [joined] = await workersOf(id);
+        const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
+        expect(
+          validator('POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave')(response.body),
+        ).toBe(true);
+        expect(response.body).toMatchObject({ workSessionWorkerId: joined.workSessionWorkerId, leftAt: LEAVE_AT });
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(1);
+        expect(await workersOf(id)).toEqual([]);
+        expect((await workersOf(id, false)).map((row) => row.workSessionWorkerId)).toEqual([
+          joined.workSessionWorkerId,
+        ]);
+        // 세션 축은 그대로다 — `:leave` 는 세션 행을 UPDATE 하지 않는다.
+        expect((await sessionOf(id)).version_no).toBe(1);
+      });
+
+      it('이미 떠난 사람을 다시 :leave 하면 400 STATE_LOCKED', async () => {
+        const { id } = await running({ workerIds: [Number(ids.worker1)] });
+        const [joined] = await workersOf(id);
+        await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
+        const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: END_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      });
+
+      it('leftAt 이 joinedAt 보다 앞서면 400 RANGE', async () => {
+        const { id } = await running({ workerIds: [Number(ids.worker1)] });
+        const [joined] = await workersOf(id);
+        const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: T0 }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'leftAt', code: 'RANGE' });
+      });
+
+      it('남의 세션의 참여 행을 경로로 물으면 404', async () => {
+        const mine = await running({ workerIds: [Number(ids.worker1)] });
+        const other = await running();
+        const [joined] = await workersOf(mine.id);
+        await leaveWorker(other.id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(404);
+      });
+
+      it('종료된 세션의 참여자도 :leave 할 수 있다', async () => {
+        // 설계 미정 — 문의 058. `:end` 가 `left_at` 을 자동으로 안 찍으므로 이 길을 닫으면
+        // 「영원히 참여 중」이 확정된다 — 참여(400)와 이탈(200)이 비대칭인 이유다.
+        const { id } = await running({ workerIds: [Number(ids.worker1)] });
+        const [joined] = await workersOf(id);
+        await endSession(id, { endedAt: END_AT }).expect(200);
+        const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
+        expect(response.body.leftAt).toBe(LEAVE_AT);
+      });
+    });
   });
 
   async function makeFixtures(): Promise<void> {
