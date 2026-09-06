@@ -1,7 +1,8 @@
 /**
  * 생산 실적 조회 — 목록 `GET /production/production-results` · 단건 `GET …/{id}` +
  * LOT 생명주기 변경이력 `GET /trace/lot-lifecycle-events`(I-7 PR ①) +
- * 등록 `POST /production/production-results` + LOT 배분 + L1(PR ②).
+ * 등록 `POST /production/production-results` + LOT 배분 + L1(PR ②) +
+ * 정정 `POST …/{id}:correct` · 상신 `POST …/{id}:request-approval`(PR ③).
  *
  * ⭐ 조회가 보는 실적은 **직접 INSERT** 한다 — 등록 경로를 태우면 조회 단언이 등록 구현에
  *   매달린다. 등록 갈래만 API 로 만든다.
@@ -24,20 +25,29 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-pr-probe';
 const NOPERM_ID = 'e2e-pr-noperm';
+const APPROVER_ID = 'e2e-pr-approver';
 const PASSWORD = 'PR-생산실적-비밀번호';
 const PREFIX = 'PRE2E';
 const ROLE = 'E2E_PRODUCTION_RESULT';
+const APPROVER_ROLE = 'E2E_PRODUCTION_RESULT_APPROVER';
 /**
  * 403 을 선언한 것은 `:close`(`W-02-05`)와 실적 등록(POP 화면 넷 중 하나면 된다)뿐이다 —
  * 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
  */
 const PERMISSIONS = ['W-02-05', 'P-02-04'];
+/** 결재함 상세 GET 과 `:approve`/`:reject` 가 같은 한 벌을 쓴다(`derived-permissions.ts:17·143`). */
+const APPROVER_PERMISSIONS = ['W-03-09'];
+/** 승인 다형 축 — 서버가 채우는 값 그대로다(계약 x-internal-note). */
+const CORRECT_APPROVAL_TYPE = 'PRODUCTION_RESULT_CORRECT';
 const LOT_SOURCE = 'WORK_ORDER';
 const RESULTS = '/api/production/production-results';
 const EVENTS = '/api/trace/lot-lifecycle-events';
+const WORK_ORDERS = '/api/production/work-orders';
+const APPROVAL_REQUESTS = '/api/app/approval-requests';
 const OCCURRED_EARLY = '2026-09-06T01:00:00.000Z';
 const OCCURRED_LATE = '2026-09-06T05:00:00.000Z';
 
@@ -70,6 +80,22 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   let secondSlotId: bigint;
   let voidedSlotId: bigint;
   let noPermCookie: string[];
+  /** 정정 대상 넷 — 상신(A) · B급 정정(B) · A급 정정(C) · 자유 사유 코드(D). */
+  let correctingWorkOrderId: number;
+  let resultAId: number;
+  let resultBId: number;
+  let resultCId: number;
+  let resultDId: number;
+  /** 정정 앞뒤로 `withProgress` 를 읽는 W/O — 실적 1건(양품 40)만 붙는다. */
+  let progressWorkOrderId: number;
+  /** 정정이 `:close` 3분류를 바꾸는 것을 보는 W/O — 지시 100 · 실적 100. */
+  let correctClosableWorkOrderId: number;
+  let closingResultId: number;
+  /** ①에서 만든 정정본 — 「정정본도 상신할 수 있다」가 이 id 를 쓴다. */
+  let correctionOfBId: number;
+  let approverCookie: string[];
+  let approverUserId: bigint;
+  let correctRouteId: bigint;
   const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n };
 
   beforeAll(async () => {
@@ -82,6 +108,8 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await cleanup();
     await makeFixtures();
     await makeUser();
+    // ⭐ 개발 DB `approval_route` 는 0행이다 — 안 심으면 상신이 늘 400 `ROUTE_NOT_FOUND` 다.
+    correctRouteId = await seedRoute(prisma, CORRECT_APPROVAL_TYPE, [approverUserId]);
   });
 
   afterAll(async () => {
@@ -382,6 +410,286 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     });
   });
 
+  describe('정정 · 상신 (PR ③)', () => {
+    const correct = (productionResultId: number, payload: object, options: { cookie?: string[] } = {}) =>
+      request(app.getHttpServer())
+        .post(`${RESULTS}/${productionResultId}:correct`)
+        .set('Cookie', options.cookie ?? cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send(payload);
+
+    const submit = (productionResultId: number, reason: string) =>
+      request(app.getHttpServer())
+        .post(`${RESULTS}/${productionResultId}:request-approval`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reason });
+
+    /** 결재함 상세의 ETag 는 `:approve`·`:reject` 가 함께 쓰는 토큰이다. */
+    async function decide(action: 'approve' | 'reject', approvalRequestId: number, comment: string): Promise<void> {
+      const detail = await request(app.getHttpServer())
+        .get(`${APPROVAL_REQUESTS}/${approvalRequestId}`)
+        .set('Cookie', approverCookie)
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`${APPROVAL_REQUESTS}/${approvalRequestId}:${action}`)
+        .set('Cookie', approverCookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', detail.headers.etag as string)
+        .send({ comment })
+        .expect(200);
+    }
+
+    const goodQtyOf = async (workOrderId: number): Promise<number> => {
+      const response = await request(app.getHttpServer())
+        .get(`${WORK_ORDERS}/${workOrderId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body.progress.goodQty as number;
+    };
+
+    it('정정 — 사유만 바꾸면 201 이고 승인 없이 통과한다', async () => {
+      const response = await correct(resultBId, { reasonCode: 'MISCOUNT', note: '집계 오기' }).expect(201);
+
+      correctionOfBId = response.body.productionResultId;
+      // B급(다섯 수량이 원본과 같다)이라 승인 흔적이 0건이어도 통과한다.
+      expect(response.body).toMatchObject({
+        correctsProductionResultId: resultBId,
+        workOrderId: correctingWorkOrderId,
+        // 사건 칸 열 승계 — 다섯 수량도 원본 그대로다.
+        goodQty: 20,
+        defectQty: 0,
+        statusCode: 'CONFIRMED',
+        // ⚠ 계약이 이름을 달리 적었다 — 본문 `note` 가 물리 `remarks` 로 간다.
+        remarks: '집계 오기',
+      });
+      expect(response.body.productionResultNo).toMatch(/^PR-\d{6}-\d{4}$/);
+      // 계약 201 에 ETag 를 안 선언했다 — 원본을 고치지 않으니 새 토큰을 낼 자리도 없다.
+      expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+      expect(
+        validator('production-02생산실행.json', 'POST /production/production-results/{productionResultId}:correct', 201)(
+          response.body,
+        ),
+      ).toBe(true);
+      // ⛔ 원본은 그대로다 — 배분도 하나 안 생긴다.
+      const original = await prisma.production_result.findUniqueOrThrow({
+        where: { production_result_id: BigInt(resultBId) },
+      });
+      expect(original.version_no).toBe(1);
+      expect(
+        await prisma.production_result_lot_allocation.count({
+          where: { production_result_id: BigInt(correctionOfBId) },
+        }),
+      ).toBe(0);
+    });
+
+    it('정정 — 사유 코드는 아무 문자열이나 통과한다(그룹 0값 · 대조 안 걺 · R-20)', async () => {
+      // `PRODUCTION_RESULT_CORRECT_REASON` 그룹은 값이 0건이라 대조를 걸면 모든 값이 400 이 된다.
+      const response = await correct(resultDId, { reasonCode: '아무-값이나-통과-2026' }).expect(201);
+
+      expect(response.body).toMatchObject({ correctsProductionResultId: resultDId, goodQty: 5 });
+      const row = await prisma.production_result.findUniqueOrThrow({
+        where: { production_result_id: BigInt(response.body.productionResultId) },
+      });
+      expect(row.correct_reason_code).toBe('아무-값이나-통과-2026');
+      // 공백만은 여전히 막는다 — required 를 「있기만 하면」으로 풀지 않는다.
+      await correct(resultDId, { reasonCode: '   ' }).expect(400);
+    });
+
+    it('정정 — 수량을 바꾸면 400 이고, 상신·승인 뒤 같은 요청이 201 이 된다', async () => {
+      const payload = { reasonCode: 'MISCOUNT', goodQty: 50 };
+
+      const rejected = await correct(resultCId, payload).expect(400);
+
+      // ⭐ 코어 `assertApproved` 는 ⌜요청 0건이면 통과⌝ 라 이 자리를 열어 준다 — 도메인 게이트가 막는다.
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'APPROVAL_REQUIRED' });
+
+      const submitted = await submit(resultCId, '집계에서 양품 20 EA 누락').expect(202);
+      // 승인 «전»에는 진행 중이라 코드가 갈린다.
+      const pending = await correct(resultCId, payload).expect(400);
+      expect(pending.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+
+      await decide('approve', submitted.body.approvalRequestId, '수량 확인함');
+      const accepted = await correct(resultCId, payload).expect(201);
+
+      expect(accepted.body).toMatchObject({ correctsProductionResultId: resultCId, goodQty: 50, defectQty: 0 });
+    });
+
+    it('정정 — 정정본이 목록에 원본과 «둘 다» 보인다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${RESULTS}?workOrderId=${correctingWorkOrderId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const listed = response.body.items.map((item: { productionResultId: number }) => item.productionResultId);
+      // ⛔ 목록은 잎만 세지 «않는다» — 정정은 이력이라 원본도 남는다(누계만 잎을 센다).
+      expect(listed).toContain(resultBId);
+      expect(listed).toContain(correctionOfBId);
+      const correction = response.body.items.find(
+        (item: { productionResultId: number }) => item.productionResultId === correctionOfBId,
+      );
+      expect(correction).toMatchObject({ correctsProductionResultId: resultBId });
+      // 원본은 그 칸이 비어 키가 없다.
+      const original = response.body.items.find(
+        (item: { productionResultId: number }) => item.productionResultId === resultBId,
+      );
+      expect(Object.keys(original)).not.toContain('correctsProductionResultId');
+    });
+
+    it('정정 — 정정 뒤 `withProgress` 의 `goodQty` 가 정정 후 값이다(두 배가 아니다)', async () => {
+      expect(await goodQtyOf(progressWorkOrderId)).toBe(40);
+
+      const only = await prisma.production_result.findFirstOrThrow({
+        where: { work_order_id: BigInt(progressWorkOrderId) },
+        select: { production_result_id: true },
+      });
+      await correct(Number(only.production_result_id), { reasonCode: 'MISCOUNT', note: '사유만' }).expect(201);
+
+      // 정정본이 «대체값»이라 원본이 합에서 빠진다 — 그냥 더하면 80 이다.
+      expect(await goodQtyOf(progressWorkOrderId)).toBe(40);
+    });
+
+    it('정정 — 정정 뒤 `:close` 3분류가 정정 후 값으로 갈린다', async () => {
+      const payload = { reasonCode: 'MISCOUNT', goodQty: 60 };
+      const submitted = await submit(closingResultId, '실측 60 EA 로 정정').expect(202);
+      await decide('approve', submitted.body.approvalRequestId, '실측 확인함');
+      await correct(closingResultId, payload).expect(201);
+
+      const close = (body: object) =>
+        request(app.getHttpServer())
+          .post(`${WORK_ORDERS}/${correctClosableWorkOrderId}:close`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', randomUUID())
+          .set('If-Match', '1')
+          .send(body);
+
+      // 100 + 60 을 더하면 «초과»(사유만 요구)다 — 잔량 처분을 묻는 것이 미달 판정의 증거다.
+      const rejected = await close({}).expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: 'remainderDispositionCode',
+        code: 'REMAINDER_DISPOSITION_REQUIRED',
+      });
+
+      await close({ remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' }).expect(200);
+
+      const queued = await prisma.integration_message.findFirstOrThrow({
+        where: { target_type_code: 'WORK_ORDER', target_id: BigInt(correctClosableWorkOrderId) },
+      });
+      // ERP 로 나가는 값도 정정 후 값이다 — 조회·마감·송신이 한 정의를 쓴다.
+      expect((queued.payload as { header: { goodQty: number; completionJudgmentCode: string } }).header).toMatchObject({
+        goodQty: 60,
+        completionJudgmentCode: 'UNDER',
+      });
+    });
+
+    it('상신 — 결재선을 심으면 202 이고 `approvalRequestId` 가 온다', async () => {
+      const response = await submit(resultAId, '교대 종료 후 집계에서 양품 누락 확인').expect(202);
+
+      expect(typeof response.body.approvalRequestId).toBe('number');
+      expect(
+        validator(
+          'production-02생산실행.json',
+          'POST /production/production-results/{productionResultId}:request-approval',
+          202,
+        )(response.body),
+      ).toBe(true);
+      const row = await prisma.approval_request.findUniqueOrThrow({
+        where: { approval_request_id: BigInt(response.body.approvalRequestId) },
+      });
+      // 서버가 다형 축 두 칸을 채운다 — 화면은 등급도 유형도 보내지 않는다.
+      expect(row).toMatchObject({
+        approval_type_code: CORRECT_APPROVAL_TYPE,
+        target_type_code: 'PRODUCTION_RESULT',
+        target_id: BigInt(resultAId),
+        status_code: 'PENDING',
+      });
+      // ⛔ 원본은 그대로다 — 상신이 `version_no` 를 안 올린다.
+      const original = await prisma.production_result.findUniqueOrThrow({
+        where: { production_result_id: BigInt(resultAId) },
+      });
+      expect(original.version_no).toBe(1);
+    });
+
+    it('상신 — 진행 중 요청이 있으면 400 이다', async () => {
+      const rejected = await submit(resultAId, '두 번째 상신').expect(400);
+
+      // 한 실적에 살아 있는 요청은 하나다 — 코어 `assertNoOpenRequest` 가 던지는 그대로 흘린다.
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+    });
+
+    it('상신 — 반려 뒤 다시 상신하면 새 요청이 선다', async () => {
+      const open = await prisma.approval_request.findFirstOrThrow({
+        where: { approval_type_code: CORRECT_APPROVAL_TYPE, target_id: BigInt(resultAId), status_code: 'PENDING' },
+      });
+
+      await decide('reject', Number(open.approval_request_id), '근거 자료가 없다');
+      const again = await submit(resultAId, '근거 붙여 다시 올린다').expect(202);
+
+      // 반려는 진행 중이 아니다(J-6) — 옛 요청을 되살리지 않고 «새» 행이 선다.
+      expect(again.body.approvalRequestId).not.toBe(Number(open.approval_request_id));
+      expect(
+        await prisma.approval_request.count({
+          where: { approval_type_code: CORRECT_APPROVAL_TYPE, target_id: BigInt(resultAId) },
+        }),
+      ).toBe(2);
+    });
+
+    it('상신 — 정정본도 상신할 수 있다(R-10)', async () => {
+      // 다형 축(`targetId`)이라 「원본인지 정정본인지」를 볼 근거가 없고 계약이 안 막았다.
+      const response = await submit(correctionOfBId, '정정본을 다시 고친다').expect(202);
+
+      expect(typeof response.body.approvalRequestId).toBe('number');
+    });
+
+    it('상신 — 결재선이 없으면 400 `ROUTE_NOT_FOUND` 다', async () => {
+      await prisma.approval_route.update({ where: { approval_route_id: correctRouteId }, data: { is_active: false } });
+      try {
+        const rejected = await submit(resultDId, '결재선이 없는 상태').expect(400);
+
+        // 상신할 곳이 없는 요청을 만들지 않는다 — 코어 `selectRoute` 가 던진다.
+        expect(rejected.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+      } finally {
+        await prisma.approval_route.update({ where: { approval_route_id: correctRouteId }, data: { is_active: true } });
+      }
+    });
+
+    it('상신 — 활성 결재선 둘은 물리가 막아 `ROUTE_AMBIGUOUS` 가 안 난다(R-8 정정)', async () => {
+      // ⚠ I-7.md R-8 은 ⌜`approval_route` 에 유일 제약이 없어 실제로 나는 갈래⌝ 라 적었는데
+      //   I-1 A6 이 `uq_approval_route_active(approval_type_code, COALESCE(business_unit_id,0))
+      //   WHERE is_active` 를 이미 깔았다. 상신자가 `businessUnitId=null` 이라 `selectRoute` 는
+      //   공통본만 보고, 활성 공통본은 이 인덱스가 한 벌로 묶는다 ⇒ 이 도메인에서 그 갈래는 «도달 불가»다.
+      await expect(seedRoute(prisma, CORRECT_APPROVAL_TYPE, [approverUserId])).rejects.toThrow();
+
+      // 결재선은 여전히 한 벌이라 상신이 그대로 선다 — 코드는 그대로 두고(코어 소관) 사실만 못박는다.
+      const response = await submit(resultDId, '결재선은 한 벌뿐이다').expect(202);
+      expect(typeof response.body.approvalRequestId).toBe('number');
+    });
+
+    it('상신 — 없는 실적이면 404 이고 AP 번호가 안 나간다', async () => {
+      const before = await approvalCounter();
+
+      await request(app.getHttpServer())
+        .post(`${RESULTS}/999999999:request-approval`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reason: '없는 실적' })
+        .expect(404);
+
+      // 존재 확인이 채번보다 «앞»이라 결번이 안 생긴다(I-5 R-12).
+      expect(await approvalCounter()).toEqual(before);
+    });
+
+    /** `APPROVAL_REQUEST` 채번 카운터의 현재값 — 결번 여부를 이 숫자로 본다. */
+    async function approvalCounter(): Promise<bigint> {
+      const counter = await prisma.numbering_counter.findFirst({
+        where: { numbering_rule: { document_type_code: 'APPROVAL_REQUEST' } },
+        orderBy: { numbering_counter_id: 'desc' },
+        select: { last_value: true },
+      });
+      return counter?.last_value ?? 0n;
+    }
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -617,6 +925,60 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     // 폐번 슬롯 — 배분에 섞이면 400 이고 아무것도 안 남아야 한다.
     voidedSlotId = (await recordingSlot(3, 'VOIDED')).lot_id;
 
+    // 정정 대상 W/O — 실적 넷을 직접 심는다(정정이 «원본을 어떻게 다루는가»가 관심이라
+    // 등록 경로를 태우지 않는다). 지시 200 이라 정정 뒤에도 초과가 나지 않는다.
+    const correcting = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOX`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 200,
+        uom_id: uom.uom_id,
+        status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-09-06T00:30:00.000Z'),
+      },
+    });
+    correctingWorkOrderId = Number(correcting.work_order_id);
+    resultAId = Number((await result('PRX1', correcting.work_order_id, 10, OCCURRED_EARLY, null, 1)).production_result_id);
+    resultBId = Number((await result('PRX2', correcting.work_order_id, 20, OCCURRED_EARLY, null, 2)).production_result_id);
+    resultCId = Number((await result('PRX3', correcting.work_order_id, 30, OCCURRED_EARLY, null, 3)).production_result_id);
+    resultDId = Number((await result('PRX4', correcting.work_order_id, 5, OCCURRED_EARLY, null, 4)).production_result_id);
+
+    // 진척 대상 — 실적 1건(40)뿐이라 「정정 뒤 80 이 되는가」가 한눈에 갈린다.
+    const progressing = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOG`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 100,
+        uom_id: uom.uom_id,
+        status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-09-06T00:30:00.000Z'),
+      },
+    });
+    progressWorkOrderId = Number(progressing.work_order_id);
+    await result('PRG1', progressing.work_order_id, 40, OCCURRED_EARLY, null, 1);
+
+    // 마감 대상 — 정정 전이면 정상(100/100), 정정 뒤면 미달(60/100)이다.
+    const correctClosable = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOZ`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 100,
+        uom_id: uom.uom_id,
+        status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-09-06T00:30:00.000Z'),
+      },
+    });
+    correctClosableWorkOrderId = Number(correctClosable.work_order_id);
+    closingResultId = Number(
+      (await result('PRZ1', correctClosable.work_order_id, 100, OCCURRED_EARLY, null, 1)).production_result_id,
+    );
+
     // 마감이 정상 판정이 되도록 누적 양품 = 지시 수량. 이 실적은 슬롯에 안 붙는다.
     const closableResult = await result('PRDC', closable.work_order_id, 100, OCCURRED_EARLY, null);
     await prisma.production_result_lot_allocation.create({
@@ -643,15 +1005,31 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    // 결재자 — 결재선의 유일한 단계다. A급 정정을 실제로 «승인»해 게이트가 열리는 것을 본다.
+    const approver = await prisma.app_user.create({
+      data: { login_id: APPROVER_ID, user_name: '생산실적결재자', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: approver.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    approverUserId = approver.app_user_id;
     // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '생산실적검사용' } });
     await prisma.role_permission.createMany({
       data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    const approverRole = await prisma.role.create({
+      data: { role_code: APPROVER_ROLE, role_name: '생산실적결재용' },
+    });
+    await prisma.role_permission.createMany({
+      data: APPROVER_PERMISSIONS.map((permission_code) => ({ role_id: approverRole.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: approverUserId, role_id: approverRole.role_id } });
 
     cookie = await login(LOGIN_ID);
     noPermCookie = await login(NOPERM_ID);
+    approverCookie = await login(APPROVER_ID);
   }
 
   async function login(loginId: string): Promise<string[]> {
@@ -672,6 +1050,19 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.integration_message.deleteMany({
       where: { target_type_code: 'WORK_ORDER', target_id: { in: queued.map((row) => row.work_order_id) } },
     });
+    // 승인 축 — FK 역순(step → request → route_step → route). 결재자 계정보다 «먼저» 지운다.
+    const requests = await prisma.approval_request.findMany({
+      where: { approval_type_code: CORRECT_APPROVAL_TYPE },
+      select: { approval_request_id: true },
+    });
+    await prisma.approval_step.deleteMany({
+      where: { approval_request_id: { in: requests.map((row) => row.approval_request_id) } },
+    });
+    await prisma.approval_request.deleteMany({ where: { approval_type_code: CORRECT_APPROVAL_TYPE } });
+    await prisma.approval_route_step.deleteMany({
+      where: { approval_route: { approval_type_code: CORRECT_APPROVAL_TYPE } },
+    });
+    await prisma.approval_route.deleteMany({ where: { approval_type_code: CORRECT_APPROVAL_TYPE } });
     await prisma.lot_lifecycle_history.deleteMany({ where: { lot: plantScope } });
     await prisma.production_result_lot_allocation.deleteMany({
       where: { production_result: { work_order: orderScope } },
@@ -691,7 +1082,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID, APPROVER_ID]) {
       const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
       if (!user) continue;
       // 멱등 기록도 지운다 — 남으면 다음 회차의 같은 키 재전송이 옛 응답을 되돌려 준다.
@@ -700,8 +1091,9 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const roleCode of [ROLE, APPROVER_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: roleCode } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }

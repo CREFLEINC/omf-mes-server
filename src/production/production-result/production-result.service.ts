@@ -18,7 +18,7 @@ import {
 import { ProductionResultView, productionResultView } from './production-result-view';
 
 /** 채번 문서 유형 — `app.numbering_rule` 에 `PR-{YYMMDD}-{SEQ4}` 가 등재돼 있다. */
-const NUMBERING_DOCUMENT = 'PRODUCTION_RESULT';
+export const NUMBERING_DOCUMENT = 'PRODUCTION_RESULT';
 /**
  * 계약 `LotLifecycleHistoryEvent.sourceDocumentTypeCode` enum 의 L1 값. 채번 유형과 문자열은
  * 같아도 **축이 다르다** — 묶으면 R-2(공용 상수를 써서 L2 에 틀린 값이 실린 자리)를 되풀이한다.
@@ -30,7 +30,7 @@ const RECORD_ACTION = 'production-result-recorded';
  * 태어나는 상태값. `PRODUCTION_RESULT_STATUS` 는 폐기 그룹(`x-no-code-key`)이라 값 목록이 없어
  * **이미 데이터에 있는 값**을 든다. ⛔ 이 값으로 «아무것도 거르지 않는다»(§2-3).
  */
-const RESULT_STATUS = 'CONFIRMED';
+export const RESULT_STATUS = 'CONFIRMED';
 const WORKER_NO = 'X-Worker-No';
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 **선택** — 없으면 대조를 건너뛴다(§4-6 · C-9). */
