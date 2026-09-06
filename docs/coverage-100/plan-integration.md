@@ -234,11 +234,11 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-4 · 출고 — 전표·전기·원장 out — 7건
 
 **체인 마디**: ⑧ `goods_issue` — **재고가 처음으로 «나가는» 자리**. `sourceDocumentTypeCode` 3값이 세 업무를 가른다(피킹=생산투입 · 입고=반품/자재폐기 · 처분결정=제품폐기).
-**원장**: ⭐ `GOODS_ISSUE`. 라인마다 `from`={출발 창고·위치·품질상태·재고상태}, `to`= 헤더 `destinationTypeCode` 가 `LOCATION` 이면 그 위치, `PARTNER`/`DISPOSAL_SITE`/비움이면 **없음**. `goods_issue_line.inventory_transaction_line_id` 로 되짚는다(입고와 같은 모양).
+**원장**: ⭐ `GOODS_ISSUE`. 라인마다 `from`={출발 창고·위치·품질상태·재고상태}, `to`= 헤더 `destinationTypeCode` 가 `LOCATION` 이면 그 위치, `PARTNER`/`DISPOSAL_SITE`/비움이면 **없음**. `goods_issue_line.inventory_transaction_line_id` 로 되짚는다(입고와 같은 모양). ⚠ `from` 의 품질·재고 상태 두 칸은 계약 `GoodsIssueLineUpsert` 에 **없다** — 7칸 키로 `inventory_balance` 를 잠그고 되읽어 1행이면 그 값, 2행+ 면 400(문의 031 · I-4 재수립 R-1).
 ⭐ **M1 최단 경로가 여기 있다** — `sourceDocumentTypeCode='GOODS_RECEIPT'`(자재 폐기·공급사 반품)는 **피킹 없이** 성립한다. 즉 I-8 을 기다리지 않고 「불출 → balance 감소」를 닫을 수 있다.
 **예상 설계 미정**
-- 차단 판정 정본은 Lot Status 다(결정 10) — 그런데 I-20 이 아직 없다. → 1단계 **본길**(모든 출고의 결과가 달라진다)이 아니라 **가장자리**(보류된 LOT 을 출고할 때만 갈린다) → 2단계 기준 2「거부하는 쪽」 → `trace.lot.status_code ∈ {DEFECTIVE, SCRAPPED, INSPECTION_PENDING}` 이면 400 으로 막고, 코드에 `// 판정 정본은 Lot Status(결정 10)` 를 남긴다.
-- `goods_issue.destination_id` 가 물리에서 NOT NULL 인데 계약은 「자체 폐기면 비운다」(#147). → **선행 마이그레이션**(nullable 화 = 완화라 forward-only 안전).
+- ~~차단 판정: `trace.lot.status_code ∈ {DEFECTIVE, SCRAPPED, INSPECTION_PENDING}` 이면 400~~ → **철회**(I-4 재수립 R-7). 그 집합은 폐기(`W-01-06` 불량창고 입고분 · `W-04-10` 처분=폐기)·반품(`W-01-05` 보류 LOT)을 **전건 400** 으로 만들어 바로 위 「M1 최단 경로」와 자기모순이다. 결정 10 의 단일 지점은 `mdm.judgment_type_control.blocks_issue`(실재 · 시드·DB 0행) — I-4 는 그 칸을 읽고 문자열 집합을 박지 않는다(오늘은 아무것도 안 막는다). `blocks_picking` 은 I-8.
+- ~~`goods_issue.destination_id` NOT NULL → 선행 마이그레이션~~ → **이미 적용됨**(`20260901090000_goods_issue_destination_and_spare` · #44 ≡ #147). I-4 마이그 **0건**.
 
 
 ##### I-5 · 다형 취소 — document-progress — 4건
@@ -371,7 +371,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-20 · LOT 상태·보류 — 등록·해제·전이·요약 — 10건
 
-**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»** — 그래서 I-4 에서 잠정 판정을 둔 자리를 여기서 정본으로 바꾼다.
+**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»** — I-4 는 `judgment_type_control.blocks_issue` 를 이미 읽으므로 I-20 이 하는 일은 **그 표에 행을 «채우는» 것**(`JUDGMENT_TYPE` 코드값 + 통제표)이지 코드가 아니다(I-4 재수립 R-7).
 **원장**: ⛔ 없다 — 계약이 「`inventory_balance.blocked_qty` 는 쓰지 않는다. 잔액은 서버가 파생한다」로 못 박았다.
 **트랜잭션**: `lot_hold` INSERT + `lot.status_code` UPDATE + `lot_status_event` 가 **한 트랜잭션**(B-8).
 **예상 설계 미정**: 회신 11(보류 해제 사유 — 철회 예정) · 회신 13(`LOT_HOLD_STATUS` 시드). 13 은 §Z-3 에서 이미 판정했다(`HELD` 를 넣되 해제 판정은 `released_at IS NULL`) — **반복하지 않고 그대로 쓴다**.
@@ -589,13 +589,13 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 
 ### 6-3. 마이그레이션이 모이는 자리
 
-CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 「그 도메인 첫 PR 앞에」. 실측으로 필요한 것은 ~~7건~~ **8건**이다(M-h 는 I-3 재수립 R-9 에서 드러났다 — 계약이 「선택」이라 적은 칸이 물리에서 NOT NULL).
+CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 「그 도메인 첫 PR 앞에」. 실측으로 필요한 것은 ~~7건~~ ~~8건~~ **7건**이다(M-h 는 I-3 재수립 R-9 에서 드러났다 — 계약이 「선택」이라 적은 칸이 물리에서 NOT NULL. M-c 는 I-4 재수립 R-11 에서 «이미 적용됨»으로 빠졌다).
 
 | # | 슬라이스 | 무엇 | 하위 호환? |
 |---|---|---|---|
 | M-a | I-1 | `approval_route` 부분 유일 인덱스 `(approval_type_code, business_unit_id) WHERE is_active`(§I-35) | ⭕ 인덱스 추가 |
 | M-b | I-2 | `purchase_order` 유일 제약 · OCR 자리(§I-48) | ⭕ |
-| M-c | I-4 | `goods_issue.destination_id`·`destination_type_code` **NOT NULL 해제**(#147) | ⭕ 완화 |
+| ~~M-c~~ | ~~I-4~~ | ✅ 이미 적용됨(`20260901090000` · #44 ≡ #147) — I-4 마이그 0건(I-4 재수립 R-11) | — |
 | M-d | I-6 | `work_order_resource_assignment` 부분 유일 인덱스 + `work_order.remainder_disposition_code`(nullable · §I-25) | ⭕ 추가 |
 | M-e | I-19 | 검사 의뢰 기준 완화(#280) | ⭕ |
 | M-f | I-23 | 긴급 출하 사유 컬럼(§I-41) | ⭕ nullable |
