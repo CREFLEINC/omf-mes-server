@@ -2,12 +2,13 @@ import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
 import { LotRow } from '../../core/lot';
+import { LotProgressView } from './lot-progress';
 
 /**
  * 계약 `Lot`·`LotExternalIdentifier`·`LotHold` 로 옮기는 자리.
  *
- * ⚠ 계약에 있으나 **지금 채울 수 없는 칸**이 셋이다 — 전부 `required` 가 아니라 뺀다.
- *   `progress` (실적 파생 · production 미구현) · `bomSnapshot` (스냅샷 칸이 물리에 없다) ·
+ * ⚠ 계약에 있으나 **지금 채울 수 없는 칸**이 둘이다 — 둘 다 `required` 가 아니라 뺀다.
+ *   `bomSnapshot` (스냅샷 칸이 물리에 없다) ·
  *   `receiptDispositionCode` (**물리에 컬럼 자체가 없다** · 되돌림 §Z-5)
  */
 
@@ -31,6 +32,10 @@ export interface LotView {
   completedAt: string | null;
   remarks: string | null;
   held: boolean;
+  /** ⚠ `withProgress=true` 로 «부른 조회»만 채운다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로
+   *  기본은 끈다⌝ 라 적었고, 끈 요청에는 키 자체가 없다. `lotView()` 는 이 칸을 만들지 않고
+   *  부르는 쪽(`lot.service.ts`)이 얹는다. */
+  progress?: LotProgressView;
 }
 
 export interface ExternalIdentifierView {
