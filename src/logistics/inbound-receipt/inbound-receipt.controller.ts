@@ -1,8 +1,12 @@
 import {
   Body,
   Controller,
+  Get,
   HttpStatus,
+  Param,
+  ParseIntPipe,
   Post,
+  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -14,17 +18,50 @@ import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
+import { PagedResponse } from '../../common/pagination';
+import {
+  InboundReceiptLineQuery,
+  InboundReceiptQuery,
+  InboundReceiptQueryService,
+} from './inbound-receipt-query.service';
 import { InboundReceiptCreateInput } from './inbound-receipt-rules';
-import { InboundReceiptDetail } from './inbound-receipt-view';
+import { InboundReceiptDetail, InboundReceiptLineView, InboundReceiptView } from './inbound-receipt-view';
 import { InboundReceiptService } from './inbound-receipt.service';
 
-/** 입하 쓰기 — 화면 `M-01-01`(등록). 조회·수정·치환·분리는 뒤 PR 이 같은 컨트롤러에 붙인다. */
+/** 입하 조회 3 + 등록 1 — 화면 `W-01-03`·`M-01-06`·`P-01-01`(조회) · `M-01-01`(등록). */
 @Controller('logistics/inbound-receipts')
 export class InboundReceiptController {
   constructor(
     private readonly inboundReceipts: InboundReceiptService,
+    private readonly queries: InboundReceiptQueryService,
     private readonly idempotency: IdempotencyService,
   ) {}
+
+  @Get()
+  @Contract('GET /logistics/inbound-receipts')
+  list(@Query() query: InboundReceiptQuery): Promise<PagedResponse<InboundReceiptView>> {
+    return this.queries.list(query);
+  }
+
+  @Get(':inboundReceiptId')
+  @Contract('GET /logistics/inbound-receipts/{inboundReceiptId}')
+  async get(
+    @Param('inboundReceiptId', ParseIntPipe) inboundReceiptId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<InboundReceiptDetail> {
+    const { detail, versionNo } = await this.queries.get(inboundReceiptId);
+    setEtag(response, versionNo);
+    return detail;
+  }
+
+  @Get(':inboundReceiptId/lines')
+  @Contract('GET /logistics/inbound-receipts/{inboundReceiptId}/lines')
+  async lines(
+    @Param('inboundReceiptId', ParseIntPipe) inboundReceiptId: number,
+    @Query() query: InboundReceiptLineQuery,
+  ): Promise<{ items: InboundReceiptLineView[] }> {
+    return { items: await this.queries.lines(inboundReceiptId, query) };
+  }
 
   @Post()
   @Contract('POST /logistics/inbound-receipts')
