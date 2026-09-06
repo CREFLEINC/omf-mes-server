@@ -5,6 +5,8 @@ import { ApprovalModule } from '../core/approval';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AsnController } from './asn/asn.controller';
+import { AsnQueryService } from './asn/asn-query.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
@@ -20,7 +22,13 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 @Module({
   // ⭐ 원장 코어가 처음 물리는 자리다 — 입고가 재고를 «쓰는» 첫 도메인이다.
   imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule, ApprovalModule],
-  controllers: [GoodsReceiptController, PutawayRuleController, PurchaseOrderController],
-  providers: [GoodsReceiptService, PutawayRuleService, PurchaseOrderService, PurchaseOrderQueryService],
+  controllers: [GoodsReceiptController, PutawayRuleController, PurchaseOrderController, AsnController],
+  providers: [
+    GoodsReceiptService,
+    PutawayRuleService,
+    PurchaseOrderService,
+    PurchaseOrderQueryService,
+    AsnQueryService,
+  ],
 })
 export class LogisticsModule {}
