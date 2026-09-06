@@ -7,6 +7,7 @@ import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
+import { ProductionResultService } from './production-result/production-result.service';
 import { ProductionResultController } from './production-result/production-result.controller';
 import { WorkOrderCancelService } from './work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order/work-order-close.service';
@@ -22,6 +23,7 @@ import { WorkOrderController } from './work-order/work-order.controller';
  * 배포(PR ⑤b)가 LOT 코어를 부르고 자재 출고요청 표에 직접 쓴다.
  * 마감·취소(PR ⑥b)가 LOT 생명주기 코어와 ERP 아웃박스 코어를 부른다.
  * 생산 실적 조회(I-7 PR ①)는 읽기만 한다 — 코어를 부르지 않는다.
+ * 실적 등록(PR ②)은 채번 코어와 LOT 생명주기 코어(L1)를 부른다 — 원장은 지나지 않는다.
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, NumberingModule, DocumentStateModule, LotRegistryModule, OutboxModule],
@@ -35,6 +37,7 @@ import { WorkOrderController } from './work-order/work-order.controller';
     WorkOrderCancelService,
     WorkOrderResourcePlanService,
     ProductionResultQueryService,
+    ProductionResultService,
   ],
 })
 export class ProductionModule {}

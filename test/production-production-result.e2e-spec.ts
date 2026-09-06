@@ -1,8 +1,10 @@
 /**
  * 생산 실적 조회 — 목록 `GET /production/production-results` · 단건 `GET …/{id}` +
- * LOT 생명주기 변경이력 `GET /trace/lot-lifecycle-events`(I-7 PR ①).
+ * LOT 생명주기 변경이력 `GET /trace/lot-lifecycle-events`(I-7 PR ①) +
+ * 등록 `POST /production/production-results` + LOT 배분 + L1(PR ②).
  *
- * ⭐ 마스터·전표 픽스처는 **직접 INSERT** 한다 — 등록 오퍼레이션(PR ②)이 아직 없다.
+ * ⭐ 조회가 보는 실적은 **직접 INSERT** 한다 — 등록 경로를 태우면 조회 단언이 등록 구현에
+ *   매달린다. 등록 갈래만 API 로 만든다.
  *   `production-work-order.e2e-spec.ts` 의 사다리를 그대로 베꼈고 그 파일은 손대지 않는다.
  * ⭐ 실적 2건 중 하나는 `shift_id` 를 비운다 — D1(NOT NULL 해제)이 실제로 먹었는지,
  *   그리고 뷰가 그때 키를 생략하는지를 같은 행으로 본다.
@@ -24,11 +26,15 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-pr-probe';
+const NOPERM_ID = 'e2e-pr-noperm';
 const PASSWORD = 'PR-생산실적-비밀번호';
 const PREFIX = 'PRE2E';
 const ROLE = 'E2E_PRODUCTION_RESULT';
-/** `:close` 만 403 을 선언한다(`derived-permissions.ts` — `W-02-05`). 조회 셋은 미선언이다. */
-const PERMISSIONS = ['W-02-05'];
+/**
+ * 403 을 선언한 것은 `:close`(`W-02-05`)와 실적 등록(POP 화면 넷 중 하나면 된다)뿐이다 —
+ * 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
+ */
+const PERMISSIONS = ['W-02-05', 'P-02-04'];
 const LOT_SOURCE = 'WORK_ORDER';
 const RESULTS = '/api/production/production-results';
 const EVENTS = '/api/trace/lot-lifecycle-events';
@@ -58,6 +64,12 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   let shiftlessResultId: number;
   let shiftedResultId: number;
   let emptySlotId: bigint;
+  /** 등록 대상 — `IN_PROGRESS` + 선발행 슬롯 셋(대기 2 · 폐번 1). */
+  let recordingWorkOrderId: number;
+  let waitingSlotId: bigint;
+  let secondSlotId: bigint;
+  let voidedSlotId: bigint;
+  let noPermCookie: string[];
   const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n };
 
   beforeAll(async () => {
@@ -181,6 +193,181 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       sourceDocumentId: closableWorkOrderId,
     });
     expect(validator('logistics-01자재창고.json', 'GET /trace/lot-lifecycle-events')(response.body)).toBe(true);
+  });
+
+  describe('등록 POST (PR ②)', () => {
+    const RECORDED_AT = '2026-09-06T03:00:00.000Z';
+
+    interface RegisterOptions {
+      key?: string;
+      cookie?: string[];
+      workerNo?: string;
+      ifMatch?: string;
+    }
+
+    function register(payload: object, options: RegisterOptions = {}) {
+      const call = request(app.getHttpServer())
+        .post(RESULTS)
+        .set('Cookie', options.cookie ?? cookie)
+        .set('Idempotency-Key', options.key ?? randomUUID())
+        // 귀속 사번은 계약이 required 로 못박은 유일한 작업자 원천이다(§4-3).
+        .set('X-Worker-No', options.workerNo ?? `${PREFIX}-WK`);
+      if (options.ifMatch !== undefined) call.set('If-Match', options.ifMatch);
+      return call.send(payload);
+    }
+
+    const resultBody = (overrides: object = {}) => ({
+      workOrderId: recordingWorkOrderId,
+      uomId: Number(ids.uom),
+      resultSourceCode: 'MANUAL',
+      occurredAt: RECORDED_AT,
+      goodQty: 10,
+      ...overrides,
+    });
+
+    it('등록 — 201 이고 ETag 헤더가 없다', async () => {
+      const response = await register(resultBody()).expect(201);
+
+      expect(response.body).toMatchObject({
+        workOrderId: recordingWorkOrderId,
+        resultSequence: 1,
+        // 생략한 넷은 0 으로 «저장»되고, required 14 라 0 도 값으로 실린다.
+        goodQty: 10,
+        defectQty: 0,
+        holdQty: 0,
+        scrapQty: 0,
+        reworkQty: 0,
+        statusCode: 'CONFIRMED',
+        workerId: Number(ids.worker),
+      });
+      // 등재된 규칙 `PR-{YYMMDD}-{SEQ4}` 그대로 — 접두어를 지어내지 않는다.
+      expect(response.body.productionResultNo).toMatch(/^PR-\d{6}-\d{4}$/);
+      // 요청에 칸이 없는 둘은 키가 아예 없다(D1 · 단말 토큰 부재).
+      expect(Object.keys(response.body)).not.toContain('shiftId');
+      expect(Object.keys(response.body)).not.toContain('terminalId');
+      // 계약이 201 에 ETag 를 선언하지 않았다 — Express 의 약한 내용 해시만 남는다.
+      expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+      expect(validator('production-02생산실행.json', 'POST /production/production-results', 201)(response.body)).toBe(
+        true,
+      );
+    });
+
+    it('등록 — 슬롯이 `WAITING`→`ACTIVE` 로 옮고 `lot_lifecycle_history` 에 L1 이 찍힌다', async () => {
+      // 배분 합계는 양품수량을 못 넘는다(DB-C18) — 30 을 배분하려면 양품이 30 이상이어야 한다.
+      const response = await register(
+        resultBody({ goodQty: 30, lotAllocations: [{ lotId: Number(waitingSlotId), allocatedQty: 30 }] }),
+      ).expect(201);
+
+      const slot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: waitingSlotId } });
+      expect(slot.lifecycle_status_code).toBe('ACTIVE');
+      const history = await prisma.lot_lifecycle_history.findMany({ where: { lot_id: waitingSlotId } });
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({
+        from_lifecycle_status_code: 'WAITING',
+        to_lifecycle_status_code: 'ACTIVE',
+        transition_code: 'L1',
+        // 계약 enum 이 전이별 값을 못박았다 — L1 은 `PRODUCTION_RESULT`(§1-4 ⓑ).
+        source_document_type_code: 'PRODUCTION_RESULT',
+        source_document_id: BigInt(response.body.productionResultId),
+        // 전이 시각은 단말이 보낸 «사건» 시각이다 — 서버 수신 시각이 아니다.
+        changed_at: new Date(RECORDED_AT),
+      });
+      const allocations = await prisma.production_result_lot_allocation.findMany({ where: { lot_id: waitingSlotId } });
+      expect(allocations).toHaveLength(1);
+      expect(Number(allocations[0].allocated_qty)).toBe(30);
+    });
+
+    it('등록 — 같은 슬롯에 두 번째 실적은 이력을 두 번 안 찍는다', async () => {
+      await register(
+        resultBody({
+          occurredAt: '2026-09-06T04:00:00.000Z',
+          lotAllocations: [{ lotId: Number(waitingSlotId), allocatedQty: 5 }],
+        }),
+      ).expect(201);
+
+      // 이미 `ACTIVE` 인 슬롯은 코어가 `skippedLotIds` 로 건너뛴다 — 배분만 늘고 이력은 그대로다.
+      expect(await prisma.lot_lifecycle_history.count({ where: { lot_id: waitingSlotId } })).toBe(1);
+      expect(await prisma.production_result_lot_allocation.count({ where: { lot_id: waitingSlotId } })).toBe(2);
+    });
+
+    it('등록 — 같은 멱등키 재전송이 행을 두 벌 만들지 않는다', async () => {
+      const key = randomUUID();
+
+      const first = await register(resultBody({ goodQty: 4 }), { key }).expect(201);
+      const again = await register(resultBody({ goodQty: 4 }), { key }).expect(201);
+
+      expect(again.body.productionResultId).toBe(first.body.productionResultId);
+      // 헤더 값을 도메인 표에 그대로 담는다 — 멱등 기록이 만료된 뒤의 재전송을 이 UNIQUE 가 막는다(§4-4).
+      expect(await prisma.production_result.count({ where: { idempotency_key: key } })).toBe(1);
+    });
+
+    it('등록 — If-Match 는 온 요청만 대조한다 — 낡으면 409, 없으면 통과다', async () => {
+      // 실적은 `work_order` 를 UPDATE 하지 않으므로 W/O 의 `version_no` 는 1 그대로다.
+      const stale = await register(resultBody({ goodQty: 6 }), { ifMatch: '99' }).expect(409);
+
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+      expect(
+        validator('production-02생산실행.json', 'POST /production/production-results', 409)(stale.body),
+      ).toBe(true);
+      // 토큰이 없으면 대조를 건너뛴다 — 오프라인 큐는 토큰을 싣지 않는다(C-9).
+      await register(resultBody({ goodQty: 6 })).expect(201);
+    });
+
+    it('등록 — 배분한 슬롯 LOT 의 `versionNo` 가 +1 된다(R-15)', async () => {
+      const before = await prisma.lot.findUniqueOrThrow({ where: { lot_id: secondSlotId } });
+
+      await register(resultBody({ lotAllocations: [{ lotId: Number(secondSlotId), allocatedQty: 7 }] })).expect(201);
+
+      // `moveWithin` 이 응답에 실리는 칸을 바꾸므로 ETag 도 올린다 — `:complete`·`PUT` 이 같은 토큰을 쓴다.
+      const after = await prisma.lot.findUniqueOrThrow({ where: { lot_id: secondSlotId } });
+      expect(after.version_no).toBe(before.version_no + 1);
+    });
+
+    it('등록 — 실패하면 배분·이력이 하나도 안 남는다', async () => {
+      const before = await prisma.production_result.count({
+        where: { work_order_id: BigInt(recordingWorkOrderId) },
+      });
+
+      const rejected = await register(
+        resultBody({
+          lotAllocations: [
+            { lotId: Number(secondSlotId), allocatedQty: 3 },
+            { lotId: Number(voidedSlotId), allocatedQty: 3 },
+          ],
+        }),
+      ).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'lotAllocations', code: 'STATE_LOCKED' });
+      // 채번은 트랜잭션 «밖»이라 결번은 남는다 — 허용한다(I-2 R-2). 행은 하나도 안 는다.
+      expect(await prisma.production_result.count({ where: { work_order_id: BigInt(recordingWorkOrderId) } })).toBe(
+        before,
+      );
+      expect(await prisma.production_result_lot_allocation.count({ where: { lot_id: voidedSlotId } })).toBe(0);
+      expect(await prisma.lot_lifecycle_history.count({ where: { lot_id: voidedSlotId } })).toBe(0);
+    });
+
+    it('등록 — 권한 없으면 403 이다', async () => {
+      // 계약이 403 을 선언한 자리라 가드가 본다 — POP 화면 넷 중 하나도 없는 계정이다.
+      await register(resultBody(), { cookie: noPermCookie }).expect(403);
+    });
+
+    it('이벤트 — 방금 찍힌 L1 이 `GET /trace/lot-lifecycle-events` 로 보인다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${EVENTS}?occurredFrom=2026-09-01T00:00:00.000Z&occurredTo=2026-12-31T00:00:00.000Z&transitionCode=L1`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const events = response.body.items.filter((item: { lotId: number }) => item.lotId === Number(waitingSlotId));
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        lotNo: `${PREFIX}-LOT-R1`,
+        fromLifecycleStatusCode: 'WAITING',
+        toLifecycleStatusCode: 'ACTIVE',
+        transitionCode: 'L1',
+        sourceDocumentTypeCode: 'PRODUCTION_RESULT',
+      });
+      expect(validator('logistics-01자재창고.json', 'GET /trace/lot-lifecycle-events')(response.body)).toBe(true);
+    });
   });
 
   async function makeFixtures(): Promise<void> {
@@ -381,6 +568,43 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     shiftedResultId = Number((await result('PRD2', main.work_order_id, 40, OCCURRED_LATE, shift.shift_id, 2)).production_result_id);
     await result('PRD3', other.work_order_id, 50, OCCURRED_LATE, null);
 
+    // 등록 대상 W/O — 배포된 상태로 바로 심는다(`:release` 를 안 태운다. 이 스위트가 보는 것은
+    // 「실적이 슬롯을 어떻게 옮기는가」라 배포 경로를 재현할 이유가 없다).
+    const recording = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOR`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 100,
+        uom_id: uom.uom_id,
+        status_code: 'IN_PROGRESS',
+        released_at: new Date('2026-09-06T00:30:00.000Z'),
+      },
+    });
+    recordingWorkOrderId = Number(recording.work_order_id);
+
+    const recordingSlot = async (seq: number, lifecycleStatusCode: string) =>
+      prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-LOT-R${seq}`,
+          item_id: item.item_id,
+          lot_type_code: 'PRODUCT',
+          plant_id: plant.plant_id,
+          initial_qty: 50,
+          uom_id: uom.uom_id,
+          source_type_code: LOT_SOURCE,
+          source_id: recording.work_order_id,
+          status_code: 'NORMAL',
+          lifecycle_status_code: lifecycleStatusCode,
+          work_order_lot_seq: seq,
+        },
+      });
+    waitingSlotId = (await recordingSlot(1, 'WAITING')).lot_id;
+    secondSlotId = (await recordingSlot(2, 'WAITING')).lot_id;
+    // 폐번 슬롯 — 배분에 섞이면 400 이고 아무것도 안 남아야 한다.
+    voidedSlotId = (await recordingSlot(3, 'VOIDED')).lot_id;
+
     // 마감이 정상 판정이 되도록 누적 양품 = 지시 수량. 이 실적은 슬롯에 안 붙는다.
     const closableResult = await result('PRDC', closable.work_order_id, 100, OCCURRED_EARLY, null);
     await prisma.production_result_lot_allocation.create({
@@ -400,19 +624,32 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    // 권한 0건 계정 — 등록만 403 을 선언하므로 이 계정으로 그 갈래를 본다(역할을 안 붙인다).
+    const other = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '생산실적권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '생산실적검사용' } });
     await prisma.role_permission.createMany({
       data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
 
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   /** 만든 행을 FK 역순으로 지운다(§10-1 그대로 · 자기참조 FK 는 한 `deleteMany` 로 통과한다). */
@@ -442,8 +679,10 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!user) continue;
+      // 멱등 기록도 지운다 — 남으면 다음 회차의 같은 키 재전송이 옛 응답을 되돌려 준다.
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
