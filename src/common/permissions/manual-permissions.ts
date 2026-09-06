@@ -188,4 +188,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 
   // `M-01-06` 입하 오류 등록 — 그 화면이 이 자원의 유일한 소유자다(계약 description 근거).
   'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['M-01-06'],
+
+  // 설계 미정 — 문의 050. 계약이 소유 화면을 비워 두었다(2026-08-26). 회신이 오면 이 한
+  // 줄을 그 화면으로 바꾼다. 선례 `PUT /logistics/goods-issues/{id}/lines`·
+  // `PUT /logistics/inbound-receipts/{id}`(부르는 화면이 0건이어도 가드가 등록을 요구한다 · I-10 R-10 넷째).
+  'POST /production/material-returns': ['P-02-03'],
 };
