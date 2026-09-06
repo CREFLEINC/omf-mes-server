@@ -9,8 +9,8 @@ import { TransitionRegistry } from './document-state.types';
  * 85건이 409 를 선언하는데, 값 목록이 없는 상태에서 그 판정을 흉내 내면 «아무 전이나»
  * 통과시키는 것과 같다.
  *
- * ⚠ **여기 선 축은 다섯뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
- * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 다섯이다.
+ * ⚠ **여기 선 축은 여섯뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
+ * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 여섯이다.
  *
  * ⛔ **품질 판정 축(`trace.lot.status_code`)은 일부러 비워 두었다.**
  * `LOT_STATUS_TRANSITION` 이 가리키는 상태(`Release(합격)`·`Hold(불합격)`·`보류`·
@@ -135,5 +135,26 @@ export const TRANSITIONS: TransitionRegistry = {
       to: 'REJECTED',
       sourceOperation: 'POST /app/approval-requests/{approvalRequestId}:reject',
     },
+  },
+
+  /**
+   * 출고 전표 진행. 값은 시드 `LOGISTICS_DOCUMENT_STATUS` 4값(`REGISTERED`·`POSTED`·
+   * `CANCEL_REQUESTED`·`CANCELLED` · `isSystemOwned`)이 확정했다.
+   *
+   * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 계약이 같은 축에
+   * 「전기된 전표의 라인은 바꿀 수 없다 — 400 `STATE_LOCKED`」(`GoodsIssueLineUpsert`)로
+   * 400 을 명시했고, `approval.service.ts:263` 이 「409 는 If-Match 저장 충돌이 쓴다」로
+   * 이미 못박았다.
+   *
+   * ⛔ 등록과 동시에 전기하는 경로(`postImmediately`)는 여기 오지 않는다 — `from` 이 없는
+   * 전이라 표에 담을 수 없다(전표가 처음부터 `POSTED` 로 태어난다).
+   */
+  'logistics.goods_issue.status_code': {
+    'document-post': {
+      from: ['REGISTERED'],
+      to: 'POSTED',
+      sourceOperation: 'POST /logistics/goods-issues/{goodsIssueId}:post',
+    },
+    // I-5 가 이 키 안에 document-request-cancel·document-cancel 을 더한다 — 키를 다시 만들지 않는다(I-4.md R-2)
   },
 };

@@ -47,6 +47,12 @@ export const ERROR_CODE = {
   // (`received_qty <= ordered_qty + tolerance_over_qty`)를 손으로 앞당겨 막는 이름이다.
   // ⛔ `RANGE`(발주를 이미 받은 양보다 «적게» 고친다 — 반대 방향)와 갈린다. I-3.md §1-5.
   QTY_EXCEEDS_ORDERED: 'QTY_EXCEEDS_ORDERED',
+  // 계약이 이름을 안 준 자리다(grep 실측: `contracts/*.json` 에 이 문자열 0건) —
+  // `contracts/logistics-01자재창고.json:6803` 이 「역처리가 재고 잔액을 음수로 만들면
+  // 400 이다」로 자리만 세웠고 `plan-api.md` §5.4(1061행)가 S06 에 배정하며 이름을 지었다.
+  // 첫 사용처는 I-4 `:post`(잔액 0행·부족 둘 다) — I-5 의 `posting.reverse()` 가 같은
+  // 문자열을 쓴다(plan.md §5 규칙 6).
+  NEGATIVE_BALANCE: 'NEGATIVE_BALANCE',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
