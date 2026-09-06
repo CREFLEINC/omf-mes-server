@@ -85,5 +85,22 @@ describe('LotLifecycleService', () => {
       skippedLotIds: [],
     });
     expect(calls).not.toContain('lot.findMany');
+    // 빈 집합이라도 미등록 액션은 던진다 — 마감의 「실적 없는 슬롯 0건」이 가드를 끄지 않는다.
+    await expect(service.moveWithin(tx, input([], 'work-order-scrap'))).rejects.toThrow(
+      /상태 전이가 등록되지 않았다/,
+    );
+  });
+
+  it('생명주기 — 못 찾은 id 는 skippedLotIds 에 실려 moved + skipped 가 입력 집합과 같다', async () => {
+    const { tx, args } = fake([{ lot_id: 1n, lifecycle_status_code: 'WAITING' }]);
+
+    const result = await service.moveWithin(tx, input([1n, 9n]));
+
+    expect(result).toEqual({ movedLotIds: [1n], skippedLotIds: [9n] });
+    // 응답에 실리는 칸이 바뀌므로 ETag 도 올린다.
+    expect(args.find((a) => 'data' in a && 'lifecycle_status_code' in (a.data as object))?.data).toEqual({
+      lifecycle_status_code: 'VOIDED',
+      version_no: { increment: 1 },
+    });
   });
 });

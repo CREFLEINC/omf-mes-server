@@ -31,8 +31,6 @@ export class LotLifecycleService {
   async moveWithin(tx: Tx, input: LotMoveInput): Promise<LotMoveResult> {
     const moved: bigint[] = [];
     const skipped: bigint[] = [];
-    if (input.lotIds.length === 0) return { movedLotIds: moved, skippedLotIds: skipped };
-
     const transition = TRANSITIONS[LIFECYCLE_COLUMN]?.[input.action];
     if (!transition) {
       throw new Error(
@@ -43,11 +41,16 @@ export class LotLifecycleService {
     // 이력 칸이 NOT NULL 이다 — 코드가 없는 전이는 이 축에 실을 수 없다.
     const transitionCode = transition.transitionCode;
     if (transitionCode === undefined) throw new Error(`transitionCode 가 없다: ${input.action}`);
+    // 미등록 액션 가드가 «빈 집합»(마감의 실적 없는 슬롯 0건)에서도 살아 있게 반환은 그 뒤다.
+    if (input.lotIds.length === 0) return { movedLotIds: moved, skippedLotIds: skipped };
 
     const lots = await tx.lot.findMany({
       where: { lot_id: { in: input.lotIds } },
       select: { lot_id: true, lifecycle_status_code: true },
     });
+    // 못 찾은 id 도 skipped 에 싣는다 — moved + skipped = 입력 집합이어야 호출자가 이력을 안 겹쳐 쓴다(R-12).
+    const found = new Set(lots.map((lot) => lot.lot_id));
+    skipped.push(...input.lotIds.filter((id) => !found.has(id)));
 
     for (const lot of lots) {
       const from = lot.lifecycle_status_code;
@@ -59,7 +62,8 @@ export class LotLifecycleService {
       }
       await tx.lot.update({
         where: { lot_id: lot.lot_id },
-        data: { lifecycle_status_code: transition.to },
+        // 응답에 실리는 칸이 바뀌므로 ETag(version_no)도 올린다 — 다른 전이 자리와 같다.
+        data: { lifecycle_status_code: transition.to, version_no: { increment: 1 } },
       });
       await tx.lot_lifecycle_history.create({
         data: {

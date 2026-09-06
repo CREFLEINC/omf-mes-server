@@ -136,6 +136,7 @@ export class LotRegistryService {
     if ((input.bomId === null) !== (input.bomVersion === null)) {
       throw new Error('bomId 와 bomVersion 은 둘 다 있거나 둘 다 없어야 한다 (ck_lot_bom_snapshot)');
     }
+    if (input.lotNos.length !== input.qtys.length) throw new Error('lotNos 와 qtys 의 길이가 다르다');
     const lotIds: bigint[] = [];
     for (const [index, lotNo] of input.lotNos.entries()) {
       const lot = await tx.lot.create({
