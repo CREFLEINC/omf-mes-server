@@ -32,7 +32,7 @@ export const LOT_LIFECYCLE_EVENT_ORDER_BY: Prisma.lot_lifecycle_historyOrderByWi
  */
 export function buildLotLifecycleEventWhere(query: LotLifecycleEventQuery): Prisma.lot_lifecycle_historyWhereInput {
   return {
-    changed_at: { gte: new Date(query.occurredFrom), lte: new Date(query.occurredTo) },
+    changed_at: { gte: new Date(query.occurredFrom), lt: new Date(query.occurredTo) },
     ...(query.lotId === undefined ? {} : { lot_id: query.lotId }),
     ...(query.transitionCode === undefined ? {} : { transition_code: query.transitionCode }),
   };

@@ -31,13 +31,13 @@ describe('LOT 생명주기 변경이력 조회 (I-7 PR ①)', () => {
 
     for (const transitionCode of codes) {
       expect(buildLotLifecycleEventWhere({ occurredFrom: FROM, occurredTo: TO, transitionCode })).toEqual({
-        changed_at: { gte: new Date(FROM), lte: new Date(TO) },
+        changed_at: { gte: new Date(FROM), lt: new Date(TO) },
         transition_code: transitionCode,
       });
     }
     // 계약 enum 밖은 가드가 400 을 내고 타입이 닫는다 — 빌더는 「안 주면 조건도 없다」뿐이다.
     expect(buildLotLifecycleEventWhere({ occurredFrom: FROM, occurredTo: TO, lotId: 12 })).toEqual({
-      changed_at: { gte: new Date(FROM), lte: new Date(TO) },
+      changed_at: { gte: new Date(FROM), lt: new Date(TO) },
       lot_id: 12,
     });
     expect(LOT_LIFECYCLE_EVENT_ORDER_BY).toEqual([{ changed_at: 'desc' }, { lot_lifecycle_history_id: 'desc' }]);
