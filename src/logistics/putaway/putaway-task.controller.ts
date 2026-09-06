@@ -1,15 +1,27 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import {
+  Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { setEtag } from '../../common/optimistic-lock';
+import { IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { PutawayCompleteContext, PutawayCompleteService, PutawayTaskComplete } from './putaway-complete.service';
+import { PutawayTaskView } from './putaway-task-view';
 import { PutawayTaskQuery, PutawayTaskService } from './putaway-task.service';
 
-/** 적치 지시 조회 2건. 화면은 `M-01-05`·`M-01-07`. 완료·임시 적재 두 POST 는 PR ② 몫이다. */
+/** 적치 지시 조회 2 + 완료·임시 적재 2. 화면은 `M-01-05`·`M-01-07`. */
 @Controller('logistics/putaway-tasks')
 export class PutawayTaskController {
-  constructor(private readonly tasks: PutawayTaskService) {}
+  constructor(
+    private readonly tasks: PutawayTaskService,
+    private readonly completes: PutawayCompleteService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get()
   @Contract('GET /logistics/putaway-tasks')
@@ -27,4 +39,45 @@ export class PutawayTaskController {
     setEtag(response, versionNo);
     return view;
   }
+
+  /**
+   * ⛔ `runVersioned` 를 못 쓴다 — If-Match 가 **선택**이라 토큰이 없으면 저쪽이 던져 500 이
+   * 된다(피킹 `:pick` 과 같은 가름). ⛔ `setEtag` 도 안 부른다 — 계약 미선언이다.
+   */
+  @Post(':putawayTaskId\\:complete')
+  @Contract('POST /logistics/putaway-tasks/{putawayTaskId}:complete')
+  @HttpCode(HttpStatus.OK)
+  complete(
+    @Req() request: Request, @Param('putawayTaskId', ParseIntPipe) putawayTaskId: number,
+    @Body() body: PutawayTaskComplete,
+  ): Promise<PutawayTaskView> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.completes.complete(putawayTaskId, body, contextOf(request), 'NORMAL'),
+    );
+  }
+
+  /** 정상 적치와 «상태»만 갈린다 — 권장 강제의 탈출구라 같은 자물쇠를 걸지 않는다. */
+  @Post(':putawayTaskId\\:complete-temporary')
+  @Contract('POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary')
+  @HttpCode(HttpStatus.OK)
+  completeTemporary(
+    @Req() request: Request, @Param('putawayTaskId', ParseIntPipe) putawayTaskId: number,
+    @Body() body: PutawayTaskComplete,
+  ): Promise<PutawayTaskView> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.completes.complete(putawayTaskId, body, contextOf(request), 'TEMPORARY'),
+    );
+  }
+}
+
+/** 헤더는 계약 검증 가드가 안 본다 — 사번 필수 판정은 서비스 몫이다(피킹 선례). */
+function contextOf(request: Request): PutawayCompleteContext {
+  const workerNo = request.headers['x-worker-no'];
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return {
+    workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+    version: ifMatchVersion(request),
+    appUserId: session.userId,
+  };
 }

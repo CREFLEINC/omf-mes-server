@@ -33,6 +33,7 @@ import { MaterialIssueShortageService } from './material-issue-request/shortage.
 import { PickingController } from './picking/picking.controller';
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
+import { PutawayCompleteService } from './putaway/putaway-complete.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
@@ -81,6 +82,7 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
     GoodsReceiptService,
     PickingPickService,
     PickingQueryService,
+    PutawayCompleteService,
     PutawayRuleService,
     PutawayTaskService,
     PurchaseOrderService,
