@@ -9,6 +9,7 @@ import { IF_WO_CLOSE, OutboxService, outboxMessageKey } from '../../core/outbox'
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose, assertCloseBody, closePayload } from './close-rules';
 import { judgeCompletion } from './completion';
+import { ACTIVE_RESULT_WHERE } from './work-order-progress';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
 const STATUS_COLUMN = 'production.work_order.status_code';
@@ -136,12 +137,13 @@ async function assertNoOpenSession(tx: Tx, workOrderId: number): Promise<void> {
 
 /**
  * 누적 양품. ⛔ `status_code` 로 **거르지 않는다** — `PRODUCTION_RESULT_STATUS` 그룹이
- * 폐기돼 거를 값이 없고, 정정은 상쇄 트랜잭션이라 합이 곧 반영된 값이다(§5-2 · F-6).
- * `progressOf` 의 `goodQty` 와 같은 식이어야 조회와 마감이 다른 값을 내지 않는다.
+ * 폐기돼 거를 값이 없다. 대신 정정된 원본을 합에서 «뺀다» — 정정본은 대체값이고 잎만
+ * 센다(I-7 §5-3). 조회(`progressOf` 의 `goodQty`)와 «같은» `ACTIVE_RESULT_WHERE` 를 써야
+ * 마감이 다른 값을 내지 않는다.
  */
 async function goodQty(tx: Tx, workOrderId: number): Promise<Prisma.Decimal> {
   const sums = await tx.production_result.aggregate({
-    where: { work_order_id: BigInt(workOrderId) },
+    where: { work_order_id: BigInt(workOrderId), ...ACTIVE_RESULT_WHERE },
     _sum: { good_qty: true },
   });
   return sums._sum.good_qty ?? new Prisma.Decimal(0);

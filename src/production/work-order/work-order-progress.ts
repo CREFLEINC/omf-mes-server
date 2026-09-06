@@ -9,6 +9,16 @@ import { judgeCompletion } from './completion';
  * 받아 온 합계를 넣는다(N+1 금지).
  */
 
+/**
+ * 정정된 원본은 합에서 뺀다 — 정정본은 «대체값»이고 잎(아무도 안 가리키는 행)만 센다
+ * (I-7 §5-3 · A-21 2026-09-02 판정). 체인(정정의 정정)도 이 한 줄로 닫힌다.
+ * ⛔ `status_code` 로는 여전히 안 거른다 — `PRODUCTION_RESULT_STATUS` 그룹이 폐기돼 거를 값이 없다.
+ * ⭐ 누계를 내는 «네 자리»가 이 한 상수를 쓴다 — 정의가 갈리면 조회와 마감이 다른 값을 낸다.
+ */
+export const ACTIVE_RESULT_WHERE = {
+  corrected_by_production_results: { none: {} },
+} satisfies Prisma.production_resultWhereInput;
+
 /** `production_result` 다섯 칸의 합 — Prisma `_sum` 을 그대로 받는다. 행이 0건이면 널이다. */
 export interface ResultSums {
   good_qty: Prisma.Decimal | null;
