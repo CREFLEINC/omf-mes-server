@@ -2,7 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BalanceLockKey, lockBalancesInOrder } from './balance-lock';
-import { PostingEndpoint, PostingInput, PostingLine, PostingResult } from './posting.types';
+import {
+  PostingEndpoint,
+  PostingInput,
+  PostingLine,
+  PostingResult,
+  ReverseInput,
+  ReverseResult,
+} from './posting.types';
+import {
+  REVERSAL_NO_SUFFIX,
+  assertReversible,
+  findReversal,
+  insertReversalHeader,
+  reversedLine,
+} from './reversal';
 
 /** 잔량 행이 서려면 조직 축 셋이 필요한데, 창고가 그것을 안다. */
 interface OrgAxis {
@@ -74,6 +88,66 @@ export class InventoryPostingService {
       inventoryTransactionId: header.inventory_transaction_id,
       businessDate: input.businessDate,
       alreadyPosted: false,
+    };
+  }
+
+  /**
+   * 전기된 원장을 되돌린다 — 원 라인의 `from`/`to` 를 **맞바꾼** 새 트랜잭션을 만든다.
+   * 부호를 뒤집지 않는 이유는 라인의 `qty > 0` CHECK 다(I-5.md §3-2).
+   *
+   * 역트랜잭션의 영업일은 원 트랜잭션의 것이다 — `:cancel` 이 `businessDate` 를 안 받는다
+   * (계약 실측). 서버가 수신 시각으로 다시 잡지 않는다(C-8 · CLAUDE.md). 04 `ShipmentCancel`
+   * 은 같은 행위에 `businessDate` 를 required 로 실었다 — I-5.md §3-4 · 문의 032.
+   *
+   * ⛔ 되짚기 칸(`goods_receipt_line.inventory_transaction_line_id` 등)은 건드리지 않는다 —
+   * 「이 문서 라인이 어느 원장 줄로 들어갔나」는 취소해도 사실이다(B-3 이력 불변).
+   */
+  async reverse(tx: Prisma.TransactionClient, input: ReverseInput): Promise<ReverseResult> {
+    const businessDate = new Date(input.businessDate);
+    // 키가 `REVERSAL:` 이 아니어도 「이미 되돌렸다」가 사실이다 — I-14 가 `post()` 로 낸
+    // 역분개도 같은 짝 칸을 채운다(I-5 R-3).
+    const already = await findReversal(tx, input.inventoryTransactionId, businessDate);
+    if (already !== null) return already;
+
+    const original = await tx.inventory_transaction.findUniqueOrThrow({
+      where: {
+        inventory_transaction_id_business_date: {
+          inventory_transaction_id: input.inventoryTransactionId,
+          business_date: businessDate,
+        },
+      },
+      include: { inventory_transaction_line: { orderBy: { line_no: 'asc' } } },
+    });
+    const rows = original.inventory_transaction_line;
+    const lines = rows.map(reversedLine);
+    const transactionNo = `${original.transaction_no}${REVERSAL_NO_SUFFIX}`;
+
+    const locked = await lockBalancesInOrder(tx, await this.balanceKeys(tx, lines));
+
+    // 잠금 뒤 되읽기가 경합의 그물이다 — INSERT 의 P2002 를 잡아 되읽는 길은 abort 된 tx 안이라
+    // 25P02 로 막힌다(리뷰 #217). 두 `reverse()` 가 같은 잔액 행을 잡으므로 뒤 트랜잭션은 앞이
+    // 커밋한 뒤에야 잠금을 얻고, READ COMMITTED 재조회가 앞이 만든 역행을 본다.
+    // ⛔ `assertReversible` «앞»이라야 한다 — 앞 트랜잭션이 이미 되돌려 `to` 쪽 잔액이 줄어 있어,
+    // 뒤에 두면 하한 검사가 먼저 400 NEGATIVE_BALANCE 를 던져 흡수에 못 닿는다.
+    const won = await findReversal(tx, input.inventoryTransactionId, businessDate);
+    if (won !== null) return won;
+
+    assertReversible(lines, locked);
+
+    const header = await insertReversalHeader(tx, input, original, transactionNo);
+
+    for (const [index, line] of lines.entries()) {
+      // 원 `line_no` 를 그대로 쓴다 — 헤더가 달라 `uq_inventory_transaction_line` 을 안 깨고
+      // 원 라인과 1:1 로 읽힌다.
+      const lineNo = rows[index].line_no;
+      await this.writeLine(tx, header.inventory_transaction_id, input, line, lineNo);
+    }
+
+    return {
+      inventoryTransactionId: header.inventory_transaction_id,
+      transactionNo,
+      businessDate: input.businessDate,
+      alreadyReversed: false,
     };
   }
 
