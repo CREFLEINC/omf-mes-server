@@ -22,6 +22,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   SHOPFLOOR_RECEIPT: 'SR',
   /** 규칙 미등재 — `MC-{YYYYMMDD}-{SEQ4}` · 계약 example 은 자리채움 · I-10 §3-11. */
   MATERIAL_CONSUMPTION: 'MC',
+  /** 규칙 미등재 — `MR-{YYYYMMDD}-{SEQ4}`(계약 example `"값"` 뿐 · 기간 축은 서버 시각 UTC 날짜 · I-10 §4-6). */
+  MATERIAL_RETURN: 'MR',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
