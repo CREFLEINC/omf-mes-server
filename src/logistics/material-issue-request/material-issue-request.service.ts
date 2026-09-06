@@ -20,7 +20,7 @@ export interface MaterialIssueRequestCreateLine {
   uomId: number;
 }
 
-/** 계약 `MaterialIssueRequestCreate` — required 5. */
+/** 계약 `MaterialIssueRequestCreate` — required 5 · 선택 3. */
 export interface MaterialIssueRequestCreate {
   workOrderId: number;
   destinationLocationId: number;
@@ -41,8 +41,8 @@ const STATE_LOCKED = new Set(['CANCELLED', 'CLOSED']);
 /**
  * 추가 자재 출고 요청 발행(`W-02-10` §5-6). 자동 발행(`work-order-release.service.ts:105~`)과
  * 공유하는 것은 상태 상수 하나다 — 라인의 출처가 달라 도메인 간 호출이 0 이다(§4-2).
- * ⛔ 예약도 피킹 지시도 만들지 않는다 — 어느 잔액 행에 거는지를 정할 근거가 계약에 없다(§5 · 045).
- * ⛔ 중복 요청·BOM 밖 품목을 막지 않는다(`W-02-10` §8 #4 · §5-3).
+ * ⛔ 예약·피킹 지시를 만들지 않는다(거는 근거가 계약에 없다 · §5 · 045) · ⛔ 중복 요청·BOM 밖
+ * 품목을 막지 않는다(`W-02-10` §8 #4 · §5-3).
  */
 @Injectable()
 export class MaterialIssueRequestService {
@@ -58,7 +58,7 @@ export class MaterialIssueRequestService {
     const plantId = await this.assertCreatable(input);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을 둘 쥐어
     //    풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `release-plan.ts:78-86`). 결번은 허용한다.
-    // ⛔ 기간 축은 클라이언트가 준 `businessDate` 그대로다(공유계약 C-8 · CLAUDE.md).
+    //    기간 축은 클라이언트가 준 `businessDate` 그대로다(공유계약 C-8 · CLAUDE.md).
     const no = await this.numbering.next('MATERIAL_ISSUE_REQUEST', plantId, input.businessDate);
     return this.prisma.$transaction((tx) => this.write(tx, input, no, appUserId));
   }
@@ -77,8 +77,8 @@ export class MaterialIssueRequestService {
         destination_location_id: input.destinationLocationId,
         required_at: input.requiredAt == null ? null : new Date(input.requiredAt),
         status_code: ISSUE_REQUEST_REGISTERED,
-        // 주체는 계정 세션이다 — 자동 발행(`work-order-release.service.ts:111`)과 같은 축이다.
-        // 수동 발행이 비우면 같은 표에 주체가 반쪽만 남는다(R-12).
+        // 주체는 세션 계정이다 — 자동 발행(`work-order-release.service.ts:111`)과 같은 축이라야
+        // 같은 표에 주체가 반쪽만 남지 않는다(R-12).
         requested_by: appUserId,
         reason_code: input.reasonCode ?? null,
         remarks: input.remarks ?? null,
@@ -112,36 +112,21 @@ export class MaterialIssueRequestService {
   /**
    * 트랜잭션 «밖»의 검증(§4-4)이고 돌려주는 것은 **W/O 의 공장**이다 — `work_order` 에
    * `plant_id` 가 없어 `production_plan.production_order.plant_id` 로 푼다(I-6 R-7 의 단일 축).
-   * ⛔ 없는 id 를 그냥 넘기면 FK 위반이 500 으로 샌다 — 트랜잭션 밖의 읽기라 값이 그 사이
-   *    사라지면 FK 가 최종 방어다(`goods-issue-rules.ts:10-12` 와 같은 규약).
+   * ⛔ 없는 id 를 넘기면 FK 위반이 500 으로 샌다 — 밖의 읽기라 FK 가 최종 방어다
+   *    (`goods-issue-rules.ts:10-12` 와 같은 규약).
    */
   private async assertCreatable(input: MaterialIssueRequestCreate): Promise<bigint> {
     const errors: ErrorItem[] = [];
-    // 계약이 `minItems: 1` 을 걸었으나 서비스가 스스로 선다 — 가드 밖에서 부르는 자리가
-    // 생겨도 같은 판정이어야 한다.
-    if (input.lines.length === 0) {
-      errors.push(field('lines', ERROR_CODE.LINE_REQUIRED, '요청 라인이 1건 이상이어야 합니다.'));
-    }
+    // 계약이 `minItems: 1` 을 걸었으나 서비스가 스스로 선다(가드 밖에서 부르는 자리가 생겨도).
+    if (input.lines.length === 0) errors.push(field('lines', ERROR_CODE.LINE_REQUIRED, '요청 라인이 1건 이상이어야 합니다.'));
     for (const [index, line] of input.lines.entries()) {
       // 물리 CHECK 를 앞당긴다 — CHECK 위반은 공용 그물에 안 걸려 500 으로 샌다.
-      if (!(line.requestedQty > 0)) {
-        errors.push(field(`lines[${index}].requestedQty`, ERROR_CODE.RANGE, '요청 수량은 0 보다 커야 합니다.'));
-      }
+      if (!(line.requestedQty > 0)) errors.push(field(`lines[${index}].requestedQty`, ERROR_CODE.RANGE, '요청 수량은 0 보다 커야 합니다.'));
     }
     assertMoments(input, errors);
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
-    const plantId = await this.assertTargets(input);
-    // ⛔ 필수로 만들지 않는다 — 계약이 nullable 이고 `W-02-10` §6 이 「사유 미선택은 화면이
-    //    막는다 — DB 는 안 막는다」로 적었다. 값이 오면 목록을 본다(§4-4).
-    await assertCodeValues(this.prisma, [
-      { field: 'reasonCode', value: input.reasonCode, groupCode: 'MATERIAL_ISSUE_REQUEST_REASON' },
-    ]);
-    return plantId;
-  }
-
-  /** FK 그물 — 축마다 한 번씩 `IN` 으로 모아 읽는다(라인 수와 무관하게 왕복 5회다). */
-  private async assertTargets(input: MaterialIssueRequestCreate): Promise<bigint> {
+    // FK 그물 — 축마다 한 번씩 `IN` 으로 모아 읽는다(라인 수와 무관하게 왕복 5회다).
     const ids = (of: (l: MaterialIssueRequestCreateLine) => number | null | undefined): number[] =>
       [...new Set(input.lines.map(of).filter((id): id is number => id != null))];
     const [workOrder, locations, items, uoms, components] = await Promise.all([
@@ -161,7 +146,6 @@ export class MaterialIssueRequestService {
       }),
     ]);
 
-    const errors: ErrorItem[] = [];
     // ⛔ 404 가 아니라 400 `INVALID` 다 — 계약이 이 경로에 404 를 선언하지 않았다(R-16 ⓒ).
     if (workOrder === null) {
       errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
@@ -170,9 +154,7 @@ export class MaterialIssueRequestService {
       // 답하면 뒤쪽을 연다(I-8.md §4-5).
       errors.push(field('workOrderId', ERROR_CODE.STATE_LOCKED, '취소·마감된 작업지시입니다.'));
     }
-    if (locations === 0) {
-      errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.'));
-    }
+    if (locations === 0) errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.'));
     const itemIds = new Set(items.map((row) => Number(row.item_id)));
     const uomIds = new Set(uoms.map((row) => Number(row.uom_id)));
     const componentIds = new Set(components.map((row) => Number(row.bom_component_id)));
@@ -186,20 +168,22 @@ export class MaterialIssueRequestService {
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
+    // ⛔ `reasonCode` 를 필수로 만들지 않는다 — 계약이 nullable 이고 `W-02-10` §6 이 「사유
+    //    미선택은 화면이 막는다 — DB 는 안 막는다」로 적었다. 값이 오면 목록을 본다(§4-4).
+    await assertCodeValues(this.prisma, [
+      { field: 'reasonCode', value: input.reasonCode, groupCode: 'MATERIAL_ISSUE_REQUEST_REASON' },
+    ]);
     const plantId = workOrder?.production_plan?.production_order.plant_id;
     // I-6 R-6 이 계획 없는 배포를 막았으나 그 전에 생긴 W/O 가 남아 있을 수 있다.
-    if (plantId == null) {
-      throw one(field('workOrderId', ERROR_CODE.INVALID, '공장을 풀 계획이 없습니다(문의 040).'));
-    }
+    if (plantId == null) throw one(field('workOrderId', ERROR_CODE.INVALID, '공장을 풀 계획이 없습니다(문의 040).'));
     return plantId;
   }
 }
 
 /**
- * 두 시각의 «형식»만 본다. ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만
- * 채번의 기간 축으로 들어가 `MIR-20261339-0001` 이 전표 번호에 영구히 남는다
- * (`goods-issue-rules.ts:105-125` 글자 그대로). `requiredAt` 만 담을 칸이 있다.
- */
+ * 시각의 «형식»만 본다. ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만 채번의
+ * 기간 축으로 들어가 `MIR-20261339-0001` 이 전표 번호에 영구히 남는다
+ * (`goods-issue-rules.ts:105-125` 글자 그대로). 셋 중 `requiredAt` 만 담을 칸이 있다. */
 function assertMoments(input: MaterialIssueRequestCreate, errors: ErrorItem[]): void {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate) ||
@@ -209,8 +193,6 @@ function assertMoments(input: MaterialIssueRequestCreate, errors: ErrorItem[]): 
   }
   for (const name of ['occurredAt', 'requiredAt'] as const) {
     const value = input[name];
-    if (value != null && Number.isNaN(Date.parse(value))) {
-      errors.push(field(name, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
-    }
+    if (value != null && Number.isNaN(Date.parse(value))) errors.push(field(name, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
   }
 }
