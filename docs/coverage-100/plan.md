@@ -37,7 +37,7 @@
 | 4 | **I-12** 적치 완료·임시적재 | 4 | 입고(구현됨) | — | — | opus(원장 STOCK_TRANSFER) | 2 | ∥ I-3 |
 | 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | — (M-c 는 `20260901090000` 로 이미 적용됨 · I-4 재수립 R-11) | `assertApproved`(코어 PR) | opus(코어·원장·등록·치환) · sonnet(조회 3) | 5 | — |
 | 6 | **I-5** 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | `document_cancellation.reason_code` NOT NULL 해제(I-5 R-1) | `posting.reverse()` | opus · 조회 ③a③b sonnet | 6 | — |
-| 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus | 4 | — |
+| 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus · ② sonnet | 7 | I-6 재수립 R-5 |
 | 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1 | — | opus | 3 | — |
 | — | **M1 체인 e2e** (통합 §4-1) | | I-7 | | | fable 통합 | 1 | |
 | 9 | **I-8** 출고요청·피킹·예약 코어 | 8 | I-4 | — | `reserved_qty`/`picked_qty` | opus | 3 | ⛔ I-5 와 직렬 |
@@ -100,8 +100,8 @@
 | 승인 완료 판정 | I-4 코어 PR ≤200줄 | `assertApproved(tx, targetTypeCode, targetId, approvalTypeCode)` — `approval_request` **다형 축**(FK `approval_request_id` 를 안 본다 · §5 #12). 요청 0건이면 통과(「승인이 필요한 전표」를 가르는 축이 데이터에 없어 상신 흔적으로 대신 가른다 — 문의 030 · I-4 재수립 R-4) · `PENDING` 400 `APPROVAL_IN_PROGRESS` · 거부/취소 400 `APPROVAL_REQUIRED`. 사용처 I-4 `goods-issues:post` · I-14 재고 조정 |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 **코드의 정적 표**(등록부는 칸 4개라 `DocumentProgress` 를 못 채운다 · `entity_type_registry` 는 부팅 대조만 · I-5 R-6), 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
-| ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | `src/integration/message` 에 적재 함수 하나. `message_key` 규약 한 곳 |
-| LOT 생명주기 전이 | I-6·I-7 | `transitions.ts` 에 이미 등록 — 호출만 |
+| ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | **`src/core/outbox/`** 에 `enqueue()` 하나(사용처가 두 도메인 — I-6 R-11). `message_key` 규약 `{INTERFACE_CODE}:{문서번호}` · 버전 없음 · UNIQUE 충돌은 `alreadyQueued:true` |
+| LOT 생명주기 전이 | I-6·I-7 | `transitions.ts` 에 이미 등록 + **`LotLifecycleService.moveWithin()`**(`lot_lifecycle_history` 를 쓰는 코어 · `{movedLotIds, skippedLotIds}` 반환)을 I-6 이 만들고 I-7 이 L1 로 재사용(I-6 R-12) |
 | LOT 품질 축 전이 | I-19 | 계약이 이름 적은 전이만 등록. 미등록은 던진다(F-6) |
 | 예약/피킹 | I-8 코어 PR ≤200줄 | `posting` 이 `reserved_qty`·`picked_qty` 를 올리고 내린다. 도메인의 `inventory_balance` 직접 UPDATE 금지(e2e 감지) |
 | 시리얼 | 코어 아님 | I-26 서비스 안 |
@@ -118,7 +118,7 @@
 | A3 | I-3 | `logistics.inbound_receipt_line` | `lot_id?` + **같은 파일에** `inbound_variance.reason_code` NOT NULL 해제(계약 「⛔ 선택이다」) · `ix_inbound_variance_line`(I-3 재수립 R-9) |
 | — | I-5 | `app.document_cancellation` | `reason_code` NOT NULL 해제(계약·화면에 사유 «코드» 축이 0 — I-3 A3 와 같은 모양 · I-5 재수립 R-1) |
 | ~~M-c~~ | ~~I-4~~ | `logistics.goods_issue` | ✅ **이미 적용됨**(`20260901090000_goods_issue_destination_and_spare` · #44 ≡ #147 · `ck_goods_issue_destination`) — I-4 슬라이스 마이그 **0건**(I-4 재수립 R-11) |
-| M-d | I-6 | `production.work_order(_resource_assignment)` | 부분 유일 인덱스 + `remainder_disposition_code?` |
+| M-d | I-6 | `production.work_order_resource_assignment` | **식** 유일 인덱스 1건(`COALESCE(equipment_id, mold_id, worker_id, shift_id)` · I-6 R-9) — `remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다 |
 | D1 | I-7 | `production.production_result` | `shift_id` NOT NULL 해제 |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` |
 | M-e | I-19 | 검사 의뢰 | 기준 완화(#280) |
@@ -141,7 +141,7 @@
 
 ## 5. 횡단 규칙 (슬라이스마다 적용 · API §5.3 요약)
 
-1. **403 게이트** — 계약이 403 선언한 오퍼레이션은 `OPERATION_PERMISSIONS` 에 **같은 PR 에서** 등록(미등록 28건은 API §5.3 ①). 미등록이면 가드가 던져 500.
+1. **403 게이트** — 계약이 403 선언한 오퍼레이션은 `OPERATION_PERMISSIONS` 에 **같은 PR 에서** 등록(미등록 28건은 API §5.3 ①). 미등록이면 가드가 던져 500. ⚠ 가드는 계약이 403 을 «선언한» 자리에서만 검사한다(`permission.guard.ts:37-41`) — 표에 등재돼 있어도 미선언 오퍼레이션은 검사하지 않는다(I-6 R-22 ⓣ).
 2. **멱등** — 쓰기 116건 전부 `runIdempotent`. 조회엔 안 붙인다. `recipients:preview` 도 감싼다.
 3. **If-Match** — 필수 46/선택 28 을 가드 `requirement()` 그대로. 조이지도 풀지도 않는다. 다형 취소는 대상 문서 상세의 `version_no` 와 대조. `PUT .../lines` 는 부모 버전. `:acknowledge` 만 토큰 둘.
 4. **ETag** — 42건 `setEtag`. 자식 컬렉션 GET 엔 안 붙인다(B-1-1 · 7건 명시).
@@ -189,6 +189,12 @@
 | **032** 취소 실행이 역트랜잭션의 영업일·시각·번호를 아무것도 안 받는다 — `:cancel` 본문 없음(04 `ShipmentCancel` 은 `businessDate`·`occurredAt` required) → 서버가 원 트랜잭션 영업일 + `{원 번호}-R` 로 채움(C-8 과의 정합) | I-5 | I-5 재수립 R-3·R-4 |
 | **033** 취소 승인이 반려되면 `CANCEL_REQUESTED` 를 되돌릴 경로가 없다 — `W-CO-09` §5-5·J-6 은 «재상신»을 전제하는데 §4-4 순위 3 이 영구히 막는다(철회는 `W-04-10` §8 미결 5 둘째 사용처) | I-5 | I-5 재수립 R-2 |
 | **034** 후속 판정 축이 계약 문자와 화면에서 어긋난다 — `cancelBlockedReasonCode` 5값·`successorCount` 두 갈래·`TYPE_NOT_CANCELABLE` 9종 중 6종 회색 | I-5 | I-5 재수립 R-6 |
+| **035** `:hold`/`:resume` 을 부르는 화면이 0건인데 오퍼레이션이 서 있고 W/O 층 중단이 셋을 잃는다 — 사유 값 0건 · 구간 표 없음(`held` 근사) · 세션 없는 `IN_PROGRESS` | I-6 | I-6 재수립 R-19 |
+| **036** 선발행 슬롯 `lot.source_type_code='WORK_ORDER'` 가 시스템 소유 그룹 `LOT_SOURCE_TYPE` 에 없다(코드는 이미 쓴다) | I-6 | I-6 재수립 R-1 |
+| **037** `:release` BOM 소요 산정 규칙 부재 — `bom_component` 공정 칸 둘 중 어느 축 · `scrap_rate` | I-6 | I-6 재수립 R-3 |
+| **038** `:cancel` 이 이미 발행된 출고요청을 어떻게 하는지 미기재 · `W-02-06` 에 사유 고르는 칸 없음 | I-6 | I-6 재수립 R-20 |
+| **039** 마감 전 게이트 셋을 서버가 판정할 수단이 없다 | I-6 | I-6 재수립 R-2 |
+| **040** 긴급 발행(계획 없는 `POST`)의 내부 P/O 공장·사업부를 풀 값이 어디에도 없다 — 답 전까지 400 | I-6 | I-6 재수립 R-6 |
 | 알려둘 것(번호 없음): (I-1) `PUT …/steps` ETag 내림(계약 미선언) · `?requestedByMe` 세션 필요 / **(I-2) `:request-approval` 이 `version_no` 를 안 올린다(8 상신자에 복사) · P/O 쓰기 3건 404 미선언인데 404 를 낸다 · `DEPARTMENT` 결재선을 사람으로 심는다 · `uq_purchase_order_erp_no` 를 걸었다 · 문의 14 표에 `purchase_order_no` 한 행 추가** / **(I-3) `I-3.md` §7-5 ⓐ~ⓗ + 재수립 R-11 ⓘ~ⓡ 18건**(`reason_code` NOT NULL 해제 · 라인 `status_code` 상수 · 쓰기 3건 404 미선언 · `:split`·`variances` 409 미선언 · 첨부 id 버림 · `SplitPart` 차량번호 유실 · 동시 입하 400 화면 통지 · `W-01-09` 두 열 결손 · 문의 14 표에 `inbound_receipt_no`) / **(I-5) `I-5.md` §9-3 ⓐ~ⓤ 21건(R-12) + 구현 중 5건**: `previous_status_code` 는 언제나 `CANCEL_REQUESTED`(`reversed` 는 원장 0/1/2행+ 규칙) · 어댑터는 입하 하나뿐(입고·출고는 항등) · `NEGATIVE_BALANCE` 는 입고 취소에서 LOT 축 후속 판정에 먼저 막혀 사실상 도달 불가 · `:request-cancel` 채번이 존재 확인보다 앞이라 404/400 때 AP 번호 결번(후속 소형 PR 후보 · `purchase-order.service.ts:282` 선례) · 상세 `steps` 의 `POSTED` 줄은 원장 행이 있을 때만(입하는 영원히 없음) · 취소된 입고의 `putaway_task` 잔존 · `goods_issue` 취소 3칸 영원히 빔 · `reversal_of_transaction_id` 무인덱스 · 원장 마감 개념 부재 · 목록 판정 행당 최대 8쿼리 · e2e 시계 축(`occurred_at` 앱 시각 vs `created_at` DB 시각) 혼재 | I-1 · I-2 · I-3 · I-5 | 다음 전달분 말미 |
 | 처분 전이가 `transitionCode` 9종에 없음 | I-21 | UI/UX N |
 | `lot-hold-events` vs `lot-status-events` — W-03-01 이 어느 쪽 | I-20 | UI/UX §9-3 |
