@@ -443,7 +443,8 @@ describe('출고 조회 3건 · 전기 · 등록 (e2e)', () => {
     // ⭐ 입고 201 은 계약이 헤더를 안 선언해 ETag 가 없다 — 출고는 선언한다(I-4.md §1-1).
     expect(response.headers.etag).toBe('1');
     // 규칙 미등재라 기본 패턴 `GI-{YYYYMMDD}-{SEQ4}` 다 — 자릿수는 넓게 본다(카운터를 안 지운다).
-    expect(response.body.goodsIssue.goodsIssueNo).toMatch(/^GI-\d{8}-\d{4,}$/);
+    // 날짜 자리는 클라이언트 `businessDate`(DAY) 다 — 「오늘」로 잡으면 여기서 갈린다(C-8).
+    expect(response.body.goodsIssue.goodsIssueNo).toMatch(/^GI-20260504-\d{4,}$/);
     expect(response.body.goodsIssue.erpMessageQueued).toBe(false);
   });
 
@@ -568,6 +569,20 @@ describe('출고 조회 3건 · 전기 · 등록 (e2e)', () => {
       where: { item_id: itemId, lot_id: lot, location_id: destinationLocationId },
     });
     expect(Number(arrived.on_hand_qty)).toBe(10);
+  });
+
+  it('POST /logistics/goods-issues — postImmediately:true 가 400 이면 전표도 안 남는다(같은 트랜잭션)', async () => {
+    const lot = await makeLot();
+    await stock(lot, 5);
+    const before = await prisma.goods_issue.count();
+
+    const rejected = await createIssue({
+      postImmediately: true,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'NEGATIVE_BALANCE' });
+    expect(await prisma.goods_issue.count()).toBe(before);
   });
 
   /** 등록 본문 한 벌 — 겹치는 8칸은 여기 두고 갈래마다 덮어쓴다. */
