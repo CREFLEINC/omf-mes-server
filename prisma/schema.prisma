@@ -3733,7 +3733,7 @@ model document_cancellation {
   document_type_code       String   @db.VarChar(50)
   document_id              BigInt
   previous_status_code     String?  @db.VarChar(50)
-  reason_code              String   @db.VarChar(50)
+  reason_code              String?  @db.VarChar(50)
   reason_detail            String?
   cancelled_at             DateTime @db.Timestamptz(6)
   cancelled_by             BigInt

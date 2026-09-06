@@ -8,7 +8,7 @@ import { ContractException } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibilityService } from './cancel-eligibility.service';
-import { DOCUMENT_SCHEMA, DOCUMENT_TYPES, LogisticsDocumentType } from './document-type-registry';
+import { DOCUMENT_SCHEMA, DOCUMENT_TYPES, DocumentTypeMapping, LogisticsDocumentType } from './document-type-registry';
 
 /** 취소 실행 축 3종 — 계약 경로 `documentTypeCode` enum(`CD-CANCELABLE-DOCUMENT-TYPE`). */
 export type CancelableDocumentType = 'INBOUND_RECEIPT' | 'GOODS_RECEIPT' | 'GOODS_ISSUE';
@@ -24,13 +24,14 @@ interface WritableDelegate {
   }): Promise<{ count: number }>;
 }
 
-interface LockedRow {
+export interface LockedRow {
   status_code: string;
   version_no: number;
 }
 
 /**
- * 물류 문서 취소 — 요청 경로(PR ④). `:cancel` 실행과 어댑터 3은 PR ⑤ 가 이 파일에 잇는다.
+ * 물류 문서 취소 «요청»(PR ④). 실행 `:cancel` 은 `document-cancel-execute.service.ts` 다
+ * — 잠금·상태 쓰기 두 문장을 이 클래스가 내주고 둘이 같은 것을 쓴다.
  *
  * ⛔ 입하·입고·출고 도메인의 service 를 부르지 않는다 — `tx.<표>` 를 직접 쓴다. 코어
  *    (`ApprovalService`·`NumberingService`·`DocumentStateService`)만 주입한다.
@@ -72,7 +73,7 @@ export class DocumentCancelService {
     const approvalRequestId = await this.prisma.$transaction(async (tx) => {
       // ⛔ 첫 문장에서 대상 행을 «잠근다» — `assertNoOpenRequest` 의 조회만으로는 같은 순간의
       //    두 상신이 둘 다 통과한다(`approval.service.ts` · I-2.md R-4).
-      const locked = await this.lock(tx, typeCode, documentId);
+      const locked = await this.lockDocument(tx, typeCode, documentId);
       if (locked === undefined) throw new NotFoundException('없는 문서입니다.');
       // 존재는 위에서 확인했다 — 값이 다르면 그 사이 누가 먼저 저장한 것이다(재로드로 풀린다).
       if (locked.version_no !== version) assertUpdated(0);
@@ -127,9 +128,20 @@ export class DocumentCancelService {
       currentStatus,
       HttpStatus.BAD_REQUEST,
     );
+    await this.applyStatus(tx, mapping, documentId, version, transition.to);
+  }
+
+  /** 상태 한 칸 + `version_no +1` 을 토큰 대조와 «한 문장»으로 쓴다. 0행이면 409 다. */
+  async applyStatus(
+    tx: Prisma.TransactionClient,
+    mapping: DocumentTypeMapping,
+    documentId: bigint,
+    version: number,
+    to: string,
+  ): Promise<void> {
     const updated = await this.delegate(tx, mapping.delegate).updateMany({
       where: { [mapping.idColumn]: documentId, [mapping.versionColumn]: version },
-      data: { status_code: transition.to, [mapping.versionColumn]: { increment: 1 } },
+      data: { status_code: to, [mapping.versionColumn]: { increment: 1 } },
     });
     assertUpdated(updated.count);
   }
@@ -138,7 +150,7 @@ export class DocumentCancelService {
    * `FOR UPDATE` 한 문장. ⛔ 표 이름을 변수로 흘리지 않는다 — 유형마다 리터럴 문장을 둔다
    * (등록부·매핑의 문자열이 SQL 로 들어가지 않는다 · `document-type-registry.ts` 머리말).
    */
-  private async lock(
+  async lockDocument(
     tx: Prisma.TransactionClient,
     typeCode: CancelableDocumentType,
     documentId: bigint,
