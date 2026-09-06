@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, day } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 요청 스키마에 `statusCode` 칸이 없어 서버가 정한다. ⛔ 라인 진행은 이 값으로 판정하지
@@ -42,6 +42,11 @@ export interface InboundReceiptCreateInput {
   businessDate: string;
   occurredAt: string;
   lines: InboundReceiptLineWriteInput[];
+}
+
+/** `@db.Date` 칸 — 값이 있으면 `day` 가 형식까지 보고, 없으면 널이다(등록·치환 공용). */
+export function dayOrNull(path: string, value: string | null | undefined): Date | null {
+  return value == null ? null : day(path, value);
 }
 
 /** 사전부착 라인 — 이 라인만 등록과 같은 트랜잭션에서 LOT 을 얻는다(I-3.md §5-1). */

@@ -169,4 +169,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/purchase-orders/{purchaseOrderId}': ['W-01-11'],
   'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
   'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
+
+  // `M-01-01` 입하 등록 — 도출표에 POST 만 들어왔다(§3 이 등록 액션만 적었다).
+  // ⚠ 두 PUT 을 부르는 화면이 01 도메인 26장에 «없다»(문의 026) — 화면이 정해지기 전까지
+  //   등록 화면으로 잠정 등록한다. 미등록이면 `PermissionGuard` 가 던져 500 이 된다.
+  'PUT /logistics/inbound-receipts/{inboundReceiptId}': ['M-01-01'],
+  'PUT /logistics/inbound-receipts/{inboundReceiptId}/lines': ['M-01-01'],
 };
