@@ -219,6 +219,37 @@ describe('자재 투입 등록 (I-10 PR ②)', () => {
     expect(harness.created).toEqual([]);
   });
 
+  it('빈 문자열 코드 셋은 400 REQUIRED', async () => {
+    const harness = stub();
+
+    // `app.code_t` 도메인 CHECK 위반은 공용 그물에 안 걸려 500 으로 샌다 — 400 으로 앞당긴다.
+    const caught = await harness.service
+      .create(body({ consumptionTypeCode: '', changeReasonCode: ' ', lateEntryReasonCode: '' }), context())
+      .catch((e: unknown) => e);
+
+    expect(errorsOf(caught)).toMatchObject([
+      { field: 'consumptionTypeCode', code: ERROR_CODE.REQUIRED },
+      { field: 'changeReasonCode', code: ERROR_CODE.REQUIRED },
+      { field: 'lateEntryReasonCode', code: ERROR_CODE.REQUIRED },
+    ]);
+    expect(harness.created).toEqual([]);
+  });
+
+  it('enteredQty 가 음수면 400 RANGE', async () => {
+    const harness = stub();
+
+    // `app.qty_t` 의 `CHECK (VALUE >= 0)` 앞당김 — `inputQty <= 0` 도 같은 자리에서 모인다.
+    const caught = await harness.service
+      .create(body({ inputQty: 0, enteredQty: -1, enteredUomId: 4 }), context())
+      .catch((e: unknown) => e);
+
+    expect(errorsOf(caught)).toMatchObject([
+      { field: 'inputQty', code: ERROR_CODE.RANGE },
+      { field: 'enteredQty', code: ERROR_CODE.RANGE },
+    ]);
+    expect(harness.created).toEqual([]);
+  });
+
   it('enteredQty 와 inputQty 의 환산 정합을 검사하지 않는다', async () => {
     // 계약이 inputQty 를 required 로 받는다 — 화면이 이미 환산한 값을 보낸다(§3-8).
     const harness = stub();

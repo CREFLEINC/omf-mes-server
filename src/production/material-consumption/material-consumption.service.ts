@@ -142,11 +142,12 @@ export class MaterialConsumptionService {
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     // ⓒ 긴급 W/O 는 오늘 발행되지 않는다 — I-6·문의 040. 계약 ⌜못 찾으면 거절⌝ 에 「길이 없음」도 든다.
-    const bomId = workOrder.production_plan?.bom_id;
-    if (bomId == null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세를 풀 계획이 없습니다(문의 040).'));
+    // 계획만 보면 된다 — `bom_id`·`production_order.plant_id` 가 둘 다 NOT NULL 이라 갈래가 하나다.
+    const plan = workOrder.production_plan;
+    if (plan === null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세를 풀 계획이 없습니다(문의 040).'));
     // 같은 품목이 두 줄이면 `sequence_no` 첫 줄 — 품목 유일 제약이 없다(`uq_bom_component` 는 순번 축).
     const component = await this.prisma.bom_component.findFirst({
-      where: { bom_id: bomId, component_item_id: BigInt(body.itemId) },
+      where: { bom_id: plan.bom_id, component_item_id: BigInt(body.itemId) },
       orderBy: { sequence_no: 'asc' },
       select: BOM_COMPONENT_SELECT,
     });
@@ -154,15 +155,13 @@ export class MaterialConsumptionService {
     // ⛔ `component.uom_id` 와 `uomId` 를 대조하지 않는다 — 계약이 두 칸의 관계를 안 적었다(I-10 R-7).
     if (component === null) throw one(field('itemId', ERROR_CODE.INVALID, '자재 명세에 없는 품목입니다.'));
 
-    const plantId = workOrder.production_plan?.production_order.plant_id;
-    if (plantId == null) throw one(field('workOrderId', ERROR_CODE.INVALID, '공장을 풀 계획이 없습니다(문의 040).'));
     return {
       workerId,
       bomComponentId: component.bom_component_id,
       // 계약 ⌜서버가 이 W/O 의 공정으로 채운다⌝ — `routing_operation` 1홉이다(§3-6 ⓒ).
       actualUseProcessId: workOrder.routing_operation.process_id,
       shopfloorReceiptLineId: await this.receiptLineOf(body),
-      plantId,
+      plantId: plan.production_order.plant_id,
       occurredAt: new Date(body.occurredAt),
     };
   }
@@ -270,6 +269,21 @@ function assertShape(body: MaterialConsumptionCreate, errors: ErrorItem[]): void
   if (!(body.inputQty > 0)) errors.push(field('inputQty', ERROR_CODE.RANGE, '투입 수량은 0 보다 커야 합니다.'));
   const entered = [body.enteredQty, body.enteredUomId].filter((value) => value !== undefined).length;
   if (entered === 1) errors.push(field('enteredQty', ERROR_CODE.PAIR, '입력 수량과 입력 단위는 함께 옵니다.'));
+  // `app.qty_t` 의 `CHECK (VALUE >= 0)` 앞당김 — 계약에 `minimum` 이 없어 음수가 그대로 온다.
+  if (body.enteredQty !== undefined && !(body.enteredQty >= 0)) {
+    errors.push(field('enteredQty', ERROR_CODE.RANGE, '입력 수량은 0 보다 작을 수 없습니다.'));
+  }
+  // `app.code_t` 도메인 CHECK 가 빈 문자열을 거부하는데 공용 그물이 CHECK 위반을 안 잡아 500 으로 샌다 — 앞당김.
+  const codes: [string, string | undefined][] = [
+    ['consumptionTypeCode', body.consumptionTypeCode],
+    ['changeReasonCode', body.changeReasonCode],
+    ['lateEntryReasonCode', body.lateEntryReasonCode],
+  ];
+  for (const [name, value] of codes) {
+    if (value !== undefined && value.trim() === '') {
+      errors.push(field(name, ERROR_CODE.REQUIRED, '빈 값을 보낼 수 없습니다.'));
+    }
+  }
 }
 
 /** 존재 + 「그 W/O 소속인가」를 한 자리에서 본다 — 두 선택 FK 가 같은 모양이다. */
