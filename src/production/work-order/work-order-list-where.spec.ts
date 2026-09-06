@@ -69,6 +69,11 @@ describe('work-order-list-where', () => {
       }
     });
 
+    it('정렬 — 프로토타입 체인 키는 400 이다', () => {
+      expect(() => buildOrderBy('toString')).toThrow(ContractException);
+      expect(() => buildOrderBy('constructor')).toThrow(ContractException);
+    });
+
     it('정렬 — 동률은 PK 오름차순으로 닫는다', () => {
       expect(buildOrderBy(undefined)).toEqual([{ priority_no: 'asc' }, { work_order_id: 'asc' }]);
       expect(buildOrderBy('workOrderNo,desc')).toEqual([{ work_order_no: 'desc' }, { work_order_id: 'asc' }]);

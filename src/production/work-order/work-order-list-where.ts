@@ -33,7 +33,7 @@ export interface WorkOrderListQuery {
 export const RELEASABLE_ELIGIBLE_WHERE: Prisma.work_orderWhereInput = {
   released_at: null,
   work_order_resource_assignment: { some: {} },
-  // ⭐ 계약 ⌜긴급 W/O 는 이 목록에 넣지 않는다⌝ — releasable=true·false 모두에서 뺀다.
+  // 후보 집합에서 뺀다 — 따라서 `true` 에는 안 나오고 `false` 여집합에는 들어온다.
   work_order_type_code: { not: 'EMERGENCY' },
 };
 
@@ -104,7 +104,7 @@ function eq(column: string, value: unknown): Prisma.work_orderWhereInput {
 /** 허용 키 넷 밖·방향 밖은 400 `INVALID` 다. 동률은 PK asc 로 닫는다(I-3 `inbound-receipt-query.service.ts` 선례). */
 export function buildOrderBy(sort?: string): Prisma.work_orderOrderByWithRelationInput[] {
   const [key, direction] = (sort ?? 'priorityNo,asc').split(',');
-  const dbField = SORT_FIELDS[key];
+  const dbField = Object.prototype.hasOwnProperty.call(SORT_FIELDS, key) ? SORT_FIELDS[key] : undefined;
   if (dbField === undefined || (direction !== undefined && direction !== 'asc' && direction !== 'desc')) {
     throw one(field('sort', ERROR_CODE.INVALID, `${Object.keys(SORT_FIELDS).join(' · ')} 중 하나이고 asc·desc 만 받는다.`));
   }
