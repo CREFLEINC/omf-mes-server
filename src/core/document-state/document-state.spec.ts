@@ -13,8 +13,11 @@ const EQUIPMENT_STATUS = 'mdm.equipment.status_code';
 const MOLD_STATUS = 'mdm.mold.status_code';
 /** 결재 요청 진행 — 시드 APPROVAL_REQUEST_STATUS(PENDING·APPROVED·REJECTED). */
 const APPROVAL_STATUS = 'app.approval_request.status_code';
-/** I-4 가 여는 축. 취소 두 액션은 I-5 가 «이 키 안에» 더한다(I-4.md R-2). */
+/** I-4 가 여는 축. 취소 두 액션을 I-5 PR ④ 가 «이 키 안에» 더했다(I-4.md R-2). */
 const GOODS_ISSUE_STATUS = 'logistics.goods_issue.status_code';
+/** I-5 PR ④ 가 여는 두 축 — 취소 두 액션만 갖는다(다형 취소 경로 3유형 · I-5.md §6-1). */
+const INBOUND_RECEIPT_STATUS = 'logistics.inbound_receipt.status_code';
+const GOODS_RECEIPT_STATUS = 'logistics.goods_receipt.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -146,12 +149,15 @@ describe('DocumentStateService', () => {
           APPROVAL_STATUS,
           EQUIPMENT_STATUS,
           GOODS_ISSUE_STATUS,
+          GOODS_RECEIPT_STATUS,
+          INBOUND_RECEIPT_STATUS,
           LIFECYCLE,
           MOLD_STATUS,
           ROUTING_COLUMN,
         ].sort(),
       );
-      expect(service.registered()).toHaveLength(10);
+      // +6 — 출고 키에 취소 2, 입하·입고 키가 각각 2(I-5 PR ④).
+      expect(service.registered()).toHaveLength(16);
     });
   });
 });
