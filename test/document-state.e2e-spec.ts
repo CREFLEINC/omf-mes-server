@@ -43,6 +43,9 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     // 툴도 같은 그룹을 쓴다 — 계약이 「설비·툴·계측기가 같은 규칙」이라 적었다.
     'mdm.mold.status_code': 'EQUIPMENT_STATUS',
     'planning.routing.status_code': 'MASTER_VERSION_STATUS',
+    // ⚠ I-1 이 결재 축을 열면서 이 표에 안 실어 검사가 「등록되지 않았다」로 이미 붉었다.
+    'app.approval_request.status_code': 'APPROVAL_REQUEST_STATUS',
+    'logistics.goods_issue.status_code': 'LOGISTICS_DOCUMENT_STATUS',
   };
 
   it('⭐ 전이표가 쓰는 상태가 축마다의 코드 그룹에 전부 있다', async () => {

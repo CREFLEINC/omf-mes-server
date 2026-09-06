@@ -1,20 +1,42 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { setEtag } from '../../common/optimistic-lock';
+import { IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { GoodsIssueQuery, GoodsIssueQueryService } from './goods-issue-query.service';
 import { GoodsIssueDetail, GoodsIssueLineView, GoodsIssueView } from './goods-issue-view';
+import { GoodsIssueService, PostIssueRequest } from './goods-issue.service';
 
 /**
- * 출고 조회 3건. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)가 소유한다.
- * 등록·라인 치환·전기·상신은 PR ③④⑤ 가 같은 파일에 얹는다(계약이 조회 3건에 403 을
- * 선언하지 않아 `manual-permissions.ts` 를 안 건드린다 — I-4.md §1-2).
+ * 출고 조회 3건 + 전기. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)가
+ * 소유한다. 등록·라인 치환·상신은 PR ④⑤ 가 같은 파일에 얹는다(계약이 조회 3건에 403 을
+ * 선언하지 않아 `manual-permissions.ts` 를 안 건드린다 — I-4.md §1-2. `:post` 의 403 은
+ * `derived-permissions.ts:170` 이 `W-01-06`·`W-04-10` 으로 이미 갖는다).
  */
 @Controller('logistics/goods-issues')
 export class GoodsIssueController {
-  constructor(private readonly queries: GoodsIssueQueryService) {}
+  constructor(
+    private readonly queries: GoodsIssueQueryService,
+    private readonly issues: GoodsIssueService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get()
   @Contract('GET /logistics/goods-issues')
@@ -40,4 +62,32 @@ export class GoodsIssueController {
   ): Promise<{ items: GoodsIssueLineView[] }> {
     return { items: await this.queries.lines(goodsIssueId) };
   }
+
+  /** ⭐ 200 은 상세가 아니라 헤더 하나(`GoodsIssue`)다 — ETag 도 안 내린다(계약 미선언). */
+  @Post(':goodsIssueId\\:post')
+  @Contract('POST /logistics/goods-issues/{goodsIssueId}:post')
+  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
+  @HttpCode(HttpStatus.OK)
+  post(
+    @Req() request: Request,
+    @Param('goodsIssueId', ParseIntPipe) goodsIssueId: number,
+    @Body() body: PostIssueRequest,
+  ): Promise<GoodsIssueView> {
+    // ⛔ `runVersioned` 를 못 쓴다 — 200 에 ETag 가 없어 새 토큰을 내릴 자리가 없다. 대신
+    //    가드가 파싱해 둔 If-Match 값을 꺼내 서비스가 «비교만» 한다(P/O `:request-approval` 선례).
+    const version = ifMatchVersion(request);
+    if (version === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.issues.post(goodsIssueId, version, body, appUserId),
+    );
+  }
+}
+
+function userOf(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+  return session.userId;
 }

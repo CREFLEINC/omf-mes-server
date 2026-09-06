@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
+import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
@@ -10,6 +11,7 @@ import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
+import { GoodsIssueService } from './goods-issue/goods-issue.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
@@ -34,7 +36,15 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
  */
 @Module({
   // ⭐ 원장 코어가 처음 물리는 자리다 — 입고가 재고를 «쓰는» 첫 도메인이다.
-  imports: [PrismaModule, IdempotencyModule, InventoryPostingModule, NumberingModule, ApprovalModule, LotRegistryModule],
+  imports: [
+    PrismaModule,
+    IdempotencyModule,
+    InventoryPostingModule,
+    NumberingModule,
+    ApprovalModule,
+    DocumentStateModule,
+    LotRegistryModule,
+  ],
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
@@ -47,6 +57,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
   ],
   providers: [
     GoodsIssueQueryService,
+    GoodsIssueService,
     GoodsReceiptService,
     PutawayRuleService,
     PurchaseOrderService,
