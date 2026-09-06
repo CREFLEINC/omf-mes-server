@@ -2982,7 +2982,7 @@ model work_session {
   work_session_id      BigInt                 @id @default(autoincrement())
   work_order_id        BigInt
   session_no           Int
-  shift_id             BigInt
+  shift_id             BigInt?
   equipment_id         BigInt?
   mold_id              BigInt?
   terminal_id          BigInt
@@ -3001,7 +3001,7 @@ model work_session {
   production_result    production_result[]
   equipment            equipment?             @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   mold                 mold?                  @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
-  shift                shift                  @relation(fields: [shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
+  shift                shift?                 @relation(fields: [shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
   terminal             terminal               @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   work_order           work_order             @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   work_session_event   work_session_event[]

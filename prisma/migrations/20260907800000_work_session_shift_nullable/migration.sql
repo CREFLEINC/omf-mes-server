@@ -1,0 +1,18 @@
+-- I-11 선행 커밋 · 완화 1 · 추가 0 · 삭제 0 — forward-only 이고 두 릴리스 규칙 미해당. 백필 0.
+--
+-- 사전 대조(마이그 «전» 개발 DB 실측 · 읽기만):
+--   SELECT count(*) FILTER (WHERE shift_id IS NULL) AS null_shift, count(*) AS total
+--     FROM production.work_session;                            -- → null_shift=0 · total=0
+--   SELECT is_nullable FROM information_schema.columns
+--    WHERE table_schema='production' AND table_name='work_session'
+--      AND column_name='shift_id';                             -- → NO
+--
+-- 계약 `WorkSession.shiftId` 는 required 밖이고 `WorkSessionCreate` 에서도 선택이다.
+-- 설명: ⌜비우면 서버가 정한다 … ⚠ 어느 교대에도 들지 않는 시각이면 서버가 «비운 채»
+--   기록한다 — 세션을 막지 않는다⌝ · x-internal-note ⌜required 에서 뺀 것은 2026-08-18
+--   사용자 확정(「교대는 설계가 정의하는 값이 아니다」)의 미이행분⌝.
+-- 형제 선례: D1 `production_result.shift_id` DROP NOT NULL(20260906600000 · I-7).
+-- ⛔ 기존 FK `work_session_shift_id_fkey` 를 건드리지 않는다 — DROP NOT NULL 은 FK 와
+--    무관하고, 제약 이름을 손으로 다시 지으면 `migrate diff` 가 드리프트를 낸다.
+-- ⛔ terminal_id 는 완화하지 않는다 — 세션 열기는 토큰 없이 서지 않는다(I-11 §0-재수립 R-1).
+ALTER TABLE production.work_session ALTER COLUMN shift_id DROP NOT NULL;
