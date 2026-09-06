@@ -12,6 +12,7 @@ import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
 import { InboundReceiptController } from './inbound-receipt/inbound-receipt.controller';
+import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-update.service';
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
@@ -44,6 +45,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
+    InboundReceiptUpdateService,
     InboundVarianceService,
   ],
 })

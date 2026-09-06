@@ -12,6 +12,7 @@ import {
   MATERIAL_LOT_TYPE,
   assertWritable,
   attachesLot,
+  dayOrNull,
 } from './inbound-receipt-rules';
 import {
   InboundReceiptDetail,
@@ -84,8 +85,8 @@ export class InboundReceiptService {
               supplier_lot_no: line.supplierLotNo ?? null,
               supplier_lot_missing: line.supplierLotMissing,
               substitute_lot_reason_code: line.substituteLotReasonCode ?? null,
-              manufactured_date: dayOrNull(line.manufacturedDate),
-              expiry_date: dayOrNull(line.expiryDate),
+              manufactured_date: dayOrNull(`lines.${index}.manufacturedDate`, line.manufacturedDate),
+              expiry_date: dayOrNull(`lines.${index}.expiryDate`, line.expiryDate),
               inspection_required: inspection.get(BigInt(line.itemId)) ?? false,
               status_code: DOCUMENT_STATUS,
               created_by: BigInt(appUserId),
@@ -225,8 +226,9 @@ export class InboundReceiptService {
 }
 
 /** 「서버가 채운다 — 요청 스키마에 이 칸이 없다」(계약)이고 계약이 지목한 후보 하나가
- *  `Item.inspectionRequired` 다. ⚠ 판정 원천 미확정 — M-01-01 §8 #3. */
-async function inspectionFlags(
+ *  `Item.inspectionRequired` 다. 라인 치환도 같은 승계를 써야 해 내보낸다.
+ *  ⚠ 판정 원천 미확정 — M-01-01 §8 #3. */
+export async function inspectionFlags(
   tx: Prisma.TransactionClient,
   lines: InboundReceiptLineWriteInput[],
 ): Promise<Map<bigint, boolean>> {
@@ -239,9 +241,4 @@ async function inspectionFlags(
 
 function bigintOrNull(value: number | null | undefined): bigint | null {
   return value === null || value === undefined ? null : BigInt(value);
-}
-
-/** `@db.Date` 는 시각을 붙이지 않는다 — 형식은 계약 가드가 이미 봤다. */
-function dayOrNull(value: string | null | undefined): Date | null {
-  return value === null || value === undefined ? null : new Date(`${value}T00:00:00.000Z`);
 }
