@@ -11,6 +11,7 @@ import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
+import { GoodsIssueUpdateService } from './goods-issue/goods-issue-update.service';
 import { GoodsIssueService } from './goods-issue/goods-issue.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
@@ -58,6 +59,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
   providers: [
     GoodsIssueQueryService,
     GoodsIssueService,
+    GoodsIssueUpdateService,
     GoodsReceiptService,
     PutawayRuleService,
     PurchaseOrderService,

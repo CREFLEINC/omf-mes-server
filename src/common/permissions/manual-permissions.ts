@@ -170,6 +170,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
   'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
 
+  // `W-01-06`·`W-04-10` 폐기 요청 — 부르는 화면이 실제로 0건이나 `PermissionGuard` 가 등록을
+  // 요구한다(미등록이면 500). 소유자를 폐기 두 화면으로 둔다 — 두 화면의 §3 액션표에 라인
+  // 편집이 없어(「승인 요청」·「기타출고 처리」뿐) 도출표에 치환이 안 들어왔다.
+  // ⚠ `M-01-09` §8 #1 이 「⛔ 라인 치환은 쓸 수 없다」라 적었다(I-4.md §6-1 · R-8 · 문의 030).
+  'PUT /logistics/goods-issues/{goodsIssueId}/lines': ['W-01-06', 'W-04-10'],
+
   // `M-01-01` 입하 등록 — 도출표에 POST 만 들어왔다(§3 이 등록 액션만 적었다).
   // ⚠ 두 PUT 을 부르는 화면이 01 도메인 26장에 «없다»(문의 026) — 화면이 정해지기 전까지
   //   등록 화면으로 잠정 등록한다. 미등록이면 `PermissionGuard` 가 던져 500 이 된다.

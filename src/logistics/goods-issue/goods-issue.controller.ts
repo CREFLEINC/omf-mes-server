@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -21,21 +22,23 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { GoodsIssueQuery, GoodsIssueQueryService } from './goods-issue-query.service';
-import { GoodsIssueCreate } from './goods-issue-rules';
+import { GoodsIssueCreate, GoodsIssueLineCreate } from './goods-issue-rules';
+import { GoodsIssueUpdateService } from './goods-issue-update.service';
 import { GoodsIssueDetail, GoodsIssueLineView, GoodsIssueView } from './goods-issue-view';
 import { GoodsIssueService, PostIssueRequest } from './goods-issue.service';
 
 /**
- * 출고 조회 3건 + 등록 + 전기. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)·
- * `W-04-10`(제품 폐기)가 소유한다. 라인 치환·상신은 PR ⑤ 가 같은 파일에 얹는다(계약이 조회
- * 3건에 403 을 선언하지 않아 `manual-permissions.ts` 를 안 건드린다 — I-4.md §1-2. 등록의
- * 403 은 `derived-permissions.ts:169`, `:post` 는 :170 이 이미 갖는다).
+ * 출고 7건 전건. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)·
+ * `W-04-10`(제품 폐기)가 소유한다. 계약이 조회 3건에 403 을 선언하지 않아 그 셋은
+ * `manual-permissions.ts` 에 없다(I-4.md §1-2). 등록의 403 은 `derived-permissions.ts:169`,
+ * `:post` 는 :170, `:request-approval` 은 :171 이 이미 갖고, 라인 치환 하나만 수동표에 있다.
  */
 @Controller('logistics/goods-issues')
 export class GoodsIssueController {
   constructor(
     private readonly queries: GoodsIssueQueryService,
     private readonly issues: GoodsIssueService,
+    private readonly updates: GoodsIssueUpdateService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -94,17 +97,60 @@ export class GoodsIssueController {
     @Param('goodsIssueId', ParseIntPipe) goodsIssueId: number,
     @Body() body: PostIssueRequest,
   ): Promise<GoodsIssueView> {
-    // ⛔ `runVersioned` 를 못 쓴다 — 200 에 ETag 가 없어 새 토큰을 내릴 자리가 없다. 대신
-    //    가드가 파싱해 둔 If-Match 값을 꺼내 서비스가 «비교만» 한다(P/O `:request-approval` 선례).
-    const version = ifMatchVersion(request);
-    if (version === undefined) {
-      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
-    }
+    const version = versionOf(request);
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.issues.post(goodsIssueId, version, body, appUserId),
     );
   }
+
+  /**
+   * ⭐ If-Match 는 **부모** `goods_issue.version_no` 다 — 「잠그는 단위가 부모이기
+   * 때문이다」(계약 · B-1-1). ⛔ 응답에 ETag 를 안 내린다(계약이 이 경로에 헤더 미선언) —
+   * 화면은 다음 토큰을 상세 GET 으로 받는다(I-4.md §6-3).
+   */
+  @Put(':goodsIssueId/lines')
+  @Contract('PUT /logistics/goods-issues/{goodsIssueId}/lines')
+  async replaceLines(
+    @Req() request: Request,
+    @Param('goodsIssueId', ParseIntPipe) goodsIssueId: number,
+    @Body() body: { items: GoodsIssueLineCreate[] },
+  ): Promise<{ items: GoodsIssueLineView[] }> {
+    const version = versionOf(request);
+    const appUserId = userOf(request);
+    const result = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.updates.replaceLines(goodsIssueId, version, body.items, appUserId),
+    );
+    return { items: result.items };
+  }
+
+  /** ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 승인 유형은 서버가 낸다(본문 미수신). */
+  @Post(':goodsIssueId\\:request-approval')
+  @Contract('POST /logistics/goods-issues/{goodsIssueId}:request-approval')
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestApproval(
+    @Req() request: Request,
+    @Param('goodsIssueId', ParseIntPipe) goodsIssueId: number,
+    @Body() body: { reason: string },
+  ): Promise<{ approvalRequestId: number }> {
+    const version = versionOf(request);
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.updates.requestApproval(goodsIssueId, version, body.reason, appUserId),
+    );
+  }
+}
+
+/**
+ * ⛔ 쓰기 셋은 `runVersioned` 를 못 쓴다 — 응답에 ETag 가 없어 새 토큰을 내릴 자리가 없다.
+ * 대신 가드가 파싱해 둔 If-Match 값을 꺼내 서비스가 «비교만» 한다(P/O `:request-approval` 선례).
+ */
+function versionOf(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+  }
+  return version;
 }
 
 function userOf(request: Request): number {
