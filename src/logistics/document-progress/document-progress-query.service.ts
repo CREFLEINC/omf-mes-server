@@ -1,10 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibilityService } from './cancel-eligibility.service';
 import { DOCUMENT_TYPES, DocumentTypeMapping, LogisticsDocumentType } from './document-type-registry';
-import { DocumentProgress, DocumentProgressRow, documentProgressView } from './document-progress-view';
+import {
+  DocumentProgress,
+  DocumentProgressDetail,
+  DocumentProgressRow,
+  DocumentProgressStep,
+  DocumentProgressStepInputs,
+  documentProgressSteps,
+  documentProgressView,
+  documentSuccessorsView,
+} from './document-progress-view';
 
 /** 계약 파라미터 11 전건 — `documentTypeCode` 만 필수. 나머지는 `@Contract` 가드가 coerce 해 둔다. */
 export interface DocumentProgressQuery {
@@ -27,6 +36,7 @@ type Row = Record<string, unknown>;
 interface ListableDelegate {
   findMany(args: Row): Promise<Row[]>;
   count(args: Row): Promise<number>;
+  findFirst(args: Row): Promise<Row | null>;
 }
 
 /** `lot_id` 칸 자체가 없는 라인 표 — 있으면 lotId 필터를 그냥 넘길 때 Prisma 가 500 을 던진다. */
@@ -74,6 +84,21 @@ export class DocumentProgressQueryService {
     if (query.cancellableOnly === true) items = items.filter((item) => item.cancellable);
 
     return pagedResponse(items, total, page);
+  }
+
+  /** 상세 1건 — PR ③b. `progress`·`successors` 는 목록과 «같은 함수»(evaluate·매퍼)로 채운다. */
+  async detail(typeCode: LogisticsDocumentType, documentId: bigint): Promise<DocumentProgressDetail> {
+    const mapping = DOCUMENT_TYPES[typeCode];
+    const delegate = this.delegateOf(mapping.delegate);
+    const row = await delegate.findFirst({ where: { [mapping.idColumn]: documentId }, include: this.includeOf(mapping) });
+    if (row === null) throw new NotFoundException('없는 문서입니다.');
+
+    const eligibility = await this.eligibility.evaluate(this.prisma, typeCode, documentId, { withSuccessorRows: true });
+    return {
+      progress: documentProgressView(typeCode, this.toRow(mapping, row), eligibility),
+      steps: await this.steps(typeCode, mapping, documentId, row),
+      successors: documentSuccessorsView(eligibility.successors),
+    };
   }
 
   private delegateOf(name: string): ListableDelegate {
@@ -185,5 +210,69 @@ export class DocumentProgressQueryService {
     // 그 축이 없는 유형(P/O·입하)은 결과 0 — 존재하지 않는 id 로 닫는다(itemId·lotId 와 같은 갈래).
     if (mapping.warehouseFilter === null) return { [mapping.idColumn]: { in: [] } };
     return mapping.warehouseFilter(warehouseId);
+  }
+
+  /**
+   * §5-4 세 표(원장·승인·취소)를 병렬로 본다. `POSTED` 는 원장 행이 «있을 때만» —
+   * `reversal_of_transaction_id: null` 이 역행을 원천에서 뺀다(거슬러 오르지 않는다).
+   */
+  private async steps(
+    typeCode: LogisticsDocumentType,
+    mapping: DocumentTypeMapping,
+    documentId: bigint,
+    row: Row,
+  ): Promise<DocumentProgressStep[]> {
+    const [posted, cancelRequest, cancellation] = await Promise.all([
+      this.prisma.inventory_transaction.findFirst({
+        where: { source_document_type_code: typeCode, source_document_id: documentId, reversal_of_transaction_id: null },
+        orderBy: { occurred_at: 'asc' },
+      }),
+      this.prisma.approval_request.findFirst({
+        where: { target_type_code: mapping.entityTypeCode, target_id: documentId, approval_type_code: `${typeCode}_CANCEL` },
+        orderBy: { requested_at: 'desc' },
+      }),
+      this.prisma.document_cancellation.findFirst({
+        where: { document_type_code: typeCode, document_id: documentId },
+        orderBy: { cancelled_at: 'desc' },
+      }),
+    ]);
+    // 역행은 document_cancellation 에 참조 칸이 없다(schema.prisma:3731-3745) — 전기된 원 원장의
+    // reversal_of_transaction_id 로 거꾸로 찾는다. 전기 전 취소면 posted 가 없어 여기도 없다.
+    const reversal =
+      cancellation === null || posted === null
+        ? null
+        : await this.prisma.inventory_transaction.findFirst({
+            where: { reversal_of_transaction_id: posted.inventory_transaction_id, reversal_of_business_date: posted.business_date },
+          });
+
+    const createdBy = row.created_by as bigint | null;
+    const names = await this.userNames([createdBy, cancelRequest?.requested_by, cancellation?.cancelled_by]);
+    const inputs: DocumentProgressStepInputs = {
+      registered: { occurredAt: row.created_at as Date, actorName: createdBy === null ? undefined : names.get(createdBy) },
+      posted: posted === null ? undefined : { occurredAt: posted.occurred_at, transactionNo: posted.transaction_no, businessDate: posted.business_date },
+      cancelRequested:
+        cancelRequest === null ? undefined : { occurredAt: cancelRequest.requested_at, actorName: names.get(cancelRequest.requested_by) },
+      cancelled:
+        cancellation === null
+          ? undefined
+          : {
+              occurredAt: cancellation.cancelled_at,
+              actorName: names.get(cancellation.cancelled_by),
+              transactionNo: reversal?.transaction_no,
+              businessDate: reversal?.business_date,
+            },
+    };
+    return documentProgressSteps(inputs);
+  }
+
+  /** 한 번에 묶어 읽는다 — 상세는 행 단위라 N+1 방지가 목록만큼 절박하지 않지만 3쿼리를 1쿼리로 줄인다. */
+  private async userNames(ids: Array<bigint | null | undefined>): Promise<Map<bigint, string>> {
+    const wanted = ids.filter((id): id is bigint => id !== null && id !== undefined);
+    if (wanted.length === 0) return new Map();
+    const users = await this.prisma.app_user.findMany({
+      where: { app_user_id: { in: wanted } },
+      select: { app_user_id: true, user_name: true },
+    });
+    return new Map(users.map((u) => [u.app_user_id, u.user_name]));
   }
 }

@@ -1,3 +1,5 @@
+import { NotFoundException } from '@nestjs/common';
+
 import { CancelEligibility, CancelEligibilityService } from './cancel-eligibility.service';
 import { DocumentProgressQueryService } from './document-progress-query.service';
 import { DocumentProgressRow, documentProgressView } from './document-progress-view';
@@ -180,5 +182,148 @@ describe('DocumentProgressQueryService', () => {
     const view = documentProgressView('PURCHASE_ORDER', BASE_ROW, BASE_ELIGIBILITY);
 
     expect(view).not.toHaveProperty('documentSubTypeCode');
+  });
+});
+
+/** 상세 GET(PR ③b) — DB 표 4개를 병렬로 본다. `Args`(위에서 이미 선언)는 delegate 호출 인자·행의 최소 모양. */
+function docDelegateStub(row: Args | null) {
+  return { findFirst: async () => row };
+}
+
+/** `approval_request`·`document_cancellation`·`inventory_transaction` 공통 스텁 — where 등호
+ *  필터 + orderBy 한 칸으로 실제 DB 처럼 고른다(역행 배제·최신순 선택을 실제로 검증하려고). */
+function tableStub(rows: Args[]) {
+  return {
+    findFirst: async (args: Args) => {
+      const where = (args.where ?? {}) as Args;
+      const matches = rows.filter((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+      if (matches.length === 0) return null;
+      const orderBy = args.orderBy as Record<string, 'asc' | 'desc'> | undefined;
+      if (orderBy === undefined) return matches[0];
+      const [key, dir] = Object.entries(orderBy)[0];
+      const sorted = [...matches].sort((a, b) => {
+        const diff = (a[key] as Date).getTime() - (b[key] as Date).getTime();
+        return dir === 'desc' ? -diff : diff;
+      });
+      return sorted[0];
+    },
+  };
+}
+
+const DOC_ROW: Args = {
+  goods_receipt_id: 1n,
+  goods_receipt_no: 'GR-1',
+  receipt_datetime: new Date('2026-01-01T00:00:00.000Z'),
+  status_code: 'POSTED',
+  receipt_type_code: 'MATERIAL',
+  goods_receipt_line: [],
+  created_at: new Date('2026-01-01T00:00:00.000Z'),
+  created_by: null,
+};
+
+function detailService(opts: {
+  row?: Args | null;
+  ledger?: Args[];
+  approvals?: Args[];
+  cancellations?: Args[];
+  users?: Args[];
+}): DocumentProgressQueryService {
+  const prisma = {
+    goods_receipt: docDelegateStub(opts.row === undefined ? DOC_ROW : opts.row),
+    inventory_transaction: tableStub(opts.ledger ?? []),
+    approval_request: tableStub(opts.approvals ?? []),
+    document_cancellation: tableStub(opts.cancellations ?? []),
+    app_user: { findMany: async () => opts.users ?? [] },
+  } as unknown as PrismaService;
+  return new DocumentProgressQueryService(prisma, fakeEligibility());
+}
+
+describe('DocumentProgressQueryService.detail — steps(I-5 PR ③b)', () => {
+  it('상세 — 없는 id 면 404 다', async () => {
+    const service = detailService({ row: null });
+
+    await expect(service.detail('GOODS_RECEIPT' as LogisticsDocumentType, 1n)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('상세 — steps 는 원장이 없으면 POSTED 줄을 안 낸다', async () => {
+    const service = detailService({ ledger: [] });
+
+    const detail = await service.detail('GOODS_RECEIPT' as LogisticsDocumentType, 1n);
+
+    expect(detail.steps.map((s) => s.stepCode)).toEqual(['REGISTERED']);
+  });
+
+  it('상세 — POSTED 줄은 actorName 을 생략하고 원장 번호·영업일을 싣는다', async () => {
+    const ledger: Args = {
+      inventory_transaction_id: 10n,
+      business_date: new Date('2026-02-01T00:00:00.000Z'),
+      transaction_no: 'TX-2026-0011',
+      occurred_at: new Date('2026-02-01T01:00:00.000Z'),
+      source_document_type_code: 'GOODS_RECEIPT',
+      source_document_id: 1n,
+      reversal_of_transaction_id: null,
+    };
+    const service = detailService({ ledger: [ledger] });
+
+    const detail = await service.detail('GOODS_RECEIPT' as LogisticsDocumentType, 1n);
+
+    const posted = detail.steps.find((s) => s.stepCode === 'POSTED');
+    expect(posted).not.toHaveProperty('actorName');
+    expect(posted).toMatchObject({ inventoryTransactionNo: 'TX-2026-0011', businessDate: '2026-02-01' });
+  });
+
+  it('상세 — 역처리 원장은 POSTED 줄의 원천이 아니다(reversal_of_transaction_id 가 있는 행은 건너뛴다)', async () => {
+    const original: Args = {
+      inventory_transaction_id: 10n,
+      business_date: new Date('2026-02-01T00:00:00.000Z'),
+      transaction_no: 'TX-ORIGINAL',
+      occurred_at: new Date('2026-02-01T01:00:00.000Z'),
+      source_document_type_code: 'GOODS_RECEIPT',
+      source_document_id: 1n,
+      reversal_of_transaction_id: null,
+    };
+    const reversal: Args = {
+      inventory_transaction_id: 11n,
+      business_date: new Date('2026-02-02T00:00:00.000Z'),
+      transaction_no: 'TX-ORIGINAL-R',
+      occurred_at: new Date('2026-02-02T01:00:00.000Z'),
+      source_document_type_code: 'GOODS_RECEIPT',
+      source_document_id: 1n,
+      reversal_of_transaction_id: 10n,
+    };
+    const service = detailService({ ledger: [original, reversal] });
+
+    const detail = await service.detail('GOODS_RECEIPT' as LogisticsDocumentType, 1n);
+
+    const posted = detail.steps.find((s) => s.stepCode === 'POSTED');
+    expect(posted?.inventoryTransactionNo).toBe('TX-ORIGINAL');
+  });
+
+  it('상세 — steps 는 occurredAt 오름차순이다', async () => {
+    // 일부러 도메인상 있을 법하지 않은 순서로 채운다 — push 순서(등록·전기·취소요청)가 아니라
+    // occurredAt 값으로 «다시» 정렬하는지를 검증한다.
+    const ledger: Args = {
+      inventory_transaction_id: 10n,
+      business_date: new Date('2026-03-03T00:00:00.000Z'),
+      transaction_no: 'TX-LATE',
+      occurred_at: new Date('2026-03-03T00:00:00.000Z'),
+      source_document_type_code: 'GOODS_RECEIPT',
+      source_document_id: 1n,
+      reversal_of_transaction_id: null,
+    };
+    const approval: Args = {
+      target_type_code: 'GOODS_RECEIPT',
+      target_id: 1n,
+      approval_type_code: 'GOODS_RECEIPT_CANCEL',
+      requested_at: new Date('2026-02-02T00:00:00.000Z'),
+      requested_by: 7n,
+    };
+    const service = detailService({ ledger: [ledger], approvals: [approval], users: [] });
+
+    const detail = await service.detail('GOODS_RECEIPT' as LogisticsDocumentType, 1n);
+
+    expect(detail.steps.map((s) => s.stepCode)).toEqual(['REGISTERED', 'CANCEL_REQUESTED', 'POSTED']);
   });
 });

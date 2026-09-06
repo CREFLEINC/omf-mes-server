@@ -1,12 +1,17 @@
 /**
- * 물류 문서 진행현황 목록 — `GET /logistics/document-progress`(I-5 PR ③a). 상세 GET·취소 2건은
- * 뒤 PR(③b·④·⑤) 몫이라 여기서 다루지 않는다.
+ * 물류 문서 진행현황 — 목록 `GET /logistics/document-progress`(I-5 PR ③a) + 상세
+ * `GET /logistics/document-progress/{documentTypeCode}/{documentId}`(PR ③b). 취소 2건은
+ * 뒤 PR(④·⑤) 몫이라 여기서 다루지 않는다.
  *
  * ⛔ 계약이 이 GET 에 403 을 선언하지 않아(`declaresForbidden` 이 거짓) 권한 등록이 필요 없다
  *   — 로그인 세션만 있으면 된다(I-5.md §1-1 실측).
  * ⭐ 픽스처는 대부분 **직접 INSERT** 한다 — 이 스위트의 목은 조회·매핑이지 등록·전기 흐름이 아니고,
  *   후속 판정(`CancelEligibilityService`)은 `source_document_type_code`+`source_document_id` 다형
  *   축을 직접 보므로 REGISTERED 상태 그대로도 후속으로 잡힌다(전기가 필요 없다).
+ * ⚠ 상세의 `POSTED` 줄 픽스처는 `inventory_transaction` 을 **직접 INSERT** 한다 — 원장은
+ *   트리거가 UPDATE·DELETE 를 막아(`block_ledger_header_mutation`) cleanup 이 DELETE 대신
+ *   `TRUNCATE … CASCADE` 를 쓴다(입고 스위트 선례 · I-5.md §10-1). `CANCELLED` 줄은 여기서
+ *   안 다룬다 — `document_cancellation` 은 PR⑤ 전이라 오늘 0행이다(단위로만 덮는다).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -215,6 +220,44 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     expect(items[0].documentNo).toBe(pair.goodsIssueNo);
   });
 
+  it('GET /{type}/{id} — 없는 id 면 404', async () => {
+    await request(app.getHttpServer())
+      .get('/api/logistics/document-progress/GOODS_RECEIPT/999999999')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('GET /{type}/{id} — steps 와 successors 를 한 번에 낸다(등록·전기 두 줄 · 후속 1건)', async () => {
+    const receipt = await insertGoodsReceipt({ statusCode: 'POSTED' });
+    const tx = await insertPostedLedger(receipt.goodsReceiptId);
+    await insertGoodsIssue({ sourceDocumentId: receipt.goodsReceiptId });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/document-progress/GOODS_RECEIPT/${receipt.goodsReceiptId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('GET /logistics/document-progress/{documentTypeCode}/{documentId}');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const steps = response.body.steps as Array<{
+      stepCode: string;
+      actorName?: string;
+      inventoryTransactionNo?: string;
+      businessDate?: string;
+    }>;
+    expect(steps.map((s) => s.stepCode)).toEqual(['REGISTERED', 'POSTED']);
+    // REGISTERED 는 created_by 를 안 채운 픽스처라 actorName 이 없다.
+    expect(steps[0]).not.toHaveProperty('actorName');
+    // POSTED 는 자동이라 actorName 이 «언제나» 없고, 원장 번호·영업일을 대신 싣는다(§5-4).
+    expect(steps[1]).not.toHaveProperty('actorName');
+    expect(steps[1]).toMatchObject({ inventoryTransactionNo: tx.transactionNo, businessDate: '2026-05-04' });
+
+    expect(response.body.progress).toMatchObject({ documentTypeCode: 'GOODS_RECEIPT', documentId: receipt.goodsReceiptId });
+    expect(response.body.successors).toHaveLength(1);
+    expect(response.body.successors[0]).toMatchObject({ successorTypeCode: 'GOODS_ISSUE' });
+  });
+
   let receiptSeq = 0;
   let lotSeq = 0;
   let issueSeq = 0;
@@ -299,6 +342,31 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
       },
     });
     return { goodsIssueId: Number(issue.goods_issue_id), goodsIssueNo: issue.goods_issue_no };
+  }
+
+  /**
+   * `POSTED` 단계 픽스처 — 실 전기 흐름(`InventoryPostingService`) 대신 원장 헤더를 직접
+   * 세운다. 이 스위트의 목은 상세 조회·매핑이지 posting 이 아니다(같은 근거로 목록도 직접 INSERT).
+   * ⚠ `occurred_at` 은 «지금»을 쓴다 — 대상 문서 `created_at` 이 `clock_timestamp()` 기본값(실제
+   *   현재 시각)이라, 고정된 과거 `AT` 를 쓰면 REGISTERED 보다 POSTED 가 앞서는 뒤집힌 순서가 된다.
+   */
+  async function insertPostedLedger(sourceDocumentId: number): Promise<{ transactionNo: string }> {
+    receiptSeq += 1;
+    const transactionNo = `${PREFIX}-TX-${receiptSeq}`;
+    await prisma.inventory_transaction.create({
+      data: {
+        business_date: new Date('2026-05-04'),
+        transaction_no: transactionNo,
+        transaction_type_code: 'GOODS_RECEIPT',
+        plant_id: plantId,
+        occurred_at: new Date(),
+        source_document_type_code: 'GOODS_RECEIPT',
+        source_document_id: BigInt(sourceDocumentId),
+        status_code: 'POSTED',
+        idempotency_key: `${PREFIX}-IDEMP-${transactionNo}`,
+      },
+    });
+    return { transactionNo };
   }
 
   async function insertPickingOrder(): Promise<{ pickingOrderId: number; pickingOrderNo: string }> {
@@ -429,6 +497,10 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
+    // 원장 header 는 트리거가 UPDATE·DELETE 를 막는다 — TRUNCATE 뿐이다(입고 스위트 선례).
+    await prisma.$executeRawUnsafe(
+      `TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`,
+    );
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.subcontract_issue
         WHERE subcontract_order_id IN (SELECT subcontract_order_id FROM logistics.subcontract_order WHERE subcontract_order_no LIKE '${PREFIX}%')`,
