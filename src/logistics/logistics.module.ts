@@ -27,6 +27,7 @@ import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
 import { PickingController } from './picking/picking.controller';
+import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
@@ -66,6 +67,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
+    PickingPickService,
     PickingQueryService,
     PutawayRuleService,
     PurchaseOrderService,

@@ -182,6 +182,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/inbound-receipts/{inboundReceiptId}': ['M-01-01'],
   'PUT /logistics/inbound-receipts/{inboundReceiptId}/lines': ['M-01-01'],
 
+  // `M-01-08` 자재 출고 피킹 — `M-01-08` §5-8 의 액션 [피킹] — 요구서 §3 이 하위 자원 액션을
+  // 안 적어 도출되지 않는다.
+  'POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick': ['M-01-08'],
+
   // `M-01-06` 입하 오류 등록 — 그 화면이 이 자원의 유일한 소유자다(계약 description 근거).
   'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['M-01-06'],
 };
