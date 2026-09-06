@@ -51,7 +51,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | 없음 | 불필요 | ○ 조정 | ○ 조정 | 2 |
 | U18 | 물류 문서 진행현황 · 취소 | 4 | W-01-13 | U5 · U12 · U1 | 없음 | ○ §I-38 취소 흔적 | ○ 역분개 | ○ 취소 | 3 |
 | U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 | — | 없음 | ○ 변경 이력 칸 | — | ○ 계획 | 3 |
-| U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | **work_order_resource_plan** | ○ | — | ○ W/O | 3 |
+| U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | ~~work_order_resource_plan~~ 표는 있다(`work_order_resource_assignment`) — 결손은 **유일 제약**(I-6 R-9) | ○ | — | ○ W/O | 3 |
 | U21 | W/O 상태 전이 | 4 | P-02-10 · W-02-05 · W-02-06 | U20 · U24 | 없음 | 불필요 | — | ○ 4전이 | 2 |
 | U22 | 작업 세션 · 작업 전 점검 | 11 | P-02-01 · P-02-02 · P-02-10 | U20 · U33 | 없음 | 불필요 | — | ○ 세션 | 3 |
 | U23 | 자재 투입 · 반납 | 6 | P-02-03 | U22 · U13 | 없음 | 불필요 | ○ 소비 | — | 2 |
@@ -324,7 +324,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `POST /production/work-orders/{workOrderId}:hold` | 작업 중단 | P-02-10 | 멱등, ETag, 사번 |
+| `POST /production/work-orders/{workOrderId}:hold` | 작업 중단 | ~~P-02-10~~ **부르는 화면 0건**(P-02-10 §5-4 는 세션 사건 — 문의 035 · I-6 R-19) | 멱등, ETag, 사번 |
 | `POST /production/work-orders/{workOrderId}:resume` | 작업 재개 | P-02-10 | 멱등, ETag, 사번 |
 | `POST /production/work-orders/{workOrderId}:cancel` | W/O 취소 | W-02-06 | 멱등, ETag |
 | `POST /production/work-orders/{workOrderId}:close` | 마감 · ERP 실적 송신 | W-02-02,W-02-05,W-06-12 | 멱등, ETag |
@@ -583,8 +583,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U18 | `screenId` 를 채울 표가 없다(`계약-재검토-2026-09-04` §3) | 가장자리 | 계약의 물러난 길 그대로 — **키를 생략한다(널을 보내지 않는다).** `DocumentProgress.screenId` · `ApprovalTarget.screenId` · `Notification.screenId` 셋 다 같다 |
 | U18 | 취소 흔적 3컬럼이 `inbound_receipt`·`goods_receipt` 에 없다(`§I-38` · 실측 확인) | 본길 — 취소가 흔적 없이 지나간다 | 마이그레이션으로 3컬럼을 «먼저» 넣는다. 넣지 않으면 계약이 「승인 기록이 그 이력을 대신한다」로 물러난 자리와 어긋난다 |
 | U19 | `changedFields` 열거 셋(`ORDER_QTY`·`DUE_DATE`·`STATUS_CODE`) 밖 변경 · `beforeQty` 저장 자리(W-02-06 §8) | 가장자리 | 2단계 ③ nullable 칸으로 연다. 열거 밖 변경은 **무시하지 않고** `OTHER` 로 보인다(④ 조용히 도출 금지) |
-| U20 | `work_order_resource_plan` 표가 물리에 없다 | 본길 | 계약이 「저장 테이블은 데이터 모델 담당에게 통지 — **기다리지 않는다**」라 적었다 → 표를 만든다. 유일 키는 계약이 준 `uq_work_order_resource_plan(work_order_id, resource_type_code, resource_id)` |
-| U20 | 정렬 축에 파생값(달성률)을 열 것인가(W-02-08 §5) | 가장자리 | 화면 명세가 「좁은 기간만」으로 이미 제한 → 0단계. 파생 정렬은 **기간 필터가 있을 때만** 받고 없으면 400 |
+| U20 | ~~`work_order_resource_plan` 표가 물리에 없다~~ 표는 있다(`work_order_resource_assignment` · 네 칸) — 유일 제약만 없다 | 본길 | 계약이 준 이름 `uq_work_order_resource_plan` 으로 식 유일 인덱스 1건(I-6 R-9) |
+| U20 | 정렬 축에 파생값(달성률)을 열 것인가(W-02-08 §5) | 가장자리 | ~~기간 필터가 있을 때만 받는다~~ → **열지 않는다**(I-6 R-21) — 계약 「정렬 키는 제한한다(L-4)」 · 허용 키는 응답이 가진 축 넷(`priorityNo`·`plannedStartAt`·`workOrderNo`·`statusCode`) · 달성률 정렬은 400 이고 화면 통지 |
 | U21 | 마감 3분류 「정상」의 허용 오차(W-02-05 §8-1) | 가장자리 | 계약이 「서버 정책이 정해지면 그 기준을 따른다 — 계약과 화면은 그대로다」 → **오차 0**(양품 = 지시)으로 두고 상수에 이름을 붙인다(3단계 흔적) |
 | U22 | 작업 중단·포장 전용 단말 게이팅 플래그가 8종에 없다(P-02-08·P-02-10 §8) | 가장자리 | 2단계 ③ — 플래그를 늘리지 않고 **기존 `can_start_work`·`can_input_result` 로만** 게이팅한다 |
 | U23 | 자재 투입 정정(`:correct`)이 계약에 없다(P-02-03 §8) | 본길 | 계약에 오퍼레이션이 없으므로 만들 수 없다. 요청서에 싣는다 |
@@ -999,7 +999,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 
 화면 명세 원문: 「요약 카드 6종(전체·대기·진행중·완료·마감·지연) = `COUNT(*) GROUP BY status_code`,
 양품·불량·손실 합계 = `SUM(good_qty)` 등, **달성률 = `SUM(good_qty) / SUM(order_qty)`**」.
-계약의 `WorkOrderListSummary` 가 그대로다. 두 함정:
+계약의 `WorkOrderListSummary` 가 그대로다. ⚠ required 는 `totalCount`·`statusCounts` **둘**뿐 — 나머지 8칸 중 카운트는 0 도 값으로 내고, `achievementRate` 는 분모 0 이면 키 생략(I-6 R-21). 두 함정:
 
 - ⚠ ⌜**기간 축은 W/O 의 «계획 시작 시각»**이라 「그 기간에 생산된 양」이 아니다⌝ — 화면 라벨을
   「생산량」으로 쓰면 틀린 뜻이 된다

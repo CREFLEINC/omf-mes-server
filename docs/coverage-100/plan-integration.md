@@ -148,8 +148,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | **다형 취소**(`document-progress`) | 조회 **9종** · 취소 실행 **3종** · `document_cancellation` 표는 이미 있다 | ⭐ **I-5** — 입하·입고·출고 셋이 다 선 «직후», 그러나 이동·조정·출하보다 «앞». 취소 판정 로직(`successorCount`·`cancellable`·`cancelBlockedReasonCode`·`SUCCESSOR_EXISTS` 재판정)이 뒤의 전표에 그대로 붙는다 | 출하 취소(`shipments:request-cancel`·`:cancel`)가 **같은 규약의 두 번째 구현**이 된다. J-7·J-8 을 두 번 짜면 반드시 갈린다 |
 | **역트랜잭션**(원장 되돌림) | `inventory_transaction.reversal_of_transaction_id`·`reversal_of_business_date` 컬럼이 **이미 있다** · `CancelResult.reversed`·`reversalTransactionNo`·`reversalBusinessDate` | ⭐ **I-5 안에서 `InventoryPostingService.reverse()` 로.** 코어 전용 PR(diff ≤ 200줄) | 취소·정정·출하취소·실적 A급 정정이 각자 「반대 부호 라인을 쓴다」를 짠다. 원장 불변식이 깨지는 1순위 자리다 |
 | **예약·피킹 수량**(`reserved_qty`·`picked_qty`) | 계약 `InventoryBalance` 가 「**서버 전기가 올리고 소진되면 내린다**」 — `material_issue_request`(예약 건다) · `picking:pick`(예약→피킹) · `goods_issue:post`(피킹 소진) · `shipment_requests/.../:pick`(제품 피킹) **4자리** | ⭐ **I-8 에서 코어로.** ⛔ 지금 `InventoryPostingService` 는 이 두 칸을 **일부러 안 건드린다**(코드 주석). 계약(아키텍처 C-1 도 같다)과 **구현이 어긋나 있는 유일한 자리**다 | 4자리가 각자 `inventory_balance` 를 직접 UPDATE 하게 된다 — 결정 08 「잔량 직접 덮어쓰기 금지」를 정면으로 깬다 |
-| **ERP 아웃박스**(`integration_message`) | 적재 지점 — 입고(§Z-9 로 «지금은 안 넣는다») · `work-orders:close` · `shipments:confirm` · 출고(`sendToErp`) · 조정(`erpMessageQueued`) **5자리** | **I-6(`:close`)에서 처음 만들고 I-23(`:confirm`)이 두 번째 사용처.** 그 전에는 만들지 않는다 — `src/integration/message` 가 이미 조회·재처리를 갖고 있어 «적재 함수 하나»만 붙이면 된다 | 5자리가 각자 `integration_message.create` 를 부르며 `message_key` 규약이 갈린다(전역 `UNIQUE` 라 충돌이 런타임에 터진다) |
-| **LOT 상태 전이**(`lot_status_event` 9전이 · `lot_lifecycle_history` 3전이) | 품질 축 9전이(C4~C15)를 일으키는 것 = 검사 확정 · 보류 등록/해제 · 부적합 처분 · 재등록 **5자리** / 생명주기 3전이 = 실적·마감·취소 **3자리** | 생명주기는 **I-6·I-7 에서**(`transitions.ts` 에 이미 등록돼 있다 — 코드를 안 쓰고 있을 뿐). 품질 축은 **I-19 에서** 전이표를 채우고 I-20·I-21·I-23 이 재사용 | 「값 목록이 없어 막는다」(F-6)를 슬라이스마다 다르게 흉내 낸다. 회신 12·13 이 오면 고칠 자리가 5곳으로 흩어진다 |
+| **ERP 아웃박스**(`integration_message`) | 적재 지점 — 입고(§Z-9 로 «지금은 안 넣는다») · `work-orders:close` · `shipments:confirm` · 출고(`sendToErp`) · 조정(`erpMessageQueued`) **5자리** | **I-6(`:close`)에서 처음 만들고 I-23(`:confirm`)이 두 번째 사용처.** 그 전에는 만들지 않는다 — 적재 함수는 **`src/core/outbox/`**(사용처가 두 도메인 · I-6 R-11 · `src/integration/message` 는 조회·재처리만) 에 «하나»만 붙이면 된다 | 5자리가 각자 `integration_message.create` 를 부르며 `message_key` 규약이 갈린다(전역 `UNIQUE` 라 충돌이 런타임에 터진다) |
+| **LOT 상태 전이**(`lot_status_event` 9전이 · `lot_lifecycle_history` 3전이) | 품질 축 9전이(C4~C15)를 일으키는 것 = 검사 확정 · 보류 등록/해제 · 부적합 처분 · 재등록 **5자리** / 생명주기 3전이 = 실적·마감·취소 **3자리** | 생명주기는 **I-6·I-7 에서**(`transitions.ts` 에 이미 등록돼 있다 — 코드를 안 쓰고 있을 뿐 · `lot_lifecycle_history` 를 쓰는 `LotLifecycleService.moveWithin()` 은 I-6 이 코어에 만든다 — R-12). ⚠ `production.work_order.status_code` 키는 **없다** — I-6 이 열고 I-11 이 그 키에 `work-session-start` 를 더한다. 품질 축은 **I-19 에서** 전이표를 채우고 I-20·I-21·I-23 이 재사용 | 「값 목록이 없어 막는다」(F-6)를 슬라이스마다 다르게 흉내 낸다. 회신 12·13 이 오면 고칠 자리가 5곳으로 흩어진다 |
 | **채번**(`numbering_rule`·`numbering_counter`) | 표는 **이미 있다.** 지금 규칙은 `PRODUCTION_RESULT` **1건**뿐이고 나머지 전표는 서버가 형식을 지어낸다(GR-·PT-, §Z-1·문의 14) | ⭐ **I-2 에서 코어로 승격.** P/O·입하·출고·이동·조정·실사·출하 … **최소 15개 전표번호**가 뒤따른다 | `count()+1` 패턴이 15벌 복사된다. 규칙이 등재되는 순간 15군데를 고쳐야 하고, `count()` 는 취소·삭제가 생기면 번호를 재사용한다(입고에 이미 있는 잠재 결함) |
 | **시리얼**(`serial_number`) | `POST /trace/serial-numbers` **1자리** + 발행 이력의 `targetTypeCode='SERIAL_NUMBER'` | ⛔ **코어로 만들지 않는다.** 사용처가 하나다 — I-26 의 서비스 안에 둔다 | — |
 | **`screenId` 생략**(`ApprovalTarget`·`DocumentTarget`·`DocumentProgress`) | **3자리** | I-1 에서 「채울 표가 없으면 키를 생략한다」를 한 줄 헬퍼로 두고 I-5·I-27 이 재사용 | 세 자리가 각자 `null` 을 보낸다 — 계약이 「널을 보내지 않는다」로 막은 것이다(재검토 §3) |
@@ -167,7 +167,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-3 | 입하 — 라인·차이·초과분리 | 12 | I-2 | 있음 | ✕ | ✕ | ⭕ | 3 |
 | I-4 | 출고 — 전표·전기 | 7 | I-3 | 있음 | ⚠ `goods_issue.destination_id` NOT NULL 해제(#147) | ⭐ | ⭕ | 3 |
 | I-5 | 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | 있음(`document_cancellation`) | 완화 1(`reason_code` NOT NULL 해제 · R-1) | ⭐ 역 | ⭕ | 6 |
-| I-6 | W/O — 발행~마감 + 4M 배정 | 13 | I-2 | ⚠ `work_order_resource_assignment` 축이 다르다 | ⭕ 유일 제약 + `remainder_disposition_code`(§I-25) | ✕ | ⭐ | 4 |
+| I-6 | W/O — 발행~마감 + 4M 배정 | 13 | I-2 | ⚠ `work_order_resource_assignment` 축이 다르다(네 칸 유지 · `SHIFT` 는 이 경로로 안 채워진다) | ⭕ 식 유일 인덱스 1(`remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다 — I-6 R-9) | ✕ | ⭐ | ~~4~~ **7**(I-6 R-5) |
 | I-7 | 생산 실적 + LOT 생명주기 | 7 | I-6 | 있음 | ✕ | ✕ | ⭐ L1·L2·L3 | 3 |
 | I-8 | 출고요청·피킹·예약 코어 | 8 | I-4 | 있음 | ✕ | ⭐ 예약/피킹 칸 | ⭕ | 3 |
 | I-9 | 생산창고 입고 | 3 | I-8 | 있음 | ⚠ 차이 전기 자리가 없다 | ⚠ 미정 | ⭕ | 2 |
@@ -255,11 +255,11 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: ⑬ `work_order` — 생산 흐름의 머리. `:release` 가 ⑭ 생산LOT 선발행 + 자재 출고요청 자동 발행(R29)까지 한 트랜잭션.
 **원장**: 없음. **상태기계**: ⭐ 이 슬라이스가 가장 크다 — `work_order.status_code`(발행·확정·중단·재개·취소·마감) + `trace.lot.lifecycle_status_code` 의 **L2·L3**(`transitions.ts` 에 이미 등록돼 있다 — 처음으로 «쓰는» 자리).
 **4M 배정**: 계약은 `WorkOrderResourcePlan{resourceTypeCode, resourceId}` 인데 물리 `work_order_resource_assignment` 는 `equipment_id`·`mold_id`·`worker_id`·`shift_id` **네 칸으로 갈라 두었다**. 계약이 요구하는 `uq(work_order_id, resource_type_code, resource_id)` 도 없다.
-→ **§2 1단계 본길이 아니다**(매핑 규칙은 결정 가능) → 2단계 기준 3「스키마를 안 늘리는 쪽」 → **네 칸을 유지하고 `resourceTypeCode` 로 어느 칸에 넣을지 가른다.** 유일 제약은 `(work_order_id, resource_type_code, COALESCE(equipment_id,0), COALESCE(mold_id,0), COALESCE(worker_id,0))` 부분 인덱스로 **선행 마이그레이션**.
+→ **§2 1단계 본길이 아니다**(매핑 규칙은 결정 가능) → 2단계 기준 3「스키마를 안 늘리는 쪽」 → **네 칸을 유지하고 `resourceTypeCode` 로 어느 칸에 넣을지 가른다.** 유일 제약은 `(work_order_id, resource_type_code, COALESCE(equipment_id, mold_id, worker_id, shift_id))` **식** 유일 인덱스(`WHERE` 없음 · `ck_work_order_resource_target` 이 하나만 non-null 임을 보장)로 **선행 마이그레이션**(I-6 R-9).
 **예상 설계 미정**
 - `:close` 의 「정상」 허용 오차 폭 → 서버 정책(계약이 그렇게 적었다). 상수로 두고 근거를 적는다.
 - 잔량 이월의 자동 전개 여부 → 계약이 「정해지지 않았다 — 정해지기 전까지 만들지 않는다」로 이미 물러났다. 그대로 따른다.
-- `remainder_disposition_code` 컬럼이 물리에 없다(§I-25) → **선행 마이그레이션**(nullable).
+- ~~`remainder_disposition_code` 컬럼이 물리에 없다(§I-25) → 선행 마이그레이션~~ → **이미 있다** — `work_order.close_disposition_code`(`20260826000000_data_model_v4:72` · I-6 실측).
 - POP 버퍼 미동기 실적 게이트 → 「서버가 단말 버퍼를 볼 수단이 계약에 없다」(계약 자인) → **본길** → 판정을 만들지 않고 요청서에 싣는다.
 
 
@@ -279,7 +279,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **함께 서는 코어 — 예약·피킹 수량**. ⛔ 지금 `InventoryPostingService` 는 `reserved_qty`·`picked_qty` 를 안 건드리는데, 계약 `InventoryBalance` 는 「서버 전기가 올리고 소진되면 내린다」라 적었다. 넷이 쓴다(출고요청·자재피킹·출고전기·제품피킹).
 → **§2 0단계 선례 있음**(계약 본문이 인용 가능) → 코어에 `reserve()`/`pick()`/`consume()` 를 더한다. 잔량을 직접 UPDATE 하는 길은 여전히 posting 하나뿐이다(결정 08).
 **예상 설계 미정**
-- 「부족」 판정(`/material-issue-requests/shortage`)이 BOM 소요 − 기출고를 서버가 낸다. BOM 버전 선택 기준(작업지시 시점 스냅샷인가 현재 확정본인가)이 계약에 없다. → 1단계 가장자리(버전이 갈린 품목에서만) → 2단계 기준 4「조용히 도출하지 않는 쪽」 → `work_order`/`lot` 이 이미 든 `bom_id`·`bom_version` 을 쓰고 없으면 400.
+- 「부족」 판정(`/material-issue-requests/shortage`)이 BOM 소요 − 기출고를 서버가 낸다. BOM 버전 선택 기준(작업지시 시점 스냅샷인가 현재 확정본인가)이 계약에 없다. → 1단계 가장자리(버전이 갈린 품목에서만) → 2단계 기준 4「조용히 도출하지 않는 쪽」 → ~~`work_order`/`lot` 이 이미 든~~ **`work_order` 에는 `bom_id`·`bom_version` 이 없다**(I-6 실측) — `production_plan.bom_id`(NOT NULL) 를 `:release` 가 `lot.bom_id`/`bom_version` 스냅샷으로 찍고 I-8 은 그 스냅샷을 쓴다. 소요 = `required_qty × order_qty ÷ bom.base_qty`(스크랩률 미적용 — I-6 R-18 · 문의 037).
 - `picking_line.status_code` 값 목록 없음(`G-2`) → 값을 내려주되 서버가 분기하지 않는다.
 
 
@@ -596,7 +596,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | M-a | I-1 | `approval_route` 부분 유일 인덱스 `(approval_type_code, business_unit_id) WHERE is_active`(§I-35) | ⭕ 인덱스 추가 |
 | M-b | I-2 | `purchase_order` 유일 제약 · OCR 자리(§I-48) | ⭕ |
 | ~~M-c~~ | ~~I-4~~ | ✅ 이미 적용됨(`20260901090000` · #44 ≡ #147) — I-4 마이그 0건(I-4 재수립 R-11) | — |
-| M-d | I-6 | `work_order_resource_assignment` 부분 유일 인덱스 + `work_order.remainder_disposition_code`(nullable · §I-25) | ⭕ 추가 |
+| M-d | I-6 | `work_order_resource_assignment` **식** 유일 인덱스(COALESCE 한 식 3칸) — `remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다(I-6 R-9) | ⭕ 추가(반) |
 | M-e | I-19 | 검사 의뢰 기준 완화(#280) | ⭕ |
 | M-f | I-23 | 긴급 출하 사유 컬럼(§I-41) | ⭕ nullable |
 | M-g | I-33 | `collection_channel` 부분 유일 인덱스(`COALESCE` 형) | ⭕ |

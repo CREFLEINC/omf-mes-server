@@ -362,10 +362,10 @@
 |---|---|
 | 선행 슬라이스 | S13 |
 | 쓰는 표 | `production.work_order`·`work_order_dependency`·`work_order_resource_assignment` — 있음 |
-| 마이그레이션 | 없음 · ⚠ 다만 `:close` 의 「개발품 제외」 판정 축이 `mdm.item.development_item` 인데 그 칸이 없다(계약이 직접 적음). 계약도 「그때까지 서버는 전건을 적재한다」라 물러났으니 **칸을 만들지 않고 전건 적재**한다. |
+| 마이그레이션 | ~~없음~~ → **1**(I-6 재수립 R-9 — `work_order_resource_assignment` 식 유일 인덱스 `uq_work_order_resource_plan(work_order_id, resource_type_code, COALESCE(equipment_id, mold_id, worker_id, shift_id))` · 실측상 4M 유일 제약이 없었다) · ⚠ `:close` 의 「개발품 제외」 판정 축이 `mdm.item.development_item` 인데 그 칸이 없다(계약이 직접 적음). 계약도 「그때까지 서버는 전건을 적재한다」라 물러났으니 **칸을 만들지 않고 전건 적재**한다. |
 | posting(원장) 연결 | 없음 (직접) — 다만 `:release` 가 자재 출고요청을 자동 발행하고 `:cancel`/`:close` 가 선발행 LOT 을 폐번한다 |
 | 상태기계 | **있음 · 두 축 동시**(`WORK_ORDER_STATUS` 8값 + `trace.lot.lifecycle_status_code` L2·L3) — §5.1-C |
-| 예상 PR 수 | 4 — ① 조회 GET 4건 + 자원계획 POST/DELETE ② W/O 생성·수정 ③ `:release`(선발행 + 출고요청 자동발행, 코어) ④ `:hold`/`:resume`/`:close`/`:cancel` + e2e (코어) |
+| 예상 PR 수 | ~~4~~ → **7**(I-6 재수립 R-5) — ① 마이그 선행 + 골격 + 상세·자원계획 GET(opus) ② 목록 GET(sonnet) ③ `validation` + 자원계획 POST/DELETE ④ 생성·수정 + 전이 키 + `:hold`/`:resume` + `ConflictException.code` ⑤a 코어(`preIssueWithin()`·`moveWithin()` ≤200) ⑤b `:release` + 출고요청 자동 발행 ⑥ `:close`/`:cancel` + `src/core/outbox/` + M1 마디 e2e · 직렬 스택 |
 | 설계 미정 자리 · §2 판정 초안 | `:close` 의 「정상」 허용 오차 폭. 계약이 「서버 정책이 정한다」라 넘겼고 `app.operation_policy` 자리가 있다. 상수로 두고 근거를 적는다(server-architecture §5 4번과 같은 처리). 이월 잔량 W/O 자동 생성은 **계약이 「아직 정해지지 않았다 — 만들지 않는다」**라 못박았다. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
@@ -807,7 +807,7 @@ e2e」)을 못 채운다 — 2026-09-04 드리프트가 취소를 리소스 축�
 | `work-order-release` | `PLANNED`·`CONFIRMED` → `RELEASED` | `:release` | 생산LOT **선발행**(슬롯 생성) + 자재 출고요청 자동 발행(⛔ 긴급 W/O 제외 — `work_order_type_code` 로 서버가 가른다) |
 | `work-order-hold` | `RELEASED`·`IN_PROGRESS` → `SUSPENDED` | `:hold` | ⛔ 세션을 닫지 않는다 |
 | `work-order-resume` | `SUSPENDED` → `IN_PROGRESS` | `:resume` | ⛔ 세션을 다시 열지 않는다 |
-| `work-order-close` | `COMPLETED`(·`IN_PROGRESS`) → `CLOSED` | `:close` | **L2**(`WAITING`→`VOIDED`, 실적 없는 슬롯만) — *이미 등록됨* · ERP 아웃박스 적재 |
+| `work-order-close` | `COMPLETED`·`IN_PROGRESS` → `CLOSED`(I-6 R — `COMPLETED` 로 옮기는 오퍼레이션이 계약에 0건이라 `IN_PROGRESS` 를 뺄 수 없다) | `:close` | **L2**(`WAITING`→`VOIDED`, 실적 없는 슬롯만) — *이미 등록됨* · ERP 아웃박스 적재 |
 | `work-order-cancel` | `PLANNED`·`CONFIRMED`·`RELEASED`·`IN_PROGRESS`·`SUSPENDED` → `CANCELLED` | `:cancel` | **L3**(`WAITING`·`ACTIVE`→`VOIDED`, 선발행 슬롯 **전건**) — *이미 등록됨* |
 | (전이 아님) | — | `PUT /production/work-orders/{id}` | ⛔ 본문에 `statusCode` 칸이 없다 — 계약이 그렇게 못박았다 |
 
