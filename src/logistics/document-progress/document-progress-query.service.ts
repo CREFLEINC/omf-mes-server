@@ -84,30 +84,35 @@ export class DocumentProgressQueryService {
     return row[mapping.idColumn] as bigint;
   }
 
+  /** `derivedFrom`(`'goods_issue'|'goods_receipt'`)이 가리키는 그 유형의 매핑 — 짝 전표 판을 대신 읽는다. */
+  private sourceOf(mapping: DocumentTypeMapping): DocumentTypeMapping {
+    if (mapping.derivedFrom === null) return mapping;
+    return mapping.derivedFrom === 'goods_issue' ? DOCUMENT_TYPES.GOODS_ISSUE : DOCUMENT_TYPES.GOODS_RECEIPT;
+  }
+
   private includeOf(mapping: DocumentTypeMapping): Row {
     if (mapping.derivedFrom !== null) {
-      const source = DOCUMENT_TYPES[mapping.derivedFrom];
+      const source = this.sourceOf(mapping);
       return { [source.delegate]: source.lineDelegate === null ? true : { include: { [source.lineDelegate]: true } } };
     }
     return mapping.lineDelegate === null ? {} : { [mapping.lineDelegate]: true };
   }
 
   private orderBy(mapping: DocumentTypeMapping): Row[] {
-    // 일자 칸이 없는 둘(MATERIAL_ISSUE_REQUEST·PICKING_ORDER)은 created_at 으로 대신한다.
-    const column = mapping.dateColumn ?? 'created_at';
-    return [{ [column]: 'desc' }, { [mapping.idColumn]: 'desc' }];
+    // 일자 칸이 없는 둘(MATERIAL_ISSUE_REQUEST·PICKING_ORDER)은 표에서 이미 `created_at` 이다.
+    return [{ [mapping.dateColumn]: 'desc' }, { [mapping.idColumn]: 'desc' }];
   }
 
   /** 행 하나를 매퍼가 먹을 공통 모양으로 맞춘다. 외주 2종은 짝 전표(`derivedFrom`)에서 판다(§5-2). */
   private toRow(mapping: DocumentTypeMapping, row: Row): DocumentProgressRow {
-    const source = mapping.derivedFrom === null ? mapping : DOCUMENT_TYPES[mapping.derivedFrom];
+    const source = this.sourceOf(mapping);
     const paired = mapping.derivedFrom === null ? row : (row[source.delegate] as Row);
     const lines = source.lineDelegate === null ? [] : (paired[source.lineDelegate] as Row[]);
     return {
       documentId: row[mapping.idColumn] as bigint,
       // 외주 2종은 noColumn 이 없다 — source(GOODS_ISSUE·GOODS_RECEIPT)는 언제나 있다.
       documentNo: paired[source.noColumn as string] as string,
-      documentDate: row[mapping.dateColumn ?? 'created_at'] as Date,
+      documentDate: row[mapping.dateColumn] as Date,
       documentSubTypeCode: mapping.subTypeColumn === null ? null : (row[mapping.subTypeColumn] as string | null),
       statusCode: row.status_code as string,
       plannedQty: source.plannedColumn === null ? null : this.sumNullable(lines, source.plannedColumn),
@@ -144,19 +149,18 @@ export class DocumentProgressQueryService {
    * `@db.Date` 하나(P/O)를 빼면 전부 `timestamptz` 다 — **UTC 경계**로 자른다(CLAUDE.md 타임존
    * 캐스팅 금지 · I-4 `issuedAtWhere` 선례). `From` 은 그날 00:00Z 부터, `To` 는 다음날 00:00Z 전.
    */
-  private dateWhere(column: string | null, from?: string, to?: string): Row {
+  private dateWhere(column: string, from?: string, to?: string): Row {
     if (from === undefined && to === undefined) return {};
-    const col = column ?? 'created_at';
     const start = from === undefined ? undefined : new Date(`${from}T00:00:00.000Z`);
     const end = to === undefined ? undefined : new Date(`${to}T00:00:00.000Z`);
     if (end) end.setUTCDate(end.getUTCDate() + 1);
-    return { [col]: { ...(start === undefined ? {} : { gte: start }), ...(end === undefined ? {} : { lt: end }) } };
+    return { [column]: { ...(start === undefined ? {} : { gte: start }), ...(end === undefined ? {} : { lt: end }) } };
   }
 
   private noWhere(mapping: DocumentTypeMapping, q?: string): Row {
     if (q === undefined) return {};
     if (mapping.derivedFrom === null) return { [mapping.noColumn as string]: { contains: q, mode: 'insensitive' } };
-    const source = DOCUMENT_TYPES[mapping.derivedFrom];
+    const source = this.sourceOf(mapping);
     return { [source.delegate]: { [source.noColumn as string]: { contains: q, mode: 'insensitive' } } };
   }
 
