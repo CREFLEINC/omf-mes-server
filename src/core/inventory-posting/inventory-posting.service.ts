@@ -122,13 +122,17 @@ export class InventoryPostingService {
     const lines = rows.map(reversedLine);
     const transactionNo = `${original.transaction_no}${REVERSAL_NO_SUFFIX}`;
 
-    assertReversible(lines, await lockBalancesInOrder(tx, await this.balanceKeys(tx, lines)));
+    const locked = await lockBalancesInOrder(tx, await this.balanceKeys(tx, lines));
 
     // 잠금 뒤 되읽기가 경합의 그물이다 — INSERT 의 P2002 를 잡아 되읽는 길은 abort 된 tx 안이라
     // 25P02 로 막힌다(리뷰 #217). 두 `reverse()` 가 같은 잔액 행을 잡으므로 뒤 트랜잭션은 앞이
     // 커밋한 뒤에야 잠금을 얻고, READ COMMITTED 재조회가 앞이 만든 역행을 본다.
+    // ⛔ `assertReversible` «앞»이라야 한다 — 앞 트랜잭션이 이미 되돌려 `to` 쪽 잔액이 줄어 있어,
+    // 뒤에 두면 하한 검사가 먼저 400 NEGATIVE_BALANCE 를 던져 흡수에 못 닿는다.
     const won = await findReversal(tx, input.inventoryTransactionId, businessDate);
     if (won !== null) return won;
+
+    assertReversible(lines, locked);
 
     const header = await insertReversalHeader(tx, input, original, transactionNo);
 

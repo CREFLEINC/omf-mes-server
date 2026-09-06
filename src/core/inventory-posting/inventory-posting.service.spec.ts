@@ -297,9 +297,12 @@ describe('역트랜잭션 코어', () => {
     expect(calls).toEqual(['header.findFirst']);
   });
 
-  it('reverse — 잠금 뒤 되읽기가 역행을 보면 alreadyReversed:true 로 흡수한다(경합의 그물은 P2002 가 아니라 잠금이다)', async () => {
+  it('reverse — 되읽기가 역행을 보면 잔액이 부족해도 alreadyReversed:true 다(NEGATIVE_BALANCE 를 던지지 않는다)', async () => {
     // 첫 선조회는 0행(경합 상대가 아직 안 커밋했다) · 잔액 행을 잠근 «뒤» 되읽기는 1행이다.
+    // 잠금이 돌려주는 잔액은 앞 트랜잭션이 이미 되돌려 «줄어든» 값이라 하한을 못 채운다 —
+    // 되읽기가 `assertReversible` 앞이라야 흡수에 닿는다.
     const { tx, calls, service } = fake({
+      balances: [balanceRow({ available_qty: new Prisma.Decimal(0) })],
       reversals: [
         null,
         {
@@ -323,6 +326,17 @@ describe('역트랜잭션 코어', () => {
     expect(calls).not.toContain('line.create');
     expect(calls).toEqual(['header.findFirst', 'header.findUniqueOrThrow',
       'warehouse.findUniqueOrThrow', 'lock', 'header.findFirst']);
+  });
+
+  it('reverse — 되읽기가 0행이면 그 부족한 잔액으로 400 NEGATIVE_BALANCE 를 던진다', async () => {
+    const { tx, service } = fake({
+      balances: [balanceRow({ available_qty: new Prisma.Decimal(0) })],
+    });
+
+    const failure = await thrown(() => service.reverse(tx, reverseInput()));
+
+    expect(failure.getStatus()).toBe(400);
+    expect(failure.errors[0]).toMatchObject({ code: ERROR_CODE.NEGATIVE_BALANCE });
   });
 
   it('reverse — 잔액 행은 from·to 7칸 키를 한 VALUES 문장으로 id 오름차순 잠근다(교차곱이 아니다)', async () => {
