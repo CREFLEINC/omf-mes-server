@@ -9,12 +9,23 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  * 「다른 사용자가 먼저 수정했습니다」와 「기간계 배치가 덮었습니다」가 같은 모양이 된다.
  *
  * ⚠ 계열이 넷 더 있다(`Production`·`Quality`·`Shipment`·`StockReinstatement`). 그쪽은
- * 저장 충돌의 «원인»이 아니라 거부의 «업무 사유»(`code`)를 함께 담는다 — 그 도메인이
- * 서면 이 예외를 넓히는 것이 아니라 각자의 봉투를 만든다(계약이 이름을 가른 이유다).
+ * 저장 충돌의 «원인»이 아니라 거부의 «업무 사유»(`code`)를 함께 담고 그 `code` 가
+ * **required** 다(`ProductionConflictResponse` 실측). 그래도 **같은 예외에 선택 `code` 를
+ * 더한다**(I-6 R-8) — 봉투를 따로 만들면 `assertUpdated()` 를 도메인마다 복제하게 되고
+ * If-Match 충돌은 어느 계열에서나 같은 사건이다. 두 축은 직교하며 겹치는 지점이
+ * `VERSION_CONFLICT` ↔ `conflictCause='user'` 하나뿐인 것도 계약이 적어 두었다.
  */
 export type ConflictCause = 'user' | 'erpSync' | 'workerLease';
 
-export interface ConflictResponse {
+/** 계열이 요구하는 선택 두 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
+export interface ConflictExtra {
+  /** `ProductionConflictResponse.code` 등 — 거부의 업무 사유. */
+  code?: string;
+  /** `VERSION_CONFLICT` 일 때 서버의 현재 `version_no`(계약이 문자열로 적었다). */
+  currentVersion?: string;
+}
+
+export interface ConflictResponse extends ConflictExtra {
   conflictCause: ConflictCause;
   message: string;
 }
@@ -22,8 +33,8 @@ export interface ConflictResponse {
 export class ConflictException extends HttpException {
   readonly conflict: ConflictResponse;
 
-  constructor(conflictCause: ConflictCause, message: string) {
-    super({ conflictCause, message }, HttpStatus.CONFLICT);
-    this.conflict = { conflictCause, message };
+  constructor(conflictCause: ConflictCause, message: string, extra: ConflictExtra = {}) {
+    super({ conflictCause, message, ...extra }, HttpStatus.CONFLICT);
+    this.conflict = { conflictCause, message, ...extra };
   }
 }

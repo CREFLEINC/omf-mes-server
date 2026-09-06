@@ -2,12 +2,13 @@
  * W/O 조회 — 상세 `GET /production/work-orders/{workOrderId}`(ETag) + 4M 계획 배정 목록
  * `GET …/{workOrderId}/resource-plans`(I-6 PR ①).
  *
- * 4M 계획 배정 추가·해제(`POST`/`DELETE`)와 유효성 점검 `GET …/validation`(I-6 PR ③)을 잇는다.
+ * 4M 계획 배정 추가·해제(`POST`/`DELETE`)와 유효성 점검 `GET …/validation`(I-6 PR ③),
+ * 발행 `POST`·수정 `PUT`(I-6 PR ④)을 잇는다 — 중단·재개는 ④b 다.
  *
  * ⛔ 계약이 403 을 선언한 것은 `validation` 하나뿐이라 그 자리만 권한 가드가 본다 — 나머지
  *   넷은 로그인 세션만으로 통과한다. 그래서 사용자가 둘이다(권한 있음·없음).
- * ⭐ 픽스처는 전부 **직접 INSERT** 한다 — 발행(`POST`)·배포(`:release`)가 아직 없다(PR ④·⑤).
- *   시드 마스터가 얇아(품목·공정·라우팅·BOM·작업자·근무조 0행) 이 스위트가 다 심는다.
+ * ⭐ 마스터 픽스처는 **직접 INSERT** 한다 — 시드가 얇아(품목·공정·라우팅·BOM·작업자·근무조
+ *   0행) 이 스위트가 다 심는다. 배포(`:release`)는 ⑤b 라 `RELEASED` 도 직접 심는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -28,8 +29,12 @@ const NOPERM_ID = 'e2e-wo-noperm';
 const PASSWORD = 'WO-작업지시-비밀번호';
 const PREFIX = 'WOE2E';
 const ROLE = 'E2E_WORK_ORDER';
-/** `validation` 이 요구하는 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한 값이다. */
-const PERMISSIONS = ['W-02-03'];
+/**
+ * 계약이 403 을 선언한 다섯 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
+ * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10` ·
+ * 뒤 둘은 ④b 가 쓴다).
+ */
+const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10'];
 /** 선발행 슬롯의 원천 유형 — `lot-rules.ts workOrderWhere()` 와 같은 문자열. */
 const LOT_SOURCE = 'WORK_ORDER';
 
@@ -338,6 +343,138 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
   });
 
+  describe('발행·수정 (PR ④)', () => {
+    const base = '/api/production/work-orders';
+    let issuedId = 0;
+    let issuedEtag = '';
+
+    it('발행 — 201 에 ETag 가 실리고 그 토큰이 PUT 에 그대로 통한다', async () => {
+      const created = await request(app.getHttpServer())
+        .post(base)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: Number(ids.productionPlan),
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty: 40,
+          uomId: Number(ids.uom),
+          remarks: '발행 검사',
+        })
+        .expect(201);
+
+      // ⭐ 토큰을 받으려고 상세를 다시 조회하지 않는다(계약 x-internal-note · omf-mes#258).
+      expect(created.headers.etag).toBe('1');
+      expect(created.body).toMatchObject({
+        statusCode: 'PLANNED',
+        // 유형을 안 보냈으니 서버가 `NORMAL` 을 «명시»로 넣는다.
+        workOrderTypeCode: 'NORMAL',
+        priorityNo: 100,
+        versionNo: 1,
+      });
+      expect(created.body.workOrderNo).toMatch(/^WO-\d{8}-\d{4}$/);
+      expect(validator('POST /production/work-orders', 201)(created.body)).toBe(true);
+      issuedId = created.body.workOrderId;
+      issuedEtag = created.headers.etag;
+
+      const updated = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', issuedEtag)
+        .send({ priorityNo: 5, plannedEquipmentId: Number(ids.equipment) })
+        .expect(200);
+
+      // ⛔ 200 에 «잠금 토큰» ETag 가 없다(계약 미선언 — express 의 약한 해시가 남을 뿐이다).
+      //    다음 If-Match 는 본문 `versionNo` 가 준다(R-22).
+      expect(updated.headers.etag ?? '').not.toMatch(/^\d+$/);
+      expect(updated.body).toMatchObject({ priorityNo: 5, plannedEquipmentId: Number(ids.equipment), versionNo: 2 });
+      expect(validator('PUT /production/work-orders/{workOrderId}')(updated.body)).toBe(true);
+    });
+
+    it('발행 — 계획을 비우면 400 이고 아무것도 생기지 않는다', async () => {
+      const before = await counted();
+
+      const rejected = await request(app.getHttpServer())
+        .post(base)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: null,
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty: 40,
+          uomId: Number(ids.uom),
+        })
+        .expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'productionPlanId', code: 'REQUIRED' });
+      // ⭐ 검사가 채번보다 앞이라 카운터도 안 오른다(결번을 남기지 않는다).
+      expect(await counted()).toEqual(before);
+    });
+
+    it('수정 — 같은 멱등키 재전송이 버전을 두 번 올리지 않는다', async () => {
+      const key = randomUUID();
+      const body = { remarks: null, plannedMoldId: null };
+      const first = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send(body)
+        .expect(200);
+      // 같은 키·같은 지문이라 두 번째는 앞의 응답을 그대로 돌려받는다 — 버전은 한 번만 오른다.
+      const again = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send(body)
+        .expect(200);
+
+      expect(first.body.versionNo).toBe(3);
+      expect(again.body.versionNo).toBe(3);
+      const row = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(issuedId) } });
+      expect(row.version_no).toBe(3);
+      // 명시적 null 은 해제다 — 생략한 `priorityNo` 는 앞 수정의 5 로 남는다.
+      expect(row.remarks).toBeNull();
+      expect(row.priority_no).toBe(5);
+    });
+
+    it('수정 — If-Match 가 없으면 400 이다', async () => {
+      const bare = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ priorityNo: 7 });
+
+      expect(bare.status).toBe(400);
+    });
+
+    it('수정 — 낡은 If-Match 는 409 이고 본문이 {conflictCause:"user", code:"VERSION_CONFLICT"} 다', async () => {
+      const stale = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        // 앞선 테스트들로 버전이 이미 3 을 지났다 — '1' 은 확실히 낡았다.
+        .set('If-Match', '1')
+        .send({ priorityNo: 8 });
+
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+    });
+
+    /** 이 스위트가 만든 W/O 수 + `WORK_ORDER` 채번 카운터. 둘 다 안 움직여야 「아무것도 안 생겼다」다. */
+    async function counted(): Promise<[number, string]> {
+      const orders = await prisma.work_order.count({ where: { production_plan_id: ids.productionPlan } });
+      const counters = await prisma.numbering_counter.findMany({
+        where: { numbering_rule: { document_type_code: 'WORK_ORDER' } },
+        select: { last_value: true },
+      });
+      return [orders, counters.map((row) => String(row.last_value)).join(',')];
+    }
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -623,17 +760,23 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
   /** 만든 행을 역순으로 지운다 — FK 방향 그대로. */
   async function cleanup(): Promise<void> {
     const plantScope = { plant: { plant_code: { startsWith: PREFIX } } };
+    // ⚠ 발행(`POST`)이 만든 W/O 는 번호를 채번이 짓는다(`WO-…`) — 접두어로는 안 잡히므로
+    //    계획을 거쳐 함께 건다.
+    const orderScope = {
+      OR: [
+        { work_order_no: { startsWith: PREFIX } },
+        { production_plan: { plan_no: { startsWith: PREFIX } } },
+      ],
+    };
     await prisma.production_result_lot_allocation.deleteMany({
-      where: { production_result: { work_order: { work_order_no: { startsWith: PREFIX } } } },
+      where: { production_result: { work_order: orderScope } },
     });
-    await prisma.production_result.deleteMany({ where: { work_order: { work_order_no: { startsWith: PREFIX } } } });
+    await prisma.production_result.deleteMany({ where: { work_order: orderScope } });
     await prisma.lot.deleteMany({ where: plantScope });
-    await prisma.work_order_resource_assignment.deleteMany({
-      where: { work_order: { work_order_no: { startsWith: PREFIX } } },
-    });
+    await prisma.work_order_resource_assignment.deleteMany({ where: { work_order: orderScope } });
     // FK 가 `work_order` 를 막는다 — 지우기 전에 의존 표를 먼저 비운다.
     await prisma.work_order_dependency.deleteMany({ where: { predecessor_work_order_id: ids.workOrder } });
-    await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
+    await prisma.work_order.deleteMany({ where: orderScope });
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
