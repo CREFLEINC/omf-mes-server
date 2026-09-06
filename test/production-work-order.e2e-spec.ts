@@ -539,6 +539,24 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
     });
 
+    it('중단·재개 — 권한 없으면 403 이다', async () => {
+      const workOrder = await released();
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', noPermCookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:resume`)
+        .set('Cookie', noPermCookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(403);
+    });
+
     it('수정 — 같은 멱등키 재전송이 버전을 두 번 올리지 않는다', async () => {
       const key = randomUUID();
       const body = { remarks: null, plannedMoldId: null };
@@ -1083,6 +1101,78 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(rejected.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'INVALID' });
       const row = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
       expect(row).toMatchObject({ status_code: 'IN_PROGRESS', cancellation_reason_code: null });
+    });
+
+    it('마감 — If-Match 가 없으면 400, 낡으면 409 다', async () => {
+      const workOrderId = await closable(100, 100);
+
+      const missing = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({});
+      expect(missing.status).toBe(400);
+
+      const stale = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({});
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      // 상태가 안 바뀌었음을 못박는다 — 여전히 올바른 토큰 '2' 로는 그대로 마감된다.
+      await call('close', workOrderId, {}, '2').expect(200);
+    });
+
+    it('취소 — If-Match 가 없으면 400, 낡으면 409 다', async () => {
+      const workOrderId = await closable(100);
+
+      const missing = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:cancel`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'PLAN_CHANGE' });
+      expect(missing.status).toBe(400);
+
+      const stale = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:cancel`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ reasonCode: 'PLAN_CHANGE' });
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      // 상태가 안 바뀌었음을 못박는다 — 여전히 올바른 토큰 '2' 로는 그대로 취소된다.
+      await call('cancel', workOrderId, { reasonCode: 'PLAN_CHANGE' }, '2').expect(200);
+    });
+
+    it('마감 — 같은 Idempotency-Key 재전송은 200 을 되돌려주고 integration_message 는 1행이다', async () => {
+      const workOrderId = await closable(100, 100);
+      const key = randomUUID();
+
+      const first = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send({})
+        .expect(200);
+      const again = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send({})
+        .expect(200);
+
+      expect(again.body).toEqual(first.body);
+      const count = await prisma.integration_message.count({
+        where: { message_key: `IF-WO-CLOSE-SEND:${first.body.workOrderNo}` },
+      });
+      expect(count).toBe(1);
     });
   });
 
