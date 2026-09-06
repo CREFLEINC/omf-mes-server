@@ -193,4 +193,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 줄을 그 화면으로 바꾼다. 선례 `PUT /logistics/goods-issues/{id}/lines`·
   // `PUT /logistics/inbound-receipts/{id}`(부르는 화면이 0건이어도 가드가 등록을 요구한다 · I-10 R-10 넷째).
   'POST /production/material-returns': ['P-02-03'],
+
+  // `P-02-01` 작업 시작 — 그 화면이 세션 작업자 목록을 소유한다(계약 `GET …/workers` 근거 =
+  // `P-02-01` §5 · §5-A 가 `work_session_worker` 를 「작업자 — 사번 귀속 — REQ-PR-0023」으로
+  // 자기 표에 실었다). `plan-api.md` 972행이 이 둘을 「S15 · 등록이 필요한 오퍼레이션」으로
+  // 이미 셌다 — 도출표에 없고 계약이 403 을 선언해 미등록이면 `PermissionGuard` 가 500 을 낸다.
+  // ⚠ 참여·이탈을 «부르는» 화면은 0건이다 — 화면이 정해지면 그때 옮긴다(설계 미정 — 문의 057).
+  'POST /production/work-sessions/{workSessionId}/workers': ['P-02-01'],
+  'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
 };
