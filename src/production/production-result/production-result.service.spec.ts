@@ -261,7 +261,7 @@ describe('생산 실적 등록 (I-7 PR ②)', () => {
     expect(harness.allocated).toEqual([]);
   });
 
-  it('배분 — 합이 `goodQty` 와 달라도 통과한다(검사하지 않는다)', async () => {
+  it('배분 — 합이 `goodQty` 보다 «적어도» 통과한다(같은가는 안 본다 · 상한만 막는다)', async () => {
     const harness = stub({ slots: [slot(31n)] });
 
     await harness.service.create(
