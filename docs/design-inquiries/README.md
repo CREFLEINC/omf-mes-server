@@ -27,17 +27,17 @@
 | 27 | 입하 오류를 여는 화면·필터가 없다 | 구현함(I-3 · 등록·조회만 · 필터 없음) |
 | 28 | 입하 사전부착 라인의 `supplierLotNo` 누락 — 계약이 안 막은 조합 | 구현함(I-3 · 400 `PAIR` · §2 2단계 기준 2) |
 | 29 | 한 물리 공급사 LOT 이 정량분·초과분으로 갈릴 때 — `uq_lot` 이 `W-01-03` 대표 시나리오를 막는다 | 구현함(I-3 · `:split` 겹침 400 `INVALID` · §2 2단계 기준 2) |
-| 30 | 폐기 출고의 승인 게이트를 걸 축이 데이터에 없다 — 화면은 「전건 차단」으로 읽었고 서버는 상신한 전표만 막는다 | 구현 예정(I-4 · 상신 흔적으로 가른다 · §2 2단계 기준 5) |
-| 31 | 출고 라인이 잔액 차원 두 칸(`qualityStatusCode`·`inventoryStatusCode`)을 안 싣는다 | 구현 예정(I-4 · 2행 이상 400 `INVALID` · §2 2단계 기준 2) |
-| 32 | 취소 실행이 역트랜잭션의 영업일·시각·번호를 아무것도 안 받는다 — 04 `ShipmentCancel` 은 `businessDate`·`occurredAt` 필수 | 구현 예정(I-5 · 영업일 = 원 트랜잭션 · `{원 번호}-R` · §2 0단계·기준 4) |
-| 33 | 취소 승인이 반려되면 `CANCEL_REQUESTED` 를 되돌릴 경로가 없다 — `W-CO-09` §5-5·J-6 은 재상신을 전제 | 구현 예정(I-5 · 계약 문자 그대로 · 되돌리는 전이 0) |
-| 34 | 후속 판정 축이 계약 문자와 화면에서 어긋난다 — ① `INVENTORY_TRANSACTION` 문서 하류/LOT 축 ② 출고 「사용」 축 없음 ③ P/O 후속 enum 없음 | 구현 예정(I-5 · LOT 축 · enum 그대로 · §2 0단계) |
-| 35 | `:hold`/`:resume` 을 부르는 화면이 0건인데 W/O 층 「작업 중단」이 셋을 함께 잃는다 — ⓐ 사유 값 0건 ⓑ 구간 표 없음(`held` 는 상태 문자열 근사) ⓒ `RELEASED`→홀드→재개가 세션 없는 `IN_PROGRESS` | 구현 예정(I-6 · 계약 문자 그대로 · 셋 미저장 · §2 2단계 기준 3) |
-| 36 | 선발행 슬롯의 `lot.sourceTypeCode` 값이 `LOT_SOURCE_TYPE` 2값에 없다 — `GET /trace/lots?workOrderId=` 은 그 값을 전제 | 구현 예정(I-6 · 시드 `WORK_ORDER` 1행 · §2 0단계) |
-| 37 | `:release` 의 BOM 소요량 자동 산정 규칙이 어디에도 없다 — ⓐ `bom_component` 공정 칸 둘 중 어느 축 ⓑ `scrap_rate` 곱하나 | 구현 예정(I-6 · `routing_operation_id` 축 · 스크랩률 미적용 · §2 2단계 기준 1·4) |
-| 38 | `:cancel` 이 이미 발행된 자재 출고요청을 어떻게 하는지 아무 문서도 적지 않았다 — 덤으로 `W-02-06` 에 `reasonCode` 고르는 칸 없음 | 구현 예정(I-6 · 요청 안 건드림 · §2 2단계 기준 1 · I-8 인계) |
-| 39 | 마감 전 게이트 셋(POP 버퍼·미종료 홀드·실적 완결성)을 서버가 판정할 수단이 없다 — 계약 자인 | 구현 예정(I-6 · 게이트 0 · `OPEN_SESSION_EXISTS` 만 · §2 1단계 본길·계약 침묵) |
-| 40 | 긴급 발행(계획 없는 `POST`)이 만들 내부 P/O 의 공장·사업부를 풀 값이 어디에도 없다 — `W-02-07` §8 미결 1 ①안 불성립 | 구현 예정(I-6 · 400 `REQUIRED` · `internal-plan.ts` 보류 · §2 2단계 기준 2) |
+| 30 | 폐기 출고의 승인 게이트를 걸 축이 데이터에 없다 — 화면은 「전건 차단」으로 읽었고 서버는 상신한 전표만 막는다 | 구현함(I-4 · 상신 흔적으로 가른다 · §2 2단계 기준 5) |
+| 31 | 출고 라인이 잔액 차원 두 칸(`qualityStatusCode`·`inventoryStatusCode`)을 안 싣는다 | 구현함(I-4 · 2행 이상 400 `INVALID` · §2 2단계 기준 2) |
+| 32 | 취소 실행이 역트랜잭션의 영업일·시각·번호를 아무것도 안 받는다 — 04 `ShipmentCancel` 은 `businessDate`·`occurredAt` 필수 | 구현함(I-5 · 영업일 = 원 트랜잭션 · `{원 번호}-R` · §2 0단계·기준 4) |
+| 33 | 취소 승인이 반려되면 `CANCEL_REQUESTED` 를 되돌릴 경로가 없다 — `W-CO-09` §5-5·J-6 은 재상신을 전제 | 구현함(I-5 · 계약 문자 그대로 · 되돌리는 전이 0) |
+| 34 | 후속 판정 축이 계약 문자와 화면에서 어긋난다 — ① `INVENTORY_TRANSACTION` 문서 하류/LOT 축 ② 출고 「사용」 축 없음 ③ P/O 후속 enum 없음 | 구현함(I-5 · LOT 축 · enum 그대로 · §2 0단계) |
+| 35 | `:hold`/`:resume` 을 부르는 화면이 0건인데 W/O 층 「작업 중단」이 셋을 함께 잃는다 — ⓐ 사유 값 0건 ⓑ 구간 표 없음(`held` 는 상태 문자열 근사) ⓒ `RELEASED`→홀드→재개가 세션 없는 `IN_PROGRESS` | 구현함(I-6 · 계약 문자 그대로 · 셋 미저장 · §2 2단계 기준 3) |
+| 36 | 선발행 슬롯의 `lot.sourceTypeCode` 값이 `LOT_SOURCE_TYPE` 2값에 없다 — `GET /trace/lots?workOrderId=` 은 그 값을 전제 | 구현함(I-6 · 시드 `WORK_ORDER` 1행 · §2 0단계) |
+| 37 | `:release` 의 BOM 소요량 자동 산정 규칙이 어디에도 없다 — ⓐ `bom_component` 공정 칸 둘 중 어느 축 ⓑ `scrap_rate` 곱하나 | 구현함(I-6 · `routing_operation_id` 축 · 스크랩률 미적용 · §2 2단계 기준 1·4) |
+| 38 | `:cancel` 이 이미 발행된 자재 출고요청을 어떻게 하는지 아무 문서도 적지 않았다 — 덤으로 `W-02-06` 에 `reasonCode` 고르는 칸 없음 | 구현함(I-6 · 요청 안 건드림 · §2 2단계 기준 1 · I-8 인계) |
+| 39 | 마감 전 게이트 셋(POP 버퍼·미종료 홀드·실적 완결성)을 서버가 판정할 수단이 없다 — 계약 자인 | 구현함(I-6 · 게이트 0 · `OPEN_SESSION_EXISTS` 만 · §2 1단계 본길·계약 침묵) |
+| 40 | 긴급 발행(계획 없는 `POST`)이 만들 내부 P/O 의 공장·사업부를 풀 값이 어디에도 없다 — `W-02-07` §8 미결 1 ①안 불성립 | 구현함(I-6 · 400 `REQUIRED` · `internal-plan.ts` 보류 · §2 2단계 기준 2) |
 
 번호 20 은 결번 — 「`INBOUND_LOT` 대응 표 없음」으로 세웠다가 계약 안에 답이 있어(19 각주) 철회.
 번호 24 도 결번 — 「`erp_purchase_order_no` 유일 제약」으로 세웠다가 `W-01-11` §8 #3(「강제는 서버·DB 몫」 · 계약 반영 완료 · 이슈 재발행)과 §8 #4(「도메인 02 스펙 작성 시 함께 본다」)가 물음도 일정도 이미 세워 둔 것을 확인해 철회(I-2 재수립 R-9). 우리가 부분 유일을 걸었다는 사실은 아래 「알려둘 것」에 남긴다.
@@ -48,4 +48,4 @@
 - (I-3) `slices/I-3.md` §7-5 ⓐ~ⓗ · R-11 ⓘ~ⓡ 18건이 정본이다. 그 위에 구현·리뷰가 더한 것: **`:split` 은 한 요청이 채번을 둘 소모하고 트랜잭션이 깨지면 둘 다 결번**(§4-3) · `lot.manufactured_at` 을 채우지 않아 제조일이 LOT 쪽엔 없다(§7-5 ⓖ) · 무발주 `exceptionTypeCode` 필수가 등록에는 서고 `:split` 에는 안 선다(R-7 ②) · `:split` 에 `If-Match` 가 없고 `:split`·`…/variances` 는 409 미선언인데 멱등 409 를 낸다 · `…/variances` 404 는 계약 미선언 · `SplitPart` 에 `vehicleNo` 가 없어 초과 분리 도착의 차량번호가 유실된다(실려 오면 서버는 저장한다) · 등록이 계약에 없는 `remarks` 를 받아 저장한다 · LOT 이 붙은 부착 라인의 수량·품목을 치환으로 바꿀 수 있어 `lot.initial_qty` 와 어긋날 수 있다(026 갈래 ③ 의 입고 없는 판) · `PUT …/{id}` 헤더 FK 오류 문구가 등록 경로와 다르다(공용 그물) · 조회 4건에 403 이 없다(계약 미선언) · 입하일 필터는 UTC 하루다(하노이 06:00 도착이 전날에 잡힌다 · 입고 선례) · 목록 정렬은 `receipt_datetime` desc + PK(계약 침묵 · P/O 선례) · `labelIssued` 는 `document_issue_log.lot_id` 가 채워져야 산다 — 라벨 발행(`P-01-01`)이 `lot_id` 를 반드시 채워야 한다 · `document_issue_log(lot_id)` 인덱스가 없다(후속 마이그) · LOT 코어는 없는 `sourceId` 를 400 으로 거절한다 · 문의 14 의 표에 `inbound_receipt_no` 한 행을 더한다.
 - (I-4) `slices/I-4.md` §8-3 ⓐ~ⓘ · R-9 ⓙ~ⓝ · §8-4 ⓞ~ⓡ **18건**이 정본이다. 요지: M-c 마이그는 이미 적용돼 계약 노트 둘이 낡았다(ⓐ) · `:post`·`PUT …/lines` 200 에 ETag 없음, `:request-approval` 은 `version_no` 도 안 올림(ⓑ) · 404·400 미선언인데 낸다(ⓒ·ⓡ) · 출고일 필터 UTC 하루(ⓓ) · `erpMessageQueued=false` 고정(ⓕ) · 문의 022 권고안 ②의 `item.business_unit_id` 는 없는 칸(ⓗ) · `PUT …/lines` 를 부르는 화면 0건(ⓙ) · **승인 뒤 전기 전 라인 치환을 `STATE_LOCKED` 로 막는다 — 계약 밖 자물쇠**(ⓞ) · `AP-` 채번 기간키 UTC(ⓠ).
 - (I-5) `slices/I-5.md` §9-3 ⓐ~ⓛ · R-12 ⓜ~ⓤ **21건**이 정본이다. 요지: 취소 흔적의 정본은 `app.document_cancellation` 한 표(`goods_issue` 3칸 영구 널) · 역행 번호 `{원 번호}-R` · `screenId` 영구 생략 · `SUCCESSOR_EXISTS` 400 에 후속 목록 없음 · 반려로 잠긴 문서는 DB 직접 수정뿐.
-- (I-6) `slices/I-6.md` §9-3 ⓐ~ⓩ **25건**이 정본이다. 요지: 다섯 액션·`PUT` 200 에 ETag 없음(본문 `versionNo` 로 다음 If-Match) · `handoverNote`·`WorkOrderCancel.note`·`dueDate`(계획 있을 때) 를 받아서 버린다 · `resource-plans` 3건과 목록·상세 GET 은 403 미선언 · `ix_work_order_dispatch` 가 죽은 상태값을 문다 · `:release` 실패 시 `MIR-` 결번 · 4M 유일은 식 유일 인덱스라 `schema.prisma` 밖 · 마감 뒤 UPDATE 는 DB 트리거가 500 으로 막을 수 있다 · `W-02-08` 「달성률」 정렬 400 · **문의 14 의 표에 `work_order_no`·`issue_request_no` 두 행을 더한다**(`WO-{YYYYMMDD}-{SEQ4}` · `MIR-{YYYYMMDD}-{SEQ4}` — `plan_no`·`production_order_no` 는 040 답 뒤).
+- (I-6) `slices/I-6.md` §9-3 ⓐ~ⓩ **25건** + §11-2 ⓐ~ⓘ(구현·리뷰가 더한 9건)이 정본이다. 요지: 다섯 액션·`PUT` 200 에 ETag 없음(본문 `versionNo` 로 다음 If-Match) · `handoverNote`·`WorkOrderCancel.note`·`dueDate`(계획 있을 때) 를 받아서 버린다 · `resource-plans` 3건과 목록·상세 GET 은 403 미선언 · `ix_work_order_dispatch` 가 죽은 상태값을 문다 · `:release` 실패 시 `MIR-` 결번 · 4M 유일은 식 유일 인덱스라 `schema.prisma` 밖 · 마감 뒤 UPDATE 는 DB 트리거가 500 으로 막을 수 있다 · `W-02-08` 「달성률」 정렬 400 · **문의 14 의 표에 `work_order_no`·`issue_request_no` 두 행을 더한다**(`WO-{YYYYMMDD}-{SEQ4}` · `MIR-{YYYYMMDD}-{SEQ4}` — `plan_no`·`production_order_no` 는 040 답 뒤). 구현이 더한 것: `:hold` 의 `reasonCode` 공백은 400 · `:hold`/`:resume` 403 e2e 없음 · `WO-`·`MIR-` 번호의 날짜가 UTC 라 하노이 새벽 발행이 전날 번호를 받는다 · 계획 없는 `POST` 는 400 `REQUIRED`(040 답 전까지) · `:cancel` 은 `note` 를 버리고 `remarks` 를 안 건드린다 · `LotLifecycleService.moveWithin()` 이 LOT 의 `version_no` 를 올린다(선발행 LOT 을 든 화면의 If-Match 가 확정배포 뒤 낡는다) · `:close`/`:cancel` 의 If-Match 400/409 와 멱등 재전송의 아웃박스 단일 적재는 e2e 가 없다(후속).
