@@ -26,6 +26,8 @@ import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-u
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
+import { PickingController } from './picking/picking.controller';
+import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
@@ -51,6 +53,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
+    PickingController,
     PutawayRuleController,
     PurchaseOrderController,
     AsnController,
@@ -63,6 +66,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
+    PickingQueryService,
     PutawayRuleService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
