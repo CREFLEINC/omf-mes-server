@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService, TRANSITIONS } from '../../core/document-state';
-import { InventoryPostingService } from '../../core/inventory-posting';
+import { ConsumeMove, InventoryPostingService } from '../../core/inventory-posting';
 import { PostingInput } from '../../core/inventory-posting/posting.types';
 import { GoodsIssueLineWriteInput, PostIssueInput, postIssue } from './issue-posting';
 
@@ -75,6 +75,8 @@ interface Seed {
 
 function fake(seed: Seed = {}) {
   const raws: { sql: string; values: unknown[] }[] = [];
+  /** 문장 순서가 불변식이다 — 잠금 → consume → post(I-8.md R-6). */
+  const order: string[] = [];
   const backfilled: Row[] = [];
   const touched = new Set<string>();
   let requested = 0;
@@ -107,6 +109,7 @@ function fake(seed: Seed = {}) {
     },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       raws.push({ sql: strings.join('?'), values });
+      order.push('lock');
       return seed.balances ?? [balance()];
     },
   };
@@ -115,8 +118,14 @@ function fake(seed: Seed = {}) {
   }) as unknown as Prisma.TransactionClient;
 
   const posted: PostingInput[] = [];
+  const consumed: ConsumeMove[][] = [];
   const posting = {
+    consume: async (_tx: Prisma.TransactionClient, moves: ConsumeMove[]) => {
+      order.push('consume');
+      consumed.push(moves);
+    },
     post: async (_tx: Prisma.TransactionClient, input: PostingInput) => {
+      order.push('post');
       posted.push(input);
       requested = input.lines.length;
       return {
@@ -127,13 +136,14 @@ function fake(seed: Seed = {}) {
     },
   } as unknown as InventoryPostingService;
 
-  return { tx, posting, posted, raws, backfilled, touched };
+  return { tx, posting, posted, consumed, order, raws, backfilled, touched };
 }
 
 const input = (over: Partial<PostIssueInput> = {}): PostIssueInput => ({
   header: {
     goodsIssueId: ISSUE_ID,
     goodsIssueNo: 'GI-20260504-0001',
+    sourceDocumentTypeCode: 'GOODS_RECEIPT',
     sourceWarehouseId: WH,
     destinationTypeCode: null,
     destinationId: null,
@@ -182,6 +192,7 @@ describe('출고 전기', () => {
         header: {
           goodsIssueId: ISSUE_ID,
           goodsIssueNo: 'GI-20260504-0001',
+          sourceDocumentTypeCode: 'GOODS_RECEIPT',
           sourceWarehouseId: WH,
           destinationTypeCode: 'LOCATION',
           destinationId: DEST_LOC,
@@ -210,6 +221,7 @@ describe('출고 전기', () => {
           header: {
             goodsIssueId: ISSUE_ID,
             goodsIssueNo: 'GI-20260504-0001',
+            sourceDocumentTypeCode: 'GOODS_RECEIPT',
             sourceWarehouseId: WH,
             destinationTypeCode,
             destinationId: destinationTypeCode === null ? null : 55n,
@@ -328,6 +340,7 @@ describe('출고 전기', () => {
         header: {
           goodsIssueId: ISSUE_ID,
           goodsIssueNo: 'GI-20260504-0001',
+          sourceDocumentTypeCode: 'GOODS_RECEIPT',
           sourceWarehouseId: WH,
           destinationTypeCode: 'LOCATION',
           destinationId: DEST_LOC,
@@ -457,5 +470,46 @@ describe('출고 전기', () => {
     expect(caught?.getResponse()).toMatchObject({
       errors: [{ code: ERROR_CODE.STATE_LOCKED }],
     });
+  });
+
+  it('소진 — 헤더가 PICKING_ORDER 면 라인 전건을 consume 한다', async () => {
+    const { tx, posting, consumed, order } = fake();
+
+    await postIssue(
+      tx,
+      posting,
+      input({
+        header: {
+          goodsIssueId: ISSUE_ID,
+          goodsIssueNo: 'GI-20260504-0001',
+          sourceDocumentTypeCode: 'PICKING_ORDER',
+          sourceWarehouseId: WH,
+          destinationTypeCode: null,
+          destinationId: null,
+        },
+        // ⭐ 축은 «헤더»다 — 되짚기 칸이 빈 라인도 소진 대상이다(I-8.md R-4).
+        lines: [line({ pickingLineId: null })],
+      }),
+      1,
+    );
+
+    expect(consumed[0]).toHaveLength(1);
+    expect(consumed[0][0]).toMatchObject({
+      qty: new Prisma.Decimal(10),
+      field: 'lines[0].issueQty',
+    });
+    expect(consumed[0][0].dimension).toMatchObject({ itemId: ITEM, lotId: LOT, locationId: LOC });
+    // 잠금 → consume → post. 반대면 `available_qty` 가 피킹분을 빼고 재어 정상 출고가 400 이다.
+    expect(order).toEqual(['lock', 'consume', 'post']);
+  });
+
+  it('소진 — 헤더가 다른 유형이면 consume 을 부르지 않는다', async () => {
+    const { tx, posting, consumed, order } = fake();
+
+    // 회귀 — 피킹을 안 지난 출고는 `picked_qty` 를 건드릴 것이 없다.
+    await postIssue(tx, posting, input({ lines: [line({ pickingLineId: 77n })] }), 1);
+
+    expect(consumed).toEqual([]);
+    expect(order).toEqual(['lock', 'post']);
   });
 });
