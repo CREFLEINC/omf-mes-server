@@ -95,7 +95,8 @@ export class DocumentProgressQueryService {
       const source = this.sourceOf(mapping);
       return { [source.delegate]: source.lineDelegate === null ? true : { include: { [source.lineDelegate]: true } } };
     }
-    return mapping.lineDelegate === null ? {} : { [mapping.lineDelegate]: true };
+    // 비파생 7종은 전부 lineDelegate 를 가진다(표 실측) — null 가지는 도달 불가(Prisma 가 include:{} 를 던진다).
+    return { [mapping.lineDelegate as string]: true };
   }
 
   private orderBy(mapping: DocumentTypeMapping): Row[] {
@@ -135,14 +136,20 @@ export class DocumentProgressQueryService {
     return lotId !== undefined && LOT_LESS_LINES.has(mapping.lineDelegate);
   }
 
+  /**
+   * 외주 2종은 `noWhere`·`warehouseWhere` 가 «같은» 관계 키(`goods_issue`·`goods_receipt`)를
+   * 낸다 — 객체 스프레드로 합치면 뒤가 앞을 조용히 덮는다(`q` 유실). `AND` 배열로 묶어 조각을
+   * 살린다(빈 조각은 안 넣는다).
+   */
   private buildWhere(mapping: DocumentTypeMapping, query: DocumentProgressQuery): Row {
-    return {
-      ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
-      ...this.dateWhere(mapping.dateColumn, query.documentDateFrom, query.documentDateTo),
-      ...this.noWhere(mapping, query.q),
-      ...this.lineWhere(mapping, query.itemId, query.lotId),
-      ...this.warehouseWhere(mapping, query.warehouseId),
-    };
+    const clauses = [
+      query.statusCode === undefined ? {} : { status_code: query.statusCode },
+      this.dateWhere(mapping.dateColumn, query.documentDateFrom, query.documentDateTo),
+      this.noWhere(mapping, query.q),
+      this.lineWhere(mapping, query.itemId, query.lotId),
+      this.warehouseWhere(mapping, query.warehouseId),
+    ].filter((clause) => Object.keys(clause).length > 0);
+    return clauses.length === 0 ? {} : { AND: clauses };
   }
 
   /**

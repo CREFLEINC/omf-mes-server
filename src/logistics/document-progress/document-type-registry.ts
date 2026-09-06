@@ -35,8 +35,7 @@ export interface DocumentTypeMapping {
   warehouseFilter: ((warehouseId: number) => Record<string, unknown>) | null;
 }
 
-/** 9종 모두 `logistics` 스키마다 — 부팅 대조의 `schema_name` 쪽. */
-export const DOCUMENT_SCHEMA = 'logistics';
+/** 9종 모두 `logistics` 스키마다 — 부팅 대조의 `schema_name` 쪽. */ export const DOCUMENT_SCHEMA = 'logistics';
 
 export const DOCUMENT_TYPES: Record<LogisticsDocumentType, DocumentTypeMapping> = {
   PURCHASE_ORDER: { entityTypeCode: 'PURCHASE_ORDER', delegate: 'purchase_order', idColumn: 'purchase_order_id',
@@ -46,6 +45,7 @@ export const DOCUMENT_TYPES: Record<LogisticsDocumentType, DocumentTypeMapping> 
   INBOUND_RECEIPT: { entityTypeCode: 'INBOUND_RECEIPT', delegate: 'inbound_receipt', idColumn: 'inbound_receipt_id',
     noColumn: 'inbound_receipt_no', dateColumn: 'receipt_datetime', lineDelegate: 'inbound_receipt_line',
     plannedColumn: null, processedColumn: 'received_qty', subTypeColumn: null, cancelable: true, cancelledStatus: null,
+    // 입하의 dock_location_id 는 도크지 보관 창고가 아니다 — warehouseId 를 주면 0행(I-5.md §5-3).
     derivedFrom: null, warehouseFilter: null },
   GOODS_RECEIPT: { entityTypeCode: 'GOODS_RECEIPT', delegate: 'goods_receipt', idColumn: 'goods_receipt_id',
     noColumn: 'goods_receipt_no', dateColumn: 'receipt_datetime', lineDelegate: 'goods_receipt_line',

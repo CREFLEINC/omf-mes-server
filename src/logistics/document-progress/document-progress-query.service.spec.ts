@@ -61,6 +61,28 @@ describe('DocumentProgressQueryService', () => {
     expect(purchaseOrder.findManyCalls).toHaveLength(0);
   });
 
+  it('목록 — 외주 2종은 q 와 warehouseId 를 함께 걸 수 있다', async () => {
+    // noWhere·warehouseWhere 가 둘 다 `goods_issue` 관계 키를 낸다 — 스프레드로 합치면
+    // 뒤가 앞을 덮어 q 가 사라진다(리뷰 #220 Major). AND 배열이면 둘 다 살아 있어야 한다.
+    const subcontractIssue = delegateStub([]);
+    const service = new DocumentProgressQueryService(
+      fakePrisma({ subcontract_issue: subcontractIssue }),
+      fakeEligibility(),
+    );
+
+    await service.list({
+      documentTypeCode: 'SUBCONTRACT_ISSUE' as LogisticsDocumentType,
+      q: 'GI-1',
+      warehouseId: 5,
+    });
+
+    const where = subcontractIssue.findManyCalls[0].where as { AND: Args[] };
+    expect(where.AND).toEqual([
+      { goods_issue: { goods_issue_no: { contains: 'GI-1', mode: 'insensitive' } } },
+      { goods_issue: { source_warehouse_id: 5 } },
+    ]);
+  });
+
   it('목록 — 라인 수량 칸이 하나뿐인 유형은 planned = processed 다', async () => {
     const row = {
       inbound_receipt_id: 1n,
