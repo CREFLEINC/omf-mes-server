@@ -9,6 +9,7 @@ import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
+import { DocumentProgressModule } from './document-progress/document-progress.module';
 import { GoodsIssueController } from './goods-issue/goods-issue.controller';
 import { GoodsIssueQueryService } from './goods-issue/goods-issue-query.service';
 import { GoodsIssueUpdateService } from './goods-issue/goods-issue-update.service';
@@ -45,6 +46,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     ApprovalModule,
     DocumentStateModule,
     LotRegistryModule,
+    DocumentProgressModule,
   ],
   controllers: [
     GoodsIssueController,
