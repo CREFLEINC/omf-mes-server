@@ -10,6 +10,7 @@ import {
   ReverseInput,
   ReverseResult,
 } from './posting.types';
+import { ConsumeMove, PickMove, consumeBalances, pickBalances } from './reservation-qty';
 import {
   REVERSAL_NO_SUFFIX,
   assertReversible,
@@ -36,8 +37,10 @@ interface OrgAxis {
  * 미확정이라(`omf-mes#213`) 그 표를 지금 만들면 정해지지 않은 정책을 지어내는 것이 된다.
  * 대신 **라인의 `from`/`to` 가 이동을 말한다** — 유형 목록 없이도 완전하다.
  *
- * ⛔ `reserved_qty`·`picked_qty` 는 건드리지 않는다. 원장 라인에 그 칸이 없고, 예약은
- * `inventory.inventory_reservation` 이 정본이다. 별도 코어다.
+ * ⛔ `reserved_qty`·`picked_qty` 는 «원장 라인»이 건드리지 않는다 — 원장 라인에 그 칸이 없고
+ * 예약은 `inventory.inventory_reservation` 이 정본이다. 대신 `pick()`·`consume()` 이 그 두 칸의
+ * 유일한 통로다(`reservation-qty.ts`). ⛔ 예약을 «거는» 함수는 아직 없다 — 어느 잔액 행에
+ * 거는지를 정할 근거가 계약에 없다(I-8.md §5 · 문의 045). 첫 사용처는 I-22 다.
  */
 @Injectable()
 export class InventoryPostingService {
@@ -149,6 +152,19 @@ export class InventoryPostingService {
       businessDate: input.businessDate,
       alreadyReversed: false,
     };
+  }
+
+  /**
+   * 피킹 — 잔액의 `reserved`/`picked` 와 예약의 `consumed_qty` 를 옮긴다. `post()` 와 같은 규약으로
+   * 호출자가 연 트랜잭션 «안»에서, 호출자가 이미 잠근 행 위에서 돈다(§3-4).
+   */
+  async pick(tx: Prisma.TransactionClient, moves: PickMove[]): Promise<void> {
+    await pickBalances(tx, moves);
+  }
+
+  /** 소진 — 출고가 `on_hand` 를 내리기 «전»에 그만큼의 `picked_qty` 를 내린다. */
+  async consume(tx: Prisma.TransactionClient, moves: ConsumeMove[]): Promise<void> {
+    await consumeBalances(tx, moves);
   }
 
   /**
