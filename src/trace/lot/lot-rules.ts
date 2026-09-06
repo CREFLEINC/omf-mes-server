@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { day } from '../../common/master';
+import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
 
 /**
  * LOT 등록의 «규칙» — 번호 출처의 짝, 중복의 성격, 질의 조건.
@@ -71,7 +72,7 @@ export function expiryWhere(from: string | undefined, to: string | undefined): P
 
 /** 「이 W/O 를 원천으로 발행된 LOT 만」 — 원천은 유형과 id 가 «짝»이다. */
 export function workOrderWhere(workOrderId: number | undefined): Prisma.lotWhereInput {
-  return workOrderId === undefined ? {} : { source_type_code: 'WORK_ORDER', source_id: workOrderId };
+  return workOrderId === undefined ? {} : { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: workOrderId };
 }
 
 /** 「false 면 completedAt 이 비어 있는 것만, true 면 값이 있는 것만」(계약). */

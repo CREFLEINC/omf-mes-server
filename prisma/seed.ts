@@ -1083,6 +1083,7 @@ const SEED: CodeGroupSeed[] = [
     values: [
       { code: 'INBOUND_RECEIPT_LINE', codeName: '입하 라인', order: 10 },
       { code: 'RECYCLE_ENTRY', codeName: '재생재 등록', order: 20 },
+      { code: 'WORK_ORDER', codeName: '작업지시(선발행)', order: 30 },
     ],
   },
   {
