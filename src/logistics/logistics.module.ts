@@ -40,6 +40,7 @@ import { PurchaseOrderController } from './purchase-order/purchase-order.control
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
 import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
+import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.service';
 
 /**
  * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하·P/O 요청.
@@ -90,6 +91,7 @@ import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-rece
     MaterialIssueShortageService,
     MaterialIssueRequestService,
     ShopfloorReceiptQueryService,
+    ShopfloorReceiptService,
   ],
 })
 export class LogisticsModule {}
