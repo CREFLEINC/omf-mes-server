@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -18,7 +19,7 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
-import { setEtag } from '../../common/optimistic-lock';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ValidationReport, validateWorkOrder } from './validation';
@@ -26,18 +27,22 @@ import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
 import { WorkOrderListSummary } from './work-order-summary';
+import { WorkOrderCreate, WorkOrderUpdate, WorkOrderWriteService } from './work-order-write.service';
 import { WorkOrderResourcePlanView, WorkOrderView } from './work-order-view';
 
 /**
- * W/O 조회 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③). 질의·본문의 형·enum 검증은 계약
- * 검증 가드(`@Contract`)가 이미 한다 — 여기서 다시 검사하지 않는다.
- * ⛔ 권한 가드는 `validation` 에서만 본다 — 계약이 나머지 넷에 403 을 선언하지 않았다
- * (`plan.md` §5 규칙 1).
+ * W/O 조회 + 발행·수정 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③·④).
+ * 중단·재개(`:hold`/`:resume`)는 ④b 다 — 예산(비테스트 350)을 넘어 뗐다.
+ * 질의·본문의 형·enum 검증은 계약 검증 가드(`@Contract`)가 이미 한다 — 여기서 다시
+ * 검사하지 않는다.
+ * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — `validation`·`POST`·`PUT` 셋이고
+ * 그 매핑은 `derived-permissions.ts` 에 이미 있다(추가 0건 · `plan.md` §5 규칙 1).
  */
 @Controller('production/work-orders')
 export class WorkOrderController {
   constructor(
     private readonly queries: WorkOrderQueryService,
+    private readonly writes: WorkOrderWriteService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
@@ -60,6 +65,38 @@ export class WorkOrderController {
     const { view, versionNo } = await this.queries.detail(workOrderId, query);
     setEtag(response, versionNo);
     return view;
+  }
+
+  /** ⭐ 201 에 ETag 를 싣는다 — 발행 직후 `:release`·`PUT` 이 그 토큰을 그대로 쓴다(계약). */
+  @Post()
+  @Contract('POST /production/work-orders')
+  async create(
+    @Req() request: Request,
+    @Body() body: WorkOrderCreate,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<WorkOrderView> {
+    const created = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
+      const workOrderId = await this.writes.create(body, currentSession(request)?.userId);
+      return this.queries.detail(workOrderId, {});
+    });
+    setEtag(response, created.versionNo);
+    return created.view;
+  }
+
+  @Put(':workOrderId')
+  @Contract('PUT /production/work-orders/{workOrderId}')
+  update(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: WorkOrderUpdate,
+  ): Promise<WorkOrderView> {
+    // ⛔ `runVersioned` 를 못 쓴다 — 계약이 200 에 ETag 를 선언하지 않아 새 토큰을 내릴
+    //    자리가 없다. 다음 If-Match 는 본문의 `versionNo` 가 준다(R-22).
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.writes.update(workOrderId, version, body, currentSession(request)?.userId);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
   }
 
   @Get(':workOrderId/resource-plans')
@@ -100,4 +137,13 @@ export class WorkOrderController {
   validation(@Param('workOrderId', ParseIntPipe) workOrderId: number): Promise<ValidationReport> {
     return validateWorkOrder(this.prisma, workOrderId);
   }
+}
+
+/** `PUT` 은 If-Match 가 필수라 가드가 이미 막았다 — 여기 오면 값이 있다(형제 선례). */
+function versionOf(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+  }
+  return version;
 }
