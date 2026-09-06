@@ -19,10 +19,13 @@ import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
+import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ValidationReport, validateWorkOrder } from './validation';
-import { WorkOrderDetailQuery, WorkOrderQueryService } from './work-order-query.service';
+import { WorkOrderListQuery } from './work-order-list-where';
+import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
+import { WorkOrderListSummary } from './work-order-summary';
 import { WorkOrderResourcePlanView, WorkOrderView } from './work-order-view';
 
 /**
@@ -40,6 +43,12 @@ export class WorkOrderController {
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
     private readonly prisma: PrismaService,
   ) {}
+
+  @Get()
+  @Contract('GET /production/work-orders')
+  list(@Query() query: WorkOrderListQuery): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
+    return this.queries.list(query);
+  }
 
   @Get(':workOrderId')
   @Contract('GET /production/work-orders/{workOrderId}')

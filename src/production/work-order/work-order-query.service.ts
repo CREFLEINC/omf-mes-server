@@ -1,7 +1,25 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
+import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PreIssuedLotSummaryView, WorkOrderProgressView, preIssuedLotsOf, progressOf } from './work-order-progress';
+import { ValidationSummary, summarize, validateWorkOrder } from './validation';
+import {
+  RELEASABLE_ELIGIBLE_WHERE,
+  WorkOrderListQuery,
+  buildOrderBy,
+  buildWorkOrderWhere,
+} from './work-order-list-where';
+import {
+  PreIssuedLotSummaryView,
+  ResultSums,
+  WorkOrderProgressView,
+  preIssuedLotsOf,
+  preIssuedLotsOfMany,
+  progressOf,
+  progressOfMany,
+} from './work-order-progress';
+import { UNDETERMINABLE_DELAY_WHERE, WorkOrderListSummary, delayedWhere, workOrderListSummaryOf } from './work-order-summary';
 import {
   DISPLAY_JOIN,
   WorkOrderResourcePlanView,
@@ -10,6 +28,9 @@ import {
   workOrderResourcePlanView,
   workOrderView,
 } from './work-order-view';
+
+/** 목록 행 — 상세와 «같은» 매퍼(`workOrderView`)를 쓰고 `validation` 만 `withValidation` 일 때 얹는다. */
+export type WorkOrderListItem = Omit<WorkOrderView, 'validation'> & { validation?: ValidationSummary };
 
 /**
  * 선발행 슬롯의 원천 유형 — `src/trace/lot/lot-rules.ts workOrderWhere()` 와 같은 문자열.
@@ -26,10 +47,121 @@ export interface WorkOrderDetailQuery {
   withPreIssuedLots?: boolean;
 }
 
-/** 조회 2건 — 상세 GET · 4M 계획 배정 목록(PR ①). 집계 두 함수는 PR ② 목록이 재사용한다. */
+/** 조회 3건 — 상세 GET(①) · 4M 계획 배정 목록(①) · 목록 GET(②, 질의 23). */
 @Injectable()
 export class WorkOrderQueryService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** where 는 순수 함수가 짓고 `releasable`ⓒ 만 후보를 좁혀 뺀다(N+1 금지 · §7-5). */
+  async list(query: WorkOrderListQuery): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
+    const page = pageRequest(query);
+    const orderBy = buildOrderBy(query.sort);
+    const where = await this.releasableWhere(buildWorkOrderWhere(query), query.releasable);
+    const now = new Date();
+
+    // `withSummary` 는 목록·건수·요약을 «같은 트랜잭션»에서 낸다(계약).
+    const { rows, total, summary } = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.work_order.findMany({ where, orderBy, skip: page.skip, take: page.take, include: DISPLAY_JOIN });
+      const total = await tx.work_order.count({ where });
+      const summary = query.withSummary === true ? await this.summaryOf(tx, where, total, now) : undefined;
+      return { rows, total, summary };
+    });
+    const ids = rows.map((row) => row.work_order_id);
+
+    const [progress, preIssuedLots, erpQueued, validation] = await Promise.all([
+      query.withProgress === false ? undefined : this.progressMany(rows),
+      query.withPreIssuedLots === true ? this.preIssuedLotsMany(ids) : undefined,
+      this.erpQueuedMany(ids),
+      query.withValidation === true ? this.validationMany(ids) : undefined,
+    ]);
+
+    const items: WorkOrderListItem[] = rows.map((row) => {
+      const view = workOrderView(row, {
+        progress: progress?.get(row.work_order_id),
+        preIssuedLots: query.withPreIssuedLots === true ? (preIssuedLots?.get(row.work_order_id) ?? preIssuedLotsOf([], [])) : undefined,
+        erpMessageQueued: erpQueued.has(row.work_order_id),
+      });
+      return query.withValidation === true ? { ...view, validation: validation?.get(row.work_order_id) } : view;
+    });
+    return { items, page: { page: page.page, size: page.size, total }, summary };
+  }
+
+  /** ⓐⓑ+유형으로 좁힌 후보만 `validateWorkOrder`(③)를 부른다 — 페이지 밖도 봐야 「true 의 여집합」이 맞다(비용 · PR 본문). */
+  private async releasableWhere(base: Prisma.work_orderWhereInput, releasable?: boolean): Promise<Prisma.work_orderWhereInput> {
+    if (releasable === undefined) return base;
+
+    const candidates = await this.prisma.work_order.findMany({
+      where: { AND: [base, RELEASABLE_ELIGIBLE_WHERE] },
+      select: { work_order_id: true },
+    });
+    const reports = await Promise.all(candidates.map((row) => validateWorkOrder(this.prisma, Number(row.work_order_id))));
+    const passingIds = candidates.filter((_, i) => summarize(reports[i]).blockCount === 0).map((row) => row.work_order_id);
+
+    // `releasable=false` 는 그 여집합이다 — 후보 밖(이미 배포됐거나 자원 미배정·긴급)도 포함한다.
+    const idFilter = releasable ? { work_order_id: { in: passingIds } } : { work_order_id: { notIn: passingIds } };
+    return { AND: [base, idFilter] };
+  }
+
+  private async summaryOf(
+    tx: Prisma.TransactionClient,
+    where: Prisma.work_orderWhereInput,
+    totalCount: number,
+    now: Date,
+  ): Promise<WorkOrderListSummary> {
+    const [statusCounts, orderQtyAgg, resultAgg, delayedCount, undeterminableDelayCount] = await Promise.all([
+      tx.work_order.groupBy({ by: ['status_code'], where, _count: { work_order_id: true } }),
+      tx.work_order.aggregate({ where, _sum: { order_qty: true } }),
+      tx.production_result.aggregate({
+        where: { work_order: where },
+        _sum: { good_qty: true, defect_qty: true, hold_qty: true, scrap_qty: true, rework_qty: true },
+      }),
+      tx.work_order.count({ where: { AND: [where, delayedWhere(now)] } }),
+      tx.work_order.count({ where: { AND: [where, UNDETERMINABLE_DELAY_WHERE] } }),
+    ]);
+    return workOrderListSummaryOf({ totalCount, statusCounts, orderQtySum: orderQtyAgg._sum.order_qty, resultSums: resultAgg._sum, delayedCount, undeterminableDelayCount });
+  }
+
+  private async progressMany(rows: WorkOrderRow[]): Promise<Map<bigint, WorkOrderProgressView>> {
+    const groups = await this.prisma.production_result.groupBy({
+      by: ['work_order_id'],
+      where: { work_order_id: { in: rows.map((row) => row.work_order_id) } },
+      _sum: { good_qty: true, defect_qty: true, hold_qty: true, scrap_qty: true, rework_qty: true },
+    });
+    const sums = new Map<bigint, ResultSums>(groups.map((group) => [group.work_order_id, group._sum]));
+    const inputs = rows.map((row) => ({ workOrderId: row.work_order_id, orderQty: row.order_qty, plannedEndAt: row.planned_end_at, completedAt: row.completed_at }));
+    return progressOfMany(inputs, sums, new Date());
+  }
+
+  /** ①의 단건 정의(`production_result_lot_allocation` 유무)와 «같은» 집계를 `GROUP BY source_id` 로 낸다. */
+  private async preIssuedLotsMany(workOrderIds: bigint[]): Promise<Map<bigint, PreIssuedLotSummaryView>> {
+    const slots = await this.prisma.lot.findMany({
+      where: { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: { in: workOrderIds } },
+      select: { lot_id: true, source_id: true },
+    });
+    if (slots.length === 0) return new Map();
+
+    const allocated = await this.prisma.production_result_lot_allocation.findMany({
+      where: { lot_id: { in: slots.map((slot) => slot.lot_id) } },
+      select: { lot_id: true },
+      distinct: ['lot_id'],
+    });
+    return preIssuedLotsOfMany(slots.map((slot) => ({ workOrderId: slot.source_id, lotId: slot.lot_id })), allocated.map((row) => row.lot_id));
+  }
+
+  private async erpQueuedMany(workOrderIds: bigint[]): Promise<Set<bigint>> {
+    const rows = await this.prisma.integration_message.findMany({
+      where: { target_type_code: WORK_ORDER_TARGET_TYPE, target_id: { in: workOrderIds } },
+      select: { target_id: true },
+      distinct: ['target_id'],
+    });
+    return new Set(rows.map((row) => row.target_id));
+  }
+
+  /** 목록 `withValidation` — 페이지 안 행마다만 부른다(`releasable` 후보 집합과는 별개). */
+  private async validationMany(workOrderIds: bigint[]): Promise<Map<bigint, ValidationSummary>> {
+    const reports = await Promise.all(workOrderIds.map((id) => validateWorkOrder(this.prisma, Number(id))));
+    return new Map(workOrderIds.map((id, i) => [id, summarize(reports[i])]));
+  }
 
   /** 없으면 404 다(계약 선언). */
   async detail(workOrderId: number, query: WorkOrderDetailQuery): Promise<{ view: WorkOrderView; versionNo: number }> {

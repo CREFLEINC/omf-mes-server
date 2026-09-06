@@ -56,6 +56,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
   /** 설비·작업자가 «같은 숫자 id» 를 갖도록 못박은 값 — 유형이 유일키를 가르는지 보려면 필요하다. */
   let twinId: bigint;
   let equipmentPlanId: number;
+  /** 목록 GET(PR ②) 전용 — `workOrder` 의 후속(의존 표 1행) · priority_no 가 더 낮다. */
+  let secondWorkOrderId: number;
+  /** `releasable`·`withValidation` e2e 전용 — EMERGENCY 유형(계획 없음), 후보 집합에서부터 빠진다. */
+  let emergencyWorkOrderId: number;
   const ids = {
     plant: 0n,
     businessUnit: 0n,
@@ -237,6 +241,100 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .get(`/api/production/work-orders/${workOrderId}/validation`)
         .set('Cookie', noPermCookie)
         .expect(403);
+    });
+  });
+
+  describe('목록 GET (PR ②)', () => {
+    it('목록 — 기간을 비워도 400 이 아니다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/production/work-orders')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
+    });
+
+    it('목록 — withSummary=true 면 요약이 필터 전체 기준이다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?productionPlanId=${ids.productionPlan}&withSummary=true&size=1`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // 쪽은 size=1 로 잘렸어도 요약의 totalCount 는 필터에 걸린 전체(이 계획 아래 W/O 2건)다.
+      expect(response.body.items).toHaveLength(1);
+      expect(response.body.page.total).toBe(2);
+      expect(response.body.summary.totalCount).toBe(2);
+      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
+    });
+
+    it('목록 — successorOfWorkOrderId 가 의존 표를 푼다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?successorOfWorkOrderId=${workOrderId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(response.body.items.map((item: { workOrderId: number }) => item.workOrderId)).toEqual([secondWorkOrderId]);
+    });
+
+    it('목록 — 기본 정렬이 priorityNo,asc 다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?productionPlanId=${ids.productionPlan}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // secondWorkOrder(priority_no=10)가 workOrder(기본값 100)보다 앞선다.
+      expect(response.body.items.map((item: { workOrderId: number }) => item.workOrderId)).toEqual([
+        secondWorkOrderId,
+        workOrderId,
+      ]);
+    });
+
+    it('목록 — releasable=true 는 BLOCK 있는 W/O 를 뺀다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?q=${PREFIX}&releasable=true`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const itemIds = response.body.items.map((item: { workOrderId: number }) => item.workOrderId);
+      // workOrder 는 설비(twinId)가 DISPOSED 라 BLOCK(EQUIPMENT_NOT_IN_SERVICE) 이다 — 후보였지만 걸러진다.
+      expect(itemIds).not.toContain(workOrderId);
+      // secondWorkOrder 는 자원 배정이 있고 BLOCK 이 없어 통과한다(대조군).
+      expect(itemIds).toContain(secondWorkOrderId);
+      expect(response.body.page.total).toBe(itemIds.length);
+      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
+    });
+
+    it('목록 — releasable=false 는 긴급·미배정도 낸다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?q=${PREFIX}&releasable=false`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const itemIds = response.body.items.map((item: { workOrderId: number }) => item.workOrderId);
+      // 후보였으나 BLOCK 인 workOrder · 유형부터 후보 밖인 emergencyWorkOrder 둘 다 여집합에 든다.
+      expect(itemIds).toContain(workOrderId);
+      expect(itemIds).toContain(emergencyWorkOrderId);
+      // secondWorkOrder 는 releasable=true 의 통과자라 false 여집합에는 없다.
+      expect(itemIds).not.toContain(secondWorkOrderId);
+    });
+
+    it('목록 — withValidation=true 는 항목마다 validation 요약을 싣는다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/production/work-orders?productionPlanId=${ids.productionPlan}&withValidation=true`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const byId = new Map(
+        response.body.items.map((item: { workOrderId: number; validation: unknown }) => [item.workOrderId, item.validation]),
+      );
+      expect(byId.get(workOrderId)).toMatchObject({ passed: false, blockCount: 1 });
+      expect(byId.get(secondWorkOrderId)).toMatchObject({ passed: true, blockCount: 0 });
+      for (const validation of byId.values()) {
+        expect(validation).toEqual(
+          expect.objectContaining({ passed: expect.any(Boolean), blockCount: expect.any(Number), warnCount: expect.any(Number) }),
+        );
+      }
+      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
     });
   });
 
@@ -433,6 +531,59 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         uom_id: uom.uom_id,
       },
     });
+
+    // 목록 GET(PR ②) 전용 — 같은 계획 아래 두 번째 W/O. priority_no 를 낮춰 기본 정렬을 보고,
+    // `workOrder` 의 후속으로 걸어 `successorOfWorkOrderId` 가 의존 표를 푸는지 본다.
+    const secondWorkOrder = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WO2`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 50,
+        uom_id: uom.uom_id,
+        status_code: 'PLANNED',
+        priority_no: 10,
+      },
+    });
+    secondWorkOrderId = Number(secondWorkOrder.work_order_id);
+    await prisma.work_order_dependency.create({
+      data: { predecessor_work_order_id: workOrder.work_order_id, successor_work_order_id: secondWorkOrder.work_order_id },
+    });
+    // `releasable=true` 가 이 후보를 통과시키는지 보는 대조군 — 자원 배정은 있고 BLOCK 은 없다
+    // (자격 미달은 WARN 뿐이라 통과한다).
+    await prisma.work_order_resource_assignment.create({
+      data: { work_order_id: secondWorkOrder.work_order_id, resource_type_code: 'WORKER', worker_id: worker.worker_id },
+    });
+
+    // `releasable`ⓒ 의 후보 집합 자체(유형)에서 빠지는 긴급 W/O — 계획 필터 스코프 테스트를
+    // 건드리지 않게 별도 계획(같은 발주) 아래에 심는다. `productionPlanId` 는 계약 필수 칸이라
+    // 계획 없이 심으면 이 파일의 무필터 목록 테스트가 계약 검증에서 깨진다.
+    const secondPlan = await prisma.production_plan.create({
+      data: {
+        production_order_id: order.production_order_id,
+        plan_no: `${PREFIX}-PP2`,
+        plan_date: new Date('2026-09-06T00:00:00.000Z'),
+        planned_qty: 10,
+        uom_id: uom.uom_id,
+        bom_id: bom.bom_id,
+        routing_id: routing.routing_id,
+        status_code: 'CONFIRMED',
+      },
+    });
+    const emergencyWorkOrder = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WO3`,
+        production_plan_id: secondPlan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 10,
+        uom_id: uom.uom_id,
+        status_code: 'PLANNED',
+        work_order_type_code: 'EMERGENCY',
+      },
+    });
+    emergencyWorkOrderId = Number(emergencyWorkOrder.work_order_id);
   }
 
   async function makeUser(): Promise<void> {
@@ -480,6 +631,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.work_order_resource_assignment.deleteMany({
       where: { work_order: { work_order_no: { startsWith: PREFIX } } },
     });
+    // FK 가 `work_order` 를 막는다 — 지우기 전에 의존 표를 먼저 비운다.
+    await prisma.work_order_dependency.deleteMany({ where: { predecessor_work_order_id: ids.workOrder } });
     await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
