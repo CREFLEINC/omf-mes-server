@@ -1,10 +1,6 @@
 /**
- * 확정·배포가 곁들여 발행하는 자재 출고요청(§4-3). `src/logistics/material-issue-request/`
- * 가 조회를 갖고 나서도 production 이 표에 **직접** INSERT 한다 — 선례는 shipment 가
- * `goods_issue` 행을 스스로 만드는 자리이고, 도메인끼리 나누는 것은 타입뿐이다.
- *
+ * 확정·배포가 곁들여 발행하는 자재 출고요청(§4-3) — production 이 표에 **직접** INSERT 한다.
  * ⭐ 소요식은 `src/core/bom` 으로 올라갔다(I-8.md §7-3 · R-19) — `shortage` 와 **한 함수**다.
- * 아래 재수출은 이 도메인의 호출자가 코어를 직접 알지 않아도 되게 남긴 것이다.
  */
 export {
   BOM_COMPONENT_SELECT,
@@ -17,10 +13,9 @@ export {
 const EMERGENCY_TYPE = 'EMERGENCY';
 
 /**
- * ⛔ **판정에 쓰지 않는다** — 컬럼이 NOT NULL 이라 넣을 뿐이다. 값 목록은 계약
- * `MaterialIssueRequest.statusCode` 가 지목한 `LOGISTICS_DOCUMENT_STATUS`(시드 4값)이고
- * 정본 상수는 `src/logistics/material-issue-request/material-issue-request.constants.ts`
- * 다 — 도메인 간 import 를 만들지 않으려 값만 복사해 둔다(I-8.md §4-3 · R-11).
+ * ⛔ **판정에 쓰지 않는다** — 컬럼이 NOT NULL 이라 넣을 뿐이다. 값 목록은 계약이 지목한
+ * `LOGISTICS_DOCUMENT_STATUS`(시드 4값)이고 정본은 `material-issue-request.constants.ts`
+ * 다 — 도메인 간 import 를 안 만들려 값만 복사해 둔다(I-8.md §4-3 · R-11).
  */
 export const ISSUE_REGISTERED = 'REGISTERED';
 

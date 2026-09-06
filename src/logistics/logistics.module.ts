@@ -26,6 +26,9 @@ import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-u
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
+import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
+import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
+import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
@@ -57,6 +60,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptController,
     InboundReceiptSplitController,
     InboundVarianceController,
+    MaterialIssueRequestController,
   ],
   providers: [
     GoodsIssueQueryService,
@@ -72,6 +76,8 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptUpdateService,
     InboundReceiptSplitService,
     InboundVarianceService,
+    MaterialIssueRequestQueryService,
+    MaterialIssueShortageService,
   ],
 })
 export class LogisticsModule {}
