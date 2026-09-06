@@ -1,7 +1,9 @@
 /**
- * 작업 전 점검 통제 판정 조회 1건 — `GET /production/precheck-decisions`(I-11 PR ①).
+ * 작업 전 점검 통제 판정 조회 1건 `GET /production/precheck-decisions`(I-11 PR ①) +
+ * 기록 `POST /production/precheck-decisions`(I-11 PR ⑤).
  *
- * ⭐ 판정 이력은 **직접 INSERT** 한다 — 이 PR 에 `POST` 가 없다(PR ⑤ 몫).
+ * ⭐ 조회가 보는 판정 이력(d1~dOther)은 **직접 INSERT** 한다 — 등록 경로를 태우면
+ * 조회 단언이 등록 구현에 매달린다. 등록 갈래(PR ⑤)만 API 로 만든다.
  * ⛔ `TRUNCATE` 를 쓰지 않는다 — FK 역순 `DELETE` 로 정리한다(I-9 §7-2).
  */
 import { INestApplication } from '@nestjs/common';
@@ -20,12 +22,19 @@ import { parseIfMatch } from '../src/common/optimistic-lock';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-pde-probe';
+const NOPERM_ID = 'e2e-pde-noperm';
 const PASSWORD = 'PDE-통제판정-비밀번호';
 const PREFIX = 'PDE2E';
+const ROLE = 'E2E_PRECHECK_DECISION';
+/** 계약이 403 을 선언한 유일한 자리 — `derived-permissions.ts:231`. */
+const PERMISSIONS = ['P-02-02'];
 const BASE = '/api/production/precheck-decisions';
 
 const T0 = '2026-09-07T01:00:00.000Z';
 const T1 = '2026-09-07T02:00:00.000Z';
+// 직접 INSERT 픽스처(d1~d3)가 T1 까지 쓴다 — 등록 e2e 는 그보다 늦은 시각을 써야
+// `decided_at DESC` 정렬에서 확실히 «가장 최근»이 된다.
+const T2 = '2026-09-07T03:00:00.000Z';
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -44,14 +53,17 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   let workOrderAId: number;
+  let workOrderEmergencyId: number;
   let equipmentAId: number;
   let equipmentBId: number;
   let d1Id: number;
   let d2Id: number;
   let d3Id: number;
   let dOtherId: number;
+  const workerNo = `${PREFIX}-WK`;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -62,7 +74,7 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
 
     await cleanup();
     await makeFixtures();
-    await makeUser();
+    await makeUsers();
   });
 
   afterAll(async () => {
@@ -124,6 +136,127 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
     expect(parseIfMatch(String(response.headers.etag ?? ''))).toBeNull();
   });
 
+  it('PASSED 판정이 201 로 기록되고 목록에 뜬다', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'WARN',
+      decisionCode: 'PASSED',
+    }).expect(201);
+    expect(validator('POST /production/precheck-decisions', 201)(response.body)).toBe(true);
+    expect(response.body).toMatchObject({ workOrderId: workOrderAId, equipmentId: equipmentAId, decisionCode: 'PASSED' });
+
+    const listed = await request(app.getHttpServer())
+      .get(`${BASE}?workOrderId=${workOrderAId}&equipmentId=${equipmentAId}&size=1`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(listed.body.items[0]).toMatchObject({ precheckDecisionId: response.body.precheckDecisionId });
+  });
+
+  it('⭐ BLOCKED 도 기록된다 — 차단이 남는다', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'BLOCK',
+      decisionCode: 'BLOCKED',
+    }).expect(201);
+    expect(response.body.decisionCode).toBe('BLOCKED');
+  });
+
+  it('OVERRIDDEN 인데 긴급 W/O 가 아니면 400 INVALID', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'BLOCK',
+      decisionCode: 'OVERRIDDEN',
+      overrideReasonCode: 'EMERGENCY_WORK_ORDER',
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'overrideReasonCode', code: 'INVALID' });
+  });
+
+  it('OVERRIDDEN 인데 사유가 없으면 400 REQUIRED', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderEmergencyId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'BLOCK',
+      decisionCode: 'OVERRIDDEN',
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'overrideReasonCode', code: 'REQUIRED' });
+  });
+
+  it('OVERRIDDEN 이 아닌데 사유를 보내면 400 INVALID', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'WARN',
+      decisionCode: 'PASSED',
+      overrideReasonCode: 'OTHER',
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'overrideReasonCode', code: 'INVALID' });
+  });
+
+  it('basisInspectionId 가 없는 점검이면 400 INVALID', async () => {
+    // 존재하지 않는 id — FK 존재만 본다(유형·주기·판정은 화면 몫 · §7-1 3).
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'WARN',
+      decisionCode: 'PASSED',
+      basisInspectionId: 999999999,
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'basisInspectionId', code: 'INVALID' });
+  });
+
+  it('X-Worker-No 가 worker_no 로 저장된다', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'WARN',
+      decisionCode: 'PASSED',
+    }).expect(201);
+    expect(response.body.workerNo).toBe(workerNo);
+  });
+
+  it('⛔ 응답에 ETag 가 없다', async () => {
+    const response = await postDecision({
+      workOrderId: workOrderAId,
+      equipmentId: equipmentAId,
+      decidedAt: T2,
+      controlLevelCode: 'WARN',
+      decisionCode: 'PASSED',
+    }).expect(201);
+    expect(parseIfMatch(String(response.headers.etag ?? ''))).toBeNull();
+  });
+
+  it('기록 — 권한 없으면 403 이다', async () => {
+    await postDecision(
+      {
+        workOrderId: workOrderAId,
+        equipmentId: equipmentAId,
+        decidedAt: T2,
+        controlLevelCode: 'WARN',
+        decisionCode: 'PASSED',
+      },
+      { cookie: noPermCookie },
+    ).expect(403);
+  });
+
+  function postDecision(body: Record<string, unknown>, options: { cookie?: string[] } = {}) {
+    return request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', options.cookie ?? cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', workerNo)
+      .send(body);
+  }
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '통제판정검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -180,6 +313,30 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
     const woA = await workOrder('WOA');
     workOrderAId = Number(woA.work_order_id);
     const woB = await workOrder('WOB');
+    // 우회(`OVERRIDDEN`) 판정 e2e 전용 — 서버가 `work_order_type_code` 로 긴급을 판정한다.
+    const woEmergency = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOE`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 100,
+        uom_id: uom.uom_id,
+        status_code: 'IN_PROGRESS',
+        work_order_type_code: 'EMERGENCY',
+      },
+    });
+    workOrderEmergencyId = Number(woEmergency.work_order_id);
+
+    await prisma.worker.create({
+      data: {
+        worker_no: workerNo,
+        worker_name: '통제판정검사작업자',
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        status_code: 'EMPLOYED',
+      },
+    });
 
     const decision = (data: {
       workOrderId: bigint;
@@ -207,20 +364,40 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
     dOtherId = Number(dOther.precheck_decision_id);
   }
 
-  async function makeUser(): Promise<void> {
+  async function makeUsers(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '통제판정검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '통제판정기록검사용' } });
+    await prisma.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+
+    // 권한 0건 계정 — 기록만 403 을 선언하므로 이 계정으로 그 갈래를 본다(역할을 안 붙인다).
+    const other = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '통제판정권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   /** 만든 행을 FK 역순으로 지운다(§10-1 · ⛔ TRUNCATE 금지). */
@@ -234,14 +411,24 @@ describe('작업 전 점검 통제 판정 조회 (e2e)', () => {
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
+    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (!user) return;
-    await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.user_role.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
+    }
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!user) continue;
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
   }
 });
