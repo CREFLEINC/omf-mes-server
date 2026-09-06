@@ -35,6 +35,8 @@ import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
+import { PutawayTaskController } from './putaway/putaway-task.controller';
+import { PutawayTaskService } from './putaway/putaway-task.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
@@ -63,6 +65,7 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
     GoodsReceiptController,
     PickingController,
     PutawayRuleController,
+    PutawayTaskController,
     PurchaseOrderController,
     AsnController,
     InboundReceiptController,
@@ -79,6 +82,7 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
     PickingPickService,
     PickingQueryService,
     PutawayRuleService,
+    PutawayTaskService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
     AsnQueryService,

@@ -139,6 +139,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/putaway-rules/{putawayRuleId}:activate': ['W-06-14'],
   'POST /logistics/putaway-rules/{putawayRuleId}:deactivate': ['W-06-14'],
 
+  // `M-01-05` 적치·입고 완료 — ⭐ 도출표에 «이미 있는» 키에 화면을 더하는 둘째 자리다
+  // (`GET /app/users` 선례). 도출표는 제품 입고(`M-04-04`)만 적었는데 자재 적치를 소유한
+  // 화면은 `M-01-05` 다(§5-7 액션 [적치 완료]) — 없으면 물류담당이 403 을 받는다.
+  'POST /logistics/putaway-tasks/{putawayTaskId}:complete': ['M-01-05'],
+  // `M-01-07` 임시 위치 적재 — 계약이 403 을 선언했는데 도출표에 없다(미등록이면 500 ·
+  // `permission.guard.ts:47-53`). ⛔ `M-04-04` 를 넣지 않는다 — 그 화면 §5-6 이
+  // 「임시 위치 적재는 `M-01-07` 이 자재 전용이라 제품용 경로가 없다」라 적었다.
+  'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary': ['M-01-07'],
+
   // `W-06-09` ERP-MES I/F 연계정의 관리 — §3 이 「정의 추가」만 적어 수정·활성 전이·연결
   // 시험이 도출표에 안 들어왔다. 넷 다 이 화면이 소유한 자원의 같은 자리다.
   'PUT /integration/interface-definitions/{interfaceDefinitionId}': ['W-06-09'],

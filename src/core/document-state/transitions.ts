@@ -238,4 +238,24 @@ export const TRANSITIONS: TransitionRegistry = {
    */
   'logistics.inbound_receipt.status_code': { ...DOCUMENT_CANCEL_ACTIONS },
   'logistics.goods_receipt.status_code': { ...DOCUMENT_CANCEL_ACTIONS },
+
+  /**
+   * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
+   * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
+   * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
+   * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — `M-01-05` §6 「이미 완료된 지시 400 STATE_LOCKED」.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'logistics.putaway_task.status_code': {
+    'putaway-complete': {
+      from: ['PENDING'],
+      to: 'COMPLETED',
+      sourceOperation: 'POST /logistics/putaway-tasks/{putawayTaskId}:complete',
+    },
+    'putaway-complete-temporary': {
+      from: ['PENDING'],
+      to: 'COMPLETED_TEMPORARY',
+      sourceOperation: 'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary',
+    },
+  },
 };

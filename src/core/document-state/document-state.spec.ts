@@ -22,6 +22,8 @@ const GOODS_RECEIPT_STATUS = 'logistics.goods_receipt.status_code';
 const WORK_ORDER_STATUS = 'production.work_order.status_code';
 /** I-11 PR ② 가 여는 축 — 시드 `WORK_SESSION_STATUS`(RUNNING·STOPPED·ENDED) 3값. */
 const WORK_SESSION_STATUS = 'production.work_session.status_code';
+/** I-12 PR ① 이 여는 축 — 시드 `PUTAWAY_TASK_STATUS`(PENDING·COMPLETED·COMPLETED_TEMPORARY) 3값. */
+const PUTAWAY_TASK_STATUS = 'logistics.putaway_task.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -257,6 +259,7 @@ describe('DocumentStateService', () => {
           INBOUND_RECEIPT_STATUS,
           LIFECYCLE,
           MOLD_STATUS,
+          PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
           WORK_ORDER_STATUS,
           WORK_SESSION_STATUS,
@@ -265,7 +268,29 @@ describe('DocumentStateService', () => {
       // +6 — 출고 키에 취소 2, 입하·입고 키가 각각 2(I-5 PR ④).
       // +5 — W/O 키(I-6 PR ④).
       // +4 — W/O 키에 세션 시작 1, 세션 키 신설 3(I-11 PR ②).
-      expect(service.registered()).toHaveLength(25);
+      // +2 — 적치 지시 키 신설(I-12 PR ①).
+      expect(service.registered()).toHaveLength(27);
+    });
+
+    it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
+      expect(
+        service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'PENDING'),
+      ).toMatchObject({ from: ['PENDING'], to: 'COMPLETED' });
+      expect(
+        service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete-temporary', 'PENDING'),
+      ).toMatchObject({ from: ['PENDING'], to: 'COMPLETED_TEMPORARY' });
+
+      const actions = service
+        .registered()
+        .filter((entry) => entry.column === PUTAWAY_TASK_STATUS)
+        .map((entry) => entry.action);
+      expect(actions.sort()).toEqual(['putaway-complete', 'putaway-complete-temporary'].sort());
+      expect(() =>
+        service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'COMPLETED'),
+      ).toThrow();
+      expect(() =>
+        service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'COMPLETED_TEMPORARY'),
+      ).toThrow();
     });
   });
 });
