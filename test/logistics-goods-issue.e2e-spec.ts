@@ -703,14 +703,43 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
       data: { is_active: false },
     });
 
-    const response = await requestApproval(fixture);
-
-    await prisma.approval_route.updateMany({
-      where: { approval_route_id: { in: routeIds } },
-      data: { is_active: true },
-    });
+    let response: request.Response;
+    try {
+      response = await requestApproval(fixture);
+    } finally {
+      // 요청 자체가 죽어도 되돌린다 — 안 그러면 뒤따르는 상신 e2e 전건이 이 코드로 무너진다.
+      await prisma.approval_route.updateMany({
+        where: { approval_route_id: { in: routeIds } },
+        data: { is_active: true },
+      });
+    }
     expect(response.status).toBe(400);
     expect(response.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+  });
+
+  it('PUT …/lines — 승인이 끝난 뒤 전기 전 치환은 400 STATE_LOCKED 다(승인자가 본 라인을 얼린다)', async () => {
+    const lot = await makeLot();
+    await stock(lot, 100);
+    const created = await createIssue({
+      reasonCode: 'IQC_FAIL',
+      postImmediately: false,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(201);
+    const fixture = {
+      goodsIssueId: created.body.goodsIssue.goodsIssueId as number,
+      versionNo: Number(created.headers.etag),
+    };
+    const submitted = await requestApproval(fixture).expect(202);
+    await decide('approve', submitted.body.approvalRequestId);
+
+    const response = await replaceLines(fixture, [lineBody({ lotId: lot, issueQty: 100 })]);
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', field: 'items' });
+    const lines = await prisma.goods_issue_line.findMany({
+      where: { goods_issue_id: fixture.goodsIssueId },
+    });
+    expect(lines.map((line) => Number(line.issue_qty))).toEqual([10]);
   });
 
   it('POST …:request-approval — 두 번 부르면 400 APPROVAL_IN_PROGRESS', async () => {

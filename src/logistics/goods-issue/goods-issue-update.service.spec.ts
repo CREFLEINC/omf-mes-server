@@ -44,6 +44,8 @@ interface Seed {
   existingLineIds?: number[];
   /** `assertNoOpenRequest` 가 막는다(PENDING). */
   open?: boolean;
+  /** 승인이 끝난(APPROVED) 요청이 있다 — 치환 자물쇠(#213 Major-1). */
+  approved?: boolean;
   /** `approval.request` 가 던지는 코드(결재선 갈래). */
   routeError?: string;
 }
@@ -67,7 +69,11 @@ function stub(seed: Seed = {}) {
       findUnique: async () =>
         (seed.missing ?? false)
           ? null
-          : { goods_issue_id: BigInt(ISSUE), source_warehouse_id: BigInt(WAREHOUSE) },
+          : {
+              goods_issue_id: BigInt(ISSUE),
+              source_warehouse_id: BigInt(WAREHOUSE),
+              status_code: seed.statusCode ?? 'REGISTERED',
+            },
     },
     item: { findMany: async () => [{ item_id: BigInt(ITEM) }] },
     lot: { findMany: async () => [{ lot_id: BigInt(LOT), item_id: BigInt(ITEM) }] },
@@ -86,6 +92,12 @@ function stub(seed: Seed = {}) {
         : [{ status_code: seed.statusCode ?? 'REGISTERED', version_no: seed.versionNo ?? 3 }];
     },
     $executeRaw: async () => void order.push('shift'),
+    approval_request: {
+      findFirst: async () => {
+        order.push('approved');
+        return (seed.approved ?? false) ? { approval_request_id: REQUEST_ID } : null;
+      },
+    },
     goods_issue: {
       updateMany: async (args: Row) => {
         order.push('bump');
@@ -232,6 +244,16 @@ describe('출고 라인 치환', () => {
     expect(order).toEqual(['lock', 'no-open']);
   });
 
+  it('치환 — 승인이 끝난(APPROVED) 전표는 400 STATE_LOCKED 다(승인자가 본 라인이 원장에 나간다)', async () => {
+    const { service, order, updated } = stub({ approved: true });
+
+    const error = await thrown(() => service.replaceLines(ISSUE, 3, [item()], 1));
+
+    expect(codes(error)).toEqual([ERROR_CODE.STATE_LOCKED]);
+    expect(order).toEqual(['lock', 'no-open', 'approved']);
+    expect(updated).toHaveLength(0);
+  });
+
   it('치환 — 남의 전표 라인 id 를 주면 400 INVALID 다', async () => {
     const { service, removed } = stub({ existingLineIds: [901] });
 
@@ -268,7 +290,7 @@ describe('출고 라인 치환', () => {
 
     const result = await service.replaceLines(ISSUE, 3, [item({ goodsIssueLineId: 901 })], 1);
 
-    expect(order).toEqual(['lock', 'no-open', 'existing', 'shift', 'update', 'bump']);
+    expect(order).toEqual(['lock', 'no-open', 'approved', 'existing', 'shift', 'update', 'bump']);
     // 라인이 바뀌면 부모 상세의 내용이 바뀐다 — 버전을 올린다(§6-3).
     expect(bumps[0]).toEqual({
       where: { goods_issue_id: ISSUE, version_no: 3 },

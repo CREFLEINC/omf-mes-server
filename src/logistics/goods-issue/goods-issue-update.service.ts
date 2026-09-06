@@ -88,6 +88,10 @@ export class GoodsIssueUpdateService {
         BigInt(goodsIssueId),
         APPROVAL_TYPE,
       );
+      // ⛔ 승인이 «끝난» 뒤에도 막는다 — `assertApproved` 는 시각 순서를 안 봐서 승인 뒤 바꾼
+      //    라인이 그대로 원장에 나간다(#213 리뷰 Major-1). 승인을 되무르는 경로가 계약에 없어
+      //    전기 전까지 라인은 승인자가 본 그대로 얼어 있다.
+      await assertNotApproved(tx, goodsIssueId);
 
       const existing = await tx.goods_issue_line.findMany({
         where: { goods_issue_id: goodsIssueId },
@@ -171,9 +175,12 @@ export class GoodsIssueUpdateService {
   ): Promise<{ approvalRequestId: number }> {
     const exists = await this.prisma.goods_issue.findUnique({
       where: { goods_issue_id: goodsIssueId },
-      select: { goods_issue_id: true },
+      select: { status_code: true },
     });
     if (exists === null) throw new NotFoundException('없는 출고 전표입니다.');
+    // 채번 «전»에 한 번 거른다 — 전기된 전표에 상신을 되풀이하면 AP 번호만 매번 빈다(#213
+    // Minor-1). 잠근 뒤의 재검사는 경합 때문에 그대로 둔다.
+    assertRegistered(exists.status_code, '상신할');
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다 — 열린 트랜잭션 안에서 부르면 이 요청이
     //    커넥션을 둘 쥐고, 동시 요청이 풀을 채우면 P2024 로 죽는다(P/O :288 그대로).
@@ -234,6 +241,25 @@ async function lockHeader(
 }
 
 /** 계약 문자 그대로 400 이다 — 409 는 If-Match 저장 충돌 전용이다(`approval.service.ts:263`). */
+/** 승인이 끝난(전기 전) 전표의 라인 자물쇠 — 재로드로 풀리지 않으니 `STATE_LOCKED` 다. */
+async function assertNotApproved(
+  tx: Prisma.TransactionClient,
+  goodsIssueId: number,
+): Promise<void> {
+  const approved = await tx.approval_request.findFirst({
+    where: {
+      target_type_code: TARGET_TYPE,
+      target_id: BigInt(goodsIssueId),
+      approval_type_code: APPROVAL_TYPE,
+      status_code: 'APPROVED',
+    },
+    select: { approval_request_id: true },
+  });
+  if (approved !== null) {
+    throw one(field('items', ERROR_CODE.STATE_LOCKED, '승인이 끝난 출고의 라인은 고칠 수 없습니다.'));
+  }
+}
+
 function assertRegistered(statusCode: string, what: string): void {
   if (statusCode !== REGISTERED) {
     throw one(field('statusCode', ERROR_CODE.STATE_LOCKED, `등록 상태에서만 ${what} 수 있습니다.`));
