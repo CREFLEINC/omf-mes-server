@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import type { ConsumeMove } from '../../core/inventory-posting';
 
 /**
  * 출고 «전기» — 잔액 선잠금 · 음수 손검사 · 원장 out · 되짚기. 입고 `receipt-posting.ts` 의
@@ -29,6 +30,8 @@ const DESTINATION_LOCATION = 'LOCATION';
 export interface GoodsIssueHeaderWriteInput {
   goodsIssueId: bigint;
   goodsIssueNo: string;
+  /** ⭐ 피킹 소진의 **축**이다 — `'PICKING_ORDER'` 면 라인 «전건»이 소진 대상이다(I-8.md R-4). */
+  sourceDocumentTypeCode: string;
   sourceWarehouseId: bigint;
   destinationTypeCode: string | null;
   destinationId: bigint | null;
@@ -42,6 +45,12 @@ export interface GoodsIssueLineWriteInput {
   issueQty: Prisma.Decimal;
   uomId: bigint;
   sourceLocationId: bigint;
+  /**
+   * 되짚기용 «선택» 칸이다 — 계약 `GoodsIssueLineUpsert` required 5 에 없어 화면이 비울 수
+   * 있다. ⛔ 소진 축으로 쓰지 않는다: 비면 `consume()` 이 안 돌고 손검사가 피킹분을 뺀
+   * `available` 로 재어 **정상 출고가 400** 이 된다(I-8.md R-4).
+   */
+  pickingLineId?: bigint | null;
 }
 
 export interface PostIssueInput {
@@ -113,7 +122,7 @@ export async function postIssue(
 
   const errors: ErrorItem[] = [];
   const picked = new Map<string, BalanceRow>();
-  for (const [id, { qty, index }] of demanded) {
+  for (const [id, { index }] of demanded) {
     const rows = found.get(id) ?? [];
     if (rows.length === 0) {
       errors.push(
@@ -133,16 +142,25 @@ export async function postIssue(
     if (row.available_qty === null) {
       throw new Error(`available_qty 가 비어 있다: inventory_balance ${id}`);
     }
+    picked.set(id, row);
+  }
+  // ⭐ 판정 오류는 소진 «전»에 낸다 — 없는 행을 소진하려 들면 코어가 다른 400 을 던진다.
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+
+  const consumed = await consumePicked(tx, posting, input, fromKeys, picked);
+
+  for (const [id, { qty, index }] of demanded) {
+    const row = picked.get(id) as BalanceRow;
     // ⛔ `on_hand_qty` 만 보면 안 된다 — 트리거 첫 갈래가 「on_hand < reserved+picked+blocked」도
     //    막아 예약이 걸린 재고를 내면 500 이다. ⛔ `item.negative_stock_allowed` 는 보지 않는다 —
     //    계약 `GoodsIssueLineUpsert.issueQty` 가 「보유 수량 이하」로 예외 없이 닫았다(§3-3).
-    if (row.available_qty.lessThan(qty)) {
+    // ⭐ `available_qty` 는 STORED 생성 컬럼이라 `consume()` 뒤에도 «옛 값»이다 — 되읽기 대신
+    //    방금 내린 소진량을 더한다(같은 트랜잭션이고 행은 잠겨 있다 · I-8.md R-6).
+    if ((row.available_qty as Prisma.Decimal).plus(consumed.get(id) ?? ZERO).lessThan(qty)) {
       errors.push(
         field(`lines[${index}].issueQty`, ERROR_CODE.NEGATIVE_BALANCE, '보유 수량보다 많이 낼 수 없습니다.'),
       );
-      continue;
     }
-    picked.set(id, row);
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
@@ -218,6 +236,62 @@ export async function postIssue(
       data: { inventory_transaction_line_id: ledger[index].inventory_transaction_line_id },
     });
   }
+}
+
+const ZERO = new Prisma.Decimal(0);
+
+/** ⭐ 피킹 소진의 축 — 출고 «헤더»의 원천 유형이다(I-8.md R-4). */
+const PICKING_ORDER = 'PICKING_ORDER';
+
+/**
+ * ⭐ **손검사 «앞»**에서 돈다 — `available = on_hand − reserved − picked − blocked` 라
+ * 피킹된 재고는 가용에서 이미 빠져 있고, 그대로 두면 피킹을 마친 정상 출고가 언제나 400
+ * `NEGATIVE_BALANCE` 다(I-8.md §3-5). `picked↓` → `on_hand↓` 순서라 트리거
+ * `check_balance_qty()` 의 문장별 불변식도 지킨다(R-6).
+ *
+ * ⛔ 라인의 `pickingLineId` 축으로 «가르지» 않는다 — 헤더가 `PICKING_ORDER` 면 라인 전건이
+ * 대상이다. ⚠ 피킹이 올린 행과 출고가 내리는 행이 다르면 코어가 0행 → 400 이고, 그것이
+ * 옳다(다른 위치의 피킹분을 여기서 소진할 수 없다).
+ *
+ * 돌려주는 것은 «키별 소진 합»이다 — 손검사가 `available_qty` 에 더해 쓴다.
+ */
+async function consumePicked(
+  tx: Tx,
+  posting: InventoryPostingService,
+  input: PostIssueInput,
+  fromKeys: BalanceKey[],
+  picked: Map<string, BalanceRow>,
+): Promise<Map<string, Prisma.Decimal>> {
+  const consumed = new Map<string, Prisma.Decimal>();
+  if (input.header.sourceDocumentTypeCode !== PICKING_ORDER) return consumed;
+
+  const moves: ConsumeMove[] = [];
+  for (const [index, line] of input.lines.entries()) {
+    const id = keyOf(fromKeys[index]);
+    const row = picked.get(id) as BalanceRow;
+    moves.push({
+      dimension: {
+        legalEntityId: row.legalEntityId,
+        businessUnitId: row.businessUnitId,
+        plantId: row.plantId,
+        warehouseId: row.warehouseId,
+        locationId: row.locationId,
+        itemId: row.itemId,
+        // ⚠ 사본의 SELECT 가 `COALESCE(lot_id,0)` 만 내린다 — 출고 라인은 `lot_id` NOT NULL 이라
+        //    0 이 「LOT 없음」인 갈래가 서지 않는다(코어 `BalanceDimension.lotId` 는 실제 컬럼이다).
+        lotId: row.lotKey === 0n ? null : row.lotKey,
+        qualityStatusCode: row.quality_status_code,
+        inventoryStatusCode: row.inventory_status_code,
+        ownershipTypeCode: row.ownership_type_code,
+        ownerPartnerId: row.owner_partner_id,
+      },
+      qty: line.issueQty,
+      field: `lines[${index}].issueQty`,
+    });
+    consumed.set(id, (consumed.get(id) ?? ZERO).plus(line.issueQty));
+  }
+  await posting.consume(tx, moves);
+  return consumed;
 }
 
 /**
