@@ -88,8 +88,7 @@ export class GoodsIssueUpdateService {
         BigInt(goodsIssueId),
         APPROVAL_TYPE,
       );
-      // ⛔ 승인이 «끝난» 뒤에도 막는다 — `assertApproved` 는 시각 순서를 안 봐서 승인 뒤 바꾼 라인이
-      //    그대로 원장에 나간다. 승인을 되무르는 경로가 계약에 없어 전기 전까지 라인은 얼어 있다.
+      // ⛔ 승인이 «끝난» 뒤에도 막는다 — `assertApproved` 는 시각 순서를 안 봐 승인 뒤 바꾼 라인이 원장에 나간다.
       await assertNotApproved(tx, goodsIssueId);
 
       const existing = await tx.goods_issue_line.findMany({
