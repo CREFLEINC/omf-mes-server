@@ -659,8 +659,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
    * §11-1 정리 순서 — `goods_issue_line → goods_issue → picking_line → picking_order →
    * inventory_reservation → material_issue_request_line → material_issue_request →
    * inventory_balance/원장 → lot → …`.
-   * ⛔ `inventory_transaction` 을 TRUNCATE 하지 않는다 — e2e DB 를 다른 스위트와 나눠 쓴다.
-   *   파티션 PK 가 `(id, business_date)` 라도 하위질의 DELETE 는 그대로 선다.
+   * 원장(`inventory_transaction*`)만은 TRUNCATE 한다 — 아래 주석(트리거가 DELETE 를 막는다).
    */
   async function cleanup(): Promise<void> {
     const lots = `SELECT lot_id FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`;
