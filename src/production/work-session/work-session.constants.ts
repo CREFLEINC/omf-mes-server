@@ -10,3 +10,9 @@ export const REASON_GROUP_BY_EVENT_TYPE: Record<string, string> = {
   STOP: 'WORK_SESSION_EVENT_REASON',
   CONTROL_OVERRIDE: 'CONTROL_OVERRIDE_REASON',
 };
+
+/**
+ * 세션을 열고 닫는 오퍼레이션이 «만드는» 사건 셋(A-25). STOP·RESUME 은 PR ④ 몫이다.
+ * ⚠ 상태 칸·액션 이름은 쓰는 서비스가 각자 지역 상수로 둔다(`work-order-transition.service.ts:21` 선례).
+ */
+export const EVENT_TYPE = { START: 'START', END: 'END', CONTROL_OVERRIDE: 'CONTROL_OVERRIDE' } as const;

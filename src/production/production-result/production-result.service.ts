@@ -139,7 +139,7 @@ export class ProductionResultService {
         ...ref('equipment_id', body.equipmentId),
         ...ref('mold_id', body.moldId),
         ...ref('work_session_id', body.workSessionId),
-        // `shift_id`·`terminal_id` 는 비운다 — 요청에 칸이 없고(D1) 단말 토큰이 아직 없다.
+        // `shift_id`·`terminal_id` 는 비운다 — 검증은 `src/auth/terminal-token.ts` 가 지지만 실적은 안 읽는다(D1).
         status_code: RESULT_STATUS,
         // 헤더 값 «그대로» — 멱등 기록이 만료된 뒤의 재전송을 이 UNIQUE 가 둘째 그물로 막는다(§4-4).
         idempotency_key: context.idempotencyKey,
