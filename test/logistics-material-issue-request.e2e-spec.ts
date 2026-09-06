@@ -1,6 +1,6 @@
 /**
- * 자재 출고요청 조회 3건 — `GET /logistics/material-issue-requests` ·
- * `/{materialIssueRequestId}` · `/shortage`(I-8 PR ②).
+ * 자재 출고요청 4건 — `GET /logistics/material-issue-requests` ·
+ * `/{materialIssueRequestId}` · `/shortage`(PR ②) · **`POST`**(PR ③).
  * 화면 `M-01-08`(자재 출고)이 목록·상세를, `W-02-10`(추가 자재 출고 요청)이 `shortage` 를 읽는다.
  *
  * ⭐ 픽스처는 `material_issue_request(_line)` 을 **직접 INSERT** 한다 — 요청을 만드는
@@ -22,6 +22,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { ISSUE_REQUEST_REGISTERED } from '../src/logistics/material-issue-request/material-issue-request.constants';
+import { parseIfMatch } from '../src/common/optimistic-lock';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ISSUE_REGISTERED } from '../src/production/work-order/material-issue';
 
@@ -29,8 +30,11 @@ const LOGIN_ID = 'e2e-mir-probe';
 const PASSWORD = 'MIR-출고요청-비밀번호';
 const PREFIX = 'MIRE2E';
 const ROLE = 'E2E_MIR';
-/** `:release` 회귀 한 건에만 필요하다 — 조회 3건은 계약이 403 을 선언하지 않았다. */
-const PERMISSIONS = ['W-02-04'];
+/** `:release` 회귀와 발행 `POST` 에만 필요하다 — 조회 3건은 계약이 403 을 선언하지 않았다. */
+const PERMISSIONS = ['W-02-04', 'W-02-10'];
+/** 403 을 재는 짝 — 세션은 서고 `W-02-10` 만 없다(`logistics-goods-issue.e2e-spec.ts:658` 선례). */
+const NO_PERM_LOGIN_ID = 'e2e-mir-noperm';
+const NO_PERM_ROLE = 'E2E_MIR_NP';
 const BASE = '/api/logistics/material-issue-requests';
 
 function validator(operation: string, status = 200): ValidateFunction {
@@ -65,10 +69,11 @@ interface ShortageBody {
   shortageQty: number;
 }
 
-describe('자재 출고요청 조회 3건 (e2e)', () => {
+describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   const ids = {
     plant: 0n,
@@ -84,6 +89,7 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
     location: 0n,
     productionPlan: 0n,
     workOrder: 0n,
+    postWorkOrder: 0n,
     lot: 0n,
   };
   /** 두 요청 — 첫째는 필터 대상, 둘째는 라인 둘을 가진 상세 대상이다. */
@@ -261,6 +267,125 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
     expect(listed.body.items[0].statusCode).toBe(ISSUE_REQUEST_REGISTERED);
   });
 
+  it('요청을 발행하면 201 과 상세가 온다', async () => {
+    const validate = validator('POST /logistics/material-issue-requests', 201);
+
+    const response = await post(createBody()).expect(201);
+
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body.materialIssueRequest).toMatchObject({
+      workOrderId: Number(ids.postWorkOrder),
+      destinationLocationId: Number(ids.location),
+      statusCode: ISSUE_REQUEST_REGISTERED,
+      reasonCode: 'URGENT_WO_RESPONSE',
+      remarks: '라인 정지로 추가 소요',
+    });
+    // 주체는 세션 계정이다 — 자동 발행과 같은 축이다(R-12).
+    expect(response.body.materialIssueRequest.requestedBy).toBeGreaterThan(0);
+    // 채번은 DB 에 등재된 `MIR-{YYYYMMDD}-{SEQ4}` 규칙이다(§4-1).
+    expect(response.body.materialIssueRequest.issueRequestNo).toMatch(/^MIR-20260907-/);
+    // 라인 번호는 서버가 본문 순서대로 1..M 으로 매긴다.
+    expect(response.body.lines.map((line: { lineNo: number }) => line.lineNo)).toEqual([1, 2]);
+    expect(response.body.lines[1]).toMatchObject({
+      itemId: Number(ids.componentItemB),
+      requestedQty: 7,
+      bomComponentId: Number(ids.bomComponentB),
+      issuedQty: 0,
+    });
+  });
+
+  it('같은 Idempotency-Key 재전송이 요청을 두 벌 만들지 않는다', async () => {
+    const key = randomUUID();
+    const body = createBody();
+    const before = await prisma.material_issue_request.count({
+      where: { work_order_id: ids.postWorkOrder },
+    });
+
+    const first = await post(body, key).expect(201);
+    const again = await post(body, key).expect(201);
+
+    expect(again.body.materialIssueRequest.materialIssueRequestId).toBe(
+      first.body.materialIssueRequest.materialIssueRequestId,
+    );
+    const after = await prisma.material_issue_request.count({
+      where: { work_order_id: ids.postWorkOrder },
+    });
+    expect(after - before).toBe(1);
+  });
+
+  it('⛔ 요청 발행이 inventory_reservation 을 만들지 않는다', async () => {
+    // 예약을 «거는» 자리를 계약이 정하지 않았다 — 지어내지 않는다(§5 · 문의 045).
+    await post(createBody()).expect(201);
+
+    expect(
+      await prisma.inventory_reservation.count({ where: { warehouse_id: ids.warehouse } }),
+    ).toBe(0);
+    // 피킹 지시도 마찬가지다 — 만드는 오퍼레이션이 계약에 0건이다.
+    expect(
+      await prisma.picking_order.count({ where: { warehouse_id: ids.warehouse } }),
+    ).toBe(1);
+  });
+
+  it('⛔ 응답에 ETag 가 없다', async () => {
+    // 계약 201 에 `headers` 가 없다 — `runVersioned` 를 쓰지 않는다(§4-7 · R-1 표).
+    // ⚠ Express 가 본문 해시로 붙이는 약한 ETag(`W/"…"`)는 «잠금 토큰이 아니다» —
+    //    `setEtag` 가 내리는 것은 `version_no` 숫자다(`optimistic-lock.ts:20`).
+    const response = await post(createBody()).expect(201);
+
+    expect(parseIfMatch(String(response.headers.etag ?? ''))).toBeNull();
+    // If-Match 는 「선택」이라 받되 무시한다 — 400 도 내지 않는다(I-7 §4-6).
+    const withStale = await request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', '99')
+      .send(createBody())
+      .expect(201);
+    expect(parseIfMatch(String(withStale.headers.etag ?? ''))).toBeNull();
+  });
+
+  it('무권한 사용자는 403', async () => {
+    // 미등록이면 `PermissionGuard` 가 던져 500 이다 — 403 이 `derived-permissions.ts:175` 의 증거다.
+    const response = await request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send(createBody());
+
+    expect(response.status).toBe(403);
+  });
+
+  /** 계약 `MaterialIssueRequestCreate` — required 5 + 선택 3 전건. */
+  function createBody(): Record<string, unknown> {
+    return {
+      workOrderId: Number(ids.postWorkOrder),
+      destinationLocationId: Number(ids.location),
+      requiredAt: '2026-09-08T01:00:00.000Z',
+      reasonCode: 'URGENT_WO_RESPONSE',
+      remarks: '라인 정지로 추가 소요',
+      lines: [
+        { itemId: Number(ids.componentItemA), requestedQty: 12, uomId: Number(ids.uom) },
+        {
+          itemId: Number(ids.componentItemB),
+          requestedQty: 7,
+          uomId: Number(ids.uom),
+          bomComponentId: Number(ids.bomComponentB),
+        },
+      ],
+      businessDate: '2026-09-07',
+      occurredAt: '2026-09-07T03:00:00.000Z',
+    };
+  }
+
+  function post(body: Record<string, unknown>, key = randomUUID()) {
+    return request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send(body);
+  }
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -429,6 +554,20 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
       },
     });
     ids.workOrder = workOrder.work_order_id;
+    // 발행 `POST` 전용 W/O — 조회 목록의 PK 역순 단언을 흔들지 않으려고 축을 가른다.
+    const postWorkOrder = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WOP`,
+        production_plan_id: plan.production_plan_id,
+        routing_operation_id: operation.routing_operation_id,
+        item_id: item.item_id,
+        order_qty: 100,
+        uom_id: uom.uom_id,
+        status_code: 'RELEASED',
+        default_wip_location_id: location.location_id,
+      },
+    });
+    ids.postWorkOrder = postWorkOrder.work_order_id;
 
     const lot = await prisma.lot.create({
       data: {
@@ -527,17 +666,22 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
   }
 
   async function makeUser(): Promise<void> {
+    cookie = await login(LOGIN_ID, ROLE, PERMISSIONS);
+    noPermCookie = await login(NO_PERM_LOGIN_ID, NO_PERM_ROLE, ['W-02-04']);
+  }
+
+  async function login(loginId: string, roleCode: string, permissions: string[]): Promise<string[]> {
     const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '출고요청검사', status_code: 'EMPLOYED' },
+      data: { login_id: loginId, user_name: '출고요청검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
     const role = await prisma.role.create({
-      data: { role_code: ROLE, role_name: '출고요청검사용' },
+      data: { role_code: roleCode, role_name: '출고요청검사용' },
     });
     await prisma.role_permission.createMany({
-      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+      data: permissions.map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({
       data: { app_user_id: user.app_user_id, role_id: role.role_id },
@@ -545,10 +689,10 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   /** §11-1 정리 순서 — 출고 → 피킹 → 요청 → LOT → W/O → 계획 → BOM → 마스터. */
@@ -585,14 +729,17 @@ describe('자재 출고요청 조회 3건 (e2e)', () => {
     ]) {
       await prisma.$executeRawUnsafe(sql);
     }
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
+    for (const loginId of [LOGIN_ID, NO_PERM_LOGIN_ID]) {
+      const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    await prisma.role_permission.deleteMany({ where: { role: { role_code: ROLE } } });
-    await prisma.role.deleteMany({ where: { role_code: ROLE } });
+    await prisma.role_permission.deleteMany({
+      where: { role: { role_code: { in: [ROLE, NO_PERM_ROLE] } } },
+    });
+    await prisma.role.deleteMany({ where: { role_code: { in: [ROLE, NO_PERM_ROLE] } } });
   }
 });
