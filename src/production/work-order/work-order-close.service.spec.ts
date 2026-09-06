@@ -201,6 +201,18 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
     });
   });
 
+  it('마감 — L2 이력의 `sourceDocumentTypeCode` 는 `WORK_ORDER_CLOSING` 이고 아웃박스 `targetTypeCode` 는 `WORK_ORDER` 그대로다', async () => {
+    const harness = stub({ goodSum: ORDER_QTY, slots: [10n] });
+
+    await harness.close.close(WORK_ORDER, 1, {}, 7);
+
+    // 계약 `LotLifecycleHistoryEvent.sourceDocumentTypeCode` enum 이 전이별 값을 못박았다 —
+    // L2 대기→폐번은 `WORK_ORDER_CLOSING` 이고 `WORK_ORDER` 는 L3 취소의 값이다(I-7 R-2).
+    expect(harness.moves[0]).toMatchObject({ sourceDocumentTypeCode: 'WORK_ORDER_CLOSING' });
+    // ⛔ 아웃박스는 «승인 다형 축»이라 그대로 `WORK_ORDER` 다 — 두 축이 한 상수를 쓰고 있었다.
+    expect(harness.enqueued[0]).toMatchObject({ targetTypeCode: 'WORK_ORDER' });
+  });
+
   it('취소 — 대상 집합이 `WAITING`·`ACTIVE` 전건이고 마감의 집합보다 넓다', async () => {
     const harness = stub({ status: 'RELEASED', slots: [10n, 11n] });
 

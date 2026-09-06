@@ -14,8 +14,10 @@ import { assertVersion, lockWorkOrder } from './work-order-write.service';
 const STATUS_COLUMN = 'production.work_order.status_code';
 const CLOSE_ACTION = 'work-order-close';
 const VARIANCE_REASON_GROUP = 'WORK_ORDER_COMPLETION_VARIANCE_REASON';
-/** 아웃박스 대상 유형이자 LOT 이력의 원천 문서 유형 — 시드 `INTERFACE_TARGET` 이 열려 있다(§1-6). */
-const WORK_ORDER_DOCUMENT = 'WORK_ORDER';
+/** 아웃박스 대상 유형(승인 다형 축) — 시드 `INTERFACE_TARGET` 이 열려 있다(I-6 §1-6). */
+const WORK_ORDER_TARGET = 'WORK_ORDER';
+// 계약 LotLifecycleHistoryEvent.sourceDocumentTypeCode enum — L2 는 WORK_ORDER_CLOSING(L3 취소만 WORK_ORDER)
+const WORK_ORDER_CLOSING_DOCUMENT = 'WORK_ORDER_CLOSING';
 
 /**
  * W/O 마감 + 미달 슬롯 자동 폐번 + ERP 실적 아웃박스 적재. 순서는 §5-1 그대로다.
@@ -81,7 +83,7 @@ export class WorkOrderCloseService {
     await this.outbox.enqueue(tx, {
       interfaceCode: IF_WO_CLOSE,
       messageKey: outboxMessageKey(IF_WO_CLOSE, row.work_order_no),
-      targetTypeCode: WORK_ORDER_DOCUMENT,
+      targetTypeCode: WORK_ORDER_TARGET,
       targetId: BigInt(workOrderId),
       payload: closePayload({
         workOrderId,
@@ -111,7 +113,7 @@ export class WorkOrderCloseService {
     await this.lots.moveWithin(tx, {
       lotIds: slots.map((slot) => slot.lot_id),
       action: CLOSE_ACTION,
-      sourceDocumentTypeCode: WORK_ORDER_DOCUMENT,
+      sourceDocumentTypeCode: WORK_ORDER_CLOSING_DOCUMENT,
       sourceDocumentId: BigInt(workOrderId),
       changedAt,
     });

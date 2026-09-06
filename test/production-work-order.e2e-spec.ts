@@ -991,7 +991,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         from_lifecycle_status_code: 'WAITING',
         to_lifecycle_status_code: 'VOIDED',
         transition_code: 'L2',
-        source_document_type_code: 'WORK_ORDER',
+        // I-7 R-2 — 계약 enum 이 L2 에 `WORK_ORDER_CLOSING` 을 못박았다(`WORK_ORDER` 는 L3).
+        source_document_type_code: 'WORK_ORDER_CLOSING',
         source_document_id: BigInt(workOrderId),
       });
     });
