@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   DOCUMENT_STATUS,
   InboundReceiptCreateInput,
+  InboundReceiptHeaderWriteInput,
   InboundReceiptLineWriteInput,
   MATERIAL_LOT_TYPE,
   assertWritable,
@@ -47,81 +48,7 @@ export class InboundReceiptService {
     );
 
     const inboundReceiptId = await this.prisma.$transaction(
-      async (tx) => {
-        const deltas = await this.lockAttribution(tx, input);
-        const inspection = await inspectionFlags(tx, input.lines);
-
-        const header = await tx.inbound_receipt.create({
-          data: {
-            inbound_receipt_no: inboundReceiptNo,
-            supplier_id: input.supplierId,
-            plant_id: input.plantId,
-            receipt_datetime: new Date(input.receiptDatetime),
-            delivery_note_no: input.deliveryNoteNo ?? null,
-            vehicle_no: input.vehicleNo ?? null,
-            dock_location_id: input.dockLocationId ?? null,
-            exception_type_code: input.exceptionTypeCode ?? null,
-            exception_reason: input.exceptionReason ?? null,
-            status_code: DOCUMENT_STATUS,
-            // 요청 스키마에 `receivedBy` 칸이 없다 — 주체는 계정 세션이다(`X-Worker-No` 는
-            // 덧붙임이라 없어도 400 이 아니다 · I-3.md §6-4).
-            received_by: BigInt(appUserId),
-            created_by: BigInt(appUserId),
-          },
-        });
-
-        for (const [index, line] of input.lines.entries()) {
-          const created = await tx.inbound_receipt_line.create({
-            data: {
-              inbound_receipt_id: header.inbound_receipt_id,
-              // lineNo 는 배열 순서로 서버가 부여한다(계약 `uq_inbound_receipt_line`).
-              line_no: index + 1,
-              purchase_order_line_id: bigintOrNull(line.purchaseOrderLineId),
-              asn_line_id: bigintOrNull(line.asnLineId),
-              item_id: line.itemId,
-              received_qty: line.receivedQty,
-              uom_id: line.uomId,
-              package_count: line.packageCount ?? null,
-              supplier_lot_no: line.supplierLotNo ?? null,
-              supplier_lot_missing: line.supplierLotMissing,
-              substitute_lot_reason_code: line.substituteLotReasonCode ?? null,
-              manufactured_date: dayOrNull(`lines.${index}.manufacturedDate`, line.manufacturedDate),
-              expiry_date: dayOrNull(`lines.${index}.expiryDate`, line.expiryDate),
-              inspection_required: inspection.get(BigInt(line.itemId)) ?? false,
-              status_code: DOCUMENT_STATUS,
-              created_by: BigInt(appUserId),
-            },
-          });
-
-          if (!attachesLot(line)) continue;
-          // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의
-          //    `lot_id` 는 코어가 채운다(직접 UPDATE 하지 않는다 · R-1). ⛔ `manufactured_at`
-          //    은 비운다 — 날짜를 시각으로 올리는 타임존 캐스팅이다(I-3.md §5-1).
-          await this.lots.createWithin(
-            tx,
-            {
-              lotNo: line.supplierLotNo as string,
-              itemId: line.itemId,
-              lotTypeCode: MATERIAL_LOT_TYPE,
-              plantId: input.plantId,
-              initialQty: line.receivedQty,
-              uomId: line.uomId,
-              expiryDate: line.expiryDate ?? null,
-              sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-              sourceId: Number(created.inbound_receipt_line_id),
-            },
-            appUserId,
-          );
-        }
-
-        for (const [purchaseOrderLineId, delta] of deltas) {
-          await tx.purchase_order_line.update({
-            where: { purchase_order_line_id: purchaseOrderLineId },
-            data: { received_qty: { increment: delta.qty }, updated_by: BigInt(appUserId) },
-          });
-        }
-        return header.inbound_receipt_id;
-      },
+      (tx) => this.createWithin(tx, inboundReceiptNo, input, appUserId),
       // ⚠ 저장소 첫 트랜잭션 옵션이다 — 부모 P/O 잠금이 커밋까지 가므로 기본 5초를
       //   넘기면 `P2028` 이 «알려진 오류가 아니라» 500 으로 샌다(R-4).
       { timeout: 15_000, maxWait: 5_000 },
@@ -131,16 +58,106 @@ export class InboundReceiptService {
   }
 
   /**
+   * 헤더·라인·LOT·P/O 귀속 한 벌. `:split` 이 **같은 `$transaction` 안에서 이것을 두 번**
+   * 불러 정량분·초과분을 세운다 — 「부분 실패를 허용하지 않는다」(계약 · I-3.md §4-1).
+   * ⛔ 채번은 여기서 하지 않는다 — 잠근 채로 채번하면 카운터 대기가 P/O 잠금을 문다.
+   * `at` 은 오류가 짚을 계약 필드 경로의 앞머리다(등록 `''` · 분리 `'normal.'`·`'excess.'`).
+   */
+  async createWithin(
+    tx: Prisma.TransactionClient,
+    inboundReceiptNo: string,
+    input: InboundReceiptHeaderWriteInput,
+    appUserId: number,
+    at = '',
+  ): Promise<bigint> {
+    const deltas = await this.lockAttribution(tx, input.lines, at);
+    const inspection = await inspectionFlags(tx, input.lines);
+
+    const header = await tx.inbound_receipt.create({
+      data: {
+        inbound_receipt_no: inboundReceiptNo,
+        supplier_id: input.supplierId,
+        plant_id: input.plantId,
+        receipt_datetime: new Date(input.receiptDatetime),
+        delivery_note_no: input.deliveryNoteNo ?? null,
+        vehicle_no: input.vehicleNo ?? null,
+        dock_location_id: input.dockLocationId ?? null,
+        exception_type_code: input.exceptionTypeCode ?? null,
+        exception_reason: input.exceptionReason ?? null,
+        remarks: input.remarks ?? null,
+        status_code: DOCUMENT_STATUS,
+        // 요청 스키마에 `receivedBy` 칸이 없다 — 주체는 계정 세션이다(`X-Worker-No` 는
+        // 덧붙임이라 없어도 400 이 아니다 · I-3.md §6-4).
+        received_by: BigInt(appUserId),
+        created_by: BigInt(appUserId),
+      },
+    });
+
+    for (const [index, line] of input.lines.entries()) {
+      const created = await tx.inbound_receipt_line.create({
+        data: {
+          inbound_receipt_id: header.inbound_receipt_id,
+          // lineNo 는 배열 순서로 서버가 부여한다(계약 `uq_inbound_receipt_line`).
+          line_no: index + 1,
+          purchase_order_line_id: bigintOrNull(line.purchaseOrderLineId),
+          asn_line_id: bigintOrNull(line.asnLineId),
+          item_id: line.itemId,
+          received_qty: line.receivedQty,
+          uom_id: line.uomId,
+          package_count: line.packageCount ?? null,
+          supplier_lot_no: line.supplierLotNo ?? null,
+          supplier_lot_missing: line.supplierLotMissing,
+          substitute_lot_reason_code: line.substituteLotReasonCode ?? null,
+          manufactured_date: dayOrNull(`${at}lines.${index}.manufacturedDate`, line.manufacturedDate),
+          expiry_date: dayOrNull(`${at}lines.${index}.expiryDate`, line.expiryDate),
+          inspection_required: inspection.get(BigInt(line.itemId)) ?? false,
+          status_code: DOCUMENT_STATUS,
+          created_by: BigInt(appUserId),
+        },
+      });
+
+      if (!attachesLot(line)) continue;
+      // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의
+      //    `lot_id` 는 코어가 채운다(직접 UPDATE 하지 않는다 · R-1). ⛔ `manufactured_at`
+      //    은 비운다 — 날짜를 시각으로 올리는 타임존 캐스팅이다(I-3.md §5-1).
+      await this.lots.createWithin(
+        tx,
+        {
+          lotNo: line.supplierLotNo as string,
+          itemId: line.itemId,
+          lotTypeCode: MATERIAL_LOT_TYPE,
+          plantId: input.plantId,
+          initialQty: line.receivedQty,
+          uomId: line.uomId,
+          expiryDate: line.expiryDate ?? null,
+          sourceTypeCode: 'INBOUND_RECEIPT_LINE',
+          sourceId: Number(created.inbound_receipt_line_id),
+        },
+        appUserId,
+      );
+    }
+
+    for (const [purchaseOrderLineId, delta] of deltas) {
+      await tx.purchase_order_line.update({
+        where: { purchase_order_line_id: purchaseOrderLineId },
+        data: { received_qty: { increment: delta.qty }, updated_by: BigInt(appUserId) },
+      });
+    }
+    return header.inbound_receipt_id;
+  }
+
+  /**
    * ⭐ 불변식 — `purchase_order_line.received_qty` 를 쓰는 모든 경로는 부모 `purchase_order`
    * 를 «먼저» 잠근다(I-3.md §3-2 · I-2 `replaceLines` 와 같은 순서). 두 입하가 서로 다른
    * 순서로 두 P/O 를 잡으면 교착하므로 **오름차순 한 문장**이다.
    */
   private async lockAttribution(
     tx: Prisma.TransactionClient,
-    input: InboundReceiptCreateInput,
+    lines: InboundReceiptLineWriteInput[],
+    at: string,
   ): Promise<Map<bigint, { qty: Prisma.Decimal; index: number }>> {
     const deltas = new Map<bigint, { qty: Prisma.Decimal; index: number }>();
-    for (const [index, line] of input.lines.entries()) {
+    for (const [index, line] of lines.entries()) {
       if (line.purchaseOrderLineId == null) continue;
       const key = BigInt(line.purchaseOrderLineId);
       const carried = deltas.get(key);
@@ -161,7 +178,7 @@ export class InboundReceiptService {
     for (const [purchaseOrderLineId, delta] of deltas) {
       if (!parents.has(purchaseOrderLineId)) {
         throw one(
-          field(`lines.${delta.index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '없는 P/O 라인입니다.'),
+          field(`${at}lines.${delta.index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '없는 P/O 라인입니다.'),
         );
       }
     }
@@ -195,7 +212,7 @@ export class InboundReceiptService {
       if (delta.qty.greaterThan(room)) {
         throw new ContractException(HttpStatus.BAD_REQUEST, [
           field(
-            `lines.${delta.index}.receivedQty`,
+            `${at}lines.${delta.index}.receivedQty`,
             ERROR_CODE.QTY_EXCEEDS_ORDERED,
             '발주 수량과 허용치를 넘습니다.',
           ),

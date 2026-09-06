@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
-import { assertCodeValues, day } from '../../common/master';
+import { CodeCheck, assertCodeValues, day } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 요청 스키마에 `statusCode` 칸이 없어 서버가 정한다. ⛔ 라인 진행은 이 값으로 판정하지
@@ -26,7 +26,9 @@ export interface InboundReceiptLineWriteInput {
   expiryDate?: string | null;
 }
 
-export interface InboundReceiptCreateInput {
+/** 헤더 한 벌 — 등록 본문과 `:split` 의 한쪽(계약 `InboundReceiptSplitPart`)이 함께 쓴다.
+ *  ⛔ `vehicleNo` 는 `SplitPart` 에 «없다» — 선택 칸이라 분리가 그냥 안 싣는다(R-11 ⓚ). */
+export interface InboundReceiptHeaderWriteInput {
   supplierId: number;
   plantId: number;
   receiptDatetime: string;
@@ -35,13 +37,17 @@ export interface InboundReceiptCreateInput {
   dockLocationId?: number | null;
   exceptionTypeCode?: string | null;
   exceptionReason?: string | null;
+  remarks?: string | null;
+  lines: InboundReceiptLineWriteInput[];
+}
+
+export interface InboundReceiptCreateInput extends InboundReceiptHeaderWriteInput {
   /** ⛔ 받아서 «버린다» — 담을 칸이 없고 첨부 오퍼레이션이 1차에 안 선다(I-3.md §7-3). */
   deliveryNoteAttachmentId?: number | null;
   /** ⛔ 저장하지 않는다 — 원장을 지나지 않아 실을 표가 없다. 형식만 보고 채번의 기간
    *  축으로만 쓴다(I-3.md §2-5 · 공유계약 C-8). */
   businessDate: string;
   occurredAt: string;
-  lines: InboundReceiptLineWriteInput[];
 }
 
 /** `@db.Date` 칸 — 값이 있으면 `day` 가 형식까지 보고, 없으면 널이다(등록·치환 공용). */
@@ -54,6 +60,67 @@ export function attachesLot(line: InboundReceiptLineWriteInput): boolean {
   return !line.supplierLotMissing;
 }
 
+/** 계약이 「최소 1행」이라 적었으나 `minItems` 를 걸지 않아 가드가 빈 배열을 통과시킨다.
+ *  `at` 은 계약 필드 경로다(등록 `lines` · 분리 `normal.lines`). */
+export function lineRequired(at: string): ErrorItem {
+  return field(at, ERROR_CODE.LINE_REQUIRED, '입하 라인이 1건 이상이어야 합니다.');
+}
+
+/**
+ * 헤더 한 벌의 형식·짝·라인 검증. `at` 은 계약 필드 경로의 앞머리다(등록 `''` · 분리
+ * `'normal.'`·`'excess.'`). 돌려주는 것은 DB 를 봐야 하는 코드값 검사 목록이다.
+ *
+ * ⛔ 「P/O 를 고르지 않고 진행할 때 `exceptionTypeCode` 필수」는 여기 «없다» — 계약이 그
+ * 문장을 `InboundReceiptCreate` 에만 적었고 `SplitPart` 초과분은 정의상 무발주다(R-7 ②).
+ */
+export function collectHeaderErrors(
+  at: string,
+  header: InboundReceiptHeaderWriteInput,
+  errors: ErrorItem[],
+): CodeCheck[] {
+  if (Number.isNaN(Date.parse(header.receiptDatetime))) {
+    errors.push(field(`${at}receiptDatetime`, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
+  }
+  // 「`exceptionTypeCode` 가 있으면 필수」(계약).
+  if (header.exceptionTypeCode != null && !header.exceptionReason) {
+    errors.push(field(`${at}exceptionReason`, ERROR_CODE.PAIR, '예외 유형과 사유는 짝입니다.'));
+  }
+  assertLines(at, header.lines, errors);
+
+  return [
+    {
+      field: `${at}exceptionTypeCode`,
+      value: header.exceptionTypeCode,
+      groupCode: 'INBOUND_RECEIPT_EXCEPTION_TYPE',
+    },
+    ...header.lines.map((line, index) => ({
+      field: `${at}lines.${index}.substituteLotReasonCode`,
+      value: line.substituteLotReasonCode,
+      groupCode: 'SUBSTITUTE_LOT_REASON',
+    })),
+  ];
+}
+
+/** 저장하지 않는 두 칸의 형식 검사 — 분리는 이 둘을 «바깥에서 한 번만» 받는다(§2-5). */
+export function collectMomentErrors(
+  businessDate: string,
+  occurredAt: string,
+  errors: ErrorItem[],
+): void {
+  // ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만 채번의 기간 축으로 들어가
+  //    `IR-20261339-0001` 이 `inbound_receipt_no` 에 «영구히» 남는다. 달력에 있는 날인지 함께 본다
+  //    (`lot-rules.ts:assertDay` 와 같은 축 · import 는 안 한다 · §6-4).
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(businessDate) ||
+    Number.isNaN(Date.parse(`${businessDate}T00:00:00Z`))
+  ) {
+    errors.push(field('businessDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 형식의 실재하는 날짜여야 합니다.'));
+  }
+  if (Number.isNaN(Date.parse(occurredAt))) {
+    errors.push(field('occurredAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
+  }
+}
+
 /**
  * 트랜잭션을 열기 «전»의 검증 — 잠근 뒤 400 을 내면 부모 P/O 를 헛되이 붙잡는다.
  * ⛔ `src/trace/lot/lot-rules.ts` 의 날짜 도우미를 가로질러 부르지 않는다(§6-4).
@@ -62,33 +129,13 @@ export async function assertWritable(
   prisma: PrismaService,
   input: InboundReceiptCreateInput,
 ): Promise<void> {
-  // 계약이 「최소 1행」이라 적었으나 `minItems` 를 걸지 않아 가드가 빈 배열을 통과시킨다.
   if (input.lines.length === 0) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      field('lines', ERROR_CODE.LINE_REQUIRED, '입하 라인이 1건 이상이어야 합니다.'),
-    ]);
+    throw new ContractException(HttpStatus.BAD_REQUEST, [lineRequired('lines')]);
   }
 
   const errors: ErrorItem[] = [];
-  if (Number.isNaN(Date.parse(input.receiptDatetime))) {
-    errors.push(field('receiptDatetime', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
-  }
-  // ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만 채번의 기간 축으로 들어가
-  //    `IR-20261339-0001` 이 `inbound_receipt_no` 에 «영구히» 남는다. 달력에 있는 날인지 함께 본다
-  //    (`lot-rules.ts:assertDay` 와 같은 축 · import 는 안 한다 · §6-4).
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate) ||
-    Number.isNaN(Date.parse(`${input.businessDate}T00:00:00Z`))
-  ) {
-    errors.push(field('businessDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 형식의 실재하는 날짜여야 합니다.'));
-  }
-  if (Number.isNaN(Date.parse(input.occurredAt))) {
-    errors.push(field('occurredAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
-  }
-  // 「`exceptionTypeCode` 가 있으면 필수」(계약).
-  if (input.exceptionTypeCode != null && !input.exceptionReason) {
-    errors.push(field('exceptionReason', ERROR_CODE.PAIR, '예외 유형과 사유는 짝입니다.'));
-  }
+  const checks = collectHeaderErrors('', input, errors);
+  collectMomentErrors(input.businessDate, input.occurredAt, errors);
   // ⭐ 「P/O 를 고르지 않고 진행할 때 필수」(계약 `InboundReceiptCreate` description) —
   //   무발주 입하에 승인을 걸지 않는 대신 예외 유형·사유 기록이 통제다(R-7 ②).
   if (input.lines.some((line) => line.purchaseOrderLineId == null) && input.exceptionTypeCode == null) {
@@ -96,27 +143,15 @@ export async function assertWritable(
       field('exceptionTypeCode', ERROR_CODE.REQUIRED, 'P/O 를 고르지 않은 라인이 있으면 예외 유형이 필요합니다.'),
     );
   }
-  assertLines(input.lines, errors);
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
-  await assertCodeValues(prisma, [
-    {
-      field: 'exceptionTypeCode',
-      value: input.exceptionTypeCode,
-      groupCode: 'INBOUND_RECEIPT_EXCEPTION_TYPE',
-    },
-    ...input.lines.map((line, index) => ({
-      field: `lines.${index}.substituteLotReasonCode`,
-      value: line.substituteLotReasonCode,
-      groupCode: 'SUBSTITUTE_LOT_REASON',
-    })),
-  ]);
+  await assertCodeValues(prisma, checks);
 }
 
-function assertLines(lines: InboundReceiptLineWriteInput[], errors: ErrorItem[]): void {
+function assertLines(prefix: string, lines: InboundReceiptLineWriteInput[], errors: ErrorItem[]): void {
   const lotNos = new Set<string>();
   for (const [index, line] of lines.entries()) {
-    const at = `lines.${index}`;
+    const at = `${prefix}lines.${index}`;
     // 「`supplierLotMissing` 이 참일 때 필수」(계약).
     if (line.supplierLotMissing && !line.substituteLotReasonCode) {
       errors.push(
