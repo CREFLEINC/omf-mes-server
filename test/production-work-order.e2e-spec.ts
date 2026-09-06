@@ -2,7 +2,10 @@
  * W/O 조회 — 상세 `GET /production/work-orders/{workOrderId}`(ETag) + 4M 계획 배정 목록
  * `GET …/{workOrderId}/resource-plans`(I-6 PR ①).
  *
- * ⛔ 계약이 두 GET 에 403 을 선언하지 않아 권한 가드가 보지 않는다 — 로그인 세션만 심는다.
+ * 4M 계획 배정 추가·해제(`POST`/`DELETE`)와 유효성 점검 `GET …/validation`(I-6 PR ③)을 잇는다.
+ *
+ * ⛔ 계약이 403 을 선언한 것은 `validation` 하나뿐이라 그 자리만 권한 가드가 본다 — 나머지
+ *   넷은 로그인 세션만으로 통과한다. 그래서 사용자가 둘이다(권한 있음·없음).
  * ⭐ 픽스처는 전부 **직접 INSERT** 한다 — 발행(`POST`)·배포(`:release`)가 아직 없다(PR ④·⑤).
  *   시드 마스터가 얇아(품목·공정·라우팅·BOM·작업자·근무조 0행) 이 스위트가 다 심는다.
  */
@@ -21,8 +24,12 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-wo-probe';
+const NOPERM_ID = 'e2e-wo-noperm';
 const PASSWORD = 'WO-작업지시-비밀번호';
 const PREFIX = 'WOE2E';
+const ROLE = 'E2E_WORK_ORDER';
+/** `validation` 이 요구하는 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한 값이다. */
+const PERMISSIONS = ['W-02-03'];
 /** 선발행 슬롯의 원천 유형 — `lot-rules.ts workOrderWhere()` 와 같은 문자열. */
 const LOT_SOURCE = 'WORK_ORDER';
 
@@ -43,8 +50,12 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   let workOrderId: number;
+  /** 설비·작업자가 «같은 숫자 id» 를 갖도록 못박은 값 — 유형이 유일키를 가르는지 보려면 필요하다. */
+  let twinId: bigint;
+  let equipmentPlanId: number;
   const ids = {
     plant: 0n,
     businessUnit: 0n,
@@ -55,6 +66,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     routingOperation: 0n,
     bom: 0n,
     worker: 0n,
+    equipment: 0n,
     shift: 0n,
     productionOrder: 0n,
     productionPlan: 0n,
@@ -140,6 +152,94 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
   });
 
+  describe('4M 계획 배정 쓰기 · 유효성 점검 (PR ③)', () => {
+    const plans = (): string => `/api/production/work-orders/${workOrderId}/resource-plans`;
+
+    it('자원계획 — 같은 자원 재배정은 409 다', async () => {
+      const created = await request(app.getHttpServer())
+        .post(plans())
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ resourceTypeCode: 'EQUIPMENT', resourceId: Number(twinId) })
+        .expect(201);
+
+      expect(created.body).toMatchObject({ workOrderId, resourceTypeCode: 'EQUIPMENT', resourceId: Number(twinId) });
+      expect(validator('POST /production/work-orders/{workOrderId}/resource-plans', 201)(created.body)).toBe(true);
+      equipmentPlanId = created.body.workOrderResourcePlanId;
+
+      const rejected = await request(app.getHttpServer())
+        .post(plans())
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ resourceTypeCode: 'EQUIPMENT', resourceId: Number(twinId) })
+        .expect(409);
+
+      // ⚠ 이 자리의 409 봉투만 `ErrorResponse` 다 — 다른 409 는 `ProductionConflictResponse` 다.
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'resourceId', code: 'UNIQUE_VIOLATION' });
+      expect(validator('POST /production/work-orders/{workOrderId}/resource-plans', 409)(rejected.body)).toBe(true);
+    });
+
+    it('자원계획 — 유형이 다르면 같은 id 라도 배정된다', async () => {
+      // 유일 인덱스 식은 `(work_order_id, resource_type_code, COALESCE(...))` 라 유형이 가른다.
+      const created = await request(app.getHttpServer())
+        .post(plans())
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ resourceTypeCode: 'WORKER', resourceId: Number(twinId) })
+        .expect(201);
+
+      expect(created.body).toMatchObject({ resourceTypeCode: 'WORKER', resourceId: Number(twinId) });
+
+      const listed = await request(app.getHttpServer()).get(plans()).set('Cookie', cookie).expect(200);
+      expect(listed.body.items).toHaveLength(2);
+      // 물리는 네 칸으로 갈라 담고 넷 중 하나만 non-null 이다(`ck_work_order_resource_target`).
+      const row = await prisma.work_order_resource_assignment.findUniqueOrThrow({
+        where: { work_order_resource_assignment_id: BigInt(created.body.workOrderResourcePlanId) },
+      });
+      expect([row.equipment_id, row.mold_id, row.worker_id, row.shift_id]).toEqual([null, null, twinId, null]);
+      expect(row.assignment_status_code).toBe('PLANNED');
+    });
+
+    it('자원계획 — 해제는 204 이고 두 번째는 404 다', async () => {
+      const url = `${plans()}/${equipmentPlanId}`;
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .expect(204);
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .expect(404);
+    });
+
+    it('유효성 — 권한 없으면 403 이다', async () => {
+      await prisma.work_order.update({
+        where: { work_order_id: BigInt(workOrderId) },
+        data: { planned_equipment_id: twinId },
+      });
+      await prisma.equipment.update({ where: { equipment_id: twinId }, data: { status_code: 'DISPOSED' } });
+
+      // 200 갈래를 함께 못박는다 — 권한이 있으면 규칙 여섯의 판정이 계약 스키마대로 온다.
+      const report = await request(app.getHttpServer())
+        .get(`/api/production/work-orders/${workOrderId}/validation`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(report.body.passed).toBe(false);
+      expect(report.body.findings).toContainEqual(
+        expect.objectContaining({ severity: 'BLOCK', code: 'EQUIPMENT_NOT_IN_SERVICE', field: 'plannedEquipmentId' }),
+      );
+      expect(validator('GET /production/work-orders/{workOrderId}/validation')(report.body)).toBe(true);
+
+      await request(app.getHttpServer())
+        .get(`/api/production/work-orders/${workOrderId}/validation`)
+        .set('Cookie', noPermCookie)
+        .expect(403);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -209,16 +309,36 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     ids.bom = bom.bom_id;
-    const worker = await prisma.worker.create({
-      data: {
-        worker_no: `${PREFIX}-WK`,
-        worker_name: '작업지시검사작업자',
-        business_unit_id: unit.business_unit_id,
-        plant_id: plant.plant_id,
-        status_code: 'EMPLOYED',
-      },
-    });
+    // ⭐ 설비와 작업자를 «같은 숫자 id» 로 심는다 — 배정 유일키가 `resource_type_code` 를 함께
+    //    보는지(같은 id 라도 유형이 다르면 배정된다)를 볼 유일한 길이다. 두 시퀀스는 서로
+    //    모르므로 값을 못박고, 다음 자동 채번이 부딪히지 않게 시퀀스를 그 뒤로 민다.
+    const [maxEquipment, maxWorker] = await Promise.all([
+      prisma.equipment.aggregate({ _max: { equipment_id: true } }),
+      prisma.worker.aggregate({ _max: { worker_id: true } }),
+    ]);
+    twinId = (maxEquipment._max.equipment_id ?? 0n) > (maxWorker._max.worker_id ?? 0n)
+      ? (maxEquipment._max.equipment_id ?? 0n) + 1n
+      : (maxWorker._max.worker_id ?? 0n) + 1n;
+
+    // ⛔ 두 PK 는 `GENERATED ALWAYS` 라 Prisma create 로는 값을 못 넣는다 — 원문 INSERT 로
+    //    `OVERRIDING SYSTEM VALUE` 를 써야 한다. 넣은 뒤 시퀀스를 그 값으로 민다.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO mdm.worker (worker_id, worker_no, worker_name, business_unit_id, plant_id, status_code)
+       OVERRIDING SYSTEM VALUE VALUES (${twinId}, '${PREFIX}-WK', '작업지시검사작업자', ${unit.business_unit_id}, ${plant.plant_id}, 'EMPLOYED')`,
+    );
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO mdm.equipment (equipment_id, plant_id, equipment_code, equipment_name, equipment_type_code, status_code)
+       OVERRIDING SYSTEM VALUE VALUES (${twinId}, ${plant.plant_id}, '${PREFIX}-EQ', '작업지시검사설비', 'PRESS', 'IN_SERVICE')`,
+    );
+    for (const [table, column] of [
+      ['mdm.worker', 'worker_id'],
+      ['mdm.equipment', 'equipment_id'],
+    ]) {
+      await prisma.$queryRawUnsafe(`SELECT setval(pg_get_serial_sequence('${table}', '${column}'), ${twinId})`);
+    }
+    const worker = await prisma.worker.findUniqueOrThrow({ where: { worker_id: twinId } });
     ids.worker = worker.worker_id;
+    ids.equipment = twinId;
     const shift = await prisma.shift.create({
       data: {
         plant_id: plant.plant_id,
@@ -322,13 +442,31 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    const other = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '작업지시검사용' } });
+    await prisma.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   /** 만든 행을 역순으로 지운다 — FK 방향 그대로. */
@@ -346,6 +484,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
@@ -355,10 +494,18 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!user) continue;
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });
