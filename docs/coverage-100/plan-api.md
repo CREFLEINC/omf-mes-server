@@ -415,7 +415,7 @@
 | 선행 슬라이스 | S14·S15 · S09(정정 승인) |
 | 쓰는 표 | `production.production_result(_lot_allocation)`·`material_consumption`·`material_return(_line)`·`operation_handover(_line)`·`precheck_decision`·`repair_execution`·`material_usage_allocation` — 전부 있음 |
 | 마이그레이션 | **2**(I-7 재수립) — D1 `production_result.shift_id` NOT NULL 완화(계약이 필수를 풀었다 · 「교대는 설계가 정의하는 값이 아니다」) · **D2 `production_result.correct_reason_code app.code_t` 추가**(`ProductionResultCorrect.reasonCode` 가 required 인데 담을 칸이 없다). 둘 다 두 릴리스 규칙에 안 걸린다 |
-| posting(원장) 연결 | **실적은 없음** — 제품 재고는 기존 입고(`POST /logistics/goods-receipts` · `sourceDocumentTypeCode='PRODUCTION_RESULT'`)가 잡는다(`plan.md` §0 151행 · integration §1-4 정본 · I-7 §11 #2). 자재 소비가 WIP 를 빼고 반납은 역방향(I-10) |
+| posting(원장) 연결 | **실적은 없음** — 제품 재고는 기존 입고(`POST /logistics/goods-receipts` · `sourceDocumentTypeCode='PRODUCTION_RESULT'`)가 잡는다(`plan.md` §0 151행 · integration §1-4 정본 · I-7 §11 #2). ~~자재 소비가 WIP 를 빼고 반납은 역방향(I-10)~~ **소비도 반납도 원장을 안 지난다**(`plan.md` §5 규칙 8 · I-10 §1-7 · 재수립 R-2 · 2026-09-07 정정) |
 | 상태기계 | **있음** — `trace.lot.lifecycle_status_code` L1(대기→활성, 이미 등록됨 · 호출만) · 실적 자체의 `status_code` 는 `x-no-code-key` 이나 칸이 NOT NULL 로 실재하고 응답 required 라 **상수 `'CONFIRMED'`**(판정에 안 쓴다 · `plan.md` §0 #10 · I-7 §2-3) |
 | 예상 PR 수 | I-7(실적 7건 · `:complete`·`lot-lifecycle-events` 포함) **4** — ① 마이그+골격+조회 3 ② 실적+배분+L1 ③ `:correct`+`:request-approval`+누계 정정 ④ `:complete`+`Lot.progress`(I-7 재수립 R-4~R-6). 나머지(소비/반납 · 인계·사전점검·수리)는 I-10·I-25 몫 |
 | 설계 미정 자리 · §2 판정 초안 | 「A급 보정」 판정식 — **판정 자리는 `:request-approval` 이 아니라 `:correct` 다**(`W-02-05` §5-8 흐름도 · 상신 본문은 `reason` 한 칸이라 판정 입력이 없다 → 문의 041). 승계 뒤 다섯 수량 칸 중 하나라도 원본과 다르면 A급(I-7 §5-5 · R-9). |
@@ -1101,8 +1101,8 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 승인 요청 | `approval_request_no` | ❌ | — | S09 |
 | 생산 계획 | `plan_no` | ❌ | — | S13 |
 | 작업지시 | `work_order_no` | ❌ | ⭐ **설계가 「가운데는 항상 MES 가 만든다」라 못박은 자리**(§4.4 · CORE-1) | S14 |
-| 자재 소비 | `consumption_no` | ❌ | — | S16 |
-| 자재 반납 | `material_return_no` | ❌ | — | S16 |
+| 자재 소비 | `consumption_no` | ❌ | `MC-{YYYYMMDD}-{SEQ4}`(계약 example `"값"` · `app.numbering_rule` 에 행 없음 · `DEFAULT_PREFIX` 한 줄 · I-10 §3-11 · 문의 14 표에 한 행) | S16 |
+| 자재 반납 | `material_return_no` | ❌ | `MR-{YYYYMMDD}-{SEQ4}`(같음 · I-10 §4-7 · ⚠ 오프라인 재전송이면 기간 키가 재전송 날짜 — 051) | S16 |
 | 공정 인계 | `handover_no` | ❌ | — | S16 |
 | 검사 결과 | `inspection_result_no` | ❌ | — | S18 |
 | 부적합 | `nonconformance_no` | ❌ | — | S20 |

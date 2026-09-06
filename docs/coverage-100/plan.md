@@ -42,7 +42,7 @@
 | — | **M1 체인 e2e** (통합 §4-1) | | I-7 | | | fable 통합 | 1 | |
 | 9 | **I-8** 출고요청·피킹·예약 코어 | 8 | I-4 | — | `reserved_qty`/`picked_qty`(`pick()`·`consume()` 둘 — `reserve()` 는 사용처 0 이라 **I-22** · I-8 §3-7) | opus | ~~3~~ **5**(I-8 R-1 · ④ 선분할) | ⛔ I-5 와 직렬 |
 | 10 | **I-9** 생산창고 입고 | 3 | I-8 | — | — | sonnet | 2 | — |
-| 11 | **I-10** 자재 투입·반출 + 계보 | 6 | I-9·I-7 | — | — | opus | 3 | ∥ I-11 |
+| 11 | **I-10** 자재 투입·반출 + 계보 | 6 | I-9·I-7 | **2** · `material_consumption.terminal_id`·`material_return.return_quality_status_code` NOT NULL 완화(I-10 재수립 R-3·R-4) | — | opus | 3 | ∥ I-11 |
 | 12 | **I-11** 작업 세션·작업전점검 | 11 | I-6 | — | — | sonnet | 3 | ∥ I-13 |
 | 13 | **I-24** 생산 계획·생산오더 | 10 | I-6 | A11 | — | opus(전개 `:confirm`) · sonnet(조회) | 3 | — |
 | 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
@@ -150,7 +150,7 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) · **`POST /logistics/shopfloor-receipts`**(I-9 R-11 — `received_by` 는 세션이 채우고 사번은 읽고 버린다 · 넷째) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) · **`POST /logistics/shopfloor-receipts`**(I-9 R-11 — `received_by` 는 세션이 채우고 사번은 읽고 버린다 · 넷째) · **`POST /production/material-consumptions`**(I-10 §3-7 — `material_consumption.worker_id` NOT NULL 의 유일한 원천 · 저장형 · 다섯째) · **`POST /production/material-returns`**(I-10 §4-8 — 담을 칸 0 · 읽고 버림형 · 여섯째) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
 12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.
@@ -207,9 +207,9 @@
 | 처분 전이가 `transitionCode` 9종에 없음 | I-21 | UI/UX N |
 | `lot-hold-events` vs `lot-status-events` — W-03-01 이 어느 쪽 | I-20 | UI/UX §9-3 |
 | LOT 품질 판정 축(`lot.status_code` vs `inventory_balance.quality_status_code`) — #115 재판정 중 인용 | I-19/I-20 | UI/UX L · 아키텍처 §5 #1 |
-| `POST /production/material-returns` 소유 화면 | I-10 | UI/UX §9-2 |
+| `POST /production/material-returns` 소유 화면 | I-10 | UI/UX §9-2 · **050 으로 발행**(I-10 재수립 R-10·R-13) |
 | 수리 `:return` 뒤 재투입 등록처 | I-25 | UI/UX §9-2 |
-| 투입 정정(`:correct`) 부재 · 포장 해체 부재 | I-10 · I-16 | UI/UX E·F |
+| 투입 정정(`:correct`) 부재 · 포장 해체 부재 | I-10 · I-16 | UI/UX E·F · E 는 **055 로 발행**(I-10 재수립 R-13) |
 | 재생재/입하 오류의 «미등록 품목» 생성 경로 없음 | I-17 · I-3 | UI/UX B·C |
 | 창고 «안» 위치 이동 업무 문서 없음 | I-13 | UI/UX A |
 | 라벨 무효화 규칙 없음 | I-27 | UI/UX J |
