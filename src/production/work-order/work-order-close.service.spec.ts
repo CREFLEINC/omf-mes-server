@@ -7,6 +7,7 @@ import { OutboxEnqueueInput, OutboxService } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderCancelService } from './work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order-close.service';
+import { ACTIVE_RESULT_WHERE } from './work-order-progress';
 
 const WORK_ORDER = 900;
 const ORDER_QTY = 100;
@@ -108,11 +109,21 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
 
     // ⛔ `PRODUCTION_RESULT_STATUS` 그룹이 폐기돼 거를 값이 없다 — `status_code` 를 조건에
     //    넣으면 조회(`progressOf`)와 마감이 다른 양품 합을 낸다(§5-2 · F-6).
-    expect(harness.resultWheres).toEqual([{ work_order_id: BigInt(WORK_ORDER) }]);
+    expect(Object.keys(harness.resultWheres[0])).not.toContain('status_code');
     expect(harness.enqueued[0].payload).toMatchObject({
       header: { goodQty: ORDER_QTY, completionJudgmentCode: 'NORMAL' },
       sendItems: [],
     });
+  });
+
+  it('마감 — `:close` 의 누적 양품이 `ACTIVE_RESULT_WHERE` 를 쓴다', async () => {
+    const harness = stub({ goodSum: ORDER_QTY });
+
+    await harness.close.close(WORK_ORDER, 1, {}, 7);
+
+    // ⭐ 조회(`work-order-query.service.ts` 세 자리)와 «같은» 상수다 — 정의가 갈리면 마감이
+    //    정정된 원본까지 세어 조회와 다른 값을 낸다(I-7 §5-3 · R-3).
+    expect(harness.resultWheres).toEqual([{ work_order_id: BigInt(WORK_ORDER), ...ACTIVE_RESULT_WHERE }]);
   });
 
   it('마감 — 실적이 0건이면 양품 합은 0 이고 미달 판정이다', async () => {

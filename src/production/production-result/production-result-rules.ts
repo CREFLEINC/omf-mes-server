@@ -24,7 +24,8 @@ export interface ProductionResultCreate {
   remarks?: string;
 }
 
-const QTY_COLUMNS = {
+/** 다섯 수량 ↔ 물리 칸. 등록·정정이 «같은 다섯 칸»을 세므로 한 자리에서만 적는다. */
+export const QTY_COLUMNS = {
   goodQty: 'good_qty',
   defectQty: 'defect_qty',
   holdQty: 'hold_qty',
@@ -32,16 +33,20 @@ const QTY_COLUMNS = {
   reworkQty: 'rework_qty',
 } as const;
 
+/** 다섯 수량만 보는 구조 — `ProductionResultCreate` 도 정정의 승계 결과도 이 모양이다. */
+export type ResultQuantityInput = Partial<Record<keyof typeof QTY_COLUMNS, number>>;
+
 const VOIDED = 'VOIDED';
 /** 실적을 받지 않는 W/O 상태 — 선발행 슬롯이 «없는» 두 끝이다(§3-2). */
 const NO_SLOT_STATUS: readonly string[] = ['PLANNED', 'CONFIRMED', 'CANCELLED'];
 
 /**
- * 다섯 수량 손검사 + 물리 칸으로. ⛔ `app.qty_t CHECK (>= 0)`·`ck_production_result_nonzero` 를
+ * 다섯 수량 손검사 + 물리 칸으로. 등록 본문과 «승계 뒤» 정정 값이 같은 검사를 탄다.
+ * ⛔ `app.qty_t CHECK (>= 0)`·`ck_production_result_nonzero` 를
  * «앞당겨» 막는다 — CHECK 위반은 `PrismaClientUnknownRequestError` 라 공용 그물에 안 걸려 500 이
  * 샌다. 생략한 칸은 **0**(`P-02-04` §4).
  */
-export function resultQuantities(body: ProductionResultCreate): Record<string, number> {
+export function resultQuantities(body: ResultQuantityInput): Record<string, number> {
   const columns: Record<string, number> = {};
   let sum = 0;
   for (const [name, column] of Object.entries(QTY_COLUMNS)) {

@@ -12,6 +12,7 @@ import {
   buildWorkOrderWhere,
 } from './work-order-list-where';
 import {
+  ACTIVE_RESULT_WHERE,
   PreIssuedLotSummaryView,
   ResultSums,
   WorkOrderProgressView,
@@ -107,7 +108,7 @@ export class WorkOrderQueryService {
       tx.work_order.groupBy({ by: ['status_code'], where, _count: { work_order_id: true } }),
       tx.work_order.aggregate({ where, _sum: { order_qty: true } }),
       tx.production_result.aggregate({
-        where: { work_order: where },
+        where: { work_order: where, ...ACTIVE_RESULT_WHERE },
         _sum: { good_qty: true, defect_qty: true, hold_qty: true, scrap_qty: true, rework_qty: true },
       }),
       tx.work_order.count({ where: { AND: [where, delayedWhere(now)] } }),
@@ -119,7 +120,7 @@ export class WorkOrderQueryService {
   private async progressMany(rows: WorkOrderRow[]): Promise<Map<bigint, WorkOrderProgressView>> {
     const groups = await this.prisma.production_result.groupBy({
       by: ['work_order_id'],
-      where: { work_order_id: { in: rows.map((row) => row.work_order_id) } },
+      where: { work_order_id: { in: rows.map((row) => row.work_order_id) }, ...ACTIVE_RESULT_WHERE },
       _sum: { good_qty: true, defect_qty: true, hold_qty: true, scrap_qty: true, rework_qty: true },
     });
     const sums = new Map<bigint, ResultSums>(groups.map((group) => [group.work_order_id, group._sum]));
@@ -184,12 +185,12 @@ export class WorkOrderQueryService {
   }
 
   /**
-   * ⛔ `status_code` 로 거르지 않는다 — `PRODUCTION_RESULT_STATUS` 그룹이 폐기돼 거를 값이 없고,
-   * 정정은 상쇄 행이라 합이 곧 반영값이다(계약 ⌜정정(상쇄) 실적이 반영된 값⌝ · §5-2).
+   * ⛔ `status_code` 로 거르지 않는다 — `PRODUCTION_RESULT_STATUS` 그룹이 폐기돼 거를 값이 없다.
+   * 대신 정정된 원본을 합에서 «뺀다» — 정정본은 대체값이고 잎만 센다(`ACTIVE_RESULT_WHERE`).
    */
   private async progress(row: WorkOrderRow): Promise<WorkOrderProgressView> {
     const { _sum } = await this.prisma.production_result.aggregate({
-      where: { work_order_id: row.work_order_id },
+      where: { work_order_id: row.work_order_id, ...ACTIVE_RESULT_WHERE },
       _sum: { good_qty: true, defect_qty: true, hold_qty: true, scrap_qty: true, rework_qty: true },
     });
     return progressOf({
