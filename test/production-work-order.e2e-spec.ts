@@ -32,11 +32,12 @@ const PASSWORD = 'WO-작업지시-비밀번호';
 const PREFIX = 'WOE2E';
 const ROLE = 'E2E_WORK_ORDER';
 /**
- * 계약이 403 을 선언한 여섯 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
+ * 계약이 403 을 선언한 여덟 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
  * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10` ·
- * `:release` = `W-02-04`).
+ * `:release` = `W-02-04` · `:close` = `W-02-05` · `:cancel` = `W-02-06`).
+ * ⭐ `W-02-06` 은 `GET /integration/messages`(403 선언)도 연다 — 마감이 적재한 행을 그 경로로 본다.
  */
-const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10', 'W-02-04'];
+const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10', 'W-02-04', 'W-02-05', 'W-02-06'];
 /** 선발행 슬롯의 원천 유형 — `lot-rules.ts workOrderWhere()` 와 같은 문자열. */
 const LOT_SOURCE = 'WORK_ORDER';
 
@@ -538,6 +539,24 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
     });
 
+    it('중단·재개 — 권한 없으면 403 이다', async () => {
+      const workOrder = await released();
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', noPermCookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:resume`)
+        .set('Cookie', noPermCookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(403);
+    });
+
     it('수정 — 같은 멱등키 재전송이 버전을 두 번 올리지 않는다', async () => {
       const key = randomUUID();
       const body = { remarks: null, plannedMoldId: null };
@@ -775,6 +794,385 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         where: { work_order_id: BigInt(workOrderId) },
       });
       expect(row).toMatchObject({ status_code: 'PLANNED', version_no: 1, released_at: null });
+    });
+  });
+
+  describe('마감 · 취소 (PR ⑥b)', () => {
+    const base = '/api/production/work-orders';
+    let seq = 0;
+
+    /**
+     * 마감 대상 — 배포까지 HTTP 로 돌린 뒤 진행 상태로 옮긴다. 전이표의 `from` 이
+     * `COMPLETED`·`IN_PROGRESS` 인데 `IN_PROGRESS` 로 «들어가는» 액션은 세션 열기(I-11)라
+     * 아직 없다. 상태만 손으로 바꾸므로 `version_no` 는 배포가 올린 2 그대로다.
+     */
+    async function closable(lotSize = 100, goodQty?: number): Promise<number> {
+      const row = await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WOC${++seq}`,
+          production_plan_id: ids.productionPlan,
+          routing_operation_id: ids.routingOperation,
+          item_id: ids.item,
+          order_qty: 100,
+          uom_id: ids.uom,
+          status_code: 'PLANNED',
+          default_wip_location_id: ids.location,
+        },
+      });
+      const workOrderId = Number(row.work_order_id);
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ lotSize })
+        .expect(200);
+      await prisma.work_order.update({
+        where: { work_order_id: row.work_order_id },
+        data: { status_code: 'IN_PROGRESS' },
+      });
+      if (goodQty !== undefined) await result(workOrderId, goodQty);
+      return workOrderId;
+    }
+
+    /** 실적 직접 INSERT(I-7 전) — 붙일 슬롯을 주면 배정 행까지 만든다. */
+    async function result(workOrderId: number, goodQty: number, lotId?: bigint): Promise<void> {
+      const row = await prisma.production_result.create({
+        data: {
+          production_result_no: `${PREFIX}-PRC${++seq}`,
+          work_order_id: BigInt(workOrderId),
+          result_sequence: 1,
+          good_qty: goodQty,
+          uom_id: ids.uom,
+          result_source_code: 'MANUAL',
+          occurred_at: new Date('2026-09-06T02:00:00.000Z'),
+          worker_id: ids.worker,
+          shift_id: ids.shift,
+          status_code: 'CONFIRMED',
+          idempotency_key: `${PREFIX}-${randomUUID()}`,
+        },
+      });
+      if (lotId === undefined) return;
+      await prisma.production_result_lot_allocation.create({
+        data: {
+          production_result_id: row.production_result_id,
+          lot_id: lotId,
+          allocated_qty: goodQty,
+          uom_id: ids.uom,
+        },
+      });
+    }
+
+    const call = (verb: 'close' | 'cancel', workOrderId: number, body: object, etag = '2') =>
+      request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:${verb}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', etag)
+        .send(body);
+
+    const slots = (workOrderId: number) =>
+      prisma.lot.findMany({
+        where: { source_type_code: LOT_SOURCE, source_id: BigInt(workOrderId) },
+        orderBy: { work_order_lot_seq: 'asc' },
+      });
+
+    const history = (lotIds: bigint[]) =>
+      prisma.lot_lifecycle_history.findMany({
+        where: { lot_id: { in: lotIds } },
+        orderBy: { lot_lifecycle_history_id: 'asc' },
+      });
+
+    it('M1 마디 — 발행 → 배포 → 슬롯 N 개 `WAITING` → 출고요청 1건', async () => {
+      const created = await request(app.getHttpServer())
+        .post(base)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: Number(ids.productionPlan),
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty: 90,
+          uomId: Number(ids.uom),
+        })
+        .expect(201);
+      const workOrderId: number = created.body.workOrderId;
+      // ⚠ `WorkOrderCreate` 에 기본 WIP 위치 칸이 없다 — 화면은 `PUT` 으로 채운다. 마디의
+      //    관심은 배포가 요청을 «자동 발행»하는지라 그 한 칸만 픽스처로 심는다(버전은 그대로다).
+      await prisma.work_order.update({
+        where: { work_order_id: BigInt(workOrderId) },
+        data: { default_wip_location_id: ids.location },
+      });
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', created.headers.etag)
+        .send({ lotSize: 30 })
+        .expect(200);
+
+      const detail = await request(app.getHttpServer())
+        .get(`${base}/${workOrderId}?withPreIssuedLots=true`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(detail.body).toMatchObject({ statusCode: 'RELEASED' });
+      // 마감 전이라 아웃박스가 비었다 — 계약 ⌜마감 전에는 비어 있다⌝ 라 키 자체가 없다.
+      expect(Object.keys(detail.body)).not.toContain('erpMessageQueued');
+      expect(detail.body.preIssuedLots).toEqual({ slotCount: 3, withResultCount: 0, withoutResultCount: 3 });
+      expect((await slots(workOrderId)).map((lot) => lot.lifecycle_status_code)).toEqual(['WAITING', 'WAITING', 'WAITING']);
+      expect(await prisma.material_issue_request.count({ where: { work_order_id: BigInt(workOrderId) } })).toBe(1);
+    });
+
+    it('마감 — 열린 세션이 있으면 409 `OPEN_SESSION_EXISTS` 다', async () => {
+      const workOrderId = await closable(100, 100);
+      await prisma.work_session.create({
+        data: {
+          work_order_id: BigInt(workOrderId),
+          session_no: 1,
+          shift_id: ids.shift,
+          terminal_id: ids.terminal,
+          started_at: new Date('2026-09-06T01:00:00.000Z'),
+          // ⭐ `STOPPED` 도 «열린» 것이다 — 판정은 `ended_at IS NULL` 이다(§5-5).
+          status_code: 'STOPPED',
+          idempotency_key: `${PREFIX}-${randomUUID()}`,
+        },
+      });
+
+      const rejected = await call('close', workOrderId, {}).expect(409);
+
+      expect(rejected.body).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
+      expect(validator('POST /production/work-orders/{workOrderId}:close', 409)(rejected.body)).toBe(true);
+      const row = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      expect(row).toMatchObject({ status_code: 'IN_PROGRESS', closed_at: null });
+    });
+
+    it('마감 — 세션을 닫으면 마감된다', async () => {
+      const workOrderId = await closable(100, 100);
+      const session = await prisma.work_session.create({
+        data: {
+          work_order_id: BigInt(workOrderId),
+          session_no: 1,
+          shift_id: ids.shift,
+          terminal_id: ids.terminal,
+          started_at: new Date('2026-09-06T01:00:00.000Z'),
+          status_code: 'RUNNING',
+          idempotency_key: `${PREFIX}-${randomUUID()}`,
+        },
+      });
+      await call('close', workOrderId, {}).expect(409);
+
+      await prisma.work_session.update({
+        where: { work_session_id: session.work_session_id },
+        data: { ended_at: new Date('2026-09-06T03:00:00.000Z'), status_code: 'ENDED' },
+      });
+      const closed = await call('close', workOrderId, {}).expect(200);
+
+      expect(closed.body).toMatchObject({ statusCode: 'CLOSED', versionNo: 3, erpMessageQueued: true });
+      expect(closed.body.closedAt).toEqual(expect.any(String));
+      expect(validator('POST /production/work-orders/{workOrderId}:close')(closed.body)).toBe(true);
+    });
+
+    it('마감 — 실적 없는 슬롯만 `VOIDED` 이고 실적 붙은 슬롯은 남는다 + `lot_lifecycle_history` 에 L2 가 찍힌다', async () => {
+      const workOrderId = await closable(50);
+      const [attached, empty] = await slots(workOrderId);
+      await result(workOrderId, 100, attached.lot_id);
+
+      await call('close', workOrderId, {}).expect(200);
+
+      const after = await slots(workOrderId);
+      // ⌜실적이 없는 슬롯만⌝(R82) — 실적이 붙은 슬롯은 `WAITING` 그대로 남는다.
+      expect(after.map((lot) => lot.lifecycle_status_code)).toEqual(['WAITING', 'VOIDED']);
+      const rows = await history(after.map((lot) => lot.lot_id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        lot_id: empty.lot_id,
+        from_lifecycle_status_code: 'WAITING',
+        to_lifecycle_status_code: 'VOIDED',
+        transition_code: 'L2',
+        source_document_type_code: 'WORK_ORDER',
+        source_document_id: BigInt(workOrderId),
+      });
+    });
+
+    it('마감 — 미달·정상·초과 세 갈래가 각각 400/200/400 을 낸다', async () => {
+      const [under, normal, over] = await Promise.all([closable(100, 90), closable(100, 100), closable(100, 110)]);
+
+      const missingDisposition = await call('close', under, { reasonCode: 'MATERIAL_SHORTAGE' }).expect(400);
+      expect(missingDisposition.body.errors[0]).toMatchObject({
+        field: 'remainderDispositionCode',
+        code: 'REMAINDER_DISPOSITION_REQUIRED',
+      });
+
+      // 정상은 두 칸을 다 비운다 — 그때만 200 이다.
+      await call('close', normal, {}).expect(200);
+
+      const missingReason = await call('close', over, {}).expect(400);
+      expect(missingReason.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'REQUIRED' });
+      // 초과인데 처분을 실으면 반대쪽 코드가 난다.
+      const notAllowed = await call('close', over, { reasonCode: 'OVER_PRODUCTION', remainderDispositionCode: 'CARRY_OVER' }).expect(400);
+      expect(notAllowed.body.errors[0]).toMatchObject({ code: 'REMAINDER_DISPOSITION_NOT_ALLOWED' });
+    });
+
+    it('마감 — `integration_message` 1행이 `GET /integration/messages` 로 보이고 상태가 `PENDING` 이다', async () => {
+      const workOrderId = await closable(100, 100);
+
+      const closed = await call('close', workOrderId, { erpSendItems: ['투입자재'], remarks: '마감 비고' }).expect(200);
+      expect(closed.body).toMatchObject({ erpMessageQueued: true, remarks: '마감 비고' });
+
+      const listed = await request(app.getHttpServer())
+        .get('/api/integration/messages?createdFrom=2026-01-01T00:00:00.000Z&createdTo=2030-01-01T00:00:00.000Z&interfaceCode=IF-WO-CLOSE-SEND&targetTypeCode=WORK_ORDER')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const mine = listed.body.items.filter((item: { targetId: number }) => item.targetId === workOrderId);
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toMatchObject({
+        statusCode: 'PENDING',
+        directionCode: 'OUTBOUND',
+        messageKey: `IF-WO-CLOSE-SEND:${closed.body.workOrderNo}`,
+        retryCount: 0,
+      });
+      // 값을 해석하지 않고 그대로 싣는다 — 부속 항목 코드 표기가 아직 없다(§5-6).
+      const stored = await prisma.integration_message.findUniqueOrThrow({
+        where: { message_key: `IF-WO-CLOSE-SEND:${closed.body.workOrderNo}` },
+      });
+      expect(stored.payload).toMatchObject({
+        header: { workOrderId, goodQty: 100, completionJudgmentCode: 'NORMAL' },
+        sendItems: ['투입자재'],
+      });
+    });
+
+    it('마감 — 마감된 W/O 에 `:cancel` 은 400 이고 500 이 아니다', async () => {
+      const workOrderId = await closable(100, 100);
+      await call('close', workOrderId, {}).expect(200);
+
+      // ⛔ 전이표가 `CLOSED` 를 `from` 밖으로 막는다 — UPDATE 까지 가면
+      //    `trg_work_order_closed_immutable` 이 500 을 낸다.
+      const rejected = await call('cancel', workOrderId, { reasonCode: 'PLAN_CHANGE' }, '3').expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    });
+
+    it('취소 — 슬롯 전건이 `VOIDED` 이고 이력에 L3 가 찍힌다', async () => {
+      const workOrderId = await closable(50);
+      const before = await slots(workOrderId);
+      // 첫 슬롯을 활성으로 옮겨 둔다 — 마감의 집합(`WAITING` 만)보다 넓은지 가르는 자리다.
+      await prisma.lot.update({
+        where: { lot_id: before[0].lot_id },
+        data: { lifecycle_status_code: 'ACTIVE' },
+      });
+
+      const cancelled = await call('cancel', workOrderId, { reasonCode: 'PLAN_CHANGE', note: '버려진다' }).expect(200);
+
+      expect(cancelled.body).toMatchObject({ statusCode: 'CANCELLED', versionNo: 3 });
+      expect(validator('POST /production/work-orders/{workOrderId}:cancel')(cancelled.body)).toBe(true);
+      // `note` 는 담을 칸이 없어 버린다 — `remarks` 에 덧붙이지 않는다(「알려둘 것」).
+      expect(cancelled.body.remarks ?? null).toBeNull();
+      const after = await slots(workOrderId);
+      expect(after.map((lot) => lot.lifecycle_status_code)).toEqual(['VOIDED', 'VOIDED']);
+      const rows = await history(after.map((lot) => lot.lot_id));
+      expect(rows.map((row) => row.transition_code)).toEqual(['L3', 'L3']);
+      // 코어가 집합을 «찾은 순서»로 돈다 — 두 슬롯이 각각 자기 자리에서 왔는지만 본다.
+      expect(rows.map((row) => row.from_lifecycle_status_code).sort()).toEqual(['ACTIVE', 'WAITING']);
+      const row = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      expect(row.cancellation_reason_code).toBe('PLAN_CHANGE');
+    });
+
+    it('취소 — 이미 발행된 출고요청은 그대로 남는다(문의 038)', async () => {
+      const workOrderId = await closable(100);
+
+      await call('cancel', workOrderId, { reasonCode: 'CUSTOMER_ORDER_CHANGE' }).expect(200);
+
+      // §2 2단계 기준 1 — 재고·상태를 쓰지 않는 쪽. I-8 이 그 표의 상태 축을 세울 때 함께 정한다.
+      const [issued] = await prisma.material_issue_request.findMany({
+        where: { work_order_id: BigInt(workOrderId) },
+        include: { material_issue_request_line: true },
+      });
+      expect(issued).toMatchObject({ status_code: 'REQUESTED' });
+      expect(issued.material_issue_request_line).toHaveLength(2);
+    });
+
+    it('취소 — 사유 코드가 시드 6값 밖이면 400 이다', async () => {
+      const workOrderId = await closable(100);
+
+      const rejected = await call('cancel', workOrderId, { reasonCode: 'NOT_A_SEEDED_REASON' }).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'INVALID' });
+      const row = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      expect(row).toMatchObject({ status_code: 'IN_PROGRESS', cancellation_reason_code: null });
+    });
+
+    it('마감 — If-Match 가 없으면 400, 낡으면 409 다', async () => {
+      const workOrderId = await closable(100, 100);
+
+      const missing = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({});
+      expect(missing.status).toBe(400);
+
+      const stale = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({});
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      // 상태가 안 바뀌었음을 못박는다 — 여전히 올바른 토큰 '2' 로는 그대로 마감된다.
+      await call('close', workOrderId, {}, '2').expect(200);
+    });
+
+    it('취소 — If-Match 가 없으면 400, 낡으면 409 다', async () => {
+      const workOrderId = await closable(100);
+
+      const missing = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:cancel`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'PLAN_CHANGE' });
+      expect(missing.status).toBe(400);
+
+      const stale = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:cancel`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ reasonCode: 'PLAN_CHANGE' });
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      // 상태가 안 바뀌었음을 못박는다 — 여전히 올바른 토큰 '2' 로는 그대로 취소된다.
+      await call('cancel', workOrderId, { reasonCode: 'PLAN_CHANGE' }, '2').expect(200);
+    });
+
+    it('마감 — 같은 Idempotency-Key 재전송은 200 을 되돌려주고 integration_message 는 1행이다', async () => {
+      const workOrderId = await closable(100, 100);
+      const key = randomUUID();
+
+      const first = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send({})
+        .expect(200);
+      const again = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:close`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', '2')
+        .send({})
+        .expect(200);
+
+      expect(again.body).toEqual(first.body);
+      const count = await prisma.integration_message.count({
+        where: { message_key: `IF-WO-CLOSE-SEND:${first.body.workOrderNo}` },
+      });
+      expect(count).toBe(1);
     });
   });
 
@@ -1163,6 +1561,11 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         { production_plan: { plan_no: { startsWith: PREFIX } } },
       ],
     };
+    // 아웃박스는 W/O 를 FK 로 안 걸고 `target_id` 로만 가리킨다 — id 를 먼저 모아 지운다.
+    const queued = await prisma.work_order.findMany({ where: orderScope, select: { work_order_id: true } });
+    await prisma.integration_message.deleteMany({
+      where: { target_type_code: 'WORK_ORDER', target_id: { in: queued.map((row) => row.work_order_id) } },
+    });
     await prisma.production_result_lot_allocation.deleteMany({
       where: { production_result: { work_order: orderScope } },
     });
