@@ -80,5 +80,13 @@ describe('GoodsIssueQueryService', () => {
         NotFoundException,
       );
     });
+
+    it('라인 목록 — 없는 출고면 404(형제 ASN·입하·P/O 의 빈 배열과 «다르게» 고정한다 · I-4.md §6-4)', async () => {
+      const { prisma } = listStub();
+
+      await expect(new GoodsIssueQueryService(prisma).lines(999999999)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
   });
 });

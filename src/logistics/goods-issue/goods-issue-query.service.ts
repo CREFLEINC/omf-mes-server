@@ -37,10 +37,8 @@ export class GoodsIssueQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(query: GoodsIssueQuery): Promise<PagedResponse<GoodsIssueView>> {
-    const page = pageRequest({
-      page: numeric('page', query.page),
-      size: numeric('size', query.size),
-    });
+    // `page`·`size` 는 형제 목록과 같이 «자른다»(`pagination.ts`) — 400 은 식별자 축에만.
+    const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const sourceWarehouseId = numeric('sourceWarehouseId', query.sourceWarehouseId);
     const supplierId = numeric('supplierId', query.supplierId);
     const goodsIssueLineId = numeric('goodsIssueLineId', query.goodsIssueLineId);
@@ -124,10 +122,16 @@ function issuedAtWhere(from?: string, to?: string): Prisma.goods_issueWhereInput
 }
 
 /** 숫자 축에 글자가 섞이면 400 이다 — 그냥 넘기면 Prisma 검증 오류가 500 으로 샌다
- *  (GR 목록 선례 · 계약은 400 미선언 · I-4.md R-9 ⓒ). `page`·`size` 도 같은 축이다. */
+ *  (GR 목록 선례 · 계약은 400 미선언 · I-4.md R-9 ⓒ). */
 function numeric(name: string, value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
   if (Number.isInteger(parsed) && parsed >= 0) return parsed;
   throw one(field(name, ERROR_CODE.INVALID, '숫자여야 합니다.'));
+}
+
+function number(value: unknown): number | undefined {
+  if (value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

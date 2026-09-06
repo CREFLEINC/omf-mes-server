@@ -164,6 +164,14 @@ describe('출고 조회 3건 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
     expect(response.headers.etag).toMatch(/^\d+$/);
     expect(response.body.goodsIssue).not.toHaveProperty('versionNo');
+    // 계약 required 밖이라 ajv 가 못 잡는 둘 — 널 키 비생략(§2-2) · `erpMessageQueued:false` 고정(§8-3 ⓕ).
+    expect(response.body.goodsIssue).toMatchObject({
+      erpMessageQueued: false,
+      approvalRequestId: null,
+      reasonCode: null,
+      replacementExpected: null,
+      remarks: null,
+    });
   });
 
   it('GET /logistics/goods-issues/{id} — 없는 id 는 404', async () => {
