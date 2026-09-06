@@ -1,9 +1,10 @@
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   InboundReceiptCreateInput,
   InboundReceiptLineWriteInput,
   assertWritable,
+  collectHeaderErrors,
 } from './inbound-receipt-rules';
 
 /**
@@ -123,6 +124,18 @@ describe('입하 등록 검사', () => {
       field: 'lines.1.supplierLotNo',
       code: ERROR_CODE.INVALID,
     });
+  });
+
+  it('assertLines — 공유 집합을 넘기면 호출을 넘어 겹침을 본다', () => {
+    const errors: ErrorItem[] = [];
+    const lotNos = new Set<string>();
+
+    collectHeaderErrors('normal.', input(), errors, lotNos);
+    collectHeaderErrors('excess.', input(), errors, lotNos);
+
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'excess.lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+    ]);
   });
 });
 

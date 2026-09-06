@@ -60,6 +60,16 @@ export class InboundReceiptSplitService {
 
     const ids = await this.prisma.$transaction(
       async (tx) => {
+        // ⛔ 두 part 의 부모 P/O 를 «한 번에» 오름차순으로 먼저 잠근다 — part 마다 잠그면
+        //    획득 순서가 「normal 집합 → excess 집합」이 되어 동시 등록·치환과 교착한다.
+        const parentLineIds = new Set<bigint>();
+        for (const { part } of parts) {
+          for (const line of part.lines) {
+            if (line.purchaseOrderLineId != null) parentLineIds.add(BigInt(line.purchaseOrderLineId));
+          }
+        }
+        if (parentLineIds.size > 0) await this.receipts.lockParentsOf(tx, [...parentLineIds]);
+
         const created: bigint[] = [];
         for (const [index, { side, part }] of parts.entries()) {
           created.push(await this.receipts.createWithin(tx, numbers[index], part, appUserId, `${side}.`));
@@ -105,7 +115,13 @@ export class InboundReceiptSplitService {
       if (part.lines.length === 0) errors.push(lineRequired(`${side}.lines`));
     }
     collectMomentErrors(input.businessDate, input.occurredAt, errors);
-    const checks = parts.flatMap(({ side, part }) => collectHeaderErrors(`${side}.`, part, errors));
+    // 설계 미정 — 문의 029: 한 물리 공급사 LOT 이 정량분·초과분으로 갈리는 W-01-03 대표
+    // 시나리오를 `uq_lot(plant_id, lot_no)` 이 막는다. 계약·화면 스펙이 안 다뤘다 — 화면이
+    // 어느 칸을 고칠지 짚도록 미리 400 한다(§2 2단계 「거부하는 쪽」).
+    const lotNos = new Set<string>();
+    const checks = parts.flatMap(({ side, part }) =>
+      collectHeaderErrors(`${side}.`, part, errors, lotNos),
+    );
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     await assertCodeValues(this.prisma, checks);
