@@ -9,7 +9,7 @@ describe('생산 실적 목록 질의 (I-7 PR ①)', () => {
       shiftId: 3,
       equipmentId: 44,
       occurredFrom: '2026-09-06T00:00:00.000Z',
-      occurredTo: '2026-09-06T23:59:59.000Z',
+      occurredTo: '2026-09-07T00:00:00.000Z',
       page: 2,
       size: 20,
     });
@@ -19,8 +19,8 @@ describe('생산 실적 목록 질의 (I-7 PR ①)', () => {
       work_session_id: 12,
       shift_id: 3,
       equipment_id: 44,
-      // ⚠ 끝은 «닫힌» 구간이다 — 계약이 반열림이라 적은 description 이 없다.
-      occurred_at: { gte: new Date('2026-09-06T00:00:00.000Z'), lte: new Date('2026-09-06T23:59:59.000Z') },
+      // 끝은 반열림(L-3) — 익일 00:00 정각은 안 잡힌다.
+      occurred_at: { gte: new Date('2026-09-06T00:00:00.000Z'), lt: new Date('2026-09-07T00:00:00.000Z') },
     });
     // 남은 둘은 where 가 아니라 쪽 요청으로 간다.
     expect(pageRequest({ page: 2, size: 20 })).toMatchObject({ skip: 20, take: 20 });

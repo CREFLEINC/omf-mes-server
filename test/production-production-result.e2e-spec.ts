@@ -118,6 +118,18 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     expect(validator('production-02생산실행.json', 'GET /production/production-results')(response.body)).toBe(true);
   });
 
+  it('목록 — `occurredTo` 정각은 안 잡힌다(반열림 · L-3)', async () => {
+    // 끝 경계를 LATE 정각으로 보내면 EARLY 만 온다 — 「그날까지」를 익일 00:00 으로 보내는 관행에서 경계 1건이 이중 계수되지 않는다.
+    const response = await request(app.getHttpServer())
+      .get(`${RESULTS}?workOrderId=${workOrderId}&occurredFrom=${OCCURRED_EARLY}&occurredTo=${OCCURRED_LATE}`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(response.body.items.map((item: { productionResultId: number }) => item.productionResultId)).toEqual([
+      shiftlessResultId,
+    ]);
+  });
+
   it('단건 — 없는 id 는 404 다', async () => {
     await request(app.getHttpServer()).get(`${RESULTS}/999999999`).set('Cookie', cookie).expect(404);
   });

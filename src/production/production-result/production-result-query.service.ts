@@ -30,14 +30,14 @@ export const PRODUCTION_RESULT_ORDER_BY: Prisma.production_resultOrderByWithRela
  * 질의 6개 → Prisma where(순수 함수). 값이 없는 질의는 **키를 안 넣는다**.
  * ⛔ 기간을 강제하지 않는다 — 계약이 `occurredFrom`·`occurredTo` 를 required 로 적지 않았다
  *    (감사 조회가 아니다). 둘 다 비면 `occurred_at` 조건 자체가 없다.
- * ⚠ `occurredTo` 는 **닫힌 구간(`lte`)**이다 — 계약 파라미터에 반열림을 적은 description 이
- *    없어(실측: description 키 자체가 없다) 이름 그대로 「~까지」로 읽는다.
+ * `occurredTo` 는 반열림(`lt`) — 이 쌍의 description 은 비어 있으나 공유계약 L-3(date-time 축은
+ *    From 이상 · To 미만 · 「그날까지」는 익일 00:00)이 정본이고 형제 목록 6곳이 같다.
  * ⛔ 정정본을 거르지 않는다 — 원본·정정본이 목록에 «둘 다» 보여야 한다(§7-1).
  */
 export function buildProductionResultWhere(query: ProductionResultListQuery): Prisma.production_resultWhereInput {
   const occurredAt = {
     ...(query.occurredFrom === undefined ? {} : { gte: new Date(query.occurredFrom) }),
-    ...(query.occurredTo === undefined ? {} : { lte: new Date(query.occurredTo) }),
+    ...(query.occurredTo === undefined ? {} : { lt: new Date(query.occurredTo) }),
   };
   return {
     ...(query.workOrderId === undefined ? {} : { work_order_id: query.workOrderId }),
