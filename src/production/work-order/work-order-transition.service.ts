@@ -36,23 +36,33 @@ export class WorkOrderTransitionService {
     private readonly documentState: DocumentStateService,
   ) {}
 
-  async hold(workOrderId: number, version: number | undefined, body: WorkOrderHold): Promise<void> {
+  async hold(
+    workOrderId: number,
+    version: number | undefined,
+    body: WorkOrderHold,
+    appUserId?: number,
+  ): Promise<void> {
     // ⛔ `assertCodeValues` 를 걸지 않는다 — `WORK_ORDER_HOLD_REASON` 그룹에 값이 0건이라
     //    대조를 켜면 «모든» `:hold` 가 400 이 된다. 값이 오면 그때 켠다(문의 035 ⓓ).
     //    `occurredAt` 은 계약 검증(`format: date-time`)이 이미 봤다 — 다시 파싱하지 않는다.
     assertNotBlank([['reasonCode', body.reasonCode]]);
-    await this.move(workOrderId, version, 'work-order-hold');
+    await this.move(workOrderId, version, 'work-order-hold', appUserId);
   }
 
-  resume(workOrderId: number, version: number | undefined): Promise<void> {
-    return this.move(workOrderId, version, 'work-order-resume');
+  resume(
+    workOrderId: number,
+    version: number | undefined,
+    appUserId?: number,
+  ): Promise<void> {
+    return this.move(workOrderId, version, 'work-order-resume', appUserId);
   }
 
-  /** 순서: 잠금 → (선택) 버전 대조 → 전이 판정 → 상태·버전만 쓴다. 404 가 전이보다 앞이다. */
+  /** 순서: 잠금 → (선택) 버전 대조 → 전이 판정 → 상태·버전·수정자만 쓴다. 404 가 전이보다 앞이다. */
   private async move(
     workOrderId: number,
     version: number | undefined,
     action: string,
+    appUserId: number | undefined,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const locked = await lockWorkOrder(tx, workOrderId);
@@ -67,7 +77,12 @@ export class WorkOrderTransitionService {
 
       await tx.work_order.update({
         where: { work_order_id: BigInt(workOrderId) },
-        data: { status_code: transition.to, version_no: { increment: 1 } },
+        // `updated_at` 은 트리거가 찍는다 — `updated_by` 를 같이 쓰지 않으면 두 감사 칸이 어긋난다.
+        data: {
+          status_code: transition.to,
+          version_no: { increment: 1 },
+          updated_by: appUserId ?? null,
+        },
       });
     });
   }
