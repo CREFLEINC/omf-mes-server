@@ -35,7 +35,7 @@
 | 2 | **I-2** P/O + 채번 코어 + 승인 상신 코어 | 7 | I-1 | A1·A2·M-b | 채번 · 승인 `request`/`assertNoOpenRequest`(별도 코어 PR) — `assertApproved` 는 **I-4 로 이관**(첫 사용처가 `goods-issues:post` · I-2 재수립 R-9) | opus(코어 2 · 마이그) · sonnet(P/O 조회·CRUD) | 5 | ∥ I-30/I-32 |
 | 3 | **I-3** 입하 | 12 | I-2 | A3 + `inbound_variance.reason_code` 완화 + `ix_inbound_variance_line` | LOT 등록 `src/core/lot/`(코어 PR ≤200 · I-3 재수립 R-1) | sonnet(조회) · opus(마이그·LOT 코어·등록·치환·초과분리) | 6 | ∥ I-12 |
 | 4 | **I-12** 적치 완료·임시적재 | 4 | 입고(구현됨) | — | — | opus(원장 STOCK_TRANSFER) | 2 | ∥ I-3 |
-| 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | M-c | — | opus | 3 | — |
+| 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | — (M-c 는 `20260901090000` 로 이미 적용됨 · I-4 재수립 R-11) | `assertApproved`(코어 PR) | opus(코어·원장·등록·치환) · sonnet(조회 3) | 5 | — |
 | 6 | **I-5** 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | — | `posting.reverse()` | opus | 3 | — |
 | 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus | 4 | — |
 | 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1 | — | opus | 3 | — |
@@ -97,6 +97,7 @@
 | `omitEmpty` 헬퍼 | I-1 | `src/common/http/omit-empty.ts` — 값 없으면 키 생략(널 금지). 사용처 3(`ApprovalTarget`·`DocumentTarget`·`DocumentProgress`) |
 | 채번 | I-2 코어 PR ≤200줄 | `core/numbering` — `numbering_rule`·`numbering_counter`, 기본 패턴, `GR-`·`PT-`·`NTC-` 이관. ⭐ **카운터 증가는 업무 트랜잭션 «밖»에서 돈다**(`next()` 가 `tx` 를 받지 않는다) — 안에서 올리면 ① 롤백이 번호를 되돌려 호출자의 재시도가 같은 번호를 다시 뽑고 ② 카운터 행 잠금이 전표 커밋까지 가서 같은 (유형·영업일)이 직렬화된다(Prisma 기본 5초 시한 → `P2028` 이 재시도 루프를 빠져나가 500). **결번은 허용한다** — 계약이 번호의 연속을 요구하지 않는다. ⭐ **그리고 업무 `$transaction` 을 «열기 전»에 부르고 번호 «문자열»만 트랜잭션에 넘긴다** — 업무 트랜잭션 안에서 부르면 한 요청이 커넥션을 셋 쥐어 풀(기본 `cpu×2+1`) 고갈 시 `P2024` 로 죽는다(PR #189 리뷰 Major-1). 순서는 `검증 → next() → $transaction(…, 번호)`. ⚠ **실측 정정(PR #190 리뷰 Major-1)** — 컨트롤러의 `runIdempotent` 가 이미 `$transaction` 을 열고 그 안에서 `create()` 를 부르므로 「모든 호출자가 열기 전」은 e2e 픽스처에서만 참이다. 운영 호출자는 **멱등 기록 트랜잭션 «안»**이라 요청당 동시 커넥션이 **2 로 main 과 같다(늘지 않는다)**. 진짜 밖으로 빼려면 `IdempotencyService.run` 경계 재설계가 필요해 I-2 범위 밖이다. 뒤 32 전표는 **이 정정된 문장**을 벤다(I-2 재수립 R-2) |
 | LOT 등록 | I-3 코어 PR ≤200줄 | `src/core/lot/` `createWithin(tx, …)` — `lot` + `lot_hold`, 읽기도 `tx`. `sourceTypeCode='INBOUND_RECEIPT_LINE'` 이면 `inbound_receipt_line.lot_id` 를 채운다(이미 있으면 400 `STATE_LOCKED`). 사용처 3(`POST /trace/lots` 구현됨 · I-3 입하 · I-17 재생재) — `server-architecture.md:67` 도메인 간 service 호출 금지 · §1 `lot-genealogy` 예고 자리(I-3 재수립 R-1) |
+| 승인 완료 판정 | I-4 코어 PR ≤200줄 | `assertApproved(tx, targetTypeCode, targetId, approvalTypeCode)` — `approval_request` **다형 축**(FK `approval_request_id` 를 안 본다 · §5 #12). 요청 0건이면 통과(「승인이 필요한 전표」를 가르는 축이 데이터에 없어 상신 흔적으로 대신 가른다 — 문의 030 · I-4 재수립 R-4) · `PENDING` 400 `APPROVAL_IN_PROGRESS` · 거부/취소 400 `APPROVAL_REQUIRED`. 사용처 I-4 `goods-issues:post` · I-14 재고 조정 |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 `app.entity_type_registry` 에서 읽음, 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | `src/integration/message` 에 적재 함수 하나. `message_key` 규약 한 곳 |
@@ -115,7 +116,7 @@
 | A6 | I-1 | `app.approval_route` · `app.approval_request` | 부분 유일 인덱스 `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` **+ `ix_approval_request_target (target_type_code, target_id)`**(J-8 상태 조회 축 — 모든 `:post` 의 자물쇠 경로) · 같은 선행 커밋 |
 | A1·A2·M-b | I-2 | `logistics.purchase_order` | `approval_request_id?` · `source_inbound_receipt_line_id?` · 유일 제약(§I-48) |
 | A3 | I-3 | `logistics.inbound_receipt_line` | `lot_id?` + **같은 파일에** `inbound_variance.reason_code` NOT NULL 해제(계약 「⛔ 선택이다」) · `ix_inbound_variance_line`(I-3 재수립 R-9) |
-| M-c | I-4 | `logistics.goods_issue` | `destination_id`·`destination_type_code` NOT NULL 해제(#147) |
+| ~~M-c~~ | ~~I-4~~ | `logistics.goods_issue` | ✅ **이미 적용됨**(`20260901090000_goods_issue_destination_and_spare` · #44 ≡ #147 · `ck_goods_issue_destination`) — I-4 슬라이스 마이그 **0건**(I-4 재수립 R-11) |
 | M-d | I-6 | `production.work_order(_resource_assignment)` | 부분 유일 인덱스 + `remainder_disposition_code?` |
 | D1 | I-7 | `production.production_result` | `shift_id` NOT NULL 해제 |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` |
@@ -180,6 +181,8 @@
 | **023** P/O 상태 축과 상신 뒤 잠금 — `REGISTERED` 밖으로 옮기는 오퍼레이션이 없다(화면의 상태 드롭다운도 갈 길이 없다 · 승인 대기 중 수정이 열려 있다) | I-2 | I-2 재수립 R-9 |
 | **025** 등록한 P/O 를 다시 여는 화면이 없다 — 수정·라인 치환·재상신·「ERP 미매칭 배지」가 갈 곳이 없다 | I-2 | I-2 재수립 R-9 |
 | **026** 입고가 소비한 입하를 «전기 완료»로 옮기는 주체가 없고, 저장된 입하를 다시 여는 화면도 없다 — 「작성중에서만」 가드가 늘 통과 · 두 PUT 을 부르는 화면 0건(`M-01-09` §8 #1 취소·재등록 선례를 따르는가) | I-3 | I-3 재수립 R-8 |
+| **030** 폐기 출고의 승인 게이트를 걸 축이 데이터에 없다 — 「폐기」`reasonCode` 값이 아직 안 실렸고(고객 확장) 매핑은 데이터여야 한다 · 상신 뒤 라인 변경 · `postImmediately=true` 를 서버가 거부할 것인가(«고아 전표» — 한 버튼 두 호출의 둘째가 400 이면 승인 0건 전표가 남는다) | I-4 | I-4 재수립 R-5 |
+| **031** 출고 라인이 잔액 차원 두 칸(`qualityStatusCode`·`inventoryStatusCode`)을 안 싣는다 — 한 (위치·LOT)에 품질 상태가 둘이면 어느 재고를 내는지 계약이 말하지 않는다(서버: 1행 채택 · 2행+ 400) | I-4 | I-4 재수립 R-5 |
 | **027** 입하 오류를 기록한 뒤 담당자가 그것을 여는 화면·필터가 없다(입하 목록 10필터에 차이 축 0 · `W-01-05` 는 `inbound_variance` 를 안 본다) — 025 의 입하판 | I-3 | I-3 재수립 R-8 |
 | ~~024~~ `erp_purchase_order_no` 유일 제약 → **철회·결번**(`W-01-11` §8 #3·#4 가 물음도 일정도 이미 세웠다). 우리가 부분 유일을 건 사실만 「알려둘 것」으로 | ~~I-2~~ | I-2 재수립 R-9 |
 | 알려둘 것(번호 없음): (I-1) `PUT …/steps` ETag 내림(계약 미선언) · `?requestedByMe` 세션 필요 / **(I-2) `:request-approval` 이 `version_no` 를 안 올린다(8 상신자에 복사) · P/O 쓰기 3건 404 미선언인데 404 를 낸다 · `DEPARTMENT` 결재선을 사람으로 심는다 · `uq_purchase_order_erp_no` 를 걸었다 · 문의 14 표에 `purchase_order_no` 한 행 추가** / **(I-3) `I-3.md` §7-5 ⓐ~ⓗ + 재수립 R-11 ⓘ~ⓡ 18건**(`reason_code` NOT NULL 해제 · 라인 `status_code` 상수 · 쓰기 3건 404 미선언 · `:split`·`variances` 409 미선언 · 첨부 id 버림 · `SplitPart` 차량번호 유실 · 동시 입하 400 화면 통지 · `W-01-09` 두 열 결손 · 문의 14 표에 `inbound_receipt_no`) | I-1 · I-2 · I-3 | 다음 전달분 말미 |

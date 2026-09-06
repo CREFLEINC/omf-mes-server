@@ -43,7 +43,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U9 | 긴급 IQC 생략 | 1 | M-01-13 · W-01-02 | U1 · U8 | 없음 | 불필요 | — | — | 1 |
 | U10 | 적치 지시 | 4 | M-01-05 · M-01-07 · M-04-04 | U5 | 없음 | 불필요 | ○ 위치 이동 | ○ 지시 | 2 |
 | U11 | 출고요청 · 피킹 | 8 | M-01-08 앞 · W-02-10 | U20 | 없음 | 불필요 | ○ 예약 | ○ 피킹 | 2 |
-| U12 | 출고 전표 | 7 | M-01-08 뒤 · W-01-05 · W-01-06 | U11 · U1 | 없음 | 불필요 | ○ 출고 | ○ 출고 | 3 |
+| U12 | 출고 전표 | 7 | M-01-08 뒤 · W-01-05 · W-01-06 · W-04-10 | U11 · U1 | 없음 | 불필요 | ○ 출고 | ○ 출고 | 5(I-4 재수립 R-11) |
 | U13 | 생산창고 입고 | 3 | M-01-09 | U12 | 없음 | 불필요 | ○ 이동 | ○ | 1 |
 | U14 | 재고 이동 · 반출 | 6 | M-01-10 · W-04-11 | U12 | 없음 | 불필요 | ○ 2단 | ○ 이동 | 2 |
 | U15 | 재생재 | 1 | M-01-12 | U5 | 없음 | 불필요 | ○ 증가 | — | 1 |
@@ -229,9 +229,9 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /logistics/goods-issues` | 출고 목록 | M-01-09,P-01-02,W-01-05,W-01-06 | - |
 | `GET /logistics/goods-issues/{goodsIssueId}` | 출고 상세 | P-01-02,W-01-05,W-01-06 | - |
 | `GET /logistics/goods-issues/{goodsIssueId}/lines` | 출고 라인 목록 | P-01-02 | - |
-| `PUT /logistics/goods-issues/{goodsIssueId}/lines` | 출고 라인 치환 | — | 멱등, ETag |
-| `POST /logistics/goods-issues` | 출고 등록 | M-01-08,W-01-05,W-01-06 | 멱등, ETag, 사번 |
-| `POST /logistics/goods-issues/{goodsIssueId}:post` | 출고 전기 | W-01-06 | 멱등, ETag |
+| `PUT /logistics/goods-issues/{goodsIssueId}/lines` | 출고 라인 치환 | — (0건 확정 — `M-01-09` §8 #1 · 반품·피킹은 항상 `POSTED` · 폐기 두 화면 액션표에 라인 편집 없음 · I-4 「알려둘 것」) | 멱등, ETag |
+| `POST /logistics/goods-issues` | 출고 등록 | M-01-08,W-01-05,W-01-06,W-04-10 | 멱등, ETag, 사번 |
+| `POST /logistics/goods-issues/{goodsIssueId}:post` | 출고 전기 | W-01-06,W-04-10 | 멱등, ETag |
 | `POST /logistics/goods-issues/{goodsIssueId}:request-approval` | 기타 출고 품의 상신 | W-01-06,W-04-10 | 멱등, ETag |
 
 #### U13 생산창고 입고 (M-01-09) — 3건
@@ -577,7 +577,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U8 | 보류 해제 사유 코드 필요 여부(대기 11번 · `§Z-8` 열린 물음) | 가장자리 | 2단계 ④「조용히 도출하지 않는 쪽」 — 사유를 **받되 필수로 만들지 않는다**(nullable). 필수→선택은 완화, 선택→필수는 깨는 변경 |
 | U10 | `putaway_rule.priority_no` 방향 · `capacityQty` 사용(`§I-35` · `§Z-11`) | 가장자리 | `§Z-11` 선례 그대로 — **한도를 보지 않고 우선순위 첫 건**만 권장한다 |
 | U11 | 피킹 지시를 **누가 만드는가**(M-01-08 §5-1 「⚠ 누가 만드는지 미정」) | 본길 — 만드는 주체가 없으면 M-01-08 이 영영 빈 화면 | 1단계 본길 → 계약에 생성 오퍼레이션이 없다. `POST /logistics/material-issue-requests` 와 `:release` 가 만드는 쪽으로 «서버 파생»을 두되, **그 파생을 이 슬라이스에서 지어내지 않고** 요청서로 올린다. 조회·`:pick` 은 그대로 구현 |
-| U12 | 기타 출고 결재선 선택 축(`businessUnitId` × `reasonCode` 파생) | 가장자리 — 계약이 「서버가 전표의 reasonCode 로 파생한다」로 이미 못박음 | 0단계에서 끝난다 |
+| U12 | 기타 출고 결재선 선택 축(`businessUnitId` × `reasonCode` 파생) | 가장자리 — 계약이 「서버가 전표의 reasonCode 로 파생한다」로 이미 못박음 | ~~0단계에서 끝난다~~ → **022 대기 · 공통본만**(`businessUnitId` 8자리 `null` · `item.business_unit_id` 는 없는 칸 — I-4 재수립 R-5) |
 | U14 | 창고 «내» 위치 이동을 담을 헤더가 없다(M-01-10 §8) | 본길 | 1단계 본길 → `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 위치 이동은 **적치(U10)로 흡수**하고 요청서에 싣는다 |
 | U16 | 「차이가 있을 때 조정 없이 마감할 수 있나」(W-01-04 §8) | 가장자리 | 계약이 답했다 — `closable`·`closeBlockedReasonCode(VARIANCE_UNADJUSTED)` → 0단계 |
 | U18 | `screenId` 를 채울 표가 없다(`계약-재검토-2026-09-04` §3) | 가장자리 | 계약의 물러난 길 그대로 — **키를 생략한다(널을 보내지 않는다).** `DocumentProgress.screenId` · `ApprovalTarget.screenId` · `Notification.screenId` 셋 다 같다 |

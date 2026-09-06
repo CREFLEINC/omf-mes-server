@@ -117,8 +117,8 @@
 | 마이그레이션 | 없음 (실측) — `goods_issue.approval_request_id`·취소 흔적 3칸이 **이미 있다**. 계약의 「모델에 이 컬럼이 아직 없다」 노트는 **낡았다**(§5.2 표 B). |
 | posting(원장) 연결 | **있음** — `:post` 가 창고→목적지 출고를 쌓는다. 피킹 `:pick` 은 `inventory_reservation` 을 걸고 푼다 |
 | 상태기계 | 있음 (`LOGISTICS_DOCUMENT_STATUS`) · 피킹 라인 상태는 「칸 불필요」(`plannedQty ↔ pickedQty` 가 진행을 담는다) |
-| 예상 PR 수 | 4 — ① 조회 GET 10건 ② 출고 전표 + `:post` posting + e2e(코어) ③ `:request-approval` + 라인 PUT ④ 자재요청·피킹`:pick`·현장입고 + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `:post` 가 「승인이 필요한 전표」를 어떻게 가르는가. 계약이 `reasonCode` → 결재선 파생(G-31)이라 적었다 → **결재선이 그 유형·사업부로 존재하면 승인 필수**로 읽는다. §2 0단계 선례 인용. |
+| 예상 PR 수 | 4 — ① 조회 GET 10건 ② 출고 전표 + `:post` posting + e2e(코어) ③ `:request-approval` + 라인 PUT ④ 자재요청·피킹`:pick`·현장입고 + e2e. ⚠ I-4(출고 7건)만 **5**(조회 3 · `assertApproved` 코어 · `:post`+전기 · 등록 · 치환+상신) — 나머지 10건은 I-8(I-4 재수립 R-11) |
+| 설계 미정 자리 · §2 판정 초안 | `:post` 가 「승인이 필요한 전표」를 어떻게 가르는가. ~~결재선이 그 유형·사업부로 존재하면 승인 필수~~ → **기각**(I-4 재수립 R-4): `businessUnitId` 가 8자리 `null` 이라 「그 유형으로」만 남아 전역 조건이 되고, 결재선 한 벌이 서면 `M-01-08` 생산 투입 출고까지 400 이다. 「폐기」`reasonCode` 값은 아직 안 실렸다(고객 확장). ⇒ **그 전표에 `GOODS_ISSUE_DISPOSAL` 승인 요청이 있으면 승인 전표**(상신 흔적 · §2 2단계 기준 5 · 값이 오면 데이터 매핑으로 바꾼다 — 문의 030). |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -747,7 +747,7 @@ e2e」)을 못 채운다 — 2026-09-04 드리프트가 취소를 리소스 축�
 | 전이 | from → to | 여는 오퍼레이션 | 원장(`InventoryPostingService.post`) |
 |---|---|---|---|
 | `document-post` | `REGISTERED` → `POSTED` | `POST /logistics/goods-issues/{id}:post` · `POST /inventory/adjustments/{id}:post` | **부른다** |
-| (전기와 동시) | (없음) → `POSTED` | `POST /logistics/goods-receipts`(구현됨) | **부른다** — 「생성과 전기가 같은 순간」이라 `REGISTERED` 에 머무는 자리가 없다 |
+| (전기와 동시) | (없음) → `POSTED` | `POST /logistics/goods-receipts`(구현됨) · `POST /logistics/goods-issues`(`postImmediately=true` — I-4) | **부른다** — 「생성과 전기가 같은 순간」이라 `REGISTERED` 에 머무는 자리가 없다. `from` 이 없는 전이라 `transitions.ts` 표에 담지 않고 `document-post` 도 부르지 않는다(I-4.md §3-9) |
 | `transfer-issue` | (없음) → `REGISTERED` | `POST /logistics/stock-transfers` | **부른다**(반출 = 1단째, 도착지가 `IN_TRANSIT`) |
 | `transfer-arrive` | `REGISTERED` → `POSTED` | `POST /logistics/stock-transfers/{id}:arrive` | **부른다**(입고 = 2단째). ⚠ 부분 도착은 상태를 안 옮긴다 — `received_qty` 합이 담고 전량에서만 `POSTED` |
 | `document-request-cancel` | `REGISTERED`·`POSTED` → `CANCEL_REQUESTED` | `POST /logistics/document-progress/{type}/{id}:request-cancel` | 안 부른다 |
@@ -995,7 +995,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | | 건수 | 자리 |
 |---|---|---|
 | `If-Match` **필수**(`IfMatchVersion`) | **46** | 가드가 없으면 400, 형식이 틀리면 400. 핸들러는 `ifMatchVersion(request)` 로 읽어 **UPDATE 의 WHERE 에 건다** |
-| `If-Match` **선택**(`IfMatchVersionOptional`) | **28** | ⭐ 전부 POP 오프라인 큐 대상(C-9 — 「큐는 잠금 토큰을 싣지 않는다」). 있으면 걸고 없으면 안 건다 |
+| `If-Match` **선택**(`IfMatchVersionOptional`) | **28** | ⭐ 전부 POP 오프라인 큐 대상(C-9 — 「큐는 잠금 토큰을 싣지 않는다」). 있으면 걸고 없으면 안 건다. ⛔ 단, **새 자원을 만드는 POST**(`inbound-receipts`·`goods-issues` 등록)는 대조할 버전이 없어 **무시**한다(I-3 §6-3 · I-4 재수립 R-11) |
 | 응답 `ETag` | **42** | `setEtag(response, versionNo)` — ⛔ 본문 필드로 내리지 않는다(A-4) |
 
 ⛔ **선택 28건을 필수로 조이거나 필수 46건을 선택으로 푸는 것이 둘 다 사고다.** 조이면 오프라인 큐가
@@ -1087,7 +1087,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 공지 | `notice_no` | ❌ | 서버가 지음(문의 10번) | (구현됨) |
 | 발주 | `purchase_order_no` | ❌ | — | S01 |
 | 입하 | `inbound_receipt_no` | ❌ | — | S02 |
-| 출고 | `goods_issue_no` | ❌ | — | S04 |
+| 출고 | `goods_issue_no` | ❌ | `GI-{YYYYMMDD}-{SEQ4}`(I-4 · `DEFAULT_PREFIX` `GI`) | S04 |
 | 자재 출고요청 | `issue_request_no` | ❌ | — | S04 |
 | 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — 출고요청이 만든다) |
 | 현장 입고 | `shopfloor_receipt_no` | ❌ | — | S04 |
