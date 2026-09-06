@@ -13,6 +13,9 @@ interface Seed {
   statusCode?: string;
   releasedAt?: Date | null;
   versionNo?: number;
+  orderQty?: number;
+  plannedStartAt?: Date | null;
+  plannedEndAt?: Date | null;
 }
 
 type Row = Record<string, unknown>;
@@ -27,6 +30,9 @@ function stub(seed: Seed = {}) {
           status_code: seed.statusCode ?? 'PLANNED',
           released_at: seed.releasedAt ?? null,
           version_no: seed.versionNo ?? 1,
+          order_qty: seed.orderQty ?? 100,
+          planned_start_at: seed.plannedStartAt ?? null,
+          planned_end_at: seed.plannedEndAt ?? null,
         },
       ]),
     work_order: {
@@ -90,6 +96,36 @@ describe('W/O 발행·수정 (I-6 PR ④)', () => {
       expect(next).not.toHaveBeenCalled();
       expect(created).toEqual([]);
     }
+  });
+
+  it('발행 — 수량이 0 이면 400 이고 채번을 안 태운다', async () => {
+    const { service, created, next } = stub();
+
+    const caught = await service.create(body({ orderQty: 0 }), 9).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ContractException);
+    expect((caught as ContractException).errors).toMatchObject([
+      { field: 'orderQty', code: ERROR_CODE.INVALID },
+    ]);
+    // ⭐ CHECK 위반을 DB 에 물어보지 않는다 — 손검사가 채번보다 앞이다.
+    expect(next).not.toHaveBeenCalled();
+    expect(created).toEqual([]);
+  });
+
+  it('수정 — 종료가 시작보다 앞서면 400 이다(한 칸만 와도 잠긴 행의 짝과 대조한다)', async () => {
+    const plannedStartAt = new Date('2026-09-10T00:00:00Z');
+    const { service, updated } = stub({ plannedStartAt });
+
+    // `plannedEndAt` 한 칸만 보낸다 — 잠긴 행의 `planned_start_at` 과 대조해야 잡힌다.
+    const caught = await service
+      .update(WORK_ORDER, 1, { plannedEndAt: '2026-09-01T00:00:00Z' }, 9)
+      .catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ContractException);
+    expect((caught as ContractException).errors).toMatchObject([
+      { field: 'plannedEndAt', code: ERROR_CODE.INVALID },
+    ]);
+    expect(updated).toEqual([]);
   });
 
   it('수정 — 배포 뒤에는 400 `STATE_LOCKED` 다', async () => {

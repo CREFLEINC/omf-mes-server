@@ -55,6 +55,9 @@ export interface LockedWorkOrder {
   status_code: string;
   released_at: Date | null;
   version_no: number;
+  order_qty: Prisma.Decimal;
+  planned_start_at: Date | null;
+  planned_end_at: Date | null;
 }
 
 /**
@@ -66,7 +69,7 @@ export async function lockWorkOrder(
   workOrderId: number,
 ): Promise<LockedWorkOrder> {
   const rows = await tx.$queryRaw<LockedWorkOrder[]>`
-    SELECT status_code, released_at, version_no
+    SELECT status_code, released_at, version_no, order_qty, planned_start_at, planned_end_at
       FROM production.work_order
      WHERE work_order_id = ${BigInt(workOrderId)}
        FOR UPDATE`;
@@ -78,6 +81,26 @@ export async function lockWorkOrder(
 export function assertVersion(locked: LockedWorkOrder, version: number | undefined): void {
   if (version !== undefined && locked.version_no !== version) {
     assertUpdated(0, 'user', { code: VERSION_CONFLICT });
+  }
+}
+
+/**
+ * ⛔ `work_order_order_qty_check`(`order_qty > 0`)·`ck_work_order_plan_dates`
+ * (`planned_end_at >= planned_start_at`) 를 손으로 먼저 본다 — CHECK 위반은
+ * `PrismaClientUnknownRequestError` 라 공용 그물에 안 걸린다(`prisma-error.ts:23`).
+ */
+function assertWorkOrderWindow(
+  orderQty: number,
+  plannedStartAt: Date | null,
+  plannedEndAt: Date | null,
+): void {
+  if (orderQty <= 0) {
+    throw one(field('orderQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
+  }
+  if (plannedStartAt !== null && plannedEndAt !== null && plannedEndAt < plannedStartAt) {
+    throw one(
+      field('plannedEndAt', ERROR_CODE.INVALID, '시작보다 앞설 수 없습니다.'),
+    );
   }
 }
 
@@ -107,9 +130,13 @@ export class WorkOrderWriteService {
         ),
       );
     }
+    const plannedStartAt = at(body.plannedStartAt) ?? null;
+    const plannedEndAt = at(body.plannedEndAt) ?? null;
+    assertWorkOrderWindow(body.orderQty, plannedStartAt, plannedEndAt);
 
     // ⛔ `$transaction` «밖»이다 — 안에서 부르면 커넥션을 둘 쥔다(`numbering.service.ts:51-53`).
     //    없는 계획·품목은 FK 그물이 400 으로 잡고 그때 번호 하나가 결번으로 남는다(I-2 R-2).
+    // 공장 축은 R-7 이 열려 있으나 규칙 0건이라 비운다 — 등재될 때 채운다.
     const workOrderNo = await this.numbering.next(WORK_ORDER, null, today());
     const created = await this.prisma.work_order.create({
       data: {
@@ -123,8 +150,8 @@ export class WorkOrderWriteService {
         //    다시 돌려야 반영돼, 스키마만 고친 환경에서 옛 값이 조용히 들어간다.
         work_order_type_code: body.workOrderTypeCode ?? DEFAULT_TYPE,
         priority_no: body.priorityNo ?? DEFAULT_PRIORITY,
-        planned_start_at: body.plannedStartAt ?? null,
-        planned_end_at: body.plannedEndAt ?? null,
+        planned_start_at: plannedStartAt,
+        planned_end_at: plannedEndAt,
         status_code: INITIAL_STATUS,
         remarks: body.remarks ?? null,
         created_by: appUserId ?? null,
@@ -156,6 +183,13 @@ export class WorkOrderWriteService {
           field('statusCode', ERROR_CODE.STATE_LOCKED, '배포된 작업지시는 고칠 수 없습니다.'),
         );
       }
+      // 한 칸만 와도 잠긴 행의 짝과 대조한다 — `plannedEndAt` 만 고치면 저장된
+      // `planned_start_at` 과, 반대도 마찬가지로 검사해야 CHECK 를 앞질러 잡는다.
+      assertWorkOrderWindow(
+        body.orderQty ?? Number(locked.order_qty),
+        body.plannedStartAt !== undefined ? at(body.plannedStartAt) ?? null : locked.planned_start_at,
+        body.plannedEndAt !== undefined ? at(body.plannedEndAt) ?? null : locked.planned_end_at,
+      );
 
       await tx.work_order.update({
         where: { work_order_id: BigInt(workOrderId) },
@@ -196,5 +230,8 @@ const id = (value: number | null | undefined): bigint | null | undefined =>
 const at = (value: string | null | undefined): Date | null | undefined =>
   value === undefined || value === null ? (value as null | undefined) : new Date(value);
 
-/** 채번 기간 키 — W/O 는 영업일 칸이 없다. 서버·컨테이너 TZ 가 UTC 로 고정이다. */
+/**
+ * 채번 기간 키 — W/O 는 영업일 칸이 없다. 서버·컨테이너 TZ 가 UTC 로 고정이다.
+ * 하노이 로컬 기준 하루가 어긋날 수 있다 — 영업일 칸이 서면 그 값을 쓴다.
+ */
 const today = (): string => new Date().toISOString().slice(0, 10);

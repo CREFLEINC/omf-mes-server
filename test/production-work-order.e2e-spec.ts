@@ -566,6 +566,29 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(row.priority_no).toBe(5);
     });
 
+    it('수정 — If-Match 가 없으면 400 이다', async () => {
+      const bare = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ priorityNo: 7 });
+
+      expect(bare.status).toBe(400);
+    });
+
+    it('수정 — 낡은 If-Match 는 409 이고 본문이 {conflictCause:"user", code:"VERSION_CONFLICT"} 다', async () => {
+      const stale = await request(app.getHttpServer())
+        .put(`${base}/${issuedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        // 앞선 테스트들로 버전이 이미 3 을 지났다 — '1' 은 확실히 낡았다.
+        .set('If-Match', '1')
+        .send({ priorityNo: 8 });
+
+      expect(stale.status).toBe(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+    });
+
     /** 이 스위트가 만든 W/O 수 + `WORK_ORDER` 채번 카운터. 둘 다 안 움직여야 「아무것도 안 생겼다」다. */
     async function counted(): Promise<[number, string]> {
       const orders = await prisma.work_order.count({ where: { production_plan_id: ids.productionPlan } });

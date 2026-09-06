@@ -65,6 +65,10 @@ export const ERROR_CODE = {
   CANCEL_IN_PROGRESS: 'CANCEL_IN_PROGRESS',
   // 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이고, 나머지 6종이 이 코드로 걸린다.
   TYPE_NOT_CANCELABLE: 'TYPE_NOT_CANCELABLE',
+  // 계약이 이름 붙인 값이다 — `ProductionConflictResponse.code` enum 5값 중 하나이고
+  // W/O 마감이 열린 세션(`ended_at IS NULL`)을 만났을 때 **409** 로 낸다(I-6.md §5-5).
+  // ⚠ 이 PR 은 이름만 예약한다 — 사용처는 I-6 PR ⑥b 다.
+  OPEN_SESSION_EXISTS: 'OPEN_SESSION_EXISTS',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
