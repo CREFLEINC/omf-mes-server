@@ -7,6 +7,10 @@ import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
+import { MaterialConsumptionQueryService } from './material-consumption/material-consumption-query.service';
+import { MaterialConsumptionController } from './material-consumption/material-consumption.controller';
+import { MaterialReturnQueryService } from './material-return/material-return-query.service';
+import { MaterialReturnController } from './material-return/material-return.controller';
 import { ProductionResultApprovalService } from './production-result/production-result-approval.service';
 import { ProductionResultCorrectService } from './production-result/production-result-correct.service';
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
@@ -27,6 +31,7 @@ import { WorkOrderController } from './work-order/work-order.controller';
  * 마감·취소(PR ⑥b)가 LOT 생명주기 코어와 ERP 아웃박스 코어를 부른다.
  * 생산 실적 조회(I-7 PR ①)는 읽기만 한다 — 코어를 부르지 않는다.
  * 실적 등록(PR ②)은 채번 코어와 LOT 생명주기 코어(L1)를 부른다 — 원장은 지나지 않는다.
+ * 자재 투입·반출 조회(I-10 PR ①)는 읽기만 한다 — 코어를 부르지 않는다.
  * 정정·상신(PR ③)이 승인 코어를 부른다 — 상신만 코어를 타고, 정정의 승인 게이트는
  * 「승인이 필수」라 뜻이 반대라 도메인 안에 선다(§5-5).
  */
@@ -40,7 +45,12 @@ import { WorkOrderController } from './work-order/work-order.controller';
     OutboxModule,
     ApprovalModule,
   ],
-  controllers: [WorkOrderController, ProductionResultController],
+  controllers: [
+    WorkOrderController,
+    ProductionResultController,
+    MaterialConsumptionController,
+    MaterialReturnController,
+  ],
   providers: [
     WorkOrderQueryService,
     WorkOrderWriteService,
@@ -53,6 +63,8 @@ import { WorkOrderController } from './work-order/work-order.controller';
     ProductionResultService,
     ProductionResultCorrectService,
     ProductionResultApprovalService,
+    MaterialConsumptionQueryService,
+    MaterialReturnQueryService,
   ],
 })
 export class ProductionModule {}

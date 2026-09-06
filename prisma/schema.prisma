@@ -2630,7 +2630,7 @@ model material_consumption {
   recorded_at                                                                                   DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   late_entry_reason_code                                                                        String?                     @db.VarChar(50)
   worker_id                                                                                     BigInt
-  terminal_id                                                                                   BigInt
+  terminal_id                                                                                   BigInt?
   status_code                                                                                   String                      @db.VarChar(50)
   idempotency_key                                                                               String                      @unique @db.VarChar(150)
   remarks                                                                                       String?
@@ -2649,7 +2649,7 @@ model material_consumption {
   material_consumption_material_consumption_replaced_consumption_idTomaterial_consumption       material_consumption?       @relation("material_consumption_replaced_consumption_idTomaterial_consumption", fields: [replaced_consumption_id], references: [material_consumption_id], onDelete: NoAction, onUpdate: NoAction)
   other_material_consumption_material_consumption_replaced_consumption_idTomaterial_consumption material_consumption[]      @relation("material_consumption_replaced_consumption_idTomaterial_consumption")
   shopfloor_receipt_line                                                                        shopfloor_receipt_line?     @relation(fields: [shopfloor_receipt_line_id], references: [shopfloor_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
-  terminal                                                                                      terminal                    @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  terminal                                                                                      terminal?                   @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   uom_material_consumption_uom_idTouom                                                          uom                         @relation("material_consumption_uom_idTouom", fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                                                                                    work_order                  @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   work_session                                                                                  work_session?               @relation(fields: [work_session_id], references: [work_session_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2721,7 +2721,7 @@ model material_return_line {
   uom_id                        BigInt
   package_opened                Boolean                     @default(false)
   quality_check_required        Boolean                     @default(false)
-  return_quality_status_code    String                      @db.VarChar(50)
+  return_quality_status_code    String?                     @db.VarChar(50)
   inventory_transaction_line_id BigInt?
   created_at                    DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                    BigInt?
