@@ -168,7 +168,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-4 | 출고 — 전표·전기 | 7 | I-3 | 있음 | ⚠ `goods_issue.destination_id` NOT NULL 해제(#147) | ⭐ | ⭕ | 3 |
 | I-5 | 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | 있음(`document_cancellation`) | 완화 1(`reason_code` NOT NULL 해제 · R-1) | ⭐ 역 | ⭕ | 6 |
 | I-6 | W/O — 발행~마감 + 4M 배정 | 13 | I-2 | ⚠ `work_order_resource_assignment` 축이 다르다(네 칸 유지 · `SHIFT` 는 이 경로로 안 채워진다) | ⭕ 식 유일 인덱스 1(`remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다 — I-6 R-9) | ✕ | ⭐ | ~~4~~ **7**(I-6 R-5) |
-| I-7 | 생산 실적 + LOT 생명주기 | 7 | I-6 | 있음 | ✕ | ✕ | ⭐ L1·L2·L3 | 3 |
+| I-7 | 생산 실적 + LOT 생명주기 | 7 | I-6 | 있음 | ⚠ 2(D1 `shift_id` 완화 · D2 `correct_reason_code` · I-7 재수립 R-19) | ✕ | ⭐ L1 만(L2·L3 는 I-6 이 병합해 «쓰기»는 끝났다 · L2 상수 정정 I-7 PR ①) | 4 |
 | I-8 | 출고요청·피킹·예약 코어 | 8 | I-4 | 있음 | ✕ | ⭐ 예약/피킹 칸 | ⭕ | 3 |
 | I-9 | 생산창고 입고 | 3 | I-8 | 있음 | ⚠ 차이 전기 자리가 없다 | ⚠ 미정 | ⭕ | 2 |
 | I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음(`lot_relation`) | ✕ | 반출만 ⭐ | ✕ | 3 |
@@ -267,7 +267,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 **체인 마디**: ⑮~⑱ — 실적이 생산LOT 에 붙고 소비 계보가 닫힌다. **M1 의 종점**.
 **원장**: ⛔ 없다(§1-4). 제품이 재고로 잡히는 것은 **이미 구현된 입고**(`sourceDocumentTypeCode='PRODUCTION_RESULT'`)다 — 그래서 M1 체인 e2e 는 실적 뒤에 «기존» 입고 오퍼레이션을 한 번 더 부른다.
-**상태기계**: ⭐ L1(WAITING→ACTIVE) 을 처음 «쓴다». `production_result_lot_allocation`·`material_usage_allocation`·`lot_lifecycle_history` 가 실적 저장과 **같은 트랜잭션**(원칙 2 「lot 계보」).
+**상태기계**: ⭐ L1(WAITING→ACTIVE) 을 처음 «쓴다». `production_result_lot_allocation`·`lot_lifecycle_history` 가 실적 저장과 **같은 트랜잭션**(원칙 2 「lot 계보」). `material_usage_allocation` 은 투입(I-10) 이 쓴다 — 실적은 건드리지 않는다(I-7 재수립 R-19).
 **예상 설계 미정**
 - `:correct` 의 A급 판정을 「서버가 정정 내용으로 판정한다」인데 등급 기준이 없다. → 1단계 **본길**(모든 정정의 승인 필요 여부가 갈린다) → 계약 문자 그대로 + 문의. 잠정: 「수량 5칸 중 하나라도 바뀌면 A급」 — 계약이 「수불에 영향」이라 적은 것의 가장 좁은 해석이고, 넓히는 것은 호환 완화다.
 - 지연 실적의 마감 뒤 편입(R83) → I-6 의 게이트 물음과 같은 뿌리. 함께 요청서에 싣는다.
@@ -658,7 +658,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 |---|---|---|---|
 | 1 | **원장 판별자를 늘리고 싶어진다.** 투입·실적·출하를 각각 `MATERIAL_CONSUMPTION`·`PRODUCTION_RESULT`·`SHIPMENT` 로 원장에 넣으려는 유혹 | I-10 · I-7 · I-23 | §1-4 표를 계획서에 못 박았다. 계약 `InventoryTransaction.sourceDocumentTypeCode` **enum 4값**이 정본이고, 늘리려면 계약을 고쳐야 한다 |
 | 2 | **`reserved_qty`·`picked_qty` 를 도메인이 직접 UPDATE 한다.** 코어가 안 건드리니 「내가 하면 되지」가 된다 | I-8 에서 시작해 I-22 로 번진다 | I-8 을 코어 전용 PR 로 자르고, e2e 에 「도메인이 `inventory_balance` 를 직접 쓰지 않는다」를 잔액 UPDATE 트리거로 감지 |
-| 3 | **역트랜잭션이 4벌 생긴다** — 취소·실적 정정·출하 취소·조정 역분개 | I-5 → I-7 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
+| 3 | **역트랜잭션이 3벌 생긴다** — 취소·출하 취소·조정 역분개(실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19) | I-5 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
 | 4 | **채번이 15벌 복사된다.** 입고에 이미 `count()+1` 이 있어 복사가 자연스럽다. 취소가 생기면 번호를 **재사용**한다 | I-2 를 늦추면 I-3·I-4·I-13·I-14·I-15·I-22·I-23 전부 | I-2 에서 코어로 세우고 **입고의 두 함수를 그 코어로 옮기는 것**까지 같은 PR |
 | 5 | **`document-progress` 의 유형↔표 대응을 코드에 박는다.** 9종 × 후속 판정이라 `switch` 가 자연스럽다 | I-5, 그리고 유형이 느는 순간 조용히 틀린다 | `app.entity_type_registry` 표가 이미 있다 — 거기서 읽는다. 계약이 명시적으로 서버 소유로 넘긴 자리(A-10 보강) | ⭐ I-5 R-6: **절반 기각** — 매핑은 코드 · 등록부는 부팅 대조로 남긴다.
 | 6 | **생산창고 차이를 원장으로 처리해 버린다.** `businessDate` 가 실려 있어 「전기해야 하나 보다」로 읽힌다 | I-9 | §3-1 I-9 의 §2 판정을 따른다 — 기록만. 뒤집히면 마이그레이션이 생기므로 **그 슬라이스만 3관점 재수립**(README §1-2 첫째 조건) |

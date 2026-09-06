@@ -38,7 +38,7 @@
 | 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | — (M-c 는 `20260901090000` 로 이미 적용됨 · I-4 재수립 R-11) | `assertApproved`(코어 PR) | opus(코어·원장·등록·치환) · sonnet(조회 3) | 5 | — |
 | 6 | **I-5** 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | `document_cancellation.reason_code` NOT NULL 해제(I-5 R-1) | `posting.reverse()` | opus · 조회 ③a③b sonnet | 6 | — |
 | 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus · ② sonnet | 7 | I-6 재수립 R-5 |
-| 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1 | — | opus | 3 | — |
+| 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1·**D2** | — | opus | **4** | — (I-7 재수립 R-5 · D2 는 R-1~R-20 참조) |
 | — | **M1 체인 e2e** (통합 §4-1) | | I-7 | | | fable 통합 | 1 | |
 | 9 | **I-8** 출고요청·피킹·예약 코어 | 8 | I-4 | — | `reserved_qty`/`picked_qty` | opus | 3 | ⛔ I-5 와 직렬 |
 | 10 | **I-9** 생산창고 입고 | 3 | I-8 | — | — | sonnet | 2 | — |
@@ -97,7 +97,7 @@
 | `omitEmpty` 헬퍼 | I-1 | `src/common/http/omit-empty.ts` — 값 없으면 키 생략(널 금지). 사용처 3(`ApprovalTarget`·`DocumentTarget`·`DocumentProgress`) |
 | 채번 | I-2 코어 PR ≤200줄 | `core/numbering` — `numbering_rule`·`numbering_counter`, 기본 패턴, `GR-`·`PT-`·`NTC-` 이관. ⭐ **카운터 증가는 업무 트랜잭션 «밖»에서 돈다**(`next()` 가 `tx` 를 받지 않는다) — 안에서 올리면 ① 롤백이 번호를 되돌려 호출자의 재시도가 같은 번호를 다시 뽑고 ② 카운터 행 잠금이 전표 커밋까지 가서 같은 (유형·영업일)이 직렬화된다(Prisma 기본 5초 시한 → `P2028` 이 재시도 루프를 빠져나가 500). **결번은 허용한다** — 계약이 번호의 연속을 요구하지 않는다. ⭐ **그리고 업무 `$transaction` 을 «열기 전»에 부르고 번호 «문자열»만 트랜잭션에 넘긴다** — 업무 트랜잭션 안에서 부르면 한 요청이 커넥션을 셋 쥐어 풀(기본 `cpu×2+1`) 고갈 시 `P2024` 로 죽는다(PR #189 리뷰 Major-1). 순서는 `검증 → next() → $transaction(…, 번호)`. ⚠ **실측 정정(PR #190 리뷰 Major-1)** — 컨트롤러의 `runIdempotent` 가 이미 `$transaction` 을 열고 그 안에서 `create()` 를 부르므로 「모든 호출자가 열기 전」은 e2e 픽스처에서만 참이다. 운영 호출자는 **멱등 기록 트랜잭션 «안»**이라 요청당 동시 커넥션이 **2 로 main 과 같다(늘지 않는다)**. 진짜 밖으로 빼려면 `IdempotencyService.run` 경계 재설계가 필요해 I-2 범위 밖이다. 뒤 32 전표는 **이 정정된 문장**을 벤다(I-2 재수립 R-2) |
 | LOT 등록 | I-3 코어 PR ≤200줄 | `src/core/lot/` `createWithin(tx, …)` — `lot` + `lot_hold`, 읽기도 `tx`. `sourceTypeCode='INBOUND_RECEIPT_LINE'` 이면 `inbound_receipt_line.lot_id` 를 채운다(이미 있으면 400 `STATE_LOCKED`). 사용처 3(`POST /trace/lots` 구현됨 · I-3 입하 · I-17 재생재) — `server-architecture.md:67` 도메인 간 service 호출 금지 · §1 `lot-genealogy` 예고 자리(I-3 재수립 R-1) |
-| 승인 완료 판정 | I-4 코어 PR ≤200줄 | `assertApproved(tx, targetTypeCode, targetId, approvalTypeCode)` — `approval_request` **다형 축**(FK `approval_request_id` 를 안 본다 · §5 #12). 요청 0건이면 통과(「승인이 필요한 전표」를 가르는 축이 데이터에 없어 상신 흔적으로 대신 가른다 — 문의 030 · I-4 재수립 R-4) · `PENDING` 400 `APPROVAL_IN_PROGRESS` · 거부/취소 400 `APPROVAL_REQUIRED`. 사용처 I-4 `goods-issues:post` · I-14 재고 조정 |
+| 승인 완료 판정 | I-4 코어 PR ≤200줄 | `assertApproved(tx, targetTypeCode, targetId, approvalTypeCode)` — `approval_request` **다형 축**(FK `approval_request_id` 를 안 본다 · §5 #12). 요청 0건이면 통과(「승인이 필요한 전표」를 가르는 축이 데이터에 없어 상신 흔적으로 대신 가른다 — 문의 030 · I-4 재수립 R-4) · `PENDING` 400 `APPROVAL_IN_PROGRESS` · 거부/취소 400 `APPROVAL_REQUIRED`. 사용처 I-4 `goods-issues:post` · I-14 재고 조정. ⚠ **I-7 `:correct` 는 이 함수를 «쓰지 않는다»** — A급 정정은 「승인이 필수」라 0건 통과가 계약과 반대다 ⇒ 도메인이 5줄 판정을 둔다(코어 무변경 · I-7 §5-5). 030 이 답하면 두 자리를 함께 고친다 |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 **코드의 정적 표**(등록부는 칸 4개라 `DocumentProgress` 를 못 채운다 · `entity_type_registry` 는 부팅 대조만 · I-5 R-6), 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | **`src/core/outbox/`** 에 `enqueue()` 하나(사용처가 두 도메인 — I-6 R-11). `message_key` 규약 `{INTERFACE_CODE}:{문서번호}` · 버전 없음 · UNIQUE 충돌은 `alreadyQueued:true` |
@@ -120,6 +120,7 @@
 | ~~M-c~~ | ~~I-4~~ | `logistics.goods_issue` | ✅ **이미 적용됨**(`20260901090000_goods_issue_destination_and_spare` · #44 ≡ #147 · `ck_goods_issue_destination`) — I-4 슬라이스 마이그 **0건**(I-4 재수립 R-11) |
 | M-d | I-6 | `production.work_order_resource_assignment` | **식** 유일 인덱스 1건(`COALESCE(equipment_id, mold_id, worker_id, shift_id)` · I-6 R-9) — `remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다 |
 | D1 | I-7 | `production.production_result` | `shift_id` NOT NULL 해제 |
+| **D2** | I-7 | `production.production_result` | **`correct_reason_code app.code_t` 추가**(nullable) — `ProductionResultCorrect.reasonCode` 가 required 인데 담을 칸이 없다(형제 `material_consumption.change_reason_code` 는 있다 · I-7 §2-2). D1 과 한 파일 |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` |
 | M-e | I-19 | 검사 의뢰 | 기준 완화(#280) |
 | A12 · V | I-20 | `trace.lot_hold` | `target_lot_status_code?` · `version_no`(If-Match 대상이면) |
@@ -149,7 +150,7 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
 12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.

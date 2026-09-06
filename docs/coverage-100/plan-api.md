@@ -224,10 +224,10 @@
 | 선행 슬라이스 | 구현된 `trace/lot` · S19(보류 등록) |
 | 쓰는 표 | `trace.lot_external_identifier`·`lot_hold`·`lot_status_event`·`lot_lifecycle_history` — 있음 |
 | 마이그레이션 | 없음 |
-| posting(원장) 연결 | 없음 — `:complete` 는 LOT 상태와 W/O 사유만 쓴다 |
-| 상태기계 | **있음** — `trace.lot.lifecycle_status_code`(L1·L2·L3 는 이미 `transitions.ts` 에 등록됨) · `:complete` 는 그 셋 밖의 새 전이 |
-| 예상 PR 수 | 2 — ① 조회 GET 4건 ② `:complete`·`:request-iqc-skip`·외부식별자 PUT + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `:complete` 가 «수명주기» 축인지 «품질» 축인지. 계약은 「생산 LOT 을 완료로 옮긴다」만 적는다. `LOT_LIFECYCLE_STATUS` 3값에 「완료」가 없고 `LOT_STATUS` 4값에도 없다 → §2 1단계 **본길**. 계약 문자 그대로 두고(어느 칸도 안 옮기고 W/O 사유만 기록) 문의를 낸다. |
+| posting(원장) 연결 | 없음 — `:complete` 는 `lot.completed_at` 과 W/O 미달 사유만 쓴다(어느 상태 칸도 안 옮긴다) |
+| 상태기계 | **전이 0건** — `:complete` 는 `lifecycle_status_code`·`status_code` 어느 축도 안 옮긴다(`P-02-06` §5-5 ⌜완료는 «시각 필드»가 담는다⌝ 0단계 선례 · I-7 §3-3). L1·L2·L3 는 I-6·I-7 몫 |
+| 예상 PR 수 | 2 — ① 조회 GET 3건 ② `:request-iqc-skip`·외부식별자 PUT + e2e. ⚠ **`:complete`·`GET /trace/lot-lifecycle-events` 는 I-7 로 옮겼다**(`plan.md` §1 41행 · `assignment.tsv` · I-7 §11 #7) |
+| 설계 미정 자리 · §2 판정 초안 | (`:complete` 는 I-7 이 판정했다 — 「본길」이 아니라 **0단계 선례**로 닫혔고 남는 물음은 미달 사유 칸의 소유권 → 문의 043.) 이 슬라이스에 남는 미정 자리는 `:request-iqc-skip` 의 판정 축뿐 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -414,11 +414,11 @@
 |---|---|
 | 선행 슬라이스 | S14·S15 · S09(정정 승인) |
 | 쓰는 표 | `production.production_result(_lot_allocation)`·`material_consumption`·`material_return(_line)`·`operation_handover(_line)`·`precheck_decision`·`repair_execution`·`material_usage_allocation` — 전부 있음 |
-| 마이그레이션 | 없음 · ⚠ `production_result.shift_id` 가 NOT NULL 인데 계약이 필수를 풀었다(「교대는 설계가 정의하는 값이 아니다」). 물리를 고치는 쪽이면 nullable 로 완화 — 두 릴리스 규칙에 안 걸린다(삭제가 아니다). |
-| posting(원장) 연결 | **있음** — 실적이 완제품을 잡고 자재 소비가 WIP 를 뺀다. 반납은 역방향 |
-| 상태기계 | **있음** — `trace.lot.lifecycle_status_code` L1(대기→활성, 이미 등록됨) · 실적 자체의 `status_code` 는 「칸 불필요」 |
-| 예상 PR 수 | 5 — ① 조회 GET 10건 ② 실적 + LOT 배분 + L1 전이 + posting + e2e(코어) ③ 자재 소비/반납 + posting + e2e(코어) ④ `:correct` + `:request-approval`(A급 판정) ⑤ 인계·사전점검·수리 + `:return` |
-| 설계 미정 자리 · §2 판정 초안 | `:request-approval` 의 「A급 보정」 판정식. 계약이 「서버가 정정 내용으로 판정한다」만 적었다 — §2 1단계 **본길**(모든 호출의 결과가 갈린다). 계약 문자 그대로 = 「수불에 영향을 주는 정정」으로 좁게 읽어 **수량 칸이 바뀌면 A급**으로 두고 문의를 낸다. |
+| 마이그레이션 | **2**(I-7 재수립) — D1 `production_result.shift_id` NOT NULL 완화(계약이 필수를 풀었다 · 「교대는 설계가 정의하는 값이 아니다」) · **D2 `production_result.correct_reason_code app.code_t` 추가**(`ProductionResultCorrect.reasonCode` 가 required 인데 담을 칸이 없다). 둘 다 두 릴리스 규칙에 안 걸린다 |
+| posting(원장) 연결 | **실적은 없음** — 제품 재고는 기존 입고(`POST /logistics/goods-receipts` · `sourceDocumentTypeCode='PRODUCTION_RESULT'`)가 잡는다(`plan.md` §0 151행 · integration §1-4 정본 · I-7 §11 #2). 자재 소비가 WIP 를 빼고 반납은 역방향(I-10) |
+| 상태기계 | **있음** — `trace.lot.lifecycle_status_code` L1(대기→활성, 이미 등록됨 · 호출만) · 실적 자체의 `status_code` 는 `x-no-code-key` 이나 칸이 NOT NULL 로 실재하고 응답 required 라 **상수 `'CONFIRMED'`**(판정에 안 쓴다 · `plan.md` §0 #10 · I-7 §2-3) |
+| 예상 PR 수 | I-7(실적 7건 · `:complete`·`lot-lifecycle-events` 포함) **4** — ① 마이그+골격+조회 3 ② 실적+배분+L1 ③ `:correct`+`:request-approval`+누계 정정 ④ `:complete`+`Lot.progress`(I-7 재수립 R-4~R-6). 나머지(소비/반납 · 인계·사전점검·수리)는 I-10·I-25 몫 |
+| 설계 미정 자리 · §2 판정 초안 | 「A급 보정」 판정식 — **판정 자리는 `:request-approval` 이 아니라 `:correct` 다**(`W-02-05` §5-8 흐름도 · 상신 본문은 `reason` 한 칸이라 판정 입력이 없다 → 문의 041). 승계 뒤 다섯 수량 칸 중 하나라도 원본과 다르면 A급(I-7 §5-5 · R-9). |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -1048,7 +1048,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 
 | 코드 | 상태 | 조건 | 슬라이스 | 왜 새로 만드나 |
 |---|---|---|---|---|
-| `APPROVAL_REQUIRED` | 400 | `:post` 인데 승인이 안 끝났다 | S04·S07 | 계약이 「승인 전이면 400」이라만 적고 코드를 안 줬다. `STATE_LOCKED` 로 뭉치면 화면이 「결재함으로 가세요」를 못 낸다 |
+| `APPROVAL_REQUIRED` | 400 | `:post` 인데 승인이 안 끝났다 · **`:correct` A급인데 승인 흔적이 0건이거나 반려됨**(I-7) | S04·S07·**S16** | 계약이 「승인 전이면 400」이라만 적고 코드를 안 줬다. `STATE_LOCKED` 로 뭉치면 화면이 「결재함으로 가세요」를 못 낸다 |
 | `APPROVAL_IN_PROGRESS` | 400 | 진행 중인 승인 요청이 이미 있다(「한 전표에 살아 있는 요청은 하나」) | S01·S04·S07·S16 | 위와 갈려야 한다 — 이쪽은 «기다려라», 저쪽은 «올려라» |
 | `ALREADY_CANCELLED` | 400 | 이미 취소됐다 | S06 | `cancelBlockedReasonCode` 와 **같은 문자열**을 쓴다 — 조회의 사유와 실행의 오류가 같은 어휘여야 화면이 안 갈린다 |
 | `CANCEL_IN_PROGRESS` | 400 | 취소 요청이 이미 진행 중이다 | S06 | 같음(S22 의 409 와 상태만 다르고 뜻이 같다) |
