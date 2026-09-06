@@ -147,9 +147,40 @@ export class InboundReceiptService {
   }
 
   /**
+   * 라인 → 부모 P/O 매핑을 읽고 부모를 오름차순 한 문장으로 잠근다. ⛔ 없는 라인을 «던지지
+   * 않는다» — 400 이 짚을 필드 경로는 부르는 쪽만 안다. `:split` 은 `createWithin` 둘을
+   * 부르기 «전»에 두 part 의 합집합으로 이것을 한 번 부른다.
+   */
+  async lockParentsOf(
+    tx: Prisma.TransactionClient,
+    purchaseOrderLineIds: bigint[],
+  ): Promise<Map<bigint, bigint>> {
+    // ⛔ 잠글 부모는 트랜잭션 «안»에서 라인 → 부모 매핑을 읽어 얻는다. 없는 라인을 FK 에
+    //    맡기면 오류가 최상위 칸을 짚는다(R-6 ⓐ · #193 Minor-1).
+    const owners = await tx.purchase_order_line.findMany({
+      where: { purchase_order_line_id: { in: purchaseOrderLineIds } },
+      select: { purchase_order_line_id: true, purchase_order_id: true },
+    });
+    const parents = new Map(owners.map((row) => [row.purchase_order_line_id, row.purchase_order_id]));
+    if (parents.size === 0) return parents;
+
+    const parentIds = [...new Set(parents.values())].sort((left, right) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    );
+    await tx.$queryRaw`
+      SELECT purchase_order_id
+        FROM logistics.purchase_order
+       WHERE purchase_order_id IN (${Prisma.join(parentIds)})
+       ORDER BY purchase_order_id
+         FOR UPDATE`;
+    return parents;
+  }
+
+  /**
    * ⭐ 불변식 — `purchase_order_line.received_qty` 를 쓰는 모든 경로는 부모 `purchase_order`
    * 를 «먼저» 잠근다(I-3.md §3-2 · I-2 `replaceLines` 와 같은 순서). 두 입하가 서로 다른
-   * 순서로 두 P/O 를 잡으면 교착하므로 **오름차순 한 문장**이다.
+   * 순서로 두 P/O 를 잡으면 교착하므로 **오름차순 한 문장**이다. `:split` 은 두 part 의
+   * 합집합을 먼저 잠근다(PR ⑥) — part 마다 잠그면 순서가 어긋난다.
    */
   private async lockAttribution(
     tx: Prisma.TransactionClient,
@@ -168,13 +199,7 @@ export class InboundReceiptService {
     }
     if (deltas.size === 0) return deltas;
 
-    // ⛔ 잠글 부모는 트랜잭션 «안»에서 라인 → 부모 매핑을 읽어 얻는다. 없는 라인을 FK 에
-    //    맡기면 오류가 최상위 칸을 짚는다(R-6 ⓐ · #193 Minor-1).
-    const owners = await tx.purchase_order_line.findMany({
-      where: { purchase_order_line_id: { in: [...deltas.keys()] } },
-      select: { purchase_order_line_id: true, purchase_order_id: true },
-    });
-    const parents = new Map(owners.map((row) => [row.purchase_order_line_id, row.purchase_order_id]));
+    const parents = await this.lockParentsOf(tx, [...deltas.keys()]);
     for (const [purchaseOrderLineId, delta] of deltas) {
       if (!parents.has(purchaseOrderLineId)) {
         throw one(
@@ -182,16 +207,6 @@ export class InboundReceiptService {
         );
       }
     }
-
-    const parentIds = [...new Set(parents.values())].sort((left, right) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    );
-    await tx.$queryRaw`
-      SELECT purchase_order_id
-        FROM logistics.purchase_order
-       WHERE purchase_order_id IN (${Prisma.join(parentIds)})
-       ORDER BY purchase_order_id
-         FOR UPDATE`;
 
     // 잠근 «뒤»에 수량을 다시 읽는다 — 그 전에 읽은 값은 P/O 치환이 바꿨을 수 있다.
     const locked = await tx.purchase_order_line.findMany({

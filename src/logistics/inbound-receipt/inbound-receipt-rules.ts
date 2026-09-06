@@ -77,6 +77,8 @@ export function collectHeaderErrors(
   at: string,
   header: InboundReceiptHeaderWriteInput,
   errors: ErrorItem[],
+  /** 호출을 «가로질러» 공급사 LOT 겹침을 보려면 한 집합을 넘긴다(`:split` 의 두 part). */
+  lotNos = new Set<string>(),
 ): CodeCheck[] {
   if (Number.isNaN(Date.parse(header.receiptDatetime))) {
     errors.push(field(`${at}receiptDatetime`, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
@@ -85,7 +87,7 @@ export function collectHeaderErrors(
   if (header.exceptionTypeCode != null && !header.exceptionReason) {
     errors.push(field(`${at}exceptionReason`, ERROR_CODE.PAIR, '예외 유형과 사유는 짝입니다.'));
   }
-  assertLines(at, header.lines, errors);
+  assertLines(at, header.plantId, header.lines, errors, lotNos);
 
   return [
     {
@@ -148,8 +150,13 @@ export async function assertWritable(
   await assertCodeValues(prisma, checks);
 }
 
-function assertLines(prefix: string, lines: InboundReceiptLineWriteInput[], errors: ErrorItem[]): void {
-  const lotNos = new Set<string>();
+function assertLines(
+  prefix: string,
+  plantId: number,
+  lines: InboundReceiptLineWriteInput[],
+  errors: ErrorItem[],
+  lotNos: Set<string>,
+): void {
   for (const [index, line] of lines.entries()) {
     const at = `${prefix}lines.${index}`;
     // 「`supplierLotMissing` 이 참일 때 필수」(계약).
@@ -166,11 +173,13 @@ function assertLines(prefix: string, lines: InboundReceiptLineWriteInput[], erro
       );
     }
     // ⛔ 안 가르면 `uq_lot(plant_id, lot_no)` P2002 로 트랜잭션이 통째로 죽는다(R-7 ③).
+    //    키는 그 유일 제약과 «같은 쌍»이다 — 공장이 다르면 같은 번호를 허용한다(물리가 허용한다).
     if (attachesLot(line) && line.supplierLotNo) {
-      if (lotNos.has(line.supplierLotNo)) {
+      const key = `${plantId}\u0000${line.supplierLotNo}`;
+      if (lotNos.has(key)) {
         errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '한 요청 안에서 겹칩니다.'));
       }
-      lotNos.add(line.supplierLotNo);
+      lotNos.add(key);
     }
     // ⛔ `ck_inbound_expiry` 위반은 알려진 오류가 아니라 500 으로 샌다 — 손으로 앞당긴다.
     if (line.expiryDate && line.manufacturedDate && line.expiryDate < line.manufacturedDate) {

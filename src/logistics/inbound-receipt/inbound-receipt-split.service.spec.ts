@@ -14,8 +14,10 @@ import { InboundReceiptService } from './inbound-receipt.service';
 
 type Args = Record<string, unknown>;
 
+/** 102 의 부모가 101 의 부모보다 «작다» — part 마다 잠그면 900 → 800 순이 되는 배치다. */
 const PO_LINES: Record<string, { parent: bigint; ordered: number; received: number }> = {
   '101': { parent: 900n, ordered: 100, received: 0 },
+  '102': { parent: 800n, ordered: 100, received: 0 },
 };
 
 const part = (overrides: Args = {}) => ({
@@ -44,6 +46,20 @@ const excessPart = (overrides: Args = {}) =>
     ],
     ...overrides,
   });
+
+const poLine = (purchaseOrderLineId: number | null) => ({
+  purchaseOrderLineId,
+  itemId: 40,
+  receivedQty: 3,
+  uomId: 50,
+  supplierLotMissing: true,
+  substituteLotReasonCode: 'NO_LABEL',
+});
+
+/** 사전부착 라인 한 벌 — 두 part 에 같은 번호를 실어 `uq_lot` 축을 본다. */
+const LOT_LINES = {
+  lines: [{ itemId: 40, receivedQty: 3, uomId: 50, supplierLotMissing: false, supplierLotNo: 'SL-같음' }],
+};
 
 const input = (overrides: Args = {}): InboundReceiptSplitInput =>
   ({
@@ -96,6 +112,11 @@ function fake(codeValues?: string[]) {
       },
       updateMany: async () => ({ count: 1 }),
     },
+    lot: {
+      create: async () => ({ lot_id: 7000n }),
+      findUniqueOrThrow: async () => ({ lot_id: 7000n, lot_hold: [] }),
+    },
+    lot_hold: { create: async () => undefined },
   };
 
   const prisma = {
@@ -139,7 +160,25 @@ function fake(codeValues?: string[]) {
     numbering,
     receipts,
   );
-  return { service, recorded };
+  return { service, receipts, recorded };
+}
+
+/** `lockParentsOf` 와 `createWithin` 의 «호출 순서»를 본다 — 원본은 그대로 부른다. */
+function trace(receipts: InboundReceiptService) {
+  const order: string[] = [];
+  const lockArgs: bigint[][] = [];
+  const lock = receipts.lockParentsOf.bind(receipts);
+  const create = receipts.createWithin.bind(receipts);
+  jest.spyOn(receipts, 'lockParentsOf').mockImplementation((tx, ids) => {
+    order.push('lock');
+    lockArgs.push(ids);
+    return lock(tx, ids);
+  });
+  jest.spyOn(receipts, 'createWithin').mockImplementation((...args) => {
+    order.push('create');
+    return create(...args);
+  });
+  return { order, lockArgs };
 }
 
 async function thrown(work: () => Promise<unknown>): Promise<unknown> {
@@ -226,6 +265,49 @@ describe('InboundReceiptSplitService.create', () => {
 
     expect(recorded.headers[1].exception_type_code).toBeNull();
     expect(created.created.map((row) => row.exceptionTypeCode)).toEqual([null, null]);
+  });
+
+  it('분리 — 두 part 에 같은 공장의 같은 supplierLotNo 가 실리면 excess.lines.{i}.supplierLotNo 를 짚는 400 INVALID 다', async () => {
+    const error = await thrown(() =>
+      fake().service.create(input({ normal: part(LOT_LINES), excess: excessPart({ plantId: 30, ...LOT_LINES }) }), 99),
+    );
+
+    expect((error as ContractException).errors).toEqual([
+      expect.objectContaining({ field: 'excess.lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+    ]);
+  });
+
+  it('분리 — 두 part 의 plantId 가 다르면 같은 supplierLotNo 를 허용한다', async () => {
+    const { service, recorded } = fake();
+
+    const created = await service.create(
+      input({ normal: part(LOT_LINES), excess: excessPart(LOT_LINES) }),
+      99,
+    );
+
+    expect(created.created).toHaveLength(2);
+    expect(recorded.lines.map((row) => row.supplier_lot_no)).toEqual(['SL-같음', 'SL-같음']);
+  });
+
+  it('분리 — createWithin 전에 두 part 의 P/O 부모 합집합을 한 번 잠근다', async () => {
+    const { service, receipts } = fake();
+    const { order, lockArgs } = trace(receipts);
+
+    await service.create(input({ excess: excessPart({ lines: [poLine(102)] }) }), 99);
+
+    // 선잠금이 «한 번»만 서고 그 다음이 첫 `createWithin` 이다 — 합집합이라 800 → 900 순이 된다.
+    expect(order.indexOf('create')).toBe(1);
+    expect(lockArgs[0]).toEqual([101n, 102n]);
+  });
+
+  it('분리 — 두 part 모두 P/O 라인이 없으면 선잠금을 부르지 않는다', async () => {
+    const { service, receipts } = fake();
+    const { order, lockArgs } = trace(receipts);
+
+    await service.create(input({ normal: part({ lines: [poLine(null)] }) }), 99);
+
+    expect(lockArgs).toEqual([]);
+    expect(order).toEqual(['create', 'create']);
   });
 
   it('분리 — exceptionTypeCode 가 code_value 에 없으면 400 이다', async () => {

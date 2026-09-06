@@ -748,6 +748,27 @@ describe('입하 등록 (e2e)', () => {
     expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
   });
 
+  it('분리 — 정량분·초과분이 같은 공급사 LOT 을 실으면 400 INVALID 가 초과분 칸을 짚는다', async () => {
+    const receiptsBefore = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+    const lotsBefore = await prisma.lot.count({ where: { plant_id: plantId } });
+    // W-01-03 대표 시나리오 — 한 물리 LOT 이 정량분·초과분으로 갈린다(문의 029).
+    const shared = await lineDraft();
+
+    const rejected = await sendSplit(
+      await splitBody({
+        normal: await splitPart({ lines: [shared] }),
+        excess: await splitPart({ lines: [{ ...shared, receivedQty: 20 }] }),
+      }),
+    ).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'excess.lines.0.supplierLotNo',
+      code: 'INVALID',
+    });
+    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(receiptsBefore);
+    expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
+  });
+
   it('분리 — 권한 없는 사용자의 POST 는 403', async () => {
     await request(app.getHttpServer())
       .post('/api/logistics/inbound-receipts:split')
