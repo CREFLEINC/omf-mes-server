@@ -88,9 +88,8 @@ export class GoodsIssueUpdateService {
         BigInt(goodsIssueId),
         APPROVAL_TYPE,
       );
-      // ⛔ 승인이 «끝난» 뒤에도 막는다 — `assertApproved` 는 시각 순서를 안 봐서 승인 뒤 바꾼
-      //    라인이 그대로 원장에 나간다(#213 리뷰 Major-1). 승인을 되무르는 경로가 계약에 없어
-      //    전기 전까지 라인은 승인자가 본 그대로 얼어 있다.
+      // ⛔ 승인이 «끝난» 뒤에도 막는다 — `assertApproved` 는 시각 순서를 안 봐서 승인 뒤 바꾼 라인이
+      //    그대로 원장에 나간다. 승인을 되무르는 경로가 계약에 없어 전기 전까지 라인은 얼어 있다.
       await assertNotApproved(tx, goodsIssueId);
 
       const existing = await tx.goods_issue_line.findMany({
@@ -178,8 +177,7 @@ export class GoodsIssueUpdateService {
       select: { status_code: true },
     });
     if (exists === null) throw new NotFoundException('없는 출고 전표입니다.');
-    // 채번 «전»에 한 번 거른다 — 전기된 전표에 상신을 되풀이하면 AP 번호만 매번 빈다(#213
-    // Minor-1). 잠근 뒤의 재검사는 경합 때문에 그대로 둔다.
+    // 채번 «전»에 한 번 거른다 — 전기된 전표에 상신을 되풀이하면 AP 번호만 빈다. 잠근 뒤 재검사는 경합 몫.
     assertRegistered(exists.status_code, '상신할');
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다 — 열린 트랜잭션 안에서 부르면 이 요청이
