@@ -3,6 +3,8 @@
  * LOT 생명주기 변경이력 `GET /trace/lot-lifecycle-events`(I-7 PR ①) +
  * 등록 `POST /production/production-results` + LOT 배분 + L1(PR ②) +
  * 정정 `POST …/{id}:correct` · 상신 `POST …/{id}:request-approval`(PR ③).
+ * 생산 LOT 완료 `POST /trace/lots/{lotId}:complete` + `Lot.progress`(PR ④ — LOT 완료도 실적
+ * 픽스처가 필요해 같은 스위트에 둔다).
  *
  * ⭐ 조회가 보는 실적은 **직접 INSERT** 한다 — 등록 경로를 태우면 조회 단언이 등록 구현에
  *   매달린다. 등록 갈래만 API 로 만든다.
@@ -38,7 +40,7 @@ const APPROVER_ROLE = 'E2E_PRODUCTION_RESULT_APPROVER';
  * 403 을 선언한 것은 `:close`(`W-02-05`) · 실적 등록(POP 화면 넷 중 하나면 된다) · 정정·상신(`W-02-05`)
  * 넷이다 — 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
  */
-const PERMISSIONS = ['W-02-05', 'P-02-04'];
+const PERMISSIONS = ['W-02-05', 'P-02-04', 'W-02-07', 'P-02-06'];
 /** 결재함 상세 GET 과 `:approve`/`:reject` 가 같은 한 벌을 쓴다(`derived-permissions.ts:17·143`). */
 const APPROVER_PERMISSIONS = ['W-03-09'];
 /** 승인 다형 축 — 서버가 채우는 값 그대로다(계약 x-internal-note). */
@@ -47,6 +49,7 @@ const LOT_SOURCE = 'WORK_ORDER';
 const RESULTS = '/api/production/production-results';
 const EVENTS = '/api/trace/lot-lifecycle-events';
 const WORK_ORDERS = '/api/production/work-orders';
+const LOTS = '/api/trace/lots';
 const APPROVAL_REQUESTS = '/api/app/approval-requests';
 const OCCURRED_EARLY = '2026-09-06T01:00:00.000Z';
 const OCCURRED_LATE = '2026-09-06T05:00:00.000Z';
@@ -96,7 +99,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   let approverCookie: string[];
   let approverUserId: bigint;
   let correctRouteId: bigint;
-  const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n };
+  const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n, productionPlan: 0n, routingOperation: 0n };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -706,6 +709,236 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     }
   });
 
+  describe('LOT 완료 :complete · 진척 (PR ④)', () => {
+    const COMPLETED_AT = '2026-09-06T06:00:00.000Z';
+    const BUSINESS_DATE = '2026-09-06';
+
+    /**
+     * ⭐ 발행·배포를 **API 로** 탄다 — 이 블록이 보는 것이 「M1 마디가 끝까지 이어지는가」라
+     *   선발행 슬롯을 직접 INSERT 하면 그 마디가 사라진다(위 두 블록과 반대 이유다).
+     */
+    async function released(orderQty: number, lotSize: number) {
+      const created = await request(app.getHttpServer())
+        .post(WORK_ORDERS)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: Number(ids.productionPlan),
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty,
+          uomId: Number(ids.uom),
+        })
+        .expect(201);
+      const workOrderId = created.body.workOrderId as number;
+      await request(app.getHttpServer())
+        .post(`${WORK_ORDERS}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', created.headers.etag as string)
+        .send({ lotSize })
+        .expect(200);
+      const slots = await prisma.lot.findMany({
+        where: { source_type_code: LOT_SOURCE, source_id: BigInt(workOrderId) },
+        orderBy: { work_order_lot_seq: 'asc' },
+        select: { lot_id: true, lifecycle_status_code: true },
+      });
+      return { workOrderId, slots };
+    }
+
+    /** 배분한 실적 1건 — 슬롯이 `ACTIVE` 로 옮고 LOT 누계가 선다. */
+    const record = (workOrderId: number, lotId: bigint, qty: number) =>
+      request(app.getHttpServer())
+        .post(RESULTS)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Worker-No', `${PREFIX}-WK`)
+        .send({
+          workOrderId,
+          uomId: Number(ids.uom),
+          resultSourceCode: 'MANUAL',
+          occurredAt: OCCURRED_LATE,
+          goodQty: qty,
+          lotAllocations: [{ lotId: Number(lotId), allocatedQty: qty }],
+        });
+
+    interface CompleteOptions {
+      cookie?: string[];
+      ifMatch?: string;
+      /** `null` 이면 헤더를 아예 안 붙인다 — 계약이 required 로 못박은 자리다. */
+      workerNo?: string | null;
+    }
+
+    function complete(lotId: bigint, payload: object = {}, options: CompleteOptions = {}) {
+      const call = request(app.getHttpServer())
+        .post(`${LOTS}/${Number(lotId)}:complete`)
+        .set('Cookie', options.cookie ?? cookie)
+        .set('Idempotency-Key', randomUUID());
+      if (options.workerNo !== null) call.set('X-Worker-No', options.workerNo ?? `${PREFIX}-WK`);
+      if (options.ifMatch !== undefined) call.set('If-Match', options.ifMatch);
+      return call.send({ businessDate: BUSINESS_DATE, occurredAt: COMPLETED_AT, ...payload });
+    }
+
+    /** LOT 의 지금 토큰 — 본문에 `versionNo` 가 없으므로(A-4) ETag 로만 받는다. */
+    async function etagOf(lotId: bigint): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .get(`${LOTS}/${Number(lotId)}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.headers.etag as string;
+    }
+
+    const lifecyclesOf = async (lotIds: bigint[]) =>
+      (
+        await prisma.lot.findMany({
+          where: { lot_id: { in: lotIds } },
+          orderBy: { work_order_lot_seq: 'asc' },
+          select: { lifecycle_status_code: true },
+        })
+      ).map((lot) => lot.lifecycle_status_code);
+
+    it('M1 마디 — 발행 → 배포 → 슬롯 2개 `WAITING` → 실적 등록 → 슬롯 1이 `ACTIVE` → LOT 완료 → `completedAt` 이 응답에 실린다', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      expect(slots.map((slot) => slot.lifecycle_status_code)).toEqual(['WAITING', 'WAITING']);
+
+      await record(workOrderId, slots[0].lot_id, 50).expect(201);
+      expect(await lifecyclesOf(slots.map((slot) => slot.lot_id))).toEqual(['ACTIVE', 'WAITING']);
+
+      const response = await complete(slots[0].lot_id, {}, { ifMatch: await etagOf(slots[0].lot_id) }).expect(200);
+
+      // ⛔ 완료가 옮기는 것은 «시각 칸» 하나다 — `LOT_LIFECYCLE_STATUS` 3값에 「완료」가 없다.
+      expect(response.body).toMatchObject({
+        lotId: Number(slots[0].lot_id),
+        completedAt: COMPLETED_AT,
+        lifecycleStatusCode: 'ACTIVE',
+        // 배포가 심은 품질 판정 그대로다 — `:complete` 는 그 축도 안 건드린다(03 품질 계약 소관).
+        statusCode: 'INSPECTION_PENDING',
+      });
+      // 배포 1 → L1 2 → 완료 3.
+      expect(response.headers.etag).toBe('3');
+      expect(validator('logistics-01자재창고.json', 'POST /trace/lots/{lotId}:complete')(response.body)).toBe(true);
+    });
+
+    it('완료 — 미달이면 W/O 의 `completionVarianceReasonCode` 가 함께 찍힌다(한 트랜잭션)', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      await record(workOrderId, slots[0].lot_id, 60).expect(201);
+
+      // 사유가 없으면 400 이고 아무것도 안 남는다.
+      const missing = await complete(slots[0].lot_id).expect(400);
+      expect(missing.body.errors[0]).toMatchObject({
+        field: 'completionVarianceReasonCode',
+        code: 'REQUIRED',
+      });
+
+      await complete(slots[0].lot_id, { completionVarianceReasonCode: 'MATERIAL_SHORTAGE' }).expect(200);
+
+      const workOrder = await prisma.work_order.findUniqueOrThrow({
+        where: { work_order_id: BigInt(workOrderId) },
+        select: { completion_variance_reason_code: true, status_code: true, closed_at: true },
+      });
+      // ⛔ W/O 의 상태·마감 시각은 안 옮긴다 — 옮기는 것은 사유 한 칸뿐이다(§3-3).
+      expect(workOrder).toEqual({
+        completion_variance_reason_code: 'MATERIAL_SHORTAGE',
+        status_code: 'RELEASED',
+        closed_at: null,
+      });
+      const lot = await prisma.lot.findUniqueOrThrow({
+        where: { lot_id: slots[0].lot_id },
+        select: { completed_at: true },
+      });
+      expect(lot.completed_at).toEqual(new Date(COMPLETED_AT));
+    });
+
+    it('완료 — 실적 등록 뒤 LOT 을 다시 읽은 `versionNo` 로 If-Match 하면 통과하고, 실적 전 토큰이면 409 다(R-15)', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      const beforeResult = await etagOf(slots[0].lot_id);
+      await record(workOrderId, slots[0].lot_id, 100).expect(201);
+      const afterResult = await etagOf(slots[0].lot_id);
+
+      // ⭐ `moveWithin`(L1)이 같은 행의 `version_no` 를 올린다 — 실적 전 토큰은 이미 낡았다.
+      expect([beforeResult, afterResult]).toEqual(['1', '2']);
+      const stale = await complete(slots[0].lot_id, {}, { ifMatch: beforeResult }).expect(409);
+      // ⛔ 이 오퍼레이션만 «일반» `ConflictResponse` 다 — `code` 를 안 싣는다(§8-4).
+      expect(stale.body).toMatchObject({ conflictCause: 'user' });
+      expect(Object.keys(stale.body)).not.toContain('code');
+      expect(validator('logistics-01자재창고.json', 'POST /trace/lots/{lotId}:complete', 409)(stale.body)).toBe(true);
+
+      await complete(slots[0].lot_id, {}, { ifMatch: afterResult }).expect(200);
+    });
+
+    it('완료 — If-Match 가 없으면 통과다', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      await record(workOrderId, slots[0].lot_id, 100).expect(201);
+
+      // 오프라인 큐에 쌓인 요청은 토큰을 싣지 않는다(C-9) — 계약이 이 자리를 «선택»으로 뒀다.
+      const response = await complete(slots[0].lot_id).expect(200);
+
+      expect(response.body.completedAt).toBe(COMPLETED_AT);
+    });
+
+    it('진척 — `GET /trace/lots/{lotId}?withProgress=true` 에 `progress` 4칸이 실리고 `false` 면 키가 없다(R-6)', async () => {
+      const { workOrderId, slots } = await released(100, 50);
+      await record(workOrderId, slots[0].lot_id, 30).expect(201);
+
+      const on = await request(app.getHttpServer())
+        .get(`${LOTS}/${Number(slots[0].lot_id)}?withProgress=true`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const off = await request(app.getHttpServer())
+        .get(`${LOTS}/${Number(slots[0].lot_id)}?withProgress=false`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // 분모는 이 LOT 의 `initialQty`(50)다 — W/O 지시 수량(100)이 아니다.
+      expect(on.body.lot.progress).toEqual({
+        goodQty: 30,
+        achievementRate: 0.6,
+        varianceQty: -20,
+        completionJudgmentCode: 'UNDER',
+      });
+      expect(Object.keys(off.body.lot)).not.toContain('progress');
+      expect(validator('logistics-01자재창고.json', 'GET /trace/lots/{lotId}')(on.body)).toBe(true);
+      // 켠 조회도 ETag 는 그대로다 — 진척은 파생이라 행을 안 바꾼다.
+      expect(on.headers.etag).toBe(off.headers.etag);
+    });
+
+    it('완료 — `X-Worker-No` 가 없으면 400 이다', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      await record(workOrderId, slots[0].lot_id, 100).expect(201);
+
+      // ⚠ 담을 칸이 없어 «저장은 안 하지만» 계약이 required 로 못박아 부재는 거부한다(§8-4).
+      const response = await complete(slots[0].lot_id, {}, { workerNo: null }).expect(400);
+
+      expect(response.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
+      const lot = await prisma.lot.findUniqueOrThrow({
+        where: { lot_id: slots[0].lot_id },
+        select: { completed_at: true },
+      });
+      expect(lot.completed_at).toBeNull();
+    });
+
+    it('완료 — 권한 없으면 403 이다', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      await record(workOrderId, slots[0].lot_id, 100).expect(201);
+
+      await complete(slots[0].lot_id, {}, { cookie: noPermCookie }).expect(403);
+    });
+
+    it('이벤트 — 완료는 `lot-lifecycle-events` 에 아무 행도 더하지 않는다', async () => {
+      const { workOrderId, slots } = await released(100, 100);
+      await record(workOrderId, slots[0].lot_id, 100).expect(201);
+      const query = `${EVENTS}?occurredFrom=2026-09-01T00:00:00.000Z&occurredTo=2026-09-30T00:00:00.000Z&lotId=${Number(slots[0].lot_id)}`;
+      const before = await request(app.getHttpServer()).get(query).set('Cookie', cookie).expect(200);
+
+      await complete(slots[0].lot_id).expect(200);
+
+      // `LOT_LIFECYCLE_TRANSITION` 3값(L1·L2·L3)에 「완료」가 없다 — 이력은 L1 한 줄뿐이다.
+      const after = await request(app.getHttpServer()).get(query).set('Cookie', cookie).expect(200);
+      expect(before.body.items).toHaveLength(1);
+      expect(after.body.items).toEqual(before.body.items);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -813,6 +1046,10 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
         status_code: 'CONFIRMED',
       },
     });
+
+    // ⭐ PR ④ 의 M1 마디는 W/O 를 **API 로** 발행한다 — 이 둘이 그 본문의 참조다.
+    ids.productionPlan = plan.production_plan_id;
+    ids.routingOperation = operation.routing_operation_id;
 
     const workOrder = async (suffix: string, statusCode: string) =>
       prisma.work_order.create({
@@ -1061,7 +1298,9 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   /** 만든 행을 FK 역순으로 지운다(§10-1 그대로 · 자기참조 FK 는 한 `deleteMany` 로 통과한다). */
   async function cleanup(): Promise<void> {
     const plantScope = { plant: { plant_code: { startsWith: PREFIX } } };
-    const orderScope = { work_order_no: { startsWith: PREFIX } };
+    // ⚠ API 로 발행한 W/O 는 번호가 채번 규칙(`WO-{YYYYMMDD}-{SEQ4}`)이라 `PREFIX` 로 안 잡힌다 —
+    //   이 스위트가 만든 W/O 는 전부 같은 계획에 매달리므로 그 축으로 지운다.
+    const orderScope = { production_plan: { plan_no: { startsWith: PREFIX } } };
     const queued = await prisma.work_order.findMany({ where: orderScope, select: { work_order_id: true } });
     await prisma.integration_message.deleteMany({
       where: { target_type_code: 'WORK_ORDER', target_id: { in: queued.map((row) => row.work_order_id) } },

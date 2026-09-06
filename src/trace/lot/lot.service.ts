@@ -28,6 +28,7 @@ import {
   optional,
   workOrderWhere,
 } from './lot-rules';
+import { LotProgressView, lotProgress } from './lot-progress';
 import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
 
 /**
@@ -132,7 +133,8 @@ export class LotService {
     return pagedResponse(rows.map(lotView), total, page);
   }
 
-  async get(lotId: number): Promise<{ detail: LotDetail; versionNo: number }> {
+  /** `withProgress` 는 **단건에만** 있다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로 기본은 끈다⌝. */
+  async get(lotId: number, withProgress = false): Promise<{ detail: LotDetail; versionNo: number }> {
     const row = await this.row(lotId);
     const identifiers = await this.prisma.lot_external_identifier.findMany({
       where: { lot_id: lotId },
@@ -140,7 +142,7 @@ export class LotService {
     });
     return {
       detail: {
-        lot: lotView(row),
+        lot: { ...lotView(row), ...(withProgress ? { progress: await this.progress(row) } : {}) },
         externalIdentifiers: identifiers.map(identifierView),
         // 「해제되지 않은 보류를 함께 내린다」(계약) — 푼 것은 이력이지 지금 상태가 아니다.
         holds: row.lot_hold.filter((h) => h.released_at === null).map((h) => holdView(h, row)),
@@ -207,6 +209,19 @@ export class LotService {
     });
     assertUpdated(updated.count);
     return this.get(lotId);
+  }
+
+  /**
+   * ⭐ 판정은 `:complete` 와 **같은 함수**다(`lot-progress.ts`) — 갈리면 완료 화면과 라벨
+   * 화면의 값이 어긋난다(공유계약 L-2). ⚠ 생산 LOT 이 아니어도 계약이 막지 않아 그대로
+   * 계산한다 — 배분이 0건이라 `UNDER` 로 나온다.
+   */
+  private async progress(row: LotRow): Promise<LotProgressView> {
+    const sum = await this.prisma.production_result_lot_allocation.aggregate({
+      where: { lot_id: row.lot_id },
+      _sum: { allocated_qty: true },
+    });
+    return lotProgress(row.initial_qty, sum._sum.allocated_qty ?? new Prisma.Decimal(0));
   }
 
   /** 원장이 그 LOT 을 건드린 적이 있는가 — A1 이 세운 표를 되읽는 자리다. */

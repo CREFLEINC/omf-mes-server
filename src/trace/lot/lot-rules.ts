@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot/lot-source';
+import { LotCompletionJudgment } from './lot-progress';
 
 /**
  * LOT 등록의 «규칙» — 번호 출처의 짝, 중복의 성격, 질의 조건.
@@ -79,6 +80,29 @@ export function workOrderWhere(workOrderId: number | undefined): Prisma.lotWhere
 export function completedWhere(completed: boolean | undefined): Prisma.lotWhereInput {
   if (completed === undefined) return {};
   return { completed_at: completed ? { not: null } : null };
+}
+
+export const COMPLETION_REASON = 'completionVarianceReasonCode';
+
+/**
+ * 미달 사유의 짝. 계약이 평면적인 `required` 로는 「미달일 때만」을 못 적어 목록에서 뺐고
+ * ⌜계획 수량에 미달하면 필수이고 **서버가 400 으로 막는다**⌝ 라 설명에 적었다.
+ *
+ * ⭐ 뒷 절반(정상·초과인데 사유가 왔다)은 계약이 침묵한 자리다. `:close` 규칙 5
+ * (`close-rules.ts:38` 「정상 마감에는 사유를 담지 않습니다」)가 이미 같은 모양으로 섰으므로
+ * **선례를 따라** 400 `INVALID` 로 가른다 — 조용히 버리면 화면이 사유를 적었다고 믿는다.
+ */
+export function assertCompletionReason(
+  judgment: LotCompletionJudgment,
+  reasonCode: string | null | undefined,
+): void {
+  const given = reasonCode !== undefined && reasonCode !== null;
+  if (judgment === 'UNDER' && !given) {
+    throw one(field(COMPLETION_REASON, ERROR_CODE.REQUIRED, '계획 수량에 미달한 완료는 사유가 필요합니다.'));
+  }
+  if (judgment !== 'UNDER' && given) {
+    throw one(field(COMPLETION_REASON, ERROR_CODE.INVALID, '정상·초과 완료에는 사유를 담지 않습니다.'));
+  }
 }
 
 /** 형식만 본다 — 값을 담을 칸이 없어 저장하지 않는 자리에 쓴다(§Z-4). */
