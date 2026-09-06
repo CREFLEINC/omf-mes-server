@@ -1385,6 +1385,40 @@ const ENTITY_TYPES = [
     table: 'purchase_order',
     idColumn: 'purchase_order_id',
   },
+  // 물류 문서 진행현황이 덮는 9종 중 등록부에 없던 넷과, 후속 판정 5종 중 없던 둘.
+  // 부팅 대조(DocumentTypeRegistryChecker)가 이 행들을 본다 — 마이그레이션이 아니다(I-5.md §4-5).
+  // ⚠ inventory_transaction 의 PK 는 (id, business_date) 복합이라 id_column_name 한 칸과 안 맞는다.
+  {
+    code: 'MATERIAL_ISSUE_REQUEST',
+    schema: 'logistics',
+    table: 'material_issue_request',
+    idColumn: 'material_issue_request_id',
+  },
+  { code: 'PICKING_ORDER', schema: 'logistics', table: 'picking_order', idColumn: 'picking_order_id' },
+  {
+    code: 'SUBCONTRACT_ISSUE',
+    schema: 'logistics',
+    table: 'subcontract_issue',
+    idColumn: 'subcontract_issue_id',
+  },
+  {
+    code: 'SUBCONTRACT_RECEIPT',
+    schema: 'logistics',
+    table: 'subcontract_receipt',
+    idColumn: 'subcontract_receipt_id',
+  },
+  {
+    code: 'INVENTORY_TRANSACTION',
+    schema: 'inventory',
+    table: 'inventory_transaction',
+    idColumn: 'inventory_transaction_id',
+  },
+  {
+    code: 'MATERIAL_CONSUMPTION',
+    schema: 'production',
+    table: 'material_consumption',
+    idColumn: 'material_consumption_id',
+  },
 ];
 
 const NUMBERING_RULES = [
