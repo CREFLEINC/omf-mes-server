@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest } from '../../common/pagination';
+import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ValidationSummary, summarize, validateWorkOrder } from './validation';
 import {
@@ -31,12 +32,6 @@ import {
 
 /** 목록 행 — 상세와 «같은» 매퍼(`workOrderView`)를 쓰고 `validation` 만 `withValidation` 일 때 얹는다. */
 export type WorkOrderListItem = Omit<WorkOrderView, 'validation'> & { validation?: ValidationSummary };
-
-/**
- * 선발행 슬롯의 원천 유형 — `src/trace/lot/lot-rules.ts workOrderWhere()` 와 같은 문자열.
- * // ⑤a 에서 core/lot/lot-source 로 모은다(I-6 R-1)
- */
-const WORK_ORDER_LOT_SOURCE = 'WORK_ORDER';
 
 /** `integration_message.target_type_code` — ⑥ 마감이 아웃박스에 적재할 때 같은 값을 쓴다. */
 const WORK_ORDER_TARGET_TYPE = 'WORK_ORDER';
