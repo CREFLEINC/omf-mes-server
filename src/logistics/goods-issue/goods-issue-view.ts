@@ -63,7 +63,7 @@ export function goodsIssueView(row: GoodsIssueRow): GoodsIssueView {
     reasonCode: row.reason_code,
     replacementExpected: row.replacement_expected,
     approvalRequestId: id(row.approval_request_id),
-    // 담을 칸이 없다(I-4.md §8-3 ⓕ) — `sendToErp` 도 받아서 버린다.
+    // 담을 칸이 없다(I-4.md §8-3 ⓕ) — 파생값이라 늘 거짓이다.
     erpMessageQueued: false,
     remarks: row.remarks,
   };

@@ -1,10 +1,12 @@
 /**
- * 출고 조회 3건 + 전기 — `GET /logistics/goods-issues`·`/{goodsIssueId}`·`/{goodsIssueId}/lines`
- * 와 `POST /logistics/goods-issues/{goodsIssueId}:post`.
+ * 출고 조회 3건 + 전기 + 등록 — `GET /logistics/goods-issues`·`/{goodsIssueId}`·
+ * `/{goodsIssueId}/lines` 와 `POST /logistics/goods-issues/{goodsIssueId}:post` ·
+ * `POST /logistics/goods-issues`.
  * 화면 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)·`W-04-10`(제품 폐기).
  *
- * ⛔ 등록 API 가 아직 없다(PR ④) — 전표는 **직접 INSERT** 한다(`insertRegisteredIssue`).
- * ⭐ 그러나 **잔액은 직접 INSERT 하지 않는다** — `POST /logistics/goods-receipts` 를 «부른다»
+ * ⛔ `:post` 갈래는 전표를 **직접 INSERT** 한다(`insertRegisteredIssue`) — 등록 갈래(`createIssue`)
+ * 와 갈라 두어야 한쪽이 깨져도 다른 쪽 판정이 남는다.
+ * ⭐ 그리고 **잔액은 직접 INSERT 하지 않는다** — `POST /logistics/goods-receipts` 를 «부른다»
  * (I-4.md §6-5). `inventory_balance` 는 트리거가 지키는 표라 손으로 넣으면 차원 11칸을
  * 우리가 맞춰야 하고, 그것이 `:post` 가 되읽는 바로 그 값이다.
  *
@@ -74,7 +76,7 @@ interface Stock {
   goodsReceiptId: number;
 }
 
-describe('출고 조회 3건 · 전기 (e2e)', () => {
+describe('출고 조회 3건 · 전기 · 등록 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -433,9 +435,181 @@ describe('출고 조회 3건 · 전기 (e2e)', () => {
     expect(Number(arrived.on_hand_qty)).toBe(10);
   });
 
+  it('POST /logistics/goods-issues — 201 · ETag 가 실린다(입고와 갈리는 자리)', async () => {
+    const response = await createIssue().expect(201);
+
+    const validate = validator('POST /logistics/goods-issues', 201);
+    expect(validate(response.body)).toBe(true);
+    // ⭐ 입고 201 은 계약이 헤더를 안 선언해 ETag 가 없다 — 출고는 선언한다(I-4.md §1-1).
+    expect(response.headers.etag).toBe('1');
+    // 규칙 미등재라 기본 패턴 `GI-{YYYYMMDD}-{SEQ4}` 다 — 자릿수는 넓게 본다(카운터를 안 지운다).
+    // 날짜 자리는 클라이언트 `businessDate`(DAY) 다 — 「오늘」로 잡으면 여기서 갈린다(C-8).
+    expect(response.body.goodsIssue.goodsIssueNo).toMatch(/^GI-20260504-\d{4,}$/);
+    expect(response.body.goodsIssue.erpMessageQueued).toBe(false);
+  });
+
+  it('POST /logistics/goods-issues — postImmediately:false 면 REGISTERED 이고 원장이 안 선다', async () => {
+    const lot = await makeLot();
+    await stock(lot, 100);
+
+    const response = await createIssue({
+      postImmediately: false,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(201);
+
+    expect(response.body.goodsIssue.statusCode).toBe('REGISTERED');
+    // 원장을 안 지나므로 `businessDate`·`occurredAt` 을 실을 표가 없다(I-4.md §2-5).
+    const ledger = await prisma.inventory_transaction.findMany({
+      where: { transaction_no: response.body.goodsIssue.goodsIssueNo },
+    });
+    expect(ledger).toHaveLength(0);
+    const balance = await prisma.inventory_balance.findFirstOrThrow({
+      where: { item_id: itemId, lot_id: lot, location_id: locationId },
+    });
+    expect(Number(balance.on_hand_qty)).toBe(100);
+  });
+
+  it('POST /logistics/goods-issues — postImmediately:true 면 POSTED 이고 balance 가 준다', async () => {
+    const lot = await makeLot();
+    await stock(lot, 100);
+
+    const response = await createIssue({
+      postImmediately: true,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(201);
+
+    // 「등록과 전기가 같은 트랜잭션이다」(계약) — 상태를 옮긴 것이 아니라 처음부터 POSTED 다.
+    expect(response.body.goodsIssue.statusCode).toBe('POSTED');
+    expect(response.headers.etag).toBe('1');
+    expect(response.body.lines[0].inventoryTransactionLineId).not.toBeNull();
+    const balance = await prisma.inventory_balance.findFirstOrThrow({
+      where: { item_id: itemId, lot_id: lot, location_id: locationId },
+    });
+    expect(Number(balance.on_hand_qty)).toBe(90);
+  });
+
+  it('POST /logistics/goods-issues — 자체 폐기(도착지 짝 비움)로 등록된다', async () => {
+    // 「나가서 없어지는 물건에는 도착지가 없다」(계약) — 짝을 비우는 것이 그 표현이다.
+    const response = await createIssue({
+      destinationTypeCode: null,
+      destinationId: null,
+      reasonCode: 'OTHER',
+    }).expect(201);
+
+    expect(response.body.goodsIssue.destinationTypeCode).toBeNull();
+    expect(response.body.goodsIssue.destinationId).toBeNull();
+  });
+
+  it('POST /logistics/goods-issues — 같은 Idempotency-Key 재전송은 전표를 둘 만들지 않는다', async () => {
+    const key = randomUUID();
+    const before = await prisma.goods_issue.count();
+
+    const first = await createIssue({}, key).expect(201);
+    const second = await createIssue({}, key).expect(201);
+
+    expect(second.body).toEqual(first.body);
+    expect(await prisma.goods_issue.count()).toBe(before + 1);
+  });
+
+  it('POST /logistics/goods-issues — 권한 없는 사용자는 403', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/logistics/goods-issues')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        issueTypeCode: 'OTHER',
+        sourceDocumentTypeCode: 'GOODS_RECEIPT',
+        sourceDocumentId: goodsReceiptId,
+        sourceWarehouseId: warehouseId,
+        issuedAt: AT,
+        businessDate: DAY,
+        occurredAt: AT,
+        lines: [{ itemId, lotId, issueQty: 10, uomId, sourceLocationId: locationId }],
+      })
+      .expect(403);
+
+    expect(response.body.errors[0]).toMatchObject({ code: 'PERMISSION_DENIED' });
+  });
+
+  it('POST /logistics/goods-issues — X-Worker-No 가 없어도 400 이 아니다', async () => {
+    // `WorkerNoOptional` 이다 — 주체는 계정 세션이 낸다(I-4.md §6-4 · `plan.md` §5 규칙 9).
+    const response = await createIssue().expect(201);
+
+    expect(response.request.getHeader('X-Worker-No')).toBeUndefined();
+  });
+
+  it('POST /logistics/goods-issues — 응답 detail 의 lines 가 요청 순서대로 lineNo 1..N 이다', async () => {
+    const second = await makeLot();
+
+    const response = await createIssue({
+      lines: [
+        // 본문의 `goodsIssueLineId` 는 무시된다 — 「서버가 부여하며 화면이 정하지 않는다」(계약).
+        { goodsIssueLineId: 999999, itemId, lotId, issueQty: 3, uomId, sourceLocationId: locationId },
+        { itemId, lotId: second, issueQty: 4, uomId, sourceLocationId: locationId },
+      ],
+    }).expect(201);
+
+    expect(response.body.lines.map((row: { lineNo: number }) => row.lineNo)).toEqual([1, 2]);
+    expect(response.body.lines.map((row: { lotId: number }) => row.lotId)).toEqual([lotId, second]);
+    expect(response.body.lines[0].goodsIssueLineId).not.toBe(999999);
+  });
+
+  it('POST — postImmediately:true + destinationTypeCode=LOCATION 이면 도착 위치 잔액이 는다(M-01-08 갈래)', async () => {
+    const lot = await makeLot();
+    await stock(lot, 100);
+
+    await createIssue({
+      postImmediately: true,
+      destinationTypeCode: 'LOCATION',
+      destinationId: destinationLocationId,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(201);
+
+    const arrived = await prisma.inventory_balance.findFirstOrThrow({
+      where: { item_id: itemId, lot_id: lot, location_id: destinationLocationId },
+    });
+    expect(Number(arrived.on_hand_qty)).toBe(10);
+  });
+
+  it('POST /logistics/goods-issues — postImmediately:true 가 400 이면 전표도 안 남는다(같은 트랜잭션)', async () => {
+    const lot = await makeLot();
+    await stock(lot, 5);
+    const before = await prisma.goods_issue.count();
+
+    const rejected = await createIssue({
+      postImmediately: true,
+      lines: [{ itemId, lotId: lot, issueQty: 10, uomId, sourceLocationId: locationId }],
+    }).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'NEGATIVE_BALANCE' });
+    expect(await prisma.goods_issue.count()).toBe(before);
+  });
+
+  /** 등록 본문 한 벌 — 겹치는 8칸은 여기 두고 갈래마다 덮어쓴다. */
+  function createIssue(body: Record<string, unknown> = {}, key = randomUUID()): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/logistics/goods-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send({
+        issueTypeCode: 'OTHER',
+        // 원천 3값 중 M1 최단 경로 — 픽스처 입고 전표를 그대로 가리킨다(I-4.md §1-4 ①).
+        sourceDocumentTypeCode: 'GOODS_RECEIPT',
+        sourceDocumentId: goodsReceiptId,
+        sourceWarehouseId: warehouseId,
+        issuedAt: AT,
+        businessDate: DAY,
+        occurredAt: AT,
+        lines: [{ itemId, lotId, issueQty: 10, uomId, sourceLocationId: locationId }],
+        ...body,
+      });
+  }
+
   let issueSeq = 0;
   /**
-   * 등록 API 가 아직 없다 — 전표+라인을 직접 INSERT 한다(I-4.md §6-5 · R-3).
+   * PR ③ 의 `:post` e2e 는 전표를 직접 INSERT 한다 — 등록 API 를 안 탄다(I-4.md §6-5 · R-3).
+   * ⚠ 여기 넣는 칸 집합은 `create()` 가 INSERT 하는 것과 어긋나면 안 된다 —
+   *   단위 `등록 — 결과가 ③ 픽스처와 같은 모양이다` 가 그 대조를 지킨다.
    * ⭐ PR ③ 이 `approvalRequestId`·`reasonCode` 와 **라인 배열**을 더했다 — 「같은 위치·LOT
    * 라인이 둘」과 승인 갈래가 그것을 쓴다. 기존 호출은 인자 없이 그대로 통과한다.
    */

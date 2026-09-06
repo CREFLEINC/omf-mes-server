@@ -1,12 +1,27 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { ERROR_CODE, ErrorItem, field, ContractException } from '../../common/errors';
+import { Prisma } from '@prisma/client';
+
+import {
+  ConflictException,
+  ContractException,
+  ERROR_CODE,
+  ErrorItem,
+  field,
+} from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { ApprovalService } from '../../core/approval';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GoodsIssueView, goodsIssueView } from './goods-issue-view';
-import { postIssue } from './issue-posting';
+import { GoodsIssueCreate, REGISTERED, assertCreatable } from './goods-issue-rules';
+import {
+  GoodsIssueDetail,
+  GoodsIssueView,
+  goodsIssueLineView,
+  goodsIssueView,
+} from './goods-issue-view';
+import { GoodsIssueLineWriteInput, postIssue } from './issue-posting';
 
 /** 계약 `PostRequest` — required 2. 서버가 도출하지 않는다(C-8 · C-1). */
 export interface PostIssueRequest {
@@ -16,13 +31,16 @@ export interface PostIssueRequest {
 
 const STATUS_COLUMN = 'logistics.goods_issue.status_code';
 const POST_ACTION = 'document-post';
+const POSTED = 'POSTED';
+/** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다(입고 선례). */
+const NUMBER_RETRY = 3;
 /** 계약이 언제나 이 유형이라 못박았다 — 본문이 승인 유형을 받지 않는다(계약 `:request-approval`). */
 const APPROVAL_TYPE = 'GOODS_ISSUE_DISPOSAL';
 const TARGET_TYPE = 'GOODS_ISSUE';
 /** 잔액 선잠금이 커밋까지 간다 — 기본 5초를 넘기면 `P2028` 이 500 으로 샌다(I-3.md R-4). */
 const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
 
-/** 출고 쓰기. 조회 3건은 `GoodsIssueQueryService`, 등록·치환·상신은 PR ④⑤ 가 얹는다. */
+/** 출고 쓰기. 조회 3건은 `GoodsIssueQueryService`, 라인 치환·상신은 PR ⑤ 가 얹는다. */
 @Injectable()
 export class GoodsIssueService {
   constructor(
@@ -30,7 +48,150 @@ export class GoodsIssueService {
     private readonly posting: InventoryPostingService,
     private readonly approvals: ApprovalService,
     private readonly documentState: DocumentStateService,
+    private readonly numbering: NumberingService,
   ) {}
+
+  /**
+   * 등록. ⭐ `postImmediately` 가 참이면 **등록과 전기가 같은 트랜잭션**이다 — 「두 번 호출로
+   * 나누면 오프라인 큐에 중간 상태가 남는다」(계약 · §3-9). If-Match 는 안 받는다(§6-3).
+   */
+  async create(
+    input: GoodsIssueCreate,
+    appUserId: number,
+  ): Promise<{ detail: GoodsIssueDetail; versionNo: number }> {
+    const plantId = await assertCreatable(this.prisma, input);
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 열린 트랜잭션 안에서 부르면 한
+        //    요청이 커넥션을 둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(입고 :103-107 · I-2.md R-2).
+        // ⛔ 기간 축은 클라이언트가 준 `businessDate` 그대로다 — 서버가 「오늘」로 다시 잡지
+        //    않는다(공유계약 C-8 · CLAUDE.md).
+        const issueNo = await this.numbering.next('GOODS_ISSUE', plantId, input.businessDate);
+        return await this.prisma.$transaction(
+          (tx) => this.write(tx, input, issueNo, appUserId),
+          TRANSACTION_OPTIONS,
+        );
+      } catch (error) {
+        if (!isDuplicateNo(error)) throw error;
+        if (attempt >= NUMBER_RETRY) {
+          throw new ConflictException('user', '출고번호를 매기지 못했습니다. 다시 시도해 주세요.');
+        }
+      }
+    }
+  }
+
+  /** 헤더 → 라인 → (참이면) 전기 → 되읽기. 한 트랜잭션이다. */
+  private async write(
+    tx: Prisma.TransactionClient,
+    input: GoodsIssueCreate,
+    issueNo: string,
+    appUserId: number,
+  ): Promise<{ detail: GoodsIssueDetail; versionNo: number }> {
+    const issue = await tx.goods_issue.create({
+      data: {
+        goods_issue_no: issueNo,
+        issue_type_code: input.issueTypeCode,
+        source_document_type_code: input.sourceDocumentTypeCode,
+        source_document_id: input.sourceDocumentId,
+        source_warehouse_id: input.sourceWarehouseId,
+        // 짝 그대로 담는다 — 자체 폐기면 둘 다 널이다(계약 · `ck_goods_issue_destination`).
+        destination_type_code: input.destinationTypeCode ?? null,
+        destination_id: input.destinationId ?? null,
+        issued_at: new Date(input.issuedAt),
+        status_code: REGISTERED,
+        reason_code: input.reasonCode ?? null,
+        replacement_expected: input.replacementExpected ?? null,
+        remarks: input.remarks ?? null,
+        created_by: BigInt(appUserId),
+      },
+    });
+    // ⛔ `businessDate`·`occurredAt`·`sendToErp` 를 헤더에 «안 담는다» — 칸이 없다. 앞의 둘은
+    //    `postImmediately` 가 거짓이면 저장할 표가 아예 없다(원장을 안 지난다 · I-4.md §2-5).
+
+    const lines: GoodsIssueLineWriteInput[] = [];
+    for (const [index, line] of input.lines.entries()) {
+      const created = await tx.goods_issue_line.create({
+        data: {
+          goods_issue_id: issue.goods_issue_id,
+          // ⛔ 본문의 `goodsIssueLineId` 는 무시한다 — 「서버가 부여하며 화면이 정하지
+          //    않는다」(계약 `GoodsIssueLine.lineNo`). 요청 순서대로 1..N 이다.
+          line_no: index + 1,
+          picking_line_id: line.pickingLineId ?? null,
+          item_id: line.itemId,
+          lot_id: line.lotId,
+          issue_qty: line.issueQty,
+          uom_id: line.uomId,
+          source_location_id: line.sourceLocationId,
+          created_by: BigInt(appUserId),
+        },
+      });
+      lines.push({
+        goodsIssueLineId: created.goods_issue_line_id,
+        itemId: created.item_id,
+        lotId: created.lot_id,
+        issueQty: created.issue_qty,
+        uomId: created.uom_id,
+        sourceLocationId: created.source_location_id,
+      });
+    }
+
+    if (input.postImmediately === true) {
+      await this.postOnCreate(tx, issue, lines, input, appUserId);
+    }
+
+    // 상세 매퍼는 PR ① 것을 그대로 쓴다 — 전기가 상태·되짚기를 바꿔 두므로 되읽는다.
+    const row = await tx.goods_issue.findUniqueOrThrow({
+      where: { goods_issue_id: issue.goods_issue_id },
+    });
+    const rows = await tx.goods_issue_line.findMany({
+      where: { goods_issue_id: issue.goods_issue_id },
+      orderBy: { line_no: 'asc' },
+    });
+    return {
+      detail: { goodsIssue: goodsIssueView(row), lines: rows.map(goodsIssueLineView) },
+      versionNo: row.version_no,
+    };
+  }
+
+  /**
+   * 등록과 «같은» 트랜잭션의 전기 — 전기 몸통은 `:post` 와 **같은 `postIssue()`** 를 탄다.
+   * ⛔ `document-post` 전이를 부르지 않는다 — from 이 없는 전이라 표에 담을 수 없다(I-4.md §3-9).
+   * ⛔ `version_no` 를 안 올린다 — «옮기는» 것이 아니라 처음부터 `POSTED` 로 «만든다»(ETag 는 1).
+   */
+  private async postOnCreate(
+    tx: Prisma.TransactionClient,
+    issue: { goods_issue_id: bigint; goods_issue_no: string },
+    lines: GoodsIssueLineWriteInput[],
+    input: GoodsIssueCreate,
+    appUserId: number,
+  ): Promise<void> {
+    // 방금 만든 전표라 승인 요청이 있을 수 없다 — 게이트는 언제나 통과한다. 폐기 출고가 이
+    // 값으로 오면 승인을 건너뛴다 — 계약이 막지 않았다(문의 030 갈래 ③).
+    await this.approvals.assertApproved(tx, TARGET_TYPE, issue.goods_issue_id, APPROVAL_TYPE);
+    await postIssue(
+      tx,
+      this.posting,
+      {
+        header: {
+          goodsIssueId: issue.goods_issue_id,
+          goodsIssueNo: issue.goods_issue_no,
+          sourceWarehouseId: BigInt(input.sourceWarehouseId),
+          destinationTypeCode: input.destinationTypeCode ?? null,
+          destinationId: input.destinationId == null ? null : BigInt(input.destinationId),
+        },
+        lines,
+        // ⛔ 본문 값 그대로다 — 참일 때만 원장 키의 일부가 된다(§2-5 · C-8 · C-1).
+        businessDate: input.businessDate,
+        occurredAt: new Date(input.occurredAt),
+      },
+      appUserId,
+    );
+    await tx.goods_issue.update({
+      where: { goods_issue_id: issue.goods_issue_id },
+      data: { status_code: POSTED },
+    });
+  }
 
   /**
    * ⭐ 순서가 불변식이다 — 헤더 `FOR UPDATE` → 승인 게이트 → LOT 차단 → 잔액 잠금 →
@@ -144,6 +305,18 @@ interface HeaderRow {
   destination_id: bigint | null;
   status_code: string;
   version_no: number;
+}
+
+/** `uq` 위반이 «번호» 때문인가 — 다른 유일 위반과 갈라야 재시도 판정이 선다(입고 선례). */
+function isDuplicateNo(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = (error.meta ?? {}).target;
+  return (
+    Array.isArray(target) &&
+    target.some((column) => ['goods_issue_no', 'transaction_no'].includes(String(column)))
+  );
 }
 
 /** 형식 검증은 트랜잭션 «밖»이다 — 입고 `goods-receipt.service.ts:156-161` 선례. */
