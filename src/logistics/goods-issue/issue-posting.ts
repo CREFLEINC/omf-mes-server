@@ -157,7 +157,8 @@ export async function postIssue(
     plantId: Number(source.plantId),
     sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
     sourceDocumentId: Number(header.goodsIssueId),
-    // ⛔ 등록의 `postImmediately` 경로와 «같은» 키다 — 같은 영업일의 이중 전기를 코어가 흡수한다.
+    // 등록의 `postImmediately` 경로와 «같은» 키다. 전표 번호가 유일하고 키가 거기서 나오므로
+    // 흡수는 «앞 전기가 이미 커밋됐다»는 뜻이고, 그때 헤더는 POSTED 라 상태 잠금이 먼저 막는다.
     idempotencyKey: `${SOURCE_DOCUMENT_TYPE}:${header.goodsIssueNo}`,
     createdBy: appUserId,
     lines: lines.map((line, index) => {
@@ -192,6 +193,11 @@ export async function postIssue(
       };
     }),
   });
+
+  // 그래도 흡수가 오면 잔액은 안 깎였는데 되짚기와 상태 전이가 그대로 돈다 — 조용히 지나느니 되돌린다.
+  if (posted.alreadyPosted) {
+    throw new Error(`원장이 이미 있다 — 상태 잠금을 지나쳤다: ${header.goodsIssueNo}`);
+  }
 
   // posting 은 라인을 받은 «순서»대로 `line_no` 를 매긴다 — 자리로 짝짓는다(입고와 같은 모양).
   const ledger = await tx.inventory_transaction_line.findMany({

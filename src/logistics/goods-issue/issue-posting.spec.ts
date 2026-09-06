@@ -68,6 +68,7 @@ interface Seed {
   balances?: BalanceSeed[];
   /** 원장이 되돌려 주는 라인 수 — 안 주면 요청 라인 수와 같다. */
   ledger?: number;
+  absorbed?: boolean;
   lotStatuses?: string[];
   blocked?: boolean;
 }
@@ -118,7 +119,11 @@ function fake(seed: Seed = {}) {
     post: async (_tx: Prisma.TransactionClient, input: PostingInput) => {
       posted.push(input);
       requested = input.lines.length;
-      return { inventoryTransactionId: 77n, businessDate: input.businessDate, alreadyPosted: false };
+      return {
+        inventoryTransactionId: 77n,
+        businessDate: input.businessDate,
+        alreadyPosted: seed.absorbed === true,
+      };
     },
   } as unknown as InventoryPostingService;
 
@@ -366,6 +371,13 @@ describe('출고 전기', () => {
     const { tx, posting } = fake({ balances: [balance({ available_qty: null })] });
 
     await expect(postIssue(tx, posting, input(), 1)).rejects.toThrow('available_qty');
+  });
+
+  it('전기 — 코어가 멱등키로 흡수하면 던져 되돌린다(잔액 없이 되짚기가 돌지 않는다)', async () => {
+    const { tx, posting, backfilled } = fake({ absorbed: true });
+
+    await expect(postIssue(tx, posting, input(), 1)).rejects.toThrow('원장이 이미 있다');
+    expect(backfilled).toHaveLength(0);
   });
 
   it('전기 — 원장 라인 수가 출고 라인과 다르면 던져 되돌린다', async () => {
