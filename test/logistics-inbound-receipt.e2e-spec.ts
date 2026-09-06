@@ -341,7 +341,98 @@ describe('입하 등록 (e2e)', () => {
     expect((created.body as Detail).inboundReceipt.inboundReceiptId).toBeDefined();
   });
 
+  it('입하 — 상세가 ETag 를 헤더로만 내린다(본문에 versionNo 가 없다)', async () => {
+    const detail = await create();
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(response.headers.etag).toMatch(/^\d+$/);
+    expect(response.body.inboundReceipt).not.toHaveProperty('versionNo');
+  });
+
+  it('입하 — 없는 입하 상세는 404 다(계약 선언)', async () => {
+    await request(app.getHttpServer())
+      .get('/api/logistics/inbound-receipts/999999999')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('입하 — 라인 목록은 ETag 를 내리지 않는다(자식 컬렉션 · B-1-1)', async () => {
+    const detail = await create();
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    // express 가 기본으로 약한 ETag 를 늘 붙인다 — 우리가 안 내렸다는 건 숫자 형식이 아님으로 본다(#196 리뷰 Minor).
+    expect(response.headers.etag ?? '').not.toMatch(/^\d+$/);
+  });
+
+  it('입하 — 목록이 supplierId·plantId·statusCode·receiptDate 로 걸린다', async () => {
+    const detail = await create();
+
+    const found = await list(
+      `supplierId=${supplierId}&plantId=${plantId}&statusCode=REGISTERED` +
+        `&receiptDateFrom=${BUSINESS_DATE}&receiptDateTo=${BUSINESS_DATE}`,
+    );
+
+    expect(found.items.map((item) => item.inboundReceiptId)).toContain(
+      detail.inboundReceipt.inboundReceiptId,
+    );
+  });
+
+  it('입하 — P-01-01 의 조합 질의(supplierLotMissing=true&labelIssued=false)가 미부착 라인만 준다', async () => {
+    const labeledAttached = await lineDraft();
+    const plainAttached = await lineDraft();
+    const missing = await lineDraft();
+    const detail = await create({
+      lines: [
+        labeledAttached,
+        plainAttached,
+        { ...missing, supplierLotNo: null, supplierLotMissing: true, substituteLotReasonCode: 'NO_LABEL' },
+      ],
+    });
+
+    // 첫 라인의 LOT 에 라벨 발행 기록을 직접 남긴다 — 발행은 P-01-01 의 몫이라 등록 API 가 모른다.
+    const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+    const labeledLotId = BigInt(detail.lines[0].lotId as number);
+    await prisma.document_issue_log.create({
+      data: {
+        document_type_code: 'MATERIAL_LOT_LABEL',
+        target_type_code: 'LOT',
+        target_id: labeledLotId,
+        lot_id: labeledLotId,
+        issued_by: user.app_user_id,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(
+        `/api/logistics/inbound-receipts/${detail.inboundReceipt.inboundReceiptId}` +
+          '/lines?supplierLotMissing=true&labelIssued=false',
+      )
+      .set('Cookie', cookie)
+      .expect(200);
+
+    // 라벨 발행된 부착 라인(1) · 미발행 부착 라인(2)은 supplierLotMissing 에서 이미 빠지고,
+    // 미부착 라인(3)만 두 필터를 모두 통과한다 — AND 가 아니면 2도 섞여 나온다.
+    const items = response.body.items as LineBody[];
+    expect(items.map((item) => item.lineNo)).toEqual([3]);
+  });
+
   // ── 도우미 ────────────────────────────────────────────────────────────────
+
+  async function list(qs: string): Promise<{ items: ReceiptBody[] }> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts?${qs}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body as { items: ReceiptBody[] };
+  }
 
   function send(draft: object, idempotencyKey = key()): request.Test {
     return request(app.getHttpServer())
@@ -556,6 +647,8 @@ describe('입하 등록 (e2e)', () => {
     await prisma.$executeRawUnsafe(
       `DELETE FROM trace.lot_external_identifier WHERE lot_id IN ${ownLots}`,
     );
+    // `app.document_issue_log` 가 `trace.lot` 을 가리킨다(labelIssued 픽스처) — lot 보다 먼저(R-10).
+    await prisma.$executeRawUnsafe(`DELETE FROM app.document_issue_log WHERE lot_id IN ${ownLots}`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE plant_id IN ${ownPlants}`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.purchase_order_line
