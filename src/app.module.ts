@@ -13,6 +13,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { LogisticsModule } from './logistics/logistics.module';
 import { MdmModule } from './mdm/mdm.module';
 import { PlanningModule } from './planning/planning.module';
+import { ProductionModule } from './production/production.module';
 import { QualityModule } from './quality/quality.module';
 import { TraceModule } from './trace/trace.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -37,6 +38,7 @@ import { PrismaModule } from './prisma/prisma.module';
     MdmModule,
     AppDomainModule,
     PlanningModule,
+    ProductionModule,
     QualityModule,
     LogisticsModule,
     InventoryModule,
