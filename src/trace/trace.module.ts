@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { IdempotencyModule } from '../common/idempotency';
 import { LotRegistryModule } from '../core/lot';
 import { PrismaModule } from '../prisma/prisma.module';
+import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controller';
+import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
 import { LotController } from './lot/lot.controller';
 import { LotService } from './lot/lot.service';
 
@@ -12,7 +14,7 @@ import { LotService } from './lot/lot.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule],
-  controllers: [LotController],
-  providers: [LotService],
+  controllers: [LotController, LotLifecycleEventController],
+  providers: [LotService, LotLifecycleEventService],
 })
 export class TraceModule {}
