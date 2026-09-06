@@ -34,9 +34,11 @@ const POST_ACTION = 'document-post';
 const POSTED = 'POSTED';
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다(입고 선례). */
 const NUMBER_RETRY = 3;
-/** 계약이 언제나 이 유형이라 못박았다 — 본문이 승인 유형을 받지 않는다(계약 `:request-approval`). */
-const APPROVAL_TYPE = 'GOODS_ISSUE_DISPOSAL';
-const TARGET_TYPE = 'GOODS_ISSUE';
+/** 계약이 언제나 이 유형이라 못박았다 — 본문이 승인 유형을 받지 않는다(계약 `:request-approval`).
+ *  ⛔ 상신(`GoodsIssueUpdateService`)과 «같은 값»이어야 한다 — 갈리면 상신한 전표를 `:post` 의
+ *  게이트가 못 찾아 승인 없이 나간다. 그래서 여기서 export 하고 한 벌만 둔다. */
+export const APPROVAL_TYPE = 'GOODS_ISSUE_DISPOSAL';
+export const TARGET_TYPE = 'GOODS_ISSUE';
 /** 잔액 선잠금이 커밋까지 간다 — 기본 5초를 넘기면 `P2028` 이 500 으로 샌다(I-3.md R-4). */
 const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
 
