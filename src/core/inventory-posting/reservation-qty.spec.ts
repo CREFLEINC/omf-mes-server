@@ -114,8 +114,28 @@ describe('InventoryPostingService.pick', () => {
     expect(statements[1].sql).toContain('UPDATE inventory.inventory_reservation');
     expect(statements[1].sql).toContain('consumed_qty = consumed_qty + ?::numeric');
     expect(statements[1].sql).toContain('inventory_reservation_id = ?');
+    expect(statements[1].sql).toContain('item_id = ?::bigint');
     expect(statements[1].values).toContainEqual(dec(30));
     expect(statements[1].values).toContain(RESERVATION);
+    expect(statements[1].values).toContain(30n);
+  });
+
+  it('LOT 없는 잔액(lotId null)은 COALESCE 로 겨냥하고 null 을 바인딩한다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.pick(tx, [pickMove({ dimension: dimension({ lotId: null }) })]);
+
+    expect(statements[0].sql).toContain('COALESCE(lot_id, 0::bigint) = COALESCE(?::bigint, 0::bigint)');
+    expect(statements[0].values).toContain(null);
+  });
+
+  it('코어는 잠그지 않는다 — FOR UPDATE 를 내지 않는다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.pick(tx, [pickMove({ inventoryReservationId: RESERVATION })]);
+    await service.consume(tx, [{ dimension: dimension(), qty: dec(1), field: 'lines[0].lotId' }]);
+
+    expect(statements.map((s) => s.sql).join(' ')).not.toContain('FOR UPDATE');
   });
 
   it('예약이 없으면 available 에서 picked 로 올린다', async () => {

@@ -12,7 +12,8 @@ const CORE = 'core/inventory-posting/';
 const WRITES = [
   /UPDATE\s+inventory\.inventory_balance/,
   /INSERT\s+INTO\s+inventory\.inventory_balance/,
-  /\.inventory_balance\.(update|updateMany|create|createMany|upsert|delete)\(/,
+  // 접두 일치라 `deleteMany`·`updateManyAndReturn`·`createManyAndReturn` 도 잡는다 — `(` 를 붙이면 샌다.
+  /\.inventory_balance\.(update|updateMany|create|createMany|upsert|delete)/,
 ];
 
 describe('balance-write-guard', () => {

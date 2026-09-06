@@ -93,7 +93,7 @@ export async function pickBalances(tx: Prisma.TransactionClient, moves: PickMove
       RETURNING inventory_balance_id`;
     if (rows.length === 0) throw negativeBalance(move.field, '피킹할 재고가 모자랍니다.');
     if (move.inventoryReservationId !== null) {
-      await consumeReservation(tx, move.inventoryReservationId, delta, move.field);
+      await consumeReservation(tx, move.inventoryReservationId, move.dimension.itemId, delta, move.field);
     }
   }
 }
@@ -102,6 +102,7 @@ export async function pickBalances(tx: Prisma.TransactionClient, moves: PickMove
 async function consumeReservation(
   tx: Prisma.TransactionClient,
   reservationId: bigint,
+  itemId: bigint,
   delta: Prisma.Decimal,
   path: string,
 ): Promise<void> {
@@ -109,11 +110,13 @@ async function consumeReservation(
     ? // `ck_reservation_qty`(released + consumed ≤ reserved) 를 앞당긴다.
       Prisma.sql`reserved_qty - released_qty - consumed_qty >= ${delta}::numeric`
     : Prisma.sql`consumed_qty >= ${delta.negated()}::numeric`;
+  // `item_id` 까지 겨냥해 차원과 예약의 짝이 어긋난 호출을 0행 → 400 으로 드러낸다.
   const rows = await tx.$queryRaw<{ inventory_reservation_id: bigint }[]>`
     UPDATE inventory.inventory_reservation
        SET consumed_qty = consumed_qty + ${delta}::numeric,
            version_no = version_no + 1
      WHERE inventory_reservation_id = ${reservationId}
+       AND item_id = ${itemId}::bigint
        AND ${guard}
     RETURNING inventory_reservation_id`;
   if (rows.length === 0) throw negativeBalance(path, '피킹에 쓸 예약 수량이 모자랍니다.');
