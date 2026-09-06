@@ -18,8 +18,10 @@ const GOODS_ISSUE_STATUS = 'logistics.goods_issue.status_code';
 /** I-5 PR ④ 가 여는 두 축 — 취소 두 액션만 갖는다(다형 취소 경로 3유형 · I-5.md §6-1). */
 const INBOUND_RECEIPT_STATUS = 'logistics.inbound_receipt.status_code';
 const GOODS_RECEIPT_STATUS = 'logistics.goods_receipt.status_code';
-/** I-6 PR ④ 가 여는 축 — 액션 다섯. I-11 이 같은 키에 `work-session-start` 를 더한다. */
+/** I-6 PR ④ 가 여는 축 — 액션 다섯. I-11 PR ② 가 같은 키에 `work-session-start` 를 더했다. */
 const WORK_ORDER_STATUS = 'production.work_order.status_code';
+/** I-11 PR ② 가 여는 축 — 시드 `WORK_SESSION_STATUS`(RUNNING·STOPPED·ENDED) 3값. */
+const WORK_SESSION_STATUS = 'production.work_session.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -97,6 +99,62 @@ describe('DocumentStateService', () => {
       expect(caught?.getStatus()).toBe(HttpStatus.BAD_REQUEST);
       expect(caught).not.toBeInstanceOf(ConflictException);
       expect(caught?.errors).toMatchObject([{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED }]);
+    });
+
+    it('work-session-start 는 RELEASED·IN_PROGRESS 에서 IN_PROGRESS 로 간다', () => {
+      for (const from of ['RELEASED', 'IN_PROGRESS']) {
+        expect(service.assertTransition(WORK_ORDER_STATUS, 'work-session-start', from).to).toBe(
+          'IN_PROGRESS',
+        );
+      }
+    });
+
+    it('work-session-start 는 SUSPENDED 에서 던진다 — 재개는 같은 세션의 RESUME 뿐이다', () => {
+      expect(() =>
+        service.assertTransition(
+          WORK_ORDER_STATUS,
+          'work-session-start',
+          'SUSPENDED',
+          HttpStatus.BAD_REQUEST,
+        ),
+      ).toThrow(ContractException);
+    });
+  });
+
+  describe('작업 세션 진행 — I-11 이 여는 축', () => {
+    it('세션 키 — STOP 은 RUNNING 에서만, RESUME 은 STOPPED 에서만이다', () => {
+      expect(service.assertTransition(WORK_SESSION_STATUS, 'work-session-stop', 'RUNNING').to).toBe(
+        'STOPPED',
+      );
+      expect(
+        service.assertTransition(WORK_SESSION_STATUS, 'work-session-resume', 'STOPPED').to,
+      ).toBe('RUNNING');
+      for (const [action, from] of [
+        ['work-session-stop', 'STOPPED'],
+        ['work-session-stop', 'ENDED'],
+        ['work-session-resume', 'RUNNING'],
+        ['work-session-resume', 'ENDED'],
+      ]) {
+        expect(() =>
+          service.assertTransition(WORK_SESSION_STATUS, action, from, HttpStatus.BAD_REQUEST),
+        ).toThrow(ContractException);
+      }
+    });
+
+    it('세션 키 — END 는 RUNNING·STOPPED 둘 다에서 ENDED 로 간다', () => {
+      for (const from of ['RUNNING', 'STOPPED']) {
+        expect(service.assertTransition(WORK_SESSION_STATUS, 'work-session-end', from).to).toBe(
+          'ENDED',
+        );
+      }
+      expect(() =>
+        service.assertTransition(
+          WORK_SESSION_STATUS,
+          'work-session-end',
+          'ENDED',
+          HttpStatus.BAD_REQUEST,
+        ),
+      ).toThrow(ContractException);
     });
   });
 
@@ -201,11 +259,13 @@ describe('DocumentStateService', () => {
           MOLD_STATUS,
           ROUTING_COLUMN,
           WORK_ORDER_STATUS,
+          WORK_SESSION_STATUS,
         ].sort(),
       );
       // +6 — 출고 키에 취소 2, 입하·입고 키가 각각 2(I-5 PR ④).
       // +5 — W/O 키(I-6 PR ④).
-      expect(service.registered()).toHaveLength(21);
+      // +4 — W/O 키에 세션 시작 1, 세션 키 신설 3(I-11 PR ②).
+      expect(service.registered()).toHaveLength(25);
     });
   });
 });
