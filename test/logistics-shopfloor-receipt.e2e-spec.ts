@@ -249,6 +249,517 @@ describe('생산창고 입고 조회 2건 (e2e)', () => {
     expect(parseIfMatch(String(detail.headers.etag ?? ''))).toBeNull();
   });
 
+  /**
+   * `POST /logistics/shopfloor-receipts` — I-9 PR ②. 세션은 M-01-09 권한이 필요해
+   * 조회 전용 `cookie`(`P-02-03`) 대신 이 describe 전용 세션(`postCookie`)을 쓴다 —
+   * ① 의 `PERMISSIONS`·`makeUser()` 를 고치지 않는다.
+   * ⛔ 실제 채번 번호(`SR-{YYYYMMDD}-{SEQ4}`)는 `SRE2E` 접두어가 아니다 — 이 describe 의
+   * `afterAll` 이 `goods_issue_no LIKE 'SRE2E%'` 로 이어진 수령 전표를 id 서브쿼리로 지운다
+   * (① 의 `cleanup()` 은 고치지 않는다 · 브리프 「정리 순서는 ① 것 유지」).
+   */
+  describe('POST /logistics/shopfloor-receipts', () => {
+    const WORKER_NO = `${PREFIX}-WK`;
+    const POST_LOGIN_ID = 'e2e-sre-post';
+    const POST_ROLE = 'E2E_SRE_POST';
+    const NO_PERM_LOGIN_ID = 'e2e-sre-post-np';
+    const NO_PERM_ROLE = 'E2E_SRE_POST_NP';
+
+    let postCookie: string[];
+    let noPermCookie: string[];
+    let successResponse: request.Response;
+    let ledgerBefore: { onHand: string; version: number };
+    let ledgerAfter: { onHand: string; version: number };
+    let txLineCountBefore: number;
+    let txLineCountAfter: number;
+
+    interface PostOptions {
+      key?: string;
+      cookie?: string[];
+      workerNo?: string | null;
+    }
+
+    function post(payload: object, options: PostOptions = {}) {
+      const call = request(app.getHttpServer())
+        .post(BASE)
+        .set('Cookie', options.cookie ?? postCookie)
+        .set('Idempotency-Key', options.key ?? randomUUID());
+      if (options.workerNo !== null) call.set('X-Worker-No', options.workerNo ?? WORKER_NO);
+      return call.send(payload);
+    }
+
+    function receiptBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        goodsIssueId: 0,
+        workOrderId: Number(ids.workOrderA),
+        destinationLocationId: Number(ids.location),
+        receivedAt: '2026-09-07T04:00:00.000Z',
+        businessDate: '2026-09-07',
+        occurredAt: '2026-09-07T04:00:00.000Z',
+        lines: [],
+        ...overrides,
+      };
+    }
+
+    beforeAll(async () => {
+      postCookie = await login(POST_LOGIN_ID, POST_ROLE, ['M-01-09']);
+      noPermCookie = await login(NO_PERM_LOGIN_ID, NO_PERM_ROLE, []);
+
+      // 원장 단언은 픽스처 lot_id/item_id 축으로 좁힌다(R-14 ⓓ) — componentItem × lotA.
+      const balanceBefore = await prisma.inventory_balance.findFirstOrThrow({
+        where: { item_id: ids.componentItem, lot_id: ids.lotA },
+      });
+      ledgerBefore = { onHand: balanceBefore.on_hand_qty.toString(), version: balanceBefore.version_no };
+      txLineCountBefore = await prisma.inventory_transaction_line.count({ where: { lot_id: ids.lotA } });
+
+      const successIssue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      successResponse = await post(
+        receiptBody({
+          goodsIssueId: successIssue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: successIssue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 60,
+              varianceReasonCode: 'SPILL',
+            },
+          ],
+        }),
+      );
+
+      const balanceAfter = await prisma.inventory_balance.findFirstOrThrow({
+        where: { item_id: ids.componentItem, lot_id: ids.lotA },
+      });
+      ledgerAfter = { onHand: balanceAfter.on_hand_qty.toString(), version: balanceAfter.version_no };
+      txLineCountAfter = await prisma.inventory_transaction_line.count({ where: { lot_id: ids.lotA } });
+    });
+
+    afterAll(async () => {
+      // ⛔ 실제 채번 번호는 `SRE2E` 접두어가 아니다 — 이어진 출고(SRE2E 접두어)로 되짚는다.
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM logistics.shopfloor_receipt_line
+          WHERE shopfloor_receipt_id IN (
+            SELECT shopfloor_receipt_id FROM logistics.shopfloor_receipt
+            WHERE goods_issue_id IN (
+              SELECT goods_issue_id FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%'))`,
+      );
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM logistics.shopfloor_receipt
+          WHERE goods_issue_id IN (
+            SELECT goods_issue_id FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%')`,
+      );
+      for (const loginId of [POST_LOGIN_ID, NO_PERM_LOGIN_ID]) {
+        const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+        if (!target) continue;
+        await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
+        await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
+        await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
+        await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
+      }
+      for (const roleCode of [POST_ROLE, NO_PERM_ROLE]) {
+        await prisma.role_permission.deleteMany({ where: { role: { role_code: roleCode } } });
+        await prisma.role.deleteMany({ where: { role_code: roleCode } });
+      }
+    });
+
+    it('POSTED 출고를 받아 201 과 상세가 오고 varianceQty 가 issued − received 로 계산돼 온다', () => {
+      expect(successResponse.status).toBe(201);
+      const validate = validator('POST /logistics/shopfloor-receipts', 201);
+      expect(validate(successResponse.body)).toBe(true);
+      expect(validate.errors ?? []).toEqual([]);
+
+      const receipt = successResponse.body.shopfloorReceipt as ReceiptBody;
+      expect(receipt.statusCode).toBe('REGISTERED');
+      expect(successResponse.body.lines[0]).toMatchObject({ issuedQty: 100, receivedQty: 60, varianceQty: 40 });
+    });
+
+    it('⛔ 수령이 inventory_transaction·inventory_transaction_line 을 만들지 않고 inventory_balance 의 on_hand·version_no 가 그대로다', () => {
+      expect(txLineCountAfter).toBe(txLineCountBefore);
+      expect(ledgerAfter).toEqual(ledgerBefore);
+    });
+
+    it('⛔ 201 응답에 ETag 가 없다', () => {
+      expect(parseIfMatch(String(successResponse.headers.etag ?? ''))).toBeNull();
+    });
+
+    it('⭐ 발행된 번호가 SR-{YYYYMMDD}-{SEQ4} 다', () => {
+      const receipt = successResponse.body.shopfloorReceipt as ReceiptBody & { shopfloorReceiptNo: string };
+      expect(receipt.shopfloorReceiptNo).toMatch(/^SR-\d{8}-\d{4}$/);
+    });
+
+    it('차이가 0 이 아닌데 사유가 없으면 400 REQUIRED', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 60,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'lines[0].varianceReasonCode', code: 'REQUIRED' }),
+      );
+    });
+
+    it('receivedQty 가 issuedQty 를 넘으면 400 RANGE', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 150,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'lines[0].receivedQty', code: 'RANGE' }),
+      );
+    });
+
+    it('다른 출고의 라인을 실으면 400 INVALID', async () => {
+      const issueX = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const issueY = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotB, uomId: ids.uom, issueQty: 50 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issueX.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issueX.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+            {
+              goodsIssueLineId: issueY.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotB),
+              uomId: Number(ids.uom),
+              issuedQty: 50,
+              receivedQty: 50,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'lines[1].goodsIssueLineId', code: 'INVALID' }),
+      );
+    });
+
+    it('없는 출고면 400 INVALID(404 아님)', async () => {
+      const response = await post(
+        receiptBody({
+          goodsIssueId: 999999999,
+          lines: [
+            { goodsIssueLineId: 1, itemId: 1, lotId: 1, uomId: 1, issuedQty: 1, receivedQty: 1 },
+          ],
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'goodsIssueId', code: 'INVALID' }),
+      );
+    });
+
+    it('등록만 된 출고면 400 STATE_LOCKED', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        statusCode: 'REGISTERED',
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'goodsIssueId', code: 'STATE_LOCKED' }),
+      );
+    });
+
+    it('취소된 출고면 400 STATE_LOCKED', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        statusCode: 'CANCELLED',
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'goodsIssueId', code: 'STATE_LOCKED' }),
+      );
+    });
+
+    it('같은 출고로 두 번 수령하면 400 STATE_LOCKED', async () => {
+      const response = await post(
+        receiptBody({
+          goodsIssueId: goodsIssueAId,
+          lines: [
+            {
+              goodsIssueLineId: goodsIssueALine1Id,
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+            {
+              goodsIssueLineId: goodsIssueALine2Id,
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotB),
+              uomId: Number(ids.uom),
+              issuedQty: 50,
+              receivedQty: 50,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'goodsIssueId', code: 'STATE_LOCKED' }),
+      );
+    });
+
+    it('같은 Idempotency-Key 재전송이 수령 전표를 두 벌 만들지 않는다', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const key = randomUUID();
+      const body = receiptBody({
+        goodsIssueId: issue.goodsIssueId,
+        lines: [
+          {
+            goodsIssueLineId: issue.lineIds[0],
+            itemId: Number(ids.componentItem),
+            lotId: Number(ids.lotA),
+            uomId: Number(ids.uom),
+            issuedQty: 100,
+            receivedQty: 100,
+          },
+        ],
+      });
+      const first = await post(body, { key }).expect(201);
+      const second = await post(body, { key }).expect(201);
+      expect(second.body.shopfloorReceipt.shopfloorReceiptId).toBe(first.body.shopfloorReceipt.shopfloorReceiptId);
+
+      const count = await prisma.shopfloor_receipt.count({
+        where: { goods_issue_id: issue.goodsIssueId },
+      });
+      expect(count).toBe(1);
+    });
+
+    it('X-Worker-No 가 없으면 400 REQUIRED', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+          ],
+        }),
+        { workerNo: null },
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'X-Worker-No', code: 'REQUIRED' }),
+      );
+    });
+
+    it('무권한 사용자는 403', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      // 미등록이면 `PermissionGuard` 가 던져 500 이다 — 403 이 `derived-permissions.ts:186` 의 증거다.
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+          ],
+        }),
+        { cookie: noPermCookie },
+      );
+      expect(response.status).toBe(403);
+    });
+
+    it('출고 라인 5행 중 3행만 실으면 400 LINE_REQUIRED', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: Array.from({ length: 5 }, () => ({
+          itemId: ids.componentItem,
+          lotId: ids.lotA,
+          uomId: ids.uom,
+          issueQty: 10,
+        })),
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: issue.lineIds.slice(0, 3).map((lineId) => ({
+            goodsIssueLineId: lineId,
+            itemId: Number(ids.componentItem),
+            lotId: Number(ids.lotA),
+            uomId: Number(ids.uom),
+            issuedQty: 10,
+            receivedQty: 10,
+          })),
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'lines', code: 'LINE_REQUIRED' }),
+      );
+    });
+
+    it('미수령 라인을 receivedQty 0 + 사유로 실으면 201', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [
+          { itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 },
+          { itemId: ids.componentItem, lotId: ids.lotB, uomId: ids.uom, issueQty: 50 },
+        ],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+            {
+              goodsIssueLineId: issue.lineIds[1],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotB),
+              uomId: Number(ids.uom),
+              issuedQty: 50,
+              receivedQty: 0,
+              varianceReasonCode: 'MISPLACED',
+            },
+          ],
+        }),
+      );
+      expect(response.status).toBe(201);
+      const body = response.body as ReceiptBody;
+      expect(body.lines[1]).toMatchObject({ receivedQty: 0, varianceQty: 50 });
+    });
+
+    it('없는 destinationLocationId 면 400 INVALID', async () => {
+      const issue = await insertGoodsIssue({
+        warehouseId: ids.warehouse,
+        locationId: ids.location,
+        lines: [{ itemId: ids.componentItem, lotId: ids.lotA, uomId: ids.uom, issueQty: 100 }],
+      });
+      const response = await post(
+        receiptBody({
+          goodsIssueId: issue.goodsIssueId,
+          destinationLocationId: 999999999,
+          lines: [
+            {
+              goodsIssueLineId: issue.lineIds[0],
+              itemId: Number(ids.componentItem),
+              lotId: Number(ids.lotA),
+              uomId: Number(ids.uom),
+              issuedQty: 100,
+              receivedQty: 100,
+            },
+          ],
+        }),
+      ).expect(400);
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'destinationLocationId', code: 'INVALID' }),
+      );
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
 
   async function makeFixtures(): Promise<void> {
