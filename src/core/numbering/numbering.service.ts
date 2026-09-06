@@ -12,6 +12,7 @@ const DEFAULT_PREFIX: Record<string, string> = {
   PUTAWAY_TASK: 'PT',
   NOTICE: 'NTC',
   APPROVAL_REQUEST: 'AP',
+  INBOUND_RECEIPT: 'IR',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
