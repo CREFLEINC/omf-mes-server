@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
@@ -26,8 +27,10 @@ import { WorkOrderResourcePlanService } from './work-order/work-order-resource-p
 import { WorkOrderTransitionService } from './work-order/work-order-transition.service';
 import { WorkOrderWriteService } from './work-order/work-order-write.service';
 import { WorkOrderController } from './work-order/work-order.controller';
+import { WorkSessionEndService } from './work-session/work-session-end.service';
 import { WorkSessionQueryService } from './work-session/work-session-query.service';
 import { WorkSessionController } from './work-session/work-session.controller';
+import { WorkSessionService } from './work-session/work-session.service';
 
 /**
  * 생산 도메인 — W/O(I-6). 발행이 채번을, 중단·재개가 상태기계를 부른다(PR ④).
@@ -38,12 +41,14 @@ import { WorkSessionController } from './work-session/work-session.controller';
  * 자재 투입·반출 조회(I-10 PR ①)는 읽기만 한다 — 코어를 부르지 않는다.
  * 정정·상신(PR ③)이 승인 코어를 부른다 — 상신만 코어를 타고, 정정의 승인 게이트는
  * 「승인이 필수」라 뜻이 반대라 도메인 안에 선다(§5-5).
- * 작업 세션·통제 판정 조회 5건(I-11 PR ①)은 읽기만 한다 — 코어를 부르지 않는다.
- *   등록(`POST`)과 코어 배선(`AuthModule`)은 PR ②~⑤ 몫이다.
+ * 작업 세션·통제 판정 조회 5건(I-11 PR ①)은 읽기만 하고, 세션 열기·닫기(PR ③)는 상태기계
+ * 코어만 부른다 — 원장·채번·승인은 지나지 않는다.
  */
 @Module({
   imports: [
     PrismaModule,
+    // AuthModule 이 JwtModule 을 내보낸다 — 단말 토큰이 세션과 같은 비밀키로 서명된다.
+    AuthModule,
     IdempotencyModule,
     NumberingModule,
     DocumentStateModule,
@@ -74,6 +79,8 @@ import { WorkSessionController } from './work-session/work-session.controller';
     MaterialConsumptionQueryService,
     MaterialReturnQueryService,
     WorkSessionQueryService,
+    WorkSessionService,
+    WorkSessionEndService,
     PrecheckDecisionQueryService,
   ],
 })
