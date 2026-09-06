@@ -36,7 +36,7 @@
 | 3 | **I-3** 입하 | 12 | I-2 | A3 + `inbound_variance.reason_code` 완화 + `ix_inbound_variance_line` | LOT 등록 `src/core/lot/`(코어 PR ≤200 · I-3 재수립 R-1) | sonnet(조회) · opus(마이그·LOT 코어·등록·치환·초과분리) | 6 | ∥ I-12 |
 | 4 | **I-12** 적치 완료·임시적재 | 4 | 입고(구현됨) | — | — | opus(원장 STOCK_TRANSFER) | 2 | ∥ I-3 |
 | 5 | **I-4** 출고 — 전표·전기 | 7 | I-3 | — (M-c 는 `20260901090000` 로 이미 적용됨 · I-4 재수립 R-11) | `assertApproved`(코어 PR) | opus(코어·원장·등록·치환) · sonnet(조회 3) | 5 | — |
-| 6 | **I-5** 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | — | `posting.reverse()` | opus | 3 | — |
+| 6 | **I-5** 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | `document_cancellation.reason_code` NOT NULL 해제(I-5 R-1) | `posting.reverse()` | opus · 조회 ③a③b sonnet | 6 | — |
 | 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus | 4 | — |
 | 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1 | — | opus | 3 | — |
 | — | **M1 체인 e2e** (통합 §4-1) | | I-7 | | | fable 통합 | 1 | |
@@ -99,7 +99,7 @@
 | LOT 등록 | I-3 코어 PR ≤200줄 | `src/core/lot/` `createWithin(tx, …)` — `lot` + `lot_hold`, 읽기도 `tx`. `sourceTypeCode='INBOUND_RECEIPT_LINE'` 이면 `inbound_receipt_line.lot_id` 를 채운다(이미 있으면 400 `STATE_LOCKED`). 사용처 3(`POST /trace/lots` 구현됨 · I-3 입하 · I-17 재생재) — `server-architecture.md:67` 도메인 간 service 호출 금지 · §1 `lot-genealogy` 예고 자리(I-3 재수립 R-1) |
 | 승인 완료 판정 | I-4 코어 PR ≤200줄 | `assertApproved(tx, targetTypeCode, targetId, approvalTypeCode)` — `approval_request` **다형 축**(FK `approval_request_id` 를 안 본다 · §5 #12). 요청 0건이면 통과(「승인이 필요한 전표」를 가르는 축이 데이터에 없어 상신 흔적으로 대신 가른다 — 문의 030 · I-4 재수립 R-4) · `PENDING` 400 `APPROVAL_IN_PROGRESS` · 거부/취소 400 `APPROVAL_REQUIRED`. 사용처 I-4 `goods-issues:post` · I-14 재고 조정 |
 | 역트랜잭션 | I-5 코어 PR ≤200줄 | `InventoryPostingService.reverse()` — `reversal_of_transaction_id`·`reversal_of_business_date` 채움, `NEGATIVE_BALANCE` 400 |
-| 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 `app.entity_type_registry` 에서 읽음, 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
+| 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 **코드의 정적 표**(등록부는 칸 4개라 `DocumentProgress` 를 못 채운다 · `entity_type_registry` 는 부팅 대조만 · I-5 R-6), 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | `src/integration/message` 에 적재 함수 하나. `message_key` 규약 한 곳 |
 | LOT 생명주기 전이 | I-6·I-7 | `transitions.ts` 에 이미 등록 — 호출만 |
 | LOT 품질 축 전이 | I-19 | 계약이 이름 적은 전이만 등록. 미등록은 던진다(F-6) |
@@ -116,6 +116,7 @@
 | A6 | I-1 | `app.approval_route` · `app.approval_request` | 부분 유일 인덱스 `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` **+ `ix_approval_request_target (target_type_code, target_id)`**(J-8 상태 조회 축 — 모든 `:post` 의 자물쇠 경로) · 같은 선행 커밋 |
 | A1·A2·M-b | I-2 | `logistics.purchase_order` | `approval_request_id?` · `source_inbound_receipt_line_id?` · 유일 제약(§I-48) |
 | A3 | I-3 | `logistics.inbound_receipt_line` | `lot_id?` + **같은 파일에** `inbound_variance.reason_code` NOT NULL 해제(계약 「⛔ 선택이다」) · `ix_inbound_variance_line`(I-3 재수립 R-9) |
+| — | I-5 | `app.document_cancellation` | `reason_code` NOT NULL 해제(계약·화면에 사유 «코드» 축이 0 — I-3 A3 와 같은 모양 · I-5 재수립 R-1) |
 | ~~M-c~~ | ~~I-4~~ | `logistics.goods_issue` | ✅ **이미 적용됨**(`20260901090000_goods_issue_destination_and_spare` · #44 ≡ #147 · `ck_goods_issue_destination`) — I-4 슬라이스 마이그 **0건**(I-4 재수립 R-11) |
 | M-d | I-6 | `production.work_order(_resource_assignment)` | 부분 유일 인덱스 + `remainder_disposition_code?` |
 | D1 | I-7 | `production.production_result` | `shift_id` NOT NULL 해제 |
@@ -145,7 +146,7 @@
 3. **If-Match** — 필수 46/선택 28 을 가드 `requirement()` 그대로. 조이지도 풀지도 않는다. 다형 취소는 대상 문서 상세의 `version_no` 와 대조. `PUT .../lines` 는 부모 버전. `:acknowledge` 만 토큰 둘.
 4. **ETag** — 42건 `setEtag`. 자식 컬렉션 GET 엔 안 붙인다(B-1-1 · 7건 명시).
 5. **`@Contract`** — 249건 전건. 409 봉투는 도메인 전용 넷(`Production`·`Quality`·`Shipment`·`StockReinstatement`ConflictResponse) 을 계약대로 가른다. 422(보전 12건)는 슬라이스 시작 때 계약 문장 재확인.
-6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(409)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
+6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
 9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).

@@ -1031,6 +1031,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 프런트가 「입고 → 출고·이동·투입」 관계표를 **하드코딩하면 유형이 늘 때마다 취소 판정이 조용히 틀린다**⌝ ·
 `cancelBlockedReasonCode` 에 `TYPE_NOT_CANCELABLE` 이 있다 — ⌜취소 실행 경로가 있는 것은 **입하·입고·출고 3종뿐**⌝
 인데 목록은 **9종**을 낸다. 나머지 6종은 취소 버튼이 «회색»으로 그려져야 하고, 그것을 가르는 것이 이 칸이다.
+⭐ I-5 재수립 R-6 ⓐ: **`successorCount` 는 취소 불가 6종에서도 센다** — 「후속」 열은 취소 게이트가 아니라 FR-IM-086 진행현황 열이다.
 
 #### ⑬ `GET /quality/nonconformances/{id}/disposition-decisions` 의 `summary`
 
