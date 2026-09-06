@@ -21,14 +21,15 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { GoodsIssueQuery, GoodsIssueQueryService } from './goods-issue-query.service';
+import { GoodsIssueCreate } from './goods-issue-rules';
 import { GoodsIssueDetail, GoodsIssueLineView, GoodsIssueView } from './goods-issue-view';
 import { GoodsIssueService, PostIssueRequest } from './goods-issue.service';
 
 /**
- * 출고 조회 3건 + 전기. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)가
- * 소유한다. 등록·라인 치환·상신은 PR ④⑤ 가 같은 파일에 얹는다(계약이 조회 3건에 403 을
- * 선언하지 않아 `manual-permissions.ts` 를 안 건드린다 — I-4.md §1-2. `:post` 의 403 은
- * `derived-permissions.ts:170` 이 `W-01-06`·`W-04-10` 으로 이미 갖는다).
+ * 출고 조회 3건 + 등록 + 전기. 화면은 `W-01-05`(반품)·`W-01-06`(기타 출고)·`P-01-02`(현장 QR)·
+ * `W-04-10`(제품 폐기)가 소유한다. 라인 치환·상신은 PR ⑤ 가 같은 파일에 얹는다(계약이 조회
+ * 3건에 403 을 선언하지 않아 `manual-permissions.ts` 를 안 건드린다 — I-4.md §1-2. 등록의
+ * 403 은 `derived-permissions.ts:169`, `:post` 는 :170 이 이미 갖는다).
  */
 @Controller('logistics/goods-issues')
 export class GoodsIssueController {
@@ -61,6 +62,26 @@ export class GoodsIssueController {
     @Param('goodsIssueId', ParseIntPipe) goodsIssueId: number,
   ): Promise<{ items: GoodsIssueLineView[] }> {
     return { items: await this.queries.lines(goodsIssueId) };
+  }
+
+  /**
+   * ⭐ 201 에 **ETag 를 내린다** — 입고 `POST /logistics/goods-receipts` 201 은 계약이 헤더를
+   * 선언하지 않아 안 내렸다. 여기는 선언한다(I-4.md §1-1 · 입고를 베끼면 빠뜨리는 자리).
+   * ⛔ If-Match 는 「선택」이라 꺼내지 않는다 — 새 자원이라 대조할 버전이 없다(§6-3).
+   */
+  @Post()
+  @Contract('POST /logistics/goods-issues')
+  async create(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Body() body: GoodsIssueCreate,
+  ): Promise<GoodsIssueDetail> {
+    const appUserId = userOf(request);
+    const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.issues.create(body, appUserId),
+    );
+    setEtag(response, result.versionNo);
+    return result.detail;
   }
 
   /** ⭐ 200 은 상세가 아니라 헤더 하나(`GoodsIssue`)다 — ETag 도 안 내린다(계약 미선언). */
