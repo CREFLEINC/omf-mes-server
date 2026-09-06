@@ -38,6 +38,8 @@ import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
+import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
+import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
 
 /**
  * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하·P/O 요청.
@@ -66,6 +68,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptSplitController,
     InboundVarianceController,
     MaterialIssueRequestController,
+    ShopfloorReceiptController,
   ],
   providers: [
     GoodsIssueQueryService,
@@ -86,6 +89,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     MaterialIssueRequestQueryService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
+    ShopfloorReceiptQueryService,
   ],
 })
 export class LogisticsModule {}
