@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
@@ -9,7 +9,6 @@ import {
   ExternalIdentifierInput,
   LotRegisterInput,
   LotRegistryService,
-  field,
   optionalDay,
   optionalInstant,
 } from '../../core/lot';

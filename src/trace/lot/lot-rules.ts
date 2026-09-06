@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
-import { day, field, one } from '../../core/lot';
+import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
+import { day } from '../../common/master';
 
 /**
  * LOT 등록의 «규칙» — 번호 출처의 짝, 중복의 성격, 질의 조건.

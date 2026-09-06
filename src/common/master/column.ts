@@ -1,3 +1,5 @@
+import { ERROR_CODE, field, one } from '../errors';
+
 /**
  * 선택 칸을 Prisma `data` 에 넣을지 말지 가른다.
  *
@@ -22,4 +24,13 @@ export function optionalDate(
 /** `@db.Date` 를 계약의 `format: date` 로 되돌린다 — 시각을 붙이면 어긋난다. */
 export function toDateString(value: Date | null): string | null {
   return value === null ? null : value.toISOString().slice(0, 10);
+}
+
+/** 계약의 `format: date` 문자열을 `@db.Date` 값으로 — 형식이 아니면 400. 시각·타임존을 붙이지 않는다. */
+export function day(name: string, value: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  throw one(field(name, ERROR_CODE.INVALID, 'YYYY-MM-DD 형식입니다.'));
 }
