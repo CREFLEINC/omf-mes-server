@@ -20,6 +20,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   MATERIAL_ISSUE_REQUEST: 'MIR',
   /** 규칙 미등재 — `SR-{YYYYMMDD}-{SEQ4}`(`plan-api.md` 1093행 · 계약 example `SR-2026-000077` 는 형식만 · I-9 §3-7). */
   SHOPFLOOR_RECEIPT: 'SR',
+  /** 규칙 미등재 — `MR-{YYYYMMDD}-{SEQ4}`(계약 example `"값"` 뿐 · 기간 축은 서버 시각 UTC 날짜 · I-10 §4-6). */
+  MATERIAL_RETURN: 'MR',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
