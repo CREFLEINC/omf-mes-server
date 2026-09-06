@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
+import { lockBalancesInOrder } from './balance-lock';
 import { InventoryPostingService } from './inventory-posting.service';
 import { PostingInput, ReverseInput } from './posting.types';
 
@@ -57,6 +58,7 @@ function balanceRow(over: Row = {}): Row {
     locationId: LOC,
     itemId: ITEM,
     lotKey: LOT,
+    lotId: LOT,
     quality_status_code: 'NORMAL',
     inventory_status_code: 'AVAILABLE',
     ownership_type_code: 'OWNED',
@@ -441,6 +443,20 @@ describe('재고 전기 — 잔액 선잠금', () => {
     expect(lock?.sql).toContain('IN (VALUES');
     // 두 끝을 «같은» 문장에 넣는다 — 7칸 × 2줄이라 값이 14 개다(교차곱이면 더 는다).
     expect((lock?.values[0] as Prisma.Sql).values).toHaveLength(14);
+  });
+
+  it('lock — lot_id 가 NULL 이면 lotId 가 null 이고 lotKey 는 0 이다', async () => {
+    // `lotKey` 는 COALESCE 0 이라 「LOT 없음」과 「lot_id = 0」을 못 가른다 — `BalanceDimension`
+    // 으로 넘길 값은 실제 `lot_id` 라서 잠금 SELECT 가 둘 다 내린다(R-3).
+    const { tx, raws } = fake({ balances: [balanceRow({ lotKey: 0n, lotId: null })] });
+
+    const locked = await lockBalancesInOrder(tx, [
+      { legalEntityId: LE, businessUnitId: BU, plantId: PLANT, warehouseId: WH,
+        locationId: LOC, itemId: ITEM, lotKey: 0n },
+    ]);
+
+    expect(raws[0].sql).toContain('COALESCE(lot_id, 0) AS "lotKey", lot_id AS "lotId"');
+    expect(locked[0]).toMatchObject({ lotKey: 0n, lotId: null });
   });
 
   it('post — 멱등 재전송은 잠그지도 만들지도 않는다', async () => {
