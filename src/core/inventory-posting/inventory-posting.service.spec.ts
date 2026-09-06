@@ -71,8 +71,6 @@ type Seed = {
   balances?: Row[];
   /** 선조회가 차례로 낼 역행 헤더 — 경합 재현에 두 값이 필요하다. */
   reversals?: (Row | null)[];
-  /** 헤더 INSERT 가 던질 것. */
-  createError?: unknown;
 };
 
 /**
@@ -106,10 +104,7 @@ function fake(seed: Seed = {}) {
         status_code: 'POSTED',
         inventory_transaction_line: lines,
       })),
-      create: record('header.create', () => {
-        if (seed.createError !== undefined) throw seed.createError;
-        return { inventory_transaction_id: 9100n };
-      }),
+      create: record('header.create', () => ({ inventory_transaction_id: 9100n })),
     },
     inventory_transaction_line: {
       create: record('line.create', () => ({ inventory_transaction_line_id: BigInt(++created) })),
@@ -302,15 +297,9 @@ describe('역트랜잭션 코어', () => {
     expect(calls).toEqual(['header.findFirst']);
   });
 
-  it('reverse — 경합으로 uq_inventory_idempotency 에 걸리면 되읽어 같은 응답이다', async () => {
-    const conflict = new Prisma.PrismaClientKnownRequestError('unique', {
-      code: 'P2002',
-      clientVersion: '6',
-      meta: { target: 'uq_inventory_idempotency' },
-    });
-    // 선조회는 0행(경합 상대가 아직 안 들어왔다) · INSERT 실패 뒤 되읽기는 1행이다.
-    const { tx, service } = fake({
-      createError: conflict,
+  it('reverse — 잠금 뒤 되읽기가 역행을 보면 alreadyReversed:true 로 흡수한다(경합의 그물은 P2002 가 아니라 잠금이다)', async () => {
+    // 첫 선조회는 0행(경합 상대가 아직 안 커밋했다) · 잔액 행을 잠근 «뒤» 되읽기는 1행이다.
+    const { tx, calls, service } = fake({
       reversals: [
         null,
         {
@@ -329,17 +318,11 @@ describe('역트랜잭션 코어', () => {
       businessDate: DAY,
       alreadyReversed: true,
     });
-  });
-
-  it('reverse — 다른 유일 위반(uq_inventory_transaction_no)은 삼키지 않는다', async () => {
-    const conflict = new Prisma.PrismaClientKnownRequestError('unique', {
-      code: 'P2002',
-      clientVersion: '6',
-      meta: { target: 'uq_inventory_transaction_no' },
-    });
-    const { tx, service } = fake({ createError: conflict });
-
-    await expect(service.reverse(tx, reverseInput())).rejects.toBe(conflict);
+    // 헤더 INSERT 가 아예 안 나간다 — abort 된 tx 안에서 되읽을 일이 없다(25P02).
+    expect(calls).not.toContain('header.create');
+    expect(calls).not.toContain('line.create');
+    expect(calls).toEqual(['header.findFirst', 'header.findUniqueOrThrow',
+      'warehouse.findUniqueOrThrow', 'lock', 'header.findFirst']);
   });
 
   it('reverse — 잔액 행은 from·to 7칸 키를 한 VALUES 문장으로 id 오름차순 잠근다(교차곱이 아니다)', async () => {
@@ -363,6 +346,10 @@ describe('역트랜잭션 코어', () => {
     // 두 끝을 «같은» 문장에 넣는다 — 7칸 × 2줄이라 값이 14 개다(교차곱이면 더 는다).
     expect((lock?.values[0] as Prisma.Sql).values).toHaveLength(14);
     expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('move'));
+    // 되읽기 그물은 잠금 «뒤» · 헤더 INSERT «앞»이라야 앞 트랜잭션의 역행을 본다.
+    const reread = calls.lastIndexOf('header.findFirst');
+    expect(calls.indexOf('lock')).toBeLessThan(reread);
+    expect(reread).toBeLessThan(calls.indexOf('header.create'));
   });
 
   it('reverse — 같은 11칸 키의 라인이 둘이면 합계로 하한을 본다 · available_qty 가 null 이면 던진다', async () => {

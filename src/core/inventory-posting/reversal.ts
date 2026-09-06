@@ -3,7 +3,7 @@ import { Prisma, inventory_transaction_line } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { LockedBalanceRow } from './balance-lock';
-import { PostingLine } from './posting.types';
+import { PostingLine, ReverseInput, ReverseResult } from './posting.types';
 
 /** `{원 번호}-R`. 채번 코어를 부르지 않는다 — 카운터를 안 써서 롤백이 결번을 안 만든다(§3-5). */
 export const REVERSAL_NO_SUFFIX = '-R';
@@ -72,10 +72,54 @@ const negativeBalance = (): ContractException =>
     { scope: 'screen', code: ERROR_CODE.NEGATIVE_BALANCE, message: '되돌리면 재고가 음수가 됩니다.' },
   ]);
 
-/** `uq_inventory_transaction_no` 위반과 갈라야 한다 — 그쪽은 삼키지 않고 그대로 던진다. */
-export function isIdempotencyConflict(error: unknown): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
-    return false;
-  }
-  return [error.meta?.target].flat().join(',').includes('uq_inventory_idempotency');
+export async function findReversal(
+  tx: Prisma.TransactionClient,
+  originalId: bigint,
+  originalDate: Date,
+): Promise<ReverseResult | null> {
+  const row = await tx.inventory_transaction.findFirst({
+    where: { reversal_of_transaction_id: originalId, reversal_of_business_date: originalDate },
+    select: { inventory_transaction_id: true, transaction_no: true, business_date: true },
+  });
+  if (row === null) return null;
+  return {
+    inventoryTransactionId: row.inventory_transaction_id,
+    transactionNo: row.transaction_no,
+    businessDate: row.business_date.toISOString().slice(0, 10),
+    alreadyReversed: true,
+  };
+}
+
+export async function insertReversalHeader(
+  tx: Prisma.TransactionClient,
+  input: ReverseInput,
+  original: {
+    transaction_type_code: string;
+    plant_id: bigint;
+    source_document_type_code: string;
+    source_document_id: bigint;
+    status_code: string;
+  },
+  transactionNo: string,
+): Promise<{ inventory_transaction_id: bigint }> {
+  const businessDate = new Date(input.businessDate);
+  // ⛔ `uq_inventory_idempotency` 는 그대로 마지막 방어다 — 위 되읽기를 뚫고 두 역행이
+  // 들어오면 500 이 맞다. 삼키지 않는다.
+  return tx.inventory_transaction.create({
+    data: {
+      business_date: businessDate,
+      transaction_no: transactionNo,
+      transaction_type_code: original.transaction_type_code,
+      plant_id: original.plant_id,
+      occurred_at: input.occurredAt,
+      source_document_type_code: original.source_document_type_code,
+      source_document_id: original.source_document_id,
+      status_code: original.status_code,
+      idempotency_key: `${REVERSAL_KEY_PREFIX}${input.inventoryTransactionId}`,
+      reversal_of_transaction_id: input.inventoryTransactionId,
+      reversal_of_business_date: businessDate,
+      ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
+    },
+    select: { inventory_transaction_id: true },
+  });
 }

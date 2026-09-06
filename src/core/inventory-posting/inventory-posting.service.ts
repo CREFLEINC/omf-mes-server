@@ -11,10 +11,10 @@ import {
   ReverseResult,
 } from './posting.types';
 import {
-  REVERSAL_KEY_PREFIX,
   REVERSAL_NO_SUFFIX,
   assertReversible,
-  isIdempotencyConflict,
+  findReversal,
+  insertReversalHeader,
   reversedLine,
 } from './reversal';
 
@@ -106,7 +106,7 @@ export class InventoryPostingService {
     const businessDate = new Date(input.businessDate);
     // 키가 `REVERSAL:` 이 아니어도 「이미 되돌렸다」가 사실이다 — I-14 가 `post()` 로 낸
     // 역분개도 같은 짝 칸을 채운다(I-5 R-3).
-    const already = await this.findReversal(tx, input.inventoryTransactionId, businessDate);
+    const already = await findReversal(tx, input.inventoryTransactionId, businessDate);
     if (already !== null) return already;
 
     const original = await tx.inventory_transaction.findUniqueOrThrow({
@@ -124,33 +124,13 @@ export class InventoryPostingService {
 
     assertReversible(lines, await lockBalancesInOrder(tx, await this.balanceKeys(tx, lines)));
 
-    let header: { inventory_transaction_id: bigint };
-    try {
-      header = await tx.inventory_transaction.create({
-        data: {
-          business_date: businessDate,
-          transaction_no: transactionNo,
-          transaction_type_code: original.transaction_type_code,
-          plant_id: original.plant_id,
-          occurred_at: input.occurredAt,
-          source_document_type_code: original.source_document_type_code,
-          source_document_id: original.source_document_id,
-          status_code: original.status_code,
-          idempotency_key: `${REVERSAL_KEY_PREFIX}${input.inventoryTransactionId}`,
-          reversal_of_transaction_id: input.inventoryTransactionId,
-          reversal_of_business_date: businessDate,
-          ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
-        },
-        select: { inventory_transaction_id: true },
-      });
-    } catch (error) {
-      // 경합의 마지막 그물이다 — 같은 `(REVERSAL:{원 id}, 원 영업일)`이 먼저 들어갔으면 되읽어
-      // 같은 응답을 준다(I-5 R-3 ②). ⛔ 다른 유일 위반(`uq_inventory_transaction_no`)은 삼키지 않는다.
-      if (!isIdempotencyConflict(error)) throw error;
-      const won = await this.findReversal(tx, input.inventoryTransactionId, businessDate);
-      if (won === null) throw error;
-      return won;
-    }
+    // 잠금 뒤 되읽기가 경합의 그물이다 — INSERT 의 P2002 를 잡아 되읽는 길은 abort 된 tx 안이라
+    // 25P02 로 막힌다(리뷰 #217). 두 `reverse()` 가 같은 잔액 행을 잡으므로 뒤 트랜잭션은 앞이
+    // 커밋한 뒤에야 잠금을 얻고, READ COMMITTED 재조회가 앞이 만든 역행을 본다.
+    const won = await findReversal(tx, input.inventoryTransactionId, businessDate);
+    if (won !== null) return won;
+
+    const header = await insertReversalHeader(tx, input, original, transactionNo);
 
     for (const [index, line] of lines.entries()) {
       // 원 `line_no` 를 그대로 쓴다 — 헤더가 달라 `uq_inventory_transaction_line` 을 안 깨고
@@ -201,24 +181,6 @@ export class InventoryPostingService {
         ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
       },
     });
-  }
-
-  private async findReversal(
-    tx: Prisma.TransactionClient,
-    originalId: bigint,
-    originalDate: Date,
-  ): Promise<ReverseResult | null> {
-    const row = await tx.inventory_transaction.findFirst({
-      where: { reversal_of_transaction_id: originalId, reversal_of_business_date: originalDate },
-      select: { inventory_transaction_id: true, transaction_no: true, business_date: true },
-    });
-    if (row === null) return null;
-    return {
-      inventoryTransactionId: row.inventory_transaction_id,
-      transactionNo: row.transaction_no,
-      businessDate: row.business_date.toISOString().slice(0, 10),
-      alreadyReversed: true,
-    };
   }
 
   /** 라인 전건의 from·to 를 한 문장에 담을 7칸 키로 편다 — 조직 3축은 창고가 안다. */
