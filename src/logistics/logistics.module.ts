@@ -29,6 +29,8 @@ import { InboundVarianceService } from './inbound-receipt/inbound-variance.servi
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
+import { PickingController } from './picking/picking.controller';
+import { PickingQueryService } from './picking/picking-query.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
@@ -54,6 +56,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
   controllers: [
     GoodsIssueController,
     GoodsReceiptController,
+    PickingController,
     PutawayRuleController,
     PurchaseOrderController,
     AsnController,
@@ -67,6 +70,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     GoodsIssueService,
     GoodsIssueUpdateService,
     GoodsReceiptService,
+    PickingQueryService,
     PutawayRuleService,
     PurchaseOrderService,
     PurchaseOrderQueryService,

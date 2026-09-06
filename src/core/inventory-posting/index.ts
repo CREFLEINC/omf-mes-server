@@ -6,3 +6,4 @@ export type {
   PostingLine,
   PostingResult,
 } from './posting.types';
+export type { BalanceDimension, ConsumeMove, PickMove } from './reservation-qty';

@@ -13,6 +13,8 @@ export interface BalanceLockKey {
 
 /** 잠근 행. 하한 판정은 11칸 단위라 나머지 4칸과 `available_qty` 를 함께 싣는다(I-5 R-4). */
 export interface LockedBalanceRow extends BalanceLockKey {
+  /** `lotKey` 는 COALESCE 0 이라 「LOT 없음」과 「lot_id=0」을 못 가른다 — `BalanceDimension.lotId` 에 실을 값은 이쪽이다. */
+  lotId: bigint | null;
   quality_status_code: string;
   inventory_status_code: string;
   ownership_type_code: string;
@@ -48,7 +50,7 @@ export async function lockBalancesInOrder(
   return tx.$queryRaw<LockedBalanceRow[]>`
     SELECT legal_entity_id AS "legalEntityId", business_unit_id AS "businessUnitId",
            plant_id AS "plantId", warehouse_id AS "warehouseId", location_id AS "locationId",
-           item_id AS "itemId", COALESCE(lot_id, 0) AS "lotKey",
+           item_id AS "itemId", COALESCE(lot_id, 0) AS "lotKey", lot_id AS "lotId",
            quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id,
            available_qty
       FROM inventory.inventory_balance
