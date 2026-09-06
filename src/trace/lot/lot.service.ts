@@ -5,6 +5,14 @@ import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
+import {
+  ExternalIdentifierInput,
+  LotRegisterInput,
+  LotRegistryService,
+  field,
+  optionalDay,
+  optionalInstant,
+} from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { mesLotNo } from './lot-number';
 import {
@@ -16,12 +24,9 @@ import {
   completedWhere,
   duplicateLotNo,
   expiryWhere,
-  field,
   isDuplicateLotNo,
   loose,
   optional,
-  optionalDay,
-  optionalInstant,
   workOrderWhere,
 } from './lot-rules';
 import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
@@ -39,41 +44,17 @@ import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from '.
  * 입고가 진다 — 되돌림 §Z-2.
  */
 
-/** 등록 즉시 거는 보류. 시드 `LOT_HOLD_REASON` 의 「수입검사 대기」다. */
-const INSPECTION_HOLD_REASON = 'INCOMING_INSPECTION_WAIT';
-/**
- * ⚠ `LOT_HOLD_STATUS` 코드 그룹이 시드에 **없다**. 컬럼은 NOT NULL 이라 무엇이든 넣어야
- * 하므로 `HELD` 로 둔다. ⛔ 해제 판정은 이 값이 아니라 **`released_at IS NULL`** 로만
- * 한다 — 값 목록이 확정되기 전에 상태 문자열로 판정하면 지어낸 규칙이 된다(F-6 · §Z-3).
- */
-const HOLD_STATUS = 'HELD';
-/** 등록 시점의 품질 판정 — 검사 대기다(시드 `LOT_STATUS`). */
-const INITIAL_LOT_STATUS = 'INSPECTION_PENDING';
 /** 계약이 이 경로로 오는 원천을 하나로 닫았다. */
 const SOURCE_TYPES = ['INBOUND_RECEIPT_LINE'];
 const MES_RETRY = 3;
 
-export interface ExternalIdentifierInput {
-  identifierTypeCode: string;
-  externalIdentifier: string;
-  partnerId?: number | null;
-  externalSystemCode?: string | null;
-}
+export type { ExternalIdentifierInput };
 
-export interface LotCreate {
+/** 코어가 받는 칸(`LotRegisterInput`)에 이 경로만 쓰는 넷을 더한 것이다. */
+export interface LotCreate extends Omit<LotRegisterInput, 'lotNo'> {
   numberSourceCode?: string;
+  /** ⚠ 코어와 달리 «없을 수» 있다 — MES 채번은 서버가 뒤에 매긴다. */
   lotNo?: string;
-  itemId: number;
-  lotTypeCode: string;
-  plantId: number;
-  initialQty: number;
-  uomId: number;
-  manufacturedAt?: string | null;
-  expiryDate?: string | null;
-  sourceTypeCode: string;
-  sourceId: number;
-  remarks?: string | null;
-  externalIdentifiers?: ExternalIdentifierInput[];
   businessDate: string;
   occurredAt: string;
 }
@@ -106,7 +87,10 @@ export interface LotQuery {
 
 @Injectable()
 export class LotService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly registry: LotRegistryService,
+  ) {}
 
   async list(query: LotQuery): Promise<PagedResponse<LotView>> {
     const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
@@ -236,54 +220,9 @@ export class LotService {
   }
 
   private async insert(input: LotCreate, lotNo: string, appUserId: number): Promise<LotRow> {
-    return this.prisma.$transaction(async (tx) => {
-      const lot = await tx.lot.create({
-        data: {
-          lot_no: lotNo,
-          item_id: input.itemId,
-          lot_type_code: input.lotTypeCode,
-          plant_id: input.plantId,
-          initial_qty: input.initialQty,
-          uom_id: input.uomId,
-          source_type_code: input.sourceTypeCode,
-          source_id: input.sourceId,
-          status_code: INITIAL_LOT_STATUS,
-          manufactured_at: optionalInstant(input.manufacturedAt),
-          expiry_date: optionalDay(input.expiryDate),
-          remarks: input.remarks ?? null,
-          created_by: BigInt(appUserId),
-        },
-      });
-
-      // ⭐ 화면이 보내지 않고 «서버가» 건다(MLOT #5).
-      await tx.lot_hold.create({
-        data: {
-          lot_id: lot.lot_id,
-          reason_code: INSPECTION_HOLD_REASON,
-          status_code: HOLD_STATUS,
-          held_by: BigInt(appUserId),
-          held_at: new Date(),
-        },
-      });
-
-      for (const identifier of input.externalIdentifiers ?? []) {
-        await tx.lot_external_identifier.create({
-          data: {
-            lot_id: lot.lot_id,
-            identifier_type_code: identifier.identifierTypeCode,
-            external_identifier: identifier.externalIdentifier,
-            partner_id: identifier.partnerId ?? null,
-            external_system_code: identifier.externalSystemCode ?? null,
-            created_by: BigInt(appUserId),
-          },
-        });
-      }
-
-      return tx.lot.findUniqueOrThrow({
-        where: { lot_id: lot.lot_id },
-        include: { lot_hold: true },
-      });
-    });
+    return this.prisma.$transaction((tx) =>
+      this.registry.createWithin(tx, { ...input, lotNo }, appUserId),
+    );
   }
 
   /**

@@ -1,7 +1,7 @@
-import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { day, field, one } from '../../core/lot';
 
 /**
  * LOT 등록의 «규칙» — 번호 출처의 짝, 중복의 성격, 질의 조건.
@@ -80,14 +80,6 @@ export function completedWhere(completed: boolean | undefined): Prisma.lotWhereI
   return { completed_at: completed ? { not: null } : null };
 }
 
-export function field(name: string, code: string, message: string): ErrorItem {
-  return { scope: 'field', field: name, code, message };
-}
-
-export function one(item: ErrorItem): ContractException {
-  return new ContractException(HttpStatus.BAD_REQUEST, [item]);
-}
-
 /** 형식만 본다 — 값을 담을 칸이 없어 저장하지 않는 자리에 쓴다(§Z-4). */
 export function assertDay(name: string, value: string, errors: ErrorItem[]): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
@@ -99,27 +91,6 @@ export function assertInstant(name: string, value: string, errors: ErrorItem[]):
   if (Number.isNaN(Date.parse(value))) {
     errors.push(field(name, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
   }
-}
-
-export function day(name: string, value: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const parsed = new Date(`${value}T00:00:00.000Z`);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-  throw one(field(name, ERROR_CODE.INVALID, 'YYYY-MM-DD 형식입니다.'));
-}
-
-export function optionalDay(value: string | null | undefined): Date | null {
-  return value === null || value === undefined ? null : day('expiryDate', value);
-}
-
-export function optionalInstant(value: string | null | undefined): Date | null {
-  if (value === null || value === undefined) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    throw one(field('manufacturedAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
-  }
-  return parsed;
 }
 
 export function optional<T>(column: string, value: T | undefined): Record<string, unknown> {

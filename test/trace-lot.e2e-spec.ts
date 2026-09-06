@@ -63,6 +63,8 @@ describe('LOT (e2e)', () => {
   let itemId: number;
   let uomId: number;
   let here: PostingEndpoint;
+  let inboundReceiptId: bigint;
+  let lineNo = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -89,18 +91,18 @@ describe('LOT (e2e)', () => {
       .post('/api/trace/lots')
       .set('Cookie', noPermCookie)
       .set('Idempotency-Key', key())
-      .send(body({ numberSourceCode: 'MES' }))
+      .send(await body({ numberSourceCode: 'MES' }))
       .expect(403);
   });
 
   it('⛔ SUPPLIER 인데 번호가 없으면 400 이다', async () => {
-    const rejected = await post(body({ numberSourceCode: 'SUPPLIER' })).expect(400);
+    const rejected = await post(await body({ numberSourceCode: 'SUPPLIER' })).expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'lotNo', code: 'REQUIRED' });
   });
 
   it('⛔ MES 인데 번호를 보내면 400 이다', async () => {
     const rejected = await post(
-      body({ numberSourceCode: 'MES', lotNo: `${PREFIX}-손으로` }),
+      await body({ numberSourceCode: 'MES', lotNo: `${PREFIX}-손으로` }),
     ).expect(400);
     expect(rejected.body.errors[0]).toMatchObject({ field: 'lotNo', code: 'INVALID' });
   });
@@ -114,7 +116,7 @@ describe('LOT (e2e)', () => {
     await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-DUP` });
 
     const rejected = await post(
-      body({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-DUP` }),
+      await body({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-DUP` }),
     ).expect(400);
     expect(rejected.body.errors[0]).toMatchObject({
       field: 'lotNo',
@@ -166,7 +168,7 @@ describe('LOT (e2e)', () => {
 
   it('⛔ 마스터에 없는 식별자 유형은 400 이다', async () => {
     await post(
-      body({
+      await body({
         numberSourceCode: 'SUPPLIER',
         lotNo: `${PREFIX}-BADEXT`,
         externalIdentifiers: [
@@ -296,6 +298,13 @@ describe('LOT (e2e)', () => {
     expect(stale.body.conflictCause).toBe('user');
   });
 
+  it('⛔ 없는 sourceId 는 400 INVALID 다 — 고아 참조를 더 이상 안 받는다', async () => {
+    const rejected = await post(
+      await body({ numberSourceCode: 'MES', sourceId: 999999999 }),
+    ).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'sourceId', code: 'INVALID' });
+  });
+
   it('⛔ 없는 LOT 은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/trace/lots/999999999')
@@ -305,7 +314,11 @@ describe('LOT (e2e)', () => {
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
-  function body(extra: Record<string, unknown>): Record<string, unknown> {
+  /**
+   * ⚠ `sourceId` 는 «실재하는» 입하 라인이어야 한다 — 등록이 그 라인의 `lot_id` 를 채운다.
+   * 라인 하나에 LOT 은 하나라 호출마다 새 라인을 심는다.
+   */
+  async function body(extra: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {
       itemId,
       lotTypeCode: 'MATERIAL',
@@ -313,11 +326,27 @@ describe('LOT (e2e)', () => {
       initialQty: 10,
       uomId,
       sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-      sourceId: 1,
+      sourceId: await newLine(),
       businessDate: DAY,
       occurredAt: `${DAY}T02:00:00.000Z`,
       ...extra,
     };
+  }
+
+  async function newLine(): Promise<number> {
+    lineNo += 1;
+    const line = await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: inboundReceiptId,
+        line_no: lineNo,
+        item_id: BigInt(itemId),
+        received_qty: 1,
+        uom_id: BigInt(uomId),
+        inspection_required: false,
+        status_code: 'REGISTERED',
+      },
+    });
+    return Number(line.inbound_receipt_line_id);
   }
 
   function post(payload: Record<string, unknown>): request.Test {
@@ -330,7 +359,7 @@ describe('LOT (e2e)', () => {
 
   /** ⚠ 201 은 `Lot` 이 아니라 상세 봉투(`lot`·`externalIdentifiers`·`holds`)를 준다. */
   async function create(extra: Record<string, unknown>): Promise<LotBody> {
-    const created = await post(body(extra)).expect(201);
+    const created = await post(await body(extra)).expect(201);
     const validate = validator('POST /trace/lots', 201);
     expect(validate(created.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
@@ -443,6 +472,21 @@ describe('LOT (e2e)', () => {
       qualityStatusCode: 'NORMAL',
       inventoryStatusCode: 'AVAILABLE',
     };
+
+    // 등록이 채우는 `inbound_receipt_line.lot_id` 의 상대 — 등록 경로가 없어 직접 심는다.
+    const supplier = await prisma.partner.create({
+      data: { partner_code: `${PREFIX}-SUP`, partner_name: 'LOT검사공급사' },
+    });
+    const receipt = await prisma.inbound_receipt.create({
+      data: {
+        inbound_receipt_no: `${PREFIX}-IR`,
+        supplier_id: supplier.partner_id,
+        plant_id: plant.plant_id,
+        receipt_datetime: new Date(`${DAY}T02:00:00.000Z`),
+        status_code: 'REGISTERED',
+      },
+    });
+    inboundReceiptId = receipt.inbound_receipt_id;
   }
 
   async function makeUsers(): Promise<void> {
@@ -490,12 +534,20 @@ describe('LOT (e2e)', () => {
       DELETE FROM trace.lot_external_identifier
        WHERE lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '%${PREFIX}%' OR lot_no LIKE 'M%')`);
     await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.inbound_receipt_line
+       WHERE inbound_receipt_id IN (SELECT inbound_receipt_id FROM logistics.inbound_receipt
+                                     WHERE inbound_receipt_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot_hold
        WHERE lot_id IN (SELECT lot_id FROM trace.lot
                          WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'))`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
+    );
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);

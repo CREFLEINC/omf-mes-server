@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
+import { LotRow } from '../../core/lot';
 
 /**
  * 계약 `Lot`·`LotExternalIdentifier`·`LotHold` 로 옮기는 자리.
@@ -10,7 +11,7 @@ import { toDateString } from '../../common/master';
  *   `receiptDispositionCode` (**물리에 컬럼 자체가 없다** · 되돌림 §Z-5)
  */
 
-export type LotRow = Prisma.lotGetPayload<{ include: { lot_hold: true } }>;
+export type { LotRow };
 
 export interface LotView {
   lotId: number;
