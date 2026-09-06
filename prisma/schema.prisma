@@ -2824,7 +2824,7 @@ model production_result {
   worker_id                        BigInt
   equipment_id                     BigInt?
   mold_id                          BigInt?
-  shift_id                         BigInt
+  shift_id                         BigInt?
   terminal_id                      BigInt?
   status_code                      String                             @db.VarChar(50)
   idempotency_key                  String                             @unique @db.VarChar(150)
@@ -2834,12 +2834,13 @@ model production_result {
   updated_at                       DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                       BigInt?
   version_no                       Int                                @default(1)
+  correct_reason_code              String?                            @db.VarChar(50)
   material_usage_allocation        material_usage_allocation[]
   corrects_production_result       production_result?                 @relation("production_resultToproduction_result", fields: [corrects_production_result_id], references: [production_result_id], onDelete: NoAction, onUpdate: NoAction)
   corrected_by_production_results  production_result[]                @relation("production_resultToproduction_result")
   equipment                        equipment?                         @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   mold                             mold?                              @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
-  shift                            shift                              @relation(fields: [shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
+  shift                            shift?                             @relation(fields: [shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
   terminal                         terminal?                          @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   uom                              uom                                @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                       work_order                         @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
