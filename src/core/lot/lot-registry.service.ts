@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
+import { mesLotNo } from './lot-number';
+import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 
 /**
  * LOT 계보 코어(`server-architecture.md` §1 `lot-genealogy`) — **값이 정해진 LOT 하나를
@@ -21,6 +23,10 @@ export const HOLD_STATUS = 'HELD';
 export const INITIAL_LOT_STATUS = 'INSPECTION_PENDING';
 /** 이 원천만 역방향(라인 → LOT) 칸을 갖는다. */
 const INBOUND_RECEIPT_LINE = 'INBOUND_RECEIPT_LINE';
+/** 선발행 슬롯의 생명주기 첫 상태 — 「예약」에 해당한다(시드 `LOT_LIFECYCLE_STATUS`). */
+export const PREISSUED_LIFECYCLE = 'WAITING';
+/** 선발행 슬롯의 유형(시드 `LOT_TYPE`). */
+export const PRODUCTION_LOT_TYPE = 'PRODUCTION';
 
 export type Tx = Prisma.TransactionClient;
 export type LotRow = Prisma.lotGetPayload<{ include: { lot_hold: true } }>;
@@ -46,6 +52,18 @@ export interface LotRegisterInput {
   sourceId: number;
   remarks?: string | null;
   externalIdentifiers?: ExternalIdentifierInput[];
+}
+
+/** 선발행 슬롯 N 개가 받는 칸 — 번호·수량은 이미 정해져 온다(`nextMesLotNos`·`slotQtys`). */
+export interface LotPreIssueInput {
+  workOrderId: bigint;
+  plantId: number;
+  itemId: number;
+  uomId: number;
+  bomId: number | null;
+  bomVersion: number | null;
+  lotNos: string[];
+  qtys: Prisma.Decimal[];
 }
 
 @Injectable()
@@ -105,6 +123,49 @@ export class LotRegistryService {
     return tx.lot.findUniqueOrThrow({ where: { lot_id: lot.lot_id }, include: { lot_hold: true } });
   }
 
+  /**
+   * W/O 확정배포의 **선발행 슬롯 N 개**. `createWithin` 의 자매 함수이지 확장이 아니다.
+   *
+   * ⛔ **`lot_hold` 를 걸지 않는다** — 실물이 없어 수입검사가 뜻이 안 맞고, 걸면
+   *    `GET /trace/lots?heldOnly` 와 잔액의 `heldLotCount` 가 오염된다.
+   * ⛔ **`lot_lifecycle_history` 를 쓰지 않는다** — `WAITING` 은 태어남이지 전이가 아니고
+   *    `LOT_LIFECYCLE_TRANSITION` 에 「생성」 코드가 없다(값을 지어내지 않는다 · F-6).
+   */
+  async preIssueWithin(tx: Tx, input: LotPreIssueInput, appUserId: number): Promise<LotRow[]> {
+    // 400 이 아니라 호출자 버그다 — 화면이 고칠 값이 아니다.
+    if ((input.bomId === null) !== (input.bomVersion === null)) {
+      throw new Error('bomId 와 bomVersion 은 둘 다 있거나 둘 다 없어야 한다 (ck_lot_bom_snapshot)');
+    }
+    const lotIds: bigint[] = [];
+    for (const [index, lotNo] of input.lotNos.entries()) {
+      const lot = await tx.lot.create({
+        data: {
+          lot_no: lotNo,
+          item_id: input.itemId,
+          lot_type_code: PRODUCTION_LOT_TYPE,
+          plant_id: input.plantId,
+          initial_qty: input.qtys[index],
+          uom_id: input.uomId,
+          source_type_code: WORK_ORDER_LOT_SOURCE,
+          source_id: input.workOrderId,
+          status_code: INITIAL_LOT_STATUS,
+          lifecycle_status_code: PREISSUED_LIFECYCLE,
+          work_order_lot_seq: index + 1,
+          bom_id: input.bomId,
+          bom_version: input.bomVersion,
+          created_by: BigInt(appUserId),
+        },
+      });
+      lotIds.push(lot.lot_id);
+    }
+
+    return tx.lot.findMany({
+      where: { lot_id: { in: lotIds } },
+      include: { lot_hold: true },
+      orderBy: { work_order_lot_seq: 'asc' },
+    });
+  }
+
   /** ⛔ `(source_type_code, source_id)` 유일 제약이 «없다» — 두 번 채우면 앞의 LOT 이 고아가
    *     되므로 `lot_id IS NULL` 인 행만 집는다. */
   private async attach(tx: Tx, sourceId: number, lotId: bigint): Promise<void> {
@@ -138,4 +199,31 @@ export function optionalInstant(value: string | null | undefined): Date | null {
     throw one(field('manufacturedAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
   }
   return parsed;
+}
+
+/**
+ * 지시수량을 LOT 크기로 나눈 슬롯 수량들 — 앞은 `lotSize`, 마지막만 나머지다.
+ * ⛔ 부동소수로 세지 않는다 — 합이 지시수량과 «정확히» 같아야 한다(0.5/0.2).
+ */
+export function slotQtys(orderQty: Prisma.Decimal, lotSize: Prisma.Decimal): Prisma.Decimal[] {
+  // 0 이하면 슬롯 수가 무한이 된다 — `ck_lot_initial_qty` 가 낼 500 을 400 으로 앞당긴다.
+  if (lotSize.lessThanOrEqualTo(0)) {
+    throw one(field('lotSize', ERROR_CODE.INVALID, 'LOT 크기는 0 보다 커야 합니다.'));
+  }
+  // ⌜lotSize 가 지시수량 이상이면 슬롯 1개⌝ — 수량은 lotSize 가 아니라 orderQty 다.
+  if (lotSize.greaterThanOrEqualTo(orderQty)) return [orderQty];
+
+  const slots = orderQty.dividedBy(lotSize).ceil().toNumber();
+  const last = orderQty.minus(lotSize.times(slots - 1));
+  return [...Array.from({ length: slots - 1 }, () => lotSize), last];
+}
+
+/**
+ * 선발행 슬롯 N 개의 MES LOT 번호. ⛔ **`count` 를 한 번만 읽는다** — N 번 세면 같은
+ * 트랜잭션 안이라 값이 안 변해 N 개가 모두 같은 순번을 얻는다.
+ */
+export async function nextMesLotNos(tx: Tx, plantId: number, businessDate: string, count: number): Promise<string[]> {
+  const prefix = `M${String(plantId).padStart(6, '0').slice(-6)}${businessDate.replace(/-/g, '')}`;
+  const used = await tx.lot.count({ where: { plant_id: plantId, lot_no: { startsWith: prefix } } });
+  return Array.from({ length: count }, (_, i) => mesLotNo(plantId, businessDate, used + 1 + i));
 }
