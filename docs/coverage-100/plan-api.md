@@ -390,11 +390,11 @@
 |---|---|
 | 선행 슬라이스 | S14 |
 | 쓰는 표 | `production.work_session`·`work_session_event`·`work_session_worker` — 있음 |
-| 마이그레이션 | 없음 |
+| 마이그레이션 | ~~없음~~ → **1** · `work_session.shift_id` NOT NULL 해제(D1 과 같은 근거 · I-11 재수립 R-3). `terminal_id` 는 안 푼다(R-1) |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | 있음 (`WORK_SESSION_STATUS`: `RUNNING`·`STOPPED`·`ENDED`) — ⚠ **W/O 층과 세션 층을 섞지 않는다** |
-| 예상 PR 수 | 2 — ① 조회 GET 4건 ② 세션 열기·사건·작업자·`:leave`·`:end` + e2e |
-| 설계 미정 자리 · §2 판정 초안 | 없음 — 계약이 층 분리를 문장으로 못박았다(「`:hold` 는 W/O 의 status_code, `events` 의 `STOP` 은 세션 층」). |
+| 예상 PR 수 | ~~2~~ → **5**(I-11 §14 · ① 조회 5 sonnet · ② 코어 전용 `transitions.ts`+마이그 opus · ③ 세션 열기·`:end`·단말 토큰 opus · ④ events·workers·`:leave` opus · ⑤ precheck sonnet) |
+| 설계 미정 자리 · §2 판정 초안 | ~~없음~~ — 층 분리는 맞다. **신규 3 + 공유 1**: 054(단말 토큰 · I-10 과 공동 — 세션 열기는 토큰 부재 **403** · 투입·반출은 비움 · I-11 재수립 R-1) · 056(역할 기본값 `OPERATOR`) · 057 ⭐(세션 작업자 귀속 0건) · 058(`:end` 의 참여자). |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|

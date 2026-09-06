@@ -172,7 +172,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-8 | 출고요청·피킹·예약 코어 | 8 | I-4 | 있음 | ✕ | ⭐ 예약/피킹 칸 | ⭕ | 3 |
 | I-9 | 생산창고 입고 | 3 | I-8 | 있음 | ⚠ 차이 전기 자리가 없다 | ⚠ 미정 | ⭕ | 2 |
 | I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음 · `lot_relation` 은 이 슬라이스가 쓰지 않는다(052) | **2** NOT NULL 완화(`terminal_id`·`return_quality_status_code`) | ✕ | ✕ | 3 |
-| I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | ✕ | ✕ | ⭕ 세션 | 3 |
+| I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | **1** NOT NULL 완화(`work_session.shift_id` · R-3) | ✕ | ⭕ 세션 | 5 |
 | I-12 | 적치 완료·임시적재 | 4 | (입고 구현됨) | 있음 | ✕ | ⭐ | ⭕ | 2 |
 | I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | ✕ | ⭐ ×2 | ⭕ | 3 |
 | I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | ✕ | ⭐ | ⭕ | 3 |
@@ -308,8 +308,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 **체인 마디**: 실적의 «구간» 축. `work_session` → `production_result.work_session_id`(비울 수 있다).
 **원장**: 없음. **상태기계**: 세션 상태(열림/중단/종료) — ⚠ W/O 층의 `:hold`/`:resume` 와 **다른 축**이다(계약이 명시). 섞으면 두 축이 한 필드가 된다.
-⭐ `work_session.idempotency_key` 가 **전역 UNIQUE** 다(아키텍처 C-3 실측) — 멱등 처리가 `app.idempotency_record` 와 이중이 되지 않도록 한쪽만 쓴다.
-**예상 설계 미정**: `can_start_work` 게이팅의 판정 입력(단말·점검 이력·W/O 상태)이 세 표에 흩어져 있다. 조합 규칙은 계약이 적었다 — 그대로 구현.
+⭐ `work_session.idempotency_key` 가 **전역 UNIQUE** 다(아키텍처 C-3 실측) — ~~한쪽만 쓴다~~ → **둘 다 쓴다**(판정은 `runIdempotent` · 컬럼은 둘째 그물 — I-7 `production_result` 방식 그대로 · I-11 §3-4).
+**예상 설계 미정**: ~~`can_start_work` 게이팅의 판정 입력(단말·점검 이력·W/O 상태)이 세 표에 흩어져 있다~~ → 서버 몫은 **`can_start_work` 하나**(입력 두 표 `routing_operation` → `terminal_process`) · 점검 이력은 화면이 판정한다(`P-02-02` §5-9 · I-11 §3-6). **단말 토큰 부재 → 403**(게이팅을 판정할 수 없다 · F-6 · I-11 재수립 R-1) — 투입·반출(I-10 R-3)과 답이 다른 이유는 계약 ⌜서버가 강제한다⌝ 한 줄. 마이그 1(`work_session.shift_id`).
 
 
 ##### I-12 · 적치 — 완료·임시적재(원장 STOCK_TRANSFER) — 4건
