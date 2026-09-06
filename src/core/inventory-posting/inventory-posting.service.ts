@@ -2,7 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BalanceLockKey, lockBalancesInOrder } from './balance-lock';
-import { PostingEndpoint, PostingInput, PostingLine, PostingResult } from './posting.types';
+import {
+  PostingEndpoint,
+  PostingInput,
+  PostingLine,
+  PostingResult,
+  ReverseInput,
+  ReverseResult,
+} from './posting.types';
+import {
+  REVERSAL_KEY_PREFIX,
+  REVERSAL_NO_SUFFIX,
+  assertReversible,
+  isIdempotencyConflict,
+  reversedLine,
+} from './reversal';
 
 /** 잔량 행이 서려면 조직 축 셋이 필요한데, 창고가 그것을 안다. */
 interface OrgAxis {
@@ -78,6 +92,82 @@ export class InventoryPostingService {
   }
 
   /**
+   * 전기된 원장을 되돌린다 — 원 라인의 `from`/`to` 를 **맞바꾼** 새 트랜잭션을 만든다.
+   * 부호를 뒤집지 않는 이유는 라인의 `qty > 0` CHECK 다(I-5.md §3-2).
+   *
+   * 역트랜잭션의 영업일은 원 트랜잭션의 것이다 — `:cancel` 이 `businessDate` 를 안 받는다
+   * (계약 실측). 서버가 수신 시각으로 다시 잡지 않는다(C-8 · CLAUDE.md). 04 `ShipmentCancel`
+   * 은 같은 행위에 `businessDate` 를 required 로 실었다 — I-5.md §3-4 · 문의 032.
+   *
+   * ⛔ 되짚기 칸(`goods_receipt_line.inventory_transaction_line_id` 등)은 건드리지 않는다 —
+   * 「이 문서 라인이 어느 원장 줄로 들어갔나」는 취소해도 사실이다(B-3 이력 불변).
+   */
+  async reverse(tx: Prisma.TransactionClient, input: ReverseInput): Promise<ReverseResult> {
+    const businessDate = new Date(input.businessDate);
+    // 키가 `REVERSAL:` 이 아니어도 「이미 되돌렸다」가 사실이다 — I-14 가 `post()` 로 낸
+    // 역분개도 같은 짝 칸을 채운다(I-5 R-3).
+    const already = await this.findReversal(tx, input.inventoryTransactionId, businessDate);
+    if (already !== null) return already;
+
+    const original = await tx.inventory_transaction.findUniqueOrThrow({
+      where: {
+        inventory_transaction_id_business_date: {
+          inventory_transaction_id: input.inventoryTransactionId,
+          business_date: businessDate,
+        },
+      },
+      include: { inventory_transaction_line: { orderBy: { line_no: 'asc' } } },
+    });
+    const rows = original.inventory_transaction_line;
+    const lines = rows.map(reversedLine);
+    const transactionNo = `${original.transaction_no}${REVERSAL_NO_SUFFIX}`;
+
+    assertReversible(lines, await lockBalancesInOrder(tx, await this.balanceKeys(tx, lines)));
+
+    let header: { inventory_transaction_id: bigint };
+    try {
+      header = await tx.inventory_transaction.create({
+        data: {
+          business_date: businessDate,
+          transaction_no: transactionNo,
+          transaction_type_code: original.transaction_type_code,
+          plant_id: original.plant_id,
+          occurred_at: input.occurredAt,
+          source_document_type_code: original.source_document_type_code,
+          source_document_id: original.source_document_id,
+          status_code: original.status_code,
+          idempotency_key: `${REVERSAL_KEY_PREFIX}${input.inventoryTransactionId}`,
+          reversal_of_transaction_id: input.inventoryTransactionId,
+          reversal_of_business_date: businessDate,
+          ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
+        },
+        select: { inventory_transaction_id: true },
+      });
+    } catch (error) {
+      // 경합의 마지막 그물이다 — 같은 `(REVERSAL:{원 id}, 원 영업일)`이 먼저 들어갔으면 되읽어
+      // 같은 응답을 준다(I-5 R-3 ②). ⛔ 다른 유일 위반(`uq_inventory_transaction_no`)은 삼키지 않는다.
+      if (!isIdempotencyConflict(error)) throw error;
+      const won = await this.findReversal(tx, input.inventoryTransactionId, businessDate);
+      if (won === null) throw error;
+      return won;
+    }
+
+    for (const [index, line] of lines.entries()) {
+      // 원 `line_no` 를 그대로 쓴다 — 헤더가 달라 `uq_inventory_transaction_line` 을 안 깨고
+      // 원 라인과 1:1 로 읽힌다.
+      const lineNo = rows[index].line_no;
+      await this.writeLine(tx, header.inventory_transaction_id, input, line, lineNo);
+    }
+
+    return {
+      inventoryTransactionId: header.inventory_transaction_id,
+      transactionNo,
+      businessDate: input.businessDate,
+      alreadyReversed: false,
+    };
+  }
+
+  /**
    * ⛔ 잔량을 먼저 옮기고 그 결과를 라인에 적는다 — `from`/`to_qty_after_transaction` 은
    * 「이 전기 «뒤»의 잔량」이라 순서가 뜻을 정한다.
    */
@@ -111,6 +201,24 @@ export class InventoryPostingService {
         ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
       },
     });
+  }
+
+  private async findReversal(
+    tx: Prisma.TransactionClient,
+    originalId: bigint,
+    originalDate: Date,
+  ): Promise<ReverseResult | null> {
+    const row = await tx.inventory_transaction.findFirst({
+      where: { reversal_of_transaction_id: originalId, reversal_of_business_date: originalDate },
+      select: { inventory_transaction_id: true, transaction_no: true, business_date: true },
+    });
+    if (row === null) return null;
+    return {
+      inventoryTransactionId: row.inventory_transaction_id,
+      transactionNo: row.transaction_no,
+      businessDate: row.business_date.toISOString().slice(0, 10),
+      alreadyReversed: true,
+    };
   }
 
   /** 라인 전건의 from·to 를 한 문장에 담을 7칸 키로 편다 — 조직 3축은 창고가 안다. */
