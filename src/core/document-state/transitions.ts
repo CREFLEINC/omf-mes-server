@@ -31,8 +31,8 @@ const DOCUMENT_CANCEL_ACTIONS: Record<ActionName, Transition> = {
  * 85건이 409 를 선언하는데, 값 목록이 없는 상태에서 그 판정을 흉내 내면 «아무 전이나»
  * 통과시키는 것과 같다.
  *
- * ⚠ **여기 선 축은 여섯뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
- * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 여섯이다.
+ * ⚠ **여기 선 축은 일곱뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
+ * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 일곱이다.
  *
  * ⛔ **품질 판정 축(`trace.lot.status_code`)은 일부러 비워 두었다.**
  * `LOT_STATUS_TRANSITION` 이 가리키는 상태(`Release(합격)`·`Hold(불합격)`·`보류`·
@@ -136,6 +136,28 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'L3',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel',
     },
+  },
+
+  /**
+   * 작업지시 진행. 값은 시드 `WORK_ORDER_STATUS` 8값이 확정했다(2026-09-02 사용자 확정 · G-32).
+   *
+   * ⛔ `CONFIRMED` 를 «지나지» 않는다 — `PLANNED`→`CONFIRMED` 를 여는 오퍼레이션이 계약에 없고
+   *    `:release` 하나가 「확정과 배포와 선발행」을 한 트랜잭션으로 한다. 두 값을 다 `from` 에 둔다.
+   * ⛔ `IN_PROGRESS` 로 «들어가는» 액션은 여기 없다 — 세션 열기의 부수효과이고 I-11 이 같은 키에
+   *    `work-session-start` 를 더한다(I-4 R-2 방식 — 키를 다시 만들지 않는다).
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'production.work_order.status_code': {
+    'work-order-release': { from: ['PLANNED', 'CONFIRMED'], to: 'RELEASED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:release' },
+    'work-order-hold':    { from: ['RELEASED', 'IN_PROGRESS'], to: 'SUSPENDED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:hold' },
+    'work-order-resume':  { from: ['SUSPENDED'], to: 'IN_PROGRESS',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:resume' },
+    'work-order-close':   { from: ['COMPLETED', 'IN_PROGRESS'], to: 'CLOSED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:close' },
+    'work-order-cancel':  { from: ['PLANNED','CONFIRMED','RELEASED','IN_PROGRESS','SUSPENDED'], to: 'CANCELLED',
+      sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel' },
   },
 
   /**

@@ -18,6 +18,8 @@ const GOODS_ISSUE_STATUS = 'logistics.goods_issue.status_code';
 /** I-5 PR ④ 가 여는 두 축 — 취소 두 액션만 갖는다(다형 취소 경로 3유형 · I-5.md §6-1). */
 const INBOUND_RECEIPT_STATUS = 'logistics.inbound_receipt.status_code';
 const GOODS_RECEIPT_STATUS = 'logistics.goods_receipt.status_code';
+/** I-6 PR ④ 가 여는 축 — 액션 다섯. I-11 이 같은 키에 `work-session-start` 를 더한다. */
+const WORK_ORDER_STATUS = 'production.work_order.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -51,6 +53,50 @@ describe('DocumentStateService', () => {
           ConflictException,
         );
       }
+    });
+  });
+
+  describe('작업지시 진행 — I-6 이 여는 축', () => {
+    it('전이 — `:hold` 는 `RELEASED`·`IN_PROGRESS` 에서만 열린다', () => {
+      for (const from of ['RELEASED', 'IN_PROGRESS']) {
+        expect(service.assertTransition(WORK_ORDER_STATUS, 'work-order-hold', from).to).toBe(
+          'SUSPENDED',
+        );
+      }
+      // `PLANNED`·`CONFIRMED` 는 아직 배포 전이라 중단할 것이 없다.
+      for (const from of ['PLANNED', 'CONFIRMED', 'SUSPENDED', 'CLOSED']) {
+        expect(() =>
+          service.assertTransition(WORK_ORDER_STATUS, 'work-order-hold', from, HttpStatus.BAD_REQUEST),
+        ).toThrow(ContractException);
+      }
+    });
+
+    it('전이 — 등록되지 않은 (칸, 액션) 은 던진다', () => {
+      // `:release` 는 ⑤b 가 부르지만 키는 여기서 다 열었다 — 없는 것은 아직 안 정한 액션이다.
+      expect(service.assertTransition(WORK_ORDER_STATUS, 'work-order-release', 'PLANNED').to).toBe(
+        'RELEASED',
+      );
+      expect(() =>
+        service.assertTransition(WORK_ORDER_STATUS, 'work-order-complete', 'IN_PROGRESS'),
+      ).toThrow(/상태 전이가 등록되지 않았다/);
+    });
+
+    it('전이 — `from` 밖이면 400 `STATE_LOCKED` 이고 409 가 아니다', () => {
+      let caught: ContractException | undefined;
+      try {
+        service.assertTransition(
+          WORK_ORDER_STATUS,
+          'work-order-resume',
+          'RELEASED',
+          HttpStatus.BAD_REQUEST,
+        );
+      } catch (error) {
+        caught = error as ContractException;
+      }
+
+      expect(caught?.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(caught).not.toBeInstanceOf(ConflictException);
+      expect(caught?.errors).toMatchObject([{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED }]);
     });
   });
 
@@ -154,10 +200,12 @@ describe('DocumentStateService', () => {
           LIFECYCLE,
           MOLD_STATUS,
           ROUTING_COLUMN,
+          WORK_ORDER_STATUS,
         ].sort(),
       );
       // +6 — 출고 키에 취소 2, 입하·입고 키가 각각 2(I-5 PR ④).
-      expect(service.registered()).toHaveLength(16);
+      // +5 — W/O 키(I-6 PR ④).
+      expect(service.registered()).toHaveLength(21);
     });
   });
 });
