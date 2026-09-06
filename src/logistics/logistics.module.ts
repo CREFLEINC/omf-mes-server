@@ -28,6 +28,7 @@ import { InboundVarianceController } from './inbound-receipt/inbound-variance.co
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
 import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
 import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
+import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
 import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
 import { PutawayRuleController } from './putaway/putaway-rule.controller';
 import { PutawayRuleService } from './putaway/putaway-rule.service';
@@ -78,6 +79,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundVarianceService,
     MaterialIssueRequestQueryService,
     MaterialIssueShortageService,
+    MaterialIssueRequestService,
   ],
 })
 export class LogisticsModule {}
