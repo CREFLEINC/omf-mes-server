@@ -26,6 +26,10 @@ import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-u
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
 import { InboundVarianceService } from './inbound-receipt/inbound-variance.service';
+import { MaterialIssueRequestController } from './material-issue-request/material-issue-request.controller';
+import { MaterialIssueRequestQueryService } from './material-issue-request/material-issue-request-query.service';
+import { MaterialIssueRequestService } from './material-issue-request/material-issue-request.service';
+import { MaterialIssueShortageService } from './material-issue-request/shortage.service';
 import { PickingController } from './picking/picking.controller';
 import { PickingPickService } from './picking/picking-pick.service';
 import { PickingQueryService } from './picking/picking-query.service';
@@ -61,6 +65,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptController,
     InboundReceiptSplitController,
     InboundVarianceController,
+    MaterialIssueRequestController,
   ],
   providers: [
     GoodsIssueQueryService,
@@ -78,6 +83,9 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptUpdateService,
     InboundReceiptSplitService,
     InboundVarianceService,
+    MaterialIssueRequestQueryService,
+    MaterialIssueShortageService,
+    MaterialIssueRequestService,
   ],
 })
 export class LogisticsModule {}

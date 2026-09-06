@@ -5,7 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { slotQtys } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BomComponentRow, skipsMaterialIssue } from './material-issue';
+import { BOM_COMPONENT_SELECT, BomComponentRow, skipsMaterialIssue } from './material-issue';
 
 /** 배포가 읽는 W/O — 공장은 계획을 거쳐 «한 축»으로만 푼다(R-7). */
 const RELEASE_SELECT = {
@@ -103,7 +103,7 @@ function bomComponents(
   }
   return prisma.bom_component.findMany({
     where: { bom_id: bomId, routing_operation_id: row.routing_operation_id },
-    select: { bom_component_id: true, component_item_id: true, uom_id: true, required_qty: true },
+    select: BOM_COMPONENT_SELECT,
     orderBy: { sequence_no: 'asc' },
   });
 }

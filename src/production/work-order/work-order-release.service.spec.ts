@@ -194,7 +194,7 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.requests[0]).toMatchObject({
       issue_request_no: 'MIR-20260906-0001',
       destination_location_id: 77n,
-      status_code: 'REQUESTED',
+      status_code: 'REGISTERED',
       requested_by: 7,
       created_by: 7,
     });
