@@ -1,4 +1,26 @@
-import { TransitionRegistry } from './document-state.types';
+import { ActionName, Transition, TransitionRegistry } from './document-state.types';
+
+/**
+ * 물류 문서 취소 두 액션. 입하·입고·출고 세 표가 «글자 그대로 같은» 규칙을 쓴다 —
+ * 취소 주소가 유형 축 하나(`documentTypeCode`)라 표마다 갈릴 자리가 없다(I-5.md §6-1).
+ *
+ * ⛔ 되돌리는 전이를 만들지 않는다 — 반려 뒤 `CANCEL_REQUESTED` 를 되돌리는 오퍼레이션이
+ *    계약에 없다(승인 9경로에 철회·취소 0건 · I-5.md §6-5 · 문의 033).
+ * ⛔ `transitionCode` 를 안 쓴다 — 이력 표가 없는 축이다(`trace.lot` 만 갖는 칸).
+ */
+const DOCUMENT_CANCEL_ACTIONS: Record<ActionName, Transition> = {
+  'document-request-cancel': {
+    from: ['REGISTERED', 'POSTED'],
+    to: 'CANCEL_REQUESTED',
+    sourceOperation:
+      'POST /logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel',
+  },
+  'document-cancel': {
+    from: ['CANCEL_REQUESTED'],
+    to: 'CANCELLED',
+    sourceOperation: 'POST /logistics/document-progress/{documentTypeCode}/{documentId}:cancel',
+  },
+};
 
 /**
  * 전이표. **데이터로 둔다** — 코드에 상태 문자열을 박으면 값이 확정될 때 찾아 고칠 수 없다
@@ -155,6 +177,16 @@ export const TRANSITIONS: TransitionRegistry = {
       to: 'POSTED',
       sourceOperation: 'POST /logistics/goods-issues/{goodsIssueId}:post',
     },
-    // I-5 가 이 키 안에 document-request-cancel·document-cancel 을 더한다 — 키를 다시 만들지 않는다(I-4.md R-2)
+    ...DOCUMENT_CANCEL_ACTIONS,
   },
+
+  /**
+   * 입하·입고 전표 진행. 출고와 «같은 두 액션»만 갖는다 — 세 유형이 한 취소 경로를 탄다
+   * (계약 `documentTypeCode` enum 3값 · I-5.md §6-1).
+   *
+   * ⚠ 입하는 `POSTED` 에 도달하는 길이 아직 없다(I-3 §5-3 · 문의 026) — `from` 의 `POSTED`
+   *   는 입하에서 도달 불가지만 계약 문장대로 두고 좁히지 않는다.
+   */
+  'logistics.inbound_receipt.status_code': { ...DOCUMENT_CANCEL_ACTIONS },
+  'logistics.goods_receipt.status_code': { ...DOCUMENT_CANCEL_ACTIONS },
 };

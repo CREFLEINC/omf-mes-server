@@ -25,6 +25,12 @@ export interface DocumentTypeMapping {
   processedColumn: string | null;
   subTypeColumn: string | null;
   cancelable: boolean;
+  /**
+   * PR ④ 추가 — If-Match 토큰을 대조할 칸. 계약이 「토큰은 대상 문서 리소스의 상세 GET 이
+   * 내려주는 ETag」로 못박아(I-5.md §7-2) 비교는 이 표를 아는 쪽이 한다. 9종 전건
+   * `version_no` 다(실측) — 값이 같아도 칸을 매핑에 둔다: 표마다 다를 수 있는 축이다.
+   */
+  versionColumn: string;
   /** 규칙 ②(취소된 후속은 안 센다)를 적용할 유형만 값을 든다 — 값 목록이 없는 축에 `'CANCELLED'` 를 지어 넣지 않고, 원장·투입은 규칙 ③이 대신한다(I-5.md R-6 ⓑ · F-6). */
   cancelledStatus: 'CANCELLED' | null;
   /**
@@ -40,40 +46,40 @@ export interface DocumentTypeMapping {
 export const DOCUMENT_TYPES: Record<LogisticsDocumentType, DocumentTypeMapping> = {
   PURCHASE_ORDER: { entityTypeCode: 'PURCHASE_ORDER', delegate: 'purchase_order', idColumn: 'purchase_order_id',
     noColumn: 'purchase_order_no', dateColumn: 'order_date', lineDelegate: 'purchase_order_line',
-    plannedColumn: 'ordered_qty', processedColumn: 'received_qty', subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: 'ordered_qty', processedColumn: 'received_qty', subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: null, warehouseFilter: null },
   INBOUND_RECEIPT: { entityTypeCode: 'INBOUND_RECEIPT', delegate: 'inbound_receipt', idColumn: 'inbound_receipt_id',
     noColumn: 'inbound_receipt_no', dateColumn: 'receipt_datetime', lineDelegate: 'inbound_receipt_line',
-    plannedColumn: null, processedColumn: 'received_qty', subTypeColumn: null, cancelable: true, cancelledStatus: null,
+    plannedColumn: null, processedColumn: 'received_qty', subTypeColumn: null, cancelable: true, versionColumn: 'version_no', cancelledStatus: null,
     // 입하의 dock_location_id 는 도크지 보관 창고가 아니다 — warehouseId 를 주면 0행(I-5.md §5-3).
     derivedFrom: null, warehouseFilter: null },
   GOODS_RECEIPT: { entityTypeCode: 'GOODS_RECEIPT', delegate: 'goods_receipt', idColumn: 'goods_receipt_id',
     noColumn: 'goods_receipt_no', dateColumn: 'receipt_datetime', lineDelegate: 'goods_receipt_line',
-    plannedColumn: 'expected_qty', processedColumn: 'receipt_qty', subTypeColumn: 'receipt_type_code', cancelable: true, cancelledStatus: 'CANCELLED',
+    plannedColumn: 'expected_qty', processedColumn: 'receipt_qty', subTypeColumn: 'receipt_type_code', cancelable: true, versionColumn: 'version_no', cancelledStatus: 'CANCELLED',
     derivedFrom: null, warehouseFilter: (warehouseId) => ({ warehouse_id: warehouseId }) },
   MATERIAL_ISSUE_REQUEST: { entityTypeCode: 'MATERIAL_ISSUE_REQUEST', delegate: 'material_issue_request', idColumn: 'material_issue_request_id',
     noColumn: 'issue_request_no', dateColumn: 'created_at', lineDelegate: 'material_issue_request_line',
-    plannedColumn: 'requested_qty', processedColumn: 'issued_qty', subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: 'requested_qty', processedColumn: 'issued_qty', subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: null, warehouseFilter: (warehouseId) => ({ location: { warehouse_id: warehouseId } }) },
   PICKING_ORDER: { entityTypeCode: 'PICKING_ORDER', delegate: 'picking_order', idColumn: 'picking_order_id',
     noColumn: 'picking_order_no', dateColumn: 'created_at', lineDelegate: 'picking_line',
-    plannedColumn: 'planned_qty', processedColumn: 'picked_qty', subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: 'planned_qty', processedColumn: 'picked_qty', subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: null, warehouseFilter: (warehouseId) => ({ warehouse_id: warehouseId }) },
   STOCK_TRANSFER: { entityTypeCode: 'STOCK_TRANSFER', delegate: 'stock_transfer', idColumn: 'stock_transfer_id',
     noColumn: 'stock_transfer_no', dateColumn: 'requested_at', lineDelegate: 'stock_transfer_line',
-    plannedColumn: 'requested_qty', processedColumn: 'received_qty', subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: 'requested_qty', processedColumn: 'received_qty', subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: null, warehouseFilter: (warehouseId) => ({ from_warehouse_id: warehouseId }) },
   SUBCONTRACT_ISSUE: { entityTypeCode: 'SUBCONTRACT_ISSUE', delegate: 'subcontract_issue', idColumn: 'subcontract_issue_id',
     noColumn: null, dateColumn: 'issued_at', lineDelegate: null,
-    plannedColumn: null, processedColumn: null, subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: null, processedColumn: null, subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: 'goods_issue', warehouseFilter: (warehouseId) => ({ goods_issue: { source_warehouse_id: warehouseId } }) },
   SUBCONTRACT_RECEIPT: { entityTypeCode: 'SUBCONTRACT_RECEIPT', delegate: 'subcontract_receipt', idColumn: 'subcontract_receipt_id',
     noColumn: null, dateColumn: 'received_at', lineDelegate: null,
-    plannedColumn: null, processedColumn: null, subTypeColumn: null, cancelable: false, cancelledStatus: null,
+    plannedColumn: null, processedColumn: null, subTypeColumn: null, cancelable: false, versionColumn: 'version_no', cancelledStatus: null,
     derivedFrom: 'goods_receipt', warehouseFilter: (warehouseId) => ({ goods_receipt: { warehouse_id: warehouseId } }) },
   GOODS_ISSUE: { entityTypeCode: 'GOODS_ISSUE', delegate: 'goods_issue', idColumn: 'goods_issue_id',
     noColumn: 'goods_issue_no', dateColumn: 'issued_at', lineDelegate: 'goods_issue_line',
-    plannedColumn: null, processedColumn: 'issue_qty', subTypeColumn: 'issue_type_code', cancelable: true, cancelledStatus: 'CANCELLED',
+    plannedColumn: null, processedColumn: 'issue_qty', subTypeColumn: 'issue_type_code', cancelable: true, versionColumn: 'version_no', cancelledStatus: 'CANCELLED',
     derivedFrom: null, warehouseFilter: (warehouseId) => ({ source_warehouse_id: warehouseId }) },
 };
 
