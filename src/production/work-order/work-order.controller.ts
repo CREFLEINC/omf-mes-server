@@ -23,7 +23,10 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkOrderClose } from './close-rules';
 import { ValidationReport, validateWorkOrder } from './validation';
+import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
+import { WorkOrderCloseService } from './work-order-close.service';
 import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
@@ -38,7 +41,8 @@ import { WorkOrderCreate, WorkOrderUpdate, WorkOrderWriteService } from './work-
 import { WorkOrderResourcePlanView, WorkOrderView } from './work-order-view';
 
 /**
- * W/O 조회 + 발행·수정·중단·재개 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③·④).
+ * W/O 조회 + 발행·수정·중단·재개 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③·④) +
+ * 확정·배포(⑤b) + 마감·취소(⑥b).
  * 질의·본문의 형·enum 검증은 계약 검증 가드(`@Contract`)가 이미 한다 — 여기서 다시
  * 검사하지 않는다.
  * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — `validation`·`POST`·`PUT`·
@@ -52,6 +56,8 @@ export class WorkOrderController {
     private readonly writes: WorkOrderWriteService,
     private readonly transitions: WorkOrderTransitionService,
     private readonly releases: WorkOrderReleaseService,
+    private readonly closes: WorkOrderCloseService,
+    private readonly cancels: WorkOrderCancelService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
@@ -163,6 +169,40 @@ export class WorkOrderController {
         ifMatchVersion(request),
         currentSession(request)?.userId,
       );
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
+  }
+
+  /**
+   * 마감. If-Match 는 **필수**라 가드가 이미 막았고, ETag 는 안 싣는다(계약 미선언).
+   * 200 본문은 상세 뷰라 `erpMessageQueued` 가 방금 적재한 아웃박스 행에서 파생된다.
+   */
+  @Post(':workOrderId\\:close')
+  @Contract('POST /production/work-orders/{workOrderId}:close')
+  @HttpCode(HttpStatus.OK)
+  close(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: WorkOrderClose,
+  ): Promise<WorkOrderView> {
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.closes.close(workOrderId, version, body, currentSession(request)?.userId);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
+  }
+
+  @Post(':workOrderId\\:cancel')
+  @Contract('POST /production/work-orders/{workOrderId}:cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: WorkOrderCancel,
+  ): Promise<WorkOrderView> {
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.cancels.cancel(workOrderId, version, body, currentSession(request)?.userId);
       return (await this.queries.detail(workOrderId, {})).view;
     });
   }
