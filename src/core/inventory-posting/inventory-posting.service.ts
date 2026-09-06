@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { BalanceLockKey, lockBalancesInOrder } from './balance-lock';
 import { PostingEndpoint, PostingInput, PostingLine, PostingResult } from './posting.types';
 
 /** 잔량 행이 서려면 조직 축 셋이 필요한데, 창고가 그것을 안다. */
@@ -45,6 +46,11 @@ export class InventoryPostingService {
       };
     }
 
+    // 첫 `move()` «앞»에 라인 전건의 from·to 잔액 행을 id 오름차순으로 한 번에 잠근다 —
+    // `:cancel`(id 오름차순)과 `POST /goods-receipts`(라인 순서)가 같은 두 행을 반대 순서로
+    // 잡는 교착 창을 닫는다(I-4 R-1 ①② · I-5 R-5). 잠글 뿐 판정하지 않는다.
+    await lockBalancesInOrder(tx, await this.balanceKeys(tx, input.lines));
+
     const header = await tx.inventory_transaction.create({
       data: {
         business_date: new Date(input.businessDate),
@@ -60,32 +66,8 @@ export class InventoryPostingService {
       },
       select: { inventory_transaction_id: true },
     });
-
     for (const [index, line] of input.lines.entries()) {
-      // ⛔ 잔량을 먼저 옮기고 그 결과를 라인에 적는다 — from/to_qty_after_transaction 은
-      // 「이 전기 «뒤»의 잔량」이라 순서가 뜻을 정한다.
-      const fromAfter = line.from ? await this.move(tx, input, line, line.from, -line.qty) : null;
-      const toAfter = line.to ? await this.move(tx, input, line, line.to, line.qty) : null;
-
-      await tx.inventory_transaction_line.create({
-        data: {
-          inventory_transaction_id: header.inventory_transaction_id,
-          business_date: new Date(input.businessDate),
-          line_no: index + 1,
-          item_id: line.itemId,
-          ...(line.lotId === undefined ? {} : { lot_id: line.lotId }),
-          qty: line.qty,
-          uom_id: line.uomId,
-          ...this.endpointColumns('from', line.from),
-          ...this.endpointColumns('to', line.to),
-          ownership_type_code: line.ownershipTypeCode,
-          ...(line.ownerPartnerId === undefined ? {} : { owner_partner_id: line.ownerPartnerId }),
-          ...(line.handlingUnitId === undefined ? {} : { handling_unit_id: line.handlingUnitId }),
-          ...(fromAfter === null ? {} : { from_qty_after_transaction: fromAfter }),
-          ...(toAfter === null ? {} : { to_qty_after_transaction: toAfter }),
-          ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
-        },
-      });
+      await this.writeLine(tx, header.inventory_transaction_id, input, line, index + 1);
     }
 
     return {
@@ -93,6 +75,63 @@ export class InventoryPostingService {
       businessDate: input.businessDate,
       alreadyPosted: false,
     };
+  }
+
+  /**
+   * ⛔ 잔량을 먼저 옮기고 그 결과를 라인에 적는다 — `from`/`to_qty_after_transaction` 은
+   * 「이 전기 «뒤»의 잔량」이라 순서가 뜻을 정한다.
+   */
+  private async writeLine(
+    tx: Prisma.TransactionClient,
+    headerId: bigint,
+    input: { businessDate: string; occurredAt: Date; createdBy?: number },
+    line: PostingLine,
+    lineNo: number,
+  ): Promise<void> {
+    const at = input.occurredAt;
+    const fromAfter = line.from ? await this.move(tx, at, line, line.from, -line.qty) : null;
+    const toAfter = line.to ? await this.move(tx, at, line, line.to, line.qty) : null;
+
+    await tx.inventory_transaction_line.create({
+      data: {
+        inventory_transaction_id: headerId,
+        business_date: new Date(input.businessDate),
+        line_no: lineNo,
+        item_id: line.itemId,
+        ...(line.lotId === undefined ? {} : { lot_id: line.lotId }),
+        qty: line.qty,
+        uom_id: line.uomId,
+        ...this.endpointColumns('from', line.from),
+        ...this.endpointColumns('to', line.to),
+        ownership_type_code: line.ownershipTypeCode,
+        ...(line.ownerPartnerId === undefined ? {} : { owner_partner_id: line.ownerPartnerId }),
+        ...(line.handlingUnitId === undefined ? {} : { handling_unit_id: line.handlingUnitId }),
+        ...(fromAfter === null ? {} : { from_qty_after_transaction: fromAfter }),
+        ...(toAfter === null ? {} : { to_qty_after_transaction: toAfter }),
+        ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
+      },
+    });
+  }
+
+  /** 라인 전건의 from·to 를 한 문장에 담을 7칸 키로 편다 — 조직 3축은 창고가 안다. */
+  private async balanceKeys(
+    tx: Prisma.TransactionClient,
+    lines: PostingLine[],
+  ): Promise<BalanceLockKey[]> {
+    const keys: BalanceLockKey[] = [];
+    for (const line of lines) {
+      for (const endpoint of [line.from, line.to]) {
+        if (endpoint === undefined) continue;
+        keys.push({
+          ...(await this.orgAxis(tx, endpoint.warehouseId)),
+          warehouseId: BigInt(endpoint.warehouseId),
+          locationId: BigInt(endpoint.locationId),
+          itemId: BigInt(line.itemId),
+          lotKey: BigInt(line.lotId ?? 0),
+        });
+      }
+    }
+    return keys;
   }
 
   private endpointColumns(
@@ -125,7 +164,7 @@ export class InventoryPostingService {
    */
   private async move(
     tx: Prisma.TransactionClient,
-    input: PostingInput,
+    occurredAt: Date,
     line: PostingLine,
     endpoint: PostingEndpoint,
     delta: number,
@@ -155,7 +194,7 @@ export class InventoryPostingService {
     const rows = await tx.$queryRaw<{ on_hand_qty: Prisma.Decimal }[]>`
       UPDATE inventory.inventory_balance
          SET on_hand_qty = on_hand_qty + ${delta},
-             last_transaction_at = ${input.occurredAt},
+             last_transaction_at = ${occurredAt},
              version_no = version_no + 1
        WHERE legal_entity_id = ${org.legalEntityId}
          AND business_unit_id = ${org.businessUnitId}

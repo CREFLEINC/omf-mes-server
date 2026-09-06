@@ -49,3 +49,26 @@ export interface PostingResult {
   /** 같은 (멱등키, 영업일) 이 이미 있어 새로 만들지 않았다는 뜻. */
   alreadyPosted: boolean;
 }
+
+export interface ReverseInput {
+  /** 되돌릴 원 트랜잭션. PK 가 복합이라 `businessDate` 가 짝으로 온다. */
+  inventoryTransactionId: bigint;
+  /**
+   * ⛔ 원 트랜잭션의 영업일이다 — «새» 영업일이 아니다. `:cancel` 이 `businessDate` 를
+   * 안 받고(계약 실측), 서버가 수신 시각으로 다시 잡지도 않는다(C-8 · CLAUDE.md).
+   * `YYYY-MM-DD`.
+   */
+  businessDate: string;
+  /** 역처리가 «언제» 일어났는지는 새 사실이다 — 취소 실행 시각을 호출자가 넘긴다. */
+  occurredAt: Date;
+  createdBy?: number;
+}
+
+export interface ReverseResult {
+  /** 새로 만든 역트랜잭션(이미 있었으면 그 행). */
+  inventoryTransactionId: bigint;
+  transactionNo: string;
+  businessDate: string;
+  /** 원 트랜잭션을 이미 되돌린 뒤라 새로 만들지 않았다는 뜻. */
+  alreadyReversed: boolean;
+}
