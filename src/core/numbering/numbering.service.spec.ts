@@ -94,6 +94,12 @@ describe('채번 코어', () => {
     ]);
   });
 
+  it('채번 — INBOUND_RECEIPT 의 기본 접두어는 IR 이다', async () => {
+    const { service } = fake();
+
+    expect(await service.next('INBOUND_RECEIPT', PLANT, DAY)).toBe('IR-20260906-0001');
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),
