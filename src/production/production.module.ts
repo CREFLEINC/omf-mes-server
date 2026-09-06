@@ -31,7 +31,9 @@ import { WorkOrderTransitionService } from './work-order/work-order-transition.s
 import { WorkOrderWriteService } from './work-order/work-order-write.service';
 import { WorkOrderController } from './work-order/work-order.controller';
 import { WorkSessionEndService } from './work-session/work-session-end.service';
+import { WorkSessionEventService } from './work-session/work-session-event.service';
 import { WorkSessionQueryService } from './work-session/work-session-query.service';
+import { WorkSessionWorkerService } from './work-session/work-session-worker.service';
 import { WorkSessionController } from './work-session/work-session.controller';
 import { WorkSessionService } from './work-session/work-session.service';
 
@@ -48,6 +50,7 @@ import { WorkSessionService } from './work-session/work-session.service';
  * 「승인이 필수」라 뜻이 반대라 도메인 안에 선다(§5-5).
  * 작업 세션·통제 판정 조회 5건(I-11 PR ①)은 읽기만 하고, 세션 열기·닫기(PR ③)는 상태기계
  * 코어만 부른다 — 원장·채번·승인은 지나지 않는다.
+ * 사건 적재(PR ④)도 상태기계 코어만 부르고, 작업자 참여·이탈은 코어를 하나도 안 부른다.
  * 통제 판정 기록(I-11 PR ⑤)은 세션·전이표·단말 토큰을 하나도 안 쓴다 — 단일 INSERT.
  */
 @Module({
@@ -88,6 +91,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     WorkSessionQueryService,
     WorkSessionService,
     WorkSessionEndService,
+    WorkSessionEventService,
+    WorkSessionWorkerService,
     PrecheckDecisionQueryService,
     MaterialReturnService,
     PrecheckDecisionService,
