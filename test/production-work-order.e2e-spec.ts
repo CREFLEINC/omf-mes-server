@@ -718,7 +718,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(rest).toEqual([]);
       expect(issued.issue_request_no).toMatch(/^MIR-\d{8}-\d{4}$/);
       expect(issued).toMatchObject({
-        status_code: 'REQUESTED',
+        status_code: 'REGISTERED',
         destination_location_id: ids.location,
         required_at: null,
         reason_code: null,
@@ -1090,7 +1090,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         where: { work_order_id: BigInt(workOrderId) },
         include: { material_issue_request_line: true },
       });
-      expect(issued).toMatchObject({ status_code: 'REQUESTED' });
+      expect(issued).toMatchObject({ status_code: 'REGISTERED' });
       expect(issued.material_issue_request_line).toHaveLength(2);
     });
 
