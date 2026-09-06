@@ -29,8 +29,8 @@ import { ProductionResultView } from './production-result-view';
 /**
  * 생산 실적 조회 — 목록·단건(I-7 PR ①) + 등록(PR ②) + 정정·상신(PR ③). 질의·본문의 형·enum 검증은 계약 검증
  * 가드(`@Contract`)가 이미 한다 — 여기서 다시 검사하지 않는다.
- * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — 조회 둘은 미선언이고 등록만
- *    선언돼 있다(`derived-permissions.ts:232` — 부르는 화면 넷이 전부 POP 단말이다).
+ * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — 조회 둘은 미선언이고 등록·정정·상신
+ *    셋이 선언돼 있다(`derived-permissions.ts` — 등록은 POP 단말 화면 넷, 정정·상신은 `W-02-05`).
  * ⛔ `setEtag` 를 부르지 않는다 — 계약이 ETag 를 선언한 것이 I-7 7건 중 0건이다.
  */
 @Controller('production/production-results')

@@ -52,6 +52,8 @@ interface StubOptions {
   requests?: { status_code: string }[];
   maxSequence?: number | null;
   missing?: boolean;
+  /** 원본을 가리키는 정정본 수. 없으면 0 이다. */
+  correctedCount?: number;
 }
 
 function stub(options: StubOptions = {}) {
@@ -92,6 +94,7 @@ function stub(options: StubOptions = {}) {
     },
     production_result: {
       findUniqueOrThrow: () => Promise.resolve(original),
+      count: () => Promise.resolve(options.correctedCount ?? 0),
       aggregate: ({ where }: { where: Row }) => {
         sequenceWheres.push(where);
         return Promise.resolve({ _max: { result_sequence: options.maxSequence ?? null } });
@@ -296,6 +299,15 @@ describe('생산 실적 정정 (I-7 PR ③)', () => {
     // 체인을 막으려면 「정정본인가」 축을 하나 더 봐야 하는데 계약도 물리도 안 막았고,
     // §5-3 의 잎 규칙이 체인을 이미 옳게 센다.
     expect(harness.created[0]).toMatchObject({ corrects_production_result_id: BigInt(ORIGINAL_ID) });
+  });
+
+  it('정정 — 이미 정정된 원본은 다시 정정할 수 없다(형제가 서면 누계가 두 배다 · R-21)', async () => {
+    const harness = stub({ correctedCount: 1, requests: approved });
+
+    const caught = await harness.service.correct(ORIGINAL_ID, body({ goodQty: 7 }), context()).catch((e: unknown) => e);
+
+    expect(errorsOf(caught)).toMatchObject([{ code: ERROR_CODE.STATE_LOCKED }]);
+    expect(harness.created).toEqual([]);
   });
 
   it('정정 — 정정 뒤 합이 0 이면 400 이다', async () => {

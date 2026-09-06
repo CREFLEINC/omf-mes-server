@@ -35,8 +35,8 @@ const PREFIX = 'PRE2E';
 const ROLE = 'E2E_PRODUCTION_RESULT';
 const APPROVER_ROLE = 'E2E_PRODUCTION_RESULT_APPROVER';
 /**
- * 403 을 선언한 것은 `:close`(`W-02-05`)와 실적 등록(POP 화면 넷 중 하나면 된다)뿐이다 —
- * 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
+ * 403 을 선언한 것은 `:close`(`W-02-05`) · 실적 등록(POP 화면 넷 중 하나면 된다) · 정정·상신(`W-02-05`)
+ * 넷이다 — 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
  */
 const PERMISSIONS = ['W-02-05', 'P-02-04'];
 /** 결재함 상세 GET 과 `:approve`/`:reject` 가 같은 한 벌을 쓴다(`derived-permissions.ts:17·143`). */
@@ -483,6 +483,11 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       ).toBe(0);
     });
 
+    it('정정 — 권한 없으면 403 이고, 없는 실적이면 404 다', async () => {
+      await correct(resultBId, { reasonCode: 'MISCOUNT' }, { cookie: noPermCookie }).expect(403);
+      await correct(999_999_999, { reasonCode: 'MISCOUNT' }).expect(404);
+    });
+
     it('정정 — 사유 코드는 아무 문자열이나 통과한다(그룹 0값 · 대조 안 걺 · R-20)', async () => {
       // `PRODUCTION_RESULT_CORRECT_REASON` 그룹은 값이 0건이라 대조를 걸면 모든 값이 400 이 된다.
       const response = await correct(resultDId, { reasonCode: '아무-값이나-통과-2026' }).expect(201);
@@ -534,6 +539,17 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
         (item: { productionResultId: number }) => item.productionResultId === resultBId,
       );
       expect(Object.keys(original)).not.toContain('correctsProductionResultId');
+    });
+
+    it('정정 — 이미 정정된 원본을 다시 정정하면 400 `STATE_LOCKED` 다(형제가 서면 누계가 두 배다 · R-21)', async () => {
+      const before = await goodQtyOf(correctingWorkOrderId);
+      const rejected = await correct(resultBId, { reasonCode: 'MISCOUNT', note: '두 번째' }).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      // 체인은 열려 있다 — 막는 것은 «이미 정정된 행»이고 잎(정정본)은 계속 정정된다(§5-4).
+      const chained = await correct(correctionOfBId, { reasonCode: 'MISCOUNT', note: '잎을 정정' }).expect(201);
+      expect(chained.body).toMatchObject({ correctsProductionResultId: correctionOfBId });
+      expect(await goodQtyOf(correctingWorkOrderId)).toBe(before);
     });
 
     it('정정 — 정정 뒤 `withProgress` 의 `goodQty` 가 정정 후 값이다(두 배가 아니다)', async () => {

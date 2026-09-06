@@ -78,6 +78,15 @@ export class ProductionResultCorrectService {
     const original = await tx.production_result.findUniqueOrThrow({
       where: { production_result_id: BigInt(productionResultId) },
     });
+    // ⛔ 이미 정정된 행은 다시 정정하지 못한다 — 형제 정정본이 서면 잎 규칙(§5-3)이 «둘 다» 세어
+    //    누계가 두 배가 된다. 체인(잎을 정정)은 그대로 허용한다(§5-4). 물리에 유일 제약이 없어
+    //    자물쇠를 쥔 여기서 막는다(R-21 · 리뷰 #241).
+    const corrected = await tx.production_result.count({
+      where: { corrects_production_result_id: original.production_result_id },
+    });
+    if (corrected > 0) {
+      throw badRequest(ERROR_CODE.STATE_LOCKED, '이미 정정된 실적입니다. 최신 정정본을 정정하십시오.');
+    }
 
     const quantities = resultQuantities({
       goodQty: body.goodQty ?? original.good_qty.toNumber(),
