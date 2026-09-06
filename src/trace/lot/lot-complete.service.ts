@@ -47,7 +47,7 @@ export class LotCompleteService {
     lotId: number,
     body: LotComplete,
     context: LotCompleteContext,
-  ): Promise<{ view: LotView; versionNo: number }> {
+  ): Promise<LotView> {
     assertWorkerNo(context.workerNo);
     // 코드값 대조는 트랜잭션 «밖»이다 — 잠글 필요가 없는 마스터 조회다(형제 `:close` 선례).
     await assertCodeValues(this.prisma, [
@@ -61,7 +61,7 @@ export class LotCompleteService {
     lotId: number,
     body: LotComplete,
     context: LotCompleteContext,
-  ): Promise<{ view: LotView; versionNo: number }> {
+  ): Promise<LotView> {
     const locked = await lockLot(tx, lotId);
     // 계약이 ⌜**생산** LOT 을 완료로 옮긴다⌝ 라 적었다 — 자재·재생재 LOT 은 대상이 아니다.
     if (locked.source_type_code !== WORK_ORDER_LOT_SOURCE) {
@@ -100,7 +100,7 @@ export class LotCompleteService {
       },
       include: { lot_hold: true },
     });
-    return { view: lotView(updated), versionNo: updated.version_no };
+    return lotView(updated);
   }
 }
 

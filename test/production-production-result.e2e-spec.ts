@@ -814,8 +814,9 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
         // 배포가 심은 품질 판정 그대로다 — `:complete` 는 그 축도 안 건드린다(03 품질 계약 소관).
         statusCode: 'INSPECTION_PENDING',
       });
-      // 배포 1 → L1 2 → 완료 3.
-      expect(response.headers.etag).toBe('3');
+      // 계약이 200 에 ETag 를 안 선언했다 — `version_no` 는 3 으로 올라가지만 토큰은 다시 읽어야 받는다(ⓦ).
+      expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+      expect(await etagOf(slots[0].lot_id)).toBe('3');
       expect(validator('logistics-01자재창고.json', 'POST /trace/lots/{lotId}:complete')(response.body)).toBe(true);
     });
 

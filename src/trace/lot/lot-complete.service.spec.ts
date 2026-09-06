@@ -204,8 +204,7 @@ describe('생산 LOT 완료 (I-7 PR ④)', () => {
       completed_at: new Date(OCCURRED_AT),
       version_no: { increment: 1 },
     });
-    expect(result.view.lifecycleStatusCode).toBe('ACTIVE');
-    expect(result.versionNo).toBe(3);
+    expect(result.lifecycleStatusCode).toBe('ACTIVE');
   });
 
   it('완료 — `lot_lifecycle_history` 를 쓰지 않는다', async () => {

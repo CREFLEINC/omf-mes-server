@@ -85,7 +85,6 @@ export class LotController {
   @HttpCode(HttpStatus.OK)
   async complete(
     @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
     @Param('lotId', ParseIntPipe) lotId: number,
     @Body() body: LotComplete,
   ): Promise<LotView> {
@@ -96,11 +95,9 @@ export class LotController {
       version: ifMatchVersion(request),
       appUserId: currentSession(request)?.userId,
     };
-    const completed = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.completes.complete(lotId, body, context),
-    );
-    setEtag(response, completed.versionNo);
-    return completed.view;
+    // ⛔ `setEtag` 를 부르지 않는다 — 계약이 `:complete` 200 에 ETag 를 선언하지 않았다(I-7 §1-1 ·
+    //    I-6 §8-2 와 같은 가름). `version_no` 는 올라가므로 화면은 완료 뒤 `GET` 으로 새 토큰을 받는다(ⓦ).
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.completes.complete(lotId, body, context));
   }
 }
 
