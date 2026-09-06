@@ -4,7 +4,7 @@ import { DocumentStateService } from '../../core/document-state';
 import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ISSUE_REQUESTED, materialRequirements } from './material-issue';
+import { ISSUE_REGISTERED, materialRequirements } from './material-issue';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -107,7 +107,7 @@ export class WorkOrderReleaseService {
         issue_request_no: issueRequestNo,
         work_order_id: BigInt(workOrderId),
         destination_location_id: destinationLocationId,
-        status_code: ISSUE_REQUESTED,
+        status_code: ISSUE_REGISTERED,
         requested_by: appUserId,
         created_by: appUserId,
         // `required_at`·`reason_code` 는 비운다 — 받는 칸이 없고, 사유 4값에 「BOM 자동
