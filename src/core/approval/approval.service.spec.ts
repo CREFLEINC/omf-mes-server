@@ -354,12 +354,15 @@ describe('ApprovalService', () => {
 
     it('assertApproved — PENDING 만 있으면 400 APPROVAL_IN_PROGRESS 다', async () => {
       // 반려가 섞여 있어도 `PENDING` 이 이긴다 — 「기다려라」다.
-      const { tx } = fake({ requests: [seen('REJECTED'), seen('PENDING')] });
+      const only = fake({ requests: [seen('PENDING')] });
+      const mixed = fake({ requests: [seen('REJECTED'), seen('PENDING')] });
 
-      const error = await thrown(() => assert(tx));
+      for (const { tx } of [only, mixed]) {
+        const error = await thrown(() => assert(tx));
 
-      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
-      expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_IN_PROGRESS);
+        expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_IN_PROGRESS);
+      }
     });
 
     it('assertApproved — REJECTED 만 있으면 400 APPROVAL_REQUIRED 다', async () => {
