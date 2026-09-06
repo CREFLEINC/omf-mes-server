@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CancelEligibilityService } from './cancel-eligibility.service';
+import { DocumentProgressController } from './document-progress.controller';
+import { DocumentProgressQueryService } from './document-progress-query.service';
 import { DocumentTypeRegistryChecker } from './document-type-registry';
 
 /**
@@ -10,7 +12,8 @@ import { DocumentTypeRegistryChecker } from './document-type-registry';
  */
 @Module({
   imports: [PrismaModule],
-  providers: [CancelEligibilityService, DocumentTypeRegistryChecker],
+  controllers: [DocumentProgressController],
+  providers: [CancelEligibilityService, DocumentTypeRegistryChecker, DocumentProgressQueryService],
   exports: [CancelEligibilityService],
 })
 export class DocumentProgressModule {}
