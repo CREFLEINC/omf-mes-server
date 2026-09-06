@@ -77,7 +77,8 @@ describe('CancelEligibilityService', () => {
     // 가장 싼 판정이다 — 대상 행도 승인 요청도 조회하지 않는다(§4-4 순위 1).
     expect(calls.filter((c) => c.endsWith('.findUnique'))).toHaveLength(0);
     expect(calls).not.toContain('approval_request.findFirst');
-    expect(result.statusCode).toBe('');
+    // 빈 문자열이 응답으로 새지 않게 키 자체를 안 채운다 — 상태는 호출자가 자기 행에서 채운다.
+    expect(result.statusCode).toBeUndefined();
   });
 
   it('판정 — 이미 CANCELLED 면 ALREADY_CANCELLED 다', async () => {
@@ -125,17 +126,23 @@ describe('CancelEligibilityService', () => {
     expect(result.cancelBlockedReasonCode).toBe('TYPE_NOT_CANCELABLE');
   });
 
-  it('판정 — 다섯이 동시에 참이면 TYPE_NOT_CANCELABLE 이 이긴다(우선순위)', async () => {
-    const { tx } = fake({
-      document: { status_code: 'CANCELLED' },
-      openApproval: 5n,
-      counts: { goods_receipt: 1 },
-    });
+  it('판정 — 취소 경로가 없으면 후속이 있어도 TYPE_NOT_CANCELABLE 이 이긴다(1 > 5)', async () => {
+    const { tx } = fake({ counts: { goods_receipt: 1 } });
 
     const result = await service.evaluate(tx, 'STOCK_TRANSFER', DOC_ID);
 
     expect(result.cancelBlockedReasonCode).toBe('TYPE_NOT_CANCELABLE');
     expect(result.successorCount).toBe(1);
+  });
+
+  it('판정 — CANCELLED 이면서 열린 요청이 남아도 ALREADY_CANCELLED 가 이긴다(2 > 3)', async () => {
+    const { tx } = fake({ document: { status_code: 'CANCELLED' }, openApproval: 5n });
+
+    const result = await service.evaluate(tx, 'GOODS_RECEIPT', DOC_ID);
+
+    expect(result.cancelBlockedReasonCode).toBe('ALREADY_CANCELLED');
+    // 사유가 갈려도 승인 요청 id 는 실린다 — 화면이 결재함으로 이어 갈 수 있다.
+    expect(result.cancelApprovalRequestId).toBe(5n);
   });
 
   it('판정 — 후속이 있으면 SUCCESSOR_EXISTS 이고 후속 조회는 맨 뒤에 돈다', async () => {

@@ -31,8 +31,8 @@ export interface CancelEligibility {
   cancellable: boolean;
   cancelBlockedReasonCode?: CancelBlockedReason;
   cancelApprovalRequestId?: bigint;
-  /** ⚠ 취소 경로가 없는 6종은 «대상 행을 안 읽으므로» 빈 문자열이다(순위 1 · I-5.md §4-4). */
-  statusCode: string;
+  /** ⚠ 취소 경로가 없는 6종은 «대상 행을 안 읽어» 키가 없다 — 호출자가 자기 행에서 채운다(§4-4). */
+  statusCode?: string;
 }
 
 const CANCELLED = 'CANCELLED';
@@ -82,13 +82,13 @@ export class CancelEligibilityService {
     opts?: { withSuccessorRows?: boolean },
   ): Promise<CancelEligibility> {
     const mapping = DOCUMENT_TYPES[typeCode];
-    let statusCode = '';
+    let statusCode: string | undefined;
     let cancelApprovalRequestId: bigint | undefined;
 
     if (mapping.cancelable) {
       const document = await this.readDocument(tx, typeCode, documentId);
-      // 행이 없으면 404 는 호출자 몫이다 — 계약이 404 를 상세 GET 에만 선언했다(I-5.md §1-1).
-      statusCode = document?.status_code ?? '';
+      // 행이 없으면 404 는 호출자가 «이 함수 앞에서» 낸다(§6-2 ③-1 · 계약은 상세 GET 에만 선언).
+      statusCode = document?.status_code;
       // ⛔ 유형 접두가 필수다 — 없으면 다른 축의 승인이 취소 품의를 대신한다(I-5.md §6-2).
       const open = await tx.approval_request.findFirst({
         where: { target_type_code: mapping.entityTypeCode, target_id: documentId, approval_type_code: `${typeCode}_CANCEL`, status_code: 'PENDING' },
@@ -107,7 +107,7 @@ export class CancelEligibilityService {
       // 상태가 CANCEL_REQUESTED 인데 반려돼 열린 요청이 없는 경우가 실재한다 — 그때도 막는다
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
-      STATE_LOCKED: statusCode !== '' && !OPEN_STATUSES.includes(statusCode),
+      STATE_LOCKED: statusCode !== undefined && !OPEN_STATUSES.includes(statusCode),
       SUCCESSOR_EXISTS: found.count > 0,
     };
     const blocked = BLOCK_ORDER.find((code) => hit[code]);
@@ -118,7 +118,7 @@ export class CancelEligibilityService {
       cancellable: blocked === undefined,
       ...(blocked === undefined ? {} : { cancelBlockedReasonCode: blocked }),
       ...(cancelApprovalRequestId === undefined ? {} : { cancelApprovalRequestId }),
-      statusCode,
+      ...(statusCode === undefined ? {} : { statusCode }),
     };
   }
 
@@ -142,17 +142,17 @@ export class CancelEligibilityService {
     const receiptWhere = this.downstream(typeCode, documentId, 'GOODS_RECEIPT');
     const issueWhere = this.downstream(typeCode, documentId, 'GOODS_ISSUE');
     const pickingWhere = this.downstream(typeCode, documentId, 'PICKING_ORDER');
-    const probes = [
-      await branch(withRows, () => tx.goods_receipt.count({ where: receiptWhere }),
+    const probes = await Promise.all([
+      branch(withRows, () => tx.goods_receipt.count({ where: receiptWhere }),
         () => tx.goods_receipt.findMany({ where: receiptWhere, select: { goods_receipt_id: true, goods_receipt_no: true, goods_receipt_line: { select: { receipt_qty: true } } } }),
         (r) => row('GOODS_RECEIPT', r.goods_receipt_id, r.goods_receipt_no, r.goods_receipt_line.map((l) => l.receipt_qty))),
-      await branch(withRows, () => tx.goods_issue.count({ where: issueWhere }),
+      branch(withRows, () => tx.goods_issue.count({ where: issueWhere }),
         () => tx.goods_issue.findMany({ where: issueWhere, select: { goods_issue_id: true, goods_issue_no: true, goods_issue_line: { select: { issue_qty: true } } } }),
         (r) => row('GOODS_ISSUE', r.goods_issue_id, r.goods_issue_no, r.goods_issue_line.map((l) => l.issue_qty))),
-      await branch(withRows, () => tx.picking_order.count({ where: pickingWhere }),
+      branch(withRows, () => tx.picking_order.count({ where: pickingWhere }),
         () => tx.picking_order.findMany({ where: pickingWhere, select: { picking_order_id: true, picking_order_no: true, picking_line: { select: { picked_qty: true } } } }),
         (r) => row('PICKING_ORDER', r.picking_order_id, r.picking_order_no, r.picking_line.map((l) => l.picked_qty))),
-    ];
+    ]);
     if (LOT_SOURCE_TYPES.includes(typeCode)) probes.push(...(await this.lotAxis(tx, typeCode, documentId, withRows)));
     return { count: probes.reduce((sum, p) => sum + p.count, 0), rows: probes.flatMap((p) => p.rows) };
   }
@@ -180,14 +180,14 @@ export class CancelEligibilityService {
       inventory_transaction_line: { some: { lot_id: { in: lotIds } } },
     };
     const usedLots = { lot_id: { in: lotIds } };
-    return [
-      await branch(withRows, () => tx.inventory_transaction.count({ where: ledgerWhere }),
+    return Promise.all([
+      branch(withRows, () => tx.inventory_transaction.count({ where: ledgerWhere }),
         () => tx.inventory_transaction.findMany({ where: ledgerWhere, select: { inventory_transaction_id: true, transaction_no: true, inventory_transaction_line: { where: usedLots, select: { qty: true } } } }),
         (r) => row('INVENTORY_TRANSACTION', r.inventory_transaction_id, r.transaction_no, r.inventory_transaction_line.map((l) => l.qty))),
-      await branch(withRows, () => tx.material_consumption.count({ where: usedLots }),
+      branch(withRows, () => tx.material_consumption.count({ where: usedLots }),
         () => tx.material_consumption.findMany({ where: usedLots, select: { material_consumption_id: true, consumption_no: true, input_qty: true } }),
         (r) => row('MATERIAL_CONSUMPTION', r.material_consumption_id, r.consumption_no, [r.input_qty])),
-    ];
+    ]);
   }
 
   /** 「이 문서가 만든 LOT」 — 입하는 라인의 `lot_id`(nullable), 입고는 라인의 `lot_id`(NOT NULL). */
