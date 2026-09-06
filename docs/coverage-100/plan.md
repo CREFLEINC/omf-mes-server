@@ -21,7 +21,7 @@
 | 10 | `x-no-code-key` 16자리 `status_code` NOT NULL | 상수 하나 | — | — | **NOT NULL 해제(nullable)** — §2 2단계 ③ 이 「nullable」을 우선으로 적었다. 상수는 데이터에 남아 되돌리기 비싸다. 그 표를 처음 쓰는 슬라이스의 선행 마이그레이션에 싣는다. ⚠ **계약이 응답에 `required` 로 적은 자리에는 안 선다**(널이면 실을 값이 없다 — nullable 은 문제를 옮길 뿐) — 그 자리는 상수(`Asn.statusCode`·`InboundReceiptLine.statusCode` = `'REGISTERED'` · I-3 재수립 R-9) | README §2 2-3 |
 | 11 | LOT 품질 축 전이 | 계약이 이름 적은 9줄만 등록, 나머지는 던짐 | 처분 전이 코드 없음 → 문의 | I-19 가 전이표를 채우고 뒤가 재사용 | **I-19 에서 계약이 이름 적은 전이만 등록**. 처분(I-21)은 계약 문장(재작업→`INSPECTION_PENDING` 등)대로 옮기되 `transitionCode` 는 지어내지 않고 문의(§7) | API §6-3 · UI/UX §9-4 N |
 | 12 | 알림 구독 축 | 새 표 `notification_subscription_recipient` | recipient 규칙 마이그 | — | **새 표** — 계약(이벤트별 수신자)이 물리(사용자별)와 반대 | API 위험 7 |
-| 13 | I-9 생산창고 차이 | — | — | 기록만(뒤집히면 3관점 재수립) | **기록만** | 통합 §9-6 |
+| 13 | I-9 생산창고 차이 | — | — | 기록만(뒤집히면 3관점 재수립) | **기록만** — I-9 계획서가 실측으로 확인(원장 FK 칸이 계약·물리 둘 다 0 · I-9.md §3-4 · R-17) | 통합 §9-6 |
 | 14 | 출하의 원장 | — | — | `posting.post()` 직접, `GoodsIssueService` 안 부름 | 그대로 | 아키텍처 §1 |
 
 ## 1. 슬라이스 35 — 순서·선행·배분
@@ -150,7 +150,7 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) · **`POST /logistics/shopfloor-receipts`**(I-9 R-11 — `received_by` 는 세션이 채우고 사번은 읽고 버린다 · 넷째) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
 12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.
@@ -213,7 +213,7 @@
 | 재생재/입하 오류의 «미등록 품목» 생성 경로 없음 | I-17 · I-3 | UI/UX B·C |
 | 창고 «안» 위치 이동 업무 문서 없음 | I-13 | UI/UX A |
 | 라벨 무효화 규칙 없음 | I-27 | UI/UX J |
-| 출고·생산창고 입고 한 단말 오프라인 큐 순서 | I-9 | UI/UX K |
+| ~~출고·생산창고 입고 한 단말 오프라인 큐 순서~~ — **C-10 으로 해소**(공유계약 v0.7 「큐에 순서 의존이 있으면 묶음으로 거부」 · I-9 R-2) | I-9 | UI/UX K |
 | `achievementRate` 분모 차이(LOT vs W/O) 화면 라벨 | I-7 | UI/UX §9-3 |
 | M-01-08 결정 10 ↔ C-1 정면 충돌(열린 것 인용) | I-8 | UI/UX §9-3 |
 | `collection_channel_observation` 영원히 빈 목록 | I-33 | UI/UX §9-2 |

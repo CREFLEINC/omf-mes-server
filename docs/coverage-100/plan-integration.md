@@ -130,11 +130,11 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | `PUT /inventory/counts/{id}/lines` · `:close` | — | — | **원장 없음** — 실사는 조정을 만들고 조정이 전기한다(결정 49) |
 | `POST /logistics/material-issue-requests` | — | — | **원장 없음**, `inventory_reservation` 만 건다 |
 | `POST /logistics/picking-orders/.../{id}:pick` | — | — | **원장 없음**, `reserved_qty` → `picked_qty` 이동 |
-| `POST /logistics/shopfloor-receipts` | — | — | **차이 0 이면 원장 없음.** 차이가 있을 때가 미정 — §2 대상 |
+| `POST /logistics/shopfloor-receipts` | — | — | **원장 없음** — 차이가 있어도 `variance_qty`+사유로 기록만(I-9 §3-4 · 재고는 I-14 조정) |
 | `POST /logistics/inbound-receipts` · `:split` | — | — | **원장 없음**(§Z-2 — LOT 등록은 원장을 지나지 않는다) |
 | `POST /trace/lots/{id}:complete` | — | — | **원장 없음** — 생명주기 축만 옮긴다 |
 
-⚠ `businessDate` 를 싣지만 원장을 지나지 않는 6건(`inbound-receipts`·`:split`·`counts/lines`·`:close`·`material-issue-requests`·`lots:complete`)은 **회신 대기 15번(C-8-1 어긋남)의 실물**이다. `§Z-4` 가 LOT 등록에서 이미 같은 판정을 내렸다 — **받아서 형식만 검증하고 저장하지 않는다**. 슬라이스마다 이 판정을 그대로 반복하고 요청서에 건수를 누적한다.
+⚠ `businessDate` 를 싣지만 원장을 지나지 않는 7건(`inbound-receipts`·`:split`·`counts/lines`·`:close`·`material-issue-requests`·`lots:complete`·`shopfloor-receipts`)은 **회신 대기 15번(C-8-1 어긋남)의 실물**이다. `§Z-4` 가 LOT 등록에서 이미 같은 판정을 내렸다 — **받아서 형식만 검증하고 저장하지 않는다**. 슬라이스마다 이 판정을 그대로 반복하고 요청서에 건수를 누적한다.
 
 ---
 
@@ -292,6 +292,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 → **2단계 기준 1「재고·원장·상태를 쓰지 않는 쪽」** → **차이가 있어도 원장을 만들지 않는다.** 차이는 `variance_qty`+`variance_reason_code` 로 «기록»만 하고, 재고를 맞추는 것은 **재고 조정(I-14)** 의 몫이다(결정 49 「실사 조정 = 원장 트랜잭션」과 같은 결). `businessDate` 는 §Z-4 판정대로 형식만 검증한다.
 → **3단계 흔적**: 단언 테스트에 `// 설계 미정 — 문의 NNN(생산창고 차이의 원장 처리)`.
 ⚠ 이 판정이 뒤집히면 `shopfloor_receipt_line` 에 컬럼이 붙는 마이그레이션이 생긴다 — 「차이가 크다」 3조건 중 첫째에 걸리므로 그때는 이 슬라이스만 3관점 재수립.
+→ **I-9 계획서(2026-09-07) 실측 확인** — 뒤집을 근거 0. 덤: 한 출고 = 수령 전표 하나 · 본문 라인은 출고 라인 **전건**(빠지면 400 `LINE_REQUIRED` · I-9 R-1) ⇒ 체인 ⑨ 는 1:1 로 굳는다.
 
 
 ##### I-10 · 자재 투입·반출 — 계보(lot_relation) — 6건
@@ -319,7 +320,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-13 · 재고 이동 — 반출·도착 2단 — 6건
 
-**체인 마디**: 창고 간 이동. 체인의 본줄기가 아니라 «가지»이지만 **`IN_TRANSIT` 를 처음 쓰는 자리**라 I-9 판정의 선례가 된다.
+**체인 마디**: 창고 간 이동. 체인의 본줄기가 아니라 «가지»이지만 **`IN_TRANSIT` 를 처음 쓰는 자리**다(~~I-9 판정의 선례가 된다~~ — I-9 는 `IN_TRANSIT` 를 안 쓰고 먼저 닫혔다 · I-9 R-17).
 **원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, `AVAILABLE`}. `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
 **예상 설계 미정**: `IN_TRANSIT` 행의 `location_id` 는 NOT NULL 인데 이동 중에는 위치가 없다. → 2단계 기준 3 → 도착 위치를 미리 쓴다(`to_location_id`).
 

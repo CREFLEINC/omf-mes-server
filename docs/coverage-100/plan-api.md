@@ -1090,7 +1090,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 출고 | `goods_issue_no` | ❌ | `GI-{YYYYMMDD}-{SEQ4}`(I-4 · `DEFAULT_PREFIX` `GI`) | S04 |
 | 자재 출고요청 | `issue_request_no` | ❌ | — | S04 |
 | 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — ~~출고요청이 만든다~~ **아무도 못 만든다** · 배정 축 3겹 부재 · I-8 §5 · 문의 045) |
-| 현장 입고 | `shopfloor_receipt_no` | ❌ | — | S04 |
+| 현장 입고 | `shopfloor_receipt_no` | ❌ | `SR-{YYYYMMDD}-{SEQ4}`(계약 example `SR-2026-000077` 에서 접두어만 · `DEFAULT_PREFIX` 한 줄 · I-9 §3-7) | S04 |
 | 창고 이동 | `stock_transfer_no` | ❌ | — | S05 |
 | 재생재 | `recycle_entry_no` | ❌ | — | S05 |
 | 재고 실사 | `inventory_count_no` | ❌ | — | S07 |
