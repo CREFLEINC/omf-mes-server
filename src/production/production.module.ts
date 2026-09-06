@@ -15,6 +15,7 @@ import { MaterialReturnController } from './material-return/material-return.cont
 import { PrecheckDecisionQueryService } from './precheck-decision/precheck-decision-query.service';
 import { PrecheckDecisionController } from './precheck-decision/precheck-decision.controller';
 import { MaterialReturnService } from './material-return/material-return.service';
+import { PrecheckDecisionService } from './precheck-decision/precheck-decision.service';
 import { ProductionResultApprovalService } from './production-result/production-result-approval.service';
 import { ProductionResultCorrectService } from './production-result/production-result-correct.service';
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
@@ -43,7 +44,8 @@ import { WorkSessionController } from './work-session/work-session.controller';
  * 정정·상신(PR ③)이 승인 코어를 부른다 — 상신만 코어를 타고, 정정의 승인 게이트는
  * 「승인이 필수」라 뜻이 반대라 도메인 안에 선다(§5-5).
  * 작업 세션·통제 판정 조회 5건(I-11 PR ①)은 읽기만 한다 — 코어를 부르지 않는다.
- *   등록(`POST`)과 코어 배선(`AuthModule`)은 PR ②~⑤ 몫이다.
+ *   세션 등록과 코어 배선(`AuthModule`)은 PR ②~④ 몫이다.
+ * 통제 판정 기록(I-11 PR ⑤)은 세션·전이표·단말 토큰을 하나도 안 쓴다 — 단일 INSERT.
  */
 @Module({
   imports: [
@@ -81,6 +83,7 @@ import { WorkSessionController } from './work-session/work-session.controller';
     WorkSessionQueryService,
     PrecheckDecisionQueryService,
     MaterialReturnService,
+    PrecheckDecisionService,
   ],
 })
 export class ProductionModule {}
