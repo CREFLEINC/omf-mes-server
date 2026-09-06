@@ -7,8 +7,10 @@
  *
  * ⛔ 계약이 403 을 선언한 것은 `validation` 하나뿐이라 그 자리만 권한 가드가 본다 — 나머지
  *   넷은 로그인 세션만으로 통과한다. 그래서 사용자가 둘이다(권한 있음·없음).
+ * 확정·배포 `:release` + 생산LOT 선발행 + 자재 출고요청 자동 발행(I-6 PR ⑤b)을 잇는다.
+ *
  * ⭐ 마스터 픽스처는 **직접 INSERT** 한다 — 시드가 얇아(품목·공정·라우팅·BOM·작업자·근무조
- *   0행) 이 스위트가 다 심는다. 배포(`:release`)는 ⑤b 라 `RELEASED` 도 직접 심는다.
+ *   0행) 이 스위트가 다 심는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -30,10 +32,11 @@ const PASSWORD = 'WO-작업지시-비밀번호';
 const PREFIX = 'WOE2E';
 const ROLE = 'E2E_WORK_ORDER';
 /**
- * 계약이 403 을 선언한 다섯 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
- * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10`).
+ * 계약이 403 을 선언한 여섯 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
+ * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10` ·
+ * `:release` = `W-02-04`).
  */
-const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10'];
+const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10', 'W-02-04'];
 /** 선발행 슬롯의 원천 유형 — `lot-rules.ts workOrderWhere()` 와 같은 문자열. */
 const LOT_SOURCE = 'WORK_ORDER';
 
@@ -80,6 +83,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     productionPlan: 0n,
     workOrder: 0n,
     terminal: 0n,
+    location: 0n,
+    componentItemA: 0n,
+    componentItemB: 0n,
+    overflowPlan: 0n,
   };
 
   beforeAll(async () => {
@@ -570,6 +577,184 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     }
   });
 
+
+  describe('확정·배포 + 자재 출고요청 자동 발행 (PR ⑤b)', () => {
+    const base = '/api/production/work-orders';
+    let seq = 0;
+
+    /** 배포 대상 W/O — 상태·기본 위치를 픽스처로 못박는다(발행 경로는 ④가 이미 본다). */
+    async function planned(data: Record<string, unknown> = {}): Promise<number> {
+      const row = await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WOR${++seq}`,
+          production_plan_id: ids.productionPlan,
+          routing_operation_id: ids.routingOperation,
+          item_id: ids.item,
+          order_qty: 100,
+          uom_id: ids.uom,
+          status_code: 'PLANNED',
+          default_wip_location_id: ids.location,
+          ...data,
+        },
+      });
+      return Number(row.work_order_id);
+    }
+
+    const call = (workOrderId: number, lotSize: number, etag = '1', key = randomUUID()) =>
+      request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .set('If-Match', etag)
+        .send({ lotSize });
+
+    const slots = (workOrderId: number) =>
+      prisma.lot.findMany({
+        where: { source_type_code: LOT_SOURCE, source_id: BigInt(workOrderId) },
+        orderBy: { work_order_lot_seq: 'asc' },
+      });
+
+    const requests = (workOrderId: number) =>
+      prisma.material_issue_request.findMany({
+        where: { work_order_id: BigInt(workOrderId) },
+        include: { material_issue_request_line: { orderBy: { line_no: 'asc' } } },
+      });
+
+    it('배포 — 슬롯 N 개가 `WAITING` 으로 생기고 상태가 `RELEASED` 다', async () => {
+      const workOrderId = await planned();
+
+      const response = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ lotSize: 30, handoverNote: '전달사항입니다' })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ workOrderId, statusCode: 'RELEASED', versionNo: 2 });
+      expect(response.body.releasedAt).toEqual(expect.any(String));
+      // ⛔ `handoverNote` 는 저장하지 않는다 — `remarks` 에 덧붙이지도 않는다(§4-5).
+      expect(response.body.remarks ?? null).toBeNull();
+      // 굳힐 두 칸이 둘 다 NULL 이라 빈 객체다(R-27).
+      expect(response.body.operationSettingsSnapshot).toEqual({});
+      expect(validator('POST /production/work-orders/{workOrderId}:release')(response.body)).toBe(true);
+
+      const lots = await slots(workOrderId);
+      // 100 ÷ 30 → 4슬롯이고 마지막만 나머지다. 합이 지시수량과 정확히 같다.
+      expect(lots.map((lot) => lot.initial_qty.toNumber())).toEqual([30, 30, 30, 10]);
+      expect(lots.map((lot) => lot.work_order_lot_seq)).toEqual([1, 2, 3, 4]);
+      expect(lots.map((lot) => lot.lifecycle_status_code)).toEqual(Array(4).fill('WAITING'));
+      expect(lots.map((lot) => lot.lot_type_code)).toEqual(Array(4).fill('PRODUCTION'));
+      // BOM 스냅샷은 계획의 것이고 짝을 지킨다.
+      expect(lots.map((lot) => lot.bom_version)).toEqual([1, 1, 1, 1]);
+      // ⛔ 실물이 없어 수입검사 보류를 걸지 않는다(입하 등록과 다르다).
+      const held = await prisma.lot_hold.count({
+        where: { lot_id: { in: lots.map((lot) => lot.lot_id) } },
+      });
+      expect(held).toBe(0);
+    });
+
+    it('배포 — 라인·기본 위치가 없어도 계획으로 공장이 풀린다', async () => {
+      const workOrderId = await planned({ default_wip_location_id: null, production_line_id: null });
+
+      await call(workOrderId, 100).expect(200);
+
+      // R-7 — 공장은 `production_plan → production_order.plant_id` 한 축으로만 푼다.
+      const lots = await slots(workOrderId);
+      expect(lots).toHaveLength(1);
+      expect(lots[0].plant_id).toBe(ids.plant);
+      // 도착 위치를 못 풀면 요청 없이 배포는 성공한다(400 이 아니다).
+      expect(await requests(workOrderId)).toEqual([]);
+    });
+
+    it('배포 — 출고요청 1건과 BOM 라인 수만큼의 라인이 생긴다', async () => {
+      const workOrderId = await planned();
+
+      await call(workOrderId, 100).expect(200);
+
+      const [issued, ...rest] = await requests(workOrderId);
+      expect(rest).toEqual([]);
+      expect(issued.issue_request_no).toMatch(/^MIR-\d{8}-\d{4}$/);
+      expect(issued).toMatchObject({
+        status_code: 'REQUESTED',
+        destination_location_id: ids.location,
+        required_at: null,
+        reason_code: null,
+      });
+      // BOM 구성 3행 중 «이 공정»의 둘만 담는다 — 공정 미지정 1행은 빠진다.
+      const lines = issued.material_issue_request_line;
+      expect(lines.map((line) => line.line_no)).toEqual([1, 2]);
+      expect(lines.map((line) => line.item_id)).toEqual([ids.componentItemA, ids.componentItemB]);
+      // 2×100÷1 = 200 · 0.5×100÷1 = 50. 둘째의 스크랩률 5% 를 곱했다면 52.5 다(문의 037).
+      expect(lines.map((line) => line.requested_qty.toNumber())).toEqual([200, 50]);
+      expect(lines.map((line) => line.bom_component_id === null)).toEqual([false, false]);
+    });
+
+    it('배포 — 긴급 W/O 는 슬롯은 생기고 출고요청은 0건이다', async () => {
+      const workOrderId = await planned({ work_order_type_code: 'EMERGENCY' });
+
+      await call(workOrderId, 40).expect(200);
+
+      // 긴급 경로에서도 선발행은 «일어난다» — 현장이 정상 경로 화면을 재사용한다(계약).
+      expect((await slots(workOrderId)).map((lot) => lot.initial_qty.toNumber())).toEqual([40, 40, 20]);
+      expect(await requests(workOrderId)).toEqual([]);
+    });
+
+    it('배포 — If-Match 가 없으면 400, 낡으면 409 다', async () => {
+      const workOrderId = await planned();
+
+      const missing = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ lotSize: 100 })
+        .expect(400);
+      expect(missing.body.errors[0]).toMatchObject({ code: 'REQUIRED' });
+
+      const stale = await call(workOrderId, 100, '99').expect(409);
+      expect(stale.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+      expect(validator('POST /production/work-orders/{workOrderId}:release', 409)(stale.body)).toBe(true);
+      expect(await slots(workOrderId)).toEqual([]);
+    });
+
+    it('배포 — 같은 멱등키 재전송이 슬롯을 두 벌 만들지 않는다', async () => {
+      const workOrderId = await planned();
+      const key = randomUUID();
+
+      const first = await call(workOrderId, 100, '1', key).expect(200);
+      const again = await call(workOrderId, 100, '1', key).expect(200);
+
+      expect(again.body).toEqual(first.body);
+      expect(await slots(workOrderId)).toHaveLength(1);
+      expect(await requests(workOrderId)).toHaveLength(1);
+    });
+
+    it('배포 — 배포된 W/O 를 다시 배포하면 400 이다', async () => {
+      const workOrderId = await planned();
+      await call(workOrderId, 100).expect(200);
+
+      // 전이표의 `from` 밖이다 — 409 가 아니라 400 이고 재로드해도 안 풀린다(§1-6).
+      const again = await call(workOrderId, 100, '2').expect(400);
+      expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      expect(await slots(workOrderId)).toHaveLength(1);
+    });
+
+    it('배포 — 실패하면 슬롯·요청이 하나도 안 남는다', async () => {
+      // 소요가 `requested_qty numeric(20,6)` 을 넘게 만들어 라인 INSERT 를 깬다
+      // (계획서의 「BOM 라인의 품목을 지운다」는 FK 가 삭제 자체를 막아 성립하지 않는다).
+      const workOrderId = await planned({ production_plan_id: ids.overflowPlan, order_qty: 1000000 });
+
+      await call(workOrderId, 1000000).expect(500);
+
+      expect(await slots(workOrderId)).toEqual([]);
+      expect(await requests(workOrderId)).toEqual([]);
+      const row = await prisma.work_order.findUniqueOrThrow({
+        where: { work_order_id: BigInt(workOrderId) },
+      });
+      expect(row).toMatchObject({ status_code: 'PLANNED', version_no: 1, released_at: null });
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -639,6 +824,51 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     ids.bom = bom.bom_id;
+
+    // ⑤b — BOM 소요 산정용 구성 3행. 둘은 이 공정, 하나는 **공정 미지정**(안 담긴다).
+    const componentItems = [];
+    for (const [suffix, name] of [['A', '원자재갑'], ['B', '원자재을']]) {
+      componentItems.push(
+        await prisma.item.create({
+          data: {
+            item_code: `${PREFIX}-CI${suffix}`,
+            item_name: name,
+            item_type_code: 'RAW_MATERIAL',
+            base_uom_id: uom.uom_id,
+          },
+        }),
+      );
+    }
+    ids.componentItemA = componentItems[0].item_id;
+    ids.componentItemB = componentItems[1].item_id;
+    await prisma.bom_component.createMany({
+      data: [
+        { bom_id: bom.bom_id, component_item_id: componentItems[0].item_id, routing_operation_id: operation.routing_operation_id, required_qty: 2, uom_id: uom.uom_id, sequence_no: 1 },
+        // 스크랩률이 있어도 소요에 곱하지 않는다(문의 037 · R-18).
+        { bom_id: bom.bom_id, component_item_id: componentItems[1].item_id, routing_operation_id: operation.routing_operation_id, required_qty: 0.5, scrap_rate: 0.05, uom_id: uom.uom_id, sequence_no: 2 },
+        { bom_id: bom.bom_id, component_item_id: componentItems[0].item_id, routing_operation_id: null, required_qty: 9, uom_id: uom.uom_id, sequence_no: 3 },
+      ],
+    });
+
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH`,
+        warehouse_name: '작업지시검사창고',
+        warehouse_type_code: 'RAW',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const location = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-LOC`,
+        location_name: '작업지시검사위치',
+        location_type_code: 'BIN',
+      },
+    });
+    ids.location = location.location_id;
     // ⭐ 설비와 작업자를 «같은 숫자 id» 로 심는다 — 배정 유일키가 `resource_type_code` 를 함께
     //    보는지(같은 id 라도 유형이 다르면 배정된다)를 볼 유일한 길이다. 두 시퀀스는 서로
     //    모르므로 값을 못박고, 다음 자동 채번이 부딪히지 않게 시퀀스를 그 뒤로 민다.
@@ -826,6 +1056,43 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     emergencyWorkOrderId = Number(emergencyWorkOrder.work_order_id);
+
+    // ⑤b 롤백 e2e 전용 — 소요가 `requested_qty numeric(20,6)` 을 넘게 만드는 BOM.
+    // (계획서의 「BOM 라인의 품목을 지운다」는 FK 가 삭제 자체를 막아 성립하지 않는다.)
+    const overflowBom = await prisma.bom.create({
+      data: {
+        parent_item_id: item.item_id,
+        bom_code: `${PREFIX}-BOMX`,
+        bom_version: 1,
+        status_code: 'ACTIVE',
+        effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        base_qty: 0.000001,
+        base_uom_id: uom.uom_id,
+      },
+    });
+    await prisma.bom_component.create({
+      data: {
+        bom_id: overflowBom.bom_id,
+        component_item_id: componentItems[0].item_id,
+        routing_operation_id: operation.routing_operation_id,
+        required_qty: 1000000,
+        uom_id: uom.uom_id,
+        sequence_no: 1,
+      },
+    });
+    const overflowPlan = await prisma.production_plan.create({
+      data: {
+        production_order_id: order.production_order_id,
+        plan_no: `${PREFIX}-PPX`,
+        plan_date: new Date('2026-09-06T00:00:00.000Z'),
+        planned_qty: 1000000,
+        uom_id: uom.uom_id,
+        bom_id: overflowBom.bom_id,
+        routing_id: routing.routing_id,
+        status_code: 'CONFIRMED',
+      },
+    });
+    ids.overflowPlan = overflowPlan.production_plan_id;
   }
 
   async function makeUser(): Promise<void> {
@@ -877,6 +1144,11 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       where: { production_result: { work_order: orderScope } },
     });
     await prisma.production_result.deleteMany({ where: { work_order: orderScope } });
+    await prisma.material_issue_request_line.deleteMany({
+      where: { material_issue_request: { work_order: orderScope } },
+    });
+    await prisma.material_issue_request.deleteMany({ where: { work_order: orderScope } });
+    await prisma.lot_lifecycle_history.deleteMany({ where: { lot: plantScope } });
     await prisma.lot.deleteMany({ where: plantScope });
     await prisma.work_order_resource_assignment.deleteMany({ where: { work_order: orderScope } });
     await prisma.work_session.deleteMany({ where: { work_order: orderScope } });
@@ -889,6 +1161,9 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.bom_component.deleteMany({ where: { bom: { bom_code: { startsWith: PREFIX } } } });
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: PREFIX } } });
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
