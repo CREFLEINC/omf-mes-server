@@ -34,6 +34,11 @@ export const ERROR_CODE = {
   // 같은 문장). `APPROVAL_REQUIRED`(승인을 «올려라»)와 «반드시» 갈려야 한다 — 이쪽은
   // 「기다려라」다. 이름의 근거: plan-api.md §5.4.
   APPROVAL_IN_PROGRESS: 'APPROVAL_IN_PROGRESS',
+  // 계약이 이름을 안 준 자리다 — `POST /logistics/goods-issues/{goodsIssueId}:post` 「승인이
+  // 필요한 전표는 승인이 끝나기 전에는 400 이다」가 자리만 세웠다(grep 실측: `contracts/*.json`
+  // 에 이 문자열 0건). `APPROVAL_IN_PROGRESS`(기다려라)와 «반드시» 갈려야 한다 — 이쪽은
+  // 승인을 «올려라»다(반려는 진행 중이 아니고 다시 상신해야 한다 — 공유계약 J-6).
+  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
   // 계약이 이 자리(P/O 라인 치환)에 코드를 안 줬으나 같은 뜻의 이름을 다른 자리에서 이미
   // 지었다 — `CD-…-CANCEL-BLOCKED-REASON` 「후속 문서가 있다」. 다형 취소(I-5)가 조회의
   // 사유와 실행 오류에 같은 문자열을 쓴다(plan-api.md §5.4).

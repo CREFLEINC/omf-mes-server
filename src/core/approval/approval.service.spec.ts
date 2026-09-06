@@ -95,6 +95,13 @@ function fake(seed: Seed) {
         rows.push(data as unknown as RequestSeed);
         return { approval_request_id: REQUEST_ID + BigInt(writes.requestCreates.length) };
       },
+      findMany: async ({ where }: { where: Omit<RequestSeed, 'status_code'> }) =>
+        rows.filter(
+          (row) =>
+            row.target_type_code === where.target_type_code &&
+            row.target_id === where.target_id &&
+            row.approval_type_code === where.approval_type_code,
+        ),
       updateMany: record(writes.requestUpdates),
     },
   };
@@ -317,6 +324,73 @@ describe('ApprovalService', () => {
 
       // 둘 다 선다 — 막는 것은 호출자가 트랜잭션 첫 문장에서 거는 대상 행 잠금이다(I-2.md R-4).
       expect(writes.requestCreates).toHaveLength(2);
+    });
+  });
+
+  describe('승인 완료 판정', () => {
+    const ISSUE_ID = 4100n;
+    const seen = (status_code: string, approval_type_code = 'GOODS_ISSUE_DISPOSAL'): RequestSeed => ({
+      target_type_code: 'GOODS_ISSUE',
+      target_id: ISSUE_ID,
+      approval_type_code,
+      status_code,
+    });
+    const assert = (tx: Prisma.TransactionClient, approvalTypeCode = 'GOODS_ISSUE_DISPOSAL') =>
+      service.assertApproved(tx, 'GOODS_ISSUE', ISSUE_ID, approvalTypeCode);
+
+    it('assertApproved — 그 축에 요청이 0건이면 통과한다(승인을 타지 않은 출고)', async () => {
+      // 계약 `GoodsIssue.approvalRequestId` 「비어 있으면 승인을 타지 않은 출고다」.
+      const { tx } = fake({ requests: [] });
+
+      await expect(assert(tx)).resolves.toBeUndefined();
+    });
+
+    it('assertApproved — APPROVED 가 있으면 통과한다', async () => {
+      // 「승인된 뒤 재상신 → 반려」도 통과한다 — 시각 순서를 안 본다(I-4.md §8-1 ⓔ).
+      const { tx } = fake({ requests: [seen('APPROVED'), seen('REJECTED')] });
+
+      await expect(assert(tx)).resolves.toBeUndefined();
+    });
+
+    it('assertApproved — PENDING 만 있으면 400 APPROVAL_IN_PROGRESS 다', async () => {
+      // 반려가 섞여 있어도 `PENDING` 이 이긴다 — 「기다려라」다.
+      const only = fake({ requests: [seen('PENDING')] });
+      const mixed = fake({ requests: [seen('REJECTED'), seen('PENDING')] });
+
+      for (const { tx } of [only, mixed]) {
+        const error = await thrown(() => assert(tx));
+
+        expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_IN_PROGRESS);
+      }
+    });
+
+    it('assertApproved — REJECTED 만 있으면 400 APPROVAL_REQUIRED 다', async () => {
+      const { tx } = fake({ requests: [seen('REJECTED')] });
+
+      const error = await thrown(() => assert(tx));
+
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_REQUIRED);
+    });
+
+    it('assertApproved — approvalTypeCode 가 다르면 못 본다(GOODS_ISSUE_CANCEL 승인이 업무 승인을 대신하지 않는다)', async () => {
+      const { tx } = fake({ requests: [seen('APPROVED', 'GOODS_ISSUE_CANCEL'), seen('REJECTED')] });
+
+      const error = await thrown(() => assert(tx));
+
+      expect(error.errors[0].code).toBe(ERROR_CODE.APPROVAL_REQUIRED);
+      // 뒤집으면 취소 축은 그 승인을 본다 — 축이 갈려 있다는 것이 요지다.
+      await expect(assert(tx, 'GOODS_ISSUE_CANCEL')).resolves.toBeUndefined();
+    });
+
+    it('assertApproved — 대상 표의 approval_request_id 를 읽지 않는다(다형 축만 본다)', async () => {
+      const { tx, touched } = fake({ requests: [seen('APPROVED')] });
+
+      await assert(tx);
+
+      // 목에 `goods_issue` 가 아예 없다 — FK 를 읽으려 들면 undefined 접근으로 터진다.
+      expect([...touched]).toEqual(['approval_request']);
     });
   });
 
