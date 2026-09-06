@@ -69,6 +69,13 @@ export const ERROR_CODE = {
   // W/O 마감이 열린 세션(`ended_at IS NULL`)을 만났을 때 **409** 로 낸다(I-6.md §5-5).
   // ⚠ 이 PR 은 이름만 예약한다 — 사용처는 I-6 PR ⑥b 다.
   OPEN_SESSION_EXISTS: 'OPEN_SESSION_EXISTS',
+  // 아래 둘은 계약이 이름을 안 준 자리다 — W/O `:close` 본문 검증 4규칙 중 잔량 처분 두 줄
+  // (⌜미달인데 remainderDispositionCode 가 없다 → 400⌝ · ⌜정상·초과인데 있다 → 400⌝).
+  // `REQUIRED`/`INVALID` 로 뭉치면 화면(`W-02-05`)이 「처분을 고르라」와 「처분을 지우라」를
+  // 같은 코드로 받아 문구를 못 가른다 — 사유 칸(`reasonCode`)이 같은 화면에 나란히 서서
+  // 그 둘은 `REQUIRED`/`INVALID` 를 쓰기 때문이다. I-6.md §1-6.
+  REMAINDER_DISPOSITION_REQUIRED: 'REMAINDER_DISPOSITION_REQUIRED',
+  REMAINDER_DISPOSITION_NOT_ALLOWED: 'REMAINDER_DISPOSITION_NOT_ALLOWED',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
