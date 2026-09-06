@@ -1,7 +1,8 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { ERROR_CODE, field, one } from '../../common/errors';
+import { day } from '../../common/master';
 
 /**
  * LOT 계보 코어(`server-architecture.md` §1 `lot-genealogy`) — **값이 정해진 LOT 하나를
@@ -124,23 +125,7 @@ export class LotRegistryService {
   }
 }
 
-// ── 값 변환·오류 조립 — 코어와 trace 가 함께 쓴다(날짜는 타임존을 고르지 않는다) ──────
-
-export function field(name: string, code: string, message: string): ErrorItem {
-  return { scope: 'field', field: name, code, message };
-}
-
-export function one(item: ErrorItem): ContractException {
-  return new ContractException(HttpStatus.BAD_REQUEST, [item]);
-}
-
-export function day(name: string, value: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const parsed = new Date(`${value}T00:00:00.000Z`);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-  throw one(field(name, ERROR_CODE.INVALID, 'YYYY-MM-DD 형식입니다.'));
-}
+// ── LOT 칸에 붙박인 값 변환(날짜는 타임존을 고르지 않는다) ──────────────────────────
 
 export function optionalDay(value: string | null | undefined): Date | null {
   return value === null || value === undefined ? null : day('expiryDate', value);
