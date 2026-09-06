@@ -91,6 +91,12 @@ export class GoodsIssueService {
           source_location_id: true,
         },
       });
+      // 라인 0건은 잠금·손검사 0건으로 지나 빈 원장을 세운다 — 등록·치환이 막지만 여기서도 막는다.
+      if (lines.length === 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          field('lines', ERROR_CODE.LINE_REQUIRED, '출고 라인이 1건 이상이어야 합니다.'),
+        ]);
+      }
       await postIssue(
         tx,
         this.posting,

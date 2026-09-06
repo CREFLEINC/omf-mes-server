@@ -306,6 +306,13 @@ describe('출고 조회 3건 · 전기 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
   });
 
+  it('POST …:post — 라인 0건 전표는 400 LINE_REQUIRED 다(빈 원장을 세우지 않는다)', async () => {
+    const fixture = await insertRegisteredIssue({ lines: [] });
+
+    const rejected = await postIssue(fixture).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'LINE_REQUIRED', field: 'lines' });
+  });
+
   it('POST …:post — 같은 Idempotency-Key 재전송은 앞의 응답을 그대로 준다(원장 1건)', async () => {
     const fixture = await stockedIssue(10, 100);
     const key = randomUUID();
