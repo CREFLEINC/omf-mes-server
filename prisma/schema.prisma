@@ -917,8 +917,10 @@ model inbound_receipt_line {
   updated_at                 DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                 BigInt?
   version_no                 Int                  @default(1)
+  lot_id                     BigInt?
   goods_receipt_line         goods_receipt_line[]
   asn_line                   asn_line?            @relation(fields: [asn_line_id], references: [asn_line_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                        lot?                 @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   inbound_receipt            inbound_receipt      @relation(fields: [inbound_receipt_id], references: [inbound_receipt_id], onDelete: NoAction, onUpdate: NoAction)
   item                       item                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   purchase_order_line        purchase_order_line? @relation(fields: [purchase_order_line_id], references: [purchase_order_line_id], onDelete: NoAction, onUpdate: NoAction)
@@ -928,6 +930,7 @@ model inbound_receipt_line {
 
   @@unique([inbound_receipt_id, line_no], map: "uq_inbound_receipt_line")
   @@index([purchase_order_line_id], map: "ix_inbound_line_po")
+  @@index([lot_id], map: "ix_inbound_line_lot")
   @@schema("logistics")
 }
 
@@ -938,7 +941,7 @@ model inbound_variance {
   variance_type_code      String               @db.VarChar(50)
   variance_qty            Decimal              @db.Decimal(20, 6)
   uom_id                  BigInt
-  reason_code             String               @db.VarChar(50)
+  reason_code             String?              @db.VarChar(50)
   approval_request_id     BigInt?
   created_at              DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
@@ -946,6 +949,7 @@ model inbound_variance {
   inbound_receipt_line    inbound_receipt_line @relation(fields: [inbound_receipt_line_id], references: [inbound_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
   uom                     uom                  @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([inbound_receipt_line_id], map: "ix_inbound_variance_line")
   @@schema("logistics")
 }
 
@@ -3529,6 +3533,7 @@ model lot {
   completed_at                                     DateTime?                            @db.Timestamptz(6)
   document_issue_log                               document_issue_log[]
   handling_unit_content                            handling_unit_content[]
+  inbound_receipt_line                             inbound_receipt_line[]
   handling_unit_reconfiguration_line               handling_unit_reconfiguration_line[]
   inventory_adjustment_line                        inventory_adjustment_line[]
   inventory_balance                                inventory_balance[]
