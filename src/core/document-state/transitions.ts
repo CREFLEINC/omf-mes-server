@@ -143,8 +143,8 @@ export const TRANSITIONS: TransitionRegistry = {
    *
    * ⛔ `CONFIRMED` 를 «지나지» 않는다 — `PLANNED`→`CONFIRMED` 를 여는 오퍼레이션이 계약에 없고
    *    `:release` 하나가 「확정과 배포와 선발행」을 한 트랜잭션으로 한다. 두 값을 다 `from` 에 둔다.
-   * ⛔ `IN_PROGRESS` 로 «들어가는» 액션은 여기 없다 — 세션 열기의 부수효과이고 I-11 이 같은 키에
-   *    `work-session-start` 를 더한다(I-4 R-2 방식 — 키를 다시 만들지 않는다).
+   * ⛔ `IN_PROGRESS` 로 «들어가는» 액션은 세션 열기의 부수효과다 — I-11 이 같은 키에
+   *    `work-session-start` 를 더했다(I-4 R-2 방식 — 키를 다시 만들지 않는다).
    * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
    */
   'production.work_order.status_code': {
@@ -158,6 +158,33 @@ export const TRANSITIONS: TransitionRegistry = {
       sourceOperation: 'POST /production/work-orders/{workOrderId}:close' },
     'work-order-cancel':  { from: ['PLANNED','CONFIRMED','RELEASED','IN_PROGRESS','SUSPENDED'], to: 'CANCELLED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel' },
+    // `IN_PROGRESS` 도 `from` 에 있다 — 계약 `sessionNo` ⌜`:end` 한 뒤 다시 시작⌝ 이
+    // 둘째 세션을 `IN_PROGRESS` 에서 연다.
+    // `SUSPENDED` 는 없다 — 중단된 W/O 는 새 세션이 아니라 같은 세션의 RESUME 로만
+    // 돌아온다(`P-02-01` §5-5).
+    'work-session-start': { from: ['RELEASED', 'IN_PROGRESS'], to: 'IN_PROGRESS',
+      sourceOperation: 'POST /production/work-sessions' },
+  },
+
+  /**
+   * 작업 세션 진행. 값은 시드 `WORK_SESSION_STATUS` 3값(`RUNNING`·`STOPPED`·`ENDED` ·
+   * DB 실재)이 확정했고 A-25 전이표가 START·RESUME→진행 / STOP→중단 / END→종료를
+   * 문장으로 확정했다.
+   *
+   * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 계약이 같은 축에 400 `STATE_LOCKED`
+   * 를 적었다(`work-order-transition.service.ts:71` 과 같다).
+   *
+   * ⛔ 세션의 탄생(`RUNNING`)은 여기 오지 않는다 — `from` 이 없는 자리라 표에 담을 수 없다
+   *    (`logistics.goods_issue.status_code` 의 `postImmediately` 와 같은 판단).
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'production.work_session.status_code': {
+    'work-session-stop':   { from: ['RUNNING'],            to: 'STOPPED',
+      sourceOperation: 'POST /production/work-sessions/{workSessionId}/events' },
+    'work-session-resume': { from: ['STOPPED'],            to: 'RUNNING',
+      sourceOperation: 'POST /production/work-sessions/{workSessionId}/events' },
+    'work-session-end':    { from: ['RUNNING', 'STOPPED'], to: 'ENDED',
+      sourceOperation: 'POST /production/work-sessions/{workSessionId}:end' },
   },
 
   /**
