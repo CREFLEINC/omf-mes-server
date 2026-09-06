@@ -1,8 +1,20 @@
+import { HttpStatus } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
 import { ContractException } from '../../common/errors';
-import { LotRegisterInput, LotRegistryService, Tx } from './lot-registry.service';
+import {
+  LotPreIssueInput,
+  LotRegisterInput,
+  LotRegistryService,
+  Tx,
+  nextMesLotNos,
+  slotQtys,
+} from './lot-registry.service';
 
 const LOT_ID = 900n;
 const LINE_ID = 41;
+const USED_LOTS = 7;
+const dec = (v: string) => new Prisma.Decimal(v);
 
 type Args = Record<string, unknown>;
 type Seed = { line?: { lot_id: bigint | null } };
@@ -20,10 +32,18 @@ function fake(seed: Seed) {
     return result(a);
   };
   let line = seed.line ?? null;
+  const created: Args[] = [];
   const tx = {
     lot: {
-      create: record('lot.create', () => ({ lot_id: LOT_ID })),
+      create: record('lot.create', (a) => {
+        created.push(a.data as Args);
+        return { lot_id: LOT_ID + BigInt(created.length - 1) };
+      }),
       findUniqueOrThrow: record('lot.findUniqueOrThrow', () => ({ lot_id: LOT_ID, lot_hold: [] })),
+      findMany: record('lot.findMany', () =>
+        created.map((data, i) => ({ ...data, lot_id: LOT_ID + BigInt(i), lot_hold: [] })),
+      ),
+      count: record('lot.count', () => USED_LOTS),
     },
     lot_hold: { create: record('lot_hold.create', () => ({})) },
     lot_external_identifier: { create: record('identifier.create', () => ({})) },
@@ -36,7 +56,7 @@ function fake(seed: Seed) {
       findUnique: record('line.findUnique', () => line),
     },
   };
-  return { tx: tx as unknown as Tx, calls, args };
+  return { tx: tx as unknown as Tx, calls, args, created };
 }
 
 function input(extra: Partial<LotRegisterInput> = {}): LotRegisterInput {
@@ -49,6 +69,20 @@ function input(extra: Partial<LotRegisterInput> = {}): LotRegisterInput {
     uomId: 3,
     sourceTypeCode: 'INBOUND_RECEIPT_LINE',
     sourceId: LINE_ID,
+    ...extra,
+  };
+}
+
+function preIssue(extra: Partial<LotPreIssueInput> = {}): LotPreIssueInput {
+  return {
+    workOrderId: 55n,
+    plantId: 2,
+    itemId: 1,
+    uomId: 3,
+    bomId: 8,
+    bomVersion: 2,
+    lotNos: ['A', 'B', 'C'],
+    qtys: [dec('300'), dec('300'), dec('100')],
     ...extra,
   };
 }
@@ -106,5 +140,92 @@ describe('LotRegistryService', () => {
     await service.createWithin(tx, input({ sourceTypeCode: 'WORK_ORDER' }), 7);
 
     expect(calls).not.toContain('line.updateMany');
+  });
+});
+
+describe('선발행 슬롯', () => {
+  const service = new LotRegistryService();
+
+  it('슬롯 — N = 올림(orderQty ÷ lotSize) 이고 마지막만 나머지다(1000/300 → 300·300·300·100)', () => {
+    expect(slotQtys(dec('1000'), dec('300')).map(String)).toEqual(['300', '300', '300', '100']);
+  });
+
+  it('슬롯 — lotSize ≥ orderQty 면 슬롯 1개이고 수량은 orderQty 다(lotSize 가 아니다)', () => {
+    expect(slotQtys(dec('1000'), dec('1000')).map(String)).toEqual(['1000']);
+    // 5000 이 아니라 1000 이다 — 「전량 1슬롯」(W-02-07).
+    expect(slotQtys(dec('1000'), dec('5000')).map(String)).toEqual(['1000']);
+  });
+
+  it('슬롯 — lotSize ≤ 0 이면 400 이다(무한 루프·CHECK 500 을 앞당겨 막는다)', () => {
+    const failure = (() => {
+      try {
+        slotQtys(dec('1000'), dec('0'));
+      } catch (e: unknown) {
+        return e;
+      }
+    })();
+    expect(failure).toBeInstanceOf(ContractException);
+    expect((failure as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    expect((failure as ContractException).errors[0]).toMatchObject({
+      field: 'lotSize',
+      code: 'INVALID',
+    });
+  });
+
+  it('슬롯 — 소수 수량도 Decimal 로 나눠 합이 지시수량과 정확히 같다(0.5/0.2 → 0.2·0.2·0.1)', () => {
+    const qtys = slotQtys(dec('0.5'), dec('0.2'));
+    expect(qtys.map(String)).toEqual(['0.2', '0.2', '0.1']);
+    // 부동소수면 0.30000000000000004 가 나오는 자리다.
+    expect(qtys.reduce((a, b) => a.plus(b), dec('0')).equals(dec('0.5'))).toBe(true);
+  });
+
+  it('슬롯 — work_order_lot_seq 는 1부터 N 까지 빠짐없이 찍힌다', async () => {
+    const { tx, created } = fake({});
+
+    const rows = await service.preIssueWithin(tx, preIssue(), 7);
+
+    expect(created.map((d) => d.work_order_lot_seq)).toEqual([1, 2, 3]);
+    expect(created.map((d) => d.lot_no)).toEqual(['A', 'B', 'C']);
+    expect(created.map((d) => d.lifecycle_status_code)).toEqual(['WAITING', 'WAITING', 'WAITING']);
+    expect(created[0]).toMatchObject({
+      lot_type_code: 'PRODUCTION',
+      status_code: 'INSPECTION_PENDING',
+      source_type_code: 'WORK_ORDER',
+      source_id: 55n,
+    });
+    expect(rows).toHaveLength(3);
+  });
+
+  it('슬롯 — lot_hold 를 만들지 않는다(입하 등록과 다르다)', async () => {
+    const { tx, calls } = fake({});
+
+    await service.preIssueWithin(tx, preIssue(), 7);
+
+    expect(calls).not.toContain('lot_hold.create');
+    // 이력도 안 쓴다 — WAITING 은 태어남이지 전이가 아니다.
+    expect(calls).not.toContain('lifecycle_history.create');
+  });
+
+  it('슬롯 — bom_id 와 bom_version 은 둘 다 차거나 둘 다 빈다', async () => {
+    const { tx, created } = fake({});
+
+    await service.preIssueWithin(tx, preIssue({ bomId: null, bomVersion: null }), 7);
+    expect(created[0]).toMatchObject({ bom_id: null, bom_version: null });
+
+    // 짝이 어긋나면 호출자 버그다 — 400 이 아니라 Error 다.
+    const half = fake({});
+    await expect(
+      service.preIssueWithin(half.tx, preIssue({ bomVersion: null }), 7),
+    ).rejects.toThrow(/ck_lot_bom_snapshot/);
+  });
+
+  it('번호 — count 를 한 번 읽어 used+1…used+N 을 찍는다', async () => {
+    const { tx, calls } = fake({});
+
+    const lotNos = await nextMesLotNos(tx, 2, '2026-09-06', 3);
+
+    expect(calls.filter((c) => c === 'lot.count')).toHaveLength(1);
+    expect(lotNos.map((no) => no.slice(15, 21))).toEqual(['000008', '000009', '000010']);
+    expect(new Set(lotNos).size).toBe(3);
   });
 });

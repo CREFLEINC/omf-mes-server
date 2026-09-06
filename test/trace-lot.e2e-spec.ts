@@ -18,7 +18,7 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { InventoryPostingModule, InventoryPostingService } from '../src/core/inventory-posting';
 import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
-import { LOT_NO_LENGTH } from '../src/trace/lot/lot-number';
+import { LOT_NO_LENGTH } from '../src/core/lot/lot-number';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-lot-probe';

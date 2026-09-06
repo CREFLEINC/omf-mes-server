@@ -9,11 +9,11 @@ import {
   ExternalIdentifierInput,
   LotRegisterInput,
   LotRegistryService,
+  mesLotNo,
   optionalDay,
   optionalInstant,
 } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-import { mesLotNo } from './lot-number';
 import {
   assertDay,
   assertId,
