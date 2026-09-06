@@ -68,3 +68,27 @@ export function preIssuedLotsOf(slotLotIds: bigint[], allocatedLotIds: bigint[])
   const withResultCount = slotLotIds.filter((lotId) => allocated.has(String(lotId))).length;
   return { slotCount: slotLotIds.length, withResultCount, withoutResultCount: slotLotIds.length - withResultCount };
 }
+
+/** 목록 벌크 판(PR ② · N+1 금지) — DB 는 서비스가 `GROUP BY` 로 이미 모았고, 행마다 «같은» 단건 함수를 부른다. */
+export interface ProgressManyRow {
+  workOrderId: bigint;
+  orderQty: Prisma.Decimal;
+  plannedEndAt: Date | null;
+  completedAt: Date | null;
+}
+
+export function progressOfMany(rows: ProgressManyRow[], sums: Map<bigint, ResultSums>, now: Date): Map<bigint, WorkOrderProgressView> {
+  const out = new Map<bigint, WorkOrderProgressView>();
+  for (const row of rows) {
+    const { workOrderId, orderQty, plannedEndAt, completedAt } = row;
+    out.set(workOrderId, progressOf({ orderQty, plannedEndAt, completedAt, sums: sums.get(workOrderId) ?? NO_RESULTS, now }));
+  }
+  return out;
+}
+
+/** `GROUP BY source_id` 로 받은 슬롯 행을 W/O 별로 나눠 ①과 같은 정의(`preIssuedLotsOf`)로 센다. */
+export function preIssuedLotsOfMany(slotRows: { workOrderId: bigint; lotId: bigint }[], allocatedLotIds: bigint[]): Map<bigint, PreIssuedLotSummaryView> {
+  const bySource = new Map<bigint, bigint[]>();
+  for (const row of slotRows) bySource.set(row.workOrderId, [...(bySource.get(row.workOrderId) ?? []), row.lotId]);
+  return new Map([...bySource].map(([workOrderId, lotIds]) => [workOrderId, preIssuedLotsOf(lotIds, allocatedLotIds)]));
+}
