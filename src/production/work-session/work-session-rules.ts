@@ -35,7 +35,10 @@ export async function assertEventPair(
   eventTypeCode: string,
   reasonCode: string | undefined,
 ): Promise<string> {
-  const action = SESSION_ACTION[eventTypeCode];
+  // ⛔ `Object.hasOwn` 로 «자기 소유» 키만 본다 — 그냥 첨자로 읽으면 `toString`·`__proto__`·
+  //    `constructor` 가 프로토타입에서 «값이 있는 것»으로 잡혀 코드값 검사를 건너뛰고,
+  //    함수가 액션 이름으로 흘러 `assertTransition` 이 평범한 Error(500)를 던진다(#264 리뷰 Major).
+  const action = Object.hasOwn(SESSION_ACTION, eventTypeCode) ? SESSION_ACTION[eventTypeCode] : undefined;
   if (action === undefined) {
     // 그룹 밖 문자열이면 여기서 400 `INVALID` 다. 통과하면 남은 것은 위 셋뿐이다(5값 · 시스템 소유).
     await assertCodeValues(prisma, [

@@ -48,6 +48,8 @@ describe('work-session-rules', () => {
     }
     // 그룹 밖 문자열은 코드값 검사가 먼저 가른다 — 같은 400 `INVALID` 지만 문구가 다르다.
     expect(await reject(assertEventPair(prisma, 'PAUSE', undefined))).toBe('eventTypeCode:INVALID');
+    // `Object.prototype` 의 멤버 이름도 그냥 「그룹 밖 문자열」이다 — 500 으로 새지 않는다.
+    expect(await reject(assertEventPair(prisma, 'toString', undefined))).toBe('eventTypeCode:INVALID');
   });
 
   it('workerIds 로 만든 참여 행의 역할은 물리 기본값 OPERATOR 다', async () => {
