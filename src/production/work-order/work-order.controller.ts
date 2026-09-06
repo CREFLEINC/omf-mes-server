@@ -116,7 +116,12 @@ export class WorkOrderController {
     @Body() body: WorkOrderHold,
   ): Promise<WorkOrderView> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.transitions.hold(workOrderId, ifMatchVersion(request), body);
+      await this.transitions.hold(
+        workOrderId,
+        ifMatchVersion(request),
+        body,
+        currentSession(request)?.userId,
+      );
       return (await this.queries.detail(workOrderId, {})).view;
     });
   }
@@ -131,7 +136,11 @@ export class WorkOrderController {
     @Body() _body: WorkOrderResume,
   ): Promise<WorkOrderView> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.transitions.resume(workOrderId, ifMatchVersion(request));
+      await this.transitions.resume(
+        workOrderId,
+        ifMatchVersion(request),
+        currentSession(request)?.userId,
+      );
       return (await this.queries.detail(workOrderId, {})).view;
     });
   }
