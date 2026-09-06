@@ -68,8 +68,14 @@ export async function assertWritable(
   if (Number.isNaN(Date.parse(input.receiptDatetime))) {
     errors.push(field('receiptDatetime', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate)) {
-    errors.push(field('businessDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 형식입니다.'));
+  // ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만 채번의 기간 축으로 들어가
+  //    `IR-20261339-0001` 이 `inbound_receipt_no` 에 «영구히» 남는다. 달력에 있는 날인지 함께 본다
+  //    (`lot-rules.ts:assertDay` 와 같은 축 · import 는 안 한다 · §6-4).
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate) ||
+    Number.isNaN(Date.parse(`${input.businessDate}T00:00:00Z`))
+  ) {
+    errors.push(field('businessDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 형식의 실재하는 날짜여야 합니다.'));
   }
   if (Number.isNaN(Date.parse(input.occurredAt))) {
     errors.push(field('occurredAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
@@ -112,8 +118,8 @@ function assertLines(lines: InboundReceiptLineWriteInput[], errors: ErrorItem[])
         field(`${at}.substituteLotReasonCode`, ERROR_CODE.PAIR, '대체 LOT 사유가 필요합니다.'),
       );
     }
-    // 부착 라인은 LOT 번호가 공급사 값 그대로다 — 없으면 만들 LOT 의 번호가 없다
-    // (계약 「부착 라인의 LOT 이 없으면 이후 흐름이 통째로 막힌다」).
+    // 설계 미정 — 문의 028: 계약은 이 조합을 막지 않는다. lot.lot_no NOT NULL 이라 서버가 거절한다.
+    // (계약 「부착 라인의 LOT 이 없으면 이후 흐름이 통째로 막힌다」 · §2 2단계 기준 2 「거부하는 쪽」).
     if (attachesLot(line) && !line.supplierLotNo) {
       errors.push(
         field(`${at}.supplierLotNo`, ERROR_CODE.PAIR, '공급사 LOT 번호가 없으면 supplierLotMissing 이 참이어야 합니다.'),

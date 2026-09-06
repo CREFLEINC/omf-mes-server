@@ -90,6 +90,27 @@ describe('입하 등록 검사', () => {
     });
   });
 
+  // 설계 미정 — 문의 028(계약이 막지 않는 조합을 서버가 거절한다 · README §2 3단계 흔적).
+  it('등록 — supplierLotMissing=false 인데 supplierLotNo 가 비면 400 PAIR 다(lot_no 가 NOT NULL 이라 LOT 을 못 만든다 · 문의 028)', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake(), input({ lines: [line({ supplierLotNo: null })] })),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotNo',
+      code: ERROR_CODE.PAIR,
+    });
+  });
+
+  it('등록 — businessDate 가 달력에 없는 날이면 400 이다(정규식만으로는 채번에 새는 날이 남는다)', async () => {
+    const error = await thrown(() => assertWritable(fake(), input({ businessDate: '2026-13-39' })));
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'businessDate',
+      code: ERROR_CODE.INVALID,
+    });
+  });
+
   it('등록 — 한 요청 안 supplierLotNo 가 겹치면 400 이다(P2002 로 새지 않는다)', async () => {
     const error = await thrown(() =>
       assertWritable(
