@@ -47,19 +47,14 @@ export class ProductionResultController {
   @Post()
   @Contract('POST /production/production-results')
   create(@Req() request: Request, @Body() body: ProductionResultCreate): Promise<ProductionResultView> {
-    // ⛔ 헤더는 계약 검증 가드가 «보지 않는다»(`contract-validator.ts:206-207`) — 사번의
-    //    필수 판정은 서비스가 손으로 한다(§1-1 · §4-3).
+    // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:206-207`) — 사번의 필수 판정은 서비스 몫이다.
+    const workerNo = request.headers['x-worker-no'];
     const context = {
-      workerNo: headerOf(request, 'x-worker-no'),
+      workerNo: typeof workerNo === 'string' ? workerNo : undefined,
       idempotencyKey: String(request.headers['idempotency-key']),
       version: ifMatchVersion(request),
       appUserId: currentSession(request)?.userId,
     };
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.results.create(body, context));
   }
-}
-
-function headerOf(request: Request, name: string): string | undefined {
-  const raw = request.headers[name];
-  return typeof raw === 'string' ? raw : undefined;
 }
