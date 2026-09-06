@@ -1,7 +1,10 @@
 /**
- * 자재 투입 조회 — 목록 `GET /production/material-consumptions` · 단건 `GET …/{id}`(I-10 PR ①).
+ * 자재 투입 — 조회 2건(I-10 PR ①) + 등록 `POST /production/material-consumptions`(PR ②).
  *
- * ⭐ 조회가 보는 투입은 **직접 INSERT** 한다 — 이 PR 에 `POST` 가 없다(PR ② 몫).
+ * ⭐ 조회가 보는 투입은 **직접 INSERT** 한다 — 등록 스위트와 픽스처를 섞지 않으려는 것이다.
+ * ⭐ M2 마디 ⑨→⑩ — 수령(`shopfloor_receipt`+라인)을 **직접 INSERT** 하고 그 라인이 서버
+ *    귀속으로 잡히는지를 본다. 진짜 출고를 태우지 않는다(원장 무변화 단언이 뜻을 가지려면
+ *    이 스위트가 원장에 손대지 않아야 한다 · I-9 §7-1 과 같은 이유).
  * ⭐ 전건 `terminal_id: null` 이다 — M-1(NOT NULL 완화)이 실제로 먹었는지를 픽스처가 증명한다.
  * ⛔ `mdm.terminal` 을 세우지 않는다(I-10 §7-1) — 「단말 없이도 선다」가 이 슬라이스의 판정이다.
  *    그래서 `work_session`(terminal_id NOT NULL)도 못 세운다 — `workSessionId` 는 축이 컬럼에
@@ -22,8 +25,13 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-mc-probe';
+const NOPERM_ID = 'e2e-mc-noperm';
 const PASSWORD = 'MC-자재투입-비밀번호';
 const PREFIX = 'MCE2E';
+const ROLE = 'E2E_MATERIAL_CONSUMPTION';
+/** 등록만 403 을 선언했다 — POP 화면 셋 중 하나면 통과한다(`derived-permissions.ts:229`). */
+const PERMISSIONS = ['P-02-03'];
+const WORKER_NO = `${PREFIX}-WK`;
 const CONSUMPTIONS = '/api/production/material-consumptions';
 const OCCURRED_1 = '2026-09-07T01:00:00.000Z';
 const OCCURRED_2 = '2026-09-07T03:00:00.000Z';
@@ -32,14 +40,26 @@ const OCCURRED_3 = '2026-09-07T05:00:00.000Z';
 const TYPE_DEFAULT = 'NORMAL';
 const TYPE_OTHER = 'SPECIAL';
 
-describe('자재 투입 조회 2건 (e2e)', () => {
+describe('자재 투입 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   let workOrderId: number;
+  let otherWorkOrderId: number;
+  let componentItemId: number;
+  let finishedItemId: number;
+  let uomId: number;
+  let processId: number;
+  let bomComponentId: number;
+  let receiptLineId: number;
+  let balanceId: bigint;
   let lotAId: number;
   let lotBId: number;
+  /** 오투입 갈래용 — C 는 `DEFECTIVE` · D 는 BOM 에 없는 완제품 품목의 LOT 이다. */
+  let lotCId: number;
+  let lotDId: number;
   /** 시간순 C1 → C4. C3·C4 는 `occurred_at` 이 같아 PK 내림차순 동률 처리를 본다. */
   let c1Id: number;
   let c2Id: number;
@@ -172,6 +192,186 @@ describe('자재 투입 조회 2건 (e2e)', () => {
     expect(response.body).not.toHaveProperty('terminalId');
   });
 
+  describe('POST — 자재 투입 등록 (PR ②)', () => {
+    /** 계약 required 6 을 채운 최소 본문. 나머지 셋은 서버가 채우므로 보내지 않는다. */
+    const consumptionBody = (overrides: Record<string, unknown> = {}) => ({
+      workOrderId,
+      itemId: componentItemId,
+      lotId: lotAId,
+      inputQty: 12,
+      uomId,
+      occurredAt: OCCURRED_1,
+      ...overrides,
+    });
+
+    const register = (body: Record<string, unknown>, options: { cookie?: string[]; workerNo?: string | null } = {}) => {
+      const call = request(app.getHttpServer())
+        .post(CONSUMPTIONS)
+        .set('Cookie', options.cookie ?? cookie)
+        .set('Idempotency-Key', randomUUID());
+      if (options.workerNo !== null) call.set('X-Worker-No', options.workerNo ?? WORKER_NO);
+      return call.send(body);
+    };
+
+    it('⭐ M2 마디 — BOM 에 있는 품목·LOT 을 투입하면 201 이고 bom_component_id·actual_use_process_id 가 서버가 채워져 온다', async () => {
+      // ⛔ 계약 스키마로 검증하지 않는다 — `terminalId` 가 required 인데 오늘 언제나 빠진다.
+      //    설계 미정 — 문의 054. 대신 칸을 손으로 단언한다(PR ① 과 같은 방식).
+      const response = await register(consumptionBody({ bomComponentId: 999999, actualUseProcessId: 999999 })).expect(201);
+
+      // ⭐ 본문이 보낸 셋은 무시하고 서버 값으로 덮는다(계약 ⌜화면은 이 값을 보내지 않는다⌝).
+      expect(response.body).toMatchObject({
+        workOrderId,
+        itemId: componentItemId,
+        lotId: lotAId,
+        bomComponentId,
+        actualUseProcessId: processId,
+        consumptionTypeCode: TYPE_DEFAULT,
+        statusCode: 'RECORDED',
+        inputQty: 12,
+        actualConsumedQty: 0,
+        occurredAt: OCCURRED_1,
+      });
+      expect(response.body.recordedAt).toEqual(expect.any(String));
+    });
+
+    it('⭐ 같은 W/O 의 수령 라인이 있으면 shopfloor_receipt_line_id 가 서버 귀속으로 채워진다', async () => {
+      const response = await register(consumptionBody()).expect(201);
+
+      // 같은 (W/O · 품목 · LOT) 라인이 둘인데 최신 PK 를 잇는다 — 상한(`received_qty`)은 안 본다.
+      expect(response.body.shopfloorReceiptLineId).toBe(receiptLineId);
+    });
+
+    it('수령 라인이 없어도 201 이고 shopfloorReceiptLineId 키가 생략된다', async () => {
+      // LOT B 는 수령 라인이 없다 — 계약 ⌜비어 있어도 투입은 선다(출고 귀속 무관)⌝.
+      const response = await register(consumptionBody({ lotId: lotBId })).expect(201);
+
+      expect(response.body).not.toHaveProperty('shopfloorReceiptLineId');
+    });
+
+    it('⛔ 투입이 trace.lot_relation 을 만들지 않는다', async () => {
+      // 설계 미정 — 문의 052. `target_lot_id` 를 가릴 축이 계약·화면·물리 어디에도 없다.
+      await register(consumptionBody()).expect(201);
+
+      const relations = await prisma.lot_relation.count({
+        where: { OR: [{ source_lot_id: BigInt(lotAId) }, { target_lot_id: BigInt(lotAId) }] },
+      });
+      expect(relations).toBe(0);
+    });
+
+    it('⛔ 투입이 production.material_usage_allocation 을 만들지 않는다', async () => {
+      // CHECK `ck_material_usage_target` 이 요구하는 두 축이 투입 시점에 둘 다 없다(§3-10).
+      await register(consumptionBody()).expect(201);
+
+      const allocations = await prisma.material_usage_allocation.count({
+        where: { material_consumption: { work_order_id: BigInt(workOrderId) } },
+      });
+      expect(allocations).toBe(0);
+    });
+
+    it('⛔ 투입이 inventory_transaction·inventory_transaction_line 을 만들지 않고 inventory_balance 의 on_hand·version_no 가 그대로다', async () => {
+      const before = await prisma.inventory_balance.findUniqueOrThrow({
+        where: { inventory_balance_id: balanceId },
+      });
+
+      await register(consumptionBody()).expect(201);
+
+      const lines = await prisma.inventory_transaction_line.count({ where: { lot_id: BigInt(lotAId) } });
+      expect(lines).toBe(0);
+      const after = await prisma.inventory_balance.findUniqueOrThrow({ where: { inventory_balance_id: balanceId } });
+      expect(Number(after.on_hand_qty)).toBe(Number(before.on_hand_qty));
+      expect(after.version_no).toBe(before.version_no);
+    });
+
+    it('⛔ 응답에 terminalId 키가 없다(단말 토큰 축이 0건 — 문의 054)', async () => {
+      const response = await register(consumptionBody()).expect(201);
+
+      // 계약이 required 로 적었으나 단말 토큰 «검증» 축이 0건이라 서버가 채울 값이 없다.
+      expect(response.body).not.toHaveProperty('terminalId');
+      const row = await prisma.material_consumption.findUniqueOrThrow({
+        where: { material_consumption_id: BigInt(response.body.materialConsumptionId) },
+      });
+      expect(row.terminal_id).toBeNull();
+    });
+
+    it('BOM 에 없는 품목이면 400 INVALID', async () => {
+      // ⭐ 오투입 3축에서 «막는 것은 이 하나»다(§3-3).
+      const response = await register(consumptionBody({ itemId: finishedItemId, lotId: lotDId })).expect(400);
+
+      expect(response.body.errors).toMatchObject([{ field: 'itemId', code: 'INVALID' }]);
+    });
+
+    it('lot.status_code 가 DEFECTIVE 면 400 INVALID', async () => {
+      const response = await register(consumptionBody({ lotId: lotCId })).expect(400);
+
+      expect(response.body.errors).toMatchObject([{ field: 'lotId', code: 'INVALID' }]);
+    });
+
+    it('러닝체인지 — replacedConsumptionId 가 붙은 둘째 투입이 201 이고 앞 건이 남아 있다', async () => {
+      const first = await register(consumptionBody()).expect(201);
+
+      const second = await register(
+        consumptionBody({ lotId: lotBId, replacedConsumptionId: first.body.materialConsumptionId }),
+      ).expect(201);
+
+      // ⌜지우지 않고 잇는다⌝(`P-02-11` §5-2) — 앞 건이 그대로 조회된다.
+      expect(second.body.replacedConsumptionId).toBe(first.body.materialConsumptionId);
+      await request(app.getHttpServer())
+        .get(`${CONSUMPTIONS}/${first.body.materialConsumptionId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+    });
+
+    it('replacedConsumptionId 가 다른 W/O 의 투입이면 400 INVALID', async () => {
+      const response = await register(
+        consumptionBody({ workOrderId: otherWorkOrderId, replacedConsumptionId: c1Id }),
+      ).expect(400);
+
+      // 러닝체인지는 세션 안에서 일어난다 — W/O 는 무분할이다(`P-02-11` R42).
+      expect(response.body.errors).toMatchObject([{ field: 'replacedConsumptionId', code: 'INVALID' }]);
+    });
+
+    it('같은 Idempotency-Key 재전송이 투입을 두 벌 만들지 않는다', async () => {
+      const key = randomUUID();
+      const send = () =>
+        request(app.getHttpServer())
+          .post(CONSUMPTIONS)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key)
+          .set('X-Worker-No', WORKER_NO)
+          .send(consumptionBody());
+
+      const first = await send().expect(201);
+      const again = await send().expect(201);
+
+      expect(again.body.materialConsumptionId).toBe(first.body.materialConsumptionId);
+      const row = await prisma.material_consumption.findUniqueOrThrow({
+        where: { material_consumption_id: BigInt(first.body.materialConsumptionId) },
+      });
+      // 헤더 값이 컬럼에도 그대로 든다 — 멱등 기록 만료 뒤의 재전송을 UNIQUE 가 둘째로 막는다.
+      expect(row.idempotency_key).toBe(key);
+    });
+
+    it('X-Worker-No 가 없으면 400 REQUIRED', async () => {
+      const response = await register(consumptionBody(), { workerNo: null }).expect(400);
+
+      // 계약 검증 가드가 헤더를 안 본다 — 필수 판정은 서비스 몫이다.
+      expect(response.body.errors).toMatchObject([{ field: 'X-Worker-No', code: 'REQUIRED' }]);
+    });
+
+    it('무권한 사용자는 403', async () => {
+      // 계약이 403 을 선언한 자리라 가드가 본다 — `P-02-03` 이 없는 계정이다.
+      await register(consumptionBody(), { cookie: noPermCookie }).expect(403);
+    });
+
+    it('⭐ 발행된 번호가 MC-{YYYYMMDD}-{SEQ4} 다', async () => {
+      const response = await register(consumptionBody()).expect(201);
+
+      // 규칙 미등재라 `DEFAULT_PREFIX` 의 `MC` 로 자동 등재된다 · 기간 키는 `occurredAt` 의 UTC 날짜다.
+      expect(response.body.consumptionNo).toMatch(/^MC-\d{8}-\d{4}$/);
+      expect(response.body.consumptionNo).toContain('MC-20260907-');
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -218,6 +418,28 @@ describe('자재 투입 조회 2건 (e2e)', () => {
     const process = await prisma.process.create({
       data: { process_code: `${PREFIX}-PR`, process_name: '사출공정', process_type_code: 'MOLDING' },
     });
+    processId = Number(process.process_id);
+    uomId = Number(uom.uom_id);
+    finishedItemId = Number(item.item_id);
+    componentItemId = Number(component.item_id);
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH`,
+        warehouse_name: '자재투입검사창고',
+        warehouse_type_code: 'PRODUCTION',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const location = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-LC`,
+        location_name: '자재투입검사위치',
+        location_type_code: 'SHELF',
+      },
+    });
     const routing = await prisma.routing.create({
       data: { item_id: item.item_id, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'ACTIVE' },
     });
@@ -245,6 +467,7 @@ describe('자재 투입 조회 2건 (e2e)', () => {
         uom_id: uom.uom_id,
       },
     });
+    bomComponentId = Number(componentRow.bom_component_id);
     // ⭐ `resolveWorker` 가 사번으로 푸는 자리 — 투입의 `worker_id` 는 NOT NULL 이다.
     const worker = await prisma.worker.create({
       data: {
@@ -293,6 +516,7 @@ describe('자재 투입 조회 2건 (e2e)', () => {
     const main = await workOrder('WO');
     workOrderId = Number(main.work_order_id);
     const other = await workOrder('WO2');
+    otherWorkOrderId = Number(other.work_order_id);
 
     const lot = async (suffix: string, sourceId: number) =>
       prisma.lot.create({
@@ -312,6 +536,104 @@ describe('자재 투입 조회 2건 (e2e)', () => {
     lotAId = Number(lotA.lot_id);
     const lotB = await lot('B', 2);
     lotBId = Number(lotB.lot_id);
+    // ⓔ `P-02-03` §5-2 ⌜`DEFECTIVE` → ⛔ 차단⌝ 을 e2e 가 본다.
+    const lotC = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT-C`,
+        item_id: component.item_id,
+        lot_type_code: 'MATERIAL',
+        plant_id: plant.plant_id,
+        initial_qty: 1000,
+        uom_id: uom.uom_id,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: 3,
+        status_code: 'DEFECTIVE',
+      },
+    });
+    lotCId = Number(lotC.lot_id);
+    // BOM 에 없는 품목 — 완제품 축의 LOT 이다(`lot.item_id` 정합은 통과하고 BOM 에서 막힌다).
+    const lotD = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT-D`,
+        item_id: item.item_id,
+        lot_type_code: 'PRODUCT',
+        plant_id: plant.plant_id,
+        initial_qty: 10,
+        uom_id: uom.uom_id,
+        source_type_code: 'WORK_ORDER',
+        source_id: Number(main.work_order_id),
+        status_code: 'NORMAL',
+      },
+    });
+    lotDId = Number(lotD.lot_id);
+
+    // ⭐ M2 마디 ⑨ — 수령 라인을 직접 세운다. 같은 (W/O · 품목 · LOT) 이 둘이라 서버가
+    //    최신 PK 를 고르는 것까지 본다(§3-5). ⛔ 진짜 출고를 태우지 않는다.
+    const issue = await prisma.goods_issue.create({
+      data: {
+        goods_issue_no: `${PREFIX}-GI`,
+        issue_type_code: 'PRODUCTION',
+        source_document_type_code: 'WORK_ORDER',
+        source_document_id: main.work_order_id,
+        source_warehouse_id: warehouse.warehouse_id,
+        issued_at: new Date(OCCURRED_1),
+        status_code: 'POSTED',
+      },
+    });
+    const issueLine = await prisma.goods_issue_line.create({
+      data: {
+        goods_issue_id: issue.goods_issue_id,
+        line_no: 1,
+        item_id: component.item_id,
+        lot_id: lotA.lot_id,
+        issue_qty: 100,
+        uom_id: uom.uom_id,
+        source_location_id: location.location_id,
+      },
+    });
+    const receipt = await prisma.shopfloor_receipt.create({
+      data: {
+        shopfloor_receipt_no: `${PREFIX}-SR`,
+        goods_issue_id: issue.goods_issue_id,
+        work_order_id: main.work_order_id,
+        destination_location_id: location.location_id,
+        received_at: new Date(OCCURRED_1),
+        status_code: 'REGISTERED',
+      },
+    });
+    const receiptLine = async () =>
+      prisma.shopfloor_receipt_line.create({
+        data: {
+          shopfloor_receipt_id: receipt.shopfloor_receipt_id,
+          goods_issue_line_id: issueLine.goods_issue_line_id,
+          item_id: component.item_id,
+          lot_id: lotA.lot_id,
+          issued_qty: 100,
+          received_qty: 100,
+          uom_id: uom.uom_id,
+        },
+      });
+    await receiptLine();
+    receiptLineId = Number((await receiptLine()).shopfloor_receipt_line_id);
+
+    // 원장 무변화 단언의 기준선 — 투입이 이 행의 `on_hand_qty`·`version_no` 를 건드리지 않는다.
+    const balance = await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: entity.legal_entity_id,
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        warehouse_id: warehouse.warehouse_id,
+        location_id: location.location_id,
+        item_id: component.item_id,
+        lot_id: lotA.lot_id,
+        quality_status_code: 'GOOD',
+        inventory_status_code: 'AVAILABLE',
+        ownership_type_code: 'OWNED',
+        on_hand_qty: 100,
+        uom_id: uom.uom_id,
+      },
+    });
+    balanceId = balance.inventory_balance_id;
 
     let sequence = 0;
     const consumption = async (
@@ -350,29 +672,58 @@ describe('자재 투입 조회 2건 (e2e)', () => {
   }
 
   async function makeUser(): Promise<void> {
-    // 조회 둘은 403 미선언이라 역할을 안 붙인다 — 로그인 세션만 있으면 된다.
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '자재투입검사', status_code: 'EMPLOYED' },
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    // 권한 0건 계정 — 조회 둘은 403 미선언이고 등록만 선언했다. 이 계정으로 그 갈래를 본다.
+    const other = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '자재투입권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '자재투입검사용' } });
+    await prisma.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   /** 만든 행을 FK 역순으로 지운다(§7-2 · `LIKE '${PREFIX}%'` 또는 id 서브쿼리 · ⛔ TRUNCATE 금지). */
   async function cleanup(): Promise<void> {
-    const consumptionScope = { material_consumption: { consumption_no: { startsWith: PREFIX } } };
     const orderScope = { production_plan: { plan_no: { startsWith: PREFIX } } };
+    // ⭐ `POST` 가 만든 행은 `MC-…` 라 접두어로 안 잡힌다 — W/O 축을 함께 건다.
+    const consumptionWhere = {
+      OR: [{ consumption_no: { startsWith: PREFIX } }, { work_order: orderScope }],
+    };
+    const consumptionScope = { material_consumption: consumptionWhere };
     await prisma.material_usage_allocation.deleteMany({ where: consumptionScope });
     await prisma.material_loss.deleteMany({ where: consumptionScope });
-    await prisma.material_consumption.deleteMany({ where: { consumption_no: { startsWith: PREFIX } } });
+    await prisma.material_consumption.deleteMany({ where: consumptionWhere });
+    await prisma.inventory_balance.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
+    await prisma.shopfloor_receipt_line.deleteMany({
+      where: { shopfloor_receipt: { shopfloor_receipt_no: { startsWith: PREFIX } } },
+    });
+    await prisma.shopfloor_receipt.deleteMany({ where: { shopfloor_receipt_no: { startsWith: PREFIX } } });
+    await prisma.goods_issue_line.deleteMany({ where: { goods_issue: { goods_issue_no: { startsWith: PREFIX } } } });
+    await prisma.goods_issue.deleteMany({ where: { goods_issue_no: { startsWith: PREFIX } } });
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: PREFIX } } });
     await prisma.work_order.deleteMany({ where: orderScope });
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
@@ -384,13 +735,23 @@ describe('자재 투입 조회 2건 (e2e)', () => {
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (!user) return;
-    await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-    await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!user) continue;
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (!role) return;
+    await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+    await prisma.role.delete({ where: { role_id: role.role_id } });
+    // ⛔ `app.numbering_rule`·`numbering_counter` 의 `MATERIAL_CONSUMPTION` 행은 안 지운다(전역 자원 · §7-2).
   }
 });
