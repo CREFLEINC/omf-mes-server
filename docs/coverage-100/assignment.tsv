@@ -30,13 +30,13 @@ I-3	logistics-01자재창고.json	POST /logistics/inbound-receipts	logistics	입
 I-3	logistics-01자재창고.json	POST /logistics/inbound-receipts:split	logistics	초과 입하 분리 등록	403	☑
 I-3	logistics-01자재창고.json	PUT /logistics/inbound-receipts/{inboundReceiptId}	logistics	입하 헤더 수정	403	☑
 I-3	logistics-01자재창고.json	PUT /logistics/inbound-receipts/{inboundReceiptId}/lines	logistics	입하 라인 치환	403	☑
-I-4	logistics-01자재창고.json	GET /logistics/goods-issues	logistics	출고 목록		☐
-I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}	logistics	출고 상세		☐
-I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 목록		☐
-I-4	logistics-01자재창고.json	POST /logistics/goods-issues	logistics	출고 등록	403	☐
-I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:post	logistics	출고 전기	403	☐
-I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:request-approval	logistics	기타 출고 품의 상신	403	☐
-I-4	logistics-01자재창고.json	PUT /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 치환	403	☐
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues	logistics	출고 목록		☑
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}	logistics	출고 상세		☑
+I-4	logistics-01자재창고.json	GET /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 목록		☑
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues	logistics	출고 등록	403	☑
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:post	logistics	출고 전기	403	☑
+I-4	logistics-01자재창고.json	POST /logistics/goods-issues/{goodsIssueId}:request-approval	logistics	기타 출고 품의 상신	403	☑
+I-4	logistics-01자재창고.json	PUT /logistics/goods-issues/{goodsIssueId}/lines	logistics	출고 라인 치환	403	☑
 I-5	logistics-01자재창고.json	GET /logistics/document-progress	logistics	물류 문서 진행현황		☐
 I-5	logistics-01자재창고.json	GET /logistics/document-progress/{documentTypeCode}/{documentId}	logistics	물류 문서 진행현황 상세		☐
 I-5	logistics-01자재창고.json	POST /logistics/document-progress/{documentTypeCode}/{documentId}:cancel	logistics	물류 문서 취소 실행	403	☐
