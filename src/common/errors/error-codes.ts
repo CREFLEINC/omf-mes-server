@@ -53,6 +53,18 @@ export const ERROR_CODE = {
   // 첫 사용처는 I-4 `:post`(잔액 0행·부족 둘 다) — I-5 의 `posting.reverse()` 가 같은
   // 문자열을 쓴다(plan.md §5 규칙 6).
   NEGATIVE_BALANCE: 'NEGATIVE_BALANCE',
+  // 아래 셋은 계약 `contracts/logistics-01자재창고.json` `CD-CANCEL-BLOCKED-REASON` enum 5값
+  // 중 `SUCCESSOR_EXISTS`·`STATE_LOCKED` 를 뺀 나머지다 — 다형 취소(I-5)가 조회의 「취소 불가
+  // 사유」와 실행 오류에 같은 문자열을 쓴다(plan-api.md §5.4).
+  // ⚠ 이 PR 은 이름만 예약한다 — 사용처는 I-5 PR ②·④·⑤ 다.
+  //
+  // 두 번째 `:cancel` — 대상 문서 상태가 이미 `CANCELLED` 다.
+  ALREADY_CANCELLED: 'ALREADY_CANCELLED',
+  // `CANCEL_REQUESTED` 인데 다시 취소를 요청했다. ⛔ 봉투는 **400** 이다 — 409 는 S22
+  // `:confirm` 자리뿐이다(plan-api.md §5.4 · plan.md §5 규칙 6 · I-5 R-9).
+  CANCEL_IN_PROGRESS: 'CANCEL_IN_PROGRESS',
+  // 취소 실행 경로가 있는 것은 입하·입고·출고 3종뿐이고, 나머지 6종이 이 코드로 걸린다.
+  TYPE_NOT_CANCELABLE: 'TYPE_NOT_CANCELABLE',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */
