@@ -53,7 +53,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 | — | 없음 | ○ 변경 이력 칸 | — | ○ 계획 | 3 |
 | U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | ~~work_order_resource_plan~~ 표는 있다(`work_order_resource_assignment`) — 결손은 **유일 제약**(I-6 R-9) | ○ | — | ○ W/O | 3 |
 | U21 | W/O 상태 전이 | 4 | P-02-10 · W-02-05 · W-02-06 | U20 · U24 | 없음 | 불필요 | — | ○ 4전이 | 2 |
-| U22 | 작업 세션 · 작업 전 점검 | 11 | P-02-01 · P-02-02 · P-02-10 | U20 · U33 | 없음 | 불필요 | — | ○ 세션 | 3 |
+| U22 | 작업 세션 · 작업 전 점검 | 11 | P-02-01 · P-02-02 · P-02-10 | U20 · U33 | 없음 | **1** · `work_session.shift_id` NOT NULL 완화(I-11 재수립 R-3) | — | ○ 세션 | 5 |
 | U23 | 자재 투입 · 반납 | 6 | P-02-03 | U22 · U13 | 없음 | **2** · `terminal_id`·`return_quality_status_code` NOT NULL 완화(I-10 재수립 R-3·R-4) | 없음(투입·반출 둘 다 · R-2) | — | 3 |
 | U24 | 생산 실적 · 정정 | 5 | P-02-04 · W-02-05 | U23 | 없음 | **2**(D1 `shift_id` 완화 · D2 `correct_reason_code`) | — (원장 안 지난다 · 제품 재고는 기존 입고) | ○ L1 호출 | 3 (I-7 ①②③ · 재수립 R-19) |
 | U25 | 생산 LOT 완료 · 개체 발번 | 4 | P-02-06 · P-02-05 · W-02-05/06 | U24 | 없음 | 불필요 | — | — (완료는 `completed_at` 시각 · 어느 상태 칸도 안 옮긴다 · I-7 §3-3) | 2 |
@@ -335,13 +335,13 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 |---|---|---|---|
 | `GET /production/work-sessions` | 작업 세션 목록 | — | - |
 | `GET /production/work-sessions/{workSessionId}` | 세션 한 건 | P-02-01 | - |
-| `POST /production/work-sessions` | 작업 시작 — 세션 열기 | P-02-01,P-02-02 | 멱등, ETag, 사번 |
-| `POST /production/work-sessions/{workSessionId}:end` | 세션 닫기 | — | 멱등, ETag, 사번 |
+| `POST /production/work-sessions` | 작업 시작 — 세션 열기 | P-02-01,P-02-02 | 멱등, ~~ETag~~, 사번 |
+| `POST /production/work-sessions/{workSessionId}:end` | 세션 닫기 | — | 멱등, ~~ETag~~, 사번 |
 | `GET /production/work-sessions/{workSessionId}/events` | 세션 이벤트 목록 | P-02-10 | - |
-| `POST /production/work-sessions/{workSessionId}/events` | 세션 이벤트 적재 | P-02-01,P-02-10 | 멱등, ETag, 사번 |
+| `POST /production/work-sessions/{workSessionId}/events` | 세션 이벤트 적재 | P-02-01,P-02-10 | 멱등, ~~ETag~~, 사번 |
 | `GET /production/work-sessions/{workSessionId}/workers` | 세션 작업자 목록 | P-02-01 | - |
-| `POST /production/work-sessions/{workSessionId}/workers` | 작업자 참여 | — | 멱등, ETag |
-| `POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave` | 작업자 이탈 | — | 멱등 |
+| `POST /production/work-sessions/{workSessionId}/workers` | 작업자 참여 | — | 멱등, ~~ETag~~ · ⚠ 계약이 사번을 안 줬다 — 화면 규약(`P-CO-01` §5-4)과 어긋난다(I-11 R-10) |
+| `POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave` | 작업자 이탈 | — | 멱등 · ⚠ 사번 없음(위와 같다) |
 | `GET /production/precheck-decisions` | 작업 전 점검 통제 판정 이력 조회 | P-02-02 | - |
 | `POST /production/precheck-decisions` | 작업 전 점검 통제 판정 기록 | P-02-02 | 멱등, 사번 |
 
