@@ -130,6 +130,7 @@ export class GoodsIssueService {
       });
       lines.push({
         goodsIssueLineId: created.goods_issue_line_id,
+        pickingLineId: created.picking_line_id,
         itemId: created.item_id,
         lotId: created.lot_id,
         issueQty: created.issue_qty,
@@ -178,6 +179,7 @@ export class GoodsIssueService {
         header: {
           goodsIssueId: issue.goods_issue_id,
           goodsIssueNo: issue.goods_issue_no,
+          sourceDocumentTypeCode: input.sourceDocumentTypeCode,
           sourceWarehouseId: BigInt(input.sourceWarehouseId),
           destinationTypeCode: input.destinationTypeCode ?? null,
           destinationId: input.destinationId == null ? null : BigInt(input.destinationId),
@@ -216,8 +218,8 @@ export class GoodsIssueService {
       // ⛔ 헤더를 먼저 «잠근다» — findUnique 로 읽으면 같은 순간의 두 `:post` 가 둘 다
       //    `REGISTERED` 를 보고 잔액을 두 번 깎는다(상태 잠금이 ③번째 겹이다 · §3-8).
       const [header] = await tx.$queryRaw<HeaderRow[]>`
-        SELECT goods_issue_id, goods_issue_no, source_warehouse_id, destination_type_code,
-               destination_id, status_code, version_no
+        SELECT goods_issue_id, goods_issue_no, source_document_type_code, source_warehouse_id,
+               destination_type_code, destination_id, status_code, version_no
           FROM logistics.goods_issue
          WHERE goods_issue_id = ${goodsIssueId}
            FOR UPDATE`;
@@ -247,6 +249,8 @@ export class GoodsIssueService {
         orderBy: { line_no: 'asc' },
         select: {
           goods_issue_line_id: true,
+          // ⭐ 되짚기용 선택 칸 — 소진 축은 헤더다(I-8.md R-4). 여기 싣는 것은 되짚기뿐이다.
+          picking_line_id: true,
           item_id: true,
           lot_id: true,
           issue_qty: true,
@@ -267,12 +271,14 @@ export class GoodsIssueService {
           header: {
             goodsIssueId: header.goods_issue_id,
             goodsIssueNo: header.goods_issue_no,
+            sourceDocumentTypeCode: header.source_document_type_code,
             sourceWarehouseId: header.source_warehouse_id,
             destinationTypeCode: header.destination_type_code,
             destinationId: header.destination_id,
           },
           lines: lines.map((line) => ({
             goodsIssueLineId: line.goods_issue_line_id,
+            pickingLineId: line.picking_line_id,
             itemId: line.item_id,
             lotId: line.lot_id,
             issueQty: line.issue_qty,
@@ -302,6 +308,7 @@ export class GoodsIssueService {
 interface HeaderRow {
   goods_issue_id: bigint;
   goods_issue_no: string;
+  source_document_type_code: string;
   source_warehouse_id: bigint;
   destination_type_code: string | null;
   destination_id: bigint | null;
