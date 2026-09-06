@@ -120,6 +120,49 @@ export class ApprovalService {
   }
 
   /**
+   * 「승인 전이면 400」의 자물쇠. 대상 문서의 `:post` 가 부른다 — 승인은 자물쇠만 풀고(J-8)
+   * 실행은 여기서 «읽어» 가른다. `assertNoOpenRequest` 와 대칭이지 반대가 아니다 —
+   * 그쪽은 `PENDING` 을 찾아 막고 이쪽은 `APPROVED` 를 찾아 연다. 뜻도 호출자도 달라
+   * 한 함수로 합치지 않는다(I-4.md §4-1).
+   *
+   * ⛔ 대상 표의 `approval_request_id` FK 를 보지 않는다 — 정본은 다형 축이다(plan.md §5 #12).
+   *    FK 는 업무 승인 하나만 담아서, I-5 의 취소 품의가 I-4 의 업무 승인을 덮는다.
+   * ⛔ `approvalTypeCode` 는 필수다 — 없으면 `GOODS_ISSUE_CANCEL` 승인이
+   *    `GOODS_ISSUE_DISPOSAL` 을 대신한다.
+   * 요청이 0건이면 통과한다 — 계약 `GoodsIssue.approvalRequestId` 「비어 있으면 승인을
+   * 타지 않은 출고다」가 승인을 안 탄 전표의 존재를 인정하고 사후 조회로 가려낸다고 적었다.
+   * 서버가 사전에 전건을 막는 축이 아니다.
+   * // 계약이 세운 축(reasonCode)의 값이 아직 없어 상신 흔적으로 대신 가른다 — 값이 오면 이 자리를 바꾼다(I-4.md R-4 · 문의 030)
+   * ⚠ 시각 순서를 안 본다 — 「승인된 뒤 다시 상신했고 그것이 반려됨」이면 통과한다.
+   *   계약이 그 경우를 안 적었고 재판정을 새로 만들지 않는다(I-4.md §8-1 ⓔ).
+   * 조회 축은 I-1 A6 이 깐 `ix_approval_request_target` 2칸(`target_type_code`·`target_id`)이고
+   * `approval_type_code` 는 그 위의 필터다 — `assertNoOpenRequest` 와 같은 모양이다.
+   */
+  async assertApproved(
+    tx: Tx,
+    targetTypeCode: string,
+    targetId: bigint,
+    approvalTypeCode: string,
+  ): Promise<void> {
+    const requests = await tx.approval_request.findMany({
+      where: {
+        target_type_code: targetTypeCode,
+        target_id: targetId,
+        approval_type_code: approvalTypeCode,
+      },
+      select: { status_code: true },
+    });
+    if (requests.length === 0 || requests.some((row) => row.status_code === 'APPROVED')) {
+      return;
+    }
+    // 섞여 있으면 `PENDING` 이 이긴다 — 「기다려라」가 「다시 올려라」보다 정확하다.
+    if (requests.some((row) => row.status_code === 'PENDING')) {
+      throw badRequest(ERROR_CODE.APPROVAL_IN_PROGRESS, '진행 중인 승인 요청이 이미 있습니다.');
+    }
+    throw badRequest(ERROR_CODE.APPROVAL_REQUIRED, '승인이 필요합니다. 다시 상신하십시오.');
+  }
+
+  /**
    * ① 사업부 지정본이 전 사업부 공통본을 이긴다 ② 그러고도 둘 이상이면 서버가 임의로
    * 고르지 않고 `ROUTE_AMBIGUOUS` 다 — 계약이 선택 규칙의 정본을 갖는다.
    * ⚠ `businessUnitId` 는 P/O 만 전표 값을 준다. 나머지는 `null`(공통본) — 계약이 적은
