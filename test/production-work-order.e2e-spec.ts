@@ -3,7 +3,7 @@
  * `GET …/{workOrderId}/resource-plans`(I-6 PR ①).
  *
  * 4M 계획 배정 추가·해제(`POST`/`DELETE`)와 유효성 점검 `GET …/validation`(I-6 PR ③),
- * 발행 `POST`·수정 `PUT`(I-6 PR ④)을 잇는다 — 중단·재개는 ④b 다.
+ * 발행 `POST`·수정 `PUT`·중단 `:hold`·재개 `:resume`(I-6 PR ④)을 잇는다.
  *
  * ⛔ 계약이 403 을 선언한 것은 `validation` 하나뿐이라 그 자리만 권한 가드가 본다 — 나머지
  *   넷은 로그인 세션만으로 통과한다. 그래서 사용자가 둘이다(권한 있음·없음).
@@ -31,8 +31,7 @@ const PREFIX = 'WOE2E';
 const ROLE = 'E2E_WORK_ORDER';
 /**
  * 계약이 403 을 선언한 다섯 자리의 화면 권한 — `derived-permissions.ts` 가 계약에서 도출한
- * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10` ·
- * 뒤 둘은 ④b 가 쓴다).
+ * 값이다(`validation`·`PUT` = `W-02-03` · `POST` = `W-02-02` · `:hold`/`:resume` = `P-02-10`).
  */
 const PERMISSIONS = ['W-02-03', 'W-02-02', 'P-02-10'];
 /** 선발행 슬롯의 원천 유형 — `lot-rules.ts workOrderWhere()` 와 같은 문자열. */
@@ -80,6 +79,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     productionOrder: 0n,
     productionPlan: 0n,
     workOrder: 0n,
+    terminal: 0n,
   };
 
   beforeAll(async () => {
@@ -343,10 +343,36 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
   });
 
-  describe('발행·수정 (PR ④)', () => {
+  describe('발행·수정·중단·재개 (PR ④)', () => {
     const base = '/api/production/work-orders';
     let issuedId = 0;
     let issuedEtag = '';
+
+    /** ⑤b 전 — `:release` 가 없어 배포 상태를 직접 심는다. */
+    async function released(): Promise<number> {
+      const id = await issue();
+      await prisma.work_order.update({
+        where: { work_order_id: BigInt(id) },
+        data: { status_code: 'RELEASED', released_at: new Date() },
+      });
+      return id;
+    }
+
+    async function issue(): Promise<number> {
+      const response = await request(app.getHttpServer())
+        .post(base)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: Number(ids.productionPlan),
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty: 40,
+          uomId: Number(ids.uom),
+        })
+        .expect(201);
+      return response.body.workOrderId;
+    }
 
     it('발행 — 201 에 ETag 가 실리고 그 토큰이 PUT 에 그대로 통한다', async () => {
       const created = await request(app.getHttpServer())
@@ -411,6 +437,98 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(rejected.body.errors[0]).toMatchObject({ field: 'productionPlanId', code: 'REQUIRED' });
       // ⭐ 검사가 채번보다 앞이라 카운터도 안 오른다(결번을 남기지 않는다).
       expect(await counted()).toEqual(before);
+    });
+
+    it('중단 — If-Match 가 없어도 200 이다(선택)', async () => {
+      const workOrder = await released();
+
+      const held = await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z', note: '설비 정지' })
+        .expect(200);
+
+      expect(held.body).toMatchObject({ statusCode: 'SUSPENDED', versionNo: 2 });
+      expect(validator('POST /production/work-orders/{workOrderId}:hold')(held.body)).toBe(true);
+    });
+
+    it('중단 — 낡은 토큰을 실으면 409 다', async () => {
+      const workOrder = await released();
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(200);
+
+      // 이제 그 행은 2 다 — 1 을 다시 실으면 저장 충돌이고, 상태 자물쇠보다 «앞»에서 걸린다.
+      const stale = await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(409);
+
+      // 봉투가 `ProductionConflictResponse` 다 — `code` 가 required 이고 `conflictCause` 도 함께 온다.
+      expect(stale.body).toMatchObject({ code: 'VERSION_CONFLICT', conflictCause: 'user' });
+      expect(stale.body.errors).toBeUndefined();
+      expect(validator('POST /production/work-orders/{workOrderId}:hold', 409)(stale.body)).toBe(true);
+    });
+
+    it('중단 — `X-Worker-No` 가 없어도 400 이 아니다', async () => {
+      const workOrder = await released();
+
+      // 계약이 헤더를 선언했지만 담을 칸이 없어 서버가 읽지 않는다(§6-2 ⓔ · 출고 선례).
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(200);
+    });
+
+    it('중단 — 세션의 `ended_at`·`status_code` 가 그대로다', async () => {
+      const workOrder = await released();
+      const session = await prisma.work_session.create({
+        data: {
+          work_order_id: BigInt(workOrder),
+          session_no: 1,
+          shift_id: ids.shift,
+          terminal_id: ids.terminal,
+          started_at: new Date('2026-09-06T01:00:00.000Z'),
+          status_code: 'RUNNING',
+          idempotency_key: `${PREFIX}-${randomUUID()}`,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrder}:hold`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ reasonCode: 'EQUIPMENT_FAULT', occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(200);
+
+      // ⭐ 계약이 두 번 못박았다 — 「세션은 닫지 않는다」. 세션 층은 events 의 STOP 이 옮긴다.
+      const after = await prisma.work_session.findUniqueOrThrow({
+        where: { work_session_id: session.work_session_id },
+      });
+      expect(after.ended_at).toBeNull();
+      expect(after.status_code).toBe('RUNNING');
+    });
+
+    it('재개 — `SUSPENDED` 가 아니면 400 이다', async () => {
+      const rejected = await request(app.getHttpServer())
+        .post(`${base}/${issuedId}:resume`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ occurredAt: '2026-09-06T02:00:00.000Z' })
+        .expect(400);
+
+      // ⛔ 409 가 아니다 — 재로드해도 풀리지 않는 잠금이다(G-1 · §1-6).
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
     });
 
     it('수정 — 같은 멱등키 재전송이 버전을 두 번 올리지 않는다', async () => {
@@ -561,6 +679,16 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     ids.shift = shift.shift_id;
+    // `work_session` 이 요구하는 NOT NULL 참조 — 중단이 세션을 안 건드리는지 보려면 필요하다.
+    const terminal = await prisma.terminal.create({
+      data: {
+        terminal_code: `${PREFIX}-TM`,
+        plant_id: plant.plant_id,
+        terminal_type_code: 'POP',
+        status_code: 'RUNNING',
+      },
+    });
+    ids.terminal = terminal.terminal_id;
 
     const order = await prisma.production_order.create({
       data: {
@@ -751,11 +879,13 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.production_result.deleteMany({ where: { work_order: orderScope } });
     await prisma.lot.deleteMany({ where: plantScope });
     await prisma.work_order_resource_assignment.deleteMany({ where: { work_order: orderScope } });
+    await prisma.work_session.deleteMany({ where: { work_order: orderScope } });
     // FK 가 `work_order` 를 막는다 — 지우기 전에 의존 표를 먼저 비운다.
     await prisma.work_order_dependency.deleteMany({ where: { predecessor_work_order_id: ids.workOrder } });
     await prisma.work_order.deleteMany({ where: orderScope });
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
+    await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });

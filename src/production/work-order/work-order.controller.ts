@@ -27,22 +27,28 @@ import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
 import { WorkOrderListSummary } from './work-order-summary';
+import {
+  WorkOrderHold,
+  WorkOrderResume,
+  WorkOrderTransitionService,
+} from './work-order-transition.service';
 import { WorkOrderCreate, WorkOrderUpdate, WorkOrderWriteService } from './work-order-write.service';
 import { WorkOrderResourcePlanView, WorkOrderView } from './work-order-view';
 
 /**
- * W/O 조회 + 발행·수정 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③·④).
- * 중단·재개(`:hold`/`:resume`)는 ④b 다 — 예산(비테스트 350)을 넘어 뗐다.
+ * W/O 조회 + 발행·수정·중단·재개 + 4M 계획 배정 쓰기·유효성 점검(I-6 PR ①·③·④).
  * 질의·본문의 형·enum 검증은 계약 검증 가드(`@Contract`)가 이미 한다 — 여기서 다시
  * 검사하지 않는다.
- * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — `validation`·`POST`·`PUT` 셋이고
- * 그 매핑은 `derived-permissions.ts` 에 이미 있다(추가 0건 · `plan.md` §5 규칙 1).
+ * ⛔ 권한 가드는 계약이 403 을 «선언한» 자리에서만 본다 — `validation`·`POST`·`PUT`·
+ * `:hold`·`:resume` 다섯이고 그 매핑은 `derived-permissions.ts` 에 이미 있다(추가 0건 ·
+ * `plan.md` §5 규칙 1).
  */
 @Controller('production/work-orders')
 export class WorkOrderController {
   constructor(
     private readonly queries: WorkOrderQueryService,
     private readonly writes: WorkOrderWriteService,
+    private readonly transitions: WorkOrderTransitionService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
@@ -95,6 +101,37 @@ export class WorkOrderController {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.writes.update(workOrderId, version, body, currentSession(request)?.userId);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
+  }
+
+  /** If-Match 가 **선택**이다(오프라인 대상 · C-9) — 없으면 `undefined` 로 내려보낸다. */
+  @Post(':workOrderId\\:hold')
+  @Contract('POST /production/work-orders/{workOrderId}:hold')
+  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
+  @HttpCode(HttpStatus.OK)
+  hold(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: WorkOrderHold,
+  ): Promise<WorkOrderView> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.transitions.hold(workOrderId, ifMatchVersion(request), body);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
+  }
+
+  @Post(':workOrderId\\:resume')
+  @Contract('POST /production/work-orders/{workOrderId}:resume')
+  @HttpCode(HttpStatus.OK)
+  resume(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    // 본문은 받되 저장할 칸이 없다 — 계약이 `occurredAt` 을 required 로 적었다(문의 035).
+    @Body() _body: WorkOrderResume,
+  ): Promise<WorkOrderView> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.transitions.resume(workOrderId, ifMatchVersion(request));
       return (await this.queries.detail(workOrderId, {})).view;
     });
   }
