@@ -12,6 +12,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
@@ -26,6 +27,7 @@ import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
+import { WorkOrderRelease, WorkOrderReleaseService } from './work-order-release.service';
 import { WorkOrderListSummary } from './work-order-summary';
 import {
   WorkOrderHold,
@@ -49,6 +51,7 @@ export class WorkOrderController {
     private readonly queries: WorkOrderQueryService,
     private readonly writes: WorkOrderWriteService,
     private readonly transitions: WorkOrderTransitionService,
+    private readonly releases: WorkOrderReleaseService,
     private readonly resourcePlans: WorkOrderResourcePlanService,
     private readonly idempotency: IdempotencyService,
     // 점검은 서비스 클래스를 안 세운다 — `validation.ts` 의 함수가 정본이고 ② 목록도 그것을 부른다.
@@ -101,6 +104,25 @@ export class WorkOrderController {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.writes.update(workOrderId, version, body, currentSession(request)?.userId);
+      return (await this.queries.detail(workOrderId, {})).view;
+    });
+  }
+
+  /**
+   * 확정·배포. ⛔ ETag 를 안 싣는다 — 계약이 200 에 선언하지 않았다(`PUT` 과 같은 자리).
+   * If-Match 는 **필수**라 가드가 이미 막았다.
+   */
+  @Post(':workOrderId\\:release')
+  @Contract('POST /production/work-orders/{workOrderId}:release')
+  @HttpCode(HttpStatus.OK)
+  release(
+    @Req() request: Request,
+    @Param('workOrderId', ParseIntPipe) workOrderId: number,
+    @Body() body: WorkOrderRelease,
+  ): Promise<WorkOrderView> {
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.releases.release(workOrderId, version, body, userOf(request));
       return (await this.queries.detail(workOrderId, {})).view;
     });
   }
@@ -192,4 +214,11 @@ function versionOf(request: Request): number {
     throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
   }
   return version;
+}
+
+/** 선발행 슬롯의 `created_by` 가 NOT NULL 이라 세션이 반드시 필요하다(`lot.controller.ts` 선례). */
+function userOf(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return session.userId;
 }
