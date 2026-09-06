@@ -26,6 +26,7 @@ import {
   InboundReceiptQueryService,
 } from './inbound-receipt-query.service';
 import { InboundReceiptCreateInput, InboundReceiptLineWriteInput } from './inbound-receipt-rules';
+import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
 import { InboundReceiptUpdateInput, InboundReceiptUpdateService } from './inbound-receipt-update.service';
 import { InboundReceiptDetail, InboundReceiptLineView, InboundReceiptView } from './inbound-receipt-view';
 import { InboundReceiptService } from './inbound-receipt.service';
@@ -118,6 +119,32 @@ export class InboundReceiptController {
       this.updates.replaceLines(inboundReceiptId, version, body.items, appUserId),
     );
     return { items };
+  }
+}
+
+/**
+ * ⛔ 컬렉션에 붙는 액션(`/inbound-receipts:split`)은 컨트롤러 접두어를 «짧게» 잡아야 한다 —
+ * Nest 가 컨트롤러 경로와 메서드 경로를 슬래시로 잇기 때문이다(`molds:import` 선례).
+ */
+@Controller('logistics')
+export class InboundReceiptSplitController {
+  constructor(
+    private readonly splits: InboundReceiptSplitService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
+
+  @Post('inbound-receipts\\:split')
+  @Contract('POST /logistics/inbound-receipts:split')
+  create(
+    @Req() request: Request,
+    @Body() body: InboundReceiptSplitInput,
+  ): Promise<{ created: InboundReceiptView[] }> {
+    // ⛔ `If-Match` 가 아예 없다 — 계약이 등록과 달리 이 경로에 파라미터를 안 걸었다(§6-3).
+    //    ETag 도 안 내린다(응답 헤더 선언 0건).
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.splits.create(body, appUserId),
+    );
   }
 }
 

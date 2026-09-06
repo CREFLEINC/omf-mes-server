@@ -11,7 +11,11 @@ import { AsnQueryService } from './asn/asn-query.service';
 import { GoodsReceiptController } from './goods-receipt/goods-receipt.controller';
 import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
-import { InboundReceiptController } from './inbound-receipt/inbound-receipt.controller';
+import {
+  InboundReceiptController,
+  InboundReceiptSplitController,
+} from './inbound-receipt/inbound-receipt.controller';
+import { InboundReceiptSplitService } from './inbound-receipt/inbound-receipt-split.service';
 import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-update.service';
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
 import { InboundVarianceController } from './inbound-receipt/inbound-variance.controller';
@@ -35,6 +39,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     PurchaseOrderController,
     AsnController,
     InboundReceiptController,
+    InboundReceiptSplitController,
     InboundVarianceController,
   ],
   providers: [
@@ -46,6 +51,7 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
     InboundReceiptService,
     InboundReceiptQueryService,
     InboundReceiptUpdateService,
+    InboundReceiptSplitService,
     InboundVarianceService,
   ],
 })

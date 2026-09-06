@@ -26,7 +26,7 @@ const PASSWORD = '입하-등록-검사-비밀번호';
 const PREFIX = 'IRE2E';
 const ROLE = 'E2E_IR';
 /** `W-01-11` 은 동시성 검사 하나가 P/O 라인 치환을 함께 걸기 위해서다. */
-const PERMISSIONS = ['M-01-01', 'W-01-11'];
+const PERMISSIONS = ['M-01-01', 'W-01-11', 'W-01-03', 'M-01-06'];
 const BUSINESS_DATE = '2026-08-06';
 const RECEIPT_AT = '2026-08-06T09:12:00+09:00';
 
@@ -50,6 +50,7 @@ interface ReceiptBody {
   inboundReceiptNo: string;
   statusCode: string;
   receivedBy: number | null;
+  exceptionTypeCode: string | null;
 }
 interface LineBody {
   inboundReceiptLineId: number;
@@ -661,7 +662,228 @@ describe('입하 등록 (e2e)', () => {
       .expect(403);
   });
 
+  // ── 초과 분리 등록 · 차이 등록 ────────────────────────────────────────────
+
+  it('분리 — mode=BOTH 가 입하 2건을 만들고 번호가 서로 다르다', async () => {
+    const created = await split();
+
+    expect(created).toHaveLength(2);
+    expect(created[0].inboundReceiptNo).not.toBe(created[1].inboundReceiptNo);
+    for (const receipt of created) expect(receipt.inboundReceiptNo).toMatch(/^IR-20260806-\d{4,}$/);
+  });
+
+  it('분리 — mode=NORMAL_ONLY 는 1건만 만든다', async () => {
+    const created = await split({ mode: 'NORMAL_ONLY', excess: undefined });
+
+    expect(created).toHaveLength(1);
+  });
+
+  it('분리 — mode=EXCESS_ONLY 는 1건만 만든다', async () => {
+    const created = await split({ mode: 'EXCESS_ONLY', normal: undefined });
+
+    expect(created).toHaveLength(1);
+  });
+
+  it('분리 — 어느 part 의 lines 가 비면 400 LINE_REQUIRED', async () => {
+    const rejected = await sendSplit(await splitBody({ excess: await splitPart({ lines: [] }) })).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'excess.lines', code: 'LINE_REQUIRED' });
+  });
+
+  it('분리 — 초과분이 실패하면 정량분도 없다(한 트랜잭션 · 부분 저장 금지)', async () => {
+    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+
+    // 검증을 통과한 뒤 트랜잭션 «안»에서 깨지는 값 — 없는 uom 이라 라인 삽입이 FK 위반이다.
+    const draft = await lineDraft();
+    await sendSplit(
+      await splitBody({ excess: await splitPart({ lines: [{ ...draft, uomId: 999999999 }] }) }),
+    ).expect(400);
+
+    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
+  });
+
+  it('분리 — 정량분만 received_qty 를 올린다(초과분은 P/O 비귀속)', async () => {
+    const { purchaseOrderLineId } = await seedOrderLine(100);
+    const normalLine = { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 };
+
+    await split({ normal: await splitPart({ lines: [normalLine] }) });
+
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
+  });
+
+  it('분리 — 요청이 원본 입하를 가리키지 않는다(원 도착은 저장된 적이 없다 — W-01-03 §5-1)', async () => {
+    const original = await create();
+    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+
+    const created = await split();
+
+    expect(created.map((receipt) => receipt.inboundReceiptId)).not.toContain(
+      original.inboundReceipt.inboundReceiptId,
+    );
+    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before + 2);
+    const reloaded = await prisma.inbound_receipt.findUniqueOrThrow({
+      where: { inbound_receipt_id: BigInt(original.inboundReceipt.inboundReceiptId) },
+    });
+    expect(reloaded.version_no).toBe(1);
+  });
+
+  it('분리 — 응답 created 순서가 정량분·초과분이다', async () => {
+    const created = await split({
+      excess: await splitPart({ exceptionTypeCode: 'OVER_DELIVERY', exceptionReason: '초과 도착' }),
+    });
+
+    expect(created[0].exceptionTypeCode).toBeNull();
+    expect(created[1].exceptionTypeCode).toBe('OVER_DELIVERY');
+  });
+
+  it('분리 — 같은 Idempotency-Key 재전송도 201 이고 건이 늘지 않는다', async () => {
+    const draft = await splitBody();
+    const idempotencyKey = key();
+
+    const first = await sendSplit(draft, idempotencyKey).expect(201);
+    const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+    const second = await sendSplit(draft, idempotencyKey).expect(201);
+
+    expect(second.body).toEqual(first.body);
+    expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
+  });
+
+  it('분리 — 권한 없는 사용자의 POST 는 403', async () => {
+    await request(app.getHttpServer())
+      .post('/api/logistics/inbound-receipts:split')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send(await splitBody())
+      .expect(403);
+  });
+
+  it('차이 — 등록 응답이 계약 InboundVariance 를 만족한다', async () => {
+    const detail = await create();
+    const variance = await addVariance(detail.lines[0].inboundReceiptLineId);
+
+    const validate = validator(
+      'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances',
+      201,
+    );
+    expect(validate(variance)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // 채우는 경로가 계약에 0건이라 늘 널이다 — 키를 생략하지 않는다.
+    expect(variance).toHaveProperty('approvalRequestId', null);
+  });
+
+  it('차이 — 같은 라인에 두 번 등록해도 막지 않는다(유일 제약이 없다)', async () => {
+    const detail = await create();
+    const inboundReceiptLineId = detail.lines[0].inboundReceiptLineId;
+
+    await addVariance(inboundReceiptLineId);
+    await addVariance(inboundReceiptLineId, { varianceTypeCode: 'ITEM_MISMATCH', reasonCode: 'DAMAGED' });
+
+    expect(
+      await prisma.inbound_variance.count({
+        where: { inbound_receipt_line_id: BigInt(inboundReceiptLineId) },
+      }),
+    ).toBe(2);
+  });
+
+  it('차이 — 등록해도 received_qty 가 그대로다(원장도 라인 상태도 안 움직인다)', async () => {
+    const { purchaseOrderLineId } = await seedOrderLine(100);
+    const detail = await create({
+      lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 30 }],
+    });
+    const line = detail.lines[0];
+
+    await addVariance(line.inboundReceiptLineId, { varianceQty: 12 });
+
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
+    const reloaded = await prisma.inbound_receipt_line.findUniqueOrThrow({
+      where: { inbound_receipt_line_id: BigInt(line.inboundReceiptLineId) },
+    });
+    expect(Number(reloaded.received_qty)).toBe(30);
+    expect(reloaded.status_code).toBe('REGISTERED');
+    expect(reloaded.lot_id).not.toBeNull();
+  });
+
+  it('차이 — 없는 라인에 등록하면 404 다(계약 미선언 — 알려둘 것 ⓒ)', async () => {
+    await sendVariance(999999999, varianceBody()).expect(404);
+  });
+
+  it('차이 — 권한 없는 사용자의 POST 는 403 이다', async () => {
+    const detail = await create();
+
+    await request(app.getHttpServer())
+      .post(`/api/logistics/inbound-receipt-lines/${detail.lines[0].inboundReceiptLineId}/variances`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .send(varianceBody())
+      .expect(403);
+  });
+
+  it('⭐ 원장이 움직이지 않는다 — 12건 전건 뒤 inventory_transaction 이 0건이다', async () => {
+    const created = await split();
+    const lines = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${created[0].inboundReceiptId}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    await addVariance((lines.body.items as LineBody[])[0].inboundReceiptLineId);
+
+    expect(await prisma.inventory_transaction.count({ where: { plant_id: plantId } })).toBe(0);
+  });
+
   // ── 도우미 ────────────────────────────────────────────────────────────────
+
+  function sendSplit(draft: object, idempotencyKey = key()): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/logistics/inbound-receipts:split')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .send(draft);
+  }
+
+  async function split(overrides: object = {}): Promise<ReceiptBody[]> {
+    const created = await sendSplit(await splitBody(overrides)).expect(201);
+    return (created.body as { created: ReceiptBody[] }).created;
+  }
+
+  /** ⛔ `businessDate`·`occurredAt` 은 «바깥에서 한 번»이다 — part 에는 칸이 없다(계약). */
+  async function splitBody(overrides: object = {}): Promise<object> {
+    return {
+      mode: 'BOTH',
+      normal: await splitPart(),
+      excess: await splitPart(),
+      businessDate: BUSINESS_DATE,
+      occurredAt: RECEIPT_AT,
+      ...overrides,
+    };
+  }
+
+  /** 기본 part 의 라인은 «무발주»다 — `:split` 에는 등록의 「무발주면 예외 유형 필수」가 안 선다(R-7 ②). */
+  async function splitPart(overrides: object = {}): Promise<object> {
+    return {
+      supplierId,
+      plantId,
+      receiptDatetime: RECEIPT_AT,
+      lines: [await lineDraft()],
+      ...overrides,
+    };
+  }
+
+  function varianceBody(overrides: object = {}): object {
+    return { varianceTypeCode: 'SHORTAGE', varianceQty: 5, uomId, ...overrides };
+  }
+
+  function sendVariance(inboundReceiptLineId: number, draft: object): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/logistics/inbound-receipt-lines/${inboundReceiptLineId}/variances`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('X-Worker-No', 'W-0001')
+      .send(draft);
+  }
+
+  async function addVariance(inboundReceiptLineId: number, overrides: object = {}): Promise<object> {
+    const created = await sendVariance(inboundReceiptLineId, varianceBody(overrides)).expect(201);
+    return created.body as object;
+  }
 
   async function list(qs: string): Promise<{ items: ReceiptBody[] }> {
     const response = await request(app.getHttpServer())

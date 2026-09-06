@@ -175,4 +175,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   //   등록 화면으로 잠정 등록한다. 미등록이면 `PermissionGuard` 가 던져 500 이 된다.
   'PUT /logistics/inbound-receipts/{inboundReceiptId}': ['M-01-01'],
   'PUT /logistics/inbound-receipts/{inboundReceiptId}/lines': ['M-01-01'],
+
+  // `M-01-06` 입하 오류 등록 — 그 화면이 이 자원의 유일한 소유자다(계약 description 근거).
+  'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['M-01-06'],
 };
