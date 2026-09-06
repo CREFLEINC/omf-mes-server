@@ -45,7 +45,7 @@ material_issue_request ─⑥ picking_order.source_document_type_code='MATERIAL_
                    └─⑨ shopfloor_receipt.goods_issue_id / shopfloor_receipt_line.goods_issue_line_id
                             │  (차이 수량은 variance_qty 파생 컬럼)
                             └─⑩ material_consumption.shopfloor_receipt_line_id   ⛔ 원장 없음
-                                     └─⑪ lot_relation(source=자재LOT, target=생산LOT, N:M)
+                                     └─⑪ lot_relation(source=자재LOT, target=생산LOT, N:M)   ⚠ I-10 은 만들지 않는다 — 052 회신 뒤
 ```
 
 ### 1-2. 생산 흐름 (지시 → 실적 → 제품 입고)
@@ -171,7 +171,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-7 | 생산 실적 + LOT 생명주기 | 7 | I-6 | 있음 | ⚠ 2(D1 `shift_id` 완화 · D2 `correct_reason_code` · I-7 재수립 R-19) | ✕ | ⭐ L1 만(L2·L3 는 I-6 이 병합해 «쓰기»는 끝났다 · L2 상수 정정 I-7 PR ①) | 4 |
 | I-8 | 출고요청·피킹·예약 코어 | 8 | I-4 | 있음 | ✕ | ⭐ 예약/피킹 칸 | ⭕ | 3 |
 | I-9 | 생산창고 입고 | 3 | I-8 | 있음 | ⚠ 차이 전기 자리가 없다 | ⚠ 미정 | ⭕ | 2 |
-| I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음(`lot_relation`) | ✕ | 반출만 ⭐ | ✕ | 3 |
+| I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음 · `lot_relation` 은 이 슬라이스가 쓰지 않는다(052) | **2** NOT NULL 완화(`terminal_id`·`return_quality_status_code`) | ✕ | ✕ | 3 |
 | I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | ✕ | ✕ | ⭕ 세션 | 3 |
 | I-12 | 적치 완료·임시적재 | 4 | (입고 구현됨) | 있음 | ✕ | ⭐ | ⭕ | 2 |
 | I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | ✕ | ⭐ ×2 | ⭕ | 3 |
@@ -267,7 +267,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 **체인 마디**: ⑮~⑱ — 실적이 생산LOT 에 붙고 소비 계보가 닫힌다. **M1 의 종점**.
 **원장**: ⛔ 없다(§1-4). 제품이 재고로 잡히는 것은 **이미 구현된 입고**(`sourceDocumentTypeCode='PRODUCTION_RESULT'`)다 — 그래서 M1 체인 e2e 는 실적 뒤에 «기존» 입고 오퍼레이션을 한 번 더 부른다.
-**상태기계**: ⭐ L1(WAITING→ACTIVE) 을 처음 «쓴다». `production_result_lot_allocation`·`lot_lifecycle_history` 가 실적 저장과 **같은 트랜잭션**(원칙 2 「lot 계보」). `material_usage_allocation` 은 투입(I-10) 이 쓴다 — 실적은 건드리지 않는다(I-7 재수립 R-19).
+**상태기계**: ⭐ L1(WAITING→ACTIVE) 을 처음 «쓴다». `production_result_lot_allocation`·`lot_lifecycle_history` 가 실적 저장과 **같은 트랜잭션**(원칙 2 「lot 계보」). `material_usage_allocation` 은 ~~투입(I-10) 이 쓴다~~ **I-10 도 못 쓴다**(CHECK `ck_material_usage_target` 이 `production_result_id`/`output_lot_id` 를 요구하는데 투입 시점엔 둘 다 없다 · I-10 §2-3 · 문의 052) — 실적은 건드리지 않는다(I-7 재수립 R-19). 저장소 전체에서 이 표를 채우는 자리가 0 이다.
 **예상 설계 미정**
 - `:correct` 의 A급 판정을 「서버가 정정 내용으로 판정한다」인데 등급 기준이 없다. → 1단계 **본길**(모든 정정의 승인 필요 여부가 갈린다) → 계약 문자 그대로 + 문의. 잠정: 「수량 5칸 중 하나라도 바뀌면 A급」 — 계약이 「수불에 영향」이라 적은 것의 가장 좁은 해석이고, 넓히는 것은 호환 완화다.
 - 지연 실적의 마감 뒤 편입(R83) → I-6 의 게이트 물음과 같은 뿌리. 함께 요청서에 싣는다.
@@ -297,10 +297,11 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-10 · 자재 투입·반출 — 계보(lot_relation) — 6건
 
-**체인 마디**: ⑩⑪ — 자재LOT → 생산LOT 계보가 **시작되는 지점**(계약 문구).
-**원장**: 투입 ⛔ 없음. 반출(`material-returns`)만 ⭐ 있다 — `material_return_line.inventory_transaction_line_id` 컬럼이 실재한다(생산창고 → 자재창고 이동이므로 `STOCK_TRANSFER`).
-**계보**: `lot_relation` 은 계약 7벌에 **자원이 전무하다**(계약 x-internal-note: 「읽거나 쓰는 화면이 118장 중 0장」). 그래도 **서버는 써야 한다** — 계약이 「서버가 계보 관계를 이 등록과 한 트랜잭션으로 만든다」라 적었다. e2e 는 API 가 아니라 **DB 를 직접 읽어** 단언한다.
-**예상 설계 미정**: `trace_accuracy_code`·`allocation_method_code` 값 목록 미확정인데 컬럼은 NOT NULL. → 1단계 가장자리 아님 — 모든 투입이 이 값을 갖는다 → **본길** → 그러나 계약이 「서버가 투입 형태로 정한다」로 판정 주체를 명시적으로 서버에 넘겼다 → 0단계 선례로 취급하고, 한 값(`EXACT`/`DIRECT`)을 상수로 두고 요청서에 싣는다.
+**체인 마디**: ⑩⑪ — 자재LOT → 생산LOT 계보가 **시작되는 지점**(계약 문구). ⚠ ⑪ 은 이 슬라이스가 **만들지 않는다**(아래 계보).
+**원장**: ⛔ **투입도 반출도 없다**(I-10 §4-4 · 재수립 R-2). `material_return_line.inventory_transaction_line_id` 컬럼은 실재하나 계약 `MaterialReturn`·`MaterialReturnCreate`·`MaterialReturnLine` 어디에도 원장·`inventoryTransactionLineId` 언급이 0건이라 채우지 않는다 — `STOCK_TRANSFER` 의 첫 사용처는 **I-13 그대로**. ~~반출(`material-returns`)만 ⭐ 있다~~(2026-09-07 정정).
+**계보**: `lot_relation` 은 계약 7벌에 **자원이 전무하다**(계약 x-internal-note: 「읽거나 쓰는 화면이 118장 중 0장」). 계약이 「서버가 계보 관계를 이 등록과 한 트랜잭션으로 만든다」라 적었으나 **이 등록에서는 만들지 않는다**(I-10 §3-9 · 재수립 R-1) — 투입 시점에 생산LOT 이 아직 없고(`ck_material_usage_target` 도 같은 이유로 못 채운다 · §3-10) `relation_type_code`·`allocation_method_code`·`trace_accuracy_code` NOT NULL 셋의 문자열이 계약·화면·시드 어디에도 없다. 소비자 실측 0(`src/`·`test/`·seed · `shipment_lot_allocation` 은 별도 표). **문의 052** 회신 뒤에 만든다(선택지 ② = 실적 시점 후속). ~~그래도 서버는 써야 한다 · e2e 는 DB 를 직접 읽어 단언한다~~.
+**코드 상수 셋**: `material_consumption.consumption_type_code='NORMAL'`·`status_code='RECORDED'` · `material_return.status_code='REQUESTED'` — 계약 `x-no-code-key` 로 판정 주체를 서버에 넘겼고 응답 required 라 문자열은 서버가 골랐다(**문의 053** 판정 확인 요청 · 재수립 R-4·R-5). `return_quality_status_code` 는 요청·응답 어디에도 칸이 없어 값을 만드는 대신 NOT NULL 을 푼다(마이그 2 중 하나).
+**예상 설계 미정**: ~~`trace_accuracy_code`·`allocation_method_code` 값 목록 미확정인데 컬럼은 NOT NULL~~ → `material_usage_allocation` 자체를 이 슬라이스가 못 쓴다(위 계보 · 052). 단말 토큰은 발급(`terminal.service.ts:200-223` `issueToken`)만 있고 검증·계약 `security` 선언이 0 이라 `terminal_id` NOT NULL 을 푼다(**문의 054** · I-11 과 공동).
 
 
 ##### I-11 · 작업 세션 — 세션·이벤트·작업자·작업전점검 — 11건
@@ -657,7 +658,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 
 | # | 함정 | 어느 슬라이스에서 터지나 | 방어 |
 |---|---|---|---|
-| 1 | **원장 판별자를 늘리고 싶어진다.** 투입·실적·출하를 각각 `MATERIAL_CONSUMPTION`·`PRODUCTION_RESULT`·`SHIPMENT` 로 원장에 넣으려는 유혹 | I-10 · I-7 · I-23 | §1-4 표를 계획서에 못 박았다. 계약 `InventoryTransaction.sourceDocumentTypeCode` **enum 4값**이 정본이고, 늘리려면 계약을 고쳐야 한다 |
+| 1 | **원장 판별자를 늘리고 싶어진다.** 투입·실적·출하를 각각 `MATERIAL_CONSUMPTION`·`PRODUCTION_RESULT`·`SHIPMENT` 로 원장에 넣으려는 유혹 — **반출도**(`material_return_line.inventory_transaction_line_id` 칸이 있다고 `STOCK_TRANSFER` 를 만들려는 유혹 · I-10 재수립 R-2) | I-10 · I-7 · I-23 | §1-4 표를 계획서에 못 박았다. 계약 `InventoryTransaction.sourceDocumentTypeCode` **enum 4값**이 정본이고, 늘리려면 계약을 고쳐야 한다 |
 | 2 | **`reserved_qty`·`picked_qty` 를 도메인이 직접 UPDATE 한다.** 코어가 안 건드리니 「내가 하면 되지」가 된다 | I-8 에서 시작해 I-22 로 번진다 | I-8 을 코어 전용 PR 로 자르고, ~~e2e 에 「도메인이 `inventory_balance` 를 직접 쓰지 않는다」를 잔액 UPDATE 트리거로 감지~~ **정적 가드 spec**(`balance-write-guard.spec.ts` · 정규식 3패턴 — 잔액 UPDATE 트리거가 없고 코어 자신이 UPDATE 하므로 DB 층에서 주체를 못 가른다 · I-8 §3-8 · R-8) |
 | 3 | **역트랜잭션이 3벌 생긴다** — 취소·출하 취소·조정 역분개(실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19) | I-5 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
 | 4 | **채번이 15벌 복사된다.** 입고에 이미 `count()+1` 이 있어 복사가 자연스럽다. 취소가 생기면 번호를 **재사용**한다 | I-2 를 늦추면 I-3·I-4·I-13·I-14·I-15·I-22·I-23 전부 | I-2 에서 코어로 세우고 **입고의 두 함수를 그 코어로 옮기는 것**까지 같은 PR |
