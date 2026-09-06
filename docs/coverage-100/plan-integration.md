@@ -166,7 +166,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-2 | P/O(발주) + 채번 코어 | 7 | I-1 | 있음 | ⚠ P/O 유일 제약(§I-48) | ✕ | ⭕ | 3 |
 | I-3 | 입하 — 라인·차이·초과분리 | 12 | I-2 | 있음 | ✕ | ✕ | ⭕ | 3 |
 | I-4 | 출고 — 전표·전기 | 7 | I-3 | 있음 | ⚠ `goods_issue.destination_id` NOT NULL 해제(#147) | ⭐ | ⭕ | 3 |
-| I-5 | 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | 있음(`document_cancellation`) | ✕ | ⭐ 역 | ⭕ | 3 |
+| I-5 | 다형 취소 + 역트랜잭션 코어 | 4 | I-3·I-4 | 있음(`document_cancellation`) | 완화 1(`reason_code` NOT NULL 해제 · R-1) | ⭐ 역 | ⭕ | 6 |
 | I-6 | W/O — 발행~마감 + 4M 배정 | 13 | I-2 | ⚠ `work_order_resource_assignment` 축이 다르다 | ⭕ 유일 제약 + `remainder_disposition_code`(§I-25) | ✕ | ⭐ | 4 |
 | I-7 | 생산 실적 + LOT 생명주기 | 7 | I-6 | 있음 | ✕ | ✕ | ⭐ L1·L2·L3 | 3 |
 | I-8 | 출고요청·피킹·예약 코어 | 8 | I-4 | 있음 | ✕ | ⭐ 예약/피킹 칸 | ⭕ | 3 |
@@ -245,7 +245,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 **체인 마디**: 체인 «전체»를 거꾸로 되짚는 가로대. 조회 9종 · 취소 실행 3종.
 **함께 서는 코어 — 역트랜잭션**: `InventoryPostingService.reverse(tx, {원 트랜잭션})` 를 **전용 PR(diff ≤ 200줄)** 로 만든다. `inventory_transaction.reversal_of_transaction_id`·`reversal_of_business_date` 컬럼이 이미 있다. 역처리가 잔액을 음수로 만들면 400(계약 명시).
-**핵심 판정 — `successorCount`·`cancellable`**: 원천 참조가 다형(`source_document_type_code`+`source_document_id`)이라 「유형 → 어느 표를 뒤져야 하나」 표가 서버에 필요하다. 계약이 그 표를 명시적으로 서버 소유로 넘겼다(A-10 보강). `entity_type_registry` 표가 이미 있으니 **거기서 읽는다** — 코드에 표를 박지 않는다.
+**핵심 판정 — `successorCount`·`cancellable`**: 원천 참조가 다형(`source_document_type_code`+`source_document_id`)이라 「유형 → 어느 표를 뒤져야 하나」 표가 서버에 필요하다. 계약이 그 표를 명시적으로 서버 소유로 넘겼다(A-10 보강). ~~`entity_type_registry` 표가 이미 있으니 거기서 읽는다 — 코드에 표를 박지 않는다.~~ ⭐ **I-5 재수립 R-6 으로 절반 기각** — 등록부는 칸이 넷(`schema_name`·`table_name`·`id_column_name`·`is_active`)이라 `DocumentProgress` required 10 을 못 채우고 9종 중 4종이 없다. 매핑은 코드의 정적 표 하나, 등록부는 부팅 시 대조(로그 경고)에만 쓴다.
 ⭐ `:cancel` 은 승인 후 **재판정**한다 — `SUCCESSOR_EXISTS` 400. 승인은 그대로 유효하다(J-8). e2e 가 「승인 → 그 사이 후속 생성 → 실행 400 → 승인은 살아 있음」을 반드시 못 박는다.
 **예상 설계 미정**: 취소 흔적 컬럼이 14표 중 2표에만 있다(§I-38). → `app.document_cancellation`(다형 표)이 이미 있으므로 **컬럼을 늘리지 않고 그 표에 적는다** — 2단계 기준 3「스키마를 안 늘리는 쪽」.
 
@@ -585,7 +585,7 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 | **I-27 ∥ I-28** | `src/app/document-issue/` ∥ `src/app/notification/` | 둘 다 `app-domain.module.ts` 한 줄만 겹친다 |
 | **I-33 ∥ I-16** | `src/maintenance/tool·calibration/` ∥ `src/inventory/handling-unit/` | 완전 분리 |
 
-⛔ **병렬로 두면 안 되는 쌍**: 원장 코어를 «고치는» 두 슬라이스(I-5 ∥ I-8) — 같은 `inventory-posting.service.ts` 를 늘린다. I-4 ∥ I-23 — 둘 다 `goods_issue` 를 만든다.
+⛔ **병렬로 두면 안 되는 쌍**: 원장 코어를 «고치는» 두 슬라이스(I-5 ∥ I-8) — 같은 `inventory-posting.service.ts` 를 늘린다(I-5 PR ① 이 `post()`·`reverse()` 공용 선잠금 헬퍼를 닫는다 — I-8 은 그 헬퍼를 재사용 · I-5 R-5). I-4 ∥ I-23 — 둘 다 `goods_issue` 를 만든다.
 
 ### 6-3. 마이그레이션이 모이는 자리
 
@@ -660,7 +660,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | 2 | **`reserved_qty`·`picked_qty` 를 도메인이 직접 UPDATE 한다.** 코어가 안 건드리니 「내가 하면 되지」가 된다 | I-8 에서 시작해 I-22 로 번진다 | I-8 을 코어 전용 PR 로 자르고, e2e 에 「도메인이 `inventory_balance` 를 직접 쓰지 않는다」를 잔액 UPDATE 트리거로 감지 |
 | 3 | **역트랜잭션이 4벌 생긴다** — 취소·실적 정정·출하 취소·조정 역분개 | I-5 → I-7 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
 | 4 | **채번이 15벌 복사된다.** 입고에 이미 `count()+1` 이 있어 복사가 자연스럽다. 취소가 생기면 번호를 **재사용**한다 | I-2 를 늦추면 I-3·I-4·I-13·I-14·I-15·I-22·I-23 전부 | I-2 에서 코어로 세우고 **입고의 두 함수를 그 코어로 옮기는 것**까지 같은 PR |
-| 5 | **`document-progress` 의 유형↔표 대응을 코드에 박는다.** 9종 × 후속 판정이라 `switch` 가 자연스럽다 | I-5, 그리고 유형이 느는 순간 조용히 틀린다 | `app.entity_type_registry` 표가 이미 있다 — 거기서 읽는다. 계약이 명시적으로 서버 소유로 넘긴 자리(A-10 보강) |
+| 5 | **`document-progress` 의 유형↔표 대응을 코드에 박는다.** 9종 × 후속 판정이라 `switch` 가 자연스럽다 | I-5, 그리고 유형이 느는 순간 조용히 틀린다 | `app.entity_type_registry` 표가 이미 있다 — 거기서 읽는다. 계약이 명시적으로 서버 소유로 넘긴 자리(A-10 보강) | ⭐ I-5 R-6: **절반 기각** — 매핑은 코드 · 등록부는 부팅 대조로 남긴다.
 | 6 | **생산창고 차이를 원장으로 처리해 버린다.** `businessDate` 가 실려 있어 「전기해야 하나 보다」로 읽힌다 | I-9 | §3-1 I-9 의 §2 판정을 따른다 — 기록만. 뒤집히면 마이그레이션이 생기므로 **그 슬라이스만 3관점 재수립**(README §1-2 첫째 조건) |
 | 7 | **`:confirm`(계획 전개)을 W/O 보다 먼저 짠다.** 계획이 체인의 «위»라 순서상 먼저로 보인다 | I-24 를 앞당기면 I-6 을 두 번 짠다 | 순서표에서 I-24 를 M2 끝에 두었다. 전개는 W/O 의 상태·선발행 규칙을 «쓰는» 쪽이다 |
 | 8 | **출하가 `GoodsIssueService` 를 부른다.** 도메인 간 service 호출 금지(아키텍처 §1)를 어긴다 | I-23 | shipment 가 `posting.post()` 를 직접 부르고 `goods_issue` 행은 자기가 만든다. 공유하는 것은 **타입뿐** |

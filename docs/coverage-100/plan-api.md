@@ -171,7 +171,7 @@
 | 마이그레이션 | 없음 — ⭐ §I-38 「취소 흔적 2/14 표」가 **`app.document_cancellation` 로 이미 해소돼 있다**. 유형·id·직전상태·사유·시각·주체를 다 담는 다형 표다. 유형별 표에 3칸을 더할 이유가 사라졌다. |
 | posting(원장) 연결 | **있음** — 전기된 문서면 역트랜잭션. 전기 전이면 상태만 바뀌고 원장에 아무것도 안 생긴다(`CancelResult.reversed`) |
 | 상태기계 | **있음 · 이 계획의 중심 상태기계**(§5.1-A) |
-| 예상 PR 수 | 3 — ① 진행 조회 2건(후속 판정 포함) ② `:request-cancel` + 승인 연결 + e2e ③ `:cancel` + 역전기 + `SUCCESSOR_EXISTS` 재판정 + e2e (코어) |
+| 예상 PR 수 | ~~3~~ **6**(I-5 재수립 R-10) — ① `posting.reverse()` 코어 ② 매핑 표 + 후속 판정 ③a 목록 GET ③b 상세 GET ④ `:request-cancel` + 승인 연결 ⑤ `:cancel` + 어댑터 3 + e2e(선행 커밋: `document_cancellation.reason_code` 완화 · R-1) |
 | 설계 미정 자리 · §2 판정 초안 | `DocumentProgress.screenId` — **채울 표가 없다**(계약 재검토 2026-09-04 §3). 계약이 물러난 길을 이미 적었다: 「정하지 못하면 이 키를 생략한다(널을 보내지 않는다)」. 그대로 생략한다. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
