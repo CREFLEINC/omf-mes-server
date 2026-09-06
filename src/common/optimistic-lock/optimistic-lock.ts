@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { ConflictCause, ConflictException } from '../errors';
+import { ConflictCause, ConflictException, ConflictExtra } from '../errors';
 
 export const IF_MATCH_HEADER = 'if-match';
 export const ETAG_HEADER = 'ETag';
@@ -53,9 +53,14 @@ export function rememberIfMatch(request: Request, version: number): void {
  * 로 문구를 고르므로 원인을 함께 싣는다. 기본은 사람이고, ERP 재동기화 배치가 같은 행을
  * 덮을 수 있는 자리(수신본 마스터)는 호출자가 `erpSync` 를 준다.
  */
-export function assertUpdated(affectedRows: number, cause: ConflictCause = 'user'): void {
+export function assertUpdated(
+  affectedRows: number,
+  cause: ConflictCause = 'user',
+  /** 계열이 `code` 를 required 로 적은 자리가 실어 보낸다(I-6 R-8). 없으면 봉투는 그대로다. */
+  extra?: ConflictExtra,
+): void {
   if (affectedRows === 0) {
-    throw new ConflictException(cause, MESSAGE[cause]);
+    throw new ConflictException(cause, MESSAGE[cause], extra);
   }
 }
 

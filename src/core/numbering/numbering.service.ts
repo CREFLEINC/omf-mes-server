@@ -15,6 +15,9 @@ const DEFAULT_PREFIX: Record<string, string> = {
   INBOUND_RECEIPT: 'IR',
   /** 규칙 미등재 — `GI-{YYYYMMDD}-{SEQ4}`(`plan-api.md` 1090행 · 계약 example `GI-2026-000402` 는 형식만). */
   GOODS_ISSUE: 'GI',
+  /** 규칙 미등재 — 형식 확정은 문의 14 표에 두 행을 더해 받는다(I-6 §2-7). */
+  WORK_ORDER: 'WO',
+  MATERIAL_ISSUE_REQUEST: 'MIR',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
