@@ -13,6 +13,8 @@ const EQUIPMENT_STATUS = 'mdm.equipment.status_code';
 const MOLD_STATUS = 'mdm.mold.status_code';
 /** 결재 요청 진행 — 시드 APPROVAL_REQUEST_STATUS(PENDING·APPROVED·REJECTED). */
 const APPROVAL_STATUS = 'app.approval_request.status_code';
+/** I-4 가 여는 축. 취소 두 액션은 I-5 가 «이 키 안에» 더한다(I-4.md R-2). */
+const GOODS_ISSUE_STATUS = 'logistics.goods_issue.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -140,9 +142,16 @@ describe('DocumentStateService', () => {
       const columns = new Set(service.registered().map((entry) => entry.column));
 
       expect([...columns].sort()).toEqual(
-        [APPROVAL_STATUS, EQUIPMENT_STATUS, LIFECYCLE, MOLD_STATUS, ROUTING_COLUMN].sort(),
+        [
+          APPROVAL_STATUS,
+          EQUIPMENT_STATUS,
+          GOODS_ISSUE_STATUS,
+          LIFECYCLE,
+          MOLD_STATUS,
+          ROUTING_COLUMN,
+        ].sort(),
       );
-      expect(service.registered()).toHaveLength(9);
+      expect(service.registered()).toHaveLength(10);
     });
   });
 });

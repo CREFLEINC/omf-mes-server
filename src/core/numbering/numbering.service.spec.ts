@@ -100,6 +100,12 @@ describe('채번 코어', () => {
     expect(await service.next('INBOUND_RECEIPT', PLANT, DAY)).toBe('IR-20260906-0001');
   });
 
+  it('채번 — GOODS_ISSUE 의 기본 접두어는 GI 다(규칙 미등재)', async () => {
+    const { service } = fake();
+
+    expect(await service.next('GOODS_ISSUE', PLANT, DAY)).toBe('GI-20260906-0001');
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),
