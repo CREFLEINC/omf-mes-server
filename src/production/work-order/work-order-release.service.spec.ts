@@ -5,7 +5,8 @@ import { LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { materialRequirements } from './material-issue';
-import { WorkOrderReleaseService, operationSettings } from './work-order-release.service';
+import { operationSettings } from './release-plan';
+import { WorkOrderReleaseService } from './work-order-release.service';
 
 const WORK_ORDER = 900;
 const ROUTING_OPERATION = 33n;

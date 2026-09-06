@@ -33,10 +33,7 @@ export interface MaterialIssueLine {
   uom_id: bigint;
 }
 
-/**
- * 자동 발행 제외. ⛔ `REWORK` 는 대상이 **아니다** — 계약이 `EMERGENCY` 만 적었고
- * 「재작업도 비슷하니까」는 우리가 지어내는 뜻이다.
- */
+/** 자동 발행 제외. ⛔ `REWORK` 는 대상이 **아니다** — 계약이 `EMERGENCY` 만 적었다. */
 export function skipsMaterialIssue(workOrderTypeCode: string): boolean {
   return workOrderTypeCode === EMERGENCY_TYPE;
 }
