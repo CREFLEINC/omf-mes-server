@@ -115,9 +115,9 @@
 | 선행 슬라이스 | S03 · S09(승인) |
 | 쓰는 표 | `logistics.goods_issue`·`goods_issue_line`·`picking_order`·`picking_line`·`material_issue_request(_line)`·`shopfloor_receipt(_line)` — 전부 있음 |
 | 마이그레이션 | 없음 (실측) — `goods_issue.approval_request_id`·취소 흔적 3칸이 **이미 있다**. 계약의 「모델에 이 컬럼이 아직 없다」 노트는 **낡았다**(§5.2 표 B). |
-| posting(원장) 연결 | **있음** — `:post` 가 창고→목적지 출고를 쌓는다. 피킹 `:pick` 은 `inventory_reservation` 을 걸고 푼다 |
+| posting(원장) 연결 | **있음** — `:post` 가 창고→목적지 출고를 쌓는다. 피킹 `:pick` 은 `inventory_reservation` 을 ~~걸고~~ **푸는 쪽만**(`consumed_qty` · 거는 자리는 계약에 없다 — I-8 R-22 · 문의 045) |
 | 상태기계 | 있음 (`LOGISTICS_DOCUMENT_STATUS`) · 피킹 라인 상태는 「칸 불필요」(`plannedQty ↔ pickedQty` 가 진행을 담는다) |
-| 예상 PR 수 | 4 — ① 조회 GET 10건 ② 출고 전표 + `:post` posting + e2e(코어) ③ `:request-approval` + 라인 PUT ④ 자재요청·피킹`:pick`·현장입고 + e2e. ⚠ I-4(출고 7건)만 **5**(조회 3 · `assertApproved` 코어 · `:post`+전기 · 등록 · 치환+상신) — 나머지 10건은 I-8(I-4 재수립 R-11) |
+| 예상 PR 수 | 4 — ① 조회 GET 10건 ② 출고 전표 + `:post` posting + e2e(코어) ③ `:request-approval` + 라인 PUT ④ 자재요청·피킹`:pick`·현장입고 + e2e. ⚠ I-4(출고 7건)만 **5**(조회 3 · `assertApproved` 코어 · `:post`+전기 · 등록 · 치환+상신) — 나머지 10건은 I-8(I-4 재수립 R-11) — I-8 은 8건을 **PR 5**(코어 · 요청 조회 3 · `POST`+`reservations` · 피킹 조회 2 · `:pick`+`consume()` 배선 · I-8 R-1) |
 | 설계 미정 자리 · §2 판정 초안 | `:post` 가 「승인이 필요한 전표」를 어떻게 가르는가. ~~결재선이 그 유형·사업부로 존재하면 승인 필수~~ → **기각**(I-4 재수립 R-4): `businessUnitId` 가 8자리 `null` 이라 「그 유형으로」만 남아 전역 조건이 되고, 결재선 한 벌이 서면 `M-01-08` 생산 투입 출고까지 400 이다. 「폐기」`reasonCode` 값은 아직 안 실렸다(고객 확장). ⇒ **그 전표에 `GOODS_ISSUE_DISPOSAL` 승인 요청이 있으면 승인 전표**(상신 흔적 · §2 2단계 기준 5 · 값이 오면 데이터 매핑으로 바꾼다 — 문의 030). |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
@@ -543,7 +543,7 @@
 | 선행 슬라이스 | S16(완제품 LOT) · S19(Release 판정) |
 | 쓰는 표 | `logistics.sales_order(_line)`·`shipment_request(_line)`·`shipment_lot_allocation` — 있음 |
 | 마이그레이션 | **필요** — `shipment_request.sales_order_id`(nullable FK · 계약 `ShipmentRequest.salesOrderId`). |
-| posting(원장) 연결 | 없음 (배분은 예약 축) — `:pick` 이 `inventory_reservation` 을 걸고 푼다 |
+| posting(원장) 연결 | 없음 (배분은 예약 축) — `:pick` 이 `inventory_reservation` 을 ~~걸고~~ **푸는 쪽만** 한다(거는 오퍼레이션이 계약에 없다 — I-8 R-22 · 문의 045 · 04 제품 피킹은 I-22) |
 | 상태기계 | 없음 — ⭐ `ShipmentRequest.statusCode` 는 「칸 불필요」로 닫혔고 진행은 **파생 `shipmentProgressCode` 6값**이다(저장 칸 없음, 판정식은 계약이 정본으로 가짐) |
 | 예상 PR 수 | 3 — ① 조회 GET 6건 + `shipmentProgressCode` 파생 ② 마이그 + 출하요청 등록 ③ `:pick` + 배분 PUT + e2e |
 | 설계 미정 자리 · §2 판정 초안 | 없음 — 계약이 6값의 판정식과 우선순위(「뒤가 이긴다」)까지 적었다. |
@@ -1058,7 +1058,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | `ALREADY_CLOSED` | 400 | 이미 마감됐다 | S07 | 같음 |
 | `RECOMMENDED_LOCATION_MISMATCH` | 400 | 권장 위치가 있는데 다른 곳에 적치(`confirmedNoRule` 로도 안 풀린다) | S03 | 계약이 「400 으로 막는다」만 적음 |
 | `QTY_EXCEEDS_SHIPPED` | 400 | `:arrive` 수량 > 반출 수량 | S05 | 계약 「반출한 수량 이하만」 |
-| `NEGATIVE_BALANCE` | 400 | 역처리가 잔액을 음수로 만든다 | S06 | 계약이 「400 이다」라 적음. ⚠ 지금은 DB 트리거 `check_balance_qty()` 가 500 으로 샌다 — 잡아서 이 코드로 바꾼다 |
+| `NEGATIVE_BALANCE` | 400 | 역처리가 잔액을 음수로 만든다 | S06 · **I-8**(`pick()`/`consume()` 하한 0행) | 계약이 「400 이다」라 적음. ⚠ 지금은 DB 트리거 `check_balance_qty()` 가 500 으로 샌다 — 잡아서 이 코드로 바꾼다 |
 | `JUDGMENT_SUM_MISMATCH` | 400 | `accepted + rejected + held ≠ inspected` | S18 | 계약이 「400 이다(A-3)」라 적음 |
 | `NOT_BLOCKING` | 400 | `blocksUse=false` 인 검교정 이력에 `:clear` | S24 | 계약 「막고 있지 않은 것을 풀 수 없다」 |
 | `ALREADY_CLEARED` | **409** | 이미 해소된 이력에 `:clear` | S24 | 계약이 「409 다」라 적음 |
@@ -1089,7 +1089,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 입하 | `inbound_receipt_no` | ❌ | — | S02 |
 | 출고 | `goods_issue_no` | ❌ | `GI-{YYYYMMDD}-{SEQ4}`(I-4 · `DEFAULT_PREFIX` `GI`) | S04 |
 | 자재 출고요청 | `issue_request_no` | ❌ | — | S04 |
-| 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — 출고요청이 만든다) |
+| 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — ~~출고요청이 만든다~~ **아무도 못 만든다** · 배정 축 3겹 부재 · I-8 §5 · 문의 045) |
 | 현장 입고 | `shopfloor_receipt_no` | ❌ | — | S04 |
 | 창고 이동 | `stock_transfer_no` | ❌ | — | S05 |
 | 재생재 | `recycle_entry_no` | ❌ | — | S05 |

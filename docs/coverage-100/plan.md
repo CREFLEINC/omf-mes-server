@@ -40,7 +40,7 @@
 | 7 | **I-6** W/O + 4M 배정 | 13 | I-2 | M-d | ERP 아웃박스(첫 사용처) · 생명주기 전이 | opus · ② sonnet | 7 | I-6 재수립 R-5 |
 | 8 | **I-7** 생산 실적 + LOT 생명주기 L1 | 7 | I-6 | D1·**D2** | — | opus | **4** | — (I-7 재수립 R-5 · D2 는 R-1~R-20 참조) |
 | — | **M1 체인 e2e** (통합 §4-1) | | I-7 | | | fable 통합 | 1 | |
-| 9 | **I-8** 출고요청·피킹·예약 코어 | 8 | I-4 | — | `reserved_qty`/`picked_qty` | opus | 3 | ⛔ I-5 와 직렬 |
+| 9 | **I-8** 출고요청·피킹·예약 코어 | 8 | I-4 | — | `reserved_qty`/`picked_qty`(`pick()`·`consume()` 둘 — `reserve()` 는 사용처 0 이라 **I-22** · I-8 §3-7) | opus | ~~3~~ **5**(I-8 R-1 · ④ 선분할) | ⛔ I-5 와 직렬 |
 | 10 | **I-9** 생산창고 입고 | 3 | I-8 | — | — | sonnet | 2 | — |
 | 11 | **I-10** 자재 투입·반출 + 계보 | 6 | I-9·I-7 | — | — | opus | 3 | ∥ I-11 |
 | 12 | **I-11** 작업 세션·작업전점검 | 11 | I-6 | — | — | sonnet | 3 | ∥ I-13 |
@@ -103,7 +103,7 @@
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | **`src/core/outbox/`** 에 `enqueue()` 하나(사용처가 두 도메인 — I-6 R-11). `message_key` 규약 `{INTERFACE_CODE}:{문서번호}` · 버전 없음 · UNIQUE 충돌은 `alreadyQueued:true` |
 | LOT 생명주기 전이 | I-6·I-7 | `transitions.ts` 에 이미 등록 + **`LotLifecycleService.moveWithin()`**(`lot_lifecycle_history` 를 쓰는 코어 · `{movedLotIds, skippedLotIds}` 반환)을 I-6 이 만들고 I-7 이 L1 로 재사용(I-6 R-12) |
 | LOT 품질 축 전이 | I-19 | 계약이 이름 적은 전이만 등록. 미등록은 던진다(F-6) |
-| 예약/피킹 | I-8 코어 PR ≤200줄 | `posting` 이 `reserved_qty`·`picked_qty` 를 올리고 내린다. 도메인의 `inventory_balance` 직접 UPDATE 금지(e2e 감지) |
+| 예약/피킹 | I-8 코어 PR ≤200줄 | `posting` 이 ~~`reserved_qty`·~~`picked_qty` 를 올리고 내린다(`pick()`·`consume()` · `reserved_qty` 를 «거는» 오퍼레이션은 계약에 없다 — I-8 §5 · 문의 045). 도메인의 `inventory_balance` 직접 UPDATE 금지(~~e2e 감지~~ **정적 가드 spec** `balance-write-guard.spec.ts` — 잔액 UPDATE 트리거가 없고 코어 자신이 UPDATE 하므로 DB 층에서 주체를 못 가른다 · I-8 §3-8 · R-8) |
 | 시리얼 | 코어 아님 | I-26 서비스 안 |
 
 ## 4. 마이그레이션 목록 (전부 추가·완화 — 삭제 0, 두 릴리스 규칙 미해당)
@@ -150,7 +150,7 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
 12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.
