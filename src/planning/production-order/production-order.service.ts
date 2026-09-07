@@ -137,20 +137,29 @@ export class ProductionOrderService {
     });
   }
 
-  /** §5-1(집계 2칸) + §2-3(확인 3칸, `acknowledged_at` 최대 1행)을 한 쿼리로 낸다 — 행마다 돌지 않는다. */
+  /**
+   * §5-1(집계 2칸) + §2-3(확인 3칸, `acknowledged_at` 최대 1행)을 한 쿼리로 낸다 — 행마다 돌지 않는다.
+   * ⛔ 두 그룹 서브쿼리 «안»에도 `IN` 을 건다 — 바깥 `WHERE o.production_order_id IN (…)` 은 그쪽으로
+   * 내려가지 않아(EXPLAIN 실측) 상세 한 건 조회가 `production.work_order` 전건을 집계했다.
+   */
   private async derivedOf(ids: bigint[]): Promise<Map<bigint, DerivedRow>> {
     const map = new Map<bigint, DerivedRow>();
     if (ids.length === 0) return map;
+    // ⛔ 확인 3칸은 별칭이 필요하다 — `DerivedRow` 가 camelCase 라 스네이크 이름 그대로면 늘
+    //    undefined 가 되어 확인 3칸이 응답에서 통째로 빠진다(PR ④ e2e 15 가 잡았다).
     const rows = await this.prisma.$queryRaw<({ production_order_id: bigint } & DerivedRow)[]>(Prisma.sql`
       SELECT o.production_order_id, COALESCE(ewo.n, 0)::int AS expanded, COALESCE(pwo.n, 0)::int AS planned,
-             ack.acknowledged_at, ack.acknowledged_by, ack.acknowledge_decision_code
+             ack.acknowledged_at AS "acknowledgedAt", ack.acknowledged_by AS "acknowledgedBy",
+             ack.acknowledge_decision_code AS "acknowledgeDecisionCode"
         FROM planning.production_order o
         LEFT JOIN (SELECT p.production_order_id, count(*) n FROM production.work_order w
-                     JOIN planning.production_plan p ON p.production_plan_id = w.production_plan_id GROUP BY 1) ewo
+                     JOIN planning.production_plan p ON p.production_plan_id = w.production_plan_id
+                    WHERE p.production_order_id IN (${Prisma.join(ids)}) GROUP BY 1) ewo
           ON ewo.production_order_id = o.production_order_id
         LEFT JOIN (SELECT p.production_order_id, sum(oc.cnt) n FROM planning.production_plan p
                      LEFT JOIN (SELECT routing_id, count(*) cnt FROM planning.routing_operation GROUP BY 1) oc
-                       ON oc.routing_id = p.routing_id GROUP BY 1) pwo
+                       ON oc.routing_id = p.routing_id
+                    WHERE p.production_order_id IN (${Prisma.join(ids)}) GROUP BY 1) pwo
           ON pwo.production_order_id = o.production_order_id
         LEFT JOIN LATERAL (SELECT acknowledged_at, acknowledged_by, acknowledge_decision_code
                               FROM production.production_order_acknowledgement
