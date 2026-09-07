@@ -35,7 +35,7 @@ export class NotificationPreviewService {
     const directUserIds = directRecipientUserIds(input.recipients);
     const rows = await this.readUsersInOneSnapshot(tx, directUserIds, roleRules);
     const users: NotificationPreviewUser[] = rows.map((row) => ({
-      userId: Number(row.app_user_id),
+      userId: contractUserId(row.app_user_id),
       userName: row.user_name,
       isActive: row.is_active,
       ...(row.department_name === null ? {} : { departmentName: row.department_name }),
@@ -110,6 +110,15 @@ export class NotificationPreviewService {
     );
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
+}
+
+// 설계 미정 — 문의 번호 배정 대기(I-28 R-11): 서로 다른 bigint를 같은 숫자로 내리지 않는다.
+function contractUserId(id: bigint): number {
+  const value = Number(id);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error('사용자 ID를 JSON 숫자로 안전하게 표현할 수 없습니다.');
+  }
+  return value;
 }
 
 function uniqueIds(ids: number[]): number[] {

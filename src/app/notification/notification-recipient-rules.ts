@@ -31,6 +31,9 @@ export function assertNotificationRecipientRules(
     const shapeErrors = recipientShapeErrors(recipient, index);
     errors.push(...shapeErrors);
     if (shapeErrors.length > 0) return;
+    const rangeErrors = recipientIdRangeErrors(recipient, index);
+    errors.push(...rangeErrors);
+    if (rangeErrors.length > 0) return;
 
     const key = recipientKey(recipient);
     const first = seen.get(key);
@@ -51,6 +54,32 @@ export function assertNotificationRecipientRules(
   });
 
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+// 설계 미정 — 문의 번호 배정 대기(I-28 R-11): JSON 숫자로 이미 받은 값의 안전 경계다.
+function recipientIdRangeErrors(
+  recipient: NotificationRecipientInput,
+  index: number,
+): ErrorItem[] {
+  const ids: [string, number | undefined][] =
+    recipient.recipientTypeCode === 'ROLE'
+      ? [
+          ['businessUnitId', recipient.businessUnitId],
+          ['roleId', recipient.roleId],
+        ]
+      : [['userId', recipient.userId]];
+  return ids.flatMap(([field, value]) =>
+    Number.isSafeInteger(value)
+      ? []
+      : [
+          {
+            scope: 'field',
+            field: `recipients[${index}].${field}`,
+            code: ERROR_CODE.RANGE,
+            message: '안전한 정수 범위여야 합니다.',
+          },
+        ],
+  );
 }
 
 export function roleRecipientRules(

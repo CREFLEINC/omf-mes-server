@@ -401,6 +401,38 @@ describe('알림 수신자 preview (I-28 PR ③ e2e)', () => {
     );
   });
 
+  it('세 입력 ID 축의 안전 범위 밖 숫자는 실제 HTTP에서 정확한 RANGE 400이다', async () => {
+    // 설계 미정 — 문의 번호 배정 대기(I-28 R-11)
+    const unsafe = Number.MAX_SAFE_INTEGER + 1;
+    const cases: [Record<string, unknown>, string][] = [
+      [
+        { recipientTypeCode: 'ROLE', businessUnitId: unsafe, roleId: Number(roleAId) },
+        'recipients[0].businessUnitId',
+      ],
+      [
+        { recipientTypeCode: 'ROLE', businessUnitId: Number(businessUnitAId), roleId: unsafe },
+        'recipients[0].roleId',
+      ],
+      [{ recipientTypeCode: 'USER', userId: unsafe }, 'recipients[0].userId'],
+    ];
+    for (const [recipient, field] of cases) {
+      const response = await preview({ recipients: [recipient] }).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field, code: 'RANGE' }),
+      ]);
+    }
+    const rawMaximum = await request(app.getHttpServer())
+      .post(PATH)
+      .set('Cookie', actor.cookie)
+      .set('Idempotency-Key', newKey())
+      .type('application/json')
+      .send('{"recipients":[{"recipientTypeCode":"USER","userId":9223372036854775807}]}')
+      .expect(400);
+    expect(rawMaximum.body.errors).toEqual([
+      expect.objectContaining({ field: 'recipients[0].userId', code: 'RANGE' }),
+    ]);
+  });
+
   it('중복 규칙은 뒤 행과 정확한 uniqueScope의 400이다', async () => {
     const cases: [Record<string, unknown>[], string[]][] = [
       [
@@ -457,6 +489,45 @@ describe('알림 수신자 preview (I-28 PR ③ e2e)', () => {
       response_status: 200,
       response_body: response.body,
     });
+  });
+
+  it('ROLE DB 전개의 unsafe bigint ID는 전체 500이고 멱등 기록도 롤백한다', async () => {
+    // 설계 미정 — 문의 번호 배정 대기(I-28 R-11)
+    const unsafeIds = [9007199254740992n, 9007199254740993n];
+    for (const [index, unsafeId] of unsafeIds.entries()) {
+      await prisma.$executeRaw`
+        INSERT INTO app.app_user
+          (app_user_id, login_id, user_name, department_id, status_code)
+        OVERRIDING SYSTEM VALUE
+        VALUES (
+          ${unsafeId}, ${`${PREFIX}_UNSAFE_${index}`}, ${`unsafe 사용자 ${index}`},
+          ${departmentAId}, 'EMPLOYED'
+        )
+      `;
+      userIds.push(unsafeId);
+      await prisma.user_role.create({
+        data: { app_user_id: unsafeId, role_id: emptyRoleId },
+      });
+    }
+
+    const failedKey = newKey();
+    const failure = await preview(
+      { recipients: [roleRecipient(businessUnitAId, emptyRoleId)] },
+      failedKey,
+    ).expect(500);
+    expect(validateBadRequest(failure.body)).toBe(true);
+    expect(failure.text).not.toContain('900719925474099');
+    expect(
+      await prisma.idempotency_record.count({ where: { idempotency_key: failedKey } }),
+    ).toBe(0);
+
+    const successKey = newKey();
+    await preview({ recipients: [userRecipient(activeMatched.id)] }, successKey).expect(200);
+    expect(
+      await prisma.idempotency_record.count({
+        where: { idempotency_key: { in: [failedKey, successKey] }, status: 'COMPLETED' },
+      }),
+    ).toBe(1);
   });
 
   it('같은 키는 소속 변경 뒤에도 최초 시각·사용자를 재생하고 새 키는 다시 전개한다', async () => {
