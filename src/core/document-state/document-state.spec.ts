@@ -24,6 +24,8 @@ const WORK_ORDER_STATUS = 'production.work_order.status_code';
 const WORK_SESSION_STATUS = 'production.work_session.status_code';
 /** I-12 PR ① 이 여는 축 — 시드 `PUTAWAY_TASK_STATUS`(PENDING·COMPLETED·COMPLETED_TEMPORARY) 3값. */
 const PUTAWAY_TASK_STATUS = 'logistics.putaway_task.status_code';
+/** I-24 PR ③ 이 여는 축 — 시드 `PRODUCTION_PLAN_STATUS`(DRAFT·CONFIRMED) 2값. */
+const PRODUCTION_PLAN_STATUS = 'planning.production_plan.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -259,6 +261,7 @@ describe('DocumentStateService', () => {
           INBOUND_RECEIPT_STATUS,
           LIFECYCLE,
           MOLD_STATUS,
+          PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
           WORK_ORDER_STATUS,
@@ -269,7 +272,8 @@ describe('DocumentStateService', () => {
       // +5 — W/O 키(I-6 PR ④).
       // +4 — W/O 키에 세션 시작 1, 세션 키 신설 3(I-11 PR ②).
       // +2 — 적치 지시 키 신설(I-12 PR ①).
-      expect(service.registered()).toHaveLength(27);
+      // +1 — 생산계획 확정 키 신설(I-24 PR ③).
+      expect(service.registered()).toHaveLength(28);
     });
 
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
