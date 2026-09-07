@@ -47,7 +47,7 @@
 | 13 | **I-24** 생산 계획·생산오더 | 10 | I-6 | A11(두 칸 — R-1) | `transitions.ts` 키 신설 1(R-12) · `src/core/work-order/defaults.ts` 신설(R-3) | opus(`:confirm` · `:acknowledge`/`:resync`) · sonnet(조회 · CRUD) | 4 | ① → {② → ③} ∥ ④(R-15) |
 | 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
 | — | **M2 체인 e2e** | | | | | fable | 1 | |
-| 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | M-e | 품질 축 전이표 | opus | 4 | — |
+| 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | **M-e(항목 3)** | 품질 축 전이표(**액션별 `from`** — I-19 R-1) | opus | ~~4~~ **7** | M-e ∥ ②a(I-19 R-18) |
 | 16 | **I-20** LOT 상태·보류 | 10 | I-19 | A12 · V-lot_hold | — | opus | 3 | — |
 | 17 | **I-21** 부적합·처분·특채 | 11 | I-20 | — | — | opus | 3 | — |
 | 18 | **I-18** LOT 부가·상태 이력·IQC 생략 | 5 | I-1 | — | — | sonnet | 2 | ∥ I-19 |
@@ -102,7 +102,7 @@
 | 다형 취소 | I-5 | `document-progress` 어댑터 — 유형↔표는 **코드의 정적 표**(등록부는 칸 4개라 `DocumentProgress` 를 못 채운다 · `entity_type_registry` 는 부팅 대조만 · I-5 R-6), 후속 판정 두 갈래(문서 역조회 + LOT 재고 사용), `SUCCESSOR_EXISTS` 요청·실행 시점 둘 다 |
 | ERP 아웃박스 적재 함수 | I-6 (둘째 I-23) | **`src/core/outbox/`** 에 `enqueue()` 하나(사용처가 두 도메인 — I-6 R-11). `message_key` 규약 `{INTERFACE_CODE}:{문서번호}` · 버전 없음 · UNIQUE 충돌은 `alreadyQueued:true` |
 | LOT 생명주기 전이 | I-6·I-7 | `transitions.ts` 에 이미 등록 + **`LotLifecycleService.moveWithin()`**(`lot_lifecycle_history` 를 쓰는 코어 · `{movedLotIds, skippedLotIds}` 반환)을 I-6 이 만들고 I-7 이 L1 로 재사용(I-6 R-12) |
-| LOT 품질 축 전이 | I-19 | 계약이 이름 적은 전이만 등록. 미등록은 던진다(F-6) |
+| LOT 품질 축 전이 | I-19 | 계약이 이름 적은 전이만 등록. 미등록은 던진다(F-6). ⭐ **`from` 은 상수 하나가 아니라 액션별로 가른다**(I-19 R-1) — 계약이 「**불량(Hold)은 발신 전이가 0**」(`quality-03품질.json:4472`)과 「**이 경로에서만** Hold → 정상」(`shipment-04제품출하.json:431` · B-13)을 이름 적었다. `DEFECTIVE` 는 `stock-reinstate` 의 `from` 에만 |
 | 예약/피킹 | I-8 코어 PR ≤200줄 | `posting` 이 ~~`reserved_qty`·~~`picked_qty` 를 올리고 내린다(`pick()`·`consume()` · `reserved_qty` 를 «거는» 오퍼레이션은 계약에 없다 — I-8 §5 · 문의 045). 도메인의 `inventory_balance` 직접 UPDATE 금지(~~e2e 감지~~ **정적 가드 spec** `balance-write-guard.spec.ts` — 잔액 UPDATE 트리거가 없고 코어 자신이 UPDATE 하므로 DB 층에서 주체를 못 가른다 · I-8 §3-8 · R-8) |
 | 시리얼 | 코어 아님 | I-26 서비스 안 |
 
@@ -123,7 +123,7 @@
 | **D2** | I-7 | `production.production_result` | **`correct_reason_code app.code_t` 추가**(nullable) — `ProductionResultCorrect.reasonCode` 가 required 인데 담을 칸이 없다(형제 `material_consumption.change_reason_code` 는 있다 · I-7 §2-2). D1 과 한 파일 |
 | — | I-11 | `production.work_session` | `shift_id` NOT NULL 해제(계약 `WorkSession.shiftId` required 밖 · ⌜어느 교대에도 들지 않으면 비운 채 기록⌝ · D1 과 같은 근거 · I-11 재수립 R-3). ⛔ `terminal_id` 는 완화하지 않는다 — 세션 열기는 토큰 부재 403(R-1) |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` · `split_reason_code?`(app.code_t) · `ck_production_plan_split_self` · `ix_production_plan_split_of`(I-24 재수립 R-1 — 계약 `ProductionPlanSplitRef{sourcePlanId, reasonCode}` 두 칸) |
-| M-e | I-19 | 검사 의뢰 | 기준 완화(#280) |
+| M-e | I-19 | 검사 의뢰 · 검사 결과 | **항목 3**(I-19 R-2 · R-18 — **선행 단독 PR**): ⓐ `inspection_request.inspection_plan_version_id` NOT NULL 해제(#280) · ⓑ `ck_inspection_result_qty` 를 `status_code <> 'CONFIRMED' OR (합)` 으로 완화 · ⓒ `inspection_result.overall_judgment_code` NOT NULL 해제(⛔ ⓑ 만 풀면 임시 저장이 여전히 막힌다) |
 | A12 · V | I-20 | `trace.lot_hold` | `target_lot_status_code?` · `version_no`(If-Match 대상이면) |
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
