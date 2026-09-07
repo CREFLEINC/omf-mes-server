@@ -145,9 +145,12 @@ export class ProductionOrderService {
   private async derivedOf(ids: bigint[]): Promise<Map<bigint, DerivedRow>> {
     const map = new Map<bigint, DerivedRow>();
     if (ids.length === 0) return map;
+    // ⛔ 확인 3칸은 별칭이 필요하다 — `DerivedRow` 가 camelCase 라 스네이크 이름 그대로면 늘
+    //    undefined 가 되어 확인 3칸이 응답에서 통째로 빠진다(PR ④ e2e 15 가 잡았다).
     const rows = await this.prisma.$queryRaw<({ production_order_id: bigint } & DerivedRow)[]>(Prisma.sql`
       SELECT o.production_order_id, COALESCE(ewo.n, 0)::int AS expanded, COALESCE(pwo.n, 0)::int AS planned,
-             ack.acknowledged_at, ack.acknowledged_by, ack.acknowledge_decision_code
+             ack.acknowledged_at AS "acknowledgedAt", ack.acknowledged_by AS "acknowledgedBy",
+             ack.acknowledge_decision_code AS "acknowledgeDecisionCode"
         FROM planning.production_order o
         LEFT JOIN (SELECT p.production_order_id, count(*) n FROM production.work_order w
                      JOIN planning.production_plan p ON p.production_plan_id = w.production_plan_id
