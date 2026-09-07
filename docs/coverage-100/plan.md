@@ -62,7 +62,7 @@
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 발번 | 2 | I-7 | — | — | sonnet | 1 | — |
 | 27 | **I-27** 발행 이력·프린터 | 7 | I-26 | A9·A10 | — | sonnet | 2 | ∥ I-28 |
-| 28 | **I-28** 알림 | 8 | I-1 | A7·A8 | — | sonnet | 2 | ∥ I-27 |
+| 28 | **I-28** 알림 | 8(즉시5·보류3) | I-1 | 지금0·A7/A8은 코드 정본 확인 뒤 | — | 조회 복제·쓰기 판단 분리 | 즉시3 + 조건부2 | `I-28.md` R-1~R-10 · 문의099~103 |
 | 29 | **I-30** 설비 점검·고장 | 9 | — | A15 | — | sonnet | 3 | ∥ I-1 (앞당김) |
 | 30 | **I-31** 보전 지시·실적 | 8 | I-30 | A16·A17·A18·A19 · V-maintenance_result | — | opus(마이그 최대) | 3 | — |
 | 31 | **I-32** 비가동 | 6 | I-11 | V-equipment_downtime | — | sonnet | 2 | ∥ I-2 |
@@ -130,7 +130,7 @@
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9·A10 | I-27 | `app.document_issue_log` · `app.printer` | 인쇄 결과 3칸 · 프린터 5칸(`status_code NOT NULL DEFAULT 'OFFLINE'`) |
-| A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | `zalo_enabled` · 수신자 표 |
+| A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | **조건부·지금 적용0**. zalo 칸·사용자/채널 nullable 완화·NULL/NULL 헤더 부분유일/짝 CHECK·규칙 표. 과거행 보존·백필0 (`I-28.md` R-2) |
 | A15 | I-30 | `maintenance.breakdown` | `occurrence_state_code?` · `stopped_at?` · `notify_assignee?` |
 | A16~A19 · V | I-31 | `maintenance.maintenance_order` · `maintenance_result` · **신설** `maintenance_result_line` · `maintenance_result_part` | 오더 5칸 · 실적 9칸 · 표 2 · `version_no` |
 | V | I-32 | `maintenance.equipment_downtime` | `version_no` |
@@ -164,9 +164,14 @@
 | `GET /app/attachments/{attachmentId}/content` | I-34 | 같음 |
 | `POST /maintenance/breakdowns/{breakdownId}/attachments` | I-34 | 같음(+ `CD-ATTACHMENT-TARGET-TYPE` 에 고장 값 없음 — 문의) |
 | `GET /app/document-issues/{documentIssueLogId}/rendition` | I-27 | 서버가 PDF/PNG 를 그린다 |
+| `GET /app/notification-events` | I-28 | 계약 소유 eventCode↔eventName 정본 부재. 발생이력은 카탈로그가 아님(099) |
+| `GET /app/notification-subscriptions` | I-28 | 정본 이벤트/미등록 입력을 가를 수 없어 최초 설정 GET 경로가 비어 있음(099·100) |
+| `PUT /app/notification-subscriptions` | I-28 | 허용 eventCode 집합 없음. 임의 코드/전건 거부 핸들러를 만들지 않음(099) |
 
 부분 건너뜀(구현은 함): `:resync` 202+아웃박스까지 · `work-orders:close`/`shipments:confirm` ERP 아웃박스까지 · `zaloEnabled` 칸만.
-**목표 커버리지 483/487**(238 + 245).
+**현재 목표 커버리지 480/487**(당초483 − I-28 본길 보류3). 배정/분모487은 불변이며 보류 해소 때 해당 증분만 복원한다. 현재 main 실측342/487과 목표를 구분한다.
+
+I-28 배포 제한: 저장 알림 조회·읽음·수신자 preview 5건은 진행한다. 이벤트 이름/유형 목록과 구독 화면은 미완이며 알림 발생기·Zalo 전송기0이다. `openable=false`는 대상 삭제가 아니라 화면 매핑 부재일 수 있고 읽음은 가능하다. 목록 규칙 수와 preview 활성 인원수는 다르다(`I-28.md` R-5·R-7).
 
 배포 노트에 적을 것: 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
 
