@@ -194,7 +194,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-30 | 설비 점검·고장 | 9(진행8·보류1) | — | A15 nullable8추가·2완화 | ✕ | ✕ | ⭕ 고장 start, 완료 보류 | 실행8 + 조건부 |
 | I-31 | 보전 지시·실적 | 8 | I-30·I32순간helper | 확장/완화·표2 | MO/cancel·부여/PM최소공유 | ✕ 기존출고참조 | ⭕ 지시 | R12 최소책임별/초과 때만 분할 |
 | I-32 | 비가동 | 6 | I-11 | 있음 | ✕ | ✕ | ✕ | 2 |
-| I-33 | 툴 사용·계측기·수집 채널 | 12 | I-31 | 있음 | ⚠ 채널 부분 유일 인덱스 | ✕ | ✕ | 3 |
+| I-33 | 툴 사용·계측기·수집 채널 | 12 | I31경계·I32순간 | 추가4/5/8·완화2/3·T | 네축NULL式/검교정유형별유일·A참조조율 | ✕ | 누계NKU·CAL기본효과 | R14 10조각후보 |
 | I-34 | 첨부 | 4 | — | 있음(`attachment`) | ✕ | ✕ | ✕ | 1 (3건 건너뜀) |
 | I-35 | 변경 이력·예비품 엑셀 | 2 | — | 있음 | ⚠ audit jsonb 규약(§I-5) | ✕ | ✕ | 2 |
 | | **합계** | **249** | | | | | | **92** |
@@ -475,8 +475,9 @@ I-32 재수립 R1~R14: 조회2+등록/수정2 진행,close/summary2 유보. 추�
 ##### I-33 · 툴 사용실적·계측기 이력·수집 채널 — 12건
 
 **체인 마디**: 툴 누계(타발수) → 보전 트리거. 계측기 차단(`blocksUse`) → 검사(I-19)의 사용 가부.
-⭐ `POST /maintenance/results` 의 `resetCounter=true` 는 **툴 마스터의 ETag** 를 `If-Match` 로 받는다 — 자원과 잠금 대상이 다른 드문 자리다.
-**예상 설계 미정**: 수집 채널의 부분 유일 인덱스(`COALESCE` 형) → **선행 마이그레이션**.
+I33 R1~R14가정본이다. tool제출delta보존/NO KEY UPDATE누계가산과 실제production W/O→mold FK writer의경합을검증한다. I31 resettrue는툴ETag 원천과별개로 현재114해소전422·전건0, nonreset정상. 실제reset성공교차회귀는재개뒤조건부이며도메인API미구현을PASS라쓰지않는다.
+물리: A20추가4/완화2,A21추가5/완화3+네축NULL식유일·기존uq보존,T최신관측표,A22추가8·유형별/legacyNULL유일·cal version추가0. 새quality item_spec참조는A사전조율후measurement기존보호+channel검사·사전검사뒤정확FK P2003를tx밖STATE_LOCKED400번역한다. equipment/process실제REFERRERS,ERP item/referenceCountNULL은유지한다.
+CAL 기본PASS/ADJUSTED는이력+master2날짜동일tx·FAIL이력만,nonCAL확장정상/unknownCAL만422(117). clear는해당행만·다른차단/만료유지·새ETag/권한0. T는실제값/µs조회·registered와active연결부재분리,수집자운영인수별도(118). client단위빈PUT와409·500성공오집계는별도2단건미배정·서버계약변경0. 순간helper는I32P0t단일공유,일반350/400·core전체200이며10조각은후보일뿐이다.
 
 
 ##### I-34 · 첨부 — 올리기·목록·내려받기 — 4건
@@ -611,7 +612,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | M-d | I-6 | `work_order_resource_assignment` **식** 유일 인덱스(COALESCE 한 식 3칸) — `remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다(I-6 R-9) | ⭕ 추가(반) |
 | M-e | I-19 | 검사 의뢰 기준 완화(#280) | ⭕ |
 | M-f | I-23 | 긴급 출하 사유 컬럼(§I-41) | ⭕ nullable |
-| M-g | I-33 | `collection_channel` 부분 유일 인덱스(`COALESCE` 형) | ⭕ |
+| M-g | I-33 | equipment/key/item/process 네축NULL식유일(NULL비트+COALESCE0)·inactive포함·구uq유지, 신규정확index충돌만409 | ⭕·R5 |
 | M-h | I-3 | A3 `inbound_receipt_line.lot_id?` + `inbound_variance.reason_code` **NOT NULL 해제** + `ix_inbound_variance_line` — 한 파일, PR ②a 선행 커밋 | ⭕ 추가·완화 |
 
 ⭐ **전부 추가·완화다 — 두 릴리스 규칙(§3 멈춤 조건)에 걸리는 삭제가 하나도 없다.** 이 계획대로 가면 멈춤 조건 1번은 발생하지 않는다.
