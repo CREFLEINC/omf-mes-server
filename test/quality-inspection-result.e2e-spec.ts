@@ -150,14 +150,16 @@ describe('검사 의뢰·결과 (e2e)', () => {
    * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
    * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
    * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
+   * ⛔ **`beforeAll` 픽스처(`r1`~`r9`)를 쓰기 단언이 재사용하지 않는다** — 확정 저장이 의뢰를
+   *   `COMPLETED` 로 «변형»하므로 공유 픽스처를 쓰면 describe 실행 «순서»에 결합된다(#320 m-3).
    */
-  async function newRequest(): Promise<number> {
+  async function newRequest(planVersionId: bigint | null = ids.inspectionPlanVersion): Promise<number> {
     writeSeq += 1;
     const row = await prisma.inspection_request.create({
       data: {
         inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
         inspection_type_code: 'PQC',
-        inspection_plan_version_id: ids.inspectionPlanVersion,
+        inspection_plan_version_id: planVersionId,
         target_type_code: 'WORK_ORDER',
         target_id: ids.workOrder,
         item_id: ids.item2,
@@ -611,13 +613,38 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(requestRow.status_code).toBe('COMPLETED');
     });
 
-    it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
-      const response = await post(
-        draftBody(requestR5Id, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', remarks: '자유 입력만으로 성립한다' }),
+    it('⭐ `POST` 확정도 **C14 를 편다** — PQC 불합격 수량이 `acceptance_number` 를 넘으면 같은 W/O 의 생산LOT 이 옮겨지고 `from` 밖 LOT 은 건너뛴다(R-7)', async () => {
+      // ⭐ 위 단언(IQC·`lot_id` 1건)은 `spreadC14()` 의 첫 조건에서 되돌아간다 — 이 픽스처가
+      //   **PQC + `acceptance_number` 실재**라 C14 본문에 도달하는 «유일한» POST 갈래다.
+      //   그래서 `rejectedQty`(넘긴 인자 다섯 중 하나)가 여기서만 반증 가능해진다.
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const scrapped = await newLot('SCRAPPED', { workOrderId, seq: 2 });
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId, planVersionId: ids.c14PlanVersion });
+
+      // `acceptance_number` 는 5 다 — 불합격 20 이 그 값을 넘어야 C14 가 펴진다.
+      await post(
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 80, rejectedQty: 20, overallJudgmentCode: 'REJECTED' }),
         { workerNo: WORKER_HEADER },
       ).expect(201);
 
-      expect(response.body).toMatchObject({ inspectionRequestId: requestR5Id, remarks: '자유 입력만으로 성립한다' });
+      expect(await lotOfId(slot)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 2 });
+      expect((await eventsOf(slot)).map((event) => event.transition_code)).toEqual(['C14']);
+      // ⭐ R-7 — `SCRAPPED` 하나가 섞였다고 PQC 확정 전체가 막히면 안 된다. 코어가 건너뛴다.
+      expect(await lotOfId(scrapped)).toEqual({ status_code: 'SCRAPPED', version_no: 1 });
+      expect(await eventsOf(scrapped)).toHaveLength(0);
+    });
+
+    it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
+      // ⛔ 공유 픽스처 `r5` 를 안 쓴다 — 확정 저장이 의뢰를 `COMPLETED` 로 변형해 앞 describe 의
+      //    `r5` 단언과 실행 순서로 결합된다(#320 m-3). 같은 갈래(`기준 없음`)를 자기 의뢰로 세운다.
+      const inspectionRequestId = await newRequest(null);
+      const response = await post(
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', remarks: '자유 입력만으로 성립한다' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(response.body).toMatchObject({ inspectionRequestId, remarks: '자유 입력만으로 성립한다' });
       expect(await prisma.inspection_measurement.count({ where: { inspection_result_id: BigInt(response.body.inspectionResultId) } })).toBe(0);
     });
 
