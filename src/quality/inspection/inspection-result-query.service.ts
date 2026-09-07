@@ -4,13 +4,16 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PagedResponse, PageRequest, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CalibrationExpiredFilter, CalibrationIndex } from './calibration';
 import { INSPECTION_RESULT_JOIN, InspectionResultRow, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { assertScopedOrPeriod, buildInspectionResultOrderBy, finalRoundOf } from './inspection-rules';
 
 /**
- * 조회 2건(I-19 PR ②b) — 목록(재검 사슬)·상세. 집계 2건은 별도 컨트롤러다(R-18 · PR ⑤a).
- * ⚠ `calibrationExpired` 는 계약에 있지만 판정 로직(`calibration.ts`)이 **PR ⑤b** 에서 서므로
- * 아직 안 받는다 — 근거 없이 필터만 열면 조용히 도출하는 쪽이 된다(#298 m-1 · ⑤b 가 갚는다).
+ * 조회 2건(I-19 PR ②b) — 목록(재검 사슬)·상세. 집계·측정치 4건은 별도 컨트롤러다(R-18).
+ * ⭐ **#298 m-1 상환(PR ⑤b)** — `calibrationExpired` 를 «조용히 무시»하던 자리다. 판정
+ * (`calibration.ts` · R-13)이 이 PR 에서 서면서 목록에도 실제로 필터가 걸린다. ⚠ ⑤a 까지는
+ * 「질의 칸을 선언 안 했으니 무시가 아니다」로 적었는데 **사실이 아니었다** — 계약 검증기는
+ * 선언 안 한 질의를 막지 않고, 애초에 계약이 선언한 칸이라 서버가 안 읽으면 그냥 무시였다.
  */
 export interface InspectionResultListQuery {
   inspectionRequestId?: number;
@@ -22,6 +25,7 @@ export interface InspectionResultListQuery {
   inspectedFrom?: string;
   inspectedTo?: string;
   finalRoundOnly?: boolean;
+  calibrationExpired?: CalibrationExpiredFilter;
   sort?: string;
   page?: number;
   size?: number;
@@ -35,7 +39,9 @@ export class InspectionResultQueryService {
   async list(query: InspectionResultListQuery): Promise<PagedResponse<InspectionResultView>> {
     assertScopedOrPeriod(query);
     const page = pageRequest(query);
-    const where = buildInspectionResultWhere(query);
+    // 교정 만료 필터가 올 때만 장비 마스터를 읽는다 — 안 쓰는 질의에 두 번의 조회를 더하지 않는다.
+    const calibration = query.calibrationExpired === undefined ? undefined : await CalibrationIndex.load(this.prisma);
+    const where = buildInspectionResultWhere(query, calibration?.resultScope(query.calibrationExpired));
     const orderBy = buildInspectionResultOrderBy(query.sort);
 
     return query.finalRoundOnly === true
@@ -127,7 +133,10 @@ export class InspectionResultQueryService {
 export const FINAL_ROUND_SELECT = { inspection_result_id: true, inspection_request_id: true, inspection_round: true } as const;
 
 /** 목록·집계 3건이 **같은 필터 축**(§1-2)을 쓴다 — 두 벌로 짜면 조용히 갈린다. */
-export function buildInspectionResultWhere(query: InspectionResultListQuery): Prisma.inspection_resultWhereInput {
+export function buildInspectionResultWhere(
+  query: InspectionResultListQuery,
+  calibrationScope: Prisma.inspection_resultWhereInput = {},
+): Prisma.inspection_resultWhereInput {
   const requestWhere: Prisma.inspection_requestWhereInput = {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
     ...filter('item_id', query.itemId),
@@ -139,6 +148,7 @@ export function buildInspectionResultWhere(query: InspectionResultListQuery): Pr
     ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
     ...inspectedAtWhere(query.inspectedFrom, query.inspectedTo),
     ...(Object.keys(requestWhere).length === 0 ? {} : { inspection_request: requestWhere }),
+    ...calibrationScope,
   };
 }
 

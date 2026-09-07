@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { CalibrationExpiredFilter, CalibrationIndex } from './calibration';
 import { buildInspectionResultWhere, FINAL_ROUND_SELECT } from './inspection-result-query.service';
 import { assertPeriodRequired, finalRoundOf } from './inspection-rules';
 
@@ -16,12 +17,15 @@ export interface InspectionSummaryQuery {
   inspectedFrom?: string;
   inspectedTo?: string;
   finalRoundOnly?: boolean;
-  // ⚠ 계약의 `calibrationExpired`(only·exclude)와 응답 `calibrationExpiredCount` 는 **PR ⑤b** 가
-  //   같은 커밋에서 연다 — 교정 만료 판정(`calibration.ts` · R-13)이 측정치 2건과 함께 서기
-  //   때문이다. ⛔ 근거 없이 칸만 받아 두면 «조용히 무시»가 된다(#298 m-1 이 그 자리였다).
+  calibrationExpired?: CalibrationExpiredFilter;
 }
 
-/** `defect-rate-trend` 의 질의 8 — 위에서 `inspectionRequestId`·`statusCode` 가 빠진다(계약 실측). */
+/**
+ * `defect-rate-trend` 의 질의 **8** — `inspectionRequestId`·`statusCode` 가 없다(계약 실측).
+ * ⚠ ⑤a 리뷰 m-2 — `Omit` 은 **타입뿐**이라 런타임에는 그 두 칸이 질의에 실려 올 수 있고,
+ *   공용 `buildInspectionResultWhere` 가 그것을 읽어 추이를 조용히 좁혔다. 계약이 이 자리에
+ *   선언하지 않은 축이므로 **런타임에서 지운다**(`trendScope`) — 주석만 고치는 쪽이 아니다.
+ */
 export type DefectRateTrendQuery = Omit<InspectionSummaryQuery, 'inspectionRequestId' | 'statusCode'>;
 
 const SCOPE_SELECT = {
@@ -35,9 +39,10 @@ const SCOPE_SELECT = {
 type ScopeRow = Prisma.inspection_resultGetPayload<{ select: typeof SCOPE_SELECT }>;
 
 /**
- * 집계 2건 — `summary`·`defect-rate-trend`(I-19 PR ⑤a). **서버가 센다**(L-1·L-2): 화면은 페이지를
- * 받아 더하지 않는다. ⚠ 교정 만료 축(`calibrationExpired` 필터 · `calibrationExpiredCount`)은
- * **PR ⑤b** 가 측정치 2건과 «같은 커밋»에서 연다 — 판정이 없는데 칸만 받으면 조용히 무시가 된다.
+ * 집계 2건 — `summary`·`defect-rate-trend`. **서버가 센다**(L-1·L-2): 화면은 페이지를 받아
+ * 더하지 않는다. ⭐ PR ⑤b 가 교정 만료 축을 채웠다 — `calibrationExpired` 필터와
+ * `calibrationExpiredCount`(⑤a 는 판정(`calibration.ts`)이 없어 «키를 안 냈다» — 계약 required
+ * 여섯에 없는 칸이라 위반이 아니었다).
  *
  * ⭐ R-12 — `finalRoundOnly` 의 기본값이 계약에 없다. **집계 셋은 `true`** 다(목록만 `false`).
  * 도면 수가 그 근거다(요약 412 · 목록 412 · 결과 ~450) — `false` 로 두면 1회차 불합격과 재검
@@ -52,7 +57,7 @@ export class InspectionSummaryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async summary(query: InspectionSummaryQuery) {
-    const rows = await this.scope(query);
+    const { rows, calibration } = await this.scope(query);
     const inspected = sumOf(rows, 'inspected_qty');
     const rejected = sumOf(rows, 'rejected_qty');
 
@@ -64,8 +69,8 @@ export class InspectionSummaryService {
       heldQty: sumOf(rows, 'held_qty').toNumber(),
       // ⭐ 분모는 **검사 수량**이다 — 생산 수량이 아니다(`W-02-08` 수율과 다른 수가 정상 · QA #13).
       defectRate: defectRateOf(inspected, rejected),
-      // ⚠ `calibrationExpiredCount` 는 아직 «키가 없다»(계약 optional) — PR ⑤b 몫이다.
-      //    ⛔ 0 을 채우면 「만료 장비로 잰 검사가 없다」로 읽혀 §5-6 의 경고가 영영 안 뜬다(L-8).
+      // ⛔ 이 수는 «경고»다 — 위 합계에서 빼지 않는다(무효화 정책 미정 · E-9 ①).
+      calibrationExpiredCount: await this.expiredCount(rows, calibration),
       finalRoundOnly: finalRoundOnlyOf(query),
       asOf: new Date().toISOString(),
     };
@@ -73,7 +78,7 @@ export class InspectionSummaryService {
 
   /** 일자 버킷. ⭐ 축은 **UTC 날짜**다 — 결과에 공장 칸이 없어 `plant.timezone_code` 로 풀 자리가 없다. */
   async trend(query: DefectRateTrendQuery) {
-    const rows = await this.scope(query);
+    const { rows } = await this.scope(trendScope(query));
     const buckets = new Map<string, { inspected: Prisma.Decimal; rejected: Prisma.Decimal }>();
     for (const row of rows) {
       const bucket = row.inspected_at.toISOString().slice(0, 10);
@@ -95,14 +100,33 @@ export class InspectionSummaryService {
     };
   }
 
-  private async scope(query: InspectionSummaryQuery): Promise<ScopeRow[]> {
+  private async scope(query: InspectionSummaryQuery): Promise<{ rows: ScopeRow[]; calibration: CalibrationIndex }> {
     assertPeriodRequired(query);
-    const where = buildInspectionResultWhere(query);
+    const calibration = await CalibrationIndex.load(this.prisma);
+    const where = buildInspectionResultWhere(query, calibration.resultScope(query.calibrationExpired));
     const rows = await this.prisma.inspection_result.findMany({ where, select: SCOPE_SELECT });
 
-    return finalRoundOnlyOf(query) ? finalRoundOf(rows) : rows;
+    return { rows: finalRoundOnlyOf(query) ? finalRoundOf(rows) : rows, calibration };
+  }
+
+  /** 「만료 측정치를 «가진» 결과」의 수다(측정치 «수»가 아니다 · §4-5). */
+  private async expiredCount(rows: ScopeRow[], calibration: CalibrationIndex): Promise<number> {
+    if (rows.length === 0) return 0;
+    return this.prisma.inspection_result.count({
+      where: {
+        inspection_result_id: { in: rows.map((row) => row.inspection_result_id) },
+        inspection_measurement: { some: calibration.expiredMeasurements() },
+      },
+    });
   }
 }
+
+/** ⑤a 리뷰 m-2 — 계약이 추이에 선언하지 않은 두 축을 «런타임에서» 떨어뜨린다. */
+const trendScope = (query: DefectRateTrendQuery): InspectionSummaryQuery => ({
+  ...query,
+  inspectionRequestId: undefined,
+  statusCode: undefined,
+});
 
 /** ⭐ R-12 — 생략은 `true` 다. 「false 로 왔을 때만」 사슬 전건을 센다. */
 const finalRoundOnlyOf = (query: { finalRoundOnly?: boolean }): boolean => query.finalRoundOnly !== false;
