@@ -44,7 +44,7 @@
 | 10 | **I-9** 생산창고 입고 | 3 | I-8 | — | — | sonnet | 2 | — |
 | 11 | **I-10** 자재 투입·반출 + 계보 | 6 | I-9·I-7 | **2** · `material_consumption.terminal_id`·`material_return.return_quality_status_code` NOT NULL 완화(I-10 재수립 R-3·R-4) | — | opus | 3 | ∥ I-11 |
 | 12 | **I-11** 작업 세션·작업전점검 | 11 | I-6 | **1** · `work_session.shift_id` NOT NULL 완화(I-11 재수립 R-3 · D1 과 같은 모양) | — | sonnet ×2 · opus ×3(코어 `transitions.ts`·심장·events — R-15) | 5 | ∥ I-13 · ⚠ I-10 과 `production.module.ts` 같은 줄 |
-| 13 | **I-24** 생산 계획·생산오더 | 10 | I-6 | A11 | — | opus(전개 `:confirm`) · sonnet(조회) | 3 | — |
+| 13 | **I-24** 생산 계획·생산오더 | 10 | I-6 | A11(두 칸 — R-1) | `transitions.ts` 키 신설 1(R-12) · `src/core/work-order/defaults.ts` 신설(R-3) | opus(`:confirm` · `:acknowledge`/`:resync`) · sonnet(조회 · CRUD) | 4 | ① → {② → ③} ∥ ④(R-15) |
 | 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
 | — | **M2 체인 e2e** | | | | | fable | 1 | |
 | 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | M-e | 품질 축 전이표 | opus | 4 | — |
@@ -80,7 +80,7 @@
 | M | 슬라이스 | 체인 e2e (끝점 셋만 단언 — 통합 §5-3) |
 |---|---|---|
 | **M1** | I-1 → I-2 → I-3 (∥ I-12) → I-4 → I-5 → I-6 → I-7 (UI/UX U1 의 「상신 → 결재함 승인 → 전기」 한 줄 e2e 는 I-4 완료 시점에 선다 — I-1 은 원장 0건까지) | P/O 승인 → 입하 → 입고(기존) → 기타출고(`GOODS_RECEIPT` source, 피킹 없이) → W/O 발행·확정배포(선발행) → 실적(L1) → 제품 입고(기존) → balance 3행 → 입고 취소 요청·승인·실행 → 역트랜잭션 → balance 원복 |
-| **M2** | I-8 → I-9 → I-10 ∥ I-11 → I-24 → I-25 | 계획 `:confirm` → W/O `:release`(출고요청 자동) → 피킹 → 출고 → 생산창고 입고 → 투입 → 세션 → 실적 → W/O `:cancel` 로 선발행 전건 폐번 |
+| **M2** | I-8 → I-9 → I-10 ∥ I-11 → I-24 → I-25 | 계획 `:confirm` → W/O `PUT`(기본 WIP 위치 — 전개분은 NULL 이라 이 걸음 없이는 출고요청이 0건 · I-24 R-5) → W/O `:release`(출고요청 자동) → 피킹 → 출고 → 생산창고 입고 → 투입 → 세션 → 실적 → W/O `:cancel` 로 선발행 전건 폐번 |
 | **M3** | I-19 → I-20 → I-21 ∥ I-18 | 실적 → 검사 의뢰 → 확정(전이) → 불합격 → 보류 → 부적합 → 처분 SCRAP → 폐기 출고(I-4 재사용) 원장 감소 |
 | **M4** | I-22 → I-23 | 출하작업지시 → 제품 피킹 → 출하 처리(원장 out) → 확정(아웃박스 행) / 미확정 취소 → 역트랜잭션 · 반품 → 처분 NORMAL → 재등록 |
 | **M5** | 나머지 (I-29 맨 끝) | 슬라이스 e2e 3건씩 |
@@ -122,7 +122,7 @@
 | D1 | I-7 | `production.production_result` | `shift_id` NOT NULL 해제 |
 | **D2** | I-7 | `production.production_result` | **`correct_reason_code app.code_t` 추가**(nullable) — `ProductionResultCorrect.reasonCode` 가 required 인데 담을 칸이 없다(형제 `material_consumption.change_reason_code` 는 있다 · I-7 §2-2). D1 과 한 파일 |
 | — | I-11 | `production.work_session` | `shift_id` NOT NULL 해제(계약 `WorkSession.shiftId` required 밖 · ⌜어느 교대에도 들지 않으면 비운 채 기록⌝ · D1 과 같은 근거 · I-11 재수립 R-3). ⛔ `terminal_id` 는 완화하지 않는다 — 세션 열기는 토큰 부재 403(R-1) |
-| A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` |
+| A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` · `split_reason_code?`(app.code_t) · `ck_production_plan_split_self` · `ix_production_plan_split_of`(I-24 재수립 R-1 — 계약 `ProductionPlanSplitRef{sourcePlanId, reasonCode}` 두 칸) |
 | M-e | I-19 | 검사 의뢰 | 기준 완화(#280) |
 | A12 · V | I-20 | `trace.lot_hold` | `target_lot_status_code?` · `version_no`(If-Match 대상이면) |
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |

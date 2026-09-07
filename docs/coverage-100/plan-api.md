@@ -336,12 +336,12 @@
 | | |
 |---|---|
 | 선행 슬라이스 | 없음 (ERP 수신본) |
-| 쓰는 표 | `planning.production_order`·`production_order_change_field`·`production_order_acknowledgement`·`production_plan` — 있음 |
-| 마이그레이션 | **필요** — `production_plan.split_of_plan_id`(nullable self FK). 계약 `ProductionPlanCreate.splitOfPlanId` + 시드에 `PRODUCTION_PLAN_SPLIT_REASON` 이 이미 있다. |
+| 쓰는 표 | `planning.production_order`·`production_order_change_field`·`production_order_acknowledgement`·`production_plan` · **`production.work_order`·`work_order_dependency`**(`:confirm` 전개) · **`integration.integration_message`**(`:resync`) — 전부 있음(I-24 재수립 R-17 — 7표) |
+| 마이그레이션 | **필요** — `production_plan.split_of_plan_id`(nullable self FK) **+ `split_reason_code app.code_t?`**(I-24 R-1 — 계약 `ProductionPlanSplitRef` 가 두 칸) + `ck_production_plan_split_self` + `ix_production_plan_split_of`. 시드 `PRODUCTION_PLAN_SPLIT_REASON` 5값 실재. |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | 있음 (`PRODUCTION_PLAN_STATUS` 2값 `DRAFT`·`CONFIRMED` · `PRODUCTION_ORDER_STATUS` 3값) |
-| 예상 PR 수 | 3 — ① 조회 GET 4건 ② 마이그 + 계획 CRUD + DELETE ③ `:confirm`(전개까지 한 트랜잭션) + `:acknowledge`/`:resync` + e2e (코어 — W/O 를 만든다) |
-| 설계 미정 자리 · §2 판정 초안 | `:resync` 가 무엇을 남기는가 — 202 이고 「결과는 연계 수신으로 온다」. §0 범위대로 **아웃박스 행 하나**(`integration.integration_message`)까지만 하고 전송기는 안 만든다. |
+| 예상 PR 수 | **4**(I-24 R-15) — ① 조회 GET 4건 + 권한 2 ② 마이그 + 계획 CRUD 3 ③ `:confirm`(전개까지 한 트랜잭션 · `transitions.ts`·`core/work-order/defaults.ts`) ④ `:acknowledge`/`:resync`. 스택 ① → {② → ③} ∥ ④ |
+| 설계 미정 자리 · §2 판정 초안 | `:resync` 가 무엇을 남기는가 — 202 이고 「결과는 연계 수신으로 온다」. §0 범위대로 **아웃박스 행 하나**(`integration.integration_message`)까지만 하고 전송기는 안 만든다. ⚠ I-24 계획안에서 **6건**으로 늘었다(문의 063~068 — DELETE 봉투 · 분할 계보 쓰기 전용 · 전개 승계 칸 · 확인 행 값 목록+수신기 0 · `PO` 접두어 · `:resync` 키 규약) — `I-24.md` §9-2 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -897,7 +897,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 8 | **표 신설** `app.notification_subscription_recipient` | `(event_type_code, recipient_type_code, business_unit_id?, role_id?, app_user_id?)` | `NotificationRecipient` — 축이 물리와 반대(§5.3 아래) | S10 |
 | 9 | `app.document_issue_log` | `print_outcome_code String?` · `print_failure_reason String?` · `printed_at DateTime?` | `:report-print` + `PrintOutcomeReport` | S11 |
 | 10 | `app.printer` | `display_name String?` · `status_code String?` · `status_message String?` · `is_default Boolean @default(false)` · `supported_document_type_codes String[]` | `Printer` 5칸 | S11 |
-| 11 | `planning.production_plan` | `split_of_plan_id BigInt?` | `ProductionPlanCreate.splitOfPlanId` (+ 시드 `PRODUCTION_PLAN_SPLIT_REASON` 이 이미 있다) | S13 |
+| 11 | `planning.production_plan` | `split_of_plan_id BigInt?` · `split_reason_code String? @db.VarChar(50)`(I-24 R-1) | `ProductionPlanCreate.splitOfPlanId` = `{sourcePlanId, reasonCode}` (+ 시드 `PRODUCTION_PLAN_SPLIT_REASON` 5값) | S13 |
 | 12 | `trace.lot_hold` | `target_lot_status_code String?` | `LotHoldCreate.targetLotStatusCode` — 도착 상태가 C9/C10 을 가른다 | S19 |
 | 13 | `logistics.shipment_request` | `sales_order_id BigInt?` | `ShipmentRequest.salesOrderId` | S21 |
 | 14 | `logistics.shipment` | `expedited Boolean @default(false)` · `expedite_reason String?` | `Shipment.expedited`·`expediteReason` · §I-41 | S22 |
