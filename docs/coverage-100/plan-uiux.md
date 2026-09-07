@@ -64,7 +64,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U30 | 출하지시서 · 출하작업지시 | 7 | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | 3 |
 | U31 | 출하 처리 · 확정 · 취소 | 8 | W-04-04/05/12 · P-04-01/02 | U30 · U1 | 없음 | 불필요 | ○ 출하·역분개 | ○ 2단 확정 | 3 |
 | U32 | 재고 재등록 | 1 | W-04-03 · W-04-11 · W-03-02 | U8 · U14 · U28 | 없음 | 불필요 | ○ 복합 | ○ | 1 |
-| U33 | 설비 점검 · 고장 | 9 | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | 불필요 | — | ○ 고장 | 3 |
+| U33 | 설비 점검 · 고장 | 9(진행8·보류1) | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | A15 nullable8추가·2완화 | — | ○ 고장 start, 완료 보류 | 실행8 + 조건부 |
 | U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33 | 없음 | ○ maintenance_result.version_no | ○ 예비품 출고 | ○ 지시 | 3 |
 | U35 | 비가동 | 6 | P-05-02 · W-05-08 | U33 · U22 | 없음 | ○ downtime.version_no | — | — | 2 |
 | U36 | 툴 사용실적 | 3 | P-05-01 | — | 없음 | 불필요 | — | — | 1 |
@@ -458,11 +458,13 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /maintenance/inspections/{inspectionId}` | 점검 기록 한 건 | — | - |
 | `POST /maintenance/inspections` | 점검 기록 등록 | — | 멱등, 사번 |
 | `GET /maintenance/breakdowns` | 고장 기록 목록 | W-05-05 | - |
-| `GET /maintenance/breakdowns/{breakdownId}` | 고장 기록 한 건 | — | - |
+| `GET /maintenance/breakdowns/{breakdownId}` | 고장 기록 한 건 | — | 응답 ETag |
 | `POST /maintenance/breakdowns` | 고장 보고 등록 | — | 멱등, 사번 |
-| `POST /maintenance/breakdowns/{breakdownId}:start-handling` | 처리 중으로 | — | 멱등, ETag |
-| `POST /maintenance/breakdowns/{breakdownId}:complete` | 고장 완료 | P-02-02,P-05-02,W-05-04 | 멱등, ETag |
-| `PUT /maintenance/breakdowns/{breakdownId}` | 처리 내역 저장 | — | 멱등, ETag |
+| `POST /maintenance/breakdowns/{breakdownId}:start-handling` | 처리 중으로 | — | 멱등, If-Match 필수 |
+| `POST /maintenance/breakdowns/{breakdownId}:complete` | 고장 완료 · 원인 원천 보류 | P-02-02,P-05-02,W-05-04 | 멱등, If-Match 필수 |
+| `PUT /maintenance/breakdowns/{breakdownId}` | 처리 내역 저장 | — | 멱등, If-Match 필수 |
+
+I-30 재수립 R-1~R-14가 구현 정본이다. 연속 편집은 상세 GET→메모 PUT→상세 GET→start→상세 GET으로 숫자 버전을 새로 받는다. 쓰기 응답의 내용 해시를 If-Match로 쓰지 않는다. 목록의 linkedDowntimeCount=0은 실제 경고 해제 근거가 아니며 상세를 다시 읽는다. 원인 미정 complete1건은 보류, PUT은 원인 nonnull만 거부한다. 보고 성공과 알림 발송/사진 저장을 구분하며, 오프라인 단말의 필수 항목·자동 판정 책임과 현재 인증/CORS 한계는 문의090~098·054에 남겼다.
 
 #### U34 보전 지시·실적 (W-05-05·W-05-06·W-05-02·W-05-03) — 8건
 
