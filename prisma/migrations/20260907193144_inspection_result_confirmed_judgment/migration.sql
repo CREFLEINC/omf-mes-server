@@ -1,0 +1,42 @@
+-- 확정(CONFIRMED) 행에는 종합 판정이 반드시 있다 — 바로 앞 마이그가 연 구멍을 닫는다.
+--
+-- 요청: PR #294 리뷰 Minor M-3
+-- 계약: quality-03품질.json 의 InspectionResultCreate.overallJudgmentCode
+--       「statusCode=확정 이면 필수다」 · InspectionResult.overallJudgmentCode required
+-- 계획: docs/coverage-100/slices/I-19.md §1-6 · §5-1 (PR ③ — 이 칸을 «비운 채» 확정 행을
+--       만들 수 있는 첫 쓰기 경로가 이 PR 에서 열린다)
+--
+-- ⭐ 추가 1 · 완화 0 · 삭제 0 · 백필 0 — 순서에 의존하지 않는다(lanes.md §1-2).
+--
+-- ── 왜 지금인가 ──────────────────────────────────────────────────────────────
+--
+-- 20260907174412 ⓒ 가 overall_judgment_code 의 NOT NULL 을 풀었다(임시 저장에는 판정이
+-- 아직 없다). 그 순간 「확정 행에는 판정이 있다」를 DB 가 못 막게 됐는데, 그 칸이 빈
+-- 행을 만드는 쓰기 경로는 아직 하나도 없었다 — 즉 **지금 위반 행이 0 이고**, 그 경로를
+-- 여는 것이 바로 이 PR 이다. 나중에 걸려면 백필이 붙는다.
+--
+-- ── 앞 마이그의 주석이 「CHECK 로 박지 않는다」라 적었다. 그 근거가 실측으로 뒤집힌다 ──
+--
+--   근거였던 것: 「status_code 는 공통코드 소유라 값 문자열을 제약에 박으면 죽는다
+--   (20260901010000 의 'PREISSUED')」.
+--   실측: ⓐ 그 'PREISSUED' 는 lot_type_code 값이었고 계약이 「확정된 값 목록이 아직
+--        없다」라 적은 축이었다 — 저장소 전수에서 그 CHECK 한 줄이 유일한 등장이었다.
+--        여기 CONFIRMED 는 계약이 「⛔ 시스템 소유다 — 고객이 W-06-06 공통코드 마스터에서
+--        이 값을 편집하면 안 된다」라 못박았고 시드도 isSystemOwned=true 2값(DRAFT·
+--        CONFIRMED)이다. 고객이 못 바꾸는 값이라 조용히 죽을 길이 없다.
+--     ⓑ 같은 표의 ck_inspection_result_qty 가 **이미** status_code <> 'CONFIRMED' 를
+--        박고 있다(20260907174412 ⓑ). 같은 문자열이라 새 결합이 아니다.
+--
+-- 선례 — 「종료 상태면 이 칸들이 차 있어야 한다」는 이 저장소가 이미 쓰는 모양이다.
+--   20260805100000:51  CHECK (status <> 'COMPLETED' OR (response_status IS NOT NULL AND …))
+--   20260901030000:92  ck_lot_hold_release_reason
+--                      CHECK (released_at IS NULL OR release_reason_code IS NOT NULL)
+--
+-- ⚠ CHECK 위반은 500 이다(PrismaClientUnknownRequestError — prisma-error.ts:23 이 「서비스가
+--    짝 검사를 빠뜨린 «우리» 버그이므로 500 이 맞다」라 적었다). 그래서 이것은 검증이 아니라
+--    **둘째 그물**이다. 사용자에게 보이는 400 REQUIRED 는 서비스가 먼저 낸다
+--    (inspection-rules.ts assertConfirmedShape · 계약 §1-6).
+
+ALTER TABLE quality.inspection_result
+    ADD CONSTRAINT ck_inspection_result_judgment
+        CHECK (status_code <> 'CONFIRMED' OR overall_judgment_code IS NOT NULL);
