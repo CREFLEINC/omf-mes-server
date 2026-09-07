@@ -64,7 +64,7 @@
 | 27 | **I-27** 발행 이력·프린터 | 7 | I-26 | A9·A10 | — | sonnet | 2 | ∥ I-28 |
 | 28 | **I-28** 알림 | 8(즉시5·보류3) | I-1 | 지금0·A7/A8은 코드 정본 확인 뒤 | — | 조회 복제·쓰기 판단 분리 | 즉시3 + 조건부2 | `I-28.md` R-1~R-10 · 문의099~103 |
 | 29 | **I-30** 설비 점검·고장 | 9(진행8·보류1) | — | A15 확장: nullable8추가·2완화 | EQI/MLF 채번2·고장 start 전이1(별도 코어 PR) | 조회/쓰기·코어 분리 | 실행8 + 조건부 완료 조각 | ∥ I-1 · I-30 R-1~R-14 |
-| 30 | **I-31** 보전 지시·실적 | 8 | I-30 | A16·A17·A18·A19 · V-maintenance_result | — | opus(마이그 최대) | 3 | — |
+| 30 | **I-31** 보전 지시·실적 | 8 | I-30·I-32 순간helper | order8추가/priority완화·result15추가/6완화·표2·trigger1:N/bigint | MO/cancel·부여탐색/PM사실 최소공유(core전체200) | 코어/마이그·조회·쓰기 분리 | 최소책임별·초과 때만 준비분할 | I-31 R1~R13·113~116, closed/reset true만422 |
 | 31 | **I-32** 비가동 | 6(진행4·보류2) | I-11·I-30 날짜helper | 추가3/완화1·조건부 종료사번1 | 없음 | µs 준비/조회/쓰기 분리 | P0t+P1~P4, 조건부close/summary별도 | I-32 R1~R14·문의108~112 |
 | 32 | **I-33** 툴 사용·계측기·수집 채널 | 12 | I-31 | A20·A21·A22·M-g · V-equipment_calibration · T-observation | — | sonnet | 3 | ∥ I-16 |
 | 33 | **I-34** 첨부(목록만) | 4 | — | — | — | sonnet | 1 | 3건 건너뜀 |
@@ -132,7 +132,7 @@
 | A9·A10 | I-27 | `app.document_issue_log` · `app.printer` | 인쇄 결과 3칸 · 프린터 5칸(`status_code NOT NULL DEFAULT 'OFFLINE'`) |
 | A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | **조건부·지금 적용0**. zalo 칸·사용자/채널 nullable 완화·NULL/NULL 헤더 부분유일/짝 CHECK·규칙 표. 과거행 보존·백필0 (`I-28.md` R-2) |
 | A15 | I-30 | `maintenance.breakdown`·`equipment_inspection` | 고장 nullable8추가: `occurrence_state_code`·`stopped_at`·`notify_assignee`·`reporter_worker_no`·`cause_code`·`handling_note`·`handled_by`·`handled_at`. 고장 `severity_code`·점검 `status_code` NOT NULL 완화. 삭제0/백필0, 과거 필수값·enum 사전조회는 조회 PR부터(`I-30.md` §2) |
-| A16~A19 · V | I-31 | `maintenance.maintenance_order` · `maintenance_result` · **신설** `maintenance_result_line` · `maintenance_result_part` | 오더 5칸 · 실적 9칸 · 표 2 · `version_no` |
+| A16~A19 · V | I-31 | `maintenance.maintenance_order` · `maintenance_result` · **신설** `maintenance_result_line` · `maintenance_result_part` | order8추가(계정담당·계획/기준/메모·발행2·취소2)·priority완화. trigger order UNIQUE완화/shot snapshot2 bigint. result15추가(type+equipment/mold FK쌍·breakdown·계정수행자·본문/외주/reset/closed·version/audit)·구NOT NULL6완화·표2/FK역관계·CHECK·참조카운트. 삭제/백필0·required 구행 환경 활성화 제한(091) |
 | V·물리 보완 | I-32 | `maintenance.equipment_downtime` | remarks text?·recorded_by_worker_no varchar(50)?·version_no default1/positive CHECK 추가3, downtime_type_code NOT NULL 완화1. close시각 해소 뒤 종료사번1 별도. 삭제/백필0·과거 required/구 작성자 배포검사(108) |
 | A20~A22·M-g · V · T | I-33 | `tool_usage` · `collection_channel` · `equipment_calibration` · **신설** `collection_channel_observation` | 칸 4·5·8 · 부분 유일 인덱스 · `version_no` · 관측 표(영원히 빈 목록 — 문의) |
 | — | I-35 | `audit` | jsonb 규약(§I-5, 마이그레이션 아닐 수 있음) |
@@ -173,11 +173,13 @@
 | `GET /maintenance/downtimes/summary` | I-32 | 날짜×설비 정상계획구간/적용 산식과 완료보전 엔티티·완료일·범위 정의 필요(111). 기간/소수분/열린세션 등 가장자리는 별도 판정(112) |
 
 부분 건너뜀(구현은 함): `:resync` 202+아웃박스까지 · `work-orders:close`/`shipments:confirm` ERP 아웃박스까지 · `zaloEnabled` 칸만.
-**현재 목표 커버리지 476/487**(당초483 − I-28 본길3 − I-30 완료1 − I-26 발번1 − I-32 종료/요약2 보류). 배정/분모487은 불변이며 보류 해소 때 해당 증분만 복원한다. 최신 main 실측은 진행 기록과 병합 SHA로 구분한다(2026-09-07 a790806:352/487, I-30① #305 포함).
+**현재 목표 커버리지 476/487**(당초483 − I-28 본길3 − I-30 완료1 − I-26 발번1 − I-32 종료/요약2 보류). 배정/분모487은 불변이며 보류 해소 때 해당 증분만 복원한다. I-31은8건의 정상 본길을 유지하므로 목표 차감0. 최신 main 실측은 진행 기록과 병합 SHA로 구분한다(2026-09-07 4fadf31:353/487, I-26 #307 GET1·I-30② #308 증분0 포함).
 
 I-28 배포 제한: 저장 알림 조회·읽음·수신자 preview 5건은 진행한다. 이벤트 이름/유형 목록과 구독 화면은 미완이며 알림 발생기·Zalo 전송기0이다. `openable=false`는 대상 삭제가 아니라 화면 매핑 부재일 수 있고 읽음은 가능하다. 목록 규칙 수와 preview 활성 인원수는 다르다(`I-28.md` R-5·R-7).
 
 I-30 배포 제한: 점검·고장8건 진행, 완료1건 보류. 고장 PUT의 원인 nonnull만 명시 거부하고 생략 유지·null 해제·메모 저장은 가능하다. 보고 성공은 알림 발송·사진 업로드 성공이 아니다. 유효 계정 세션이 필요하며 X-Worker-No 교차 오리진 허용은 공용 담당 과제다(054·090~098). 과거 필수값/enum 결손 환경의 배포는 별도 판정한다. 날짜 조회는 설비 공장의 로컬 달력일이고 채번 기간은 기존 UTC 선례다.
+
+I-31 배포 제한: R1~R13으로 GET4·쓰기4 정상 본길 진행. closed=true와 resetCounter=true만422·업무/자식/누계/lastPM/version/멱등 전건0이며 미마감 nonreset 기록·수정은 정상이다. finishedAt를 PM 완료로 해석하지 않는다. 구행 required 결손 또는 구 작성자 지속 환경만 활성화 유보, 개발 DDL/정상 구현 중단0. parts는 기존 출고 참조·unknown단위NULL이지 posting/환산이 아니다. 실제 부여·예비품 writer와 NKU/SHARE/UPDATE 경로 안정화·유한 run 재시도 인수, 상세/PUT·PM 날짜·마감/누적 의미·단위 확인 소비자 인수는 별도 미완(091·094·113~116). I-32 summary111 원천 질문은 해소되지 않았다.
 
 배포 노트에 적을 것: 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
 
@@ -256,6 +258,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건 진행 계획, close/summ
 | I-11 | ✅ 2026-09-07 | #256(계획 R-1~R-17) · #261(① 조회 5 + 뷰 2벌 + 골격) · #258(② 코어 전용 — 전이 4액션 + `shift-resolver` + 마이그 `20260907800000`) · #263(③ 세션 열기·닫기 + 단말 토큰 헬퍼 + M2 세션 마디 e2e) · #264(④ `/events`·`/workers`·`:leave` + 권한 등록 2) · #262(⑤ `POST` precheck 판정) | **328** (11/11) |
 | I-12 | ✅ 2026-09-07 | #266(계획 R-1~R-14) · #267(① 조회 2 + 뷰 + 권한 2 + 전이표 2) · #268(② `:complete`·`:complete-temporary` + 원장 `STOCK_TRANSFER` + 잔액 하한 400) · #269(마감 docs · 문의 059~062) | **332** (4/4) |
 | I-28 | 진행 중 · 2026-09-07 | #290(계획) · #295(① 조회2) · #299(② 읽음2, 8a895c2) MERGED. 열린자식0·자기브랜치정리. preview1 후속·이벤트/구독3 보류 | **348 main 실측**, I-28 구현4/8 |
-| I-30 | 계획·⓪·① 병합 완료, ② #308 병합 직전 | #297 f85cb51·#300 eb42b21·#305 a790806 MERGED/열린자식0/자기브랜치정리. ② nullable8/완화2·비테스트72·독립지적0·단위98/931·E2E7/35·영향12/22 exit0·DB56/drift0 | 현재 main353, ② 증분0·I-30 구현2/9·후속6·보류1 |
+| I-30 | 계획·⓪·①·② 병합 완료 | #297 f85cb51·#300 eb42b21·#305 a790806·#308 4fadf31 MERGED/열린자식0/자기브랜치정리. ② nullable8/완화2·비테스트72·독립지적0·단위98/931·E2E7/35·영향12/22 exit0·DB56/drift0 | main353/487 직접4 tests pass, ② 증분0·I-30 구현2/9·후속6·보류1 |
 | I-26 | 계획 #301·조회 #307 병합 완료 | #301 f521a89·#307 d5979ca MERGED/열린자식0/자기브랜치정리. GET 비테스트157·독립 단위98/931·E2E14·root LOT20 pass, Minor1 보완 후 전부0. 발번1건 유보·마이그0 | main353/487 직접4 tests pass(+1) |
 | I-32 | 독립3리뷰·통합 완료, 계획 #306 병합 완료 | #306 MERGED 6bde921·열린자식0·자기브랜치정리. API68/UIUX78/Integration70줄→R1~R13, root 추가 시각 실측R14. 문의108~112·진행4/유보2·추가3/완화1 계획, 구현0 | 문서 증분0·main352 직접 실측 |
+| I-31 | 독립3리뷰·R1~R13 통합·全본문 재독 완료, 계획 PR 발행 전 | API62/UIUX79/통합71줄·root832줄 재독. 마감/reset true만422·정상8유지·추가/완화 물리·실제writer잠금·공유core/µs·예산 정합. 문의113~116·기존문의 보강 | 문서 증분0·현재 main353, I-31 구현0/8 |

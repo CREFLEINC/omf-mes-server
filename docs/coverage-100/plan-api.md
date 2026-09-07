@@ -590,11 +590,11 @@ GET은8개 선택 필터·id ASC·같은WHERE/RepeatableRead total, producedFrom
 |---|---|
 | 선행 슬라이스 | 없음 (mdm 설비·툴 완료분) |
 | 쓰는 표 | `maintenance.breakdown`·`maintenance_order(_item,_trigger)`·`maintenance_result` — 있음. ⛔ **`maintenance_result_line`·`maintenance_result_part` 는 없다** |
-| 마이그레이션 | **필요** — ① I-30 재수립 A15: `breakdown` nullable8추가(발생상태·정지시각·알림의사·보고사번·원인·처리내역·처리계정·처리시각), 고장심각도/점검상태2완화. ② `maintenance_order`: `planned_date`·`base_date`·`order_note`·`issued_by`·`issued_at`, 담당자 worker/app_user 축은 I-31에서 대조. ③ `maintenance_result`: `target_type_code`/`target_id`·`result_note`·`is_outsourced`·`outsource_vendor_name`·`reset_counter`·`shot_count_before/after_reset`·`closed`. ④ **표2개 신설** `maintenance_result_line`·`maintenance_result_part`(②~④는 I-31 재수립 전 초안) |
-| posting(원장) 연결 | ⚠ **부분적으로 있을 수 있다** — 예비품 소모(`parts`)가 재고를 뺀다면 posting 이다. 계약이 그 연결을 안 적었다 → §2 2단계 기준 1(재고를 안 쓰는 쪽) → **원장을 부르지 않고** 기록만 하고 문의 |
-| 상태기계 | **있음 · 둘** (`EQUIPMENT_BREAKDOWN_STATUS`: `RECEIVED`→`HANDLING`→`DONE` · `MAINTENANCE_ORDER_STATUS`: `ISSUED`→`DONE`|`CANCELLED`) |
-| 예상 PR 수 | I-30은 점검까지 묶어 **실행8 PR**(달력 준비/점검조회/A15/고장조회/코어/점검등록/고장등록/메모·start), 완료1건은 조건부 후속 조각. 보전오더·실적은 I-31 계획으로 별도 재산정하며 한 PR에 고장 전건을 합치지 않는다 |
-| 설계 미정 자리 · §2 판정 초안 | 담당자 축이 `worker` 인가 `app_user` 인가. §2 2단계 기준 3(스키마를 안 늘리는 쪽) → **기존 `assigned_worker_id` 를 쓰고** 계약의 `assigneeUserId` 를 worker 로 해석하지 않는다 — 두 축이 다르므로 그대로 두고 문의를 낸다. |
+| 마이그레이션 | **필요** — ① I-30 A15 nullable8/완화2는 #308 병합. ② I-31 order8추가(assignee app_user·취소audit2 포함)/priority완화·trigger order UNIQUE완화/snapshot2 bigint. ③ result15추가(type+equipment/mold FK쌍·직접breakdown·계정수행자·본문/외주/reset/closed·version/audit)/구NN6완화. ④ 표2 `maintenance_result_line`·`maintenance_result_part`, FK역관계/참조카운트. SQL 전문 I-31 §3, 삭제·백필0 |
+| posting(원장) 연결 | **없음** — I-31 parts는 기존 GI/예비품 참조만, posting·자동출고·quota·환산0. 다중UOM/출고미연결unknown은nullable이며 수량 확인/정정 인수116 |
+| 상태기계 | 현재 추가는 I-30 RECEIVED→HANDLING, I-31 ISSUED→CANCELLED만 A조율 뒤 별도core전체200. 고장완료090·지시마감113는 원천 해소 전 등록0. reset true도114 해소 전422·누계만201 성공0 |
+| 예상 PR 수 | I-30은 점검까지 실행8 PR+조건부완료 조각. I-31 R12는 3PR/16~17개 고정수 모두 철회, M1/M2·C0/C1/C2·T1회·조회/쓰기 최소책임별. 준비분할은 예정diff초과 때만, 일반350/400·core전체200 |
+| 재수립 정본 | I-31 R1~R13. assignee/performer/issuer/actor는 app_user이며 worker와 분리, 계약을 worker로 reinterpret0. GET4+쓰기4 정상미마감 본길 유지, closed/reset true만422·전건0. 실제 writer와 NKU/SHARE/UPDATE·경로 재읽기·유한run재시도, MO 선채번과 rawactor지문/같은tx, required구행500·환경활성화제한, µs는I32 R2/R14 단일재사용 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
