@@ -32,6 +32,8 @@
 
 **권장 순서**: I-13 ∥ I-14 → I-15 ∥ I-16 → I-22 → I-23 → I-17 ∥ I-35.
 계약 파일은 주로 `contracts/logistics-01자재창고.json` · `shipment-04제품출하.json` · `app-공통.json` 이다.
+배정의 정본은 **`docs/coverage-100/assignment.tsv`** 다 — 시작 전에 `awk -F'\t' '$1=="I-13"' docs/coverage-100/assignment.tsv` 로 자기 슬라이스를 뽑아 **건수와 오퍼레이션을 대조**한다. 이 표의 건수와 어긋나면 `assignment.tsv` 가 이긴다.
+⛔ **`plan.md` §6 의 「건너뜀」 목록을 먼저 확인**한다 — 네 축에도 건너뛰는 오퍼레이션이 있을 수 있고, 그건 아무도 구현하지 않는다.
 
 ⚠ 이 레인은 **재고 원장에 «쓰는» 슬라이스가 많다**(I-13·I-14·I-15). 원장 posting 은 코어라 **전용 PR · 비테스트 ≤200 · 보일러플레이트와 커밋 분리**가 강제된다(`CLAUDE.md`). 기존 구현(`src/core/posting/` 과 I-8~I-12 의 사용처)을 **반드시 먼저 읽고** 같은 모양으로 쓴다 — 새 규칙을 만들지 않는다.
 ⚠ I-23 은 `src/core/outbox/` 의 **두 번째 사용처**다. I-6(W/O 마감 송신)과 I-24(`:resync`)가 이미 규약을 갈라 놨으니 `outbox.service.ts` 주석을 먼저 읽는다.
@@ -178,12 +180,9 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 | 소유 | `gh pr create` 가 준 **번호를 기록**하고 **그 번호만** 다룬다 | |
 
 - 커밋 메시지: 한국어. 제목은 `feat(logistics): …` 형태. 본문에 **왜**를 적는다.
-- 커밋 트레일러 두 줄(네 세션 것으로):
-  ```
-  Co-Authored-By: <네 모델> <noreply@anthropic.com>
-  Claude-Session: <네 세션 URL>
-  ```
-- PR 본문에 반드시: 여는 오퍼레이션 목록 · **게이트 실측(명령 + 숫자)** · 비테스트 diff 합계 · 「계약 미수정 · 새 error code 0」 · 마이그가 있으면 사전 대조 SELECT 결과와 드리프트 0. 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)` 와 세션 URL.
+- ⛔ **다른 도구의 서명을 베끼지 않는다.** 이 저장소의 기존 커밋에는 `Co-Authored-By: Claude …` · `Claude-Session: …` 트레일러와 PR 푸터 `🤖 Generated with [Claude Code](…)` 가 붙어 있는데 그건 **레인 A 세션 전용**이다. 네가 Claude 를 쓰지 않는다면 **그대로 베끼지 마라 — 허위 기재다.** 네가 실제로 쓴 도구·모델 표기로 **대체하거나 생략**한다. 생략해도 무방하다.
+- ⭐ **`[C] ` 제목 접두어만은 생략하지 마라** — 세 레인이 같은 git 계정을 써서 그것과 브랜치 이름이 유일한 구별 수단이다.
+- PR 본문에 반드시: 여는 오퍼레이션 목록 · **게이트 실측(명령 + 숫자)** · 비테스트 diff 합계 · 「계약 미수정 · 새 error code 0」 · 마이그가 있으면 사전 대조 SELECT 결과와 드리프트 0.
 - 병합은 **merge commit**(`--merge`). ⛔ squash·rebase 안 쓴다.
 
 ## 9. 멈춤 조건 — 이 셋 «외에는» 멈추지 않는다
@@ -209,6 +208,7 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 3. **I-13(재고 이동 2단 · 6건)** 의 개별 계획안 브리프를 써서 opus 계획자를 띄운다.
    - 계약: `contracts/logistics-01자재창고.json` 의 재고 이동 path
    - 화면: `.design-reference/omf-mes/design/wiki/screens/01/M-01-10-재고이동불량반출.md`
+     (⭐ 화면 **ID** 가 정본이고 파일 이름은 실제 파일을 따른다 — 이 지시서에 적힌 이름과 다르면 **실제 파일이 이긴다**)
    - 마이그: A4(`stock_transfer_line.handling_unit_id?` — `plan.md` §4 130행)
    - ⭐ **2단 이동**(출발 → 도착이 두 전표로 갈린다)이 이 슬라이스의 심장이다. 원장 두 번 전기의 순서와 취소 시 역분개를 계획안에서 못 박는다.
 4. 계획안이 나오면 3관점 재수립 → **계획 PR**(브랜치 `docs/coverage-100-c-i13-plan` · 제목 `[C] docs(coverage-100): I-13 계획안 + 3관점 재검토` · 문서만이라 리뷰 없이 병합) → 구현 PR(`feat/coverage-100-c-i13-a` …).
