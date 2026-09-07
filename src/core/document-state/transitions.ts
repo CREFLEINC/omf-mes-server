@@ -22,6 +22,11 @@ const DOCUMENT_CANCEL_ACTIONS: Record<ActionName, Transition> = {
   },
 };
 
+// 검사·보류가 여는 오퍼레이션 셋 — 아래 신설 전이 10 중 9 가 이 셋을 되풀이한다.
+const CONFIRM = 'POST /quality/inspection-results/{inspectionResultId}:confirm';
+const HOLD = 'POST /quality/lot-holds';
+const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
+
 /**
  * 전이표. **데이터로 둔다** — 코드에 상태 문자열을 박으면 값이 확정될 때 찾아 고칠 수 없다
  * (`'PREISSUED'` 교훈: 값이 CHECK 한 곳에만 있고 아무 데서도 안 쓰였다).
@@ -34,12 +39,13 @@ const DOCUMENT_CANCEL_ACTIONS: Record<ActionName, Transition> = {
  * ⚠ **여기 선 축은 일곱뿐이다.** `*statusCode` 89자리 중 78자리에 값 목록이 없고
  * (`omf-mes#213`), 값이 시드된 15그룹 중 전이까지 확정된 것이 이 일곱이다.
  *
- * ⛔ **품질 판정 축(`trace.lot.status_code`)은 일부러 비워 두었다.**
- * `LOT_STATUS_TRANSITION` 이 가리키는 상태(`Release(합격)`·`Hold(불합격)`·`보류`·
- * `PQC 검사 필요`)와 시드된 `LOT_STATUS`(`NORMAL`·`INSPECTION_PENDING`·`DEFECTIVE`·
- * `SCRAPPED`)가 맞지 않는다 — 특히 `C14` 가 가리키는 「PQC 검사 필요」는 값 목록에 없다.
- * 설계도 「판정 유형 값 목록은 **고객 회신 대기(회신 E-3)**」라 적었다. 지금 매핑하면
- * 회신 전에 우리가 판정 체계를 지어내는 것이다.
+ * ⭐ **품질 판정 축(`trace.lot.status_code`)을 2026-09-07 에 채웠다**(I-19 PR ①).
+ * 비워 둔 이유였던 「판정 유형 값 목록은 고객 회신 대기(회신 E-3)」가 **2026-08-07 에
+ * 종결**됐다(`design/raw/process/uiux/2026-08-07-E3-판정유형-제안안/LOT상태-확정기록.md:5` ·
+ * 계약도 `INSPECTION_RESULT_OVERALL_JUDGMENT` 설명에 「근거: 회신 E-3 종결 2026-08-07」을
+ * 적었다). 그 확정이 `LOT_STATUS_TRANSITION` 이 말하는 「보류」와 「PQC 검사 필요」를 값
+ * 하나(`INSPECTION_PENDING`)로 합쳤다 — 상태 목록이 LOT 종류 공통인데 이름에 검사 종류를
+ * 박을 수 없어서다(확정 기록 §1.2). 그래서 시드 두 그룹이 이제 맞물린다.
  *
  * ⛔ `:activate`/`:deactivate` **36건은 여기 오지 않는다.** 그것들은 `is_active` 불리언
  * 토글이고 `status_code` 를 건드리지 않는다(`app/roles/{roleId}:deactivate` 실측).
@@ -153,6 +159,64 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'L3',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel',
     },
+  },
+
+  /**
+   * 검사 성적서 확정. 값은 시드 `INSPECTION_RESULT_STATUS` 2값(`DRAFT`·`CONFIRMED`)이 확정했다.
+   *
+   * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 재확정은 재로드해도 안 풀리는 잠금이다.
+   *    ⛔ 그러나 `PUT` 의 확정본 수정은 **409 `INVALID_STATE`** 다 — 계약이 그 자리에만 409 를
+   *    문자로 적었다(`InspectionResultUpdate` 설명). 두 자리의 봉투가 다르다.
+   * ⛔ 되돌아오는 전이가 없다 — 확정을 푸는 오퍼레이션이 계약에 0건이고 번복은 재검 회차다(B-10).
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
+   */
+  'quality.inspection_result.status_code': {
+    'inspection-confirm': { from: ['DRAFT'], to: 'CONFIRMED', sourceOperation: CONFIRM },
+  },
+
+  /**
+   * LOT 품질 판정 축. 값은 시드 `LOT_STATUS` 4값이고 전이 코드는 시드
+   * `LOT_STATUS_TRANSITION`(C4~C15)이 갖는다 — 코드는 `trace.lot_status_event.transition_code`
+   * (NOT NULL)에 그대로 들어간다. 생명주기 축과 «한 필드에 섞지 않는다»(`02-SW설계사양서` §4.2).
+   *
+   * ⭐ **`from` 이 액션마다 다르다 — 한 상수로 묶지 않는다.** 계약이 「불량(Hold)은 발신 전이가
+   *    0」이라 적었고(`contracts/quality-03품질.json:4472` · 화면 정본 `W-03-02` §5-5 도식이
+   *    「Hold 발신 (없음)」), 그 유일한 예외를 재등록 한 경로에만 열었다 — 「⭐ 이 경로에서만
+   *    반영 목적의 Hold → 정상 전이가 허용된다」(B-13 · `shipment-04제품출하.json:431`).
+   *    ⇒ `DEFECTIVE` 는 `stock-reinstate` 의 `from` 에만 있고, 나머지 여덟의 출발 상태는
+   *    위 도식의 «수신·발신»에서 그대로 읽는다.
+   * ⛔ `SCRAPPED` 는 `from` 에도 `to` 에도 없다 — 계약이 어느 오퍼레이션에도 적지 않았다.
+   * ⛔ `C15`(전수 재검 양품)를 등록하지 않는다 — `C4` 와 (from, to) 가 같은데 어느 LOT 이
+   *    `C14` 로 그 자리에 왔는지 가릴 표식이 데이터에 없다(F-6 · 문의 069+8).
+   */
+  'trace.lot.status_code': {
+    // ── 검사 확정(I-19)이 쓴다 ─────────────────────────────────────
+    'inspection-accepted': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C4', sourceOperation: CONFIRM },
+    'inspection-held': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C5', sourceOperation: CONFIRM },
+    'inspection-rejected': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'DEFECTIVE',
+      transitionCode: 'C6', sourceOperation: CONFIRM },
+    // 「PQC 불합격이 합격판정개수를 넘으면 같은 W/O 의 생산LOT 전체를 옮긴다」 — 대상이
+    // 집합이라 `from` 밖의 LOT 이 섞인다. 코어가 던지지 않고 건너뛰는 이유가 여기다.
+    'pqc-acceptance-exceeded': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C14', sourceOperation: CONFIRM },
+
+    // ── I-20(보류)이 쓴다 · 여기서는 등록만 한다 ───────────────────
+    'lot-hold-release-accepted': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C7', sourceOperation: RELEASE },
+    'lot-hold-release-rejected': { from: ['INSPECTION_PENDING'], to: 'DEFECTIVE',
+      transitionCode: 'C8', sourceOperation: RELEASE },
+    'lot-hold-claim': { from: ['NORMAL'], to: 'DEFECTIVE',
+      transitionCode: 'C9', sourceOperation: HOLD },
+    'lot-hold-suspect': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C10', sourceOperation: HOLD },
+
+    // ── I-23(레인 C · 재고 재등록)이 쓴다 ──────────────────────────
+    // ⛔ `transitionCode` 가 없다 — 이력 칸은 NOT NULL 인데 계약 enum 9값(C4~C15)에 재등록을
+    //    가리키는 코드가 «없다». 지어내지 않고 호출자가 넘기게 둔다. 설계 미정 — 문의 069+12.
+    'stock-reinstate': { from: ['DEFECTIVE'], to: 'NORMAL',
+      sourceOperation: 'POST /logistics/stock-reinstatements' },
   },
 
   /**
