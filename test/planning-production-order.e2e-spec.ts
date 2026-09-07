@@ -110,7 +110,7 @@ describe('P/O 조회 (e2e)', () => {
     it('2. dueDateFrom·dueDateTo 로 걸러진다', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
-        .query({ dueDateFrom: '2026-09-10', dueDateTo: '2026-09-16' })
+        .query({ businessUnitId: mainBusinessUnitId, dueDateFrom: '2026-09-10', dueDateTo: '2026-09-16' })
         .set('Cookie', cookie)
         .expect(200);
 
@@ -121,7 +121,7 @@ describe('P/O 조회 (e2e)', () => {
     it('3. q 가 P/O 번호 부분일치다', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
-        .query({ q: 'MAIN' })
+        .query({ businessUnitId: mainBusinessUnitId, q: 'MAIN' })
         .set('Cookie', cookie)
         .expect(200);
 
@@ -153,15 +153,20 @@ describe('P/O 조회 (e2e)', () => {
   });
 
   describe('includeChildren', () => {
-    it('7. includeChildren=false 는 루트만 낸다', async () => {
+    // 계약이 「**참이면** 필터·page·size·total 은 «루트 P/O» 기준」이라 한정했다 — 거짓은 루트로
+    // 안 세는 «평면 목록»이다. 자식에 도달할 질의 칸이 0이라 루트만 내면 자식 P/O 가 어떤 질의로도
+    // 안 보인다(I-24 리뷰 #274 §5 — 계획서 §8-4 7번 이름을 이 판정으로 정정했다).
+    it('7. includeChildren 미지정은 필터 그대로의 평면 목록이다 — 자식도 실린다', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
-        .query({ businessUnitId: treeBusinessUnitId, itemId })
+        .query({ businessUnitId: treeBusinessUnitId })
         .set('Cookie', cookie)
         .expect(200);
 
       const ids = response.body.items.map((item: { productionOrderId: number }) => item.productionOrderId);
-      expect(ids).toEqual([orderRootId]);
+      expect(ids).toContain(orderRootId);
+      expect(ids).toContain(orderChildId);
+      expect(response.body.page.total).toBe(ids.length);
     });
 
     it('8. includeChildren=true 는 total 이 루트 수인데 items 가 더 많다', async () => {
