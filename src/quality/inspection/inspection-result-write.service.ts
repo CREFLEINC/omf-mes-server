@@ -75,9 +75,9 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
 
 /**
  * 검사 결과 저장(PR ③b) · 수정(PR ③c).
- * ⛔ `:confirm` 의 부수효과(LOT 품질 축 전이·보류 해제·
- * 의뢰 완료)는 **PR ④** 가 붙인다 — `statusCode=CONFIRMED` 로 온 저장도 같은 함수를 타야 한다고
- * 계약이 적었다(x-internal-note 「확정 경로 둘이 부수효과가 같아야 한다」).
+ * ⚠ **`statusCode=CONFIRMED` 로 온 저장은 아직 부수효과가 «없다»** — PR ④(#316)가 `:confirm`
+ * 쪽에만 세웠다. 계약은 둘이 같아야 한다 적었고(`x-internal-note`) 오프라인 큐는 이 경로로만
+ * 확정하므로(`plan-uiux.md:1112`) **큐로 온 확정은 오늘 LOT 을 안 옮긴다** — 후속 PR · §12-1 ⓑ.
  * ⛔ 다른 도메인 service 호출 0 · import 0(`server-architecture.md`).
  */
 @Injectable()
