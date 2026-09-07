@@ -705,6 +705,28 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors).toBeUndefined();
     });
 
+    it('⭐ #314 Major — 물리 하한이 400 이다(500 아니다): `inspectedQty` 0 · `acceptedQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionRequestId = await newRequest();
+      // ⭐ 본길이다 — M-e ⓑ 가 연 「세 칸을 다 채우기 전 임시 저장」이 정확히 이 갈래다.
+      const zero = await post(draftBody(inspectionRequestId, { inspectedQty: 0 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      // `app.qty_t` 도메인이 `VALUE >= 0` 이라 음수 세 칸도 같은 500 갈래였다.
+      const negative = await post(draftBody(inspectionRequestId, { acceptedQty: -1 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(negative.body.errors).toContainEqual(expect.objectContaining({ field: 'acceptedQty', code: 'RANGE' }));
+
+      const sample = await post(
+        draftBody(inspectionRequestId, {
+          measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }],
+        }),
+        { workerNo: WORKER_HEADER },
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 셋 다 막혔으니 행이 하나도 안 섰다 — 500 이었다면 여기서도 0 이지만 응답이 5xx 였다.
+      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } })).toBe(0);
+    });
+
     it('무권한 계정은 `POST` 에서 403 이다', async () => {
       await post(draftBody(await newRequest()), { session: noPermCookie, workerNo: WORKER_HEADER }).expect(403);
     });
@@ -783,9 +805,10 @@ describe('검사 의뢰·결과 (e2e)', () => {
       // ⚠ 실측 — `idempotency.service.ts:115` 가 공용 예외를 `code` 없이 던진다. `QualityConflictResponse.code`
       //   는 required 라 이 갈래«만» 계약 스키마를 통과하지 못한다. R-8 이 PR ① 에 배정했으나
       //   `ConflictExtra` 타입만 늘고 사용처가 안 섰다 — 공용 파일이라 이 PR 이 고치지 않는다.
-      //   ⭐ 고치는 PR 은 아래 두 줄을 `code: 'DUPLICATE_KEY'` 단언과 `toBe(true)` 로 바꾼다.
+      //   ⭐ 고치는 PR 은 아래 한 줄을 `code: 'DUPLICATE_KEY'` 단언으로 바꾼다. ⛔ 「계약 스키마
+      //   불통과」를 초록으로 굳히지 않는다 — 살아 있는 응답에 ajv `toBe(false)` 를 걸면 결함이
+      //   테스트로 고정된다(#314 리뷰). 부재만 특성화한다. 정본 §12-1 미완 ⓐ.
       expect(response.body.code).toBeUndefined();
-      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(false);
     });
 
     it('⭐ `measurements` 를 실으면 치환이고 생략하면 손대지 않는다', async () => {
@@ -812,7 +835,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(rows[0].inspection_item_spec_id).toBe(ids.itemSpecA);
       expect(Number(rows[0].numeric_value)).toBe(99);
 
-      // 빈 배열은 «전건 삭제»다 — 생략과 다르다.
+      // 빈 배열은 «전건 삭제»다 — 생략과 다르다. 설계 미정 — 문의 086(계약이 완전히 침묵한다).
       await put(inspectionResultId, { measurements: [] }, 3).expect(200);
       expect(await prisma.inspection_measurement.count({ where: scope })).toBe(0);
     });
@@ -824,6 +847,27 @@ describe('검사 의뢰·결과 (e2e)', () => {
       // ⛔ 공백 문자열도 「값 목록 밖」이라 걸린다 — `assertCodeValues` 가 빈 문자열을 값으로 본다.
       const blank = await put(inspectionResultId, { overallJudgmentCode: ' ' }, 1).expect(400);
       expect(blank.body.errors[0]).toMatchObject({ field: 'overallJudgmentCode', code: 'INVALID' });
+    });
+
+    it('⭐ #314 Major — `PUT` 도 같은 하한을 건다: `inspectedQty` 0·음수 · `heldQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+
+      const zero = await put(inspectionResultId, { inspectedQty: 0 }, 1).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      const mixed = await put(inspectionResultId, { inspectedQty: -5, heldQty: -1 }, 1).expect(400);
+      expect(mixed.body.errors.map((item: { field: string }) => item.field)).toEqual(['inspectedQty', 'heldQty']);
+
+      const sample = await put(
+        inspectionResultId,
+        { measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }] },
+        1,
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 400 이 먼저 났으니 버전이 안 올랐다 — 화면의 If-Match 가 그대로 산다.
+      const after = await request(app.getHttpServer()).get(`${RESULTS}/${inspectionResultId}`).set('Cookie', cookie).expect(200);
+      expect(after.body.versionNo).toBe(1);
     });
 
     it('무권한 계정은 `PUT` 에서 403 이다', async () => {

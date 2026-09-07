@@ -3,6 +3,7 @@ import {
   assertConfirmedShape,
   assertMeasurementValues,
   assertPeriodPair,
+  assertQuantityBounds,
   assertScopedOrPeriod,
   buildInspectionResultOrderBy,
 } from './inspection-rules';
@@ -91,5 +92,44 @@ describe('assertMeasurementValues — 값은 한 칸만', () => {
 
   it('두 칸이 차 있으면 400 — `ck_measurement_single_value` 를 앞당겨 잡는다', () => {
     expect(() => assertMeasurementValues([{ numericValue: 1, textValue: '가' }])).toThrow(ContractException);
+  });
+});
+
+
+describe('assertQuantityBounds — 물리 하한을 400 으로 앞당긴다', () => {
+  it('검사 수량 0 은 400 — `inspection_result_inspected_qty_check` 는 조건이 없어 작성중에도 산다', () => {
+    expect(() => assertQuantityBounds({ inspectedQty: 0 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ inspectedQty: -1 })).toThrow(ContractException);
+  });
+
+  it('합격·불합격·보류 음수는 400 — 도메인 `app.qty_t` 가 `VALUE >= 0` 이다', () => {
+    expect(() => assertQuantityBounds({ acceptedQty: -1 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ rejectedQty: -0.000001 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ heldQty: -1 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ acceptedQty: 0, rejectedQty: 0, heldQty: 0 })).not.toThrow();
+  });
+
+  it('표본 번호 0 은 400 — `inspection_measurement_sample_no_check`', () => {
+    expect(() => assertQuantityBounds({ measurements: [{ sampleNo: 0 }] })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ measurements: [{ sampleNo: 1 }] })).not.toThrow();
+  });
+
+  it('⭐ 생략한 칸은 안 본다 — `PUT` 은 보낸 칸만 고친다', () => {
+    expect(() => assertQuantityBounds({})).not.toThrow();
+    expect(() => assertQuantityBounds({ inspectedQty: 100 })).not.toThrow();
+  });
+
+  it('어긋난 칸을 한 응답에 모아 낸다 — 화면이 한 번에 고친다', () => {
+    try {
+      assertQuantityBounds({ inspectedQty: 0, acceptedQty: -1, measurements: [{ sampleNo: 0 }] });
+      throw new Error('던졌어야 한다');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractException);
+      expect((error as ContractException).errors.map((item) => item.field)).toEqual([
+        'inspectedQty',
+        'acceptedQty',
+        'measurements[0].sampleNo',
+      ]);
+    }
   });
 });

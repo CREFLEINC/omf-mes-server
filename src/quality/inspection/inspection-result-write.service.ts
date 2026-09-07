@@ -7,7 +7,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { CONFIRMED, assertConfirmedShape, assertMeasurementValues } from './inspection-rules';
+import { CONFIRMED, assertConfirmedShape, assertMeasurementValues, assertQuantityBounds } from './inspection-rules';
 
 /** 계약 `InspectionMeasurementInput` — required 4 · 프로퍼티 8. */
 export interface InspectionMeasurementInput {
@@ -89,6 +89,8 @@ export class InspectionResultWriteService {
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
     await this.assertCodes(body.statusCode, body.overallJudgmentCode, body.measurements);
+    // 물리 하한이 먼저다 — 여기서 안 막으면 CHECK 위반이 500 으로 나간다(작성중도 그대로 산다).
+    assertQuantityBounds(body);
     assertConfirmedShape(body);
     assertMeasurementValues(body.measurements);
     const inspectorId = await this.resolveInspector(context);
@@ -152,6 +154,7 @@ export class InspectionResultWriteService {
     context: InspectionResultWriteContext,
   ): Promise<{ view: InspectionResultView; versionNo: number }> {
     await this.assertCodes(undefined, body.overallJudgmentCode, body.measurements);
+    assertQuantityBounds(body);
     assertMeasurementValues(body.measurements);
 
     return this.prisma.$transaction(async (tx) => {
