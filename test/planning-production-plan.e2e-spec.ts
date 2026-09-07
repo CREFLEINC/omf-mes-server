@@ -278,6 +278,20 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       expect(response.body).toMatchObject({ planDate: '2026-09-27', plannedQty: 22, versionNo: 3 });
     });
 
+    it('14-1. plannedQty 가 0 이면 400 INVALID — DB CHECK 를 앞지른다', async () => {
+      const version = await etagOf(planPutId);
+
+      const response = await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${planPutId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', version)
+        .send({ plannedQty: 0 })
+        .expect(400);
+
+      expect(response.body.errors[0]).toMatchObject({ field: 'plannedQty', code: 'INVALID' });
+    });
+
     it('15. If-Match 어긋남은 409 VERSION_CONFLICT', async () => {
       const response = await request(app.getHttpServer())
         .put(`/api/planning/production-plans/${planPutId}`)
@@ -308,6 +322,18 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         .expect(400);
 
       expect(response.body.errors[0]).toMatchObject({ field: 'statusCode', code: 'STATE_LOCKED' });
+
+      // ⭐ 순서(잠금 → If-Match → 상태)를 가르는 유일한 조합 — 확정된 계획에 «어긋난» 토큰을
+      // 주면 상태 검사(400)가 아니라 토큰 검사(409)가 먼저 걸린다(§4-2 · 리뷰 #276 Minor).
+      const conflict = await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${confirmedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '99')
+        .send({ remarks: '토큰이 먼저다' })
+        .expect(409);
+
+      expect(conflict.body).toMatchObject({ code: 'VERSION_CONFLICT' });
     });
   });
 
@@ -346,6 +372,16 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         .expect(409);
 
       expect(response.body).toMatchObject({ conflictCause: 'user', code: 'INVALID_STATE' });
+
+      // ⭐ 같은 순서 그물 — 확정된 계획 + 어긋난 토큰이면 409 VERSION_CONFLICT 가 먼저다.
+      const conflict = await request(app.getHttpServer())
+        .delete(`/api/planning/production-plans/${confirmedId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '99')
+        .expect(409);
+
+      expect(conflict.body).toMatchObject({ code: 'VERSION_CONFLICT' });
     });
 
     it('19. If-Match 어긋남은 409 VERSION_CONFLICT', async () => {

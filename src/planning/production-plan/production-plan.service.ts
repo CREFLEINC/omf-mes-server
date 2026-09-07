@@ -141,12 +141,8 @@ export class ProductionPlanService {
             routing_id: BigInt(body.routingId),
             planned_line_id: idOf(body.plannedLineId),
             status_code: DRAFT,
-            ...(body.splitOfPlanId?.sourcePlanId === undefined
-              ? {}
-              : { split_of_plan_id: BigInt(body.splitOfPlanId.sourcePlanId) }),
-            ...(body.splitOfPlanId?.reasonCode === undefined
-              ? {}
-              : { split_reason_code: body.splitOfPlanId.reasonCode }),
+            ...optional('split_of_plan_id', idOf(body.splitOfPlanId?.sourcePlanId)),
+            ...optional('split_reason_code', body.splitOfPlanId?.reasonCode),
             remarks: body.remarks ?? null,
             created_by: appUserId ?? null,
             updated_by: appUserId ?? null,
@@ -176,6 +172,11 @@ export class ProductionPlanService {
       assertPlanVersion(locked, version);
       if (locked.status_code !== DRAFT) {
         throw one(field('statusCode', ERROR_CODE.STATE_LOCKED, '확정된 계획은 고칠 수 없습니다.'));
+      }
+      // 계약 `ProductionPlanUpdate.plannedQty` 에 `minimum` 이 없어 ajv 가 못 막는다 — 그냥
+      // 흘리면 DB CHECK 위반이 500 으로 나간다(POST 와 같은 그물 · 리뷰 #276 Major).
+      if (body.plannedQty !== undefined && body.plannedQty <= 0) {
+        throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
       }
       const updated = await tx.production_plan.update({
         where: { production_plan_id: BigInt(productionPlanId) },
