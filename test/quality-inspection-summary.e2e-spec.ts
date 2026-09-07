@@ -216,15 +216,15 @@ describe('검사 집계·측정치 (e2e)', () => {
   });
 
   describe('항목별 요약 — `GET …/{id}/measurement-summary`', () => {
-    it('⭐ **항목 단위**로 접히고 `asOf` 를 낸다 — 측정치 17행이 항목 3행이 된다', async () => {
+    it('⭐ **항목 단위**로 접히고 `asOf` 를 낸다 — 측정치 19행이 항목 3행이 된다', async () => {
       const response = await get(`${RESULTS}/${resultS3Id}/measurement-summary`).expect(200);
 
       expect(response.body.items).toHaveLength(3);
       expect(response.body.items[0]).toMatchObject({
         inspectionItemSpecId: Number(ids.specNumeric),
         itemName: `${PREFIX} 치수`,
-        measuredCount: 12,
-        acceptedCount: 10,
+        measuredCount: 14, // 규격 밖 12 + 경계값 2
+        acceptedCount: 12,
         rejectedCount: 2,
         unmeasuredCount: 0,
       });
@@ -242,6 +242,18 @@ describe('검사 집계·측정치 (e2e)', () => {
       // ⭐ 반증: 규격 밖 12건인데 사람이 불합격을 준 것은 2건뿐이다 — 두 수가 같아지면 역산한 것이다.
       expect(numeric.outOfSpecTotalCount).not.toBe(numeric.rejectedCount);
       expect(numeric.outOfSpecValues[0]).toBe('12.06');
+    });
+
+    it('⭐ #319 Major 3 — **경계값은 규격 «안»이다**(상·하한과 «같은» 값을 규격 밖으로 세지 않는다)', async () => {
+      const response = await get(`${RESULTS}/${resultS3Id}/measurement-summary`).expect(200);
+      const [numeric] = response.body.items;
+
+      // 14행 중 상한 12.05·하한 11.95 «와 같은» 2행은 규격 안이다 — 규격 밖은 그대로 12.
+      // ⭐ 반증: 비교를 `lte`/`gte` 로 되돌리면 이 수가 13·14 로 늘어 여기가 깨진다.
+      expect(numeric.measuredCount).toBe(14);
+      expect(numeric.outOfSpecTotalCount).toBe(12);
+      expect(numeric.outOfSpecValues).not.toContain('12.05');
+      expect(numeric.outOfSpecValues).not.toContain('11.95');
     });
 
     it('⭐ `unmeasuredCount` 가 **값 3칸이 전부 빈 행**을 센다 — 상·하한이 없으면 `specText` 키가 없다', async () => {
@@ -288,8 +300,8 @@ describe('검사 집계·측정치 (e2e)', () => {
     it('페이지 골격으로 오고 기본 크기가 50 이며 `항목 → 표본` 순이다', async () => {
       const response = await get(`${RESULTS}/${resultS3Id}/measurements`).expect(200);
 
-      expect(response.body.page).toMatchObject({ page: 1, size: 50, total: 17 });
-      expect(response.body.items).toHaveLength(17);
+      expect(response.body.page).toMatchObject({ page: 1, size: 50, total: 19 });
+      expect(response.body.items).toHaveLength(19);
       expect(response.body.items[0]).toMatchObject({ inspectionItemSpecId: Number(ids.specNumeric), sampleNo: 1 });
       expect(response.body.items[11]).toMatchObject({ inspectionItemSpecId: Number(ids.specNumeric), sampleNo: 12 });
       expect(validator('GET /quality/inspection-results/{inspectionResultId}/measurements')(response.body)).toBe(true);
@@ -298,7 +310,7 @@ describe('검사 집계·측정치 (e2e)', () => {
     it('⭐ 목록을 «접지 않는다» — `size` 로 끊어도 `total` 은 전체다(135,000 자릿수의 층)', async () => {
       const response = await get(`${RESULTS}/${resultS3Id}/measurements?page=2&size=5`).expect(200);
 
-      expect(response.body.page).toMatchObject({ page: 2, size: 5, total: 17 });
+      expect(response.body.page).toMatchObject({ page: 2, size: 5, total: 19 });
       expect(response.body.items).toHaveLength(5);
       expect(response.body.items[0]).toMatchObject({ sampleNo: 6 });
     });
@@ -316,6 +328,7 @@ describe('검사 집계·측정치 (e2e)', () => {
       const response = await get(`${RESULTS}/${resultS3Id}/measurements?inspectionItemSpecId=${ids.specPlain}`).expect(200);
 
       expect(response.body.page.total).toBe(3);
+      expect(response.body.items).toHaveLength(3); // ⚠ `every` 는 빈 배열에서 진공 통과한다
       expect(response.body.items.every((row: { inspectionItemSpecId: number }) => row.inspectionItemSpecId === Number(ids.specPlain))).toBe(true);
     });
 
@@ -323,6 +336,10 @@ describe('검사 집계·측정치 (e2e)', () => {
       const response = await get(`${RESULTS}/${resultS3Id}/measurements`).expect(200);
       const bySpec = (specId: bigint) => response.body.items.filter((row: { inspectionItemSpecId: number }) => row.inspectionItemSpecId === Number(specId));
 
+      // ⚠ `every` 는 빈 배열에서 진공 통과한다 — 셋 다 길이를 «먼저» 못박는다.
+      expect(bySpec(ids.specNumeric)).toHaveLength(14);
+      expect(bySpec(ids.specText)).toHaveLength(2);
+      expect(bySpec(ids.specPlain)).toHaveLength(3);
       expect(bySpec(ids.specNumeric).every((row: { calibrationExpiredAtMeasurement: boolean }) => row.calibrationExpiredAtMeasurement === true)).toBe(true);
       expect(bySpec(ids.specText).every((row: { calibrationExpiredAtMeasurement: boolean }) => row.calibrationExpiredAtMeasurement === false)).toBe(true);
       // 장비가 없는 행은 «키 자체가 없다» — false 로 채우면 「교정이 유효했다」로 읽힌다(L-8).
@@ -333,7 +350,7 @@ describe('검사 집계·측정치 (e2e)', () => {
       const only = await get(`${RESULTS}/${resultS3Id}/measurements?calibrationExpired=only`).expect(200);
       const excluded = await get(`${RESULTS}/${resultS3Id}/measurements?calibrationExpired=exclude`).expect(200);
 
-      expect(only.body.page.total).toBe(12);
+      expect(only.body.page.total).toBe(14); // 치수 항목 전체(규격 밖 12 + 경계값 2) — 만료 캘리퍼로 쟀다
       expect(excluded.body.page.total).toBe(5); // 교정불요 장비 2 + 장비 없는 행 3
     });
   });
@@ -528,8 +545,8 @@ describe('검사 집계·측정치 (e2e)', () => {
         },
       });
 
-    // S3 의 측정치 17행 — 항목 셋.
-    // ① 치수(NUMERIC 11.95~12.05): 12건 «전부» 규격 밖(12.06~12.17)인데 사람이 준 불합격은 2건뿐.
+    // S3 의 측정치 19행 — 항목 셋.
+    // ① 치수(NUMERIC 11.95~12.05): 12건이 규격 밖(12.06~12.17)인데 사람이 준 불합격은 2건뿐.
     //    ⇒ outOfSpecTotalCount(12) ≠ rejectedCount(2) 라 역산을 반증한다. 장비는 만료 캘리퍼.
     for (let sample = 1; sample <= 12; sample += 1) {
       await measurementOf(
@@ -543,6 +560,12 @@ describe('검사 집계·측정치 (e2e)', () => {
         AT_S3,
       );
     }
+    // ⭐ #319 Major 3 — **경계값 2행**(상한과 «같은» 12.05 · 하한과 «같은» 11.95).
+    //    한계 포함이 규격 «안»이라(계약·화면) 이 둘은 규격 밖이 아니다. 이 행들이 없으면
+    //    `lessThan`/`greaterThan` 을 `lte`/`gte` 로 되돌려도 «전 단언이 초록»이었다 —
+    //    반증 9개를 통과하는 10번째 변이체가 정확히 이 자리였다.
+    await measurementOf(s3.inspection_result_id, ids.specNumeric, 13, { numeric: 12.05 }, 'ACCEPTED', ids.equipmentExpired, AT_S3);
+    await measurementOf(s3.inspection_result_id, ids.specNumeric, 14, { numeric: 11.95 }, 'ACCEPTED', ids.equipmentExpired, AT_S3);
     // ② 외관(상·하한 없음 · 장비 없음): 측정 1 + ⭐ 미측정 2(값 세 칸이 전부 NULL).
     await measurementOf(s3.inspection_result_id, ids.specPlain, 1, { numeric: 5 }, 'ACCEPTED', null, AT_S3);
     await measurementOf(s3.inspection_result_id, ids.specPlain, 2, {}, 'ACCEPTED', null, AT_S3);
