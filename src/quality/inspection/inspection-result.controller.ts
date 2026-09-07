@@ -36,10 +36,10 @@ import { InspectionResultView } from './inspection-result-view';
 
 /**
  * 검사 결과 조회 2건(I-19 PR ②b) + 저장(PR ③b)·수정(PR ③c)·**확정(PR ④)**.
- * `summary`·`defect-rate-trend`·`measurement-summary`·`/measurements`(PR ⑤)는 **별도
- * 컨트롤러**다(R-18) — 그래도 `quality.module.ts` 의 `controllers` 배열에서 **이 컨트롤러
- * 보다 먼저** 등록해야 한다. `ParseIntPipe` 가 `'summary'` 를 숫자로 못 읽어 400 을 내는
- * 함정은 컨트롤러를 나눠도 라우트 등록 순서에는 그대로 남는다.
+ * `summary`·`defect-rate-trend`·`measurement-summary`·`/measurements` 는 `InspectionSummaryController`
+ * 에 있다(PR ⑤ · R-18) — 그쪽이 `quality.module.ts` 의 `controllers` 배열에서 **이 컨트롤러보다
+ * 먼저** 등록돼 있다. `ParseIntPipe` 가 `'summary'` 를 숫자로 못 읽어 400 을 내는 함정은
+ * 컨트롤러를 나눠도 라우트 등록 «순서»에는 그대로 남기 때문이다.
  * ⛔ 403 게이트는 `derived-permissions.ts:250-251·280` 에 세 자리가 이미 있다 — `manual-permissions.ts` 0줄.
  */
 @Controller('quality/inspection-results')
