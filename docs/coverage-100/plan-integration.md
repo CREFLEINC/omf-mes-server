@@ -192,9 +192,9 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-28 | 알림 | 8 | I-1 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-29 | 통합 대시보드 | 1 | 전부 | 있음 | ✕ | ✕ | ✕ | 1 |
 | I-30 | 설비 점검·고장 | 9(진행8·보류1) | — | A15 nullable8추가·2완화 | ✕ | ✕ | ⭕ 고장 start, 완료 보류 | 실행8 + 조건부 |
-| I-31 | 보전 지시·실적 | 8 | I-30 | 있음 | ✕ | ✕ | ⭕ | 3 |
+| I-31 | 보전 지시·실적 | 8 | I-30·I32순간helper | 확장/완화·표2 | MO/cancel·부여/PM최소공유 | ✕ 기존출고참조 | ⭕ 지시 | R12 최소책임별/초과 때만 분할 |
 | I-32 | 비가동 | 6 | I-11 | 있음 | ✕ | ✕ | ✕ | 2 |
-| I-33 | 툴 사용·계측기·수집 채널 | 12 | I-31 | 있음 | ⚠ 채널 부분 유일 인덱스 | ✕ | ✕ | 3 |
+| I-33 | 툴 사용·계측기·수집 채널 | 12 | I31경계·I32순간 | 추가4/5/8·완화2/3·T | 네축NULL式/검교정유형별유일·A참조조율 | ✕ | 누계NKU·CAL기본효과 | R14 10조각후보 |
 | I-34 | 첨부 | 4 | — | 있음(`attachment`) | ✕ | ✕ | ✕ | 1 (3건 건너뜀) |
 | I-35 | 변경 이력·예비품 엑셀 | 2 | — | 있음 | ⚠ audit jsonb 규약(§I-5) | ✕ | ✕ | 2 |
 | | **합계** | **249** | | | | | | **92** |
@@ -459,9 +459,9 @@ I-30 R-1~R-14 확정: nullable8추가·2완화·과거 필수값/enum 사전조�
 
 ##### I-31 · 보전 — 지시·실적 — 8건
 
-**체인 마디**: 점검·고장·계측기가 트리거가 되어 보전 지시로 모인다(`maintenance_order_trigger`).
-⭐ **ERP 아웃박스의 두 번째 사용처가 아니다** — 보전은 ERP 로 나가지 않는다. 여기서는 코어를 안 만든다.
-**예상 설계 미정**: 회신 6(임박 임계 90)이 「미발행 트리거 목록」의 정렬·필터에 걸린다 — 가장자리(임계 근처 건에서만 갈린다) → 2단계 기준 5 → 90 을 상수로 두고 이름을 붙인다.
+**체인 마디**: 고정 BREAKDOWN/INSPECTION_NG/PM_DUE 촉발이 같은 대상의 지시로 모인다. 다형1:N과 직접breakdown FK를 I-30 조회가 함께 읽고 취소도발행흔적이다. I-31 R1~R13이 정본이며 임의 계측기 trigger유형을 추가하지 않는다.
+**ERP/수불/알림 연결0**. 다만 MO/cancel 등록과 실제MDM+maintenance 두사용처의 부여층/PM사실 최소추출은 코어전용전체200으로 나눈다. PMnear는 실재 PM_NEAR_THRESHOLD_PERCENT90 비율 선례이며 새IMMINENT_DAYS 일수상수0. 전이는 A와 사용자 사전조율 후.
+order8추가/priority완화·result15추가/6완화·표2/FK·trigger unique완화/bigint, 구행required 결손/구writer 환경활성화는 별도유보다. 미마감nonreset8건 정상 본길, closed/reset true만422·상태/자식/누계/PM/멱등전건0. 누계만201 성공철회·finishedAt≠PM완료. 실제writer의E/M NO KEY UPDATE→order/result UPDATE·그룹/참조 SHARE 및 후보경로재해석/유한whole run 재시도로 직렬화한다. 빈중간층 부여/부모변경/예비품FK 실제writer를 제어된배리어로 검증, 임의sleep/DBversionfixture로 대체0. µs는 I32 R2/R14 helper1회·GI issuedAt포함, 부여/PM 소유와 공유순서는 root 조율. I32 summary111의 완료실체/시각/범위는 여전히미해소. 자세한 실패/소비자 인수와 문의113~116은 I-31 §8~12.
 
 
 ##### I-32 · 비가동 — 구간·집계 — 6건
@@ -469,12 +469,15 @@ I-30 R-1~R-14 확정: nullable8추가·2완화·과거 필수값/enum 사전조�
 **체인 마디**: 작업 세션(I-11)의 조업 시간과 짝을 이룬다 — `downtimes/summary` 가 세션과 작업 캘린더를 읽어 시간가동률을 낸다.
 ⚠ `openOnly=true` 는 기간 필수 규칙(L-3)의 **예외**다 — 전날부터 이어진 구간을 놓치면 안 된다.
 
+I-32 재수립 R1~R14: 조회2+등록/수정2 진행,close/summary2 유보. 추가3/완화1 및 기존µs 무손실 projection/바인딩/재생을 선행하고 equipment→downtime→새breakdown 잠금 순서를 지킨다. server now 미래검사0, 업무/응답/멱등은 같은 전달tx다. I30 연결raw90분과 I32 설비union60분은 다른 집계며 계획장비배정으로 실제session을 증폭하지 않는다. 요약의 날짜×설비 정상계획구간/적용과 완료보전 엔티티/완료일/범위는111의 본길, I31 API 미구현/DB0행은 유보 근거가 아니다. 과거캘린더수정 허용·공장minor 확정규칙을 재질문하지 않는다. P0 날짜helper #300·MaintenanceModule #305 실재를 재사용하고 P0t/P1~P4로 나눈다. 문의108~112와 I-32 §12에 배포/미완을 기록한다.
+
 
 ##### I-33 · 툴 사용실적·계측기 이력·수집 채널 — 12건
 
 **체인 마디**: 툴 누계(타발수) → 보전 트리거. 계측기 차단(`blocksUse`) → 검사(I-19)의 사용 가부.
-⭐ `POST /maintenance/results` 의 `resetCounter=true` 는 **툴 마스터의 ETag** 를 `If-Match` 로 받는다 — 자원과 잠금 대상이 다른 드문 자리다.
-**예상 설계 미정**: 수집 채널의 부분 유일 인덱스(`COALESCE` 형) → **선행 마이그레이션**.
+I33 R1~R14가정본이다. tool제출delta보존/NO KEY UPDATE누계가산과 실제production W/O→mold FK writer의경합을검증한다. I31 resettrue는툴ETag 원천과별개로 현재114해소전422·전건0, nonreset정상. 실제reset성공교차회귀는재개뒤조건부이며도메인API미구현을PASS라쓰지않는다.
+물리: A20추가4/완화2,A21추가5/완화3+네축NULL식유일·기존uq보존,T최신관측표,A22추가8·유형별/legacyNULL유일·cal version추가0. 새quality item_spec참조는A사전조율후measurement기존보호+channel검사·사전검사뒤정확FK P2003를tx밖STATE_LOCKED400번역한다. equipment/process실제REFERRERS,ERP item/referenceCountNULL은유지한다.
+CAL 기본PASS/ADJUSTED는이력+master2날짜동일tx·FAIL이력만,nonCAL확장정상/unknownCAL만422(117). clear는해당행만·다른차단/만료유지·새ETag/권한0. T는실제값/µs조회·registered와active연결부재분리,수집자운영인수별도(118). client단위빈PUT와409·500성공오집계는별도2단건미배정·서버계약변경0. 순간helper는I32P0t단일공유,일반350/400·core전체200이며10조각은후보일뿐이다.
 
 
 ##### I-34 · 첨부 — 올리기·목록·내려받기 — 4건
@@ -609,7 +612,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | M-d | I-6 | `work_order_resource_assignment` **식** 유일 인덱스(COALESCE 한 식 3칸) — `remainder_disposition_code` 는 `close_disposition_code` 로 이미 있다(I-6 R-9) | ⭕ 추가(반) |
 | M-e | I-19 | 검사 의뢰 기준 완화(#280) | ⭕ |
 | M-f | I-23 | 긴급 출하 사유 컬럼(§I-41) | ⭕ nullable |
-| M-g | I-33 | `collection_channel` 부분 유일 인덱스(`COALESCE` 형) | ⭕ |
+| M-g | I-33 | equipment/key/item/process 네축NULL식유일(NULL비트+COALESCE0)·inactive포함·구uq유지, 신규정확index충돌만409 | ⭕·R5 |
 | M-h | I-3 | A3 `inbound_receipt_line.lot_id?` + `inbound_variance.reason_code` **NOT NULL 해제** + `ix_inbound_variance_line` — 한 파일, PR ②a 선행 커밋 | ⭕ 추가·완화 |
 
 ⭐ **전부 추가·완화다 — 두 릴리스 규칙(§3 멈춤 조건)에 걸리는 삭제가 하나도 없다.** 이 계획대로 가면 멈춤 조건 1번은 발생하지 않는다.
@@ -627,7 +630,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 | 2 | `certifiedBy` 참조 | — (mdm 구현 완료) | — | 걸리지 않는다 |
 | 4 | `pmDueAxisCode` | **I-31**(보전 지시 트리거) · I-33 | 가장자리 | §O-6 판정(스키마를 따랐다)을 그대로 재사용. 새 판단 없음 |
 | 5 | `type` null 인데 `enum` 에 null 없음 — **16자리** | **전 슬라이스**(응답 스키마 곳곳) | 가장자리 | §Y-1 판정 그대로 — 값이 없으면 **키를 뺀다**(널을 보내지 않는다). 슬라이스마다 반복하지 않는다 |
-| 6 | 임박 임계 90 | **I-31** · I-33 · I-29 | 가장자리(임계 근처 건에서만) | 2단계 기준 5 → 90 을 이름 붙인 상수(`IMMINENT_DAYS`)로 두고 요청서에 누적 |
+| 6 | 임박 임계 90 | **I-31** · I-33 · I-29 | 가장자리(임계 근처 건에서만) | I-31/33은 실제 `PM_NEAR_THRESHOLD_PERCENT=90` 비율 선례를 재사용. 일수 `IMMINENT_DAYS` 신설0·I-29 A 소유 판단은 변경하지 않음 |
 | 7 | `molds:import` 공장 | **I-35**(`spare-parts:import`) | 가장자리(공장이 둘 이상일 때만) | §P-3 판정 재사용 — 공장이 하나일 때만 생략 허용, 둘 이상이면 400 |
 | 8 | 같은 비밀번호 | — (auth 구현 완료) | — | 걸리지 않는다 |
 | 9 | 공지 종료일 | — (app/notice 구현 완료) | — | 걸리지 않는다 |
