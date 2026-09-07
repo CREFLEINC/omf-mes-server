@@ -2520,6 +2520,8 @@ model production_plan {
   updated_at          DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by          BigInt?
   version_no          Int              @default(1)
+  split_of_plan_id    BigInt?
+  split_reason_code   String?          @db.VarChar(50)
   app_user            app_user?        @relation(fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_production_plan_confirmed_by")
   bom                 bom              @relation(fields: [bom_id], references: [bom_id], onDelete: NoAction, onUpdate: NoAction)
   production_line     production_line? @relation(fields: [planned_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2527,7 +2529,10 @@ model production_plan {
   routing             routing          @relation(fields: [routing_id], references: [routing_id], onDelete: NoAction, onUpdate: NoAction)
   uom                 uom              @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   work_order          work_order[]
+  split_of_plan       production_plan?  @relation("production_planToproduction_plan", fields: [split_of_plan_id], references: [production_plan_id], onDelete: NoAction, onUpdate: NoAction)
+  split_children      production_plan[] @relation("production_planToproduction_plan")
 
+  @@index([split_of_plan_id], map: "ix_production_plan_split_of")
   @@schema("planning")
 }
 
