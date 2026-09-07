@@ -191,7 +191,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-27 | 발행 이력·프린터 | 7 | I-26 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-28 | 알림 | 8 | I-1 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-29 | 통합 대시보드 | 1 | 전부 | 있음 | ✕ | ✕ | ✕ | 1 |
-| I-30 | 설비 점검·고장 | 9 | — | 있음 | ✕ | ✕ | ⭕ 고장 | 3 |
+| I-30 | 설비 점검·고장 | 9(진행8·보류1) | — | A15 nullable8추가·2완화 | ✕ | ✕ | ⭕ 고장 start, 완료 보류 | 실행8 + 조건부 |
 | I-31 | 보전 지시·실적 | 8 | I-30 | 있음 | ✕ | ✕ | ⭕ | 3 |
 | I-32 | 비가동 | 6 | I-11 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-33 | 툴 사용·계측기·수집 채널 | 12 | I-31 | 있음 | ⚠ 채널 부분 유일 인덱스 | ✕ | ✕ | 3 |
@@ -449,8 +449,10 @@ OEE 분모는 `mdm.WorkCalendar*`(결정 03)에서 구한다 — 마스터는 �
 ##### I-30 · 설비 — 점검·고장 — 9건
 
 **체인 마디**: 생산과 «옆으로» 붙는다 — 작업 전 점검 통제(I-11)가 `maintenance/inspections` 를 근거로 삼는다.
-**선행이 사실상 없다** → ⭐ **병렬 1순위**. 파일이 `src/maintenance/` 로 완전히 갈려 물류·생산 슬라이스와 충돌하지 않는다.
-**상태기계**: 고장(접수→처리중→완료, 되돌림 없음).
+**조회는 선행 없이 진행 가능**. 쓰기는 기존 채번 코어에 EQI/MLF 등록, A 소유 전이표에 start 등록을 별도 PR로 선행한다. `src/maintenance/` 도메인은 갈리지만 공용 코어·root 모듈 등록은 소유 조율과 최신 main 통합이 필요하다.
+**상태기계**: 고장 접수→처리중은 구현, 완료는 원인 마스터 원천 확인까지1건 보류(090). start 상태잠금은 구체 계약 문언의400이다.
+
+I-30 R-1~R-14 확정: nullable8추가·2완화·과거 필수값/enum 사전조회, 공장 로컬 날짜 경계 준비 PR⓪, 조회2+2·등록1+1·메모/start2로8건 진행한다. 멱등은 로컬 주체 지문과 전달 tx를 사용한다. 채번은 tx 밖에서 먼저 끝내어 열린 업무 tx가 별도 연결을 기다리지 않게 하며 경합/실패의 결번은 허용한다(098). 실제 번호 카운터·업무·응답의 원자성 범위를 구분한다. I-11 FK 소비, I-31 다형 트리거, I-32 비가동 집계 회귀와 연결 한계는 개별 계획 §4·§8·§11이 정본이다.
 
 
 ##### I-31 · 보전 — 지시·실적 — 8건
@@ -583,8 +585,8 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 
 | 쌍 | 각자의 파일 | 왜 안 부딪히나 |
 |---|---|---|
-| **I-1 ∥ I-30** | `src/app/approval/` ∥ `src/maintenance/inspection·breakdown/` | 설비는 승인·원장·채번을 하나도 안 쓴다. 선행이 없다 |
-| **I-2 ∥ I-30/I-32** | `src/logistics/purchase-order/` ∥ `src/maintenance/` | 채번 코어를 설비가 쓰지 않는다(고장·비가동에 번호가 없다) |
+| **I-1 ∥ I-30** | `src/app/approval/` ∥ `src/maintenance/inspection·breakdown/` | 설비는 승인·원장 미사용. 조회는 독립이고 쓰기는 채번2유형·고장 start 코어 등록 선행. root 모듈 자기 등록만 통합 |
+| **I-2 ∥ I-30/I-32** | `src/logistics/purchase-order/` ∥ `src/maintenance/` | I-30 점검번호·고장번호는 물리 NOT NULL UNIQUE이므로 기존 채번 코어를 사용한다. 채번/전이 공용 파일 동시 변경은 조율 후 별도 PR. 비가동과 번호 존재 여부를 혼동하지 않음 |
 | **I-3 ∥ I-12** | `src/logistics/inbound-receipt/` ∥ `src/logistics/putaway/` | 적치는 **이미 선 입고**만 필요하다. 다만 둘 다 `logistics.module.ts` 를 건드린다 — 한쪽이 먼저 병합되면 **`origin/main`을 merge해 모듈 등록 줄의 충돌을 해소**하고 게이트를 다시 탄다(`lanes.md` §2 · I-3 은 `LotRegistryModule` import 가 하나 더 — 재수립 R-1) |
 | **I-6 ∥ I-19** | `src/production/work-order/` ∥ `src/quality/inspection/` | ⚠ I-19 가 실적을 시드로 필요로 하므로 I-7 뒤. I-6 과는 겹치지 않는다 |
 | **I-11 ∥ I-13** | `src/production/work-session/` ∥ `src/logistics/stock-transfer/` | 세션은 원장을 안 쓰고, 이동은 생산을 안 본다 |
@@ -1010,7 +1012,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 - `POST /maintenance/breakdowns` `403` — 고장 보고 등록
 - `GET /maintenance/breakdowns/{breakdownId}` — 고장 기록 한 건
 - `PUT /maintenance/breakdowns/{breakdownId}` `403` — 처리 내역 저장
-- `POST /maintenance/breakdowns/{breakdownId}:complete` `403` — 고장 완료
+- `POST /maintenance/breakdowns/{breakdownId}:complete` `403` — 고장 완료 · 원인 마스터 원천 확인 전 보류(090)
 - `POST /maintenance/breakdowns/{breakdownId}:start-handling` `403` — 처리 중으로
 - `GET /maintenance/inspections` — 점검 기록 목록
 - `POST /maintenance/inspections` `403` — 점검 기록 등록
