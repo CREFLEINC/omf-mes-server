@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { RoutingOperationService } from './routing/routing-operation.service';
 import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
+import { AcknowledgeService } from './production-order/acknowledge.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderService } from './production-order/production-order.service';
 import { ProductionPlanController } from './production-plan/production-plan.controller';
@@ -28,6 +29,7 @@ import { RoutingService } from './routing/routing.service';
     BomService,
     ProductionPlanService,
     ProductionOrderService,
+    AcknowledgeService,
   ],
 })
 export class PlanningModule {}
