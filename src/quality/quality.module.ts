@@ -12,10 +12,12 @@ import { InspectionPlanController } from './inspection-plan/inspection-plan.cont
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
 import { InspectionRequestService } from './inspection/inspection-request.service';
+import { InspectionResultController } from './inspection/inspection-result.controller';
+import { InspectionResultQueryService } from './inspection/inspection-result-query.service';
 
 /**
- * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰.
- * ⚠ 검사 결과(`inspection-results`)는 I-19 PR ②b 가 배선한다.
+ * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
+ * ⚠ 검사 결과 쓰기(`POST`·`PUT`·`:confirm`)와 집계 3건은 PR ③④⑤ 가 이어서 배선한다.
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
@@ -26,6 +28,7 @@ import { InspectionRequestService } from './inspection/inspection-request.servic
     InspectionPlanController,
     InspectionPlanVersionController,
     InspectionRequestController,
+    InspectionResultController,
   ],
   providers: [
     DefectCodeService,
@@ -34,6 +37,7 @@ import { InspectionRequestService } from './inspection/inspection-request.servic
     InspectionPlanService,
     InspectionPlanVersionService,
     InspectionRequestService,
+    InspectionResultQueryService,
   ],
 })
 export class QualityModule {}

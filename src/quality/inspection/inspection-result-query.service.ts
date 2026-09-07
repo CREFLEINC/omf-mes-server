@@ -1,0 +1,156 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+
+import { filter } from '../../common/master';
+import { PagedResponse, PageRequest, pageRequest } from '../../common/pagination';
+import { PrismaService } from '../../prisma/prisma.service';
+import { INSPECTION_RESULT_JOIN, InspectionResultRow, InspectionResultView, inspectionResultView } from './inspection-result-view';
+import { assertScopedOrPeriod, buildInspectionResultOrderBy } from './inspection-rules';
+
+/**
+ * 조회 2건(I-19 PR ②b) — 목록(재검 사슬)·상세. 집계 3건·`/measurements`는 별도 컨트롤러인
+ * PR ⑤ 몫이다(R-18). ⚠ `calibrationExpired` 는 계약에 있지만 판정 로직(`calibration.ts`)이
+ * PR ⑤ 에서 서므로 여기서 안 받는다 — 근거 없이 필터만 열면 조용히 도출하는 쪽이 된다.
+ */
+export interface InspectionResultListQuery {
+  inspectionRequestId?: number;
+  inspectionTypeCode?: string;
+  overallJudgmentCode?: string;
+  statusCode?: string;
+  processId?: number;
+  itemId?: number;
+  inspectedFrom?: string;
+  inspectedTo?: string;
+  finalRoundOnly?: boolean;
+  sort?: string;
+  page?: number;
+  size?: number;
+}
+
+/** 재검 사슬 BFS 깊이 상한(§fetchChains) — 정상 사슬은 몇 회차 안 되어 절대 안 닿는다. */
+const MAX_CHAIN_DEPTH = 20;
+
+@Injectable()
+export class InspectionResultQueryService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** ⭐ R-12 — `finalRoundOnly` 기본값은 계약에 없다. 목록은 `false`(사슬 동거)가 기본, 집계(⑤)만 `true`. */
+  async list(query: InspectionResultListQuery): Promise<PagedResponse<InspectionResultView>> {
+    assertScopedOrPeriod(query);
+    const page = pageRequest(query);
+    const where = buildWhere(query);
+    const orderBy = buildInspectionResultOrderBy(query.sort);
+
+    return query.finalRoundOnly === true
+      ? this.listFinalRoundOnly(where, orderBy, page)
+      : this.listWithChain(where, orderBy, page);
+  }
+
+  /** 없으면 404(계약 선언). ETag = `version_no` — 11건 중 이 자리 하나뿐이다. */
+  async detail(inspectionResultId: number): Promise<{ view: InspectionResultView; versionNo: number }> {
+    const row = await this.prisma.inspection_result.findUnique({ where: { inspection_result_id: inspectionResultId }, include: INSPECTION_RESULT_JOIN });
+    if (!row) throw new NotFoundException('없는 검사 결과입니다.');
+    return { view: inspectionResultView(row), versionNo: row.version_no };
+  }
+
+  /** ⭐ 재검 사슬 페이지(계약 `:753`) — 뿌리만 세고 자르되 사슬 전체를 동거시킨다(§4-2). */
+  private async listWithChain(
+    where: Prisma.inspection_resultWhereInput,
+    orderBy: Prisma.inspection_resultOrderByWithRelationInput[],
+    page: PageRequest,
+  ): Promise<PagedResponse<InspectionResultView>> {
+    const rootWhere: Prisma.inspection_resultWhereInput = { AND: [where, { previous_result_id: null }] };
+    const [total, rootRows] = await Promise.all([
+      this.prisma.inspection_result.count({ where: rootWhere }),
+      this.prisma.inspection_result.findMany({ where: rootWhere, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN }),
+    ]);
+    const meta = { page: page.page, size: page.size, total };
+    if (rootRows.length === 0) return { items: [], page: meta };
+
+    const chains = await this.fetchChains(rootRows);
+    const items = rootRows.flatMap((root) => chains.get(root.inspection_result_id.toString()) ?? [root]).map(inspectionResultView);
+    return { items, page: meta };
+  }
+
+  /**
+   * ⭐ 리뷰 Major 2 — `uq_inspection_round(의뢰,회차)` 는 「의뢰 하나 = 사슬 하나」를 보장하지
+   * 않는다(뿌리가 둘일 수 있고, `previous_result_id` 를 같은 의뢰로 묶는 FK·CHECK 가 0건이라
+   * 자식이 다른 의뢰에 있을 수도 있다 — `inspection_request_id` 로 뭉치던 옛 방식은 조용한
+   * 중복·소실을 냈다). ⇒ `previous_result_id` 만 신뢰해 뿌리마다 **독립** BFS 로 켠다.
+   */
+  private async fetchChains(roots: InspectionResultRow[]): Promise<Map<string, InspectionResultRow[]>> {
+    const chains = new Map<string, InspectionResultRow[]>(roots.map((r) => [r.inspection_result_id.toString(), [r]]));
+    const ownerOf = new Map<string, string>(roots.map((r) => [r.inspection_result_id.toString(), r.inspection_result_id.toString()]));
+    let frontier = roots.map((r) => r.inspection_result_id);
+
+    for (let depth = 0; depth < MAX_CHAIN_DEPTH && frontier.length > 0; depth += 1) {
+      const children = await this.prisma.inspection_result.findMany({ where: { previous_result_id: { in: frontier } }, orderBy: { inspection_round: 'asc' }, include: INSPECTION_RESULT_JOIN });
+      if (children.length === 0) break;
+      frontier = [];
+      for (const child of children) {
+        const parentKey = child.previous_result_id?.toString(); // in 절이 null 은 안 돌려주지만 타입은 방어적으로 본다
+        const ownerKey = parentKey === undefined ? undefined : ownerOf.get(parentKey);
+        const bucket = ownerKey === undefined ? undefined : chains.get(ownerKey);
+        if (ownerKey === undefined || bucket === undefined) continue; // 방어적 — 프론티어 밖 값은 안 온다
+        bucket.push(child);
+        ownerOf.set(child.inspection_result_id.toString(), ownerKey);
+        frontier.push(child.inspection_result_id);
+      }
+    }
+    // ⭐ 리뷰 m-7 — BFS 는 «깊이» 순이지 «회차» 순이 아니다. 한 부모에 자식이 둘(분기)이면
+    // 얕은 형제가 깊은 조카보다 회차가 커도 먼저 담긴다(예: root1→A2→B5 형제, A→C3 자식이면
+    // [1,2,5,3]으로 담긴다). §4-2 「사슬 안은 회차 순」을 지키려면 다 모은 뒤 정렬해야 한다.
+    for (const bucket of chains.values()) bucket.sort((a, b) => a.inspection_round - b.inspection_round);
+    return chains;
+  }
+
+  /** `finalRoundOnly=true` — 의뢰별 최대 회차 1건씩(그룹핑으로 정의를 못박는다 · §4-2). */
+  private async listFinalRoundOnly(
+    where: Prisma.inspection_resultWhereInput,
+    orderBy: Prisma.inspection_resultOrderByWithRelationInput[],
+    page: PageRequest,
+  ): Promise<PagedResponse<InspectionResultView>> {
+    const groups = await this.prisma.inspection_result.groupBy({ by: ['inspection_request_id'], where, _max: { inspection_round: true } });
+    const meta = { page: page.page, size: page.size, total: groups.length };
+    if (groups.length === 0) return { items: [], page: meta };
+
+    const finalWhere: Prisma.inspection_resultWhereInput = {
+      OR: groups.map((group) => ({ inspection_request_id: group.inspection_request_id, inspection_round: group._max.inspection_round ?? 0 })),
+    };
+    const rows = await this.prisma.inspection_result.findMany({ where: finalWhere, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN });
+    return { items: rows.map(inspectionResultView), page: meta };
+  }
+}
+
+function buildWhere(query: InspectionResultListQuery): Prisma.inspection_resultWhereInput {
+  const requestWhere: Prisma.inspection_requestWhereInput = {
+    ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
+    ...filter('item_id', query.itemId),
+    ...processWhere(query.processId),
+  };
+  return {
+    ...filter('inspection_request_id', query.inspectionRequestId),
+    ...(query.overallJudgmentCode === undefined ? {} : { overall_judgment_code: query.overallJudgmentCode }),
+    ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
+    ...inspectedAtWhere(query.inspectedFrom, query.inspectedTo),
+    ...(Object.keys(requestWhere).length === 0 ? {} : { inspection_request: requestWhere }),
+  };
+}
+
+/** §2-3 판정 — ⓑ W/O 축을 먼저, 비면 ⓐ 기준 축. 둘 다 없으면 이 필터는 아무 행도 안 잡는다. */
+function processWhere(processId: number | undefined): Prisma.inspection_requestWhereInput {
+  if (processId === undefined) return {};
+  return {
+    OR: [{ work_order: { routing_operation: { process_id: processId } } }, { inspection_plan_version: { inspection_plan: { process_id: processId } } }],
+  };
+}
+
+function inspectedAtWhere(from?: string, to?: string): Prisma.inspection_resultWhereInput {
+  if (from === undefined && to === undefined) return {};
+  return {
+    inspected_at: {
+      ...(from === undefined ? {} : { gte: new Date(from) }),
+      ...(to === undefined ? {} : { lte: new Date(to) }),
+    },
+  };
+}

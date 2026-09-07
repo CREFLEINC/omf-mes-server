@@ -65,9 +65,17 @@ function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_reques
   };
 }
 
+/**
+ * ⭐ #286 M-1 — `pendingOnly` 와 `statusCode` 를 **AND** 로 묶는다. 형제
+ * `approval-request.service.ts:148,154` 와 같은 모양 — 예전엔 `pendingOnly=true` 가
+ * `statusCode` 를 조용히 삼켰다(`pendingOnly=true&statusCode=IN_PROGRESS` 가 `statusCode` 를
+ * 무시하고 REQUESTED·IN_PROGRESS 둘 다 돌려줬다).
+ */
 function statusWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
-  if (query.pendingOnly === true) return { status_code: { in: PENDING_STATUS_CODES } };
-  return query.statusCode === undefined ? {} : { status_code: query.statusCode };
+  const conditions: Prisma.inspection_requestWhereInput[] = [];
+  if (query.pendingOnly === true) conditions.push({ status_code: { in: PENDING_STATUS_CODES } });
+  if (query.statusCode !== undefined) conditions.push({ status_code: query.statusCode });
+  return conditions.length === 0 ? {} : { AND: conditions };
 }
 
 /**
