@@ -82,9 +82,10 @@ node_modules/.bin/jest contract-coverage    # 콘솔에 「계약 구현 커버�
 
 1. PR 을 열기 **직전에** `git fetch origin && git merge origin/main`(⛔ rebase·force-push 금지) → 충돌을 풀고 → **게이트를 다시 돌린다**.
 2. 남의 레인 마이그가 딸려 오면 `node_modules/.bin/prisma migrate deploy` 로 자기 DB 를 따라잡힌 뒤 `prisma generate`.
-3. 드리프트 0 확인 — `node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma` 가 **`No difference detected`**.
+3. 드리프트 0 확인 — `node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma` 가 **`No difference detected`**. 종료코드로 자동 판정하려면 `--exit-code` 를 붙인다(빈 diff 0 · 오류 1 · 차이 있으면 2).
 4. 병합은 **merge commit** — `gh pr merge <N> --merge`.
-5. ⭐ **병합 성공을 확인한 «뒤에» 브랜치를 정리한다.** `gh pr merge && git branch -D …` 처럼 한 줄로 이으면 충돌로 실패했을 때도 브랜치가 지워진다(실제로 한 번 났다 — `refs/pull/<N>/head` 에서 복구했다).
+5. ⭐ **브랜치는 병합 성공을 확인한 «뒤에» 따로 지운다.** ⛔ `gh pr merge --delete-branch` 를 쓰지 않는다 — 지워진 브랜치를 base 로 둔 **자식 PR 이 재지정되지 않고 CLOSED 된다**(이 저장소에서 실제로 났다 · #153 병합 → #154 닫힘. 닫힌 PR 은 base 변경도 reopen 도 안 돼 새 PR 을 열어야 했다). 순서: `gh pr merge <N> --merge` → 병합 확인 → 스택이면 `gh pr edit <N+1> --base main` → `git push origin --delete <브랜치>`. 실수로 지웠으면 `refs/pull/<N>/head` 에서 되살린다.
+   ⚠ 「`gh pr merge && git branch -D …` 는 실패해도 지워진다」고 적었던 옛 문장은 **틀렸다** — `&&` 는 앞이 성공해야 뒤를 돈다(레인 C 지적, 2026-09-07). 위험한 것은 `&&` 가 아니라 `--delete-branch` 다.
 
 ## 3. 서로에게 알려야 하는 순간 (사용자를 통해)
 

@@ -324,6 +324,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: 창고 간 이동. 체인의 본줄기가 아니라 «가지»이지만 **`IN_TRANSIT` 를 처음 쓰는 자리**다(~~I-9 판정의 선례가 된다~~ — I-9 는 `IN_TRANSIT` 를 안 쓰고 먼저 닫혔다 · I-9 R-17).
 **원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, `AVAILABLE`}. `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
 **예상 설계 미정**: `IN_TRANSIT` 행의 `location_id` 는 NOT NULL 인데 이동 중에는 위치가 없다. → 2단계 기준 3 → 도착 위치를 미리 쓴다(`to_location_id`).
+⛔ **취소는 I-13 이 만들지 않는다**(2026-09-07 · 레인 C 지적). 문서는 **1건**이고 원장 전기가 2회일 뿐이다(계약 `x-internal-note` 「두 문서가 아니라 한 문서의 두 전이다」). 취소 API 의 `documentTypeCode` 는 입하·입고·출고 3종뿐이라 `STOCK_TRANSFER` 에 실행 경로가 없고, `document-type-registry.ts` 도 `cancelable: false` 로 이미 등록했다. §508 의 「I-13 이 각자 취소를 짠다」는 I-5 를 앞당긴 «이유»를 적은 문장이지 I-13 의 범위가 아니다 — 미지원으로 두고 문의로 올린다.
 
 
 ##### I-14 · 재고 조정 — 등록·상신·전기 — 7건
