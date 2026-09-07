@@ -26,6 +26,13 @@ const DEFAULT_PREFIX: Record<string, string> = {
   MATERIAL_CONSUMPTION: 'MC',
   /** 규칙 미등재 — `MR-{YYYYMMDD}-{SEQ4}`(계약 example `"값"` 뿐 · 기간 축은 서버 시각 UTC 날짜 · I-10 §4-6). */
   MATERIAL_RETURN: 'MR',
+  /**
+   * 규칙 미등재 — `IRS-{YYYYMMDD}-{SEQ4}` · 기간 축은 `inspectedAt` 의 UTC 날짜(I-19 §1-5·§5-3).
+   * ⚠ 계약 example `IRS-2026-0812-0412-1` 은 조각이 넷이라 형식이 다르다 — 형식 확정은 문의 대상이고
+   *   여기서는 저장소 기본 패턴을 따른다. ⛔ 의뢰 번호(`IR`)를 더하지 않는다 — 의뢰를 만드는
+   *   오퍼레이션이 계약에 0건이고 `IR` 은 이미 `INBOUND_RECEIPT` 가 쓴다.
+   */
+  INSPECTION_RESULT: 'IRS',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —

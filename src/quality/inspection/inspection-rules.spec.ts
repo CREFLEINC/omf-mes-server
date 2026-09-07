@@ -1,4 +1,11 @@
-import { assertPeriodPair, assertScopedOrPeriod, buildInspectionResultOrderBy } from './inspection-rules';
+import { ContractException } from '../../common/errors';
+import {
+  assertConfirmedShape,
+  assertMeasurementValues,
+  assertPeriodPair,
+  assertScopedOrPeriod,
+  buildInspectionResultOrderBy,
+} from './inspection-rules';
 
 describe('assertScopedOrPeriod — inspectionRequestId 또는 기간 중 하나(계약 :753)', () => {
   it('⛔ 셋 다 없으면 400 REQUIRED 를 던진다', () => {
@@ -53,5 +60,36 @@ describe('buildInspectionResultOrderBy — 허용 3키 + 기본값', () => {
 
   it('⛔ 방향이 asc·desc 밖이면 400 INVALID', () => {
     expect(() => buildInspectionResultOrderBy('inspectedAt,up')).toThrow();
+  });
+});
+
+describe('assertConfirmedShape — 확정 행의 두 규칙', () => {
+  const base = { statusCode: 'CONFIRMED', inspectedQty: 100, acceptedQty: 60, rejectedQty: 30, heldQty: 10, overallJudgmentCode: 'ACCEPTED' };
+
+  it('작성중은 합도 판정도 안 본다 — M-e ⓑ·ⓒ 가 물리를 그 모양으로 풀었다', () => {
+    expect(() => assertConfirmedShape({ ...base, statusCode: 'DRAFT', acceptedQty: 0, rejectedQty: 0, heldQty: 0, overallJudgmentCode: undefined })).not.toThrow();
+  });
+
+  it('확정인데 판정이 없으면 400 `REQUIRED`', () => {
+    expect(() => assertConfirmedShape({ ...base, overallJudgmentCode: undefined })).toThrow(ContractException);
+  });
+
+  it('확정인데 합이 다르면 400 `INVALID`', () => {
+    expect(() => assertConfirmedShape({ ...base, heldQty: 11 })).toThrow(ContractException);
+  });
+
+  it('⭐ 소수 자릿수 합을 부동소수로 재지 않는다 — `Decimal(20,6)` 자리로 옮겨 센다', () => {
+    // 0.1 + 0.2 !== 0.3 이라 그대로 비교하면 DB CHECK 는 통과하는 입력을 서비스가 400 으로 막는다.
+    expect(() => assertConfirmedShape({ ...base, inspectedQty: 0.3, acceptedQty: 0.1, rejectedQty: 0.2, heldQty: 0 })).not.toThrow();
+  });
+});
+
+describe('assertMeasurementValues — 값은 한 칸만', () => {
+  it('전부 비는 것은 통과다 — 「미측정」 갈래', () => {
+    expect(() => assertMeasurementValues([{}])).not.toThrow();
+  });
+
+  it('두 칸이 차 있으면 400 — `ck_measurement_single_value` 를 앞당겨 잡는다', () => {
+    expect(() => assertMeasurementValues([{ numericValue: 1, textValue: '가' }])).toThrow(ContractException);
   });
 });
