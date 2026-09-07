@@ -14,6 +14,8 @@ import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
+import { NotificationController } from './notification/notification.controller';
+import { NotificationQueryService } from './notification/notification-query.service';
 import { OperationPolicyController } from './policy/operation-policy.controller';
 import { OperationPolicyService } from './policy/operation-policy.service';
 import { RolePermissionService } from './access/role-permission.service';
@@ -41,6 +43,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     AppUserController,
     OperationPolicyController,
     NoticeController,
+    NotificationController,
     ApprovalRouteController,
     ApprovalRequestController,
   ],
@@ -51,6 +54,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     UserAssignmentService,
     OperationPolicyService,
     NoticeService,
+    NotificationQueryService,
     ApprovalRouteService,
     ApprovalRequestService,
   ],
