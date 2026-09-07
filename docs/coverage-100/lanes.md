@@ -95,6 +95,12 @@ node_modules/.bin/jest contract-coverage    # 콘솔에 「계약 구현 커버�
 - 문의 번호 대역이 모자랄 때
 - 멈춤 조건 셋 중 하나에 걸렸을 때(`README.md` §3)
 
+## 3-1. 모델 배분과 커밋 서명 — 레인마다 도구가 다를 수 있다
+
+- `README.md` §4 의 **opus/sonnet/fable 은 「역할」이지 제품명이 아니다.** 「판단 밀도가 높은 일(계획·코어·마이그레이션·리뷰·심장 구현)에 큰 모델, 패턴을 베끼는 일(조회·CRUD 복제·e2e)에 작은 모델」이라는 축만 지키면 된다. 다른 도구(Codex 등)를 쓰는 레인은 자기 쪽 대응 모델로 바꿔 읽는다 — 예: 큰 모델 `gpt-6-astra` · 작은 모델 `gpt-5.6-sol`.
+- ⛔ **커밋 트레일러·PR 푸터를 «자기가 쓰지 않은 도구» 이름으로 적지 않는다.** 저장소 기존 커밋의 `Co-Authored-By: Claude …`·`Claude-Session: …`·`🤖 Generated with [Claude Code](…)` 는 **레인 A 세션 전용**이다. 다른 도구를 쓰면 자기 표기로 대체하거나 **생략**한다. 허위 기재는 금지다.
+- ⭐ 다만 **PR 제목의 레인 접두어(`[A]`·`[B]`·`[C]`)와 브랜치 접두어는 생략하지 않는다**(§1-3).
+
 ## 4. 절대 금지 (레인 공통)
 
 - `contracts/*.json` 수정 · `pnpm contracts:update` · `contracts:check` — 계약 사본은 **`a6a87e1` 고정**이다(`contracts/COMMIT.txt`). 이게 분모 487 의 기준이다.

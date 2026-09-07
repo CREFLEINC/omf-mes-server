@@ -1,4 +1,4 @@
-# 레인 B 업무 지시서 — 설비 · 보전 · 발행 · 알림 (52건)
+# 레인 B 업무 지시서 — 설비 · 보전 · 발행 · 알림 (슬라이스 **7** · **52건**)
 
 > 읽는 사람: **이 프로젝트를 처음 맡는 새 세션.** 커버리지 100 루틴을 모른다고 전제하고 썼다.
 > 순서대로 읽고 그대로 하면 된다. 모르는 규칙이 나오면 지어내지 말고 여기 적힌 정본을 찾아 읽는다.
@@ -15,7 +15,7 @@
 - 이 루틴을 **세 세션이 병렬로** 돈다. **너는 레인 B** 다. 공유 규칙은 `docs/coverage-100/lanes.md`.
 - 범위는 **DB 안에서 끝나는 것만**. 실제 외부 전송·프린터 출력·바이너리 저장은 하지 않는다(아웃박스 테이블에 쌓는 데까지, 발행 이력은 기록만 — 이건 범위 안이다).
 
-## 2. 네 담당 — 슬라이스 6개 · 52건
+## 2. 네 담당 — 슬라이스 **7개** · **52건**
 
 레인 안에서 **화살표 순서를 지킨다**(선행이 병합돼야 다음을 시작한다). `∥` 는 동시에 해도 된다.
 
@@ -31,6 +31,9 @@
 
 **권장 순서**: I-30 ∥ I-28 → I-32 ∥ I-26 → I-31 → I-27 → I-33.
 계약 파일은 주로 `contracts/equipment-05설비툴.json` 과 `contracts/app-공통.json` 이다.
+배정의 정본은 **`docs/coverage-100/assignment.tsv`** 다 — 슬라이스별 오퍼레이션이 한 줄씩 있으니 시작 전에 자기 슬라이스를 `awk -F'\t' '$1=="I-30"' docs/coverage-100/assignment.tsv` 로 뽑아 **건수를 대조**한다.
+
+⛔ **`POST /maintenance/breakdowns/{breakdownId}/attachments` 는 네 것이 아니다.** 배정은 I-34 이고, 더구나 **`plan.md` §6 의 「건너뜀」**으로 확정돼 **아무도 구현하지 않는다**(바이너리 저장소가 DB 밖 + `CD-ATTACHMENT-TARGET-TYPE` 에 고장 값이 없어 설계 문의 대상). 계획안에 「고장 첨부는 I-34 건너뜀분이라 이 슬라이스가 만들지 않는다」 한 줄만 남긴다.
 
 ⚠ 이 레인은 **마이그레이션이 가장 많다**(신설 표 4개 포함). 마이그는 `README.md` 와 `CLAUDE.md` 규칙을 그대로 따른다 — **추가·완화만, 삭제 0, forward-only, 별도 선행 커밋**.
 
@@ -176,12 +179,9 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 | 소유 | `gh pr create` 가 준 **번호를 기록**하고 **그 번호만** 다룬다 | |
 
 - 커밋 메시지: 한국어. 제목은 `feat(equipment): …` 형태. 본문에 **왜**를 적는다.
-- 커밋 트레일러 두 줄(네 세션 것으로):
-  ```
-  Co-Authored-By: <네 모델> <noreply@anthropic.com>
-  Claude-Session: <네 세션 URL>
-  ```
-- PR 본문에 반드시: 여는 오퍼레이션 목록 · **게이트 실측(명령 + 숫자)** · 비테스트 diff 합계 · 「계약 미수정 · 새 error code 0」 · 마이그가 있으면 사전 대조 SELECT 결과와 드리프트 0. 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)` 와 세션 URL.
+- ⛔ **다른 도구의 서명을 베끼지 않는다.** 이 저장소의 기존 커밋에는 `Co-Authored-By: Claude …` · `Claude-Session: …` 트레일러와 PR 푸터 `🤖 Generated with [Claude Code](…)` 가 붙어 있는데 그건 **레인 A 세션 전용**이다. 네가 Claude 를 쓰지 않는다면 **그대로 베끼지 마라 — 허위 기재다.** 네가 실제로 쓴 도구·모델 표기로 **대체하거나 생략**한다(예: `Co-Authored-By: Codex (gpt-6-astra) <noreply@openai.com>`). 생략해도 무방하다.
+- ⭐ **`[B] ` 제목 접두어만은 생략하지 마라** — 세 레인이 같은 git 계정을 써서 그것과 브랜치 이름이 유일한 구별 수단이다.
+- PR 본문에 반드시: 여는 오퍼레이션 목록 · **게이트 실측(명령 + 숫자)** · 비테스트 diff 합계 · 「계약 미수정 · 새 error code 0」 · 마이그가 있으면 사전 대조 SELECT 결과와 드리프트 0.
 - 병합은 **merge commit**(`--merge`). ⛔ squash·rebase 안 쓴다.
 
 ## 9. 멈춤 조건 — 이 셋 «외에는» 멈추지 않는다
@@ -205,7 +205,8 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 2. §4 정본 7건을 읽는다. 특히 `README.md` §2 와 `slices/I-24.md` 는 정독한다.
 3. **I-30(설비 점검·고장 · 9건)** 의 개별 계획안 브리프를 써서 opus 계획자를 띄운다.
    - 계약: `contracts/equipment-05설비툴.json` 의 해당 7 path
-   - 화면: `.design-reference/omf-mes/design/wiki/screens/05/M-05-01-설비점검.md`·`M-05-02-설비고장.md`
+   - 화면: `.design-reference/omf-mes/design/wiki/screens/05/` 의 **`M-05-01-설비점검입력.md`** · **`M-05-02-설비고장현장보고.md`** · **`W-05-04-설비고장상세처리.md`**
+     (⭐ 화면 **ID** 가 정본이고 파일 이름은 실제 파일을 따른다 — 이 지시서에 적힌 이름과 다르면 **실제 파일이 이긴다**. `PUT …/{breakdownId}`·`:start-handling`·`:complete` 는 `W-05-04` 소관일 가능성이 크다)
    - 마이그: A15(`maintenance.breakdown` 3칸 — `plan.md` §4 134행)
 4. 계획안이 나오면 3관점 재수립 → **계획 PR**(브랜치 `docs/coverage-100-b-i30-plan` · 제목 `[B] docs(coverage-100): I-30 계획안 + 3관점 재검토` · 문서만이라 리뷰 없이 병합) → 구현 PR(`feat/coverage-100-b-i30-a` …).
 5. **첫 PR 을 열면 그 번호를 기록**하고, 이후 `gh pr merge`·`close` 전에 `headRefName` 이 `…-b-` 로 시작하는지 확인한다(`lanes.md` §1-3).
