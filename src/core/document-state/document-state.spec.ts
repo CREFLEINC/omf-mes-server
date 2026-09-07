@@ -26,6 +26,10 @@ const WORK_SESSION_STATUS = 'production.work_session.status_code';
 const PUTAWAY_TASK_STATUS = 'logistics.putaway_task.status_code';
 /** I-24 PR ③ 이 여는 축 — 시드 `PRODUCTION_PLAN_STATUS`(DRAFT·CONFIRMED) 2값. */
 const PRODUCTION_PLAN_STATUS = 'planning.production_plan.status_code';
+/** I-19 PR ① 이 여는 축 — 시드 `INSPECTION_RESULT_STATUS`(DRAFT·CONFIRMED) 2값. */
+const INSPECTION_RESULT_STATUS = 'quality.inspection_result.status_code';
+/** I-19 PR ① 이 여는 축 — 시드 `LOT_STATUS` 4값. 같은 표의 생명주기 축과 «다른 칸»이다. */
+const LOT_QUALITY_STATUS = 'trace.lot.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -162,6 +166,70 @@ describe('DocumentStateService', () => {
     });
   });
 
+  describe('LOT 품질 판정 축 — I-19 가 여는 축', () => {
+    const from = (action: string) => [...TRANSITIONS[LOT_QUALITY_STATUS][action].from].sort();
+
+    it('⭐ 불량(Hold)은 발신 전이가 0이다 — DEFECTIVE 는 재등록의 from 에만 있다', () => {
+      // 계약이 두 자리에 이름 적었다: 「불량(Hold)은 발신 전이가 0」(quality-03품질.json)
+      // · 「⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다」(shipment-04제품출하.json
+      // · 공유계약 B-13). 그래서 `from` 을 한 상수로 묶지 않고 액션마다 가른다.
+      const withDefective = service
+        .registered()
+        .filter((entry) => entry.column === LOT_QUALITY_STATUS)
+        .filter((entry) => entry.transition.from.includes('DEFECTIVE'))
+        .map((entry) => entry.action);
+
+      expect(withDefective).toEqual(['stock-reinstate']);
+      expect(from('stock-reinstate')).toEqual(['DEFECTIVE']);
+      // 불합격은 «자기 자신»으로도 못 간다 — 자기 전이도 발신이다.
+      expect(() =>
+        service.assertTransition(LOT_QUALITY_STATUS, 'inspection-rejected', 'DEFECTIVE'),
+      ).toThrow(ConflictException);
+    });
+
+    it('검사 확정 넷은 NORMAL·INSPECTION_PENDING 에서 출발한다 — 재검·OQC 가 막히지 않는다', () => {
+      // 좁혀서 `INSPECTION_PENDING` 하나로 두면 ⓐ 재검 회차 확정과 ⓑ PQC 를 지나 이미
+      // `NORMAL` 인 제품LOT 의 OQC 확정이 통째로 막힌다.
+      for (const action of [
+        'inspection-accepted',
+        'inspection-held',
+        'inspection-rejected',
+        'pqc-acceptance-exceeded',
+      ]) {
+        expect(from(action)).toEqual(['INSPECTION_PENDING', 'NORMAL']);
+      }
+      expect(service.assertTransition(LOT_QUALITY_STATUS, 'inspection-accepted', 'NORMAL').to).toBe(
+        'NORMAL',
+      );
+    });
+
+    it('보류 축은 도식의 수신·발신 그대로다 — 재판정은 보류에서, 재Hold 는 정상에서', () => {
+      expect(from('lot-hold-release-accepted')).toEqual(['INSPECTION_PENDING']);
+      expect(from('lot-hold-release-rejected')).toEqual(['INSPECTION_PENDING']);
+      expect(from('lot-hold-claim')).toEqual(['NORMAL']);
+      expect(from('lot-hold-suspect')).toEqual(['INSPECTION_PENDING', 'NORMAL']);
+    });
+
+    it('⛔ SCRAPPED 는 어느 쪽에도 없다 — 계약이 그 전이를 적은 오퍼레이션이 0건이다', () => {
+      const states = service
+        .registered()
+        .filter((entry) => entry.column === LOT_QUALITY_STATUS)
+        .flatMap((entry) => [...entry.transition.from, entry.transition.to]);
+
+      expect(states).not.toContain('SCRAPPED');
+    });
+
+    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(069+12)', () => {
+      const withoutCode = service
+        .registered()
+        .filter((entry) => entry.column === LOT_QUALITY_STATUS)
+        .filter((entry) => entry.transition.transitionCode === undefined)
+        .map((entry) => entry.action);
+
+      expect(withoutCode).toEqual(['stock-reinstate']);
+    });
+  });
+
   describe('판정할 수 없음을 통과로 처리하지 않는다 (F-6)', () => {
     it('⛔ 등록되지 않은 칸은 던진다', () => {
       expect(() => service.assertTransition('logistics.goods_issue.status_code', 'post', 'DRAFT'))
@@ -224,8 +292,12 @@ describe('DocumentStateService', () => {
   });
 
   describe('등록 범위를 명시로 지킨다', () => {
-    it('⛔ 품질 판정 축은 등록돼 있지 않다 — 판정 유형 값 목록이 회신 E-3 대기다', () => {
-      expect(TRANSITIONS['trace.lot.status_code']).toBeUndefined();
+    it('⭐ 품질 판정 축을 등록했다 — 회신 E-3 이 2026-08-07 에 종결됐다', () => {
+      // 이 단언은 오래 「등록돼 있지 않다」였다. 비워 둔 이유가 판정 유형 값 목록의
+      // 고객 회신 대기였고, 그 회신이 종결되며 「보류」·「PQC 검사 필요」가
+      // `INSPECTION_PENDING` 하나로 합쳐져 시드 두 그룹이 맞물렸다(LOT상태-확정기록.md).
+      expect(TRANSITIONS[LOT_QUALITY_STATUS]).toBeDefined();
+      expect(TRANSITIONS[INSPECTION_RESULT_STATUS]).toBeDefined();
     });
 
     it('⛔ is_active 토글은 상태기계가 아니다 — activate/deactivate 가 없다', () => {
@@ -259,7 +331,9 @@ describe('DocumentStateService', () => {
           GOODS_ISSUE_STATUS,
           GOODS_RECEIPT_STATUS,
           INBOUND_RECEIPT_STATUS,
+          INSPECTION_RESULT_STATUS,
           LIFECYCLE,
+          LOT_QUALITY_STATUS,
           MOLD_STATUS,
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
@@ -273,7 +347,8 @@ describe('DocumentStateService', () => {
       // +4 — W/O 키에 세션 시작 1, 세션 키 신설 3(I-11 PR ②).
       // +2 — 적치 지시 키 신설(I-12 PR ①).
       // +1 — 생산계획 확정 키 신설(I-24 PR ③).
-      expect(service.registered()).toHaveLength(28);
+      // +10 — 검사 성적서 확정 키 신설 1, LOT 품질 축 키 신설 9(I-19 PR ①).
+      expect(service.registered()).toHaveLength(38);
     });
 
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
