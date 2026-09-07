@@ -2,12 +2,15 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { DocumentStateModule } from '../core/document-state';
+import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RoutingOperationService } from './routing/routing-operation.service';
 import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
+import { AcknowledgeService } from './production-order/acknowledge.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderService } from './production-order/production-order.service';
+import { ResyncService } from './production-order/resync.service';
 import { ProductionPlanController } from './production-plan/production-plan.controller';
 import { ProductionPlanService } from './production-plan/production-plan.service';
 import { RoutingRevisionService } from './routing/routing-revision.service';
@@ -19,7 +22,7 @@ import { RoutingService } from './routing/routing.service';
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
-  imports: [PrismaModule, IdempotencyModule, DocumentStateModule],
+  imports: [PrismaModule, IdempotencyModule, DocumentStateModule, OutboxModule],
   controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController],
   providers: [
     RoutingService,
@@ -28,6 +31,8 @@ import { RoutingService } from './routing/routing.service';
     BomService,
     ProductionPlanService,
     ProductionOrderService,
+    AcknowledgeService,
+    ResyncService,
   ],
 })
 export class PlanningModule {}

@@ -1,5 +1,6 @@
 /**
- * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①). `:acknowledge`·`:resync`·권한 403 은 PR ④ 몫이다.
+ * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④).
+ * 권한 403 6건은 `:confirm` 이 필요해 PR ③ 몫이다.
  *
  * ⛔ P/O 는 이 시스템이 만들지 않는다(수신기 부재 · I-24.md §2-2) — `prisma` 로 직접
  * INSERT 한다. `production_order_change_field`·`production_order_acknowledgement` 도 같다.
@@ -22,6 +23,8 @@ const LOGIN_ID = 'e2e-po24-probe';
 const PASSWORD = 'PO24-검사-비밀번호';
 const PREFIX = 'PO24';
 const ROLE = 'E2E_PO24';
+/** R-11 — `{인터페이스}:{P/O id}:{멱등키}`. 문서번호를 쓰지 않는다. */
+const RESYNC_KEY_PREFIX = 'IF-PO-RESYNC-REQUEST:';
 
 interface ChangedField {
   field: string;
@@ -60,6 +63,21 @@ describe('P/O 조회 (e2e)', () => {
   let orderChildId = 0;
   let orderChangeFullId = 0;
   let orderChangeEmptyId = 0;
+
+  // PR ④ — 확인·재동기용. 확인은 W/O 를 고치므로 시험마다 P/O 를 따로 둔다.
+  let ackApplyOrderId = 0;
+  let ackEmptyOrderId = 0;
+  let ackBadOrderId = 0;
+  let ackVersionOrderId = 0;
+  let ackClosedOrderId = 0;
+  let resyncOrderId = 0;
+  let workOrderApplyId = 0;
+  let workOrderApplyOtherId = 0;
+  let workOrderEmptyIds: number[] = [];
+  let workOrderBadId = 0;
+  let workOrderVersionId = 0;
+  let workOrderOpenId = 0;
+  let workOrderClosedId = 0;
 
   const T1 = new Date('2026-09-01T00:00:00.000Z');
   const T2 = new Date('2026-09-10T00:00:00.000Z'); // T1 보다 뒤 — §14 재수신
@@ -265,6 +283,180 @@ describe('P/O 조회 (e2e)', () => {
     });
   });
 
+  describe(':acknowledge — §5-5 · R-10', () => {
+    it('15. APPLY + 조정 1건이 W/O order_qty 를 고치고 200 이며 확인 3칸이 응답에 실린다', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackApplyOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ decisionCode: 'APPLY', workOrderAdjustments: [{ workOrderId: workOrderApplyId, versionNo: 1, orderQty: 77 }] })
+        .expect(200);
+
+      expect(response.body.acknowledgedAt).toBeDefined();
+      expect(response.body.acknowledgeDecisionCode).toBe('APPLY');
+      expect(response.body.acknowledgedBy).toBeDefined();
+      // ⑨ P/O 의 version_no 는 안 오른다 — 같은 토큰으로 다시 확인할 수 있다.
+      expect(response.body.versionNo).toBe(1);
+      expect(validator('POST /planning/production-orders/{productionOrderId}:acknowledge')(response.body)).toBe(true);
+
+      const adjusted = await prisma.work_order.findUnique({ where: { work_order_id: BigInt(workOrderApplyId) } });
+      expect(Number(adjusted?.order_qty)).toBe(77);
+      expect(adjusted?.version_no).toBe(2);
+      expect(adjusted?.po_mismatch).toBe(false);
+      // ⑦ 조정하지 않은 영향 W/O 에는 표식이 선다(계약 `WorkOrder.poMismatch` ⓑ).
+      const untouched = await prisma.work_order.findUnique({ where: { work_order_id: BigInt(workOrderApplyOtherId) } });
+      expect(untouched?.po_mismatch).toBe(true);
+    });
+
+    it('16. APPLY + 빈 배열이면 영향 W/O 전건에 po_mismatch 가 선다', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackEmptyOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ decisionCode: 'APPLY', workOrderAdjustments: [] })
+        .expect(200);
+
+      const rows = await prisma.work_order.findMany({ where: { work_order_id: { in: workOrderEmptyIds.map((id) => BigInt(id)) } } });
+      expect(rows.map((row) => row.po_mismatch)).toEqual([true, true]);
+    });
+
+    it('17. 본문 400 이 다섯 갈래다', async () => {
+      const post = (body: object) =>
+        request(app.getHttpServer())
+          .post(`/api/planning/production-orders/${ackBadOrderId}:acknowledge`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', randomUUID())
+          .set('If-Match', '1')
+          .send(body)
+          .expect(400);
+
+      const proceedWithAdjustment = await post({
+        decisionCode: 'PROCEED',
+        reason: '기존 유지',
+        workOrderAdjustments: [{ workOrderId: workOrderBadId, versionNo: 1, orderQty: 1 }],
+      });
+      expect(proceedWithAdjustment.body.errors).toContainEqual(expect.objectContaining({ field: 'workOrderAdjustments', code: 'INVALID' }));
+
+      const proceedWithoutReason = await post({ decisionCode: 'PROCEED' });
+      expect(proceedWithoutReason.body.errors).toContainEqual(expect.objectContaining({ field: 'reason', code: 'REQUIRED' }));
+
+      const foreign = await post({ decisionCode: 'APPLY', workOrderAdjustments: [{ workOrderId: workOrderApplyId, versionNo: 1, orderQty: 1 }] });
+      expect(foreign.body.errors).toContainEqual(expect.objectContaining({ field: 'workOrderAdjustments[0].workOrderId', code: 'INVALID' }));
+
+      const duplicated = await post({
+        decisionCode: 'APPLY',
+        workOrderAdjustments: [
+          { workOrderId: workOrderBadId, versionNo: 1, orderQty: 1 },
+          { workOrderId: workOrderBadId, versionNo: 1, orderQty: 2 },
+        ],
+      });
+      expect(duplicated.body.errors).toContainEqual(expect.objectContaining({ field: 'workOrderAdjustments[1].workOrderId', code: 'UNIQUE_VIOLATION' }));
+
+      const nothingToChange = await post({ decisionCode: 'APPLY', workOrderAdjustments: [{ workOrderId: workOrderBadId, versionNo: 1 }] });
+      expect(nothingToChange.body.errors).toContainEqual(expect.objectContaining({ field: 'workOrderAdjustments[0]', code: 'REQUIRED' }));
+
+      // 다섯 갈래가 전부 거부라 W/O 는 그대로다 — 「하나라도 어긋나면 전체를 거부한다」.
+      const untouched = await prisma.work_order.findUnique({ where: { work_order_id: BigInt(workOrderBadId) } });
+      expect(untouched?.version_no).toBe(1);
+    });
+
+    it('18. 본문 versionNo 어긋남은 409 user · P/O If-Match 어긋남은 409 erpSync 다', async () => {
+      const byBody = await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackVersionOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ decisionCode: 'APPLY', workOrderAdjustments: [{ workOrderId: workOrderVersionId, versionNo: 99, orderQty: 5 }] })
+        .expect(409);
+      expect(byBody.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      const byHeader = await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackVersionOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '99')
+        .send({ decisionCode: 'APPLY', workOrderAdjustments: [] })
+        .expect(409);
+      expect(byHeader.body).toMatchObject({ conflictCause: 'erpSync', code: 'VERSION_CONFLICT' });
+    });
+
+    it('마감 W/O 가 섞여도 500 이 아니다 — po_mismatch 대상에서 마감분을 뺀다(R-10 ⓐ)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackClosedOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ decisionCode: 'PROCEED', reason: '기존 유지' })
+        .expect(200);
+
+      const open = await prisma.work_order.findUnique({ where: { work_order_id: BigInt(workOrderOpenId) } });
+      const closed = await prisma.work_order.findUnique({ where: { work_order_id: BigInt(workOrderClosedId) } });
+      expect(open?.po_mismatch).toBe(true);
+      expect(closed?.po_mismatch).toBe(false);
+    });
+
+    it('조정이 마감 W/O 를 가리키면 400 STATE_LOCKED 다(R-10 ⓑ)', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${ackClosedOrderId}:acknowledge`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ decisionCode: 'APPLY', workOrderAdjustments: [{ workOrderId: workOrderClosedId, versionNo: 1, orderQty: 3 }] })
+        .expect(400);
+
+      expect(response.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'workOrderAdjustments[0].workOrderId', code: 'STATE_LOCKED' }),
+      );
+    });
+  });
+
+  describe(':resync — §5-6 · R-11', () => {
+    it('19. 202 이고 integration_message 가 1행이다', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${resyncOrderId}:resync`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({})
+        .expect(202);
+      expect(response.body).toEqual({});
+
+      const rows = await prisma.integration_message.findMany({ where: { message_key: { startsWith: `${RESYNC_KEY_PREFIX}${resyncOrderId}:` } } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        interface_code: 'IF-PO-RESYNC-REQUEST',
+        direction_code: 'OUTBOUND',
+        status_code: 'PENDING',
+        target_type_code: 'PRODUCTION_ORDER',
+      });
+      expect(Number(rows[0].target_id)).toBe(resyncOrderId);
+      // ⭐ 문서번호가 아니라 id 다 — `message_key` 는 VarChar(150) 인데 번호가 VarChar(100) 이다.
+      expect(rows[0].message_key.length).toBeLessThanOrEqual(150);
+    });
+
+    it('같은 P/O 를 다른 멱등키로 두 번 부르면 행이 2건이다 — 요청 1건 = 행 1건(R-11)', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${resyncOrderId}:resync`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({})
+        .expect(202);
+
+      const rows = await prisma.integration_message.findMany({ where: { message_key: { startsWith: `${RESYNC_KEY_PREFIX}${resyncOrderId}:` } } });
+      expect(rows).toHaveLength(2);
+    });
+
+    it('20. 없는 P/O 의 :resync 는 404 다', async () => {
+      await request(app.getHttpServer())
+        .post('/api/planning/production-orders/999999999:resync')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({})
+        .expect(404);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'PO조회검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -416,6 +608,87 @@ describe('P/O 조회 (e2e)', () => {
       },
     });
     orderChangeEmptyId = Number(orderChangeEmpty.production_order_id);
+
+    // PR ④ — 확인·재동기용. `last_change_received_at` 이 있어야 확인 행의 `received_at` 이 선다.
+    const operations = await prisma.routing_operation.findMany({
+      where: { routing_id: routing.routing_id },
+      orderBy: { operation_seq: 'asc' },
+      select: { routing_operation_id: true },
+    });
+    let seq = 0;
+    const makeOrder = async (suffix: string): Promise<bigint> => {
+      const order = await prisma.production_order.create({
+        data: {
+          production_order_no: `${PREFIX}-PO-${suffix}`,
+          business_unit_id: mainUnit.business_unit_id,
+          plant_id: plant.plant_id,
+          item_id: item.item_id,
+          order_qty: 500,
+          uom_id: uom.uom_id,
+          status_code: 'UPDATED',
+          last_change_received_at: T1,
+        },
+      });
+      return order.production_order_id;
+    };
+    const makePlan = async (orderId: bigint, suffix: string): Promise<bigint> => {
+      const plan = await prisma.production_plan.create({
+        data: {
+          production_order_id: orderId,
+          plan_no: `${PREFIX}-PP-${suffix}`,
+          plan_date: new Date('2026-09-01T00:00:00.000Z'),
+          planned_qty: 500,
+          uom_id: uom.uom_id,
+          bom_id: bom.bom_id,
+          routing_id: routing.routing_id,
+          status_code: 'CONFIRMED',
+        },
+      });
+      return plan.production_plan_id;
+    };
+    const makeWorkOrder = async (planId: bigint, closed: boolean): Promise<number> => {
+      seq += 1;
+      const workOrder = await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WO-${seq}`,
+          production_plan_id: planId,
+          routing_operation_id: operations[seq % operations.length].routing_operation_id,
+          item_id: item.item_id,
+          order_qty: 500,
+          uom_id: uom.uom_id,
+          status_code: closed ? 'CLOSED' : 'PLANNED',
+          ...(closed ? { closed_at: new Date('2026-09-02T00:00:00.000Z') } : {}),
+        },
+      });
+      return Number(workOrder.work_order_id);
+    };
+
+    const applyOrder = await makeOrder('ACKAPPLY');
+    ackApplyOrderId = Number(applyOrder);
+    const applyPlan = await makePlan(applyOrder, 'ACKAPPLY');
+    workOrderApplyId = await makeWorkOrder(applyPlan, false);
+    workOrderApplyOtherId = await makeWorkOrder(applyPlan, false);
+
+    const emptyOrder = await makeOrder('ACKEMPTY');
+    ackEmptyOrderId = Number(emptyOrder);
+    const emptyPlan = await makePlan(emptyOrder, 'ACKEMPTY');
+    workOrderEmptyIds = [await makeWorkOrder(emptyPlan, false), await makeWorkOrder(emptyPlan, false)];
+
+    const badOrder = await makeOrder('ACKBAD');
+    ackBadOrderId = Number(badOrder);
+    workOrderBadId = await makeWorkOrder(await makePlan(badOrder, 'ACKBAD'), false);
+
+    const versionOrder = await makeOrder('ACKVER');
+    ackVersionOrderId = Number(versionOrder);
+    workOrderVersionId = await makeWorkOrder(await makePlan(versionOrder, 'ACKVER'), false);
+
+    const closedOrder = await makeOrder('ACKCLOSED');
+    ackClosedOrderId = Number(closedOrder);
+    const closedPlan = await makePlan(closedOrder, 'ACKCLOSED');
+    workOrderOpenId = await makeWorkOrder(closedPlan, false);
+    workOrderClosedId = await makeWorkOrder(closedPlan, true);
+
+    resyncOrderId = Number(await makeOrder('RESYNC'));
   }
 
   async function makeUser(): Promise<void> {
@@ -424,7 +697,10 @@ describe('P/O 조회 (e2e)', () => {
     });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
     const role = await prisma.role.create({ data: { role_code: ROLE, role_name: 'PO조회검사용' } });
-    await prisma.role_permission.create({ data: { role_id: role.role_id, permission_code: 'W-02-01' } });
+    // `:acknowledge` 는 `W-02-06`, `:resync` 는 `W-06-10` 이 문다(도출표·수동표 실측).
+    await prisma.role_permission.createMany({
+      data: ['W-02-01', 'W-02-06', 'W-06-10'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
 
     // §2-3 확인 3칸 — «확인됨» 판정용(acknowledged_at >= last_change_received_at).
@@ -453,6 +729,9 @@ describe('P/O 조회 (e2e)', () => {
 
   /** §8-2 — 자가 치유 `deleteMany`(역순). `beforeAll`·`afterAll` 둘 다 부른다. */
   async function cleanup(): Promise<void> {
+    // ⛔ TRUNCATE 를 쓰지 않는다 — 이 접두어가 붙은 것만 지운다.
+    await prisma.integration_message.deleteMany({ where: { message_key: { startsWith: RESYNC_KEY_PREFIX } } });
+    await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
     await prisma.production_order_acknowledgement.deleteMany({
       where: { production_order: { production_order_no: { startsWith: PREFIX } } },
     });
