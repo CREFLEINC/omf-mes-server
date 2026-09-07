@@ -21,6 +21,32 @@ export function assertScopedOrPeriod(query: {
   ]);
 }
 
+/**
+ * ⭐ R-17 — 집계 3건의 기간은 **무조건 필수**다(계약 `:1157`·`:1055` 의 `inspectedFrom` 설명
+ * 「필수 — 공유계약 L-3」). 목록과 규칙이 «다르므로» 함수도 둘이다 — 위 함수를 재사용하지 않는다.
+ */
+export function assertPeriodRequired(query: { inspectedFrom?: string; inspectedTo?: string }): void {
+  assertPeriodPair(query);
+  if (query.inspectedFrom === undefined) {
+    throw one(field('inspectedFrom', ERROR_CODE.REQUIRED, '기간(inspectedFrom·inspectedTo)이 필요합니다.'));
+  }
+}
+
+/**
+ * ⭐ #298 m-3 — 의뢰별 **최종 회차 1건**만 남긴다(§4-2 의 그룹 정의 그대로). 옛 구현은
+ * `groupBy` 로 그룹을 «전건» 뽑고 그 수만큼 `(의뢰, 회차)` AND 절을 OR 로 폈다 — 스코프가
+ * 넓어질수록 OR 가 그대로 늘었다. 좁은 칸 셋만 읽어 메모리에서 접으면 뒤 질의가 id `in` 하나다.
+ */
+export function finalRoundOf<T extends { inspection_request_id: bigint; inspection_round: number }>(rows: T[]): T[] {
+  const best = new Map<string, T>();
+  for (const row of rows) {
+    const key = row.inspection_request_id.toString();
+    const kept = best.get(key);
+    if (kept === undefined || row.inspection_round > kept.inspection_round) best.set(key, row);
+  }
+  return [...best.values()];
+}
+
 /** 계약 `inspectedTo` 설명 — inspectedFrom 과 한 쌍. 한쪽만 오면 400 PAIR(L-3 하한 없는 구멍 방지). */
 export function assertPeriodPair(query: { inspectedFrom?: string; inspectedTo?: string }): void {
   if ((query.inspectedFrom !== undefined) === (query.inspectedTo !== undefined)) return;

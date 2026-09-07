@@ -5,12 +5,12 @@ import { filter } from '../../common/master';
 import { PagedResponse, PageRequest, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INSPECTION_RESULT_JOIN, InspectionResultRow, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertScopedOrPeriod, buildInspectionResultOrderBy } from './inspection-rules';
+import { assertScopedOrPeriod, buildInspectionResultOrderBy, finalRoundOf } from './inspection-rules';
 
 /**
- * 조회 2건(I-19 PR ②b) — 목록(재검 사슬)·상세. 집계 3건·`/measurements`는 별도 컨트롤러인
- * PR ⑤ 몫이다(R-18). ⚠ `calibrationExpired` 는 계약에 있지만 판정 로직(`calibration.ts`)이
- * PR ⑤ 에서 서므로 여기서 안 받는다 — 근거 없이 필터만 열면 조용히 도출하는 쪽이 된다.
+ * 조회 2건(I-19 PR ②b) — 목록(재검 사슬)·상세. 집계 2건은 별도 컨트롤러다(R-18 · PR ⑤a).
+ * ⚠ `calibrationExpired` 는 계약에 있지만 판정 로직(`calibration.ts`)이 **PR ⑤b** 에서 서므로
+ * 아직 안 받는다 — 근거 없이 필터만 열면 조용히 도출하는 쪽이 된다(#298 m-1 · ⑤b 가 갚는다).
  */
 export interface InspectionResultListQuery {
   inspectionRequestId?: number;
@@ -27,9 +27,6 @@ export interface InspectionResultListQuery {
   size?: number;
 }
 
-/** 재검 사슬 BFS 깊이 상한(§fetchChains) — 정상 사슬은 몇 회차 안 되어 절대 안 닿는다. */
-const MAX_CHAIN_DEPTH = 20;
-
 @Injectable()
 export class InspectionResultQueryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -38,7 +35,7 @@ export class InspectionResultQueryService {
   async list(query: InspectionResultListQuery): Promise<PagedResponse<InspectionResultView>> {
     assertScopedOrPeriod(query);
     const page = pageRequest(query);
-    const where = buildWhere(query);
+    const where = buildInspectionResultWhere(query);
     const orderBy = buildInspectionResultOrderBy(query.sort);
 
     return query.finalRoundOnly === true
@@ -83,7 +80,12 @@ export class InspectionResultQueryService {
     const ownerOf = new Map<string, string>(roots.map((r) => [r.inspection_result_id.toString(), r.inspection_result_id.toString()]));
     let frontier = roots.map((r) => r.inspection_result_id);
 
-    for (let depth = 0; depth < MAX_CHAIN_DEPTH && frontier.length > 0; depth += 1) {
+    // ⭐ #298 m-6 — 옛 깊이 상한 20 은 «조용히» 잘랐다(경고·로그·표식 0). 상한을 없앤다:
+    // `previous_result_id` 는 칸 하나라 부모가 최대 하나이고, 뿌리는 그 칸이 NULL 인 행이다.
+    // ⇒ 뿌리에서 내려가는 그래프는 «숲»이라 같은 행을 두 번 밟지 않고 반드시 끝난다. 순환은
+    // 만들 수 있어도(사슬 안에서 서로를 가리키는 두 행) 그 순환에는 뿌리가 없어 **여기서 도달
+    // 불가**다 — 상한이 막던 것은 무한 루프가 아니라 «긴 재검 사슬»뿐이었다.
+    while (frontier.length > 0) {
       const children = await this.prisma.inspection_result.findMany({ where: { previous_result_id: { in: frontier } }, orderBy: { inspection_round: 'asc' }, include: INSPECTION_RESULT_JOIN });
       if (children.length === 0) break;
       frontier = [];
@@ -104,25 +106,28 @@ export class InspectionResultQueryService {
     return chains;
   }
 
-  /** `finalRoundOnly=true` — 의뢰별 최대 회차 1건씩(그룹핑으로 정의를 못박는다 · §4-2). */
+  /** `finalRoundOnly=true` — 의뢰별 최대 회차 1건씩(§4-2 의 그룹 정의 그대로 · #298 m-3). */
   private async listFinalRoundOnly(
     where: Prisma.inspection_resultWhereInput,
     orderBy: Prisma.inspection_resultOrderByWithRelationInput[],
     page: PageRequest,
   ): Promise<PagedResponse<InspectionResultView>> {
-    const groups = await this.prisma.inspection_result.groupBy({ by: ['inspection_request_id'], where, _max: { inspection_round: true } });
-    const meta = { page: page.page, size: page.size, total: groups.length };
-    if (groups.length === 0) return { items: [], page: meta };
+    const finalIds = finalRoundOf(await this.prisma.inspection_result.findMany({ where, select: FINAL_ROUND_SELECT })).map(
+      (row) => row.inspection_result_id,
+    );
+    const meta = { page: page.page, size: page.size, total: finalIds.length };
+    if (finalIds.length === 0) return { items: [], page: meta };
 
-    const finalWhere: Prisma.inspection_resultWhereInput = {
-      OR: groups.map((group) => ({ inspection_request_id: group.inspection_request_id, inspection_round: group._max.inspection_round ?? 0 })),
-    };
-    const rows = await this.prisma.inspection_result.findMany({ where: finalWhere, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN });
+    const rows = await this.prisma.inspection_result.findMany({ where: { inspection_result_id: { in: finalIds } }, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN });
     return { items: rows.map(inspectionResultView), page: meta };
   }
 }
 
-function buildWhere(query: InspectionResultListQuery): Prisma.inspection_resultWhereInput {
+/** 최종 회차를 접는 데 필요한 칸 셋. 뷰 조인 없이 좁게 읽어야 스코프가 넓어도 견딘다. */
+export const FINAL_ROUND_SELECT = { inspection_result_id: true, inspection_request_id: true, inspection_round: true } as const;
+
+/** 목록·집계 3건이 **같은 필터 축**(§1-2)을 쓴다 — 두 벌로 짜면 조용히 갈린다. */
+export function buildInspectionResultWhere(query: InspectionResultListQuery): Prisma.inspection_resultWhereInput {
   const requestWhere: Prisma.inspection_requestWhereInput = {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
     ...filter('item_id', query.itemId),
