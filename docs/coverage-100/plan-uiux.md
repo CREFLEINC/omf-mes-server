@@ -58,7 +58,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U24 | 생산 실적 · 정정 | 5 | P-02-04 · W-02-05 | U23 | 없음 | **2**(D1 `shift_id` 완화 · D2 `correct_reason_code`) | — (원장 안 지난다 · 제품 재고는 기존 입고) | ○ L1 호출 | 3 (I-7 ①②③ · 재수립 R-19) |
 | U25 | 생산 LOT 완료 · 개체 발번 | 4 | P-02-06 · P-02-05 · W-02-05/06 | U24 | 없음 | 불필요 | — | — (완료는 `completed_at` 시각 · 어느 상태 칸도 안 옮긴다 · I-7 §3-3) | 2 |
 | U26 | 공정 인계 · 수리 왕복 | 6 | M-02-01 · M-02-02 | U24 | 없음 | 불필요 | ○ 이동 | ○ 인계 | 2 |
-| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **handling_unit_repack_event(+line)** | ○ | — | ○ 포장 | 3 |
+| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **N-2 — `handling_unit_repack_event(+line)` 신설**(✅ 실측으로 확인 · I-16 재수립 R-1) | ○ | — | ○ 포장 | **4** |
 | U28 | 부적합 · 처분 | 9 | W-04-06/07 · W-03-10 · P-04-03 | U8 | 없음 | 불필요 | — | ○ 부적합 | 3 |
 | U29 | 특채 | 2 | W-03-09 | U1 · U28 | 없음 | 불필요 | — | — | 1 |
 | U30 | 출하지시서 · 출하작업지시 | 7 | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | 3 |
@@ -393,10 +393,10 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /inventory/handling-units` | 취급 단위 목록 | M-01-10,P-01-02,P-02-08 | - |
 | `GET /inventory/handling-units/{handlingUnitId}` | 취급 단위 상세 | P-01-02 | - |
 | `GET /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 목록 | M-01-10 | - |
-| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03,P-04-04 | 멱등, ETag, 사번 |
+| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03 | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (⛔ `P-04-04` 삭제 — 그 화면 액션 9건에 구성 편집이 없고 부르는 것은 `POST /inventory/handling-units` 다 · I-16 재수립 R-17) |
 | `GET /inventory/handling-units/{handlingUnitId}/repack-events` | 포장 재구성 이력 | M-04-03 | - |
 | `POST /inventory/handling-units` | 취급 단위 등록 | M-04-03,P-02-08,P-04-01 | 멱등, 사번 |
-| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08 | 멱등, ETag, 사번 |
+| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08,**P-04-01** | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (`P-04-01` §5-6:240 「포장 확정」·§6:257 이 부모 `version_no` 충돌을 요구 · I-16 재수립 R-17) |
 
 #### U28 부적합·처분 (W-04-06·W-04-07·W-03-10·P-04-03) — 9건
 

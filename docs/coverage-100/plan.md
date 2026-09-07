@@ -58,7 +58,7 @@
 | 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | — | opus | 3 | ∥ I-11 |
 | 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | — | — | opus | 3 | — |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
-| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | — | — | opus | 3 | ∥ I-33 |
+| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **4** | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 발번 | 2 | I-7 | — | — | sonnet | 1 | — |
 | 27 | **I-27** 발행 이력·프린터 | 7 | I-26 | A9·A10 | — | sonnet | 2 | ∥ I-28 |
@@ -128,6 +128,7 @@
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
+| **N-2** | **I-16** | **신설** `inventory.handling_unit_repack_event` · `handling_unit_repack_event_line` | 재포장 이벤트 헤더 + 라인(`role_code`·`qty_before`·`qty_after`) + 복합 인덱스 1. ⭐ **`plan.md` §0 #9 의 「기존 표 재사용」이 실측으로 뒤집혔다**(I-16 재수립 R-1) — `handling_unit_reconfiguration(+_line)` 은 라인 필수 6칸 중 4칸이 없고 `ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약 대표 경로(한 HU 의 `PUT …/contents`)를 **구조적으로 막는다**. 기존 표는 **손대지 않는다**(0행·참조 0) ⇒ 삭제 0 |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9·A10 | I-27 | `app.document_issue_log` · `app.printer` | 인쇄 결과 3칸 · 프린터 5칸(`status_code NOT NULL DEFAULT 'OFFLINE'`) |
 | A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | `zalo_enabled` · 수신자 표 |
