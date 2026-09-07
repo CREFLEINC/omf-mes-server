@@ -565,10 +565,13 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   }
 
   /** 전개분을 공정 순(`routing_operation_id` asc = seq 10·20·30)으로 돌려준다. */
+  // ⛔ `routing_operation_id asc` 로 정렬하지 않는다 — 픽스처가 공정 3행을 동시에 INSERT 해
+  // 시퀀스 배정 순서가 seq 순(10·20·30)과 어긋날 수 있고, 그러면 `operationIds` 와의 비교가
+  // 무작위로 깨진다(리뷰 #278 Blocker). 업무 축인 `operation_seq` 로 센다.
   async function workOrdersOf(productionPlanId: number) {
     return prisma.work_order.findMany({
       where: { production_plan_id: BigInt(productionPlanId) },
-      orderBy: { routing_operation_id: 'asc' },
+      orderBy: { routing_operation: { operation_seq: 'asc' } },
     });
   }
 
