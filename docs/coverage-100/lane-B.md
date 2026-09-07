@@ -46,7 +46,11 @@ cd omf-mes-server
 corepack enable && pnpm install          # Node ≥ 20, pnpm 11.17.0
 
 # 2) 설계 화면 사본(3관점 재검토의 uiux 관점이 읽는다 — 필수)
-pnpm workflow:bootstrap                  # .design-reference/omf-mes 를 고정 커밋으로 받는다
+#    ⭐ bootstrap 은 «받아 오지 않는다» — 로컬 상태를 기록할 뿐이다. 사본이 없으면 「없어서 회차를 못 봤다」고
+#       한 줄 흘리고 그냥 끝난다(bootstrap.mjs:85). --sync-design 도 클론은 안 하고 명령만 알려 준다(:111).
+#       그러니 새 PC 에서는 클론이 «먼저»다.
+git clone git@github.com:CREFLEINC/omf-mes.git .design-reference/omf-mes
+pnpm workflow:bootstrap                  # 설계 고정 커밋·변경 회차를 .workflow-state 에 기록한다
 
 # 3) PostgreSQL 16 을 로컬에 띄운다(도커든 네이티브든 상관없다)
 #    DB 이름은 아무거나 — 네 PC 안에서만 쓴다
@@ -63,6 +67,7 @@ node_modules/.bin/prisma generate
 pnpm db:seed
 
 # 6) 시운전 — 여기서 전부 초록이어야 시작할 수 있다
+set -o pipefail                          # ⭐ 없으면 grep 이 매치되는 한 jest 실패가 종료코드 0 으로 가려진다
 node_modules/.bin/eslint "{src,test}/**/*.ts"
 node_modules/.bin/tsc --noEmit -p tsconfig.all.json
 node_modules/.bin/jest 2>&1 | grep -E "Tests:|커버리지"
@@ -141,7 +146,7 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
   ```
   `headRefName` 이 네 레인 접두어(`…-b-` / `…-c-`)로 시작하지 않으면 **남의 PR 이다. 손대지 않는다.** 상세는 `lanes.md` §1-3.
 - Major 를 고칠 때는 **구현자에게 되돌리거나 네가 직접** 고친다(작으면 직접이 빠르다). 고친 뒤 **바뀐 e2e 파일을 다시 돌린다**.
-- 병합 **성공을 확인한 «뒤에»** 브랜치를 정리한다 — `gh pr merge && git branch -D …` 처럼 한 줄로 이으면 충돌로 실패했을 때도 브랜치가 지워진다(`lanes.md` §2-5).
+- 병합 **성공을 확인한 «뒤에»** 브랜치를 따로 지운다 — ⛔ `gh pr merge --delete-branch` 는 쓰지 않는다(`lanes.md` §2-5).
 
 ### ⑺ 슬라이스 마감
 계획안 맨 아래에 **§12 마감표**(PR 목록 · 커버리지 · 마이그 · 리뷰가 잡은 것 · 미완 목록 · **계획서가 틀렸던 자리**)를 쓴다. **별도 마감 PR 을 내지 말고 마지막 구현 PR 에 얹는다.**
@@ -150,16 +155,18 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
 
 ```bash
 set -a; . ./.env; set +a
+set -o pipefail                              # ⭐ 필수 — 아래 파이프가 jest 실패를 0 으로 덮는다
 node_modules/.bin/prisma migrate deploy      # 남의 레인 마이그가 딸려 왔을 때
 node_modules/.bin/prisma generate
 node_modules/.bin/eslint "{src,test}/**/*.ts"
 node_modules/.bin/tsc --noEmit -p tsconfig.all.json
 node_modules/.bin/jest 2>&1 | grep -E "Tests:|FAIL|✕|커버리지"
 FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --runInBand test/<파일>.e2e-spec.ts 2>&1 | grep -E "Tests:|FAIL|✕"
-# 드리프트(마이그 PR 필수)
-node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
+# 드리프트(마이그 PR 필수) — --exit-code: 빈 diff 0 · 오류 1 · 차이 있으면 2
+node_modules/.bin/prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
 ```
 ⛔ `-t` 로 테스트를 골라 돌리지 마라(파일 단위로만). ⛔ `--shadow-database-url` 에 개발 DB 금지.
+⛔ **종료코드만 보고 「통과」라고 하지 마라.** `set -o pipefail` 을 빼면 `jest … | grep` 이 **매치되는 순간 0 을 돌려줘 실패가 사라진다**(실측 재현). 파이프를 걸었으면 `Tests:` 줄에 `failed` 가 없는지 **눈으로도** 확인한다.
 
 ## 7. 설계가 미정인 자리를 만나면
 

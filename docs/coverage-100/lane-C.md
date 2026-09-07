@@ -31,12 +31,12 @@
 | 8 | **I-35** 변경 이력·예비품 엑셀 | 2 | 없음 — 언제든 | audit jsonb 규약 | sonnet | 2 |
 
 **권장 순서**: I-13 ∥ I-14 → I-15 ∥ I-16 → I-22 → I-23 → I-17 ∥ I-35.
-계약 파일은 주로 `contracts/logistics-01자재창고.json` · `shipment-04제품출하.json` · `app-공통.json` 이다.
+계약 파일은 셋이다 — `contracts/logistics-01자재창고.json`(I-13~I-17) · `shipment-04제품출하.json`(I-22·I-23) · **`mdm-기준정보.json`**(I-35 두 건). ⛔ `app-공통.json` 에는 네 배정이 없다.
 배정의 정본은 **`docs/coverage-100/assignment.tsv`** 다 — 시작 전에 `awk -F'\t' '$1=="I-13"' docs/coverage-100/assignment.tsv` 로 자기 슬라이스를 뽑아 **건수와 오퍼레이션을 대조**한다. 이 표의 건수와 어긋나면 `assignment.tsv` 가 이긴다.
 ⛔ **`plan.md` §6 의 「건너뜀」 목록을 먼저 확인**한다 — 네 축에도 건너뛰는 오퍼레이션이 있을 수 있고, 그건 아무도 구현하지 않는다.
 
-⚠ 이 레인은 **재고 원장에 «쓰는» 슬라이스가 많다**(I-13·I-14·I-15). 원장 posting 은 코어라 **전용 PR · 비테스트 ≤200 · 보일러플레이트와 커밋 분리**가 강제된다(`CLAUDE.md`). 기존 구현(`src/core/posting/` 과 I-8~I-12 의 사용처)을 **반드시 먼저 읽고** 같은 모양으로 쓴다 — 새 규칙을 만들지 않는다.
-⚠ I-23 은 `src/core/outbox/` 의 **두 번째 사용처**다. I-6(W/O 마감 송신)과 I-24(`:resync`)가 이미 규약을 갈라 놨으니 `outbox.service.ts` 주석을 먼저 읽는다.
+⚠ 이 레인은 **재고 원장에 «쓰는» 슬라이스가 많다** — I-13(2회 전기) · I-14(조정 전기) · I-23(출하 out) · I-22(피킹 코어). ⛔ **I-15 실사는 원장을 쓰지 않는다**(결정 49 「잔량 직접 덮어쓰기 금지」 — 차이는 조정 I-14 가 전기한다 · `plan-integration.md` §I-15). 원장 posting 은 코어라 **전용 PR · 비테스트 ≤200 · 보일러플레이트와 커밋 분리**가 강제된다(`CLAUDE.md`). 기존 구현(**`src/core/inventory-posting/`** 과 I-8~I-12 의 사용처)을 **반드시 먼저 읽고** 같은 모양으로 쓴다 — 새 규칙을 만들지 않는다.
+⚠ I-23 은 `src/core/outbox/` 의 **세 번째 사용처**다 — 둘이 이미 섰다(I-6 `work-order-close.service.ts` · I-24 `production-order/resync.service.ts`). 규약이 그 둘에서 갈렸으니 `outbox.service.ts` 주석과 두 사용처를 먼저 읽는다.
 
 ## 3. 환경 구성 (한 번만)
 
@@ -47,7 +47,11 @@ cd omf-mes-server
 corepack enable && pnpm install          # Node ≥ 20, pnpm 11.17.0
 
 # 2) 설계 화면 사본(3관점 재검토의 uiux 관점이 읽는다 — 필수)
-pnpm workflow:bootstrap                  # .design-reference/omf-mes 를 고정 커밋으로 받는다
+#    ⭐ bootstrap 은 «받아 오지 않는다» — 로컬 상태를 기록할 뿐이다. 사본이 없으면 「없어서 회차를 못 봤다」고
+#       한 줄 흘리고 그냥 끝난다(bootstrap.mjs:85). --sync-design 도 클론은 안 하고 명령만 알려 준다(:111).
+#       그러니 새 PC 에서는 클론이 «먼저»다.
+git clone git@github.com:CREFLEINC/omf-mes.git .design-reference/omf-mes
+pnpm workflow:bootstrap                  # 설계 고정 커밋·변경 회차를 .workflow-state 에 기록한다
 
 # 3) PostgreSQL 16 을 로컬에 띄운다(도커든 네이티브든 상관없다)
 #    DB 이름은 아무거나 — 네 PC 안에서만 쓴다
@@ -64,6 +68,7 @@ node_modules/.bin/prisma generate
 pnpm db:seed
 
 # 6) 시운전 — 여기서 전부 초록이어야 시작할 수 있다
+set -o pipefail                          # ⭐ 없으면 grep 이 매치되는 한 jest 실패가 종료코드 0 으로 가려진다
 node_modules/.bin/eslint "{src,test}/**/*.ts"
 node_modules/.bin/tsc --noEmit -p tsconfig.all.json
 node_modules/.bin/jest 2>&1 | grep -E "Tests:|커버리지"
@@ -142,7 +147,7 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
   ```
   `headRefName` 이 네 레인 접두어(`…-b-` / `…-c-`)로 시작하지 않으면 **남의 PR 이다. 손대지 않는다.** 상세는 `lanes.md` §1-3.
 - Major 를 고칠 때는 **구현자에게 되돌리거나 네가 직접** 고친다(작으면 직접이 빠르다). 고친 뒤 **바뀐 e2e 파일을 다시 돌린다**.
-- 병합 **성공을 확인한 «뒤에»** 브랜치를 정리한다 — `gh pr merge && git branch -D …` 처럼 한 줄로 이으면 충돌로 실패했을 때도 브랜치가 지워진다(`lanes.md` §2-5).
+- 병합 **성공을 확인한 «뒤에»** 브랜치를 따로 지운다 — ⛔ `gh pr merge --delete-branch` 는 쓰지 않는다(`lanes.md` §2-5).
 
 ### ⑺ 슬라이스 마감
 계획안 맨 아래에 **§12 마감표**(PR 목록 · 커버리지 · 마이그 · 리뷰가 잡은 것 · 미완 목록 · **계획서가 틀렸던 자리**)를 쓴다. **별도 마감 PR 을 내지 말고 마지막 구현 PR 에 얹는다.**
@@ -151,16 +156,18 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
 
 ```bash
 set -a; . ./.env; set +a
+set -o pipefail                              # ⭐ 필수 — 아래 파이프가 jest 실패를 0 으로 덮는다
 node_modules/.bin/prisma migrate deploy      # 남의 레인 마이그가 딸려 왔을 때
 node_modules/.bin/prisma generate
 node_modules/.bin/eslint "{src,test}/**/*.ts"
 node_modules/.bin/tsc --noEmit -p tsconfig.all.json
 node_modules/.bin/jest 2>&1 | grep -E "Tests:|FAIL|✕|커버리지"
 FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --runInBand test/<파일>.e2e-spec.ts 2>&1 | grep -E "Tests:|FAIL|✕"
-# 드리프트(마이그 PR 필수)
-node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
+# 드리프트(마이그 PR 필수) — --exit-code: 빈 diff 0 · 오류 1 · 차이 있으면 2
+node_modules/.bin/prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
 ```
 ⛔ `-t` 로 테스트를 골라 돌리지 마라(파일 단위로만). ⛔ `--shadow-database-url` 에 개발 DB 금지.
+⛔ **종료코드만 보고 「통과」라고 하지 마라.** `set -o pipefail` 을 빼면 `jest … | grep` 이 **매치되는 순간 0 을 돌려줘 실패가 사라진다**(실측 재현). 파이프를 걸었으면 `Tests:` 줄에 `failed` 가 없는지 **눈으로도** 확인한다.
 
 ## 7. 설계가 미정인 자리를 만나면
 
@@ -175,8 +182,8 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 
 | | 네 레인(C) 형식 | 예 |
 |---|---|---|
-| 브랜치 | `feat/coverage-100-c-<슬라이스>-<조각>` · 문서는 `docs/coverage-100-c-…` | `feat/coverage-100-c-i30-a` |
-| PR 제목 | **`[C] `** 로 시작 | `[C] feat(equipment): …` |
+| 브랜치 | `feat/coverage-100-c-<슬라이스>-<조각>` · 문서는 `docs/coverage-100-c-…` | `feat/coverage-100-c-i13-a` |
+| PR 제목 | **`[C] `** 로 시작 | `[C] feat(logistics): 재고 이동 조회 3 (I-13 PR ①)` |
 | 소유 | `gh pr create` 가 준 **번호를 기록**하고 **그 번호만** 다룬다 | |
 
 - 커밋 메시지: 한국어. 제목은 `feat(logistics): …` 형태. 본문에 **왜**를 적는다.
@@ -204,13 +211,14 @@ node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.pri
 
 1. §3 환경 구성을 끝내고 시운전이 초록인지 확인한다(**342/487** 이 나와야 한다).
 2. §4 정본 7건을 읽는다. 특히 `README.md` §2 와 `slices/I-24.md` 는 정독한다.
-   추가로 **`slices/I-12.md`**(적치 완료 — 원장에 쓰는 슬라이스의 본보기)와 **`src/core/posting/`** 을 읽는다.
+   추가로 **`slices/I-12.md`**(적치 완료 — 원장에 쓰는 슬라이스의 본보기)와 **`src/core/inventory-posting/`** 을 읽는다.
 3. **I-13(재고 이동 2단 · 6건)** 의 개별 계획안 브리프를 써서 opus 계획자를 띄운다.
    - 계약: `contracts/logistics-01자재창고.json` 의 재고 이동 path
    - 화면: `.design-reference/omf-mes/design/wiki/screens/01/M-01-10-재고이동불량반출.md`
      (⭐ 화면 **ID** 가 정본이고 파일 이름은 실제 파일을 따른다 — 이 지시서에 적힌 이름과 다르면 **실제 파일이 이긴다**)
    - 마이그: A4(`stock_transfer_line.handling_unit_id?` — `plan.md` §4 130행)
-   - ⭐ **2단 이동**(출발 → 도착이 두 전표로 갈린다)이 이 슬라이스의 심장이다. 원장 두 번 전기의 순서와 취소 시 역분개를 계획안에서 못 박는다.
+   - ⭐ **2단 이동이 이 슬라이스의 심장이다 — 「이동 문서 1건 · 원장 전기 2회」**다. ⛔ **두 «전표» 가 아니다**: 계약이 「한 행에 `shipped_at`·`received_at` 이 둘 다 있다 — 두 문서가 아니라 **한 문서의 두 전이**다」로 못 박았고(`contracts/logistics-01자재창고.json` `StockTransfer` 의 `x-internal-note`), `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 물증이다. 반출 = `from` 출발 / `to` {도착 창고, `IN_TRANSIT`} · 도착 = `from` {도착 창고, `IN_TRANSIT`} / `to` {도착 창고·위치, `AVAILABLE`}(`plan-integration.md` §I-13). 원장 두 번 전기의 **순서**를 계획안에서 못 박는다.
+   - ⛔ **취소는 이 슬라이스에 없다.** 취소 API 의 `documentTypeCode` 는 **입하·입고·출고 3종뿐**이고 `STOCK_TRANSFER` 는 빠져 있다(같은 계약 파일 · 「취소 실행 경로가 있는 것만 닫았다」). 코드도 이미 `cancelable: false` 로 등록했다(`src/logistics/document-progress/document-type-registry.ts`). **역분개를 짓지 마라** — 「미지원」을 계획안에 적고 **문의로 올린다**(대역 120~149).
 4. 계획안이 나오면 3관점 재수립 → **계획 PR**(브랜치 `docs/coverage-100-c-i13-plan` · 제목 `[C] docs(coverage-100): I-13 계획안 + 3관점 재검토` · 문서만이라 리뷰 없이 병합) → 구현 PR(`feat/coverage-100-c-i13-a` …).
 5. **첫 PR 을 열면 그 번호를 기록**하고, 이후 `gh pr merge`·`close` 전에 `headRefName` 이 `…-c-` 로 시작하는지 확인한다(`lanes.md` §1-3).
 
