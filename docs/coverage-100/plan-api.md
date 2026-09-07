@@ -293,13 +293,13 @@
 
 | | |
 |---|---|
-| 선행 슬라이스 | 없음 |
-| 쓰는 표 | `app.document_issue_log`·`app.printer` — 있음 |
-| 마이그레이션 | **필요** — `document_issue_log` 에 인쇄 결과 칸(`print_outcome_code`·`print_failure_reason`·`printed_at`)이 없다. `:report-print` 가 그것을 쓴다. `printer` 에 `display_name`·`status`·`status_message`·`is_default`·`supported_document_type_codes` 없음. |
+| 선행 슬라이스 | I-26 저장조회 완료; 개체 신규 발번의 미정과 기존 발행 기록은 구분 |
+| 쓰는 표 | `app.document_issue_log`, 결과·귀속만 기록. `app.printer`는 본길 유보 |
+| 마이그레이션 | **I-27 R9**: 결과3(`print_outcome_code`·`print_failure_reason`·`print_reported_at`)+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0. 프린터 A10 적용0 |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | 없음 — 발행은 append-only(「발행 기록을 되돌리지 않는다」) |
-| 예상 PR 수 | 2 — ① 조회 GET 4건(rendition 제외) ② 마이그 + `POST /app/document-issues` + `:report-print` + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `printer.status` 가 무엇에서 오는가. 실물 프린터를 물어볼 길이 없다(C11 인터넷 비보장). §2 2단계 기준 4 → **저장 칸으로 두고 사람이 갱신**한다. 자동 탐지를 지어내지 않는다. |
+| PR 책임 | P0물리→P1목록/상세·P2summary전용CSV·P3보고, 발행은 규칙/실제writer잠금/배치 책임별. 정상5·프린터1유보·rendition1제외, 일반350/400·코어전체200 |
+| 설계 미정 판정 | **R1~R16 정본**. LOCATION 및 지원표의 정상 발행은 진행, 개체/출하배분 등 미정 입력군은 이름 있는 거부·TOOL writer 조율 조건부. printer의 사람 갱신/기본 OFFLINE도 원천을 발명한 것이므로 철회, GET/A10 유보. 구행 NULL outcome은 DocumentIssue 환경hold와 summary nullable 정상으로 구분 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -905,8 +905,8 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 6 | `app.approval_route` | **부분 유일 인덱스** `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` | `:activate` 400 조건 · §I-35 | S09 |
 | 7 | `app.notification_subscription` | `zalo_enabled Boolean @default(false)` | `NotificationSubscriptionReplace.zaloEnabled` | S10 |
 | 8 | **표 신설** `app.notification_subscription_recipient` | `(event_type_code, recipient_type_code, business_unit_id?, role_id?, app_user_id?)` | `NotificationRecipient` — 축이 물리와 반대(§5.3 아래) | S10 |
-| 9 | `app.document_issue_log` | `print_outcome_code String?` · `print_failure_reason String?` · `printed_at DateTime?` | `:report-print` + `PrintOutcomeReport` | S11 |
-| 10 | `app.printer` | `display_name String?` · `status_code String?` · `status_message String?` · `is_default Boolean @default(false)` · `supported_document_type_codes String[]` | `Printer` 5칸 | S11 |
+| 9 | `app.document_issue_log` | 결과3+issued_worker_id/print_reported_worker_id/print_reported_by nullable6·NoAction FK·wholeCHECK, 시각은print_reported_at | I27 R9, 사전/배포 P5·구writer 갱신, 백필0 | S11 |
+| 10 | `app.printer` | **유보·적용0**. A10의5칸 후보만으로 단말매핑/관측/기본/지원 원천을 채울 수 없음 | I27 R15, OFFLINE/false/빈배열 기본값 철회 | S11 |
 | 11 | `planning.production_plan` | `split_of_plan_id BigInt?` · `split_reason_code String? @db.VarChar(50)`(I-24 R-1) | `ProductionPlanCreate.splitOfPlanId` = `{sourcePlanId, reasonCode}` (+ 시드 `PRODUCTION_PLAN_SPLIT_REASON` 5값) | S13 |
 | 12 | `trace.lot_hold` | `target_lot_status_code String?` | `LotHoldCreate.targetLotStatusCode` — 도착 상태가 C9/C10 을 가른다 | S19 |
 | 13 | `logistics.shipment_request` | `sales_order_id BigInt?` | `ShipmentRequest.salesOrderId` | S21 |
