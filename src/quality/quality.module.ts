@@ -20,10 +20,12 @@ import { InspectionRequestService } from './inspection/inspection-request.servic
 import { InspectionResultController } from './inspection/inspection-result.controller';
 import { InspectionResultQueryService } from './inspection/inspection-result-query.service';
 import { InspectionResultWriteService } from './inspection/inspection-result-write.service';
+import { InspectionSummaryController } from './inspection/inspection-summary.controller';
+import { InspectionSummaryService } from './inspection/inspection-summary.service';
 
 /**
  * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
- * ⚠ 집계 3건은 PR ⑤ 가 이어서 배선한다. `:confirm`(PR ④)이 LOT 세 표를 쓰므로 코어 둘
+ * ⚠ 집계 2건은 **별도 컨트롤러**다(PR ⑤a · R-18 · 측정치 2건은 ⑤b 가 그 컨트롤러에 더한다). `:confirm`(PR ④)이 LOT 세 표를 쓰므로 코어 둘
  * (`DocumentStateModule`·`LotRegistryModule`)을 함께 든다 — 도메인이 `trace` 를 직접 안 쓴다.
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
@@ -43,6 +45,9 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
     InspectionPlanController,
     InspectionPlanVersionController,
     InspectionRequestController,
+    // ⭐ `InspectionResultController` 보다 «먼저» — 라우트가 등록 순서로 잡혀, 뒤에 두면
+    //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
+    InspectionSummaryController,
     InspectionResultController,
   ],
   providers: [
@@ -55,6 +60,7 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
     InspectionResultQueryService,
     InspectionResultWriteService,
     InspectionConfirmService,
+    InspectionSummaryService,
   ],
 })
 export class QualityModule {}

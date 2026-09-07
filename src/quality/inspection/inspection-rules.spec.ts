@@ -3,9 +3,11 @@ import {
   assertConfirmedShape,
   assertMeasurementValues,
   assertPeriodPair,
+  assertPeriodRequired,
   assertQuantityBounds,
   assertScopedOrPeriod,
   buildInspectionResultOrderBy,
+  finalRoundOf,
 } from './inspection-rules';
 
 describe('assertScopedOrPeriod — inspectionRequestId 또는 기간 중 하나(계약 :753)', () => {
@@ -131,5 +133,38 @@ describe('assertQuantityBounds — 물리 하한을 400 으로 앞당긴다', ()
         'measurements[0].sampleNo',
       ]);
     }
+  });
+});
+
+describe('⭐ R-17 — assertPeriodRequired: 집계는 기간이 «무조건» 필수다(계약 :1157·:1055)', () => {
+  it('기간을 쌍으로 주면 통과한다', () => {
+    expect(() =>
+      assertPeriodRequired({ inspectedFrom: '2026-09-01T00:00:00.000Z', inspectedTo: '2026-09-02T00:00:00.000Z' }),
+    ).not.toThrow();
+  });
+
+  it('⛔ 기간이 없으면 400 REQUIRED — 목록과 달리 `inspectionRequestId` 로 대신할 수 없다', () => {
+    // 목록 전용 규칙(assertScopedOrPeriod)은 같은 입력을 통과시킨다. 둘을 한 함수로 뭉치면
+    // `summary?inspectionRequestId=…` 가 조용히 200 을 낸다 — 그 차이를 여기서 못박는다.
+    expect(() => assertPeriodRequired({})).toThrow();
+    expect(() => assertScopedOrPeriod({ inspectionRequestId: 1 })).not.toThrow();
+  });
+});
+
+describe('⭐ #298 m-3 — finalRoundOf: 의뢰별 최종 회차 1건(§4-2)', () => {
+  const row = (id: bigint, request: bigint, round: number) => ({
+    inspection_result_id: id,
+    inspection_request_id: request,
+    inspection_round: round,
+  });
+
+  it('의뢰마다 회차가 가장 큰 행만 남긴다 — 입력 순서와 무관하다', () => {
+    const rows = [row(1n, 10n, 1), row(3n, 20n, 1), row(2n, 10n, 3), row(4n, 10n, 2)];
+
+    expect(finalRoundOf(rows).map((kept) => kept.inspection_result_id)).toEqual([2n, 3n]);
+  });
+
+  it('빈 입력은 빈 배열이다 — 뒤 질의의 `in` 이 통째로 비는 갈래', () => {
+    expect(finalRoundOf([])).toEqual([]);
   });
 });
