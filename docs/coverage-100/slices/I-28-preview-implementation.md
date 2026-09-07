@@ -1,5 +1,7 @@
 # I-28 ③ 수신자 preview 구현 기록
 
+최종 수정 소스 fb952053c1b21f45bf446803334a587b9e134641. 비테스트360 추가/0 삭제, root 리뷰 여유380/하드400 이내다. 아래 초기322/999/25 기록은 이전 소스 이력이고 마지막 R-11 변경 뒤103/1013/27이 최종 구현자 검증이다.
+
 ## 결과
 
 - 구현 operation: `POST /app/notification-subscriptions/recipients:preview` 1건
@@ -48,4 +50,26 @@
 - 소유 source/test 파일은 구현 완료 상태이며 git stage/commit/branch/gh 쓰기는 하지 않았다.
 - DB/E2E 프로세스는 종료했다.
 - 전용 lane-B DB/E2E lease는 최종 exact E2E 뒤 root에게 반환했다.
+
+## R-11 ID 정밀도 수정 — 최종 기록
+
+- root가 코드 수정 전에 확정한 `I-28.md` R-11과 §12-5를 적용했다.
+- 형태 검증을 통과한 `businessUnitId`·`roleId`·`userId` 각각에 `Number.isSafeInteger`를 적용한다. unsafe 양수/음수는 정확한 필드의 400 `RANGE`; 안전한 ±MAX_SAFE_INTEGER·0·음수는 기존 FK 판정으로 계속 간다.
+- SQL 결과의 `app_user_id bigint`도 숫자 변환 직전에 안전성을 확인한다. 9007199254740992n과 9007199254740993n처럼 서로 다른 저장 ID가 같은 JSON 숫자로 합쳐질 수 있으면 `Error`로 전체 요청을 500 처리하며 멱등 행은 함께 rollback한다.
+- 프레임워크 JSON 파싱 전에 원문 숫자가 이미 잃은 소수·표기까지 무손실 검증한다고 주장하지 않는다. 공용 parser/helper/계약/error code는 바꾸지 않았다.
+- 단언 주석은 지시된 `설계 미정 — 문의 번호 배정 대기(I-28 R-11)`를 썼다. 임의 문의 번호나 기존 번호를 재사용하지 않았고, 번호 승인 뒤 갱신은 미완 추적 상태다.
+
+### R-11 변경 뒤 전체 게이트
+
+| 명령 | 결과 | 실측 |
+|---|---|---|
+| `node_modules/.bin/eslint "{src,test}/**/*.ts"` | exit 0 | real 3.09s |
+| `node_modules/.bin/tsc --noEmit -p tsconfig.all.json` | exit 0 | real 5.36s |
+| `node_modules/.bin/jest --runInBand` | exit 0 | **103 suites / 1013 tests passed**, 6.408s(Jest), real 6.68s |
+| `FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --runInBand test/app-notification-preview.e2e-spec.ts` | exit 0 | **1 suite / 27 tests passed**, 1.619s(Jest) |
+| `git diff --check 754c233 -- src/app/notification src/app/app-domain.module.ts test/app-notification-preview.e2e-spec.ts` | exit 0 | 출력 0 |
+
+R-11 작업 중 실패는 0이다. 실제 HTTP는 세 입력축의 unsafe 숫자와 원문 int64 최대값을 400 `RANGE`로 확인했다. 전용 DB에는 시험 범위에서만 unsafe PK 두 개를 `OVERRIDING SYSTEM VALUE`로 만들고 안전한 ROLE 입력으로 전체 500/멱등0을 확인했으며, 안전한 요청은 COMPLETED1을 확인했다. `afterAll` 소유 fixture 잔존은 전 항목 0이다. seed/reset/TRUNCATE/전체 E2E/`-t` 실행은 0이다.
+
+R-11 source와 test 수정 소유권 및 DB/E2E lease를 root에게 반환했고 실행 중인 프로세스는 없다.
 
