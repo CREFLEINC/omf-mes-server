@@ -48,7 +48,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U14 | 재고 이동 · 반출 | 6 | M-01-10 · W-04-11 | U12 | 없음 | 불필요 | ○ 2단 | ○ 이동 | 2 |
 | U15 | 재생재 | 1 | M-01-12 | U5 | 없음 | 불필요 | ○ 증가 | — | 1 |
 | U16 | 실사 | 6 | W-01-04 · M-01-11 | — | 없음 | 불필요 | — | ○ 실사 | 2 |
-| U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | 없음 | 불필요 | ○ 조정 | ○ 조정 | 2 |
+| U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | **1(N-1)** | `transitions.ts` | ○ 조정 | ○ 조정 | **4** |
 | U18 | 물류 문서 진행현황 · 취소 | 4 | W-01-13 | U5 · U12 · U1 | 없음 | ○ §I-38 취소 흔적 | ○ 역분개 | ○ 취소 | 3 |
 | U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 · W-06-10(`:resync` 권한) | — | 없음 | ○ 분할 계보 2칸(A11 — 변경 이력 칸은 실재 · I-24 R-17) | — | ○ 계획 | 4 |
 | U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | ~~work_order_resource_plan~~ 표는 있다(`work_order_resource_assignment`) — 결손은 **유일 제약**(I-6 R-9) | ○ | — | ○ W/O | 3 |
@@ -274,13 +274,13 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `GET /inventory/adjustments` | 재고 조정 목록 | W-01-12,W-06-06 | - |
-| `GET /inventory/adjustments/{inventoryAdjustmentId}` | 재고 조정 상세 | W-01-12 | - |
+| `GET /inventory/adjustments` | 재고 조정 목록 | W-01-12 | - (⛔ `W-06-06` 삭제 — 계약에서 그 식별자는 `statusCode` **설명문** 안에서만 나오고 그 화면에 조정 언급 0건 · I-14 재수립 R-17) |
+| `GET /inventory/adjustments/{inventoryAdjustmentId}` | 재고 조정 상세 | W-01-12 | **응답 ETag** |
 | `GET /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 목록 | W-01-12 | - |
-| `PUT /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 치환 | — | 멱등, ETag |
-| `POST /inventory/adjustments` | 재고 조정 등록 | W-01-12 | 멱등 |
-| `POST /inventory/adjustments/{inventoryAdjustmentId}:post` | 재고 조정 전기 | W-01-12 | 멱등, ETag |
-| `POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval` | 재고 조정 상신 | W-01-12 | 멱등, ETag |
+| `PUT /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 치환 | — | 멱등, **요청 If-Match(필수) + 응답 ETag** |
+| `POST /inventory/adjustments` | 재고 조정 등록 | W-01-12 | 멱등, **응답 ETag(201)** |
+| `POST /inventory/adjustments/{inventoryAdjustmentId}:post` | 재고 조정 전기 | W-01-12 | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
+| `POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval` | 재고 조정 상신 | W-01-12 | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
 
 #### U18 물류 문서 진행현황·취소 (W-01-13) — 4건
 
@@ -620,7 +620,7 @@ M5 주변부)을 **바탕으로 삼되, 마일스톤 안의 순서를 화면 흐
 | 8 | U9 긴급 IQC 생략 | U1 · U8 이 서야 성립. 1건짜리 슬라이스라 U8 PR 에 얹을 수도 있다 |
 | 9 | U10 적치 지시 | 입고(이미 구현)가 만드는 지시를 소화한다. M-01-05·M-01-07 |
 | 10 | U16 실사 | ⚠ **벗어남 — M5(실사)를 앞으로.** 적치까지 서면 창고에 물건이 쌓이는데 **세는 화면이 없으면 초기 데이터가 틀어진 채로 굳는다.** M-01-11(모바일)·W-01-04(관리웹)가 같은 레코드를 쓴다 |
-| 11 | U17 재고 조정 | 실사 차이를 닫는다. U16 없이는 W-01-12 의 「실사 결과에서 불러오기」가 빈다 |
+| 11 | U17 재고 조정 | 실사 차이를 닫는다. U16 없이는 W-01-12 의 「실사 결과에서 불러오기」가 빈다 — ⚠ 그 버튼이 부르는 것은 `GET /inventory/counts/{id}/lines`(**I-15 몫**)다. 서버는 `inventoryCountId`·`inventoryCountLineId` 를 받아 **저장만** 하므로 I-15 가 뒤여도 선다. 다만 화면 §3 ① 라디오의 「실사 결과에서」 한쪽이 그때까지 빈다 — **배포 노트**(I-14 재수립 R-19) |
 | 12 | U19 P/O 수신 · 생산 계획 | 생산 흐름의 머리 |
 | 13 | U20 W/O 편성 · 배포 | `:release` 가 **출고요청과 생산 LOT 선발행을 만든다** — U11 · U25 의 원천 |
 | 14 | U11 출고요청 · 피킹 | M-01-08. W/O 가 서야 요청이 생긴다 |

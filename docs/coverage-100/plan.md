@@ -56,7 +56,7 @@
 | 20 | **I-23** 출하·확정·취소 + 재등록 | 7 | I-22·I-5 · **I-19 품질 전이 코어(재등록, A)** | A14 · U-I(`confirmed_*`) | ERP 아웃박스 둘째 | opus | 4 | ⛔ I-4 와 직렬(이미 끝) · 재등록 전 A 코어 병합·동기화(`lanes.md` §0) |
 | — | **M4 체인 e2e** | | | | | fable | 1 | |
 | 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | — | opus | 3 | ∥ I-11 |
-| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | — | — | opus | 3 | — |
+| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | **N-1** | `transitions.ts`(키 1) | opus·sonnet | **4** | C |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
 | 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | — | — | opus | 3 | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
@@ -128,6 +128,7 @@
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
+| **N-1** | **I-14** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** + FK + `ix_inventory_adjustment_line_count_line` — 계약 `InventoryAdjustmentLine.inventoryCountLineId`·`…LineUpsert.inventoryCountLineId` 둘 다 정의했는데 물리에 칸이 없다(I-14 재수립 R-4). ⭐ 이 칸이 **I-15 `:close` 의 「조정됨」을 라인 축으로** 재게 한다(§I-15 「라인 대응이 없다」를 연다) |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9·A10 | I-27 | `app.document_issue_log` · `app.printer` | 인쇄 결과 3칸 · 프린터 5칸(`status_code NOT NULL DEFAULT 'OFFLINE'`) |
 | A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | `zalo_enabled` · 수신자 표 |
