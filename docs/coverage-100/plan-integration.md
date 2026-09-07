@@ -368,6 +368,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: ⑳~㉒ — 실적/입하 LOT → 검사 → **Lot Status 전이**. 품질 축 전이표를 처음 채우는 자리.
 **원장**: 없음. **상태기계**: ⭐ `trace.lot.status_code` — `transitions.ts` 가 **일부러 비워 둔 칸**이다(값 불일치 때문). 회신 E-3 으로 `LOT_STATUS` 4값(`NORMAL`·`DEFECTIVE`·`INSPECTION_PENDING`·`SCRAPPED`)이 확정됐고 계약 `InventoryBalance.qualityStatusCode` 가 같은 넷을 적었다 → **여기서 채운다.**
 전이 매핑(계약 실물): 합격→`NORMAL` · 불합격→`DEFECTIVE` · 보류→`INSPECTION_PENDING` · PQC 합격판정개수 초과→같은 W/O 생산LOT **전체** `INSPECTION_PENDING`(C14).
+⭐ **도착값(`to`)은 위가 맞고 출발값(`from`)은 액션마다 다르다**(I-19 R-1) — 상수 하나로 묶지 않는다. `DEFECTIVE` 에서 나오는 전이는 **재등록(`stock-reinstate`) 하나뿐**이다. C14 는 `from` 밖 LOT 을 400 이 아니라 **건너뛴다**(I-19 R-7 · 형제 코어와 같은 모양).
 **예상 설계 미정**: C14 의 「전체」 범위(같은 W/O 인가 같은 공정인가)가 좁혀지지 않으면 가장자리 → 계약 문자 그대로 「같은 W/O」.
 **규모 주의**: 측정치가 135,000 자릿수라 `/measurements` 는 반드시 페이지네이션, `/measurement-summary` 는 서버 집계(L-1·L-2).
 
@@ -399,6 +400,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-23 · 출하 — 처리·확정·취소 + 재고 재등록 — 7건
 
 **레인 간 선행**: 재등록은 §2의 LOT 품질 전이표를 재사용한다. **A의 I-19 품질 전이 코어 PR이 `main`에 병합되고 C가 동기화한 뒤 재등록을 구현한다**(`lanes.md` §0). 선행 코어가 없으면 별도 전이표를 만들지 않고 다른 선행 충족 슬라이스를 진행한다.
+⛔ **2026-09-07 추가 — 코어만으로는 부족하다**(I-19 R-6). `trace.lot_status_event.transition_code` 가 **NOT NULL** 인데 계약 enum 9값(C4~C15)에 **재등록을 가리키는 코드가 없다**. 전이 코어는 `from=['DEFECTIVE']` 로 열리지만 C 는 이력 행에 넣을 코드가 없어 값을 **지어내야** 한다 ⇒ ⛔ 지어내지 말고 **문의 069+12 의 답을 기다린다**. 그 전까지 I-23 의 **재등록 1건만** 미루고 나머지 6건은 진행할 수 있다.
 **체인 마디**: ㉘ — **재고가 마지막으로 나가는 자리.** 그리고 반품→재등록이 체인을 되감는 자리.
 **원장**: ⭐ `POST /logistics/shipments` 가 서버 내부에서 `goods_issue` 를 만들고 전기한다 — **I-4 의 서비스를 도메인 간 호출로 부르지 않는다**(아키텍처 「도메인이 다른 도메인의 service 를 부르지 않는다」). 공유가 필요하면 코어다 → `postIssue()` 를 `core/` 로 올릴지, 아니면 shipment 가 `posting.post()` 를 직접 부르고 `goods_issue` 행만 자기가 만들지가 갈림길.
 → **§2 2단계 기준 5「새 개념 수가 적은 쪽」** → **shipment 가 `posting.post()` 를 직접 부르고 `goods_issue` 를 만든다.** 새 코어를 만들지 않는다. 대신 `goods_issue` 를 만드는 «데이터 모양»은 I-4 의 타입을 재사용한다.
