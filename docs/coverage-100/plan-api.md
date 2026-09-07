@@ -621,14 +621,16 @@ I-30 확정 범위·검증은 `slices/I-30.md` R-1~R-14가 정본이다. 원인 
 | | |
 |---|---|
 | 선행 슬라이스 | S23 |
-| 쓰는 표 | `maintenance.equipment_downtime`·`equipment_inspection(_result)`·`tool_usage`·`collection_channel`·`collection_observation`·`quality.equipment_calibration` — 전부 있음 |
-| 마이그레이션 | **필요** — ① `tool_usage`: `collection_method_code`·`conversion_base_qty`·`conversion_ratio`·`occurred_at` ② `collection_channel`: `channel_key`·`signal_name`·`inspection_item_id`·`item_id`·`process_id`(현재 `channel_code`/`channel_name`/`uom_id` 만) ③ `equipment_calibration`: `history_type_code`·`agency_type_code`·`agency_name`·`tolerance_note`·`recorded_by`·**`blocks_use`·`cleared_at`·`cleared_by`** — `:clear` 가 그 셋 위에 선다 |
+| 쓰는 표 | 기존 `maintenance.equipment_downtime`·`equipment_inspection(_result)`·`tool_usage`·`collection_channel`·`collection_observation`·`quality.equipment_calibration`. I33은 미등록신호를 담을 별도 `maintenance.collection_channel_observation` 신설(T). 기존관측의channel필수FK와 구분 |
+| 마이그레이션 | **I33 R1/R4/R5/R6**: tool nullable4추가/계약밖NN2완화, channel nullable5추가/옛NN3완화·네축NULL식유일·기존uq유지·T신설/FK참조보호. calibration8추가(명시blocksfalse)·동일설비/일 제약을 유형별+legacyNULL partial로완화·기존valid_until재사용·version새칸0. 삭제/백필0 |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | ⛔ 없음 — 전부 **구간 축**이다(`ended_at` · `cleared_at` 널 여부가 열림/닫힘). 계약이 「구간을 닫는 것은 액션이다」(G-16)로 못박았다 |
 | 예상 PR 수 | 4 — ① 마이그레이션 선행 커밋 ② 비가동 + `:close` + 집계 ③ 점검·툴사용 ④ 수집채널 + 검교정 + `:clear` + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `CalibrationCreate` 의 `resultCode` 값 집합이 «이력 유형마다 다르다»는데 시드 `CALIBRATION_RESULT` 는 한 그룹이다. §2 2단계 기준 2(거부하는 쪽) → **그룹 등재값만 통과**시키고 유형별 부분집합 검사는 걸지 않는다. |
+| 설계 미정 자리 · I33 R3 확정 | 현재 활성 registry는검사하되유형별부분집합은원천없어도출0. CAL 기본PASS/ADJUSTED는master2날짜동일tx·FAIL이력만(고정의미0단계), unknownCAL만422STATE_LOCKED·전건0, nonCAL활성확장정상. 문의117 |
 
 위 PR 수는 초기 S 단위 초안이다. 점검3건은 현재 I-30으로 분리됐으며 inspection.status_code NOT NULL 완화와 required/판정 enum 사전조회를 A15에 포함한다. 측정값은 Decimal(20,6)에 무손실로 담을 수 있는 범위만 저장하며 그 밖은400 RANGE다(097). 나머지 비가동·툴/계측기 작업은 각각 I-32·I-33 재수립을 따른다.
+
+I-33 R1~R14·문의117~119가 정본이다. GET7/쓰기5 정상12건 계획·미구현, 물리3/조회4/쓰기3은10조각 후보이지 최소보증이 아니다. 제출shot은고정화면입력권한으로보존·mold NKU와production실제FK writer회귀. 순간은I32 P0t한번. T저장값조회/등록flag/활성연결미매핑을분리하고 수집기·UI운영인수별도. 빈unit400/생략PUT정상과409·500실패계수소비자문제는별도단건으로번호추가승인대기. 새ERROR_CODE·cal version/ETag·core0.
 
 I-32 재수립(`slices/I-32.md` R1~R14): 목록·상세·생성·수정4건 진행, 종료 발생시각 입력 경로 없는close와 정상 계획구간/완료보전 정의 없는summary2건 유보(108~112). 물리는 remarks/recorded_by_worker_no/version_no 추가3·downtime_type_code NOT NULL 완화1, 종료사번은 조건부다. 조회/잠금/쓰기/재생의 µs를 epoch문자열/BigInt·정확한UTC 바인딩으로 보존한다. 단말 미래 인라인은 화면 소관, server now 거부0. 이미닫힘close400/완료고장새연결PUT400은 구체 문언 우선이며 신규연결POST422와 구분한다. 공장 minor·실제sessionΣ·비가동union은 확정, summary의 가장자리와 두 남는 본길을 구별한다. 코드·마이그 적용0.
 
@@ -914,9 +916,9 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 17 | `maintenance.maintenance_result` | `target_type_code String?` · `target_id BigInt?` · `result_note String?` · `is_outsourced Boolean?` · `outsource_vendor_name String?` · `reset_counter Boolean?` · `shot_count_before_reset BigInt?` · `shot_count_after_reset BigInt?` · `closed Boolean?` | `MaintenanceResult`·`MaintenanceResultCreate`·`MaintenanceResultUpdate` | S23 |
 | 18 | **표 신설** `maintenance.maintenance_result_line` | `MaintenanceResultLine` (시드 `MAINTENANCE_RESULT_LINE_RESULT` 가 이미 있다) | 계약 스키마 실재 · 물리 없음 | S23 |
 | 19 | **표 신설** `maintenance.maintenance_result_part` | `MaintenanceResultPart` | 계약 스키마 실재 · 물리 없음 | S23 |
-| 20 | `maintenance.tool_usage` | `collection_method_code String?` · `conversion_base_qty Decimal?` · `conversion_ratio Decimal?` · `occurred_at DateTime?` | `ToolUsage`·`ToolUsageCreate` (+ 시드 `CD-TOOL-USAGE-COLLECTION-METHOD` 값 2종) | S24 |
-| 21 | `maintenance.collection_channel` | `channel_key String?` · `signal_name String?` · `inspection_item_id BigInt?` · `item_id BigInt?` · `process_id BigInt?` | `CollectionChannel`·`Create`·`Update` — 현재는 `channel_code`/`channel_name`/`uom_id` 만 | S24 |
-| 22 | `quality.equipment_calibration` | `history_type_code String?` · `agency_type_code String?` · `agency_name String?` · `tolerance_note String?` · `recorded_by BigInt?` · **`blocks_use Boolean @default(false)`** · **`cleared_at DateTime?`** · **`cleared_by BigInt?`** | `Calibration`·`CalibrationCreate` — `:clear` 가 뒤 셋 위에 선다 | S24 |
+| 20 | `maintenance.tool_usage` | `collection_method_code String?` · `conversion_base_qty Decimal?` · `conversion_ratio Decimal?` · `occurred_at DateTime?` 추가4, usage_type_code/used_from NN완화2 | DIRECT/CONVERTED는계약enum·코드그룹시드0, numeric20,6·required구행091/119 | S24/I33 |
+| 21 | `maintenance.collection_channel` | channel_key/signal_name/inspection_item_id/item_id/process_id nullable5·channel_code/name/data_type_code NN완화3, 새FK3/역관계·네축NULL식유일 | 기존uq유지·inactive포함·key100/code50복사0. T실제최신관측표 별도신설·참조보호A조율 | S24/I33 |
+| 22 | `quality.equipment_calibration` | history_type_code/agency_type_code/agency_name/tolerance_note/recorded_by·blocks_use(false명시default)·cleared_at/cleared_by 추가8 | valid_until이미존재, 유형별/legacyNULL유일성완화·cal version추가0 | S24/I33 |
 
 #### 표 B — **계약이 「물리에 없다」라 적었으나 실제로는 있는 것** (마이그레이션 불필요)
 
@@ -1068,8 +1070,8 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | `QTY_EXCEEDS_SHIPPED` | 400 | `:arrive` 수량 > 반출 수량 | S05 | 계약 「반출한 수량 이하만」 |
 | `NEGATIVE_BALANCE` | 400 | 역처리가 잔액을 음수로 만든다 | S06 · **I-8**(`pick()`/`consume()` 하한 0행) | 계약이 「400 이다」라 적음. ⚠ 지금은 DB 트리거 `check_balance_qty()` 가 500 으로 샌다 — 잡아서 이 코드로 바꾼다 |
 | `JUDGMENT_SUM_MISMATCH` | 400 | `accepted + rejected + held ≠ inspected` | S18 | 계약이 「400 이다(A-3)」라 적음 |
-| `NOT_BLOCKING` | 400 | `blocksUse=false` 인 검교정 이력에 `:clear` | S24 | 계약 「막고 있지 않은 것을 풀 수 없다」 |
-| `ALREADY_CLEARED` | **409** | 이미 해소된 이력에 `:clear` | S24 | 계약이 「409 다」라 적음 |
+| `STATE_LOCKED`(기존) | 400 | blocksUse=false 이력의 :clear | S24/I33 R8 | NOT_BLOCKING 신설철회·계약상차단아님 |
+| 기존 ConflictResponse | **409** | 이미 해소된 이력의 :clear | S24/I33 R8 | ALREADY_CLEARED 신설철회·같은키200재생/다른키409 |
 | `RESULT_EXISTS` | 400 | 실적이 있는 보전오더에 `:cancel` | S23 | 계약 「실적이 하나도 없을 때만」 |
 | `REQUIRED`(기존 코드) | 400 | 고장 `:complete` 필수 원인 코드·처리 내역 누락 | S23 | 새 CAUSE_REQUIRED를 만들지 않는다. 완료 본길은 원인 원천 확인까지 보류(I-30·090) |
 | `REMAINDER_DISPOSITION_REQUIRED` / `_NOT_ALLOWED` | 400 | W/O `:close` 3분류 대조 4규칙 | S14 | 계약이 규칙 넷을 적었으나 코드를 안 줬다 |
