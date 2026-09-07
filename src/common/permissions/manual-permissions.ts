@@ -221,4 +221,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ 참여·이탈을 «부르는» 화면은 0건이다 — 화면이 정해지면 그때 옮긴다(설계 미정 — 문의 057).
   'POST /production/work-sessions/{workSessionId}/workers': ['P-02-01'],
   'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
+
+  // `M-01-10` 재고이동·불량 반출 — 계약이 403 을 선언했는데 도출표에 없다(미등록이면 500 ·
+  // `permission.guard.ts:47-53`). 계약 description 「도착 확정. 반출한 수량 이하만 받을 수
+  // 있다. 근거: M-01-10 §5-6」 — 반출과 도착이 «한 화면의 두 단계」라 반출을 소유한 화면이
+  // 도착도 소유한다.
+  'POST /logistics/stock-transfers/{stockTransferId}:arrive': ['M-01-10'],
+
+  // ⚠ 부르는 화면이 «0건»이다 — `M-01-10` §5-6 액션 7종에 라인 편집이 없다. 그래도 가드가
+  // 등록을 요구한다(미등록이면 500 · 선례 `PUT /logistics/goods-issues/{id}/lines`). 소유자를
+  // 이동 문서의 유일한 화면으로 둔다 — 잠정(설계 미정 · 문의 123).
+  'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
 };
