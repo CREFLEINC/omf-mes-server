@@ -50,7 +50,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U16 | 실사 | 6 | W-01-04 · M-01-11 | — | 없음 | 불필요 | — | ○ 실사 | 2 |
 | U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | 없음 | 불필요 | ○ 조정 | ○ 조정 | 2 |
 | U18 | 물류 문서 진행현황 · 취소 | 4 | W-01-13 | U5 · U12 · U1 | 없음 | ○ §I-38 취소 흔적 | ○ 역분개 | ○ 취소 | 3 |
-| U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 | — | 없음 | ○ 변경 이력 칸 | — | ○ 계획 | 3 |
+| U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 · W-06-10(`:resync` 권한) | — | 없음 | ○ 분할 계보 2칸(A11 — 변경 이력 칸은 실재 · I-24 R-17) | — | ○ 계획 | 4 |
 | U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | ~~work_order_resource_plan~~ 표는 있다(`work_order_resource_assignment`) — 결손은 **유일 제약**(I-6 R-9) | ○ | — | ○ W/O | 3 |
 | U21 | W/O 상태 전이 | 4 | P-02-10 · W-02-05 · W-02-06 | U20 · U24 | 없음 | 불필요 | — | ○ 4전이 | 2 |
 | U22 | 작업 세션 · 작업 전 점검 | 11 | P-02-01 · P-02-02 · P-02-10 | U20 · U33 | 없음 | **1** · `work_session.shift_id` NOT NULL 완화(I-11 재수립 R-3) | — | ○ 세션 | 5 |
@@ -296,15 +296,15 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
 | `GET /planning/production-orders` | P/O 목록 | W-02-01,W-02-06,W-06-06 | - |
-| `GET /planning/production-orders/{productionOrderId}` | P/O 한 건 | W-02-01,W-02-06 | - |
-| `POST /planning/production-orders/{productionOrderId}:acknowledge` | P/O 변경 확인 처리 | W-02-06 | 멱등, ETag |
-| `POST /planning/production-orders/{productionOrderId}:resync` | ERP 재동기 요청 | W-02-01,W-06-10 | 멱등 |
+| `GET /planning/production-orders/{productionOrderId}` | P/O 한 건 | W-02-01,W-02-06 | ETag(응답) |
+| `POST /planning/production-orders/{productionOrderId}:acknowledge` | P/O 변경 확인 처리 | W-02-06 | 멱등, If-Match |
+| `POST /planning/production-orders/{productionOrderId}:resync` | ERP 재동기 요청 | W-06-10(W-02-01 §5-5 「이 화면에 두지 않는다」) | 멱등 |
 | `GET /planning/production-plans` | 생산 계획 목록 | W-02-02,W-06-06 | - |
-| `GET /planning/production-plans/{productionPlanId}` | 생산 계획 한 건 | W-02-02 | - |
+| `GET /planning/production-plans/{productionPlanId}` | 생산 계획 한 건 | W-02-02 | ETag(응답) |
 | `POST /planning/production-plans` | 생산 계획 추가 | W-02-02 | 멱등 |
-| `PUT /planning/production-plans/{productionPlanId}` | 생산 계획 수정 | W-02-02 | 멱등, ETag |
-| `DELETE /planning/production-plans/{productionPlanId}` | 생산 계획 삭제 | W-02-02 | 멱등, ETag |
-| `POST /planning/production-plans/{productionPlanId}:confirm` | 전개 확정 | W-02-02,W-02-03,W-02-04,W-02-07 | 멱등, ETag |
+| `PUT /planning/production-plans/{productionPlanId}` | 생산 계획 수정 | W-02-02 | 멱등, If-Match |
+| `DELETE /planning/production-plans/{productionPlanId}` | 생산 계획 삭제 | W-02-02 | 멱등, If-Match |
+| `POST /planning/production-plans/{productionPlanId}:confirm` | 전개 확정 | W-02-02,W-02-03,W-02-04,W-02-07 | 멱등, If-Match |
 
 #### U20 W/O 편성·배포 (W-02-03·W-02-04·W-02-07·W-02-08) — 9건
 
