@@ -1,12 +1,10 @@
 /**
- * 생산 계획 조회 2 + CRUD 3(I-24 PR ①a·②). `:confirm` 은 PR ③ 몫이다.
+ * 생산 계획 조회 2 + CRUD 3(I-24 PR ①a·②) + `:confirm` 전개(PR ③).
  *
- * ⚠ 계획 행은 **실제 `POST /planning/production-plans` 호출**로 만든다(§8-1 관행) —
- * `planB` 만 확정이 필요해 POST 뒤 `prisma.production_plan.update({status_code:'CONFIRMED'})`
- * 로 직접 옮긴다(`:confirm` 이 아직 없다 · PR ③ 이 그 자리를 실제 오퍼레이션으로 바꾼다).
- *
- * Routing 3공정(seq 10·20·30) + 의존 2행 · `production_line` 1건은 이 PR 의 테스트가
- * 쓰지 않지만 PR ③(`:confirm`)이 같은 픽스처에 이어 쌓는다 — 미리 세워 둔다.
+ * ⚠ 계획 행은 **실제 오퍼레이션 호출**로 만든다(§8-1 관행) — 확정도 PR ③ 부터는
+ * `:confirm` 이 한다(PR ② 가 `prisma.production_plan.update` 로 심어 둔 세 자리를 바꿨다).
+ * 공정 0건 Routing 에 매달린 계획만 확정 상태를 prisma 로 심는다 — 그 조합(확정 + 공정
+ * 0건)을 만들 오퍼레이션이 없고, 그 조합이 갈래 순서(§3-7)의 증거다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -51,6 +49,8 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   let uomId = 0;
   let bomId = 0;
   let routingId = 0;
+  let emptyRoutingId = 0; // 공정 0건 — 400 LINE_REQUIRED 용
+  let operationIds: number[] = []; // seq 10·20·30 순
   let lineId = 0;
 
   let planAId = 0; // productionOrderA · DRAFT · plan_date 2026-09-01
@@ -306,11 +306,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
 
     it('16. 확정된 계획은 400 STATE_LOCKED — If-Match 를 맞게 보내도 그렇다', async () => {
       const confirmedId = await createPlan('2026-09-28', 5);
-      // ⚠ `:confirm` 이 아직 없다(PR ③ 몫) — 상태만 직접 옮겨 잠금을 검사한다.
-      await prisma.production_plan.update({
-        where: { production_plan_id: BigInt(confirmedId) },
-        data: { status_code: 'CONFIRMED' },
-      });
+      await confirmPlan(confirmedId);
       const version = await etagOf(confirmedId);
 
       const response = await request(app.getHttpServer())
@@ -357,11 +353,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
 
     it('18. 확정된 계획은 409 INVALID_STATE(400 도 404 도 아니다)', async () => {
       const confirmedId = await createPlan('2026-09-30', 8);
-      // ⚠ `:confirm` 이 아직 없다(PR ③ 몫) — 상태만 직접 옮겨 잠금을 검사한다.
-      await prisma.production_plan.update({
-        where: { production_plan_id: BigInt(confirmedId) },
-        data: { status_code: 'CONFIRMED' },
-      });
+      await confirmPlan(confirmedId);
       const version = await etagOf(confirmedId);
 
       const response = await request(app.getHttpServer())
@@ -427,6 +419,178 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     });
   });
 
+
+  describe(':confirm — §3-1 · 갈래 순서 §3-7', () => {
+    it('21. 확정하면 200 이고 work_order 3행·work_order_dependency 2행이 선다', async () => {
+      const planId = await createPlan('2026-11-01', 40);
+      const response = await confirmPlan(planId);
+
+      expect(response.body).toMatchObject({ productionPlanId: planId, statusCode: 'CONFIRMED', versionNo: 2 });
+      expect(response.body.confirmedAt).toEqual(expect.any(String));
+      expect(validator('POST /planning/production-plans/{productionPlanId}:confirm')(response.body)).toBe(true);
+
+      const workOrders = await workOrdersOf(planId);
+      expect(workOrders).toHaveLength(3);
+      expect(await dependencyRowsOf(workOrders)).toHaveLength(2);
+    });
+
+    it('22. 전개분의 order_qty 는 planned_qty 이고 status_code=PLANNED·work_order_type_code=NORMAL 이다', async () => {
+      const planId = await createPlan('2026-11-02', 40);
+      await confirmPlan(planId);
+
+      const workOrders = await workOrdersOf(planId);
+      expect(workOrders.map((row) => Number(row.order_qty))).toEqual([40, 40, 40]);
+      expect(workOrders.map((row) => row.status_code)).toEqual(['PLANNED', 'PLANNED', 'PLANNED']);
+      expect(workOrders.map((row) => row.work_order_type_code)).toEqual(['NORMAL', 'NORMAL', 'NORMAL']);
+      expect(workOrders.map((row) => Number(row.routing_operation_id))).toEqual(operationIds);
+      expect(workOrders.every((row) => row.work_order_no.startsWith('WO-'))).toBe(true);
+    });
+
+    it('⭐ (R-5) 전개된 W/O 의 default_wip_location_id·production_line_id 는 NULL 이다', async () => {
+      const planId = await createPlan('2026-11-03', 40);
+      await confirmPlan(planId);
+
+      for (const workOrder of await workOrdersOf(planId)) {
+        expect(workOrder.production_line_id).toBeNull();
+        expect(workOrder.default_wip_location_id).toBeNull();
+        expect(workOrder.default_fg_location_id).toBeNull();
+        expect(workOrder.default_scrap_location_id).toBeNull();
+      }
+    });
+
+    it('23. 의존이 마스터 짝을 그대로 옮기고 두 코드 값이 마스터·기본값이다', async () => {
+      const planId = await createPlan('2026-11-04', 40);
+      await confirmPlan(planId);
+
+      const workOrders = await workOrdersOf(planId);
+      const operationOf = new Map(workOrders.map((row) => [String(row.work_order_id), Number(row.routing_operation_id)]));
+      const dependencies = await dependencyRowsOf(workOrders);
+      const pairs = dependencies.map((row) => [
+        operationOf.get(String(row.predecessor_work_order_id)),
+        operationOf.get(String(row.successor_work_order_id)),
+      ]);
+      // 마스터 `routing_operation_dependency` 는 10→20 · 20→30 이다(픽스처).
+      expect(pairs).toEqual(
+        expect.arrayContaining([
+          [operationIds[0], operationIds[1]],
+          [operationIds[1], operationIds[2]],
+        ]),
+      );
+      expect(dependencies.map((row) => row.dependency_type_code)).toEqual(['FINISH_TO_START', 'FINISH_TO_START']);
+      expect(dependencies.map((row) => row.required_qty_rule_code)).toEqual([
+        'AVAILABLE_GOOD_QTY',
+        'AVAILABLE_GOOD_QTY',
+      ]);
+    });
+
+    it('24. 같은 Idempotency-Key 재전송은 work_order 수를 늘리지 않는다', async () => {
+      const planId = await createPlan('2026-11-05', 40);
+      const version = await etagOf(planId);
+      const key = randomUUID();
+
+      const send = () =>
+        request(app.getHttpServer())
+          .post(`/api/planning/production-plans/${planId}:confirm`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key)
+          .set('If-Match', version)
+          .expect(200);
+      const first = await send();
+      const replay = await send();
+      expect(replay.body).toEqual(first.body);
+
+      expect(await workOrdersOf(planId)).toHaveLength(3);
+    });
+
+    it('25. 재확정은 400 STATE_LOCKED 이고 If-Match 어긋남은 409 다', async () => {
+      const planId = await createPlan('2026-11-06', 40);
+      await confirmPlan(planId);
+      const version = await etagOf(planId);
+
+      const locked = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${planId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', version)
+        .expect(400);
+      expect(locked.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+
+      const conflict = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${planId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '99')
+        .expect(409);
+      expect(conflict.body).toMatchObject({ conflictCause: 'user', code: 'VERSION_CONFLICT' });
+
+      // 전개는 한 번뿐이다 — 막힌 두 요청이 W/O 를 더 만들지 않았다.
+      expect(await workOrdersOf(planId)).toHaveLength(3);
+    });
+
+    it('26. 공정 0건 Routing 은 400 LINE_REQUIRED — ⭐ 확정된 계획이어도 이 400 이 먼저다', async () => {
+      const draftId = await createPlanOn(emptyRoutingId, '2026-11-07');
+      const draft = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${draftId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(draftId))
+        .expect(400);
+      expect(draft.body.errors[0]).toMatchObject({ field: 'routingId', code: 'LINE_REQUIRED' });
+
+      // ⚠ 이 조합(확정 + 공정 0건)을 만들 오퍼레이션이 없다 — 상태만 심는다.
+      const confirmedId = await createPlanOn(emptyRoutingId, '2026-11-08');
+      await prisma.production_plan.update({
+        where: { production_plan_id: BigInt(confirmedId) },
+        data: { status_code: 'CONFIRMED' },
+      });
+      const confirmed = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${confirmedId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(confirmedId))
+        .expect(400);
+      // ② 가 tx 밖이라 STATE_LOCKED 가 아니라 LINE_REQUIRED 다(§3-7 — 고치지 않는다).
+      expect(confirmed.body.errors[0]).toMatchObject({ field: 'routingId', code: 'LINE_REQUIRED' });
+    });
+  });
+
+  /** `:confirm` 200 — 확정도 실제 오퍼레이션으로 한다(§8-1 관행). */
+  async function confirmPlan(productionPlanId: number): Promise<request.Response> {
+    return request(app.getHttpServer())
+      .post(`/api/planning/production-plans/${productionPlanId}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', await etagOf(productionPlanId))
+      .expect(200);
+  }
+
+  /** 전개분을 공정 순(`routing_operation_id` asc = seq 10·20·30)으로 돌려준다. */
+  async function workOrdersOf(productionPlanId: number) {
+    return prisma.work_order.findMany({
+      where: { production_plan_id: BigInt(productionPlanId) },
+      orderBy: { routing_operation_id: 'asc' },
+    });
+  }
+
+  async function dependencyRowsOf(workOrders: { work_order_id: bigint }[]) {
+    const ids = workOrders.map((row) => row.work_order_id);
+    return prisma.work_order_dependency.findMany({
+      where: { predecessor_work_order_id: { in: ids } },
+      orderBy: { work_order_dependency_id: 'asc' },
+    });
+  }
+
+  /** 다른 Routing 에 매달린 DRAFT 계획 — 공정 0건 갈래용. */
+  async function createPlanOn(routing: number, planDate: string): Promise<number> {
+    const response = await request(app.getHttpServer())
+      .post('/api/planning/production-plans')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ productionOrderId: orderWId, planDate, plannedQty: 5, uomId, bomId, routingId: routing })
+      .expect(201);
+    return response.body.productionPlanId as number;
+  }
+
   /** POST 로 DRAFT 계획 하나를 만들고 id 를 돌려준다(§8-1 관행 — 픽스처를 오퍼레이션으로 세운다). */
   async function createPlan(planDate: string, plannedQty: number): Promise<number> {
     const response = await request(app.getHttpServer())
@@ -476,7 +640,12 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         }),
       ),
     );
-    // PR ③(:confirm)이 옮길 의존 2행 — 이 PR 의 테스트는 쓰지 않는다(§3-4).
+    operationIds = operations.map((operation) => Number(operation.routing_operation_id));
+    const emptyRouting = await prisma.routing.create({
+      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT-EMPTY`, routing_version: 1, status_code: 'ACTIVE' },
+    });
+    emptyRoutingId = Number(emptyRouting.routing_id);
+    // `:confirm` 이 옮길 의존 2행(§3-4).
     await prisma.routing_operation_dependency.createMany({
       data: [
         { predecessor_operation_id: operations[0].routing_operation_id, successor_operation_id: operations[1].routing_operation_id },
@@ -548,7 +717,6 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       .send({ productionOrderId: orderAId, planDate: '2026-09-01', plannedQty: 100, uomId, bomId, routingId })
       .expect(201);
     planAId = planA.body.productionPlanId as number;
-    // ⚠ `:confirm` 이 아직 없다(PR ③ 몫) — POST(DRAFT) 뒤 상태만 직접 옮긴다.
     const planB = await request(app.getHttpServer())
       .post('/api/planning/production-plans')
       .set('Cookie', cookie)
@@ -556,10 +724,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       .send({ productionOrderId: orderAId, planDate: '2026-09-10', plannedQty: 200, uomId, bomId, routingId })
       .expect(201);
     planBId = planB.body.productionPlanId as number;
-    await prisma.production_plan.update({
-      where: { production_plan_id: BigInt(planBId) },
-      data: { status_code: 'CONFIRMED' },
-    });
+    await confirmPlan(planBId);
 
     const planC = await request(app.getHttpServer())
       .post('/api/planning/production-plans')
@@ -609,6 +774,23 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
    *  `production_order` 관계로 좁힌다. */
   async function cleanup(): Promise<void> {
     const scope = { production_order: { production_order_no: { startsWith: PREFIX } } };
+    // 전개분 — `work_order_dependency` → `work_order` 가 계획보다 먼저다(§8-2 역순).
+    const plans = await prisma.production_plan.findMany({ where: scope, select: { production_plan_id: true } });
+    const planIds = plans.map((row) => row.production_plan_id);
+    const workOrders = await prisma.work_order.findMany({
+      where: { production_plan_id: { in: planIds } },
+      select: { work_order_id: true },
+    });
+    const workOrderIds = workOrders.map((row) => row.work_order_id);
+    await prisma.work_order_dependency.deleteMany({
+      where: {
+        OR: [
+          { predecessor_work_order_id: { in: workOrderIds } },
+          { successor_work_order_id: { in: workOrderIds } },
+        ],
+      },
+    });
+    await prisma.work_order.deleteMany({ where: { work_order_id: { in: workOrderIds } } });
     await prisma.production_plan.deleteMany({ where: { ...scope, split_of_plan_id: { not: null } } });
     await prisma.production_plan.deleteMany({ where: scope });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
@@ -617,9 +799,14 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       where: { routing: { routing_code: { startsWith: PREFIX } } },
       select: { routing_operation_id: true },
     });
-    const operationIds = operations.map((row) => row.routing_operation_id);
+    const routingOperationIds = operations.map((row) => row.routing_operation_id);
     await prisma.routing_operation_dependency.deleteMany({
-      where: { OR: [{ predecessor_operation_id: { in: operationIds } }, { successor_operation_id: { in: operationIds } }] },
+      where: {
+        OR: [
+          { predecessor_operation_id: { in: routingOperationIds } },
+          { successor_operation_id: { in: routingOperationIds } },
+        ],
+      },
     });
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
