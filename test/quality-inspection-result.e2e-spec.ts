@@ -1,6 +1,6 @@
 /**
- * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(결과 조회 2건) + PR ③b(**저장 1건**).
- * `PUT`(PR ③c)·`:confirm`·집계 3건·`/measurements`는 PR ③c④⑤ 가 같은 파일에 이어 붙인다.
+ * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(결과 조회 2건) + PR ③b(저장) + PR ③c(**수정**).
+ * `:confirm`·집계 3건·`/measurements`는 PR ④⑤ 가 같은 파일에 이어 붙인다.
  * ⭐ PR ③b 부터 **쓰기 경로가 행을 «만든다»** — 그전까지 `DRAFT` + 판정 없음 행은 픽스처가 prisma
  *   로 심은 것뿐이었다. 저장 갈래는 그 행을 `POST` 로 세우고 이어서 `GET` 으로 모양을 확인한다.
  *
@@ -134,6 +134,76 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await cleanup();
     await app.close();
   });
+
+  // ── 쓰기 공용 도구 (PR ③b 저장 · PR ③c 수정이 함께 쓴다) ──────────────────────
+  /** ⛔ 조회 단언의 기간창(`SCOPE_FROM`~`SCOPE_TO`) 밖이다 — 쓰기가 그 건수를 흔들면 안 된다. */
+  const INSPECTED_W = '2026-09-10T05:00:00.000Z';
+  const WORKER_HEADER = `${PREFIX}-WK`;
+  let writeSeq = 0;
+
+  /**
+   * 쓰기 단언마다 «자기 의뢰»를 하나씩 세운다. `uq_inspection_round(의뢰, 회차)` 가 「뿌리는
+   * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
+   * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
+   * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
+   */
+  async function newRequest(): Promise<number> {
+    writeSeq += 1;
+    const row = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
+        inspection_type_code: 'PQC',
+        inspection_plan_version_id: ids.inspectionPlanVersion,
+        target_type_code: 'WORK_ORDER',
+        target_id: ids.workOrder,
+        item_id: ids.item2,
+        work_order_id: ids.workOrder,
+        target_qty: 100,
+        uom_id: ids.uom,
+        status_code: 'REQUESTED',
+        requested_at: new Date(REQUESTED_R1),
+      },
+    });
+    return Number(row.inspection_request_id);
+  }
+
+  function draftBody(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      inspectionRequestId,
+      inspectedQty: 100,
+      // ⭐ 합이 100 이 아니다 — 작성중에는 통과해야 한다(M-e ⓑ).
+      acceptedQty: 0,
+      rejectedQty: 0,
+      heldQty: 0,
+      uomId: Number(ids.uom),
+      inspectedAt: INSPECTED_W,
+      statusCode: 'DRAFT',
+      ...overrides,
+    };
+  }
+
+  function post(body: Record<string, unknown>, options: { session?: string[]; workerNo?: string; key?: string } = {}) {
+    const call = request(app.getHttpServer())
+      .post(RESULTS)
+      .set('Cookie', options.session ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID());
+    if (options.workerNo !== undefined) call.set('X-Worker-No', options.workerNo);
+    return call.send(body);
+  }
+
+  async function newDraft(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
+    const created = await post(draftBody(inspectionRequestId, overrides), { workerNo: WORKER_HEADER }).expect(201);
+    return created.body.inspectionResultId as number;
+  }
+
+  function put(inspectionResultId: number, body: Record<string, unknown>, version: number, session: string[] = cookie) {
+    return request(app.getHttpServer())
+      .put(`${RESULTS}/${inspectionResultId}`)
+      .set('Cookie', session)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send(body);
+  }
 
   describe('의뢰 조회 (PR ②a)', () => {
     it('목록이 `page`·`size`·`total` 골격으로 온다', async () => {
@@ -452,66 +522,6 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
 
   describe('저장 (PR ③b)', () => {
-    /** ⛔ 조회 단언의 기간창(`SCOPE_FROM`~`SCOPE_TO`) 밖이다 — 쓰기가 그 건수를 흔들면 안 된다. */
-    const INSPECTED_W = '2026-09-10T05:00:00.000Z';
-    const WORKER_HEADER = `${PREFIX}-WK`;
-    let writeSeq = 0;
-
-    /**
-     * 쓰기 단언마다 «자기 의뢰»를 하나씩 세운다. `uq_inspection_round(의뢰, 회차)` 가 「뿌리는
-     * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
-     * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
-     * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
-     */
-    async function newRequest(): Promise<number> {
-      writeSeq += 1;
-      const row = await prisma.inspection_request.create({
-        data: {
-          inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
-          inspection_type_code: 'PQC',
-          inspection_plan_version_id: ids.inspectionPlanVersion,
-          target_type_code: 'WORK_ORDER',
-          target_id: ids.workOrder,
-          item_id: ids.item2,
-          work_order_id: ids.workOrder,
-          target_qty: 100,
-          uom_id: ids.uom,
-          status_code: 'REQUESTED',
-          requested_at: new Date(REQUESTED_R1),
-        },
-      });
-      return Number(row.inspection_request_id);
-    }
-
-    function draftBody(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-      return {
-        inspectionRequestId,
-        inspectedQty: 100,
-        // ⭐ 합이 100 이 아니다 — 작성중에는 통과해야 한다(M-e ⓑ).
-        acceptedQty: 0,
-        rejectedQty: 0,
-        heldQty: 0,
-        uomId: Number(ids.uom),
-        inspectedAt: INSPECTED_W,
-        statusCode: 'DRAFT',
-        ...overrides,
-      };
-    }
-
-    function post(body: Record<string, unknown>, options: { session?: string[]; workerNo?: string; key?: string } = {}) {
-      const call = request(app.getHttpServer())
-        .post(RESULTS)
-        .set('Cookie', options.session ?? cookie)
-        .set('Idempotency-Key', options.key ?? randomUUID());
-      if (options.workerNo !== undefined) call.set('X-Worker-No', options.workerNo);
-      return call.send(body);
-    }
-
-    async function newDraft(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
-      const created = await post(draftBody(inspectionRequestId, overrides), { workerNo: WORKER_HEADER }).expect(201);
-      return created.body.inspectionResultId as number;
-    }
-
     it('`POST` `statusCode=DRAFT` 가 수량 합이 안 맞아도 201 이다 — 번호·회차·검사자를 서버가 채운다(M-e ⓑ)', async () => {
       const response = await post(draftBody(await newRequest()), { workerNo: WORKER_HEADER }).expect(201);
 
@@ -683,8 +693,186 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ field: 'measurements[0]', code: 'INVALID' });
     });
 
+    it('⭐ #304 M-2 — 같은 의뢰에 뿌리를 둘 세우면 409 `DUPLICATE_KEY` 다(`uq_inspection_round`)', async () => {
+      const inspectionRequestId = await newRequest();
+      await newDraft(inspectionRequestId);
+      // 두 번째 저장도 previousResultId 가 없어 회차 1 을 노린다 — (의뢰, 회차) UNIQUE 가 막는다.
+      const response = await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
+      // 봉투가 `QualityConflictResponse` 다 — required(`code`·`message`)를 계약 스키마로 확인한다.
+      expect(validator('POST /quality/inspection-results', 409)(response.body)).toBe(true);
+      expect(response.body.errors).toBeUndefined();
+    });
+
+    it('⭐ #314 Major — 물리 하한이 400 이다(500 아니다): `inspectedQty` 0 · `acceptedQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionRequestId = await newRequest();
+      // ⭐ 본길이다 — M-e ⓑ 가 연 「세 칸을 다 채우기 전 임시 저장」이 정확히 이 갈래다.
+      const zero = await post(draftBody(inspectionRequestId, { inspectedQty: 0 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      // `app.qty_t` 도메인이 `VALUE >= 0` 이라 음수 세 칸도 같은 500 갈래였다.
+      const negative = await post(draftBody(inspectionRequestId, { acceptedQty: -1 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(negative.body.errors).toContainEqual(expect.objectContaining({ field: 'acceptedQty', code: 'RANGE' }));
+
+      const sample = await post(
+        draftBody(inspectionRequestId, {
+          measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }],
+        }),
+        { workerNo: WORKER_HEADER },
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 셋 다 막혔으니 행이 하나도 안 섰다 — 500 이었다면 여기서도 0 이지만 응답이 5xx 였다.
+      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } })).toBe(0);
+    });
+
     it('무권한 계정은 `POST` 에서 403 이다', async () => {
       await post(draftBody(await newRequest()), { session: noPermCookie, workerNo: WORKER_HEADER }).expect(403);
+    });
+  });
+
+  describe('수정 (PR ③c)', () => {
+    it('`PUT` 이 작성중 결과를 고친다 — 새 ETag 가 온다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(
+        inspectionResultId,
+        { inspectedQty: 100, acceptedQty: 90, rejectedQty: 10, heldQty: 0, overallJudgmentCode: 'HELD', inspectedAt: INSPECTED_W, remarks: '고침' },
+        1,
+      ).expect(200);
+
+      expect(response.body).toMatchObject({
+        inspectionResultId,
+        acceptedQty: 90,
+        rejectedQty: 10,
+        overallJudgmentCode: 'HELD',
+        remarks: '고침',
+        versionNo: 2,
+      });
+      // ⚠ 계약이 `PUT` 200 에 ETag 를 «선언하지 않았는데» `runVersioned` 는 늘 낸다 — I-1 의
+      //   `PUT …/steps` 와 같은 자리다. 「알려둘 것」으로 남기고 고치지 않는다(호환 완화).
+      expect(response.headers.etag).toBe('2');
+      // ⛔ `statusCode` 를 못 바꾼다 — 계약 `InspectionResultUpdate` 에 그 칸이 없다.
+      expect(response.body.statusCode).toBe('DRAFT');
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}')(response.body)).toBe(true);
+    });
+
+    it('보낸 칸만 바뀐다 — 생략한 칸은 저장된 값 그대로다(명시 null 로 «해제»하는 칸이 0 이다)', async () => {
+      const inspectionResultId = await newDraft(await newRequest(), { remarks: '처음 비고' });
+      const response = await put(inspectionResultId, { acceptedQty: 40 }, 1).expect(200);
+
+      expect(response.body).toMatchObject({ acceptedQty: 40, remarks: '처음 비고', inspectedQty: 100 });
+    });
+
+    it('⭐ 확정된 결과를 `PUT` 하면 409 `INVALID_STATE` — 고치는 것이 아니라 재검이다(B-10)', async () => {
+      const response = await put(resultA1Id, { remarks: '확정본을 고친다' }, 1).expect(409);
+
+      // 봉투가 `ErrorResponse` 가 아니라 `QualityConflictResponse` 다. `code` 가 required 라 반드시 실린다.
+      expect(response.body).toMatchObject({ code: 'INVALID_STATE', conflictCause: 'user' });
+      expect(response.body.errors).toBeUndefined();
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(true);
+      // ⛔ `:confirm` 의 재확정(400 `STATE_LOCKED`)과 봉투가 «다르다» — 여기는 409 다.
+      expect(await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(resultA1Id) }, select: { version_no: true } })).toEqual({ version_no: 1 });
+    });
+
+    it('⭐ `If-Match` 가 어긋나면 409 `VERSION_CONFLICT` + `currentVersion` — 상태 게이트보다 «먼저» 본다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(inspectionResultId, { remarks: '낡은 토큰' }, 99).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'VERSION_CONFLICT', conflictCause: 'user', currentVersion: '1' });
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(true);
+
+      // 확정본에 낡은 토큰을 보내면 «상태»가 아니라 «버전»이 먼저 걸린다(형제 `:release`·`:close` 선례).
+      const confirmed = await put(resultA1Id, { remarks: '낡은 토큰 + 확정본' }, 99).expect(409);
+      expect(confirmed.body).toMatchObject({ code: 'VERSION_CONFLICT', currentVersion: '1' });
+    });
+
+    it('⚠ 같은 키로 «다른» 본문을 보내면 409 인데 계약 required 인 `code` 가 빠진다(알려진 결손 · 공용 파일)', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const key = randomUUID();
+      const send = (remarks: string) =>
+        request(app.getHttpServer())
+          .put(`${RESULTS}/${inspectionResultId}`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key)
+          .set('If-Match', '1')
+          .send({ remarks });
+      await send('첫 본문').expect(200);
+      const response = await send('다른 본문').expect(409);
+
+      expect(response.body).toMatchObject({ conflictCause: 'user' });
+      expect(response.body.message).toEqual(expect.any(String));
+      // ⚠ 실측 — `idempotency.service.ts:115` 가 공용 예외를 `code` 없이 던진다. `QualityConflictResponse.code`
+      //   는 required 라 이 갈래«만» 계약 스키마를 통과하지 못한다. R-8 이 PR ① 에 배정했으나
+      //   `ConflictExtra` 타입만 늘고 사용처가 안 섰다 — 공용 파일이라 이 PR 이 고치지 않는다.
+      //   ⭐ 고치는 PR 은 아래 한 줄을 `code: 'DUPLICATE_KEY'` 단언으로 바꾼다. ⛔ 「계약 스키마
+      //   불통과」를 초록으로 굳히지 않는다 — 살아 있는 응답에 ajv `toBe(false)` 를 걸면 결함이
+      //   테스트로 고정된다(#314 리뷰). 부재만 특성화한다. 정본 §12-1 미완 ⓐ.
+      expect(response.body.code).toBeUndefined();
+    });
+
+    it('⭐ `measurements` 를 실으면 치환이고 생략하면 손대지 않는다', async () => {
+      const measurement = (specId: bigint, value: number) => ({
+        inspectionItemSpecId: Number(specId),
+        sampleNo: 1,
+        numericValue: value,
+        judgmentCode: 'ACCEPTED',
+        measuredAt: INSPECTED_W,
+      });
+      const inspectionResultId = await newDraft(await newRequest(), {
+        measurements: [measurement(ids.itemSpecA, 10), measurement(ids.itemSpecB, 20)],
+      });
+      const scope = { inspection_result_id: BigInt(inspectionResultId) };
+
+      // 생략 — 손대지 않는다(빈 배열과 다르다).
+      await put(inspectionResultId, { remarks: '측정치는 안 건드린다' }, 1).expect(200);
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(2);
+
+      // 실으면 전건 치환이다 — 부분 병합이 아니다(§1-3).
+      await put(inspectionResultId, { measurements: [measurement(ids.itemSpecA, 99)] }, 2).expect(200);
+      const rows = await prisma.inspection_measurement.findMany({ where: scope, select: { inspection_item_spec_id: true, numeric_value: true } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].inspection_item_spec_id).toBe(ids.itemSpecA);
+      expect(Number(rows[0].numeric_value)).toBe(99);
+
+      // 빈 배열은 «전건 삭제»다 — 생략과 다르다. 설계 미정 — 문의 086(계약이 완전히 침묵한다).
+      await put(inspectionResultId, { measurements: [] }, 3).expect(200);
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(0);
+    });
+
+    it('없는 `inspectionResultId` 는 404 다(계약 선언) · 값 목록 밖 판정은 400 `INVALID`', async () => {
+      await put(999_999_999, { remarks: '없는 대상' }, 1).expect(404);
+
+      const inspectionResultId = await newDraft(await newRequest());
+      // ⛔ 공백 문자열도 「값 목록 밖」이라 걸린다 — `assertCodeValues` 가 빈 문자열을 값으로 본다.
+      const blank = await put(inspectionResultId, { overallJudgmentCode: ' ' }, 1).expect(400);
+      expect(blank.body.errors[0]).toMatchObject({ field: 'overallJudgmentCode', code: 'INVALID' });
+    });
+
+    it('⭐ #314 Major — `PUT` 도 같은 하한을 건다: `inspectedQty` 0·음수 · `heldQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+
+      const zero = await put(inspectionResultId, { inspectedQty: 0 }, 1).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      const mixed = await put(inspectionResultId, { inspectedQty: -5, heldQty: -1 }, 1).expect(400);
+      expect(mixed.body.errors.map((item: { field: string }) => item.field)).toEqual(['inspectedQty', 'heldQty']);
+
+      const sample = await put(
+        inspectionResultId,
+        { measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }] },
+        1,
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 400 이 먼저 났으니 버전이 안 올랐다 — 화면의 If-Match 가 그대로 산다.
+      const after = await request(app.getHttpServer()).get(`${RESULTS}/${inspectionResultId}`).set('Cookie', cookie).expect(200);
+      expect(after.body.versionNo).toBe(1);
+    });
+
+    it('무권한 계정은 `PUT` 에서 403 이다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      await put(inspectionResultId, { remarks: '권한 없음' }, 1, noPermCookie).expect(403);
     });
   });
 

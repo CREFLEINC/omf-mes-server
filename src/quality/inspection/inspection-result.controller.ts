@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Put, Query, Req, Res } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
 
@@ -6,20 +6,21 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { resolveTerminalId } from '../../auth/terminal-token';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
-import { runIdempotent } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionResultListQuery, InspectionResultQueryService } from './inspection-result-query.service';
 import {
   InspectionResultCreate,
+  InspectionResultUpdate,
   InspectionResultWriteContext,
   InspectionResultWriteService,
 } from './inspection-result-write.service';
 import { InspectionResultView } from './inspection-result-view';
 
 /**
- * 검사 결과 조회 2건(I-19 PR ②b) + 저장 1건(PR ③b). `PUT`(PR ③c)·`:confirm`(PR ④)이 이어 붙는다.
+ * 검사 결과 조회 2건(I-19 PR ②b) + 저장(PR ③b)·수정(PR ③c). `:confirm`(PR ④)이 이어 붙는다.
  * `summary`·`defect-rate-trend`·`measurement-summary`·`/measurements`(PR ⑤)는 **별도
  * 컨트롤러**다(R-18) — 그래도 `quality.module.ts` 의 `controllers` 배열에서 **이 컨트롤러
  * 보다 먼저** 등록해야 한다. `ParseIntPipe` 가 `'summary'` 를 숫자로 못 읽어 400 을 내는
@@ -63,6 +64,26 @@ export class InspectionResultController {
   async create(@Req() request: Request, @Body() body: InspectionResultCreate): Promise<InspectionResultView> {
     const context = await this.contextOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, context));
+  }
+
+  /**
+   * 수정. If-Match 는 **필수**(`IfMatchVersion`)라 가드가 이미 막았다 — `runVersioned` 를 그대로 쓴다.
+   * ⚠ 계약이 200 에 **ETag 를 선언하지 않았는데** `runVersioned` 는 늘 낸다. I-1 「알려둘 것」
+   *   (`PUT …/steps` 가 같은 자리)과 같은 모양이라 반복 기재하고 **고치지 않는다** — 선언 안 한
+   *   헤더를 더 내리는 것은 호환 완화이고, 다음 쓰기의 If-Match 를 화면이 여기서 얻는다.
+   */
+  @Put(':inspectionResultId')
+  @Contract('PUT /quality/inspection-results/{inspectionResultId}')
+  async update(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('inspectionResultId', ParseIntPipe) inspectionResultId: number,
+    @Body() body: InspectionResultUpdate,
+  ): Promise<InspectionResultView> {
+    const context = await this.contextOf(request);
+    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
+      this.writes.update(inspectionResultId, version, body, context),
+    );
   }
 
   /**

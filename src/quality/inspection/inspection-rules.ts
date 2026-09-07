@@ -107,3 +107,43 @@ export function assertMeasurementValues(
   );
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
+
+/**
+ * 물리 하한을 손으로 앞당겨 잡는다 — CHECK·도메인 위반은 공용 그물에 안 걸려 **500** 이다
+ * (`prisma-error.ts:23` 「CHECK 위반은 여기 오지 않는다」). 라이브 DB `pg_constraint` 실측:
+ *
+ *   inspection_result_inspected_qty_check    CHECK (inspected_qty > 0)   ← **조건이 없다**
+ *   도메인 app.qty_t                          CHECK (VALUE >= 0)          ← 수량 네 칸 전부
+ *   inspection_measurement_sample_no_check   CHECK (sample_no > 0)
+ *
+ * ⚠ M-e ⓑ 가 조건부로 푼 것은 **합계** CHECK(`ck_inspection_result_qty`) 하나뿐이라 이 하한들은
+ *   작성중(DRAFT)에도 그대로 산다. 그리고 「세 칸을 다 채우기 전 임시 저장」이 정확히 이 갈래라
+ *   **가장자리가 아니라 본길**이다 — M-e ⓑ 의 존재 이유가 곧 이 요청이다.
+ * ⛔ 계약에 `minimum` 이 0건이라 계약 검증 가드도 못 막는다 — 서비스가 유일한 그물이다.
+ * ⛔ 새 `ERROR_CODE` 를 만들지 않는다. `RANGE` 는 형제 수량 그물이 쓰는 값이다
+ *   (`material-consumption.service.ts:269,274` · `lot.service.ts:258` · `material-return.service.ts:182`).
+ */
+export function assertQuantityBounds(body: {
+  inspectedQty?: number;
+  acceptedQty?: number;
+  rejectedQty?: number;
+  heldQty?: number;
+  measurements?: readonly { sampleNo: number }[];
+}): void {
+  const errors: ErrorItem[] = [];
+  if (body.inspectedQty !== undefined && !(body.inspectedQty > 0)) {
+    errors.push(field('inspectedQty', ERROR_CODE.RANGE, '검사 수량은 0 보다 커야 합니다.'));
+  }
+  for (const name of ['acceptedQty', 'rejectedQty', 'heldQty'] as const) {
+    const value = body[name];
+    if (value !== undefined && !(value >= 0)) {
+      errors.push(field(name, ERROR_CODE.RANGE, '0 보다 작을 수 없습니다.'));
+    }
+  }
+  (body.measurements ?? []).forEach((measurement, index) => {
+    if (!(measurement.sampleNo > 0)) {
+      errors.push(field(`measurements[${index}].sampleNo`, ERROR_CODE.RANGE, '표본 번호는 0 보다 커야 합니다.'));
+    }
+  });
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}

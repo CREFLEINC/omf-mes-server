@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
@@ -7,7 +7,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { CONFIRMED, assertConfirmedShape, assertMeasurementValues } from './inspection-rules';
+import { CONFIRMED, assertConfirmedShape, assertMeasurementValues, assertQuantityBounds } from './inspection-rules';
 
 /** 계약 `InspectionMeasurementInput` — required 4 · 프로퍼티 8. */
 export interface InspectionMeasurementInput {
@@ -38,7 +38,25 @@ export interface InspectionResultCreate {
   remarks?: string;
 }
 
-/** 본문 밖에서 오는 것. `version`(If-Match)은 이 자리에서 **선택**이다(C-9 오프라인 큐). */
+/**
+ * 계약 `InspectionResultUpdate` — required **0** · 프로퍼티 **8**.
+ * ⛔ `statusCode` 가 없다 — `PUT` 으로 확정할 수 없다(확정 경로는 `POST statusCode=CONFIRMED` 와 `:confirm` 둘).
+ * ⛔ `previousResultId`·`reinspectionReasonCode` 가 없다 — 회차 사슬은 못 고친다(B-10 「번복은 재검이지 수정이 아니다」).
+ * ⚠ `[string,null]`·`[integer,null]` 형이 **하나도 없다** — 명시 null 로 «해제»하는 칸이 0 이라
+ *   `optional()` 관행 중 **null 갈래를 쓰지 않는다**(§1-3).
+ */
+export interface InspectionResultUpdate {
+  inspectedQty?: number;
+  acceptedQty?: number;
+  rejectedQty?: number;
+  heldQty?: number;
+  overallJudgmentCode?: string;
+  inspectedAt?: string;
+  measurements?: InspectionMeasurementInput[];
+  remarks?: string;
+}
+
+/** 본문 밖에서 오는 것. `version`(If-Match)은 `POST` 에서 **선택**이고 `PUT` 에서 필수다. */
 export interface InspectionResultWriteContext {
   workerNo: string | undefined;
   idempotencyKey: string;
@@ -51,11 +69,12 @@ export interface InspectionResultWriteContext {
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
 const WORKER_NO = 'X-Worker-No';
 /** 계약 `QualityConflictResponse.code` — required 라 409 를 낼 때마다 싣는다. */
+const INVALID_STATE = 'INVALID_STATE';
 const VERSION_CONFLICT = 'VERSION_CONFLICT';
 const DUPLICATE_KEY = 'DUPLICATE_KEY';
 
 /**
- * 검사 결과 저장(I-19 PR ③b). `PUT`(수정)은 PR ③c 가 이 클래스에 `update()` 를 더한다.
+ * 검사 결과 저장(PR ③b) · 수정(PR ③c).
  * ⛔ `:confirm` 의 부수효과(LOT 품질 축 전이·보류 해제·
  * 의뢰 완료)는 **PR ④** 가 붙인다 — `statusCode=CONFIRMED` 로 온 저장도 같은 함수를 타야 한다고
  * 계약이 적었다(x-internal-note 「확정 경로 둘이 부수효과가 같아야 한다」).
@@ -70,6 +89,8 @@ export class InspectionResultWriteService {
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
     await this.assertCodes(body.statusCode, body.overallJudgmentCode, body.measurements);
+    // 물리 하한이 먼저다 — 여기서 안 막으면 CHECK 위반이 500 으로 나간다(작성중도 그대로 산다).
+    assertQuantityBounds(body);
     assertConfirmedShape(body);
     assertMeasurementValues(body.measurements);
     const inspectorId = await this.resolveInspector(context);
@@ -115,6 +136,66 @@ export class InspectionResultWriteService {
         return this.reread(tx, created.inspection_result_id);
       })
       .catch((error: unknown) => throwRoundConflict(error));
+  }
+
+  /**
+   * ⭐ **작성중인 것만 고친다** — 확정본은 **409 `INVALID_STATE`** 다. 계약이 이 자리에만 409 를
+   * 문자로 적었다(「작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이
+   * 아니라 재검이다(B-10)」). ⛔ `:confirm` 의 재확정은 400 `STATE_LOCKED` 라 **봉투가 다르다**.
+   *
+   * 버전 대조가 상태 게이트보다 «먼저»다 — 형제 `:release`·`:close` 선례
+   * (`work-order-write.service.ts:78` · `production-result.service.ts` 의 `assertVersion` 순서).
+   * 낡은 토큰으로 확정본을 건드리면 「다시 불러오라」가 먼저 나와야 한다.
+   */
+  async update(
+    inspectionResultId: number,
+    version: number,
+    body: InspectionResultUpdate,
+    context: InspectionResultWriteContext,
+  ): Promise<{ view: InspectionResultView; versionNo: number }> {
+    await this.assertCodes(undefined, body.overallJudgmentCode, body.measurements);
+    assertQuantityBounds(body);
+    assertMeasurementValues(body.measurements);
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.inspection_result.findUnique({
+        where: { inspection_result_id: inspectionResultId },
+        select: { status_code: true, version_no: true },
+      });
+      if (current === null) throw new NotFoundException('없는 검사 결과입니다.');
+      const currentVersion = String(current.version_no);
+      if (current.version_no !== version) {
+        assertUpdated(0, 'user', { code: VERSION_CONFLICT, currentVersion });
+      }
+      if (current.status_code === CONFIRMED) {
+        throw new ConflictException('user', '확정된 검사 결과는 고칠 수 없습니다 — 번복은 재검 회차입니다.', { code: INVALID_STATE });
+      }
+      // ⛔ 수량 합을 강제하지 않는다 — 작성중이라 M-e ⓑ 뒤 DB 도 안 잡는다(§5-2). 확정으로 넘어갈 때
+      //    `:confirm`(PR ④)이 잡는다. ⛔ `statusCode` 를 안 바꾼다 — 계약 본문에 그 칸이 없다.
+      const updated = await tx.inspection_result.updateMany({
+        where: { inspection_result_id: inspectionResultId, version_no: version },
+        data: {
+          ...optional('inspected_qty', body.inspectedQty),
+          ...optional('accepted_qty', body.acceptedQty),
+          ...optional('rejected_qty', body.rejectedQty),
+          ...optional('held_qty', body.heldQty),
+          ...optional('overall_judgment_code', body.overallJudgmentCode),
+          ...optional('inspected_at', body.inspectedAt === undefined ? undefined : new Date(body.inspectedAt)),
+          ...optional('remarks', body.remarks),
+          updated_by: context.appUserId ?? null,
+          version_no: { increment: 1 },
+        },
+      });
+      // 위 대조를 지난 뒤 같은 행을 누가 옮겼을 때의 둘째 그물 — 조건부 UPDATE 가 0행이면 그것이다.
+      assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion });
+      // ⭐ **치환**이다 — 실으면 그 결과의 측정치 전건을 갈아 끼우고, **생략하면 손대지 않는다**
+      //    (빈 배열과 다르다 · §1-3). 부분 병합이 아니다 — 계약이 「부분」을 적지 않았다.
+      if (body.measurements !== undefined) {
+        await tx.inspection_measurement.deleteMany({ where: { inspection_result_id: BigInt(inspectionResultId) } });
+        await this.writeMeasurements(tx, BigInt(inspectionResultId), body.measurements, context.appUserId);
+      }
+      return { view: await this.reread(tx, BigInt(inspectionResultId)), versionNo: current.version_no + 1 };
+    });
   }
 
   /**
