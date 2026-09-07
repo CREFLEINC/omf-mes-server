@@ -375,7 +375,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-20 · LOT 상태·보류 — 등록·해제·전이·요약 — 10건
 
-**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»** — I-4 는 `judgment_type_control.blocks_issue` 를 이미 읽으므로 I-20 이 하는 일은 **그 표에 행을 «채우는» 것**(`JUDGMENT_TYPE` 코드값 + 통제표)이지 코드가 아니다(I-4 재수립 R-7).
+**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»**.
+⛔ **2026-09-08 정정(I-20 계획 · api 관점 확인)** — 「I-20 이 `judgment_type_control` 에 행을 채운다」는 **전제가 두 겹으로 깨졌다**: ⓐ 쓰는 오퍼레이션(`PUT /mdm/judgment-type-controls/{codeValueId}`)이 **이미 구현·커버**돼 있고 ⓑ `JUDGMENT_TYPE` 은 **회신 E-1 대기로 잠긴 빈 그룹**이라 시드로도 채우면 안 된다(quality-03 계약에 `judgment` 문자열 0건 · `assignment.tsv`·`uncovered.tsv` 0행) ⇒ **이 슬라이스는 그 표에 아무것도 하지 않는다.**
 **원장**: ⛔ 없다 — 계약이 「`inventory_balance.blocked_qty` 는 쓰지 않는다. 잔액은 서버가 파생한다」로 못 박았다.
 **트랜잭션**: `lot_hold` INSERT + `lot.status_code` UPDATE + `lot_status_event` 가 **한 트랜잭션**(B-8).
 **예상 설계 미정**: 회신 11(보류 해제 사유 — 철회 예정) · 회신 13(`LOT_HOLD_STATUS` 시드). 13 은 §Z-3 에서 이미 판정했다(`HELD` 를 넣되 해제 판정은 `released_at IS NULL`) — **반복하지 않고 그대로 쓴다**.

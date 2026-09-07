@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
@@ -6,6 +6,7 @@ import { CodeCheck, assertCodeValues, optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { InspectionConfirmService } from './inspection-confirm.service';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { CONFIRMED, assertConfirmedShape, assertMeasurementValues, assertQuantityBounds } from './inspection-rules';
 
@@ -75,16 +76,18 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
 
 /**
  * 검사 결과 저장(PR ③b) · 수정(PR ③c).
- * ⚠ **`statusCode=CONFIRMED` 로 온 저장은 아직 부수효과가 «없다»** — PR ④(#316)가 `:confirm`
- * 쪽에만 세웠다. 계약은 둘이 같아야 한다 적었고(`x-internal-note`) 오프라인 큐는 이 경로로만
- * 확정하므로(`plan-uiux.md:1112`) **큐로 온 확정은 오늘 LOT 을 안 옮긴다** — 후속 PR · §12-1 ⓑ.
- * ⛔ 다른 도메인 service 호출 0 · import 0(`server-architecture.md`).
+ * ⭐ **`statusCode=CONFIRMED` 로 온 저장은 `:confirm` 과 «같은» 부수효과를 낸다**(§12-1 ⓑ 상환) —
+ * 같은 트랜잭션에서 `InspectionConfirmService.applyConfirmEffects()` 를 부른다. 계약
+ * `x-internal-note` 가 확정 경로 둘의 부수 효과가 같아야 한다고 못 박았고, 오프라인 큐는 서버가
+ * 만든 id 를 몰라 `:confirm` 을 못 부르므로 **이 경로가 큐의 유일한 확정**이다(`plan-uiux.md:1112`).
+ * ⛔ 다른 도메인 service 호출 0 · import 0 — 부르는 상대는 **같은 도메인**이다(`server-architecture.md`).
  */
 @Injectable()
 export class InspectionResultWriteService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
+    private readonly confirms: InspectionConfirmService,
   ) {}
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
@@ -101,6 +104,9 @@ export class InspectionResultWriteService {
     // ⚠ 기간 키는 `inspectedAt` 의 UTC 날짜다 — 서버가 「오늘」로 다시 잡으면 자정을 넘긴
     //    오프라인 재전송이 하루 뒤 번호를 받는다(I-7 선례 · §5-3).
     const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
+    // 확정으로 태어나는 저장은 시각·주체를 트랜잭션 «밖»에서 한 번 정한다 — `confirmed_at` 과
+    // LOT 이력·보류 해제가 같은 시각을 써야 한다. 작성중이면 `undefined` 다.
+    const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
 
     return this.prisma
       .$transaction(async (tx) => {
@@ -119,7 +125,7 @@ export class InspectionResultWriteService {
             inspector_id: inspectorId,
             inspected_at: inspectedAt,
             // 확정으로 태어나면 확정 시각이 함께 찬다. 작성중이면 비운다(키 생략 = NULL 기본).
-            ...(body.statusCode === CONFIRMED ? { confirmed_at: new Date() } : {}),
+            ...optional('confirmed_at', born?.changedAt),
             ...optional('terminal_id', context.terminalId ?? undefined),
             status_code: body.statusCode,
             ...optional('previous_result_id', body.previousResultId === undefined ? undefined : BigInt(body.previousResultId)),
@@ -133,6 +139,16 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        if (born !== undefined) {
+          await this.confirms.applyConfirmEffects(tx, {
+            ...born,
+            inspectionResultId: created.inspection_result_id,
+            inspectionRequestId: BigInt(body.inspectionRequestId),
+            // `assertConfirmedShape()` 가 확정에는 판정이 있음을 이미 400 으로 강제했다.
+            judgment: body.overallJudgmentCode as string,
+            rejectedQty: body.rejectedQty,
+          });
+        }
         return this.reread(tx, created.inspection_result_id);
       })
       .catch((error: unknown) => throwRoundConflict(error));
@@ -310,6 +326,16 @@ export class InspectionResultWriteService {
     });
     return inspectionResultView(row);
   }
+}
+
+/**
+ * 확정으로 태어나는 저장의 확정 축. ⛔ 주체는 **계정 세션뿐**이다 — `lot_status_event.changed_by`
+ * 가 NOT NULL 이고 `X-Worker-No` 가 푸는 `worker_id` 는 그 칸의 축이 아니다(`:confirm` 컨트롤러의
+ * `userOf` 와 같은 자리). 오프라인 큐도 로그인 세션으로 온다.
+ */
+function bornConfirmed(context: InspectionResultWriteContext): { appUserId: number; changedAt: Date } {
+  if (context.appUserId === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return { appUserId: context.appUserId, changedAt: new Date() };
 }
 
 /**

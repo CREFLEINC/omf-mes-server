@@ -48,7 +48,7 @@
 | 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
 | — | **M2 체인 e2e** | | | | | fable | 1 | |
 | 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | **M-e(항목 3)** | 품질 축 전이표(**액션별 `from`** — I-19 R-1) | opus | ~~4~~ **7** | M-e ∥ ②a(I-19 R-18) |
-| 16 | **I-20** LOT 상태·보류 | 10 | I-19 | A12 · V-lot_hold | — | opus | 3 | — |
+| 16 | **I-20** LOT 상태·보류 | 10 | I-19 | **M-f(항목 5)** — A12 **두 칸** · `version_no` 필수 · CHECK · 인덱스 2(I-20 R-1) | **`trace.lot_hold` 쓰기 코어**(I-20 R-4·R-5 — 잠금 순서) | opus | ~~3~~ **11~12**(I-20 R-17) | PR ⓪ = I-19 §12-1 ⓑ 상환 |
 | 17 | **I-21** 부적합·처분·특채 | 11 | I-20 | — | — | opus | 3 | — |
 | 18 | **I-18** LOT 부가·상태 이력·IQC 생략 | 5 | I-1 | — | — | sonnet | 2 | ∥ I-19 |
 | — | **M3 체인 e2e** | | | | | fable | 1 | |
@@ -124,7 +124,7 @@
 | — | I-11 | `production.work_session` | `shift_id` NOT NULL 해제(계약 `WorkSession.shiftId` required 밖 · ⌜어느 교대에도 들지 않으면 비운 채 기록⌝ · D1 과 같은 근거 · I-11 재수립 R-3). ⛔ `terminal_id` 는 완화하지 않는다 — 세션 열기는 토큰 부재 403(R-1) |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` · `split_reason_code?`(app.code_t) · `ck_production_plan_split_self` · `ix_production_plan_split_of`(I-24 재수립 R-1 — 계약 `ProductionPlanSplitRef{sourcePlanId, reasonCode}` 두 칸) |
 | M-e | I-19 | 검사 의뢰 · 검사 결과 | **항목 3**(I-19 R-2 · R-18 — **선행 단독 PR**): ⓐ `inspection_request.inspection_plan_version_id` NOT NULL 해제(#280) · ⓑ `ck_inspection_result_qty` 를 `status_code <> 'CONFIRMED' OR (합)` 으로 완화 · ⓒ `inspection_result.overall_judgment_code` NOT NULL 해제(⛔ ⓑ 만 풀면 임시 저장이 여전히 막힌다) |
-| A12 · V | I-20 | `trace.lot_hold` | `target_lot_status_code?` · `version_no`(If-Match 대상이면) |
+| **M-f**(구 A12·V) | I-20 | `trace.lot_hold` | **항목 5**(I-20 R-1): 등록 도착 `target_lot_status_code?` · **해제 도착 `release_target_lot_status_code?`**(⭐ 한 칸이면 해제가 등록값을 덮는다 — 계약 `:4035` ↔ `:4191` 은 값 집합조차 안 겹치고, 부분 해제는 전이가 0건이라 도출할 원본이 없다) · `version_no NOT NULL DEFAULT 1`(**조건부가 아니라 필수** — 물리에 칸이 없다) · `ck_lot_hold_release_target` · 인덱스 2. 추가·완화만 · 삭제 0 · 백필 0 |
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
