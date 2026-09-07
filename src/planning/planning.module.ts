@@ -12,6 +12,7 @@ import { AcknowledgeService } from './production-order/acknowledge.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderService } from './production-order/production-order.service';
 import { ResyncService } from './production-order/resync.service';
+import { PlanConfirmService } from './production-plan/plan-confirm.service';
 import { ProductionPlanController } from './production-plan/production-plan.controller';
 import { ProductionPlanService } from './production-plan/production-plan.service';
 import { RoutingRevisionService } from './routing/routing-revision.service';
@@ -31,6 +32,7 @@ import { RoutingService } from './routing/routing.service';
     RoutingRevisionService,
     BomService,
     ProductionPlanService,
+    PlanConfirmService,
     ProductionOrderService,
     AcknowledgeService,
     ResyncService,
