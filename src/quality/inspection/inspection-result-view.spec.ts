@@ -59,12 +59,12 @@ describe('InspectionResult 뷰', () => {
     expect(view).toMatchObject({ inspectionResultId: 1, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED' });
   });
 
-  it('⭐ DRAFT + 판정 없음 — overallJudgmentCode 는 null 을 그대로 낸다(지어내지도, 키를 지우지도 않는다)', () => {
+  it('⭐ DRAFT + 판정 없음 — overallJudgmentCode 는 키를 생략한다(선례 054 와 같은 모양)', () => {
     const view = inspectionResultView(resultRow({ status_code: 'DRAFT', overall_judgment_code: null, confirmed_at: null }));
 
-    // 계약이 required·type:"string" 으로 닫은 자리라 null 은 그 형과 어긋난다 — 그래도
-    // 키 생략(required 위반)·값 지어내기(F-6 위반) 둘보다 이쪽을 골랐다(문의 069+16).
-    expect(view).toHaveProperty('overallJudgmentCode', null);
+    // 계약 required 인데 물리는 M-e ⓒ로 nullable 이다 — 값을 지어내지 않고(F-6) 선례
+    // (material-consumption-view.ts `terminalId`)처럼 키를 생략한다(문의 069+16).
+    expect(view).not.toHaveProperty('overallJudgmentCode');
     expect(view.statusCode).toBe('DRAFT');
     expect(view).not.toHaveProperty('confirmedAt');
   });

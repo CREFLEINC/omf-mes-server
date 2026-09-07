@@ -13,11 +13,18 @@ export function assertScopedOrPeriod(query: {
   inspectedFrom?: string;
   inspectedTo?: string;
 }): void {
+  assertPeriodPair(query);
   if (query.inspectionRequestId !== undefined) return;
-  if (query.inspectedFrom !== undefined || query.inspectedTo !== undefined) return;
+  if (query.inspectedFrom !== undefined) return; // 위에서 쌍임을 확인했으니 하나만 봐도 된다
   throw new ContractException(HttpStatus.BAD_REQUEST, [
     field('inspectionRequestId', ERROR_CODE.REQUIRED, 'inspectionRequestId 또는 기간(inspectedFrom·inspectedTo) 중 하나가 필요합니다.'),
   ]);
+}
+
+/** 계약 `inspectedTo` 설명 — inspectedFrom 과 한 쌍. 한쪽만 오면 400 PAIR(L-3 하한 없는 구멍 방지). */
+export function assertPeriodPair(query: { inspectedFrom?: string; inspectedTo?: string }): void {
+  if ((query.inspectedFrom !== undefined) === (query.inspectedTo !== undefined)) return;
+  throw one(field('inspectedTo', ERROR_CODE.PAIR, 'inspectedFrom·inspectedTo 는 함께 보내거나 함께 생략한다.'));
 }
 
 /** 정렬 허용 3키(계약 `:859-861`). 동률은 `inspection_result_id` 로 닫는다. */

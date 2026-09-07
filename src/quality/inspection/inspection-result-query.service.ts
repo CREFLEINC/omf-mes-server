@@ -27,6 +27,9 @@ export interface InspectionResultListQuery {
   size?: number;
 }
 
+/** 재검 사슬 BFS 깊이 상한(§fetchChains) — 정상 사슬은 몇 회차 안 되어 절대 안 닿는다. */
+const MAX_CHAIN_DEPTH = 20;
+
 @Injectable()
 export class InspectionResultQueryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -45,15 +48,12 @@ export class InspectionResultQueryService {
 
   /** 없으면 404(계약 선언). ETag = `version_no` — 11건 중 이 자리 하나뿐이다. */
   async detail(inspectionResultId: number): Promise<{ view: InspectionResultView; versionNo: number }> {
-    const row = await this.prisma.inspection_result.findUnique({
-      where: { inspection_result_id: inspectionResultId },
-      include: INSPECTION_RESULT_JOIN,
-    });
+    const row = await this.prisma.inspection_result.findUnique({ where: { inspection_result_id: inspectionResultId }, include: INSPECTION_RESULT_JOIN });
     if (!row) throw new NotFoundException('없는 검사 결과입니다.');
     return { view: inspectionResultView(row), versionNo: row.version_no };
   }
 
-  /** ⭐ 재검 사슬 페이지(계약 `:753`) — 뿌리만 세고 자르되 사슬 전체를 동거시킨다. `uq_inspection_round(의뢰,회차)` 로 재귀 CTE 없이 푼다(§4-2). */
+  /** ⭐ 재검 사슬 페이지(계약 `:753`) — 뿌리만 세고 자르되 사슬 전체를 동거시킨다(§4-2). */
   private async listWithChain(
     where: Prisma.inspection_resultWhereInput,
     orderBy: Prisma.inspection_resultOrderByWithRelationInput[],
@@ -62,32 +62,42 @@ export class InspectionResultQueryService {
     const rootWhere: Prisma.inspection_resultWhereInput = { AND: [where, { previous_result_id: null }] };
     const [total, rootRows] = await Promise.all([
       this.prisma.inspection_result.count({ where: rootWhere }),
-      this.prisma.inspection_result.findMany({
-        where: rootWhere,
-        orderBy,
-        skip: page.skip,
-        take: page.take,
-        select: { inspection_result_id: true, inspection_request_id: true },
-      }),
+      this.prisma.inspection_result.findMany({ where: rootWhere, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN }),
     ]);
     const meta = { page: page.page, size: page.size, total };
     if (rootRows.length === 0) return { items: [], page: meta };
 
-    const requestIds = rootRows.map((row) => row.inspection_request_id);
-    const chainRows = await this.prisma.inspection_result.findMany({
-      where: { inspection_request_id: { in: requestIds } },
-      orderBy: { inspection_round: 'asc' },
-      include: INSPECTION_RESULT_JOIN,
-    });
-    const byRequest = new Map<string, InspectionResultRow[]>();
-    for (const row of chainRows) {
-      const key = row.inspection_request_id.toString();
-      byRequest.set(key, [...(byRequest.get(key) ?? []), row]);
-    }
-    const items = rootRows
-      .flatMap((row) => byRequest.get(row.inspection_request_id.toString()) ?? [])
-      .map(inspectionResultView);
+    const chains = await this.fetchChains(rootRows);
+    const items = rootRows.flatMap((root) => chains.get(root.inspection_result_id.toString()) ?? [root]).map(inspectionResultView);
     return { items, page: meta };
+  }
+
+  /**
+   * ⭐ 리뷰 Major 2 — `uq_inspection_round(의뢰,회차)` 는 「의뢰 하나 = 사슬 하나」를 보장하지
+   * 않는다(뿌리가 둘일 수 있고, `previous_result_id` 를 같은 의뢰로 묶는 FK·CHECK 가 0건이라
+   * 자식이 다른 의뢰에 있을 수도 있다 — `inspection_request_id` 로 뭉치던 옛 방식은 조용한
+   * 중복·소실을 냈다). ⇒ `previous_result_id` 만 신뢰해 뿌리마다 **독립** BFS 로 켠다.
+   */
+  private async fetchChains(roots: InspectionResultRow[]): Promise<Map<string, InspectionResultRow[]>> {
+    const chains = new Map<string, InspectionResultRow[]>(roots.map((r) => [r.inspection_result_id.toString(), [r]]));
+    const ownerOf = new Map<string, string>(roots.map((r) => [r.inspection_result_id.toString(), r.inspection_result_id.toString()]));
+    let frontier = roots.map((r) => r.inspection_result_id);
+
+    for (let depth = 0; depth < MAX_CHAIN_DEPTH && frontier.length > 0; depth += 1) {
+      const children = await this.prisma.inspection_result.findMany({ where: { previous_result_id: { in: frontier } }, orderBy: { inspection_round: 'asc' }, include: INSPECTION_RESULT_JOIN });
+      if (children.length === 0) break;
+      frontier = [];
+      for (const child of children) {
+        const parentKey = child.previous_result_id?.toString(); // in 절이 null 은 안 돌려주지만 타입은 방어적으로 본다
+        const ownerKey = parentKey === undefined ? undefined : ownerOf.get(parentKey);
+        const bucket = ownerKey === undefined ? undefined : chains.get(ownerKey);
+        if (ownerKey === undefined || bucket === undefined) continue; // 방어적 — 프론티어 밖 값은 안 온다
+        bucket.push(child);
+        ownerOf.set(child.inspection_result_id.toString(), ownerKey);
+        frontier.push(child.inspection_result_id);
+      }
+    }
+    return chains;
   }
 
   /** `finalRoundOnly=true` — 의뢰별 최대 회차 1건씩(그룹핑으로 정의를 못박는다 · §4-2). */
@@ -96,27 +106,14 @@ export class InspectionResultQueryService {
     orderBy: Prisma.inspection_resultOrderByWithRelationInput[],
     page: PageRequest,
   ): Promise<PagedResponse<InspectionResultView>> {
-    const groups = await this.prisma.inspection_result.groupBy({
-      by: ['inspection_request_id'],
-      where,
-      _max: { inspection_round: true },
-    });
+    const groups = await this.prisma.inspection_result.groupBy({ by: ['inspection_request_id'], where, _max: { inspection_round: true } });
     const meta = { page: page.page, size: page.size, total: groups.length };
     if (groups.length === 0) return { items: [], page: meta };
 
     const finalWhere: Prisma.inspection_resultWhereInput = {
-      OR: groups.map((group) => ({
-        inspection_request_id: group.inspection_request_id,
-        inspection_round: group._max.inspection_round ?? 0,
-      })),
+      OR: groups.map((group) => ({ inspection_request_id: group.inspection_request_id, inspection_round: group._max.inspection_round ?? 0 })),
     };
-    const rows = await this.prisma.inspection_result.findMany({
-      where: finalWhere,
-      orderBy,
-      skip: page.skip,
-      take: page.take,
-      include: INSPECTION_RESULT_JOIN,
-    });
+    const rows = await this.prisma.inspection_result.findMany({ where: finalWhere, orderBy, skip: page.skip, take: page.take, include: INSPECTION_RESULT_JOIN });
     return { items: rows.map(inspectionResultView), page: meta };
   }
 }
@@ -140,10 +137,7 @@ function buildWhere(query: InspectionResultListQuery): Prisma.inspection_resultW
 function processWhere(processId: number | undefined): Prisma.inspection_requestWhereInput {
   if (processId === undefined) return {};
   return {
-    OR: [
-      { work_order: { routing_operation: { process_id: processId } } },
-      { inspection_plan_version: { inspection_plan: { process_id: processId } } },
-    ],
+    OR: [{ work_order: { routing_operation: { process_id: processId } } }, { inspection_plan_version: { inspection_plan: { process_id: processId } } }],
   };
 }
 

@@ -81,11 +81,22 @@ describe('검사 의뢰·결과 (e2e)', () => {
   let resultB1Id: number; // R2 round1(뿌리·단일) — CONFIRMED·ACCEPTED
   let resultC1Id: number; // R3 round1 — ⭐ DRAFT + overall_judgment_code=NULL
   let resultD1Id: number; // R4 round1 — PQC·W/O 축 processId 실측용
+  // ⭐ 리뷰 Major 2 픽스처 — uq_inspection_round 는 (의뢰,회차) 쌍만 닫을 뿐 「의뢰 하나 = 사슬
+  // 하나」를 보장하지 않는다. prisma 직접 INSERT 로 그 갈래를 만든다(정상 쓰기 경로로는 못 만든다).
+  let requestR6Id: number; // 뿌리가 둘인 의뢰(이상 데이터)
+  let requestR7Id: number; // 교차-의뢰 자식 시나리오 — 뿌리
+  let resultE1Id: number; // R6 뿌리1(정상 · round=1 · prev=NULL)
+  let resultE2Id: number; // R6 뿌리2(이상 데이터 · round=2 인데도 prev=NULL)
+  let resultF1Id: number; // R7 뿌리
+  let resultF2Id: number; // R8(다른 의뢰) 소속인데 previous_result_id 로 F1 의 자식이 된다
   const INSPECTED_A1 = '2026-09-02T01:00:00.000Z';
   const INSPECTED_A2 = '2026-09-02T03:00:00.000Z';
   const INSPECTED_B1 = '2026-09-02T02:00:00.000Z';
   const INSPECTED_C1 = '2026-09-03T00:00:00.000Z';
   const INSPECTED_D1 = '2026-09-04T00:00:00.000Z';
+  const INSPECTED_E = '2026-09-06T00:00:00.000Z';
+  const INSPECTED_F1 = '2026-09-07T00:00:00.000Z';
+  const INSPECTED_F2 = '2026-09-07T01:00:00.000Z';
   const SCOPE_FROM = '2026-09-02T00:00:00.000Z';
   const SCOPE_TO = '2026-09-02T23:59:59.000Z';
 
@@ -264,6 +275,18 @@ describe('검사 의뢰·결과 (e2e)', () => {
         .expect(200);
 
       expect(response.body.page.total).toBe(2); // 기간 안 뿌리 — R1 의 A1 · R2 의 B1
+      expect(validator('GET /quality/inspection-results')(response.body)).toBe(true);
+    });
+
+    it('⛔ Major 3(리뷰) — `inspectedFrom`·`inspectedTo` 는 한 쌍이다. 한쪽만 오면 400 `PAIR`', async () => {
+      const fromOnly = await request(app.getHttpServer())
+        .get(`${RESULTS}?inspectedFrom=${SCOPE_FROM}`)
+        .set('Cookie', cookie)
+        .expect(400);
+      expect(fromOnly.body.errors[0]).toMatchObject({ field: 'inspectedTo', code: 'PAIR' });
+
+      const toOnly = await request(app.getHttpServer()).get(`${RESULTS}?inspectedTo=${SCOPE_TO}`).set('Cookie', cookie).expect(400);
+      expect(toOnly.body.errors[0]).toMatchObject({ field: 'inspectedTo', code: 'PAIR' });
     });
 
     it('⭐ `finalRoundOnly=false` 면 `items.length > page.total` 이다 — 사슬이 뿌리와 같은 페이지에 동거한다', async () => {
@@ -274,6 +297,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
       expect(response.body.page.total).toBe(2);
       expect(response.body.items.length).toBeGreaterThan(response.body.page.total);
+      expect(validator('GET /quality/inspection-results')(response.body)).toBe(true);
     });
 
     it('⭐ R-12 — `finalRoundOnly` 를 생략해도 기본값 `false`(목록) 와 같다', async () => {
@@ -313,6 +337,42 @@ describe('검사 의뢰·결과 (e2e)', () => {
         resultA2Id, // R1 최종 회차(2)
         resultB1Id, // R2 최종 회차(1 — 단일)
       ]);
+      expect(validator('GET /quality/inspection-results')(response.body)).toBe(true);
+    });
+
+    it('⭐ Major 2(리뷰) — 뿌리가 둘인 의뢰가 사슬을 두 번 싣지 않는다(조용한 중복 방지)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${RESULTS}?inspectionRequestId=${requestR6Id}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // 뿌리(previous_result_id IS NULL)가 E1·E2 둘이라 page.total 도 2 다. 옛 코드는
+      // inspection_request_id 로 묶어 두 뿌리가 같은 사슬 버킷을 공유했고, 그 버킷을 뿌리
+      // 수만큼(2번) flatMap 해 items 가 [E1,E2,E1,E2] 로 중복됐다. 지금은 뿌리마다 독립
+      // BFS 라 각자 자기 자신 1건짜리 사슬로 끝난다 — 중복이 없다.
+      expect(response.body.page.total).toBe(2);
+      expect(response.body.items.map((item: { inspectionResultId: number }) => item.inspectionResultId)).toEqual([
+        resultE1Id,
+        resultE2Id,
+      ]);
+    });
+
+    it('⭐ Major 2(리뷰) — 교차-의뢰 자식이 previous_result_id 로 잡힌다(조용한 소실 방지)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${RESULTS}?inspectionRequestId=${requestR7Id}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // F2 는 자기 자신의 inspection_request_id 가 R8(다른 의뢰)이라 「inspection_request_id
+      // IN (뿌리 의뢰들)」로 훑던 옛 코드에서는 통째로 사라졌다. previous_result_id 로 직접
+      // 찾는 지금은 F1(R7 뿌리)의 자식으로 정상 노출된다 — F2 의 inspectionRequestId 필드
+      // 자체는 여전히 R8(자기 소속)을 그대로 낸다(데이터를 지어내 R7로 바꾸지 않는다).
+      expect(response.body.page.total).toBe(1); // 뿌리는 F1 하나(R7 스코프 기준)
+      expect(response.body.items.map((item: { inspectionResultId: number }) => item.inspectionResultId)).toEqual([
+        resultF1Id,
+        resultF2Id,
+      ]);
+      expect(response.body.items[1].inspectionRequestId).not.toBe(requestR7Id); // F2 는 R8 소속 그대로
     });
 
     it('`sort` 가 허용 3키 밖이면 400 `INVALID`', async () => {
@@ -340,7 +400,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(validator('GET /quality/inspection-results/{inspectionResultId}')(response.body)).toBe(true);
     });
 
-    it('⭐ DRAFT 행 — `overall_judgment_code` 가 NULL 이면 그 값을 그대로 낸다(계약이 required·string 으로만 닫아 못 그리는 자리 — 문의 069+16)', async () => {
+    it('⭐ DRAFT 행 — `overall_judgment_code` 가 NULL 이면 `overallJudgmentCode` 키를 생략한다(선례 054 와 같은 모양 — 문의 069+16)', async () => {
       const response = await request(app.getHttpServer())
         .get(`${RESULTS}?inspectionRequestId=${requestR3Id}`)
         .set('Cookie', cookie)
@@ -348,10 +408,10 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
       expect(response.body.items).toHaveLength(1);
       expect(response.body.items[0]).toMatchObject({ inspectionResultId: resultC1Id, statusCode: 'DRAFT' });
-      expect(response.body.items[0]).toHaveProperty('overallJudgmentCode', null);
-      // ⛔ 전체 스키마 ajv 검증은 여기서 부르지 않는다 — 계약 `InspectionResult.overallJudgmentCode`
-      // 는 required·type:"string"(널을 형에 안 적음)이라 이 한 행만 ajv 가 못 통과시킨다. 그
-      // 간극 자체가 이 테스트의 목적이다(설계 미정 — 문의 069+16, PR 본문에 근거를 적는다).
+      expect(response.body.items[0]).not.toHaveProperty('overallJudgmentCode');
+      // ⛔ 전체 스키마 ajv 검증은 여기서도 못 통과한다 — 계약이 required 로 적은 칸이라 키
+      // 생략도 ajv 상 위반이다(ⓐ 를 골라도 결과는 같다 — 스킵은 판정과 독립적인 불가피한
+      // 결과다). 설계 미정 — 문의 069+16(054 와 같은 자리 · 묶어 답해 달라고 적는다).
     });
   });
 
@@ -496,6 +556,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
     // M-e ⓐ 전에는 물리가 NOT NULL 이라 이 행 자체를 심을 수 없었다.
     const r5 = await requestOf('5', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R5, planVersionId: null });
     requestR5Id = Number(r5.inspection_request_id);
+    // Major 2 픽스처용 — item1·lotA 스코프(위 「의뢰 조회」 단언들의 정확한 건수)를 안 건드리게
+    // item2·workOrder(PQC 갈래·R4/R5 와 같은 축)를 재사용한다. 대상 자체는 이 테스트와 무관하다.
+    const r6 = await requestOf('6', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
+    requestR6Id = Number(r6.inspection_request_id);
+    const r7 = await requestOf('7', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
+    requestR7Id = Number(r7.inspection_request_id);
+    const r8 = await requestOf('8', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
 
     // 결과(PR ②b) 픽스처 — 검사자 하나로 충분하다(주체 해석은 PR ③ 몫).
     const worker = await prisma.worker.create({
@@ -555,6 +622,21 @@ describe('검사 의뢰·결과 (e2e)', () => {
     // R4 — PQC(W/O 축). `processId` 판정 ⓑ(work_order.routing_operation.process)의 근거.
     const d1 = await resultOf('D1', { inspectionRequestId: r4.inspection_request_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_D1, acceptedQty: 100 });
     resultD1Id = Number(d1.inspection_result_id);
+
+    // ⭐ 리뷰 Major 2 — R6: 뿌리가 둘인 의뢰(이상 데이터). uq_inspection_round(의뢰,회차) 는
+    // (의뢰,회차) 쌍만 닫아 round=1·round=2 가 «둘 다» previous_result_id=NULL 로 공존할 수
+    // 있다 — 정상 쓰기 경로(§5-1 「없으면 회차 1」)로는 못 만들어 prisma 로 직접 심는다.
+    const e1 = await resultOf('E1', { inspectionRequestId: r6.inspection_request_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_E, acceptedQty: 100 });
+    resultE1Id = Number(e1.inspection_result_id);
+    const e2 = await resultOf('E2', { inspectionRequestId: r6.inspection_request_id, round: 2, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_E, acceptedQty: 100 });
+    resultE2Id = Number(e2.inspection_result_id);
+
+    // ⭐ 리뷰 Major 2 — R7/R8: 교차-의뢰 자식. previous_result_id 를 같은 의뢰로 묶는 FK·CHECK
+    // 가 0건이라 F2(의뢰 R8 소속)가 F1(의뢰 R7 소속)의 자식으로 물리적으로 설 수 있다.
+    const f1 = await resultOf('F1', { inspectionRequestId: r7.inspection_request_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'REJECTED', inspectedAt: INSPECTED_F1, rejectedQty: 100 });
+    resultF1Id = Number(f1.inspection_result_id);
+    const f2 = await resultOf('F2', { inspectionRequestId: r8.inspection_request_id, previousResultId: f1.inspection_result_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_F2, acceptedQty: 100 });
+    resultF2Id = Number(f2.inspection_result_id);
   }
 
   async function makeUser(): Promise<void> {

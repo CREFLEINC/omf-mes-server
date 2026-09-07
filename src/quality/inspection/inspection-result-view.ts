@@ -47,10 +47,10 @@ export function inspectionResultView(row: InspectionResultRow) {
     rejectedQty: Number(row.rejected_qty),
     heldQty: Number(row.held_qty),
     uomId: Number(row.uom_id),
-    // ⭐ DRAFT + 판정 없음(M-e ⓒ) — 계약은 이 칸을 required·type:"string"(널 없음)으로 닫았다.
-    // 키 생략은 required 위반, 값을 지어내면 F-6 위반이라 있는 그대로(null)를 낸다 — 계약이
-    // 못 그리는 자리다(문의 069+16 · README §2 2단계 기준 3·4: nullable 의 뜻으로 두되 안 짓는다).
-    overallJudgmentCode: row.overall_judgment_code,
+    // ⚠ 계약 required 인데 DRAFT + 판정 없음(M-e ⓒ)이면 오늘 언제나 빠진다 — 물리가 nullable
+    // 로 풀렸다. 선례(`material-consumption-view.ts` `terminalId` · 문의 054)와 같은 모양으로
+    // 키를 생략한다(값을 지어내면 F-6 위반). 설계 미정 — 문의 069+16(054 와 같은 자리 · 묶어 답).
+    overallJudgmentCode: row.overall_judgment_code ?? undefined,
     inspectorId: Number(row.inspector_id),
     inspectedAt: row.inspected_at.toISOString(),
     confirmedAt: row.confirmed_at?.toISOString(),
