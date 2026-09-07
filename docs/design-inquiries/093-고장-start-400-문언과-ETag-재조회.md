@@ -16,3 +16,7 @@
 소비자는 생성→상세GET→메모PUT→상세GET→start→상세GET으로 다음 토큰과 집계를 얻는다. 내용해시를 If-Match로 쓰거나 쓰기응답의 목록형count0으로 열린 비가동 경고를 지우지 않는다. 409는 입력보존/재조회 후 새시도, 응답유실은 같은키/본문 재전송이다.
 
 흔적: E-B21/E-B22, E-I08, 연속GET/PUT/start와 내용해시≠버전 단언에 문의093.
+
+## I-31 지시 취소·실적 토큰 인계
+
+R11: 지시 cancel은 ISSUED·실적0 조건과 지시 상세 숫자 ETag를 사용한다. 실적 PUT은 실적 상세 ETag로 검사하며 부모 마감이 잠기면 독립토큰이 맞아도 STATE_LOCKED400이다. cancel의409설명은 상태/참조400을 명시하지만400 responses가 빠진 동일편차를 재사용 문의한다. 현재 reset=true는114의422 정책거부이고 성공토큰 규칙은 후속이다. nonreset MOLD에 If-Match가 오면 툴token검사, 생략은 허용한다. EQUIPMENT nonreset의 제공토큰 원천은 미정이므로 특정입력400 INVALID(2단계②), 다른 자원의 우연히 같은version으로 통과0. 상세GET→각 자원 ETag→PUT/cancel 재조회 소비자 인수는 아직미완.

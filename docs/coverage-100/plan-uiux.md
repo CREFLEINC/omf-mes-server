@@ -65,7 +65,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U31 | 출하 처리 · 확정 · 취소 | 8 | W-04-04/05/12 · P-04-01/02 | U30 · U1 | 없음 | 불필요 | ○ 출하·역분개 | ○ 2단 확정 | 3 |
 | U32 | 재고 재등록 | 1 | W-04-03 · W-04-11 · W-03-02 | U8 · U14 · U28 | 없음 | 불필요 | ○ 복합 | ○ | 1 |
 | U33 | 설비 점검 · 고장 | 9(진행8·보류1) | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | A15 nullable8추가·2완화 | — | ○ 고장 start, 완료 보류 | 실행8 + 조건부 |
-| U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33 | 없음 | ○ maintenance_result.version_no | ○ 예비품 출고 | ○ 지시 | 3 |
+| U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33·I32순간helper | MO/cancel·부여/PM최소공유 | ○ result.version_no/필드확장 | ✕ 기존출고 참조만 | ○ 지시 | I31 R12 최소책임별 |
 | U35 | 비가동 | 6(진행4·보류2) | P-05-02 · W-05-08 | I-30 날짜helper·U22 | 없음 | ○ remarks/최초사번/version 추가3·type완화1 | — | — | µs준비+조회/쓰기분리 |
 | U36 | 툴 사용실적 | 3 | P-05-01 | — | 없음 | 불필요 | — | — | 1 |
 | U37 | 계측기 | 4 | W-05-10 · W-05-11 | — | 없음 | ○ calibration 6칸 | — | — | 2 |
@@ -478,8 +478,10 @@ I-30 재수립 R-1~R-14가 구현 정본이다. 연속 편집은 상세 GET→�
 | `POST /maintenance/orders/{maintenanceOrderId}:cancel` | 보전 지시 취소 | — | 멱등, ETag |
 | `GET /maintenance/results` | 보전 실적 목록 | — | - |
 | `GET /maintenance/results/{maintenanceResultId}` | 보전 실적 한 건 | — | - |
-| `POST /maintenance/results` | 보전 실적 등록 | W-05-06 | 멱등, ETag |
+| `POST /maintenance/results` | nonreset 미마감 실적 등록, reset/closed true만422 | W-05-06·W-05-03 | 멱등, If-Match 선택(툴 reset 조건부필수·현재성공유보) |
 | `PUT /maintenance/results/{maintenanceResultId}` | 보전 실적 수정 | — | 멱등, ETag |
+
+I-31 정본 R1~R13·문의113~116: 미마감 저장/편집, 마감, PM 기준, 원천/부여, parts 확인·정정을 별도 인수한다. closed/reset true는 각각422·전건0이며 일반 기록 성공을 PM/지시 완료 성공으로 표시하지 않는다. finishedAt가 있어도 PM 완료 선언이 아니다. EQUIPMENT 직접고장의 breakdownId·예방baseDate·실제effective부여, MOLD order 필수·자유부위 입력은 현재 client 누락을 고칠 자리다. 상세GET→실적 ETag→PUT 진입점은 아직 없고 parts7칸·unknown UOM/GI 재선택·수량정정 표시도 미완이다. client의 브라우저offset 자정 입력/UTCprefix 날짜표시는 공장로컬 인수094로 분리하며 서버 instant를 재해석하지 않는다. 툴 폐기만으로 nonreset 과거 기록을 막지 않는다. 담당/수행자/발행자/실제actor는 별도 계정축, 예비품은 출고 참조이지 자동출고/수불이 아니다.
 
 #### U35 비가동 (P-05-02·W-05-08) — 6건
 
