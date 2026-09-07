@@ -111,6 +111,17 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 도출기의 「계약에 실재하는 것만 남긴다」 걸러내기에 떨어졌다(실측).
   'PUT /planning/boms/{bomId}/components/{bomComponentId}': ['W-06-05'],
 
+  // `W-02-02` W/O 전개·편성 — 계획 수정. 도출표는 화면 «액션»만 긁어 「계획 추가·삭제」만
+  // 들어왔고 수정이 빠졌다(`W-02-02` §7 DS 매핑 「계획 편집 표 — 편집 그리드」 + §3 ②
+  // 행별 라인 Select 근거 — I-24.md R-13).
+  'PUT /planning/production-plans/{productionPlanId}': ['W-02-02'],
+
+  // `W-06-10` 연계 동기화 현황·실패 재처리 — 계약 x-internal-note 가 「소관 = W-06-10
+  // (공유계약 B-4-1 ④ · 중복 구현 금지)」라 직접 적었다. `W-06-10` §5-1 액션 8건에 이
+  // 액션이 «없다» — 잠정 등록이다(I-24.md R-13). 부르는 화면이 오늘 0건이어도 가드가
+  // 등록을 요구한다(미등록이면 500 · 선례 `POST /production/material-returns`).
+  'POST /planning/production-orders/{productionOrderId}:resync': ['W-06-10'],
+
   // `W-06-03` 불량·원인코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
   // 수정·활성 전이와 원인코드 목록이 도출표에 안 들어왔다. 한 화면의 두 탭이다.
   'GET /quality/cause-codes': ['W-06-03'],
