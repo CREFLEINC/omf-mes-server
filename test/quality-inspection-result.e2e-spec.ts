@@ -1,6 +1,8 @@
 /**
- * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(**결과 조회 2건**).
- * `POST`·`PUT`·`:confirm`·집계 3건·`/measurements`는 PR ③④⑤ 가 같은 파일에 이어 붙인다.
+ * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(결과 조회 2건) + PR ③(**저장·수정 2건**).
+ * `:confirm`·집계 3건·`/measurements`는 PR ④⑤ 가 같은 파일에 이어 붙인다.
+ * ⭐ PR ③ 부터 **쓰기 경로가 행을 «만든다»** — 그전까지 `DRAFT` + 판정 없음 행은 픽스처가 prisma
+ *   로 심은 것뿐이었다. 저장 갈래는 그 행을 `POST` 로 세우고 이어서 `GET` 으로 모양을 확인한다.
  *
  * ⭐ `inspection_request` 는 **직접 INSERT** 한다 — 만드는 오퍼레이션이 계약에 0건이다
  *   (I-19.md §0 #5). 갈래 셋을 심는다 — IQC(`targetTypeCode='LOT'`)·PQC(`'WORK_ORDER'`) ·
@@ -30,6 +32,10 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'I19QA';
 const LOGIN_ID = 'e2e-i19qa-probe';
+const NOPERM_ID = 'e2e-i19qa-noperm';
+/** 계약이 403 을 선언한 셋 — 도출표(`derived-permissions.ts:250·251·280`)에 이미 있다. */
+const ROLE = 'E2E_I19_QUALITY';
+const PERMISSIONS = ['W-01-01', 'P-02-13', 'W-04-03'];
 const PASSWORD = 'PR-검사의뢰-비밀번호';
 const REQUESTS = '/api/quality/inspection-requests';
 const RESULTS = '/api/quality/inspection-results';
@@ -49,6 +55,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   const ids = {
     plant: 0n,
@@ -61,7 +68,11 @@ describe('검사 의뢰·결과 (e2e)', () => {
     lotA: 0n,
     lotB: 0n,
     worker: 0n,
+    sessionWorker: 0n,
     process: 0n,
+    businessUnit: 0n,
+    itemSpecA: 0n,
+    itemSpecB: 0n,
   };
   let requestR1Id: number;
   let requestR2Id: number;
@@ -439,6 +450,271 @@ describe('검사 의뢰·결과 (e2e)', () => {
     });
   });
 
+
+  describe('저장·수정 (PR ③)', () => {
+    /** ⛔ 조회 단언의 기간창(`SCOPE_FROM`~`SCOPE_TO`) 밖이다 — 쓰기가 그 건수를 흔들면 안 된다. */
+    const INSPECTED_W = '2026-09-10T05:00:00.000Z';
+    const WORKER_HEADER = `${PREFIX}-WK`;
+    let writeSeq = 0;
+
+    /**
+     * 쓰기 단언마다 «자기 의뢰»를 하나씩 세운다. `uq_inspection_round(의뢰, 회차)` 가 「뿌리는
+     * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
+     * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
+     * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
+     */
+    async function newRequest(): Promise<number> {
+      writeSeq += 1;
+      const row = await prisma.inspection_request.create({
+        data: {
+          inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
+          inspection_type_code: 'PQC',
+          inspection_plan_version_id: ids.inspectionPlanVersion,
+          target_type_code: 'WORK_ORDER',
+          target_id: ids.workOrder,
+          item_id: ids.item2,
+          work_order_id: ids.workOrder,
+          target_qty: 100,
+          uom_id: ids.uom,
+          status_code: 'REQUESTED',
+          requested_at: new Date(REQUESTED_R1),
+        },
+      });
+      return Number(row.inspection_request_id);
+    }
+
+    function draftBody(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        inspectionRequestId,
+        inspectedQty: 100,
+        // ⭐ 합이 100 이 아니다 — 작성중에는 통과해야 한다(M-e ⓑ).
+        acceptedQty: 0,
+        rejectedQty: 0,
+        heldQty: 0,
+        uomId: Number(ids.uom),
+        inspectedAt: INSPECTED_W,
+        statusCode: 'DRAFT',
+        ...overrides,
+      };
+    }
+
+    function post(body: Record<string, unknown>, options: { session?: string[]; workerNo?: string; key?: string } = {}) {
+      const call = request(app.getHttpServer())
+        .post(RESULTS)
+        .set('Cookie', options.session ?? cookie)
+        .set('Idempotency-Key', options.key ?? randomUUID());
+      if (options.workerNo !== undefined) call.set('X-Worker-No', options.workerNo);
+      return call.send(body);
+    }
+
+    function put(inspectionResultId: number, body: Record<string, unknown>, version: number, session: string[] = cookie) {
+      return request(app.getHttpServer())
+        .put(`${RESULTS}/${inspectionResultId}`)
+        .set('Cookie', session)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', String(version))
+        .send(body);
+    }
+
+    async function newDraft(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
+      const created = await post(draftBody(inspectionRequestId, overrides), { workerNo: WORKER_HEADER }).expect(201);
+      return created.body.inspectionResultId as number;
+    }
+
+    it('`POST` `statusCode=DRAFT` 가 수량 합이 안 맞아도 201 이다 — 번호·회차·검사자를 서버가 채운다(M-e ⓑ)', async () => {
+      const response = await post(draftBody(await newRequest()), { workerNo: WORKER_HEADER }).expect(201);
+
+      expect(response.body).toMatchObject({
+        statusCode: 'DRAFT',
+        // ⭐ 본문이 못 보내는 세 칸 — §5-3 의 「서로 다른 축」이 각자 채운다.
+        inspectionRound: 1,
+        inspectorId: Number(ids.worker),
+        versionNo: 1,
+      });
+      // 기간 키는 `inspectedAt` 의 UTC 날짜다 — 서버 수신 시각(오늘)이 아니다.
+      expect(response.body.inspectionResultNo).toMatch(/^IRS-20260910-\d{4}$/);
+    });
+
+    it('⭐ 문의 085 — `POST`(DRAFT)로 «실제로 만든» 행이 `GET` 에서 `overallJudgmentCode` 키를 안 낸다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+
+      const detail = await request(app.getHttpServer()).get(`${RESULTS}/${inspectionResultId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ inspectionResultId, statusCode: 'DRAFT' });
+      // 지금까지 이 모양은 픽스처가 prisma 로 심은 행에서만 봤다(선례 054 와 같은 판정). 쓰기
+      // 경로가 세운 행도 같은 모양인지가 이 PR 의 몫이다 — 물리까지 함께 못 박는다.
+      expect(detail.body).not.toHaveProperty('overallJudgmentCode');
+      const row = await prisma.inspection_result.findUniqueOrThrow({
+        where: { inspection_result_id: BigInt(inspectionResultId) },
+        select: { overall_judgment_code: true, confirmed_at: true },
+      });
+      expect(row.overall_judgment_code).toBeNull();
+      expect(row.confirmed_at).toBeNull();
+    });
+
+    it('`POST` `statusCode=CONFIRMED` 가 수량 합이 안 맞으면 400 `INVALID`', async () => {
+      const response = await post(draftBody(await newRequest(), { statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED' }), {
+        workerNo: WORKER_HEADER,
+      }).expect(400);
+
+      expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'INVALID' }));
+    });
+
+    it('`POST` `statusCode=CONFIRMED` 에 `overallJudgmentCode` 가 없으면 400 `REQUIRED`', async () => {
+      const response = await post(draftBody(await newRequest(), { statusCode: 'CONFIRMED', acceptedQty: 100 }), {
+        workerNo: WORKER_HEADER,
+      }).expect(400);
+
+      expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'overallJudgmentCode', code: 'REQUIRED' }));
+    });
+
+    it('`POST` `statusCode=CONFIRMED` 가 201 이고 `confirmed_at` 이 함께 찬다', async () => {
+      const response = await post(
+        draftBody(await newRequest(), { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(response.body).toMatchObject({ statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED' });
+      expect(response.body.confirmedAt).toEqual(expect.any(String));
+      // 확정 응답은 계약 `InspectionResult` 를 그대로 통과한다(판정 칸이 required 라 DRAFT 는 못 한다).
+      expect(validator('POST /quality/inspection-results', 201)(response.body)).toBe(true);
+      // ⛔ LOT 품질 축 전이·보류 해제·의뢰 완료는 **PR ④** 가 붙인다 — 아직 아무것도 안 옮긴다.
+      expect(await prisma.lot_status_event.count({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } })).toBe(0);
+    });
+
+    it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
+      const response = await post(
+        draftBody(requestR5Id, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', remarks: '자유 입력만으로 성립한다' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(response.body).toMatchObject({ inspectionRequestId: requestR5Id, remarks: '자유 입력만으로 성립한다' });
+      expect(await prisma.inspection_measurement.count({ where: { inspection_result_id: BigInt(response.body.inspectionResultId) } })).toBe(0);
+    });
+
+    it('같은 `Idempotency-Key` 재전송이 한 건이다 — `inspection_result` 행이 늘지 않는다', async () => {
+      const inspectionRequestId = await newRequest();
+      const key = randomUUID();
+      const body = draftBody(inspectionRequestId);
+      const first = await post(body, { workerNo: WORKER_HEADER, key }).expect(201);
+      const again = await post(body, { workerNo: WORKER_HEADER, key }).expect(201);
+
+      expect(again.body.inspectionResultId).toBe(first.body.inspectionResultId);
+      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } })).toBe(1);
+    });
+
+    it('`previousResultId` 를 실으면 회차가 +1 이고 같은 의뢰에 매달린다', async () => {
+      const inspectionRequestId = await newRequest();
+      const root = await newDraft(inspectionRequestId);
+      const response = await post(
+        draftBody(inspectionRequestId, { previousResultId: root, reinspectionReasonCode: 'CUSTOMER_CLAIM' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(response.body).toMatchObject({ inspectionRequestId, inspectionRound: 2, previousResultId: root });
+    });
+
+    it('⛔ `previousResultId` 가 «다른 의뢰»의 행이면 400 `INVALID` — 쓰기 경로는 교차-의뢰 자식을 안 만든다', async () => {
+      const response = await post(draftBody(await newRequest(), { previousResultId: resultA1Id }), { workerNo: WORKER_HEADER }).expect(400);
+
+      expect(response.body.errors[0]).toMatchObject({ field: 'previousResultId', code: 'INVALID' });
+    });
+
+    it('없는 `inspectionRequestId` 는 400 `INVALID` 다(404 가 아니다 — 계약 미선언)', async () => {
+      const response = await post(draftBody(999_999_999), { workerNo: WORKER_HEADER }).expect(400);
+      expect(response.body.errors[0]).toMatchObject({ field: 'inspectionRequestId', code: 'INVALID' });
+    });
+
+    it('⭐ `X-Worker-No` 없이 계정 토큰만으로 201 이다 — 서버가 세션에서 검사자를 푼다(§5-5)', async () => {
+      const response = await post(draftBody(await newRequest())).expect(201);
+
+      // 헤더 갈래(`-WK`)가 아니라 계정 연결 갈래(`-WK2`)로 풀렸다.
+      expect(response.body.inspectorId).toBe(Number(ids.sessionWorker));
+      expect(response.body.inspectorId).not.toBe(Number(ids.worker));
+    });
+
+    it('⭐ 확정 행에 판정이 비면 물리 CHECK 가 둘째 그물로 막는다(`ck_inspection_result_judgment`)', async () => {
+      // 서비스가 400 `REQUIRED` 로 먼저 막지만(위 단언), M-e ⓒ 가 NOT NULL 을 푼 뒤로 «DB 는»
+      // 아무것도 못 막고 있었다. 이 PR 의 마이그가 그 자리를 닫았는지 물리로 직접 확인한다.
+      const inspectionRequestId = await newRequest();
+      await expect(
+        prisma.inspection_result.create({
+          data: {
+            inspection_result_no: `${PREFIX}-IRS-CHECK`,
+            inspection_request_id: BigInt(inspectionRequestId),
+            inspection_round: 90,
+            inspected_qty: 100,
+            accepted_qty: 100,
+            uom_id: ids.uom,
+            overall_judgment_code: null,
+            inspector_id: ids.worker,
+            inspected_at: new Date(INSPECTED_W),
+            status_code: 'CONFIRMED',
+            idempotency_key: `${PREFIX}-IDEM-CHECK`,
+          },
+        }),
+      ).rejects.toThrow(/ck_inspection_result_judgment/);
+    });
+
+    it('`PUT` 이 작성중 결과를 고친다 — 새 ETag 가 온다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(inspectionResultId, { acceptedQty: 90, rejectedQty: 10, overallJudgmentCode: 'HELD', remarks: '고침' }, 1).expect(200);
+
+      expect(response.body).toMatchObject({ inspectionResultId, acceptedQty: 90, rejectedQty: 10, overallJudgmentCode: 'HELD', remarks: '고침', versionNo: 2 });
+      expect(response.headers.etag).toBe('2');
+      // ⛔ `statusCode` 를 못 바꾼다 — 계약 `InspectionResultUpdate` 에 그 칸이 없다.
+      expect(response.body.statusCode).toBe('DRAFT');
+    });
+
+    it('⭐ 확정된 결과를 `PUT` 하면 409 `INVALID_STATE` — 고치는 것이 아니라 재검이다(B-10)', async () => {
+      const response = await put(resultA1Id, { remarks: '확정본을 고친다' }, 1).expect(409);
+
+      // 봉투가 `QualityConflictResponse` 다 — `code` 가 required 라 반드시 실린다.
+      expect(response.body).toMatchObject({ code: 'INVALID_STATE', conflictCause: 'user' });
+      expect(response.body.errors).toBeUndefined();
+    });
+
+    it('`If-Match` 가 어긋나면 409 `VERSION_CONFLICT` + `currentVersion`', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(inspectionResultId, { remarks: '낡은 토큰' }, 99).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'VERSION_CONFLICT', conflictCause: 'user', currentVersion: '1' });
+    });
+
+    it('⭐ `measurements` 를 실으면 치환이고 생략하면 손대지 않는다', async () => {
+      const measurement = (specId: bigint, sampleNo: number, value: number) => ({
+        inspectionItemSpecId: Number(specId),
+        sampleNo,
+        numericValue: value,
+        judgmentCode: 'ACCEPTED',
+        measuredAt: INSPECTED_W,
+      });
+      const inspectionResultId = await newDraft(await newRequest(), {
+        measurements: [measurement(ids.itemSpecA, 1, 10), measurement(ids.itemSpecB, 1, 20)],
+      });
+      const scope = { inspection_result_id: BigInt(inspectionResultId) };
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(2);
+
+      // 생략 — 손대지 않는다(빈 배열과 다르다).
+      await put(inspectionResultId, { remarks: '측정치는 안 건드린다' }, 1).expect(200);
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(2);
+
+      // 실으면 전건 치환이다 — 부분 병합이 아니다(§1-3).
+      await put(inspectionResultId, { measurements: [measurement(ids.itemSpecA, 1, 99)] }, 2).expect(200);
+      const rows = await prisma.inspection_measurement.findMany({ where: scope, select: { inspection_item_spec_id: true, numeric_value: true } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].inspection_item_spec_id).toBe(ids.itemSpecA);
+      expect(Number(rows[0].numeric_value)).toBe(99);
+    });
+
+    it('무권한 계정은 `POST`·`PUT` 에서 403 이다', async () => {
+      const inspectionRequestId = await newRequest();
+      const inspectionResultId = await newDraft(inspectionRequestId);
+
+      await post(draftBody(await newRequest()), { session: noPermCookie, workerNo: WORKER_HEADER }).expect(403);
+      await put(inspectionResultId, { remarks: '권한 없음' }, 1, noPermCookie).expect(403);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '검사의뢰검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -446,6 +722,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
     const businessUnit = await prisma.business_unit.create({
       data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: '검사의뢰검사사업부' },
     });
+    ids.businessUnit = businessUnit.business_unit_id;
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '검사의뢰검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
@@ -501,6 +778,19 @@ describe('검사 의뢰·결과 (e2e)', () => {
       },
     });
     ids.inspectionPlanVersion = planVersion.inspection_plan_version_id;
+    // 항목 규격 2 — PR ③ 의 `measurements` 치환 단언이 쓴다(교정 이력·자동 판정은 PR ⑤ 몫).
+    const specOf = async (sequenceNo: number, code: string) =>
+      prisma.inspection_item_spec.create({
+        data: {
+          inspection_plan_version_id: planVersion.inspection_plan_version_id,
+          sequence_no: sequenceNo,
+          inspection_item_code: code,
+          inspection_item_name: `검사항목${sequenceNo}`,
+          data_type_code: 'NUMERIC',
+        },
+      });
+    ids.itemSpecA = (await specOf(10, `${PREFIX}-SPEC-A`)).inspection_item_spec_id;
+    ids.itemSpecB = (await specOf(20, `${PREFIX}-SPEC-B`)).inspection_item_spec_id;
 
     // 공급사 2 + 입하 라인 2 — `supplierId` 2단 조인(§4-1)이 실제 값으로 갈리는지 본다.
     const partnerA = await prisma.partner.create({ data: { partner_code: `${PREFIX}-SUP-A`, partner_name: '검사의뢰공급사A' } });
@@ -680,7 +970,21 @@ describe('검사 의뢰·결과 (e2e)', () => {
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({ data: { login_id: LOGIN_ID, user_name: '검사의뢰검사', status_code: 'EMPLOYED' } });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const other = await prisma.app_user.create({ data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' } });
+    await prisma.user_credential.create({ data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    // ⭐ §5-5 의 둘째 갈래 — 계정에 «연결된» 작업자. `X-Worker-No` 없이 온 관리웹 저장이 이 행으로
+    //   풀린다. 헤더 갈래(`${PREFIX}-WK`)와 다른 행이라 어느 길로 풀렸는지 단언이 가른다.
+    const sessionWorker = await prisma.worker.create({
+      data: { worker_no: `${PREFIX}-WK2`, worker_name: '계정연결검사원', business_unit_id: ids.businessUnit, plant_id: ids.plant, app_user_id: user.app_user_id, status_code: 'EMPLOYED' },
+    });
+    ids.sessionWorker = sessionWorker.worker_id;
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '검사결과쓰기용' } });
+    await prisma.role_permission.createMany({ data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })) });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+
     cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
   }
 
   async function login(loginId: string): Promise<string[]> {
@@ -695,11 +999,21 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
   /** FK 역순으로 지운다. `beforeAll`·`afterAll` 둘 다 부른다(자가 치유). */
   async function cleanup(): Promise<void> {
+    // ⚠ PR ③ 이 만든 행은 번호를 «채번»이 짓는다(`IRS-…`) — 접두어로는 안 잡히므로 의뢰를 거쳐 건다.
+    const resultScope = {
+      OR: [{ inspection_result_no: { startsWith: PREFIX } }, { inspection_request: { inspection_request_no: { startsWith: PREFIX } } }],
+    };
+    // `inspection_measurement` 는 `inspection_result`·`inspection_item_spec` 둘의 자식이다 — 맨 먼저.
+    await prisma.inspection_measurement.deleteMany({ where: { inspection_result: resultScope } });
     // `inspection_result` 는 `inspection_request`·`worker` 둘을 참조한다 — 그 둘보다 먼저 지운다.
-    await prisma.inspection_result.deleteMany({ where: { inspection_result_no: { startsWith: PREFIX } } });
+    // 회차 자식이 부모를 가리키므로 두 번 돈다(자식 먼저 · §8-2).
+    await prisma.inspection_result.deleteMany({ where: { AND: [resultScope, { previous_result_id: { not: null } }] } });
+    await prisma.inspection_result.deleteMany({ where: resultScope });
+    await prisma.inspection_item_spec.deleteMany({ where: { inspection_item_code: { startsWith: PREFIX } } });
     await prisma.inspection_request.deleteMany({ where: { inspection_request_no: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.inbound_receipt_line.deleteMany({ where: { inbound_receipt: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.inbound_receipt.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });
@@ -714,11 +1028,18 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
 
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!user) continue;
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });

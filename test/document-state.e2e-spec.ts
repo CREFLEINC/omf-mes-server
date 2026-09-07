@@ -103,6 +103,9 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
         .map((entry) => entry.transition.transitionCode)
         .filter((code): code is string => code !== undefined);
 
+      // ⭐ #292 리뷰 M-1 — 축별로 가르면서 «중복» 탐지를 잃었다. 옛 단언은 다중집합 비교라 한
+      // 코드가 두 액션에 붙으면 깨졌는데, 아래 집합차는 중복을 못 본다.
+      expect([...new Set(used)]).toHaveLength(used.length);
       expect(used.filter((code) => !seeded.includes(code))).toEqual([]);
       // 시드된 셋을 다 쓴다 — 안 쓰는 것은 그 전이를 여는 자리가 없다는 뜻이라 위 표가 이름 적는다.
       expect(seeded.filter((code) => !used.includes(code))).toEqual(
