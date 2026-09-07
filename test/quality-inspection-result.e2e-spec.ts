@@ -89,6 +89,12 @@ describe('검사 의뢰·결과 (e2e)', () => {
   let resultE2Id: number; // R6 뿌리2(이상 데이터 · round=2 인데도 prev=NULL)
   let resultF1Id: number; // R7 뿌리
   let resultF2Id: number; // R8(다른 의뢰) 소속인데 previous_result_id 로 F1 의 자식이 된다
+  // ⭐ 리뷰 m-7 픽스처 — 분기 사슬(한 부모에 자식 둘)에서 BFS 깊이 순과 회차 순이 갈린다.
+  let requestR9Id: number;
+  let resultG1Id: number; // 뿌리(회차1)
+  let resultGAId: number; // G1 자식(회차2)
+  let resultGBId: number; // G1 자식(회차5) — GA 의 형제, 회차가 더 크다
+  let resultGCId: number; // GA 의 자식(회차3) — GB 보다 늦게(더 깊게) 발견되지만 회차는 더 작다
   const INSPECTED_A1 = '2026-09-02T01:00:00.000Z';
   const INSPECTED_A2 = '2026-09-02T03:00:00.000Z';
   const INSPECTED_B1 = '2026-09-02T02:00:00.000Z';
@@ -97,6 +103,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
   const INSPECTED_E = '2026-09-06T00:00:00.000Z';
   const INSPECTED_F1 = '2026-09-07T00:00:00.000Z';
   const INSPECTED_F2 = '2026-09-07T01:00:00.000Z';
+  const INSPECTED_G = '2026-09-08T00:00:00.000Z';
   const SCOPE_FROM = '2026-09-02T00:00:00.000Z';
   const SCOPE_TO = '2026-09-02T23:59:59.000Z';
 
@@ -375,6 +382,23 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.items[1].inspectionRequestId).not.toBe(requestR7Id); // F2 는 R8 소속 그대로
     });
 
+    it('⭐ 리뷰 m-7 — 분기 사슬(한 부모에 자식 둘)도 회차 오름차순으로 나온다(BFS 깊이 순이 아니다)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${RESULTS}?inspectionRequestId=${requestR9Id}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // G1(1) 의 자식이 GA(2)·GB(5) 둘이고 GA 의 자식이 GC(3)다. BFS 는 깊이 순으로 담아
+      // [G1,GA,GB,GC]=[1,2,5,3] 이 된다 — 최종 정렬이 없으면 이 단언이 실패한다.
+      expect(response.body.items.map((item: { inspectionResultId: number }) => item.inspectionResultId)).toEqual([
+        resultG1Id,
+        resultGAId,
+        resultGCId,
+        resultGBId,
+      ]);
+      expect(response.body.items.map((item: { inspectionRound: number }) => item.inspectionRound)).toEqual([1, 2, 3, 5]);
+    });
+
     it('`sort` 가 허용 3키 밖이면 400 `INVALID`', async () => {
       const response = await request(app.getHttpServer())
         .get(`${RESULTS}?inspectionRequestId=${requestR1Id}&sort=bogus,asc`)
@@ -400,7 +424,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(validator('GET /quality/inspection-results/{inspectionResultId}')(response.body)).toBe(true);
     });
 
-    it('⭐ DRAFT 행 — `overall_judgment_code` 가 NULL 이면 `overallJudgmentCode` 키를 생략한다(선례 054 와 같은 모양 — 문의 069+16)', async () => {
+    it('⭐ DRAFT 행 — `overall_judgment_code` 가 NULL 이면 `overallJudgmentCode` 키를 생략한다(선례 054 와 같은 모양 — 문의 085)', async () => {
       const response = await request(app.getHttpServer())
         .get(`${RESULTS}?inspectionRequestId=${requestR3Id}`)
         .set('Cookie', cookie)
@@ -411,7 +435,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.items[0]).not.toHaveProperty('overallJudgmentCode');
       // ⛔ 전체 스키마 ajv 검증은 여기서도 못 통과한다 — 계약이 required 로 적은 칸이라 키
       // 생략도 ajv 상 위반이다(ⓐ 를 골라도 결과는 같다 — 스킵은 판정과 독립적인 불가피한
-      // 결과다). 설계 미정 — 문의 069+16(054 와 같은 자리 · 묶어 답해 달라고 적는다).
+      // 결과다). 설계 미정 — 문의 085(054 와 같은 자리 · 묶어 답해 달라고 적는다).
     });
   });
 
@@ -563,6 +587,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
     const r7 = await requestOf('7', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
     requestR7Id = Number(r7.inspection_request_id);
     const r8 = await requestOf('8', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
+    const r9 = await requestOf('9', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R1 });
+    requestR9Id = Number(r9.inspection_request_id);
 
     // 결과(PR ②b) 픽스처 — 검사자 하나로 충분하다(주체 해석은 PR ③ 몫).
     const worker = await prisma.worker.create({
@@ -637,6 +663,18 @@ describe('검사 의뢰·결과 (e2e)', () => {
     resultF1Id = Number(f1.inspection_result_id);
     const f2 = await resultOf('F2', { inspectionRequestId: r8.inspection_request_id, previousResultId: f1.inspection_result_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_F2, acceptedQty: 100 });
     resultF2Id = Number(f2.inspection_result_id);
+
+    // ⭐ 리뷰 m-7 — R9: 분기 사슬(G1 의 자식이 GA·GB 둘). BFS 는 깊이 순으로 담아 GB(회차5·
+    // 얕음)가 GC(회차3·GA 의 자식이라 더 깊음)보다 먼저 담긴다 — 최종 정렬(회차 오름차순)이
+    // 없으면 [1,2,5,3] 으로 나간다.
+    const g1 = await resultOf('G1', { inspectionRequestId: r9.inspection_request_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'REJECTED', inspectedAt: INSPECTED_G, rejectedQty: 100 });
+    resultG1Id = Number(g1.inspection_result_id);
+    const ga = await resultOf('GA', { inspectionRequestId: r9.inspection_request_id, round: 2, previousResultId: g1.inspection_result_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'REJECTED', inspectedAt: INSPECTED_G, rejectedQty: 100 });
+    resultGAId = Number(ga.inspection_result_id);
+    const gb = await resultOf('GB', { inspectionRequestId: r9.inspection_request_id, round: 5, previousResultId: g1.inspection_result_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_G, acceptedQty: 100 });
+    resultGBId = Number(gb.inspection_result_id);
+    const gc = await resultOf('GC', { inspectionRequestId: r9.inspection_request_id, round: 3, previousResultId: ga.inspection_result_id, statusCode: 'CONFIRMED', overallJudgmentCode: 'ACCEPTED', inspectedAt: INSPECTED_G, acceptedQty: 100 });
+    resultGCId = Number(gc.inspection_result_id);
   }
 
   async function makeUser(): Promise<void> {

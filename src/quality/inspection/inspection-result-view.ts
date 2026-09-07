@@ -49,7 +49,7 @@ export function inspectionResultView(row: InspectionResultRow) {
     uomId: Number(row.uom_id),
     // ⚠ 계약 required 인데 DRAFT + 판정 없음(M-e ⓒ)이면 오늘 언제나 빠진다 — 물리가 nullable
     // 로 풀렸다. 선례(`material-consumption-view.ts` `terminalId` · 문의 054)와 같은 모양으로
-    // 키를 생략한다(값을 지어내면 F-6 위반). 설계 미정 — 문의 069+16(054 와 같은 자리 · 묶어 답).
+    // 키를 생략한다(값을 지어내면 F-6 위반). 설계 미정 — 문의 085(054 와 같은 자리 · 묶어 답).
     overallJudgmentCode: row.overall_judgment_code ?? undefined,
     inspectorId: Number(row.inspector_id),
     inspectedAt: row.inspected_at.toISOString(),

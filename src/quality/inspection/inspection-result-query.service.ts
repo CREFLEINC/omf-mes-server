@@ -97,6 +97,10 @@ export class InspectionResultQueryService {
         frontier.push(child.inspection_result_id);
       }
     }
+    // ⭐ 리뷰 m-7 — BFS 는 «깊이» 순이지 «회차» 순이 아니다. 한 부모에 자식이 둘(분기)이면
+    // 얕은 형제가 깊은 조카보다 회차가 커도 먼저 담긴다(예: root1→A2→B5 형제, A→C3 자식이면
+    // [1,2,5,3]으로 담긴다). §4-2 「사슬 안은 회차 순」을 지키려면 다 모은 뒤 정렬해야 한다.
+    for (const bucket of chains.values()) bucket.sort((a, b) => a.inspection_round - b.inspection_round);
     return chains;
   }
 

@@ -63,7 +63,7 @@ describe('InspectionResult 뷰', () => {
     const view = inspectionResultView(resultRow({ status_code: 'DRAFT', overall_judgment_code: null, confirmed_at: null }));
 
     // 계약 required 인데 물리는 M-e ⓒ로 nullable 이다 — 값을 지어내지 않고(F-6) 선례
-    // (material-consumption-view.ts `terminalId`)처럼 키를 생략한다(문의 069+16).
+    // (material-consumption-view.ts `terminalId`)처럼 키를 생략한다(문의 085).
     expect(view).not.toHaveProperty('overallJudgmentCode');
     expect(view.statusCode).toBe('DRAFT');
     expect(view).not.toHaveProperty('confirmedAt');
