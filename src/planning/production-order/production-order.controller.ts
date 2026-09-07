@@ -1,17 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  ParseIntPipe,
-  Post,
-  Query,
-  Req,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
@@ -92,9 +79,7 @@ export class ProductionOrderController {
 /** If-Match 가 필수라 가드가 이미 막았다 — 여기 오면 값이 있다(형제 선례). */
 function versionOf(request: Request): number {
   const version = ifMatchVersion(request);
-  if (version === undefined) {
-    throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
-  }
+  if (version === undefined) throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
   return version;
 }
 
