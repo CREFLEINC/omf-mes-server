@@ -584,8 +584,10 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(validator('POST /quality/inspection-results', 201)(response.body)).toBe(true);
       // ⚠ **이 0 은 「옳아서」가 아니라 「아직 안 붙여서」다.** PR ④(#316)는 `:confirm` 쪽에만
       //   부수효과를 세웠고, 계약은 확정 경로 둘의 부수효과가 같아야 한다고 적었다
-      //   (`x-internal-note`). ⭐ **고치는 PR 은 이 단언을 뒤집는다** — LOT 상태·`lot_status_event`
-      //   1행·보류 해제를 `:confirm` 갈래와 같은 모양으로 단언한다. 정본 §12-1 ⓑ.
+      //   (`x-internal-note`). ⭐ **고치는 PR 은 이 자리의 픽스처를 «LOT 이 붙은 의뢰»로 갈고**
+      //   단언을 뒤집는다 — LOT 상태·`lot_status_event` 1행·보류 해제를 `:confirm` 갈래와 같은
+      //   모양으로 단언한다. ⛔ 픽스처를 그대로 두고 부수효과만 붙이면 여기는 «여전히 0» 이라
+      //   초록인데, 그것은 고쳐졌다는 뜻이 아니다. 정본 §12-1 ⓑ.
       //   ⛔ 이 단언을 「전이가 없다」의 근거로 인용하지 마라 — 이 픽스처는 PQC·`lot_id=null`
       //   ·`rejectedQty=0` 이라 §3-3·§3-4 를 정확히 구현해도 0 이다(반증 불가).
       expect(await prisma.lot_status_event.count({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } })).toBe(0);
