@@ -630,6 +630,8 @@ I-30 확정 범위·검증은 `slices/I-30.md` R-1~R-14가 정본이다. 원인 
 
 위 PR 수는 초기 S 단위 초안이다. 점검3건은 현재 I-30으로 분리됐으며 inspection.status_code NOT NULL 완화와 required/판정 enum 사전조회를 A15에 포함한다. 측정값은 Decimal(20,6)에 무손실로 담을 수 있는 범위만 저장하며 그 밖은400 RANGE다(097). 나머지 비가동·툴/계측기 작업은 각각 I-32·I-33 재수립을 따른다.
 
+I-32 재수립(`slices/I-32.md` R1~R14): 목록·상세·생성·수정4건 진행, 종료 발생시각 입력 경로 없는close와 정상 계획구간/완료보전 정의 없는summary2건 유보(108~112). 물리는 remarks/recorded_by_worker_no/version_no 추가3·downtime_type_code NOT NULL 완화1, 종료사번은 조건부다. 조회/잠금/쓰기/재생의 µs를 epoch문자열/BigInt·정확한UTC 바인딩으로 보존한다. 단말 미래 인라인은 화면 소관, server now 거부0. 이미닫힘close400/완료고장새연결PUT400은 구체 문언 우선이며 신규연결POST422와 구분한다. 공장 minor·실제sessionΣ·비가동union은 확정, summary의 가장자리와 두 남는 본길을 구별한다. 코드·마이그 적용0.
+
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
 | `GET /maintenance/calibrations` | — | — | — | — |

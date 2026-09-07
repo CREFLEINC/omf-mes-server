@@ -66,7 +66,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U32 | 재고 재등록 | 1 | W-04-03 · W-04-11 · W-03-02 | U8 · U14 · U28 | 없음 | 불필요 | ○ 복합 | ○ | 1 |
 | U33 | 설비 점검 · 고장 | 9(진행8·보류1) | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | A15 nullable8추가·2완화 | — | ○ 고장 start, 완료 보류 | 실행8 + 조건부 |
 | U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33 | 없음 | ○ maintenance_result.version_no | ○ 예비품 출고 | ○ 지시 | 3 |
-| U35 | 비가동 | 6 | P-05-02 · W-05-08 | U33 · U22 | 없음 | ○ downtime.version_no | — | — | 2 |
+| U35 | 비가동 | 6(진행4·보류2) | P-05-02 · W-05-08 | I-30 날짜helper·U22 | 없음 | ○ remarks/최초사번/version 추가3·type완화1 | — | — | µs준비+조회/쓰기분리 |
 | U36 | 툴 사용실적 | 3 | P-05-01 | — | 없음 | 불필요 | — | — | 1 |
 | U37 | 계측기 | 4 | W-05-10 · W-05-11 | — | 없음 | ○ calibration 6칸 | — | — | 2 |
 | U38 | 수집 채널 | 5 | W-05-07 | — | **collection_channel_observation** | ○ | — | — | 2 |
@@ -486,11 +486,13 @@ I-30 재수립 R-1~R-14가 구현 정본이다. 연속 편집은 상세 GET→�
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
 | `GET /maintenance/downtimes` | 비가동 목록 | P-05-02 | - |
-| `GET /maintenance/downtimes/{downtimeId}` | 비가동 한 건 | — | - |
+| `GET /maintenance/downtimes/{downtimeId}` | 비가동 한 건 | — | 응답 버전 ETag |
 | `POST /maintenance/downtimes` | 비가동 등록 | — | 멱등, 사번 |
-| `PUT /maintenance/downtimes/{downtimeId}` | 비가동 수정 | — | 멱등, ETag |
-| `POST /maintenance/downtimes/{downtimeId}:close` | 비가동 지금 종료 | P-05-02 | 멱등, ETag, 사번 |
+| `PUT /maintenance/downtimes/{downtimeId}` | 비가동 수정 | — | 멱등, If-Match 필수 |
+| `POST /maintenance/downtimes/{downtimeId}:close` | 비가동 지금 종료 — 시각 입력 경로 해소 전 유보 | P-05-02 | 멱등, If-Match 선택, 사번 |
 | `GET /maintenance/downtimes/summary` | 비가동 집계 | W-05-08 | - |
+
+I-32 재수립 R1~R14·문의108~112가 정본이다. 입력/수정의 µs는 유지하고 미래 인라인은 단말 로컬 시계로 검사한다. 닫힌 구간 재개(null)는400, 과거 닫힌 입력·겹침·0길이는 허용한다. openOnly=true만 기간 생략 예외이며 무기간은 timezone 평가0. summary는 정상 계획구간/적용 산식과 완료보전 정의가 남아 유보하며 optional을 영구 생략하지 않는다. 경미정지는 공장정책으로 충분·미설정만5·actual포함/일반사유와별도줄, 폐지사유는 미분류+원본code다. 열린세션/교차기간/소수분 등은 특정조건 문제로 별도판정한다. ‘종료 버튼/집계 화면 완성’과 CRUD4건 구현을 구분한다.
 
 #### U36 툴 사용실적 (P-05-01) — 3건
 
