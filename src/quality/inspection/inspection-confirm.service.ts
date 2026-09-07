@@ -16,6 +16,18 @@ export interface InspectionResultConfirm {
   remarks?: string;
 }
 
+/** `applyConfirmEffects()` 의 입력 — 확정 경로 둘이 각자 모아 «같은 모양»으로 넘긴다. */
+export interface ConfirmEffectsInput {
+  inspectionResultId: bigint;
+  inspectionRequestId: bigint;
+  judgment: string;
+  rejectedQty: number;
+  /** `lot_status_event.changed_by` 가 NOT NULL — 계정 세션이 유일한 원천이다. */
+  appUserId: number;
+  /** `confirmed_at`·`lot_status_event.changed_at`·`lot_hold.released_at` 이 한 시각을 나눠 쓴다. */
+  changedAt: Date;
+}
+
 const VERSION_CONFLICT = 'VERSION_CONFLICT';
 const REQUEST_COMPLETED = 'COMPLETED';
 const JUDGMENT_GROUP = 'INSPECTION_RESULT_OVERALL_JUDGMENT';
@@ -56,6 +68,8 @@ interface LockedResult {
 /**
  * ⭐ 검사 판정 확정(I-19 PR ④) — 한 트랜잭션 안에서 **확정 · LOT 품질 축 전이 · 보류 해제 ·
  * C14 전개**가 함께 일어난다(I-19.md §3-1).
+ * ⭐ 그중 **부수효과 절반은 `applyConfirmEffects()` 로 떼 두었다** — `POST …/inspection-results`
+ * `statusCode=CONFIRMED`(오프라인 큐)가 같은 함수를 부른다(§12-1 ⓑ 상환).
  *
  * ⛔ 원장을 지나지 않는다 · ⛔ `inventory_balance.quality_status_code` 를 안 건드린다(§9-1 #2) ·
  * ⛔ 관리자 알람을 내지 않는다(알림은 I-28) · ⛔ 다른 도메인 service 호출 0 — LOT 세 표는
@@ -105,11 +119,6 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
-      const action = ACTION_BY_JUDGMENT[judgment as string];
-      if (action === undefined) {
-        throw one(field('overallJudgmentCode', ERROR_CODE.INVALID, '값 목록 밖의 종합 판정입니다.'));
-      }
-
       const changedAt = new Date();
       await tx.inspection_result.update({
         where: { inspection_result_id: resultId },
@@ -122,19 +131,42 @@ export class InspectionConfirmService {
           version_no: { increment: 1 },
         },
       });
-      const request = await this.completeRequest(tx, result.inspection_request_id, appUserId);
-
-      const moveContext: LotQualityMoveContext = {
-        changedBy: BigInt(appUserId),
+      await this.applyConfirmEffects(tx, {
+        inspectionResultId: resultId,
+        inspectionRequestId: result.inspection_request_id,
+        judgment: judgment as string,
+        rejectedQty: Number(result.rejected_qty),
+        appUserId,
         changedAt,
-        sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
-        sourceDocumentId: resultId,
-      };
-      await this.moveTargetLot(tx, request, judgment as string, action, moveContext);
-      await this.spreadC14(tx, request, Number(result.rejected_qty), moveContext);
+      });
 
       return { view: await reread(tx, resultId), versionNo: result.version_no + 1 };
     });
+  }
+
+  /**
+   * ⭐ 확정의 부수효과 — **확정 경로 «둘»이 이 한 함수를 부른다.** `:confirm`(관리웹·온라인)과
+   * `POST /quality/inspection-results` `statusCode=CONFIRMED`(오프라인 큐 — 서버가 만든
+   * `inspectionResultId` 를 몰라 `:confirm` 을 못 부른다 · `plan-uiux.md:1112` 「큐는 언제나
+   * 확정으로 온다」)은 계약 `x-internal-note` 가 「**부수 효과가 같아야 한다**」고 못 박은 짝이다.
+   * ⛔ 두 자리에 갈라 적지 않는다 — 갈리면 큐로 들어온 확정만 조용히 LOT 을 안 옮긴다(그것이
+   * I-19 §12-1 ⓑ 가 남긴 부채였다).
+   * ⛔ 호출자가 연 `tx` 안에서만 돈다 — 결과 행 쓰기와 같은 트랜잭션이어야 부분 확정이 없다.
+   */
+  async applyConfirmEffects(tx: Tx, input: ConfirmEffectsInput): Promise<void> {
+    const action = ACTION_BY_JUDGMENT[input.judgment];
+    if (action === undefined) {
+      throw one(field('overallJudgmentCode', ERROR_CODE.INVALID, '값 목록 밖의 종합 판정입니다.'));
+    }
+    const request = await this.completeRequest(tx, input.inspectionRequestId, input.appUserId);
+    const moveContext: LotQualityMoveContext = {
+      changedBy: BigInt(input.appUserId),
+      changedAt: input.changedAt,
+      sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
+      sourceDocumentId: input.inspectionResultId,
+    };
+    await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
+    await this.spreadC14(tx, request, input.rejectedQty, moveContext);
   }
 
   /**

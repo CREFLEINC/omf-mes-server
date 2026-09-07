@@ -572,9 +572,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'overallJudgmentCode', code: 'REQUIRED' }));
     });
 
-    it('`POST` `statusCode=CONFIRMED` 가 201 이고 `confirmed_at` 이 함께 찬다', async () => {
+    it('⭐ `POST` `statusCode=CONFIRMED` 가 201 이고 `:confirm` 과 «같은» 부수효과를 낸다(§12-1 ⓑ 상환)', async () => {
+      // ⭐ 픽스처가 «LOT 이 붙은 의뢰»다 — 옛 픽스처(PQC·`lot_id=null`·`rejectedQty=0`)에서는
+      //   §3-3·§3-4 를 정확히 구현해도 이력이 0 이라 「안 붙였다」와 「붙였다」가 갈리지 않았다.
+      const lotId = await newLot('INSPECTION_PENDING', { holds: [INCOMING_HOLD] });
+      const inspectionRequestId = await newConfirmRequest({ lotId });
       const response = await post(
-        draftBody(await newRequest(), { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED' }),
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED' }),
         { workerNo: WORKER_HEADER },
       ).expect(201);
 
@@ -582,15 +586,29 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.confirmedAt).toEqual(expect.any(String));
       // 확정 응답은 계약 `InspectionResult` 를 그대로 통과한다(판정 칸이 required 라 DRAFT 는 못 한다).
       expect(validator('POST /quality/inspection-results', 201)(response.body)).toBe(true);
-      // ⚠ **이 0 은 「옳아서」가 아니라 「아직 안 붙여서」다.** PR ④(#316)는 `:confirm` 쪽에만
-      //   부수효과를 세웠고, 계약은 확정 경로 둘의 부수효과가 같아야 한다고 적었다
-      //   (`x-internal-note`). ⭐ **고치는 PR 은 이 자리의 픽스처를 «LOT 이 붙은 의뢰»로 갈고**
-      //   단언을 뒤집는다 — LOT 상태·`lot_status_event` 1행·보류 해제를 `:confirm` 갈래와 같은
-      //   모양으로 단언한다. ⛔ 픽스처를 그대로 두고 부수효과만 붙이면 여기는 «여전히 0» 이라
-      //   초록인데, 그것은 고쳐졌다는 뜻이 아니다. 정본 §12-1 ⓑ.
-      //   ⛔ 이 단언을 「전이가 없다」의 근거로 인용하지 마라 — 이 픽스처는 PQC·`lot_id=null`
-      //   ·`rejectedQty=0` 이라 §3-3·§3-4 를 정확히 구현해도 0 이다(반증 불가).
-      expect(await prisma.lot_status_event.count({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } })).toBe(0);
+
+      // ⭐ 확정 경로는 **둘**이고 계약 `x-internal-note` 가 「부수 효과가 같아야 한다」고 못 박았다.
+      //   오프라인 큐는 서버가 만든 `inspectionResultId` 를 몰라 `:confirm` 을 못 부르므로 이
+      //   경로가 큐의 «유일한» 확정이다(`plan-uiux.md:1112`). 아래 넷은 `:confirm` 합격 갈래의
+      //   단언과 «같은 모양»이다 — 두 경로가 갈리면 여기가 깨진다.
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'NORMAL', version_no: 2 });
+      const events = await eventsOf(lotId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        previous_status_code: 'INSPECTION_PENDING',
+        new_status_code: 'NORMAL',
+        transition_code: 'C4',
+        source_document_type_code: 'INSPECTION_RESULT',
+        source_document_id: BigInt(response.body.inspectionResultId),
+      });
+      const holds = await holdsOf(lotId);
+      expect(holds[0].released_at).not.toBeNull();
+      expect(holds[0].release_reason_code).toBe(CONFIRM_RELEASE_REASON);
+      const requestRow = await prisma.inspection_request.findUniqueOrThrow({
+        where: { inspection_request_id: BigInt(inspectionRequestId) },
+        select: { status_code: true },
+      });
+      expect(requestRow.status_code).toBe('COMPLETED');
     });
 
     it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
