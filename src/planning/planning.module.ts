@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { DocumentStateModule } from '../core/document-state';
+import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RoutingOperationService } from './routing/routing-operation.service';
 import { BomController } from './bom/bom.controller';
@@ -19,7 +20,7 @@ import { RoutingService } from './routing/routing.service';
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
-  imports: [PrismaModule, IdempotencyModule, DocumentStateModule],
+  imports: [PrismaModule, IdempotencyModule, DocumentStateModule, NumberingModule],
   controllers: [RoutingController, BomController, ProductionPlanController, ProductionOrderController],
   providers: [
     RoutingService,

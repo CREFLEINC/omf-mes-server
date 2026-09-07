@@ -12,7 +12,7 @@ export function productionPlanView(row: ProductionPlanRow) {
     productionPlanId: Number(row.production_plan_id),
     productionOrderId: Number(row.production_order_id),
     planNo: row.plan_no,
-    planDate: toDateString(row.plan_date),
+    planDate: toDateString(row.plan_date) as string,
     plannedQty: Number(row.planned_qty),
     uomId: Number(row.uom_id),
     bomId: Number(row.bom_id),
