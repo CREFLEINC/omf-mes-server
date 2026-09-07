@@ -35,6 +35,8 @@ export interface OutboxEnqueueInput {
  * `message_key` 규약 — `{인터페이스}:{문서번호}`.
  * ⭐ **버전을 안 붙인다** — 재마감이 금지(R83)이고 `trg_work_order_closed_immutable` 이
  * 물리로 막으므로 한 W/O 는 평생 한 번만 적재된다.
+ * ⚠ 키 규약이 두 갈래다 — 평생 1회 송신(I-6·I-23)은 문서번호까지, 되풀이 가능한 요청
+ * (I-24 `:resync`)은 호출부에서 멱등키를 덧붙인다.
  */
 export function outboxMessageKey(interfaceCode: string, documentNo: string): string {
   return `${interfaceCode}:${documentNo}`;

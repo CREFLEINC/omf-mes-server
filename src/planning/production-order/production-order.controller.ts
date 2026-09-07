@@ -23,13 +23,15 @@ import type { PagedResponse } from '../../common/pagination';
 import { AcknowledgeService, ProductionOrderAcknowledge } from './acknowledge.service';
 import { ProductionOrderDetailQuery, ProductionOrderListQuery, ProductionOrderService } from './production-order.service';
 import { ProductionOrderView } from './production-order-view';
+import { ResyncService } from './resync.service';
 
-/** P/O 조회 2건(PR ①) + `:acknowledge`(PR ④). */
+/** P/O 조회 2건(PR ①) + `:acknowledge`·`:resync`(PR ④). */
 @Controller('planning/production-orders')
 export class ProductionOrderController {
   constructor(
     private readonly queries: ProductionOrderService,
     private readonly acknowledges: AcknowledgeService,
+    private readonly resyncs: ResyncService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -68,6 +70,21 @@ export class ProductionOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
       return (await this.queries.detail(productionOrderId, {})).view;
+    });
+  }
+
+  /** ⭐ 202 에 본문이 없다 — 계약이 content 를 주지 않았다. 결과는 연계 수신으로 온다. */
+  @Post(':productionOrderId\\:resync')
+  @Contract('POST /planning/production-orders/{productionOrderId}:resync')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async resync(
+    @Req() request: Request,
+    @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
+  ): Promise<void> {
+    await runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, async () => {
+      // 멱등키가 `message_key` 의 뒷자리다 — 가드가 형식을 이미 강제했다(§5-6 · R-11).
+      await this.resyncs.resync(productionOrderId, String(request.headers['idempotency-key']));
+      return undefined;
     });
   }
 }
