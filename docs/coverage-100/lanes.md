@@ -13,7 +13,10 @@
 | **C** | 물류 · 재고 · 출하 | I-13 · I-14 → I-15 · I-16 · I-17 · I-22 → I-23 · I-35 | 45 | 새 세션 |
 | — | **I-29 통합 대시보드 · M2~M4 체인 e2e** | 전부 끝난 뒤 | 1+ | **A 가 맡는다** |
 
-세 축은 서로 **선행 관계가 없다**(전부 이미 끝난 I-1~I-12·I-24 에 매달려 있다). 레인 안에서만 순서를 지킨다.
+첫 슬라이스 **A의 I-19 · B의 I-30 · C의 I-13 은 병렬 착수 가능**하다. 레인 안의 선행 순서를 지키되, 다음 **레인 간 의존성**도 지킨다.
+
+- **A의 I-19 품질 전이 코어 → C의 I-23 재고 재등록**: C는 재등록 구현 전에 I-19의 품질 전이 코어 PR이 `main`에 병합됐는지 확인하고 자기 브랜치에 반영한다. I-23은 그 전이표를 재사용한다(`plan-integration.md` §2 · §I-23).
+- 선행 코어가 아직 병합되지 않았으면 C는 다른 선행 충족 슬라이스를 진행한다. 전이표를 별도로 복제하지 않으며, 추가 전이가 필요하면 §1-4의 A 소유 규칙에 따라 먼저 사용자에게 알린다.
 
 ## 1. 겹치지 않게 미리 나눠 둔 것
 
@@ -68,7 +71,18 @@
 | `src/common/permissions/manual-permissions.ts` | 공용 | 각자 자기 오퍼레이션 줄만. **단독 커밋**으로 내고 바로 병합해 충돌 창을 줄인다 |
 | `prisma/schema.prisma` | 공용 | 각자 자기 모델 블록만 만진다 — 대부분 자동 병합된다 |
 | `docs/coverage-100/plan.md` | 공용 | 자기 슬라이스 행만 |
-| 도메인 모듈(`quality.module.ts`·`equipment.module.ts`·`logistics.module.ts` …) | 축별 | 서로 안 겹친다 |
+| `src/app/app-domain.module.ts` | **공용(A·B)** | A의 첨부·대시보드와 B의 발행·알림 등록이 겹친다 — 아래 공용 등록부 규칙 적용 |
+| `src/trace/trace.module.ts` | **공용(A·B)** | A의 LOT 기능과 B의 시리얼 등록이 겹친다 — 아래 공용 등록부 규칙 적용 |
+| 그 밖의 도메인 모듈(`quality.module.ts`·`logistics.module.ts` …) | 담당 레인 | 파일별 변경 주체를 확인한다. 다른 레인의 등록도 들어오면 아래 공용 등록부 규칙 적용 |
+
+#### 공용 모듈 등록부 변경 규칙
+
+**기능 구현은 병렬로 진행하되, 공용 등록부의 병합은 순차로 진행한다.**
+
+1. 각 레인은 **자기 기능의 import·`@Module`의 imports/controllers/providers/exports 등록만** 수정한다. 파일 전체 정렬·구조 변경·다른 레인의 등록 삭제는 하지 않는다.
+2. 먼저 준비된 PR부터 각 소유 레인이 병합한다. 후속 PR은 **병합 직전에 최신 `origin/main`을 merge**하고 충돌을 해소한 뒤 게이트를 다시 탄다(§2). 검증 뒤 공용 등록부가 다시 변경되면 재동기화·재검증한다.
+3. 자동 병합됐어도 **양쪽 기능의 등록이 모두 남았는지, 누락·중복이 없는지** diff를 대조한다. 애플리케이션 모듈 구성으로 부팅되는 영향 범위의 파일 단위 E2E를 실행해 의존성 주입과 라우트 등록을 확인한다. 타입 검사만으로 통과 처리하지 않는다.
+4. 충돌 해소에 다른 레인의 기능 코드 수정이 필요하면 임의로 고치지 않고 **사용자에게 알려 해당 레인과 조율**한다. PR 소유는 §1-3을 그대로 따른다.
 
 ### 1-5. 커버리지 숫자
 
@@ -84,7 +98,12 @@ node_modules/.bin/jest contract-coverage    # 콘솔에 「계약 구현 커버�
 2. 남의 레인 마이그가 딸려 오면 `node_modules/.bin/prisma migrate deploy` 로 자기 DB 를 따라잡힌 뒤 `prisma generate`.
 3. 드리프트 0 확인 — `node_modules/.bin/prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma` 가 **`No difference detected`**. 종료코드로 자동 판정하려면 `--exit-code` 를 붙인다(빈 diff 0 · 오류 1 · 차이 있으면 2).
 4. 병합은 **merge commit** — `gh pr merge <N> --merge`.
-5. ⭐ **브랜치는 병합 성공을 확인한 «뒤에» 따로 지운다.** ⛔ `gh pr merge --delete-branch` 를 쓰지 않는다 — 지워진 브랜치를 base 로 둔 **자식 PR 이 재지정되지 않고 CLOSED 된다**(이 저장소에서 실제로 났다 · #153 병합 → #154 닫힘. 닫힌 PR 은 base 변경도 reopen 도 안 돼 새 PR 을 열어야 했다). 순서: `gh pr merge <N> --merge` → 병합 확인 → 스택이면 `gh pr edit <N+1> --base main` → `git push origin --delete <브랜치>`. 실수로 지웠으면 `refs/pull/<N>/head` 에서 되살린다.
+5. ⭐ **브랜치는 병합 성공을 확인한 «뒤에» 따로 지운다.** ⛔ `gh pr merge --delete-branch` 를 쓰지 않는다 — 지워진 브랜치를 base 로 둔 **자식 PR 이 재지정되지 않고 CLOSED 된다**(이 저장소에서 실제로 났다 · #153 병합 → #154 닫힘. 닫힌 PR 은 base 변경도 reopen 도 안 돼 새 PR 을 열어야 했다).
+
+   1. `gh pr view <병합 PR 번호> --json state,mergedAt` 로 **`state=MERGED`** 를 확인한다. 명령 성공이나 병합 예약만으로 브랜치를 지우지 않는다.
+   2. 그 브랜치를 base로 둔 열린 자식 PR을 확인한다. §1-3의 소유 확인을 거쳐 **실제로 기록한 각 자식 PR 번호**로 `gh pr edit <자식 PR 번호> --base main` 을 실행하고, `gh pr view <자식 PR 번호> --json state,baseRefName` 으로 열린 상태와 `baseRefName=main` 을 확인한다. 번호를 `N+1`로 추정하지 않는다. 다른 레인의 자식 PR이면 사용자에게 알리고, 해당 레인이 base를 변경할 때까지 브랜치 삭제만 보류한다.
+   3. 열린 자식 PR이 더 이상 해당 브랜치를 base로 쓰지 않는 것을 확인한 뒤 `git push origin --delete <병합된 브랜치>` 로 삭제한다. 실수로 지웠으면 `refs/pull/<병합 PR 번호>/head` 에서 되살린다.
+
    ⚠ 「`gh pr merge && git branch -D …` 는 실패해도 지워진다」고 적었던 옛 문장은 **틀렸다** — `&&` 는 앞이 성공해야 뒤를 돈다(레인 C 지적, 2026-09-07). 위험한 것은 `&&` 가 아니라 `--delete-branch` 다.
 
 ## 3. 서로에게 알려야 하는 순간 (사용자를 통해)

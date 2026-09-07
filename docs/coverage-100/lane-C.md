@@ -27,10 +27,13 @@
 | 4 | **I-16** 취급 단위·포장·재구성 | 7 | I-12(끝남) — 언제든 | 없음 | opus | 3 |
 | 5 | **I-17** 재생재 등록 | 1 | I-3(끝남) — 언제든 | A5 — `logistics.recycle_entry` 2칸(+ `item.mes_category_code` 부재는 #64 · 슬라이스에서 판정) | sonnet | 1 |
 | 6 | **I-22** 출하지시·작업지시·제품 피킹 | 9 | I-8(끝남) — 언제든 | A13 — `logistics.shipment_request.sales_order_id?` | opus | 3 |
-| 7 | **I-23** 출하·확정·취소 + 재등록 | 7 | **I-22** · I-5(끝남) | A14·M-f·U-I — `logistics.shipment` 4칸 | opus(**ERP 아웃박스 둘째 사용처**) | 4 |
+| 7 | **I-23** 출하·확정·취소 + 재등록 | 7 | **I-22** · I-5(끝남) · **A의 I-19 품질 전이 코어(재등록)** | A14·M-f·U-I — `logistics.shipment` 4칸 | opus(**ERP 아웃박스 둘째 사용처**) | 4 |
 | 8 | **I-35** 변경 이력·예비품 엑셀 | 2 | 없음 — 언제든 | audit jsonb 규약 | sonnet | 2 |
 
 **권장 순서**: I-13 ∥ I-14 → I-15 ∥ I-16 → I-22 → I-23 → I-17 ∥ I-35.
+
+⚠ **I-23 재등록 구현 전에는 A의 I-19 품질 전이 코어 PR이 `main`에 병합됐는지 확인하고 동기화한다.** 레인 간 선행 조건과 대기 중 대응은 `lanes.md` §0을 따른다. I-13·I-14 등 첫 슬라이스는 이 의존성과 무관하게 시작할 수 있다.
+
 계약 파일은 셋이다 — `contracts/logistics-01자재창고.json`(I-13~I-17) · `shipment-04제품출하.json`(I-22·I-23) · **`mdm-기준정보.json`**(I-35 두 건). ⛔ `app-공통.json` 에는 네 배정이 없다.
 배정의 정본은 **`docs/coverage-100/assignment.tsv`** 다 — 시작 전에 `awk -F'\t' '$1=="I-13"' docs/coverage-100/assignment.tsv` 로 자기 슬라이스를 뽑아 **건수와 오퍼레이션을 대조**한다. 이 표의 건수와 어긋나면 `assignment.tsv` 가 이긴다.
 ⛔ **`plan.md` §6 의 「건너뜀」 목록을 먼저 확인**한다 — 네 축에도 건너뛰는 오퍼레이션이 있을 수 있고, 그건 아무도 구현하지 않는다.
@@ -89,6 +92,8 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
 | 5 | `docs/coverage-100/plan-api.md` · `plan-uiux.md` · `plan-integration.md` | 3관점 계획서. 자기 슬라이스 절을 찾아 읽는다 |
 | 6 | **`docs/coverage-100/slices/I-24.md`** | ⭐ **개별 계획안의 본보기.** 형식·깊이를 이대로 맞춘다. 특히 맨 위 **§0-재수립 R-n 표**와 맨 아래 **§12 마감표** |
 | 7 | `docs/server-architecture.md` | 코어 6건·모듈 배치. 도메인 구현 전 필독 |
+
+⭐ **공용 모듈 등록부는 `lanes.md` §1-4를 따른다.** C도 모듈 등록이 다른 레인과 겹치면 같은 규칙을 적용하며, 다른 레인의 등록·기능을 임의로 변경하지 않는다.
 
 ## 5. 슬라이스 한 바퀴 (이 절차를 슬라이스마다 반복한다)
 

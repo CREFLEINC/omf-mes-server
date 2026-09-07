@@ -89,6 +89,8 @@ FORCE_COLOR=0 node_modules/.bin/jest --config test/jest-e2e.json --no-colors --r
 | 6 | **`docs/coverage-100/slices/I-24.md`** | ⭐ **개별 계획안의 본보기.** 형식·깊이를 이대로 맞춘다. 특히 맨 위 **§0-재수립 R-n 표**와 맨 아래 **§12 마감표** |
 | 7 | `docs/server-architecture.md` | 코어 6건·모듈 배치. 도메인 구현 전 필독 |
 
+⭐ **공용 모듈 등록부는 `lanes.md` §1-4를 따른다.** `app-domain.module.ts`·`trace.module.ts`는 A와 겹친다. 자기 등록만 수정하고, 후속 PR은 최신 main 반영 뒤 양쪽 등록과 의존성 주입·라우트를 검증한다.
+
 ## 5. 슬라이스 한 바퀴 (이 절차를 슬라이스마다 반복한다)
 
 ### ⑴ 개별 계획안

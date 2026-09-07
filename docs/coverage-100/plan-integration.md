@@ -184,7 +184,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-20 | LOT 상태·보류 | 10 | I-19 | 있음 | ✕ | ✕ | ⭕ | 3 |
 | I-21 | 부적합·처분·특채 | 11 | I-20 | 있음 | ✕ | ✕(폐기는 I-4 재사용) | ⭕ | 3 |
 | I-22 | 출하지시·작업지시·제품 피킹 | 9 | I-8 | 있음 | ✕ | ⭐ 예약 | ⭕ | 3 |
-| I-23 | 출하·확정·취소 + 재등록 | 7 | I-22·I-5 | 있음(재등록은 `stock_transfer` 재사용) | ⚠ 긴급 출하 사유(§I-41) | ⭐ | ⭕ | 4 |
+| I-23 | 출하·확정·취소 + 재등록 | 7 | I-22·I-5 · **I-19 품질 전이 코어(재등록, A)** | 있음(재등록은 `stock_transfer` 재사용) | ⚠ 긴급 출하 사유(§I-41) | ⭐ | ⭕ | 4 |
 | I-24 | 생산 계획·생산오더 | 10 | I-6 | 있음 | ⭕(A11 두 칸 — I-24 R-1) | ✕ | ⭕ | 4 |
 | I-25 | 공정 인계·수리 왕복 | 6 | I-7 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-26 | 제품 개체 발번 | 2 | I-7 | 있음 | ✕ | ✕ | ✕ | 1 |
@@ -398,6 +398,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-23 · 출하 — 처리·확정·취소 + 재고 재등록 — 7건
 
+**레인 간 선행**: 재등록은 §2의 LOT 품질 전이표를 재사용한다. **A의 I-19 품질 전이 코어 PR이 `main`에 병합되고 C가 동기화한 뒤 재등록을 구현한다**(`lanes.md` §0). 선행 코어가 없으면 별도 전이표를 만들지 않고 다른 선행 충족 슬라이스를 진행한다.
 **체인 마디**: ㉘ — **재고가 마지막으로 나가는 자리.** 그리고 반품→재등록이 체인을 되감는 자리.
 **원장**: ⭐ `POST /logistics/shipments` 가 서버 내부에서 `goods_issue` 를 만들고 전기한다 — **I-4 의 서비스를 도메인 간 호출로 부르지 않는다**(아키텍처 「도메인이 다른 도메인의 service 를 부르지 않는다」). 공유가 필요하면 코어다 → `postIssue()` 를 `core/` 로 올릴지, 아니면 shipment 가 `posting.post()` 를 직접 부르고 `goods_issue` 행만 자기가 만들지가 갈림길.
 → **§2 2단계 기준 5「새 개념 수가 적은 쪽」** → **shipment 가 `posting.post()` 를 직접 부르고 `goods_issue` 를 만든다.** 새 코어를 만들지 않는다. 대신 `goods_issue` 를 만드는 «데이터 모양»은 I-4 의 타입을 재사용한다.
@@ -582,7 +583,7 @@ M1 체인 e2e 하나:  P/O 등록·승인 → 입하 → 입고(기존) → 적�
 |---|---|---|
 | **I-1 ∥ I-30** | `src/app/approval/` ∥ `src/maintenance/inspection·breakdown/` | 설비는 승인·원장·채번을 하나도 안 쓴다. 선행이 없다 |
 | **I-2 ∥ I-30/I-32** | `src/logistics/purchase-order/` ∥ `src/maintenance/` | 채번 코어를 설비가 쓰지 않는다(고장·비가동에 번호가 없다) |
-| **I-3 ∥ I-12** | `src/logistics/inbound-receipt/` ∥ `src/logistics/putaway/` | 적치는 **이미 선 입고**만 필요하다. 다만 둘 다 `logistics.module.ts` 를 건드린다 — **모듈 등록 줄만 충돌**하므로 한쪽이 먼저 머지되면 재베이스 1~2줄(I-3 은 `LotRegistryModule` import 가 하나 더 — 재수립 R-1) |
+| **I-3 ∥ I-12** | `src/logistics/inbound-receipt/` ∥ `src/logistics/putaway/` | 적치는 **이미 선 입고**만 필요하다. 다만 둘 다 `logistics.module.ts` 를 건드린다 — 한쪽이 먼저 병합되면 **`origin/main`을 merge해 모듈 등록 줄의 충돌을 해소**하고 게이트를 다시 탄다(`lanes.md` §2 · I-3 은 `LotRegistryModule` import 가 하나 더 — 재수립 R-1) |
 | **I-6 ∥ I-19** | `src/production/work-order/` ∥ `src/quality/inspection/` | ⚠ I-19 가 실적을 시드로 필요로 하므로 I-7 뒤. I-6 과는 겹치지 않는다 |
 | **I-11 ∥ I-13** | `src/production/work-session/` ∥ `src/logistics/stock-transfer/` | 세션은 원장을 안 쓰고, 이동은 생산을 안 본다 |
 | **I-27 ∥ I-28** | `src/app/document-issue/` ∥ `src/app/notification/` | 둘 다 `app-domain.module.ts` 한 줄만 겹친다 |
