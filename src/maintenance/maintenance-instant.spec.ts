@@ -80,6 +80,7 @@ describe('maintenance instant', () => {
     expect(maintenanceInstantFromEpoch(epoch).utcIso).toBe(iso);
   });
 
+  // 설계 미정 — 문의 109: 윤초를 익일로 바꾸지 않는 물리 표현 경계.
   it.each(['2016-12-31T23:59:60Z', '2016-12-31T23:59:60.1Z'])(
     'Ajv가 허용하는 윤초 %s는 익일로 접지 않고 RANGE다',
     (value) => {
@@ -88,6 +89,7 @@ describe('maintenance instant', () => {
     },
   );
 
+  // 설계 미정 — 문의 109: 마이크로초 미만의 비영 정밀도를 조용히 버리지 않는다.
   it.each([
     '2026-09-07T00:00:00.1234561Z',
     '2026-09-07T00:00:00.0000000001Z',
@@ -106,6 +108,7 @@ describe('maintenance instant', () => {
     expectInputError(value, ERROR_CODE.INVALID, 'endedAt');
   });
 
+  // 설계 미정 — 문의 109: UTC 응답 연도 표현 한계의 입력 오류.
   it.each([
     '0000-01-01T00:00:00+00:01',
     '9999-12-31T23:59:59.999999-00:01',
@@ -114,6 +117,7 @@ describe('maintenance instant', () => {
     expectInputError(value, ERROR_CODE.RANGE);
   });
 
+  // 설계 미정 — 문의 109: 단말 시계 검사를 서버 수신시각 검사로 대체하지 않는다.
   it('서버 현재시각과 비교하지 않아 먼 미래도 허용한다', () => {
     expect(parseMaintenanceInstant('9999-01-01T00:00:00Z', 'startedAt').utcIso).toBe(
       '9999-01-01T00:00:00.000000Z',
@@ -134,6 +138,7 @@ describe('maintenance instant', () => {
     },
   );
 
+  // 설계 미정 — 문의 109: 같은 표현 한계라도 저장값 오류는 입력 400이 아니다.
   it.each(['-62167219200000001', '253402300800000000'])(
     '저장 UTC 응답연도 밖 %s는 일반 Error다',
     (value) => {
