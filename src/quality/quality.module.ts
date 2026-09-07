@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
+import { DocumentStateModule } from '../core/document-state';
+import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CauseCodeService } from './code/cause-code.service';
@@ -12,6 +14,7 @@ import { InspectionPlanVersionController } from './inspection-plan/inspection-pl
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
+import { InspectionConfirmService } from './inspection/inspection-confirm.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
 import { InspectionRequestService } from './inspection/inspection-request.service';
 import { InspectionResultController } from './inspection/inspection-result.controller';
@@ -20,7 +23,8 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
 
 /**
  * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
- * ⚠ `:confirm` 과 집계 3건은 PR ④⑤ 가 이어서 배선한다.
+ * ⚠ 집계 3건은 PR ⑤ 가 이어서 배선한다. `:confirm`(PR ④)이 LOT 세 표를 쓰므로 코어 둘
+ * (`DocumentStateModule`·`LotRegistryModule`)을 함께 든다 — 도메인이 `trace` 를 직접 안 쓴다.
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
@@ -30,6 +34,8 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
     AuthModule,
     IdempotencyModule,
     NumberingModule,
+    DocumentStateModule,
+    LotRegistryModule,
   ],
   controllers: [
     DefectCodeController,
@@ -48,6 +54,7 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
     InspectionRequestService,
     InspectionResultQueryService,
     InspectionResultWriteService,
+    InspectionConfirmService,
   ],
 })
 export class QualityModule {}
