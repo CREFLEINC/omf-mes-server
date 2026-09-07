@@ -188,7 +188,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-24 | 생산 계획·생산오더 | 10 | I-6 | 있음 | ⭕(A11 두 칸 — I-24 R-1) | ✕ | ⭕ | 4 |
 | I-25 | 공정 인계·수리 왕복 | 6 | I-7 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-26 | 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 있음 | 현재✕ | ✕ | 현재✕·조건부 채번별도 | GET1 + 조건부 코어/쓰기 |
-| I-27 | 발행 이력·프린터 | 7 | I-26 | 있음 | ✕ | ✕ | ✕ | 2 |
+| I-27 | 발행 이력·프린터 | 7(진행5·유보1·제외1) | I-26저장조회 | A9nullable6/A10유보 | ✕ | ✕ | ✕ | R16 책임별 |
 | I-28 | 알림 | 8 | I-1 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-29 | 통합 대시보드 | 1 | 전부 | 있음 | ✕ | ✕ | ✕ | 1 |
 | I-30 | 설비 점검·고장 | 9(진행8·보류1) | — | A15 nullable8추가·2완화 | ✕ | ✕ | ⭕ 고장 start, 완료 보류 | 실행8 + 조건부 |
@@ -433,7 +433,11 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-27 · 발행 이력 — 기록·요약·인쇄 보고·프린터 — 7건
 
 **체인 마디**: 개체·LOT·포장에 라벨 회차를 매긴다. `document_issue_log` 표가 `uq(document_type, target_type, target_id, issue_seq)` 를 이미 갖는다.
-⭐ **범위 안**: 기록·회차·요약·인쇄 결과 보고 · 프린터 목록(`printer` 표 실재). ⛔ **범위 밖**: `/rendition`(출력물 이미지·문서 생성).
+⭐ **I-27 R1~R16 범위 안**: 조회3·부분 정상 발행1·보고1. 프린터GET은 단말매핑/관측/기본/지원 정본 결손으로 유보, `/rendition`은 DB 밖 출력 생성으로 제외한다. 표의 존재와 정상 응답 원천은 다르다.
+
+A9는 결과3+귀속3 nullable, whole CHECK·NoAction FK·DEFAULT/백필0이다. 구writer 종료/갱신→P5/필수값 검사 뒤 환경별 응답 활성화하며 summary의 구행 NULL outcome은 정상 null이다. GET16칸/target3칸은 같은 snapshot·7종 batch, summary는 경로 전용 middleware로 CSV를 guard 전에 정규화하고 원래 ordinal/multiplicity를 보존한다.
+
+발행은 지원표의 정상/조건부/거부 입력군을 구분한다. GI header NKU→line/FK 재확인→LOT NKU, HU 부모NKU/최소content SHARE, CoA LOT NKU→request SHARE→result NKU 순서를 최신 실제 writer와 대조한다. 부모 잠금 뒤 새문장 MAX/batchINSERT/원래순서응답·같은tx멱등, 정확원인만 전체run최대3회다. MOLD writer는 소유조율 후 별도보완 전 TOOL만 조건부거부. 공용 core/다른레인 writer를 우회수정하지 않는다. 입력400/업무422/단말403/소진409, worker/actor/terminal 지문과 실제 소비자 회귀는 I-27 정본을 따른다.
 
 
 ##### I-28 · 알림 — 목록·읽음·이벤트·수신자 설정 — 8건
@@ -661,7 +665,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 - `GET /app/printers` · `POST /app/document-issues:report-print` — 프린터 «목록·상태»와 인쇄 «결과 기록». 실제 인쇄를 하지 않는다. **범위 안**.
 - ERP 적재(`work-orders:close` · `shipments:confirm` · 출고 `sendToErp`) — `integration_message` 에 **쌓는 데까지**가 범위 안(§0 명시). 전송기는 만들지 않는다.
 
-⇒ **249 − 4 = 245건이 구현 대상**이다. 최종 커버리지는 **483/487**(238 + 245)이 되고, 남는 4건은 루틴 끝 보고에 목록으로 올린다.
+⇒ **최초 계획 기준** 249 − 4 = 245건, 목표483/487(238 + 245)였다. 이후 B의 본길 유보8건(I28 3·I30 1·I26 1·I32 2·I27프린터1)을 반영한 **현재 목표475/487**와 상세 제외/재개 조건은 `plan.md` §6을 따른다. 고정 배정·분모487은 바꾸지 않는다.
 
 ---
 
@@ -991,7 +995,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 - `GET /app/document-issues/{documentIssueLogId}` — 발행 기록 한 건
 - `GET /app/document-issues/{documentIssueLogId}/rendition` — 출력물 이미지 · 문서
 - `POST /app/document-issues/{documentIssueLogId}:report-print` — 인쇄 결과 보고
-- `GET /app/printers` — 프린터 목록 · 상태
+- `GET /app/printers` — 프린터 목록 · 상태 **본길 유보(I-27 R15)**
 
 
 ### I-28 · 알림 — 목록·읽음·이벤트·수신자 설정 (8건)
