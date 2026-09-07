@@ -442,22 +442,24 @@
 | `POST /production/repair-executions` | ✓ | — | — | ✓ |
 | `POST /production/repair-executions/{repairExecutionId}:return` | ✓ | — | — | — |
 
-### S17. 시리얼 — 2건
+### S17. 시리얼 — 2건(조회1 진행·발번1 본길 유보)
 
 | | |
 |---|---|
 | 선행 슬라이스 | S16 |
-| 쓰는 표 | `trace.serial_number`·`serial_component_relation` — 있음 |
+| 쓰는 표 | `trace.serial_number` — 현재 조회만. 조립 관계는 이 두 계약 범위 밖 |
 | 마이그레이션 | 없음 |
 | posting(원장) 연결 | 없음 |
-| 상태기계 | 없음 — 계약이 「칸 불필요」로 닫음 |
-| 예상 PR 수 | 1 |
-| 설계 미정 자리 · §2 판정 초안 | 없음 |
+| 상태기계 | 전이 없음. 코드 그룹 금지는 required statusCode 폐지가 아님. 초기 값/위임 원천 부재 |
+| 예상 PR 수 | 즉시 GET1(예산250·µs 경계 포함) + 조건부 채번 코어≤200/배치 쓰기 별도 |
+| 설계 미정 자리 · §2 판정 | I-26 R1~R10. POST 상태/개체 수량 단위 원천은 본길 유보(104·105), 번호 위임/선택 If-Match와 귀속·단계별 멱등은106·107 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
 | `GET /trace/serial-numbers` | — | — | — | — |
 | `POST /trace/serial-numbers` | ✓ | 선택 | — | ✓ |
+
+GET은8개 선택 필터·id ASC·같은WHERE/RepeatableRead total, producedFrom 포함/To 제외를 µs 올림 경계로 보존한다. 저장 상태 원문·nullable producedAt 키 생략, ETag 새 발행0. POST는 N개체 한 tx·발행기록0의 조건부 계획이며 전건 거부 핸들러를 등록하지 않는다.
 
 ### S18. 검사결과·측정·의뢰 — 11건
 
