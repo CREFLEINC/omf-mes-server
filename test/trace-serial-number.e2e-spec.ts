@@ -88,6 +88,7 @@ describe('제품 개체 목록 (e2e)', () => {
       itemId: Number(itemA),
       lotId: Number(lotA),
       statusCode: RAW_A,
+      producedAt: '2026-09-07T00:00:00.000Z',
       versionNo: 6,
     });
   });
