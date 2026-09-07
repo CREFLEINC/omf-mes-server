@@ -3,9 +3,9 @@
  * `GET /quality/inspection-results` 목록·상세는 PR ②b 가 같은 파일에 이어 붙인다.
  *
  * ⭐ `inspection_request` 는 **직접 INSERT** 한다 — 만드는 오퍼레이션이 계약에 0건이다
- *   (I-19.md §0 #5). IQC 갈래(`targetTypeCode='LOT'`)·PQC 갈래(`'WORK_ORDER'`) 둘만 심는다 —
- *   「기준 없는 갈래」(`inspectionPlanVersionId=null`)는 물리가 아직 NOT NULL 이라(M-e ⓐ 전)
- *   못 심는다. PR ③ 이 마이그를 낸 뒤에나 세 번째 갈래가 선다.
+ *   (I-19.md §0 #5). 갈래 셋을 심는다 — IQC(`targetTypeCode='LOT'`)·PQC(`'WORK_ORDER'`) ·
+ *   ⭐ **기준 없는 갈래**(`inspection_plan_version_id = null` · M-e ⓐ 가 그 칸의 NOT NULL 을
+ *   풀어 이제 심을 수 있다).
  * ⭐ 검사기준(`inspection_plan_version`)은 FK 를 채우는 최소 골격만 심는다 — 항목 규격 3·
  *   검교정 이력·단말은 이 PR 도 ②b 도 안 쓴다. PR ⑤(집계·측정치)가 이 `beforeAll` 을
  *   확장하며 그 칸을 채운다.
@@ -62,10 +62,12 @@ describe('검사 의뢰·결과 (e2e)', () => {
   let requestR2Id: number;
   let requestR3Id: number;
   let requestR4Id: number;
+  let requestR5Id: number;
   const REQUESTED_R1 = '2026-09-01T09:00:00.000Z';
   const REQUESTED_R2 = '2026-09-01T07:00:00.000Z';
   const REQUESTED_R3 = '2026-09-01T11:00:00.000Z';
   const REQUESTED_R4 = '2026-09-01T13:00:00.000Z';
+  const REQUESTED_R5 = '2026-09-01T15:00:00.000Z';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -179,6 +181,28 @@ describe('검사 의뢰·결과 (e2e)', () => {
     });
   });
 
+  describe('기준 없는 의뢰 (M-e ⓐ)', () => {
+    it('⭐ 기준이 없으면 `inspectionPlanVersionId` 키가 «아예 없다» — 가짜 0 을 안 싣는다', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`${REQUESTS}/${requestR5Id}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      // ⛔ `Number(null) === 0` 이라 그냥 변환하면 「기준 0번」이 실린다. 계약이 `[integer,null]`
+      // 이라 ajv 는 그 0 을 통과시킨다 — 키의 유무로만 잡을 수 있다(plan.md §5-7 널 금지).
+      expect(response.body).not.toHaveProperty('inspectionPlanVersionId');
+      expect(response.body).toMatchObject({ inspectionRequestId: requestR5Id, inspectionTypeCode: 'PQC' });
+      expect(validator('GET /quality/inspection-requests/{inspectionRequestId}')(response.body)).toBe(true);
+
+      // 기준이 있는 의뢰는 그대로 실린다 — 키를 통째로 지운 것이 아니다.
+      const withPlan = await request(app.getHttpServer())
+        .get(`${REQUESTS}/${requestR1Id}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(withPlan.body.inspectionPlanVersionId).toBe(Number(ids.inspectionPlanVersion));
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '검사의뢰검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -286,13 +310,14 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     const requestOf = async (
       suffix: string,
-      overrides: { inspectionTypeCode: string; targetTypeCode: string; targetId: bigint; itemId: bigint; lotId?: bigint; workOrderId?: bigint; statusCode: string; requestedAt: string },
+      overrides: { inspectionTypeCode: string; targetTypeCode: string; targetId: bigint; itemId: bigint; lotId?: bigint; workOrderId?: bigint; statusCode: string; requestedAt: string; planVersionId?: bigint | null },
     ) =>
       prisma.inspection_request.create({
         data: {
           inspection_request_no: `${PREFIX}-IR-${suffix}`,
           inspection_type_code: overrides.inspectionTypeCode,
-          inspection_plan_version_id: planVersion.inspection_plan_version_id,
+          inspection_plan_version_id:
+            overrides.planVersionId === undefined ? planVersion.inspection_plan_version_id : overrides.planVersionId,
           target_type_code: overrides.targetTypeCode,
           target_id: overrides.targetId,
           item_id: overrides.itemId,
@@ -314,6 +339,10 @@ describe('검사 의뢰·결과 (e2e)', () => {
     // PQC 갈래 — 다른 품목(item2)이라 item1 로 좁히는 위 단언들과 안 섞인다.
     const r4 = await requestOf('4', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R4 });
     requestR4Id = Number(r4.inspection_request_id);
+    // ⭐ 기준 없는 갈래 — 검사 기준이 등록되지 않은 품목도 검사를 진행한다(✓확정 2026-07-15).
+    // M-e ⓐ 전에는 물리가 NOT NULL 이라 이 행 자체를 심을 수 없었다.
+    const r5 = await requestOf('5', { inspectionTypeCode: 'PQC', targetTypeCode: 'WORK_ORDER', targetId: workOrder.work_order_id, itemId: item2.item_id, workOrderId: workOrder.work_order_id, statusCode: 'REQUESTED', requestedAt: REQUESTED_R5, planVersionId: null });
+    requestR5Id = Number(r5.inspection_request_id);
   }
 
   async function makeUser(): Promise<void> {
