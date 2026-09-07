@@ -5,6 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
+import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `WorkOrderCreate` 11칸 — required 넷. */
@@ -41,12 +42,6 @@ export interface WorkOrderUpdate {
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `WO`. */
 const WORK_ORDER = 'WORK_ORDER';
-/** 태어나는 상태. ⛔ 전이표 밖이다 — `from` 이 없는 자리는 표에 담을 수 없다(§3-1). */
-const INITIAL_STATUS = 'PLANNED';
-/** 계약 ⌜보내지 않으면 서버가 NORMAL(양산)로 채운다⌝. */
-const DEFAULT_TYPE = 'NORMAL';
-/** 물리 `priority_no` 의 기본값과 같은 값 — 아래 주석과 같은 이유로 명시한다. */
-const DEFAULT_PRIORITY = 100;
 /** If-Match 어긋남의 계약 `code`(`ProductionConflictResponse.code` required). */
 export const VERSION_CONFLICT = 'VERSION_CONFLICT';
 
@@ -148,11 +143,11 @@ export class WorkOrderWriteService {
         uom_id: BigInt(body.uomId),
         // ⛔ `@default` 에 기대지 않고 값을 «명시»한다 — 정적 기본값은 `prisma generate` 를
         //    다시 돌려야 반영돼, 스키마만 고친 환경에서 옛 값이 조용히 들어간다.
-        work_order_type_code: body.workOrderTypeCode ?? DEFAULT_TYPE,
-        priority_no: body.priorityNo ?? DEFAULT_PRIORITY,
+        work_order_type_code: body.workOrderTypeCode ?? WORK_ORDER_DEFAULT_TYPE,
+        priority_no: body.priorityNo ?? WORK_ORDER_DEFAULT_PRIORITY,
         planned_start_at: plannedStartAt,
         planned_end_at: plannedEndAt,
-        status_code: INITIAL_STATUS,
+        status_code: WORK_ORDER_INITIAL_STATUS,
         remarks: body.remarks ?? null,
         created_by: appUserId ?? null,
         updated_by: appUserId ?? null,

@@ -1,6 +1,6 @@
 /**
- * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④).
- * 권한 403 6건은 `:confirm` 이 필요해 PR ③ 몫이다.
+ * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④) +
+ * 권한 403 6건(PR ③ — `:confirm` 이 서고 나서야 여섯을 한자리에서 물을 수 있다).
  *
  * ⛔ P/O 는 이 시스템이 만들지 않는다(수신기 부재 · I-24.md §2-2) — `prisma` 로 직접
  * INSERT 한다. `production_order_change_field`·`production_order_acknowledgement` 도 같다.
@@ -23,6 +23,9 @@ const LOGIN_ID = 'e2e-po24-probe';
 const PASSWORD = 'PO24-검사-비밀번호';
 const PREFIX = 'PO24';
 const ROLE = 'E2E_PO24';
+/** 권한이 한 줄도 없는 계정 — 403 여섯 갈래 검사용(§8-4 21). */
+const STRANGER_ID = 'e2e-po24-stranger';
+const STRANGER_ROLE = 'E2E_PO24_STRANGER';
 /** R-11 — `{인터페이스}:{P/O id}:{멱등키}`. 문서번호를 쓰지 않는다. */
 const RESYNC_KEY_PREFIX = 'IF-PO-RESYNC-REQUEST:';
 
@@ -51,6 +54,7 @@ describe('P/O 조회 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let strangerCookie: string[];
 
   let mainBusinessUnitId = 0;
   let treeBusinessUnitId = 0;
@@ -94,7 +98,8 @@ describe('P/O 조회 (e2e)', () => {
     await cleanup();
     await makeFixtures();
     await makeUser();
-    cookie = await login();
+    cookie = await login(LOGIN_ID);
+    strangerCookie = await login(STRANGER_ID);
 
     const statusValues = await prisma.code_value.findMany({
       where: { code_group: { group_code: 'PRODUCTION_ORDER_STATUS' }, code: { in: ['RECEIVED', 'UPDATED'] } },
@@ -457,6 +462,23 @@ describe('P/O 조회 (e2e)', () => {
     });
   });
 
+  describe('권한 — 무권한 계정(§8-4 21)', () => {
+    it('21. POST·PUT·DELETE·:confirm·:acknowledge·:resync 여섯 전부 403 이다', async () => {
+      // 가드 순서가 인증 → 권한 → 계약 검증 → 멱등 → 낙관적 잠금이라(`app.module.ts`)
+      // 본문·`Idempotency-Key`·`If-Match` 없이도 권한이 먼저 답한다. 계획 id 는 없는 값을
+      // 써도 된다 — 권한이 조회보다 앞이다(그래서 404 가 아니라 403 이다).
+      const missingPlanId = 999999999;
+      const stranger = () => request(app.getHttpServer());
+
+      await stranger().post('/api/planning/production-plans').set('Cookie', strangerCookie).send({}).expect(403);
+      await stranger().put(`/api/planning/production-plans/${missingPlanId}`).set('Cookie', strangerCookie).send({}).expect(403);
+      await stranger().delete(`/api/planning/production-plans/${missingPlanId}`).set('Cookie', strangerCookie).expect(403);
+      await stranger().post(`/api/planning/production-plans/${missingPlanId}:confirm`).set('Cookie', strangerCookie).send({}).expect(403);
+      await stranger().post(`/api/planning/production-orders/${orderMainId}:acknowledge`).set('Cookie', strangerCookie).send({}).expect(403);
+      await stranger().post(`/api/planning/production-orders/${orderMainId}:resync`).set('Cookie', strangerCookie).send({}).expect(403);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'PO조회검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -703,6 +725,14 @@ describe('P/O 조회 (e2e)', () => {
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
 
+    // 권한 0줄짜리 역할 — 「역할 없음」이 아니라 「권한 없음」이라야 403 이 권한 판정이다.
+    const stranger = await prisma.app_user.create({
+      data: { login_id: STRANGER_ID, user_name: 'PO권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({ data: { app_user_id: stranger.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const strangerRole = await prisma.role.create({ data: { role_code: STRANGER_ROLE, role_name: 'PO권한없음용' } });
+    await prisma.user_role.create({ data: { app_user_id: stranger.app_user_id, role_id: strangerRole.role_id } });
+
     // §2-3 확인 3칸 — «확인됨» 판정용(acknowledged_at >= last_change_received_at).
     await prisma.production_order_acknowledgement.create({
       data: {
@@ -717,11 +747,11 @@ describe('P/O 조회 (e2e)', () => {
     });
   }
 
-  async function login(): Promise<string[]> {
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
@@ -751,15 +781,17 @@ describe('P/O 조회 (e2e)', () => {
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
 
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
+    for (const loginId of [LOGIN_ID, STRANGER_ID]) {
+      const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!target) continue;
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const roleCode of [ROLE, STRANGER_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: roleCode } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }

@@ -221,7 +221,7 @@ export class ProductionPlanService {
 }
 
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이 재확정이 끼는 것을 막는다. */
-async function lockPlan(tx: Prisma.TransactionClient, productionPlanId: number): Promise<LockedPlan> {
+export async function lockPlan(tx: Prisma.TransactionClient, productionPlanId: number): Promise<LockedPlan> {
   const rows = await tx.$queryRaw<LockedPlan[]>`
     SELECT status_code, version_no
       FROM planning.production_plan
@@ -231,7 +231,7 @@ async function lockPlan(tx: Prisma.TransactionClient, productionPlanId: number):
   return rows[0];
 }
 
-function assertPlanVersion(locked: LockedPlan, version: number): void {
+export function assertPlanVersion(locked: LockedPlan, version: number): void {
   if (locked.version_no !== version) {
     assertUpdated(0, 'user', { code: VERSION_CONFLICT });
   }

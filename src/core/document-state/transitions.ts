@@ -106,6 +106,23 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * 생산계획 확정. 값은 시드 `PRODUCTION_PLAN_STATUS` 2값(`DRAFT`·`CONFIRMED` ·
+   * `isSystemOwned` · DB 실재)이 확정했다.
+   *
+   * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 계약 `ProductionPlan.statusCode` 가
+   * 「확정 뒤에는 수정·삭제가 막힌다(400 STATE_LOCKED)」라 적었다(`planning.routing` 과 같다).
+   * ⛔ 되돌아오는 전이가 없다 — 확정을 푸는 오퍼레이션이 계약에 0건이다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
+   */
+  'planning.production_plan.status_code': {
+    'plan-confirm': {
+      from: ['DRAFT'],
+      to: 'CONFIRMED',
+      sourceOperation: 'POST /planning/production-plans/{productionPlanId}:confirm',
+    },
+  },
+
+  /**
    * 생산LOT 생명주기. 설계 확정 2026-08-07(`omf-mes#46`) + `DR-007`(2026-08-12).
    * 전이 코드는 `trace.lot_lifecycle_history.transition_code` 에 들어간다.
    */

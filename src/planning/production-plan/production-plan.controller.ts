@@ -21,6 +21,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
+import { PlanConfirmService } from './plan-confirm.service';
 import {
   ProductionPlanCreate,
   ProductionPlanListQuery,
@@ -29,11 +30,12 @@ import {
 } from './production-plan.service';
 import { ProductionPlanView } from './production-plan-view';
 
-/** 생산계획 조회 2 + CRUD 3(PR ①a·②) — `:confirm` 은 PR ③ 몫. */
+/** 생산계획 조회 2 + CRUD 3 + 확정 전개. */
 @Controller('planning/production-plans')
 export class ProductionPlanController {
   constructor(
     private readonly queries: ProductionPlanService,
+    private readonly confirms: PlanConfirmService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -75,6 +77,20 @@ export class ProductionPlanController {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.queries.update(productionPlanId, version, body, currentSession(request)?.userId),
+    );
+  }
+
+  /** 확정 + W/O 전개. ⛔ `setEtag` 를 안 부른다 — 계약이 200 에 ETag 를 선언하지 않았다. */
+  @Post(':productionPlanId\\:confirm')
+  @Contract('POST /planning/production-plans/{productionPlanId}:confirm')
+  @HttpCode(HttpStatus.OK)
+  confirm(
+    @Req() request: Request,
+    @Param('productionPlanId', ParseIntPipe) productionPlanId: number,
+  ): Promise<ProductionPlanView> {
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.confirms.confirm(productionPlanId, version, currentSession(request)?.userId),
     );
   }
 
