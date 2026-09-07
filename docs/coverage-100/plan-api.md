@@ -588,10 +588,10 @@
 |---|---|
 | 선행 슬라이스 | 없음 (mdm 설비·툴 완료분) |
 | 쓰는 표 | `maintenance.breakdown`·`maintenance_order(_item,_trigger)`·`maintenance_result` — 있음. ⛔ **`maintenance_result_line`·`maintenance_result_part` 는 없다** |
-| 마이그레이션 | **필요 · 이 계획에서 가장 큰 마이그레이션** — ① `breakdown`: `occurrence_state_code`·`stopped_at`·`notify_assignee` ② `maintenance_order`: `planned_date`·`base_date`·`order_note`·`issued_by`·`issued_at`, 그리고 담당자 축이 `assigned_worker_id`(worker)인데 계약은 `assigneeUserId`(app_user)다 ③ `maintenance_result`: `target_type_code`/`target_id`·`result_note`·`is_outsourced`·`outsource_vendor_name`·`reset_counter`·`shot_count_before/after_reset`·`closed` ④ **표 2개 신설** `maintenance_result_line`(시드에 `MAINTENANCE_RESULT_LINE_RESULT` 가 이미 있다)·`maintenance_result_part` |
+| 마이그레이션 | **필요** — ① I-30 재수립 A15: `breakdown` nullable8추가(발생상태·정지시각·알림의사·보고사번·원인·처리내역·처리계정·처리시각), 고장심각도/점검상태2완화. ② `maintenance_order`: `planned_date`·`base_date`·`order_note`·`issued_by`·`issued_at`, 담당자 worker/app_user 축은 I-31에서 대조. ③ `maintenance_result`: `target_type_code`/`target_id`·`result_note`·`is_outsourced`·`outsource_vendor_name`·`reset_counter`·`shot_count_before/after_reset`·`closed`. ④ **표2개 신설** `maintenance_result_line`·`maintenance_result_part`(②~④는 I-31 재수립 전 초안) |
 | posting(원장) 연결 | ⚠ **부분적으로 있을 수 있다** — 예비품 소모(`parts`)가 재고를 뺀다면 posting 이다. 계약이 그 연결을 안 적었다 → §2 2단계 기준 1(재고를 안 쓰는 쪽) → **원장을 부르지 않고** 기록만 하고 문의 |
 | 상태기계 | **있음 · 둘** (`EQUIPMENT_BREAKDOWN_STATUS`: `RECEIVED`→`HANDLING`→`DONE` · `MAINTENANCE_ORDER_STATUS`: `ISSUED`→`DONE`|`CANCELLED`) |
-| 예상 PR 수 | 4 — ① 마이그레이션 선행 커밋(위 4건) ② 고장 조회+등록+수정+`:start-handling`+`:complete`+e2e ③ 보전오더 + `:cancel` ④ 보전실적(라인·부품) + e2e |
+| 예상 PR 수 | I-30은 점검까지 묶어 **실행8 PR**(달력 준비/점검조회/A15/고장조회/코어/점검등록/고장등록/메모·start), 완료1건은 조건부 후속 조각. 보전오더·실적은 I-31 계획으로 별도 재산정하며 한 PR에 고장 전건을 합치지 않는다 |
 | 설계 미정 자리 · §2 판정 초안 | 담당자 축이 `worker` 인가 `app_user` 인가. §2 2단계 기준 3(스키마를 안 늘리는 쪽) → **기존 `assigned_worker_id` 를 쓰고** 계약의 `assigneeUserId` 를 worker 로 해석하지 않는다 — 두 축이 다르므로 그대로 두고 문의를 낸다. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
@@ -612,6 +612,8 @@
 | `PUT /maintenance/breakdowns/{breakdownId}` | ✓ | 필수 | — | ✓ |
 | `PUT /maintenance/results/{maintenanceResultId}` | ✓ | 필수 | — | ✓ |
 
+I-30 확정 범위·검증은 `slices/I-30.md` R-1~R-14가 정본이다. 원인 코드 원천 부재로 complete1건을 보류하며 고장 PUT의 원인 nonnull만 거부한다. reported_by는 실제 세션 계정이고 사번은 신규 reporter_worker_no에 분리한다. 로컬 멱등 지문·전달 tx, tx 밖 선채번, 공장 로컬 조회 날짜와 UTC 채번 날짜, 현재 인증/CORS 배포 한계를 문의090~098·054에 기록했다.
+
 ### S24. 비가동·점검·툴사용·수집채널·검교정 — 21건
 
 | | |
@@ -623,6 +625,8 @@
 | 상태기계 | ⛔ 없음 — 전부 **구간 축**이다(`ended_at` · `cleared_at` 널 여부가 열림/닫힘). 계약이 「구간을 닫는 것은 액션이다」(G-16)로 못박았다 |
 | 예상 PR 수 | 4 — ① 마이그레이션 선행 커밋 ② 비가동 + `:close` + 집계 ③ 점검·툴사용 ④ 수집채널 + 검교정 + `:clear` + e2e |
 | 설계 미정 자리 · §2 판정 초안 | `CalibrationCreate` 의 `resultCode` 값 집합이 «이력 유형마다 다르다»는데 시드 `CALIBRATION_RESULT` 는 한 그룹이다. §2 2단계 기준 2(거부하는 쪽) → **그룹 등재값만 통과**시키고 유형별 부분집합 검사는 걸지 않는다. |
+
+위 PR 수는 초기 S 단위 초안이다. 점검3건은 현재 I-30으로 분리됐으며 inspection.status_code NOT NULL 완화와 required/판정 enum 사전조회를 A15에 포함한다. 측정값은 Decimal(20,6)에 무손실로 담을 수 있는 범위만 저장하며 그 밖은400 RANGE다(097). 나머지 비가동·툴/계측기 작업은 각각 I-32·I-33 재수립을 따른다.
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -901,7 +905,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 12 | `trace.lot_hold` | `target_lot_status_code String?` | `LotHoldCreate.targetLotStatusCode` — 도착 상태가 C9/C10 을 가른다 | S19 |
 | 13 | `logistics.shipment_request` | `sales_order_id BigInt?` | `ShipmentRequest.salesOrderId` | S21 |
 | 14 | `logistics.shipment` | `expedited Boolean @default(false)` · `expedite_reason String?` | `Shipment.expedited`·`expediteReason` · §I-41 | S22 |
-| 15 | `maintenance.breakdown` | `occurrence_state_code String?` · `stopped_at DateTime?` · `notify_assignee Boolean?` | `Breakdown`·`BreakdownCreate` (+ 시드 `BREAKDOWN_OCCURRENCE_STATE` 가 이미 있다) | S23 |
+| 15 | `maintenance.breakdown`·`equipment_inspection` | 고장 nullable8추가: `occurrence_state_code`·`stopped_at`·`notify_assignee`·`reporter_worker_no`·`cause_code`·`handling_note`·`handled_by`·`handled_at`. 고장 `severity_code`·점검 `status_code` nullable 완화 | I-30 §2 전문 SQL·FK NoAction/NoAction·삭제0/백필0. 조회 전 과거 required·PASS/FAIL 사전조회 | S23·S24 / I-30 |
 | 16 | `maintenance.maintenance_order` | `planned_date Date?` · `base_date Date?` · `order_note String?` · `issued_by BigInt?` · `issued_at DateTime?` | `MaintenanceOrder`·`MaintenanceOrderCreate` | S23 |
 | 17 | `maintenance.maintenance_result` | `target_type_code String?` · `target_id BigInt?` · `result_note String?` · `is_outsourced Boolean?` · `outsource_vendor_name String?` · `reset_counter Boolean?` · `shot_count_before_reset BigInt?` · `shot_count_after_reset BigInt?` · `closed Boolean?` | `MaintenanceResult`·`MaintenanceResultCreate`·`MaintenanceResultUpdate` | S23 |
 | 18 | **표 신설** `maintenance.maintenance_result_line` | `MaintenanceResultLine` (시드 `MAINTENANCE_RESULT_LINE_RESULT` 가 이미 있다) | 계약 스키마 실재 · 물리 없음 | S23 |
@@ -1063,7 +1067,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | `NOT_BLOCKING` | 400 | `blocksUse=false` 인 검교정 이력에 `:clear` | S24 | 계약 「막고 있지 않은 것을 풀 수 없다」 |
 | `ALREADY_CLEARED` | **409** | 이미 해소된 이력에 `:clear` | S24 | 계약이 「409 다」라 적음 |
 | `RESULT_EXISTS` | 400 | 실적이 있는 보전오더에 `:cancel` | S23 | 계약 「실적이 하나도 없을 때만」 |
-| `CAUSE_REQUIRED` | 400 | 고장 `:complete` 인데 원인 코드·처리 내역이 없다 | S23 | 계약 「있어야 완료된다」 |
+| `REQUIRED`(기존 코드) | 400 | 고장 `:complete` 필수 원인 코드·처리 내역 누락 | S23 | 새 CAUSE_REQUIRED를 만들지 않는다. 완료 본길은 원인 원천 확인까지 보류(I-30·090) |
 | `REMAINDER_DISPOSITION_REQUIRED` / `_NOT_ALLOWED` | 400 | W/O `:close` 3분류 대조 4규칙 | S14 | 계약이 규칙 넷을 적었으나 코드를 안 줬다 |
 
 ⛔ **`STATE_LOCKED` 와 `STALE_VERSION` 을 섞지 않는다**(G-1) — 앞은 재로드해도 안 풀리고 뒤는 풀린다.
