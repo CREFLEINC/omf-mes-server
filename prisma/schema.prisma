@@ -53,6 +53,9 @@ model app_user {
   subcontract_reconciliation                             subcontract_reconciliation[]
   breakdown                                              breakdown[]                        @relation("breakdown_reported_byToapp_user")
   breakdown_handled_by                                   breakdown[]                        @relation("breakdown_handled_byToapp_user")
+  maintenance_order_assignee                             maintenance_order[]                @relation("maintenance_order_assignee_user")
+  maintenance_order_issuer                               maintenance_order[]                @relation("maintenance_order_issued_by_user")
+  maintenance_order_canceller                            maintenance_order[]                @relation("maintenance_order_cancelled_by_user")
   equipment_downtime                                     equipment_downtime[]
   worker                                                 worker[]
   production_plan                                        production_plan[]
@@ -4244,25 +4247,38 @@ model maintenance_order {
   mold_id                   BigInt?
   breakdown_id              BigInt?
   order_type_code           String                     @db.VarChar(50)
-  priority_code             String                     @db.VarChar(50)
+  priority_code             String?                     @db.VarChar(50)
   scheduled_start_at        DateTime?                  @db.Timestamptz(6)
   scheduled_end_at          DateTime?                  @db.Timestamptz(6)
   assigned_worker_id        BigInt?
   status_code               String                     @db.VarChar(50)
   cancellation_reason_code  String?                    @db.VarChar(50)
+  planned_date              DateTime?                   @db.Date
+  base_date                 DateTime?                   @db.Date
+  order_note                String?
+  assignee_user_id          BigInt?
+  issued_by                 BigInt?
+  issued_at                 DateTime?                   @db.Timestamptz(6)
+  cancelled_at              DateTime?                   @db.Timestamptz(6)
+  cancelled_by              BigInt?
   created_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                BigInt?
   updated_at                DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                BigInt?
   version_no                Int                        @default(1)
   worker                    worker?                    @relation(fields: [assigned_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  assignee_user             app_user?                   @relation("maintenance_order_assignee_user", fields: [assignee_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  issuer                    app_user?                   @relation("maintenance_order_issued_by_user", fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  canceller                 app_user?                   @relation("maintenance_order_cancelled_by_user", fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   breakdown                 breakdown?                 @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
   equipment                 equipment?                 @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   mold                      mold?                      @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
   maintenance_order_item    maintenance_order_item[]
-  maintenance_order_trigger maintenance_order_trigger?
+  maintenance_order_trigger maintenance_order_trigger[]
   maintenance_result        maintenance_result[]
 
+  @@index([planned_date, maintenance_order_id], map: "ix_maintenance_order_planned")
+  @@index([equipment_id, status_code], map: "ix_maintenance_order_equipment")
   @@index([mold_id, status_code], map: "ix_maintenance_order_mold")
   @@schema("maintenance")
 }
@@ -4716,16 +4732,18 @@ model maintenance_order_item {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model maintenance_order_trigger {
   maintenance_order_trigger_id BigInt            @id @default(autoincrement())
-  maintenance_order_id         BigInt            @unique(map: "uq_maintenance_order_trigger")
+  maintenance_order_id         BigInt
   trigger_type_code            String            @db.VarChar(50)
   source_id                    BigInt?
   snapshot_note                String?
   pm_due_axis_code             String?           @db.VarChar(50)
-  shot_count_at_due            Int?
-  guaranteed_shot_count_at_due Int?
+  shot_count_at_due            BigInt?
+  guaranteed_shot_count_at_due BigInt?
   created_at                   DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   maintenance_order            maintenance_order @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([maintenance_order_id], map: "ix_maintenance_order_trigger_order")
+  @@index([trigger_type_code, source_id, maintenance_order_id], map: "ix_maintenance_order_trigger_source")
   @@schema("maintenance")
 }
 
