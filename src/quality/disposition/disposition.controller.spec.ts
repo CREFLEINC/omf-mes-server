@@ -1,6 +1,8 @@
-import { DispositionController } from './disposition.controller';
-import { DispositionDecisionRow } from './disposition-view';
+import { IdempotencyService } from '../../common/idempotency';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DispositionController } from './disposition.controller';
+import { DispositionWriteService } from './disposition-write.service';
+import { DispositionDecisionRow } from './disposition-view';
 
 /**
  * `disposition.controller.ts` 단위 시험 — ⭐⭐ 리뷰 Minor-1. `assertFollowUpInvariant` 를
@@ -32,7 +34,12 @@ const COMPLETED_SCRAP_ROW: DispositionDecisionRow = {
 
 function controllerWith(rows: DispositionDecisionRow[], total: number): DispositionController {
   const queryRawUnsafe = jest.fn().mockResolvedValueOnce(rows).mockResolvedValueOnce([{ total }]);
-  return new DispositionController({ $queryRawUnsafe: queryRawUnsafe } as unknown as PrismaService);
+  // 목록만 재는 시험이라 쓰기 배선 둘은 안 쓰인다 — 생성자 자리만 채운다.
+  return new DispositionController(
+    { $queryRawUnsafe: queryRawUnsafe } as unknown as PrismaService,
+    {} as unknown as DispositionWriteService,
+    {} as unknown as IdempotencyService,
+  );
 }
 
 describe('DispositionController.list — assertFollowUpInvariant 배선(리뷰 Minor-1)', () => {

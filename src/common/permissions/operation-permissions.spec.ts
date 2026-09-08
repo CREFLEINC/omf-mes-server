@@ -75,4 +75,21 @@ describe('오퍼레이션 권한 매핑', () => {
       expect.arrayContaining(['W-CO-09', 'M-01-13', 'W-01-02', 'W-03-09']),
     );
   });
+
+  /**
+   * ⛔ 위 189 와 «같은 사고»의 나머지 반쪽이다. `W-03-10` 은 DR-008 로 2026-08-13 «신설»돼 도출
+   * 원천(요구서 §3)보다 새것이라 한 줄도 안 도출됐다. ⭐ 아래 넷 중 **조회 셋은 계약이 403 을
+   * 선언하지 않아 `permission.guard.ts:40` 이 아예 보지 않는다** — 즉 **e2e 로는 영영 반증되지
+   * 않는다.** 그 세 줄을 지켜 주는 것이 이 단언 하나뿐이다(PR #457 리뷰 Major-1).
+   */
+  it('⛔ 처분 판정 처리(W-03-10)가 계약이 이름 적은 네 자리에 전부 있다 — 통보 181', () => {
+    for (const key of [
+      'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      'GET /quality/nonconformances',
+      'GET /quality/nonconformances/{nonconformanceId}',
+    ]) {
+      expect(OPERATION_PERMISSIONS[key]).toContain('W-03-10');
+    }
+  });
 });

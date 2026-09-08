@@ -17,7 +17,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  */
 export type ConflictCause = 'user' | 'erpSync' | 'workerLease';
 
-/** 계열이 요구하는 선택 세 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
+/** 계열이 요구하는 선택 칸 여섯. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
 export interface ConflictExtra {
   /** `ProductionConflictResponse.code` 등 — 거부의 업무 사유. */
   code?: string;
@@ -34,6 +34,14 @@ export interface ConflictExtra {
    * 그 한 건을 짚을 축이 이 칸뿐이다.
    */
   conflictingLotId?: number;
+  /**
+   * `QualityConflictResponse.remainingQty` — `DISPOSITION_QTY_EXCEEDED` 일 때 서버가 판정한 남은
+   * 수량. ⛔ 계약이 「`message` 자유 텍스트에서 파싱하지 않는다」라 못박아 구조화 칸이 있어야
+   * 한다(`W-03-10` §6). ⚠ 물리는 `numeric(20,6)` 인데 계약은 `type: number` 라 싣는 쪽이 접는다.
+   */
+  remainingQty?: number;
+  /** `QualityConflictResponse.remainingQtyUomId` — 위 수량의 단위. 둘은 «함께» 실린다. */
+  remainingQtyUomId?: number;
 }
 
 export interface ConflictResponse extends ConflictExtra {

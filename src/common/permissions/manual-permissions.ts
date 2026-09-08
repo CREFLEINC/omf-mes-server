@@ -269,4 +269,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⛔ `M-CO-01` 은 넣지 않는다 — 계약이 그 이름을 「모바일 셸에는 계정 로그인이 없다(M-CO-01 §2)」로
   //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
   'GET /app/approval-requests': ['M-01-13', 'W-01-02'],
+
+  // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
+  // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만
+  // 요구해 **정작 그 화면 담당자가 403 을 받는다**(계약 본문이 화면 코드를 직접 적었다).
+  // ⚠ 조회 셋은 계약이 403 을 «선언하지 않아» 오늘은 가드가 안 본다(`permission.guard.ts:40`).
+  // // 결정 — 통보 181
+  'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
+  'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
+  'GET /quality/nonconformances': ['W-03-10'],
+  'GET /quality/nonconformances/{nonconformanceId}': ['W-03-10'],
 };
