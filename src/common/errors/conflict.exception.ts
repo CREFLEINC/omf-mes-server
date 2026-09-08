@@ -35,11 +35,9 @@ export interface ConflictExtra {
    */
   conflictingLotId?: number;
   /**
-   * `QualityConflictResponse.remainingQty` — `DISPOSITION_QTY_EXCEEDED` 일 때 서버가 판정한
-   * 남은 수량. ⛔ 계약이 「`message` 자유 텍스트에서 파싱하지 않는다」라 못박아 구조화 칸이
-   * 있어야 한다(`W-03-10` §6 — 화면 문구 「남은 수량은 120 EA 입니다」가 이 값을 쓴다).
-   * ⚠ 물리는 `numeric(20,6)`(Prisma `Decimal`)인데 계약은 `type: number` 다 — 싣는 쪽이
-   * `.toNumber()` 로 접는다(형제 칸 `currentVersion` 은 문자열이라 형이 다르다).
+   * `QualityConflictResponse.remainingQty` — `DISPOSITION_QTY_EXCEEDED` 일 때 서버가 판정한 남은
+   * 수량. ⛔ 계약이 「`message` 자유 텍스트에서 파싱하지 않는다」라 못박아 구조화 칸이 있어야
+   * 한다(`W-03-10` §6). ⚠ 물리는 `numeric(20,6)` 인데 계약은 `type: number` 라 싣는 쪽이 접는다.
    */
   remainingQty?: number;
   /** `QualityConflictResponse.remainingQtyUomId` — 위 수량의 단위. 둘은 «함께» 실린다. */

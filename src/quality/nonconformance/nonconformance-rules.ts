@@ -35,16 +35,10 @@ const QTY_SCALE = 6;
 const QTY_INT_LIMIT = '100000000000000';
 
 /**
- * 수량이 `numeric(20,6)` 에 **손실 없이** 담기는가 — 두 축을 다 본다.
- * ⓐ 소수 자릿수 초과는 INSERT 때 **반올림**돼 `1e-7` 이 0 이 되고 `CHECK (> 0)` 를 깬다.
- * ⓑ 정수 15자리는 `22003 numeric field overflow` 다. ⛔ **둘 다 500 으로 샌다** — 계약이 이
- *   칸들에 제약을 0개 두어(`format:double` 뿐) 검증 가드가 안 막는 자리라 서비스가 막는다.
- * ⭐ ⓑ 는 **I-21 PR ⑦ 이 더했다**(⑥ 리뷰 Minor-1) — `affectedQty` 와 판정 저장의
- *   `decisionQty` 가 같은 컬럼형이라 **한 자리에서 같은 한계**로 막는다. 저장소 선례 둘이
- *   이미 양쪽을 함께 본다(`maintenance/result/result-write-input.ts:252` ·
- *   `maintenance/inspection/inspection-input.ts:67`).
- * ⚠ `scale` 은 호출자가 준다 — 등록은 컬럼 한계(6)로, 판정 저장은 `mdm.uom.decimal_scale` 로
- *   막는다(§9-1 #16 — 「조용한 반올림 금지」의 축이 단위마다 다르다).
+ * 수량이 `numeric(20,6)` 에 **손실 없이** 담기는가. ⓐ 소수 자릿수 초과는 INSERT 때 **반올림**돼
+ * `1e-7` 이 0 이 되고 `CHECK (> 0)` 를 깬다 ⓑ 정수 15자리는 `numeric field overflow` 다 —
+ * ⛔ **둘 다 500 으로 샌다**(계약이 제약을 0개 둬 가드가 안 막는다 · 선례
+ * `maintenance/result/result-write-input.ts:252`). ⚠ `scale` 은 호출자가 준다.
  */
 export function assertQtyPrecision(name: string, qty: number, scale: number): void {
   const decimal = new Prisma.Decimal(qty);

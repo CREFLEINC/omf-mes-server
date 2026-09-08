@@ -45,7 +45,7 @@ export class NonconformanceWriteService {
     await assertCodeValues(this.prisma, [{ field: 'severityCode', value: body.severityCode, groupCode: SEVERITY_GROUP }]);
     // (1) 본문 형식 — 통과하면 `lots[]` 가 공유하는 단위 하나를 돌려준다.
     const uomId = assertCreateShape(body);
-    // (2) 참조 존재 — 「열린 부적합」(3)보다 «앞»이다: 없는 LOT 이면 물을 대상이 없다.
+    // (2) 참조 존재 — 「열린 부적합」(5)보다 «앞»이다: 없는 LOT 이면 물을 대상이 없다.
     const lotStatus = await this.assertReferences(body, uomId);
     const lotIds = body.lots.map((lot) => BigInt(lot.lotId));
 
@@ -56,21 +56,16 @@ export class NonconformanceWriteService {
     const nonconformanceNo = await this.numbering.next(DOCUMENT_TYPE, null, openedAt.toISOString().slice(0, 10));
 
     const row = await this.prisma.$transaction(async (tx) => {
-      // (5) ⭐ 대상 LOT 을 «먼저» 잠근다 — (3) 중복 판정이 이 잠금 «안»에 있어야 서로 다른
-      //     `Idempotency-Key` 로 «동시에» 온 두 등록이 같은 LOT 에 열린 부적합을 둘 만들지
-      //     못한다. `nonconformance_lot` 의 유일 제약은 `(nonconformance_id, lot_id)` 뿐이라
-      //     DB 가 그것을 막지 않고, 그러면 `DispositionCandidate.nonconformanceId` 가 «단수»
-      //     라는 계약 전제가 깨진다(⑥ 리뷰 Minor-3 · 계획 §3-1 의 구멍).
-      //     ⭐ 판정 저장(§3-3 step 3)이 부적합 행을 잠그고 그 «안»에서 잔량을 세는 것과 **같은
-      //     규칙**이다 — 같은 계획서 안의 비대칭을 이쪽으로 맞췄다(I-21 PR ⑦ §4 ⓶).
-      //     ⛔ `ORDER BY lot_id` — 코어 `moveWithin` 도 같은 순서로 잠가 교착이 안 난다.
+      // (5) ⭐ 대상 LOT 을 «먼저» 잠근다 — 중복 판정이 이 잠금 «안»이라야 서로 다른 키로 «동시에»
+      //     온 두 등록이 같은 LOT 에 열린 부적합을 둘 만들지 못한다(DB 제약이 0개라 그 전에는
+      //     둘 다 201 이 됐다 · ⑥ 리뷰 Minor-3). 판정 저장이 부적합을 잠그고 그 안에서 잔량을
+      //     세는 것과 «같은 규칙»이다(I-21 PR ⑦ §4 ⓶). ⛔ `ORDER BY lot_id` — 코어 `moveWithin`
+      //     과 잠금 순서가 같아 교착이 안 난다.
       await tx.$queryRaw`
-        SELECT lot_id
-          FROM trace.lot
+        SELECT lot_id FROM trace.lot
          WHERE lot_id IN (${Prisma.join(lotIds.map((id) => Prisma.sql`${id}::bigint`))})
-         ORDER BY lot_id
-           FOR UPDATE`;
-      await assertNoOpenNonconformance(tx, lotIds);
+         ORDER BY lot_id FOR UPDATE`;
+      await this.assertNoOpenNonconformance(tx, lotIds);
 
       const created = await tx.nonconformance.create({
         data: {
@@ -167,6 +162,24 @@ export class NonconformanceWriteService {
   }
 
   /**
+   * ⭐ 같은 LOT 에 **열린** 부적합이 있으면 409 `DUPLICATE_KEY` — 근거는 후보 목록의
+   * `withoutNonconformanceOnly`(「같은 대상을 두 번 등록하는 것을 막는 축」)와
+   * `DispositionCandidate.nonconformanceId` 가 **단수**인 것이다(§1-6). ⛔ 판정은 `status_code` 가
+   * 아니라 **`closed_at IS NULL`** 로만 한다 — 종결된 것만 있는 LOT 은 다시 등록된다.
+   * ⛔ `conflictingLotId` 를 안 싣는다 — `ShipmentConflictResponse` 에 그 칸이 없다(넷뿐).
+   * ⭐ **트랜잭션 «안»에서 돈다** — 대상 LOT 잠금 뒤라야 동시 등록 둘이 갈리지 않는다(위 (5)).
+   */
+  private async assertNoOpenNonconformance(tx: Prisma.TransactionClient, lotIds: bigint[]): Promise<void> {
+    const open = await tx.nonconformance_lot.findFirst({
+      where: { lot_id: { in: lotIds }, nonconformance: { closed_at: null } },
+      select: { lot_id: true },
+      orderBy: { nonconformance_lot_id: 'asc' },
+    });
+    if (open === null) return;
+    throw new ConflictException('user', `이미 열려 있는 부적합이 있습니다. (LOT ${open.lot_id})`, { code: DUPLICATE_KEY });
+  }
+
+  /**
    * ⛔ 코어 `assertTransition` 은 계열 봉투를 모른다 — `code` 없이 409 를 낸다. 출하 계열이 그
    * 칸을 **required** 로 두므로 여기서 씌운다. 전이표는 그대로 정본이다 — `from`·`to` 를 안 베낀다.
    */
@@ -178,24 +191,6 @@ export class NonconformanceWriteService {
       throw new ConflictException('user', error.conflict.message, { code: INVALID_STATE });
     }
   }
-}
-
-/**
- * ⭐ 같은 LOT 에 **열린** 부적합이 있으면 409 `DUPLICATE_KEY` — 근거는 후보 목록의
- * `withoutNonconformanceOnly`(「같은 대상을 두 번 등록하는 것을 막는 축」)와
- * `DispositionCandidate.nonconformanceId` 가 **단수**인 것이다(§1-6). ⛔ 판정은 `status_code` 가
- * 아니라 **`closed_at IS NULL`** 로만 한다 — 종결된 것만 있는 LOT 은 다시 등록된다.
- * ⛔ `conflictingLotId` 를 안 싣는다 — `ShipmentConflictResponse` 에 그 칸이 없다(넷뿐).
- * ⭐ **트랜잭션 «안»에서 돈다** — 대상 LOT 잠금 뒤라야 동시 등록 둘이 갈리지 않는다(위 (5)).
- */
-async function assertNoOpenNonconformance(tx: Prisma.TransactionClient, lotIds: bigint[]): Promise<void> {
-  const open = await tx.nonconformance_lot.findFirst({
-    where: { lot_id: { in: lotIds }, nonconformance: { closed_at: null } },
-    select: { lot_id: true },
-    orderBy: { nonconformance_lot_id: 'asc' },
-  });
-  if (open === null) return;
-  throw new ConflictException('user', `이미 열려 있는 부적합이 있습니다. (LOT ${open.lot_id})`, { code: DUPLICATE_KEY });
 }
 
 /** 계약이 `null` 을 허용한 선택 FK 셋 — 안 보냈으면 칸을 «안 만들고», `null` 이면 비운다. */
