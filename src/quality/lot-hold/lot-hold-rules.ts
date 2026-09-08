@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { ERROR_CODE, field, one } from '../../common/errors';
 import type { ActionName } from '../../core/document-state';
 
@@ -108,6 +110,19 @@ function assertQtyPair(body: LotHoldCreate): void {
   if (qty !== undefined && !(qty > 0)) {
     throw one(field('holdQty', ERROR_CODE.RANGE, '보류 수량은 0 보다 커야 합니다.'));
   }
+  assertQtyScale('holdQty', qty);
+}
+
+/**
+ * ⭐ `app.qty_t` 가 `numeric(20,6)` 이라 7자리째는 **INSERT 때 반올림**된다. 해제 잔량이 `1e-7` 이면 0 으로 접혀 「보류 수량 0 짜리
+ * 열린 보류」가 조용히 서고(`CHECK (VALUE >= 0)` 는 통과한다) LOT 이 영영 안 움직인다 — R-6 이 막으려던 그 문장이 스케일 «아래»로
+ * 새는 자리다. 등록 `holdQty` 도 같은 컬럼이라 같은 구멍이고, 계약에 `multipleOf` 가 0건이라 ajv 가 안 막는다(0단계 선례 — `maintenance/inspection/inspection-input.ts:75` 가 측정값을 같은 자리수로 거절한다).
+ * ⛔ 코어 `remainderQty` 를 반올림 인지로 고치는 길이 «아니다» — 도메인 `willMove` 와 갈려 R-2 불변식이 500 을 낸다(두 곳을 함께 고쳐야 하고 코어는 전용 PR 소관이다). **문 앞에서** 막으면 두 산식이 갈리지 않는다.
+ */
+function assertQtyScale(name: string, qty: number | undefined): void {
+  if (qty !== undefined && new Prisma.Decimal(qty).decimalPlaces() > 6) {
+    throw one(field(name, ERROR_CODE.RANGE, '수량은 소수점 6자리까지입니다.'));
+  }
 }
 
 /**
@@ -122,4 +137,43 @@ function assertReleaseCondition(body: LotHoldCreate): void {
   if (body.targetLotStatusCode !== SUSPECT_TARGET && present) {
     throw one(field('releaseCondition', ERROR_CODE.INVALID, '불량으로 보류할 때는 해제 조건을 받지 않습니다.'));
   }
+}
+
+/** 계약 `LotHoldRelease` — required 2(`targetLotStatusCode`·`releaseReasonCode`) · 프로퍼티 4. */
+export interface LotHoldRelease {
+  targetLotStatusCode: string;
+  releaseQty?: number;
+  releaseReasonCode: string;
+  remarks?: string | null;
+}
+
+export const HOLD_RELEASE_REASON_GROUP = 'LOT_HOLD_RELEASE_REASON';
+
+/**
+ * 도착 상태 ↔ 전이표 액션 — 해제 쪽은 **재판정 합격(C7)·재판정 불합격(C8)** 둘이다
+ * (계약 `:release` 설명 「재판정 합격(C7 · 도착 정상)과 재판정 불합격(C8 · 도착 불량)을 도착
+ * 상태로 가른다」). 등록 쪽 두 값(`INSPECTION_PENDING`·`DEFECTIVE`)과 **집합이 다르다** —
+ * 두 표를 합치면 `:release` 로 검사 대기에 다시 넣는 액션이 생겨 버린다.
+ * ⛔ 등록 쪽과 같은 이유로 `Map` 이다(객체면 `'constructor'` 가 통과한다).
+ */
+const ACTION_BY_RELEASE_TARGET = new Map<string, ActionName>([
+  ['NORMAL', 'lot-hold-release-accepted'],
+  ['DEFECTIVE', 'lot-hold-release-rejected'],
+]);
+
+/**
+ * 해제 본문 형식 — 트랜잭션 «밖»이다(§3-2 1단계 · DB 를 안 연다). 통과하면 전이 액션을 돌려준다.
+ * ⛔ `releaseQty` 와 `hold_qty` 의 관계(전량 보류면 `INVALID` · 초과면 `RANGE`)는 여기서 못 본다 —
+ *    저장된 행을 읽어야 알 수 있어 트랜잭션 «안»(§3-2 d)이다.
+ */
+export function assertHoldReleaseShape(body: LotHoldRelease): ActionName {
+  const action = ACTION_BY_RELEASE_TARGET.get(body.targetLotStatusCode);
+  if (action === undefined) {
+    throw one(field('targetLotStatusCode', ERROR_CODE.INVALID, '보류 해제의 도착 상태는 NORMAL 또는 DEFECTIVE 입니다.'));
+  }
+  if (body.releaseQty !== undefined && !(body.releaseQty > 0)) {
+    throw one(field('releaseQty', ERROR_CODE.RANGE, '해제 수량은 0 보다 커야 합니다.'));
+  }
+  assertQtyScale('releaseQty', body.releaseQty);
+  return action;
 }
