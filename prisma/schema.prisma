@@ -799,6 +799,7 @@ model goods_issue_line {
 
   @@unique([goods_issue_id, line_no], map: "uq_goods_issue_line")
   @@index([source_location_id], map: "ix_goods_issue_line_source_location")
+  @@index([lot_id], map: "ix_goods_issue_line_lot")
   @@schema("logistics")
 }
 
@@ -1030,6 +1031,7 @@ model picking_line {
 
   @@unique([picking_order_id, line_no], map: "uq_picking_line")
   @@index([location_id], map: "ix_picking_line_location")
+  @@index([lot_id], map: "ix_picking_line_lot")
   @@schema("logistics")
 }
 
