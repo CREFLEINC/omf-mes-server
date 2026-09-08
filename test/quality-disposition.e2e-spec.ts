@@ -86,8 +86,10 @@ describe('처분 결정 목록·상세 (e2e)', () => {
 
   const get = (url: string) => request(app.getHttpServer()).get(url).set('Cookie', cookie);
   const ncAScope = () => `nonconformanceId=${ncIds.ncA}`;
-  // 정렬(decided_at DESC, id DESC) — boundary(T5) > tieB(T4·id 큼) > tieA(T4·id 작음) > D3 > D2 > D1.
-  const ncAOrder = ['boundary', 'tieB', 'tieA', 'D3', 'D2', 'D1'];
+  // 정렬(decided_at DESC, id DESC) — boundary(T5)>tieB(T4·id큼)>tieA(T4·id작음)>D3>D2>D1>atFrom(WINDOW_FROM).
+  // ⭐⭐ 리뷰 Major-3 — atFrom 이 «시작 경계와 같은 시각»이다. 끝 경계(boundary)만 있으면
+  // `decidedFrom >=` 를 `>` 로 바꿔도 e2e 가 초록이었다(WINDOW_FROM 시각 행이 그때는 없었다).
+  const ncAOrder = ['boundary', 'tieB', 'tieA', 'D3', 'D2', 'D1', 'atFrom'];
 
   describe('목록 — 필터 전수', () => {
     it('dispositionTypeCode=SCRAP 이 D2·D3·REWORK 계열을 뺀다', async () => {
@@ -161,7 +163,10 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       expect(returned).toContain(decisionIds.D3);
     });
 
-    it('⭐ D1 의 followUpQty=30·PARTIAL — CANCELLED 20 EA 는 «안» 더해진다(R-3 ⓑ · I-20 ①c 형)', async () => {
+    it('⭐⭐ D1 의 followUpQty=30·PARTIAL — CANCELLED 20 EA·다른 문서유형 20 EA 는 «안» 더해진다(R-3 ⓑ · 리뷰 Major-2)', async () => {
+      // 이 단언이 30 을 지킨다는 것 자체가 두 조건을 함께 잠근다 — CANCELLED(상태 축 · I-20 ①c 형)
+      // «와» D1-OTHER-DOC(판별자 축 · 리뷰 Major-2). `source_document_type_code` 조건을 지우면
+      // 50 이 된다(같은 id·다른 문서 유형인 그 출고까지 합산되므로).
       const response = await get(`${DECISIONS}?${ncAScope()}&dispositionTypeCode=SCRAP`).expect(200);
 
       expect(response.body.items[0]).toMatchObject({ followUpQty: 30, followUpStatusCode: 'PARTIAL' });
@@ -178,6 +183,20 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       expect(pending.body.items).toEqual([]);
       const done = await get(`${DECISIONS}?${scope}&followUpPending=false`).expect(200);
       expect(done.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId)).toEqual([decisionIds.DscrapDone]);
+    });
+
+    it('⭐⭐ 리뷰 Major-1 — SCRAP 이고 출고가 «0행»이어도 followUpPending=true 목록에서 안 사라진다', async () => {
+      const scope = `nonconformanceId=${ncIds.ncScrapNone}`;
+      // `coalesce(sum(...), 0)` 을 지우면 `sum()` 이 NULL 이 되어 두 갈래 «모두»에서 이 행이
+      // 증발한다(3값 논리 · W-04-10 진입 목록이 통째로 빈다) — 무필터 목록의 `?? 0` 매퍼는
+      // 이 사고를 못 잡는다(뷰 단계에서만 가려진다). 질의 단계에서 직접 잠근다.
+      const pending = await get(`${DECISIONS}?${scope}&followUpPending=true`).expect(200);
+      expect(pending.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId)).toEqual([decisionIds.DscrapNone]);
+      const done = await get(`${DECISIONS}?${scope}&followUpPending=false`).expect(200);
+      expect(done.body.items).toEqual([]);
+
+      const detail = await get(`${DECISIONS}?${scope}`).expect(200);
+      expect(detail.body.items[0]).toMatchObject({ followUpQty: 0, followUpStatusCode: 'NOT_STARTED' });
     });
 
     it('D2·D3 의 followUpQty=0·NOT_STARTED(원천 0 을 「모른다」로 접지 않는다)', async () => {
@@ -205,12 +224,20 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       await get(`${DECISIONS}?${ncAScope()}`).expect(200);
     });
 
-    it('⭐ WINDOW_TO 와 «같은 시각»의 boundary 는 빠진다(반열림)', async () => {
+    it('⭐ WINDOW_TO 와 «같은 시각»의 boundary 는 빠진다(반열림 끝 경계)', async () => {
       const response = await get(`${DECISIONS}?${ncAScope()}&decidedFrom=${WINDOW_FROM}&decidedTo=${WINDOW_TO}`).expect(200);
       const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
 
       expect(returned).not.toContain(decisionIds.boundary);
       expect(returned).toContain(decisionIds.D1);
+    });
+
+    it('⭐⭐ 리뷰 Major-3 — WINDOW_FROM 과 «같은 시각»의 atFrom 은 «든다»(반열림 시작 경계는 포함)', async () => {
+      const response = await get(`${DECISIONS}?${ncAScope()}&decidedFrom=${WINDOW_FROM}&decidedTo=${WINDOW_TO}`).expect(200);
+      const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
+
+      // `>=` 를 `>` 로 바꾸면 이 행이 빠진다 — boundary(끝 경계) 단언만으로는 못 잡는다.
+      expect(returned).toContain(decisionIds.atFrom);
     });
 
     it('⭐⭐ 기본 정렬 — decided_at DESC, 동률은 disposition_decision_id DESC(통째 단언)', async () => {
@@ -227,7 +254,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
 
       expect(idsOf(page1.body)).toEqual(ncAOrder.slice(0, 2).map((key) => decisionIds[key]));
       expect(idsOf(page2.body)).toEqual(ncAOrder.slice(2, 4).map((key) => decisionIds[key]));
-      expect(page1.body.page).toEqual({ page: 1, size: 2, total: 6 });
+      expect(page1.body.page).toEqual({ page: 1, size: 2, total: ncAOrder.length });
     });
 
     it('응답이 계약 스키마를 통과한다(ajv)', async () => {
@@ -407,13 +434,16 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     return id;
   }
 
-  /** 폐기 출고 — `source_document_type_code='DISPOSITION_DECISION'`(§0 #3 롤업의 원천). */
-  async function makeGoodsIssue(key: string, decisionId: number, statusCode: string, issueQty: number): Promise<void> {
+  /**
+   * 출고 — `source_document_type_code='DISPOSITION_DECISION'`(§0 #3 롤업의 원천). ⭐⭐ 리뷰
+   * Major-2 — `sourceDocumentTypeCode` 를 다르게 주면 「같은 id·다른 문서 유형」 픽스처가 된다.
+   */
+  async function makeGoodsIssue(key: string, decisionId: number, statusCode: string, issueQty: number, sourceDocumentTypeCode = 'DISPOSITION_DECISION'): Promise<void> {
     const issue = await prisma.goods_issue.create({
       data: {
         goods_issue_no: `${PREFIX}-GI-${key}`,
         issue_type_code: 'SCRAP',
-        source_document_type_code: 'DISPOSITION_DECISION',
+        source_document_type_code: sourceDocumentTypeCode,
         source_document_id: BigInt(decisionId),
         source_warehouse_id: ids.warehouse1,
         issued_at: new Date(T1),
@@ -443,11 +473,16 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     await makeDecision('D3', ncA, 'NORMAL', 40, T3);
     await makeDecision('tieA', ncA, 'REWORK', 5, TIE);
     await makeDecision('tieB', ncA, 'REWORK', 5, TIE); // TIE 와 같은 시각 · id 는 tieA 보다 크다
-    await makeDecision('boundary', ncA, 'REWORK', 1, WINDOW_TO); // 반열림 경계 — 기간 필터에서 빠진다
+    await makeDecision('boundary', ncA, 'REWORK', 1, WINDOW_TO); // 반열림 «끝» 경계 — 기간 필터에서 빠진다
+    await makeDecision('atFrom', ncA, 'REWORK', 1, WINDOW_FROM); // ⭐⭐ 리뷰 Major-3 — 반열림 «시작» 경계 — 든다
 
     // ⭐ R-3 ⓑ — POSTED 30 + CANCELLED 20. followUpQty 는 30 이어야 한다(50 이면 필터가 샌다).
     await makeGoodsIssue('D1-POSTED', decisionIds.D1, 'POSTED', 30);
     await makeGoodsIssue('D1-CANCELLED', decisionIds.D1, 'CANCELLED', 20);
+    // ⭐⭐ 리뷰 Major-2 — 같은 `source_document_id`(D1) · 다른 `source_document_type_code`.
+    // `goods_issue.source_document_id` 는 FK·CHECK 가 없어 다른 문서 유형과 번호가 겹치는 것이
+    // 정상이다(실측) — 판별자 조건을 지워도 이 행이 안 섞이면 걸린다.
+    await makeGoodsIssue('D1-OTHER-DOC', decisionIds.D1, 'POSTED', 20, 'WORK_ORDER');
 
     await makeDecision('D4', ncB, 'REWORK', 20, '2025-01-01T00:00:00.000Z'); // 다른 품목·LOT·기간 밖
     await makeDecision('D5', ncMulti, 'REWORK', 15, T1); // 상세 — lotId/lotNo 키 생략(LOT 2건)
@@ -458,6 +493,13 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     const ncScrapDone = await makeNonconformance('ncScrapDone', ids.item1, [ids.lotA]);
     await makeDecision('DscrapDone', ncScrapDone, 'SCRAP', 25, T1);
     await makeGoodsIssue('DscrapDone-POSTED', decisionIds.DscrapDone, 'POSTED', 25);
+
+    // ⭐⭐ 리뷰 Major-1 — 「SCRAP 이고 출고가 «0행»」 한 건. 여태 SCRAP 픽스처(D1·DscrapDone)가
+    // 전부 출고를 가져서 `fu.posted_qty` 의 `coalesce(sum(...), 0)` 이 실제로 안 걸렸다 —
+    // 0행이면 `sum()` 이 NULL 이 되고 3값 논리로 `followUpPending` 두 갈래 «모두»에서 행이
+    // 증발한다(coalesce 를 지워도 이 픽스처 없이는 e2e 가 초록이었다).
+    const ncScrapNone = await makeNonconformance('ncScrapNone', ids.item1, [ids.lotA]);
+    await makeDecision('DscrapNone', ncScrapNone, 'SCRAP', 40, T1);
   }
 
   async function makeUser(): Promise<void> {

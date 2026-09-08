@@ -92,8 +92,10 @@ export function dispositionDecisionView(row: DispositionDecisionRow): Dispositio
 /**
  * ⭐⭐ §2 — SQL WHERE(`followUpPending`·`reinstatable`)와 `dispositionFollowUp()` 이 같은 판정을
  * «두 곳»에 낸다(질의 필터가 페이지네이션 «전»이라 함수를 못 부른다). I-20 R-2 가 진 이중화
- * 빚을 여기선 값을 하나로 줄이지 못해 «런타임 대조»로 갚는다 — 같은 페이지 안 모든 행에서
- * 두 판정이 어긋나면 던진다. 증상은 「목록에 떴는데 그 행이 `COMPLETED`」다.
+ * 빚을 여기선 값을 하나로 줄이지 못해 «런타임 대조»로 갚는다 — 같은 페이지 안 «반환된» 모든
+ * 행에서 두 판정이 어긋나면 던진다. 증상은 「목록에 떴는데 그 행이 `COMPLETED`」다.
+ * ⛔ **단방향이다** — SQL 이 «과잉 배제»(있어야 할 행이 안 왔다)한 경우는 못 잡는다(대조가 반환된
+ * 행만 본다). 그 축은 e2e 의 배열 통째 단언이 진다(리뷰 Minor-2 · PR #435).
  */
 export function assertFollowUpInvariant(filters: { followUpPending?: boolean; reinstatable?: boolean }, rows: readonly DispositionDecisionRendered[]): void {
   for (const { view, followUp } of rows) {

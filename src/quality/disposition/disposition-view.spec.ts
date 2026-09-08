@@ -86,4 +86,10 @@ describe('assertFollowUpInvariant — §2 런타임 대조', () => {
   it('⭐ reinstatable 도 같은 방식으로 대조한다', () => {
     expect(() => assertFollowUpInvariant({ reinstatable: true }, [rowOf(1, followUp({ reinstatable: false }))])).toThrow(/reinstatable/);
   });
+
+  it('⭐⭐ 리뷰 Minor-1 — 여러 행 중 «둘째»만 어긋나도 던진다(첫 행만 보면 못 잡는다)', () => {
+    const good = rowOf(1, followUp({ followUpPending: true }));
+    const bad = rowOf(2, followUp({ followUpPending: false })); // 표본만 보면(예: rows[0] 만) 이 행을 놓친다
+    expect(() => assertFollowUpInvariant({ followUpPending: true }, [good, bad])).toThrow(/#2.*followUpPending/);
+  });
 });

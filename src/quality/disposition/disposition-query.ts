@@ -28,22 +28,12 @@ export interface BuiltQuery {
   params: unknown[];
 }
 
-/**
- * `lotinfo` — `nonconformance_lot` 이 하나일 때만 값을 낸다(둘 이상·0 이면 NULL → 키 생략).
- * `fu` — 이 결정을 원천으로 하는 «전기된» 폐기 출고 합(§0 #3 · R-3 ⓑ `POSTED` 만 센다).
- */
-const FROM = `
+/** `fu` — 이 결정을 원천으로 하는 «전기된» 폐기 출고 합(§0 #3 · R-3 ⓑ `POSTED` 만 센다). count 도 이 축으로 거른다. */
+const FROM_CORE = `
     FROM quality.disposition_decision d
     JOIN quality.nonconformance nc ON nc.nonconformance_id = d.nonconformance_id
     JOIN mdm.item i ON i.item_id = nc.item_id
     JOIN app.app_user u ON u.app_user_id = d.decided_by
-    LEFT JOIN LATERAL (
-      SELECT CASE WHEN count(*) = 1 THEN min(nl.lot_id) END AS lot_id,
-             CASE WHEN count(*) = 1 THEN min(l.lot_no) END AS lot_no
-        FROM quality.nonconformance_lot nl
-        JOIN trace.lot l ON l.lot_id = nl.lot_id
-       WHERE nl.nonconformance_id = d.nonconformance_id
-    ) lotinfo ON TRUE
     LEFT JOIN LATERAL (
       SELECT coalesce(sum(gil.issue_qty), 0) AS posted_qty
         FROM logistics.goods_issue gi
@@ -53,7 +43,17 @@ const FROM = `
          AND gi.status_code = '${POSTED}'
     ) fu ON TRUE`;
 
-export const SELECT_COLUMNS = `
+// `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).
+const FROM = `${FROM_CORE}
+    LEFT JOIN LATERAL (
+      SELECT CASE WHEN count(*) = 1 THEN min(nl.lot_id) END AS lot_id,
+             CASE WHEN count(*) = 1 THEN min(l.lot_no) END AS lot_no
+        FROM quality.nonconformance_lot nl
+        JOIN trace.lot l ON l.lot_id = nl.lot_id
+       WHERE nl.nonconformance_id = d.nonconformance_id
+    ) lotinfo ON TRUE`;
+
+const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
       d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
@@ -117,7 +117,7 @@ export function dispositionRowsQuery(filters: DispositionFilters, page: { skip: 
 /** `page.total` 은 필터 «전체» 기준이다 — 페이지 안에서 세지 않는다. */
 export function dispositionCountQuery(filters: DispositionFilters): BuiltQuery {
   const { where, params } = conditionsOf(filters);
-  return { sql: `SELECT count(*)::int AS total ${FROM} WHERE ${where}`, params };
+  return { sql: `SELECT count(*)::int AS total ${FROM_CORE} WHERE ${where}`, params };
 }
 
 export function dispositionByIdQuery(dispositionDecisionId: number): BuiltQuery {
