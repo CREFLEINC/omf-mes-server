@@ -4,9 +4,14 @@
  * ⛔ 이 표는 **writer 가 0개다**(§2-4 · 통보 089 §2) — 등록·승인·조건수정 오퍼레이션이 계약에
  * 없어 운영에서는 목록이 늘 빈다. 픽스처는 전부 prisma 직접 INSERT 다(0단계 선례).
  *
- * ⭐ `usableOnly=true` 가 **C1 하나만** 남기도록 나머지 픽스처는 전부 `REJECTED` 로 상태 축을
- * 끄거나(C5·C6·tie 계열) 별도 축(기간·잔여)으로 usable=false 를 만든다(C2·C3·C4·C4-a) — 「한
+ * ⭐ `usableOnly=true` 가 **C1·C7 만** 남기도록 나머지 픽스처는 전부 `REJECTED` 로 상태 축을
+ * 끄거나(C5·C6·C8·tie 계열) 별도 축(기간·잔여)으로 usable=false 를 만든다(C2·C3·C4·C4-a) — 「한
  * 값뿐이라 단언이 공허했다」를 피한다(R-19).
+ *
+ * ⭐⭐ PR #455 리뷰 반영(Major 1~3) — C7(`valid_from == 기준일` 경계 · 넷째 항 반증) ·
+ * C8(`allowedWorkOrderId`·`allowedProcessId` 가 실제로 «채워진» 행 · unrestrictedAxes 축 판정
+ * 반증) · `#12`(상세) 에 `concessionNo`·`uomId`·`approvalRequestId`·`lotNo`·`usable` **값**
+ * 단언을 더했다 — required 칸의 «값 뒤바꿈」과 상세 라우트의 기준일 하드코딩을 잡는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -49,6 +54,9 @@ describe('특채 목록·상세 (e2e)', () => {
   let plantId = 0n;
   let itemId = 0n;
   let uomId = 0n;
+  let customerId = 0n;
+  let workOrderId = 0n;
+  let processId = 0n;
 
   const lotIds: Record<string, bigint> = {};
   const ncIds: Record<string, bigint> = {};
@@ -85,12 +93,40 @@ describe('특채 목록·상세 (e2e)', () => {
       expect(response.body.page.total).toBeGreaterThanOrEqual(Object.keys(concessionIds).length);
     });
 
-    it('#2 ⭐ usableOnly=true 가 C1 «만» 남긴다(page.total 도 count(where) 축을 본다)', async () => {
+    it('#2 ⭐ usableOnly=true 가 C1·C7·C9 «만» 남긴다(page.total 도 count(where) 축을 본다)', async () => {
       const response = await get(`${CONCESSIONS}?usableOnly=true`).expect(200);
 
-      expect(idsOf(response.body)).toEqual([concessionIds.C1]);
+      // 정렬 valid_from DESC — C7(오늘) → C9(−7일) → C1(−10일).
+      expect(idsOf(response.body)).toEqual([concessionIds.C7, concessionIds.C9, concessionIds.C1]);
       // ⭐ count(where) 가 usableOnly 축을 놓치면 items 는 줄어도 page.total 은 전건 그대로다.
-      expect(response.body.page.total).toBe(1);
+      expect(response.body.page.total).toBe(3);
+    });
+
+    it('#2-c ⭐ Minor-1 — 고정밀 경계(C9, 유효자릿수 20)에서도 `Prisma.Decimal` 로 잔여를 정확히 가른다', async () => {
+      // `Number()` 산술로 되돌리면 배정밀도(≈16 유효자릿수)가 20자리를 못 지켜
+      // `99999999999999.999999 - 99999999999999.999998` 이 0 으로 뭉개지고 usable 이 false 로 샌다.
+      const response = await get(`${CONCESSIONS}?usableOnly=true`).expect(200);
+      const c9 = response.body.items.find((i: { concessionId: number }) => i.concessionId === concessionIds.C9);
+
+      // ⛔ approvedQty·consumedQty 「값」은 여기서 안 잰다 — `.toNumber()` 로 접힌 값을 JS 리터럴과
+      // 비교하면 «양쪽 다» 같은 배정밀도 반올림을 거쳐 우연히 같아진다(비교 자체가 공허해진다).
+      // 이 시험이 겨누는 것은 `usable`(Decimal 산술의 «결과 부호»)뿐이다.
+      expect(c9.usable).toBe(true);
+    });
+
+    it('#2-a ⭐⭐ PR #455 리뷰 Major-1 — `valid_from == 기준일`(C7)이 4항째 경계 `<=` 로 들어온다(`<` 로 새면 깨진다)', async () => {
+      const response = await get(`${CONCESSIONS}?usableOnly=true`).expect(200);
+      const c7 = response.body.items.find((i: { concessionId: number }) => i.concessionId === concessionIds.C7);
+
+      expect(c7).toMatchObject({ usable: true, validFrom: today() });
+    });
+
+    it('#2-b ⭐⭐ PR #455 리뷰 Major-1(딸림) — usableOnly=true 와 validOn 을 «함께» 주면 SQL 도 그 기준일을 쓴다(C2 가 그 날엔 들어온다)', async () => {
+      // SQL 이 validOn 을 무시하고 늘 서버 오늘을 쓰면 C2(−10~−1일 유효)는 usableOnly=true 에서
+      // 늘 빠진다 — 이 교차 질의가 그 갈림을 잡는다.
+      const response = await get(`${CONCESSIONS}?usableOnly=true&validOn=${shift(-5)}`).expect(200);
+
+      expect(idsOf(response.body)).toContain(concessionIds.C2);
     });
 
     it('#3 ⭐ C1 은 valid_to 가 «오늘과 같은 날»인데 usable=true(경계 `>=`)', async () => {
@@ -168,11 +204,23 @@ describe('특채 목록·상세 (e2e)', () => {
       expect(c5.unrestrictedAxes).toEqual(['allowedWorkOrderId', 'allowedProcessId', 'allowedCustomerId']);
     });
 
-    it('#11 허용 축이 하나만 찬 C6 은 unrestrictedAxes 가 «2개»(반증 행)', async () => {
+    it('#11 허용 축이 하나만 찬 C6 은 unrestrictedAxes 가 «2개»(반증 행) · allowedCustomerId 값이 실린다', async () => {
       const response = await get(CONCESSIONS).expect(200);
       const c6 = response.body.items.find((i: { concessionId: number }) => i.concessionId === concessionIds.C6);
 
       expect(c6.unrestrictedAxes).toEqual(['allowedWorkOrderId', 'allowedProcessId']);
+      // ⭐⭐ PR #455 리뷰 Major-2(M-B) — 값을 안 실어도(undefined 로 고정) 위 단언만으로는 안 잡힌다.
+      expect(c6).toMatchObject({ allowedCustomerId: Number(customerId) });
+    });
+
+    it('#11-b ⭐⭐ PR #455 리뷰 Major-2(M-D) — 허용 축이 «반대로» 찬 C8(workOrder·process 는 채우고 customer 만 비움)은 unrestrictedAxes 가 «customer 하나»뿐이다', async () => {
+      const response = await get(CONCESSIONS).expect(200);
+      const c8 = response.body.items.find((i: { concessionId: number }) => i.concessionId === concessionIds.C8);
+
+      // allowed_work_order_id·allowed_process_id 의 null 판정을 «항상 참」으로 굳혀도(M-D) 이
+      // 픽스처가 실제로 두 축을 채워 뒀으므로 걸리면 배열에 그 이름들이 잘못 섞여 깨진다.
+      expect(c8.unrestrictedAxes).toEqual(['allowedCustomerId']);
+      expect(c8).toMatchObject({ allowedWorkOrderId: Number(workOrderId), allowedProcessId: Number(processId) });
     });
 
     it('#11-a ⭐⭐ R-13 — C5 의 응답에 validTo·remarks·allowed*3·versionNo 키가 «없다»(널이 아니다)', async () => {
@@ -204,11 +252,35 @@ describe('특채 목록·상세 (e2e)', () => {
   });
 
   describe('상세', () => {
-    it('#12 200 · 필드가 채워진다', async () => {
+    it('#12 200 · 필드가 채워진다(required 칸 값 · lotNo · 기준일 반영 usable)', async () => {
       const response = await get(`${CONCESSIONS}/${concessionIds.C1}`).expect(200);
 
-      expect(response.body).toMatchObject({ concessionId: concessionIds.C1, lotId: Number(lotIds.C1), nonconformanceId: Number(ncIds.C1) });
+      // ⭐⭐ PR #455 리뷰 Major-3(M-C·M-I·M-J) — 칸을 서로 바꿔치기해도 ajv 는 타입만 봐 못 잡는다.
+      // concessionNo·uomId·approvalRequestId 「값」을 직접 잠근다. lotNo 는 Major-2(M-H) ·
+      // usable=true 는 Minor-2(M-F, 상세 라우트가 «오늘» 대신 고정 기준일을 쓰면 C1 이 false 로 샌다).
+      expect(response.body).toMatchObject({
+        concessionId: concessionIds.C1,
+        concessionNo: `${PREFIX}-CN-C1`,
+        lotId: Number(lotIds.C1),
+        lotNo: `${PREFIX}-LOT-C1`,
+        nonconformanceId: Number(ncIds.C1),
+        uomId: Number(uomId),
+        approvalRequestId: Number(arIds.C1),
+        usable: true,
+      });
       expect(validator('GET /quality/concessions/{concessionId}')(response.body)).toBe(true);
+    });
+
+    it('#12-a ⭐ PR #455 리뷰 Minor-2(M-O) — 물리 «첫 행이 아닌» C6 을 단건 조회해도 그 행 고유의 usable·unrestrictedAxes 가 나온다', async () => {
+      const response = await get(`${CONCESSIONS}/${concessionIds.C6}`).expect(200);
+
+      expect(response.body).toMatchObject({
+        concessionId: concessionIds.C6,
+        statusCode: 'REJECTED',
+        usable: false,
+        unrestrictedAxes: ['allowedWorkOrderId', 'allowedProcessId'],
+        allowedCustomerId: Number(customerId),
+      });
     });
 
     it('#12 없는 id → 404', async () => {
@@ -287,8 +359,10 @@ describe('특채 목록·상세 (e2e)', () => {
       statusCode: string;
       validFrom: string;
       validTo: string | null;
-      approvedQty: number;
-      consumedQty: number;
+      // ⭐ Minor-1 — 고정밀 경계 픽스처는 «문자열»로 넘긴다. JS 숫자 리터럴은 소스 코드
+      // 단계에서 이미 배정밀도로 반올림돼(≈16 유효자릿수) numeric(20,6) 의 20자리를 못 지킨다.
+      approvedQty: number | string;
+      consumedQty: number | string;
       allowedWorkOrderId?: bigint | null;
       allowedProcessId?: bigint | null;
       allowedCustomerId?: bigint | null;
@@ -337,7 +411,39 @@ describe('특채 목록·상세 (e2e)', () => {
     await newConcession('C5', { statusCode: 'REJECTED', validFrom: shift(-10), validTo: null, approvedQty: 100, consumedQty: 10, remarks: null });
 
     const customer = await prisma.partner.create({ data: { partner_code: `${PREFIX}-PT`, partner_name: `${PREFIX} 허용거래처` } });
+    customerId = customer.partner_id;
     await newConcession('C6', { statusCode: 'REJECTED', validFrom: shift(-10), validTo: shift(10), approvedQty: 100, consumedQty: 0, allowedCustomerId: customer.partner_id });
+
+    // ⭐⭐ PR #455 리뷰 Major-1 — `valid_from == 기준일`(오늘) 인 행. C1 은 `valid_from` 이
+    // −10일이라 넷째 항 경계(`<=` vs `<`)를 «전혀» 건드리지 않는다 — 이 행이 그 경계를 잠근다.
+    await newConcession('C7', { statusCode: 'APPROVED', validFrom: today(), validTo: shift(10), approvedQty: 100, consumedQty: 10 });
+
+    // ⭐⭐ PR #455 리뷰 Major-2(M-D) — `allowedWorkOrderId`·`allowedProcessId` 가 «실제로 채워진»
+    // 유일한 행. 이 둘이 여태 전부 NULL 이라 그 축의 null 판정을 「항상 참」으로 굳혀도 초록이었다.
+    const process = await prisma.process.create({ data: { process_code: `${PREFIX}-PR`, process_name: `${PREFIX} 특채허용공정`, process_type_code: 'MOLDING' } });
+    processId = process.process_id;
+    const routing = await prisma.routing.create({ data: { item_id: itemId, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'ACTIVE' } });
+    const operation = await prisma.routing_operation.create({ data: { routing_id: routing.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: `${PREFIX} 특채허용작업` } });
+    const workOrder = await prisma.work_order.create({
+      data: { work_order_no: `${PREFIX}-WO`, routing_operation_id: operation.routing_operation_id, item_id: itemId, order_qty: 10, uom_id: uomId, status_code: 'RELEASED' },
+    });
+    workOrderId = workOrder.work_order_id;
+    await newConcession('C8', {
+      statusCode: 'REJECTED',
+      validFrom: shift(-10),
+      validTo: shift(10),
+      approvedQty: 100,
+      consumedQty: 10,
+      allowedWorkOrderId: workOrder.work_order_id,
+      allowedProcessId: process.process_id,
+    });
+
+    // ⭐ Minor-1 — `Prisma.Decimal` 을 지키는 경계. 배정밀도(≈16 유효자릿수)로 접으면
+    // `99999999999999.999999 - 99999999999999.999998` 이 0 으로 뭉개져 usable 이 false 로 샌다.
+    // ⭐ APPROVED·정상 기간이라야 `usableOf()` 가 상태·기간 축에서 단락하지 않고 «잔여 축까지»
+    // 실제로 계산한다 — REJECTED 로 두면 산식을 아예 안 타 Decimal 경계를 못 잠근다. `validFrom`
+    // 을 C1·C7 과 다르게 둬 정렬 동률이 안 겹치게 한다.
+    await newConcession('C9', { statusCode: 'APPROVED', validFrom: shift(-7), validTo: shift(10), approvedQty: '99999999999999.999999', consumedQty: '99999999999999.999998' });
 
     // ⭐ 정렬 2차 키 — valid_from 이 «전부 같은» 네 행. id 는 생성 순서대로 커진다(DESC 로 tie4
     // 가 가장 먼저) — 둘만으로는 PostgreSQL 의 동률 처리가 우연히 일치할 수 있어(R-19) 넷으로 늘렸다.
@@ -365,6 +471,12 @@ describe('특채 목록·상세 (e2e)', () => {
   async function cleanup(): Promise<void> {
     await prisma.concession.deleteMany({ where: { concession_no: { startsWith: `${PREFIX}-CN-` } } });
     await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: `${PREFIX}-AR-` } } });
+    // ⭐ Major-2(C8) 픽스처 사슬 — work_order → routing_operation → routing → process. concession
+    // (allowed_work_order_id·allowed_process_id) 을 먼저 지운 «뒤»라야 FK 가 안 막는다.
+    await prisma.work_order.deleteMany({ where: { work_order_no: `${PREFIX}-WO` } });
+    await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: `${PREFIX}-RT` } } });
+    await prisma.routing.deleteMany({ where: { routing_code: `${PREFIX}-RT` } });
+    await prisma.process.deleteMany({ where: { process_code: `${PREFIX}-PR` } });
     await prisma.nonconformance.deleteMany({ where: { nonconformance_no: { startsWith: `${PREFIX}-NC-` } } });
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: `${PREFIX}-LOT-` } } });
     await prisma.partner.deleteMany({ where: { partner_code: `${PREFIX}-PT` } });

@@ -95,6 +95,10 @@ describe('assertUsableInvariant — §2 런타임 대조', () => {
     expect(() => assertUsableInvariant(undefined, [{ concessionId: 1, usable: false }])).not.toThrow();
   });
 
+  it('⭐ PR #455 리뷰 Nit-5 — usableOnly=false 도 조기 반환한다(true 갈래만 검사)', () => {
+    expect(() => assertUsableInvariant(false, [{ concessionId: 1, usable: false }])).not.toThrow();
+  });
+
   it('usableOnly=true 이고 반환된 모든 행이 usable=true 면 통과한다', () => {
     expect(() => assertUsableInvariant(true, [{ concessionId: 1, usable: true }])).not.toThrow();
   });

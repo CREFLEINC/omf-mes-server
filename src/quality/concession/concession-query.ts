@@ -1,10 +1,13 @@
 /**
- * `GET /quality/concessions` · `…/{concessionId}` 의 SQL — 원시 SQL(선례 `disposition-query.ts`).
- * ⛔ 왜. `usable`(§4-3 · 통보 089 §2)이 `approved_qty − consumed_qty > 0` 을 요구해 «컬럼 대
- * 컬럼» 비교가 필요하다 — Prisma 관계 필터는 리터럴 값하고만 비교되고 다른 컬럼과는 못
- * 비교한다. `usableOnly` 는 페이지네이션 «전»에 걸러야 해서 같은 판정을 SQL 로 다시 적는다
- * (§2 계열 — `concession-view.ts` 의 `assertUsableInvariant` 가 그 갈림을 런타임에 잡는다).
- * ⛔ 식별자는 이 파일의 상수·리터럴에서만 온다 — 요청 값은 전부 파라미터로 묶는다.
+ * `GET /quality/concessions` · `…/{concessionId}` 의 SQL — 원시 SQL(선례 `disposition-query.ts`
+ * 패턴 복제 · CLAUDE.md 「CRUD 는 기존 모듈 패턴 복제」). ⚠ 컬럼 대 컬럼 비교(`approved_qty −
+ * consumed_qty > 0`)는 Prisma 필드 참조(`Prisma.<model>.fields.<col>`)로도 표현할 수 있다 —
+ * 「Prisma 로는 못 비교한다」는 근거가 아니다(PR #455 리뷰 Major-4 · 반례
+ * `purchase-order-query.service.ts:97`). 형제 `disposition-query.ts` 와 같은 모양으로 두어
+ * SQL/Prisma 가 파일마다 갈리지 않게 «패턴을 고정»한 선택이다. `usableOnly` 는 페이지네이션
+ * «전»에 걸러야 해서 같은 판정을 SQL 로 다시 적는다(§2 계열 — `concession-view.ts` 의
+ * `assertUsableInvariant` 가 그 갈림을 런타임에 잡는다). ⛔ 식별자는 이 파일의 상수·리터럴에서만
+ * 온다 — 요청 값은 전부 파라미터로 묶는다.
  */
 
 export interface ConcessionFilters {
