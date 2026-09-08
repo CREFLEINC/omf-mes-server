@@ -428,6 +428,34 @@ describe('LOT (e2e)', () => {
     expect(response.body.items).toHaveLength(2);
   });
 
+  it('⭐ R-5 — 보류 정렬은 `heldAt desc` · 동률은 `lotHoldId desc` 로 닫는다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    // 등록이 만든 보류보다 «나중»이면서 서로 «동률»인 둘 — 방향과 2차 키를 함께 잠근다.
+    const tie = new Date(Date.now() + 60_000);
+    for (let i = 0; i < 2; i += 1) {
+      await prisma.lot_hold.create({
+        data: {
+          lot_id: BigInt(lot.lotId),
+          reason_code: 'INCOMING_INSPECTION_WAIT',
+          status_code: 'HELD',
+          held_at: tie,
+        },
+      });
+    }
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/holds?activeOnly=false`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    const items = response.body.items as { lotHoldId: number; heldAt: string }[];
+    expect(items).toHaveLength(3);
+    // ⑤ 방향 — desc 를 asc 로 되돌리면 깨진다.
+    expect(new Date(items[1].heldAt).getTime()).toBeGreaterThan(new Date(items[2].heldAt).getTime());
+    // ⑥ 2차 키 — 동률 두 행은 lotHoldId 가 큰 쪽이 앞이다. 2차 키를 빼면 순서가 흔들린다.
+    expect(items[0].lotHoldId).toBeGreaterThan(items[1].lotHoldId);
+  });
+
   it('⭐ 보류 목록의 첫 행이 상세 GET 의 첫 보류와 완전히 같다', async () => {
     const lot = await create({ numberSourceCode: 'MES' });
     const detail = await detailOf(lot.lotId);

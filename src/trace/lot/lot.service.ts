@@ -123,9 +123,8 @@ export class LotService {
     const [rows, total] = await Promise.all([
       this.prisma.lot.findMany({
         where,
-        // ⭐ R-5 — `GET .../holds`(`lot-hold-list.service.ts`)와 같은 정렬. 같은 보류를
-        //    두 경로가 다른 순서로 보이면 `W-01-07` 이 헷갈린다.
-        include: { lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] } },
+        // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
+        include: { lot_hold: true },
         orderBy: [{ created_at: 'desc' }, { lot_id: 'desc' }],
         skip: page.skip,
         take: page.take,
