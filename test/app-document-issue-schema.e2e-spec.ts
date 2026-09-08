@@ -88,7 +88,6 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
           worker_name: "보고 작업자",
           business_unit_id: businessUnitId,
           plant_id: plantId,
-          app_user_id: reporterId,
           status_code: "EMPLOYED",
         },
       })
