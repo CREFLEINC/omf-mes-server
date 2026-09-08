@@ -1037,7 +1037,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
 
   it(
     '⭐⭐ 등록 — 같은 키·«다른» 본문 재전송은 409 이고 `code` 가 `DUPLICATE_KEY` 다 · 두 번째 보류가 «안» 선다 ' +
-      '(↩ runIdempotent 에 FAMILY_CONFLICT_CODE 를 안 넘기거나 값을 INVALID_STATE 로 바꾸면 깨진다 · #337 ⓐ · 결정 — 통보 089)',
+      '(↩ runIdempotent 에 FAMILY_CONFLICT_CODE 를 안 넘기거나 값을 INVALID_STATE 로 바꾸면 깨진다 · #337 ⓐ · 결정 — 통보 077)',
     async () => {
       // 이 오퍼레이션의 409 봉투는 `QualityConflictResponse` 이고 `code` 가 **required** 다 —
       // 멱등 흡수가 내는 409 만 그 칸을 비워 두고 있었다(I-19 §12-1 ⓐ).

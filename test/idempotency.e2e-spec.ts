@@ -188,7 +188,7 @@ describe('멱등 (실 DB)', () => {
     });
 
     describe('계열 봉투의 `code`', () => {
-      // 결정 — 통보 089. 계약 실측(`a6a87e1`): `Production`·`Quality`·`Shipment`·
+      // 결정 — 통보 077. 계약 실측(`a6a87e1`): `Production`·`Quality`·`Shipment`·
       // `StockReinstatement` 넷 다 `code` 가 required 이고 enum 에 `DUPLICATE_KEY`·
       // `INVALID_STATE` 를 둘 다 갖는다. 반면 `app`·`mdm`·`logistics`·`equipment` 의
       // `ConflictResponse` 에는 `code` 프로퍼티 «자체»가 없다.

@@ -27,7 +27,7 @@ export interface IdempotencyConflictCode {
  * 가르지 않는다 — 갈라도 값이 같다.
  *
  * ⛔ 「처리 중」에 `CANCEL_IN_PROGRESS` 를 쓰지 않는다 — shipment 계열에만 있고 뜻이
- * 「취소가 진행 중」이라 다르다. 결정 — 통보 089.
+ * 「취소가 진행 중」이라 다르다. 결정 — 통보 077.
  */
 export const FAMILY_CONFLICT_CODE: IdempotencyConflictCode = {
   duplicate: 'DUPLICATE_KEY',
