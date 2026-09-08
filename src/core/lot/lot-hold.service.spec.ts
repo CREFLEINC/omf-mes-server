@@ -8,6 +8,7 @@ type Where = { released_at?: null; reason_code?: string; lot_hold_id?: { in: big
 
 const NOW = new Date('2026-09-08T04:00:00Z');
 const ACTOR = { by: 7n, at: NOW };
+const HELD_REASON = 'SUSPECT_MATERIAL';
 const RELEASE = { releaseReasonCode: 'RETEST_PASS', releaseTargetLotStatusCode: 'NORMAL', remarks: '풀었다' };
 const dec = (v: string) => new Prisma.Decimal(v);
 
@@ -49,7 +50,13 @@ function fake(lotIds: bigint[], seed: LotHoldRow[] = []) {
         row.released_at = NOW;
         return row;
       }),
-      findMany: record('lot_hold.findMany', (a) => rows.filter((r) => match(r, a.where as Where))),
+      findMany: record('lot_hold.findMany', (a) => {
+        // 정렬도 실제로 지킨다 — 무시하면 `orderBy` 를 'desc' 로 뒤집어도 초록이다.
+        const dir = (a.orderBy as { lot_hold_id: string }).lot_hold_id === 'desc' ? -1n : 1n;
+        return rows
+          .filter((r) => match(r, a.where as Where))
+          .sort((x, y) => Number((x.lot_hold_id - y.lot_hold_id) * dir));
+      }),
       count: record('lot_hold.count', (a) => rows.filter((r) => match(r, a.where as Where)).length),
     },
   };
@@ -67,7 +74,7 @@ function openRow(extra: Partial<LotHoldRow> = {}): LotHoldRow {
     lot_id: 1n,
     hold_qty: dec('10'),
     uom_id: 3n,
-    reason_code: 'SUSPECT_MATERIAL',
+    reason_code: HELD_REASON,
     release_condition: '재검 합격',
     status_code: 'HELD',
     held_by: 2n,
@@ -179,7 +186,7 @@ describe('LotHoldService', () => {
     const { tx, calls } = fake([1n], [openRow()]);
 
     const locked = await service.lockLotsWithin(tx, [1n]);
-    await service.releaseWithin(tx, locked, { lotId: 1n }, RELEASE, ACTOR);
+    await service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, RELEASE, ACTOR);
 
     expect(calls).toEqual(['lot.lock', 'lot_hold.findMany', 'lot_hold.update', 'lot_hold.count']);
   });
@@ -188,16 +195,16 @@ describe('LotHoldService', () => {
     const { tx, calls } = fake([1n], [openRow()]);
     const locked = await service.lockLotsWithin(tx, [1n]);
 
-    await expect(service.releaseWithin(tx, locked, { lotId: 9n }, RELEASE, ACTOR)).rejects.toThrow('잠그지 않은 LOT');
+    await expect(service.releaseWithin(tx, locked, { lotId: 9n, reasonCode: HELD_REASON }, RELEASE, ACTOR)).rejects.toThrow('잠그지 않은 LOT');
     // 던지기 «전»에 읽지도 쓰지도 않았다.
     expect(calls).toEqual(['lot.lock']);
   });
 
-  it('releaseWithin 이 원 행의 여섯 칸을 채우고 version_no 를 올린다(status_code 는 안 건드린다)', async () => {
+  it('releaseWithin 이 원 행의 다섯 칸을 채운다(status_code·version_no 는 «안» 건드린다)', async () => {
     const { tx, args } = fake([1n], [openRow({ hold_qty: null })]);
     const locked = await service.lockLotsWithin(tx, [1n]);
 
-    await service.releaseWithin(tx, locked, { lotId: 1n }, RELEASE, ACTOR);
+    const { released } = await service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, RELEASE, ACTOR);
 
     expect(args[2]).toMatchObject({ where: { lot_hold_id: 41n } });
     expect(args[2].data).toEqual({
@@ -206,10 +213,28 @@ describe('LotHoldService', () => {
       release_reason_code: 'RETEST_PASS',
       release_target_lot_status_code: 'NORMAL',
       remarks: '풀었다',
-      version_no: { increment: 1 },
     });
     // ⛔ `LOT_HOLD_STATUS` 값 목록이 시드에 0건이라 이 축을 안 건드린다(문의 13).
     expect(args[2].data).not.toHaveProperty('status_code');
+    // ⛔ R-24 — 죽은 칸이고 `plan.md` §6 이 다음 릴리스 `DROP COLUMN` 으로 못 박았다. 새 쓰기를
+    //    더하면 그 삭제가 이 해제를 죽인다(`CLAUDE.md` 두 릴리스 규칙).
+    expect(args[2].data).not.toHaveProperty('version_no');
+    // 반환은 «update 뒤» 행이다 — ⑤ 가 재조회를 생략해도 응답의 releasedAt 이 NULL 로 안 나간다.
+    expect(released[0].released_at).toEqual(NOW);
+  });
+
+  it('⭐ Major-1 — 입력이 두 칸을 «생략»하면 도착은 NULL 이고 원 행의 remarks 는 안 건드린다', async () => {
+    const { tx, args } = fake([1n], [openRow()]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    // `:confirm` 이 실제로 타는 갈래다 — 둘 다 «안 준다».
+    await service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, { releaseReasonCode: 'RETEST_PASS' }, ACTOR);
+
+    // ⭐ R-2 — 안 움직였으면 도착을 비운다. 'NORMAL' 이 들어가면 `W-03-01` 이력의 「전이」 열에
+    //    LOT 이 안 움직였는데도 「보류 → 정상」이 그려진다.
+    expect(args[2].data).toHaveProperty('release_target_lot_status_code', null);
+    // ⭐ 키를 «생략»해 원 행의 비고를 그대로 둔다 — NULL 로 덮으면 현장이 적은 비고가 사라진다.
+    expect(args[2].data).not.toHaveProperty('remarks');
   });
 
   it('⭐ R-11 — 사유로 좁혀 풀고, 재계수는 «다른 사유»의 열린 보류를 함께 센다', async () => {
@@ -226,7 +251,7 @@ describe('LotHoldService', () => {
     const { released, openAfter } = await service.releaseWithin(
       tx,
       locked,
-      { lotId: 1n, reasonCode: 'SUSPECT_MATERIAL' },
+      { lotId: 1n, reasonCode: HELD_REASON },
       RELEASE,
       ACTOR,
     );
@@ -237,6 +262,16 @@ describe('LotHoldService', () => {
     expect(openAfter).toBe(1);
     expect(args[1].where).toEqual({ lot_id: 1n, released_at: null, reason_code: 'SUSPECT_MATERIAL' });
     expect(args[3].where).toEqual({ lot_id: 1n, released_at: null });
+  });
+
+  it('여러 건을 풀면 released 가 lot_hold_id 오름차순이다(호출자가 첫 건을 집는다)', async () => {
+    // 씨앗을 «역순»으로 심는다 — `orderBy` 를 'desc' 로 뒤집으면 이 단언이 무너져야 한다.
+    const { tx } = fake([1n], [openRow({ lot_hold_id: 44n }), openRow({ lot_hold_id: 42n })]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    const { released } = await service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, RELEASE, ACTOR);
+
+    expect(released.map((r) => r.lot_hold_id)).toEqual([42n, 44n]);
   });
 
   it('lotHoldIds 로 좁히면 그 한 건만 푼다(`:release` 가 겨냥하는 모양)', async () => {
@@ -272,7 +307,7 @@ describe('LotHoldService', () => {
       const { openAfter } = await service.releaseWithin(
         tx,
         locked,
-        { lotId: 1n },
+        { lotId: 1n, reasonCode: HELD_REASON },
         { ...RELEASE, releaseQty: dec(releaseQty) },
         ACTOR,
       );
@@ -290,7 +325,7 @@ describe('LotHoldService', () => {
     const { openAfter } = await service.releaseWithin(
       tx,
       locked,
-      { lotId: 1n },
+      { lotId: 1n, reasonCode: HELD_REASON },
       { ...RELEASE, releaseQty: dec('4') },
       ACTOR,
     );
@@ -304,6 +339,8 @@ describe('LotHoldService', () => {
       uom_id: 3n,
       release_condition: '재검 합격',
       target_lot_status_code: 'DEFECTIVE',
+      // 사유·조건·도착·비고는 「같은 보류의 나머지」라 원 행에서 그대로 물려받는다.
+      remarks: '처음 걸 때',
       held_by: 7n,
       held_at: NOW,
       created_by: 7n,
@@ -318,7 +355,7 @@ describe('LotHoldService', () => {
     const locked = await service.lockLotsWithin(tx, [1n]);
 
     await expect(
-      service.releaseWithin(tx, locked, { lotId: 1n }, { ...RELEASE, releaseQty: dec('1') }, ACTOR),
-    ).rejects.toThrow('부분 해제는 보류 한 건에서만');
+      service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, { ...RELEASE, releaseQty: dec('1') }, ACTOR),
+    ).rejects.toThrow('대상 2건');
   });
 });

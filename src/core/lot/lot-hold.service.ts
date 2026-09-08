@@ -42,12 +42,16 @@ export interface LotHoldInput {
   remarks?: string | null;
 }
 
-/** 무엇을 푸나 — 안 좁히면 그 LOT 의 열린 보류 **전건**이다(`:confirm` 은 사유로, `:release` 는 id 로 좁힌다). */
-export interface LotHoldReleaseTarget {
-  lotId: bigint;
-  lotHoldIds?: bigint[];
-  reasonCode?: string;
-}
+/**
+ * 무엇을 푸나 — `:confirm` 은 **사유**로, `:release` 는 **id** 로 좁힌다.
+ * ⭐ **둘 중 하나는 반드시 준다**(`LockedLot` 과 같은 결로 타입이 강제한다). 안 그러면
+ * `{ lotId }` 하나로 그 LOT 의 열린 보류 «전건»이 닫히고 `openAfter === 0` 이 되어 LOT 이
+ * `NORMAL` 로 올라간다 — 불량 자재가 출고로 풀린다. 컴파일·린트·테스트는 다 조용하다.
+ */
+export type LotHoldReleaseTarget = { lotId: bigint } & (
+  | { lotHoldIds: bigint[]; reasonCode?: string }
+  | { reasonCode: string; lotHoldIds?: bigint[] }
+);
 
 /** 해제가 원 행에 남기는 칸 — 계약 `LotHoldRelease` 의 전 칸이 여기 담긴다. */
 export interface LotHoldReleaseInput {
@@ -130,8 +134,9 @@ export class LotHoldService {
    * ⭐⭐ 재계수를 «호출자에게 맡기지 않는» 것이 R-5 의 처방이다 — 밖에서 세면 그 한 문장이
    * 잠금 밖으로 새어 나간다. 읽기·쓰기·재계수가 한 함수 안이라 셋이 같은 잠금을 공유한다.
    * ⛔ `status_code` 를 안 건드린다 — `LOT_HOLD_STATUS` 값 목록이 시드에 0건이다(문의 13).
-   * `version_no` 는 오늘 읽는 코드가 0줄이지만(R-24) 올려 둔다 — 죽은 칸을 «틀린» 값으로
-   * 남기면 나중에 `runVersioned` 류가 집었을 때 조용히 통과한다.
+   * ⛔ **`version_no` 도 안 올린다** — R-24 가 그 칸을 「읽는 코드 0줄인 죽은 칸」으로 판정했고
+   * `plan.md` §6 배포 노트가 **다음 릴리스에서 컬럼 삭제**로 못 박았다. 「사용 제거」 단계에서
+   * 새 쓰기를 더하면 `DROP COLUMN` 이 이 해제를 통째로 죽인다(`CLAUDE.md` 두 릴리스 규칙).
    */
   async releaseWithin(
     tx: Tx,
@@ -151,7 +156,9 @@ export class LotHoldService {
       orderBy: { lot_hold_id: 'asc' },
     });
     if (input.releaseQty != null && holds.length !== 1) {
-      throw new Error('부분 해제는 보류 한 건에서만 한다 — 어느 행에서 뺄지가 정해지지 않는다');
+      throw new Error(
+        `부분 해제는 열린 보류 «정확히 한 건»을 겨냥해야 한다 — 어느 행에서 뺄지가 없다 (대상 ${holds.length}건)`,
+      );
     }
     const released: LotHoldRow[] = [];
     for (const hold of holds) {
@@ -164,7 +171,6 @@ export class LotHoldService {
             release_reason_code: input.releaseReasonCode,
             release_target_lot_status_code: input.releaseTargetLotStatusCode ?? null,
             ...optional('remarks', input.remarks),
-            version_no: { increment: 1 },
           },
         }),
       );

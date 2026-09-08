@@ -212,6 +212,8 @@ export class InspectionConfirmService {
     const lotId = request.lot_id;
     if (lotId === null) return;
     // ⭐⭐ R-5 — 보류 해제도 그 뒤의 재계수도 이 잠금 «안»이어야 한다(코어가 표식으로 강제한다).
+    // ⚠ 판정과 무관하게 «먼저» 잡는다 — 합격 갈래 안으로 옮기면 나머지 갈래의 잠금이
+    //    `moveWithin` 안으로 숨어, 뒤에 그 갈래에 보류 읽기를 더하는 사람이 잠금 밖에서 읽는다.
     const locked = await this.holds.lockLotsWithin(tx, [lotId]);
     if (judgment === ACCEPTED) {
       // 입하 LOT 이 태어날 때 걸린 보류만 닫는다. `status_code` 는 코어가 안 건드린다(문의 13).
