@@ -481,6 +481,9 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
     //   않는다** — `assertCreateShape` 의 단위 혼합 검사가 참조 검사보다 «먼저»라 400 이 난다.
     const description = `${PREFIX} 롤백 관측`;
     const ROLLBACK_QTY = 777777;
+    // ⛔ 프로세스가 급사하면 `finally` 가 안 돌아 제약이 개발 DB 에 남는다(드리프트 + 다음 실행
+    //   의 ADD 실패) — 이 파일 `cleanup()` 과 같은 「자가 치유」 축으로 먼저 지운다(리뷰 Nit-6).
+    await prisma.$executeRawUnsafe('ALTER TABLE quality.nonconformance_lot DROP CONSTRAINT IF EXISTS ck_e2e_i21nw_rollback');
     await prisma.$executeRawUnsafe(
       `ALTER TABLE quality.nonconformance_lot ADD CONSTRAINT ck_e2e_i21nw_rollback CHECK (affected_qty <> ${ROLLBACK_QTY})`,
     );

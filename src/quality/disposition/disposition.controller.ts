@@ -83,7 +83,9 @@ export class DispositionController {
    * ⭐ **If-Match 토큰은 «이 경로의 GET» 이 아니라** 부적합 상세(04 제품출하 계약)의 ETag 다 —
    *    잠그는 대상이 결정 한 건이 아니라 **부적합**이라서다. ⛔ 계약이 「토큰 원천 검사기는 한
    *    파일 안에서만 후보를 찾아 이 자리를 못 본다」라 **스스로 경고한 첫 자리**다(§0 판정 #5).
-   * ⛔ 계열 봉투라 다섯째 인자를 넘긴다 — 그 상수 이름을 «이 주석에» 적지 않는다(`:69` 경고).
+   * ⛔ 계열 봉투라 다섯째 인자를 넘긴다 — 그 상수 이름을 «이 주석에» 적지 않는다:
+   *    `family-conflict-code.spec.ts` 는 소스를 `@Contract` 로 끊어 세므로 **앞 마크가 이 주석을
+   *    삼켜** 앞 오퍼레이션이 「계열이 아닌데 넘겼다」로 오판된다(리뷰어가 재현 확인).
    * 403 게이트는 `manual-permissions.ts` 의 `W-03-10` 이 연다(도출표엔 없었다 · 통보 181).
    */
   @Post('nonconformances/:nonconformanceId/disposition-decisions')

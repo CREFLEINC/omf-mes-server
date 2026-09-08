@@ -17,7 +17,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  */
 export type ConflictCause = 'user' | 'erpSync' | 'workerLease';
 
-/** 계열이 요구하는 선택 세 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
+/** 계열이 요구하는 선택 칸 여섯. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
 export interface ConflictExtra {
   /** `ProductionConflictResponse.code` 등 — 거부의 업무 사유. */
   code?: string;

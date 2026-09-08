@@ -46,7 +46,9 @@ export function assertQtyPrecision(name: string, qty: number, scale: number): vo
     throw one(field(name, ERROR_CODE.RANGE, `수량은 소수점 ${scale}자리까지입니다.`));
   }
   // ⛔ `Infinity`(JSON `1e400`)는 `decimalPlaces()` 가 NaN 이라 위를 지난다 — 여기서 잡힌다.
-  if (decimal.abs().gte(QTY_INT_LIMIT)) {
+  // ⛔ `.abs()` 를 씌우지 않는다 — 음수는 두 호출부 «앞»에서 이미 막혀(등록은 `> 0`, 판정 저장은
+  //    계약 `exclusiveMinimum: 0`) 되돌려도 안 깨지는 절이 된다(R-15 · 리뷰 Minor-3).
+  if (decimal.gte(QTY_INT_LIMIT)) {
     throw one(field(name, ERROR_CODE.RANGE, '수량은 정수 14자리를 넘을 수 없습니다.'));
   }
 }
