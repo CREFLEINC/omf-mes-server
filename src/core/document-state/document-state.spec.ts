@@ -427,6 +427,19 @@ describe('DocumentStateService', () => {
       expect(service.registered()).toHaveLength(42);
     });
 
+    it('⭐ 재고 이동 상태 — transfer-arrive «하나»뿐이고 반출은 전이가 아니다(탄생 상태)', () => {
+      expect(
+        service.assertTransition(STOCK_TRANSFER_STATUS, 'transfer-arrive', 'REGISTERED'),
+      ).toMatchObject({ from: ['REGISTERED'], to: 'POSTED' });
+
+      const actions = service
+        .registered()
+        .filter((entry) => entry.column === STOCK_TRANSFER_STATUS)
+        .map((entry) => entry.action);
+
+      expect(actions).toEqual(['transfer-arrive']);
+    });
+
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
       expect(
         service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'PENDING'),

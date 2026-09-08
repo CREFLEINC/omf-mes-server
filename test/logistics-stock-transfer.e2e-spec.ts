@@ -1,5 +1,5 @@
 /**
- * 재고 이동 조회 3건 + 반출 등록(I-13 PR ①②). 도착·라인 치환·판별자 축은 PR ③④ 몫이다.
+ * 재고 이동 조회 3건 + 반출 등록 + 도착 확정(I-13 PR ①②③). 라인 치환·판별자 축은 PR ④ 몫이다.
  *
  * ⚠ 조회용 전표는 prisma 로 직접 심고, **반출 등록은 오퍼레이션으로** 부른다 — 잔액은
  * `POST /logistics/goods-receipts` 가 세운다(직접 INSERT 하면 트리거와 차원 11칸을 손으로
@@ -65,6 +65,8 @@ describe('재고 이동 조회 (e2e)', () => {
   let warehouse3Id: number;
   let location1Id: number;
   let location2Id: number;
+  /** `warehouse2` 의 «실제» 도착 위치 — 계획과 다른 위치로 스캔했을 때. */
+  let location3Id: number;
   let uomId: number;
   let itemId: number;
   let lotId: number;
@@ -376,6 +378,246 @@ describe('재고 이동 조회 (e2e)', () => {
     await callCreate(draft(lot, 1), { ifMatch: 1 }).expect(201);
   });
 
+  // ── 도착 확정 (PR ③) ────────────────────────────────────────────────────────
+
+  it('⭐ 전량 도착이 200 과 POSTED 를 내고 receivedAt 이 채워진다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+
+    const response = await callArrive(transfer, arrival(transfer, 4)).expect(200);
+
+    const body = response.body as DetailBody;
+    expect(body.stockTransfer.statusCode).toBe('POSTED');
+    expect(body.stockTransfer.receivedAt).toBe(AT);
+    expect(body.lines[0].receivedQty).toBe(4);
+    // ⛔ `version_no` 를 ETag 로 «안» 내린다 — 계약 200 에 응답 헤더 선언이 0건이다. 여기
+    //    보이는 값은 express 가 본문에서 만든 약한 ETag 다(다음 쓰기는 상세 GET 로 받는다).
+    expect(response.headers.etag).not.toMatch(/^\d+$/);
+  });
+
+  it('⭐ 원장 둘째 줄이 from={도착 창고, 계획 위치, IN_TRANSIT} / to={도착 창고, 실제 위치, 반출 전 재고 상태} 로 선다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    await callArrive(transfer, arrival(transfer, 4)).expect(200);
+
+    const [line] = await prisma.inventory_transaction_line.findMany({
+      where: { inventory_transaction: { transaction_no: `${transfer.stockTransfer.stockTransferNo}-A` } },
+    });
+    expect(line).toMatchObject({
+      from_warehouse_id: BigInt(warehouse2Id),
+      from_location_id: BigInt(location2Id),
+      from_inventory_status_code: 'IN_TRANSIT',
+      to_warehouse_id: BigInt(warehouse2Id),
+      to_location_id: BigInt(location2Id),
+      // ⭐ `AVAILABLE` 고정이 아니라 «반출 라인의 출발 상태»다(결정 — 통보 125).
+      to_inventory_status_code: 'AVAILABLE',
+      // 품질은 두 끝점이 같다 — 이동은 판정이 아니다.
+      from_quality_status_code: 'NORMAL',
+      to_quality_status_code: 'NORMAL',
+    });
+  });
+
+  it('⭐ inventory_balance 세 지점 — 출발 위치 0 · IN_TRANSIT 0 · 도착 위치 수량', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    await callArrive(transfer, arrival(transfer, 4)).expect(200);
+
+    expect(await onHand(lot, location1Id, 'AVAILABLE')).toBe(6);
+    expect(await onHand(lot, location2Id, 'IN_TRANSIT')).toBe(0);
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(4);
+  });
+
+  it('⭐ 같은 품목·LOT 을 같은 위치로 두 번 이동해도 도착이 200 이다', async () => {
+    // ⚠ 두 번째 도착의 `from` 키(7칸)에는 첫 도착이 세운 `AVAILABLE` 잔액이 함께 걸린다 —
+    //    반출 원장이 준 11칸으로 고르지 않으면 여기가 언제나 400 이다(재수립 R-6).
+    const lot = await seedBalance(10);
+    const first = await created(draft(lot, 3));
+    await callArrive(first, arrival(first, 3)).expect(200);
+    const second = await created(draft(lot, 2));
+
+    await callArrive(second, arrival(second, 2)).expect(200);
+
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(5);
+    expect(await onHand(lot, location2Id, 'IN_TRANSIT')).toBe(0);
+  });
+
+  it('receipt_transaction_line_id 가 되짚고 transactionNo 가 ST-…-A 다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    await callArrive(transfer, arrival(transfer, 4)).expect(200);
+
+    const no = transfer.stockTransfer.stockTransferNo;
+    // 같은 영업일에 두 번 전기했는데 `uq_inventory_transaction_no` 를 안 깬다.
+    const [issue] = await ledgerLinesOf(no);
+    const [receipt] = await ledgerLinesOf(`${no}-A`);
+    const line = await prisma.stock_transfer_line.findFirstOrThrow({
+      where: { stock_transfer_id: transfer.stockTransfer.stockTransferId },
+    });
+    expect(line.issue_transaction_line_id).toBe(issue.inventory_transaction_line_id);
+    expect(line.receipt_transaction_line_id).toBe(receipt.inventory_transaction_line_id);
+  });
+
+  it('toLocationId 재정의가 라인의 to_location_id 를 갱신하고 원장 to 가 그 위치다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+
+    const response = await callArrive(transfer, arrival(transfer, 4, location3Id)).expect(200);
+
+    expect((response.body as DetailBody).lines[0].toLocationId).toBe(location3Id);
+    const [line] = await prisma.inventory_transaction_line.findMany({
+      where: { inventory_transaction: { transaction_no: `${transfer.stockTransfer.stockTransferNo}-A` } },
+    });
+    // ⭐ `from` 은 반출 원장이 준 «계획» 위치 그대로다 — 두 값이 달라도 잔액이 안 어긋난다.
+    expect(line.from_location_id).toBe(BigInt(location2Id));
+    expect(line.to_location_id).toBe(BigInt(location3Id));
+    expect(await onHand(lot, location3Id, 'AVAILABLE')).toBe(4);
+  });
+
+  it('⭐ 부분 도착은 상태를 안 옮긴다 — REGISTERED 그대로이고 잔량이 IN_TRANSIT 에 남는다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+
+    const body = (await callArrive(transfer, arrival(transfer, 3)).expect(200)).body as DetailBody;
+
+    expect(body.stockTransfer.statusCode).toBe('REGISTERED');
+    expect(body.stockTransfer.receivedAt).toBe(AT);
+    expect(await onHand(lot, location2Id, 'IN_TRANSIT')).toBe(1);
+    // ⚠ 그 전표가 미완 목록에서 «사라진다» — `received_at` 이 찼고 `POSTED` 도 아니다
+    //    (닫는 오퍼레이션이 계약에 0건 · 결정 — 통보 124).
+    const pending = await list('inTransitOnly=true');
+    expect(pending.items.map((row) => row.stockTransferId)).not.toContain(
+      body.stockTransfer.stockTransferId,
+    );
+  });
+
+  it('⭐ 둘째 :arrive 는 400 STATE_LOCKED 다 — 부분 도착 뒤에도 그렇다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    await callArrive(transfer, arrival(transfer, 2)).expect(200);
+
+    const again = await callArrive(transfer, arrival(transfer, 2)).expect(400);
+    expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', field: 'stockTransferId' });
+    // 원장도 잔액도 안 늘었다.
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(2);
+  });
+
+  it('receivedQty > shippedQty 는 400 RANGE · receivedQty=0 인 라인은 원장 라인을 안 만든다', async () => {
+    const lot = await seedBalance(10);
+    const over = await created(draft(lot, 4));
+    const tooMany = await callArrive(over, arrival(over, 5)).expect(400);
+    expect(tooMany.body.errors[0]).toMatchObject({ code: 'RANGE', field: 'lines[0].receivedQty' });
+
+    const zero = await created(draft(await seedBalance(10), 4));
+    const body = (await callArrive(zero, arrival(zero, 0)).expect(200)).body as DetailBody;
+    expect(body.stockTransfer.statusCode).toBe('REGISTERED');
+    expect(body.lines[0].receivedQty).toBe(0);
+    expect(
+      await prisma.inventory_transaction.count({
+        where: { transaction_no: `${zero.stockTransfer.stockTransferNo}-A` },
+      }),
+    ).toBe(0);
+  });
+
+  it('남의 전표 라인·중복 라인·출발 위치로의 재정의는 400 INVALID 다', async () => {
+    const transfer = await created(draft(await seedBalance(10), 4));
+    const other = await created(draft(await seedBalance(10), 4));
+    const lineId = transfer.lines[0].stockTransferLineId;
+
+    const foreignLine = await callArrive(transfer, {
+      businessDate: DAY,
+      occurredAt: AT,
+      lines: [{ stockTransferLineId: other.lines[0].stockTransferLineId, receivedQty: 1 }],
+    }).expect(400);
+    expect(foreignLine.body.errors[0]).toMatchObject({
+      code: 'INVALID',
+      field: 'lines[0].stockTransferLineId',
+    });
+
+    const duplicated = await callArrive(transfer, {
+      businessDate: DAY,
+      occurredAt: AT,
+      lines: [
+        { stockTransferLineId: lineId, receivedQty: 1 },
+        { stockTransferLineId: lineId, receivedQty: 1 },
+      ],
+    }).expect(400);
+    expect(duplicated.body.errors[0]).toMatchObject({
+      code: 'INVALID',
+      field: 'lines[1].stockTransferLineId',
+    });
+
+    // ⚠ 라인 CHECK `ck_stock_transfer_locations` 를 앞질러 낸다 — 안 막으면 500 이 샌다.
+    const sameAsFrom = await callArrive(transfer, arrival(transfer, 1, location1Id)).expect(400);
+    expect(sameAsFrom.body.errors[0]).toMatchObject({
+      code: 'INVALID',
+      field: 'lines[0].toLocationId',
+    });
+    // 셋 다 거부됐으니 도착은 안 일어났다.
+    expect(await onHand(transfer.lines[0].lotId, location2Id, 'IN_TRANSIT')).toBe(4);
+  });
+
+  it(':arrive 에 X-Worker-No 가 없으면 400 REQUIRED · 없는 사번이면 400 INVALID', async () => {
+    const transfer = await created(draft(await seedBalance(10), 4));
+
+    const missing = await callArrive(transfer, arrival(transfer, 4), { worker: null }).expect(400);
+    expect(missing.body.errors[0]).toMatchObject({ code: 'REQUIRED', field: 'X-Worker-No' });
+
+    const unknown = await callArrive(transfer, arrival(transfer, 4), { worker: 'NO-SUCH' }).expect(400);
+    expect(unknown.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'X-Worker-No' });
+  });
+
+  it('If-Match 어긋남은 409 · 안 실으면 통과 · 같은 멱등키 재전송이 원장을 안 늘린다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+
+    const stale = await callArrive(transfer, arrival(transfer, 4), { ifMatch: 9 }).expect(409);
+    expect(stale.body).toMatchObject({ conflictCause: 'user' });
+
+    const key = randomUUID();
+    await callArrive(transfer, arrival(transfer, 4), { key }).expect(200);
+    await callArrive(transfer, arrival(transfer, 4), { key }).expect(200);
+    expect(
+      await prisma.inventory_transaction.count({
+        where: { transaction_no: `${transfer.stockTransfer.stockTransferNo}-A` },
+      }),
+    ).toBe(1);
+    expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(4);
+  });
+
+  // ── 도착 헬퍼 ────────────────────────────────────────────────────────────────
+
+  function callArrive(
+    transfer: DetailBody,
+    body: Record<string, unknown>,
+    opts: { key?: string; worker?: string | null; ifMatch?: number } = {},
+  ): request.Test {
+    const call = request(app.getHttpServer())
+      .post(`/api/logistics/stock-transfers/${transfer.stockTransfer.stockTransferId}:arrive`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', opts.key ?? randomUUID());
+    if (opts.worker !== null) call.set('X-Worker-No', opts.worker ?? WORKER_NO);
+    if (opts.ifMatch !== undefined) call.set('If-Match', String(opts.ifMatch));
+    return call.send(body);
+  }
+
+  function arrival(
+    transfer: DetailBody,
+    receivedQty: number,
+    toLocationId?: number,
+  ): Record<string, unknown> {
+    return {
+      businessDate: DAY,
+      occurredAt: AT,
+      lines: [
+        {
+          stockTransferLineId: transfer.lines[0].stockTransferLineId,
+          receivedQty,
+          ...(toLocationId === undefined ? {} : { toLocationId }),
+        },
+      ],
+    };
+  }
+
   // ── 반출 등록 헬퍼 ───────────────────────────────────────────────────────────
 
   function callCreate(
@@ -672,6 +914,15 @@ describe('재고 이동 조회 (e2e)', () => {
       },
     });
     location2Id = Number(location2.location_id);
+    const location3 = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse2.warehouse_id,
+        location_code: `${PREFIX}-LOC5`,
+        location_name: '이동검사실제도착위치',
+        location_type_code: 'BIN',
+      },
+    });
+    location3Id = Number(location3.location_id);
     const foreign = await prisma.location.create({
       data: {
         warehouse_id: warehouse3.warehouse_id,
