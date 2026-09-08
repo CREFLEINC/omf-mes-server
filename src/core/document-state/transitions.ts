@@ -392,13 +392,6 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
-   * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
-   * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
-   * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
-   * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — `M-01-05` §6 「이미 완료된 지시 400 STATE_LOCKED」.
-   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
-   */
-  /**
    * 재고 이동 전표 진행. 값은 시드 `LOGISTICS_DOCUMENT_STATUS` 4값(⛔ 시스템 소유)이 확정했고
    * 계약이 전이를 하나만 연다(`:arrive`).
    * ⛔ 반출 등록은 여기 오지 않는다 — 전표가 `REGISTERED` 로 «태어나는» 자리라 `from` 이 없다.
@@ -416,6 +409,13 @@ export const TRANSITIONS: TransitionRegistry = {
     },
   },
 
+  /**
+   * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
+   * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
+   * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
+   * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — `M-01-05` §6 「이미 완료된 지시 400 STATE_LOCKED」.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
   'logistics.putaway_task.status_code': {
     'putaway-complete': {
       from: ['PENDING'],
