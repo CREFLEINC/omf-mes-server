@@ -430,12 +430,25 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
   });
 
   it('⭐⭐ 등록 — 롤백: `nonconformance_lot` 이 실패하면 헤더도 «안 남는다»(한 트랜잭션 · B-8)', async () => {
-    // `app.qty_t` 는 numeric(20,6) — 정수 자리가 14 를 넘으면 DB 가 거절한다. 검증을
-    // 전부 통과한 뒤 «두 번째» INSERT 에서 터지는 유일한 값이라 앞 단계의 롤백을 관측한다.
+    // ⛔⛔ **지렛대를 갈아 끼웠다**(I-21 PR ⑦ §4 ⓵ ⓐ). 예전 지렛대는 `affectedQty: 1e15`
+    //   (numeric(20,6) 정수부 초과)였는데 그 값이 «검증을 다 지나 INSERT 에서만» 터진다는
+    //   사실 자체가 결함이었다(리뷰 Minor-1 — 500 이 샜다). ⑦ 이 정수부 가드를 넣어 그 값은
+    //   이제 400 이다. ⇒ 「검증을 다 지난 뒤 lot INSERT 에서만 터지는」 자리를 **임시 CHECK
+    //   제약**으로 만든다(⑥ 이 남긴 후보 ① · e2e 는 `maxWorkers:1` 이라 다른 스위트와 안 겹친다).
+    //   ⚠ ⑥ 이 남긴 후보 ③(「둘째 LOT 의 uomId 를 없는 값으로」)은 **오늘 코드에서 성립하지
+    //   않는다** — `assertCreateShape` 의 단위 혼합 검사가 참조 검사보다 «먼저»라 400 이 난다.
     const description = `${PREFIX} 롤백 관측`;
-    await post(NONCONFORMANCES)
-      .send(createBody({ description, lots: [{ lotId: Number(lotIds.ROLL), affectedQty: 1e15, uomId: Number(ids.uomA) }] }))
-      .expect(500);
+    const ROLLBACK_QTY = 777777;
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE quality.nonconformance_lot ADD CONSTRAINT ck_e2e_i21nw_rollback CHECK (affected_qty <> ${ROLLBACK_QTY})`,
+    );
+    try {
+      await post(NONCONFORMANCES)
+        .send(createBody({ description, lots: [{ lotId: Number(lotIds.ROLL), affectedQty: ROLLBACK_QTY, uomId: Number(ids.uomA) }] }))
+        .expect(500);
+    } finally {
+      await prisma.$executeRawUnsafe('ALTER TABLE quality.nonconformance_lot DROP CONSTRAINT ck_e2e_i21nw_rollback');
+    }
 
     // ⛔ 헤더를 따로 커밋하면 여기가 1 이 된다(그 순간 「대상 LOT 이 없는 부적합」이 남는다).
     expect(await prisma.nonconformance.count({ where: { description } })).toBe(0);
