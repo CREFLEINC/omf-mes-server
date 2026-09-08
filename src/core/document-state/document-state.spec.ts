@@ -36,6 +36,8 @@ const BREAKDOWN_STATUS = 'maintenance.breakdown.status_code';
 const MAINTENANCE_ORDER_STATUS = 'maintenance.maintenance_order.status_code';
 /** I-13 PR ③ 이 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 도착 확정 하나뿐이다. */
 const STOCK_TRANSFER_STATUS = 'logistics.stock_transfer.status_code';
+/** I-21 PR ④ 가 여는 축 — 시드 `NONCONFORMANCE_STATUS` 3값. 의뢰와 판정 완료 둘뿐이다. */
+const NONCONFORMANCE_STATUS = 'quality.nonconformance.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -220,17 +222,25 @@ describe('DocumentStateService', () => {
   describe('LOT 품질 판정 축 — I-19 가 여는 축', () => {
     const from = (action: string) => [...TRANSITIONS[LOT_QUALITY_STATUS][action].from].sort();
 
-    it('⭐ 불량(Hold)은 발신 전이가 0이다 — DEFECTIVE 는 재등록의 from 에만 있다', () => {
+    it('⭐ 불량(Hold) 발신은 재등록과 처분 셋뿐이다 — 검사·보류 여덟은 DEFECTIVE 를 안 받는다', () => {
       // 계약이 두 자리에 이름 적었다: 「불량(Hold)은 발신 전이가 0」(quality-03품질.json)
       // · 「⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다」(shipment-04제품출하.json
       // · 공유계약 B-13). 그래서 `from` 을 한 상수로 묶지 않고 액션마다 가른다.
+      // ⭐ 처분 판정 화면 `W-03-10` 은 그 도식보다 «나중»(DR-008 확정 3-A)이라 예외가 넷이 됐다
+      // (결정 — 통보 089 §1).
       const withDefective = service
         .registered()
         .filter((entry) => entry.column === LOT_QUALITY_STATUS)
         .filter((entry) => entry.transition.from.includes('DEFECTIVE'))
-        .map((entry) => entry.action);
+        .map((entry) => entry.action)
+        .sort();
 
-      expect(withDefective).toEqual(['stock-reinstate']);
+      expect(withDefective).toEqual([
+        'disposition-normal',
+        'disposition-rework',
+        'disposition-scrap',
+        'stock-reinstate',
+      ]);
       expect(from('stock-reinstate')).toEqual(['DEFECTIVE']);
       // 불합격은 «자기 자신»으로도 못 간다 — 자기 전이도 발신이다.
       expect(() =>
@@ -261,16 +271,55 @@ describe('DocumentStateService', () => {
       expect(from('lot-hold-suspect')).toEqual(['INSPECTION_PENDING', 'NORMAL']);
     });
 
-    it('⛔ SCRAPPED 는 어느 쪽에도 없다 — 계약이 그 전이를 적은 오퍼레이션이 0건이다', () => {
-      const states = service
-        .registered()
-        .filter((entry) => entry.column === LOT_QUALITY_STATUS)
-        .flatMap((entry) => [...entry.transition.from, entry.transition.to]);
+    it('⭐ SCRAPPED 는 도착에만 있다 — 폐기된 LOT 을 다시 옮기는 오퍼레이션이 0건이다', () => {
+      // 계약이 도착 상태를 직접 적었다(`quality-03품질.json:2460`) — 없던 것은 「도착」이 아니라
+      // 「전이 코드」뿐이었다(결정 — 통보 089 §1). 발신이 0인 것은 판정이다: 이미 폐기된 LOT 의
+      // 처분 요청은 코어가 0건 옮기고 400 STATE_LOCKED 로 떨어진다.
+      const entries = service.registered().filter((entry) => entry.column === LOT_QUALITY_STATUS);
 
-      expect(states).not.toContain('SCRAPPED');
+      expect(entries.flatMap((entry) => entry.transition.from)).not.toContain('SCRAPPED');
+      expect(
+        entries.filter((entry) => entry.transition.to === 'SCRAPPED').map((entry) => entry.action),
+      ).toEqual(['disposition-scrap']);
+      expect(() =>
+        service.assertTransition(LOT_QUALITY_STATUS, 'disposition-rework', 'SCRAPPED'),
+      ).toThrow(ConflictException);
     });
 
-    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(문의 089 · 발행 예정)', () => {
+    it('⭐ 처분 판정 셋 — 원천 둘(PRODUCT·RETURN)의 출발 상태를 다 받고 도착만 갈린다', () => {
+      // 좁히면 반품 갈래 본길이 통째로 400 으로 죽는다 — RETURN 은 원 LOT 을 그대로 쓰므로
+      // 출발이 NORMAL·INSPECTION_PENDING 이다(`W-04-07` §5-4 · 통보 089 §1).
+      for (const action of ['disposition-rework', 'disposition-scrap', 'disposition-normal']) {
+        expect(from(action)).toEqual(['DEFECTIVE', 'INSPECTION_PENDING', 'NORMAL']);
+      }
+
+      expect(
+        service.assertTransition(LOT_QUALITY_STATUS, 'disposition-rework', 'DEFECTIVE'),
+      ).toMatchObject({ to: 'INSPECTION_PENDING', transitionCode: 'C17' });
+      expect(
+        service.assertTransition(LOT_QUALITY_STATUS, 'disposition-scrap', 'NORMAL'),
+      ).toMatchObject({ to: 'SCRAPPED', transitionCode: 'C18' });
+      expect(
+        service.assertTransition(LOT_QUALITY_STATUS, 'disposition-normal', 'INSPECTION_PENDING'),
+      ).toMatchObject({ to: 'NORMAL', transitionCode: 'C19' });
+    });
+
+    it('⭐ 처분 정상과 재등록은 도착이 같아도 «다른 전이»다 — 여는 오퍼레이션이 가른다', () => {
+      // R-17 · 통보 184 — 둘 다 `to: 'NORMAL'` 이고 `from` 에 `DEFECTIVE` 를 갖지만 코어는
+      // (칸, 액션명)으로 찾고 두 액션의 `sourceOperation` 이 다르다. 이력도 갈린다(C19 ↔ 미정).
+      const normal = TRANSITIONS[LOT_QUALITY_STATUS]['disposition-normal'];
+      const reinstate = TRANSITIONS[LOT_QUALITY_STATUS]['stock-reinstate'];
+
+      expect(normal.to).toBe(reinstate.to);
+      expect(normal.sourceOperation).toBe(
+        'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
+      );
+      expect(reinstate.sourceOperation).toBe('POST /logistics/stock-reinstatements');
+      expect(normal.transitionCode).toBe('C19');
+      expect(reinstate.transitionCode).toBeUndefined();
+    });
+
+    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(통보 089 §7 · 레인 C 판정)', () => {
       const withoutCode = service
         .registered()
         .filter((entry) => entry.column === LOT_QUALITY_STATUS)
@@ -278,6 +327,47 @@ describe('DocumentStateService', () => {
         .map((entry) => entry.action);
 
       expect(withoutCode).toEqual(['stock-reinstate']);
+    });
+  });
+
+  describe('부적합 처리 진행 — I-21 이 여는 축', () => {
+    it('의뢰는 NOT_REQUESTED 에서만, 판정 완료는 PENDING_DECISION 에서만 열린다', () => {
+      expect(
+        service.assertTransition(
+          NONCONFORMANCE_STATUS,
+          'nonconformance-request-disposition',
+          'NOT_REQUESTED',
+        ),
+      ).toMatchObject({ from: ['NOT_REQUESTED'], to: 'PENDING_DECISION' });
+      expect(
+        service.assertTransition(NONCONFORMANCE_STATUS, 'nonconformance-decide', 'PENDING_DECISION'),
+      ).toMatchObject({ from: ['PENDING_DECISION'], to: 'DECIDED' });
+    });
+
+    it('⛔ 되돌리는 전이가 0이다 — 오판정 정정 오퍼레이션이 계약에 없다(W-03-10 §8 #9 미결)', () => {
+      // 판정 완료는 dead end 다. 재의뢰도 없다 — 두 방향 다 `from` 에 도착 상태가 없다.
+      expect(() =>
+        service.assertTransition(NONCONFORMANCE_STATUS, 'nonconformance-decide', 'DECIDED'),
+      ).toThrow(ConflictException);
+      expect(() =>
+        service.assertTransition(
+          NONCONFORMANCE_STATUS,
+          'nonconformance-request-disposition',
+          'DECIDED',
+        ),
+      ).toThrow(ConflictException);
+      expect(Object.keys(TRANSITIONS[NONCONFORMANCE_STATUS])).toEqual([
+        'nonconformance-request-disposition',
+        'nonconformance-decide',
+      ]);
+    });
+
+    it('⛔ 이력 표가 없는 축이다 — transitionCode 를 안 쓴다', () => {
+      const codes = Object.values(TRANSITIONS[NONCONFORMANCE_STATUS]).map(
+        (transition) => transition.transitionCode,
+      );
+
+      expect(codes).toEqual([undefined, undefined]);
     });
   });
 
@@ -407,6 +497,7 @@ describe('DocumentStateService', () => {
           LOT_QUALITY_STATUS,
           MAINTENANCE_ORDER_STATUS,
           MOLD_STATUS,
+          NONCONFORMANCE_STATUS,
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
@@ -424,7 +515,8 @@ describe('DocumentStateService', () => {
       // +2 — 설비 고장 처리 키 신설(I-30 PR ④).
       // +1 — 보전 지시 취소 키 신설(I-31 C0).
       // +1 — 재고 이동 도착 확정 키 신설(I-13 PR ③).
-      expect(service.registered()).toHaveLength(42);
+      // +5 — LOT 품질 축에 처분 판정 3, 부적합 처리 키 신설 2(I-21 PR ④).
+      expect(service.registered()).toHaveLength(47);
     });
 
     it('⭐ 재고 이동 상태 — transfer-arrive «하나»뿐이고 반출은 전이가 아니다(탄생 상태)', () => {

@@ -46,6 +46,11 @@ const DEFAULT_PREFIX: Record<string, string> = {
   MAINTENANCE_ORDER: 'MO',
   /** 규칙 미등재 — `OH-{YYYYMMDD}-{SEQ4}` · 기간 축은 `handedOverAt` 의 UTC 날짜(I-25 §0 자리 2 ⓑ). */
   OPERATION_HANDOVER: 'OH',
+  /**
+   * 규칙 미등재 — `NC-{YYYYMMDD}-{SEQ4}` · 근거는 `W-03-10:56·58` 목업의 `NC-…0042` 다.
+   * `plantId` 는 null — `quality.nonconformance` 에 공장 축이 0개다(I-21 §3-1).
+   */
+  NONCONFORMANCE: 'NC',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
