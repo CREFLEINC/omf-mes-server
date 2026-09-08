@@ -1,14 +1,17 @@
 /**
- * 부적합 목록 (e2e) — I-21 PR ①a. `GET /quality/nonconformances` 딱 하나다. 상세·처분·후보·
- * 특채·쓰기는 다른 PR 몫이라 이 파일은 목록만 본다(브리프 범위).
+ * 부적합 목록·상세 (e2e) — I-21 PR ①a(목록) + ①b(상세). `GET /quality/nonconformances` ·
+ * `…/{nonconformanceId}` 둘뿐이다. 처분·후보·특채·쓰기는 다른 PR 몫이라 이 파일은 그 둘만
+ * 본다(브리프 범위).
  *
  * ⭐ 계약 실측 — `Nonconformance` 는 «목록과 상세가 한 스키마를 공유한다»(계약 `lots` 필드
  * 설명 원문). ⇒ 목록도 `lots[]`·`dispositionProgressCode`·`affectedQtyTotal`·`uomId` 를
  * 전건 채워야 ajv 가 통과한다 — `nonconformance-view.ts` 가 그 값들을 전부 계산한다.
  * 등록 오퍼레이션이 이 PR 의 몫이 아니라 픽스처는 전부 prisma 직접 INSERT 다(0단계 선례).
+ * ①b 가 새로 시험하는 것은 **단건 라우트 · ETag(`nonconformance.version_no`) · 404** 뿐이다
+ * — 응답 «칸」은 ①a 픽스처가 같은 매퍼로 이미 잠갔다(I-21 §10-1 R-25).
  *
- * 두 창을 쓴다 — 목록 창(필터·정렬·페이지)과 롤업 창(`dispositionProgressCode` 3분기 + 널
- * 정책 + ajv 전수 검증)을 겹치지 않게 둬 서로의 정렬·페이지 단언이 섞이지 않는다.
+ * 세 창을 쓴다 — 목록 창(필터·정렬·페이지)·롤업 창(`dispositionProgressCode` 3분기 + 널
+ * 정책 + ajv 전수 검증)·상세 창(ETag·404). 서로 안 겹쳐 정렬·페이지 단언이 섞이지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -79,6 +82,7 @@ describe('부적합 목록 (e2e)', () => {
     await makeMasters();
     await makeListWindowFixtures();
     await makeRollupWindowFixtures();
+    await makeDetailWindowFixtures();
   });
 
   afterAll(async () => {
@@ -323,6 +327,69 @@ describe('부적합 목록 (e2e)', () => {
         openedAt: ROLLUP_FROM, // `created_at`(삽입 시각)이 아니라 `opened_at` 이어야 한다 — 값이 갈리는 자리
       });
       expect(row.lots[0].lotNo).toBe(`${PREFIX}-LOT-BASE`);
+    });
+  });
+
+  describe('상세 — GET /quality/nonconformances/{nonconformanceId}(I-21 PR ①b)', () => {
+    it('⭐⭐ 200 + ETag = nonconformance.version_no(이 행 자신의 값 · §0 판정 #5)', async () => {
+      const response = await get(`${NONCONFORMANCES}/${ncIds.detailVersioned}`).expect(200);
+
+      // 픽스처가 기본값 1 이 아니라 7 로 직접 올렸다 — 「늘 1」·「다른 칸(0 이나 상수)」로
+      // 새는 변이를 여기서 잡는다. `setEtag` 호출을 지워도 이 단언은 죽는다 — Express 가
+      // 본문으로 자동 weak ETag(`W/"…"`)를 채워 헤더가 `undefined` 가 «아니지만», `'7'` 과는
+      // 다르다(실측 · PR #434 리뷰 Nit-1).
+      expect(response.headers.etag).toBe('7');
+      expect(response.body).toMatchObject({ nonconformanceId: ncIds.detailVersioned });
+      // R-13/api m-4 — 본문에는 versionNo 를 안 싣는다(ETag 전용).
+      expect(response.body).not.toHaveProperty('versionNo');
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}')(response.body)).toBe(true);
+    });
+
+    it('⭐ 다른 id 를 부르면 그 id 자신의 행·ETag 를 돌려준다(행이 뒤바뀌지 않는다)', async () => {
+      const responseA = await get(`${NONCONFORMANCES}/${ncIds.detailVersioned}`).expect(200);
+      const responseB = await get(`${NONCONFORMANCES}/${ncIds.detailOther}`).expect(200);
+
+      expect(responseA.body.nonconformanceId).toBe(ncIds.detailVersioned);
+      expect(responseB.body.nonconformanceId).toBe(ncIds.detailOther);
+      expect(responseA.headers.etag).toBe('7');
+      expect(responseB.headers.etag).toBe('3');
+      expect(responseA.body.description).not.toBe(responseB.body.description);
+    });
+
+    it('⭐⭐ PR 리뷰 Minor-1·Minor-2 — 상세 본문 «값»이 같은 행의 목록 응답과 완전히 같다(lots 0행 포함)', async () => {
+      // ⛔ Minor-1 — 지금까지 상세 e2e 는 `nonconformanceId`·ETag·404 만 겨눴다. 매퍼를
+      // 공유한다는 보증이 코드 배치뿐이었고, `get()` 이 그 값을 다시 덮어써도(예:
+      // `affectedQtyTotal: 0`·`uomId: 1`·`dispositionProgressCode: 'NOT_STARTED'`·
+      // `lots: []` 로 고정) ajv 는 그대로 통과했다. 「같은 행을 목록으로 받은 것과 상세
+      // 본문이 같다」한 줄로 그 자리를 잠근다.
+      const listResponse = await get(`${NONCONFORMANCES}?openedFrom=${ROLLUP_FROM}&openedTo=${ROLLUP_TO}`).expect(200);
+      const listRowOf = (id: number) => listResponse.body.items.find((item: { nonconformanceId: number }) => item.nonconformanceId === id);
+
+      // ⭐ sourceMixed 를 쓴다(zeroLots 가 «아니다») — zeroLots 는 `uomId`(품목 기준단위 ·
+      // `ids.uom`)·`affectedQtyTotal`(0)·`lots`(`[]`)·`dispositionProgressCode`(`NOT_STARTED`)
+      // 전부가 하드코딩 덮어쓰기 값과 «우연히 같아» 그 변이를 못 잡는다(실측 — 덮어쓰기를
+      // 직접 넣어 확인). sourceMixed 는 `uomId=ids.uom2`(≠1)·`affectedQtyTotal=5`(≠0)·
+      // `lots` 2행(≠`[]`)이라 넷 중 셋이 그 값과 달라 안전하게 잡힌다.
+      const mixedList = listRowOf(ncIds.sourceMixed);
+      const mixedDetail = await get(`${NONCONFORMANCES}/${ncIds.sourceMixed}`).expect(200);
+      expect(mixedList).toBeDefined();
+      expect(mixedDetail.body).toEqual(mixedList);
+
+      // ⛔ Minor-2 — `lots` 0행(zeroLots) 경로도 상세·목록 대조에 태운다(상세 전용 분기가
+      // 그 행에서만 따로 새는 사고를 잡는다 — 값 자체의 덮어쓰기 그물은 위 sourceMixed 가 진다).
+      const zeroList = listRowOf(ncIds.zeroLots);
+      const zeroDetail = await get(`${NONCONFORMANCES}/${ncIds.zeroLots}`).expect(200);
+      expect(zeroList).toBeDefined();
+      expect(zeroDetail.body).toEqual(zeroList);
+      expect(zeroDetail.body).toMatchObject({ lots: [], affectedQtyTotal: 0, dispositionProgressCode: 'NOT_STARTED' });
+    });
+
+    it('⭐ 없는 id → 404(200 빈 응답이 아니다)', async () => {
+      const response = await get(`${NONCONFORMANCES}/999999999`).expect(404);
+
+      // `ErrorResponse` 봉투(§1-1) — 목록 응답 봉투(`items`/`page`)가 아니다.
+      expect(response.body).toHaveProperty('errors');
+      expect(response.body.items).toBeUndefined();
     });
   });
 
@@ -648,6 +715,35 @@ describe('부적합 목록 (e2e)', () => {
       actionDueDate: '2026-09-10',
       actionCompletedAt: '2026-09-06T00:00:00.000Z',
     });
+  }
+
+  /**
+   * 상세 창(§8-2 #13·#17) — 목록·롤업 창과 안 겹치는 시각을 쓴다. `version_no` 를 기본값
+   * 1 이 «아닌» 서로 다른 값으로 직접 올려 둔다 — 두 행이 같은 상수(예: 1)면 「ETag 원천을
+   * 다른 칸(또는 상수)으로 바꿔도 초록」인 변이가 안 잡힌다.
+   */
+  async function makeDetailWindowFixtures(): Promise<void> {
+    const versionedId = await makeNonconformance({
+      key: 'detailVersioned',
+      itemId: ids.item1,
+      statusCode: 'PENDING_DECISION',
+      severityCode: 'MAJOR',
+      openedAt: '2026-09-07T00:00:00.000Z',
+      lotId: ids.lotBase,
+      affectedQty: 4,
+    });
+    await prisma.nonconformance.update({ where: { nonconformance_id: BigInt(versionedId) }, data: { version_no: 7 } });
+
+    const otherId = await makeNonconformance({
+      key: 'detailOther',
+      itemId: ids.item1,
+      statusCode: 'NOT_REQUESTED',
+      severityCode: 'MINOR',
+      openedAt: '2026-09-07T01:00:00.000Z',
+      lotId: ids.lotBase,
+      affectedQty: 9,
+    });
+    await prisma.nonconformance.update({ where: { nonconformance_id: BigInt(otherId) }, data: { version_no: 3 } });
   }
 
   async function makeDecision(nonconformanceId: number, decisionQty: number): Promise<void> {

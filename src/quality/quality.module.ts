@@ -65,7 +65,7 @@ import { NonconformanceQueryService } from './nonconformance/nonconformance-quer
     DefectRecordController,
     LotStatusController, // 리터럴 경로 셋(`lot-statuses`·`lot-status-summary`·`lot-status-transitions`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
-    NonconformanceController, // `nonconformances`(목록 · I-21 PR ①a) — 상세 `:nonconformanceId` 는 ①b 몫.
+    NonconformanceController, // `nonconformances`(목록 · I-21 PR ①a) · `nonconformances/:nonconformanceId`(상세 · ①b) — 세그먼트 수가 달라 순서 함정이 없다.
     DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(I-21 PR ②a″) — `PrismaService` 만 쓰고 별도 provider 가 없다.
   ],
   providers: [

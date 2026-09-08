@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
@@ -51,6 +51,22 @@ export class NonconformanceQueryService {
       this.prisma.nonconformance.count({ where }),
     ]);
     return pagedResponse(rows.map(nonconformanceView), total, page);
+  }
+
+  /**
+   * 상세(I-21 PR ①b) — 매퍼는 목록과 «공유»한다(`nonconformanceView` · 계약이 두 스키마를
+   * 한 스키마로 묶었다 · R-25). ETag = **이 행 자신의** `nonconformance.version_no`
+   * (계약 `:request-disposition` 이 아니라 `…/{id}/disposition-decisions` 의 If-Match 원천 —
+   * §0 판정 #5). 다른 계약 파일(`quality-03품질.json`)이 그 값을 다시 쓰는 «원천 검사기가 못
+   * 보는» 자리라 여기 주석에 남긴다.
+   */
+  async get(nonconformanceId: number): Promise<{ view: NonconformanceView; versionNo: number }> {
+    const row = await this.prisma.nonconformance.findUnique({
+      where: { nonconformance_id: BigInt(nonconformanceId) },
+      include: NONCONFORMANCE_INCLUDE,
+    });
+    if (!row) throw new NotFoundException('없는 부적합입니다.');
+    return { view: nonconformanceView(row), versionNo: row.version_no };
   }
 }
 
