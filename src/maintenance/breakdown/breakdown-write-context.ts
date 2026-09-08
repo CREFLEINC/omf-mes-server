@@ -13,6 +13,10 @@ export type BreakdownWriteContext = IdempotencyContext & {
   workerNo: string;
 };
 
+export type BreakdownManagementContext = IdempotencyContext & {
+  appUserId: number;
+};
+
 export function breakdownWriteContext(request: Request): BreakdownWriteContext {
   const workerNo = request.headers['x-worker-no'];
   if (typeof workerNo !== 'string' || workerNo.trim() === '') {
@@ -43,5 +47,23 @@ export function breakdownWriteContext(request: Request): BreakdownWriteContext {
     appUserId,
     workerNo,
     successStatus: HttpStatus.CREATED,
+  };
+}
+
+export function breakdownManagementContext(
+  request: Request,
+): BreakdownManagementContext {
+  const session = currentSession(request);
+  if (session === undefined)
+    throw new UnauthorizedException('로그인이 필요합니다.');
+  const appUserId = session.userId;
+  return {
+    key: String(request.headers['idempotency-key']),
+    fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
+      actorUserId: appUserId,
+      body: request.body,
+    }),
+    appUserId,
+    successStatus: HttpStatus.OK,
   };
 }

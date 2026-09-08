@@ -2,9 +2,12 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -12,7 +15,12 @@ import {
 import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
-import { setEtag } from '../../common/optimistic-lock';
+import { IdempotencyService } from '../../common/idempotency';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
+import {
+  BreakdownHandlingService,
+  BreakdownHandlingUpdate,
+} from './breakdown-handling.service';
 import {
   BreakdownList,
   BreakdownQuery,
@@ -23,13 +31,18 @@ import {
   BreakdownCreate,
   BreakdownCreateService,
 } from './breakdown-create.service';
-import { breakdownWriteContext } from './breakdown-write-context';
+import {
+  breakdownManagementContext,
+  breakdownWriteContext,
+} from './breakdown-write-context';
 
 @Controller('maintenance/breakdowns')
 export class BreakdownController {
   constructor(
     private readonly queries: BreakdownQueryService,
     private readonly creates: BreakdownCreateService,
+    private readonly handling: BreakdownHandlingService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
@@ -57,4 +70,42 @@ export class BreakdownController {
   ): Promise<BreakdownView> {
     return this.creates.create(body, breakdownWriteContext(request));
   }
+
+  @Put(':breakdownId')
+  @Contract('PUT /maintenance/breakdowns/{breakdownId}')
+  async update(
+    @Req() request: Request,
+    @Param('breakdownId', ParseIntPipe) breakdownId: number,
+    @Body() body: BreakdownHandlingUpdate,
+  ): Promise<BreakdownView> {
+    const version = requiredVersion(request);
+    const context = breakdownManagementContext(request);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.handling.updateWithin(tx, breakdownId, version, body, context),
+    );
+    return outcome.body;
+  }
+
+  @Post(':breakdownId\\:start-handling')
+  @Contract('POST /maintenance/breakdowns/{breakdownId}:start-handling')
+  @HttpCode(HttpStatus.OK)
+  async startHandling(
+    @Req() request: Request,
+    @Param('breakdownId', ParseIntPipe) breakdownId: number,
+  ): Promise<BreakdownView> {
+    const version = requiredVersion(request);
+    const context = breakdownManagementContext(request);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.handling.startWithin(tx, breakdownId, version, context),
+    );
+    return outcome.body;
+  }
+}
+
+function requiredVersion(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났습니다.');
+  }
+  return version;
 }
