@@ -60,6 +60,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     // 같은 표의 생명주기 축과 «다른 그룹»이다 — 한 필드에 섞지 말라고 설계가 못박은 자리.
     'trace.lot.status_code': 'LOT_STATUS',
     'quality.inspection_result.status_code': 'INSPECTION_RESULT_STATUS',
+    // 부적합 처리 진행 — 판정 대기까지는 W-04-07 이, 판정 완료는 W-03-10 이 올린다(I-21 PR ④).
+    'quality.nonconformance.status_code': 'NONCONFORMANCE_STATUS',
   };
 
   /**

@@ -513,6 +513,11 @@ const SEED: CodeGroupSeed[] = [
     // 품질 판정 축의 전이 정본 9종이다. 판정 유입 경계·데이터 배선·경계 위임은 상태
     // 전이가 아니라 제외했다고 설계팀이 밝혔다(2026-09-01 회신 E-9).
     //
+    // ⭐ 처분 판정 셋(C17~C19)은 «우리가 정했다» — 결정 · 통보 089 §1. 계약이 도착 상태는
+    //    적었는데(quality-03품질.json:2460) 그것을 가리키는 코드가 9종에 없었다.
+    // ⛔ 배포가 시드를 안 돌리므로 마이그 20260909010052 가 같은 세 값을 넣는다 — 여기와
+    //    «둘 다» 있어야 한다(새 DB 는 이쪽이, 기존 DB 는 마이그가 채운다).
+    //
     // ⚠ 그룹명 LOT_STATUS_TRANSITION은 우리가 지은 잠정 이름이다 — G-32 등록부에 없다.
     groupCode: 'LOT_STATUS_TRANSITION',
     groupName: 'LOT 상태 전이',
@@ -527,6 +532,9 @@ const SEED: CodeGroupSeed[] = [
       { code: 'C10', codeName: '의심자재등록 → 보류', order: 70 },
       { code: 'C14', codeName: '판정 → PQC 검사 필요(합격판정개수 초과)', order: 80 },
       { code: 'C15', codeName: 'PQC 검사 필요 → Release(전수 재검 양품)', order: 90 },
+      { code: 'C17', codeName: '처분 재작업 → 검사 대기', order: 100 },
+      { code: 'C18', codeName: '처분 폐기 → 폐기', order: 110 },
+      { code: 'C19', codeName: '처분 정상 → 정상', order: 120 },
     ],
   },
   {

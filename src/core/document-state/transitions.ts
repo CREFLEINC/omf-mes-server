@@ -26,6 +26,8 @@ const DOCUMENT_CANCEL_ACTIONS: Record<ActionName, Transition> = {
 const CONFIRM = 'POST /quality/inspection-results/{inspectionResultId}:confirm';
 const HOLD = 'POST /quality/lot-holds';
 const RELEASE = 'POST /quality/lot-holds/{lotHoldId}:release';
+/** 처분 판정 저장 — LOT 축 전이 3 과 부적합 축 전이 1 을 «한 트랜잭션»에서 연다(I-21 · B-8). */
+const DECIDE = 'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions';
 
 /**
  * 전이표. **데이터로 둔다** — 코드에 상태 문자열을 박으면 값이 확정될 때 찾아 고칠 수 없다
@@ -183,9 +185,12 @@ export const TRANSITIONS: TransitionRegistry = {
    *    0」이라 적었고(`contracts/quality-03품질.json:4472` · 화면 정본 `W-03-02` §5-5 도식이
    *    「Hold 발신 (없음)」), 그 유일한 예외를 재등록 한 경로에만 열었다 — 「⭐ 이 경로에서만
    *    반영 목적의 Hold → 정상 전이가 허용된다」(B-13 · `shipment-04제품출하.json:431`).
-   *    ⇒ `DEFECTIVE` 는 `stock-reinstate` 의 `from` 에만 있고, 나머지 여덟의 출발 상태는
-   *    위 도식의 «수신·발신»에서 그대로 읽는다.
-   * ⛔ `SCRAPPED` 는 `from` 에도 `to` 에도 없다 — 계약이 어느 오퍼레이션에도 적지 않았다.
+   *    ⇒ 검사·보류 여덟의 출발 상태는 위 도식의 «수신·발신»에서 그대로 읽는다. ⭐ `DEFECTIVE`
+   *    발신은 재등록과 처분 판정 셋뿐이다 — 그 도식은 `W-03-02` 의 3전이(C7·C8·C9) 범위에서
+   *    쓰였고 처분 화면 `W-03-10` 은 그보다 «나중»이다(DR-008 확정 3-A · 통보 089 §1).
+   * ⭐ **`SCRAPPED` 는 `to` 에만 있고 `from` 에는 없다** — 계약이 도착 상태를 직접 적었고
+   *    (`quality-03품질.json:2460`), 폐기된 LOT 을 다시 처분하면 0건이 옮겨져 400
+   *    `STATE_LOCKED` 다. 「거부하는 쪽」을 남기는 자리다(결정 — 통보 089 §1).
    * ⛔ `C15`(전수 재검 양품)를 등록하지 않는다 — `C4` 와 (from, to) 가 같은데 어느 LOT 이
    *    `C14` 로 그 자리에 왔는지 가릴 표식이 데이터에 없다(F-6 · 미발행 · I-19 §9-2 후보 8).
    */
@@ -214,9 +219,43 @@ export const TRANSITIONS: TransitionRegistry = {
 
     // ── I-23(레인 C · 재고 재등록)이 쓴다 ──────────────────────────
     // ⛔ `transitionCode` 가 없다 — 이력 칸은 NOT NULL 인데 계약 enum 9값(C4~C15)에 재등록을
-    //    가리키는 코드가 «없다». 지어내지 않고 호출자가 넘기게 둔다. 설계 미정 — 문의 089(발행 예정).
+    //    가리키는 코드가 «없다». 호출자가 넘기게 둔다 — 결정 · 통보 089 §7(값은 레인 C 판정).
     'stock-reinstate': { from: ['DEFECTIVE'], to: 'NORMAL',
       sourceOperation: 'POST /logistics/stock-reinstatements' },
+
+    // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
+    // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
+    // ⭐ `from` 이 셋인 근거 — 대상 LOT 의 출발이 원천 둘로 갈린다. `PRODUCT`(OQC 불합격)는
+    //    `DEFECTIVE`(C6)이고 `RETURN`(반품)은 원 LOT 을 그대로 써(`W-04-07` §5-4) `NORMAL`
+    //    이거나 `INSPECTION_PENDING` 이다. 좁히면 반품 갈래 본길이 통째로 400 으로 죽는다.
+    // ⚠ `disposition-normal` 과 `stock-reinstate` 는 도착이 같아도 겹치지 않는다 — 코어가
+    //    (칸, 액션명)으로 찾고 여는 오퍼레이션이 다르며 이력 코드도 갈린다(C19 ↔ 미정).
+    //    ⛔ 겹치는 것은 «본길 순서»다: 처분 정상이 먼저 오면 재등록의 `from:['DEFECTIVE']` 가
+    //    0건을 옮긴다. 그 자리는 레인 C 의 판정이라 남의 행을 안 고치고 통보 184 로 남겼다.
+    'disposition-rework': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'INSPECTION_PENDING',
+      transitionCode: 'C17', sourceOperation: DECIDE },
+    'disposition-scrap': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'SCRAPPED',
+      transitionCode: 'C18', sourceOperation: DECIDE },
+    'disposition-normal': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
+      transitionCode: 'C19', sourceOperation: DECIDE },
+  },
+
+  /**
+   * 부적합 처리 진행. 값은 시드 `NONCONFORMANCE_STATUS` 3값(⛔ 시스템 소유)이 확정했고
+   * 계약이 전이 둘을 연다 — 의뢰는 `W-04-07`, 판정 완료는 `W-03-10` 이 올린다.
+   *
+   * ⛔ 탄생(`NOT_REQUESTED`)은 여기 오지 않는다 — `from` 이 없는 자리다.
+   * ⛔ `DECIDED` 는 «남은 수량 0» 일 때만이다 — 부분 처분은 `PENDING_DECISION` 에 머문다
+   *    (계약 `dispositionProgressCode.COMPLETED` = 「남은 수량 0」).
+   * ⛔ 되돌리는 전이를 만들지 않는다 — 오판정 정정 경로가 미결이고(`W-03-10` §8 #9) 계약에
+   *    그 오퍼레이션이 0건이다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'quality.nonconformance.status_code': {
+    'nonconformance-request-disposition': { from: ['NOT_REQUESTED'], to: 'PENDING_DECISION',
+      sourceOperation: 'POST /quality/nonconformances/{nonconformanceId}:request-disposition' },
+    'nonconformance-decide': { from: ['PENDING_DECISION'], to: 'DECIDED',
+      sourceOperation: DECIDE },
   },
 
   /**
