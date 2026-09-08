@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertCodeValues, toDateString } from '../../common/master';
+import { resolveEffectiveAssignments } from '../../core/equipment-assignment';
 
 /**
  * 점검항목 «부여» — 설비와 설비그룹 두 층에 같은 모양으로 붙는다.
@@ -131,46 +132,22 @@ export class InspectionAssignmentService {
     });
     if (!equipment) throw new NotFoundException('없는 설비입니다.');
 
-    const assigned = await this.readEquipmentAssignments(equipmentId);
-    if (assigned.length > 0) {
-      return {
-        assigned,
-        effective: assigned,
-        resolvedFromLevelCode: 'EQUIPMENT',
-        resolvedFromGroupId: null,
-        versionNo: equipment.version_no,
-      };
-    }
-
-    let groupId =
-      equipment.production_line_id === null ? null : Number(equipment.production_line_id);
-    const seen = new Set<number>();
-    while (groupId !== null && !seen.has(groupId)) {
-      seen.add(groupId);
-      const items = await this.readGroupAssignments(groupId);
-      if (items.length > 0) {
-        return {
-          assigned,
-          effective: items,
-          resolvedFromLevelCode: 'EQUIPMENT_GROUP',
-          resolvedFromGroupId: groupId,
-          versionNo: equipment.version_no,
-        };
-      }
-      const parent: { parent_line_id: bigint | null } | null =
-        await this.prisma.production_line.findUnique({
+    const resolved = await resolveEffectiveAssignments(equipment.production_line_id, {
+      readEquipmentAssignments: () => this.readEquipmentAssignments(equipmentId),
+      readGroupAssignments: (groupId) => this.readGroupAssignments(groupId),
+      readParentGroupId: async (groupId) => {
+        const parent = await this.prisma.production_line.findUnique({
           where: { production_line_id: groupId },
           select: { parent_line_id: true },
         });
-      groupId = parent?.parent_line_id == null ? null : Number(parent.parent_line_id);
-    }
-
-    // 「NONE 이면 점검 대상이 아니며 화면은 입력을 열지 않는다」(계약).
+        return parent?.parent_line_id ?? null;
+      },
+    });
     return {
-      assigned,
-      effective: [],
-      resolvedFromLevelCode: 'NONE',
-      resolvedFromGroupId: null,
+      assigned: resolved.levelCode === 'EQUIPMENT' ? resolved.assignments : [],
+      effective: resolved.assignments,
+      resolvedFromLevelCode: resolved.levelCode,
+      resolvedFromGroupId: resolved.groupId === null ? null : Number(resolved.groupId),
       versionNo: equipment.version_no,
     };
   }
@@ -220,7 +197,7 @@ export class InspectionAssignmentService {
 
   // ── 공통 ────────────────────────────────────────────────────────────────
 
-  private async readGroupAssignments(equipmentGroupId: number): Promise<AssignmentView[]> {
+  private async readGroupAssignments(equipmentGroupId: number | bigint): Promise<AssignmentView[]> {
     const rows = await this.prisma.equipment_group_inspection_item.findMany({
       where: { production_line_id: equipmentGroupId },
       include: { equipment_inspection_item: true },
