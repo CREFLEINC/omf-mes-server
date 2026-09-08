@@ -20,13 +20,14 @@ import { InventoryPostingModule, InventoryPostingService } from '../src/core/inv
 import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
 import { LOT_NO_LENGTH } from '../src/core/lot/lot-number';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-lot-probe';
 const NOPERM_ID = 'e2e-lot-noperm';
 const PASSWORD = 'LOT-검사-비밀번호';
 const PREFIX = 'LOTE2E';
 const ROLE = 'E2E_LOT';
-const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04'];
+const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04', 'M-01-13'];
 const DAY = '2026-05-01';
 
 function validator(operation: string, status = 200): ValidateFunction {
@@ -58,6 +59,9 @@ describe('LOT (e2e)', () => {
   let posting: InventoryPostingService;
   let cookie: string[];
   let noPermCookie: string[];
+  // PR ② — 상신 주체와 `IQC_SKIP` 결재선(DB 에 0행이라 픽스처가 세운다 · 시드는 안 고친다).
+  let probeUserId: bigint;
+  let iqcRouteId: bigint;
 
   let plantId: number;
   let itemId: number;
@@ -79,6 +83,7 @@ describe('LOT (e2e)', () => {
     await cleanup();
     await makeUsers();
     await makeMasters();
+    iqcRouteId = await seedRoute(prisma, 'IQC_SKIP', [probeUserId]);
   });
 
   afterAll(async () => {
@@ -475,6 +480,209 @@ describe('LOT (e2e)', () => {
       .expect(404);
   });
 
+  // ── PR ② 쓰기 2건 ───────────────────────────────────────────────────────
+
+  it('⭐ 외부식별자 치환 — 빠진 기존 행이 사라지고 부모 ETag 가 +1 이다', async () => {
+    const lot = await create({
+      numberSourceCode: 'SUPPLIER',
+      lotNo: `${PREFIX}-EXTPUT`,
+      externalIdentifiers: [
+        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-P-1` },
+        { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-P-2` },
+      ],
+    });
+    const etag = await etagOf(lot.lotId);
+
+    const replaced = await putIdentifiers(lot.lotId, etag, [
+      { identifierTypeCode: 'CUSTOMER_LOT', externalIdentifier: `${PREFIX}-P-3` },
+    ]).expect(200);
+    const validate = validator('PUT /trace/lots/{lotId}/external-identifiers');
+    expect(validate(replaced.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // ⭐ R-6 — 우리가 소유한 칸만 본다(배열을 통째로 박지 않는다).
+    expect(
+      replaced.body.items.map((i: { externalIdentifier: string }) => i.externalIdentifier),
+    ).toEqual([`${PREFIX}-P-3`]);
+    // 치환 응답과 조회가 같은 뷰·같은 정렬을 쓴다.
+    expect(await identifiersOf(lot.lotId)).toEqual(replaced.body);
+    // ⭐ 부모의 토큰이 옮겨진다 — 상세 GET 이 `externalIdentifiers` 를 싣기 때문이다.
+    expect(Number(await etagOf(lot.lotId))).toBe(Number(etag) + 1);
+  });
+
+  it('⭐ 0행 치환은 전건 삭제다 — 계약이 minItems 를 안 걸었다', async () => {
+    const lot = await create({
+      numberSourceCode: 'SUPPLIER',
+      lotNo: `${PREFIX}-EXTZERO`,
+      externalIdentifiers: [
+        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-Z-1` },
+      ],
+    });
+
+    const emptied = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), []).expect(200);
+    expect(emptied.body).toEqual({ items: [] });
+    expect(await identifiersOf(lot.lotId)).toEqual({ items: [] });
+  });
+
+  it('⭐ 같은 멱등 키의 재전송은 한 번만 반영된다 — 버전이 두 번 오르지 않는다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    const etag = await etagOf(lot.lotId);
+    const items = [{ identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-IDEM` }];
+    const idempotencyKey = key();
+
+    const first = await putIdentifiers(lot.lotId, etag, items, idempotencyKey).expect(200);
+    const again = await putIdentifiers(lot.lotId, etag, items, idempotencyKey).expect(200);
+
+    expect(again.body).toEqual(first.body);
+    expect(Number(await etagOf(lot.lotId))).toBe(Number(etag) + 1);
+    expect(await prisma.lot_external_identifier.count({ where: { lot_id: lot.lotId } })).toBe(1);
+  });
+
+  it('⛔ 치환의 If-Match 는 필수고, 낡은 값은 409 다 — 없는 LOT 은 404 다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    const etag = await etagOf(lot.lotId);
+
+    await request(app.getHttpServer())
+      .put(`/api/trace/lots/${lot.lotId}/external-identifiers`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ items: [] })
+      .expect(400);
+
+    await putIdentifiers(lot.lotId, etag, []).expect(200);
+    const stale = await putIdentifiers(lot.lotId, etag, []).expect(409);
+    expect(stale.body.conflictCause).toBe('user');
+
+    // ⛔ 없는 LOT 은 409 가 아니라 404 다 — 잠금 문장이 0행인 것과 버전이 어긋난 것은 다르다.
+    await putIdentifiers(999999999, etag, []).expect(404);
+  });
+
+  it('⛔ 요청 «안» 5칸 중복은 400 UNIQUE_VIOLATION · partnerId 만 다르면 통과한다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    const supplier = await prisma.partner.findFirstOrThrow({
+      where: { partner_code: `${PREFIX}-SUP` },
+    });
+    const same = { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-DUPID` };
+
+    const rejected = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), [
+      same,
+      same,
+    ]).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'items.1.externalIdentifier',
+      code: 'UNIQUE_VIOLATION',
+    });
+
+    // ⭐ 표현식 인덱스의 `COALESCE(partner_id,0)` 축 — 널과 값은 다른 행이다.
+    const accepted = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), [
+      { ...same, partnerId: Number(supplier.partner_id) },
+      { ...same, partnerId: null },
+    ]).expect(200);
+    expect(accepted.body.items).toHaveLength(2);
+  });
+
+  it('⛔ 마스터에 없는 유형·없는 거래처는 400 INVALID 다 — FK 위반이 500 으로 새지 않는다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+
+    const badCode = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), [
+      { identifierTypeCode: 'NO_SUCH_TYPE', externalIdentifier: `${PREFIX}-BAD` },
+    ]).expect(400);
+    expect(badCode.body.errors[0]).toMatchObject({
+      field: 'items.0.identifierTypeCode',
+      code: 'INVALID',
+    });
+
+    const badPartner = await putIdentifiers(lot.lotId, await etagOf(lot.lotId), [
+      { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-BAD2`, partnerId: 999999999 },
+    ]).expect(400);
+    expect(badPartner.body.errors[0]).toMatchObject({
+      field: 'items.0.partnerId',
+      code: 'INVALID',
+    });
+  });
+
+  it('⭐ IQC 생략 요청은 202 다 — 다형 축 세 칸이 서고 LOT 은 그대로다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+
+    const accepted = await requestIqcSkip(lot.lotId).expect(202);
+    const validate = validator('POST /trace/lots/{lotId}:request-iqc-skip', 202);
+    expect(validate(accepted.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const row = await prisma.approval_request.findUniqueOrThrow({
+      where: { approval_request_id: BigInt(accepted.body.approvalRequestId) },
+    });
+    expect(row).toMatchObject({
+      approval_type_code: 'IQC_SKIP',
+      target_type_code: 'INBOUND_LOT',
+      target_id: BigInt(lot.lotId),
+      status_code: 'PENDING',
+      requested_by: probeUserId,
+    });
+    // ⛔ 대상 행에 아무것도 안 쓴다 — 승인 FK 칸이 없고 202 에 ETag 도 없다.
+    const after = await prisma.lot.findUniqueOrThrow({ where: { lot_id: lot.lotId } });
+    expect(after.version_no).toBe(1);
+    // ⛔ 「진행 중 요청은 하나」 — 코어가 두 번째 상신을 막는다.
+    const twice = await requestIqcSkip(lot.lotId).expect(400);
+    expect(twice.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+  });
+
+  it('⛔ 사번 헤더가 없으면 400 REQUIRED · 결재선이 없으면 400 ROUTE_NOT_FOUND 다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+
+    const noWorker = await requestIqcSkip(lot.lotId, { workerNo: null }).expect(400);
+    expect(noWorker.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
+
+    // 결재선을 잠시 내린다 — 오늘 DB 에 `IQC_SKIP` 결재선이 0행이라 이 400 이 기본값이다.
+    // ⚠ 되돌리기는 `finally` 다 — 중간에 깨지면 뒤의 상신 테스트가 통째로 400 이 된다.
+    await setRouteActive(false);
+    try {
+      const noRoute = await requestIqcSkip(lot.lotId).expect(400);
+      expect(noRoute.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+    } finally {
+      await setRouteActive(true);
+    }
+  });
+
+  it('⭐ 자격 두 축은 «서로 다른» 코드로 갈린다 — 원천 INVALID · 상태 STATE_LOCKED', async () => {
+    const notInbound = await create({ numberSourceCode: 'MES' });
+    await prisma.lot.update({
+      where: { lot_id: notInbound.lotId },
+      data: { source_type_code: 'WORK_ORDER' },
+    });
+    const bySource = await requestIqcSkip(notInbound.lotId).expect(400);
+    expect(bySource.body.errors[0]).toMatchObject({ field: 'lotId', code: 'INVALID' });
+
+    const notPending = await create({ numberSourceCode: 'MES' });
+    await prisma.lot.update({
+      where: { lot_id: notPending.lotId },
+      data: { status_code: 'NORMAL' },
+    });
+    const byStatus = await requestIqcSkip(notPending.lotId).expect(400);
+    expect(byStatus.body.errors[0]).toMatchObject({ field: 'lotId', code: 'STATE_LOCKED' });
+
+    // 상신이 아예 없었으니 결번도 없다 — 두 요청 다 채번 «전»에 막힌다.
+    expect(
+      await prisma.approval_request.count({
+        where: { target_type_code: 'INBOUND_LOT', target_id: BigInt(notInbound.lotId) },
+      }),
+    ).toBe(0);
+  });
+
+  it('⛔ 권한이 없으면 쓰기 둘 다 403 이다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    const etag = await etagOf(lot.lotId);
+
+    await request(app.getHttpServer())
+      .put(`/api/trace/lots/${lot.lotId}/external-identifiers`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send({ items: [] })
+      .expect(403);
+
+    await requestIqcSkip(lot.lotId, { as: noPermCookie }).expect(403);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /**
@@ -559,6 +767,49 @@ describe('LOT (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     return response.headers.etag;
+  }
+
+  /** 치환 호출 — If-Match 는 부모 상세 GET 의 ETag 다(계약 B-1-1). */
+  function putIdentifiers(
+    lotId: number,
+    etag: string,
+    items: Record<string, unknown>[],
+    idempotencyKey: string = key(),
+  ): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/trace/lots/${lotId}/external-identifiers`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey)
+      .set('If-Match', etag)
+      .send({ items });
+  }
+
+  async function identifiersOf(lotId: number): Promise<unknown> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lotId}/external-identifiers`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body;
+  }
+
+  async function setRouteActive(isActive: boolean): Promise<void> {
+    await prisma.approval_route.update({
+      where: { approval_route_id: iqcRouteId },
+      data: { is_active: isActive },
+    });
+  }
+
+  /** ⚠ `workerNo: null` 이면 헤더를 아예 안 보낸다 — 그 자리가 400 `REQUIRED` 다. */
+  function requestIqcSkip(
+    lotId: number,
+    opts: { workerNo?: string | null; as?: string[] } = {},
+  ): request.Test {
+    const call = request(app.getHttpServer())
+      .post(`/api/trace/lots/${lotId}:request-iqc-skip`)
+      .set('Cookie', opts.as ?? cookie)
+      .set('Idempotency-Key', key());
+    if (opts.workerNo !== null) call.set('X-Worker-No', opts.workerNo ?? 'W-0001');
+    return call.send({ reason: '긴급 출하분 IQC 생략' });
   }
 
   async function list(query: string): Promise<{ items: LotBody[] }> {
@@ -659,6 +910,7 @@ describe('LOT (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    probeUserId = user.app_user_id;
     const other = await prisma.app_user.create({
       data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
     });
@@ -717,6 +969,7 @@ describe('LOT (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);
+    await cleanupApprovals();
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
@@ -730,5 +983,36 @@ describe('LOT (e2e)', () => {
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }
+  }
+
+  /**
+   * ⛔ 승인 요청·결재선은 `app_user` 를 FK 로 쥔다 — 사용자 삭제 «전»에 지운다. 접두어로 쓸지
+   * 않고 «이 스위트의 주체»로만 좁힌다(형제 `app-approval-request.e2e-spec.ts:319-334` 와 같은 이유).
+   */
+  async function cleanupApprovals(): Promise<void> {
+    const users = await prisma.app_user.findMany({
+      where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+      select: { app_user_id: true },
+    });
+    const userIds = users.map((user) => user.app_user_id);
+    if (userIds.length === 0) return;
+    const requests = await prisma.approval_request.findMany({
+      where: { requested_by: { in: userIds } },
+      select: { approval_request_id: true },
+    });
+    const requestIds = requests.map((row) => row.approval_request_id);
+    await prisma.approval_step.deleteMany({ where: { approval_request_id: { in: requestIds } } });
+    await prisma.approval_request.deleteMany({
+      where: { approval_request_id: { in: requestIds } },
+    });
+    const steps = await prisma.approval_route_step.findMany({
+      where: { approver_user_id: { in: userIds } },
+      select: { approval_route_id: true },
+    });
+    const routeIds = steps.map((row) => row.approval_route_id);
+    await prisma.approval_route_step.deleteMany({
+      where: { approval_route_id: { in: routeIds } },
+    });
+    await prisma.approval_route.deleteMany({ where: { approval_route_id: { in: routeIds } } });
   }
 });

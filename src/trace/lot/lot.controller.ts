@@ -22,8 +22,12 @@ import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { LotComplete, LotCompleteService } from './lot-complete.service';
-import { LotExternalIdentifierService } from './lot-external-identifier.service';
+import {
+  LotExternalIdentifierService,
+  LotExternalIdentifierUpsert,
+} from './lot-external-identifier.service';
 import { LotHoldListService } from './lot-hold-list.service';
+import { LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
@@ -37,6 +41,7 @@ export class LotController {
     private readonly idempotency: IdempotencyService,
     private readonly externalIdentifiers: LotExternalIdentifierService,
     private readonly holdList: LotHoldListService,
+    private readonly iqcSkips: LotIqcSkipService,
   ) {}
 
   @Get()
@@ -120,6 +125,61 @@ export class LotController {
     //    I-6 §8-2 와 같은 가름). `version_no` 는 올라가므로 화면은 완료 뒤 `GET` 으로 새 토큰을 받는다(ⓦ).
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.completes.complete(lotId, body, context));
   }
+
+  /**
+   * ⭐ If-Match 는 **부모** `trace.lot.version_no` 다 — 「잠그는 단위가 부모이기 때문이다」(계약 ·
+   * B-1-1). ⛔ 응답에 ETag 를 안 내린다(계약이 이 경로에 헤더 미선언) — 화면은 다음 토큰을
+   * 상세 GET 으로 받는다.
+   */
+  @Put(':lotId/external-identifiers')
+  @Contract('PUT /trace/lots/{lotId}/external-identifiers')
+  replaceExternalIdentifiers(
+    @Req() request: Request,
+    @Param('lotId', ParseIntPipe) lotId: number,
+    @Body() body: { items: LotExternalIdentifierUpsert[] },
+  ): Promise<{ items: ExternalIdentifierView[] }> {
+    const version = versionOf(request);
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.externalIdentifiers.replace(lotId, version, body.items, appUserId),
+    );
+  }
+
+  /**
+   * ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 승인 유형·대상은 서버가 낸다(본문 미수신).
+   * ⛔ If-Match 를 안 읽는다(계약에 없다) · ⛔ `setEtag` 를 안 부른다.
+   */
+  @Post(':lotId\\:request-iqc-skip')
+  @Contract('POST /trace/lots/{lotId}:request-iqc-skip')
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestIqcSkip(
+    @Req() request: Request,
+    @Param('lotId', ParseIntPipe) lotId: number,
+    @Body() body: { reason: string },
+  ): Promise<{ approvalRequestId: number }> {
+    // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:96`) — 사번의 필수 판정은 서비스 몫이다.
+    const workerNo = request.headers['x-worker-no'];
+    const context = {
+      workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+      // ⚠ 주체는 세션 계정이다 — 사번을 `requested_by` 로 풀지 않는다(`plan.md` §5 규칙 9).
+      appUserId: userOf(request),
+    };
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.iqcSkips.requestSkip(lotId, body.reason, context),
+    );
+  }
+}
+
+/**
+ * ⛔ 치환은 `runVersioned` 를 못 쓴다 — 응답에 ETag 가 없어 새 토큰을 내릴 자리가 없다.
+ * 대신 가드가 파싱해 둔 If-Match 값을 꺼내 서비스가 «비교만» 한다(출고 라인 치환 선례).
+ */
+function versionOf(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+  }
+  return version;
 }
 
 function userOf(request: Request): number {
