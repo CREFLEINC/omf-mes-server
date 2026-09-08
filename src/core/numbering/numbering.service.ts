@@ -42,6 +42,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   EQUIPMENT_INSPECTION: 'EQI',
   /** 결정 — 통보 098: 설비 고장 번호는 공장별 MLF 기본 접두어를 쓴다. */
   BREAKDOWN: 'MLF',
+  /** 결정 — I-31 C0: 보전 지시는 대상 공장별 MO 기본 접두어를 쓴다. */
+  MAINTENANCE_ORDER: 'MO',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —

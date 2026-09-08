@@ -28,6 +28,12 @@ export interface ConflictExtra {
    * `message` 자유문에서 파싱하지 않는다고 계약이 못박아 구조화 칸이 있어야 한다.
    */
   currentLotStatusCode?: string;
+  /**
+   * `QualityConflictResponse.conflictingLotId` — 여러 LOT 을 한 트랜잭션으로 보류할 때
+   * **어느 LOT 이 걸렸는지**(`W-03-03` §6). 하나라도 어긋나면 전체를 거부하므로 화면이
+   * 그 한 건을 짚을 축이 이 칸뿐이다.
+   */
+  conflictingLotId?: number;
 }
 
 export interface ConflictResponse extends ConflictExtra {

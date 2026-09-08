@@ -56,6 +56,7 @@ model app_user {
   maintenance_order_assignee                             maintenance_order[]                @relation("maintenance_order_assignee_user")
   maintenance_order_issuer                               maintenance_order[]                @relation("maintenance_order_issued_by_user")
   maintenance_order_canceller                            maintenance_order[]                @relation("maintenance_order_cancelled_by_user")
+  maintenance_result                                     maintenance_result[]
   equipment_downtime                                     equipment_downtime[]
   worker                                                 worker[]
   production_plan                                        production_plan[]
@@ -768,6 +769,7 @@ model goods_issue {
   warehouse                 warehouse                @relation(fields: [source_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   goods_issue_line          goods_issue_line[]
   goods_issue_spare_line    goods_issue_spare_line[]
+  maintenance_result_part   maintenance_result_part[]
   shopfloor_receipt         shopfloor_receipt[]
   subcontract_issue         subcontract_issue[]
 
@@ -1707,6 +1709,7 @@ model equipment {
   equipment_downtime                   equipment_downtime[]
   equipment_inspection                 equipment_inspection[]
   maintenance_order                    maintenance_order[]
+  maintenance_result                   maintenance_result[]
   planned_stop                         planned_stop[]
   tool_usage                           tool_usage[]
   location                             location?                              @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1970,6 +1973,7 @@ model mold {
   version_no                     Int                              @default(1)
   tool_usage                     tool_usage[]
   maintenance_order              maintenance_order[]
+  maintenance_result             maintenance_result[]
   plant                          plant                            @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   production_result              production_result[]
   work_order                     work_order[]
@@ -4124,6 +4128,7 @@ model breakdown {
   handler            app_user?            @relation("breakdown_handled_byToapp_user", fields: [handled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   equipment_downtime equipment_downtime[]
   maintenance_order  maintenance_order[]
+  maintenance_result maintenance_result[]
 
   @@schema("maintenance")
 }
@@ -4285,21 +4290,45 @@ model maintenance_order {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model maintenance_result {
-  maintenance_result_id BigInt            @id @default(autoincrement())
-  maintenance_order_id  BigInt
-  result_seq            Int
-  action_code           String            @db.VarChar(50)
-  action_description    String
-  started_at            DateTime          @db.Timestamptz(6)
-  completed_at          DateTime          @db.Timestamptz(6)
-  performed_by          BigInt?
-  result_code           String            @db.VarChar(50)
-  created_at            DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by            BigInt?
-  maintenance_order     maintenance_order @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
-  worker                worker?           @relation(fields: [performed_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_result_id    BigInt                    @id @default(autoincrement())
+  maintenance_order_id     BigInt?
+  result_seq               Int?
+  action_code              String?                   @db.VarChar(50)
+  action_description       String?
+  started_at               DateTime                  @db.Timestamptz(6)
+  completed_at             DateTime?                 @db.Timestamptz(6)
+  performed_by             BigInt?
+  result_code              String?                   @db.VarChar(50)
+  target_type_code         String?                   @db.VarChar(50)
+  equipment_id             BigInt?
+  mold_id                  BigInt?
+  breakdown_id             BigInt?
+  result_note              String?
+  performed_by_user_id     BigInt?
+  is_outsourced            Boolean?
+  outsource_vendor_name    String?
+  reset_counter            Boolean?
+  shot_count_before_reset  BigInt?
+  shot_count_after_reset   BigInt?
+  closed                   Boolean?
+  version_no               Int                       @default(1)
+  updated_at               DateTime?                 @db.Timestamptz(6)
+  updated_by               BigInt?
+  created_at               DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by               BigInt?
+  maintenance_order        maintenance_order?        @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                   worker?                   @relation(fields: [performed_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                equipment?                @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                     mold?                     @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  breakdown                breakdown?                @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
+  performer                app_user?                 @relation(fields: [performed_by_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_result_line  maintenance_result_line[]
+  maintenance_result_part  maintenance_result_part[]
 
   @@unique([maintenance_order_id, result_seq], map: "uq_maintenance_result")
+  @@index([equipment_id, started_at, maintenance_result_id], map: "ix_maintenance_result_equipment_started")
+  @@index([mold_id, started_at, maintenance_result_id], map: "ix_maintenance_result_mold_started")
+  @@index([breakdown_id], map: "ix_maintenance_result_breakdown")
   @@schema("maintenance")
 }
 
@@ -4468,6 +4497,7 @@ model spare_part {
   item                   item?                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   plant                  plant                    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   spare_part_equipment   spare_part_equipment[]
+  maintenance_result_part maintenance_result_part[]
 
   @@unique([plant_id, spare_part_code], map: "uq_spare_part")
   @@schema("mdm")
@@ -4721,6 +4751,7 @@ model maintenance_order_item {
   status_code               String                     @db.VarChar(50)
   equipment_inspection_item equipment_inspection_item? @relation(fields: [inspection_item_id], references: [equipment_inspection_item_id], onDelete: NoAction, onUpdate: NoAction)
   maintenance_order         maintenance_order          @relation(fields: [maintenance_order_id], references: [maintenance_order_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_result_line   maintenance_result_line[]
 
   @@unique([maintenance_order_id, sequence_no], map: "uq_maintenance_order_item_seq")
   @@index([inspection_item_id], map: "ix_maintenance_order_item_inspection")
@@ -4744,6 +4775,43 @@ model maintenance_order_trigger {
 
   @@index([maintenance_order_id], map: "ix_maintenance_order_trigger_order")
   @@index([trigger_type_code, source_id, maintenance_order_id], map: "ix_maintenance_order_trigger_source")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model maintenance_result_line {
+  maintenance_result_line_id BigInt                   @id @default(autoincrement())
+  maintenance_result_id      BigInt
+  sequence_no                Int
+  maintenance_order_item_id  BigInt?
+  part_name                  String?
+  result_code                String                   @db.VarChar(50)
+  remarks                    String?
+  maintenance_result         maintenance_result       @relation(fields: [maintenance_result_id], references: [maintenance_result_id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_order_item     maintenance_order_item?   @relation(fields: [maintenance_order_item_id], references: [maintenance_order_item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([maintenance_result_id, sequence_no], map: "uq_maintenance_result_line_seq")
+  @@unique([maintenance_result_id, maintenance_order_item_id], map: "uq_maintenance_result_line_item")
+  @@index([maintenance_order_item_id], map: "ix_maintenance_result_line_item")
+  @@schema("maintenance")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model maintenance_result_part {
+  maintenance_result_part_id BigInt             @id @default(autoincrement())
+  maintenance_result_id      BigInt
+  sequence_no                Int
+  spare_part_id              BigInt
+  part_name                  String?
+  used_qty                   Decimal            @db.Decimal(20, 6)
+  goods_issue_id             BigInt?
+  maintenance_result         maintenance_result @relation(fields: [maintenance_result_id], references: [maintenance_result_id], onDelete: NoAction, onUpdate: NoAction)
+  spare_part                 spare_part          @relation(fields: [spare_part_id], references: [spare_part_id], onDelete: NoAction, onUpdate: NoAction)
+  goods_issue                goods_issue?        @relation(fields: [goods_issue_id], references: [goods_issue_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([maintenance_result_id, sequence_no], map: "uq_maintenance_result_part_seq")
+  @@index([spare_part_id], map: "ix_maintenance_result_part_spare")
+  @@index([goods_issue_id], map: "ix_maintenance_result_part_issue")
   @@schema("maintenance")
 }
 

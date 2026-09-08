@@ -53,6 +53,37 @@
 당장 두 질의를 더 붙이기보다 쓰기 PR(④·⑤)이 서서 `lotHoldId` 를 선택 질의로 받게 될 때 같이
 늘리는 편이 낫다.
 
+## ⭐ 2026-09-08 재검토 — **PR ④(`POST /quality/lot-holds`)가 서고 나서** (I-20 §12-1 ⓐ)
+
+**결론은 그대로다. 근거 한 줄이 「예측」에서 「실측」으로 바뀌었다.**
+
+R-13 이 든 어긋남 ⓑ 를 **실물로 쟀다**(dev DB · LOT 7162 — `status_code='NORMAL'` 이고
+해제되지 않은 **전량 보류**가 하나 열려 있다):
+
+| 축 | 값 |
+|---|---|
+| `GET /quality/lot-status-transitions?lotId=7162` | `CREATE_HOLD` 두 줄이 **`allowed: true`**(→`DEFECTIVE` · →`INSPECTION_PENDING`) · `RELEASE_HOLD` 두 줄은 `allowed: false` |
+| `POST /quality/lot-holds` (그 LOT · 올바른 `versionNo`) | **409** `{"code":"DUPLICATE_HOLD","conflictingLotId":7162}` |
+
+⇒ 어긋남은 **실재한다.** 그리고 실측이 그 범위를 **좁혔다**:
+
+- 어긋나는 것은 **`CREATE_HOLD` 두 줄뿐**이다. `RELEASE_HOLD` 축은 이 LOT 에서 `allowed=false`
+  이고 실행도 막히므로 두 축이 맞는다(R-13 이 「`allowed=true` 축 전부」라 적은 것은 넓었다).
+- 그 두 줄은 **같은 사실 하나**(열린 전량 보류의 존재)로 함께 갈린다 — `targetLotStatusCode` 와
+  무관하다. 즉 붙일 질의는 **`EXISTS(lot_hold WHERE lot_id=? AND released_at IS NULL AND hold_qty IS NULL)`
+  한 줄**이고, 스키마·계약 변경은 0이다(`allowed=false` 로 내리면 `blockedReason` 칸이 이미 있다).
+
+**그래도 지금 안 붙인다** — 이유가 하나 줄고 하나 남았다.
+- ⛔ **죽은 이유**: 「`lotHoldId` 를 선택 질의로 받게 될 때 같이 늘린다」. `DUPLICATE_HOLD` 축은
+  `lotHoldId` 와 **무관**하다(등록은 보류를 고르지 않는다) ⇒ 그 시점을 기다릴 근거가 없다.
+- ✅ **남은 이유**: 이 조회는 이미 3질의(lot·picking·goods_issue)를 하는 **미리보기**고, 최종
+  판정은 실행측이 낸다. 그리고 이 축을 조회에 넣으면 **조회와 실행이 같은 규칙을 두 곳에 적는다** —
+  `plan.md` §5-6 이 막으려던 것이 정확히 그 이중 기재다. 등록 실행(PR ④)이 409 를
+  `DUPLICATE_HOLD` 라는 **구조화 코드**로 내리므로 화면은 그 값으로 문구를 고를 수 있다.
+
+⇒ **`allowed` 는 계속 전이표 `from` 판정만 한다.** 되돌린다면 위 한 줄짜리 `EXISTS` 를
+`CREATE_HOLD` 행에만 걸고 `blockedReason` 에 「이미 열려 있는 전량 보류가 있습니다」를 담는다.
+
 ## 관련
 
 - `src/quality/lot-status/lot-status-transition.service.ts` `rowOf()` 코드 주석은 이 판정을

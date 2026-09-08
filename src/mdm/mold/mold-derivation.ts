@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { toDateString } from '../../common/master';
+import { MoldPmDueAxis, moldPmFacts } from '../../core/mold-pm';
 
 /**
  * 툴의 도출값 — 저장하지 않고 그때그때 만드는 여섯 칸과 목록 요약·정렬.
@@ -18,7 +19,7 @@ import { toDateString } from '../../common/master';
  */
 export const PM_NEAR_THRESHOLD_PERCENT = 90;
 
-export type PmDueAxis = 'SHOT' | 'DATE';
+export type PmDueAxis = MoldPmDueAxis;
 export type MoldSort = 'SHOT_USAGE_DESC' | 'NEXT_PM_ASC' | 'CODE';
 
 /** 계약 `Mold` 와 동형. 뒤쪽 여섯 칸은 저장하지 않고 그때그때 도출한다. */
@@ -103,47 +104,27 @@ export function localDate(now: Date, timezone: string): string {
   }).format(now);
 }
 
-/**
- * 마지막 시행일 + 주기. 말일 넘침은 그 달의 말일로 **자른다** — 1/31 에 한 달을 더해
- * 3/3 이 나오면 2월치 점검이 통째로 사라진다.
- */
-function addCycle(from: Date, interval: number, unit: string): string | null {
-  const year = from.getUTCFullYear();
-  const month = from.getUTCMonth();
-  const day = from.getUTCDate();
-  if (unit === 'DAY' || unit === 'WEEK') {
-    const step = unit === 'WEEK' ? interval * 7 : interval;
-    return toDateString(new Date(Date.UTC(year, month, day + step)));
-  }
-  const months = unit === 'MONTH' ? interval : unit === 'YEAR' ? interval * 12 : null;
-  if (months === null) return null;
-  const lastDay = new Date(Date.UTC(year, month + months + 1, 0)).getUTCDate();
-  return toDateString(new Date(Date.UTC(year, month + months, Math.min(day, lastDay))));
-}
-
 /** 저장된 칸에서 도출값 여섯을 만든다. `today` 는 그 툴이 선 공장의 로컬 오늘이다. */
 export function view(row: MoldRow, today: string): MoldView {
-  const guaranteed = row.guaranteed_shot_count === null ? null : Number(row.guaranteed_shot_count);
-  const current = Number(row.current_shot_count);
+  const facts = moldPmFacts({
+    triggerTypeCode: row.pm_trigger_type_code,
+    guaranteedShotCount: row.guaranteed_shot_count,
+    currentShotCount: row.current_shot_count,
+    lastPmDate: row.last_pm_date,
+    cycleInterval: row.pm_cycle_interval,
+    cycleUnitCode: row.pm_cycle_unit_code,
+    today,
+  });
+  const guaranteed =
+    facts.guaranteedShotCountAtDue === null ? null : Number(facts.guaranteedShotCountAtDue);
+  const current = Number(facts.shotCountAtDue);
   const lastPmDate = toDateString(row.last_pm_date);
-  const nextPmDate =
-    row.last_pm_date === null || row.pm_cycle_interval === null || row.pm_cycle_unit_code === null
-      ? null
-      : addCycle(row.last_pm_date, row.pm_cycle_interval, row.pm_cycle_unit_code);
 
   // 적정타수가 비면 「산출 불가」다 — 0 으로 채우면 화면이 여유가 없다고 읽는다(계약).
   const available = guaranteed === null ? null : guaranteed - current;
   const ratio = guaranteed === null || guaranteed === 0
     ? null
     : Math.round((current / guaranteed) * 1000) / 10;
-
-  const trigger = row.pm_trigger_type_code;
-  const shotDue = (trigger === 'SHOT' || trigger === 'BOTH') && guaranteed !== null && current >= guaranteed;
-  const dateDue = (trigger === 'DATE' || trigger === 'BOTH') && nextPmDate !== null && nextPmDate <= today;
-  // ⚠ 계약은 「먼저 도달한 축」이라 하는데 이력이 없어 시각을 비교할 수 없다. 둘 다
-  // 걸리면 타발수를 준다 — 되돌릴 수 없는 물리 마모라 날짜보다 앞선 위험이다.
-  // 설계팀 확인 대기(되돌림 §O-5).
-  const axis: PmDueAxis | null = shotDue ? 'SHOT' : dateDue ? 'DATE' : null;
 
   return {
     moldId: Number(row.mold_id),
@@ -161,12 +142,12 @@ export function view(row: MoldRow, today: string): MoldView {
     pmCycleUnitCode: row.pm_cycle_unit_code,
     lastPmDate,
     availableShotCount: available,
-    nextPmDate,
-    pmDue: axis !== null,
+    nextPmDate: facts.nextPmDate,
+    pmDue: facts.pmDue,
     // ⛔ 도래하지 않았으면 «칸을 빼고» 내린다. 계약 설명은 「null 이다」인데 스키마가
     // enum: [SHOT, DATE] 라 null 이 그 스키마를 통과하지 못한다 — 설명과 스키마가
     // 어긋난 자리다. 스키마를 따르고 되돌림 문서에 적어 설계팀에 묻는다.
-    ...(axis === null ? {} : { pmDueAxisCode: axis }),
+    ...(facts.pmDueAxisCode === null ? {} : { pmDueAxisCode: facts.pmDueAxisCode }),
     shotUsageRatio: ratio,
   };
 }
