@@ -1,17 +1,16 @@
-import { PrismaClient } from "@prisma/client";
-
 import { maintenanceDateRange } from "../src/maintenance/maintenance-calendar";
 import { DowntimeSummaryCalendarService } from "../src/maintenance/downtime/downtime-summary-calendar.service";
 import type {
   SummaryEquipmentSource,
   SummaryPlantSource,
 } from "../src/maintenance/downtime/downtime-summary-source.types";
+import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I32-SUMMARY-CALENDAR";
 const HOUR_US = 3_600_000_000n;
 
 describe("I-32 계획 비가동 (e2e)", () => {
-  const prisma = new PrismaClient();
+  const prisma = new PrismaService();
   const ids: Record<string, bigint> = {};
   const sources = new Map<string, SummaryEquipmentSource>();
   const timezones = new Map<string, string>();

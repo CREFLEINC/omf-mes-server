@@ -38,6 +38,10 @@ const DEFAULT_PREFIX: Record<string, string> = {
   /** 규칙 미등재 — `IA-{YYYYMMDD}-{SEQ4}` · 계약 example `IA-2026-000031` 은 형식만 준다.
    *  기간 축은 서버 시각 UTC 날짜다 — 본문에 날짜 칸이 0개다(I-14 §5-2 · 결정 — 통보 135). */
   INVENTORY_ADJUSTMENT: 'IA',
+  /** 결정 — 통보 098: 설비 점검 번호는 공장별 EQI 기본 접두어를 쓴다. */
+  EQUIPMENT_INSPECTION: 'EQI',
+  /** 결정 — 통보 098: 설비 고장 번호는 공장별 MLF 기본 접두어를 쓴다. */
+  BREAKDOWN: 'MLF',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
