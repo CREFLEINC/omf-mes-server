@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
+import { LotHoldService } from './lot-hold.service';
 import { mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 
@@ -14,11 +15,6 @@ import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 
 /** 등록 즉시 거는 보류. 시드 `LOT_HOLD_REASON` 의 「수입검사 대기」다. */
 export const INSPECTION_HOLD_REASON = 'INCOMING_INSPECTION_WAIT';
-/**
- * ⚠ `LOT_HOLD_STATUS` 코드 그룹이 시드에 **없다** — 컬럼이 NOT NULL 이라 넣을 뿐이다.
- * ⛔ 해제 판정은 이 값이 아니라 **`released_at IS NULL`** 로만 한다(§Z-3).
- */
-export const HOLD_STATUS = 'HELD';
 /** 등록 시점의 품질 판정 — 검사 대기다(시드 `LOT_STATUS`). */
 export const INITIAL_LOT_STATUS = 'INSPECTION_PENDING';
 /** 이 원천만 역방향(라인 → LOT) 칸을 갖는다. */
@@ -68,6 +64,8 @@ export interface LotPreIssueInput {
 
 @Injectable()
 export class LotRegistryService {
+  constructor(private readonly holds: LotHoldService) {}
+
   /**
    * ⛔ 읽기도 **전부 `tx`** 다 — `this.prisma` 로 읽으면 같은 트랜잭션이 방금 만든 입하 라인이 안 보인다.
    * 순서 불변식: **라인 → LOT → 라인 UPDATE** — `lot.source_id` 가 라인 id 라 라인이 먼저
@@ -93,15 +91,18 @@ export class LotRegistryService {
     });
 
     // ⭐ 화면이 보내지 않고 «서버가» 건다(MLOT #5).
-    await tx.lot_hold.create({
-      data: {
-        lot_id: lot.lot_id,
-        reason_code: INSPECTION_HOLD_REASON,
-        status_code: HOLD_STATUS,
-        held_by: BigInt(appUserId),
-        held_at: new Date(),
-      },
-    });
+    // ⚠ 방금 만든 행이라 **잠금 자체는 무동작**이다(아무도 못 보는 행이라 교착 사이클에 못 낀다).
+    //    그래도 부르는 이유는 **표식에 예외를 두지 않으려는 것** — 예외를 내려면 `LockedLot` 발급
+    //    경로가 하나 더 생기고 그러면 리뷰가 실측한 우회가 «권장 관용구»가 된다.
+    //    비용: LOT 마다 왕복 1회(입하는 라인 수만큼).
+    const locked = await this.holds.lockLotsWithin(tx, [lot.lot_id]);
+    await this.holds.holdWithin(
+      tx,
+      locked,
+      // `targetLotStatusCode` 는 이 보류가 LOT 을 «보낸» 곳 — 위 `lot.create` 와 같은 상수다(#351 G-5).
+      [{ lotId: lot.lot_id, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS }],
+      { by: BigInt(appUserId), at: new Date() },
+    );
 
     for (const identifier of input.externalIdentifiers ?? []) {
       await tx.lot_external_identifier.create({

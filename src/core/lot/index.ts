@@ -1,4 +1,5 @@
 export { LotRegistryModule } from './lot-registry.module';
+export * from './lot-hold.service';
 export * from './lot-lifecycle.service';
 export * from './lot-number';
 export * from './lot-quality-status.service';
