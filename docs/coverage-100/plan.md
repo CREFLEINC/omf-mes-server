@@ -191,7 +191,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건은 #353/#357/#359/#360으
 
 | 후보 | 슬라이스 | 출처 |
 |---|---|---|
-| `CD-ATTACHMENT-TARGET-TYPE` 에 `BREAKDOWN` 없음 | I-34 | API §3 |
+| **156** `CD-ATTACHMENT-TARGET-TYPE` 결손 **둘** — `BREAKDOWN`(고장 사진) · 입하 거래명세서 사진(`InboundReceiptCreate.deliveryNoteAttachmentId` 실재) | I-34 | API §3 · I-34 재수립 R-10 |
 | 프린터 단말매핑·관측/기본/지원 정본 없음 | I-27 | §0 #7·I-27 R15, 해당 GET 유보·새 단건 번호 대기 |
 | ~~승인 유형 9값에 특채 없음 — 결재함으로 찾는 길 확인~~ → **019 에 흡수**(I-1 에서 발행) | ~~I-21~~ I-1 | UI/UX M |
 | **018** `inProgressCount` 연결 칸 없음 — 유형 축 근사 vs I-2 nullable `approval_route_id` | I-1 | I-1 재수립 R-11 |
