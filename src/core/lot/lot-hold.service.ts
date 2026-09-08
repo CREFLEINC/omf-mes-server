@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { optional } from '../../common/master';
 import type { Tx } from './lot-registry.service';
 
 /**
@@ -39,6 +40,27 @@ export interface LotHoldInput {
   /** 이 보류가 LOT 을 **보낸** 곳. ⛔ 「지금 상태」가 아니다(R-9 · `lot-view.ts:121-132`). */
   targetLotStatusCode?: string | null;
   remarks?: string | null;
+}
+
+/**
+ * 무엇을 푸나 — `:confirm` 은 **사유**로, `:release` 는 **id** 로 좁힌다.
+ * ⭐ **둘 중 하나는 반드시 준다**(`LockedLot` 과 같은 결로 타입이 강제한다). 안 그러면
+ * `{ lotId }` 하나로 그 LOT 의 열린 보류 «전건»이 닫히고 `openAfter === 0` 이 되어 LOT 이
+ * `NORMAL` 로 올라간다 — 불량 자재가 출고로 풀린다. 컴파일·린트·테스트는 다 조용하다.
+ */
+export type LotHoldReleaseTarget = { lotId: bigint } & (
+  | { lotHoldIds: bigint[]; reasonCode?: string }
+  | { reasonCode: string; lotHoldIds?: bigint[] }
+);
+
+/** 해제가 원 행에 남기는 칸 — 계약 `LotHoldRelease` 의 전 칸이 여기 담긴다. */
+export interface LotHoldReleaseInput {
+  releaseReasonCode: string;
+  /** ⭐ **실제로 보낸** 도착만 쓴다 — 안 움직였으면 주지 않는다(R-2). */
+  releaseTargetLotStatusCode?: string | null;
+  remarks?: string | null;
+  /** 부분 해제량. ⛔ 보류 두 건 이상을 한 번에 풀 때는 못 준다(어느 행에서 뺄지가 없다). */
+  releaseQty?: Prisma.Decimal | null;
 }
 
 export type LotHoldRow = Prisma.lot_holdGetPayload<object>;
@@ -105,6 +127,86 @@ export class LotHoldService {
     }
     return rows;
   }
+
+  /**
+   * 열린 보류를 닫고, 부분이면 **잔량 행**을 세우고, **남은 열린 보류를 다시 센다**.
+   *
+   * ⭐⭐ 재계수를 «호출자에게 맡기지 않는» 것이 R-5 의 처방이다 — 밖에서 세면 그 한 문장이
+   * 잠금 밖으로 새어 나간다. 읽기·쓰기·재계수가 한 함수 안이라 셋이 같은 잠금을 공유한다.
+   * ⛔ `status_code` 를 안 건드린다 — `LOT_HOLD_STATUS` 값 목록이 시드에 0건이다(문의 13).
+   * ⛔ **`version_no` 도 안 올린다** — R-24 가 그 칸을 「읽는 코드 0줄인 죽은 칸」으로 판정했고
+   * `plan.md` §6 배포 노트가 **다음 릴리스에서 컬럼 삭제**로 못 박았다. 「사용 제거」 단계에서
+   * 새 쓰기를 더하면 `DROP COLUMN` 이 이 해제를 통째로 죽인다(`CLAUDE.md` 두 릴리스 규칙).
+   */
+  async releaseWithin(
+    tx: Tx,
+    locked: LockedLot[],
+    target: LotHoldReleaseTarget,
+    input: LotHoldReleaseInput,
+    actor: LotHoldActor,
+  ): Promise<{ released: LotHoldRow[]; openAfter: number }> {
+    assertLocked(locked, target.lotId);
+    const holds = await tx.lot_hold.findMany({
+      where: {
+        lot_id: target.lotId,
+        released_at: null,
+        ...optional('reason_code', target.reasonCode),
+        ...optional('lot_hold_id', target.lotHoldIds && { in: target.lotHoldIds }),
+      },
+      orderBy: { lot_hold_id: 'asc' },
+    });
+    if (input.releaseQty != null && holds.length !== 1) {
+      throw new Error(
+        `부분 해제는 열린 보류 «정확히 한 건»을 겨냥해야 한다 — 어느 행에서 뺄지가 없다 (대상 ${holds.length}건)`,
+      );
+    }
+    const released: LotHoldRow[] = [];
+    for (const hold of holds) {
+      released.push(
+        await tx.lot_hold.update({
+          where: { lot_hold_id: hold.lot_hold_id },
+          data: {
+            released_at: actor.at,
+            released_by: actor.by,
+            release_reason_code: input.releaseReasonCode,
+            release_target_lot_status_code: input.releaseTargetLotStatusCode ?? null,
+            ...optional('remarks', input.remarks),
+          },
+        }),
+      );
+      const rest = remainderQty(hold.hold_qty, input.releaseQty);
+      if (rest === null) continue;
+      await tx.lot_hold.create({
+        data: {
+          lot_id: hold.lot_id,
+          reason_code: hold.reason_code,
+          status_code: hold.status_code,
+          uom_id: hold.uom_id,
+          release_condition: hold.release_condition,
+          target_lot_status_code: hold.target_lot_status_code,
+          remarks: hold.remarks,
+          hold_qty: rest,
+          // 잔량은 «지금·이 사람»이 새로 건 보류다 — 원 행의 시각을 베끼면 이력이 거꾸로 선다(문의 079).
+          held_by: actor.by,
+          held_at: actor.at,
+          created_by: actor.by,
+        },
+      });
+    }
+    const openAfter = await tx.lot_hold.count({ where: { lot_id: target.lotId, released_at: null } });
+    return { released, openAfter };
+  }
+}
+
+/**
+ * 부분 해제가 남길 잔량. ⭐ **`releaseQty == hold_qty` 면 `null`** — `app.qty_t` 가
+ * `CHECK (VALUE >= 0)` 이라 **0 짜리 행이 조용히 INSERT** 되고, 그러면 전량을 풀었는데 열린
+ * 보류가 남아 LOT 이 영원히 안 움직인다(R-6).
+ */
+function remainderQty(holdQty: Prisma.Decimal | null, releaseQty: Prisma.Decimal | null | undefined): Prisma.Decimal | null {
+  if (releaseQty === null || releaseQty === undefined || holdQty === null) return null;
+  const rest = holdQty.minus(releaseQty);
+  return rest.lessThanOrEqualTo(0) ? null : rest;
 }
 
 /** 잠근 집합 밖의 LOT 에 쓰면 호출자 버그다 — 400 이 아니라 못 일어날 일이다. */
