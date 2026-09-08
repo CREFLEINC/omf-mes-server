@@ -35,6 +35,10 @@ const DEFAULT_PREFIX: Record<string, string> = {
   INSPECTION_RESULT: 'IRS',
   /** 규칙 미등재 — `ST-{YYYYMMDD}-{SEQ4}`. 계약 example `ST-2026-000260` 은 접두어만 준다(I-13 §4-3). */
   STOCK_TRANSFER: 'ST',
+  /** 결정 — 통보 098: 설비 점검 번호는 공장별 EQI 기본 접두어를 쓴다. */
+  EQUIPMENT_INSPECTION: 'EQI',
+  /** 결정 — 통보 098: 설비 고장 번호는 공장별 MLF 기본 접두어를 쓴다. */
+  BREAKDOWN: 'MLF',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —

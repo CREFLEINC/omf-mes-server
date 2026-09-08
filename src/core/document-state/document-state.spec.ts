@@ -30,6 +30,8 @@ const PRODUCTION_PLAN_STATUS = 'planning.production_plan.status_code';
 const INSPECTION_RESULT_STATUS = 'quality.inspection_result.status_code';
 /** I-19 PR ① 이 여는 축 — 시드 `LOT_STATUS` 4값. 같은 표의 생명주기 축과 «다른 칸»이다. */
 const LOT_QUALITY_STATUS = 'trace.lot.status_code';
+/** I-30이 여는 고장 처리 축 — RECEIVED→HANDLING→DONE, RECEIVED→DONE. */
+const BREAKDOWN_STATUS = 'maintenance.breakdown.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -123,6 +125,51 @@ describe('DocumentStateService', () => {
           WORK_ORDER_STATUS,
           'work-session-start',
           'SUSPENDED',
+          HttpStatus.BAD_REQUEST,
+        ),
+      ).toThrow(ContractException);
+    });
+  });
+
+  describe('설비 고장 처리 — I-30이 여는 축', () => {
+    it('처리 시작은 RECEIVED에서만 HANDLING으로 간다', () => {
+      expect(
+        service.assertTransition(
+          BREAKDOWN_STATUS,
+          'breakdown-start-handling',
+          'RECEIVED',
+          HttpStatus.BAD_REQUEST,
+        ),
+      ).toMatchObject({ from: ['RECEIVED'], to: 'HANDLING' });
+
+      for (const from of ['HANDLING', 'DONE']) {
+        expect(() =>
+          service.assertTransition(
+            BREAKDOWN_STATUS,
+            'breakdown-start-handling',
+            from,
+            HttpStatus.BAD_REQUEST,
+          ),
+        ).toThrow(ContractException);
+      }
+    });
+
+    it('완료는 RECEIVED·HANDLING에서 DONE으로 가고 DONE은 잠긴다', () => {
+      for (const from of ['RECEIVED', 'HANDLING']) {
+        expect(
+          service.assertTransition(
+            BREAKDOWN_STATUS,
+            'breakdown-complete',
+            from,
+            HttpStatus.BAD_REQUEST,
+          ).to,
+        ).toBe('DONE');
+      }
+      expect(() =>
+        service.assertTransition(
+          BREAKDOWN_STATUS,
+          'breakdown-complete',
+          'DONE',
           HttpStatus.BAD_REQUEST,
         ),
       ).toThrow(ContractException);
@@ -327,6 +374,7 @@ describe('DocumentStateService', () => {
       expect([...columns].sort()).toEqual(
         [
           APPROVAL_STATUS,
+          BREAKDOWN_STATUS,
           EQUIPMENT_STATUS,
           GOODS_ISSUE_STATUS,
           GOODS_RECEIPT_STATUS,
@@ -348,7 +396,8 @@ describe('DocumentStateService', () => {
       // +2 — 적치 지시 키 신설(I-12 PR ①).
       // +1 — 생산계획 확정 키 신설(I-24 PR ③).
       // +10 — 검사 성적서 확정 키 신설 1, LOT 품질 축 키 신설 9(I-19 PR ①).
-      expect(service.registered()).toHaveLength(38);
+      // +2 — 설비 고장 처리 키 신설(I-30 PR ④).
+      expect(service.registered()).toHaveLength(40);
     });
 
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
