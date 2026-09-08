@@ -123,3 +123,41 @@ function assertReleaseCondition(body: LotHoldCreate): void {
     throw one(field('releaseCondition', ERROR_CODE.INVALID, '불량으로 보류할 때는 해제 조건을 받지 않습니다.'));
   }
 }
+
+/** 계약 `LotHoldRelease` — required 2(`targetLotStatusCode`·`releaseReasonCode`) · 프로퍼티 4. */
+export interface LotHoldRelease {
+  targetLotStatusCode: string;
+  releaseQty?: number;
+  releaseReasonCode: string;
+  remarks?: string | null;
+}
+
+export const HOLD_RELEASE_REASON_GROUP = 'LOT_HOLD_RELEASE_REASON';
+
+/**
+ * 도착 상태 ↔ 전이표 액션 — 해제 쪽은 **재판정 합격(C7)·재판정 불합격(C8)** 둘이다
+ * (계약 `:release` 설명 「재판정 합격(C7 · 도착 정상)과 재판정 불합격(C8 · 도착 불량)을 도착
+ * 상태로 가른다」). 등록 쪽 두 값(`INSPECTION_PENDING`·`DEFECTIVE`)과 **집합이 다르다** —
+ * 두 표를 합치면 `:release` 로 검사 대기에 다시 넣는 액션이 생겨 버린다.
+ * ⛔ 등록 쪽과 같은 이유로 `Map` 이다(객체면 `'constructor'` 가 통과한다).
+ */
+const ACTION_BY_RELEASE_TARGET = new Map<string, ActionName>([
+  ['NORMAL', 'lot-hold-release-accepted'],
+  ['DEFECTIVE', 'lot-hold-release-rejected'],
+]);
+
+/**
+ * 해제 본문 형식 — 트랜잭션 «밖»이다(§3-2 1단계 · DB 를 안 연다). 통과하면 전이 액션을 돌려준다.
+ * ⛔ `releaseQty` 와 `hold_qty` 의 관계(전량 보류면 `INVALID` · 초과면 `RANGE`)는 여기서 못 본다 —
+ *    저장된 행을 읽어야 알 수 있어 트랜잭션 «안»(§3-2 d)이다.
+ */
+export function assertHoldReleaseShape(body: LotHoldRelease): ActionName {
+  const action = ACTION_BY_RELEASE_TARGET.get(body.targetLotStatusCode);
+  if (action === undefined) {
+    throw one(field('targetLotStatusCode', ERROR_CODE.INVALID, '보류 해제의 도착 상태는 NORMAL 또는 DEFECTIVE 입니다.'));
+  }
+  if (body.releaseQty !== undefined && !(body.releaseQty > 0)) {
+    throw one(field('releaseQty', ERROR_CODE.RANGE, '해제 수량은 0 보다 커야 합니다.'));
+  }
+  return action;
+}
