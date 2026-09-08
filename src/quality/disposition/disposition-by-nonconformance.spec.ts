@@ -42,7 +42,7 @@ function fakePrisma(rows: DispositionDecisionRow[], nc: FakeNonconformance | nul
 }
 
 describe('dispositionsByNonconformance', () => {
-  it('⛔ 없는 nonconformanceId 는 404 가 아니다 — 빈 목록 + summary 전 칸 0(§1-1 · §1-6)', async () => {
+  it('⛔ 없는 nonconformanceId 는 404 가 아니다 — 빈 목록 + summary 전 칸 0(§1-1 · §1-6) // 결정 — 통보 후보(번호는 통합자가 준다)', async () => {
     const result = await dispositionsByNonconformance(fakePrisma([], null), 999999);
 
     expect(result).toEqual({
@@ -84,5 +84,22 @@ describe('dispositionsByNonconformance', () => {
     const result = await dispositionsByNonconformance(fakePrisma(rows, nc), 10);
 
     expect(result.summary.remainingQty).toBe(0);
+  });
+
+  it('⭐⭐ 리뷰 Major-1 — 대상(affected) «합»이 다중 LOT 전건이고 uomId 는 «첫» LOT 의 단위다', async () => {
+    // 두 LOT 의 uom_id 를 다르게 두어 「lots[0] 만 합한다」·「마지막 LOT 의 uom 을 고른다」를 함께
+    // 잡는다. affected_qty 를 0.1+0.2 로 심어 대상 쪽 R-25 함정(단위 시험 위에서 결정 쪽만
+    // 잠갔던 자리)도 같은 픽스처로 닫는다.
+    const nc: FakeNonconformance = {
+      item: { base_uom_id: 999n },
+      nonconformance_lot: [
+        { affected_qty: new Prisma.Decimal('0.1'), uom_id: 100n },
+        { affected_qty: new Prisma.Decimal('0.2'), uom_id: 200n },
+      ],
+    };
+
+    const result = await dispositionsByNonconformance(fakePrisma([], nc), 10);
+
+    expect(result.summary).toEqual({ affectedQtyTotal: 0.3, decidedQtyTotal: 0, remainingQty: 0.3, uomId: 100 });
   });
 });

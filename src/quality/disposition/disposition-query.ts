@@ -44,9 +44,7 @@ const FROM_CORE = `
     ) fu ON TRUE`;
 
 // `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).
-// ⭐ `export` — I-21 PR ②b(`disposition-by-nonconformance.ts`)가 같은 조인을 그대로 재사용한다.
-// 복제하면 두 자리가 갈릴 수 있다(이 파일 머리 주석의 「식별자는 이 파일에서만」과 같은 이유).
-export const FROM = `${FROM_CORE}
+const FROM = `${FROM_CORE}
     LEFT JOIN LATERAL (
       SELECT CASE WHEN count(*) = 1 THEN min(nl.lot_id) END AS lot_id,
              CASE WHEN count(*) = 1 THEN min(l.lot_no) END AS lot_no
@@ -55,7 +53,7 @@ export const FROM = `${FROM_CORE}
        WHERE nl.nonconformance_id = d.nonconformance_id
     ) lotinfo ON TRUE`;
 
-export const SELECT_COLUMNS = `
+const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
       d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
@@ -124,4 +122,17 @@ export function dispositionCountQuery(filters: DispositionFilters): BuiltQuery {
 
 export function dispositionByIdQuery(dispositionDecisionId: number): BuiltQuery {
   return { sql: `SELECT ${SELECT_COLUMNS} ${FROM} WHERE d.disposition_decision_id = $1::bigint`, params: [dispositionDecisionId] };
+}
+
+/**
+ * I-21 PR ②b(`disposition-by-nonconformance.ts`)가 쓰는 전건 나열 — 질의 칸이 0 이라
+ * LIMIT/OFFSET 이 없다(§1-2 · 51번째가 조용히 사라지면 안 된다). ⭐ 리뷰 Minor-4 — `SELECT_COLUMNS`·
+ * `FROM` 을 export 해 다른 파일에서 SQL 을 조립하는 대신, 조립을 이 파일 안에 가둔다 — 머리
+ * 주석(`:10-11`)의 「식별자는 이 파일의 상수·리터럴에서만 온다」를 그대로 지킨다.
+ */
+export function dispositionByNonconformanceQuery(nonconformanceId: number): BuiltQuery {
+  return {
+    sql: `SELECT ${SELECT_COLUMNS} ${FROM} WHERE d.nonconformance_id = $1::bigint ORDER BY d.decided_at DESC, d.disposition_decision_id DESC`,
+    params: [nonconformanceId],
+  };
 }
