@@ -28,7 +28,10 @@ const NOPERM_ID = 'e2e-ia-noperm';
 const PASSWORD = '조정-조회-비밀번호';
 const PREFIX = 'IAE2E';
 const ROLE = 'E2E_IA';
-const PERMISSIONS = ['W-01-12'];
+// `W-01-10` 은 잔액을 세우는 입고 API 를 부르려고 든다(잔액은 손으로 넣지 않는다).
+const PERMISSIONS = ['W-01-12', 'W-01-10'];
+const DAY = '2026-06-01';
+const AT = '2026-06-01T01:00:00.000Z';
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -52,16 +55,26 @@ interface AdjustmentBody {
   adjustedAt: string | null;
 }
 
-describe('재고 조정 조회 3건 (e2e)', () => {
+describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
 
+  let plantId: number;
+  let warehouseId: number;
   let locationId: number;
+  /** 잔액이 «없는» 위치 — 0행 갈래. */
+  let emptyLocationId: number;
+  /** 잔액 행이 «둘인» 위치 — 차원이 갈리는 갈래. */
+  let dualLocationId: number;
+  /** 다른 공장의 위치 — 공장 단일 검사 갈래. */
+  let otherPlantLocationId: number;
   let itemId: number;
+  let lotId: number;
   let uomId: number;
   let inventoryCountId: number;
+  let inventoryCountLineId: number;
 
   /** 전기 완료(조회됨) · 미전기(REGISTERED · adjustedAt=NULL) 한 벌씩. */
   let postedId: number;
@@ -78,6 +91,7 @@ describe('재고 조정 조회 3건 (e2e)', () => {
     await makeMasters();
     await makeUsers();
     await makeAdjustments();
+    await makeBalances();
   });
 
   afterAll(async () => {
@@ -179,7 +193,150 @@ describe('재고 조정 조회 3건 (e2e)', () => {
       .expect(200);
   });
 
+
+  // ── 등록 ────────────────────────────────────────────────────────────────
+
+  it('required 2 로 만들면 201 · statusCode 가 REGISTERED · ETag 가 실린다', async () => {
+    const response = await create({ reasonCode: 'COUNT_VARIANCE', lines: [line(-2)] }).expect(201);
+    const validate = validator('POST /inventory/adjustments', 201);
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body.inventoryAdjustment.statusCode).toBe('REGISTERED');
+    expect(response.headers.etag).toBe('1');
+  });
+
+  it('inventoryAdjustmentNo 가 IA-{YYYYMMDD}-{SEQ4} 형식이다', async () => {
+    const response = await create({ reasonCode: 'COUNT_VARIANCE', lines: [line(-1)] }).expect(201);
+    expect(response.body.inventoryAdjustment.inventoryAdjustmentNo).toMatch(/^IA-\d{8}-\d{4}$/);
+  });
+
+  it('응답 lines 가 요청 순서대로 lineNo 1..N 이다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [line(-1), line(3)],
+    }).expect(201);
+    expect(response.body.lines.map((l: { lineNo: number }) => l.lineNo)).toEqual([1, 2]);
+    expect(response.body.lines.map((l: { adjustmentQty: number }) => l.adjustmentQty)).toEqual([-1, 3]);
+  });
+
+  it('⭐ 라인 reasonCode 를 안 보내면 헤더 값이 복사되어 응답에 실린다', async () => {
+    const response = await create({ reasonCode: 'HOPPER_MEASUREMENT', lines: [line(-1)] }).expect(201);
+    expect(response.body.lines[0].reasonCode).toBe('HOPPER_MEASUREMENT');
+
+    const explicit = await create({
+      reasonCode: 'HOPPER_MEASUREMENT',
+      lines: [{ ...line(-1), reasonCode: 'OTHER' }],
+    }).expect(201);
+    expect(explicit.body.lines[0].reasonCode).toBe('OTHER');
+  });
+
+  it('⭐ 저장된 라인의 quality/inventory status 가 잔액 행의 값이다', async () => {
+    const response = await create({ reasonCode: 'COUNT_VARIANCE', lines: [line(-2)] }).expect(201);
+    const row = await prisma.inventory_adjustment_line.findFirstOrThrow({
+      where: { inventory_adjustment_id: response.body.inventoryAdjustment.inventoryAdjustmentId },
+    });
+    expect(row.quality_status_code).toBe('NORMAL');
+    expect(row.inventory_status_code).toBe('AVAILABLE');
+  });
+
+  it('⭐ 잔액이 없는 위치에 증(+) 라인은 400 INVALID 다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [{ ...line(5), locationId: emptyLocationId }],
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'lines[0].locationId', code: 'INVALID' });
+  });
+
+  it('⭐ 잔액이 없는 위치에 감(−) 라인은 400 NEGATIVE_BALANCE 다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [{ ...line(-5), locationId: emptyLocationId }],
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({
+      field: 'lines[0].locationId',
+      code: 'NEGATIVE_BALANCE',
+    });
+  });
+
+  it('⭐ 잔액 행이 둘인 위치는 400 INVALID 다 — 어느 차원을 조정할지 정할 수 없다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [{ ...line(-1), locationId: dualLocationId }],
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'lines[0].locationId', code: 'INVALID' });
+  });
+
+  it('adjustmentQty 0 은 400 INVALID · lines [] 는 400 LINE_REQUIRED 다', async () => {
+    const zero = await create({ reasonCode: 'COUNT_VARIANCE', lines: [line(0)] }).expect(400);
+    expect(zero.body.errors[0]).toMatchObject({
+      field: 'lines[0].adjustmentQty',
+      code: 'INVALID',
+    });
+
+    const empty = await create({ reasonCode: 'COUNT_VARIANCE', lines: [] }).expect(400);
+    expect(empty.body.errors[0]).toMatchObject({ field: 'lines', code: 'LINE_REQUIRED' });
+  });
+
+  it('⭐ inventoryCountId·inventoryCountLineId 를 보내면 둘 다 저장되고 응답에 실린다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      inventoryCountId,
+      lines: [{ ...line(-2), inventoryCountLineId }],
+    }).expect(201);
+    expect(response.body.inventoryAdjustment.inventoryCountId).toBe(inventoryCountId);
+    expect(response.body.lines[0].inventoryCountLineId).toBe(inventoryCountLineId);
+  });
+
+  it('라인 reasonCode 가 코드값 밖이면 400 INVALID 다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [{ ...line(-1), reasonCode: 'NOT_A_REASON' }],
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({
+      field: 'lines[0].reasonCode',
+      code: 'INVALID',
+    });
+  });
+
+  it('sendToErp 를 false 로 보내도 201 이고 erpMessageQueued 는 false 다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      sendToErp: false,
+      lines: [line(-1)],
+    }).expect(201);
+    expect(response.body.inventoryAdjustment.erpMessageQueued).toBe(false);
+  });
+
+  it('⭐ 라인이 두 공장에 걸치면 400 INVALID 다', async () => {
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [line(-1), { ...line(-1), locationId: otherPlantLocationId }],
+    }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'lines[1].locationId', code: 'INVALID' });
+  });
+
+  it('무권한 계정은 403 이다', async () => {
+    await request(app.getHttpServer())
+      .post('/api/inventory/adjustments')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ reasonCode: 'COUNT_VARIANCE', lines: [line(-1)] })
+      .expect(403);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  function line(adjustmentQty: number): Record<string, unknown> {
+    return { locationId, itemId, lotId, adjustmentQty, uomId };
+  }
+
+  function create(body: Record<string, unknown>): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/inventory/adjustments')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send(body);
+  }
 
   async function list(query: string): Promise<{ items: AdjustmentBody[]; page: { page: number; size: number; total: number } }> {
     const response = await request(app.getHttpServer())
@@ -226,15 +383,43 @@ describe('재고 조정 조회 3건 (e2e)', () => {
         management_level_code: 'LOCATION',
       },
     });
-    const location = await prisma.location.create({
+    plantId = Number(plant.plant_id);
+    warehouseId = Number(warehouse.warehouse_id);
+    const makeLocation = async (suffix: string, warehouse_id: bigint): Promise<number> => {
+      const row = await prisma.location.create({
+        data: {
+          warehouse_id,
+          location_code: `${PREFIX}-LOC${suffix}`,
+          location_name: `조정검사위치${suffix}`,
+          location_type_code: 'BIN',
+        },
+      });
+      return Number(row.location_id);
+    };
+    locationId = await makeLocation('', warehouse.warehouse_id);
+    emptyLocationId = await makeLocation('-E', warehouse.warehouse_id);
+    dualLocationId = await makeLocation('-D', warehouse.warehouse_id);
+
+    // 공장 단일 검사(결정 — 통보 133)용 두 번째 공장 한 벌.
+    const plant2 = await prisma.plant.create({
       data: {
-        warehouse_id: warehouse.warehouse_id,
-        location_code: `${PREFIX}-LOC`,
-        location_name: '조정검사위치',
-        location_type_code: 'BIN',
+        legal_entity_id: entity.legal_entity_id,
+        plant_code: `${PREFIX}-P2`,
+        plant_name: '조정검사공장2',
+        timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
-    locationId = Number(location.location_id);
+    const warehouse2 = await prisma.warehouse.create({
+      data: {
+        plant_id: plant2.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH2`,
+        warehouse_name: '조정검사창고2',
+        warehouse_type_code: 'RAW',
+        management_level_code: 'LOCATION',
+      },
+    });
+    otherPlantLocationId = await makeLocation('-X', warehouse2.warehouse_id);
 
     const uom = await prisma.uom.findFirstOrThrow();
     uomId = Number(uom.uom_id);
@@ -260,6 +445,71 @@ describe('재고 조정 조회 3건 (e2e)', () => {
       },
     });
     inventoryCountId = Number(count.inventory_count_id);
+    const countLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: count.inventory_count_id,
+        line_no: 1,
+        location_id: locationId,
+        item_id: itemId,
+        system_qty: 100,
+        counted_qty: 98,
+        uom_id: uomId,
+        counted_at: new Date(AT),
+      },
+    });
+    inventoryCountLineId = Number(countLine.inventory_count_line_id);
+
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT`,
+        item_id: itemId,
+        lot_type_code: 'MATERIAL',
+        plant_id: plantId,
+        initial_qty: 200,
+        uom_id: uomId,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: 1,
+        status_code: 'INSPECTION_PENDING',
+      },
+    });
+    lotId = Number(lot.lot_id);
+  }
+
+  /**
+   * ⭐ 잔액을 직접 INSERT 하지 않는다 — 트리거가 지키는 표라 손으로 넣으면 차원 11칸을
+   * 우리가 맞춰야 하고, 그것이 등록이 되읽는 바로 그 값이다(I-14.md §10-2). 입고 API 를
+   * 부른다. `-D` 위치에는 재고 상태를 갈라 «두 행»을 세운다.
+   */
+  async function makeBalances(): Promise<void> {
+    await receive(locationId, 100, 'AVAILABLE');
+    await receive(dualLocationId, 10, 'AVAILABLE');
+    await receive(dualLocationId, 10, 'BLOCKED');
+  }
+
+  async function receive(destinationLocationId: number, receiptQty: number, inventoryStatusCode: string): Promise<void> {
+    await request(app.getHttpServer())
+      .post('/api/logistics/goods-receipts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        receiptTypeCode: 'MATERIAL',
+        plantId,
+        warehouseId,
+        receiptDatetime: AT,
+        businessDate: DAY,
+        lines: [
+          {
+            itemId,
+            lotId,
+            receiptQty,
+            uomId,
+            qualityStatusCode: 'NORMAL',
+            inventoryStatusCode,
+            destinationLocationId,
+          },
+        ],
+      })
+      .expect(201);
   }
 
   /** 전기됨(inventoryCountId 로 이어짐) 한 벌 · 미전기 한 벌 — 목록 필터 축을 가른다. */
@@ -338,17 +588,48 @@ describe('재고 조정 조회 3건 (e2e)', () => {
    * 남긴 것과 무관하게 우리 접두어(`IA-{PREFIX}-`)로만 지운다.
    */
   async function cleanup(): Promise<void> {
+    // ⭐ 조정부터 지우고 «그 다음» TRUNCATE 한다 — 등록 오퍼레이션이 만든 전표는
+    //    `IA-{YYYYMMDD}-` 채번을 받아 접두어로 못 짚고, TRUNCATE 의 CASCADE 가 라인을
+    //    통째로 비우면 헤더가 고아로 남아 다음 회차의 실사·마스터 삭제를 막는다.
+    //    짚는 축 셋: 우리 계정이 만든 것 · 우리 실사에 매달린 것 · 손으로 심은 번호.
+    const isMine = `created_by IN (SELECT app_user_id FROM app.app_user
+                                    WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}'))
+                    OR inventory_count_id IN (SELECT inventory_count_id FROM inventory.inventory_count
+                                               WHERE inventory_count_no LIKE '${PREFIX}%')
+                    OR inventory_adjustment_no LIKE 'IA-${PREFIX}-%'`;
     await prisma.$executeRawUnsafe(
       `DELETE FROM inventory.inventory_adjustment_line WHERE inventory_adjustment_id IN
-        (SELECT inventory_adjustment_id FROM inventory.inventory_adjustment
-          WHERE inventory_adjustment_no LIKE 'IA-${PREFIX}-%')`,
+        (SELECT inventory_adjustment_id FROM inventory.inventory_adjustment WHERE ${isMine})`,
     );
     await prisma.$executeRawUnsafe(
-      `DELETE FROM inventory.inventory_adjustment WHERE inventory_adjustment_no LIKE 'IA-${PREFIX}-%'`,
+      `DELETE FROM inventory.inventory_adjustment WHERE ${isMine}`,
+    );
+    // ⚠ 뒤 스위트(`inventory-balance`·`inventory-posting`·`inventory-transaction`)와 같은
+    //    TRUNCATE 를 돈다 — 우리 앞 스위트가 남긴 것을 지운다(I-14.md §10-1).
+    await prisma.$executeRawUnsafe(
+      `TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`,
+    );
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM inventory.inventory_count_line WHERE inventory_count_id IN
+        (SELECT inventory_count_id FROM inventory.inventory_count
+          WHERE inventory_count_no LIKE '${PREFIX}%')`,
     );
     await prisma.$executeRawUnsafe(
       `DELETE FROM inventory.inventory_count WHERE inventory_count_no LIKE '${PREFIX}%'`,
     );
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM logistics.putaway_task WHERE item_id IN
+        (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
+    );
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM logistics.goods_receipt WHERE plant_id IN
+        (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`,
+    );
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM inventory.inventory_balance WHERE warehouse_id IN
+        (SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')`,
+    );
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);

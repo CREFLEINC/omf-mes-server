@@ -96,10 +96,11 @@ describe('LotHoldService', () => {
 
     expect(calls).toEqual(['lot.lock', 'lot_hold.create']);
     const sql = args[0].sql as string;
-    expect(sql).toContain('trace.lot');
-    expect(sql).toContain('FOR UPDATE');
-    // 나눠 잡으면 두 트랜잭션이 같은 두 LOT 을 반대 순서로 잡아 교착한다(`balance-lock.ts` 선례).
-    expect(sql).toContain('ORDER BY lot_id');
+    expect(sql).toContain('FROM trace.lot\n');
+    // ⭐ 방향까지 못 박는다 — 형제 잠금(`lot-quality-status.service.ts:70`)이 «오름차순»이라
+    //    여기만 DESC 가 되면 ④ 의 한 트랜잭션에서 두 질의가 같은 두 LOT 을 반대 순서로 잡아
+    //    교착한다. 꼬리를 `$` 로 닫아 `SKIP LOCKED`(경합 LOT 을 조용히 빠뜨린다)도 함께 막는다.
+    expect(sql).toMatch(/ORDER BY lot_id\s+FOR UPDATE\s*$/);
   });
 
   it('⭐⭐ R-5 — 잠그지 않은 LOT 에는 못 쓴다(표식이 순서를 강제한다)', async () => {
@@ -130,10 +131,14 @@ describe('LotHoldService', () => {
   });
 
   it('잠금은 그 LOT 의 지금 상태와 판 번호를 함께 싣는다 — 호출자가 409 를 그 값으로 판정한다', async () => {
-    const { tx } = fake([1n]);
+    const { tx, args } = fake([1n]);
 
     const locked: LockedLot[] = await service.lockLotsWithin(tx, [1n]);
 
+    // ⭐ 가짜는 SQL 과 무관하게 세 칸을 돌려주므로 반환값 단언만으로는 아무것도 못 잠근다.
+    //    ③b §3-2 b 와 ④ §3-1 b 의 409(`currentVersion`·`currentLotStatusCode`)가 이 두 칸에
+    //    기댄다 — SELECT 목록 자체를 못 박는다.
+    expect(args[0].sql as string).toContain('SELECT lot_id, status_code, version_no');
     expect(locked).toEqual([{ lot_id: 1n, status_code: 'NORMAL', version_no: 1 }]);
   });
 

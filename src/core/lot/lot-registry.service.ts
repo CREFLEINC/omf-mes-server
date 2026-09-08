@@ -90,8 +90,11 @@ export class LotRegistryService {
       },
     });
 
-    // ⭐ 화면이 보내지 않고 «서버가» 건다(MLOT #5). 방금 만든 행이라 잠글 것이 없지만 코어의
-    //    순서 규약(R-5 — `lot` 을 잡고 나서 보류를 쓴다)을 이 자리도 똑같이 탄다.
+    // ⭐ 화면이 보내지 않고 «서버가» 건다(MLOT #5).
+    // ⚠ 방금 만든 행이라 **잠금 자체는 무동작**이다(아무도 못 보는 행이라 교착 사이클에 못 낀다).
+    //    그래도 부르는 이유는 **표식에 예외를 두지 않으려는 것** — 예외를 내려면 `LockedLot` 발급
+    //    경로가 하나 더 생기고 그러면 리뷰가 실측한 우회가 «권장 관용구»가 된다.
+    //    비용: LOT 마다 왕복 1회(입하는 라인 수만큼).
     const locked = await this.holds.lockLotsWithin(tx, [lot.lot_id]);
     await this.holds.holdWithin(
       tx,

@@ -160,6 +160,25 @@ describe('LotQualityStatusService', () => {
     ]);
   });
 
+  it('⛔ ck_lot_status_event_source — 지도가 «부분»이고 배치 값이 없으면 던진다(500 을 앞당겨 막는다)', async () => {
+    const { tx, calls } = fake([
+      { lot_id: 1n, status_code: 'NORMAL' },
+      { lot_id: 2n, status_code: 'NORMAL' },
+    ]);
+
+    // 지도에 1n 만 있고 배치 `sourceDocumentId` 가 없다 ⇒ 2n 은 유형만 실려 CHECK 가 깨진다.
+    await expect(
+      service.moveWithin(tx, [1n, 2n], 'lot-hold-claim', {
+        changedBy: 7n,
+        changedAt: ctx.changedAt,
+        sourceDocumentTypeCode: 'LOT_HOLD',
+        sourceDocumentIdByLot: new Map([[1n, 41n]]),
+      }),
+    ).rejects.toThrow(/ck_lot_status_event_source/);
+    // 던지기 «전»에 아무것도 잠그거나 쓰지 않았다.
+    expect(calls).toEqual([]);
+  });
+
   it('⛔ ck_lot_status_event_source — 원천 문서 두 칸을 함께 비울 수 있다', async () => {
     const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'INSPECTION_PENDING' }]);
 
