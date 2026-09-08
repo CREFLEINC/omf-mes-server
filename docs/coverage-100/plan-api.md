@@ -149,8 +149,8 @@
 | 마이그레이션 | **필요** — `stock_transfer_line.handling_unit_id`(nullable FK, 계약 `StockTransferLine.handlingUnitId` 앵커 없음) · `recycle_entry` 에 `warehouse_id`·`remarks` 신설(계약 `RecycleEntry.warehouseId`·`remarks`). |
 | posting(원장) 연결 | **있음** — `POST /logistics/stock-transfers` 가 반출(`IN_TRANSIT`), `:arrive` 가 입고를 쌓는 **2단 전기** |
 | 상태기계 | 있음 (`LOGISTICS_DOCUMENT_STATUS`) |
-| 예상 PR 수 | 3 — ① 조회 GET 3건 ② 이동 2단 + posting + e2e(코어) ③ 재생재 + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `:arrive` 부분 도착이 상태를 어디로 두는가. 계약은 「반출한 수량 이하만」만 적는다. §2 2단계 기준 3 → **상태값을 늘리지 않는다**. 부분 도착은 `received_qty` 합이 담고 전액 도착에서만 `POSTED` 로 옮긴다. |
+| 예상 PR 수 | **5** — **I-13 이 4**(① 조회 3 + 권한 ② 마이그 A4 + 반출 + 1단 전기 ③ `:arrive` + 전이표 + 2단 전기 ④ 라인 치환 자물쇠 + 판별자 축 + 마감) **+ I-17 재생재 1**. ⚠ S05 7건 중 `POST /logistics/recycle-entries` 는 **I-17 몫**이라 마이그 칸의 `recycle_entry.warehouse_id`·`remarks`(A5)를 지우지 않는다(I-13 재수립 R-14) |
+| 설계 미정 자리 · §2 판정 초안 | ~~`:arrive` 부분 도착~~ → **판정됨**(I-13 재수립 R-3): `:arrive` 는 **한 번만** 받는다(재도착 400 `STATE_LOCKED`) — 되풀이 도착을 요구하는 계약 문장이 **0건**(전수 확인)이고 화면 액션에도 없다. 부분 도착은 그 한 번으로 종결되고 잔여가 `IN_TRANSIT` 에 남는다(문의 124). ⇒ I-13 **신규 문의 6건(120~125)** + 기존 4건(059·031·문의 14·060)에 줄 추가. 재생재분은 I-17 에서. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -758,8 +758,8 @@ e2e」)을 못 채운다 — 2026-09-04 드리프트가 취소를 리소스 축�
 |---|---|---|---|
 | `document-post` | `REGISTERED` → `POSTED` | `POST /logistics/goods-issues/{id}:post` · `POST /inventory/adjustments/{id}:post` | **부른다** |
 | (전기와 동시) | (없음) → `POSTED` | `POST /logistics/goods-receipts`(구현됨) · `POST /logistics/goods-issues`(`postImmediately=true` — I-4) | **부른다** — 「생성과 전기가 같은 순간」이라 `REGISTERED` 에 머무는 자리가 없다. `from` 이 없는 전이라 `transitions.ts` 표에 담지 않고 `document-post` 도 부르지 않는다(I-4.md §3-9) |
-| `transfer-issue` | (없음) → `REGISTERED` | `POST /logistics/stock-transfers` | **부른다**(반출 = 1단째, 도착지가 `IN_TRANSIT`) |
-| `transfer-arrive` | `REGISTERED` → `POSTED` | `POST /logistics/stock-transfers/{id}:arrive` | **부른다**(입고 = 2단째). ⚠ 부분 도착은 상태를 안 옮긴다 — `received_qty` 합이 담고 전량에서만 `POSTED` |
+| ~~`transfer-issue`~~ | (없음) → `REGISTERED` | `POST /logistics/stock-transfers` | **부른다**(반출 = 1단째, 도착지가 `IN_TRANSIT`). ⛔ **전이가 «아니다»** — `from` 이 없어 `transitions.ts` 표에 담지 않는다(생성과 전기가 같은 순간인 `goods-receipt` 와 같은 모양 · I-13 재수립 R-19) |
+| `transfer-arrive` | `REGISTERED` → `POSTED` | `POST /logistics/stock-transfers/{id}:arrive` | **부른다**(입고 = 2단째). ⛔ ~~부분 도착은 `received_qty` **합**이 담고 전량에서만 `POSTED`~~ — **계약 근거가 0** 이다(전수 확인 · I-13 재수립 R-3). `:arrive` 는 **한 번만** 받고 그 한 번이 상태를 `POSTED` 로 옮긴다. 잔여는 `IN_TRANSIT` 에 남는다(문의 124) |
 | `document-request-cancel` | `REGISTERED`·`POSTED` → `CANCEL_REQUESTED` | `POST /logistics/document-progress/{type}/{id}:request-cancel` | 안 부른다 |
 | `document-cancel` | `CANCEL_REQUESTED` → `CANCELLED` | `POST /logistics/document-progress/{type}/{id}:cancel` | **조건부로 부른다** — 직전이 `POSTED` 였으면 역트랜잭션, `REGISTERED` 였으면 상태만(`CancelResult.reversed`) |
 | **없음** | — | `:request-approval` (P/O·출고·조정) | ⛔ **상태를 옮기지 않는다** |
@@ -1101,7 +1101,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 자재 출고요청 | `issue_request_no` | ❌ | — | S04 |
 | 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — ~~출고요청이 만든다~~ **아무도 못 만든다** · 배정 축 3겹 부재 · I-8 §5 · 문의 045) |
 | 현장 입고 | `shopfloor_receipt_no` | ❌ | `SR-{YYYYMMDD}-{SEQ4}`(계약 example `SR-2026-000077` 에서 접두어만 · `DEFAULT_PREFIX` 한 줄 · I-9 §3-7) | S04 |
-| 창고 이동 | `stock_transfer_no` | ❌ | — | S05 |
+| 창고 이동 | `stock_transfer_no` | ❌ | **`ST-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `ST` 한 줄 · 계약 example `ST-2026-000260` 에서 **접두어만** 따는 것이 관행 · I-13 §4-3) | S05 |
 | 재생재 | `recycle_entry_no` | ❌ | — | S05 |
 | 재고 실사 | `inventory_count_no` | ❌ | — | S07 |
 | 재고 조정 | `inventory_adjustment_no` | ❌ | — | S07 |

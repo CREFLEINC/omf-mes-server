@@ -174,7 +174,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음 · `lot_relation` 은 이 슬라이스가 쓰지 않는다(052) | **2** NOT NULL 완화(`terminal_id`·`return_quality_status_code`) | ✕ | ✕ | 3 |
 | I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | **1** NOT NULL 완화(`work_session.shift_id` · R-3) | ✕ | ⭕ 세션 | 5 |
 | I-12 | 적치 완료·임시적재 | 4 | (입고 구현됨) | 있음 | ✕ | ⭐ | ⭕ | 2 |
-| I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | ✕ | ⭐ ×2 | ⭕ | 3 |
+| I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | **⭕ A4** | ⭐ ×2 | ⭕ | **4** |
 | I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | ✕ | ⭐ | ⭕ | 3 |
 | I-15 | 실사 | 6 | I-14 | 있음 | ✕ | ✕(조정이 진다) | ⭕ | 3 |
 | I-16 | 취급 단위·포장·재구성 | 7 | I-12 | 있음(`handling_unit_reconfiguration`) | ✕ | ⚠ 미정 | ⭕ | 3 |
@@ -322,7 +322,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-13 · 재고 이동 — 반출·도착 2단 — 6건
 
 **체인 마디**: 창고 간 이동. 체인의 본줄기가 아니라 «가지»이지만 **`IN_TRANSIT` 를 처음 쓰는 자리**다(~~I-9 판정의 선례가 된다~~ — I-9 는 `IN_TRANSIT` 를 안 쓰고 먼저 닫혔다 · I-9 R-17).
-**원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, `AVAILABLE`}. `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
+**원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, **반출 원장 라인의 `from_inventory_status_code`**}. ⛔ ~~`AVAILABLE` 고정~~ — 고정하면 **보류 재고가 이동만으로 가용이 된다**(세탁). 화면 `M-01-10` §5-3·§6 이 보류 LOT 이동을 「경고 + 진행 가능」(결정 14)으로 **정상 경로**로 열었고, 적치·출고 선례도 상태를 바꾸지 않는다(`putaway-posting.ts:52-53`·`issue-posting.ts:196-198`) · I-13 재수립 R-2. ⚠ 도착 손검사는 **반출 원장이 준 11칸으로 잠근 행**에서 한다 — 7칸 잠금 그대로면 두 번째 이동이 언제나 400 이다(R-6). `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
 **예상 설계 미정**: `IN_TRANSIT` 행의 `location_id` 는 NOT NULL 인데 이동 중에는 위치가 없다. → 2단계 기준 3 → 도착 위치를 미리 쓴다(`to_location_id`).
 ⛔ **취소는 I-13 이 만들지 않는다**(2026-09-07 · 레인 C 지적). 문서는 **1건**이고 원장 전기가 2회일 뿐이다(계약 `x-internal-note` 「두 문서가 아니라 한 문서의 두 전이다」). 취소 API 의 `documentTypeCode` 는 입하·입고·출고 3종뿐이라 `STOCK_TRANSFER` 에 실행 경로가 없고, `document-type-registry.ts` 도 `cancelable: false` 로 이미 등록했다. §508 의 「I-13 이 각자 취소를 짠다」는 I-5 를 앞당긴 «이유»를 적은 문장이지 I-13 의 범위가 아니다 — 미지원으로 두고 문의로 올린다.
 
