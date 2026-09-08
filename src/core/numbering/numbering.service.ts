@@ -44,6 +44,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   BREAKDOWN: 'MLF',
   /** 결정 — I-31 C0: 보전 지시는 대상 공장별 MO 기본 접두어를 쓴다. */
   MAINTENANCE_ORDER: 'MO',
+  /** 규칙 미등재 — `OH-{YYYYMMDD}-{SEQ4}` · 기간 축은 `handedOverAt` 의 UTC 날짜(I-25 §0 자리 2 ⓑ). */
+  OPERATION_HANDOVER: 'OH',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
