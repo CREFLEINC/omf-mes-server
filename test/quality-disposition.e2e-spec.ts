@@ -1,7 +1,8 @@
 /**
- * 처분 결정 목록·상세 (e2e) — I-21 PR ②a″. `GET /quality/disposition-decisions` ·
- * `…/{dispositionDecisionId}` 딱 둘이다. 후보(③)·특채(⑤)·쓰기(⑥⑦)는 다른 PR 몫이라 이
- * 파일은 그 둘만 본다 — 뒤 PR 들이 이 파일에 `describe` 를 더한다(회귀 `quality-` 규약).
+ * 처분 결정 목록·상세·이 부적합의 결정 (e2e) — I-21 PR ②a″·②b. `GET /quality/disposition-decisions` ·
+ * `…/{dispositionDecisionId}` · `…/nonconformances/{nonconformanceId}/disposition-decisions`(+`summary`)
+ * 셋이다. 후보(③)·특채(⑤)·쓰기(⑥⑦)는 다른 PR 몫이라 이 파일은 그 셋만 본다 — 뒤 PR 들이 이
+ * 파일에 `describe` 를 더한다(회귀 `quality-` 규약).
  *
  * 등록·판정 저장 오퍼레이션이 아직 없어(⑥⑦) 픽스처는 전부 prisma 직접 INSERT 다(0단계 선례).
  * `disposition-decision`(D1~D3·tie·boundary)은 전부 ncA 하나에 달아 필터·정렬·페이지 단언을
@@ -52,9 +53,11 @@ describe('처분 결정 목록·상세 (e2e)', () => {
   let userId = 0n;
 
   const ids = {
+    plant: 0n,
     item1: 0n,
     item2: 0n,
     uom: 0n,
+    uom2: 0n,
     warehouse1: 0n,
     warehouse2: 0n,
     location1: 0n,
@@ -62,6 +65,8 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     lotB: 0n,
     lotM1: 0n,
     lotM2: 0n,
+    lotN1: 0n,
+    lotN2: 0n,
   };
   const ncIds: Record<string, bigint> = {};
   const decisionIds: Record<string, number> = {};
@@ -270,7 +275,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       // `setEtag()`(공유계약 A-4 · 순정수 문자열)가 다르다는 것만 잠근다(선례 `app-role.e2e-
       // spec.ts:150` 의 `toBe('1')` 형과 반대 방향). 여기서 숫자 문자열이 나오면 누군가
       // `setEtag()` 를 붙였다는 뜻이다 — 계약이 이 오퍼레이션에 ETag 를 선언하지 않았다(§1-1).
-      expect(response.headers.etag).not.toMatch(/^\d+$/);
+      expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
       expect(response.body).toMatchObject({ dispositionDecisionId: decisionIds.D1, lotId: Number(ids.lotA) });
       expect(validator('GET /quality/disposition-decisions/{dispositionDecisionId}')(response.body)).toBe(true);
     });
@@ -299,6 +304,98 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     });
   });
 
+  describe('이 부적합의 결정 (②b · +summary)', () => {
+    const url = (nonconformanceId: bigint | number) => `/api/quality/nonconformances/${nonconformanceId}/disposition-decisions`;
+
+    it('⭐ 질의 칸이 0인데 page 가 {1, total, total}로 전건이다(51번째가 조용히 안 사라진다)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.items).toHaveLength(2);
+      expect(response.body.page).toEqual({ page: 1, size: 2, total: 2 });
+    });
+
+    it('summary.remainingQty = 대상(100) − 결정(25+35) = 40(서버 계산)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.summary).toMatchObject({ affectedQtyTotal: 100, decidedQtyTotal: 60, remainingQty: 40 });
+    });
+
+    it('summary.uomId 가 부적합(대상 LOT)의 단위다', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.summary.uomId).toBe(Number(ids.uom));
+    });
+
+    it('⛔ 응답에 ETag 헤더가 없다(계약 미선언)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      // Express 가 자동으로 붙이는 약한 해시(W/"…")와, `setEtag()`(공유계약 A-4·순정수 문자열)가
+      // 다르다는 것만 잠근다(상세 시험과 같은 방향).
+      expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+    });
+
+    it('정렬 — decided_at DESC(Dsummary2 가 먼저)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+      const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
+
+      expect(returned).toEqual([decisionIds.Dsummary2, decisionIds.Dsummary1]);
+    });
+
+    it('⭐ 정렬 2차 키 — decided_at 동률이면 disposition_decision_id DESC(통째 단언)', async () => {
+      const response = await get(url(ncIds.ncSummaryTie)).expect(200);
+      const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
+
+      expect(returned).toEqual([decisionIds.DsummaryTieHi, decisionIds.DsummaryTieLo]);
+    });
+
+    it('⭐⭐ 리뷰 Major-1 — 대상 «합»이 다중 LOT 전건(0.1+0.2=0.3)이고 uomId 는 «첫» LOT 의 단위다', async () => {
+      // 두 LOT 의 uom_id 가 다르다(ids.uom·ids.uom2) — 「lots[0] 만 합한다」·「마지막 LOT 의 uom
+      // 을 고른다」변이 둘을 이 한 시험이 잡는다. affected_qty=0.1+0.2 는 Number() 로 먼저 더치면
+      // 0.30000000000000004 가 새는 고전적 부동소수 함정이라 R-25 의 «대상» 쪽도 함께 잠근다.
+      const response = await get(url(ncIds.ncMultiUom)).expect(200);
+
+      expect(response.body.summary).toEqual({ affectedQtyTotal: 0.3, decidedQtyTotal: 0, remainingQty: 0.3, uomId: Number(ids.uom) });
+    });
+
+    it('⭐ Minor-5 — 결정이 0건이면 잔량은 대상 전량이다(「0건→잔량 0」으로 접지 않는다)', async () => {
+      const response = await get(url(ncIds.ncMultiUom)).expect(200);
+
+      expect(response.body.items).toEqual([]);
+      expect(response.body.summary.remainingQty).toBe(0.3);
+    });
+
+    it('⭐⭐ 없는 nonconformanceId 는 404 가 «아니다» — 빈 목록 + summary 전 칸 0(계약 미선언 · 같은 계약 파일 형제 선례) // 결정 — 통보 후보(번호는 통합자가 준다)', async () => {
+      // `GET …/{inspectionResultId}/measurements` 가 같은 계약 파일 안에서 이미 「빈 목록+total 0,
+      // 404 아니다」로 판정해 뒀다(quality-inspection-summary.e2e-spec.ts:318) — 자식 컬렉션 GET 은
+      // 부모 존재를 따로 확인하지 않는다. ⚠ 저장소 전체가 이 규범 하나로 갈린 것은 «아니다» —
+      // 계약 미선언인데도 404 를 내는 자식 컬렉션도 실재한다(예: goods-issues/{id}/lines). 이
+      // 오퍼레이션은 «같은 계약 파일·같은 축(계약 선언 유무)»을 근거로 골랐다.
+      // summary.uomId=0 도 같은 결정의 연장이다 — required·널불가 정수에 실을 값이 없어
+      // 강제된 값이고(도출이 아니다), 노출 반경은 0(①b 상세가 이미 404 를 낸다).
+      const response = await get(url(999999999)).expect(200);
+
+      expect(response.body).toEqual({
+        items: [],
+        page: { page: 1, size: 0, total: 0 },
+        summary: { affectedQtyTotal: 0, decidedQtyTotal: 0, remainingQty: 0, uomId: 0 },
+      });
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')(response.body)).toBe(true);
+    });
+
+    it('응답이 계약 스키마를 통과한다(ajv)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')(response.body)).toBe(true);
+    });
+
+    it('⭐ Nit-2 — 행에 followUpPending·reinstatable 이 없다(ajv strict:false 라 못 잡는 자리를 직접 잠근다)', async () => {
+      // `DispositionDecision.properties` 에 두 이름이 0건이다(질의 파라미터로만 있다 · disposition-rollup.ts 머리 주석).
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.items[0]).not.toHaveProperty('followUpPending');
+      expect(response.body.items[0]).not.toHaveProperty('reinstatable');
+    });
+  });
+
   async function makeMasters(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: `${PREFIX} 처분목록법인`, country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -309,8 +406,12 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: `${PREFIX} 처분목록공장`, timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    ids.plant = plant.plant_id;
     const uom = await prisma.uom.findFirstOrThrow();
     ids.uom = uom.uom_id;
+    // ⭐ 리뷰 Major-1 — 대상(affected) 쪽 다중 LOT 축을 잠그려면 «단위가 다른» 두 번째 uom 이 필요하다.
+    const uom2 = await prisma.uom.create({ data: { uom_code: `${PREFIX}-UOM2`, uom_name: `${PREFIX} 보조단위`, decimal_scale: 6 } });
+    ids.uom2 = uom2.uom_id;
 
     const item1 = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT1`, item_name: `${PREFIX} 품목1`, item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
@@ -341,6 +442,8 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     ids.lotB = await newLot('B', item2.item_id, plant.plant_id);
     ids.lotM1 = await newLot('M1', item1.item_id, plant.plant_id);
     ids.lotM2 = await newLot('M2', item1.item_id, plant.plant_id);
+    ids.lotN1 = await newLot('N1', item1.item_id, plant.plant_id);
+    ids.lotN2 = await newLot('N2', item1.item_id, plant.plant_id);
 
     await newBalance(entity.legal_entity_id, unit.business_unit_id, plant.plant_id, wh1.warehouse_id, loc1.location_id, item1.item_id, ids.lotA, uom.uom_id, 100);
     await newBalance(entity.legal_entity_id, unit.business_unit_id, plant.plant_id, wh2.warehouse_id, loc2.location_id, item2.item_id, ids.lotB, uom.uom_id, 50);
@@ -392,7 +495,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     });
   }
 
-  async function makeNonconformance(key: string, itemId: bigint, lotIds: bigint[]): Promise<bigint> {
+  async function makeNonconformance(key: string, itemId: bigint, lotIds: bigint[], affectedQtyEach = 10): Promise<bigint> {
     const nc = await prisma.nonconformance.create({
       data: {
         nonconformance_no: `${PREFIX}-NC-${key}`,
@@ -407,7 +510,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       data: lotIds.map((lotId) => ({
         nonconformance_id: nc.nonconformance_id,
         lot_id: lotId,
-        affected_qty: 10,
+        affected_qty: affectedQtyEach,
         uom_id: ids.uom,
         quality_status_before_code: 'DEFECTIVE',
         quality_status_after_code: 'DEFECTIVE',
@@ -500,6 +603,41 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     // 증발한다(coalesce 를 지워도 이 픽스처 없이는 e2e 가 초록이었다).
     const ncScrapNone = await makeNonconformance('ncScrapNone', ids.item1, [ids.lotA]);
     await makeDecision('DscrapNone', ncScrapNone, 'SCRAP', 40, T1);
+
+    // ②b — 「이 부적합의 결정」(전건 + summary). affectedQtyTotal=100(lotA 하나) · 결정 25+35=60
+    // → remainingQty=40. uomId 는 nonconformance_lot.uom_id(= ids.uom)로 고정된다.
+    const ncSummary = await makeNonconformance('ncSummary', ids.item1, [ids.lotA], 100);
+    await makeDecision('Dsummary1', ncSummary, 'REWORK', 25, T1);
+    await makeDecision('Dsummary2', ncSummary, 'SCRAP', 35, T2);
+
+    // ②b 정렬 2차 키 — decided_at 동률(TIE) 둘. 별도 부적합으로 떼어 summary 산식(위)과 섞이지 않게 한다.
+    const ncSummaryTie = await makeNonconformance('ncSummaryTie', ids.item1, [ids.lotA], 10);
+    await makeDecision('DsummaryTieLo', ncSummaryTie, 'REWORK', 1, TIE);
+    await makeDecision('DsummaryTieHi', ncSummaryTie, 'REWORK', 1, TIE); // TIE 와 같은 시각 · id 는 Lo 보다 크다
+
+    // ⭐⭐ 리뷰 Major-1 — 대상(affected) 합의 다중 LOT 축 + uom 선택 축 + R-25 소수 함정(대상 쪽)을
+    // «한 픽스처»로 잠근다. `makeNonconformance` 는 LOT 마다 같은 uom·수량만 지원해 직접 심는다.
+    // 두 LOT 의 uom_id 를 다르게(ids.uom·ids.uom2) 두어 「lots[0] 만 합한다」·「마지막 LOT 의 uom
+    // 을 고른다」변이를 잡고, affected_qty 를 0.1+0.2 로 심는다 — 0.1+0.2=0.30000000000000004 가
+    // «보이는» 고전적 부동소수 함정이다(0.15+0.15 는 JS 에서 우연히 정확해 못 잡는다). 결정을
+    // «0건» 붙여 「결정 0건이면 잔량 = 대상 전량」(Minor-5)도 같은 픽스처로 잠근다.
+    const ncMultiUom = await prisma.nonconformance.create({
+      data: {
+        nonconformance_no: `${PREFIX}-NC-ncMultiUom`,
+        item_id: ids.item1,
+        severity_code: 'MINOR',
+        description: `${PREFIX} 부적합 ncMultiUom`,
+        status_code: 'PENDING_DECISION',
+        opened_at: new Date(WINDOW_FROM),
+      },
+    });
+    await prisma.nonconformance_lot.createMany({
+      data: [
+        { nonconformance_id: ncMultiUom.nonconformance_id, lot_id: ids.lotN1, affected_qty: 0.1, uom_id: ids.uom, quality_status_before_code: 'DEFECTIVE', quality_status_after_code: 'DEFECTIVE' },
+        { nonconformance_id: ncMultiUom.nonconformance_id, lot_id: ids.lotN2, affected_qty: 0.2, uom_id: ids.uom2, quality_status_before_code: 'DEFECTIVE', quality_status_after_code: 'DEFECTIVE' },
+      ],
+    });
+    ncIds.ncMultiUom = ncMultiUom.nonconformance_id;
   }
 
   async function makeUser(): Promise<void> {
@@ -523,6 +661,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     await prisma.disposition_decision.deleteMany({ where: { nonconformance: { nonconformance_no: { startsWith: `${PREFIX}-NC-` } } } });
     await prisma.nonconformance_lot.deleteMany({ where: { nonconformance: { nonconformance_no: { startsWith: `${PREFIX}-NC-` } } } });
     await prisma.nonconformance.deleteMany({ where: { nonconformance_no: { startsWith: `${PREFIX}-NC-` } } });
+    await prisma.uom.deleteMany({ where: { uom_code: `${PREFIX}-UOM2` } }); // Major-1 픽스처(ncMultiUom)의 두 번째 uom — nonconformance_lot 을 먼저 지운 뒤라야 지워진다.
     await prisma.inventory_balance.deleteMany({ where: { lot: { lot_no: { startsWith: `${PREFIX}-LOT-` } } } });
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: `${PREFIX}-LOT-` } } });
     await prisma.location.deleteMany({ where: { location_code: { startsWith: `${PREFIX}-LOC` } } });
