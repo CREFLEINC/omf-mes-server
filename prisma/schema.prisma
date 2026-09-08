@@ -518,6 +518,7 @@ model inventory_balance {
 
   @@index([plant_id, warehouse_id, item_id, lot_id, quality_status_code, inventory_status_code], map: "ix_inventory_balance_lookup")
   @@index([location_id], map: "ix_inventory_balance_location")
+  @@index([lot_id], map: "ix_inventory_balance_lot")
   @@index([warehouse_id], map: "ix_inventory_balance_warehouse")
   @@schema("inventory")
 }
@@ -3636,6 +3637,7 @@ model lot_hold {
   uom                                     uom?      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([held_at(sort: Desc)], map: "ix_lot_hold_held_at")
+  @@index([lot_id], map: "ix_lot_hold_lot")
   @@schema("trace")
 }
 

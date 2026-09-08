@@ -32,3 +32,15 @@ CREATE INDEX ix_lot_hold_held_at
 CREATE INDEX ix_lot_hold_released_at
     ON trace.lot_hold USING btree (released_at DESC)
     WHERE released_at IS NOT NULL;
+
+-- ⓕ R-21 — PG 는 FK 에 인덱스를 «자동 생성하지 않는다». lot_id 가 선두인 인덱스가 두 표 다
+--    없어 GET /quality/lot-statuses 의 LATERAL 셋이 LOT 마다 Seq Scan 을 돈다.
+--    ix_lot_hold_active 는 부분(열린 것만)이라 해제분을 함께 보는 질의를 못 받고,
+--    ix_inventory_balance_lookup 은 lot_id 가 «4번째» 칸이라 선두로 못 쓴다.
+--    ⚠ inventory_balance.lot_id 는 nullable 이지만 부분 술어(WHERE lot_id IS NOT NULL)를
+--    안 붙인다 — lot_id = $1 는 btree 의 NULL 구간을 애초에 안 읽어 이득이 크기뿐이고,
+--    부분으로 만들면 schema.prisma 가 표현하지 못해 이 인덱스만 드리프트 검사 밖으로 나간다.
+CREATE INDEX ix_lot_hold_lot
+    ON trace.lot_hold USING btree (lot_id);
+CREATE INDEX ix_inventory_balance_lot
+    ON inventory.inventory_balance USING btree (lot_id);
