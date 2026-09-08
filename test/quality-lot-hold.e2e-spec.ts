@@ -141,20 +141,45 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'heldTo', code: 'PAIR' });
   });
 
-  // ── 5. 목록 — reasonCode·heldBy·itemId 필터 ─────────────────────────────
+  // ── 4b. 목록 — heldFrom~heldTo 는 [from, to) 반열림이다 ──────────────────
 
-  it('목록 — reasonCode·heldBy·itemId 가 각각 거른다', async () => {
-    const byReason = await listAll(`reasonCode=DIMENSION_ABNORMAL`);
+  it(
+    '⭐ 목록 — heldFrom~heldTo 는 [from, to) 반열림이다 — 끝 경계와 «같은 값»은 빠진다 ' +
+      '(↩ 끝 경계를 «이하»로 바꾸거나 시작 경계를 «초과»로 바꾸거나 절을 지우면 깨진다)',
+    async () => {
+      // held_at=T1(RELEASED·LEGACY) 은 시작 경계(gte)와 같은 값이라 포함, held_at=T2(OPEN·
+      // EXACT1·EXACT2) 는 끝 경계(lt)와 같은 값이라 제외 — heldFrom·heldTo 를 «함께» 보낸다.
+      const body = await listAll(`open=false&heldFrom=${T1}&heldTo=${T2}`);
+      const names = body.items.map((i) => i.lotNo);
+      expect(names).toContain(lotNo.RELEASED);
+      expect(names).toContain(lotNo.LEGACY);
+      expect(names).not.toContain(lotNo.OPEN);
+      expect(names).not.toContain(lotNo.EXACT1);
+      expect(names).not.toContain(lotNo.EXACT2);
+    },
+  );
+
+  // ── 5. 목록 — reasonCode·heldBy·itemId·lotId 필터 ────────────────────────
+
+  it('목록 — reasonCode·heldBy·itemId·lotId 가 각각 거른다', async () => {
+    // ⛔ §4 자가 변이 점검에서 드러난 자리 — open 기본(true)이 RELEASED 를 이미 가려서
+    // reasonCode·heldBy·itemId 절을 지워도 「안 걸리는 행」 단언이 초록으로 살아남았다.
+    // open=false 로 RELEASED 를 화면에 들여놓아야 각 필터가 «단독으로» 거르는 것이 반증된다.
+    const byReason = await listAll(`open=false&reasonCode=DIMENSION_ABNORMAL`);
     expect(byReason.items.map((i) => i.lotNo)).toContain(lotNo.OPEN);
     expect(byReason.items.map((i) => i.lotNo)).not.toContain(lotNo.RELEASED); // 안 걸리는 행(R-19)
+    expect(byReason.page.total).toBe(byReason.items.length); // Minor-2 — total 이 필터와 같은 조건이다
 
-    const byHeldBy = await listAll(`heldBy=${heldByAId}`);
+    const byHeldBy = await listAll(`open=false&heldBy=${heldByAId}`);
     expect(byHeldBy.items.map((i) => i.lotNo)).toContain(lotNo.OPEN);
     expect(byHeldBy.items.map((i) => i.lotNo)).not.toContain(lotNo.RELEASED);
 
-    const byItem = await listAll(`itemId=${item1Id}`);
+    const byItem = await listAll(`open=false&itemId=${item1Id}`);
     expect(byItem.items.map((i) => i.lotNo)).toContain(lotNo.OPEN);
     expect(byItem.items.map((i) => i.lotNo)).not.toContain(lotNo.RELEASED); // item2 소속
+
+    const byLotId = await listAll(`lotId=${lotId.OPEN}`); // Minor-1 — R-23 과 같은 지적
+    expect(byLotId.items.map((i) => i.lotNo)).toEqual([lotNo.OPEN]);
   });
 
   // ── 6. 상세 — 404 · 200 + ETag ───────────────────────────────────────────
@@ -210,9 +235,45 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     expect(opened.body.lotStatusCode).toBe('INSPECTION_PENDING');
   });
 
+  // ── 9. 목록 — 기본 정렬(R-10) · 동률 구간 페이지 경계 ────────────────────
+
+  it(
+    '⭐ 목록 — 기본 정렬은 held_at DESC · lot_hold_id DESC 다(동률을 2차 키로 깬다) ' +
+      '(↩ 방향을 뒤집거나 2차 키를 지우면 깨진다)',
+    async () => {
+      // held_at=T2 삼중 동률(OPEN·EXACT1·EXACT2)이 lot_hold_id DESC 로 갈리는 것까지 배열
+      // 전체를 통째로 단언한다 — toContain 으로는 순서·2차 키가 반증되지 않는다.
+      const body = await listAll('open=false');
+      const ids = body.items.filter((i) => i.lotNo.startsWith(PREFIX)).map((i) => i.lotHoldId);
+      expect(ids).toEqual([lotHoldId.EXACT2, lotHoldId.EXACT1, lotHoldId.OPEN, lotHoldId.LEGACY, lotHoldId.RELEASED]);
+    },
+  );
+
+  it(
+    '⭐ 목록 — held_at 동률 구간이 page 경계에 걸려도 중복·누락이 없다(size=2, page=1/2) ' +
+      '(↩ 2차 정렬 키를 지우면 동률 구간의 페이지 경계가 흔들린다)',
+    async () => {
+      const page = async (n: number): Promise<number[]> => {
+        const response = await request(app.getHttpServer())
+          .get(`/api/quality/lot-holds?open=false&size=2&page=${n}`)
+          .set('Cookie', cookie)
+          .expect(200);
+        return (response.body as LotHoldListBody).items
+          .filter((i) => i.lotNo.startsWith(PREFIX))
+          .map((i) => i.lotHoldId);
+      };
+      // 3중 동률(EXACT2·EXACT1·OPEN) 의 셋째 행(OPEN)이 page=1/2 경계에 걸린다.
+      const page1 = await page(1);
+      const page2 = await page(2);
+      expect(page1).toEqual([lotHoldId.EXACT2, lotHoldId.EXACT1]);
+      expect(page2).toEqual([lotHoldId.OPEN, lotHoldId.LEGACY]);
+      expect(new Set([...page1, ...page2]).size).toBe(page1.length + page2.length); // 중복 0
+    },
+  );
+
   it('목록·상세 — 계약 스키마를 통과한다(ajv)', async () => {
     const listResponse = await request(app.getHttpServer())
-      .get(`/api/quality/lot-holds?plantId=${plantId}`)
+      .get(`/api/quality/lot-holds?lotNo=${lotNo.OPEN}`) // ⛔ 계약 10칸에 plantId 축이 없다(Nit-1)
       .set('Cookie', cookie)
       .expect(200);
     const listValidate = validator('GET /quality/lot-holds');
@@ -314,7 +375,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     lotHoldId.OPEN = Number(openHold.lot_hold_id);
 
     lotId.RELEASED = await newLot('RELEASED', item2Id, 'NORMAL');
-    await prisma.lot_hold.create({
+    const releasedHold = await prisma.lot_hold.create({
       data: {
         lot_id: lotId.RELEASED,
         reason_code: 'CLAIM_RECALL',
@@ -328,15 +389,18 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
         release_target_lot_status_code: 'NORMAL',
       },
     });
+    lotHoldId.RELEASED = Number(releasedHold.lot_hold_id);
 
     lotId.EXACT1 = await newLot('EXACT1', item1Id, 'NORMAL');
-    await prisma.lot_hold.create({
+    const exact1Hold = await prisma.lot_hold.create({
       data: { lot_id: lotId.EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
     });
+    lotHoldId.EXACT1 = Number(exact1Hold.lot_hold_id);
     lotId.EXACT2 = await newLot('EXACT2', item1Id, 'NORMAL');
-    await prisma.lot_hold.create({
+    const exact2Hold = await prisma.lot_hold.create({
       data: { lot_id: lotId.EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
     });
+    lotHoldId.EXACT2 = Number(exact2Hold.lot_hold_id);
 
     lotId.LEGACY = await newLot('LEGACY', item1Id, 'INSPECTION_PENDING');
     const legacyHold = await prisma.lot_hold.create({
