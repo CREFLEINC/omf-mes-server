@@ -10,6 +10,9 @@ import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
+import { DefectDistributionService } from './defect/defect-distribution.service';
+import { DefectRecordController } from './defect/defect-record.controller';
+import { DefectRecordService } from './defect/defect-record.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
@@ -54,6 +57,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
     InspectionSummaryController,
     InspectionResultController,
+    DefectRecordController,
     LotStatusController, // 리터럴 경로 둘(`lot-statuses`·`lot-status-summary`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
   ],
@@ -69,6 +73,8 @@ import { LotStatusService } from './lot-status/lot-status.service';
     InspectionConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,
+    DefectRecordService,
+    DefectDistributionService,
     LotStatusService,
     LotHoldQueryService,
   ],
