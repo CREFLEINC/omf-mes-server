@@ -10,6 +10,7 @@ import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
+import { ConcessionController } from './concession/concession.controller';
 import { DefectDistributionService } from './defect/defect-distribution.service';
 import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
@@ -37,7 +38,7 @@ import { NonconformanceController } from './nonconformance/nonconformance.contro
 import { NonconformanceQueryService } from './nonconformance/nonconformance-query.service';
 
 /**
- * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
+ * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·특채·검사 의뢰·검사 결과 조회.
  * ⚠ 집계 2 + 측정치 2 는 **별도 컨트롤러**다(PR ⑤a·⑤b · R-18). `:confirm`(PR ④)이 LOT 세 표를 쓰므로 코어 둘
  * (`DocumentStateModule`·`LotRegistryModule`)을 함께 든다 — 도메인이 `trace` 를 직접 안 쓴다.
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
@@ -70,6 +71,7 @@ import { NonconformanceQueryService } from './nonconformance/nonconformance-quer
     // `decisions` 라 아래 컨트롤러와 세그먼트가 달라 순서 함정이 없다 · §7-2).
     NonconformanceController,
     DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(②a″)·`nonconformances/:nonconformanceId/disposition-decisions`(②b) — `PrismaService` 만 쓰고 별도 provider 가 없다.
+    ConcessionController, // `concessions`·`concessions/:concessionId`(I-21 PR ⑤) — `PrismaService` 원시 SQL, 다른 세그먼트라 순서 함정이 없다. ⛔ 이 표는 writer 0 — 운영에서 목록이 늘 빈다(통보 089 §2).
   ],
   providers: [
     DefectCodeService,
