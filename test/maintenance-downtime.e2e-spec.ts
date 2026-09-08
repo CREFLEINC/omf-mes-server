@@ -1,6 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import Ajv2020, { ValidateFunction } from "ajv/dist/2020";
 import addFormats from "ajv-formats";
 import { randomUUID } from "node:crypto";
@@ -11,19 +11,29 @@ import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { hashPassword } from "../src/auth/password";
+import type { DowntimeCreate } from "../src/maintenance/downtime/downtime-rules";
 import { DowntimeList } from "../src/maintenance/downtime/downtime-query.service";
 import { DowntimeView } from "../src/maintenance/downtime/downtime-view";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I32-DOWNTIME";
 const LOGIN_ID = `${PREFIX}-LOGIN`;
+const OTHER_LOGIN_ID = `${PREFIX}-OTHER`;
+const NO_PERMISSION_LOGIN_ID = `${PREFIX}-NO-PERMISSION`;
+const ROLE = `${PREFIX}-ROLE`;
 const PASSWORD = "I32-비가동-조회-비밀번호";
 const ACTIVE_REASON = `${PREFIX}-ACTIVE`;
 const INACTIVE_REASON = `${PREFIX}-INACTIVE`;
+const WORKER_NO = `${PREFIX}-WORKER`;
+const OTHER_WORKER_NO = `${PREFIX}-OTHER-WORKER`;
 const PATH = "/api/maintenance/downtimes";
 const PERIOD = { startedFrom: "2026-09-01", startedTo: "2026-09-01" };
 
-function validator(path: string): ValidateFunction {
+function validator(
+  path: string,
+  method = "get",
+  status = "200",
+): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(
       join(__dirname, "../contracts/equipment-05설비툴.json"),
@@ -36,20 +46,27 @@ function validator(path: string): ValidateFunction {
   ajv.addSchema(contract, "https://omf-mes.invalid/i32-downtime-contract");
   const pointer = path.replace(/~/g, "~0").replace(/\//g, "~1");
   return ajv.compile({
-    $ref: `https://omf-mes.invalid/i32-downtime-contract#/paths/${pointer}/get/responses/200/content/application~1json/schema`,
+    $ref: `https://omf-mes.invalid/i32-downtime-contract#/paths/${pointer}/${method}/responses/${status}/content/application~1json/schema`,
   });
 }
 
-describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
+describe("설비 비가동 조회·생성 I-32 P1b/P3 (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let otherCookie: string[];
+  let noPermissionCookie: string[];
+  let actorUserId = 0n;
+  let businessUnitId = 0n;
+  let hanoiPlantId = 0n;
   let reasonGroupId = 0n;
   let createdReasonGroup = false;
   const equipment: Record<string, bigint> = {};
   const downtimes: Record<string, bigint> = {};
+  const breakdowns: Record<string, bigint> = {};
   const listValidator = validator("/maintenance/downtimes");
   const detailValidator = validator("/maintenance/downtimes/{downtimeId}");
+  const createValidator = validator("/maintenance/downtimes", "post", "201");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -61,12 +78,49 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
     prisma = app.get(PrismaService);
     await cleanup();
     await fixtures();
+    const user = await createUser(LOGIN_ID, "비가동 입력");
+    const other = await createUser(OTHER_LOGIN_ID, "다른 입력자");
+    await createUser(NO_PERMISSION_LOGIN_ID, "권한 없음");
+    actorUserId = user.app_user_id;
+    const role = await prisma.role.create({
+      data: { role_code: ROLE, role_name: "비가동 입력용" },
+    });
+    await prisma.role_permission.create({
+      data: { role_id: role.role_id, permission_code: "P-05-02" },
+    });
+    await prisma.user_role.createMany({
+      data: [user.app_user_id, other.app_user_id].map((app_user_id) => ({
+        app_user_id,
+        role_id: role.role_id,
+      })),
+    });
+    await prisma.worker.createMany({
+      data: [WORKER_NO, OTHER_WORKER_NO].map((worker_no) => ({
+        worker_no,
+        worker_name: worker_no,
+        business_unit_id: businessUnitId,
+        plant_id: hanoiPlantId,
+        status_code: "ACTIVE",
+      })),
+    });
+    cookie = await login(LOGIN_ID);
+    otherCookie = await login(OTHER_LOGIN_ID);
+    noPermissionCookie = await login(NO_PERMISSION_LOGIN_ID);
+  });
+
+  async function login(loginId: string): Promise<string[]> {
+    const response = await request(app.getHttpServer())
+      .post("/api/app/sessions")
+      .set("Idempotency-Key", randomUUID())
+      .send({ loginId, password: PASSWORD })
+      .expect(200);
+    const raw: unknown = response.headers["set-cookie"];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
+  async function createUser(loginId: string, userName: string) {
     const user = await prisma.app_user.create({
-      data: {
-        login_id: LOGIN_ID,
-        user_name: "비가동 조회",
-        status_code: "EMPLOYED",
-      },
+      data: { login_id: loginId, user_name: userName, status_code: "EMPLOYED" },
     });
     await prisma.user_credential.create({
       data: {
@@ -74,14 +128,8 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
         password_hash: await hashPassword(PASSWORD),
       },
     });
-    const login = await request(app.getHttpServer())
-      .post("/api/app/sessions")
-      .set("Idempotency-Key", randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
-      .expect(200);
-    const raw: unknown = login.headers["set-cookie"];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
-  });
+    return user;
+  }
 
   afterAll(async () => {
     try {
@@ -263,6 +311,358 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
       .expect(404);
   });
 
+  it("D15 required 3칸으로 open을 만들고 사번·null·version 1을 정확히 저장한다", async () => {
+    const body = createBody("writeOpen", {
+      startedAt: "2026-09-08T13:00:00.123456+07:00",
+    });
+    const response = await postDowntime(body).expect(201);
+
+    expect(response.body).toMatchObject({
+      equipmentId: Number(equipment.writeOpen),
+      reasonCode: ACTIVE_REASON,
+      reasonName: "금형 교체",
+      startedAt: "2026-09-08T06:00:00.123456Z",
+      endedAt: null,
+      durationMinutes: null,
+      breakdownId: null,
+      workSessionId: null,
+      recordedByWorkerNo: WORKER_NO,
+      remarks: null,
+    });
+    expect(createValidator(response.body)).toBe(true);
+    // Express의 본문 캐시용 weak ETag는 있을 수 있지만 버전 토큰 "1"은 발행하지 않는다.
+    expect(response.headers.etag).not.toBe("1");
+
+    const rows = await prisma.$queryRaw<
+      {
+        downtime_type_code: string | null;
+        recorded_by_worker_no: string | null;
+        remarks: string | null;
+        version_no: number;
+        created_by: bigint | null;
+        closed_by: bigint | null;
+        started_epoch_us: string;
+      }[]
+    >`
+      SELECT downtime_type_code,recorded_by_worker_no,remarks,version_no,
+        created_by,closed_by,
+        (extract(epoch FROM started_at)*1000000)::bigint::text AS started_epoch_us
+      FROM maintenance.equipment_downtime
+      WHERE equipment_downtime_id=${BigInt(response.body.downtimeId)}`;
+    expect(rows[0]).toEqual({
+      downtime_type_code: null,
+      recorded_by_worker_no: WORKER_NO,
+      remarks: null,
+      version_no: 1,
+      created_by: actorUserId,
+      closed_by: null,
+      started_epoch_us: "1788847200123456",
+    });
+  });
+
+  it("D16 기존 open이 있어도 겹치는 과거 닫힌 구간은 허용한다", async () => {
+    await postDowntime(
+      createBody("writeClosed", { startedAt: "2026-09-08T00:00:00Z" }),
+    ).expect(201);
+    const closed = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2026-09-08T00:30:00Z",
+        endedAt: "2026-09-08T00:45:00Z",
+        remarks: "과거 입력",
+      }),
+    ).expect(201);
+    expect(closed.body).toMatchObject({
+      endedAt: "2026-09-08T00:45:00.000000Z",
+      durationMinutes: 15,
+      remarks: "과거 입력",
+    });
+    expect(
+      await prisma.equipment_downtime.findUnique({
+        where: {
+          equipment_downtime_id: BigInt(closed.body.downtimeId),
+        },
+        select: { created_by: true, closed_by: true },
+      }),
+    ).toEqual({ created_by: actorUserId, closed_by: actorUserId });
+  });
+
+  it("D17 같은 설비의 동시 open은 하나만 성공하고 다른 설비는 독립이다", async () => {
+    const same = await Promise.all([
+      postDowntime(
+        createBody("writeConcurrent", {
+          startedAt: "2026-09-08T01:00:00Z",
+        }),
+      ),
+      postDowntime(
+        createBody("writeConcurrent", {
+          startedAt: "2026-09-08T01:01:00Z",
+        }),
+      ),
+    ]);
+    expect(same.map((response) => response.status).sort()).toEqual([201, 422]);
+    expect(
+      same.find((response) => response.status === 422)?.body.errors[0],
+    ).toMatchObject({ field: "equipmentId", code: "STATE_LOCKED" });
+    expect(
+      await prisma.equipment_downtime.count({
+        where: { equipment_id: equipment.writeConcurrent, ended_at: null },
+      }),
+    ).toBe(1);
+
+    const separate = await Promise.all([
+      postDowntime(createBody("writeParallelA")),
+      postDowntime(createBody("writeParallelB")),
+    ]);
+    expect(separate.map((response) => response.status)).toEqual([201, 201]);
+  });
+
+  it("D18 사번 부재·공백·길이·실재를 구분하고 계정 미연결 작업자는 허용한다", async () => {
+    for (const [workerNo, code] of [
+      [null, "REQUIRED"],
+      ["   ", "REQUIRED"],
+      ["W".repeat(51), "RANGE"],
+      [`${PREFIX}-UNKNOWN`, "INVALID"],
+    ] as const) {
+      const response = await postDowntime(createBody("writeWorker"), {
+        workerNo,
+      }).expect(400);
+      expect(response.body.errors[0]).toMatchObject({
+        field: "X-Worker-No",
+        code,
+      });
+    }
+    const created = await postDowntime(createBody("writeWorker")).expect(201);
+    expect(created.body.recordedByWorkerNo).toBe(WORKER_NO);
+  });
+
+  it("D19 고객 확장 활성 사유만 허용하고 미등록·폐지 사유는 400이다", async () => {
+    for (const reasonCode of [`${PREFIX}-UNKNOWN`, INACTIVE_REASON]) {
+      const response = await postDowntime(
+        createBody("writeClosed", {
+          reasonCode,
+          endedAt: "2026-09-08T00:00:00Z",
+        }),
+      ).expect(400);
+      expect(response.body.errors[0]).toMatchObject({
+        field: "reasonCode",
+        code: "INVALID",
+      });
+    }
+  });
+
+  it("D20 미래 단말 시각과 0길이는 보존하고 역전만 두 필드 PAIR로 거절한다", async () => {
+    const zero = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2099-01-01T00:00:00.000001Z",
+        endedAt: "2099-01-01T00:00:00.000001Z",
+      }),
+    ).expect(201);
+    expect(zero.body).toMatchObject({
+      startedAt: "2099-01-01T00:00:00.000001Z",
+      endedAt: "2099-01-01T00:00:00.000001Z",
+      durationMinutes: 0,
+    });
+
+    const reversed = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2026-09-08T00:01:00Z",
+        endedAt: "2026-09-08T00:00:59.999999Z",
+      }),
+    ).expect(400);
+    expect(reversed.body.errors).toEqual([
+      expect.objectContaining({ field: "startedAt", code: "PAIR" }),
+      expect.objectContaining({ field: "endedAt", code: "PAIR" }),
+    ]);
+  });
+
+  it("D21 offset·µs 6자리를 보존하고 초과 비영 자리만 RANGE다", async () => {
+    const sameInstant = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2026-09-01T07:00:00.123456+07:00",
+        endedAt: "2026-09-01T00:00:00.123456Z",
+      }),
+    ).expect(201);
+    expect(sameInstant.body).toMatchObject({
+      startedAt: "2026-09-01T00:00:00.123456Z",
+      endedAt: "2026-09-01T00:00:00.123456Z",
+    });
+    const trailingZeros = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2026-09-01T00:00:00.123456000Z",
+        endedAt: "2026-09-01T00:00:00.123456000Z",
+      }),
+    ).expect(201);
+    expect(trailingZeros.body.startedAt).toBe("2026-09-01T00:00:00.123456Z");
+    const ranged = await postDowntime(
+      createBody("writeClosed", {
+        startedAt: "2026-09-01T00:00:00.1234567Z",
+        endedAt: "2026-09-01T00:00:01Z",
+      }),
+    ).expect(400);
+    expect(ranged.body.errors[0]).toMatchObject({
+      field: "startedAt",
+      code: "RANGE",
+    });
+  });
+
+  it("D22 고장 없음·다른 설비·완료 상태를 구분하고 열린 동일 설비만 연결한다", async () => {
+    const absent = await postDowntime(
+      createBody("writeClosed", {
+        endedAt: "2026-09-08T00:00:00Z",
+        breakdownId: 999999999,
+      }),
+    ).expect(400);
+    expect(absent.body.errors[0]).toMatchObject({
+      field: "breakdownId",
+      code: "INVALID",
+    });
+
+    const otherEquipment = await postDowntime(
+      createBody("writeClosed", {
+        endedAt: "2026-09-08T00:00:00Z",
+        breakdownId: Number(breakdowns.main),
+      }),
+    ).expect(400);
+    expect(
+      otherEquipment.body.errors.map((error: { code: string }) => error.code),
+    ).toEqual(["PAIR", "PAIR"]);
+
+    const done = await postDowntime(
+      createBody("writeClosed", {
+        endedAt: "2026-09-08T00:00:00Z",
+        breakdownId: Number(breakdowns.doneWrite),
+      }),
+    ).expect(422);
+    expect(done.body.errors[0]).toMatchObject({
+      field: "breakdownId",
+      code: "STATE_LOCKED",
+    });
+
+    const linked = await postDowntime(
+      createBody("writeClosed", {
+        endedAt: "2026-09-08T00:00:00Z",
+        breakdownId: Number(breakdowns.receivedWrite),
+      }),
+    ).expect(201);
+    expect(linked.body.breakdownId).toBe(Number(breakdowns.receivedWrite));
+  });
+
+  it("D23 같은 키·주체는 재생하고 다른 본문·계정·사번은 409다", async () => {
+    const key = randomUUID();
+    const body = createBody("writeIdempotent");
+    const first = await postDowntime(body, { key }).expect(201);
+    let replay: request.Response;
+    try {
+      await prisma.code_value.update({
+        where: {
+          code_group_id_code: {
+            code_group_id: reasonGroupId,
+            code: ACTIVE_REASON,
+          },
+        },
+        data: { is_active: false },
+      });
+      replay = await postDowntime(body, { key }).expect(201);
+    } finally {
+      await prisma.code_value.update({
+        where: {
+          code_group_id_code: {
+            code_group_id: reasonGroupId,
+            code: ACTIVE_REASON,
+          },
+        },
+        data: { is_active: true },
+      });
+    }
+    expect(replay.body).toEqual(first.body);
+    expect(
+      await prisma.equipment_downtime.count({
+        where: { equipment_id: equipment.writeIdempotent },
+      }),
+    ).toBe(1);
+
+    for (const options of [
+      { key, workerNo: OTHER_WORKER_NO },
+      { key, authCookie: otherCookie },
+    ]) {
+      const conflict = await postDowntime(body, options).expect(409);
+      expect(conflict.body).toMatchObject({ conflictCause: "user" });
+    }
+    const changed = await postDowntime(
+      { ...body, remarks: "다른 본문" },
+      { key },
+    ).expect(409);
+    expect(changed.body).toMatchObject({ conflictCause: "user" });
+  });
+
+  it("D24 멱등 완료 저장 실패는 비가동과 기록을 함께 롤백하고 재시도한다", async () => {
+    const key = randomUUID();
+    const body = createBody("writeRollback");
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, "$transaction")
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const completionSpy = jest
+            .spyOn(tx.idempotency_record, "update")
+            .mockRejectedValueOnce(new Error("I32_COMPLETION_FAILURE"));
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            completionSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      const failed = await postDowntime(body, { key }).expect(500);
+      expect(failed.text).not.toContain("I32_COMPLETION_FAILURE");
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.equipment_downtime.count({
+        where: { equipment_id: equipment.writeRollback },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+    await postDowntime(body, { key }).expect(201);
+    expect(
+      await prisma.equipment_downtime.count({
+        where: { equipment_id: equipment.writeRollback },
+      }),
+    ).toBe(1);
+  });
+
+  it("D30 생성은 고장·작업·보전·원장·알림 표를 쓰지 않는다", async () => {
+    const before = await relatedCounts();
+    await postDowntime(
+      createBody("writeClosed", { endedAt: "2026-09-08T00:00:00Z" }),
+    ).expect(201);
+    expect(await relatedCounts()).toEqual(before);
+  });
+
+  it("D31 무권한은 403, 세션 없음은 401이고 멱등 헤더 형식도 공용 가드가 막는다", async () => {
+    const body = createBody("writeClosed", {
+      endedAt: "2026-09-08T00:00:00Z",
+    });
+    const forbidden = await postDowntime(body, {
+      authCookie: noPermissionCookie,
+    }).expect(403);
+    expect(forbidden.body.errors[0]).toMatchObject({
+      code: "PERMISSION_DENIED",
+    });
+    await postDowntime(body, { authCookie: null }).expect(401);
+    for (const key of [null, "not-a-uuid"]) {
+      await postDowntime(body, { key }).expect(400);
+    }
+  });
+
   async function list(query: Record<string, unknown>): Promise<DowntimeList> {
     const response = await request(app.getHttpServer())
       .get(PATH)
@@ -277,6 +677,69 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
       .get(`${PATH}/${id}`)
       .set("Cookie", cookie)
       .expect(200);
+  }
+
+  interface PostOptions {
+    authCookie?: string[] | null;
+    key?: string | null;
+    workerNo?: string | null;
+  }
+
+  function postDowntime(
+    body: DowntimeCreate,
+    options: PostOptions = {},
+  ): request.Test {
+    const call = request(app.getHttpServer()).post(PATH).send(body);
+    const authCookie =
+      options.authCookie === undefined ? cookie : options.authCookie;
+    const key = options.key === undefined ? randomUUID() : options.key;
+    const workerNo =
+      options.workerNo === undefined ? WORKER_NO : options.workerNo;
+    if (authCookie !== null) call.set("Cookie", authCookie);
+    if (key !== null) call.set("Idempotency-Key", key);
+    if (workerNo !== null) call.set("X-Worker-No", workerNo);
+    return call;
+  }
+
+  function createBody(
+    equipmentName: string,
+    change: Partial<DowntimeCreate> = {},
+  ): DowntimeCreate {
+    return {
+      equipmentId: Number(equipment[equipmentName]),
+      reasonCode: ACTIVE_REASON,
+      startedAt: "2026-09-08T00:00:00Z",
+      ...change,
+    };
+  }
+
+  async function relatedCounts(): Promise<Record<string, number>> {
+    const [
+      breakdown,
+      workSession,
+      workOrder,
+      maintenanceOrder,
+      maintenanceResult,
+      inventory,
+      notification,
+    ] = await Promise.all([
+      prisma.breakdown.count(),
+      prisma.work_session.count(),
+      prisma.work_order.count(),
+      prisma.maintenance_order.count(),
+      prisma.maintenance_result.count(),
+      prisma.inventory_transaction.count(),
+      prisma.notification.count(),
+    ]);
+    return {
+      breakdown,
+      workSession,
+      workOrder,
+      maintenanceOrder,
+      maintenanceResult,
+      inventory,
+      notification,
+    };
   }
 
   async function fixtures(): Promise<void> {
@@ -323,6 +786,7 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
         legal_entity_id: legal.legal_entity_id,
       },
     });
+    businessUnitId = business.business_unit_id;
     for (const [name, timezone] of [
       ["hanoi", "Asia/Ho_Chi_Minh"],
       ["seoul", "Asia/Seoul"],
@@ -337,8 +801,22 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
           timezone_code: timezone,
         },
       });
+      if (name === "hanoi") hanoiPlantId = plant.plant_id;
       for (const equipmentName of name === "hanoi"
-        ? ["hanoi", "main", "overlap", "cross"]
+        ? [
+            "hanoi",
+            "main",
+            "overlap",
+            "cross",
+            "writeOpen",
+            "writeClosed",
+            "writeConcurrent",
+            "writeParallelA",
+            "writeParallelB",
+            "writeWorker",
+            "writeIdempotent",
+            "writeRollback",
+          ]
         : [name]) {
         equipment[equipmentName] = (
           await prisma.equipment.create({
@@ -363,6 +841,29 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
       },
     });
     downtimes.breakdown = breakdown.breakdown_id;
+    breakdowns.main = breakdown.breakdown_id;
+    breakdowns.receivedWrite = (
+      await prisma.breakdown.create({
+        data: {
+          breakdown_no: `${PREFIX}-BREAKDOWN-WRITE`,
+          equipment_id: equipment.writeClosed,
+          reported_at: new Date("2026-09-01T00:00:00Z"),
+          status_code: "RECEIVED",
+          description: "연결 가능 고장",
+        },
+      })
+    ).breakdown_id;
+    breakdowns.doneWrite = (
+      await prisma.breakdown.create({
+        data: {
+          breakdown_no: `${PREFIX}-BREAKDOWN-DONE`,
+          equipment_id: equipment.writeClosed,
+          reported_at: new Date("2026-09-01T00:00:00Z"),
+          status_code: "DONE",
+          description: "완료 고장",
+        },
+      })
+    ).breakdown_id;
 
     await add(
       "hanoiBefore",
@@ -481,7 +982,10 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
       where: { equipment: { equipment_code: { startsWith: `${PREFIX}-` } } },
     });
     await client.breakdown.deleteMany({
-      where: { breakdown_no: `${PREFIX}-BREAKDOWN` },
+      where: { breakdown_no: { startsWith: `${PREFIX}-BREAKDOWN` } },
+    });
+    await client.worker.deleteMany({
+      where: { worker_no: { in: [WORKER_NO, OTHER_WORKER_NO] } },
     });
     await client.equipment.deleteMany({
       where: { equipment_code: { startsWith: `${PREFIX}-` } },
@@ -495,18 +999,31 @@ describe("설비 비가동 조회 I-32 P1b (e2e)", () => {
     await client.legal_entity.deleteMany({
       where: { legal_entity_code: PREFIX },
     });
-    const user = await client.app_user.findUnique({
-      where: { login_id: LOGIN_ID },
+    await client.user_role.deleteMany({
+      where: { role: { role_code: ROLE } },
     });
-    if (user) {
+    await client.role_permission.deleteMany({
+      where: { role: { role_code: ROLE } },
+    });
+    await client.role.deleteMany({ where: { role_code: ROLE } });
+    const users = await client.app_user.findMany({
+      where: {
+        login_id: {
+          in: [LOGIN_ID, OTHER_LOGIN_ID, NO_PERMISSION_LOGIN_ID],
+        },
+      },
+      select: { app_user_id: true },
+    });
+    const userIds = users.map((user) => user.app_user_id);
+    if (userIds.length) {
       await client.idempotency_record.deleteMany({
-        where: { app_user_id: user.app_user_id },
+        where: { app_user_id: { in: userIds } },
       });
       await client.user_credential.deleteMany({
-        where: { app_user_id: user.app_user_id },
+        where: { app_user_id: { in: userIds } },
       });
-      await client.app_user.delete({
-        where: { app_user_id: user.app_user_id },
+      await client.app_user.deleteMany({
+        where: { app_user_id: { in: userIds } },
       });
     }
     await client.code_value.deleteMany({
