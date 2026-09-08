@@ -18,6 +18,7 @@ import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import {
+  BreakdownComplete,
   BreakdownHandlingService,
   BreakdownHandlingUpdate,
 } from './breakdown-handling.service';
@@ -97,6 +98,22 @@ export class BreakdownController {
     const context = breakdownManagementContext(request);
     const outcome = await this.idempotency.run(context, (tx) =>
       this.handling.startWithin(tx, breakdownId, version, context),
+    );
+    return outcome.body;
+  }
+
+  @Post(':breakdownId\\:complete')
+  @Contract('POST /maintenance/breakdowns/{breakdownId}:complete')
+  @HttpCode(HttpStatus.OK)
+  async complete(
+    @Req() request: Request,
+    @Param('breakdownId', ParseIntPipe) breakdownId: number,
+    @Body() body: BreakdownComplete,
+  ): Promise<BreakdownView> {
+    const version = requiredVersion(request);
+    const context = breakdownManagementContext(request);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.handling.completeWithin(tx, breakdownId, version, body, context),
     );
     return outcome.body;
   }

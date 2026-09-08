@@ -10,6 +10,7 @@ export interface LockedBreakdown {
   breakdown_id: bigint;
   status_code: string;
   version_no: number;
+  started_epoch_us: string | null;
 }
 
 export async function lockBreakdownForUpdate(
@@ -17,7 +18,9 @@ export async function lockBreakdownForUpdate(
   breakdownId: number,
 ): Promise<LockedBreakdown> {
   const rows = await tx.$queryRaw<LockedBreakdown[]>`
-    SELECT breakdown_id,status_code,version_no
+    SELECT breakdown_id,status_code,version_no,
+      CASE WHEN started_at IS NULL THEN NULL ELSE
+        ((extract(epoch FROM started_at)*1000000)::bigint)::text END AS started_epoch_us
     FROM maintenance.breakdown
     WHERE breakdown_id=${BigInt(breakdownId)}
     FOR UPDATE`;

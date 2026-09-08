@@ -25,6 +25,8 @@ const PASSWORD = 'I30-고장-조회-비밀번호';
 const WORKER_NO = `${PREFIX}-WORKER`;
 const OTHER_WORKER_NO = `${PREFIX}-OTHER-WORKER`;
 const QUALITY_CAUSE = `${PREFIX}-QUALITY-CAUSE`;
+const BREAKDOWN_CAUSE_GROUP = 'EQUIPMENT_BREAKDOWN_CAUSE';
+const BREAKDOWN_CAUSE = `${PREFIX}-CAUSE`;
 const PATH = '/api/maintenance/breakdowns';
 const PERIOD = { reportedFrom: '2026-09-01', reportedTo: '2026-09-01' };
 
@@ -49,7 +51,7 @@ function validator(
   });
 }
 
-describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
+describe('설비 고장 I-30 ③·⑥~⑧ (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -80,6 +82,11 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
   );
   const startValidator = validator(
     '/maintenance/breakdowns/{breakdownId}:start-handling',
+    'post',
+    '200',
+  );
+  const completeValidator = validator(
+    '/maintenance/breakdowns/{breakdownId}:complete',
     'post',
     '200',
   );
@@ -777,35 +784,49 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
     expect(stored.handled_at).not.toBeNull();
   });
 
-  it('E-B19 품질 원인과 기존 동일 원인도 비null이면 INVALID이고 보존한다', async () => {
-    for (const [suffix, existing] of [
-      ['new-quality-cause', null],
-      ['same-quality-cause', QUALITY_CAUSE],
-    ] as const) {
-      const id = await breakdown(
-        suffix,
-        '2026-09-02T02:00:00Z',
-        'RECEIVED',
-        ids.equipment,
-        { cause_code: existing, handling_note: '보존 메모' },
-      );
-      const rejected = await putBreakdown(id, 1, {
-        causeCode: QUALITY_CAUSE,
-      }).expect(400);
-      expect(rejected.body.errors[0]).toMatchObject({
-        field: 'causeCode',
-        code: 'INVALID',
-      });
-      const stored = await prisma.breakdown.findUniqueOrThrow({
-        where: { breakdown_id: id },
-      });
-      expect(stored).toMatchObject({
-        cause_code: existing,
-        handling_note: '보존 메모',
-        handled_by: null,
-        version_no: 1,
-      });
-    }
+  it('E-B19 품질 원인은 INVALID이고 설비 고장 원인은 PUT으로 저장한다', async () => {
+    const rejectedId = await breakdown(
+      'new-quality-cause',
+      '2026-09-02T02:00:00Z',
+      'RECEIVED',
+      ids.equipment,
+      { handling_note: '보존 메모' },
+    );
+    const rejected = await putBreakdown(rejectedId, 1, {
+      causeCode: QUALITY_CAUSE,
+    }).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'causeCode',
+      code: 'INVALID',
+    });
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: rejectedId },
+      }),
+    ).toMatchObject({
+      cause_code: null,
+      handling_note: '보존 메모',
+      handled_by: null,
+      version_no: 1,
+    });
+
+    const acceptedId = await breakdown(
+      'same-breakdown-cause',
+      '2026-09-02T02:30:00Z',
+      'RECEIVED',
+      ids.equipment,
+      { cause_code: BREAKDOWN_CAUSE },
+    );
+    const accepted = await putBreakdown(acceptedId, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+    }).expect(200);
+    expect(updateValidator(accepted.body)).toBe(true);
+    expect(accepted.body.handling.causeCode).toBe(BREAKDOWN_CAUSE);
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: acceptedId },
+      }),
+    ).toMatchObject({ cause_code: BREAKDOWN_CAUSE, version_no: 2 });
   });
 
   it('E-B20 PUT→GET→start→GET은 현장 원문과 열린 비가동 경고를 보존한다', async () => {
@@ -1015,6 +1036,390 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
     ).toMatchObject({ status_code: 'RECEIVED', version_no: 1 });
   });
 
+  it('E-C01 RECEIVED에서 DONE으로 직행하고 started_at은 null로 둔다', async () => {
+    const id = await breakdown('complete-direct', '2026-09-03T00:00:00Z');
+    const response = await completeBreakdown(id, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '경미한 누유 조치',
+    }).expect(200);
+    expect(completeValidator(response.body)).toBe(true);
+    expect(response.body).toMatchObject({
+      statusCode: 'DONE',
+      handling: {
+        causeCode: BREAKDOWN_CAUSE,
+        handlingNote: '경미한 누유 조치',
+        handledByUserId: Number(actorUserId),
+      },
+    });
+    const stored = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: id },
+    });
+    expect(stored).toMatchObject({
+      status_code: 'DONE',
+      started_at: null,
+      cause_code: BREAKDOWN_CAUSE,
+      handling_note: '경미한 누유 조치',
+      handled_by: actorUserId,
+      version_no: 2,
+    });
+    expect(stored.completed_at).not.toBeNull();
+    expect(stored.handled_at).toEqual(stored.completed_at);
+  });
+
+  it('E-C02 HANDLING에서 DONE으로 가며 처리 시작 시각을 보존한다', async () => {
+    const id = await breakdown('complete-handling', '2026-09-03T01:00:00Z');
+    await startBreakdown(id, 1).expect(200);
+    const started = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: id },
+    });
+    const response = await completeBreakdown(id, 2, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '씰 교체 완료',
+    }).expect(200);
+    expect(completeValidator(response.body)).toBe(true);
+    const completed = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: id },
+    });
+    expect(completed.status_code).toBe('DONE');
+    expect(completed.started_at).toEqual(started.started_at);
+    expect(completed.completed_at).not.toBeNull();
+    if (completed.completed_at === null || completed.started_at === null) {
+      throw new Error('완료·처리 시작 시각이 저장되지 않았습니다.');
+    }
+    expect(completed.completed_at.getTime()).toBeGreaterThanOrEqual(
+      completed.started_at.getTime(),
+    );
+    expect(completed.version_no).toBe(3);
+  });
+
+  it('E-C03 완료 뒤 complete·PUT·start 재전이는 STATE_LOCKED다', async () => {
+    const id = await breakdown('complete-locked', '2026-09-03T02:00:00Z');
+    await completeBreakdown(id, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '완료',
+    }).expect(200);
+    for (const response of [
+      await completeBreakdown(id, 2, {
+        causeCode: BREAKDOWN_CAUSE,
+        handlingNote: '재완료',
+      }),
+      await putBreakdown(id, 2, { handlingNote: '재수정' }),
+      await startBreakdown(id, 2),
+    ]) {
+      expect(response.status).toBe(400);
+      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    }
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({ where: { breakdown_id: id } }),
+    ).toMatchObject({ status_code: 'DONE', version_no: 2 });
+  });
+
+  it('E-C04 활성 설비 고장 원인만 허용하고 품질·비활성 원인을 섞지 않는다', async () => {
+    const qualityId = await breakdown(
+      'complete-quality-cause',
+      '2026-09-03T03:00:00Z',
+    );
+    const quality = await completeBreakdown(qualityId, 1, {
+      causeCode: QUALITY_CAUSE,
+      handlingNote: '품질 원인은 금지',
+    }).expect(400);
+    expect(quality.body.errors[0]).toMatchObject({
+      field: 'causeCode',
+      code: 'INVALID',
+    });
+
+    const cause = await prisma.code_value.findFirstOrThrow({
+      where: {
+        code: BREAKDOWN_CAUSE,
+        code_group: { group_code: BREAKDOWN_CAUSE_GROUP },
+      },
+    });
+    await prisma.code_value.update({
+      where: { code_value_id: cause.code_value_id },
+      data: { is_active: false },
+    });
+    try {
+      const inactiveId = await breakdown(
+        'complete-inactive-cause',
+        '2026-09-03T03:30:00Z',
+      );
+      const inactive = await completeBreakdown(inactiveId, 1, {
+        causeCode: BREAKDOWN_CAUSE,
+        handlingNote: '비활성 원인은 금지',
+      }).expect(400);
+      expect(inactive.body.errors[0]).toMatchObject({
+        field: 'causeCode',
+        code: 'INVALID',
+      });
+    } finally {
+      await prisma.code_value.update({
+        where: { code_value_id: cause.code_value_id },
+        data: { is_active: true },
+      });
+    }
+
+    const group = await prisma.code_group.findUniqueOrThrow({
+      where: { group_code: BREAKDOWN_CAUSE_GROUP },
+    });
+    await prisma.code_group.update({
+      where: { code_group_id: group.code_group_id },
+      data: { is_active: false },
+    });
+    try {
+      const inactiveGroupId = await breakdown(
+        'complete-inactive-cause-group',
+        '2026-09-03T03:45:00Z',
+      );
+      const inactiveGroup = await completeBreakdown(inactiveGroupId, 1, {
+        causeCode: BREAKDOWN_CAUSE,
+        handlingNote: '비활성 그룹은 금지',
+      }).expect(400);
+      expect(inactiveGroup.body.errors[0]).toMatchObject({
+        field: 'causeCode',
+        code: 'INVALID',
+      });
+    } finally {
+      await prisma.code_group.update({
+        where: { code_group_id: group.code_group_id },
+        data: { is_active: true },
+      });
+    }
+  });
+
+  it('E-C05 동일키 완료는 재생하고 다른 키 경합은 한 요청만 성공한다', async () => {
+    const replayId = await breakdown('complete-replay', '2026-09-03T04:00:00Z');
+    const body = {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '멱등 완료',
+    };
+    const key = randomUUID();
+    const first = await completeBreakdown(replayId, 1, body, { key }).expect(
+      200,
+    );
+    const replay = await completeBreakdown(replayId, 1, body, { key }).expect(
+      200,
+    );
+    expect(replay.body).toEqual(first.body);
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: replayId },
+      }),
+    ).toMatchObject({ status_code: 'DONE', version_no: 2 });
+
+    const concurrentId = await breakdown(
+      'complete-concurrent',
+      '2026-09-03T04:30:00Z',
+    );
+    const responses = await Promise.all([
+      completeBreakdown(concurrentId, 1, body),
+      completeBreakdown(concurrentId, 1, body),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: concurrentId },
+      }),
+    ).toMatchObject({ status_code: 'DONE', version_no: 2 });
+  });
+
+  it('E-C06 멱등 완료 기록 실패는 완료값·감사·version을 함께 롤백한다', async () => {
+    const id = await breakdown('complete-rollback', '2026-09-03T05:00:00Z');
+    const key = randomUUID();
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, '$transaction')
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const completionSpy = jest
+            .spyOn(tx.idempotency_record, 'update')
+            .mockRejectedValueOnce(new Error('I30_COMPLETE_RECORD_FAILURE'));
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            completionSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      const failed = await completeBreakdown(
+        id,
+        1,
+        { causeCode: BREAKDOWN_CAUSE, handlingNote: '롤백 대상' },
+        { key },
+      ).expect(500);
+      expect(failed.text).not.toContain('I30_COMPLETE_RECORD_FAILURE');
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({ where: { breakdown_id: id } }),
+    ).toMatchObject({
+      status_code: 'RECEIVED',
+      completed_at: null,
+      cause_code: null,
+      handling_note: null,
+      handled_by: null,
+      handled_at: null,
+      version_no: 1,
+    });
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+  });
+
+  it('E-C07 완료는 연결 지시·열린 비가동·알림·재고를 바꾸지 않는다', async () => {
+    const id = await breakdown(
+      'complete-no-side-effect',
+      '2026-09-03T06:00:00Z',
+    );
+    const orderId = await order('complete-no-side-effect', id, true, null);
+    const downtime = await prisma.equipment_downtime.create({
+      data: {
+        equipment_id: ids.equipment,
+        breakdown_id: id,
+        downtime_type_code: 'BREAKDOWN',
+        started_at: new Date('2026-09-03T06:00:00Z'),
+      },
+    });
+    const before = {
+      order: await prisma.maintenance_order.findUniqueOrThrow({
+        where: { maintenance_order_id: orderId },
+      }),
+      downtime: await prisma.equipment_downtime.findUniqueOrThrow({
+        where: { equipment_downtime_id: downtime.equipment_downtime_id },
+      }),
+      notifications: await notificationCounts(),
+      inventory: await prisma.inventory_transaction.count(),
+      sessions: await prisma.work_session.count(),
+    };
+    await completeBreakdown(id, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '부가 효과 없이 완료',
+    }).expect(200);
+    expect(
+      await prisma.maintenance_order.findUniqueOrThrow({
+        where: { maintenance_order_id: orderId },
+      }),
+    ).toEqual(before.order);
+    expect(
+      await prisma.equipment_downtime.findUniqueOrThrow({
+        where: { equipment_downtime_id: downtime.equipment_downtime_id },
+      }),
+    ).toEqual(before.downtime);
+    expect(await notificationCounts()).toEqual(before.notifications);
+    expect(await prisma.inventory_transaction.count()).toBe(before.inventory);
+    expect(await prisma.work_session.count()).toBe(before.sessions);
+  });
+
+  it('E-C08 지시·severity 없이도 완료하고 미래 처리시작 행은 RANGE로 거절한다', async () => {
+    const direct = await breakdown(
+      'complete-no-order',
+      '2026-09-03T07:00:00Z',
+      'RECEIVED',
+      ids.equipment,
+      { severity_code: null },
+    );
+    await completeBreakdown(direct, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '지시 없이 완료',
+    }).expect(200);
+
+    const future = await breakdown(
+      'complete-future-start',
+      '2026-09-03T07:30:00Z',
+      'HANDLING',
+      ids.equipment,
+      { started_at: new Date('2999-01-01T00:00:00Z') },
+    );
+    const rejected = await completeBreakdown(future, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '미래 시작 행',
+    }).expect(422);
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'startedAt',
+      code: 'RANGE',
+    });
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: future },
+      }),
+    ).toMatchObject({
+      status_code: 'HANDLING',
+      completed_at: null,
+      version_no: 1,
+    });
+  });
+
+  it('E-C09 완료 응답은 새 처리값을 내리고 버전 ETag는 상세 GET에서 읽는다', async () => {
+    const id = await breakdown('complete-response', '2026-09-03T08:00:00Z');
+    const completed = await completeBreakdown(id, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '응답 확인',
+    }).expect(200);
+    expect(completeValidator(completed.body)).toBe(true);
+    expect(completed.body.versionNo).toBeUndefined();
+    expect(completed.body.handling).toMatchObject({
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '응답 확인',
+      handledByUserId: Number(actorUserId),
+    });
+    const detail = await detailState(id);
+    expect(detail.version).toBe(2);
+    expect(detail.body.statusCode).toBe('DONE');
+    expect(detail.body.handling).toEqual(completed.body.handling);
+  });
+
+  it('E-C10 관리웹 완료는 사번 없이 성공하고 권한·필수본문을 검증한다', async () => {
+    const denied = await breakdown(
+      'complete-permission-denied',
+      '2026-09-03T09:00:00Z',
+    );
+    await completeBreakdown(
+      denied,
+      1,
+      { causeCode: BREAKDOWN_CAUSE, handlingNote: '권한 없음' },
+      { authCookie: noPermissionCookie },
+    ).expect(403);
+    expect(
+      await prisma.breakdown.findUniqueOrThrow({
+        where: { breakdown_id: denied },
+      }),
+    ).toMatchObject({ status_code: 'RECEIVED', version_no: 1 });
+
+    const noWorker = await breakdown(
+      'complete-no-worker',
+      '2026-09-03T09:30:00Z',
+    );
+    await completeBreakdown(noWorker, 1, {
+      causeCode: BREAKDOWN_CAUSE,
+      handlingNote: '관리웹 완료',
+    }).expect(200);
+
+    const missing = await breakdown(
+      'complete-required',
+      '2026-09-03T10:00:00Z',
+    );
+    await completeBreakdown(missing, 1, { handlingNote: '원인 누락' }).expect(
+      400,
+    );
+    const blank = await completeBreakdown(missing, 1, {
+      causeCode: ' ',
+      handlingNote: ' ',
+    }).expect(400);
+    expect(blank.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'causeCode', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'handlingNote', code: 'REQUIRED' }),
+      ]),
+    );
+  });
+
   function createBody(
     overrides: Record<string, unknown> = {},
   ): Record<string, unknown> {
@@ -1070,6 +1475,20 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
       .set('Cookie', options.authCookie ?? cookie)
       .set('Idempotency-Key', options.key ?? randomUUID())
       .set('If-Match', String(version));
+  }
+
+  function completeBreakdown(
+    breakdownId: bigint | number,
+    version: number,
+    body: Record<string, unknown>,
+    options: { key?: string; authCookie?: string[] } = {},
+  ) {
+    return request(app.getHttpServer())
+      .post(`${PATH}/${breakdownId}:complete`)
+      .set('Cookie', options.authCookie ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID())
+      .set('If-Match', String(version))
+      .send(body);
   }
 
   async function detailState(breakdownId: bigint): Promise<{
@@ -1185,6 +1604,22 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
   }
 
   async function fixtures(): Promise<void> {
+    const breakdownCauseGroup = await prisma.code_group.upsert({
+      where: { group_code: BREAKDOWN_CAUSE_GROUP },
+      create: {
+        group_code: BREAKDOWN_CAUSE_GROUP,
+        group_name: '설비 고장 원인',
+        description: PREFIX,
+      },
+      update: {},
+    });
+    await prisma.code_value.create({
+      data: {
+        code_group_id: breakdownCauseGroup.code_group_id,
+        code: BREAKDOWN_CAUSE,
+        code_name: '유압 계통 누유',
+      },
+    });
     await prisma.cause_code.create({
       data: { cause_code: QUALITY_CAUSE, cause_name: '품질 원인 대조용' },
     });
@@ -1485,6 +1920,27 @@ describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
     await prisma.cause_code.deleteMany({
       where: { cause_code: QUALITY_CAUSE },
     });
+    const breakdownCauseGroup = await prisma.code_group.findUnique({
+      where: { group_code: BREAKDOWN_CAUSE_GROUP },
+    });
+    if (breakdownCauseGroup !== null) {
+      await prisma.code_value.deleteMany({
+        where: {
+          code_group_id: breakdownCauseGroup.code_group_id,
+          code: BREAKDOWN_CAUSE,
+        },
+      });
+      if (
+        breakdownCauseGroup.description === PREFIX &&
+        (await prisma.code_value.count({
+          where: { code_group_id: breakdownCauseGroup.code_group_id },
+        })) === 0
+      ) {
+        await prisma.code_group.delete({
+          where: { code_group_id: breakdownCauseGroup.code_group_id },
+        });
+      }
+    }
     const numberingRules = await prisma.numbering_rule.findMany({
       where: {
         document_type_code: 'BREAKDOWN',
