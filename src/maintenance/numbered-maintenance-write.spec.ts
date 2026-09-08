@@ -111,13 +111,85 @@ describe("numbered maintenance write", () => {
     ]);
     expect(setup.numbering.next).toHaveBeenCalledTimes(4);
   });
+
+  it("업무 경로 변경은 새 번호 없이 같은 준비 번호로 재시도한다", async () => {
+    const pathChanged = new Error("path changed");
+    const setup = fake({ retryError: pathChanged, workErrors: [pathChanged] });
+
+    await expect(setup.run()).resolves.toBe("created");
+    expect(setup.numbering.next).toHaveBeenCalledTimes(1);
+    expect(setup.idempotency.run).toHaveBeenCalledTimes(2);
+    expect(setup.work).toHaveBeenNthCalledWith(1, expect.anything(), "EQI-1");
+    expect(setup.work).toHaveBeenNthCalledWith(2, expect.anything(), "EQI-1");
+  });
+
+  it("업무 경로 변경 네 번째에는 지정한 409 user 오류를 반환한다", async () => {
+    const pathChanged = new Error("path changed");
+    const setup = fake({
+      retryError: pathChanged,
+      workErrors: [pathChanged, pathChanged, pathChanged, pathChanged],
+    });
+
+    const error = await rejected(setup.run());
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getStatus()).toBe(409);
+    expect((error as ConflictException).conflict.conflictCause).toBe("user");
+    expect(setup.numbering.next).toHaveBeenCalledTimes(1);
+    expect(setup.work).toHaveBeenCalledTimes(4);
+  });
+
+  it("업무 재시도에서 기존 성공을 찾으면 즉시 재생하고 다시 쓰지 않는다", async () => {
+    const pathChanged = new Error("path changed");
+    const setup = fake({
+      retryError: pathChanged,
+      workErrors: [pathChanged],
+      replayBody: "first",
+      replayAtRun: 2,
+    });
+
+    await expect(setup.run()).resolves.toBe("first");
+    expect(setup.numbering.next).toHaveBeenCalledTimes(1);
+    expect(setup.idempotency.run).toHaveBeenCalledTimes(2);
+    expect(setup.work).toHaveBeenCalledTimes(1);
+  });
+
+  it("번호와 업무 재시도 횟수는 서로 초기화하지 않는다", async () => {
+    const pathChanged = new Error("path changed");
+    const duplicate = prismaError("P2002", ["inspection_no"]);
+    const setup = fake({
+      retryError: pathChanged,
+      workErrors: [
+        pathChanged,
+        pathChanged,
+        pathChanged,
+        duplicate,
+        duplicate,
+        duplicate,
+      ],
+    });
+
+    await expect(setup.run()).resolves.toBe("created");
+    expect(setup.idempotency.run).toHaveBeenCalledTimes(7);
+    expect(setup.numbering.next).toHaveBeenCalledTimes(4);
+  });
+
+  it("일반 업무 오류는 선택적 재시도 정책으로 삼키지 않는다", async () => {
+    const pathChanged = new Error("path changed");
+    const failure = new Error("write failed");
+    const setup = fake({ retryError: pathChanged, workErrors: [failure] });
+
+    await expect(setup.run()).rejects.toBe(failure);
+    expect(setup.idempotency.run).toHaveBeenCalledTimes(1);
+  });
 });
 
 interface FakeOptions {
   events?: string[];
   recordCount?: number;
   replayBody?: string;
+  replayAtRun?: number;
   transactionPlantId?: bigint;
+  retryError?: unknown;
   workErrors?: unknown[];
 }
 
@@ -169,7 +241,11 @@ function fake(options: FakeOptions = {}) {
       ) => {
         events.push("idempotency");
         runCount += 1;
-        if (options.replayBody !== undefined) {
+        if (
+          options.replayBody !== undefined &&
+          (options.replayAtRun === undefined ||
+            options.replayAtRun === runCount)
+        ) {
           return { replayed: true, status: 201, body: options.replayBody };
         }
         return { replayed: false, status: 201, body: await callback(tx) };
@@ -201,6 +277,18 @@ function fake(options: FakeOptions = {}) {
         periodDate: () => "2026-09-08",
         numberField: "inspectionNo",
         numberColumn: "inspection_no",
+        workRetry:
+          options.retryError === undefined
+            ? undefined
+            : {
+                maxRetries: 3,
+                matches: (error) => error === options.retryError,
+                exhausted: () =>
+                  new ConflictException(
+                    "user",
+                    "대상 부여 경로가 계속 바뀌었습니다. 다시 시도해 주세요.",
+                  ),
+              },
         work,
       }),
     runMold: () =>
