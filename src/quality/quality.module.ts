@@ -28,6 +28,7 @@ import { InspectionSummaryController } from './inspection/inspection-summary.con
 import { InspectionSummaryService } from './inspection/inspection-summary.service';
 import { LotHoldController } from './lot-hold/lot-hold.controller';
 import { LotHoldQueryService } from './lot-hold/lot-hold-query.service';
+import { LotHoldWriteService } from './lot-hold/lot-hold-write.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
 import { LotStatusTransitionService } from './lot-status/lot-status-transition.service';
 import { LotStatusService } from './lot-status/lot-status.service';
@@ -79,6 +80,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     LotStatusService,
     LotStatusTransitionService,
     LotHoldQueryService,
+    LotHoldWriteService,
   ],
 })
 export class QualityModule {}

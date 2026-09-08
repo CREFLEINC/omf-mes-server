@@ -1,8 +1,11 @@
-import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
+import { IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -16,7 +19,9 @@ import {
   lotHoldEventView,
 } from './lot-hold-event-query';
 import { LotHoldListQuery, LotHoldQueryService } from './lot-hold-query.service';
+import { LotHoldCreate } from './lot-hold-rules';
 import { LotHoldView } from './lot-hold-view';
+import { LotHoldWriteService } from './lot-hold-write.service';
 
 /** `GET /quality/lot-hold-events` 질의 11칸 — `occurredFrom`/`occurredTo` 는 계약 `required:true`(가드가 400 REQUIRED 를 이미 낸다 · 중복 구현 0). */
 export interface LotHoldEventListQuery extends LotHoldEventFilters {
@@ -51,6 +56,8 @@ const DEFAULT_EVENT_SORT: LotHoldEventSort = 'occurredDesc';
 export class LotHoldController {
   constructor(
     private readonly lotHolds: LotHoldQueryService,
+    private readonly writes: LotHoldWriteService,
+    private readonly idempotency: IdempotencyService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -70,6 +77,24 @@ export class LotHoldController {
     const { view, lotVersionNo } = await this.lotHolds.get(lotHoldId);
     setEtag(response, lotVersionNo);
     return view;
+  }
+
+  /**
+   * ⭐ LOT 보류 등록(PR ④ · 심장 A). `lot_hold` INSERT · `lot.status_code` 이동 ·
+   * `lot_status_event` 가 한 트랜잭션이다(B-8) — 갈래와 순서는 서비스가 진다.
+   *
+   * ⛔ `runVersioned` 가 아니라 `runIdempotent` 다 — 이 등록만 헤더 `If-Match` 를 «안 쓴다»
+   *    (계약 `:4091` — 여러 LOT 이라 토큰이 여럿이다). 토큰은 본문 `lots[].versionNo` 로 온다.
+   * ⛔ ETag 를 안 낸다 — 계약이 201 에 선언하지 않았고 응답이 «배열»이라 실을 행이 없다.
+   * ⛔ `X-Worker-No` 를 안 읽는다 — `lot_status_event.changed_by` 가 NOT NULL 이라 계정
+   *    세션이 유일한 원천이다(0단계 선례 `inspection-result.controller.ts`).
+   * 403 게이트는 `derived-permissions.ts:252` 에 이미 있다 — `manual-permissions.ts` 0줄.
+   */
+  @Post('lot-holds')
+  @Contract('POST /quality/lot-holds')
+  create(@Req() request: Request, @Body() body: LotHoldCreate): Promise<LotHoldView[]> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, appUserId));
   }
 
   /**
@@ -105,4 +130,11 @@ function assertHeldPair(query: { heldFrom?: string; heldTo?: string }): void {
   throw new ContractException(HttpStatus.BAD_REQUEST, [
     field('heldTo', ERROR_CODE.PAIR, 'heldFrom·heldTo 는 함께 보내거나 함께 생략합니다.'),
   ]);
+}
+
+/** `lot_status_event.changed_by` 가 NOT NULL 이라 보류 등록에는 계정 세션이 반드시 있어야 한다. */
+function userOf(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return session.userId;
 }
