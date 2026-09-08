@@ -126,7 +126,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | `POST /logistics/shipments/{id}:cancel` | 없음 | 되돌림 | `GOODS_ISSUE` 역트랜잭션 |
 | `POST /logistics/stock-reinstatements` | 반품 보관 위치 | 판매 가능 위치 | `STOCK_TRANSFER` |
 | `POST /logistics/document-progress/{type}/{id}:cancel` | 역방향 | 역방향 | 원 문서와 **같은 값** + `reversal_of_transaction_id` |
-| `POST /inventory/handling-units/{id}:pack` · `PUT .../contents` | — | — | **원장 없음이 유력** — 포장은 차원(`handling_unit_id`)만 바꾼다. §2 절차 대상 |
+| `POST /inventory/handling-units/{id}:pack` · `PUT .../contents` | — | — | **원장 없음 — 확정**(I-16 재수립 R-20). ⛔ ~~포장은 차원(`handling_unit_id`)만 바꾼다~~ 는 **뒷절이 틀렸다** — `uq_inventory_balance_dim` **11칸에 그 칸이 없다**(psql 실측). 잔량 차원 자체가 취급단위를 모르므로 「차원을 바꾼다」가 성립하지 않는다. 결론(원장 미경유)은 같다 |
 | `PUT /inventory/counts/{id}/lines` · `:close` | — | — | **원장 없음** — 실사는 조정을 만들고 조정이 전기한다(결정 49) |
 | `POST /logistics/material-issue-requests` | — | — | **원장 없음**, `inventory_reservation` 만 건다 |
 | `POST /logistics/picking-orders/.../{id}:pick` | — | — | **원장 없음**, `reserved_qty` → `picked_qty` 이동 |
@@ -177,7 +177,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | **⭕ A4** | ⭐ ×2 | ⭕ | **4** |
 | I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | ✕ | ⭐ | ⭕ | 3 |
 | I-15 | 실사 | 6 | I-14 | 있음 | ✕ | ✕(조정이 진다) | ⭕ | 3 |
-| I-16 | 취급 단위·포장·재구성 | 7 | I-12 | 있음(`handling_unit_reconfiguration`) | ✕ | ⚠ 미정 | ⭕ | 3 |
+| I-16 | 취급 단위·포장·재구성 | 7 | I-12 | **신설 2**(`handling_unit_repack_event(+_line)`) | **⭕ N-2** | **✕ 확정**(원장 미경유) | ⭕ | **4** |
 | I-17 | 재생재 등록 | 1 | I-3 | 있음(`recycle_entry`) | ⚠ `item.mes_category_code` 없음(#64) | ⭐ | ✕ | 1 |
 | I-18 | LOT 부가·상태 이력·IQC 생략 | 5 | I-1 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-19 | 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | 있음 | ⚠ `#280` 검사 의뢰 기준 완화 | ✕ | ⭐ 품질 축 | 4 |
@@ -345,7 +345,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-16 · 취급 단위 — 등록·구성·포장확정·재구성 이력 — 7건
 
 **체인 마디**: 포장 단위 — I-22 의 `shipment_lot_allocation` 에 연결된다(`PUT /logistics/shipment-lot-allocations/{id}`).
-**원장**: ⚠ 미정. 포장은 «어디 있나»를 바꾸지 않고 `handling_unit_id` 차원만 붙인다. `inventory_transaction_line.handling_unit_id` 칸은 있다. → 2단계 기준 1「재고를 안 쓰는 쪽」 → **원장을 만들지 않는다**. 재구성 이력은 `handling_unit_reconfiguration`(+`_line`)에 적는다 — 표가 이미 있다(계약이 「데이터 모델 담당에게 통지」라 적었지만 **실측으로 이미 서 있다** — 되돌림에 적는다).
+**원장**: ⚠ 미정. 포장은 «어디 있나»를 바꾸지 않고 `handling_unit_id` 차원만 붙인다. `inventory_transaction_line.handling_unit_id` 칸은 있다. → 2단계 기준 1「재고를 안 쓰는 쪽」 → **원장을 만들지 않는다**. ⛔ ~~재구성 이력은 `handling_unit_reconfiguration`(+`_line`)에 적는다 — 표가 이미 있다~~ — **이름만 보고 칸을 안 본 판정이었다**(I-16 재수립 R-1). 그 표는 라인 필수 6칸 중 **4칸이 없고**(`handling_unit_id`·`role_code`·`qty_before`·`qty_after`), 헤더 NOT NULL 3칸이 계약에 원천 0 이며, 결정타로 **`ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약의 대표 경로(한 HU 의 `PUT …/contents`)를 구조적으로 막는다.** 재사용하려면 FK 있는 NOT NULL 칸(`uom_id`)을 지어내고 `moved_qty > 0` 도 풀어야 한다 ⇒ **표 2 신설(N-2)**. 계약이 「데이터 모델 담당에게 통지 — 기다리지 않는다」라 적은 것이 **아직 유효하다**(문의 140).
 
 
 ##### I-17 · 재생재 등록 — 1건
