@@ -426,18 +426,20 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     expect(defective.map((t) => t.actionCode).sort()).toEqual(['CREATE_HOLD', 'RELEASE_HOLD']);
   });
 
-  it('전이 — NORMAL LOT(L1) — C9·C10 만 allowed=true 이고 C7·C8 은 blockedReason 이 있다 (↩ from 판정을 빼면 깨진다)', async () => {
+  it('전이 — NORMAL LOT(L1) — C9·C10 만 allowed=true 이고 blockedReason 이 «없다» · C7·C8 은 있고 문장이 정확하다 (↩ from 판정을 빼거나 blockedReason 을 전건에 실으면 깨진다 · Minor-1·Nit-4)', async () => {
     const body = await transitions(lotId.L1);
     const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
     const c10 = transitionOf(body, 'CREATE_HOLD', 'INSPECTION_PENDING');
     const c7 = transitionOf(body, 'RELEASE_HOLD', 'NORMAL');
     const c8 = transitionOf(body, 'RELEASE_HOLD', 'DEFECTIVE');
     expect(c9.allowed).toBe(true);
+    expect(c9).not.toHaveProperty('blockedReason');
     expect(c10.allowed).toBe(true);
+    expect(c10).not.toHaveProperty('blockedReason');
     expect(c7.allowed).toBe(false);
-    expect(c7.blockedReason).toBeTruthy();
+    expect(c7.blockedReason).toBe('지금 상태(정상)에서는 이 전이를 할 수 없습니다.');
     expect(c8.allowed).toBe(false);
-    expect(c8.blockedReason).toBeTruthy();
+    expect(c8.blockedReason).toBe('지금 상태(정상)에서는 이 전이를 할 수 없습니다.');
     expect(body).not.toHaveProperty('note');
   });
 
@@ -465,14 +467,27 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
   it('전이 — impact.openPickingCount 가 «요청» 건수다(1요청 2라인이 1로 센다 · 완료 건은 안 센다) (↩ 라인으로 세거나 상태 조건을 빼면 깨진다)', async () => {
     const body = await transitions(lotId.L8);
     const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
-    // PO1(2 라인 열림)=1요청 · PO2(완료)=0 · PO3(종결)=0 → 1. 라인으로 세면 3, 종결 필터를 빼면 2다.
+    // PO1(2 라인 열림)=1요청 · PO2(완료)=0 · PO3(종결)=0 → 1. 라인으로만 세면 2, 종결
+    // 필터만 빼면 2, 둘 다 걸어야 3(Nit-3 로 숫자 정정).
     expect(c9.impact?.openPickingCount).toBe(1);
   });
 
-  it('전이 — impact.shippedQty 가 goods_issue_line 합이다 (↩ 예약분을 섞으면 깨진다)', async () => {
+  it('전이 — impact.shippedQty 가 goods_issue_line 합이다 · POSTED·CANCEL_REQUESTED 만 걸리고 CANCELLED 는 빠진다 (↩ 예약분을 섞거나 CANCEL_REQUESTED 를 빠뜨리거나 CANCELLED 를 포함하면 깨진다 · Major-2·Minor-2)', async () => {
     const body = await transitions(lotId.L8);
     const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
-    expect(c9.impact?.shippedQty).toBe(150);
+    // 120(GI1,POSTED) + 30(GI2,POSTED) + 500(GI4,CANCEL_REQUESTED) — GI5(CANCELLED,200)·
+    // GI3(다른 LOT,999) 는 빠진다.
+    expect(c9.impact?.shippedQty).toBe(650);
+  });
+
+  it('전이 — 계약 스키마를 통과한다(ajv) (↩ 형제 목록·요약에는 있고 이 오퍼레이션에만 없던 잠금 · Minor-3)', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-transitions?lotId=${lotId.L1}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('lot-status-transitions');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
@@ -652,9 +667,13 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
    * - PO1(REGISTERED) — 라인 둘 다 `picked_qty < planned_qty`(열림) → **요청 1건**(R-7 — 라인 2 ≠ 요청 1).
    * - PO2(REGISTERED) — 라인 하나 `picked_qty === planned_qty`(한계값 · 완료) → 안 센다.
    * - PO3(**CANCELLED** · 종결) — 라인은 수량만 보면 열려 있다(0<5) → 종결 필터가 «안 걸리는 행」을 뺀다.
-   * 합쳐 openPickingCount 는 **1**이어야 한다(라인으로 세면 3, 종결 필터를 빼면 2 — 둘 다 아니다).
+   * 합쳐 openPickingCount 는 **1**이어야 한다(라인으로만 세면 2, 종결 필터만 빼면 2, 둘 다
+   * 걸어야 3 — R-19 리뷰 Nit-3 로 숫자 정정).
    *
-   * 출고: L8 앞 두 건(POSTED, 합 150) + 다른 LOT(L1) 한 건(999, 안 섞여야 한다).
+   * 출고: L8 에 POSTED 두 건(합 150) + **CANCEL_REQUESTED** 한 건(500 · 전기까지 갔다가
+   * 취소 «요청»만 된 것 — «포함»되어야 한다 · Minor-2) + **CANCELLED** 한 건(200 · 원장
+   * 역분개 완료 — «안 걸리는 행», 종결 필터를 지우면 850 이 된다 · Major-2) + 다른 LOT(L1)
+   * 한 건(999, 안 섞여야 한다). 합 shippedQty 는 **650**(=120+30+500).
    */
   async function makeImpactFixtures(): Promise<void> {
     const plant2 = await prisma.plant.create({
@@ -676,6 +695,10 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
 
     await newGoodsIssue('GI1', 'POSTED', lot8, 120);
     await newGoodsIssue('GI2', 'POSTED', lot8, 30);
+    // GI4 — CANCEL_REQUESTED(포함되어야 한다 · Minor-2). GI5 — CANCELLED(안 걸리는 행 ·
+    // Major-2 — 필터를 지우면 650 이 850 으로 깨진다).
+    await newGoodsIssue('GI4', 'CANCEL_REQUESTED', lot8, 500);
+    await newGoodsIssue('GI5', 'CANCELLED', lot8, 200);
     // 다른 LOT(L1) — lotId 필터가 안 새는지 반증한다.
     await newGoodsIssue('GI3', 'POSTED', BigInt(lotId.L1), 999);
   }

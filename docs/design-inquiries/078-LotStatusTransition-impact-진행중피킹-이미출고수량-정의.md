@@ -30,12 +30,22 @@
    ⚠ `src/logistics/document-progress/document-type-registry.ts` 의 `PICKING_ORDER.cancelledStatus:
    null` 은 «다른 축»의 판단이다(후속 문서 취소 판정에 이 값을 지어 넣지 않는다는 것) — 이 슬라이스가
    피킹 진행 축을 처음 열어 그대로 옮기지 않는다.
-3. **「이미 출고된 수량」= `Σ goods_issue_line.issue_qty`(그 LOT), 단 `goods_issue.status_code=
-   'POSTED'` 인 것만.** 0단계 선례 — `src/logistics/material-issue-request/shortage.service.ts`
-   `issuedByItem()`(I-8.md R-18)이 「기출고」를 같은 표에서 같은 필터로 이미 낸다: 취소된 출고
-   (`CANCELLED`)는 「이미 나간 것」이 아니라고 그 화면이 못 박았다 — 같은 판단을 다시 하지 않고
-   그대로 옮긴다(§2 0단계 「있으면 인용, 판단 아님」). ⛔ 예약분(`picking_line.picked_qty`)은
-   섞지 않는다 — 그 값은 아직 「출고」가 아니다.
+3. **「이미 출고된 수량」= `Σ goods_issue_line.issue_qty`(그 LOT), `goods_issue.status_code IN
+   ('POSTED', 'CANCEL_REQUESTED')` 인 것만.**(⚠ #361 리뷰 Minor-2 로 갱신 — 최초 구현은
+   `POSTED` 단독이었다.) 0단계 선례 — `src/logistics/material-issue-request/shortage.service.ts`
+   `issuedByItem()`(I-8.md R-18)이 「기출고」를 같은 표에서 `POSTED` 필터로 이미 낸다: 그 선례를
+   그대로 옮기되(§2 0단계 「있으면 인용, 판단 아님」), **`CANCEL_REQUESTED` 는 이 화면이 새로
+   판단해야 했다** — `shortage.service.ts` 는 그 값을 안 다룬다. 판단: `transitions.ts` 의
+   `document-request-cancel`(`from: ['REGISTERED','POSTED'] → CANCEL_REQUESTED`)이 보이듯
+   **전기(`POSTED`)까지 간 출고도 취소 «요청»만으로 이 상태에 온다** — 그런데 원장 역분개는
+   `document-cancel`(→`CANCELLED`)에서만 일어난다(`document-cancel-execute.service.ts#reverseLedger`).
+   ⇒ **`CANCEL_REQUESTED` 출고는 실물이 이미 나갔고 원장도 아직 안 돌아온 상태**라 「이미
+   출고된 수량」에서 빼면 **과소 보고**가 된다 — 계약이 이 칸을 「되돌릴 수 없음을 알리는 것」
+   이라 적었으므로 과소 보고가 더 나쁜 방향이다. **원장 역분개가 끝난 `CANCELLED`만** 「이미
+   나간 것」이 아니다로 뺀다. 같은 함수의 피킹 축(위 2번)도 `CANCEL_REQUESTED` 를 「진행 중」에
+   남겨 뒀다 — 두 축의 보수(conservative) 방향이 이제 같다(둘 다 「아직 뒤집힐 수 있는 상태는
+   위험 쪽으로 카운트한다」). ⛔ 예약분(`picking_line.picked_qty`)은 섞지 않는다 — 그 값은
+   아직 「출고」가 아니다.
 
 ## 관련
 
