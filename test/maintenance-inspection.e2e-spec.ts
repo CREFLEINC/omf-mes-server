@@ -11,19 +11,25 @@ import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { hashPassword } from "../src/auth/password";
+import { NumberingService } from "../src/core/numbering";
 import { InspectionList } from "../src/maintenance/inspection/inspection-query.service";
 import { InspectionView } from "../src/maintenance/inspection/inspection-view";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I30-GET";
 const LOGIN_ID = `${PREFIX}-LOGIN`;
+const OTHER_LOGIN_ID = `${PREFIX}-OTHER`;
+const NO_PERMISSION_LOGIN_ID = `${PREFIX}-NO-PERMISSION`;
+const ROLE = `${PREFIX}-ROLE`;
 const PASSWORD = "I30-조회-검증-비밀번호";
+const WORKER_NO = `${PREFIX}-WORKER`;
+const OTHER_WORKER_NO = `${PREFIX}-OTHER-WORKER`;
 const PATH = "/api/maintenance/inspections";
 const PERIOD = { inspectedFrom: "2026-09-01", inspectedTo: "2026-09-01" };
 const CALENDAR_TYPE = `${PREFIX}-CAL`;
 const TRIGGER_TYPE = `${PREFIX}-TRIGGER`;
 
-function validator(path: string): ValidateFunction {
+function validator(path: string, method = "get", status = "200"): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(
       join(__dirname, "../contracts/equipment-05설비툴.json"),
@@ -36,23 +42,33 @@ function validator(path: string): ValidateFunction {
   ajv.addSchema(contract, "https://omf-mes.invalid/i30-contract");
   const pointer = path.replace(/~/g, "~0").replace(/\//g, "~1");
   return ajv.compile({
-    $ref: `https://omf-mes.invalid/i30-contract#/paths/${pointer}/get/responses/200/content/application~1json/schema`,
+    $ref: `https://omf-mes.invalid/i30-contract#/paths/${pointer}/${method}/responses/${status}/content/application~1json/schema`,
   });
 }
 
-describe("설비 점검 조회 I-30 ① (e2e)", () => {
+describe("설비 점검 I-30 ①·⑤ (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let otherCookie: string[];
+  let noPermissionCookie: string[];
+  let actorUserId = 0n;
   const ids = {
     plant: 0n,
     seoulPlant: 0n,
     badPlant: 0n,
+    numberingRule: 0n,
     equipment: 0n,
     otherEquipment: 0n,
     seoulEquipment: 0n,
     badEquipment: 0n,
     worker: 0n,
+    uom: 0n,
+    item: 0n,
+    process: 0n,
+    routing: 0n,
+    routingOperation: 0n,
+    workOrder: 0n,
     item1: 0n,
     item2: 0n,
     item3: 0n,
@@ -60,6 +76,7 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
   const records: Record<string, bigint> = {};
   const listValidator = validator("/maintenance/inspections");
   const detailValidator = validator("/maintenance/inspections/{inspectionId}");
+  const createValidator = validator("/maintenance/inspections", "post", "201");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -71,12 +88,43 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     prisma = app.get(PrismaService);
     await cleanup();
     await fixtures();
+    const user = await createUser(LOGIN_ID, "점검 입력");
+    const other = await createUser(OTHER_LOGIN_ID, "다른 점검 입력");
+    await createUser(NO_PERMISSION_LOGIN_ID, "점검 권한 없음");
+    actorUserId = user.app_user_id;
+    const role = await prisma.role.create({
+      data: { role_code: ROLE, role_name: "설비 점검 E2E" },
+    });
+    await prisma.role_permission.createMany({
+      data: ["M-05-01", "P-02-02"].map((permission_code) => ({
+        role_id: role.role_id,
+        permission_code,
+      })),
+    });
+    await prisma.user_role.createMany({
+      data: [user.app_user_id, other.app_user_id].map((app_user_id) => ({
+        app_user_id,
+        role_id: role.role_id,
+      })),
+    });
+    cookie = await login(LOGIN_ID);
+    otherCookie = await login(OTHER_LOGIN_ID);
+    noPermissionCookie = await login(NO_PERMISSION_LOGIN_ID);
+  });
+
+  async function login(loginId: string): Promise<string[]> {
+    const response = await request(app.getHttpServer())
+      .post("/api/app/sessions")
+      .set("Idempotency-Key", randomUUID())
+      .send({ loginId, password: PASSWORD })
+      .expect(200);
+    const raw: unknown = response.headers["set-cookie"];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
+  async function createUser(loginId: string, userName: string) {
     const user = await prisma.app_user.create({
-      data: {
-        login_id: LOGIN_ID,
-        user_name: "점검 조회",
-        status_code: "EMPLOYED",
-      },
+      data: { login_id: loginId, user_name: userName, status_code: "EMPLOYED" },
     });
     await prisma.user_credential.create({
       data: {
@@ -84,14 +132,8 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
         password_hash: await hashPassword(PASSWORD),
       },
     });
-    const response = await request(app.getHttpServer())
-      .post("/api/app/sessions")
-      .set("Idempotency-Key", randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
-      .expect(200);
-    const raw: unknown = response.headers["set-cookie"];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
-  });
+    return user;
+  }
 
   afterAll(async () => {
     try {
@@ -662,6 +704,406 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     }
   });
 
+  it("E-I11·12·18 점검 헤더와 라인을 원자 생성하고 UTC 날짜·공장 규칙으로 채번한다", async () => {
+    const response = await postInspection({
+      ...createBody(),
+      remarks: "누유 확인",
+      lines: [
+        {
+          inspectionItemId: Number(ids.item2),
+          resultCode: "FAIL",
+          measuredValue: null,
+          remarks: "씰 교체 필요",
+        },
+        {
+          inspectionItemId: Number(ids.item1),
+          resultCode: "PASS",
+          measuredValue: 12.345678,
+        },
+      ],
+    }).expect(201);
+    expect(createValidator(response.body)).toBe(true);
+    expect(response.body).toMatchObject({
+      equipmentId: Number(ids.equipment),
+      inspectionNo: expect.stringMatching(/^EQI-20260908-\d{4,}$/),
+      inspectionTypeCode: "DAILY",
+      overallResultCode: "FAIL",
+      inspectedAt: "2026-09-08T17:30:00.000Z",
+      inspectorWorkerNo: WORKER_NO,
+      remarks: "누유 확인",
+    });
+    expect(response.body.lines).toEqual([
+      {
+        inspectionItemId: Number(ids.item1),
+        itemName: "현재 항목 1",
+        judgeMethodCode: "MEASUREMENT",
+        resultCode: "PASS",
+        measuredValue: 12.345678,
+        remarks: null,
+      },
+      {
+        inspectionItemId: Number(ids.item2),
+        itemName: "항목 2",
+        judgeMethodCode: "VISUAL",
+        resultCode: "FAIL",
+        measuredValue: null,
+        remarks: "씰 교체 필요",
+      },
+    ]);
+    const stored = await prisma.equipment_inspection.findUniqueOrThrow({
+      where: { equipment_inspection_id: BigInt(response.body.inspectionId) },
+    });
+    expect(stored).toMatchObject({
+      scheduled_at: null,
+      status_code: null,
+      inspected_by: ids.worker,
+      judgment_code: "FAIL",
+      created_by: BigInt(actorUserId),
+      updated_by: BigInt(actorUserId),
+    });
+    const counter = await prisma.numbering_counter.findUniqueOrThrow({
+      where: {
+        numbering_rule_id_period_key: {
+          numbering_rule_id: ids.numberingRule,
+          period_key: "20260908",
+        },
+      },
+    });
+    expect(counter.last_value).toBeGreaterThanOrEqual(1n);
+  });
+
+  it("E-I10 같은 설비·유형·시각 점검도 각각 기록한다", async () => {
+    const body = createBody({ remarks: "같은 시각 허용" });
+    const first = await postInspection(body).expect(201);
+    const second = await postInspection(body).expect(201);
+    expect(second.body.inspectionId).not.toBe(first.body.inspectionId);
+    expect(second.body.inspectionNo).not.toBe(first.body.inspectionNo);
+    expect(first.body.overallResultCode).toBe("PASS");
+    expect(second.body.overallResultCode).toBe("PASS");
+  });
+
+  it.each([
+    [null, "REQUIRED"],
+    ["", "REQUIRED"],
+    [" ", "REQUIRED"],
+    ["X".repeat(51), "RANGE"],
+    [`${PREFIX}-UNKNOWN-WORKER`, "INVALID"],
+  ])("E-I13 작업자 헤더 %j를 %s로 거부한다", async (workerNo, code) => {
+    const before = await prisma.equipment_inspection.count();
+    const response = await postInspection(createBody(), { workerNo }).expect(400);
+    expect(response.body.errors[0]).toMatchObject({
+      field: "X-Worker-No",
+      code,
+    });
+    expect(await prisma.equipment_inspection.count()).toBe(before);
+  });
+
+  it.each([
+    [
+      () => ({ lines: [] }),
+      422,
+      { field: "lines", code: "LINE_REQUIRED" },
+    ],
+    [
+      () => ({
+        lines: [
+          { inspectionItemId: Number(ids.item1), resultCode: "PASS" },
+          { inspectionItemId: Number(ids.item1), resultCode: "PASS" },
+        ],
+      }),
+      400,
+      { field: "lines[1].inspectionItemId", code: "INVALID" },
+    ],
+    [
+      () => ({
+        remarks: null,
+        lines: [{ inspectionItemId: Number(ids.item1), resultCode: "FAIL" }],
+      }),
+      422,
+      { field: "remarks", code: "REQUIRED" },
+    ],
+    [
+      () => ({
+        remarks: " ",
+        lines: [{ inspectionItemId: Number(ids.item1), resultCode: "FAIL" }],
+      }),
+      422,
+      { field: "remarks", code: "REQUIRED" },
+    ],
+    [
+      () => ({ equipmentId: -1 }),
+      400,
+      { field: "equipmentId", code: "INVALID" },
+    ],
+    [
+      () => ({ inspectionTypeCode: "IQC" }),
+      400,
+      { field: "inspectionTypeCode", code: "INVALID" },
+    ],
+    [
+      () => ({
+        lines: [{ inspectionItemId: -1, resultCode: "PASS" }],
+      }),
+      400,
+      { field: "lines[0].inspectionItemId", code: "INVALID" },
+    ],
+    [
+      () => ({
+        lines: [
+          {
+            inspectionItemId: Number(ids.item1),
+            resultCode: "PASS",
+            measuredValue: 0.0000001,
+          },
+        ],
+      }),
+      400,
+      { field: "lines[0].measuredValue", code: "RANGE" },
+    ],
+    [
+      () => ({
+        lines: [
+          {
+            inspectionItemId: Number(ids.item1),
+            resultCode: "PASS",
+            measuredValue: 100000000000000,
+          },
+        ],
+      }),
+      400,
+      { field: "lines[0].measuredValue", code: "RANGE" },
+    ],
+  ])("E-I14·15·16 입력 규칙을 적용한다: %#", async (makeOverrides, status, error) => {
+    const before = await prisma.equipment_inspection.count();
+    const response = await postInspection(createBody(makeOverrides())).expect(status);
+    expect(response.body.errors[0]).toMatchObject(error);
+    expect(await prisma.equipment_inspection.count()).toBe(before);
+  });
+
+  it("E-I16 측정값 6자리와 null을 손실 없이 왕복한다", async () => {
+    const response = await postInspection(
+      createBody({
+        lines: [
+          {
+            inspectionItemId: Number(ids.item1),
+            resultCode: "PASS",
+            measuredValue: 12.345678,
+          },
+          {
+            inspectionItemId: Number(ids.item2),
+            resultCode: "PASS",
+            measuredValue: null,
+          },
+        ],
+      }),
+    ).expect(201);
+    expect(response.body.lines.map((line: { measuredValue: number | null }) => line.measuredValue)).toEqual([
+      12.345678,
+      null,
+    ]);
+  });
+
+  it("E-I17 부여·허용범위·자격 기록이 없어도 입력할 수 있다", async () => {
+    expect(
+      await prisma.equipment_inspection_item_assignment.count({
+        where: { equipment_id: ids.equipment },
+      }),
+    ).toBe(0);
+    await postInspection(createBody({ remarks: "오프라인 입력" })).expect(201);
+  });
+
+  it("E-I19 같은 주체·사번·본문 재전송은 번호를 다시 뽑지 않고 같은 응답을 돌려준다", async () => {
+    const key = randomUUID();
+    const body = createBody({ remarks: "멱등 재전송" });
+    const first = await postInspection(body, { key }).expect(201);
+    const numbering = app.get(NumberingService);
+    const numberSpy = jest
+      .spyOn(numbering, "next")
+      .mockRejectedValueOnce(new Error("NUMBERING_MUST_NOT_RUN_ON_REPLAY"));
+    let replay;
+    try {
+      replay = await postInspection(body, { key }).expect(201);
+    } finally {
+      numberSpy.mockRestore();
+    }
+    expect(replay.body).toEqual(first.body);
+    expect(numberSpy).not.toHaveBeenCalled();
+    expect(
+      await prisma.equipment_inspection.count({
+        where: { inspection_no: first.body.inspectionNo },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.equipment_inspection_result.count({
+        where: {
+          equipment_inspection_id: BigInt(first.body.inspectionId),
+        },
+      }),
+    ).toBe(body.lines.length);
+  });
+
+  it("E-I19 같은 키의 본문·주체·사번 변경은 사용자 충돌이다", async () => {
+    const key = randomUUID();
+    const body = createBody({ remarks: "멱등 충돌" });
+    await postInspection(body, { key }).expect(201);
+    for (const [changedBody, options] of [
+      [{ ...body, remarks: "다른 본문" }, { key }],
+      [{ ...body, lines: [] }, { key }],
+      [body, { key, authCookie: otherCookie }],
+      [body, { key, workerNo: OTHER_WORKER_NO }],
+    ] as const) {
+      const response = await postInspection(changedBody, options).expect(409);
+      expect(response.body).toMatchObject({ conflictCause: "user" });
+    }
+    const missingWorker = await postInspection(body, {
+      key,
+      workerNo: null,
+    }).expect(400);
+    expect(missingWorker.body.errors[0]).toMatchObject({
+      field: "X-Worker-No",
+      code: "REQUIRED",
+    });
+  });
+
+  it("E-I20 완료 기록 저장 실패는 헤더·라인·멱등 기록을 함께 롤백하고 재시도한다", async () => {
+    const key = randomUUID();
+    const marker = `ROLLBACK-${randomUUID()}`;
+    const body = createBody({ remarks: marker });
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, "$transaction")
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const completionSpy = jest
+            .spyOn(tx.idempotency_record, "update")
+            .mockRejectedValueOnce(new Error("I30_COMPLETION_FAILURE"));
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            completionSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      const failed = await postInspection(body, { key }).expect(500);
+      expect(failed.text).not.toContain("I30_COMPLETION_FAILURE");
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.equipment_inspection.count({ where: { remarks: marker } }),
+    ).toBe(0);
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+    await postInspection(body, { key }).expect(201);
+    expect(
+      await prisma.equipment_inspection.count({ where: { remarks: marker } }),
+    ).toBe(1);
+  });
+
+  it("E-I21 FAIL 기록은 보전·비가동·알림·재고 부수효과를 만들지 않는다", async () => {
+    const before = await sideEffectCounts();
+    const response = await postInspection(
+      createBody({
+        remarks: "불합격만 기록",
+        lines: [
+          { inspectionItemId: Number(ids.item1), resultCode: "FAIL" },
+        ],
+      }),
+    ).expect(201);
+    expect(response.body.overallResultCode).toBe("FAIL");
+    expect(await sideEffectCounts()).toEqual(before);
+  });
+
+  it("권한 없는 세션은 403, 세션 없이는 401이다", async () => {
+    const before = await prisma.equipment_inspection.count();
+    await postInspection(createBody(), {
+      authCookie: noPermissionCookie,
+    }).expect(403);
+    await request(app.getHttpServer())
+      .post(PATH)
+      .set("Idempotency-Key", randomUUID())
+      .set("X-Worker-No", WORKER_NO)
+      .send(createBody())
+      .expect(401);
+    expect(await prisma.equipment_inspection.count()).toBe(before);
+  });
+
+  it("E-I22 생성한 점검 ID를 작업 전 점검 판정 근거로 기록한다", async () => {
+    const inspection = await postInspection(
+      createBody({ remarks: "생산 전 점검 근거" }),
+    ).expect(201);
+    const response = await request(app.getHttpServer())
+      .post("/api/production/precheck-decisions")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .set("X-Worker-No", WORKER_NO)
+      .send({
+        workOrderId: Number(ids.workOrder),
+        equipmentId: Number(ids.equipment),
+        decidedAt: "2026-09-08T17:35:00Z",
+        controlLevelCode: "WARN",
+        decisionCode: "PASSED",
+        basisInspectionId: inspection.body.inspectionId,
+      })
+      .expect(201);
+    const stored = await prisma.precheck_decision.findUniqueOrThrow({
+      where: { precheck_decision_id: BigInt(response.body.precheckDecisionId) },
+    });
+    expect(stored.basis_inspection_id).toBe(BigInt(inspection.body.inspectionId));
+  });
+
+  function createBody(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> & { lines: Record<string, unknown>[] } {
+    return {
+      equipmentId: Number(ids.equipment),
+      inspectionTypeCode: "DAILY",
+      inspectedAt: "2026-09-09T00:30:00+07:00",
+      remarks: null,
+      lines: [
+        {
+          inspectionItemId: Number(ids.item1),
+          resultCode: "PASS",
+          measuredValue: 12.345678,
+        },
+      ],
+      ...overrides,
+    } as Record<string, unknown> & { lines: Record<string, unknown>[] };
+  }
+
+  function postInspection(
+    body: Record<string, unknown>,
+    options: {
+      key?: string;
+      workerNo?: string | null;
+      authCookie?: string[];
+    } = {},
+  ) {
+    const response = request(app.getHttpServer())
+      .post(PATH)
+      .set("Cookie", options.authCookie ?? cookie)
+      .set("Idempotency-Key", options.key ?? randomUUID());
+    if (options.workerNo !== null) {
+      response.set("X-Worker-No", options.workerNo ?? WORKER_NO);
+    }
+    return response.send(body);
+  }
+
+  async function sideEffectCounts(): Promise<number[]> {
+    return Promise.all([
+      prisma.maintenance_order.count(),
+      prisma.equipment_downtime.count(),
+      prisma.notification.count(),
+      prisma.inventory_transaction.count(),
+    ]);
+  }
+
   async function list(query: Record<string, unknown>): Promise<InspectionList> {
     const response = await request(app.getHttpServer())
       .get(PATH)
@@ -751,6 +1193,16 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     ids.plant = await plant("HN", "Asia/Ho_Chi_Minh");
     ids.seoulPlant = await plant("KR", "Asia/Seoul");
     ids.badPlant = await plant("BAD", "Bad/Timezone");
+    ids.numberingRule = (
+      await prisma.numbering_rule.create({
+        data: {
+          document_type_code: "EQUIPMENT_INSPECTION",
+          plant_id: ids.plant,
+          pattern: "EQI-{YYYYMMDD}-{SEQ4}",
+          reset_cycle_code: "DAILY",
+        },
+      })
+    ).numbering_rule_id;
     const equipment = async (
       suffix: string,
       plantId: bigint,
@@ -773,7 +1225,7 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     ids.worker = (
       await prisma.worker.create({
         data: {
-          worker_no: `${PREFIX}-WORKER`,
+          worker_no: WORKER_NO,
           worker_name: "계정 없는 점검자",
           business_unit_id: business.business_unit_id,
           plant_id: ids.plant,
@@ -781,6 +1233,72 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
         },
       })
     ).worker_id;
+    await prisma.worker.create({
+      data: {
+        worker_no: OTHER_WORKER_NO,
+        worker_name: "다른 계정 없는 점검자",
+        business_unit_id: business.business_unit_id,
+        plant_id: ids.plant,
+        status_code: "EMPLOYED",
+      },
+    });
+    ids.uom = (
+      await prisma.uom.create({
+        data: { uom_code: `${PREFIX}-UOM`, uom_name: "점검 E2E 단위" },
+      })
+    ).uom_id;
+    ids.item = (
+      await prisma.item.create({
+        data: {
+          item_code: `${PREFIX}-ITEM`,
+          item_name: "점검 E2E 품목",
+          item_type_code: "FINISHED_GOODS",
+          base_uom_id: ids.uom,
+        },
+      })
+    ).item_id;
+    ids.process = (
+      await prisma.process.create({
+        data: {
+          process_code: `${PREFIX}-PROCESS`,
+          process_name: "점검 E2E 공정",
+          process_type_code: "MOLDING",
+        },
+      })
+    ).process_id;
+    ids.routing = (
+      await prisma.routing.create({
+        data: {
+          item_id: ids.item,
+          routing_code: `${PREFIX}-ROUTING`,
+          routing_version: 1,
+          status_code: "ACTIVE",
+        },
+      })
+    ).routing_id;
+    ids.routingOperation = (
+      await prisma.routing_operation.create({
+        data: {
+          routing_id: ids.routing,
+          operation_seq: 10,
+          process_id: ids.process,
+          operation_name: "점검 E2E 공정",
+        },
+      })
+    ).routing_operation_id;
+    ids.workOrder = (
+      await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WO`,
+          routing_operation_id: ids.routingOperation,
+          item_id: ids.item,
+          order_qty: 1,
+          uom_id: ids.uom,
+          planned_equipment_id: ids.equipment,
+          status_code: "IN_PROGRESS",
+        },
+      })
+    ).work_order_id;
     for (const [key, index, sequence] of [
       ["item1", 1, 10],
       ["item2", 2, 10],
@@ -931,11 +1449,37 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
   }
 
   async function cleanup(): Promise<void> {
+    const plants = await prisma.plant.findMany({
+      where: { plant_code: { startsWith: `${PREFIX}-` } },
+      select: { plant_id: true },
+    });
+    const plantIds = plants.map((row) => row.plant_id);
+    const equipment = await prisma.equipment.findMany({
+      where: {
+        plant_id: { in: plantIds },
+        equipment_code: { startsWith: `${PREFIX}-` },
+      },
+      select: { equipment_id: true },
+    });
+    const equipmentIds = equipment.map((row) => row.equipment_id);
     const inspections = await prisma.equipment_inspection.findMany({
-      where: { inspection_no: { startsWith: `${PREFIX}-` } },
+      where: {
+        OR: [
+          { inspection_no: { startsWith: `${PREFIX}-` } },
+          { equipment_id: { in: equipmentIds } },
+        ],
+      },
       select: { equipment_inspection_id: true },
     });
     const inspectionIds = inspections.map((row) => row.equipment_inspection_id);
+    await prisma.precheck_decision.deleteMany({
+      where: {
+        OR: [
+          { basis_inspection_id: { in: inspectionIds } },
+          { work_order: { work_order_no: { startsWith: `${PREFIX}-` } } },
+        ],
+      },
+    });
     await prisma.equipment_inspection_result.deleteMany({
       where: { equipment_inspection_id: { in: inspectionIds } },
     });
@@ -953,11 +1497,21 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     await prisma.maintenance_order.deleteMany({
       where: { maintenance_order_id: { in: orderIds } },
     });
-    const plants = await prisma.plant.findMany({
-      where: { plant_code: { startsWith: `${PREFIX}-` } },
-      select: { plant_id: true },
+    await prisma.equipment_downtime.deleteMany({
+      where: { equipment_id: { in: equipmentIds } },
     });
-    const plantIds = plants.map((row) => row.plant_id);
+    await prisma.work_order.deleteMany({
+      where: { work_order_no: { startsWith: `${PREFIX}-` } },
+    });
+    await prisma.routing_operation.deleteMany({
+      where: { routing: { routing_code: { startsWith: `${PREFIX}-` } } },
+    });
+    await prisma.routing.deleteMany({
+      where: { routing_code: { startsWith: `${PREFIX}-` } },
+    });
+    await prisma.process.deleteMany({
+      where: { process_code: { startsWith: `${PREFIX}-` } },
+    });
     await prisma.equipment_inspection_item.deleteMany({
       where: {
         plant_id: { in: plantIds },
@@ -971,7 +1525,27 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
       },
     });
     await prisma.worker.deleteMany({
-      where: { worker_no: `${PREFIX}-WORKER` },
+      where: { worker_no: { startsWith: `${PREFIX}-` } },
+    });
+    await prisma.item.deleteMany({
+      where: { item_code: { startsWith: `${PREFIX}-` } },
+    });
+    await prisma.uom.deleteMany({
+      where: { uom_code: { startsWith: `${PREFIX}-` } },
+    });
+    const numberingRules = await prisma.numbering_rule.findMany({
+      where: {
+        document_type_code: "EQUIPMENT_INSPECTION",
+        plant_id: { in: plantIds },
+      },
+      select: { numbering_rule_id: true },
+    });
+    const numberingRuleIds = numberingRules.map((row) => row.numbering_rule_id);
+    await prisma.numbering_counter.deleteMany({
+      where: { numbering_rule_id: { in: numberingRuleIds } },
+    });
+    await prisma.numbering_rule.deleteMany({
+      where: { numbering_rule_id: { in: numberingRuleIds } },
     });
     await prisma.plant.deleteMany({ where: { plant_id: { in: plantIds } } });
     await prisma.business_unit.deleteMany({
@@ -980,10 +1554,17 @@ describe("설비 점검 조회 I-30 ① (e2e)", () => {
     await prisma.legal_entity.deleteMany({
       where: { legal_entity_code: PREFIX },
     });
-    const user = await prisma.app_user.findUnique({
-      where: { login_id: LOGIN_ID },
-    });
-    if (user) {
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.user_role.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
+    }
+    for (const loginId of [LOGIN_ID, OTHER_LOGIN_ID, NO_PERMISSION_LOGIN_ID]) {
+      const user = await prisma.app_user.findUnique({
+        where: { login_id: loginId },
+      });
+      if (!user) continue;
       await prisma.idempotency_record.deleteMany({
         where: { app_user_id: user.app_user_id },
       });
