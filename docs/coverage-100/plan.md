@@ -45,7 +45,7 @@
 | 11 | **I-10** 자재 투입·반출 + 계보 | 6 | I-9·I-7 | **2** · `material_consumption.terminal_id`·`material_return.return_quality_status_code` NOT NULL 완화(I-10 재수립 R-3·R-4) | — | opus | 3 | ∥ I-11 |
 | 12 | **I-11** 작업 세션·작업전점검 | 11 | I-6 | **1** · `work_session.shift_id` NOT NULL 완화(I-11 재수립 R-3 · D1 과 같은 모양) | — | sonnet ×2 · opus ×3(코어 `transitions.ts`·심장·events — R-15) | 5 | ∥ I-13 · ⚠ I-10 과 `production.module.ts` 같은 줄 |
 | 13 | **I-24** 생산 계획·생산오더 | 10 | I-6 | A11(두 칸 — R-1) | `transitions.ts` 키 신설 1(R-12) · `src/core/work-order/defaults.ts` 신설(R-3) | opus(`:confirm` · `:acknowledge`/`:resync`) · sonnet(조회 · CRUD) | 4 | ① → {② → ③} ∥ ④(R-15) |
-| 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
+| 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 3 | — |
 | — | **M2 체인 e2e** | | | | | fable | 1 | |
 | 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | **M-e(항목 3)** | 품질 축 전이표(**액션별 `from`** — I-19 R-1) | opus | ~~4~~ **7** | M-e ∥ ②a(I-19 R-18) |
 | 16 | **I-20** LOT 상태·보류 | 10 | I-19 | **M-f(항목 5)** — A12 **두 칸** · `version_no` 필수 · CHECK · 인덱스 2(I-20 R-1) | **`trace.lot_hold` 쓰기 코어**(I-20 R-4·R-5 — 잠금 순서) | opus | ~~3~~ **11~12**(I-20 R-17) | PR ⓪ = I-19 §12-1 ⓑ 상환 |
@@ -227,7 +227,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건은 #353/#357/#359/#360으
 | `lot-hold-events` vs `lot-status-events` — W-03-01 이 어느 쪽 | I-20 | UI/UX §9-3 |
 | LOT 품질 판정 축(`lot.status_code` vs `inventory_balance.quality_status_code`) — #115 재판정 중 인용 | I-19/I-20 | UI/UX L · 아키텍처 §5 #1 |
 | `POST /production/material-returns` 소유 화면 | I-10 | UI/UX §9-2 · **050 으로 발행**(I-10 재수립 R-10·R-13) |
-| 수리 `:return` 뒤 재투입 등록처 | I-25 | UI/UX §9-2 |
+| 수리 `:return` 뒤 재투입 등록처 | I-25 | UI/UX §9-2 · **통보 157 로 발행**(I-25 재수립 R-1) |
 | 투입 정정(`:correct`) 부재 · 포장 해체 부재 | I-10 · I-16 | UI/UX E·F · E 는 **055 로 발행**(I-10 재수립 R-13) |
 | 재생재/입하 오류의 «미등록 품목» 생성 경로 없음 | I-17 · I-3 | UI/UX B·C |
 | 창고 «안» 위치 이동 업무 문서 없음 | I-13 | UI/UX A |
