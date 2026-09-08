@@ -13,10 +13,14 @@ import { MaterialConsumptionController } from './material-consumption/material-c
 import { MaterialConsumptionService } from './material-consumption/material-consumption.service';
 import { MaterialReturnQueryService } from './material-return/material-return-query.service';
 import { MaterialReturnController } from './material-return/material-return.controller';
+import { OperationHandoverQueryService } from './operation-handover/operation-handover-query.service';
+import { OperationHandoverController } from './operation-handover/operation-handover.controller';
 import { PrecheckDecisionQueryService } from './precheck-decision/precheck-decision-query.service';
 import { PrecheckDecisionController } from './precheck-decision/precheck-decision.controller';
 import { MaterialReturnService } from './material-return/material-return.service';
 import { PrecheckDecisionService } from './precheck-decision/precheck-decision.service';
+import { RepairExecutionQueryService } from './repair-execution/repair-execution-query.service';
+import { RepairExecutionController } from './repair-execution/repair-execution.controller';
 import { ProductionResultApprovalService } from './production-result/production-result-approval.service';
 import { ProductionResultCorrectService } from './production-result/production-result-correct.service';
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
@@ -72,6 +76,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     MaterialReturnController,
     WorkSessionController,
     PrecheckDecisionController,
+    OperationHandoverController,
+    RepairExecutionController,
   ],
   providers: [
     WorkOrderQueryService,
@@ -96,6 +102,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     PrecheckDecisionQueryService,
     MaterialReturnService,
     PrecheckDecisionService,
+    OperationHandoverQueryService,
+    RepairExecutionQueryService,
   ],
 })
 export class ProductionModule {}
