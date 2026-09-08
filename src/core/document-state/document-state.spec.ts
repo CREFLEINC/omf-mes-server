@@ -32,6 +32,8 @@ const INSPECTION_RESULT_STATUS = 'quality.inspection_result.status_code';
 const LOT_QUALITY_STATUS = 'trace.lot.status_code';
 /** I-30이 여는 고장 처리 축 — RECEIVED→HANDLING→DONE, RECEIVED→DONE. */
 const BREAKDOWN_STATUS = 'maintenance.breakdown.status_code';
+/** I-31 C0이 여는 축 — 발행된 보전 지시만 취소할 수 있다. */
+const MAINTENANCE_ORDER_STATUS = 'maintenance.maintenance_order.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -339,6 +341,25 @@ describe('DocumentStateService', () => {
   });
 
   describe('등록 범위를 명시로 지킨다', () => {
+    it('보전 지시 취소는 ISSUED에서만 열고 완료 전이는 등록하지 않는다', () => {
+      expect(
+        service.assertTransition(MAINTENANCE_ORDER_STATUS, 'maintenance-order-cancel', 'ISSUED'),
+      ).toMatchObject({ from: ['ISSUED'], to: 'CANCELLED' });
+      for (const status of ['DONE', 'CANCELLED']) {
+        expect(() =>
+          service.assertTransition(
+            MAINTENANCE_ORDER_STATUS,
+            'maintenance-order-cancel',
+            status,
+            HttpStatus.BAD_REQUEST,
+          ),
+        ).toThrow(ContractException);
+      }
+      expect(() =>
+        service.assertTransition(MAINTENANCE_ORDER_STATUS, 'maintenance-order-complete', 'ISSUED'),
+      ).toThrow(/상태 전이가 등록되지 않았다/);
+    });
+
     it('⭐ 품질 판정 축을 등록했다 — 회신 E-3 이 2026-08-07 에 종결됐다', () => {
       // 이 단언은 오래 「등록돼 있지 않다」였다. 비워 둔 이유가 판정 유형 값 목록의
       // 고객 회신 대기였고, 그 회신이 종결되며 「보류」·「PQC 검사 필요」가
@@ -382,6 +403,7 @@ describe('DocumentStateService', () => {
           INSPECTION_RESULT_STATUS,
           LIFECYCLE,
           LOT_QUALITY_STATUS,
+          MAINTENANCE_ORDER_STATUS,
           MOLD_STATUS,
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
@@ -397,7 +419,8 @@ describe('DocumentStateService', () => {
       // +1 — 생산계획 확정 키 신설(I-24 PR ③).
       // +10 — 검사 성적서 확정 키 신설 1, LOT 품질 축 키 신설 9(I-19 PR ①).
       // +2 — 설비 고장 처리 키 신설(I-30 PR ④).
-      expect(service.registered()).toHaveLength(40);
+      // +1 — 보전 지시 취소 키 신설(I-31 C0).
+      expect(service.registered()).toHaveLength(41);
     });
 
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {
