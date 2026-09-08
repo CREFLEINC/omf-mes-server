@@ -119,6 +119,12 @@ describe('채번 코어', () => {
     expect(await service.next('MAINTENANCE_ORDER', PLANT, DAY)).toBe('MO-20260906-0001');
   });
 
+  it('채번 — 부적합은 NC 기본 접두어를 쓰고 공장 축이 없다(plantId=null)', async () => {
+    const { service } = fake();
+
+    expect(await service.next('NONCONFORMANCE', null, DAY)).toBe('NC-20260906-0001');
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),
