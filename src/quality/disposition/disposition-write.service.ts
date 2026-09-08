@@ -29,8 +29,6 @@ const MOVE_ACTION: Readonly<Record<string, string>> = { REWORK: 'disposition-rew
 const SOURCE_TYPE = 'DISPOSITION_DECISION';
 const STATUS_COLUMN = 'quality.nonconformance.status_code';
 const DECIDED = 'DECIDED';
-/** `numeric(20,6)` 이라 단위가 그보다 큰 자릿수를 적어도 담기지 않는다. */
-const COLUMN_SCALE = 6;
 
 /** 잠금 «안»에서 한 번에 읽는 판정의 원천. */
 interface Target {
@@ -194,7 +192,9 @@ async function readTarget(tx: Tx, id: bigint): Promise<Target> {
     decidedQtyTotal: nc.disposition_decision.reduce((sum, row) => sum.add(row.decision_qty), new Prisma.Decimal(0)),
     decisionCount: nc.disposition_decision.length,
     uomId,
-    uomScale: Math.min(uom.decimal_scale, COLUMN_SCALE),
+    // ⛔ 컬럼 한계(6)로 다시 접지 않는다 — `CHECK (decimal_scale BETWEEN 0 AND 6)` 가 baseline
+    //    마이그(`:328`)에 이미 있어 죽은 절이 된다(R-15 · 되돌려도 안 깨진다).
+    uomScale: uom.decimal_scale,
   };
 }
 

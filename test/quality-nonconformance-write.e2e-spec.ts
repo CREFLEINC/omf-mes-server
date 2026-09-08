@@ -460,10 +460,14 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
         .set('Idempotency-Key', randomUUID())
         .send(createBody({ description: `${PREFIX} 동시 등록`, lots: [{ lotId: Number(lotIds.RACE), affectedQty: 6, uomId: Number(ids.uomA) }] }));
 
-    const [a, b] = await Promise.all([send(), send()]);
-    const statuses = [a.status, b.status].sort();
-    expect(statuses).toEqual([201, 409]);
-    expect((a.status === 409 ? a : b).body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
+    // ⭐ 다섯을 한꺼번에 쏜다 — 둘로는 채번(트랜잭션 «밖»)이 앞선 요청에 왕복 몇 번의 머리를
+    //   줘서 업무 트랜잭션이 겹치지 않는다(실측).
+    const responses = await Promise.all([send(), send(), send(), send(), send()]);
+    const created = responses.filter((response) => response.status === 201);
+    const rejected = responses.filter((response) => response.status === 409);
+    expect(created).toHaveLength(1);
+    expect(rejected).toHaveLength(4);
+    expect(rejected[0].body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
     expect(await prisma.nonconformance_lot.count({ where: { lot_id: lotIds.RACE } })).toBe(1);
   });
 

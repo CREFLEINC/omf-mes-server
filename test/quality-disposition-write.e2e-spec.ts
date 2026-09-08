@@ -241,11 +241,16 @@ describe('처분 판정 저장 (e2e)', () => {
     expect(record.response_status).toBe(201);
   });
 
-  it('⭐ 대상 LOT 이 «하나»면 응답이 lotId·lotNo 를 싣는다(둘이면 생략 — 접기 규칙)', async () => {
-    const response = await post(ncIds.single, 1).send(body({ decisionQty: 3 })).expect(201);
+  it('⭐ 대상 LOT 이 «하나»면 lotId·lotNo 를 싣고, 판정 «한 건»으로도 부적합이 닫힌다', async () => {
+    // ⭐ 「첫 판정이 곧 종결」인 유일한 자리다 — 다른 시험은 전부 둘째 판정이 닫아서, 이미
+    //   저장된 결정 «수»를 세는 자리(0건이면 NOT_STARTED)가 그물 밖으로 샌다.
+    const response = await post(ncIds.single, 1).send(body({ decisionQty: 10 })).expect(201);
 
     expect(response.body).toMatchObject({ lotId: Number(lotIds.G1), lotNo: `${PREFIX}-LOT-G1` });
     expect(decisionSchema(response.body)).toBe(true);
+    const row = await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: BigInt(ncIds.single) } });
+    expect(row).toMatchObject({ status_code: 'DECIDED', version_no: 2 });
+    expect(row.closed_at).not.toBeNull();
   });
 
   it('⭐ 일부 LOT 만 옮겨져도 201 이고 못 옮긴 LOT 은 그대로다(SCRAPPED 가 섞인 부적합)', async () => {
@@ -299,6 +304,7 @@ describe('처분 판정 저장 (e2e)', () => {
 
     await post(ncIds.scale, 1).send(body({ decisionQty: 1.05, uomId: Number(ids.uom2) })).expect(201);
   });
+
 
   it('⭐ decisionQty 정수 15자리는 400 RANGE 다(numeric(20,6) overflow 를 문 앞에서 막는다)', async () => {
     const response = await post(ncIds.val, 1).send(body({ decisionQty: 1e15 })).expect(400);
