@@ -35,6 +35,7 @@ import { LotStatusTransitionService } from './lot-status/lot-status-transition.s
 import { LotStatusService } from './lot-status/lot-status.service';
 import { NonconformanceController } from './nonconformance/nonconformance.controller';
 import { NonconformanceQueryService } from './nonconformance/nonconformance-query.service';
+import { NonconformanceWriteService } from './nonconformance/nonconformance-write.service';
 
 /**
  * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
@@ -90,6 +91,7 @@ import { NonconformanceQueryService } from './nonconformance/nonconformance-quer
     LotHoldQueryService,
     LotHoldWriteService,
     NonconformanceQueryService,
+    NonconformanceWriteService,
   ],
 })
 export class QualityModule {}
