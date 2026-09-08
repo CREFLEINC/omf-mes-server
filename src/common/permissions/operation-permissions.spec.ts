@@ -61,4 +61,18 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(declares403).toHaveLength(250);
     expect(covered.length).toBeGreaterThanOrEqual(152);
   });
+
+  /**
+   * ⭐ 계약이 «이름 적은» 호출 셸이 빠지면 그 화면 담당자가 조용히 403 을 받는다. 도출표는
+   * 요구서 §3 에서 나오므로 계약 description 만 아는 셸은 잡히지 않는다 — 통보 181·189 가
+   * 그 사고 둘이다. 수동표에 넣어도 «아무것도 그것을 지키지 않아» 지우면 그대로 사라진다.
+   */
+  it('⛔ 결재함 목록에 계약이 이름 적은 호출 셸 넷이 전부 있다 — 통보 189', () => {
+    // `get.description` 「부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과 모바일 상신 화면
+    // (M-01-13 의 「내가 올린 요청」 구획)」 · `assignedToMe` 「승인 화면은 관리웹뿐이라
+    // (W-CO-09·W-01-02·W-03-09)」.
+    expect(OPERATION_PERMISSIONS['GET /app/approval-requests']).toEqual(
+      expect.arrayContaining(['W-CO-09', 'M-01-13', 'W-01-02', 'W-03-09']),
+    );
+  });
 });
