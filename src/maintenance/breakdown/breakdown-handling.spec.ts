@@ -1,4 +1,3 @@
-import { ERROR_CODE } from '../../common/errors';
 import { checkBreakdownHandling } from './breakdown-handling.service';
 
 describe('breakdown handling', () => {
@@ -17,20 +16,10 @@ describe('breakdown handling', () => {
     });
   });
 
-  it.each(['HYD_LEAK', ''])(
-    '원인 비null %p은 INVALID로 거절한다',
-    (causeCode) => {
-      expect(() => checkBreakdownHandling({ causeCode })).toThrow(
-        expect.objectContaining({
-          status: 400,
-          errors: [
-            expect.objectContaining({
-              field: 'causeCode',
-              code: ERROR_CODE.INVALID,
-            }),
-          ],
-        }),
-      );
-    },
-  );
+  it('원인 비null은 존재 검증 대상으로 표시한다', () => {
+    expect(checkBreakdownHandling({ causeCode: 'HYD_LEAK' })).toEqual({
+      causePresent: true,
+      notePresent: false,
+    });
+  });
 });

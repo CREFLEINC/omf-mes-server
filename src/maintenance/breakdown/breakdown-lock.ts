@@ -10,6 +10,7 @@ export interface LockedBreakdown {
   breakdown_id: bigint;
   status_code: string;
   version_no: number;
+  started_at: Date | null;
 }
 
 export async function lockBreakdownForUpdate(
@@ -17,7 +18,7 @@ export async function lockBreakdownForUpdate(
   breakdownId: number,
 ): Promise<LockedBreakdown> {
   const rows = await tx.$queryRaw<LockedBreakdown[]>`
-    SELECT breakdown_id,status_code,version_no
+    SELECT breakdown_id,status_code,version_no,started_at
     FROM maintenance.breakdown
     WHERE breakdown_id=${BigInt(breakdownId)}
     FOR UPDATE`;

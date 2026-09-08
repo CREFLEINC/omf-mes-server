@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
+import { assertNotBlank } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { readBreakdownMutationView } from './breakdown-mutation-view';
@@ -14,12 +15,16 @@ import {
 import { BreakdownView } from './breakdown-view';
 import { BreakdownManagementContext } from './breakdown-write-context';
 
-const UNRESOLVED_BREAKDOWN_CAUSE_MESSAGE =
-  '설비 고장 원인코드의 기준정보 원천이 확정되지 않았습니다.';
+export const BREAKDOWN_CAUSE_GROUP = 'EQUIPMENT_BREAKDOWN_CAUSE';
 
 export interface BreakdownHandlingUpdate {
   causeCode?: string | null;
   handlingNote?: string | null;
+}
+
+export interface BreakdownComplete {
+  causeCode: string;
+  handlingNote: string;
 }
 
 const has = (
@@ -36,15 +41,6 @@ export function checkBreakdownHandling(
   input: BreakdownHandlingUpdate,
 ): CheckedBreakdownHandling {
   const causePresent = has(input, 'causeCode');
-  if (causePresent && input.causeCode !== null) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      field(
-        'causeCode',
-        ERROR_CODE.INVALID,
-        UNRESOLVED_BREAKDOWN_CAUSE_MESSAGE,
-      ),
-    ]);
-  }
   return { causePresent, notePresent: has(input, 'handlingNote') };
 }
 
@@ -63,8 +59,11 @@ export class BreakdownHandlingService {
     assertBreakdownVersion(locked, version);
     assertBreakdownEditable(locked);
     const checked = checkBreakdownHandling(input);
+    if (checked.causePresent && typeof input.causeCode === 'string') {
+      await assertBreakdownCause(tx, input.causeCode);
+    }
     return this.updateAndRead(tx, locked, version, context.appUserId, {
-      ...(checked.causePresent ? { cause_code: null } : {}),
+      ...(checked.causePresent ? { cause_code: input.causeCode ?? null } : {}),
       ...(checked.notePresent
         ? { handling_note: input.handlingNote ?? null }
         : {}),
@@ -99,6 +98,51 @@ export class BreakdownHandlingService {
     );
   }
 
+  async completeWithin(
+    tx: BreakdownTx,
+    breakdownId: number,
+    version: number,
+    input: BreakdownComplete,
+    context: BreakdownManagementContext,
+  ): Promise<BreakdownView> {
+    const locked = await lockBreakdownForUpdate(tx, breakdownId);
+    assertBreakdownVersion(locked, version);
+    const transition = this.state.assertTransition(
+      'maintenance.breakdown.status_code',
+      'breakdown-complete',
+      locked.status_code,
+      HttpStatus.BAD_REQUEST,
+    );
+    assertNotBlank([
+      ['causeCode', input.causeCode],
+      ['handlingNote', input.handlingNote],
+    ]);
+    await assertBreakdownCause(tx, input.causeCode);
+    const now = new Date();
+    if (locked.started_at !== null && locked.started_at > now) {
+      throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
+        field(
+          'startedAt',
+          ERROR_CODE.RANGE,
+          '처리 시작 시각이 완료 시각보다 늦을 수 없습니다.',
+        ),
+      ]);
+    }
+    return this.updateAndRead(
+      tx,
+      locked,
+      version,
+      context.appUserId,
+      {
+        cause_code: input.causeCode,
+        handling_note: input.handlingNote,
+        status_code: transition.to,
+        completed_at: now,
+      },
+      now,
+    );
+  }
+
   private async updateAndRead(
     tx: BreakdownTx,
     locked: { breakdown_id: bigint },
@@ -106,7 +150,11 @@ export class BreakdownHandlingService {
     appUserId: number,
     changes: Pick<
       Prisma.breakdownUpdateManyMutationInput,
-      'cause_code' | 'handling_note' | 'status_code' | 'started_at'
+      | 'cause_code'
+      | 'handling_note'
+      | 'status_code'
+      | 'started_at'
+      | 'completed_at'
     >,
     now = new Date(),
   ): Promise<BreakdownView> {
@@ -126,5 +174,28 @@ export class BreakdownHandlingService {
     const view = await readBreakdownMutationView(tx, locked.breakdown_id);
     if (view === null) throw new Error('Updated breakdown is missing');
     return view;
+  }
+}
+
+async function assertBreakdownCause(
+  tx: BreakdownTx,
+  causeCode: string,
+): Promise<void> {
+  const cause = await tx.code_value.findFirst({
+    where: {
+      code: causeCode,
+      is_active: true,
+      code_group: { group_code: BREAKDOWN_CAUSE_GROUP, is_active: true },
+    },
+    select: { code_value_id: true },
+  });
+  if (cause === null) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      field(
+        'causeCode',
+        ERROR_CODE.INVALID,
+        '사용할 수 없는 설비 고장 원인코드입니다.',
+      ),
+    ]);
   }
 }
