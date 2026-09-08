@@ -2,6 +2,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| **구분** | **통보** — 가장자리(같은 창고 호출)에서만 갈리고, 거부→허용은 호환 완화다 |
 | 걸리는 오퍼레이션 | `POST /logistics/stock-transfers` · `GET /logistics/stock-transfers` · `GET …/{stockTransferId}` · `GET …/{stockTransferId}/lines` |
 | 구현 상태 | **구현·병합함**(`main` · 조회 3건 + 반출 등록) — 서버가 같은 창고 호출을 400 `INVALID`(field `toWarehouseId`)로 막는다 |
 | 판정 | `coverage-100/README.md` §2 1단계 **가장자리**(`fromWarehouseId = toWarehouseId` 인 호출에서만 갈린다) → 2단계 **기준 2**(거부하는 쪽 — 거부→허용은 호환 완화, 허용→거부는 깨는 변경) |
