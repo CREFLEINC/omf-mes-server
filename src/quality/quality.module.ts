@@ -24,6 +24,7 @@ import { InspectionMeasurementService } from './inspection/inspection-measuremen
 import { InspectionSummaryController } from './inspection/inspection-summary.controller';
 import { InspectionSummaryService } from './inspection/inspection-summary.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
+import { LotStatusService } from './lot-status/lot-status.service';
 
 /**
  * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
@@ -51,7 +52,7 @@ import { LotStatusController } from './lot-status/lot-status.controller';
     //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
     InspectionSummaryController,
     InspectionResultController,
-    LotStatusController, // 리터럴 경로 하나뿐 — I-19 의 `'summary'` 함정(§7-2)이 안 생긴다.
+    LotStatusController, // 리터럴 경로 둘(`lot-statuses`·`lot-status-summary`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
   ],
   providers: [
     DefectCodeService,
@@ -65,6 +66,7 @@ import { LotStatusController } from './lot-status/lot-status.controller';
     InspectionConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,
+    LotStatusService,
   ],
 })
 export class QualityModule {}
