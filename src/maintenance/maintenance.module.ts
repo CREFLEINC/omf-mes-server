@@ -7,6 +7,7 @@ import { BreakdownQueryService } from "./breakdown/breakdown-query.service";
 import { DowntimeController } from "./downtime/downtime.controller";
 import { DowntimeCreateService } from "./downtime/downtime-create.service";
 import { DowntimeQueryService } from "./downtime/downtime-query.service";
+import { DowntimeUpdateService } from "./downtime/downtime-update.service";
 import { InspectionController } from "./inspection/inspection.controller";
 import { InspectionQueryService } from "./inspection/inspection-query.service";
 
@@ -18,6 +19,7 @@ import { InspectionQueryService } from "./inspection/inspection-query.service";
     BreakdownQueryService,
     DowntimeQueryService,
     DowntimeCreateService,
+    DowntimeUpdateService,
   ],
 })
 export class MaintenanceModule {}
