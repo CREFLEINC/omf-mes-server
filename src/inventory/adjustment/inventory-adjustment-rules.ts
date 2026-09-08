@@ -12,6 +12,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 /** 서버가 정한다 — 계약 본문에 `statusCode` 칸이 없다. */
 export const REGISTERED = 'REGISTERED';
 const REASON_GROUP = 'INVENTORY_ADJUSTMENT_REASON';
+/** 계약이 승인 유형을 못박아 본문이 받지 않는다. 대상 유형과 «같은 문자열»이다(I-14.md §1-5).
+ *  ⛔ 상신과 `:post` 게이트가 한 벌을 나눠 써야 한다 — 갈리면 상신한 전표를 게이트가 못 찾는다. */
+export const APPROVAL_TYPE = 'INVENTORY_ADJUSTMENT';
+export const TARGET_TYPE = 'INVENTORY_ADJUSTMENT';
 
 /** 계약 `InventoryAdjustmentLineUpsert` — required 4. */
 export interface InventoryAdjustmentLineCreate {
@@ -71,14 +75,13 @@ export async function assertCreatable(
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
-  const orgs = await lineTargetErrors(prisma, input.lines, 'lines', errors);
-  if (input.inventoryCountId != null) {
-    const found = await prisma.inventory_count.count({
-      where: { inventory_count_id: input.inventoryCountId },
-    });
+  const countId = input.inventoryCountId ?? null;
+  const orgs = await lineTargetErrors(prisma, input.lines, 'lines', countId, errors);
+  if (countId !== null) {
+    const found = await prisma.inventory_count.count({ where: { inventory_count_id: countId } });
     if (found === 0) errors.push(field('inventoryCountId', ERROR_CODE.INVALID, '없는 실사입니다.'));
   }
-  assertSinglePlant(input.lines, orgs, errors);
+  assertSinglePlant(input.lines, orgs, 'lines', errors);
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
   await assertCodeValues(prisma, [
@@ -100,6 +103,7 @@ export async function assertCreatable(
 export function assertSinglePlant(
   lines: InventoryAdjustmentLineCreate[],
   orgs: Map<number, LocationOrg>,
+  array: 'lines' | 'items',
   errors: ErrorItem[],
 ): void {
   // 위치를 못 찾은 라인이 있으면 건너뛴다 — 그 라인의 오류가 이미 서 있다.
@@ -107,7 +111,7 @@ export function assertSinglePlant(
   if (plants.some((plantId) => plantId === undefined)) return;
   const odd = plants.findIndex((plantId) => plantId !== plants[0]);
   if (odd >= 0) {
-    errors.push(field(`lines[${odd}].locationId`, ERROR_CODE.INVALID, '한 전표의 라인이 두 공장에 걸칠 수 없습니다.'));
+    errors.push(field(`${array}[${odd}].locationId`, ERROR_CODE.INVALID, '한 전표의 라인이 두 공장에 걸칠 수 없습니다.'));
   }
 }
 
@@ -120,6 +124,7 @@ export async function lineTargetErrors(
   prisma: PrismaService,
   lines: InventoryAdjustmentLineCreate[],
   array: 'lines' | 'items',
+  inventoryCountId: number | null,
   errors: ErrorItem[],
 ): Promise<Map<number, LocationOrg>> {
   const ids = (of: (line: InventoryAdjustmentLineCreate) => number | null | undefined): number[] => [
@@ -142,14 +147,16 @@ export async function lineTargetErrors(
     }),
     prisma.inventory_count_line.findMany({
       where: { inventory_count_line_id: { in: ids((l) => l.inventoryCountLineId) } },
-      select: { inventory_count_line_id: true },
+      select: { inventory_count_line_id: true, inventory_count_id: true },
     }),
   ]);
 
   const itemIds = new Set(items.map((row) => Number(row.item_id)));
   const lotItems = new Map(lots.map((row) => [Number(row.lot_id), Number(row.item_id)]));
   const uomIds = new Set(uoms.map((row) => Number(row.uom_id)));
-  const countLineIds = new Set(countLines.map((row) => Number(row.inventory_count_line_id)));
+  const countLineOwners = new Map(
+    countLines.map((row) => [Number(row.inventory_count_line_id), Number(row.inventory_count_id)]),
+  );
   const orgs = new Map<number, LocationOrg>(
     locations.map((row) => [
       Number(row.location_id),
@@ -175,8 +182,14 @@ export async function lineTargetErrors(
       if (!lotItems.has(line.lotId)) bad('lotId', '없는 LOT 입니다.');
       else if (lotItems.get(line.lotId) !== line.itemId) bad('itemId', '이 LOT 의 품목이 아닙니다.');
     }
-    if (line.inventoryCountLineId != null && !countLineIds.has(line.inventoryCountLineId)) {
-      bad('inventoryCountLineId', '없는 실사 라인입니다.');
+    if (line.inventoryCountLineId != null) {
+      const owner = countLineOwners.get(line.inventoryCountLineId);
+      if (owner === undefined) bad('inventoryCountLineId', '없는 실사 라인입니다.');
+      // ⭐ 실재만 보면 «남의 실사» 라인을 가리켜도 통과한다 — 그러면 I-15 `:close` 가
+      //    「이 실사의 차이가 조정됐나」를 라인 축으로 못 가른다(마이그를 넣은 이유다).
+      else if (owner !== inventoryCountId) {
+        bad('inventoryCountLineId', '이 조정이 가리키는 실사의 라인이 아닙니다.');
+      }
     }
   }
   return orgs;
@@ -195,31 +208,30 @@ export async function resolveLineDimensions(
   orgs: Map<number, LocationOrg>,
   array: 'lines' | 'items',
 ): Promise<LineDimension[]> {
-  const found = await Promise.all(
-    lines.map((line) =>
-      prisma.inventory_balance.findMany({
-        where: {
-          ...(orgs.get(line.locationId) as LocationOrg),
-          location_id: line.locationId,
-          item_id: line.itemId,
-          lot_id: line.lotId ?? null,
-        },
-        select: { quality_status_code: true, inventory_status_code: true },
-      }),
-    ),
-  );
+  // ⭐ 라인마다 한 번씩 읽으면 N+1 이다 — 7칸 키 전건을 한 문장으로 모아 읽고 키로 가른다.
+  //    같은 키를 쓰는 라인 둘은 같은 행 묶음을 보므로 0행·1행·2행+ 판정은 라인마다 그대로다.
+  const keys = lines.map((line) => ({
+    ...(orgs.get(line.locationId) as LocationOrg),
+    location_id: line.locationId,
+    item_id: line.itemId,
+    lot_id: line.lotId ?? null,
+  }));
+  const rows = await prisma.inventory_balance.findMany({ where: { OR: keys } });
+  const byKey = new Map<string, typeof rows>();
+  for (const row of rows) byKey.set(balanceKey(row), [...(byKey.get(balanceKey(row)) ?? []), row]);
 
   const errors: ErrorItem[] = [];
   // 못 푼 라인도 자리를 지켜 둔다 — 뒤 라인의 오류가 제 첨자를 짚어야 한다.
-  const dimensions = found.map((rows, index) => {
+  const dimensions = keys.map((key, index) => {
+    const found = byKey.get(balanceKey(key)) ?? [];
     const at = `${array}[${index}].locationId`;
-    if (rows.length === 1) {
+    if (found.length === 1) {
       return {
-        qualityStatusCode: rows[0].quality_status_code,
-        inventoryStatusCode: rows[0].inventory_status_code,
+        qualityStatusCode: found[0].quality_status_code,
+        inventoryStatusCode: found[0].inventory_status_code,
       };
     }
-    if (rows.length > 1) {
+    if (found.length > 1) {
       errors.push(field(at, ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 조정할지 정할 수 없습니다.'));
     } else if (lines[index].adjustmentQty < 0) {
       errors.push(field(at, ERROR_CODE.NEGATIVE_BALANCE, '이 위치에 그 LOT 의 재고가 없습니다.'));
@@ -231,4 +243,10 @@ export async function resolveLineDimensions(
   });
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   return dimensions;
+}
+
+/** 잔액 7칸 키를 한 문자열로 — 입력(number)과 조회 결과(bigint)를 같은 모양으로 맞춘다. */
+const KEY_COLUMNS = ['legal_entity_id', 'business_unit_id', 'plant_id', 'warehouse_id', 'location_id', 'item_id', 'lot_id'];
+function balanceKey(row: object): string {
+  return KEY_COLUMNS.map((column) => String((row as Record<string, unknown>)[column])).join(':');
 }
