@@ -199,7 +199,9 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
     const response = await post(NONCONFORMANCES)
       .send(
         createBody({
-          description: `${PREFIX} 선택 칸`,
+          // ⛔ 리뷰 Nit-4 — 앞뒤 공백을 «조용히» 다듬지 않는다(2단계 기준 4). 픽스처 문자열에
+          //   공백이 없으면 `description.trim()` 으로 저장하는 변이가 그물 밖이다.
+          description: `  ${PREFIX} 선택 칸  `,
           responsibleDepartmentId: Number(ids.department),
           workOrderId: null,
           inspectionResultId: null,
@@ -208,6 +210,7 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
       )
       .expect(201);
 
+    expect(response.body.description).toBe(`  ${PREFIX} 선택 칸  `);
     expect(response.body.responsibleDepartmentId).toBe(Number(ids.department));
     // 계약이 널을 못 받는 칸(7개)은 키를 생략한다 — 널로 실으면 ajv 가 막는다.
     expect(response.body).not.toHaveProperty('workOrderId');
@@ -299,6 +302,62 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
           lots: [
             { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
             { lotId: Number(lotIds.VAL2), affectedQty: 5, uomId: Number(ids.uomB) },
+          ],
+        }),
+      )
+      .expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'lots', code: 'INVALID' });
+  });
+
+  it('⭐⭐ 순서 — 본문 형식(400)이 참조 존재(400)보다 앞이다(공백만 + 없는 itemId → description REQUIRED)', async () => {
+    // ⛔ 리뷰 Major-1 — 두 검사가 다 400 `ErrorResponse` 라 스왑해도 상태 코드가 같다. 어느
+    //   «칸»을 짚는지로만 순서가 보인다(스왑 변이 N1 이 이 한 줄에서 빨개진다).
+    const response = await post(NONCONFORMANCES).send(createBody({ description: '   ', itemId: 999999999 })).expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'description', code: 'REQUIRED' });
+  });
+
+  it('⭐⭐ 전건 — 열린 부적합 판정이 «둘째» LOT 도 본다(첫 LOT 만 보면 409 를 놓친다)', async () => {
+    // ⛔ 리뷰 Major-2 ⓐ — 뒤집히면 같은 LOT 에 열린 부적합이 «둘» 생겨
+    //   `DispositionCandidate.nonconformanceId` 가 단수라는 계약 전제가 깨진다(§1-6).
+    const response = await post(NONCONFORMANCES)
+      .send(
+        createBody({
+          lots: [
+            { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
+            { lotId: Number(lotIds.OPEN), affectedQty: 5, uomId: Number(ids.uomA) },
+          ],
+        }),
+      )
+      .expect(409);
+
+    expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY' });
+  });
+
+  it('⭐⭐ 전건 — LOT 존재 검사가 «둘째» LOT 도 본다(첫 LOT 만 보면 FK 위반 500 이 샌다)', async () => {
+    const response = await post(NONCONFORMANCES)
+      .send(
+        createBody({
+          lots: [
+            { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
+            { lotId: 999999999, affectedQty: 5, uomId: Number(ids.uomA) },
+          ],
+        }),
+      )
+      .expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'lots[1].lotId', code: 'INVALID' });
+  });
+
+  it('⭐⭐ 전건 — 단위 일치가 «셋째» LOT 까지 본다(앞 둘만 보면 혼합이 통과한다)', async () => {
+    const response = await post(NONCONFORMANCES)
+      .send(
+        createBody({
+          lots: [
+            { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
+            { lotId: Number(lotIds.VAL2), affectedQty: 5, uomId: Number(ids.uomA) },
+            { lotId: Number(lotIds.ROLL), affectedQty: 5, uomId: Number(ids.uomB) },
           ],
         }),
       )
@@ -421,6 +480,10 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
     expect(lotsAfter).toEqual(lotsBefore);
     expect(after.status_code).toBe('PENDING_DECISION');
     expect(after.version_no).toBe(before.version_no + 1);
+    // ⛔ 리뷰 Minor-2 — 위 대조가 감사 칸 넷을 «일부러» 제외하므로 여기서 따로 잠근다.
+    //   `updated_at` 에 `@updatedAt` 이 없어(schema 실측) 안 채우면 값이 옛날로 굳는다.
+    expect(after.updated_by).toBe(userId);
+    expect(after.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
   });
 
   it('⭐ 의뢰 — 같은 Idempotency-Key 재전송이 판 번호를 두 번 올리지 않는다', async () => {
