@@ -191,6 +191,23 @@ describe("보전 지시 I-31 W1 (e2e)", () => {
       }),
     ).toBe(0);
 
+    const reselectKey = randomUUID();
+    const reselectNote = `${PREFIX}-SOURCE-RESELECT`;
+    const reselect = equipmentBody(equipmentId, itemA, reselectNote, [
+      { triggerTypeCode: "BREAKDOWN", sourceId: Number(breakdownIds[0]) },
+    ]);
+    await post(reselect, reselectKey).expect(422);
+    expect(
+      await prisma.maintenance_order.count({
+        where: { order_note: reselectNote },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.idempotency_record.count({
+        where: { idempotency_key: reselectKey },
+      }),
+    ).toBe(0);
+
     await request(app.getHttpServer())
       .post(PATH)
       .set("Cookie", cookie)
@@ -216,42 +233,63 @@ describe("보전 지시 I-31 W1 (e2e)", () => {
       baseDate: "2026-09-01",
       orderNote: note,
     };
-
-    const created = await post(body, randomUUID()).expect(201);
-    expect(validateCreated(created.body)).toBe(true);
-    expect(created.body).toMatchObject({
-      targetTypeCode: "MOLD",
-      targetId: Number(moldId),
-      maintenanceTypeCode: "PREVENTIVE",
-      items: [
-        {
-          itemName: " 분해 청소 ",
-          inspectionItemId: null,
-          statusCode: "PLANNED",
-        },
-      ],
-      triggers: [
-        {
-          triggerTypeCode: "PM_DUE",
-          sourceId: null,
-          shotCountAtDue: null,
-          guaranteedShotCountAtDue: null,
-        },
-      ],
-      baseDate: "2026-09-01",
-    });
-    expect(created.body.triggers[0]).not.toHaveProperty("pmDueAxisCode");
-
-    const duplicateKey = randomUUID();
-    await post(body, duplicateKey).expect(422);
-    expect(
-      await prisma.maintenance_order.count({ where: { order_note: note } }),
-    ).toBe(1);
-    expect(
-      await prisma.idempotency_record.count({
-        where: { idempotency_key: duplicateKey },
-      }),
-    ).toBe(0);
+    const keys = [randomUUID(), randomUUID()];
+    const barrier = await holdRow((tx) =>
+      tx.$queryRaw(Prisma.sql`
+        SELECT mold_id FROM mdm.mold WHERE mold_id=${moldId} FOR UPDATE`),
+    );
+    let calls: Promise<request.Response>[] = [];
+    try {
+      calls = keys.map((key) => post(body, key).then((response) => response));
+      await waitForBlocked(
+        (query) =>
+          query.includes("FROM mdm.mold") &&
+          query.includes("FOR NO KEY UPDATE"),
+        2,
+      );
+      barrier.release();
+      const responses = await Promise.all(calls);
+      expect(responses.map((response) => response.status).sort()).toEqual([
+        201, 422,
+      ]);
+      const created = responses.find((response) => response.status === 201);
+      expect(created).toBeDefined();
+      expect(validateCreated(created?.body)).toBe(true);
+      expect(created?.body).toMatchObject({
+        targetTypeCode: "MOLD",
+        targetId: Number(moldId),
+        maintenanceTypeCode: "PREVENTIVE",
+        items: [
+          {
+            itemName: " 분해 청소 ",
+            inspectionItemId: null,
+            statusCode: "PLANNED",
+          },
+        ],
+        triggers: [
+          {
+            triggerTypeCode: "PM_DUE",
+            sourceId: null,
+            shotCountAtDue: null,
+            guaranteedShotCountAtDue: null,
+          },
+        ],
+        baseDate: "2026-09-01",
+      });
+      expect(created?.body.triggers[0]).not.toHaveProperty("pmDueAxisCode");
+      expect(
+        await prisma.maintenance_order.count({ where: { order_note: note } }),
+      ).toBe(1);
+      expect(
+        await prisma.idempotency_record.count({
+          where: { idempotency_key: { in: keys } },
+        }),
+      ).toBe(1);
+    } finally {
+      barrier.release();
+      await barrier.done;
+      await Promise.allSettled(calls);
+    }
   });
 
   it("E-O25 직접 부여 교체 writer와 target 잠금이 역대기 없이 최종 부여를 사용한다", async () => {
@@ -532,6 +570,7 @@ describe("보전 지시 I-31 W1 (e2e)", () => {
 
   async function waitForBlocked(
     matches: (query: string) => boolean,
+    minimum = 1,
   ): Promise<void> {
     for (let attempt = 0; attempt < 500; attempt += 1) {
       const rows = await prisma.$queryRaw<{ query: string }[]>`
@@ -539,7 +578,7 @@ describe("보전 지시 I-31 W1 (e2e)", () => {
         WHERE datname=current_database()
           AND pid<>pg_backend_pid()
           AND wait_event_type='Lock'`;
-      if (rows.some((row) => matches(row.query))) return;
+      if (rows.filter((row) => matches(row.query)).length >= minimum) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error("제어한 DB 잠금 대기를 관찰하지 못했습니다.");
