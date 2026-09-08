@@ -34,7 +34,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 |---|---|--:|---|---|---|---|---|---|--:|
 | U1 | 결재 뼈대 | 12 | W-CO-09 · W-06-15 | — | 없음 | 불필요 | — | ○ 승인 요청 | 2 |
 | U2 | 알림 | 8 | W-CO-03 · W-CO-11 | — | recipient 규칙 | ○ | — | — | 2 |
-| U3 | 출력물 발행 이력 | 5 | P-01-01 · P-01-02 · P-02-05/07/09 · P-04-02/04 · W-05-13 | — | 없음 | 불필요 | — | — | 1 |
+| U3 | 출력물 발행 이력 | 5정상(별도프린터1유보/rendition1제외) | P-01-01 · P-01-02 · P-02-05/07/09 · P-04-02/04 · W-05-13 · W-04-03 | I26저장조회 | 없음 | A9결과/귀속6nullable | — | 기록/실물분리 | I27 R16 책임별 |
 | U4 | P/O · ASN | 10 | W-01-11 · W-01-09 | U1 | 없음 | ○ §I-48 | — | ○ P/O | 2 |
 | U5 | 입하 | 9 | M-01-01 · M-01-06 · W-01-03 | U4 | 없음 | — | — | ○ 입하 | 3 |
 | U6 | LOT 부가 조회 | 3 | M-01-02 · W-01-07 | — | 없음 | 불필요 | — | — | 1 |
@@ -45,7 +45,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U11 | 출고요청 · 피킹 | 8 | M-01-08 앞 · W-02-10 | U20 | 없음 | 불필요 | ~~○ 예약~~ **피킹 소진만**(`pick()`·`consume()` · 예약을 거는 자리 없음 · I-8 R-22) | ~~○ 피킹~~ **없음**(`picking_order`·`picking_line` 상태를 서버가 안 옮긴다 · I-8 §6-6) | ~~2~~ **5**(I-8 R-1) |
 | U12 | 출고 전표 | 7 | M-01-08 뒤 · W-01-05 · W-01-06 · W-04-10 | U11 · U1 | 없음 | 불필요 | ○ 출고 | ○ 출고 | 5(I-4 재수립 R-11) |
 | U13 | 생산창고 입고 | 3 | M-01-09 | U12 | 없음 | 불필요 | 없음(I-9 §3-4 기록만) | 없음(영원히 `REGISTERED` · I-9 R-4) | 2 |
-| U14 | 재고 이동 · 반출 | 6 | M-01-10 · W-04-11 | U12 | 없음 | 불필요 | ○ 2단 | ○ 이동 | 2 |
+| U14 | 재고 이동 · 반출 | 6 | **M-01-10** | U12 | **A4** | `transitions.ts` | ○ 2단 | ○ 이동 | **4** |
 | U15 | 재생재 | 1 | M-01-12 | U5 | 없음 | 불필요 | ○ 증가 | — | 1 |
 | U16 | 실사 | 6 | W-01-04 · M-01-11 | — | 없음 | 불필요 | — | ○ 실사 | 2 |
 | U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | **1(N-1)** | `transitions.ts` | ○ 조정 | ○ 조정 | **4** |
@@ -58,18 +58,18 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U24 | 생산 실적 · 정정 | 5 | P-02-04 · W-02-05 | U23 | 없음 | **2**(D1 `shift_id` 완화 · D2 `correct_reason_code`) | — (원장 안 지난다 · 제품 재고는 기존 입고) | ○ L1 호출 | 3 (I-7 ①②③ · 재수립 R-19) |
 | U25 | 생산 LOT 완료 · 개체 발번 | 4 | P-02-06 · P-02-05 · W-02-05/06 | U24 | 없음 | 불필요 | — | — (완료는 `completed_at` 시각 · 어느 상태 칸도 안 옮긴다 · I-7 §3-3) | 2 |
 | U26 | 공정 인계 · 수리 왕복 | 6 | M-02-01 · M-02-02 | U24 | 없음 | 불필요 | ○ 이동 | ○ 인계 | 2 |
-| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **handling_unit_repack_event(+line)** | ○ | — | ○ 포장 | 3 |
+| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **N-2 — `handling_unit_repack_event(+line)` 신설**(✅ 실측으로 확인 · I-16 재수립 R-1) | ○ | — | ○ 포장 | **4** |
 | U28 | 부적합 · 처분 | 9 | W-04-06/07 · W-03-10 · P-04-03 | U8 | 없음 | 불필요 | — | ○ 부적합 | 3 |
 | U29 | 특채 | 2 | W-03-09 | U1 · U28 | 없음 | 불필요 | — | — | 1 |
 | U30 | 출하지시서 · 출하작업지시 | 7 | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | 3 |
 | U31 | 출하 처리 · 확정 · 취소 | 8 | W-04-04/05/12 · P-04-01/02 | U30 · U1 | 없음 | 불필요 | ○ 출하·역분개 | ○ 2단 확정 | 3 |
 | U32 | 재고 재등록 | 1 | W-04-03 · W-04-11 · W-03-02 | U8 · U14 · U28 | 없음 | 불필요 | ○ 복합 | ○ | 1 |
-| U33 | 설비 점검 · 고장 | 9 | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | 불필요 | — | ○ 고장 | 3 |
-| U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33 | 없음 | ○ maintenance_result.version_no | ○ 예비품 출고 | ○ 지시 | 3 |
-| U35 | 비가동 | 6 | P-05-02 · W-05-08 | U33 · U22 | 없음 | ○ downtime.version_no | — | — | 2 |
-| U36 | 툴 사용실적 | 3 | P-05-01 | — | 없음 | 불필요 | — | — | 1 |
-| U37 | 계측기 | 4 | W-05-10 · W-05-11 | — | 없음 | ○ calibration 6칸 | — | — | 2 |
-| U38 | 수집 채널 | 5 | W-05-07 | — | **collection_channel_observation** | ○ | — | — | 2 |
+| U33 | 설비 점검 · 고장 | 9(진행8·보류1) | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | A15 nullable8추가·2완화 | — | ○ 고장 start, 완료 보류 | 실행8 + 조건부 |
+| U34 | 보전 지시 · 실적 | 8 | W-05-05/06 · W-05-02/03 | U33·I32순간helper | MO/cancel·부여/PM최소공유 | ○ result.version_no/필드확장 | ✕ 기존출고 참조만 | ○ 지시 | I31 R12 최소책임별 |
+| U35 | 비가동 | 6(진행4·보류2) | P-05-02 · W-05-08 | I-30 날짜helper·U22 | 없음 | ○ remarks/최초사번/version 추가3·type완화1 | — | — | µs준비+조회/쓰기분리 |
+| U36 | 툴 사용실적 | 3(GET2/POST1) | P-05-01 | I32순간·I31reset경계 | 없음 | ○추가4/완화2 | — | 누계NKU·실제FK회귀 | I33물리/조회/쓰기분리 |
+| U37 | 계측기 | 4 | W-05-10 · W-05-11 | — | 없음 | ○추가8·유일완화/version추가0 | — | CAL기본3효과/확장만422 | I33물리/조회/쓰기분리 |
+| U38 | 수집 채널 | 5 | W-05-07 | I32순간·A참조조율 | **collection_channel_observation** | ○추가5/완화3/네축NULL식유일 | — | 登録/활성연결분리 | I33물리/조회/쓰기분리 |
 | U39 | 검사 집계 | 5 | W-03-05 | U7 · U24 | 없음 | 불필요 | — | — | 1 |
 | U40 | 변경 이력 | 1 | W-06-11 · W-06-06 · W-CO-02 | — | 없음 | ○ §I-5 jsonb 규약 | — | — | 1 |
 | U41 | 예비품 올리기 | 1 | W-06-08 | — | 없음 | 불필요 | — | — | 1 |
@@ -80,7 +80,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 **합계 244 + 건너뜀 5 = 249.** PR 예상 합계 **86**(마이그레이션 선행 커밋 12건 별도).
 
 > PR 수 산정 근거 — 관행대로 「전표 하나 + posting 연결 + e2e」 = 1 PR, 「같은 도메인 조회 GET
-> 묶음」 = 1 PR. 조회만 있는 슬라이스(U6·U29·U36·U39·U40·U42·U43)는 1 PR, 전표+동사가 있는
+> 묶음」 = 1 PR. 조회만 있는 슬라이스(U6·U29·U39·U40·U42·U43)는 1 PR, 전표+동사가 있는
 > 슬라이스는 「조회 1 + 전표 1(+ 코어 1)」로 2~3 PR. 코어(원장 쓰기·상태기계)가 붙는
 > U12·U18·U24·U31 은 CLAUDE.md 의 diff ≤ 200줄 규칙 때문에 3 PR 이 하한이다.
 
@@ -119,6 +119,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `POST /app/notification-subscriptions/recipients:preview` | 지금 받는 사람 미리보기 | W-CO-11 | 멱등 |
 
 #### U3 출력물 발행 이력 (P-01-01·P-01-02·P-02-05/07/09·P-04-02/04·W-05-13) — 5건
+
+**I-27 R1~R16 재수립**: 조회3·부분 정상 발행1·보고1은 진행하지만 문서9종 전체 지원/물리 라벨 완료는 아니다. 발행은 계정 사번 선택·검증된 terminal이면 필수, report는 항상 필수이며 최초 발행/보고 계정·작업자를 분리한다. MATERIAL PENDING/FAILED도 기존 labelIssued=true이고 렌디션 실패 뒤 재조회 복구·51+이력 페이지·target.screenId 이동은 소비자 미완이다. DELIVERY+LOT/PACKING+LOT 실제 임시치환은 서버 허용 근거가 아니다. 프린터 상태/기본을 만들지 않고 GET을 유보한다. summary는 CSV전건·중복순서·미존재count0(존재증명 아님)·같은행의last3를 보존하고 구행 NULL outcome도 정상 null이다.
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
@@ -246,12 +248,12 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `GET /logistics/stock-transfers` | 재고 이동 목록 | M-01-10,W-06-06 | - |
+| `GET /logistics/stock-transfers` | 재고 이동 목록 | M-01-10 | - (⛔ `W-06-06` 삭제 — 공통코드 마스터 화면이라 이 목록을 부르지 않는다 · I-13 재수립 R-19) |
 | `GET /logistics/stock-transfers/{stockTransferId}` | 재고 이동 상세 | M-01-10 | - |
 | `GET /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 목록 | M-01-10 | - |
-| `PUT /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 치환 | — | 멱등, ETag |
-| `POST /logistics/stock-transfers` | 반출 등록 | M-01-10,W-04-11 | 멱등, ETag, 사번 |
-| `POST /logistics/stock-transfers/{stockTransferId}:arrive` | 도착 확정 | M-01-10 | 멱등, ETag, 사번 |
+| `PUT /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 치환 | — | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
+| `POST /logistics/stock-transfers` | 반출 등록 | M-01-10 | 멱등, **응답 ETag(201)**, 사번 (⛔ `W-04-11` 삭제 — 그 화면은 `POST /logistics/stock-reinstatements` **한 호출**이다 · `W-04-11` §0·§5-3) |
+| `POST /logistics/stock-transfers/{stockTransferId}:arrive` | 도착 확정 | M-01-10 | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 |
 
 #### U15 재생재 (M-01-12) — 1건
 
@@ -372,8 +374,10 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 |---|---|---|---|
 | `POST /trace/lots/{lotId}:complete` | 생산 LOT 완료 | P-02-06 | 멱등, ETag, 사번 — 받되 저장 칸 없음(거부 판정에만 쓴다 · I-7 §9-3 ⓜ) |
 | `GET /trace/serial-numbers` | 제품 개체 목록 | P-02-05 | - |
-| `POST /trace/serial-numbers` | 제품 개체 대량 발번 | M-01-02,P-02-05 | 멱등, ETag, 사번 |
+| `POST /trace/serial-numbers` | 제품 개체 대량 발번 — 상태/단위 원천 전 본길 유보 | P-02-05,P-02-12(재사용) | 멱등·사번 필수, If-Match 선택·원천 재개 전 판정. 응답 버전 ETag 없음 |
 | `GET /trace/lot-lifecycle-events` | LOT 생명주기 변경이력 조회 — 전이 3종 전건 | W-02-05,W-02-06 | - |
+
+I-26 R1~R10: 기존 개체 GET은 진행한다. 기발번 수는 해당 LOT **다른 필터 없는 page.total**이며 items.length나 상태/기간 필터된 total이 아니다. 신규 발번→발행은 N개 응답을 단일 targets 요청으로 넘기고 단계별 별도 키를 보존한다. ② 응답 유실은② 같은 키로 원래 회차 재생, 새 발번/재발행이 아니다. GET 첫 쪽으로 성공 배치를 재구성하지 않는다. P-02-12도 새 발번 제한을 승계한다. P-04-04 권한 매핑만으로 시리얼 소비자로 단정하지 않는다. 공용 로그인·CORS/귀속·멱등 기록 실제 삭제 한계는054·104~107에 인계.
 
 #### U26 공정 인계·수리 왕복 (M-02-01·M-02-02) — 6건
 
@@ -393,10 +397,10 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /inventory/handling-units` | 취급 단위 목록 | M-01-10,P-01-02,P-02-08 | - |
 | `GET /inventory/handling-units/{handlingUnitId}` | 취급 단위 상세 | P-01-02 | - |
 | `GET /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 목록 | M-01-10 | - |
-| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03,P-04-04 | 멱등, ETag, 사번 |
+| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03 | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (⛔ `P-04-04` 삭제 — 그 화면 액션 9건에 구성 편집이 없고 부르는 것은 `POST /inventory/handling-units` 다 · I-16 재수립 R-17) |
 | `GET /inventory/handling-units/{handlingUnitId}/repack-events` | 포장 재구성 이력 | M-04-03 | - |
 | `POST /inventory/handling-units` | 취급 단위 등록 | M-04-03,P-02-08,P-04-01 | 멱등, 사번 |
-| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08 | 멱등, ETag, 사번 |
+| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08,**P-04-01** | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (`P-04-01` §5-6:240 「포장 확정」·§6:257 이 부모 `version_no` 충돌을 요구 · I-16 재수립 R-17) |
 
 #### U28 부적합·처분 (W-04-06·W-04-07·W-03-10·P-04-03) — 9건
 
@@ -458,11 +462,13 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `GET /maintenance/inspections/{inspectionId}` | 점검 기록 한 건 | — | - |
 | `POST /maintenance/inspections` | 점검 기록 등록 | — | 멱등, 사번 |
 | `GET /maintenance/breakdowns` | 고장 기록 목록 | W-05-05 | - |
-| `GET /maintenance/breakdowns/{breakdownId}` | 고장 기록 한 건 | — | - |
+| `GET /maintenance/breakdowns/{breakdownId}` | 고장 기록 한 건 | — | 응답 ETag |
 | `POST /maintenance/breakdowns` | 고장 보고 등록 | — | 멱등, 사번 |
-| `POST /maintenance/breakdowns/{breakdownId}:start-handling` | 처리 중으로 | — | 멱등, ETag |
-| `POST /maintenance/breakdowns/{breakdownId}:complete` | 고장 완료 | P-02-02,P-05-02,W-05-04 | 멱등, ETag |
-| `PUT /maintenance/breakdowns/{breakdownId}` | 처리 내역 저장 | — | 멱등, ETag |
+| `POST /maintenance/breakdowns/{breakdownId}:start-handling` | 처리 중으로 | — | 멱등, If-Match 필수 |
+| `POST /maintenance/breakdowns/{breakdownId}:complete` | 고장 완료 · 원인 원천 보류 | P-02-02,P-05-02,W-05-04 | 멱등, If-Match 필수 |
+| `PUT /maintenance/breakdowns/{breakdownId}` | 처리 내역 저장 | — | 멱등, If-Match 필수 |
+
+I-30 재수립 R-1~R-14가 구현 정본이다. 연속 편집은 상세 GET→메모 PUT→상세 GET→start→상세 GET으로 숫자 버전을 새로 받는다. 쓰기 응답의 내용 해시를 If-Match로 쓰지 않는다. 목록의 linkedDowntimeCount=0은 실제 경고 해제 근거가 아니며 상세를 다시 읽는다. 원인 미정 complete1건은 보류, PUT은 원인 nonnull만 거부한다. 보고 성공과 알림 발송/사진 저장을 구분하며, 오프라인 단말의 필수 항목·자동 판정 책임과 현재 인증/CORS 한계는 문의090~098·054에 남겼다.
 
 #### U34 보전 지시·실적 (W-05-05·W-05-06·W-05-02·W-05-03) — 8건
 
@@ -474,21 +480,27 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `POST /maintenance/orders/{maintenanceOrderId}:cancel` | 보전 지시 취소 | — | 멱등, ETag |
 | `GET /maintenance/results` | 보전 실적 목록 | — | - |
 | `GET /maintenance/results/{maintenanceResultId}` | 보전 실적 한 건 | — | - |
-| `POST /maintenance/results` | 보전 실적 등록 | W-05-06 | 멱등, ETag |
+| `POST /maintenance/results` | nonreset 미마감 실적 등록, reset/closed true만422 | W-05-06·W-05-03 | 멱등, If-Match 선택(툴 reset 조건부필수·현재성공유보) |
 | `PUT /maintenance/results/{maintenanceResultId}` | 보전 실적 수정 | — | 멱등, ETag |
+
+I-31 정본 R1~R13·문의113~116: 미마감 저장/편집, 마감, PM 기준, 원천/부여, parts 확인·정정을 별도 인수한다. closed/reset true는 각각422·전건0이며 일반 기록 성공을 PM/지시 완료 성공으로 표시하지 않는다. finishedAt가 있어도 PM 완료 선언이 아니다. EQUIPMENT 직접고장의 breakdownId·예방baseDate·실제effective부여, MOLD order 필수·자유부위 입력은 현재 client 누락을 고칠 자리다. 상세GET→실적 ETag→PUT 진입점은 아직 없고 parts7칸·unknown UOM/GI 재선택·수량정정 표시도 미완이다. client의 브라우저offset 자정 입력/UTCprefix 날짜표시는 공장로컬 인수094로 분리하며 서버 instant를 재해석하지 않는다. 툴 폐기만으로 nonreset 과거 기록을 막지 않는다. 담당/수행자/발행자/실제actor는 별도 계정축, 예비품은 출고 참조이지 자동출고/수불이 아니다.
 
 #### U35 비가동 (P-05-02·W-05-08) — 6건
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
 | `GET /maintenance/downtimes` | 비가동 목록 | P-05-02 | - |
-| `GET /maintenance/downtimes/{downtimeId}` | 비가동 한 건 | — | - |
+| `GET /maintenance/downtimes/{downtimeId}` | 비가동 한 건 | — | 응답 버전 ETag |
 | `POST /maintenance/downtimes` | 비가동 등록 | — | 멱등, 사번 |
-| `PUT /maintenance/downtimes/{downtimeId}` | 비가동 수정 | — | 멱등, ETag |
-| `POST /maintenance/downtimes/{downtimeId}:close` | 비가동 지금 종료 | P-05-02 | 멱등, ETag, 사번 |
+| `PUT /maintenance/downtimes/{downtimeId}` | 비가동 수정 | — | 멱등, If-Match 필수 |
+| `POST /maintenance/downtimes/{downtimeId}:close` | 비가동 지금 종료 — 시각 입력 경로 해소 전 유보 | P-05-02 | 멱등, If-Match 선택, 사번 |
 | `GET /maintenance/downtimes/summary` | 비가동 집계 | W-05-08 | - |
 
+I-32 재수립 R1~R14·문의108~112가 정본이다. 입력/수정의 µs는 유지하고 미래 인라인은 단말 로컬 시계로 검사한다. 닫힌 구간 재개(null)는400, 과거 닫힌 입력·겹침·0길이는 허용한다. openOnly=true만 기간 생략 예외이며 무기간은 timezone 평가0. summary는 정상 계획구간/적용 산식과 완료보전 정의가 남아 유보하며 optional을 영구 생략하지 않는다. 경미정지는 공장정책으로 충분·미설정만5·actual포함/일반사유와별도줄, 폐지사유는 미분류+원본code다. 열린세션/교차기간/소수분 등은 특정조건 문제로 별도판정한다. ‘종료 버튼/집계 화면 완성’과 CRUD4건 구현을 구분한다.
+
 #### U36 툴 사용실적 (P-05-01) — 3건
+
+I33 R1/R2/R13·119: 화면제출shot보존·서버누적·현재정책재계산0. POST누계/기준시각은같은tx, GET과거누계쌍은snapshot없어생략. I31resettrue는114해소전전건422이고nonreset정상. 실제productionFK/NKU·MDMCAS/두증분은서버인수, POP세션/CORS·오프라인은별도미완.
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
@@ -498,6 +510,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 #### U37 계측기 (W-05-10·W-05-11) — 4건
 
+I33 R3/R11·117: CAL PASS/ADJUSTED는master2날짜갱신,FAIL이력만·nonCAL확장정상·미분류CAL만422. 실제registry ADJUSTED/EXTERNAL선택·비대상CHECK경고후등록·합격미리보기·기한NULL≠이력없음·공장today/UTC표시·clearUI 인수는서버API완료와별개. cycle/MAX/서버임의보정0.
+
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
 | `GET /maintenance/calibrations` | 계측기 이력 목록 | W-05-11 | - |
@@ -506,6 +520,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | `POST /maintenance/calibrations/{calibrationId}:clear` | 계측기 이력의 사용 차단을 해소한다 | W-05-11 | 멱등 |
 
 #### U38 수집 채널 (W-05-07) — 5건
+
+I33 R6/R7/R9/R10·118: 실제최신T관측의값/시각을조회하고 alreadyMapped=어떤등록행존재,unmappedOnly=활성항목연결부재. 혼합조건ANY연결판정·무임의페이지/age컷·同plan모든상태MAXRev. 빈unit400/단위없음유지생략PUT과실제409·500성공오집계는각별도소비자인수/번호승인대기. 수집자없는운영환경을수신완료로세지않는다.
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
@@ -568,8 +584,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 |---|---|---|---|
 | U1 | `approval_route` 유일 키(`§I-35`) | 본길 — `(approvalTypeCode, businessUnitId)` 로 활성 1벌을 강제할지 | 계약이 문자로 적었다(「같은 (approvalTypeCode, businessUnitId) 로 활성 결재선이 이미 있으면 400」) → **0단계에서 끝난다.** 부분 유일 인덱스로 물리에 건다(마이그레이션) |
 | U1 | 현장 셸의 `X-Worker-No` 주체 해석(`Y-5`) | 가장자리 — 관리웹은 계정 토큰, 모바일은 사번 | 2단계 ②「거부하는 쪽」 — 사번 헤더가 없으면 `assignedToMe`·`requestedByMe`·`myTurnOnly` 를 **400 으로 거부**한다. 조용히 빈 목록을 내면 M-01-13 이 「내가 올린 요청이 없다」로 읽힌다 |
-| U2 | 알림 **발생 지점 표가 비어 있다**(계약이 스스로 적음: 「2026-08-29 실측 — 발생 지점 표가 아직 비어 있다」) | 본길 — 어느 쓰기 뒤에 알림이 나는가 | 1단계 본길 → **알림 «발생»은 만들지 않는다.** 조회·읽음·수신자 설정만 만들고 발생 훅은 비운다. 요청서에 싣는다 |
-| U2 | 수신자 규칙의 전개 축(`recipients:preview`) | 가장자리 | 2단계 ③「스키마 안 늘리는 쪽」 — 기존 `notification_subscription(app_user, event, channel)` 위에 규칙 표를 새로 얹지 않고, 역할·부서 축이 필요하면 그때 연다 |
+| U2 | 알림 발생 지점과 eventCode 정본 | 발생기는 제외, 코드 목록은3 operation의 본길 | **I-28 R-1**: 사건명은 있지만 코드 문자열은 미확정. 저장 조회/읽음/preview5건 진행, 이벤트GET/구독GET/PUT3건 보류(099). 제목·유형 선택·구독 화면 완료와 API5건 완료는 별개 |
+| U2 | 수신자 규칙의 전개 축(`recipients:preview`) | 실제 조직 관계·이벤트별 토큰 | **I-28 R-2·R-5**: 기존 표를 이벤트 NULL/NULL 헤더+규칙 자식으로 조건부 확장(지금 마이그0). ROLE=부서 사업부+user_role, USER 직접 지정. 규칙 수≠중복 제거 전원≠활성 totalCount(100·101) |
 | U4 | P/O 유일 제약·OCR 자리(`§I-48`) · `erp_purchase_order_no` 유일 없음(W-01-11 §8) | 가장자리 | 2단계 ②거부 — 같은 `erp_purchase_order_no` 재등록을 400 으로 막는다. 허용→거부가 깨는 변경이므로 먼저 막는다 |
 | U5 | 「미등록 품목이 도착하면 입하 라인을 만들 수 없다」(M-01-06 §8) | 본길 — 품목 생성 경로가 계약에 0건 | 1단계 본길 → **오퍼레이션 자체는 그대로 두고**(입하 라인은 등록된 품목만), 화면이 못 여는 경우를 요청서에 싣는다 |
 | U7 | 계측기 미검교정 시 검사 차단 여부(W-01-01 §6 예외 E-3) | 가장자리 | 2단계 ①「재고·원장·상태를 안 쓰는 쪽」 — **차단하지 않고 `calibrationExpired` 표식만** 낸다. 계약이 이미 그 축을 필터·집계에 두었다(`calibrationExpiredCount` — 「집계에서 자동으로 빼지 않는다」) |
@@ -578,7 +594,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U10 | `putaway_rule.priority_no` 방향 · `capacityQty` 사용(`§I-35` · `§Z-11`) | 가장자리 | `§Z-11` 선례 그대로 — **한도를 보지 않고 우선순위 첫 건**만 권장한다 |
 | U11 | 피킹 지시를 **누가 만드는가**(M-01-08 §5-1 「⚠ 누가 만드는지 미정」) | 본길 — 만드는 주체가 없으면 M-01-08 이 영영 빈 화면 | 1단계 본길 → 계약에 생성 오퍼레이션이 없다. ~~`POST /logistics/material-issue-requests` 와 `:release` 가 만드는 쪽으로 «서버 파생»을 두되~~ **서버 파생을 둘 수 없다**(I-8 §5-2 실측 — 요청은 «도착» 위치만 갖고 출발 창고·LOT·위치를 모른다 · 배정 축 3겹 부재) → **문의 045**(선출 축·`pickSequenceRank` 모집단 포함 · I-8 R-22). 조회·`:pick` 은 그대로 구현 |
 | U12 | 기타 출고 결재선 선택 축(`businessUnitId` × `reasonCode` 파생) | 가장자리 — 계약이 「서버가 전표의 reasonCode 로 파생한다」로 이미 못박음 | ~~0단계에서 끝난다~~ → **022 대기 · 공통본만**(`businessUnitId` 8자리 `null` · `item.business_unit_id` 는 없는 칸 — I-4 재수립 R-5) |
-| U14 | 창고 «내» 위치 이동을 담을 헤더가 없다(M-01-10 §8) | 본길 | 1단계 본길 → `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 위치 이동은 **적치(U10)로 흡수**하고 요청서에 싣는다 |
+| U14 | 창고 «내» 위치 이동을 담을 헤더가 없다(M-01-10 §8) | 본길 | 1단계 본길 → `stock_transfer` 는 창고 간(from ≠ to)만 받는다. ⛔ ~~위치 이동은 적치(U10)로 흡수~~ — **흡수처가 없다**(I-13 재수립 R-1): `M-01-07` §0·§1·§5-4 가 복귀처를 **`M-01-10`** 으로 주고, 그 `putaway_task` 는 임시 적치로 이미 `COMPLETED_TEMPORARY` 가 되어 닫혔다. **오늘 어느 슬라이스도 창고 내 위치 이동을 만들지 않는다** — 문의 121 에 싣는다 |
 | U16 | 「차이가 있을 때 조정 없이 마감할 수 있나」(W-01-04 §8) | 가장자리 | 계약이 답했다 — `closable`·`closeBlockedReasonCode(VARIANCE_UNADJUSTED)` → 0단계 |
 | U18 | `screenId` 를 채울 표가 없다(`계약-재검토-2026-09-04` §3) | 가장자리 | 계약의 물러난 길 그대로 — **키를 생략한다(널을 보내지 않는다).** `DocumentProgress.screenId` · `ApprovalTarget.screenId` · `Notification.screenId` 셋 다 같다 |
 | U18 | 취소 흔적 3컬럼이 `inbound_receipt`·`goods_receipt` 에 없다(`§I-38` · 실측 확인) | 본길 — 취소가 흔적 없이 지나간다 | 마이그레이션으로 3컬럼을 «먼저» 넣는다. 넣지 않으면 계약이 「승인 기록이 그 이력을 대신한다」로 물러난 자리와 어긋난다 |
@@ -594,8 +610,8 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U31 | `shipment.confirmed_at`·`confirmed_by` 컬럼 없음(W-04-12 §8) | 가장자리 | `cancelled_*` 3컬럼과 대칭이 깨진 자리다. nullable 2칸을 더한다(2단계 ③) |
 | U33 | 「열린 고장 N건」 표시 자리 미정(P-02-02 §8) | 가장자리 | `GET /maintenance/breakdowns?openOnly=true&equipmentId=` 로 화면이 센다 — 새 집계를 만들지 않는다 |
 | U35 | 경미 정지 임계 기본 5분(`minorStopThresholdMinutes`) | 가장자리 | 계약이 「운영 정책이 정하며 기본은 5」라 적었다 → `app.operation_policy` 에서 읽고 없으면 5. **응답에 값을 함께 내린다**(계약 요구) |
-| U37 | `equipment_calibration` 에 `blocksUse`·`clearedAt`·`historyTypeCode`·`agencyTypeCode`·`agencyName`·`nextDueOn` 칸이 없다(실측) | 본길 — `:clear` 판정식 자체가 성립 안 함 | 마이그레이션 선행. `W-05-11 §5-2` 판정식(「`blocksUse=true` 이고 `clearedAt IS NULL` 인 이력이 있으면 사용 불가」)을 그대로 옮긴다 |
-| U38 | 수신 신호 관측 표가 물리에 없다(`collection_channel_observation`) | 본길 — `observations` 가 낼 것이 없다 | 표를 만들되 **채우는 수집기는 만들지 않는다**(외부). 빈 목록을 내는 것이 「모른다」로 읽히지 않게 화면 문구는 설계 몫이라 요청서에 싣는다 |
+| U37 | history/agency3/tolerance/recorded/blocks/cleared2 합계8추가, nextDueOn은기존valid_until | 물리보완선행·과거필수결손별도 | I33 R4: 새version0/유형별유일완화. 열린blocks한건이라도있으면사용불가·한건해소가전체해소아님 |
+| U38 | 구collection_observation은등록channel필수FK,미등록key를담을T신설필요 | T실제저장자료조회정상·수집자운영인수미완 | I33 R6/118: 설비/key최신1행·값과µs시각같은행·flag/filter분리. 실제fixture검증, 영구빈stub0 |
 | U40 | `audit_event.before_value`/`after_value` jsonb 키 규약 없음(`§I-5`) | 가장자리 | 2단계 ④ — 규약을 지어내지 않고 **조회만** 낸다. 쓰기는 이미 각 도메인이 하고 있고, 화면은 원문 jsonb 를 그대로 보인다 |
 | U41 | `:import` 이 받을 열이 미정(`§P`) · 공장 생략(대기 7번) | 가장자리 | 툴 올리기(`§P-2`·`§P-3`)의 선례 그대로 — 머리글 별명 파서 + **공장이 하나일 때만 생략 허용** |
 | U42 | OEE 분모(계획 조업 시간) | 가장자리 | 계약이 답했다 — 「`mdm.WorkCalendar`/`WorkCalendarDay`/`WorkCalendarApplication`(결정 03)에서 구한다」. 캘린더가 없으면 `valueStatusCode=NOT_YET`(0 을 내지 않는다) |
@@ -670,9 +686,11 @@ M1 의 완성 지점**이라 그 둘의 e2e 가 M1 의 완료 기준(취소 경�
 | `GET /app/attachments/{attachmentId}/content` | (미지정) | 같은 이유. 계약이 「파일 내용을 그대로 내린다」 |
 | `POST /maintenance/breakdowns/{breakdownId}/attachments` | (미지정 · M-05-02) | 고장 사진 3장 업로드. 같은 이유 |
 | `GET /app/document-issues/{documentIssueLogId}/rendition` | (미지정 · P-01-01 등) | **서버가 그린 이미지·문서.** 계약이 「서버가 그린 결과를 돌려준다 … 미리보기와 인쇄가 같은 경로다」 — 렌더러가 범위 밖 |
-| `GET /app/printers` | (미지정) | **프린터 «상태»가 장치 조회다.** 물리 `app.printer` 에 상태 칸이 없다(실측: `is_active` 뿐). 목록만 내고 `status` 를 지어내면 F-6 「판정할 수 없음을 통과로 처리하지 않는다」에 걸린다 |
+| `GET /app/printers` | (미지정) | **I-27 R15 본길 유보**. 단말매핑·식별명·명시기본/지원·관측 producer 정본이 없다. DB 저장원천만 읽는 경로 확정 뒤 재개; active→READY/관측없음→OFFLINE/전건false/빈stub 금지 |
 
-**대기 중인 물음에 본길이 걸려 건너뛰는 것: 0건.** 대기 12·13·14 는 README §0 이 「값 정의·권고안이
+**다음 0건은 최초 계획 당시 판정이며 현재값이 아니다.** 이후 I-28/I-30/I-26/I-32/I-27 재수립의 본길 유보와 현재475/487 목표는 `plan.md` §6을 따른다.
+
+**최초 계획에서 대기 중인 물음에 본길이 걸려 건너뛰는 것: 0건.** 대기 12·13·14 는 README §0 이 「값 정의·권고안이
 있으므로 그대로 구현한다」로 이미 갈랐고, 나머지 물음은 전부 가장자리라 §2 절차로 넘긴다.
 
 ⚠ **건너뜀의 결과를 화면 말로 적어 둔다** — 라벨·인식표를 뽑는 POP 화면 여덟(P-01-01 · P-01-02 ·
@@ -884,7 +902,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 | W-CO-05 통합 대시보드 (U42) | 카드 6종(생산량·양품률·성능가동률·시간가동률·미처리 알람·OEE)의 원천이 **전부 다른 슬라이스**다. 원천이 반만 서면 카드가 `NOT_YET`·`PARTIAL` 로 뜨는데, 그 상태를 현장에 보이면 「대시보드가 고장났다」로 읽힌다. 계약이 자동 갱신도 뺐다(「⛔ 자동 갱신을 두지 않는다 — 사람이 「갱신」을 누른다」) — 급할 이유가 없다 |
 | W-CO-11 알림 수신자 설정 (U2) | 계약이 「⛔ 2026-08-29 실측 — **발생 지점 표가 아직 비어 있다**」라 적었다. 수신자를 설정해도 **나올 알림이 정의돼 있지 않다** |
 | W-06-11 변경 이력 (U40) | `audit_event.before_value`/`after_value` jsonb 키 규약이 없다(`§I-5`). 화면이 그릴 수 있는 것은 원문 jsonb 뿐이다 |
-| W-05-07 수집 채널 (U38) | 신호를 «받는» 수집기가 범위 밖이라 `observations` 가 영원히 빈 목록이다 |
+| W-05-07 수집 채널 (U38) | T실제관측조회는구현하되수집자/시각선택·역순/동률·보관운영인수는118미완. 저장자료없는현장import완료주장0·영구빈handler0 |
 | W-06-08 예비품 올리기 (U41) | 받을 열이 미정(`§P`). 현행 엑셀 대장 이관은 초기 1회다 |
 
 ---
@@ -1151,9 +1169,9 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 | `POST /maintenance/results`(`resetCounter=true`) | ⌜**대상 툴의 상세 조회** 200 이 내려주는 ETag⌝ | U34 |
 | `POST /logistics/document-progress/{type}/{id}:request-cancel`·`:cancel` | ⌜이 응답이 아니라 **대상 문서 리소스의 상세 GET**(`/inbound-receipts/{id}` · `/goods-receipts/{id}` · `/goods-issues/{id}`)⌝ | U18 |
 
-⚠ **물리에 `version_no` 가 없는데 `If-Match` 를 요구하는 자리 넷**(실측):
+⚠ **물리에 `version_no` 가 없는데 `If-Match` 를 요구하는 자리 셋**(I33 정정):
 `lot_hold`(U8 `:release`) · `equipment_downtime`(U35 `PUT`·`:close`) ·
-`maintenance_result`(U34 `PUT`) · `equipment_calibration`(U37 — 칸 자체가 여섯 개 모자란다).
+`maintenance_result`(U34 `PUT`). 검교정 U37은토큰미선언·cal version새칸0이며8필드물리보완과다른책임이다.
 **전부 마이그레이션 선행 커밋**이 필요하다.
 
 ### §8-6. 「사후 입력 시간 임계값을 두지 않는다」
@@ -1171,7 +1189,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 
 | # | 화면 | 화면이 요구하는 것 | 계약 상태 | 이 계획에서의 처리 |
 |---:|---|---|---|---|
-| A | **M-01-10** 재고이동·불량반출 | **창고 «안»의 위치 이동**·파렛트 재편성을 담을 업무 문서 헤더 | `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 화면 §8 원문 — 「이동 자체는 기록되나 **「이동 건」이라는 업무 문서가 없다**」 | U14 는 창고 간만 만든다. 위치 이동은 U10(적치)로 흡수하고 **요청서 후보** |
+| A | **M-01-10** 재고이동·불량반출 | **창고 «안»의 위치 이동**·파렛트 재편성을 담을 업무 문서 헤더 | `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 화면 §8 원문 — 「이동 자체는 기록되나 **「이동 건」이라는 업무 문서가 없다**」 | U14 는 창고 간만 만들고 서버가 400 `INVALID` 로 막는다. ⛔ ~~위치 이동은 U10(적치)로 흡수~~ — **흡수처 없음**(I-13 재수립 R-1 · `M-01-07` 이 복귀처를 M-01-10 으로 준다) ⇒ **문의 121** |
 | B | **M-01-12** 재생재 등록 | 재생재 «신규 품목» 행을 만드는 경로 | `/mdm/items` 는 **GET 뿐**이다(W-06-05 가 「품목 추가는 없다 — ERP 정본 수신본」). 화면 §8 이 2026-09-02 재확인에도 **열려 있다**고 적음 | `POST /logistics/recycle-entries` 는 «등록된 품목만» 받는다. **요청서 후보** |
 | C | **M-01-06** 입하 오류 등록 | 미등록 품목이 도착했을 때 입하 라인을 만드는 길 | 품목 생성 오퍼레이션 0건 (B 와 같은 뿌리) | 400 으로 거부. **요청서 후보(B 와 묶어서)** |
 | D | **M-02-01** WIP 공정이동 스캔 | 인계의 «수령» 쪽 — `received_at`·`received_qty` 를 채울 오퍼레이션·화면 | `POST /production/operation-handovers` 는 ⌜인계와 인수를 **한 번에** 확정한다 — 화면의 버튼이 하나다⌝ 로 «인계 시점에 수령까지» 적는다. 별도 수령 스캔은 없다 | 계약대로 한 번에 확정. **화면 §8 의 「수령 스캔 부재」는 계약이 이미 답한 것으로 읽는다**(추측 아님 — 계약 원문) |
@@ -1190,7 +1208,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 | `POST /planning/production-orders/{id}:resync` | ⌜⚠ **이 오퍼레이션을 호출하는 화면은 현재 없다** — 재동기 실행 소관은 연계 동기화 현황 화면이 단독으로 갖는다⌝ | U19 에 넣어 구현한다(202 만 낸다). 실행 화면은 W-06-10 이고 그 화면의 다른 오퍼레이션은 이미 구현됨 |
 | `POST /production/material-returns` | ⌜⚠ 2026-08-26 — 근거였던 M-02-02(수리 왕복)가 이 경로를 쓰지 않는 것으로 정정됐다 … **부르는 화면이 아직 매핑되지 않았다** — 소유 화면이 정해지면 근거를 다시 적는다⌝ | U23 에 넣어 구현한다. **050 으로 발행**(I-10 재수립 R-13) — 권한은 `P-02-03` 임시 등록(`manual-permissions.ts` 선례 넷째 · R-10) |
 | `POST /production/repair-executions/{id}:return` 뒤의 «재투입» | ⌜⭐ 재투입은 이 화면이 하지 않는다 … 그 등록은 P-02-03·P-02-04 가 후보다 — **아직 정해지지 않았다**(M-02-02 §5-4·§8-3)⌝ | U26 은 왕복만 닫는다. **요청서 후보** |
-| `GET /maintenance/collection-channels/observations` | 관측을 담는 물리 표가 **없다**(실측). 채우는 수집기도 범위 밖 | U38 에서 표를 만들되 **영원히 빈 목록**임을 요청서에 적는다 |
+| `GET /maintenance/collection-channels/observations` | 미등록key수용T신설·구관측FK와구별,수집자원천/운영정책미완 | U38 R6/118: T실제값조회·두술어·무페이지,수집자/UI인수별도·영구빈stub0 |
 | `GET /production/work-sessions`(목록) · `POST .../workers` · `.../{wid}:leave` | 화면 근거가 `공유계약 G-16` 뿐이거나 아예 없다 | U22 에 넣어 구현. P-02-01 §5 가 「세션 작업자 목록」을 그리므로 짝으로 필요하다(추측 아님 — 형제 GET 이 `P-02-01` 을 들고 있다) |
 | `GET /app/attachments` | 목록만 살고 **올리기·내려받기가 건너뜀**(§3) | 화면 W-CO-04·W-CO-08 이 반쯤 열린다 |
 

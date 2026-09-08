@@ -8,6 +8,8 @@ import { LotCompleteService } from './lot/lot-complete.service';
 import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
 import { LotController } from './lot/lot.controller';
 import { LotService } from './lot/lot.service';
+import { SerialNumberQueryService } from './serial-number/serial-number-query.service';
+import { SerialNumberController } from './serial-number/serial-number.controller';
 
 /**
  * 계약 최상위 경로 `/trace` — LOT 과 그 계보·이력.
@@ -15,7 +17,7 @@ import { LotService } from './lot/lot.service';
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule],
-  controllers: [LotController, LotLifecycleEventController],
-  providers: [LotService, LotCompleteService, LotLifecycleEventService],
+  controllers: [LotController, LotLifecycleEventController, SerialNumberController],
+  providers: [LotService, LotCompleteService, LotLifecycleEventService, SerialNumberQueryService],
 })
 export class TraceModule {}
