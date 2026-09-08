@@ -10,6 +10,9 @@ import { CauseCodeService } from './code/cause-code.service';
 import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
+import { DefectDistributionService } from './defect/defect-distribution.service';
+import { DefectRecordController } from './defect/defect-record.controller';
+import { DefectRecordService } from './defect/defect-record.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
@@ -50,6 +53,7 @@ import { InspectionSummaryService } from './inspection/inspection-summary.servic
     //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
     InspectionSummaryController,
     InspectionResultController,
+    DefectRecordController,
   ],
   providers: [
     DefectCodeService,
@@ -63,6 +67,8 @@ import { InspectionSummaryService } from './inspection/inspection-summary.servic
     InspectionConfirmService,
     InspectionSummaryService,
     InspectionMeasurementService,
+    DefectRecordService,
+    DefectDistributionService,
   ],
 })
 export class QualityModule {}
