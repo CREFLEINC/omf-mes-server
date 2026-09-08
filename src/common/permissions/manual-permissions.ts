@@ -9,6 +9,8 @@
  * 이미 답을 준 자리라 여기 있을 이유가 없다.
  */
 export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  // W-CO-03 §5-5: 목록 항목 클릭 시 자동 읽음 처리.
+  'POST /app/notifications/{notificationId}:read': ['W-CO-03'],
   // `W-06-06` 공통코드·조직·작업자 마스터(다국어) — 그 화면이 이 넷의 마스터를 소유한다.
   // §3 이 목록·등록만 적고 상세·수정·활성 전이를 안 적었다.
   'PUT /mdm/code-groups/{codeGroupId}': ['W-06-06'],
@@ -189,6 +191,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/purchase-orders/{purchaseOrderId}': ['W-01-11'],
   'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
   'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
+
+  // `W-01-12` 재고조정 §5-6 액션 표 「전기 — 승인 후(또는 승인 불요 시 상신 즉시)」.
+  // 도출표는 화면 «액션»만 긁어 「조정 상신」만 들어왔고 전기가 빠졌다.
+  'POST /inventory/adjustments/{inventoryAdjustmentId}:post': ['W-01-12'],
+  // `W-01-12` §5-6 「라인 추가·수정 — 직접 등록 시」 · §7 DS 매핑 「조정 라인 편집 표 —
+  // 편집 그리드」. 계약은 이 경로에 화면을 안 적었으나 「부모 자원 GET 의 ETag 를 If-Match 로
+  // 쓴다」로 부모를 지목하고, 부모의 화면이 곧 이 오퍼레이션의 화면이다.
+  'PUT /inventory/adjustments/{inventoryAdjustmentId}/lines': ['W-01-12'],
 
   // `W-01-06`·`W-04-10` 폐기 요청 — 부르는 화면이 실제로 0건이나 `PermissionGuard` 가 등록을
   // 요구한다(미등록이면 500). 소유자를 폐기 두 화면으로 둔다 — 두 화면의 §3 액션표에 라인

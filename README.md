@@ -13,19 +13,26 @@
 | 빌드·테스트 변환 | **SWC** (`nest build` 빌더 + `@swc/jest`) |
 | API 문서 | Swagger (`/api/docs`) |
 
-> **응용 코드가 없다.** 계약(`mdm-기준정보.json`)을 기준으로 재작성 중이며, 진행은
-> [재작성 계획](docs/mdm-api-재작성-계획.md)을 본다. 왜 지웠는지는 [ADR 0001](docs/adr/0001-mdm-api-rewrite-on-spec.md).
+현재 구현된 API는 실행 후 Swagger에서 확인할 수 있다. 미구현 API도 계약 문서에 함께 표시되므로
+구현 여부 표시를 확인한다. 초기 재작성 배경은 [ADR 0001](docs/adr/0001-mdm-api-rewrite-on-spec.md)을 본다.
 
 ## 실행
 
+클라이언트 팀이 처음 클론했다면 [로컬 API 실행 가이드](docs/client-local-api.md)를 따른다.
+환경 변수, DB 준비, 생성 파일, 쿠키 로그인, 프런트엔드 연결과 업데이트 절차를 포함한다.
+
 ```bash
 corepack enable                   # package.json의 packageManager 버전 사용
-cp .env.example .env              # JWT_SECRET을 채운다: openssl rand -base64 48
-pnpm install
+cp .env.example .env              # 최초 1회. JWT_SECRET과 ADMIN_INITIAL_PASSWORD를 채운다
+pnpm install --frozen-lockfile
+pnpm run prisma:generate
+pnpm run contracts:generate
+pnpm run build
 
-docker compose up -d              # PostgreSQL 기동
+docker compose up -d postgres     # PostgreSQL이 healthy가 될 때까지 기다린다
 pnpm exec prisma migrate deploy   # 스키마 적용
 pnpm run db:seed                  # 공통코드·채번규칙·역할 + admin 계정
+pnpm run start:prod               # 빌드한 API 실행 (소스 변경 감지는 start:dev)
 ```
 
 `JWT_SECRET` 이 32자 미만이면 서버가 기동하지 않는다 — 근거는 [ADR 0002](docs/adr/0002-self-hosted-password-auth.md).

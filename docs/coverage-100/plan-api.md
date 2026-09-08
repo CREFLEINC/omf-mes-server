@@ -149,8 +149,8 @@
 | 마이그레이션 | **필요** — `stock_transfer_line.handling_unit_id`(nullable FK, 계약 `StockTransferLine.handlingUnitId` 앵커 없음) · `recycle_entry` 에 `warehouse_id`·`remarks` 신설(계약 `RecycleEntry.warehouseId`·`remarks`). |
 | posting(원장) 연결 | **있음** — `POST /logistics/stock-transfers` 가 반출(`IN_TRANSIT`), `:arrive` 가 입고를 쌓는 **2단 전기** |
 | 상태기계 | 있음 (`LOGISTICS_DOCUMENT_STATUS`) |
-| 예상 PR 수 | 3 — ① 조회 GET 3건 ② 이동 2단 + posting + e2e(코어) ③ 재생재 + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `:arrive` 부분 도착이 상태를 어디로 두는가. 계약은 「반출한 수량 이하만」만 적는다. §2 2단계 기준 3 → **상태값을 늘리지 않는다**. 부분 도착은 `received_qty` 합이 담고 전액 도착에서만 `POSTED` 로 옮긴다. |
+| 예상 PR 수 | **5** — **I-13 이 4**(① 조회 3 + 권한 ② 마이그 A4 + 반출 + 1단 전기 ③ `:arrive` + 전이표 + 2단 전기 ④ 라인 치환 자물쇠 + 판별자 축 + 마감) **+ I-17 재생재 1**. ⚠ S05 7건 중 `POST /logistics/recycle-entries` 는 **I-17 몫**이라 마이그 칸의 `recycle_entry.warehouse_id`·`remarks`(A5)를 지우지 않는다(I-13 재수립 R-14) |
+| 설계 미정 자리 · §2 판정 초안 | ~~`:arrive` 부분 도착~~ → **판정됨**(I-13 재수립 R-3): `:arrive` 는 **한 번만** 받는다(재도착 400 `STATE_LOCKED`) — 되풀이 도착을 요구하는 계약 문장이 **0건**(전수 확인)이고 화면 액션에도 없다. 부분 도착은 그 한 번으로 종결되고 잔여가 `IN_TRANSIT` 에 남는다(문의 124). ⇒ I-13 **신규 문의 6건(120~125)** + 기존 4건(059·031·문의 14·060)에 줄 추가. 재생재분은 I-17 에서. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -187,11 +187,11 @@
 |---|---|
 | 선행 슬라이스 | S06(취소 축) · S09(승인) |
 | 쓰는 표 | `inventory.inventory_count(_line)`·`inventory_adjustment(_line)`·`handling_unit(_content)`·`handling_unit_reconfiguration(_line)`·`inventory_reservation` — **전부 있음** |
-| 마이그레이션 | 없음 (실측) — 계약이 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」라 두 곳에 적었는데 **낡았다**. 우리 모델에 있다(§5.2 표 B). |
+| 마이그레이션 | **조정분 1건**(I-14 재수립 R-4) — `inventory_adjustment_line.inventory_count_line_id BigInt?` + FK + 인덱스(표 A 23). ⚠ 옛 「없음(실측)」은 **라인 «표»** 에 대한 판정이라 맞다 — 계약이 「`inventory_adjustment_line` 은 물리에 아직 없다」라 **네 곳**에 적었는데 낡았고 표는 실재한다(§5.2 표 B). 없는 것은 표가 아니라 **칸 하나**다. 실사·취급단위·예약분은 여전히 0건. |
 | posting(원장) 연결 | **있음** — `:post` 가 실사 차이를 원장 트랜잭션으로 쌓는다(결정 49 「잔량 직접 덮어쓰기 금지」) |
 | 상태기계 | 있음 (`INVENTORY_COUNT_STATUS` 3값 · 조정은 `LOGISTICS_DOCUMENT_STATUS`) |
 | 예상 PR 수 | 5 — ① 조회 GET 11건 ② 실사 전표 + 라인 PUT ③ `:close` + 마감 판정 4사유 ④ 조정 + `:post` posting + `:request-approval` + e2e(코어) ⑤ 취급단위 + `:pack` + 재포장 이력 |
-| 설계 미정 자리 · §2 판정 초안 | 취급단위 `status_code` 가 NOT NULL 인데 계약이 「칸 불필요」로 닫았다(`x-no-code-key`). §2 2단계 기준 4(값을 조용히 도출하지 않는 쪽) → **고정 상수 하나**를 쓰고 이름을 붙여 남긴다. |
+| 설계 미정 자리 · §2 판정 초안 | 취급단위 `status_code` 가 NOT NULL 인데 계약이 「칸 불필요」로 닫았다(`x-no-code-key`). §2 2단계 기준 4 → 상수를 쓰고 이름을 붙여 남긴다. ⛔ ~~고정 상수 **하나**~~ → **둘**(`OPEN`·`PACKED`) — 계약 `:pack` 의 「**이미 확정된 포장은 409 다**」가 구분을 강제한다(I-16 재수립 R-2). ⚠ `plan.md` §0 #10 의 nullable 은 여기 안 선다 — `HandlingUnit.required` 에 `statusCode` 가 있다(#10 이 스스로 단 단서 · I-3 R-9). 취급단위분 설계 미정은 그 밖에 **신규 문의 6건(140~145)**. |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -293,13 +293,13 @@
 
 | | |
 |---|---|
-| 선행 슬라이스 | 없음 |
-| 쓰는 표 | `app.document_issue_log`·`app.printer` — 있음 |
-| 마이그레이션 | **필요** — `document_issue_log` 에 인쇄 결과 칸(`print_outcome_code`·`print_failure_reason`·`printed_at`)이 없다. `:report-print` 가 그것을 쓴다. `printer` 에 `display_name`·`status`·`status_message`·`is_default`·`supported_document_type_codes` 없음. |
+| 선행 슬라이스 | I-26 저장조회 완료; 개체 신규 발번의 미정과 기존 발행 기록은 구분 |
+| 쓰는 표 | `app.document_issue_log`, 결과·귀속만 기록. `app.printer`는 본길 유보 |
+| 마이그레이션 | **I-27 R9**: 결과3(`print_outcome_code`·`print_failure_reason`·`print_reported_at`)+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0. 프린터 A10 적용0 |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | 없음 — 발행은 append-only(「발행 기록을 되돌리지 않는다」) |
-| 예상 PR 수 | 2 — ① 조회 GET 4건(rendition 제외) ② 마이그 + `POST /app/document-issues` + `:report-print` + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `printer.status` 가 무엇에서 오는가. 실물 프린터를 물어볼 길이 없다(C11 인터넷 비보장). §2 2단계 기준 4 → **저장 칸으로 두고 사람이 갱신**한다. 자동 탐지를 지어내지 않는다. |
+| PR 책임 | P0물리→P1목록/상세·P2summary전용CSV·P3보고, 발행은 규칙/실제writer잠금/배치 책임별. 정상5·프린터1유보·rendition1제외, 일반350/400·코어전체200 |
+| 설계 미정 판정 | **R1~R16 정본**. LOCATION 및 지원표의 정상 발행은 진행, 개체/출하배분 등 미정 입력군은 이름 있는 거부·TOOL writer 조율 조건부. printer의 사람 갱신/기본 OFFLINE도 원천을 발명한 것이므로 철회, GET/A10 유보. 구행 NULL outcome은 DocumentIssue 환경hold와 summary nullable 정상으로 구분 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -442,22 +442,24 @@
 | `POST /production/repair-executions` | ✓ | — | — | ✓ |
 | `POST /production/repair-executions/{repairExecutionId}:return` | ✓ | — | — | — |
 
-### S17. 시리얼 — 2건
+### S17. 시리얼 — 2건(조회1 진행·발번1 본길 유보)
 
 | | |
 |---|---|
 | 선행 슬라이스 | S16 |
-| 쓰는 표 | `trace.serial_number`·`serial_component_relation` — 있음 |
+| 쓰는 표 | `trace.serial_number` — 현재 조회만. 조립 관계는 이 두 계약 범위 밖 |
 | 마이그레이션 | 없음 |
 | posting(원장) 연결 | 없음 |
-| 상태기계 | 없음 — 계약이 「칸 불필요」로 닫음 |
-| 예상 PR 수 | 1 |
-| 설계 미정 자리 · §2 판정 초안 | 없음 |
+| 상태기계 | 전이 없음. 코드 그룹 금지는 required statusCode 폐지가 아님. 초기 값/위임 원천 부재 |
+| 예상 PR 수 | 즉시 GET1(예산250·µs 경계 포함) + 조건부 채번 코어≤200/배치 쓰기 별도 |
+| 설계 미정 자리 · §2 판정 | I-26 R1~R10. POST 상태/개체 수량 단위 원천은 본길 유보(104·105), 번호 위임/선택 If-Match와 귀속·단계별 멱등은106·107 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
 | `GET /trace/serial-numbers` | — | — | — | — |
 | `POST /trace/serial-numbers` | ✓ | 선택 | — | ✓ |
+
+GET은8개 선택 필터·id ASC·같은WHERE/RepeatableRead total, producedFrom 포함/To 제외를 µs 올림 경계로 보존한다. 저장 상태 원문·nullable producedAt 키 생략, ETag 새 발행0. POST는 N개체 한 tx·발행기록0의 조건부 계획이며 전건 거부 핸들러를 등록하지 않는다.
 
 ### S18. 검사결과·측정·의뢰 — 11건
 
@@ -588,11 +590,11 @@
 |---|---|
 | 선행 슬라이스 | 없음 (mdm 설비·툴 완료분) |
 | 쓰는 표 | `maintenance.breakdown`·`maintenance_order(_item,_trigger)`·`maintenance_result` — 있음. ⛔ **`maintenance_result_line`·`maintenance_result_part` 는 없다** |
-| 마이그레이션 | **필요 · 이 계획에서 가장 큰 마이그레이션** — ① `breakdown`: `occurrence_state_code`·`stopped_at`·`notify_assignee` ② `maintenance_order`: `planned_date`·`base_date`·`order_note`·`issued_by`·`issued_at`, 그리고 담당자 축이 `assigned_worker_id`(worker)인데 계약은 `assigneeUserId`(app_user)다 ③ `maintenance_result`: `target_type_code`/`target_id`·`result_note`·`is_outsourced`·`outsource_vendor_name`·`reset_counter`·`shot_count_before/after_reset`·`closed` ④ **표 2개 신설** `maintenance_result_line`(시드에 `MAINTENANCE_RESULT_LINE_RESULT` 가 이미 있다)·`maintenance_result_part` |
-| posting(원장) 연결 | ⚠ **부분적으로 있을 수 있다** — 예비품 소모(`parts`)가 재고를 뺀다면 posting 이다. 계약이 그 연결을 안 적었다 → §2 2단계 기준 1(재고를 안 쓰는 쪽) → **원장을 부르지 않고** 기록만 하고 문의 |
-| 상태기계 | **있음 · 둘** (`EQUIPMENT_BREAKDOWN_STATUS`: `RECEIVED`→`HANDLING`→`DONE` · `MAINTENANCE_ORDER_STATUS`: `ISSUED`→`DONE`|`CANCELLED`) |
-| 예상 PR 수 | 4 — ① 마이그레이션 선행 커밋(위 4건) ② 고장 조회+등록+수정+`:start-handling`+`:complete`+e2e ③ 보전오더 + `:cancel` ④ 보전실적(라인·부품) + e2e |
-| 설계 미정 자리 · §2 판정 초안 | 담당자 축이 `worker` 인가 `app_user` 인가. §2 2단계 기준 3(스키마를 안 늘리는 쪽) → **기존 `assigned_worker_id` 를 쓰고** 계약의 `assigneeUserId` 를 worker 로 해석하지 않는다 — 두 축이 다르므로 그대로 두고 문의를 낸다. |
+| 마이그레이션 | **필요** — ① I-30 A15 nullable8/완화2는 #308 병합. ② I-31 order8추가(assignee app_user·취소audit2 포함)/priority완화·trigger order UNIQUE완화/snapshot2 bigint. ③ result15추가(type+equipment/mold FK쌍·직접breakdown·계정수행자·본문/외주/reset/closed·version/audit)/구NN6완화. ④ 표2 `maintenance_result_line`·`maintenance_result_part`, FK역관계/참조카운트. SQL 전문 I-31 §3, 삭제·백필0 |
+| posting(원장) 연결 | **없음** — I-31 parts는 기존 GI/예비품 참조만, posting·자동출고·quota·환산0. 다중UOM/출고미연결unknown은nullable이며 수량 확인/정정 인수116 |
+| 상태기계 | 현재 추가는 I-30 RECEIVED→HANDLING, I-31 ISSUED→CANCELLED만 A조율 뒤 별도core전체200. 고장완료090·지시마감113는 원천 해소 전 등록0. reset true도114 해소 전422·누계만201 성공0 |
+| 예상 PR 수 | I-30은 점검까지 실행8 PR+조건부완료 조각. I-31 R12는 3PR/16~17개 고정수 모두 철회, M1/M2·C0/C1/C2·T1회·조회/쓰기 최소책임별. 준비분할은 예정diff초과 때만, 일반350/400·core전체200 |
+| 재수립 정본 | I-31 R1~R13. assignee/performer/issuer/actor는 app_user이며 worker와 분리, 계약을 worker로 reinterpret0. GET4+쓰기4 정상미마감 본길 유지, closed/reset true만422·전건0. 실제 writer와 NKU/SHARE/UPDATE·경로 재읽기·유한run재시도, MO 선채번과 rawactor지문/같은tx, required구행500·환경활성화제한, µs는I32 R2/R14 단일재사용 |
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -612,17 +614,25 @@
 | `PUT /maintenance/breakdowns/{breakdownId}` | ✓ | 필수 | — | ✓ |
 | `PUT /maintenance/results/{maintenanceResultId}` | ✓ | 필수 | — | ✓ |
 
+I-30 확정 범위·검증은 `slices/I-30.md` R-1~R-14가 정본이다. 원인 코드 원천 부재로 complete1건을 보류하며 고장 PUT의 원인 nonnull만 거부한다. reported_by는 실제 세션 계정이고 사번은 신규 reporter_worker_no에 분리한다. 로컬 멱등 지문·전달 tx, tx 밖 선채번, 공장 로컬 조회 날짜와 UTC 채번 날짜, 현재 인증/CORS 배포 한계를 문의090~098·054에 기록했다.
+
 ### S24. 비가동·점검·툴사용·수집채널·검교정 — 21건
 
 | | |
 |---|---|
 | 선행 슬라이스 | S23 |
-| 쓰는 표 | `maintenance.equipment_downtime`·`equipment_inspection(_result)`·`tool_usage`·`collection_channel`·`collection_observation`·`quality.equipment_calibration` — 전부 있음 |
-| 마이그레이션 | **필요** — ① `tool_usage`: `collection_method_code`·`conversion_base_qty`·`conversion_ratio`·`occurred_at` ② `collection_channel`: `channel_key`·`signal_name`·`inspection_item_id`·`item_id`·`process_id`(현재 `channel_code`/`channel_name`/`uom_id` 만) ③ `equipment_calibration`: `history_type_code`·`agency_type_code`·`agency_name`·`tolerance_note`·`recorded_by`·**`blocks_use`·`cleared_at`·`cleared_by`** — `:clear` 가 그 셋 위에 선다 |
+| 쓰는 표 | 기존 `maintenance.equipment_downtime`·`equipment_inspection(_result)`·`tool_usage`·`collection_channel`·`collection_observation`·`quality.equipment_calibration`. I33은 미등록신호를 담을 별도 `maintenance.collection_channel_observation` 신설(T). 기존관측의channel필수FK와 구분 |
+| 마이그레이션 | **I33 R1/R4/R5/R6**: tool nullable4추가/계약밖NN2완화, channel nullable5추가/옛NN3완화·네축NULL식유일·기존uq유지·T신설/FK참조보호. calibration8추가(명시blocksfalse)·동일설비/일 제약을 유형별+legacyNULL partial로완화·기존valid_until재사용·version새칸0. 삭제/백필0 |
 | posting(원장) 연결 | 없음 |
 | 상태기계 | ⛔ 없음 — 전부 **구간 축**이다(`ended_at` · `cleared_at` 널 여부가 열림/닫힘). 계약이 「구간을 닫는 것은 액션이다」(G-16)로 못박았다 |
 | 예상 PR 수 | 4 — ① 마이그레이션 선행 커밋 ② 비가동 + `:close` + 집계 ③ 점검·툴사용 ④ 수집채널 + 검교정 + `:clear` + e2e |
-| 설계 미정 자리 · §2 판정 초안 | `CalibrationCreate` 의 `resultCode` 값 집합이 «이력 유형마다 다르다»는데 시드 `CALIBRATION_RESULT` 는 한 그룹이다. §2 2단계 기준 2(거부하는 쪽) → **그룹 등재값만 통과**시키고 유형별 부분집합 검사는 걸지 않는다. |
+| 설계 미정 자리 · I33 R3 확정 | 현재 활성 registry는검사하되유형별부분집합은원천없어도출0. CAL 기본PASS/ADJUSTED는master2날짜동일tx·FAIL이력만(고정의미0단계), unknownCAL만422STATE_LOCKED·전건0, nonCAL활성확장정상. 문의117 |
+
+위 PR 수는 초기 S 단위 초안이다. 점검3건은 현재 I-30으로 분리됐으며 inspection.status_code NOT NULL 완화와 required/판정 enum 사전조회를 A15에 포함한다. 측정값은 Decimal(20,6)에 무손실로 담을 수 있는 범위만 저장하며 그 밖은400 RANGE다(097). 나머지 비가동·툴/계측기 작업은 각각 I-32·I-33 재수립을 따른다.
+
+I-33 R1~R14·문의117~119가 정본이다. GET7/쓰기5 정상12건 계획·미구현, 물리3/조회4/쓰기3은10조각 후보이지 최소보증이 아니다. 제출shot은고정화면입력권한으로보존·mold NKU와production실제FK writer회귀. 순간은I32 P0t한번. T저장값조회/등록flag/활성연결미매핑을분리하고 수집기·UI운영인수별도. 빈unit400/생략PUT정상과409·500실패계수소비자문제는별도단건으로번호추가승인대기. 새ERROR_CODE·cal version/ETag·core0.
+
+I-32 재수립(`slices/I-32.md` R1~R14): 목록·상세·생성·수정4건 진행, 종료 발생시각 입력 경로 없는close와 정상 계획구간/완료보전 정의 없는summary2건 유보(108~112). 물리는 remarks/recorded_by_worker_no/version_no 추가3·downtime_type_code NOT NULL 완화1, 종료사번은 조건부다. 조회/잠금/쓰기/재생의 µs를 epoch문자열/BigInt·정확한UTC 바인딩으로 보존한다. 단말 미래 인라인은 화면 소관, server now 거부0. 이미닫힘close400/완료고장새연결PUT400은 구체 문언 우선이며 신규연결POST422와 구분한다. 공장 minor·실제sessionΣ·비가동union은 확정, summary의 가장자리와 두 남는 본길을 구별한다. 코드·마이그 적용0.
 
 | 오퍼레이션 | 멱등 | If-Match | ETag | 403 |
 |---|---|---|---|---|
@@ -722,7 +732,7 @@ e2e」)을 못 채운다 — 2026-09-04 드리프트가 취소를 리소스 축�
 | 2 | **`SUCCESSOR_EXISTS` 재판정이 두 번 일어난다.** 요청 시점(`:request-cancel`)과 실행 시점(`:cancel`) 둘 다. 실행 시점 판정을 빠뜨리면 승인을 기다리는 사이 생긴 후속을 못 본다 — 그것이 `J-8` 이 이번에 계약에 실린 이유다 | **S06** |
 | 3 | **후속 판정이 두 갈래다.** 문서 하류 4종은 `source_document_*` 역조회, `MATERIAL_CONSUMPTION` 은 **LOT 을 가리키는 재고 사용**이다. 한 갈래로 짜면 자재 투입된 입고가 취소된다 | **S06** |
 | 4 | **`If-Match` 필수 46 / 선택 28 을 뒤집기 쉽다.** 선택은 POP 오프라인 큐 자리고(C-9), 필수를 선택으로 잘못 열면 두 관리자의 동시 확정이 조용히 늦은 쪽으로 덮인다 | S04·S07·**S14**(`:release`/`:close` 가 필수) |
-| 5 | **403 미등록 28건에서 가드가 «던진다».** 통과가 아니라 500 이다. 슬라이스마다 자기 오퍼레이션을 `manual-permissions.ts` 에 근거와 함께 등록하지 않으면 e2e 가 통째로 붉어진다 | 전 슬라이스 — 특히 **S07**(6건)·**S02**(4건) |
+| 5 | **403 미등록 28건에서 가드가 «던진다».** 통과가 아니라 500 이다. 슬라이스마다 자기 오퍼레이션을 `manual-permissions.ts` 에 근거와 함께 등록하지 않으면 e2e 가 통째로 붉어진다 | 전 슬라이스 — 특히 **S07**(~~6건~~ **4건** — §5.3 ① 표의 슬라이스별 합이 정확히 28 이고 S07 분은 4 다 · 전부 실사·조정이며 **취급단위는 0건**이다: 세 오퍼레이션이 `derived-permissions.ts:165·166·264` 에 이미 있다 · I-16 재수립 R-18)·**S02**(4건) |
 | 6 | **보전 도메인 마이그레이션이 계획 최대다.** 컬럼 15개 + 표 2개. 400줄 diff 규칙에 걸려 PR 이 쪼개지고, `assigned_worker_id`(worker) ↔ `assigneeUserId`(app_user) 축 충돌은 **되돌리기 비싼 선택**이다 | **S23** · S24 |
 | 7 | **알림 구독의 축이 반대다.** 물리는 사용자별, 계약은 이벤트별 수신자 목록. 물리를 그대로 쓰면 `recipients:preview` 가 성립하지 않는다 — 구조 마이그레이션이 필요하다 | **S10** |
 | 8 | **「칸 불필요」(`x-no-code-key`) 16자리의 `status_code` 가 NOT NULL 이다.** 값 없는 칸에 무엇을 넣을지 슬라이스마다 다르게 정하면 16가지 상수가 생긴다. 한 자리에서 정해야 한다 | S04·**S07**·S16·S19·S21 |
@@ -748,8 +758,8 @@ e2e」)을 못 채운다 — 2026-09-04 드리프트가 취소를 리소스 축�
 |---|---|---|---|
 | `document-post` | `REGISTERED` → `POSTED` | `POST /logistics/goods-issues/{id}:post` · `POST /inventory/adjustments/{id}:post` | **부른다** |
 | (전기와 동시) | (없음) → `POSTED` | `POST /logistics/goods-receipts`(구현됨) · `POST /logistics/goods-issues`(`postImmediately=true` — I-4) | **부른다** — 「생성과 전기가 같은 순간」이라 `REGISTERED` 에 머무는 자리가 없다. `from` 이 없는 전이라 `transitions.ts` 표에 담지 않고 `document-post` 도 부르지 않는다(I-4.md §3-9) |
-| `transfer-issue` | (없음) → `REGISTERED` | `POST /logistics/stock-transfers` | **부른다**(반출 = 1단째, 도착지가 `IN_TRANSIT`) |
-| `transfer-arrive` | `REGISTERED` → `POSTED` | `POST /logistics/stock-transfers/{id}:arrive` | **부른다**(입고 = 2단째). ⚠ 부분 도착은 상태를 안 옮긴다 — `received_qty` 합이 담고 전량에서만 `POSTED` |
+| ~~`transfer-issue`~~ | (없음) → `REGISTERED` | `POST /logistics/stock-transfers` | **부른다**(반출 = 1단째, 도착지가 `IN_TRANSIT`). ⛔ **전이가 «아니다»** — `from` 이 없어 `transitions.ts` 표에 담지 않는다(생성과 전기가 같은 순간인 `goods-receipt` 와 같은 모양 · I-13 재수립 R-19) |
+| `transfer-arrive` | `REGISTERED` → `POSTED` | `POST /logistics/stock-transfers/{id}:arrive` | **부른다**(입고 = 2단째). ⛔ ~~부분 도착은 `received_qty` **합**이 담고 전량에서만 `POSTED`~~ — **계약 근거가 0** 이다(전수 확인 · I-13 재수립 R-3). `:arrive` 는 **한 번만** 받고 그 한 번이 상태를 `POSTED` 로 옮긴다. 잔여는 `IN_TRANSIT` 에 남는다(문의 124) |
 | `document-request-cancel` | `REGISTERED`·`POSTED` → `CANCEL_REQUESTED` | `POST /logistics/document-progress/{type}/{id}:request-cancel` | 안 부른다 |
 | `document-cancel` | `CANCEL_REQUESTED` → `CANCELLED` | `POST /logistics/document-progress/{type}/{id}:cancel` | **조건부로 부른다** — 직전이 `POSTED` 였으면 역트랜잭션, `REGISTERED` 였으면 상태만(`CancelResult.reversed`) |
 | **없음** | — | `:request-approval` (P/O·출고·조정) | ⛔ **상태를 옮기지 않는다** |
@@ -895,20 +905,21 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 6 | `app.approval_route` | **부분 유일 인덱스** `(approval_type_code, COALESCE(business_unit_id,0)) WHERE is_active` | `:activate` 400 조건 · §I-35 | S09 |
 | 7 | `app.notification_subscription` | `zalo_enabled Boolean @default(false)` | `NotificationSubscriptionReplace.zaloEnabled` | S10 |
 | 8 | **표 신설** `app.notification_subscription_recipient` | `(event_type_code, recipient_type_code, business_unit_id?, role_id?, app_user_id?)` | `NotificationRecipient` — 축이 물리와 반대(§5.3 아래) | S10 |
-| 9 | `app.document_issue_log` | `print_outcome_code String?` · `print_failure_reason String?` · `printed_at DateTime?` | `:report-print` + `PrintOutcomeReport` | S11 |
-| 10 | `app.printer` | `display_name String?` · `status_code String?` · `status_message String?` · `is_default Boolean @default(false)` · `supported_document_type_codes String[]` | `Printer` 5칸 | S11 |
+| 9 | `app.document_issue_log` | 결과3+issued_worker_id/print_reported_worker_id/print_reported_by nullable6·NoAction FK·wholeCHECK, 시각은print_reported_at | I27 R9, 사전/배포 P5·구writer 갱신, 백필0 | S11 |
+| 10 | `app.printer` | **유보·적용0**. A10의5칸 후보만으로 단말매핑/관측/기본/지원 원천을 채울 수 없음 | I27 R15, OFFLINE/false/빈배열 기본값 철회 | S11 |
 | 11 | `planning.production_plan` | `split_of_plan_id BigInt?` · `split_reason_code String? @db.VarChar(50)`(I-24 R-1) | `ProductionPlanCreate.splitOfPlanId` = `{sourcePlanId, reasonCode}` (+ 시드 `PRODUCTION_PLAN_SPLIT_REASON` 5값) | S13 |
 | 12 | `trace.lot_hold` | `target_lot_status_code String?` | `LotHoldCreate.targetLotStatusCode` — 도착 상태가 C9/C10 을 가른다 | S19 |
 | 13 | `logistics.shipment_request` | `sales_order_id BigInt?` | `ShipmentRequest.salesOrderId` | S21 |
 | 14 | `logistics.shipment` | `expedited Boolean @default(false)` · `expedite_reason String?` | `Shipment.expedited`·`expediteReason` · §I-41 | S22 |
-| 15 | `maintenance.breakdown` | `occurrence_state_code String?` · `stopped_at DateTime?` · `notify_assignee Boolean?` | `Breakdown`·`BreakdownCreate` (+ 시드 `BREAKDOWN_OCCURRENCE_STATE` 가 이미 있다) | S23 |
+| 15 | `maintenance.breakdown`·`equipment_inspection` | 고장 nullable8추가: `occurrence_state_code`·`stopped_at`·`notify_assignee`·`reporter_worker_no`·`cause_code`·`handling_note`·`handled_by`·`handled_at`. 고장 `severity_code`·점검 `status_code` nullable 완화 | I-30 §2 전문 SQL·FK NoAction/NoAction·삭제0/백필0. 조회 전 과거 required·PASS/FAIL 사전조회 | S23·S24 / I-30 |
 | 16 | `maintenance.maintenance_order` | `planned_date Date?` · `base_date Date?` · `order_note String?` · `issued_by BigInt?` · `issued_at DateTime?` | `MaintenanceOrder`·`MaintenanceOrderCreate` | S23 |
 | 17 | `maintenance.maintenance_result` | `target_type_code String?` · `target_id BigInt?` · `result_note String?` · `is_outsourced Boolean?` · `outsource_vendor_name String?` · `reset_counter Boolean?` · `shot_count_before_reset BigInt?` · `shot_count_after_reset BigInt?` · `closed Boolean?` | `MaintenanceResult`·`MaintenanceResultCreate`·`MaintenanceResultUpdate` | S23 |
 | 18 | **표 신설** `maintenance.maintenance_result_line` | `MaintenanceResultLine` (시드 `MAINTENANCE_RESULT_LINE_RESULT` 가 이미 있다) | 계약 스키마 실재 · 물리 없음 | S23 |
 | 19 | **표 신설** `maintenance.maintenance_result_part` | `MaintenanceResultPart` | 계약 스키마 실재 · 물리 없음 | S23 |
-| 20 | `maintenance.tool_usage` | `collection_method_code String?` · `conversion_base_qty Decimal?` · `conversion_ratio Decimal?` · `occurred_at DateTime?` | `ToolUsage`·`ToolUsageCreate` (+ 시드 `CD-TOOL-USAGE-COLLECTION-METHOD` 값 2종) | S24 |
-| 21 | `maintenance.collection_channel` | `channel_key String?` · `signal_name String?` · `inspection_item_id BigInt?` · `item_id BigInt?` · `process_id BigInt?` | `CollectionChannel`·`Create`·`Update` — 현재는 `channel_code`/`channel_name`/`uom_id` 만 | S24 |
-| 22 | `quality.equipment_calibration` | `history_type_code String?` · `agency_type_code String?` · `agency_name String?` · `tolerance_note String?` · `recorded_by BigInt?` · **`blocks_use Boolean @default(false)`** · **`cleared_at DateTime?`** · **`cleared_by BigInt?`** | `Calibration`·`CalibrationCreate` — `:clear` 가 뒤 셋 위에 선다 | S24 |
+| 20 | `maintenance.tool_usage` | `collection_method_code String?` · `conversion_base_qty Decimal?` · `conversion_ratio Decimal?` · `occurred_at DateTime?` 추가4, usage_type_code/used_from NN완화2 | DIRECT/CONVERTED는계약enum·코드그룹시드0, numeric20,6·required구행091/119 | S24/I33 |
+| 21 | `maintenance.collection_channel` | channel_key/signal_name/inspection_item_id/item_id/process_id nullable5·channel_code/name/data_type_code NN완화3, 새FK3/역관계·네축NULL식유일 | 기존uq유지·inactive포함·key100/code50복사0. T실제최신관측표 별도신설·참조보호A조율 | S24/I33 |
+| 22 | `quality.equipment_calibration` | history_type_code/agency_type_code/agency_name/tolerance_note/recorded_by·blocks_use(false명시default)·cleared_at/cleared_by 추가8 | valid_until이미존재, 유형별/legacyNULL유일성완화·cal version추가0 | S24/I33 |
+| **23** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** | `InventoryAdjustmentLine.inventoryCountLineId`·`InventoryAdjustmentLineUpsert.inventoryCountLineId` (앵커 없음) — I-14 재수립 R-4 | S07(I-14) |
 
 #### 표 B — **계약이 「물리에 없다」라 적었으나 실제로는 있는 것** (마이그레이션 불필요)
 
@@ -916,7 +927,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 
 | 계약이 적은 것 | 실측 |
 |---|---|
-| 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」(2곳) | **있다** — `inventory.inventory_adjustment_line`(라인 사유 `reason_code` 포함) |
+| 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」(**4곳** — `POST /inventory/adjustments` · `PUT …/lines` · `InventoryAdjustmentLine` · `InventoryAdjustmentLineUpsert` · I-14 재수립 R-11) | **있다** — `inventory.inventory_adjustment_line`(라인 사유 `reason_code` 포함). ⚠ ⌜라인 사유를 담을 자리도 함께 확정돼야 한다⌝ 문장은 **`InventoryAdjustmentLine` 에만** 있다. ⛔ 다만 **칸 하나는 정말 없다** — `inventory_count_line_id`(표 A 23) |
 | 「`goods_issue.approval_request_id` 가 모델에 아직 없다」 | **있다** — 취소 흔적 3칸(`cancelled_at`·`cancelled_by`·`cancellation_reason_code`)도 함께 있다 |
 | 「알림 표가 물리 모델에 없다」 | **있다** — `app.notification`·`app.notification_event` |
 | 「공지 표가 물리 모델에 없다」 | **있다** — `app.notice`·`app.notice_acknowledgement` |
@@ -1042,7 +1053,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | `APPROVER_TYPE_NOT_SUPPORTED` | 400 | 결재선 단계의 승인자 유형을 풀 수 없다 | S09 |
 | `OPEN_SESSION_EXISTS` | **409** | 같은 W/O 에 열린 작업 세션이 있는데 `:close` | S14 |
 | `CANCEL_IN_PROGRESS` | **409** | 취소 결재가 진행 중인데 `:confirm`(J-7) | S22 |
-| `LINE_REQUIRED` | 400 | 라인이 0건(취급단위 `:pack`·전표 생성) | S02·S04·S07 |
+| `LINE_REQUIRED` | 400 | 라인이 0건(전표 생성). ⛔ ~~취급단위 `:pack`~~ — 계약이 `HandlingUnitPack.contents` 에 **`minItems: 1`** 을 걸어 `ContractValidationGuard` 가 핸들러 전에 **`RANGE`** 로 막는다(I-16 재수립 R-8 · I-8 이 구현 중 이미 겪은 자리 · §207) | S02·S04 |
 
 #### 새로 이름을 붙이는 코드 (§2 3단계 흔적 대상)
 
@@ -1060,10 +1071,10 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | `QTY_EXCEEDS_SHIPPED` | 400 | `:arrive` 수량 > 반출 수량 | S05 | 계약 「반출한 수량 이하만」 |
 | `NEGATIVE_BALANCE` | 400 | 역처리가 잔액을 음수로 만든다 | S06 · **I-8**(`pick()`/`consume()` 하한 0행) | 계약이 「400 이다」라 적음. ⚠ 지금은 DB 트리거 `check_balance_qty()` 가 500 으로 샌다 — 잡아서 이 코드로 바꾼다 |
 | `JUDGMENT_SUM_MISMATCH` | 400 | `accepted + rejected + held ≠ inspected` | S18 | 계약이 「400 이다(A-3)」라 적음 |
-| `NOT_BLOCKING` | 400 | `blocksUse=false` 인 검교정 이력에 `:clear` | S24 | 계약 「막고 있지 않은 것을 풀 수 없다」 |
-| `ALREADY_CLEARED` | **409** | 이미 해소된 이력에 `:clear` | S24 | 계약이 「409 다」라 적음 |
+| `STATE_LOCKED`(기존) | 400 | blocksUse=false 이력의 :clear | S24/I33 R8 | NOT_BLOCKING 신설철회·계약상차단아님 |
+| 기존 ConflictResponse | **409** | 이미 해소된 이력의 :clear | S24/I33 R8 | ALREADY_CLEARED 신설철회·같은키200재생/다른키409 |
 | `RESULT_EXISTS` | 400 | 실적이 있는 보전오더에 `:cancel` | S23 | 계약 「실적이 하나도 없을 때만」 |
-| `CAUSE_REQUIRED` | 400 | 고장 `:complete` 인데 원인 코드·처리 내역이 없다 | S23 | 계약 「있어야 완료된다」 |
+| `REQUIRED`(기존 코드) | 400 | 고장 `:complete` 필수 원인 코드·처리 내역 누락 | S23 | 새 CAUSE_REQUIRED를 만들지 않는다. 완료 본길은 원인 원천 확인까지 보류(I-30·090) |
 | `REMAINDER_DISPOSITION_REQUIRED` / `_NOT_ALLOWED` | 400 | W/O `:close` 3분류 대조 4규칙 | S14 | 계약이 규칙 넷을 적었으나 코드를 안 줬다 |
 
 ⛔ **`STATE_LOCKED` 와 `STALE_VERSION` 을 섞지 않는다**(G-1) — 앞은 재로드해도 안 풀리고 뒤는 풀린다.
@@ -1091,12 +1102,12 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 자재 출고요청 | `issue_request_no` | ❌ | — | S04 |
 | 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — ~~출고요청이 만든다~~ **아무도 못 만든다** · 배정 축 3겹 부재 · I-8 §5 · 문의 045) |
 | 현장 입고 | `shopfloor_receipt_no` | ❌ | `SR-{YYYYMMDD}-{SEQ4}`(계약 example `SR-2026-000077` 에서 접두어만 · `DEFAULT_PREFIX` 한 줄 · I-9 §3-7) | S04 |
-| 창고 이동 | `stock_transfer_no` | ❌ | — | S05 |
+| 창고 이동 | `stock_transfer_no` | ❌ | **`ST-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `ST` 한 줄 · 계약 example `ST-2026-000260` 에서 **접두어만** 따는 것이 관행 · I-13 §4-3) | S05 |
 | 재생재 | `recycle_entry_no` | ❌ | — | S05 |
 | 재고 실사 | `inventory_count_no` | ❌ | — | S07 |
 | 재고 조정 | `inventory_adjustment_no` | ❌ | — | S07 |
-| 취급 단위 | `handling_unit_no` | ❌ | — | S07 |
-| 재포장 | `reconfiguration_no` | ❌ | — | S07 |
+| 취급 단위 | `handling_unit_no` | ❌ | **`HU-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `HU` 한 줄 · 기본 패턴 그대로 · 계약 example `HU-2026-000058` 은 형식만 · I-16 §4-3) | S07 |
+| 재포장 | ~~`reconfiguration_no`~~ **`repack_event_no`** | ❌ | 신설 표(N-2)의 헤더 번호 — I-16 §4-3 · 재수립 R-1 | S07 |
 | 재고 예약 | `reservation_no` | ❌ | — | S07(예약은 서버가 만든다) |
 | 승인 요청 | `approval_request_no` | ❌ | — | S09 |
 | 생산 계획 | `plan_no` | ❌ | — | S13 |

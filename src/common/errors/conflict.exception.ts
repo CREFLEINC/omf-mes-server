@@ -17,12 +17,17 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  */
 export type ConflictCause = 'user' | 'erpSync' | 'workerLease';
 
-/** 계열이 요구하는 선택 두 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
+/** 계열이 요구하는 선택 세 칸. 안 주면 봉투는 오늘과 «글자 그대로» 같다. */
 export interface ConflictExtra {
   /** `ProductionConflictResponse.code` 등 — 거부의 업무 사유. */
   code?: string;
   /** `VERSION_CONFLICT` 일 때 서버의 현재 `version_no`(계약이 문자열로 적었다). */
   currentVersion?: string;
+  /**
+   * `QualityConflictResponse.currentLotStatusCode` — 서버의 «현재» LOT 상태. ⛔ 화면이
+   * `message` 자유문에서 파싱하지 않는다고 계약이 못박아 구조화 칸이 있어야 한다.
+   */
+  currentLotStatusCode?: string;
 }
 
 export interface ConflictResponse extends ConflictExtra {
