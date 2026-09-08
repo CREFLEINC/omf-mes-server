@@ -1,11 +1,24 @@
-import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
-import { runIdempotent } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -19,7 +32,7 @@ import {
   lotHoldEventView,
 } from './lot-hold-event-query';
 import { LotHoldListQuery, LotHoldQueryService } from './lot-hold-query.service';
-import { LotHoldCreate } from './lot-hold-rules';
+import { LotHoldCreate, LotHoldRelease } from './lot-hold-rules';
 import { LotHoldView } from './lot-hold-view';
 import { LotHoldWriteService } from './lot-hold-write.service';
 
@@ -95,6 +108,32 @@ export class LotHoldController {
   create(@Req() request: Request, @Body() body: LotHoldCreate): Promise<LotHoldView[]> {
     const appUserId = userOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, appUserId));
+  }
+
+  /**
+   * ⭐ LOT 보류 해제·재판정(PR ⑤ · 심장 B) — I-20 의 마지막 오퍼레이션이다.
+   *
+   * ⭐⭐ **If-Match 는 `trace.lot.version_no` 다**(R-24) — 위 상세 판정 주석과 «같은 값»이다.
+   *    가드가 `IfMatchVersion`(필수)을 이미 막았으므로 `runVersioned` 를 그대로 쓴다.
+   * ⭐ 그래서 **LOT 이 안 움직인 해제는 ETag 가 안 오른다**(부분 해제 · 다른 열린 보류 잔존).
+   *    서비스가 LOT 을 다시 읽어 내므로 두 갈래가 한 자리에서 갈린다.
+   * ⛔ `X-Worker-No` 를 안 읽는다 — `lot_status_event.changed_by` 가 NOT NULL 이라 계정 세션이
+   *    유일한 원천이다(등록과 같다).
+   * 403 게이트는 `derived-permissions.ts:253` 에 이미 있다 — `manual-permissions.ts` 0줄.
+   */
+  @Post('lot-holds/:lotHoldId\\:release')
+  @Contract('POST /quality/lot-holds/{lotHoldId}:release')
+  @HttpCode(HttpStatus.OK)
+  release(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('lotHoldId', ParseIntPipe) lotHoldId: number,
+    @Body() body: LotHoldRelease,
+  ): Promise<LotHoldView> {
+    const appUserId = userOf(request);
+    return runVersioned<LotHoldView, 'view'>(this.idempotency, request, response, 'view', (version) =>
+      this.writes.release(lotHoldId, version, body, appUserId),
+    );
   }
 
   /**
