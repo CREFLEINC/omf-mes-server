@@ -123,3 +123,16 @@ export function dispositionCountQuery(filters: DispositionFilters): BuiltQuery {
 export function dispositionByIdQuery(dispositionDecisionId: number): BuiltQuery {
   return { sql: `SELECT ${SELECT_COLUMNS} ${FROM} WHERE d.disposition_decision_id = $1::bigint`, params: [dispositionDecisionId] };
 }
+
+/**
+ * I-21 PR ②b(`disposition-by-nonconformance.ts`)가 쓰는 전건 나열 — 질의 칸이 0 이라
+ * LIMIT/OFFSET 이 없다(§1-2 · 51번째가 조용히 사라지면 안 된다). ⭐ 리뷰 Minor-4 — `SELECT_COLUMNS`·
+ * `FROM` 을 export 해 다른 파일에서 SQL 을 조립하는 대신, 조립을 이 파일 안에 가둔다 — 머리
+ * 주석(`:10-11`)의 「식별자는 이 파일의 상수·리터럴에서만 온다」를 그대로 지킨다.
+ */
+export function dispositionByNonconformanceQuery(nonconformanceId: number): BuiltQuery {
+  return {
+    sql: `SELECT ${SELECT_COLUMNS} ${FROM} WHERE d.nonconformance_id = $1::bigint ORDER BY d.decided_at DESC, d.disposition_decision_id DESC`,
+    params: [nonconformanceId],
+  };
+}

@@ -69,7 +69,7 @@ import { NonconformanceQueryService } from './nonconformance/nonconformance-quer
     // `disposition-candidates`(후보 목록 · PR ③ — `PrismaService` 원시 SQL, `candidates` ≠
     // `decisions` 라 아래 컨트롤러와 세그먼트가 달라 순서 함정이 없다 · §7-2).
     NonconformanceController,
-    DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(I-21 PR ②a″) — `PrismaService` 만 쓰고 별도 provider 가 없다.
+    DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(②a″)·`nonconformances/:nonconformanceId/disposition-decisions`(②b) — `PrismaService` 만 쓰고 별도 provider 가 없다.
   ],
   providers: [
     DefectCodeService,

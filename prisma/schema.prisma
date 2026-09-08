@@ -29,7 +29,8 @@ model app_user {
   approval_step                                          approval_step[]
   attachment                                             attachment[]
   document_cancellation                                  document_cancellation[]
-  document_issue_log                                     document_issue_log[]
+  document_issue_log                                     document_issue_log[]                 @relation("document_issue_log_issued_by")
+  reported_document_issue_log                            document_issue_log[]                 @relation("document_issue_log_print_reported_by")
   exception_case                                         exception_case[]
   idempotency_record                                     idempotency_record[]
   notice_notice_closed_byToapp_user                      notice[]                           @relation("notice_closed_byToapp_user")
@@ -197,9 +198,18 @@ model document_issue_log {
   terminal_id           BigInt?
   printer_name          String?   @db.VarChar(100)
   remarks               String?
-  app_user              app_user  @relation(fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  lot                   lot?      @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
-  terminal              terminal? @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+  print_outcome_code       String?   @db.VarChar(40)
+  print_failure_reason     String?   @db.VarChar(500)
+  print_reported_at        DateTime? @db.Timestamptz(6)
+  issued_worker_id         BigInt?
+  print_reported_worker_id BigInt?
+  print_reported_by        BigInt?
+  app_user                 app_user  @relation("document_issue_log_issued_by", fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  print_reported_user      app_user? @relation("document_issue_log_print_reported_by", fields: [print_reported_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  issued_worker            worker?   @relation("document_issue_log_issued_worker", fields: [issued_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  print_reported_worker    worker?   @relation("document_issue_log_print_reported_worker", fields: [print_reported_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                      lot?      @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  terminal                 terminal? @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([document_type_code, target_type_code, target_id, issue_seq], map: "uq_document_issue_log")
   @@index([target_type_code, target_id, issued_at(sort: Desc)], map: "ix_document_issue_target")
@@ -2361,6 +2371,8 @@ model worker {
   maintenance_order              maintenance_order[]
   maintenance_result             maintenance_result[]
   tool_usage                     tool_usage[]
+  issued_document_issue_log      document_issue_log[]             @relation("document_issue_log_issued_worker")
+  reported_document_issue_log    document_issue_log[]             @relation("document_issue_log_print_reported_worker")
   app_user                       app_user?                        @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit                  business_unit                    @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   department                     department?                      @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
