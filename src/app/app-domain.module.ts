@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
@@ -15,6 +20,8 @@ import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentService } from './attachment/attachment.service';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
+import { DocumentIssueSummaryMiddleware } from './document-issue/document-issue-summary.middleware';
+import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
 import { DocumentIssueController } from './document-issue/document-issue.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
@@ -44,7 +51,13 @@ import { UserAssignmentService } from './access/user-assignment.service';
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
   // ApprovalModule(core) 은 결재함의 「현재 단계」 판정이 :approve/:reject 와 같은
   // 함수여야 해서 끌어온다(I-1.md R-2).
-  imports: [PrismaModule, IdempotencyModule, AuthModule, ApprovalModule, NumberingModule],
+  imports: [
+    PrismaModule,
+    IdempotencyModule,
+    AuthModule,
+    ApprovalModule,
+    NumberingModule,
+  ],
   controllers: [
     PermissionController,
     RoleController,
@@ -66,6 +79,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     UserAssignmentService,
     AttachmentService,
     DocumentIssueQueryService,
+    DocumentIssueSummaryService,
     OperationPolicyService,
     NoticeService,
     NotificationQueryService,
@@ -75,4 +89,11 @@ import { UserAssignmentService } from './access/user-assignment.service';
     ApprovalRequestService,
   ],
 })
-export class AppDomainModule {}
+export class AppDomainModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(DocumentIssueSummaryMiddleware).forRoutes({
+      path: 'app/document-issues/summary',
+      method: RequestMethod.GET,
+    });
+  }
+}
