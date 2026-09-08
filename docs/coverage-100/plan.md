@@ -55,10 +55,10 @@
 | 19 | **I-22** 출하지시·작업지시·제품 피킹 | 9 | I-8 | A13 | — | opus | 3 | — |
 | 20 | **I-23** 출하·확정·취소 + 재등록 | 7 | I-22·I-5 · **I-19 품질 전이 코어(재등록, A)** | A14 · U-I(`confirmed_*`) | ERP 아웃박스 둘째 | opus | 4 | ⛔ I-4 와 직렬(이미 끝) · 재등록 전 A 코어 병합·동기화(`lanes.md` §0) |
 | — | **M4 체인 e2e** | | | | | fable | 1 | |
-| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | — | opus | 3 | ∥ I-11 |
-| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | — | — | opus | 3 | — |
+| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | `transitions.ts`(축 1·전이 2) | opus·sonnet | **4** | ∥ I-11 · ∥ I-14(같은 레인 C — `transitions.ts` 는 레인 «안에서» 직렬화 · I-13 R-10) |
+| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | **N-1** | `transitions.ts`(키 1 · I-13 과 레인 안 직렬화) | opus·sonnet | **4** | C |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
-| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | — | — | opus | 3 | ∥ I-33 |
+| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **4** | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 지금0 | 조건부 SERIAL_NUMBER 채번만 별도 코어≤200 | 조회/조건부 심장 분리 | 즉시 GET1 + 조건부 코어/쓰기 | I-26 R1~R10 · 문의104~107 |
 | 27 | **I-27** 발행 이력·프린터 | 7(진행5·보류1·제외1) | I-26 저장조회 | A9 nullable6·A10 유보 | — | 물리/조회/쓰기 분리 | P0/P1/P2/P3·발행 규칙/잠금/배치 별도 | R1~R16·∥ I-28 |
@@ -128,6 +128,8 @@
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
+| **N-1** | **I-14** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** + FK + `ix_inventory_adjustment_line_count_line` — 계약 `InventoryAdjustmentLine.inventoryCountLineId`·`…LineUpsert.inventoryCountLineId` 둘 다 정의했는데 물리에 칸이 없다(I-14 재수립 R-4). ⭐ 이 칸이 **I-15 `:close` 의 「조정됨」을 라인 축으로** 재게 한다(§I-15 「라인 대응이 없다」를 연다) |
+| **N-2** | **I-16** | **신설** `inventory.handling_unit_repack_event` · `handling_unit_repack_event_line` | 재포장 이벤트 헤더 + 라인(`role_code`·`qty_before`·`qty_after`) + 복합 인덱스 1. ⭐ **`plan.md` §0 #9 의 「기존 표 재사용」이 실측으로 뒤집혔다**(I-16 재수립 R-1) — `handling_unit_reconfiguration(+_line)` 은 라인 필수 6칸 중 4칸이 없고 `ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약 대표 경로(한 HU 의 `PUT …/contents`)를 **구조적으로 막는다**. 기존 표는 **손대지 않는다**(0행·참조 0) ⇒ 삭제 0 |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9 | I-27 | `app.document_issue_log` | 결과3+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0·구writer 종료/갱신→P5→환경별 응답 활성화 |
 | A10 | I-27 | `app.printer` | **유보·적용0**. 단말 매핑/관측/기본/지원 원천 전 칸5 추가만으로 완료 불가. OFFLINE/false 기본값 제안 철회 |

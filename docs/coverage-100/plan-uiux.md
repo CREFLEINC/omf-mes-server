@@ -45,10 +45,10 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U11 | 출고요청 · 피킹 | 8 | M-01-08 앞 · W-02-10 | U20 | 없음 | 불필요 | ~~○ 예약~~ **피킹 소진만**(`pick()`·`consume()` · 예약을 거는 자리 없음 · I-8 R-22) | ~~○ 피킹~~ **없음**(`picking_order`·`picking_line` 상태를 서버가 안 옮긴다 · I-8 §6-6) | ~~2~~ **5**(I-8 R-1) |
 | U12 | 출고 전표 | 7 | M-01-08 뒤 · W-01-05 · W-01-06 · W-04-10 | U11 · U1 | 없음 | 불필요 | ○ 출고 | ○ 출고 | 5(I-4 재수립 R-11) |
 | U13 | 생산창고 입고 | 3 | M-01-09 | U12 | 없음 | 불필요 | 없음(I-9 §3-4 기록만) | 없음(영원히 `REGISTERED` · I-9 R-4) | 2 |
-| U14 | 재고 이동 · 반출 | 6 | M-01-10 · W-04-11 | U12 | 없음 | 불필요 | ○ 2단 | ○ 이동 | 2 |
+| U14 | 재고 이동 · 반출 | 6 | **M-01-10** | U12 | **A4** | `transitions.ts` | ○ 2단 | ○ 이동 | **4** |
 | U15 | 재생재 | 1 | M-01-12 | U5 | 없음 | 불필요 | ○ 증가 | — | 1 |
 | U16 | 실사 | 6 | W-01-04 · M-01-11 | — | 없음 | 불필요 | — | ○ 실사 | 2 |
-| U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | 없음 | 불필요 | ○ 조정 | ○ 조정 | 2 |
+| U17 | 재고 조정 | 7 | W-01-12 | U16 · U1 | **1(N-1)** | `transitions.ts` | ○ 조정 | ○ 조정 | **4** |
 | U18 | 물류 문서 진행현황 · 취소 | 4 | W-01-13 | U5 · U12 · U1 | 없음 | ○ §I-38 취소 흔적 | ○ 역분개 | ○ 취소 | 3 |
 | U19 | P/O 수신 · 생산 계획 | 10 | W-02-01 · W-02-02 · W-02-06 · W-06-10(`:resync` 권한) | — | 없음 | ○ 분할 계보 2칸(A11 — 변경 이력 칸은 실재 · I-24 R-17) | — | ○ 계획 | 4 |
 | U20 | W/O 편성 · 배포 | 9 | W-02-03/04/07/08 | U19 | ~~work_order_resource_plan~~ 표는 있다(`work_order_resource_assignment`) — 결손은 **유일 제약**(I-6 R-9) | ○ | — | ○ W/O | 3 |
@@ -58,7 +58,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U24 | 생산 실적 · 정정 | 5 | P-02-04 · W-02-05 | U23 | 없음 | **2**(D1 `shift_id` 완화 · D2 `correct_reason_code`) | — (원장 안 지난다 · 제품 재고는 기존 입고) | ○ L1 호출 | 3 (I-7 ①②③ · 재수립 R-19) |
 | U25 | 생산 LOT 완료 · 개체 발번 | 4 | P-02-06 · P-02-05 · W-02-05/06 | U24 | 없음 | 불필요 | — | — (완료는 `completed_at` 시각 · 어느 상태 칸도 안 옮긴다 · I-7 §3-3) | 2 |
 | U26 | 공정 인계 · 수리 왕복 | 6 | M-02-01 · M-02-02 | U24 | 없음 | 불필요 | ○ 이동 | ○ 인계 | 2 |
-| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **handling_unit_repack_event(+line)** | ○ | — | ○ 포장 | 3 |
+| U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **N-2 — `handling_unit_repack_event(+line)` 신설**(✅ 실측으로 확인 · I-16 재수립 R-1) | ○ | — | ○ 포장 | **4** |
 | U28 | 부적합 · 처분 | 9 | W-04-06/07 · W-03-10 · P-04-03 | U8 | 없음 | 불필요 | — | ○ 부적합 | 3 |
 | U29 | 특채 | 2 | W-03-09 | U1 · U28 | 없음 | 불필요 | — | — | 1 |
 | U30 | 출하지시서 · 출하작업지시 | 7 | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | 3 |
@@ -248,12 +248,12 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `GET /logistics/stock-transfers` | 재고 이동 목록 | M-01-10,W-06-06 | - |
+| `GET /logistics/stock-transfers` | 재고 이동 목록 | M-01-10 | - (⛔ `W-06-06` 삭제 — 공통코드 마스터 화면이라 이 목록을 부르지 않는다 · I-13 재수립 R-19) |
 | `GET /logistics/stock-transfers/{stockTransferId}` | 재고 이동 상세 | M-01-10 | - |
 | `GET /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 목록 | M-01-10 | - |
-| `PUT /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 치환 | — | 멱등, ETag |
-| `POST /logistics/stock-transfers` | 반출 등록 | M-01-10,W-04-11 | 멱등, ETag, 사번 |
-| `POST /logistics/stock-transfers/{stockTransferId}:arrive` | 도착 확정 | M-01-10 | 멱등, ETag, 사번 |
+| `PUT /logistics/stock-transfers/{stockTransferId}/lines` | 이동 라인 치환 | — | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
+| `POST /logistics/stock-transfers` | 반출 등록 | M-01-10 | 멱등, **응답 ETag(201)**, 사번 (⛔ `W-04-11` 삭제 — 그 화면은 `POST /logistics/stock-reinstatements` **한 호출**이다 · `W-04-11` §0·§5-3) |
+| `POST /logistics/stock-transfers/{stockTransferId}:arrive` | 도착 확정 | M-01-10 | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 |
 
 #### U15 재생재 (M-01-12) — 1건
 
@@ -276,13 +276,13 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
-| `GET /inventory/adjustments` | 재고 조정 목록 | W-01-12,W-06-06 | - |
-| `GET /inventory/adjustments/{inventoryAdjustmentId}` | 재고 조정 상세 | W-01-12 | - |
+| `GET /inventory/adjustments` | 재고 조정 목록 | W-01-12 | - (⛔ `W-06-06` 삭제 — 계약에서 그 식별자는 `statusCode` **설명문** 안에서만 나오고 그 화면에 조정 언급 0건 · I-14 재수립 R-17) |
+| `GET /inventory/adjustments/{inventoryAdjustmentId}` | 재고 조정 상세 | W-01-12 | **응답 ETag** |
 | `GET /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 목록 | W-01-12 | - |
-| `PUT /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 치환 | — | 멱등, ETag |
-| `POST /inventory/adjustments` | 재고 조정 등록 | W-01-12 | 멱등 |
-| `POST /inventory/adjustments/{inventoryAdjustmentId}:post` | 재고 조정 전기 | W-01-12 | 멱등, ETag |
-| `POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval` | 재고 조정 상신 | W-01-12 | 멱등, ETag |
+| `PUT /inventory/adjustments/{inventoryAdjustmentId}/lines` | 조정 라인 치환 | — | 멱등, **요청 If-Match(필수) + 응답 ETag** |
+| `POST /inventory/adjustments` | 재고 조정 등록 | W-01-12 | 멱등, **응답 ETag(201)** |
+| `POST /inventory/adjustments/{inventoryAdjustmentId}:post` | 재고 조정 전기 | W-01-12 | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
+| `POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval` | 재고 조정 상신 | W-01-12 | 멱등, **요청 If-Match(필수)** — 응답 ETag 없음 |
 
 #### U18 물류 문서 진행현황·취소 (W-01-13) — 4건
 
@@ -397,10 +397,10 @@ I-26 R1~R10: 기존 개체 GET은 진행한다. 기발번 수는 해당 LOT **�
 | `GET /inventory/handling-units` | 취급 단위 목록 | M-01-10,P-01-02,P-02-08 | - |
 | `GET /inventory/handling-units/{handlingUnitId}` | 취급 단위 상세 | P-01-02 | - |
 | `GET /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 목록 | M-01-10 | - |
-| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03,P-04-04 | 멱등, ETag, 사번 |
+| `PUT /inventory/handling-units/{handlingUnitId}/contents` | 취급 단위 구성 치환 | M-04-03 | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (⛔ `P-04-04` 삭제 — 그 화면 액션 9건에 구성 편집이 없고 부르는 것은 `POST /inventory/handling-units` 다 · I-16 재수립 R-17) |
 | `GET /inventory/handling-units/{handlingUnitId}/repack-events` | 포장 재구성 이력 | M-04-03 | - |
 | `POST /inventory/handling-units` | 취급 단위 등록 | M-04-03,P-02-08,P-04-01 | 멱등, 사번 |
-| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08 | 멱등, ETag, 사번 |
+| `POST /inventory/handling-units/{handlingUnitId}:pack` | 포장 확정 | P-02-08,**P-04-01** | 멱등, **요청 If-Match(선택)**, 사번 — 응답 ETag 없음 (`P-04-01` §5-6:240 「포장 확정」·§6:257 이 부모 `version_no` 충돌을 요구 · I-16 재수립 R-17) |
 
 #### U28 부적합·처분 (W-04-06·W-04-07·W-03-10·P-04-03) — 9건
 
@@ -594,7 +594,7 @@ I33 R6/R7/R9/R10·118: 실제최신T관측의값/시각을조회하고 alreadyMa
 | U10 | `putaway_rule.priority_no` 방향 · `capacityQty` 사용(`§I-35` · `§Z-11`) | 가장자리 | `§Z-11` 선례 그대로 — **한도를 보지 않고 우선순위 첫 건**만 권장한다 |
 | U11 | 피킹 지시를 **누가 만드는가**(M-01-08 §5-1 「⚠ 누가 만드는지 미정」) | 본길 — 만드는 주체가 없으면 M-01-08 이 영영 빈 화면 | 1단계 본길 → 계약에 생성 오퍼레이션이 없다. ~~`POST /logistics/material-issue-requests` 와 `:release` 가 만드는 쪽으로 «서버 파생»을 두되~~ **서버 파생을 둘 수 없다**(I-8 §5-2 실측 — 요청은 «도착» 위치만 갖고 출발 창고·LOT·위치를 모른다 · 배정 축 3겹 부재) → **문의 045**(선출 축·`pickSequenceRank` 모집단 포함 · I-8 R-22). 조회·`:pick` 은 그대로 구현 |
 | U12 | 기타 출고 결재선 선택 축(`businessUnitId` × `reasonCode` 파생) | 가장자리 — 계약이 「서버가 전표의 reasonCode 로 파생한다」로 이미 못박음 | ~~0단계에서 끝난다~~ → **022 대기 · 공통본만**(`businessUnitId` 8자리 `null` · `item.business_unit_id` 는 없는 칸 — I-4 재수립 R-5) |
-| U14 | 창고 «내» 위치 이동을 담을 헤더가 없다(M-01-10 §8) | 본길 | 1단계 본길 → `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 위치 이동은 **적치(U10)로 흡수**하고 요청서에 싣는다 |
+| U14 | 창고 «내» 위치 이동을 담을 헤더가 없다(M-01-10 §8) | 본길 | 1단계 본길 → `stock_transfer` 는 창고 간(from ≠ to)만 받는다. ⛔ ~~위치 이동은 적치(U10)로 흡수~~ — **흡수처가 없다**(I-13 재수립 R-1): `M-01-07` §0·§1·§5-4 가 복귀처를 **`M-01-10`** 으로 주고, 그 `putaway_task` 는 임시 적치로 이미 `COMPLETED_TEMPORARY` 가 되어 닫혔다. **오늘 어느 슬라이스도 창고 내 위치 이동을 만들지 않는다** — 문의 121 에 싣는다 |
 | U16 | 「차이가 있을 때 조정 없이 마감할 수 있나」(W-01-04 §8) | 가장자리 | 계약이 답했다 — `closable`·`closeBlockedReasonCode(VARIANCE_UNADJUSTED)` → 0단계 |
 | U18 | `screenId` 를 채울 표가 없다(`계약-재검토-2026-09-04` §3) | 가장자리 | 계약의 물러난 길 그대로 — **키를 생략한다(널을 보내지 않는다).** `DocumentProgress.screenId` · `ApprovalTarget.screenId` · `Notification.screenId` 셋 다 같다 |
 | U18 | 취소 흔적 3컬럼이 `inbound_receipt`·`goods_receipt` 에 없다(`§I-38` · 실측 확인) | 본길 — 취소가 흔적 없이 지나간다 | 마이그레이션으로 3컬럼을 «먼저» 넣는다. 넣지 않으면 계약이 「승인 기록이 그 이력을 대신한다」로 물러난 자리와 어긋난다 |
@@ -636,7 +636,7 @@ M5 주변부)을 **바탕으로 삼되, 마일스톤 안의 순서를 화면 흐
 | 8 | U9 긴급 IQC 생략 | U1 · U8 이 서야 성립. 1건짜리 슬라이스라 U8 PR 에 얹을 수도 있다 |
 | 9 | U10 적치 지시 | 입고(이미 구현)가 만드는 지시를 소화한다. M-01-05·M-01-07 |
 | 10 | U16 실사 | ⚠ **벗어남 — M5(실사)를 앞으로.** 적치까지 서면 창고에 물건이 쌓이는데 **세는 화면이 없으면 초기 데이터가 틀어진 채로 굳는다.** M-01-11(모바일)·W-01-04(관리웹)가 같은 레코드를 쓴다 |
-| 11 | U17 재고 조정 | 실사 차이를 닫는다. U16 없이는 W-01-12 의 「실사 결과에서 불러오기」가 빈다 |
+| 11 | U17 재고 조정 | 실사 차이를 닫는다. U16 없이는 W-01-12 의 「실사 결과에서 불러오기」가 빈다 — ⚠ 그 버튼이 부르는 것은 `GET /inventory/counts/{id}/lines`(**I-15 몫**)다. 서버는 `inventoryCountId`·`inventoryCountLineId` 를 받아 **저장만** 하므로 I-15 가 뒤여도 선다. 다만 화면 §3 ① 라디오의 「실사 결과에서」 한쪽이 그때까지 빈다 — **배포 노트**(I-14 재수립 R-19) |
 | 12 | U19 P/O 수신 · 생산 계획 | 생산 흐름의 머리 |
 | 13 | U20 W/O 편성 · 배포 | `:release` 가 **출고요청과 생산 LOT 선발행을 만든다** — U11 · U25 의 원천 |
 | 14 | U11 출고요청 · 피킹 | M-01-08. W/O 가 서야 요청이 생긴다 |
@@ -1189,7 +1189,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 
 | # | 화면 | 화면이 요구하는 것 | 계약 상태 | 이 계획에서의 처리 |
 |---:|---|---|---|---|
-| A | **M-01-10** 재고이동·불량반출 | **창고 «안»의 위치 이동**·파렛트 재편성을 담을 업무 문서 헤더 | `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 화면 §8 원문 — 「이동 자체는 기록되나 **「이동 건」이라는 업무 문서가 없다**」 | U14 는 창고 간만 만든다. 위치 이동은 U10(적치)로 흡수하고 **요청서 후보** |
+| A | **M-01-10** 재고이동·불량반출 | **창고 «안»의 위치 이동**·파렛트 재편성을 담을 업무 문서 헤더 | `stock_transfer` 는 창고 간(from ≠ to)만 받는다. 화면 §8 원문 — 「이동 자체는 기록되나 **「이동 건」이라는 업무 문서가 없다**」 | U14 는 창고 간만 만들고 서버가 400 `INVALID` 로 막는다. ⛔ ~~위치 이동은 U10(적치)로 흡수~~ — **흡수처 없음**(I-13 재수립 R-1 · `M-01-07` 이 복귀처를 M-01-10 으로 준다) ⇒ **문의 121** |
 | B | **M-01-12** 재생재 등록 | 재생재 «신규 품목» 행을 만드는 경로 | `/mdm/items` 는 **GET 뿐**이다(W-06-05 가 「품목 추가는 없다 — ERP 정본 수신본」). 화면 §8 이 2026-09-02 재확인에도 **열려 있다**고 적음 | `POST /logistics/recycle-entries` 는 «등록된 품목만» 받는다. **요청서 후보** |
 | C | **M-01-06** 입하 오류 등록 | 미등록 품목이 도착했을 때 입하 라인을 만드는 길 | 품목 생성 오퍼레이션 0건 (B 와 같은 뿌리) | 400 으로 거부. **요청서 후보(B 와 묶어서)** |
 | D | **M-02-01** WIP 공정이동 스캔 | 인계의 «수령» 쪽 — `received_at`·`received_qty` 를 채울 오퍼레이션·화면 | `POST /production/operation-handovers` 는 ⌜인계와 인수를 **한 번에** 확정한다 — 화면의 버튼이 하나다⌝ 로 «인계 시점에 수령까지» 적는다. 별도 수령 스캔은 없다 | 계약대로 한 번에 확정. **화면 §8 의 「수령 스캔 부재」는 계약이 이미 답한 것으로 읽는다**(추측 아님 — 계약 원문) |
