@@ -7,9 +7,10 @@ import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
-/** 예비품을 FK 로 가리키는 자리. e2e 가 `pg_constraint` 로 대조한다. */
+/** 예비품을 FK 로 가리키는 자리 전부 — 세 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
 export const SPARE_PART_REFERRERS: readonly Referrer[] = [
   ['logistics.goods_issue_spare_line', 'spare_part_id'],
+  ['maintenance.maintenance_result_part', 'spare_part_id'],
   ['mdm.spare_part_equipment', 'spare_part_id'],
 ];
 

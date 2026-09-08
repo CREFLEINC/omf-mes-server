@@ -188,6 +188,10 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     RCONF: `LOT-R-CONF-${PREFIX}`,
     RVAL: `LOT-R-VAL-${PREFIX}`,
     RROUND: `LOT-R-ROUND-${PREFIX}`,
+    // ⭐ 리뷰 Major-1 — 「낡은 토큰」과 「초과 수량」을 «동시에» 갖는 LOT(순서 판정 1 의 (d) 축).
+    WVSTALE: `LOT-W-VSTALE-${PREFIX}`,
+    // ⭐ 리뷰 Major-2 — 「해제된 «전량» 보류」를 가진 LOT(재Hold 가 되는지).
+    WREHOLD: `LOT-W-REHOLD-${PREFIX}`,
   };
   /** ⑤ #33 — `:confirm` 이 보류를 닫는 경로를 «진짜로» 태우기 위한 검사 결과(가짜 픽스처 금지). */
   let confirmResultId: number;
@@ -760,6 +764,21 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   );
 
   it(
+    '⭐⭐ 등록 — 값 목록 밖 reasonCode 는 400 INVALID 다(§3-1 0단계) ' +
+      '(↩ assertCodeValues 를 지우면 201 이 나고 lot_hold 1행이 선다 — `trace.lot_hold.reason_code` 에 FK 가 «0개»라 ' +
+      '다른 방어가 하나도 없고, 그 코드가 lot_status_event 에도 실려 화면이 라벨을 못 푼다 · 리뷰 Major-3)',
+    async () => {
+      const rejected = await postHold({
+        lots: [await refOf('WVAL')],
+        reasonCode: 'NOT_A_CODE',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'reasonCode', code: 'INVALID' });
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVAL) } })).toBe(0);
+    },
+  );
+
+  it(
     '⭐⭐ 등록 — lots[].versionNo 가 하나만 틀려도 «전체»가 409 이고 conflictingLotId 가 그 LOT 이다 · ' +
       '버전 대조가 업무 게이트(DUPLICATE_HOLD)보다 «먼저» 난다 ' +
       '(↩ 부분 성공을 허용하거나 b↔c 순서를 뒤집으면 깨진다 · 순서 판정 1)',
@@ -784,8 +803,37 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       // ⭐ WVER2 는 «열린 전량 보류»도 갖고 있다 — (b)와 (c)의 순서를 뒤집으면 이 응답이
       //   `DUPLICATE_HOLD` 로 바뀐다. 그 자리가 이 단언의 존재 이유다.
       expect(rejected.body.code).not.toBe('DUPLICATE_HOLD');
+      expectConflictEnvelope(rejected.body);
       // 판정 3 — 하나라도 어긋나면 «전체» 거부다(성한 WVER1 에도 행이 안 선다).
       expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVER1) } })).toBe(0);
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — 낡은 토큰 «과» 초과 수량을 동시에 가진 LOT 은 VERSION_CONFLICT 가 «먼저»다 ' +
+      '(↩ (b)버전 대조를 (d)HOLD_QTY_EXCEEDED 뒤로 옮기면 응답이 HOLD_QTY_EXCEEDED 로 바뀐다 · 순서 판정 1 의 «둘째 절반» · 리뷰 Major-1)',
+    async () => {
+      const stale = await refOf('WVSTALE');
+      expect(stale.versionNo).toBe(3); // 픽스처 전제 — 보낼 토큰(1)이 «진짜로» 낡았다
+      // 500(열린 부분 보류) + 3,600 = 4,100 > 4,000(잔액) ⇒ (d) 만 보면 HOLD_QTY_EXCEEDED 다.
+      const rejected = await postHold({
+        lots: [{ lotId: stale.lotId, versionNo: 1 }],
+        holdQty: 3600,
+        uomId,
+        reasonCode: 'APPEARANCE_ABNORMAL',
+        targetLotStatusCode: 'INSPECTION_PENDING',
+        releaseCondition: '외관 재검',
+      }).expect(409);
+
+      expect(rejected.body).toMatchObject({
+        code: 'VERSION_CONFLICT',
+        conflictingLotId: lotId.WVSTALE,
+        currentVersion: '3',
+        currentLotStatusCode: 'NORMAL',
+      });
+      expect(rejected.body.code).not.toBe('HOLD_QTY_EXCEEDED');
+      expectConflictEnvelope(rejected.body);
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVSTALE), released_at: null } })).toBe(1);
     },
   );
 
@@ -800,7 +848,30 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       }).expect(409);
       expect(rejected.body).toMatchObject({ code: 'DUPLICATE_HOLD', conflictingLotId: lotId.WDUP2 });
       expect(rejected.body.conflictingLotId).not.toBe(lotId.WDUP1);
+      expectConflictEnvelope(rejected.body);
       expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WDUP1) } })).toBe(0);
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — 해제된 «전량» 보류가 있는 LOT 은 «다시» 보류할 수 있다(클레임·리콜 재Hold) ' +
+      '(↩ assertNoOpenFullHold 에서 `released_at: null` 을 지우면 409 DUPLICATE_HOLD 로 막혀, 한 번 풀린 LOT 이 ' +
+      '영영 재Hold 불가가 된다 — ⑤(:release)가 서면 해제된 LOT 전건이 그 상태다 · 리뷰 Major-2)',
+    async () => {
+      // 픽스처 전제 — 이 LOT 의 보류는 「전량(hold_qty NULL)」이고 「이미 해제됨」이다.
+      const closed = await prisma.lot_hold.findMany({ where: { lot_id: BigInt(lotId.WREHOLD) } });
+      expect(closed).toHaveLength(1);
+      expect(closed[0].hold_qty).toBeNull();
+      expect(closed[0].released_at).not.toBeNull();
+
+      const response = await postHold({
+        lots: [await refOf('WREHOLD')],
+        reasonCode: 'CLAIM_RECALL',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(201);
+      expect((response.body as LotHoldItem[])[0].lotId).toBe(lotId.WREHOLD);
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WREHOLD), released_at: null } })).toBe(1);
+      expect(await statusOf('WREHOLD')).toBe('DEFECTIVE');
     },
   );
 
@@ -831,6 +902,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       releaseCondition: '외관 재검',
     }).expect(409);
     expect(rejected.body).toMatchObject({ code: 'HOLD_QTY_EXCEEDED', conflictingLotId: lotId.WQTYNG });
+    expectConflictEnvelope(rejected.body);
     expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WQTYNG), released_at: null } })).toBe(1);
   });
 
@@ -868,6 +940,9 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
         reason_code: 'DIMENSION_ABNORMAL',
         changed_by: BigInt(heldByAId),
       });
+      // ⭐ 리뷰 Nit-1 — `held_at` 과 `changed_at` 이 「한 시각을 나눠 쓴다」는 주석이 단언으로
+      //   안 잠겨 있었다(둘을 다른 시각으로 바꾸는 변이가 초록이었다).
+      expect(events[0].changed_at).toEqual(holds[0].held_at);
     },
   );
 
@@ -1494,6 +1569,16 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     return { lotId: lotId[key], versionNo: lot.version_no };
   }
 
+  /**
+   * 409 셋은 계약이 이 오퍼레이션에 «전용»으로 준 봉투(`QualityConflictResponse`)다 —
+   * 값 대조(`toMatchObject`)만으로는 봉투 «적합»이 안 잡힌다(리뷰 Minor-2).
+   */
+  function expectConflictEnvelope(body: unknown): void {
+    const validate = validator('POST /quality/lot-holds', 409);
+    expect(validate(body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  }
+
   async function statusOf(key: string): Promise<string> {
     return (await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId[key]) } })).status_code;
   }
@@ -1852,6 +1937,36 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     lotId.WQTYNG = await newLot('WQTYNG', item1Id, 'NORMAL');
     await newBalance(lotId.WQTYNG, 4000);
     await newPartialHold(lotId.WQTYNG, 500);
+
+    // ⭐⭐ 리뷰 Major-1 — 「낡은 토큰(version_no=3)」 + 「초과 수량(500 + 3,600 > 4,000)」을 «한
+    // LOT» 이 동시에 갖는다. `holdQty` 는 LOT 1건에서만 오므로(2건 이상은 400) 순서 판정 1 의
+    // «(d) HOLD_QTY_EXCEEDED 축»은 이런 LOT 없이는 반증이 불가능하다 — WVER2 는 잔액이 0건이라
+    // (c) DUPLICATE_HOLD 축만 잡았다.
+    lotId.WVSTALE = await newLot('WVSTALE', item1Id, 'NORMAL');
+    await prisma.lot.update({ where: { lot_id: BigInt(lotId.WVSTALE) }, data: { version_no: 3 } });
+    await newBalance(lotId.WVSTALE, 4000);
+    await newPartialHold(lotId.WVSTALE, 500);
+
+    // ⭐⭐ 리뷰 Major-2 — 「해제된 «전량» 보류」(hold_qty NULL + released_at NOT NULL). 이 행이
+    // 없으면 `assertNoOpenFullHold` 의 `released_at: null` 필터를 지워도 초록이고, 그 회귀는 이
+    // 오퍼레이션의 존재 이유를 죽인다 — 한 번 전량 보류됐다 «풀린» LOT 이 영영 재Hold 불가가
+    // 된다(그게 계약이 이 경로에 적은 클레임·리콜 재Hold 다). ⑤(:release)가 서면 해제된 LOT
+    // 전건이 그 상태가 된다.
+    lotId.WREHOLD = await newLot('WREHOLD', item1Id, 'NORMAL');
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: lotId.WREHOLD,
+        reason_code: 'CLAIM_RECALL',
+        status_code: 'HELD',
+        held_at: new Date(W_SEED),
+        released_by: heldByAId,
+        released_at: new Date(W_SEED),
+        release_reason_code: 'INVESTIGATION_CLEARED',
+        release_target_lot_status_code: 'NORMAL',
+        // ⛔ hold_qty 를 안 준다 — 「전량」이 NULL 이다. 부분(9,999)으로 두면 다른 함수의
+        //    필터만 닫히고 이 자리는 그대로 열린다(리뷰 Major-2 가 짚은 「반쪽」이 그것이다).
+      },
+    });
   }
 
   function newFullHold(forLotId: number) {

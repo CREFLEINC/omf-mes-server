@@ -21,10 +21,26 @@ import { InspectionController } from "./inspection/inspection.controller";
 import { InspectionQueryService } from "./inspection/inspection-query.service";
 import { InspectionWriteService } from "./inspection/inspection-write.service";
 import { NumberedMaintenanceWrite } from "./numbered-maintenance-write";
+import { MaintenanceOrderController } from "./order/order.controller";
+import { MaintenanceOrderCancelService } from "./order/order-cancel.service";
+import { MaintenanceOrderQueryService } from "./order/order-query.service";
+import { MaintenanceResultController } from "./result/result.controller";
+import { MaintenanceResultQueryService } from "./result/result-query.service";
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule, NumberingModule, DocumentStateModule],
-  controllers: [InspectionController, BreakdownController, DowntimeController],
+  imports: [
+    PrismaModule,
+    IdempotencyModule,
+    NumberingModule,
+    DocumentStateModule,
+  ],
+  controllers: [
+    InspectionController,
+    BreakdownController,
+    DowntimeController,
+    MaintenanceOrderController,
+    MaintenanceResultController,
+  ],
   providers: [
     InspectionQueryService,
     InspectionWriteService,
@@ -40,6 +56,9 @@ import { NumberedMaintenanceWrite } from "./numbered-maintenance-write";
     DowntimeSummaryCalendarService,
     DowntimeSummaryMaintenanceService,
     DowntimeSummaryService,
+    MaintenanceOrderQueryService,
+    MaintenanceOrderCancelService,
+    MaintenanceResultQueryService,
   ],
 })
 export class MaintenanceModule {}

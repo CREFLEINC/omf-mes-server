@@ -113,6 +113,12 @@ describe('채번 코어', () => {
     expect(await service.next('BREAKDOWN', PLANT, DAY)).toBe('MLF-20260906-0001');
   });
 
+  it('채번 — 보전 지시는 MO 기본 접두어를 쓴다', async () => {
+    const { service } = fake();
+
+    expect(await service.next('MAINTENANCE_ORDER', PLANT, DAY)).toBe('MO-20260906-0001');
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),

@@ -71,7 +71,7 @@ export class LotHoldWriteService {
       // (b) 버전 → (c) 열린 전량 보류 → (d) 수량 합계. 이 순서가 판정 1 이다.
       assertVersions(body, new Map(locked.map((lot) => [lot.lot_id, lot])));
       await assertNoOpenFullHold(tx, lotIds);
-      await assertHoldQtyWithinOnHand(tx, body, lotIds[0]);
+      await assertHoldQtyWithinOnHand(tx, body);
 
       // (e) 보류 INSERT — 반환 순서가 입력 순서다(코어 규약).
       const rows = await this.holds.holdWithin(tx, locked, holdInputsOf(body), actor);
@@ -268,14 +268,19 @@ async function assertNoOpenFullHold(tx: Tx, lotIds: bigint[]): Promise<void> {
 
 /**
  * 부분 보류 합계가 보유 수량을 넘으면 409. ⭐ **`holdQty` 는 LOT 한 건에서만 온다** —
- * 2건 이상은 위에서 400 `INVALID` 라 여기 오는 `lots` 는 언제나 하나다.
+ * 2건 이상은 위에서 400 `INVALID` 라 여기 오는 `lots` 는 언제나 하나다. 그 결합을 **주석이
+ * 아니라 코드로** 세운다 — 「어느 LOT 인가」를 호출자가 `lotIds[0]` 로 골라 넘기면 그 인자가
+ * 구조적으로 반증 불가해지고, 위 갈래가 사라지는 날 «첫 LOT 만» 재는 것이 조용히 지나간다.
  *
  * ⭐ **「한계와 같은 값」은 통과다** — `>` 이지 `>=` 가 아니다(기존 500 + 신규 3,500 = 보유 4,000).
  * ⛔ 「보유」는 `inventory_balance.on_hand_qty` 의 LOT 축 합이고 `blocked_qty`·`available_qty`
  *    (GENERATED)는 안 본다 — 계약이 두 자리에서 못 박았다(`:1845`·`:4299`). // 결정 — 통보 076
  */
-async function assertHoldQtyWithinOnHand(tx: Tx, body: LotHoldCreate, lotId: bigint): Promise<void> {
+async function assertHoldQtyWithinOnHand(tx: Tx, body: LotHoldCreate): Promise<void> {
   if (body.holdQty === undefined) return;
+  // 400 이 아니라 못 일어날 일이다 — 0단계 선례 `core/lot/lot-hold.service.ts` `assertLocked()`.
+  if (body.lots.length !== 1) throw new Error('holdQty 는 LOT 한 건에서만 온다 (2건 이상은 400 INVALID 로 이미 막혔다)');
+  const lotId = BigInt(body.lots[0].lotId);
   const balance = await tx.inventory_balance.aggregate({ _sum: { on_hand_qty: true }, where: { lot_id: lotId } });
   const open = await tx.lot_hold.aggregate({ _sum: { hold_qty: true }, where: { lot_id: lotId, released_at: null } });
   const held = (open._sum.hold_qty ?? new Prisma.Decimal(0)).plus(body.holdQty);

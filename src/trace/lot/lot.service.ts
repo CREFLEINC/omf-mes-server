@@ -123,6 +123,7 @@ export class LotService {
     const [rows, total] = await Promise.all([
       this.prisma.lot.findMany({
         where,
+        // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
         include: { lot_hold: true },
         orderBy: [{ created_at: 'desc' }, { lot_id: 'desc' }],
         skip: page.skip,
@@ -281,7 +282,8 @@ export class LotService {
   private async row(lotId: number): Promise<LotRow> {
     const row = await this.prisma.lot.findUnique({
       where: { lot_id: lotId },
-      include: { lot_hold: true },
+      // ⭐ R-5 — `GET .../holds` 와 같은 정렬(0단계 선례 `lot-hold-query.service.ts:45`).
+      include: { lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] } },
     });
     if (!row) throw new NotFoundException('없는 LOT 입니다.');
     return row;

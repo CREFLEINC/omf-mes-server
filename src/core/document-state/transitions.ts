@@ -339,6 +339,20 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * 보전 지시 취소. 시드 `MAINTENANCE_ORDER_STATUS`가 ISSUED·DONE·CANCELLED를 확정했고,
+   * 계약은 발행된 지시 중 실적이 없는 것만 취소하도록 연다(I-31 R11/C0).
+   * 실적 존재 여부는 쓰기 서비스가 잠근 뒤 검사하고, 이 표는 상태 축만 판정한다.
+   * ⛔ 완료 전이는 등록하지 않는다 — 완료의 업무 의미는 별도 설계 문의가 남아 있다.
+   */
+  'maintenance.maintenance_order.status_code': {
+    'maintenance-order-cancel': {
+      from: ['ISSUED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /maintenance/orders/{maintenanceOrderId}:cancel',
+    },
+  },
+
+  /**
    * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
    * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
    * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
