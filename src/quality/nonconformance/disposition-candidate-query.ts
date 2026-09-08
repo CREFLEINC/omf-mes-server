@@ -50,7 +50,8 @@ const CAND_CTE = `
        AND r.overall_judgment_code = '${REJECTED}' AND req.lot_id IS NOT NULL
   )`;
 
-/** ⭐ `is_defect` 축의 불량창고 잔액만(내부 조인 — 0행이면 그 LOT 은 결과에서 빠진다). */
+/** ⭐ `is_defect` 축의 불량창고 잔액만(내부 조인 — 0행이면 빠진다). `$1`=`warehouseId`(null 이면
+ * 안 건다) — 사후 필터가 아니라 «재집계»(리뷰 Major-2, R-4 형 재발 방지 · 동률 2차 키 Minor-2). */
 const BAL_LATERAL = `
     JOIN LATERAL (
       SELECT b.warehouse_id, b.uom_id,
@@ -59,8 +60,9 @@ const BAL_LATERAL = `
         FROM inventory.inventory_balance b
         JOIN mdm.warehouse dw ON dw.warehouse_id = b.warehouse_id AND dw.is_defect = true
        WHERE b.lot_id = c.lot_id AND b.on_hand_qty <> 0        -- ⭐ I-20 R-22
+         AND ($1::bigint IS NULL OR b.warehouse_id = $1::bigint)
        GROUP BY b.warehouse_id, b.uom_id
-       ORDER BY sum(b.on_hand_qty) DESC
+       ORDER BY sum(b.on_hand_qty) DESC, b.warehouse_id ASC
        LIMIT 1
     ) bal ON TRUE`;
 
@@ -123,9 +125,10 @@ const SELECT_COLUMNS = `
       nc.nonconformance_id, nc.nonconformance_no, nc.status_code AS nonconformance_status_code`;
 
 /** `sourceCode` 는 `rt` 유무로 건다(응답 CASE 와 같은 축). `withoutNonconformanceOnly` 는
- * «열린» 부적합만 `NOT EXISTS` 로 — nullable 관계에 `NOT (...)` 금지(I-20 §0 #5). */
+ * «열린» 부적합만 `NOT EXISTS` 로 — nullable 관계에 `NOT (...)` 금지(I-20 §0 #5). `$1` 은 항상
+ * `warehouseId ?? null`(`BAL_LATERAL` 이 재집계로 쓴다 · 리뷰 Major-2 — 사후 필터 금지). */
 function conditionsOf(filters: DispositionCandidateFilters): { where: string; params: unknown[] } {
-  const params: unknown[] = [];
+  const params: unknown[] = [filters.warehouseId ?? null];
   const parts: string[] = [];
   const add = (sql: string, value: unknown): void => {
     params.push(value);
@@ -139,13 +142,12 @@ function conditionsOf(filters: DispositionCandidateFilters): { where: string; pa
       'NOT EXISTS (SELECT 1 FROM quality.nonconformance_lot wnl JOIN quality.nonconformance wnc ON wnc.nonconformance_id = wnl.nonconformance_id WHERE wnl.lot_id = c.lot_id AND wnc.closed_at IS NULL)',
     );
   }
-  if (filters.warehouseId !== undefined) add('bal.warehouse_id = ?::bigint', filters.warehouseId);
   if (filters.itemId !== undefined) add('l.item_id = ?::bigint', filters.itemId);
   if (filters.lotId !== undefined) add('c.lot_id = ?::bigint', filters.lotId);
-  // ⭐ 갈래 C(§1-2) — 양끝 포함, date 축. `receivedAt` 도 timestamptz 를 `::date` 로 접은
-  // 값이라(아래 뷰) 같은 캐스팅으로 비교해야 「끝 경계와 같은 날」이 어긋나지 않는다.
-  if (filters.receivedFrom !== undefined) add('bal.received_at::date >= ?::date', filters.receivedFrom);
-  if (filters.receivedTo !== undefined) add('bal.received_at::date <= ?::date', filters.receivedTo);
+  // ⭐ 갈래 C(§1-2) — 양끝 포함, date 축. NULL 인 received_at 은 지우지 않는다(리뷰 Major-1 ·
+  // §9-1 #8-b · 통보 182). `receivedAt` 도 `::date` 로 접은 값이라 같은 캐스팅으로 비교한다.
+  if (filters.receivedFrom !== undefined) add('(bal.received_at IS NULL OR bal.received_at::date >= ?::date)', filters.receivedFrom);
+  if (filters.receivedTo !== undefined) add('(bal.received_at IS NULL OR bal.received_at::date <= ?::date)', filters.receivedTo);
   if (filters.q !== undefined) {
     const q = params.push(`%${filters.q}%`);
     parts.push(`(l.lot_no ILIKE $${q} OR rt.goods_receipt_no ILIKE $${q} OR i.item_code ILIKE $${q} OR i.item_name ILIKE $${q})`);

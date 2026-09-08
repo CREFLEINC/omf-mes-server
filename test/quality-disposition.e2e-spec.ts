@@ -373,7 +373,10 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     it('#2 ⭐ 불량창고(120)·완제품창고(80)에 걸친 LOT 이 나오고 quantity 는 불량창고 잔액만이다', async () => {
       const response = await get(`${CANDIDATES}?lotId=${cand.split}`).expect(200);
 
-      expect(response.body.items).toEqual([expect.objectContaining({ lotId: Number(cand.split), warehouseId: Number(wh.d1), quantity: 120 })]);
+      // ⭐ 리뷰 Minor-3 — uomId·warehouseName 도 값을 본다(다른 칸에서 온 값이면 여기가 잡는다).
+      expect(response.body.items).toEqual([
+        expect.objectContaining({ lotId: Number(cand.split), warehouseId: Number(wh.d1), quantity: 120, uomId: Number(ids.uom), warehouseName: `${PREFIX} 불량창고1` }),
+      ]);
     });
 
     it('#3 불량창고 잔액이 0(on_hand_qty=0)인 LOT 은 안 나온다', async () => {
@@ -406,6 +409,8 @@ describe('처분 결정 목록·상세 (e2e)', () => {
 
       expect(rows).toContain(Number(cand.prod));
       expect(rows).not.toContain(Number(cand.rtn));
+      // ⭐ 리뷰 Minor-1 — count 가 이 축을 놓치면 items 는 줄어도 page.total 은 그대로다.
+      expect(response.body.page.total).toBe(rows.length);
     });
 
     it('#6 withoutNonconformanceOnly=true — 열린 부적합이 있는 rtn 을 빼고 없는 prod 를 남긴다', async () => {
@@ -428,19 +433,26 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     it('#8 receivedTo 와 «같은 날»의 행이 나온다(양끝 포함)', async () => {
       const response = await get(`${CANDIDATES}?lotId=${cand.rtn}&receivedTo=2026-08-01`).expect(200);
 
-      expect(lotIdsOf(response.body)).toContain(Number(cand.rtn));
+      // ⭐ 리뷰 Minor-1 — count 가 receivedTo 축을 놓치면 items 는 1 이어도 total 이 갈린다.
+      expect(response.body).toMatchObject({ items: [expect.objectContaining({ lotId: Number(cand.rtn) })], page: { total: 1 } });
     });
 
     it('#9 receivedFrom 이 하루 뒤면 안 나온다', async () => {
       const response = await get(`${CANDIDATES}?lotId=${cand.rtn}&receivedFrom=2026-08-02`).expect(200);
 
-      expect(lotIdsOf(response.body)).not.toContain(Number(cand.rtn));
+      expect(response.body).toMatchObject({ items: [], page: { total: 0 } });
     });
 
     it('#9-a ⭐⭐ 기간 필터를 넣어도 PRODUCT 갈래가 살아남는다(R-18 — receivedAt 공통 칸)', async () => {
       const response = await get(`${CANDIDATES}?lotId=${cand.prod}&receivedFrom=2026-08-02&receivedTo=2026-08-02`).expect(200);
 
       expect(lotIdsOf(response.body)).toContain(Number(cand.prod));
+    });
+
+    it('#9-a′ ⭐⭐ 리뷰 Major-1 — received_at 이 NULL 인 후보는 「모든 날짜를 포함하는」 기간에도 지워지지 않는다', async () => {
+      const response = await get(`${CANDIDATES}?lotId=${cand.nullReceived}&receivedFrom=1900-01-01&receivedTo=2999-12-31`).expect(200);
+
+      expect(lotIdsOf(response.body)).toEqual([Number(cand.nullReceived)]);
     });
 
     it('#10 기간을 아예 안 줘도 200 이고 오래된 건이 나온다', async () => {
@@ -458,6 +470,8 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       for (const response of [byLotNo, byReceiptNo, byItemCode, byItemName]) {
         expect(lotIdsOf(response.body)).toContain(Number(cand.rtn));
       }
+      // ⭐ 리뷰 Minor-1 — count 가 q 축을 놓치는 회귀를 잠근다.
+      expect(byLotNo.body.page.total).toBe(byLotNo.body.items.length);
     });
 
     it('#12 ⭐ PRODUCT 갈래는 goodsReceiptId·receiptNo·partnerName 을 «null» 로 싣는다(키 생략이 아니다)', async () => {
@@ -489,6 +503,9 @@ describe('처분 결정 목록·상세 (e2e)', () => {
 
       // 주 정렬 — PRODUCT(T_PRODUCT, 나중)가 RETURN(T_RETURN, 먼저)보다 앞선다.
       expect(rows.indexOf(Number(cand.prod))).toBeLessThan(rows.indexOf(Number(cand.rtn)));
+      // ⭐ 리뷰 Major-1 그물 — `NULLS LAST` 로 바뀌면 NULL(nullReceived)이 맨 뒤로 밀린다.
+      // PG 의 DESC 기본값(NULLS FIRST)이면 old(2020년)보다 «앞»에 온다.
+      expect(rows.indexOf(Number(cand.nullReceived))).toBeLessThan(rows.indexOf(Number(cand.old)));
 
       const tieResponse = await get(`${CANDIDATES}?itemId=${item.tie}`).expect(200);
       expect(lotIdsOf(tieResponse.body)).toEqual([Number(cand.tieB), Number(cand.tieA)]); // 같은 시각 — id 큰 쪽이 먼저
@@ -500,10 +517,20 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       expect(response.body.page).toMatchObject({ page: 1, size: 50 });
     });
 
+    it('⭐ 리뷰 Minor-4 — page=1&size=1 과 page=2&size=1(item.tie 스코프)이 겹치지 않는다', async () => {
+      const page1 = await get(`${CANDIDATES}?itemId=${item.tie}&page=1&size=1`).expect(200);
+      const page2 = await get(`${CANDIDATES}?itemId=${item.tie}&page=2&size=1`).expect(200);
+
+      expect(page1.body.items[0].lotId).toBe(Number(cand.tieB));
+      expect(page2.body.items[0].lotId).toBe(Number(cand.tieA));
+      expect(page1.body.page).toEqual({ page: 1, size: 1, total: 2 });
+    });
+
     it('itemId 필터 — 다른 품목(item2)을 뺀다', async () => {
       const response = await get(`${CANDIDATES}?itemId=${item.c2}`).expect(200);
 
       expect(lotIdsOf(response.body)).toEqual([Number(cand.item2)]);
+      expect(response.body.page.total).toBe(1);
     });
 
     it('warehouseId 필터 — 불량창고1(rtn)을 집고 불량창고2 전용(wh2Only)은 뺀다', async () => {
@@ -512,12 +539,20 @@ describe('처분 결정 목록·상세 (e2e)', () => {
 
       expect(rows).toContain(Number(cand.rtn));
       expect(rows).not.toContain(Number(cand.wh2Only));
+      // ⭐ 리뷰 Minor-1 — count 가 warehouseId 축을 놓치는 회귀를 잠근다.
+      expect(response.body.page.total).toBe(rows.length);
     });
 
     it('⭐ 불량창고가 «둘」인 LOT 은 더 큰 창고(90) 하나만 싣는다 — 행을 없애지 않는다', async () => {
       const response = await get(`${CANDIDATES}?lotId=${cand.twoDefect}`).expect(200);
 
       expect(response.body.items).toEqual([expect.objectContaining({ lotId: Number(cand.twoDefect), warehouseId: Number(wh.d2), quantity: 90 })]);
+    });
+
+    it('⭐⭐ 리뷰 Major-2 — warehouseId=d1 로 좁히면 「사후 필터로 지우지 않고」 d1 잔액(50)으로 재집계된다', async () => {
+      const response = await get(`${CANDIDATES}?lotId=${cand.twoDefect}&warehouseId=${wh.d1}`).expect(200);
+
+      expect(response.body.items).toEqual([expect.objectContaining({ lotId: Number(cand.twoDefect), warehouseId: Number(wh.d1), quantity: 50 })]);
     });
 
     it('응답이 계약 스키마(shipment-04제품출하.json)를 통과한다(ajv)', async () => {
@@ -542,7 +577,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       return lot.lot_id;
     }
 
-    async function newCandidateBalance(warehouseId: bigint, itemId: bigint, lotId: bigint, onHandQty: number, receivedAt: string): Promise<void> {
+    async function newCandidateBalance(warehouseId: bigint, itemId: bigint, lotId: bigint, onHandQty: number, receivedAt: string | null): Promise<void> {
       await prisma.inventory_balance.create({
         data: {
           legal_entity_id: legalEntityId,
@@ -557,7 +592,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
           ownership_type_code: 'OWNED',
           on_hand_qty: onHandQty,
           uom_id: ids.uom,
-          last_transaction_at: new Date(receivedAt),
+          last_transaction_at: receivedAt === null ? null : new Date(receivedAt),
         },
       });
     }
@@ -723,6 +758,11 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       cand.old = await newCandidateLot('OLD', item.c);
       await newReturnReceipt('OLD', item.c, cand.old, wh.d1);
       await newCandidateBalance(wh.d1, item.c, cand.old, 15, T_OLD);
+
+      // ⭐ 리뷰 Major-1 — `last_transaction_at` 이 NULL 인 불량창고 잔액(nullable · schema.prisma:509).
+      cand.nullReceived = await newCandidateLot('NULLRECV', item.c);
+      await newReturnReceipt('NULLRECV', item.c, cand.nullReceived, wh.d1);
+      await newCandidateBalance(wh.d1, item.c, cand.nullReceived, 25, null);
 
       cand.wh2Only = await newCandidateLot('WH2ONLY', item.c);
       await newReturnReceipt('WH2ONLY', item.c, cand.wh2Only, wh.d2);
