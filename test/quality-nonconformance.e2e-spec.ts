@@ -1,14 +1,17 @@
 /**
- * 부적합 목록 (e2e) — I-21 PR ①a. `GET /quality/nonconformances` 딱 하나다. 상세·처분·후보·
- * 특채·쓰기는 다른 PR 몫이라 이 파일은 목록만 본다(브리프 범위).
+ * 부적합 목록·상세 (e2e) — I-21 PR ①a(목록) + ①b(상세). `GET /quality/nonconformances` ·
+ * `…/{nonconformanceId}` 둘뿐이다. 처분·후보·특채·쓰기는 다른 PR 몫이라 이 파일은 그 둘만
+ * 본다(브리프 범위).
  *
  * ⭐ 계약 실측 — `Nonconformance` 는 «목록과 상세가 한 스키마를 공유한다»(계약 `lots` 필드
  * 설명 원문). ⇒ 목록도 `lots[]`·`dispositionProgressCode`·`affectedQtyTotal`·`uomId` 를
  * 전건 채워야 ajv 가 통과한다 — `nonconformance-view.ts` 가 그 값들을 전부 계산한다.
  * 등록 오퍼레이션이 이 PR 의 몫이 아니라 픽스처는 전부 prisma 직접 INSERT 다(0단계 선례).
+ * ①b 가 새로 시험하는 것은 **단건 라우트 · ETag(`nonconformance.version_no`) · 404** 뿐이다
+ * — 응답 «칸」은 ①a 픽스처가 같은 매퍼로 이미 잠갔다(I-21 §10-1 R-25).
  *
- * 두 창을 쓴다 — 목록 창(필터·정렬·페이지)과 롤업 창(`dispositionProgressCode` 3분기 + 널
- * 정책 + ajv 전수 검증)을 겹치지 않게 둬 서로의 정렬·페이지 단언이 섞이지 않는다.
+ * 세 창을 쓴다 — 목록 창(필터·정렬·페이지)·롤업 창(`dispositionProgressCode` 3분기 + 널
+ * 정책 + ajv 전수 검증)·상세 창(ETag·404). 서로 안 겹쳐 정렬·페이지 단언이 섞이지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -79,6 +82,7 @@ describe('부적합 목록 (e2e)', () => {
     await makeMasters();
     await makeListWindowFixtures();
     await makeRollupWindowFixtures();
+    await makeDetailWindowFixtures();
   });
 
   afterAll(async () => {
@@ -323,6 +327,39 @@ describe('부적합 목록 (e2e)', () => {
         openedAt: ROLLUP_FROM, // `created_at`(삽입 시각)이 아니라 `opened_at` 이어야 한다 — 값이 갈리는 자리
       });
       expect(row.lots[0].lotNo).toBe(`${PREFIX}-LOT-BASE`);
+    });
+  });
+
+  describe('상세 — GET /quality/nonconformances/{nonconformanceId}(I-21 PR ①b)', () => {
+    it('⭐⭐ 200 + ETag = nonconformance.version_no(이 행 자신의 값 · §0 판정 #5)', async () => {
+      const response = await get(`${NONCONFORMANCES}/${ncIds.detailVersioned}`).expect(200);
+
+      // 픽스처가 기본값 1 이 아니라 7 로 직접 올렸다 — 「늘 1」·「다른 칸(0 이나 상수)」로
+      // 새는 변이를 여기서 잡는다. ETag 를 안 내리면 헤더가 undefined 라 이 단언이 죽는다.
+      expect(response.headers.etag).toBe('7');
+      expect(response.body).toMatchObject({ nonconformanceId: ncIds.detailVersioned });
+      // R-13/api m-4 — 본문에는 versionNo 를 안 싣는다(ETag 전용).
+      expect(response.body).not.toHaveProperty('versionNo');
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}')(response.body)).toBe(true);
+    });
+
+    it('⭐ 다른 id 를 부르면 그 id 자신의 행·ETag 를 돌려준다(행이 뒤바뀌지 않는다)', async () => {
+      const responseA = await get(`${NONCONFORMANCES}/${ncIds.detailVersioned}`).expect(200);
+      const responseB = await get(`${NONCONFORMANCES}/${ncIds.detailOther}`).expect(200);
+
+      expect(responseA.body.nonconformanceId).toBe(ncIds.detailVersioned);
+      expect(responseB.body.nonconformanceId).toBe(ncIds.detailOther);
+      expect(responseA.headers.etag).toBe('7');
+      expect(responseB.headers.etag).toBe('3');
+      expect(responseA.body.description).not.toBe(responseB.body.description);
+    });
+
+    it('⭐ 없는 id → 404(200 빈 응답이 아니다)', async () => {
+      const response = await get(`${NONCONFORMANCES}/999999999`).expect(404);
+
+      // `ErrorResponse` 봉투(§1-1) — 목록 응답 봉투(`items`/`page`)가 아니다.
+      expect(response.body).toHaveProperty('errors');
+      expect(response.body.items).toBeUndefined();
     });
   });
 
@@ -648,6 +685,35 @@ describe('부적합 목록 (e2e)', () => {
       actionDueDate: '2026-09-10',
       actionCompletedAt: '2026-09-06T00:00:00.000Z',
     });
+  }
+
+  /**
+   * 상세 창(§8-2 #13·#17) — 목록·롤업 창과 안 겹치는 시각을 쓴다. `version_no` 를 기본값
+   * 1 이 «아닌» 서로 다른 값으로 직접 올려 둔다 — 두 행이 같은 상수(예: 1)면 「ETag 원천을
+   * 다른 칸(또는 상수)으로 바꿔도 초록」인 변이가 안 잡힌다.
+   */
+  async function makeDetailWindowFixtures(): Promise<void> {
+    const versionedId = await makeNonconformance({
+      key: 'detailVersioned',
+      itemId: ids.item1,
+      statusCode: 'PENDING_DECISION',
+      severityCode: 'MAJOR',
+      openedAt: '2026-09-07T00:00:00.000Z',
+      lotId: ids.lotBase,
+      affectedQty: 4,
+    });
+    await prisma.nonconformance.update({ where: { nonconformance_id: BigInt(versionedId) }, data: { version_no: 7 } });
+
+    const otherId = await makeNonconformance({
+      key: 'detailOther',
+      itemId: ids.item1,
+      statusCode: 'NOT_REQUESTED',
+      severityCode: 'MINOR',
+      openedAt: '2026-09-07T01:00:00.000Z',
+      lotId: ids.lotBase,
+      affectedQty: 9,
+    });
+    await prisma.nonconformance.update({ where: { nonconformance_id: BigInt(otherId) }, data: { version_no: 3 } });
   }
 
   async function makeDecision(nonconformanceId: number, decisionQty: number): Promise<void> {
