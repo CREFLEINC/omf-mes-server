@@ -46,9 +46,12 @@ function fake(lotIds: bigint[], seed: LotHoldRow[] = []) {
         return row;
       }),
       update: record('lot_hold.update', (a) => {
-        const row = rows.find((r) => r.lot_hold_id === (a.where as { lot_hold_id: bigint }).lot_hold_id) as LotHoldRow;
-        row.released_at = NOW;
-        return row;
+        const i = rows.findIndex((r) => r.lot_hold_id === (a.where as { lot_hold_id: bigint }).lot_hold_id);
+        // ⚠ 원 행 «객체»를 고치지 않고 사본으로 갈아 끼운다 — 같은 객체를 돌려주면 「반환이
+        //    update 뒤 행인가」를 물어볼 수 없다(호출자가 원 행을 그대로 담아도 초록이 된다).
+        const after = { ...rows[i], ...(a.data as Args), released_at: NOW } as LotHoldRow;
+        rows[i] = after;
+        return after;
       }),
       findMany: record('lot_hold.findMany', (a) => {
         // 정렬도 실제로 지킨다 — 무시하면 `orderBy` 를 'desc' 로 뒤집어도 초록이다.
