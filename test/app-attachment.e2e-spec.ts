@@ -139,6 +139,11 @@ describe('첨부 목록 (e2e)', () => {
       contentType: 'image/png',
       byteSize: 1000,
       uploadedBy: uploadedById,
+      // 다형 판별자 «쌍»과 정렬 축은 값까지 본다 — 계약이 integer 라고만 적어
+      // ajv 가 «어느 칸에서 왔는지»를 못 본다(리뷰 #429 Minor-1).
+      targetTypeCode: 'WAREHOUSE',
+      targetId: 1001,
+      uploadedAt: at(10).toISOString(),
     });
   });
 
