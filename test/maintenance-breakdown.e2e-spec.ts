@@ -11,19 +11,32 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { NumberingService } from '../src/core/numbering';
 import { BreakdownList } from '../src/maintenance/breakdown/breakdown-query.service';
 import { BreakdownView } from '../src/maintenance/breakdown/breakdown-view';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'E2E-B-I30-BREAKDOWN';
 const LOGIN_ID = `${PREFIX}-LOGIN`;
+const OTHER_LOGIN_ID = `${PREFIX}-OTHER`;
+const NO_PERMISSION_LOGIN_ID = `${PREFIX}-NO-PERMISSION`;
+const ROLE = `${PREFIX}-ROLE`;
 const PASSWORD = 'I30-고장-조회-비밀번호';
+const WORKER_NO = `${PREFIX}-WORKER`;
+const OTHER_WORKER_NO = `${PREFIX}-OTHER-WORKER`;
 const PATH = '/api/maintenance/breakdowns';
 const PERIOD = { reportedFrom: '2026-09-01', reportedTo: '2026-09-01' };
 
-function validator(path: string): ValidateFunction {
+function validator(
+  path: string,
+  method = 'get',
+  status = '200',
+): ValidateFunction {
   const contract = JSON.parse(
-    readFileSync(join(__dirname, '../contracts/equipment-05설비툴.json'), 'utf8'),
+    readFileSync(
+      join(__dirname, '../contracts/equipment-05설비툴.json'),
+      'utf8',
+    ),
   ) as object;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
@@ -31,18 +44,22 @@ function validator(path: string): ValidateFunction {
   ajv.addSchema(contract, 'https://omf-mes.invalid/i30-breakdown-contract');
   const pointer = path.replace(/~/g, '~0').replace(/\//g, '~1');
   return ajv.compile({
-    $ref: `https://omf-mes.invalid/i30-breakdown-contract#/paths/${pointer}/get/responses/200/content/application~1json/schema`,
+    $ref: `https://omf-mes.invalid/i30-breakdown-contract#/paths/${pointer}/${method}/responses/${status}/content/application~1json/schema`,
   });
 }
 
-describe('설비 고장 조회 I-30 ③ (e2e)', () => {
+describe('설비 고장 I-30 ③·⑥ (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let otherCookie: string[];
+  let noPermissionCookie: string[];
+  let actorUserId = 0n;
   const ids = {
     plant: 0n,
     seoulPlant: 0n,
     badPlant: 0n,
+    numberingRule: 0n,
     equipment: 0n,
     otherEquipment: 0n,
     orderEquipment: 0n,
@@ -54,29 +71,61 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
   const orders: Record<string, bigint> = {};
   const listValidator = validator('/maintenance/breakdowns');
   const detailValidator = validator('/maintenance/breakdowns/{breakdownId}');
+  const createValidator = validator('/maintenance/breakdowns', 'post', '201');
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleRef.createNestApplication();
     configureApp(app, 'api');
     await app.init();
     prisma = app.get(PrismaService);
     await cleanup();
     await fixtures();
-    const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '고장 조회', status_code: 'EMPLOYED' },
+    const user = await createUser(LOGIN_ID, '고장 보고');
+    const other = await createUser(OTHER_LOGIN_ID, '다른 고장 보고');
+    await createUser(NO_PERMISSION_LOGIN_ID, '고장 보고 권한 없음');
+    actorUserId = user.app_user_id;
+    const role = await prisma.role.create({
+      data: { role_code: ROLE, role_name: '설비 고장 E2E' },
     });
-    await prisma.user_credential.create({
-      data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    await prisma.role_permission.create({
+      data: { role_id: role.role_id, permission_code: 'M-05-02' },
     });
+    await prisma.user_role.createMany({
+      data: [user.app_user_id, other.app_user_id].map((app_user_id) => ({
+        app_user_id,
+        role_id: role.role_id,
+      })),
+    });
+    cookie = await login(LOGIN_ID);
+    otherCookie = await login(OTHER_LOGIN_ID);
+    noPermissionCookie = await login(NO_PERMISSION_LOGIN_ID);
+  });
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
-  });
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
+  async function createUser(loginId: string, userName: string) {
+    const user = await prisma.app_user.create({
+      data: { login_id: loginId, user_name: userName, status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: {
+        app_user_id: user.app_user_id,
+        password_hash: await hashPassword(PASSWORD),
+      },
+    });
+    return user;
+  }
 
   afterAll(async () => {
     try {
@@ -116,7 +165,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       statusCode: 'DONE',
       openOnly: false,
     });
-    expect(done.items.map((item) => item.breakdownId)).toEqual([Number(records.done)]);
+    expect(done.items.map((item) => item.breakdownId)).toEqual([
+      Number(records.done),
+    ]);
     expect((await list({ statusCode: 'NOT-REGISTERED' })).totalCount).toBe(0);
   });
 
@@ -124,23 +175,30 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     for (const query of [
       { openOnly: false },
       { openOnly: false, reportedFrom: '2026-09-01' },
-      { openOnly: false, reportedTo: '2026-09-01', withoutMaintenanceOrder: true },
+      {
+        openOnly: false,
+        reportedTo: '2026-09-01',
+        withoutMaintenanceOrder: true,
+      },
     ]) {
       const response = await request(app.getHttpServer())
         .get(PATH)
         .set('Cookie', cookie)
         .query(query)
         .expect(400);
-      expect(response.body.errors.map((error: { code: string }) => error.code)).toContain(
-        'REQUIRED',
-      );
+      expect(
+        response.body.errors.map((error: { code: string }) => error.code),
+      ).toContain('REQUIRED');
     }
     const invalidSort = await request(app.getHttpServer())
       .get(PATH)
       .set('Cookie', cookie)
       .query({ sort: 'reportedAtDesc' })
       .expect(400);
-    expect(invalidSort.body.errors[0]).toMatchObject({ field: 'sort', code: 'INVALID' });
+    expect(invalidSort.body.errors[0]).toMatchObject({
+      field: 'sort',
+      code: 'INVALID',
+    });
     await request(app.getHttpServer())
       .get(PATH)
       .set('Cookie', cookie)
@@ -200,7 +258,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       .set('Cookie', cookie)
       .query({ ...PERIOD, equipmentId: Number(ids.badEquipment) })
       .expect(500);
-    expect((await list({ equipmentId: Number(ids.badEquipment) })).totalCount).toBe(1);
+    expect(
+      (await list({ equipmentId: Number(ids.badEquipment) })).totalCount,
+    ).toBe(1);
   });
 
   it('E-B03 withoutMaintenanceOrder가 직접 FK와 BREAKDOWN source 양쪽을 읽고 openOnly와 독립이다', async () => {
@@ -228,7 +288,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     expect((await detail(records.duplicate)).handling.maintenanceOrderId).toBe(
       Number(orders.duplicate),
     );
-    expect((await detail(records.multiple)).handling.maintenanceOrderId).toBeNull();
+    expect(
+      (await detail(records.multiple)).handling.maintenanceOrderId,
+    ).toBeNull();
     expect((await detail(records.cancelled)).handling.maintenanceOrderId).toBe(
       Number(orders.cancelled),
     );
@@ -300,7 +362,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     expect((await detail(records.duplicate)).handling.maintenanceOrderId).toBe(
       Number(orders.duplicate),
     );
-    expect((await detail(records.multiple)).handling.maintenanceOrderId).toBeNull();
+    expect(
+      (await detail(records.multiple)).handling.maintenanceOrderId,
+    ).toBeNull();
   });
 
   it('E-B09 required 결손·unknown status를 보정하지 않고 root_cause를 처리값으로 바꾸지 않는다', async () => {
@@ -329,7 +393,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       .expect(404);
     expect(missing.body.errors[0].code).toBe('NOT_FOUND');
     await request(app.getHttpServer()).get(PATH).expect(401);
-    await request(app.getHttpServer()).get(`${PATH}/${records.oldReceived}`).expect(401);
+    await request(app.getHttpServer())
+      .get(`${PATH}/${records.oldReceived}`)
+      .expect(401);
 
     const before = await readOnlySnapshot();
     await request(app.getHttpServer())
@@ -343,6 +409,338 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       .expect(200);
     expect(await readOnlySnapshot()).toEqual(before);
   });
+
+  it('E-B11 별도 계정·미연결 작업자로201이고 원문·단말 시각·RECEIVED를 저장한다', async () => {
+    const response = await postBreakdown(
+      createBody({
+        symptom: '유압 누유 · 실린더 하부',
+        occurrenceStateCode: 'ABNORMAL',
+        reportedAt: '2026-09-09T00:30:00.123+07:00',
+        stoppedAt: '2026-09-09T01:00:00.654+07:00',
+      }),
+    ).expect(201);
+    expect(createValidator(response.body)).toBe(true);
+    expect(response.body).toMatchObject({
+      breakdownNo: expect.stringMatching(/^MLF-20260908-\d{4,}$/),
+      equipmentId: Number(ids.equipment),
+      equipmentCode: `${PREFIX}-EQ-CURRENT`,
+      symptom: '유압 누유 · 실린더 하부',
+      occurrenceStateCode: 'ABNORMAL',
+      reportedAt: '2026-09-08T17:30:00.123Z',
+      stoppedAt: '2026-09-08T18:00:00.654Z',
+      reporterWorkerNo: WORKER_NO,
+      statusCode: 'RECEIVED',
+      notifyAssignee: true,
+      linkedDowntimeCount: 0,
+      attachments: [],
+    });
+    const stored = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: BigInt(response.body.breakdownId) },
+    });
+    expect(stored).toMatchObject({
+      reported_by: BigInt(actorUserId),
+      reporter_worker_no: WORKER_NO,
+      description: '유압 누유 · 실린더 하부',
+      severity_code: null,
+      status_code: 'RECEIVED',
+      started_at: null,
+      completed_at: null,
+      root_cause: null,
+      cause_code: null,
+      handling_note: null,
+      handled_by: null,
+      handled_at: null,
+      created_by: BigInt(actorUserId),
+      updated_by: BigInt(actorUserId),
+      version_no: 1,
+    });
+    const [times] = await prisma.$queryRaw<
+      { reported: string; stopped: string | null }[]
+    >`
+      SELECT to_char(reported_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') AS reported,
+             to_char(stopped_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') AS stopped
+      FROM maintenance.breakdown WHERE breakdown_id=${stored.breakdown_id}`;
+    expect(times).toEqual({
+      reported: '2026-09-08 17:30:00.123000',
+      stopped: '2026-09-08 18:00:00.654000',
+    });
+    const counter = await prisma.numbering_counter.findUniqueOrThrow({
+      where: {
+        numbering_rule_id_period_key: {
+          numbering_rule_id: ids.numberingRule,
+          period_key: '20260908',
+        },
+      },
+    });
+    expect(counter.last_value).toBeGreaterThanOrEqual(1n);
+  });
+
+  it('E-B12 notifyAssignee 생략=true·명시 false를 유지하고 알림 행은 만들지 않는다', async () => {
+    const before = await notificationCounts();
+    const omitted = await postBreakdown(createBody()).expect(201);
+    const disabled = await postBreakdown(
+      createBody({ notifyAssignee: false }),
+    ).expect(201);
+    expect(omitted.body.notifyAssignee).toBe(true);
+    expect(disabled.body.notifyAssignee).toBe(false);
+    expect(await notificationCounts()).toEqual(before);
+  });
+
+  it('E-B13 stoppedAt은 선택이며 ABNORMAL 명시값도 startedAt으로 바꾸지 않는다', async () => {
+    const absent = await postBreakdown(createBody()).expect(201);
+    expect(absent.body.stoppedAt).toBeNull();
+    const explicit = await postBreakdown(
+      createBody({
+        occurrenceStateCode: 'ABNORMAL',
+        reportedAt: '2026-09-09T04:00:00+07:00',
+        stoppedAt: '2026-09-09T05:00:00+07:00',
+      }),
+    ).expect(201);
+    expect(explicit.body).toMatchObject({
+      occurrenceStateCode: 'ABNORMAL',
+      stoppedAt: '2026-09-08T22:00:00.000Z',
+    });
+    const stored = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: BigInt(explicit.body.breakdownId) },
+    });
+    expect(stored.started_at).toBeNull();
+  });
+
+  it('E-B14 같은 설비에 열린 고장이 있어도 새 보고를 별개로 만든다', async () => {
+    const before = await prisma.breakdown.count({
+      where: { equipment_id: ids.equipment, status_code: { not: 'DONE' } },
+    });
+    const created = await postBreakdown(
+      createBody({ symptom: '동시 열린 고장' }),
+    ).expect(201);
+    expect(created.body.statusCode).toBe('RECEIVED');
+    expect(
+      await prisma.breakdown.count({
+        where: { equipment_id: ids.equipment, status_code: { not: 'DONE' } },
+      }),
+    ).toBe(before + 1);
+  });
+
+  it('E-B15 STOPPED도 심각도와 설비 마스터 상태를 도출하지 않는다', async () => {
+    const equipmentBefore = await prisma.equipment.findUniqueOrThrow({
+      where: { equipment_id: ids.equipment },
+    });
+    const response = await postBreakdown(
+      createBody({ occurrenceStateCode: 'STOPPED' }),
+    ).expect(201);
+    const stored = await prisma.breakdown.findUniqueOrThrow({
+      where: { breakdown_id: BigInt(response.body.breakdownId) },
+    });
+    const equipmentAfter = await prisma.equipment.findUniqueOrThrow({
+      where: { equipment_id: ids.equipment },
+    });
+    expect(stored.severity_code).toBeNull();
+    expect(equipmentAfter.status_code).toBe(equipmentBefore.status_code);
+    expect(equipmentAfter.version_no).toBe(equipmentBefore.version_no);
+  });
+
+  it.each([
+    [() => createBody(), null, 'X-Worker-No', 'REQUIRED'],
+    [() => createBody(), '', 'X-Worker-No', 'REQUIRED'],
+    [() => createBody(), ' ', 'X-Worker-No', 'REQUIRED'],
+    [() => createBody(), 'W'.repeat(51), 'X-Worker-No', 'INVALID'],
+    [() => createBody(), `${PREFIX}-UNKNOWN-WORKER`, 'X-Worker-No', 'INVALID'],
+    [() => createBody({ symptom: ' ' }), WORKER_NO, 'symptom', 'REQUIRED'],
+    [
+      () => createBody({ equipmentId: -1 }),
+      WORKER_NO,
+      'equipmentId',
+      'INVALID',
+    ],
+    [
+      () => createBody({ occurrenceStateCode: 'RUNNING' }),
+      WORKER_NO,
+      'occurrenceStateCode',
+      'INVALID',
+    ],
+  ])(
+    'E-B16 사번·증상·설비·발생상태 오류를 검증한다: %#',
+    async (makeBody, workerNo, field, code) => {
+      const before = await prisma.breakdown.count();
+      const response = await postBreakdown(makeBody(), { workerNo }).expect(
+        400,
+      );
+      expect(response.body.errors[0]).toMatchObject({ field, code });
+      expect(await prisma.breakdown.count()).toBe(before);
+    },
+  );
+
+  it('E-B16 같은 주체·키·본문은 재생하고 다른 본문·계정·사번은 충돌한다', async () => {
+    const key = randomUUID();
+    const body = createBody({ symptom: '고장 멱등 재생' });
+    const first = await postBreakdown(body, { key }).expect(201);
+    const numbering = app.get(NumberingService);
+    const numberSpy = jest
+      .spyOn(numbering, 'next')
+      .mockRejectedValueOnce(new Error('NUMBERING_MUST_NOT_RUN_ON_REPLAY'));
+    let replay;
+    try {
+      replay = await postBreakdown(body, { key }).expect(201);
+    } finally {
+      numberSpy.mockRestore();
+    }
+    expect(replay.body).toEqual(first.body);
+    expect(numberSpy).not.toHaveBeenCalled();
+    expect(
+      await prisma.breakdown.count({
+        where: { breakdown_no: first.body.breakdownNo },
+      }),
+    ).toBe(1);
+    for (const [changedBody, options] of [
+      [{ ...body, symptom: '다른 본문' }, { key }],
+      [{ ...body, symptom: ' ' }, { key }],
+      [body, { key, authCookie: otherCookie }],
+      [body, { key, workerNo: OTHER_WORKER_NO }],
+    ] as const) {
+      const conflict = await postBreakdown(changedBody, options).expect(409);
+      expect(conflict.body).toMatchObject({ conflictCause: 'user' });
+    }
+    const missingWorker = await postBreakdown(body, {
+      key,
+      workerNo: null,
+    }).expect(400);
+    expect(missingWorker.body.errors[0]).toMatchObject({
+      field: 'X-Worker-No',
+      code: 'REQUIRED',
+    });
+  });
+
+  it('E-B17 멱등 완료 저장 실패는 고장과 기록을 함께 롤백하고 재시도한다', async () => {
+    const key = randomUUID();
+    const marker = `ROLLBACK-${randomUUID()}`;
+    const body = createBody({ symptom: marker });
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, '$transaction')
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const completionSpy = jest
+            .spyOn(tx.idempotency_record, 'update')
+            .mockRejectedValueOnce(
+              new Error('I30_BREAKDOWN_COMPLETION_FAILURE'),
+            );
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            completionSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      const failed = await postBreakdown(body, { key }).expect(500);
+      expect(failed.text).not.toContain('I30_BREAKDOWN_COMPLETION_FAILURE');
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.breakdown.count({ where: { description: marker } }),
+    ).toBe(0);
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+    await postBreakdown(body, { key }).expect(201);
+    expect(
+      await prisma.breakdown.count({ where: { description: marker } }),
+    ).toBe(1);
+  });
+
+  it('E-B17 번호 유일 충돌만 전체 멱등 트랜잭션을 재시도한다', async () => {
+    const body = createBody({ symptom: '번호 충돌 재시도' });
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const duplicate = new Prisma.PrismaClientKnownRequestError('test', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['breakdown_no'] },
+    });
+    const transactionSpy = jest
+      .spyOn(prisma, '$transaction')
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const createSpy = jest
+            .spyOn(tx.breakdown, 'create')
+            .mockRejectedValueOnce(duplicate);
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            createSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      await postBreakdown(body).expect(201);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.breakdown.count({
+        where: { description: body.symptom as string },
+      }),
+    ).toBe(1);
+  });
+
+  it('E-B25 권한 없는 세션은403이고 세션 없이는401이다', async () => {
+    const before = await prisma.breakdown.count();
+    await postBreakdown(createBody(), {
+      authCookie: noPermissionCookie,
+    }).expect(403);
+    await request(app.getHttpServer())
+      .post(PATH)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Worker-No', WORKER_NO)
+      .send(createBody())
+      .expect(401);
+    expect(await prisma.breakdown.count()).toBe(before);
+  });
+
+  function createBody(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      equipmentId: Number(ids.equipment),
+      symptom: '유압 누유',
+      occurrenceStateCode: 'ABNORMAL',
+      stoppedAt: null,
+      reportedAt: '2026-09-09T00:30:00+07:00',
+      ...overrides,
+    };
+  }
+
+  function postBreakdown(
+    body: Record<string, unknown>,
+    options: {
+      key?: string;
+      workerNo?: string | null;
+      authCookie?: string[];
+    } = {},
+  ) {
+    const response = request(app.getHttpServer())
+      .post(PATH)
+      .set('Cookie', options.authCookie ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID());
+    if (options.workerNo !== null) {
+      response.set('X-Worker-No', options.workerNo ?? WORKER_NO);
+    }
+    return response.send(body);
+  }
+
+  function notificationCounts(): Promise<number[]> {
+    return Promise.all([
+      prisma.notification.count(),
+      prisma.notification_event.count(),
+      prisma.integration_message.count(),
+    ]);
+  }
 
   async function list(query: Record<string, unknown>): Promise<BreakdownList> {
     const response = await request(app.getHttpServer())
@@ -434,7 +832,10 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
         legal_entity_id: legal.legal_entity_id,
       },
     });
-    const makePlant = async (suffix: string, timezone: string): Promise<bigint> =>
+    const makePlant = async (
+      suffix: string,
+      timezone: string,
+    ): Promise<bigint> =>
       (
         await prisma.plant.create({
           data: {
@@ -449,7 +850,20 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     ids.plant = await makePlant('HN', 'Asia/Ho_Chi_Minh');
     ids.seoulPlant = await makePlant('KR', 'Asia/Seoul');
     ids.badPlant = await makePlant('BAD', 'Bad/Timezone');
-    const makeEquipment = async (suffix: string, plantId: bigint): Promise<bigint> =>
+    ids.numberingRule = (
+      await prisma.numbering_rule.create({
+        data: {
+          document_type_code: 'BREAKDOWN',
+          plant_id: ids.plant,
+          pattern: 'MLF-{YYYYMMDD}-{SEQ4}',
+          reset_cycle_code: 'DAILY',
+        },
+      })
+    ).numbering_rule_id;
+    const makeEquipment = async (
+      suffix: string,
+      plantId: bigint,
+    ): Promise<bigint> =>
       (
         await prisma.equipment.create({
           data: {
@@ -467,15 +881,30 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     ids.invalidEquipment = await makeEquipment('EQ-INVALID', ids.plant);
     ids.seoulEquipment = await makeEquipment('EQ-KR', ids.seoulPlant);
     ids.badEquipment = await makeEquipment('EQ-BAD', ids.badPlant);
-
-    await breakdown('oldReceived', '2026-08-31T18:00:00Z', 'RECEIVED', ids.equipment, {
-      occurrence_state_code: 'STOPPED',
-      stopped_at: new Date('2026-08-31T17:30:00Z'),
-      cause_code: 'UNREGISTERED-CAUSE',
-      handling_note: '원문 처리',
-      root_cause: 'legacy root cause',
-      version_no: 17,
+    await prisma.worker.createMany({
+      data: [WORKER_NO, OTHER_WORKER_NO].map((worker_no) => ({
+        worker_no,
+        worker_name: worker_no,
+        business_unit_id: business.business_unit_id,
+        plant_id: ids.plant,
+        status_code: 'EMPLOYED',
+      })),
     });
+
+    await breakdown(
+      'oldReceived',
+      '2026-08-31T18:00:00Z',
+      'RECEIVED',
+      ids.equipment,
+      {
+        occurrence_state_code: 'STOPPED',
+        stopped_at: new Date('2026-08-31T17:30:00Z'),
+        cause_code: 'UNREGISTERED-CAUSE',
+        handling_note: '원문 처리',
+        root_cause: 'legacy root cause',
+        version_no: 17,
+      },
+    );
     await breakdown('tieA', '2026-08-31T19:00:00Z');
     await breakdown('tieB', '2026-08-31T19:00:00Z');
     await breakdown('handling', '2026-08-31T20:00:00Z', 'HANDLING');
@@ -502,13 +931,48 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       ids.invalidEquipment,
     );
 
-    await breakdown('beforeStart', '2026-08-31T16:59:59.999Z', 'DONE', ids.otherEquipment);
-    await breakdown('hanoiSameMoment', '2026-08-31T16:00:00Z', 'DONE', ids.otherEquipment);
-    await breakdown('startInclusive', '2026-08-31T17:00:00Z', 'RECEIVED', ids.otherEquipment);
-    await breakdown('endInside', '2026-09-01T16:59:59.999Z', 'DONE', ids.otherEquipment);
-    await breakdown('endExcluded', '2026-09-01T17:00:00Z', 'RECEIVED', ids.otherEquipment);
-    await breakdown('seoulSameMoment', '2026-08-31T16:00:00Z', 'DONE', ids.seoulEquipment);
-    await breakdown('badZone', '2026-09-01T00:00:00Z', 'RECEIVED', ids.badEquipment);
+    await breakdown(
+      'beforeStart',
+      '2026-08-31T16:59:59.999Z',
+      'DONE',
+      ids.otherEquipment,
+    );
+    await breakdown(
+      'hanoiSameMoment',
+      '2026-08-31T16:00:00Z',
+      'DONE',
+      ids.otherEquipment,
+    );
+    await breakdown(
+      'startInclusive',
+      '2026-08-31T17:00:00Z',
+      'RECEIVED',
+      ids.otherEquipment,
+    );
+    await breakdown(
+      'endInside',
+      '2026-09-01T16:59:59.999Z',
+      'DONE',
+      ids.otherEquipment,
+    );
+    await breakdown(
+      'endExcluded',
+      '2026-09-01T17:00:00Z',
+      'RECEIVED',
+      ids.otherEquipment,
+    );
+    await breakdown(
+      'seoulSameMoment',
+      '2026-08-31T16:00:00Z',
+      'DONE',
+      ids.seoulEquipment,
+    );
+    await breakdown(
+      'badZone',
+      '2026-09-01T00:00:00Z',
+      'RECEIVED',
+      ids.badEquipment,
+    );
 
     for (const [suffix, hour] of [
       ['unissued', 0],
@@ -532,7 +996,13 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     await order('duplicate', records.duplicate, true, 'BREAKDOWN');
     await order('multiple-direct', records.multiple, true, null);
     await order('multiple-trigger', records.multiple, false, 'BREAKDOWN');
-    await order('cancelled', records.cancelled, false, 'BREAKDOWN', 'CANCELLED');
+    await order(
+      'cancelled',
+      records.cancelled,
+      false,
+      'BREAKDOWN',
+      'CANCELLED',
+    );
 
     await prisma.equipment_downtime.createMany({
       data: [
@@ -573,7 +1043,9 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
   }
 
   async function readOnlySnapshot(): Promise<unknown> {
-    const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+    const user = await prisma.app_user.findUniqueOrThrow({
+      where: { login_id: LOGIN_ID },
+    });
     return {
       breakdowns: await prisma.breakdown.findMany({
         where: { breakdown_no: { startsWith: `${PREFIX}-` } },
@@ -594,8 +1066,26 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
+    const plants = await prisma.plant.findMany({
+      where: { plant_code: { startsWith: `${PREFIX}-` } },
+      select: { plant_id: true },
+    });
+    const plantIds = plants.map((row) => row.plant_id);
+    const equipment = await prisma.equipment.findMany({
+      where: {
+        plant_id: { in: plantIds },
+        equipment_code: { startsWith: `${PREFIX}-` },
+      },
+      select: { equipment_id: true },
+    });
+    const equipmentIds = equipment.map((row) => row.equipment_id);
     const breakdowns = await prisma.breakdown.findMany({
-      where: { breakdown_no: { startsWith: `${PREFIX}-` } },
+      where: {
+        OR: [
+          { breakdown_no: { startsWith: `${PREFIX}-` } },
+          { equipment_id: { in: equipmentIds } },
+        ],
+      },
       select: { breakdown_id: true },
     });
     const breakdownIds = breakdowns.map((row) => row.breakdown_id);
@@ -603,7 +1093,12 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
       where: { breakdown_id: { in: breakdownIds } },
     });
     const maintenanceOrders = await prisma.maintenance_order.findMany({
-      where: { maintenance_order_no: { startsWith: `${PREFIX}-ORDER-` } },
+      where: {
+        OR: [
+          { maintenance_order_no: { startsWith: `${PREFIX}-ORDER-` } },
+          { breakdown_id: { in: breakdownIds } },
+        ],
+      },
       select: { maintenance_order_id: true },
     });
     const orderIds = maintenanceOrders.map((row) => row.maintenance_order_id);
@@ -616,26 +1111,57 @@ describe('설비 고장 조회 I-30 ③ (e2e)', () => {
     await prisma.breakdown.deleteMany({
       where: { breakdown_id: { in: breakdownIds } },
     });
-    const plants = await prisma.plant.findMany({
-      where: { plant_code: { startsWith: `${PREFIX}-` } },
-      select: { plant_id: true },
-    });
-    const plantIds = plants.map((row) => row.plant_id);
-    await prisma.equipment.deleteMany({
+    const numberingRules = await prisma.numbering_rule.findMany({
       where: {
+        document_type_code: 'BREAKDOWN',
         plant_id: { in: plantIds },
-        equipment_code: { startsWith: `${PREFIX}-` },
       },
+      select: { numbering_rule_id: true },
+    });
+    const numberingRuleIds = numberingRules.map((row) => row.numbering_rule_id);
+    await prisma.numbering_counter.deleteMany({
+      where: { numbering_rule_id: { in: numberingRuleIds } },
+    });
+    await prisma.numbering_rule.deleteMany({
+      where: { numbering_rule_id: { in: numberingRuleIds } },
+    });
+    await prisma.worker.deleteMany({
+      where: { worker_no: { startsWith: PREFIX } },
+    });
+    await prisma.equipment.deleteMany({
+      where: { equipment_id: { in: equipmentIds } },
     });
     await prisma.plant.deleteMany({ where: { plant_id: { in: plantIds } } });
-    await prisma.business_unit.deleteMany({ where: { business_unit_code: PREFIX } });
-    await prisma.legal_entity.deleteMany({ where: { legal_entity_code: PREFIX } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
-      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    await prisma.business_unit.deleteMany({
+      where: { business_unit_code: PREFIX },
+    });
+    await prisma.legal_entity.deleteMany({
+      where: { legal_entity_code: PREFIX },
+    });
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role !== null) {
+      await prisma.user_role.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role_permission.deleteMany({
+        where: { role_id: role.role_id },
+      });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
+    const users = await prisma.app_user.findMany({
+      where: {
+        login_id: { in: [LOGIN_ID, OTHER_LOGIN_ID, NO_PERMISSION_LOGIN_ID] },
+      },
+      select: { app_user_id: true },
+    });
+    const userIds = users.map((row) => row.app_user_id);
+    await prisma.idempotency_record.deleteMany({
+      where: { app_user_id: { in: userIds } },
+    });
+    await prisma.user_credential.deleteMany({
+      where: { app_user_id: { in: userIds } },
+    });
+    await prisma.app_user.deleteMany({
+      where: { app_user_id: { in: userIds } },
+    });
     expect(
       await prisma.breakdown.count({
         where: { breakdown_no: { startsWith: `${PREFIX}-` } },
