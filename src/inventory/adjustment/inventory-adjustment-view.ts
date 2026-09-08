@@ -70,8 +70,7 @@ export function inventoryAdjustmentLineView(row: InventoryAdjustmentLineRow): In
     adjustmentQty: Number(row.adjustment_qty),
     uomId: Number(row.uom_id),
     reasonCode: row.reason_code,
-    // 마이그 전 물리 칸 0 — I-14 PR ② 가 채운다(I-14.md §2-4).
-    inventoryCountLineId: null,
+    inventoryCountLineId: id(row.inventory_count_line_id),
   };
 }
 

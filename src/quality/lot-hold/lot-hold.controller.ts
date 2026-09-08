@@ -4,9 +4,28 @@ import type { Response } from 'express';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { setEtag } from '../../common/optimistic-lock';
-import { PagedResponse } from '../../common/pagination';
+import { PagedResponse, pageRequest } from '../../common/pagination';
+import { PrismaService } from '../../prisma/prisma.service';
+import {
+  LotHoldEventFilters,
+  LotHoldEventRow,
+  LotHoldEventSort,
+  LotHoldEventView,
+  lotHoldEventCountQuery,
+  lotHoldEventRowsQuery,
+  lotHoldEventView,
+} from './lot-hold-event-query';
 import { LotHoldListQuery, LotHoldQueryService } from './lot-hold-query.service';
 import { LotHoldView } from './lot-hold-view';
+
+/** `GET /quality/lot-hold-events` 질의 11칸 — `occurredFrom`/`occurredTo` 는 계약 `required:true`(가드가 400 REQUIRED 를 이미 낸다 · 중복 구현 0). */
+export interface LotHoldEventListQuery extends LotHoldEventFilters {
+  sort?: LotHoldEventSort;
+  page?: number;
+  size?: number;
+}
+
+const DEFAULT_EVENT_SORT: LotHoldEventSort = 'occurredDesc';
 
 /**
  * `GET /quality/lot-holds` · `GET /quality/lot-holds/{lotHoldId}` — LOT 보류 목록·상세.
@@ -30,7 +49,10 @@ import { LotHoldView } from './lot-hold-view';
  */
 @Controller('quality')
 export class LotHoldController {
-  constructor(private readonly lotHolds: LotHoldQueryService) {}
+  constructor(
+    private readonly lotHolds: LotHoldQueryService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get('lot-holds')
   @Contract('GET /quality/lot-holds')
@@ -48,6 +70,28 @@ export class LotHoldController {
     const { view, lotVersionNo } = await this.lotHolds.get(lotHoldId);
     setEtag(response, lotVersionNo);
     return view;
+  }
+
+  /**
+   * `GET /quality/lot-hold-events` — 한 `lot_hold` 행을 최대 두 사건으로 편다(§4-3).
+   * `lot-hold-event-query.ts` 가 `SELECT … UNION ALL SELECT …` 한 문장을 짓는다(0단계 선례
+   * `lot-status.controller.ts` — `$queryRawUnsafe` 로 직접 부르고 별도 서비스를 두지 않는다).
+   */
+  @Get('lot-hold-events')
+  @Contract('GET /quality/lot-hold-events')
+  async events(@Query() query: LotHoldEventListQuery): Promise<PagedResponse<LotHoldEventView>> {
+    const sort = query.sort ?? DEFAULT_EVENT_SORT;
+    const page = pageRequest(query);
+    const rowsQuery = lotHoldEventRowsQuery(query, sort, { skip: page.skip, take: page.take });
+    const countQuery = lotHoldEventCountQuery(query);
+    const [rows, countRows] = await Promise.all([
+      this.prisma.$queryRawUnsafe<LotHoldEventRow[]>(rowsQuery.sql, ...rowsQuery.params),
+      this.prisma.$queryRawUnsafe<{ total: number }[]>(countQuery.sql, ...countQuery.params),
+    ]);
+    return {
+      items: rows.map(lotHoldEventView),
+      page: { page: page.page, size: page.size, total: countRows[0]?.total ?? 0 },
+    };
   }
 }
 
