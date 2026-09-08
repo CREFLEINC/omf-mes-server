@@ -119,15 +119,7 @@ export class BreakdownHandlingService {
     ]);
     await assertBreakdownCause(tx, input.causeCode);
     const now = new Date();
-    if (locked.started_at !== null && locked.started_at > now) {
-      throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
-        field(
-          'startedAt',
-          ERROR_CODE.RANGE,
-          '처리 시작 시각이 완료 시각보다 늦을 수 없습니다.',
-        ),
-      ]);
-    }
+    assertBreakdownCompletionWindow(locked.started_epoch_us, now);
     return this.updateAndRead(
       tx,
       locked,
@@ -175,6 +167,22 @@ export class BreakdownHandlingService {
     if (view === null) throw new Error('Updated breakdown is missing');
     return view;
   }
+}
+
+export function assertBreakdownCompletionWindow(
+  startedEpochUs: string | null,
+  completedAt: Date,
+): void {
+  const completedEpochUs = BigInt(completedAt.getTime()) * 1000n;
+  if (startedEpochUs === null || BigInt(startedEpochUs) <= completedEpochUs)
+    return;
+  throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
+    field(
+      'startedAt',
+      ERROR_CODE.RANGE,
+      '처리 시작 시각이 완료 시각보다 늦을 수 없습니다.',
+    ),
+  ]);
 }
 
 async function assertBreakdownCause(
