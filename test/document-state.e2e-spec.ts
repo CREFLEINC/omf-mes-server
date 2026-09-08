@@ -53,6 +53,7 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     'production.work_order.status_code': 'WORK_ORDER_STATUS',
     'production.work_session.status_code': 'WORK_SESSION_STATUS',
     'planning.production_plan.status_code': 'PRODUCTION_PLAN_STATUS',
+    'maintenance.breakdown.status_code': 'EQUIPMENT_BREAKDOWN_STATUS',
     // 같은 표의 생명주기 축과 «다른 그룹»이다 — 한 필드에 섞지 말라고 설계가 못박은 자리.
     'trace.lot.status_code': 'LOT_STATUS',
     'quality.inspection_result.status_code': 'INSPECTION_RESULT_STATUS',
