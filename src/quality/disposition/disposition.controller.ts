@@ -1,11 +1,17 @@
-import { Controller, Get, HttpStatus, NotFoundException, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, NotFoundException, Param, ParseIntPipe, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionsByNonconformance, dispositionsByNonconformance } from './disposition-by-nonconformance';
 import { DispositionFilters, dispositionByIdQuery, dispositionCountQuery, dispositionRowsQuery } from './disposition-query';
+import { DispositionDecisionCreate, DispositionWriteService } from './disposition-write.service';
 import { DispositionDecisionRow, DispositionDecisionView, assertFollowUpInvariant, dispositionDecisionView } from './disposition-view';
 
 export interface DispositionListQuery extends DispositionFilters {
@@ -24,7 +30,11 @@ export interface DispositionListQuery extends DispositionFilters {
  */
 @Controller('quality')
 export class DispositionController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly writes: DispositionWriteService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get('disposition-decisions')
   @Contract('GET /quality/disposition-decisions')
@@ -59,6 +69,54 @@ export class DispositionController {
   @Contract('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')
   byNonconformance(@Param('nonconformanceId', ParseIntPipe) nonconformanceId: number): Promise<DispositionsByNonconformance> {
     return dispositionsByNonconformance(this.prisma, nonconformanceId);
+  }
+
+  /**
+   * ⭐⭐ 처분 판정 저장(I-21 PR ⑦ · 심장 B) — 저장소 **유일한** 「201 + If-Match 필수 + ETag」다.
+   * ⛔ **`runVersioned` 를 못 쓴다** — 그것은 성공 상태를 `HttpStatus.OK` 로 «고정»하고
+   *    (`master-write.ts:65`) 전 사용처가 200 PUT 이다. 공용 코어에 성공 상태 인자를 더하는
+   *    길은 세 레인이 공유하는 파일이라 **안 골랐다**(§3-3 통합자 판정) ⇒ 여기서 손으로 엮는다:
+   *    `ifMatchVersion(request)` + `runIdempotent(CREATED)` + `setEtag(새 version_no)`.
+   *    (다음 사람이 「왜 `runVersioned` 를 안 썼나」를 다시 재지 않게 남긴다.)
+   * ⛔ **`@HttpCode` 를 달지 않는다** — `@Post` 기본값이 이미 201 이라 달면 오히려 어긋난다.
+   * ⚠ `runIdempotent` 의 셋째 인자는 **HTTP 상태가 아니다** — `master-write.ts:44` 가
+   *    `outcome.status` 를 버려 그 값은 `idempotency_record.response_status` 에만 남는다.
+   *    HTTP 로는 영영 관측되지 않으므로 **e2e 가 그 칸을 직접 단언한다**.
+   * ⭐ **If-Match 토큰은 «이 경로의 GET» 이 아니다** — 부적합 상세(04 제품출하 계약
+   *    `GET /quality/nonconformances/{nonconformanceId}`)의 ETag 를 그대로 담는다. 잠그는
+   *    대상이 처분 결정 한 건이 아니라 **부적합**이기 때문이다(잔량이 부적합 단위로 정해진다).
+   *    ⛔ 계약이 「토큰 원천 검사기는 한 파일 안에서만 후보를 찾아 이 자리를 못 본다」라
+   *    **스스로 경고한 첫 자리**다(§0 판정 #5). 토큰 «비교»는 서비스의 조건부 UPDATE 가 한다.
+   * ⛔ 계열 봉투(`QualityConflictResponse` · `code` required)라 다섯째 인자를 넘긴다 — 그
+   *    상수 이름을 «이 주석에» 적지 않는다(`family-conflict-code.spec.ts` 가 소스를
+   *    `@Contract` 로 끊어 세어 «앞» 오퍼레이션이 넘긴 것으로 오판된다 · `:69` 경고와 같은 자리).
+   * 403 게이트는 `manual-permissions.ts` 의 `W-03-10` 이 연다(통보 181 — 도출표엔 없었다).
+   */
+  @Post('nonconformances/:nonconformanceId/disposition-decisions')
+  @Contract('POST /quality/nonconformances/{nonconformanceId}/disposition-decisions')
+  async decide(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('nonconformanceId', ParseIntPipe) nonconformanceId: number,
+    @Body() body: DispositionDecisionCreate,
+  ): Promise<DispositionDecisionView> {
+    // 가드가 이 자리에서 If-Match 를 이미 필수로 막았다 — 여기 오면 값이 있다.
+    const version = ifMatchVersion(request);
+    if (version === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+
+    const result = await runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.CREATED,
+      () => this.writes.create(nonconformanceId, version, body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+    setEtag(response, result.versionNo);
+    return result.view;
   }
 }
 
