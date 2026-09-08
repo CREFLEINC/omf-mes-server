@@ -74,7 +74,7 @@ class Conditions {
  * ⓒ 최근 전이 — 등록(`held_at`)과 해제(`released_at`)를 한 사건 목록으로 펴서 최댓값 1건.
  *   계약 문자 그대로 `lot_hold` 최대 시각이다(문의 076).
  */
-const FROM = `
+export const FROM = `
     FROM trace.lot l
     LEFT JOIN LATERAL (
       SELECT sum(b.on_hand_qty) AS on_hand_qty,
@@ -108,7 +108,10 @@ const FROM = `
  * 잔액이 없는 LOT(L7)까지 살리려면 창고·위치 필터도 접힌 칸이 아니라 `EXISTS` 로 건다 —
  * 접힌 칸(`bal.warehouse_id`)은 창고가 둘이면 NULL 이라 `NOT (…)` 로 걸면 그 LOT 이 통째로 사라진다.
  */
-function conditionsOf(filters: LotStatusFilters): Conditions {
+// ⭐ **§4-1 필터 빌더 공유** — `lot-status.service.ts`(요약)가 이 함수와 `FROM` 을 그대로 부른다.
+// 복붙하면 카드와 목록이 서로 다른 것을 센다(#175). ⚠ I-19 R-17(「공용 헬퍼로 뭉치지 마라」)의
+// 반대 자리다 — 저기는 기간 규칙이 갈렸고, 여기는 계약·화면이 같은 질의를 요구한다(§4-1).
+export function conditionsOf(filters: LotStatusFilters): Conditions {
   const c = new Conditions();
   if (filters.lotStatusCode !== undefined) c.add((p) => `l.status_code = ${p}`, filters.lotStatusCode);
   if (filters.lotTypeCode !== undefined) c.add((p) => `l.lot_type_code = ${p}`, filters.lotTypeCode);

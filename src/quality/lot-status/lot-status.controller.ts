@@ -4,8 +4,9 @@ import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LotStatusSort, lotStatusCountQuery, lotStatusRowsQuery } from './lot-status-query';
+import { LotStatusFilters, LotStatusSort, lotStatusCountQuery, lotStatusRowsQuery } from './lot-status-query';
 import { LotStatusRow, LotStatusView, lotStatusView } from './lot-status-view';
+import { LotStatusService, LotStatusSummaryView } from './lot-status.service';
 
 export interface LotStatusListQuery {
   lotStatusCode?: string;
@@ -28,19 +29,25 @@ export interface LotStatusListQuery {
 const DEFAULT_SORT: LotStatusSort = 'latestTransitionDesc';
 
 /**
- * `GET /quality/lot-statuses` — LOT 품질 상태 목록. `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다
- * (§4-1). 창고·수량·보류 요약·최근 전이는 `lot-status-query.ts` 가 원시 SQL 로 접는다.
+ * `GET /quality/lot-statuses` · `GET /quality/lot-status-summary` — LOT 품질 상태 목록·요약.
+ * `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다(§4-1). 창고·수량·보류 요약·최근 전이는
+ * `lot-status-query.ts` 가 원시 SQL 로 접는다.
  *
- * ⛔ **이 컨트롤러는 이 오퍼레이션 하나만 연다** — `lot-status-summary`(PR ①a2)·
- * `lot-status-transitions`(PR ①c) 는 자리를 만들지 않는다(README §1-2 · CLAUDE.md 「사용처
- * 하나뿐인 선제적 레이어 금지」 — 셋을 미리 얹으면 이 PR 이 안 만든 오퍼레이션의 골격만 남는다).
+ * ⭐ **경로 접두어를 컨트롤러가 아니라 메서드에 둔다** — `lot-statuses`·`lot-status-summary` 는
+ * 같은 접두어를 공유하지 않는 «다른» 최상위 리소스라 `@Controller('quality')` 아래 리터럴
+ * 경로 둘로 연다(형제 리터럴이 없어 순서 함정도 없다 · §7-2).
+ * ⛔ **`lot-status-transitions`(PR ①c) 는 아직 자리를 만들지 않는다**(README §1-2 · CLAUDE.md
+ * 「사용처 하나뿐인 선제적 레이어 금지」).
  * ⛔ 403 게이트는 `derived-permissions.ts` 에 이미 있다 — `manual-permissions.ts` 0줄.
  */
-@Controller('quality/lot-statuses')
+@Controller('quality')
 export class LotStatusController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly lotStatusService: LotStatusService,
+  ) {}
 
-  @Get()
+  @Get('lot-statuses')
   @Contract('GET /quality/lot-statuses')
   async list(@Query() query: LotStatusListQuery): Promise<PagedResponse<LotStatusView>> {
     assertTransitionPair(query);
@@ -61,13 +68,27 @@ export class LotStatusController {
       page: { page: page.page, size: page.size, total: countRows[0]?.total ?? 0 },
     };
   }
+
+  /**
+   * `GET /quality/lot-status-summary` — ⭐ **§4-1 필터 빌더 공유**. 질의 칸은 목록 14 에서
+   * `page`·`size`·`sort` 를 뺀 것과 정확히 같다 — `LotStatusFilters` 를 그대로 질의 타입으로
+   * 쓴다(별도 DTO 를 두지 않는다). `LotStatusService` 가 `lot-status-query.ts` 의 WHERE 빌더를
+   * 그대로 불러 카드와 목록이 같은 모집단을 센다(#175 — 갈라 두면 서로 다른 것을 센다).
+   */
+  @Get('lot-status-summary')
+  @Contract('GET /quality/lot-status-summary')
+  async summary(@Query() query: LotStatusFilters): Promise<LotStatusSummaryView> {
+    assertTransitionPair(query);
+    return this.lotStatusService.summary(query);
+  }
 }
 
 /**
  * `transitionFrom`·`transitionTo` 는 한 쌍이다(계약 설명 — 「함께 보내거나 함께 생략한다」).
  * ⚠ 계약이 이 쌍 검증도 400 자체도 선언하지 않았다 — I-4 R-9 ⓒ·§9-3 ⓒ 와 같은 자리(「알려둘 것」).
+ * 목록·요약 «둘 다» 쓴다 — 같은 질의라 검증도 하나다(§4-1).
  */
-function assertTransitionPair(query: LotStatusListQuery): void {
+function assertTransitionPair(query: { transitionFrom?: string; transitionTo?: string }): void {
   if ((query.transitionFrom !== undefined) === (query.transitionTo !== undefined)) return;
   throw new ContractException(HttpStatus.BAD_REQUEST, [
     field('transitionTo', ERROR_CODE.PAIR, 'transitionFrom·transitionTo 는 함께 보내거나 함께 생략합니다.'),

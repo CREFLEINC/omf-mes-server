@@ -1,10 +1,13 @@
 /**
- * `GET /quality/lot-statuses` (I-20 PR ①a1). `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다(§4-1).
+ * `GET /quality/lot-statuses`(I-20 PR ①a1) · `GET /quality/lot-status-summary`(PR ①a2).
+ * `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다(§4-1). `lot-status-transitions`(①c) 는 여기 없다.
  *
- * ⭐ 이 파일 하나가 이 PR 의 전건이다 — `lot-status-summary`(①a2)·`lot-status-transitions`(①c)
- * 는 여기 없다. LOT 갈래 7(L1~L7)은 슬라이스 계획 §8-1 을 그대로 쓴다(창고·수량 4칸을
- * `inventory_balance` 로 접는 §0 #5 · 정렬의 NULL 자리·2차 정렬 키 R-10 · 3값 논리 함정을
- * `EXISTS`/`NOT EXISTS` 로 피하는 §0 #5 를 전건 반증한다).
+ * LOT 갈래 7(L1~L7)은 슬라이스 계획 §8-1 을 그대로 쓴다(창고·수량 4칸을 `inventory_balance` 로
+ * 접는 §0 #5 · 정렬의 NULL 자리·2차 정렬 키 R-10 · 3값 논리 함정을 `EXISTS`/`NOT EXISTS` 로 피하는
+ * §0 #5 를 전건 반증한다). ⭐ **①a2 가 L6 의 `lot_type_code` 를 `PRODUCT` 로 바꿨다**(원래
+ * `MATERIAL`) — 기존 17건은 그 칸 값을 단언하지 않아 안 깨진다. `statusCode × lotTypeCode` 를
+ * 「합치지 않는다」(§8-3 #18)를 반증하려면 한 상태 안에 유형이 «둘» 있어야 한다(NORMAL = L1·L5
+ * `MATERIAL` + L6 `PRODUCT`).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -33,11 +36,11 @@ const T3 = '2026-01-03T00:00:00.000Z';
 const T4 = '2026-01-04T00:00:00.000Z';
 const T5 = '2026-01-05T00:00:00.000Z';
 
-function validator(status = 200): ValidateFunction {
+function validator(path = 'lot-statuses', status = 200): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/quality-03품질.json'), 'utf8'),
   ) as object;
-  const pointer = `/paths/~1quality~1lot-statuses/get/responses/${status}/content/application~1json/schema`;
+  const pointer = `/paths/~1quality~1${path}/get/responses/${status}/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
@@ -66,6 +69,11 @@ interface LotStatusItem {
 interface LotStatusListBody {
   items: LotStatusItem[];
   page: { page: number; size: number; total: number };
+}
+interface LotStatusSummaryBody {
+  counts: { statusCode: string; lotTypeCode?: string; lotCount: number }[];
+  asOf: string;
+  outOfScopeCount?: number;
 }
 
 describe('LOT 품질 상태 목록 (e2e)', () => {
@@ -238,6 +246,72 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
+  // ── 요약 `GET /quality/lot-status-summary`(PR ①a2 · §8-3 #17~#22) ────────
+
+  it('요약 — 목록과 «같은 필터»가 걸린다(itemId 를 주면 둘 다 줄어든다) (↩ 필터 빌더를 갈라 두면 깨진다 · #175)', async () => {
+    const baseline = await list(`plantId=${plantId}&itemId=${itemId}`);
+    expect(baseline.page.total).toBe(7);
+
+    // 이 플랜트 안에서는 아무 LOT 도 갖지 않는 itemId — 「안 걸리는 행」 쪽(R-19).
+    const bogusItemId = itemId + 1_000_000;
+    const shrunkList = await list(`plantId=${plantId}&itemId=${bogusItemId}`);
+    expect(shrunkList.items).toHaveLength(0);
+
+    const shrunkSummary = await summary(`plantId=${plantId}&itemId=${bogusItemId}`);
+    const total = shrunkSummary.counts.reduce((sum, c) => sum + c.lotCount, 0);
+    expect(total).toBe(0);
+  });
+
+  it('요약 — statusCode × lotTypeCode 로 갈린다(합치지 않는다) (↩ lotTypeCode 를 접으면 깨진다 · L-7)', async () => {
+    const body = await summary(`plantId=${plantId}`);
+    const normalCells = body.counts.filter((c) => c.statusCode === 'NORMAL');
+    // NORMAL = L1·L5(MATERIAL) + L6(PRODUCT) — 합쳐 한 행이면 이 길이가 1 이 된다.
+    expect(normalCells).toHaveLength(2);
+    expect(normalCells.find((c) => c.lotTypeCode === 'MATERIAL')?.lotCount).toBe(2);
+    expect(normalCells.find((c) => c.lotTypeCode === 'PRODUCT')?.lotCount).toBe(1);
+  });
+
+  it('요약 — R-16 으로 뒤집는다: LOT_STATUS 4값 전건이 나온다(행이 없는 상태도 0 으로) (↩ 실재하는 조합만 내면 깨진다)', async () => {
+    // warehouseId=창고1 로 좁히면 SCRAPPED(L7)는 잔액 행이 0 이라 걸리는 LOT 이 없다 —
+    // 그래도 4값 전건이므로 SCRAPPED 행은 남고 lotTypeCode 는 «키가 없다»(모른다 · L-8).
+    const body = await summary(`plantId=${plantId}&warehouseId=${warehouse1Id}`);
+    // NORMAL 은 창고1 안에서도 유형이 둘(L1·L5=MATERIAL · L6=PRODUCT)이라 두 칸으로 갈린다 —
+    // 「4값 전건」은 «상태의 종류»가 넷 다 있다는 뜻이지 행 개수가 4 라는 뜻이 아니다(§4-2).
+    const statuses = new Set(body.counts.map((c) => c.statusCode));
+    expect(statuses).toEqual(new Set(['DEFECTIVE', 'INSPECTION_PENDING', 'NORMAL', 'SCRAPPED']));
+
+    const scrapped = body.counts.find((c) => c.statusCode === 'SCRAPPED');
+    expect(scrapped).toEqual({ statusCode: 'SCRAPPED', lotCount: 0 });
+    expect(scrapped).not.toHaveProperty('lotTypeCode');
+
+    const defective = body.counts.find((c) => c.statusCode === 'DEFECTIVE');
+    expect(defective?.lotCount).toBe(1);
+  });
+
+  it('요약 — outOfScopeCount 키가 «없다» (↩ 0 을 넣으면 깨진다 · L-8)', async () => {
+    const body = await summary(`plantId=${plantId}`);
+    expect(body).not.toHaveProperty('outOfScopeCount');
+  });
+
+  it('요약 — asOf 가 응답에 있다(required) (↩ 칸을 빼면 깨진다)', async () => {
+    const before = Date.now();
+    const body = await summary(`plantId=${plantId}`);
+    const asOf = Date.parse(body.asOf);
+    expect(Number.isNaN(asOf)).toBe(false);
+    expect(asOf).toBeGreaterThanOrEqual(before);
+    expect(asOf).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('요약 — 계약 스키마를 통과한다(ajv) (↩ 아무 칸이나 모양이 틀리면 깨진다)', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-summary?plantId=${plantId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('lot-status-summary');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function itemOf(body: LotStatusListBody, lotNoValue: string): LotStatusItem {
@@ -252,6 +326,14 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     return response.body as LotStatusListBody;
+  }
+
+  async function summary(query: string): Promise<LotStatusSummaryBody> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-summary?${query}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body as LotStatusSummaryBody;
   }
 
   async function login(): Promise<string[]> {
@@ -322,7 +404,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     lotId.L3 = await newLot('L3', 'INSPECTION_PENDING');
     lotId.L4 = await newLot('L4', 'DEFECTIVE');
     lotId.L5 = await newLot('L5', 'NORMAL');
-    lotId.L6 = await newLot('L6', 'NORMAL');
+    lotId.L6 = await newLot('L6', 'NORMAL', 'PRODUCT');
     lotId.L7 = await newLot('L7', 'SCRAPPED');
 
     await newBalance(lotId.L1, warehouse1Id, location1Id, 4000);
@@ -359,12 +441,12 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     });
   }
 
-  async function newLot(key: string, statusCode: string): Promise<number> {
+  async function newLot(key: string, statusCode: string, lotTypeCode = 'MATERIAL'): Promise<number> {
     const lot = await prisma.lot.create({
       data: {
         lot_no: lotNo[key],
         item_id: BigInt(itemId),
-        lot_type_code: 'MATERIAL',
+        lot_type_code: lotTypeCode,
         plant_id: BigInt(plantId),
         initial_qty: 100,
         uom_id: BigInt(uomId),
