@@ -42,7 +42,11 @@ export class BreakdownCreateService {
     return this.numbered.run({
       context,
       documentTypeCode: 'BREAKDOWN',
-      equipmentId: input.equipmentId,
+      target: {
+        type: 'EQUIPMENT',
+        id: input.equipmentId,
+        field: 'equipmentId',
+      },
       periodDate: () => reportedInstant().utcIso.slice(0, 10),
       numberField: 'breakdownNo',
       numberColumn: 'breakdown_no',

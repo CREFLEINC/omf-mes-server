@@ -37,7 +37,11 @@ export class InspectionWriteService {
     return this.numbered.run({
       context,
       documentTypeCode: "EQUIPMENT_INSPECTION",
-      equipmentId: input.equipmentId,
+      target: {
+        type: "EQUIPMENT",
+        id: input.equipmentId,
+        field: "equipmentId",
+      },
       periodDate: () => parsedInstant().utcIso.slice(0, 10),
       numberField: "inspectionNo",
       numberColumn: "inspection_no",
