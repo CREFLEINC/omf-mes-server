@@ -20,7 +20,7 @@ const PASSWORD = "I31-지시조회-검증-비밀번호";
 const PATH = "/api/maintenance/orders";
 const OVERLAP_ID = 831310001n;
 
-function validator(path: string): ValidateFunction {
+function validator(path: string, method = "get"): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(
       join(__dirname, "../contracts/equipment-05설비툴.json"),
@@ -33,7 +33,7 @@ function validator(path: string): ValidateFunction {
   ajv.addSchema(contract, "https://omf-mes.invalid/i31-contract");
   const pointer = path.replace(/~/g, "~0").replace(/\//g, "~1");
   return ajv.compile({
-    $ref: `https://omf-mes.invalid/i31-contract#/paths/${pointer}/get/responses/200/content/application~1json/schema`,
+    $ref: `https://omf-mes.invalid/i31-contract#/paths/${pointer}/${method}/responses/200/content/application~1json/schema`,
   });
 }
 
@@ -47,6 +47,10 @@ describe("보전 지시 I-31 Q1 (e2e)", () => {
   const records: Record<string, bigint> = {};
   const listValidator = validator("/maintenance/orders");
   const detailValidator = validator("/maintenance/orders/{maintenanceOrderId}");
+  const cancelValidator = validator(
+    "/maintenance/orders/{maintenanceOrderId}:cancel",
+    "post",
+  );
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -220,6 +224,94 @@ describe("보전 지시 I-31 Q1 (e2e)", () => {
       const response = await call.expect(500);
       expect(response.body.errors[0].code).toBe("INTERNAL_ERROR");
     }
+  });
+
+  it("E-O17/E-O18 취소는 감사·version을 갱신하고 같은 키는 최초 200을 재생한다", async () => {
+    const key = randomUUID();
+    const first = await request(app.getHttpServer())
+      .post(`${PATH}/${records.full}:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", key)
+      .set("If-Match", "7")
+      .expect(200);
+    expect(cancelValidator(first.body)).toBe(true);
+    expect(first.body).toMatchObject({
+      maintenanceOrderId: Number(records.full),
+      statusCode: "CANCELLED",
+    });
+    const stored = await prisma.maintenance_order.findUniqueOrThrow({
+      where: { maintenance_order_id: records.full },
+      include: {
+        _count: {
+          select: {
+            maintenance_order_item: true,
+            maintenance_order_trigger: true,
+          },
+        },
+      },
+    });
+    expect(stored).toMatchObject({
+      status_code: "CANCELLED",
+      cancelled_by: actorId,
+      updated_by: actorId,
+      version_no: 8,
+      _count: { maintenance_order_item: 1, maintenance_order_trigger: 2 },
+    });
+    expect(stored.cancelled_at).toBeInstanceOf(Date);
+
+    const replay = await request(app.getHttpServer())
+      .post(`${PATH}/${records.full}:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", key)
+      .set("If-Match", "7")
+      .expect(200);
+    expect(replay.body).toEqual(first.body);
+
+    const already = await request(app.getHttpServer())
+      .post(`${PATH}/${records.full}:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .set("If-Match", "8")
+      .expect(400);
+    expect(already.body.errors[0].code).toBe("STATE_LOCKED");
+  });
+
+  it("E-O19/E-O20 stale·실적 존재·없는 지시를 각각 409·400·404로 가른다", async () => {
+    const stale = await request(app.getHttpServer())
+      .post(`${PATH}/${records.tieFirst}:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .set("If-Match", "2")
+      .expect(409);
+    expect(stale.body.conflictCause).toBe("user");
+
+    await prisma.maintenance_result.create({
+      data: {
+        maintenance_order_id: records.tieSecond,
+        target_type_code: "EQUIPMENT",
+        equipment_id: OVERLAP_ID,
+        started_at: new Date("2026-09-30T01:00:00Z"),
+        result_note: `${PREFIX}-CANCEL-BLOCKER`,
+        is_outsourced: false,
+        reset_counter: false,
+        closed: false,
+        created_by: actorId,
+      },
+    });
+    const referenced = await request(app.getHttpServer())
+      .post(`${PATH}/${records.tieSecond}:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .set("If-Match", "1")
+      .expect(400);
+    expect(referenced.body.errors[0].code).toBe("STATE_LOCKED");
+
+    await request(app.getHttpServer())
+      .post(`${PATH}/831319999:cancel`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .set("If-Match", "1")
+      .expect(404);
   });
 
   async function list(
@@ -398,8 +490,11 @@ describe("보전 지시 I-31 Q1 (e2e)", () => {
     const role = await prisma.role.create({
       data: { role_code: ROLE, role_name: PREFIX },
     });
-    await prisma.role_permission.create({
-      data: { role_id: role.role_id, permission_code: "W-05-03" },
+    await prisma.role_permission.createMany({
+      data: [
+        { role_id: role.role_id, permission_code: "W-05-03" },
+        { role_id: role.role_id, permission_code: "W-05-02" },
+      ],
     });
     await prisma.user_role.create({
       data: { app_user_id: user.app_user_id, role_id: role.role_id },
@@ -420,6 +515,9 @@ describe("보전 지시 I-31 Q1 (e2e)", () => {
       select: { maintenance_order_id: true },
     });
     const orderIds = orders.map((row) => row.maintenance_order_id);
+    await prisma.maintenance_result.deleteMany({
+      where: { maintenance_order_id: { in: orderIds } },
+    });
     await prisma.maintenance_order_trigger.deleteMany({
       where: { maintenance_order_id: { in: orderIds } },
     });
@@ -448,6 +546,9 @@ describe("보전 지시 I-31 Q1 (e2e)", () => {
       where: { login_id: LOGIN_ID },
     });
     if (user) {
+      await prisma.idempotency_record.deleteMany({
+        where: { app_user_id: user.app_user_id },
+      });
       await prisma.user_credential.deleteMany({
         where: { app_user_id: user.app_user_id },
       });
