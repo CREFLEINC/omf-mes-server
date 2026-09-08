@@ -75,6 +75,15 @@ describe('assertHoldCreateShape — 보류 등록 본문(계약 LotHoldCreate)',
     );
   });
 
+  it('⭐⭐ holdQty 도 소수 6자리까지다 — 7자리는 RANGE(`app.qty_t = numeric(20,6)` 이 조용히 반올림한다)', () => {
+    expect(assertHoldCreateShape({ ...CLAIM, holdQty: 0.000001, uomId: 3 })).toBe('lot-hold-claim');
+    expect(errorsOf(() => assertHoldCreateShape({ ...CLAIM, holdQty: 0.0000001, uomId: 3 }))).toEqual(
+      expect.objectContaining({ field: 'holdQty', code: 'RANGE' }),
+    );
+    // ⛔ `> 0` 은 통과하는 값이다 — 0.0000001 이 그대로 저장되면 컬럼이 **0 으로 접어** 「수량 0 짜리 열린 보류」가 선다.
+    expect(0.0000001 > 0).toBe(true);
+  });
+
   it('⭐ LOT 2건 이상이면 holdQty 를 못 준다 — 수량은 LOT 마다 달라 뜻을 잃는다(`W-03-03` §5-3)', () => {
     const two = { ...CLAIM, lots: [{ lotId: 1, versionNo: 1 }, { lotId: 2, versionNo: 1 }], holdQty: 10, uomId: 3 };
     expect(errorsOf(() => assertHoldCreateShape(two))).toEqual(
@@ -158,6 +167,22 @@ describe('assertHoldReleaseShape — 보류 해제 본문(계약 LotHoldRelease)
       );
     }
   });
+
+  it(
+    '⭐⭐ releaseQty 는 소수 **6자리까지**다 — 7자리는 RANGE (↩ 절을 지우거나 `> 6` 을 `> 7` 로 넓히면, ' +
+      '잔량 `1e-7` 이 `numeric(20,6)` 에 0 으로 접혀 「보류 수량 0 짜리 열린 보류」가 서고 LOT 이 영영 안 움직인다)',
+    () => {
+      // 위 시험이 축복한 6자리(`0.000001`)가 «경계»다 — 한 자리만 더 가면 거절이다.
+      expect(assertHoldReleaseShape({ ...ACCEPT, releaseQty: 0.000001 })).toBe('lot-hold-release-accepted');
+      for (const qty of [0.0000001, 99.9999999]) {
+        expect(errorsOf(() => assertHoldReleaseShape({ ...ACCEPT, releaseQty: qty }))).toEqual(
+          expect.objectContaining({ field: 'releaseQty', code: 'RANGE' }),
+        );
+      }
+      // 정수부는 안 센다 — 6자리이기만 하면 자리수가 커도 통과다(`numeric(20,6)` 의 정수 14자리 안이다).
+      expect(assertHoldReleaseShape({ ...ACCEPT, releaseQty: 99999999.123456 })).toBe('lot-hold-release-accepted');
+    },
+  );
 
   it('⭐ 갈래 순서 — 도착 상태가 releaseQty 보다 먼저다(액션을 못 고르면 수량은 뜻이 없다)', () => {
     const both = { ...ACCEPT, targetLotStatusCode: 'INSPECTION_PENDING', releaseQty: 0 };

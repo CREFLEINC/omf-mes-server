@@ -39,6 +39,9 @@ const PERMISSION = 'W-03-02';
 // ⑤ #33 — `:confirm` 을 실제로 부르기 위한 권한(`derived-permissions.ts:251`).
 const CONFIRM_PERMISSION = 'W-01-01';
 const PASSWORD = 'PR-LOT보류-비밀번호';
+/** ⭐ 「알려둘 것」 ⓕ — `:release` 의 `remarks` 는 **치환**이다. 두 값이 «달라야» 덮어쓴 자리가 보인다. */
+const HELD_REMARKS = '등록-비고';
+const RELEASE_REMARKS = '해제-비고';
 
 const T1 = '2026-02-01T00:00:00.000Z';
 const T2 = '2026-02-02T00:00:00.000Z';
@@ -173,6 +176,9 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     RPART2: `LOT-R-PART2-${PREFIX}`,
     REXACT: `LOT-R-EXACT-${PREFIX}`,
     RRANGE: `LOT-R-RANGE-${PREFIX}`,
+    RSCALE: `LOT-R-SCALE-${PREFIX}`,
+    RREM: `LOT-R-REM-${PREFIX}`,
+    RREM2: `LOT-R-REM2-${PREFIX}`,
     RDONE: `LOT-R-DONE-${PREFIX}`,
     RSTALE: `LOT-R-STALE-${PREFIX}`,
     RORDER: `LOT-R-ORDER-${PREFIX}`,
@@ -1156,6 +1162,48 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   );
 
   it(
+    '⭐⭐ 해제 — 잔량이 컬럼 스케일 «아래»로 떨어지는 releaseQty(소수 7자리)는 400 RANGE 고 «아무것도» 안 남는다 ' +
+      '(↩ 자리수 검사를 지우거나 `> 6` 을 넓히면 200 이고, 잔량 `1e-7` 이 `numeric(20,6)` 에 **0 으로 접혀** ' +
+      '「보류 수량 0 짜리 열린 보류」가 조용히 서서 LOT 이 영영 안 움직인다 — R-6 이 막으려던 그 문장)',
+    async () => {
+      const before = await lotVersionOf('RSCALE');
+      // ⭐ 「한계와 «한 자리 넘는» 값」(R-19) — REXACT 의 「정수 자리에서 같은 값」은 이 자리를 못 잡는다.
+      const rejected = await release('RSCALE', { ...acceptBody(), releaseQty: 99.9999999 }, 400);
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'releaseQty', code: 'RANGE' });
+
+      const holds = await prisma.lot_hold.findMany({ where: { lot_id: BigInt(lotId.RSCALE) } });
+      expect(holds).toHaveLength(1); // ⭐ 「보류 수량 0」 잔량 행이 «안» 섰다
+      expect(holds[0].released_at).toBeNull();
+      expect(await prisma.lot_status_event.count({ where: { lot_id: BigInt(lotId.RSCALE) } })).toBe(0);
+      expect(await statusOf('RSCALE')).toBe('INSPECTION_PENDING');
+      expect(await lotVersionOf('RSCALE')).toBe(before);
+    },
+  );
+
+  it(
+    '⭐⭐ 해제 — `remarks` 는 **치환**이다: 원 행에 실리고 · 안 보내면 등록 비고가 그대로 남고 · 잔량 행은 «등록» 비고를 물려받는다 ' +
+      '(↩ 해제 본문의 `remarks` 를 안 실으면 첫 단언이 깨진다 · 계획 「알려둘 것」 ⓕ · 통보 071)',
+    async () => {
+      // ⓐ 보냈다 — 원 행의 비고가 «덮인다». 칸이 하나뿐이라 등록 비고는 원 행에서 사라진다.
+      await release('RREM', { ...acceptBody(), releaseQty: 40, remarks: RELEASE_REMARKS }, 200);
+      const holds = await prisma.lot_hold.findMany({
+        where: { lot_id: BigInt(lotId.RREM) },
+        orderBy: { lot_hold_id: 'asc' },
+      });
+      expect(holds).toHaveLength(2);
+      expect(holds[0].remarks).toBe(RELEASE_REMARKS);
+      // ⓑ 잔량 행은 «등록» 비고를 물려받는다 — 해제 비고가 새 보류의 비고로 흘러가지 «않는다».
+      expect(holds[1].remarks).toBe(HELD_REMARKS);
+
+      // ⓒ 안 보내면 무변경이다 — 널로 지우지 «않는다»(I-19 「알려둘 것」 ⓒ 와 반대 방향).
+      await release('RREM2', acceptBody(), 200);
+      const kept = await prisma.lot_hold.findUniqueOrThrow({ where: { lot_hold_id: BigInt(lotHoldId.RREM2) } });
+      expect(kept.released_at).not.toBeNull();
+      expect(kept.remarks).toBe(HELD_REMARKS);
+    },
+  );
+
+  it(
     '⭐⭐ 해제 — DEFECTIVE LOT(C9 로 걸린 보류)은 400 STATE_LOCKED 이고 «아무것도» 안 남는다 ' +
       '(↩ C7·C8 의 from 을 넓히면 200 이 된다 · 결정 — 통보 071)',
     async () => {
@@ -1316,7 +1364,8 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
    * - RFULLQ — 전량 보류(`hold_qty` NULL)에 `releaseQty` 를 주는 갈래(400 INVALID).
    * - RETAG — ETag 원천(R-24). RIDEM — 멱등.
    * - RPART·RPART2 — 부분 해제(잔량 행 · LOT 안 움직임). REXACT — 「한계와 같은 값」(R-6).
-   * - RRANGE — 초과(400 RANGE).
+   * - RRANGE — 초과(400 RANGE). RSCALE — 「한계보다 «한 자리 더»」(소수 7자리 · 400 RANGE).
+   * - RREM·RREM2 — `remarks` 치환(등록 비고를 심어 둔다 · 「알려둘 것」 ⓕ).
    * - RDONE — 이미 해제된 보류(400 STATE_LOCKED). RSTALE — `lot.version_no=3`(낡은 토큰).
    * - RORDER — 낡은 토큰 «그리고» 이미 해제됨(b↔c 순서 판정).
    * - ROTHER·RR2 — 같은 사유의 열린 보류 «둘»(좁히기 · R-2).
@@ -1328,10 +1377,15 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       lotId[key] = await newLot(key, item1Id, 'INSPECTION_PENDING');
       lotHoldId[key] = await newReleasableHold(lotId[key], {});
     }
-    for (const key of ['RPART', 'RPART2', 'REXACT', 'RRANGE']) {
+    for (const key of ['RPART', 'RPART2', 'REXACT', 'RRANGE', 'RSCALE']) {
       lotId[key] = await newLot(key, item1Id, 'INSPECTION_PENDING');
       lotHoldId[key] = await newReleasableHold(lotId[key], { holdQty: 100 });
     }
+    // ⭐ `remarks` 치환(계획 「알려둘 것」 ⓕ) — 등록 비고를 «심어야» 「덮는다」와 「그대로 둔다」가 갈린다.
+    lotId.RREM = await newLot('RREM', item1Id, 'INSPECTION_PENDING');
+    lotHoldId.RREM = await newReleasableHold(lotId.RREM, { holdQty: 100, remarks: HELD_REMARKS });
+    lotId.RREM2 = await newLot('RREM2', item1Id, 'INSPECTION_PENDING');
+    lotHoldId.RREM2 = await newReleasableHold(lotId.RREM2, { remarks: HELD_REMARKS });
     lotId.RDONE = await newLot('RDONE', item1Id, 'INSPECTION_PENDING');
     lotHoldId.RDONE = await newReleasableHold(lotId.RDONE, { released: true });
 
@@ -1407,7 +1461,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
    */
   async function newReleasableHold(
     forLotId: number,
-    options: { holdQty?: number; reason?: string; released?: boolean; targetLotStatusCode?: string },
+    options: { holdQty?: number; reason?: string; released?: boolean; targetLotStatusCode?: string; remarks?: string },
   ): Promise<number> {
     const hold = await prisma.lot_hold.create({
       data: {
@@ -1417,6 +1471,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
         held_by: heldByAId,
         held_at: new Date(W_SEED),
         target_lot_status_code: options.targetLotStatusCode ?? 'INSPECTION_PENDING',
+        remarks: options.remarks ?? null,
         version_no: 7,
         ...(options.holdQty === undefined ? {} : { hold_qty: options.holdQty, uom_id: BigInt(uomId) }),
         ...(options.released

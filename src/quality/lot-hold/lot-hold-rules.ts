@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { ERROR_CODE, field, one } from '../../common/errors';
 import type { ActionName } from '../../core/document-state';
 
@@ -108,6 +110,19 @@ function assertQtyPair(body: LotHoldCreate): void {
   if (qty !== undefined && !(qty > 0)) {
     throw one(field('holdQty', ERROR_CODE.RANGE, '보류 수량은 0 보다 커야 합니다.'));
   }
+  assertQtyScale('holdQty', qty);
+}
+
+/**
+ * ⭐ `app.qty_t` 가 `numeric(20,6)` 이라 7자리째는 **INSERT 때 반올림**된다. 해제 잔량이 `1e-7` 이면 0 으로 접혀 「보류 수량 0 짜리
+ * 열린 보류」가 조용히 서고(`CHECK (VALUE >= 0)` 는 통과한다) LOT 이 영영 안 움직인다 — R-6 이 막으려던 그 문장이 스케일 «아래»로
+ * 새는 자리다. 등록 `holdQty` 도 같은 컬럼이라 같은 구멍이고, 계약에 `multipleOf` 가 0건이라 ajv 가 안 막는다(0단계 선례 — `maintenance/inspection/inspection-input.ts:75` 가 측정값을 같은 자리수로 거절한다).
+ * ⛔ 코어 `remainderQty` 를 반올림 인지로 고치는 길이 «아니다» — 도메인 `willMove` 와 갈려 R-2 불변식이 500 을 낸다(두 곳을 함께 고쳐야 하고 코어는 전용 PR 소관이다). **문 앞에서** 막으면 두 산식이 갈리지 않는다.
+ */
+function assertQtyScale(name: string, qty: number | undefined): void {
+  if (qty !== undefined && new Prisma.Decimal(qty).decimalPlaces() > 6) {
+    throw one(field(name, ERROR_CODE.RANGE, '수량은 소수점 6자리까지입니다.'));
+  }
 }
 
 /**
@@ -159,5 +174,6 @@ export function assertHoldReleaseShape(body: LotHoldRelease): ActionName {
   if (body.releaseQty !== undefined && !(body.releaseQty > 0)) {
     throw one(field('releaseQty', ERROR_CODE.RANGE, '해제 수량은 0 보다 커야 합니다.'));
   }
+  assertQtyScale('releaseQty', body.releaseQty);
   return action;
 }

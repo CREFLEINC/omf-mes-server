@@ -111,9 +111,9 @@ export class LotHoldWriteService {
     // (0) 값 목록 대조는 트랜잭션 «밖»이다 — 코드 표를 읽는 커넥션을 업무 tx 가 쥐지 않는다.
     await assertCodeValues(this.prisma, [
       { field: 'releaseReasonCode', value: body.releaseReasonCode, groupCode: HOLD_RELEASE_REASON_GROUP },
-      { field: 'targetLotStatusCode', value: body.targetLotStatusCode, groupCode: LOT_STATUS_GROUP },
     ]);
-    // (1) 본문 형식 — 도착 상태 두 값(INVALID) · releaseQty > 0(RANGE).
+    // (1) 본문 형식 — 도착 상태 두 값(INVALID) · releaseQty > 0·소수 6자리(RANGE). ⛔ 도착을 `LOT_STATUS`
+    //     와도 대조하지 않는다 — 여기 통과하는 두 값은 언제나 시드 안이라 거를 값이 «존재하지 않는다».
     const action = assertHoldReleaseShape(body);
 
     const holdId = BigInt(lotHoldId);
@@ -152,6 +152,7 @@ export class LotHoldWriteService {
       const others = await tx.lot_hold.count({
         where: { lot_id: hold.lot_id, released_at: null, lot_hold_id: { not: holdId } },
       });
+      // ⛔ `hold_qty === null` 절은 **타입 내로잉용**이다 — 런타임엔 위 `assertReleasableQty` 가 400 을 낸다(지우면 `tsc` 가 깨진다).
       const willMove = others === 0 && (releaseQty === undefined || hold.hold_qty === null || !releaseQty.lessThan(hold.hold_qty));
 
       // (e) ⭐ 코어가 닫고·잔량을 세우고·열린 보류를 «다시 센다»(재계수가 잠금 안이어야 한다 — R-5).
@@ -170,6 +171,7 @@ export class LotHoldWriteService {
         actor,
       );
       // 잠금 안이라 둘은 어긋날 수 없다 — 어긋나면 위 예측이 코어의 잔량 규칙과 갈린 것이다.
+      // ⚠ 코어 `remainderQty` 의 경계(스케일 반올림)를 고치면 **여기가 먼저 터진다** — 두 곳을 함께 고쳐라(`assertQtyScale`).
       if (willMove !== (openAfter === 0)) {
         throw new Error(`R-2 예측이 코어 재계수와 어긋났다: willMove=${willMove} openAfter=${openAfter}`);
       }
@@ -219,7 +221,7 @@ function assertReleasableQty(releaseQty: number | undefined, holdQty: Prisma.Dec
  * ⑦⑧(이미 해제됨 · 전이 0건)을 **400 `STATE_LOCKED`** 로 판정한 근거는 공유계약 G-1 —
  * 「재로드해도 안 풀린다」이고, 409 인 셋(`VERSION_CONFLICT`·`DUPLICATE_HOLD`·
  * `HOLD_QTY_EXCEEDED`)은 계약이 **409 봉투 enum 에 직접 넣어** 답을 줬다.
- * // 설계 미정 — 통보 071
+ * // 결정 — 통보 071
  */
 function releaseStateLocked(message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [
