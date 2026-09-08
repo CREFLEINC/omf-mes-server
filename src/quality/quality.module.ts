@@ -23,6 +23,8 @@ import { InspectionResultWriteService } from './inspection/inspection-result-wri
 import { InspectionMeasurementService } from './inspection/inspection-measurement.service';
 import { InspectionSummaryController } from './inspection/inspection-summary.controller';
 import { InspectionSummaryService } from './inspection/inspection-summary.service';
+import { LotHoldController } from './lot-hold/lot-hold.controller';
+import { LotHoldQueryService } from './lot-hold/lot-hold-query.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
 import { LotStatusService } from './lot-status/lot-status.service';
 
@@ -53,6 +55,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     InspectionSummaryController,
     InspectionResultController,
     LotStatusController, // 리터럴 경로 둘(`lot-statuses`·`lot-status-summary`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
+    LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
   ],
   providers: [
     DefectCodeService,
@@ -67,6 +70,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     InspectionSummaryService,
     InspectionMeasurementService,
     LotStatusService,
+    LotHoldQueryService,
   ],
 })
 export class QualityModule {}
