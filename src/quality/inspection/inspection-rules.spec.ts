@@ -3,8 +3,11 @@ import {
   assertConfirmedShape,
   assertMeasurementValues,
   assertPeriodPair,
+  assertPeriodRequired,
+  assertQuantityBounds,
   assertScopedOrPeriod,
   buildInspectionResultOrderBy,
+  finalRoundOf,
 } from './inspection-rules';
 
 describe('assertScopedOrPeriod — inspectionRequestId 또는 기간 중 하나(계약 :753)', () => {
@@ -91,5 +94,77 @@ describe('assertMeasurementValues — 값은 한 칸만', () => {
 
   it('두 칸이 차 있으면 400 — `ck_measurement_single_value` 를 앞당겨 잡는다', () => {
     expect(() => assertMeasurementValues([{ numericValue: 1, textValue: '가' }])).toThrow(ContractException);
+  });
+});
+
+
+describe('assertQuantityBounds — 물리 하한을 400 으로 앞당긴다', () => {
+  it('검사 수량 0 은 400 — `inspection_result_inspected_qty_check` 는 조건이 없어 작성중에도 산다', () => {
+    expect(() => assertQuantityBounds({ inspectedQty: 0 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ inspectedQty: -1 })).toThrow(ContractException);
+  });
+
+  it('합격·불합격·보류 음수는 400 — 도메인 `app.qty_t` 가 `VALUE >= 0` 이다', () => {
+    expect(() => assertQuantityBounds({ acceptedQty: -1 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ rejectedQty: -0.000001 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ heldQty: -1 })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ acceptedQty: 0, rejectedQty: 0, heldQty: 0 })).not.toThrow();
+  });
+
+  it('표본 번호 0 은 400 — `inspection_measurement_sample_no_check`', () => {
+    expect(() => assertQuantityBounds({ measurements: [{ sampleNo: 0 }] })).toThrow(ContractException);
+    expect(() => assertQuantityBounds({ measurements: [{ sampleNo: 1 }] })).not.toThrow();
+  });
+
+  it('⭐ 생략한 칸은 안 본다 — `PUT` 은 보낸 칸만 고친다', () => {
+    expect(() => assertQuantityBounds({})).not.toThrow();
+    expect(() => assertQuantityBounds({ inspectedQty: 100 })).not.toThrow();
+  });
+
+  it('어긋난 칸을 한 응답에 모아 낸다 — 화면이 한 번에 고친다', () => {
+    try {
+      assertQuantityBounds({ inspectedQty: 0, acceptedQty: -1, measurements: [{ sampleNo: 0 }] });
+      throw new Error('던졌어야 한다');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractException);
+      expect((error as ContractException).errors.map((item) => item.field)).toEqual([
+        'inspectedQty',
+        'acceptedQty',
+        'measurements[0].sampleNo',
+      ]);
+    }
+  });
+});
+
+describe('⭐ R-17 — assertPeriodRequired: 집계는 기간이 «무조건» 필수다(계약 :1157·:1055)', () => {
+  it('기간을 쌍으로 주면 통과한다', () => {
+    expect(() =>
+      assertPeriodRequired({ inspectedFrom: '2026-09-01T00:00:00.000Z', inspectedTo: '2026-09-02T00:00:00.000Z' }),
+    ).not.toThrow();
+  });
+
+  it('⛔ 기간이 없으면 400 REQUIRED — 목록과 달리 `inspectionRequestId` 로 대신할 수 없다', () => {
+    // 목록 전용 규칙(assertScopedOrPeriod)은 같은 입력을 통과시킨다. 둘을 한 함수로 뭉치면
+    // `summary?inspectionRequestId=…` 가 조용히 200 을 낸다 — 그 차이를 여기서 못박는다.
+    expect(() => assertPeriodRequired({})).toThrow();
+    expect(() => assertScopedOrPeriod({ inspectionRequestId: 1 })).not.toThrow();
+  });
+});
+
+describe('⭐ #298 m-3 — finalRoundOf: 의뢰별 최종 회차 1건(§4-2)', () => {
+  const row = (id: bigint, request: bigint, round: number) => ({
+    inspection_result_id: id,
+    inspection_request_id: request,
+    inspection_round: round,
+  });
+
+  it('의뢰마다 회차가 가장 큰 행만 남긴다 — 입력 순서와 무관하다', () => {
+    const rows = [row(1n, 10n, 1), row(3n, 20n, 1), row(2n, 10n, 3), row(4n, 10n, 2)];
+
+    expect(finalRoundOf(rows).map((kept) => kept.inspection_result_id)).toEqual([2n, 3n]);
+  });
+
+  it('빈 입력은 빈 배열이다 — 뒤 질의의 `in` 이 통째로 비는 갈래', () => {
+    expect(finalRoundOf([])).toEqual([]);
   });
 });

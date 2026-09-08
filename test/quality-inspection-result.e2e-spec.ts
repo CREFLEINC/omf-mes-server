@@ -1,6 +1,8 @@
 /**
- * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(결과 조회 2건) + PR ③b(**저장 1건**).
- * `PUT`(PR ③c)·`:confirm`·집계 3건·`/measurements`는 PR ③c④⑤ 가 같은 파일에 이어 붙인다.
+ * 검사 의뢰·결과 (e2e) — I-19. PR ②a(의뢰 조회 2건) + PR ②b(결과 조회 2건) + PR ③b(저장) + PR ③c(수정)
+ * + **PR ④(`:confirm` — 이 슬라이스의 심장)**. 집계 3건·`/measurements` 는 PR ⑤ 가 이어 붙인다.
+ * ⭐ 확정 갈래는 **전이가 «일어나야» 하는 픽스처**를 쓴다 — `lot_id` 가 실재하고 상태가 전이표의
+ *   `from` 안에 있는 LOT + 열린 `lot_hold`. 그 위에서만 「안 옮겨졌다」가 반증 가능해진다.
  * ⭐ PR ③b 부터 **쓰기 경로가 행을 «만든다»** — 그전까지 `DRAFT` + 판정 없음 행은 픽스처가 prisma
  *   로 심은 것뿐이었다. 저장 갈래는 그 행을 `POST` 로 세우고 이어서 `GET` 으로 모양을 확인한다.
  *
@@ -73,6 +75,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
     businessUnit: 0n,
     itemSpecA: 0n,
     itemSpecB: 0n,
+    routingOperation: 0n,
+    c14PlanVersion: 0n,
   };
   let requestR1Id: number;
   let requestR2Id: number;
@@ -134,6 +138,78 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await cleanup();
     await app.close();
   });
+
+  // ── 쓰기 공용 도구 (PR ③b 저장 · PR ③c 수정이 함께 쓴다) ──────────────────────
+  /** ⛔ 조회 단언의 기간창(`SCOPE_FROM`~`SCOPE_TO`) 밖이다 — 쓰기가 그 건수를 흔들면 안 된다. */
+  const INSPECTED_W = '2026-09-10T05:00:00.000Z';
+  const WORKER_HEADER = `${PREFIX}-WK`;
+  let writeSeq = 0;
+
+  /**
+   * 쓰기 단언마다 «자기 의뢰»를 하나씩 세운다. `uq_inspection_round(의뢰, 회차)` 가 「뿌리는
+   * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
+   * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
+   * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
+   * ⛔ **`beforeAll` 픽스처(`r1`~`r9`)를 쓰기 단언이 재사용하지 않는다** — 확정 저장이 의뢰를
+   *   `COMPLETED` 로 «변형»하므로 공유 픽스처를 쓰면 describe 실행 «순서»에 결합된다(#320 m-3).
+   */
+  async function newRequest(planVersionId: bigint | null = ids.inspectionPlanVersion): Promise<number> {
+    writeSeq += 1;
+    const row = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
+        inspection_type_code: 'PQC',
+        inspection_plan_version_id: planVersionId,
+        target_type_code: 'WORK_ORDER',
+        target_id: ids.workOrder,
+        item_id: ids.item2,
+        work_order_id: ids.workOrder,
+        target_qty: 100,
+        uom_id: ids.uom,
+        status_code: 'REQUESTED',
+        requested_at: new Date(REQUESTED_R1),
+      },
+    });
+    return Number(row.inspection_request_id);
+  }
+
+  function draftBody(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      inspectionRequestId,
+      inspectedQty: 100,
+      // ⭐ 합이 100 이 아니다 — 작성중에는 통과해야 한다(M-e ⓑ).
+      acceptedQty: 0,
+      rejectedQty: 0,
+      heldQty: 0,
+      uomId: Number(ids.uom),
+      inspectedAt: INSPECTED_W,
+      statusCode: 'DRAFT',
+      ...overrides,
+    };
+  }
+
+  function post(body: Record<string, unknown>, options: { session?: string[]; workerNo?: string; key?: string } = {}) {
+    const call = request(app.getHttpServer())
+      .post(RESULTS)
+      .set('Cookie', options.session ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID());
+    if (options.workerNo !== undefined) call.set('X-Worker-No', options.workerNo);
+    return call.send(body);
+  }
+
+  async function newDraft(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
+    const created = await post(draftBody(inspectionRequestId, overrides), { workerNo: WORKER_HEADER }).expect(201);
+    return created.body.inspectionResultId as number;
+  }
+
+  function put(inspectionResultId: number, body: Record<string, unknown>, version: number, session: string[] = cookie) {
+    return request(app.getHttpServer())
+      .put(`${RESULTS}/${inspectionResultId}`)
+      .set('Cookie', session)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send(body);
+  }
 
   describe('의뢰 조회 (PR ②a)', () => {
     it('목록이 `page`·`size`·`total` 골격으로 온다', async () => {
@@ -452,66 +528,6 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
 
   describe('저장 (PR ③b)', () => {
-    /** ⛔ 조회 단언의 기간창(`SCOPE_FROM`~`SCOPE_TO`) 밖이다 — 쓰기가 그 건수를 흔들면 안 된다. */
-    const INSPECTED_W = '2026-09-10T05:00:00.000Z';
-    const WORKER_HEADER = `${PREFIX}-WK`;
-    let writeSeq = 0;
-
-    /**
-     * 쓰기 단언마다 «자기 의뢰»를 하나씩 세운다. `uq_inspection_round(의뢰, 회차)` 가 「뿌리는
-     * 의뢰당 하나」를 강제하므로(§5-1 「없으면 회차 1」) 한 의뢰를 나눠 쓰면 두 번째 저장이
-     * 409 `DUPLICATE_KEY` 로 막힌다 — 그 자체가 옳은 동작이라 테스트가 의뢰를 나눈다.
-     * 번호 접미어가 `W…` 인 것도 필요하다: `q=${PREFIX}-IR-1` 단언이 `IR-10` 을 함께 잡으면 안 된다.
-     */
-    async function newRequest(): Promise<number> {
-      writeSeq += 1;
-      const row = await prisma.inspection_request.create({
-        data: {
-          inspection_request_no: `${PREFIX}-IR-W${writeSeq}`,
-          inspection_type_code: 'PQC',
-          inspection_plan_version_id: ids.inspectionPlanVersion,
-          target_type_code: 'WORK_ORDER',
-          target_id: ids.workOrder,
-          item_id: ids.item2,
-          work_order_id: ids.workOrder,
-          target_qty: 100,
-          uom_id: ids.uom,
-          status_code: 'REQUESTED',
-          requested_at: new Date(REQUESTED_R1),
-        },
-      });
-      return Number(row.inspection_request_id);
-    }
-
-    function draftBody(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-      return {
-        inspectionRequestId,
-        inspectedQty: 100,
-        // ⭐ 합이 100 이 아니다 — 작성중에는 통과해야 한다(M-e ⓑ).
-        acceptedQty: 0,
-        rejectedQty: 0,
-        heldQty: 0,
-        uomId: Number(ids.uom),
-        inspectedAt: INSPECTED_W,
-        statusCode: 'DRAFT',
-        ...overrides,
-      };
-    }
-
-    function post(body: Record<string, unknown>, options: { session?: string[]; workerNo?: string; key?: string } = {}) {
-      const call = request(app.getHttpServer())
-        .post(RESULTS)
-        .set('Cookie', options.session ?? cookie)
-        .set('Idempotency-Key', options.key ?? randomUUID());
-      if (options.workerNo !== undefined) call.set('X-Worker-No', options.workerNo);
-      return call.send(body);
-    }
-
-    async function newDraft(inspectionRequestId: number, overrides: Record<string, unknown> = {}): Promise<number> {
-      const created = await post(draftBody(inspectionRequestId, overrides), { workerNo: WORKER_HEADER }).expect(201);
-      return created.body.inspectionResultId as number;
-    }
-
     it('`POST` `statusCode=DRAFT` 가 수량 합이 안 맞아도 201 이다 — 번호·회차·검사자를 서버가 채운다(M-e ⓑ)', async () => {
       const response = await post(draftBody(await newRequest()), { workerNo: WORKER_HEADER }).expect(201);
 
@@ -558,9 +574,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'overallJudgmentCode', code: 'REQUIRED' }));
     });
 
-    it('`POST` `statusCode=CONFIRMED` 가 201 이고 `confirmed_at` 이 함께 찬다', async () => {
+    it('⭐ `POST` `statusCode=CONFIRMED` 가 201 이고 `:confirm` 과 «같은» 부수효과를 낸다(§12-1 ⓑ 상환)', async () => {
+      // ⭐ 픽스처가 «LOT 이 붙은 의뢰»다 — 옛 픽스처(PQC·`lot_id=null`·`rejectedQty=0`)에서는
+      //   §3-3·§3-4 를 정확히 구현해도 이력이 0 이라 「안 붙였다」와 「붙였다」가 갈리지 않았다.
+      const lotId = await newLot('INSPECTION_PENDING', { holds: [INCOMING_HOLD] });
+      const inspectionRequestId = await newConfirmRequest({ lotId });
       const response = await post(
-        draftBody(await newRequest(), { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED' }),
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED' }),
         { workerNo: WORKER_HEADER },
       ).expect(201);
 
@@ -568,17 +588,63 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.confirmedAt).toEqual(expect.any(String));
       // 확정 응답은 계약 `InspectionResult` 를 그대로 통과한다(판정 칸이 required 라 DRAFT 는 못 한다).
       expect(validator('POST /quality/inspection-results', 201)(response.body)).toBe(true);
-      // ⛔ LOT 품질 축 전이·보류 해제·의뢰 완료는 **PR ④** 가 붙인다 — 아직 아무것도 안 옮긴다.
-      expect(await prisma.lot_status_event.count({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } })).toBe(0);
+
+      // ⭐ 확정 경로는 **둘**이고 계약 `x-internal-note` 가 「부수 효과가 같아야 한다」고 못 박았다.
+      //   오프라인 큐는 서버가 만든 `inspectionResultId` 를 몰라 `:confirm` 을 못 부르므로 이
+      //   경로가 큐의 «유일한» 확정이다(`plan-uiux.md:1112`). 아래 넷은 `:confirm` 합격 갈래의
+      //   단언과 «같은 모양»이다 — 두 경로가 갈리면 여기가 깨진다.
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'NORMAL', version_no: 2 });
+      const events = await eventsOf(lotId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        previous_status_code: 'INSPECTION_PENDING',
+        new_status_code: 'NORMAL',
+        transition_code: 'C4',
+        source_document_type_code: 'INSPECTION_RESULT',
+        source_document_id: BigInt(response.body.inspectionResultId),
+      });
+      const holds = await holdsOf(lotId);
+      expect(holds[0].released_at).not.toBeNull();
+      expect(holds[0].release_reason_code).toBe(CONFIRM_RELEASE_REASON);
+      const requestRow = await prisma.inspection_request.findUniqueOrThrow({
+        where: { inspection_request_id: BigInt(inspectionRequestId) },
+        select: { status_code: true },
+      });
+      expect(requestRow.status_code).toBe('COMPLETED');
     });
 
-    it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
-      const response = await post(
-        draftBody(requestR5Id, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', remarks: '자유 입력만으로 성립한다' }),
+    it('⭐ `POST` 확정도 **C14 를 편다** — PQC 불합격 수량이 `acceptance_number` 를 넘으면 같은 W/O 의 생산LOT 이 옮겨지고 `from` 밖 LOT 은 건너뛴다(R-7)', async () => {
+      // ⭐ 위 단언(IQC·`lot_id` 1건)은 `spreadC14()` 의 첫 조건에서 되돌아간다 — 이 픽스처가
+      //   **PQC + `acceptance_number` 실재**라 C14 본문에 도달하는 «유일한» POST 갈래다.
+      //   그래서 `rejectedQty`(넘긴 인자 다섯 중 하나)가 여기서만 반증 가능해진다.
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const scrapped = await newLot('SCRAPPED', { workOrderId, seq: 2 });
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId, planVersionId: ids.c14PlanVersion });
+
+      // `acceptance_number` 는 5 다 — 불합격 20 이 그 값을 넘어야 C14 가 펴진다.
+      await post(
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 80, rejectedQty: 20, overallJudgmentCode: 'REJECTED' }),
         { workerNo: WORKER_HEADER },
       ).expect(201);
 
-      expect(response.body).toMatchObject({ inspectionRequestId: requestR5Id, remarks: '자유 입력만으로 성립한다' });
+      expect(await lotOfId(slot)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 2 });
+      expect((await eventsOf(slot)).map((event) => event.transition_code)).toEqual(['C14']);
+      // ⭐ R-7 — `SCRAPPED` 하나가 섞였다고 PQC 확정 전체가 막히면 안 된다. 코어가 건너뛴다.
+      expect(await lotOfId(scrapped)).toEqual({ status_code: 'SCRAPPED', version_no: 1 });
+      expect(await eventsOf(scrapped)).toHaveLength(0);
+    });
+
+    it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
+      // ⛔ 공유 픽스처 `r5` 를 안 쓴다 — 확정 저장이 의뢰를 `COMPLETED` 로 변형해 앞 describe 의
+      //    `r5` 단언과 실행 순서로 결합된다(#320 m-3). 같은 갈래(`기준 없음`)를 자기 의뢰로 세운다.
+      const inspectionRequestId = await newRequest(null);
+      const response = await post(
+        draftBody(inspectionRequestId, { statusCode: 'CONFIRMED', acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', remarks: '자유 입력만으로 성립한다' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(response.body).toMatchObject({ inspectionRequestId, remarks: '자유 입력만으로 성립한다' });
       expect(await prisma.inspection_measurement.count({ where: { inspection_result_id: BigInt(response.body.inspectionResultId) } })).toBe(0);
     });
 
@@ -683,8 +749,545 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ field: 'measurements[0]', code: 'INVALID' });
     });
 
+    it('⭐ #304 M-2 — 같은 의뢰에 뿌리를 둘 세우면 409 `DUPLICATE_KEY` 다(`uq_inspection_round`)', async () => {
+      const inspectionRequestId = await newRequest();
+      await newDraft(inspectionRequestId);
+      // 두 번째 저장도 previousResultId 가 없어 회차 1 을 노린다 — (의뢰, 회차) UNIQUE 가 막는다.
+      const response = await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
+      // 봉투가 `QualityConflictResponse` 다 — required(`code`·`message`)를 계약 스키마로 확인한다.
+      expect(validator('POST /quality/inspection-results', 409)(response.body)).toBe(true);
+      expect(response.body.errors).toBeUndefined();
+    });
+
+    it('⭐ #314 Major — 물리 하한이 400 이다(500 아니다): `inspectedQty` 0 · `acceptedQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionRequestId = await newRequest();
+      // ⭐ 본길이다 — M-e ⓑ 가 연 「세 칸을 다 채우기 전 임시 저장」이 정확히 이 갈래다.
+      const zero = await post(draftBody(inspectionRequestId, { inspectedQty: 0 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      // `app.qty_t` 도메인이 `VALUE >= 0` 이라 음수 세 칸도 같은 500 갈래였다.
+      const negative = await post(draftBody(inspectionRequestId, { acceptedQty: -1 }), { workerNo: WORKER_HEADER }).expect(400);
+      expect(negative.body.errors).toContainEqual(expect.objectContaining({ field: 'acceptedQty', code: 'RANGE' }));
+
+      const sample = await post(
+        draftBody(inspectionRequestId, {
+          measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }],
+        }),
+        { workerNo: WORKER_HEADER },
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 셋 다 막혔으니 행이 하나도 안 섰다 — 500 이었다면 여기서도 0 이지만 응답이 5xx 였다.
+      expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } })).toBe(0);
+    });
+
     it('무권한 계정은 `POST` 에서 403 이다', async () => {
       await post(draftBody(await newRequest()), { session: noPermCookie, workerNo: WORKER_HEADER }).expect(403);
+    });
+  });
+
+  describe('수정 (PR ③c)', () => {
+    it('`PUT` 이 작성중 결과를 고친다 — 새 ETag 가 온다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(
+        inspectionResultId,
+        { inspectedQty: 100, acceptedQty: 90, rejectedQty: 10, heldQty: 0, overallJudgmentCode: 'HELD', inspectedAt: INSPECTED_W, remarks: '고침' },
+        1,
+      ).expect(200);
+
+      expect(response.body).toMatchObject({
+        inspectionResultId,
+        acceptedQty: 90,
+        rejectedQty: 10,
+        overallJudgmentCode: 'HELD',
+        remarks: '고침',
+        versionNo: 2,
+      });
+      // ⚠ 계약이 `PUT` 200 에 ETag 를 «선언하지 않았는데» `runVersioned` 는 늘 낸다 — I-1 의
+      //   `PUT …/steps` 와 같은 자리다. 「알려둘 것」으로 남기고 고치지 않는다(호환 완화).
+      expect(response.headers.etag).toBe('2');
+      // ⛔ `statusCode` 를 못 바꾼다 — 계약 `InspectionResultUpdate` 에 그 칸이 없다.
+      expect(response.body.statusCode).toBe('DRAFT');
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}')(response.body)).toBe(true);
+    });
+
+    it('보낸 칸만 바뀐다 — 생략한 칸은 저장된 값 그대로다(명시 null 로 «해제»하는 칸이 0 이다)', async () => {
+      const inspectionResultId = await newDraft(await newRequest(), { remarks: '처음 비고' });
+      const response = await put(inspectionResultId, { acceptedQty: 40 }, 1).expect(200);
+
+      expect(response.body).toMatchObject({ acceptedQty: 40, remarks: '처음 비고', inspectedQty: 100 });
+    });
+
+    it('⭐ 확정된 결과를 `PUT` 하면 409 `INVALID_STATE` — 고치는 것이 아니라 재검이다(B-10)', async () => {
+      const response = await put(resultA1Id, { remarks: '확정본을 고친다' }, 1).expect(409);
+
+      // 봉투가 `ErrorResponse` 가 아니라 `QualityConflictResponse` 다. `code` 가 required 라 반드시 실린다.
+      expect(response.body).toMatchObject({ code: 'INVALID_STATE', conflictCause: 'user' });
+      expect(response.body.errors).toBeUndefined();
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(true);
+      // ⛔ `:confirm` 의 재확정(400 `STATE_LOCKED`)과 봉투가 «다르다» — 여기는 409 다.
+      expect(await prisma.inspection_result.findUniqueOrThrow({ where: { inspection_result_id: BigInt(resultA1Id) }, select: { version_no: true } })).toEqual({ version_no: 1 });
+    });
+
+    it('⭐ `If-Match` 가 어긋나면 409 `VERSION_CONFLICT` + `currentVersion` — 상태 게이트보다 «먼저» 본다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const response = await put(inspectionResultId, { remarks: '낡은 토큰' }, 99).expect(409);
+
+      expect(response.body).toMatchObject({ code: 'VERSION_CONFLICT', conflictCause: 'user', currentVersion: '1' });
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(true);
+
+      // 확정본에 낡은 토큰을 보내면 «상태»가 아니라 «버전»이 먼저 걸린다(형제 `:release`·`:close` 선례).
+      const confirmed = await put(resultA1Id, { remarks: '낡은 토큰 + 확정본' }, 99).expect(409);
+      expect(confirmed.body).toMatchObject({ code: 'VERSION_CONFLICT', currentVersion: '1' });
+    });
+
+    it('⚠ 같은 키로 «다른» 본문을 보내면 409 인데 계약 required 인 `code` 가 빠진다(알려진 결손 · 공용 파일)', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      const key = randomUUID();
+      const send = (remarks: string) =>
+        request(app.getHttpServer())
+          .put(`${RESULTS}/${inspectionResultId}`)
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key)
+          .set('If-Match', '1')
+          .send({ remarks });
+      await send('첫 본문').expect(200);
+      const response = await send('다른 본문').expect(409);
+
+      expect(response.body).toMatchObject({ conflictCause: 'user' });
+      expect(response.body.message).toEqual(expect.any(String));
+      // ⚠ 실측 — `idempotency.service.ts:115` 가 공용 예외를 `code` 없이 던진다. `QualityConflictResponse.code`
+      //   는 required 라 이 갈래«만» 계약 스키마를 통과하지 못한다. R-8 이 PR ① 에 배정했으나
+      //   `ConflictExtra` 타입만 늘고 사용처가 안 섰다 — 공용 파일이라 이 PR 이 고치지 않는다.
+      //   ⭐ 고치는 PR 은 아래 한 줄을 `code: 'DUPLICATE_KEY'` 단언으로 바꾼다. ⛔ 「계약 스키마
+      //   불통과」를 초록으로 굳히지 않는다 — 살아 있는 응답에 ajv `toBe(false)` 를 걸면 결함이
+      //   테스트로 고정된다(#314 리뷰). 부재만 특성화한다. 정본 §12-1 미완 ⓐ.
+      expect(response.body.code).toBeUndefined();
+    });
+
+    it('⭐ `measurements` 를 실으면 치환이고 생략하면 손대지 않는다', async () => {
+      const measurement = (specId: bigint, value: number) => ({
+        inspectionItemSpecId: Number(specId),
+        sampleNo: 1,
+        numericValue: value,
+        judgmentCode: 'ACCEPTED',
+        measuredAt: INSPECTED_W,
+      });
+      const inspectionResultId = await newDraft(await newRequest(), {
+        measurements: [measurement(ids.itemSpecA, 10), measurement(ids.itemSpecB, 20)],
+      });
+      const scope = { inspection_result_id: BigInt(inspectionResultId) };
+
+      // 생략 — 손대지 않는다(빈 배열과 다르다).
+      await put(inspectionResultId, { remarks: '측정치는 안 건드린다' }, 1).expect(200);
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(2);
+
+      // 실으면 전건 치환이다 — 부분 병합이 아니다(§1-3).
+      await put(inspectionResultId, { measurements: [measurement(ids.itemSpecA, 99)] }, 2).expect(200);
+      const rows = await prisma.inspection_measurement.findMany({ where: scope, select: { inspection_item_spec_id: true, numeric_value: true } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].inspection_item_spec_id).toBe(ids.itemSpecA);
+      expect(Number(rows[0].numeric_value)).toBe(99);
+
+      // 빈 배열은 «전건 삭제»다 — 생략과 다르다. 설계 미정 — 문의 086(계약이 완전히 침묵한다).
+      await put(inspectionResultId, { measurements: [] }, 3).expect(200);
+      expect(await prisma.inspection_measurement.count({ where: scope })).toBe(0);
+    });
+
+    it('없는 `inspectionResultId` 는 404 다(계약 선언) · 값 목록 밖 판정은 400 `INVALID`', async () => {
+      await put(999_999_999, { remarks: '없는 대상' }, 1).expect(404);
+
+      const inspectionResultId = await newDraft(await newRequest());
+      // ⛔ 공백 문자열도 「값 목록 밖」이라 걸린다 — `assertCodeValues` 가 빈 문자열을 값으로 본다.
+      const blank = await put(inspectionResultId, { overallJudgmentCode: ' ' }, 1).expect(400);
+      expect(blank.body.errors[0]).toMatchObject({ field: 'overallJudgmentCode', code: 'INVALID' });
+    });
+
+    it('⭐ #314 Major — `PUT` 도 같은 하한을 건다: `inspectedQty` 0·음수 · `heldQty` 음수 · `sampleNo` 0', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+
+      const zero = await put(inspectionResultId, { inspectedQty: 0 }, 1).expect(400);
+      expect(zero.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'RANGE' }));
+
+      const mixed = await put(inspectionResultId, { inspectedQty: -5, heldQty: -1 }, 1).expect(400);
+      expect(mixed.body.errors.map((item: { field: string }) => item.field)).toEqual(['inspectedQty', 'heldQty']);
+
+      const sample = await put(
+        inspectionResultId,
+        { measurements: [{ inspectionItemSpecId: Number(ids.itemSpecA), sampleNo: 0, judgmentCode: 'ACCEPTED', measuredAt: INSPECTED_W }] },
+        1,
+      ).expect(400);
+      expect(sample.body.errors).toContainEqual(expect.objectContaining({ field: 'measurements[0].sampleNo', code: 'RANGE' }));
+
+      // 400 이 먼저 났으니 버전이 안 올랐다 — 화면의 If-Match 가 그대로 산다.
+      const after = await request(app.getHttpServer()).get(`${RESULTS}/${inspectionResultId}`).set('Cookie', cookie).expect(200);
+      expect(after.body.versionNo).toBe(1);
+    });
+
+    it('무권한 계정은 `PUT` 에서 403 이다', async () => {
+      const inspectionResultId = await newDraft(await newRequest());
+      await put(inspectionResultId, { remarks: '권한 없음' }, 1, noPermCookie).expect(403);
+    });
+  });
+
+  // ── 확정(PR ④) 공용 도구 ────────────────────────────────────────────────────
+  /** 입하 LOT 이 태어날 때 걸리는 보류(`lot-registry.service.ts:16`). 확정이 닫는 유일한 사유다. */
+  const INCOMING_HOLD = 'INCOMING_INSPECTION_WAIT';
+  const CONFIRM_RELEASE_REASON = 'INCOMING_INSPECTION_PASSED'; // 설계 미정 — 문의 087
+  const HELD_AT = '2026-08-31T00:00:00.000Z';
+  let confirmSeq = 0;
+
+  /**
+   * 확정 단언마다 «자기 LOT»을 세운다 — 전이가 서로를 흔들면 어느 단언이 무엇을 지키는지
+   * 알 수 없다. `workOrderId` 를 주면 C14 대상인 **선발행 생산LOT**(`work_order_lot_seq` 보유)이다.
+   */
+  async function newLot(
+    statusCode: string,
+    options: { holds?: string[]; workOrderId?: bigint; seq?: number } = {},
+  ): Promise<bigint> {
+    confirmSeq += 1;
+    const workOrderId = options.workOrderId;
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT-CF${confirmSeq}`,
+        item_id: ids.item2,
+        lot_type_code: workOrderId === undefined ? 'RAW_MATERIAL' : 'PRODUCTION',
+        plant_id: ids.plant,
+        initial_qty: 100,
+        uom_id: ids.uom,
+        source_type_code: workOrderId === undefined ? 'INBOUND_RECEIPT_LINE' : 'WORK_ORDER',
+        source_id: workOrderId ?? ids.plant,
+        status_code: statusCode,
+        work_order_lot_seq: options.seq ?? null,
+      },
+    });
+    for (const reason of options.holds ?? []) {
+      // ⚠ `held_at` 은 «과거»여야 한다 — `ck_lot_hold_release`(`released_at >= held_at`)가
+      //    해제 UPDATE 를 500 으로 튕긴다. 검사 시각(`INSPECTED_W`)은 미래 날짜라 못 쓴다.
+      await prisma.lot_hold.create({
+        data: { lot_id: lot.lot_id, reason_code: reason, status_code: 'HELD', held_at: new Date(HELD_AT) },
+      });
+    }
+    return lot.lot_id;
+  }
+
+  async function newWorkOrder(): Promise<bigint> {
+    confirmSeq += 1;
+    const row = await prisma.work_order.create({
+      data: {
+        work_order_no: `${PREFIX}-WO-CF${confirmSeq}`,
+        routing_operation_id: ids.routingOperation,
+        item_id: ids.item2,
+        order_qty: 100,
+        uom_id: ids.uom,
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    return row.work_order_id;
+  }
+
+  /** ⛔ `${PREFIX}-IR-CF…` — `q=${PREFIX}-IR-1` 단언과 `itemId=item1` 건수를 안 건드린다. */
+  async function newConfirmRequest(
+    options: { lotId?: bigint; typeCode?: string; planVersionId?: bigint; workOrderId?: bigint } = {},
+  ): Promise<number> {
+    confirmSeq += 1;
+    const row = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IR-CF${confirmSeq}`,
+        inspection_type_code: options.typeCode ?? 'IQC',
+        inspection_plan_version_id: options.planVersionId ?? ids.inspectionPlanVersion,
+        target_type_code: options.lotId === undefined ? 'WORK_ORDER' : 'LOT',
+        target_id: options.lotId ?? options.workOrderId ?? ids.workOrder,
+        item_id: ids.item2,
+        lot_id: options.lotId ?? null,
+        work_order_id: options.workOrderId ?? null,
+        target_qty: 100,
+        uom_id: ids.uom,
+        status_code: 'REQUESTED',
+        requested_at: new Date(REQUESTED_R1),
+      },
+    });
+    return Number(row.inspection_request_id);
+  }
+
+  /** LOT 이 붙은 의뢰 + 그 위의 작성중 결과를 한 번에. 수량은 확정이 통과하는 모양으로 준다. */
+  async function newConfirmable(
+    lotStatus: string,
+    holds: string[],
+    quantities: Record<string, unknown> = { acceptedQty: 100 },
+  ): Promise<{ inspectionRequestId: number; inspectionResultId: number; lotId: bigint }> {
+    const lotId = await newLot(lotStatus, { holds });
+    const inspectionRequestId = await newConfirmRequest({ lotId });
+    return { inspectionRequestId, inspectionResultId: await newDraft(inspectionRequestId, quantities), lotId };
+  }
+
+  function confirm(
+    inspectionResultId: number,
+    body: Record<string, unknown>,
+    version: number | null,
+    options: { session?: string[]; key?: string } = {},
+  ) {
+    const call = request(app.getHttpServer())
+      .post(`${RESULTS}/${inspectionResultId}:confirm`)
+      .set('Cookie', options.session ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID());
+    if (version !== null) call.set('If-Match', String(version));
+    return call.send(body);
+  }
+
+  const eventsOf = (lotId: bigint) => prisma.lot_status_event.findMany({ where: { lot_id: lotId } });
+  const lotOfId = (lotId: bigint) =>
+    prisma.lot.findUniqueOrThrow({ where: { lot_id: lotId }, select: { status_code: true, version_no: true } });
+  const holdsOf = (lotId: bigint) => prisma.lot_hold.findMany({ where: { lot_id: lotId }, orderBy: { lot_hold_id: 'asc' } });
+
+  describe('확정 (PR ④) — ⭐ 심장', () => {
+    it('⭐ 합격이 LOT 을 `NORMAL` 로 옮기고 `C4` 이력 1행을 남기며 수입검사 보류 3칸을 채운다', async () => {
+      const { inspectionRequestId, inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(200);
+
+      expect(response.body).toMatchObject({
+        inspectionResultId,
+        statusCode: 'CONFIRMED',
+        overallJudgmentCode: 'ACCEPTED',
+        versionNo: 2,
+      });
+      expect(response.body.confirmedAt).toEqual(expect.any(String));
+      expect(response.headers.etag).toBe('2');
+      expect(validator('POST /quality/inspection-results/{inspectionResultId}:confirm')(response.body)).toBe(true);
+
+      // ⓐ LOT 이 «실제로» 옮겨졌다 — 상태와 ETag 축이 함께 움직인다.
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'NORMAL', version_no: 2 });
+
+      // ⓑ 이력이 «1행 늘고» 전이 코드는 계약이 이름 적은 값이다(지어낸 값이 아니다).
+      const events = await eventsOf(lotId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        previous_status_code: 'INSPECTION_PENDING',
+        new_status_code: 'NORMAL',
+        transition_code: 'C4',
+        source_document_type_code: 'INSPECTION_RESULT',
+        source_document_id: BigInt(inspectionResultId),
+      });
+      // ⛔ 재고 차원 세 칸은 비운다 — 원장을 지나지 않는다(§9-1 #2).
+      expect(events[0].quality_status_code).toBeNull();
+      expect(events[0].location_id).toBeNull();
+
+      // ⓒ 보류가 닫힌다 — `ck_lot_hold_release_reason` 이 사유를 강제한다.
+      const holds = await holdsOf(lotId);
+      expect(holds).toHaveLength(1);
+      expect(holds[0].released_at).not.toBeNull();
+      expect(holds[0].released_by).not.toBeNull();
+      // ⭐ 설계 미정 — 문의 087. 시드 4값에 「1회차 합격」에 맞는 값이 0개다(RETEST_* 는 C7·C8 전용).
+      expect(holds[0].release_reason_code).toBe(CONFIRM_RELEASE_REASON);
+
+      // 의뢰가 완료로 간다 — 전이표 «밖»의 부수효과(§7-3 유일한 예외).
+      const requestRow = await prisma.inspection_request.findUniqueOrThrow({
+        where: { inspection_request_id: BigInt(inspectionRequestId) },
+        select: { status_code: true },
+      });
+      expect(requestRow.status_code).toBe('COMPLETED');
+    });
+
+    it('⭐ ⓓ 불합격은 `DEFECTIVE`+`C6` 이고 보류를 «닫지 않는다» — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
+
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'DEFECTIVE', version_no: 2 });
+      expect((await eventsOf(lotId)).map((event) => event.transition_code)).toEqual(['C6']);
+      const holds = await holdsOf(lotId);
+      expect(holds[0].released_at).toBeNull();
+      expect(holds[0].release_reason_code).toBeNull();
+    });
+
+    it('보류 판정은 `INSPECTION_PENDING`+`C5` 이고 역시 보류를 닫지 않는다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('NORMAL', [INCOMING_HOLD], { heldQty: 100 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'HELD' }, 1).expect(200);
+
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 2 });
+      expect((await eventsOf(lotId)).map((event) => event.transition_code)).toEqual(['C5']);
+      expect((await holdsOf(lotId))[0].released_at).toBeNull();
+    });
+
+    it('⭐ ⓔ R-11 — 다른 열린 보류가 남아 있으면 합격이어도 `NORMAL` 로 «안» 올린다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD, 'FOREIGN_MATTER_SUSPECTED']);
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(200);
+
+      // 중복 보류가 허용된다(`W-03-02` §4-B) — 수입검사 보류만 닫고 올리면 의심자재 보류가
+      // 열린 채 출고가 풀린다. 상태도 ETag 도 그대로다.
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
+      expect(await eventsOf(lotId)).toHaveLength(0);
+      const holds = await holdsOf(lotId);
+      expect(holds[0].released_at).not.toBeNull(); // 수입검사 보류는 닫혔다
+      expect(holds[1].released_at).toBeNull(); // 의심자재 보류는 열려 있다
+    });
+
+    it('⭐ R-10 — `lot_id` 가 없는 의뢰는 전이 없이 확정만 한다(⛔ W/O 전체로 넓히지 않는다)', async () => {
+      const workOrderId = await newWorkOrder();
+      const slotA = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const slotB = await newLot('NORMAL', { workOrderId, seq: 2 });
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 100 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(200);
+
+      // 계획안 본문 §3-3 의 옛 규칙(「`targetTypeCode='WORK_ORDER'` 면 W/O 축」)대로 넓혔다면
+      // 이 둘이 옮겨진다 — R-10 이 그 규칙을 뒤집었다.
+      expect(await eventsOf(slotA)).toHaveLength(0);
+      expect(await eventsOf(slotB)).toHaveLength(0);
+      expect((await lotOfId(slotA)).status_code).toBe('NORMAL');
+    });
+
+    it('⭐ 계획안 §8-3 #39 뒤집힘 — `DEFECTIVE` LOT 의 재검 합격 확정이 400 `STATE_LOCKED` 다(R-1 의 필연 · 문의 088)', async () => {
+      const { inspectionRequestId, inspectionResultId, lotId } = await newConfirmable('DEFECTIVE', []);
+
+      const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(400);
+      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+
+      // 트랜잭션이 통째로 되돌아간다 — 결과·의뢰·LOT 셋 다 그대로다(부분 확정이 없다).
+      const [result, requestRow] = await Promise.all([
+        prisma.inspection_result.findUniqueOrThrow({
+          where: { inspection_result_id: BigInt(inspectionResultId) },
+          select: { status_code: true, version_no: true, confirmed_at: true },
+        }),
+        prisma.inspection_request.findUniqueOrThrow({
+          where: { inspection_request_id: BigInt(inspectionRequestId) },
+          select: { status_code: true },
+        }),
+      ]);
+      expect(result).toEqual({ status_code: 'DRAFT', version_no: 1, confirmed_at: null });
+      expect(requestRow.status_code).toBe('REQUESTED');
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'DEFECTIVE', version_no: 1 });
+    });
+
+    it('이미 확정된 결과를 다시 `:confirm` 하면 400 `STATE_LOCKED` — `PUT`(409 `INVALID_STATE`)과 봉투가 다르다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(200);
+
+      const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 2).expect(400);
+      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      expect(response.body.code).toBeUndefined(); // 409 봉투가 아니다
+      // 두 번째 호출이 LOT 을 한 번 더 옮기지 않았다.
+      expect(await eventsOf(lotId)).toHaveLength(1);
+    });
+
+    it('⭐ `If-Match` 가 어긋나면 409 `VERSION_CONFLICT` + `currentVersion`·`currentLotStatusCode` — 상태보다 «먼저» 본다', async () => {
+      const { inspectionResultId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 99).expect(409);
+
+      expect(response.body).toMatchObject({
+        code: 'VERSION_CONFLICT',
+        conflictCause: 'user',
+        currentVersion: '1',
+        // ⛔ 계약이 「message 자유 텍스트에서 파싱하지 않는다 — 이 구조화 칸이 정본」이라 못박았다.
+        currentLotStatusCode: 'INSPECTION_PENDING',
+      });
+      expect(validator('POST /quality/inspection-results/{inspectionResultId}:confirm', 409)(response.body)).toBe(true);
+    });
+
+    it('`If-Match` 없이 부르면 400 이고, 없는 결과 id 는 404 다', async () => {
+      const { inspectionResultId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, null).expect(400);
+      await confirm(999_999_999, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(404);
+    });
+
+    it('저장된 판정도 본문 판정도 없으면 400 `REQUIRED` · 값 목록 밖이면 400 `INVALID`', async () => {
+      const { inspectionResultId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      const missing = await confirm(inspectionResultId, {}, 1).expect(400);
+      expect(missing.body.errors).toContainEqual(expect.objectContaining({ field: 'overallJudgmentCode', code: 'REQUIRED' }));
+
+      const bogus = await confirm(inspectionResultId, { overallJudgmentCode: 'BOGUS' }, 1).expect(400);
+      expect(bogus.body.errors[0]).toMatchObject({ field: 'overallJudgmentCode', code: 'INVALID' });
+    });
+
+    it('⭐ 조건부 CHECK 가 확정에서 «처음» 깨어난다 — 수량 합이 안 맞으면 400 `INVALID`(500 이 아니다)', async () => {
+      // 작성중으로는 합이 0 ≠ 100 이어도 선다(M-e ⓑ). `:confirm` 이 상태를 CONFIRMED 로 올리는
+      // 순간 `ck_inspection_result_qty` 가 발화하므로 서비스가 먼저 400 을 내야 한다.
+      const lotId = await newLot('INSPECTION_PENDING', { holds: [INCOMING_HOLD] });
+      const inspectionRequestId = await newConfirmRequest({ lotId });
+      const inspectionResultId = await newDraft(inspectionRequestId, {});
+
+      const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(400);
+      expect(response.body.errors).toContainEqual(expect.objectContaining({ field: 'inspectedQty', code: 'INVALID' }));
+
+      const result = await prisma.inspection_result.findUniqueOrThrow({
+        where: { inspection_result_id: BigInt(inspectionResultId) },
+        select: { status_code: true },
+      });
+      expect(result.status_code).toBe('DRAFT');
+      expect(await eventsOf(lotId)).toHaveLength(0);
+    });
+
+    it('⭐ ⓕ C14 — PQC 불합격 수량이 `acceptance_number` 를 넘으면 같은 W/O 의 생산LOT 전체가 `INSPECTION_PENDING` 이 되고 `from` 밖 LOT 은 건너뛴다', async () => {
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const scrapped = await newLot('SCRAPPED', { workOrderId, seq: 2 });
+      const notASlot = await newLot('NORMAL', { workOrderId }); // 선발행 슬롯이 아니다(seq 없음)
+      const inspectionRequestId = await newConfirmRequest({
+        typeCode: 'PQC',
+        workOrderId,
+        planVersionId: ids.c14PlanVersion,
+      });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
+
+      // 옮겨진 것 — 자기 자신으로 가는 전이가 아니라 NORMAL → INSPECTION_PENDING 이다.
+      expect(await lotOfId(slot)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 2 });
+      expect((await eventsOf(slot)).map((event) => event.transition_code)).toEqual(['C14']);
+      // ⭐ 건너뛴 것 — `SCRAPPED` 하나가 섞였다고 PQC 확정 전체가 막히면 안 된다(R-7).
+      expect(await lotOfId(scrapped)).toEqual({ status_code: 'SCRAPPED', version_no: 1 });
+      expect(await eventsOf(scrapped)).toHaveLength(0);
+      // 슬롯이 아닌 LOT 은 애초에 대상이 아니다.
+      expect(await eventsOf(notASlot)).toHaveLength(0);
+    });
+
+    it('`acceptance_number` 가 null 이면 C14 판정을 «건너뛴다» — 0 으로 접지 않는다', async () => {
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
+
+      expect(await eventsOf(slot)).toHaveLength(0);
+    });
+
+    it('IQC 확정은 `acceptance_number` 가 있어도 C14 를 돌지 않는다', async () => {
+      const workOrderId = await newWorkOrder();
+      const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
+      const inspectionRequestId = await newConfirmRequest({ workOrderId, planVersionId: ids.c14PlanVersion });
+      const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
+
+      expect(await eventsOf(slot)).toHaveLength(0);
+    });
+
+    it('같은 `Idempotency-Key` 재전송이 «한 번만» 전이한다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+      const key = randomUUID();
+
+      const first = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1, { key }).expect(200);
+      const again = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1, { key }).expect(200);
+
+      expect(again.body.versionNo).toBe(first.body.versionNo);
+      expect(await eventsOf(lotId)).toHaveLength(1);
+      expect((await lotOfId(lotId)).version_no).toBe(2);
+    });
+
+    it('무권한 계정은 `:confirm` 에서 403 이다', async () => {
+      const { inspectionResultId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD]);
+
+      await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1, { session: noPermCookie }).expect(403);
     });
   });
 
@@ -735,6 +1338,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       },
     });
     ids.workOrder = workOrder.work_order_id;
+    ids.routingOperation = routingOperation.routing_operation_id;
 
     // 검사기준 — FK 를 채우는 최소 골격. 항목 규격·검교정은 PR ⑤ 몫이다.
     const plan = await prisma.inspection_plan.create({
@@ -762,6 +1366,20 @@ describe('검사 의뢰·결과 (e2e)', () => {
           data_type_code: 'NUMERIC',
         },
       });
+    // ⭐ C14 의 근거 필드 — `acceptance_number` 가 있는 두 번째 기준 버전(`W-06-02:106`).
+    //    기준 버전 1(위)은 이 칸이 null 이라 「판정을 건너뛴다」 갈래의 근거가 된다.
+    const c14Version = await prisma.inspection_plan_version.create({
+      data: {
+        inspection_plan_id: plan.inspection_plan_id,
+        plan_version: 2,
+        effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        sampling_method_code: 'SAMPLE_BY_LOT',
+        inspection_frequency_code: 'EVERY_LOT',
+        status_code: 'ACTIVE',
+        acceptance_number: 5,
+      },
+    });
+    ids.c14PlanVersion = c14Version.inspection_plan_version_id;
     ids.itemSpecA = (await specOf(10, `${PREFIX}-SPEC-A`)).inspection_item_spec_id;
     ids.itemSpecB = (await specOf(20, `${PREFIX}-SPEC-B`)).inspection_item_spec_id;
 
@@ -987,6 +1605,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.inbound_receipt_line.deleteMany({ where: { inbound_receipt: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    // 확정(PR ④) 픽스처가 처음 심는 표다 — LOT 보다 먼저 지워야 FK 가 안 막는다.
+    await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.inbound_receipt.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });

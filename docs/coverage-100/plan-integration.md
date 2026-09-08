@@ -126,7 +126,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | `POST /logistics/shipments/{id}:cancel` | 없음 | 되돌림 | `GOODS_ISSUE` 역트랜잭션 |
 | `POST /logistics/stock-reinstatements` | 반품 보관 위치 | 판매 가능 위치 | `STOCK_TRANSFER` |
 | `POST /logistics/document-progress/{type}/{id}:cancel` | 역방향 | 역방향 | 원 문서와 **같은 값** + `reversal_of_transaction_id` |
-| `POST /inventory/handling-units/{id}:pack` · `PUT .../contents` | — | — | **원장 없음이 유력** — 포장은 차원(`handling_unit_id`)만 바꾼다. §2 절차 대상 |
+| `POST /inventory/handling-units/{id}:pack` · `PUT .../contents` | — | — | **원장 없음 — 확정**(I-16 재수립 R-20). ⛔ ~~포장은 차원(`handling_unit_id`)만 바꾼다~~ 는 **뒷절이 틀렸다** — `uq_inventory_balance_dim` **11칸에 그 칸이 없다**(psql 실측). 잔량 차원 자체가 취급단위를 모르므로 「차원을 바꾼다」가 성립하지 않는다. 결론(원장 미경유)은 같다 |
 | `PUT /inventory/counts/{id}/lines` · `:close` | — | — | **원장 없음** — 실사는 조정을 만들고 조정이 전기한다(결정 49) |
 | `POST /logistics/material-issue-requests` | — | — | **원장 없음**, `inventory_reservation` 만 건다 |
 | `POST /logistics/picking-orders/.../{id}:pick` | — | — | **원장 없음**, `reserved_qty` → `picked_qty` 이동 |
@@ -174,10 +174,10 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-10 | 자재 투입·반출 + 계보 | 6 | I-9·I-7 | 있음 · `lot_relation` 은 이 슬라이스가 쓰지 않는다(052) | **2** NOT NULL 완화(`terminal_id`·`return_quality_status_code`) | ✕ | ✕ | 3 |
 | I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | **1** NOT NULL 완화(`work_session.shift_id` · R-3) | ✕ | ⭕ 세션 | 5 |
 | I-12 | 적치 완료·임시적재 | 4 | (입고 구현됨) | 있음 | ✕ | ⭐ | ⭕ | 2 |
-| I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | ✕ | ⭐ ×2 | ⭕ | 3 |
-| I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | ✕ | ⭐ | ⭕ | 3 |
+| I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | **⭕ A4** | ⭐ ×2 | ⭕ | **4** |
+| I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | **⭕ N-1** | ⭐ | ⭕ | **4** |
 | I-15 | 실사 | 6 | I-14 | 있음 | ✕ | ✕(조정이 진다) | ⭕ | 3 |
-| I-16 | 취급 단위·포장·재구성 | 7 | I-12 | 있음(`handling_unit_reconfiguration`) | ✕ | ⚠ 미정 | ⭕ | 3 |
+| I-16 | 취급 단위·포장·재구성 | 7 | I-12 | **신설 2**(`handling_unit_repack_event(+_line)`) | **⭕ N-2** | **✕ 확정**(원장 미경유) | ⭕ | **4** |
 | I-17 | 재생재 등록 | 1 | I-3 | 있음(`recycle_entry`) | ⚠ `item.mes_category_code` 없음(#64) | ⭐ | ✕ | 1 |
 | I-18 | LOT 부가·상태 이력·IQC 생략 | 5 | I-1 | 있음 | ✕ | ✕ | ✕ | 2 |
 | I-19 | 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | 있음 | ⚠ `#280` 검사 의뢰 기준 완화 | ✕ | ⭐ 품질 축 | 4 |
@@ -322,7 +322,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-13 · 재고 이동 — 반출·도착 2단 — 6건
 
 **체인 마디**: 창고 간 이동. 체인의 본줄기가 아니라 «가지»이지만 **`IN_TRANSIT` 를 처음 쓰는 자리**다(~~I-9 판정의 선례가 된다~~ — I-9 는 `IN_TRANSIT` 를 안 쓰고 먼저 닫혔다 · I-9 R-17).
-**원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, `AVAILABLE`}. `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
+**원장**: ⭐ 두 번 — 반출이 `from`=출발, `to`={도착 창고, `IN_TRANSIT`} · 도착이 `from`={도착 창고, `IN_TRANSIT`}, `to`={도착 창고·위치, **반출 원장 라인의 `from_inventory_status_code`**}. ⛔ ~~`AVAILABLE` 고정~~ — 고정하면 **보류 재고가 이동만으로 가용이 된다**(세탁). 화면 `M-01-10` §5-3·§6 이 보류 LOT 이동을 「경고 + 진행 가능」(결정 14)으로 **정상 경로**로 열었고, 적치·출고 선례도 상태를 바꾸지 않는다(`putaway-posting.ts:52-53`·`issue-posting.ts:196-198`) · I-13 재수립 R-2. ⚠ 도착 손검사는 **반출 원장이 준 11칸으로 잠근 행**에서 한다 — 7칸 잠금 그대로면 두 번째 이동이 언제나 400 이다(R-6). `stock_transfer_line` 이 `issue_transaction_line_id`·`receipt_transaction_line_id` **두 칸**을 가진 것이 이 2단의 물증이다.
 **예상 설계 미정**: `IN_TRANSIT` 행의 `location_id` 는 NOT NULL 인데 이동 중에는 위치가 없다. → 2단계 기준 3 → 도착 위치를 미리 쓴다(`to_location_id`).
 ⛔ **취소는 I-13 이 만들지 않는다**(2026-09-07 · 레인 C 지적). 문서는 **1건**이고 원장 전기가 2회일 뿐이다(계약 `x-internal-note` 「두 문서가 아니라 한 문서의 두 전이다」). 취소 API 의 `documentTypeCode` 는 입하·입고·출고 3종뿐이라 `STOCK_TRANSFER` 에 실행 경로가 없고, `document-type-registry.ts` 도 `cancelable: false` 로 이미 등록했다. §508 의 「I-13 이 각자 취소를 짠다」는 I-5 를 앞당긴 «이유»를 적은 문장이지 I-13 의 범위가 아니다 — 미지원으로 두고 문의로 올린다.
 
@@ -332,20 +332,20 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: 원장을 직접 움직이는 넷째 판별자. 실사(I-15)·생산창고 차이(I-9)·호퍼 실측이 모두 여기로 모인다.
 **원장**: ⭐ `INVENTORY_ADJUSTMENT`. 라인이 증/감을 함께 담으므로 `from`만/`to`만 라인이 섞인다.
 **승인**: `:request-approval` → I-1 재사용. `:post` 는 승인이 안 끝났으면 400(계약).
-**예상 설계 미정**: 조정이 «어느 상태로» 넣는가(`quality_status_code`·`inventory_status_code`) — 라인이 실어 보내는지 계약을 다시 읽어야 한다. 안 실으면 2단계 기준 4「조용히 도출하지 않는 쪽」 → 400.
+**설계 미정 — 판정됨**(I-14 재수립 R-1): 조정이 «어느 상태로» 넣는가(`quality_status_code`·`inventory_status_code`). 계약은 **안 싣는다**(실측). ⇒ **등록·치환 시점에 잔액 행에서 읽어 라인에 저장**하고 `:post` 는 저장값을 그대로 `PostingEndpoint` 에 싣는다 — 0행이면 400, 2행+면 400(2단계 기준 4 · 문의 130). ⚠ 전기 손검사는 **저장된 두 코드로 좁힌 11칸 행**에서 한다(잠금은 7칸 · R-2).
 
 
 ##### I-15 · 실사 — 개시·라인·마감 — 6건
 
 **체인 마디**: 실사 → 차이 → 조정(I-14). ⛔ **실사 자신은 원장을 쓰지 않는다** — 결정 49 「잔량 직접 덮어쓰기 금지」.
 `POST /inventory/counts` 는 라인을 **서버가 장부에서 만든다**(화면이 열거하지 않는다) — 창고 하나에 수천 라인이라 페이지네이션이 필수.
-**예상 설계 미정**: `:close` 의 통과 조건(「미실사 0 · 차이 없음 또는 전부 조정됨」)은 계약이 적었다. 「조정됨」을 무엇으로 판정하나 — `inventory_count_line` ↔ `inventory_adjustment_line` 연결이 필요하다. `inventory_adjustment.inventory_count_id` 로 헤더는 이어지나 라인 대응이 없다. → 가장자리 → 헤더 단위로 판정하고 요청서에 싣는다.
+**예상 설계 미정**: `:close` 의 통과 조건(「미실사 0 · 차이 없음 또는 전부 조정됨」)은 계약이 적었다. 「조정됨」을 무엇으로 판정하나 — `inventory_count_line` ↔ `inventory_adjustment_line` 연결이 필요하다. `inventory_adjustment.inventory_count_id` 로 헤더는 이어진다. ⭐ **라인 대응은 I-14 가 연다** — 마이그 N-1(`inventory_adjustment_line.inventory_count_line_id`)가 서므로 I-15 는 헤더 단위로 물러설 필요가 없다(I-14 재수립 R-4). 판정식: 「이 실사의 `variance_qty <> 0` 인 `inventory_count_line` 중, `inventory_adjustment_line.inventory_count_line_id` 로 가리켜지고 그 조정 헤더가 `POSTED` 인 것이 아닌 행이 0」. ⚠ I-15 가 `TRUNCATE … CASCADE` 를 쓰면 조정 라인이 함께 비워진다.
 
 
 ##### I-16 · 취급 단위 — 등록·구성·포장확정·재구성 이력 — 7건
 
 **체인 마디**: 포장 단위 — I-22 의 `shipment_lot_allocation` 에 연결된다(`PUT /logistics/shipment-lot-allocations/{id}`).
-**원장**: ⚠ 미정. 포장은 «어디 있나»를 바꾸지 않고 `handling_unit_id` 차원만 붙인다. `inventory_transaction_line.handling_unit_id` 칸은 있다. → 2단계 기준 1「재고를 안 쓰는 쪽」 → **원장을 만들지 않는다**. 재구성 이력은 `handling_unit_reconfiguration`(+`_line`)에 적는다 — 표가 이미 있다(계약이 「데이터 모델 담당에게 통지」라 적었지만 **실측으로 이미 서 있다** — 되돌림에 적는다).
+**원장**: ⚠ 미정. 포장은 «어디 있나»를 바꾸지 않고 `handling_unit_id` 차원만 붙인다. `inventory_transaction_line.handling_unit_id` 칸은 있다. → 2단계 기준 1「재고를 안 쓰는 쪽」 → **원장을 만들지 않는다**. ⛔ ~~재구성 이력은 `handling_unit_reconfiguration`(+`_line`)에 적는다 — 표가 이미 있다~~ — **이름만 보고 칸을 안 본 판정이었다**(I-16 재수립 R-1). 그 표는 라인 필수 6칸 중 **4칸이 없고**(`handling_unit_id`·`role_code`·`qty_before`·`qty_after`), 헤더 NOT NULL 3칸이 계약에 원천 0 이며, 결정타로 **`ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약의 대표 경로(한 HU 의 `PUT …/contents`)를 구조적으로 막는다.** 재사용하려면 FK 있는 NOT NULL 칸(`uom_id`)을 지어내고 `moved_qty > 0` 도 풀어야 한다 ⇒ **표 2 신설(N-2)**. 계약이 「데이터 모델 담당에게 통지 — 기다리지 않는다」라 적은 것이 **아직 유효하다**(문의 140).
 
 
 ##### I-17 · 재생재 등록 — 1건
@@ -375,7 +375,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 
 ##### I-20 · LOT 상태·보류 — 등록·해제·전이·요약 — 10건
 
-**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»** — I-4 는 `judgment_type_control.blocks_issue` 를 이미 읽으므로 I-20 이 하는 일은 **그 표에 행을 «채우는» 것**(`JUDGMENT_TYPE` 코드값 + 통제표)이지 코드가 아니다(I-4 재수립 R-7).
+**체인 마디**: 보류 등록/해제가 출고·출하·피킹의 가부를 바꾼다(결정 10 단일 지점). **I-4·I-8·I-22 가 이 판정을 «읽는다»**.
+⛔ **2026-09-08 정정(I-20 계획 · api 관점 확인)** — 「I-20 이 `judgment_type_control` 에 행을 채운다」는 **전제가 두 겹으로 깨졌다**: ⓐ 쓰는 오퍼레이션(`PUT /mdm/judgment-type-controls/{codeValueId}`)이 **이미 구현·커버**돼 있고 ⓑ `JUDGMENT_TYPE` 은 **회신 E-1 대기로 잠긴 빈 그룹**이라 시드로도 채우면 안 된다(quality-03 계약에 `judgment` 문자열 0건 · `assignment.tsv`·`uncovered.tsv` 0행) ⇒ **이 슬라이스는 그 표에 아무것도 하지 않는다.**
 **원장**: ⛔ 없다 — 계약이 「`inventory_balance.blocked_qty` 는 쓰지 않는다. 잔액은 서버가 파생한다」로 못 박았다.
 **트랜잭션**: `lot_hold` INSERT + `lot.status_code` UPDATE + `lot_status_event` 가 **한 트랜잭션**(B-8).
 **예상 설계 미정**: 회신 11(보류 해제 사유 — 철회 예정) · 회신 13(`LOT_HOLD_STATUS` 시드). 13 은 §Z-3 에서 이미 판정했다(`HELD` 를 넣되 해제 판정은 `released_at IS NULL`) — **반복하지 않고 그대로 쓴다**.
@@ -675,7 +676,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 |---|---|---|---|
 | 1 | **원장 판별자를 늘리고 싶어진다.** 투입·실적·출하를 각각 `MATERIAL_CONSUMPTION`·`PRODUCTION_RESULT`·`SHIPMENT` 로 원장에 넣으려는 유혹 — **반출도**(`material_return_line.inventory_transaction_line_id` 칸이 있다고 `STOCK_TRANSFER` 를 만들려는 유혹 · I-10 재수립 R-2) | I-10 · I-7 · I-23 | §1-4 표를 계획서에 못 박았다. 계약 `InventoryTransaction.sourceDocumentTypeCode` **enum 4값**이 정본이고, 늘리려면 계약을 고쳐야 한다 |
 | 2 | **`reserved_qty`·`picked_qty` 를 도메인이 직접 UPDATE 한다.** 코어가 안 건드리니 「내가 하면 되지」가 된다 | I-8 에서 시작해 I-22 로 번진다 | I-8 을 코어 전용 PR 로 자르고, ~~e2e 에 「도메인이 `inventory_balance` 를 직접 쓰지 않는다」를 잔액 UPDATE 트리거로 감지~~ **정적 가드 spec**(`balance-write-guard.spec.ts` · 정규식 3패턴 — 잔액 UPDATE 트리거가 없고 코어 자신이 UPDATE 하므로 DB 층에서 주체를 못 가른다 · I-8 §3-8 · R-8) |
-| 3 | **역트랜잭션이 3벌 생긴다** — 취소·출하 취소·조정 역분개(실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19) | I-5 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
+| 3 | **역트랜잭션이 ~~3벌~~ 2벌 생긴다** — 취소·출하 취소. ⛔ **조정 역분개는 오늘 서지 않는다**(I-14 재수립 R-12 — 계약 조정 7건에 `:cancel`·`:reverse` 0건 · `DocumentProgress.documentTypeCode` enum 9값에 `INVENTORY_ADJUSTMENT` 없음 · 문의 132. 회신이 오면 되살아난다) ⇒ `reverse()` 의 **둘째 사용처는 I-23** 이다. 실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19 | I-5 → ~~I-14~~ → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
 | 4 | **채번이 15벌 복사된다.** 입고에 이미 `count()+1` 이 있어 복사가 자연스럽다. 취소가 생기면 번호를 **재사용**한다 | I-2 를 늦추면 I-3·I-4·I-13·I-14·I-15·I-22·I-23 전부 | I-2 에서 코어로 세우고 **입고의 두 함수를 그 코어로 옮기는 것**까지 같은 PR |
 | 5 | **`document-progress` 의 유형↔표 대응을 코드에 박는다.** 9종 × 후속 판정이라 `switch` 가 자연스럽다 | I-5, 그리고 유형이 느는 순간 조용히 틀린다 | `app.entity_type_registry` 표가 이미 있다 — 거기서 읽는다. 계약이 명시적으로 서버 소유로 넘긴 자리(A-10 보강) | ⭐ I-5 R-6: **절반 기각** — 매핑은 코드 · 등록부는 부팅 대조로 남긴다.
 | 6 | **생산창고 차이를 원장으로 처리해 버린다.** `businessDate` 가 실려 있어 「전기해야 하나 보다」로 읽힌다 | I-9 | §3-1 I-9 의 §2 판정을 따른다 — 기록만. 뒤집히면 마이그레이션이 생기므로 **그 슬라이스만 3관점 재수립**(README §1-2 첫째 조건) |

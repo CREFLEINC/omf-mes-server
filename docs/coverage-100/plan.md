@@ -48,17 +48,17 @@
 | 14 | **I-25** 공정 인계·수리 왕복 | 6 | I-7 | — | — | sonnet | 2 | — |
 | — | **M2 체인 e2e** | | | | | fable | 1 | |
 | 15 | **I-19** 검사 — 의뢰·결과·측정·확정 | 11 | I-7 | **M-e(항목 3)** | 품질 축 전이표(**액션별 `from`** — I-19 R-1) | opus | ~~4~~ **7** | M-e ∥ ②a(I-19 R-18) |
-| 16 | **I-20** LOT 상태·보류 | 10 | I-19 | A12 · V-lot_hold | — | opus | 3 | — |
+| 16 | **I-20** LOT 상태·보류 | 10 | I-19 | **M-f(항목 5)** — A12 **두 칸** · `version_no` 필수 · CHECK · 인덱스 2(I-20 R-1) | **`trace.lot_hold` 쓰기 코어**(I-20 R-4·R-5 — 잠금 순서) | opus | ~~3~~ **11~12**(I-20 R-17) | PR ⓪ = I-19 §12-1 ⓑ 상환 |
 | 17 | **I-21** 부적합·처분·특채 | 11 | I-20 | — | — | opus | 3 | — |
 | 18 | **I-18** LOT 부가·상태 이력·IQC 생략 | 5 | I-1 | — | — | sonnet | 2 | ∥ I-19 |
 | — | **M3 체인 e2e** | | | | | fable | 1 | |
 | 19 | **I-22** 출하지시·작업지시·제품 피킹 | 9 | I-8 | A13 | — | opus | 3 | — |
 | 20 | **I-23** 출하·확정·취소 + 재등록 | 7 | I-22·I-5 · **I-19 품질 전이 코어(재등록, A)** | A14 · U-I(`confirmed_*`) | ERP 아웃박스 둘째 | opus | 4 | ⛔ I-4 와 직렬(이미 끝) · 재등록 전 A 코어 병합·동기화(`lanes.md` §0) |
 | — | **M4 체인 e2e** | | | | | fable | 1 | |
-| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | — | opus | 3 | ∥ I-11 |
-| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | — | — | opus | 3 | — |
+| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | `transitions.ts`(축 1·전이 2) | opus·sonnet | **4** | ∥ I-11 · ∥ I-14(같은 레인 C — `transitions.ts` 는 레인 «안에서» 직렬화 · I-13 R-10) |
+| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | **N-1** | `transitions.ts`(키 1 · I-13 과 레인 안 직렬화) | opus·sonnet | **4** | C |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
-| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | — | — | opus | 3 | ∥ I-33 |
+| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **4** | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 지금0 | 조건부 SERIAL_NUMBER 채번만 별도 코어≤200 | 조회/조건부 심장 분리 | 즉시 GET1 + 조건부 코어/쓰기 | I-26 R1~R10 · 문의104~107 |
 | 27 | **I-27** 발행 이력·프린터 | 7(진행5·보류1·제외1) | I-26 저장조회 | A9 nullable6·A10 유보 | — | 물리/조회/쓰기 분리 | P0/P1/P2/P3·발행 규칙/잠금/배치 별도 | R1~R16·∥ I-28 |
@@ -124,10 +124,12 @@
 | — | I-11 | `production.work_session` | `shift_id` NOT NULL 해제(계약 `WorkSession.shiftId` required 밖 · ⌜어느 교대에도 들지 않으면 비운 채 기록⌝ · D1 과 같은 근거 · I-11 재수립 R-3). ⛔ `terminal_id` 는 완화하지 않는다 — 세션 열기는 토큰 부재 403(R-1) |
 | A11 | I-24 | `planning.production_plan` | `split_of_plan_id?` · `split_reason_code?`(app.code_t) · `ck_production_plan_split_self` · `ix_production_plan_split_of`(I-24 재수립 R-1 — 계약 `ProductionPlanSplitRef{sourcePlanId, reasonCode}` 두 칸) |
 | M-e | I-19 | 검사 의뢰 · 검사 결과 | **항목 3**(I-19 R-2 · R-18 — **선행 단독 PR**): ⓐ `inspection_request.inspection_plan_version_id` NOT NULL 해제(#280) · ⓑ `ck_inspection_result_qty` 를 `status_code <> 'CONFIRMED' OR (합)` 으로 완화 · ⓒ `inspection_result.overall_judgment_code` NOT NULL 해제(⛔ ⓑ 만 풀면 임시 저장이 여전히 막힌다) |
-| A12 · V | I-20 | `trace.lot_hold` | `target_lot_status_code?` · `version_no`(If-Match 대상이면) |
+| **M-f**(구 A12·V) | I-20 | `trace.lot_hold` | **항목 5**(I-20 R-1): 등록 도착 `target_lot_status_code?` · **해제 도착 `release_target_lot_status_code?`**(⭐ 한 칸이면 해제가 등록값을 덮는다 — 계약 `:4035` ↔ `:4191` 은 값 집합조차 안 겹치고, 부분 해제는 전이가 0건이라 도출할 원본이 없다) · `version_no NOT NULL DEFAULT 1`(**조건부가 아니라 필수** — 물리에 칸이 없다) · `ck_lot_hold_release_target` · 인덱스 2. 추가·완화만 · 삭제 0 · 백필 0 |
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
+| **N-1** | **I-14** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** + FK + `ix_inventory_adjustment_line_count_line` — 계약 `InventoryAdjustmentLine.inventoryCountLineId`·`…LineUpsert.inventoryCountLineId` 둘 다 정의했는데 물리에 칸이 없다(I-14 재수립 R-4). ⭐ 이 칸이 **I-15 `:close` 의 「조정됨」을 라인 축으로** 재게 한다(§I-15 「라인 대응이 없다」를 연다) |
+| **N-2** | **I-16** | **신설** `inventory.handling_unit_repack_event` · `handling_unit_repack_event_line` | 재포장 이벤트 헤더 + 라인(`role_code`·`qty_before`·`qty_after`) + 복합 인덱스 1. ⭐ **`plan.md` §0 #9 의 「기존 표 재사용」이 실측으로 뒤집혔다**(I-16 재수립 R-1) — `handling_unit_reconfiguration(+_line)` 은 라인 필수 6칸 중 4칸이 없고 `ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약 대표 경로(한 HU 의 `PUT …/contents`)를 **구조적으로 막는다**. 기존 표는 **손대지 않는다**(0행·참조 0) ⇒ 삭제 0 |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9 | I-27 | `app.document_issue_log` | 결과3+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0·구writer 종료/갱신→P5→환경별 응답 활성화 |
 | A10 | I-27 | `app.printer` | **유보·적용0**. 단말 매핑/관측/기본/지원 원천 전 칸5 추가만으로 완료 불가. OFFLINE/false 기본값 제안 철회 |

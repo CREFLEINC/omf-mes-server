@@ -21,6 +21,32 @@ export function assertScopedOrPeriod(query: {
   ]);
 }
 
+/**
+ * ⭐ R-17 — 집계 3건의 기간은 **무조건 필수**다(계약 `:1157`·`:1055` 의 `inspectedFrom` 설명
+ * 「필수 — 공유계약 L-3」). 목록과 규칙이 «다르므로» 함수도 둘이다 — 위 함수를 재사용하지 않는다.
+ */
+export function assertPeriodRequired(query: { inspectedFrom?: string; inspectedTo?: string }): void {
+  assertPeriodPair(query);
+  if (query.inspectedFrom === undefined) {
+    throw one(field('inspectedFrom', ERROR_CODE.REQUIRED, '기간(inspectedFrom·inspectedTo)이 필요합니다.'));
+  }
+}
+
+/**
+ * ⭐ #298 m-3 — 의뢰별 **최종 회차 1건**만 남긴다(§4-2 의 그룹 정의 그대로). 옛 구현은
+ * `groupBy` 로 그룹을 «전건» 뽑고 그 수만큼 `(의뢰, 회차)` AND 절을 OR 로 폈다 — 스코프가
+ * 넓어질수록 OR 가 그대로 늘었다. 좁은 칸 셋만 읽어 메모리에서 접으면 뒤 질의가 id `in` 하나다.
+ */
+export function finalRoundOf<T extends { inspection_request_id: bigint; inspection_round: number }>(rows: T[]): T[] {
+  const best = new Map<string, T>();
+  for (const row of rows) {
+    const key = row.inspection_request_id.toString();
+    const kept = best.get(key);
+    if (kept === undefined || row.inspection_round > kept.inspection_round) best.set(key, row);
+  }
+  return [...best.values()];
+}
+
 /** 계약 `inspectedTo` 설명 — inspectedFrom 과 한 쌍. 한쪽만 오면 400 PAIR(L-3 하한 없는 구멍 방지). */
 export function assertPeriodPair(query: { inspectedFrom?: string; inspectedTo?: string }): void {
   if ((query.inspectedFrom !== undefined) === (query.inspectedTo !== undefined)) return;
@@ -105,5 +131,45 @@ export function assertMeasurementValues(
       ? [field(`measurements[${index}]`, ERROR_CODE.INVALID, '숫자·문자·불리언 중 한 칸만 채웁니다.')]
       : [],
   );
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+}
+
+/**
+ * 물리 하한을 손으로 앞당겨 잡는다 — CHECK·도메인 위반은 공용 그물에 안 걸려 **500** 이다
+ * (`prisma-error.ts:23` 「CHECK 위반은 여기 오지 않는다」). 라이브 DB `pg_constraint` 실측:
+ *
+ *   inspection_result_inspected_qty_check    CHECK (inspected_qty > 0)   ← **조건이 없다**
+ *   도메인 app.qty_t                          CHECK (VALUE >= 0)          ← 수량 네 칸 전부
+ *   inspection_measurement_sample_no_check   CHECK (sample_no > 0)
+ *
+ * ⚠ M-e ⓑ 가 조건부로 푼 것은 **합계** CHECK(`ck_inspection_result_qty`) 하나뿐이라 이 하한들은
+ *   작성중(DRAFT)에도 그대로 산다. 그리고 「세 칸을 다 채우기 전 임시 저장」이 정확히 이 갈래라
+ *   **가장자리가 아니라 본길**이다 — M-e ⓑ 의 존재 이유가 곧 이 요청이다.
+ * ⛔ 계약에 `minimum` 이 0건이라 계약 검증 가드도 못 막는다 — 서비스가 유일한 그물이다.
+ * ⛔ 새 `ERROR_CODE` 를 만들지 않는다. `RANGE` 는 형제 수량 그물이 쓰는 값이다
+ *   (`material-consumption.service.ts:269,274` · `lot.service.ts:258` · `material-return.service.ts:182`).
+ */
+export function assertQuantityBounds(body: {
+  inspectedQty?: number;
+  acceptedQty?: number;
+  rejectedQty?: number;
+  heldQty?: number;
+  measurements?: readonly { sampleNo: number }[];
+}): void {
+  const errors: ErrorItem[] = [];
+  if (body.inspectedQty !== undefined && !(body.inspectedQty > 0)) {
+    errors.push(field('inspectedQty', ERROR_CODE.RANGE, '검사 수량은 0 보다 커야 합니다.'));
+  }
+  for (const name of ['acceptedQty', 'rejectedQty', 'heldQty'] as const) {
+    const value = body[name];
+    if (value !== undefined && !(value >= 0)) {
+      errors.push(field(name, ERROR_CODE.RANGE, '0 보다 작을 수 없습니다.'));
+    }
+  }
+  (body.measurements ?? []).forEach((measurement, index) => {
+    if (!(measurement.sampleNo > 0)) {
+      errors.push(field(`measurements[${index}].sampleNo`, ERROR_CODE.RANGE, '표본 번호는 0 보다 커야 합니다.'));
+    }
+  });
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }

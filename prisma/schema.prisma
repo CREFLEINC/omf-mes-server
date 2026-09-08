@@ -434,6 +434,7 @@ model handling_unit {
   handling_unit_reconfiguration_handling_unit_reconfiguration_target_handling_unit_idTohandling_unit handling_unit_reconfiguration[] @relation("handling_unit_reconfiguration_target_handling_unit_idTohandling_unit")
   inventory_transaction_line                                                                         inventory_transaction_line[]
   shipment_lot_allocation                                                                            shipment_lot_allocation[]
+  stock_transfer_line                                                                                stock_transfer_line[]
 
   @@index([warehouse_id], map: "ix_handling_unit_warehouse")
   @@index([location_id], map: "ix_handling_unit_location")
@@ -1458,6 +1459,8 @@ model stock_transfer_line {
   receipt_transaction_line_id                                                                            BigInt?
   created_at                                                                                             DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                                                                             BigInt?
+  handling_unit_id                                                                                       BigInt?
+  handling_unit                                                                                          handling_unit?              @relation(fields: [handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
   location_stock_transfer_line_from_location_idTolocation                                                location                    @relation("stock_transfer_line_from_location_idTolocation", fields: [from_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_transaction_line_stock_transfer_line_issue_transaction_line_idToinventory_transaction_line   inventory_transaction_line? @relation("stock_transfer_line_issue_transaction_line_idToinventory_transaction_line", fields: [issue_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
   item                                                                                                   item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
