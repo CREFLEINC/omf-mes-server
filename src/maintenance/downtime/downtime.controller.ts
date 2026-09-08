@@ -24,6 +24,11 @@ import {
 import type { DowntimeCreate, DowntimeUpdate } from "./downtime-rules";
 import { DowntimeUpdateService } from "./downtime-update.service";
 import { DowntimeView } from "./downtime-view";
+import { DowntimeSummaryService } from "./downtime-summary.service";
+import {
+  DowntimeSummaryQuery,
+  DowntimeSummaryView,
+} from "./downtime-summary-view";
 import {
   downtimeCreateContext,
   downtimeUpdateContext,
@@ -35,6 +40,7 @@ export class DowntimeController {
     private readonly queries: DowntimeQueryService,
     private readonly creates: DowntimeCreateService,
     private readonly updates: DowntimeUpdateService,
+    private readonly summaries: DowntimeSummaryService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -42,6 +48,12 @@ export class DowntimeController {
   @Contract("GET /maintenance/downtimes")
   list(@Query() query: DowntimeQuery): Promise<DowntimeList> {
     return this.queries.list(query);
+  }
+
+  @Get("summary")
+  @Contract("GET /maintenance/downtimes/summary")
+  summary(@Query() query: DowntimeSummaryQuery): Promise<DowntimeSummaryView> {
+    return this.summaries.read(query);
   }
 
   @Get(":downtimeId")
