@@ -21,7 +21,9 @@ import { PrecheckDecisionController } from './precheck-decision/precheck-decisio
 import { MaterialReturnService } from './material-return/material-return.service';
 import { PrecheckDecisionService } from './precheck-decision/precheck-decision.service';
 import { RepairExecutionQueryService } from './repair-execution/repair-execution-query.service';
+import { RepairExecutionReturnService } from './repair-execution/repair-execution-return.service';
 import { RepairExecutionController } from './repair-execution/repair-execution.controller';
+import { RepairExecutionService } from './repair-execution/repair-execution.service';
 import { ProductionResultApprovalService } from './production-result/production-result-approval.service';
 import { ProductionResultCorrectService } from './production-result/production-result-correct.service';
 import { ProductionResultQueryService } from './production-result/production-result-query.service';
@@ -106,6 +108,8 @@ import { WorkSessionService } from './work-session/work-session.service';
     OperationHandoverQueryService,
     RepairExecutionQueryService,
     OperationHandoverService,
+    RepairExecutionService,
+    RepairExecutionReturnService,
   ],
 })
 export class ProductionModule {}
