@@ -20,6 +20,7 @@ import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentService } from './attachment/attachment.service';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
+import { DocumentIssueReportService } from './document-issue/document-issue-report.service';
 import { DocumentIssueSummaryMiddleware } from './document-issue/document-issue-summary.middleware';
 import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
 import { DocumentIssueController } from './document-issue/document-issue.controller';
@@ -79,6 +80,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     UserAssignmentService,
     AttachmentService,
     DocumentIssueQueryService,
+    DocumentIssueReportService,
     DocumentIssueSummaryService,
     OperationPolicyService,
     NoticeService,
