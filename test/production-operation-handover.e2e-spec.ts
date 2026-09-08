@@ -34,7 +34,9 @@ const T2 = '2026-09-08T03:00:00.000Z';
 const STATUS_MAIN = 'HANDED_OVER';
 const STATUS_OTHER = 'CUSTOM_STATUS';
 /** 등록 전용 — 조회 픽스처의 두 시각(T1·T2)과 «다른» 날짜다(채번 기간 키가 이 날짜다). */
-const HANDED_OVER_AT = '2026-09-09T04:05:06.000Z';
+// ⭐ «과거» 시각으로 고정한다. 실행 날짜와 같아지면 「채번 기간 키가 handedOverAt 에서
+//    온다」를 지켜보는 단언이 서버시각 변이를 못 잡는다(PR #440 리뷰 Minor-2).
+const HANDED_OVER_AT = '2026-09-01T04:05:06.000Z';
 /** `mdm.worker` 에 실재해야 한다 — 없는 사번은 400 `INVALID` 갈래다(§4-1 ①). */
 const WORKER_NO = `${PREFIX}-W1`;
 
@@ -406,6 +408,15 @@ describe('공정 인계 3건 (e2e)', () => {
       ).expect(400);
       expect(missing.body.errors).toContainEqual(
         expect.objectContaining({ field: 'lines[0].lotId', code: 'INVALID' }),
+      );
+
+      // ⭐ 없는 uomId 도 400 INVALID 다. 이 갈래를 지우면 FK 가 터져 «500 이 새다»
+      //    (PR #440 리뷰 Minor-1 — §7-6 「전수」 미이행 자리였다).
+      const badUom = await post(
+        handoverBody({ lines: [{ lotId: lotAId, handoverQty: 1, uomId: 999999999 }] }),
+      ).expect(400);
+      expect(badUom.body.errors).toContainEqual(
+        expect.objectContaining({ field: 'lines[0].uomId', code: 'INVALID' }),
       );
     });
 
