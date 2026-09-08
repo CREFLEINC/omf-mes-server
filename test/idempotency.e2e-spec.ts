@@ -11,10 +11,12 @@ import request from 'supertest';
 import { configureApp } from '../src/app.setup';
 import { Contract, ContractModule } from '../src/common/contract';
 import {
+  FAMILY_CONFLICT_CODE,
   IdempotencyModule,
   IdempotencyService,
   requestFingerprint,
 } from '../src/common/idempotency';
+import type { IdempotencyContext } from '../src/common/idempotency';
 import { ConflictException } from '../src/common/errors';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -170,6 +172,80 @@ describe('멱등 (실 DB)', () => {
         message: expect.stringContaining('다른 내용'),
       });
     });
+
+    it('⛔ 처리 중이면 409 workerLease 다 — 계열을 안 준 도메인은 `code` 가 «없다»', async () => {
+      // `IN_PROGRESS` 는 열린 트랜잭션 안에서만 보이는 상태라 e2e 로는 못 만든다. 기록을
+      // 그 상태로 심어 `replay()` 의 두 번째 갈래를 직접 태운다.
+      const key = await seedInProgress({ a: 1 });
+
+      const caught = await conflictOf(context(key, { a: 1 }));
+
+      expect(caught?.getStatus()).toBe(HttpStatus.CONFLICT);
+      expect(caught?.conflict).toEqual({
+        conflictCause: 'workerLease',
+        message: expect.stringContaining('처리 중'),
+      });
+    });
+
+    describe('계열 봉투의 `code`', () => {
+      // 결정 — 통보 089. 계약 실측(`a6a87e1`): `Production`·`Quality`·`Shipment`·
+      // `StockReinstatement` 넷 다 `code` 가 required 이고 enum 에 `DUPLICATE_KEY`·
+      // `INVALID_STATE` 를 둘 다 갖는다. 반면 `app`·`mdm`·`logistics`·`equipment` 의
+      // `ConflictResponse` 에는 `code` 프로퍼티 «자체»가 없다.
+      const coded = (key: string, body: unknown) => ({
+        ...context(key, body),
+        conflictCode: FAMILY_CONFLICT_CODE,
+      });
+
+      it('⭐ 같은 키·다른 내용 → `code` 가 `DUPLICATE_KEY` 다', async () => {
+        const key = randomUUID();
+        await service.run(coded(key, { a: 1 }), async () => ({ value: 'x' }));
+
+        const caught = await conflictOf(coded(key, { a: 2 }));
+
+        expect(caught?.conflict).toEqual({
+          conflictCause: 'user',
+          message: expect.stringContaining('다른 내용'),
+          code: 'DUPLICATE_KEY',
+        });
+      });
+
+      it('⭐ 처리 중 → `code` 가 `INVALID_STATE` 다 (⛔ `CANCEL_IN_PROGRESS` 가 아니다 — shipment 전용이다)', async () => {
+        const key = await seedInProgress({ a: 1 });
+
+        const caught = await conflictOf(coded(key, { a: 1 }));
+
+        expect(caught?.conflict).toEqual({
+          conflictCause: 'workerLease',
+          message: expect.stringContaining('처리 중'),
+          code: 'INVALID_STATE',
+        });
+      });
+    });
+
+    /** 지문이 맞는 `IN_PROGRESS` 기록을 심는다 — `replay()` 의 두 번째 갈래를 여는 유일한 길이다. */
+    async function seedInProgress(body: unknown): Promise<string> {
+      const key = randomUUID();
+      await prisma.idempotency_record.create({
+        data: {
+          idempotency_key: key,
+          request_fingerprint: fingerprintOf(body),
+          status: 'IN_PROGRESS',
+          expires_at: new Date(Date.now() + 3600_000),
+        },
+      });
+      return key;
+    }
+
+    async function conflictOf(ctx: IdempotencyContext): Promise<ConflictException | undefined> {
+      try {
+        await service.run(ctx, async () => ({ value: 'never' }));
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConflictException);
+        return error as ConflictException;
+      }
+      throw new Error('409 가 나야 하는데 통과했다');
+    }
 
     it('⛔ 일이 실패하면 기록도 남지 않는다 — 재시도가 막히면 안 된다', async () => {
       const key = randomUUID();

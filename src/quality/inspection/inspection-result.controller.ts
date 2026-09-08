@@ -19,7 +19,7 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { resolveTerminalId } from '../../auth/terminal-token';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
@@ -79,7 +79,7 @@ export class InspectionResultController {
   @Contract('POST /quality/inspection-results')
   async create(@Req() request: Request, @Body() body: InspectionResultCreate): Promise<InspectionResultView> {
     const context = await this.contextOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, context));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, context), FAMILY_CONFLICT_CODE);
   }
 
   /**
@@ -97,8 +97,13 @@ export class InspectionResultController {
     @Body() body: InspectionResultUpdate,
   ): Promise<InspectionResultView> {
     const context = await this.contextOf(request);
-    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
-      this.writes.update(inspectionResultId, version, body, context),
+    return runVersioned<InspectionResultView, 'view'>(
+      this.idempotency,
+      request,
+      response,
+      'view',
+      (version) => this.writes.update(inspectionResultId, version, body, context),
+      FAMILY_CONFLICT_CODE,
     );
   }
 
@@ -120,8 +125,13 @@ export class InspectionResultController {
     @Body() body: InspectionResultConfirm,
   ): Promise<InspectionResultView> {
     const appUserId = userOf(request);
-    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
-      this.confirms.confirm(inspectionResultId, version, body, appUserId),
+    return runVersioned<InspectionResultView, 'view'>(
+      this.idempotency,
+      request,
+      response,
+      'view',
+      (version) => this.confirms.confirm(inspectionResultId, version, body, appUserId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 

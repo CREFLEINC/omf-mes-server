@@ -12,6 +12,28 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 const RETENTION_HOURS = 72;
 
+/** 멱등 흡수가 내는 409 두 갈래에 실을 계열 봉투의 `code`. */
+export interface IdempotencyConflictCode {
+  /** 같은 키로 «다른» 내용이 왔을 때. */
+  duplicate: string;
+  /** 앞의 처리가 아직 안 끝났을 때. */
+  inProgress: string;
+}
+
+/**
+ * 계열 봉투 넷이 «모두» 가진 두 값 — 계약 실측(`contracts/COMMIT.txt` = `a6a87e1`)이다.
+ * `Production`·`Quality`·`Shipment`·`StockReinstatement` 네 `*ConflictResponse` 의 `code`
+ * enum 교집합이 `VERSION_CONFLICT`·`DUPLICATE_KEY`·`INVALID_STATE` 셋이라 계열마다 상수를
+ * 가르지 않는다 — 갈라도 값이 같다.
+ *
+ * ⛔ 「처리 중」에 `CANCEL_IN_PROGRESS` 를 쓰지 않는다 — shipment 계열에만 있고 뜻이
+ * 「취소가 진행 중」이라 다르다. 결정 — 통보 089.
+ */
+export const FAMILY_CONFLICT_CODE: IdempotencyConflictCode = {
+  duplicate: 'DUPLICATE_KEY',
+  inProgress: 'INVALID_STATE',
+};
+
 export interface IdempotencyContext {
   key: string;
   /** 같은 키로 «다른» 요청이 오면 가려낸다. */
@@ -19,6 +41,13 @@ export interface IdempotencyContext {
   appUserId?: number;
   /** 처음 처리했을 때 낼 상태. 재전송에는 저장된 값을 그대로 쓴다. */
   successStatus: number;
+  /**
+   * ⛔ 계열 봉투(`code` 가 required)를 쓰는 오퍼레이션만 준다 — 안 주면 봉투는 오늘과
+   * «글자 그대로» 같다. `app`·`mdm`·`logistics`·`equipment` 의 `ConflictResponse` 에는
+   * `code` 프로퍼티 «자체»가 없어 실으면 계약에 없는 칸이 된다. 한 컨트롤러 파일 안에서도
+   * 오퍼레이션마다 갈린다 — `work-order.controller.ts` 의 자원계획 2건이 그 자리다.
+   */
+  conflictCode?: IdempotencyConflictCode;
 }
 
 export interface IdempotentOutcome<T> {
@@ -40,6 +69,17 @@ function stableJson(value: unknown): string {
     a < b ? -1 : a > b ? 1 : 0,
   );
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+}
+
+/**
+ * 계열 봉투를 쓰는 오퍼레이션만 `code` 를 얹는다. 안 준 도메인은 `{}` 라 봉투가 오늘과
+ * 바이트 단위로 같다(`app` 의 `Object.keys(body)` 단언이 그 그물이다).
+ */
+function codeOf(
+  context: IdempotencyContext,
+  branch: keyof IdempotencyConflictCode,
+): { code?: string } {
+  return context.conflictCode === undefined ? {} : { code: context.conflictCode[branch] };
 }
 
 @Injectable()
@@ -112,13 +152,21 @@ export class IdempotencyService {
       // 같은 키로 «다른» 요청이 왔다. 앞의 응답을 주면 거짓말이 된다.
       // ⛔ 봉투는 ConflictResponse 다 — 계약이 409 에 그것을 선언했다.
       // 원인은 「사람」이다: 클라이언트가 키를 재사용했다.
-      throw new ConflictException('user', '같은 요청 키로 다른 내용이 왔습니다. 새 키로 보내세요.');
+      throw new ConflictException(
+        'user',
+        '같은 요청 키로 다른 내용이 왔습니다. 새 키로 보내세요.',
+        codeOf(context, 'duplicate'),
+      );
     }
 
     if (record.status !== 'COMPLETED') {
       // 앞의 처리가 아직 끝나지 않았다. 재로드로 풀릴 수 있으므로 저장 충돌 쪽이다.
       // 앞의 처리가 아직 «잡고 있다» — 계약 어휘로 workerLease 다.
-      throw new ConflictException('workerLease', '같은 요청이 처리 중입니다. 잠시 뒤 다시 확인하세요.');
+      throw new ConflictException(
+        'workerLease',
+        '같은 요청이 처리 중입니다. 잠시 뒤 다시 확인하세요.',
+        codeOf(context, 'inProgress'),
+      );
     }
 
     return {

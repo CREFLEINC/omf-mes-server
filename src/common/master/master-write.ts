@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { IdempotencyService, requestFingerprint } from '../idempotency';
+import type { IdempotencyConflictCode } from '../idempotency';
 import { ifMatchVersion, setEtag } from '../optimistic-lock';
 
 /**
@@ -16,12 +17,18 @@ import { ifMatchVersion, setEtag } from '../optimistic-lock';
  * `IdempotencyService` 를 생성자로 넘겨줘야 해서, 배선이 오히려 늘어난다.
  */
 
-/** 멱등 흡수. 같은 키로 다시 오면 앞의 응답을 그대로 준다. */
+/**
+ * 멱등 흡수. 같은 키로 다시 오면 앞의 응답을 그대로 준다.
+ *
+ * `conflictCode` 는 **계열 봉투(`code` required)를 쓰는 오퍼레이션만** 준다 — 계약을
+ * 오퍼레이션 단위로 재서 갈라야 한다. 한 컨트롤러 파일 안에서도 다르다.
+ */
 export async function runIdempotent<T>(
   idempotency: IdempotencyService,
   request: Request,
   successStatus: number,
   work: () => Promise<T>,
+  conflictCode?: IdempotencyConflictCode,
 ): Promise<T> {
   const session = currentSession(request);
   const outcome = await idempotency.run(
@@ -30,6 +37,7 @@ export async function runIdempotent<T>(
       fingerprint: requestFingerprint(`${request.method} ${request.path}`, request.body),
       successStatus,
       ...(session === undefined ? {} : { appUserId: session.userId }),
+      ...(conflictCode === undefined ? {} : { conflictCode }),
     },
     () => work(),
   );
@@ -43,6 +51,7 @@ export async function runVersioned<T, K extends string>(
   response: Response,
   field: K,
   work: (version: number) => Promise<{ versionNo: number } & Record<K, T>>,
+  conflictCode?: IdempotencyConflictCode,
 ): Promise<T> {
   // 가드가 이 자리들에서 If-Match 를 이미 필수로 막았다(`#107`) — 여기 오면 값이 있다.
   const version = ifMatchVersion(request);
@@ -50,7 +59,13 @@ export async function runVersioned<T, K extends string>(
     throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
   }
 
-  const result = await runIdempotent(idempotency, request, HttpStatus.OK, () => work(version));
+  const result = await runIdempotent(
+    idempotency,
+    request,
+    HttpStatus.OK,
+    () => work(version),
+    conflictCode,
+  );
   setEtag(response, result.versionNo);
   return result[field];
 }

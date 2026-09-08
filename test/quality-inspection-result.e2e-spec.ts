@@ -843,7 +843,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(confirmed.body).toMatchObject({ code: 'VERSION_CONFLICT', currentVersion: '1' });
     });
 
-    it('⚠ 같은 키로 «다른» 본문을 보내면 409 인데 계약 required 인 `code` 가 빠진다(알려진 결손 · 공용 파일)', async () => {
+    it('⭐ 같은 키로 «다른» 본문을 보내면 409 `DUPLICATE_KEY` 다 — 계열 봉투의 required 를 채운다(#337 ⓐ 상환)', async () => {
       const inspectionResultId = await newDraft(await newRequest());
       const key = randomUUID();
       const send = (remarks: string) =>
@@ -856,15 +856,12 @@ describe('검사 의뢰·결과 (e2e)', () => {
       await send('첫 본문').expect(200);
       const response = await send('다른 본문').expect(409);
 
-      expect(response.body).toMatchObject({ conflictCause: 'user' });
+      expect(response.body).toMatchObject({ conflictCause: 'user', code: 'DUPLICATE_KEY' });
       expect(response.body.message).toEqual(expect.any(String));
-      // ⚠ 실측 — `idempotency.service.ts:115` 가 공용 예외를 `code` 없이 던진다. `QualityConflictResponse.code`
-      //   는 required 라 이 갈래«만» 계약 스키마를 통과하지 못한다. R-8 이 PR ① 에 배정했으나
-      //   `ConflictExtra` 타입만 늘고 사용처가 안 섰다 — 공용 파일이라 이 PR 이 고치지 않는다.
-      //   ⭐ 고치는 PR 은 아래 한 줄을 `code: 'DUPLICATE_KEY'` 단언으로 바꾼다. ⛔ 「계약 스키마
-      //   불통과」를 초록으로 굳히지 않는다 — 살아 있는 응답에 ajv `toBe(false)` 를 걸면 결함이
-      //   테스트로 고정된다(#314 리뷰). 부재만 특성화한다. 정본 §12-1 미완 ⓐ.
-      expect(response.body.code).toBeUndefined();
+      // ⭐ 이 갈래«만» 계약 스키마를 통과하지 못하던 자리다(`QualityConflictResponse.code` 가
+      //   required 인데 멱등 흡수가 공용 예외를 `code` 없이 던졌다). 이제 ajv 가 초록이다 —
+      //   `code` 를 도로 빼면 `toMatchObject` 와 이 한 줄이 «둘 다» 깨진다.
+      expect(validator('PUT /quality/inspection-results/{inspectionResultId}', 409)(response.body)).toBe(true);
     });
 
     it('⭐ `measurements` 를 실으면 치환이고 생략하면 손대지 않는다', async () => {

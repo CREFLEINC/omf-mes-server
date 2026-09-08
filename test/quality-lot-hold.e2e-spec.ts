@@ -165,6 +165,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     WR12A: `LOT-W-R12A-${PREFIX}`,
     WR12B: `LOT-W-R12B-${PREFIX}`,
     WIDEM: `LOT-W-IDEM-${PREFIX}`,
+    WIDEM2: `LOT-W-IDEM2-${PREFIX}`,
     // ⭐ 해제(⑤) 전용 — 위와 같은 이유로 접두어를 다르게 두고, `held_at` 은 W_SEED(가장 «오래된»
     // 시각)라 전역 `held_at DESC` 페이지의 앞줄(#9·#9b)을 흔들지 않는다.
     RFULL: `LOT-R-FULL-${PREFIX}`,
@@ -1034,6 +1035,28 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     expect(await prisma.lot_status_event.count({ where: { lot_id: BigInt(lotId.WIDEM) } })).toBe(1);
   });
 
+  it(
+    '⭐⭐ 등록 — 같은 키·«다른» 본문 재전송은 409 이고 `code` 가 `DUPLICATE_KEY` 다 · 두 번째 보류가 «안» 선다 ' +
+      '(↩ runIdempotent 에 FAMILY_CONFLICT_CODE 를 안 넘기거나 값을 INVALID_STATE 로 바꾸면 깨진다 · #337 ⓐ · 결정 — 통보 089)',
+    async () => {
+      // 이 오퍼레이션의 409 봉투는 `QualityConflictResponse` 이고 `code` 가 **required** 다 —
+      // 멱등 흡수가 내는 409 만 그 칸을 비워 두고 있었다(I-19 §12-1 ⓐ).
+      const key = randomUUID();
+      const ref = await refOf('WIDEM2');
+      await postHold({ lots: [ref], reasonCode: 'OTHER', targetLotStatusCode: 'DEFECTIVE' }, { key }).expect(201);
+
+      const rejected = await postHold(
+        { lots: [ref], reasonCode: 'CLAIM_RECALL', targetLotStatusCode: 'DEFECTIVE' },
+        { key },
+      ).expect(409);
+
+      expectConflictEnvelope(rejected.body);
+      expect(rejected.body.code).toBe('DUPLICATE_KEY');
+      expect(rejected.body.conflictCause).toBe('user');
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WIDEM2) } })).toBe(1);
+    },
+  );
+
   // ═══ POST /quality/lot-holds/{lotHoldId}:release(⑤ · 심장 B) ═══════════
   //
   // ⭐⭐ **If-Match 토큰은 `trace.lot.version_no` 다**(R-24 · 계약 `:1950`·`:2058`).
@@ -1902,10 +1925,10 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
    *   9,999 도 심는다 — `released_at IS NULL` 필터를 지우면 경계 통과(#25)가 깨진다.
    * - WPENDING — `INSPECTION_PENDING`. C9 의 `from` 밖(#28 · 통보 080).
    * - WR12A·WR12B — `NORMAL` 둘. R-12(LOT 마다 자기 `lot_hold_id`).
-   * - WIDEM — `NORMAL`. 멱등 재전송.
+   * - WIDEM — `NORMAL`. 멱등 재전송. WIDEM2 — 같은 키·«다른» 본문 재전송(#337 ⓐ).
    */
   async function makeWriteLots(): Promise<void> {
-    for (const key of ['WOK1', 'WOK2', 'WCLAIM', 'WVAL', 'WVAL2', 'WVER1', 'WDUP1', 'WR12A', 'WR12B', 'WIDEM']) {
+    for (const key of ['WOK1', 'WOK2', 'WCLAIM', 'WVAL', 'WVAL2', 'WVER1', 'WDUP1', 'WR12A', 'WR12B', 'WIDEM', 'WIDEM2']) {
       lotId[key] = await newLot(key, item1Id, 'NORMAL');
     }
     lotId.WPENDING = await newLot('WPENDING', item1Id, 'INSPECTION_PENDING');

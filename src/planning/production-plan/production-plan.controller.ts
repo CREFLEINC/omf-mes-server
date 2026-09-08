@@ -17,7 +17,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
@@ -61,8 +61,12 @@ export class ProductionPlanController {
   @HttpCode(HttpStatus.CREATED)
   create(@Req() request: Request, @Body() body: ProductionPlanCreate): Promise<ProductionPlanView> {
     // ⛔ `setEtag` 를 안 부른다 — 계약이 201 에 ETag 를 선언하지 않았다(I-24 §4-1).
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.queries.create(body, currentSession(request)?.userId),
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.CREATED,
+      () => this.queries.create(body, currentSession(request)?.userId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 
@@ -75,8 +79,12 @@ export class ProductionPlanController {
   ): Promise<ProductionPlanView> {
     // ⛔ `runVersioned` 를 못 쓴다 — 계약이 200 에 ETag 를 선언하지 않는다(work-order 선례).
     const version = versionOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.queries.update(productionPlanId, version, body, currentSession(request)?.userId),
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.OK,
+      () => this.queries.update(productionPlanId, version, body, currentSession(request)?.userId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 
@@ -89,8 +97,12 @@ export class ProductionPlanController {
     @Param('productionPlanId', ParseIntPipe) productionPlanId: number,
   ): Promise<ProductionPlanView> {
     const version = versionOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.confirms.confirm(productionPlanId, version, currentSession(request)?.userId),
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.OK,
+      () => this.confirms.confirm(productionPlanId, version, currentSession(request)?.userId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 
@@ -105,7 +117,7 @@ export class ProductionPlanController {
     await runIdempotent(this.idempotency, request, HttpStatus.NO_CONTENT, async () => {
       await this.queries.remove(productionPlanId, version);
       return undefined;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 }
 

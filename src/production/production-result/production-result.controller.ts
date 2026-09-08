@@ -15,7 +15,7 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
@@ -71,7 +71,7 @@ export class ProductionResultController {
       version: ifMatchVersion(request),
       appUserId: currentSession(request)?.userId,
     };
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.results.create(body, context));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.results.create(body, context), FAMILY_CONFLICT_CODE);
   }
 
   /** 정정. 새 «전표»가 서므로 201 이다. ⛔ If-Match·X-Worker-No 를 안 읽는다 — 계약이 둘 다 걷었다(2026-09-04). */
@@ -83,8 +83,12 @@ export class ProductionResultController {
     @Body() body: ProductionResultCorrect,
   ): Promise<ProductionResultView> {
     const context = { idempotencyKey: String(request.headers['idempotency-key']), appUserId: currentSession(request)?.userId };
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.corrections.correct(productionResultId, body, context),
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.CREATED,
+      () => this.corrections.correct(productionResultId, body, context),
+      FAMILY_CONFLICT_CODE,
     );
   }
 
@@ -99,8 +103,12 @@ export class ProductionResultController {
   ): Promise<{ approvalRequestId: number }> {
     const session = currentSession(request);
     if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
-      this.approvals.requestApproval(productionResultId, body.reason, session.userId),
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.ACCEPTED,
+      () => this.approvals.requestApproval(productionResultId, body.reason, session.userId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 }
