@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { IdempotencyModule } from "../common/idempotency";
+import { NumberingModule } from "../core/numbering";
 import { PrismaModule } from "../prisma/prisma.module";
 import { BreakdownController } from "./breakdown/breakdown.controller";
 import { BreakdownQueryService } from "./breakdown/breakdown-query.service";
@@ -15,12 +16,16 @@ import { DowntimeSummarySourceService } from "./downtime/downtime-summary-source
 import { DowntimeSummaryService } from "./downtime/downtime-summary.service";
 import { InspectionController } from "./inspection/inspection.controller";
 import { InspectionQueryService } from "./inspection/inspection-query.service";
+import { InspectionWriteService } from "./inspection/inspection-write.service";
+import { NumberedMaintenanceWrite } from "./numbered-maintenance-write";
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule],
+  imports: [PrismaModule, IdempotencyModule, NumberingModule],
   controllers: [InspectionController, BreakdownController, DowntimeController],
   providers: [
     InspectionQueryService,
+    InspectionWriteService,
+    NumberedMaintenanceWrite,
     BreakdownQueryService,
     DowntimeQueryService,
     DowntimeCreateService,
