@@ -4,6 +4,7 @@ import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DispositionsByNonconformance, dispositionsByNonconformance } from './disposition-by-nonconformance';
 import { DispositionFilters, dispositionByIdQuery, dispositionCountQuery, dispositionRowsQuery } from './disposition-query';
 import { DispositionDecisionRow, DispositionDecisionView, assertFollowUpInvariant, dispositionDecisionView } from './disposition-view';
 
@@ -13,11 +14,13 @@ export interface DispositionListQuery extends DispositionFilters {
 }
 
 /**
- * `GET /quality/disposition-decisions` · `…/{dispositionDecisionId}` — 처분 결정 조회(I-21 PR
- * ②a″). `W-03-10`·`W-04-10`·`W-04-11`·`P-04-03`이 함께 쓴다. `disposition-query.ts` 가 후속
- * 롤업 필터를 원시 SQL 로 낸다(§2 — `disposition-rollup.ts` 를 페이지네이션 «전»에 못 부른다).
+ * `GET /quality/disposition-decisions` · `…/{dispositionDecisionId}`(I-21 PR ②a″) ·
+ * `…/nonconformances/{nonconformanceId}/disposition-decisions`(+`summary` · PR ②b). `W-03-10`·
+ * `W-04-10`·`W-04-11`·`P-04-03`이 함께 쓴다. `disposition-query.ts` 가 후속 롤업 필터를 원시
+ * SQL 로 낸다(§2 — `disposition-rollup.ts` 를 페이지네이션 «전»에 못 부른다). `byNonconformance`
+ * 는 `disposition-by-nonconformance.ts` 에 위임한다 — 그 파일 머리 주석이 404 판정 근거를 진다.
  * ⛔ ETag·If-Match·403 게이트 0 — 계약 미선언(§1-1 · `permission.guard.ts:37-41`).
- * ⛔ `…/{ncId}/disposition-decisions`(②b) · 후보(③) · 특채(⑤) · 쓰기(⑥⑦)는 이 PR 의 몫이 아니다.
+ * ⛔ 후보(③) · 특채(⑤) · 쓰기(⑥⑦)는 이 PR 의 몫이 아니다.
  */
 @Controller('quality')
 export class DispositionController {
@@ -50,6 +53,12 @@ export class DispositionController {
     const rows = await this.prisma.$queryRawUnsafe<DispositionDecisionRow[]>(rowsQuery.sql, ...rowsQuery.params);
     if (rows.length === 0) throw new NotFoundException('없는 처분 결정입니다.');
     return dispositionDecisionView(rows[0]).view;
+  }
+
+  @Get('nonconformances/:nonconformanceId/disposition-decisions')
+  @Contract('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')
+  byNonconformance(@Param('nonconformanceId', ParseIntPipe) nonconformanceId: number): Promise<DispositionsByNonconformance> {
+    return dispositionsByNonconformance(this.prisma, nonconformanceId);
   }
 }
 
