@@ -29,6 +29,7 @@ import { InspectionSummaryService } from './inspection/inspection-summary.servic
 import { LotHoldController } from './lot-hold/lot-hold.controller';
 import { LotHoldQueryService } from './lot-hold/lot-hold-query.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
+import { LotStatusTransitionService } from './lot-status/lot-status-transition.service';
 import { LotStatusService } from './lot-status/lot-status.service';
 
 /**
@@ -58,7 +59,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     InspectionSummaryController,
     InspectionResultController,
     DefectRecordController,
-    LotStatusController, // 리터럴 경로 둘(`lot-statuses`·`lot-status-summary`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
+    LotStatusController, // 리터럴 경로 셋(`lot-statuses`·`lot-status-summary`·`lot-status-transitions`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
   ],
   providers: [
@@ -76,6 +77,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     DefectRecordService,
     DefectDistributionService,
     LotStatusService,
+    LotStatusTransitionService,
     LotHoldQueryService,
   ],
 })

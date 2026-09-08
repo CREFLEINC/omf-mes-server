@@ -1,6 +1,6 @@
 /**
- * `GET /quality/lot-statuses`(I-20 PR ①a1) · `GET /quality/lot-status-summary`(PR ①a2).
- * `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다(§4-1). `lot-status-transitions`(①c) 는 여기 없다.
+ * `GET /quality/lot-statuses`(I-20 PR ①a1) · `GET /quality/lot-status-summary`(PR ①a2) ·
+ * `GET /quality/lot-status-transitions`(PR ①c). `W-03-01`·`W-03-02`·`W-03-03` 이 함께 쓴다(§4-1).
  *
  * LOT 갈래 7(L1~L7)은 슬라이스 계획 §8-1 을 그대로 쓴다(창고·수량 4칸을 `inventory_balance` 로
  * 접는 §0 #5 · 정렬의 NULL 자리·2차 정렬 키 R-10 · 3값 논리 함정을 `EXISTS`/`NOT EXISTS` 로 피하는
@@ -8,6 +8,10 @@
  * `MATERIAL`) — 기존 17건은 그 칸 값을 단언하지 않아 안 깨진다. `statusCode × lotTypeCode` 를
  * 「합치지 않는다」(§8-3 #18)를 반증하려면 한 상태 안에 유형이 «둘» 있어야 한다(NORMAL = L1·L5
  * `MATERIAL` + L6 `PRODUCT`).
+ *
+ * ⭐ **L8 — `lot-status-transitions` 의 `impact` 전용**(§8-4 #29·#30 · R-20). 피킹·출고 픽스처가
+ * L1~L7 에는 «전혀 없다» — L8 하나에만 심어 `impact` 계산을 다른 단언과 분리한다.
+ * ⛔ **R-20** — 피킹·출고 픽스처는 정리 `deleteMany` 역순 사슬에도 반드시 들어간다(`lot` FK).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -75,12 +79,26 @@ interface LotStatusSummaryBody {
   asOf: string;
   outOfScopeCount?: number;
 }
+interface LotStatusTransitionRowBody {
+  targetLotStatusCode: string;
+  allowed: boolean;
+  actionCode: 'RELEASE_HOLD' | 'CREATE_HOLD';
+  blockedReason?: string;
+  impact: { openPickingCount: number; shippedQty: number } | null;
+}
+interface LotStatusTransitionSetBody {
+  lotId: number;
+  currentLotStatusCode: string;
+  transitions: LotStatusTransitionRowBody[];
+  note?: string;
+}
 
 describe('LOT 품질 상태 목록 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
 
+  let legalEntityId: bigint;
   let plantId: number;
   let itemId: number;
   let uomId: number;
@@ -98,6 +116,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     L5: `${PREFIX}-LOT-C5`,
     L6: `${PREFIX}-LOT-B6`,
     L7: `${PREFIX}-LOT-A7`,
+    L8: `${PREFIX}-LOT-H8`,
   };
 
   beforeAll(async () => {
@@ -111,6 +130,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     await makeMasters();
     await makeUser();
     await makeLots();
+    await makeImpactFixtures();
   });
 
   afterAll(async () => {
@@ -380,6 +400,96 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
+  // ── 전이 `GET /quality/lot-status-transitions`(PR ①c · §8-4 #23~#30) ────
+
+  it('전이 — 없는 lotId 면 404 (↩ 존재 확인을 빼면 깨진다)', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-transitions?lotId=${lotId.L1 + 900_000_000}`)
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('전이 — lotId 가 없으면 400 REQUIRED(계약 required · 가드 몫이라 서비스에 검증 코드가 없다)', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get('/api/quality/lot-status-transitions')
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'lotId', code: 'REQUIRED' });
+  });
+
+  it('전이 — NORMAL LOT(L1) — 행이 «넷»이고 DEFECTIVE 가 두 줄이다(C8 RELEASE_HOLD · C9 CREATE_HOLD) (↩ 목표 상태로 묶으면 깨진다)', async () => {
+    const body = await transitions(lotId.L1);
+    expect(body.currentLotStatusCode).toBe('NORMAL');
+    expect(body.transitions).toHaveLength(4);
+    const defective = body.transitions.filter((t) => t.targetLotStatusCode === 'DEFECTIVE');
+    expect(defective).toHaveLength(2);
+    expect(defective.map((t) => t.actionCode).sort()).toEqual(['CREATE_HOLD', 'RELEASE_HOLD']);
+  });
+
+  it('전이 — NORMAL LOT(L1) — C9·C10 만 allowed=true 이고 blockedReason 이 «없다» · C7·C8 은 있고 문장이 정확하다 (↩ from 판정을 빼거나 blockedReason 을 전건에 실으면 깨진다 · Minor-1·Nit-4)', async () => {
+    const body = await transitions(lotId.L1);
+    const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
+    const c10 = transitionOf(body, 'CREATE_HOLD', 'INSPECTION_PENDING');
+    const c7 = transitionOf(body, 'RELEASE_HOLD', 'NORMAL');
+    const c8 = transitionOf(body, 'RELEASE_HOLD', 'DEFECTIVE');
+    expect(c9.allowed).toBe(true);
+    expect(c9).not.toHaveProperty('blockedReason');
+    expect(c10.allowed).toBe(true);
+    expect(c10).not.toHaveProperty('blockedReason');
+    expect(c7.allowed).toBe(false);
+    expect(c7.blockedReason).toBe('지금 상태(정상)에서는 이 전이를 할 수 없습니다.');
+    expect(c8.allowed).toBe(false);
+    expect(c8.blockedReason).toBe('지금 상태(정상)에서는 이 전이를 할 수 없습니다.');
+    expect(body).not.toHaveProperty('note');
+  });
+
+  it('전이 — DEFECTIVE LOT(L4) — allowed 가 전건 false 이고 note 가 찬다 (↩ 「Hold 발신 0」을 뒤집으면 깨진다)', async () => {
+    const body = await transitions(lotId.L4);
+    expect(body.currentLotStatusCode).toBe('DEFECTIVE');
+    expect(body.transitions).toHaveLength(4);
+    expect(body.transitions.every((t) => t.allowed === false)).toBe(true);
+    expect(body.note).toBe('이 LOT은 더 전이할 수 없습니다 — 불량 처리는 생산실행에서 합니다.');
+  });
+
+  it('전이 — CREATE_HOLD 행만 impact 가 있고 RELEASE_HOLD 행은 null 이다 (↩ 전건에 채우면 깨진다)', async () => {
+    const body = await transitions(lotId.L1);
+    for (const t of body.transitions) {
+      if (t.actionCode === 'CREATE_HOLD') {
+        expect(t.impact).not.toBeNull();
+        expect(typeof t.impact?.openPickingCount).toBe('number');
+        expect(typeof t.impact?.shippedQty).toBe('number');
+      } else {
+        expect(t.impact).toBeNull();
+      }
+    }
+  });
+
+  it('전이 — impact.openPickingCount 가 «요청» 건수다(1요청 2라인이 1로 센다 · 완료 건은 안 센다) (↩ 라인으로 세거나 상태 조건을 빼면 깨진다)', async () => {
+    const body = await transitions(lotId.L8);
+    const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
+    // PO1(2 라인 열림)=1요청 · PO2(완료)=0 · PO3(종결)=0 → 1. 라인으로만 세면 2, 종결
+    // 필터만 빼면 2, 둘 다 걸어야 3(Nit-3 로 숫자 정정).
+    expect(c9.impact?.openPickingCount).toBe(1);
+  });
+
+  it('전이 — impact.shippedQty 가 goods_issue_line 합이다 · POSTED·CANCEL_REQUESTED 만 걸리고 CANCELLED 는 빠진다 (↩ 예약분을 섞거나 CANCEL_REQUESTED 를 빠뜨리거나 CANCELLED 를 포함하면 깨진다 · Major-2·Minor-2)', async () => {
+    const body = await transitions(lotId.L8);
+    const c9 = transitionOf(body, 'CREATE_HOLD', 'DEFECTIVE');
+    // 120(GI1,POSTED) + 30(GI2,POSTED) + 500(GI4,CANCEL_REQUESTED) — GI5(CANCELLED,200)·
+    // GI3(다른 LOT,999) 는 빠진다.
+    expect(c9.impact?.shippedQty).toBe(650);
+  });
+
+  it('전이 — 계약 스키마를 통과한다(ajv) (↩ 형제 목록·요약에는 있고 이 오퍼레이션에만 없던 잠금 · Minor-3)', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-transitions?lotId=${lotId.L1}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('lot-status-transitions');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function itemOf(body: LotStatusListBody, lotNoValue: string): LotStatusItem {
@@ -402,6 +512,20 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
     return response.body as LotStatusSummaryBody;
+  }
+
+  async function transitions(lotIdValue: number): Promise<LotStatusTransitionSetBody> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-transitions?lotId=${lotIdValue}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body as LotStatusTransitionSetBody;
+  }
+
+  function transitionOf(body: LotStatusTransitionSetBody, actionCode: string, targetLotStatusCode: string): LotStatusTransitionRowBody {
+    const found = body.transitions.find((t) => t.actionCode === actionCode && t.targetLotStatusCode === targetLotStatusCode);
+    if (!found) throw new Error(`전이 누락: ${actionCode}→${targetLotStatusCode}`);
+    return found;
   }
 
   async function login(): Promise<string[]> {
@@ -431,6 +555,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'LOT상태검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    legalEntityId = entity.legal_entity_id;
     const unit = await prisma.business_unit.create({
       data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: 'LOT상태검사사업부' },
     });
@@ -512,21 +637,120 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     });
   }
 
-  async function newLot(key: string, statusCode: string, lotTypeCode = 'MATERIAL'): Promise<number> {
+  async function newLot(
+    key: string,
+    statusCode: string,
+    lotTypeCode = 'MATERIAL',
+    forPlantId = plantId,
+  ): Promise<number> {
     const lot = await prisma.lot.create({
       data: {
         lot_no: lotNo[key],
         item_id: BigInt(itemId),
         lot_type_code: lotTypeCode,
-        plant_id: BigInt(plantId),
+        plant_id: BigInt(forPlantId),
         initial_qty: 100,
         uom_id: BigInt(uomId),
         source_type_code: 'INBOUND_RECEIPT_LINE',
-        source_id: BigInt(plantId),
+        source_id: BigInt(forPlantId),
         status_code: statusCode,
       },
     });
     return Number(lot.lot_id);
+  }
+
+  /**
+   * `lot-status-transitions` 의 `impact` 전용 픽스처(§8-4 #29·#30 · R-20). **다른 plant** 에
+   * L8 을 심는다 — 같은 plant 면 `list()`/`summary()` 의 고정 배열 단언(#1 등)이 L8 로 깨진다.
+   *
+   * 피킹 「요청」 셋:
+   * - PO1(REGISTERED) — 라인 둘 다 `picked_qty < planned_qty`(열림) → **요청 1건**(R-7 — 라인 2 ≠ 요청 1).
+   * - PO2(REGISTERED) — 라인 하나 `picked_qty === planned_qty`(한계값 · 완료) → 안 센다.
+   * - PO3(**CANCELLED** · 종결) — 라인은 수량만 보면 열려 있다(0<5) → 종결 필터가 «안 걸리는 행」을 뺀다.
+   * 합쳐 openPickingCount 는 **1**이어야 한다(라인으로만 세면 2, 종결 필터만 빼면 2, 둘 다
+   * 걸어야 3 — R-19 리뷰 Nit-3 로 숫자 정정).
+   *
+   * 출고: L8 에 POSTED 두 건(합 150) + **CANCEL_REQUESTED** 한 건(500 · 전기까지 갔다가
+   * 취소 «요청»만 된 것 — «포함»되어야 한다 · Minor-2) + **CANCELLED** 한 건(200 · 원장
+   * 역분개 완료 — «안 걸리는 행», 종결 필터를 지우면 850 이 된다 · Major-2) + 다른 LOT(L1)
+   * 한 건(999, 안 섞여야 한다). 합 shippedQty 는 **650**(=120+30+500).
+   */
+  async function makeImpactFixtures(): Promise<void> {
+    const plant2 = await prisma.plant.create({
+      data: { legal_entity_id: legalEntityId, plant_code: `${PREFIX}-P2`, plant_name: 'LOT상태검사공장2(impact)', timezone_code: 'Asia/Ho_Chi_Minh' },
+    });
+    lotId.L8 = await newLot('L8', 'NORMAL', 'MATERIAL', Number(plant2.plant_id));
+    const lot8 = BigInt(lotId.L8);
+
+    const po1 = await prisma.picking_order.create({ data: pickingOrderData('PO1', 'REGISTERED') });
+    await prisma.picking_line.create({ data: pickingLineData(po1.picking_order_id, 1, lot8, 10, 4) });
+    await prisma.picking_line.create({ data: pickingLineData(po1.picking_order_id, 2, lot8, 6, 2) });
+
+    const po2 = await prisma.picking_order.create({ data: pickingOrderData('PO2', 'REGISTERED') });
+    // 한계값 — picked_qty === planned_qty 는 「완료」다(비교 연산자 반증 · R-19).
+    await prisma.picking_line.create({ data: pickingLineData(po2.picking_order_id, 1, lot8, 8, 8) });
+
+    const po3 = await prisma.picking_order.create({ data: pickingOrderData('PO3', 'CANCELLED') });
+    await prisma.picking_line.create({ data: pickingLineData(po3.picking_order_id, 1, lot8, 5, 0) });
+
+    await newGoodsIssue('GI1', 'POSTED', lot8, 120);
+    await newGoodsIssue('GI2', 'POSTED', lot8, 30);
+    // GI4 — CANCEL_REQUESTED(포함되어야 한다 · Minor-2). GI5 — CANCELLED(안 걸리는 행 ·
+    // Major-2 — 필터를 지우면 650 이 850 으로 깨진다).
+    await newGoodsIssue('GI4', 'CANCEL_REQUESTED', lot8, 500);
+    await newGoodsIssue('GI5', 'CANCELLED', lot8, 200);
+    // 다른 LOT(L1) — lotId 필터가 안 새는지 반증한다.
+    await newGoodsIssue('GI3', 'POSTED', BigInt(lotId.L1), 999);
+  }
+
+  function pickingOrderData(key: string, statusCode: string) {
+    return {
+      picking_order_no: `${PREFIX}-${key}`,
+      picking_type_code: 'MATERIAL',
+      source_document_type_code: 'MATERIAL_ISSUE_REQUEST',
+      source_document_id: BigInt(1),
+      warehouse_id: BigInt(warehouse1Id),
+      status_code: statusCode,
+    };
+  }
+
+  function pickingLineData(pickingOrderId: bigint, lineNo: number, lotIdValue: bigint, plannedQty: number, pickedQty: number) {
+    return {
+      picking_order_id: pickingOrderId,
+      line_no: lineNo,
+      item_id: BigInt(itemId),
+      lot_id: lotIdValue,
+      location_id: BigInt(location1Id),
+      planned_qty: plannedQty,
+      picked_qty: pickedQty,
+      uom_id: BigInt(uomId),
+      status_code: 'REGISTERED',
+    };
+  }
+
+  async function newGoodsIssue(key: string, statusCode: string, lotIdValue: bigint, issueQty: number): Promise<void> {
+    const issue = await prisma.goods_issue.create({
+      data: {
+        goods_issue_no: `${PREFIX}-${key}`,
+        issue_type_code: 'PRODUCTION',
+        source_document_type_code: 'PICKING_ORDER',
+        source_document_id: BigInt(1),
+        source_warehouse_id: BigInt(warehouse1Id),
+        issued_at: new Date(T1),
+        status_code: statusCode,
+      },
+    });
+    await prisma.goods_issue_line.create({
+      data: {
+        goods_issue_id: issue.goods_issue_id,
+        line_no: 1,
+        item_id: BigInt(itemId),
+        lot_id: lotIdValue,
+        issue_qty: issueQty,
+        uom_id: BigInt(uomId),
+        source_location_id: BigInt(location1Id),
+      },
+    });
   }
 
   async function newBalance(
@@ -557,6 +781,15 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
+    // ⭐ R-20 — `impact`(L8) 픽스처 사슬. `lot`·`item`·`warehouse` 삭제보다 «먼저» 지운다
+    //   (goods_issue_line·picking_line 이 그 셋을 FK 로 문다). goods_issue_line.picking_line_id
+    //   는 이 픽스처에서 언제나 NULL 이라 goods_issue·picking_line 사이에 순서가 없다.
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.goods_issue_line WHERE goods_issue_id IN
+      (SELECT goods_issue_id FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.goods_issue WHERE goods_issue_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.picking_line WHERE picking_order_id IN
+      (SELECT picking_order_id FROM logistics.picking_order WHERE picking_order_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`DELETE FROM logistics.picking_order WHERE picking_order_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot_hold
        WHERE lot_id IN (SELECT lot_id FROM trace.lot
