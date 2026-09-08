@@ -49,6 +49,8 @@ export class DefectDistributionService {
     const where = buildDistributionWhere(query);
 
     const nodes = groupBy === 'defectCode' ? await this.byDefectCode(where) : await this.byProcess(where, groupBy);
+    // ⭐ PR #355 리뷰 Minor 1 — PG 의 GROUP BY 반환 순서는 보장되지 않는다. defectQty desc + id 로 동률을 깬다.
+    nodes.sort((a, b) => b.defectQty - a.defectQty || a.defectCodeId - b.defectCodeId);
     return { nodes: nodes.map(omitEmpty), groupBy, asOf: new Date().toISOString() };
   }
 
@@ -76,7 +78,8 @@ export class DefectDistributionService {
 
     const totalQty = grouped.reduce((sum, g) => sum + Number(g._sum.defect_qty ?? 0), 0);
     const parentAgg = new Map<string, { recordCount: number; defectQty: number }>();
-    const children: DistributionNode[] = grouped.map((g) => {
+    const children: DistributionNode[] = [];
+    for (const g of grouped) {
       // codeById 는 grouped 와 같은 id 집합으로 조회했으니 항상 있다 — FK 로 없는 결함코드는
       // defect_record 에 못 실린다. 그래도 단언(`!`) 대신 방어적 기본값으로 좁힌다.
       const code = codeById.get(g.defect_code_id.toString()) ?? { defect_code_id: g.defect_code_id, defect_name: g.defect_code_id.toString(), parent_defect_code_id: null };
@@ -84,15 +87,24 @@ export class DefectDistributionService {
       const defectQty = Number(g._sum.defect_qty ?? 0);
       const parentId = code.parent_defect_code_id === null ? undefined : Number(code.parent_defect_code_id);
       if (parentId !== undefined) {
+        // 자식 행 — 부모 롤업에 누적하고 자식 노드로도 낸다(2계층).
         const agg = parentAgg.get(String(parentId)) ?? { recordCount: 0, defectQty: 0 };
         parentAgg.set(String(parentId), { recordCount: agg.recordCount + recordCount, defectQty: agg.defectQty + defectQty });
+        // groupBy=defectCode 는 공정 축이 아니라 duplicateRisk 는 언제나 false(§4-4).
+        children.push({ defectCodeId: Number(code.defect_code_id), parentDefectCodeId: parentId, label: code.defect_name, recordCount, defectQty, share: shareOf(defectQty, totalQty), duplicateRisk: false });
+      } else {
+        // ⭐ PR #355 리뷰 Major 1 — 부모 코드 자신에 «직접» 달린 행은 잎 노드를 만들지 않고 그
+        // 부모(자기 자신) 롤업에 합친다 — 안 그러면 같은 defectCodeId 노드가 둘(롤업+잎) 생긴다.
+        const own = String(code.defect_code_id);
+        const agg = parentAgg.get(own) ?? { recordCount: 0, defectQty: 0 };
+        parentAgg.set(own, { recordCount: agg.recordCount + recordCount, defectQty: agg.defectQty + defectQty });
       }
-      // groupBy=defectCode 는 공정 축이 아니라 duplicateRisk 는 언제나 false(§4-4).
-      return { defectCodeId: Number(code.defect_code_id), parentDefectCodeId: parentId, label: code.defect_name, recordCount, defectQty, share: shareOf(defectQty, totalQty), duplicateRisk: false };
-    });
+    }
     const parentNodes: DistributionNode[] = [...parentAgg.entries()].map(([id, agg]) => ({
       defectCodeId: Number(id),
-      label: parentById.get(id) ?? id,
+      // 부모 코드 자신에 직행 행이 있으면 codeById 에 그 이름이 있다 — 순수 롤업(직행 행이
+      // 없는 부모)만 parentById 로 떨어진다.
+      label: codeById.get(id)?.defect_name ?? parentById.get(id) ?? id,
       recordCount: agg.recordCount,
       defectQty: agg.defectQty,
       share: shareOf(agg.defectQty, totalQty),
@@ -104,10 +116,15 @@ export class DefectDistributionService {
   /** 공정 축 — R-14 ⓐ. 부모(공정) 노드는 없다 · (공정,결함코드) 쌍마다 자식 노드 하나. */
   private async byProcess(where: Prisma.defect_recordWhereInput, groupBy: DefectDistributionGroupBy): Promise<DistributionNode[]> {
     const column = groupBy === 'detectionProcess' ? 'detection_process_id' : 'occurrence_process_id';
+    // ⭐ PR #355 리뷰 Minor 3 — 그룹 컬럼 하나만 다른 두 갈래를 줄바꿈해 눈으로 대조되게 한다.
     const grouped =
       column === 'detection_process_id'
-        ? (await this.prisma.defect_record.groupBy({ by: ['detection_process_id', 'defect_code_id'], where, _count: { defect_record_id: true }, _sum: { defect_qty: true } })).map((g) => ({ processId: g.detection_process_id, defectCodeId: g.defect_code_id, count: g._count.defect_record_id, qty: g._sum.defect_qty }))
-        : (await this.prisma.defect_record.groupBy({ by: ['occurrence_process_id', 'defect_code_id'], where, _count: { defect_record_id: true }, _sum: { defect_qty: true } })).map((g) => ({ processId: g.occurrence_process_id, defectCodeId: g.defect_code_id, count: g._count.defect_record_id, qty: g._sum.defect_qty }));
+        ? (
+            await this.prisma.defect_record.groupBy({ by: ['detection_process_id', 'defect_code_id'], where, _count: { defect_record_id: true }, _sum: { defect_qty: true } })
+          ).map((g) => ({ processId: g.detection_process_id, defectCodeId: g.defect_code_id, count: g._count.defect_record_id, qty: g._sum.defect_qty }))
+        : (
+            await this.prisma.defect_record.groupBy({ by: ['occurrence_process_id', 'defect_code_id'], where, _count: { defect_record_id: true }, _sum: { defect_qty: true } })
+          ).map((g) => ({ processId: g.occurrence_process_id, defectCodeId: g.defect_code_id, count: g._count.defect_record_id, qty: g._sum.defect_qty }));
     if (grouped.length === 0) return [];
 
     const processIds = [...new Set(grouped.map((g) => g.processId))];
@@ -149,7 +166,8 @@ function buildDistributionWhere(query: DefectDistributionQuery): Prisma.defect_r
   };
 }
 
-/** ⛔ 분모가 0 이면 키를 생략한다(널 금지 · `share` 는 required 밖이다 — I-19 의 `defectRate` 와 반대). */
-function shareOf(qty: number, total: number): number | undefined {
-  return total === 0 ? undefined : (qty / total) * 100;
+// ⭐ PR #355 리뷰 Major 2(M3) — `total === 0` 분기를 걷어냈다. `defect_qty CHECK(> 0)`(baseline
+// `20260727000000/migration.sql:1942`)상 grouped 가 비면 이미 `[]`로 빠져 도달 불가능한 죽은 분기였다.
+function shareOf(qty: number, total: number): number {
+  return (qty / total) * 100;
 }
