@@ -3214,6 +3214,7 @@ model disposition_decision {
   approval_request        approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval")
   sorting_result          sorting_result[]
 
+  @@index([nonconformance_id], map: "ix_disposition_decision_nonconformance")
   @@schema("quality")
 }
 
@@ -3475,6 +3476,7 @@ model nonconformance_lot {
   uom                        uom            @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([nonconformance_id, lot_id], map: "uq_nonconformance_lot")
+  @@index([lot_id], map: "ix_nonconformance_lot_lot")
   @@schema("quality")
 }
 
