@@ -3,26 +3,38 @@ import type { Response } from 'express';
 
 import { Contract } from '../../common/contract';
 import { setEtag } from '../../common/optimistic-lock';
-import { PagedResponse } from '../../common/pagination';
+import { PagedResponse, pageRequest } from '../../common/pagination';
+import { PrismaService } from '../../prisma/prisma.service';
+import {
+  DispositionCandidateFilters,
+  DispositionCandidateRow,
+  DispositionCandidateView,
+  dispositionCandidateCountQuery,
+  dispositionCandidateRowsQuery,
+  dispositionCandidateView,
+} from './disposition-candidate-query';
 import { NonconformanceListQuery, NonconformanceQueryService } from './nonconformance-query.service';
 import { NonconformanceView } from './nonconformance-view';
 
+export interface DispositionCandidateListQuery extends DispositionCandidateFilters {
+  page?: number;
+  size?: number;
+}
+
 /**
- * `GET /quality/nonconformances` · `…/{nonconformanceId}` — 부적합 목록·상세(I-21 PR ①a·①b).
- * `W-03-10`·`W-04-07`·`W-04-11` 이 함께 쓴다. ⛔ 조회 8건 어디에도 계약이 403 을 선언하지
- * 않았다(`permission.guard.ts:37-41` 실측) ⇒ 권한 등록 0줄. ⛔ 목록은 멱등·If-Match·ETag 0
- * — 계약 미선언.
- *
- * ⭐ 상세만 ETag 를 낸다 — `nonconformance.version_no`(이 행 자신의 값). ⛔ **본문에는 안
- * 싣는다**(공유계약 A-4 · `nonconformance-view.ts` 가 이미 그렇게 만든다) — `setEtag` 로만
- * 나간다. 이 토큰은 «다른 계약 파일»(`quality-03품질.json`)의 처분 판정 저장
- * (`POST …/{id}/disposition-decisions`)이 If-Match 로 받는 원천이다(I-21 §0 판정 #5) — 원천
- * 검사기가 한 파일 안에서만 후보를 찾아 이 자리를 못 본다. 처분·후보·특채·쓰기 오퍼레이션은
- * 각각 다른 PR 몫이다(I-21 §10-1).
+ * `GET /quality/nonconformances` · `…/{nonconformanceId}` · `…/disposition-candidates` —
+ * 부적합 목록·상세(I-21 PR ①a·①b) + 처분 판정 대상 목록(PR ③). ⛔ 조회 8건 어디에도 계약이
+ * 403 을 선언하지 않았다 ⇒ 권한 등록 0줄. ⛔ 목록·후보는 멱등·If-Match·ETag 0 — 계약 미선언.
+ * 상세만 ETag(`nonconformance.version_no`)를 낸다 — «다른 계약 파일»(처분 판정 저장)의 If-Match
+ * 원천이다(§0 판정 #5). ⚠ `disposition-candidates` 가 «이» 컨트롤러다(§7-2) —
+ * `disposition-decisions/:id` 를 갖는 `DispositionController` 와 세그먼트가 달라 순서 함정이 없다.
  */
 @Controller('quality')
 export class NonconformanceController {
-  constructor(private readonly nonconformances: NonconformanceQueryService) {}
+  constructor(
+    private readonly nonconformances: NonconformanceQueryService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get('nonconformances')
   @Contract('GET /quality/nonconformances')
@@ -39,5 +51,23 @@ export class NonconformanceController {
     const { view, versionNo } = await this.nonconformances.get(nonconformanceId);
     setEtag(response, versionNo);
     return view;
+  }
+
+  /** 원시 SQL(`disposition-candidate-query.ts`) — 다른 도메인 service 호출 0(§7-3). */
+  @Get('disposition-candidates')
+  @Contract('GET /quality/disposition-candidates')
+  async dispositionCandidates(@Query() query: DispositionCandidateListQuery): Promise<PagedResponse<DispositionCandidateView>> {
+    const page = pageRequest(query);
+    const rowsQuery = dispositionCandidateRowsQuery(query, { skip: page.skip, take: page.take });
+    const countQuery = dispositionCandidateCountQuery(query);
+    const [rows, countRows] = await Promise.all([
+      this.prisma.$queryRawUnsafe<DispositionCandidateRow[]>(rowsQuery.sql, ...rowsQuery.params),
+      this.prisma.$queryRawUnsafe<{ total: number }[]>(countQuery.sql, ...countQuery.params),
+    ]);
+
+    return {
+      items: rows.map(dispositionCandidateView),
+      page: { page: page.page, size: page.size, total: countRows[0]?.total ?? 0 },
+    };
   }
 }
