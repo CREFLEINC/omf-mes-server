@@ -1,7 +1,8 @@
 /**
- * 처분 결정 목록·상세 (e2e) — I-21 PR ②a″. `GET /quality/disposition-decisions` ·
- * `…/{dispositionDecisionId}` 딱 둘이다. 후보(③)·특채(⑤)·쓰기(⑥⑦)는 다른 PR 몫이라 이
- * 파일은 그 둘만 본다 — 뒤 PR 들이 이 파일에 `describe` 를 더한다(회귀 `quality-` 규약).
+ * 처분 결정 목록·상세·이 부적합의 결정 (e2e) — I-21 PR ②a″·②b. `GET /quality/disposition-decisions` ·
+ * `…/{dispositionDecisionId}` · `…/nonconformances/{nonconformanceId}/disposition-decisions`(+`summary`)
+ * 셋이다. 후보(③)·특채(⑤)·쓰기(⑥⑦)는 다른 PR 몫이라 이 파일은 그 셋만 본다 — 뒤 PR 들이 이
+ * 파일에 `describe` 를 더한다(회귀 `quality-` 규약).
  *
  * 등록·판정 저장 오퍼레이션이 아직 없어(⑥⑦) 픽스처는 전부 prisma 직접 INSERT 다(0단계 선례).
  * `disposition-decision`(D1~D3·tie·boundary)은 전부 ncA 하나에 달아 필터·정렬·페이지 단언을
@@ -299,6 +300,70 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     });
   });
 
+  describe('이 부적합의 결정 (②b · +summary)', () => {
+    const url = (nonconformanceId: bigint | number) => `/api/quality/nonconformances/${nonconformanceId}/disposition-decisions`;
+
+    it('⭐ 질의 칸이 0인데 page 가 {1, total, total}로 전건이다(51번째가 조용히 안 사라진다)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.items).toHaveLength(2);
+      expect(response.body.page).toEqual({ page: 1, size: 2, total: 2 });
+    });
+
+    it('summary.remainingQty = 대상(100) − 결정(25+35) = 40(서버 계산)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.summary).toMatchObject({ affectedQtyTotal: 100, decidedQtyTotal: 60, remainingQty: 40 });
+    });
+
+    it('summary.uomId 가 부적합(대상 LOT)의 단위다', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      expect(response.body.summary.uomId).toBe(Number(ids.uom));
+    });
+
+    it('⛔ 응답에 ETag 헤더가 없다(계약 미선언)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+
+      // Express 가 자동으로 붙이는 약한 해시(W/"…")와, `setEtag()`(공유계약 A-4·순정수 문자열)가
+      // 다르다는 것만 잠근다(상세 시험과 같은 방향).
+      expect(response.headers.etag).not.toMatch(/^\d+$/);
+    });
+
+    it('정렬 — decided_at DESC(Dsummary2 가 먼저)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+      const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
+
+      expect(returned).toEqual([decisionIds.Dsummary2, decisionIds.Dsummary1]);
+    });
+
+    it('⭐ 정렬 2차 키 — decided_at 동률이면 disposition_decision_id DESC(통째 단언)', async () => {
+      const response = await get(url(ncIds.ncSummaryTie)).expect(200);
+      const returned = response.body.items.map((i: { dispositionDecisionId: number }) => i.dispositionDecisionId);
+
+      expect(returned).toEqual([decisionIds.DsummaryTieHi, decisionIds.DsummaryTieLo]);
+    });
+
+    it('⭐⭐ 없는 nonconformanceId 는 404 가 «아니다» — 빈 목록 + summary 전 칸 0(계약 미선언 · 형제 오퍼레이션 선례)', async () => {
+      // `GET …/{inspectionResultId}/measurements` 가 같은 자리를 이미 「빈 목록+total 0, 404 아니다」로
+      // 판정해 뒀다(quality-inspection-summary.e2e-spec.ts:318) — 자식 컬렉션 GET 은 부모 존재를
+      // 따로 확인하지 않는다.
+      const response = await get(url(999999999)).expect(200);
+
+      expect(response.body).toEqual({
+        items: [],
+        page: { page: 1, size: 0, total: 0 },
+        summary: { affectedQtyTotal: 0, decidedQtyTotal: 0, remainingQty: 0, uomId: 0 },
+      });
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')(response.body)).toBe(true);
+    });
+
+    it('응답이 계약 스키마를 통과한다(ajv)', async () => {
+      const response = await get(url(ncIds.ncSummary)).expect(200);
+      expect(validator('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')(response.body)).toBe(true);
+    });
+  });
+
   async function makeMasters(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: `${PREFIX} 처분목록법인`, country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -392,7 +457,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     });
   }
 
-  async function makeNonconformance(key: string, itemId: bigint, lotIds: bigint[]): Promise<bigint> {
+  async function makeNonconformance(key: string, itemId: bigint, lotIds: bigint[], affectedQtyEach = 10): Promise<bigint> {
     const nc = await prisma.nonconformance.create({
       data: {
         nonconformance_no: `${PREFIX}-NC-${key}`,
@@ -407,7 +472,7 @@ describe('처분 결정 목록·상세 (e2e)', () => {
       data: lotIds.map((lotId) => ({
         nonconformance_id: nc.nonconformance_id,
         lot_id: lotId,
-        affected_qty: 10,
+        affected_qty: affectedQtyEach,
         uom_id: ids.uom,
         quality_status_before_code: 'DEFECTIVE',
         quality_status_after_code: 'DEFECTIVE',
@@ -500,6 +565,17 @@ describe('처분 결정 목록·상세 (e2e)', () => {
     // 증발한다(coalesce 를 지워도 이 픽스처 없이는 e2e 가 초록이었다).
     const ncScrapNone = await makeNonconformance('ncScrapNone', ids.item1, [ids.lotA]);
     await makeDecision('DscrapNone', ncScrapNone, 'SCRAP', 40, T1);
+
+    // ②b — 「이 부적합의 결정」(전건 + summary). affectedQtyTotal=100(lotA 하나) · 결정 25+35=60
+    // → remainingQty=40. uomId 는 nonconformance_lot.uom_id(= ids.uom)로 고정된다.
+    const ncSummary = await makeNonconformance('ncSummary', ids.item1, [ids.lotA], 100);
+    await makeDecision('Dsummary1', ncSummary, 'REWORK', 25, T1);
+    await makeDecision('Dsummary2', ncSummary, 'SCRAP', 35, T2);
+
+    // ②b 정렬 2차 키 — decided_at 동률(TIE) 둘. 별도 부적합으로 떼어 summary 산식(위)과 섞이지 않게 한다.
+    const ncSummaryTie = await makeNonconformance('ncSummaryTie', ids.item1, [ids.lotA], 10);
+    await makeDecision('DsummaryTieLo', ncSummaryTie, 'REWORK', 1, TIE);
+    await makeDecision('DsummaryTieHi', ncSummaryTie, 'REWORK', 1, TIE); // TIE 와 같은 시각 · id 는 Lo 보다 크다
   }
 
   async function makeUser(): Promise<void> {

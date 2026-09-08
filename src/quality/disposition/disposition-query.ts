@@ -44,7 +44,9 @@ const FROM_CORE = `
     ) fu ON TRUE`;
 
 // `lotinfo` — 하나일 때만 값(§1-4-1). 응답 전용(WHERE 가 안 본다) — count 는 `FROM_CORE` 만 쓴다(Nit-3).
-const FROM = `${FROM_CORE}
+// ⭐ `export` — I-21 PR ②b(`disposition-by-nonconformance.ts`)가 같은 조인을 그대로 재사용한다.
+// 복제하면 두 자리가 갈릴 수 있다(이 파일 머리 주석의 「식별자는 이 파일에서만」과 같은 이유).
+export const FROM = `${FROM_CORE}
     LEFT JOIN LATERAL (
       SELECT CASE WHEN count(*) = 1 THEN min(nl.lot_id) END AS lot_id,
              CASE WHEN count(*) = 1 THEN min(l.lot_no) END AS lot_no
@@ -53,7 +55,7 @@ const FROM = `${FROM_CORE}
        WHERE nl.nonconformance_id = d.nonconformance_id
     ) lotinfo ON TRUE`;
 
-const SELECT_COLUMNS = `
+export const SELECT_COLUMNS = `
       d.disposition_decision_id, d.nonconformance_id, d.disposition_type_code, d.decision_qty,
       d.uom_id, d.reason, d.decided_by, d.decided_at, d.approval_request_id,
       nc.nonconformance_no, nc.item_id, i.item_code, i.item_name, u.user_name AS decided_by_name,
