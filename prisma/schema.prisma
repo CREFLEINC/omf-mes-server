@@ -563,6 +563,7 @@ model inventory_count_line {
   created_at              DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
   app_user                app_user?       @relation(fields: [counted_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_count_line_counted_by")
+  inventory_adjustment_line inventory_adjustment_line[]
   inventory_count         inventory_count @relation(fields: [inventory_count_id], references: [inventory_count_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item            @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   location                location        @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
@@ -4041,9 +4042,11 @@ model inventory_adjustment_line {
   uom_id                        BigInt
   reason_code                   String                      @db.VarChar(50)
   inventory_transaction_line_id BigInt?
+  inventory_count_line_id       BigInt?
   created_at                    DateTime                    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                    BigInt?
   inventory_adjustment          inventory_adjustment        @relation(fields: [inventory_adjustment_id], references: [inventory_adjustment_id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_count_line          inventory_count_line?       @relation(fields: [inventory_count_line_id], references: [inventory_count_line_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_transaction_line    inventory_transaction_line? @relation(fields: [inventory_transaction_line_id], references: [inventory_transaction_line_id], onDelete: NoAction, onUpdate: NoAction)
   item                          item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   location                      location                    @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
@@ -4051,6 +4054,7 @@ model inventory_adjustment_line {
   uom                           uom                         @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([inventory_adjustment_id, line_no], map: "uq_inventory_adjustment_line")
+  @@index([inventory_count_line_id], map: "ix_inventory_adjustment_line_count_line")
   @@index([inventory_adjustment_id], map: "ix_inventory_adjustment_line_header")
   @@schema("inventory")
 }
