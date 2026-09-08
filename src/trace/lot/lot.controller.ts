@@ -22,8 +22,10 @@ import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { LotComplete, LotCompleteService } from './lot-complete.service';
+import { LotExternalIdentifierService } from './lot-external-identifier.service';
+import { LotHoldListService } from './lot-hold-list.service';
 import { bool } from './lot-rules';
-import { LotView } from './lot-view';
+import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
 
 /** LOT. 화면은 `M-01-02`·`P-01-01` 이 만들고 여러 화면이 읽는다. */
@@ -33,6 +35,8 @@ export class LotController {
     private readonly lots: LotService,
     private readonly completes: LotCompleteService,
     private readonly idempotency: IdempotencyService,
+    private readonly externalIdentifiers: LotExternalIdentifierService,
+    private readonly holdList: LotHoldListService,
   ) {}
 
   @Get()
@@ -51,6 +55,23 @@ export class LotController {
     const { detail, versionNo } = await this.lots.get(lotId, bool(withProgress) === true);
     setEtag(response, versionNo);
     return detail;
+  }
+
+  @Get(':lotId/external-identifiers')
+  @Contract('GET /trace/lots/{lotId}/external-identifiers')
+  listExternalIdentifiers(
+    @Param('lotId', ParseIntPipe) lotId: number,
+  ): Promise<{ items: ExternalIdentifierView[] }> {
+    return this.externalIdentifiers.list(lotId);
+  }
+
+  @Get(':lotId/holds')
+  @Contract('GET /trace/lots/{lotId}/holds')
+  listHolds(
+    @Param('lotId', ParseIntPipe) lotId: number,
+    @Query('activeOnly') activeOnly: string | boolean | undefined,
+  ): Promise<{ items: HoldView[] }> {
+    return this.holdList.list(lotId, bool(activeOnly) ?? true);
   }
 
   @Post()
