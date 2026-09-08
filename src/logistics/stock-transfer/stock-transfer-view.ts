@@ -77,7 +77,6 @@ export function stockTransferLineView(row: StockTransferLineRow): StockTransferL
     uomId: Number(row.uom_id),
     fromLocationId: Number(row.from_location_id),
     toLocationId: Number(row.to_location_id),
-    // A4(`handling_unit_id`)는 PR ② 마이그가 세운다 — 물리 칸이 아직 없어 항상 널이다.
-    handlingUnitId: null,
+    handlingUnitId: row.handling_unit_id === null ? null : Number(row.handling_unit_id),
   };
 }

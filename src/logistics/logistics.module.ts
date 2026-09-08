@@ -45,6 +45,7 @@ import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receip
 import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
 import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.service';
 import { StockTransferQueryService } from './stock-transfer/stock-transfer-query.service';
+import { StockTransferService } from './stock-transfer/stock-transfer.service';
 import { StockTransferController } from './stock-transfer/stock-transfer.controller';
 
 /**
@@ -102,6 +103,7 @@ import { StockTransferController } from './stock-transfer/stock-transfer.control
     ShopfloorReceiptQueryService,
     ShopfloorReceiptService,
     StockTransferQueryService,
+    StockTransferService,
   ],
 })
 export class LogisticsModule {}
