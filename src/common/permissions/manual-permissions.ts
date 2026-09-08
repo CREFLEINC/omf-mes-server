@@ -232,6 +232,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /production/work-sessions/{workSessionId}/workers': ['P-02-01'],
   'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
 
+  // `P-05-02` 비가동 실적 입력 — 요구서 §3은 등록·종료만 적어 수정이 도출되지 않았다.
+  // 같은 화면이 자기 비가동 행의 사유·종료시각·고장 연결·메모를 편집한다(I-32 110 통보).
+  'PUT /maintenance/downtimes/{downtimeId}': ['P-05-02'],
+
   // `M-01-10` 재고이동·불량 반출 — 계약이 403 을 선언했는데 도출표에 없다(미등록이면 500 ·
   // `permission.guard.ts:47-53`). 계약 description 「도착 확정. 반출한 수량 이하만 받을 수
   // 있다. 근거: M-01-10 §5-6」 — 반출과 도착이 «한 화면의 두 단계」라 반출을 소유한 화면이
