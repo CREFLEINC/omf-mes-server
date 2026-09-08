@@ -22,14 +22,21 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-ia-probe';
 const NOPERM_ID = 'e2e-ia-noperm';
+const APPROVER_ID = 'e2e-ia-approver';
 const PASSWORD = '조정-조회-비밀번호';
 const PREFIX = 'IAE2E';
 const ROLE = 'E2E_IA';
+const APPROVER_ROLE = 'E2E_IA_APPROVER';
 // `W-01-10` 은 잔액을 세우는 입고 API 를 부르려고 든다(잔액은 손으로 넣지 않는다).
 const PERMISSIONS = ['W-01-12', 'W-01-10'];
+/** 결재함(`:approve`·`:reject` 와 그 상세 GET) 몫 — 승인자에게만 필요하다. */
+const APPROVER_PERMISSIONS = ['W-03-09'];
+/** 계약이 승인 유형을 못박아 본문이 받지 않는다. 대상 유형과 같은 문자열이다. */
+const APPROVAL_TYPE = 'INVENTORY_ADJUSTMENT';
 const DAY = '2026-06-01';
 const AT = '2026-06-01T01:00:00.000Z';
 
@@ -46,6 +53,13 @@ function validator(operation: string, status = 200): ValidateFunction {
   return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
 }
 
+/** 치환·상신이 함께 쓰는 한 벌 — 전표 id · 지금 토큰 · 살아 있는 라인 id. */
+interface Fixture {
+  inventoryAdjustmentId: number;
+  versionNo: number;
+  lineIds: number[];
+}
+
 interface AdjustmentBody {
   inventoryAdjustmentId: number;
   inventoryAdjustmentNo: string;
@@ -60,6 +74,9 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let approverCookie: string[];
+  let approverUserId: bigint;
+  const routeIds: bigint[] = [];
 
   let plantId: number;
   let warehouseId: number;
@@ -70,11 +87,16 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
   let dualLocationId: number;
   /** 다른 공장의 위치 — 공장 단일 검사 갈래. */
   let otherPlantLocationId: number;
+  /** ⭐ 같은 공장 · «다른 사업부» 창고의 위치 — 공장 축만 본다는 것의 반대 갈래. */
+  let otherUnitLocationId: number;
+  let otherUnitWarehouseId: number;
   let itemId: number;
   let lotId: number;
   let uomId: number;
   let inventoryCountId: number;
   let inventoryCountLineId: number;
+  /** 다른 실사의 라인 — 「남의 실사 라인을 가리켰나」 갈래. */
+  let otherCountLineId: number;
 
   /** 전기 완료(조회됨) · 미전기(REGISTERED · adjustedAt=NULL) 한 벌씩. */
   let postedId: number;
@@ -92,6 +114,8 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     await makeUsers();
     await makeAdjustments();
     await makeBalances();
+    // 결재선은 `prisma/seed.ts` 에 0건이라 픽스처로 한 벌 심는다.
+    routeIds.push(await seedRoute(prisma, APPROVAL_TYPE, [approverUserId]));
   });
 
   afterAll(async () => {
@@ -324,7 +348,343 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       .expect(403);
   });
 
+  it('⭐ 사업부가 갈려도 같은 공장이면 통과한다 — 400 은 공장 축만 본다(과잉 차단 금지)', async () => {
+    // ⚠ 법인은 갈릴 수 «없다» — 잔액의 법인 축은 창고가 아니라 «공장»에서 나온다
+    //   (`inventory-posting.service.ts` `orgAxis`). 같은 공장이면 법인도 같다.
+    const response = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      lines: [line(-1), { ...line(-1), locationId: otherUnitLocationId }],
+    }).expect(201);
+
+    expect(response.body.lines).toHaveLength(2);
+  });
+
+  // ── 치환 ────────────────────────────────────────────────────────────────
+
+  it('PUT …/lines — 200 · 라인이 통째로 바뀌고 부모 version_no 가 오른다', async () => {
+    const fixture = await registered();
+
+    const response = await replaceLines(fixture, [
+      { ...item(-4), inventoryAdjustmentLineId: fixture.lineIds[0] },
+      item(7),
+    ]).expect(200);
+
+    const validate = validator('PUT /inventory/adjustments/{inventoryAdjustmentId}/lines');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body.items.map((row: { lineNo: number }) => row.lineNo)).toEqual([1, 2]);
+    expect(response.body.items.map((row: { adjustmentQty: number }) => row.adjustmentQty)).toEqual([-4, 7]);
+    // 첫 라인은 «살아 남고» 둘째는 새로 난다 — 전량 교체의 뜻이다.
+    expect(response.body.items[0].inventoryAdjustmentLineId).toBe(fixture.lineIds[0]);
+    const header = await prisma.inventory_adjustment.findUniqueOrThrow({
+      where: { inventory_adjustment_id: fixture.inventoryAdjustmentId },
+    });
+    expect(header.version_no).toBe(fixture.versionNo + 1);
+  });
+
+  it('⭐ 응답 ETag 가 오른 값이고 그대로 :request-approval 이 된다 — 상세 GET 을 다시 안 돈다', async () => {
+    const fixture = await registered();
+
+    const replaced = await replaceLines(fixture, [item(-1)]).expect(200);
+
+    expect(replaced.headers.etag).toBe(String(fixture.versionNo + 1));
+    await requestApproval(fixture, Number(replaced.headers.etag)).expect(202);
+  });
+
+  it('요청에서 빠진 기존 행은 삭제된다', async () => {
+    const fixture = await registered([line(-2), line(3)]);
+
+    const response = await replaceLines(fixture, [
+      { ...item(-2), inventoryAdjustmentLineId: fixture.lineIds[1] },
+    ]).expect(200);
+
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].inventoryAdjustmentLineId).toBe(fixture.lineIds[1]);
+  });
+
+  it('lineNo 가 1..N 으로 재부여된다 — 1↔2 맞바꾸기가 uq 를 안 깬다', async () => {
+    const fixture = await registered([line(-2), line(3)]);
+
+    const response = await replaceLines(fixture, [
+      { ...item(3), inventoryAdjustmentLineId: fixture.lineIds[1] },
+      { ...item(-2), inventoryAdjustmentLineId: fixture.lineIds[0] },
+    ]).expect(200);
+
+    expect(response.body.items.map((row: { inventoryAdjustmentLineId: number }) => row.inventoryAdjustmentLineId)).toEqual([
+      fixture.lineIds[1],
+      fixture.lineIds[0],
+    ]);
+    expect(response.body.items.map((row: { lineNo: number }) => row.lineNo)).toEqual([1, 2]);
+  });
+
+  it('⭐ 치환도 잔액 행에서 두 상태 칸을 다시 읽어 저장한다 · 잔액 0행이면 400', async () => {
+    const fixture = await registered();
+
+    await replaceLines(fixture, [item(-1)]).expect(200);
+    const row = await prisma.inventory_adjustment_line.findFirstOrThrow({
+      where: { inventory_adjustment_id: fixture.inventoryAdjustmentId },
+    });
+    expect(row.quality_status_code).toBe('NORMAL');
+    expect(row.inventory_status_code).toBe('AVAILABLE');
+
+    const rejected = await replaceLines(
+      { ...fixture, versionNo: fixture.versionNo + 1 },
+      [{ ...item(-1), locationId: emptyLocationId }],
+    ).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'items[0].locationId',
+      code: 'NEGATIVE_BALANCE',
+    });
+  });
+
+  it('빈 items 는 400 LINE_REQUIRED · 수량 0 은 400 INVALID — 오류가 `items` 를 짚는다', async () => {
+    const fixture = await registered();
+
+    const empty = await replaceLines(fixture, []).expect(400);
+    expect(empty.body.errors[0]).toMatchObject({ field: 'items', code: 'LINE_REQUIRED' });
+
+    const zero = await replaceLines(fixture, [item(0)]).expect(400);
+    expect(zero.body.errors[0]).toMatchObject({ field: 'items[0].adjustmentQty', code: 'INVALID' });
+  });
+
+  it('⭐ 남의 실사 라인을 가리키면 400 INVALID — 헤더가 가리키는 실사의 라인만 받는다', async () => {
+    const created = await create({
+      reasonCode: 'COUNT_VARIANCE',
+      inventoryCountId,
+      lines: [{ ...line(-2), inventoryCountLineId }],
+    }).expect(201);
+    const fixture: Fixture = {
+      inventoryAdjustmentId: created.body.inventoryAdjustment.inventoryAdjustmentId,
+      versionNo: Number(created.headers.etag),
+      lineIds: [],
+    };
+
+    const rejected = await replaceLines(fixture, [
+      { ...item(-2), inventoryCountLineId: otherCountLineId },
+    ]).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'items[0].inventoryCountLineId',
+      code: 'INVALID',
+    });
+    // 제 실사의 라인은 그대로 통과한다.
+    await replaceLines(fixture, [{ ...item(-2), inventoryCountLineId }]).expect(200);
+  });
+
+  it('남의 전표 라인 id 를 실으면 400 INVALID 다', async () => {
+    const other = await registered();
+    const fixture = await registered();
+
+    const rejected = await replaceLines(fixture, [
+      { ...item(-1), inventoryAdjustmentLineId: other.lineIds[0] },
+    ]).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'items[0].inventoryAdjustmentLineId',
+      code: 'INVALID',
+    });
+  });
+
+  it('If-Match 가 없으면 400 REQUIRED · 낡으면 409 다', async () => {
+    const fixture = await registered();
+
+    const bare = await request(app.getHttpServer())
+      .put(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}/lines`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ items: [item(-1)] });
+    expect(bare.status).toBe(400);
+    expect(bare.body.errors[0]).toMatchObject({ code: 'REQUIRED' });
+
+    await replaceLines(fixture, [item(-1)]).expect(200);
+    // 같은 토큰을 다시 쓰면 저장 충돌이다 — 재로드하면 풀린다.
+    const stale = await replaceLines(fixture, [item(-1)]);
+    expect(stale.status).toBe(409);
+  });
+
+  it('전기된 조정의 치환은 400 STATE_LOCKED 다', async () => {
+    const response = await replaceLines({ inventoryAdjustmentId: postedId, versionNo: 1, lineIds: [] }, [
+      item(-1),
+    ]);
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('⭐ 전기된 조정은 «잔액이 사라진 뒤»에도 STATE_LOCKED 다 — 상태를 잔액보다 먼저 본다', async () => {
+    // 전기가 그 위치 재고를 소진한 형상을 잔액 «행이 없는» 위치로 대신 만든다. 상태를 나중에
+    // 보면 잔액 판정이 먼저 400 `NEGATIVE_BALANCE` 를 내어 계약이 못박은 갈래가 가려진다.
+    const response = await replaceLines({ inventoryAdjustmentId: postedId, versionNo: 1, lineIds: [] }, [
+      { ...item(-1), locationId: otherPlantLocationId },
+    ]);
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('무권한 계정의 치환은 403 이다(manual-permissions 등록 확인)', async () => {
+    const fixture = await registered();
+
+    // 미등록이면 `PermissionGuard` 가 던져 500 이다 — 403 이 나온다는 것이 등록의 증거다.
+    await request(app.getHttpServer())
+      .put(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}/lines`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(fixture.versionNo))
+      .send({ items: [item(-1)] })
+      .expect(403);
+  });
+
+  // ── 상신 ────────────────────────────────────────────────────────────────
+
+  it('POST …:request-approval — 202 · FK 가 채워지고 상태·버전은 그대로다', async () => {
+    const fixture = await registered();
+    const validate = validator('POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval', 202);
+
+    const response = await requestApproval(fixture).expect(202);
+
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    const created = await prisma.approval_request.findUniqueOrThrow({
+      where: { approval_request_id: response.body.approvalRequestId },
+    });
+    expect(created).toMatchObject({
+      approval_type_code: APPROVAL_TYPE,
+      target_type_code: APPROVAL_TYPE,
+      target_id: BigInt(fixture.inventoryAdjustmentId),
+      status_code: 'PENDING',
+    });
+    const header = await prisma.inventory_adjustment.findUniqueOrThrow({
+      where: { inventory_adjustment_id: fixture.inventoryAdjustmentId },
+    });
+    expect(Number(header.approval_request_id)).toBe(response.body.approvalRequestId);
+    // ⛔ 상태를 안 옮기고 버전도 안 올린다 — 202 에 ETag 가 없다.
+    expect(header.status_code).toBe('REGISTERED');
+    expect(header.version_no).toBe(fixture.versionNo);
+    expect(response.headers.etag ?? '').not.toMatch(/^\d+$/);
+  });
+
+  it('POST …:request-approval — 결재선이 없으면 400 ROUTE_NOT_FOUND', async () => {
+    const fixture = await registered();
+    await prisma.approval_route.updateMany({
+      where: { approval_route_id: { in: routeIds } },
+      data: { is_active: false },
+    });
+
+    let response: request.Response;
+    try {
+      response = await requestApproval(fixture);
+    } finally {
+      // 요청이 죽어도 되돌린다 — 안 그러면 뒤따르는 상신 e2e 가 전부 이 코드로 무너진다.
+      await prisma.approval_route.updateMany({
+        where: { approval_route_id: { in: routeIds } },
+        data: { is_active: true },
+      });
+    }
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+  });
+
+  it('POST …:request-approval — 두 번 부르면 400 APPROVAL_IN_PROGRESS · 반려 뒤엔 새 요청이 선다', async () => {
+    const fixture = await registered();
+    const first = await requestApproval(fixture).expect(202);
+
+    // 버전이 그대로라 같은 토큰을 다시 쓴다.
+    const again = await requestApproval(fixture);
+    expect(again.status).toBe(400);
+    expect(again.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+
+    await decide('reject', first.body.approvalRequestId, { comment: '수량을 다시 보세요' });
+    const second = await requestApproval(fixture).expect(202);
+    // 번복이 아니라 «새» 요청이다(공유계약 J-6).
+    expect(second.body.approvalRequestId).not.toBe(first.body.approvalRequestId);
+  });
+
+  it('POST …:request-approval — 낡은 If-Match 면 409 · 무권한은 403', async () => {
+    const fixture = await registered();
+    // 치환이 부모 버전을 올려 두면 상신이 든 토큰이 낡는다.
+    await replaceLines(fixture, [item(-1)]).expect(200);
+
+    const stale = await requestApproval(fixture);
+    expect(stale.status).toBe(409);
+
+    await request(app.getHttpServer())
+      .post(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}:request-approval`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(fixture.versionNo + 1))
+      .send({ reason: '무권한 상신' })
+      .expect(403);
+  });
+
+  it('⭐ 승인 대기 중 치환은 400 APPROVAL_IN_PROGRESS · 승인이 끝나면 400 STATE_LOCKED', async () => {
+    const fixture = await registered();
+    const submitted = await requestApproval(fixture).expect(202);
+
+    const pending = await replaceLines(fixture, [item(-1)]);
+    expect(pending.status).toBe(400);
+    expect(pending.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+
+    // 승인이 «끝난» 뒤에도 막는다 — 승인자가 본 라인이 그대로 원장에 나가야 한다.
+    await decide('approve', submitted.body.approvalRequestId);
+    const approved = await replaceLines(fixture, [item(-1)]);
+    expect(approved.status).toBe(400);
+    expect(approved.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', field: 'items' });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** 치환 본문 한 줄 — 등록의 `line()` 과 칸은 같고 배열 이름만 `items` 다. */
+  function item(adjustmentQty: number): Record<string, unknown> {
+    return { locationId, itemId, lotId, adjustmentQty, uomId };
+  }
+
+  /** 등록 API 로 `REGISTERED` 전표 한 벌 — 치환·상신이 다룰 대상이다. */
+  async function registered(lines: Record<string, unknown>[] = [line(-2)]): Promise<Fixture> {
+    const created = await create({ reasonCode: 'COUNT_VARIANCE', lines }).expect(201);
+    return {
+      inventoryAdjustmentId: created.body.inventoryAdjustment.inventoryAdjustmentId,
+      versionNo: Number(created.headers.etag),
+      lineIds: created.body.lines.map((row: { inventoryAdjustmentLineId: number }) => row.inventoryAdjustmentLineId),
+    };
+  }
+
+  function replaceLines(fixture: Fixture, items: Record<string, unknown>[]): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}/lines`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(fixture.versionNo))
+      .send({ items });
+  }
+
+  function requestApproval(fixture: Fixture, version = fixture.versionNo): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}:request-approval`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send({ reason: '재고 차이를 닫습니다' });
+  }
+
+  /** 결재함(`W-03-09`)의 두 오퍼레이션 — 승인자 계정으로 부른다(단계의 주인이라야 통한다). */
+  async function decide(
+    action: 'approve' | 'reject',
+    approvalRequestId: number,
+    body: object = {},
+  ): Promise<request.Response> {
+    const detail = await request(app.getHttpServer())
+      .get(`/api/app/approval-requests/${approvalRequestId}`)
+      .set('Cookie', approverCookie)
+      .expect(200);
+    return request(app.getHttpServer())
+      .post(`/api/app/approval-requests/${approvalRequestId}:${action}`)
+      .set('Cookie', approverCookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', detail.headers.etag as string)
+      .send(body)
+      .expect(200);
+  }
 
   function line(adjustmentQty: number): Record<string, unknown> {
     return { locationId, itemId, lotId, adjustmentQty, uomId };
@@ -421,6 +781,29 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     });
     otherPlantLocationId = await makeLocation('-X', warehouse2.warehouse_id);
 
+    // ⭐ 같은 «공장» · 다른 사업부 창고 — 400 이 공장 축만 본다는 것을 가른다(과잉 차단 금지).
+    // ⚠ 사업부만 갈라야 한다 — 법인을 새로 세우면 창고의 법인과 «공장»의 법인이 어긋난 행이
+    //   되고, 잔액의 법인 축은 공장에서 나오므로 검사하려던 갈래를 못 밟는다.
+    const unit2 = await prisma.business_unit.create({
+      data: {
+        legal_entity_id: entity.legal_entity_id,
+        business_unit_code: `${PREFIX}-BU2`,
+        business_unit_name: '조정검사사업부2',
+      },
+    });
+    const warehouse3 = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit2.business_unit_id,
+        warehouse_code: `${PREFIX}-WH3`,
+        warehouse_name: '조정검사창고3',
+        warehouse_type_code: 'RAW',
+        management_level_code: 'LOCATION',
+      },
+    });
+    otherUnitWarehouseId = Number(warehouse3.warehouse_id);
+    otherUnitLocationId = await makeLocation('-U', warehouse3.warehouse_id);
+
     const uom = await prisma.uom.findFirstOrThrow();
     uomId = Number(uom.uom_id);
     const item = await prisma.item.create({
@@ -459,6 +842,30 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     });
     inventoryCountLineId = Number(countLine.inventory_count_line_id);
 
+    // 둘째 실사 한 벌 — 「남의 실사 라인을 가리켰나」를 가른다.
+    const otherCount = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-IC2`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-06-01T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    const otherCountLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: otherCount.inventory_count_id,
+        line_no: 1,
+        location_id: locationId,
+        item_id: itemId,
+        system_qty: 100,
+        counted_qty: 99,
+        uom_id: uomId,
+        counted_at: new Date(AT),
+      },
+    });
+    otherCountLineId = Number(otherCountLine.inventory_count_line_id);
+
     const lot = await prisma.lot.create({
       data: {
         lot_no: `${PREFIX}-LOT`,
@@ -484,9 +891,15 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     await receive(locationId, 100, 'AVAILABLE');
     await receive(dualLocationId, 10, 'AVAILABLE');
     await receive(dualLocationId, 10, 'BLOCKED');
+    await receive(otherUnitLocationId, 20, 'AVAILABLE', otherUnitWarehouseId);
   }
 
-  async function receive(destinationLocationId: number, receiptQty: number, inventoryStatusCode: string): Promise<void> {
+  async function receive(
+    destinationLocationId: number,
+    receiptQty: number,
+    inventoryStatusCode: string,
+    intoWarehouseId = warehouseId,
+  ): Promise<void> {
     await request(app.getHttpServer())
       .post('/api/logistics/goods-receipts')
       .set('Cookie', cookie)
@@ -494,7 +907,7 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       .send({
         receiptTypeCode: 'MATERIAL',
         plantId,
-        warehouseId,
+        warehouseId: intoWarehouseId,
         receiptDatetime: AT,
         businessDate: DAY,
         lines: [
@@ -569,6 +982,28 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     cookie = await login();
+
+    // 결재는 «단계의 주인»이라야 통한다 — 상신자와 다른 계정이 필요하다.
+    const approver = await prisma.app_user.create({
+      data: { login_id: APPROVER_ID, user_name: '조정결재자', status_code: 'EMPLOYED' },
+    });
+    approverUserId = approver.app_user_id;
+    await prisma.user_credential.create({
+      data: { app_user_id: approver.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    const approverRole = await prisma.role.create({
+      data: { role_code: APPROVER_ROLE, role_name: '조정결재용' },
+    });
+    await prisma.role_permission.createMany({
+      data: APPROVER_PERMISSIONS.map((permission_code) => ({
+        role_id: approverRole.role_id,
+        permission_code,
+      })),
+    });
+    await prisma.user_role.create({
+      data: { app_user_id: approver.app_user_id, role_id: approverRole.role_id },
+    });
+    approverCookie = await login(APPROVER_ID);
   }
 
   async function login(loginId: string = LOGIN_ID): Promise<string[]> {
@@ -601,9 +1036,30 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       `DELETE FROM inventory.inventory_adjustment_line WHERE inventory_adjustment_id IN
         (SELECT inventory_adjustment_id FROM inventory.inventory_adjustment WHERE ${isMine})`,
     );
+    // ⭐ 승인 요청 FK 를 먼저 끊는다 — 전표를 지운 «뒤»라야 요청 행을 지울 수 있다.
+    await prisma.$executeRawUnsafe(
+      `UPDATE inventory.inventory_adjustment SET approval_request_id = NULL WHERE ${isMine}`,
+    );
     await prisma.$executeRawUnsafe(
       `DELETE FROM inventory.inventory_adjustment WHERE ${isMine}`,
     );
+    const owners = `SELECT app_user_id FROM app.app_user
+                     WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}', '${APPROVER_ID}')`;
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM app.approval_step WHERE approval_request_id IN
+        (SELECT approval_request_id FROM app.approval_request WHERE requested_by IN (${owners}))`,
+    );
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM app.approval_request WHERE requested_by IN (${owners})`,
+    );
+    // seedRoute 가 심은 결재선. 단계는 승인자를 짚으므로 사용자보다 먼저 지운다.
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM app.approval_route_step WHERE approver_user_id IN (${owners})`,
+    );
+    if (routeIds.length > 0) {
+      await prisma.approval_route.deleteMany({ where: { approval_route_id: { in: routeIds } } });
+      routeIds.length = 0;
+    }
     // ⚠ 뒤 스위트(`inventory-balance`·`inventory-posting`·`inventory-transaction`)와 같은
     //    TRUNCATE 를 돈다 — 우리 앞 스위트가 남긴 것을 지운다(I-14.md §10-1).
     await prisma.$executeRawUnsafe(
@@ -637,7 +1093,7 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);
 
-    for (const id of [LOGIN_ID, NOPERM_ID]) {
+    for (const id of [LOGIN_ID, NOPERM_ID, APPROVER_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
@@ -645,8 +1101,9 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const code of [ROLE, APPROVER_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: code } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }

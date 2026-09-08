@@ -96,6 +96,43 @@ export async function assertCreatable(
 }
 
 /**
+ * 치환의 트랜잭션 밖 검증. 등록과 같은 판정이고 갈리는 것은 셋이다 — 오류가 짚는 배열 이름이
+ * `items` 고(계약 requestBody `{required:['items']}`), 헤더 사유는 이미 저장된 값이라 다시
+ * 대조하지 않으며, 실사 축은 본문이 아니라 «저장된 헤더»가 준다.
+ */
+export async function assertReplaceable(
+  prisma: PrismaService,
+  items: InventoryAdjustmentLineCreate[],
+  inventoryCountId: number | null,
+): Promise<LineDimension[]> {
+  const errors: ErrorItem[] = [];
+  // 계약이 등록 쪽에만 「최소 1행」을 적었으나 같은 자원이라 치환도 0행을 막는다.
+  if (items.length === 0) {
+    errors.push(field('items', ERROR_CODE.LINE_REQUIRED, '조정 라인이 1건 이상이어야 합니다.'));
+  }
+  for (const [index, line] of items.entries()) {
+    if (line.adjustmentQty === 0) {
+      errors.push(field(`items[${index}].adjustmentQty`, ERROR_CODE.INVALID, '증감 수량이 0일 수 없습니다.'));
+    }
+  }
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+
+  const orgs = await lineTargetErrors(prisma, items, 'items', inventoryCountId, errors);
+  assertSinglePlant(items, orgs, 'items', errors);
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+
+  await assertCodeValues(
+    prisma,
+    items.map((line, index) => ({
+      field: `items[${index}].reasonCode`,
+      value: line.reasonCode,
+      groupCode: REASON_GROUP,
+    })),
+  );
+  return resolveLineDimensions(prisma, items, orgs, 'items');
+}
+
+/**
  * 조정 헤더에 공장 축이 0 이라 원장 헤더 `plant_id` 를 라인 위치에서 역산한다 — 두 공장에
  * 걸친 전표는 헤더가 거짓을 적게 되므로 여기서 막는다(결정 — 통보 133).
  * ⚠ **공장 축만** 본다 — 사업부·법인은 창고가 각자 알아 두 사업부에 걸쳐도 잔액이 옳다.

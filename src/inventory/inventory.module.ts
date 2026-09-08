@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
+import { ApprovalModule } from '../core/approval';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { InventoryAdjustmentController } from './adjustment/inventory-adjustment.controller';
 import { InventoryAdjustmentQueryService } from './adjustment/inventory-adjustment-query.service';
+import { InventoryAdjustmentUpdateService } from './adjustment/inventory-adjustment-update.service';
 import { InventoryAdjustmentService } from './adjustment/inventory-adjustment.service';
 import { InventoryBalanceController } from './balance/inventory-balance.controller';
 import { InventoryBalanceService } from './balance/inventory-balance.service';
@@ -22,7 +24,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
  */
 @Module({
   // ⛔ 코어는 «쓰는 것만» 배선한다 — 원장·승인은 `:post`·상신 PR 이 그때 더한다.
-  imports: [PrismaModule, IdempotencyModule, NumberingModule],
+  imports: [PrismaModule, IdempotencyModule, NumberingModule, ApprovalModule],
   controllers: [
     InventoryTransactionController,
     InventoryBalanceController,
@@ -35,6 +37,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryReservationService,
     InventoryAdjustmentQueryService,
     InventoryAdjustmentService,
+    InventoryAdjustmentUpdateService,
   ],
 })
 export class InventoryModule {}
