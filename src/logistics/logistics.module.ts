@@ -47,6 +47,7 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
 import { StockTransferQueryService } from './stock-transfer/stock-transfer-query.service';
 import { StockTransferService } from './stock-transfer/stock-transfer.service';
 import { StockTransferController } from './stock-transfer/stock-transfer.controller';
+import { TransferArriveService } from './stock-transfer/transfer-arrive.service';
 
 /**
  * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하·P/O 요청.
@@ -104,6 +105,7 @@ import { StockTransferController } from './stock-transfer/stock-transfer.control
     ShopfloorReceiptService,
     StockTransferQueryService,
     StockTransferService,
+    TransferArriveService,
   ],
 })
 export class LogisticsModule {}
