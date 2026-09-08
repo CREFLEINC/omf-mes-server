@@ -23,6 +23,8 @@ import { InspectionWriteService } from "./inspection/inspection-write.service";
 import { NumberedMaintenanceWrite } from "./numbered-maintenance-write";
 import { MaintenanceOrderController } from "./order/order.controller";
 import { MaintenanceOrderQueryService } from "./order/order-query.service";
+import { MaintenanceResultController } from "./result/result.controller";
+import { MaintenanceResultQueryService } from "./result/result-query.service";
 
 @Module({
   imports: [
@@ -36,6 +38,7 @@ import { MaintenanceOrderQueryService } from "./order/order-query.service";
     BreakdownController,
     DowntimeController,
     MaintenanceOrderController,
+    MaintenanceResultController,
   ],
   providers: [
     InspectionQueryService,
@@ -53,6 +56,7 @@ import { MaintenanceOrderQueryService } from "./order/order-query.service";
     DowntimeSummaryMaintenanceService,
     DowntimeSummaryService,
     MaintenanceOrderQueryService,
+    MaintenanceResultQueryService,
   ],
 })
 export class MaintenanceModule {}
