@@ -6,8 +6,8 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { BalanceLockKey, LockedBalanceRow, lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
 
 /**
- * 재고 이동 «전기» — 한 문서가 원장을 **두 번** 남긴다(반출 · 도착). 이 파일은 그중
- * **반출(1단째)**만 싣는다 — 도착은 PR ③ 이 잇는다.
+ * 재고 이동 «전기» — 한 문서가 원장을 **두 번** 남긴다(반출 · 도착). 두 전기가 한
+ * 트랜잭션에 드는 자리는 없다 — 사이에 작업자가 물건을 들고 이동하는 시간이 있다.
  *
  * ⛔ HTTP 층을 모른다. `issue-posting.ts` 의 잠금·손검사 형상을 따르되 피킹 소진과
  * `assertLotNotBlocked` 는 없다 — 이동은 피킹 축이 아니고, 보류 LOT 이동은 화면
@@ -24,6 +24,8 @@ const POSTED = 'POSTED';
  * 보이면 안 된다.
  */
 const IN_TRANSIT = 'IN_TRANSIT';
+/** 둘째 원장의 번호 접미. `-R` 은 역처리가 이미 쓴다(`reversal.ts`) — 도착은 `-A` 다. */
+const ARRIVE_NO_SUFFIX = '-A';
 
 type Tx = Prisma.TransactionClient;
 
@@ -169,18 +171,30 @@ export async function postTransferIssue(
   // 흡수가 오면 잔액은 안 옮겨졌는데 되짚기가 그대로 돈다 — 조용히 지나느니 되돌린다.
   if (posted.alreadyPosted) throw new Error(`원장이 이미 있다: ${input.stockTransferNo}`);
 
-  // posting 은 라인을 받은 «순서»대로 `line_no` 를 매긴다 — 자리로 짝짓는다(출고와 같은 모양).
+  return ledgerLineIds(tx, posted.inventoryTransactionId, input.businessDate, lines.length);
+}
+
+/**
+ * 되짚을 원장 라인 id 를 «자리»로 짝짓는다 — posting 이 넘긴 배열 순서대로 `line_no` 를
+ * 매긴다는 코어 규약에 기댄다(반환 순서 추정이 아니다).
+ * ⛔ 길이가 다르면 던진다 — 어긋나면 전표 라인이 «남의 원장»을 가리킨다.
+ */
+async function ledgerLineIds(
+  tx: Tx,
+  inventoryTransactionId: bigint,
+  businessDate: string,
+  expected: number,
+): Promise<bigint[]> {
   const ledger = await tx.inventory_transaction_line.findMany({
     where: {
-      inventory_transaction_id: posted.inventoryTransactionId,
-      business_date: new Date(`${input.businessDate}T00:00:00.000Z`),
+      inventory_transaction_id: inventoryTransactionId,
+      business_date: new Date(`${businessDate}T00:00:00.000Z`),
     },
     orderBy: { line_no: 'asc' },
     select: { inventory_transaction_line_id: true },
   });
-  // 어긋나면 라인이 «남의 원장»을 가리키게 된다 — 조용히 어긋나느니 되돌린다.
-  if (ledger.length !== lines.length) {
-    throw new Error(`원장 라인 수가 이동 라인과 다르다: ${ledger.length} ≠ ${lines.length}`);
+  if (ledger.length !== expected) {
+    throw new Error(`원장 라인 수가 이동 라인과 다르다: ${ledger.length} ≠ ${expected}`);
   }
   return ledger.map((row) => row.inventory_transaction_line_id);
 }
@@ -197,4 +211,121 @@ async function orgAxis(tx: Tx, warehouseId: bigint): Promise<OrgAxis> {
     plantId: warehouse.plant_id,
     warehouseId,
   };
+}
+
+/**
+ * 도착 끝점 — 반출 원장 라인의 `to_*` 4칸 + 라인 3칸을 **그대로 복제**한 것이다. 끝점을
+ * 지어내면 반출이 세운 잔액 «행»이 아닌 다른 차원을 깎아 `NEGATIVE_BALANCE` 가 난다.
+ *
+ * ⭐ `restoredInventoryStatusCode` = 반출 원장 라인의 `from_inventory_status_code` — 도착이
+ * **되돌릴** 재고 상태다. ⛔ `AVAILABLE` 로 고정하지 않는다: 화면 `M-01-10` §5-3 이 보류 LOT
+ * 이동을 「경고 + 진행 가능」으로 열어 `ON_HOLD` 출발이 실제로 도달하는데, 고정하면 서버가
+ * 보류 재고를 이동 한 번으로 가용으로 **세탁**한다(결정 — 통보 125).
+ */
+export interface TransferArriveOrigin {
+  warehouseId: bigint; locationId: bigint; qualityStatusCode: string;
+  /** 반출이 세운 값 — `IN_TRANSIT` 이다. */
+  inventoryStatusCode: string;
+  restoredInventoryStatusCode: string;
+  ownershipTypeCode: string; ownerPartnerId: bigint | null; handlingUnitId: bigint | null;
+}
+
+export interface TransferArriveLineInput {
+  /** 오류 자리를 가리킬 **본문** 번호 — 0 수량 라인을 걸러 넘겨 배열 자리와 다르다. */
+  lineIndex: number;
+  itemId: bigint; lotId: bigint; uomId: bigint;
+  /** 본문 `receivedQty` — 0 인 라인은 호출자가 걸러 넘긴다(원장 `qty > 0` CHECK). */
+  qty: Prisma.Decimal;
+  origin: TransferArriveOrigin;
+  /** 최종 도착 위치 — 본문 재정의가 있으면 그 값이다. */
+  toLocationId: bigint;
+}
+
+export interface PostTransferArriveInput {
+  stockTransferId: bigint; stockTransferNo: string; toWarehouseId: bigint;
+  lines: TransferArriveLineInput[]; businessDate: string; occurredAt: Date;
+}
+
+/** 잠금 키 7칸 + 잔액 유일 인덱스가 갖는 나머지 4칸. */
+const dimOf = (
+  k: BalanceLockKey, quality: string, inventory: string, ownership: string, owner: bigint | null,
+): string => `${keyOf(k)}:${quality}:${inventory}:${ownership}:${owner ?? ''}`;
+
+/**
+ * 도착 전기 — **{도착 창고, 계획 위치, `IN_TRANSIT`}** 에서 빼서 실제 도착 위치에 세운다.
+ * 두 끝점이 다 도착 창고 안이라 조직 3축이 하나다.
+ */
+export async function postTransferArrive(
+  tx: Tx, posting: InventoryPostingService, input: PostTransferArriveInput, appUserId: number,
+): Promise<bigint[]> {
+  const { lines } = input;
+  const axis = await orgAxis(tx, input.toWarehouseId);
+  const dim = (line: TransferArriveLineInput, locationId: bigint) => ({
+    ...axis, locationId, itemId: line.itemId, lotKey: line.lotId,
+  });
+  const fromKeys = lines.map((line) => dim(line, line.origin.locationId));
+  const locked = await lockBalancesInOrder(tx, [
+    ...fromKeys, ...lines.map((line) => dim(line, line.toLocationId)),
+  ]);
+
+  // ⭐ 잠금 키 7칸은 품질·재고 상태·소유를 **안 가른다** — 반출 원장이 준 11칸으로 «고른다».
+  //    반출의 「행이 둘이면 400」(문의 031) 갈래를 여기 쓰면, 앞서 도착해 이미 선 잔액이 같은
+  //    7칸에 함께 걸려 **같은 품목·LOT 의 두 번째 이동이 언제나 400** 이 된다.
+  const found = new Map(
+    locked.map((row) => [
+      dimOf(row, row.quality_status_code, row.inventory_status_code, row.ownership_type_code, row.owner_partner_id),
+      row,
+    ]),
+  );
+  const ids = lines.map(({ origin }, index) =>
+    dimOf(fromKeys[index], origin.qualityStatusCode, origin.inventoryStatusCode,
+      origin.ownershipTypeCode, origin.ownerPartnerId));
+
+  // ⚠ 반출이 세운 잔액이라 모자랄 수 없다 — 그래도 본다(잔여를 누가 먼저 빼 갔을 수 있다).
+  //    같은 차원의 라인이 둘이면 «합계»로 봐야 둘째 UPDATE 에서 트리거가 500 을 안 낸다.
+  const need = new Map<string, Prisma.Decimal>();
+  for (const [index, id] of ids.entries()) need.set(id, (need.get(id) ?? ZERO).plus(lines[index].qty));
+  const errors: ErrorItem[] = ids.flatMap((id, index) => {
+    const available = found.get(id)?.available_qty ?? null;
+    return available !== null && !available.lessThan(need.get(id) as Prisma.Decimal)
+      ? []
+      : [field(`lines[${lines[index].lineIndex}].receivedQty`, ERROR_CODE.NEGATIVE_BALANCE,
+          '운송중 수량보다 많이 받을 수 없습니다.')];
+  });
+  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+
+  const posted = await posting.post(tx, {
+    businessDate: input.businessDate,
+    occurredAt: input.occurredAt,
+    transactionTypeCode: SOURCE_DOCUMENT_TYPE,
+    // ⭐ 한 문서가 원장을 «둘» 남긴다 — 같은 영업일에 `uq_inventory_transaction_no` 를 안 깨려면
+    //    둘째에 접미가 있어야 한다.
+    transactionNo: `${input.stockTransferNo}${ARRIVE_NO_SUFFIX}`,
+    statusCode: POSTED,
+    plantId: Number(axis.plantId),
+    sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
+    sourceDocumentId: Number(input.stockTransferId),
+    idempotencyKey: `${SOURCE_DOCUMENT_TYPE}:${input.stockTransferNo}:ARRIVE`,
+    createdBy: appUserId,
+    lines: lines.map(({ origin, ...line }) => ({
+      itemId: Number(line.itemId), lotId: Number(line.lotId),
+      qty: Number(line.qty), uomId: Number(line.uomId),
+      from: {
+        warehouseId: Number(origin.warehouseId), locationId: Number(origin.locationId),
+        qualityStatusCode: origin.qualityStatusCode,
+        inventoryStatusCode: origin.inventoryStatusCode,
+      },
+      to: {
+        warehouseId: Number(origin.warehouseId), locationId: Number(line.toLocationId),
+        // ⛔ 품질 상태는 손대지 않는다 — 이동은 판정이 아니다(적치·출고 선례).
+        qualityStatusCode: origin.qualityStatusCode,
+        inventoryStatusCode: origin.restoredInventoryStatusCode,
+      },
+      ownershipTypeCode: origin.ownershipTypeCode,
+      ...(origin.ownerPartnerId === null ? {} : { ownerPartnerId: Number(origin.ownerPartnerId) }),
+      ...(origin.handlingUnitId === null ? {} : { handlingUnitId: Number(origin.handlingUnitId) }),
+    })),
+  });
+  if (posted.alreadyPosted) throw new Error(`도착 원장이 이미 있다: ${input.stockTransferNo}`);
+  return ledgerLineIds(tx, posted.inventoryTransactionId, input.businessDate, lines.length);
 }

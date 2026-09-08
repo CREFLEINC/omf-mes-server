@@ -50,6 +50,8 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     'logistics.inbound_receipt.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'logistics.goods_receipt.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'logistics.putaway_task.status_code': 'PUTAWAY_TASK_STATUS',
+    // 재고 이동도 물류 전표 4값을 쓴다 — `REGISTERED` → `POSTED` 하나만 연다(I-13 PR ③).
+    'logistics.stock_transfer.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'production.work_order.status_code': 'WORK_ORDER_STATUS',
     'production.work_session.status_code': 'WORK_SESSION_STATUS',
     'planning.production_plan.status_code': 'PRODUCTION_PLAN_STATUS',

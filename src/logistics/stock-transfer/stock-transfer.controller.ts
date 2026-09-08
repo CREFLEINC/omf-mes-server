@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -17,14 +18,19 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
-import { setEtag } from '../../common/optimistic-lock';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { StockTransferQuery, StockTransferQueryService } from './stock-transfer-query.service';
 import { StockTransferDetail, StockTransferLineView, StockTransferView } from './stock-transfer-view';
 import { StockTransferCreate, StockTransferService } from './stock-transfer.service';
+import {
+  ArriveContext,
+  StockTransferArrive,
+  TransferArriveService,
+} from './transfer-arrive.service';
 
 /**
- * 재고 이동 6건 중 조회 3건 + 반출 등록(PR ①②). 도착·라인 치환은 PR ③④ 가 잇는다.
+ * 재고 이동 6건 중 조회 3건 + 반출 등록 + 도착 확정(PR ①②③). 라인 치환은 PR ④ 가 잇는다.
  * `M-01-10` 이 소유하는 화면 — 조회는 계약이 403 을 선언하지 않아 `manual-permissions.ts`
  * 에 없다(`permission.guard.ts:35-40`).
  */
@@ -33,6 +39,7 @@ export class StockTransferController {
   constructor(
     private readonly queries: StockTransferQueryService,
     private readonly transfers: StockTransferService,
+    private readonly arrivals: TransferArriveService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -73,6 +80,24 @@ export class StockTransferController {
     return result.detail;
   }
 
+  /**
+   * ⭐ 도착이 원장 2단째를 세운다 — 200 이 나온 시점에 잔액이 `IN_TRANSIT` 에서 실제 위치로 옮겨져 있다.
+   * ⛔ ETag 를 안 내린다 — 계약 200 에 응답 헤더 선언이 0건이다. If-Match 는 «선택»이라
+   *    없으면 대조를 건너뛴다(오프라인 큐가 토큰을 안 싣는다 · C-9).
+   */
+  @Post(':stockTransferId\\:arrive')
+  @Contract('POST /logistics/stock-transfers/{stockTransferId}:arrive')
+  @HttpCode(HttpStatus.OK)
+  arrive(
+    @Req() request: Request,
+    @Param('stockTransferId', ParseIntPipe) stockTransferId: number,
+    @Body() body: StockTransferArrive,
+  ): Promise<StockTransferDetail> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.arrivals.arrive(stockTransferId, body, contextOf(request)),
+    );
+  }
+
   /** ⛔ 자식 컬렉션 GET 이라 ETag 를 안 붙인다(계약 원문 — 잠그는 단위는 부모다). */
   @Get(':stockTransferId/lines')
   @Contract('GET /logistics/stock-transfers/{stockTransferId}/lines')
@@ -87,4 +112,14 @@ function userOf(request: Request): number {
   const session = currentSession(request);
   if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
   return session.userId;
+}
+
+/** 헤더는 계약 검증 가드가 안 본다 — 사번 필수 판정은 서비스 몫이다(적치 선례). */
+function contextOf(request: Request): ArriveContext {
+  const workerNo = request.header('X-Worker-No');
+  return {
+    workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+    version: ifMatchVersion(request),
+    appUserId: userOf(request),
+  };
 }
