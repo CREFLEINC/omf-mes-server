@@ -192,6 +192,14 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
   'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
 
+  // `W-01-12` 재고조정 §5-6 액션 표 「전기 — 승인 후(또는 승인 불요 시 상신 즉시)」.
+  // 도출표는 화면 «액션»만 긁어 「조정 상신」만 들어왔고 전기가 빠졌다.
+  'POST /inventory/adjustments/{inventoryAdjustmentId}:post': ['W-01-12'],
+  // `W-01-12` §5-6 「라인 추가·수정 — 직접 등록 시」 · §7 DS 매핑 「조정 라인 편집 표 —
+  // 편집 그리드」. 계약은 이 경로에 화면을 안 적었으나 「부모 자원 GET 의 ETag 를 If-Match 로
+  // 쓴다」로 부모를 지목하고, 부모의 화면이 곧 이 오퍼레이션의 화면이다.
+  'PUT /inventory/adjustments/{inventoryAdjustmentId}/lines': ['W-01-12'],
+
   // `W-01-06`·`W-04-10` 폐기 요청 — 부르는 화면이 실제로 0건이나 `PermissionGuard` 가 등록을
   // 요구한다(미등록이면 500). 소유자를 폐기 두 화면으로 둔다 — 두 화면의 §3 액션표에 라인
   // 편집이 없어(「승인 요청」·「기타출고 처리」뿐) 도출표에 치환이 안 들어왔다.
@@ -223,4 +231,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ 참여·이탈을 «부르는» 화면은 0건이다 — 화면이 정해지면 그때 옮긴다(설계 미정 — 문의 057).
   'POST /production/work-sessions/{workSessionId}/workers': ['P-02-01'],
   'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
+
+  // `M-01-10` 재고이동·불량 반출 — 계약이 403 을 선언했는데 도출표에 없다(미등록이면 500 ·
+  // `permission.guard.ts:47-53`). 계약 description 「도착 확정. 반출한 수량 이하만 받을 수
+  // 있다. 근거: M-01-10 §5-6」 — 반출과 도착이 «한 화면의 두 단계」라 반출을 소유한 화면이
+  // 도착도 소유한다.
+  'POST /logistics/stock-transfers/{stockTransferId}:arrive': ['M-01-10'],
+
+  // ⚠ 부르는 화면이 «0건»이다 — `M-01-10` §5-6 액션 7종에 라인 편집이 없다. 그래도 가드가
+  // 등록을 요구한다(미등록이면 500 · 선례 `PUT /logistics/goods-issues/{id}/lines`). 소유자를
+  // 이동 문서의 유일한 화면으로 둔다 — 잠정(설계 미정 · 문의 123).
+  'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
 };

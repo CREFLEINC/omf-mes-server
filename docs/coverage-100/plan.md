@@ -55,10 +55,10 @@
 | 19 | **I-22** 출하지시·작업지시·제품 피킹 | 9 | I-8 | A13 | — | opus | 3 | — |
 | 20 | **I-23** 출하·확정·취소 + 재등록 | 7 | I-22·I-5 · **I-19 품질 전이 코어(재등록, A)** | A14 · U-I(`confirmed_*`) | ERP 아웃박스 둘째 | opus | 4 | ⛔ I-4 와 직렬(이미 끝) · 재등록 전 A 코어 병합·동기화(`lanes.md` §0) |
 | — | **M4 체인 e2e** | | | | | fable | 1 | |
-| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | — | opus | 3 | ∥ I-11 |
-| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | — | — | opus | 3 | — |
+| 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | `transitions.ts`(축 1·전이 2) | opus·sonnet | **4** | ∥ I-11 · ∥ I-14(같은 레인 C — `transitions.ts` 는 레인 «안에서» 직렬화 · I-13 R-10) |
+| 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | **N-1** | `transitions.ts`(키 1 · I-13 과 레인 안 직렬화) | opus·sonnet | **4** | C |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
-| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | — | — | opus | 3 | ∥ I-33 |
+| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **4** | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 지금0 | 조건부 SERIAL_NUMBER 채번만 별도 코어≤200 | 조회/조건부 심장 분리 | 즉시 GET1 + 조건부 코어/쓰기 | I-26 R1~R10 · 문의104~107 |
 | 27 | **I-27** 발행 이력·프린터 | 7(진행5·보류1·제외1) | I-26 저장조회 | A9 nullable6·A10 유보 | — | 물리/조회/쓰기 분리 | P0/P1/P2/P3·발행 규칙/잠금/배치 별도 | R1~R16·∥ I-28 |
@@ -128,6 +128,8 @@
 | A13 | I-22 | `logistics.shipment_request` | `sales_order_id?` |
 | A14·M-f · U-I | I-23 | `logistics.shipment` | `expedited` · `expedite_reason?` · `confirmed_at?` · `confirmed_by?` |
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
+| **N-1** | **I-14** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** + FK + `ix_inventory_adjustment_line_count_line` — 계약 `InventoryAdjustmentLine.inventoryCountLineId`·`…LineUpsert.inventoryCountLineId` 둘 다 정의했는데 물리에 칸이 없다(I-14 재수립 R-4). ⭐ 이 칸이 **I-15 `:close` 의 「조정됨」을 라인 축으로** 재게 한다(§I-15 「라인 대응이 없다」를 연다) |
+| **N-2** | **I-16** | **신설** `inventory.handling_unit_repack_event` · `handling_unit_repack_event_line` | 재포장 이벤트 헤더 + 라인(`role_code`·`qty_before`·`qty_after`) + 복합 인덱스 1. ⭐ **`plan.md` §0 #9 의 「기존 표 재사용」이 실측으로 뒤집혔다**(I-16 재수립 R-1) — `handling_unit_reconfiguration(+_line)` 은 라인 필수 6칸 중 4칸이 없고 `ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약 대표 경로(한 HU 의 `PUT …/contents`)를 **구조적으로 막는다**. 기존 표는 **손대지 않는다**(0행·참조 0) ⇒ 삭제 0 |
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9 | I-27 | `app.document_issue_log` | 결과3+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0·구writer 종료/갱신→P5→환경별 응답 활성화 |
 | A10 | I-27 | `app.printer` | **유보·적용0**. 단말 매핑/관측/기본/지원 원천 전 칸5 추가만으로 완료 불가. OFFLINE/false 기본값 제안 철회 |
@@ -183,7 +185,7 @@ I-30 배포 제한: 점검·고장8건 진행, 완료1건 보류. 고장 PUT의 
 
 I-31 배포 제한: R1~R13으로 GET4·쓰기4 정상 본길 진행. closed=true와 resetCounter=true만422·업무/자식/누계/lastPM/version/멱등 전건0이며 미마감 nonreset 기록·수정은 정상이다. finishedAt를 PM 완료로 해석하지 않는다. 구행 required 결손 또는 구 작성자 지속 환경만 활성화 유보, 개발 DDL/정상 구현 중단0. parts는 기존 출고 참조·unknown단위NULL이지 posting/환산이 아니다. 실제 부여·예비품 writer와 NKU/SHARE/UPDATE 경로 안정화·유한 run 재시도 인수, 상세/PUT·PM 날짜·마감/누적 의미·단위 확인 소비자 인수는 별도 미완(091·094·113~116). I-32 summary111 원천 질문은 해소되지 않았다.
 
-배포 노트에 적을 것: 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
+배포 노트에 적을 것: ⭐ **(통보 051) 자재 반출분은 재고 수불에 안 잡힌다 — 실사 시 라인 재고가 장부보다 적게 나오는 원인이다** · ⭐ **(통보 030) 폐기 출고는 「상신 흔적이 있는 전표」만 승인을 강제한다 — 「승인 없이 나간 건」을 세는 질의는 문의 030 파일에 있다** · ⭐ **(회신 052) LOT 계보는 W/O 단위다 — 리콜은 W/O 단위 회수를 전제한다** · 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
 
 I-26 배포 제한: 저장 개체 조회1건만 진행하며 P-02-05·재사용 P-02-12의 새 발번은 미완이다. 수량 대응·상태 원천을 조용히 만들지 않는다. I-27의 기존 serial/LOT/HU 발행기록 경로는 별도 판정한다. 재개 때 발번 N개→단일 targets N개의 발행 요청으로 연결하고 단계별 키를 유지한다. 번호 결번/If-Match와 귀속·보존 한계는106·107에 인계했다.
 
