@@ -4,6 +4,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| **구분** | **통보** — 계획대로 「잔액 되읽기 · 2행 이상 400 · 증(+) 0행 400」으로 간다. **거부는 소급 불가한 행을 만들지 않고**, 나중에 여는 것은 완화다. ⚠ 열려면 계약 라인 스키마에 두 칸이 필요하다(그 자리만 설계 소관) |
 | 걸리는 오퍼레이션 | `POST /inventory/adjustments` · `PUT /inventory/adjustments/{id}/lines` · `POST /inventory/adjustments/{id}:post` |
 | 구현 상태 | **미구현** — I-14 는 조회 3건만 병합됐다(`main` · `src/inventory/adjustment/inventory-adjustment.controller.ts:25·31·43` 이 `@Get` 셋뿐). 등록·치환·상신·`:post` 는 아직 없다 |
 | 판정 | `coverage-100/README.md` §2 **1단계 본길**(모든 등록이 이 칸을 채워야 한다) → 2단계 **기준 4**(값을 조용히 도출하지 않는다) + **기준 2**(거부하는 쪽 · 거부→허용이 호환 완화다). ⚠ 「스키마를 안 늘리는 쪽」(기준 3)은 **안 걸린다** — NOT NULL 완화는 칸을 늘리지 않는다 |

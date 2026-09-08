@@ -77,6 +77,7 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
     "put",
     "200",
   );
+  const summaryValidator = validator("/maintenance/downtimes/summary");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -320,6 +321,108 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
       .get(`${PATH}/999999999`)
       .set("Cookie", cookie)
       .expect(404);
+  });
+
+  it("D09 summary 기본 탭은 장비합집합·경미정지와 계약 응답을 낸다", async () => {
+    const response = await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ ...PERIOD, equipmentId: Number(equipment.summary) })
+      .expect(200);
+    expect(summaryValidator(response.body)).toBe(true);
+    expect(summaryValidator.errors ?? []).toEqual([]);
+    expect(response.body).toMatchObject({
+      operatingMinutes: 0,
+      plannedDowntimeMinutes: 0,
+      actualDowntimeMinutes: 8,
+      availabilityPercent: null,
+      openIntervalCount: 1,
+      overlappingIntervalCount: 2,
+      minorStopCount: 1,
+      minorStopMinutes: 4,
+      minorStopThresholdMinutes: 5,
+      sessionsWithoutEquipmentCount: 0,
+      correctiveMaintenanceCount: 0,
+      preventiveMaintenanceCount: 0,
+      breakdownsClosedWithoutOrderCount: 0,
+      byReason: [
+        {
+          reasonCode: ACTIVE_REASON,
+          reasonName: "금형 교체",
+          count: 2,
+          totalMinutes: 10,
+          sharePercent: 125,
+          averageMinutes: 5,
+        },
+      ],
+    });
+    expect(response.body).not.toHaveProperty("byEquipment");
+    expect(response.body).not.toHaveProperty("byPeriod");
+  });
+
+  it("D10 summary는 요청한 EQUIPMENT·PERIOD 탭 하나만 채운다", async () => {
+    const query = { ...PERIOD, equipmentId: Number(equipment.summary) };
+    const byEquipment = await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ ...query, groupBy: "EQUIPMENT", bucket: "MONTH" })
+      .expect(200);
+    expect(byEquipment.body.byEquipment).toEqual([
+      {
+        equipmentId: Number(equipment.summary),
+        equipmentCode: `${PREFIX}-summary`,
+        equipmentName: "summary",
+        count: 2,
+        totalMinutes: 8,
+        sharePercent: 100,
+        averageMinutes: 4,
+      },
+    ]);
+    expect(byEquipment.body).not.toHaveProperty("byReason");
+    expect(byEquipment.body).not.toHaveProperty("byPeriod");
+
+    const byPeriod = await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ ...query, groupBy: "PERIOD", bucket: "DAY" })
+      .expect(200);
+    expect(byPeriod.body.byPeriod).toEqual([
+      { periodStart: "2026-09-01", count: 2, totalMinutes: 8 },
+    ]);
+    expect(byPeriod.body).not.toHaveProperty("byReason");
+    expect(byPeriod.body).not.toHaveProperty("byEquipment");
+  });
+
+  it("D11 summary 계약 입력·역전·인증 경계를 지킨다", async () => {
+    const valid = { ...PERIOD, equipmentId: Number(equipment.summary) };
+    await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ startedFrom: PERIOD.startedFrom })
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ ...valid, groupBy: "UNKNOWN" })
+      .expect(400);
+    const reversed = await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", cookie)
+      .query({ ...valid, startedFrom: "2026-09-02" })
+      .expect(400);
+    expect(reversed.body.errors[0]).toMatchObject({
+      field: "startedTo",
+      code: "RANGE",
+    });
+    await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .query(valid)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get(`${PATH}/summary`)
+      .set("Cookie", noPermissionCookie)
+      .query(valid)
+      .expect(200);
   });
 
   it("D15 required 3칸으로 open을 만들고 사번·null·version 1을 정확히 저장한다", async () => {
@@ -1234,6 +1337,7 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
             "updateRollback",
             "updateEmpty",
             "updateExact",
+            "summary",
           ]
         : [name]) {
         equipment[equipmentName] = (
@@ -1249,6 +1353,36 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
         ).equipment_id;
       }
     }
+    const summaryCalendar = await prisma.work_calendar.create({
+      data: {
+        calendar_code: `${PREFIX}-SUMMARY-CALENDAR`,
+        calendar_name: "summary",
+      },
+    });
+    await prisma.work_calendar_application.create({
+      data: {
+        work_calendar_id: summaryCalendar.work_calendar_id,
+        target_type_code: "PLANT",
+        target_id: hanoiPlantId,
+        effective_from: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    await prisma.work_calendar_day.create({
+      data: {
+        work_calendar_id: summaryCalendar.work_calendar_id,
+        calendar_date: new Date("2026-09-01T00:00:00Z"),
+        day_type_code: "WORKING",
+      },
+    });
+    await prisma.shift.create({
+      data: {
+        plant_id: hanoiPlantId,
+        shift_code: `${PREFIX}-SUMMARY-SHIFT`,
+        shift_name: "summary",
+        start_time: new Date("1970-01-01T08:00:00Z"),
+        end_time: new Date("1970-01-01T16:00:00Z"),
+      },
+    });
     const breakdown = await prisma.breakdown.create({
       data: {
         breakdown_no: `${PREFIX}-BREAKDOWN`,
@@ -1405,6 +1539,19 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
       "2026-08-31T17:05:00Z",
       "2026-08-31T17:06:00Z",
     );
+    await add(
+      "summaryMinor",
+      "summary",
+      "2026-09-01T00:00:00Z",
+      "2026-09-01T00:04:00Z",
+    );
+    await add(
+      "summaryLong",
+      "summary",
+      "2026-09-01T00:02:00Z",
+      "2026-09-01T00:08:00Z",
+    );
+    await add("summaryOpen", "summary", "2026-09-01T01:00:00Z", null);
   }
 
   async function add(
@@ -1429,6 +1576,23 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
 
   async function cleanup(): Promise<void> {
     const client = prisma ?? new PrismaClient();
+    const calendars = await client.work_calendar.findMany({
+      where: { calendar_code: `${PREFIX}-SUMMARY-CALENDAR` },
+      select: { work_calendar_id: true },
+    });
+    const calendarIds = calendars.map((row) => row.work_calendar_id);
+    await client.work_calendar_day.deleteMany({
+      where: { work_calendar_id: { in: calendarIds } },
+    });
+    await client.work_calendar_application.deleteMany({
+      where: { work_calendar_id: { in: calendarIds } },
+    });
+    await client.work_calendar.deleteMany({
+      where: { work_calendar_id: { in: calendarIds } },
+    });
+    await client.shift.deleteMany({
+      where: { shift_code: `${PREFIX}-SUMMARY-SHIFT` },
+    });
     await client.equipment_downtime.deleteMany({
       where: { equipment: { equipment_code: { startsWith: `${PREFIX}-` } } },
     });

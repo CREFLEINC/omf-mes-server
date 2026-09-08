@@ -54,6 +54,15 @@ export class DowntimeSummarySourceService {
   async read(
     query: DowntimeSummarySourceQuery,
   ): Promise<DowntimeSummarySource> {
+    return this.prisma.$transaction((tx) => this.readWithin(tx, query), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+  }
+
+  async readWithin(
+    tx: Prisma.TransactionClient,
+    query: DowntimeSummarySourceQuery,
+  ): Promise<DowntimeSummarySource> {
     if (query.startedFrom > query.startedTo)
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         field(
@@ -62,15 +71,6 @@ export class DowntimeSummarySourceService {
           "비가동 집계 종료일이 시작일보다 빠릅니다.",
         ),
       ]);
-    return this.prisma.$transaction((tx) => this.readWithin(tx, query), {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    });
-  }
-
-  private async readWithin(
-    tx: Prisma.TransactionClient,
-    query: DowntimeSummarySourceQuery,
-  ): Promise<DowntimeSummarySource> {
     const equipmentConditions = [Prisma.sql`TRUE`];
     if (query.plantId !== undefined)
       equipmentConditions.push(Prisma.sql`e.plant_id = ${query.plantId}`);

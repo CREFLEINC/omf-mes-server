@@ -4,6 +4,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| **구분** | **통보** — 값 목록이 오면 상수 두 줄이고 저장된 값은 `UPDATE` 로 갈아 끼운다(코드값이라 비용이 낮다 · 레인 A 12 선례) |
 | 걸리는 오퍼레이션 | `POST /inventory/handling-units/{handlingUnitId}:pack` · `POST /inventory/handling-units` · `GET /inventory/handling-units`(질의 `statusCode`) |
 | 구현 상태 | **구현 예정(I-16 · 계획만 병합됨 · 오늘 코드 0줄)** |
 | 판정 | `coverage-100/README.md` §2 **1단계 본길**(계약이 규칙은 문장으로 줬고 값만 안 줬다 → 계약 문자 그대로 + 문의) → **2단계 기준 3**(스키마를 안 늘린다 — 칸은 이미 있다 · 마이그 0) **· 기준 4**(값을 조용히 도출하지 않고 이름을 붙여 한 파일에 모은다) |
