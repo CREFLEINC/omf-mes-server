@@ -584,6 +584,142 @@ describe('재고 이동 조회 (e2e)', () => {
     expect(await onHand(lot, location2Id, 'AVAILABLE')).toBe(4);
   });
 
+  // ── 도착 확정 · 다중 라인 (PR ③ 리뷰 Major-2) ────────────────────────────────
+  // ⚠ 위 12건은 «전부 1라인»이라 라인 짝짓기·전량 판정이 통째로 무검증이었다. 아래 셋이
+  //    그 자리를 덮는다 — 본문 순서 · 0 수량 · 본문에 안 실린 라인 · 오류 자리 번호.
+
+  it('⭐ 다중 라인 — 본문을 역순으로 싣고 가운데를 0 수량으로 받아도 각 라인이 «자기» 원장 줄을 되짚는다', async () => {
+    const lotA = await seedBalance(10);
+    const lotB = await seedBalance(10);
+    const lotC = await seedBalance(10);
+    const transfer = await created({
+      ...draft(lotA, 3),
+      lines: [line(lotA, 3), line(lotB, 5), line(lotC, 7)],
+    });
+    const [l1, l2, l3] = transfer.lines;
+
+    // ⭐ 본문 순서 ≠ 전표 라인 순서 · 가운데 라인은 0 수량이라 원장 라인이 «없다».
+    const body = (
+      await callArrive(
+        transfer,
+        arrivalOf([
+          { line: l3, receivedQty: 7 },
+          { line: l2, receivedQty: 0 },
+          { line: l1, receivedQty: 3 },
+        ]),
+      ).expect(200)
+    ).body as DetailBody;
+
+    // 전량이 아니다(L2 가 0) — 상태를 안 옮긴다.
+    expect(body.stockTransfer.statusCode).toBe('REGISTERED');
+    expect(body.lines.map((row) => row.receivedQty)).toEqual([3, 0, 7]);
+
+    // 원장은 «본문 순서»로 선다 — L3 가 line_no 1, L1 이 2 다(0 수량 라인은 빠진다).
+    const ledger = await ledgerLinesOf(`${transfer.stockTransfer.stockTransferNo}-A`);
+    expect(ledger.map((row) => row.lot_id)).toEqual([BigInt(lotC), BigInt(lotA)]);
+
+    const rows = await prisma.stock_transfer_line.findMany({
+      where: { stock_transfer_id: transfer.stockTransfer.stockTransferId },
+      orderBy: { line_no: 'asc' },
+      select: { receipt_transaction_line_id: true },
+    });
+    // ⭐ 짝짓기는 «전기한 횟수»로 돈다 — 본문 자리 번호로 짚으면 마지막 라인이 널이 된다.
+    expect(rows.map((row) => row.receipt_transaction_line_id)).toEqual([
+      ledger[1].inventory_transaction_line_id,
+      null,
+      ledger[0].inventory_transaction_line_id,
+    ]);
+
+    expect(await onHand(lotA, location2Id, 'AVAILABLE')).toBe(3);
+    expect(await onHand(lotC, location2Id, 'AVAILABLE')).toBe(7);
+    // 0 수량 라인의 몫은 운송중에 그대로 남는다.
+    expect(await onHand(lotB, location2Id, 'IN_TRANSIT')).toBe(5);
+    expect(await onHand(lotB, location2Id, 'AVAILABLE')).toBe(0);
+  });
+
+  it('⭐ 다중 라인 전량 판정 — 본문에 «안» 실린 라인은 0 으로 세고, 둘 다 채우면 POSTED 다', async () => {
+    const lotA = await seedBalance(10);
+    const lotB = await seedBalance(10);
+    const partial = await created({
+      ...draft(lotA, 3),
+      lines: [line(lotA, 3), line(lotB, 5)],
+    });
+
+    // L1 을 본문에서 «뺀다» — 실린 L2 는 전량이지만 전표는 전량이 아니다.
+    const left = (
+      await callArrive(partial, arrivalOf([{ line: partial.lines[1], receivedQty: 5 }])).expect(200)
+    ).body as DetailBody;
+    expect(left.stockTransfer.statusCode).toBe('REGISTERED');
+    expect(left.lines.map((row) => row.receivedQty)).toEqual([0, 5]);
+    expect(await onHand(lotA, location2Id, 'IN_TRANSIT')).toBe(3);
+
+    const lotC = await seedBalance(10);
+    const lotD = await seedBalance(10);
+    const whole = await created({
+      ...draft(lotC, 3),
+      lines: [line(lotC, 3), line(lotD, 5)],
+    });
+    const done = (
+      await callArrive(
+        whole,
+        arrivalOf([
+          { line: whole.lines[1], receivedQty: 5 },
+          { line: whole.lines[0], receivedQty: 3 },
+        ]),
+      ).expect(200)
+    ).body as DetailBody;
+    expect(done.stockTransfer.statusCode).toBe('POSTED');
+    expect(done.lines.map((row) => row.receivedQty)).toEqual([3, 5]);
+    expect(await onHand(lotC, location2Id, 'AVAILABLE')).toBe(3);
+    expect(await onHand(lotD, location2Id, 'AVAILABLE')).toBe(5);
+  });
+
+  it('⭐ 도착 하한 위반은 «본문» 자리 번호로 가리킨다 — 0 수량 라인을 걸러 배열 자리와 갈린다', async () => {
+    const lotA = await seedBalance(10);
+    const lotB = await seedBalance(10);
+    const transfer = await created({
+      ...draft(lotA, 3),
+      lines: [line(lotA, 3), line(lotB, 5)],
+    });
+
+    // ⚠ 운송중 잔액을 «다른 이동»이 먼저 걷어 간다 — 반출이 세운 잔액이라 그러지 않고는
+    //    도착의 하한 그물에 닿는 길이 없다(반출 원장 = 도착이 깎을 수량).
+    await created({
+      ...draft(lotB, 5),
+      fromWarehouseId: warehouse2Id,
+      toWarehouseId: warehouse3Id,
+      lines: [{ ...line(lotB, 5), fromLocationId: location2Id, toLocationId: foreignLocationId }],
+    });
+    expect(await onHand(lotB, location2Id, 'IN_TRANSIT')).toBe(0);
+
+    const denied = await callArrive(
+      transfer,
+      arrivalOf([
+        { line: transfer.lines[0], receivedQty: 0 },
+        { line: transfer.lines[1], receivedQty: 5 },
+      ]),
+    ).expect(400);
+    // ⭐ 전기 배열의 자리(0)가 아니라 «본문»의 자리(1)다.
+    expect(denied.body.errors).toHaveLength(1);
+    expect(denied.body.errors[0]).toMatchObject({
+      code: 'NEGATIVE_BALANCE',
+      field: 'lines[1].receivedQty',
+    });
+
+    // 거부됐으니 상태도 원장도 안 움직였다.
+    const header = await prisma.stock_transfer.findUniqueOrThrow({
+      where: { stock_transfer_id: transfer.stockTransfer.stockTransferId },
+    });
+    expect(header.status_code).toBe('REGISTERED');
+    expect(header.received_at).toBeNull();
+    expect(await onHand(lotA, location2Id, 'IN_TRANSIT')).toBe(3);
+    expect(
+      await prisma.inventory_transaction.count({
+        where: { transaction_no: `${transfer.stockTransfer.stockTransferNo}-A` },
+      }),
+    ).toBe(0);
+  });
+
   // ── 도착 헬퍼 ────────────────────────────────────────────────────────────────
 
   function callArrive(
@@ -605,16 +741,24 @@ describe('재고 이동 조회 (e2e)', () => {
     receivedQty: number,
     toLocationId?: number,
   ): Record<string, unknown> {
+    return arrivalOf([{ line: transfer.lines[0], receivedQty, toLocationId }]);
+  }
+
+  /**
+   * ⭐ 다중 라인 도착 본문. `arrival()` 은 언제나 첫 라인 하나라 «본문 순서»도 「본문에 안
+   * 실린 라인」도 시험할 수 없다 — 그 자리를 여는 헬퍼다(리뷰 Major-2).
+   */
+  function arrivalOf(
+    items: { line: LineBody; receivedQty: number; toLocationId?: number }[],
+  ): Record<string, unknown> {
     return {
       businessDate: DAY,
       occurredAt: AT,
-      lines: [
-        {
-          stockTransferLineId: transfer.lines[0].stockTransferLineId,
-          receivedQty,
-          ...(toLocationId === undefined ? {} : { toLocationId }),
-        },
-      ],
+      lines: items.map(({ line: row, receivedQty, toLocationId }) => ({
+        stockTransferLineId: row.stockTransferLineId,
+        receivedQty,
+        ...(toLocationId === undefined ? {} : { toLocationId }),
+      })),
     };
   }
 
@@ -713,6 +857,8 @@ describe('재고 이동 조회 (e2e)', () => {
   ): Promise<
     {
       inventory_transaction_line_id: bigint;
+      line_no: number;
+      lot_id: bigint | null;
       from_quality_status_code: string | null;
       to_quality_status_code: string | null;
     }[]
