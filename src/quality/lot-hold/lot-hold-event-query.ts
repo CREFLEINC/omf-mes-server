@@ -167,9 +167,10 @@ export interface LotHoldEventView {
 }
 
 /**
- * ⭐ **문의 072** — `actorId` 가 계약 required 인데 물리(`held_by`/`released_by`)는 nullable
- * 이다. 우리 쓰기 셋은 언제나 채우지만 옛 행은 빌 수 있다 ⇒ **키를 생략**한다(0단계 선례: I-19
- * §12-1 ⓐ `QualityConflictResponse.code`). `actorName` 도 함께 비운다(LEFT JOIN 이 NULL 을 낸다).
+ * `actorId` 가 계약 required 인데 물리(`held_by`/`released_by`)는 nullable 이다. 우리 쓰기
+ * 셋은 언제나 채우지만 옛 행은 빌 수 있다 ⇒ **키를 생략**한다(0단계 선례: I-19 §12-1 ⓐ
+ * `QualityConflictResponse.code`). `actorName` 도 함께 비운다(LEFT JOIN 이 NULL 을 낸다).
+ * // 결정 — 통보 072: `docs/design-inquiries/072-actorId-required인데-held_by-released_by가-nullable이다.md`
  */
 export function lotHoldEventView(row: LotHoldEventRow): LotHoldEventView {
   return omitEmpty({
