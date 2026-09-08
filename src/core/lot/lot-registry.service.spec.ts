@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
+import { LotHoldService } from './lot-hold.service';
 import {
   LotPreIssueInput,
   LotRegisterInput,
@@ -34,6 +35,12 @@ function fake(seed: Seed) {
   let line = seed.line ?? null;
   const created: Args[] = [];
   const tx = {
+    // 등록 코어가 코어 보류를 태우면서 `lot` 을 먼저 잠근다(R-5) — 원문 SQL 이라 따로 받는다.
+    $queryRaw: async (strings: TemplateStringsArray) => {
+      calls.push('lot.lock');
+      args.push({ sql: strings.join('?') });
+      return [{ lot_id: LOT_ID, status_code: 'INSPECTION_PENDING', version_no: 1 }];
+    },
     lot: {
       create: record('lot.create', (a) => {
         created.push(a.data as Args);
@@ -88,7 +95,7 @@ function preIssue(extra: Partial<LotPreIssueInput> = {}): LotPreIssueInput {
 }
 
 describe('LotRegistryService', () => {
-  const service = new LotRegistryService();
+  const service = new LotRegistryService(new LotHoldService());
 
   it('LOT 코어 — 읽기도 tx 로 한다(같은 트랜잭션의 라인을 본다)', async () => {
     // 라인은 «이 트랜잭션 안»에만 있다 — 코어가 다른 연결로 읽으면 못 보고 400 이 된다.
@@ -132,6 +139,8 @@ describe('LotRegistryService', () => {
     // 라인은 코어가 불리기 «전에» 서 있다(`lot.source_id` 가 라인 id 다).
     expect(calls.indexOf('lot.create')).toBeLessThan(calls.indexOf('line.updateMany'));
     expect(calls.indexOf('lot_hold.create')).toBeGreaterThan(calls.indexOf('lot.create'));
+    // ⭐⭐ R-5 — 보류 쓰기 «앞»에 `lot` 잠금이 선다(코어가 표식으로 강제하는 순서다).
+    expect(calls.indexOf('lot.lock')).toBeLessThan(calls.indexOf('lot_hold.create'));
   });
 
   it('LOT 코어 — 입하 라인이 아닌 원천은 라인을 만지지 않는다', async () => {
@@ -144,7 +153,7 @@ describe('LotRegistryService', () => {
 });
 
 describe('선발행 슬롯', () => {
-  const service = new LotRegistryService();
+  const service = new LotRegistryService(new LotHoldService());
 
   it('슬롯 — N = 올림(orderQty ÷ lotSize) 이고 마지막만 나머지다(1000/300 → 300·300·300·100)', () => {
     expect(slotQtys(dec('1000'), dec('300')).map(String)).toEqual(['300', '300', '300', '100']);

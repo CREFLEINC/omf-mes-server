@@ -5,7 +5,14 @@ import { ConflictExtra, ContractException, ERROR_CODE, field, one } from '../../
 import { assertCodeValues, optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
-import { LotQualityMoveContext, LotQualityStatusService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import {
+  INSPECTION_HOLD_REASON,
+  LotHoldService,
+  LotQualityMoveContext,
+  LotQualityStatusService,
+  Tx,
+  WORK_ORDER_LOT_SOURCE,
+} from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
@@ -35,8 +42,6 @@ const ACCEPTED = 'ACCEPTED';
 const PQC = 'PQC';
 /** `lot_status_event.source_document_type_code` — 이 전이를 일으킨 전표. */
 const SOURCE_DOCUMENT_TYPE = 'INSPECTION_RESULT';
-/** 입하 LOT 이 태어날 때 걸리는 보류(`lot-registry.service.ts:16`)만 닫는다. */
-const INCOMING_HOLD_REASON = 'INCOMING_INSPECTION_WAIT';
 /**
  * ⭐ **설계 미정 — 문의 087.** 시드 `LOT_HOLD_RELEASE_REASON` 4값(`RETEST_PASS`·`RETEST_FAIL`·
  * `INVESTIGATION_CLEARED`·`MANAGER_OVERRIDE`)에 「1회차 수입검사 합격」에 맞는 값이 **하나도
@@ -73,7 +78,7 @@ interface LockedResult {
  *
  * ⛔ 원장을 지나지 않는다 · ⛔ `inventory_balance.quality_status_code` 를 안 건드린다(§9-1 #2) ·
  * ⛔ 관리자 알람을 내지 않는다(알림은 I-28) · ⛔ 다른 도메인 service 호출 0 — LOT 세 표는
- * **코어**(`LotQualityStatusService`)가 쓴다(`server-architecture.md`).
+ * **코어**(`LotQualityStatusService`·`LotHoldService`)가 쓴다(`server-architecture.md:67`).
  */
 @Injectable()
 export class InspectionConfirmService {
@@ -81,6 +86,7 @@ export class InspectionConfirmService {
     private readonly prisma: PrismaService,
     private readonly state: DocumentStateService,
     private readonly lots: LotQualityStatusService,
+    private readonly holds: LotHoldService,
   ) {}
 
   async confirm(
@@ -205,17 +211,20 @@ export class InspectionConfirmService {
   ): Promise<void> {
     const lotId = request.lot_id;
     if (lotId === null) return;
+    // ⭐⭐ R-5 — 보류 해제도 그 뒤의 재계수도 이 잠금 «안»이어야 한다(코어가 표식으로 강제한다).
+    // ⚠ 판정과 무관하게 «먼저» 잡는다 — 합격 갈래 안으로 옮기면 나머지 갈래의 잠금이
+    //    `moveWithin` 안으로 숨어, 뒤에 그 갈래에 보류 읽기를 더하는 사람이 잠금 밖에서 읽는다.
+    const locked = await this.holds.lockLotsWithin(tx, [lotId]);
     if (judgment === ACCEPTED) {
-      await tx.lot_hold.updateMany({
-        where: { lot_id: lotId, reason_code: INCOMING_HOLD_REASON, released_at: null },
-        // ⛔ `status_code` 는 안 건드린다 — `LOT_HOLD_STATUS` 값 목록이 시드에 0건이다(문의 13).
-        data: {
-          released_at: context.changedAt,
-          released_by: context.changedBy,
-          release_reason_code: HOLD_RELEASE_REASON,
-        },
-      });
-      if ((await tx.lot_hold.count({ where: { lot_id: lotId, released_at: null } })) > 0) return;
+      // 입하 LOT 이 태어날 때 걸린 보류만 닫는다. `status_code` 는 코어가 안 건드린다(문의 13).
+      const { openAfter } = await this.holds.releaseWithin(
+        tx,
+        locked,
+        { lotId, reasonCode: INSPECTION_HOLD_REASON },
+        { releaseReasonCode: HOLD_RELEASE_REASON },
+        { by: context.changedBy, at: context.changedAt },
+      );
+      if (openAfter > 0) return;
     }
     const { movedLotIds } = await this.lots.moveWithin(tx, [lotId], action, context);
     // ⭐ 코어는 `from` 밖이면 건너뛴다(R-7 — C14 가 집합이라 그렇다). 단건 대상에서 「안

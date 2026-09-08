@@ -124,8 +124,9 @@ export function identifierView(
  * `lot.status_code` 는 바뀌지만 「걸었을 때 간 상태」는 안 바뀐다. `GET /quality/lot-holds/{id}`
  * (같은 계약 칸)는 물리 칸 `lot_hold.target_lot_status_code`(M-f)로 채운다 — 두 자리를
  * 같은 뜻으로 맞추려면 여기도 그 칸을 써야 한다.
- * ⚠ **마이그 전에 태어난 행은 그 칸이 NULL** 이다(백필 0) — `core/lot/lot-registry.service.ts`
- * 가 아직(PR ③ 전) 그 칸을 안 채워, «오늘 새로 만든» 보류도 포함해 전부 여기 해당한다. 예전에는
+ * ⚠ **마이그 전에 태어난 행은 그 칸이 NULL** 이다(백필 0). ⭐ **PR ③a 부터 `core/lot`
+ * (`lot-registry.service.ts` → `holdWithin`)가 그 칸을 채우므로 «오늘 새로 만든» 보류는 값을
+ * 갖는다** — NULL 로 남는 것은 그 이전에 태어난 행뿐이다. 예전에는
  * `lot.status_code` 값이 항상 실려 있었지만, 지금은 그 행들이 **키 생략**으로 후퇴한다. 계약
  * 위반은 아니다(`lotStatusCode` 는 `LotHold.required` 밖 — 실측 확인됨). 실측 전에는
  * `test/trace-lot.e2e-spec.ts` 가 이 칸의 값을 어디서도 단언하지 않았다 — 이번 커밋이 회귀

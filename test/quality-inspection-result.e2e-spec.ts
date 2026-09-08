@@ -937,6 +937,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
   const INCOMING_HOLD = 'INCOMING_INSPECTION_WAIT';
   const CONFIRM_RELEASE_REASON = 'INCOMING_INSPECTION_PASSED'; // 설계 미정 — 문의 087
   const HELD_AT = '2026-08-31T00:00:00.000Z';
+  /** 현장이 보류를 걸며 적은 비고 — 해제가 이것을 NULL 로 덮으면 안 된다(ⓒ 단언). */
+  const HOLD_REMARKS = '입고 시 외관 이상 — 현장 메모';
   let confirmSeq = 0;
 
   /**
@@ -967,7 +969,14 @@ describe('검사 의뢰·결과 (e2e)', () => {
       // ⚠ `held_at` 은 «과거»여야 한다 — `ck_lot_hold_release`(`released_at >= held_at`)가
       //    해제 UPDATE 를 500 으로 튕긴다. 검사 시각(`INSPECTED_W`)은 미래 날짜라 못 쓴다.
       await prisma.lot_hold.create({
-        data: { lot_id: lot.lot_id, reason_code: reason, status_code: 'HELD', held_at: new Date(HELD_AT) },
+        // ⭐ `remarks` 는 「현장이 보류를 걸며 적은 비고」다 — 해제가 그것을 지우면 안 된다(ⓒ 참조).
+        data: {
+          lot_id: lot.lot_id,
+          reason_code: reason,
+          status_code: 'HELD',
+          held_at: new Date(HELD_AT),
+          remarks: HOLD_REMARKS,
+        },
       });
     }
     return lot.lot_id;
@@ -1082,6 +1091,14 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(holds[0].released_by).not.toBeNull();
       // ⭐ 설계 미정 — 문의 087. 시드 4값에 「1회차 합격」에 맞는 값이 0개다(RETEST_* 는 C7·C8 전용).
       expect(holds[0].release_reason_code).toBe(CONFIRM_RELEASE_REASON);
+      // ⭐ R-2 — `:confirm` 은 도착을 «안 준다». 'NORMAL' 이 실리면 LOT 이 R-11 로 안 움직인
+      //    경우에도 `W-03-01` 이력의 「전이」 열에 「보류 → 정상」이 그려진다.
+      expect(holds[0].release_target_lot_status_code).toBeNull();
+      // ⭐ m-2 「동작을 안 바꿨다」의 축 — 옛 `updateMany` 는 `remarks` 를 아예 안 건드렸다.
+      //    코어가 키를 «생략»하므로 현장이 적은 비고가 합격 확정에도 그대로 남는다.
+      expect(holds[0].remarks).toBe(HOLD_REMARKS);
+      // ⛔ R-24 — 죽은 칸이라 새 쓰기를 더하지 않는다(`plan.md` §6 이 다음 릴리스 삭제로 못 박았다).
+      expect(holds[0].version_no).toBe(1);
 
       // 의뢰가 완료로 간다 — 전이표 «밖»의 부수효과(§7-3 유일한 예외).
       const requestRow = await prisma.inspection_request.findUniqueOrThrow({

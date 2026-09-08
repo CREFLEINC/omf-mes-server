@@ -13,9 +13,18 @@ export interface LotQualityMoveContext {
   /** `lot_status_event.changed_by` 는 NOT NULL — 이 축은 사람이 전이시킨다(생명주기 축과 다르다). */
   changedBy: bigint;
   changedAt: Date;
-  /** ⛔ `ck_lot_status_event_source` — 원천 문서 두 칸은 둘 다 주거나 둘 다 안 준다. */
+  /**
+   * ⛔ `ck_lot_status_event_source` — 유형과 id 는 **함께 산다**. R-12 로 id 쪽이 두 칸이 되어
+   * 불변식은 「유형을 주면 **LOT 전건이** 지도나 배치 값으로 id 를 얻는다」다(아래가 막는다).
+   */
   sourceDocumentTypeCode?: string;
   sourceDocumentId?: bigint;
+  /**
+   * ⭐ **R-12** — 배치의 LOT 마다 원천 문서가 «다를» 때 쓴다(N LOT 보류 등록은 LOT 마다
+   * 자기 `lot_hold_id` 를 가리켜야 하는데 위 한 칸으로는 「첫 것」밖에 못 담는다).
+   * 없는 LOT 은 위 배치 값으로 떨어진다.
+   */
+  sourceDocumentIdByLot?: ReadonlyMap<bigint, bigint>;
   reasonCode?: string;
   reason?: string;
   /** 전이표에 코드가 없는 자리(재등록)만 채운다 — 설계 미정 · 문의 089(발행 예정). */
@@ -52,6 +61,11 @@ export class LotQualityStatusService {
     // 이력 칸이 NOT NULL 이다. 전이표가 코드를 안 가진 자리는 호출자가 넘겨야 실린다.
     const transitionCode = transition.transitionCode ?? ctx.transitionCode;
     if (transitionCode === undefined) throw new Error(`transitionCode 가 없다: ${action}`);
+    // ⛔ 지도가 «부분»이고 배치 값도 없으면 지도 밖 LOT 이 `ck_lot_status_event_source` 를 깨 500 이다.
+    const sourceIdOf = (lotId: bigint) => ctx.sourceDocumentIdByLot?.get(lotId) ?? ctx.sourceDocumentId;
+    if (ctx.sourceDocumentTypeCode !== undefined && lotIds.some((id) => sourceIdOf(id) === undefined)) {
+      throw new Error('원천 문서 유형을 주면 LOT 전건이 문서 id 를 가져야 한다 (ck_lot_status_event_source)');
+    }
     // 미등록 액션 가드가 «빈 집합»에서도 살아 있게 반환은 그 뒤다.
     if (lotIds.length === 0) return { movedLotIds: moved, skippedLotIds: skipped };
 
@@ -86,7 +100,7 @@ export class LotQualityStatusService {
           reason_code: ctx.reasonCode,
           reason: ctx.reason,
           source_document_type_code: ctx.sourceDocumentTypeCode,
-          source_document_id: ctx.sourceDocumentId,
+          source_document_id: sourceIdOf(lot.lot_id),
           changed_at: ctx.changedAt,
           changed_by: ctx.changedBy,
           // ⛔ `quality_status_code`·`inventory_status_code`·`location_id` 는 비운다 —

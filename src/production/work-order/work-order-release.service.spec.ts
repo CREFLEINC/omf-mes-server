@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { DocumentStateService } from '../../core/document-state';
-import { LotRegistryService } from '../../core/lot';
+import { LotHoldService, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { materialRequirements } from './material-issue';
@@ -104,7 +104,7 @@ function stub(options: {
     prisma,
     new DocumentStateService(),
     numbering,
-    new LotRegistryService(),
+    new LotRegistryService(new LotHoldService()),
   );
   return { service, calls, updated, lots, requests, lines, componentWheres };
 }

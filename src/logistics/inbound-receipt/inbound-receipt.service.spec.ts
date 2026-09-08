@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { LotRegistryService } from '../../core/lot';
+import { LotHoldService, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InboundReceiptLineWriteInput } from './inbound-receipt-rules';
@@ -89,6 +89,14 @@ function fake(options: Options = {}) {
       },
     },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      // 코어 보류가 LOT 을 «먼저» 잠근다(R-5) — 이 스위트가 보는 잠금은 P/O 쪽이라 갈라 준다.
+      if (strings.join('?').includes('trace.lot')) {
+        return ((values[0] as Prisma.Sql).values as bigint[]).map((lot_id) => ({
+          lot_id,
+          status_code: 'INSPECTION_PENDING',
+          version_no: 1,
+        }));
+      }
       recorded.calls.push('lock');
       recorded.lockSql = strings.join('?');
       recorded.lockIds = (values[0] as Prisma.Sql).values as bigint[];
@@ -169,7 +177,7 @@ function fake(options: Options = {}) {
   const service = new InboundReceiptService(
     prisma as unknown as PrismaService,
     numbering,
-    new LotRegistryService(),
+    new LotRegistryService(new LotHoldService()),
   );
   return { service, recorded };
 }

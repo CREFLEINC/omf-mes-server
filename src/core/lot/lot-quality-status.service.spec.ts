@@ -134,6 +134,51 @@ describe('LotQualityStatusService', () => {
     });
   });
 
+  it('⭐ R-12 — 원천 문서 id 를 LOT 마다 다르게 싣는다 (N LOT 보류는 자기 lot_hold_id 를 가리킨다)', async () => {
+    const { tx, calls, args } = fake([
+      { lot_id: 1n, status_code: 'NORMAL' },
+      { lot_id: 2n, status_code: 'NORMAL' },
+      { lot_id: 3n, status_code: 'NORMAL' },
+    ]);
+
+    // 배치 칸 하나만 쓰면 셋이 모두 「첫 lot_hold_id」를 가리켜 계보가 틀린다.
+    await service.moveWithin(tx, [1n, 2n, 3n], 'lot-hold-claim', {
+      ...ctx,
+      sourceDocumentTypeCode: 'LOT_HOLD',
+      sourceDocumentId: 41n,
+      sourceDocumentIdByLot: new Map([
+        [1n, 41n],
+        [2n, 42n],
+      ]),
+    });
+
+    const events = args.filter((_, i) => calls[i] === 'event.create');
+    expect(events.map((e) => (e.data as Record<string, unknown>).source_document_id)).toEqual([
+      41n,
+      42n,
+      41n, // 지도에 없는 LOT 은 배치 값으로 떨어진다 — 두 칸 CHECK 를 깨지 않는다.
+    ]);
+  });
+
+  it('⛔ ck_lot_status_event_source — 지도가 «부분»이고 배치 값이 없으면 던진다(500 을 앞당겨 막는다)', async () => {
+    const { tx, calls } = fake([
+      { lot_id: 1n, status_code: 'NORMAL' },
+      { lot_id: 2n, status_code: 'NORMAL' },
+    ]);
+
+    // 지도에 1n 만 있고 배치 `sourceDocumentId` 가 없다 ⇒ 2n 은 유형만 실려 CHECK 가 깨진다.
+    await expect(
+      service.moveWithin(tx, [1n, 2n], 'lot-hold-claim', {
+        changedBy: 7n,
+        changedAt: ctx.changedAt,
+        sourceDocumentTypeCode: 'LOT_HOLD',
+        sourceDocumentIdByLot: new Map([[1n, 41n]]),
+      }),
+    ).rejects.toThrow(/ck_lot_status_event_source/);
+    // 던지기 «전»에 아무것도 잠그거나 쓰지 않았다.
+    expect(calls).toEqual([]);
+  });
+
   it('⛔ ck_lot_status_event_source — 원천 문서 두 칸을 함께 비울 수 있다', async () => {
     const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'INSPECTION_PENDING' }]);
 
