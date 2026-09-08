@@ -13,6 +13,7 @@ import { CauseCodeController, DefectCodeController } from './code/quality-code.c
 import { DefectDistributionService } from './defect/defect-distribution.service';
 import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
+import { DispositionController } from './disposition/disposition.controller';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
@@ -65,6 +66,7 @@ import { NonconformanceQueryService } from './nonconformance/nonconformance-quer
     LotStatusController, // 리터럴 경로 셋(`lot-statuses`·`lot-status-summary`·`lot-status-transitions`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
     NonconformanceController, // `nonconformances`(목록 · I-21 PR ①a) — 상세 `:nonconformanceId` 는 ①b 몫.
+    DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(I-21 PR ②a″) — `PrismaService` 만 쓰고 별도 provider 가 없다.
   ],
   providers: [
     DefectCodeService,
