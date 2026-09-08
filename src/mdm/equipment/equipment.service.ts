@@ -8,13 +8,14 @@ import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere, toDateString } from '../../common/master';
 
-/** 설비를 FK 로 가리키는 자리 전부 — 스무 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
+/** 설비를 FK 로 가리키는 자리 전부 — 스물한 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
 export const EQUIPMENT_REFERRERS: readonly Referrer[] = [
   ['maintenance.breakdown', 'equipment_id'],
   ['maintenance.collection_channel', 'equipment_id'],
   ['maintenance.equipment_downtime', 'equipment_id'],
   ['maintenance.equipment_inspection', 'equipment_id'],
   ['maintenance.maintenance_order', 'equipment_id'],
+  ['maintenance.maintenance_result', 'equipment_id'],
   ['maintenance.planned_stop', 'equipment_id'],
   ['maintenance.tool_usage', 'equipment_id'],
   ['mdm.equipment_group_member', 'equipment_id'],

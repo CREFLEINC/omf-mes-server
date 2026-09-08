@@ -32,9 +32,10 @@ import {
  * 화면은 `W-05-13`(툴 마스터)·`W-05-02`(예방보전 도래 조회)가 함께 쓴다.
  */
 
-/** 툴을 FK 로 가리키는 자리 전부 — 일곱 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
+/** 툴을 FK 로 가리키는 자리 전부 — 여덟 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
 export const MOLD_REFERRERS: readonly Referrer[] = [
   ['maintenance.maintenance_order', 'mold_id'],
+  ['maintenance.maintenance_result', 'mold_id'],
   ['maintenance.tool_usage', 'mold_id'],
   ['production.production_result', 'mold_id'],
   ['production.work_order', 'planned_mold_id'],
