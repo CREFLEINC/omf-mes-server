@@ -341,6 +341,112 @@ describe('LOT (e2e)', () => {
       .expect(404);
   });
 
+  it('⭐ 외부식별자 목록이 등록 때 넣은 식별자를 id 오름차순으로 준다', async () => {
+    const lot = await create({
+      numberSourceCode: 'SUPPLIER',
+      lotNo: `${PREFIX}-EXTLIST`,
+      externalIdentifiers: [
+        { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-EL-1` },
+        { identifierTypeCode: 'ERP_LOT', externalIdentifier: `${PREFIX}-EL-2` },
+      ],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/external-identifiers`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('GET /trace/lots/{lotId}/external-identifiers');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(response.body.items.map((i: { identifierTypeCode: string }) => i.identifierTypeCode)).toEqual([
+      'SUPPLIER_LOT',
+      'ERP_LOT',
+    ]);
+  });
+
+  it('⭐ 식별자가 없는 LOT 은 빈 목록이다 — 404 가 아니다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/external-identifiers`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(response.body).toEqual({ items: [] });
+  });
+
+  it('⛔ 없는 LOT 의 외부식별자 목록은 404 다', async () => {
+    await request(app.getHttpServer())
+      .get('/api/trace/lots/999999999/external-identifiers')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('⭐ 보류 목록 기본값은 해제되지 않은 것만 준다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    // 등록이 이미 건 보류(해제 안 됨) 1건에, 해제된 보류 1건을 더 심는다.
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: BigInt(lot.lotId),
+        reason_code: 'INCOMING_INSPECTION_WAIT',
+        status_code: 'HELD',
+        held_at: new Date(),
+        released_at: new Date(),
+        release_reason_code: 'INSPECTION_PASSED',
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/holds`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('GET /trace/lots/{lotId}/holds');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // ⭐ R-6 — 배열을 통째로 단언하지 않는다. 우리가 소유한 칸만 본다.
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].releasedAt).toBeNull();
+  });
+
+  it('⭐ activeOnly=false 는 「해제된 것만」이 아니라 «전체»다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: BigInt(lot.lotId),
+        reason_code: 'INCOMING_INSPECTION_WAIT',
+        status_code: 'HELD',
+        held_at: new Date(),
+        released_at: new Date(),
+        release_reason_code: 'INSPECTION_PASSED',
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/holds?activeOnly=false`)
+      .set('Cookie', cookie)
+      .expect(200);
+    // ⭐ R-6 — 길이만 본다(내용 전체를 박지 않는다).
+    expect(response.body.items).toHaveLength(2);
+  });
+
+  it('⭐ 보류 목록의 첫 행이 상세 GET 의 첫 보류와 완전히 같다', async () => {
+    const lot = await create({ numberSourceCode: 'MES' });
+    const detail = await detailOf(lot.lotId);
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/trace/lots/${lot.lotId}/holds`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(response.body.items[0]).toEqual(detail.holds[0]);
+  });
+
+  it('⛔ 없는 LOT 의 보류 목록은 404 다', async () => {
+    await request(app.getHttpServer())
+      .get('/api/trace/lots/999999999/holds')
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /**

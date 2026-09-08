@@ -5,7 +5,11 @@ import { LotRegistryModule } from '../core/lot';
 import { PrismaModule } from '../prisma/prisma.module';
 import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controller';
 import { LotCompleteService } from './lot/lot-complete.service';
+import { LotExternalIdentifierService } from './lot/lot-external-identifier.service';
+import { LotHoldListService } from './lot/lot-hold-list.service';
 import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
+import { LotStatusEventController } from './lot/lot-status-event.controller';
+import { LotStatusEventService } from './lot/lot-status-event.service';
 import { LotController } from './lot/lot.controller';
 import { LotService } from './lot/lot.service';
 import { SerialNumberQueryService } from './serial-number/serial-number-query.service';
@@ -17,7 +21,15 @@ import { SerialNumberController } from './serial-number/serial-number.controller
  */
 @Module({
   imports: [PrismaModule, IdempotencyModule, LotRegistryModule],
-  controllers: [LotController, LotLifecycleEventController, SerialNumberController],
-  providers: [LotService, LotCompleteService, LotLifecycleEventService, SerialNumberQueryService],
+  controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController],
+  providers: [
+    LotService,
+    LotCompleteService,
+    LotExternalIdentifierService,
+    LotHoldListService,
+    LotLifecycleEventService,
+    LotStatusEventService,
+    SerialNumberQueryService,
+  ],
 })
 export class TraceModule {}
