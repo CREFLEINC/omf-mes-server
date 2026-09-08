@@ -85,6 +85,7 @@ describe("I-31 M2 보전 실적 물리 계약 (e2e)", () => {
         prisma.maintenance_result.count({
           where: { result_note: { startsWith: PREFIX } },
         }),
+        prisma.maintenance_result.count({ where: { created_by: performerId } }),
         prisma.spare_part.count({ where: { spare_part_code: PREFIX } }),
         prisma.mold.count({ where: { mold_code: PREFIX } }),
         prisma.equipment.count({ where: { equipment_code: PREFIX } }),
@@ -93,7 +94,7 @@ describe("I-31 M2 보전 실적 물리 계약 (e2e)", () => {
         prisma.business_unit.count({ where: { business_unit_code: PREFIX } }),
         prisma.legal_entity.count({ where: { legal_entity_code: PREFIX } }),
       ]);
-      expect(remaining).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+      expect(remaining).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
     } finally {
       await prisma.$disconnect();
     }
