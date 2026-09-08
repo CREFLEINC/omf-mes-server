@@ -34,6 +34,8 @@ const LOT_QUALITY_STATUS = 'trace.lot.status_code';
 const BREAKDOWN_STATUS = 'maintenance.breakdown.status_code';
 /** I-31 C0이 여는 축 — 발행된 보전 지시만 취소할 수 있다. */
 const MAINTENANCE_ORDER_STATUS = 'maintenance.maintenance_order.status_code';
+/** I-13 PR ③ 이 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 도착 확정 하나뿐이다. */
+const STOCK_TRANSFER_STATUS = 'logistics.stock_transfer.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -408,6 +410,7 @@ describe('DocumentStateService', () => {
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
+          STOCK_TRANSFER_STATUS,
           WORK_ORDER_STATUS,
           WORK_SESSION_STATUS,
         ].sort(),
@@ -420,7 +423,21 @@ describe('DocumentStateService', () => {
       // +10 — 검사 성적서 확정 키 신설 1, LOT 품질 축 키 신설 9(I-19 PR ①).
       // +2 — 설비 고장 처리 키 신설(I-30 PR ④).
       // +1 — 보전 지시 취소 키 신설(I-31 C0).
-      expect(service.registered()).toHaveLength(41);
+      // +1 — 재고 이동 도착 확정 키 신설(I-13 PR ③).
+      expect(service.registered()).toHaveLength(42);
+    });
+
+    it('⭐ 재고 이동 상태 — transfer-arrive «하나»뿐이고 반출은 전이가 아니다(탄생 상태)', () => {
+      expect(
+        service.assertTransition(STOCK_TRANSFER_STATUS, 'transfer-arrive', 'REGISTERED'),
+      ).toMatchObject({ from: ['REGISTERED'], to: 'POSTED' });
+
+      const actions = service
+        .registered()
+        .filter((entry) => entry.column === STOCK_TRANSFER_STATUS)
+        .map((entry) => entry.action);
+
+      expect(actions).toEqual(['transfer-arrive']);
     });
 
     it('⭐ 적치 지시 상태 — 완료 둘 다 dead end 다(임시→정상 복귀 오퍼레이션이 계약에 없다)', () => {

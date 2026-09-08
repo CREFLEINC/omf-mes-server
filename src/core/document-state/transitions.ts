@@ -359,6 +359,24 @@ export const TRANSITIONS: TransitionRegistry = {
    * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — `M-01-05` §6 「이미 완료된 지시 400 STATE_LOCKED」.
    * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
    */
+  /**
+   * 재고 이동 전표 진행. 값은 시드 `LOGISTICS_DOCUMENT_STATUS` 4값(⛔ 시스템 소유)이 확정했고
+   * 계약이 전이를 하나만 연다(`:arrive`).
+   * ⛔ 반출 등록은 여기 오지 않는다 — 전표가 `REGISTERED` 로 «태어나는» 자리라 `from` 이 없다.
+   * ⛔ 취소 두 액션을 안 붙인다 — `documentTypeCode` enum 3값에 `STOCK_TRANSFER` 가 없고
+   *    `document-type-registry.ts` 도 `cancelable:false` 다(결정 — 통보 120).
+   * ⛔ 부분 도착은 전이가 아니다 — 전량 도착에서만 이 액션을 부른다.
+   * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — 형제 물류 전표와 같다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'logistics.stock_transfer.status_code': {
+    'transfer-arrive': {
+      from: ['REGISTERED'],
+      to: 'POSTED',
+      sourceOperation: 'POST /logistics/stock-transfers/{stockTransferId}:arrive',
+    },
+  },
+
   'logistics.putaway_task.status_code': {
     'putaway-complete': {
       from: ['PENDING'],
