@@ -18,7 +18,11 @@ class NumberPreparationRequired extends Error {}
 interface NumberedWrite<T> {
   context: IdempotencyContext;
   documentTypeCode: string;
-  equipmentId: number;
+  target: {
+    type: "EQUIPMENT" | "MOLD";
+    id: number;
+    field: string;
+  };
   periodDate: () => string;
   numberField: string;
   numberColumn: string;
@@ -46,15 +50,12 @@ export class NumberedMaintenanceWrite {
           input.context,
           async (tx) => {
             if (prepared === undefined) throw new NumberPreparationRequired();
-            const equipment = await tx.equipment.findUnique({
-              where: { equipment_id: BigInt(input.equipmentId) },
-              select: { plant_id: true },
-            });
-            if (equipment === null) throw invalidEquipment();
-            if (equipment.plant_id !== prepared.plantId) {
+            const plantId = await this.targetPlant(tx, input.target);
+            if (plantId === null) throw invalidTarget(input.target);
+            if (plantId !== prepared.plantId) {
               throw new ConflictException(
                 "user",
-                "번호 준비 뒤 설비의 공장이 바뀌었습니다. 다시 시도해 주세요.",
+                "번호 준비 뒤 대상의 공장이 바뀌었습니다. 다시 시도해 주세요.",
               );
             }
             return input.work(tx, prepared.documentNo);
@@ -91,25 +92,46 @@ export class NumberedMaintenanceWrite {
   }
 
   private async prepare<T>(input: NumberedWrite<T>) {
-    const equipment = await this.prisma.equipment.findUnique({
-      where: { equipment_id: BigInt(input.equipmentId) },
-      select: { plant_id: true },
-    });
-    if (equipment === null) throw invalidEquipment();
+    const plantId = await this.targetPlant(this.prisma, input.target);
+    if (plantId === null) throw invalidTarget(input.target);
     return {
-      plantId: equipment.plant_id,
+      plantId,
       documentNo: await this.numbering.next(
         input.documentTypeCode,
-        equipment.plant_id,
+        plantId,
         input.periodDate(),
       ),
     };
   }
+
+  private async targetPlant(
+    client: PrismaService | Prisma.TransactionClient,
+    target: NumberedWrite<unknown>["target"],
+  ): Promise<bigint | null> {
+    if (target.type === "EQUIPMENT") {
+      const row = await client.equipment.findUnique({
+        where: { equipment_id: BigInt(target.id) },
+        select: { plant_id: true },
+      });
+      return row?.plant_id ?? null;
+    }
+    const row = await client.mold.findUnique({
+      where: { mold_id: BigInt(target.id) },
+      select: { plant_id: true },
+    });
+    return row?.plant_id ?? null;
+  }
 }
 
-function invalidEquipment(): ContractException {
+function invalidTarget(
+  target: NumberedWrite<unknown>["target"],
+): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [
-    field("equipmentId", ERROR_CODE.INVALID, "없는 설비입니다."),
+    field(
+      target.field,
+      ERROR_CODE.INVALID,
+      target.type === "EQUIPMENT" ? "없는 설비입니다." : "없는 툴입니다.",
+    ),
   ]);
 }
 

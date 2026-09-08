@@ -37,6 +37,20 @@ describe("numbered maintenance write", () => {
     ]);
   });
 
+  it("금형도 같은 선채번·전달 tx 경로에서 공장을 재확인한다", async () => {
+    const events: string[] = [];
+    const setup = fake({ events });
+
+    await expect(setup.runMold()).resolves.toBe("created");
+    expect(events).toEqual([
+      "prepare-mold",
+      "number",
+      "idempotency",
+      "tx-mold",
+      "work",
+    ]);
+  });
+
   it("사전 확인 뒤 멱등행이 사라지면 callback 안 채번 없이 롤백하고 다시 준비한다", async () => {
     const setup = fake({ recordCount: 1 });
 
@@ -119,11 +133,23 @@ function fake(options: FakeOptions = {}) {
         return { plant_id: 7n };
       }),
     },
+    mold: {
+      findUnique: jest.fn(async () => {
+        events.push("prepare-mold");
+        return { plant_id: 7n };
+      }),
+    },
   };
   const tx = {
     equipment: {
       findUnique: jest.fn(async () => {
         events.push("tx-equipment");
+        return { plant_id: options.transactionPlantId ?? 7n };
+      }),
+    },
+    mold: {
+      findUnique: jest.fn(async () => {
+        events.push("tx-mold");
         return { plant_id: options.transactionPlantId ?? 7n };
       }),
     },
@@ -171,10 +197,20 @@ function fake(options: FakeOptions = {}) {
       service.run({
         context,
         documentTypeCode: "EQUIPMENT_INSPECTION",
-        equipmentId: 1,
+        target: { type: "EQUIPMENT", id: 1, field: "equipmentId" },
         periodDate: () => "2026-09-08",
         numberField: "inspectionNo",
         numberColumn: "inspection_no",
+        work,
+      }),
+    runMold: () =>
+      service.run({
+        context,
+        documentTypeCode: "MAINTENANCE_ORDER",
+        target: { type: "MOLD", id: 1, field: "targetId" },
+        periodDate: () => "2026-09-08",
+        numberField: "maintenanceOrderNo",
+        numberColumn: "maintenance_order_no",
         work,
       }),
     runCount: () => runCount,
