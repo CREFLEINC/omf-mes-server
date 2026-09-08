@@ -14,7 +14,7 @@ function row(overrides: Partial<RepairExecutionRow> = {}): RepairExecutionRow {
     reintroduced_lot_id: null,
     terminal_id: null,
     worker_no: null,
-    created_at: new Date('2026-09-08T01:00:00.000Z'),
+    created_at: new Date('2026-09-08T02:00:00.000Z'),
     created_by: null,
     ...overrides,
   } as unknown as RepairExecutionRow;
@@ -49,6 +49,18 @@ describe('repairExecutionView', () => {
       reintroducedLotId: 40,
       terminalId: 50,
       workerNo: '100027',
+    });
+  });
+
+  it('⭐ 필수 다섯 칸이 «어느 물리 칸에서» 왔는지 전 칸으로 못박는다', () => {
+    // 계약이 integer 로만 선언한 칸은 ajv 가 출처를 못 본다 — 값 단언만이 잡는다
+    // (PR #437 리뷰 Minor-1). 픽스처의 id·시각을 서로 다른 값으로 둔 이유다.
+    expect(repairExecutionView(row())).toEqual({
+      repairExecutionId: 1,
+      defectRecordId: 100,
+      startedAt: '2026-09-08T01:00:00.000Z',
+      repairQty: 40.5,
+      uomId: 200,
     });
   });
 
