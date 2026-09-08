@@ -14,6 +14,8 @@ import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentService } from './attachment/attachment.service';
+import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
+import { DocumentIssueController } from './document-issue/document-issue.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
 import { NotificationController } from './notification/notification.controller';
@@ -48,6 +50,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     RoleController,
     AppUserController,
     AttachmentController,
+    DocumentIssueController,
     OperationPolicyController,
     NoticeController,
     NotificationController,
@@ -62,6 +65,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     AppUserService,
     UserAssignmentService,
     AttachmentService,
+    DocumentIssueQueryService,
     OperationPolicyService,
     NoticeService,
     NotificationQueryService,
