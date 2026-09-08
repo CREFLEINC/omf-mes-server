@@ -578,6 +578,11 @@ describe('LOT (e2e)', () => {
       { ...same, partnerId: null },
     ]).expect(200);
     expect(accepted.body.items).toHaveLength(2);
+    // 삽입 순서 = id 오름차순(계획 §3-2 ⓔ). 재조회 정렬이 뒤집히면 여기서 깨진다 —
+    // 같은 자원이 치환 응답과 목록 조회에서 반대 순서로 보이는 것을 막는다.
+    expect(
+      accepted.body.items.map((item: { partnerId?: number }) => item.partnerId ?? null),
+    ).toEqual([Number(supplier.partner_id), null]);
   });
 
   it('⛔ 마스터에 없는 유형·없는 거래처는 400 INVALID 다 — FK 위반이 500 으로 새지 않는다', async () => {
@@ -632,6 +637,9 @@ describe('LOT (e2e)', () => {
     const noWorker = await requestIqcSkip(lot.lotId, { workerNo: null }).expect(400);
     expect(noWorker.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
 
+    // §3-3 7행 — 없는 LOT 은 404 다. 이 갈래를 지우면 자격 검사가 null 을 만나 500 이 샌다.
+    await requestIqcSkip(999999999).expect(404);
+
     // 결재선을 잠시 내린다 — 오늘 DB 에 `IQC_SKIP` 결재선이 0행이라 이 400 이 기본값이다.
     // ⚠ 되돌리기는 `finally` 다 — 중간에 깨지면 뒤의 상신 테스트가 통째로 400 이 된다.
     await setRouteActive(false);
@@ -649,18 +657,27 @@ describe('LOT (e2e)', () => {
       where: { lot_id: notInbound.lotId },
       data: { source_type_code: 'WORK_ORDER' },
     });
-    const bySource = await requestIqcSkip(notInbound.lotId).expect(400);
-    expect(bySource.body.errors[0]).toMatchObject({ field: 'lotId', code: 'INVALID' });
-
     const notPending = await create({ numberSourceCode: 'MES' });
     await prisma.lot.update({
       where: { lot_id: notPending.lotId },
       data: { status_code: 'NORMAL' },
     });
+
+    // 두 LOT 을 다 세운 «뒤» 채번 카운터를 집는다 — LOT 채번은 여기 셈에서 빠져야 한다.
+    const counters = async () =>
+      (await prisma.numbering_counter.aggregate({ _sum: { last_value: true } }))._sum.last_value ??
+      0n;
+    const before = await counters();
+
+    const bySource = await requestIqcSkip(notInbound.lotId).expect(400);
+    expect(bySource.body.errors[0]).toMatchObject({ field: 'lotId', code: 'INVALID' });
+
     const byStatus = await requestIqcSkip(notPending.lotId).expect(400);
     expect(byStatus.body.errors[0]).toMatchObject({ field: 'lotId', code: 'STATE_LOCKED' });
 
-    // 상신이 아예 없었으니 결번도 없다 — 두 요청 다 채번 «전»에 막힌다.
+    // ⭐ 결번도 없다 — 채번을 자격 검사 «위»로 옮기면 카운터가 2 올라 여기서 깨진다
+    //    (계획 §3-1 3 · I-24 R-6). 행 개수만 세면 채번 순서를 못 본다.
+    expect(await counters()).toBe(before);
     expect(
       await prisma.approval_request.count({
         where: { target_type_code: 'INBOUND_LOT', target_id: BigInt(notInbound.lotId) },
