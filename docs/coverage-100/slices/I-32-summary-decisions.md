@@ -5,7 +5,7 @@
 ## 1. 범위·기간
 
 - `plantId`·`equipmentGroupId`·`equipmentId`는 교집으로 적용하고 모순이면 빈 집계를 낸다.
-- `equipmentGroupId`는 계약의 EquipmentGroup 원천인 `mdm.production_line.production_line_id`다. 별도 `mdm.equipment_group`으로 바꾸지 않는다.
+- `equipmentGroupId`는 계약의 EquipmentGroup 원천인 `mdm.production_line.production_line_id`다. 별도 `mdm.equipment_group`으로 바꾸지 않고, 선택한 그룹과 하위 그룹의 설비를 포함한다.
 - 각 공장 시간대의 `[startedFrom 00:00, startedTo 익일 00:00)`을 쓴다. 기간과 교차하는 닫힌 세션·비가동은 경계에서 자른다.
 - 장비 없는 세션의 공장은 `terminal.plant_id`다. 장비·그룹 필터에서는 빠지만 공장 또는 전체 조회에서는 조업 합계와 `sessionsWithoutEquipmentCount`에 넣는다.
 
