@@ -61,7 +61,7 @@ export class DocumentIssueQueryService {
           throw new Error('Document issue count exceeds safe range');
         const [targets, reasons] = await Promise.all([
           loadDocumentIssueTargets(tx, rows),
-          loadReasons(tx, rows),
+          loadDocumentIssueReasons(tx, rows),
         ]);
         return pagedResponse(
           rows.map((row) => documentIssueView(row, targets, reasons)),
@@ -88,7 +88,7 @@ export class DocumentIssueQueryService {
         if (row === null) throw new NotFoundException('없는 발행 기록입니다.');
         const [targets, reasons] = await Promise.all([
           loadDocumentIssueTargets(tx, [row]),
-          loadReasons(tx, [row]),
+          loadDocumentIssueReasons(tx, [row]),
         ]);
         return documentIssueView(row, targets, reasons);
       },
@@ -150,7 +150,7 @@ function rangeError(name: string, message: string): ContractException {
   ]);
 }
 
-async function loadReasons(
+export async function loadDocumentIssueReasons(
   tx: Prisma.TransactionClient,
   rows: DocumentIssueRow[],
 ): Promise<ReasonLookup> {
