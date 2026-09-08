@@ -335,7 +335,9 @@ describe('부적합 목록 (e2e)', () => {
       const response = await get(`${NONCONFORMANCES}/${ncIds.detailVersioned}`).expect(200);
 
       // 픽스처가 기본값 1 이 아니라 7 로 직접 올렸다 — 「늘 1」·「다른 칸(0 이나 상수)」로
-      // 새는 변이를 여기서 잡는다. ETag 를 안 내리면 헤더가 undefined 라 이 단언이 죽는다.
+      // 새는 변이를 여기서 잡는다. `setEtag` 호출을 지워도 이 단언은 죽는다 — Express 가
+      // 본문으로 자동 weak ETag(`W/"…"`)를 채워 헤더가 `undefined` 가 «아니지만», `'7'` 과는
+      // 다르다(실측 · PR #434 리뷰 Nit-1).
       expect(response.headers.etag).toBe('7');
       expect(response.body).toMatchObject({ nonconformanceId: ncIds.detailVersioned });
       // R-13/api m-4 — 본문에는 versionNo 를 안 싣는다(ETag 전용).
@@ -352,6 +354,34 @@ describe('부적합 목록 (e2e)', () => {
       expect(responseA.headers.etag).toBe('7');
       expect(responseB.headers.etag).toBe('3');
       expect(responseA.body.description).not.toBe(responseB.body.description);
+    });
+
+    it('⭐⭐ PR 리뷰 Minor-1·Minor-2 — 상세 본문 «값»이 같은 행의 목록 응답과 완전히 같다(lots 0행 포함)', async () => {
+      // ⛔ Minor-1 — 지금까지 상세 e2e 는 `nonconformanceId`·ETag·404 만 겨눴다. 매퍼를
+      // 공유한다는 보증이 코드 배치뿐이었고, `get()` 이 그 값을 다시 덮어써도(예:
+      // `affectedQtyTotal: 0`·`uomId: 1`·`dispositionProgressCode: 'NOT_STARTED'`·
+      // `lots: []` 로 고정) ajv 는 그대로 통과했다. 「같은 행을 목록으로 받은 것과 상세
+      // 본문이 같다」한 줄로 그 자리를 잠근다.
+      const listResponse = await get(`${NONCONFORMANCES}?openedFrom=${ROLLUP_FROM}&openedTo=${ROLLUP_TO}`).expect(200);
+      const listRowOf = (id: number) => listResponse.body.items.find((item: { nonconformanceId: number }) => item.nonconformanceId === id);
+
+      // ⭐ sourceMixed 를 쓴다(zeroLots 가 «아니다») — zeroLots 는 `uomId`(품목 기준단위 ·
+      // `ids.uom`)·`affectedQtyTotal`(0)·`lots`(`[]`)·`dispositionProgressCode`(`NOT_STARTED`)
+      // 전부가 하드코딩 덮어쓰기 값과 «우연히 같아» 그 변이를 못 잡는다(실측 — 덮어쓰기를
+      // 직접 넣어 확인). sourceMixed 는 `uomId=ids.uom2`(≠1)·`affectedQtyTotal=5`(≠0)·
+      // `lots` 2행(≠`[]`)이라 넷 중 셋이 그 값과 달라 안전하게 잡힌다.
+      const mixedList = listRowOf(ncIds.sourceMixed);
+      const mixedDetail = await get(`${NONCONFORMANCES}/${ncIds.sourceMixed}`).expect(200);
+      expect(mixedList).toBeDefined();
+      expect(mixedDetail.body).toEqual(mixedList);
+
+      // ⛔ Minor-2 — `lots` 0행(zeroLots) 경로도 상세·목록 대조에 태운다(상세 전용 분기가
+      // 그 행에서만 따로 새는 사고를 잡는다 — 값 자체의 덮어쓰기 그물은 위 sourceMixed 가 진다).
+      const zeroList = listRowOf(ncIds.zeroLots);
+      const zeroDetail = await get(`${NONCONFORMANCES}/${ncIds.zeroLots}`).expect(200);
+      expect(zeroList).toBeDefined();
+      expect(zeroDetail.body).toEqual(zeroList);
+      expect(zeroDetail.body).toMatchObject({ lots: [], affectedQtyTotal: 0, dispositionProgressCode: 'NOT_STARTED' });
     });
 
     it('⭐ 없는 id → 404(200 빈 응답이 아니다)', async () => {
