@@ -67,7 +67,8 @@ export interface HoldView {
   releasedAt: string | null;
   releaseReasonCode: string | null;
   remarks: string | null;
-  lotStatusCode: string;
+  /** ⛔ 널 금지 — 마이그 «전»에 태어난 행은 NULL 이라 키 자체를 뺀다(아래 `holdView` 참고). */
+  lotStatusCode?: string;
 }
 
 export interface LotDetail {
@@ -114,8 +115,25 @@ export function identifierView(
   };
 }
 
-/** 보류 줄은 LOT 의 번호·품목·판정을 함께 보인다 — 화면이 마스터를 다시 부르지 않게. */
+/**
+ * 보류 줄은 LOT 의 번호·품목·판정을 함께 보인다 — 화면이 마스터를 다시 부르지 않게.
+ *
+ * ⭐⭐ **R-9 판정(I-20 §0 #1 · PR ②a 와 같은 커밋)** — `lotStatusCode` 는 이전에 `lot.status_code`
+ * (LOT 의 «지금» 상태)로 채웠다. 계약 `LotHold.lotStatusCode` 의 뜻은 「이 보류가 «걸었을 때»
+ * LOT 이 간 상태」(`:4035`, 등록 도착)라 다른 사실이다 — 보류가 걸린 뒤 LOT 이 다시 옮겨지면
+ * `lot.status_code` 는 바뀌지만 「걸었을 때 간 상태」는 안 바뀐다. `GET /quality/lot-holds/{id}`
+ * (같은 계약 칸)는 물리 칸 `lot_hold.target_lot_status_code`(M-f)로 채운다 — 두 자리를
+ * 같은 뜻으로 맞추려면 여기도 그 칸을 써야 한다.
+ * ⚠ **마이그 전에 태어난 행은 그 칸이 NULL** 이다(백필 0) — `core/lot/lot-registry.service.ts`
+ * 가 아직(PR ③ 전) 그 칸을 안 채워, «오늘 새로 만든» 보류도 포함해 전부 여기 해당한다. 예전에는
+ * `lot.status_code` 값이 항상 실려 있었지만, 지금은 그 행들이 **키 생략**으로 후퇴한다. 계약
+ * 위반은 아니다(`lotStatusCode` 는 `LotHold.required` 밖 — 실측 확인됨). 실측 전에는
+ * `test/trace-lot.e2e-spec.ts` 가 이 칸의 값을 어디서도 단언하지 않았다 — 이번 커밋이 회귀
+ * 테스트를 새로 더했다(같은 파일 「R-9」 표시 · 키 생략과 등록 시점 값 고정을 함께 잠근다).
+ * // 결정 — 통보 079(근거·대안 비교는 I-20 PR ②a 본문)
+ */
 export function holdView(row: Prisma.lot_holdGetPayload<object>, lot: LotRow): HoldView {
+  const target = row.target_lot_status_code;
   return {
     lotHoldId: Number(row.lot_hold_id),
     lotId: Number(row.lot_id),
@@ -132,7 +150,7 @@ export function holdView(row: Prisma.lot_holdGetPayload<object>, lot: LotRow): H
     releasedAt: row.released_at?.toISOString() ?? null,
     releaseReasonCode: row.release_reason_code,
     remarks: row.remarks,
-    lotStatusCode: lot.status_code,
+    ...(target === null || target === undefined ? {} : { lotStatusCode: target }),
   };
 }
 
