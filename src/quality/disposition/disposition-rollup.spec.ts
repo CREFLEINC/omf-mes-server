@@ -98,6 +98,7 @@ describe('dispositionFollowUp — 후속 롤업(통보 089 §4)', () => {
   });
 
   it('⭐⭐ POSTED 아닌 폐기 출고는 세지 않는다 — 취소·미전기는 「후속 처리된 수량」이 아니다', () => {
+    // 결정 — 통보 089
     const mixed = [
       { statusCode: 'REGISTERED', issueQty: dec('10') },
       { statusCode: 'CANCEL_REQUESTED', issueQty: dec('10') },
@@ -115,22 +116,28 @@ describe('dispositionFollowUp — 후속 롤업(통보 089 §4)', () => {
 
 describe('followUpPending — 「후속 원천이 있는 유형만」(통보 089 §4 #3)', () => {
   it('SCRAP 은 후속이 남았으면 참이고 다 나가면 거짓이다', () => {
+    // 결정 — 통보 089
     expect(dispositionFollowUp('SCRAP', dec('30'), []).followUpPending).toBe(true);
     expect(dispositionFollowUp('SCRAP', dec('30'), [posted('10')]).followUpPending).toBe(true);
     expect(dispositionFollowUp('SCRAP', dec('30'), [posted('30')]).followUpPending).toBe(false);
   });
 
-  it('⛔ REWORK 는 언제나 거짓이다 — 참이면 W-04-10·W-04-11 이 같은 건을 두 번 처리한다', () => {
+  it('⛔ REWORK 는 «전기된 출고가 붙어 있어도» 거짓이다 — 참이면 같은 건을 두 번 처리한다', () => {
+    // ⭐⭐ 「안 걸리는 행」이다 — 픽스처를 비우면 축을 「유형」이 아니라 「전기된 출고가 있으면」
+    // 이라는 «데이터»로 구현해도 이 시험이 초록이다(리뷰 M-1 · 변이 X14). // 결정 — 통보 089
+    expect(dispositionFollowUp('REWORK', dec('160'), [posted('160')]).followUpPending).toBe(false);
     expect(dispositionFollowUp('REWORK', dec('160'), []).followUpPending).toBe(false);
   });
 
-  it('⛔ NORMAL 도 언제나 거짓이다 — 그 화면의 진입 축은 reinstatable 이다', () => {
+  it('⛔ NORMAL 도 마찬가지다 — 그 화면의 진입 축은 reinstatable 이다', () => {
+    expect(dispositionFollowUp('NORMAL', dec('160'), [posted('160')]).followUpPending).toBe(false);
     expect(dispositionFollowUp('NORMAL', dec('160'), []).followUpPending).toBe(false);
   });
 });
 
 describe('reinstatable — 재고로 되돌릴 수 있는 결정(통보 089 §4 #4)', () => {
   it('NORMAL 만 참이다 — 후속 진행과 무관하다', () => {
+    // 결정 — 통보 089 (계약의 「재작업이고 끝난 것」 절은 원천이 0이라 닿지 않는다 · 089 §4 #4)
     expect(dispositionFollowUp('NORMAL', dec('160'), []).reinstatable).toBe(true);
     expect(dispositionFollowUp('NORMAL', dec('160'), [posted('160')]).reinstatable).toBe(true);
   });
