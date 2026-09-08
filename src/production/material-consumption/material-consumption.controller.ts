@@ -3,7 +3,7 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import type { PagedResponse } from '../../common/pagination';
 import {
@@ -56,6 +56,6 @@ export class MaterialConsumptionController {
       idempotencyKey: String(request.headers['idempotency-key']),
       appUserId: currentSession(request)?.userId,
     };
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.consumptions.create(body, context));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.consumptions.create(body, context), FAMILY_CONFLICT_CODE);
   }
 }

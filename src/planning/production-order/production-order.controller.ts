@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
@@ -57,7 +57,7 @@ export class ProductionOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
       return (await this.queries.detail(productionOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /** ⭐ 202 에 본문이 없다 — 계약이 content 를 주지 않았다. 결과는 연계 수신으로 온다. */

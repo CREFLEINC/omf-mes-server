@@ -17,7 +17,7 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest } from '../../common/pagination';
@@ -107,7 +107,7 @@ export class LotHoldController {
   @Contract('POST /quality/lot-holds')
   create(@Req() request: Request, @Body() body: LotHoldCreate): Promise<LotHoldView[]> {
     const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, appUserId));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, appUserId), FAMILY_CONFLICT_CODE);
   }
 
   /**
@@ -132,8 +132,7 @@ export class LotHoldController {
   ): Promise<LotHoldView> {
     const appUserId = userOf(request);
     return runVersioned<LotHoldView, 'view'>(this.idempotency, request, response, 'view', (version) =>
-      this.writes.release(lotHoldId, version, body, appUserId),
-    );
+      this.writes.release(lotHoldId, version, body, appUserId), FAMILY_CONFLICT_CODE);
   }
 
   /**

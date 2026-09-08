@@ -18,7 +18,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
@@ -93,7 +93,7 @@ export class WorkOrderController {
     const created = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
       const workOrderId = await this.writes.create(body, currentSession(request)?.userId);
       return this.queries.detail(workOrderId, {});
-    });
+    }, FAMILY_CONFLICT_CODE);
     setEtag(response, created.versionNo);
     return created.view;
   }
@@ -111,7 +111,7 @@ export class WorkOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.writes.update(workOrderId, version, body, currentSession(request)?.userId);
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /**
@@ -130,7 +130,7 @@ export class WorkOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.releases.release(workOrderId, version, body, userOf(request));
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /** If-Match 가 **선택**이다(오프라인 대상 · C-9) — 없으면 `undefined` 로 내려보낸다. */
@@ -151,7 +151,7 @@ export class WorkOrderController {
         currentSession(request)?.userId,
       );
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   @Post(':workOrderId\\:resume')
@@ -170,7 +170,7 @@ export class WorkOrderController {
         currentSession(request)?.userId,
       );
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   /**
@@ -189,7 +189,7 @@ export class WorkOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.closes.close(workOrderId, version, body, currentSession(request)?.userId);
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   @Post(':workOrderId\\:cancel')
@@ -204,7 +204,7 @@ export class WorkOrderController {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
       await this.cancels.cancel(workOrderId, version, body, currentSession(request)?.userId);
       return (await this.queries.detail(workOrderId, {})).view;
-    });
+    }, FAMILY_CONFLICT_CODE);
   }
 
   @Get(':workOrderId/resource-plans')

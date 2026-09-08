@@ -14,7 +14,7 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import type { PagedResponse } from '../../common/pagination';
 import { MaterialReturnListQuery, MaterialReturnQueryService } from './material-return-query.service';
@@ -59,8 +59,7 @@ export class MaterialReturnController {
     const appUserId = userOf(request);
     const workerNo = request.headers['x-worker-no'];
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.returns.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined),
-    );
+      this.returns.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined), FAMILY_CONFLICT_CODE);
   }
 }
 
