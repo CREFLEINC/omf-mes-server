@@ -324,6 +324,21 @@ describe('수리 실행 목록 조회 1건 (e2e)', () => {
       }
     });
 
+    it('⭐ repairProcessId 는 «선택»이다 — 빼고 보내도 201 이고 응답에 키가 없다', async () => {
+      // 계약이 유일하게 선택으로 연 칸이다(required 4 에 없다 · type ["integer","null"]).
+      // 널 가드(`processId === null ? 1 : count`)를 지우면 계약을 «지킨» 요청이 400 으로
+      // 거부되는데, 이 단언이 없으면 아무도 못 잡는다(PR #445 리뷰 Minor-1).
+      const defectRecordId = await makeDefectRecord();
+      const body = createBody(defectRecordId);
+      delete (body as Record<string, unknown>).repairProcessId;
+      const response = await post(body).expect(201);
+      expect('repairProcessId' in response.body).toBe(false);
+
+      // 널을 «명시»해도 같다 — 계약이 널을 허용한다.
+      const withNull = await post(createBody(await makeDefectRecord(), { repairProcessId: null })).expect(201);
+      expect('repairProcessId' in withNull.body).toBe(false);
+    });
+
     it('⭐ 픽스처의 id 가 서로 다르다 — 값 단언이 «출처»를 가를 수 있게 하는 전제', () => {
       // 하나라도 같으면 뒤바뀜 변이가 값까지 같아 안 잡힌다(§7-1 ⓑ · PR ① 리뷰).
       const ids = [
