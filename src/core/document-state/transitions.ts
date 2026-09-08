@@ -321,6 +321,24 @@ export const TRANSITIONS: TransitionRegistry = {
   'logistics.goods_receipt.status_code': { ...DOCUMENT_CANCEL_ACTIONS },
 
   /**
+   * 설비 고장 처리. 계약은 `RECEIVED`에서 처리 시작, `RECEIVED`·`HANDLING`에서 완료를 연다.
+   * 결정 — 통보 090·093: 완료 경로도 같은 상태 축에 등록한다.
+   * ⛔ 이력 표가 없다 — `transitionCode`를 쓰지 않는다.
+   */
+  'maintenance.breakdown.status_code': {
+    'breakdown-start-handling': {
+      from: ['RECEIVED'],
+      to: 'HANDLING',
+      sourceOperation: 'POST /maintenance/breakdowns/{breakdownId}:start-handling',
+    },
+    'breakdown-complete': {
+      from: ['RECEIVED', 'HANDLING'],
+      to: 'DONE',
+      sourceOperation: 'POST /maintenance/breakdowns/{breakdownId}:complete',
+    },
+  },
+
+  /**
    * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
    * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
    * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
