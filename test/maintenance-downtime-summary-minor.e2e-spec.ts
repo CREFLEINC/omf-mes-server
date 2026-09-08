@@ -1,12 +1,11 @@
-import { PrismaClient } from "@prisma/client";
-
 import { DowntimeSummaryMinorService } from "../src/maintenance/downtime/downtime-summary-minor.service";
 import type { SummaryPlantSource } from "../src/maintenance/downtime/downtime-summary-source.types";
+import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I32-SUMMARY-MINOR";
 
 describe("I-32 경미 정지 정책 (e2e)", () => {
-  const prisma = new PrismaClient();
+  const prisma = new PrismaService();
   const ids: Record<string, bigint> = {};
   let resolver: DowntimeSummaryMinorService;
   let plants: SummaryPlantSource[];
