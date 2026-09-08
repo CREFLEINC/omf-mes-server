@@ -6,13 +6,13 @@ import { CheckedMaintenanceResultCreate } from "./result-write-input";
 
 type Tx = Prisma.TransactionClient;
 
-interface TargetRow {
+export interface LockedMaintenanceResultTarget {
   target_id: bigint;
   plant_id: bigint;
   version_no: number;
 }
 
-interface OrderRow {
+export interface LockedMaintenanceResultOrder {
   maintenance_order_id: bigint;
   target_type_code: string;
   equipment_id: bigint | null;
@@ -41,6 +41,18 @@ export async function resolveMaintenanceResultCreateReferences(
   const order = await lockOrder(tx, input);
   await assertBreakdown(tx, input, order);
   await assertPerformer(tx, input);
+  await assertMaintenanceResultChildReferences(tx, input, target, order);
+}
+
+export async function assertMaintenanceResultChildReferences(
+  tx: Tx,
+  input: Pick<
+    CheckedMaintenanceResultCreate,
+    "targetTypeCode" | "targetId" | "lines" | "parts"
+  >,
+  target: LockedMaintenanceResultTarget,
+  order: LockedMaintenanceResultOrder | null,
+): Promise<void> {
   await assertLines(tx, input, order);
   await assertParts(tx, input, target);
 }
@@ -48,14 +60,14 @@ export async function resolveMaintenanceResultCreateReferences(
 async function lockTarget(
   tx: Tx,
   input: CheckedMaintenanceResultCreate,
-): Promise<TargetRow> {
+): Promise<LockedMaintenanceResultTarget> {
   const rows =
     input.targetTypeCode === "EQUIPMENT"
-      ? await tx.$queryRaw<TargetRow[]>(Prisma.sql`
+      ? await tx.$queryRaw<LockedMaintenanceResultTarget[]>(Prisma.sql`
           SELECT equipment_id AS target_id,plant_id,version_no
           FROM mdm.equipment WHERE equipment_id=${input.targetId}
           FOR NO KEY UPDATE`)
-      : await tx.$queryRaw<TargetRow[]>(Prisma.sql`
+      : await tx.$queryRaw<LockedMaintenanceResultTarget[]>(Prisma.sql`
           SELECT mold_id AS target_id,plant_id,version_no
           FROM mdm.mold WHERE mold_id=${input.targetId}
           FOR NO KEY UPDATE`);
@@ -66,7 +78,7 @@ async function lockTarget(
 async function lockOrder(
   tx: Tx,
   input: CheckedMaintenanceResultCreate,
-): Promise<OrderRow | null> {
+): Promise<LockedMaintenanceResultOrder | null> {
   if (input.maintenanceOrderId === null) {
     if (input.targetTypeCode === "MOLD")
       fail(
@@ -82,7 +94,7 @@ async function lockOrder(
       );
     return null;
   }
-  const rows = await tx.$queryRaw<OrderRow[]>(Prisma.sql`
+  const rows = await tx.$queryRaw<LockedMaintenanceResultOrder[]>(Prisma.sql`
     SELECT maintenance_order_id,target_type_code,equipment_id,mold_id,
            breakdown_id,order_type_code,status_code
     FROM maintenance.maintenance_order
@@ -119,7 +131,7 @@ async function lockOrder(
 async function assertBreakdown(
   tx: Tx,
   input: CheckedMaintenanceResultCreate,
-  order: OrderRow | null,
+  order: LockedMaintenanceResultOrder | null,
 ): Promise<void> {
   if (input.targetTypeCode === "MOLD" && input.breakdownId !== null)
     fail(
@@ -170,8 +182,8 @@ async function assertPerformer(
 
 async function assertLines(
   tx: Tx,
-  input: CheckedMaintenanceResultCreate,
-  order: OrderRow | null,
+  input: Pick<CheckedMaintenanceResultCreate, "targetTypeCode" | "lines">,
+  order: LockedMaintenanceResultOrder | null,
 ): Promise<void> {
   if (input.targetTypeCode === "MOLD") {
     input.lines.forEach((line, index) => {
@@ -244,8 +256,11 @@ async function assertLines(
 
 async function assertParts(
   tx: Tx,
-  input: CheckedMaintenanceResultCreate,
-  target: TargetRow,
+  input: Pick<
+    CheckedMaintenanceResultCreate,
+    "targetTypeCode" | "targetId" | "parts"
+  >,
+  target: LockedMaintenanceResultTarget,
 ): Promise<void> {
   const ids = [...new Set(input.parts.map((part) => part.sparePartId))].sort(
     bigintOrder,

@@ -41,6 +41,21 @@ export interface MaintenanceResultCreate {
   parts?: MaintenanceResultPartInput[];
 }
 
+export interface MaintenanceResultUpdate {
+  finishedAt?: string | null;
+  resultNote?: string;
+  closed?: boolean;
+  lines?: MaintenanceResultLineInput[];
+  parts?: MaintenanceResultPartInput[];
+}
+
+export interface CheckedMaintenanceResultUpdate {
+  finishedAt?: MaintenanceInstant | null;
+  resultNote?: string;
+  lines?: CheckedMaintenanceResultCreate["lines"];
+  parts?: CheckedMaintenanceResultCreate["parts"];
+}
+
 export interface CheckedMaintenanceResultCreate {
   maintenanceOrderId: bigint | null;
   breakdownId: bigint | null;
@@ -127,6 +142,41 @@ export function checkMaintenanceResultCreate(
     outsourceVendorName,
     lines: lines(body.lines ?? []),
     parts: parts(body.parts ?? []),
+  };
+}
+
+export function checkMaintenanceResultUpdate(
+  body: MaintenanceResultUpdate,
+  startedEpochMicroseconds: bigint,
+): CheckedMaintenanceResultUpdate {
+  if (body.closed === true)
+    throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
+      field(
+        "closed",
+        ERROR_CODE.INVALID,
+        "결과코드의 마감 의미가 확정되기 전에는 실적을 마감할 수 없습니다.",
+      ),
+    ]);
+  let finishedAt: MaintenanceInstant | null | undefined;
+  if (Object.hasOwn(body, "finishedAt")) {
+    finishedAt =
+      body.finishedAt == null
+        ? null
+        : parseMaintenanceInstant(body.finishedAt, "finishedAt");
+    if (finishedAt && finishedAt.epochMicroseconds < startedEpochMicroseconds)
+      fail(
+        "finishedAt",
+        ERROR_CODE.RANGE,
+        "종료 시각은 시작 시각보다 빠를 수 없습니다.",
+      );
+  }
+  if (body.resultNote !== undefined && !body.resultNote.trim())
+    fail("resultNote", ERROR_CODE.REQUIRED, "실적 내용이 필요합니다.");
+  return {
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    ...(body.resultNote === undefined ? {} : { resultNote: body.resultNote }),
+    ...(body.lines === undefined ? {} : { lines: lines(body.lines) }),
+    ...(body.parts === undefined ? {} : { parts: parts(body.parts) }),
   };
 }
 
