@@ -12,8 +12,8 @@ import type { Tx } from './lot-registry.service';
  * ⛔ **업무 게이트는 여기 없다** — 409 셋(`VERSION_CONFLICT`·`DUPLICATE_HOLD`·
  *    `HOLD_QTY_EXCEEDED`)과 400 갈래는 도메인 몫이다.
  *
- * ⛔ `lot-registry.service.ts` 는 **값 import 를 하지 않는다**(`import type` 뿐) — 등록 코어가
- *    이 서비스를 주입받으므로 값으로 맞물리면 Nest 가 DI 메타데이터를 읽을 때 순환한다.
+ * ⛔ **이 파일이** `lot-registry.service.ts` 를 값으로 import 하지 않는다(`import type` 뿐) —
+ *    등록 코어가 이 서비스를 «주입»받으므로 값으로 맞물리면 Nest 가 DI 메타데이터를 읽을 때 순환한다.
  */
 
 /**
@@ -28,7 +28,7 @@ export interface LotHoldActor {
   at: Date;
 }
 
-/** 보류 한 건이 받는 칸 — 계약 `LotHoldCreate.lots[]` 의 전 칸이 여기 담긴다. */
+/** 보류 한 건이 받는 칸 — 계약 `LotHoldCreate` 의 전 칸이 여기 담긴다(`lots[]` 는 LOT 참조뿐이다). */
 export interface LotHoldInput {
   lotId: bigint;
   reasonCode: string;
@@ -45,8 +45,11 @@ export type LotHoldRow = Prisma.lot_holdGetPayload<object>;
 
 declare const lockToken: unique symbol;
 /**
- * `lockLotsWithin()` 만 만들 수 있는 표식 — 쓰기가 이 값을 **인자로 요구해** 잠금 없이는
- * 컴파일되지 않는다. R-5 를 주석이 아니라 타입으로 못 박는 자리다.
+ * `lockLotsWithin()` 만 만들 수 있는 표식 — 쓰기가 이 값을 **인자로 요구해** 잠금 호출을
+ * **«빠뜨리면» 컴파일이 막힌다**(막으려는 사고가 그것이다).
+ * ⚠ **고의로 우회하는 것까지는 못 막는다** — 단일 `as LockedLot[]` · `$queryRaw<LockedLot[]>` 로
+ *    직접 쓴 잠금 없는 질의 · 코어를 안 거친 직접 쓰기 셋은 `tsc`·`eslint` 를 통과하고, `locked`
+ *    가 «같은 `tx`»에서 왔다는 보증도 없다(#378 리뷰 A-2 실측). 리터럴 위조만 막힌다.
  */
 export interface LockedLot {
   readonly [lockToken]: true;
