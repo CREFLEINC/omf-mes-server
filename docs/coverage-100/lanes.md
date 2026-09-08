@@ -121,6 +121,25 @@ node_modules/.bin/jest contract-coverage    # 콘솔에 「계약 구현 커버�
 - 흔적 표기: 질의 `// 설계 미정 — 문의 NNN` · **통보 `// 결정 — 통보 NNN`**.
 - ⚠ **016~119 는 이 규칙 «이전»에 쓰였다** — 대부분 실질이 통보다. 소급 재분류는 하지 않고 루틴 끝 전달 때 가른다.
 
+## 2-2. ⭐ 워크트리에서 게이트를 돌릴 때 (2026-09-08 · 세 레인 공통)
+
+워크트리의 `node_modules` 를 주 저장소로 심링크해 쓰면 세 가지가 물린다. 셋 다 실제로 났다.
+
+1. ⛔ **`pnpm exec` 를 쓰지 마라.** pnpm 이 `node_modules/.modules.yaml` 지문이 안 맞는 것을 보고
+   **modules 디렉터리를 «삭제»하려 든다**(`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 로 중단됐다 —
+   TTY 가 있었으면 **주 저장소의 `node_modules` 가 날아간다**). 바이너리를 직접 불러라:
+   `node_modules/.bin/eslint` · `.bin/tsc` · `.bin/jest` · `.bin/prisma`.
+2. ⚠ **`prisma generate` 는 세 레인이 «같은 생성물»을 덮어쓴다.** 남의 워크트리가 그 사이에 돌리면
+   **내 `tsc` 가 가짜로 빨개진다**(다른 레인의 새 칸이 없다고 나온다). ⇒ 게이트는
+   **`generate` 와 `tsc`/`jest` 를 «한 호출»로 묶는다.** 빨개지면 먼저 `generate` 를 다시 돌려 보고
+   그래도 빨가면 그때 진짜 결함이다.
+3. ⚠ **이미 적용한 마이그 파일에 줄을 얹으면 로컬 DB 체크섬이 어긋난다**(`_prisma_migrations.checksum`).
+   DB 실물은 맞아도 다음 `migrate deploy` 가 「modified after applied」로 걸린다. 원격·CI·새 DB 는
+   처음부터 적용하므로 **영향이 없다**. 고치려면 그 행의 `checksum` 을 파일의 sha256 으로 UPDATE 한다.
+
+접속 문자열은 워크트리 `.env` 를 그대로 쓴다 — DB 이름은 **`omf_mes`** 다.
+⛔ 파이프 뒤 `$?` 는 **파이프 마지막 명령의 종료코드**다. 종료코드를 볼 게이트는 파이프 없이 돌린다.
+
 ## 3. 서로에게 알려야 하는 순간 (사용자를 통해)
 
 직접 소통 수단이 없다. 아래는 **사용자에게 한 줄 보고**한다.
