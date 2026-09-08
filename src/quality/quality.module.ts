@@ -32,6 +32,8 @@ import { LotHoldWriteService } from './lot-hold/lot-hold-write.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
 import { LotStatusTransitionService } from './lot-status/lot-status-transition.service';
 import { LotStatusService } from './lot-status/lot-status.service';
+import { NonconformanceController } from './nonconformance/nonconformance.controller';
+import { NonconformanceQueryService } from './nonconformance/nonconformance-query.service';
 
 /**
  * 계약 최상위 경로 `/quality` — 검사기준·불량/원인코드·판정·부적합·검사 의뢰·검사 결과 조회.
@@ -62,6 +64,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     DefectRecordController,
     LotStatusController, // 리터럴 경로 셋(`lot-statuses`·`lot-status-summary`·`lot-status-transitions`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
     LotHoldController, // `lot-holds`(목록) · `lot-holds/:lotHoldId`(상세) — 세그먼트 수가 달라 순서 함정이 없다.
+    NonconformanceController, // `nonconformances`(목록 · I-21 PR ①a) — 상세 `:nonconformanceId` 는 ①b 몫.
   ],
   providers: [
     DefectCodeService,
@@ -81,6 +84,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     LotStatusTransitionService,
     LotHoldQueryService,
     LotHoldWriteService,
+    NonconformanceQueryService,
   ],
 })
 export class QualityModule {}
