@@ -16,6 +16,12 @@ export interface LotQualityMoveContext {
   /** ⛔ `ck_lot_status_event_source` — 원천 문서 두 칸은 둘 다 주거나 둘 다 안 준다. */
   sourceDocumentTypeCode?: string;
   sourceDocumentId?: bigint;
+  /**
+   * ⭐ **R-12** — 배치의 LOT 마다 원천 문서가 «다를» 때 쓴다(N LOT 보류 등록은 LOT 마다
+   * 자기 `lot_hold_id` 를 가리켜야 하는데 위 한 칸으로는 「첫 것」밖에 못 담는다).
+   * 없는 LOT 은 위 배치 값으로 떨어진다.
+   */
+  sourceDocumentIdByLot?: ReadonlyMap<bigint, bigint>;
   reasonCode?: string;
   reason?: string;
   /** 전이표에 코드가 없는 자리(재등록)만 채운다 — 설계 미정 · 문의 089(발행 예정). */
@@ -86,7 +92,7 @@ export class LotQualityStatusService {
           reason_code: ctx.reasonCode,
           reason: ctx.reason,
           source_document_type_code: ctx.sourceDocumentTypeCode,
-          source_document_id: ctx.sourceDocumentId,
+          source_document_id: ctx.sourceDocumentIdByLot?.get(lot.lot_id) ?? ctx.sourceDocumentId,
           changed_at: ctx.changedAt,
           changed_by: ctx.changedBy,
           // ⛔ `quality_status_code`·`inventory_status_code`·`location_id` 는 비운다 —

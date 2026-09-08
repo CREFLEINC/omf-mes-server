@@ -145,29 +145,32 @@ describe('LOT (e2e)', () => {
   });
 
   /**
-   * ⭐⭐ R-9 회귀(I-20 PR ②a 와 같은 커밋) — `holdView()` 가 `lotStatusCode` 를 `lot.status_code`
-   * (지금 상태)가 아니라 `lot_hold.target_lot_status_code`(등록 때 간 상태)로 채우도록 갈았다.
-   * `core/lot/lot-registry.service.ts` 는 아직(PR ③ 전) 그 칸을 안 채우므로 «오늘 만든» 보류도
-   * 키가 없다 — 이 e2e 가 그 특성화를 잠근다. 그리고 값을 심어 두면 LOT 이 나중에 다시 옮겨져도
-   * 그 값이 그대로인 것(=「지금」이 아니라 「걸었을 때」)을 증명한다.
+   * ⭐⭐ R-9 회귀(I-20 PR ②a) + **PR ③ 2-5** — `holdView()` 는 `lotStatusCode` 를 `lot.status_code`
+   * (지금 상태)가 아니라 `lot_hold.target_lot_status_code`(등록 때 간 상태)로 채운다. PR ③ 이
+   * 코어(`lot-registry.service.ts:96`)에 그 칸을 채우게 해서 **오늘 태어난 보류는 값을 갖는다**.
+   * ⛔ 백필은 없다(마이그 0) — PR ③ 이전에 태어난 옛 보류는 칸이 영구히 비고, 널 금지라
+   * **키가 생략된다**. 마지막 단언이 그 갈래를 함께 잠근다.
    */
   it('⭐⭐ R-9 — 보류의 lotStatusCode 는 target_lot_status_code 다(lot.status_code 의 「지금」이 아니다)', async () => {
     const lot = await create({ numberSourceCode: 'MES' });
 
     const before = await detailOf(lot.lotId);
     const hold = before.holds[0] as { lotHoldId: number; lotStatusCode?: string };
-    expect(hold).not.toHaveProperty('lotStatusCode'); // 코어가 아직 안 채운다(PR ③ 전) — 널 금지로 키 생략
+    expect(hold.lotStatusCode).toBe('INSPECTION_PENDING'); // ⭐ 2-5 — 코어가 등록 때 채운다
 
-    await prisma.lot_hold.update({
-      where: { lot_hold_id: BigInt(hold.lotHoldId) },
-      data: { target_lot_status_code: 'INSPECTION_PENDING' },
-    });
     await prisma.lot.update({ where: { lot_id: BigInt(lot.lotId) }, data: { status_code: 'NORMAL' } });
 
     const after = await detailOf(lot.lotId);
     const movedHold = after.holds[0] as { lotStatusCode?: string };
     expect(after.lot.statusCode).toBe('NORMAL'); // LOT 은 옮겨졌다
     expect(movedHold.lotStatusCode).toBe('INSPECTION_PENDING'); // 그래도 「등록 때」 값 그대로 — lot.status_code 를 베끼면 'NORMAL' 이 나와 깨진다
+
+    await prisma.lot_hold.update({
+      where: { lot_hold_id: BigInt(hold.lotHoldId) },
+      data: { target_lot_status_code: null },
+    });
+    const legacy = await detailOf(lot.lotId);
+    expect(legacy.holds[0]).not.toHaveProperty('lotStatusCode'); // 옛 행(백필 안 함) — 널 금지로 키 생략
   });
 
   it('⭐ 등록하면 상태가 검사 대기다', async () => {

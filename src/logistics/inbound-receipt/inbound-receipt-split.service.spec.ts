@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { LotRegistryService } from '../../core/lot';
+import { LotHoldService, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
@@ -97,7 +97,15 @@ function fake(codeValues?: string[]) {
           })),
       update: async () => undefined,
     },
-    $queryRaw: async () => [],
+    // 코어 보류가 LOT 을 «먼저» 잠근다(R-5). P/O 부모 잠금은 이 스위트가 따로 본다.
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join('?').includes('trace.lot')
+        ? ((values[0] as Prisma.Sql).values as bigint[]).map((lot_id) => ({
+            lot_id,
+            status_code: 'INSPECTION_PENDING',
+            version_no: 1,
+          }))
+        : [],
     item: { findMany: async () => [{ item_id: 40n, inspection_required: false }] },
     inbound_receipt: {
       create: async ({ data }: { data: Args }) => {
@@ -153,7 +161,7 @@ function fake(codeValues?: string[]) {
   const receipts = new InboundReceiptService(
     prisma as unknown as PrismaService,
     numbering,
-    new LotRegistryService(),
+    new LotRegistryService(new LotHoldService()),
   );
   const service = new InboundReceiptSplitService(
     prisma as unknown as PrismaService,
