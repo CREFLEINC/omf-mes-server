@@ -4,7 +4,12 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 
 /**
  * 적치 완료가 쌓는 **원장 한 줄** — 하역장(`from`) → 실제 위치(`to`). `receipt-posting.ts` 의 짝.
- * ⚠ **설계 미정 — 문의 059.** 판별자 값은 「대상 테이블 이름」인데 적치에는
+ * ⭐ **결정 — 통보 059**(2026-09-08). 판별자는 `STOCK_TRANSFER` 를 그대로 쓰고,
+ * **`transaction_no` 의 `PT-` 접두어가 「적치가 쓴 행」을 가르는 정본 판별 규칙**이다.
+ *   적치        : `source_document_type_code='STOCK_TRANSFER' AND transaction_no LIKE 'PT-%'`
+ *   재고 이동   : 같은 판별자 + `NOT LIKE 'PT-%'` (I-13)
+ * ⛔ 레인 C 에 전달됨 — I-13 의 진짜 재고이동은 `PT-` 를 쓰지 않는다.
+ * (아래는 그 결정에 이른 사정이다.) 판별자 값은 「대상 테이블 이름」인데 적치에는
  * `logistics.stock_transfer` 헤더가 **없다** — `sourceDocumentId` 는 `putaway_task_id` 다.
  * enum 이 4값으로 닫혀 다섯째 값은 조회 계약을 깨고, `GOODS_RECEIPT` 는 다형 취소의
  * 「2행이면 던진다」에 걸려 입고 취소를 죽인다. ⛔ **되돌릴 수 없다** —

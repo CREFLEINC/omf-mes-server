@@ -368,6 +368,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: ⑳~㉒ — 실적/입하 LOT → 검사 → **Lot Status 전이**. 품질 축 전이표를 처음 채우는 자리.
 **원장**: 없음. **상태기계**: ⭐ `trace.lot.status_code` — `transitions.ts` 가 **일부러 비워 둔 칸**이다(값 불일치 때문). 회신 E-3 으로 `LOT_STATUS` 4값(`NORMAL`·`DEFECTIVE`·`INSPECTION_PENDING`·`SCRAPPED`)이 확정됐고 계약 `InventoryBalance.qualityStatusCode` 가 같은 넷을 적었다 → **여기서 채운다.**
 전이 매핑(계약 실물): 합격→`NORMAL` · 불합격→`DEFECTIVE` · 보류→`INSPECTION_PENDING` · PQC 합격판정개수 초과→같은 W/O 생산LOT **전체** `INSPECTION_PENDING`(C14).
+⛔ **2026-09-08 · 통보 059 — I-13 이 반드시 지킬 것.** 적치(I-12)가 이미 `source_document_type_code='STOCK_TRANSFER'` 로 원장을 쌓고 있고, **`transaction_no` 의 `PT-` 접두어가 그 둘을 가르는 «정본 판별 규칙»**이다. ⇒ **I-13 의 재고 이동은 `PT-` 접두어를 쓰지 않는다.** 쓰면 한 값에 두 뜻이 섞여 **식별조차 못 하게 되고**, 이미 쌓인 원장 행은 `block_ledger_header_mutation` 때문에 **정정이 불가능**하다.
+
 ⭐ **도착값(`to`)은 위가 맞고 출발값(`from`)은 액션마다 다르다**(I-19 R-1) — 상수 하나로 묶지 않는다. `DEFECTIVE` 에서 나오는 전이는 **재등록(`stock-reinstate`) 하나뿐**이다. C14 는 `from` 밖 LOT 을 400 이 아니라 **건너뛴다**(I-19 R-7 · 형제 코어와 같은 모양).
 **예상 설계 미정**: C14 의 「전체」 범위(같은 W/O 인가 같은 공정인가)가 좁혀지지 않으면 가장자리 → 계약 문자 그대로 「같은 W/O」.
 **규모 주의**: 측정치가 135,000 자릿수라 `/measurements` 는 반드시 페이지네이션, `/measurement-summary` 는 서버 집계(L-1·L-2).
