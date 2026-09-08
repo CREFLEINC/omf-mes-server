@@ -45,6 +45,8 @@ const T_11 = '2026-01-15T11:00:00.000Z';
 const T_12 = '2026-01-15T12:00:00.000Z';
 const T_13 = '2026-01-15T13:00:00.000Z';
 const T_14 = '2026-01-15T14:00:00.000Z';
+const T_15 = '2026-01-15T15:00:00.000Z'; // EVPARTIAL 의 released_at(리뷰 Major-2)
+const T_16 = '2026-01-15T16:00:00.000Z'; // EV_EXACT1·EV_EXACT2 의 held_at(리뷰 Minor-3)
 const EV_TO = '2026-01-16T00:00:00.000Z'; // 기간 끝 — 동시에 경계 제외 픽스처의 held_at
 
 interface LotHoldItem {
@@ -122,6 +124,10 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     EVOPEN2: `LOT-EV-OPEN2-${PREFIX}`,
     EVTIE: `LOT-EV-TIE-${PREFIX}`,
     EVBOUNDARY: `LOT-EV-BOUNDARY-${PREFIX}`,
+    EVPARTIAL: `LOT-EV-PARTIAL-${PREFIX}`, // 리뷰 Major-2 — 부분 해제(R-2)
+    // 리뷰 Minor-3 — EV_EXACT1 은 EV_EXACT2 lotNo 문자열의 «정확한 접두»다(EXACT1/EXACT2 선례와 같은 짝).
+    EV_EXACT1: `LOT-EV-EXACT1-${PREFIX}`,
+    EV_EXACT2: `LOT-EV-EXACT1-${PREFIX}X`,
   };
 
   beforeAll(async () => {
@@ -353,21 +359,42 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       expect(ids).toContain(lotHoldId.EVBOTH); // held_at === occurredFrom(시작 경계) — 포함
       expect(ids).toContain(lotHoldId.EVTIE); // 〃(동률)
       expect(ids).not.toContain(lotHoldId.EVBOUNDARY); // held_at === occurredTo(끝 경계) — 제외
-      expect(body.page.total).toBe(6);
+      expect(body.page.total).toBe(9);
     },
   );
 
   // ── 10. 사건 — 한 보류가 최대 두 행 ───────────────────────────────────
 
   it(
-    '⭐ 사건 — 한 보류가 최대 두 행이다(EVBOTH 가 HELD·RELEASED 둘) ' +
-      '(↩ 보류 «문서» 목록을 그대로 내면 한 행만 나온다)',
+    '⭐⭐ 사건 — 한 보류가 최대 두 행이다(EVBOTH 가 HELD·RELEASED 둘) · actorId·actorName·itemId 값도 잠근다 ' +
+      '(↩ 보류 «문서» 목록을 그대로 내면 한 행만 나온다 · 리뷰 Major-1·Minor-4 — actorName·해제 가지 actorId·itemId 값은 아무도 안 봤다)',
     async () => {
       const body = await listEvents(`lotId=${lotId.EVBOTH}`);
       expect(body.items).toHaveLength(2);
       const byType = Object.fromEntries(body.items.map((i) => [i.eventTypeCode, i]));
-      expect(byType.HELD).toMatchObject({ lotHoldId: lotHoldId.EVBOTH, occurredAt: EV_FROM });
-      expect(byType.RELEASED).toMatchObject({ lotHoldId: lotHoldId.EVBOTH, occurredAt: T_13 });
+      // EVBOTH 는 held_by(A) ≠ released_by(B) 라 두 가지의 actorId·actorName 이 축이 갈린다 —
+      // 이 두 toMatchObject 가 「RELEASED 가지의 actorId 를 held_by 로 잘못 실어도 초록」이던
+      // 반증 불가(N3)와 「actorName JOIN 을 안 해도 초록」이던 반증 불가(N1)를 함께 닫는다.
+      expect(byType.HELD).toMatchObject({
+        lotHoldId: lotHoldId.EVBOTH,
+        occurredAt: EV_FROM,
+        actorId: heldByAId,
+        actorName: 'LOT보류검사',
+        itemId: item1Id,
+        holdQty: 40,
+        uomId,
+        releaseCondition: '재검사 후 판정 대기',
+      });
+      expect(byType.RELEASED).toMatchObject({
+        lotHoldId: lotHoldId.EVBOTH,
+        occurredAt: T_13,
+        actorId: heldByBId,
+        actorName: 'LOT보류검사행위자B',
+        itemId: item1Id,
+        holdQty: 40,
+        uomId,
+        releaseCondition: '재검사 후 판정 대기',
+      });
     },
   );
 
@@ -390,11 +417,11 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       '(↩ released_at IS NULL 을 WHERE 에 걸면 3값 논리로 사라진다)',
     async () => {
       const released = await listEvents('eventTypeCode=RELEASED');
-      expect(released.items).toHaveLength(2);
+      expect(released.items).toHaveLength(3); // EVBOTH · EVBEFORE · EVPARTIAL
       expect(released.items.every((i) => i.eventTypeCode === 'RELEASED')).toBe(true); // HELD 가 0건
 
       const held = await listEvents('eventTypeCode=HELD');
-      expect(held.items).toHaveLength(4);
+      expect(held.items).toHaveLength(6); // EVBOTH·EVLEGACY·EVOPEN2·EVTIE·EV_EXACT1·EV_EXACT2
       expect(held.items.every((i) => i.eventTypeCode === 'HELD')).toBe(true);
       // ⭐ EVBOTH 는 «나중에 해제»됐지만(released_at NOT NULL) HELD 사건은 여전히 나온다 —
       // `eventTypeCode=HELD AND released_at IS NULL` 로 잘못 구현하면 이 행이 사라진다.
@@ -431,25 +458,36 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   // ── 15. 사건 — targetLotStatusCode 두 칸 ─────────────────────────────
 
   it(
-    '⭐ 사건 — targetLotStatusCode 가 HELD·RELEASED 에서 «다른 칸»이다(§0 #1) (↩ 한 칸으로 합치면 깨진다)',
+    '⭐⭐ 사건 — targetLotStatusCode 가 HELD·RELEASED 에서 «다른 칸»이다(§0 #1) · 부분 해제(R-2)는 RELEASED 여도 키가 «없다» ' +
+      '(↩ 한 칸으로 합치거나 COALESCE 로 폴백하면 깨진다 · 리뷰 Major-2 — 그 경로 픽스처가 0행이었다)',
     async () => {
       const body = await listEvents(`lotId=${lotId.EVBOTH}`);
       const byType = Object.fromEntries(body.items.map((i) => [i.eventTypeCode, i]));
       expect(byType.HELD.targetLotStatusCode).toBe('INSPECTION_PENDING');
       expect(byType.RELEASED.targetLotStatusCode).toBe('NORMAL');
+
+      // EVPARTIAL — release_target_lot_status_code 가 NULL(부분 해제, LOT 미이동) ⇒
+      // RELEASED 사건이어도 targetLotStatusCode 키가 없어야 한다(R-2 — 「보류 → 정상」을
+      // 지어내면 안 움직인 LOT 이 이력에 이동한 것처럼 그려진다).
+      const partial = await listEvents(`lotId=${lotId.EVPARTIAL}`);
+      expect(partial.items).toHaveLength(1);
+      expect(partial.items[0]).toMatchObject({ eventTypeCode: 'RELEASED', lotHoldId: lotHoldId.EVPARTIAL });
+      expect(partial.items[0]).not.toHaveProperty('targetLotStatusCode');
     },
   );
 
   // ── 16. 사건 — actorId 키 생략 ────────────────────────────────────────
 
   it(
-    '⭐ 사건 — held_by 가 NULL 인 보류는 actorId·actorName 키가 «없다»(계약 required 결손 특성화 · 통보 072) ' +
-      '(↩ 0 을 넣으면 깨진다)',
+    '⭐ 사건 — held_by 가 NULL 인 보류는 actorId·actorName 키가 «없다»(계약 required 결손 특성화 · 통보 072) · ' +
+      'target_lot_status_code 가 NULL 이면 targetLotStatusCode 키도 «없다» ' +
+      '(↩ 0 을 넣거나 null 을 그대로 실으면 깨진다 · 뒤 단언은 리뷰 Minor-5)',
     async () => {
       const body = await listEvents(`lotId=${lotId.EVLEGACY}`);
       expect(body.items).toHaveLength(1);
       expect(body.items[0]).not.toHaveProperty('actorId');
       expect(body.items[0]).not.toHaveProperty('actorName');
+      expect(body.items[0]).not.toHaveProperty('targetLotStatusCode');
     },
   );
 
@@ -457,18 +495,27 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
 
   it('사건 — actorId·itemId·lotNo·lotTypeCode 가 각각 거른다', async () => {
     const byActorA = await listEvents(`actorId=${heldByAId}`);
-    // A 는 held_by(EVBOTH·EVTIE·EVOPEN2) «와» released_by(EVBEFORE) 를 함께 본다 — 등록·해제 «둘 다».
+    // A 는 held_by(EVBOTH·EVTIE·EVOPEN2) «와» released_by(EVBEFORE·EVPARTIAL) 를 함께 본다 —
+    // 등록·해제 «둘 다».
     expect(byActorA.items.map((i) => i.lotHoldId).sort()).toEqual(
-      [lotHoldId.EVBOTH, lotHoldId.EVTIE, lotHoldId.EVOPEN2, lotHoldId.EVBEFORE].sort(),
+      [lotHoldId.EVBOTH, lotHoldId.EVTIE, lotHoldId.EVOPEN2, lotHoldId.EVBEFORE, lotHoldId.EVPARTIAL].sort(),
     );
     const byActorB = await listEvents(`actorId=${heldByBId}`);
     expect(byActorB.items).toEqual([expect.objectContaining({ lotHoldId: lotHoldId.EVBOTH, eventTypeCode: 'RELEASED' })]);
 
     const byItem1 = await listEvents(`itemId=${item1Id}`);
-    expect(byItem1.items.map((i) => i.lotHoldId).sort()).toEqual([lotHoldId.EVBOTH, lotHoldId.EVBOTH, lotHoldId.EVLEGACY].sort());
+    expect(byItem1.items.map((i) => i.lotHoldId).sort()).toEqual(
+      [lotHoldId.EVBOTH, lotHoldId.EVBOTH, lotHoldId.EVLEGACY, lotHoldId.EV_EXACT1, lotHoldId.EV_EXACT2].sort(),
+    );
 
     const byLotNo = await listEvents(`lotNo=${lotNo.EVBEFORE}`);
     expect(byLotNo.items.map((i) => i.lotHoldId)).toEqual([lotHoldId.EVBEFORE]);
+
+    // ⭐ 리뷰 Minor-3 — 「정확히 일치」가 접두 일치와 구별되는지. EV_EXACT1 의 lotNo 는
+    // EV_EXACT2 의 lotNo 문자열의 «정확한 접두»다(목록 테스트 EXACT1/EXACT2 와 같은 짝) —
+    // LIKE 로 새면 둘 다 걸린다.
+    const byLotNoExact = await listEvents(`lotNo=${lotNo.EV_EXACT1}`);
+    expect(byLotNoExact.items.map((i) => i.lotHoldId)).toEqual([lotHoldId.EV_EXACT1]);
 
     const byLotType = await listEvents('lotTypeCode=PRODUCT');
     expect(byLotType.items.map((i) => i.lotHoldId)).toEqual([lotHoldId.EVTIE]);
@@ -479,7 +526,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   it('사건 — page.total 은 count(where) 가 findMany 의 where 와 같은 조건이다', async () => {
     const body = await listEvents(`itemId=${item1Id}`);
     expect(body.page.total).toBe(body.items.length);
-    expect(body.page.total).toBe(3);
+    expect(body.page.total).toBe(5);
   });
 
   // ── 17. 사건 — sort=occurredAsc + 동률 2차 키 ────────────────────────
@@ -660,15 +707,23 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   }
 
   /**
-   * 사건 조회(②b) 전용 — LOT 여섯 + `lot_hold` 여섯. 기간 질의는 `[EV_FROM, EV_TO)`.
+   * 사건 조회(②b) 전용 — LOT 아홉 + `lot_hold` 아홉(EV_EXACT1·EV_EXACT2 는 기존 EXACT1·EXACT2
+   * LOT 을 재사용한다). 기간 질의는 `[EV_FROM, EV_TO)`.
    * - EVBOTH — `held_at=EV_FROM`(경계 포함) · `released_at=T_13` · held_by≠released_by(actorId
-   *   가 둘을 함께 본다) · target_lot_status_code≠release_target_lot_status_code(§0 #1).
+   *   가 둘을 함께 본다) · target_lot_status_code≠release_target_lot_status_code(§0 #1) ·
+   *   holdQty·uomId·releaseCondition 을 실측 채운다(리뷰 Minor-2 — 세 칸이 픽스처 전건 NULL 이었다).
    * - EVBEFORE — `held_at=EV_BEFORE`(기간 «밖» — HELD 는 안 나온다) · `released_at=T_11`(기간
    *   «안» — RELEASED 만 나온다 · #11 이 이 오퍼레이션의 존재 이유).
    * - EVLEGACY — `held_by=NULL`(actorId 키 생략 특성화 · #16). 열린 채로 둔다.
    * - EVOPEN2 — item2 · `held_at=T_14` · held_by=A. 열린 채로 둔다.
    * - EVTIE — `held_at=EV_FROM`(EVBOTH 와 «동률» — 2차 키 `lot_hold_id` 로 깬다) · `lot_type_code='PRODUCT'`.
    * - EVBOUNDARY — `held_at=EV_TO`(끝 경계와 «같은 값» — 미만이라 빠진다).
+   * - ⭐ EVPARTIAL(리뷰 Major-2) — `held_at=EV_BEFORE`(기간 밖) · `released_at=T_15`(기간 안) ·
+   *   **`release_target_lot_status_code` 를 안 준다** — R-2(부분 해제는 LOT 을 안 옮긴다) 경로에
+   *   픽스처가 0행이던 구멍을 막는다. RELEASED 사건이어도 `targetLotStatusCode` 키가 없어야 한다.
+   * - ⭐ EV_EXACT1·EV_EXACT2(리뷰 Minor-3) — 기존 `lotId.EXACT1`/`EXACT2`(`lotNo` 가 서로 접두
+   *   관계 — `…-EXACT-1` ↔ `…-EXACT-12`)에 `held_at=T_16` 인 사건을 하나씩 심어, `lotNo` 필터가
+   *   «정확히 일치」인지(부분 일치로 새면 EXACT1 질의에 EXACT2 도 걸린다) 사건 조회에서도 잠근다.
    */
   async function makeEventLots(): Promise<void> {
     lotId.EVBOTH = await newLot('EVBOTH', item1Id, 'NORMAL');
@@ -680,6 +735,9 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
         held_by: heldByAId,
         held_at: new Date(EV_FROM),
         target_lot_status_code: 'INSPECTION_PENDING',
+        hold_qty: 40,
+        uom_id: BigInt(uomId),
+        release_condition: '재검사 후 판정 대기',
         released_by: heldByBId,
         released_at: new Date(T_13),
         release_reason_code: 'RETEST_PASS',
@@ -742,6 +800,39 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       data: { lot_id: lotId.EVBOUNDARY, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(EV_TO) },
     });
     lotHoldId.EVBOUNDARY = Number(boundary.lot_hold_id);
+
+    // ⭐ 리뷰 Major-2 — 부분 해제(R-2): LOT 을 안 옮겨 release_target_lot_status_code 가 NULL 이다.
+    lotId.EVPARTIAL = await newLot('EVPARTIAL', item2Id, 'INSPECTION_PENDING');
+    const partial = await prisma.lot_hold.create({
+      data: {
+        lot_id: lotId.EVPARTIAL,
+        reason_code: 'APPEARANCE_ABNORMAL',
+        status_code: 'HELD',
+        held_at: new Date(EV_BEFORE),
+        target_lot_status_code: 'INSPECTION_PENDING',
+        released_by: heldByAId,
+        released_at: new Date(T_15),
+        release_reason_code: 'MANAGER_OVERRIDE',
+        // ⛔ release_target_lot_status_code 를 안 준다 — 부분 해제라 LOT 이 안 움직였다.
+      },
+    });
+    lotHoldId.EVPARTIAL = Number(partial.lot_hold_id);
+
+    // ⭐ 리뷰 Minor-3 — lotNo 가 서로 «정확한 접두» 관계인 LOT 짝(목록 테스트 EXACT1/EXACT2 와
+    // 같은 모양). ⛔ 기존 EXACT1/EXACT2 LOT 을 재사용하지 않는다 — 그 LOT 에 `lot_hold` 를
+    // 더 심으면 `/quality/lot-holds` 목록의 「lotNo 정확 일치(단건)」·「기본 정렬(5건 고정 배열)」
+    // 테스트가 행 수 증가로 깨진다(실측 — 최초 시도에서 그렇게 깨졌다).
+    lotId.EV_EXACT1 = await newLot('EV_EXACT1', item1Id, 'NORMAL');
+    const evExact1 = await prisma.lot_hold.create({
+      data: { lot_id: lotId.EV_EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
+    });
+    lotHoldId.EV_EXACT1 = Number(evExact1.lot_hold_id);
+
+    lotId.EV_EXACT2 = await newLot('EV_EXACT2', item1Id, 'NORMAL');
+    const evExact2 = await prisma.lot_hold.create({
+      data: { lot_id: lotId.EV_EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
+    });
+    lotHoldId.EV_EXACT2 = Number(evExact2.lot_hold_id);
   }
 
   async function newLot(key: string, forItemId: number, statusCode: string, lotTypeCode = 'MATERIAL'): Promise<number> {

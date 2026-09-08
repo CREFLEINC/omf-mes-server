@@ -48,7 +48,7 @@ function commonConditions(p: Params, filters: LotHoldEventFilters): string[] {
   return parts;
 }
 
-/** 한 가지의 고정 축 — HELD·RELEASED 가 다른 것은 여기 넷뿐이다(그 밖 SELECT 칸·조인은 똑같다). */
+/** 한 가지의 고정 축 — HELD·RELEASED 가 다른 것은 여기 셋뿐이다(그 밖 SELECT 칸·조인은 똑같다). */
 interface BranchAxis {
   eventType: LotHoldEventType;
   occurredColumn: 'held_at' | 'released_at';
@@ -56,8 +56,6 @@ interface BranchAxis {
   /** RELEASED 만 실제 칸 · HELD 는 SQL 리터럴 NULL(§1-4 — 등록 사건엔 해제 사유가 없다). */
   releaseReasonExpr: string;
   targetStatusExpr: string;
-  /** RELEASED 가지의 존재 조건(사용자 필터가 아니다) — HELD 는 없다. */
-  existsCondition?: string;
 }
 
 const HELD_AXIS: BranchAxis = {
@@ -73,13 +71,13 @@ const RELEASED_AXIS: BranchAxis = {
   actorColumn: 'released_by',
   releaseReasonExpr: 'h.release_reason_code',
   targetStatusExpr: 'h.release_target_lot_status_code',
-  existsCondition: 'h.released_at IS NOT NULL',
 };
 
-/** ⛔ 끝 경계는 «미만»(공유계약 L-3-1). */
+// ⛔ RELEASED 가지에 `released_at IS NOT NULL` 존재 조건을 따로 두지 않는다 — 이미
+// `h.released_at >= $occurredFrom::timestamptz` 가 걸려 있어 NULL 이면 3값 논리로 자연히
+// 빠진다(중복 절이었다 — 리뷰 Minor-1). ⛔ 끝 경계는 «미만»(공유계약 L-3-1).
 function branch(p: Params, filters: LotHoldEventFilters, axis: BranchAxis): string {
   const parts = [
-    ...(axis.existsCondition ? [axis.existsCondition] : []),
     `h.${axis.occurredColumn} >= ${p.add(filters.occurredFrom)}::timestamptz`,
     `h.${axis.occurredColumn} < ${p.add(filters.occurredTo)}::timestamptz`,
     ...commonConditions(p, filters),
