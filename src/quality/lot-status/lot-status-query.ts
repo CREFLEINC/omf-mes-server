@@ -7,7 +7,7 @@
  *
  * ⭐ **§0 #5 판정** — `heldQty`·`availableQty` 는 `inventory_balance.blocked_qty`/`available_qty`
  * 를 쓰지 않는다(계약이 두 자리에서 못 박았다) — `lot_hold` 가 정본이다. 창고·위치·단위는 LOT
- * 하나에 잔액 행이 여럿이면 «비운다»(값이 하나일 때만 싣는다 · 문의 075).
+ * 하나에 잔액 행이 여럿이면 «비운다»(값이 하나일 때만 싣는다 · 미발행 · I-20 §9-2 후보 075).
  *
  * ⛔ 식별자(표·열 이름)는 이 파일의 상수·리터럴에서만 온다. 요청 값은 전부 파라미터로 묶는다.
  */
@@ -72,15 +72,18 @@ class Conditions {
  * ⓑ 열린 보류 집계(`hold_qty IS NULL` 인 전량 보류는 따로 센다 — `SUM` 이 NULL 을 건너뛰어
  *   전량 보류 하나뿐이면 `partial_hold_qty` 가 NULL 이 되는 함정을 뷰에서 가른다)
  * ⓒ 최근 전이 — 등록(`held_at`)과 해제(`released_at`)를 한 사건 목록으로 펴서 최댓값 1건.
- *   계약 문자 그대로 `lot_hold` 최대 시각이다(문의 076).
+ *   계약 문자 그대로 `lot_hold` 최대 시각이다(미발행 · I-20 §9-2 후보 076).
  */
 const FROM = `
     FROM trace.lot l
     LEFT JOIN LATERAL (
-      SELECT sum(b.on_hand_qty) AS on_hand_qty,
-             CASE WHEN count(DISTINCT b.uom_id) = 1 THEN min(b.uom_id) END AS uom_id,
-             CASE WHEN count(DISTINCT b.warehouse_id) = 1 THEN min(b.warehouse_id) END AS warehouse_id,
-             CASE WHEN count(DISTINCT b.location_id) = 1 THEN min(b.location_id) END AS location_id
+      SELECT sum(b.on_hand_qty) AS on_hand_qty,          -- ⛔ 0 행도 그대로 더한다(선례 balance-query.ts:128 은 행을 통째로 빼지만, 여긴 접는 칸만 뺀다 — 전량 소진 LOT 의 onHandQty=0 을 잃으면 안 된다)
+             CASE WHEN count(DISTINCT b.uom_id) FILTER (WHERE b.on_hand_qty <> 0) = 1
+                  THEN min(b.uom_id) FILTER (WHERE b.on_hand_qty <> 0) END AS uom_id,
+             CASE WHEN count(DISTINCT b.warehouse_id) FILTER (WHERE b.on_hand_qty <> 0) = 1
+                  THEN min(b.warehouse_id) FILTER (WHERE b.on_hand_qty <> 0) END AS warehouse_id,
+             CASE WHEN count(DISTINCT b.location_id) FILTER (WHERE b.on_hand_qty <> 0) = 1
+                  THEN min(b.location_id) FILTER (WHERE b.on_hand_qty <> 0) END AS location_id
         FROM inventory.inventory_balance b
        WHERE b.lot_id = l.lot_id
     ) bal ON TRUE
@@ -94,12 +97,12 @@ const FROM = `
     LEFT JOIN LATERAL (
       SELECT e.event_at, e.reason_code
         FROM (
-          SELECT he.held_at AS event_at, he.reason_code FROM trace.lot_hold he WHERE he.lot_id = l.lot_id
+          SELECT he.held_at AS event_at, he.reason_code, he.lot_hold_id FROM trace.lot_hold he WHERE he.lot_id = l.lot_id
           UNION ALL
-          SELECT hr.released_at, hr.reason_code FROM trace.lot_hold hr
+          SELECT hr.released_at, hr.reason_code, hr.lot_hold_id FROM trace.lot_hold hr
            WHERE hr.lot_id = l.lot_id AND hr.released_at IS NOT NULL
         ) e
-       ORDER BY e.event_at DESC
+       ORDER BY e.event_at DESC, e.lot_hold_id DESC   -- ⛔ 동률 깨기(Minor-5) — 같은 시각 사건 둘이면 결과가 흔들린다
        LIMIT 1
     ) trans ON TRUE`;
 
@@ -170,11 +173,13 @@ export function lotStatusRowsQuery(
   const c = conditionsOf(filters);
   const limit = c.param(page.take);
   const offset = c.param(page.skip);
+  // ⚠ Minor-3 — `sort` 검증은 계약 가드(ajv enum · R-19 #3)의 몫이다. 여긴 값 «검증»이 아니라 500 갈래를 막는 조회 기본값이다.
+  const orderBy = ORDER_BY[sort] ?? ORDER_BY.latestTransitionDesc;
   const sql = `
     SELECT ${SELECT_COLUMNS}
       ${FROM}
      WHERE ${c.where}
-     ORDER BY ${ORDER_BY[sort]}
+     ORDER BY ${orderBy}
      LIMIT ${limit} OFFSET ${offset}`;
   return { sql, params: c.params };
 }
