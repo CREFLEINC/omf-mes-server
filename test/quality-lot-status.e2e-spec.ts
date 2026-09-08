@@ -288,6 +288,10 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     const baseline = await list(`plantId=${plantId}&itemId=${itemId}`);
     expect(baseline.page.total).toBe(7);
 
+    // 요약 합계 == 목록 total(m-5) — #175 가 막으려는 것은 「카드와 목록이 서로 다른 것을 센다」.
+    const baseSummary = await summary(`plantId=${plantId}&itemId=${itemId}`);
+    expect(baseSummary.counts.reduce((sum, c) => sum + c.lotCount, 0)).toBe(baseline.page.total);
+
     // 이 플랜트 안에서는 아무 LOT 도 갖지 않는 itemId — 「안 걸리는 행」 쪽(R-19).
     const bogusItemId = itemId + 1_000_000;
     const shrunkList = await list(`plantId=${plantId}&itemId=${bogusItemId}`);
@@ -322,6 +326,34 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
 
     const defective = body.counts.find((c) => c.statusCode === 'DEFECTIVE');
     expect(defective?.lotCount).toBe(1);
+  });
+
+  it('요약 — lotStatusCode 필터가 왔어도 4값 전건이다(필터 밖 셋은 lotCount:0) (↩ 필터가 오면 1값만 내면 깨진다 · Major M-1)', async () => {
+    // DEFECTIVE = L4 하나(MATERIAL) — lotTypeCode 분기가 없어 「4행」이 정확히 나온다.
+    const body = await summary(`plantId=${plantId}&lotStatusCode=DEFECTIVE`);
+    expect(body.counts).toEqual([
+      { statusCode: 'NORMAL', lotCount: 0 },
+      { statusCode: 'INSPECTION_PENDING', lotCount: 0 },
+      { statusCode: 'DEFECTIVE', lotTypeCode: 'MATERIAL', lotCount: 1 },
+      { statusCode: 'SCRAPPED', lotCount: 0 },
+    ]);
+    // BOGUS 는 계약에 enum 이 없어 가드가 안 막지만, 사용자 입력을 그대로 statusCode 로
+    // «되돌리지» 않는다 — WHERE 절만 좁히고 카드축은 여전히 고정 4값이다.
+    const bogus = await summary(`plantId=${plantId}&lotStatusCode=BOGUS`);
+    expect(bogus.counts).toEqual([
+      { statusCode: 'NORMAL', lotCount: 0 },
+      { statusCode: 'INSPECTION_PENDING', lotCount: 0 },
+      { statusCode: 'DEFECTIVE', lotCount: 0 },
+      { statusCode: 'SCRAPPED', lotCount: 0 },
+    ]);
+  });
+
+  it('요약 — transitionFrom 만 보내면 400 PAIR (↩ 목록과 같은 검증 · 요약 쪽 호출을 지워도 안 깨지면 반증 불가 · Minor m-1)', async () => {
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/quality/lot-status-summary?plantId=${plantId}&transitionFrom=${T1}`)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'transitionTo', code: 'PAIR' });
   });
 
   it('요약 — outOfScopeCount 키가 «없다» (↩ 0 을 넣으면 깨진다 · L-8)', async () => {

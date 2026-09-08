@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { conditionsOf, FROM, LotStatusFilters } from './lot-status-query';
+import { conditionsOf, FROM_TRANS_ONLY, LotStatusFilters } from './lot-status-query';
 
 /**
  * `LOT_STATUS` 4값(시드 순서 — `NORMAL`·`INSPECTION_PENDING`·`DEFECTIVE`·`SCRAPPED`).
@@ -42,36 +42,42 @@ export class LotStatusService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * `GET /quality/lot-status-summary` — 목록(`lot-status.controller.ts`)과 **같은 질의**로
-   * 부른다(계약 x-internal-note · `W-03-01` §5-7). 묶는 축은 `statusCode × lotTypeCode` —
-   * 셋을 합치지 않는다(공유계약 L-7).
+   * `GET /quality/lot-status-summary` — 목록(`lot-status.controller.ts`)과 **같은 WHERE**(
+   * `conditionsOf`)로 부른다(계약 x-internal-note · `W-03-01` §5-7). 묶는 축은
+   * `statusCode × lotTypeCode` — 셋을 합치지 않는다(공유계약 L-7). ⭐ `FROM` 은 목록과
+   * 다르다 — `FROM_TRANS_ONLY`(잔액·보류 LATERAL 없이 `trans` 만)를 쓴다. WHERE 절 필터는
+   * `bal`·`hold` 별칭을 참조하지 않으므로 모집단 동일성(§4-1)은 그대로다(m-4).
    */
   async summary(filters: LotStatusFilters): Promise<LotStatusSummaryView> {
     const asOf = new Date().toISOString();
     const c = conditionsOf(filters);
     const sql = `
       SELECT l.status_code, l.lot_type_code, count(*)::int AS cnt
-        ${FROM}
+        ${FROM_TRANS_ONLY}
        WHERE ${c.where}
        GROUP BY l.status_code, l.lot_type_code
        ORDER BY l.status_code, l.lot_type_code`;
     const rows = await this.prisma.$queryRawUnsafe<SummaryRow[]>(sql, ...c.params);
 
-    return { counts: countsOf(rows, filters.lotStatusCode), asOf };
+    return { counts: countsOf(rows), asOf };
   }
 }
 
 /**
- * ⭐ **R-16** — `lotStatusCode` 필터가 좁힌 값(없으면 4값 전건)은 실재하는 조합이 하나도 없어도
- * `{statusCode, lotCount: 0}` 한 행을 낸다. ⛔ **`lotTypeCode` 축은 격자 전체가 아니다** — 실재
- * 하는 조합만 낸다. 근거: `LotStatusCount.lotTypeCode` 는 required 밖(`statusCode`·`lotCount`
- * 만 required)이고, `W-03-01` §5-4 가 「4값 전건」이라 부르는 자리는 상태 축(정상·불량·검사
- * 대기·폐기)만 다룬다 — 유형(자재·생산·제품)은 그 절에 등장하지 않는다. 상태 자체가 0건이면
- * 어느 유형인지 알 수 없어(「모른다」) `lotTypeCode` 키를 생략한다(공유계약 L-8).
- * // 결정 — 통보(번호 없음 · 질의 아님): 「본질 아님 · 비용 낮음」(README §2 2단계 기준 5) ⇒
- * PR 본문에만 남기고 새 설계 문의를 내지 않는다.
+ * ⭐ **R-16** — `LOT_STATUS` 4값은 실재하는 조합이 하나도 없어도 `{statusCode, lotCount: 0}` 한
+ * 행을 낸다 — **`lotStatusCode` 필터가 왔어도 언제나 4값 전건이다**(필터는 WHERE 절에서 모집단만
+ * 좁힌다 · `conditionsOf`). `:209` 「요약 카드는 4값 전건을 센다」·`:283` 「요약 카드 5종」을
+ * 문자 그대로 읽으면 필터가 걸려도 카드는 4장이다 — 「다른 상태로 갈아타는」 카드를 그리려면
+ * 나머지 3장(값 0)이 필요하다(리뷰 #354 Major M-1 · 권고안 ⓐ).
+ * ⛔ **`lotTypeCode` 축은 격자 전체가 아니다** — 실재하는 조합만 낸다. 근거: `LotStatusCount
+ * .lotTypeCode` 는 required 밖(`statusCode`·`lotCount` 만 required)이고, `W-03-01` §5-4 가
+ * 「4값 전건」이라 부르는 자리는 상태 축(정상·불량·검사대기·폐기)만 다룬다 — 유형(자재·생산·
+ * 제품)은 그 절에 등장하지 않는다. 상태 자체가 0건이면 어느 유형인지 알 수 없어(「모른다」)
+ * `lotTypeCode` 키를 생략한다(공유계약 L-8).
+ * // 결정 — 통보 083: §2 2단계 기준 4(값을 조용히 도출하지 않는 쪽) ⇒ 격자 전체(4×3)를 지어내지
+ * 않는다. `docs/design-inquiries/083-lotTypeCode-축은-격자-전체가-아니다.md`.
  */
-function countsOf(rows: SummaryRow[], lotStatusFilter: string | undefined): LotStatusCount[] {
+function countsOf(rows: SummaryRow[]): LotStatusCount[] {
   const byStatus = new Map<string, LotStatusCount[]>();
   for (const row of rows) {
     const cells = byStatus.get(row.status_code) ?? [];
@@ -79,6 +85,5 @@ function countsOf(rows: SummaryRow[], lotStatusFilter: string | undefined): LotS
     byStatus.set(row.status_code, cells);
   }
 
-  const statuses = lotStatusFilter !== undefined ? [lotStatusFilter] : LOT_STATUS_VALUES;
-  return statuses.flatMap((statusCode) => byStatus.get(statusCode) ?? [{ statusCode, lotCount: 0 }]);
+  return LOT_STATUS_VALUES.flatMap((statusCode) => byStatus.get(statusCode) ?? [{ statusCode, lotCount: 0 }]);
 }

@@ -107,13 +107,37 @@ export const FROM = `
     ) trans ON TRUE`;
 
 /**
+ * 요약(`lot-status.service.ts`) 전용 — `trans`(최근 전이) 만 붙인 갈래. ⭐ **m-4** — `bal`·
+ * `hold` 는 목록의 SELECT 칸(창고·수량·보류 요약)에만 쓰이고 WHERE 절 어디도 그 별칭을 참조하지
+ * 않는다(창고·위치·보류 필터는 전부 위 `FROM` 밖의 별도 `EXISTS`) — `LEFT JOIN LATERAL (집계
+ * 서브쿼리)` 는 PostgreSQL 이 join removal 로 못 걷어내므로, 요약에 `FROM` 을 그대로 붙이면 LOT
+ * 마다 «쓰지 않는» 잔액·보류 집계가 돈다. ⚠ 위 `FROM` 의 `trans` 블록과 **텍스트가 같다**(의도적
+ * 중복 — 재배치하면 diff 예산을 크게 넘긴다). WHERE 절이 참조하는 것은 `trans` 뿐이라 필터
+ * 동일성(§4-1)은 그대로다.
+ */
+export const FROM_TRANS_ONLY = `
+    FROM trace.lot l
+    LEFT JOIN LATERAL (
+      SELECT e.event_at, e.reason_code
+        FROM (
+          SELECT he.held_at AS event_at, he.reason_code, he.lot_hold_id FROM trace.lot_hold he WHERE he.lot_id = l.lot_id
+          UNION ALL
+          SELECT hr.released_at, hr.reason_code, hr.lot_hold_id FROM trace.lot_hold hr
+           WHERE hr.lot_id = l.lot_id AND hr.released_at IS NOT NULL
+        ) e
+       ORDER BY e.event_at DESC, e.lot_hold_id DESC   -- ⛔ 동률 깨기(Minor-5) — 같은 시각 사건 둘이면 결과가 흔들린다
+       LIMIT 1
+    ) trans ON TRUE`;
+
+/**
  * ⭐ **§0 #5 · SQL 3값 논리** — `heldOnly`/`excludeFullyHeld` 는 `EXISTS`/`NOT EXISTS` 로 쓴다.
  * 잔액이 없는 LOT(L7)까지 살리려면 창고·위치 필터도 접힌 칸이 아니라 `EXISTS` 로 건다 —
  * 접힌 칸(`bal.warehouse_id`)은 창고가 둘이면 NULL 이라 `NOT (…)` 로 걸면 그 LOT 이 통째로 사라진다.
  */
-// ⭐ **§4-1 필터 빌더 공유** — `lot-status.service.ts`(요약)가 이 함수와 `FROM` 을 그대로 부른다.
-// 복붙하면 카드와 목록이 서로 다른 것을 센다(#175). ⚠ I-19 R-17(「공용 헬퍼로 뭉치지 마라」)의
-// 반대 자리다 — 저기는 기간 규칙이 갈렸고, 여기는 계약·화면이 같은 질의를 요구한다(§4-1).
+// ⭐ **§4-1 필터 빌더 공유** — `lot-status.service.ts`(요약)가 이 함수를 그대로 부른다(WHERE 는
+// 목록·요약이 완전히 같다 — `FROM` 은 다르다 · m-4). 복붙하면 카드와 목록이 서로 다른 것을 센다
+// (#175). ⚠ I-19 R-17(「공용 헬퍼로 뭉치지 마라」)의 반대 자리다 — 저기는 기간 규칙이 갈렸고,
+// 여기는 계약·화면이 같은 질의를 요구한다(§4-1).
 export function conditionsOf(filters: LotStatusFilters): Conditions {
   const c = new Conditions();
   if (filters.lotStatusCode !== undefined) c.add((p) => `l.status_code = ${p}`, filters.lotStatusCode);
