@@ -36,7 +36,10 @@ type ResultPlant = {
   timezone_code: string | null;
   has_invalid_target: boolean;
 };
-type ProjectedResult = { view: MaintenanceResultView; versionNo: number };
+export type ProjectedResult = {
+  view: MaintenanceResultView;
+  versionNo: number;
+};
 
 const RESULT_FROM = Prisma.sql`
   FROM maintenance.maintenance_result r
@@ -111,12 +114,20 @@ export class MaintenanceResultQueryService {
       );
     return this.prisma.$transaction(
       async (tx) => {
-        const [result] = await this.project(tx, [BigInt(maintenanceResultId)]);
+        const result = await this.getWithin(tx, BigInt(maintenanceResultId));
         if (!result) throw new NotFoundException("없는 보전 실적입니다.");
         return result;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
+  }
+
+  async getWithin(
+    tx: Prisma.TransactionClient,
+    maintenanceResultId: bigint,
+  ): Promise<ProjectedResult | undefined> {
+    const [result] = await this.project(tx, [maintenanceResultId]);
+    return result;
   }
 
   private async addCalendarCondition(

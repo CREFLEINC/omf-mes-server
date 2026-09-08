@@ -15,6 +15,12 @@ const NUMBER_RETRY = 3;
 
 class NumberPreparationRequired extends Error {}
 
+interface NumberedWorkRetry {
+  maxRetries: number;
+  matches: (error: unknown) => boolean;
+  exhausted: (error: unknown) => Error;
+}
+
 interface NumberedWrite<T> {
   context: IdempotencyContext;
   documentTypeCode: string;
@@ -26,6 +32,7 @@ interface NumberedWrite<T> {
   periodDate: () => string;
   numberField: string;
   numberColumn: string;
+  workRetry?: NumberedWorkRetry;
   work: (tx: Prisma.TransactionClient, documentNo: string) => Promise<T>;
 }
 
@@ -42,7 +49,8 @@ export class NumberedMaintenanceWrite {
     let prepared = (await this.hasRecord(input.context.key))
       ? undefined
       : await this.prepare(input);
-    let retries = 0;
+    let numberRetries = 0;
+    let workRetries = 0;
 
     for (;;) {
       try {
@@ -67,8 +75,14 @@ export class NumberedMaintenanceWrite {
           prepared = await this.prepare(input);
           continue;
         }
+        if (input.workRetry?.matches(error)) {
+          if (workRetries >= input.workRetry.maxRetries)
+            throw input.workRetry.exhausted(error);
+          workRetries += 1;
+          continue;
+        }
         if (!isNumberDuplicate(error, input.numberColumn)) throw error;
-        if (retries >= NUMBER_RETRY) {
+        if (numberRetries >= NUMBER_RETRY) {
           throw new ContractException(HttpStatus.BAD_REQUEST, [
             field(
               input.numberField,
@@ -77,7 +91,7 @@ export class NumberedMaintenanceWrite {
             ),
           ]);
         }
-        retries += 1;
+        numberRetries += 1;
         prepared = await this.prepare(input);
       }
     }

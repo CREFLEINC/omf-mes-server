@@ -5,7 +5,7 @@ import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-import { COMPLETION_REASON, assertCompletionReason } from './lot-rules';
+import { COMPLETION_REASON, assertCompletionReason, assertWorkerNo } from './lot-rules';
 import { lotProgress } from './lot-progress';
 import { LotView, lotView } from './lot-view';
 
@@ -154,15 +154,4 @@ async function recordVarianceReason(tx: Tx, workOrderId: bigint, reasonCode: str
     where: { work_order_id: workOrderId },
     data: { completion_variance_reason_code: reasonCode },
   });
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — `lot` 에도 `work_order` 에도 작업자 칸이 없다. 저장하지 않지만
- * 계약이 `required: true` 로 못박았으므로 부재는 거부한다(§8-4). 헤더는 계약 검증 가드가
- * 보지 않아(`contract-validator.ts:206-207`) 이 판정이 서비스 몫이다.
- */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
 }

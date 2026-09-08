@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -16,6 +17,8 @@ import { Contract } from "../../common/contract";
 import { IdempotencyService } from "../../common/idempotency";
 import { ifMatchVersion, setEtag } from "../../common/optimistic-lock";
 import { MaintenanceOrderCancelService } from "./order-cancel.service";
+import { MaintenanceOrderCreateService } from "./order-create.service";
+import { MaintenanceOrderCreate } from "./order-create-input";
 import {
   MaintenanceOrderList,
   MaintenanceOrderQuery,
@@ -28,6 +31,7 @@ import { maintenanceOrderWriteContext } from "./order-write-context";
 export class MaintenanceOrderController {
   constructor(
     private readonly queries: MaintenanceOrderQueryService,
+    private readonly creates: MaintenanceOrderCreateService,
     private readonly cancels: MaintenanceOrderCancelService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -47,6 +51,19 @@ export class MaintenanceOrderController {
     const { view, versionNo } = await this.queries.get(maintenanceOrderId);
     setEtag(response, versionNo);
     return view;
+  }
+
+  @Post()
+  @Contract("POST /maintenance/orders")
+  @HttpCode(HttpStatus.CREATED)
+  create(
+    @Req() request: Request,
+    @Body() body: MaintenanceOrderCreate,
+  ): Promise<MaintenanceOrderView> {
+    return this.creates.create(
+      body,
+      maintenanceOrderWriteContext(request, HttpStatus.CREATED),
+    );
   }
 
   @Post(":maintenanceOrderId\\:cancel")
