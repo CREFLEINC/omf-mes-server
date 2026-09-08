@@ -24,6 +24,7 @@ import { InspectionMeasurementService } from './inspection/inspection-measuremen
 import { InspectionSummaryController } from './inspection/inspection-summary.controller';
 import { InspectionSummaryService } from './inspection/inspection-summary.service';
 import { LotStatusController } from './lot-status/lot-status.controller';
+import { LotStatusTransitionService } from './lot-status/lot-status-transition.service';
 import { LotStatusService } from './lot-status/lot-status.service';
 
 /**
@@ -52,7 +53,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     //   `/summary`·`/defect-rate-trend` 가 `:inspectionResultId`(ParseIntPipe)에 먼저 걸려 400 이다.
     InspectionSummaryController,
     InspectionResultController,
-    LotStatusController, // 리터럴 경로 둘(`lot-statuses`·`lot-status-summary`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
+    LotStatusController, // 리터럴 경로 셋(`lot-statuses`·`lot-status-summary`·`lot-status-transitions`) — 형제 파라미터 경로가 없어 순서 함정이 없다.
   ],
   providers: [
     DefectCodeService,
@@ -67,6 +68,7 @@ import { LotStatusService } from './lot-status/lot-status.service';
     InspectionSummaryService,
     InspectionMeasurementService,
     LotStatusService,
+    LotStatusTransitionService,
   ],
 })
 export class QualityModule {}
