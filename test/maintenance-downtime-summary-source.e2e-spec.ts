@@ -1,11 +1,12 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { DowntimeSummarySourceService } from "../src/maintenance/downtime/downtime-summary-source.service";
+import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I32-SUMMARY-SOURCE";
 
 describe("I-32 비가동 요약 원천 (e2e)", () => {
-  const prisma = new PrismaClient();
+  const prisma = new PrismaService();
   const ids: Record<string, bigint> = {};
   let source: DowntimeSummarySourceService;
 

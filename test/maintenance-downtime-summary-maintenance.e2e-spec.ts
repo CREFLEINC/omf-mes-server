@@ -1,16 +1,15 @@
-import { PrismaClient } from "@prisma/client";
-
 import { maintenanceDateRange } from "../src/maintenance/maintenance-calendar";
 import { DowntimeSummaryMaintenanceService } from "../src/maintenance/downtime/downtime-summary-maintenance.service";
 import type {
   SummaryEquipmentSource,
   SummaryPlantSource,
 } from "../src/maintenance/downtime/downtime-summary-source.types";
+import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E-B-I32-SUMMARY-MAINT";
 
 describe("I-32 완료 보전 카운트 (e2e)", () => {
-  const prisma = new PrismaClient();
+  const prisma = new PrismaService();
   const ids: Record<string, bigint> = {};
   let resolver: DowntimeSummaryMaintenanceService;
 
