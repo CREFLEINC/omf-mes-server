@@ -1,19 +1,36 @@
 import { Prisma } from '@prisma/client';
 
-import { LockedLot, LotHoldInput, LotHoldService } from './lot-hold.service';
+import { LockedLot, LotHoldInput, LotHoldRow, LotHoldService } from './lot-hold.service';
 import { Tx } from './lot-registry.service';
 
 type Args = Record<string, unknown>;
+type Where = { released_at?: null; reason_code?: string; lot_hold_id?: { in: bigint[] } };
 
 const NOW = new Date('2026-09-08T04:00:00Z');
 const ACTOR = { by: 7n, at: NOW };
+const RELEASE = { releaseReasonCode: 'RETEST_PASS', releaseTargetLotStatusCode: 'NORMAL', remarks: '풀었다' };
 const dec = (v: string) => new Prisma.Decimal(v);
 
-/** `lot-quality-status.service.spec.ts` 와 같은 틀 — **어느 순서로** 읽고 썼는지가 이 스위트의 목이다. */
-function fake(lotIds: bigint[]) {
+/**
+ * `lot-quality-status.service.spec.ts` 와 같은 틀 — **어느 순서로** 읽고 썼는지가 이 스위트의 목이다.
+ * 다만 `lot_hold` 는 절을 «실제로» 걸러 준다: 안 그러면 `released_at IS NULL` 을 지워도 초록이다.
+ */
+function fake(lotIds: bigint[], seed: LotHoldRow[] = []) {
   const calls: string[] = [];
   const args: Args[] = [];
+  const rows = [...seed];
   let nextId = 500n;
+  const record =
+    <T>(name: string, result: (a: Args) => T) =>
+    async (a: Args) => {
+      calls.push(name);
+      args.push(a);
+      return result(a);
+    };
+  const match = (row: LotHoldRow, where: Where) =>
+    (where.released_at === undefined || row.released_at === null) &&
+    (where.reason_code === undefined || row.reason_code === where.reason_code) &&
+    (where.lot_hold_id === undefined || where.lot_hold_id.in.includes(row.lot_hold_id));
   const tx = {
     // 잠금 질의라 `findMany` 가 아니라 원문 SQL 이다 — 무엇을 보냈는지도 함께 남긴다.
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -22,11 +39,18 @@ function fake(lotIds: bigint[]) {
       return lotIds.map((lot_id) => ({ lot_id, status_code: 'NORMAL', version_no: 1 }));
     },
     lot_hold: {
-      create: async (a: Args) => {
-        calls.push('lot_hold.create');
-        args.push(a);
-        return { ...(a.data as Args), lot_hold_id: nextId++ };
-      },
+      create: record('lot_hold.create', (a) => {
+        const row = { ...(a.data as Args), lot_hold_id: nextId++, released_at: null } as unknown as LotHoldRow;
+        rows.push(row);
+        return row;
+      }),
+      update: record('lot_hold.update', (a) => {
+        const row = rows.find((r) => r.lot_hold_id === (a.where as { lot_hold_id: bigint }).lot_hold_id) as LotHoldRow;
+        row.released_at = NOW;
+        return row;
+      }),
+      findMany: record('lot_hold.findMany', (a) => rows.filter((r) => match(r, a.where as Where))),
+      count: record('lot_hold.count', (a) => rows.filter((r) => match(r, a.where as Where)).length),
     },
   };
   return { tx: tx as unknown as Tx, calls, args };
@@ -34,6 +58,31 @@ function fake(lotIds: bigint[]) {
 
 function holdInput(extra: Partial<LotHoldInput> = {}): LotHoldInput {
   return { lotId: 1n, reasonCode: 'SUSPECT_MATERIAL', ...extra };
+}
+
+/** 이미 열려 있는 보류 한 행 — 잔량 행이 베낄 칸을 다 갖춘다. */
+function openRow(extra: Partial<LotHoldRow> = {}): LotHoldRow {
+  return {
+    lot_hold_id: 41n,
+    lot_id: 1n,
+    hold_qty: dec('10'),
+    uom_id: 3n,
+    reason_code: 'SUSPECT_MATERIAL',
+    release_condition: '재검 합격',
+    status_code: 'HELD',
+    held_by: 2n,
+    held_at: new Date('2026-09-01T00:00:00Z'),
+    released_by: null,
+    released_at: null,
+    remarks: '처음 걸 때',
+    created_at: new Date('2026-09-01T00:00:00Z'),
+    created_by: 2n,
+    release_reason_code: null,
+    target_lot_status_code: 'DEFECTIVE',
+    release_target_lot_status_code: null,
+    version_no: 1,
+    ...extra,
+  } as LotHoldRow;
 }
 
 describe('LotHoldService', () => {
@@ -119,5 +168,152 @@ describe('LotHoldService', () => {
     expect(args[2].data).toMatchObject({ lot_id: 2n, hold_qty: null, target_lot_status_code: 'INSPECTION_PENDING' });
     // 반환 순서가 입력 순서여야 호출자가 LOT 마다 `lot_hold_id` 를 되짚는다(R-12).
     expect(rows.map((r) => r.lot_id)).toEqual([1n, 2n]);
+  });
+
+  it('⭐⭐ R-5 — 재계수가 잠금 «안»이다(코어가 세어 돌려주므로 호출자가 밖으로 못 흘린다)', async () => {
+    const { tx, calls } = fake([1n], [openRow()]);
+
+    const locked = await service.lockLotsWithin(tx, [1n]);
+    await service.releaseWithin(tx, locked, { lotId: 1n }, RELEASE, ACTOR);
+
+    expect(calls).toEqual(['lot.lock', 'lot_hold.findMany', 'lot_hold.update', 'lot_hold.count']);
+  });
+
+  it('⭐⭐ R-5 — 잠그지 않은 LOT 은 풀지도 세지도 못한다', async () => {
+    const { tx, calls } = fake([1n], [openRow()]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    await expect(service.releaseWithin(tx, locked, { lotId: 9n }, RELEASE, ACTOR)).rejects.toThrow('잠그지 않은 LOT');
+    // 던지기 «전»에 읽지도 쓰지도 않았다.
+    expect(calls).toEqual(['lot.lock']);
+  });
+
+  it('releaseWithin 이 원 행의 여섯 칸을 채우고 version_no 를 올린다(status_code 는 안 건드린다)', async () => {
+    const { tx, args } = fake([1n], [openRow({ hold_qty: null })]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    await service.releaseWithin(tx, locked, { lotId: 1n }, RELEASE, ACTOR);
+
+    expect(args[2]).toMatchObject({ where: { lot_hold_id: 41n } });
+    expect(args[2].data).toEqual({
+      released_at: NOW,
+      released_by: 7n,
+      release_reason_code: 'RETEST_PASS',
+      release_target_lot_status_code: 'NORMAL',
+      remarks: '풀었다',
+      version_no: { increment: 1 },
+    });
+    // ⛔ `LOT_HOLD_STATUS` 값 목록이 시드에 0건이라 이 축을 안 건드린다(문의 13).
+    expect(args[2].data).not.toHaveProperty('status_code');
+  });
+
+  it('⭐ R-11 — 사유로 좁혀 풀고, 재계수는 «다른 사유»의 열린 보류를 함께 센다', async () => {
+    const { tx, args } = fake(
+      [1n],
+      [
+        openRow(),
+        openRow({ lot_hold_id: 42n, reason_code: 'CLAIM' }),
+        openRow({ lot_hold_id: 43n, released_at: new Date('2026-09-02T00:00:00Z') }),
+      ],
+    );
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    const { released, openAfter } = await service.releaseWithin(
+      tx,
+      locked,
+      { lotId: 1n, reasonCode: 'SUSPECT_MATERIAL' },
+      RELEASE,
+      ACTOR,
+    );
+
+    // 43 은 이미 닫혀 안 걸린다 — 닫힌 행을 다시 닫으면 `released_at` 이 뒤로 밀린다.
+    expect(released.map((r) => r.lot_hold_id)).toEqual([41n]);
+    // 재계수가 사유를 가리면 0 이 되어 의심자재 보류가 열린 채 LOT 이 `NORMAL` 로 간다.
+    expect(openAfter).toBe(1);
+    expect(args[1].where).toEqual({ lot_id: 1n, released_at: null, reason_code: 'SUSPECT_MATERIAL' });
+    expect(args[3].where).toEqual({ lot_id: 1n, released_at: null });
+  });
+
+  it('lotHoldIds 로 좁히면 그 한 건만 푼다(`:release` 가 겨냥하는 모양)', async () => {
+    const { tx, args } = fake([1n], [openRow(), openRow({ lot_hold_id: 42n })]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    const { released, openAfter } = await service.releaseWithin(
+      tx,
+      locked,
+      { lotId: 1n, lotHoldIds: [42n] },
+      RELEASE,
+      ACTOR,
+    );
+
+    expect(released.map((r) => r.lot_hold_id)).toEqual([42n]);
+    expect(openAfter).toBe(1);
+    expect(args[1].where).toEqual({ lot_id: 1n, released_at: null, lot_hold_id: { in: [42n] } });
+  });
+
+  it('⭐⭐ R-6 — releaseQty 가 hold_qty 와 «같으면» 잔량 0 행을 만들지 않는다', async () => {
+    // ⓐ 한계와 «같은» 값 — `app.qty_t` 가 `CHECK (VALUE >= 0)` 이라 0 짜리 행이 조용히 들어간다.
+    // ⓑ 한계를 넘는 값(도메인이 400 으로 막지만 코어도 음수 잔량을 안 만든다).
+    // ⓒ 전량 보류(`hold_qty` NULL)에서는 뺄 것이 없다.
+    const cases: [Prisma.Decimal | null, string][] = [
+      [dec('10'), '10'],
+      [dec('10'), '11'],
+      [null, '3'],
+    ];
+    for (const [holdQty, releaseQty] of cases) {
+      const { tx, calls } = fake([1n], [openRow({ hold_qty: holdQty })]);
+      const locked = await service.lockLotsWithin(tx, [1n]);
+
+      const { openAfter } = await service.releaseWithin(
+        tx,
+        locked,
+        { lotId: 1n },
+        { ...RELEASE, releaseQty: dec(releaseQty) },
+        ACTOR,
+      );
+
+      expect(calls).toEqual(['lot.lock', 'lot_hold.findMany', 'lot_hold.update', 'lot_hold.count']);
+      // 잔량 0 행이 서면 여기가 1 이 되고 — 전량을 풀었는데 LOT 이 영영 안 움직인다.
+      expect(openAfter).toBe(0);
+    }
+  });
+
+  it('부분 해제는 잔량 행을 세우고 held_by·held_at 이 «지금·이 사람»이다(문의 079)', async () => {
+    const { tx, calls, args } = fake([1n], [openRow()]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    const { openAfter } = await service.releaseWithin(
+      tx,
+      locked,
+      { lotId: 1n },
+      { ...RELEASE, releaseQty: dec('4') },
+      ACTOR,
+    );
+
+    expect(calls).toEqual(['lot.lock', 'lot_hold.findMany', 'lot_hold.update', 'lot_hold.create', 'lot_hold.count']);
+    expect(args[3].data).toMatchObject({
+      lot_id: 1n,
+      hold_qty: dec('6'),
+      reason_code: 'SUSPECT_MATERIAL',
+      status_code: 'HELD',
+      uom_id: 3n,
+      release_condition: '재검 합격',
+      target_lot_status_code: 'DEFECTIVE',
+      held_by: 7n,
+      held_at: NOW,
+      created_by: 7n,
+    });
+    // 잔량 행은 열려 있다 — 그래서 부분 해제는 LOT 을 못 옮긴다(§3-2 f · 필연이지 결론이 아니다).
+    expect(args[3].data).not.toHaveProperty('released_at');
+    expect(openAfter).toBe(1);
+  });
+
+  it('⛔ 보류 두 건을 한 번에 부분 해제하지 못한다 — 어느 행에서 뺄지가 없다', async () => {
+    const { tx } = fake([1n], [openRow(), openRow({ lot_hold_id: 42n })]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+
+    await expect(
+      service.releaseWithin(tx, locked, { lotId: 1n }, { ...RELEASE, releaseQty: dec('1') }, ACTOR),
+    ).rejects.toThrow('부분 해제는 보류 한 건에서만');
   });
 });
