@@ -1,5 +1,7 @@
+import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { PostingInput } from '../../core/inventory-posting/posting.types';
 import {
@@ -72,7 +74,7 @@ const line = (over: Partial<TransferLineWriteInput> = {}): TransferLineWriteInpu
   ...over,
 });
 
-function fake(seed: { balances?: BalanceSeed[] } = {}) {
+function fake(seed: { balances?: BalanceSeed[]; ledgerRows?: number } = {}) {
   let requested = 0;
   const models: Row = {
     warehouse: {
@@ -84,7 +86,8 @@ function fake(seed: { balances?: BalanceSeed[] } = {}) {
     },
     inventory_transaction_line: {
       findMany: async () =>
-        Array.from({ length: requested }, (_, index) => ({
+        // `ledgerRows` 는 「원장이 이동 라인과 어긋난 상태」를 만드는 자리다(기본은 일치).
+        Array.from({ length: seed.ledgerRows ?? requested }, (_, index) => ({
           inventory_transaction_line_id: BigInt(5000 + index),
         })),
     },
@@ -203,6 +206,67 @@ describe('재고 이동 전기', () => {
 
     expect(posted[0].lines).toHaveLength(1);
     expect(ledgerLineIds).toEqual([5000n]);
+  });
+
+  it('⭐ 같은 차원 라인이 둘이면 하한을 «합계»로 본다 — 라인별로 보면 둘째 UPDATE 에서 트리거가 500 이다', async () => {
+    // 같은 품목·LOT·같은 출발 위치 2라인. 각 5 는 운송중 8 이하지만 합계 10 은 넘는다.
+    const short = fake({
+      balances: [
+        balance({
+          warehouseId: TO_WH, locationId: TO_LOC, inventory_status_code: 'IN_TRANSIT',
+          available_qty: new Prisma.Decimal(8),
+        }),
+      ],
+    });
+    const twoLines = [
+      arriveLine({ lineIndex: 0, qty: new Prisma.Decimal(5) }),
+      // 0 수량 라인을 걸러 넘긴 뒤라 배열 자리(1)와 본문 자리(3)가 갈린다.
+      arriveLine({ lineIndex: 3, qty: new Prisma.Decimal(5) }),
+    ];
+
+    const failure = await postTransferArrive(
+      short.tx, short.posting, arriveInput({ lines: twoLines }), 1,
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ContractException);
+    expect((failure as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    // 오류 자리는 «본문» 번호다. ⚠ 지금은 차원당 1건이 아니라 라인마다 낸다(리뷰 Nit-1).
+    expect((failure as ContractException).errors).toMatchObject([
+      { field: 'lines[0].receivedQty', code: 'NEGATIVE_BALANCE' },
+      { field: 'lines[3].receivedQty', code: 'NEGATIVE_BALANCE' },
+    ]);
+    // 거부는 전기 «앞»에서 끝난다.
+    expect(short.posted).toHaveLength(0);
+
+    // 합계가 딱 맞으면 지난다 — 「언제나 거부」가 아님을 함께 못박는다.
+    const exact = fake({
+      balances: [
+        balance({
+          warehouseId: TO_WH, locationId: TO_LOC, inventory_status_code: 'IN_TRANSIT',
+          available_qty: new Prisma.Decimal(10),
+        }),
+      ],
+    });
+    const ledgerLineIds = await postTransferArrive(
+      exact.tx, exact.posting, arriveInput({ lines: twoLines }), 1,
+    );
+    expect(exact.posted[0].lines).toHaveLength(2);
+    expect(ledgerLineIds).toEqual([5000n, 5001n]);
+  });
+
+  it('⛔ 원장 라인 수가 이동 라인과 다르면 던진다 — 전표 라인이 «남의 원장»을 가리키느니 되돌린다', async () => {
+    const { tx, posting } = fake({
+      balances: [balance({ warehouseId: TO_WH, locationId: TO_LOC, inventory_status_code: 'IN_TRANSIT' })],
+      ledgerRows: 1,
+    });
+
+    await expect(
+      postTransferArrive(
+        tx, posting,
+        arriveInput({ lines: [arriveLine(), arriveLine({ lineIndex: 1 })] }),
+        1,
+      ),
+    ).rejects.toThrow('원장 라인 수가 이동 라인과 다르다: 1 ≠ 2');
   });
 });
 
