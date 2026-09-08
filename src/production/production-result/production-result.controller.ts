@@ -83,13 +83,8 @@ export class ProductionResultController {
     @Body() body: ProductionResultCorrect,
   ): Promise<ProductionResultView> {
     const context = { idempotencyKey: String(request.headers['idempotency-key']), appUserId: currentSession(request)?.userId };
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.CREATED,
-      () => this.corrections.correct(productionResultId, body, context),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.corrections.correct(productionResultId, body, context), FAMILY_CONFLICT_CODE);
   }
 
   /** ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 등급·승인 유형은 서버가 낸다. */
@@ -103,12 +98,7 @@ export class ProductionResultController {
   ): Promise<{ approvalRequestId: number }> {
     const session = currentSession(request);
     if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.ACCEPTED,
-      () => this.approvals.requestApproval(productionResultId, body.reason, session.userId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.approvals.requestApproval(productionResultId, body.reason, session.userId), FAMILY_CONFLICT_CODE);
   }
 }

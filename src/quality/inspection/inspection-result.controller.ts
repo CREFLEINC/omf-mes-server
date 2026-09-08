@@ -97,14 +97,8 @@ export class InspectionResultController {
     @Body() body: InspectionResultUpdate,
   ): Promise<InspectionResultView> {
     const context = await this.contextOf(request);
-    return runVersioned<InspectionResultView, 'view'>(
-      this.idempotency,
-      request,
-      response,
-      'view',
-      (version) => this.writes.update(inspectionResultId, version, body, context),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
+      this.writes.update(inspectionResultId, version, body, context), FAMILY_CONFLICT_CODE);
   }
 
   /**
@@ -125,14 +119,8 @@ export class InspectionResultController {
     @Body() body: InspectionResultConfirm,
   ): Promise<InspectionResultView> {
     const appUserId = userOf(request);
-    return runVersioned<InspectionResultView, 'view'>(
-      this.idempotency,
-      request,
-      response,
-      'view',
-      (version) => this.confirms.confirm(inspectionResultId, version, body, appUserId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runVersioned<InspectionResultView, 'view'>(this.idempotency, request, response, 'view', (version) =>
+      this.confirms.confirm(inspectionResultId, version, body, appUserId), FAMILY_CONFLICT_CODE);
   }
 
   /**

@@ -61,13 +61,8 @@ export class ProductionPlanController {
   @HttpCode(HttpStatus.CREATED)
   create(@Req() request: Request, @Body() body: ProductionPlanCreate): Promise<ProductionPlanView> {
     // ⛔ `setEtag` 를 안 부른다 — 계약이 201 에 ETag 를 선언하지 않았다(I-24 §4-1).
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.CREATED,
-      () => this.queries.create(body, currentSession(request)?.userId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.queries.create(body, currentSession(request)?.userId), FAMILY_CONFLICT_CODE);
   }
 
   @Put(':productionPlanId')
@@ -79,13 +74,8 @@ export class ProductionPlanController {
   ): Promise<ProductionPlanView> {
     // ⛔ `runVersioned` 를 못 쓴다 — 계약이 200 에 ETag 를 선언하지 않는다(work-order 선례).
     const version = versionOf(request);
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () => this.queries.update(productionPlanId, version, body, currentSession(request)?.userId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.queries.update(productionPlanId, version, body, currentSession(request)?.userId), FAMILY_CONFLICT_CODE);
   }
 
   /** 확정 + W/O 전개. ⛔ `setEtag` 를 안 부른다 — 계약이 200 에 ETag 를 선언하지 않았다. */
@@ -97,13 +87,8 @@ export class ProductionPlanController {
     @Param('productionPlanId', ParseIntPipe) productionPlanId: number,
   ): Promise<ProductionPlanView> {
     const version = versionOf(request);
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () => this.confirms.confirm(productionPlanId, version, currentSession(request)?.userId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.confirms.confirm(productionPlanId, version, currentSession(request)?.userId), FAMILY_CONFLICT_CODE);
   }
 
   @Delete(':productionPlanId')

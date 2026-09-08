@@ -131,14 +131,8 @@ export class LotHoldController {
     @Body() body: LotHoldRelease,
   ): Promise<LotHoldView> {
     const appUserId = userOf(request);
-    return runVersioned<LotHoldView, 'view'>(
-      this.idempotency,
-      request,
-      response,
-      'view',
-      (version) => this.writes.release(lotHoldId, version, body, appUserId),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runVersioned<LotHoldView, 'view'>(this.idempotency, request, response, 'view', (version) =>
+      this.writes.release(lotHoldId, version, body, appUserId), FAMILY_CONFLICT_CODE);
   }
 
   /**

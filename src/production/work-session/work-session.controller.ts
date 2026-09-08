@@ -102,13 +102,8 @@ export class WorkSessionController {
     @Body() body: WorkSessionEventCreate,
   ): Promise<WorkSessionEventView> {
     const context = await this.contextOf(request);
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.CREATED,
-      () => this.eventWrites.create(workSessionId, body, context),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.eventWrites.create(workSessionId, body, context), FAMILY_CONFLICT_CODE);
   }
   // ⛔ 사번을 읽지 않는다 — 계약이 이 둘에만 `X-Worker-No` 를 안 걸었다(R-13 ⓠ). 단말 토큰은
   //    «온 경우만» 검증하려고 푼다 — 값은 담을 칸이 없어 버린다.
@@ -120,13 +115,8 @@ export class WorkSessionController {
     @Body() body: WorkSessionWorkerJoin,
   ): Promise<WorkSessionWorkerView> {
     const { version, appUserId } = await this.contextOf(request);
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.CREATED,
-      () => this.workerWrites.join(workSessionId, body, { version, appUserId }),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.workerWrites.join(workSessionId, body, { version, appUserId }), FAMILY_CONFLICT_CODE);
   }
   /** 계약 응답이 200 이다. ⛔ If-Match 를 읽지 않는다 — 계약이 이 자리에만 안 걸었다. */
   @Post(':workSessionId/workers/:workSessionWorkerId\\:leave')
@@ -138,13 +128,8 @@ export class WorkSessionController {
     @Param('workSessionWorkerId', ParseIntPipe) workSessionWorkerId: number,
     @Body() body: WorkSessionWorkerLeave,
   ): Promise<WorkSessionWorkerView> {
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.OK,
-      () => this.workerWrites.leave(workSessionId, workSessionWorkerId, body),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.workerWrites.leave(workSessionId, workSessionWorkerId, body), FAMILY_CONFLICT_CODE);
   }
   // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:206`) — 사번의 필수 판정은
   //    서비스 몫이고, 단말 토큰은 «없으면 null» 이라 그 뜻도 서비스가 가른다(R-1).

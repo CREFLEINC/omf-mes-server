@@ -12,12 +12,19 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 const RETENTION_HOURS = 72;
 
+/**
+ * 계열 봉투 넷의 `code` enum **교집합**. ⛔ `string` 으로 열어 두지 않는다 — 호출부 28곳에
+ * 넘기는 값이라 교집합 밖 문자열이 들어가면 어느 한 계열에서 계약을 깨는데, 다섯째 인자가
+ * 선택이라 그것을 잡아 줄 다른 그물이 없다(#414 리뷰 m-4).
+ */
+export type FamilyConflictCode = 'VERSION_CONFLICT' | 'DUPLICATE_KEY' | 'INVALID_STATE';
+
 /** 멱등 흡수가 내는 409 두 갈래에 실을 계열 봉투의 `code`. */
 export interface IdempotencyConflictCode {
   /** 같은 키로 «다른» 내용이 왔을 때. */
-  duplicate: string;
+  duplicate: FamilyConflictCode;
   /** 앞의 처리가 아직 안 끝났을 때. */
-  inProgress: string;
+  inProgress: FamilyConflictCode;
 }
 
 /**
@@ -28,6 +35,12 @@ export interface IdempotencyConflictCode {
  *
  * ⛔ 「처리 중」에 `CANCEL_IN_PROGRESS` 를 쓰지 않는다 — shipment 계열에만 있고 뜻이
  * 「취소가 진행 중」이라 다르다. 결정 — 통보 077.
+ *
+ * ⚠ `INVALID_STATE` 는 이 저장소에서 이미 「**문서 상태가 막는다**」(되돌릴 수 없는 거부)로
+ * 쓰인다 — `inspection-result-write.service.ts` 의 확정본 수정 · `production-plan.service.ts`
+ * 의 확정 계획 삭제. 여기서 내는 것은 그 반대로 «**재시도하면 풀린다**»이고, 두 사건을 가르는
+ * 것은 `code` 가 아니라 **`conflictCause`**(`workerLease` vs `user`)뿐이다. 화면·오프라인 큐가
+ * `code` 만 보고 분기하면 재시도할 요청을 버린다(#414 리뷰 m-1 · 통보 077 §「같은 값의 두 뜻」).
  */
 export const FAMILY_CONFLICT_CODE: IdempotencyConflictCode = {
   duplicate: 'DUPLICATE_KEY',

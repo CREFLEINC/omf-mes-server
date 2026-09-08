@@ -58,13 +58,8 @@ export class MaterialReturnController {
   create(@Req() request: Request, @Body() body: MaterialReturnCreate): Promise<MaterialReturnView> {
     const appUserId = userOf(request);
     const workerNo = request.headers['x-worker-no'];
-    return runIdempotent(
-      this.idempotency,
-      request,
-      HttpStatus.CREATED,
-      () => this.returns.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined),
-      FAMILY_CONFLICT_CODE,
-    );
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.returns.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined), FAMILY_CONFLICT_CODE);
   }
 }
 
