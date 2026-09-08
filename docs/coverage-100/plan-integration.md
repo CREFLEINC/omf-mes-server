@@ -175,7 +175,7 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 | I-11 | 작업 세션·작업전점검 | 11 | I-6 | 있음 | **1** NOT NULL 완화(`work_session.shift_id` · R-3) | ✕ | ⭕ 세션 | 5 |
 | I-12 | 적치 완료·임시적재 | 4 | (입고 구현됨) | 있음 | ✕ | ⭐ | ⭕ | 2 |
 | I-13 | 재고 이동 2단 | 6 | I-5 | 있음 | **⭕ A4** | ⭐ ×2 | ⭕ | **4** |
-| I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | ✕ | ⭐ | ⭕ | 3 |
+| I-14 | 재고 조정 | 7 | I-1·I-5 | 있음 | **⭕ N-1** | ⭐ | ⭕ | **4** |
 | I-15 | 실사 | 6 | I-14 | 있음 | ✕ | ✕(조정이 진다) | ⭕ | 3 |
 | I-16 | 취급 단위·포장·재구성 | 7 | I-12 | **신설 2**(`handling_unit_repack_event(+_line)`) | **⭕ N-2** | **✕ 확정**(원장 미경유) | ⭕ | **4** |
 | I-17 | 재생재 등록 | 1 | I-3 | 있음(`recycle_entry`) | ⚠ `item.mes_category_code` 없음(#64) | ⭐ | ✕ | 1 |
@@ -332,14 +332,14 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 **체인 마디**: 원장을 직접 움직이는 넷째 판별자. 실사(I-15)·생산창고 차이(I-9)·호퍼 실측이 모두 여기로 모인다.
 **원장**: ⭐ `INVENTORY_ADJUSTMENT`. 라인이 증/감을 함께 담으므로 `from`만/`to`만 라인이 섞인다.
 **승인**: `:request-approval` → I-1 재사용. `:post` 는 승인이 안 끝났으면 400(계약).
-**예상 설계 미정**: 조정이 «어느 상태로» 넣는가(`quality_status_code`·`inventory_status_code`) — 라인이 실어 보내는지 계약을 다시 읽어야 한다. 안 실으면 2단계 기준 4「조용히 도출하지 않는 쪽」 → 400.
+**설계 미정 — 판정됨**(I-14 재수립 R-1): 조정이 «어느 상태로» 넣는가(`quality_status_code`·`inventory_status_code`). 계약은 **안 싣는다**(실측). ⇒ **등록·치환 시점에 잔액 행에서 읽어 라인에 저장**하고 `:post` 는 저장값을 그대로 `PostingEndpoint` 에 싣는다 — 0행이면 400, 2행+면 400(2단계 기준 4 · 문의 130). ⚠ 전기 손검사는 **저장된 두 코드로 좁힌 11칸 행**에서 한다(잠금은 7칸 · R-2).
 
 
 ##### I-15 · 실사 — 개시·라인·마감 — 6건
 
 **체인 마디**: 실사 → 차이 → 조정(I-14). ⛔ **실사 자신은 원장을 쓰지 않는다** — 결정 49 「잔량 직접 덮어쓰기 금지」.
 `POST /inventory/counts` 는 라인을 **서버가 장부에서 만든다**(화면이 열거하지 않는다) — 창고 하나에 수천 라인이라 페이지네이션이 필수.
-**예상 설계 미정**: `:close` 의 통과 조건(「미실사 0 · 차이 없음 또는 전부 조정됨」)은 계약이 적었다. 「조정됨」을 무엇으로 판정하나 — `inventory_count_line` ↔ `inventory_adjustment_line` 연결이 필요하다. `inventory_adjustment.inventory_count_id` 로 헤더는 이어지나 라인 대응이 없다. → 가장자리 → 헤더 단위로 판정하고 요청서에 싣는다.
+**예상 설계 미정**: `:close` 의 통과 조건(「미실사 0 · 차이 없음 또는 전부 조정됨」)은 계약이 적었다. 「조정됨」을 무엇으로 판정하나 — `inventory_count_line` ↔ `inventory_adjustment_line` 연결이 필요하다. `inventory_adjustment.inventory_count_id` 로 헤더는 이어진다. ⭐ **라인 대응은 I-14 가 연다** — 마이그 N-1(`inventory_adjustment_line.inventory_count_line_id`)가 서므로 I-15 는 헤더 단위로 물러설 필요가 없다(I-14 재수립 R-4). 판정식: 「이 실사의 `variance_qty <> 0` 인 `inventory_count_line` 중, `inventory_adjustment_line.inventory_count_line_id` 로 가리켜지고 그 조정 헤더가 `POSTED` 인 것이 아닌 행이 0」. ⚠ I-15 가 `TRUNCATE … CASCADE` 를 쓰면 조정 라인이 함께 비워진다.
 
 
 ##### I-16 · 취급 단위 — 등록·구성·포장확정·재구성 이력 — 7건
@@ -676,7 +676,7 @@ CLAUDE.md 「마이그레이션은 별도 선행 커밋」 + 아키텍처 §6 �
 |---|---|---|---|
 | 1 | **원장 판별자를 늘리고 싶어진다.** 투입·실적·출하를 각각 `MATERIAL_CONSUMPTION`·`PRODUCTION_RESULT`·`SHIPMENT` 로 원장에 넣으려는 유혹 — **반출도**(`material_return_line.inventory_transaction_line_id` 칸이 있다고 `STOCK_TRANSFER` 를 만들려는 유혹 · I-10 재수립 R-2) | I-10 · I-7 · I-23 | §1-4 표를 계획서에 못 박았다. 계약 `InventoryTransaction.sourceDocumentTypeCode` **enum 4값**이 정본이고, 늘리려면 계약을 고쳐야 한다 |
 | 2 | **`reserved_qty`·`picked_qty` 를 도메인이 직접 UPDATE 한다.** 코어가 안 건드리니 「내가 하면 되지」가 된다 | I-8 에서 시작해 I-22 로 번진다 | I-8 을 코어 전용 PR 로 자르고, ~~e2e 에 「도메인이 `inventory_balance` 를 직접 쓰지 않는다」를 잔액 UPDATE 트리거로 감지~~ **정적 가드 spec**(`balance-write-guard.spec.ts` · 정규식 3패턴 — 잔액 UPDATE 트리거가 없고 코어 자신이 UPDATE 하므로 DB 층에서 주체를 못 가른다 · I-8 §3-8 · R-8) |
-| 3 | **역트랜잭션이 3벌 생긴다** — 취소·출하 취소·조정 역분개(실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19) | I-5 → I-14 → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
+| 3 | **역트랜잭션이 ~~3벌~~ 2벌 생긴다** — 취소·출하 취소. ⛔ **조정 역분개는 오늘 서지 않는다**(I-14 재수립 R-12 — 계약 조정 7건에 `:cancel`·`:reverse` 0건 · `DocumentProgress.documentTypeCode` enum 9값에 `INVENTORY_ADJUSTMENT` 없음 · 문의 132. 회신이 오면 되살아난다) ⇒ `reverse()` 의 **둘째 사용처는 I-23** 이다. 실적 정정은 원장을 안 지난다 — `production_result` 안의 상쇄 행 · I-7 재수립 R-19 | I-5 → ~~I-14~~ → I-23 | I-5 를 코어 전용 PR(diff ≤ 200)로 먼저. `reversal_of_transaction_id` 가 안 채워진 원장 행이 있으면 e2e 실패 |
 | 4 | **채번이 15벌 복사된다.** 입고에 이미 `count()+1` 이 있어 복사가 자연스럽다. 취소가 생기면 번호를 **재사용**한다 | I-2 를 늦추면 I-3·I-4·I-13·I-14·I-15·I-22·I-23 전부 | I-2 에서 코어로 세우고 **입고의 두 함수를 그 코어로 옮기는 것**까지 같은 PR |
 | 5 | **`document-progress` 의 유형↔표 대응을 코드에 박는다.** 9종 × 후속 판정이라 `switch` 가 자연스럽다 | I-5, 그리고 유형이 느는 순간 조용히 틀린다 | `app.entity_type_registry` 표가 이미 있다 — 거기서 읽는다. 계약이 명시적으로 서버 소유로 넘긴 자리(A-10 보강) | ⭐ I-5 R-6: **절반 기각** — 매핑은 코드 · 등록부는 부팅 대조로 남긴다.
 | 6 | **생산창고 차이를 원장으로 처리해 버린다.** `businessDate` 가 실려 있어 「전기해야 하나 보다」로 읽힌다 | I-9 | §3-1 I-9 의 §2 판정을 따른다 — 기록만. 뒤집히면 마이그레이션이 생기므로 **그 슬라이스만 3관점 재수립**(README §1-2 첫째 조건) |

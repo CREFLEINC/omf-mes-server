@@ -187,7 +187,7 @@
 |---|---|
 | 선행 슬라이스 | S06(취소 축) · S09(승인) |
 | 쓰는 표 | `inventory.inventory_count(_line)`·`inventory_adjustment(_line)`·`handling_unit(_content)`·`handling_unit_reconfiguration(_line)`·`inventory_reservation` — **전부 있음** |
-| 마이그레이션 | 없음 (실측) — 계약이 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」라 두 곳에 적었는데 **낡았다**. 우리 모델에 있다(§5.2 표 B). |
+| 마이그레이션 | **조정분 1건**(I-14 재수립 R-4) — `inventory_adjustment_line.inventory_count_line_id BigInt?` + FK + 인덱스(표 A 23). ⚠ 옛 「없음(실측)」은 **라인 «표»** 에 대한 판정이라 맞다 — 계약이 「`inventory_adjustment_line` 은 물리에 아직 없다」라 **네 곳**에 적었는데 낡았고 표는 실재한다(§5.2 표 B). 없는 것은 표가 아니라 **칸 하나**다. 실사·취급단위·예약분은 여전히 0건. |
 | posting(원장) 연결 | **있음** — `:post` 가 실사 차이를 원장 트랜잭션으로 쌓는다(결정 49 「잔량 직접 덮어쓰기 금지」) |
 | 상태기계 | 있음 (`INVENTORY_COUNT_STATUS` 3값 · 조정은 `LOGISTICS_DOCUMENT_STATUS`) |
 | 예상 PR 수 | 5 — ① 조회 GET 11건 ② 실사 전표 + 라인 PUT ③ `:close` + 마감 판정 4사유 ④ 조정 + `:post` posting + `:request-approval` + e2e(코어) ⑤ 취급단위 + `:pack` + 재포장 이력 |
@@ -919,6 +919,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 20 | `maintenance.tool_usage` | `collection_method_code String?` · `conversion_base_qty Decimal?` · `conversion_ratio Decimal?` · `occurred_at DateTime?` 추가4, usage_type_code/used_from NN완화2 | DIRECT/CONVERTED는계약enum·코드그룹시드0, numeric20,6·required구행091/119 | S24/I33 |
 | 21 | `maintenance.collection_channel` | channel_key/signal_name/inspection_item_id/item_id/process_id nullable5·channel_code/name/data_type_code NN완화3, 새FK3/역관계·네축NULL식유일 | 기존uq유지·inactive포함·key100/code50복사0. T실제최신관측표 별도신설·참조보호A조율 | S24/I33 |
 | 22 | `quality.equipment_calibration` | history_type_code/agency_type_code/agency_name/tolerance_note/recorded_by·blocks_use(false명시default)·cleared_at/cleared_by 추가8 | valid_until이미존재, 유형별/legacyNULL유일성완화·cal version추가0 | S24/I33 |
+| **23** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** | `InventoryAdjustmentLine.inventoryCountLineId`·`InventoryAdjustmentLineUpsert.inventoryCountLineId` (앵커 없음) — I-14 재수립 R-4 | S07(I-14) |
 
 #### 표 B — **계약이 「물리에 없다」라 적었으나 실제로는 있는 것** (마이그레이션 불필요)
 
@@ -926,7 +927,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 
 | 계약이 적은 것 | 실측 |
 |---|---|
-| 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」(2곳) | **있다** — `inventory.inventory_adjustment_line`(라인 사유 `reason_code` 포함) |
+| 「`inventory_adjustment_line` 은 물리 모델에 아직 없다」(**4곳** — `POST /inventory/adjustments` · `PUT …/lines` · `InventoryAdjustmentLine` · `InventoryAdjustmentLineUpsert` · I-14 재수립 R-11) | **있다** — `inventory.inventory_adjustment_line`(라인 사유 `reason_code` 포함). ⚠ ⌜라인 사유를 담을 자리도 함께 확정돼야 한다⌝ 문장은 **`InventoryAdjustmentLine` 에만** 있다. ⛔ 다만 **칸 하나는 정말 없다** — `inventory_count_line_id`(표 A 23) |
 | 「`goods_issue.approval_request_id` 가 모델에 아직 없다」 | **있다** — 취소 흔적 3칸(`cancelled_at`·`cancelled_by`·`cancellation_reason_code`)도 함께 있다 |
 | 「알림 표가 물리 모델에 없다」 | **있다** — `app.notification`·`app.notification_event` |
 | 「공지 표가 물리 모델에 없다」 | **있다** — `app.notice`·`app.notice_acknowledgement` |
