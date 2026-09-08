@@ -429,6 +429,44 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
       .expect(403);
   });
 
+  it('⭐ 등록 — 정수 15자리 수량은 400 RANGE 다(numeric(20,6) overflow 가 500 으로 새던 자리)', async () => {
+    // ⛔ I-21 PR ⑦ §4 ⓵ ⓑ — ⑥ 은 소수 자릿수만 막아 `1e15` 가 `22003 numeric field overflow`
+    //   로 **500** 이 됐다(계약이 이 오퍼레이션에 500 을 선언한 적이 없다). `decisionQty` 와
+    //   «같은 한계»로 한 자리에서 막는다(`assertQtyPrecision`).
+    const response = await post(NONCONFORMANCES)
+      .send(createBody({ lots: [{ lotId: Number(lotIds.INT), affectedQty: 1e15, uomId: Number(ids.uomA) }] }))
+      .expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'lots[0].affectedQty', code: 'RANGE' });
+    // 한계와 «같은 값»(1e14)도 못 담는다 — 정수 14자리가 상한이라 `>=` 다.
+    await post(NONCONFORMANCES)
+      .send(createBody({ lots: [{ lotId: Number(lotIds.INT), affectedQty: 1e14, uomId: Number(ids.uomA) }] }))
+      .expect(400);
+    // 바로 아래(1e14 - 1)는 통과한다 — 상한을 한 자리 좁히는 변이를 잡는다.
+    await post(NONCONFORMANCES)
+      .send(createBody({ description: `${PREFIX} 정수 14자리`, lots: [{ lotId: Number(lotIds.INT), affectedQty: 1e14 - 1, uomId: Number(ids.uomA) }] }))
+      .expect(201);
+  });
+
+  it('⭐⭐ 등록 — 동시 두 요청이 같은 LOT 에 열린 부적합을 «둘» 만들지 못한다(대상 LOT 잠금)', async () => {
+    // ⛔ I-21 PR ⑦ §4 ⓶ — 중복 판정이 트랜잭션 «밖»이면 서로 다른 `Idempotency-Key` 로 동시에
+    //   온 둘이 «다» 201 이 되고 `DispositionCandidate.nonconformanceId` 가 단수라는 계약
+    //   전제가 깨진다. ⚠ 겹치지 않고 직렬로 돌면 그냥 통과하는 검사다(선례 주석
+    //   `app-role.e2e-spec.ts:356`) — 그래도 「둘 다 201」은 이 잠금이 없으면 «언젠가» 난다.
+    const send = () =>
+      request(app.getHttpServer())
+        .post(NONCONFORMANCES)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send(createBody({ description: `${PREFIX} 동시 등록`, lots: [{ lotId: Number(lotIds.RACE), affectedQty: 6, uomId: Number(ids.uomA) }] }));
+
+    const [a, b] = await Promise.all([send(), send()]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 409]);
+    expect((a.status === 409 ? a : b).body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
+    expect(await prisma.nonconformance_lot.count({ where: { lot_id: lotIds.RACE } })).toBe(1);
+  });
+
   it('⭐⭐ 등록 — 롤백: `nonconformance_lot` 이 실패하면 헤더도 «안 남는다»(한 트랜잭션 · B-8)', async () => {
     // ⛔⛔ **지렛대를 갈아 끼웠다**(I-21 PR ⑦ §4 ⓵ ⓐ). 예전 지렛대는 `affectedQty: 1e15`
     //   (numeric(20,6) 정수부 초과)였는데 그 값이 «검증을 다 지나 INSERT 에서만» 터진다는
@@ -646,6 +684,8 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
       ['R5', 'DEFECTIVE'],
       ['R6', 'DEFECTIVE'],
       ['R7', 'DEFECTIVE'],
+      ['INT', 'DEFECTIVE'],
+      ['RACE', 'DEFECTIVE'],
     ];
     for (const [suffix, statusCode] of plan) {
       const lot = await prisma.lot.create({
