@@ -3,7 +3,10 @@ import type { Request } from 'express';
 
 import { attachSession } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
-import { breakdownWriteContext } from './breakdown-write-context';
+import {
+  breakdownManagementContext,
+  breakdownWriteContext,
+} from './breakdown-write-context';
 
 describe('breakdown write context', () => {
   it('세션 주체·사번 원문·201을 지문에 담는다', () => {
@@ -53,6 +56,26 @@ describe('breakdown write context', () => {
   it('세션이 붙지 않은 요청은 401이다', () => {
     expect(() =>
       breakdownWriteContext(createRequest({ attach: false })),
+    ).toThrow(UnauthorizedException);
+  });
+
+  it('관리웹 쓰기는 계정·본문·오퍼레이션만 지문에 담고 200을 낸다', () => {
+    const request = createRequest({
+      method: 'PUT',
+      path: '/maintenance/breakdowns/7',
+      body: { handlingNote: '교체' },
+    });
+    expect(breakdownManagementContext(request)).toMatchObject({
+      key: 'idem-1',
+      appUserId: 17,
+      successStatus: 200,
+      fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+  });
+
+  it('관리웹 쓰기도 세션이 없으면 401이다', () => {
+    expect(() =>
+      breakdownManagementContext(createRequest({ attach: false })),
     ).toThrow(UnauthorizedException);
   });
 });
