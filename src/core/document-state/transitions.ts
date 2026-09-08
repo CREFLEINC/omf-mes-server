@@ -187,7 +187,7 @@ export const TRANSITIONS: TransitionRegistry = {
    *    위 도식의 «수신·발신»에서 그대로 읽는다.
    * ⛔ `SCRAPPED` 는 `from` 에도 `to` 에도 없다 — 계약이 어느 오퍼레이션에도 적지 않았다.
    * ⛔ `C15`(전수 재검 양품)를 등록하지 않는다 — `C4` 와 (from, to) 가 같은데 어느 LOT 이
-   *    `C14` 로 그 자리에 왔는지 가릴 표식이 데이터에 없다(F-6 · 문의 069+8).
+   *    `C14` 로 그 자리에 왔는지 가릴 표식이 데이터에 없다(F-6 · 미발행 · I-19 §9-2 후보 8).
    */
   'trace.lot.status_code': {
     // ── 검사 확정(I-19)이 쓴다 ─────────────────────────────────────
@@ -214,7 +214,7 @@ export const TRANSITIONS: TransitionRegistry = {
 
     // ── I-23(레인 C · 재고 재등록)이 쓴다 ──────────────────────────
     // ⛔ `transitionCode` 가 없다 — 이력 칸은 NOT NULL 인데 계약 enum 9값(C4~C15)에 재등록을
-    //    가리키는 코드가 «없다». 지어내지 않고 호출자가 넘기게 둔다. 설계 미정 — 문의 069+12.
+    //    가리키는 코드가 «없다». 지어내지 않고 호출자가 넘기게 둔다. 설계 미정 — 문의 089(발행 예정).
     'stock-reinstate': { from: ['DEFECTIVE'], to: 'NORMAL',
       sourceOperation: 'POST /logistics/stock-reinstatements' },
   },

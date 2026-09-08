@@ -518,6 +518,7 @@ model inventory_balance {
 
   @@index([plant_id, warehouse_id, item_id, lot_id, quality_status_code, inventory_status_code], map: "ix_inventory_balance_lookup")
   @@index([location_id], map: "ix_inventory_balance_location")
+  @@index([lot_id], map: "ix_inventory_balance_lot")
   @@index([warehouse_id], map: "ix_inventory_balance_warehouse")
   @@schema("inventory")
 }
@@ -3627,11 +3628,16 @@ model lot_hold {
   created_at                              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                              BigInt?
   release_reason_code                     String?   @db.VarChar(50)
+  target_lot_status_code                  String?   @db.VarChar(50)
+  release_target_lot_status_code          String?   @db.VarChar(50)
+  version_no                              Int       @default(1)
   app_user_lot_hold_held_byToapp_user     app_user? @relation("lot_hold_held_byToapp_user", fields: [held_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                     lot       @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_lot_hold_released_byToapp_user app_user? @relation("lot_hold_released_byToapp_user", fields: [released_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   uom                                     uom?      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([held_at(sort: Desc)], map: "ix_lot_hold_held_at")
+  @@index([lot_id], map: "ix_lot_hold_lot")
   @@schema("trace")
 }
 
@@ -4161,7 +4167,7 @@ model equipment_downtime {
   equipment_downtime_id BigInt     @id @default(autoincrement())
   equipment_id          BigInt
   breakdown_id          BigInt?
-  downtime_type_code    String     @db.VarChar(50)
+  downtime_type_code    String?    @db.VarChar(50)
   started_at            DateTime   @db.Timestamptz(6)
   ended_at              DateTime?  @db.Timestamptz(6)
   reason_code           String?    @db.VarChar(50)
@@ -4171,6 +4177,10 @@ model equipment_downtime {
   breakdown             breakdown? @relation(fields: [breakdown_id], references: [breakdown_id], onDelete: NoAction, onUpdate: NoAction)
   app_user              app_user?  @relation(fields: [closed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   equipment             equipment  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  remarks               String?
+  recorded_by_worker_no String?    @db.VarChar(50)
+  version_no            Int        @default(1)
 
   @@schema("maintenance")
 }
