@@ -12,6 +12,8 @@ import { ApprovalRouteService } from './approval/approval-route.service';
 import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
+import { AttachmentController } from './attachment/attachment.controller';
+import { AttachmentService } from './attachment/attachment.service';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
 import { NotificationController } from './notification/notification.controller';
@@ -45,6 +47,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     PermissionController,
     RoleController,
     AppUserController,
+    AttachmentController,
     OperationPolicyController,
     NoticeController,
     NotificationController,
@@ -58,6 +61,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     RolePermissionService,
     AppUserService,
     UserAssignmentService,
+    AttachmentService,
     OperationPolicyService,
     NoticeService,
     NotificationQueryService,
