@@ -219,7 +219,7 @@ describe('DocumentStateService', () => {
       expect(states).not.toContain('SCRAPPED');
     });
 
-    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(069+12)', () => {
+    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(문의 089 · 발행 예정)', () => {
       const withoutCode = service
         .registered()
         .filter((entry) => entry.column === LOT_QUALITY_STATUS)

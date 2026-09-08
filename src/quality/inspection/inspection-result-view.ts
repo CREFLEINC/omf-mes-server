@@ -6,7 +6,7 @@ import { omitEmpty } from '../../common/http/omit-empty';
  * 목록 한 행에 필요한 의뢰 조인 4칸 + 파생(`lotNo`·`processId`·`processName`)을 한 쿼리로
  * 묶는다(N+1 금지 · §4-4). `select` 로 좁힌다 — 이 뷰가 안 쓰는 칸을 끌고 오지 않는다.
  * `processId` 두 갈래(§2-3): ⓑ W/O 축(`work_order.routing_operation.process_id` · 2단)을
- * 먼저 보고 비면 ⓐ 기준 축(3단)으로 떨어진다 — 계약 「2단」과 홉 수가 맞는 쪽이 ⓑ 다(문의 069+5).
+ * 먼저 보고 비면 ⓐ 기준 축(3단)으로 떨어진다 — 계약 「2단」과 홉 수가 맞는 쪽이 ⓑ 다(미발행 · I-19 §9-2 후보 5).
  */
 export const INSPECTION_RESULT_JOIN = {
   inspection_request: {

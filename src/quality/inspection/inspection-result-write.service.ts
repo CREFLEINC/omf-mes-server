@@ -218,7 +218,7 @@ export class InspectionResultWriteService {
    * ⭐ `plan.md` §5-9 의 가름 — 관리웹은 계정 세션, POP 단말은 사번 귀속 헤더다. 계약이 헤더를
    * `WorkerNoOptional` 로 적었으므로 **헤더가 「주체 칸의 유일한 원천」이 아니다** — 없다고 400 을
    * 내지 않는다(그 목록은 `WorkerNo`(필수)를 단 열 자리뿐이고 여기는 아니다).
-   * ⚠ 관리자 계정에 `worker` 행이 없으면 관리웹이 검사를 저장할 수 없다 — 설계 미정 · 문의 069+11.
+   * ⚠ 관리자 계정에 `worker` 행이 없으면 관리웹이 검사를 저장할 수 없다 — 설계 미정 · 미발행 · I-19 §9-2 후보 11.
    */
   private async resolveInspector(context: InspectionResultWriteContext): Promise<bigint> {
     const workerNo = context.workerNo;
@@ -234,7 +234,7 @@ export class InspectionResultWriteService {
       });
       if (worker !== null) return worker.worker_id;
     }
-    throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '검사자를 풀 수 없습니다 — 사번 헤더를 싣거나 계정에 작업자를 연결하세요(문의 069+11).'));
+    throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '검사자를 풀 수 없습니다 — 사번 헤더를 싣거나 계정에 작업자를 연결하세요(미발행 · I-19 §9-2 후보 11).'));
   }
 
   /**
@@ -253,7 +253,7 @@ export class InspectionResultWriteService {
     });
     if (request === null) throw one(field('inspectionRequestId', ERROR_CODE.INVALID, '없는 검사 의뢰입니다.'));
     // If-Match 는 **선택**이다(오프라인 큐가 토큰을 안 싣는다 · C-9). 값이 오면 의뢰의 버전과
-    // 대조한다 — ⚠ 계약이 무엇의 버전인지 안 적었다(결과는 아직 없다). 설계 미정 · 문의 069+10.
+    // 대조한다 — ⚠ 계약이 무엇의 버전인지 안 적었다(결과는 아직 없다). 설계 미정 · 미발행 · I-19 §9-2 후보 10.
     if (version !== undefined && request.version_no !== version) {
       assertUpdated(0, 'user', { code: VERSION_CONFLICT, currentVersion: String(request.version_no) });
     }

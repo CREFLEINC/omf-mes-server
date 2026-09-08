@@ -109,7 +109,7 @@ function coveredWindows(dueDate: Date | null, history: { from: number; until: nu
   const windows: Window[] = [];
   if (dueDate !== null) windows.push({ from: null, until: Math.min(dayOf(dueDate) + 1, firstRecord ?? Number.MAX_SAFE_INTEGER) });
   history.forEach((record, index) => {
-    if (record.until === null) return; // 유효기한 없는 검교정 = 그 뒤로 만료(§4-4 · 문의 후보 069+9)
+    if (record.until === null) return; // 유효기한 없는 검교정 = 그 뒤로 만료(§4-4 · 미발행 · I-19 §9-2 후보 9)
     windows.push({ from: record.from, until: Math.min(record.until + 1, history[index + 1]?.from ?? Number.MAX_SAFE_INTEGER) });
   });
   return windows.filter((window) => window.until > (window.from ?? Number.MIN_SAFE_INTEGER));
