@@ -66,3 +66,7 @@ root가 초안467줄, DB161줄, 독립 API82/UIUX94/통합70줄, CSV 프로브16
 ## 편집자에게 맡기는 일
 
 이R1~R16과표를그대로초안 §0-재수립에반영하고관련본문/SQL보존/테스트/예산/배포/마감표를정합화한다. SQL A9전문은현재후보를보존하고기존CHECK/FK/칼럼삭제0. 새판단/문의번호/공유정본편집/소스/DB/gitgh0. 정적source를다시읽어R이실행불가능함을발견하면root에돌려묻고자의로지원표를바꾸지않는다. 완성파일전건root재독뒤정본화/PR하며이편집완료는루틴종료가아니다.
+
+## R17 — A9 준비 뒤 root 추가 명료화
+
+계획 #315 병합 후 새 물리 준비자가 `btrim`과 모든 whitespace를 같은 보장으로 읽을 위험을 지적했다. root는 고정 PrintOutcomeReport(실패 사유 조건부 필수)와 `src/common/master/not-blank.ts` 전건의 `String.trim()` 선례를 대조했다. 정본 SQL은 변경하지 않는다. CHECK2 중 보고 분기 전체만 IS TRUE이며 DB 실패사유 검사는 빈문자열/일반공백 최소 제약이다. API R10은 String.trim() 공백을422 REQUIRED로 거부하며 원문 내용은 보존한다. SQL 상수/물리 검사와 후속 API whitespace 검증을 분리하고 물리 PASS를 API 검증으로 확대하지 않는다. 이 추가는 source/DB 실행이나 새 문의번호 배정이 아니다.
