@@ -40,6 +40,25 @@ AND EXISTS (
     AND COALESCE(x.ended_at, 'infinity'::timestamptz) > d.started_at
 )`;
 
+export async function readDowntimeWithin(
+  tx: Prisma.TransactionClient,
+  downtimeId: number | bigint,
+): Promise<DowntimeRow | null> {
+  const rows = await tx.$queryRaw<DowntimeRow[]>(Prisma.sql`
+    SELECT d.equipment_downtime_id AS downtime_id, d.equipment_id,
+      e.equipment_code, d.reason_code, cv.code_name AS reason_name,
+      (extract(epoch FROM d.started_at) * 1000000)::bigint::text AS started_epoch_us,
+      CASE WHEN d.ended_at IS NULL THEN NULL ELSE
+        (extract(epoch FROM d.ended_at) * 1000000)::bigint::text END AS ended_epoch_us,
+      d.breakdown_id, d.recorded_by_worker_no, d.remarks, d.version_no
+    ${FROM}
+    LEFT JOIN mdm.code_group cg ON cg.group_code = 'DOWNTIME_REASON' AND cg.is_active
+    LEFT JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id
+      AND cv.code = d.reason_code AND cv.is_active
+    WHERE d.equipment_downtime_id = ${downtimeId}`);
+  return rows[0] ?? null;
+}
+
 @Injectable()
 export class DowntimeQueryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -140,19 +159,7 @@ export class DowntimeQueryService {
   ): Promise<{ view: DowntimeView; versionNo: number }> {
     return this.prisma.$transaction(
       async (tx) => {
-        const rows = await tx.$queryRaw<DowntimeRow[]>(Prisma.sql`
-          SELECT d.equipment_downtime_id AS downtime_id, d.equipment_id,
-            e.equipment_code, d.reason_code, cv.code_name AS reason_name,
-            (extract(epoch FROM d.started_at) * 1000000)::bigint::text AS started_epoch_us,
-            CASE WHEN d.ended_at IS NULL THEN NULL ELSE
-              (extract(epoch FROM d.ended_at) * 1000000)::bigint::text END AS ended_epoch_us,
-            d.breakdown_id, d.recorded_by_worker_no, d.remarks, d.version_no
-          ${FROM}
-          LEFT JOIN mdm.code_group cg ON cg.group_code = 'DOWNTIME_REASON' AND cg.is_active
-          LEFT JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id
-            AND cv.code = d.reason_code AND cv.is_active
-          WHERE d.equipment_downtime_id = ${downtimeId}`);
-        const row = rows[0];
+        const row = await readDowntimeWithin(tx, downtimeId);
         if (!row) throw new NotFoundException("없는 비가동 기록입니다.");
         if (!Number.isSafeInteger(row.version_no) || row.version_no <= 0)
           throw new Error("Invalid stored downtime version");
