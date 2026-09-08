@@ -28,6 +28,7 @@ import { MaintenanceOrderQueryService } from "./order/order-query.service";
 import { MaintenanceResultController } from "./result/result.controller";
 import { MaintenanceResultCreateService } from "./result/result-create.service";
 import { MaintenanceResultQueryService } from "./result/result-query.service";
+import { MaintenanceResultUpdateService } from "./result/result-update.service";
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { MaintenanceResultQueryService } from "./result/result-query.service";
     MaintenanceOrderCreateService,
     MaintenanceOrderCancelService,
     MaintenanceResultCreateService,
+    MaintenanceResultUpdateService,
     MaintenanceResultQueryService,
   ],
 })

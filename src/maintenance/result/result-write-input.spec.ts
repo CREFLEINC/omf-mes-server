@@ -2,6 +2,7 @@ import { ContractException } from "../../common/errors";
 import {
   MaintenanceResultCreate,
   checkMaintenanceResultCreate,
+  checkMaintenanceResultUpdate,
 } from "./result-write-input";
 
 const base = (): MaintenanceResultCreate => ({
@@ -11,6 +12,35 @@ const base = (): MaintenanceResultCreate => ({
   startedAt: "2026-09-01T00:00:00.123456Z",
   resultNote: "조치 기록",
   performedByUserId: 13,
+});
+
+describe("checkMaintenanceResultUpdate", () => {
+  it("빈 PUT은 빈 변경으로 두고 명시 null·빈 배열은 보존한다", () => {
+    expect(checkMaintenanceResultUpdate({}, 1_000_000n)).toEqual({});
+    expect(
+      checkMaintenanceResultUpdate(
+        { finishedAt: null, lines: [], parts: [] },
+        1_000_000n,
+      ),
+    ).toEqual({ finishedAt: null, lines: [], parts: [] });
+  });
+
+  it("마감과 시작 전 종료시각을 명시 거부한다", () => {
+    for (const [body, status, name] of [
+      [{ closed: true }, 422, "closed"],
+      [{ finishedAt: "1970-01-01T00:00:00.999999Z" }, 400, "finishedAt"],
+      [{ resultNote: " " }, 400, "resultNote"],
+    ] as const) {
+      try {
+        checkMaintenanceResultUpdate(body, 1_000_000n);
+        throw new Error("expected failure");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ContractException);
+        expect((error as ContractException).getStatus()).toBe(status);
+        expect((error as ContractException).errors[0].field).toBe(name);
+      }
+    }
+  });
 });
 
 describe("checkMaintenanceResultCreate", () => {

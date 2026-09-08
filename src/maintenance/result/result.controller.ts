@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -24,13 +25,18 @@ import {
   MaintenanceResultQueryService,
 } from "./result-query.service";
 import { MaintenanceResultView } from "./result-view";
-import { MaintenanceResultCreate } from "./result-write-input";
+import { MaintenanceResultUpdateService } from "./result-update.service";
+import {
+  MaintenanceResultCreate,
+  MaintenanceResultUpdate,
+} from "./result-write-input";
 
 @Controller("maintenance/results")
 export class MaintenanceResultController {
   constructor(
     private readonly queries: MaintenanceResultQueryService,
     private readonly creates: MaintenanceResultCreateService,
+    private readonly updates: MaintenanceResultUpdateService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -38,6 +44,32 @@ export class MaintenanceResultController {
   @Contract("GET /maintenance/results")
   list(@Query() query: MaintenanceResultQuery): Promise<MaintenanceResultList> {
     return this.queries.list(query);
+  }
+
+  @Put(":maintenanceResultId")
+  @Contract("PUT /maintenance/results/{maintenanceResultId}")
+  @HttpCode(HttpStatus.OK)
+  async update(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param("maintenanceResultId", ParseIntPipe) maintenanceResultId: number,
+    @Body() body: MaintenanceResultUpdate,
+  ): Promise<MaintenanceResultView> {
+    const version = ifMatchVersion(request);
+    if (version === undefined)
+      throw new Error("If-Match 가 없는데 가드를 지났습니다.");
+    const context = maintenanceOrderWriteContext(request, HttpStatus.OK);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.updates.updateWithin(
+        tx,
+        maintenanceResultId,
+        version,
+        body,
+        context.appUserId,
+      ),
+    );
+    setEtag(response, outcome.body.versionNo);
+    return outcome.body.view;
   }
 
   @Post()

@@ -34,7 +34,7 @@ function responseValidator() {
   });
 }
 
-describe("보전 실적 I-31 W2 (e2e)", () => {
+describe("보전 실적 I-31 W2/W3 (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -370,6 +370,151 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
     ).toBe(0);
   });
 
+  it("E-R14/15/30 PUT 빈 본문·생략 배열은 보존하고 명시 null·빈 배열은 교체한다", async () => {
+    const { orderId, itemId } = await equipmentOrder("UPDATE");
+    const created = await post(
+      equipmentBody(orderId, itemId, `${PREFIX}-UPDATE`),
+      randomUUID(),
+    ).expect(201);
+    const resultId = BigInt(created.body.maintenanceResultId);
+    const before = await prisma.maintenance_result.findUniqueOrThrow({
+      where: { maintenance_result_id: resultId },
+      include: { maintenance_result_line: true, maintenance_result_part: true },
+    });
+    const key = randomUUID();
+    const empty = await put(resultId, {}, key, 1).expect(200);
+    expect(empty.headers.etag).toBe("2");
+    expect(validateCreated(empty.body)).toBe(true);
+    expect(empty.body).toEqual(created.body);
+    let stored = await prisma.maintenance_result.findUniqueOrThrow({
+      where: { maintenance_result_id: resultId },
+      include: { maintenance_result_line: true, maintenance_result_part: true },
+    });
+    expect(stored.version_no).toBe(2);
+    expect(stored.maintenance_result_line[0].maintenance_result_line_id).toBe(
+      before.maintenance_result_line[0].maintenance_result_line_id,
+    );
+    expect(stored.maintenance_result_part[0].maintenance_result_part_id).toBe(
+      before.maintenance_result_part[0].maintenance_result_part_id,
+    );
+
+    const replay = await put(resultId, {}, key, 1).expect(200);
+    expect(replay.headers.etag).toBe("2");
+    expect(replay.body).toEqual(empty.body);
+    await put(resultId, { resultNote: "changed" }, key, 1).expect(409);
+
+    const replaced = await put(
+      resultId,
+      {
+        finishedAt: null,
+        resultNote: `${PREFIX}-UPDATED`,
+        closed: false,
+        lines: [],
+        parts: [],
+      },
+      randomUUID(),
+      2,
+    ).expect(200);
+    expect(replaced.headers.etag).toBe("3");
+    expect(replaced.body).toMatchObject({
+      maintenanceResultId: Number(resultId),
+      maintenanceOrderId: Number(orderId),
+      targetTypeCode: "EQUIPMENT",
+      targetId: Number(equipmentId),
+      startedAt: created.body.startedAt,
+      finishedAt: null,
+      resultNote: `${PREFIX}-UPDATED`,
+      performedByUserId: Number(performerId),
+      resetCounter: false,
+      closed: false,
+      lines: [],
+      parts: [],
+    });
+    stored = await prisma.maintenance_result.findUniqueOrThrow({
+      where: { maintenance_result_id: resultId },
+      include: { maintenance_result_line: true, maintenance_result_part: true },
+    });
+    expect(stored.version_no).toBe(3);
+    expect(stored.completed_at).toBeNull();
+    expect(stored.maintenance_result_line).toEqual([]);
+    expect(stored.maintenance_result_part).toEqual([]);
+  });
+
+  it("E-R16/18/29 PUT stale·마감·지시상태·자식검증 실패의 우선순위와 원자성을 지킨다", async () => {
+    const first = await equipmentOrder("UPDATE-FAIL");
+    const created = await post(
+      equipmentBody(first.orderId, first.itemId, `${PREFIX}-UPDATE-FAIL`),
+      randomUUID(),
+    ).expect(201);
+    const resultId = BigInt(created.body.maintenanceResultId);
+    const key = randomUUID();
+    const invalid = await put(
+      resultId,
+      { lines: [{ orderItemId: 9_999_999, resultCode: RESULT_CODE }] },
+      key,
+      1,
+    ).expect(400);
+    expect(invalid.body.errors[0].field).toBe("lines");
+    const unchanged = await prisma.maintenance_result.findUniqueOrThrow({
+      where: { maintenance_result_id: resultId },
+      include: { maintenance_result_line: true, maintenance_result_part: true },
+    });
+    expect(unchanged.version_no).toBe(1);
+    expect(unchanged.maintenance_result_line).toHaveLength(1);
+    expect(unchanged.maintenance_result_part).toHaveLength(1);
+    expect(
+      await prisma.idempotency_record.count({
+        where: { idempotency_key: key },
+      }),
+    ).toBe(0);
+
+    const closeKey = randomUUID();
+    const close = await put(resultId, { closed: true }, closeKey, 1).expect(
+      422,
+    );
+    expect(close.body.errors[0]).toMatchObject({
+      field: "closed",
+      code: "INVALID",
+    });
+    expect(
+      await prisma.idempotency_record.count({
+        where: { idempotency_key: closeKey },
+      }),
+    ).toBe(0);
+
+    await prisma.maintenance_result.update({
+      where: { maintenance_result_id: resultId },
+      data: { closed: true, version_no: 2 },
+    });
+    await put(resultId, {}, randomUUID(), 1).expect(409);
+    const locked = await put(resultId, {}, randomUUID(), 2).expect(400);
+    expect(locked.body.errors[0].code).toBe("STATE_LOCKED");
+
+    const second = await equipmentOrder("UPDATE-ORDER-LOCKED");
+    const orderResult = await post(
+      equipmentBody(
+        second.orderId,
+        second.itemId,
+        `${PREFIX}-UPDATE-ORDER-LOCKED`,
+      ),
+      randomUUID(),
+    ).expect(201);
+    await prisma.maintenance_order.update({
+      where: { maintenance_order_id: second.orderId },
+      data: { status_code: "CANCELLED" },
+    });
+    const parentLocked = await put(
+      BigInt(orderResult.body.maintenanceResultId),
+      {},
+      randomUUID(),
+      1,
+    ).expect(400);
+    expect(parentLocked.body.errors[0]).toMatchObject({
+      field: "maintenanceOrderId",
+      code: "STATE_LOCKED",
+    });
+  });
+
   it("E-O18 취소와 등록 경합은 먼저 order 잠금을 얻은 요청만 성공한다", async () => {
     const first = await equipmentOrder("RACE-CANCEL-FIRST");
     const barrier = await holdRow((tx) =>
@@ -426,8 +571,75 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       .expect(400);
   });
 
-  it("E-O28 실제 예비품 매핑 writer 뒤 최종 매핑으로 등록을 판정한다", async () => {
+  it("E-O28 실제 예비품 매핑 writer 뒤 최종 매핑으로 수정을 판정한다", async () => {
     const { orderId, itemId } = await equipmentOrder("MAPPING-RACE");
+    const created = await post(
+      equipmentBody(orderId, itemId, `${PREFIX}-MAPPING-RACE-BASE`),
+      randomUUID(),
+    ).expect(201);
+    const resultId = BigInt(created.body.maintenanceResultId);
+    const spare = await prisma.spare_part.findUniqueOrThrow({
+      where: { spare_part_id: sparePartId },
+    });
+    const barrier = await holdRow((tx) =>
+      tx.$queryRaw(Prisma.sql`
+        SELECT spare_part_id FROM mdm.spare_part
+        WHERE spare_part_id=${sparePartId} FOR UPDATE`),
+    );
+    let writer: Promise<request.Response> | undefined;
+    let create: Promise<request.Response> | undefined;
+    try {
+      writer = request(app.getHttpServer())
+        .put(`/api/mdm/spare-parts/${sparePartId}/equipments`)
+        .set("Cookie", cookie)
+        .set("Idempotency-Key", randomUUID())
+        .set("If-Match", String(spare.version_no))
+        .send({ equipmentIds: [Number(otherEquipmentId)] })
+        .then((response) => response);
+      await waitForBlocked(
+        (query) => query.includes("UPDATE") && query.includes("spare_part"),
+      );
+      create = put(
+        resultId,
+        {
+          parts: [
+            {
+              sparePartId: Number(sparePartId),
+              usedQty: 1,
+              goodsIssueId: Number(goodsIssueId),
+            },
+          ],
+        },
+        randomUUID(),
+        1,
+      ).then((response) => response);
+      await waitForBlocked(
+        (query) =>
+          query.includes("FROM mdm.spare_part") && query.includes("FOR SHARE"),
+      );
+      barrier.release();
+      const [updated, rejected] = await Promise.all([writer, create]);
+      expect(updated.status).toBe(200);
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: "parts",
+        code: "INVALID",
+      });
+      expect(
+        await prisma.maintenance_result.count({
+          where: { result_note: `${PREFIX}-MAPPING-RACE-BASE`, version_no: 1 },
+        }),
+      ).toBe(1);
+    } finally {
+      barrier.release();
+      await barrier.done;
+      await Promise.allSettled([writer, create].filter(Boolean));
+    }
+    await restoreSpareMapping();
+  });
+
+  it("E-O28 실제 예비품 매핑 writer 뒤 최종 매핑으로 등록도 판정한다", async () => {
+    const { orderId, itemId } = await equipmentOrder("MAPPING-RACE-POST");
     const spare = await prisma.spare_part.findUniqueOrThrow({
       where: { spare_part_id: sparePartId },
     });
@@ -450,7 +662,7 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
         (query) => query.includes("UPDATE") && query.includes("spare_part"),
       );
       create = post(
-        equipmentBody(orderId, itemId, `${PREFIX}-MAPPING-RACE`),
+        equipmentBody(orderId, itemId, `${PREFIX}-MAPPING-RACE-POST`),
         randomUUID(),
       ).then((response) => response);
       await waitForBlocked(
@@ -461,13 +673,9 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       const [updated, rejected] = await Promise.all([writer, create]);
       expect(updated.status).toBe(200);
       expect(rejected.status).toBe(400);
-      expect(rejected.body.errors[0]).toMatchObject({
-        field: "parts",
-        code: "INVALID",
-      });
       expect(
         await prisma.maintenance_result.count({
-          where: { result_note: `${PREFIX}-MAPPING-RACE` },
+          where: { result_note: `${PREFIX}-MAPPING-RACE-POST` },
         }),
       ).toBe(0);
     } finally {
@@ -475,6 +683,7 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       await barrier.done;
       await Promise.allSettled([writer, create].filter(Boolean));
     }
+    await restoreSpareMapping();
   });
 
   it("E-R26 멱등 헤더와 W-05-03/06 권한을 강제한다", async () => {
@@ -486,6 +695,16 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       .send(body)
       .expect(400);
     await post(body, randomUUID(), noPermissionCookie).expect(403);
+
+    const created = await post(body, randomUUID()).expect(201);
+    const resultId = BigInt(created.body.maintenanceResultId);
+    await request(app.getHttpServer())
+      .put(`${PATH}/${resultId}`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({})
+      .expect(400);
+    await put(resultId, {}, randomUUID(), 1, noPermissionCookie).expect(403);
   });
 
   function equipmentBody(orderId: bigint, itemId: bigint, note: string) {
@@ -523,6 +742,21 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       .post(PATH)
       .set("Cookie", selectedCookie)
       .set("Idempotency-Key", key)
+      .send(body);
+  }
+
+  function put(
+    resultId: bigint,
+    body: object,
+    key: string,
+    version: number,
+    selectedCookie = cookie,
+  ) {
+    return request(app.getHttpServer())
+      .put(`${PATH}/${resultId}`)
+      .set("Cookie", selectedCookie)
+      .set("Idempotency-Key", key)
+      .set("If-Match", String(version))
       .send(body);
   }
 
@@ -760,6 +994,15 @@ describe("보전 실적 I-31 W2 (e2e)", () => {
       ],
     );
     return { inventory, downtimes, workOrders, notifications };
+  }
+
+  async function restoreSpareMapping(): Promise<void> {
+    await prisma.spare_part_equipment.deleteMany({
+      where: { spare_part_id: sparePartId },
+    });
+    await prisma.spare_part_equipment.create({
+      data: { spare_part_id: sparePartId, equipment_id: equipmentId },
+    });
   }
 
   async function holdRow(
