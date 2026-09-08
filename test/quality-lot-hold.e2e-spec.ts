@@ -29,6 +29,11 @@ import { PrismaService } from '../src/prisma/prisma.service';
 const PREFIX = 'I20QH';
 const LOGIN_ID = 'e2e-i20qh-probe';
 const ROLE = 'E2E_I20_LOT_HOLD';
+// ④ #30 — 「이 경로를 못 쓰는」 계정. `POST /quality/lot-holds` 는 W-03-02·W-03-03 을 요구하므로
+// 조회 전용 화면 권한 하나(W-03-01)만 준다 — 권한이 «0개»인 계정으로 재면 「로그인은 됐는데
+// 아무 권한도 없다」와 「이 기능만 없다」를 못 가른다.
+const ROLE_NO_WRITE = 'E2E_I20_LOT_HOLD_RO';
+const NO_WRITE_PERMISSION = 'W-03-01';
 // 조회 8건은 계약이 403 을 안 선언한다(`permission.guard.ts:37-41`) — 아무 화면 권한이나 충분하다.
 const PERMISSION = 'W-03-02';
 const PASSWORD = 'PR-LOT보류-비밀번호';
@@ -40,6 +45,10 @@ const T2 = '2026-02-02T00:00:00.000Z';
 // 테스트(#9b)가 `open=false` 전역 목록을 held_at DESC 로 «필터 없이» 앞 2건씩 끊어 보므로,
 // 사건 픽스처가 2월보다 «최근»이면 그 페이지 경계 앞에 끼어든다(실측 — 최초엔 3월로 뒀다가 깨졌다).
 const EV_BEFORE = '2026-01-10T00:00:00.000Z'; // 기간 «밖»(등록이 기간 전)
+// ⭐ 등록(④) 픽스처가 «미리» 심는 보류의 시각 — 위 두 묶음(2월 목록 · 1월 사건)보다 «먼저»여야
+// 한다. 목록 #9b 는 `held_at DESC` 전역 페이지의 앞 4행을 보고 자기 픽스처를 골라내므로,
+// 같은 T1 에 새 행을 심으면 그 페이지 경계가 밀려 깨진다(실측 — 최초엔 T1 로 뒀다가 깨졌다).
+const W_SEED = '2025-06-01T00:00:00.000Z';
 const EV_FROM = '2026-01-15T00:00:00.000Z'; // 기간 시작 — 동시에 T_10(경계 포함 · 동률 축)
 const T_11 = '2026-01-15T11:00:00.000Z';
 const T_12 = '2026-01-15T12:00:00.000Z';
@@ -101,6 +110,11 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   let cookie: string[];
 
   let plantId: number;
+  let legalEntityId: bigint;
+  let businessUnitId: bigint;
+  let warehouseId: number;
+  let locationId: number;
+  let noWriteCookie: string[];
   let item1Id: number;
   let item2Id: number;
   let uomId: number;
@@ -128,6 +142,24 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     // 리뷰 Minor-3 — EV_EXACT1 은 EV_EXACT2 lotNo 문자열의 «정확한 접두»다(EXACT1/EXACT2 선례와 같은 짝).
     EV_EXACT1: `LOT-EV-EXACT1-${PREFIX}`,
     EV_EXACT2: `LOT-EV-EXACT1-${PREFIX}X`,
+    // ⭐ 등록(④) 전용 — 접두어를 «다르게» 둔다. 위 조회 테스트가 `lotNo.startsWith(PREFIX)` 로
+    // 자기 픽스처만 고르는데, `PREFIX` 로 시작하면 등록이 만든 행(held_at = now · 가장 최근)이
+    // 그 고정 배열·페이지 경계 단언 앞에 끼어든다.
+    WOK1: `LOT-W-OK1-${PREFIX}`,
+    WOK2: `LOT-W-OK2-${PREFIX}`,
+    WCLAIM: `LOT-W-CLAIM-${PREFIX}`,
+    WVAL: `LOT-W-VAL-${PREFIX}`,
+    WVAL2: `LOT-W-VAL2-${PREFIX}`,
+    WVER1: `LOT-W-VER1-${PREFIX}`,
+    WVER2: `LOT-W-VER2-${PREFIX}`,
+    WDUP1: `LOT-W-DUP1-${PREFIX}`,
+    WDUP2: `LOT-W-DUP2-${PREFIX}`,
+    WQTYOK: `LOT-W-QTYOK-${PREFIX}`,
+    WQTYNG: `LOT-W-QTYNG-${PREFIX}`,
+    WPENDING: `LOT-W-PENDING-${PREFIX}`,
+    WR12A: `LOT-W-R12A-${PREFIX}`,
+    WR12B: `LOT-W-R12B-${PREFIX}`,
+    WIDEM: `LOT-W-IDEM-${PREFIX}`,
   };
 
   beforeAll(async () => {
@@ -142,6 +174,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     await makeUser();
     await makeLots();
     await makeEventLots();
+    await makeWriteLots();
   });
 
   afterAll(async () => {
@@ -571,7 +604,351 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
+  // ═══ POST /quality/lot-holds(④ · 심장 A) ═══════════════════════════════
+  //
+  // ⚠ 이 절의 테스트들은 «행을 만든다». 위 조회 절(#1~#17)의 고정 배열·`page.total` 단언이
+  //   흔들리지 않도록 셋을 지킨다: ⓐ LOT 이름이 `PREFIX` 로 «시작하지 않는다»(조회 단언이
+  //   `startsWith(PREFIX)` 로 자기 픽스처만 고른다) ⓑ 등록 시각(now)이 사건 조회 기간
+  //   `[EV_FROM, EV_TO)` «밖»이다 ⓒ 이 절이 파일 «맨 뒤»다(jest 는 선언 순서로 돈다).
+
+  it('⭐ 등록 — 201 이고 본문이 «배열»이다 · 계약 스키마를 통과한다 (↩ 객체로 내면 깨진다)', async () => {
+    const response = await postHold({
+      lots: [await refOf('WOK1')],
+      reasonCode: 'FOREIGN_MATTER_SUSPECTED',
+      targetLotStatusCode: 'INSPECTION_PENDING',
+      releaseCondition: '재검사 후 판정 대기',
+    }).expect(201);
+
+    expect(Array.isArray(response.body)).toBe(true);
+    const items = response.body as LotHoldItem[];
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      lotId: lotId.WOK1,
+      lotNo: lotNo.WOK1,
+      itemId: item1Id,
+      statusCode: 'HELD',
+      reasonCode: 'FOREIGN_MATTER_SUSPECTED',
+      // A12 ⓐ — 「이 보류가 걸었을 때 LOT 이 간 상태」(계약 `LotHold.lotStatusCode`).
+      lotStatusCode: 'INSPECTION_PENDING',
+      heldBy: heldByAId,
+    });
+    const validate = validator('POST /quality/lot-holds', 201);
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+  });
+
+  it('등록 — 빈 lots 는 400 RANGE · holdQty 0 도 400 RANGE (↩ 두 절을 지우면 깨진다)', async () => {
+    const empty = await postHold({ lots: [], reasonCode: 'OTHER', targetLotStatusCode: 'DEFECTIVE' }).expect(400);
+    expect(empty.body.errors[0]).toMatchObject({ field: 'lots', code: 'RANGE' });
+
+    const zero = await postHold({
+      lots: [await refOf('WVAL')],
+      holdQty: 0,
+      uomId,
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(400);
+    expect(zero.body.errors[0]).toMatchObject({ field: 'holdQty', code: 'RANGE' });
+  });
+
+  it('⭐ 등록 — LOT 둘이면 holdQty 를 보낼 수 없다(400 INVALID) (↩ `W-03-03` §5-3 을 빼면 깨진다)', async () => {
+    // ⛔ `uomId` 를 «함께» 보낸다 — 빠뜨리면 PAIR 가 먼저 나 이 규칙이 반증되지 않는다.
+    const rejected = await postHold({
+      lots: [await refOf('WVAL'), await refOf('WVAL2')],
+      holdQty: 10,
+      uomId,
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'holdQty', code: 'INVALID' });
+  });
+
+  it('⭐ 등록 — holdQty·uomId 는 한쪽만 오면 400 PAIR 다(500 이 «아니다») (↩ ck_lot_hold_qty_uom 으로 흘리면 500 이다)', async () => {
+    const onlyQty = await postHold({
+      lots: [await refOf('WVAL')],
+      holdQty: 10,
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(400);
+    expect(onlyQty.body.errors[0]).toMatchObject({ field: 'uomId', code: 'PAIR' });
+
+    const onlyUom = await postHold({
+      lots: [await refOf('WVAL')],
+      uomId,
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(400);
+    expect(onlyUom.body.errors[0]).toMatchObject({ field: 'holdQty', code: 'PAIR' });
+  });
+
+  it('⭐ 등록 — target=INSPECTION_PENDING 인데 releaseCondition 이 없으면 400 REQUIRED (↩ 조건부 필수를 빼면 깨진다)', async () => {
+    const rejected = await postHold({
+      lots: [await refOf('WVAL')],
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'INSPECTION_PENDING',
+    }).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'releaseCondition', code: 'REQUIRED' });
+  });
+
+  it(
+    '⭐ 등록 — target=DEFECTIVE 인데 releaseCondition 이 있으면 400 INVALID · 도착 상태가 두 값 밖이면 400 INVALID ' +
+      '(↩ 「받지 않는다」를 무시하거나 값 목록을 LOT_STATUS 4값으로 넓히면 깨진다)',
+    async () => {
+      const withCondition = await postHold({
+        lots: [await refOf('WVAL')],
+        reasonCode: 'OTHER',
+        targetLotStatusCode: 'DEFECTIVE',
+        releaseCondition: '있으면 안 된다',
+      }).expect(400);
+      expect(withCondition.body.errors[0]).toMatchObject({ field: 'releaseCondition', code: 'INVALID' });
+
+      // `NORMAL` 은 `LOT_STATUS` 시드 4값 «안»이라 `assertCodeValues` 는 통과한다 —
+      // 두 값(INSPECTION_PENDING·DEFECTIVE)으로 좁히는 절이 «없으면» 이 요청이 200 으로 샌다.
+      const wrongTarget = await postHold({
+        lots: [await refOf('WVAL')],
+        reasonCode: 'OTHER',
+        targetLotStatusCode: 'NORMAL',
+      }).expect(400);
+      expect(wrongTarget.body.errors[0]).toMatchObject({ field: 'targetLotStatusCode', code: 'INVALID' });
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — 같은 lotId 를 두 번 담으면 400 INVALID 다(404 가 «아니다») ' +
+      '(↩ 중복 검사를 빼면 `WHERE lot_id IN (n,n)` 이 한 행이라 「행수」 판정이 404 를 낸다 · §12-1 ⓑ · 결정 — 통보 081)',
+    async () => {
+      const ref = await refOf('WVAL');
+      const rejected = await postHold({
+        lots: [ref, ref],
+        reasonCode: 'CLAIM_RECALL',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'lots', code: 'INVALID' });
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVAL) } })).toBe(0);
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — lots[].versionNo 가 하나만 틀려도 «전체»가 409 이고 conflictingLotId 가 그 LOT 이다 · ' +
+      '버전 대조가 업무 게이트(DUPLICATE_HOLD)보다 «먼저» 난다 ' +
+      '(↩ 부분 성공을 허용하거나 b↔c 순서를 뒤집으면 깨진다 · 순서 판정 1)',
+    async () => {
+      const fresh = await refOf('WVER1');
+      const stale = await refOf('WVER2');
+      expect(stale.versionNo).toBe(3); // 픽스처 전제 — 보낼 토큰(1)이 «진짜로» 낡았다
+
+      const rejected = await postHold({
+        lots: [fresh, { lotId: stale.lotId, versionNo: 1 }],
+        reasonCode: 'CLAIM_RECALL',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(409);
+
+      expect(rejected.body).toMatchObject({
+        code: 'VERSION_CONFLICT',
+        conflictCause: 'user',
+        conflictingLotId: lotId.WVER2,
+        currentVersion: '3',
+        currentLotStatusCode: 'NORMAL',
+      });
+      // ⭐ WVER2 는 «열린 전량 보류»도 갖고 있다 — (b)와 (c)의 순서를 뒤집으면 이 응답이
+      //   `DUPLICATE_HOLD` 로 바뀐다. 그 자리가 이 단언의 존재 이유다.
+      expect(rejected.body.code).not.toBe('DUPLICATE_HOLD');
+      // 판정 3 — 하나라도 어긋나면 «전체» 거부다(성한 WVER1 에도 행이 안 선다).
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVER1) } })).toBe(0);
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — 열린 «전량» 보류가 있으면 409 DUPLICATE_HOLD 이고 conflictingLotId 가 «그» LOT 이다 ' +
+      '(↩ 중복 판정을 빼거나 「첫 LOT」을 실으면 깨진다)',
+    async () => {
+      const rejected = await postHold({
+        lots: [await refOf('WDUP1'), await refOf('WDUP2')],
+        reasonCode: 'CLAIM_RECALL',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(409);
+      expect(rejected.body).toMatchObject({ code: 'DUPLICATE_HOLD', conflictingLotId: lotId.WDUP2 });
+      expect(rejected.body.conflictingLotId).not.toBe(lotId.WDUP1);
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WDUP1) } })).toBe(0);
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — 기존 500 + 신규 3,500 = 보유 4,000 은 «통과»한다(경계) ' +
+      '(↩ `>` 를 `>=` 로 바꾸거나 해제된 보류 9,999 를 합계에 넣으면 깨진다)',
+    async () => {
+      // 「보유」 = `inventory_balance.on_hand_qty` 의 `lot_id` 축 합. // 결정 — 통보 076
+      const response = await postHold({
+        lots: [await refOf('WQTYOK')],
+        holdQty: 3500,
+        uomId,
+        reasonCode: 'APPEARANCE_ABNORMAL',
+        targetLotStatusCode: 'INSPECTION_PENDING',
+        releaseCondition: '외관 재검',
+      }).expect(201);
+      expect((response.body as { holdQty?: number }[])[0].holdQty).toBe(3500);
+    },
+  );
+
+  it('⭐ 등록 — 기존 500 + 신규 3,501 은 409 HOLD_QTY_EXCEEDED (↩ 합계 판정을 빼거나 열린 보류를 안 세면 깨진다)', async () => {
+    const rejected = await postHold({
+      lots: [await refOf('WQTYNG')],
+      holdQty: 3501,
+      uomId,
+      reasonCode: 'APPEARANCE_ABNORMAL',
+      targetLotStatusCode: 'INSPECTION_PENDING',
+      releaseCondition: '외관 재검',
+    }).expect(409);
+    expect(rejected.body).toMatchObject({ code: 'HOLD_QTY_EXCEEDED', conflictingLotId: lotId.WQTYNG });
+    expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WQTYNG), released_at: null } })).toBe(1);
+  });
+
+  it(
+    '⭐⭐ 등록 — 성공하면 lot_hold 1행 + lot.status_code 이동 + lot_status_event 1행이 «함께» 선다(B-8) ' +
+      '(↩ 트랜잭션을 쪼개거나 전이 배선을 빼면 깨진다)',
+    async () => {
+      const before = await refOf('WOK2');
+      expect(await statusOf('WOK2')).toBe('NORMAL');
+
+      const response = await postHold({
+        lots: [before],
+        reasonCode: 'DIMENSION_ABNORMAL',
+        targetLotStatusCode: 'INSPECTION_PENDING',
+        releaseCondition: '치수 재측정',
+      }).expect(201);
+      const holdId = (response.body as LotHoldItem[])[0].lotHoldId;
+
+      const holds = await prisma.lot_hold.findMany({ where: { lot_id: BigInt(lotId.WOK2) } });
+      expect(holds).toHaveLength(1);
+      expect(holds[0].hold_qty).toBeNull(); // ⛔ 전량 보류는 NULL 이다(0 이 아니다)
+      expect(holds[0].target_lot_status_code).toBe('INSPECTION_PENDING');
+      expect(holds[0].held_by).toBe(BigInt(heldByAId));
+
+      expect(await statusOf('WOK2')).toBe('INSPECTION_PENDING');
+
+      const events = await prisma.lot_status_event.findMany({ where: { lot_id: BigInt(lotId.WOK2) } });
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        previous_status_code: 'NORMAL',
+        new_status_code: 'INSPECTION_PENDING',
+        transition_code: 'C10',
+        source_document_type_code: 'LOT_HOLD',
+        source_document_id: BigInt(holdId),
+        reason_code: 'DIMENSION_ABNORMAL',
+        changed_by: BigInt(heldByAId),
+      });
+    },
+  );
+
+  it('⭐ 등록 — target=DEFECTIVE 는 C9 다(NORMAL LOT 에서 선다) (↩ 액션 매핑을 뒤바꾸면 transition_code 가 C10 이 된다)', async () => {
+    await postHold({
+      lots: [await refOf('WCLAIM')],
+      reasonCode: 'CLAIM_RECALL',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(201);
+    expect(await statusOf('WCLAIM')).toBe('DEFECTIVE');
+    const events = await prisma.lot_status_event.findMany({ where: { lot_id: BigInt(lotId.WCLAIM) } });
+    expect(events).toHaveLength(1);
+    expect(events[0].transition_code).toBe('C9');
+  });
+
+  it(
+    '⭐⭐ 등록 — INSPECTION_PENDING LOT 에 target=DEFECTIVE(C9)는 400 STATE_LOCKED 이고 lot_hold 가 «한 행도» 안 남는다 ' +
+      '(↩ C9 의 from 을 넓히면 200 이 된다 · 결정 — 통보 080 · 순서 판정 2·3)',
+    async () => {
+      const rejected = await postHold({
+        lots: [await refOf('WPENDING')],
+        reasonCode: 'CLAIM_RECALL',
+        targetLotStatusCode: 'DEFECTIVE',
+      }).expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      // ⭐ INSERT(e)가 전이(f)보다 «먼저» 서는데도 전체가 롤백된다 — 그것이 B-8 이다.
+      expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WPENDING) } })).toBe(0);
+      expect(await prisma.lot_status_event.count({ where: { lot_id: BigInt(lotId.WPENDING) } })).toBe(0);
+      expect(await statusOf('WPENDING')).toBe('INSPECTION_PENDING');
+    },
+  );
+
+  it(
+    '⭐⭐ 등록 — N LOT 등록에서 lot_status_event.source_document_id 가 LOT 마다 «자기» lot_hold_id 다(R-12) ' +
+      '(↩ 배치 한 칸(sourceDocumentId)으로 담으면 둘째 LOT 이 «첫» 보류를 가리켜 깨진다)',
+    async () => {
+      const response = await postHold({
+        lots: [await refOf('WR12A'), await refOf('WR12B')],
+        reasonCode: 'FOREIGN_MATTER_SUSPECTED',
+        targetLotStatusCode: 'INSPECTION_PENDING',
+        releaseCondition: '이물 재검',
+      }).expect(201);
+
+      const items = response.body as LotHoldItem[];
+      expect(items).toHaveLength(2);
+      // 반환 순서 = 입력 순서(코어 `holdWithin` 의 규약).
+      expect(items.map((i) => i.lotId)).toEqual([lotId.WR12A, lotId.WR12B]);
+      expect(items[0].lotHoldId).not.toBe(items[1].lotHoldId);
+
+      for (const item of items) {
+        const events = await prisma.lot_status_event.findMany({ where: { lot_id: BigInt(item.lotId) } });
+        expect(events).toHaveLength(1);
+        expect(events[0].source_document_type_code).toBe('LOT_HOLD');
+        expect(events[0].source_document_id).toBe(BigInt(item.lotHoldId));
+      }
+    },
+  );
+
+  it('⭐ 등록 — 없는 lotId 가 섞이면 404 다(400 이 «아니다») (↩ 계약이 404 를 선언한 것을 뒤집으면 깨진다)', async () => {
+    await postHold({
+      lots: [await refOf('WVAL'), { lotId: 999999999, versionNo: 1 }],
+      reasonCode: 'CLAIM_RECALL',
+      targetLotStatusCode: 'DEFECTIVE',
+    }).expect(404);
+    expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVAL) } })).toBe(0);
+  });
+
+  it('등록 — 권한 없는 계정은 403 (↩ 게이트를 빼면 201 이 된다)', async () => {
+    await postHold(
+      { lots: [await refOf('WVAL')], reasonCode: 'CLAIM_RECALL', targetLotStatusCode: 'DEFECTIVE' },
+      { asCookie: noWriteCookie },
+    ).expect(403);
+    expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WVAL) } })).toBe(0);
+  });
+
+  it('⭐ 등록 — 같은 Idempotency-Key 재전송이 새 행을 안 만든다 (↩ runIdempotent 를 빼면 두 행이 선다)', async () => {
+    const key = randomUUID();
+    const body = {
+      lots: [await refOf('WIDEM')],
+      reasonCode: 'OTHER',
+      targetLotStatusCode: 'INSPECTION_PENDING',
+      releaseCondition: '재확인',
+    };
+    const first = await postHold(body, { key }).expect(201);
+    const again = await postHold(body, { key }).expect(201);
+
+    expect((again.body as LotHoldItem[])[0].lotHoldId).toBe((first.body as LotHoldItem[])[0].lotHoldId);
+    expect(await prisma.lot_hold.count({ where: { lot_id: BigInt(lotId.WIDEM) } })).toBe(1);
+    expect(await prisma.lot_status_event.count({ where: { lot_id: BigInt(lotId.WIDEM) } })).toBe(1);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** 등록 본문의 `lots[]` 한 항목 — ⭐ `version_no` 는 전이 때마다 오르므로 «지금» 읽는다. */
+  async function refOf(key: string): Promise<{ lotId: number; versionNo: number }> {
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId[key]) } });
+    return { lotId: lotId[key], versionNo: lot.version_no };
+  }
+
+  async function statusOf(key: string): Promise<string> {
+    return (await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId[key]) } })).status_code;
+  }
+
+  /** ⛔ `If-Match` 를 «안» 보낸다 — 이 등록만 토큰을 본문 `lots[].versionNo` 로 싣는다(계약 `:4091`). */
+  function postHold(body: object, options: { asCookie?: string[]; key?: string } = {}) {
+    return request(app.getHttpServer())
+      .post('/api/quality/lot-holds')
+      .set('Cookie', options.asCookie ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID())
+      .send(body);
+  }
+
 
   /** `size` 를 넉넉히 준다 — 목록 질의에 `plantId` 축이 없어(계약 10칸) 다른 슬라이스의 fixture 도 섞일 수 있다. */
   async function listAll(query: string): Promise<LotHoldListBody> {
@@ -591,11 +968,11 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     return response.body as LotHoldEventListBody;
   }
 
-  async function login(): Promise<string[]> {
+  async function login(loginId = LOGIN_ID): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
@@ -619,16 +996,45 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       data: { login_id: `${LOGIN_ID}-b`, user_name: 'LOT보류검사행위자B', status_code: 'EMPLOYED' },
     });
     heldByBId = Number(other.app_user_id);
+
+    // ④ #30 — 등록 권한이 «없는» 계정.
+    const readOnly = await prisma.app_user.create({
+      data: { login_id: `${LOGIN_ID}-c`, user_name: 'LOT보류검사조회전용', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: readOnly.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    const readOnlyRole = await prisma.role.create({ data: { role_code: ROLE_NO_WRITE, role_name: 'LOT보류조회전용' } });
+    await prisma.role_permission.create({
+      data: { role_id: readOnlyRole.role_id, permission_code: NO_WRITE_PERMISSION },
+    });
+    await prisma.user_role.create({ data: { app_user_id: readOnly.app_user_id, role_id: readOnlyRole.role_id } });
+    noWriteCookie = await login(`${LOGIN_ID}-c`);
   }
 
   async function makeMasters(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'LOT보류검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    legalEntityId = entity.legal_entity_id;
+    const unit = await prisma.business_unit.create({
+      data: { legal_entity_id: entity.legal_entity_id, business_unit_code: `${PREFIX}-BU`, business_unit_name: 'LOT보류검사사업부' },
+    });
+    businessUnitId = unit.business_unit_id;
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: 'LOT보류검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
     plantId = Number(plant.plant_id);
+
+    // ④ #25·#26 — `inventory_balance.on_hand_qty` 가 「보유 수량」의 원천이라 창고·위치가 필요하다.
+    const warehouse = await prisma.warehouse.create({
+      data: { plant_id: plant.plant_id, business_unit_id: unit.business_unit_id, warehouse_code: `${PREFIX}-WH`, warehouse_name: 'LOT보류검사창고', warehouse_type_code: 'RAW', management_level_code: 'LOCATION' },
+    });
+    warehouseId = Number(warehouse.warehouse_id);
+    const location = await prisma.location.create({
+      data: { warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LOC`, location_name: 'LOT보류검사위치', location_type_code: 'BIN' },
+    });
+    locationId = Number(location.location_id);
 
     const uom = await prisma.uom.findFirstOrThrow();
     uomId = Number(uom.uom_id);
@@ -835,6 +1241,91 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     lotHoldId.EV_EXACT2 = Number(evExact2.lot_hold_id);
   }
 
+  /**
+   * ⭐ 등록(④) 전용 픽스처. LOT 열넷 — 이름은 `PREFIX` 로 «시작하지 않는다»(조회 단언 보호).
+   * - WOK1·WOK2 — `NORMAL`. 성공 경로(#18 배열 · #27 세 행이 함께 선다).
+   * - WCLAIM — `NORMAL`. C9(target=DEFECTIVE)가 «서는» 쪽(액션 매핑 반증).
+   * - WVAL·WVAL2 — `NORMAL`. 400 갈래 전용(행을 만들지 않는다). WVAL 은 404·중복·403 도 쓴다.
+   * - WVER1 — `NORMAL`(버전 그대로). WVER2 — `version_no=3` 으로 올리고 **열린 전량 보류**를
+   *   함께 심는다. ⭐ 그 보류가 **판정 1**(버전 대조가 업무 게이트보다 먼저)의 반증 장치다 —
+   *   순서를 뒤집으면 #23 의 응답이 `DUPLICATE_HOLD` 로 바뀐다.
+   * - WDUP1(보류 0) · WDUP2(열린 전량 보류) — `conflictingLotId` 가 «둘째» LOT 인 것을 잠근다
+   *   (「첫 LOT 을 싣는다」로 바꾸면 깨진다).
+   * - WQTYOK·WQTYNG — 잔액 4,000 + 열린 «부분» 보류 500. ⭐ WQTYOK 에는 **해제된** 보류
+   *   9,999 도 심는다 — `released_at IS NULL` 필터를 지우면 경계 통과(#25)가 깨진다.
+   * - WPENDING — `INSPECTION_PENDING`. C9 의 `from` 밖(#28 · 통보 080).
+   * - WR12A·WR12B — `NORMAL` 둘. R-12(LOT 마다 자기 `lot_hold_id`).
+   * - WIDEM — `NORMAL`. 멱등 재전송.
+   */
+  async function makeWriteLots(): Promise<void> {
+    for (const key of ['WOK1', 'WOK2', 'WCLAIM', 'WVAL', 'WVAL2', 'WVER1', 'WDUP1', 'WR12A', 'WR12B', 'WIDEM']) {
+      lotId[key] = await newLot(key, item1Id, 'NORMAL');
+    }
+    lotId.WPENDING = await newLot('WPENDING', item1Id, 'INSPECTION_PENDING');
+
+    lotId.WVER2 = await newLot('WVER2', item1Id, 'NORMAL');
+    await prisma.lot.update({ where: { lot_id: BigInt(lotId.WVER2) }, data: { version_no: 3 } });
+    await newFullHold(lotId.WVER2);
+
+    lotId.WDUP2 = await newLot('WDUP2', item1Id, 'NORMAL');
+    await newFullHold(lotId.WDUP2);
+
+    lotId.WQTYOK = await newLot('WQTYOK', item1Id, 'NORMAL');
+    await newBalance(lotId.WQTYOK, 4000);
+    await newPartialHold(lotId.WQTYOK, 500);
+    // 「안 걸리는 행」 — 해제된 보류는 합계에 들지 않는다(필터를 지우면 #25 가 409 로 깨진다).
+    await prisma.lot_hold.create({
+      data: {
+        lot_id: lotId.WQTYOK,
+        hold_qty: 9999,
+        uom_id: BigInt(uomId),
+        reason_code: 'OTHER',
+        status_code: 'HELD',
+        held_at: new Date(W_SEED),
+        released_at: new Date(W_SEED),
+        release_reason_code: 'INVESTIGATION_CLEARED',
+      },
+    });
+
+    lotId.WQTYNG = await newLot('WQTYNG', item1Id, 'NORMAL');
+    await newBalance(lotId.WQTYNG, 4000);
+    await newPartialHold(lotId.WQTYNG, 500);
+  }
+
+  function newFullHold(forLotId: number) {
+    return prisma.lot_hold.create({
+      // ⛔ 전량 보류는 `hold_qty` 가 **NULL** 이다(0 이 아니다) — DUPLICATE_HOLD 의 판정 축.
+      data: { lot_id: forLotId, reason_code: 'CLAIM_RECALL', status_code: 'HELD', held_at: new Date(W_SEED) },
+    });
+  }
+
+  function newPartialHold(forLotId: number, qty: number) {
+    return prisma.lot_hold.create({
+      data: { lot_id: forLotId, hold_qty: qty, uom_id: BigInt(uomId), reason_code: 'DIMENSION_ABNORMAL', status_code: 'HELD', held_at: new Date(W_SEED) },
+    });
+  }
+
+  function newBalance(forLotId: number, onHandQty: number) {
+    return prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: legalEntityId,
+        business_unit_id: businessUnitId,
+        plant_id: BigInt(plantId),
+        warehouse_id: BigInt(warehouseId),
+        location_id: BigInt(locationId),
+        item_id: BigInt(item1Id),
+        lot_id: BigInt(forLotId),
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        ownership_type_code: 'OWNED',
+        on_hand_qty: onHandQty,
+        // 미끼 — 계약이 두 자리에서 「`blocked_qty` 를 쓰지 않는다」고 못 박았다(`:1845`·`:4299`).
+        blocked_qty: 999,
+        uom_id: BigInt(uomId),
+      },
+    });
+  }
+
   async function newLot(key: string, forItemId: number, statusCode: string, lotTypeCode = 'MATERIAL'): Promise<number> {
     const lot = await prisma.lot.create({
       data: {
@@ -852,15 +1343,24 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     return Number(lot.lot_id);
   }
 
-  /** 자가 치유 — 역순(§8-2): lot_hold → lot → item → plant → legal_entity → app_user/role. */
+  /**
+   * 자가 치유 — 역순(§8-2): lot_status_event·lot_hold·inventory_balance → lot → location →
+   * warehouse → item → plant → business_unit → legal_entity → app_user/role.
+   * ⭐ `lot_status_event` 는 ④ 가 처음 만든다 — 빼면 `lot` 삭제가 FK 로 막힌다.
+   */
   async function cleanup(): Promise<void> {
+    await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    await prisma.inventory_balance.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
+    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
+    await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
 
-    for (const loginId of [LOGIN_ID, `${LOGIN_ID}-b`]) {
+    for (const loginId of [LOGIN_ID, `${LOGIN_ID}-b`, `${LOGIN_ID}-c`]) {
       const user = await prisma.app_user.findUnique({ where: { login_id: loginId } });
       if (!user) continue;
       await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
@@ -868,8 +1368,9 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const roleCode of [ROLE, ROLE_NO_WRITE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: roleCode } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }
