@@ -114,7 +114,7 @@ describe('LotQualityStatusService', () => {
     );
   });
 
-  it('⛔ 재등록은 전이표에 코드가 없다 — 호출자가 넘겨야 돈다 (문의 069+12)', async () => {
+  it('⛔ 재등록은 전이표에 코드가 없다 — 호출자가 넘겨야 돈다 (문의 089 · 발행 예정)', async () => {
     const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'DEFECTIVE' }]);
 
     // 계약 enum 9값(C4~C15)에 재등록을 가리키는 코드가 없다. 지어내지 않으므로

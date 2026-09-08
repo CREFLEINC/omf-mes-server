@@ -18,7 +18,7 @@ export interface LotQualityMoveContext {
   sourceDocumentId?: bigint;
   reasonCode?: string;
   reason?: string;
-  /** 전이표에 코드가 없는 자리(재등록)만 채운다 — 설계 미정 · 문의 069+12. */
+  /** 전이표에 코드가 없는 자리(재등록)만 채운다 — 설계 미정 · 문의 089(발행 예정). */
   transitionCode?: string;
 }
 

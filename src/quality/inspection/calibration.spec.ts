@@ -49,7 +49,7 @@ describe('CalibrationIndex — 교정 만료 판정(§4-4 · R-13)', () => {
     expect(index.expiredAt(1n, at('2026-07-31'))).toBe(true); // 검교정 «이전»도 근거가 없다
   });
 
-  it('`valid_until` 이 비면 그 검교정 뒤로는 만료다(문의 후보 069+9)', async () => {
+  it('`valid_until` 이 비면 그 검교정 뒤로는 만료다(미발행 · I-19 §9-2 후보 9)', async () => {
     const index = await indexOf(
       [{ equipment_id: 1n, calibration_due_date: null }],
       [{ equipment_id: 1n, calibration_date: day('2026-08-01'), valid_until: null }],

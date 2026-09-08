@@ -73,7 +73,7 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
    */
   const UNOPENED_TRANSITION_CODES: Record<string, string[]> = {
     // C15(전수 재검 양품)는 C4 와 (from, to) 가 같은데 어느 LOT 이 C14 로 그 자리에 왔는지
-    // 가릴 표식이 데이터에 없다 — 지어내지 않는다(F-6 · 문의 069+8).
+    // 가릴 표식이 데이터에 없다 — 지어내지 않는다(F-6 · 미발행 · I-19 §9-2 후보 8).
     'trace.lot.status_code': ['C15'],
   };
 
@@ -145,7 +145,7 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
 
   it('전이가 남길 자리가 실재한다 — 축마다 이력 표가 다르다', async () => {
     // 품질 판정 축은 `lot_status_event` 가 받는다. 그 칸이 NOT NULL 이라 코드 없는 전이
-    // (재등록 · 문의 069+12)는 이 표에 실릴 수 없다.
+    // (재등록 · 문의 089 · 발행 예정)는 이 표에 실릴 수 없다.
     const columns = await prisma.$queryRaw<{ table_name: string; is_nullable: string }[]>`
       SELECT table_name, is_nullable FROM information_schema.columns
        WHERE table_schema = 'trace' AND column_name = 'transition_code'
