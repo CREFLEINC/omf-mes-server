@@ -48,7 +48,7 @@ export interface LotStatusView {
  * NULL 이 되는 함정을 피한다 — R-19 #9). 잔액 행이 0 인 LOT(L7)은 `onHandQty`·`availableQty`·
  * `uomId`·창고·위치를 **키 생략**한다(0 이 아니라 「모른다」 — L-8). ⚠ `uomId` 는 `lot_hold.uom_id`
  * 와 다를 수 있고 `uq_inventory_balance_dim` 밖이라 창고·위치와 같은 「값이 하나일 때만」 규칙을
- * 적용한다 — 단위 축을 판정한 흔적이고 문의 075 를 넓히는 자리다(R-11).
+ * 적용한다 — 단위 축을 판정한 흔적이고 이 자리를 넓힌다(미발행 · I-20 §9-2 후보 075 · R-11).
  */
 export function lotStatusView(row: LotStatusRow): LotStatusView {
   const onHandQty = row.on_hand_qty === null || row.on_hand_qty === undefined ? undefined : num(row.on_hand_qty);

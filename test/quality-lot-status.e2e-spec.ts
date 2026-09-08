@@ -138,6 +138,13 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'sort', code: 'INVALID' });
   });
 
+  it('목록 — sort=latestTransitionAsc 는 NULL 이 뒤로 가고 lot_id ASC 로 동률을 깬다(Minor-4 — 기본 정렬만 돌리면 반대 방향의 NULLS LAST 버그를 놓친다)', async () => {
+    const body = await list(`plantId=${plantId}&sort=latestTransitionAsc`);
+    expect(body.items.map((i) => i.lotNo)).toEqual(
+      ['L2', 'L3', 'L4', 'L5', 'L1', 'L6', 'L7'].map((k) => lotNo[k]),
+    );
+  });
+
   it('목록 — 보류가 «없는» LOT(L6)이 excludeFullyHeld=true 에서 사라지지 않는다 · 전량 보류(L2·L4)는 사라진다 (↩ NOT EXISTS 를 nullable 조인 칸의 NOT(…) 으로 바꾸면 L6 이 사라진다)', async () => {
     const body = await list(`plantId=${plantId}&excludeFullyHeld=true`);
     const names = body.items.map((i) => i.lotNo);
@@ -166,6 +173,35 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     expect(l6.locationId).toBeUndefined();
     expect(l1.warehouseId).toBe(warehouse1Id);
     expect(l1.locationId).toBe(location1Id);
+  });
+
+  it('목록 — warehouseId 필터가 «창고가 둘인» L6 을 살린다(Major-2 — 접힌 bal.warehouse_id 로 걸면 L6 이 사라진다)', async () => {
+    const body = await list(`plantId=${plantId}&warehouseId=${warehouse1Id}`);
+    const names = body.items.map((i) => i.lotNo);
+    expect(names).toContain(lotNo.L6);
+    expect(names).not.toContain(lotNo.L7);
+  });
+
+  it('목록 — locationId 도 같다(Major-2)', async () => {
+    const body = await list(`plantId=${plantId}&locationId=${location1Id}`);
+    const names = body.items.map((i) => i.lotNo);
+    expect(names).toContain(lotNo.L6);
+    expect(names).not.toContain(lotNo.L7);
+  });
+
+  it('목록 — itemId·lotStatusCode·lotTypeCode 필터가 각각 «걸리는 행»과 «안 걸리는 행»을 가른다', async () => {
+    const byOtherItem = await list(`plantId=${plantId}&itemId=${itemId + 1}`);
+    expect(byOtherItem.items).toHaveLength(0);
+    const byItem = await list(`plantId=${plantId}&itemId=${itemId}`);
+    expect(byItem.items.map((i) => i.lotNo)).toContain(lotNo.L1);
+
+    const byStatus = await list(`plantId=${plantId}&lotStatusCode=DEFECTIVE`);
+    expect(byStatus.items.map((i) => i.lotNo)).toEqual([lotNo.L4]);
+
+    const byOtherType = await list(`plantId=${plantId}&lotTypeCode=PACKAGING`);
+    expect(byOtherType.items).toHaveLength(0);
+    const byType = await list(`plantId=${plantId}&lotTypeCode=MATERIAL`);
+    expect(byType.items.map((i) => i.lotNo)).toContain(lotNo.L1);
   });
 
   it('목록 — 잔액 행이 0인 L7 도 나온다(LEFT JOIN) — onHandQty 키가 «없다» (↩ INNER JOIN 으로 바꾸면 L7 이 사라진다)', async () => {
@@ -408,6 +444,9 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     lotId.L7 = await newLot('L7', 'SCRAPPED');
 
     await newBalance(lotId.L1, warehouse1Id, location1Id, 4000);
+    // L1 — 창고2 에 0 수량 잔액 행(Major-1 반증) — 전량 이동/소진 뒤 남는 0 행이 창고 접기를
+    // 「창고가 둘」로 잘못 세면 안 된다(아래 「창고가 하나뿐인 L1」 단언이 이 행으로 못 박는다).
+    await newBalance(lotId.L1, warehouse2Id, location2Id, 0);
     await newBalance(lotId.L2, warehouse1Id, location1Id, 1000);
     await newBalance(lotId.L3, warehouse1Id, location1Id, 4000, { blockedQty: 999 });
     await newBalance(lotId.L4, warehouse1Id, location1Id, 800);

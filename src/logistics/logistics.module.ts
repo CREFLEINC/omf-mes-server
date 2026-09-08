@@ -44,6 +44,9 @@ import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
 import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
 import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.service';
+import { StockTransferQueryService } from './stock-transfer/stock-transfer-query.service';
+import { StockTransferService } from './stock-transfer/stock-transfer.service';
+import { StockTransferController } from './stock-transfer/stock-transfer.controller';
 
 /**
  * 계약 최상위 경로 `/logistics` — 입하·출고·적치·이동·출하·P/O 요청.
@@ -74,6 +77,7 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
     InboundVarianceController,
     MaterialIssueRequestController,
     ShopfloorReceiptController,
+    StockTransferController,
   ],
   providers: [
     GoodsIssueQueryService,
@@ -98,6 +102,8 @@ import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.s
     MaterialIssueRequestService,
     ShopfloorReceiptQueryService,
     ShopfloorReceiptService,
+    StockTransferQueryService,
+    StockTransferService,
   ],
 })
 export class LogisticsModule {}

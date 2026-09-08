@@ -234,7 +234,7 @@ export class InspectionResultWriteService {
       });
       if (worker !== null) return worker.worker_id;
     }
-    throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '검사자를 풀 수 없습니다 — 사번 헤더를 싣거나 계정에 작업자를 연결하세요(미발행 · I-19 §9-2 후보 11).'));
+    throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '검사자를 풀 수 없습니다 — 사번 헤더를 싣거나 계정에 작업자를 연결하세요.'));
   }
 
   /**
