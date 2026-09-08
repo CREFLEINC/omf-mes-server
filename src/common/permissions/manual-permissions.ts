@@ -258,4 +258,15 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 등록을 요구한다(미등록이면 500 · 선례 `PUT /logistics/goods-issues/{id}/lines`). 소유자를
   // 이동 문서의 유일한 화면으로 둔다 — 잠정(설계 미정 · 문의 123).
   'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
+
+  // `GET /app/approval-requests` — ⭐ 도출표에 «이미 있는» 키에 호출 셸을 더한다(`GET /app/users` 와 같은 모양).
+  // 도출표는 `['W-01-13','W-03-09','W-CO-09']` 인데 계약이 이름 적은 호출자 둘이 빠져 있다:
+  //  · `M-01-13` — 오퍼레이션 description 「⭐ 부르는 셸이 «둘»이다 — 관리웹 결재함(W-CO-09)과
+  //    **모바일 상신 화면(M-01-13 의 「내가 올린 요청」 구획)**」 · `requestedByMe` 근거 「M-01-13 §4」.
+  //  · `W-01-02` — `assignedToMe` description 「승인 화면은 관리웹뿐이라(W-CO-09·**W-01-02**·W-03-09)」.
+  //    셋 중 둘은 도출표에 있고 이것만 없다.
+  // 원인은 181 과 같다 — 도출 원천인 요구서 §3 이 화면보다 낡았다. // 결정 — 통보 189
+  // ⛔ `M-CO-01` 은 넣지 않는다 — 계약이 그 이름을 「모바일 셸에는 계정 로그인이 없다(M-CO-01 §2)」로
+  //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
+  'GET /app/approval-requests': ['M-01-13', 'W-01-02'],
 };

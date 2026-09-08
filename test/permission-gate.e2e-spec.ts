@@ -202,7 +202,8 @@ describe('권한 게이트 (e2e)', () => {
   });
 
   it('⭐ 여러 화면이 쓰는 경로는 그중 하나만 있으면 된다', async () => {
-    // GET /app/approval-requests 는 W-03-09 · W-CO-09 둘이 쓴다.
+    // GET /app/approval-requests 는 다섯이 쓴다 — 도출 W-01-13·W-03-09·W-CO-09 +
+    // 수동 M-01-13·W-01-02(통보 189). 그중 하나만 있으면 된다.
     await grant('W-CO-09');
     const session = await request(app.getHttpServer())
       .get('/api/app/sessions/current')
