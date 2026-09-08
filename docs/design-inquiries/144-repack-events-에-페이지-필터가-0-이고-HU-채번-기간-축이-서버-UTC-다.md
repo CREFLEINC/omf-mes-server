@@ -2,6 +2,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| **구분** | **통보** — 질의 칸·정렬 축이 계약에 서면 호환으로 는다(오늘 저장하는 데이터가 달라지지 않는다) |
 | 걸리는 오퍼레이션 | `GET /inventory/handling-units/{handlingUnitId}/repack-events` · `POST /inventory/handling-units` |
 | 구현 상태 | **구현 예정(I-16 · 계획만 병합됨 · 오늘 코드 0줄 · 이력 표도 아직 없다 — 문의 140)** |
 | 판정 | 조회 쪽 `coverage-100/README.md` §2 **1단계 계약 문자 그대로**(응답 스키마에 `page` 가 없다 → 전건 반환). 채번 기간 축 **0단계 선례**(I-10 `MATERIAL_RETURN` — 「기간 축은 서버 시각 UTC 날짜」) |

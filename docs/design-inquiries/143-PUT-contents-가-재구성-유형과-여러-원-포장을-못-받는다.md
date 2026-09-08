@@ -2,6 +2,7 @@
 
 | 칸 | 내용 |
 |---|---|
+| **구분** | **통보** — ⓓ(빈 배열 허용)를 **지금 정한다** — 계약이 `minItems` 를 `:pack` 에만 건 것을 명시 신호로 읽는다. ⓐⓑⓒ 는 담을 칸이 없어 형식만 보고 버린다 |
 | 걸리는 오퍼레이션 | `PUT /inventory/handling-units/{handlingUnitId}/contents` · `POST /inventory/handling-units/{handlingUnitId}:pack`(ⓒⓓ) |
 | 구현 상태 | **구현 예정(I-16 · 계획만 병합됨 · 오늘 코드 0줄)** |
 | 판정 | ⓐⓑ `coverage-100/README.md` §2 **2단계 기준 4**(값을 조용히 도출하지 않는다 — 수량 모양으로 `MERGE`/`SPLIT` 을 추론하지 않는다) · ⓒ **`plan.md` §5 규칙 7**(담을 칸 0 → 형식만 보고 버린다) · ⓓ **1단계 계약 문자 그대로**(계약이 `minItems` 를 `:pack` 에만 걸었다 = 명시 신호 → 허용) |
