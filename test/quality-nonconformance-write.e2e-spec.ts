@@ -107,7 +107,10 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
   it('⭐ 등록 — 201 · 채번 접두어 NC- · statusCode 는 서버가 NOT_REQUESTED 로 연다', async () => {
     const response = await post(NONCONFORMANCES).send(createBody()).expect(201);
 
-    expect(response.body.nonconformanceNo).toMatch(/^NC-\d{8}-\d{4}$/);
+    // ⛔ 변이 점검 M51 — 기간 축이 「서버 시각의 UTC 달력일」이다. `\d{8}` 로만 재면 고정 날짜
+    //   상수로 바꿔도 초록이라 리셋 주기가 죽는 것을 못 본다.
+    const todayUtc = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    expect(response.body.nonconformanceNo).toMatch(new RegExp(`^NC-${todayUtc}-\\d{4}$`));
     expect(response.body).toMatchObject({
       itemId: Number(ids.item1),
       severityCode: 'MAJOR',
@@ -131,6 +134,11 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
     expect(row.closed_at).toBeNull();
     // 서버 수신 시각이다 — 본문에 그 칸이 없다(B-6).
     expect(row.opened_at.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    // 감사 칸은 계약 응답에 없다 — DB 로만 볼 수 있어 여기서 잠근다(세션 주체가 원천이다).
+    expect(row.created_by).toBe(userId);
+    expect(row.updated_by).toBe(userId);
+    const lotRow = await prisma.nonconformance_lot.findFirstOrThrow({ where: { nonconformance_id: row.nonconformance_id } });
+    expect(lotRow.created_by).toBe(userId);
   });
 
   it('⭐⭐ 등록 — 다중 LOT: 합은 Decimal 산술이고, before/after 는 «LOT 자신의» 상태다', async () => {
@@ -218,6 +226,11 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
 
     expect(replay.body.nonconformanceId).toBe(first.body.nonconformanceId);
     expect(await prisma.nonconformance_lot.count({ where: { lot_id: lotIds.IDEM } })).toBe(1);
+    // ⛔ 변이 점검 M44 가 찾은 구멍 — `runIdempotent` 의 성공 상태 인자는 «HTTP 상태»가 아니라
+    //   기록에만 남는다(HTTP 201 은 `@Post` 기본값이라 인자를 200 으로 바꿔도 응답이 안 변한다).
+    //   그 인자가 틀리면 «재생»이 200 으로 나가므로 저장된 값을 직접 단언한다.
+    const record = await prisma.idempotency_record.findUniqueOrThrow({ where: { idempotency_key: key } });
+    expect(record.response_status).toBe(201);
   });
 
   it('⭐ 등록 — 종결된 부적합만 있는 LOT 은 «다시» 등록된다(판정은 closed_at IS NULL 로만 한다)', async () => {
@@ -236,10 +249,15 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
     expect(response.body.errors).not.toContainEqual(expect.objectContaining({ field: 'severityCode' }));
   });
 
-  it('⭐⭐ 순서 — 코드값 대조가 참조 존재보다 앞이다(밖 severityCode + 없는 itemId → severityCode INVALID)', async () => {
-    const response = await post(NONCONFORMANCES).send(createBody({ severityCode: 'NOPE_XYZ', itemId: 999999999 })).expect(400);
+  it('⭐⭐ 순서 — 코드값 대조가 본문 형식·참조 존재보다 «둘 다» 앞이다', async () => {
+    // ⛔ 변이 점검 M16b 가 찾은 구멍 — 참조 존재만 겨누면 「코드값 ↔ 본문 형식」 순서가 안 보인다.
+    const withMissingItem = await post(NONCONFORMANCES).send(createBody({ severityCode: 'NOPE_XYZ', itemId: 999999999 })).expect(400);
+    const withBadQty = await post(NONCONFORMANCES)
+      .send(createBody({ severityCode: 'NOPE_XYZ', lots: [{ lotId: Number(lotIds.VAL), affectedQty: 0, uomId: Number(ids.uomA) }] }))
+      .expect(400);
 
-    expect(response.body.errors[0]).toMatchObject({ field: 'severityCode', code: 'INVALID' });
+    expect(withMissingItem.body.errors[0]).toMatchObject({ field: 'severityCode', code: 'INVALID' });
+    expect(withBadQty.body.errors[0]).toMatchObject({ field: 'severityCode', code: 'INVALID' });
   });
 
   it('⭐⭐ 순서 — 같은 LOT 두 번이 수량 검사보다 앞이다(중복 + affectedQty 0 → lots[1].lotId INVALID)', async () => {
@@ -249,6 +267,22 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
           lots: [
             { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
             { lotId: Number(lotIds.VAL), affectedQty: 0, uomId: Number(ids.uomA) },
+          ],
+        }),
+      )
+      .expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ field: 'lots[1].lotId', code: 'INVALID' });
+  });
+
+  it('⭐⭐ 순서 — 같은 LOT 두 번이 단위 일치보다 앞이다(중복 + 단위 혼합 → lots[1].lotId INVALID)', async () => {
+    // ⛔ 변이 점검 M10 이 찾은 구멍 — 두 검사가 한 요청에서 «동시에» 걸려야 상대 순서가 보인다.
+    const response = await post(NONCONFORMANCES)
+      .send(
+        createBody({
+          lots: [
+            { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomA) },
+            { lotId: Number(lotIds.VAL), affectedQty: 5, uomId: Number(ids.uomB) },
           ],
         }),
       )
@@ -404,6 +438,8 @@ describe('부적합 등록 · 처분 판정 의뢰 (e2e)', () => {
 
     const row = await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: BigInt(ncIds.idem) } });
     expect(row.version_no).toBe(2);
+    const record = await prisma.idempotency_record.findUniqueOrThrow({ where: { idempotency_key: key } });
+    expect(record.response_status).toBe(200);
   });
 
   it('⭐ 의뢰 — requestedQty 의 「한계와 같은 값」(=1)은 통과다(`>=` 이지 `>` 가 아니다)', async () => {
