@@ -197,6 +197,17 @@ fork(fable) 는 이 대화를 다 안고 가서 비싸므로 통합 단계 외�
 > **⑸ 경계 픽스처의 숫자가 «정말» 그 함정을 건드리는지 재 봐라.** ⛔ `0.15 + 0.15 === 0.3` 은
 > JS 에서 **`true`** 다(함정 아님). `0.1 + 0.2` 를 써라. `numeric(20,6)` 경계는 **소수 여섯째 자리**와
 > **유효자릿수 16 초과**가 서로 다른 자리다.
+>
+> **⑹ ⭐ 「키를 생략한다」는 HTTP e2e 로 «구조적으로» 반증되지 않는다 — 뷰 «단위» spec 으로 잠근다.**
+> `omitEmpty`(`src/common/http/omit-empty.ts`)도, `?? undefined` 도 마찬가지다. **`JSON.stringify` 가
+> `undefined` 값 키를 이미 떨어뜨리기 때문**에, 그 코드를 통째로 지워도 e2e 는 초록이다.
+> ⇒ **뷰 파일마다 `*-view.spec.ts` 에 `expect(view(...)).not.toHaveProperty('키')` 한 줄**을 둔다.
+> ⭐ 저장소에 **이미 18벌의 선례**가 있다(`work-order-view`·`production-result-view`·`concession-view`·
+> `disposition-view`·`notification-view`·`inspection-result-view` 등 · `not.toHaveProperty` 42회 · `not.toContain` 16회).
+> 실측으로 확인했다 — `omitEmpty` 를 항등 함수로 바꾸면 **18 스위트 / 32건이 깨진다.**
+> ⛔ **「HTTP 로 못 잡으니 반증 불가다」로 결론짓지 마라**(I-22 PR ③b 가 그렇게 보고했고 틀렸다).
+> 그 뷰의 단위 spec 이 «없어서» 안 잡힌 것이다. **e2e 가 못 보는 축은 단위 spec 이 본다** — 축이 없는 게 아니라
+> 그물을 안 친 것이다.
 
 **⛔ 그리고 하나 더 — 고쳤으면 «망가뜨려서 다시» 확인해라.**
 2026-09-09 에 **리뷰어가 제안한 처방이 두 번 헛수고**였다: ⓐ 제안한 픽스처의 값이 우연히 덮어쓸 값과
