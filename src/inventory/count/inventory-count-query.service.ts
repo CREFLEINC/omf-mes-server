@@ -34,7 +34,7 @@ export interface InventoryCountLineQuery {
   size?: unknown;
 }
 
-type CountClient = Pick<Prisma.TransactionClient, 'inventory_count_line'>;
+type CountClient = Pick<Prisma.TransactionClient, 'inventory_count' | 'inventory_count_line'>;
 
 @Injectable()
 export class InventoryCountQueryService {
@@ -56,14 +56,22 @@ export class InventoryCountQueryService {
   }
 
   async get(inventoryCountId: number): Promise<{ detail: InventoryCountDetail; versionNo: number }> {
-    const row = await this.prisma.inventory_count.findUnique({
+    return this.getWithin(this.prisma, inventoryCountId);
+  }
+
+  /** 생성·마감은 커밋 전 응답까지 같은 멱등 트랜잭션에서 읽는다. */
+  async getWithin(
+    prisma: CountClient,
+    inventoryCountId: number,
+  ): Promise<{ detail: InventoryCountDetail; versionNo: number }> {
+    const row = await prisma.inventory_count.findUnique({
       where: { inventory_count_id: inventoryCountId },
     });
     if (row === null) throw new NotFoundException('없는 재고 실사입니다.');
     return {
       detail: {
         inventoryCount: inventoryCountView(row),
-        summary: await inventoryCountSummary(this.prisma, row.inventory_count_id, row.status_code),
+        summary: await inventoryCountSummary(prisma, row.inventory_count_id, row.status_code),
       },
       versionNo: row.version_no,
     };
@@ -73,7 +81,16 @@ export class InventoryCountQueryService {
     inventoryCountId: number,
     query: InventoryCountLineQuery,
   ): Promise<PagedResponse<InventoryCountLineView>> {
-    const header = await this.prisma.inventory_count.findUnique({
+    return this.linesWithin(this.prisma, inventoryCountId, query);
+  }
+
+  /** 위치 치환 응답도 업무·멱등 기록과 같은 트랜잭션에서 만든다. */
+  async linesWithin(
+    prisma: CountClient,
+    inventoryCountId: number,
+    query: InventoryCountLineQuery,
+  ): Promise<PagedResponse<InventoryCountLineView>> {
+    const header = await prisma.inventory_count.findUnique({
       where: { inventory_count_id: inventoryCountId },
       select: { inventory_count_id: true, blind_count: true },
     });
@@ -87,14 +104,14 @@ export class InventoryCountQueryService {
       location: { select: { location_code: true } },
     } as const;
     const [rows, total] = await Promise.all([
-      this.prisma.inventory_count_line.findMany({
+      prisma.inventory_count_line.findMany({
         where,
         include,
         orderBy: [{ line_no: 'asc' }, { inventory_count_line_id: 'asc' }],
         skip: page.skip,
         take: page.take,
       }),
-      this.prisma.inventory_count_line.count({ where }),
+      prisma.inventory_count_line.count({ where }),
     ]);
     return pagedResponse(
       rows.map((row) => inventoryCountLineView(row, header.blind_count)),

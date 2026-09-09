@@ -37,6 +37,8 @@ const RESERVATION_REGISTERED = 'REGISTERED';
 const INVENTORY_RESERVATION = 'INVENTORY_RESERVATION';
 /** 400 의 `field` 경로. 코어의 `NEGATIVE_BALANCE`(둘째 그물)도 이 경로로 나간다. */
 const QTY_FIELD = 'pickedQty';
+/** `app.qty_t` = `numeric(20,6)`. 이 아래는 저장에서 접힌다. */
+const QTY_SCALE = 6;
 const ZERO = new Prisma.Decimal(0);
 const DAY_MS = 86_400_000;
 
@@ -153,7 +155,7 @@ export class ShipmentPickService {
         reservationNo,
         reservationTypeCode: RESERVATION_TYPE_SHIPMENT,
         // ⚠ 계약 enum 은 `PRODUCTION_ORDER` 하나뿐인데 04 가 「가리킬 표가 늘면 계약을 고친다」라
-        //   적었다(통보 199 · #409 인계). 값의 정본은 `shipment-progress.ts` 한 곳이다.
+        //   적었다(통보 190 · #409 인계). 값의 정본은 `shipment-progress.ts` 한 곳이다.
         sourceDocumentTypeCode: SHIPMENT_REQUEST_LINE,
         sourceDocumentId: line.shipment_request_line_id,
         uomId: line.uom_id,
@@ -172,10 +174,20 @@ function assertWorkerNo(workerNo: string | undefined): void {
   throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
 }
 
-/** ③ ⭐ 계약에 `exclusiveMinimum` 이 없다 — 0·음수를 여기서 막지 않으면 코어가 500 으로 샌다. */
+/**
+ * ③ ⭐ 계약에 `exclusiveMinimum` 도 `multipleOf` 도 없다 — 둘 다 **서버가 막는 자리**다.
+ * ⛔ 스케일을 안 보면 `0 < Δ < 0.0000005` 가 **500** 으로 샌다: ⑪·⑫ 는 `Decimal` 로 정확히
+ *   통과하고 잔액 UPDATE 도 지나가는데, 예약 INSERT 에서 `numeric(20,6)` 이 `0.000000` 으로
+ *   접혀 `inventory_reservation_reserved_qty_check` 를 깬다(리뷰 실측).
+ * ⭐ 선례 넷 — `handling-unit.service.ts:293` · `nonconformance-rules.ts:45` ·
+ *   `lot-hold-rules.ts:123` · `result-write-input.ts:259`(「⛔ 조용한 반올림 금지」).
+ */
 function assertPickedQty(pickedQty: number): Prisma.Decimal {
   const delta = new Prisma.Decimal(pickedQty);
   if (!delta.greaterThan(ZERO)) throw one(field(QTY_FIELD, ERROR_CODE.RANGE, '피킹 수량은 0 보다 커야 합니다.'));
+  if (delta.decimalPlaces() > QTY_SCALE) {
+    throw one(field(QTY_FIELD, ERROR_CODE.RANGE, `수량은 소수점 ${QTY_SCALE}자리까지입니다.`));
+  }
   return delta;
 }
 

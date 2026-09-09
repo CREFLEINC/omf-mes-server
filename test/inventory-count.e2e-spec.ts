@@ -1,5 +1,5 @@
 /**
- * I-15 재고 실사. PR ②는 조회 3건을 열고, 뒤 PR이 같은 스위트에 쓰기 갈래를 더한다.
+ * I-15 재고 실사. 조회 3건과 생성 스냅샷을 같은 격리 스위트에서 검증한다.
  * ⛔ I-14 조정 라인이 실사 라인을 FK로 가리키므로 CASCADE TRUNCATE를 쓰지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -17,16 +17,19 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-inventory-count';
+const NOPERM_ID = 'e2e-inventory-count-no-permission';
 const PASSWORD = '실사-조회-비밀번호';
 const PREFIX = 'ICE2E';
+const ROLE = 'E2E_INVENTORY_COUNT';
+const WORKER_NO = `${PREFIX}-WORKER`;
 const AT = new Date('2026-09-09T01:02:03.000Z');
 
-function validator(operation: string): ValidateFunction {
+function validator(operation: string, status = '200'): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/logistics-01자재창고.json'), 'utf8'),
   ) as object;
   const [method, path] = operation.split(' ');
-  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/200/content/application~1json/schema`;
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const format of ['int64', 'int32', 'double', 'float', 'binary', 'password']) {
@@ -36,18 +39,31 @@ function validator(operation: string): ValidateFunction {
   return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
 }
 
-describe('재고 실사 조회 3건 (e2e)', () => {
+describe('재고 실사 조회·생성 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
   let userId: bigint;
   let warehouseId: number;
+  let legalEntityId: bigint;
+  let businessUnitId: bigint;
+  let plantId: bigint;
+  let uomId: bigint;
   let location1Id: number;
   let location2Id: number;
   let itemId: number;
   let blindId: number;
   let completedId: number;
   let plannedId: number;
+  let lockedId: number;
+  let registeredAdjustedId: number;
+  let zeroCloseId: number;
+  let postedCloseId: number;
+  let uncountedCloseId: number;
+  let createdId: number;
+  let negativeItemId: bigint;
+  let negativeLotId: bigint;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -71,20 +87,38 @@ describe('재고 실사 조회 3건 (e2e)', () => {
       blindId,
       completedId,
       plannedId,
+      lockedId,
+      registeredAdjustedId,
+      zeroCloseId,
+      postedCloseId,
+      uncountedCloseId,
     ]);
-    expect(all.page).toMatchObject({ page: 1, size: 50, total: 3 });
+    expect(all.page).toMatchObject({ page: 1, size: 50, total: 8 });
 
-    expect((await list(`warehouseId=${warehouseId}`)).items).toHaveLength(3);
+    expect((await list(`warehouseId=${warehouseId}`)).items).toHaveLength(8);
     expect((await list('plannedDateFrom=2026-09-09&plannedDateTo=2026-09-09')).items)
       .toEqual([expect.objectContaining({ inventoryCountId: completedId })]);
     expect((await list('countTypeCode=CYCLE')).items.map((row) => row.inventoryCountId))
-      .toEqual([blindId, completedId]);
+      .toEqual([
+        blindId,
+        completedId,
+        registeredAdjustedId,
+        zeroCloseId,
+        postedCloseId,
+        uncountedCloseId,
+      ]);
     expect((await list('statusCode=PLANNED')).items.map((row) => row.inventoryCountId))
-      .toEqual([plannedId]);
+      .toEqual([plannedId, lockedId]);
     expect((await list('inProgressOnly=true')).items.map((row) => row.inventoryCountId))
-      .toEqual([blindId]);
+      .toEqual([
+        blindId,
+        registeredAdjustedId,
+        zeroCloseId,
+        postedCloseId,
+        uncountedCloseId,
+      ]);
     expect((await list('page=2&size=2')).items.map((row) => row.inventoryCountId))
-      .toEqual([plannedId]);
+      .toEqual([plannedId, lockedId]);
   });
 
   it('상세은 ETag와 전체 요약을 내리고 차단 사유 우선순위를 지킨다', async () => {
@@ -161,6 +195,347 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await request(app.getHttpServer()).get('/api/inventory/counts').set('Cookie', cookie).expect(200);
   });
 
+  it('생성은 현재 잔액을 네 축으로 합쳐 0은 빼고 원장을 쓰지 않는다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const key = randomUUID();
+    const body = {
+      countTypeCode: 'CYCLE',
+      warehouseId,
+      plannedDate: '2026-09-10',
+      blindCount: false,
+    };
+    const first = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    createdId = first.body.inventoryCount.inventoryCountId;
+    expect(first.headers.etag).toBe('1');
+    expect(first.body).toMatchObject({
+      inventoryCount: {
+        inventoryCountNo: expect.stringMatching(/^IC-20260910-/),
+        countTypeCode: 'CYCLE',
+        warehouseId,
+        plannedDate: '2026-09-10',
+        blindCount: false,
+        statusCode: 'IN_PROGRESS',
+      },
+      summary: {
+        plannedCount: 1,
+        countedCount: 0,
+        uncountedCount: 1,
+        varianceCount: 0,
+        closable: false,
+        closeBlockedReasonCode: 'COUNT_REMAINING',
+      },
+    });
+    const validate = validator('POST /inventory/counts', '201');
+    expect(validate(first.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const replay = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    expect(replay.body).toEqual(first.body);
+    expect(replay.headers.etag).toBe('1');
+    expect(
+      await prisma.inventory_count.count({ where: { created_by: userId } }),
+    ).toBe(1);
+
+    const createdLines = await request(app.getHttpServer())
+      .get(`/api/inventory/counts/${createdId}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(createdLines.body.items).toHaveLength(1);
+    expect(createdLines.body.items.map((line: { systemQty: number }) => line.systemQty)).toEqual([
+      10,
+    ]);
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('음수 장부는 0으로 자르거나 누락하지 않고 질의 276 회신 전까지 생성 전체를 막는다', async () => {
+    await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: legalEntityId,
+        business_unit_id: businessUnitId,
+        plant_id: plantId,
+        warehouse_id: warehouseId,
+        location_id: location2Id,
+        item_id: negativeItemId,
+        lot_id: negativeLotId,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        ownership_type_code: 'OWNED',
+        on_hand_qty: -3,
+        uom_id: uomId,
+      },
+    });
+    const response = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ field: 'warehouseId', code: 'INVALID' }),
+    ]);
+    expect(await prisma.inventory_count.count({ where: { created_by: userId } })).toBe(1);
+  });
+
+  it('생성은 권한·코드·창고 계약을 각각 거부한다', async () => {
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'NOT_A_TYPE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId: 999999999, plannedDate: '2026-09-10' })
+      .expect(400);
+  });
+
+  it('위치 입력은 선택 If-Match 없이 기존 스냅샷을 보존하고 멱등 재생한다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const key = randomUUID();
+    const input = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:11:12.000Z',
+      lines: [
+        {
+          inventoryCountLineId: Number(
+            (
+              await prisma.inventory_count_line.findFirstOrThrow({
+                where: { inventory_count_id: blindId, location_id: location1Id },
+              })
+            ).inventory_count_line_id,
+          ),
+          locationId: location1Id,
+          itemId,
+          lotId: Number(
+            (
+              await prisma.lot.findFirstOrThrow({ where: { lot_no: `${PREFIX}-LOT` } })
+            ).lot_id,
+          ),
+          countedQty: 100,
+          uomId: Number(uomId),
+          countedAt: '2026-09-09T10:10:00.000Z',
+        },
+      ],
+    };
+    const first = await putLines(blindId, input, key).expect(200);
+    expect(first.body.items).toEqual([
+      expect.objectContaining({
+        locationId: location1Id,
+        countedQty: 100,
+        varianceQty: 0,
+        countedBy: Number(userId),
+        counted: true,
+      }),
+    ]);
+    expect(first.body.items[0]).not.toHaveProperty('systemQty');
+    expect(first.body.page).toEqual({ page: 1, size: 50, total: 1 });
+    const stored = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location1Id },
+    });
+    expect(stored.system_qty.toNumber()).toBe(100);
+    expect(stored.counted).toBe(true);
+    expect((await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: blindId } })).version_no)
+      .toBe(2);
+
+    const replay = await putLines(blindId, input, key).expect(200);
+    expect(replay.body).toEqual(first.body);
+    expect((await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: blindId } })).version_no)
+      .toBe(2);
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('위치 입력은 낡은 If-Match와 같은 멱등 키의 다른 본문을 409로 가른다', async () => {
+    const body = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:12:00.000Z',
+      lines: [],
+    };
+    await putLines(blindId, body, randomUUID(), '1').expect(409);
+
+    const key = randomUUID();
+    await putLines(blindId, body, key).expect(200);
+    await putLines(blindId, { ...body, occurredAt: '2026-09-09T10:13:00.000Z' }, key).expect(409);
+  });
+
+  it('빈 배열은 해당 위치만 미실사로 되돌리고 다른 위치는 보존한다', async () => {
+    const location1 = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location1Id },
+    });
+    const location2 = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location2Id },
+    });
+    expect(location1.counted).toBe(false);
+    expect(location1.counted_qty.toNumber()).toBe(0);
+    expect(location1.counted_by).toBeNull();
+    expect(location2.counted).toBe(true);
+    expect(location2.counted_qty.toNumber()).toBe(8);
+  });
+
+  it('PLANNED 실사의 신규 현장 라인은 현재 장부 0과 계정 없는 작업자를 보존하며 진행중으로 옮긴다', async () => {
+    const lotId = Number(
+      (await prisma.lot.findFirstOrThrow({ where: { lot_no: `${PREFIX}-LOT` } })).lot_id,
+    );
+    const response = await putLines(
+      plannedId,
+      {
+        locationId: location2Id,
+        businessDate: '2026-09-09',
+        occurredAt: '2026-09-09T10:14:00.000Z',
+        lines: [
+          {
+            locationId: location2Id,
+            itemId,
+            lotId,
+            countedQty: 0,
+            uomId: Number(uomId),
+            countedAt: '2026-09-09T10:14:00.000Z',
+          },
+        ],
+      },
+      randomUUID(),
+      undefined,
+      WORKER_NO,
+    ).expect(200);
+    expect(response.body.items).toEqual([
+      expect.objectContaining({ systemQty: 0, countedQty: 0, countedBy: null, counted: true }),
+    ]);
+    const validate = validator('PUT /inventory/counts/{inventoryCountId}/lines');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(
+      (await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: plannedId } }))
+        .status_code,
+    ).toBe('IN_PROGRESS');
+  });
+
+  it('위치 입력은 권한·상태·위치·차이 사유를 쓰기 전에 거부한다', async () => {
+    const base = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:15:00.000Z',
+      lines: [],
+    };
+    await request(app.getHttpServer())
+      .put(`/api/inventory/counts/${blindId}/lines`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send(base)
+      .expect(403);
+    await putLines(completedId, base, randomUUID()).expect(400);
+    await putLines(
+      blindId,
+      { ...base, locationId: 999999999 },
+      randomUUID(),
+    ).expect(400);
+
+    const existing = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location2Id },
+    });
+    const missingReason = await putLines(
+      blindId,
+      {
+        ...base,
+        locationId: location2Id,
+        lines: [
+          {
+            inventoryCountLineId: Number(existing.inventory_count_line_id),
+            locationId: location2Id,
+            itemId,
+            lotId: Number(existing.lot_id),
+            countedQty: 9,
+            uomId: Number(uomId),
+            countedAt: '2026-09-09T10:15:00.000Z',
+          },
+        ],
+      },
+      randomUUID(),
+    ).expect(400);
+    expect(missingReason.body.errors).toEqual([
+      expect.objectContaining({ field: 'lines.0.varianceReasonCode', code: 'REQUIRED' }),
+    ]);
+  });
+
+  it('마감은 차이 없음과 POSTED 조정을 허용하고 멱등 재생하며 원장을 쓰지 않는다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const zeroVersion = (
+      await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: zeroCloseId } })
+    ).version_no;
+    const zeroKey = randomUUID();
+    const zero = await close(zeroCloseId, zeroKey, String(zeroVersion)).expect(200);
+    expect(zero.body).toMatchObject({
+      inventoryCount: { inventoryCountId: zeroCloseId, statusCode: 'COMPLETED' },
+      summary: { closable: false, closeBlockedReasonCode: 'ALREADY_CLOSED' },
+    });
+    const validate = validator('POST /inventory/counts/{inventoryCountId}:close');
+    expect(validate(zero.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const replay = await close(zeroCloseId, zeroKey, String(zeroVersion)).expect(200);
+    expect(replay.body).toEqual(zero.body);
+    expect(
+      (await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: zeroCloseId } }))
+        .version_no,
+    ).toBe(zeroVersion + 1);
+    await close(zeroCloseId, zeroKey, String(zeroVersion), cookie, '2026-09-10').expect(409);
+
+    const postedVersion = (
+      await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: postedCloseId } })
+    ).version_no;
+    const posted = await close(postedCloseId, randomUUID(), String(postedVersion)).expect(200);
+    expect(posted.body.inventoryCount.statusCode).toBe('COMPLETED');
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('마감은 상태·미실사·REGISTERED 조정을 공용 우선순위 코드로 차단한다', async () => {
+    const cases = [
+      [completedId, 'ALREADY_CLOSED'],
+      [lockedId, 'STATE_LOCKED'],
+      [uncountedCloseId, 'COUNT_REMAINING'],
+      [registeredAdjustedId, 'VARIANCE_UNADJUSTED'],
+    ] as const;
+
+    for (const [id, code] of cases) {
+      const version = (
+        await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: id } })
+      ).version_no;
+      const response = await close(id, randomUUID(), String(version)).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field: 'inventoryCountId', code }),
+      ]);
+    }
+  });
+
+  it('마감은 권한·필수 If-Match·낡은 버전을 각각 거부한다', async () => {
+    await close(uncountedCloseId, randomUUID(), '1', noPermCookie).expect(403);
+    await request(app.getHttpServer())
+      .post(`/api/inventory/counts/${uncountedCloseId}:close`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ businessDate: '2026-09-09' })
+      .expect(400);
+    await close(uncountedCloseId, randomUUID(), '999').expect(409);
+  });
+
   async function list(query: string): Promise<{
     items: { inventoryCountId: number }[];
     page: { page: number; size: number; total: number };
@@ -186,6 +561,37 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     return response.body;
   }
 
+  function putLines(
+    id: number,
+    body: Record<string, unknown>,
+    key: string,
+    version?: string,
+    workerNo?: string,
+  ): request.Test {
+    let operation = request(app.getHttpServer())
+      .put(`/api/inventory/counts/${id}/lines`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key);
+    if (version !== undefined) operation = operation.set('If-Match', version);
+    if (workerNo !== undefined) operation = operation.set('X-Worker-No', workerNo);
+    return operation.send(body);
+  }
+
+  function close(
+    id: number,
+    key: string,
+    version: string,
+    requestCookie = cookie,
+    businessDate = '2026-09-09',
+  ): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/inventory/counts/${id}:close`)
+      .set('Cookie', requestCookie)
+      .set('Idempotency-Key', key)
+      .set('If-Match', version)
+      .send({ businessDate });
+  }
+
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '실사 조회자', status_code: 'EMPLOYED' },
@@ -194,13 +600,34 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: userId, password_hash: await hashPassword(PASSWORD) },
     });
+    const role = await prisma.role.create({
+      data: { role_code: ROLE, role_name: '재고 실사 E2E' },
+    });
+    await prisma.role_permission.createMany({
+      data: ['W-01-04', 'M-01-11'].map((permission_code) => ({
+        role_id: role.role_id,
+        permission_code,
+      })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: userId, role_id: role.role_id } });
+    const noPerm = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '실사 권한 없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: noPerm.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   async function makeCounts(): Promise<void> {
@@ -212,6 +639,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
+    legalEntityId = entity.legal_entity_id;
     const unit = await prisma.business_unit.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
@@ -219,6 +647,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         business_unit_name: '실사 사업부',
       },
     });
+    businessUnitId = unit.business_unit_id;
     const plant = await prisma.plant.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
@@ -227,6 +656,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
+    plantId = plant.plant_id;
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,
@@ -257,6 +687,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     location1Id = Number(location1.location_id);
     location2Id = Number(location2.location_id);
     const uom = await prisma.uom.findFirstOrThrow();
+    uomId = uom.uom_id;
     const item = await prisma.item.create({
       data: {
         item_code: `${PREFIX}-ITEM`,
@@ -280,6 +711,86 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         source_id: 1,
         status_code: 'AVAILABLE',
       },
+    });
+    const negativeItem = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-NEG-ITEM`,
+        item_name: '음수 재고 허용 품목',
+        item_type_code: 'RAW_MATERIAL',
+        base_uom_id: uom.uom_id,
+        lot_controlled: true,
+        negative_stock_allowed: true,
+      },
+    });
+    negativeItemId = negativeItem.item_id;
+    const negativeLot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-NEG-LOT`,
+        item_id: negativeItem.item_id,
+        lot_type_code: 'MATERIAL',
+        plant_id: plant.plant_id,
+        initial_qty: 1,
+        uom_id: uom.uom_id,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: 2,
+        status_code: 'AVAILABLE',
+      },
+    });
+    negativeLotId = negativeLot.lot_id;
+    await prisma.worker.create({
+      data: {
+        worker_no: WORKER_NO,
+        worker_name: '계정 없는 실사 작업자',
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        status_code: 'EMPLOYED',
+      },
+    });
+    await prisma.inventory_balance.createMany({
+      data: [
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location1.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'AVAILABLE',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 6,
+          uom_id: uom.uom_id,
+        },
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location1.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'BLOCKED',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 4,
+          uom_id: uom.uom_id,
+        },
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location2.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'AVAILABLE',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 0,
+          uom_id: uom.uom_id,
+        },
+      ],
     });
 
     const blind = await prisma.inventory_count.create({
@@ -385,6 +896,168 @@ describe('재고 실사 조회 3건 (e2e)', () => {
       },
     });
     plannedId = Number(planned.inventory_count_id);
+
+    const locked = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-004`,
+        count_type_code: 'ADHOC',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-07T00:00:00.000Z'),
+        status_code: 'PLANNED',
+      },
+    });
+    lockedId = Number(locked.inventory_count_id);
+
+    const registeredAdjusted = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-005`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-06T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    registeredAdjustedId = Number(registeredAdjusted.inventory_count_id);
+    const registeredLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: registeredAdjusted.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 8,
+        uom_id: uom.uom_id,
+        variance_reason_code: 'COUNT_ERROR',
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+    const registeredAdjustment = await prisma.inventory_adjustment.create({
+      data: {
+        inventory_adjustment_no: `${PREFIX}-IA-REGISTERED`,
+        inventory_count_id: registeredAdjusted.inventory_count_id,
+        reason_code: 'COUNT_VARIANCE',
+        status_code: 'REGISTERED',
+      },
+    });
+    await prisma.inventory_adjustment_line.create({
+      data: {
+        inventory_adjustment_id: registeredAdjustment.inventory_adjustment_id,
+        inventory_count_line_id: registeredLine.inventory_count_line_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        adjustment_qty: -2,
+        uom_id: uom.uom_id,
+        reason_code: 'COUNT_VARIANCE',
+      },
+    });
+
+    const zeroClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-006`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-05T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    zeroCloseId = Number(zeroClose.inventory_count_id);
+    await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: zeroClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 10,
+        uom_id: uom.uom_id,
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+
+    const postedClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-007`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-04T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    postedCloseId = Number(postedClose.inventory_count_id);
+    const postedLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: postedClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 8,
+        uom_id: uom.uom_id,
+        variance_reason_code: 'COUNT_ERROR',
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+    const postedAdjustment = await prisma.inventory_adjustment.create({
+      data: {
+        inventory_adjustment_no: `${PREFIX}-IA-POSTED-CLOSE`,
+        inventory_count_id: postedClose.inventory_count_id,
+        reason_code: 'COUNT_VARIANCE',
+        status_code: 'POSTED',
+      },
+    });
+    await prisma.inventory_adjustment_line.create({
+      data: {
+        inventory_adjustment_id: postedAdjustment.inventory_adjustment_id,
+        inventory_count_line_id: postedLine.inventory_count_line_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        adjustment_qty: -2,
+        uom_id: uom.uom_id,
+        reason_code: 'COUNT_VARIANCE',
+      },
+    });
+
+    const uncountedClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-008`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-03T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    uncountedCloseId = Number(uncountedClose.inventory_count_id);
+    await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: uncountedClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 0,
+        uom_id: uom.uom_id,
+        counted_at: AT,
+        counted: false,
+      },
+    });
   }
 
   async function cleanup(): Promise<void> {
@@ -399,15 +1072,30 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.$executeRawUnsafe(
       `DELETE FROM inventory.inventory_count_line WHERE inventory_count_id IN
        (SELECT inventory_count_id FROM inventory.inventory_count
-         WHERE inventory_count_no LIKE '${PREFIX}%')`,
+         WHERE inventory_count_no LIKE '${PREFIX}%'
+            OR created_by IN (SELECT app_user_id FROM app.app_user
+                               WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}')))`,
     );
     await prisma.inventory_count.deleteMany({
-      where: { inventory_count_no: { startsWith: PREFIX } },
+      where: {
+        OR: [
+          { inventory_count_no: { startsWith: PREFIX } },
+          { created_by: { in: (await prisma.app_user.findMany({
+            where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+            select: { app_user_id: true },
+          })).map((user) => user.app_user_id) } },
+        ],
+      },
     });
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM inventory.inventory_balance
+        WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
+    );
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({
       where: { business_unit_code: { startsWith: PREFIX } },
@@ -415,11 +1103,20 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.legal_entity.deleteMany({
       where: { legal_entity_code: { startsWith: PREFIX } },
     });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user !== null) {
+    const users = await prisma.app_user.findMany({
+      where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+      select: { app_user_id: true },
+    });
+    for (const user of users) {
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role !== null) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });

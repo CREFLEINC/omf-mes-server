@@ -44,6 +44,8 @@ const WORKER_NO = `${PREFIX}-W1`;
 const SHIP_DATE = '2026-11-04';
 /** `blocks_picking` 통제가 겨냥할 LOT 상태 — 통제표가 오늘 0행이라 픽스처를 심어야 돈다. */
 const BLOCKED_STATUS = `${PREFIX}-BLOCKED`;
+/** ⭐ 같은 표의 **안 걸리는** 축 — 「출고는 막지만 피킹은 안 막는」 상태다(§6-3 ⑵). */
+const ISSUE_ONLY_STATUS = `${PREFIX}-ISSUE-ONLY`;
 const HOLD_REASON = `${PREFIX}-EXPIRED`;
 /** `numeric(20,6)` 의 마지막 자리 — 「한계와 같은 값」의 바로 옆이다(§6-3 ⑸). */
 const ONE_SCALE = 0.000001;
@@ -240,8 +242,10 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
 
     await pick(s, { pickedQty: 30 });
 
-    const open = await reservationList({ sourceDocumentId: s.lineId, openOnly: true });
-    const all = await reservationList({ sourceDocumentId: s.lineId });
+    // ⛔ `lotId` 로 좁힌다 — 이 목록은 원천 «유형» 축이 없어 `scenario()` 가 심은
+    //    `PRODUCTION_ORDER` 미끼(같은 id · `lot_id` 널)까지 함께 세기 때문이다(#409 인계).
+    const open = await reservationList({ sourceDocumentId: s.lineId, lotId: s.lotId, openOnly: true });
+    const all = await reservationList({ sourceDocumentId: s.lineId, lotId: s.lotId });
     // ⛔ ⓐ안이면 열린 채 떠서 «자재» 피킹 목록을 오염시킨다(`M-01-08`).
     expect(open.total).toBe(0);
     expect(all.total).toBe(1);
@@ -340,13 +344,17 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
   it('P-15 X-Worker-No 가 없으면 400 REQUIRED 다', async () => {
     const s = await scenario();
 
-    const response = await call(s.requestId, s.lineId, body(s), { workerNo: null });
+    const missing = await call(s.requestId, s.lineId, body(s), { workerNo: null });
+    // ⭐ 「보냈지만 비었다」도 부재다 — `trim()` 갈래를 지우면 여기서만 죽는다.
+    const blank = await call(s.requestId, s.lineId, body(s), { workerNo: '  ' });
 
     // ⛔ 계약 가드가 헤더를 안 본다 — 서버가 유일한 그물이다.
-    expect(response.status).toBe(400);
-    expect((response.body as ErrorBody).errors).toMatchObject([
-      { field: 'X-Worker-No', code: 'REQUIRED' },
-    ]);
+    expect([missing.status, blank.status]).toEqual([400, 400]);
+    for (const response of [missing, blank]) {
+      expect((response.body as ErrorBody).errors).toMatchObject([
+        { field: 'X-Worker-No', code: 'REQUIRED' },
+      ]);
+    }
   });
 
   // ── P-16 ~ P-19 · 409 사유 ① 보류 · 통제 · ⭐ 순서 ─────────────────────────
@@ -634,6 +642,42 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     });
   });
 
+  // ── P-40 ~ P-42 · 리뷰(#559)가 실측으로 연 세 자리 ────────────────────────
+  it('P-40 ⭐ numeric(20,6) 아래로 접히는 수량은 400 RANGE 다 (500 이 아니다)', async () => {
+    const s = await scenario({ onHand: 100 });
+
+    const errors = await reject(s, { pickedQty: 0.0000001 });
+
+    // ⛔ `> 0` 만 보면 ⑪·⑫ 를 `Decimal` 로 정확히 통과한 뒤 예약 INSERT 가 `0.000000` 으로
+    //   접혀 `inventory_reservation_reserved_qty_check` 를 깨고 **500** 이 나간다(리뷰 실측).
+    expect(errors).toMatchObject([{ field: 'pickedQty', code: 'RANGE' }]);
+    expect(errors[0].message).toContain('소수점 6자리');
+    expect(await reservationsOf(s.lineId)).toHaveLength(0);
+  });
+
+  it('P-41 ⭐⭐ 같은 id 의 PRODUCTION_ORDER 예약을 ⑫ 가 「이미 피킹」으로 세지 않는다', async () => {
+    // `scenario()` 가 라인 id 와 «같은 숫자»의 `PRODUCTION_ORDER` 예약(999)을 늘 심는다.
+    const s = await scenario({ onHand: 100, allocated: 40, requested: 100 });
+    const decoy = await foreignReservationsOf(s.lineId);
+    expect(decoy.map((row) => row.reserved_qty.toString())).toEqual(['999']);
+
+    const body = await pick(s, { pickedQty: 40 });
+
+    // ⛔ ⑫ 의 축은 `(유형, id)` **둘 다**다 — 유형을 빼면 999 를 세어 배정 40 을 넘겼다며
+    //   409 로 «정상 피킹»을 거부한다. 응답 롤업(③b `picksByLine`)도 같은 축을 쓴다.
+    expect(body.pickedQty).toBe(40);
+    expect(body.picks.map((row) => row.pickedQty)).toEqual([40]);
+  });
+
+  it('P-42 ⭐ 「출고만 막는」 통제 행은 피킹을 안 막는다', async () => {
+    const s = await scenario({ onHand: 100, lotStatus: ISSUE_ONLY_STATUS });
+
+    const body = await pick(s, { pickedQty: 30 });
+
+    // ⛔ `blocks_picking: true` 필터를 빼면 `blocks_issue` 만 켠 행이 피킹을 막는다.
+    expect(body.pickedQty).toBe(30);
+  });
+
   // ── 픽스처 ────────────────────────────────────────────────────────────────
 
   interface Scenario {
@@ -694,6 +738,28 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
         },
       });
       lineIds.push(Number(line.shipment_request_line_id));
+    }
+    // ⭐⭐ 라인 id 와 «같은 숫자»를 쓰는 `PRODUCTION_ORDER` 예약을 **성공·실패 경로 둘 다**에
+    //   심는다(§6-3 ⑵·⑶). 두 표의 시퀀스가 별개라 현장에서 흔히 겹치고, ⑫ 나 ③b 의 롤업이
+    //   원천 «유형» 축을 빼면 그 999 를 「이미 피킹」으로 세어 정상 피킹이 409 가 된다
+    //   (#409 인계 · `shipment-request-query.service.ts:166` 이 같은 경고를 적어 뒀다).
+    // ⛔ `lot_id` 는 널이다 — `GET /inventory/reservations` 가 유형 축을 안 갖고 있어
+    //   P-6 이 `lotId` 로 갈라야 하기 때문이다.
+    for (const lineId of lineIds) {
+      seq += 1;
+      await prisma.inventory_reservation.create({
+        data: {
+          reservation_no: `${PREFIX}-RS-${seq}`,
+          reservation_type_code: 'PRODUCTION',
+          source_document_type_code: 'PRODUCTION_ORDER',
+          source_document_id: BigInt(lineId),
+          item_id: BigInt(ids.item1),
+          warehouse_id: ids.warehouse1,
+          reserved_qty: 999,
+          uom_id: BigInt(ids.uom1),
+          status_code: 'REGISTERED',
+        },
+      });
     }
     return {
       requestId: Number(header.shipment_request_id),
@@ -820,11 +886,15 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
 
   async function reservationList(query: {
     sourceDocumentId: number;
+    lotId: number;
     openOnly?: boolean;
   }): Promise<{ items: { inventoryReservationId: number }[]; total: number }> {
     const openOnly = query.openOnly === true ? '&openOnly=true' : '';
     const response = await request(app.getHttpServer())
-      .get(`/api/inventory/reservations?sourceDocumentId=${query.sourceDocumentId}${openOnly}`)
+      .get(
+        `/api/inventory/reservations?sourceDocumentId=${query.sourceDocumentId}` +
+          `&lotId=${query.lotId}${openOnly}`,
+      )
       .set('Cookie', cookie)
       .expect(200);
     const body = response.body as {
@@ -844,6 +914,17 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     return prisma.inventory_reservation.findMany({
       where: {
         source_document_type_code: 'SHIPMENT_REQUEST_LINE',
+        source_document_id: BigInt(lineId),
+      },
+      orderBy: { inventory_reservation_id: 'asc' },
+    });
+  }
+
+  /** 같은 id 를 쓰는 «남의» 예약 — P-41 이 그 존재부터 단언한다(§6-3 ⑵). */
+  function foreignReservationsOf(lineId: number) {
+    return prisma.inventory_reservation.findMany({
+      where: {
+        source_document_type_code: 'PRODUCTION_ORDER',
         source_document_id: BigInt(lineId),
       },
       orderBy: { inventory_reservation_id: 'asc' },
@@ -963,22 +1044,21 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     ids.salesOrderLine = Number(salesOrder.sales_order_line[0].sales_order_line_id);
 
     // ⭐ `judgment_type_control` 은 오늘 0행이라 P-19 가 픽스처를 심어야 돈다.
+    // ⭐⭐ **두 행**을 심는다 — 「피킹을 막는」 행과 「출고만 막는」 행. 한 행뿐이면
+    //   `blocks_picking: true` 필터를 지워도 안 죽는다(§6-3 ⑵ · 리뷰 Minor-1).
     const group = await prisma.code_group.findFirstOrThrow({ orderBy: { code_group_id: 'asc' } });
-    const codeValue = await prisma.code_value.create({
-      data: {
-        code_group_id: group.code_group_id,
-        code: `${PREFIX}-BLK`,
-        code_name: '제품피킹검사차단',
-      },
-    });
-    ids.codeValue = codeValue.code_value_id;
-    await prisma.judgment_type_control.create({
-      data: {
-        code_value_id: codeValue.code_value_id,
-        blocks_picking: true,
-        lot_status_code: BLOCKED_STATUS,
-      },
-    });
+    for (const [suffix, name, control] of [
+      ['BLK', '제품피킹검사차단', { blocks_picking: true, lot_status_code: BLOCKED_STATUS }],
+      ['ISS', '제품피킹검사출고차단', { blocks_issue: true, lot_status_code: ISSUE_ONLY_STATUS }],
+    ] as const) {
+      const codeValue = await prisma.code_value.create({
+        data: { code_group_id: group.code_group_id, code: `${PREFIX}-${suffix}`, code_name: name },
+      });
+      if (suffix === 'BLK') ids.codeValue = codeValue.code_value_id;
+      await prisma.judgment_type_control.create({
+        data: { code_value_id: codeValue.code_value_id, ...control },
+      });
+    }
   }
 
   /** `:pick` 은 403 을 «선언»한 자리다 — 권한 있는 세션과 없는 세션을 둘 다 세운다. */

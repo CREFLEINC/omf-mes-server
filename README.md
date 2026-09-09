@@ -75,9 +75,47 @@ v4 전체 산출물(논리 명세·전체 DDL·API 매핑·검증 리포트)은 
 API와 PostgreSQL을 컨테이너로 함께 띄운다. 파일: `Dockerfile` · `docker-compose.prod.yml` · `.env.prod.example`.
 운영 절차의 정본은 [`docs/deployment.md`](docs/deployment.md) 와 [`deploy/RELEASE.md`](deploy/RELEASE.md) 다.
 
+### 현장 서버 최초 설치
+
+현장 서버에 Docker와 Compose가 설치되어 있고, 이 저장소의 배포 파일을 받은 상태에서 실행한다.
+`install-deploy.sh`가 환경 입력, JWT 키 생성, Registry 로그인, Compose 검증과 최초 배포를 순서대로 처리한다.
+
 ```bash
-cp .env.prod.example .env.prod        # POSTGRES_PASSWORD 반드시 교체
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+./deploy/install-deploy.sh
+```
+
+스크립트가 다음 값을 입력받는다.
+
+- PostgreSQL 사용자·비밀번호·데이터베이스명
+- 외부 API 포트 (`API_PORT`, 기본 3100)
+- 배포할 릴리스 이미지 tag (`v1.2.3` 형식)
+- 로그 타임존 (`LOG_TZ`, 기본 `Asia/Seoul`)
+- TLS 사용 여부 (`COOKIE_SECURE`)
+- 초기 관리자 비밀번호 (비워두면 1회성 무작위 값 생성)
+
+`JWT_SECRET`은 매 설치마다 무작위로 생성되며 `.env.prod`는 권한 600으로 저장된다.
+LAN IP는 환경변수로 저장하지 않는다. 설치 완료 후 `http://<서버 LAN IP>:<API_PORT>`로 접속한다.
+
+Registry 로그인은 배포 디렉터리 전용 Docker 설정(`/opt/services/omf-mes-server/.docker`)에 저장된다.
+따라서 다른 경로에 로그인하지 말고, 설치 스크립트가 안내하는 로그인 단계에서 배포용 계정을 사용한다.
+
+### 현장 서버 수동 재배포
+
+새 릴리스는 먼저 release tag(`v1.2.3`)로 빌드·push되어 있어야 한다. 이후 서버에서 다음처럼 버전을 지정한다.
+
+```bash
+cd /opt/services/omf-mes-server
+./rollback.sh v1.2.3
+```
+
+`rollback.sh`는 이름과 달리 `.env.prod`의 `IMAGE_TAG`를 지정한 버전으로 바꾸고 `deploy.sh`를 실행한다.
+배포 스크립트가 이미지 pull, Prisma migration, healthcheck, 실패 시 자동 롤백을 수행한다.
+
+스크립트를 사용하지 않고 수동 구성해야 한다면 `.env.prod`를 직접 작성한 뒤 다음 명령을 사용한다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 # 최초 1회 — 초기 공통코드 적재
 docker compose -f docker-compose.prod.yml --env-file .env.prod \

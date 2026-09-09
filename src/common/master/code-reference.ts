@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../errors';
-import { PrismaService } from '../../prisma/prisma.service';
 
 /** 검사할 칸 하나 — 계약 필드 이름, 그 값, 값이 속해야 할 코드 그룹. */
 export interface CodeCheck {
@@ -22,7 +22,7 @@ export interface CodeCheck {
  * 이미 그 값을 쓰던 기존 행은 건드리지 않는다 — 물리 삭제를 두지 않는 이유와 같다.
  */
 export async function assertCodeValues(
-  prisma: PrismaService,
+  prisma: Pick<Prisma.TransactionClient, 'code_value'>,
   checks: readonly CodeCheck[],
 ): Promise<void> {
   const present = checks.filter(

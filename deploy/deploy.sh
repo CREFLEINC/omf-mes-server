@@ -97,9 +97,12 @@ docker info >/dev/null 2>&1 || die "docker 에 접근할 수 없습니다. 실�
 
 # Harbor 로그인 여부를 pull 전에 확인한다 — 여기서 안 걸러면 pull 이
 # "not found" 나 "unauthorized" 로 죽어서 원인이 자격증명인지 태그인지 헷갈린다.
-if [[ ! -f "$DOCKER_CONFIG/config.json" ]]; then
-  die "Harbor 로그인이 없습니다 ($DOCKER_CONFIG/config.json 없음).
-       docker --config '$DOCKER_CONFIG' login $REGISTRY -u 'robot\$mes+server-pull'"
+if [[ -f "$DOCKER_CONFIG/config.json" ]]; then
+  log "Harbor 자격증명 확인: $DOCKER_CONFIG/config.json"
+else
+  # 공개 저장소는 인증 없이 pull할 수 있다. 비공개 저장소라면 이후
+  # docker pull 단계에서 인증 오류가 발생하므로 원인이 그대로 드러난다.
+  log "Harbor 로그인 없음 — 공개 이미지 pull을 시도합니다 ($DOCKER_CONFIG/config.json 없음)"
 fi
 
 mkdir -p "$APP_DIR/logs"

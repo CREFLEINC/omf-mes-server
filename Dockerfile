@@ -49,6 +49,8 @@ COPY tsconfig.json tsconfig.build.json nest-cli.json .swcrc ./
 # src 보다 '앞에' 복사한다 — 계약은 src 보다 훨씬 덜 바뀌므로, 코드를 한 줄 고칠 때마다
 # 생성 레이어까지 다시 도는 것을 막는다(위 deps 스테이지의 prisma 복사와 같은 이유).
 COPY contracts ./contracts
+# 계약 타입 생성 스크립트와 계약 목록 정의도 빌드 스테이지에 필요하다.
+COPY scripts/contracts ./scripts/contracts
 RUN pnpm run contracts:generate
 COPY src ./src
 RUN pnpm run build
