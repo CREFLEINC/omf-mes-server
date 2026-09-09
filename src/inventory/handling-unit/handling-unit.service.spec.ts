@@ -139,4 +139,57 @@ describe('취급 단위 등록 — 채번', () => {
     // ⭐ ETag 의 원천이 «캐시되는 본문»에 실린다 — 빠지면 재전송 응답이 토큰을 잃는다(§4-1).
     expect(result.versionNo).toBe(1);
   });
+
+  it('⭐ 번호가 부딪히면 다시 뽑는다 — 사용자가 고칠 수 없는 값이라 400 으로 되돌리지 않는다', async () => {
+    const used: string[] = [];
+    let issued = 0;
+
+    const duplicate = new Prisma.PrismaClientKnownRequestError('중복', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['handling_unit_no'] },
+    });
+    const prisma = {
+      worker: { count: async () => 1 },
+      code_value: {
+        findMany: async () => [{ code: 'PALLET', code_group: { group_code: 'HANDLING_UNIT_TYPE' } }],
+      },
+      item: { findMany: async () => [] },
+      lot: { findMany: async () => [] },
+      uom: { findMany: async () => [] },
+      $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        work({
+          handling_unit: {
+            create: async ({ data }: { data: { handling_unit_no: string } }) => {
+              used.push(data.handling_unit_no);
+              // 첫 번호만 부딪힌다 — 두 번째는 통과해야 «다시 뽑았다»가 보인다.
+              if (used.length === 1) throw duplicate;
+              return { handling_unit_id: 77n };
+            },
+          },
+        } as unknown as Prisma.TransactionClient),
+    };
+    const numbering = {
+      next: async () => {
+        issued += 1;
+        return `HU-20260909-000${issued}`;
+      },
+    };
+    const queries = {
+      get: async () => ({ handlingUnit: { handlingUnitId: 77 }, contents: [], versionNo: 1 }),
+    };
+
+    const service = new HandlingUnitService(
+      prisma as unknown as PrismaService,
+      queries as unknown as HandlingUnitQueryService,
+      numbering as unknown as NumberingService,
+    );
+    await service.create(
+      { handlingUnitTypeCode: 'PALLET' },
+      { workerNo: '100027', appUserId: 42 },
+    );
+
+    // ⛔ 같은 번호를 다시 쓰지 않는다 — 재시도가 채번을 «다시» 부른다(결번 허용).
+    expect(used).toEqual(['HU-20260909-0001', 'HU-20260909-0002']);
+  });
 });
