@@ -224,7 +224,21 @@ export class DocumentProgressQueryService {
   ): Promise<DocumentProgressStep[]> {
     const [posted, cancelRequest, cancellation] = await Promise.all([
       this.prisma.inventory_transaction.findFirst({
-        where: { source_document_type_code: typeCode, source_document_id: documentId, reversal_of_transaction_id: null },
+        where: {
+          source_document_type_code: typeCode,
+          source_document_id: documentId,
+          reversal_of_transaction_id: null,
+          // ⭐ 결정 — 통보 059(2026-09-08). 적치가 «같은 판별자»로 원장을 쌓아
+          //    (`putaway-posting.ts:18,53`) `(STOCK_TRANSFER, id)` 두 식별자 공간이 겹친다.
+          //    059 는 「`PT-` 접두어」를 규칙으로 정했는데 ⛔ 그건 쓰는 쪽이 늘 때마다 자라는
+          //    «거부 목록»이다. 여기서는 «이 전표가 남기는 번호»로 양성 판별한다 — 이동 원장
+          //    번호는 `ST-…`(반출)·`ST-…-A`(도착) 둘로 구성상 닫혀 있다
+          //    (`transfer-posting.ts:136,303` · `ARRIVE_NO_SUFFIX`). 겹칠 자리가 0인 나머지
+          //    여덟 유형에는 안 얹는다.
+          ...(typeCode === 'STOCK_TRANSFER' && mapping.noColumn !== null
+            ? { transaction_no: { in: [String(row[mapping.noColumn]), `${String(row[mapping.noColumn])}-A`] } }
+            : {}),
+        },
         orderBy: { occurred_at: 'asc' },
       }),
       this.prisma.approval_request.findFirst({
