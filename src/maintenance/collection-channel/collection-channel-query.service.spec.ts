@@ -91,6 +91,56 @@ describe("CollectionChannelQueryService", () => {
     });
     expect(transaction).not.toHaveBeenCalled();
   });
+
+  it("관측은 등록 여부와 활성 검사연결 여부를 다른 술어로 계산한다", async () => {
+    raw.mockResolvedValueOnce([
+      {
+        channel_key: "PRS41.RAW.01",
+        last_value: "182.4",
+        observed_epoch_microseconds: "1788925323123456",
+        already_mapped: true,
+        total_count: 1n,
+      },
+    ]);
+
+    await expect(
+      service.observations({ equipmentId: 41, unmappedOnly: true }),
+    ).resolves.toEqual({
+      items: [
+        {
+          channelKey: "PRS41.RAW.01",
+          lastValue: "182.4",
+          observedAt: "2026-09-09T03:42:03.123456Z",
+          alreadyMapped: true,
+        },
+      ],
+      totalCount: 1,
+    });
+    const sql = raw.mock.calls[0][0] as Prisma.Sql;
+    expect(sql.sql).toContain("linked.is_active");
+    expect(sql.sql).toContain("linked.inspection_item_id IS NOT NULL");
+    expect(sql.sql).toContain("registered.equipment_id = o.equipment_id");
+    expect(sql.sql).toContain("count(*) OVER ()");
+    expect(sql.sql).toContain(
+      "ORDER BY o.observed_at DESC, o.equipment_id ASC, o.channel_key ASC",
+    );
+    expect(sql.values).toEqual([41]);
+  });
+
+  it("unmappedOnly false·생략은 필터를 만들지 않고 안전 범위 밖 설비는 거절한다", async () => {
+    raw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    await expect(service.observations({ unmappedOnly: false })).resolves.toEqual({
+      items: [],
+      totalCount: 0,
+    });
+    await expect(service.observations({})).resolves.toEqual({ items: [], totalCount: 0 });
+    const sqls = raw.mock.calls.map(([sql]) => sql as Prisma.Sql);
+    expect(sqls.every((sql) => !sql.sql.includes("linked.is_active"))).toBe(true);
+    await expect(
+      service.observations({ equipmentId: Number.MAX_SAFE_INTEGER + 1 }),
+    ).rejects.toMatchObject({ status: 400, errors: [{ field: "equipmentId", code: "RANGE" }] });
+    expect(raw).toHaveBeenCalledTimes(2);
+  });
 });
 
 function projection(): CollectionChannelProjection {
