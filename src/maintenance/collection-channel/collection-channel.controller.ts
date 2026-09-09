@@ -1,14 +1,24 @@
-import { Controller, Get, Param, Res } from "@nestjs/common";
+import { Controller, Get, Param, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 
 import { Contract } from "../../common/contract";
 import { setEtag } from "../../common/optimistic-lock";
-import { CollectionChannelQueryService } from "./collection-channel-query.service";
+import {
+  CollectionChannelList,
+  CollectionChannelQuery,
+  CollectionChannelQueryService,
+} from "./collection-channel-query.service";
 import { CollectionChannelView } from "./collection-channel-view";
 
 @Controller("maintenance/collection-channels")
 export class CollectionChannelController {
   constructor(private readonly queries: CollectionChannelQueryService) {}
+
+  @Get()
+  @Contract("GET /maintenance/collection-channels")
+  list(@Query() query: CollectionChannelQuery): Promise<CollectionChannelList> {
+    return this.queries.list(query);
+  }
 
   @Get(":collectionChannelId")
   @Contract("GET /maintenance/collection-channels/{collectionChannelId}")

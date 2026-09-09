@@ -6,7 +6,17 @@ import { CollectionChannelProjection } from "./collection-channel-view";
 
 describe("CollectionChannelQueryService", () => {
   const raw = jest.fn();
-  const service = new CollectionChannelQueryService({ $queryRaw: raw } as unknown as PrismaService);
+  const tx = { $queryRaw: raw };
+  const transaction = jest.fn(
+    async (
+      work: (client: typeof tx) => Promise<unknown>,
+      _options?: { isolationLevel: string },
+    ) => work(tx),
+  );
+  const service = new CollectionChannelQueryService({
+    $queryRaw: raw,
+    $transaction: transaction,
+  } as unknown as PrismaService);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -33,6 +43,53 @@ describe("CollectionChannelQueryService", () => {
       errors: [{ field: "collectionChannelId", code: "RANGE" }],
     });
     expect(raw).not.toHaveBeenCalled();
+  });
+
+  it("목록은 필터·정렬·count·page·projection을 한 스냅샷에서 읽는다", async () => {
+    raw
+      .mockResolvedValueOnce([{ has_missing_key: false }])
+      .mockResolvedValueOnce([{ collection_channel_id: 31n }])
+      .mockResolvedValueOnce([{ total: 1n }])
+      .mockResolvedValueOnce([projection()]);
+
+    await expect(
+      service.list({ equipmentId: 41, isActive: false, page: 2, size: 1 }),
+    ).resolves.toMatchObject({
+      items: [{ collectionChannelId: 31 }],
+      totalCount: 1,
+      page: { page: 2, size: 1, total: 1 },
+    });
+    const [missing, ids, count, projected] = raw.mock.calls.map(([sql]) => sql as Prisma.Sql);
+    expect(missing.sql).toContain("bool_or(c.channel_key IS NULL)");
+    expect(missing.values).toEqual([41]);
+    expect(ids.sql).toContain(
+      "ORDER BY c.equipment_id ASC, c.channel_key ASC NULLS LAST,\n                     c.collection_channel_id ASC",
+    );
+    expect(ids.values.slice(0, -2)).toEqual(count.values);
+    expect(count.values).toEqual([41, false]);
+    expect(projected.values).toEqual([31n]);
+    expect(transaction.mock.calls[0][1]).toEqual({ isolationLevel: "RepeatableRead" });
+  });
+
+  it("isActive 미지정은 활성·비활성을 모두 읽고 과거 NULL 키를 먼저 드러낸다", async () => {
+    raw.mockResolvedValueOnce([{ has_missing_key: true }]);
+    await expect(service.list({ equipmentId: 41 })).rejects.toThrow(
+      "Missing required collection channel key",
+    );
+    const sql = raw.mock.calls[0][0] as Prisma.Sql;
+    expect(sql.sql).not.toContain("c.is_active =");
+    expect(raw).toHaveBeenCalledTimes(1);
+  });
+
+  it("목록의 안전 범위 밖 설비와 page는 DB 전에 400이다", async () => {
+    await expect(
+      service.list({ equipmentId: Number.MAX_SAFE_INTEGER + 1 }),
+    ).rejects.toMatchObject({ status: 400, errors: [{ field: "equipmentId", code: "RANGE" }] });
+    await expect(service.list({ page: Number.MAX_SAFE_INTEGER })).rejects.toMatchObject({
+      status: 400,
+      errors: [{ field: "page", code: "RANGE" }],
+    });
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 
