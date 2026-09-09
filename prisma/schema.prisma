@@ -2199,6 +2199,7 @@ model terminal {
   work_session         work_session[]
   work_session_event   work_session_event[]
   inspection_result    inspection_result[]
+  terminal_printer     terminal_printer[]
 
   @@index([location_id], map: "ix_terminal_location")
   @@index([equipment_id], map: "ix_terminal_equipment")
@@ -3911,22 +3912,44 @@ model notification_subscription {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model printer {
-  printer_id        BigInt   @id @default(autoincrement())
+  printer_id        BigInt             @id @default(autoincrement())
   plant_id          BigInt
-  printer_code      String   @db.VarChar(50)
-  printer_name      String   @db.VarChar(200)
-  printer_type_code String   @db.VarChar(50)
+  printer_code      String             @db.VarChar(50)
+  printer_name      String             @db.VarChar(200)
+  printer_type_code String             @db.VarChar(50)
   connection_uri    String
   dpi               Int?
-  is_active         Boolean  @default(true)
-  created_at        DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  is_active         Boolean            @default(true)
+  created_at        DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by        BigInt?
-  updated_at        DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at        DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by        BigInt?
-  version_no        Int      @default(1)
-  plant             plant    @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  version_no        Int                @default(1)
+  status_code       String?            @db.VarChar(40)
+  status_message    String?            @db.VarChar(200)
+  plant             plant              @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  terminal_printer  terminal_printer[]
 
   @@unique([plant_id, printer_code], map: "uq_printer")
+  @@schema("app")
+}
+
+model terminal_printer {
+  terminal_printer_id           BigInt   @id @default(autoincrement())
+  terminal_id                   BigInt
+  printer_id                    BigInt
+  is_default                    Boolean  @default(false)
+  supported_document_type_codes String[] @default([]) @db.VarChar(40)
+  created_at                    DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                    BigInt?
+  updated_at                    DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                    BigInt?
+  version_no                    Int      @default(1)
+  printer                       printer  @relation(fields: [printer_id], references: [printer_id], onDelete: NoAction, onUpdate: NoAction)
+  terminal                      terminal @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([terminal_id, printer_id], map: "uq_terminal_printer")
+  @@index([printer_id], map: "ix_terminal_printer_printer")
   @@schema("app")
 }
 
