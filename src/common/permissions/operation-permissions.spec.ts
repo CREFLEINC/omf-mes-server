@@ -92,4 +92,10 @@ describe('오퍼레이션 권한 매핑', () => {
       expect(OPERATION_PERMISSIONS[key]).toContain('W-03-10');
     }
   });
+
+  it('⛔ 발행 POST에 재구성 라벨과 검사성적서 호출 셸이 모두 있다 — I-27 R11', () => {
+    expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toEqual(
+      expect.arrayContaining(['P-04-04', 'W-04-03']),
+    );
+  });
 });

@@ -97,6 +97,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /app/notices/{noticeId}:publish': ['W-CO-04'],
   'POST /app/notices/{noticeId}:close': ['W-CO-04'],
   'GET /app/notices/{noticeId}/acknowledgements': ['W-CO-04'],
+  // 라벨·출력물 발행 — 도출표에는 기존 여덟 화면이 있지만 재구성 라벨(`P-04-04`)과
+  // 검사성적서(`W-04-03`) 호출 셸이 빠졌다. 둘 다 같은 발행 POST를 사용한다(I-27 R11).
+  // GET·결과보고에는 계약상 403이 없으므로 이 권한을 확대하지 않는다. // 결정 — 통보(레인 B)
+  'POST /app/document-issues': ['P-04-04', 'W-04-03'],
   'POST /app/roles/{roleId}:activate': ['W-CO-02'],
   'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
   'PUT /app/roles/{roleId}/permissions': ['W-CO-02'],
