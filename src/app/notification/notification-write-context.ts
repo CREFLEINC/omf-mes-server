@@ -18,6 +18,7 @@ export function notificationWriteContext(
     fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
       actorUserId: session.userId,
       body: request.body,
+      query: request.query,
     }),
   };
 }

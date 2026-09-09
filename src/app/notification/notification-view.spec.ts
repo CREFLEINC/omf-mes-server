@@ -52,7 +52,7 @@ describe('notificationView', () => {
     'WORK_ORDER',
     'NONCONFORMANCE',
   ])('%s 대상은 이동 불가여도 대상 쌍을 보존하고 화면과 위치는 생략한다', (type) => {
-    // 설계 미정 — 문의 102
+    // 결정 — 통보 102
     const view = notificationView({
       ...ROW,
       notification_event: {
@@ -72,7 +72,7 @@ describe('notificationView', () => {
   it.each(['LEGACY_TARGET', 'equipment', ''])(
     'enum 밖 과거 유형 %s는 대상 쌍을 생략한다',
     (type) => {
-      // 설계 미정 — 문의 102
+      // 결정 — 통보 102
       const view = notificationView({
         ...ROW,
         notification_event: {
