@@ -235,8 +235,15 @@ function compareDesc(left: string, right: string): number {
 /**
  * 참조 존재 확인. ⚠ **404 를 안 낸다** — 없는 품목·LOT·단위는 본문이 틀린 것이다
  * ⇒ 400 `INVALID`(등록과 같은 가름 · §5-6). 그냥 넘기면 FK 위반이 500 으로 샌다.
+ *
+ * ⚠ 배열 이름이 오퍼레이션마다 다르다 — 치환은 `items`, `:pack` 은 `contents` 다. `field` 가
+ *   요청 본문의 «그 자리»를 짚어야 화면이 어느 줄인지 안다(`assertNoDuplicateContent` 와 같은 축).
  */
-async function assertReferences(tx: Tx, items: HandlingUnitContentUpsert[]): Promise<void> {
+export async function assertReferences(
+  tx: Tx,
+  items: HandlingUnitContentUpsert[],
+  arrayField = 'items',
+): Promise<void> {
   if (items.length === 0) return;
   const found = await tx.item.findMany({
     where: { item_id: { in: items.map((line) => line.itemId) } },
@@ -259,9 +266,9 @@ async function assertReferences(tx: Tx, items: HandlingUnitContentUpsert[]): Pro
     errors.push(field(name, ERROR_CODE.INVALID, '없는 식별자입니다.'));
 
   items.forEach((line, index) => {
-    if (!itemIds.has(line.itemId)) missing(`items[${index}].itemId`);
-    if (!lotIds.has(line.lotId)) missing(`items[${index}].lotId`);
-    if (!uomIds.has(line.uomId)) missing(`items[${index}].uomId`);
+    if (!itemIds.has(line.itemId)) missing(`${arrayField}[${index}].itemId`);
+    if (!lotIds.has(line.lotId)) missing(`${arrayField}[${index}].lotId`);
+    if (!uomIds.has(line.uomId)) missing(`${arrayField}[${index}].uomId`);
   });
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
