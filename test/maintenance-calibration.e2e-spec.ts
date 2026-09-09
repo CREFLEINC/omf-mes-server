@@ -11,6 +11,8 @@ import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E_I33_CAL";
 const LOGIN_ID = `${PREFIX}-USER`;
+const ROLE = `${PREFIX}-ROLE`;
+const CUSTOM_RESULT = `${PREFIX}_CUSTOM`;
 const PASSWORD = "I-33-검교정-조회-검증-비밀번호";
 
 describe("검교정 이력 (e2e)", () => {
@@ -19,6 +21,7 @@ describe("검교정 이력 (e2e)", () => {
   let cookie: string[];
   let calibrationId: number;
   let equipmentId: number;
+  let actorUserId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -34,6 +37,26 @@ describe("검교정 이력 (e2e)", () => {
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    actorUserId = Number(user.app_user_id);
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: ROLE } });
+    for (const permissionCode of ["W-05-10", "W-05-11"]) {
+      await prisma.role_permission.create({
+        data: { role_id: role.role_id, permission_code: permissionCode },
+      });
+    }
+    await prisma.user_role.create({
+      data: { app_user_id: user.app_user_id, role_id: role.role_id },
+    });
+    const resultGroup = await prisma.code_group.findUniqueOrThrow({
+      where: { group_code: "CALIBRATION_RESULT" },
+    });
+    await prisma.code_value.create({
+      data: {
+        code_group_id: resultGroup.code_group_id,
+        code: CUSTOM_RESULT,
+        code_name: "의미 미정 확장 결과",
+      },
     });
     const equipment = await prisma.equipment.create({
       data: {
@@ -139,6 +162,181 @@ describe("검교정 이력 (e2e)", () => {
     expect(boundary.body).toMatchObject({ items: [], totalCount: 0 });
   });
 
+  it("CHECK는 필수 네 칸만으로 이력을 남기고 설비 마스터는 바꾸지 않는다", async () => {
+    const before = await equipmentState();
+    const response = await post({
+      equipmentId,
+      historyTypeCode: "CHECK",
+      performedOn: "2026-09-10",
+      resultCode: "PASS",
+    }).expect(201);
+    expect(response.body).toMatchObject({
+      equipmentId,
+      historyTypeCode: "CHECK",
+      performedOn: "2026-09-10",
+      resultCode: "PASS",
+      recordedByUserId: actorUserId,
+      performedByUserId: null,
+      blocksUse: false,
+      clearedAt: null,
+    });
+    expect(await equipmentState()).toEqual(before);
+  });
+
+  it("같은 날 다른 유형은 허용하고 같은 유형 중복은 세 축의 400이다", async () => {
+    await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-10",
+      resultCode: "FAIL",
+    }).expect(201);
+    const duplicate = await post({
+      equipmentId,
+      historyTypeCode: "CHECK",
+      performedOn: "2026-09-10",
+      resultCode: "PASS",
+    }).expect(400);
+    expect(duplicate.body.errors).toContainEqual(
+      expect.objectContaining({
+        code: "UNIQUE_VIOLATION",
+        uniqueScope: ["equipmentId", "performedOn", "historyTypeCode"],
+      }),
+    );
+  });
+
+  it("외부 기관은 이름이 필요하고 내부 수행자와 짝지을 수 없다", async () => {
+    const before = await prisma.equipment_calibration.count({
+      where: { equipment_id: BigInt(equipmentId) },
+    });
+    const missingName = await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-15",
+      resultCode: "PASS",
+      agencyTypeCode: "EXTERNAL",
+    }).expect(400);
+    expect(missingName.body.errors).toContainEqual(
+      expect.objectContaining({ field: "agencyName", code: "REQUIRED" }),
+    );
+    const pairedPerformer = await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-15",
+      resultCode: "PASS",
+      agencyTypeCode: "EXTERNAL",
+      agencyName: "외부기관",
+      performedByUserId: actorUserId,
+    }).expect(400);
+    expect(pairedPerformer.body.errors).toContainEqual(
+      expect.objectContaining({ field: "performedByUserId", code: "PAIR" }),
+    );
+    expect(
+      await prisma.equipment_calibration.count({ where: { equipment_id: BigInt(equipmentId) } }),
+    ).toBe(before);
+  });
+
+  it("CALIBRATION PASS는 이력·마스터를 원자 갱신하고 같은 키는 재생한다", async () => {
+    const key = randomUUID();
+    const body = {
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-11",
+      resultCode: "PASS",
+      agencyTypeCode: "EXTERNAL",
+      agencyName: "한국계측인증",
+      nextDueOn: "2027-09-11",
+      blocksUse: true,
+    };
+    const first = await post(body, key).expect(201);
+    const replay = await post(body, key).expect(201);
+    expect(replay.body).toEqual(first.body);
+    expect(first.body).toMatchObject({
+      recordedByUserId: actorUserId,
+      performedByUserId: null,
+      agencyTypeCode: "EXTERNAL",
+      agencyName: "한국계측인증",
+      blocksUse: true,
+    });
+    expect(await equipmentState()).toEqual({
+      last: "2026-09-11",
+      due: "2027-09-11",
+      version: 2,
+    });
+    expect(
+      await prisma.equipment_calibration.count({
+        where: {
+          equipment_id: BigInt(equipmentId),
+          calibration_date: new Date("2026-09-11T00:00:00.000Z"),
+          history_type_code: "CALIBRATION",
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it("FAIL은 기한을 이력에만 남기고 ADJUSTED는 null 기한까지 마스터에 반영한다", async () => {
+    await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-12",
+      resultCode: "FAIL",
+      nextDueOn: "2028-09-12",
+    }).expect(201);
+    expect(await equipmentState()).toEqual({
+      last: "2026-09-11",
+      due: "2027-09-11",
+      version: 2,
+    });
+
+    await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-13",
+      resultCode: "ADJUSTED",
+      nextDueOn: null,
+    }).expect(201);
+    expect(await equipmentState()).toEqual({ last: "2026-09-13", due: null, version: 3 });
+  });
+
+  it("CALIBRATION의 활성 확장 결과는 422이며 이력·마스터를 쓰지 않는다", async () => {
+    const before = await equipmentState();
+    const count = await prisma.equipment_calibration.count({
+      where: { equipment_id: BigInt(equipmentId) },
+    });
+    const response = await post({
+      equipmentId,
+      historyTypeCode: "CALIBRATION",
+      performedOn: "2026-09-14",
+      resultCode: CUSTOM_RESULT,
+    }).expect(422);
+    expect(response.body.errors).toContainEqual(
+      expect.objectContaining({ field: "resultCode", code: "STATE_LOCKED" }),
+    );
+    expect(await equipmentState()).toEqual(before);
+    expect(
+      await prisma.equipment_calibration.count({ where: { equipment_id: BigInt(equipmentId) } }),
+    ).toBe(count);
+  });
+
+  function post(body: object, key: string = randomUUID()): request.Test {
+    return request(app.getHttpServer())
+      .post("/api/maintenance/calibrations")
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", key)
+      .send(body);
+  }
+
+  async function equipmentState(): Promise<{ last: string | null; due: string | null; version: number }> {
+    const row = await prisma.equipment.findUniqueOrThrow({
+      where: { equipment_id: BigInt(equipmentId) },
+      select: { last_calibration_date: true, calibration_due_date: true, version_no: true },
+    });
+    return {
+      last: row.last_calibration_date?.toISOString().slice(0, 10) ?? null,
+      due: row.calibration_due_date?.toISOString().slice(0, 10) ?? null,
+      version: row.version_no,
+    };
+  }
+
   async function login(): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post("/api/app/sessions")
@@ -154,11 +352,18 @@ describe("검교정 이력 (e2e)", () => {
       where: { equipment: { equipment_code: { startsWith: PREFIX } } },
     });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
+    await prisma.code_value.deleteMany({ where: { code: CUSTOM_RESULT } });
     const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
     if (user) {
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });
