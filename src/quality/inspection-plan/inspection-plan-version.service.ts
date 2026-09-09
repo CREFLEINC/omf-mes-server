@@ -229,29 +229,34 @@ export class InspectionPlanVersionService {
     const removed = [...known].filter((id) => !keep.has(id));
     await this.assertRemovable(removed);
 
-    await this.prisma.$transaction(async (tx) => {
-      if (removed.length > 0) {
-        await tx.inspection_item_spec.deleteMany({
-          where: { inspection_item_spec_id: { in: removed } },
-        });
-      }
-      if (keep.size > 0) {
-        await tx.$executeRaw`
-          UPDATE quality.inspection_item_spec
-             SET sequence_no = sequence_no + ${SEQ_PARKING_OFFSET}
-           WHERE inspection_plan_version_id = ${versionId}`;
-      }
-      for (const item of items) {
-        if (item.inspectionItemSpecId === undefined) {
-          await tx.inspection_item_spec.create({ data: itemData(versionId, item) });
-          continue;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (removed.length > 0) {
+          await tx.inspection_item_spec.deleteMany({
+            where: { inspection_item_spec_id: { in: removed } },
+          });
         }
-        await tx.inspection_item_spec.update({
-          where: { inspection_item_spec_id: item.inspectionItemSpecId },
-          data: itemData(versionId, item),
-        });
-      }
-    });
+        if (keep.size > 0) {
+          await tx.$executeRaw`
+            UPDATE quality.inspection_item_spec
+               SET sequence_no = sequence_no + ${SEQ_PARKING_OFFSET}
+             WHERE inspection_plan_version_id = ${versionId}`;
+        }
+        for (const item of items) {
+          if (item.inspectionItemSpecId === undefined) {
+            await tx.inspection_item_spec.create({ data: itemData(versionId, item) });
+            continue;
+          }
+          await tx.inspection_item_spec.update({
+            where: { inspection_item_spec_id: item.inspectionItemSpecId },
+            data: itemData(versionId, item),
+          });
+        }
+      });
+    } catch (error) {
+      if (isCollectionChannelItemReferenceError(error)) throw itemReferenceLocked();
+      throw error;
+    }
 
     return this.readItems(versionId);
   }
@@ -454,20 +459,19 @@ export class InspectionPlanVersionService {
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
 
-  /** ⛔ 측정 기록이 붙은 항목은 뺄 수 없다 — NOT NULL FK 라 지우면 기록이 무너진다. */
+  /** ⛔ 측정 기록이나 수집 채널이 붙은 항목은 뺄 수 없다. */
   private async assertRemovable(removed: number[]): Promise<void> {
     if (removed.length === 0) return;
-    const measured = await this.prisma.inspection_measurement.count({
-      where: { inspection_item_spec_id: { in: removed } },
-    });
-    if (measured === 0) return;
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      {
-        scope: 'screen',
-        code: ERROR_CODE.STATE_LOCKED,
-        message: '측정 기록이 있는 검사 항목은 뺄 수 없습니다.',
-      },
+    const [measured, mapped] = await Promise.all([
+      this.prisma.inspection_measurement.count({
+        where: { inspection_item_spec_id: { in: removed } },
+      }),
+      this.prisma.collection_channel.count({
+        where: { inspection_item_id: { in: removed } },
+      }),
     ]);
+    if (measured === 0 && mapped === 0) return;
+    throw itemReferenceLocked();
   }
 
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
@@ -483,6 +487,26 @@ export class InspectionPlanVersionService {
 }
 
 type ItemError = ErrorItem;
+
+const COLLECTION_CHANNEL_ITEM_FK = 'collection_channel_inspection_item_id_fkey';
+
+export function isCollectionChannelItemReferenceError(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2003') {
+    return false;
+  }
+  const meta = (error.meta ?? {}) as Record<string, unknown>;
+  return meta.constraint === COLLECTION_CHANNEL_ITEM_FK;
+}
+
+function itemReferenceLocked(): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message: '측정 기록 또는 수집 채널이 연결된 검사 항목은 뺄 수 없습니다.',
+    },
+  ]);
+}
 
 function locked(action: string): ContractException {
   // ⛔ 400 이다 — 계약이 이 자리들에 409 를 «선언하지 않았다»(Routing 과 같다).
