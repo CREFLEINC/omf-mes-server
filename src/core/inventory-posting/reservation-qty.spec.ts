@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { LockedBalanceRow, lockBalancesByItemLot } from './balance-lock';
+import { LockedBalanceRow, lockBalancesByItemLot, lockBalancesInOrder } from './balance-lock';
 import { InventoryPostingService } from './inventory-posting.service';
 import { BalanceDimension, PickMove, ReserveMove } from './reservation-qty';
 
@@ -133,7 +133,7 @@ describe('InventoryPostingService.reserve', () => {
 
     await service.reserve(tx, [reserveMove()]);
 
-    expect(statements[0].sql).toContain('UPDATE inventory.inventory_balance');
+    expect(statements[0].sql).toMatch(/UPDATE inventory\.inventory_balance$/m);
     expect(statements[0].sql).toContain('reserved_qty = reserved_qty + ?::numeric');
     expect(statements[0].sql).toContain('version_no = version_no + 1');
     expect(statements[0].sql).not.toContain('on_hand_qty');
@@ -152,7 +152,8 @@ describe('InventoryPostingService.reserve', () => {
     expect(ids).not.toEqual([BALANCE]);
     // 잔액 먼저·예약 나중 — 순서를 뒤집으면 `pick()` 이 잡는 순서와 갈린다(§6-4).
     expect(statements).toHaveLength(2);
-    expect(statements[1].sql).toContain('INSERT INTO inventory.inventory_reservation');
+    // ⛔ `toContain` 은 접두 일치라 `…_reservation_x` 도 통과한다 — 줄 끝까지 못박는다.
+    expect(statements[1].sql).toMatch(/INSERT INTO inventory\.inventory_reservation$/m);
     expect(statements[1].sql).toContain('RETURNING inventory_reservation_id');
     // 11칸 중 «넷»만 담긴다 — 통보 196. 나머지 일곱은 예약이 못 싣는다.
     expect(statements[1].values).toEqual([
@@ -304,8 +305,31 @@ describe('lockBalancesByItemLot', () => {
     expect(statements[0].sql).toContain('ORDER BY inventory_balance_id');
     expect(statements[0].sql).not.toContain('DESC');
     expect(statements[0].sql).toContain('FOR UPDATE');
-    // 잠근 행을 그대로 `reserve()`·`pick()` 에 넘기므로 하한 판정 칸이 실려야 한다.
-    expect(statements[0].sql).toContain('available_qty');
+  });
+
+  it('형제 lockBalancesInOrder 와 «같은» 칸을 돌려준다', async () => {
+    const { tx, statements } = lockFake([]);
+
+    await lockBalancesByItemLot(tx, 30n, 40n);
+    await lockBalancesInOrder(tx, [
+      {
+        legalEntityId: 1n,
+        businessUnitId: 2n,
+        plantId: 3n,
+        warehouseId: 10n,
+        locationId: 20n,
+        itemId: 30n,
+        lotKey: 40n,
+      },
+    ]);
+
+    // 둘 다 `LockedBalanceRow` 를 낸다 — 한쪽 칸을 지우거나 상수로 덮으면 여기서 갈린다.
+    // (`toContain('available_qty')` 는 `0 AS available_qty` 도 통과해 공허했다.)
+    const projection = (sql: string): string =>
+      sql.split('FROM inventory.inventory_balance')[0].replace(/\s+/g, ' ').trim();
+    expect(projection(statements[0].sql)).toBe(projection(statements[1].sql));
+    // 잠근 행을 그대로 `reserve()`·`pick()` 에 넘기므로 하한 판정 칸이 실려 있어야 한다.
+    expect(projection(statements[0].sql)).toContain('owner_partner_id, available_qty');
   });
 
   it('없으면 빈 배열이다 (행을 만들지 않는다)', async () => {
