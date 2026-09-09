@@ -12,7 +12,7 @@ describe("예비품 엑셀 파서", () => {
       await workbook([
         ["공장", "부품코드", "부품명", "계약에 없는 열"],
         ["P1", "SP-1", "씰", "무시"],
-        [null, null, null, null],
+        [" ", " ", " ", null],
         ["P1", null, null, null],
       ]),
     );
@@ -25,7 +25,7 @@ describe("예비품 엑셀 파서", () => {
         values: { sparePartCode: "SP-1", sparePartName: "씰" },
       },
       {
-        index: 1,
+        index: 2,
         plantCode: "P1",
         values: { sparePartCode: "", sparePartName: "" },
       },
