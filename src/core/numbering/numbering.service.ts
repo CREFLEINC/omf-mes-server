@@ -38,6 +38,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   /** 규칙 미등재 — `IA-{YYYYMMDD}-{SEQ4}` · 계약 example `IA-2026-000031` 은 형식만 준다.
    *  기간 축은 서버 시각 UTC 날짜다 — 본문에 날짜 칸이 0개다(I-14 §5-2 · 결정 — 통보 135). */
   INVENTORY_ADJUSTMENT: 'IA',
+  /** 규칙 미등재 — `IC-{YYYYMMDD}-{SEQ4}` · 기간 축은 요청 plannedDate, 공장 축은 창고에서 푼다(통보 272). */
+  INVENTORY_COUNT: 'IC',
   /** 규칙 미등재 — `HU-{YYYYMMDD}-{SEQ4}` · 계약 example `HU-2026-000058` 은 형식만 준다.
    *  기간 축은 «서버 시각 UTC 날짜» — `HandlingUnitCreate` 에 날짜 칸이 0개다(통보 144ⓒ).
    *  `plantId` 는 null — `inventory.handling_unit` 에 공장 축이 0개다(I-16 §4-2). */

@@ -134,6 +134,15 @@ describe('채번 코어', () => {
     ]);
   });
 
+  it('채번 — 재고 실사는 IC 기본 접두어와 창고의 공장 축을 쓴다 // 결정 — 통보 272', async () => {
+    const { service, inserted } = fake();
+
+    expect(await service.next('INVENTORY_COUNT', PLANT, DAY)).toBe('IC-20260906-0001');
+    expect(inserted).toEqual([
+      { documentTypeCode: 'INVENTORY_COUNT', pattern: 'IC-{YYYYMMDD}-{SEQ4}' },
+    ]);
+  });
+
   it('채번 — 출하지시서·재고예약은 SR·RS 기본 접두어를 쓴다 // 결정 — 통보 191', async () => {
     const { service } = fake();
 
