@@ -50,6 +50,8 @@ export type DocumentIssueTargetFacts =
       lotTypeCode: string;
       statusCode: string;
       completedAt: Date | null;
+      sourceTypeCode?: string;
+      sourceId?: bigint;
     }
   | {
       targetTypeCode: "SERIAL_NUMBER";
