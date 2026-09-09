@@ -9,6 +9,7 @@ import { BreakdownCreateService } from "./breakdown/breakdown-create.service";
 import { BreakdownHandlingService } from "./breakdown/breakdown-handling.service";
 import { BreakdownQueryService } from "./breakdown/breakdown-query.service";
 import { CalibrationController } from "./calibration/calibration.controller";
+import { CalibrationCreateService } from "./calibration/calibration-create.service";
 import { CalibrationQueryService } from "./calibration/calibration-query.service";
 import { DowntimeController } from "./downtime/downtime.controller";
 import { DowntimeCreateService } from "./downtime/downtime-create.service";
@@ -73,6 +74,7 @@ import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
     MaintenanceResultQueryService,
     ToolUsageQueryService,
     CalibrationQueryService,
+    CalibrationCreateService,
   ],
 })
 export class MaintenanceModule {}

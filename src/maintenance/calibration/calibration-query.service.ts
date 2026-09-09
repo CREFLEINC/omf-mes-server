@@ -131,6 +131,17 @@ function project(
       WHERE ${condition}`);
 }
 
+export async function readCalibrationWithin(
+  client: ProjectionClient,
+  calibrationId: bigint,
+): Promise<CalibrationProjection | null> {
+  const rows = await project(
+    client,
+    Prisma.sql`c.equipment_calibration_id = ${calibrationId}`,
+  );
+  return rows[0] ?? null;
+}
+
 function rangeError(name: string, message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [field(name, ERROR_CODE.RANGE, message)]);
 }
