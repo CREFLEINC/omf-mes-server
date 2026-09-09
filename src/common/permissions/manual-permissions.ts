@@ -212,6 +212,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 쓴다」로 부모를 지목하고, 부모의 화면이 곧 이 오퍼레이션의 화면이다.
   'PUT /inventory/adjustments/{inventoryAdjustmentId}/lines': ['W-01-12'],
 
+  // 실사 — 계약이 403을 선언했지만 화면 액션 도출표에는 빠진 두 자리다.
+  // 모바일은 한 위치의 실물 카운트(M-01-11), 관리웹은 마감(W-01-04)을 소유한다.
+  'PUT /inventory/counts/{inventoryCountId}/lines': ['M-01-11'],
+  'POST /inventory/counts/{inventoryCountId}:close': ['W-01-04'],
+
   // `W-01-06`·`W-04-10` 폐기 요청 — 부르는 화면이 실제로 0건이나 `PermissionGuard` 가 등록을
   // 요구한다(미등록이면 500). 소유자를 폐기 두 화면으로 둔다 — 두 화면의 §3 액션표에 라인
   // 편집이 없어(「승인 요청」·「기타출고 처리」뿐) 도출표에 치환이 안 들어왔다.

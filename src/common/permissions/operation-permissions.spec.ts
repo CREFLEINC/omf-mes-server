@@ -98,4 +98,13 @@ describe('오퍼레이션 권한 매핑', () => {
       expect.arrayContaining(['P-04-04', 'W-04-03']),
     );
   });
+
+  it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
+    expect(OPERATION_PERMISSIONS['PUT /inventory/counts/{inventoryCountId}/lines']).toEqual([
+      'M-01-11',
+    ]);
+    expect(OPERATION_PERMISSIONS['POST /inventory/counts/{inventoryCountId}:close']).toEqual([
+      'W-01-04',
+    ]);
+  });
 });
