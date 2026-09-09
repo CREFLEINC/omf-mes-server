@@ -1,8 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -19,6 +20,11 @@ import { TransferLineWriteInput, postTransferIssue } from './transfer-posting';
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다(입고와 같은 판정). */
 const NUMBER_RETRY = 3;
 const REGISTERED = 'REGISTERED';
+
+interface LockedHeader {
+  shipped_at: Date | null;
+  version_no: number;
+}
 
 export interface StockTransferLineCreate {
   itemId: number;
@@ -163,6 +169,27 @@ export class StockTransferService {
   }
 
   /**
+   * 라인 치환의 **자물쇠까지만**이다(통보 123) — 잠그고·찾고·대조하고 «거절만» 한다.
+   * ⛔ 본문 `items` 를 한 칸도 안 읽는다. 형제 출고가 404 «앞»에서 빈 배열을 400
+   *    `LINE_REQUIRED` 로 막는 그 한 단을 «일부러» 뺐다(`goods-issue-update.service.ts:56-60`)
+   *    — 치환 본체가 없어 `items` 를 볼 이유가 0이다.
+   * ⛔ 치환 본체를 짓지 않는다 — 오늘 실재하는 모든 전표가 `shipped_at IS NOT NULL` 이라
+   *    아래 400 이 유일한 출구고, 호출자가 0인 코드다(`CLAUDE.md`). 본체가 서는 날
+   *    `stock-transfer-update.service.ts` 로 뺀다(형제 둘의 형상).
+   */
+  async replaceLines(stockTransferId: number, version: number): Promise<never> {
+    const locked = await this.prisma.$transaction((tx) => lockHeader(tx, stockTransferId, version));
+    if (locked.shipped_at !== null) {
+      throw one(field('items', ERROR_CODE.STATE_LOCKED, '반출이 끝난 이동의 라인은 바꿀 수 없습니다.'));
+    }
+    // ⛔ 오늘 여기 닿을 수 없다 — 반출 전 상태를 만드는 오퍼레이션이 계약에 0건이다(POST 가
+    //    생성·반출을 한 번에 하고 x-internal-note 가 `:depart` 를 없앴다 · 통보 123).
+    //    ⭐ 위 400 으로 «같이» 닫지 않는다 — 그러면 `shipped_at` 을 아예 안 읽는 구현과 모든
+    //    테스트가 같아져 자물쇠가 조용히 사라져도 아무도 모른다.
+    throw new Error('반출 전 재고 이동 전표가 실재한다 — 계약 전제가 깨졌다(문의 123).');
+  }
+
+  /**
    * ⚠ 사번을 **읽고 버린다** — `stock_transfer` 에 행위자 칸이 없고 `created_by` 는
    * `app_user` FK 다. 계약이 required 로 못박았고 헤더는 계약 검증 가드가 안 본다.
    */
@@ -248,6 +275,27 @@ export class StockTransferService {
     });
     return row !== null;
   }
+}
+
+/**
+ * 헤더를 잠그고 버전을 대조한다 — 형제 둘(`inventory-adjustment-update.service.ts:194-207` ·
+ * 출고)의 복제다. ⛔ 잠금을 빼면 도착이 그 사이 `version_no` 를 올려도(`transfer-arrive.service.ts:146`)
+ * stale 한 값으로 대조를 통과해 **경쟁 시 409 대신 400** 이 나간다.
+ */
+async function lockHeader(
+  tx: Prisma.TransactionClient,
+  stockTransferId: number,
+  version: number,
+): Promise<LockedHeader> {
+  const [locked] = await tx.$queryRaw<LockedHeader[]>`
+    SELECT shipped_at, version_no
+      FROM logistics.stock_transfer
+     WHERE stock_transfer_id = ${BigInt(stockTransferId)}
+       FOR UPDATE`;
+  if (locked === undefined) throw new NotFoundException('없는 재고 이동입니다.');
+  // 존재는 확인했다 — 값이 다르면 그 사이 누가 먼저 저장한 것이다(재로드로 «토큰»은 풀린다).
+  if (locked.version_no !== version) assertUpdated(0);
+  return locked;
 }
 
 /** `uq` 위반이 «번호» 때문인가 — 다른 유일 위반과 갈라야 재시도 판정이 선다. */
