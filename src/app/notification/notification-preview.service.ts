@@ -79,7 +79,7 @@ export class NotificationPreviewService {
     `);
   }
 
-  private async assertReferencesExist(
+  async assertReferencesExist(
     tx: Prisma.TransactionClient,
     recipients: NotificationRecipientInput[],
   ): Promise<void> {

@@ -1,9 +1,16 @@
-import { Injectable } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
+import { ContractException, ERROR_CODE } from "../../common/errors";
+import { assertUpdated } from "../../common/optimistic-lock";
 import { PrismaService } from "../../prisma/prisma.service";
 import { NOTIFICATION_EVENTS, notificationEvent } from "./notification-events";
-import { NotificationRecipientInput } from "./notification-recipient-rules";
+import { NotificationPreviewService } from "./notification-preview.service";
+import {
+  assertNotificationRecipientRules,
+  NotificationRecipientInput,
+  NotificationSubscriptionReplaceInput,
+} from "./notification-recipient-rules";
 
 export const INITIAL_NOTIFICATION_SUBSCRIPTION_VERSION = 1;
 
@@ -28,9 +35,18 @@ interface SubscriptionRow {
   app_user_id: bigint | null;
 }
 
+interface LockedSubscription {
+  notification_subscription_id: bigint;
+  zalo_enabled: boolean;
+  version_no: number;
+}
+
 @Injectable()
 export class NotificationSubscriptionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly preview: NotificationPreviewService,
+  ) {}
 
   async list(eventCode?: string): Promise<NotificationSubscriptionRead> {
     const selectedEvent = eventCode === undefined ? undefined : notificationEvent(eventCode);
@@ -54,6 +70,65 @@ export class NotificationSubscriptionService {
     };
   }
 
+  async replaceWithin(
+    tx: Prisma.TransactionClient,
+    eventCode: string,
+    expectedVersion: number,
+    input: NotificationSubscriptionReplaceInput,
+  ): Promise<NotificationSubscriptionView> {
+    if (notificationEvent(eventCode) === undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        {
+          scope: "field",
+          field: "eventCode",
+          code: ERROR_CODE.INVALID,
+          message: "알림 이벤트 정본에 없는 코드입니다.",
+        },
+      ]);
+    }
+    assertNotificationRecipientRules(input.recipients);
+    await this.preview.assertReferencesExist(tx, input.recipients);
+
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO app.notification_subscription
+        (event_type_code, app_user_id, channel_code, is_enabled, zalo_enabled, version_no)
+      VALUES (${eventCode}, NULL, NULL, true, false, 1)
+      ON CONFLICT (event_type_code)
+        WHERE app_user_id IS NULL AND channel_code IS NULL
+      DO NOTHING
+    `);
+    const [header] = await tx.$queryRaw<LockedSubscription[]>(Prisma.sql`
+      SELECT notification_subscription_id, zalo_enabled, version_no
+        FROM app.notification_subscription
+       WHERE event_type_code = ${eventCode}
+         AND app_user_id IS NULL
+         AND channel_code IS NULL
+       FOR UPDATE
+    `);
+    if (header === undefined)
+      throw new Error("알림 구독 헤더 생성 뒤 다시 읽지 못했습니다.");
+    assertUpdated(header.version_no === expectedVersion ? 1 : 0);
+
+    await tx.notification_subscription_recipient.deleteMany({
+      where: { notification_subscription_id: header.notification_subscription_id },
+    });
+    if (input.recipients.length > 0) {
+      await tx.notification_subscription_recipient.createMany({
+        data: input.recipients.map((recipient) => recipientData(header, recipient)),
+      });
+    }
+    const zaloEnabled = input.zaloEnabled ?? header.zalo_enabled;
+    await tx.notification_subscription.update({
+      where: { notification_subscription_id: header.notification_subscription_id },
+      data: {
+        zalo_enabled: zaloEnabled,
+        updated_at: new Date(),
+        version_no: { increment: 1 },
+      },
+    });
+    return { eventCode, recipients: input.recipients, zaloEnabled };
+  }
+
   /** 헤더·Zalo·수신자 규칙을 한 SQL 문의 동일 스냅샷에서 읽는다. */
   private readRows(eventCode?: string): Promise<SubscriptionRow[]> {
     return this.prisma.$queryRaw<SubscriptionRow[]>(Prisma.sql`
@@ -68,6 +143,27 @@ export class NotificationSubscriptionService {
        ORDER BY s.event_type_code, r.notification_subscription_recipient_id
     `);
   }
+}
+
+function recipientData(
+  header: LockedSubscription,
+  recipient: NotificationRecipientInput,
+): Prisma.notification_subscription_recipientCreateManyInput {
+  return {
+    notification_subscription_id: header.notification_subscription_id,
+    recipient_type_code: recipient.recipientTypeCode,
+    ...(recipient.recipientTypeCode === "ROLE"
+      ? {
+          business_unit_id: BigInt(requiredRecipientId(recipient.businessUnitId)),
+          role_id: BigInt(requiredRecipientId(recipient.roleId)),
+        }
+      : { app_user_id: BigInt(requiredRecipientId(recipient.userId)) }),
+  };
+}
+
+function requiredRecipientId(value: number | undefined): number {
+  if (value === undefined) throw new Error("검증된 수신자 ID가 없습니다.");
+  return value;
 }
 
 function groupRows(rows: SubscriptionRow[]): Map<string, SubscriptionRow[]> {
