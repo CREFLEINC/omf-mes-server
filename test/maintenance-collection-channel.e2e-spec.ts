@@ -447,12 +447,138 @@ describe("수집 채널 (e2e)", () => {
     ]);
   });
 
+  it("단위 없는 채널 PUT은 연결·재생·빈 수정·null 해제를 version별로 보존한다", async () => {
+    const body = { signalName: "", inspectionItemId: oldSpecId, isActive: true };
+    const idempotencyKey = randomUUID();
+    const linked = await putChannel(unmappedId, body, "1", idempotencyKey, cookie).expect(200);
+    expect(linked.body).toMatchObject({
+      collectionChannelId: unmappedId,
+      signalName: "",
+      inspectionItemId: oldSpecId,
+      inspectionItemIsCurrentRevision: false,
+      isActive: true,
+    });
+    expect(linked.body).not.toHaveProperty("unitCode");
+
+    const replay = await putChannel(unmappedId, body, "2", idempotencyKey, cookie).expect(200);
+    expect(replay.body).toEqual(linked.body);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("2");
+
+    await putChannel(unmappedId, { isActive: false }, "1", randomUUID(), cookie).expect(409);
+    const empty = await putChannel(unmappedId, {}, "2", randomUUID(), cookie).expect(200);
+    expect(empty.body).toMatchObject({ inspectionItemId: oldSpecId, isActive: true });
+    expect((await getChannel(unmappedId)).headers.etag).toBe("3");
+
+    await putChannel(unmappedId, { unitCode: "" }, "3", randomUUID(), cookie).expect(400);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("3");
+    const cleared = await putChannel(
+      unmappedId,
+      { inspectionItemId: null, itemId: null, processId: null, isActive: false },
+      "3",
+      randomUUID(),
+      cookie,
+    ).expect(200);
+    expect(cleared.body).toMatchObject({
+      inspectionItemId: null,
+      itemId: null,
+      processId: null,
+      isActive: false,
+    });
+    expect((await getChannel(unmappedId)).headers.etag).toBe("4");
+  });
+
+  it("PUT은 If-Match·대상·권한을 각각 검사한다", async () => {
+    await request(app.getHttpServer())
+      .put(`/api/maintenance/collection-channels/${unmappedId}`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({})
+      .expect(400);
+    await putChannel(999999999, {}, "1", randomUUID(), cookie).expect(404);
+    await putChannel(unmappedId, {}, "4", randomUUID(), noPermissionCookie).expect(403);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("4");
+  });
+
+  it("조건 변경으로 다른 행의 동일 범위가 되면 원래 행을 보존하고 409다", async () => {
+    const channelKey = `${PREFIX}.UPDATE-DUP`;
+    const first = await postChannel({ equipmentId, channelKey, itemId }, randomUUID(), cookie).expect(201);
+    await postChannel({ equipmentId, channelKey }, randomUUID(), cookie).expect(201);
+
+    await putChannel(
+      first.body.collectionChannelId,
+      { itemId: null },
+      "1",
+      randomUUID(),
+      cookie,
+    ).expect(409);
+    const stored = await prisma.collection_channel.findUniqueOrThrow({
+      where: { collection_channel_id: BigInt(first.body.collectionChannelId) },
+    });
+    expect(stored.item_id).toBe(BigInt(itemId));
+    expect(stored.version_no).toBe(1);
+  });
+
+  it("서로 다른 두 조건을 동시에 같은 범위로 바꾸면 하나만 성공한다", async () => {
+    const channelKey = `${PREFIX}.UPDATE-RACE`;
+    const byItem = await postChannel({ equipmentId, channelKey, itemId }, randomUUID(), cookie).expect(201);
+    const byProcess = await postChannel(
+      { equipmentId, channelKey, processId },
+      randomUUID(),
+      cookie,
+    ).expect(201);
+
+    const responses = await Promise.all([
+      putChannel(byItem.body.collectionChannelId, { itemId: null }, "1", randomUUID(), cookie),
+      putChannel(
+        byProcess.body.collectionChannelId,
+        { processId: null },
+        "1",
+        randomUUID(),
+        cookie,
+      ),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(
+      await prisma.collection_channel.count({
+        where: {
+          equipment_id: BigInt(equipmentId),
+          channel_key: channelKey,
+          item_id: null,
+          process_id: null,
+        },
+      }),
+    ).toBe(1);
+    expect(await prisma.collection_channel.count({ where: { channel_key: channelKey } })).toBe(2);
+  });
+
   function postChannel(body: object, idempotencyKey: string, authCookie: string[]) {
     return request(app.getHttpServer())
       .post("/api/maintenance/collection-channels")
       .set("Cookie", authCookie)
       .set("Idempotency-Key", idempotencyKey)
       .send(body);
+  }
+
+  function putChannel(
+    id: number,
+    body: object,
+    version: string,
+    idempotencyKey: string,
+    authCookie: string[],
+  ) {
+    return request(app.getHttpServer())
+      .put(`/api/maintenance/collection-channels/${id}`)
+      .set("Cookie", authCookie)
+      .set("Idempotency-Key", idempotencyKey)
+      .set("If-Match", version)
+      .send(body);
+  }
+
+  function getChannel(id: number) {
+    return request(app.getHttpServer())
+      .get(`/api/maintenance/collection-channels/${id}`)
+      .set("Cookie", cookie)
+      .expect(200);
   }
 
   async function login(loginId = LOGIN_ID): Promise<string[]> {
