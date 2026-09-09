@@ -34,7 +34,7 @@ export interface InventoryCountLineQuery {
   size?: unknown;
 }
 
-type CountClient = Pick<Prisma.TransactionClient, 'inventory_count_line'>;
+type CountClient = Pick<Prisma.TransactionClient, 'inventory_count' | 'inventory_count_line'>;
 
 @Injectable()
 export class InventoryCountQueryService {
@@ -56,14 +56,22 @@ export class InventoryCountQueryService {
   }
 
   async get(inventoryCountId: number): Promise<{ detail: InventoryCountDetail; versionNo: number }> {
-    const row = await this.prisma.inventory_count.findUnique({
+    return this.getWithin(this.prisma, inventoryCountId);
+  }
+
+  /** 생성·마감은 커밋 전 응답까지 같은 멱등 트랜잭션에서 읽는다. */
+  async getWithin(
+    prisma: CountClient,
+    inventoryCountId: number,
+  ): Promise<{ detail: InventoryCountDetail; versionNo: number }> {
+    const row = await prisma.inventory_count.findUnique({
       where: { inventory_count_id: inventoryCountId },
     });
     if (row === null) throw new NotFoundException('없는 재고 실사입니다.');
     return {
       detail: {
         inventoryCount: inventoryCountView(row),
-        summary: await inventoryCountSummary(this.prisma, row.inventory_count_id, row.status_code),
+        summary: await inventoryCountSummary(prisma, row.inventory_count_id, row.status_code),
       },
       versionNo: row.version_no,
     };
