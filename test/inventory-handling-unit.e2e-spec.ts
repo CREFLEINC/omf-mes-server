@@ -509,13 +509,16 @@ describe('취급 단위 조회 (e2e)', () => {
   });
 
   it('⭐ 헤더·라인의 FK 6개·UNIQUE·조회 인덱스가 실재한다', async () => {
-    const header = await prisma.$queryRaw<{ conname: string }[]>`
-      SELECT conname FROM pg_constraint
+    const header = await prisma.$queryRaw<{ conname: string; confdeltype: string }[]>`
+      SELECT conname, confdeltype::text FROM pg_constraint
        WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass AND contype = 'f'`;
     expect(header.map((c) => c.conname)).toEqual(['handling_unit_repack_event_performed_by_fkey']);
+    expect(header.map((c) => c.confdeltype)).toEqual(['a']);
 
-    const constraints = await prisma.$queryRaw<{ conname: string; contype: string }[]>`
-      SELECT conname, contype::text FROM pg_constraint
+    const constraints = await prisma.$queryRaw<
+      { conname: string; contype: string; confdeltype: string }[]
+    >`
+      SELECT conname, contype::text, confdeltype::text FROM pg_constraint
        WHERE conrelid = 'inventory.handling_unit_repack_event_line'::regclass
        ORDER BY conname`;
     // ⭐ `uom` 을 «두 번» 가리킨다 — before/after 가 서로 다른 FK 다.
@@ -528,6 +531,17 @@ describe('취급 단위 조회 (e2e)', () => {
       'handling_unit_repack_event_line_uom_id_before_fkey',
     ]);
     expect(constraints.map((c) => c.conname)).toContain('uq_handling_unit_repack_event_line');
+    // ⭐ 삭제 «동작»까지 잰다(PR #499 리뷰 Major-1) — 이름·종류만 재면 `ON DELETE CASCADE`
+    //   로 바꿔도 전건 초록이고, 그러면 취급 단위 한 건을 지우는 것만으로 재구성 이력이
+    //   조용히 사라진다. `a` = NO ACTION(형제 표 전건과 같다).
+    expect(constraints.filter((c) => c.contype === 'f').map((c) => c.confdeltype)).toEqual([
+      'a',
+      'a',
+      'a',
+      'a',
+      'a',
+      'a',
+    ]);
     // ⛔ 코드 칸(`repack_type_code`·`role_code`)에 CHECK 를 «걸지 않았다» — mdm.code_group
     //   에 CD-REPACK-TYPE·CD-ROLE 이 0건이고, 값이 늘면 CHECK 가 먼저 막는다. 유일한
     //   CHECK 는 정렬 축(`line_no > 0`)이다.
