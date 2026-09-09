@@ -50,6 +50,10 @@ const NUMBER_RETRY = 3;
  */
 const PARENT_WALK_LIMIT = 200;
 
+/** `app.qty_t` = `numeric(20,6)` — 스케일 6 · 정수부 14. */
+const QTY_SCALE = 6;
+const QTY_INT_LIMIT = '100000000000000';
+
 /**
  * 취급 단위 «등록» 하나(PR ③). 구성 치환은 PR ④, 포장 확정은 PR ⑤ 몫이다.
  * ⛔ 원장을 안 부른다 — `inventory_balance` 차원에 `handling_unit_id` 가 없다(계획 §2-5·§3-5).
@@ -78,6 +82,7 @@ export class HandlingUnitService {
     ]);
     const contents = input.contents ?? [];
     assertNoDuplicateContent(contents);
+    assertContentQty(contents);
     await this.assertReferences(input, contents);
 
     for (let attempt = 0; ; attempt += 1) {
@@ -262,6 +267,47 @@ export function assertNoDuplicateContent(
       );
     }
     seen.add(key);
+  });
+}
+
+/**
+ * 수량의 «자릿수». 물리는 `app.qty_t` = `numeric(20,6)` 이라 7째 자리가 **조용히 반올림**된다
+ * (실측: `10.0000005::numeric(20,6)` → `10.000001`). 마이그는 forward-only 라 그렇게 접힌 값은
+ * **소급 복구가 안 된다** ⇒ 저장 «전»에 400 `RANGE` 로 거절한다.
+ *
+ * ⭐ 저장소 규칙이다 — `disposition-write.service.ts:203` 「⛔ 조용한 반올림 금지」 ·
+ *   `nonconformance-rules.ts:43` `assertQtyPrecision`(선례 둘). 계약은 `qty` 에
+ *   `exclusiveMinimum: 0` 뿐 `multipleOf` 가 없어 **서버가 막는 자리**다.
+ * ⚠ 정수부 상한도 같이 본다 — `1e15` 는 `numeric(20,6)` 이 못 담아 지금은 «계약 미선언 500» 이다.
+ *
+ * ⛔ `nonconformance-rules.ts` 의 것을 **import 하지 않는다** — 이 저장소에 도메인 간 import 가
+ *   **0건**이라 여기서 첫 사례를 만들지 않는다. 같은 규칙이 두 자리에 있는 사실은 마감표에 적었다.
+ */
+export function assertContentQty(
+  contents: HandlingUnitContentUpsert[],
+  arrayField = 'contents',
+): void {
+  contents.forEach((line, index) => {
+    const qty = new Prisma.Decimal(line.qty);
+    if (qty.decimalPlaces() > QTY_SCALE) {
+      throw one(
+        field(
+          `${arrayField}[${index}].qty`,
+          ERROR_CODE.RANGE,
+          `수량은 소수점 ${QTY_SCALE}자리까지입니다.`,
+        ),
+      );
+    }
+    // ⛔ `Infinity`(JSON `1e400`)는 `decimalPlaces()` 가 NaN 이라 위를 지난다 — 여기서 잡힌다.
+    if (qty.gte(QTY_INT_LIMIT)) {
+      throw one(
+        field(
+          `${arrayField}[${index}].qty`,
+          ERROR_CODE.RANGE,
+          '수량은 정수 14자리를 넘을 수 없습니다.',
+        ),
+      );
+    }
   });
 }
 

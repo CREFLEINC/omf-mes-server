@@ -1090,6 +1090,82 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     ]);
   });
 
+  /**
+   * ⭐ PR #499 후속 · PR #530 리뷰 Minor-1 — 물리 `app.qty_t` 가 `numeric(20,6)` 이라
+   * 7째 자리는 «조용히 반올림»되고(실측 `10.0000005` → `10.000001`) 마이그가 forward-only 라
+   * 소급 복구가 안 된다. 저장소 규칙(「⛔ 조용한 반올림 금지」)대로 저장 «전»에 거절한다.
+   * ⛔ 등록·치환 «둘 다» 잰다 — 한쪽만 재면 다른 쪽 호출을 지워도 초록이다.
+   */
+  it('⭐ 수량이 소수 7자리면 400 RANGE — 등록·치환 둘 다, 6자리는 통과한다', async () => {
+    const seven = await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [{ itemId: item1Id, lotId: lot1Id, qty: 10.0000005, uomId }],
+    }).expect(400);
+    expect(seven.body.errors).toEqual([
+      expect.objectContaining({ field: 'contents[0].qty', code: 'RANGE' }),
+    ]);
+
+    // 6자리는 산다 — 상한을 한 자리 안쪽으로 조여도(스케일 5) 이 줄이 빨개진다.
+    await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [{ itemId: item1Id, lotId: lot1Id, qty: 10.000001, uomId }],
+    }).expect(201);
+
+    const hu = await makeUnit('QTY', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    const put = await putContents(hu, [{ itemId: item1Id, lotId: lot1Id, qty: 2.0000005, uomId }]).expect(400);
+    expect(put.body.errors).toEqual([
+      expect.objectContaining({ field: 'items[0].qty', code: 'RANGE' }),
+    ]);
+
+    // ⚠ 정수부 상한도 같은 그물이다 — `1e15` 는 `numeric(20,6)` 이 못 담아 전에는 500 이었다.
+    const huge = await putContents(hu, [{ itemId: item1Id, lotId: lot1Id, qty: 1e15, uomId }]).expect(400);
+    expect(huge.body.errors).toEqual([
+      expect.objectContaining({ field: 'items[0].qty', code: 'RANGE' }),
+    ]);
+  });
+
+  /**
+   * ⭐ PR #530 리뷰 Major-1 — `runIdempotent` 를 통째로 우회해도 40건이 전부 초록이었다.
+   * 계약이 `Idempotency-Key` 를 required 로 걸어 «오프라인 재전송 흡수»를 요구하는데
+   * 그것을 지켜보는 단언이 없었다(계획 §9-3 e2e 25~32 에 그 항목이 없다).
+   */
+  it('⭐ 치환의 같은 Idempotency-Key 재전송 — 이력이 안 늘고 version 도 안 오른다', async () => {
+    const hu = await makeUnit('IDEM', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    const key = randomUUID();
+    const items = [{ itemId: item2Id, lotId: lot2Id, qty: 3, uomId: uom2Id }];
+
+    const first = await putContents(hu, items, { key }).expect(200);
+    const again = await putContents(hu, items, { key }).expect(200);
+    expect(again.body).toEqual(first.body);
+
+    // ⛔ 응답이 같은 것만으로는 부족하다 — 우회하면 «두 번 저장»되므로 저장값을 되읽는다.
+    const events = await prisma.handling_unit_repack_event.count({
+      where: { lines: { some: { handling_unit_id: BigInt(hu) } } },
+    });
+    expect(events).toBe(1);
+    const header = await prisma.handling_unit.findUniqueOrThrow({
+      where: { handling_unit_id: BigInt(hu) },
+      select: { version_no: true },
+    });
+    expect(header.version_no).toBe(2);
+  });
+
+  /**
+   * ⭐ PR #530 리뷰 Major-2 — `assertReferences` 의 `lotId` 가지 넷이 「지워도 초록」이었다.
+   * e2e 가 `lotId` 만 늘 유효한 값으로 보냈기 때문이다(PR ③ Major-1 의 되풀이).
+   * ⛔ 상태 코드로는 안 갈린다 — 물리 FK 그물도 400 을 낸다. **줄 인덱스**가 지문이다.
+   */
+  it('⭐ 없는 LOT 은 items[0].lotId 로 짚는다 — FK 그물은 그 이름을 못 만든다', async () => {
+    const hu = await makeUnit('LOTREF', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    const response = await putContents(hu, [
+      { itemId: item1Id, lotId: lot1Id, qty: 1, uomId },
+      { itemId: item2Id, lotId: 999999999, qty: 1, uomId },
+    ]).expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ field: 'items[1].lotId', code: 'INVALID' }),
+    ]);
+  });
+
   it('If-Match 를 안 보내면 통과하고 낡은 토큰이면 409 {conflictCause:user} 다', async () => {
     const hu = await makeUnit('ETAG', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
     // ⭐ 토큰은 «부모» 상세 GET 의 ETag 다 — 이 경로의 조회는 ETag 를 안 내린다(B-1-1).

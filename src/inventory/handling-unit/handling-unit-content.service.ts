@@ -9,6 +9,7 @@ import { assertWorkerNo } from './handling-unit-worker';
 import {
   HandlingUnitContentUpsert,
   HandlingUnitContext,
+  assertContentQty,
   assertNoDuplicateContent,
 } from './handling-unit.service';
 
@@ -60,6 +61,7 @@ export class HandlingUnitContentService {
     await assertWorkerNo(this.prisma, context.workerNo);
     // 잠글 필요가 없는 검사는 트랜잭션 «밖»이다(형제 치환과 같은 순서 · §5-2 ③).
     assertNoDuplicateContent(items, 'items');
+    assertContentQty(items, 'items');
 
     return this.prisma.$transaction(async (tx) => {
       const versionNo = await lockHandlingUnit(tx, handlingUnitId, version);
