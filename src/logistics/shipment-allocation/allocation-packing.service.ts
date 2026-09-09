@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoPresent } from '../../common/master';
 // ⭐ 01 자재창고가 «소유한» 상수를 그대로 쓴다 — 값을 베끼면 저쪽이 늘 때 여기만 조용히 뒤처진다
 //    (README §6-4). 도메인 간 상수 import 선례: `inspection-plan.service.ts:20` 의 `REVISION_STATUS`.
 import { HU_STATUS_OPEN, HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
@@ -61,7 +62,7 @@ export class AllocationPackingService {
     context: AllocationPackingContext,
   ): Promise<ShipmentLotAllocationView> {
     // ① 계약 가드가 헤더를 «안 본다»(`contract-validation.guard.ts:39`) — 서버가 유일한 그물이다.
-    assertWorkerNo(context.workerNo);
+    assertWorkerNoPresent(context.workerNo);
     const handlingUnitId = BigInt(body.handlingUnitId);
 
     await this.prisma.$transaction(async (tx) => {
@@ -92,11 +93,6 @@ export class AllocationPackingService {
   }
 }
 
-/** ⚠ 사번을 **읽고 버린다** — 담을 칸이 0개다. ⛔ `mdm.worker` 조회도 `maxLength` 도 안 세운다. */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo !== undefined && workerNo.trim() !== '') return;
-  throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-}
 
 /**
  * ③ ⭐ **`FOR UPDATE OF a`** — 배분 «한 행»만 잠근다. 헤더까지 잠그면 같은 출하의 다른 배분을 잇는

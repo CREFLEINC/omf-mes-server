@@ -35,6 +35,9 @@ function stub(options: StubOptions = {}) {
   const created: Record<string, unknown>[] = [];
   const prisma = {
     worker: {
+      // `assertWorkerNoExists`(공용) 는 실재만 보므로 `count` 다 — 이 서비스는 `worker_id` 를
+      // 안 쓴다(`precheck_decision.worker_no` 는 헤더 «문자열»을 그대로 옮겨 적는 칸이다).
+      count: () => Promise.resolve(options.worker === false ? 0 : 1),
       findUnique: () =>
         Promise.resolve(options.worker === false ? null : { worker_id: 1n }),
     },

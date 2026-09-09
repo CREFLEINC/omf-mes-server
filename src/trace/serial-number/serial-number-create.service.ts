@@ -9,6 +9,7 @@ import {
   one,
 } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
+import { assertWorkerNoExists } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SerialNumberView, serialNumberView } from './serial-number-view';
@@ -88,7 +89,7 @@ export class SerialNumberCreateService {
   ): Promise<void> {
     assertInput(input);
     const [, lot] = await Promise.all([
-      assertWorker(this.prisma, context.workerNo),
+      assertWorkerNoExists(this.prisma, context.workerNo),
       this.prisma.lot.findUnique({
         where: { lot_id: BigInt(input.lotId) },
         select: {
@@ -111,7 +112,7 @@ export class SerialNumberCreateService {
   ): Promise<SerialNumberBatchResult> {
     const lot = await lockLot(tx, input.lotId);
     assertLot(lot, input.lotId);
-    await assertWorker(tx, context.workerNo);
+    await assertWorkerNoExists(tx, context.workerNo);
     await assertTerminalGate(tx, lot.source_id, context.terminalId);
     const producedAt = input.producedAt ?? null;
     const values = serialNos.map(
@@ -237,20 +238,6 @@ async function assertTerminalGate(
   if (gate?.can_print_label !== true) throw denied();
 }
 
-async function assertWorker(
-  db: Pick<Prisma.TransactionClient, 'worker'>,
-  workerNo: string,
-): Promise<void> {
-  const worker = await db.worker.findUnique({
-    where: { worker_no: workerNo },
-    select: { worker_id: true },
-  });
-  if (worker === null) {
-    throw one(
-      field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'),
-    );
-  }
-}
 
 function denied(): ContractException {
   return new ContractException(HttpStatus.FORBIDDEN, [

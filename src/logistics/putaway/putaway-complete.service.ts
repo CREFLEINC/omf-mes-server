@@ -7,6 +7,7 @@ import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어를 한 줄도 안 고친다(피킹 선례).
 import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
+import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PutawayOrigin, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
@@ -60,7 +61,7 @@ export class PutawayCompleteService {
   async complete(
     putawayTaskId: number, body: PutawayTaskComplete, context: PutawayCompleteContext, mode: PutawayMode,
   ): Promise<PutawayTaskView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     if (mode === 'TEMPORARY') {
       // 코드값 대조는 트랜잭션 «밖»이다 — 잠글 필요가 없는 마스터 조회다(LOT 완료 선례).
       const value = body.reasonCode;
@@ -232,18 +233,6 @@ async function assertBalance(
   }
 }
 
-/**
- * ⚠ 사번을 **읽고 버린다** — 지시에 행위자 칸이 없다(`assigned_worker_id` 는 «배정» 축).
- * 계약이 required 로 못박았고 헤더는 계약 검증 가드가 안 본다. 없는 사번은 가른다.
- */
-async function assertWorkerNo(prisma: PrismaService, workerNo: string | undefined): Promise<void> {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-  if ((await prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-    throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-  }
-}
 
 /** 계약 「사유 코드와 비고 중 적어도 하나는 있어야 한다」 — 화면의 필수 표시와 다른 축이다. */
 function assertReason(body: PutawayTaskComplete): void {

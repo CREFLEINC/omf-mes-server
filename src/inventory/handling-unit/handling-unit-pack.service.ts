@@ -2,12 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertReferences } from './handling-unit-content.service';
 import { HandlingUnitQueryService } from './handling-unit-query.service';
 import { HU_STATUS_PACKED } from './handling-unit-status';
 import { HandlingUnitDetailView } from './handling-unit-view';
-import { assertWorkerNo } from './handling-unit-worker';
 import {
   HandlingUnitContentUpsert,
   HandlingUnitContext,
@@ -61,7 +61,7 @@ export class HandlingUnitPackService {
     input: HandlingUnitPack,
     context: HandlingUnitContext,
   ): Promise<HandlingUnitDetailView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     // 잠글 필요가 없는 검사는 트랜잭션 «밖»이다(형제 치환과 같은 순서 · §3-1 ③④).
     assertNoDuplicateContent(input.contents, 'contents');
     // ⛔ 빠뜨리면 `10.0000005` 가 `numeric(20,6)` 에서 조용히 반올림돼 저장되고 마이그가

@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
@@ -64,7 +64,7 @@ export class StockTransferService {
     workerNo: string | undefined,
     appUserId: number,
   ): Promise<{ detail: StockTransferDetail; versionNo: number }> {
-    await this.assertWorkerNo(workerNo);
+    await assertWorkerNoExists(this.prisma, workerNo);
     const plantId = await this.assertWritable(input);
 
     for (let attempt = 0; ; attempt += 1) {
@@ -189,18 +189,6 @@ export class StockTransferService {
     throw new Error('반출 전 재고 이동 전표가 실재한다 — 계약 전제가 깨졌다(문의 123).');
   }
 
-  /**
-   * ⚠ 사번을 **읽고 버린다** — `stock_transfer` 에 행위자 칸이 없고 `created_by` 는
-   * `app_user` FK 다. 계약이 required 로 못박았고 헤더는 계약 검증 가드가 안 본다.
-   */
-  private async assertWorkerNo(workerNo: string | undefined): Promise<void> {
-    if (workerNo === undefined || workerNo.trim() === '') {
-      throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-    }
-    if ((await this.prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-      throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-    }
-  }
 
   /**
    * ⛔ 없는 id 를 그냥 넘기면 FK 위반이 **500** 으로 샌다 — 원장까지 열고 나서 터지므로

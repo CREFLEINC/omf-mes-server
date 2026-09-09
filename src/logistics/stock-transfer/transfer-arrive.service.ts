@@ -5,6 +5,7 @@ import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockTransferDetail, stockTransferLineView, stockTransferView } from './stock-transfer-view';
 import { TransferArriveOrigin, postTransferArrive } from './transfer-posting';
@@ -63,7 +64,7 @@ export class TransferArriveService {
   async arrive(
     stockTransferId: number, body: StockTransferArrive, context: ArriveContext,
   ): Promise<StockTransferDetail> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     if (body.lines.length === 0) {
       throw one(field('lines', ERROR_CODE.LINE_REQUIRED, '도착 라인이 1건 이상이어야 합니다.'));
     }
@@ -252,15 +253,3 @@ const receivedOf = (items: StockTransferArriveLine[], row: ArriveRow): number =>
 const at = (index: number, name: string, code: string, message: string): ErrorItem =>
   field(`lines[${index}].${name}`, code, message);
 
-/**
- * ⚠ 사번을 **읽고 버린다** — `stock_transfer` 에 행위자 칸이 없다. 계약이 required 로 못박았고
- * 헤더는 계약 검증 가드가 안 본다(반출 등록과 같은 갈래 · 여섯째 사본).
- */
-async function assertWorkerNo(prisma: PrismaService, workerNo: string | undefined): Promise<void> {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-  if ((await prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-    throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-  }
-}

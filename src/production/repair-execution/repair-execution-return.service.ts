@@ -2,9 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 // ⛔ 새 사본을 만들지 않는다(I-25 R-6) — PR ② 가 세운 선례 그대로다.
-import { assertWorkerNo } from '../work-session/work-session.service';
 import { RepairExecutionView, repairExecutionView } from './repair-execution-view';
 
 type Tx = Prisma.TransactionClient;
@@ -40,7 +40,7 @@ export class RepairExecutionReturnService {
     body: RepairExecutionReturn,
     workerNo: string | undefined,
   ): Promise<RepairExecutionView> {
-    await assertWorkerNo(this.prisma, workerNo);
+    await assertWorkerNoExists(this.prisma, workerNo);
     return this.prisma.$transaction(async (tx: Tx) => {
       const locked = await lockRepairExecution(tx, repairExecutionId);
       // 다른 키로 온 두 번째 반출이다 — 재로드해도 풀리지 않는 업무 거부라 `conflictCause='user'`.
