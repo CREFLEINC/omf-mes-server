@@ -1840,12 +1840,13 @@
         "GOODS_RECEIPT",
         "GOODS_ISSUE",
         "INVENTORY_ADJUSTMENT",
-        "STOCK_TRANSFER"
+        "STOCK_TRANSFER",
+        "RECYCLE_ENTRY"
        ],
        "example": "GOODS_RECEIPT"
       },
       "x-code-key": "CD-INVENTORY-TRANSACTION-SOURCE-DOCUMENT-TYPE",
-      "description": "원천 문서 유형으로 거른다. 원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 «대상 테이블 이름»이다 — sourceDocumentId 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 늘릴 수 있는 값이 아니고, 가리킬 표가 늘면 계약을 고친다. 넷이다 — 입고(GOODS_RECEIPT) · 출고(GOODS_ISSUE) · 재고조정(INVENTORY_ADJUSTMENT) · 재고이동(STOCK_TRANSFER). ⭐ 근거 — W-04-05 가 「입고·출고 전기 각 1건」을 명시하고, W-01-12 §5-2 가 「inventory_transaction.source_document_type_code 에 「재고조정」 값이 있으면 source_document_id = inventory_adjustment_id 로 잇는다」로 적었다. ⚠ STOCK_TRANSFER 는 «재고를 움직이므로 원장을 남긴다»는 추론이다 — 다른 셋보다 근거가 얕다. ⭐ 이 축이 원장 한 줄의 «성격»을 말한다 — 방향(입고·출고·이동)은 라인의 from*/to* 가 이미 말하므로 transactionTypeCode 를 따로 두지 않는다(L-2-1 · 2026-09-02 판정)."
+      "description": "원천 문서 유형으로 거른다. 원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 «대상 테이블 이름»이다 — sourceDocumentId 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 늘릴 수 있는 값이 아니고, 가리킬 표가 늘면 계약을 고친다. 다섯이다 — 입고(GOODS_RECEIPT) · 출고(GOODS_ISSUE) · 재고조정(INVENTORY_ADJUSTMENT) · 재고이동(STOCK_TRANSFER) · 재생재(RECYCLE_ENTRY). ⭐⭐ RECYCLE_ENTRY 는 2026-09-10 설계팀 합의로 «설계 변동 공지 전에 선반영»한 값이다(질의 213) — 다음 contracts:update 때 공지에 실렸는지 반드시 확인한다. contract-recycle-entry-enum.spec.ts 가 이 값의 부재를 즉시 잡는다. ⭐ 근거 — W-04-05 가 「입고·출고 전기 각 1건」을 명시하고, W-01-12 §5-2 가 「inventory_transaction.source_document_type_code 에 「재고조정」 값이 있으면 source_document_id = inventory_adjustment_id 로 잇는다」로 적었다. ⚠ STOCK_TRANSFER 는 «재고를 움직이므로 원장을 남긴다»는 추론이다 — 다른 셋보다 근거가 얕다. ⭐ 이 축이 원장 한 줄의 «성격»을 말한다 — 방향(입고·출고·이동)은 라인의 from*/to* 가 이미 말하므로 transactionTypeCode 를 따로 두지 않는다(L-2-1 · 2026-09-02 판정)."
      },
      {
       "name": "page",
@@ -11007,7 +11008,7 @@
       "x-source-column": "source_document_type_code",
       "type": "string",
       "maxLength": 50,
-      "description": "원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 «대상 테이블 이름»이다 — sourceDocumentId 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 늘릴 수 있는 값이 아니고, 가리킬 표가 늘면 계약을 고친다. 넷이다 — 입고(GOODS_RECEIPT) · 출고(GOODS_ISSUE) · 재고조정(INVENTORY_ADJUSTMENT) · 재고이동(STOCK_TRANSFER). ⭐ 근거 — W-04-05 가 「입고·출고 전기 각 1건」을 명시하고, W-01-12 §5-2 가 「inventory_transaction.source_document_type_code 에 「재고조정」 값이 있으면 source_document_id = inventory_adjustment_id 로 잇는다」로 적었다. ⚠ STOCK_TRANSFER 는 «재고를 움직이므로 원장을 남긴다»는 추론이다 — 다른 셋보다 근거가 얕다. ⭐ 이 축이 원장 한 줄의 «성격»을 말한다 — 방향(입고·출고·이동)은 라인의 from*/to* 가 이미 말하므로 transactionTypeCode 를 따로 두지 않는다(L-2-1 · 2026-09-02 판정).",
+      "description": "원천 문서 유형. **A-10 다형 참조 판별자**이고 값은 «대상 테이블 이름»이다 — sourceDocumentId 는 그 표의 식별자다. ⛔ 공통코드 그룹으로 받지 않는다 — 고객이 늘릴 수 있는 값이 아니고, 가리킬 표가 늘면 계약을 고친다. 다섯이다 — 입고(GOODS_RECEIPT) · 출고(GOODS_ISSUE) · 재고조정(INVENTORY_ADJUSTMENT) · 재고이동(STOCK_TRANSFER) · 재생재(RECYCLE_ENTRY). ⭐⭐ RECYCLE_ENTRY 는 2026-09-10 설계팀 합의로 «설계 변동 공지 전에 선반영»한 값이다(질의 213) — 다음 contracts:update 때 공지에 실렸는지 반드시 확인한다. contract-recycle-entry-enum.spec.ts 가 이 값의 부재를 즉시 잡는다. ⭐ 근거 — W-04-05 가 「입고·출고 전기 각 1건」을 명시하고, W-01-12 §5-2 가 「inventory_transaction.source_document_type_code 에 「재고조정」 값이 있으면 source_document_id = inventory_adjustment_id 로 잇는다」로 적었다. ⚠ STOCK_TRANSFER 는 «재고를 움직이므로 원장을 남긴다»는 추론이다 — 다른 셋보다 근거가 얕다. ⭐ 이 축이 원장 한 줄의 «성격»을 말한다 — 방향(입고·출고·이동)은 라인의 from*/to* 가 이미 말하므로 transactionTypeCode 를 따로 두지 않는다(L-2-1 · 2026-09-02 판정).",
       "x-no-example": true,
       "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다.",
       "x-code-key": "CD-INVENTORY-TRANSACTION-SOURCE-DOCUMENT-TYPE",
@@ -11015,7 +11016,8 @@
        "GOODS_RECEIPT",
        "GOODS_ISSUE",
        "INVENTORY_ADJUSTMENT",
-       "STOCK_TRANSFER"
+       "STOCK_TRANSFER",
+       "RECYCLE_ENTRY"
       ],
       "example": "GOODS_RECEIPT"
      },
