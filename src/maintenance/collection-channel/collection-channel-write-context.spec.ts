@@ -26,6 +26,18 @@ describe("collection channel write context", () => {
     }
   });
 
+  it("If-Match는 성공 재생을 막지 않도록 지문에서 제외한다", () => {
+    const first = collectionChannelWriteContext(
+      createRequest({ method: "PUT", path: "/maintenance/collection-channels/7", ifMatch: "1" }),
+      HttpStatus.OK,
+    );
+    const replay = collectionChannelWriteContext(
+      createRequest({ method: "PUT", path: "/maintenance/collection-channels/7", ifMatch: "2" }),
+      HttpStatus.OK,
+    );
+    expect(first.fingerprint).toBe(replay.fingerprint);
+  });
+
   it("세션이 없으면 401이다", () => {
     expect(() => collectionChannelWriteContext(createRequest({ attach: false }), HttpStatus.CREATED)).toThrow(
       UnauthorizedException,
@@ -39,13 +51,14 @@ interface RequestOptions {
   method?: string;
   path?: string;
   userId?: number;
+  ifMatch?: string;
 }
 
 function createRequest(options: RequestOptions = {}): Request {
   const request = {
     method: options.method ?? "POST",
     path: options.path ?? "/maintenance/collection-channels",
-    headers: { "idempotency-key": "idem-1" },
+    headers: { "idempotency-key": "idem-1", ...(options.ifMatch ? { "if-match": options.ifMatch } : {}) },
     body: options.body ?? { equipmentId: 7, channelKey: "A" },
   } as unknown as Request;
   if (options.attach !== false) {

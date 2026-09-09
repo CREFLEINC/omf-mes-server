@@ -1,6 +1,7 @@
 import {
   CollectionChannelCreate,
   checkCollectionChannelCreate,
+  checkCollectionChannelUpdate,
 } from "./collection-channel-write-input";
 
 describe("checkCollectionChannelCreate", () => {
@@ -57,6 +58,52 @@ describe("checkCollectionChannelCreate", () => {
       signalName: "",
       unitCode: null,
     });
+  });
+});
+
+describe("checkCollectionChannelUpdate", () => {
+  it("생략은 유지하고 FK null은 해제로 보존한다", () => {
+    expect(checkCollectionChannelUpdate({})).toEqual({});
+    expect(
+      checkCollectionChannelUpdate({
+        signalName: "",
+        inspectionItemId: null,
+        itemId: 61,
+        processId: null,
+        isActive: false,
+      }),
+    ).toEqual({
+      signalName: "",
+      inspectionItemId: null,
+      itemId: 61n,
+      processId: null,
+      isActive: false,
+    });
+  });
+
+  it("단위 생략은 기존 없음도 유지하지만 빈 단위는 명시 오류다", () => {
+    expect(checkCollectionChannelUpdate({ inspectionItemId: 51 })).toEqual({
+      inspectionItemId: 51n,
+    });
+    expect(() => checkCollectionChannelUpdate({ unitCode: "" })).toThrow(
+      expect.objectContaining({
+        errors: [expect.objectContaining({ field: "unitCode", code: "INVALID" })],
+      }),
+    );
+  });
+
+  it("수정 문자열 길이와 FK 안전 범위를 검사한다", () => {
+    for (const [fieldName, input] of [
+      ["signalName", { signalName: "S".repeat(201) }],
+      ["unitCode", { unitCode: "U".repeat(51) }],
+      ["inspectionItemId", { inspectionItemId: Number.MAX_SAFE_INTEGER + 1 }],
+      ["itemId", { itemId: Number.MAX_SAFE_INTEGER + 1 }],
+      ["processId", { processId: Number.MAX_SAFE_INTEGER + 1 }],
+    ] as const) {
+      expect(() => checkCollectionChannelUpdate(input)).toThrow(
+        expect.objectContaining({ errors: [expect.objectContaining({ field: fieldName })] }),
+      );
+    }
   });
 });
 
