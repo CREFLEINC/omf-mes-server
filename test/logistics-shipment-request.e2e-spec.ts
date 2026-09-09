@@ -533,13 +533,13 @@ describe('출하작업지시 조회 (e2e)', () => {
     const byCustomer = nos(await list({ customerId: Number(ids.customer) }));
     expect(byCustomer).toContain(`${PREFIX}-HDR`);
     expect(byCustomer).not.toContain(`${PREFIX}-CUST2`);
-    expect(nos(await list({ shipToPartnerId: Number(ids.shipTo2) }))).toEqual([`${PREFIX}-CUST2`]);
+    expect(ours(await list({ shipToPartnerId: Number(ids.shipTo2) }))).toEqual([`${PREFIX}-CUST2`]);
   });
 
   it('L-6 · L-7 itemId 가 그 품목 라인이 «없는» 건을 빼고 헤더가 중복되지 않는다', async () => {
     const body = await list({ itemId: Number(ids.item2) });
 
-    expect(nos(body).sort()).toEqual([`${PREFIX}-DUP`, `${PREFIX}-LINE`]);
+    expect(ours(body).sort()).toEqual([`${PREFIX}-DUP`, `${PREFIX}-LINE`]);
     // ⛔ 조인이면 같은 품목 라인 «둘»인 DUP 이 두 번 나와 total 이 3 이 된다.
     expect(made.DUP.lines).toHaveLength(2);
     expect(body.page.total).toBe(2);
@@ -547,8 +547,8 @@ describe('출하작업지시 조회 (e2e)', () => {
 
   it('L-8 timeSlotCode 필터가 NULL 행과 다른 시간대 행을 뺀다', async () => {
     // 축에 값이 셋이다 — MORNING · AFTERNOON · NULL(나머지 전부).
-    expect(nos(await list({ timeSlotCode: 'MORNING' }))).toEqual([`${PREFIX}-HDR`]);
-    expect(nos(await list({ timeSlotCode: 'AFTERNOON' }))).toEqual([`${PREFIX}-TSPM`]);
+    expect(ours(await list({ timeSlotCode: 'MORNING' }))).toEqual([`${PREFIX}-HDR`]);
+    expect(ours(await list({ timeSlotCode: 'AFTERNOON' }))).toEqual([`${PREFIX}-TSPM`]);
   });
 
   it('L-9 pickingCompleteOnly 가 라인 0건(SR-G)을 «안» 낸다 — 공허참', async () => {
@@ -720,6 +720,17 @@ describe('출하작업지시 조회 (e2e)', () => {
     expect(new Set(seen).size).toBe(seen.length);
   });
 
+  it('L-40b 범위 «밖» 쪽에서도 page.total 이 그대로다 — 페이저가 안 접힌다', async () => {
+    const all = await list();
+    const beyond = await listRaw({ ...WINDOW, page: 99, size: 3 });
+
+    // ⛔ `count(*) OVER ()` 로 세면 행이 0개라 `total` 이 «0» 으로 접히고, 화면이 1쪽으로
+    //    돌아올 길을 잃는다(계약 `PageMeta.total` 은 필터 «전체» 기준이다).
+    expect(beyond.items).toEqual([]);
+    expect(all.page.total).toBeGreaterThan(3);
+    expect(beyond.page.total).toBe(all.page.total);
+  });
+
   it('L-41 목록이 lines 를 싣고 pickedQty·picks 가 찬다', async () => {
     const item = (await list()).items.find((row) => row.shipmentRequestNo === `${PREFIX}-LINE`);
     const lines = item?.lines ?? [];
@@ -812,6 +823,24 @@ describe('출하작업지시 조회 (e2e)', () => {
     expect((await summary({})).pendingInspectionCount).toBe(pending.length);
   });
 
+  it('L-48b 검사 필수 라인 0건인 건을 좁혀 내도 pendingInspectionCount 가 «안 변한다»', async () => {
+    const all = (await list()).items;
+    // ⭐ 요약은 `INSPECTION_REQUIRED_SQL` 로 모집단을 좁힌다 — 그 좁히기가 «무손실»인지 본다.
+    //   목록 쪽 롤업은 좁히기가 «없는» 계산이라 둘이 같으면 잃은 건이 0이다.
+    const withoutRequired = all.filter(
+      (item) => (item.lines ?? []).every((line) => !line.shippingInspectionRequired),
+    );
+    expect(withoutRequired.length).toBeGreaterThan(3);
+    // 좁혀 내는 그 건들이 전부 PENDING 이 «아니어야» 무손실이다(라인 0건 SR-G 도 여기 든다).
+    expect(withoutRequired.map((item) => item.shippingInspectionStatusCode)).toEqual(
+      withoutRequired.map(() => 'NOT_REQUIRED'),
+    );
+    expect(withoutRequired.some((item) => (item.lines ?? []).length === 0)).toBe(true);
+    expect((await summary({})).pendingInspectionCount).toBe(
+      all.filter((item) => item.shippingInspectionStatusCode === 'PENDING').length,
+    );
+  });
+
   it('L-49 incompletePickingCount 가 pickingCompleteOnly 의 «여집합»이다', async () => {
     const card = await summary({});
     const complete = (await list({ pickingCompleteOnly: true })).page.total;
@@ -837,7 +866,9 @@ describe('출하작업지시 조회 (e2e)', () => {
     const card = await summary({});
 
     expect(card.asOf).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(Number.isNaN(Date.parse(card.asOf))).toBe(false);
+    // ⛔ 형식만 보면 굳은 시각(`new Date(0)`)이 그대로 통과한다 — 화면 헤더 「기준 …」이
+    //    낡은 값을 최신으로 읽는다. 서버 «집계 시각»이라는 뜻을 값으로 못박는다.
+    expect(Math.abs(Date.parse(card.asOf) - Date.now())).toBeLessThan(60_000);
   });
 
   it('L-53 @Get(summary) 가 @Get(:shipmentRequestId) «앞»이다 — 400 이 아니다', async () => {
@@ -877,6 +908,11 @@ describe('출하작업지시 조회 (e2e)', () => {
 
   function nos(body: ListBody): string[] {
     return body.items.map((item) => item.shipmentRequestNo);
+  }
+
+  /** 창(08-13~14) 안에 행을 넣는 스위트가 생겨도 안 흔들리게 «우리 것»만 남긴다(정확 일치용). */
+  function ours(body: ListBody): string[] {
+    return nos(body).filter((no) => no.startsWith(`${PREFIX}-`));
   }
 
   async function listSummary(query: Record<string, unknown>): Promise<SummaryBody> {

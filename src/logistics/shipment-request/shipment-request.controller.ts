@@ -3,11 +3,10 @@ import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
 import {
-  ShipmentRequestQuery,
   ShipmentRequestQueryService,
-  ShipmentRequestSummaryQuery,
   ShipmentRequestSummaryView,
 } from './shipment-request-query.service';
+import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
 import { ShipmentRequestView } from './shipment-request-view';
 
 /**
@@ -36,7 +35,7 @@ export class ShipmentRequestController {
    */
   @Get('summary')
   @Contract('GET /logistics/shipment-requests/summary')
-  summary(@Query() query: ShipmentRequestSummaryQuery): Promise<ShipmentRequestSummaryView> {
+  summary(@Query() query: ShipmentRequestFilters): Promise<ShipmentRequestSummaryView> {
     return this.queries.summary(query);
   }
 

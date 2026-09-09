@@ -1,4 +1,4 @@
-import { orderBySql, whereSql } from './shipment-request-query.service';
+import { orderBySql, whereSql } from './shipment-request-query.sql';
 
 /**
  * ⭐⭐ **e2e 가 «구조적으로» 못 보는 두 축**을 이 spec 이 본다(README §6-3 ⑹).
