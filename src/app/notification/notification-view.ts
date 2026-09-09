@@ -44,7 +44,7 @@ export function notificationView(row: NotificationRow): NotificationView {
     message: row.message,
     occurredAt: event.occurred_at.toISOString(),
     read: row.read_at !== null,
-    // 설계 미정 — 문의 102: 화면·위치 원천이 없고, enum 밖 과거 대상은 짝을 생략한다.
+    // 결정 — 통보 102: 화면·위치 원천이 없고, enum 밖 과거 대상은 짝을 생략한다.
     openable: false,
     targetTypeCode,
     targetId: targetTypeCode === undefined ? undefined : Number(event.aggregate_id),

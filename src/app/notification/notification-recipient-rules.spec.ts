@@ -117,7 +117,7 @@ describe('notification recipient rules', () => {
       'recipients[0].userId',
     ],
   ])('안전 범위 밖 ID는 참조 조회 전에 정확한 field의 RANGE다', (recipient, field) => {
-    // 설계 미정 — 문의 번호 배정 대기(I-28 R-11)
+    // 결정 — I-28 R-11 통보
     try {
       assertNotificationRecipientRules([recipient]);
       throw new Error('예외가 필요합니다.');

@@ -29,10 +29,13 @@ import { PrinterQueryService } from './document-issue/printer-query.service';
 import { PrinterController } from './document-issue/printer.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
+import { NotificationEventController } from './notification/notification-event.controller';
 import { NotificationController } from './notification/notification.controller';
 import { NotificationPreviewController } from './notification/notification-preview.controller';
 import { NotificationPreviewService } from './notification/notification-preview.service';
 import { NotificationQueryService } from './notification/notification-query.service';
+import { NotificationSubscriptionController } from './notification/notification-subscription.controller';
+import { NotificationSubscriptionService } from './notification/notification-subscription.service';
 import { NotificationWriteController } from './notification/notification-write.controller';
 import { NotificationWriteService } from './notification/notification-write.service';
 import { OperationPolicyController } from './policy/operation-policy.controller';
@@ -71,8 +74,10 @@ import { UserAssignmentService } from './access/user-assignment.service';
     PrinterController,
     OperationPolicyController,
     NoticeController,
+    NotificationEventController,
     NotificationController,
     NotificationPreviewController,
+    NotificationSubscriptionController,
     NotificationWriteController,
     ApprovalRouteController,
     ApprovalRequestController,
@@ -92,6 +97,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     NoticeService,
     NotificationQueryService,
     NotificationPreviewService,
+    NotificationSubscriptionService,
     NotificationWriteService,
     ApprovalRouteService,
     ApprovalRequestService,
