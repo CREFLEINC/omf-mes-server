@@ -77,6 +77,11 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
     "put",
     "200",
   );
+  const closeValidator = validator(
+    "/maintenance/downtimes/{downtimeId}:close",
+    "post",
+    "200",
+  );
   const summaryValidator = validator("/maintenance/downtimes/summary");
 
   beforeAll(async () => {
@@ -1141,6 +1146,243 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
     expect(replay.body).toEqual(updated.body);
   });
 
+  it("C01 서버 수신시각으로 닫고 계정·사번을 분리하며 관련 표는 건드리지 않는다", async () => {
+    const created = await postDowntime(createBody("closeServerTime")).expect(
+      201,
+    );
+    const relatedBefore = await relatedCounts();
+    const before = Date.now();
+    const response = await closeDowntime(created.body.downtimeId, {
+      authCookie: otherCookie,
+      workerNo: OTHER_WORKER_NO,
+    }).expect(200);
+    const after = Date.now();
+
+    expect(closeValidator(response.body)).toBe(true);
+    expect(closeValidator.errors ?? []).toEqual([]);
+    expect(response.body).toMatchObject({
+      downtimeId: created.body.downtimeId,
+      startedAt: "2026-09-08T00:00:00.000000Z",
+      recordedByWorkerNo: WORKER_NO,
+    });
+    expect(response.body.endedAt).toMatch(/\.\d{6}Z$/);
+    expect(Date.parse(response.body.endedAt)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(response.body.endedAt)).toBeLessThanOrEqual(after);
+    expect(await relatedCounts()).toEqual(relatedBefore);
+
+    const stored = await prisma.$queryRaw<
+      {
+        closed_by: bigint | null;
+        closed_by_worker_no: string | null;
+        ended_text: string;
+        version_no: number;
+      }[]
+    >`
+      SELECT closed_by,closed_by_worker_no,version_no,
+        to_char(ended_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ended_text
+      FROM maintenance.equipment_downtime
+      WHERE equipment_downtime_id=${BigInt(created.body.downtimeId)}`;
+    expect(stored[0]).toEqual({
+      closed_by: otherUserId,
+      closed_by_worker_no: OTHER_WORKER_NO,
+      ended_text: response.body.endedAt,
+      version_no: 2,
+    });
+  });
+
+  it("C02 If-Match는 선택이며 낡거나 잘못된 값만 거절한다", async () => {
+    const optional = await postDowntime(createBody("closeOptional")).expect(
+      201,
+    );
+    await closeDowntime(optional.body.downtimeId).expect(200);
+
+    const stale = await postDowntime(createBody("closeStale")).expect(201);
+    const conflict = await closeDowntime(stale.body.downtimeId, {
+      version: 7,
+    }).expect(409);
+    expect(conflict.body).toMatchObject({ conflictCause: "user" });
+    expect(
+      (await detail(BigInt(stale.body.downtimeId))).body.endedAt,
+    ).toBeNull();
+    await closeDowntime(stale.body.downtimeId, { version: 1 }).expect(200);
+
+    const malformed = await postDowntime(createBody("closeMalformed")).expect(
+      201,
+    );
+    await closeDowntime(malformed.body.downtimeId, {
+      version: "wrong",
+    }).expect(400);
+
+    const future = await postDowntime(
+      createBody("closeFuture", { startedAt: "2099-01-01T00:00:00Z" }),
+    ).expect(201);
+    const reversed = await closeDowntime(future.body.downtimeId).expect(400);
+    expect(
+      reversed.body.errors.map((error: { code: string }) => error.code),
+    ).toEqual(["PAIR", "PAIR"]);
+  });
+
+  it("C03 같은 키는 최초 종료를 재생하고 다른 요청과 재종료는 구분한다", async () => {
+    const created = await postDowntime(createBody("closeReplay")).expect(201);
+    const key = randomUUID();
+    const first = await closeDowntime(created.body.downtimeId, {
+      key,
+      version: 1,
+    }).expect(200);
+    const replay = await closeDowntime(created.body.downtimeId, {
+      key,
+      version: 999,
+    }).expect(200);
+    expect(replay.body).toEqual(first.body);
+
+    for (const options of [
+      { key, workerNo: OTHER_WORKER_NO },
+      { key, authCookie: otherCookie },
+    ]) {
+      const conflict = await closeDowntime(
+        created.body.downtimeId,
+        options,
+      ).expect(409);
+      expect(conflict.body).toMatchObject({ conflictCause: "user" });
+    }
+    const locked = await closeDowntime(created.body.downtimeId).expect(400);
+    expect(locked.body.errors[0]).toMatchObject({
+      field: "downtimeId",
+      code: "STATE_LOCKED",
+    });
+    expect((await detail(BigInt(created.body.downtimeId))).headers.etag).toBe(
+      "2",
+    );
+  });
+
+  it("C04 동시 종료는 한 번만 반영하고 version도 한 번만 증가한다", async () => {
+    const created = await postDowntime(createBody("closeConcurrent")).expect(
+      201,
+    );
+    const responses = await Promise.all([
+      closeDowntime(created.body.downtimeId),
+      closeDowntime(created.body.downtimeId),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 400,
+    ]);
+    const stored = await prisma.equipment_downtime.findUniqueOrThrow({
+      where: { equipment_downtime_id: BigInt(created.body.downtimeId) },
+      select: { ended_at: true, version_no: true },
+    });
+    expect(stored.ended_at).not.toBeNull();
+    expect(stored.version_no).toBe(2);
+  });
+
+  it("C05 사번·인증·권한을 검증하고 계정 미연결 작업자도 기록한다", async () => {
+    const created = await postDowntime(createBody("closeWorker")).expect(201);
+    for (const [workerNo, code] of [
+      [null, "REQUIRED"],
+      [`${PREFIX}-UNKNOWN`, "INVALID"],
+      ["W".repeat(51), "RANGE"],
+    ] as const) {
+      const rejected = await closeDowntime(created.body.downtimeId, {
+        workerNo,
+      }).expect(400);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: "X-Worker-No",
+        code,
+      });
+    }
+    await closeDowntime(created.body.downtimeId, {
+      authCookie: null,
+    }).expect(401);
+    await closeDowntime(created.body.downtimeId, {
+      authCookie: noPermissionCookie,
+    }).expect(403);
+
+    await closeDowntime(created.body.downtimeId, {
+      workerNo: OTHER_WORKER_NO,
+    }).expect(200);
+    const stored = await prisma.equipment_downtime.findUniqueOrThrow({
+      where: { equipment_downtime_id: BigInt(created.body.downtimeId) },
+      select: { closed_by: true, closed_by_worker_no: true },
+    });
+    expect(stored).toEqual({
+      closed_by: actorUserId,
+      closed_by_worker_no: OTHER_WORKER_NO,
+    });
+  });
+
+  it("C06 응답 매핑 실패는 종료·version·멱등행을 함께 롤백한다", async () => {
+    const created = await postDowntime(createBody("closeMapping")).expect(201);
+    await prisma.equipment_downtime.update({
+      where: { equipment_downtime_id: BigInt(created.body.downtimeId) },
+      data: { reason_code: null },
+    });
+    const key = randomUUID();
+    await closeDowntime(created.body.downtimeId, { key }).expect(500);
+    const stored = await prisma.equipment_downtime.findUniqueOrThrow({
+      where: { equipment_downtime_id: BigInt(created.body.downtimeId) },
+      select: {
+        ended_at: true,
+        closed_by: true,
+        closed_by_worker_no: true,
+        version_no: true,
+      },
+    });
+    expect(stored).toEqual({
+      ended_at: null,
+      closed_by: null,
+      closed_by_worker_no: null,
+      version_no: 1,
+    });
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+  });
+
+  it("C07 멱등 완료 저장 실패도 종료를 롤백하고 같은 키로 재시도한다", async () => {
+    const created = await postDowntime(createBody("closeCompletion")).expect(
+      201,
+    );
+    const key = randomUUID();
+    const runTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, "$transaction")
+      .mockImplementationOnce(async (work) =>
+        runTransaction(async (tx) => {
+          const completionSpy = jest
+            .spyOn(tx.idempotency_record, "update")
+            .mockRejectedValueOnce(new Error("I32_CLOSE_COMPLETION_FAILURE"));
+          try {
+            return await (
+              work as (client: Prisma.TransactionClient) => Promise<unknown>
+            )(tx);
+          } finally {
+            completionSpy.mockRestore();
+          }
+        }),
+      );
+    try {
+      const failed = await closeDowntime(created.body.downtimeId, {
+        key,
+      }).expect(500);
+      expect(failed.text).not.toContain("I32_CLOSE_COMPLETION_FAILURE");
+    } finally {
+      transactionSpy.mockRestore();
+    }
+    expect(
+      await prisma.equipment_downtime.findUniqueOrThrow({
+        where: { equipment_downtime_id: BigInt(created.body.downtimeId) },
+        select: { ended_at: true, version_no: true },
+      }),
+    ).toEqual({ ended_at: null, version_no: 1 });
+    expect(
+      await prisma.idempotency_record.findUnique({
+        where: { idempotency_key: key },
+      }),
+    ).toBeNull();
+    await closeDowntime(created.body.downtimeId, { key }).expect(200);
+  });
+
   async function list(query: Record<string, unknown>): Promise<DowntimeList> {
     const response = await request(app.getHttpServer())
       .get(PATH)
@@ -1166,6 +1408,10 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
   interface PutOptions {
     authCookie?: string[] | null;
     key?: string | null;
+    version?: number | string | null;
+  }
+
+  interface CloseOptions extends PostOptions {
     version?: number | string | null;
   }
 
@@ -1199,6 +1445,26 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
     const version = options.version === undefined ? 1 : options.version;
     if (authCookie !== null) call.set("Cookie", authCookie);
     if (key !== null) call.set("Idempotency-Key", key);
+    if (version !== null) call.set("If-Match", String(version));
+    return call;
+  }
+
+  function closeDowntime(
+    downtimeId: number,
+    options: CloseOptions = {},
+  ): request.Test {
+    const call = request(app.getHttpServer()).post(
+      `${PATH}/${downtimeId}:close`,
+    );
+    const authCookie =
+      options.authCookie === undefined ? cookie : options.authCookie;
+    const key = options.key === undefined ? randomUUID() : options.key;
+    const workerNo =
+      options.workerNo === undefined ? WORKER_NO : options.workerNo;
+    const version = options.version === undefined ? null : options.version;
+    if (authCookie !== null) call.set("Cookie", authCookie);
+    if (key !== null) call.set("Idempotency-Key", key);
+    if (workerNo !== null) call.set("X-Worker-No", workerNo);
     if (version !== null) call.set("If-Match", String(version));
     return call;
   }
@@ -1337,6 +1603,16 @@ describe("설비 비가동 조회·쓰기 I-32 P1b/P3/P4 (e2e)", () => {
             "updateRollback",
             "updateEmpty",
             "updateExact",
+            "closeServerTime",
+            "closeOptional",
+            "closeStale",
+            "closeMalformed",
+            "closeFuture",
+            "closeReplay",
+            "closeConcurrent",
+            "closeWorker",
+            "closeMapping",
+            "closeCompletion",
             "summary",
           ]
         : [name]) {

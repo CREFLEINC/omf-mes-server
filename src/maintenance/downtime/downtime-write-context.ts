@@ -10,12 +10,13 @@ import { ERROR_CODE, field, one } from "../../common/errors";
 
 export type DowntimeWriteContext = IdempotencyContext & { appUserId: number };
 export type DowntimeCreateContext = DowntimeWriteContext & { workerNo: string };
+export type DowntimeCloseContext = DowntimeWriteContext & { workerNo: string };
 
 function workerProblem(code: string, message: string) {
   return one(field("X-Worker-No", code, message));
 }
 
-export function downtimeCreateContext(request: Request): DowntimeCreateContext {
+function workerNo(request: Request): string {
   const raw = request.headers["x-worker-no"];
   if (typeof raw !== "string" || raw.trim() === "") {
     throw workerProblem(ERROR_CODE.REQUIRED, "작업자 사번이 필요합니다.");
@@ -26,7 +27,15 @@ export function downtimeCreateContext(request: Request): DowntimeCreateContext {
       "작업자 사번은 50자 이하여야 합니다.",
     );
   }
-  return context(request, HttpStatus.CREATED, { workerNo: raw });
+  return raw;
+}
+
+export function downtimeCreateContext(request: Request): DowntimeCreateContext {
+  return context(request, HttpStatus.CREATED, { workerNo: workerNo(request) });
+}
+
+export function downtimeCloseContext(request: Request): DowntimeCloseContext {
+  return context(request, HttpStatus.OK, { workerNo: workerNo(request) });
 }
 
 export function downtimeUpdateContext(request: Request): DowntimeWriteContext {

@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -16,6 +18,7 @@ import { Contract } from "../../common/contract";
 import { IdempotencyService } from "../../common/idempotency";
 import { ifMatchVersion, setEtag } from "../../common/optimistic-lock";
 import { DowntimeCreateService } from "./downtime-create.service";
+import { DowntimeCloseService } from "./downtime-close.service";
 import {
   DowntimeList,
   DowntimeQuery,
@@ -31,6 +34,7 @@ import {
 } from "./downtime-summary-view";
 import {
   downtimeCreateContext,
+  downtimeCloseContext,
   downtimeUpdateContext,
 } from "./downtime-write-context";
 
@@ -39,6 +43,7 @@ export class DowntimeController {
   constructor(
     private readonly queries: DowntimeQueryService,
     private readonly creates: DowntimeCreateService,
+    private readonly closes: DowntimeCloseService,
     private readonly updates: DowntimeUpdateService,
     private readonly summaries: DowntimeSummaryService,
     private readonly idempotency: IdempotencyService,
@@ -76,6 +81,21 @@ export class DowntimeController {
     const context = downtimeCreateContext(request);
     const outcome = await this.idempotency.run(context, (tx) =>
       this.creates.createWithin(tx, body, context),
+    );
+    return outcome.body;
+  }
+
+  @Post(":downtimeId\\:close")
+  @Contract("POST /maintenance/downtimes/{downtimeId}:close")
+  @HttpCode(HttpStatus.OK)
+  async close(
+    @Req() request: Request,
+    @Param("downtimeId", ParseIntPipe) downtimeId: number,
+  ): Promise<DowntimeView> {
+    const version = ifMatchVersion(request);
+    const context = downtimeCloseContext(request);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.closes.closeWithin(tx, downtimeId, version, context),
     );
     return outcome.body;
   }
