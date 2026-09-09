@@ -7,19 +7,25 @@ import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { hashPassword } from "../src/auth/password";
+import { maintenanceInstantFromEpoch } from "../src/maintenance/maintenance-instant";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E_I33_TOOL";
 const LOGIN_ID = `${PREFIX}-USER`;
+const NO_PERMISSION_LOGIN_ID = `${PREFIX}-NO-PERM`;
+const ROLE_CODE = `${PREFIX}-ROLE`;
+const WORKER_NO = `${PREFIX}-WORKER`;
 const PASSWORD = "I-33-툴-조회-검증-비밀번호";
 
 describe("툴 사용실적 (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermissionCookie: string[];
   let usageId: number;
   let moldId: number;
   let workOrderId: number;
+  let actorUserId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -40,9 +46,32 @@ describe("툴 사용실적 (e2e)", () => {
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    actorUserId = Number(user.app_user_id);
+    const noPermissionUser = await prisma.app_user.create({
+      data: {
+        login_id: NO_PERMISSION_LOGIN_ID,
+        user_name: "I-33 툴 권한 없음",
+        status_code: "EMPLOYED",
+      },
+    });
+    await prisma.user_credential.create({
+      data: {
+        app_user_id: noPermissionUser.app_user_id,
+        password_hash: await hashPassword(PASSWORD),
+      },
+    });
+    const role = await prisma.role.create({
+      data: { role_code: ROLE_CODE, role_name: "I-33 툴 입력" },
+    });
+    await prisma.role_permission.create({
+      data: { role_id: role.role_id, permission_code: "P-05-01" },
+    });
+    await prisma.user_role.create({
+      data: { app_user_id: user.app_user_id, role_id: role.role_id },
+    });
     const worker = await prisma.worker.create({
       data: {
-        worker_no: `${PREFIX}-WORKER`,
+        worker_no: WORKER_NO,
         worker_name: "툴 기록 작업자",
         business_unit_id: unit.business_unit_id,
         plant_id: plant.plant_id,
@@ -114,6 +143,7 @@ describe("툴 사용실적 (e2e)", () => {
     moldId = Number(mold.mold_id);
     workOrderId = Number(order.work_order_id);
     cookie = await login();
+    noPermissionCookie = await login(NO_PERMISSION_LOGIN_ID);
   });
 
   afterAll(async () => {
@@ -136,7 +166,7 @@ describe("툴 사용실적 (e2e)", () => {
       conversionBaseQty: null,
       conversionRatio: null,
       occurredAt: "2026-09-09T01:02:03.123456Z",
-      recordedByWorkerNo: `${PREFIX}-WORKER`,
+      recordedByWorkerNo: WORKER_NO,
     });
     expect(response.body).not.toHaveProperty("cumulativeShotCount");
     expect(response.body).not.toHaveProperty("cumulativeAsOf");
@@ -171,11 +201,192 @@ describe("툴 사용실적 (e2e)", () => {
     expect(response.body.totalCount).toBe(1);
   });
 
-  async function login(): Promise<string[]> {
+  it("DIRECT 증분과 후속 입력 뒤 재생은 최초 누계·기준시각을 그대로 보존한다", async () => {
+    const before = await moldState();
+    const beforeRows = await usageCount();
+    const key = randomUUID();
+    const body = createBody({ shotCount: 7, occurredAt: "2026-09-06T10:00:00.123456+07:00" });
+    const first = await postUsage(body, key).expect(201);
+    expect(first.body).toMatchObject({
+      moldId,
+      workOrderId,
+      shotCount: 7,
+      collectionMethodCode: "DIRECT",
+      conversionBaseQty: null,
+      conversionRatio: null,
+      occurredAt: "2026-09-06T03:00:00.123456Z",
+      recordedByWorkerNo: WORKER_NO,
+      cumulativeShotCount: before.current_shot_count + 7,
+      cumulativeAsOf: expect.stringMatching(/\.\d{6}Z$/),
+    });
+    const afterFirst = await moldState();
+    expect(first.body.cumulativeAsOf).toBe(
+      maintenanceInstantFromEpoch(afterFirst.updated_epoch).utcIso,
+    );
+    await postUsage(createBody({ shotCount: 2 }), randomUUID()).expect(201);
+    const replay = await postUsage(body, key).expect(201);
+    expect(replay.body).toEqual(first.body);
+    await postUsage(body, key, cookie, `${WORKER_NO}-OTHER`).expect(409);
+
+    const after = await moldState();
+    expect(after).toMatchObject({
+      current_shot_count: before.current_shot_count + 9,
+      version_no: before.version_no + 2,
+      updated_by: actorUserId,
+    });
+    expect(await usageCount()).toBe(beforeRows + 2);
+    const detail = await request(app.getHttpServer())
+      .get(`/api/maintenance/tool-usages/${first.body.toolUsageId}`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(detail.body).not.toHaveProperty("cumulativeShotCount");
+    expect(detail.body).not.toHaveProperty("cumulativeAsOf");
+  });
+
+  it("CONVERTED는 제출 타발수와 비율을 재계산 없이 저장한다", async () => {
+    const response = await postUsage(
+      createBody({
+        shotCount: 1,
+        collectionMethodCode: "CONVERTED",
+        conversionBaseQty: 1,
+        conversionRatio: 1.2,
+        occurredAt: "2026-09-07T00:00:00.654321000Z",
+      }),
+      randomUUID(),
+    ).expect(201);
+    expect(response.body).toMatchObject({
+      shotCount: 1,
+      collectionMethodCode: "CONVERTED",
+      conversionBaseQty: 1,
+      conversionRatio: 1.2,
+      occurredAt: "2026-09-07T00:00:00.654321Z",
+    });
+    const stored = await prisma.tool_usage.findUniqueOrThrow({
+      where: { tool_usage_id: BigInt(response.body.toolUsageId) },
+    });
+    expect(stored.shot_count).toBe(1n);
+    expect(stored.conversion_base_qty?.toString()).toBe("1");
+    expect(stored.conversion_ratio?.toString()).toBe("1.2");
+  });
+
+  it("헤더·참조·환산·권한 오류는 이력과 누계를 바꾸지 않는다", async () => {
+    const before = await moldState();
+    const beforeRows = await usageCount();
+    await postUsage(createBody(), randomUUID(), cookie, null).expect(400);
+    await postUsage(createBody(), randomUUID(), cookie, "UNKNOWN-WORKER").expect(400);
+    await postUsage(createBody({ workOrderId: 999999999 }), randomUUID()).expect(400);
+    await postUsage(
+      createBody({
+        collectionMethodCode: "CONVERTED",
+        conversionBaseQty: 1,
+        conversionRatio: 0.0000001,
+      }),
+      randomUUID(),
+    ).expect(400);
+    await postUsage(createBody(), randomUUID(), noPermissionCookie).expect(403);
+    expect(await moldState()).toMatchObject({
+      current_shot_count: before.current_shot_count,
+      version_no: before.version_no,
+    });
+    expect(await usageCount()).toBe(beforeRows);
+  });
+
+  it("비활성 툴은 허용하지만 폐기 툴은 쓰기 없이 422다", async () => {
+    await prisma.mold.update({ where: { mold_id: BigInt(moldId) }, data: { is_active: false } });
+    await postUsage(createBody({ shotCount: 1 }), randomUUID()).expect(201);
+    await prisma.mold.update({
+      where: { mold_id: BigInt(moldId) },
+      data: { status_code: "DISPOSED" },
+    });
+    const before = await moldState();
+    const beforeRows = await usageCount();
+    await postUsage(createBody(), randomUUID()).expect(422);
+    expect(await moldState()).toMatchObject({
+      current_shot_count: before.current_shot_count,
+      version_no: before.version_no,
+    });
+    expect(await usageCount()).toBe(beforeRows);
+    await prisma.mold.update({
+      where: { mold_id: BigInt(moldId) },
+      data: { status_code: "IN_USE", is_active: true },
+    });
+  });
+
+  it("서로 다른 두 키의 동시 증분은 유실 없이 직렬 누계와 version을 만든다", async () => {
+    const before = await moldState();
+    const responses = await Promise.all([
+      postUsage(createBody({ shotCount: 1 }), randomUUID()),
+      postUsage(createBody({ shotCount: 1 }), randomUUID()),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    expect(
+      responses.map((response) => response.body.cumulativeShotCount).sort((a, b) => a - b),
+    ).toEqual([before.current_shot_count + 1, before.current_shot_count + 2]);
+    expect(await moldState()).toMatchObject({
+      current_shot_count: before.current_shot_count + 2,
+      version_no: before.version_no + 2,
+    });
+  });
+
+  it("현재 누계와 요청의 합이 안전 범위를 넘으면 전건 쓰기 없이 400이다", async () => {
+    const before = await moldState();
+    const beforeRows = await usageCount();
+    await prisma.mold.update({
+      where: { mold_id: BigInt(moldId) },
+      data: { current_shot_count: BigInt(Number.MAX_SAFE_INTEGER) },
+    });
+    await postUsage(createBody({ shotCount: 1 }), randomUUID()).expect(400);
+    expect(await usageCount()).toBe(beforeRows);
+    await prisma.mold.update({
+      where: { mold_id: BigInt(moldId) },
+      data: { current_shot_count: BigInt(before.current_shot_count) },
+    });
+  });
+
+  function postUsage(
+    body: object,
+    key: string,
+    authCookie = cookie,
+    workerNo: string | null = WORKER_NO,
+  ) {
+    const result = request(app.getHttpServer())
+      .post("/api/maintenance/tool-usages")
+      .set("Cookie", authCookie)
+      .set("Idempotency-Key", key);
+    if (workerNo !== null) result.set("X-Worker-No", workerNo);
+    return result.send(body);
+  }
+
+  function createBody(overrides: Record<string, unknown> = {}) {
+    return {
+      moldId,
+      workOrderId,
+      shotCount: 3,
+      collectionMethodCode: "DIRECT",
+      occurredAt: "2026-09-07T00:00:00.123456Z",
+      ...overrides,
+    };
+  }
+
+  async function moldState() {
+    const [row] = await prisma.$queryRaw<
+      { current_shot_count: bigint; version_no: number; updated_by: bigint | null; updated_epoch: string }[]
+    >(Prisma.sql`
+      SELECT current_shot_count, version_no, updated_by,
+        (extract(epoch FROM updated_at) * 1000000)::numeric(30,0)::text AS updated_epoch
+      FROM mdm.mold WHERE mold_id = ${moldId}`);
+    return { ...row, current_shot_count: Number(row.current_shot_count), updated_by: Number(row.updated_by) };
+  }
+
+  function usageCount(): Promise<number> {
+    return prisma.tool_usage.count({ where: { mold_id: BigInt(moldId) } });
+  }
+
+  async function login(loginId = LOGIN_ID): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post("/api/app/sessions")
       .set("Idempotency-Key", randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers["set-cookie"];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
@@ -190,11 +401,19 @@ describe("툴 사용실적 (e2e)", () => {
     await prisma.mold.deleteMany({ where: { mold_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
-      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    const users = await prisma.app_user.findMany({
+      where: { login_id: { startsWith: PREFIX } },
+      select: { app_user_id: true },
+    });
+    const userIds = users.map((user) => user.app_user_id);
+    await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
+    await prisma.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });
+    await prisma.user_credential.deleteMany({ where: { app_user_id: { in: userIds } } });
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE_CODE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
+    await prisma.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
   }
 });
