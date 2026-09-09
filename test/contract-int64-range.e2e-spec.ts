@@ -27,6 +27,10 @@ const PASSWORD = '정수범위-검사-비밀번호';
 const OVER = '99999999999999999999';
 /** 배정도가 표현할 수 있는 가장 큰 int64. 유효한 값이라 통과해야 한다. */
 const LARGEST_VALID = '9223372036854774784';
+/** int64 로는 «유효한» 최솟값이지만 Prisma 가 못 받는다 — 여기서 안 막으면 500 이다. */
+const INT64_MIN = '-9223372036854775808';
+/** 배정도로 표현 가능한 가장 작은 int64. 유효한 값이라 통과해야 한다. */
+const SMALLEST_VALID = '-9223372036854774784';
 
 describe('int64 범위 (e2e)', () => {
   let app: INestApplication;
@@ -122,9 +126,24 @@ describe('int64 범위 (e2e)', () => {
    * ⭐ 경계를 «양쪽에서» 집는다. 위만 보면 검사가 `false` 를 늘 돌려주는 구현으로도
    * 전건 초록이라 「범위를 본다」가 반증 불가가 된다.
    */
-  it('표현 가능한 가장 큰 int64 는 통과한다 — 400 이 아니라 404 다', async () => {
-    const response = await get(`/api/inventory/handling-units/${LARGEST_VALID}`).expect(404);
+  it.each([
+    ['가장 큰', LARGEST_VALID],
+    ['가장 작은', SMALLEST_VALID],
+  ])('표현 가능한 %s int64 는 통과한다 — 400 이 아니라 404 다', async (_label, value) => {
+    const response = await get(`/api/inventory/handling-units/${value}`).expect(404);
     expect(response.body.errors[0]).toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  /**
+   * ⛔ int64 최솟값은 «유효한 int64 인데도» 막는다 — Prisma 가 `|v| >= 2^63` 을
+   * ⌜Expected BigInt, provided Float⌝ 로 던져 500 이 되기 때문이다. 하한을 `>=` 로
+   * 닫아 두면 배정도로 이 값이 되는 513개가 전부 500 으로 샌다.
+   */
+  it('int64 최솟값 -(2^63) 은 500 이 아니라 400 이다 — 하한도 «열린» 구간이다', async () => {
+    const response = await get(`/api/inventory/handling-units/${INT64_MIN}`).expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'handlingUnitId', code: 'INVALID' }),
+    ]);
   });
 
   it('평범한 id 는 그대로 404 다 · 정상 목록은 200 이다', async () => {
