@@ -11,55 +11,24 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
-import { Contract, ContractRegistry } from '../src/common/contract';
-import { OPERATION_PERMISSIONS } from '../src/common/permissions';
+import { Contract } from '../src/common/contract';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
- * 계약이 403 을 선언했는데 권한이 아직 등록되지 않은 오퍼레이션을 «찾아» 쓴다.
+ * ⭐⭐ 2026-09-09 — 「권한이 «도출되지 않은» 자리」 탐침을 여기서 걷어냈다.
  *
- * ⛔ 하드코딩하면 그 자리를 구현하는 PR 마다 이 검사가 깨진다 — 실제로 `GET /app/roles`
- * 로 적어 두었다가 역할 마스터가 서면서 깨졌다.
+ * 그 탐침은 계약에서 **403 을 선언했는데 미등록인** 오퍼레이션을 하나 찾아 붙여, 가드가
+ * 통과가 아니라 **던짐**으로 가는지(F-6) 확인했다. 2026-09-05 에 「GET 중에 없을 뿐」이라
+ * 메서드를 넓혔는데, 이번엔 **메서드를 통틀어 0** 이 됐다 — 게이트가 실제로 완성됐다.
+ * (전건 250/250 등록 · `operation-permissions.spec.ts`)
  *
- * ⚠ 2026-09-05 — 후보를 `GET` 으로만 좁혀 두었더니 공지 권한을 채운 순간 0이 되어 검사가
- * 스스로 「게이트가 완성됐다」고 던졌다. **완성된 것이 아니라 GET 중에 없었을 뿐이다**
- * (권한 미등록 403 자리는 다른 메서드에 여전히 남아 있다). 그래서 메서드를 가리지 않는다.
+ * ⇒ 그 축은 **e2e 로 더는 만들 수 없다**. README §6-3 의 「e2e 로 반증 불가 부류」대로
+ *   「반증 불가」를 결론이 아니라 **어느 층으로 내려갈지의 신호**로 읽고 둘로 갈랐다:
+ *   - **던짐 자체**(F-6) → `src/common/permissions/permission.guard.spec.ts`(단위)
+ *   - **미등록이 0 이라는 사실** → `operation-permissions.spec.ts` 의 전건 일치 단언
  *
- * ⭐ 고른 키가 `POST` 여도 아래 탐침은 `@Get` 으로 단다 — 권한 가드는 **계약 검증 가드보다
- * 앞**에 서고(`app.module.ts` 의 등록 순서) 메타데이터만 보므로, 본문이 없어도 판정에
- * 닿는다. 실제로 그 순서가 이 검사의 전제다.
+ * ⛔ 여기에 탐침을 되살리지 마라 — 미등록 자리가 다시 생기면 그 두 spec 이 먼저 빨개진다.
  */
-function pickUnregistered(): { key: string; route: string; url: string } {
-  const registry = ContractRegistry.load();
-  const key = registry
-    .keys()
-    .sort()
-    .find((candidate) => {
-      const responses = (registry.get(candidate)?.operation as {
-        responses?: Record<string, unknown>;
-      }).responses;
-      return (
-        responses !== undefined && '403' in responses && !(candidate in OPERATION_PERMISSIONS)
-      );
-    });
-  if (key === undefined) {
-    throw new Error(
-      '권한 미등록 403 자리가 «메서드를 통틀어» 없다 — 게이트가 완성됐으므로 이 검사를 지운다',
-    );
-  }
-  // 실재 경로와 부딪히지 않게 접두어를 붙인다. 가드는 «메타데이터»만 보므로 경로가
-  // 달라도 판정은 같다. 경로 파라미터는 이름을 그대로 살린다 — 계약 검증 가드가 본다.
-  const path = key.slice(key.indexOf(' ') + 1);
-  // ⛔ 액션 콜론(`…{id}:activate`)을 먼저 이스케이프한 뒤 경로 파라미터를 바꾼다. 순서를
-  // 뒤집으면 `:id:activate` 가 되어 라우터가 「param 앞에 글자가 없다」로 죽는다.
-  const route = path.replace(/:/g, '\\:').replace(/\{(\w+)\}/g, ':$1');
-  // 부를 주소는 «경로 파라미터만» 값으로 바꾼다 — 액션 콜론은 그대로 둔다. 라우트
-  // 문자열에서 만들면 이스케이프한 콜론까지 값으로 바뀌어 주소가 어긋난다.
-  return { key, route: `gate-probe${route}`, url: `gate-probe${path.replace(/\{\w+\}/g, '1')}` };
-}
-
-const UNREGISTERED = pickUnregistered();
-
 @Controller()
 class GateProbeController {
   /** 계약이 403 을 선언하고 권한이 도출된 자리 — `W-CO-11` 하나만 요구한다. */
@@ -73,13 +42,6 @@ class GateProbeController {
   @Get('logistics/sales-orders')
   @Contract('GET /logistics/sales-orders')
   ungated(): unknown {
-    return { items: [] };
-  }
-
-  /** 계약이 403 을 선언했으나 권한이 «도출되지 않은» 자리. 남은 것에서 골라 온다. */
-  @Get(UNREGISTERED.route)
-  @Contract(UNREGISTERED.key)
-  unregistered(): unknown {
     return { items: [] };
   }
 }
@@ -184,13 +146,6 @@ describe('권한 게이트 (e2e)', () => {
       .expect(200);
   });
 
-  it('⛔ 권한이 도출되지 않은 자리는 통과가 아니라 던짐이다 — F-6', async () => {
-    // 500 이 난다. 사용자 문구가 아니라 «구현이 멈춰야 하는» 자리다.
-    await request(app.getHttpServer())
-      .get(`/api/${UNREGISTERED.url}`)
-      .set('Cookie', cookie)
-      .expect(500);
-  });
 
   it('⭐ 권한을 주면 지나간다', async () => {
     await grant('W-CO-11');
