@@ -87,11 +87,8 @@ export class SerialNumberCreateService {
     context: SerialNumberWriteContext,
   ): Promise<void> {
     assertInput(input);
-    const [worker, lot] = await Promise.all([
-      this.prisma.worker.findUnique({
-        where: { worker_no: context.workerNo },
-        select: { worker_id: true },
-      }),
+    const [, lot] = await Promise.all([
+      assertWorker(this.prisma, context.workerNo),
       this.prisma.lot.findUnique({
         where: { lot_id: BigInt(input.lotId) },
         select: {
@@ -102,10 +99,6 @@ export class SerialNumberCreateService {
         },
       }),
     ]);
-    if (worker === null)
-      throw one(
-        field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'),
-      );
     assertLot(lot, input.lotId);
     await assertTerminalGate(this.prisma, lot.source_id, context.terminalId);
   }
@@ -118,6 +111,7 @@ export class SerialNumberCreateService {
   ): Promise<SerialNumberBatchResult> {
     const lot = await lockLot(tx, input.lotId);
     assertLot(lot, input.lotId);
+    await assertWorker(tx, context.workerNo);
     await assertTerminalGate(tx, lot.source_id, context.terminalId);
     const producedAt = input.producedAt ?? null;
     const values = serialNos.map(
@@ -241,6 +235,21 @@ async function assertTerminalGate(
     select: { can_print_label: true },
   });
   if (gate?.can_print_label !== true) throw denied();
+}
+
+async function assertWorker(
+  db: Pick<Prisma.TransactionClient, 'worker'>,
+  workerNo: string,
+): Promise<void> {
+  const worker = await db.worker.findUnique({
+    where: { worker_no: workerNo },
+    select: { worker_id: true },
+  });
+  if (worker === null) {
+    throw one(
+      field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'),
+    );
+  }
 }
 
 function denied(): ContractException {
