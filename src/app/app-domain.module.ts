@@ -23,6 +23,7 @@ import { DocumentIssueQueryService } from './document-issue/document-issue-query
 import { DocumentIssueReportService } from './document-issue/document-issue-report.service';
 import { DocumentIssueSummaryMiddleware } from './document-issue/document-issue-summary.middleware';
 import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
+import { DocumentIssueWriteService } from './document-issue/document-issue-write.service';
 import { DocumentIssueController } from './document-issue/document-issue.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
@@ -82,6 +83,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     DocumentIssueQueryService,
     DocumentIssueReportService,
     DocumentIssueSummaryService,
+    DocumentIssueWriteService,
     OperationPolicyService,
     NoticeService,
     NotificationQueryService,
