@@ -67,7 +67,9 @@ model app_user {
   repair_execution                                       repair_execution[]
   work_session_event                                     work_session_event[]
   disposition_decision                                   disposition_decision[]
-  equipment_calibration                                  equipment_calibration[]
+  equipment_calibration_performer                        equipment_calibration[]           @relation("equipment_calibration_calibrated_by")
+  equipment_calibration_recorder                         equipment_calibration[]           @relation("equipment_calibration_recorded_by")
+  equipment_calibration_clearer                          equipment_calibration[]           @relation("equipment_calibration_cleared_by")
   inspection_plan                                        inspection_plan[]
   nonconformance                                         nonconformance[]
   impact_analysis                                        impact_analysis[]
@@ -3235,20 +3237,29 @@ model disposition_decision {
 }
 
 model equipment_calibration {
-  equipment_calibration_id BigInt    @id @default(autoincrement())
+  equipment_calibration_id BigInt     @id @default(autoincrement())
   equipment_id             BigInt
-  calibration_date         DateTime  @db.Date
-  result_code              String    @db.VarChar(50)
-  valid_until              DateTime? @db.Date
-  certificate_no           String?   @db.VarChar(100)
+  calibration_date         DateTime   @db.Date
+  result_code              String     @db.VarChar(50)
+  valid_until              DateTime?  @db.Date
+  certificate_no           String?    @db.VarChar(100)
   calibrated_by            BigInt?
   remarks                  String?
-  created_at               DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_at               DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by               BigInt?
-  app_user                 app_user? @relation(fields: [calibrated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  equipment                equipment @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  history_type_code        String?    @db.VarChar(50)
+  agency_type_code         String?    @db.VarChar(50)
+  agency_name              String?    @db.VarChar(200)
+  tolerance_note           String?
+  recorded_by              BigInt?
+  blocks_use               Boolean    @default(false)
+  cleared_at               DateTime?  @db.Timestamptz(6)
+  cleared_by               BigInt?
+  performer                app_user?  @relation("equipment_calibration_calibrated_by", fields: [calibrated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  recorder                 app_user?  @relation("equipment_calibration_recorded_by", fields: [recorded_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  clearer                  app_user?  @relation("equipment_calibration_cleared_by", fields: [cleared_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment                equipment  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([equipment_id, calibration_date], map: "uq_equipment_calibration")
   @@index([equipment_id, calibration_date(sort: Desc)], map: "ix_equipment_calibration_history")
   @@schema("quality")
 }
