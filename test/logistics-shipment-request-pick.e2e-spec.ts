@@ -36,8 +36,11 @@ const NOPERM_ID = 'e2e-shipment-pick-noperm';
 const PASSWORD = '제품피킹-비밀번호';
 const PREFIX = 'SRPKE2E';
 const ROLE = `${PREFIX}-ROLE`;
-/** `:pick` 은 403 을 «선언»했고 `DERIVED_PERMISSIONS:181` 이 이 화면 하나를 요구한다. */
-const PERMISSIONS = ['M-04-01'];
+/**
+ * `:pick` 은 403 을 «선언»했고 `DERIVED_PERMISSIONS:181` 이 이 화면 하나를 요구한다.
+ * ⭐ `W-04-01` 은 M4 체인 마디가 «편성»을 HTTP 로 부르기 때문이다(`:180`).
+ */
+const PERMISSIONS = ['M-04-01', 'W-04-01'];
 const BASE = '/api/logistics/shipment-requests';
 const WORKER_NO = `${PREFIX}-W1`;
 /** 다른 스위트의 목록 창 밖이라 서로를 안 흔든다. */
@@ -71,6 +74,13 @@ interface LineBody {
   shippingInspectionRequired: boolean;
   minimumRemainingShelfLifeDays: number | null;
   picks: PickBody[];
+}
+/** M4 마디가 쓰는 헤더 스키마 — 편성 201 과 상세 200 이 같은 `ShipmentRequest` 다. */
+interface RequestBody {
+  shipmentRequestId: number;
+  salesOrderId: number | null;
+  shipmentProgressCode: string;
+  lines?: LineBody[];
 }
 interface ErrorBody {
   errors: { field?: string; code: string; message: string }[];
@@ -678,6 +688,61 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     expect(body.pickedQty).toBe(30);
   });
 
+  // ── M4 체인 마디 (§8-8 · PR ⑦b) ──────────────────────────────────────────
+
+  it('M4 ⭐⭐ 지시서 → 편성 → 피킹 이 HTTP 로 이어지고 진행이 PICKING → PICKED 로 오른다', async () => {
+    // ⛔ 중간을 Prisma 로 «건너뛰지 않는다» — 편성·피킹·조회 셋 다 HTTP 다. LOT 과 잔액만 픽스처인데
+    //    04 계약에 그 둘을 세우는 오퍼레이션이 0건이고 ㉖ 판매오더도 등록 경로가 0건이라 다른 길이 없다.
+    const lotId = await stockedLot({ onHand: 100 });
+
+    // ㉖ 지시서 → ㉗ 편성. 판매오더를 걸어 두 문서가 실제로 이어진 것을 응답에서 본다.
+    const created = await request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        salesOrderId: Number(ids.salesOrder),
+        customerId: ids.customer,
+        shipToPartnerId: ids.shipTo,
+        requestedShipDate: SHIP_DATE,
+        lines: [
+          {
+            salesOrderLineId: ids.salesOrderLine,
+            itemId: ids.item1,
+            requestedQty: 50,
+            allocatedQty: 50,
+            uomId: ids.uom1,
+            shippingInspectionRequired: false,
+          },
+        ],
+      })
+      .expect(201);
+    const header = created.body as RequestBody;
+    expect(header.salesOrderId).toBe(Number(ids.salesOrder));
+    const lineId = (header.lines ?? [])[0].shipmentRequestLineId;
+    // 편성 직후 — `A = R` 이고 `P = 0` 이라 이미 `PICKING` 이다(§5-1). 여기서부터 «움직이는지»를 본다.
+    expect(header.shipmentProgressCode).toBe('PICKING');
+
+    // ㉙ 제품 LOT 피킹 — 편성이 «돌려준» id 로만 부른다. 체인이 끊기면 404 다.
+    const partial = await call(header.shipmentRequestId, lineId, {
+      lotId,
+      pickedQty: 20,
+      uomId: ids.uom1,
+    }).expect(200);
+    expect((partial.body as LineBody).pickedQty).toBe(20);
+
+    const midway = await getRequest(header.shipmentRequestId);
+    expect(midway.shipmentProgressCode).toBe('PICKING');
+    expect((midway.lines ?? [])[0].pickedQty).toBe(20);
+
+    // ⭐ 남은 30 을 마저 집으면 `P = A` 라 `PICKED` 로 오른다 — 축이 «상수»가 아님을 여기서 잠근다.
+    //    (`shipmentProgressCode` 를 'PICKING' 으로 고정하는 변이가 위 두 단언만으로는 안 죽는다.)
+    await call(header.shipmentRequestId, lineId, { lotId, pickedQty: 30, uomId: ids.uom1 }).expect(200);
+    const done = await getRequest(header.shipmentRequestId);
+    expect(done.shipmentProgressCode).toBe('PICKED');
+    expect((done.lines ?? [])[0].pickedQty).toBe(50);
+  });
+
   // ── 픽스처 ────────────────────────────────────────────────────────────────
 
   interface Scenario {
@@ -861,6 +926,15 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       .set('Idempotency-Key', options.key ?? randomUUID());
     if (options.workerNo !== null) test.set('X-Worker-No', options.workerNo ?? WORKER_NO);
     return test.send(payload);
+  }
+
+  /** M4 마디의 마지막 마디 — 상세 조회도 HTTP 다(③b `GET …/{id}`). */
+  async function getRequest(shipmentRequestId: number): Promise<RequestBody> {
+    const response = await request(app.getHttpServer())
+      .get(`${BASE}/${shipmentRequestId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body as RequestBody;
   }
 
   async function pick(s: Scenario, overrides: Record<string, unknown> = {}): Promise<LineBody> {

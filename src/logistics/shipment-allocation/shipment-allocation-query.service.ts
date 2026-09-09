@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PagedResponse, PageRequest, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -110,6 +110,23 @@ export class ShipmentAllocationQueryService {
     const response: ShipmentAllocationListResponse = pagedResponse(views, total, page);
     if (match !== undefined) response.match = match;
     return response;
+  }
+
+  /**
+   * ⑦b 의 되읽기 — 목록과 «같은» SELECT · 같은 `oqcPassed` 함수 · 같은 뷰를 탄다(§3-3 ⑨).
+   * ⛔ 쓰기 쪽에서 다시 세우지 마라 — `oqcPassed` 의 LOT 모집단이 «예약 축»이라(Major-1) 두 벌을
+   * 만들면 「목록이 판정한 것」과 「연결 응답이 말하는 것」이 갈린다.
+   * ⚠ 오늘은 ⑦b 가 이미 잠그고 404 로 판정한 뒤라 0행이 «도달 불가»지만, **I-23 이 배분 삭제
+   *   경로를 만든다** — 그때 잠금과 되읽기 사이가 벌어지면 `row` 가 `undefined` 다.
+   */
+  async get(shipmentLotAllocationId: number): Promise<ShipmentLotAllocationView> {
+    const [row] = await this.prisma.$queryRawUnsafe<QueryRow[]>(
+      `${SELECT_SQL} WHERE a.shipment_lot_allocation_id = $1::bigint`,
+      shipmentLotAllocationId,
+    );
+    if (row === undefined) throw new NotFoundException('없는 출하 LOT 배분입니다.');
+    const oqcByLine = await this.oqcPassedByLine([row.shipment_request_line_id]);
+    return shipmentLotAllocationView(row, oqcByLine.get(String(row.shipment_request_line_id)) ?? false);
   }
 
   private async fetchPage(where: BuiltWhere, page: PageRequest): Promise<{ rows: QueryRow[]; total: number }> {
