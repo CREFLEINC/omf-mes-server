@@ -14,6 +14,9 @@ import { ShipmentLotAllocationView } from './shipment-allocation-view';
  *    이 파일은 끝을 고정해 제거와 확대를 **둘 다** 죽인다.
  * ⓑ **「행을 안 바꾼다」** — 같은 HU 재전송은 값이 같아 응답에도 표에도 흔적이 없다(그 표에
  *    `version_no`·`updated_at` 이 0개다) ⇒ **UPDATE 를 «부르지 않았는지»**를 본다.
+ * ⓒ **헤더 값의 «공백»** — `X-Worker-No: '   '` 는 핸들러에 «닿지 않는다». HTTP 파서가 헤더 값의
+ *    OWS 를 잘라 서버는 `''` 를 받으므로, `trim()` 을 지워도 e2e 는 31/41 전건 초록이다(리뷰
+ *    실측) ⇒ **검증을 «직접» 불러** 그 축을 잠근다.
  *
  * ⛔ 이 파일은 e2e 를 대신하지 않는다 — 두 층을 같이 돌리는 것이 규칙이다(README §6-2).
  */
@@ -120,6 +123,21 @@ describe('배분 포장 연결 — e2e 가 못 보는 축', () => {
 
     expect(harness.recorded.order).not.toContain('update');
     expect(harness.recorded.order).not.toContain('read-back');
+  });
+
+  it('⭐ `X-Worker-No` 가 «공백뿐»이면 400 REQUIRED 다 — e2e 로는 못 닿는 축이다', async () => {
+    const harness = stub();
+
+    // ⛔ `trim()` 을 지우면 여기서만 빨개진다 — HTTP 파서가 OWS 를 잘라 e2e 는 `''` 만 보낸다.
+    const error = (await harness.service
+      .pack(ALLOCATION_ID, { handlingUnitId: Number(HU_ID) }, { workerNo: '   ' })
+      .catch((cause: unknown) => cause)) as ContractException;
+    expect(error).toBeInstanceOf(ContractException);
+    expect(error.errors).toEqual([
+      { scope: 'field', field: 'X-Worker-No', code: 'REQUIRED', message: '작업자 사번 헤더가 필요합니다.' },
+    ]);
+    // ① 은 트랜잭션을 열기 «전»이다 — 잠금도 안 잡힌다.
+    expect(harness.recorded.order).toEqual([]);
   });
 
   it('⭐ 되읽기는 «경로의 그 id» 로 ⑦a 를 부른다 — 목록 첫 행을 돌려주지 않는다', async () => {

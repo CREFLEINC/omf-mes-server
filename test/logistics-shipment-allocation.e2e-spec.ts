@@ -588,7 +588,10 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const hu = await makeHandlingUnit();
     const payload = { handlingUnitId: Number(hu) };
 
-    for (const workerNo of [null, '', '   ']) {
+    // ⛔ `'   '` 는 여기 두지 «않는다» — HTTP 파서가 헤더 값의 OWS 를 잘라 서버는 `''` 를 받는다.
+    //    그 축은 핸들러에 안 닿아 `trim()` 을 지워도 초록이다(리뷰 실측 · 31/31 GREEN) ⇒
+    //    `allocation-packing.service.spec.ts` 가 검증 함수를 «직접» 불러 잠근다.
+    for (const workerNo of [null, '']) {
       const response = await put(allocationId, payload, { workerNo }).expect(400);
       expect((response.body as ErrorBody).errors).toEqual([
         { scope: 'field', field: 'X-Worker-No', code: 'REQUIRED', message: '작업자 사번 헤더가 필요합니다.' },

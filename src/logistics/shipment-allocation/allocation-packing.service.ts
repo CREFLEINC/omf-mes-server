@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
+// ⭐ 01 자재창고가 «소유한» 상수를 그대로 쓴다 — 값을 베끼면 저쪽이 늘 때 여기만 조용히 뒤처진다
+//    (README §6-4). 도메인 간 상수 import 선례: `inspection-plan.service.ts:20` 의 `REVISION_STATUS`.
+import { HU_STATUS_OPEN, HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ShipmentAllocationQueryService } from './shipment-allocation-query.service';
 import { ShipmentLotAllocationView } from './shipment-allocation-view';
@@ -23,13 +26,16 @@ const HU_FIELD = 'handlingUnitId';
 /**
  * ⑥ 「포장 가능 상태」 — ⛔ 값 목록을 «지어내지 않았다». 실측: 계약이 `HandlingUnit.statusCode` 를
  * `x-no-code-key` 로 닫아 코드 그룹 시드가 **0행**이고, 저장소가 쥔 값은
- * `src/inventory/handling-unit/handling-unit-status.ts:11-12` 의 둘뿐이며(`OPEN`·`PACKED`)
+ * `src/inventory/handling-unit/handling-unit-status.ts:10-11` 의 둘뿐이며(`OPEN`·`PACKED`)
  * **폐기·해체를 뜻하는 값은 0개**다(통보 142 — 해체 화면이 계약에 0건).
  * ⇒ 결정 — 통보 후보. README §2 기준 2(거부하는 쪽)로 «허용 목록»을 골랐다: 없는 폐기 값 이름을
- *   지어 «거부 목록»을 세우면 기준 5(새 개념 0)에 걸린다. ⚠ 01 상수와 «두 벌»인 것은 저장소에
- *   도메인 간 import 가 0건이라서다. 픽스처의 셋째 값 `'ACTIVE'`(통보 164 ⓐ)는 여기서 거부된다.
+ *   지어 «거부 목록»을 세우면 기준 5(새 개념 0)에 걸린다.
+ * ⭐ **값을 베끼지 않고 그 파일을 `import` 한다** — 두 벌이면 01 이 문자열을 바꿀 때 여기만 뒤처져
+ *   포장 연결이 400 으로 «조용히» 막힌다(README §6-4). ⚠ 01 이 «셋째» 상태를 더하는 경우는 이
+ *   목록이 자동으로 늘지 않는다 — 허용 목록이라 의도한 바이고, 그때 여기 한 줄을 더한다.
+ * ⚠ 픽스처의 셋째 값 `'ACTIVE'`(통보 164 ⓐ)는 여기서 거부된다 — 통보 후보.
  */
-const PACKABLE_STATUS: ReadonlySet<string> = new Set(['OPEN', 'PACKED']);
+const PACKABLE_STATUS: ReadonlySet<string> = new Set([HU_STATUS_OPEN, HU_STATUS_PACKED]);
 
 interface AllocationRow {
   shipment_lot_allocation_id: bigint;
