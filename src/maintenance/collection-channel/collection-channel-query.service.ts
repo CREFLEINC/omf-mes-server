@@ -5,6 +5,11 @@ import { ContractException, ERROR_CODE, field } from "../../common/errors";
 import { PagedResponse, pageRequest, pagedResponse } from "../../common/pagination";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
+  CollectionChannelObservationProjection,
+  CollectionChannelObservationView,
+  collectionChannelObservationView,
+} from "./collection-channel-observation-view";
+import {
   CollectionChannelProjection,
   CollectionChannelView,
   collectionChannelView,
@@ -18,6 +23,14 @@ export interface CollectionChannelQuery {
 }
 
 export type CollectionChannelList = PagedResponse<CollectionChannelView> & { totalCount: number };
+export interface CollectionChannelObservationQuery {
+  equipmentId?: number;
+  unmappedOnly?: boolean;
+}
+export interface CollectionChannelObservationList {
+  items: CollectionChannelObservationView[];
+  totalCount: number;
+}
 type CollectionChannelId = { collection_channel_id: bigint };
 type MissingKey = { has_missing_key: boolean | null };
 
@@ -28,6 +41,44 @@ const COLLECTION_CHANNEL_FROM = Prisma.sql`
 @Injectable()
 export class CollectionChannelQueryService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async observations(
+    query: CollectionChannelObservationQuery,
+  ): Promise<CollectionChannelObservationList> {
+    if (query.equipmentId !== undefined && !Number.isSafeInteger(query.equipmentId)) {
+      throw rangeError("equipmentId", "설비 식별자 범위가 너무 큽니다.");
+    }
+    const conditions = [Prisma.sql`TRUE`];
+    if (query.equipmentId !== undefined) {
+      conditions.push(Prisma.sql`o.equipment_id = ${query.equipmentId}`);
+    }
+    if (query.unmappedOnly === true) {
+      conditions.push(Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM maintenance.collection_channel linked
+        WHERE linked.equipment_id = o.equipment_id
+          AND linked.channel_key = o.channel_key
+          AND linked.is_active
+          AND linked.inspection_item_id IS NOT NULL)`);
+    }
+    const rows = await this.prisma.$queryRaw<CollectionChannelObservationProjection[]>(Prisma.sql`
+      SELECT o.channel_key, o.last_value,
+             ((extract(epoch FROM o.observed_at) * 1000000)::bigint)::text
+               AS observed_epoch_microseconds,
+             EXISTS (
+               SELECT 1 FROM maintenance.collection_channel registered
+               WHERE registered.equipment_id = o.equipment_id
+                 AND registered.channel_key = o.channel_key
+             ) AS already_mapped,
+             count(*) OVER () AS total_count
+      FROM maintenance.collection_channel_observation o
+      WHERE ${Prisma.join(conditions, " AND ")}
+      ORDER BY o.observed_at DESC, o.equipment_id ASC, o.channel_key ASC`);
+    const total = rows.length === 0 ? 0 : Number(rows[0].total_count);
+    if (!Number.isSafeInteger(total)) {
+      throw new Error("Collection channel observation count exceeds safe range");
+    }
+    return { items: rows.map(collectionChannelObservationView), totalCount: total };
+  }
 
   async list(query: CollectionChannelQuery): Promise<CollectionChannelList> {
     const page = pageRequest(query);
@@ -135,6 +186,17 @@ function project(
       GROUP BY inspection_plan_id
     ) latest ON latest.inspection_plan_id = version.inspection_plan_id
     WHERE ${condition}`);
+}
+
+export async function readCollectionChannelWithin(
+  client: ProjectionClient,
+  collectionChannelId: bigint,
+): Promise<CollectionChannelProjection | null> {
+  const rows = await project(
+    client,
+    Prisma.sql`c.collection_channel_id = ${collectionChannelId}`,
+  );
+  return rows[0] ?? null;
 }
 
 function rangeError(name: string, message: string): ContractException {

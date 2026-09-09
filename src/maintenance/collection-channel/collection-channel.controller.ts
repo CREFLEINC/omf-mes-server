@@ -1,23 +1,54 @@
-import { Controller, Get, Param, Query, Res } from "@nestjs/common";
-import type { Response } from "express";
+import { Body, Controller, Get, Param, Post, Query, Req, Res } from "@nestjs/common";
+import type { Request, Response } from "express";
 
 import { Contract } from "../../common/contract";
+import { IdempotencyService } from "../../common/idempotency";
 import { setEtag } from "../../common/optimistic-lock";
+import { CollectionChannelCreateService } from "./collection-channel-create.service";
 import {
   CollectionChannelList,
+  CollectionChannelObservationList,
+  CollectionChannelObservationQuery,
   CollectionChannelQuery,
   CollectionChannelQueryService,
 } from "./collection-channel-query.service";
 import { CollectionChannelView } from "./collection-channel-view";
+import { collectionChannelWriteContext } from "./collection-channel-write-context";
+import { CollectionChannelCreate } from "./collection-channel-write-input";
 
 @Controller("maintenance/collection-channels")
 export class CollectionChannelController {
-  constructor(private readonly queries: CollectionChannelQueryService) {}
+  constructor(
+    private readonly queries: CollectionChannelQueryService,
+    private readonly creates: CollectionChannelCreateService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get()
   @Contract("GET /maintenance/collection-channels")
   list(@Query() query: CollectionChannelQuery): Promise<CollectionChannelList> {
     return this.queries.list(query);
+  }
+
+  @Get("observations")
+  @Contract("GET /maintenance/collection-channels/observations")
+  observations(
+    @Query() query: CollectionChannelObservationQuery,
+  ): Promise<CollectionChannelObservationList> {
+    return this.queries.observations(query);
+  }
+
+  @Post()
+  @Contract("POST /maintenance/collection-channels")
+  async create(
+    @Req() request: Request,
+    @Body() body: CollectionChannelCreate,
+  ): Promise<CollectionChannelView> {
+    const context = collectionChannelWriteContext(request, 201);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.creates.createWithin(tx, body, context),
+    );
+    return outcome.body;
   }
 
   @Get(":collectionChannelId")
