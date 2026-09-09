@@ -200,6 +200,32 @@ describe('검사기준 버전 (e2e)', () => {
     );
   });
 
+  it('⛔ 수집 채널이 연결된 검사 항목은 치환에서 뺄 수 없다', async () => {
+    const versionId = await createVersion(await createPlan());
+    const saved = await putItems(versionId, [item(versionId, 1, 'CHANNEL')]);
+    const plant = await prisma.plant.findFirstOrThrow();
+    const equipment = await prisma.equipment.create({
+      data: {
+        plant_id: plant.plant_id,
+        equipment_code: `${PREFIX}-CHANNEL-EQ`,
+        equipment_name: '수집 채널 참조 설비',
+        equipment_type_code: 'MACHINE',
+        status_code: 'IN_SERVICE',
+      },
+    });
+    await prisma.collection_channel.create({
+      data: {
+        equipment_id: equipment.equipment_id,
+        channel_key: `${PREFIX}-CHANNEL`,
+        inspection_item_id: saved.body.items[0].inspectionItemSpecId,
+      },
+    });
+
+    const rejected = await putItemsRaw(versionId, []);
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+  });
+
   it('⛔ 같은 순서·상한<하한·남의 버전 항목은 400 이다', async () => {
     const versionId = await createVersion(await createPlan());
 
@@ -460,6 +486,12 @@ describe('검사기준 버전 (e2e)', () => {
 
   async function cleanup(): Promise<void> {
     planCounter = 0;
+    await prisma.collection_channel.deleteMany({
+      where: { channel_key: { startsWith: PREFIX } },
+    });
+    await prisma.equipment.deleteMany({
+      where: { equipment_code: { startsWith: PREFIX } },
+    });
     const plans = await prisma.inspection_plan.findMany({
       where: { inspection_plan_code: { startsWith: PREFIX } },
       select: { inspection_plan_id: true },

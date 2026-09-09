@@ -25,6 +25,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export const PROCESS_REFERRERS: readonly Referrer[] = [
   ['app.operation_policy', 'process_id'],
   ['logistics.subcontract_order', 'process_id'],
+  ['maintenance.collection_channel', 'process_id'],
   ['mdm.equipment', 'process_id'],
   ['mdm.terminal_process', 'process_id'],
   ['mdm.worker_qualification', 'process_id'],
