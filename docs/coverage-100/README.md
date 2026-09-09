@@ -205,6 +205,23 @@ fork(fable) 는 이 대화를 다 안고 가서 비싸므로 통합 단계 외�
 ⚠ **이 절은 레인 A 의 I-21 에서 나왔지만 레인 공통이다** — 특히 ⑷·⑸ 와 권한 항은 원장·수량·인가를
 다루는 모든 슬라이스에 걸린다.
 
+### 6-4. ⭐ 2026-09-09 추가 — **FK 를 더했으면 «남의» `*_REFERRERS` 도 같이 고쳐라** (main 이 빨강인 채로 여러 PR 이 얹혔다)
+
+`*_REFERRERS`(`src/mdm/*/*.service.ts` · `src/app/access/role.service.ts`)는 시험 픽스처가 아니라
+`countReferences()` 가 그대로 `count(*)` 항으로 펴는 **운영 상수**다(`src/common/master/reference-count.ts:27-33`).
+빠진 표는 `referenceCount` 에 안 세어지고, 그 값이 `editability.codeEditable` · `reason` 으로 **클라이언트에 나간다**.
+
+**실사고.** 어느 레인이 `maintenance.collection_channel*` · `app.notification_subscription_recipient.role_id`
+FK 를 더한 마이그를 병합했는데 **자기 레인이 안 쥔 상수 셋을 아무도 갱신하지 않았다**. 그 표만 가리키는
+공정·설비·역할이 `codeEditable: true` · `EDITABLE` 로 응답했다(#491 이 둘, #494 가 나머지 하나를 닫았다).
+
+> **마이그레이션이 새 FK 를 만들면, 그 FK 가 «가리키는» 마스터의 `*_REFERRERS` 에 한 줄을 더한다.**
+> 그 파일이 남의 레인 소유여도 **같은 PR 에서** 고친다 — 상수 한 줄이라 충돌이 나도 자명하다.
+> 찾는 법: `grep -rn "_REFERRERS" src/` → 새 FK 의 `confrelid` 표를 쥔 상수.
+
+⚠ ⭐ 「참조 목록이 DB 의 FK 와 정확히 같다」 e2e 가 이걸 **잡긴 한다**. 다만 그 스펙들은 남의 레인 파일이라
+**통합자가 병합 직전 전수 회귀를 돌릴 때에야** 드러난다(§6-1) — 그때는 이미 여러 PR 이 얹힌 뒤다.
+
 바꾸지 않는 것(품질이 여기 걸려 있다): **관점 3개 유지**(I-24 에서 셋이 각각 자기만 찾은 결함이 있었다 —
 api 상수 코어 선례 · uiux 「확인」 열 정의 불일치·`W-06-10` 액션 부재 · integration 마감 트리거 500·키 150자) ·
 리뷰어 ≠ 구현자 · 병합 전 e2e 파일 단위 실행 · 마이그·코어 PR 의 opus + 병합 전 한 줄 보고.
