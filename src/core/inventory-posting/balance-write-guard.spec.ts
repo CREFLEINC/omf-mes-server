@@ -49,6 +49,8 @@ describe('balance-write-guard', () => {
     expect(writers.filter((name) => !name.startsWith(CORE))).toEqual([]);
     // 예약을 «거는» 길과 «푸는» 길이 둘 다 이 파일 하나다(I-22 §6-3).
     // spec 은 그 SQL 을 문자열로 단언해서 걸리므로 뺀다 — 남는 것이 «구현» 파일 전부다.
+    // ⭐ 목록을 «통째로» 못박는 것이 의도다 — 코어 «안»에 예약을 쓰는 파일이 하나 더 생겨도 걸린다.
+    //   위 `filter` 만으로는 코어 안의 새 통로를 못 본다(「유일한 길」이 둘이 되는 것을 막는 자리다).
     expect(writers.filter((name) => !name.endsWith('.spec.ts'))).toEqual([
       `${CORE}reservation-qty.ts`,
     ]);

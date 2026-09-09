@@ -91,6 +91,12 @@ function dimensionWhere(d: BalanceDimension): Prisma.Sql {
  * ⛔ 없는 잔액 행을 만들지 않는다 — 「재고가 없다」가 「0 이 있다」로 바뀐다.
  * ⛔ 잔액 먼저·예약 나중이다 — 순서를 뒤집으면 `pick()` 이 잡는 순서와 갈린다(I-22 §6-4).
  *
+ * ⚠ **Δ ≤ 0 은 «의도된 500» 이다** — `qty > 0` 은 호출자가 이미 거른 계약이라(`ReserveMove.qty`)
+ * 여기서 다시 세지 않는다(`consumeBalances` 도 같다). 뚫고 들어오면 `available_qty >= 음수` 가 늘 참이라
+ * 잔액 UPDATE 는 «지나가고» 뒤이은 INSERT 가 `app.qty_t`(Δ<0)·`…_reserved_qty_check`(Δ=0) 로 죽는다.
+ * ⇒ 호출자 트랜잭션이 통째 롤백되어 **잔액은 어긋나지 않는다.** 400 으로 낮추지 않는 이유: 그 입력은
+ * 도메인이 이미 400 `RANGE` 로 거부한 뒤라, 여기 닿았다면 «우리 버그»이고 조용해지면 안 된다.
+ *
  * ✅ `check_balance_qty()`(baseline:2835-2852)는 어느 갈래로도 못 걸린다 —
  * `available = on_hand − reserved − picked − blocked ≥ Δ > 0` 이면 ⓐ `on_hand > 0` 이라 음수 갈래
  * (「음수재고 상태에서는 예약·피킹·차단 수량을 가질 수 없습니다」)에 못 가고 ⓑ 그 부등식이 곧

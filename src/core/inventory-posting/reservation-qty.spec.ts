@@ -135,7 +135,7 @@ describe('InventoryPostingService.reserve', () => {
 
     expect(statements[0].sql).toMatch(/UPDATE inventory\.inventory_balance$/m);
     expect(statements[0].sql).toContain('reserved_qty = reserved_qty + ?::numeric');
-    expect(statements[0].sql).toContain('version_no = version_no + 1');
+    expect(statements[0].sql).toMatch(/version_no = version_no \+ 1$/m);
     expect(statements[0].sql).not.toContain('on_hand_qty');
     expect(statements[0].sql).not.toContain('picked_qty');
     // ⛔ 코어는 잠그지 않는다 — 호출자가 `lockBalancesByItemLot()` 로 이미 잠근 행을 UPDATE 한다.
@@ -154,8 +154,16 @@ describe('InventoryPostingService.reserve', () => {
     expect(statements).toHaveLength(2);
     // ⛔ `toContain` 은 접두 일치라 `…_reservation_x` 도 통과한다 — 줄 끝까지 못박는다.
     expect(statements[1].sql).toMatch(/INSERT INTO inventory\.inventory_reservation$/m);
-    expect(statements[1].sql).toContain('RETURNING inventory_reservation_id');
-    // 11칸 중 «넷»만 담긴다 — 통보 196. 나머지 일곱은 예약이 못 싣는다.
+    expect(statements[1].sql).toMatch(/RETURNING inventory_reservation_id$/m);
+    // ⛔ «칸 이름» 목록도 못박는다 — 값만 보면 칸 쪽 뒤바꿈(`warehouse_id`↔`location_id` ·
+    // `item_id`↔`lot_id`)에 값 배열이 «한 글자도» 안 변해 통과한다. 그 넷이 예약이 담는 차원의 전부다.
+    expect(statements[1].sql).toContain(
+      '(reservation_no, reservation_type_code, source_document_type_code, source_document_id,',
+    );
+    expect(statements[1].sql).toContain(
+      'item_id, lot_id, warehouse_id, location_id, reserved_qty, uom_id, status_code, created_by)',
+    );
+    // 결정 — 통보 196: 11칸 중 «넷»만 담긴다. 나머지 일곱은 예약이 못 싣는다.
     expect(statements[1].values).toEqual([
       'RS-20260909-0001',
       'SHIPMENT',
@@ -169,6 +177,31 @@ describe('InventoryPostingService.reserve', () => {
       60n,
       'REGISTERED',
       70n,
+    ]);
+  });
+
+  it('11칸 차원을 그대로 겨냥한다 — 위치가 하나만 달라도 0행이다', async () => {
+    const { tx, statements, service } = fake([0]);
+
+    const failure = await thrown(() =>
+      service.reserve(tx, [reserveMove({ dimension: dimension({ locationId: 99n }) })]),
+    );
+
+    // `consume` 의 같은 시험(:604)과 한 모양이다 — 11칸을 그대로 겨냥하므로 한 칸만 달라도 0행이다.
+    expect(failure.getStatus()).toBe(400);
+    expect(statements[0].sql).toContain('location_id = ?');
+    expect(statements[0].values).toContain(99n);
+  });
+
+  it('WHERE 는 Δ + 11칸 + 가용 하한 열셋이다 — 한 칸이라도 빠지면 다른 창고 행까지 묶인다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.reserve(tx, [reserveMove()]);
+
+    // ⛔ 차원이 통째로 빠지면(예: `item_id` 만 겨냥) 같은 LOT 의 «다른 창고» 행이 함께 UPDATE 되고
+    // `balance.length === 0` 은 2행이라 지나간다 — 예약은 한 건만 서서 그 수량이 풀 근거 없이 묶인다.
+    expect(statements[0].values).toEqual([
+      dec(30), 1n, 2n, 3n, 10n, 20n, 30n, 40n, 'NORMAL', 'AVAILABLE', 'OWNED', null, dec(30),
     ]);
   });
 
@@ -261,7 +294,7 @@ describe('InventoryPostingService.reserve', () => {
     await expect(new InventoryPostingService().reserve(tx, [reserveMove()])).rejects.toBe(unique);
   });
 
-  it('reserve → pick — 같은 트랜잭션에서 이으면 reserved 순변화가 0 이고 picked 가 오른다', async () => {
+  it('reserve 가 만든 예약을 pick 이 그대로 물어 곧바로 푼다', async () => {
     const { tx, statements, service } = fake();
 
     const [reservationId] = await service.reserve(tx, [reserveMove()]);
@@ -271,9 +304,11 @@ describe('InventoryPostingService.reserve', () => {
     expect(statements[0].sql).toContain('reserved_qty = reserved_qty + ?::numeric');
     expect(statements[2].sql).toContain('reserved_qty = reserved_qty - ?::numeric');
     expect(statements[2].sql).toContain('picked_qty = picked_qty + ?::numeric');
-    expect(statements[0].values[0]).toEqual(statements[2].values[0]);
-    // 푸는 쪽이 «방금 만든» 예약을 물어야 예약이 열린 채 남지 않는다(통보 196).
-    expect(statements[3].sql).toContain('UPDATE inventory.inventory_reservation');
+    // ⛔ 「reserved 순변화 0」은 코어가 아니라 «호출자»의 성질이라 이 층에서 못 잠근다 — 두 Δ 가 같은지
+    // 재면 픽스처끼리 재는 것이라 소스 어떤 변이로도 안 죽는다. R-2(ⓒ안)의 실관측점은 PR ⑥ e2e 다:
+    // `:pick` 뒤 그 잔액 행의 `reserved_qty` 불변 · `picked_qty` +Δ · 예약의 `consumed_qty = reserved_qty`.
+    // 푸는 쪽이 «방금 만든» 예약을 물어야 예약이 열린 채 남지 않는다(결정 — 통보 196).
+    expect(statements[3].sql).toMatch(/UPDATE inventory\.inventory_reservation$/m);
     expect(statements[3].sql).toContain('consumed_qty = consumed_qty + ?::numeric');
     expect(statements[3].values).toContain(RESERVATION);
   });
@@ -302,9 +337,11 @@ describe('lockBalancesByItemLot', () => {
     expect(statements[0].sql).toContain('lot_id = ?');
     expect(statements[0].values).toEqual([30n, 40n]);
     // 형제(`lockBalancesInOrder`)와 «같은» 순서라야 교착 창이 안 열린다.
-    expect(statements[0].sql).toContain('ORDER BY inventory_balance_id');
+    expect(statements[0].sql).toMatch(/ORDER BY inventory_balance_id$/m);
     expect(statements[0].sql).not.toContain('DESC');
-    expect(statements[0].sql).toContain('FOR UPDATE');
+    // ⛔ 줄 끝까지 못박는다 — `toContain('FOR UPDATE')` 는 `SKIP LOCKED`·`NOWAIT` 를 통과시키고,
+    // `SKIP LOCKED` 는 «다른 트랜잭션이 쥔» 잔액 행을 조용히 빼서 2행을 1행처럼 보이게 한다.
+    expect(statements[0].sql).toMatch(/FOR UPDATE$/m);
   });
 
   it('형제 lockBalancesInOrder 와 «같은» 칸을 돌려준다', async () => {
