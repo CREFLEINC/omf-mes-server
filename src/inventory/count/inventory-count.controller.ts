@@ -1,7 +1,21 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { requestFingerprint } from '../../common/idempotency';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
@@ -14,15 +28,41 @@ import {
   InventoryCountLineView,
   InventoryCountView,
 } from './inventory-count-view';
+import {
+  InventoryCountCreate,
+  InventoryCountCreateService,
+} from './inventory-count-create.service';
 
 @Controller('inventory/counts')
 export class InventoryCountController {
-  constructor(private readonly counts: InventoryCountQueryService) {}
+  constructor(
+    private readonly counts: InventoryCountQueryService,
+    private readonly creates: InventoryCountCreateService,
+  ) {}
 
   @Get()
   @Contract('GET /inventory/counts')
   list(@Query() query: InventoryCountQuery): Promise<PagedResponse<InventoryCountView>> {
     return this.counts.list(query);
+  }
+
+  @Post()
+  @Contract('POST /inventory/counts')
+  async create(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Body() body: InventoryCountCreate,
+  ): Promise<InventoryCountDetail> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    const result = await this.creates.create(body, {
+      key: String(request.headers['idempotency-key']),
+      fingerprint: requestFingerprint(`${request.method} ${request.path}`, request.body),
+      appUserId: session.userId,
+      successStatus: HttpStatus.CREATED,
+    });
+    setEtag(response, result.versionNo);
+    return result.detail;
   }
 
   @Get(':inventoryCountId')

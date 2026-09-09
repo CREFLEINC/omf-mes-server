@@ -1,5 +1,5 @@
 /**
- * I-15 재고 실사. PR ②는 조회 3건을 열고, 뒤 PR이 같은 스위트에 쓰기 갈래를 더한다.
+ * I-15 재고 실사. 조회 3건과 생성 스냅샷을 같은 격리 스위트에서 검증한다.
  * ⛔ I-14 조정 라인이 실사 라인을 FK로 가리키므로 CASCADE TRUNCATE를 쓰지 않는다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -17,16 +17,18 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-inventory-count';
+const NOPERM_ID = 'e2e-inventory-count-no-permission';
 const PASSWORD = '실사-조회-비밀번호';
 const PREFIX = 'ICE2E';
+const ROLE = 'E2E_INVENTORY_COUNT';
 const AT = new Date('2026-09-09T01:02:03.000Z');
 
-function validator(operation: string): ValidateFunction {
+function validator(operation: string, status = '200'): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/logistics-01자재창고.json'), 'utf8'),
   ) as object;
   const [method, path] = operation.split(' ');
-  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/200/content/application~1json/schema`;
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const format of ['int64', 'int32', 'double', 'float', 'binary', 'password']) {
@@ -36,18 +38,26 @@ function validator(operation: string): ValidateFunction {
   return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
 }
 
-describe('재고 실사 조회 3건 (e2e)', () => {
+describe('재고 실사 조회·생성 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
   let userId: bigint;
   let warehouseId: number;
+  let legalEntityId: bigint;
+  let businessUnitId: bigint;
+  let plantId: bigint;
+  let uomId: bigint;
   let location1Id: number;
   let location2Id: number;
   let itemId: number;
   let blindId: number;
   let completedId: number;
   let plannedId: number;
+  let createdId: number;
+  let negativeItemId: bigint;
+  let negativeLotId: bigint;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -161,6 +171,118 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await request(app.getHttpServer()).get('/api/inventory/counts').set('Cookie', cookie).expect(200);
   });
 
+  it('생성은 현재 잔액을 네 축으로 합쳐 0은 빼고 원장을 쓰지 않는다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const key = randomUUID();
+    const body = {
+      countTypeCode: 'CYCLE',
+      warehouseId,
+      plannedDate: '2026-09-10',
+      blindCount: false,
+    };
+    const first = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    createdId = first.body.inventoryCount.inventoryCountId;
+    expect(first.headers.etag).toBe('1');
+    expect(first.body).toMatchObject({
+      inventoryCount: {
+        inventoryCountNo: expect.stringMatching(/^IC-20260910-/),
+        countTypeCode: 'CYCLE',
+        warehouseId,
+        plannedDate: '2026-09-10',
+        blindCount: false,
+        statusCode: 'IN_PROGRESS',
+      },
+      summary: {
+        plannedCount: 1,
+        countedCount: 0,
+        uncountedCount: 1,
+        varianceCount: 0,
+        closable: false,
+        closeBlockedReasonCode: 'COUNT_REMAINING',
+      },
+    });
+    const validate = validator('POST /inventory/counts', '201');
+    expect(validate(first.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const replay = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    expect(replay.body).toEqual(first.body);
+    expect(replay.headers.etag).toBe('1');
+    expect(
+      await prisma.inventory_count.count({ where: { created_by: userId } }),
+    ).toBe(1);
+
+    const createdLines = await request(app.getHttpServer())
+      .get(`/api/inventory/counts/${createdId}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(createdLines.body.items).toHaveLength(1);
+    expect(createdLines.body.items.map((line: { systemQty: number }) => line.systemQty)).toEqual([
+      10,
+    ]);
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('음수 장부는 0으로 자르거나 누락하지 않고 질의 276 회신 전까지 생성 전체를 막는다', async () => {
+    await prisma.inventory_balance.create({
+      data: {
+        legal_entity_id: legalEntityId,
+        business_unit_id: businessUnitId,
+        plant_id: plantId,
+        warehouse_id: warehouseId,
+        location_id: location2Id,
+        item_id: negativeItemId,
+        lot_id: negativeLotId,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        ownership_type_code: 'OWNED',
+        on_hand_qty: -3,
+        uom_id: uomId,
+      },
+    });
+    const response = await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ field: 'warehouseId', code: 'INVALID' }),
+    ]);
+    expect(await prisma.inventory_count.count({ where: { created_by: userId } })).toBe(1);
+  });
+
+  it('생성은 권한·코드·창고 계약을 각각 거부한다', async () => {
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'NOT_A_TYPE', warehouseId, plannedDate: '2026-09-10' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/inventory/counts')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ countTypeCode: 'CYCLE', warehouseId: 999999999, plannedDate: '2026-09-10' })
+      .expect(400);
+  });
+
   async function list(query: string): Promise<{
     items: { inventoryCountId: number }[];
     page: { page: number; size: number; total: number };
@@ -194,13 +316,31 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: userId, password_hash: await hashPassword(PASSWORD) },
     });
+    const role = await prisma.role.create({
+      data: { role_code: ROLE, role_name: '재고 실사 E2E' },
+    });
+    await prisma.role_permission.create({
+      data: { role_id: role.role_id, permission_code: 'W-01-04' },
+    });
+    await prisma.user_role.create({ data: { app_user_id: userId, role_id: role.role_id } });
+    const noPerm = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '실사 권한 없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: noPerm.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
+  }
+
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
-    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
 
   async function makeCounts(): Promise<void> {
@@ -212,6 +352,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
+    legalEntityId = entity.legal_entity_id;
     const unit = await prisma.business_unit.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
@@ -219,6 +360,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         business_unit_name: '실사 사업부',
       },
     });
+    businessUnitId = unit.business_unit_id;
     const plant = await prisma.plant.create({
       data: {
         legal_entity_id: entity.legal_entity_id,
@@ -227,6 +369,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         timezone_code: 'Asia/Ho_Chi_Minh',
       },
     });
+    plantId = plant.plant_id;
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,
@@ -257,6 +400,7 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     location1Id = Number(location1.location_id);
     location2Id = Number(location2.location_id);
     const uom = await prisma.uom.findFirstOrThrow();
+    uomId = uom.uom_id;
     const item = await prisma.item.create({
       data: {
         item_code: `${PREFIX}-ITEM`,
@@ -280,6 +424,77 @@ describe('재고 실사 조회 3건 (e2e)', () => {
         source_id: 1,
         status_code: 'AVAILABLE',
       },
+    });
+    const negativeItem = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-NEG-ITEM`,
+        item_name: '음수 재고 허용 품목',
+        item_type_code: 'RAW_MATERIAL',
+        base_uom_id: uom.uom_id,
+        lot_controlled: true,
+        negative_stock_allowed: true,
+      },
+    });
+    negativeItemId = negativeItem.item_id;
+    const negativeLot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-NEG-LOT`,
+        item_id: negativeItem.item_id,
+        lot_type_code: 'MATERIAL',
+        plant_id: plant.plant_id,
+        initial_qty: 1,
+        uom_id: uom.uom_id,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: 2,
+        status_code: 'AVAILABLE',
+      },
+    });
+    negativeLotId = negativeLot.lot_id;
+    await prisma.inventory_balance.createMany({
+      data: [
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location1.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'AVAILABLE',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 6,
+          uom_id: uom.uom_id,
+        },
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location1.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'BLOCKED',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 4,
+          uom_id: uom.uom_id,
+        },
+        {
+          legal_entity_id: entity.legal_entity_id,
+          business_unit_id: unit.business_unit_id,
+          plant_id: plant.plant_id,
+          warehouse_id: warehouse.warehouse_id,
+          location_id: location2.location_id,
+          item_id: item.item_id,
+          lot_id: lot.lot_id,
+          quality_status_code: 'NORMAL',
+          inventory_status_code: 'AVAILABLE',
+          ownership_type_code: 'OWNED',
+          on_hand_qty: 0,
+          uom_id: uom.uom_id,
+        },
+      ],
     });
 
     const blind = await prisma.inventory_count.create({
@@ -399,11 +614,25 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.$executeRawUnsafe(
       `DELETE FROM inventory.inventory_count_line WHERE inventory_count_id IN
        (SELECT inventory_count_id FROM inventory.inventory_count
-         WHERE inventory_count_no LIKE '${PREFIX}%')`,
+         WHERE inventory_count_no LIKE '${PREFIX}%'
+            OR created_by IN (SELECT app_user_id FROM app.app_user
+                               WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}')))`,
     );
     await prisma.inventory_count.deleteMany({
-      where: { inventory_count_no: { startsWith: PREFIX } },
+      where: {
+        OR: [
+          { inventory_count_no: { startsWith: PREFIX } },
+          { created_by: { in: (await prisma.app_user.findMany({
+            where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+            select: { app_user_id: true },
+          })).map((user) => user.app_user_id) } },
+        ],
+      },
     });
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM inventory.inventory_balance
+        WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
+    );
     await prisma.lot.deleteMany({ where: { lot_no: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
@@ -415,11 +644,20 @@ describe('재고 실사 조회 3건 (e2e)', () => {
     await prisma.legal_entity.deleteMany({
       where: { legal_entity_code: { startsWith: PREFIX } },
     });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user !== null) {
+    const users = await prisma.app_user.findMany({
+      where: { login_id: { in: [LOGIN_ID, NOPERM_ID] } },
+      select: { app_user_id: true },
+    });
+    for (const user of users) {
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role !== null) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });
