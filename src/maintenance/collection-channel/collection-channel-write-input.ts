@@ -20,6 +20,24 @@ export interface CheckedCollectionChannelCreate {
   processId: bigint | null;
 }
 
+export interface CollectionChannelUpdate {
+  signalName?: string;
+  unitCode?: string;
+  inspectionItemId?: number | null;
+  itemId?: number | null;
+  processId?: number | null;
+  isActive?: boolean;
+}
+
+export interface CheckedCollectionChannelUpdate {
+  signalName?: string;
+  unitCode?: string;
+  inspectionItemId?: bigint | null;
+  itemId?: bigint | null;
+  processId?: bigint | null;
+  isActive?: boolean;
+}
+
 export function checkCollectionChannelCreate(
   input: CollectionChannelCreate,
 ): CheckedCollectionChannelCreate {
@@ -38,6 +56,30 @@ export function checkCollectionChannelCreate(
     itemId: nullableId("itemId", input.itemId),
     processId: nullableId("processId", input.processId),
   };
+}
+
+export function checkCollectionChannelUpdate(
+  input: CollectionChannelUpdate,
+): CheckedCollectionChannelUpdate {
+  checkLength("signalName", input.signalName, 200);
+  checkLength("unitCode", input.unitCode, 50);
+  if (input.unitCode === "") {
+    throw one(field("unitCode", ERROR_CODE.INVALID, "빈 단위 코드는 사용할 수 없습니다."));
+  }
+  const checked: CheckedCollectionChannelUpdate = {};
+  if (has(input, "signalName")) checked.signalName = input.signalName;
+  if (has(input, "unitCode")) checked.unitCode = input.unitCode;
+  if (has(input, "inspectionItemId")) {
+    checked.inspectionItemId = nullableId("inspectionItemId", input.inspectionItemId);
+  }
+  if (has(input, "itemId")) checked.itemId = nullableId("itemId", input.itemId);
+  if (has(input, "processId")) checked.processId = nullableId("processId", input.processId);
+  if (has(input, "isActive")) checked.isActive = input.isActive;
+  return checked;
+}
+
+function has<T extends object>(input: T, name: keyof T): boolean {
+  return Object.prototype.hasOwnProperty.call(input, name);
 }
 
 function nullableId(name: string, value: number | null | undefined): bigint | null {
