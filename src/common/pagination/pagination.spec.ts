@@ -3,6 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ERROR_CODE } from '../errors';
 import { DEFAULT_PAGE, DEFAULT_SIZE, MAX_SIZE, pageRequest, pagedResponse } from './pagination';
 
 describe('페이징', () => {
@@ -34,6 +35,45 @@ describe('페이징', () => {
 
     it('소수는 버린다 — 계약이 integer 로 선언했다', () => {
       expect(pageRequest({ page: 2.9, size: 10.7 })).toMatchObject({ page: 2, size: 10 });
+    });
+
+    /**
+     * ⭐ 위 상한을 «양쪽에서» 집는다.
+     *
+     * 거절 쪽만 고정하면 상한이 조용히 «좁아져도» 아무것도 빨개지지 않는다 — 실측으로
+     * 확인했다. `!Number.isSafeInteger(skip)` 을 `skip >= 1000` 으로 바꿔도 저장소
+     * 단위 검사가 전건 초록이었다. 그 상태는 `size=50` 기준 **22쪽부터 400** 이다.
+     *
+     * ⚠ 이 자리가 유일한 방어선이다 — 여섯 조회 서비스가 각자 들고 있던 같은 판정을
+     * 지웠으므로(`pageRequest` 로 모았다) 여기가 무너지면 그 여섯이 함께 무너진다.
+     */
+    it('⭐ 안전 정수 안의 쪽은 깊어도 통과한다 — 상한이 좁아지면 여기서 걸린다', () => {
+      expect(pageRequest({ page: 100, size: 50 })).toMatchObject({ page: 100, skip: 4_950 });
+      expect(pageRequest({ page: 10_000, size: MAX_SIZE })).toMatchObject({ skip: 1_999_800 });
+    });
+
+    it('⭐ 상한은 skip 이 안전 정수인가다 — 경계 «바로 아래»는 통과한다', () => {
+      const lastSafePage = Math.floor(Number.MAX_SAFE_INTEGER / MAX_SIZE) + 1;
+      const request = pageRequest({ page: lastSafePage, size: MAX_SIZE });
+
+      expect(request.skip).toBe((lastSafePage - 1) * MAX_SIZE);
+      expect(Number.isSafeInteger(request.skip)).toBe(true);
+    });
+
+    it('⭐ 경계 «바로 위»는 400 RANGE 다 — skip 이 부풀면 Prisma 가 500 을 낸다', () => {
+      const firstUnsafePage = Math.floor(Number.MAX_SAFE_INTEGER / MAX_SIZE) + 2;
+
+      let thrown: unknown;
+      try {
+        pageRequest({ page: firstUnsafePage, size: MAX_SIZE });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toMatchObject({
+        status: 400,
+        errors: [{ scope: 'field', field: 'page', code: ERROR_CODE.RANGE }],
+      });
     });
   });
 
