@@ -37,7 +37,7 @@ describe('notificationWriteContext', () => {
   });
 
   it('동일 키·다른 세션 주체의 지문을 구분한다', () => {
-    // 설계 미정 — 문의 103: 전역 멱등 키에서 다른 주체의 응답을 노출하지 않는다.
+    // 결정 — 통보 103: 전역 멱등 키에서 다른 주체의 응답을 노출하지 않는다.
     expect(notificationWriteContext(requestOf(11), 204).fingerprint).not.toBe(
       notificationWriteContext(requestOf(12), 204).fingerprint,
     );
@@ -47,6 +47,7 @@ describe('notificationWriteContext', () => {
     ['method', 'PUT'],
     ['path', '/api/app/notifications/22:read'],
     ['body', { userId: 12 }],
+    ['query', { eventCode: 'APPROVAL_ACTION_REQUIRED' }],
   ])('%s가 바뀌면 다른 요청이다', (field, value) => {
     const first = requestOf();
     const changed = requestOf();
