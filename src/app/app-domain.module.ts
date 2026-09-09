@@ -29,6 +29,7 @@ import { PrinterQueryService } from './document-issue/printer-query.service';
 import { PrinterController } from './document-issue/printer.controller';
 import { NoticeController } from './notice/notice.controller';
 import { NoticeService } from './notice/notice.service';
+import { NotificationEventController } from './notification/notification-event.controller';
 import { NotificationController } from './notification/notification.controller';
 import { NotificationPreviewController } from './notification/notification-preview.controller';
 import { NotificationPreviewService } from './notification/notification-preview.service';
@@ -71,6 +72,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     PrinterController,
     OperationPolicyController,
     NoticeController,
+    NotificationEventController,
     NotificationController,
     NotificationPreviewController,
     NotificationWriteController,
