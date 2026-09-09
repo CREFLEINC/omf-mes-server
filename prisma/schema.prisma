@@ -32,6 +32,7 @@ model app_user {
   document_issue_log                                     document_issue_log[]                 @relation("document_issue_log_issued_by")
   reported_document_issue_log                            document_issue_log[]                 @relation("document_issue_log_print_reported_by")
   exception_case                                         exception_case[]
+  handling_unit_repack_event                             handling_unit_repack_event[]
   idempotency_record                                     idempotency_record[]
   notice_notice_closed_byToapp_user                      notice[]                           @relation("notice_closed_byToapp_user")
   notice_notice_published_byToapp_user                   notice[]                           @relation("notice_published_byToapp_user")
@@ -448,6 +449,7 @@ model handling_unit {
   child_handling_units                                                                               handling_unit[]                 @relation("handling_unitTohandling_unit")
   warehouse                                                                                          warehouse?                      @relation(fields: [warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   handling_unit_content                                                                              handling_unit_content[]
+  handling_unit_repack_event_line                                                                    handling_unit_repack_event_line[]
   handling_unit_reconfiguration_handling_unit_reconfiguration_source_handling_unit_idTohandling_unit handling_unit_reconfiguration[] @relation("handling_unit_reconfiguration_source_handling_unit_idTohandling_unit")
   handling_unit_reconfiguration_handling_unit_reconfiguration_target_handling_unit_idTohandling_unit handling_unit_reconfiguration[] @relation("handling_unit_reconfiguration_target_handling_unit_idTohandling_unit")
   inventory_transaction_line                                                                         inventory_transaction_line[]
@@ -1783,6 +1785,7 @@ model item {
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]
+  handling_unit_repack_event_line                      handling_unit_repack_event_line[]
   handling_unit_reconfiguration_line                   handling_unit_reconfiguration_line[]
   inventory_adjustment_line                            inventory_adjustment_line[]
   inventory_balance                                    inventory_balance[]
@@ -2248,6 +2251,8 @@ model uom {
   updated_by                                                    BigInt?
   version_no                                                    Int                                  @default(1)
   handling_unit_content                                         handling_unit_content[]
+  handling_unit_repack_event_line_uom_before                    handling_unit_repack_event_line[]    @relation("handling_unit_repack_event_line_uom_before")
+  handling_unit_repack_event_line_uom_after                     handling_unit_repack_event_line[]    @relation("handling_unit_repack_event_line_uom_after")
   handling_unit_reconfiguration_line                            handling_unit_reconfiguration_line[]
   inventory_adjustment_line                                     inventory_adjustment_line[]
   inventory_balance                                             inventory_balance[]
@@ -3587,6 +3592,7 @@ model lot {
   completed_at                                     DateTime?                            @db.Timestamptz(6)
   document_issue_log                               document_issue_log[]
   handling_unit_content                            handling_unit_content[]
+  handling_unit_repack_event_line                  handling_unit_repack_event_line[]
   inbound_receipt_line                             inbound_receipt_line[]
   handling_unit_reconfiguration_line               handling_unit_reconfiguration_line[]
   inventory_adjustment_line                        inventory_adjustment_line[]
@@ -5026,4 +5032,46 @@ model interface_column_mapping {
 
   @@unique([interface_definition_id, sequence_no], map: "uq_interface_column_mapping")
   @@schema("integration")
+}
+
+/// 계약 `HandlingUnitRepackEvent` — I-16. 헤더에 `handling_unit_id` 를 두지 않는다:
+/// `MERGE` 는 원본이 여럿이라 헤더 한 칸으로 못 가리키고, 라인이 이미 전건을 담는다.
+model handling_unit_repack_event {
+  handling_unit_repack_event_id BigInt                            @id @default(autoincrement())
+  repack_type_code              String                            @db.VarChar(50)
+  performed_by                  BigInt
+  occurred_at                   DateTime                          @db.Timestamptz(6)
+  created_at                    DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  app_user                      app_user                          @relation(fields: [performed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  lines                         handling_unit_repack_event_line[]
+
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// 계약 `HandlingUnitRepackEventLine`. ⭐ `uom_id_before`·`uom_id_after` 는 계약에 «없는»
+/// 칸이다(통보 165) — 서버가 채우고 서버만 읽는다. ⛔ 응답 뷰에 싣지 않는다.
+model handling_unit_repack_event_line {
+  handling_unit_repack_event_line_id BigInt                     @id @default(autoincrement())
+  handling_unit_repack_event_id      BigInt
+  line_no                            Int
+  handling_unit_id                   BigInt
+  role_code                          String                     @db.VarChar(50)
+  item_id                            BigInt
+  lot_id                             BigInt
+  qty_before                         Decimal                    @db.Decimal(20, 6)
+  qty_after                          Decimal                    @db.Decimal(20, 6)
+  uom_id_before                      BigInt?
+  uom_id_after                       BigInt?
+  created_at                         DateTime                   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  handling_unit_repack_event         handling_unit_repack_event @relation(fields: [handling_unit_repack_event_id], references: [handling_unit_repack_event_id], onDelete: NoAction, onUpdate: NoAction, map: "handling_unit_repack_event_li_handling_unit_repack_event_i_fkey")
+  handling_unit                      handling_unit              @relation(fields: [handling_unit_id], references: [handling_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  item                               item                       @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                                lot                        @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  uom_before                         uom?                       @relation("handling_unit_repack_event_line_uom_before", fields: [uom_id_before], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  uom_after                          uom?                       @relation("handling_unit_repack_event_line_uom_after", fields: [uom_id_after], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([handling_unit_repack_event_id, line_no], map: "uq_handling_unit_repack_event_line")
+  @@index([handling_unit_id, handling_unit_repack_event_id], map: "ix_handling_unit_repack_event_line_hu")
+  @@schema("inventory")
 }

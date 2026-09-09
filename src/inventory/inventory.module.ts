@@ -14,6 +14,7 @@ import { InventoryReservationController } from './balance/inventory-reservation.
 import { InventoryReservationService } from './balance/inventory-reservation.service';
 import { HandlingUnitController } from './handling-unit/handling-unit.controller';
 import { HandlingUnitQueryService } from './handling-unit/handling-unit-query.service';
+import { RepackEventService } from './handling-unit/repack-event.service';
 import { InventoryTransactionController } from './transaction/inventory-transaction.controller';
 import { InventoryTransactionService } from './transaction/inventory-transaction.service';
 
@@ -42,6 +43,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryAdjustmentService,
     InventoryAdjustmentUpdateService,
     HandlingUnitQueryService,
+    RepackEventService,
   ],
 })
 export class InventoryModule {}
