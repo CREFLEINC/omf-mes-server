@@ -1,5 +1,5 @@
 /**
- * 재고 이동 조회 3건 + 반출 등록 + 도착 확정(I-13 PR ①②③). 라인 치환·판별자 축은 PR ④ 몫이다.
+ * 재고 이동 조회 3건 + 반출 등록 + 도착 확정(I-13 PR ①②③) + 라인 치환 자물쇠·진행 판별자 축(PR ④).
  *
  * ⚠ 조회용 전표는 prisma 로 직접 심고, **반출 등록은 오퍼레이션으로** 부른다 — 잔액은
  * `POST /logistics/goods-receipts` 가 세운다(직접 INSERT 하면 트리거와 차원 11칸을 손으로
@@ -18,6 +18,8 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-st-probe';
+/** 403 을 재려면 «권한 없는» 계정이 하나 더 있어야 한다 — 정리 루프도 함께 고친다(출고 선례). */
+const NOPERM_ID = 'e2e-st-noperm';
 const PASSWORD = 'ST-검사-비밀번호';
 const PREFIX = 'STE2E';
 const ROLE = 'E2E_ST';
@@ -58,6 +60,7 @@ describe('재고 이동 조회 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   let businessUnitId: number;
   let warehouse1Id: number;
@@ -720,6 +723,184 @@ describe('재고 이동 조회 (e2e)', () => {
     ).toBe(0);
   });
 
+  // ── 라인 치환 자물쇠 `PUT …/lines` (PR ④) ───────────────────────────────────
+  // ⚠ 200 은 «도달 불가»다 — `POST` 가 생성·반출을 한 번에 해 실재하는 모든 전표가
+  //    `shipped_at IS NOT NULL` 이다. 아래는 그 사실 위에서 400·409·404·403·500 을 잰다.
+
+  it('⭐ 반출이 끝난 전표의 라인 치환은 400 STATE_LOCKED 다 — 같은 멱등키로 다시 보내도 400 이다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    const id = transfer.stockTransfer.stockTransferId;
+    const key = randomUUID();
+
+    const denied = await callReplaceLines(id, { key }).expect(400);
+    expect(denied.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', field: 'items' });
+
+    // ⭐ 실패는 멱등 기록에 «안» 남는다 — 기록 INSERT 가 work() 와 같은 트랜잭션이라 함께
+    //    롤백된다. 흡수된 200 이 아니라 같은 400 이 다시 나온다.
+    const again = await callReplaceLines(id, { key }).expect(400);
+    expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('⭐⭐ shipped_at 이 널인 전표(손으로 심은 srA)는 500 으로 터진다 — 화면도 오퍼레이션도 만들 수 없는 상태다', async () => {
+    // ⛔ 이 갈래를 400 으로 «합치면» 「shipped_at 을 아예 안 읽고 무조건 400」 구현과 모든
+    //    테스트가 같아져 자물쇠가 조용히 사라져도 아무도 모른다. 이 한 줄이 유일한 그물이다.
+    const burst = await callReplaceLines(srA).expect(500);
+    // 던진 문장은 응답에 안 실린다(로그뿐) — 화면이 보는 것은 봉투 하나다.
+    expect(burst.body.errors[0]).toMatchObject({ scope: 'screen', code: 'INTERNAL_ERROR' });
+  });
+
+  it('⭐ If-Match 가 어긋나면 409 이고 400 STATE_LOCKED «보다 먼저»다 — 그리고 재조회 뒤 같은 호출은 400 이다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    const id = transfer.stockTransfer.stockTransferId;
+
+    const stale = await callReplaceLines(id, { ifMatch: '9' }).expect(409);
+    expect(stale.body).toMatchObject({ conflictCause: 'user' });
+
+    // ⭐ 409 의 「다시 읽어 오면 풀린다」가 이 오퍼레이션에서는 «거짓»이다 — 바른 토큰으로
+    //    다시 불러도 3단계가 400 이다(G-1 예외 자리 · 문의 162 ⓓ).
+    const detail = await request(app.getHttpServer())
+      .get(`/api/logistics/stock-transfers/${id}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(detail.headers.etag).toBe('1');
+
+    const locked = await callReplaceLines(id, { ifMatch: String(detail.headers.etag) }).expect(400);
+    expect(locked.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('If-Match 를 안 실으면 400 REQUIRED · "abc" 면 400 INVALID — 가드가 핸들러 앞에서 낸다', async () => {
+    // ⚠ 대상이 srA(반출 전)라 가드를 지나면 500 이 나온다 — 400 이 「핸들러 앞」의 증거다.
+    const missing = await callReplaceLines(srA, { ifMatch: null }).expect(400);
+    expect(missing.body.errors[0]).toMatchObject({ code: 'REQUIRED' });
+
+    const invalid = await callReplaceLines(srA, { ifMatch: 'abc' }).expect(400);
+    expect(invalid.body.errors[0]).toMatchObject({ code: 'INVALID' });
+  });
+
+  it('없는 전표의 라인 치환은 404 다', async () => {
+    // ⚠ 계약이 404 를 «선언하지 않는다»(형제 6건 전원의 관행). 유효한 If-Match 를 손으로
+    //    실어야 0-e 가드를 지나 1단계에 닿는다.
+    await callReplaceLines(999999999, { ifMatch: '1' }).expect(404);
+  });
+
+  it('⭐ 치환이 거부돼도 라인 배열·version_no·원장 건수가 하나도 안 바뀐다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    const id = transfer.stockTransfer.stockTransferId;
+    const before = await linesOf(id);
+    const ledgerBefore = await ledgerCount(id);
+
+    const denied = await callReplaceLines(id).expect(400);
+    // ⛔ 계약 200 에 응답 헤더 선언이 0건이다 — `setEtag` 를 부르면 이 줄이 빨개진다.
+    // ⚠ `toBeUndefined()` 로는 못 잰다: express 가 본문에 «약한 검증자»(`W/"…"`)를 스스로
+    //    단다. 갈라야 하는 것은 `setEtag` 가 싣는 **버전 토큰**(맨 숫자)이다.
+    expect(denied.headers.etag).not.toMatch(/^"?\d+"?$/);
+
+    expect(await linesOf(id)).toEqual(before);
+    const detail = await request(app.getHttpServer())
+      .get(`/api/logistics/stock-transfers/${id}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    // version_no 를 «안» 올린다 — 바뀐 행이 0이라 올릴 근거가 없다.
+    expect(detail.headers.etag).toBe('1');
+    expect(await ledgerCount(id)).toBe(ledgerBefore);
+  });
+
+  // ── 문서진행 판별자 축 (PR ④ · 통보 059) ─────────────────────────────────────
+
+  it('⭐⭐ document-progress STOCK_TRANSFER 상세가 같은 id 의 «PT-» 원장을 안 집는다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    const id = transfer.stockTransfer.stockTransferId;
+
+    // 적치가 «같은 판별자»로 쌓는 행을 흉내낸다(`putaway-posting.ts:18,53` — 원장은 불변이라
+    // 적치 코드를 못 고친다). ⭐ occurred_at 을 AT 보다 «이르게» 둔다 — `occurred_at asc` 가
+    // 이쪽을 먼저 집어야 판별 축을 지웠을 때 실제로 빨개진다(동률이면 반증이 안 선다).
+    await prisma.inventory_transaction.create({
+      data: {
+        business_date: new Date('2026-05-11'),
+        transaction_no: 'PT-20260511-9999',
+        transaction_type_code: 'STOCK_TRANSFER',
+        plant_id: plantId,
+        occurred_at: new Date('2026-05-11T09:00:00.000Z'),
+        source_document_type_code: 'STOCK_TRANSFER',
+        source_document_id: id,
+        status_code: 'POSTED',
+        idempotency_key: `PUTAWAY_TASK:PT-20260511-9999`,
+      },
+    });
+
+    expect(await postedStep(id)).toMatchObject({
+      inventoryTransactionNo: transfer.stockTransfer.stockTransferNo,
+      businessDate: DAY,
+    });
+  });
+
+  it('⭐ 진행 조회의 POSTED 줄은 «반출» 원장(ST-…)이다 — 도착 뒤에도 첫 원장을 집는다', async () => {
+    const lot = await seedBalance(10);
+    const transfer = await created(draft(lot, 4));
+    const id = transfer.stockTransfer.stockTransferId;
+    // ⚠ 도착 원장을 «늦은» 시각으로 세운다 — 반출과 동률이면 asc/desc 가 갈리지 않는다.
+    await callArrive(transfer, {
+      ...arrival(transfer, 4),
+      occurredAt: '2026-05-12T18:00:00.000Z',
+    }).expect(200);
+
+    expect(await postedStep(id)).toMatchObject({
+      inventoryTransactionNo: transfer.stockTransfer.stockTransferNo,
+    });
+  });
+
+  it('PUT …/lines — 권한 없는 사용자는 403(manual-permissions 등록 확인)', async () => {
+    // 미등록이면 `PermissionGuard` 가 던져 500 이다 — 403 이 나온다는 것이 등록의 증거다.
+    await callReplaceLines(srA, { cookies: noPermCookie }).expect(403);
+  });
+
+  // ── 라인 치환 헬퍼 ───────────────────────────────────────────────────────────
+
+  /** ⚠ 본문은 required 6 을 채운 한 줄이다 — 안 채우면 계약 검증 가드가 자물쇠 «앞»에서 400 이다. */
+  function callReplaceLines(
+    stockTransferId: number,
+    opts: { key?: string; ifMatch?: string | null; cookies?: string[] } = {},
+  ): request.Test {
+    const call = request(app.getHttpServer())
+      .put(`/api/logistics/stock-transfers/${stockTransferId}/lines`)
+      .set('Cookie', opts.cookies ?? cookie)
+      .set('Idempotency-Key', opts.key ?? randomUUID());
+    if (opts.ifMatch !== null) call.set('If-Match', opts.ifMatch ?? '1');
+    return call.send({ items: [line(lotId, 1)] });
+  }
+
+  async function linesOf(stockTransferId: number): Promise<LineBody[]> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/stock-transfers/${stockTransferId}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return (response.body as { items: LineBody[] }).items;
+  }
+
+  function ledgerCount(stockTransferId: number): Promise<number> {
+    return prisma.inventory_transaction.count({
+      where: { source_document_type_code: 'STOCK_TRANSFER', source_document_id: stockTransferId },
+    });
+  }
+
+  /** 진행 상세의 `POSTED` 줄 — 없으면 `undefined` 라 단언이 그대로 빨개진다. */
+  async function postedStep(
+    stockTransferId: number,
+  ): Promise<{ inventoryTransactionNo?: string; businessDate?: string } | undefined> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/logistics/document-progress/STOCK_TRANSFER/${stockTransferId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const body = response.body as {
+      steps: { stepCode: string; inventoryTransactionNo?: string; businessDate?: string }[];
+    };
+    return body.steps.find((step) => step.stepCode === 'POSTED');
+  }
+
   // ── 도착 헬퍼 ────────────────────────────────────────────────────────────────
 
   function callArrive(
@@ -1150,6 +1331,16 @@ describe('재고 이동 조회 (e2e)', () => {
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
 
+    // ⭐ 권한 «없는» 둘째 계정 — 역할을 안 준다. 아래 cleanup 의 정리 루프를 «같이» 고쳐야
+    //    두 번째 실행에서 `login_id @unique` 로 P2002 가 나 스위트 전체가 죽지 않는다.
+    const other = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '이동권한없음', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+
+    noPermCookie = await login(NOPERM_ID);
     cookie = await login(LOGIN_ID);
   }
 
@@ -1203,8 +1394,9 @@ describe('재고 이동 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);
 
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
+    for (const id of [LOGIN_ID, NOPERM_ID]) {
+      const target = await prisma.app_user.findUnique({ where: { login_id: id } });
+      if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
