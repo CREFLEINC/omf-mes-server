@@ -34,6 +34,7 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 - `business_date` 는 **클라이언트가 보낸다. 서버가 수신 시각으로 다시 잡지 않는다** (공유계약 C-8 — 자정을 넘긴 오프라인 재전송이 이중 전기가 된다). 실린 표는 3개뿐(`inventory_transaction`·그 파티션·`inventory_transaction_line`). ⚠ 도출 규칙(야간조 경계)은 **설계 미정**이라 도출 함수를 만들지 않는다. 상세: `docs/server-architecture.md` C-3.
 - 날짜 타임존 캐스팅 금지 (`shift.crosses_midnight`). 공장 로컬은 `plant.timezone_code` 로만 푼다. `@db.Date` 49자리.
 - 서버·컨테이너·DB TZ = UTC 고정. 공장 로컬 시각은 `plant.timezone_code` 사용.
+- id 는 물리 **756개 전부 `BigInt`(int8)** 이고 계약도 그 자리 1456곳을 `format: int64` 로 적었다. ⚠ 그러나 **서버가 넘길 수 있는 구간은 int64 구간이 «아니다»** — Prisma 가 `|v| >= 2 ** 63` 을 ⌜Expected BigInt, provided Float⌝ 로 던져, 하한이 닫힌 `[-2^63, 2^63-1]` 이 아니라 **양쪽이 열린 `(-2^63, 2^63)`** 이다(실측 · PostgreSQL 자체는 `-2^63` 을 받으므로 DB 가 아니라 Prisma 층의 제약). ⇒ `-(2^63)` 은 유효한 int64 인데도 400 이다. 범위 검사는 `contract-validator.ts` 의 `INT64_FORMAT` **한 곳**이고 **경로·질의에만** 건다(본문은 I-28 이 자기 `RANGE` 로 막는다 — 통보 210).
 - 마이그레이션은 하위 호환(forward-only). 컬럼·테이블 삭제는 두 릴리스로 분리: 사용 제거 배포 → 다음 릴리스에서 삭제.
 
 ## 배포·인프라 금지 (상세: `docs/deployment.md`)

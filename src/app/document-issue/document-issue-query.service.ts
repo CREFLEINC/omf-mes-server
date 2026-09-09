@@ -42,8 +42,6 @@ export class DocumentIssueQueryService {
   ): Promise<PagedResponse<DocumentIssueView>> {
     assertQuery(query);
     const page = pageRequest(query);
-    if (!Number.isSafeInteger(page.skip))
-      throw rangeError('page', '페이지 범위가 너무 큽니다.');
     const where = documentIssueWhere(query);
     return this.prisma.$transaction(
       async (tx) => {

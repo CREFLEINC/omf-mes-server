@@ -35,8 +35,6 @@ export class MaintenanceOrderQueryService {
 
   async list(query: MaintenanceOrderQuery): Promise<MaintenanceOrderList> {
     const page = pageRequest(query);
-    if (!Number.isSafeInteger(page.skip))
-      throw rangeError("page", "페이지 범위가 너무 큽니다.");
     if (query.targetId !== undefined && !Number.isSafeInteger(query.targetId))
       throw rangeError("targetId", "대상 식별자 범위가 너무 큽니다.");
     if (
