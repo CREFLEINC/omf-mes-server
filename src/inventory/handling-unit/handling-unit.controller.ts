@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -17,21 +18,23 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
-import { setEtag } from '../../common/optimistic-lock';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { HandlingUnitContentService } from './handling-unit-content.service';
 import { HandlingUnitQuery, HandlingUnitQueryService } from './handling-unit-query.service';
 import { HandlingUnitContentView, HandlingUnitDetailView, HandlingUnitView } from './handling-unit-view';
 import { HandlingUnitRepackEventView } from './repack-event-view';
 import { RepackEventService } from './repack-event.service';
 import {
+  HandlingUnitContentUpsert,
   HandlingUnitContext,
   HandlingUnitCreate,
   HandlingUnitService,
 } from './handling-unit.service';
 
 /**
- * 취급 단위 7 오퍼레이션 중 조회 4건(PR ①②) + 등록(PR ③). 구성 치환·포장 확정은 뒤 PR 이
- * 이 컨트롤러에 얹는다(계획 `docs/coverage-100/slices/I-16-a2.md` §11-3 — ①→②→③→④→⑤).
+ * 취급 단위 7 오퍼레이션 중 조회 4건(PR ①②) + 등록(PR ③) + 구성 치환(PR ④). 포장 확정은
+ * PR ⑤ 가 이 컨트롤러에 얹는다(계획 `docs/coverage-100/slices/I-16-a2.md` §11-3).
  */
 @Controller('inventory/handling-units')
 export class HandlingUnitController {
@@ -39,6 +42,7 @@ export class HandlingUnitController {
     private readonly queries: HandlingUnitQueryService,
     private readonly repackEvents: RepackEventService,
     private readonly units: HandlingUnitService,
+    private readonly contentWrites: HandlingUnitContentService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -89,6 +93,27 @@ export class HandlingUnitController {
     );
     setEtag(response, versionNo);
     return view;
+  }
+
+  /**
+   * 구성 «전량 치환»(200). 요청에서 빠진 기존 행은 삭제한다(공유계약 A-5).
+   * ⭐ If-Match 는 **선택**이고 그 토큰은 **부모** `GET …/{id}` 의 ETag 다 — 이 경로의
+   * 조회는 ETag 를 안 내린다(계약 명시 · 공유계약 B-1-1·C-9). 그래서 `runVersioned` 를
+   * 못 쓴다(토큰이 없으면 저쪽이 던져 500 이 된다 · `master-write.ts:56-60`).
+   * ⛔ `setEtag` 를 안 부른다 — 계약이 이 200 에 ETag 를 선언하지 않았다.
+   */
+  @Put(':handlingUnitId/contents')
+  @Contract('PUT /inventory/handling-units/{handlingUnitId}/contents')
+  replaceContents(
+    @Req() request: Request,
+    @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
+    @Body() body: { items: HandlingUnitContentUpsert[] },
+  ): Promise<{ items: HandlingUnitContentView[] }> {
+    const context = contextOf(request);
+    const version = ifMatchVersion(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.contentWrites.replace(handlingUnitId, version, body.items, context),
+    );
   }
 
   /** ⛔ 계약 응답이 `{items[]}` 뿐이라 `page` 가 없다 — 전건을 내린다(§6-4). */
