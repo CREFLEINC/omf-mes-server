@@ -61,7 +61,7 @@ API 관점이 자원 축으로, 통합 관점이 원장·트랜잭션 축으로 
 | U27 | 취급 단위 · 포장 | 7 | P-02-08 · M-04-03 · P-04-01/04 · P-01-02 | U25 | **N-2 — `handling_unit_repack_event(+line)` 신설**(✅ 실측으로 확인 · I-16 재수립 R-1) | ○ | — | ○ 포장 | **4** |
 | U28 | 부적합 · 처분 | 9 | W-04-06/07 · W-03-10 · P-04-03 | U8 | 없음 | 불필요 | — | ○ 부적합 | 3 |
 | U29 | 특채 | 2 | W-03-09 | U1 · U28 | 없음 | 불필요 | — | — | 1 |
-| U30 | 출하지시서 · 출하작업지시 | 7 | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | 3 |
+| U30 | 출하지시서 · 출하작업지시 | **9** | W-04-01 · W-04-02 · M-04-01 | U25 · U11 | 없음 | 불필요 | ○ 예약 | ○ 지시 | **8** |
 | U31 | 출하 처리 · 확정 · 취소 | 8 | W-04-04/05/12 · P-04-01/02 | U30 · U1 | 없음 | 불필요 | ○ 출하·역분개 | ○ 2단 확정 | 3 |
 | U32 | 재고 재등록 | 1 | W-04-03 · W-04-11 · W-03-02 | U8 · U14 · U28 | 없음 | 불필요 | ○ 복합 | ○ | 1 |
 | U33 | 설비 점검 · 고장 | 9(진행8·보류1) | M-05-01 · M-05-02 · W-05-04 · P-02-02 | — | 없음 | A15 nullable8추가·2완화 | — | ○ 고장 start, 완료 보류 | 실행8 + 조건부 |
@@ -423,7 +423,7 @@ I-26 R1~R10: 기존 개체 GET은 진행한다. 기발번 수는 해당 LOT **�
 | `GET /quality/concessions` | 특채 목록 | W-03-09 | - |
 | `GET /quality/concessions/{concessionId}` | 특채 한 건 | W-03-09 | - |
 
-#### U30 출하지시서·출하작업지시 (W-04-01·W-04-02·M-04-01) — 7건
+#### U30 출하지시서·출하작업지시 (W-04-01·W-04-02·M-04-01) — **9건** (2026-09-09 정정 · `assignment.tsv` 실측)
 
 | 오퍼레이션 | 요약 | 화면 | 헤더 |
 |---|---|---|---|
@@ -433,7 +433,7 @@ I-26 R1~R10: 기존 개체 GET은 진행한다. 기발번 수는 해당 LOT **�
 | `GET /logistics/shipment-requests/{shipmentRequestId}` | 출하작업지시 한 건 | W-04-01 | - |
 | `GET /logistics/shipment-requests/summary` | 출하작업지시 요약 | W-04-02,W-04-04,W-04-05 | - |
 | `POST /logistics/shipment-requests` | 출하작업지시 편성 | W-04-01 | 멱등 |
-| `POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick` | 제품 LOT 피킹 확정 | M-01-08,M-04-01 | 멱등, 사번 |
+| `POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick` | 제품 LOT 피킹 확정 | **M-04-01**(⛔ 2026-09-09 정정 — `M-01-08` 은 **자재** 피킹 화면이라 오탐이다. 04 계약이 그 절을 «규약의 근거»로 가리킬 뿐 부르는 화면이 아니다) | 멱등, 사번 |
 
 #### U31 출하 처리·확정·취소 (W-04-04·W-04-05·W-04-12·P-04-01/02) — 8건
 
@@ -445,7 +445,7 @@ I-26 R1~R10: 기존 개체 GET은 진행한다. 기발번 수는 해당 LOT **�
 | `POST /logistics/shipments/{shipmentId}:confirm` | 출하 확정 | W-04-12 | 멱등, ETag |
 | `POST /logistics/shipments/{shipmentId}:request-cancel` | 출하 취소 요청 | W-04-12 | 멱등, ETag |
 | `POST /logistics/shipments/{shipmentId}:cancel` | 출하 취소 실행 | W-04-12 | 멱등, ETag |
-| `GET /logistics/shipment-lot-allocations` | 출하 LOT 배분 목록 | M-04-01,P-04-01,P-04-02,W-04-04 | - |
+| `GET /logistics/shipment-lot-allocations` | 출하 LOT 배분 목록 | **P-04-01,P-04-02,W-04-04**(⛔ 2026-09-09 정정 — `M-04-01` 오탐. **배분은 출하 «뒤»에만 생긴다**) | - |
 | `PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}` | 배분에 포장 단위 연결 | P-04-01 | 멱등, 사번 |
 
 #### U32 재고 재등록 (W-04-03·W-04-11·W-03-02) — 1건
@@ -1009,7 +1009,7 @@ W-01-06 에서 전기」** 한 줄이어야 한다.
 
 화면 명세의 요약 구획 원문: 「작업지시 24건 · 요청 12,400 · 배정 11,900 · 출하 3,200 ·
 **미배정 = 요청−배정** 500 · 검사대기 4건 · 피킹미완 9건」.
-계약이 그대로 여섯 칸 + `asOf` 를 낸다. ⌜`unallocatedQtyTotal` — 요청 − 배정. ⭐ **서버가 계산한다**(L-2)
+계약이 그대로 **일곱** 칸 + `asOf` 를 낸다(⛔ 2026-09-09 정정 — 「여섯」은 오측 · I-22 §0-재수립 R-19). ⌜`unallocatedQtyTotal` — 요청 − 배정. ⭐ **서버가 계산한다**(L-2)
 — 화면이 `requestedQtyTotal`·`allocatedQtyTotal` 을 받아 다시 빼지 않는다⌝ ·
 ⌜질의 축은 짝 목록과 같다 — **`page`·`size`·`sort` 만 뺀다**(L-1-1 ⑶)⌝
 
