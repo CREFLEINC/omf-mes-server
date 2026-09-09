@@ -62,7 +62,7 @@
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
 | 26 | **I-26** 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 지금0 | 조건부 SERIAL_NUMBER 채번만 별도 코어≤200 | 조회/조건부 심장 분리 | 즉시 GET1 + 조건부 코어/쓰기 | I-26 R1~R10 · 문의104~107 |
 | 27 | **I-27** 발행 이력·프린터 | 7(진행5·보류1·제외1) | I-26 저장조회 | A9 nullable6·A10 유보 | — | 물리/조회/쓰기 분리 | P0/P1/P2/P3·발행 규칙/잠금/배치 별도 | R1~R16·∥ I-28 |
-| 28 | **I-28** 알림 | 8(즉시5·보류3) | I-1 | 지금0·A7/A8은 코드 정본 확인 뒤 | — | 조회 복제·쓰기 판단 분리 | 즉시3 + 조건부2 | `I-28.md` R-1~R-10 · 문의099~103 |
+| 28 | **I-28** 알림 | 8(구현8) | I-1 | A7·A8 적용 완료 | — | 조회 복제·쓰기 판단 분리 | ①~③ + 모델/이벤트/구독 GET/PUT | `I-28.md` R-1~R-11 · 통보099~103 |
 | 29 | **I-30** 설비 점검·고장 | 9(진행8·보류1) | — | A15 확장: nullable8추가·2완화 | EQI/MLF 채번2·고장 start 전이1(별도 코어 PR) | 조회/쓰기·코어 분리 | 실행8 + 조건부 완료 조각 | ∥ I-1 · I-30 R-1~R-14 |
 | 30 | **I-31** 보전 지시·실적 | 8 | I-30·I-32 순간helper | order8추가/priority완화·result15추가/6완화·표2·trigger1:N/bigint | MO/cancel·부여탐색/PM사실 최소공유(core전체200) | 코어/마이그·조회·쓰기 분리 | 최소책임별·초과 때만 준비분할 | I-31 R1~R13·113~116, closed/reset true만422 |
 | 31 | **I-32** 비가동 | 6(진행5·보류1) | I-11·I-30 날짜helper | 추가3/완화1·조건부 종료사번1 | 없음 | µs 준비/물리/조회/쓰기·summary 분리 | P0t+P1a물리/P1b조회+P2~P4, summary 재수립, 조건부close | I-32 R1~R16·문의108~112·재분류 정본 |
@@ -134,7 +134,7 @@
 | A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
 | A9 | I-27 | `app.document_issue_log` | 결과3+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0·구writer 종료/갱신→P5→환경별 응답 활성화 |
 | A10 | I-27 | `app.printer` | **유보·적용0**. 단말 매핑/관측/기본/지원 원천 전 칸5 추가만으로 완료 불가. OFFLINE/false 기본값 제안 철회 |
-| A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | **조건부·지금 적용0**. zalo 칸·사용자/채널 nullable 완화·NULL/NULL 헤더 부분유일/짝 CHECK·규칙 표. 과거행 보존·백필0 (`I-28.md` R-2) |
+| A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | **#482 적용 완료**. zalo 칸·사용자/채널 nullable 완화·NULL/NULL 헤더 부분유일/짝 CHECK·규칙 표. 과거행 보존·백필0 (`I-28.md` R-2) |
 | A15 | I-30 | `maintenance.breakdown`·`equipment_inspection` | 고장 nullable8추가: `occurrence_state_code`·`stopped_at`·`notify_assignee`·`reporter_worker_no`·`cause_code`·`handling_note`·`handled_by`·`handled_at`. 고장 `severity_code`·점검 `status_code` NOT NULL 완화. 삭제0/백필0, 과거 필수값·enum 사전조회는 조회 PR부터(`I-30.md` §2) |
 | A16~A19 · V | I-31 | `maintenance.maintenance_order` · `maintenance_result` · **신설** `maintenance_result_line` · `maintenance_result_part` | order8추가(계정담당·계획/기준/메모·발행2·취소2)·priority완화. trigger order UNIQUE완화/shot snapshot2 bigint. result15추가(type+equipment/mold FK쌍·breakdown·계정수행자·본문/외주/reset/closed·version/audit)·구NOT NULL6완화·표2/FK역관계·CHECK·참조카운트. 삭제/백필0·required 구행 환경 활성화 제한(091) |
 | V·물리 보완 | I-32 | `maintenance.equipment_downtime` | remarks text?·recorded_by_worker_no varchar(50)?·version_no default1/positive CHECK 추가3, downtime_type_code NOT NULL 완화1. close시각 해소 뒤 종료사번1 별도. 삭제/백필0·과거 required/구 작성자 배포검사(108) |
@@ -174,7 +174,7 @@
 부분 건너뜀(구현은 함): `:resync` 202+아웃박스까지 · `work-orders:close`/`shipments:confirm` ERP 아웃박스까지 · `zaloEnabled` 칸만.
 **현재 목표 커버리지 481/487**(기술적 제외 I-34 3·I-27 rendition 1, 질의 대기 I-26 발번 1·I-32 종료 1). 2026-09-08 재분류에 따라 I-27 프린터·I-28 3건·I-30 완료·I-32 summary는 서버팀 결정·통보 후 진행 대상으로 복원했다. 배정/분모487은 불변이다. I-32 P4 #360 후보는 **378/487·4tests pass**이며 병합 전에는 main 수치로 쓰지 않는다.
 
-I-28 배포 제한: 저장 알림 조회·읽음·수신자 preview 5건에 이어 이벤트·구독 3건도 서버팀 결정·통보로 진행한다. 알림 발생기·Zalo 전송기0은 그대로다. `openable=false`는 대상 삭제가 아니라 화면 매핑 부재일 수 있고 읽음은 가능하다. 목록 규칙 수와 preview 활성 인원수는 다르다(`I-28.md` R-5·R-7).
+I-28 배포 제한: 8건은 #295·#299·#313·#483·#484·#486으로 구현 완료했다. 알림 발생기·검교정 시간 트리거·Zalo 전송기0은 그대로다. `openable=false`는 대상 삭제가 아니라 화면 매핑 부재일 수 있고 읽음은 가능하다. 목록 규칙 수와 preview 활성 인원수는 다르다(`I-28.md` R-5·R-7).
 
 I-30 배포 제한: 점검·고장9건 전부 서버팀 결정·통보로 진행한다. 고장 PUT의 원인 nonnull만 명시 거부하고 생략 유지·null 해제·메모 저장은 가능하다. 보고 성공은 알림 발송·사진 업로드 성공이 아니다. 유효 계정 세션이 필요하며 X-Worker-No 교차 오리진 허용은 공용 담당 과제다(054·090~098). 과거 필수값/enum 결손 환경의 배포는 별도 판정한다. 날짜 조회는 설비 공장의 로컬 달력일이고 채번 기간은 기존 UTC 선례다.
 
@@ -258,7 +258,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건은 #353/#357/#359/#360으
 | I-10 | ✅ 2026-09-07 | #255(계획 R-1~R-18) · #257(① NOT NULL 완화 마이그 2 + 조회 4 + 뷰 2) · #260(② `POST` 투입 + `MC` 접두어 + M2 마디 ⑨→⑩ e2e) · #259(③ `POST` 반출 + `MR` 접두어 + 권한 잠정 등록) | **317** (6/6) |
 | I-11 | ✅ 2026-09-07 | #256(계획 R-1~R-17) · #261(① 조회 5 + 뷰 2벌 + 골격) · #258(② 코어 전용 — 전이 4액션 + `shift-resolver` + 마이그 `20260907800000`) · #263(③ 세션 열기·닫기 + 단말 토큰 헬퍼 + M2 세션 마디 e2e) · #264(④ `/events`·`/workers`·`:leave` + 권한 등록 2) · #262(⑤ `POST` precheck 판정) | **328** (11/11) |
 | I-12 | ✅ 2026-09-07 | #266(계획 R-1~R-14) · #267(① 조회 2 + 뷰 + 권한 2 + 전이표 2) · #268(② `:complete`·`:complete-temporary` + 원장 `STOCK_TRANSFER` + 잔액 하한 400) · #269(마감 docs · 문의 059~062) | **332** (4/4) |
-| I-28 | 정상5건 병합 완료·③ **#313 MERGED** | 636a1f1·비테스트360/400·R-11 ID 정밀도 수정·독립 최종지적0. 최신main 반영 lint/tsc·unit103/1019·preview27·품질39·영향회귀49 exit0. 실제 자식315 main/OPEN·열린자식0·mainFF·자기branch정리 완료 | main직접357/487·4tests pass, ③+1·I-28 구현5/8·보류3 |
+| I-28 | ✅ 구현 8/8 | 기존 #295·#299·#313 + 모델 #482·이벤트 #483·구독GET #484·구독PUT #486 MERGED. 정본6·단일 ETag·초기1·legacy격리·최초PUT경합·완료기록 rollback 검증. 발생기·검교정 시간 트리거·Zalo 전송은 범위 밖 | #486 main **435/487**, unit167/1588·구독E2E13·영향회귀102 pass |
 | I-30 | 계획·⓪·①·②·③ 병합 완료 | #297/#300/#305/#308/#310 MERGED·열린자식0/mainFF/자기브랜치정리. ③4cfe9a9·非test329·독립지적0·unit100/949·고장10·영향점검35/precheck12 exit0·DB56/drift0 | main355/487 직접4tests pass, I-30구현4/9·후속4·보류1 |
 | I-26 | 계획 #301·조회 #307 병합 완료 | #301 f521a89·#307 d5979ca MERGED/열린자식0/자기브랜치정리. GET 비테스트157·독립 단위98/931·E2E14·root LOT20 pass, Minor1 보완 후 전부0. 발번1건 유보·마이그0 | main353/487 직접4 tests pass(+1) |
 | I-27 | ✅ #315·#441/#442/#447~#451·#460/#462~#476·#479 | 목록·상세·summary·printer GET4 + 발행·보고POST2 구현. A9 로그 귀속/결과, terminal printer 명시매핑, GI/CoA/MOLD 실제 writer 경합 검증. rendition은 기술적 제외 | #478 main **432/487**, I-27 **6/6**·unit167/1587·#479 변경E2E9 pass |

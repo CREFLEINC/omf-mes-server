@@ -43,7 +43,7 @@ export class NotificationPreviewService {
 
     return {
       resolvedAt: new Date().toISOString(),
-      // 설계 미정 — 문의 101: inactive는 표시하되 실제 수신 인원에서는 제외한다.
+      // 결정 — 통보 101: inactive는 표시하되 실제 수신 인원에서는 제외한다.
       totalCount: countActiveRecipients(users),
       users,
     };
@@ -112,7 +112,7 @@ export class NotificationPreviewService {
   }
 }
 
-// 설계 미정 — 문의 번호 배정 대기(I-28 R-11): 서로 다른 bigint를 같은 숫자로 내리지 않는다.
+// 결정 — I-28 R-11 통보: 서로 다른 bigint를 같은 숫자로 내리지 않는다.
 function contractUserId(id: bigint): number {
   const value = Number(id);
   if (!Number.isSafeInteger(value)) {
