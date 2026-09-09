@@ -59,7 +59,7 @@ export type DocumentIssueTargetFacts =
   | {
       targetTypeCode: "HANDLING_UNIT";
       targetId: bigint;
-      hasContent: boolean;
+      hasContent?: boolean;
     }
   | {
       targetTypeCode: "GOODS_ISSUE_LINE";
@@ -157,7 +157,7 @@ export function qualifyDocumentIssueTarget(
           );
         sourceLotId = facts.lotId;
       } else if (facts.targetTypeCode === "HANDLING_UNIT") {
-        if (!facts.hasContent)
+        if (facts.hasContent !== true)
           failTarget(
             target,
             ERROR_CODE.STATE_LOCKED,
