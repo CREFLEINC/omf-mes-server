@@ -125,6 +125,15 @@ describe('채번 코어', () => {
     expect(await service.next('NONCONFORMANCE', null, DAY)).toBe('NC-20260906-0001');
   });
 
+  it('채번 — 취급 단위는 HU 기본 접두어를 쓰고 공장 축이 없다(plantId=null) // 결정 — 통보 144', async () => {
+    const { service, inserted } = fake();
+
+    expect(await service.next('HANDLING_UNIT', null, DAY)).toBe('HU-20260906-0001');
+    expect(inserted).toEqual([
+      { documentTypeCode: 'HANDLING_UNIT', pattern: 'HU-{YYYYMMDD}-{SEQ4}' },
+    ]);
+  });
+
   it('채번 — 출하지시서·재고예약은 SR·RS 기본 접두어를 쓴다 // 결정 — 통보 191', async () => {
     const { service } = fake();
 
