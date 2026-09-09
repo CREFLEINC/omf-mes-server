@@ -11,6 +11,7 @@ import {
   qualifyDocumentIssueTarget,
 } from "./document-issue-create-rules";
 import { lockDocumentIssueGoodsIssueTargets } from "./document-issue-goods-issue-lock";
+import { lockDocumentIssueInspectionTargets } from "./document-issue-inspection-lock";
 import { loadDocumentIssueReasons } from "./document-issue-query.service";
 import {
   DocumentIssueSequence,
@@ -48,10 +49,10 @@ export class DocumentIssueWriteService {
     context: DocumentIssueWriteContext,
   ): Promise<DocumentIssueBatchResponse> {
     const targets = prepareDocumentIssueTargets(input);
-    assertWriterReady(input.documentTypeCode);
     const facts = mergeFacts(
       await lockSimpleDocumentIssueTargets(tx, input.documentTypeCode, targets),
       await lockDocumentIssueGoodsIssueTargets(tx, targets),
+      await lockDocumentIssueInspectionTargets(tx, targets),
     );
     const sequences = await nextDocumentIssueSequences(
       tx,
@@ -141,17 +142,6 @@ export class DocumentIssueWriteService {
     });
     return { items, issuedCount: items.length };
   }
-}
-
-function assertWriterReady(documentTypeCode: string): void {
-  if (documentTypeCode !== "CERTIFICATE_OF_ANALYSIS") return;
-  throw new ContractException(HttpStatus.UNPROCESSABLE_ENTITY, [
-    field(
-      "documentTypeCode",
-      ERROR_CODE.STATE_LOCKED,
-      "검사 확정과 성적서 발행의 잠금 순서가 조율되지 않았습니다.",
-    ),
-  ]);
 }
 
 function mergeFacts(

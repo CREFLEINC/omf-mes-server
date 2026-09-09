@@ -106,7 +106,7 @@ describe("발행 배치 작성 (I-27 C3b)", () => {
     expect(setup.created).toEqual([]);
   });
 
-  it("성적서는 반대 순서 품질 writer가 조율되기 전 명시적으로 막는다", async () => {
+  it("성적서는 선제 차단하지 않고 조율된 검사 결과 잠금으로 진입한다", async () => {
     const setup = fake({ sequences: [] });
     const coa: DocumentIssueCreateInput = {
       documentTypeCode: "CERTIFICATE_OF_ANALYSIS",
@@ -119,12 +119,15 @@ describe("발행 배치 작성 (I-27 C3b)", () => {
       status: 422,
       errors: [
         expect.objectContaining({
-          field: "documentTypeCode",
-          code: "STATE_LOCKED",
+          field: "targets[0].targetId",
+          code: "INVALID",
         }),
       ],
     });
-    expect(setup.rawQueries).toEqual([]);
+    expect(setup.rawQueries).toEqual([
+      expect.stringMatching(/FROM quality\.inspection_result[\s\S]*FOR SHARE/),
+      expect.stringMatching(/WITH requested/),
+    ]);
   });
 });
 
