@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -22,23 +23,24 @@ import {
   ShipmentRequestSummaryView,
 } from './shipment-request-query.service';
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
-import { ShipmentRequestView } from './shipment-request-view';
+import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
+import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
 import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
 
 /**
  * MES 출하작업지시 — 화면 `W-04-01`(편성) · `W-04-02`(목록·요약·상세) · `M-04-01`(피킹).
  *
- * ⚠ 지금은 조회 셋 + 편성 POST(PR ⑤)다 — `:pick`(⑥)이 **같은 파일에** 더해진다.
- * 계약이 한 자원 아래 묶어 둔 5건이라 컨트롤러를 가르지 않는다(§7-3).
+ * 계약이 한 자원 아래 묶어 둔 5건이라 컨트롤러를 가르지 않는다(§7-3) — 조회 셋 + 편성 + `:pick`.
  * ⛔ `OPERATION_PERMISSIONS` 를 **0줄** 건드린다 — 조회 셋은 403 을 «선언하지 않아» 더해도
- * 죽은 행이 되고, 편성 POST 는 403 을 «선언»했으나 `DERIVED_PERMISSIONS:180` 이 이미
- * `W-04-01` 로 갖고 있다(§7-4). ⚠ 미등재였다면 가드가 던져 403 이 아니라 **500** 이다.
+ * 죽은 행이 되고, 403 을 «선언»한 둘은 `DERIVED_PERMISSIONS:180`(`W-04-01`)·`:181`(`M-04-01`)이
+ * 이미 갖고 있다(§7-4). ⚠ 미등재였다면 가드가 던져 403 이 아니라 **500** 이다.
  */
 @Controller('logistics/shipment-requests')
 export class ShipmentRequestController {
   constructor(
     private readonly queries: ShipmentRequestQueryService,
     private readonly requests: ShipmentRequestService,
+    private readonly picks: ShipmentPickService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -89,6 +91,40 @@ export class ShipmentRequestController {
       request,
       HttpStatus.CREATED,
       () => this.requests.create(body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+  }
+
+  /**
+   * ⭐⭐ 제품 LOT 피킹 확정(`M-04-01`) — 응답은 헤더가 아니라 **갱신된 라인**이다.
+   * ⛔ `If-Match`·ETag 가 계약에 0건이라 `runVersioned`·`setEtag` 를 부르지 않는다(§1-1).
+   * ⛔ 헤더는 계약 검증 가드가 «안 본다» — `X-Worker-No` 필수 판정은 서비스 몫이다.
+   * ⛔ 409 봉투가 계열이라 `FAMILY_CONFLICT_CODE` 를 넘긴다 — 안 넘기면 멱등 충돌 409 에서
+   *   required `code` 가 빠지고, 그 자리는 e2e 로 반증되지 않아 `family-conflict-code.spec.ts`
+   *   가 유일한 그물이다.
+   */
+  @Post(':shipmentRequestId/lines/:shipmentRequestLineId\\:pick')
+  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick')
+  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
+  @HttpCode(HttpStatus.OK)
+  pick(
+    @Req() request: Request,
+    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+    @Param('shipmentRequestLineId', ParseIntPipe) shipmentRequestLineId: number,
+    @Body() body: ShipmentLinePick,
+  ): Promise<ShipmentRequestLineView> {
+    const workerNo = request.headers['x-worker-no'];
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.OK,
+      () =>
+        this.picks.pick(shipmentRequestId, shipmentRequestLineId, body, {
+          workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+          appUserId: session.userId,
+        }),
       FAMILY_CONFLICT_CODE,
     );
   }
