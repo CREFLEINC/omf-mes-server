@@ -31,7 +31,6 @@ export class ToolUsageQueryService {
 
   async list(query: ToolUsageQuery): Promise<ToolUsageList> {
     const page = pageRequest(query);
-    if (!Number.isSafeInteger(page.skip)) throw rangeError("page", "페이지 범위가 너무 큽니다.");
     for (const name of ["moldId", "workOrderId"] as const) {
       if (query[name] !== undefined && !Number.isSafeInteger(query[name])) {
         throw rangeError(name, "식별자 범위가 너무 큽니다.");
