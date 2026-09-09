@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { Prisma } from "@prisma/client";
 import { Test } from "@nestjs/testing";
 import Ajv2020, { ValidateFunction } from "ajv/dist/2020";
 import addFormats from "ajv-formats";
@@ -49,6 +50,10 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let userId: bigint;
+  let plantId: bigint;
+  let itemId: bigint;
+  let uomId: bigint;
+  let workerId: bigint;
   let cookie: string;
   let locationIds: bigint[] = [];
   const keys: string[] = [];
@@ -84,8 +89,18 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
           prisma.app_user.count({
             where: { login_id: { startsWith: PREFIX } },
           }),
+          prisma.inspection_result.count({
+            where: { inspection_result_no: { startsWith: PREFIX } },
+          }),
+          prisma.inspection_request.count({
+            where: { inspection_request_no: { startsWith: PREFIX } },
+          }),
+          prisma.lot.count({ where: { lot_no: { startsWith: PREFIX } } }),
+          prisma.worker.count({ where: { worker_no: { startsWith: PREFIX } } }),
+          prisma.item.count({ where: { item_code: { startsWith: PREFIX } } }),
+          prisma.uom.count({ where: { uom_code: { startsWith: PREFIX } } }),
         ]),
-      ).toEqual([0, 0, 0, 0]);
+      ).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     } finally {
       await app?.close();
     }
@@ -193,6 +208,73 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     );
   });
 
+  it("검사 확정이 먼저 잠그면 CoA 발행은 확정 결과와 LOT을 다시 읽고 성공한다", async () => {
+    const fixture = await newConfirmableCoa("CONFIRM_FIRST");
+    const blocker = await blockInspectionResult(fixture.resultId);
+
+    try {
+      const confirm = confirmInspection(fixture.resultId).then(
+        (response) => response,
+      );
+      await waitForBlockedQualityQuery("%inspected_qty%FOR UPDATE%");
+      const issue = issueCertificate(fixture.resultId, "CONFIRM_FIRST").then(
+        (response) => response,
+      );
+      await waitForBlockedQualityQuery("%confirmed_at%FOR SHARE%");
+      blocker.release();
+
+      const [confirmed, issued] = await Promise.all([confirm, issue]);
+      expect(confirmed.status).toBe(200);
+      expect(issued.status).toBe(201);
+      expect(issued.body.items[0]).toMatchObject({
+        lotId: Number(fixture.lotId),
+        printOutcome: "PENDING",
+      });
+      expect(await certificateCount(fixture.resultId)).toBe(1);
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
+  it("CoA 발행이 먼저 잠그면 DRAFT를 422로 끝낸 뒤 검사 확정이 진행된다", async () => {
+    const fixture = await newConfirmableCoa("ISSUE_FIRST");
+    const blocker = await blockInspectionResult(fixture.resultId);
+
+    try {
+      const issue = issueCertificate(fixture.resultId, "ISSUE_FIRST").then(
+        (response) => response,
+      );
+      await waitForBlockedQualityQuery("%confirmed_at%FOR SHARE%");
+      const confirm = confirmInspection(fixture.resultId).then(
+        (response) => response,
+      );
+      await waitForBlockedQualityQuery("%inspected_qty%FOR UPDATE%");
+      blocker.release();
+
+      const [rejected, confirmed] = await Promise.all([issue, confirm]);
+      expect(rejected.status).toBe(422);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: "targets[0].targetId",
+        code: "STATE_LOCKED",
+      });
+      expect(confirmed.status).toBe(200);
+      expect(await certificateCount(fixture.resultId)).toBe(0);
+      await expect(
+        prisma.inspection_result.findUniqueOrThrow({
+          where: { inspection_result_id: BigInt(fixture.resultId) },
+          select: { status_code: true, confirmed_at: true },
+        }),
+      ).resolves.toMatchObject({
+        status_code: "CONFIRMED",
+        confirmed_at: expect.any(Date),
+      });
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
   it("1,000건 배치 중간에 미존재 대상이 있으면 전건 롤백한다", async () => {
     const missing = 8_027_399_999_999;
     const targets = locationIds.slice(3, 1_002);
@@ -292,13 +374,154 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     });
   }
 
+  function issueCertificate(resultId: number, suffix: string): request.Test {
+    return request(app.getHttpServer())
+      .post(PATH)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", newKey())
+      .send({
+        documentTypeCode: "CERTIFICATE_OF_ANALYSIS",
+        targets: [
+          { targetTypeCode: "INSPECTION_RESULT", targetId: resultId },
+        ],
+        remarks: `${PREFIX}_COA_${suffix}`,
+      });
+  }
+
+  function confirmInspection(resultId: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/quality/inspection-results/${resultId}:confirm`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", newKey())
+      .set("If-Match", "1")
+      .send({ overallJudgmentCode: "ACCEPTED" });
+  }
+
+  function certificateCount(resultId: number): Promise<number> {
+    return prisma.document_issue_log.count({
+      where: {
+        document_type_code: "CERTIFICATE_OF_ANALYSIS",
+        target_type_code: "INSPECTION_RESULT",
+        target_id: resultId,
+      },
+    });
+  }
+
+  async function newConfirmableCoa(suffix: string): Promise<{
+    resultId: number;
+    lotId: bigint;
+  }> {
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}_COA_LOT_${suffix}`,
+        item_id: itemId,
+        lot_type_code: "RAW_MATERIAL",
+        plant_id: plantId,
+        initial_qty: 100,
+        uom_id: uomId,
+        source_type_code: "INBOUND_RECEIPT_LINE",
+        source_id: plantId,
+        status_code: "INSPECTION_PENDING",
+      },
+    });
+    const inspectionRequest = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}_COA_REQ_${suffix}`,
+        inspection_type_code: "IQC",
+        target_type_code: "LOT",
+        target_id: lot.lot_id,
+        item_id: itemId,
+        lot_id: lot.lot_id,
+        target_qty: 100,
+        uom_id: uomId,
+        status_code: "REQUESTED",
+        requested_at: new Date(),
+      },
+    });
+    const result = await prisma.inspection_result.create({
+      data: {
+        inspection_result_no: `${PREFIX}_COA_RES_${suffix}`,
+        inspection_request_id: inspectionRequest.inspection_request_id,
+        inspected_qty: 100,
+        accepted_qty: 100,
+        uom_id: uomId,
+        inspector_id: workerId,
+        inspected_at: new Date(),
+        status_code: "DRAFT",
+        idempotency_key: `${PREFIX}_COA_IDEM_${suffix}`,
+      },
+    });
+    return { resultId: Number(result.inspection_result_id), lotId: lot.lot_id };
+  }
+
+  async function blockInspectionResult(resultId: number): Promise<{
+    release: () => void;
+    done: Promise<void>;
+  }> {
+    let unlock = (): void => undefined;
+    let locked = (): void => undefined;
+    const released = new Promise<void>((resolve) => (unlock = resolve));
+    const acquired = new Promise<void>((resolve) => (locked = resolve));
+    let releasedOnce = false;
+    const done = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT inspection_result_id FROM quality.inspection_result
+        WHERE inspection_result_id=${BigInt(resultId)}
+        FOR UPDATE`);
+      locked();
+      await released;
+    });
+    await acquired;
+    return {
+      release: () => {
+        if (releasedOnce) return;
+        releasedOnce = true;
+        unlock();
+      },
+      done,
+    };
+  }
+
+  async function waitForBlockedQualityQuery(pattern: string): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const rows = await prisma.$queryRaw<{ waiting: boolean }[]>(Prisma.sql`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database()
+            AND pid <> pg_backend_pid()
+            AND wait_event_type='Lock'
+            AND query LIKE ${pattern}
+        ) AS waiting`);
+      if (rows[0]?.waiting) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`검사 결과 잠금 대기를 관측하지 못했습니다: ${pattern}`);
+  }
+
   async function makeFixture(jwt: JwtService): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({
       orderBy: { plant_id: "asc" },
     });
+    plantId = plant.plant_id;
     const businessUnit = await prisma.business_unit.findFirstOrThrow({
       orderBy: { business_unit_id: "asc" },
     });
+    const uom = await prisma.uom.create({
+      data: { uom_code: `${PREFIX}_UOM`, uom_name: "I-27 CoA 검사 단위" },
+    });
+    uomId = uom.uom_id;
+    itemId = (
+      await prisma.item.create({
+        data: {
+          item_code: `${PREFIX}_ITEM`,
+          item_name: "I-27 CoA 검사 품목",
+          item_type_code: "FINISHED_GOOD",
+          base_uom_id: uomId,
+          lot_control_type_code: "LOT",
+        },
+      })
+    ).item_id;
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,
@@ -328,12 +551,25 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         role_name: "I-27 발행 E2E 역할",
       },
     });
-    await prisma.role_permission.create({
-      data: { role_id: role.role_id, permission_code: "W-06-07" },
+    await prisma.role_permission.createMany({
+      data: ["W-06-07", "W-04-03", "W-01-01"].map(
+        (permission_code) => ({ role_id: role.role_id, permission_code }),
+      ),
     });
     await prisma.user_role.create({
       data: { app_user_id: userId, role_id: role.role_id },
     });
+    workerId = (
+      await prisma.worker.create({
+        data: {
+          worker_no: `${PREFIX}_COA_WORKER`,
+          worker_name: "I-27 CoA 경합 검사자",
+          business_unit_id: businessUnit.business_unit_id,
+          plant_id: plant.plant_id,
+          status_code: "EMPLOYED",
+        },
+      })
+    ).worker_id;
     const reasonGroup = await prisma.code_group.findUniqueOrThrow({
       where: { group_code: "REISSUE_REASON" },
     });
@@ -369,6 +605,34 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     });
     await prisma.document_issue_log.deleteMany({
       where: { remarks: { startsWith: PREFIX } },
+    });
+    const lots = await prisma.lot.findMany({
+      where: { lot_no: { startsWith: PREFIX } },
+      select: { lot_id: true },
+    });
+    await prisma.lot_status_event.deleteMany({
+      where: { lot_id: { in: lots.map((lot) => lot.lot_id) } },
+    });
+    await prisma.lot_hold.deleteMany({
+      where: { lot_id: { in: lots.map((lot) => lot.lot_id) } },
+    });
+    await prisma.inspection_result.deleteMany({
+      where: { inspection_result_no: { startsWith: PREFIX } },
+    });
+    await prisma.inspection_request.deleteMany({
+      where: { inspection_request_no: { startsWith: PREFIX } },
+    });
+    await prisma.lot.deleteMany({
+      where: { lot_id: { in: lots.map((lot) => lot.lot_id) } },
+    });
+    await prisma.worker.deleteMany({
+      where: { worker_no: { startsWith: PREFIX } },
+    });
+    await prisma.item.deleteMany({
+      where: { item_code: { startsWith: PREFIX } },
+    });
+    await prisma.uom.deleteMany({
+      where: { uom_code: { startsWith: PREFIX } },
     });
     await prisma.location.deleteMany({
       where: { location_code: { startsWith: PREFIX } },
