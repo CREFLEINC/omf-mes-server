@@ -82,7 +82,6 @@ export class CollectionChannelQueryService {
 
   async list(query: CollectionChannelQuery): Promise<CollectionChannelList> {
     const page = pageRequest(query);
-    if (!Number.isSafeInteger(page.skip)) throw rangeError("page", "페이지 범위가 너무 큽니다.");
     if (query.equipmentId !== undefined && !Number.isSafeInteger(query.equipmentId)) {
       throw rangeError("equipmentId", "설비 식별자 범위가 너무 큽니다.");
     }

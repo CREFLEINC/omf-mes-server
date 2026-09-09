@@ -90,6 +90,12 @@ describe("CalibrationQueryService", () => {
       status: 400,
       errors: [{ field: "equipmentId", code: "RANGE" }],
     });
+    // 쪽 범위는 `pageRequest()` 가 본다 — 이 자리에 있던 같은 검사를 지웠으므로
+    // 여기서 고정해 두지 않으면 그 공용 판정이 사라져도 아무것도 빨개지지 않는다.
+    await expect(service.list({ page: Number.MAX_SAFE_INTEGER })).rejects.toMatchObject({
+      status: 400,
+      errors: [{ field: "page", code: "RANGE" }],
+    });
     expect(transaction).not.toHaveBeenCalled();
   });
 });
