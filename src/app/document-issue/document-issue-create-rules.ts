@@ -4,9 +4,20 @@ import { ContractException, ERROR_CODE, field } from "../../common/errors";
 import { DocumentTargetType } from "./document-issue-target-lookup";
 import { DocumentIssueView } from "./document-issue-view";
 
-export const MATERIAL_LABEL_UNRESOLVED_STATE_POLICY = "REJECT";
-export const IDENTIFICATION_LABEL_ELIGIBILITY_POLICY = "REJECT_UNRESOLVED";
-export const DELIVERY_ALLOCATION_TARGET_POLICY = "REJECT_UNREPRESENTABLE";
+// 변경 비용이 낮은 발행 가장자리는 원문을 보존하는 거부 정책으로 서버가 결정했다.
+// 결정 — 통보(레인 B), `docs/design-inquiries/재정리-2026-09-08-레인B.md` §5.
+export const MATERIAL_LABEL_UNRESOLVED_STATE_POLICY = {
+  code: ERROR_CODE.STATE_LOCKED,
+  message: "자재 LOT 라벨을 발행할 수 없는 상태입니다.",
+} as const;
+export const IDENTIFICATION_LABEL_ELIGIBILITY_POLICY = {
+  code: ERROR_CODE.STATE_LOCKED,
+  message: "개체별 발행 자격 원천이 확정되지 않았습니다.",
+} as const;
+export const DELIVERY_ALLOCATION_TARGET_POLICY = {
+  code: ERROR_CODE.INVALID,
+  message: "납품 라벨의 대상 유형이 계약에 없습니다.",
+} as const;
 export const TOOL_LABEL_WRITER_READY = false;
 
 export type DocumentIssueDocumentType = DocumentIssueView["documentTypeCode"];
@@ -119,11 +130,7 @@ export function qualifyDocumentIssueTarget(
         facts.lotTypeCode !== "MATERIAL" ||
         !["INSPECTION_PENDING", "NORMAL"].includes(facts.statusCode)
       )
-        failTarget(
-          target,
-          ERROR_CODE.STATE_LOCKED,
-          "자재 LOT 라벨을 발행할 수 없는 상태입니다.",
-        );
+        failTarget(target, MATERIAL_LABEL_UNRESOLVED_STATE_POLICY);
       sourceLotId = facts.targetId;
       break;
     case "PRODUCTION_LOT_LABEL":
@@ -174,11 +181,7 @@ export function qualifyDocumentIssueTarget(
       sourceLotId = facts.lotId;
       break;
     case "IDENTIFICATION_TAG":
-      return failTarget(
-        target,
-        ERROR_CODE.STATE_LOCKED,
-        "개체별 발행 자격 원천이 확정되지 않았습니다.",
-      );
+      return failTarget(target, IDENTIFICATION_LABEL_ELIGIBILITY_POLICY);
     case "TOOL_LABEL":
       if (!TOOL_LABEL_WRITER_READY)
         failTarget(
@@ -190,11 +193,7 @@ export function qualifyDocumentIssueTarget(
     case "LOCATION_LABEL":
       break;
     case "DELIVERY_LABEL":
-      return failTarget(
-        target,
-        ERROR_CODE.INVALID,
-        "납품 라벨의 대상 유형이 계약에 없습니다.",
-      );
+      return failTarget(target, DELIVERY_ALLOCATION_TARGET_POLICY);
   }
 
   assertLotMatches(target, sourceLotId);
@@ -286,14 +285,25 @@ function assertSafeId(value: number, name: string): void {
 
 function failTarget(
   target: PreparedDocumentIssueTarget,
+  policy: { code: string; message: string },
+): never;
+function failTarget(
+  target: PreparedDocumentIssueTarget,
   code: string,
   message: string,
+): never;
+function failTarget(
+  target: PreparedDocumentIssueTarget,
+  codeOrPolicy: string | { code: string; message: string },
+  message?: string,
 ): never {
+  const code =
+    typeof codeOrPolicy === "string" ? codeOrPolicy : codeOrPolicy.code;
   return fail(
     HttpStatus.UNPROCESSABLE_ENTITY,
     `targets[${target.index}].targetId`,
     code,
-    message,
+    typeof codeOrPolicy === "string" ? String(message) : codeOrPolicy.message,
   );
 }
 
