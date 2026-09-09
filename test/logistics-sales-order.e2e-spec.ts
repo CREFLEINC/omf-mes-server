@@ -188,6 +188,11 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
     const body = await list(`q=${PREFIX}-SO3`);
 
     expect(idsOf(body)).toEqual([so.SO3L, so.SO3]);
+    // ⭐ 계획서에 없던 두 «추가» 동작을 잠근다(README §6-2 마지막 문단) — 접두사만 대면
+    //   `startsWith` 로 좁혀도 통과하고, 저장값 그대로 대면 `mode:'insensitive'` 제거도
+    //   통과한다. 중간 일치와 소문자를 각각 대야 둘이 죽는다.
+    expect(idsOf(await list('q=E2E-SO3'))).toEqual([so.SO3L, so.SO3]);
+    expect(idsOf(await list(`q=${PREFIX.toLowerCase()}-so3`))).toEqual([so.SO3L, so.SO3]);
   });
 
   it('S-12 q 는 erp_sales_order_no 를 «안» 본다', async () => {
@@ -251,7 +256,16 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
       shippedQty: 60,
     });
     expect(lines[2]).toMatchObject({ lineNo: 3, orderedQty: 360, shippedQty: 90 });
-    expect(new Set(lines.map((line) => line.salesOrderLineId)).size).toBe(3);
+    // ⛔ `Set(...).size` 로는 안 잠긴다 — 「서로 다르다」만 보므로 `line_no`(1·2·3)나
+    //   `ordered_qty`(120·240·360)에서 가져와도 통과한다. 저장된 PK 와 통째로 맞춘다.
+    const stored = await prisma.sales_order_line.findMany({
+      where: { sales_order_id: BigInt(so.SO3L) },
+      orderBy: { line_no: 'asc' },
+      select: { sales_order_line_id: true },
+    });
+    expect(lines.map((line) => line.salesOrderLineId)).toEqual(
+      stored.map((row) => Number(row.sales_order_line_id)),
+    );
   });
 
   it('S-18 requestedDeliveryDate 가 없는 라인은 키를 «생략»한다(있는 라인은 싣는다)', async () => {
