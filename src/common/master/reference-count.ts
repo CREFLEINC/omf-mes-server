@@ -19,7 +19,7 @@ export type Referrer = readonly [table: string, column: string];
  * 한 번의 왕복으로 센다. 16~30번을 따로 돌면 상세 조회 하나가 그만큼 느려진다.
  */
 export async function countReferences(
-  prisma: PrismaService,
+  prisma: Pick<PrismaService, '$queryRawUnsafe'>,
   referrers: readonly Referrer[],
   id: number | bigint,
 ): Promise<number> {

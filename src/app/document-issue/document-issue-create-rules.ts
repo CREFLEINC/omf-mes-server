@@ -18,7 +18,6 @@ export const DELIVERY_ALLOCATION_TARGET_POLICY = {
   code: ERROR_CODE.INVALID,
   message: "납품 라벨의 대상 유형이 계약에 없습니다.",
 } as const;
-export const TOOL_LABEL_WRITER_READY = false;
 
 export type DocumentIssueDocumentType = DocumentIssueView["documentTypeCode"];
 
@@ -185,12 +184,6 @@ export function qualifyDocumentIssueTarget(
     case "IDENTIFICATION_TAG":
       return failTarget(target, IDENTIFICATION_LABEL_ELIGIBILITY_POLICY);
     case "TOOL_LABEL":
-      if (!TOOL_LABEL_WRITER_READY)
-        failTarget(
-          target,
-          ERROR_CODE.STATE_LOCKED,
-          "툴 변경 경합 보호가 준비되지 않았습니다.",
-        );
       break;
     case "LOCATION_LABEL":
       break;
