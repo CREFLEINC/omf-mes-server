@@ -92,7 +92,7 @@ describe('설비 마스터 (e2e)', () => {
     await app.close();
   });
 
-  it('⭐ 참조 목록이 DB 의 FK 와 정확히 같다 — 스무 곳이다', async () => {
+  it('⭐ 참조 목록이 DB 의 FK 와 정확히 같다 — 스물두 곳이다', async () => {
     const rows = await prisma.$queryRawUnsafe<{ table: string; column: string }[]>(`
       SELECT n.nspname || '.' || r.relname AS "table",
              (SELECT a.attname FROM unnest(c.conkey) k
