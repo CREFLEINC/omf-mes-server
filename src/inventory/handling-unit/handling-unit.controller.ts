@@ -6,15 +6,19 @@ import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { HandlingUnitQuery, HandlingUnitQueryService } from './handling-unit-query.service';
 import { HandlingUnitContentView, HandlingUnitDetailView, HandlingUnitView } from './handling-unit-view';
+import { HandlingUnitRepackEventView } from './repack-event-view';
+import { RepackEventService } from './repack-event.service';
 
 /**
- * 취급 단위 7 오퍼레이션 중 조회 3건(PR ①) — 골격만. 등록·구성 치환·포장 확정·재구성
- * 이력 조회는 뒤 PR 이 이 컨트롤러에 얹는다(계획 `docs/coverage-100/slices/I-16-a2.md`
- * §11-3 — 스택 ①→②→③→④→⑤).
+ * 취급 단위 7 오퍼레이션 중 조회 4건(PR ①②). 등록·구성 치환·포장 확정은 뒤 PR 이 이
+ * 컨트롤러에 얹는다(계획 `docs/coverage-100/slices/I-16-a2.md` §11-3 — 스택 ①→②→③→④→⑤).
  */
 @Controller('inventory/handling-units')
 export class HandlingUnitController {
-  constructor(private readonly queries: HandlingUnitQueryService) {}
+  constructor(
+    private readonly queries: HandlingUnitQueryService,
+    private readonly repackEvents: RepackEventService,
+  ) {}
 
   @Get()
   @Contract('GET /inventory/handling-units')
@@ -40,5 +44,14 @@ export class HandlingUnitController {
     @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
   ): Promise<{ items: HandlingUnitContentView[] }> {
     return { items: await this.queries.contents(handlingUnitId) };
+  }
+
+  /** ⛔ 계약 응답이 `{items[]}` 뿐이라 `page` 가 없다 — 전건을 내린다(§6-4). */
+  @Get(':handlingUnitId/repack-events')
+  @Contract('GET /inventory/handling-units/{handlingUnitId}/repack-events')
+  async repackEventList(
+    @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
+  ): Promise<{ items: HandlingUnitRepackEventView[] }> {
+    return { items: await this.repackEvents.list(handlingUnitId) };
   }
 }
