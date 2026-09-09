@@ -132,6 +132,55 @@ describe('ContractValidator', () => {
     it('경로 파라미터가 맞으면 통과한다', () => {
       expect(validator.validate('GET /app/roles/{roleId}', { params: { roleId: '7' } })).toEqual([]);
     });
+
+    /**
+     * ⭐ `format: int64` 를 «실제로» 본다. `type: integer` 만으로는 1e20 이 통과하고
+     * (`Number.isInteger(1e20)` 가 참이다) 그 값이 Prisma 에서 500 이 됐다(통보 210).
+     *
+     * ⚠ 경계를 양쪽에서 집는다 — 위만 보면 언제나 거절하는 구현으로도 초록이다.
+     */
+    describe('int64 범위', () => {
+      const roleId = (value: string) =>
+        validator.validate('GET /app/roles/{roleId}', { params: { roleId: value } });
+
+      it.each([
+        ['1e20', '99999999999999999999'],
+        ['음수 1e20', '-99999999999999999999'],
+        // 배정도가 int64 최댓값을 표현하지 못해 2^63 으로 올림된다 — int8 에 안 들어간다.
+        ['int64 최댓값', '9223372036854775807'],
+        ['2^63', '9223372036854775808'],
+      ])('%s 는 INVALID 다', (_label, value) => {
+        expect(roleId(value)).toMatchObject([{ field: 'roleId', code: ERROR_CODE.INVALID }]);
+      });
+
+      it.each([
+        ['평범한 값', '7'],
+        // 배정도로 표현 가능한 가장 큰 int64. 유효한 값이라 통과해야 한다.
+        ['2^63 - 1024', '9223372036854774784'],
+        ['음수', '-1'],
+      ])('%s 는 통과한다', (_label, value) => {
+        expect(roleId(value)).toEqual([]);
+      });
+
+      /**
+       * ⛔ 본문 `userId` 도 계약이 `format: int64` 로 적었지만 «여기서» 막지 않는다 —
+       * I-28 이 자기 `RANGE` 규칙을 들고 있고 그 자리는 미결이다(R-11 · 통보 210).
+       */
+      it('본문 int64 는 막지 않는다 — I-28 의 RANGE 를 덮지 않는다', () => {
+        const key = 'POST /app/notification-subscriptions/recipients:preview';
+        // 키가 살아 있는지 «먼저» 못 박는다 — 없는 키면 validate 가 빈 배열을 돌려줘
+        // 아래 단언이 반증 불가가 된다.
+        expect(
+          validator.validate(key, { body: { recipients: [{ recipientTypeCode: '없는값' }] } }),
+        ).toMatchObject([{ field: 'recipients[0].recipientTypeCode' }]);
+
+        expect(
+          validator.validate(key, {
+            body: { recipients: [{ recipientTypeCode: 'USER', userId: 2 ** 63 }] },
+          }),
+        ).toEqual([]);
+      });
+    });
   });
 
   describe('선택 본문', () => {
