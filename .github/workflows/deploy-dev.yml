@@ -38,11 +38,11 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
 
-    runs-on: [self-hosted, omf-dev]
+    runs-on: [self-hosted, omf-mes-server]
     environment: dev
 
     env:
-      DEPLOY_DIR: /opt/omf-mes
+      DEPLOY_DIR: /opt/services/omf-mes-server
 
     steps:
       - name: Checkout
