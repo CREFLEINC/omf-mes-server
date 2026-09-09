@@ -47,19 +47,23 @@ describe('오퍼레이션 권한 매핑', () => {
     }
   });
 
-  it('⚠ 계약이 403 을 선언한 자리 중 아직 절반쯤만 등록됐다 — 나머지는 게이트가 던진다', () => {
+  it('⭐ 계약이 403 을 선언한 자리가 «전건» 등록됐다 — 게이트가 완성됐다', () => {
     const declares403 = registry.keys().filter((key) => {
       const responses = (registry.get(key)?.operation as { responses?: Record<string, unknown> })
         .responses;
       return responses !== undefined && '403' in responses;
     });
-    const covered = declares403.filter((key) => key in OPERATION_PERMISSIONS);
+    const missing = declares403.filter((key) => !(key in OPERATION_PERMISSIONS));
 
-    // 이 수치가 오르면 도메인이 자기 권한을 등록했다는 뜻이다. 250 이 되면 게이트가 완성된다.
     // 253 → 250(a6a87e1) — 403 을 선언하던 물류 취소 6건이 다형 2건으로, 실적 정정 승인
     // 상신 1건이 늘어 합이 셋 줄었다.
     expect(declares403).toHaveLength(250);
-    expect(covered.length).toBeGreaterThanOrEqual(152);
+    // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
+    // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
+    // 안 등록하면 여기서 **이름째** 드러난다.
+    // ⛔ 그 자리가 비면 `permission.guard.ts:48` 이 «런타임에» Error 를 던진다(공유계약 F-6).
+    //    던짐 자체는 `permission.guard.spec.ts` 가 단위로 잡는다 — e2e 로는 더 이상 못 만든다.
+    expect(missing).toEqual([]);
   });
 
   /**
