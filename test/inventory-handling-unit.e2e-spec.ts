@@ -35,7 +35,18 @@ const T_MIX = new Date('2026-09-02T12:00:00.000Z');
 const T_NEW = new Date('2026-09-03T00:00:00.000Z');
 const PASSWORD = '취급단위-검사-비밀번호';
 const PREFIX = 'HUE2E';
+// ⛔ 사슬 픽스처는 `PREFIX` 를 «안» 쓴다 — 목록 e2e 1 이 `PREFIX` 로 자기 3건을 세므로
+//   같은 접두어를 쓰면 그 배열 통째 단언이 깨진다. 정리는 아래 `OURS` 가 둘 다 집는다.
+const CHAIN_PREFIX = 'HUCHAIN';
 const PATH = '/api/inventory/handling-units';
+const ROLE = 'E2E_HU';
+// `POST /inventory/handling-units` 의 도출 권한 셋 중 하나(`derived-permissions.ts:165`).
+const PERMISSIONS = ['M-04-03'];
+const WORKER_NO = 'HUE2E01';
+/** 이 스위트가 만든 취급 단위 — 채번된 `HU-…` 도 잡아야 창고·위치 삭제가 안 막힌다(S-12). */
+const OURS =
+  `(handling_unit_no LIKE '${PREFIX}%' OR handling_unit_no LIKE '${CHAIN_PREFIX}%'` +
+  ` OR created_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}'))`;
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -95,7 +106,7 @@ interface PagedHandlingUnits {
   page: { page: number; size: number; total: number };
 }
 
-describe('취급 단위 조회 (e2e)', () => {
+describe('취급 단위 조회·등록 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -137,6 +148,14 @@ describe('취급 단위 조회 (e2e)', () => {
   //   없으면 `some` 을 `every` 로 바꿔도 언제나 초록이다(A 만의 이벤트·B 만의 이벤트는
   //   두 연산자가 같은 답을 낸다).
   let eventMixed: number;
+
+  // ⭐ PR ③ 순환 검사용. 물리 CHECK 는 `parent <> self` 하나뿐이라 prisma 로 «이미 순환인»
+  //   사슬을 심을 수 있다. 깊이 2(X↔Y)와 깊이 3(P→R→Q→P) 둘 다 둔다 — 자기참조만 막는
+  //   구현은 둘 다 통과시킨다. 그리고 «순환이 아닌» 3단 사슬(L1→L2→L3)이 반증이다.
+  let cycle2Id: number;
+  let cycle3Id: number;
+  let chainDeepId: number;
+  let userId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -592,7 +611,251 @@ describe('취급 단위 조회 (e2e)', () => {
     ).rejects.toThrow(/handling_unit_repack_event_line_line_no_check/);
   });
 
+  // ── PR ③ 등록 (18~24) ────────────────────────────────────────────────────
+
+  it('⭐ 201 — handlingUnitNo 가 HU-{오늘 UTC}- 로 시작하고 statusCode 가 OPEN 이며 ETag 가 1 이다', async () => {
+    const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    // ⭐ 축의 값을 «둘» 쏜다 — 유형·창고·위치·부모가 한 값이면 상수로 채워도 초록이다.
+    const withPlace = await create({
+      handlingUnitTypeCode: 'PALLET',
+      warehouseId: warehouse1Id,
+      locationId: location1Id,
+      parentHandlingUnitId: huA,
+    }).expect(201);
+    const bare = await create({ handlingUnitTypeCode: 'CART' }).expect(201);
+
+    const validate = validator('POST /inventory/handling-units', 201);
+    expect(validate(withPlace.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    expect(withPlace.body.handlingUnit.handlingUnitNo).toMatch(
+      new RegExp(`^HU-${day}-\\d{4,}$`),
+    );
+    expect(withPlace.headers.etag).toBe('1');
+    expect(bare.headers.etag).toBe('1');
+
+    // ⭐ 「호출했다」가 아니라 «무엇이 저장됐나»를 잰다 — 응답이 아니라 DB 를 되읽는다.
+    const stored = await prisma.handling_unit.findMany({
+      where: {
+        handling_unit_id: {
+          in: [withPlace.body.handlingUnit.handlingUnitId, bare.body.handlingUnit.handlingUnitId],
+        },
+      },
+      orderBy: { handling_unit_id: 'asc' },
+    });
+    expect(
+      stored.map((row) => [
+        row.handling_unit_type_code,
+        row.status_code,
+        nullableId(row.warehouse_id),
+        nullableId(row.location_id),
+        nullableId(row.parent_handling_unit_id),
+        row.version_no,
+        nullableId(row.created_by),
+        nullableId(row.updated_by),
+      ]),
+    ).toEqual([
+      ['PALLET', 'OPEN', warehouse1Id, location1Id, huA, 1, userId, userId],
+      // ⭐ 창고·위치를 «안 보내면 널»이다 — 서버가 기본값을 도출하지 않는다(§4-4).
+      //   그리고 이 행이 warehouseId↔locationId 뒤바꿈을 확정으로 잡는다(둘 다 널).
+      ['CART', 'OPEN', null, null, null, 1, userId, userId],
+    ]);
+    expect(stored.every((row) => row.handling_unit_no.startsWith(`HU-${day}-`))).toBe(true);
+
+    // ⭐ ajv 는 여분 칸을 못 잡는다 — 키 집합을 명시로 잰다. ⛔ 특히 PR ② 가 만든
+    //   `uomIdBefore`·`uomIdAfter` 나 `versionNo` 가 여기로 새면 안 된다.
+    expect(Object.keys(withPlace.body).sort()).toEqual(['contents', 'handlingUnit']);
+    expect(Object.keys(withPlace.body.handlingUnit).sort()).toEqual([
+      'handlingUnitId',
+      'handlingUnitNo',
+      'handlingUnitTypeCode',
+      'locationId',
+      'parentHandlingUnitId',
+      'statusCode',
+      'warehouseId',
+    ]);
+    expect(withPlace.body.handlingUnit).toMatchObject({
+      handlingUnitTypeCode: 'PALLET',
+      statusCode: 'OPEN',
+      warehouseId: warehouse1Id,
+      locationId: location1Id,
+      parentHandlingUnitId: huA,
+    });
+    expect(bare.body.contents).toEqual([]);
+  });
+
+  it('contents 를 함께 주면 같은 응답에 그 2행이 실린다', async () => {
+    const response = await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [
+        { itemId: item1Id, lotId: lot1Id, qty: 100, uomId },
+        // ⭐ 축을 둘로 벌린다 — 수량·품목·LOT·단위가 한 값이면 매핑을 뒤바꿔도 초록이다.
+        //   `100.000001` 은 Decimal(20,6) 의 끝자리다(§9-2).
+        { itemId: item2Id, lotId: lot2Id, qty: 100.000001, uomId: uom2Id },
+      ],
+    }).expect(201);
+
+    const created = response.body.handlingUnit.handlingUnitId as number;
+    expect(response.body.contents).toEqual([
+      expect.objectContaining({
+        handlingUnitId: created,
+        itemId: item1Id,
+        lotId: lot1Id,
+        qty: 100,
+        uomId,
+      }),
+      expect.objectContaining({
+        handlingUnitId: created,
+        itemId: item2Id,
+        lotId: lot2Id,
+        qty: 100.000001,
+        uomId: uom2Id,
+      }),
+    ]);
+    expect(Object.keys(response.body.contents[0]).sort()).toEqual([
+      'handlingUnitContentId',
+      'handlingUnitId',
+      'itemId',
+      'lotId',
+      'qty',
+      'uomId',
+    ]);
+
+    // ⭐ DB 로 되읽어 «무엇이 저장됐나»를 확정한다 — 응답 조립만 맞고 저장이 틀릴 수 있다.
+    const stored = await prisma.handling_unit_content.findMany({
+      where: { handling_unit_id: created },
+      orderBy: { handling_unit_content_id: 'asc' },
+    });
+    expect(
+      stored.map((row) => [
+        Number(row.item_id),
+        Number(row.lot_id),
+        row.qty.toString(),
+        Number(row.uom_id),
+        nullableId(row.created_by),
+      ]),
+    ).toEqual([
+      [item1Id, lot1Id, '100', uomId, userId],
+      [item2Id, lot2Id, '100.000001', uom2Id, userId],
+    ]);
+  });
+
+  it('handlingUnitTypeCode 가 코드 목록에 없으면 400 INVALID 다', async () => {
+    const response = await create({ handlingUnitTypeCode: 'NO_SUCH_TYPE' }).expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({
+        scope: 'field',
+        field: 'handlingUnitTypeCode',
+        code: 'INVALID',
+      }),
+    ]);
+    // ⭐ 반증 — 시드된 세 값은 통과한다(검증을 「전부 거부」로 바꿔도 초록이 되지 않는다).
+    await create({ handlingUnitTypeCode: 'BOX' }).expect(201);
+  });
+
+  it('⭐ 부모 사슬이 순환이면 400 INVALID — 깊이 2(A→B→A) 도 깊이 3(A→B→C→A) 도 잡는다', async () => {
+    for (const parent of [cycle2Id, cycle3Id]) {
+      const response = await create({
+        handlingUnitTypeCode: 'PALLET',
+        parentHandlingUnitId: parent,
+      }).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ scope: 'field', field: 'parentHandlingUnitId', code: 'INVALID' }),
+      ]);
+    }
+
+    // ⭐⭐ 반증 둘 — 「부모가 부모를 가지면 거부」·「깊이 상한을 둔다」로 구현해도 초록이
+    //    되지 않게 한다. 3단 사슬 아래에 4단째를 실제로 «만든다»(계획 §4-3 기준 1).
+    const deep = await create({
+      handlingUnitTypeCode: 'PALLET',
+      parentHandlingUnitId: chainDeepId,
+    }).expect(201);
+    expect(deep.body.handlingUnit.parentHandlingUnitId).toBe(chainDeepId);
+
+    // ⛔ 없는 부모는 404 가 아니라 400 이다(계약이 404 를 선언하지 않았다 · §4-4).
+    const absent = await create({
+      handlingUnitTypeCode: 'PALLET',
+      parentHandlingUnitId: 999999999,
+    }).expect(400);
+    expect(absent.body.errors).toEqual([
+      expect.objectContaining({ field: 'parentHandlingUnitId', code: 'INVALID' }),
+    ]);
+  });
+
+  it('contents 안 같은 (itemId, lotId) 둘이면 400 UNIQUE_VIOLATION 이다', async () => {
+    const response = await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [
+        { itemId: item1Id, lotId: lot1Id, qty: 1, uomId },
+        { itemId: item1Id, lotId: lot1Id, qty: 2, uomId: uom2Id },
+      ],
+    }).expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'contents[1]', code: 'UNIQUE_VIOLATION' }),
+    ]);
+
+    // ⭐ 반증 — 축을 `itemId` «만»으로 좁히면 이 두 줄이 400 이 되어 빨개진다.
+    const distinct = await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [
+        { itemId: item1Id, lotId: lot1Id, qty: 1, uomId },
+        { itemId: item1Id, lotId: lot2Id, qty: 2, uomId },
+      ],
+    }).expect(201);
+    expect(distinct.body.contents.map((c: { lotId: number }) => c.lotId)).toEqual([lot1Id, lot2Id]);
+  });
+
+  it('X-Worker-No 가 없으면 400 REQUIRED · 없는 사번이면 400 INVALID 다', async () => {
+    const before = await prisma.handling_unit.count({ where: { created_by: userId } });
+
+    const missing = await create({ handlingUnitTypeCode: 'BOX' }, { worker: null }).expect(400);
+    expect(missing.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'X-Worker-No', code: 'REQUIRED' }),
+    ]);
+
+    // ⭐ 존재 조회를 지우면 여기가 초록이 된다(변이 25).
+    const unknown = await create({ handlingUnitTypeCode: 'BOX' }, { worker: 'NO-SUCH' }).expect(400);
+    expect(unknown.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'X-Worker-No', code: 'INVALID' }),
+    ]);
+
+    // ⛔ 둘 다 «아무것도 안 만들고» 끝난다 — 사번 가드가 채번·INSERT 보다 먼저다.
+    expect(await prisma.handling_unit.count({ where: { created_by: userId } })).toBe(before);
+  });
+
+  it('⭐ 같은 Idempotency-Key 재전송 — HU 가 안 늘고 첫 응답 그대로이며 재전송에도 ETag 가 온다', async () => {
+    const key = randomUUID();
+    const body = {
+      handlingUnitTypeCode: 'PALLET',
+      warehouseId: warehouse2Id,
+      contents: [{ itemId: item2Id, lotId: lot2Id, qty: 42.5, uomId: uom2Id }],
+    };
+    const before = await prisma.handling_unit.count({ where: { created_by: userId } });
+
+    const first = await create(body, { key }).expect(201);
+    const second = await create(body, { key }).expect(201);
+
+    expect(await prisma.handling_unit.count({ where: { created_by: userId } })).toBe(before + 1);
+    expect(second.body).toEqual(first.body);
+    // ⭐ `runIdempotent` 는 `setEtag` 를 안 부른다 — 버전을 «캐시 본문»에 안 실으면 재전송
+    //   응답의 이 헤더가 express 의 약한 검증자나 `undefined` 가 된다(§4-1 · 변이 12).
+    expect(first.headers.etag).toBe('1');
+    expect(second.headers.etag).toBe('1');
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  function create(
+    body: Record<string, unknown>,
+    opts: { key?: string; worker?: string | null } = {},
+  ): request.Test {
+    const call = request(app.getHttpServer())
+      .post(PATH)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', opts.key ?? randomUUID());
+    if (opts.worker !== null) call.set('X-Worker-No', opts.worker ?? WORKER_NO);
+    return call.send(body);
+  }
 
   async function list(qs: string): Promise<PagedHandlingUnits> {
     const response = await request(app.getHttpServer())
@@ -644,6 +907,13 @@ describe('취급 단위 조회 (e2e)', () => {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '취급단위검사', status_code: 'EMPLOYED' },
     });
+    userId = Number(user.app_user_id);
+    // ⭐ 등록(PR ③)은 403 을 «선언한» 자리라 권한이 필요하다 — 조회 4건은 여전히 0줄이다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '취급단위검사용' } });
+    await prisma.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     // ⭐ 이벤트를 «수행한» 계정을 로그인 계정과 다르게 둔다 — 한 값이면 performedBy 를
     //    엉뚱한 칸에서 채워도 초록일 수 있다.
     const performer = await prisma.app_user.create({
@@ -777,6 +1047,18 @@ describe('취급 단위 조회 (e2e)', () => {
     });
     lot2Id = Number(lot2.lot_id);
 
+    // ⭐ `X-Worker-No` 는 «읽고 버리는» 축이다(담을 칸 0 · §8-3) — 그래도 존재 확인을 하므로
+    //   실재하는 사번이 하나 있어야 등록이 통과한다.
+    await prisma.worker.create({
+      data: {
+        worker_no: WORKER_NO,
+        worker_name: '취급단위검사작업자',
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        status_code: 'EMPLOYED',
+      },
+    });
+
     const a = await prisma.handling_unit.create({
       data: {
         handling_unit_no: `${PREFIX}-ALPHA-1`,
@@ -808,6 +1090,11 @@ describe('취급 단위 조회 (e2e)', () => {
       },
     });
     huC = Number(c.handling_unit_id);
+
+    cycle2Id = await makeCycle(['X', 'Y']);
+    cycle3Id = await makeCycle(['P', 'Q', 'R']);
+    // ⭐ 반증 — 순환이 «아닌» 3단 사슬. 여기에 붙이는 등록은 201 이어야 한다(깊이 상한 0).
+    chainDeepId = await makeChain(['L1', 'L2', 'L3']);
 
     const content1 = await prisma.handling_unit_content.create({
       data: {
@@ -873,6 +1160,38 @@ describe('취급 단위 조회 (e2e)', () => {
     ]);
   }
 
+  /** 위→아래 사슬 하나. 돌려주는 것은 «맨 아래»(가장 깊은) 행의 id 다. */
+  async function makeChain(suffixes: string[]): Promise<number> {
+    let parent: bigint | null = null;
+    for (const suffix of suffixes) {
+      const row: { handling_unit_id: bigint } = await prisma.handling_unit.create({
+        data: {
+          handling_unit_no: `${CHAIN_PREFIX}-${suffix}`,
+          handling_unit_type_code: 'PALLET',
+          status_code: 'OPEN',
+          parent_handling_unit_id: parent,
+        },
+        select: { handling_unit_id: true },
+      });
+      parent = row.handling_unit_id;
+    }
+    return Number(parent);
+  }
+
+  /**
+   * ⭐ 사슬을 만든 뒤 «맨 위»의 부모를 «맨 아래»로 돌려 순환을 완성한다. 물리 CHECK 는
+   * `parent <> self` 하나뿐이라 이 UPDATE 를 막지 않는다(계획 §4-3 · psql 원문).
+   * 돌려주는 것은 맨 아래 행 — 등록이 그것을 부모로 지목한다.
+   */
+  async function makeCycle(suffixes: string[]): Promise<number> {
+    const bottom = await makeChain(suffixes);
+    await prisma.handling_unit.update({
+      where: { handling_unit_no: `${CHAIN_PREFIX}-${suffixes[0]}` },
+      data: { parent_handling_unit_id: bottom },
+    });
+    return bottom;
+  }
+
   /**
    * ⭐ 라인을 «한 건씩 차례로» 심는다 — 중첩 create 는 삽입 순서를 약속하지 않아
    * 「`orderBy line_no` 를 빼면 빨개진다」가 우연에 기대게 된다.
@@ -901,14 +1220,13 @@ describe('취급 단위 조회 (e2e)', () => {
    */
   async function cleanup(): Promise<void> {
     await prisma.$executeRawUnsafe(`
-      UPDATE inventory.handling_unit SET parent_handling_unit_id = NULL
-       WHERE handling_unit_no LIKE '${PREFIX}%'`);
+      UPDATE inventory.handling_unit SET parent_handling_unit_id = NULL WHERE ${OURS}`);
     // ⭐ 신설 두 표를 «가장 먼저» 지운다 — 라인이 handling_unit·item·lot·uom·app_user 를
     //   전부 가리켜, 남으면 아래 삭제가 줄줄이 FK 위반으로 막힌다(§9-1 정리 역순).
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_repack_event_line
        WHERE handling_unit_id IN (
-         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'
+         SELECT handling_unit_id FROM inventory.handling_unit WHERE ${OURS}
        )`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_repack_event
@@ -916,9 +1234,10 @@ describe('취급 단위 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_content
        WHERE handling_unit_id IN (
-         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'
+         SELECT handling_unit_id FROM inventory.handling_unit WHERE ${OURS}
        )`);
-    await prisma.$executeRawUnsafe(`DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM inventory.handling_unit WHERE ${OURS}`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
@@ -936,7 +1255,10 @@ describe('취급 단위 조회 (e2e)', () => {
     if (userIds.length > 0) {
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });
       await prisma.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
     }
+    await prisma.role_permission.deleteMany({ where: { role: { role_code: ROLE } } });
+    await prisma.role.deleteMany({ where: { role_code: ROLE } });
   }
 });
