@@ -788,6 +788,36 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     ]);
   });
 
+  /**
+   * ⭐ `assertReferences` 를 «지워도» 초록이면 안 된다(PR #522 리뷰 Major-1).
+   * 지우면 물리 FK 가 대신 400 을 내는데(`prisma-error.ts` 가 P2003 을 접는다) 봉투가 다르다:
+   *   ⓐ FK 는 **처음 걸린 하나만** 낸다 — 둘이 틀려도 오류 1건이다
+   *   ⓑ 중첩 create 의 `modelName` 이 부모라 `contents[i].itemId` 이름을 못 되뽑는다
+   * 위의 `parentHandlingUnitId` 하나짜리 시험은 하필 두 경로의 봉투가 «같은» 자리였다.
+   */
+  it('⭐ 참조 존재 확인 — 창고·위치가 함께 없으면 오류가 «둘»이고, 없는 품목은 contents[i] 로 짚는다', async () => {
+    const both = await create({
+      handlingUnitTypeCode: 'PALLET',
+      warehouseId: 999999999,
+      locationId: 999999998,
+    }).expect(400);
+    // ⛔ FK 그물은 여기서 1건만 낸다 — 「둘」이 `assertReferences` 의 지문이다.
+    expect(both.body.errors).toHaveLength(2);
+    expect(both.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
+      'locationId',
+      'warehouseId',
+    ]);
+
+    const line = await create({
+      handlingUnitTypeCode: 'BOX',
+      contents: [{ itemId: 999999999, lotId: lot1Id, qty: 1, uomId }],
+    }).expect(400);
+    // ⛔ FK 그물은 이 이름을 못 만든다(중첩 create 의 modelName 이 부모다).
+    expect(line.body.errors).toEqual([
+      expect.objectContaining({ field: 'contents[0].itemId', code: 'INVALID' }),
+    ]);
+  });
+
   it('contents 안 같은 (itemId, lotId) 둘이면 400 UNIQUE_VIOLATION 이다', async () => {
     const response = await create({
       handlingUnitTypeCode: 'BOX',

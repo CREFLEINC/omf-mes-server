@@ -204,8 +204,11 @@ const CODE_GROUP = 'HANDLING_UNIT_TYPE';
  * 순환 방지는 **서버 몫**이다 — 물리 CHECK 는 `parent <> self` 하나뿐이라 `A→B→A` 를 안
  * 막는다(`ck_handling_unit_parent` 원문 · 계획 §4-3). 등록되는 새 행은 아직 아무의 부모도
  * 아니므로 여기서 잡는 것은 **이미 순환인 부모 사슬**이다.
- * ⛔ 깊이 상한을 두지 않는다 — `P-04-01` §8 미결 4 가 미정이라 3단 이상을 막으면 안 된다.
+ * ⛔ «깊이» 상한은 두지 않는다 — `P-04-01` §8 미결 4 가 미정이라 3단 이상을 막으면 안 된다.
  * ⭐ 이미 지난 조상을 다시 만나면 그 자리에서 400 `INVALID` 다(500 도 무한 루프도 아니다).
+ * ⚠ `PARENT_WALK_LIMIT` 은 «깊이» 상한이 아니라 **작업량 상한**이다 — 종료는 `seen` 이
+ *   이미 보장하므로 이 상한은 「한 요청이 조상 질의를 200회 넘게 하지 않는다」는 뜻뿐이다.
+ *   그래서 201단짜리 «정상» 사슬도 거절된다(현장에 그런 중첩은 없다 · PR #522 리뷰 Minor-1).
  */
 export async function assertParentAcyclic(
   tx: Prisma.TransactionClient,
@@ -214,8 +217,14 @@ export async function assertParentAcyclic(
   const seen = new Set<number>();
   let cursor = parentId;
   for (let step = 0; cursor !== null; step += 1) {
-    if (seen.has(cursor) || step >= PARENT_WALK_LIMIT) {
+    if (seen.has(cursor)) {
       throw one(field('parentHandlingUnitId', ERROR_CODE.INVALID, '상위 취급 단위가 순환합니다.'));
+    }
+    // ⚠ 여기는 순환이 «아니다» — 사슬이 너무 길 뿐이라 그렇게 말한다(리뷰 Minor-1).
+    if (step >= PARENT_WALK_LIMIT) {
+      throw one(
+        field('parentHandlingUnitId', ERROR_CODE.INVALID, '상위 취급 단위 사슬이 너무 깊습니다.'),
+      );
     }
     seen.add(cursor);
     const row = await tx.handling_unit.findUnique({
