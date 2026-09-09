@@ -43,10 +43,16 @@ const ROLE = 'E2E_HU';
 // `POST /inventory/handling-units` 의 도출 권한 셋 중 하나(`derived-permissions.ts:165`).
 const PERMISSIONS = ['M-04-03'];
 const WORKER_NO = 'HUE2E01';
-/** 이 스위트가 만든 취급 단위 — 채번된 `HU-…` 도 잡아야 창고·위치 삭제가 안 막힌다(S-12). */
+/**
+ * 이 스위트가 만든 취급 단위 — 채번된 `HU-…` 도 잡아야 창고·위치 삭제가 안 막힌다(S-12).
+ * ⭐ 이름·작성자뿐 아니라 «우리 창고·위치를 가리키는가»도 본다 — `created_by` 가 어긋난
+ * 행이 하나만 남아도 창고 삭제가 FK 로 막혀 다음 실행이 통째로 붉어진다(변이 주입 중 실측).
+ */
 const OURS =
   `(handling_unit_no LIKE '${PREFIX}%' OR handling_unit_no LIKE '${CHAIN_PREFIX}%'` +
-  ` OR created_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}'))`;
+  ` OR created_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}')` +
+  ` OR warehouse_id IN (SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')` +
+  ` OR location_id IN (SELECT location_id FROM mdm.location WHERE location_code LIKE '${PREFIX}%'))`;
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -1219,8 +1225,13 @@ describe('취급 단위 조회·등록 (e2e)', () => {
    * handling_unit_id`)는 먼저 풀어 둔 뒤 지운다.
    */
   async function cleanup(): Promise<void> {
+    // ⭐ 자기 행의 부모뿐 아니라 «자기 행을 부모로 가리키는» 남의 행도 푼다 — 안 그러면
+    //   그런 행이 하나만 남아도 아래 DELETE 가 FK 로 막혀 다음 실행이 통째로 붉어진다
+    //   (변이 주입 중 실측 · 자가 치유).
     await prisma.$executeRawUnsafe(`
-      UPDATE inventory.handling_unit SET parent_handling_unit_id = NULL WHERE ${OURS}`);
+      UPDATE inventory.handling_unit SET parent_handling_unit_id = NULL
+       WHERE ${OURS}
+          OR parent_handling_unit_id IN (SELECT handling_unit_id FROM inventory.handling_unit WHERE ${OURS})`);
     // ⭐ 신설 두 표를 «가장 먼저» 지운다 — 라인이 handling_unit·item·lot·uom·app_user 를
     //   전부 가리켜, 남으면 아래 삭제가 줄줄이 FK 위반으로 막힌다(§9-1 정리 역순).
     await prisma.$executeRawUnsafe(`
@@ -1231,11 +1242,13 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_repack_event
        WHERE performed_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}')`);
+    // ⭐ 우리 품목·LOT 을 «가리키는» 구성 행도 함께 지운다 — 남의 HU 에 달려 있어도
+    //   그것은 이 스위트가 만든 것이고, 남으면 아래 lot·item 삭제가 FK 로 막힌다.
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_content
-       WHERE handling_unit_id IN (
-         SELECT handling_unit_id FROM inventory.handling_unit WHERE ${OURS}
-       )`);
+       WHERE handling_unit_id IN (SELECT handling_unit_id FROM inventory.handling_unit WHERE ${OURS})
+          OR item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')
+          OR lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM inventory.handling_unit WHERE ${OURS}`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
