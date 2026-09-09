@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -30,7 +31,7 @@ import {
 } from './transfer-arrive.service';
 
 /**
- * 재고 이동 6건 중 조회 3건 + 반출 등록 + 도착 확정(PR ①②③). 라인 치환은 PR ④ 가 잇는다.
+ * 재고 이동 6건 — 조회 3건 + 반출 등록 + 도착 확정(PR ①②③) + 라인 치환 자물쇠(PR ④).
  * `M-01-10` 이 소유하는 화면 — 조회는 계약이 403 을 선언하지 않아 `manual-permissions.ts`
  * 에 없다(`permission.guard.ts:35-40`).
  */
@@ -106,6 +107,35 @@ export class StockTransferController {
   ): Promise<{ items: StockTransferLineView[] }> {
     return { items: await this.queries.lines(stockTransferId) };
   }
+
+  /**
+   * ⭐ 「자물쇠까지만」이다(통보 123) — 오늘 실재하는 모든 전표가 반출을 끝낸 상태라 200 이
+   * 도달 불가하고, 이 호출은 400 `STATE_LOCKED` 로 닫힌다. 그래서 본문을 «안 받는다» —
+   * 계약 검증 가드가 `items` 의 모양을 이미 보고, 서비스는 한 칸도 읽지 않는다.
+   * ⭐ If-Match 는 **부모** `stock_transfer.version_no` 다(계약 · B-1-1).
+   * ⛔ ETag 를 안 내린다 — 계약 200 에 응답 헤더 선언이 0건이다. 그래서 `runVersioned` 가
+   *    아니라 `runIdempotent` 다(형제 조정은 헤더가 «선언돼» 내린다 — 베끼면 어긋난다).
+   */
+  @Put(':stockTransferId/lines')
+  @Contract('PUT /logistics/stock-transfers/{stockTransferId}/lines')
+  replaceLines(
+    @Req() request: Request,
+    @Param('stockTransferId', ParseIntPipe) stockTransferId: number,
+  ): Promise<{ items: StockTransferLineView[] }> {
+    const version = versionOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.transfers.replaceLines(stockTransferId, version),
+    );
+  }
+}
+
+/** ⛔ `runVersioned` 를 못 쓴다 — 응답에 ETag 가 없어 새 토큰을 내릴 자리가 없다(출고 선례). */
+function versionOf(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+  }
+  return version;
 }
 
 function userOf(request: Request): number {
