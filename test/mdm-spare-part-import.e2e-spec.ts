@@ -79,6 +79,8 @@ describe("예비품 엑셀 올리기 (e2e)", () => {
       await workbook([["알 수 없는 열"], ["값"]]),
       randomUUID(),
     ).expect(400);
+
+    await upload(Buffer.alloc(10 * 1024 * 1024 + 1), randomUUID()).expect(413);
   });
 
   it("⛔ 권한이 없으면 403이다", async () => {
