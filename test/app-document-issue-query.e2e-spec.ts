@@ -589,10 +589,19 @@ describe('발행 이력 목록·상세 (I-27 P1 e2e)', () => {
       outcome: 'SUCCEEDED',
       issuedAt: '2090-01-01T00:00:00.000002Z',
     });
+    // 「숫자가 겹치는 다른 유형을 안 섞는다」를 시험하려고 LOT 번호를 MOLD 대상에 «일부러»
+    // 심는다. ⛔ 회차를 2 로 갈라 두는 것이 핵심이다 — `trace.lot` 과 `mdm.mold` 는 각자
+    // 1번부터 번호를 매겨 `lotId === moldId` 가 될 수 있고, 그러면 아래 「진짜 금형」 기록과
+    // `(TOOL_LABEL, MOLD, 같은 번호, 1)` 로 유니크가 겹쳐 픽스처가 통째로 죽는다.
+    // 빈 DB 에서 «항상» 재현됐다(이슈 #537).
+    // ⚠ 회차를 올리면 사유가 «필수»다 — `ck_document_reissue_reason`(`issue_seq = 1 OR
+    //   reissue_reason_code IS NOT NULL`). 재발행은 왜 다시 뽑았는지 남겨야 한다.
     await createLog({
       documentType: 'TOOL_LABEL',
       targetType: 'MOLD',
       targetId: lotId,
+      issueSeq: 2,
+      reason: REASON,
       issuedAt: '2090-08-01T00:00:00Z',
     });
     await createLog({
