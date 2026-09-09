@@ -31,6 +31,7 @@ export const WAREHOUSE_REFERRERS: readonly Referrer[] = [
   ['logistics.goods_receipt', 'warehouse_id'],
   ['logistics.picking_order', 'warehouse_id'],
   ['logistics.putaway_rule', 'warehouse_id'],
+  ['logistics.recycle_entry', 'warehouse_id'],
   ['logistics.shipment', 'warehouse_id'],
   ['logistics.stock_transfer', 'from_warehouse_id'],
   ['logistics.stock_transfer', 'to_warehouse_id'],
