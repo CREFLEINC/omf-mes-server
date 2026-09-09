@@ -1220,6 +1220,7 @@ model sales_order {
   partner_sales_order_customer_idTopartner        partner            @relation("sales_order_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_sales_order_ship_to_partner_idTopartner partner            @relation("sales_order_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order_line                                sales_order_line[]
+  shipment_request                                shipment_request[]
 
   @@schema("logistics")
 }
@@ -1347,12 +1348,15 @@ model shipment_request {
   ship_time_slot_start                                 DateTime?               @db.Time(6)
   ship_time_slot_end                                   DateTime?               @db.Time(6)
   ship_time_slot_code                                  String?                 @db.VarChar(50)
+  sales_order_id                                       BigInt?
   shipment                                             shipment[]
   partner_shipment_request_customer_idTopartner        partner                 @relation("shipment_request_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_shipment_request_ship_to_partner_idTopartner partner                 @relation("shipment_request_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
+  sales_order                                          sales_order?            @relation(fields: [sales_order_id], references: [sales_order_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request_line                                shipment_request_line[]
 
   @@index([customer_id, requested_ship_date, status_code], map: "ix_shipment_customer_date")
+  @@index([sales_order_id], map: "ix_shipment_request_sales_order")
   @@schema("logistics")
 }
 
