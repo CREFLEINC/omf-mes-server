@@ -23,10 +23,11 @@ import { assertAdminRemains } from './last-admin';
  * ⚠ 계약 `Role` 은 「`role_permission`·`user_role` 의 FK 대상이라 셀 수 있다」고 둘만
  * 들었다. 그 둘은 이 화면이 «관리하는» 자리라 눈에 띈 것이고, 결재선 단계·판정유형 통제도
  * 같은 역할을 가리킨다. 잠금이 묻는 것은 「이 역할을 가리키는 곳이 있는가」이므로
- * 역할을 가리지 않고 넷을 다 센다(부서와 같은 판단 — `department.service.ts`).
+ * 역할을 가리지 않고 다섯을 다 센다(부서와 같은 판단 — `department.service.ts`).
  */
 export const ROLE_REFERRERS: readonly Referrer[] = [
   ['app.approval_route_step', 'approver_role_id'],
+  ['app.notification_subscription_recipient', 'role_id'],
   ['app.role_permission', 'role_id'],
   ['app.user_role', 'role_id'],
   ['mdm.judgment_type_control', 'approver_role_id'],
