@@ -42,6 +42,8 @@ interface LockedCount {
 
 type ExistingLine = Prisma.inventory_count_lineGetPayload<object>;
 const VARIANCE_REASON = 'VARIANCE_REASON';
+const QTY_SCALE = 6;
+const QTY_INT_LIMIT = '100000000000000';
 
 @Injectable()
 export class InventoryCountUpdateService {
@@ -366,6 +368,21 @@ function assertRequestDimensions(input: InventoryCountLineReplace): void {
   const ids = new Set<number>();
   const errors: ErrorItem[] = [];
   input.lines.forEach((line, index) => {
+    const countedQty = new Prisma.Decimal(line.countedQty);
+    if (
+      !Number.isFinite(line.countedQty) ||
+      countedQty.isNegative() ||
+      countedQty.decimalPlaces() > QTY_SCALE ||
+      countedQty.gte(QTY_INT_LIMIT)
+    ) {
+      errors.push(
+        field(
+          `lines.${index}.countedQty`,
+          ERROR_CODE.RANGE,
+          '수량은 0 이상, 소수 6자리·정수 14자리 이하여야 합니다.',
+        ),
+      );
+    }
     if (line.locationId !== input.locationId) {
       errors.push(
         field(`lines.${index}.locationId`, ERROR_CODE.INVALID, '요청 위치와 같아야 합니다.'),

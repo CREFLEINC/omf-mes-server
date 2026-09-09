@@ -177,6 +177,23 @@ describe('위치별 재고 실사 입력', () => {
     expect(tx.$queryRaw).not.toHaveBeenCalled();
   });
 
+  it.each([-1, 10.0000005, 100_000_000_000_000])(
+    'DB 수량형에 손실 없이 담을 수 없는 countedQty %s를 RANGE로 거부한다',
+    async (countedQty) => {
+      const { service, tx } = fixture();
+
+      await expect(
+        service.replaceWithin(tx, 91, body([line({ countedQty })]), { appUserId: 71 }),
+      ).rejects.toMatchObject({
+        status: 400,
+        response: {
+          errors: [expect.objectContaining({ field: 'lines.0.countedQty', code: 'RANGE' })],
+        },
+      });
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+    },
+  );
+
   it('기존 라인의 차원을 바꾸거나 다른 위치의 ID를 제출하면 INVALID다', async () => {
     const { service, tx } = fixture();
     await expect(
