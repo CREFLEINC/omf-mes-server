@@ -208,6 +208,34 @@ describe("수집 채널 (e2e)", () => {
       .expect(404);
   });
 
+  it("목록은 숨은 활성 기본값 없이 정렬·count·page를 함께 낸다", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/maintenance/collection-channels")
+      .query({ equipmentId, page: 1, size: 1 })
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      items: [expect.objectContaining({ collectionChannelId: unmappedId, isActive: false })],
+      totalCount: 2,
+      page: { page: 1, size: 1, total: 2 },
+    });
+  });
+
+  it("목록의 isActive 조건은 명시했을 때만 적용한다", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/maintenance/collection-channels")
+      .query({ equipmentId, isActive: true })
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.items).toEqual([
+      expect.objectContaining({ collectionChannelId: mappedId, isActive: true }),
+    ]);
+    expect(response.body.totalCount).toBe(1);
+    expect(response.body.page.total).toBe(1);
+  });
+
   async function login(): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post("/api/app/sessions")
