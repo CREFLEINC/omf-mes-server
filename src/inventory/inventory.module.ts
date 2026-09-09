@@ -15,6 +15,7 @@ import { InventoryBalanceService } from './balance/inventory-balance.service';
 import { InventoryCountController } from './count/inventory-count.controller';
 import { InventoryCountCreateService } from './count/inventory-count-create.service';
 import { InventoryCountQueryService } from './count/inventory-count-query.service';
+import { InventoryCountUpdateService } from './count/inventory-count-update.service';
 import { InventoryReservationController } from './balance/inventory-reservation.controller';
 import { InventoryReservationService } from './balance/inventory-reservation.service';
 import { HandlingUnitContentService } from './handling-unit/handling-unit-content.service';
@@ -60,6 +61,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryAdjustmentUpdateService,
     InventoryCountQueryService,
     InventoryCountCreateService,
+    InventoryCountUpdateService,
     HandlingUnitQueryService,
     RepackEventService,
     HandlingUnitService,

@@ -21,6 +21,7 @@ const NOPERM_ID = 'e2e-inventory-count-no-permission';
 const PASSWORD = '실사-조회-비밀번호';
 const PREFIX = 'ICE2E';
 const ROLE = 'E2E_INVENTORY_COUNT';
+const WORKER_NO = `${PREFIX}-WORKER`;
 const AT = new Date('2026-09-09T01:02:03.000Z');
 
 function validator(operation: string, status = '200'): ValidateFunction {
@@ -283,6 +284,174 @@ describe('재고 실사 조회·생성 (e2e)', () => {
       .expect(400);
   });
 
+  it('위치 입력은 선택 If-Match 없이 기존 스냅샷을 보존하고 멱등 재생한다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const key = randomUUID();
+    const input = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:11:12.000Z',
+      lines: [
+        {
+          inventoryCountLineId: Number(
+            (
+              await prisma.inventory_count_line.findFirstOrThrow({
+                where: { inventory_count_id: blindId, location_id: location1Id },
+              })
+            ).inventory_count_line_id,
+          ),
+          locationId: location1Id,
+          itemId,
+          lotId: Number(
+            (
+              await prisma.lot.findFirstOrThrow({ where: { lot_no: `${PREFIX}-LOT` } })
+            ).lot_id,
+          ),
+          countedQty: 100,
+          uomId: Number(uomId),
+          countedAt: '2026-09-09T10:10:00.000Z',
+        },
+      ],
+    };
+    const first = await putLines(blindId, input, key).expect(200);
+    expect(first.body.items).toEqual([
+      expect.objectContaining({
+        locationId: location1Id,
+        countedQty: 100,
+        varianceQty: 0,
+        countedBy: Number(userId),
+        counted: true,
+      }),
+    ]);
+    expect(first.body.items[0]).not.toHaveProperty('systemQty');
+    expect(first.body.page).toEqual({ page: 1, size: 50, total: 1 });
+    const stored = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location1Id },
+    });
+    expect(stored.system_qty.toNumber()).toBe(100);
+    expect(stored.counted).toBe(true);
+    expect((await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: blindId } })).version_no)
+      .toBe(2);
+
+    const replay = await putLines(blindId, input, key).expect(200);
+    expect(replay.body).toEqual(first.body);
+    expect((await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: blindId } })).version_no)
+      .toBe(2);
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('위치 입력은 낡은 If-Match와 같은 멱등 키의 다른 본문을 409로 가른다', async () => {
+    const body = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:12:00.000Z',
+      lines: [],
+    };
+    await putLines(blindId, body, randomUUID(), '1').expect(409);
+
+    const key = randomUUID();
+    await putLines(blindId, body, key).expect(200);
+    await putLines(blindId, { ...body, occurredAt: '2026-09-09T10:13:00.000Z' }, key).expect(409);
+  });
+
+  it('빈 배열은 해당 위치만 미실사로 되돌리고 다른 위치는 보존한다', async () => {
+    const location1 = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location1Id },
+    });
+    const location2 = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location2Id },
+    });
+    expect(location1.counted).toBe(false);
+    expect(location1.counted_qty.toNumber()).toBe(0);
+    expect(location1.counted_by).toBeNull();
+    expect(location2.counted).toBe(true);
+    expect(location2.counted_qty.toNumber()).toBe(8);
+  });
+
+  it('PLANNED 실사의 신규 현장 라인은 현재 장부 0과 계정 없는 작업자를 보존하며 진행중으로 옮긴다', async () => {
+    const lotId = Number(
+      (await prisma.lot.findFirstOrThrow({ where: { lot_no: `${PREFIX}-LOT` } })).lot_id,
+    );
+    const response = await putLines(
+      plannedId,
+      {
+        locationId: location2Id,
+        businessDate: '2026-09-09',
+        occurredAt: '2026-09-09T10:14:00.000Z',
+        lines: [
+          {
+            locationId: location2Id,
+            itemId,
+            lotId,
+            countedQty: 0,
+            uomId: Number(uomId),
+            countedAt: '2026-09-09T10:14:00.000Z',
+          },
+        ],
+      },
+      randomUUID(),
+      undefined,
+      WORKER_NO,
+    ).expect(200);
+    expect(response.body.items).toEqual([
+      expect.objectContaining({ systemQty: 0, countedQty: 0, countedBy: null, counted: true }),
+    ]);
+    const validate = validator('PUT /inventory/counts/{inventoryCountId}/lines');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(
+      (await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: plannedId } }))
+        .status_code,
+    ).toBe('IN_PROGRESS');
+  });
+
+  it('위치 입력은 권한·상태·위치·차이 사유를 쓰기 전에 거부한다', async () => {
+    const base = {
+      locationId: location1Id,
+      businessDate: '2026-09-09',
+      occurredAt: '2026-09-09T10:15:00.000Z',
+      lines: [],
+    };
+    await request(app.getHttpServer())
+      .put(`/api/inventory/counts/${blindId}/lines`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .send(base)
+      .expect(403);
+    await putLines(completedId, base, randomUUID()).expect(400);
+    await putLines(
+      blindId,
+      { ...base, locationId: 999999999 },
+      randomUUID(),
+    ).expect(400);
+
+    const existing = await prisma.inventory_count_line.findFirstOrThrow({
+      where: { inventory_count_id: blindId, location_id: location2Id },
+    });
+    const missingReason = await putLines(
+      blindId,
+      {
+        ...base,
+        locationId: location2Id,
+        lines: [
+          {
+            inventoryCountLineId: Number(existing.inventory_count_line_id),
+            locationId: location2Id,
+            itemId,
+            lotId: Number(existing.lot_id),
+            countedQty: 9,
+            uomId: Number(uomId),
+            countedAt: '2026-09-09T10:15:00.000Z',
+          },
+        ],
+      },
+      randomUUID(),
+    ).expect(400);
+    expect(missingReason.body.errors).toEqual([
+      expect.objectContaining({ field: 'lines.0.varianceReasonCode', code: 'REQUIRED' }),
+    ]);
+  });
+
   async function list(query: string): Promise<{
     items: { inventoryCountId: number }[];
     page: { page: number; size: number; total: number };
@@ -308,6 +477,22 @@ describe('재고 실사 조회·생성 (e2e)', () => {
     return response.body;
   }
 
+  function putLines(
+    id: number,
+    body: Record<string, unknown>,
+    key: string,
+    version?: string,
+    workerNo?: string,
+  ): request.Test {
+    let operation = request(app.getHttpServer())
+      .put(`/api/inventory/counts/${id}/lines`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key);
+    if (version !== undefined) operation = operation.set('If-Match', version);
+    if (workerNo !== undefined) operation = operation.set('X-Worker-No', workerNo);
+    return operation.send(body);
+  }
+
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '실사 조회자', status_code: 'EMPLOYED' },
@@ -319,8 +504,11 @@ describe('재고 실사 조회·생성 (e2e)', () => {
     const role = await prisma.role.create({
       data: { role_code: ROLE, role_name: '재고 실사 E2E' },
     });
-    await prisma.role_permission.create({
-      data: { role_id: role.role_id, permission_code: 'W-01-04' },
+    await prisma.role_permission.createMany({
+      data: ['W-01-04', 'M-01-11'].map((permission_code) => ({
+        role_id: role.role_id,
+        permission_code,
+      })),
     });
     await prisma.user_role.create({ data: { app_user_id: userId, role_id: role.role_id } });
     const noPerm = await prisma.app_user.create({
@@ -450,6 +638,15 @@ describe('재고 실사 조회·생성 (e2e)', () => {
       },
     });
     negativeLotId = negativeLot.lot_id;
+    await prisma.worker.create({
+      data: {
+        worker_no: WORKER_NO,
+        worker_name: '계정 없는 실사 작업자',
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        status_code: 'EMPLOYED',
+      },
+    });
     await prisma.inventory_balance.createMany({
       data: [
         {
@@ -637,6 +834,7 @@ describe('재고 실사 조회·생성 (e2e)', () => {
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({
       where: { business_unit_code: { startsWith: PREFIX } },

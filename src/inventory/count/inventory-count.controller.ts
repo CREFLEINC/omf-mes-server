@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -15,8 +16,9 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { requestFingerprint } from '../../common/idempotency';
-import { setEtag } from '../../common/optimistic-lock';
+import { IdempotencyService, requestFingerprint } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
   InventoryCountLineQuery,
@@ -32,12 +34,18 @@ import {
   InventoryCountCreate,
   InventoryCountCreateService,
 } from './inventory-count-create.service';
+import {
+  InventoryCountLineReplace,
+  InventoryCountUpdateService,
+} from './inventory-count-update.service';
 
 @Controller('inventory/counts')
 export class InventoryCountController {
   constructor(
     private readonly counts: InventoryCountQueryService,
     private readonly creates: InventoryCountCreateService,
+    private readonly updates: InventoryCountUpdateService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   @Get()
@@ -83,5 +91,24 @@ export class InventoryCountController {
     @Query() query: InventoryCountLineQuery,
   ): Promise<PagedResponse<InventoryCountLineView>> {
     return this.counts.lines(inventoryCountId, query);
+  }
+
+  @Put(':inventoryCountId/lines')
+  @Contract('PUT /inventory/counts/{inventoryCountId}/lines')
+  replaceLines(
+    @Req() request: Request,
+    @Param('inventoryCountId', ParseIntPipe) inventoryCountId: number,
+    @Body() body: InventoryCountLineReplace,
+  ): Promise<PagedResponse<InventoryCountLineView>> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    const workerNo = request.headers['x-worker-no'];
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) =>
+      this.updates.replaceWithin(tx, inventoryCountId, body, {
+        appUserId: session.userId,
+        version: ifMatchVersion(request),
+        workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+      }),
+    );
   }
 }
