@@ -21,4 +21,3 @@
 - `contracts/logistics-01자재창고.json` — `InventoryCountLine.counted`, `systemQty`, `x-internal-note`
 - `prisma/schema.prisma` — `inventory_count_line`에 counted 원천 0칸
 - `docs/coverage-100/slices/I-15.md` §2-1·§3-2·§3-3
-

@@ -18,4 +18,3 @@
 1. 블라인드 미실사 행의 `varianceQty`를 실제 생성값으로 내리면 systemQty가 역산된다. 0으로 마스킹하도록 본문에 명시했다.
 2. 차이 사유는 고객 확장 코드라 enum을 하드코딩하지 않고 활성 `VARIANCE_REASON`을 조회한다.
 3. 마감 오류 문자열은 요약의 `closeBlockedReasonCode`와 동일하게 유지한다.
-
