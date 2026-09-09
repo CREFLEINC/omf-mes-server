@@ -47,6 +47,7 @@ import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-a
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
+import { ShipmentRequestService } from './shipment-request/shipment-request.service';
 import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
 import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
 import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.service';
@@ -104,6 +105,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     SalesOrderQueryService,
     ShipmentAllocationQueryService,
     ShipmentRequestQueryService,
+    ShipmentRequestService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,

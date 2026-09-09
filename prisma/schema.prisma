@@ -580,6 +580,7 @@ model inventory_count_line {
   variance_reason_code    String?         @db.VarChar(50)
   counted_by              BigInt?
   counted_at              DateTime        @db.Timestamptz(6)
+  counted                 Boolean         @default(false)
   created_at              DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
   app_user                app_user?       @relation(fields: [counted_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_count_line_counted_by")

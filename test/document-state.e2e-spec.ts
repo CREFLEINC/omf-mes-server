@@ -52,6 +52,10 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     'logistics.putaway_task.status_code': 'PUTAWAY_TASK_STATUS',
     // 재고 이동도 물류 전표 4값을 쓴다 — `REGISTERED` → `POSTED` 하나만 연다(I-13 PR ③).
     'logistics.stock_transfer.status_code': 'LOGISTICS_DOCUMENT_STATUS',
+    // 재고 조정도 같다(I-14 §179·§811 · `plan-api.md` S07 「조정은 LOGISTICS_DOCUMENT_STATUS」).
+    // ⛔ 취소 두 액션은 «안» 연다 — `DocumentProgress.documentTypeCode` enum 9값에
+    //    `INVENTORY_ADJUSTMENT` 가 없어 취소 경로가 0건이다(문의 132 · `transitions.ts` 머리 주석).
+    'inventory.inventory_adjustment.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'production.work_order.status_code': 'WORK_ORDER_STATUS',
     'production.work_session.status_code': 'WORK_SESSION_STATUS',
     'planning.production_plan.status_code': 'PRODUCTION_PLAN_STATUS',
