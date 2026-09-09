@@ -14,6 +14,8 @@ const LOC = 20n;
 const OTHER_LOC = 21n;
 /** 같은 공장의 둘째 위치 — 증·감이 섞인 전표를 세우는 자리다. */
 const SECOND_LOC = 22n;
+/** ⭐ 같은 공장의 «다른» 창고 — 끝점 창고가 라인마다 갈리는지 재려면 값이 둘이어야 한다. */
+const SECOND_WH = 11n;
 const ITEM = 30n;
 const LOT = 40n;
 const UOM = 5n;
@@ -85,13 +87,16 @@ function fake(
   const models: Row = {
     location: {
       findMany: async () =>
+        // ⭐ `SECOND_LOC` 는 «같은 공장의 다른 창고»다 — 창고 축에 값이 하나뿐이면
+        //    끝점 창고를 `lines[0]` 의 것으로 못 박아도 초록이다(PR ④ 리뷰 Minor-4).
+        //    `assertSinglePlant` 는 공장만 보므로 이 전표는 «통과해야» 한다.
         [
-          { location_id: LOC, plant_id: PLANT },
-          { location_id: SECOND_LOC, plant_id: PLANT },
-          { location_id: OTHER_LOC, plant_id: OTHER_PLANT },
+          { location_id: LOC, plant_id: PLANT, warehouse_id: WH },
+          { location_id: SECOND_LOC, plant_id: PLANT, warehouse_id: SECOND_WH },
+          { location_id: OTHER_LOC, plant_id: OTHER_PLANT, warehouse_id: WH },
         ].map((row) => ({
           location_id: row.location_id,
-          warehouse_id: WH,
+          warehouse_id: row.warehouse_id,
           warehouse: { business_unit_id: BU, plant_id: row.plant_id, plant: { legal_entity_id: LE } },
         })),
     },
@@ -169,6 +174,24 @@ describe('postAdjustment — 부호가 방향을 정한다', () => {
     expect(written.ownerPartnerId).toBe(9);
   });
 
+  it('⭐ 끝점의 두 상태 칸은 «라인이 저장한 값»이다 — 상수로 못 박으면 남의 차원에 전기된다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    // ⭐ 픽스처 기본값(NORMAL/AVAILABLE)과 «다른» 값이라야 잰다 — 같은 값이면 상수로
+    //    바꿔치기해도 초록이다(README §6-3 ⑵ · PR ④ 리뷰 Minor-5).
+    await postAdjustment(
+      tx,
+      posting,
+      input([line({ qualityStatusCode: 'REWORK', inventoryStatusCode: 'BLOCKED' })]),
+      1,
+    );
+
+    expect(recorded.posted[0].lines[0].from).toMatchObject({
+      qualityStatusCode: 'REWORK',
+      inventoryStatusCode: 'BLOCKED',
+    });
+  });
+
   it('증(+)은 `to` 만 싣는다 — 같은 라인 모양에서 부호 하나로 갈린다', async () => {
     const { tx, posting, recorded } = fake();
 
@@ -182,7 +205,7 @@ describe('postAdjustment — 부호가 방향을 정한다', () => {
 
   it('⭐ 증·감이 섞여도 라인 «순서»가 보존된다 — 되짚기가 자리로 짝짓는다', async () => {
     const { tx, posting, recorded } = fake({
-      balances: [balance(), balance({ locationId: SECOND_LOC })],
+      balances: [balance(), balance({ locationId: SECOND_LOC, warehouseId: SECOND_WH })],
     });
 
     await postAdjustment(
@@ -199,6 +222,13 @@ describe('postAdjustment — 부호가 방향을 정한다', () => {
     expect(written.map((row) => [row.from === undefined, row.to === undefined])).toEqual([
       [false, true],
       [true, false],
+    ]);
+    // ⭐ 끝점 창고는 «라인마다» 자기 위치에서 나온다 — `lines[0]` 의 것으로 못 박으면
+    //   둘째 라인이 엉뚱한 창고 차원에 선다(선잠금은 옳은 창고를 잡았는데 `move()` 가
+    //   다른 창고에 만든다 · PR ④ 리뷰 Minor-4).
+    expect([written[0].from?.warehouseId, written[1].to?.warehouseId]).toEqual([
+      Number(WH),
+      Number(SECOND_WH),
     ]);
     expect(recorded.backfilled).toEqual([
       { id: 900n, ledgerId: 5000n },

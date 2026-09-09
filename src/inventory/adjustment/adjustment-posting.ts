@@ -4,7 +4,12 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import type { BalanceLockKey } from '../../core/inventory-posting/balance-lock';
-import { LocationOrg, assertSinglePlant } from './inventory-adjustment-rules';
+import {
+  LOCATION_ORG_SELECT,
+  LocationOrg,
+  assertSinglePlant,
+  locationOrgMap,
+} from './inventory-adjustment-rules';
 
 /**
  * 재고 조정 «전기» — 조직 축 역산 · 잔액 선잠금 · 음수재고 손검사 · 원장 · 되짚기.
@@ -113,8 +118,13 @@ export async function postAdjustment(
     const at = `lines[${index}].locationId`;
     if (rows.length === 0) {
       // 등록·치환이 이 행을 읽어 라인의 두 상태 칸을 세웠으므로 여기 0행은 그 사이 차원이
-      // 사라졌다는 뜻이다 — 소유 축을 되읽을 곳도 없다.
-      errors.push(field(at, ERROR_CODE.NEGATIVE_BALANCE, '이 위치에 그 LOT 의 재고가 없습니다.'));
+      // 사라졌다는 뜻이다 — 소유 축(`ownershipTypeCode` required)을 되읽을 곳이 없어 증(+)도
+      // 전기할 수 없다. ⛔ 등록 경로(§3-3)는 부호로 코드를 가르지만 여기는 «부호와 무관하게»
+      // 하나다 — 잔액 행을 지우는 코드가 저장소에 0건이라 도달 불가에 가까운 방어이고,
+      // 재볼 수 없는 갈래를 둘로 늘리지 않는다(PR ④ 리뷰 Minor-3).
+      errors.push(
+        field(at, ERROR_CODE.NEGATIVE_BALANCE, '이 위치의 재고 차원이 없어 조정할 수 없습니다.'),
+      );
     } else if (rows.length > 1) {
       // 설계 미정 — 문의 130. 어느 차원의 잔액을 조정할지 계약이 말하지 않는다.
       errors.push(field(at, ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 조정할지 정할 수 없습니다.'));
@@ -218,26 +228,17 @@ const balanceKey = (line: AdjustmentLineWriteInput, org: LocationOrg): BalanceLo
   lotKey: line.lotId ?? 0n,
 });
 
-/** 잔액 행의 조직 축 넷은 창고가 안다 — 조정 헤더에는 공장 칸조차 없다(§3-5). */
+/**
+ * 잔액 행의 조직 축 넷은 창고가 안다 — 조정 헤더에는 공장 칸조차 없다(§3-5).
+ * ⭐ `select` 와 대응표 조립은 **등록·치환과 한 벌**이다(`LOCATION_ORG_SELECT`·`locationOrgMap`) —
+ * 갈라 두면 축이 하나 늘 때 한쪽만 고쳐 7칸 키가 어긋난다.
+ */
 async function locationOrgs(tx: Tx, lines: AdjustmentLineWriteInput[]): Promise<Map<number, LocationOrg>> {
-  const rows = await tx.location.findMany({
-    where: { location_id: { in: [...new Set(lines.map((line) => line.locationId))] } },
-    select: {
-      location_id: true,
-      warehouse_id: true,
-      warehouse: { select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } } },
-    },
-  });
-  return new Map(
-    rows.map((row) => [
-      Number(row.location_id),
-      {
-        legal_entity_id: row.warehouse.plant.legal_entity_id,
-        business_unit_id: row.warehouse.business_unit_id,
-        plant_id: row.warehouse.plant_id,
-        warehouse_id: row.warehouse_id,
-      },
-    ]),
+  return locationOrgMap(
+    await tx.location.findMany({
+      where: { location_id: { in: [...new Set(lines.map((line) => line.locationId))] } },
+      select: LOCATION_ORG_SELECT,
+    }),
   );
 }
 
