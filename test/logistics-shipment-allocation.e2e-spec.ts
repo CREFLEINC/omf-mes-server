@@ -73,6 +73,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     plant: 0n,
     warehouse: 0n,
     uom: 0n,
+    uom2: 0n,
     item1: 0n,
     item2: 0n,
     customer: 0n,
@@ -137,6 +138,12 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   });
 
   it('A-28 required 필수 칸 각각이 «제 출처»에서 온다(서로 다른 값 · packedQty ≠ allocatedQty)', async () => {
+    // Nit ⑩ — 네 축(shipment·line·lot·HU) 시퀀스를 미리 벌려 둔다. 값 단언(아래)이 주 방어선이고
+    // 이건 보조일 뿐이다 — 이 벌림 자체를 반증 근거로 쓰지 않는다(Set 크기 검사로 되돌리지 않는다).
+    await makeShipment();
+    await makeHandlingUnit();
+    await makeLot('A28-burn');
+
     const shipmentA = await makeShipment();
     const lineA = await makeShipmentLine(shipmentA, { item: 1 });
     const hu = await makeHandlingUnit();
@@ -165,6 +172,20 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     });
     // ⚠ 이 행은 HU 가 붙어 `packedQty = allocatedQty` 다(§5-3 정의) — `allocatedQty ≠ packedQty`
     //   인 행은 A-4 가 이미 세운다(HU 없음 · `packedQty = 0`). 두 시험이 함께 §6-3 ⑵ 를 채운다.
+
+    // ⭐⭐ `itemId`·`itemCode`·`uomId` 의 출처가 «LOT»(`lt`)이 아니라 «라인/배분»(`sl`/`a`)임을
+    //   잠근다 — 품목·UOM 이 늘 같은 픽스처에서는 `JOIN … i ON i.item_id = sl.item_id → lt.item_id`
+    //   같은 뒤바꿈이 전건 초록이었다(Major-3). LOT 은 다른 품목·다른 UOM 으로 세운다.
+    const mismatchedLot = await makeLot('A28-X', 2, 2);
+    const allocationId2 = await makeAllocation(lineA, { lot: mismatchedLot, qty: 10 });
+    const body2 = await list({ shipmentLineId: lineA.shipmentLineId });
+    const row2 = body2.items.find((r) => r.shipmentLotAllocationId === allocationId2);
+    expect(row2).toMatchObject({
+      itemId: Number(ids.item1),
+      itemCode: `${PREFIX}-IT1`,
+      lotId: Number(mismatchedLot),
+      uomId: Number(ids.uom),
+    });
   });
 
   // ── A-2 · A-3 — 필터 절 ──────────────────────────────────────────────────
@@ -180,11 +201,11 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const a1 = await makeAllocation(line1, { lot: lot1, handlingUnitId: hu });
     const a2 = await makeAllocation(line2, { lot: lot2, handlingUnitId: null });
 
-    expect(await ids_(await list({ shipmentId: shipment1.shipmentId }))).toEqual([a1]);
-    expect(await ids_(await list({ shipmentLineId: line1.shipmentLineId }))).toEqual([a1]);
-    expect(await ids_(await list({ lotId: Number(lot1) }))).toEqual([a1]);
-    expect(await ids_(await list({ handlingUnitId: Number(hu) }))).toEqual([a1]);
-    expect((await list({ shipmentId: shipment2.shipmentId })).items.map((r) => r.shipmentLotAllocationId)).toEqual([a2]);
+    expect(ids_(await list({ shipmentId: shipment1.shipmentId }))).toEqual([a1]);
+    expect(ids_(await list({ shipmentLineId: line1.shipmentLineId }))).toEqual([a1]);
+    expect(ids_(await list({ lotId: Number(lot1) }))).toEqual([a1]);
+    expect(ids_(await list({ handlingUnitId: Number(hu) }))).toEqual([a1]);
+    expect(ids_(await list({ shipmentId: shipment2.shipmentId }))).toEqual([a2]);
   });
 
   it('A-3 unpackedOnly=true 가 HU 붙은 배분을 뺀다', async () => {
@@ -213,11 +234,13 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const shipment = await makeShipment();
     const passLine = await makeShipmentLine(shipment, { item: 1, required: true });
     const passLot = await makeLot('A7');
+    await makePick(passLine.shipmentRequestLineId, passLot);
     await makeAllocation(passLine, { lot: passLot });
     await makeOqc('LOT', passLot, null, [{ judgment: 'ACCEPTED' }]);
 
     const failLine = await makeShipmentLine(shipment, { item: 1, required: true });
     const failLot = await makeLot('A8');
+    await makePick(failLine.shipmentRequestLineId, failLot);
     await makeAllocation(failLine, { lot: failLot });
     await makeOqc('LOT', failLot, null, [{ judgment: 'REJECTED' }]);
 
@@ -229,10 +252,56 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1, required: true });
     const lot = await makeLot('A9');
+    await makePick(line.shipmentRequestLineId, lot);
     await makeAllocation(line, { lot });
     await makeOqc('LOT', lot, null, [{ judgment: 'REJECTED', round: 1 }, { judgment: 'ACCEPTED', round: 2 }]);
 
     expect((await list({ shipmentLineId: line.shipmentLineId })).items[0].oqcPassed).toBe(true);
+  });
+
+  it('Major-1 ⭐⭐ oqcPassed 모집단은 «이 라인이 피킹한 LOT 전체»다 — 이번 출하에 배정되지 않은 LOT의 불합격도 반영한다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1, required: true });
+    const lotA = await makeLot('M1-A');
+    const lotB = await makeLot('M1-B');
+    // 둘 다 «피킹»했지만 이번 출하엔 A 만 «배분»됐다 — B 는 다른 출하(또는 아직 미배정)의 몫이다.
+    await makePick(line.shipmentRequestLineId, lotA);
+    await makePick(line.shipmentRequestLineId, lotB);
+    const allocationId = await makeAllocation(line, { lot: lotA });
+    // ⭐ A 자신은 «합격»이어야 두 축이 진짜로 갈린다 — «배분 축»으로 되돌리면 모집단이 {A} 뿐이라
+    //   결과가 인구 0(PENDING→false)이 아니라 «PASSED(true)» 로 나온다(A 만 보고 «통과»로 오판).
+    await makeOqc('LOT', lotA, null, [{ judgment: 'ACCEPTED' }]);
+    await makeOqc('LOT', lotB, null, [{ judgment: 'REJECTED' }]);
+
+    const body = await list({ shipmentLineId: line.shipmentLineId });
+    // ⛔ 배분(`shipment_lot_allocation`) 축으로 모집단을 세우면 B 가 안 보여 A 홀로 PASSED(true) —
+    //   그러면 검사 화면은 불합격인데 이 목록은 A 의 납품라벨을 뽑게 허용한다(Major-1).
+    expect(body.items.find((r) => r.shipmentLotAllocationId === allocationId)?.oqcPassed).toBe(false);
+  });
+
+  it('Major-2 ⭐ oqcPassed 는 부르는 필터에 따라 갈리지 않는다 — LOT 모집단은 후보 행이 아니라 라인 전건', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1, required: true });
+    const lotA = await makeLot('M2-A');
+    const lotB = await makeLot('M2-B');
+    const hu = await makeHandlingUnit();
+    await makePick(line.shipmentRequestLineId, lotA);
+    await makePick(line.shipmentRequestLineId, lotB);
+    const allocA = await makeAllocation(line, { lot: lotA, handlingUnitId: hu });
+    await makeAllocation(line, { lot: lotB, handlingUnitId: null });
+    await makeOqc('LOT', lotA, null, [{ judgment: 'ACCEPTED' }]);
+    await makeOqc('LOT', lotB, null, [{ judgment: 'REJECTED' }]);
+
+    // `handlingUnitId` 로 좁히면 후보 행에 B(REJECTED)가 안 보인다 — 별도 조회로 세우지 않으면
+    // 이 호출만 다른 값을 낸다(초과 54줄이 사는 이유 · Major-2).
+    const fromHu = (await list({ handlingUnitId: Number(hu) })).items.find(
+      (r) => r.shipmentLotAllocationId === allocA,
+    )?.oqcPassed;
+    const fromLine = (await list({ shipmentLineId: line.shipmentLineId })).items.find(
+      (r) => r.shipmentLotAllocationId === allocA,
+    )?.oqcPassed;
+    expect(fromHu).toBe(fromLine);
+    expect(fromHu).toBe(false);
   });
 
   it('A-10 ⭐⭐ 헤더 대상 OQC 만 있는 출하의 배분이 oqcPassed=true 다(R-10)', async () => {
@@ -253,10 +322,15 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const passLine = await makeShipmentLine(shipment, { item: 1, required: false });
     const passId = await makeAllocation(passLine, { lot: await makeLot('A11-P') });
     const failLine = await makeShipmentLine(shipment, { item: 1, required: true });
-    await makeAllocation(failLine, { lot: await makeLot('A11-F') });
+    const failLot = await makeLot('A11-F');
+    await makePick(failLine.shipmentRequestLineId, failLot);
+    await makeAllocation(failLine, { lot: failLot });
+    await makeOqc('LOT', failLot, null, [{ judgment: 'REJECTED' }]);
 
     const body = await list({ shipmentId: shipment.shipmentId, oqcPassed: true });
     expect(body.items.map((r) => r.shipmentLotAllocationId)).toEqual([passId]);
+    // Minor ⑤ — `total` 이 필터 «전» 건수(2)로 접혀도 그전까진 초록이었다.
+    expect(body.page.total).toBe(1);
   });
 
   // ── A-12 — q ──────────────────────────────────────────────────────────
@@ -308,6 +382,14 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     expect(body.match).toEqual({ matched: false, reasonCode: 'LOT_NOT_ALLOCATED' });
   });
 
+  it('Minor-7 lotQ 가 어떤 LOT 도 못 찾으면 LOT_NOT_ALLOCATED 다', async () => {
+    const shipment = await makeShipment();
+    await makeShipmentLine(shipment, { item: 1 });
+
+    const body = await list({ shipmentId: shipment.shipmentId, lotQ: `${PREFIX}-NOSUCH` });
+    expect(body.match).toEqual({ matched: false, reasonCode: 'LOT_NOT_ALLOCATED' });
+  });
+
   it('A-16 LABEL_ITEM_MISMATCH — 이 출하의 어느 라인 품목과도 다른 LOT', async () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1 });
@@ -352,7 +434,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     return response.body as ListBody;
   }
 
-  async function ids_(body: ListBody): Promise<number[]> {
+  function ids_(body: ListBody): number[] {
     return body.items.map((row) => row.shipmentLotAllocationId);
   }
 
@@ -381,7 +463,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   async function makeShipmentLine(
     shipment: { shipmentId: number; shipmentRequestId: bigint },
     spec: { item: 1 | 2; required?: boolean; lineNo?: number },
-  ): Promise<{ shipmentLineId: number; shipmentRequestId: bigint }> {
+  ): Promise<{ shipmentLineId: number; shipmentRequestId: bigint; shipmentRequestLineId: number }> {
     seq += 1;
     const itemId = spec.item === 2 ? ids.item2 : ids.item1;
     const requestLine = await prisma.shipment_request_line.create({
@@ -407,7 +489,35 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
         uom_id: ids.uom,
       },
     });
-    return { shipmentLineId: Number(line.shipment_line_id), shipmentRequestId: shipment.shipmentRequestId };
+    return {
+      shipmentLineId: Number(line.shipment_line_id),
+      shipmentRequestId: shipment.shipmentRequestId,
+      shipmentRequestLineId: Number(requestLine.shipment_request_line_id),
+    };
+  }
+
+  /**
+   * 라인의 「피킹」— `inventory_reservation`(`SHIPMENT_REQUEST_LINE` 축). ③b/④ `picksByLine()` 과
+   * 같은 축이고, ⑦a `oqcPassedByLine()` 의 LOT 모집단이 «이것»에서 온다(Major-1) — 배분
+   * (`shipment_lot_allocation`) 이 아니다. 배분됐다고 자동으로 피킹된 것은 아니라 필요한 시험마다
+   * 명시적으로 세운다.
+   */
+  async function makePick(shipmentRequestLineId: number, lot: bigint, qty = 10): Promise<void> {
+    seq += 1;
+    await prisma.inventory_reservation.create({
+      data: {
+        reservation_no: `${PREFIX}-RS-${seq}`,
+        reservation_type_code: 'SHIPMENT',
+        source_document_type_code: 'SHIPMENT_REQUEST_LINE',
+        source_document_id: BigInt(shipmentRequestLineId),
+        item_id: ids.item1,
+        lot_id: lot,
+        warehouse_id: ids.warehouse,
+        reserved_qty: qty,
+        uom_id: ids.uom,
+        status_code: 'REGISTERED',
+      },
+    });
   }
 
   async function makeAllocation(
@@ -439,7 +549,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     return hu.handling_unit_id;
   }
 
-  async function makeLot(key: string, item: 1 | 2 = 1): Promise<bigint> {
+  async function makeLot(key: string, item: 1 | 2 = 1, uom: 1 | 2 = 1): Promise<bigint> {
     const lot = await prisma.lot.create({
       data: {
         lot_no: `${PREFIX}-${key}`,
@@ -447,7 +557,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
         lot_type_code: 'PRODUCT',
         plant_id: ids.plant,
         initial_qty: 1_000,
-        uom_id: ids.uom,
+        uom_id: uom === 2 ? ids.uom2 : ids.uom,
         source_type_code: 'WORK_ORDER',
         source_id: 1,
         status_code: 'NORMAL',
@@ -503,8 +613,9 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
     ids.plant = plant.plant_id;
     const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
-    const uom = await prisma.uom.findFirstOrThrow();
+    const [uom, uom2] = await prisma.uom.findMany({ take: 2, orderBy: { uom_id: 'asc' } });
     ids.uom = uom.uom_id;
+    ids.uom2 = uom2.uom_id;
 
     const warehouse = await prisma.warehouse.create({
       data: {
@@ -595,6 +706,8 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
       DELETE FROM quality.inspection_result WHERE inspection_result_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM quality.inspection_request WHERE inspection_request_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
