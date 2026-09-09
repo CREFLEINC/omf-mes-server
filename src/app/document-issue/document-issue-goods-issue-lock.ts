@@ -4,6 +4,7 @@ import {
   DocumentIssueTargetFacts,
   PreparedDocumentIssueTarget,
 } from "./document-issue-create-rules";
+import { DocumentIssueTargetPathChanged } from "./document-issue-sequence";
 import { targetKey } from "./document-issue-target-lookup";
 
 type Tx = Prisma.TransactionClient;
@@ -25,7 +26,7 @@ interface LotRow {
 }
 
 /** 부모 잠금 전후의 출고 라인 경로가 달라지면 실패한 tx 전체를 다시 시작한다. */
-export class DocumentIssueGoodsIssuePathChanged extends Error {}
+export class DocumentIssueGoodsIssuePathChanged extends DocumentIssueTargetPathChanged {}
 
 /**
  * 출고 writer와 같은 부모 축을 먼저 잠그고 라인→LOT 경로를 잠금 뒤 다시 확정한다.
