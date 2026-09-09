@@ -1,12 +1,16 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
+import { LockedBalanceRow, lockBalancesByItemLot } from './balance-lock';
 import { InventoryPostingService } from './inventory-posting.service';
-import { BalanceDimension, PickMove } from './reservation-qty';
+import { BalanceDimension, PickMove, ReserveMove } from './reservation-qty';
 
 const RESERVATION = 7n;
+/** ⭐ 예약 id 와 «다른» 값이라야 「돌려주는 id 의 출처」 변이가 죽는다(README §6-3 ⑴). */
+const BALANCE = 1n;
 const PICK_FIELD = 'lines[0].pickedQty';
 const ISSUE_FIELD = 'lines[0].issueQty';
+const RESERVE_FIELD = 'pickedQty';
 
 const dec = (value: string | number): Prisma.Decimal => new Prisma.Decimal(value);
 
@@ -30,6 +34,20 @@ const pickMove = (over: Partial<PickMove> = {}): PickMove => ({
   delta: dec(30),
   inventoryReservationId: null,
   field: PICK_FIELD,
+  ...over,
+});
+
+const reserveMove = (over: Partial<ReserveMove> = {}): ReserveMove => ({
+  dimension: dimension(),
+  qty: dec(30),
+  reservationNo: 'RS-20260909-0001',
+  reservationTypeCode: 'SHIPMENT',
+  sourceDocumentTypeCode: 'SHIPMENT_REQUEST_LINE',
+  sourceDocumentId: 500n,
+  uomId: 60n,
+  statusCode: 'REGISTERED',
+  createdBy: 70n,
+  field: RESERVE_FIELD,
   ...over,
 });
 
@@ -63,15 +81,22 @@ function flatten(strings: readonly string[], values: unknown[]): Statement {
  * `$queryRaw` 가 돌려주는 **행 수**로 하한 통과(1행)와 위반(0행)을 흉내낸다 —
  * 판정이 WHERE 에 실려 있어서 이 코어에는 그 밖의 갈림이 없다.
  */
-function fake(rowCounts: number[] = []) {
+function fake(rowCounts: number[] = [], reservationIds: bigint[] = []) {
   const statements: Statement[] = [];
   const queue = [...rowCounts];
+  const ids = [...reservationIds];
   const tx = {
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      statements.push(flatten(strings, values));
+      const statement = flatten(strings, values);
+      statements.push(statement);
+      // 예약 표를 건드리는 문장에만 id 를 순서대로 물린다 — 「준 순서대로 돌려준다」를 관측하려면
+      // 예약마다 값이 «달라야» 한다(README §6-3 ⑵).
+      const reservationId = statement.sql.includes('inventory.inventory_reservation')
+        ? (ids.shift() ?? RESERVATION)
+        : RESERVATION;
       return Array.from({ length: queue.shift() ?? 1 }, () => ({
-        inventory_balance_id: 1n,
-        inventory_reservation_id: RESERVATION,
+        inventory_balance_id: BALANCE,
+        inventory_reservation_id: reservationId,
       }));
     },
   };
@@ -89,6 +114,210 @@ const thrown = (run: () => Promise<unknown>): Promise<ContractException> =>
     },
     (error: ContractException) => error,
   );
+
+/** 잠금 함수는 «돌려주는 행»이 관측 대상이라 행 자체를 물린다. */
+function lockFake(rows: Partial<LockedBalanceRow>[]) {
+  const statements: Statement[] = [];
+  const tx = {
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      statements.push(flatten(strings, values));
+      return rows;
+    },
+  };
+  return { tx: tx as unknown as Prisma.TransactionClient, statements };
+}
+
+describe('InventoryPostingService.reserve', () => {
+  it('잔액의 reserved 를 올리고 on_hand 는 안 건드린다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.reserve(tx, [reserveMove()]);
+
+    expect(statements[0].sql).toContain('UPDATE inventory.inventory_balance');
+    expect(statements[0].sql).toContain('reserved_qty = reserved_qty + ?::numeric');
+    expect(statements[0].sql).toContain('version_no = version_no + 1');
+    expect(statements[0].sql).not.toContain('on_hand_qty');
+    expect(statements[0].sql).not.toContain('picked_qty');
+    // ⛔ 코어는 잠그지 않는다 — 호출자가 `lockBalancesByItemLot()` 로 이미 잠근 행을 UPDATE 한다.
+    expect(statements.map((statement) => statement.sql).join(' ')).not.toContain('FOR UPDATE');
+  });
+
+  it('inventory_reservation 행을 만들고 그 id 를 돌려준다', async () => {
+    const { tx, statements, service } = fake();
+
+    const ids = await service.reserve(tx, [reserveMove()]);
+
+    // 돌려주는 것은 «예약» id 다 — 잔액 id(BALANCE) 로 바꾸면 여기서 죽는다.
+    expect(ids).toEqual([RESERVATION]);
+    expect(ids).not.toEqual([BALANCE]);
+    // 잔액 먼저·예약 나중 — 순서를 뒤집으면 `pick()` 이 잡는 순서와 갈린다(§6-4).
+    expect(statements).toHaveLength(2);
+    expect(statements[1].sql).toContain('INSERT INTO inventory.inventory_reservation');
+    expect(statements[1].sql).toContain('RETURNING inventory_reservation_id');
+    // 11칸 중 «넷»만 담긴다 — 통보 196. 나머지 일곱은 예약이 못 싣는다.
+    expect(statements[1].values).toEqual([
+      'RS-20260909-0001',
+      'SHIPMENT',
+      'SHIPMENT_REQUEST_LINE',
+      500n,
+      30n,
+      40n,
+      10n,
+      20n,
+      dec(30),
+      60n,
+      'REGISTERED',
+      70n,
+    ]);
+  });
+
+  it('available_qty 와 «같은» 양은 통과한다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.reserve(tx, [reserveMove()]);
+
+    // `>` 로 바꾸면 「가용과 같은 양」이 막힌다 — 경계가 통과 쪽이다.
+    expect(statements[0].sql).toMatch(/available_qty >= \?::numeric/);
+    expect(statements[0].sql).not.toMatch(/available_qty > \?/);
+    expect(statements[0].values.at(-1)).toEqual(dec(30));
+  });
+
+  it('available_qty 보다 많으면 400 NEGATIVE_BALANCE', async () => {
+    const { tx, service } = fake([0]);
+
+    const failure = await thrown(() => service.reserve(tx, [reserveMove({ qty: dec(999) })]));
+
+    expect(failure.getStatus()).toBe(400);
+    // 호출자가 준 field 경로를 그대로 싣는다.
+    expect(failure.errors[0]).toMatchObject({
+      scope: 'field',
+      field: RESERVE_FIELD,
+      code: ERROR_CODE.NEGATIVE_BALANCE,
+    });
+  });
+
+  it('잔액 행이 없으면 400 NEGATIVE_BALANCE (0 행을 만들지 않는다)', async () => {
+    const { tx, statements, service } = fake([0]);
+
+    const failure = await thrown(() => service.reserve(tx, [reserveMove()]));
+
+    expect(failure.getStatus()).toBe(400);
+    // `move()` 와 달리 없는 자리에 0 인 행을 세우지 않는다 — 「재고가 없다」가 「0 이 있다」가 된다.
+    expect(statements[0].sql).not.toContain('INSERT INTO inventory.inventory_balance');
+    // 잔액이 0행이면 예약 INSERT 는 아예 안 나간다 — 번호만 타고 행이 남으면 안 된다.
+    expect(statements).toHaveLength(1);
+  });
+
+  it('qty 가 0 이면 아무것도 하지 않는다 (version_no 도 안 올린다)', async () => {
+    const { tx, statements, service } = fake();
+
+    const ids = await service.reserve(tx, [
+      reserveMove({ qty: dec(0) }),
+      reserveMove({ qty: dec('0.000000') }),
+    ]);
+
+    expect(statements).toEqual([]);
+    // 걸지 않았으므로 돌려줄 id 도 없다 — 그 자리가 배열에서 빠진다.
+    expect(ids).toEqual([]);
+  });
+
+  it('Decimal 로 센다: 0.1 + 0.2 를 부동소수로 세지 않는다', async () => {
+    const { tx, statements, service } = fake();
+
+    await service.reserve(tx, [reserveMove({ qty: dec('0.1').plus(dec('0.2')) })]);
+
+    expect(0.1 + 0.2).not.toBe(0.3);
+    expect(String(statements[0].values[0])).toBe('0.3');
+    expect(String(statements[1].values[8])).toBe('0.3');
+  });
+
+  it('moves 여럿을 준 순서대로 예약 id 를 돌려준다', async () => {
+    const { tx, statements, service } = fake([], [71n, 72n]);
+
+    const ids = await service.reserve(tx, [
+      reserveMove({ reservationNo: 'RS-20260909-0001', qty: dec(1) }),
+      reserveMove({ reservationNo: 'RS-20260909-0002', qty: dec(2) }),
+    ]);
+
+    expect(ids).toEqual([71n, 72n]);
+    expect(statements).toHaveLength(4);
+    expect(statements[1].values[0]).toBe('RS-20260909-0001');
+    expect(statements[3].values[0]).toBe('RS-20260909-0002');
+  });
+
+  it('reservationNo 가 중복이면 유일 위반을 그대로 올린다', async () => {
+    const unique = new Error('duplicate key value violates unique constraint');
+    const tx = {
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (flatten(strings, values).sql.includes('INSERT INTO inventory.inventory_reservation')) {
+          throw unique;
+        }
+        return [{ inventory_balance_id: BALANCE }];
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    // ⛔ 삼켜서 400 으로 바꾸지 않는다 — 같은 번호가 둘이면 채번이 깨진 것이라 500 이 맞다.
+    await expect(new InventoryPostingService().reserve(tx, [reserveMove()])).rejects.toBe(unique);
+  });
+
+  it('reserve → pick — 같은 트랜잭션에서 이으면 reserved 순변화가 0 이고 picked 가 오른다', async () => {
+    const { tx, statements, service } = fake();
+
+    const [reservationId] = await service.reserve(tx, [reserveMove()]);
+    await service.pick(tx, [pickMove({ inventoryReservationId: reservationId })]);
+
+    // ⓒ안 — 걸고 «곧바로» 푼다. reserved 는 올랐다가 같은 양 내려가고 picked 만 남는다.
+    expect(statements[0].sql).toContain('reserved_qty = reserved_qty + ?::numeric');
+    expect(statements[2].sql).toContain('reserved_qty = reserved_qty - ?::numeric');
+    expect(statements[2].sql).toContain('picked_qty = picked_qty + ?::numeric');
+    expect(statements[0].values[0]).toEqual(statements[2].values[0]);
+    // 푸는 쪽이 «방금 만든» 예약을 물어야 예약이 열린 채 남지 않는다(통보 196).
+    expect(statements[3].sql).toContain('UPDATE inventory.inventory_reservation');
+    expect(statements[3].sql).toContain('consumed_qty = consumed_qty + ?::numeric');
+    expect(statements[3].values).toContain(RESERVATION);
+  });
+});
+
+describe('lockBalancesByItemLot', () => {
+  const row = (over: Partial<LockedBalanceRow> = {}): Partial<LockedBalanceRow> => ({
+    warehouseId: 10n,
+    locationId: 20n,
+    itemId: 30n,
+    lotId: 40n,
+    available_qty: dec(100),
+    ...over,
+  });
+
+  it('(품목·LOT)의 행 전부를 id 오름차순으로 돌려준다', async () => {
+    // ⭐ 창고가 «둘»인 픽스처다 — 한 행뿐이면 「전부 돌려준다」도 「첫 개만」도 똑같이 초록이다.
+    const rows = [row({ warehouseId: 10n }), row({ warehouseId: 11n })];
+    const { tx, statements } = lockFake(rows);
+
+    const locked = await lockBalancesByItemLot(tx, 30n, 40n);
+
+    expect(locked).toEqual(rows);
+    expect(locked).toHaveLength(2);
+    expect(statements[0].sql).toContain('item_id = ?');
+    expect(statements[0].sql).toContain('lot_id = ?');
+    expect(statements[0].values).toEqual([30n, 40n]);
+    // 형제(`lockBalancesInOrder`)와 «같은» 순서라야 교착 창이 안 열린다.
+    expect(statements[0].sql).toContain('ORDER BY inventory_balance_id');
+    expect(statements[0].sql).not.toContain('DESC');
+    expect(statements[0].sql).toContain('FOR UPDATE');
+    // 잠근 행을 그대로 `reserve()`·`pick()` 에 넘기므로 하한 판정 칸이 실려야 한다.
+    expect(statements[0].sql).toContain('available_qty');
+  });
+
+  it('없으면 빈 배열이다 (행을 만들지 않는다)', async () => {
+    const { tx, statements } = lockFake([]);
+
+    const locked = await lockBalancesByItemLot(tx, 30n, 40n);
+
+    // 0행의 «뜻»(409)은 호출자가 정한다 — 코어는 잠글 뿐 판정하지 않는다.
+    expect(locked).toEqual([]);
+    expect(statements[0].sql).not.toContain('INSERT');
+  });
+});
 
 describe('InventoryPostingService.pick', () => {
   it('예약이 있으면 reserved 를 내리고 picked 를 같은 양 올린다', async () => {
