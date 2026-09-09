@@ -34,6 +34,8 @@ import { NotificationController } from './notification/notification.controller';
 import { NotificationPreviewController } from './notification/notification-preview.controller';
 import { NotificationPreviewService } from './notification/notification-preview.service';
 import { NotificationQueryService } from './notification/notification-query.service';
+import { NotificationSubscriptionController } from './notification/notification-subscription.controller';
+import { NotificationSubscriptionService } from './notification/notification-subscription.service';
 import { NotificationWriteController } from './notification/notification-write.controller';
 import { NotificationWriteService } from './notification/notification-write.service';
 import { OperationPolicyController } from './policy/operation-policy.controller';
@@ -75,6 +77,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     NotificationEventController,
     NotificationController,
     NotificationPreviewController,
+    NotificationSubscriptionController,
     NotificationWriteController,
     ApprovalRouteController,
     ApprovalRequestController,
@@ -94,6 +97,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     NoticeService,
     NotificationQueryService,
     NotificationPreviewService,
+    NotificationSubscriptionService,
     NotificationWriteService,
     ApprovalRouteService,
     ApprovalRequestService,
