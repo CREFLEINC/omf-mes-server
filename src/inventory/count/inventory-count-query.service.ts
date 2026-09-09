@@ -81,7 +81,16 @@ export class InventoryCountQueryService {
     inventoryCountId: number,
     query: InventoryCountLineQuery,
   ): Promise<PagedResponse<InventoryCountLineView>> {
-    const header = await this.prisma.inventory_count.findUnique({
+    return this.linesWithin(this.prisma, inventoryCountId, query);
+  }
+
+  /** 위치 치환 응답도 업무·멱등 기록과 같은 트랜잭션에서 만든다. */
+  async linesWithin(
+    prisma: CountClient,
+    inventoryCountId: number,
+    query: InventoryCountLineQuery,
+  ): Promise<PagedResponse<InventoryCountLineView>> {
+    const header = await prisma.inventory_count.findUnique({
       where: { inventory_count_id: inventoryCountId },
       select: { inventory_count_id: true, blind_count: true },
     });
@@ -95,14 +104,14 @@ export class InventoryCountQueryService {
       location: { select: { location_code: true } },
     } as const;
     const [rows, total] = await Promise.all([
-      this.prisma.inventory_count_line.findMany({
+      prisma.inventory_count_line.findMany({
         where,
         include,
         orderBy: [{ line_no: 'asc' }, { inventory_count_line_id: 'asc' }],
         skip: page.skip,
         take: page.take,
       }),
-      this.prisma.inventory_count_line.count({ where }),
+      prisma.inventory_count_line.count({ where }),
     ]);
     return pagedResponse(
       rows.map((row) => inventoryCountLineView(row, header.blind_count)),
