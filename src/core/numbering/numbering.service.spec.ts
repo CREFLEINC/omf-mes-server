@@ -125,6 +125,16 @@ describe('채번 코어', () => {
     expect(await service.next('NONCONFORMANCE', null, DAY)).toBe('NC-20260906-0001');
   });
 
+  it('채번 — 출하지시서·재고예약은 SR·RS 기본 접두어를 쓴다 // 결정 — 통보 191', async () => {
+    const { service } = fake();
+
+    // ⚠ `SR` 는 이미 있는 `SHOPFLOOR_RECEIPT` 와 겹친다 — 두 계약 example 이 둘 다 `SR-` 라
+    //   계약 문자를 따랐다. 카운터가 문서 유형별이라 같은 날 첫 건이면 두 표에 하나씩 선다.
+    expect(await service.next('SHIPMENT_REQUEST', PLANT, DAY)).toBe('SR-20260906-0001');
+    expect(await service.next('SHOPFLOOR_RECEIPT', PLANT, DAY)).toBe('SR-20260906-0001');
+    expect(await service.next('INVENTORY_RESERVATION', null, DAY)).toBe('RS-20260906-0001');
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),

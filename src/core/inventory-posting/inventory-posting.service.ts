@@ -10,7 +10,14 @@ import {
   ReverseInput,
   ReverseResult,
 } from './posting.types';
-import { ConsumeMove, PickMove, consumeBalances, pickBalances } from './reservation-qty';
+import {
+  ConsumeMove,
+  PickMove,
+  ReserveMove,
+  consumeBalances,
+  pickBalances,
+  reserveBalances,
+} from './reservation-qty';
 import {
   REVERSAL_NO_SUFFIX,
   assertReversible,
@@ -38,9 +45,12 @@ interface OrgAxis {
  * 대신 **라인의 `from`/`to` 가 이동을 말한다** — 유형 목록 없이도 완전하다.
  *
  * ⛔ `reserved_qty`·`picked_qty` 는 «원장 라인»이 건드리지 않는다 — 원장 라인에 그 칸이 없고
- * 예약은 `inventory.inventory_reservation` 이 정본이다. 대신 `pick()`·`consume()` 이 그 두 칸의
- * 유일한 통로다(`reservation-qty.ts`). ⛔ 예약을 «거는» 함수는 아직 없다 — 어느 잔액 행에
- * 거는지를 정할 근거가 계약에 없다(I-8.md §5 · 문의 045). 첫 사용처는 I-22 다.
+ * 예약은 `inventory.inventory_reservation` 이 정본이다. 대신 `reserve()`·`pick()`·`consume()` 이
+ * 그 두 칸의 유일한 통로다(`reservation-qty.ts`).
+ *
+ * ⭐ 「어느 잔액 행에 거는가」는 04 제품 피킹이 답을 줬다 — (품목·LOT)로 잠가 **정확히 한 행**일 때만
+ * 그 행에 건다(I-22 §6-3 · `lockBalancesByItemLot`). 01 자재 출고요청은 여전히 그 근거가 없어
+ * `reserve()` 를 부르지 않는다(I-8.md §5 · 문의 045).
  */
 @Injectable()
 export class InventoryPostingService {
@@ -152,6 +162,15 @@ export class InventoryPostingService {
       businessDate: input.businessDate,
       alreadyReversed: false,
     };
+  }
+
+  /**
+   * 예약 걸기 — 잔액의 `reserved` 를 올리고 예약 행을 만든다. 만든 예약 id 를 순서대로 돌려준다.
+   * ⭐ 04 제품 피킹은 이것을 `pick(…, inventoryReservationId)` 로 **곧바로 이어** 같은 트랜잭션에서
+   * 푼다(I-22 §6-2 ⓒ안) — 순변화는 `picked += Δ` 하나이고 `reserved` 는 0 이다.
+   */
+  async reserve(tx: Prisma.TransactionClient, moves: ReserveMove[]): Promise<bigint[]> {
+    return reserveBalances(tx, moves);
   }
 
   /**

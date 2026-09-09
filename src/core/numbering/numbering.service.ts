@@ -51,6 +51,18 @@ const DEFAULT_PREFIX: Record<string, string> = {
    * `plantId` 는 null — `quality.nonconformance` 에 공장 축이 0개다(I-21 §3-1).
    */
   NONCONFORMANCE: 'NC',
+  /**
+   * 규칙 미등재 — `SR-{YYYYMMDD}-{SEQ4}` · 계약 example `SR-2026-0813-0108` 이 접두어를 준다.
+   * ⚠⚠ **`SHOPFLOOR_RECEIPT` 와 접두어가 겹친다**(결정 — 통보 191) — 두 계약 example 이 둘 다
+   * `SR-` 다. 카운터는 문서 유형별이라 같은 날 첫 건이면 `SR-{YYYYMMDD}-0001` 이 두 표에 하나씩
+   * 선다. DB 는 안 막는다(`business_no_t` UNIQUE 가 표마다다) — 막히는 것은 사람이다.
+   * ⛔ 이미 배포된 01(I-9)의 접두어를 바꾸지 않는다 — 발번된 번호와 새 번호의 규칙이 갈린다.
+   */
+  SHIPMENT_REQUEST: 'SR',
+  /** 규칙 미등재 — `RS-{YYYYMMDD}-{SEQ4}` · 01 계약 `InventoryReservation.reservationNo.example`
+   *  = `RS-2026-000144` 가 근거다(형식은 저장소 기본 패턴). ⚠ `:pick` 은 409 가 정상 거부라
+   *  소진율이 높다 — 죽는 요청마다 번호가 탄다(결번 허용 · I-2 R-2). */
+  INVENTORY_RESERVATION: 'RS',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
