@@ -38,6 +38,7 @@ model app_user {
   notice_acknowledgement                                 notice_acknowledgement[]
   notification                                           notification[]
   notification_subscription                              notification_subscription[]
+  notification_subscription_recipient                    notification_subscription_recipient[]
   user_credential                                        user_credential?
   user_data_scope                                        user_data_scope[]
   user_role                                              user_role[]
@@ -318,6 +319,7 @@ model role {
   role_permission       role_permission[]
   user_role             user_role[]
   judgment_type_control judgment_type_control[]
+  notification_subscription_recipient notification_subscription_recipient[]
 
   @@schema("app")
 }
@@ -1613,6 +1615,7 @@ model business_unit {
   warehouse                                                              warehouse[]
   worker                                                                 worker[]
   production_order                                                       production_order[]
+  notification_subscription_recipient                                    notification_subscription_recipient[]
 
   @@unique([legal_entity_id, business_unit_code], map: "uq_business_unit")
   @@schema("mdm")
@@ -3896,17 +3899,38 @@ model notification_event {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model notification_subscription {
-  notification_subscription_id BigInt   @id @default(autoincrement())
-  app_user_id                  BigInt
-  event_type_code              String   @db.VarChar(50)
-  channel_code                 String   @db.VarChar(50)
-  is_enabled                   Boolean  @default(true)
-  created_at                   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_at                   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  version_no                   Int      @default(1)
-  app_user                     app_user @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  notification_subscription_id BigInt                                @id @default(autoincrement())
+  app_user_id                  BigInt?
+  event_type_code              String                                @db.VarChar(50)
+  channel_code                 String?                               @db.VarChar(50)
+  is_enabled                   Boolean                               @default(true)
+  zalo_enabled                 Boolean                               @default(false)
+  created_at                   DateTime                              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at                   DateTime                              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  version_no                   Int                                   @default(1)
+  app_user                     app_user?                             @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  recipients                   notification_subscription_recipient[]
 
   @@unique([app_user_id, event_type_code, channel_code], map: "uq_notification_subscription")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains partial indexes which require additional setup for migrations. Visit https://pris.ly/d/indexes for more info.
+model notification_subscription_recipient {
+  notification_subscription_recipient_id BigInt                    @id @default(autoincrement())
+  notification_subscription_id           BigInt
+  recipient_type_code                     String                    @db.VarChar(50)
+  business_unit_id                        BigInt?
+  role_id                                 BigInt?
+  app_user_id                             BigInt?
+  created_at                              DateTime                  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  notification_subscription               notification_subscription @relation(fields: [notification_subscription_id], references: [notification_subscription_id], onDelete: NoAction, onUpdate: NoAction)
+  business_unit                           business_unit?            @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  role                                    role?                     @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                                app_user?                 @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([notification_subscription_id], map: "ix_notification_subscription_recipient_parent")
   @@schema("app")
 }
 
