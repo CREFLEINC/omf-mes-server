@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AppDomainModule } from './app/app-domain.module';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { ContractModule } from './common/contract';
 import { IdempotencyModule } from './common/idempotency';
@@ -35,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
     // ⛔ 계약 검증 가드 «뒤»에 온다 — 본문이 계약과 맞는지 먼저 보고, 그다음 멱등키를 본다.
     IdempotencyModule,
     OptimisticLockModule,
+    AuditModule,
     HealthModule,
     MdmModule,
     AppDomainModule,
