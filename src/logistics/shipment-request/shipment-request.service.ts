@@ -121,6 +121,17 @@ export class ShipmentRequestService {
    * ⛔ `lines: []` 를 여기서 다시 막지 않는다 — 계약 `minItems: 1` 이 이미 400 을 낸다(I-21 R-15).
    */
   private async assertCreatable(input: ShipmentRequestCreate): Promise<void> {
+    // ⛔ 순서가 판정이다(§3-4) — 모양이 틀린 본문으로 참조 질의를 쏘지 않는다.
+    this.assertShape(input);
+    await this.assertReferences(input);
+    // 값이 오면 코드 목록을 본다 — `null` 은 통과다(계약이 nullable 이고 「일부 항목」만 채운다).
+    await assertCodeValues(this.prisma, [
+      { field: 'timeSlotCode', value: input.timeSlotCode, groupCode: SHIPMENT_TIME_SLOT_GROUP },
+    ]);
+  }
+
+  /** ① 본문 «모양» — 수량 넷과 길이 하나. 질의를 한 번도 안 쏜다. */
+  private assertShape(input: ShipmentRequestCreate): void {
     const errors: ErrorItem[] = [];
     for (const [index, line] of input.lines.entries()) {
       const at = `lines[${index}]`;
@@ -144,8 +155,11 @@ export class ShipmentRequestService {
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+  }
 
-    // FK 그물 — 축마다 한 번씩 `IN` 으로 모아 읽는다(라인 수와 무관하게 왕복 5회다).
+  /** ② 참조 무결 — 존재 넷 + 짝 하나. 축마다 한 번씩 `IN` 으로 모아 읽는다(왕복 5회). */
+  private async assertReferences(input: ShipmentRequestCreate): Promise<void> {
+    const errors: ErrorItem[] = [];
     const ids = (of: (l: ShipmentRequestLineCreate) => number | null | undefined): number[] =>
       [...new Set(input.lines.map(of).filter((id): id is number => id != null))];
     const [salesOrder, partners, items, uoms, salesOrderLines] = await Promise.all([
@@ -190,10 +204,5 @@ export class ShipmentRequestService {
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-
-    // 값이 오면 코드 목록을 본다 — `null` 은 통과다(계약이 nullable 이고 「일부 항목」만 채운다).
-    await assertCodeValues(this.prisma, [
-      { field: 'timeSlotCode', value: input.timeSlotCode, groupCode: SHIPMENT_TIME_SLOT_GROUP },
-    ]);
   }
 }

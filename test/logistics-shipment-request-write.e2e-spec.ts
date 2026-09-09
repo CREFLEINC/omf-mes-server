@@ -89,6 +89,7 @@ describe('출하작업지시 편성 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let probeUserId = 0;
 
   const ids = {
     uom1: 0,
@@ -223,8 +224,20 @@ describe('출하작업지시 편성 (e2e)', () => {
     expect(errors).toEqual([
       expect.objectContaining({ field: 'lines[0].allocatedQty', code: 'RANGE' }),
     ]);
+    // ⛔ 접두어(`SRWE2E-`)로 세면 «API 가 만든 행»을 원리적으로 못 본다 — 채번이 붙이는 번호는
+    //    `SR-{YYYYMMDD}-{SEQ4}` 다(W-24). 그때 유일하게 걸리는 것은 W-21 이 Prisma 로 직접 넣는
+    //    `SRWE2E-SRF`(배정 0)이고, 0 이 나오는 이유가 「선언 순서상 W-21 이 뒤」일 뿐이 된다.
+    //    ⇒ 고객 축으로 «우리 API 행»만 세어 순서에 안 물리게 한다.
     expect(
-      await prisma.shipment_request_line.count({ where: { allocated_qty: 0, shipment_request: { shipment_request_no: { startsWith: `${PREFIX}-` } } } }),
+      await prisma.shipment_request_line.count({
+        where: {
+          allocated_qty: 0,
+          shipment_request: {
+            customer_id: BigInt(ids.customer),
+            shipment_request_no: { startsWith: 'SR-' },
+          },
+        },
+      }),
     ).toBe(0);
   });
 
@@ -311,6 +324,16 @@ describe('출하작업지시 편성 (e2e)', () => {
     expect(errors[0]).toMatchObject({ field: 'lines[0].customerLotRequirement', code: 'RANGE' });
     const ok = await create(payload({ lines: [line({ customerLotRequirement: 'ㄱ'.repeat(200) })] }));
     expect((ok.lines as LineBody[])[0].customerLotRequirement).toHaveLength(200);
+    // ⭐ 널을 «받는» 칸이고 이 오퍼레이션이 저장소의 유일한 writer 다(§1-4-0) — 형제 셋
+    //   (`salesOrderId` W-3 · `timeSlotCode` W-15 · `minimumRemainingShelfLifeDays` W-18)처럼
+    //   반대 방향도 잠근다. ⛔ `?? ''` 로 바꾸면 계약 `type:['string','null']` 이 통과시켜
+    //   빈 문자열이 저장되고 I-23 의 `IS NULL` 갈래가 조용히 갈린다.
+    const empty = await create(payload());
+    expect((empty.lines as LineBody[])[0]).toHaveProperty('customerLotRequirement', null);
+    const stored = await prisma.shipment_request_line.findFirstOrThrow({
+      where: { shipment_request_id: BigInt(empty.shipmentRequestId) },
+    });
+    expect(stored.customer_lot_requirement).toBeNull();
   });
 
   it('W-17 minimumRemainingShelfLifeDays = -1 은 400 RANGE 다', async () => {
@@ -332,14 +355,23 @@ describe('출하작업지시 편성 (e2e)', () => {
   });
 
   // ── W-19 ~ W-23 · 상태 · 파생 축 ────────────────────────────────────────
-  it('W-19 statusCode 가 REGISTERED 다 — 저장값과 응답이 같은 상수다', async () => {
-    const body = await create(payload());
+  it('W-19 statusCode 가 REGISTERED 이고 created_by 가 세션 계정이다', async () => {
+    const body = await create(payload({ lines: [line(), line({ itemId: ids.item2 })] }));
     const stored = await prisma.shipment_request.findUniqueOrThrow({
       where: { shipment_request_id: BigInt(body.shipmentRequestId) },
+      include: { shipment_request_line: { orderBy: { line_no: 'asc' } } },
     });
 
     expect(stored.status_code).toBe('REGISTERED');
     expect(body.statusCode).toBe('REGISTERED');
+    // ⭐ 「누가 편성했는가」는 계약 응답 12칸에 «없어» 화면으로는 영영 안 드러난다 —
+    //   둘을 null 로 바꿔도 응답이 그대로다. 헤더·라인 둘 다 본다
+    //   (선례 `quality-nonconformance-write.e2e-spec.ts:138·141`).
+    expect(stored.created_by).toBe(BigInt(probeUserId));
+    expect(stored.shipment_request_line.map((row) => row.created_by)).toEqual([
+      BigInt(probeUserId),
+      BigInt(probeUserId),
+    ]);
   });
 
   it('W-20 부분 배정 본문이면 PARTIALLY_ALLOCATED 다', async () => {
@@ -465,7 +497,12 @@ describe('출하작업지시 편성 (e2e)', () => {
       payload({
         salesOrderId: ids.salesOrder,
         timeSlotCode: 'AFTERNOON',
-        lines: [line({ requestedQty: 100, allocatedQty: 40, shippingInspectionRequired: true })],
+        // ⭐ 라인 «둘» — 라인 1건이면 `versionNo(1)` 과 `lines.length(1)` 이 같아 그 칸의
+        //   출처 뒤바꿈이 공허해진다(§6-3 ⑵).
+        lines: [
+          line({ requestedQty: 100, allocatedQty: 40, shippingInspectionRequired: true }),
+          line({ itemId: ids.item2, requestedQty: 50, allocatedQty: 50 }),
+        ],
       }),
     );
     const stored = await prisma.shipment_request.findUniqueOrThrow({
@@ -638,6 +675,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    probeUserId = Number(user.app_user_id);
 
     const noPerm = await prisma.app_user.create({
       data: { login_id: NOPERM_ID, user_name: '출하편성무권한', status_code: 'EMPLOYED' },

@@ -19,7 +19,7 @@ interface Recorded {
   lines: Record<string, unknown>[];
 }
 
-function stub(options: { timeSlotCodes?: string[]; salesOrderLineOwner?: bigint } = {}) {
+function stub() {
   const recorded: Recorded = { order: [], numbered: [], header: {}, lines: [] };
   const prisma = {
     sales_order: { count: async () => 1 },
@@ -27,16 +27,10 @@ function stub(options: { timeSlotCodes?: string[]; salesOrderLineOwner?: bigint 
     item: { findMany: async () => [{ item_id: 21n }] },
     uom: { findMany: async () => [{ uom_id: 31n }] },
     sales_order_line: {
-      findMany: async () => [
-        { sales_order_line_id: 41n, sales_order_id: options.salesOrderLineOwner ?? 9n },
-      ],
+      findMany: async () => [{ sales_order_line_id: 41n, sales_order_id: 9n }],
     },
     code_value: {
-      findMany: async () =>
-        (options.timeSlotCodes ?? ['MORNING']).map((code) => ({
-          code,
-          code_group: { group_code: 'SHIPMENT_TIME_SLOT' },
-        })),
+      findMany: async () => [{ code: 'MORNING', code_group: { group_code: 'SHIPMENT_TIME_SLOT' } }],
     },
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
       recorded.order.push('transaction');
@@ -127,5 +121,31 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
     // 두 벌을 만들면 편성 직후와 재조회가 갈린다(§4 · 파생 축 둘이 그 자리다).
     expect(view).toEqual({ shipmentRequestId: 77 });
     expect(harness.recorded.order.at(-1)).toBe('readback');
+  });
+
+  it('넣는 값 — status_code 상수 · line_no 1부터 · created_by 는 세션 계정', async () => {
+    const harness = stub();
+
+    await harness.service.create(
+      body({
+        lines: [
+          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true },
+          { itemId: 21, requestedQty: 50, allocatedQty: 50, uomId: 31, shippingInspectionRequired: false },
+        ],
+      }),
+      3,
+    );
+
+    expect(harness.recorded.header).toMatchObject({
+      shipment_request_no: 'SR-20260921-0001',
+      status_code: 'REGISTERED',
+      created_by: 3,
+    });
+    // ⛔ `version_no` 를 손으로 넣지 않는다 — 물리 기본값 1 이다(§3-1 ⑦-1).
+    expect(harness.recorded.header).not.toHaveProperty('version_no');
+    expect(harness.recorded.lines.map((row) => row.line_no)).toEqual([1, 2]);
+    expect(harness.recorded.lines.map((row) => row.created_by)).toEqual([3, 3]);
+    // ⛔ `shipped_qty` 도 안 넣는다 — 올리는 것은 I-23 출하 확정이다.
+    expect(harness.recorded.lines[0]).not.toHaveProperty('shipped_qty');
   });
 });
