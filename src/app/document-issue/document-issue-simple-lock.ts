@@ -15,6 +15,8 @@ interface LotRow {
   lot_type_code: string;
   status_code: string;
   completed_at: Date | null;
+  source_type_code: string;
+  source_id: bigint;
 }
 
 interface SerialRow {
@@ -60,7 +62,7 @@ async function lockLots(
 ): Promise<void> {
   if (ids.length === 0) return;
   const rows = await tx.$queryRaw<LotRow[]>(Prisma.sql`
-    SELECT lot_id,lot_type_code,status_code,completed_at
+    SELECT lot_id,lot_type_code,status_code,completed_at,source_type_code,source_id
     FROM trace.lot
     WHERE lot_id IN (${joinedIds(ids)})
     ORDER BY lot_id FOR NO KEY UPDATE`);
@@ -71,6 +73,8 @@ async function lockLots(
       lotTypeCode: row.lot_type_code,
       statusCode: row.status_code,
       completedAt: row.completed_at,
+      sourceTypeCode: row.source_type_code,
+      sourceId: row.source_id,
     }),
   );
 }

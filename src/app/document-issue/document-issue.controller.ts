@@ -31,6 +31,13 @@ import {
   DocumentIssueSummaryService,
 } from './document-issue-summary.service';
 import { DocumentIssueView } from './document-issue-view';
+import { documentIssueWriteContext } from './document-issue-write-context';
+import {
+  DocumentIssueBatchResponse,
+  DocumentIssueWriteService,
+} from './document-issue-write.service';
+import { DocumentIssueCreateInput } from './document-issue-create-rules';
+import { runDocumentIssueWriteWithRetry } from './document-issue-sequence';
 
 @Controller('app/document-issues')
 export class DocumentIssueController {
@@ -38,10 +45,31 @@ export class DocumentIssueController {
     private readonly documentIssues: DocumentIssueQueryService,
     private readonly summaries: DocumentIssueSummaryService,
     private readonly reports: DocumentIssueReportService,
+    private readonly writes: DocumentIssueWriteService,
     private readonly idempotency: IdempotencyService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
   ) {}
+
+  @Post()
+  @Contract('POST /app/document-issues')
+  @HttpCode(HttpStatus.CREATED)
+  async create(
+    @Req() request: Request,
+    @Body() body: DocumentIssueCreateInput,
+  ): Promise<DocumentIssueBatchResponse> {
+    const context = await documentIssueWriteContext(
+      request,
+      this.jwt,
+      this.prisma,
+    );
+    return runDocumentIssueWriteWithRetry(async () => {
+      const outcome = await this.idempotency.run(context, (tx) =>
+        this.writes.issueWithin(tx, body, context),
+      );
+      return outcome.body;
+    });
+  }
 
   @Get()
   @Contract('GET /app/document-issues')
