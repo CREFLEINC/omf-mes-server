@@ -112,6 +112,21 @@ export class ShipmentAllocationQueryService {
     return response;
   }
 
+  /**
+   * ⑦b 의 되읽기 — 목록과 «같은» SELECT · 같은 `oqcPassed` 함수 · 같은 뷰를 탄다(§3-3 ⑨).
+   * ⛔ 쓰기 쪽에서 다시 세우지 마라 — `oqcPassed` 의 LOT 모집단이 «예약 축»이라(Major-1) 두 벌을
+   * 만들면 「목록이 판정한 것」과 「연결 응답이 말하는 것」이 갈린다. 경로 자원의 존재는 ⑦b 가
+   * 이미 잠그고 404 로 판정했다.
+   */
+  async get(shipmentLotAllocationId: number): Promise<ShipmentLotAllocationView> {
+    const [row] = await this.prisma.$queryRawUnsafe<QueryRow[]>(
+      `${SELECT_SQL} WHERE a.shipment_lot_allocation_id = $1::bigint`,
+      shipmentLotAllocationId,
+    );
+    const oqcByLine = await this.oqcPassedByLine([row.shipment_request_line_id]);
+    return shipmentLotAllocationView(row, oqcByLine.get(String(row.shipment_request_line_id)) ?? false);
+  }
+
   private async fetchPage(where: BuiltWhere, page: PageRequest): Promise<{ rows: QueryRow[]; total: number }> {
     const [rows, counted] = await Promise.all([
       this.prisma.$queryRawUnsafe<QueryRow[]>(

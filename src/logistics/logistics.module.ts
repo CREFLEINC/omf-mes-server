@@ -43,6 +43,7 @@ import { PurchaseOrderController } from './purchase-order/purchase-order.control
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 import { SalesOrderQueryService } from './sales-order/sales-order-query.service';
 import { SalesOrderController } from './sales-order/sales-order.controller';
+import { AllocationPackingService } from './shipment-allocation/allocation-packing.service';
 import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-allocation-query.service';
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
@@ -104,6 +105,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PurchaseOrderService,
     PurchaseOrderQueryService,
     SalesOrderQueryService,
+    AllocationPackingService,
     ShipmentAllocationQueryService,
     ShipmentPickService,
     ShipmentRequestQueryService,

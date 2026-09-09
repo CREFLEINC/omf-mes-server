@@ -24,16 +24,23 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-shipment-allocation-probe';
+const NOPERM_ID = 'e2e-shipment-allocation-noperm';
 const PASSWORD = 'SA-출하배분-비밀번호';
 const PREFIX = 'ALE2E';
+const ROLE = `${PREFIX}-ROLE`;
+/** `PUT …/{id}` 는 403 을 «선언»했고 `DERIVED_PERMISSIONS:265` 가 이 화면 하나를 요구한다. */
+const PERMISSIONS = ['P-04-01'];
 const BASE = '/api/logistics/shipment-lot-allocations';
+const WORKER_NO = `${PREFIX}-W1`;
+const LIST_POINTER =
+  '/paths/~1logistics~1shipment-lot-allocations/get/responses/200/content/application~1json/schema';
+/** PUT 200 은 `$ref: ShipmentLotAllocation` 이다 — 경로에 중괄호가 없는 컴포넌트로 곧장 건다. */
+const ITEM_POINTER = '/components/schemas/ShipmentLotAllocation';
 
-function validator(): ValidateFunction {
+function validator(pointer: string = LIST_POINTER): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/shipment-04제품출하.json'), 'utf8'),
   ) as object;
-  const pointer =
-    '/paths/~1logistics~1shipment-lot-allocations/get/responses/200/content/application~1json/schema';
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
@@ -56,6 +63,9 @@ interface AllocationBody {
   oqcPassed: boolean;
   packedQty: number;
 }
+interface ErrorBody {
+  errors: { scope: string; field?: string; code: string; message: string }[];
+}
 interface ListBody {
   items: AllocationBody[];
   page: { page: number; size: number; total: number };
@@ -68,10 +78,12 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermCookie: string[];
 
   const ids = {
     plant: 0n,
     warehouse: 0n,
+    warehouse2: 0n,
     uom: 0n,
     uom2: 0n,
     item1: 0n,
@@ -421,6 +433,188 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     expect(body.items.map((r) => r.shipmentLotAllocationId)).toEqual([c, b, a]);
   });
 
+  // ── A-19 ~ A-27 — PUT …/{id} 포장 단위 연결(PR ⑦b) ─────────────────────────
+
+  it('A-19 PUT 이 handling_unit_id 를 붙이고 200 이다 — 되읽기가 ⑦a 의 뷰 그대로다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const lot = await makeLot('A19');
+    const allocationId = await makeAllocation(line, { lot, handlingUnitId: null, qty: 40 });
+    const hu = await makeHandlingUnit();
+
+    const body = await pack(allocationId, hu);
+
+    const schema = validator(ITEM_POINTER);
+    expect(schema(body)).toBe(true);
+    expect(schema.errors ?? []).toEqual([]);
+    expect(body).toMatchObject({
+      shipmentLotAllocationId: allocationId,
+      handlingUnitId: Number(hu),
+      // ⭐ ⑨ 는 ⑦a 의 뷰가 낸다 — `packedQty` 를 여기서 다시 세면(예: 늘 0) 이 값이 갈린다(§5-3).
+      packedQty: 40,
+      allocatedQty: 40,
+    });
+    expect(await storedHuOf(allocationId)).toBe(hu);
+    // 목록이 내는 같은 행과 «통째로» 같다 — 두 벌 계산이 생기면 여기서 갈린다.
+    const fromList = (await list({ shipmentLineId: line.shipmentLineId })).items.find(
+      (row) => row.shipmentLotAllocationId === allocationId,
+    );
+    expect(body).toEqual(fromList);
+  });
+
+  it('A-19b ⭐⭐ 되읽기의 oqcPassed 가 «예약 축» 모집단 그대로다 — 여기서 다시 계산하면 갈린다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1, required: true });
+    const lotA = await makeLot('A19B-A');
+    const lotB = await makeLot('A19B-B');
+    // 둘 다 «피킹»했고 이번 출하엔 A 만 «배분»됐다 — ⑦a Major-1 과 같은 픽스처다.
+    await makePick(line.shipmentRequestLineId, lotA);
+    await makePick(line.shipmentRequestLineId, lotB);
+    const allocationId = await makeAllocation(line, { lot: lotA, handlingUnitId: null });
+    await makeOqc('LOT', lotA, null, [{ judgment: 'ACCEPTED' }]);
+    await makeOqc('LOT', lotB, null, [{ judgment: 'REJECTED' }]);
+    const hu = await makeHandlingUnit();
+
+    const body = await pack(allocationId, hu);
+
+    // ⛔ 배분 축으로 다시 세우면 모집단이 {A} 뿐이라 true 가 나온다 — 그러면 검사 화면은
+    //    불합격인데 연결 응답은 「라벨 뽑아도 된다」고 말한다.
+    expect(body.oqcPassed).toBe(false);
+  });
+
+  it('A-20 ⭐ 다른 HU 가 이미 붙었으면 409 INVALID_STATE 이고 문구가 «현재 HU» 를 싣는다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const first = await makeHandlingUnit();
+    const second = await makeHandlingUnit();
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A20'), handlingUnitId: first });
+
+    const response = await put(allocationId, { handlingUnitId: Number(second) }).expect(409);
+
+    const conflict = response.body as { code?: string; message: string; conflictCause: string };
+    // `code` 는 계약 required 인데 공용 예외가 «선택»으로 둔다 — 명시로 안 넘기면 여기서 빠진다.
+    expect(conflict.code).toBe('INVALID_STATE');
+    // ⭐ 네 사유가 전부 `INVALID_STATE` 라 화면이 분기할 축은 문구뿐이다(R-18) — 현재 HU 번호를
+    //   빼면 운영자가 「어느 포장을 풀어야 하나」를 못 정한다.
+    expect(conflict.message).toContain(await handlingUnitNoOf(first));
+    // ⛔ 덮어쓰기 변이는 상태만으로도 죽지만, 저장값까지 본다.
+    expect(await storedHuOf(allocationId)).toBe(first);
+  });
+
+  it('A-21 ⭐ 같은 HU 를 다시 주면 200 이고 행이 안 바뀐다(멱등 — 409 로 내면 깨진다)', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const hu = await makeHandlingUnit();
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A21'), handlingUnitId: null });
+
+    await pack(allocationId, hu);
+    const before = await xminOf(allocationId);
+    // ⛔ 다른 `Idempotency-Key` 다 — 멱등 «기록»이 흡수하는 것이 아니라 «도메인»이 흡수한다.
+    const body = await pack(allocationId, hu);
+
+    expect(body.handlingUnitId).toBe(Number(hu));
+    expect(await xminOf(allocationId)).toBe(before);
+  });
+
+  it('A-22 HU 창고가 출하 창고와 다르면 400 이다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A22'), handlingUnitId: null });
+    const hu = await makeHandlingUnit({ warehouse: 'other' });
+
+    const errors = await rejectPut(allocationId, hu);
+
+    expect(errors).toEqual([
+      { scope: 'field', field: 'handlingUnitId', code: 'INVALID', message: '출하 창고와 다른 창고의 취급 단위입니다.' },
+    ]);
+    expect(await storedHuOf(allocationId)).toBeNull();
+  });
+
+  it('A-23 ⭐⭐ HU 창고가 NULL 이면 400 이다 — 확인할 수 없으면 «통과시키지 않는다»', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A23'), handlingUnitId: null });
+    const hu = await makeHandlingUnit({ warehouse: null });
+
+    const errors = await rejectPut(allocationId, hu);
+
+    // ⛔ A-22 와 «다른» 문구다 — 하나로 합치면 널 갈래를 지워도 창고 대조가 대신 막아 초록이 된다.
+    expect(errors).toEqual([
+      {
+        scope: 'field',
+        field: 'handlingUnitId',
+        code: 'INVALID',
+        message: '취급 단위의 창고를 알 수 없어 연결할 수 없습니다.',
+      },
+    ]);
+    expect(await storedHuOf(allocationId)).toBeNull();
+  });
+
+  it('A-24 ⭐ 포장 가능 상태가 아닌 HU 면 400 이고, 확정된 포장(PACKED)은 통과한다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A24'), handlingUnitId: null });
+    // 결정 — 통보 후보. 저장소에 폐기·해체 상태값이 «0개»라(통보 142) 허용 목록 밖의 값으로 겨눈다.
+    const dead = await makeHandlingUnit({ status: 'SCRAPPED' });
+
+    const errors = await rejectPut(allocationId, dead);
+    expect(errors[0]).toMatchObject({ field: 'handlingUnitId', code: 'INVALID' });
+    expect(errors[0].message).toContain('SCRAPPED');
+    expect(await storedHuOf(allocationId)).toBeNull();
+
+    // ⭐ 축의 «반대쪽» — `:pack` 이 닫은 포장에도 붙는다. 허용 목록을 `OPEN` 하나로 좁히면 깨진다.
+    const packed = await makeHandlingUnit({ status: 'PACKED' });
+    expect((await pack(allocationId, packed)).handlingUnitId).toBe(Number(packed));
+  });
+
+  it('A-25 없는 배분 → 404 · 없는 HU → 400 INVALID (같은 코드로 내면 깨진다)', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A25'), handlingUnitId: null });
+    const hu = await makeHandlingUnit();
+
+    await put(999_999_999, { handlingUnitId: Number(hu) }).expect(404);
+
+    const errors = await rejectPut(allocationId, 999_999_999n);
+    expect(errors).toEqual([
+      { scope: 'field', field: 'handlingUnitId', code: 'INVALID', message: '없는 취급 단위입니다.' },
+    ]);
+  });
+
+  it('A-26 X-Worker-No 가 없거나 빈 문자열이면 400 REQUIRED 다', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A26'), handlingUnitId: null });
+    const hu = await makeHandlingUnit();
+    const payload = { handlingUnitId: Number(hu) };
+
+    for (const workerNo of [null, '', '   ']) {
+      const response = await put(allocationId, payload, { workerNo }).expect(400);
+      expect((response.body as ErrorBody).errors).toEqual([
+        { scope: 'field', field: 'X-Worker-No', code: 'REQUIRED', message: '작업자 사번 헤더가 필요합니다.' },
+      ]);
+    }
+    expect(await storedHuOf(allocationId)).toBeNull();
+  });
+
+  it('A-27 ⭐ 권한 없는 세션의 PUT 은 403 이다 (GET 은 403 미선언이라 200 이 온다)', async () => {
+    const shipment = await makeShipment();
+    const line = await makeShipmentLine(shipment, { item: 1 });
+    const allocationId = await makeAllocation(line, { lot: await makeLot('A27'), handlingUnitId: null });
+    const hu = await makeHandlingUnit();
+
+    // ⚠ 권한 미등재였다면 가드가 던져 403 이 아니라 500 이다.
+    const forbidden = await put(allocationId, { handlingUnitId: Number(hu) }, { session: noPermCookie });
+    expect(forbidden.status).toBe(403);
+
+    // ⛔ 겨냥을 GET 으로 옮기면 이 시험이 뒤집힌다 — GET 은 403 을 «선언하지 않아» 200 이다.
+    await request(app.getHttpServer())
+      .get(`${BASE}?shipmentId=${shipment.shipmentId}`)
+      .set('Cookie', noPermCookie)
+      .expect(200);
+    expect(await storedHuOf(allocationId)).toBeNull();
+  });
+
   // ───────────────────────────────────────────────────────────────────────
 
   async function list(query: Record<string, unknown>): Promise<ListBody> {
@@ -536,17 +730,77 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     return Number(allocation.shipment_lot_allocation_id);
   }
 
-  async function makeHandlingUnit(): Promise<bigint> {
+  /**
+   * ⭐ 축이 둘 이상이다(§6-3 ⑵) — 창고는 «출하 창고 · 다른 창고 · NULL» 셋, 상태는 «OPEN ·
+   * PACKED · 포장 불가» 셋. 한 값뿐이면 ⑤·⑥ 의 단언이 공허하다.
+   */
+  async function makeHandlingUnit(
+    spec: { warehouse?: 'ship' | 'other' | null; status?: string } = {},
+  ): Promise<bigint> {
     seq += 1;
+    // ⛔ `??` 를 쓰면 «널 창고» 축이 통째로 사라진다(널이 nullish 라 기본값으로 접힌다).
+    const warehouse = spec.warehouse === undefined ? 'ship' : spec.warehouse;
     const hu = await prisma.handling_unit.create({
       data: {
         handling_unit_no: `${PREFIX}-HU-${seq}`,
         handling_unit_type_code: 'PALLET',
-        warehouse_id: ids.warehouse,
-        status_code: 'OPEN',
+        warehouse_id: warehouse === null ? null : warehouse === 'other' ? ids.warehouse2 : ids.warehouse,
+        status_code: spec.status ?? 'OPEN',
       },
     });
     return hu.handling_unit_id;
+  }
+
+  async function handlingUnitNoOf(handlingUnitId: bigint): Promise<string> {
+    const row = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: handlingUnitId } });
+    return row.handling_unit_no;
+  }
+
+  /**
+   * ⭐ `shipment_lot_allocation` 에 `version_no` 도 `updated_at` 도 «없다» — 「행이 안 바뀐다」를
+   * 볼 칸이 응답에도 표에도 없다. Postgres 시스템 칸 `xmin`(그 행을 마지막으로 쓴 트랜잭션)이
+   * 유일한 그물이다: 값이 같은 UPDATE 라도 돌면 `xmin` 이 «바뀐다».
+   */
+  async function xminOf(allocationId: number): Promise<string> {
+    const [row] = await prisma.$queryRawUnsafe<{ xmin: string }[]>(
+      `SELECT xmin::text AS xmin FROM logistics.shipment_lot_allocation
+        WHERE shipment_lot_allocation_id = $1::bigint`,
+      allocationId,
+    );
+    return row.xmin;
+  }
+
+  async function storedHuOf(allocationId: number): Promise<bigint | null> {
+    const row = await prisma.shipment_lot_allocation.findUniqueOrThrow({
+      where: { shipment_lot_allocation_id: BigInt(allocationId) },
+    });
+    return row.handling_unit_id;
+  }
+
+  function put(
+    allocationId: number,
+    payload: Record<string, unknown>,
+    options: { workerNo?: string | null; key?: string; session?: string[] } = {},
+  ): request.Test {
+    const test = request(app.getHttpServer())
+      .put(`${BASE}/${allocationId}`)
+      .set('Cookie', options.session ?? cookie)
+      .set('Idempotency-Key', options.key ?? randomUUID());
+    if (options.workerNo !== null) test.set('X-Worker-No', options.workerNo ?? WORKER_NO);
+    return test.send(payload);
+  }
+
+  async function pack(allocationId: number, handlingUnitId: bigint): Promise<AllocationBody> {
+    const response = await put(allocationId, { handlingUnitId: Number(handlingUnitId) }).expect(200);
+    return response.body as AllocationBody;
+  }
+
+  async function rejectPut(
+    allocationId: number,
+    handlingUnitId: bigint,
+  ): Promise<{ scope: string; field?: string; code: string; message: string }[]> {
+    const response = await put(allocationId, { handlingUnitId: Number(handlingUnitId) }).expect(400);
+    return (response.body as ErrorBody).errors;
   }
 
   async function makeLot(key: string, item: 1 | 2 = 1, uom: 1 | 2 = 1): Promise<bigint> {
@@ -629,6 +883,19 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     });
     ids.warehouse = warehouse.warehouse_id;
 
+    // ⭐ ⑤ 의 「다른 창고」 축 — 값이 하나뿐이면 창고 대조가 공허하다(§6-3 ⑵).
+    const other = await prisma.warehouse.create({
+      data: {
+        plant_id: ids.plant,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH2`,
+        warehouse_name: '출하배분다른창고',
+        warehouse_type_code: 'FINISHED',
+        management_level_code: 'WAREHOUSE',
+      },
+    });
+    ids.warehouse2 = other.warehouse_id;
+
     for (const [key, suffix] of [
       ['item1', 'IT1'],
       ['item2', 'IT2'],
@@ -666,6 +933,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     ids.worker = worker.worker_id;
   }
 
+  /** `PUT …/{id}` 는 403 을 «선언»한 자리다 — 권한 있는 세션과 없는 세션을 둘 다 세운다. */
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '출하배분검사', status_code: 'EMPLOYED' },
@@ -673,7 +941,20 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '출하배분검사용' } });
+    await prisma.role_permission.createMany({
+      data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+    });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+
+    const noPerm = await prisma.app_user.create({
+      data: { login_id: NOPERM_ID, user_name: '출하배분무권한', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: noPerm.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
     cookie = await login(LOGIN_ID);
+    noPermCookie = await login(NOPERM_ID);
   }
 
   async function login(loginId: string): Promise<string[]> {
@@ -716,11 +997,18 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
 
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
+    for (const loginId of [LOGIN_ID, NOPERM_ID]) {
+      const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });
