@@ -69,7 +69,7 @@ interface AdjustmentBody {
   adjustedAt: string | null;
 }
 
-describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
+describe('재고 조정 7 오퍼레이션 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -90,6 +90,18 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
   /** ⭐ 같은 공장 · «다른 사업부» 창고의 위치 — 공장 축만 본다는 것의 반대 갈래. */
   let otherUnitLocationId: number;
   let otherUnitWarehouseId: number;
+  /** 전기 전용 위치들 — 전기가 잔액을 «움직이므로» 앞 시험과 섞이면 기대값이 무너진다. */
+  let postDownLocationId: number;
+  let postUpLocationId: number;
+  /** §10-6 의 A(100)·B(30) — 증·감이 섞인 한 전표가 이 둘을 80·35 로 만든다. */
+  let mixFromLocationId: number;
+  let mixToLocationId: number;
+  let postGeneralLocationId: number;
+  let flowLocationId: number;
+  /** ⭐ `negative_stock_allowed = true` 품목 한 벌 — I-4 와 갈리는 자리다. */
+  let negItemId: number;
+  let negLotId: number;
+  let negLocationId: number;
   let itemId: number;
   let lotId: number;
   let uomId: number;
@@ -632,6 +644,196 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     expect(approved.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED', field: 'items' });
   });
 
+  // ── 전기(`:post`) ───────────────────────────────────────────────────────
+
+  it('⭐ 감(−) 전기 — 200 · 잔액이 줄고 원장 라인에 from 만 실린다', async () => {
+    const fixture = await registered([lineAt({ locationId: postDownLocationId, adjustmentQty: -20 })]);
+
+    const response = await post(fixture).expect(200);
+
+    expect(response.body).toMatchObject({ statusCode: 'POSTED' });
+    expect(await onHand(postDownLocationId)).toBe(20);
+    const [entry] = await ledgerOf(fixture.inventoryAdjustmentId);
+    // ⛔ 부호는 끝점이 말한다 — 원장 라인은 `qty > 0` CHECK 라 절댓값이 실린다.
+    expect(Number(entry.qty)).toBe(20);
+    expect(Number(entry.from_location_id)).toBe(postDownLocationId);
+    expect(entry.to_location_id).toBeNull();
+    expect(Number(entry.from_qty_after_transaction)).toBe(20);
+  });
+
+  it('⭐ 증(+) 전기 — 잔액이 늘고 원장 라인에 to 만 실린다', async () => {
+    const fixture = await registered([lineAt({ locationId: postUpLocationId, adjustmentQty: 5 })]);
+
+    await post(fixture).expect(200);
+
+    expect(await onHand(postUpLocationId)).toBe(45);
+    const [entry] = await ledgerOf(fixture.inventoryAdjustmentId);
+    expect(Number(entry.qty)).toBe(5);
+    expect(entry.from_location_id).toBeNull();
+    expect(Number(entry.to_location_id)).toBe(postUpLocationId);
+    expect(Number(entry.to_qty_after_transaction)).toBe(45);
+  });
+
+  it('⭐ 증·감이 섞인 한 전표가 원장 하나(헤더 1 · 라인 2)로 나가고 두 잔액이 각각 오르내린다', async () => {
+    // §10-6 — A 100 · B 30 → (A −20 · B +5) → A 80 · B 35.
+    const fixture = await registered([
+      lineAt({ locationId: mixFromLocationId, adjustmentQty: -20 }),
+      lineAt({ locationId: mixToLocationId, adjustmentQty: 5 }),
+    ]);
+
+    await post(fixture).expect(200);
+
+    expect(await onHand(mixFromLocationId)).toBe(80);
+    expect(await onHand(mixToLocationId)).toBe(35);
+    const headers = await prisma.inventory_transaction.findMany({
+      where: { source_document_type_code: 'INVENTORY_ADJUSTMENT', source_document_id: fixture.inventoryAdjustmentId },
+    });
+    expect(headers).toHaveLength(1);
+    const entries = await ledgerOf(fixture.inventoryAdjustmentId);
+    expect(entries).toHaveLength(2);
+    // ⭐ 라인 순서가 보존되고 가름이 라인마다 «독립»이다 — 뒤집으면 여기가 깨진다.
+    expect(entries.map((row) => row.line_no)).toEqual([1, 2]);
+    expect(Number(entries[0].from_location_id)).toBe(mixFromLocationId);
+    expect(entries[0].to_location_id).toBeNull();
+    expect(Number(entries[0].from_qty_after_transaction)).toBe(80);
+    expect(entries[1].from_location_id).toBeNull();
+    expect(Number(entries[1].to_location_id)).toBe(mixToLocationId);
+    expect(Number(entries[1].to_qty_after_transaction)).toBe(35);
+  });
+
+  it('⭐ 원장 헤더가 조정을 가리킨다 — 판별자·원천 id·번호·영업일 · 공장은 라인 위치에서 역산한다', async () => {
+    const fixture = await registered([lineAt({ locationId: postGeneralLocationId, adjustmentQty: -1 })]);
+    const detail = await getDetail(fixture.inventoryAdjustmentId);
+
+    await post(fixture).expect(200);
+
+    const header = await prisma.inventory_transaction.findFirstOrThrow({
+      where: { source_document_type_code: 'INVENTORY_ADJUSTMENT', source_document_id: fixture.inventoryAdjustmentId },
+    });
+    expect(header.transaction_type_code).toBe('INVENTORY_ADJUSTMENT');
+    expect(header.transaction_no).toBe(detail.inventoryAdjustment.inventoryAdjustmentNo);
+    expect(header.business_date.toISOString().slice(0, 10)).toBe(DAY);
+    expect(header.occurred_at.toISOString()).toBe(AT);
+    expect(Number(header.plant_id)).toBe(plantId);
+    expect(header.idempotency_key).toBe(`INVENTORY_ADJUSTMENT:${detail.inventoryAdjustment.inventoryAdjustmentNo}`);
+  });
+
+  it('⭐ 라인이 두 공장에 걸친 전표는 전기가 400 INVALID 다 — 헤더 공장이 거짓을 적게 된다', async () => {
+    // 등록 경로가 이미 막으므로 «저장된» 전표를 직접 심어야 이 갈래를 밟는다.
+    const id = await seedTwoPlantAdjustment();
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/inventory/adjustments/${id}:post`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', '1')
+      .send({ businessDate: DAY, occurredAt: AT });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({ code: 'INVALID', field: 'lines[1].locationId' });
+  });
+
+  it('⭐ 되짚기 — inventory_adjustment_line 이 제 원장 라인을 가리킨다(응답에는 안 실린다)', async () => {
+    const fixture = await registered([
+      lineAt({ locationId: mixFromLocationId, adjustmentQty: -2 }),
+      lineAt({ locationId: mixToLocationId, adjustmentQty: 3 }),
+    ]);
+
+    const response = await post(fixture).expect(200);
+
+    expect(response.body).not.toHaveProperty('lines');
+    const lines = await prisma.inventory_adjustment_line.findMany({
+      where: { inventory_adjustment_id: fixture.inventoryAdjustmentId },
+      orderBy: { line_no: 'asc' },
+    });
+    const entries = await ledgerOf(fixture.inventoryAdjustmentId);
+    // ⭐ «자리»로 짝지어야 한다 — 어긋나면 라인이 남의 원장 줄을 가리킨다.
+    expect(lines.map((row) => row.inventory_transaction_line_id)).toEqual(
+      entries.map((row) => row.inventory_transaction_line_id),
+    );
+    expect(Number(entries[0].from_location_id)).toBe(mixFromLocationId);
+    expect(Number(entries[1].to_location_id)).toBe(mixToLocationId);
+  });
+
+  it('⭐ POSTED · adjustedAt 이 본문 occurredAt · version_no 가 오른다 · 200 에 lines 도 ETag 도 없다', async () => {
+    const fixture = await registered([lineAt({ locationId: postGeneralLocationId, adjustmentQty: -3 })]);
+
+    const response = await post(fixture).expect(200);
+
+    expect(response.body).toMatchObject({ statusCode: 'POSTED', adjustedAt: AT });
+    expect(response.body.lines).toBeUndefined();
+    // ⛔ ETag 를 «값»으로 재면 못 잡는다 — express 가 본문 해시로 `W/"…"` 를 늘 붙인다.
+    //    `setEtag` 는 버전 «숫자»를 쓰므로, 숫자로 안 읽히는 것이 「안 내렸다」의 증거다.
+    expect(response.headers.etag).toMatch(/^W\//);
+    expect(Number(response.headers.etag)).toBeNaN();
+    const after = await request(app.getHttpServer())
+      .get(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(Number(after.headers.etag)).toBe(fixture.versionNo + 1);
+  });
+
+  it('⭐ 재전기는 400 STATE_LOCKED · 같은 Idempotency-Key 재전송은 앞 응답 그대로고 원장이 1건이다', async () => {
+    const fixture = await registered([lineAt({ locationId: postGeneralLocationId, adjustmentQty: -4 })]);
+    const key = randomUUID();
+    const first = await post(fixture, fixture.versionNo, key).expect(200);
+
+    const replayed = await post(fixture, fixture.versionNo, key).expect(200);
+    expect(replayed.body).toEqual(first.body);
+    // ⛔ 응답만 보면 멱등을 우회해도 초록이다 — 원장을 «되읽어» 1건임을 잰다.
+    expect(await ledgerOf(fixture.inventoryAdjustmentId)).toHaveLength(1);
+
+    const again = await post(fixture, fixture.versionNo + 1);
+    expect(again.status).toBe(400);
+    expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('⭐ 보유보다 많이 빼면 400 NEGATIVE_BALANCE — 단 negative_stock_allowed 품목은 전기된다', async () => {
+    const blocked = await registered([lineAt({ locationId: postGeneralLocationId, adjustmentQty: -600 })]);
+    const refused = await post(blocked);
+    expect(refused.status).toBe(400);
+    expect(refused.body.errors[0]).toMatchObject({
+      code: 'NEGATIVE_BALANCE',
+      field: 'lines[0].adjustmentQty',
+    });
+    expect(await onHand(postGeneralLocationId)).toBeGreaterThan(0);
+
+    // ⭐ 같은 형상인데 품목만 갈린다 — 잔액이 «음수»가 되어도 전기된다(화면 `W-01-12` §6).
+    const allowed = await registered([
+      lineAt({ locationId: negLocationId, itemId: negItemId, lotId: negLotId, adjustmentQty: -25 }),
+    ]);
+    await post(allowed).expect(200);
+    expect(await onHand(negLocationId, negItemId, negLotId)).toBe(-15);
+  });
+
+  it('⭐ 승인 축 — 대기 중은 400 APPROVAL_IN_PROGRESS · 반려는 400 APPROVAL_REQUIRED · 무권한 403 · 승인 한 줄', async () => {
+    const pendingFixture = await registered([lineAt({ locationId: postGeneralLocationId, adjustmentQty: -5 })]);
+    const submitted = await requestApproval(pendingFixture).expect(202);
+    const pending = await post(pendingFixture);
+    expect(pending.status).toBe(400);
+    expect(pending.body.errors[0]).toMatchObject({ code: 'APPROVAL_IN_PROGRESS' });
+
+    await decide('reject', submitted.body.approvalRequestId, { comment: '근거가 모자랍니다' });
+    const rejected = await post(pendingFixture);
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.errors[0]).toMatchObject({ code: 'APPROVAL_REQUIRED' });
+
+    const noPerm = await request(app.getHttpServer())
+      .post(`/api/inventory/adjustments/${pendingFixture.inventoryAdjustmentId}:post`)
+      .set('Cookie', noPermCookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(pendingFixture.versionNo))
+      .send({ businessDate: DAY, occurredAt: AT });
+    expect(noPerm.status).toBe(403);
+
+    // ⭐ 한 줄 — 등록 → 상신 → 결재함 승인 → 전기 → 잔액이 준다.
+    const flow = await registered([lineAt({ locationId: flowLocationId, adjustmentQty: -10 })]);
+    const request2 = await requestApproval(flow).expect(202);
+    await decide('approve', request2.body.approvalRequestId);
+    await post(flow).expect(200);
+    expect(await onHand(flowLocationId)).toBe(40);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /** 치환 본문 한 줄 — 등록의 `line()` 과 칸은 같고 배열 이름만 `items` 다. */
@@ -684,6 +886,75 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       .set('If-Match', detail.headers.etag as string)
       .send(body)
       .expect(200);
+  }
+
+  /** 등록 본문 한 줄 — 위치·품목·수량을 시험마다 갈아 끼운다(전기가 잔액을 움직인다). */
+  function lineAt(over: Record<string, unknown>): Record<string, unknown> {
+    return { locationId, itemId, lotId, uomId, adjustmentQty: -2, ...over };
+  }
+
+  function post(fixture: Fixture, version = fixture.versionNo, key = randomUUID()): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/inventory/adjustments/${fixture.inventoryAdjustmentId}:post`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .set('If-Match', String(version))
+      .send({ businessDate: DAY, occurredAt: AT });
+  }
+
+  async function onHand(location: number, item = itemId, lot = lotId): Promise<number> {
+    const row = await prisma.inventory_balance.findFirstOrThrow({
+      where: { location_id: location, item_id: item, lot_id: lot },
+    });
+    return Number(row.on_hand_qty);
+  }
+
+  /** 그 조정이 남긴 원장 라인 — `line_no` 오름차순. */
+  async function ledgerOf(inventoryAdjustmentId: number) {
+    const header = await prisma.inventory_transaction.findFirstOrThrow({
+      where: {
+        source_document_type_code: 'INVENTORY_ADJUSTMENT',
+        source_document_id: inventoryAdjustmentId,
+      },
+    });
+    return prisma.inventory_transaction_line.findMany({
+      where: { inventory_transaction_id: header.inventory_transaction_id },
+      orderBy: { line_no: 'asc' },
+    });
+  }
+
+  async function getDetail(inventoryAdjustmentId: number): Promise<{ inventoryAdjustment: AdjustmentBody }> {
+    const response = await request(app.getHttpServer())
+      .get(`/api/inventory/adjustments/${inventoryAdjustmentId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body;
+  }
+
+  /** 등록이 막는 형상이라 손으로 심는다 — 번호 접두어가 cleanup 의 축이다. */
+  async function seedTwoPlantAdjustment(): Promise<number> {
+    const header = await prisma.inventory_adjustment.create({
+      data: {
+        inventory_adjustment_no: `IA-${PREFIX}-0003`,
+        reason_code: 'COUNT_VARIANCE',
+        status_code: 'REGISTERED',
+        inventory_adjustment_line: {
+          create: [mixFromLocationId, otherPlantLocationId].map((location_id, index) => ({
+            line_no: index + 1,
+            location_id,
+            item_id: itemId,
+            lot_id: lotId,
+            quality_status_code: 'NORMAL',
+            inventory_status_code: 'AVAILABLE',
+            adjustment_qty: -1,
+            uom_id: uomId,
+            reason_code: 'COUNT_VARIANCE',
+          })),
+        },
+      },
+      select: { inventory_adjustment_id: true },
+    });
+    return Number(header.inventory_adjustment_id);
   }
 
   function line(adjustmentQty: number): Record<string, unknown> {
@@ -759,6 +1030,13 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     locationId = await makeLocation('', warehouse.warehouse_id);
     emptyLocationId = await makeLocation('-E', warehouse.warehouse_id);
     dualLocationId = await makeLocation('-D', warehouse.warehouse_id);
+    postDownLocationId = await makeLocation('-PD', warehouse.warehouse_id);
+    postUpLocationId = await makeLocation('-PU', warehouse.warehouse_id);
+    mixFromLocationId = await makeLocation('-MA', warehouse.warehouse_id);
+    mixToLocationId = await makeLocation('-MB', warehouse.warehouse_id);
+    postGeneralLocationId = await makeLocation('-PG', warehouse.warehouse_id);
+    flowLocationId = await makeLocation('-PF', warehouse.warehouse_id);
+    negLocationId = await makeLocation('-NG', warehouse.warehouse_id);
 
     // 공장 단일 검사(결정 — 통보 133)용 두 번째 공장 한 벌.
     const plant2 = await prisma.plant.create({
@@ -817,6 +1095,19 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       },
     });
     itemId = Number(item.item_id);
+    // ⭐ 트리거 `check_balance_qty()` 둘째 갈래를 «반대로» 밟는 품목 — 화면 `W-01-12` §6 이
+    //    「음수 재고가 되는 조정」을 인정한 자리다(I-4 는 이 축을 무시했다).
+    const negItem = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-IT-NEG`,
+        item_name: '조정검사품목음수',
+        item_type_code: 'RAW_MATERIAL',
+        base_uom_id: uom.uom_id,
+        lot_controlled: false,
+        negative_stock_allowed: true,
+      },
+    });
+    negItemId = Number(negItem.item_id);
 
     const count = await prisma.inventory_count.create({
       data: {
@@ -880,6 +1171,20 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
       },
     });
     lotId = Number(lot.lot_id);
+    const negLot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT-NEG`,
+        item_id: negItemId,
+        lot_type_code: 'MATERIAL',
+        plant_id: plantId,
+        initial_qty: 20,
+        uom_id: uomId,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: 1,
+        status_code: 'INSPECTION_PENDING',
+      },
+    });
+    negLotId = Number(negLot.lot_id);
   }
 
   /**
@@ -892,6 +1197,15 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     await receive(dualLocationId, 10, 'AVAILABLE');
     await receive(dualLocationId, 10, 'BLOCKED');
     await receive(otherUnitLocationId, 20, 'AVAILABLE', otherUnitWarehouseId);
+    // 전기 시험 몫. ⭐ 여기서 선 원장(입고)이 「남의 전표의 원장 라인」이기도 하다 —
+    // 되짚기의 `where: { inventory_transaction_id }` 를 잠그는 것이 그 행들이다.
+    await receive(postDownLocationId, 40, 'AVAILABLE');
+    await receive(postUpLocationId, 40, 'AVAILABLE');
+    await receive(mixFromLocationId, 100, 'AVAILABLE');
+    await receive(mixToLocationId, 30, 'AVAILABLE');
+    await receive(postGeneralLocationId, 500, 'AVAILABLE');
+    await receive(flowLocationId, 50, 'AVAILABLE');
+    await receive(negLocationId, 10, 'AVAILABLE', warehouseId, negItemId, negLotId);
   }
 
   async function receive(
@@ -899,6 +1213,8 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
     receiptQty: number,
     inventoryStatusCode: string,
     intoWarehouseId = warehouseId,
+    intoItemId = itemId,
+    intoLotId = lotId,
   ): Promise<void> {
     await request(app.getHttpServer())
       .post('/api/logistics/goods-receipts')
@@ -912,8 +1228,8 @@ describe('재고 조정 조회 3건 + 등록 (e2e)', () => {
         businessDate: DAY,
         lines: [
           {
-            itemId,
-            lotId,
+            itemId: intoItemId,
+            lotId: intoLotId,
             receiptQty,
             uomId,
             qualityStatusCode: 'NORMAL',

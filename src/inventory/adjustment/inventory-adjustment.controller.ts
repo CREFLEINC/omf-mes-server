@@ -35,10 +35,10 @@ import {
   InventoryAdjustmentLineCreate,
 } from './inventory-adjustment-rules';
 import { InventoryAdjustmentUpdateService } from './inventory-adjustment-update.service';
-import { InventoryAdjustmentService } from './inventory-adjustment.service';
+import { InventoryAdjustmentService, PostAdjustmentRequest } from './inventory-adjustment.service';
 
 /**
- * 재고 조정 7건 중 조회 3 + 등록 + 치환 + 상신. 화면은 `W-01-12` 가 소유한다. `:post` 는 뒤 PR.
+ * 재고 조정 7건 전부. 화면은 `W-01-12` 가 소유한다.
  * 계약이 조회 3건에 403 을 선언하지 않아 `manual-permissions.ts` 에 없다(I-14.md §7).
  */
 @Controller('inventory/adjustments')
@@ -118,6 +118,27 @@ export class InventoryAdjustmentController {
       (version) => this.updates.replaceLines(inventoryAdjustmentId, version, body.items, appUserId),
     );
     return { items };
+  }
+
+  /**
+   * ⭐ 재고가 움직이는 순간이다. If-Match 는 `inventory_adjustment.version_no` 다.
+   * ⛔ `setEtag` 를 안 부른다 — 계약이 이 200 에 헤더를 선언하지 않았다. 200 본문은 헤더
+   * 하나이고 `lines` 가 없다(계약 응답 스키마 `InventoryAdjustment`).
+   */
+  @Post(':inventoryAdjustmentId\\:post')
+  @Contract('POST /inventory/adjustments/{inventoryAdjustmentId}:post')
+  // 계약 응답이 200 이다 — Nest 의 `@Post` 기본값 201 을 되돌린다.
+  @HttpCode(HttpStatus.OK)
+  post(
+    @Req() request: Request,
+    @Param('inventoryAdjustmentId', ParseIntPipe) inventoryAdjustmentId: number,
+    @Body() body: PostAdjustmentRequest,
+  ): Promise<InventoryAdjustmentView> {
+    const version = versionOf(request);
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.adjustments.post(inventoryAdjustmentId, version, body, appUserId),
+    );
   }
 
   /** ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 승인 유형은 서버가 낸다(본문 미수신). */

@@ -38,6 +38,8 @@ const MAINTENANCE_ORDER_STATUS = 'maintenance.maintenance_order.status_code';
 const STOCK_TRANSFER_STATUS = 'logistics.stock_transfer.status_code';
 /** I-21 PR ④ 가 여는 축 — 시드 `NONCONFORMANCE_STATUS` 3값. 의뢰와 판정 완료 둘뿐이다. */
 const NONCONFORMANCE_STATUS = 'quality.nonconformance.status_code';
+/** I-14 PR ④ 가 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 전기 하나뿐이다(취소 경로 0건). */
+const ADJUSTMENT_STATUS = 'inventory.inventory_adjustment.status_code';
 
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
@@ -486,6 +488,7 @@ describe('DocumentStateService', () => {
 
       expect([...columns].sort()).toEqual(
         [
+          ADJUSTMENT_STATUS,
           APPROVAL_STATUS,
           BREAKDOWN_STATUS,
           EQUIPMENT_STATUS,
@@ -516,7 +519,8 @@ describe('DocumentStateService', () => {
       // +1 — 보전 지시 취소 키 신설(I-31 C0).
       // +1 — 재고 이동 도착 확정 키 신설(I-13 PR ③).
       // +5 — LOT 품질 축에 처분 판정 3, 부적합 처리 키 신설 2(I-21 PR ④).
-      expect(service.registered()).toHaveLength(47);
+      // +1 — 재고 조정 전기 키 신설(I-14 PR ④).
+      expect(service.registered()).toHaveLength(48);
     });
 
     it('⭐ 재고 이동 상태 — transfer-arrive «하나»뿐이고 반출은 전이가 아니다(탄생 상태)', () => {

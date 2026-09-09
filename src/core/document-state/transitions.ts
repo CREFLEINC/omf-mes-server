@@ -428,4 +428,23 @@ export const TRANSITIONS: TransitionRegistry = {
       sourceOperation: 'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary',
     },
   },
+
+  /**
+   * 재고 조정 전표 진행. 값은 시드 `LOGISTICS_DOCUMENT_STATUS` 4값(`isSystemOwned` · DB 실재)이
+   * 확정했다. 계약 `InventoryAdjustment.statusCode` 가 그 넷을 그대로 적는다.
+   *
+   * ⚠ `conflictStatus` 는 호출자가 **400** 을 넘긴다 — 계약 `InventoryAdjustmentLineUpsert` 가
+   * 「전기된 조정은 바꿀 수 없다 — 400 STATE_LOCKED」로 400 을 명시했다(출고와 같다).
+   * ⛔ 취소 두 액션을 «넣지 않는다» — `DocumentProgress.documentTypeCode` enum 9값에
+   *    `INVENTORY_ADJUSTMENT` 가 없어(계약 실측) 조정을 취소할 경로가 0건이다(문의 132).
+   *    등록되지 않은 (칸, 액션)은 던지므로 이 부재가 방어다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
+   */
+  'inventory.inventory_adjustment.status_code': {
+    'document-post': {
+      from: ['REGISTERED'],
+      to: 'POSTED',
+      sourceOperation: 'POST /inventory/adjustments/{inventoryAdjustmentId}:post',
+    },
+  },
 };

@@ -54,6 +54,39 @@ export interface LocationOrg {
 }
 
 /**
+ * ⭐ 등록·치환(`lineTargetErrors`)과 전기(`adjustment-posting.ts`)가 **같은 축을 읽는다.**
+ * 한 벌로 두지 않으면 조직 축이 하나 늘 때 한쪽만 고쳐 **등록은 맞고 전기는 틀린 잔액 키**를
+ * 만든다 — 7칸 키가 어긋나면 0행 판정이 뒤집힌다(PR ④ 리뷰 Minor-2).
+ */
+export const LOCATION_ORG_SELECT = {
+  location_id: true,
+  warehouse_id: true,
+  warehouse: {
+    select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } },
+  },
+} as const;
+
+type LocationOrgRow = {
+  location_id: bigint;
+  warehouse_id: bigint;
+  warehouse: { business_unit_id: bigint; plant_id: bigint; plant: { legal_entity_id: bigint } };
+};
+
+export function locationOrgMap(rows: LocationOrgRow[]): Map<number, LocationOrg> {
+  return new Map(
+    rows.map((row) => [
+      Number(row.location_id),
+      {
+        legal_entity_id: row.warehouse.plant.legal_entity_id,
+        business_unit_id: row.warehouse.business_unit_id,
+        plant_id: row.warehouse.plant_id,
+        warehouse_id: row.warehouse_id,
+      },
+    ]),
+  );
+}
+
+/**
  * 전건 검증. 돌려주는 것은 **라인마다의 잔액 차원 두 칸**이다(결정 — 통보 130).
  * 판정 순서가 곧 400 갈래의 순서다.
  */
@@ -138,7 +171,9 @@ export async function assertReplaceable(
  * ⚠ **공장 축만** 본다 — 사업부·법인은 창고가 각자 알아 두 사업부에 걸쳐도 잔액이 옳다.
  */
 export function assertSinglePlant(
-  lines: InventoryAdjustmentLineCreate[],
+  // ⭐ 위치 축만 본다 — `:post`(`adjustment-posting.ts`)가 «저장된» 라인으로 같은 판정을
+  //    다시 밟으므로 등록 본문 모양에 묶지 않는다(중복 작성 금지).
+  lines: { locationId: number }[],
   orgs: Map<number, LocationOrg>,
   array: 'lines' | 'items',
   errors: ErrorItem[],
@@ -176,11 +211,7 @@ export async function lineTargetErrors(
     prisma.uom.findMany({ where: { uom_id: { in: ids((l) => l.uomId) } }, select: { uom_id: true } }),
     prisma.location.findMany({
       where: { location_id: { in: ids((l) => l.locationId) } },
-      select: {
-        location_id: true,
-        warehouse_id: true,
-        warehouse: { select: { business_unit_id: true, plant_id: true, plant: { select: { legal_entity_id: true } } } },
-      },
+      select: LOCATION_ORG_SELECT,
     }),
     prisma.inventory_count_line.findMany({
       where: { inventory_count_line_id: { in: ids((l) => l.inventoryCountLineId) } },
@@ -194,17 +225,7 @@ export async function lineTargetErrors(
   const countLineOwners = new Map(
     countLines.map((row) => [Number(row.inventory_count_line_id), Number(row.inventory_count_id)]),
   );
-  const orgs = new Map<number, LocationOrg>(
-    locations.map((row) => [
-      Number(row.location_id),
-      {
-        legal_entity_id: row.warehouse.plant.legal_entity_id,
-        business_unit_id: row.warehouse.business_unit_id,
-        plant_id: row.warehouse.plant_id,
-        warehouse_id: row.warehouse_id,
-      },
-    ]),
-  );
+  const orgs = locationOrgMap(locations);
 
   for (const [index, line] of lines.entries()) {
     const at = `${array}[${index}]`;
