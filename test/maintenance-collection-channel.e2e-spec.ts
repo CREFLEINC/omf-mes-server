@@ -51,6 +51,15 @@ describe("수집 채널 (e2e)", () => {
         status_code: "RUNNING",
       },
     });
+    const otherEquipment = await prisma.equipment.create({
+      data: {
+        plant_id: plant.plant_id,
+        equipment_code: `${PREFIX}-EQ-OTHER`,
+        equipment_name: "동명 신호 설비",
+        equipment_type_code: "PRESS",
+        status_code: "RUNNING",
+      },
+    });
     const item = await prisma.item.create({
       data: {
         item_code: `${PREFIX}-ITEM`,
@@ -133,6 +142,18 @@ describe("수집 채널 (e2e)", () => {
         is_active: false,
       },
     });
+    await prisma.$executeRaw`
+      INSERT INTO maintenance.collection_channel_observation
+        (equipment_id, channel_key, last_value, observed_at)
+      VALUES
+        (${equipment.equipment_id}, ${`${PREFIX}.TEMP.01`}, ${"182.4"},
+         ${"2026-09-09T03:42:03.123456Z"}::timestamptz),
+        (${equipment.equipment_id}, ${`${PREFIX}.RAW.01`}, NULL,
+         ${"2026-09-09T03:42:04.000001Z"}::timestamptz),
+        (${equipment.equipment_id}, ${`${PREFIX}.NEW.01`}, ${""},
+         ${"2026-09-09T03:42:05.000002Z"}::timestamptz),
+        (${otherEquipment.equipment_id}, ${`${PREFIX}.TEMP.01`}, ${"other"},
+         ${"2026-09-09T03:42:06.000003Z"}::timestamptz)`;
     mappedId = Number(mapped.collection_channel_id);
     unmappedId = Number(unmapped.collection_channel_id);
     equipmentId = Number(equipment.equipment_id);
@@ -236,6 +257,59 @@ describe("수집 채널 (e2e)", () => {
     expect(response.body.page.total).toBe(1);
   });
 
+  it("미매핑 관측은 활성 검사연결 부재로 고르고 등록 여부는 별도로 표시한다", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/maintenance/collection-channels/observations")
+      .query({ equipmentId, unmappedOnly: true })
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      items: [
+        {
+          channelKey: `${PREFIX}.NEW.01`,
+          lastValue: "",
+          observedAt: "2026-09-09T03:42:05.000002Z",
+          alreadyMapped: false,
+        },
+        {
+          channelKey: `${PREFIX}.RAW.01`,
+          observedAt: "2026-09-09T03:42:04.000001Z",
+          alreadyMapped: true,
+        },
+      ],
+      totalCount: 2,
+    });
+    expect(response.body).not.toHaveProperty("page");
+  });
+
+  it("설비가 다른 동명 관측은 독립이며 저장된 값·마이크로초를 그대로 낸다", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/api/maintenance/collection-channels/observations")
+      .set("Cookie", cookie)
+      .expect(200);
+
+    expect(response.body.totalCount).toBe(4);
+    expect(
+      response.body.items.filter(
+        (item: { channelKey: string }) => item.channelKey === `${PREFIX}.TEMP.01`,
+      ),
+    ).toEqual([
+      {
+        channelKey: `${PREFIX}.TEMP.01`,
+        lastValue: "other",
+        observedAt: "2026-09-09T03:42:06.000003Z",
+        alreadyMapped: false,
+      },
+      {
+        channelKey: `${PREFIX}.TEMP.01`,
+        lastValue: "182.4",
+        observedAt: "2026-09-09T03:42:03.123456Z",
+        alreadyMapped: true,
+      },
+    ]);
+  });
+
   async function login(): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post("/api/app/sessions")
@@ -247,6 +321,9 @@ describe("수집 채널 (e2e)", () => {
   }
 
   async function cleanup(): Promise<void> {
+    await prisma.collection_channel_observation.deleteMany({
+      where: { equipment: { equipment_code: { startsWith: PREFIX } } },
+    });
     await prisma.collection_channel.deleteMany({
       where: { equipment: { equipment_code: { startsWith: PREFIX } } },
     });
