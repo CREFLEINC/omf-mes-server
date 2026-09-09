@@ -56,6 +56,11 @@ describe('재고 실사 조회·생성 (e2e)', () => {
   let blindId: number;
   let completedId: number;
   let plannedId: number;
+  let lockedId: number;
+  let registeredAdjustedId: number;
+  let zeroCloseId: number;
+  let postedCloseId: number;
+  let uncountedCloseId: number;
   let createdId: number;
   let negativeItemId: bigint;
   let negativeLotId: bigint;
@@ -82,20 +87,38 @@ describe('재고 실사 조회·생성 (e2e)', () => {
       blindId,
       completedId,
       plannedId,
+      lockedId,
+      registeredAdjustedId,
+      zeroCloseId,
+      postedCloseId,
+      uncountedCloseId,
     ]);
-    expect(all.page).toMatchObject({ page: 1, size: 50, total: 3 });
+    expect(all.page).toMatchObject({ page: 1, size: 50, total: 8 });
 
-    expect((await list(`warehouseId=${warehouseId}`)).items).toHaveLength(3);
+    expect((await list(`warehouseId=${warehouseId}`)).items).toHaveLength(8);
     expect((await list('plannedDateFrom=2026-09-09&plannedDateTo=2026-09-09')).items)
       .toEqual([expect.objectContaining({ inventoryCountId: completedId })]);
     expect((await list('countTypeCode=CYCLE')).items.map((row) => row.inventoryCountId))
-      .toEqual([blindId, completedId]);
+      .toEqual([
+        blindId,
+        completedId,
+        registeredAdjustedId,
+        zeroCloseId,
+        postedCloseId,
+        uncountedCloseId,
+      ]);
     expect((await list('statusCode=PLANNED')).items.map((row) => row.inventoryCountId))
-      .toEqual([plannedId]);
+      .toEqual([plannedId, lockedId]);
     expect((await list('inProgressOnly=true')).items.map((row) => row.inventoryCountId))
-      .toEqual([blindId]);
+      .toEqual([
+        blindId,
+        registeredAdjustedId,
+        zeroCloseId,
+        postedCloseId,
+        uncountedCloseId,
+      ]);
     expect((await list('page=2&size=2')).items.map((row) => row.inventoryCountId))
-      .toEqual([plannedId]);
+      .toEqual([plannedId, lockedId]);
   });
 
   it('상세은 ETag와 전체 요약을 내리고 차단 사유 우선순위를 지킨다', async () => {
@@ -452,6 +475,67 @@ describe('재고 실사 조회·생성 (e2e)', () => {
     ]);
   });
 
+  it('마감은 차이 없음과 POSTED 조정을 허용하고 멱등 재생하며 원장을 쓰지 않는다', async () => {
+    const transactionCount = await prisma.inventory_transaction.count();
+    const zeroVersion = (
+      await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: zeroCloseId } })
+    ).version_no;
+    const zeroKey = randomUUID();
+    const zero = await close(zeroCloseId, zeroKey, String(zeroVersion)).expect(200);
+    expect(zero.body).toMatchObject({
+      inventoryCount: { inventoryCountId: zeroCloseId, statusCode: 'COMPLETED' },
+      summary: { closable: false, closeBlockedReasonCode: 'ALREADY_CLOSED' },
+    });
+    const validate = validator('POST /inventory/counts/{inventoryCountId}:close');
+    expect(validate(zero.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+
+    const replay = await close(zeroCloseId, zeroKey, String(zeroVersion)).expect(200);
+    expect(replay.body).toEqual(zero.body);
+    expect(
+      (await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: zeroCloseId } }))
+        .version_no,
+    ).toBe(zeroVersion + 1);
+    await close(zeroCloseId, zeroKey, String(zeroVersion), cookie, '2026-09-10').expect(409);
+
+    const postedVersion = (
+      await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: postedCloseId } })
+    ).version_no;
+    const posted = await close(postedCloseId, randomUUID(), String(postedVersion)).expect(200);
+    expect(posted.body.inventoryCount.statusCode).toBe('COMPLETED');
+    expect(await prisma.inventory_transaction.count()).toBe(transactionCount);
+  });
+
+  it('마감은 상태·미실사·REGISTERED 조정을 공용 우선순위 코드로 차단한다', async () => {
+    const cases = [
+      [completedId, 'ALREADY_CLOSED'],
+      [lockedId, 'STATE_LOCKED'],
+      [uncountedCloseId, 'COUNT_REMAINING'],
+      [registeredAdjustedId, 'VARIANCE_UNADJUSTED'],
+    ] as const;
+
+    for (const [id, code] of cases) {
+      const version = (
+        await prisma.inventory_count.findUniqueOrThrow({ where: { inventory_count_id: id } })
+      ).version_no;
+      const response = await close(id, randomUUID(), String(version)).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field: 'inventoryCountId', code }),
+      ]);
+    }
+  });
+
+  it('마감은 권한·필수 If-Match·낡은 버전을 각각 거부한다', async () => {
+    await close(uncountedCloseId, randomUUID(), '1', noPermCookie).expect(403);
+    await request(app.getHttpServer())
+      .post(`/api/inventory/counts/${uncountedCloseId}:close`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ businessDate: '2026-09-09' })
+      .expect(400);
+    await close(uncountedCloseId, randomUUID(), '999').expect(409);
+  });
+
   async function list(query: string): Promise<{
     items: { inventoryCountId: number }[];
     page: { page: number; size: number; total: number };
@@ -491,6 +575,21 @@ describe('재고 실사 조회·생성 (e2e)', () => {
     if (version !== undefined) operation = operation.set('If-Match', version);
     if (workerNo !== undefined) operation = operation.set('X-Worker-No', workerNo);
     return operation.send(body);
+  }
+
+  function close(
+    id: number,
+    key: string,
+    version: string,
+    requestCookie = cookie,
+    businessDate = '2026-09-09',
+  ): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/inventory/counts/${id}:close`)
+      .set('Cookie', requestCookie)
+      .set('Idempotency-Key', key)
+      .set('If-Match', version)
+      .send({ businessDate });
   }
 
   async function makeUser(): Promise<void> {
@@ -797,6 +896,168 @@ describe('재고 실사 조회·생성 (e2e)', () => {
       },
     });
     plannedId = Number(planned.inventory_count_id);
+
+    const locked = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-004`,
+        count_type_code: 'ADHOC',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-07T00:00:00.000Z'),
+        status_code: 'PLANNED',
+      },
+    });
+    lockedId = Number(locked.inventory_count_id);
+
+    const registeredAdjusted = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-005`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-06T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    registeredAdjustedId = Number(registeredAdjusted.inventory_count_id);
+    const registeredLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: registeredAdjusted.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 8,
+        uom_id: uom.uom_id,
+        variance_reason_code: 'COUNT_ERROR',
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+    const registeredAdjustment = await prisma.inventory_adjustment.create({
+      data: {
+        inventory_adjustment_no: `${PREFIX}-IA-REGISTERED`,
+        inventory_count_id: registeredAdjusted.inventory_count_id,
+        reason_code: 'COUNT_VARIANCE',
+        status_code: 'REGISTERED',
+      },
+    });
+    await prisma.inventory_adjustment_line.create({
+      data: {
+        inventory_adjustment_id: registeredAdjustment.inventory_adjustment_id,
+        inventory_count_line_id: registeredLine.inventory_count_line_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        adjustment_qty: -2,
+        uom_id: uom.uom_id,
+        reason_code: 'COUNT_VARIANCE',
+      },
+    });
+
+    const zeroClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-006`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-05T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    zeroCloseId = Number(zeroClose.inventory_count_id);
+    await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: zeroClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 10,
+        uom_id: uom.uom_id,
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+
+    const postedClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-007`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-04T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    postedCloseId = Number(postedClose.inventory_count_id);
+    const postedLine = await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: postedClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 8,
+        uom_id: uom.uom_id,
+        variance_reason_code: 'COUNT_ERROR',
+        counted_by: userId,
+        counted_at: AT,
+        counted: true,
+      },
+    });
+    const postedAdjustment = await prisma.inventory_adjustment.create({
+      data: {
+        inventory_adjustment_no: `${PREFIX}-IA-POSTED-CLOSE`,
+        inventory_count_id: postedClose.inventory_count_id,
+        reason_code: 'COUNT_VARIANCE',
+        status_code: 'POSTED',
+      },
+    });
+    await prisma.inventory_adjustment_line.create({
+      data: {
+        inventory_adjustment_id: postedAdjustment.inventory_adjustment_id,
+        inventory_count_line_id: postedLine.inventory_count_line_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        quality_status_code: 'NORMAL',
+        inventory_status_code: 'AVAILABLE',
+        adjustment_qty: -2,
+        uom_id: uom.uom_id,
+        reason_code: 'COUNT_VARIANCE',
+      },
+    });
+
+    const uncountedClose = await prisma.inventory_count.create({
+      data: {
+        inventory_count_no: `${PREFIX}-008`,
+        count_type_code: 'CYCLE',
+        warehouse_id: warehouse.warehouse_id,
+        planned_date: new Date('2026-09-03T00:00:00.000Z'),
+        status_code: 'IN_PROGRESS',
+      },
+    });
+    uncountedCloseId = Number(uncountedClose.inventory_count_id);
+    await prisma.inventory_count_line.create({
+      data: {
+        inventory_count_id: uncountedClose.inventory_count_id,
+        line_no: 1,
+        location_id: location1.location_id,
+        item_id: item.item_id,
+        lot_id: lot.lot_id,
+        system_qty: 10,
+        counted_qty: 0,
+        uom_id: uom.uom_id,
+        counted_at: AT,
+        counted: false,
+      },
+    });
   }
 
   async function cleanup(): Promise<void> {

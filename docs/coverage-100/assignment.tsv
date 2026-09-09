@@ -106,12 +106,12 @@ I-14	logistics-01자재창고.json	POST /inventory/adjustments	inventory	재고 
 I-14	logistics-01자재창고.json	POST /inventory/adjustments/{inventoryAdjustmentId}:post	inventory	재고 조정 전기	403	☐
 I-14	logistics-01자재창고.json	POST /inventory/adjustments/{inventoryAdjustmentId}:request-approval	inventory	재고 조정 상신	403	☐
 I-14	logistics-01자재창고.json	PUT /inventory/adjustments/{inventoryAdjustmentId}/lines	inventory	조정 라인 치환	403	☐
-I-15	logistics-01자재창고.json	GET /inventory/counts	inventory	실사 목록		☐
-I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}	inventory	실사 상세		☐
-I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}/lines	inventory	실사 라인 목록		☐
-I-15	logistics-01자재창고.json	POST /inventory/counts	inventory	실사 개시	403	☐
-I-15	logistics-01자재창고.json	POST /inventory/counts/{inventoryCountId}:close	inventory	실사 마감	403	☐
-I-15	logistics-01자재창고.json	PUT /inventory/counts/{inventoryCountId}/lines	inventory	한 위치의 실사 라인 치환	403	☐
+I-15	logistics-01자재창고.json	GET /inventory/counts	inventory	실사 목록		☑
+I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}	inventory	실사 상세		☑
+I-15	logistics-01자재창고.json	GET /inventory/counts/{inventoryCountId}/lines	inventory	실사 라인 목록		☑
+I-15	logistics-01자재창고.json	POST /inventory/counts	inventory	실사 개시	403	☑
+I-15	logistics-01자재창고.json	POST /inventory/counts/{inventoryCountId}:close	inventory	실사 마감	403	☑
+I-15	logistics-01자재창고.json	PUT /inventory/counts/{inventoryCountId}/lines	inventory	한 위치의 실사 라인 치환	403	☑
 I-16	logistics-01자재창고.json	GET /inventory/handling-units	inventory	취급 단위 목록		☐
 I-16	logistics-01자재창고.json	GET /inventory/handling-units/{handlingUnitId}	inventory	취급 단위 상세		☐
 I-16	logistics-01자재창고.json	GET /inventory/handling-units/{handlingUnitId}/contents	inventory	취급 단위 구성 목록		☐

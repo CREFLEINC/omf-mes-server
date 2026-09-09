@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -31,6 +32,10 @@ import {
   InventoryCountView,
 } from './inventory-count-view';
 import {
+  InventoryCountClose,
+  InventoryCountCloseService,
+} from './inventory-count-close.service';
+import {
   InventoryCountCreate,
   InventoryCountCreateService,
 } from './inventory-count-create.service';
@@ -45,6 +50,7 @@ export class InventoryCountController {
     private readonly counts: InventoryCountQueryService,
     private readonly creates: InventoryCountCreateService,
     private readonly updates: InventoryCountUpdateService,
+    private readonly closes: InventoryCountCloseService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -111,4 +117,28 @@ export class InventoryCountController {
       }),
     );
   }
+
+  @Post(':inventoryCountId\\:close')
+  @Contract('POST /inventory/counts/{inventoryCountId}:close')
+  @HttpCode(HttpStatus.OK)
+  close(
+    @Req() request: Request,
+    @Param('inventoryCountId', ParseIntPipe) inventoryCountId: number,
+    @Body() body: InventoryCountClose,
+  ): Promise<InventoryCountDetail> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    const version = requiredVersion(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) =>
+      this.closes.closeWithin(tx, inventoryCountId, version, body, session.userId),
+    );
+  }
+}
+
+function requiredVersion(request: Request): number {
+  const version = ifMatchVersion(request);
+  if (version === undefined) {
+    throw new Error('If-Match 가 없는데 가드를 지났습니다.');
+  }
+  return version;
 }
