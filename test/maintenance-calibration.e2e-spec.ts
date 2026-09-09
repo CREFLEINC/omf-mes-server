@@ -22,6 +22,8 @@ describe("검교정 이력 (e2e)", () => {
   let calibrationId: number;
   let equipmentId: number;
   let actorUserId: number;
+  let blockingCalibrationId: number;
+  let nonblockingCalibrationId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -180,6 +182,7 @@ describe("검교정 이력 (e2e)", () => {
       blocksUse: false,
       clearedAt: null,
     });
+    nonblockingCalibrationId = response.body.calibrationId as number;
     expect(await equipmentState()).toEqual(before);
   });
 
@@ -257,6 +260,7 @@ describe("검교정 이력 (e2e)", () => {
       agencyName: "한국계측인증",
       blocksUse: true,
     });
+    blockingCalibrationId = first.body.calibrationId as number;
     expect(await equipmentState()).toEqual({
       last: "2026-09-11",
       due: "2027-09-11",
@@ -317,12 +321,48 @@ describe("검교정 이력 (e2e)", () => {
     ).toBe(count);
   });
 
+  it("clear는 한 차단만 해소하며 재생·비차단·재해소·미존재를 구분한다", async () => {
+    const key = randomUUID();
+    const first = await clear(blockingCalibrationId, key).expect(200);
+    const replay = await clear(blockingCalibrationId, key).expect(200);
+    expect(replay.body).toEqual(first.body);
+    expect(first.body).toMatchObject({
+      calibrationId: blockingCalibrationId,
+      blocksUse: true,
+      clearedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*\.\d{6}Z$/),
+    });
+    const stored = await prisma.equipment_calibration.findUniqueOrThrow({
+      where: { equipment_calibration_id: BigInt(blockingCalibrationId) },
+      select: { blocks_use: true, cleared_at: true, cleared_by: true },
+    });
+    expect(stored).toMatchObject({
+      blocks_use: true,
+      cleared_at: expect.any(Date),
+      cleared_by: BigInt(actorUserId),
+    });
+
+    const again = await clear(blockingCalibrationId).expect(409);
+    expect(again.body).toMatchObject({ conflictCause: "user" });
+    const notBlocking = await clear(nonblockingCalibrationId).expect(400);
+    expect(notBlocking.body.errors).toContainEqual(
+      expect.objectContaining({ field: "calibrationId", code: "STATE_LOCKED" }),
+    );
+    await clear(999999999).expect(404);
+  });
+
   function post(body: object, key: string = randomUUID()): request.Test {
     return request(app.getHttpServer())
       .post("/api/maintenance/calibrations")
       .set("Cookie", cookie)
       .set("Idempotency-Key", key)
       .send(body);
+  }
+
+  function clear(id: number, key: string = randomUUID()): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/maintenance/calibrations/${id}:clear`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", key);
   }
 
   async function equipmentState(): Promise<{ last: string | null; due: string | null; version: number }> {

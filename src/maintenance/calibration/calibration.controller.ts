@@ -1,8 +1,19 @@
-import { Body, Controller, Get, HttpStatus, Param, Post, Query, Req } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+} from "@nestjs/common";
 import type { Request } from "express";
 
 import { Contract } from "../../common/contract";
 import { IdempotencyService } from "../../common/idempotency";
+import { CalibrationClearService } from "./calibration-clear.service";
 import { CalibrationCreateService } from "./calibration-create.service";
 import {
   CalibrationList,
@@ -18,6 +29,7 @@ export class CalibrationController {
   constructor(
     private readonly queries: CalibrationQueryService,
     private readonly creates: CalibrationCreateService,
+    private readonly clears: CalibrationClearService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -36,6 +48,20 @@ export class CalibrationController {
     const context = calibrationWriteContext(request, HttpStatus.CREATED);
     const outcome = await this.idempotency.run(context, (tx) =>
       this.creates.createWithin(tx, body, context),
+    );
+    return outcome.body;
+  }
+
+  @Post(":calibrationId\\:clear")
+  @Contract("POST /maintenance/calibrations/{calibrationId}:clear")
+  @HttpCode(HttpStatus.OK)
+  async clear(
+    @Req() request: Request,
+    @Param("calibrationId") calibrationId: number,
+  ): Promise<CalibrationView> {
+    const context = calibrationWriteContext(request, HttpStatus.OK);
+    const outcome = await this.idempotency.run(context, (tx) =>
+      this.clears.clearWithin(tx, calibrationId, context),
     );
     return outcome.body;
   }
