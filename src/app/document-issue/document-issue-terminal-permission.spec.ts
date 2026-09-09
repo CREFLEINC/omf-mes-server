@@ -36,7 +36,7 @@ describe("발행 생산 단말 권한 (I-27 C3a)", () => {
       ),
     ).resolves.toBeUndefined();
     expect(setup.sql).toMatch(
-      /production\.work_order[\s\S]*routing_operation[\s\S]*terminal_process[\s\S]*process_id/,
+      /production\.work_order[\s\S]*planning\.routing_operation[\s\S]*mdm\.terminal_process[\s\S]*process_id/,
     );
     expect(setup.values).toEqual([7n, 10n, 20n]);
   });

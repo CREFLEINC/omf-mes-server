@@ -43,7 +43,7 @@ export async function assertDocumentIssueTerminalPermission(
     SELECT work_order.work_order_id,
            COALESCE(terminal_process.can_print_label,false) AS can_print_label
     FROM production.work_order
-    JOIN mdm.routing_operation
+    JOIN planning.routing_operation
       ON routing_operation.routing_operation_id=work_order.routing_operation_id
     LEFT JOIN mdm.terminal_process
       ON terminal_process.terminal_id=${terminalId}
