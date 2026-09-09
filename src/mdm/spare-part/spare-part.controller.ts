@@ -11,11 +11,16 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { createHash } from 'node:crypto';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
@@ -128,5 +133,37 @@ export class SparePartController {
       ),
     );
     return { items };
+  }
+}
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** 컬렉션 액션은 `spare-parts/\:import`가 아니라 `spare-parts\:import` 경로다. */
+@Controller('mdm')
+export class SparePartImportController {
+  constructor(
+    private readonly spareParts: SparePartService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
+
+  @Post('spare-parts\\:import')
+  @Contract('POST /mdm/spare-parts:import')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
+  upload(@Req() request: Request, @UploadedFile() file?: Express.Multer.File): Promise<unknown> {
+    if (file === undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'screen', code: ERROR_CODE.REQUIRED, message: '엑셀 파일이 없습니다.' },
+      ]);
+    }
+    const fileSha256 = createHash('sha256').update(file.buffer).digest('hex');
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.OK,
+      (tx) => this.spareParts.importWorkbook(file.buffer, tx),
+      undefined,
+      { fileSha256 },
+    );
   }
 }
