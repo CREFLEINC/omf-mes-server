@@ -17,6 +17,7 @@ import { CollectionChannelCreateService } from "./collection-channel/collection-
 import { CollectionChannelQueryService } from "./collection-channel/collection-channel-query.service";
 import { CollectionChannelUpdateService } from "./collection-channel/collection-channel-update.service";
 import { DowntimeController } from "./downtime/downtime.controller";
+import { DowntimeCloseService } from "./downtime/downtime-close.service";
 import { DowntimeCreateService } from "./downtime/downtime-create.service";
 import { DowntimeQueryService } from "./downtime/downtime-query.service";
 import { DowntimeUpdateService } from "./downtime/downtime-update.service";
@@ -67,6 +68,7 @@ import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
     BreakdownQueryService,
     DowntimeQueryService,
     DowntimeCreateService,
+    DowntimeCloseService,
     DowntimeUpdateService,
     DowntimeSummarySourceService,
     DowntimeSummaryMinorService,
