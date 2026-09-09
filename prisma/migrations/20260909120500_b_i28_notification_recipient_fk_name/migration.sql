@@ -1,0 +1,3 @@
+ALTER TABLE app.notification_subscription_recipient
+  RENAME CONSTRAINT notification_subscription_rec_notification_subscription_id_fkey
+  TO notification_subscription_recipient_notification_subscript_fkey;
