@@ -93,8 +93,12 @@ interface PickSpec {
   consumed?: number;
   /** 라인이 가진 LOT 둘 중 하나. */
   lot?: 'a' | 'b';
+  /** ⭐ `lot_id` 가 NULL 인 예약 — 물리가 nullable 이라 만들 수 있다. */
+  noLot?: boolean;
   /** ⛔ 다른 원천 유형의 예약 — 축이 (유형, id) 둘이 아니면 여기서 섞인다. */
   typeCode?: string;
+  /** ⭐ 예약 상태 — 질의가 이 축으로 좁히지 «않는다»(통보 241). */
+  statusCode?: string;
 }
 interface LineSpec {
   requested: number;
@@ -332,6 +336,31 @@ describe('출하작업지시 단건 조회 (e2e)', () => {
     expect(line.pickedQty).toBe(50);
     expect(line.picks).toHaveLength(1);
     expect(body.shipmentProgressCode).toBe('PICKED');
+  });
+
+  it('D-25 lot_id 가 널인 예약도 picks[] 에 실린다 — 오늘은 lotId 가 0 이다', async () => {
+    const line = ((await detail(made.EDGE.id)).lines as LineBody[])[0];
+
+    // ⛔ 널 행을 걸러 내면 라인 롤업(60)과 Σ picks[].pickedQty 가 갈린다 — 그래서 «싣는다».
+    expect(line.picks).toHaveLength(3);
+    expect(line.pickedQty).toBe(60);
+    // ⚠ 오늘의 동작을 잠근다 — `lotId: 0`(어느 LOT 도 아니다)이 옳은 답인지는 설계 문의 대기.
+    expect(line.picks[1]).toMatchObject({ lotId: 0, pickedQty: 20 });
+    expect(line.picks[1]).not.toHaveProperty('lotNo');
+    expect(line.picks[0].lotNo).toBe(`${PREFIX}-EDGE-L1A`);
+  });
+
+  it('D-26 예약 status_code 가 달라도 롤업이 «센다»', async () => {
+    const stored = await prisma.inventory_reservation.count({
+      where: { reservation_no: { startsWith: `${PREFIX}-` }, status_code: 'CLOSED' },
+    });
+    const line = ((await detail(made.EDGE.id)).lines as LineBody[])[0];
+
+    // ⚠ 통보 241 — `released_qty` 를 «쓰는» 코드가 0개라 되돌린 예약을 상태로도 수량으로도
+    //   못 뺀다. 상태로 좁히는 절을 «추가»하면 이 단언이 깨진다.
+    expect(stored).toBe(1);
+    expect(line.picks.map((pick) => pick.pickedQty)).toEqual([10, 20, 30]);
+    expect(line.pickedQty).toBe(60);
   });
 
   it('D-11 0.1 + 0.2 로 피킹한 라인이 PICKED 다', async () => {
@@ -613,13 +642,13 @@ describe('출하작업지시 단건 조회 (e2e)', () => {
             source_document_type_code: pick.typeCode ?? AXIS,
             source_document_id: created.shipment_request_line_id,
             item_id: line.item === 2 ? ids.item2 : ids.item1,
-            lot_id: pick.lot === 'b' ? lotB : lotA,
+            lot_id: pick.noLot === true ? null : pick.lot === 'b' ? lotB : lotA,
             warehouse_id: ids.warehouse,
             reserved_qty: pick.reserved,
             released_qty: pick.released ?? 0,
             consumed_qty: pick.consumed ?? 0,
             uom_id: line.uom === 2 ? ids.uom2 : ids.uom1,
-            status_code: 'REGISTERED',
+            status_code: pick.statusCode ?? 'REGISTERED',
           },
         });
       }
@@ -707,6 +736,21 @@ describe('출하작업지시 단건 조회 (e2e)', () => {
           picks: [
             { reserved: 50 },
             { reserved: 70, typeCode: 'MATERIAL_ISSUE_REQUEST_LINE', lot: 'b' },
+          ],
+        },
+      ],
+    });
+    // ⭐ 예약 축의 «가장자리» 둘 — `lot_id` 널 · 다른 `status_code`. 둘 다 값이 하나뿐이면
+    //   그 축의 결정(널 행을 안 거른다 · 상태로 안 좁힌다)이 공허해진다(§6-3 ⑵).
+    await makeRequest('EDGE', {
+      lines: [
+        {
+          requested: 100,
+          allocated: 60,
+          picks: [
+            { reserved: 10, lot: 'a' },
+            { reserved: 20, noLot: true },
+            { reserved: 30, lot: 'b', statusCode: 'CLOSED' },
           ],
         },
       ],

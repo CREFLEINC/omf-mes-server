@@ -30,8 +30,10 @@ export class ShipmentRequestQueryService {
     const picks = await this.picksByLine(
       row.shipment_request_line.map((line) => line.shipment_request_line_id),
     );
-    const lotIds = [...picks.values()]
-      .flat()
+    // ⛔ 맵 «전체»를 훑지 않는다 — 이 건의 라인에서 뽑는다. 앞 질의가 느슨해지면 섞여 든 남의
+    //    LOT 이 그대로 둘째 질의의 `IN` 목록으로 새 나간다(응답은 ③a 가 다시 걸러 안 바뀐다).
+    const lotIds = row.shipment_request_line
+      .flatMap((line) => picks.get(String(line.shipment_request_line_id)) ?? [])
       .flatMap((pick) => (pick.lot_id === null ? [] : [pick.lot_id]));
     return shipmentRequestView(row, picks, await this.oqcResults(row.shipment_request_id, lotIds));
   }
@@ -41,8 +43,11 @@ export class ShipmentRequestQueryService {
    * ⛔ 축은 `(source_document_type_code, source_document_id)` **둘 다**다. 유형을 빼면 같은 id 를 쓰는
    *    «자재» 예약이 섞여 들어와 수량이 부풀고 남의 LOT 이 `picks[]` 에 뜬다(#409 인계 · §11 ②).
    *    `ix_reservation_source (type, id, status)` 가 그대로 탄다(§2-7).
-   * ⛔ `status_code` 로 좁히지 않는다 — 롤업이 `released_qty` 로 되돌림을 반영하므로 닫힌 예약도
-   *    수량이 0 이 되어 저절로 빠진다.
+   * ⛔ `status_code` 로 좁히지 않는다 — 계약이 「누적 피킹 수량」이라 적었고 되돌림은 **수량 축**
+   *    (`released_qty`)이 감당하기로 한 자리다(§5-1 · R-14). ⚠ 그 되돌림이 **오늘은 일어나지
+   *    않는다** — `released_qty` 를 쓰는 코드가 저장소에 0개이고 ⓒ안에서 `consumed = reserved` 라
+   *    `ck_reservation_qty` 가 올리는 것 자체를 막는다(**통보 241** · §11 ①). 그래서 지금은 상태와
+   *    무관하게 예약 행 전건이 `pickedQty` 에 남는다 — I-23 이 되돌림 칸을 정할 때 함께 푼다.
    */
   private async picksByLine(lineIds: bigint[]): Promise<ShipmentPicksByLine> {
     const rows = await this.prisma.inventory_reservation.findMany({

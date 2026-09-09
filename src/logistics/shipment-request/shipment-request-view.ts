@@ -157,7 +157,9 @@ export function shipmentRequestLineView(
  * `lot_id`·`reserved_qty`·`uom_id`·`created_at`.
  * ⚠ `lot_id` 는 물리가 nullable 이지만 이 축(`SHIPMENT_REQUEST_LINE`)의 예약은 `:pick` 이 **LOT 을
  *   집어** 만든 것이라 늘 있다. ⛔ 그렇다고 널 행을 걸러 내지 마라 — 걸러 내면 `pickedQty` 롤업과
- *   `Σ picks[].pickedQty` 가 갈린다.
+ *   `Σ picks[].pickedQty` 가 갈린다(e2e D-25 가 이 결정을 잠근다).
+ * ⚠ 그때 `lotId` 가 **0** 이 되는 것은 「오늘의 동작」일 뿐 확정된 답이 아니다 — 계약 required
+ *   `lotId` 에 어느 LOT 도 아닌 0 이 실린다. 답은 통합자가 설계 문의로 정한다.
  */
 function shipmentLinePickedLotView(pick: ShipmentPickRow): ShipmentLinePickedLotView {
   return omitEmpty({
