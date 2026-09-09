@@ -56,7 +56,7 @@ export function assertNotificationRecipientRules(
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
-// 설계 미정 — 문의 번호 배정 대기(I-28 R-11): JSON 숫자로 이미 받은 값의 안전 경계다.
+// 결정 — I-28 R-11 통보: JSON 숫자로 이미 받은 값의 안전 경계다.
 function recipientIdRangeErrors(
   recipient: NotificationRecipientInput,
   index: number,
