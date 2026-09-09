@@ -51,6 +51,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
   let prisma: PrismaService;
   let userId: bigint;
   let plantId: bigint;
+  let warehouseId: bigint;
   let itemId: bigint;
   let uomId: bigint;
   let workerId: bigint;
@@ -95,12 +96,20 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
           prisma.inspection_request.count({
             where: { inspection_request_no: { startsWith: PREFIX } },
           }),
+          prisma.goods_issue.count({
+            where: { goods_issue_no: { startsWith: PREFIX } },
+          }),
+          prisma.goods_issue_line.count({
+            where: {
+              goods_issue: { goods_issue_no: { startsWith: PREFIX } },
+            },
+          }),
           prisma.lot.count({ where: { lot_no: { startsWith: PREFIX } } }),
           prisma.worker.count({ where: { worker_no: { startsWith: PREFIX } } }),
           prisma.item.count({ where: { item_code: { startsWith: PREFIX } } }),
           prisma.uom.count({ where: { uom_code: { startsWith: PREFIX } } }),
         ]),
-      ).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      ).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     } finally {
       await app?.close();
     }
@@ -216,11 +225,11 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       const confirm = confirmInspection(fixture.resultId).then(
         (response) => response,
       );
-      await waitForBlockedQualityQuery("%inspected_qty%FOR UPDATE%");
+      await waitForBlockedQuery("%inspected_qty%FOR UPDATE%");
       const issue = issueCertificate(fixture.resultId, "CONFIRM_FIRST").then(
         (response) => response,
       );
-      await waitForBlockedQualityQuery("%confirmed_at%FOR SHARE%");
+      await waitForBlockedQuery("%confirmed_at%FOR SHARE%");
       blocker.release();
 
       const [confirmed, issued] = await Promise.all([confirm, issue]);
@@ -245,11 +254,11 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       const issue = issueCertificate(fixture.resultId, "ISSUE_FIRST").then(
         (response) => response,
       );
-      await waitForBlockedQualityQuery("%confirmed_at%FOR SHARE%");
+      await waitForBlockedQuery("%confirmed_at%FOR SHARE%");
       const confirm = confirmInspection(fixture.resultId).then(
         (response) => response,
       );
-      await waitForBlockedQualityQuery("%inspected_qty%FOR UPDATE%");
+      await waitForBlockedQuery("%inspected_qty%FOR UPDATE%");
       blocker.release();
 
       const [rejected, confirmed] = await Promise.all([issue, confirm]);
@@ -269,6 +278,80 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         status_code: "CONFIRMED",
         confirmed_at: expect.any(Date),
       });
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
+  it("출고 라인 writer가 먼저 잠그면 변경 경로를 다시 읽고 발행 전건을 롤백한다", async () => {
+    const fixture = await newRegisteredGoodsIssue("WRITER_FIRST");
+    const blocker = await blockGoodsIssue(fixture.goodsIssueId);
+
+    try {
+      const writer = replaceGoodsIssueLine(fixture).then(
+        (response) => response,
+      );
+      await waitForBlockedQuery("%status_code, version_no%FOR UPDATE%");
+      const issue = issueGoodsIssueLine(fixture, "WRITER_FIRST").then(
+        (response) => response,
+      );
+      await waitForBlockedQuery(
+        "%goods_issue_id,status_code%FOR NO KEY UPDATE%",
+      );
+      blocker.release();
+
+      const [changed, rejected] = await Promise.all([writer, issue]);
+      expect(changed.status).toBe(200);
+      expect(rejected.status).toBe(422);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: "targets[0].targetId",
+        code: "STATE_LOCKED",
+      });
+      await expect(
+        prisma.goods_issue_line.findUniqueOrThrow({
+          where: { goods_issue_line_id: fixture.goodsIssueLineId },
+          select: { lot_id: true },
+        }),
+      ).resolves.toEqual({ lot_id: fixture.replacementLotId });
+      expect(await goodsIssueDocumentCount(fixture.goodsIssueLineId)).toBe(0);
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
+  it("발행이 먼저 잠그면 판정을 끝낼 때까지 출고 라인 writer를 직렬화한다", async () => {
+    const fixture = await newRegisteredGoodsIssue("ISSUE_FIRST");
+    const blocker = await blockGoodsIssue(fixture.goodsIssueId);
+
+    try {
+      const issue = issueGoodsIssueLine(fixture, "ISSUE_FIRST").then(
+        (response) => response,
+      );
+      await waitForBlockedQuery(
+        "%goods_issue_id,status_code%FOR NO KEY UPDATE%",
+      );
+      const writer = replaceGoodsIssueLine(fixture).then(
+        (response) => response,
+      );
+      await waitForBlockedQuery("%status_code, version_no%FOR UPDATE%");
+      blocker.release();
+
+      const [rejected, changed] = await Promise.all([issue, writer]);
+      expect(rejected.status).toBe(422);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: "targets[0].targetId",
+        code: "STATE_LOCKED",
+      });
+      expect(changed.status).toBe(200);
+      await expect(
+        prisma.goods_issue_line.findUniqueOrThrow({
+          where: { goods_issue_line_id: fixture.goodsIssueLineId },
+          select: { lot_id: true },
+        }),
+      ).resolves.toEqual({ lot_id: fixture.replacementLotId });
+      expect(await goodsIssueDocumentCount(fixture.goodsIssueLineId)).toBe(0);
     } finally {
       blocker.release();
       await blocker.done;
@@ -381,9 +464,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       .set("Idempotency-Key", newKey())
       .send({
         documentTypeCode: "CERTIFICATE_OF_ANALYSIS",
-        targets: [
-          { targetTypeCode: "INSPECTION_RESULT", targetId: resultId },
-        ],
+        targets: [{ targetTypeCode: "INSPECTION_RESULT", targetId: resultId }],
         remarks: `${PREFIX}_COA_${suffix}`,
       });
   }
@@ -405,6 +486,118 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         target_id: resultId,
       },
     });
+  }
+
+  interface GoodsIssueFixture {
+    goodsIssueId: number;
+    goodsIssueLineId: bigint;
+    replacementLotId: bigint;
+    versionNo: number;
+  }
+
+  function issueGoodsIssueLine(
+    fixture: GoodsIssueFixture,
+    suffix: string,
+  ): request.Test {
+    return request(app.getHttpServer())
+      .post(PATH)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", newKey())
+      .send({
+        documentTypeCode: "GOODS_ISSUE_QR",
+        targets: [
+          {
+            targetTypeCode: "GOODS_ISSUE_LINE",
+            targetId: Number(fixture.goodsIssueLineId),
+          },
+        ],
+        remarks: `${PREFIX}_GI_${suffix}`,
+      });
+  }
+
+  function replaceGoodsIssueLine(fixture: GoodsIssueFixture): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/logistics/goods-issues/${fixture.goodsIssueId}/lines`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", newKey())
+      .set("If-Match", String(fixture.versionNo))
+      .send({
+        items: [
+          {
+            goodsIssueLineId: Number(fixture.goodsIssueLineId),
+            itemId: Number(itemId),
+            lotId: Number(fixture.replacementLotId),
+            issueQty: 10,
+            uomId: Number(uomId),
+            sourceLocationId: Number(locationIds[0]),
+          },
+        ],
+      });
+  }
+
+  function goodsIssueDocumentCount(lineId: bigint): Promise<number> {
+    return prisma.document_issue_log.count({
+      where: {
+        document_type_code: "GOODS_ISSUE_QR",
+        target_type_code: "GOODS_ISSUE_LINE",
+        target_id: lineId,
+      },
+    });
+  }
+
+  async function newRegisteredGoodsIssue(
+    suffix: string,
+  ): Promise<GoodsIssueFixture> {
+    const [originalLot, replacementLot] = await Promise.all([
+      newLot(`GI_${suffix}_ORIGINAL`),
+      newLot(`GI_${suffix}_REPLACEMENT`),
+    ]);
+    const header = await prisma.goods_issue.create({
+      data: {
+        goods_issue_no: `${PREFIX}_GI_${suffix}`,
+        issue_type_code: "OTHER",
+        source_document_type_code: "GOODS_RECEIPT",
+        source_document_id: plantId,
+        source_warehouse_id: warehouseId,
+        issued_at: new Date(),
+        status_code: "REGISTERED",
+      },
+    });
+    const line = await prisma.goods_issue_line.create({
+      data: {
+        goods_issue_id: header.goods_issue_id,
+        line_no: 1,
+        item_id: itemId,
+        lot_id: originalLot,
+        issue_qty: 10,
+        uom_id: uomId,
+        source_location_id: locationIds[0],
+      },
+    });
+    return {
+      goodsIssueId: Number(header.goods_issue_id),
+      goodsIssueLineId: line.goods_issue_line_id,
+      replacementLotId: replacementLot,
+      versionNo: header.version_no,
+    };
+  }
+
+  async function newLot(suffix: string): Promise<bigint> {
+    return (
+      await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}_${suffix}`,
+          item_id: itemId,
+          lot_type_code: "RAW_MATERIAL",
+          plant_id: plantId,
+          initial_qty: 100,
+          uom_id: uomId,
+          source_type_code: "INBOUND_RECEIPT_LINE",
+          source_id: plantId,
+          status_code: "NORMAL",
+        },
+      })
+    ).lot_id;
   }
 
   async function newConfirmableCoa(suffix: string): Promise<{
@@ -482,8 +675,36 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     };
   }
 
-  async function waitForBlockedQualityQuery(pattern: string): Promise<void> {
-    const deadline = Date.now() + 2_000;
+  async function blockGoodsIssue(goodsIssueId: number): Promise<{
+    release: () => void;
+    done: Promise<void>;
+  }> {
+    let unlock = (): void => undefined;
+    let locked = (): void => undefined;
+    const released = new Promise<void>((resolve) => (unlock = resolve));
+    const acquired = new Promise<void>((resolve) => (locked = resolve));
+    let releasedOnce = false;
+    const done = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT goods_issue_id FROM logistics.goods_issue
+        WHERE goods_issue_id=${BigInt(goodsIssueId)}
+        FOR UPDATE`);
+      locked();
+      await released;
+    });
+    await acquired;
+    return {
+      release: () => {
+        if (releasedOnce) return;
+        releasedOnce = true;
+        unlock();
+      },
+      done,
+    };
+  }
+
+  async function waitForBlockedQuery(pattern: string): Promise<void> {
+    const deadline = Date.now() + 4_000;
     while (Date.now() < deadline) {
       const rows = await prisma.$queryRaw<{ waiting: boolean }[]>(Prisma.sql`
         SELECT EXISTS (
@@ -496,7 +717,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       if (rows[0]?.waiting) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error(`검사 결과 잠금 대기를 관측하지 못했습니다: ${pattern}`);
+    throw new Error(`잠금 대기를 관측하지 못했습니다: ${pattern}`);
   }
 
   async function makeFixture(jwt: JwtService): Promise<void> {
@@ -533,6 +754,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         management_level_code: "LOCATION",
       },
     });
+    warehouseId = warehouse.warehouse_id;
     const user = await prisma.app_user.create({
       data: {
         login_id: `${PREFIX}_USER`,
@@ -552,7 +774,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       },
     });
     await prisma.role_permission.createMany({
-      data: ["W-06-07", "W-04-03", "W-01-01"].map(
+      data: ["W-06-07", "W-04-03", "W-01-01", "W-01-06"].map(
         (permission_code) => ({ role_id: role.role_id, permission_code }),
       ),
     });
@@ -605,6 +827,24 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     });
     await prisma.document_issue_log.deleteMany({
       where: { remarks: { startsWith: PREFIX } },
+    });
+    const goodsIssues = await prisma.goods_issue.findMany({
+      where: { goods_issue_no: { startsWith: PREFIX } },
+      select: { goods_issue_id: true },
+    });
+    await prisma.goods_issue_line.deleteMany({
+      where: {
+        goods_issue_id: {
+          in: goodsIssues.map((issue) => issue.goods_issue_id),
+        },
+      },
+    });
+    await prisma.goods_issue.deleteMany({
+      where: {
+        goods_issue_id: {
+          in: goodsIssues.map((issue) => issue.goods_issue_id),
+        },
+      },
     });
     const lots = await prisma.lot.findMany({
       where: { lot_no: { startsWith: PREFIX } },
