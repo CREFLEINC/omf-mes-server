@@ -18,7 +18,7 @@ const TOKEN = randomUUID().replace(/-/g, "").slice(0, 8);
 const PREFIX = `E2E_I27W_${TOKEN}`;
 const PATH = "/api/app/document-issues";
 const REASON = `${PREFIX}_REPRINT`;
-const LOCATION_COUNT = 1_002;
+const LOCATION_COUNT = 1_003;
 
 function responseValidator(status: 201 | 422): ValidateFunction {
   const contract = JSON.parse(
@@ -153,8 +153,10 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
   });
 
   it("재발행은 활성 사유를 강제하고 2회차에만 원문 코드를 남긴다", async () => {
-    const before = await countIssues(locationIds[0]);
-    const missing = await issue([locationIds[0]], {
+    const target = locationIds[2];
+    await issue([target], { remarks: `${PREFIX}_REISSUE_BASE` }).expect(201);
+    const before = await countIssues(target);
+    const missing = await issue([target], {
       remarks: `${PREFIX}_MISSING_REASON`,
     }).expect(422);
     expect(validateUnprocessable(missing.body)).toBe(true);
@@ -164,9 +166,9 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         code: "REQUIRED",
       }),
     ]);
-    expect(await countIssues(locationIds[0])).toBe(before);
+    expect(await countIssues(target)).toBe(before);
 
-    const response = await issue([locationIds[0]], {
+    const response = await issue([target], {
       reissueReasonCode: REASON,
       remarks: `${PREFIX}_REISSUE`,
     }).expect(201);
@@ -179,7 +181,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       where: {
         document_type_code: "LOCATION_LABEL",
         target_type_code: "LOCATION",
-        target_id: locationIds[0],
+        target_id: target,
       },
       orderBy: { issue_seq: "asc" },
     });
@@ -193,7 +195,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
 
   it("1,000건 배치 중간에 미존재 대상이 있으면 전건 롤백한다", async () => {
     const missing = 8_027_399_999_999;
-    const targets = locationIds.slice(2, 1_001);
+    const targets = locationIds.slice(3, 1_002);
     targets.splice(500, 0, BigInt(missing));
     const key = newKey();
     const response = await issue(targets, {
@@ -220,7 +222,7 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
   });
 
   it("계약 최대치 1,000건을 기본 트랜잭션 제한 안에서 원자 발행·재생한다", async () => {
-    const targets = locationIds.slice(2, 1_002);
+    const targets = locationIds.slice(3, 1_003);
     const key = newKey();
     const options = { remarks: `${PREFIX}_MAX`, key };
     const startedAt = Date.now();
