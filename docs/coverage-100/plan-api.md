@@ -545,7 +545,7 @@ GET은8개 선택 필터·id ASC·같은WHERE/RepeatableRead total, producedFrom
 | 선행 슬라이스 | S16(완제품 LOT) · S19(Release 판정) |
 | 쓰는 표 | `logistics.sales_order(_line)`·`shipment_request(_line)`·`shipment_lot_allocation` — 있음 |
 | 마이그레이션 | **필요** — `shipment_request.sales_order_id`(nullable FK · 계약 `ShipmentRequest.salesOrderId`). |
-| posting(원장) 연결 | 없음 (배분은 예약 축) — `:pick` 이 `inventory_reservation` 을 ~~걸고~~ **푸는 쪽만** 한다(거는 오퍼레이션이 계약에 없다 — I-8 R-22 · 문의 045 · 04 제품 피킹은 I-22) |
+| posting(원장) 연결 | 없음 (배분은 예약 축). ⛔ **2026-09-09 정정 — 이 줄은 01 자재 피킹의 사실을 04 표에 그대로 옮긴 것이었다**(I-22 계획 §0). **01 자재 피킹**(I-8)은 예약을 **푸는 쪽만** 한다 — 거는 오퍼레이션이 01 계약에 없다(I-8 R-22 · 문의 045). ⭐ **04 제품 피킹(I-22)은 «건다»** — 04 계약이 `:pick` description 과 `GET /logistics/shipment-lot-allocations` 의 `x-internal-note` **두 곳**에서 「서버가 이 피킹의 결과로 `inventory_reservation` 을 «건다»」라 적었다. 그래서 **예약을 거는 코어의 첫 사용처가 I-22** 다 — `plan-integration.md:280`·`slices/I-8.md` §3-7·`src/core/inventory-posting/inventory-posting.service.ts:42-43` 이 셋 다 그렇게 예고해 두었고 이 표만 낡아 있었다 |
 | 상태기계 | 없음 — ⭐ `ShipmentRequest.statusCode` 는 「칸 불필요」로 닫혔고 진행은 **파생 `shipmentProgressCode` 6값**이다(저장 칸 없음, 판정식은 계약이 정본으로 가짐) |
 | 예상 PR 수 | 3 — ① 조회 GET 6건 + `shipmentProgressCode` 파생 ② 마이그 + 출하요청 등록 ③ `:pick` + 배분 PUT + e2e |
 | 설계 미정 자리 · §2 판정 초안 | 없음 — 계약이 6값의 판정식과 우선순위(「뒤가 이긴다」)까지 적었다. |
