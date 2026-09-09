@@ -99,6 +99,16 @@ function codeOf(
 export class IdempotencyService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** 준비 비용이 큰 쓰기가 번호·파일 등을 만들기 전에 기존 완료 응답을 재생한다. */
+  async replayExisting<T>(
+    context: IdempotencyContext,
+  ): Promise<IdempotentOutcome<T> | undefined> {
+    const seen = await this.prisma.idempotency_record.findUnique({
+      where: { idempotency_key: context.key },
+    });
+    return seen === null ? undefined : this.replay<T>(seen, context);
+  }
+
   /**
    * 한 오퍼레이션 = 한 트랜잭션 = 한 멱등 기록.
    *
@@ -110,10 +120,8 @@ export class IdempotencyService {
     context: IdempotencyContext,
     work: (tx: Prisma.TransactionClient) => Promise<T>,
   ): Promise<IdempotentOutcome<T>> {
-    const seen = await this.prisma.idempotency_record.findUnique({
-      where: { idempotency_key: context.key },
-    });
-    if (seen) return this.replay<T>(seen, context);
+    const seen = await this.replayExisting<T>(context);
+    if (seen !== undefined) return seen;
 
     try {
       return await this.prisma.$transaction(async (tx) => {

@@ -190,7 +190,8 @@ describe('제품 개체 목록 (e2e)', () => {
       const body = await list(
         `lotId=${lotA}&producedFrom=${encodeURIComponent(value)}&producedTo=2026-09-07T00%3A00%3A02Z`,
       );
-      expect(body.items.map((row) => row.serialNumberId)).toEqual([Number(fromId), Number(toId)]);
+      const expected = [Number(fromId), Number(toId)].sort((left, right) => left - right);
+      expect(body.items.map((row) => row.serialNumberId)).toEqual(expected);
     }
   });
 
