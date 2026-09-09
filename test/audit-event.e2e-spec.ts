@@ -121,9 +121,9 @@ describe("감사 이력 조회 (e2e)", () => {
   });
 
   it("⭐ 페이지 items와 count가 같은 필터를 쓰고 계약 스키마를 만족한다", async () => {
-    const response = await get({ size: "2" });
-    expect(response.body.items).toHaveLength(2);
-    expect(response.body.page).toEqual({ page: 1, size: 2, total: 10 });
+    const response = await get({ correlationId: `${PREFIX}-SORT`, size: "1" });
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.page).toEqual({ page: 1, size: 1, total: 2 });
     const validate = validator();
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
