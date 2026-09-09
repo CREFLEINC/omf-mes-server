@@ -4415,21 +4415,26 @@ model planned_stop {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model tool_usage {
-  tool_usage_id   BigInt      @id @default(autoincrement())
-  mold_id         BigInt
-  equipment_id    BigInt?
-  work_order_id   BigInt?
-  usage_type_code String      @db.VarChar(50)
-  shot_count      BigInt?
-  used_from       DateTime    @db.Timestamptz(6)
-  used_to         DateTime?   @db.Timestamptz(6)
-  recorded_by     BigInt?
-  created_at      DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  equipment       equipment?  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
-  mold            mold        @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
-  worker          worker?     @relation(fields: [recorded_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
-  work_order      work_order? @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  tool_usage_id         BigInt      @id @default(autoincrement())
+  mold_id               BigInt
+  equipment_id          BigInt?
+  work_order_id         BigInt?
+  usage_type_code       String?     @db.VarChar(50)
+  shot_count            BigInt?
+  used_from             DateTime?   @db.Timestamptz(6)
+  used_to               DateTime?   @db.Timestamptz(6)
+  recorded_by           BigInt?
+  created_at            DateTime    @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  collection_method_code String?    @db.VarChar(50)
+  conversion_base_qty   Decimal?    @db.Decimal(20, 6)
+  conversion_ratio      Decimal?    @db.Decimal(20, 6)
+  occurred_at           DateTime?   @db.Timestamptz(6)
+  equipment              equipment?  @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                   mold        @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                 worker?     @relation(fields: [recorded_by], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order             work_order? @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([mold_id, occurred_at(sort: Desc), tool_usage_id(sort: Desc)], map: "ix_tool_usage_mold_occurred")
   @@schema("maintenance")
 }
 
