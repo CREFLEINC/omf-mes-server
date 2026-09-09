@@ -62,18 +62,24 @@ describe('취급 단위 조회 (e2e)', () => {
   let location1Id: number;
   let location2Id: number;
   let uomId: number;
+  let uom2Id: number;
   let item1Id: number;
   let item2Id: number;
   let lot1Id: number;
   let lot2Id: number;
 
-  // §9-2 「픽스처 축의 값이 둘 이상인가」— A: 창고1·위치1·PALLET·OPEN·부모없음.
+  // §9-2 「픽스처 축의 값이 둘 이상인가」— A: 창고1·위치1·PALLET·OPEN·부모없음·⭐구성 1행.
   // B: 창고2·위치2·BOX·OPEN·부모=A·구성 2행. C: 창고·위치 NULL·PALLET·PACKED·부모없음.
+  // ⭐ A 도 구성을 갖는다(PR #485 리뷰 Major-1) — B 만 가지면 `where` 를 통째로 빼도
+  //    12건이 전부 초록이라 「남의 파렛트 내용물이 섞여 나온다」가 안 잡힌다.
+  // ⭐ `uom` 은 «둘»이다(리뷰 Major-2) — 하나면 uomId 단언이 언제나 초록이고,
+  //    단위 변경 이력(통보 165 · R-2)의 심장이 PR ④ 에서 반증 불가가 된다.
   let huA: number;
   let huB: number;
   let huC: number;
   let contentB1: number;
   let contentB2: number;
+  let contentA1: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -189,8 +195,35 @@ describe('취급 단위 조회 (e2e)', () => {
         itemId: item2Id,
         lotId: lot2Id,
         qty: 7.25,
-        uomId,
+        uomId: uom2Id, // ⭐ 두 행의 단위가 다르다 — 한 값을 상수로 실어도 초록이 되지 않는다
       }),
+    ]);
+
+    // ⭐ ajv 는 여분 칸을 못 잡는다(`additionalProperties` 미선언) — 키 집합을 명시로 잰다
+    //   (리뷰 Major-3 · `versionNo`·`createdAt` 이 새도 `toMatchObject` 는 초록이었다).
+    expect(Object.keys(response.body).sort()).toEqual(['contents', 'handlingUnit']);
+    expect(Object.keys(response.body.handlingUnit).sort()).toEqual([
+      'handlingUnitId',
+      'handlingUnitNo',
+      'handlingUnitTypeCode',
+      'locationId',
+      'parentHandlingUnitId',
+      'statusCode',
+      'warehouseId',
+    ]);
+    expect(Object.keys(response.body.contents[0]).sort()).toEqual([
+      'handlingUnitContentId',
+      'handlingUnitId',
+      'itemId',
+      'lotId',
+      'qty',
+      'uomId',
+    ]);
+
+    // ⭐ 남의 구성이 섞여 나오지 않는다 — `contentsOf` 의 `where` 를 빼면 여기가 빨개진다.
+    expect(response.body.contents.map((c: { handlingUnitContentId: number }) => c.handlingUnitContentId)).toEqual([
+      contentB1,
+      contentB2,
     ]);
   });
 
@@ -216,10 +249,27 @@ describe('취급 단위 조회 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
     expect(Object.keys(response.body)).toEqual(['items']);
 
+    // ⭐ B 의 두 행만 온다 — A 의 구성(contentA1)이 섞이면 빨개진다(리뷰 Major-1).
+    expect(response.body.items.map((c: { handlingUnitContentId: number }) => c.handlingUnitContentId)).toEqual([
+      contentB1,
+      contentB2,
+    ]);
+    expect(response.body.items.map((c: { uomId: number }) => c.uomId)).toEqual([uomId, uom2Id]);
+
     // ⭐ R-5 — express 가 JSON 본문에 약한 검증자(W/"...")를 스스로 단다. `toBeUndefined()`
     //   도 `!== String(version_no)` 로도 재지 않는다(저장소 선례 11건 · 두 경로가 다 version
     //   을 +1 해 그 형은 변이를 못 잡는다).
     expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+  });
+
+  it('⭐ contents — A 를 물으면 A 의 한 행만 온다(반대 방향으로도 걸러진다)', async () => {
+    const response = await request(app.getHttpServer())
+      .get(`${PATH}/${huA}/contents`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(response.body.items.map((c: { handlingUnitContentId: number }) => c.handlingUnitContentId)).toEqual([
+      contentA1,
+    ]);
   });
 
   it('contents — 없는 id 는 404 다(계약 미선언 · 서버가 낸다)', async () => {
@@ -326,8 +376,11 @@ describe('취급 단위 조회 (e2e)', () => {
     });
     location2Id = Number(location2.location_id);
 
-    const uom = await prisma.uom.findFirstOrThrow();
+    const uoms = await prisma.uom.findMany({ take: 2, orderBy: { uom_id: 'asc' } });
+    expect(uoms).toHaveLength(2); // 축의 값이 하나면 아래 uomId 단언이 언제나 초록이다
+    const [uom, uom2] = uoms;
     uomId = Number(uom.uom_id);
+    uom2Id = Number(uom2.uom_id);
 
     const item1 = await prisma.item.create({
       data: {
@@ -427,10 +480,22 @@ describe('취급 단위 조회 (e2e)', () => {
         item_id: item2.item_id,
         lot_id: lot2.lot_id,
         qty: 7.25,
-        uom_id: uom.uom_id,
+        uom_id: uom2.uom_id,
       },
     });
     contentB2 = Number(content2.handling_unit_content_id);
+
+    // ⭐ A 의 구성 — B 조회에 «섞여 나오면» 안 되는 행이다(리뷰 Major-1).
+    const contentA = await prisma.handling_unit_content.create({
+      data: {
+        handling_unit_id: a.handling_unit_id,
+        item_id: item1.item_id,
+        lot_id: lot1.lot_id,
+        qty: 3.5,
+        uom_id: uom2.uom_id,
+      },
+    });
+    contentA1 = Number(contentA.handling_unit_content_id);
   }
 
   /**
