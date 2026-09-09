@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
@@ -63,6 +63,7 @@ export interface SparePartQuery extends ReferenceQuery {
 }
 
 type SparePartRow = Prisma.spare_partGetPayload<object>;
+type SparePartImportDb = Pick<Prisma.TransactionClient, 'plant' | 'spare_part'>;
 
 export type SparePartResult = {
   sparePart: SparePartView;
@@ -132,11 +133,14 @@ export class SparePartService {
   }
 
   /** 성공 행은 유지하고 거부 행만 실패 목록으로 돌려준다(공유계약 C-2 · 통보 271). */
-  async importWorkbook(buffer: Buffer): Promise<SparePartBatchResult> {
+  async importWorkbook(
+    buffer: Buffer,
+    db: SparePartImportDb,
+  ): Promise<SparePartBatchResult> {
     const parsed = await parseSparePartWorkbook(buffer);
     if (parsed.error) throw new ContractException(HttpStatus.BAD_REQUEST, [parsed.error]);
 
-    const plants = await this.prisma.plant.findMany({
+    const plants = await db.plant.findMany({
       select: { plant_id: true, plant_code: true },
     });
     const result: SparePartBatchResult = { succeeded: 0, failed: [] };
@@ -150,27 +154,20 @@ export class SparePartService {
         continue;
       }
 
-      try {
-        await this.assertImportCodeFree(plantId, row.values.sparePartCode);
-        await this.prisma.spare_part.create({
-          data: {
+      const created = await db.spare_part.createMany({
+        data: [
+          {
             plant_id: plantId,
             spare_part_code: row.values.sparePartCode,
             spare_part_name: row.values.sparePartName,
           },
-        });
+        ],
+        skipDuplicates: true,
+      });
+      if (created.count === 1) {
         result.succeeded += 1;
-      } catch (error) {
-        if (error instanceof ContractException) {
-          result.failed.push(importFailure(row, error.errors));
-          continue;
-        }
-        // 선검사 뒤 경쟁 요청이 먼저 같은 코드를 만들 수 있다. 행 실패 의미는 같다.
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-          result.failed.push(importFailure(row, [duplicateImportCode()]));
-          continue;
-        }
-        throw error;
+      } else {
+        result.failed.push(importFailure(row, [duplicateImportCode()]));
       }
     }
     return result;
@@ -313,16 +310,6 @@ export class SparePartService {
       });
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  }
-
-  private async assertImportCodeFree(plantId: number, sparePartCode: string): Promise<void> {
-    const found = await this.prisma.spare_part.findUnique({
-      where: { plant_id_spare_part_code: { plant_id: plantId, spare_part_code: sparePartCode } },
-      select: { spare_part_id: true },
-    });
-    if (found !== null) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [duplicateImportCode()]);
-    }
   }
 
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */

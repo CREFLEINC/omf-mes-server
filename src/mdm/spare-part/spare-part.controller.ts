@@ -161,7 +161,7 @@ export class SparePartImportController {
       this.idempotency,
       request,
       HttpStatus.OK,
-      () => this.spareParts.importWorkbook(file.buffer),
+      (tx) => this.spareParts.importWorkbook(file.buffer, tx),
       undefined,
       { fileSha256 },
     );

@@ -1,4 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
@@ -27,7 +28,7 @@ export async function runIdempotent<T>(
   idempotency: IdempotencyService,
   request: Request,
   successStatus: number,
-  work: () => Promise<T>,
+  work: (tx: Prisma.TransactionClient) => Promise<T>,
   conflictCode?: IdempotencyConflictCode,
   fingerprintBody?: unknown,
 ): Promise<T> {
@@ -43,7 +44,7 @@ export async function runIdempotent<T>(
       ...(session === undefined ? {} : { appUserId: session.userId }),
       ...(conflictCode === undefined ? {} : { conflictCode }),
     },
-    () => work(),
+    (tx) => work(tx),
   );
   return outcome.body;
 }
