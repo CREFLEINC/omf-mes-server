@@ -67,6 +67,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
    *  = `RS-2026-000144` 가 근거다(형식은 저장소 기본 패턴). ⚠ `:pick` 은 409 가 정상 거부라
    *  소진율이 높다 — 죽는 요청마다 번호가 탄다(결번 허용 · I-2 R-2). */
   INVENTORY_RESERVATION: 'RS',
+  /** 결정 — 통보 106: 제품 개체는 전역 일련번호 `SN-{YYYYMMDD}-{SEQ4}` 를 쓴다. */
+  SERIAL_NUMBER: 'SN',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
@@ -75,6 +77,7 @@ const DEFAULT_PATTERN_SUFFIX = '-{YYYYMMDD}-{SEQ4}';
 
 /** 값 목록이 없다 — 시드된 유일한 값이 이것이고, 그 밖은 던진다(I-2.md §7-2). */
 const DAILY = 'DAILY';
+const MAX_BATCH_SIZE = 1000;
 
 interface RuleRow {
   numbering_rule_id: bigint;
@@ -110,6 +113,22 @@ export class NumberingService {
    * @param plantId 공장 지정 규칙이 있으면 그것이 전역 규칙을 이긴다.
    */
   async next(documentTypeCode: string, plantId: bigint | null, periodDate: string): Promise<string> {
+    return (await this.nextMany(documentTypeCode, plantId, periodDate, 1))[0];
+  }
+
+  /**
+   * 한 요청에 쓸 연속 번호를 한 번에 예약한다. 예약 뒤 업무가 실패하면 번호는 결번으로 남지만,
+   * 같은 배치 안에서는 다른 호출이 끼어들지 않는다(결정 — 통보 106).
+   */
+  async nextMany(
+    documentTypeCode: string,
+    plantId: bigint | null,
+    periodDate: string,
+    quantity: number,
+  ): Promise<string[]> {
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > MAX_BATCH_SIZE) {
+      throw new Error(`묶음 채번 수량은 1~${MAX_BATCH_SIZE}의 정수여야 한다: ${quantity}`);
+    }
     const rule = await this.rule(documentTypeCode, plantId);
     if (rule.reset_cycle_code !== DAILY) {
       throw new Error(
@@ -118,14 +137,18 @@ export class NumberingService {
       );
     }
     const periodKey = periodDate.replace(/-/g, '');
+    const increment = BigInt(quantity);
     const counter = await this.prisma.$queryRaw<{ last_value: bigint }[]>`
       INSERT INTO app.numbering_counter (numbering_rule_id, period_key, last_value)
-           VALUES (${rule.numbering_rule_id}, ${periodKey}, 1)
+           VALUES (${rule.numbering_rule_id}, ${periodKey}, ${increment})
       ON CONFLICT ON CONSTRAINT uq_numbering_counter
-        DO UPDATE SET last_value = app.numbering_counter.last_value + 1,
+        DO UPDATE SET last_value = app.numbering_counter.last_value + EXCLUDED.last_value,
                       updated_at = clock_timestamp()
         RETURNING last_value`;
-    return render(rule.pattern, documentTypeCode, periodKey, counter[0].last_value);
+    const first = counter[0].last_value - increment + 1n;
+    return Array.from({ length: quantity }, (_, index) =>
+      render(rule.pattern, documentTypeCode, periodKey, first + BigInt(index)),
+    );
   }
 
   /**
