@@ -280,8 +280,9 @@ export function assertNoDuplicateContent(
  *   `exclusiveMinimum: 0` 뿐 `multipleOf` 가 없어 **서버가 막는 자리**다.
  * ⚠ 정수부 상한도 같이 본다 — `1e15` 는 `numeric(20,6)` 이 못 담아 지금은 «계약 미선언 500» 이다.
  *
- * ⛔ `nonconformance-rules.ts` 의 것을 **import 하지 않는다** — 이 저장소에 도메인 간 import 가
- *   **0건**이라 여기서 첫 사례를 만들지 않는다. 같은 규칙이 두 자리에 있는 사실은 마감표에 적었다.
+ * ⛔ `nonconformance-rules.ts` 의 것을 **import 하지 않는다** — 두 함수가 **다르기** 때문이다.
+ *   저쪽은 `scale` 을 «호출자»가 주고(`mdm.uom.decimal_scale` 축), 이쪽은 6 고정에 배열 인덱스로
+ *   `field` 를 짚는다. 한 함수로 안 접힌다. 같은 규칙이 두 자리에 있는 사실은 마감표에 적었다.
  */
 export function assertContentQty(
   contents: HandlingUnitContentUpsert[],

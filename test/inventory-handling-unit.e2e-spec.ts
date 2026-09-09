@@ -1288,6 +1288,15 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     // ⛔ 「표가 통째로 비어 공짜로 0」이 아니다 — 다른 HU 의 이벤트는 여전히 산다.
     expect(await prisma.handling_unit_repack_event.count()).toBeGreaterThan(0);
 
+    // ⭐⭐ 치환이 «그 HU 만» 지웠는가 — `deleteMany` 의 `where` 를 떨구면 공장 전체 구성이
+    //    사라지는데, 자기 HU 만 세는 단언으로는 그것이 영영 안 잡힌다(PR ① Major-1 의
+    //    되풀이 · 이 슬라이스에서 셋째 쓰기 경로다).
+    expect(
+      await prisma.handling_unit_content.count({
+        where: { handling_unit_id: { not: BigInt(hu) } },
+      }),
+    ).toBeGreaterThan(0);
+
     const stored = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } });
     expect([stored.status_code, stored.version_no]).toEqual(['PACKED', 2]);
   });
@@ -1305,11 +1314,24 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     const movedBody = await pack(moved, { contents: [line], locationId: location2Id }).expect(200);
     expect(movedBody.body.handlingUnit.locationId).toBe(location2Id);
 
+    // ⭐ 명시 `null` 은 «비운다» — 키 없음(유지)과 «다른» 갈래다. 둘을 `??` 로 접으면
+    //   랙에서 들어낸 포장의 위치가 조용히 남는다(§3-1 ⑩).
+    const cleared = await makeUnit('LOCNULL', [line], 'OPEN', location1Id);
+    const clearedBody = await pack(cleared, { contents: [line], locationId: null }).expect(200);
+    expect(clearedBody.body.handlingUnit.locationId).toBeNull();
+
     // 없는 위치는 400 `INVALID` 다(404 아니다 · §3-1 ⑧).
     const bad = await makeUnit('LOCBAD', [line], 'OPEN', location1Id);
     const invalid = await pack(bad, { contents: [line], locationId: 999999999 }).expect(400);
+    // ⭐ `message` 까지 잰다 — 이것을 빼면 `assertLocation` 을 통째로 지워도 초록이다.
+    //   물리까지 내려간 P2003 을 `prisma-error.ts` 의 일반 그물이 같은 봉투로 되뽑기
+    //   때문이다(그쪽 문구는 '참조하는 대상이 없습니다.'). 유일한 지문이 문구다.
     expect(invalid.body.errors).toEqual([
-      expect.objectContaining({ field: 'locationId', code: 'INVALID' }),
+      expect.objectContaining({
+        field: 'locationId',
+        code: 'INVALID',
+        message: '없는 식별자입니다.',
+      }),
     ]);
   });
 
@@ -1388,7 +1410,7 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     expect(await prisma.handling_unit_content.count({ where: { handling_unit_id: hu } })).toBe(2);
   });
 
-  it('⛔ 원장이 0건이다 — 전표·라인이 안 늘고 잔액이 안 바뀐다 · 200 응답 etag 가 버전 토큰이 아니다', async () => {
+  it('⛔ :pack 도 원장이 0건이다 — 전표·라인이 안 늘고 잔액이 안 바뀐다 · 200 응답 etag 가 버전 토큰이 아니다', async () => {
     const hu = await makeUnit('PACKLEDGER', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
     const ledger = async (): Promise<number[]> =>
       Promise.all([
