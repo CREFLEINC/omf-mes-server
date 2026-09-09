@@ -2,6 +2,7 @@
 
 > 읽는 사람: **이 프로젝트를 처음 맡는 새 세션.** 커버리지 100 루틴을 모른다고 전제하고 썼다.
 > 순서대로 읽고 그대로 하면 된다. 모르는 규칙이 나오면 지어내지 말고 여기 적힌 정본을 찾아 읽는다.
+> **현재 상태는 §12가 정본이다.** 앞 절의 커버리지와 진행 수치는 착수 당시 기록이므로 최종 상태로 해석하지 않는다.
 
 ---
 
@@ -242,3 +243,64 @@ node_modules/.bin/prisma migrate diff --exit-code --from-schema-datasource prism
 5. **첫 PR 을 열면 그 번호를 기록**하고, 이후 `gh pr merge`·`close` 전에 `headRefName` 이 `…-b-` 로 시작하는지 확인한다(`lanes.md` §1-3).
 
 막히면 지어내지 말고 **실측**(`파일:줄`)으로 판정하고, 판정할 수 없으면 사용자에게 묻는다.
+
+## 12. 2026-09-09 Lane B 최종 정산
+
+### 12-1. 배정 52건 전수 대조
+
+`assignment.tsv`의 I-26·I-27·I-28·I-30·I-31·I-32·I-33 52행을 `src/**/*.ts`의 실제 `@Contract`와 대조했다. 결과는 **구현 49, 기술적 제외 1, 질의 대기 2**다. 최신 `main` `2dbf02a`의 저장소 전체 계약 커버리지는 **453/487**이며, 이 분자에는 다른 레인의 동시 증분이 포함된다.
+
+| 슬라이스 | 배정 | 구현 | 제외 | 질의 대기 | 현재 정본 |
+|---|--:|--:|--:|--:|---|
+| I-26 | 2 | 1 | 0 | 1 | [I-26 §12](slices/I-26.md#12-마감표--구현-뒤-통합자가-갱신), 문의 105 |
+| I-27 | 7 | 6 | 1 | 0 | [I-27 §14](slices/I-27.md#14-구현-인계최종-마감표) |
+| I-28 | 8 | 8 | 0 | 0 | [I-28 §12-6](slices/I-28.md#12-6-서버-결정-재개와-최종-완료-2026-09-09) |
+| I-30 | 9 | 9 | 0 | 0 | [I-30 §12-2](slices/I-30.md#12-2-슬라이스-마감표) |
+| I-31 | 8 | 8 | 0 | 0 | [I-31 §12-1](slices/I-31.md#12-1-구현-마감-및-잔여-인계) |
+| I-32 | 6 | 5 | 0 | 1 | [I-32 §13](slices/I-32.md#13-2026-09-09-최종-정산), 문의 109 |
+| I-33 | 12 | 12 | 0 | 0 | [I-33 §13](slices/I-33.md#13-2026-09-09-구현-최종-마감) |
+| **합계** | **52** | **49** | **1** | **2** | 구현 가능한 Lane B 범위 완료 |
+
+세 미구현 operation은 다음처럼 서로 다른 상태다.
+
+- `POST /trace/serial-numbers`: LOT 배분 단위를 개체 수로 환산하는 정본이 없어 **질의 105 대기**다. 잘못 발번하면 추적·물리 라벨을 소급 복구하기 어렵다.
+- `POST /maintenance/downtimes/{downtimeId}:close`: 계약 본문에 실제 종료 발생시각 입력이 없어 **질의 109 대기**다. 서버 수신시각으로 대체하면 OEE 원시 사건시각이 유실된다.
+- `GET /app/document-issues/{documentIssueLogId}/rendition`: DB 밖 바이너리 생성·보관 원천이 없어 **기술적 제외**다. 완료나 질의 대기로 세지 않는다.
+
+`POST /maintenance/breakdowns/{breakdownId}/attachments`는 애초 I-34 배정이며 DB 밖 저장소와 코드 원천이 없는 별도 기술적 제외다. Lane B의 52건 집계에 넣지 않는다.
+
+### 12-2. 설계팀 전달 경계
+
+[레인 B 재분류 정본](../design-inquiries/재정리-2026-09-08-레인B.md)에 따라 번호가 있는 090~119는 **질의 105·109 두 건**과 **통보 28건**으로 나눈다. I-27·I-33의 번호 없는 후보도 통보이며, 새 번호를 만들지 않는다. 실제 전달 상태는 이슈 #342에서 추적하고, 질문의 응답이 오기 전에는 #347과 #344의 해당 operation만 열어 둔다.
+
+### 12-3. 마이그레이션·배포 인계
+
+Lane B가 추가한 forward-only 마이그레이션은 다음 12개다. 삭제·가짜 백필은 없다.
+
+| 슬라이스 | 마이그레이션 |
+|---|---|
+| I-30 | `20260907115007_b_i30_inspection_breakdown_fields`, `20260908151000_b_i30_breakdown_cause_decision` |
+| I-31 | `20260908152504_b_i31_maintenance_order_contract`, `20260908153809_b_i31_maintenance_result_contract` |
+| I-32 | `20260907142349_b_i32_downtime_fields` |
+| I-27 | `20260908220249_b_i27_document_issue_print_outcome`, `20260909010202_b_i27_printer_mapping` |
+| I-28 | `20260909120000_b_i28_notification_subscription_rules`, `20260909120500_b_i28_notification_recipient_fk_name` |
+| I-33 | `20260909143000_b_i33_tool_usage_contract`, `20260909144000_b_i33_calibration_history_contract`, `20260909145000_b_i33_collection_channel_contract` |
+
+Lane B 전용 PostgreSQL에는 저장소 전체 **75개 마이그레이션**을 적용했고 최종 drift는 0이다. 필수값 사전검사는 tool usage·calibration·collection channel·downtime·breakdown·maintenance order에서 모두 결손 0이었다. 이것은 **로컬 개발 DB 결과일 뿐 운영 결과가 아니다**.
+
+운영 배포 담당자는 각 마이그레이션 주석의 사전 `SELECT`를 운영 DB에서 다시 실행하고, 구 writer가 새 필수값·상태·부분 유일 조건을 만족하는지 확인한 뒤 `prisma migrate deploy`를 실행해야 한다. 결손이 있으면 임의 백필하지 말고 원천과 보완 절차를 확정한다. 배포 뒤 같은 스키마 기준 drift 0과 legacy 행 조회를 재확인한다.
+
+### 12-4. 서버 밖 소비자 인계
+
+- 프론트/POP: ETag·멱등 키·사번/단말 귀속과 마이크로초 시각을 계약대로 전달한다. I-26 발번과 I-32 close는 질의 해소 전 UI 완료로 표시하지 않는다.
+- 프린터: 서버는 명시 매핑·상태·발행 이력까지만 소유한다. 장치 poll, driver/spool, rendition 생성·실패 복구, 51건 이상 페이지와 화면 이동은 별도 소비자 인수다.
+- 알림: 구독 설정과 읽음·미리보기는 완료됐다. 실제 이벤트 발생기, 검교정 임박 배치, Zalo 수신처/전송은 별도 인수이며 이번 API 완료와 동일시하지 않는다.
+- 수집기: 서버는 채널 설정과 저장된 관측 조회를 제공한다. 실제 관측 producer, 장치 시계·동률 처리, 보관 정책은 수집기 운영 인수다.
+
+### 12-5. 최종 검증과 루틴 상태
+
+- 최신 구현 PR #526 기준 전체 단위 테스트 **186 suites / 1,712 tests** 통과, ESLint·TypeScript 통과.
+- I-33의 tool usage·calibration·collection channel E2E를 최신 `main`에서 다시 실행해 **3 suites / 36 tests** 통과.
+- 계약 커버리지 **453/487**, Lane B 전수 대조 **49/52 구현**.
+- GitHub의 Build & Push to Harbor, CI, Deploy to dev server workflow는 모두 `disabled_manually`다. `mergeStateStatus`를 CI 통과로 표현하지 않고 로컬 게이트만 검증 근거로 사용한다.
+- Lane B의 구현 가능한 범위는 끝났다. 후속 작업은 질의 105·109 회신, 운영 배포 사전점검, 서버 밖 소비자 인수다.
