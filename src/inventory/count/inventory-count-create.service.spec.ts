@@ -134,6 +134,21 @@ describe('재고 실사 생성', () => {
     expect(numbering.next).not.toHaveBeenCalled();
   });
 
+  it('빈 창고도 라인 0건인 진행중 실사로 정상 개시한다', async () => {
+    const { service, tx } = fixture();
+    tx.$queryRaw = jest.fn().mockResolvedValue([]);
+
+    await expect(service.create(INPUT, CONTEXT)).resolves.toEqual(RESULT);
+    expect(tx.inventory_count.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status_code: 'IN_PROGRESS',
+          inventory_count_line: { create: [] },
+        }),
+      }),
+    );
+  });
+
   it('음수 장부는 값을 자르거나 누락하지 않고 질의 276 회신 전까지 생성 전체를 막는다', async () => {
     const { service, tx } = fixture();
     tx.$queryRaw = jest.fn().mockResolvedValue([
