@@ -6,6 +6,11 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Editability, ReferenceQuery, Referrer, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
+import {
+  SparePartImportRow,
+  parseSparePartWorkbook,
+  resolveSparePartImportPlant,
+} from './spare-part-import';
 
 /** 예비품을 FK 로 가리키는 자리 전부 — 세 곳이다. e2e 가 `pg_constraint` 로 대조한다. */
 export const SPARE_PART_REFERRERS: readonly Referrer[] = [
@@ -39,6 +44,17 @@ export interface SparePartCreate {
 export interface SparePartUpdate {
   sparePartCode?: string;
   sparePartName: string;
+}
+
+interface BatchFailure {
+  index: number;
+  key?: string;
+  errors: ErrorItem[];
+}
+
+export interface SparePartBatchResult {
+  succeeded: number;
+  failed: BatchFailure[];
 }
 
 export interface SparePartQuery extends ReferenceQuery {
@@ -113,6 +129,51 @@ export class SparePartService {
         },
       }),
     );
+  }
+
+  /** 성공 행은 유지하고 거부 행만 실패 목록으로 돌려준다(공유계약 C-2 · 통보 271). */
+  async importWorkbook(buffer: Buffer): Promise<SparePartBatchResult> {
+    const parsed = await parseSparePartWorkbook(buffer);
+    if (parsed.error) throw new ContractException(HttpStatus.BAD_REQUEST, [parsed.error]);
+
+    const plants = await this.prisma.plant.findMany({
+      select: { plant_id: true, plant_code: true },
+    });
+    const result: SparePartBatchResult = { succeeded: 0, failed: [] };
+
+    // 같은 파일의 중복을 첫 성공 뒤의 행 실패로 결정하기 위해 순차 처리한다.
+    for (const row of parsed.rows) {
+      const plantId = resolveSparePartImportPlant(row, plants);
+      const errors = importRowErrors(row, plantId);
+      if (errors.length > 0 || plantId === null) {
+        result.failed.push(importFailure(row, errors));
+        continue;
+      }
+
+      try {
+        await this.assertImportCodeFree(plantId, row.values.sparePartCode);
+        await this.prisma.spare_part.create({
+          data: {
+            plant_id: plantId,
+            spare_part_code: row.values.sparePartCode,
+            spare_part_name: row.values.sparePartName,
+          },
+        });
+        result.succeeded += 1;
+      } catch (error) {
+        if (error instanceof ContractException) {
+          result.failed.push(importFailure(row, error.errors));
+          continue;
+        }
+        // 선검사 뒤 경쟁 요청이 먼저 같은 코드를 만들 수 있다. 행 실패 의미는 같다.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          result.failed.push(importFailure(row, [duplicateImportCode()]));
+          continue;
+        }
+        throw error;
+      }
+    }
+    return result;
   }
 
   async update(
@@ -254,6 +315,16 @@ export class SparePartService {
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
 
+  private async assertImportCodeFree(plantId: number, sparePartCode: string): Promise<void> {
+    const found = await this.prisma.spare_part.findUnique({
+      where: { plant_id_spare_part_code: { plant_id: plantId, spare_part_code: sparePartCode } },
+      select: { spare_part_id: true },
+    });
+    if (found !== null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [duplicateImportCode()]);
+    }
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(sparePartId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -264,6 +335,51 @@ export class SparePartService {
     if (!exists) throw new NotFoundException('없는 예비품입니다.');
     assertUpdated(0);
   }
+}
+
+function importRowErrors(row: SparePartImportRow, plantId: number | null): ErrorItem[] {
+  const errors: ErrorItem[] = [];
+  if (plantId === null) {
+    errors.push({
+      scope: 'field',
+      field: 'plantId',
+      code: row.plantCode === null ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID,
+      message:
+        row.plantCode === null
+          ? '공장 열이 없고 공장이 여럿이라 어느 공장인지 정할 수 없습니다.'
+          : `없는 공장 코드입니다: ${row.plantCode}`,
+    });
+  }
+  for (const [field, value, maximum] of [
+    ['sparePartCode', row.values.sparePartCode, 50],
+    ['sparePartName', row.values.sparePartName, 200],
+  ] as const) {
+    if (value === '') {
+      errors.push({ scope: 'field', field, code: ERROR_CODE.REQUIRED, message: '필수 값입니다.' });
+    } else if (value.length > maximum) {
+      errors.push({
+        scope: 'field',
+        field,
+        code: ERROR_CODE.RANGE,
+        message: `${maximum}자 이하여야 합니다.`,
+      });
+    }
+  }
+  return errors;
+}
+
+function duplicateImportCode(): ErrorItem {
+  return {
+    scope: 'field',
+    field: 'sparePartCode',
+    code: ERROR_CODE.UNIQUE_VIOLATION,
+    uniqueScope: ['plantId', 'sparePartCode'],
+    message: '같은 공장에 이미 있는 예비품 코드입니다.',
+  };
+}
+
+function importFailure(row: SparePartImportRow, errors: ErrorItem[]): BatchFailure {
+  return { index: row.index, key: row.values.sparePartCode, errors };
 }
 
 function view(row: SparePartRow): SparePartView {

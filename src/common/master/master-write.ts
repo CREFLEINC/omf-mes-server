@@ -29,12 +29,16 @@ export async function runIdempotent<T>(
   successStatus: number,
   work: () => Promise<T>,
   conflictCode?: IdempotencyConflictCode,
+  fingerprintBody?: unknown,
 ): Promise<T> {
   const session = currentSession(request);
   const outcome = await idempotency.run(
     {
       key: String(request.headers['idempotency-key']),
-      fingerprint: requestFingerprint(`${request.method} ${request.path}`, request.body),
+      fingerprint: requestFingerprint(
+        `${request.method} ${request.path}`,
+        fingerprintBody ?? request.body,
+      ),
       successStatus,
       ...(session === undefined ? {} : { appUserId: session.userId }),
       ...(conflictCode === undefined ? {} : { conflictCode }),
