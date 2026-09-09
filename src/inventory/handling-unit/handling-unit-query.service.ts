@@ -23,8 +23,8 @@ export interface HandlingUnitQuery {
 }
 
 /**
- * 조회 3건(PR ①). 등록·구성 치환·포장 확정·재구성 이력 조회는 뒤 PR 몫이다
- * (`docs/coverage-100/slices/I-16-a2.md` §11-3).
+ * 조회 3건(PR ①). 재구성 이력 조회는 `repack-event.service.ts`(PR ②)가 따로 갖고,
+ * 등록·구성 치환·포장 확정은 뒤 PR 몫이다(`docs/coverage-100/slices/I-16-a2.md` §11-3).
  */
 @Injectable()
 export class HandlingUnitQueryService {

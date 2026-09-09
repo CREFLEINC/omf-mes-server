@@ -1,6 +1,11 @@
 /**
- * 취급 단위 조회 3건(I-16 PR ①) — 목록·상세·구성 목록. 등록·구성 치환·포장 확정·재구성
- * 이력 조회는 뒤 PR 몫이다(`docs/coverage-100/slices/I-16-a2.md` §11-3).
+ * 취급 단위 조회 4건(I-16 PR ①②) — 목록·상세·구성 목록·재구성 이력. 등록·구성 치환·
+ * 포장 확정은 뒤 PR 몫이다(`docs/coverage-100/slices/I-16-a2.md` §11-3).
+ *
+ * ⭐ PR ② 는 «자기 마이그를 지나는» e2e 를 갖는다(§11-3) — 신설
+ * `inventory.handling_unit_repack_event(+_line)` 에 prisma 직삽으로 픽스처를 심고
+ * `GET …/repack-events` 로 되읽는다. 표를 만들었는데 그 PR 이 한 번도 안 지나는 공백을
+ * 없앤다(I-13 R-15 의 교훈).
  *
  * ⚠ 저장소 다른 e2e(`logistics-stock-transfer.e2e-spec.ts`)가 `status_code:'ACTIVE'` 인
  * 취급 단위를 남길 수 있다(통보 164 ⓐ · S-11) — 목록 단언은 «자기 픽스처»의 id 로만
@@ -21,6 +26,13 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-hu-probe';
+const PERFORMER_LOGIN_ID = 'e2e-hu-performer';
+const LOGIN_LIKE = 'e2e-hu-%';
+// ⭐ 정렬 축의 «동률»을 픽스처로 명시한다 — 안 그러면 2차 키 단언이 죽는다(I-13 실사고).
+const T_OLD = new Date('2026-09-01T00:00:00.000Z');
+const T_TIE = new Date('2026-09-02T00:00:00.000Z');
+const T_MIX = new Date('2026-09-02T12:00:00.000Z');
+const T_NEW = new Date('2026-09-03T00:00:00.000Z');
 const PASSWORD = '취급단위-검사-비밀번호';
 const PREFIX = 'HUE2E';
 const PATH = '/api/inventory/handling-units';
@@ -46,6 +58,37 @@ interface HandlingUnitBody {
   warehouseId: number | null;
   locationId: number | null;
   statusCode: string;
+}
+interface ColumnShape {
+  column_name: string;
+  domain_name: string | null;
+  is_nullable: string;
+}
+interface RepackEventLineFixture {
+  line_no: number;
+  handling_unit_id: bigint;
+  role_code: string;
+  item_id: bigint;
+  lot_id: bigint;
+  qty_before: number;
+  qty_after: number;
+  uom_id_before: bigint | null;
+  uom_id_after: bigint | null;
+}
+interface RepackEventLineBody {
+  handlingUnitId: number;
+  roleCode: string;
+  itemId: number;
+  lotId: number;
+  qtyBefore: number;
+  qtyAfter: number;
+}
+interface RepackEventBody {
+  repackEventId: number;
+  repackTypeCode: string;
+  performedBy: number;
+  occurredAt: string;
+  lines: RepackEventLineBody[];
 }
 interface PagedHandlingUnits {
   items: HandlingUnitBody[];
@@ -80,6 +123,20 @@ describe('취급 단위 조회 (e2e)', () => {
   let contentB1: number;
   let contentB2: number;
   let contentA1: number;
+
+  // ⭐ 재구성 이벤트(PR ②). 만든 순서 ≠ 기대 순서다 — 그래야 정렬 두 축이 «둘 다» 반증된다.
+  //  · `occurred_at` 축을 지우면 id 역순이 되는데 그것이 기대값과 다르다(eventNew 가 id 최소).
+  //  · 2차 키를 지우면 동률 두 건이 삽입 순서(Low → High)로 와서 기대값(High → Low)과 다르다.
+  let performerId: number;
+  let eventNew: number;
+  let eventOld: number;
+  let eventTieLow: number;
+  let eventTieHigh: number;
+  let eventForeign: number;
+  // ⭐ 계약의 `MERGE` 는 원본이 여럿이라 라인이 «두 HU 에 걸친다». 그 모양이 픽스처에
+  //   없으면 `some` 을 `every` 로 바꿔도 언제나 초록이다(A 만의 이벤트·B 만의 이벤트는
+  //   두 연산자가 같은 답을 낸다).
+  let eventMixed: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -276,6 +333,265 @@ describe('취급 단위 조회 (e2e)', () => {
     await request(app.getHttpServer()).get(`${PATH}/999999999/contents`).set('Cookie', cookie).expect(404);
   });
 
+
+  // ── PR ② 재구성 이력 조회 (13~17) ────────────────────────────────────────
+
+  it('이벤트가 0건인 HU 의 repack-events 는 빈 목록이다', async () => {
+    const body = await repackEvents(huC);
+    expect(Object.keys(body)).toEqual(['items']);
+    expect(body.items).toEqual([]);
+  });
+
+  it('occurred_at 최신이 위다 · 각 이벤트의 lines 가 line_no asc 다(배열 통째 단언)', async () => {
+    const body = await repackEvents(huA);
+
+    expect(body.items.map((e) => e.repackEventId)).toEqual([
+      eventNew,
+      eventMixed,
+      eventTieHigh,
+      eventTieLow,
+      eventOld,
+    ]);
+    expect(body.items.map((e) => e.occurredAt)).toEqual([
+      T_NEW.toISOString(),
+      T_MIX.toISOString(),
+      T_TIE.toISOString(),
+      T_TIE.toISOString(),
+      T_OLD.toISOString(),
+    ]);
+    // ⭐ 유형 축의 값이 «셋»이다 — 하나면 상수로 실어도 언제나 초록이다.
+    expect(body.items.map((e) => e.repackTypeCode)).toEqual([
+      'RECONFIGURE',
+      'MERGE',
+      'RECONFIGURE',
+      'SPLIT',
+      'SPLIT',
+    ]);
+
+    // 라인은 «만든 순서»가 line_no 역순이라(3→2→1) orderBy 를 빼면 여기가 빨개진다.
+    // `line_no` 자체는 계약에 없으니 그것을 따라가는 값으로 잰다.
+    expect(body.items[0].lines.map((l) => l.qtyAfter)).toEqual([0, 100.000001, 12.5]);
+    expect(body.items[0].lines.map((l) => l.roleCode)).toEqual(['SOURCE', 'RESULT', 'RESULT']);
+  });
+
+  it('⭐ occurred_at 이 동률인 두 건은 repackEventId 역순이다(2차 키 반증)', async () => {
+    expect(eventTieHigh).toBeGreaterThan(eventTieLow); // 「동률 픽스처」가 실제로 동률인지
+    const body = await repackEvents(huA);
+
+    const tied = body.items.filter((e) => e.occurredAt === T_TIE.toISOString());
+    expect(tied.map((e) => e.repackEventId)).toEqual([eventTieHigh, eventTieLow]);
+  });
+
+  it('⭐ 헤더 5칸·라인 6칸 전건 값 단언 — uomId·uomIdBefore·uomIdAfter 가 응답에 없다', async () => {
+    const body = await repackEvents(huA);
+    const event = body.items[0];
+
+    // 같은 형끼리 뒤바꾸면 ajv 가 못 잡는다(qtyBefore↔qtyAfter · itemId↔lotId) — 값으로 잰다.
+    expect(event).toEqual({
+      repackEventId: eventNew,
+      repackTypeCode: 'RECONFIGURE',
+      performedBy: performerId,
+      occurredAt: T_NEW.toISOString(),
+      lines: [
+        { handlingUnitId: huA, roleCode: 'SOURCE', itemId: item1Id, lotId: lot1Id, qtyBefore: 100, qtyAfter: 0 },
+        { handlingUnitId: huA, roleCode: 'RESULT', itemId: item1Id, lotId: lot1Id, qtyBefore: 0, qtyAfter: 100.000001 },
+        { handlingUnitId: huA, roleCode: 'RESULT', itemId: item2Id, lotId: lot2Id, qtyBefore: 12.5, qtyAfter: 12.5 },
+      ],
+    });
+
+    // ⭐ ajv 도 `toMatchObject` 도 여분 칸을 못 잡는다 — 키 집합을 «명시로» 잰다.
+    //   `toEqual` 은 `undefined` 로 실린 칸을 통과시키므로 이 단언이 겹으로 필요하다.
+    expect(Object.keys(event).sort()).toEqual([
+      'lines',
+      'occurredAt',
+      'performedBy',
+      'repackEventId',
+      'repackTypeCode',
+    ]);
+    for (const line of body.items.flatMap((e) => e.lines)) {
+      expect(Object.keys(line).sort()).toEqual([
+        'handlingUnitId',
+        'itemId',
+        'lotId',
+        'qtyAfter',
+        'qtyBefore',
+        'roleCode',
+      ]);
+    }
+
+    // ⭐⭐ R-2 — 서버 전용 두 칸은 «DB 에 실제로 채워져 있다». 응답에만 없는 것이지
+    //    픽스처가 빈 것이 아니다(빈 픽스처면 「응답에 없다」가 공짜로 초록이 된다).
+    //    단위 축도 둘이다: uom → NULL · NULL → uom2 · uom → uom2(단위만 바뀐 줄 · 통보 165).
+    const stored = await prisma.handling_unit_repack_event_line.findMany({
+      where: { handling_unit_repack_event_id: eventNew },
+      orderBy: { line_no: 'asc' },
+    });
+    expect(stored.map((l) => [nullableId(l.uom_id_before), nullableId(l.uom_id_after)])).toEqual([
+      [uomId, null],
+      [null, uom2Id],
+      [uomId, uom2Id],
+    ]);
+  });
+
+  it('⭐ 다른 HU 의 라인만 가진 이벤트는 안 잡힌다(라인 축 필터를 양방향으로 잰다)', async () => {
+    const forA = await repackEvents(huA);
+    expect(forA.items.map((e) => e.repackEventId)).not.toContain(eventForeign);
+
+    // 반대 방향 — B 를 물으면 B 의 이벤트 «만» 온다(A 의 넷이 안 섞인다).
+    const forB = await repackEvents(huB);
+    expect(forB.items.map((e) => e.repackEventId)).toEqual([eventForeign, eventMixed]);
+    expect(forB.items[0].lines.map((l) => l.handlingUnitId)).toEqual([huB, huB]);
+
+    // ⭐ 두 HU 에 걸친 MERGE 는 «양쪽 다» 잡힌다 — `some` 을 `every` 로 바꾸면 여기서
+    //   양쪽 모두 사라진다. 그리고 라인은 «이벤트 전건»이 온다(대상 HU 로 안 거른다) —
+    //   계약 라인의 `handlingUnitId` 가 그 축이다.
+    expect(forA.items.map((e) => e.repackEventId)).toContain(eventMixed);
+    const mixed = forA.items.find((e) => e.repackEventId === eventMixed);
+    expect(mixed?.lines.map((l) => l.handlingUnitId)).toEqual([huB, huA]);
+  });
+
+  // ⚠ 계획 §9-3 의 13~17 밖이다 — 서비스의 존재 검사(§10-3 ⓐ)가 시험 없이 남으면
+  //   그 줄을 지워도 초록이라 한 건 더 둔다(형제 조회 e2e 12 와 같은 모양).
+  it('repack-events — 없는 id 는 404 다(계약 미선언 · 서버가 낸다)', async () => {
+    await request(app.getHttpServer())
+      .get(`${PATH}/999999999/repack-events`)
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+
+  // ── PR ② 마이그레이션 자체를 재는 자리 ────────────────────────────────────
+  // 계약 응답으로는 반증할 수 없는 DDL(칸 목록·nullable·도메인·UNIQUE·CHECK·FK·인덱스)을
+  // 잰다 — 저장소 선례 `app-printer-schema.e2e-spec.ts` 형. 이것이 없으면 마이그의 절반이
+  // 「지워도 초록」이다. forward-only 라 되돌릴 수 없는 자리이므로 값을 못 박아 둔다.
+
+  it('⭐ 신설 두 표의 칸·nullable·도메인이 정본대로다', async () => {
+    const header = await columnsOf('handling_unit_repack_event');
+    expect(header.map((c) => c.column_name)).toEqual([
+      'handling_unit_repack_event_id',
+      'repack_type_code',
+      'performed_by',
+      'occurred_at',
+      'created_at',
+    ]);
+    // ⛔ 헤더에 `handling_unit_id`·`reason_code`·`repack_event_no` 를 «만들지 않았다»
+    //   (MERGE 는 원본이 여럿이라 헤더 한 칸이 거짓말이 되고, 나머지는 계약에 원천이 0이다).
+    expect(header.every((c) => c.is_nullable === 'NO')).toBe(true);
+    expect(header.find((c) => c.column_name === 'repack_type_code')?.domain_name).toBe('code_t');
+
+    const line = await columnsOf('handling_unit_repack_event_line');
+    expect(line.map((c) => c.column_name)).toEqual([
+      'handling_unit_repack_event_line_id',
+      'handling_unit_repack_event_id',
+      'line_no',
+      'handling_unit_id',
+      'role_code',
+      'item_id',
+      'lot_id',
+      'qty_before',
+      'qty_after',
+      'uom_id_before',
+      'uom_id_after',
+      'created_at',
+    ]);
+    // ⭐ R-2 — 계약에 «없는» 두 칸은 nullable 이다(응답이 안 읽고 서버만 채운다).
+    //   ⛔ NOT NULL 로 두면 과거 픽스처·수동 삽입이 막힌다.
+    expect(line.filter((c) => c.is_nullable === 'YES').map((c) => c.column_name)).toEqual([
+      'uom_id_before',
+      'uom_id_after',
+    ]);
+    // ⭐ qty 는 `app.qty_t`(CHECK VALUE >= 0) 다 — 0 이 담겨야 한다(새 줄의 전량·빠진
+    //   줄의 후량). handling_unit_content.qty 의 CHECK (qty > 0) 와 «다른» 규칙이 의도다.
+    expect(line.filter((c) => c.domain_name === 'qty_t').map((c) => c.column_name)).toEqual([
+      'qty_before',
+      'qty_after',
+    ]);
+  });
+
+  it('⭐ 헤더·라인의 FK 6개·UNIQUE·조회 인덱스가 실재한다', async () => {
+    const header = await prisma.$queryRaw<{ conname: string; confdeltype: string }[]>`
+      SELECT conname, confdeltype::text FROM pg_constraint
+       WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass AND contype = 'f'`;
+    expect(header.map((c) => c.conname)).toEqual(['handling_unit_repack_event_performed_by_fkey']);
+    expect(header.map((c) => c.confdeltype)).toEqual(['a']);
+
+    const constraints = await prisma.$queryRaw<
+      { conname: string; contype: string; confdeltype: string }[]
+    >`
+      SELECT conname, contype::text, confdeltype::text FROM pg_constraint
+       WHERE conrelid = 'inventory.handling_unit_repack_event_line'::regclass
+       ORDER BY conname`;
+    // ⭐ `uom` 을 «두 번» 가리킨다 — before/after 가 서로 다른 FK 다.
+    expect(constraints.filter((c) => c.contype === 'f').map((c) => c.conname)).toEqual([
+      'handling_unit_repack_event_li_handling_unit_repack_event_i_fkey',
+      'handling_unit_repack_event_line_handling_unit_id_fkey',
+      'handling_unit_repack_event_line_item_id_fkey',
+      'handling_unit_repack_event_line_lot_id_fkey',
+      'handling_unit_repack_event_line_uom_id_after_fkey',
+      'handling_unit_repack_event_line_uom_id_before_fkey',
+    ]);
+    expect(constraints.map((c) => c.conname)).toContain('uq_handling_unit_repack_event_line');
+    // ⭐ 삭제 «동작»까지 잰다(PR #499 리뷰 Major-1) — 이름·종류만 재면 `ON DELETE CASCADE`
+    //   로 바꿔도 전건 초록이고, 그러면 취급 단위 한 건을 지우는 것만으로 재구성 이력이
+    //   조용히 사라진다. `a` = NO ACTION(형제 표 전건과 같다).
+    expect(constraints.filter((c) => c.contype === 'f').map((c) => c.confdeltype)).toEqual([
+      'a',
+      'a',
+      'a',
+      'a',
+      'a',
+      'a',
+    ]);
+    // ⛔ 코드 칸(`repack_type_code`·`role_code`)에 CHECK 를 «걸지 않았다» — mdm.code_group
+    //   에 CD-REPACK-TYPE·CD-ROLE 이 0건이고, 값이 늘면 CHECK 가 먼저 막는다. 유일한
+    //   CHECK 는 정렬 축(`line_no > 0`)이다.
+    expect(constraints.filter((c) => c.contype === 'c').map((c) => c.conname)).toEqual([
+      'handling_unit_repack_event_line_line_no_check',
+    ]);
+    const headerChecks = await prisma.$queryRaw<{ conname: string }[]>`
+      SELECT conname FROM pg_constraint
+       WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass AND contype = 'c'`;
+    expect(headerChecks).toEqual([]);
+
+    // `GET …/repack-events` 의 «유일한» 축이자 커버링 인덱스다(§2-4).
+    const indexes = await prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes
+       WHERE schemaname='inventory' AND indexname='ix_handling_unit_repack_event_line_hu'`;
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0].indexdef).toContain('(handling_unit_id, handling_unit_repack_event_id)');
+  });
+
+  it('⛔ occurred_at 에 DEFAULT 가 «없다» — 계약 required 이자 정렬 1차 축이라 서버가 명시로 싣는다', async () => {
+    const defaults = await prisma.$queryRaw<{ column_name: string; column_default: string | null }[]>`
+      SELECT column_name, column_default FROM information_schema.columns
+       WHERE table_schema='inventory' AND table_name='handling_unit_repack_event'
+         AND column_name IN ('occurred_at','created_at')
+       ORDER BY column_name`;
+    expect(defaults).toEqual([
+      { column_name: 'created_at', column_default: 'clock_timestamp()' },
+      { column_name: 'occurred_at', column_default: null },
+    ]);
+  });
+
+  it('⭐ 한 이벤트에 같은 line_no 둘은 거부되고, line_no 0 도 거부된다', async () => {
+    const duplicate = {
+      handling_unit_repack_event_id: BigInt(eventNew),
+      line_no: 1, // eventNew 가 이미 쓰고 있는 번호다
+      handling_unit_id: BigInt(huA),
+      role_code: 'RESULT',
+      item_id: BigInt(item1Id),
+      lot_id: BigInt(lot1Id),
+      qty_before: 1,
+      qty_after: 1,
+    };
+    await expect(prisma.handling_unit_repack_event_line.create({ data: duplicate })).rejects.toThrow(
+      /Unique constraint failed/,
+    );
+    await expect(
+      prisma.handling_unit_repack_event_line.create({ data: { ...duplicate, line_no: 0 } }),
+    ).rejects.toThrow(/handling_unit_repack_event_line_line_no_check/);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   async function list(qs: string): Promise<PagedHandlingUnits> {
@@ -287,6 +603,29 @@ describe('취급 단위 조회 (e2e)', () => {
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return response.body as PagedHandlingUnits;
+  }
+
+  async function repackEvents(handlingUnitId: number): Promise<{ items: RepackEventBody[] }> {
+    const response = await request(app.getHttpServer())
+      .get(`${PATH}/${handlingUnitId}/repack-events`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const validate = validator('GET /inventory/handling-units/{handlingUnitId}/repack-events');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    return response.body as { items: RepackEventBody[] };
+  }
+
+  function columnsOf(table: string): Promise<ColumnShape[]> {
+    return prisma.$queryRaw<ColumnShape[]>`
+      SELECT column_name, domain_name, is_nullable
+        FROM information_schema.columns
+       WHERE table_schema = 'inventory' AND table_name = ${table}
+       ORDER BY ordinal_position`;
+  }
+
+  function nullableId(value: bigint | null): number | null {
+    return value === null ? null : Number(value);
   }
 
   async function login(): Promise<string[]> {
@@ -305,6 +644,12 @@ describe('취급 단위 조회 (e2e)', () => {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '취급단위검사', status_code: 'EMPLOYED' },
     });
+    // ⭐ 이벤트를 «수행한» 계정을 로그인 계정과 다르게 둔다 — 한 값이면 performedBy 를
+    //    엉뚱한 칸에서 채워도 초록일 수 있다.
+    const performer = await prisma.app_user.create({
+      data: { login_id: PERFORMER_LOGIN_ID, user_name: '재구성수행자', status_code: 'EMPLOYED' },
+    });
+    performerId = Number(performer.app_user_id);
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
@@ -496,6 +841,57 @@ describe('취급 단위 조회 (e2e)', () => {
       },
     });
     contentA1 = Number(contentA.handling_unit_content_id);
+
+    // ⭐ PR ② 의 마이그를 «지나는» 픽스처 — prisma 직삽. 만든 순서를 기대 순서와 어긋나게
+    //    둔다(eventNew 가 id 최소): `occurred_at` 축을 지우면 id 역순이 되는데 그것이
+    //    기대값과 다르다. 동률 두 건은 Low → High 순으로 심어, 2차 키를 지우면 삽입
+    //    순서로 와서 기대값(High → Low)과 다르다.
+    eventNew = await makeEvent(T_NEW, 'RECONFIGURE', performer.app_user_id, [
+      // ⭐ line_no 역순으로 심는다 — `orderBy line_no asc` 를 빼면 순서 단언이 빨개진다.
+      { line_no: 3, handling_unit_id: a.handling_unit_id, role_code: 'RESULT', item_id: item2.item_id, lot_id: lot2.lot_id, qty_before: 12.5, qty_after: 12.5, uom_id_before: uom.uom_id, uom_id_after: uom2.uom_id },
+      { line_no: 2, handling_unit_id: a.handling_unit_id, role_code: 'RESULT', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 0, qty_after: 100.000001, uom_id_before: null, uom_id_after: uom2.uom_id },
+      { line_no: 1, handling_unit_id: a.handling_unit_id, role_code: 'SOURCE', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 100, qty_after: 0, uom_id_before: uom.uom_id, uom_id_after: null },
+    ]);
+    eventOld = await makeEvent(T_OLD, 'SPLIT', user.app_user_id, [
+      { line_no: 1, handling_unit_id: a.handling_unit_id, role_code: 'RESULT', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 5, qty_after: 7, uom_id_before: uom2.uom_id, uom_id_after: uom2.uom_id },
+    ]);
+    eventTieLow = await makeEvent(T_TIE, 'SPLIT', user.app_user_id, [
+      { line_no: 1, handling_unit_id: a.handling_unit_id, role_code: 'SOURCE', item_id: item2.item_id, lot_id: lot2.lot_id, qty_before: 3, qty_after: 1, uom_id_before: uom.uom_id, uom_id_after: uom.uom_id },
+    ]);
+    eventTieHigh = await makeEvent(T_TIE, 'RECONFIGURE', user.app_user_id, [
+      { line_no: 1, handling_unit_id: a.handling_unit_id, role_code: 'RESULT', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 1, qty_after: 3, uom_id_before: uom2.uom_id, uom_id_after: uom.uom_id },
+    ]);
+    // ⭐ 「거를 남의 행」 — 라인이 전부 B 에 걸린 이벤트다. A 를 물을 때 안 잡혀야 한다.
+    eventForeign = await makeEvent(T_NEW, 'MERGE', user.app_user_id, [
+      { line_no: 1, handling_unit_id: b.handling_unit_id, role_code: 'SOURCE', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 20, qty_after: 0, uom_id_before: uom.uom_id, uom_id_after: null },
+      { line_no: 2, handling_unit_id: b.handling_unit_id, role_code: 'RESULT', item_id: item2.item_id, lot_id: lot2.lot_id, qty_before: 0, qty_after: 20, uom_id_before: null, uom_id_after: uom2.uom_id },
+    ]);
+    // ⭐ 두 HU 에 걸친 MERGE — A 로 물어도 B 로 물어도 «둘 다» 잡혀야 한다.
+    eventMixed = await makeEvent(T_MIX, 'MERGE', user.app_user_id, [
+      { line_no: 1, handling_unit_id: b.handling_unit_id, role_code: 'SOURCE', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 8, qty_after: 0, uom_id_before: uom.uom_id, uom_id_after: null },
+      { line_no: 2, handling_unit_id: a.handling_unit_id, role_code: 'RESULT', item_id: item1.item_id, lot_id: lot1.lot_id, qty_before: 0, qty_after: 8, uom_id_before: null, uom_id_after: uom.uom_id },
+    ]);
+  }
+
+  /**
+   * ⭐ 라인을 «한 건씩 차례로» 심는다 — 중첩 create 는 삽입 순서를 약속하지 않아
+   * 「`orderBy line_no` 를 빼면 빨개진다」가 우연에 기대게 된다.
+   */
+  async function makeEvent(
+    occurredAt: Date,
+    repackTypeCode: string,
+    performedBy: bigint,
+    lines: RepackEventLineFixture[],
+  ): Promise<number> {
+    const event = await prisma.handling_unit_repack_event.create({
+      data: { repack_type_code: repackTypeCode, performed_by: performedBy, occurred_at: occurredAt },
+    });
+    for (const line of lines) {
+      await prisma.handling_unit_repack_event_line.create({
+        data: { handling_unit_repack_event_id: event.handling_unit_repack_event_id, ...line },
+      });
+    }
+    return Number(event.handling_unit_repack_event_id);
   }
 
   /**
@@ -507,6 +903,16 @@ describe('취급 단위 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`
       UPDATE inventory.handling_unit SET parent_handling_unit_id = NULL
        WHERE handling_unit_no LIKE '${PREFIX}%'`);
+    // ⭐ 신설 두 표를 «가장 먼저» 지운다 — 라인이 handling_unit·item·lot·uom·app_user 를
+    //   전부 가리켜, 남으면 아래 삭제가 줄줄이 FK 위반으로 막힌다(§9-1 정리 역순).
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM inventory.handling_unit_repack_event_line
+       WHERE handling_unit_id IN (
+         SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'
+       )`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM inventory.handling_unit_repack_event
+       WHERE performed_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}')`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.handling_unit_content
        WHERE handling_unit_id IN (
@@ -521,11 +927,16 @@ describe('취급 단위 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);
 
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
-      await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
-      await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
-      await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
+    // 계정은 «둘»이다 — 로그인용과 이벤트 수행자용(picked by LIKE).
+    const targets = await prisma.app_user.findMany({
+      where: { login_id: { in: [LOGIN_ID, PERFORMER_LOGIN_ID] } },
+      select: { app_user_id: true },
+    });
+    const userIds = targets.map((t) => t.app_user_id);
+    if (userIds.length > 0) {
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.user_credential.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
     }
   }
 });
