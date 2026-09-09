@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import {
@@ -25,6 +26,7 @@ import {
   summarize,
   view,
 } from './mold-derivation';
+import { lockMoldForWrite } from './mold-write-lock';
 
 /**
  * 툴 마스터. 표 이름은 금형이지만 담는 것은 **모든 도구**이고 `tool_type_code` 가
@@ -184,34 +186,52 @@ export class MoldService {
 
   async update(moldId: number, version: number, input: MoldWrite): Promise<MoldResult> {
     await this.assertWritable(input);
-    const current = await this.get(moldId);
-    assertNotDisposed(current.mold.statusCode);
+    await this.prisma.$transaction(async (tx) => {
+      // TOOL_LABEL 발행도 이 행을 먼저 잠근다. 이 잠금 안에서 발행 이력을 다시 세야
+      // 「검사 뒤 코드 변경」과 「코드 변경 뒤 발행」이 한쪽 순서로 완결된다.
+      const current = await lockMoldForWrite(tx, moldId);
+      assertNotDisposed(current.status_code);
 
-    if (input.moldCode !== undefined && input.moldCode !== current.mold.moldCode) {
-      // 공유계약 B-4 — 참조가 있거나 라벨이 나갔으면 코드를 못 바꾼다.
-      // 「업무 규칙 위반은 409 가 아니라 400」(계약).
-      if (!current.editability.codeEditable) throw codeLocked(current);
-      await this.assertCodeFree(current.mold.plantId, input.moldCode, moldId);
-    }
+      if (input.moldCode !== undefined && input.moldCode !== current.mold_code) {
+        const [referenceCount, labelIssueCount] = await Promise.all([
+          countReferences(tx, MOLD_REFERRERS, current.mold_id),
+          this.labelIssueCount(current.mold_id, tx),
+        ]);
+        const currentEditability = editability(referenceCount, labelIssueCount);
+        // 공유계약 B-4 — 참조가 있거나 결과와 무관하게 라벨 이력이 있으면 코드를 못 바꾼다.
+        if (!currentEditability.codeEditable) {
+          throw codeLocked({
+            editability: currentEditability,
+            labelIssueCount,
+          });
+        }
+        await this.assertCodeFree(
+          current.plant_id,
+          input.moldCode,
+          current.mold_id,
+          tx,
+        );
+      }
 
-    const updated = await this.prisma.mold.updateMany({
-      // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
-      where: { mold_id: moldId, version_no: version },
-      data: {
-        mold_name: input.moldName,
-        tool_type_code: input.toolTypeCode,
-        cavity_count: input.cavityCount,
-        // ⚠ 수정은 통째로 바꾸는 자리다 — 안 보낸 판정 기준은 계약이 선언한 기본값
-        // NONE 으로 되돌린다. 옛 값을 남기면 「끄려고 지웠다」가 조용히 무시된다.
-        pm_trigger_type_code: input.pmTriggerTypeCode ?? 'NONE',
-        ...optional('mold_code', input.moldCode),
-        ...optional('guaranteed_shot_count', input.guaranteedShotCount),
-        ...optional('pm_cycle_interval', input.pmCycleInterval),
-        ...optional('pm_cycle_unit_code', input.pmCycleUnitCode),
-        version_no: { increment: 1 },
-      },
+      const updated = await tx.mold.updateMany({
+        // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
+        where: { mold_id: current.mold_id, version_no: version },
+        data: {
+          mold_name: input.moldName,
+          tool_type_code: input.toolTypeCode,
+          cavity_count: input.cavityCount,
+          // ⚠ 수정은 통째로 바꾸는 자리다 — 안 보낸 판정 기준은 계약이 선언한 기본값
+          // NONE 으로 되돌린다. 옛 값을 남기면 「끄려고 지웠다」가 조용히 무시된다.
+          pm_trigger_type_code: input.pmTriggerTypeCode ?? 'NONE',
+          ...optional('mold_code', input.moldCode),
+          ...optional('guaranteed_shot_count', input.guaranteedShotCount),
+          ...optional('pm_cycle_interval', input.pmCycleInterval),
+          ...optional('pm_cycle_unit_code', input.pmCycleUnitCode),
+          version_no: { increment: 1 },
+        },
+      });
+      assertUpdated(updated.count);
     });
-    await this.assertExists(moldId, updated.count);
     return this.get(moldId);
   }
 
@@ -291,8 +311,11 @@ export class MoldService {
   }
 
   /** 코드가 라벨로 나갔는지 센다 — 1 이상이면 참조가 0이어도 코드를 잠근다(계약). */
-  private labelIssueCount(moldId: bigint): Promise<number> {
-    return this.prisma.document_issue_log.count({
+  private labelIssueCount(
+    moldId: bigint,
+    prisma: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<number> {
+    return prisma.document_issue_log.count({
       where: {
         target_type_code: LABEL_TARGET_TYPE,
         document_type_code: LABEL_DOCUMENT_TYPE,
@@ -393,12 +416,17 @@ export class MoldService {
   }
 
   /** `mold_code` 는 **공장 안에서만** 유일하다(uq_mold) — 「중복이면 400」(계약). */
-  private async assertCodeFree(plantId: number, moldCode: string, self: number | null): Promise<void> {
-    const taken = await this.prisma.mold.findUnique({
+  private async assertCodeFree(
+    plantId: number | bigint,
+    moldCode: string,
+    self: number | bigint | null,
+    prisma: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    const taken = await prisma.mold.findUnique({
       where: { plant_id_mold_code: { plant_id: plantId, mold_code: moldCode } },
       select: { mold_id: true },
     });
-    if (!taken || (self !== null && Number(taken.mold_id) === self)) return;
+    if (!taken || (self !== null && taken.mold_id === BigInt(self))) return;
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       {
         scope: 'field',
@@ -434,7 +462,7 @@ function editability(referenceCount: number, labelIssueCount: number): Editabili
   };
 }
 
-function codeLocked(current: MoldResult): ContractException {
+function codeLocked(current: Pick<MoldResult, 'editability' | 'labelIssueCount'>): ContractException {
   const because =
     current.editability.reason === 'LABEL_ISSUED'
       ? `라벨이 ${current.labelIssueCount}회 발행돼 현장에 나가 있어`

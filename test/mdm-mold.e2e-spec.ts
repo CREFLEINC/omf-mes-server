@@ -5,6 +5,7 @@
  * 도래·초과율), 필터 전체를 세는 요약, 라벨 발행이 코드를 잠그는 갈래.
  */
 import { INestApplication } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -338,6 +339,58 @@ describe('툴 마스터 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'moldCode', code: 'STATE_LOCKED' });
   });
 
+  it('⭐ 코드 변경이 먼저 잠그면 변경 뒤 TOOL_LABEL 발행이 새 코드에 직렬화된다', async () => {
+    const before = `${PREFIX}-RACE-U`;
+    const after = `${before}-NEW`;
+    const { id, etag } = await create(before);
+    const blocker = await blockMold(id);
+
+    try {
+      const update = updateMold(id, etag, after).then((response) => response);
+      await waitForBlockedMoldQuery('%mold_code%FOR NO KEY UPDATE%');
+      const issue = issueToolLabel(id, `${PREFIX}-RACE-U`).then((response) => response);
+      await waitForBlockedMoldQuery('%mold_id AS target_id%FOR NO KEY UPDATE%');
+      blocker.release();
+
+      const [updated, issued] = await Promise.all([update, issue]);
+      expect(updated.status).toBe(200);
+      expect(issued.status).toBe(201);
+      expect((await moldOf(id)).moldCode).toBe(after);
+      expect(await toolLabelCount(id)).toBe(1);
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
+  it('⭐ TOOL_LABEL 발행이 먼저 잠그면 뒤의 코드 변경은 발행 이력을 보고 거부된다', async () => {
+    const before = `${PREFIX}-RACE-I`;
+    const after = `${before}-NEW`;
+    const { id, etag } = await create(before);
+    const blocker = await blockMold(id);
+
+    try {
+      const issue = issueToolLabel(id, `${PREFIX}-RACE-I`).then((response) => response);
+      await waitForBlockedMoldQuery('%mold_id AS target_id%FOR NO KEY UPDATE%');
+      const update = updateMold(id, etag, after).then((response) => response);
+      await waitForBlockedMoldQuery('%mold_code%FOR NO KEY UPDATE%');
+      blocker.release();
+
+      const [issued, rejected] = await Promise.all([issue, update]);
+      expect(issued.status).toBe(201);
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.errors[0]).toMatchObject({
+        field: 'moldCode',
+        code: 'STATE_LOCKED',
+      });
+      expect((await moldOf(id)).moldCode).toBe(before);
+      expect(await toolLabelCount(id)).toBe(1);
+    } finally {
+      blocker.release();
+      await blocker.done;
+    }
+  });
+
   it('⭐ 참조가 붙으면 코드가 잠기고 코드 변경은 400, 이름 변경은 된다 — REFERENCED', async () => {
     const { id, etag } = await create(`${PREFIX}-REF`);
     await order(id, 'ISSUED');
@@ -556,6 +609,82 @@ describe('툴 마스터 (e2e)', () => {
     expect(validate(created.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
     return { id: created.body.moldId, etag: (await detailOf(created.body.moldId)).etag };
+  }
+
+  function updateMold(id: number, etag: string, moldCode: string): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/mdm/molds/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send(body(moldCode));
+  }
+
+  function issueToolLabel(id: number, remarks: string): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/app/document-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({
+        documentTypeCode: 'TOOL_LABEL',
+        targets: [{ targetTypeCode: 'MOLD', targetId: id }],
+        remarks,
+      });
+  }
+
+  function toolLabelCount(id: number): Promise<number> {
+    return prisma.document_issue_log.count({
+      where: {
+        document_type_code: 'TOOL_LABEL',
+        target_type_code: 'MOLD',
+        target_id: id,
+      },
+    });
+  }
+
+  async function blockMold(id: number): Promise<{
+    release: () => void;
+    done: Promise<void>;
+  }> {
+    let unlock = (): void => undefined;
+    let locked = (): void => undefined;
+    const released = new Promise<void>((resolve) => (unlock = resolve));
+    const acquired = new Promise<void>((resolve) => (locked = resolve));
+    let releasedOnce = false;
+    const done = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT mold_id FROM mdm.mold
+        WHERE mold_id=${BigInt(id)}
+        FOR NO KEY UPDATE`);
+      locked();
+      await released;
+    });
+    await acquired;
+    return {
+      release: () => {
+        if (releasedOnce) return;
+        releasedOnce = true;
+        unlock();
+      },
+      done,
+    };
+  }
+
+  async function waitForBlockedMoldQuery(pattern: string): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const rows = await prisma.$queryRaw<{ waiting: boolean }[]>(Prisma.sql`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database()
+            AND pid <> pg_backend_pid()
+            AND wait_event_type='Lock'
+            AND query LIKE ${pattern}
+        ) AS waiting`);
+      if (rows[0]?.waiting) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`금형 잠금 대기를 관측하지 못했습니다: ${pattern}`);
   }
 
   /** 상태 액션 하나. 전부 `Idempotency-Key` + `If-Match` 를 요구한다(계약). */

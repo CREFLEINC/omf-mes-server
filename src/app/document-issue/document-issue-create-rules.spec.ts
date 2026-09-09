@@ -241,23 +241,28 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
     );
   });
 
-  it.each([
-    ["IDENTIFICATION_TAG", "SERIAL_NUMBER"],
-    ["TOOL_LABEL", "MOLD"],
-  ] as const)(
-    "%s는 원천 선행 전 이름 있는 정책으로 막는다",
-    (documentTypeCode, targetTypeCode) => {
-      const target = prepared(targetTypeCode);
-      const facts: DocumentIssueTargetFacts =
-        targetTypeCode === "SERIAL_NUMBER"
-          ? { targetTypeCode, targetId: target.targetId, lotId: 31n }
-          : { targetTypeCode, targetId: target.targetId };
-      expectFailure(
-        () => qualifyDocumentIssueTarget(documentTypeCode, target, facts),
-        ERROR_CODE.STATE_LOCKED,
-      );
-    },
-  );
+  it("개체 태그는 품질 원천 선행 전 이름 있는 정책으로 막는다", () => {
+    const target = prepared("SERIAL_NUMBER");
+    expectFailure(
+      () =>
+        qualifyDocumentIssueTarget("IDENTIFICATION_TAG", target, {
+          targetTypeCode: "SERIAL_NUMBER",
+          targetId: target.targetId,
+          lotId: 31n,
+        }),
+      ERROR_CODE.STATE_LOCKED,
+    );
+  });
+
+  it("TOOL_LABEL은 조율된 MOLD writer를 전제로 nullable LOT 정상 경로다", () => {
+    const target = prepared("MOLD");
+    expect(
+      qualifyDocumentIssueTarget("TOOL_LABEL", target, {
+        targetTypeCode: "MOLD",
+        targetId: target.targetId,
+      }),
+    ).toBeNull();
+  });
 
   it("요청 LOT이 원천과 다르면 422 PAIR이고, 생략하면 원천을 쓴다", () => {
     const target = prepared("LOT");
