@@ -29,6 +29,8 @@ import { MaintenanceResultController } from "./result/result.controller";
 import { MaintenanceResultCreateService } from "./result/result-create.service";
 import { MaintenanceResultQueryService } from "./result/result-query.service";
 import { MaintenanceResultUpdateService } from "./result/result-update.service";
+import { ToolUsageController } from "./tool-usage/tool-usage.controller";
+import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { MaintenanceResultUpdateService } from "./result/result-update.service";
     DowntimeController,
     MaintenanceOrderController,
     MaintenanceResultController,
+    ToolUsageController,
   ],
   providers: [
     InspectionQueryService,
@@ -65,6 +68,7 @@ import { MaintenanceResultUpdateService } from "./result/result-update.service";
     MaintenanceResultCreateService,
     MaintenanceResultUpdateService,
     MaintenanceResultQueryService,
+    ToolUsageQueryService,
   ],
 })
 export class MaintenanceModule {}
