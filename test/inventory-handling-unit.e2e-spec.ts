@@ -1,6 +1,6 @@
 /**
- * 취급 단위 조회 4건(I-16 PR ①②) — 목록·상세·구성 목록·재구성 이력. 등록·구성 치환·
- * 포장 확정은 뒤 PR 몫이다(`docs/coverage-100/slices/I-16-a2.md` §11-3).
+ * 취급 단위 조회 4건(I-16 PR ①②) + 등록(PR ③) + 구성 치환(PR ④). 포장 확정은 PR ⑤
+ * 몫이다(`docs/coverage-100/slices/I-16-a2.md` §11-3).
  *
  * ⭐ PR ② 는 «자기 마이그를 지나는» e2e 를 갖는다(§11-3) — 신설
  * `inventory.handling_unit_repack_event(+_line)` 에 prisma 직삽으로 픽스처를 심고
@@ -38,6 +38,9 @@ const PREFIX = 'HUE2E';
 // ⛔ 사슬 픽스처는 `PREFIX` 를 «안» 쓴다 — 목록 e2e 1 이 `PREFIX` 로 자기 3건을 세므로
 //   같은 접두어를 쓰면 그 배열 통째 단언이 깨진다. 정리는 아래 `OURS` 가 둘 다 집는다.
 const CHAIN_PREFIX = 'HUCHAIN';
+// ⛔ 치환 픽스처도 `PREFIX` 를 안 쓴다 — 같은 이유다. 정리는 `OURS` 의 `created_by` 축이
+//   집는다(아래 `makeUnit` 이 우리 계정을 심는다).
+const PUT_PREFIX = 'HUPUT';
 const PATH = '/api/inventory/handling-units';
 const ROLE = 'E2E_HU';
 // `POST /inventory/handling-units` 의 도출 권한 셋 중 하나(`derived-permissions.ts:165`).
@@ -50,6 +53,7 @@ const WORKER_NO = 'HUE2E01';
  */
 const OURS =
   `(handling_unit_no LIKE '${PREFIX}%' OR handling_unit_no LIKE '${CHAIN_PREFIX}%'` +
+  ` OR handling_unit_no LIKE '${PUT_PREFIX}%'` +
   ` OR created_by IN (SELECT app_user_id FROM app.app_user WHERE login_id LIKE '${LOGIN_LIKE}')` +
   ` OR warehouse_id IN (SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')` +
   ` OR location_id IN (SELECT location_id FROM mdm.location WHERE location_code LIKE '${PREFIX}%'))`;
@@ -879,6 +883,293 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     expect(second.headers.etag).toBe('1');
   });
 
+  // ── PR ④ `PUT …/contents` (25~32) ────────────────────────────────────────
+
+  it('⭐ 빠진 행 삭제 · 남은 행 갱신 · 새 행 추가를 한 요청에서 — version_no 가 1 오르고 status_code 는 그대로다', async () => {
+    const hu = await makeUnit('MIX', [
+      { itemId: item1Id, lotId: lot1Id, qty: 10, uomId },
+      { itemId: item2Id, lotId: lot2Id, qty: 7, uomId: uom2Id },
+    ]);
+
+    const response = await putContents(hu, [
+      // 남은 행 — 수량과 «단위»가 둘 다 바뀐다.
+      { itemId: item1Id, lotId: lot1Id, qty: 4, uomId: uom2Id },
+      // 새 행. ⛔ 빠진 행 `(item2, lot2)` 는 요청에 없다 ⇒ 삭제다(공유계약 A-5).
+      { itemId: item2Id, lotId: lot1Id, qty: 5, uomId },
+    ]).expect(200);
+
+    const validate = validator('PUT /inventory/handling-units/{handlingUnitId}/contents');
+    expect(validate(response.body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(Object.keys(response.body)).toEqual(['items']);
+    // ⭐ ajv 도 `toMatchObject` 도 여분 칸을 못 잡는다 — 키 집합을 명시로 잰다.
+    //   ⛔ 서버 전용 `uomIdBefore`·`uomIdAfter` 가 여기로 새면 안 된다(통보 165).
+    expect(Object.keys(response.body.items[0]).sort()).toEqual([
+      'handlingUnitContentId',
+      'handlingUnitId',
+      'itemId',
+      'lotId',
+      'qty',
+      'uomId',
+    ]);
+
+    // ⭐ 「호출했다」가 아니라 «무엇이 저장됐나»를 잰다.
+    const stored = await prisma.handling_unit_content.findMany({
+      where: { handling_unit_id: hu },
+      orderBy: { handling_unit_content_id: 'asc' },
+    });
+    expect(
+      stored.map((row) => [Number(row.item_id), Number(row.lot_id), Number(row.qty), Number(row.uom_id)]),
+    ).toEqual([
+      [item1Id, lot1Id, 4, uom2Id],
+      [item2Id, lot1Id, 5, uomId],
+    ]);
+    expect(response.body.items.map((c: { qty: number }) => c.qty)).toEqual([4, 5]);
+
+    const header = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } });
+    // ⛔ `status_code` 는 안 옮긴다 · `version_no` 는 올린다(잠금 단위가 부모라서다 · §5-4).
+    expect([header.version_no, header.status_code, nullableId(header.updated_by)]).toEqual([
+      2,
+      'OPEN',
+      userId,
+    ]);
+  });
+
+  it('⭐⭐ 이벤트가 1건 생기고 라인이 세 갈래 전건이다 — prisma 로 되읽어 uom_id_before·uom_id_after 를 잰다', async () => {
+    const hu = await makeUnit('DIFF', [
+      // ⭐ 유지될 줄 — 수량은 그대로고 «단위만» 바뀐다(R-2 의 심장 · 통보 165).
+      { itemId: item1Id, lotId: lot1Id, qty: 10, uomId },
+      // 빠질 줄.
+      { itemId: item2Id, lotId: lot2Id, qty: 7, uomId: uom2Id },
+    ]);
+
+    await putContents(hu, [
+      { itemId: item1Id, lotId: lot1Id, qty: 10, uomId: uom2Id },
+      { itemId: item2Id, lotId: lot1Id, qty: 5, uomId },
+    ]).expect(200);
+
+    const events = await prisma.handling_unit_repack_event.findMany({
+      where: { lines: { some: { handling_unit_id: hu } } },
+      include: { lines: { orderBy: { line_no: 'asc' } } },
+    });
+    expect(events).toHaveLength(1);
+    expect([events[0].repack_type_code, nullableId(events[0].performed_by)]).toEqual([
+      'RECONFIGURE',
+      userId,
+    ]);
+    // ⭐ 응답으로는 볼 수 없는 두 칸이다 — 되읽어야 「안 채움」(변이 26)과 「전=후로 채움」
+    //   (변이 27)이 둘 다 빨개진다. 2행은 `10 → 10` 이라 수량만으로는 「변화 없음」이다.
+    expect(
+      events[0].lines.map((line) => [
+        line.line_no,
+        line.role_code,
+        Number(line.item_id),
+        Number(line.lot_id),
+        Number(line.qty_before),
+        Number(line.qty_after),
+        nullableId(line.uom_id_before),
+        nullableId(line.uom_id_after),
+      ]),
+    ).toEqual([
+      [1, 'SOURCE', item2Id, lot2Id, 7, 0, uom2Id, null],
+      [2, 'RESULT', item1Id, lot1Id, 10, 10, uomId, uom2Id],
+      [3, 'RESULT', item2Id, lot1Id, 0, 5, null, uomId],
+    ]);
+  });
+
+  it('⭐ line_no 가 1부터이고 SOURCE 가 위다 — GET …/repack-events 응답을 배열 통째로 단언한다', async () => {
+    const hu = await makeUnit('ORDER', [
+      { itemId: item2Id, lotId: lot2Id, qty: 3, uomId: uom2Id },
+      { itemId: item2Id, lotId: lot1Id, qty: 2, uomId },
+    ]);
+
+    await putContents(hu, [
+      { itemId: item1Id, lotId: lot2Id, qty: 1, uomId },
+      { itemId: item2Id, lotId: lot1Id, qty: 9, uomId: uom2Id },
+    ]).expect(200);
+
+    const body = await repackEvents(hu);
+    expect(body.items).toHaveLength(1);
+    // 정렬은 `(role_code DESC, item_id ASC, lot_id ASC)` — 2차·3차 키를 지우면 빨개진다.
+    // ⛔ `toEqual` 이라 응답에 서버 전용 두 칸이 새도 잡힌다(ajv 는 못 잡는다).
+    expect(body.items[0].lines).toEqual([
+      { handlingUnitId: hu, roleCode: 'SOURCE', itemId: item2Id, lotId: lot2Id, qtyBefore: 3, qtyAfter: 0 },
+      { handlingUnitId: hu, roleCode: 'RESULT', itemId: item1Id, lotId: lot2Id, qtyBefore: 0, qtyAfter: 1 },
+      { handlingUnitId: hu, roleCode: 'RESULT', itemId: item2Id, lotId: lot1Id, qtyBefore: 2, qtyAfter: 9 },
+    ]);
+    const stored = await prisma.handling_unit_repack_event_line.findMany({
+      where: { handling_unit_id: hu },
+      orderBy: { line_no: 'asc' },
+    });
+    expect(stored.map((line) => line.line_no)).toEqual([1, 2, 3]);
+  });
+
+  it('⭐ 최초 채움(빈 HU)도 이벤트가 생기고 라인 전건 qtyBefore 가 0 · uom_id_before 가 NULL 이다', async () => {
+    const hu = await makeUnit('EMPTY', []);
+
+    await putContents(hu, [
+      { itemId: item1Id, lotId: lot1Id, qty: 12, uomId },
+      { itemId: item2Id, lotId: lot2Id, qty: 3.5, uomId: uom2Id },
+    ]).expect(200);
+
+    const lines = await prisma.handling_unit_repack_event_line.findMany({
+      where: { handling_unit_id: hu },
+      orderBy: { line_no: 'asc' },
+    });
+    expect(
+      lines.map((line) => [
+        line.role_code,
+        Number(line.qty_before),
+        Number(line.qty_after),
+        nullableId(line.uom_id_before),
+        nullableId(line.uom_id_after),
+      ]),
+    ).toEqual([
+      ['RESULT', 0, 12, null, uomId],
+      ['RESULT', 0, 3.5, null, uom2Id],
+    ]);
+  });
+
+  it('⭐ 변화 없는 치환도 이벤트가 «한 건 더» 생기고 qtyBefore === qtyAfter 다(통보 144ⓑ)', async () => {
+    const hu = await makeUnit('SAME', [{ itemId: item1Id, lotId: lot1Id, qty: 6, uomId }]);
+    const same = [{ itemId: item1Id, lotId: lot1Id, qty: 6, uomId }];
+
+    await putContents(hu, same).expect(200);
+    await putContents(hu, same).expect(200);
+
+    // ⛔ 「변화가 있을 때만」으로 바꾸면(변이 13) 여기가 0건이 된다.
+    const events = await prisma.handling_unit_repack_event.findMany({
+      where: { lines: { some: { handling_unit_id: hu } } },
+      include: { lines: true },
+      orderBy: { handling_unit_repack_event_id: 'asc' },
+    });
+    expect(events).toHaveLength(2);
+    expect(
+      events.flatMap((event) => event.lines).map((line) => [
+        line.role_code,
+        Number(line.qty_before),
+        Number(line.qty_after),
+        nullableId(line.uom_id_before),
+        nullableId(line.uom_id_after),
+      ]),
+    ).toEqual([
+      ['RESULT', 6, 6, uomId, uomId],
+      ['RESULT', 6, 6, uomId, uomId],
+    ]);
+    expect((await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } })).version_no).toBe(3);
+  });
+
+  it('⭐ 빈 배열 → 200 · contents 0행 · 라인 전건 SOURCE·qtyAfter 0 · PACKED 인 HU 도 200 이고 상태 그대로다', async () => {
+    // 사실상 「해체」다 — 계약 `required:["items"]` 에 `minItems` 가 없어 허용한다(통보 163ⓓ).
+    const hu = await makeUnit(
+      'PACKED',
+      [
+        { itemId: item1Id, lotId: lot1Id, qty: 2, uomId },
+        { itemId: item2Id, lotId: lot2Id, qty: 4, uomId: uom2Id },
+      ],
+      'PACKED',
+    );
+
+    const response = await putContents(hu, []).expect(200);
+
+    expect(response.body).toEqual({ items: [] });
+    expect(await prisma.handling_unit_content.count({ where: { handling_unit_id: hu } })).toBe(0);
+    const header = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } });
+    // ⛔ 치환은 확정도 해제도 아니다 — `PACKED` 를 막지도 옮기지도 않는다(통보 143ⓓ).
+    expect([header.status_code, header.version_no]).toEqual(['PACKED', 2]);
+
+    const lines = await prisma.handling_unit_repack_event_line.findMany({
+      where: { handling_unit_id: hu },
+      orderBy: { line_no: 'asc' },
+    });
+    expect(
+      lines.map((line) => [line.role_code, Number(line.qty_after), nullableId(line.uom_id_after)]),
+    ).toEqual([
+      ['SOURCE', 0, null],
+      ['SOURCE', 0, null],
+    ]);
+  });
+
+  it('If-Match 를 안 보내면 통과하고 낡은 토큰이면 409 {conflictCause:user} 다', async () => {
+    const hu = await makeUnit('ETAG', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    // ⭐ 토큰은 «부모» 상세 GET 의 ETag 다 — 이 경로의 조회는 ETag 를 안 내린다(B-1-1).
+    const detail = await request(app.getHttpServer()).get(`${PATH}/${hu}`).set('Cookie', cookie).expect(200);
+    expect(detail.headers.etag).toBe('1');
+
+    await putContents(hu, [{ itemId: item1Id, lotId: lot1Id, qty: 2, uomId }], {
+      ifMatch: detail.headers.etag as string,
+    }).expect(200);
+
+    // 그 토큰은 이제 낡았다 — 치환이 부모 버전을 올렸다.
+    const stale = await putContents(hu, [{ itemId: item1Id, lotId: lot1Id, qty: 3, uomId }], {
+      ifMatch: '1',
+    }).expect(409);
+    expect(stale.body).toEqual({ conflictCause: 'user', message: expect.any(String) });
+
+    // ⭐ 안 보내면 낙관적 잠금 검사를 건너뛴다 — 오프라인 큐가 토큰을 안 싣는다(C-9).
+    await putContents(hu, [{ itemId: item1Id, lotId: lot1Id, qty: 4, uomId }]).expect(200);
+    const header = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } });
+    expect(header.version_no).toBe(3);
+    const stored = await prisma.handling_unit_content.findMany({ where: { handling_unit_id: hu } });
+    expect(stored.map((row) => Number(row.qty))).toEqual([4]);
+  });
+
+  it('⛔ 원장이 0건이다 — 전표·라인이 안 늘고 잔액이 안 바뀐다 · 200 응답 etag 가 버전 토큰이 아니다', async () => {
+    const hu = await makeUnit('LEDGER', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    const ledger = async (): Promise<number[]> =>
+      Promise.all([
+        prisma.inventory_transaction.count(),
+        prisma.inventory_transaction_line.count(),
+        prisma.inventory_balance.count(),
+      ]);
+    const before = await ledger();
+
+    const response = await putContents(hu, [
+      { itemId: item1Id, lotId: lot1Id, qty: 9, uomId: uom2Id },
+    ]).expect(200);
+
+    expect(await ledger()).toEqual(before);
+    // ⭐ R-5 — `toBeUndefined()` 도 `!== String(version_no)` 도 변이를 못 잡는다.
+    expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
+  });
+
+  it('⭐ 400·404 갈래 — 사번 둘 · 요청 안 중복 · 없는 참조 · 없는 HU. 전부 아무것도 안 바꾼다', async () => {
+    const hu = await makeUnit('GUARD', [{ itemId: item1Id, lotId: lot1Id, qty: 1, uomId }]);
+    const line = { itemId: item1Id, lotId: lot1Id, qty: 2, uomId };
+
+    const missing = await putContents(hu, [line], { worker: null }).expect(400);
+    expect(missing.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'X-Worker-No', code: 'REQUIRED' }),
+    ]);
+    const unknownWorker = await putContents(hu, [line], { worker: 'NO-SUCH' }).expect(400);
+    expect(unknownWorker.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'X-Worker-No', code: 'INVALID' }),
+    ]);
+
+    const duplicated = await putContents(hu, [line, { ...line, qty: 3 }]).expect(400);
+    expect(duplicated.body.errors).toEqual([
+      // ⭐ `contents[…]` 가 아니라 «이 오퍼레이션의» 배열 이름을 짚는다.
+      expect.objectContaining({ field: 'items[1]', code: 'UNIQUE_VIOLATION' }),
+    ]);
+
+    const unknownRefs = await putContents(hu, [
+      { itemId: 999999999, lotId: lot1Id, qty: 1, uomId: 999999999 },
+    ]).expect(400);
+    expect(unknownRefs.body.errors).toEqual([
+      expect.objectContaining({ field: 'items[0].itemId', code: 'INVALID' }),
+      expect.objectContaining({ field: 'items[0].uomId', code: 'INVALID' }),
+    ]);
+
+    // 계약 미선언이나 404 를 낸다(잠글 행이 없다 · §5-6).
+    await putContents(999999999, [line]).expect(404);
+
+    // ⭐ 반증 — `itemId` 만 같고 `lotId` 가 다른 두 줄은 통과한다(중복 축이 두 칸이다).
+    await putContents(hu, [line, { itemId: item1Id, lotId: lot2Id, qty: 3, uomId }]).expect(200);
+    // ⛔ 위 400·404 다섯은 아무것도 안 바꿨다 — 마지막 200 이 남긴 2행 그대로다.
+    expect(await prisma.handling_unit_content.count({ where: { handling_unit_id: hu } })).toBe(2);
+    expect(await prisma.handling_unit_repack_event.count({ where: { lines: { some: { handling_unit_id: hu } } } })).toBe(1);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function create(
@@ -891,6 +1182,52 @@ describe('취급 단위 조회·등록 (e2e)', () => {
       .set('Idempotency-Key', opts.key ?? randomUUID());
     if (opts.worker !== null) call.set('X-Worker-No', opts.worker ?? WORKER_NO);
     return call.send(body);
+  }
+
+  function putContents(
+    handlingUnitId: number,
+    items: Record<string, unknown>[],
+    opts: { key?: string; worker?: string | null; ifMatch?: string } = {},
+  ): request.Test {
+    const call = request(app.getHttpServer())
+      .put(`${PATH}/${handlingUnitId}/contents`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', opts.key ?? randomUUID());
+    if (opts.worker !== null) call.set('X-Worker-No', opts.worker ?? WORKER_NO);
+    if (opts.ifMatch !== undefined) call.set('If-Match', opts.ifMatch);
+    return call.send({ items });
+  }
+
+  /**
+   * 치환 시험 «전용» 취급 단위. ⭐ 시험마다 새로 만든다 — 조회 픽스처(A·B·C)를 고치면
+   * 앞선 12건이 실행 순서에 매달리고, 「남의 행」을 심는 자리도 사라진다.
+   * ⚠ `created_by` 를 심어야 `OURS` 가 집어 창고·위치 삭제가 안 막힌다(S-12).
+   */
+  async function makeUnit(
+    suffix: string,
+    contents: { itemId: number; lotId: number; qty: number; uomId: number }[],
+    statusCode = 'OPEN',
+  ): Promise<number> {
+    const unit = await prisma.handling_unit.create({
+      data: {
+        handling_unit_no: `${PUT_PREFIX}-${suffix}`,
+        handling_unit_type_code: 'PALLET',
+        status_code: statusCode,
+        created_by: userId,
+        updated_by: userId,
+        handling_unit_content: {
+          create: contents.map((line) => ({
+            item_id: line.itemId,
+            lot_id: line.lotId,
+            qty: line.qty,
+            uom_id: line.uomId,
+            created_by: userId,
+          })),
+        },
+      },
+      select: { handling_unit_id: true },
+    });
+    return Number(unit.handling_unit_id);
   }
 
   async function list(qs: string): Promise<PagedHandlingUnits> {

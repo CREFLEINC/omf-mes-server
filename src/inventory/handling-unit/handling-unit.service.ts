@@ -241,15 +241,21 @@ export async function assertParentAcyclic(
  * 요청 배열 안의 `(itemId, lotId)` 중복. ⛔ 물리 `uq_handling_unit_content` 에 맡기지
  * 않는다 — P2002 는 어느 줄이 겹쳤는지 못 알려 준다(계약 「같은 취급 단위 안에서
  * 품목·LOT 조합은 한 번만 나온다」).
+ *
+ * ⚠ 배열 이름이 두 오퍼레이션에서 다르다 — 등록은 `contents`, 치환(PR ④)은 `items` 다.
+ *   `field` 가 요청 본문의 «그 자리»를 짚어야 화면이 어느 줄인지 안다.
  */
-function assertNoDuplicateContent(contents: HandlingUnitContentUpsert[]): void {
+export function assertNoDuplicateContent(
+  contents: HandlingUnitContentUpsert[],
+  arrayField = 'contents',
+): void {
   const seen = new Set<string>();
   contents.forEach((line, index) => {
     const key = `${line.itemId} ${line.lotId}`;
     if (seen.has(key)) {
       throw one(
         field(
-          `contents[${index}]`,
+          `${arrayField}[${index}]`,
           ERROR_CODE.UNIQUE_VIOLATION,
           '같은 품목·LOT 조합이 두 번 실렸습니다.',
         ),
