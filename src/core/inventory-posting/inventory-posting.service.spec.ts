@@ -359,6 +359,8 @@ describe('역트랜잭션 코어', () => {
     expect(lock).toBeDefined();
     expect(lock?.sql).toContain('IN (VALUES');
     expect(lock?.sql).toContain('ORDER BY inventory_balance_id');
+    // ⛔ 줄 끝까지 못박는다 — `SKIP LOCKED` 면 남이 쥔 행을 «조용히 건너뛰고» 전기해 수량이 샌다.
+    expect(lock?.sql).toMatch(/FOR UPDATE$/m);
     // 두 끝을 «같은» 문장에 넣는다 — 7칸 × 2줄이라 값이 14 개다(교차곱이면 더 는다).
     expect((lock?.values[0] as Prisma.Sql).values).toHaveLength(14);
     expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('move'));
@@ -414,6 +416,7 @@ describe('재고 전기 — 잔액 선잠금', () => {
 
     const lock = raws.find((r) => r.sql.includes('FOR UPDATE'));
     expect(lock?.sql).toContain('ORDER BY inventory_balance_id');
+    expect(lock?.sql).toMatch(/FOR UPDATE$/m);
     // 첫 `move()` «앞»이라야 교착 창이 닫힌다 — 순서가 이 처방의 전부다(I-4 R-1 ② · I-5 R-5).
     expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('header.create'));
     expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('move'));
