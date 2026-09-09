@@ -18,6 +18,8 @@ describe("툴 사용실적 (e2e)", () => {
   let prisma: PrismaService;
   let cookie: string[];
   let usageId: number;
+  let moldId: number;
+  let workOrderId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -98,14 +100,19 @@ describe("툴 사용실적 (e2e)", () => {
         tool_type_code: "MOLD",
       },
     });
-    const rows = await prisma.$queryRaw<{ tool_usage_id: bigint }[]>(Prisma.sql`
+    const rows = await prisma.$queryRaw<{ tool_usage_id: bigint; shot_count: bigint }[]>(Prisma.sql`
       INSERT INTO maintenance.tool_usage
-        (mold_id, work_order_id, shot_count, collection_method_code, occurred_at, recorded_by)
+        (mold_id, work_order_id, shot_count, collection_method_code,
+         conversion_base_qty, conversion_ratio, occurred_at, recorded_by)
       VALUES
-        (${mold.mold_id}, ${order.work_order_id}, 1250, 'DIRECT',
-         '2026-09-09 08:02:03.123456+07'::timestamptz, ${worker.worker_id})
-      RETURNING tool_usage_id`);
-    usageId = Number(rows[0].tool_usage_id);
+        (${mold.mold_id}, ${order.work_order_id}, 1250, 'DIRECT', NULL, NULL,
+         '2026-09-09 08:02:03.123456+07'::timestamptz, ${worker.worker_id}),
+        (${mold.mold_id}, ${order.work_order_id}, 25, 'CONVERTED', 100, 0.25,
+         '2026-09-08 08:02:03.654321+07'::timestamptz, ${worker.worker_id})
+      RETURNING tool_usage_id, shot_count`);
+    usageId = Number(rows.find((row) => row.shot_count === 1250n)?.tool_usage_id);
+    moldId = Number(mold.mold_id);
+    workOrderId = Number(order.work_order_id);
     cookie = await login();
   });
 
@@ -140,6 +147,28 @@ describe("툴 사용실적 (e2e)", () => {
       .get("/api/maintenance/tool-usages/999999999")
       .set("Cookie", cookie)
       .expect(404);
+  });
+
+  it("목록은 발생시각 역순 페이지와 필터 전체 count를 함께 낸다", async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/maintenance/tool-usages?moldId=${moldId}&workOrderId=${workOrderId}&page=1&size=1`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].toolUsageId).toBe(usageId);
+    expect(response.body.totalCount).toBe(2);
+    expect(response.body.page).toEqual({ page: 1, size: 1, total: 2 });
+  });
+
+  it("목록 날짜는 금형 공장의 달력일 경계로 필터한다", async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/maintenance/tool-usages?moldId=${moldId}&occurredFrom=2026-09-09&occurredTo=2026-09-09`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(response.body.items.map((row: { toolUsageId: number }) => row.toolUsageId)).toEqual([
+      usageId,
+    ]);
+    expect(response.body.totalCount).toBe(1);
   });
 
   async function login(): Promise<string[]> {
