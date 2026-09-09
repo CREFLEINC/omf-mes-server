@@ -120,8 +120,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     expect(extra).toEqual([]);
   });
 
-  it('넘긴 호출부가 36건이다 — 계열 43건 중 구현된 몫(#414 실측 + I-25 3건 · I-21 3건 · I-26 1건 · I-22 1건)', () => {
-    expect(sites.filter((site) => site.passes)).toHaveLength(36);
+  it('넘긴 호출부가 37건이다 — 계열 43건 중 구현된 몫(#414 실측 + I-25 3건 · I-21 3건 · I-26 1건 · I-22 2건)', () => {
+    expect(sites.filter((site) => site.passes)).toHaveLength(37);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {

@@ -45,6 +45,7 @@ import { SalesOrderQueryService } from './sales-order/sales-order-query.service'
 import { SalesOrderController } from './sales-order/sales-order.controller';
 import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-allocation-query.service';
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
+import { ShipmentPickService } from './shipment-request/shipment-pick.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
 import { ShipmentRequestService } from './shipment-request/shipment-request.service';
@@ -104,6 +105,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PurchaseOrderQueryService,
     SalesOrderQueryService,
     ShipmentAllocationQueryService,
+    ShipmentPickService,
     ShipmentRequestQueryService,
     ShipmentRequestService,
     AsnQueryService,
