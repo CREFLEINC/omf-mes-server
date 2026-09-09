@@ -13,6 +13,7 @@ import { InventoryAdjustmentService } from './adjustment/inventory-adjustment.se
 import { InventoryBalanceController } from './balance/inventory-balance.controller';
 import { InventoryBalanceService } from './balance/inventory-balance.service';
 import { InventoryCountController } from './count/inventory-count.controller';
+import { InventoryCountCloseService } from './count/inventory-count-close.service';
 import { InventoryCountCreateService } from './count/inventory-count-create.service';
 import { InventoryCountQueryService } from './count/inventory-count-query.service';
 import { InventoryCountUpdateService } from './count/inventory-count-update.service';
@@ -60,6 +61,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryAdjustmentService,
     InventoryAdjustmentUpdateService,
     InventoryCountQueryService,
+    InventoryCountCloseService,
     InventoryCountCreateService,
     InventoryCountUpdateService,
     HandlingUnitQueryService,
