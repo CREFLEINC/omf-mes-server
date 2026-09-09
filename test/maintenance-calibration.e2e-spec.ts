@@ -18,6 +18,7 @@ describe("검교정 이력 (e2e)", () => {
   let prisma: PrismaService;
   let cookie: string[];
   let calibrationId: number;
+  let equipmentId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -44,7 +45,9 @@ describe("검교정 이력 (e2e)", () => {
         calibration_required: true,
       },
     });
-    const rows = await prisma.$queryRaw<{ equipment_calibration_id: bigint }[]>(Prisma.sql`
+    const rows = await prisma.$queryRaw<
+      { equipment_calibration_id: bigint; history_type_code: string }[]
+    >(Prisma.sql`
       INSERT INTO quality.equipment_calibration
         (equipment_id, calibration_date, result_code, valid_until, certificate_no,
          calibrated_by, remarks, history_type_code, agency_type_code, agency_name,
@@ -53,9 +56,15 @@ describe("검교정 이력 (e2e)", () => {
         (${equipment.equipment_id}, '2026-09-09'::date, 'PASS', '2027-09-09'::date,
          'CERT-I33-31', NULL, '정기 검교정', 'CALIBRATION', 'EXTERNAL', '한국계측인증',
          '±0.02 mm', ${user.app_user_id}, true,
-         '2026-09-09 08:02:03.123456+07'::timestamptz, ${user.app_user_id})
-      RETURNING equipment_calibration_id`);
-    calibrationId = Number(rows[0].equipment_calibration_id);
+         '2026-09-09 08:02:03.123456+07'::timestamptz, ${user.app_user_id}),
+        (${equipment.equipment_id}, '2026-09-08'::date, 'NORMAL', '2026-09-30'::date,
+         NULL, ${user.app_user_id}, NULL, 'CHECK', NULL, NULL,
+         NULL, ${user.app_user_id}, false, NULL, NULL)
+      RETURNING equipment_calibration_id, history_type_code`);
+    calibrationId = Number(
+      rows.find((row) => row.history_type_code === "CALIBRATION")?.equipment_calibration_id,
+    );
+    equipmentId = Number(equipment.equipment_id);
     cookie = await login();
   });
 
@@ -94,6 +103,40 @@ describe("검교정 이력 (e2e)", () => {
       .get("/api/maintenance/calibrations/999999999")
       .set("Cookie", cookie)
       .expect(404);
+  });
+
+  it("목록은 수행일·ID 역순 페이지와 필터 전체 count를 함께 낸다", async () => {
+    const response = await request(app.getHttpServer())
+      .get(`/api/maintenance/calibrations?equipmentId=${equipmentId}&page=1&size=1`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].calibrationId).toBe(calibrationId);
+    expect(response.body.totalCount).toBe(2);
+    expect(response.body.page).toEqual({ page: 1, size: 1, total: 2 });
+  });
+
+  it("목록은 유형·수행기간을 함께 거르고 dueBefore를 미만으로 비교한다", async () => {
+    const included = await request(app.getHttpServer())
+      .get(
+        `/api/maintenance/calibrations?equipmentId=${equipmentId}` +
+          "&historyTypeCode=CHECK&performedFrom=2026-09-08&performedTo=2026-09-08" +
+          "&dueBefore=2026-10-01",
+      )
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(included.body.items).toHaveLength(1);
+    expect(included.body.items[0]).toMatchObject({
+      historyTypeCode: "CHECK",
+      performedOn: "2026-09-08",
+      nextDueOn: "2026-09-30",
+    });
+
+    const boundary = await request(app.getHttpServer())
+      .get(`/api/maintenance/calibrations?equipmentId=${equipmentId}&dueBefore=2026-09-30`)
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(boundary.body).toMatchObject({ items: [], totalCount: 0 });
   });
 
   async function login(): Promise<string[]> {
