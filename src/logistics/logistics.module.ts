@@ -43,6 +43,8 @@ import { PurchaseOrderController } from './purchase-order/purchase-order.control
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 import { SalesOrderQueryService } from './sales-order/sales-order-query.service';
 import { SalesOrderController } from './sales-order/sales-order.controller';
+import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-allocation-query.service';
+import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
 import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
@@ -77,6 +79,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayTaskController,
     PurchaseOrderController,
     SalesOrderController,
+    ShipmentAllocationController,
     ShipmentRequestController,
     AsnController,
     InboundReceiptController,
@@ -99,6 +102,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PurchaseOrderService,
     PurchaseOrderQueryService,
     SalesOrderQueryService,
+    ShipmentAllocationQueryService,
     ShipmentRequestQueryService,
     AsnQueryService,
     InboundReceiptService,
