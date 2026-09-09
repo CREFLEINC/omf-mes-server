@@ -13,12 +13,16 @@ describe("발행 단순 부모 잠금 (I-27 C2a)", () => {
           lot_type_code: "MATERIAL",
           status_code: "NORMAL",
           completed_at: null,
+          source_type_code: "INBOUND_RECEIPT_LINE",
+          source_id: 101n,
         },
         {
           lot_id: 7n,
           lot_type_code: "PRODUCTION",
           status_code: "NORMAL",
           completed_at: new Date("2026-09-09T00:00:00Z"),
+          source_type_code: "WORK_ORDER",
+          source_id: 102n,
         },
       ],
     });
@@ -36,6 +40,8 @@ describe("발행 단순 부모 잠금 (I-27 C2a)", () => {
     expect(facts.get(targetKey("LOT", 3n))).toMatchObject({
       lotTypeCode: "MATERIAL",
       statusCode: "NORMAL",
+      sourceTypeCode: "INBOUND_RECEIPT_LINE",
+      sourceId: 101n,
     });
   });
 
