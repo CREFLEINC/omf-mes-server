@@ -83,8 +83,20 @@ export function shipmentProgressCode(totals: ShipmentProgressTotals): ShipmentPr
 }
 
 /**
- * ⭐ 헤더 4수량 — 목록·요약이 `JOIN LATERAL (…) t ON TRUE` 로 단다(바깥 별칭 `sr`). `P` 의 정의가
- * `pickedQtyOf` 와 **한 글자도 달라선 안 된다** — `- res.released_qty` 가 그 한 글자다.
+ * ⭐ **라인 하나의 `P`** — `pickedQtyOf` 의 SQL 짝이다(`- res.released_qty` 가 그 한 글자).
+ * 아래 헤더 롤업이 이것을 합치고, 목록의 `pickingCompleteOnly`(라인 «전체»가 `P = A`)는 헤더
+ * 4합계로 도출할 수 없어 **라인 축 그대로** 이것을 쓴다. ⛔ 사본을 더 만들지 마라 — §5-1 이
+ * 「TS 와 SQL 두 벌을 **한 파일에** 나란히」라 못박은 자리다(셋째 벌이 갈리면 아무도 못 본다).
+ */
+export function shipmentLinePickedSql(lineAlias: string): string {
+  return `(SELECT coalesce(sum(res.reserved_qty - res.released_qty), 0)
+              FROM inventory.inventory_reservation res
+             WHERE res.source_document_type_code = '${SHIPMENT_REQUEST_LINE}'
+               AND res.source_document_id = ${lineAlias}.shipment_request_line_id)`;
+}
+
+/**
+ * ⭐ 헤더 4수량 — 목록·요약이 `JOIN LATERAL (…) t ON TRUE` 로 단다(바깥 별칭 `sr`).
  * ⛔ `coalesce` 를 벗기지 마라 — 라인 0건이면 `sum` 이 NULL 이고 3값 논리로 비교가 UNKNOWN 이 되어
  *    그 작업지시가 **목록에서 통째로 사라진다**(README §6-3 ⑷).
  */
@@ -92,10 +104,7 @@ export const SHIPMENT_PROGRESS_TOTALS_SQL = `
     SELECT coalesce(sum(srl.requested_qty), 0) AS requested_qty,
            coalesce(sum(srl.allocated_qty), 0) AS allocated_qty,
            coalesce(sum(srl.shipped_qty), 0)   AS shipped_qty,
-           coalesce(sum((SELECT coalesce(sum(res.reserved_qty - res.released_qty), 0)
-                           FROM inventory.inventory_reservation res
-                          WHERE res.source_document_type_code = '${SHIPMENT_REQUEST_LINE}'
-                            AND res.source_document_id = srl.shipment_request_line_id)), 0) AS picked_qty
+           coalesce(sum(${shipmentLinePickedSql('srl')}), 0) AS picked_qty
       FROM logistics.shipment_request_line srl
      WHERE srl.shipment_request_id = sr.shipment_request_id`;
 
