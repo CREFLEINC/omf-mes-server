@@ -12,6 +12,8 @@ import { InventoryAdjustmentUpdateService } from './adjustment/inventory-adjustm
 import { InventoryAdjustmentService } from './adjustment/inventory-adjustment.service';
 import { InventoryBalanceController } from './balance/inventory-balance.controller';
 import { InventoryBalanceService } from './balance/inventory-balance.service';
+import { InventoryCountController } from './count/inventory-count.controller';
+import { InventoryCountQueryService } from './count/inventory-count-query.service';
 import { InventoryReservationController } from './balance/inventory-reservation.controller';
 import { InventoryReservationService } from './balance/inventory-reservation.service';
 import { HandlingUnitContentService } from './handling-unit/handling-unit-content.service';
@@ -45,6 +47,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryBalanceController,
     InventoryReservationController,
     InventoryAdjustmentController,
+    InventoryCountController,
     HandlingUnitController,
   ],
   providers: [
@@ -54,6 +57,7 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
     InventoryAdjustmentQueryService,
     InventoryAdjustmentService,
     InventoryAdjustmentUpdateService,
+    InventoryCountQueryService,
     HandlingUnitQueryService,
     RepackEventService,
     HandlingUnitService,
