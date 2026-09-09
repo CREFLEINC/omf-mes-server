@@ -59,9 +59,9 @@ function fake(seeded: RuleSeed[] = []) {
         rules.push(created);
         return [created];
       }
-      const [numberingRuleId, periodKey] = values as [bigint, string];
+      const [numberingRuleId, periodKey, increment = 1n] = values as [bigint, string, bigint?];
       const key = `${numberingRuleId}:${periodKey}`;
-      const last = (counters.get(key) ?? 0n) + 1n;
+      const last = (counters.get(key) ?? 0n) + increment;
       counters.set(key, last);
       return [{ last_value: last }];
     },
@@ -160,6 +160,28 @@ describe('채번 코어', () => {
     await service.next('GOODS_RECEIPT', null, DAY);
 
     expect(await service.next('GOODS_RECEIPT', null, DAY)).toBe('GR-20260906-0002');
+  });
+
+  it('묶음 채번 — SERIAL_NUMBER 번호를 한 번에 연속 예약하고 다음 호출은 그 뒤를 잇는다 // 결정 — 통보 106', async () => {
+    const { service } = fake();
+
+    expect(await service.nextMany('SERIAL_NUMBER', null, DAY, 3)).toEqual([
+      'SN-20260906-0001',
+      'SN-20260906-0002',
+      'SN-20260906-0003',
+    ]);
+    expect(await service.next('SERIAL_NUMBER', null, DAY)).toBe('SN-20260906-0004');
+  });
+
+  it('묶음 채번 — 0·1001·안전하지 않은 수량은 카운터를 건드리기 전에 거부한다', async () => {
+    const { service, inserted } = fake();
+
+    await expect(service.nextMany('SERIAL_NUMBER', null, DAY, 0)).rejects.toThrow('1~1000');
+    await expect(service.nextMany('SERIAL_NUMBER', null, DAY, 1001)).rejects.toThrow('1~1000');
+    await expect(service.nextMany('SERIAL_NUMBER', null, DAY, Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow(
+      '1~1000',
+    );
+    expect(inserted).toEqual([]);
   });
 
   it('채번 — 기간이 바뀌면 SEQ 가 1 부터 다시 센다', async () => {
