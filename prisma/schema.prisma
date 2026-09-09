@@ -1721,6 +1721,7 @@ model equipment {
   precision_uom_id                     BigInt?
   breakdown                            breakdown[]
   collection_channel                   collection_channel[]
+  collection_channel_observation       collection_channel_observation[]
   equipment_downtime                   equipment_downtime[]
   equipment_inspection                 equipment_inspection[]
   maintenance_order                    maintenance_order[]
@@ -1788,6 +1789,7 @@ model item {
   inventory_count_line                                 inventory_count_line[]
   inventory_reservation                                inventory_reservation[]
   inventory_transaction_line                           inventory_transaction_line[]
+  collection_channel                                   collection_channel[]
   asn_line                                             asn_line[]
   goods_issue_line                                     goods_issue_line[]
   goods_receipt_line                                   goods_receipt_line[]
@@ -2119,6 +2121,7 @@ model process {
   defect_record_defect_record_detection_process_idToprocess  defect_record[]        @relation("defect_record_detection_process_idToprocess")
   defect_record_defect_record_occurrence_process_idToprocess defect_record[]        @relation("defect_record_occurrence_process_idToprocess")
   inspection_plan                                            inspection_plan[]
+  collection_channel                                        collection_channel[]
 
   @@schema("mdm")
 }
@@ -3289,6 +3292,7 @@ model inspection_item_spec {
   inspection_plan_version         inspection_plan_version  @relation(fields: [inspection_plan_version_id], references: [inspection_plan_version_id], onDelete: NoAction, onUpdate: NoAction)
   uom                             uom?                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_measurement          inspection_measurement[]
+  collection_channel              collection_channel[]
 
   @@unique([inspection_plan_version_id, sequence_no], map: "uq_inspection_item_spec")
   @@schema("quality")
@@ -4209,9 +4213,9 @@ model breakdown {
 model collection_channel {
   collection_channel_id   BigInt                   @id @default(autoincrement())
   equipment_id            BigInt
-  channel_code            String                   @db.VarChar(50)
-  channel_name            String                   @db.VarChar(200)
-  data_type_code          String                   @db.VarChar(50)
+  channel_code            String?                  @db.VarChar(50)
+  channel_name            String?                  @db.VarChar(200)
+  data_type_code          String?                  @db.VarChar(50)
   uom_id                  BigInt?
   collection_interval_sec Int?
   lower_limit             Decimal?                 @db.Decimal(20, 6)
@@ -4222,11 +4226,32 @@ model collection_channel {
   updated_at              DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by              BigInt?
   version_no              Int                      @default(1)
+  channel_key             String?                  @db.VarChar(100)
+  signal_name             String?                  @db.VarChar(200)
+  inspection_item_id      BigInt?
+  item_id                 BigInt?
+  process_id              BigInt?
   equipment               equipment                @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
   uom                     uom?                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_item         inspection_item_spec?    @relation(fields: [inspection_item_id], references: [inspection_item_spec_id], onDelete: NoAction, onUpdate: NoAction)
+  item                    item?                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  process                 process?                 @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   collection_observation  collection_observation[]
 
   @@unique([equipment_id, channel_code], map: "uq_collection_channel")
+  @@index([inspection_item_id], map: "ix_collection_channel_inspection_item")
+  @@schema("maintenance")
+}
+
+model collection_channel_observation {
+  equipment_id BigInt
+  channel_key  String    @db.VarChar(100)
+  last_value   String?
+  observed_at  DateTime  @db.Timestamptz(6)
+  equipment    equipment @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([equipment_id, channel_key])
+  @@index([observed_at(sort: Desc), equipment_id, channel_key], map: "ix_collection_channel_observation_time")
   @@schema("maintenance")
 }
 
