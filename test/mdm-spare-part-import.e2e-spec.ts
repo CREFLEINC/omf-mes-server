@@ -102,6 +102,7 @@ describe("예비품 엑셀 올리기 (e2e)", () => {
       ["공장코드", "예비품코드", "예비품명", "계약에 없는 열"],
       [plantCodes[0], `${PREFIX}-PARTIAL`, "첫 공장 씰", "무시"],
       [plantCodes[0], "", "코드 없음", null],
+      [plantCodes[0], `${PREFIX}-NO-NAME`, "", null],
       ["NO-SUCH-PLANT", `${PREFIX}-UNKNOWN`, "없는 공장", null],
       [plantCodes[0], `${PREFIX}-PARTIAL`, "중복", null],
       [plantCodes[1], `${PREFIX}-PARTIAL`, "둘째 공장 씰", null],
@@ -116,16 +117,20 @@ describe("예비품 엑셀 올리기 (e2e)", () => {
     expect(response.body.succeeded).toBe(2);
     expect(
       response.body.failed.map((failure: { index: number }) => failure.index),
-    ).toEqual([1, 2, 3, 5, 6]);
+    ).toEqual([1, 2, 3, 4, 6, 7]);
     expect(response.body.failed[0].errors[0]).toMatchObject({
       field: "sparePartCode",
       code: "REQUIRED",
     });
     expect(response.body.failed[1].errors[0]).toMatchObject({
+      field: "sparePartName",
+      code: "REQUIRED",
+    });
+    expect(response.body.failed[2].errors[0]).toMatchObject({
       field: "plantId",
       code: "INVALID",
     });
-    expect(response.body.failed[2]).toMatchObject({
+    expect(response.body.failed[3]).toMatchObject({
       key: `${PREFIX}-PARTIAL`,
       errors: [
         expect.objectContaining({
@@ -134,11 +139,11 @@ describe("예비품 엑셀 올리기 (e2e)", () => {
         }),
       ],
     });
-    expect(response.body.failed[3].errors[0]).toMatchObject({
+    expect(response.body.failed[4].errors[0]).toMatchObject({
       field: "sparePartCode",
       code: "RANGE",
     });
-    expect(response.body.failed[4].errors[0]).toMatchObject({
+    expect(response.body.failed[5].errors[0]).toMatchObject({
       field: "sparePartName",
       code: "RANGE",
     });
