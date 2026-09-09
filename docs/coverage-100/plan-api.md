@@ -1107,7 +1107,6 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 재고 실사 | `inventory_count_no` | ❌ | — | S07 |
 | 재고 조정 | `inventory_adjustment_no` | ❌ | — | S07 |
 | 취급 단위 | `handling_unit_no` | ❌ | **`HU-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `HU` 한 줄 · 기본 패턴 그대로 · 계약 example `HU-2026-000058` 은 형식만 · I-16 §4-3) | S07 |
-| 재포장 | ~~`reconfiguration_no`~~ **`repack_event_no`** | ❌ | 신설 표(N-2)의 헤더 번호 — I-16 §4-3 · 재수립 R-1 | S07 |
 | 재고 예약 | `reservation_no` | ❌ | — | S07(예약은 서버가 만든다) |
 | 승인 요청 | `approval_request_no` | ❌ | — | S09 |
 | 생산 계획 | `plan_no` | ❌ | — | S13 |
