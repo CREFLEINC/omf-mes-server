@@ -138,7 +138,9 @@ export async function assertReplaceable(
  * ⚠ **공장 축만** 본다 — 사업부·법인은 창고가 각자 알아 두 사업부에 걸쳐도 잔액이 옳다.
  */
 export function assertSinglePlant(
-  lines: InventoryAdjustmentLineCreate[],
+  // ⭐ 위치 축만 본다 — `:post`(`adjustment-posting.ts`)가 «저장된» 라인으로 같은 판정을
+  //    다시 밟으므로 등록 본문 모양에 묶지 않는다(중복 작성 금지).
+  lines: { locationId: number }[],
   orgs: Map<number, LocationOrg>,
   array: 'lines' | 'items',
   errors: ErrorItem[],

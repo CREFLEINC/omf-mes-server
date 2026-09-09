@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
+import { DocumentStateModule } from '../core/document-state';
+import { InventoryPostingModule } from '../core/inventory-posting';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
 import { InventoryAdjustmentController } from './adjustment/inventory-adjustment.controller';
@@ -29,8 +31,15 @@ import { InventoryTransactionService } from './transaction/inventory-transaction
  * 그것이 남긴 것을 읽기만 한다.
  */
 @Module({
-  // ⛔ 코어는 «쓰는 것만» 배선한다 — 원장·승인은 `:post`·상신 PR 이 그때 더한다.
-  imports: [PrismaModule, IdempotencyModule, NumberingModule, ApprovalModule],
+  // ⛔ 코어는 «쓰는 것만» 배선한다 — 원장·상태기계는 `:post`(I-14 PR ④)가 데려왔다.
+  imports: [
+    PrismaModule,
+    IdempotencyModule,
+    NumberingModule,
+    ApprovalModule,
+    InventoryPostingModule,
+    DocumentStateModule,
+  ],
   controllers: [
     InventoryTransactionController,
     InventoryBalanceController,
