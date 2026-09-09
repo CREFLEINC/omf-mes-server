@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -21,6 +22,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { HandlingUnitContentService } from './handling-unit-content.service';
+import { HandlingUnitPack, HandlingUnitPackService } from './handling-unit-pack.service';
 import { HandlingUnitQuery, HandlingUnitQueryService } from './handling-unit-query.service';
 import { HandlingUnitContentView, HandlingUnitDetailView, HandlingUnitView } from './handling-unit-view';
 import { HandlingUnitRepackEventView } from './repack-event-view';
@@ -32,10 +34,7 @@ import {
   HandlingUnitService,
 } from './handling-unit.service';
 
-/**
- * 취급 단위 7 오퍼레이션 중 조회 4건(PR ①②) + 등록(PR ③) + 구성 치환(PR ④). 포장 확정은
- * PR ⑤ 가 이 컨트롤러에 얹는다(계획 `docs/coverage-100/slices/I-16-a2.md` §11-3).
- */
+/** 취급 단위 7 오퍼레이션 전건(`docs/coverage-100/slices/I-16-a2.md` §11-3). */
 @Controller('inventory/handling-units')
 export class HandlingUnitController {
   constructor(
@@ -43,6 +42,7 @@ export class HandlingUnitController {
     private readonly repackEvents: RepackEventService,
     private readonly units: HandlingUnitService,
     private readonly contentWrites: HandlingUnitContentService,
+    private readonly packs: HandlingUnitPackService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -113,6 +113,27 @@ export class HandlingUnitController {
     const version = ifMatchVersion(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.contentWrites.replace(handlingUnitId, version, body.items, context),
+    );
+  }
+
+  /**
+   * 포장 확정(200). ⛔ `setEtag` 를 안 부른다 — 계약 `responses.200` 에 `headers` 키가 아예
+   * 없다(이 계약에서 ETag 를 선언한 것은 `POST` 201 과 상세 `GET` 200 둘뿐이다).
+   * ⛔ `runVersioned` 도 못 쓴다 — If-Match 가 «선택»이라 토큰이 없으면 저쪽이 던져 500 이
+   * 된다(형제 치환·적치 `:complete` 와 같은 가름).
+   */
+  @Post(':handlingUnitId\\:pack')
+  @Contract('POST /inventory/handling-units/{handlingUnitId}:pack')
+  @HttpCode(HttpStatus.OK)
+  pack(
+    @Req() request: Request,
+    @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
+    @Body() body: HandlingUnitPack,
+  ): Promise<HandlingUnitDetailView> {
+    const context = contextOf(request);
+    const version = ifMatchVersion(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.packs.pack(handlingUnitId, version, body, context),
     );
   }
 

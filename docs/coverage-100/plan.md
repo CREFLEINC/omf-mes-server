@@ -58,9 +58,9 @@
 | 21 | **I-13** 재고 이동 2단 | 6 | I-5 | A4 | `transitions.ts`(축 1·전이 2) | opus·sonnet | **4** | ∥ I-11 · ∥ I-14(같은 레인 C — `transitions.ts` 는 레인 «안에서» 직렬화 · I-13 R-10) |
 | 22 | **I-14** 재고 조정 | 7 | I-1·I-5 | **N-1** | `transitions.ts`(키 1 · I-13 과 레인 안 직렬화) | opus·sonnet | **4** | C |
 | 23 | **I-15** 실사 | 6 | I-14 | — | — | sonnet | 3 | — |
-| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **4** | ∥ I-33 |
+| 24 | **I-16** 취급 단위·포장·재구성 | 7 | I-12 | **N-2** | — | opus·sonnet | **5** | ∥ I-33 |
 | 25 | **I-17** 재생재 등록 | 1 | I-3 | A5 | — | sonnet | 1 | — |
-| 26 | **I-26** 제품 개체 조회·발번 | 2(진행1·보류1) | I-7 | 지금0 | 조건부 SERIAL_NUMBER 채번만 별도 코어≤200 | 조회/조건부 심장 분리 | 즉시 GET1 + 조건부 코어/쓰기 | I-26 R1~R10 · 문의104~107 |
+| 26 | **I-26** 제품 개체 조회·발번 | 2(구현2) | I-7 | 지금0 | SERIAL_NUMBER 묶음 채번 #540 | 조회/쓰기 심장 분리 | GET1 + 채번코어/POST | I-26 · 회신105 · 통보104·106·107 |
 | 27 | **I-27** 발행 이력·프린터 | 7(진행5·보류1·제외1) | I-26 저장조회 | A9 nullable6·A10 유보 | — | 물리/조회/쓰기 분리 | P0/P1/P2/P3·발행 규칙/잠금/배치 별도 | R1~R16·∥ I-28 |
 | 28 | **I-28** 알림 | 8(구현8) | I-1 | A7·A8 적용 완료 | — | 조회 복제·쓰기 판단 분리 | ①~③ + 모델/이벤트/구독 GET/PUT | `I-28.md` R-1~R-11 · 통보099~103 |
 | 29 | **I-30** 설비 점검·고장 | 9(진행8·보류1) | — | A15 확장: nullable8추가·2완화 | EQI/MLF 채번2·고장 start 전이1(별도 코어 PR) | 조회/쓰기·코어 분리 | 실행8 + 조건부 완료 조각 | ∥ I-1 · I-30 R-1~R-14 |
@@ -155,7 +155,7 @@
 6. **에러 코드** — 계약이 이름 적은 것(`SUCCESSOR_EXISTS`·`ROUTE_NOT_FOUND`·`OPEN_SESSION_EXISTS`(409)·`CANCEL_IN_PROGRESS`(S22 `:confirm` 만 409 · S06 다형 취소는 400 — I-5 R-9)…)은 그대로. 새로 짓는 것(API §5.4 둘째 표)은 §2 3단계 흔적 대상 — 조회의 `*BlockedReasonCode` 와 실행 오류가 **같은 문자열**.
 7. **값 없는 칸** — 키 생략(널 금지). `businessDate`/`occurredAt` 는 원장 안 지나면 형식만 검증하고 저장 안 함(대기 15).
 8. **원장 판별자 4값** 고정. 투입·실적·출하는 원장 안 지남(출하는 서버가 만든 `goods_issue`).
-9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) · **`POST /logistics/shopfloor-receipts`**(I-9 R-11 — `received_by` 는 세션이 채우고 사번은 읽고 버린다 · 넷째) · **`POST /production/material-consumptions`**(I-10 §3-7 — `material_consumption.worker_id` NOT NULL 의 유일한 원천 · 저장형 · 다섯째) · **`POST /production/material-returns`**(I-10 §4-8 — 담을 칸 0 · 읽고 버림형 · 여섯째) · **`POST /production/work-sessions`**·**`…/{id}/events`**·**`…/{id}:end`**·**`POST /production/precheck-decisions`**(I-11 §3-7 · 담을 칸 0 · 존재 확인 후 버림 · 일곱째~열째) · **`POST /trace/lots/{lotId}:request-iqc-skip`**(I-18 · **열한째** · 통보 151 — ⭐ 「유일한 원천」형이 아니라 **「담을 칸 0 · 읽고 버림」형**이다. `app.approval_request` 에 사번 칸이 0개이고 상신 주체는 `requested_by`(계정)다. 같은 자원의 형제 `:complete` 가 이미 같은 답을 갖고 있어 0단계로 닫혔다) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
+9. **주체는 계정 세션**(`계약-되돌림-mdm.md` Y-5 · 계약 `assignedToMe` 「지금은 계정 토큰에서만 풀린다」) — `X-Worker-No` 41건은 「누가 어느 단말에서」 덧붙임. 헤더가 없어도 400 을 내지 않는다(관리웹이 헤더 없이 부르는 것이 정상). ⚠ **예외 — 헤더가 «주체 칸의 유일한 원천»이고 POP 단말만 부르는 자리**: `POST /production/production-results`(`worker_id` NOT NULL) · `POST /trace/lots/{lotId}:complete` · **`POST /logistics/picking-orders/{id}/lines/{lineId}:pick`**(I-8 R-16 — 받아서 거부 판정에만 쓰고 버린다 · 담을 칸 0) · **`POST /logistics/shopfloor-receipts`**(I-9 R-11 — `received_by` 는 세션이 채우고 사번은 읽고 버린다 · 넷째) · **`POST /production/material-consumptions`**(I-10 §3-7 — `material_consumption.worker_id` NOT NULL 의 유일한 원천 · 저장형 · 다섯째) · **`POST /production/material-returns`**(I-10 §4-8 — 담을 칸 0 · 읽고 버림형 · 여섯째) · **`POST /production/work-sessions`**·**`…/{id}/events`**·**`…/{id}:end`**·**`POST /production/precheck-decisions`**(I-11 §3-7 · 담을 칸 0 · 존재 확인 후 버림 · 일곱째~열째) · **`POST /trace/lots/{lotId}:request-iqc-skip`**(I-18 · **열한째** · 통보 151 — ⭐ 「유일한 원천」형이 아니라 **「담을 칸 0 · 읽고 버림」형**이다. `app.approval_request` 에 사번 칸이 0개이고 상신 주체는 `requested_by`(계정)다. 같은 자원의 형제 `:complete` 가 이미 같은 답을 갖고 있어 0단계로 닫혔다)  · **`POST /logistics/stock-transfers`**·**`POST /logistics/stock-transfers/{id}:arrive`**(I-13 · **열두째·열셋째** — 빠져 있던 것을 I-16 마감에서 채운다. 둘 다 「담을 칸 0 · 읽고 버림」형이다 · `stock-transfer.service.ts:196` · `transfer-arrive.service.ts:259`) · **`POST /inventory/handling-units`**·**`PUT /inventory/handling-units/{id}/contents`**·**`POST /inventory/handling-units/{id}:pack`**(I-16 §8-3 · **열넷째~열여섯째** — `inventory.handling_unit` 에 행위자 칸이 0개다(`created_by` 는 `app.app_user` 축, 사번은 `mdm.worker.worker_no` 축) ⇒ 「담을 칸 0 · 존재 확인 후 버림」형 · `handling-unit-worker.ts`) 는 없으면 400 `REQUIRED`(계약 `WorkerNo.required=true` ⌜없으면 서버가 거부한다⌝ · 계약이 관리웹이 부르는 `:correct`·`:request-approval` 에서 헤더를 걷어낸 것이 이 가름의 증거 2026-09-04 · I-7 R-18). 「내 요청」 필터의 축은 세션. ~~감사 칸이 아니라 주체~~(I-1 재수립에서 철회).
 12. **승인 FK vs 다형 축** — 문서의 `approval_request_id` FK 는 **업무 승인 하나만**(`PURCHASE_ORDER`·`GOODS_ISSUE_DISPOSAL`·`INVENTORY_ADJUSTMENT`). `*_CANCEL`·`IQC_SKIP`·`PRODUCTION_RESULT_CORRECT` 는 FK 를 쓰지 않는다 — 정본은 `approval_request.(target_type_code, target_id, approval_type_code)`. 승인 판정은 언제나 다형 축으로 조회한다(I-5 가 I-4 의 품의 흔적을 덮지 않게).
 10. **집계는 서버가** — 목록을 접지 않는다(L-1·L-2). `UNDETERMINABLE` 을 0/정상으로 접지 않는다.
 11. **목록 「기간 필수」와 `openOnly` 공존**(L-3·L-12) — 계약 문장대로 둘 다.
@@ -168,11 +168,10 @@
 | `GET /app/attachments/{attachmentId}/content` | I-34 | 같음 |
 | `POST /maintenance/breakdowns/{breakdownId}/attachments` | I-34 | 같음(+ `CD-ATTACHMENT-TARGET-TYPE` 에 고장 값 없음 — 문의) |
 | `GET /app/document-issues/{documentIssueLogId}/rendition` | I-27 | 서버가 PDF/PNG 를 그린다 |
-| `POST /trace/serial-numbers` | I-26 | LOT 배분 단위와 제품 개체 수 환산을 잘못 정하면 추적 관계를 되돌리기 어렵다. 105 회신 전까지 이 1건만 보류 |
 | `POST /maintenance/downtimes/{downtimeId}:close` | I-32 | 오프라인 종료 발생시각의 입력 경로 결손. 단말 종료시각 전달 규약 또는 명시적 서버시각 예외가 필요하며 지금=서버로 추정하지 않음(109) |
 
 부분 건너뜀(구현은 함): `:resync` 202+아웃박스까지 · `work-orders:close`/`shipments:confirm` ERP 아웃박스까지 · `zaloEnabled` 칸만.
-**현재 목표 커버리지 481/487**(기술적 제외 I-34 3·I-27 rendition 1, 질의 대기 I-26 발번 1·I-32 종료 1). 2026-09-08 재분류에 따라 I-27 프린터·I-28 3건·I-30 완료·I-32 summary는 서버팀 결정·통보 후 진행 대상으로 복원했다. 배정/분모487은 불변이다. I-32 P4 #360 후보는 **378/487·4tests pass**이며 병합 전에는 main 수치로 쓰지 않는다.
+**현재 목표 커버리지 483/487**(기술적 제외 I-34 3·I-27 rendition 1). 질의105와 통보109가 해소되어 I-26 발번·I-32 종료를 구현 대상으로 복원했다. 배정/분모487은 불변이다.
 
 I-28 배포 제한: 8건은 #295·#299·#313·#483·#484·#486으로 구현 완료했다. 알림 발생기·검교정 시간 트리거·Zalo 전송기0은 그대로다. `openable=false`는 대상 삭제가 아니라 화면 매핑 부재일 수 있고 읽음은 가능하다. 목록 규칙 수와 preview 활성 인원수는 다르다(`I-28.md` R-5·R-7).
 
@@ -182,7 +181,7 @@ I-31 배포 제한: R1~R13으로 GET4·쓰기4 정상 본길 진행. closed=true
 
 배포 노트에 적을 것: ⛔ **(I-20 R-24) `trace.lot_hold.version_no` 는 «쓰이지 않는 죽은 칸»이다** — M-f(#351)가 세웠으나 계약이 ETag/If-Match 토큰을 `trace.lot.version_no` 로 «명시»한다(`:1950`·`:2058`). 읽는 코드가 **0줄**이라 「사용 제거」는 이미 끝났다 ⇒ **다음 릴리스에서 컬럼 삭제**(`CLAUDE.md` 두 릴리스 규칙). ⚠ `schema.prisma` 에 남아 있어 `runVersioned` 류가 실수로 집을 수 있다 · ⭐ **(통보 051) 자재 반출분은 재고 수불에 안 잡힌다 — 실사 시 라인 재고가 장부보다 적게 나오는 원인이다** · ⭐ **(통보 030) 폐기 출고는 「상신 흔적이 있는 전표」만 승인을 강제한다 — 「승인 없이 나간 건」을 세는 질의는 문의 030 파일에 있다** · ⭐ **(회신 052) LOT 계보는 W/O 단위다 — 리콜은 W/O 단위 회수를 전제한다** · 결재함 W-CO-09 「대상 화면에서 보기 ↗」는 9 유형 전건 `openable=false` 라 1차 내내 비활성(계약이 `screenId` 규칙을 준 유형이 없다 — 문의 019) · M-01-13 「내가 올린 요청」은 계정 세션 필요(단말 토큰 부재 → 401) · 라벨 POP 화면 8개는 「발행 기록은 남지만 종이가 안 나온다」 · 프린터는 보고 장치가 없어 `OFFLINE` 고정 · 한 화면이 여러 슬라이스에 걸치는 자리(M-01-08 · M-01-10 · W-02-05)는 마지막 슬라이스까지 반쯤 열림.
 
-I-26 배포 제한: 저장 개체 조회1건만 진행하며 P-02-05·재사용 P-02-12의 새 발번은 미완이다. 수량 대응·상태 원천을 조용히 만들지 않는다. I-27의 기존 serial/LOT/HU 발행기록 경로는 별도 판정한다. 재개 때 발번 N개→단일 targets N개의 발행 요청으로 연결하고 단계별 키를 유지한다. 번호 결번/If-Match와 귀속·보존 한계는106·107에 인계했다.
+I-26 배포 제한: 발번은 질의105 회신대로 생산실적·양품·배분을 선행조건으로 읽지 않고 요청 N개를 N개체로 만든다. 초기상태·번호/If-Match·귀속/멱등은 통보104·106·107의 서버팀 결정을 따른다. 발행기록은 I-27 별도 API이며 발번 N개→단일 targets N개의 발행 요청과 단계별 키를 유지한다.
 
 I-27 배포 제한: 조회3/발행POST1/보고1과 프린터1까지 6건을 서버팀 결정·통보로 진행하되 문서9종 전체 지원이나 실물 인쇄 완료를 뜻하지 않는다. §0 지원표의 LOCATION·자재 초기검사대기/양품·완료생산양품·GI라인/HU·포장HU·확인CoA 정상가지는 진행한다. 개체양품/출하배분/PACKING+LOT는 이름 있는 거부, TOOL은 기존MOLD writer 소유조율/경합보완 전 조건부거부다. rendition1은 기술적 제외다. A9 구행required/구writer 환경 점검과 summary legacy NULL 정상 경로를 구분한다. MATERIAL PENDING/FAILED도labelIssued라는 기존규칙·실제화면 렌디션실패복구/51+페이지/대상화면 이동 미완을 인계하며 자동FAILED/상태도출0.
 
@@ -260,7 +259,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건은 #353/#357/#359/#360으
 | I-12 | ✅ 2026-09-07 | #266(계획 R-1~R-14) · #267(① 조회 2 + 뷰 + 권한 2 + 전이표 2) · #268(② `:complete`·`:complete-temporary` + 원장 `STOCK_TRANSFER` + 잔액 하한 400) · #269(마감 docs · 문의 059~062) | **332** (4/4) |
 | I-28 | ✅ 구현 8/8 | 기존 #295·#299·#313 + 모델 #482·이벤트 #483·구독GET #484·구독PUT #486 MERGED. 정본6·단일 ETag·초기1·legacy격리·최초PUT경합·완료기록 rollback 검증. 발생기·검교정 시간 트리거·Zalo 전송은 범위 밖 | #486 main **435/487**, unit167/1588·구독E2E13·영향회귀102 pass |
 | I-30 | 계획·⓪·①·②·③ 병합 완료 | #297/#300/#305/#308/#310 MERGED·열린자식0/mainFF/자기브랜치정리. ③4cfe9a9·非test329·독립지적0·unit100/949·고장10·영향점검35/precheck12 exit0·DB56/drift0 | main355/487 직접4tests pass, I-30구현4/9·후속4·보류1 |
-| I-26 | 계획 #301·조회 #307 병합 완료 | #301 f521a89·#307 d5979ca MERGED/열린자식0/자기브랜치정리. GET 비테스트157·독립 단위98/931·E2E14·root LOT20 pass, Minor1 보완 후 전부0. 발번1건 유보·마이그0 | main353/487 직접4 tests pass(+1) |
+| I-26 | ✅ 계획 #301·조회 #307·채번코어 #540·POST #544 병합 | 질의105 회신과 통보104·106·107 반영. 요청 N→개체 N, 실적/배분 선행0, `REGISTERED`, 전역 SN 묶음예약, 선택 If-Match 비교0, 실제 계정/사번/단말·멱등·충돌재시도 검증 | #544 main 459/487·발번 E2E9 pass |
 | I-27 | ✅ #315·#441/#442/#447~#451·#460/#462~#476·#479 | 목록·상세·summary·printer GET4 + 발행·보고POST2 구현. A9 로그 귀속/결과, terminal printer 명시매핑, GI/CoA/MOLD 실제 writer 경합 검증. rendition은 기술적 제외 | #478 main **432/487**, I-27 **6/6**·unit167/1587·#479 변경E2E9 pass |
 | I-32 | 계획 #306·P0t #312·P1a #353·P1b #357·P2 #358·P3 #359 병합, P4 **#360** | 목록·상세·등록 구현3건과 물리/시간/쓰기규칙 준비 병합. #360은 수정1건, 설비→비가동 잠금·If-Match·선택4칸 생략/null·µs·멱등same tx·감사귀속을 E2E29로 검증. 새 재분류 정본에 따라 summary는 후속 서버결정, close만109 대기 | #360 후보 **378/487·4tests pass**, I-32 구현4/6·후속summary1·질의대기close1 |
 | I-31 | 독립3리뷰·R1~R13 통합·全본문 재독 완료, 계획 **#309** 병합 완료 | #309 MERGED f85b0b2·열린자식0/mainFF/자기브랜치정리. API62/UIUX79/통합71줄·root832줄 재독. 마감/reset true만422·정상8유지·실제writer잠금·예산 정합. 문의113~116·기존문의 보강 | 문서 증분0·main353(선행 직접gate+이번source/test차이0), I-31 구현0/8 |
