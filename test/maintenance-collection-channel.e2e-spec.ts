@@ -10,12 +10,15 @@ import { PrismaService } from "../src/prisma/prisma.service";
 
 const PREFIX = "E2E_I33_CHANNEL";
 const LOGIN_ID = `${PREFIX}-USER`;
+const NO_PERMISSION_LOGIN_ID = `${PREFIX}-NO-PERM`;
+const ROLE_CODE = `${PREFIX}-ROLE`;
 const PASSWORD = "I-33-수집채널-조회-검증-비밀번호";
 
 describe("수집 채널 (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let noPermissionCookie: string[];
   let mappedId: number;
   let unmappedId: number;
   let equipmentId: number;
@@ -23,6 +26,7 @@ describe("수집 채널 (e2e)", () => {
   let processId: number;
   let oldSpecId: number;
   let oldVersionId: number;
+  let unitCode: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -41,6 +45,28 @@ describe("수집 채널 (e2e)", () => {
     });
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    const noPermissionUser = await prisma.app_user.create({
+      data: {
+        login_id: NO_PERMISSION_LOGIN_ID,
+        user_name: "I-33 수집 채널 권한 없음",
+        status_code: "EMPLOYED",
+      },
+    });
+    await prisma.user_credential.create({
+      data: {
+        app_user_id: noPermissionUser.app_user_id,
+        password_hash: await hashPassword(PASSWORD),
+      },
+    });
+    const role = await prisma.role.create({
+      data: { role_code: ROLE_CODE, role_name: "I-33 수집 채널 관리" },
+    });
+    await prisma.role_permission.create({
+      data: { role_id: role.role_id, permission_code: "W-05-07" },
+    });
+    await prisma.user_role.create({
+      data: { app_user_id: user.app_user_id, role_id: role.role_id },
     });
     const equipment = await prisma.equipment.create({
       data: {
@@ -161,7 +187,9 @@ describe("수집 채널 (e2e)", () => {
     processId = Number(process.process_id);
     oldSpecId = Number(oldSpec.inspection_item_spec_id);
     oldVersionId = Number(oldVersion.inspection_plan_version_id);
+    unitCode = uom.uom_code;
     cookie = await login();
+    noPermissionCookie = await login(NO_PERMISSION_LOGIN_ID);
   });
 
   afterAll(async () => {
@@ -310,11 +338,254 @@ describe("수집 채널 (e2e)", () => {
     ]);
   });
 
-  async function login(): Promise<string[]> {
+  it("등록은 18칸을 반환하고 legacy 필드를 만들지 않으며 같은 키는 그대로 재생한다", async () => {
+    const idempotencyKey = randomUUID();
+    const body = {
+      equipmentId,
+      channelKey: `${PREFIX}.CREATE.FULL`,
+      signalName: "원문 신호",
+      unitCode,
+      inspectionItemId: oldSpecId,
+      itemId,
+      processId,
+    };
+    const first = await postChannel(body, idempotencyKey, cookie).expect(201);
+    expect(first.body).toMatchObject({
+      equipmentId,
+      channelKey: body.channelKey,
+      signalName: "원문 신호",
+      unitCode,
+      inspectionItemId: oldSpecId,
+      itemId,
+      processId,
+      inspectionItemIsCurrentRevision: false,
+      isActive: true,
+    });
+    expect(Object.keys(first.body)).toHaveLength(18);
+
+    const replay = await postChannel(body, idempotencyKey, cookie).expect(201);
+    expect(replay.body).toEqual(first.body);
+    const stored = await prisma.collection_channel.findUniqueOrThrow({
+      where: { collection_channel_id: BigInt(first.body.collectionChannelId) },
+    });
+    expect(stored).toMatchObject({
+      channel_code: null,
+      channel_name: null,
+      data_type_code: null,
+      channel_key: body.channelKey,
+      version_no: 1,
+    });
+    expect(await prisma.collection_channel.count({ where: { channel_key: body.channelKey } })).toBe(1);
+  });
+
+  it("NULL 품목·공정 네 조합은 서로 다르고 각 동일 범위는 409다", async () => {
+    const channelKey = `${PREFIX}.SCOPE`;
+    const conditions = [
+      {},
+      { itemId },
+      { processId },
+      { itemId, processId },
+    ];
+    for (const condition of conditions) {
+      const body = { equipmentId, channelKey, ...condition };
+      await postChannel(body, randomUUID(), cookie).expect(201);
+      const duplicate = await postChannel(
+        { ...body, signalName: "다른 표시", inspectionItemId: oldSpecId },
+        randomUUID(),
+        cookie,
+      ).expect(409);
+      expect(duplicate.body).toEqual({
+        conflictCause: "user",
+        message: `이 설비의 ${channelKey} 채널에 품목·공정 조건이 같은 매핑이 이미 있습니다.`,
+      });
+    }
+    expect(await prisma.collection_channel.count({ where: { equipment_id: BigInt(equipmentId), channel_key: channelKey } })).toBe(4);
+  });
+
+  it("동시 동일 범위 등록은 식 unique로 한 건만 성공한다", async () => {
+    const channelKey = `${PREFIX}.RACE`;
+    const responses = await Promise.all([
+      postChannel({ equipmentId, channelKey }, randomUUID(), cookie),
+      postChannel({ equipmentId, channelKey }, randomUUID(), cookie),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(await prisma.collection_channel.count({ where: { equipment_id: BigInt(equipmentId), channel_key: channelKey } })).toBe(1);
+  });
+
+  it("등록 권한과 참조·빈 단위를 쓰기 전에 거절한다", async () => {
+    await postChannel(
+      { equipmentId, channelKey: `${PREFIX}.NO-PERM` },
+      randomUUID(),
+      noPermissionCookie,
+    ).expect(403);
+    const invalid = await postChannel(
+      {
+        equipmentId: 999999999,
+        channelKey: `${PREFIX}.INVALID`,
+        unitCode: "__MISSING_UOM__",
+        inspectionItemId: 999999999,
+        itemId: 999999999,
+        processId: 999999999,
+      },
+      randomUUID(),
+      cookie,
+    ).expect(400);
+    expect(invalid.body.errors.map((error: { field: string }) => error.field)).toEqual([
+      "equipmentId",
+      "unitCode",
+      "inspectionItemId",
+      "itemId",
+      "processId",
+    ]);
+    const emptyUnit = await postChannel(
+      { equipmentId, channelKey: `${PREFIX}.EMPTY-UNIT`, unitCode: "" },
+      randomUUID(),
+      cookie,
+    ).expect(400);
+    expect(emptyUnit.body.errors).toEqual([
+      expect.objectContaining({ field: "unitCode", code: "INVALID" }),
+    ]);
+  });
+
+  it("단위 없는 채널 PUT은 연결·재생·빈 수정·null 해제를 version별로 보존한다", async () => {
+    const body = { signalName: "", inspectionItemId: oldSpecId, isActive: true };
+    const idempotencyKey = randomUUID();
+    const linked = await putChannel(unmappedId, body, "1", idempotencyKey, cookie).expect(200);
+    expect(linked.body).toMatchObject({
+      collectionChannelId: unmappedId,
+      signalName: "",
+      inspectionItemId: oldSpecId,
+      inspectionItemIsCurrentRevision: false,
+      isActive: true,
+    });
+    expect(linked.body).not.toHaveProperty("unitCode");
+
+    const replay = await putChannel(unmappedId, body, "2", idempotencyKey, cookie).expect(200);
+    expect(replay.body).toEqual(linked.body);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("2");
+
+    await putChannel(unmappedId, { isActive: false }, "1", randomUUID(), cookie).expect(409);
+    const empty = await putChannel(unmappedId, {}, "2", randomUUID(), cookie).expect(200);
+    expect(empty.body).toMatchObject({ inspectionItemId: oldSpecId, isActive: true });
+    expect((await getChannel(unmappedId)).headers.etag).toBe("3");
+
+    await putChannel(unmappedId, { unitCode: "" }, "3", randomUUID(), cookie).expect(400);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("3");
+    const cleared = await putChannel(
+      unmappedId,
+      { inspectionItemId: null, itemId: null, processId: null, isActive: false },
+      "3",
+      randomUUID(),
+      cookie,
+    ).expect(200);
+    expect(cleared.body).toMatchObject({
+      inspectionItemId: null,
+      itemId: null,
+      processId: null,
+      isActive: false,
+    });
+    expect((await getChannel(unmappedId)).headers.etag).toBe("4");
+  });
+
+  it("PUT은 If-Match·대상·권한을 각각 검사한다", async () => {
+    await request(app.getHttpServer())
+      .put(`/api/maintenance/collection-channels/${unmappedId}`)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", randomUUID())
+      .send({})
+      .expect(400);
+    await putChannel(999999999, {}, "1", randomUUID(), cookie).expect(404);
+    await putChannel(unmappedId, {}, "4", randomUUID(), noPermissionCookie).expect(403);
+    expect((await getChannel(unmappedId)).headers.etag).toBe("4");
+  });
+
+  it("조건 변경으로 다른 행의 동일 범위가 되면 원래 행을 보존하고 409다", async () => {
+    const channelKey = `${PREFIX}.UPDATE-DUP`;
+    const first = await postChannel({ equipmentId, channelKey, itemId }, randomUUID(), cookie).expect(201);
+    await postChannel({ equipmentId, channelKey }, randomUUID(), cookie).expect(201);
+
+    await putChannel(
+      first.body.collectionChannelId,
+      { itemId: null },
+      "1",
+      randomUUID(),
+      cookie,
+    ).expect(409);
+    const stored = await prisma.collection_channel.findUniqueOrThrow({
+      where: { collection_channel_id: BigInt(first.body.collectionChannelId) },
+    });
+    expect(stored.item_id).toBe(BigInt(itemId));
+    expect(stored.version_no).toBe(1);
+  });
+
+  it("서로 다른 두 조건을 동시에 같은 범위로 바꾸면 하나만 성공한다", async () => {
+    const channelKey = `${PREFIX}.UPDATE-RACE`;
+    const byItem = await postChannel({ equipmentId, channelKey, itemId }, randomUUID(), cookie).expect(201);
+    const byProcess = await postChannel(
+      { equipmentId, channelKey, processId },
+      randomUUID(),
+      cookie,
+    ).expect(201);
+
+    const responses = await Promise.all([
+      putChannel(byItem.body.collectionChannelId, { itemId: null }, "1", randomUUID(), cookie),
+      putChannel(
+        byProcess.body.collectionChannelId,
+        { processId: null },
+        "1",
+        randomUUID(),
+        cookie,
+      ),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(
+      await prisma.collection_channel.count({
+        where: {
+          equipment_id: BigInt(equipmentId),
+          channel_key: channelKey,
+          item_id: null,
+          process_id: null,
+        },
+      }),
+    ).toBe(1);
+    expect(await prisma.collection_channel.count({ where: { channel_key: channelKey } })).toBe(2);
+  });
+
+  function postChannel(body: object, idempotencyKey: string, authCookie: string[]) {
+    return request(app.getHttpServer())
+      .post("/api/maintenance/collection-channels")
+      .set("Cookie", authCookie)
+      .set("Idempotency-Key", idempotencyKey)
+      .send(body);
+  }
+
+  function putChannel(
+    id: number,
+    body: object,
+    version: string,
+    idempotencyKey: string,
+    authCookie: string[],
+  ) {
+    return request(app.getHttpServer())
+      .put(`/api/maintenance/collection-channels/${id}`)
+      .set("Cookie", authCookie)
+      .set("Idempotency-Key", idempotencyKey)
+      .set("If-Match", version)
+      .send(body);
+  }
+
+  function getChannel(id: number) {
+    return request(app.getHttpServer())
+      .get(`/api/maintenance/collection-channels/${id}`)
+      .set("Cookie", cookie)
+      .expect(200);
+  }
+
+  async function login(loginId = LOGIN_ID): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post("/api/app/sessions")
       .set("Idempotency-Key", randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers["set-cookie"];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
@@ -337,11 +608,21 @@ describe("수집 채널 (e2e)", () => {
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
-    const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (user) {
-      await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
-      await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
+    const users = await prisma.app_user.findMany({
+      where: { login_id: { in: [LOGIN_ID, NO_PERMISSION_LOGIN_ID] } },
+      select: { app_user_id: true },
+    });
+    const userIds = users.map((user) => user.app_user_id);
+    if (userIds.length) {
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.user_credential.deleteMany({ where: { app_user_id: { in: userIds } } });
+      await prisma.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
+    }
+    const role = await prisma.role.findUnique({ where: { role_code: ROLE_CODE } });
+    if (role) {
+      await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
+      await prisma.role.delete({ where: { role_id: role.role_id } });
     }
   }
 });

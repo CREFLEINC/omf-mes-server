@@ -188,6 +188,17 @@ function project(
     WHERE ${condition}`);
 }
 
+export async function readCollectionChannelWithin(
+  client: ProjectionClient,
+  collectionChannelId: bigint,
+): Promise<CollectionChannelProjection | null> {
+  const rows = await project(
+    client,
+    Prisma.sql`c.collection_channel_id = ${collectionChannelId}`,
+  );
+  return rows[0] ?? null;
+}
+
 function rangeError(name: string, message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [field(name, ERROR_CODE.RANGE, message)]);
 }

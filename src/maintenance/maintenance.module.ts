@@ -13,7 +13,9 @@ import { CalibrationClearService } from "./calibration/calibration-clear.service
 import { CalibrationCreateService } from "./calibration/calibration-create.service";
 import { CalibrationQueryService } from "./calibration/calibration-query.service";
 import { CollectionChannelController } from "./collection-channel/collection-channel.controller";
+import { CollectionChannelCreateService } from "./collection-channel/collection-channel-create.service";
 import { CollectionChannelQueryService } from "./collection-channel/collection-channel-query.service";
+import { CollectionChannelUpdateService } from "./collection-channel/collection-channel-update.service";
 import { DowntimeController } from "./downtime/downtime.controller";
 import { DowntimeCreateService } from "./downtime/downtime-create.service";
 import { DowntimeQueryService } from "./downtime/downtime-query.service";
@@ -81,6 +83,8 @@ import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
     CalibrationCreateService,
     CalibrationClearService,
     CollectionChannelQueryService,
+    CollectionChannelCreateService,
+    CollectionChannelUpdateService,
   ],
 })
 export class MaintenanceModule {}

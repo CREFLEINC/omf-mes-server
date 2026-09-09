@@ -41,6 +41,8 @@ import { PutawayTaskService } from './putaway/putaway-task.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
+import { SalesOrderQueryService } from './sales-order/sales-order-query.service';
+import { SalesOrderController } from './sales-order/sales-order.controller';
 import { ShopfloorReceiptController } from './shopfloor-receipt/shopfloor-receipt.controller';
 import { ShopfloorReceiptQueryService } from './shopfloor-receipt/shopfloor-receipt-query.service';
 import { ShopfloorReceiptService } from './shopfloor-receipt/shopfloor-receipt.service';
@@ -72,6 +74,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayRuleController,
     PutawayTaskController,
     PurchaseOrderController,
+    SalesOrderController,
     AsnController,
     InboundReceiptController,
     InboundReceiptSplitController,
@@ -92,6 +95,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayTaskService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
+    SalesOrderQueryService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
