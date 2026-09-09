@@ -41,8 +41,11 @@ export interface ShipmentProgressTotals {
 }
 
 /**
- * ⭐ `released_qty` 를 **뺀다**(R-14). 안 빼면 I-23 이 출하를 취소해 예약을 푼 뒤에도 `P` 가 그대로
- * 남아 `PICKED` 로 잘못 오르고, 그 값이 `W-04-04` 의 진입 목록을 정한다.
+ * ⭐ `released_qty` 를 **뺀다**(R-14 · §5-1 정본). 안 빼면 예약을 푼 뒤에도 `P` 가 그대로 남아
+ * `PICKED` 로 잘못 오르고, 그 값이 `W-04-04` 의 진입 목록을 정한다.
+ * ⚠ **I-23 이 취소 시 `released_qty` 를 올려야 이 뺄셈이 산다** — 오늘 코어의 `pick()` Δ<0 갈래는
+ *   `consumed_qty` 만 내리고, 저장소에 `released_qty` 를 «쓰는» 코드가 0개다. ⛔ 그렇다고
+ *   `- consumed_qty` 를 더하지 마라 — 피킹 직후 `P = 0` 이 되어 `PICKED` 가 영영 안 나온다.
  */
 export function pickedQtyOf(reservations: ShipmentProgressReservation[]): Prisma.Decimal {
   return reservations.reduce((sum, row) => sum.plus(row.reservedQty).minus(row.releasedQty), ZERO);

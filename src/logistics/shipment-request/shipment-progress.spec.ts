@@ -239,6 +239,9 @@ const GRID: Row[] = [
   //    `S <= A <= R`). 그래도 «격자에 둔다» — 이 파일의 주장은 「TS 판정과 SQL CASE 가 같은 전역
   //    함수다」이고, 그러려면 닿지 않는 입력에서도 답이 갈리면 안 된다. 실제로 이 셋이 각각
   //    `A = 0`→`A <= 0` · `S = A && A > 0` 의 뒤 절 · `P = A && S = 0` 의 뒤 절 · `P < A` 를 잡는다.
+  // ⛔⛔ 그 절들은 앞 분기에 가려 «중복»이다 — 「`&& A > 0` 은 `A = 0` 분기가 앞에 있으니 군더더기」
+  //    라며 지우고 싶어진다. §5-1 의 사슬을 «글자 그대로» 유지하려고 남긴 것이고, TS 와 SQL 양쪽에
+  //    똑같이 있다. 이 세 줄이 그 중복을 잠근다 — 셋을 지우면 한쪽만 지우는 변경이 조용히 통과한다.
   { r: 100, a: -1, p: -1, s: -1 },
   { r: 100, a: 80, p: 80, s: 90 },
   { r: 100, a: 100, p: 100, s: 110 },
@@ -271,6 +274,22 @@ describe('⭐ TS 판정과 SQL 술어가 같은 6값 경계를 쓴다 (문자열
     expect(sql).toContain("res.source_document_type_code = 'SHIPMENT_REQUEST_LINE'");
     expect(sql).toContain('res.source_document_id = srl.shipment_request_line_id');
     expect(sql).toContain('srl.shipment_request_id = sr.shipment_request_id');
+    // ⭐ 별칭이 «어느» 원천 칸에서 나는지 고정한다 — 별칭만 맞고 원천이 뒤바뀌면 목록의 6값과
+    //   ③b 의 응답 칸이 갈린다(I-20 R-2 형). 별칭 이름 자체는 CASE 가 읽는 이름이다.
+    expect(sql).toContain('FROM logistics.shipment_request_line srl');
+    for (const [source, alias] of [
+      ['requested_qty', 'requested_qty'],
+      ['allocated_qty', 'allocated_qty'],
+      ['shipped_qty', 'shipped_qty'],
+    ]) {
+      expect(sql).toMatch(new RegExp(`coalesce\\(sum\\(srl\\.${source}\\), 0\\)\\s+AS ${alias}\\b`));
+    }
+    // ⛔ CASE 가 읽는 네 이름이 곧 이 총계의 별칭 «전부»다 — 하나라도 어긋나면 런타임 42703 이다.
+    expect((sql.match(/AS (\w+)/g) ?? []).map((text) => text.slice(3)).sort()).toEqual(
+      Object.keys(COLUMN)
+        .map((column) => column.replace('t.', ''))
+        .sort(),
+    );
     // ⛔ 집계 NULL — 라인 0건이면 sum 이 NULL 이라 비교가 UNKNOWN 이 되고 행이 사라진다(§6-3 ⑷).
     expect(sql.match(/coalesce\(sum\(/g) ?? []).toHaveLength((sql.match(/sum\(/g) ?? []).length);
   });

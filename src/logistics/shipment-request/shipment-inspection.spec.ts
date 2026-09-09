@@ -57,6 +57,9 @@ describe('lineInspectionStatus — 5값 각각(계약 shippingInspectionStatusCo
     expect(lineInspectionStatus(srLine(), [row({ targetId: LOT_OUTSIDE })])).toBe('PENDING');
     // OQC 가 아닌 검사도 안 센다(IQC·PQC 가 같은 LOT 에 붙는다).
     expect(lineInspectionStatus(srLine(), [row({ inspectionTypeCode: 'IQC' })])).toBe('PENDING');
+    // 제3의 대상 유형(WORK_ORDER)도 안 겨눈다 — target_id 가 우연히 같은 값이어도 마찬가지다.
+    // ⛔ `target_type_code` 는 `app.code_t` 라 CHECK 가 없고 `target_id` 는 다형 bigint 다.
+    expect(lineInspectionStatus(srLine(), [row({ targetTypeCode: 'WORK_ORDER', targetId: REQUEST })])).toBe('PENDING');
   });
 
   it('PASSED — 겨누는 결과가 전건 ACCEPTED 다(두 LOT · 두 의뢰)', () => {
