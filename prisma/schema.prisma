@@ -4301,6 +4301,7 @@ model equipment_downtime {
 
   remarks               String?
   recorded_by_worker_no String?    @db.VarChar(50)
+  closed_by_worker_no   String?    @db.VarChar(50)
   version_no            Int        @default(1)
 
   @@schema("maintenance")
