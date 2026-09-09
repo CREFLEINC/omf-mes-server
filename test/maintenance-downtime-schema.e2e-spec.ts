@@ -27,6 +27,7 @@ interface DowntimeSnapshot {
   created_epoch_us: string;
   remarks: string | null;
   recorded_by_worker_no: string | null;
+  closed_by_worker_no: string | null;
   version_no: number;
 }
 
@@ -116,13 +117,13 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
     }
   });
 
-  it("S01 새 nullable 두 칸·version과 완화 type의 타입·길이·default가 정본과 같다", async () => {
+  it("S01 nullable 세 칸·version과 완화 type의 타입·길이·default가 정본과 같다", async () => {
     const columns = await prisma.$queryRaw<Column[]>`
       SELECT column_name,data_type,is_nullable,column_default,
              character_maximum_length,datetime_precision,domain_name
       FROM information_schema.columns
       WHERE table_schema='maintenance' AND table_name='equipment_downtime'`;
-    expect(columns).toHaveLength(13);
+    expect(columns).toHaveLength(14);
     const byName = Object.fromEntries(
       columns.map((column) => [column.column_name, column]),
     );
@@ -156,23 +157,32 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
         datetime_precision: 6,
       });
     }
-    expect(byName.closed_by_worker_no).toBeUndefined();
+    expect(byName.closed_by_worker_no).toMatchObject({
+      data_type: "character varying",
+      character_maximum_length: 50,
+      is_nullable: "YES",
+      column_default: null,
+      domain_name: null,
+    });
     expect(byName.work_session_id).toBeUndefined();
   });
 
-  it("S02 네 컬럼 주석이 최초 사번·메모·구 유형·버전의 의미를 보존한다", async () => {
+  it("S02 다섯 컬럼 주석이 최초·종료 사번과 기존 의미를 보존한다", async () => {
     const comments = await prisma.$queryRaw<
       { name: string; description: string }[]
     >`
       SELECT a.attname AS name,col_description(a.attrelid,a.attnum) AS description
       FROM pg_attribute a
       WHERE a.attrelid='maintenance.equipment_downtime'::regclass
-        AND a.attname IN ('recorded_by_worker_no','remarks','downtime_type_code','version_no')`;
+        AND a.attname IN ('recorded_by_worker_no','closed_by_worker_no','remarks',
+                          'downtime_type_code','version_no')`;
     expect(
       Object.fromEntries(comments.map((row) => [row.name, row.description])),
     ).toEqual({
       recorded_by_worker_no:
         "비가동을 최초 기록한 귀속용 X-Worker-No 원문. 계정 created_by와 별개이며 과거행은 임의 백필하지 않는다.",
+      closed_by_worker_no:
+        "비가동을 종료한 X-Worker-No 원문. 계정 closed_by와 별개이며 과거 종료행은 임의 백필하지 않는다.",
       remarks: "현장 비가동 메모. DowntimeCreate/Update.remarks.",
       downtime_type_code:
         "계약에 입력과 값 정의가 없는 기존 축. 신규 비가동은 null; reason_code를 복제하지 않는다.",
@@ -189,6 +199,7 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
       downtime_type_code: null,
       reason_code: null,
       recorded_by_worker_no: null,
+      closed_by_worker_no: null,
       remarks: null,
       version_no: 1,
       breakdown_id: null,
@@ -210,33 +221,50 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
     });
   });
 
-  it("S04 최초 사번50자·메모 원문 왕복과 null 해제가 계정 감사값과 µs를 바꾸지 않는다 — 108", async () => {
+  it("S04 최초·종료 사번50자와 메모 왕복이 계정 감사값·µs를 바꾸지 않는다 — 108·109", async () => {
     // 서버팀 결정·통보 108: 귀속 원문을 계정 숫자로 도출하거나 덮지 않는다.
     const id = await insert();
     const original = await snapshot(id);
     const workerNo = "W".repeat(50);
+    const closedWorkerNo = "C".repeat(50);
     const remarks = "현장 원문\n유압 호스 교체 대기 — 변경 없이";
     await prisma.equipment_downtime.update({
       where: { equipment_downtime_id: id },
-      data: { recorded_by_worker_no: workerNo, remarks },
+      data: {
+        recorded_by_worker_no: workerNo,
+        closed_by_worker_no: closedWorkerNo,
+        remarks,
+      },
     });
     expect(await snapshot(id)).toEqual({
       ...original,
       recorded_by_worker_no: workerNo,
+      closed_by_worker_no: closedWorkerNo,
       remarks,
     });
     await prisma.equipment_downtime.update({
       where: { equipment_downtime_id: id },
-      data: { recorded_by_worker_no: null, remarks: null },
+      data: {
+        recorded_by_worker_no: null,
+        closed_by_worker_no: null,
+        remarks: null,
+      },
     });
     expect(await snapshot(id)).toEqual(original);
   });
 
-  it("S05 최초 사번51자는 물리 길이 제약으로 거부된다", async () => {
+  it("S05 최초·종료 사번51자는 물리 길이 제약으로 거부된다", async () => {
     const id = await insert();
     const original = await snapshot(id);
     await expect(prisma.$executeRaw`
       UPDATE maintenance.equipment_downtime SET recorded_by_worker_no=${"W".repeat(51)}
+      WHERE equipment_downtime_id=${id}`).rejects.toMatchObject({
+      code: "P2010",
+      meta: { code: "22001" },
+    });
+    expect(await snapshot(id)).toEqual(original);
+    await expect(prisma.$executeRaw`
+      UPDATE maintenance.equipment_downtime SET closed_by_worker_no=${"C".repeat(51)}
       WHERE equipment_downtime_id=${id}`).rejects.toMatchObject({
       code: "P2010",
       meta: { code: "22001" },
@@ -407,7 +435,7 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
     ).rejects.toMatchObject({ code: "P2003" });
   });
 
-  it("S10 새 최초 사번은 worker FK나 계정 변환 없이 별도 원문으로 저장된다 — 108", async () => {
+  it("S10 새 최초·종료 사번은 worker FK나 계정 변환 없이 별도 원문으로 저장된다 — 108·109", async () => {
     // 서버팀 결정·통보 108: API의 사번 검증 책임을 물리 FK나 기본값으로 대체하지 않는다.
     const workerNo = `${PREFIX}-UNLINKED`;
     expect(await prisma.worker.count({ where: { worker_no: workerNo } })).toBe(
@@ -416,10 +444,14 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
     const id = await insert();
     await prisma.equipment_downtime.update({
       where: { equipment_downtime_id: id },
-      data: { recorded_by_worker_no: workerNo },
+      data: {
+        recorded_by_worker_no: workerNo,
+        closed_by_worker_no: workerNo,
+      },
     });
     expect(await snapshot(id)).toMatchObject({
       recorded_by_worker_no: workerNo,
+      closed_by_worker_no: workerNo,
       created_by: actorId,
       closed_by: actorId,
     });
@@ -439,7 +471,8 @@ describe("I-32 P1a 비가동 물리 필드 (e2e)", () => {
   async function snapshot(id: bigint): Promise<DowntimeSnapshot> {
     const rows = await prisma.$queryRaw<DowntimeSnapshot[]>`
       SELECT equipment_downtime_id,equipment_id,breakdown_id,downtime_type_code,
-             reason_code,closed_by,created_by,remarks,recorded_by_worker_no,version_no,
+             reason_code,closed_by,created_by,remarks,recorded_by_worker_no,
+             closed_by_worker_no,version_no,
              ((extract(epoch FROM started_at)*1000000)::bigint)::text AS started_epoch_us,
              ((extract(epoch FROM ended_at)*1000000)::bigint)::text AS ended_epoch_us,
              ((extract(epoch FROM created_at)*1000000)::bigint)::text AS created_epoch_us
