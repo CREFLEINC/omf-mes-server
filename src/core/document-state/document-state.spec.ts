@@ -35,6 +35,7 @@ const BREAKDOWN_STATUS = 'maintenance.breakdown.status_code';
 /** I-31 C0이 여는 축 — 발행된 보전 지시만 취소할 수 있다. */
 const MAINTENANCE_ORDER_STATUS = 'maintenance.maintenance_order.status_code';
 /** I-13 PR ③ 이 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 도착 확정 하나뿐이다. */
+const SHIPMENT_STATUS = 'logistics.shipment.status_code';
 const STOCK_TRANSFER_STATUS = 'logistics.stock_transfer.status_code';
 /** I-21 PR ④ 가 여는 축 — 시드 `NONCONFORMANCE_STATUS` 3값. 의뢰와 판정 완료 둘뿐이다. */
 const NONCONFORMANCE_STATUS = 'quality.nonconformance.status_code';
@@ -63,6 +64,7 @@ const REGISTERED_AXES = [
   PRODUCTION_PLAN_STATUS,
   PUTAWAY_TASK_STATUS,
   ROUTING_COLUMN,
+  SHIPMENT_STATUS,
   STOCK_TRANSFER_STATUS,
   WORK_ORDER_STATUS,
   WORK_SESSION_STATUS,
@@ -71,7 +73,7 @@ const REGISTERED_AXES = [
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
 
-  it('⭐ 등록된 축은 열아홉이고, 그 열아홉이 이 파일이 이름 적은 축과 «같다»', () => {
+  it('⭐ 등록된 축은 «스물»이고, 그 스물이 이 파일이 이름 적은 축과 «같다»', () => {
     // ⛔ 축을 더했으면 위 상수 목록에도 더한다 — 여기 없는 축은 이 spec 이 한 번도 안 만져 본
     //    축이고, `test/document-state.e2e-spec.ts` 의 `STATUS_GROUPS` 도 못 채웠을 가능성이
     //    높다(README §6-4 — 그 표가 안 채워져 main 이 두 번 빨갰다).
@@ -277,7 +279,13 @@ describe('DocumentStateService', () => {
         'disposition-scrap',
         'stock-reinstate',
       ]);
-      expect(from('stock-reinstate')).toEqual(['DEFECTIVE']);
+      // ⭐ I-23 이 셋으로 넓혔다 — 코어가 `from` 밖을 «던지지 않고 skip» 해서, 좁으면 400 이
+      //    아니라 응답 `lotStatusCode` 가 조용히 거짓이 된다(통보 218). 반품 갈래가
+      //    `INSPECTION_PENDING` 으로 들어온다. ⛔ `SCRAPPED` 는 없다.
+      // ⚠ `from` 헬퍼가 정렬해 돌려준다 — 선언 순서가 아니라 사전순이다.
+      expect(from('stock-reinstate')).toEqual(['DEFECTIVE', 'INSPECTION_PENDING', 'NORMAL']);
+      // ⛔ 폐기된 LOT 은 되살리지 않는다 — 재등록은 그 오퍼레이션이 아니다.
+      expect(from('stock-reinstate')).not.toContain('SCRAPPED');
       // 불합격은 «자기 자신»으로도 못 간다 — 자기 전이도 발신이다.
       expect(() =>
         service.assertTransition(LOT_QUALITY_STATUS, 'inspection-rejected', 'DEFECTIVE'),
@@ -351,18 +359,22 @@ describe('DocumentStateService', () => {
         'POST /quality/nonconformances/{nonconformanceId}/disposition-decisions',
       );
       expect(reinstate.sourceOperation).toBe('POST /logistics/stock-reinstatements');
+      // ⭐ I-23 이 C20 을 박았다 — 코드가 갈리는 것이 「도착이 같아도 다른 전이」의 셋째 증거다.
       expect(normal.transitionCode).toBe('C19');
-      expect(reinstate.transitionCode).toBeUndefined();
+      expect(reinstate.transitionCode).toBe('C20');
     });
 
-    it('⛔ 재등록만 transitionCode 가 없다 — C4~C15 에 재등록을 가리키는 코드가 없다(통보 089 §7 · 레인 C 판정)', () => {
+    it('⭐ LOT 품질 축은 «전건» transitionCode 를 갖는다 — 이력 칸이 NOT NULL 이다', () => {
+      // ⛔ 이 단언의 뜻이 I-23 에서 뒤집혔다: 예전엔 「재등록만 없다」였다. 계약 enum 9값에
+      //    재등록 코드가 없어 호출자가 넘기게 뒀던 자리를 통보 218 이 C20 으로 확정했다.
+      //    ⇒ 이제 «하나라도 비면» 그 전이는 이력 행을 세울 수 없어 런타임에 터진다.
       const withoutCode = service
         .registered()
         .filter((entry) => entry.column === LOT_QUALITY_STATUS)
         .filter((entry) => entry.transition.transitionCode === undefined)
         .map((entry) => entry.action);
 
-      expect(withoutCode).toEqual(['stock-reinstate']);
+      expect(withoutCode).toEqual([]);
     });
   });
 
@@ -538,6 +550,7 @@ describe('DocumentStateService', () => {
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
+          SHIPMENT_STATUS,
           STOCK_TRANSFER_STATUS,
           WORK_ORDER_STATUS,
           WORK_SESSION_STATUS,
@@ -554,7 +567,26 @@ describe('DocumentStateService', () => {
       // +1 — 재고 이동 도착 확정 키 신설(I-13 PR ③).
       // +5 — LOT 품질 축에 처분 판정 3, 부적합 처리 키 신설 2(I-21 PR ④).
       // +1 — 재고 조정 전기 키 신설(I-14 PR ④).
-      expect(service.registered()).toHaveLength(48);
+      // +2 — 출하 확정·취소 키 신설(I-23 PR ③). ⛔ `:request-cancel` 은 전이가 «0개»다 —
+      //      시드 SHIPMENT_STATUS 3값에 CANCEL_REQUESTED 가 없어 담을 상태가 없다.
+      expect(service.registered()).toHaveLength(50);
+    });
+
+    it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {
+      expect(
+        service.assertTransition(SHIPMENT_STATUS, 'shipment-confirm', 'UNCONFIRMED'),
+      ).toMatchObject({ to: 'CONFIRMED', from: ['UNCONFIRMED'] });
+      expect(
+        service.assertTransition(SHIPMENT_STATUS, 'shipment-cancel', 'UNCONFIRMED'),
+      ).toMatchObject({ to: 'CANCELLED', from: ['UNCONFIRMED'] });
+      // ⛔ 확정에서 되돌아오는 전이는 없다 — 계약이 「확정 취소 경로가 없다」라 적었다.
+      expect(() =>
+        service.assertTransition(SHIPMENT_STATUS, 'shipment-cancel', 'CONFIRMED'),
+      ).toThrow(ConflictException);
+      // ⛔ `:request-cancel` 은 (칸, 액션)이 «없다» — 등록되지 않은 액션은 코어가 던진다.
+      expect(() =>
+        service.assertTransition(SHIPMENT_STATUS, 'shipment-request-cancel', 'UNCONFIRMED'),
+      ).toThrow();
     });
 
     it('⭐ 재고 이동 상태 — transfer-arrive «하나»뿐이고 반출은 전이가 아니다(탄생 상태)', () => {
