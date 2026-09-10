@@ -126,7 +126,7 @@ function fake(
   };
 
   const prisma = {
-    worker: { count: async () => 1 },
+    worker: { findUnique: async () => ({ worker_id: 1n }) },
     $transaction: async (work: (client: unknown) => Promise<unknown>) => {
       recorded.calls.push('transaction');
       return work(tx);

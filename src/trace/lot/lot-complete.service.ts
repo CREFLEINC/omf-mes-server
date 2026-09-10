@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
 import { Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-import { COMPLETION_REASON, assertCompletionReason, assertWorkerNo } from './lot-rules';
+import { COMPLETION_REASON, assertCompletionReason } from './lot-rules';
 import { lotProgress } from './lot-progress';
 import { LotView, lotView } from './lot-view';
 
@@ -48,7 +48,7 @@ export class LotCompleteService {
     body: LotComplete,
     context: LotCompleteContext,
   ): Promise<LotView> {
-    assertWorkerNo(context.workerNo);
+    assertWorkerNoPresent(context.workerNo);
     // 코드값 대조는 트랜잭션 «밖»이다 — 잠글 필요가 없는 마스터 조회다(형제 `:close` 선례).
     await assertCodeValues(this.prisma, [
       { field: COMPLETION_REASON, value: body.completionVarianceReasonCode, groupCode: VARIANCE_REASON_GROUP },

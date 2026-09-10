@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어를 한 줄도 안 고친다(피킹 선례).
@@ -60,7 +60,7 @@ export class PutawayCompleteService {
   async complete(
     putawayTaskId: number, body: PutawayTaskComplete, context: PutawayCompleteContext, mode: PutawayMode,
   ): Promise<PutawayTaskView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     if (mode === 'TEMPORARY') {
       // 코드값 대조는 트랜잭션 «밖»이다 — 잠글 필요가 없는 마스터 조회다(LOT 완료 선례).
       const value = body.reasonCode;
@@ -229,19 +229,6 @@ async function assertBalance(
   if (from === undefined) throw short('이 위치에 그 LOT 의 재고가 없습니다.');
   if ((from.available_qty ?? new Prisma.Decimal(0)).lessThan(task.task_qty)) {
     throw short('보유 수량보다 많이 옮길 수 없습니다.');
-  }
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — 지시에 행위자 칸이 없다(`assigned_worker_id` 는 «배정» 축).
- * 계약이 required 로 못박았고 헤더는 계약 검증 가드가 안 본다. 없는 사번은 가른다.
- */
-async function assertWorkerNo(prisma: PrismaService, workerNo: string | undefined): Promise<void> {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-  if ((await prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-    throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
   }
 }
 

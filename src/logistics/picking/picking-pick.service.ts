@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
+import { assertWorkerNoPresent } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어는 PR ① 로 닫혔고 이 PR 은 코어 파일을 안 고친다.
@@ -62,7 +63,7 @@ export class PickingPickService {
     body: PickingLinePick,
     context: PickContext,
   ): Promise<PickingLineView> {
-    assertWorkerNo(context.workerNo);
+    assertWorkerNoPresent(context.workerNo);
     assertMoments(body);
 
     await this.prisma.$transaction(async (tx) => {
@@ -152,17 +153,6 @@ export class PickingPickService {
         field: path,
       },
     ]);
-  }
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — 행위자 칸이 두 표에 없다(`assigned_worker_id` 는 «배정» 축이다).
- * 계약이 `required: true` 로 못박아 부재만 거부한다(§6-7 · `lot-complete.service.ts:164` 선례).
- * ⛔ `mdm.worker` 를 조회하지 않는다 — 저장하지 않는 값에 왕복을 늘리지 않는다.
- */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
   }
 }
 

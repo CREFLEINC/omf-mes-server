@@ -127,6 +127,8 @@ function stub(options: { status?: string; maxSessionNo?: number | null; openSess
 
   const prisma = {
     worker: {
+      // 헤더 축(`assertWorkerNoExists`)은 `findUnique`, 아래 `count` 는 본문 `workerIds` «명단» 축이다.
+      findUnique: () => Promise.resolve({ worker_id: 1n }),
       count: ({ where }: { where: Row }) => {
         const ids = (where.worker_id as { in?: unknown[] } | undefined)?.in;
         return Promise.resolve(ids === undefined ? 1 : ids.length);

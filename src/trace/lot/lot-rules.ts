@@ -141,18 +141,3 @@ export function assertId(name: string, value: unknown): number | undefined {
   if (Number.isInteger(parsed) && parsed >= 0) return parsed;
   throw one(field(name, ERROR_CODE.INVALID, '숫자 식별자여야 합니다.'));
 }
-
-/**
- * 사번 헤더의 필수 판정 — **읽고 버리지만 부재는 거부한다**. 담을 칸이 0개인데도 막는 이유는
- * 계약이 `WorkerNo.required=true` 로 못박았기 때문이고(§8-4), 헤더는 계약 검증 가드가 보지
- * 않아(`contract-validator.ts:96` — `$ref` 파라미터는 `in` 만 보고 지나간다) 판정이 서비스 몫이다.
- *
- * ⛔ 사번을 «주체»로 승격시키지 않는다 — `requested_by`·`updated_by` 는 언제나 세션
- *    계정이다(`plan.md` §5 규칙 9). 같은 자원의 `:complete`·`:request-iqc-skip` 둘이 같은
- *    판정을 쓴다 — 갈리면 한쪽만 사번을 요구하는 화면이 된다.
- */
-export function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-}

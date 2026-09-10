@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoPresent } from '../../common/master';
 import { ApprovalService } from '../../core/approval';
 import { INITIAL_LOT_STATUS, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertWorkerNo } from './lot-rules';
 
 /** 승인 다형 축 — 계약 `x-internal-note` 가 이 둘을 서버 몫으로 못 박았다. */
 const IQC_SKIP_TYPE = 'IQC_SKIP';
@@ -49,7 +49,7 @@ export class LotIqcSkipService {
     reason: string,
     context: IqcSkipContext,
   ): Promise<{ approvalRequestId: number }> {
-    assertWorkerNo(context.workerNo);
+    assertWorkerNoPresent(context.workerNo);
     // 존재·자격을 채번 «전»에 한 번 거른다 — 400 이 될 LOT 에 AP 번호를 태우면 결번만 남는다
     // (I-5 R-12). 잠근 뒤 재검사가 경합 몫이다(형제 `goods-issue-update.service.ts:176-178`).
     const current = await this.prisma.lot.findUnique({

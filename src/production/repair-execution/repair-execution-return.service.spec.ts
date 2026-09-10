@@ -42,7 +42,7 @@ function stub(options: { returnedAt?: string } = {}) {
     },
   };
   const prisma = {
-    worker: { count: () => Promise.resolve(1) },
+    worker: { findUnique: async () => ({ worker_id: 1n }) },
     $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
 

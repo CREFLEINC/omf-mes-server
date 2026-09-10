@@ -17,7 +17,7 @@ function stub(options: StubOptions = {}) {
   };
 
   const prisma = {
-    worker: { count: async () => 1 },
+    worker: { findUnique: async () => ({ worker_id: 1n }) },
     work_order: {
       findMany: async () => [
         { work_order_id: 5n, default_wip_location_id: options.fromWip === undefined ? 41n : options.fromWip },

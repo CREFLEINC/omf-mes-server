@@ -2,10 +2,10 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HandlingUnitContentView, handlingUnitContentView } from './handling-unit-view';
-import { assertWorkerNo } from './handling-unit-worker';
 import {
   HandlingUnitContentUpsert,
   HandlingUnitContext,
@@ -58,7 +58,7 @@ export class HandlingUnitContentService {
     items: HandlingUnitContentUpsert[],
     context: HandlingUnitContext,
   ): Promise<{ items: HandlingUnitContentView[] }> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     // 잠글 필요가 없는 검사는 트랜잭션 «밖»이다(형제 치환과 같은 순서 · §5-2 ③).
     assertNoDuplicateContent(items, 'items');
     assertContentQty(items, 'items');

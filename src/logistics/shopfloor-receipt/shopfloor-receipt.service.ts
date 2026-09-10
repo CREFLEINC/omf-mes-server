@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -64,7 +64,7 @@ export class ShopfloorReceiptService {
     appUserId: number,
     workerNo: string | undefined,
   ): Promise<ShopfloorReceiptDetail> {
-    assertWorkerNo(workerNo);
+    assertWorkerNoPresent(workerNo);
     const plantId = await this.assertCreatable(input);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을
     //    둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `material-issue-request.service.ts:62`
@@ -179,19 +179,6 @@ export class ShopfloorReceiptService {
     // I-6 R-6 이 계획 없는 배포를 막았으나 그 전에 생긴 W/O 가 남아 있을 수 있다(문의 040).
     if (plantId == null) throw one(field('workOrderId', ERROR_CODE.INVALID, '공장을 풀 계획이 없습니다(문의 040).'));
     return plantId;
-  }
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — `received_by` 는 `app.app_user` 축이라 사번(`mdm.worker.worker_no`)을
- * 담을 칸이 아니다(I-9.md §3-6). 계약 `required: true` 라 부재만 거부한다.
- * `lot-complete.service.ts:164` · `picking-pick.service.ts:163` 에 이은 **셋째 사본**이다 —
- * 후속 공용화 후보 `src/common/http/worker-no.ts`(I-9 §3-6 · §8-3 ⓔ).
- * ⛔ `mdm.worker` 를 조회하지 않는다 — 저장하지 않는 값에 왕복을 늘리지 않는다.
- */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
   }
 }
 

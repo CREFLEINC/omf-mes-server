@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
@@ -43,7 +43,7 @@ export class WorkSessionService {
     private readonly documentState: DocumentStateService,
   ) {}
   async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     await this.assertReferences(body);
     await this.assertControlOverride(body);
     // `runIdempotent` 가 tx 를 넘겨주지 않는다 — 서비스가 자기 트랜잭션을 연다(I-9 R-10).
@@ -174,16 +174,6 @@ export class WorkSessionService {
     // 없는 W/O 는 트랜잭션 1번이 404 로 낸다 — 여기서 가로채지 않는다.
     if (workOrder === null || workOrder.work_order_type_code === EMERGENCY) return;
     throw one(field('controlOverride.reasonCode', ERROR_CODE.INVALID, '긴급 작업지시에서만 우회할 수 있습니다.'));
-  }
-}
-// 귀속 사번 — 계약이 required 로 걸었으나 **담을 칸이 0**이라 읽고 버린다(§3-7 · 문의 057).
-// `assertWorkerNo` 다섯째 사본(R-11) — 앞 넷과 달리 「없는 사번」을 가르려 조회를 한 번 한다.
-export async function assertWorkerNo(prisma: PrismaService, workerNo: string | undefined): Promise<void> {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-  if ((await prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-    throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
   }
 }
 /** 계정 권한(`PermissionGuard`)과 **다른 축**이라 가드가 아니라 서비스가 낸다(§3-2). */

@@ -1,3 +1,4 @@
+import { assertWorkerNoExists } from "../../common/master";
 import type { MaintenanceInstant } from "../maintenance-instant";
 import {
   assertDowntimeBreakdown,
@@ -5,7 +6,6 @@ import {
   assertDowntimeReason,
   assertDowntimeVersion,
   assertDowntimeWindow,
-  assertDowntimeWorker,
   assertNoOpenDowntime,
   type DowntimeTx,
   type LockedDowntime,
@@ -29,7 +29,8 @@ describe("downtime rules", () => {
     worker.findUnique.mockResolvedValue({ worker_id: 1n });
     codeValue.findFirst.mockResolvedValue({ code_value_id: 2n });
 
-    await assertDowntimeWorker(tx, "W-1");
+    // 판정은 `common/master/worker-no.ts` 로 옮겼다(#337) — 여기서는 «가동중지가 그것을 쓴다»를 잰다.
+    await assertWorkerNoExists(tx, "W-1");
     await assertDowntimeReason(tx, "MOLD_CHANGE");
 
     expect(worker.findUnique).toHaveBeenCalledWith({
@@ -50,7 +51,7 @@ describe("downtime rules", () => {
     worker.findUnique.mockResolvedValue(null);
     codeValue.findFirst.mockResolvedValue(null);
 
-    await expect(assertDowntimeWorker(tx, "NONE")).rejects.toMatchObject({
+    await expect(assertWorkerNoExists(tx, "NONE")).rejects.toMatchObject({
       status: 400,
       errors: [{ field: "X-Worker-No", code: "INVALID" }],
     });

@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { optional } from '../../common/master';
+import { optional, resolveWorkerId } from '../../common/master';
 import { BOM_COMPONENT_SELECT } from '../../core/bom';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -11,7 +11,6 @@ import { CONSUMPTION_STATUS, CONSUMPTION_TYPE_DEFAULT, LOT_NORMAL } from './mate
 
 /** 채번 문서 유형 — 규칙 미등재라 `DEFAULT_PREFIX` 의 `MC` 로 자동 등재된다(§3-11). */
 const NUMBERING_DOCUMENT = 'MATERIAL_CONSUMPTION';
-const WORKER_NO = 'X-Worker-No';
 
 /** 계약 `MaterialConsumptionCreate` — required 6 · 선택 11(I-10 §1-3). */
 export interface MaterialConsumptionCreate {
@@ -71,7 +70,7 @@ export class MaterialConsumptionService {
 
   async create(body: MaterialConsumptionCreate, context: MaterialConsumptionContext): Promise<MaterialConsumptionView> {
     // ① 헤더 부재가 먼저다 — 본문을 다 통과해도 귀속 주체가 없으면 저장할 수 없다.
-    const workerId = await this.resolveWorker(context.workerNo);
+    const workerId = await resolveWorkerId(this.prisma, context.workerNo);
     const errors: ErrorItem[] = [];
     assertShape(body, errors);
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -242,22 +241,6 @@ export class MaterialConsumptionService {
     return line?.shopfloor_receipt_line_id ?? null;
   }
 
-  /**
-   * 귀속 사번 → `worker_id`. `production-result.service.ts:166-176` 의 **둘째 사본**이다 —
-   * 전표 간 service 호출을 만들지 않는다(I-10 R-9 · §3-7).
-   * ⛔ `app_user_id` 로 세션 사용자에서 도출하지 않는다 · ⛔ 재직 여부를 안 본다.
-   */
-  private async resolveWorker(workerNo: string | undefined): Promise<bigint> {
-    if (workerNo === undefined || workerNo.trim() === '') {
-      throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-    }
-    const worker = await this.prisma.worker.findUnique({
-      where: { worker_no: workerNo },
-      select: { worker_id: true },
-    });
-    if (worker === null) throw one(field(WORKER_NO, ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-    return worker.worker_id;
-  }
 }
 
 /**
