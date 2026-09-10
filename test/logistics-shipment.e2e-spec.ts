@@ -116,12 +116,20 @@ describe('출하 목록 (e2e)', () => {
     ]);
   });
 
-  it('L-3 shipDateTo 는 선택이고, 줄 때 그 날 «하루치»가 다 걸린다', async () => {
+  it('L-3 ⭐ 기간은 «공장 로컬» 날짜다 — shipDateTo 는 선택이고, 줄 때 그 날 하루치가 다 걸린다', async () => {
     const open = await ours({ shipDateFrom: '2026-08-20', shipDateTo: undefined as never });
     expect(open.length).toBeGreaterThan(0);
-    // `B` 는 2026-08-21T23:30Z 다 — `<= to::date` 로 적으면 자정만 걸려 이 행이 샌다.
-    const sameDay = await ours({ shipDateFrom: '2026-08-21', shipDateTo: '2026-08-21' });
-    expect(sameDay.map((item) => item.shipmentNo)).toEqual([`${PREFIX}-B`]);
+    // ⭐ 픽스처 축 — 이 시험의 뜻은 공장이 UTC 가 «아닌» 데서 선다.
+    const warehouse = await prisma.warehouse.findUniqueOrThrow({
+      where: { warehouse_id: BigInt(ids.warehouse) },
+      select: { plant: { select: { timezone_code: true } } },
+    });
+    expect(warehouse.plant.timezone_code).toBe('Asia/Ho_Chi_Minh');
+    // `B` 는 2026-08-21T23:30Z = 하노이 **22일 06:30** 이다. UTC 자정으로 견주면 21일에 걸리고
+    // 22일에서 샌다 — 두 날을 다 본다. `<= to` 로 적어도 22일에서 샌다(자정만 걸린다).
+    expect(await ours({ shipDateFrom: '2026-08-21', shipDateTo: '2026-08-21' })).toEqual([]);
+    const day22 = await ours({ shipDateFrom: '2026-08-22', shipDateTo: '2026-08-22' });
+    expect(day22.map((item) => item.shipmentNo)).toEqual([`${PREFIX}-B`, `${PREFIX}-C`, `${PREFIX}-D`]);
   });
 
   it('L-4 statusCode 로 거른다 — 세 값 각각', async () => {
