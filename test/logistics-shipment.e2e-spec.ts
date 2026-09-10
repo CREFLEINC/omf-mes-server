@@ -182,6 +182,10 @@ describe('출하 목록 (e2e)', () => {
     expect((await ours({ lotId: Number(ids.lotB) })).map((i) => i.shipmentNo)).toEqual([
       `${PREFIX}-B`,
     ]);
+    // ⭐ `A` 는 배분이 «둘»이다 — 둘째 LOT 으로도 «한 번만» 걸려야 한다(조인이면 두 줄이다).
+    expect((await ours({ lotId: Number(ids.lotC) })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+    ]);
     expect(Number(ids.lotA)).not.toBe(Number(ids.lotB));
   });
 
@@ -193,7 +197,8 @@ describe('출하 목록 (e2e)', () => {
     expect(rows.map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-C`);
   });
 
-  it('L-12 ⭐ 기본 정렬은 경과일 긴 순이다 — 배열을 «통째로» 단언한다', async () => {
+  it('L-12 ⭐ 기본 정렬은 경과일 긴 순이다 — 배열을 «통째로» 단언한다(중복 0)', async () => {
+    // ⛔ `A` 는 배분이 둘이라 `FROM` 을 조인으로 바꾸면 여기서 «두 줄»이 된다(변이 M-10).
     expect((await ours()).map((i) => i.shipmentNo)).toEqual([
       `${PREFIX}-A`,
       `${PREFIX}-B`,
@@ -311,9 +316,12 @@ describe('출하 목록 (e2e)', () => {
       });
       ids[key] = partner.partner_id;
     }
+    // ⭐ 셋이다 — `A` 에 배분을 «둘» 달아야 「조인으로 바꾸면 헤더가 중복된다」가 드러난다
+    //   (변이 M-10 이 배분 한 개짜리 픽스처에서 «살아남았다» · README §6-3 ⑵).
     for (const [key, suffix] of [
       ['lotA', 'LOT-A'],
       ['lotB', 'LOT-B'],
+      ['lotC', 'LOT-C'],
     ] as const) {
       const lot = await prisma.lot.create({
         data: {
@@ -343,6 +351,7 @@ describe('출하 목록 (e2e)', () => {
         status: 'UNCONFIRMED',
         shippedAt: new Date('2026-08-20T01:00:00.000Z'),
         lotId: ids.lotA,
+        extraLotId: ids.lotC,
         vehicleNo: '51C-00001',
       }),
     );
@@ -424,6 +433,8 @@ describe('출하 목록 (e2e)', () => {
       status: string;
       shippedAt: Date | null;
       lotId?: bigint;
+      /** 같은 라인에 둘째 배분 — 헤더가 조인으로 중복되는지 드러내는 축이다. */
+      extraLotId?: bigint;
       expedited?: boolean;
       expediteReason?: string;
       vehicleNo?: string;
@@ -456,14 +467,16 @@ describe('출하 목록 (e2e)', () => {
           uom_id: ids.uom,
         },
       });
-      await prisma.shipment_lot_allocation.create({
-        data: {
-          shipment_line_id: line.shipment_line_id,
-          lot_id: opts.lotId,
-          allocated_qty: 5,
-          uom_id: ids.uom,
-        },
-      });
+      for (const lotId of [opts.lotId, opts.extraLotId].filter((id) => id !== undefined)) {
+        await prisma.shipment_lot_allocation.create({
+          data: {
+            shipment_line_id: line.shipment_line_id,
+            lot_id: lotId,
+            allocated_qty: 5,
+            uom_id: ids.uom,
+          },
+        });
+      }
     }
     return shipment.shipment_id;
   }
