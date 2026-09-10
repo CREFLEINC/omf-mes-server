@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import { ShipmentLotAllocationView } from '../shipment-allocation/shipment-allocation-view';
 
 /**
  * 계약 `Shipment` 로 옮기는 자리 — 프로퍼티 **19 · required 6**.
@@ -36,6 +37,54 @@ export interface ShipmentView {
   expedited: boolean;
   expediteReason: string | null;
   versionNo?: number;
+}
+
+/** 계약 `ShipmentLine` — 프로퍼티 8 · required 6. */
+export interface ShipmentLineView {
+  shipmentLineId: number;
+  lineNo: number;
+  shipmentRequestLineId: number;
+  itemId: number;
+  shippedQty: number;
+  uomId: number;
+  /** ⚠ 계약이 「비어도 된다」라 적은 널 «받는» 칸이다 — 키를 지우지 않는다(§3-5). */
+  goodsIssueLineId: number | null;
+  allocations: ShipmentLotAllocationView[];
+}
+
+/** 상세는 목록과 달리 `lines` 를 «싣는다» — 계약 「라인과 LOT 배분을 함께 내린다」. */
+export interface ShipmentDetailView extends ShipmentView {
+  lines: ShipmentLineView[];
+}
+
+export type ShipmentLineRow = Prisma.shipment_lineGetPayload<object>;
+
+export function shipmentLineView(
+  row: ShipmentLineRow,
+  allocations: ShipmentLotAllocationView[],
+): ShipmentLineView {
+  return {
+    shipmentLineId: Number(row.shipment_line_id),
+    lineNo: row.line_no,
+    shipmentRequestLineId: Number(row.shipment_request_line_id),
+    itemId: Number(row.item_id),
+    shippedQty: Number(row.shipped_qty),
+    uomId: Number(row.uom_id),
+    goodsIssueLineId:
+      row.goods_issue_line_id === null ? null : Number(row.goods_issue_line_id),
+    allocations,
+  };
+}
+
+/**
+ * ⭐ 목록 뷰에 `lines` 를 얹는다 — **뷰를 두 벌로 적지 않는다.** 헤더 19칸이 갈리면 목록과
+ * 상세가 같은 출하를 다르게 그린다.
+ */
+export function shipmentDetailView(
+  row: ShipmentRow,
+  lines: ShipmentLineView[],
+): ShipmentDetailView {
+  return { ...shipmentView(row), lines };
 }
 
 /** `null` 을 «키 없음»으로 접는다 — 위 널 정책의 뒤쪽 갈래에 쓴다. */

@@ -1,5 +1,7 @@
 /**
- * 출하 목록 — `GET /logistics/shipments` **13축**(I-23 PR ②a). 화면 `W-04-02`·`W-04-04`·`W-04-12`.
+ * 출하 조회 둘 — 목록 `GET /logistics/shipments` **13축**(PR ②a) · 상세
+ * `GET …/{shipmentId}`(PR ②b · 「라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다」).
+ * 화면 `W-04-02`·`W-04-04`·`W-04-12`.
  *
  * ⭐ 축마다 값을 둘 이상 세웠다(README §6-3 ⑵) — 상태 3값 · 창고 둘 · 고객 둘 · 출하작업지시 둘 ·
  *   `shipped_at` 값/널 · 긴급 참/거짓 · 배분 LOT 둘 · 피킹 완료/미완 · 선택 칸 값/널.
@@ -39,17 +41,38 @@ interface ShipmentBody {
   vehicleNo?: string;
   versionNo?: number;
 }
+interface AllocationBody {
+  shipmentLotAllocationId: number;
+  shipmentId: number;
+  shipmentLineId: number;
+  itemCode: string;
+  warehouseId: number;
+  lotId: number;
+  handlingUnitId: number | null;
+  allocatedQty: number;
+  packedQty: number;
+  oqcPassed: boolean;
+}
+interface LineBody {
+  shipmentLineId: number;
+  lineNo: number;
+  shipmentRequestLineId: number;
+  goodsIssueLineId: number | null;
+  allocations: AllocationBody[];
+}
+interface ShipmentDetailBody extends ShipmentBody {
+  lines: LineBody[];
+}
 interface Paged {
   items: ShipmentBody[];
   page: { page: number; size: number; total: number };
 }
 
-function validator(): ValidateFunction {
+function validator(path = '/logistics/shipments'): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/shipment-04제품출하.json'), 'utf8'),
   ) as object;
-  const pointer =
-    '/paths/~1logistics~1shipments/get/responses/200/content/application~1json/schema';
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/get/responses/200/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
@@ -128,6 +151,7 @@ describe('출하 목록 (e2e)', () => {
     expect((await ours({ statusCode: 'UNCONFIRMED' })).map((i) => i.shipmentNo)).toEqual([
       `${PREFIX}-A`,
       `${PREFIX}-B`,
+      `${PREFIX}-E`,
     ]);
     expect((await ours({ statusCode: 'CONFIRMED' })).map((i) => i.shipmentNo)).toEqual([
       `${PREFIX}-C`,
@@ -143,6 +167,7 @@ describe('출하 목록 (e2e)', () => {
     expect((await ours({ unconfirmedOnly: true })).map((i) => i.shipmentNo)).toEqual([
       `${PREFIX}-A`,
       `${PREFIX}-B`,
+      `${PREFIX}-E`,
     ]);
     // `false` 는 절을 «안 건다» — 전건이 돌아온다.
     expect((await ours({ unconfirmedOnly: false })).length).toBeGreaterThan(2);
@@ -193,7 +218,11 @@ describe('출하 목록 (e2e)', () => {
     const rows = await ours({ pickedOnly: true });
     // `A`·`D` 는 지시 1(예약 합 = 배정 ⇒ 완료) · `B` 는 지시 3(미달) · `C` 는 지시 2(라인 0건).
     // ⛔ `C` 가 «빠지는» 것이 이 시험의 심장이다 — 공허참을 막는 앞 절이 없으면 섞여 든다.
-    expect(rows.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-A`, `${PREFIX}-D`]);
+    expect(rows.map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+      `${PREFIX}-D`,
+      `${PREFIX}-E`,
+    ]);
     expect(rows.map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-C`);
   });
 
@@ -204,6 +233,7 @@ describe('출하 목록 (e2e)', () => {
       `${PREFIX}-B`,
       `${PREFIX}-C`,
       `${PREFIX}-D`,
+      `${PREFIX}-E`,
     ]);
   });
 
@@ -273,6 +303,103 @@ describe('출하 목록 (e2e)', () => {
     expect(made.shipmentA).not.toBe(made.request1);
   });
 
+  // ── 상세 `GET /logistics/shipments/{shipmentId}` ──────────────────────────
+  async function detail(shipmentId: number): Promise<{ body: ShipmentDetailBody; etag?: string }> {
+    const response = await request(app.getHttpServer())
+      .get(`${BASE}/${shipmentId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    return { body: response.body as ShipmentDetailBody, etag: response.headers.etag };
+  }
+
+  it('D-1 라인과 배분을 함께 내린다 — 라인 «둘» · 배분 «셋» · 계약 스키마 통과', async () => {
+    const { body } = await detail(made.shipmentA);
+    const validate = validator('/logistics/shipments/{shipmentId}');
+
+    expect(validate(body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    // ⭐ 라인이 둘이고 배분 수가 갈린다(2 · 1) — 「첫 라인만 본다」·「배분을 한 라인에 모은다」가
+    //   값에서 드러난다(§6-3 ⑵).
+    expect(body.lines.map((l) => l.lineNo)).toEqual([1, 2]);
+    expect(body.lines.map((l) => l.allocations.length)).toEqual([2, 1]);
+  });
+
+  it('D-2 ⭐ 상세의 ETag 는 version_no «그 값»이다 — 목록의 것은 버전이 아니다', async () => {
+    const { etag } = await detail(made.shipmentA);
+    const stored = await prisma.shipment.findUniqueOrThrow({
+      where: { shipment_id: BigInt(made.shipmentA) },
+    });
+
+    // 계약이 ETag 를 «상세에만» 선언했고 :confirm·:cancel 의 If-Match 가 이 값을 담는다.
+    expect(etag).toBe(String(stored.version_no));
+    expect(etag).toMatch(/^\d+$/);
+
+    // ⚠ Express 가 모든 200 에 «약한 content ETag»(W/"…")를 스스로 단다 — 목록의 헤더는
+    //   그것이지 버전이 아니다. 화면이 그것을 If-Match 로 보내면 parseIfMatch 가 숫자가
+    //   아니라 거절한다. ⛔ 목록 헤더가 숫자가 되는 순간(우리가 setEtag 를 잘못 달면) 여기서 죽는다.
+    const listed = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ ...WINDOW })
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(listed.headers.etag).not.toMatch(/^\d+$/);
+  });
+
+  it('D-3 없는 id 는 404 다', async () => {
+    await request(app.getHttpServer())
+      .get(`${BASE}/999999999`)
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('D-4 배분의 파생 넷이 실려 온다 — itemCode·warehouseId 는 조인이 만든다', async () => {
+    const { body } = await detail(made.shipmentA);
+    const first = body.lines[0].allocations[0];
+
+    expect(first).toMatchObject({
+      itemCode: `${PREFIX}-IT`,
+      warehouseId: Number(ids.warehouse),
+      shipmentId: made.shipmentA,
+      shipmentLineId: body.lines[0].shipmentLineId,
+    });
+    // ⛔ `itemCode` 를 품목명에서 길어 오면 여기서 드러난다(코드 ≠ 이름).
+    expect(first.itemCode).not.toBe('출하검사품목');
+    // ⛔ `warehouseId` 를 배분의 창고로 읽을 칸이 없다 — 출하 헤더에서 온다.
+    expect(first.warehouseId).not.toBe(Number(ids.warehouse2));
+  });
+
+  it('D-5 ⭐ oqcPassed — 검사 대상이 아닌 배분은 true 다(계약 명시)', async () => {
+    const { body } = await detail(made.shipmentA);
+    // 픽스처의 지시 라인은 `shipping_inspection_required = false` 다 ⇒ 전건 true.
+    expect(body.lines.flatMap((l) => l.allocations).map((a) => a.oqcPassed)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    // ⭐ 검사 필수 라인은 결과가 없으면 false 다 — 같은 축에 값이 둘이라야 「늘 true」가 죽는다.
+    const inspected = await detail(made.shipmentInspected);
+    expect(inspected.body.lines[0].allocations[0].oqcPassed).toBe(false);
+  });
+
+  it('D-6 packedQty 는 HU 가 없으면 0 · 있으면 배정 «전량»이다', async () => {
+    const { body } = await detail(made.shipmentA);
+    const [packed, unpacked] = body.lines[0].allocations;
+
+    expect(packed).toMatchObject({ packedQty: 5, allocatedQty: 5 });
+    expect(packed.handlingUnitId).not.toBeNull();
+    expect(unpacked).toMatchObject({ packedQty: 0, allocatedQty: 5 });
+    expect(unpacked.handlingUnitId).toBeNull();
+  });
+
+  it('D-7 goodsIssueLineId 는 널을 «받는» 칸이다 — 키가 있고 값이 null 이다', async () => {
+    const { body } = await detail(made.shipmentA);
+    // ⭐ 이 슬라이스의 판정(§3-2 ⓐ)에서는 출하 처리가 값을 채운다 — PR ④ e2e 가 그것을 본다.
+    //   여기서 보는 것은 「출하 처리를 거치지 않은 행에서 키가 살아 있다」다.
+    for (const lineBody of body.lines) {
+      expect(lineBody).toHaveProperty('goodsIssueLineId', null);
+    }
+  });
+
   // ── 픽스처 ────────────────────────────────────────────────────────────────
   async function makeMasters(): Promise<void> {
     const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
@@ -322,6 +449,8 @@ describe('출하 목록 (e2e)', () => {
       ['lotA', 'LOT-A'],
       ['lotB', 'LOT-B'],
       ['lotC', 'LOT-C'],
+      ['lotD', 'LOT-D'],
+      ['lotE', 'LOT-E'],
     ] as const) {
       const lot = await prisma.lot.create({
         data: {
@@ -345,13 +474,18 @@ describe('출하 목록 (e2e)', () => {
     made.request1 = Number(await makeRequest('R1', ids.customer, { allocated: 10, reserved: 10 }));
     made.request2 = Number(await makeRequest('R2', ids.customer2, null));
     made.request3 = Number(await makeRequest('R3', ids.customer, { allocated: 10, reserved: 4 }));
+    // ⭐ 검사 «필수»인 지시 — 결과가 0건이라 `oqcPassed` 가 false 여야 한다. 같은 축에 값이
+    //   둘이라야 「늘 true 로 내린다」 변이가 죽는다(§6-3 ⑵).
+    made.request4 = Number(
+      await makeRequest('R4', ids.customer, { allocated: 10, reserved: 10, inspection: true }),
+    );
 
     made.shipmentA = Number(
       await makeShipment('A', made.request1, ids.warehouse, {
         status: 'UNCONFIRMED',
         shippedAt: new Date('2026-08-20T01:00:00.000Z'),
-        lotId: ids.lotA,
-        extraLotId: ids.lotC,
+        // 라인 둘 — 1번에 배분 둘(첫째가 포장됨) · 2번에 배분 하나.
+        lines: [{ lots: [ids.lotA, ids.lotC], packedIndex: 0 }, { lots: [ids.lotD] }],
         vehicleNo: '51C-00001',
       }),
     );
@@ -359,7 +493,7 @@ describe('출하 목록 (e2e)', () => {
       await makeShipment('B', made.request3, ids.warehouse, {
         status: 'UNCONFIRMED',
         shippedAt: new Date('2026-08-21T23:30:00.000Z'),
-        lotId: ids.lotB,
+        lines: [{ lots: [ids.lotB] }],
         expedited: true,
         expediteReason: '고객 라인 정지',
       }),
@@ -376,6 +510,13 @@ describe('출하 목록 (e2e)', () => {
       status: 'UNCONFIRMED',
       shippedAt: null,
     });
+    made.shipmentInspected = Number(
+      await makeShipment('E', made.request4, ids.warehouse, {
+        status: 'UNCONFIRMED',
+        shippedAt: new Date('2026-08-22T07:00:00.000Z'),
+        lines: [{ lots: [ids.lotE] }],
+      }),
+    );
     await makeShipment('OUT', made.request1, ids.warehouse, {
       status: 'UNCONFIRMED',
       shippedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -385,7 +526,7 @@ describe('출하 목록 (e2e)', () => {
   async function makeRequest(
     suffix: string,
     customerId: bigint,
-    line: { allocated: number; reserved: number } | null,
+    line: { allocated: number; reserved: number; inspection?: boolean } | null,
   ): Promise<bigint> {
     const header = await prisma.shipment_request.create({
       data: {
@@ -405,6 +546,7 @@ describe('출하 목록 (e2e)', () => {
           uom_id: ids.uom,
           requested_qty: 20,
           allocated_qty: line.allocated,
+          shipping_inspection_required: line.inspection ?? false,
         },
       });
       await prisma.inventory_reservation.create({
@@ -432,9 +574,11 @@ describe('출하 목록 (e2e)', () => {
     opts: {
       status: string;
       shippedAt: Date | null;
-      lotId?: bigint;
-      /** 같은 라인에 둘째 배분 — 헤더가 조인으로 중복되는지 드러내는 축이다. */
-      extraLotId?: bigint;
+      /**
+       * 라인마다 배분 LOT 목록. ⭐ 라인 둘 · 배분 수 갈림(2·1) · HU 있음/없음이 모두 이 축에서
+       * 선다 — 「첫 라인만 본다」·「배분을 한 라인에 모은다」·「packedQty 를 늘 0 으로」가 드러난다.
+       */
+      lines?: { lots: bigint[]; packedIndex?: number }[];
       expedited?: boolean;
       expediteReason?: string;
       vehicleNo?: string;
@@ -452,33 +596,48 @@ describe('출하 목록 (e2e)', () => {
         vehicle_no: opts.vehicleNo ?? null,
       },
     });
-    if (opts.lotId !== undefined) {
+    const requestLine = await prisma.shipment_request_line.findFirst({
+      where: { shipment_request_id: BigInt(requestId) },
+    });
+    for (const [index, spec] of (opts.lines ?? []).entries()) {
+      if (requestLine === null) break;
       const line = await prisma.shipment_line.create({
         data: {
           shipment_id: shipment.shipment_id,
-          line_no: 1,
-          shipment_request_line_id: (
-            await prisma.shipment_request_line.findFirstOrThrow({
-              where: { shipment_request_id: BigInt(requestId) },
-            })
-          ).shipment_request_line_id,
+          line_no: index + 1,
+          shipment_request_line_id: requestLine.shipment_request_line_id,
           item_id: ids.item,
           shipped_qty: 5,
           uom_id: ids.uom,
         },
       });
-      for (const lotId of [opts.lotId, opts.extraLotId].filter((id) => id !== undefined)) {
+      for (const [lotIndex, lotId] of spec.lots.entries()) {
         await prisma.shipment_lot_allocation.create({
           data: {
             shipment_line_id: line.shipment_line_id,
             lot_id: lotId,
             allocated_qty: 5,
             uom_id: ids.uom,
+            handling_unit_id: lotIndex === spec.packedIndex ? await makeHandlingUnit() : null,
           },
         });
       }
     }
     return shipment.shipment_id;
+  }
+
+  /** 포장된 배분 한 개를 위한 HU — `packedQty` 가 0 / 배정 전량 두 갈래로 갈리는 축이다. */
+  async function makeHandlingUnit(): Promise<bigint> {
+    made.hu = (made.hu ?? 0) + 1;
+    const unit = await prisma.handling_unit.create({
+      data: {
+        handling_unit_no: `${PREFIX}-HU${made.hu}`,
+        handling_unit_type_code: 'PALLET',
+        status_code: 'OPEN',
+        warehouse_id: ids.warehouse,
+      },
+    });
+    return unit.handling_unit_id;
   }
 
   async function makeUser(): Promise<void> {
@@ -506,6 +665,7 @@ describe('출하 목록 (e2e)', () => {
       `DELETE FROM logistics.shipment_line WHERE shipment_id IN (
          SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'`,
+      `DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (
          SELECT shipment_request_id FROM logistics.shipment_request

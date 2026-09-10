@@ -1,9 +1,40 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ShipmentAllocationRow,
+  shipmentLotAllocationView,
+} from '../shipment-allocation/shipment-allocation-view';
+import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
 import { FROM_SQL, ShipmentQuery, orderBySql, whereSql } from './shipment-query.sql';
-import { ShipmentView, shipmentView } from './shipment-view';
+import {
+  ShipmentDetailView,
+  ShipmentView,
+  shipmentDetailView,
+  shipmentLineView,
+  shipmentView,
+} from './shipment-view';
+
+/**
+ * ⭐ I-22 `shipment-allocation-query.service.ts:52-55` 의 `SELECT`/`FROM` 을 **그대로** 쓴다 —
+ * `itemCode`·`warehouseId` 는 조인이 만드는 파생 칸이라 모양이 갈리면 두 화면이 다른 값을 그린다.
+ */
+const ALLOCATION_SQL = `SELECT a.shipment_lot_allocation_id, a.shipment_line_id, a.lot_id,
+              a.handling_unit_id, a.allocated_qty, a.uom_id,
+              sl.shipment_id, sl.item_id, sl.shipment_request_line_id,
+              s.warehouse_id, i.item_code, lt.lot_no
+         FROM logistics.shipment_lot_allocation a
+         JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
+         JOIN logistics.shipment s ON s.shipment_id = sl.shipment_id
+         JOIN mdm.item i ON i.item_id = sl.item_id
+         JOIN trace.lot lt ON lt.lot_id = a.lot_id
+        WHERE sl.shipment_id = $1::bigint
+        ORDER BY a.shipment_lot_allocation_id ASC`;
+
+interface AllocationQueryRow extends ShipmentAllocationRow {
+  shipment_request_line_id: bigint;
+}
 
 /**
  * 출하 목록 — 화면 `W-04-02`·`W-04-04`·`W-04-12` 가 함께 쓴다(계약).
@@ -40,6 +71,49 @@ export class ShipmentQueryService {
       ),
     ]);
     return pagedResponse(await this.views(ids.map((row) => row.shipment_id)), counted[0].total, page);
+  }
+
+  /**
+   * 상세 — 라인과 LOT 배분을 함께 내린다(계약 「genealogy 종결점이다」).
+   * ⛔ 없는 id 는 404 다(계약이 그 응답만 선언했다 · 403 은 0건).
+   */
+  async get(shipmentId: number): Promise<{ view: ShipmentDetailView; versionNo: number }> {
+    const row = await this.prisma.shipment.findUnique({
+      where: { shipment_id: BigInt(shipmentId) },
+    });
+    if (row === null) throw new NotFoundException('없는 출하입니다.');
+    const lines = await this.prisma.shipment_line.findMany({
+      where: { shipment_id: row.shipment_id },
+      orderBy: { line_no: 'asc' },
+    });
+    const allocations = await this.prisma.$queryRawUnsafe<AllocationQueryRow[]>(
+      ALLOCATION_SQL,
+      shipmentId,
+    );
+    // ⭐ 판정은 공용 함수 하나다 — 배분 목록(P-04-01·P-04-02)과 «같은 값»이어야 한다(I-22 R-10).
+    //    ⛔ 여기서 다시 판정하면 같은 배분의 `oqcPassed` 가 두 화면에서 갈린다.
+    const passed = await oqcPassedByLine(
+      this.prisma,
+      allocations.map((allocation) => allocation.shipment_request_line_id),
+    );
+    const byLine = new Map<string, AllocationQueryRow[]>();
+    for (const allocation of allocations) {
+      const key = allocation.shipment_line_id.toString();
+      byLine.set(key, [...(byLine.get(key) ?? []), allocation]);
+    }
+    const views = lines.map((line) =>
+      shipmentLineView(
+        line,
+        (byLine.get(line.shipment_line_id.toString()) ?? []).map((allocation) =>
+          shipmentLotAllocationView(
+            allocation,
+            // ⛔ `?? true` 로 접지 마라 — 라인 행을 못 찾은 것과 「검사 대상이 아니다」가 같아진다.
+            passed.get(allocation.shipment_request_line_id.toString()) ?? false,
+          ),
+        ),
+      ),
+    );
+    return { view: shipmentDetailView(row, views), versionNo: row.version_no };
   }
 
   /**

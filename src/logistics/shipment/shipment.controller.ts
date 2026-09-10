@@ -1,10 +1,12 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 
 import { Contract } from '../../common/contract';
+import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentQuery } from './shipment-query.sql';
-import { ShipmentView } from './shipment-view';
+import { ShipmentDetailView, ShipmentView } from './shipment-view';
 
 /**
  * MES 출하 — 화면 `W-04-04`(처리·확정) · `W-04-12`(취소) · `W-04-02`(목록).
@@ -22,5 +24,19 @@ export class ShipmentController {
   @Contract('GET /logistics/shipments')
   list(@Query() query: ShipmentQuery): Promise<PagedResponse<ShipmentView>> {
     return this.queries.list(query);
+  }
+
+  @Get(':shipmentId')
+  @Contract('GET /logistics/shipments/{shipmentId}')
+  async get(
+    @Param('shipmentId', ParseIntPipe) shipmentId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShipmentDetailView> {
+    const { view, versionNo } = await this.queries.get(shipmentId);
+    // ⛔ 계약이 ETag 를 «상세에만» 선언했다 — :confirm·:cancel 의 If-Match 가 이 값을 담는다.
+    // ⚠ Express 가 모든 200 에 약한 content ETag(W/"…")를 스스로 단다 — 목록에도 «헤더는»
+    //   있다. 다른 것은 값이다: 여기만 숫자(version_no)라 If-Match 로 쓸 수 있다(e2e D-2).
+    setEtag(response, versionNo);
+    return view;
   }
 }
