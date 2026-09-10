@@ -73,7 +73,7 @@ const REGISTERED_AXES = [
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
 
-  it('⭐ 등록된 축은 «스물»이고, 그 스물이 이 파일이 이름 적은 축과 «같다»', () => {
+  it('⭐ 등록된 축이 이 파일이 이름 적은 축과 «같다» — 수는 여기서 세지 않는다', () => {
     // ⛔ 축을 더했으면 위 상수 목록에도 더한다 — 여기 없는 축은 이 spec 이 한 번도 안 만져 본
     //    축이고, `test/document-state.e2e-spec.ts` 의 `STATUS_GROUPS` 도 못 채웠을 가능성이
     //    높다(README §6-4 — 그 표가 안 채워져 main 이 두 번 빨갰다).
