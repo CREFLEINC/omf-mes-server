@@ -1,9 +1,9 @@
 {
   "mapping_version": "4.1",
   "design_reference_commit": "a8f46f2",
-  "contract_reference_commit": "6d03a44798ac216ace1bfdf7d5a6d8fa2cc67231",
-  "operation_count": 490,
-  "mapped_operation_count": 489,
+  "contract_reference_commit": "a6a87e144116ebaa32c01df5a12a0fd2924427e7",
+  "operation_count": 487,
+  "mapped_operation_count": 486,
   "tableless_operation_count": 1,
   "coverage": "100.0%",
   "operations": [
@@ -3866,6 +3866,110 @@
       "missing_tables": []
     },
     {
+      "id": "POST /logistics/document-progress/{documentTypeCode}/{documentId}:cancel",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/logistics/document-progress/{documentTypeCode}/{documentId}:cancel",
+      "summary": "물류 문서 취소 실행",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "logistics.purchase_order",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.asn",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.goods_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel",
+      "domain": "logistics-01자재창고",
+      "method": "POST",
+      "path": "/logistics/document-progress/{documentTypeCode}/{documentId}:request-cancel",
+      "summary": "물류 문서 취소 요청",
+      "tags": [
+        "logistics"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": true,
+      "tables": [
+        {
+          "table": "logistics.purchase_order",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.asn",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.inbound_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "logistics.goods_receipt",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
       "id": "GET /logistics/goods-issues",
       "domain": "logistics-01자재창고",
       "method": "GET",
@@ -4030,46 +4134,6 @@
       "missing_tables": []
     },
     {
-      "id": "POST /logistics/goods-issues/{goodsIssueId}:cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/goods-issues/{goodsIssueId}:cancel",
-      "summary": "출고 취소 실행",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.goods_issue",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.goods_issue_line",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
       "id": "POST /logistics/goods-issues/{goodsIssueId}:post",
       "domain": "logistics-01자재창고",
       "method": "POST",
@@ -4115,46 +4179,6 @@
       "method": "POST",
       "path": "/logistics/goods-issues/{goodsIssueId}:request-approval",
       "summary": "기타 출고 품의 상신",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.goods_issue",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.goods_issue_line",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/goods-issues/{goodsIssueId}:request-cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/goods-issues/{goodsIssueId}:request-cancel",
-      "summary": "출고 취소 요청",
       "tags": [
         "logistics"
       ],
@@ -4309,86 +4333,6 @@
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/goods-receipts/{goodsReceiptId}:cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/goods-receipts/{goodsReceiptId}:cancel",
-      "summary": "입고 취소 실행",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.goods_receipt",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.goods_receipt_line",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/goods-receipts/{goodsReceiptId}:request-cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/goods-receipts/{goodsReceiptId}:request-cancel",
-      "summary": "입고 취소 요청",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.goods_receipt",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.goods_receipt_line",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
         }
       ],
       "missing_tables": []
@@ -4658,86 +4602,6 @@
         },
         {
           "table": "logistics.inbound_variance",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/inbound-receipts/{inboundReceiptId}:cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/inbound-receipts/{inboundReceiptId}:cancel",
-      "summary": "입하 취소 실행",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.inbound_receipt",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.inbound_receipt_line",
-          "role": "SUPPORTING",
-          "access": "READ",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "app.idempotency_record",
-          "role": "CROSS_CUTTING",
-          "access": "UPSERT",
-          "basis": "HEADER_CONTRACT"
-        },
-        {
-          "table": "audit.audit_event",
-          "role": "CROSS_CUTTING",
-          "access": "APPEND",
-          "basis": "AUDIT_POLICY"
-        }
-      ],
-      "missing_tables": []
-    },
-    {
-      "id": "POST /logistics/inbound-receipts/{inboundReceiptId}:request-cancel",
-      "domain": "logistics-01자재창고",
-      "method": "POST",
-      "path": "/logistics/inbound-receipts/{inboundReceiptId}:request-cancel",
-      "summary": "입하 취소 요청",
-      "tags": [
-        "logistics"
-      ],
-      "deprecated": false,
-      "idempotency_key": true,
-      "if_match": true,
-      "tables": [
-        {
-          "table": "logistics.inbound_receipt",
-          "role": "PRIMARY",
-          "access": "UPDATE",
-          "basis": "RESOURCE_RULE"
-        },
-        {
-          "table": "logistics.inbound_receipt_line",
           "role": "SUPPORTING",
           "access": "READ",
           "basis": "RESOURCE_RULE"
@@ -13793,6 +13657,46 @@
       "method": "POST",
       "path": "/production/production-results/{productionResultId}:correct",
       "summary": "실적 정정",
+      "tags": [
+        "production"
+      ],
+      "deprecated": false,
+      "idempotency_key": true,
+      "if_match": false,
+      "tables": [
+        {
+          "table": "production.production_result",
+          "role": "PRIMARY",
+          "access": "UPDATE",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "production.production_result_lot_allocation",
+          "role": "SUPPORTING",
+          "access": "READ",
+          "basis": "RESOURCE_RULE"
+        },
+        {
+          "table": "app.idempotency_record",
+          "role": "CROSS_CUTTING",
+          "access": "UPSERT",
+          "basis": "HEADER_CONTRACT"
+        },
+        {
+          "table": "audit.audit_event",
+          "role": "CROSS_CUTTING",
+          "access": "APPEND",
+          "basis": "AUDIT_POLICY"
+        }
+      ],
+      "missing_tables": []
+    },
+    {
+      "id": "POST /production/production-results/{productionResultId}:request-approval",
+      "domain": "production-02생산실행",
+      "method": "POST",
+      "path": "/production/production-results/{productionResultId}:request-approval",
+      "summary": "실적 정정 상신",
       "tags": [
         "production"
       ],
