@@ -71,6 +71,17 @@ function allocationExists(condition: string): string {
                    WHERE sl.shipment_id = s.shipment_id AND ${condition})`;
 }
 
+/**
+ * 날짜 하나를 «그 출하 공장의» 자정(timestamptz)으로 편다(결정 — 통보 219 ⓔ).
+ * ⛔ `shipped_at >= $1::date` 로 두면 DB 가 UTC 라 **UTC 자정**과 견준다 — 하노이(UTC+7)의 00:00~07:00
+ *    출하가 «전날»로 간다(CLAUDE.md · `plant.timezone_code`). 공장은 출하 창고에서 푼다.
+ * ⛔ 요청 하나를 시간대 하나로 접지 않는다 — `warehouseId` 가 선택이라 한 목록에 공장이 섞인다 ⇒ 행마다 푼다.
+ */
+function plantMidnightSql(date: string): string {
+  return `((${date})::timestamp AT TIME ZONE (SELECT p.timezone_code FROM mdm.warehouse w
+                    JOIN mdm.plant p ON p.plant_id = w.plant_id WHERE w.warehouse_id = s.warehouse_id))`;
+}
+
 export function whereSql(query: ShipmentFilters): BuiltWhere {
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
@@ -81,13 +92,11 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   // ⭐ 기간 축은 `shipped_at` 이다 — 계약이 칸을 안 말했고 날짜 칸 다섯 중 이것만 전건 의미를
   //    갖는다(`created_at` 은 업무 사실이 아니고 `confirmed_at`·`cancelled_at` 은 일부 행만,
   //    `loaded_at` 은 「상차」다). `ShipmentCreate.occurredAt`(「실물이 나간 시각」)이 이 칸에 든다.
-  // ⛔ timestamptz 를 날짜로 접을 때 타임존을 붙이지 않는다 — 하노이 경계가 어긋난다(CLAUDE.md).
-  //    공장 로컬이 필요해지면 `plant.timezone_code` 로 푼다(통보 219 ⓔ).
-  const and = [`s.shipped_at >= ${bind(query.shipDateFrom)}::date`];
+  const and = [`s.shipped_at >= ${plantMidnightSql(`${bind(query.shipDateFrom)}::date`)}`];
   if (query.shipDateTo !== undefined) {
     // 경계를 «포함»한다 — 같은 날을 주면 그 날 것이 걸린다. `< to + 1일` 로 적어야 그 날
-    // 23:59 도 걸린다(`<= to::date` 면 자정만 걸려 하루가 통째로 샌다).
-    and.push(`s.shipped_at < ${bind(query.shipDateTo)}::date + interval '1 day'`);
+    // 23:59 도 걸린다(`<= to` 면 자정만 걸려 하루가 통째로 샌다).
+    and.push(`s.shipped_at < ${plantMidnightSql(`${bind(query.shipDateTo)}::date + 1`)}`);
   }
   if (query.shipmentRequestId !== undefined) {
     and.push(`s.shipment_request_id = ${bind(query.shipmentRequestId)}::bigint`);
