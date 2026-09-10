@@ -223,7 +223,9 @@ describe('postShipment — 출하·출고 전표·원장이 한 트랜잭션이�
       goods_issue_no: ISSUE_NO,
       issue_type_code: 'SHIPMENT',
       source_document_type_code: 'SHIPMENT',
-      source_document_id: BigInt(REQUEST_ID),
+      // ⭐ 짝 id 는 «이 출하»다 — 초판은 여기에 출하작업지시 id 를 넣었고 이 단언이 그것을
+      //   못 박고 있었다(유령 참조). A-10: 판별자 SHIPMENT 의 짝은 logistics.shipment 의 id.
+      source_document_id: SHIPMENT_ID,
       source_warehouse_id: BigInt(WAREHOUSE_ID),
       status_code: 'POSTED',
     });
@@ -327,7 +329,8 @@ describe('postShipment — 출하·출고 전표·원장이 한 트랜잭션이�
       field: 'lines[0].allocations[0].lotId',
       code: 'STATE_LOCKED',
     });
-    // ⭐ 전표도 원장도 «안» 섰다 — 뒤에서 막으면 이미 깎은 재고를 되돌려야 한다.
+    // ⭐ 출하도 전표도 원장도 «안» 섰다 — 게이트가 맨 앞이다.
+    expect(recorded.order).not.toContain('shipment.create');
     expect(recorded.order).not.toContain('goods_issue.create');
     expect(recorded.posted).toHaveLength(0);
   });
@@ -381,6 +384,16 @@ describe('postShipment — 출하·출고 전표·원장이 한 트랜잭션이�
       'lines[0].allocations[0].lotId',
       'lines[0].allocations[1].lotId',
     ]);
+  });
+
+  it('⭐⭐ 출하 헤더가 출고 전표보다 «먼저» 선다 — 원천 id 가 그것이다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, write());
+
+    expect(recorded.order.indexOf('shipment.create')).toBeLessThan(
+      recorded.order.indexOf('goods_issue.create'),
+    );
   });
 
   it('⭐ 잔액을 «먼저» 잠근 뒤에 쓴다 — 순서가 불변식이다', async () => {
