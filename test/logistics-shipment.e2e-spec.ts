@@ -102,6 +102,7 @@ describe('출하 목록 (e2e)', () => {
     await makeMasters();
     await makeShipments();
     await makePostFixture();
+    await makeExpeditedFixture();
     await makeUser();
   }, 120_000);
 
@@ -617,6 +618,143 @@ describe('출하 목록 (e2e)', () => {
     });
   }
 
+  // ── 긴급 직행 `expedited=true` (PR ⑤) ─────────────────────────────────────
+  const expeditedBody = (over: Partial<CreateBody> = {}): CreateBody =>
+    body({
+      shipmentRequestId: made.expRequest,
+      expedited: true,
+      expediteReason: '고객 라인 정지',
+      lines: [
+        {
+          shipmentRequestLineId: made.expRequestLine,
+          shippedQty: 3,
+          uomId: Number(ids.uom),
+          allocations: [{ lotId: Number(ids.lotExp), allocatedQty: 3, uomId: Number(ids.uom) }],
+        },
+      ],
+      ...over,
+    });
+
+  const firstError = (failed: Record<string, unknown>): { field: string; code: string } =>
+    (failed.errors as { field: string; code: string }[])[0];
+
+  async function receiptOf(shipmentId: unknown) {
+    return prisma.goods_receipt.findFirst({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(shipmentId as number) },
+      include: { goods_receipt_line: true },
+    });
+  }
+
+  it('E-1 ⭐ 잔액이 «없는» LOT 도 201 로 나간다 — 입고 전기가 먼저라서다', async () => {
+    expect(await prisma.inventory_balance.count({ where: { lot_id: ids.lotExp } })).toBe(0);
+
+    const created = await post(expeditedBody());
+
+    expect(created).toMatchObject({
+      statusCode: 'UNCONFIRMED',
+      expedited: true,
+      expediteReason: '고객 라인 정지',
+    });
+  });
+
+  it('E-2 ⭐ 입고 전표 — PRODUCT · 원천 SHIPMENT · 짝 id 는 «출하» id(A-10)', async () => {
+    const created = await post(expeditedBody());
+    const receipt = await receiptOf(created.shipmentId);
+
+    expect(receipt).toMatchObject({
+      receipt_type_code: 'PRODUCT',
+      source_document_type_code: 'SHIPMENT',
+      status_code: 'POSTED',
+      warehouse_id: ids.warehouse,
+    });
+    expect(receipt?.source_document_id).toBe(BigInt(created.shipmentId as number));
+    expect(receipt?.source_document_id).not.toBe(BigInt(made.expRequest));
+  });
+
+  it('E-3 ⭐⭐ 원장이 «둘»이다 — 입고가 먼저 · 같은 위치 · 입고는 to 만 · 출고는 from 만', async () => {
+    const created = await post(expeditedBody());
+    const receipt = await receiptOf(created.shipmentId);
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    const [inbound, outbound] = await Promise.all([
+      prisma.inventory_transaction.findFirstOrThrow({
+        where: { source_document_type_code: 'GOODS_RECEIPT', source_document_id: receipt?.goods_receipt_id },
+        include: { inventory_transaction_line: true },
+      }),
+      prisma.inventory_transaction.findFirstOrThrow({
+        where: { source_document_type_code: 'GOODS_ISSUE', source_document_id: issue.goods_issue_id },
+        include: { inventory_transaction_line: true },
+      }),
+    ]);
+
+    expect(inbound.inventory_transaction_id < outbound.inventory_transaction_id).toBe(true);
+    const [inLine] = inbound.inventory_transaction_line;
+    const [outLine] = outbound.inventory_transaction_line;
+    // ⛔ 위치가 다르면 입고분이 유령 잔액으로 남는다.
+    expect(inLine.to_location_id).toBe(outLine.from_location_id);
+    expect(inLine.from_location_id).toBeNull();
+    expect(outLine.to_location_id).toBeNull();
+  });
+
+  it('E-4 ⭐ 잔액 순증은 0 이다 — 들어왔다 나갔고 피킹을 소진하지 않았다', async () => {
+    await post(expeditedBody());
+
+    const row = await prisma.inventory_balance.findFirstOrThrow({
+      where: { lot_id: ids.lotExp, location_id: ids.location },
+    });
+    expect(row.on_hand_qty.toNumber()).toBe(0);
+    expect(row.picked_qty.toNumber()).toBe(0);
+  });
+
+  it('E-5 ⛔ 적치 지시가 «0건»이다 — 물건이 이미 나갔다', async () => {
+    const created = await post(expeditedBody());
+    const receipt = await receiptOf(created.shipmentId);
+    const lineIds = (receipt?.goods_receipt_line ?? []).map((line) => line.goods_receipt_line_id);
+
+    expect(lineIds).toHaveLength(1);
+    expect(await prisma.putaway_task.count({ where: { goods_receipt_line_id: { in: lineIds } } })).toBe(0);
+  });
+
+  it('E-6 ⛔ 입고 위치를 하나로 못 정하면 400 — 셀 관리 · 위치 0 · 위치 둘', async () => {
+    // 계약: 「창고면 위치를 받지 않고, 셀이면 셀까지 받는다」 — 긴급 직행엔 위치 칸이 없다.
+    const cell = await post(expeditedBody({ warehouseId: Number(ids.warehouseCell) }), 400);
+    expect(firstError(cell)).toMatchObject({ field: 'warehouseId', code: 'REQUIRED' });
+
+    const none = await post(expeditedBody({ warehouseId: Number(ids.warehouse2) }), 400);
+    expect(firstError(none)).toMatchObject({ field: 'warehouseId', code: 'RANGE' });
+
+    const two = await post(expeditedBody({ warehouseId: Number(ids.warehouseTwo) }), 400);
+    expect(firstError(two)).toMatchObject({ field: 'warehouseId', code: 'RANGE' });
+  });
+
+  it('E-7 ⛔ 긴급도 품질 게이트를 건너뛰지 않는다 — 입고 전표조차 안 선다(결정 10)', async () => {
+    const before = await prisma.goods_receipt.count({ where: { source_document_type_code: 'SHIPMENT' } });
+
+    const failed = await post(
+      expeditedBody({
+        lines: [
+          {
+            shipmentRequestLineId: made.expRequestLine,
+            shippedQty: 3,
+            uomId: Number(ids.uom),
+            allocations: [{ lotId: Number(ids.lotDefect), allocatedQty: 3, uomId: Number(ids.uom) }],
+          },
+        ],
+      }),
+      400,
+    );
+
+    expect(firstError(failed)).toMatchObject({ field: 'lines[0].allocations[0].lotId', code: 'STATE_LOCKED' });
+    expect(await prisma.goods_receipt.count({ where: { source_document_type_code: 'SHIPMENT' } })).toBe(before);
+  });
+
+  it('E-8 평시 출하에는 입고 전표가 «0건»이다', async () => {
+    const created = await post(body());
+
+    expect(await receiptOf(created.shipmentId)).toBeNull();
+  });
+
   // ── 상세 `GET /logistics/shipments/{shipmentId}` ──────────────────────────
   async function detail(shipmentId: number): Promise<{ body: ShipmentDetailBody; etag?: string }> {
     const response = await request(app.getHttpServer())
@@ -779,6 +917,8 @@ describe('출하 목록 (e2e)', () => {
       // ⭐ 등록 경로용 — `lotPost` 는 잔액·피킹이 서 있고 `lotDefect` 는 Release 가 아니다.
       ['lotPost', 'LOT-POST'],
       ['lotDefect', 'LOT-DEFECT'],
+      // ⭐ 긴급 직행용 — 잔액이 «없는» 정상 LOT(「아직 입고 안 된 LOT」).
+      ['lotExp', 'LOT-EXP'],
     ] as const) {
       const lot = await ensure(prisma.lot, { lot_no: `${PREFIX}-${suffix}` }, {
           lot_no: `${PREFIX}-${suffix}`,
@@ -910,6 +1050,51 @@ describe('출하 목록 (e2e)', () => {
     });
     made.tightRequest = Number(tight.shipment_request_id);
     made.tightRequestLine = Number(tight.shipment_request_line[0].shipment_request_line_id);
+  }
+
+  /**
+   * 긴급 직행 픽스처 — 위치 해소의 세 갈래를 가르는 창고 둘 + 수주 라인이 «없는» 지시.
+   * ⭐ `ids.warehouse` 는 관리수준 WAREHOUSE · 활성 위치 «하나»(본길) · `ids.warehouse2` 는 위치 0.
+   * ⭐ 지시 라인에 수주 라인을 안 건다 — 롤업의 nullable 갈래가 본길로 지나간다.
+   */
+  async function makeExpeditedFixture(): Promise<void> {
+    const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+    const unit = await prisma.business_unit.findFirstOrThrow({ orderBy: { business_unit_id: 'asc' } });
+    const warehouse = (code: string, level: string) => ({
+      plant_id: plant.plant_id,
+      business_unit_id: unit.business_unit_id,
+      warehouse_code: code,
+      warehouse_name: `출하검사창고${code.slice(-3)}`,
+      warehouse_type_code: 'FINISHED',
+      management_level_code: level,
+    });
+    const cell = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHC` }, warehouse(`${PREFIX}-WHC`, 'CELL'));
+    ids.warehouseCell = cell.warehouse_id;
+    const two = await ensure(prisma.warehouse, { warehouse_code: `${PREFIX}-WHT` }, warehouse(`${PREFIX}-WHT`, 'WAREHOUSE'));
+    ids.warehouseTwo = two.warehouse_id;
+    for (const suffix of ['T1', 'T2']) {
+      await ensure(prisma.location, { location_code: `${PREFIX}-LOC-${suffix}` }, {
+        warehouse_id: two.warehouse_id,
+        location_code: `${PREFIX}-LOC-${suffix}`,
+        location_name: `출하검사위치${suffix}`,
+        location_type_code: 'DEFAULT',
+      });
+    }
+    const header = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-EXP`,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: {
+          create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 500, allocated_qty: 500 }],
+        },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.expRequest = Number(header.shipment_request_id);
+    made.expRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
   }
 
   async function makeShipments(): Promise<void> {
@@ -1106,29 +1291,31 @@ describe('출하 목록 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
-    // ⛔ 순서가 FK 의 역순이다 — 수주 라인을 지시 라인보다 먼저 지우면 23503 으로 죽는다.
+    const OUR_REQUESTS = `SELECT shipment_request_id FROM logistics.shipment_request
+                           WHERE shipment_request_no LIKE '${PREFIX}%'`;
+    const OUR_SHIPMENTS = `SELECT shipment_id FROM logistics.shipment
+                            WHERE shipment_no LIKE '${PREFIX}%' OR shipment_request_id IN (${OUR_REQUESTS})`;
+    // ⛔ 순서가 FK 의 역순이다. ⛔ «이 스위트의 출하»로만 좁힌다 — 원천이 SHIPMENT 인 전표를 통째로
+    //    지우면 반품 클레임 입고(W-04-06) 같은 남의 스위트 행까지 사라진다.
     for (const sql of [
       `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
-         SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (
-           SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'
-              OR shipment_no LIKE 'SH-%'))`,
-      `DELETE FROM logistics.shipment_line WHERE shipment_id IN (
-         SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'
-            OR shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request
-              WHERE shipment_request_no LIKE '${PREFIX}%'))`,
-      `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'
-         OR shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request
-           WHERE shipment_request_no LIKE '${PREFIX}%')`,
-      // ⛔⛔ 원장은 «지우지 않는다» — `block_ledger_header_mutation` 트리거가 UPDATE·DELETE 를
-      //    막는다(P0001 「역트랜잭션을 사용하세요」). 그것이 원장의 설계다. 남는 행은
-      //    `source_document_id` 가 다형 참조라 FK 를 잡지 않고, 다음 실행은 새 id 를 쓴다.
+         SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS}))`,
+      `DELETE FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS})`,
+      // ⛔⛔ 원장은 «지우지 않는다» — `block_ledger_header_mutation` 트리거가 UPDATE·DELETE 를 막는다
+      //    (P0001). 그것이 원장의 설계다. 남는 행은 `source_document_id` 가 다형 참조라 FK 가 없다.
       `DELETE FROM logistics.goods_issue_line WHERE goods_issue_id IN (
-         SELECT goods_issue_id FROM logistics.goods_issue WHERE source_document_type_code = 'SHIPMENT')`,
-      `DELETE FROM logistics.goods_issue WHERE source_document_type_code = 'SHIPMENT'`,
+         SELECT goods_issue_id FROM logistics.goods_issue
+          WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS}))`,
+      `DELETE FROM logistics.goods_issue
+        WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS})`,
+      `DELETE FROM logistics.goods_receipt_line WHERE goods_receipt_id IN (
+         SELECT goods_receipt_id FROM logistics.goods_receipt
+          WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS}))`,
+      `DELETE FROM logistics.goods_receipt
+        WHERE source_document_type_code = 'SHIPMENT' AND source_document_id IN (${OUR_SHIPMENTS})`,
+      `DELETE FROM logistics.shipment WHERE shipment_id IN (${OUR_SHIPMENTS})`,
       `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`,
-      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (
-         SELECT shipment_request_id FROM logistics.shipment_request
-          WHERE shipment_request_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (${OUR_REQUESTS})`,
       `DELETE FROM logistics.shipment_request WHERE shipment_request_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.sales_order_line WHERE sales_order_id IN (
          SELECT sales_order_id FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%')`,
@@ -1136,8 +1323,8 @@ describe('출하 목록 (e2e)', () => {
       `DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM inventory.inventory_balance WHERE location_id IN (
          SELECT location_id FROM mdm.location WHERE location_code LIKE '${PREFIX}%')`,
-      // ⛔ 마스터(위치·LOT·창고·품목·파트너)는 «안» 지운다 — 지울 수 없는 원장이 FK 로
-      //    잡고 있다. 위 `ensure()` 가 다음 실행에서 그대로 다시 쓴다.
+      // ⛔ 마스터(위치·LOT·창고·품목·파트너)는 «안» 지운다 — 지울 수 없는 원장이 FK 로 잡고 있다.
+      //    `ensure()` 가 다음 실행에서 그대로 다시 쓴다.
     ]) {
       await prisma.$executeRawUnsafe(sql);
     }
