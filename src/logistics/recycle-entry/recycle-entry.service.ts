@@ -122,22 +122,14 @@ export class RecycleEntryService {
 }
 
 /**
- * ⛔ **조용한 반올림 금지**(`disposition-write.service.ts:203`). 계약 `quantity` 는
- * `{ type: 'number', exclusiveMinimum: 0 }` 뿐이고 **`multipleOf` 가 없다** — 그런데 이 값이
- * 흘러드는 칸이 **넷 다 `numeric(20,6)`** 이다: `recycle_entry.recycle_qty` · `lot.initial_qty` ·
- * `inventory_transaction_line.qty` · `inventory_balance.on_hand_qty`.
+ * ⛔ **조용한 반올림 금지**(`disposition-write.service.ts:203`). 계약 `quantity` 에 `multipleOf` 가
+ * 없는데 이 값이 흘러드는 칸이 **넷 다 `numeric(20,6)`** 이다 — 막지 않으면 7째 자리가 반올림돼
+ * **원장·잔액까지** 박히고(forward-only · 소급 복구 불가) `1e15` 는 계약 미선언 **500** 이 된다.
+ * 근거와 실측은 계획 `docs/coverage-100/slices/I-17.md` **§4-4**.
  *
- * ⭐ 막지 않으면 두 갈래로 터진다(실측):
- *   ⓐ `10.0000005` → `10.000001` 로 **조용히 반올림**돼 원장·잔액까지 박힌다. 마이그는
- *      forward-only 이고 원장 헤더는 `block_ledger_header_mutation` 으로 잠겨 **소급 정정이 불가능**하다.
- *   ⓑ `1e15` → `numeric field overflow` 가 raw Postgres 오류라 그물에 안 걸려 **500** 으로 샌다.
- *      이 오퍼레이션이 선언한 응답은 201·400·403·409 뿐이라 계약 위반이다.
- *
- * ⚠ `Infinity`(JSON `1e400`)는 `decimalPlaces()` 가 `NaN` 이라 자릿수 검사를 지나간다 —
- *   정수부 검사가 그것을 잡는다.
- * ⭐ 선례 — `handling-unit.service.ts:292`(자릿수 + 정수부 둘 다) · `shipment-pick.service.ts:183` ·
- *   `nonconformance-rules.ts:45` · `lot-hold-rules.ts:123`.
- *   ⚠ 같은 판정이 **7개 도메인에 9벌**이다 — 공용화 후보다(§11-2 인계).
+ * ⚠ `Infinity`(JSON `1e400`)는 `decimalPlaces()` 가 `NaN` 이라 자릿수 검사를 **지나간다** —
+ *   정수부 검사가 그것을 잡는다. 두 검사를 하나로 줄이면 그 갈래가 샌다.
+ * ⭐ 선례 — `handling-unit.service.ts:292`(둘 다 막는다) · `shipment-pick.service.ts:183`(자릿수만).
  */
 function assertQuantity(quantity: number): void {
   const qty = new Prisma.Decimal(quantity);
