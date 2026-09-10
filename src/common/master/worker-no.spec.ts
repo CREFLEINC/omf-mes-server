@@ -112,7 +112,8 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
  * `breakdown-create`(다른 마스터와 한 `Promise.all`) ·
  * `inspection-write`(오류를 `errors[]` 에 **누적**해 한 봉투로 던진다 — 즉시 던지는 공용 함수로
  * 바꾸면 다중 오류 봉투가 깨진다) ·
- * `inspection-result-write`(`WorkerNoOptional` + **계정 폴백**까지 있어 갈래가 셋과 다르다).
+ * `inspection-result-write-rules`(`WorkerNoOptional` + **계정 폴백**까지 있어 갈래가 셋과 다르다 —
+ * 부재가 곧 오류가 아니라 계정에서 검사자를 푼다).
  */
 const WORKER_TABLE_READERS = [
   'app/document-issue/document-issue-write.service.ts',
@@ -124,7 +125,7 @@ const WORKER_TABLE_READERS = [
   'mdm/organization/worker.service.ts',
   'production/work-session/work-session-worker.service.ts',
   'production/work-session/work-session.service.ts',
-  'quality/inspection/inspection-result-write.service.ts',
+  'quality/inspection/inspection-result-write-rules.ts',
 ];
 
 interface Source {

@@ -30,8 +30,8 @@ import {
   InspectionResultCreate,
   InspectionResultUpdate,
   InspectionResultWriteContext,
-  InspectionResultWriteService,
-} from './inspection-result-write.service';
+} from './inspection-result-write-input';
+import { InspectionResultWriteService } from './inspection-result-write.service';
 import { InspectionResultView } from './inspection-result-view';
 
 /**
