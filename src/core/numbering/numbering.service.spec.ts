@@ -153,6 +153,14 @@ describe('채번 코어', () => {
     expect(await service.next('INVENTORY_RESERVATION', null, DAY)).toBe('RS-20260906-0001');
   });
 
+  it('채번 — 출하는 SH 기본 접두어와 출발 창고의 공장 축을 쓴다 (I-23)', async () => {
+    const { service, inserted } = fake();
+
+    // ⛔ `SR`(출하지시서)와 겹치지 않는다 — `SHOPFLOOR_RECEIPT` 충돌(통보 191)을 또 만들지 않는다.
+    expect(await service.next('SHIPMENT', PLANT, DAY)).toBe('SH-20260906-0001');
+    expect(inserted).toEqual([{ documentTypeCode: 'SHIPMENT', pattern: 'SH-{YYYYMMDD}-{SEQ4}' }]);
+  });
+
   it('채번 — 공장 지정 규칙이 전역 규칙을 이긴다', async () => {
     const { service } = fake([
       rule({ numbering_rule_id: 1n, pattern: 'GR-{YYYYMMDD}-{SEQ4}' }),
