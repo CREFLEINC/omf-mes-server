@@ -172,6 +172,18 @@ SELECT jsonb_pretty(jsonb_build_object(
     'design_reference_commit', 'a8f46f2',
     'database', 'PostgreSQL 16',
     'tables', COALESCE(tables.value, '[]'::jsonb),
-    'relationships', COALESCE(relations.value, '[]'::jsonb)
+    'relationships', COALESCE(relations.value, '[]'::jsonb),
+    -- 파티션 «자식»에 복제된 제약을 뺀 수. 위 relationships 는 pg_catalog 행이라 복제분까지 센다.
+    -- 두 수를 함께 내야 00-design-basis 의 문장이 손으로 적은 수 없이 선다.
+    'declared_relationship_count', (
+        SELECT count(*)
+        FROM pg_constraint con
+        JOIN pg_class source_table ON source_table.oid = con.conrelid
+        JOIN pg_namespace source_ns ON source_ns.oid = source_table.relnamespace
+        WHERE con.contype = 'f'
+          AND con.conparentid = 0
+          AND source_ns.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND source_ns.nspname NOT LIKE 'pg_toast%'
+    )
 ))
 FROM tables, relations;

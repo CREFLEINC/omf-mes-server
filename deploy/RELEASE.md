@@ -45,6 +45,78 @@ NestJS 부팅             5~15초
 
 ## 릴리스 절차
 
+### 0. 최초 구축 — **한 번만** 돈다 (아직 안 했다)
+
+2026-09-10 확인: **하노이에는 DB 가 아직 없다.** 아래는 그 첫 설치 절차이고, 두 번째부터는 §1 로 간다.
+
+⭐ **이미 데이터가 든 DB 에 올리는 것이 아니라 «빈 DB»에 처음 얹는 것**이라, 「기존 행이 새 제약을
+어긴다」는 부류의 사고가 원리상 0 이다. 별도 수기 SQL·백필·`NOT VALID` 가 필요 없다.
+
+**검증**: 빈 DB 에 마이그레이션 **79개**를 처음부터 적용해 보았다(2026-09-10 · PostgreSQL 16).
+`All migrations have been successfully applied` · 드리프트 **0** · 시드 완주 · 서버 부팅 · `admin` 로그인 200.
+
+```bash
+cd /opt/omf-mes
+./deploy.sh                    # postgres → migrate(79개) → api
+curl -s localhost:3100/api/health     # {"status":"ok","db":"up"}
+```
+
+#### ⛔ 여기서 멈추면 안 된다 — **시드는 «자동으로» 안 돈다**
+
+`docker-compose.prod.yml` 에는 `migrate` 서비스만 있고 **seed 서비스가 없다.** `deploy.sh` 도
+시드를 부르지 않는다. 그래서 위까지만 하면 **표는 다 섰는데 행이 거의 없다**:
+
+| | 코드 그룹 | 코드 값 |
+|---|:-:|:-:|
+| `migrate deploy` **만** | **2** | **18** |
+| `db seed` 까지 | **109** | **377** |
+
+⇒ 시드를 빼면 **화면 드롭다운이 전부 비고**, 코드값을 검사하는 오퍼레이션이 **전건 400** 이다.
+게다가 계정이 0개라 **아무도 로그인할 수 없다.**
+
+```bash
+# ⭐ 미리 비밀번호를 정해 둔다 — 안 주면 임의 문자열을 만들어 로그에 한 번 찍고 만다.
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+  run --rm -e ADMIN_INITIAL_PASSWORD='<정한 값>' migrate node dist/seed.js
+```
+
+⛔ **`prisma db seed` 를 쓰지 마라.** `prisma.config.ts` 가 `NODE_ENV` 로 갈리는데 `migrate`
+서비스에는 그 값이 없어 `ts-node prisma/seed.ts` 로 빠지고, **운영 이미지에는 ts-node 도
+`prisma/seed.ts` 도 없다**(런타임 스테이지가 안 복사한다) ⇒ `spawn ts-node ENOENT`.
+`node dist/seed.js` 를 직접 부르면 그 갈림을 지나가지 않는다.
+
+시드는 `upsert` 라 **여러 번 돌려도 안전하다.**
+
+#### 그 다음 — 사람이 해야 하는 것 둘
+
+**① 역할별 권한을 준다.** 시드는 `ROLE_SYS_ADMIN` 에만 권한 3개(`W-CO-01`·`W-CO-02`·`W-CO-10`)를
+주고 **나머지 세 역할은 권한 0 으로 둔다** — 설계 확정(2026-09-01)대로 **고객이 `W-CO-02` 에서
+정하는 것**이기 때문이다. `admin` 으로 로그인해 `W-CO-02` 에서 부여한다.
+⚠ 이걸 안 하면 **관리자 말고는 아무도 아무것도 못 한다.**
+
+**② 값이 비어 있는 코드 그룹을 채운다.** 시드가 그룹은 세우고 **값을 0개로 둔 것이 10개**다
+(설계팀 회신 대기분 — 전달분 §7-2):
+
+```
+DEFECT_RESPONSIBILITY_TYPE   JUDGMENT_TYPE                  LATE_ENTRY_REASON
+MAINTENANCE_RESULT_LINE_RESULT  MATERIAL_CHANGE_REASON      PRODUCTION_RESULT_CORRECT_REASON
+REINSPECTION_REASON          STOCK_REINSTATEMENT_REASON     STOCK_TRANSFER_REASON
+WORK_ORDER_HOLD_REASON
+```
+
+⚠ 그리고 **`QUALITY_STATUS` 는 그룹 자체가 없다.** 그 값을 쓰는 화면은 열리지 않는다.
+
+```bash
+# 오픈 전 확인 — 빈 그룹이 몇 개인가
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+  "SELECT g.group_code FROM mdm.code_group g
+     LEFT JOIN mdm.code_value v ON v.code_group_id=g.code_group_id AND v.is_active
+    WHERE g.is_active GROUP BY g.group_code HAVING count(v.code)=0 ORDER BY 1"
+```
+
+---
+
 ### 1. 개발 서버에서 검증
 
 main 에 머지된 코드는 이미지 빌드가 끝나는 대로 개발 서버에 자동 반영됩니다(수 분). **최소 하루는 개발 서버에서 돌려보세요.**

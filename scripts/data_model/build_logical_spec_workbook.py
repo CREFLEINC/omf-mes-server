@@ -273,16 +273,31 @@ def add_summary(wb: Workbook, payload: dict[str, Any]) -> Any:
     summary = payload["summary"]
     mapped = summary["mapped_operation_count"]
     total = summary["api_operation_count"]
+    # ⛔ 위 문장을 이 표가 두 줄에서 어겼었다 — 「12개 순차 적용」(실제 79) 과
+    #    「19 suites · 140 tests」(실제 213/1933) 가 손으로 적힌 채 남아 있었다.
+    #    ⇒ 셀 수 있는 것은 세고, 여기서 셀 수 없는 것은 «싣지 않는다».
+    migration_count = sum(
+        1 for d in (REPOSITORY_ROOT / "prisma" / "migrations").iterdir() if (d / "migration.sql").is_file()
+    )
+    ddl_tables = (
+        (REPOSITORY_ROOT / "docs/data-model/02-omf-mes-postgresql-v4.sql")
+        .read_text()
+        .count("\nCREATE TABLE ")
+    )
     gates = [
-        ("PostgreSQL 마이그레이션", "PASS", "12개 순차 적용"),
-        ("전체 DDL 재설치", "PASS", f"{summary['table_count']} tables"),
+        ("PostgreSQL 마이그레이션", "PASS", f"{migration_count}개 순차 적용"),
+        # ⚠ 이 파일은 v4 시점에 고정돼 있고 재생성 대상이 아니다 — 카탈로그와 표 수가 갈린다.
+        (
+            "전체 DDL 재설치",
+            "PASS" if ddl_tables == summary["table_count"] else "STALE",
+            f"{ddl_tables} tables (카탈로그 {summary['table_count']})",
+        ),
         ("Prisma 정합성", "PASS", f"{summary['logical_table_count']} models"),
         (
             "OpenAPI 매핑",
             "PASS" if mapped == total else "GAP",
             f"{mapped}/{total}",
         ),
-        ("서버 회귀", "PASS", "19 suites · 140 tests"),
     ]
     for column, value in enumerate(["검증 게이트", "상태", "근거"], start=8):
         ws.cell(row=4, column=column, value=value)

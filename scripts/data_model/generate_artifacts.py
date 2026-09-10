@@ -115,8 +115,8 @@ def render_basis(catalog: dict[str, Any], mapping: dict[str, Any]) -> str:
 - 결과 모델: v4.0, 물리 테이블 {summary["table_count"]}개(논리 {summary["logical_table_count"]}개, 파티션 {summary["partition_count"]}개), 컬럼 {summary["column_count"]}개, FK {summary["relationship_count"]}개
 - API 추적성: OpenAPI 작업 {mapping["operation_count"]}개 중 {mapping["mapped_operation_count"]}개 매핑, 커버리지 {mapping["coverage"]}{tableless_note}
 
-FK {summary["relationship_count"]}개는 `pg_catalog` 행 수다. 선언된 `FOREIGN KEY` 문장은 528개이며,
-차이 5건은 파티션 부모·자식에 복제된 제약이다.
+FK {summary["relationship_count"]}개는 `pg_catalog` 행 수다. 그중 {summary["relationship_count"] - summary["declared_relationship_count"]}개는 파티션 «자식»에
+복제된 제약이라, 선언된 `FOREIGN KEY` 제약은 {summary["declared_relationship_count"]}개다.
 
 설계 저장소의 최신 결정은 데이터 모델의 소유권을 백엔드로 이관한다. 과거 v3 모델은 출발점으로만 사용하고, 최신 계약에서 확정된 필드·관계·상태 전이를 v4 순방향 확장으로 반영했다.
 

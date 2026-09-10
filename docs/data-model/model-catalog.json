@@ -52,7 +52,7 @@
                 },
                 {
                     "name": "status_code",
-                    "default": "'ACTIVE'::character varying",
+                    "default": "'EMPLOYED'::character varying",
                     "ordinal": 6,
                     "nullable": false,
                     "data_type": "app.code_t",
@@ -871,9 +871,9 @@
                     "name": "reason_code",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "취소 사유 코드. 물류 다형 취소(:cancel)는 계약이 사유 코드를 안 보내 비운다 — 사유 원문은 reason_detail 이 진다(I-5.md R-1)."
                 },
                 {
                     "name": "reason_detail",
@@ -935,6 +935,14 @@
         {
             "name": "document_issue_log",
             "checks": [
+                {
+                    "name": "ck_document_issue_print_outcome",
+                    "expression": "CHECK (print_outcome_code IS NULL OR (print_outcome_code::text = ANY (ARRAY['PENDING'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying]::text[])))"
+                },
+                {
+                    "name": "ck_document_issue_print_report",
+                    "expression": "CHECK ((print_outcome_code IS NULL AND print_reported_at IS NULL AND print_failure_reason IS NULL AND print_reported_worker_id IS NULL AND print_reported_by IS NULL OR print_outcome_code::text = 'PENDING'::text AND print_reported_at IS NULL AND print_failure_reason IS NULL AND print_reported_worker_id IS NULL AND print_reported_by IS NULL OR print_outcome_code::text = 'SUCCEEDED'::text AND print_reported_at IS NOT NULL AND print_failure_reason IS NULL AND print_reported_worker_id IS NOT NULL AND print_reported_by IS NOT NULL OR print_outcome_code::text = 'FAILED'::text AND print_reported_at IS NOT NULL AND NULLIF(btrim(print_failure_reason::text), ''::text) IS NOT NULL AND print_reported_worker_id IS NOT NULL AND print_reported_by IS NOT NULL) IS TRUE)"
+                },
                 {
                     "name": "ck_document_reissue_reason",
                     "expression": "CHECK (issue_seq = 1 OR reissue_reason_code IS NOT NULL)"
@@ -1041,6 +1049,54 @@
                     "nullable": true,
                     "data_type": "text",
                     "description": null
+                },
+                {
+                    "name": "print_outcome_code",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "character varying(40)",
+                    "description": "인쇄 결과. 신규 발행만 명시 PENDING; NULL은 과거 결과 미확인이고 PENDING으로 간주하지 않는다."
+                },
+                {
+                    "name": "print_failure_reason",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "character varying(500)",
+                    "description": "FAILED 결과의 필수 실패 사유. 성공 결과에는 NULL."
+                },
+                {
+                    "name": "print_reported_at",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "timestamp(6) with time zone",
+                    "description": "인쇄 결과를 서버가 접수한 시각. 실물 인쇄 발생시각을 도출하지 않는다."
+                },
+                {
+                    "name": "issued_worker_id",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "X-Worker-No로 확인한 최초 발행 귀속 작업자. issued_by 계정FK와 별개."
+                },
+                {
+                    "name": "print_reported_worker_id",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "결과 보고 X-Worker-No 귀속 작업자. 최초 발행 사번을 덮지 않는다."
+                },
+                {
+                    "name": "print_reported_by",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "인쇄 결과를 보고한 인증 계정. issued_by 최초 발행 계정과 별개."
                 }
             ],
             "description": null,
@@ -1062,6 +1118,19 @@
                     ]
                 },
                 {
+                    "name": "document_issue_log_issued_worker_id_fkey",
+                    "columns": [
+                        "issued_worker_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "worker",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "worker_id"
+                    ]
+                },
+                {
                     "name": "document_issue_log_lot_id_fkey",
                     "columns": [
                         "lot_id"
@@ -1072,6 +1141,32 @@
                     "target_schema": "trace",
                     "target_columns": [
                         "lot_id"
+                    ]
+                },
+                {
+                    "name": "document_issue_log_print_reported_by_fkey",
+                    "columns": [
+                        "print_reported_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "document_issue_log_print_reported_worker_id_fkey",
+                    "columns": [
+                        "print_reported_worker_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "worker",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "worker_id"
                     ]
                 },
                 {
@@ -2156,6 +2251,10 @@
             "name": "notification_subscription",
             "checks": [
                 {
+                    "name": "ck_notification_subscription_scope",
+                    "expression": "CHECK (app_user_id IS NULL AND channel_code IS NULL OR app_user_id IS NOT NULL AND channel_code IS NOT NULL)"
+                },
+                {
                     "name": "notification_subscription_version_no_check",
                     "expression": "CHECK (version_no > 0)"
                 }
@@ -2174,9 +2273,9 @@
                     "name": "app_user_id",
                     "default": null,
                     "ordinal": 2,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "기존 사용자별 구독은 사용자 ID를 보존. 신규 이벤트 헤더는 app_user_id와 channel_code 모두 NULL."
                 },
                 {
                     "name": "event_type_code",
@@ -2190,9 +2289,9 @@
                     "name": "channel_code",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "기존 채널 구독 값 보존. 신규 이벤트 헤더에서는 NULL이며 Zalo 설정은 zalo_enabled에 저장."
                 },
                 {
                     "name": "is_enabled",
@@ -2225,6 +2324,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "zalo_enabled",
+                    "default": "false",
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "이벤트 헤더의 Zalo 추가 전달 설정. 기본 끔. 실제 전송·전화번호 수집은 별도 미정."
                 }
             ],
             "description": null,
@@ -2257,6 +2364,136 @@
                         "channel_code"
                     ]
                 }
+            ]
+        },
+        {
+            "name": "notification_subscription_recipient",
+            "checks": [
+                {
+                    "name": "ck_notification_subscription_recipient_shape",
+                    "expression": "CHECK (recipient_type_code::text = 'ROLE'::text AND business_unit_id IS NOT NULL AND role_id IS NOT NULL AND app_user_id IS NULL OR recipient_type_code::text = 'USER'::text AND business_unit_id IS NULL AND role_id IS NULL AND app_user_id IS NOT NULL)"
+                }
+            ],
+            "schema": "app",
+            "columns": [
+                {
+                    "name": "notification_subscription_recipient_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "notification_subscription_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "recipient_type_code",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "business_unit_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "role_id",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "app_user_id",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 7,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": "이벤트 헤더의 수신자 규칙. ROLE=사업부+역할, USER=개인. 발생 기록이나 전개된 사람 목록이 아니다.",
+            "primary_key": [
+                "notification_subscription_recipient_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "notification_subscription_recipient_app_user_id_fkey",
+                    "columns": [
+                        "app_user_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "notification_subscription_recipient_business_unit_id_fkey",
+                    "columns": [
+                        "business_unit_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "business_unit",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "business_unit_id"
+                    ]
+                },
+                {
+                    "name": "notification_subscription_recipient_notification_subscript_fkey",
+                    "columns": [
+                        "notification_subscription_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "notification_subscription",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "notification_subscription_id"
+                    ]
+                },
+                {
+                    "name": "notification_subscription_recipient_role_id_fkey",
+                    "columns": [
+                        "role_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "role",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "role_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "app.notification_subscription_recipient",
+            "unique_constraints": [
             ]
         },
         {
@@ -2686,6 +2923,10 @@
             "name": "printer",
             "checks": [
                 {
+                    "name": "ck_printer_status",
+                    "expression": "CHECK (status_code IS NULL OR (status_code::text = ANY (ARRAY['READY'::character varying, 'BUSY'::character varying, 'OFFLINE'::character varying, 'ERROR'::character varying]::text[])))"
+                },
+                {
                     "name": "printer_dpi_check",
                     "expression": "CHECK (dpi IS NULL OR dpi > 0)"
                 },
@@ -2799,6 +3040,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "status_code",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "character varying(40)",
+                    "description": "프린터 상태 관측값. NULL은 관측 producer가 없음을 뜻하며 API는 OFFLINE으로 표시한다."
+                },
+                {
+                    "name": "status_message",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "character varying(200)",
+                    "description": "상태 관측 producer가 저장한 사용자용 설명. 서버가 상태 코드로 조립하지 않는다."
                 }
             ],
             "description": null,
@@ -3014,6 +3271,145 @@
                     "columns": [
                         "role_id",
                         "permission_code"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "terminal_printer",
+            "checks": [
+                {
+                    "name": "ck_terminal_printer_document_types",
+                    "expression": "CHECK (supported_document_type_codes <@ ARRAY['MATERIAL_LOT_LABEL'::character varying(40), 'GOODS_ISSUE_QR'::character varying(40), 'PRODUCTION_LOT_LABEL'::character varying(40), 'IDENTIFICATION_TAG'::character varying(40), 'PACKING_LABEL'::character varying(40), 'DELIVERY_LABEL'::character varying(40), 'CERTIFICATE_OF_ANALYSIS'::character varying(40), 'TOOL_LABEL'::character varying(40), 'LOCATION_LABEL'::character varying(40)])"
+                },
+                {
+                    "name": "terminal_printer_version_no_check",
+                    "expression": "CHECK (version_no > 0)"
+                }
+            ],
+            "schema": "app",
+            "columns": [
+                {
+                    "name": "terminal_printer_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "terminal_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "printer_id",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "is_default",
+                    "default": "false",
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "supported_document_type_codes",
+                    "default": "'{}'::character varying[]",
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "character varying(40)[]",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "timestamp(6) with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_by",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "updated_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "timestamp(6) with time zone",
+                    "description": null
+                },
+                {
+                    "name": "updated_by",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 10,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                }
+            ],
+            "description": "단말별 사용 가능 프린터와 기본·지원 문서 종류의 명시 설정.",
+            "primary_key": [
+                "terminal_printer_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "terminal_printer_printer_id_fkey",
+                    "columns": [
+                        "printer_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "printer",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "printer_id"
+                    ]
+                },
+                {
+                    "name": "terminal_printer_terminal_id_fkey",
+                    "columns": [
+                        "terminal_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "terminal",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "terminal_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "app.terminal_printer",
+            "unique_constraints": [
+                {
+                    "name": "uq_terminal_printer",
+                    "columns": [
+                        "terminal_id",
+                        "printer_id"
                     ]
                 }
             ]
@@ -5133,6 +5529,280 @@
             ]
         },
         {
+            "name": "handling_unit_repack_event",
+            "checks": [
+            ],
+            "schema": "inventory",
+            "columns": [
+                {
+                    "name": "handling_unit_repack_event_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "repack_type_code",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "performed_by",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "occurred_at",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": null,
+            "primary_key": [
+                "handling_unit_repack_event_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "handling_unit_repack_event_performed_by_fkey",
+                    "columns": [
+                        "performed_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "inventory.handling_unit_repack_event",
+            "unique_constraints": [
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line",
+            "checks": [
+                {
+                    "name": "handling_unit_repack_event_line_line_no_check",
+                    "expression": "CHECK (line_no > 0)"
+                }
+            ],
+            "schema": "inventory",
+            "columns": [
+                {
+                    "name": "handling_unit_repack_event_line_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "handling_unit_repack_event_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "line_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "handling_unit_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "role_code",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "item_id",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "lot_id",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "qty_before",
+                    "default": null,
+                    "ordinal": 8,
+                    "nullable": false,
+                    "data_type": "app.qty_t",
+                    "description": null
+                },
+                {
+                    "name": "qty_after",
+                    "default": null,
+                    "ordinal": 9,
+                    "nullable": false,
+                    "data_type": "app.qty_t",
+                    "description": null
+                },
+                {
+                    "name": "uom_id_before",
+                    "default": null,
+                    "ordinal": 10,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "uom_id_after",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "created_at",
+                    "default": "clock_timestamp()",
+                    "ordinal": 12,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": null,
+            "primary_key": [
+                "handling_unit_repack_event_line_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "handling_unit_repack_event_li_handling_unit_repack_event_i_fkey",
+                    "columns": [
+                        "handling_unit_repack_event_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "handling_unit_repack_event",
+                    "target_schema": "inventory",
+                    "target_columns": [
+                        "handling_unit_repack_event_id"
+                    ]
+                },
+                {
+                    "name": "handling_unit_repack_event_line_handling_unit_id_fkey",
+                    "columns": [
+                        "handling_unit_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "handling_unit",
+                    "target_schema": "inventory",
+                    "target_columns": [
+                        "handling_unit_id"
+                    ]
+                },
+                {
+                    "name": "handling_unit_repack_event_line_item_id_fkey",
+                    "columns": [
+                        "item_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "item",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "item_id"
+                    ]
+                },
+                {
+                    "name": "handling_unit_repack_event_line_lot_id_fkey",
+                    "columns": [
+                        "lot_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "lot",
+                    "target_schema": "trace",
+                    "target_columns": [
+                        "lot_id"
+                    ]
+                },
+                {
+                    "name": "handling_unit_repack_event_line_uom_id_after_fkey",
+                    "columns": [
+                        "uom_id_after"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "uom",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "uom_id"
+                    ]
+                },
+                {
+                    "name": "handling_unit_repack_event_line_uom_id_before_fkey",
+                    "columns": [
+                        "uom_id_before"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "uom",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "uom_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "inventory.handling_unit_repack_event_line",
+            "unique_constraints": [
+                {
+                    "name": "uq_handling_unit_repack_event_line",
+                    "columns": [
+                        "handling_unit_repack_event_id",
+                        "line_no"
+                    ]
+                }
+            ]
+        },
+        {
             "name": "inventory_adjustment",
             "checks": [
                 {
@@ -5407,6 +6077,14 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "inventory_count_line_id",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "실사 차이에서 불러온 경우의 원천 라인. 계약 InventoryAdjustmentLine.inventoryCountLineId."
                 }
             ],
             "description": null,
@@ -5425,6 +6103,19 @@
                     "target_schema": "inventory",
                     "target_columns": [
                         "inventory_adjustment_id"
+                    ]
+                },
+                {
+                    "name": "inventory_adjustment_line_inventory_count_line_id_fkey",
+                    "columns": [
+                        "inventory_count_line_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "inventory_count_line",
+                    "target_schema": "inventory",
+                    "target_columns": [
+                        "inventory_count_line_id"
                     ]
                 },
                 {
@@ -6090,6 +6781,14 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "counted",
+                    "default": "false",
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "실제 계수 완료 여부. false면 counted_qty/counted_at/variance_qty는 의미 없는 자리다."
                 }
             ],
             "description": null,
@@ -9019,6 +9718,14 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "lot_id",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "이 라인으로 만들어진 자재 LOT. 사전부착 라인은 입하 등록과 같은 트랜잭션에서, 미부착 라인은 POST /trace/lots(P-01-01)가 채운다. 계약 InboundReceiptLine.lotId."
                 }
             ],
             "description": null,
@@ -9063,6 +9770,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "item_id"
+                    ]
+                },
+                {
+                    "name": "inbound_receipt_line_lot_id_fkey",
+                    "columns": [
+                        "lot_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "lot",
+                    "target_schema": "trace",
+                    "target_columns": [
+                        "lot_id"
                     ]
                 },
                 {
@@ -9158,7 +9878,7 @@
                     "name": "reason_code",
                     "default": null,
                     "ordinal": 6,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -10111,6 +10831,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "approval_request_id",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "이 P/O 의 업무 승인 요청. 취소·특수 승인은 여기 담지 않는다(공유계약 A-10 다형 축이 정본). 근거: 계약 PurchaseOrder.approvalRequestId."
+                },
+                {
+                    "name": "source_inbound_receipt_line_id",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "초과 입하 분리(W-01-03)에서 승계된 입하 라인. 일반 발주는 비어 있다. 근거: 계약 PurchaseOrderCreate.sourceInboundReceiptLineId."
                 }
             ],
             "description": null,
@@ -10118,6 +10854,19 @@
                 "purchase_order_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "purchase_order_approval_request_id_fkey",
+                    "columns": [
+                        "approval_request_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "approval_request",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "approval_request_id"
+                    ]
+                },
                 {
                     "name": "purchase_order_business_unit_id_fkey",
                     "columns": [
@@ -10142,6 +10891,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "plant_id"
+                    ]
+                },
+                {
+                    "name": "purchase_order_source_inbound_receipt_line_id_fkey",
+                    "columns": [
+                        "source_inbound_receipt_line_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "inbound_receipt_line",
+                    "target_schema": "logistics",
+                    "target_columns": [
+                        "inbound_receipt_line_id"
                     ]
                 },
                 {
@@ -10959,15 +11721,15 @@
                     "name": "source_document_type_code",
                     "default": null,
                     "ordinal": 6,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "원천 문서 짝(A-10). 재생재 등록은 가리킬 문서가 없어 둘 다 NULL 이다 (통보 215)."
                 },
                 {
                     "name": "source_document_id",
                     "default": null,
                     "ordinal": 7,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -11058,6 +11820,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "warehouse_id",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "재생재를 잡는 창고. 계약 RecycleEntryCreate.warehouseId (required) 의 저장처다."
+                },
+                {
+                    "name": "remarks",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "비고. 계약 RecycleEntryCreate.remarks 의 저장처다."
                 }
             ],
             "description": null,
@@ -11128,6 +11906,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "uom_id"
+                    ]
+                },
+                {
+                    "name": "recycle_entry_warehouse_id_fkey",
+                    "columns": [
+                        "warehouse_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "warehouse",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "warehouse_id"
                     ]
                 }
             ],
@@ -11480,6 +12271,10 @@
             "name": "shipment",
             "checks": [
                 {
+                    "name": "ck_shipment_expedite",
+                    "expression": "CHECK (expedited = false OR expedite_reason IS NOT NULL)"
+                },
+                {
                     "name": "shipment_version_no_check",
                     "expression": "CHECK (version_no > 0)"
                 }
@@ -11685,6 +12480,22 @@
                     "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
+                },
+                {
+                    "name": "expedited",
+                    "default": "false",
+                    "ordinal": 26,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "긴급 직행 출하(W-04-05) — 창고 경유·피킹·Packing 을 건너뛴다. 품질 게이트는 건너뛰지 않는다."
+                },
+                {
+                    "name": "expedite_reason",
+                    "default": null,
+                    "ordinal": 27,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "긴급 사유. expedited 가 참인 건에만 있다(공유계약 A-12). 짝 불변식은 ck_shipment_expedite 가 본다."
                 }
             ],
             "description": null,
@@ -12223,6 +13034,14 @@
                     "nullable": true,
                     "data_type": "app.code_t",
                     "description": "출하 시간대(SHIPMENT_TIME_SLOT — MORNING·AFTERNOON·NIGHT). 시각 경계를 담지 않는다 — 슬롯을 가리키는 이름이다. ship_time_slot_start/end 를 대체하며 그 둘은 다음 릴리스에서 삭제한다."
+                },
+                {
+                    "name": "sales_order_id",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "상위 고객사 출하지시서. nullable — 단독 생성(무지시)이 상시 구조다(W-04-01 §5-2). GET /logistics/sales-orders?unassignedOnly 가 이 칸으로 편성 여부를 판정한다."
                 }
             ],
             "description": null,
@@ -12241,6 +13060,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "partner_id"
+                    ]
+                },
+                {
+                    "name": "shipment_request_sales_order_id_fkey",
+                    "columns": [
+                        "sales_order_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "sales_order",
+                    "target_schema": "logistics",
+                    "target_columns": [
+                        "sales_order_id"
                     ]
                 },
                 {
@@ -13021,6 +13853,14 @@
                     "nullable": true,
                     "data_type": "text",
                     "description": "부가 비고. 사유는 reason_code 가 정본이다 — 계약이 그렇게 갈랐다."
+                },
+                {
+                    "name": "disposition_decision_id",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "재고 재등록(POST /logistics/stock-reinstatements)이 반영한 처분 결정. 그 경로만 채운다 — 일반 이동은 NULL."
                 }
             ],
             "description": null,
@@ -13028,6 +13868,19 @@
                 "stock_transfer_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "stock_transfer_disposition_decision_id_fkey",
+                    "columns": [
+                        "disposition_decision_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "disposition_decision",
+                    "target_schema": "quality",
+                    "target_columns": [
+                        "disposition_decision_id"
+                    ]
+                },
                 {
                     "name": "stock_transfer_from_business_unit_id_fkey",
                     "columns": [
@@ -13233,6 +14086,14 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "handling_unit_id",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "파렛트 단위로 옮긴 경우의 취급 단위. 계약 StockTransferLine.handlingUnitId. 파렛트는 «이동 그룹핑»이고 재고 잠금 단위가 아니다(M-01-10 §5-2 · ✓확정 QA #16) — 잔액은 inventory_balance 가 위치·LOT 축으로 진다."
                 }
             ],
             "description": null,
@@ -13251,6 +14112,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "location_id"
+                    ]
+                },
+                {
+                    "name": "stock_transfer_line_handling_unit_id_fkey",
+                    "columns": [
+                        "handling_unit_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "handling_unit",
+                    "target_schema": "inventory",
+                    "target_columns": [
+                        "handling_unit_id"
                     ]
                 },
                 {
@@ -14106,9 +14980,9 @@
                     "name": "severity_code",
                     "default": null,
                     "ordinal": 8,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "기존 물리 심각도. 고정 계약에 입력·출력·기본값이 없어 신규 API는 채우지 않는다."
                 },
                 {
                     "name": "status_code",
@@ -14181,6 +15055,70 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "occurrence_state_code",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "현장 보고 시 선택한 발생 상태. BREAKDOWN_OCCURRENCE_STATE. 처리 상태와 다른 축이다."
+                },
+                {
+                    "name": "stopped_at",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "현장이 알고 있을 때 입력한 정지 시각. 단말 값 그대로이며 started_at으로 대신하지 않는다."
+                },
+                {
+                    "name": "notify_assignee",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "boolean",
+                    "description": "설비담당 알림 의사. 신규 요청 미지정은 true. 과거 NULL은 미상이며 발송 성공을 뜻하지 않는다."
+                },
+                {
+                    "name": "reporter_worker_no",
+                    "default": null,
+                    "ordinal": 21,
+                    "nullable": true,
+                    "data_type": "character varying(50)",
+                    "description": "보고 시 귀속 사번. X-Worker-No 원문 스냅샷. reported_by의 app_user FK와 다른 축이다."
+                },
+                {
+                    "name": "cause_code",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "통보 090 서버 결정. 활성 EQUIPMENT_BREAKDOWN_CAUSE 코드 그룹의 mdm.code_value.code 자연키. quality.cause_code 대체 금지; 과거 저장값 조회에는 현재 활성 검증을 소급하지 않는다."
+                },
+                {
+                    "name": "handling_note",
+                    "default": null,
+                    "ordinal": 23,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "사무 처리 내역. 현장 description과 기존 root_cause를 덮어쓰지 않는다."
+                },
+                {
+                    "name": "handled_by",
+                    "default": null,
+                    "ordinal": 24,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "처리 저장·처리 시작·완료를 수행한 관리웹 계정. 보고 귀속 사번과 구분한다."
+                },
+                {
+                    "name": "handled_at",
+                    "default": null,
+                    "ordinal": 25,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "마지막 처리 행위 서버 시각. 보고 시각과 빼서 소요 시간을 계산하지 않는다."
                 }
             ],
             "description": null,
@@ -14199,6 +15137,19 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "equipment_id"
+                    ]
+                },
+                {
+                    "name": "breakdown_handled_by_fkey",
+                    "columns": [
+                        "handled_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
                     ]
                 },
                 {
@@ -14264,7 +15215,7 @@
                     "name": "channel_code",
                     "default": null,
                     "ordinal": 3,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -14272,7 +15223,7 @@
                     "name": "channel_name",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.name_t",
                     "description": null
                 },
@@ -14280,7 +15231,7 @@
                     "name": "data_type_code",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -14363,6 +15314,46 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "channel_key",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "character varying(100)",
+                    "description": "Raw equipment channel key. It is not inferred from legacy channel_code."
+                },
+                {
+                    "name": "signal_name",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "character varying(200)",
+                    "description": null
+                },
+                {
+                    "name": "inspection_item_id",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "Quality inspection_item_spec row; revisions are not migrated automatically."
+                },
+                {
+                    "name": "item_id",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "process_id",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
                 }
             ],
             "description": null,
@@ -14381,6 +15372,45 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "equipment_id"
+                    ]
+                },
+                {
+                    "name": "collection_channel_inspection_item_id_fkey",
+                    "columns": [
+                        "inspection_item_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "inspection_item_spec",
+                    "target_schema": "quality",
+                    "target_columns": [
+                        "inspection_item_spec_id"
+                    ]
+                },
+                {
+                    "name": "collection_channel_item_id_fkey",
+                    "columns": [
+                        "item_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "item",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "item_id"
+                    ]
+                },
+                {
+                    "name": "collection_channel_process_id_fkey",
+                    "columns": [
+                        "process_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "process",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "process_id"
                     ]
                 },
                 {
@@ -14407,6 +15437,70 @@
                         "channel_code"
                     ]
                 }
+            ]
+        },
+        {
+            "name": "collection_channel_observation",
+            "checks": [
+            ],
+            "schema": "maintenance",
+            "columns": [
+                {
+                    "name": "equipment_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "channel_key",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "character varying(100)",
+                    "description": null
+                },
+                {
+                    "name": "last_value",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "observed_at",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                }
+            ],
+            "description": "Latest observed snapshot per equipment and channel key. Writer ordering and raw history retention are separate integration responsibilities.",
+            "primary_key": [
+                "equipment_id",
+                "channel_key"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "collection_channel_observation_equipment_id_fkey",
+                    "columns": [
+                        "equipment_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "equipment_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "maintenance.collection_channel_observation",
+            "unique_constraints": [
             ]
         },
         {
@@ -14530,6 +15624,10 @@
                 {
                     "name": "ck_equipment_downtime_window",
                     "expression": "CHECK (ended_at IS NULL OR ended_at >= started_at)"
+                },
+                {
+                    "name": "equipment_downtime_version_no_check",
+                    "expression": "CHECK (version_no > 0)"
                 }
             ],
             "schema": "maintenance",
@@ -14562,9 +15660,9 @@
                     "name": "downtime_type_code",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "계약에 입력과 값 정의가 없는 기존 축. 신규 비가동은 null; reason_code를 복제하지 않는다."
                 },
                 {
                     "name": "started_at",
@@ -14613,6 +15711,38 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "remarks",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": "현장 비가동 메모. DowntimeCreate/Update.remarks."
+                },
+                {
+                    "name": "recorded_by_worker_no",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "character varying(50)",
+                    "description": "비가동을 최초 기록한 귀속용 X-Worker-No 원문. 계정 created_by와 별개이며 과거행은 임의 백필하지 않는다."
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 13,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": "상세 GET ETag와 수정/종료 If-Match 토큰. 본문에 노출하지 않는다."
+                },
+                {
+                    "name": "closed_by_worker_no",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "character varying(50)",
+                    "description": "비가동을 종료한 X-Worker-No 원문. 계정 closed_by와 별개이며 과거 종료행은 임의 백필하지 않는다."
                 }
             ],
             "description": null,
@@ -14743,9 +15873,9 @@
                     "name": "status_code",
                     "default": null,
                     "ordinal": 9,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "기존 물리 점검 상태. 계약 종합 판정은 judgment_code이며 별도 상태값을 도출하지 않는다."
                 },
                 {
                     "name": "remarks",
@@ -14978,6 +16108,10 @@
             "name": "maintenance_order",
             "checks": [
                 {
+                    "name": "ck_maintenance_order_target",
+                    "expression": "CHECK (target_type_code::text = 'EQUIPMENT'::text AND equipment_id IS NOT NULL AND mold_id IS NULL OR target_type_code::text = 'MOLD'::text AND mold_id IS NOT NULL AND equipment_id IS NULL)"
+                },
+                {
                     "name": "ck_maintenance_order_window",
                     "expression": "CHECK (scheduled_end_at IS NULL OR scheduled_start_at IS NULL OR scheduled_end_at >= scheduled_start_at)"
                 },
@@ -15008,7 +16142,7 @@
                     "name": "equipment_id",
                     "default": null,
                     "ordinal": 3,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -15032,7 +16166,7 @@
                     "name": "priority_code",
                     "default": null,
                     "ordinal": 6,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -15115,6 +16249,86 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "target_type_code",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": false,
+                    "data_type": "character varying(50)",
+                    "description": null
+                },
+                {
+                    "name": "mold_id",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "planned_date",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": "계약 plannedDate 원문 날짜. scheduled_start_at이나 서버 오늘에서 도출하지 않는다."
+                },
+                {
+                    "name": "base_date",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "date",
+                    "description": "예방보전 기준일 입력 원문. 계획일이나 서버 오늘에서 도출하지 않는다."
+                },
+                {
+                    "name": "order_note",
+                    "default": null,
+                    "ordinal": 21,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "assignee_user_id",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "계약 assigneeUserId. assigned_worker_id를 계정으로 변환하거나 백필하지 않는다."
+                },
+                {
+                    "name": "issued_by",
+                    "default": null,
+                    "ordinal": 23,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "보전 지시를 발행한 관리웹 계정. 담당 계정 및 기존 worker FK와 구분한다."
+                },
+                {
+                    "name": "issued_at",
+                    "default": null,
+                    "ordinal": 24,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "cancelled_at",
+                    "default": null,
+                    "ordinal": 25,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "cancelled_by",
+                    "default": null,
+                    "ordinal": 26,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "보전 지시를 취소한 관리웹 계정. 취소 사유 입력을 새로 만들지 않는다."
                 }
             ],
             "description": null,
@@ -15136,6 +16350,19 @@
                     ]
                 },
                 {
+                    "name": "maintenance_order_assignee_user_id_fkey",
+                    "columns": [
+                        "assignee_user_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
                     "name": "maintenance_order_breakdown_id_fkey",
                     "columns": [
                         "breakdown_id"
@@ -15149,6 +16376,19 @@
                     ]
                 },
                 {
+                    "name": "maintenance_order_cancelled_by_fkey",
+                    "columns": [
+                        "cancelled_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
                     "name": "maintenance_order_equipment_id_fkey",
                     "columns": [
                         "equipment_id"
@@ -15159,6 +16399,32 @@
                     "target_schema": "mdm",
                     "target_columns": [
                         "equipment_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_order_issued_by_fkey",
+                    "columns": [
+                        "issued_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_order_mold_id_fkey",
+                    "columns": [
+                        "mold_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "mold",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "mold_id"
                     ]
                 }
             ],
@@ -15343,7 +16609,7 @@
                     "default": null,
                     "ordinal": 7,
                     "nullable": true,
-                    "data_type": "integer",
+                    "data_type": "bigint",
                     "description": "발행 시점의 누계 타발수 스냅샷. 누계는 뒤에 리셋되므로 얼려 두지 않으면 왜 그때 발행했는지 되짚을 수 없다."
                 },
                 {
@@ -15351,7 +16617,7 @@
                     "default": null,
                     "ordinal": 8,
                     "nullable": true,
-                    "data_type": "integer",
+                    "data_type": "bigint",
                     "description": null
                 },
                 {
@@ -15363,7 +16629,7 @@
                     "description": null
                 }
             ],
-            "description": "보전지시를 발행시킨 트리거와 발행 시점 스냅샷. 보전지시 하나에 하나다. 근거: 이슈 #44 · #63 · 설계 회신 B-4.",
+            "description": "한 보전 지시의 촉발 0..N. 계약 triggers 배열. source는 유형별 다형 참조.",
             "primary_key": [
                 "maintenance_order_trigger_id"
             ],
@@ -15385,17 +16651,19 @@
             "is_partition": false,
             "qualified_name": "maintenance.maintenance_order_trigger",
             "unique_constraints": [
-                {
-                    "name": "uq_maintenance_order_trigger",
-                    "columns": [
-                        "maintenance_order_id"
-                    ]
-                }
             ]
         },
         {
             "name": "maintenance_result",
             "checks": [
+                {
+                    "name": "ck_maintenance_result_reset_counts",
+                    "expression": "CHECK ((shot_count_before_reset IS NULL OR shot_count_before_reset >= 0) AND (shot_count_after_reset IS NULL OR shot_count_after_reset >= 0))"
+                },
+                {
+                    "name": "ck_maintenance_result_target",
+                    "expression": "CHECK (target_type_code IS NULL AND equipment_id IS NULL AND mold_id IS NULL OR target_type_code IS NOT NULL AND target_type_code::text = 'EQUIPMENT'::text AND equipment_id IS NOT NULL AND mold_id IS NULL OR target_type_code IS NOT NULL AND target_type_code::text = 'MOLD'::text AND mold_id IS NOT NULL AND equipment_id IS NULL)"
+                },
                 {
                     "name": "ck_maintenance_result_window",
                     "expression": "CHECK (completed_at >= started_at)"
@@ -15403,6 +16671,10 @@
                 {
                     "name": "maintenance_result_result_seq_check",
                     "expression": "CHECK (result_seq > 0)"
+                },
+                {
+                    "name": "maintenance_result_version_no_check",
+                    "expression": "CHECK (version_no > 0)"
                 }
             ],
             "schema": "maintenance",
@@ -15419,7 +16691,7 @@
                     "name": "maintenance_order_id",
                     "default": null,
                     "ordinal": 2,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -15427,7 +16699,7 @@
                     "name": "result_seq",
                     "default": null,
                     "ordinal": 3,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "integer",
                     "description": null
                 },
@@ -15435,7 +16707,7 @@
                     "name": "action_code",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -15443,7 +16715,7 @@
                     "name": "action_description",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "text",
                     "description": null
                 },
@@ -15459,9 +16731,9 @@
                     "name": "completed_at",
                     "default": null,
                     "ordinal": 7,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "timestamp with time zone",
-                    "description": null
+                    "description": "계약 finishedAt: 실제 수행 종료. null은 진행 중이며 지시 마감이나 PM 완료를 뜻하지 않는다."
                 },
                 {
                     "name": "performed_by",
@@ -15475,7 +16747,7 @@
                     "name": "result_code",
                     "default": null,
                     "ordinal": 9,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -15494,6 +16766,126 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "target_type_code",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "character varying(50)",
+                    "description": null
+                },
+                {
+                    "name": "equipment_id",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "mold_id",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "breakdown_id",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "result_note",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "performed_by_user_id",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "계약 수행자 app_user. 구 performed_by worker FK와 다른 축이며 외주면 null이다."
+                },
+                {
+                    "name": "is_outsourced",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "outsource_vendor_name",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "reset_counter",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "boolean",
+                    "description": null
+                },
+                {
+                    "name": "shot_count_before_reset",
+                    "default": null,
+                    "ordinal": 21,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "shot_count_after_reset",
+                    "default": null,
+                    "ordinal": 22,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "closed",
+                    "default": null,
+                    "ordinal": 23,
+                    "nullable": true,
+                    "data_type": "boolean",
+                    "description": "계약 closed 저장 자리. 결과코드의 완료 의미가 확정되기 전 true는 서비스에서 거부한다."
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 24,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "updated_at",
+                    "default": null,
+                    "ordinal": 25,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": null
+                },
+                {
+                    "name": "updated_by",
+                    "default": null,
+                    "ordinal": 26,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
                 }
             ],
             "description": null,
@@ -15501,6 +16893,32 @@
                 "maintenance_result_id"
             ],
             "foreign_keys": [
+                {
+                    "name": "maintenance_result_breakdown_id_fkey",
+                    "columns": [
+                        "breakdown_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "breakdown",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "breakdown_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_result_equipment_id_fkey",
+                    "columns": [
+                        "equipment_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "equipment",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "equipment_id"
+                    ]
+                },
                 {
                     "name": "maintenance_result_maintenance_order_id_fkey",
                     "columns": [
@@ -15515,6 +16933,19 @@
                     ]
                 },
                 {
+                    "name": "maintenance_result_mold_id_fkey",
+                    "columns": [
+                        "mold_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "mold",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "mold_id"
+                    ]
+                },
+                {
                     "name": "maintenance_result_performed_by_fkey",
                     "columns": [
                         "performed_by"
@@ -15526,6 +16957,19 @@
                     "target_columns": [
                         "worker_id"
                     ]
+                },
+                {
+                    "name": "maintenance_result_performed_by_user_id_fkey",
+                    "columns": [
+                        "performed_by_user_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
                 }
             ],
             "is_partition": false,
@@ -15536,6 +16980,252 @@
                     "columns": [
                         "maintenance_order_id",
                         "result_seq"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "maintenance_result_line",
+            "checks": [
+                {
+                    "name": "maintenance_result_line_sequence_no_check",
+                    "expression": "CHECK (sequence_no > 0)"
+                }
+            ],
+            "schema": "maintenance",
+            "columns": [
+                {
+                    "name": "maintenance_result_line_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "maintenance_result_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "sequence_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "maintenance_order_item_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "part_name",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "result_code",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "remarks",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                }
+            ],
+            "description": "보전 실적의 대상별 결과 라인. 고객 확장 결과 코드를 저장하되 완료 의미를 도출하지 않는다.",
+            "primary_key": [
+                "maintenance_result_line_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "maintenance_result_line_maintenance_order_item_id_fkey",
+                    "columns": [
+                        "maintenance_order_item_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "maintenance_order_item",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "maintenance_order_item_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_result_line_maintenance_result_id_fkey",
+                    "columns": [
+                        "maintenance_result_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "maintenance_result",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "maintenance_result_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "maintenance.maintenance_result_line",
+            "unique_constraints": [
+                {
+                    "name": "uq_maintenance_result_line_item",
+                    "columns": [
+                        "maintenance_result_id",
+                        "maintenance_order_item_id"
+                    ]
+                },
+                {
+                    "name": "uq_maintenance_result_line_seq",
+                    "columns": [
+                        "maintenance_result_id",
+                        "sequence_no"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "maintenance_result_part",
+            "checks": [
+                {
+                    "name": "maintenance_result_part_sequence_no_check",
+                    "expression": "CHECK (sequence_no > 0)"
+                },
+                {
+                    "name": "maintenance_result_part_used_qty_check",
+                    "expression": "CHECK (used_qty > 0::numeric)"
+                }
+            ],
+            "schema": "maintenance",
+            "columns": [
+                {
+                    "name": "maintenance_result_part_id",
+                    "default": null,
+                    "ordinal": 1,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "maintenance_result_id",
+                    "default": null,
+                    "ordinal": 2,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "sequence_no",
+                    "default": null,
+                    "ordinal": 3,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "spare_part_id",
+                    "default": null,
+                    "ordinal": 4,
+                    "nullable": false,
+                    "data_type": "bigint",
+                    "description": null
+                },
+                {
+                    "name": "part_name",
+                    "default": null,
+                    "ordinal": 5,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "used_qty",
+                    "default": null,
+                    "ordinal": 6,
+                    "nullable": false,
+                    "data_type": "numeric(20,6)",
+                    "description": null
+                },
+                {
+                    "name": "goods_issue_id",
+                    "default": null,
+                    "ordinal": 7,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
+                }
+            ],
+            "description": "보전 실적의 예비품 사용 사실과 기존 출고 참조. 출고·수불·재고 변경을 만들지 않는다.",
+            "primary_key": [
+                "maintenance_result_part_id"
+            ],
+            "foreign_keys": [
+                {
+                    "name": "maintenance_result_part_goods_issue_id_fkey",
+                    "columns": [
+                        "goods_issue_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "goods_issue",
+                    "target_schema": "logistics",
+                    "target_columns": [
+                        "goods_issue_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_result_part_maintenance_result_id_fkey",
+                    "columns": [
+                        "maintenance_result_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "maintenance_result",
+                    "target_schema": "maintenance",
+                    "target_columns": [
+                        "maintenance_result_id"
+                    ]
+                },
+                {
+                    "name": "maintenance_result_part_spare_part_id_fkey",
+                    "columns": [
+                        "spare_part_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "spare_part",
+                    "target_schema": "mdm",
+                    "target_columns": [
+                        "spare_part_id"
+                    ]
+                }
+            ],
+            "is_partition": false,
+            "qualified_name": "maintenance.maintenance_result_part",
+            "unique_constraints": [
+                {
+                    "name": "uq_maintenance_result_part_seq",
+                    "columns": [
+                        "maintenance_result_id",
+                        "sequence_no"
                     ]
                 }
             ]
@@ -15742,7 +17432,7 @@
                     "name": "usage_type_code",
                     "default": null,
                     "ordinal": 5,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -15758,7 +17448,7 @@
                     "name": "used_from",
                     "default": null,
                     "ordinal": 7,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "timestamp with time zone",
                     "description": null
                 },
@@ -15785,6 +17475,38 @@
                     "nullable": false,
                     "data_type": "timestamp with time zone",
                     "description": null
+                },
+                {
+                    "name": "collection_method_code",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "ToolUsage collectionMethodCode: DIRECT or CONVERTED. This is separate from legacy usage_type_code."
+                },
+                {
+                    "name": "conversion_base_qty",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "numeric(20,6)",
+                    "description": "Conversion base quantity captured with the usage event."
+                },
+                {
+                    "name": "conversion_ratio",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "numeric(20,6)",
+                    "description": "Conversion ratio captured with the usage event; the submitted shot count remains authoritative."
+                },
+                {
+                    "name": "occurred_at",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "Device-provided occurrence instant. Do not derive or backfill from used_from or created_at."
                 }
             ],
             "description": null,
@@ -18600,6 +20322,10 @@
             "name": "mold",
             "checks": [
                 {
+                    "name": "ck_mold_pm_cycle_pair",
+                    "expression": "CHECK ((pm_cycle_interval IS NULL) = (pm_cycle_unit_code IS NULL))"
+                },
+                {
                     "name": "mold_cavity_count_check",
                     "expression": "CHECK (cavity_count > 0)"
                 },
@@ -18728,6 +20454,46 @@
                     "ordinal": 14,
                     "nullable": false,
                     "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "tool_type_code",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": false,
+                    "data_type": "character varying(50)",
+                    "description": null
+                },
+                {
+                    "name": "pm_trigger_type_code",
+                    "default": "'NONE'::character varying",
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "character varying(50)",
+                    "description": null
+                },
+                {
+                    "name": "pm_cycle_interval",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "pm_cycle_unit_code",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "character varying(50)",
+                    "description": null
+                },
+                {
+                    "name": "last_pm_date",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "date",
                     "description": null
                 }
             ],
@@ -22212,6 +23978,10 @@
             "name": "production_plan",
             "checks": [
                 {
+                    "name": "ck_production_plan_split_self",
+                    "expression": "CHECK (split_of_plan_id IS NULL OR split_of_plan_id <> production_plan_id)"
+                },
+                {
                     "name": "production_plan_planned_qty_check",
                     "expression": "CHECK (planned_qty::numeric > 0::numeric)"
                 },
@@ -22365,6 +24135,22 @@
                     "nullable": false,
                     "data_type": "integer",
                     "description": null
+                },
+                {
+                    "name": "split_of_plan_id",
+                    "default": null,
+                    "ordinal": 19,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "러닝체인지로 이 계획을 나눌 때의 원본 계획. 계약 ProductionPlanCreate.splitOfPlanId.sourcePlanId."
+                },
+                {
+                    "name": "split_reason_code",
+                    "default": null,
+                    "ordinal": 20,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "분할 사유. 공통코드 그룹 PRODUCTION_PLAN_SPLIT_REASON. 계약 ProductionPlanSplitRef.reasonCode."
                 }
             ],
             "description": null,
@@ -22435,6 +24221,19 @@
                     "target_schema": "planning",
                     "target_columns": [
                         "routing_id"
+                    ]
+                },
+                {
+                    "name": "production_plan_split_of_plan_id_fkey",
+                    "columns": [
+                        "split_of_plan_id"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "production_plan",
+                    "target_schema": "planning",
+                    "target_columns": [
+                        "production_plan_id"
                     ]
                 },
                 {
@@ -23165,7 +24964,7 @@
                     "name": "terminal_id",
                     "default": null,
                     "ordinal": 23,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -23870,7 +25669,7 @@
                     "name": "return_quality_status_code",
                     "default": null,
                     "ordinal": 10,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
                     "description": null
                 },
@@ -25001,7 +26800,7 @@
                     "name": "shift_id",
                     "default": null,
                     "ordinal": 20,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -25075,6 +26874,14 @@
                     "ordinal": 29,
                     "nullable": false,
                     "data_type": "integer",
+                    "description": null
+                },
+                {
+                    "name": "correct_reason_code",
+                    "default": null,
+                    "ordinal": 30,
+                    "nullable": true,
+                    "data_type": "app.code_t",
                     "description": null
                 }
             ],
@@ -26493,7 +28300,7 @@
                     "name": "shift_id",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
                     "description": null
                 },
@@ -28313,6 +30120,70 @@
                     "nullable": true,
                     "data_type": "bigint",
                     "description": null
+                },
+                {
+                    "name": "history_type_code",
+                    "default": null,
+                    "ordinal": 11,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "Calibration history type. Legacy NULL rows are not inferred as CALIBRATION."
+                },
+                {
+                    "name": "agency_type_code",
+                    "default": null,
+                    "ordinal": 12,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": null
+                },
+                {
+                    "name": "agency_name",
+                    "default": null,
+                    "ordinal": 13,
+                    "nullable": true,
+                    "data_type": "character varying(200)",
+                    "description": null
+                },
+                {
+                    "name": "tolerance_note",
+                    "default": null,
+                    "ordinal": 14,
+                    "nullable": true,
+                    "data_type": "text",
+                    "description": null
+                },
+                {
+                    "name": "recorded_by",
+                    "default": null,
+                    "ordinal": 15,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": "Authenticated recording user, distinct from calibrated_by and cleared_by."
+                },
+                {
+                    "name": "blocks_use",
+                    "default": "false",
+                    "ordinal": 16,
+                    "nullable": false,
+                    "data_type": "boolean",
+                    "description": "Explicit use-blocking decision. The contract default is false."
+                },
+                {
+                    "name": "cleared_at",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "timestamp with time zone",
+                    "description": "Set by the unblock action without rewriting or deleting the history entry."
+                },
+                {
+                    "name": "cleared_by",
+                    "default": null,
+                    "ordinal": 18,
+                    "nullable": true,
+                    "data_type": "bigint",
+                    "description": null
                 }
             ],
             "description": null,
@@ -28334,6 +30205,19 @@
                     ]
                 },
                 {
+                    "name": "equipment_calibration_cleared_by_fkey",
+                    "columns": [
+                        "cleared_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
+                },
+                {
                     "name": "equipment_calibration_equipment_id_fkey",
                     "columns": [
                         "equipment_id"
@@ -28345,18 +30229,24 @@
                     "target_columns": [
                         "equipment_id"
                     ]
+                },
+                {
+                    "name": "equipment_calibration_recorded_by_fkey",
+                    "columns": [
+                        "recorded_by"
+                    ],
+                    "on_delete": "NO ACTION",
+                    "on_update": "NO ACTION",
+                    "target_table": "app_user",
+                    "target_schema": "app",
+                    "target_columns": [
+                        "app_user_id"
+                    ]
                 }
             ],
             "is_partition": false,
             "qualified_name": "quality.equipment_calibration",
             "unique_constraints": [
-                {
-                    "name": "uq_equipment_calibration",
-                    "columns": [
-                        "equipment_id",
-                        "calibration_date"
-                    ]
-                }
             ]
         },
         {
@@ -29260,9 +31150,9 @@
                     "name": "inspection_plan_version_id",
                     "default": null,
                     "ordinal": 4,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "bigint",
-                    "description": null
+                    "description": "이 의뢰가 따르는 검사 기준 버전. 비어 있을 수 있다 — 기준 미등록 품목도 검사를 진행한다(✓확정 2026-07-15). 비면 항목별 규격이 없어 결과는 수량 세 칸·종합 판정·자유 입력만으로 성립한다(P-02-13 §5-2). ⚠ IQC·OQC 의뢰는 서버가 언제나 채워 내린다(W-01-01 §4 · W-04-03 §4). 근거: 계약 #280 · omf-mes#251."
                 },
                 {
                     "name": "target_type_code",
@@ -29500,8 +31390,12 @@
             "name": "inspection_result",
             "checks": [
                 {
+                    "name": "ck_inspection_result_judgment",
+                    "expression": "CHECK (status_code::text <> 'CONFIRMED'::text OR overall_judgment_code IS NOT NULL)"
+                },
+                {
                     "name": "ck_inspection_result_qty",
-                    "expression": "CHECK ((accepted_qty::numeric + rejected_qty::numeric + held_qty::numeric) = inspected_qty::numeric)"
+                    "expression": "CHECK (status_code::text <> 'CONFIRMED'::text OR (accepted_qty::numeric + rejected_qty::numeric + held_qty::numeric) = inspected_qty::numeric)"
                 },
                 {
                     "name": "inspection_result_inspected_qty_check",
@@ -29594,9 +31488,9 @@
                     "name": "overall_judgment_code",
                     "default": null,
                     "ordinal": 10,
-                    "nullable": false,
+                    "nullable": true,
                     "data_type": "app.code_t",
-                    "description": null
+                    "description": "종합 판정 — ACCEPTED(합격)·REJECTED(불합격)·HELD(보류). 값 목록은 공통코드 INSPECTION_RESULT_OVERALL_JUDGMENT 가 갖는다(제약에 박지 않는다). 작성중(DRAFT)에는 비어 있을 수 있고 확정(CONFIRMED)에는 반드시 있다 — 그 필수는 서비스가 400 REQUIRED 로 막는다. 근거: 계약 InspectionResultCreate.overallJudgmentCode 「statusCode=확정 이면 필수다」 · 회신 E-3 종결 2026-08-07 · P-02-13 §5-9."
                 },
                 {
                     "name": "inspector_id",
@@ -31233,6 +33127,10 @@
                 {
                     "name": "ck_lot_hold_release_reason",
                     "expression": "CHECK (released_at IS NULL OR release_reason_code IS NOT NULL)"
+                },
+                {
+                    "name": "ck_lot_hold_release_target",
+                    "expression": "CHECK (released_at IS NOT NULL OR release_target_lot_status_code IS NULL)"
                 }
             ],
             "schema": "trace",
@@ -31356,6 +33254,30 @@
                     "nullable": true,
                     "data_type": "app.code_t",
                     "description": "보류 해제 사유(LOT_HOLD_RELEASE_REASON). 해제 전에는 비어 있고 해제되면 반드시 있다 — ck_lot_hold_release_reason 이 그 짝을 지킨다."
+                },
+                {
+                    "name": "target_lot_status_code",
+                    "default": null,
+                    "ordinal": 16,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "보류를 걸 때 LOT 이 간 상태(LOT_STATUS) — C9=DEFECTIVE · C10=INSPECTION_PENDING. 계약 LotHold.lotStatusCode."
+                },
+                {
+                    "name": "release_target_lot_status_code",
+                    "default": null,
+                    "ordinal": 17,
+                    "nullable": true,
+                    "data_type": "app.code_t",
+                    "description": "해제가 LOT 을 보낸 상태(LOT_STATUS) — C7=NORMAL · C8=DEFECTIVE. 계약 LotHoldEvent.targetLotStatusCode(RELEASED 사건)."
+                },
+                {
+                    "name": "version_no",
+                    "default": "1",
+                    "ordinal": 18,
+                    "nullable": false,
+                    "data_type": "integer",
+                    "description": null
                 }
             ],
             "description": null,
@@ -32345,6 +34267,20 @@
             ]
         },
         {
+            "name": "document_issue_log_issued_worker_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "document_issue_log",
+            "target_table": "worker",
+            "source_schema": "app",
+            "target_schema": "mdm",
+            "source_columns": [
+                "issued_worker_id"
+            ],
+            "target_columns": [
+                "worker_id"
+            ]
+        },
+        {
             "name": "document_issue_log_lot_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "document_issue_log",
@@ -32356,6 +34292,34 @@
             ],
             "target_columns": [
                 "lot_id"
+            ]
+        },
+        {
+            "name": "document_issue_log_print_reported_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "document_issue_log",
+            "target_table": "app_user",
+            "source_schema": "app",
+            "target_schema": "app",
+            "source_columns": [
+                "print_reported_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "document_issue_log_print_reported_worker_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "document_issue_log",
+            "target_table": "worker",
+            "source_schema": "app",
+            "target_schema": "mdm",
+            "source_columns": [
+                "print_reported_worker_id"
+            ],
+            "target_columns": [
+                "worker_id"
             ]
         },
         {
@@ -32541,6 +34505,62 @@
             ]
         },
         {
+            "name": "notification_subscription_recipient_app_user_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "notification_subscription_recipient",
+            "target_table": "app_user",
+            "source_schema": "app",
+            "target_schema": "app",
+            "source_columns": [
+                "app_user_id"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "notification_subscription_recipient_business_unit_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "notification_subscription_recipient",
+            "target_table": "business_unit",
+            "source_schema": "app",
+            "target_schema": "mdm",
+            "source_columns": [
+                "business_unit_id"
+            ],
+            "target_columns": [
+                "business_unit_id"
+            ]
+        },
+        {
+            "name": "notification_subscription_recipient_notification_subscript_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "notification_subscription_recipient",
+            "target_table": "notification_subscription",
+            "source_schema": "app",
+            "target_schema": "app",
+            "source_columns": [
+                "notification_subscription_id"
+            ],
+            "target_columns": [
+                "notification_subscription_id"
+            ]
+        },
+        {
+            "name": "notification_subscription_recipient_role_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "notification_subscription_recipient",
+            "target_table": "role",
+            "source_schema": "app",
+            "target_schema": "app",
+            "source_columns": [
+                "role_id"
+            ],
+            "target_columns": [
+                "role_id"
+            ]
+        },
+        {
             "name": "numbering_counter_numbering_rule_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "numbering_counter",
@@ -32650,6 +34670,34 @@
             ],
             "target_columns": [
                 "role_id"
+            ]
+        },
+        {
+            "name": "terminal_printer_printer_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "terminal_printer",
+            "target_table": "printer",
+            "source_schema": "app",
+            "target_schema": "app",
+            "source_columns": [
+                "printer_id"
+            ],
+            "target_columns": [
+                "printer_id"
+            ]
+        },
+        {
+            "name": "terminal_printer_terminal_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "terminal_printer",
+            "target_table": "terminal",
+            "source_schema": "app",
+            "target_schema": "mdm",
+            "source_columns": [
+                "terminal_id"
+            ],
+            "target_columns": [
+                "terminal_id"
             ]
         },
         {
@@ -33059,6 +35107,104 @@
             ]
         },
         {
+            "name": "handling_unit_repack_event_performed_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event",
+            "target_table": "app_user",
+            "source_schema": "inventory",
+            "target_schema": "app",
+            "source_columns": [
+                "performed_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_li_handling_unit_repack_event_i_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "handling_unit_repack_event",
+            "source_schema": "inventory",
+            "target_schema": "inventory",
+            "source_columns": [
+                "handling_unit_repack_event_id"
+            ],
+            "target_columns": [
+                "handling_unit_repack_event_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line_handling_unit_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "handling_unit",
+            "source_schema": "inventory",
+            "target_schema": "inventory",
+            "source_columns": [
+                "handling_unit_id"
+            ],
+            "target_columns": [
+                "handling_unit_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line_item_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "item",
+            "source_schema": "inventory",
+            "target_schema": "mdm",
+            "source_columns": [
+                "item_id"
+            ],
+            "target_columns": [
+                "item_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line_lot_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "lot",
+            "source_schema": "inventory",
+            "target_schema": "trace",
+            "source_columns": [
+                "lot_id"
+            ],
+            "target_columns": [
+                "lot_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line_uom_id_after_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "uom",
+            "source_schema": "inventory",
+            "target_schema": "mdm",
+            "source_columns": [
+                "uom_id_after"
+            ],
+            "target_columns": [
+                "uom_id"
+            ]
+        },
+        {
+            "name": "handling_unit_repack_event_line_uom_id_before_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "handling_unit_repack_event_line",
+            "target_table": "uom",
+            "source_schema": "inventory",
+            "target_schema": "mdm",
+            "source_columns": [
+                "uom_id_before"
+            ],
+            "target_columns": [
+                "uom_id"
+            ]
+        },
+        {
             "name": "fk_inventory_adjustment_approval",
             "on_delete": "NO ACTION",
             "source_table": "inventory_adjustment",
@@ -33098,6 +35244,20 @@
             ],
             "target_columns": [
                 "inventory_adjustment_id"
+            ]
+        },
+        {
+            "name": "inventory_adjustment_line_inventory_count_line_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "inventory_adjustment_line",
+            "target_table": "inventory_count_line",
+            "source_schema": "inventory",
+            "target_schema": "inventory",
+            "source_columns": [
+                "inventory_count_line_id"
+            ],
+            "target_columns": [
+                "inventory_count_line_id"
             ]
         },
         {
@@ -34231,6 +36391,20 @@
             ]
         },
         {
+            "name": "inbound_receipt_line_lot_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "inbound_receipt_line",
+            "target_table": "lot",
+            "source_schema": "logistics",
+            "target_schema": "trace",
+            "source_columns": [
+                "lot_id"
+            ],
+            "target_columns": [
+                "lot_id"
+            ]
+        },
+        {
             "name": "inbound_receipt_line_purchase_order_line_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "inbound_receipt_line",
@@ -34511,6 +36685,20 @@
             ]
         },
         {
+            "name": "purchase_order_approval_request_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "purchase_order",
+            "target_table": "approval_request",
+            "source_schema": "logistics",
+            "target_schema": "app",
+            "source_columns": [
+                "approval_request_id"
+            ],
+            "target_columns": [
+                "approval_request_id"
+            ]
+        },
+        {
             "name": "purchase_order_business_unit_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "purchase_order",
@@ -34536,6 +36724,20 @@
             ],
             "target_columns": [
                 "plant_id"
+            ]
+        },
+        {
+            "name": "purchase_order_source_inbound_receipt_line_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "purchase_order",
+            "target_table": "inbound_receipt_line",
+            "source_schema": "logistics",
+            "target_schema": "logistics",
+            "source_columns": [
+                "source_inbound_receipt_line_id"
+            ],
+            "target_columns": [
+                "inbound_receipt_line_id"
             ]
         },
         {
@@ -34861,6 +37063,20 @@
             ]
         },
         {
+            "name": "recycle_entry_warehouse_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "recycle_entry",
+            "target_table": "warehouse",
+            "source_schema": "logistics",
+            "target_schema": "mdm",
+            "source_columns": [
+                "warehouse_id"
+            ],
+            "target_columns": [
+                "warehouse_id"
+            ]
+        },
+        {
             "name": "sales_order_customer_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "sales_order",
@@ -35155,6 +37371,20 @@
             ]
         },
         {
+            "name": "shipment_request_sales_order_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "shipment_request",
+            "target_table": "sales_order",
+            "source_schema": "logistics",
+            "target_schema": "logistics",
+            "source_columns": [
+                "sales_order_id"
+            ],
+            "target_columns": [
+                "sales_order_id"
+            ]
+        },
+        {
             "name": "shipment_request_ship_to_partner_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "shipment_request",
@@ -35351,6 +37581,20 @@
             ]
         },
         {
+            "name": "stock_transfer_disposition_decision_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "stock_transfer",
+            "target_table": "disposition_decision",
+            "source_schema": "logistics",
+            "target_schema": "quality",
+            "source_columns": [
+                "disposition_decision_id"
+            ],
+            "target_columns": [
+                "disposition_decision_id"
+            ]
+        },
+        {
             "name": "stock_transfer_from_business_unit_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "stock_transfer",
@@ -35418,6 +37662,20 @@
             ],
             "target_columns": [
                 "location_id"
+            ]
+        },
+        {
+            "name": "stock_transfer_line_handling_unit_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "stock_transfer_line",
+            "target_table": "handling_unit",
+            "source_schema": "logistics",
+            "target_schema": "inventory",
+            "source_columns": [
+                "handling_unit_id"
+            ],
+            "target_columns": [
+                "handling_unit_id"
             ]
         },
         {
@@ -35701,6 +37959,20 @@
             ]
         },
         {
+            "name": "breakdown_handled_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "breakdown",
+            "target_table": "app_user",
+            "source_schema": "maintenance",
+            "target_schema": "app",
+            "source_columns": [
+                "handled_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
             "name": "breakdown_reported_by_fkey",
             "on_delete": "NO ACTION",
             "source_table": "breakdown",
@@ -35729,6 +38001,48 @@
             ]
         },
         {
+            "name": "collection_channel_inspection_item_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "collection_channel",
+            "target_table": "inspection_item_spec",
+            "source_schema": "maintenance",
+            "target_schema": "quality",
+            "source_columns": [
+                "inspection_item_id"
+            ],
+            "target_columns": [
+                "inspection_item_spec_id"
+            ]
+        },
+        {
+            "name": "collection_channel_item_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "collection_channel",
+            "target_table": "item",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "item_id"
+            ],
+            "target_columns": [
+                "item_id"
+            ]
+        },
+        {
+            "name": "collection_channel_process_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "collection_channel",
+            "target_table": "process",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "process_id"
+            ],
+            "target_columns": [
+                "process_id"
+            ]
+        },
+        {
             "name": "collection_channel_uom_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "collection_channel",
@@ -35740,6 +38054,20 @@
             ],
             "target_columns": [
                 "uom_id"
+            ]
+        },
+        {
+            "name": "collection_channel_observation_equipment_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "collection_channel_observation",
+            "target_table": "equipment",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "equipment_id"
+            ],
+            "target_columns": [
+                "equipment_id"
             ]
         },
         {
@@ -35869,6 +38197,20 @@
             ]
         },
         {
+            "name": "maintenance_order_assignee_user_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order",
+            "target_table": "app_user",
+            "source_schema": "maintenance",
+            "target_schema": "app",
+            "source_columns": [
+                "assignee_user_id"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
             "name": "maintenance_order_breakdown_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "maintenance_order",
@@ -35883,6 +38225,20 @@
             ]
         },
         {
+            "name": "maintenance_order_cancelled_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order",
+            "target_table": "app_user",
+            "source_schema": "maintenance",
+            "target_schema": "app",
+            "source_columns": [
+                "cancelled_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
             "name": "maintenance_order_equipment_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "maintenance_order",
@@ -35894,6 +38250,34 @@
             ],
             "target_columns": [
                 "equipment_id"
+            ]
+        },
+        {
+            "name": "maintenance_order_issued_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order",
+            "target_table": "app_user",
+            "source_schema": "maintenance",
+            "target_schema": "app",
+            "source_columns": [
+                "issued_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "maintenance_order_mold_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_order",
+            "target_table": "mold",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "mold_id"
+            ],
+            "target_columns": [
+                "mold_id"
             ]
         },
         {
@@ -35939,6 +38323,34 @@
             ]
         },
         {
+            "name": "maintenance_result_breakdown_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result",
+            "target_table": "breakdown",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "breakdown_id"
+            ],
+            "target_columns": [
+                "breakdown_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_equipment_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result",
+            "target_table": "equipment",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "equipment_id"
+            ],
+            "target_columns": [
+                "equipment_id"
+            ]
+        },
+        {
             "name": "maintenance_result_maintenance_order_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "maintenance_result",
@@ -35953,6 +38365,20 @@
             ]
         },
         {
+            "name": "maintenance_result_mold_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result",
+            "target_table": "mold",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "mold_id"
+            ],
+            "target_columns": [
+                "mold_id"
+            ]
+        },
+        {
             "name": "maintenance_result_performed_by_fkey",
             "on_delete": "NO ACTION",
             "source_table": "maintenance_result",
@@ -35964,6 +38390,90 @@
             ],
             "target_columns": [
                 "worker_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_performed_by_user_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result",
+            "target_table": "app_user",
+            "source_schema": "maintenance",
+            "target_schema": "app",
+            "source_columns": [
+                "performed_by_user_id"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_line_maintenance_order_item_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result_line",
+            "target_table": "maintenance_order_item",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "maintenance_order_item_id"
+            ],
+            "target_columns": [
+                "maintenance_order_item_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_line_maintenance_result_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result_line",
+            "target_table": "maintenance_result",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "maintenance_result_id"
+            ],
+            "target_columns": [
+                "maintenance_result_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_part_goods_issue_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result_part",
+            "target_table": "goods_issue",
+            "source_schema": "maintenance",
+            "target_schema": "logistics",
+            "source_columns": [
+                "goods_issue_id"
+            ],
+            "target_columns": [
+                "goods_issue_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_part_maintenance_result_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result_part",
+            "target_table": "maintenance_result",
+            "source_schema": "maintenance",
+            "target_schema": "maintenance",
+            "source_columns": [
+                "maintenance_result_id"
+            ],
+            "target_columns": [
+                "maintenance_result_id"
+            ]
+        },
+        {
+            "name": "maintenance_result_part_spare_part_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "maintenance_result_part",
+            "target_table": "spare_part",
+            "source_schema": "maintenance",
+            "target_schema": "mdm",
+            "source_columns": [
+                "spare_part_id"
+            ],
+            "target_columns": [
+                "spare_part_id"
             ]
         },
         {
@@ -37238,6 +39748,20 @@
             ],
             "target_columns": [
                 "routing_id"
+            ]
+        },
+        {
+            "name": "production_plan_split_of_plan_id_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "production_plan",
+            "target_table": "production_plan",
+            "source_schema": "planning",
+            "target_schema": "planning",
+            "source_columns": [
+                "split_of_plan_id"
+            ],
+            "target_columns": [
+                "production_plan_id"
             ]
         },
         {
@@ -39103,6 +41627,20 @@
             ]
         },
         {
+            "name": "equipment_calibration_cleared_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "equipment_calibration",
+            "target_table": "app_user",
+            "source_schema": "quality",
+            "target_schema": "app",
+            "source_columns": [
+                "cleared_by"
+            ],
+            "target_columns": [
+                "app_user_id"
+            ]
+        },
+        {
             "name": "equipment_calibration_equipment_id_fkey",
             "on_delete": "NO ACTION",
             "source_table": "equipment_calibration",
@@ -39114,6 +41652,20 @@
             ],
             "target_columns": [
                 "equipment_id"
+            ]
+        },
+        {
+            "name": "equipment_calibration_recorded_by_fkey",
+            "on_delete": "NO ACTION",
+            "source_table": "equipment_calibration",
+            "target_table": "app_user",
+            "source_schema": "quality",
+            "target_schema": "app",
+            "source_columns": [
+                "recorded_by"
+            ],
+            "target_columns": [
+                "app_user_id"
             ]
         },
         {
@@ -40027,5 +42579,6 @@
             ]
         }
     ],
-    "design_reference_commit": "a8f46f2"
+    "design_reference_commit": "a8f46f2",
+    "declared_relationship_count": 601
 }

@@ -73,6 +73,14 @@ const DEFAULT_PREFIX: Record<string, string> = {
   SERIAL_NUMBER: 'SN',
   /** 규칙 미등재 — `RC-{YYYYMMDD}-{SEQ4}`. ⭐ 기간 축은 «본문 businessDate» 다(I-17 §6). */
   RECYCLE_ENTRY: 'RC',
+  /**
+   * 규칙 미등재 — `SH-{YYYYMMDD}-{SEQ4}`.
+   * ⚠ 계약 example `SH-2026-0813-0031` 은 형식이 다르다(`-{YYYY}-{MMDD}-`). 저장소 기본 패턴을
+   * 쓴다 — 형제 `STOCK_TRANSFER` 가 계약 example `ST-2026-000260` 과 갈린 채 이미 병합됐다(I-13).
+   * ⛔ `SHIPMENT_REQUEST`(`SR`)와 겹치지 않는 두 글자다 — `SHOPFLOOR_RECEIPT` 충돌(통보 191)을
+   * 한 번 더 만들지 않는다.
+   */
+  SHIPMENT: 'SH',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
