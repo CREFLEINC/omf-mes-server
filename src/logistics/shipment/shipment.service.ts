@@ -5,6 +5,7 @@ import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } fr
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolveDestinationLocation } from '../destination-location';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentCreateWrite, postShipment } from './shipment-posting';
 import { assertAllocationSum, assertShipmentQty } from './shipment-rules';
@@ -17,8 +18,6 @@ import { ShipmentDetailView } from './shipment-view';
 
 /** 번호가 «둘»이라 재시도가 둘 다를 새로 뽑는다(I-17 R-11 ⓓ 가 한 쪽만 적어 지적받은 자리). */
 const NUMBER_RETRY = 3;
-/** 시드 `MANAGEMENT_LEVEL` 4값(WAREHOUSE·ZONE·RACK·CELL) 중 «위치를 받지 않는» 하나. */
-const WAREHOUSE_LEVEL = 'WAREHOUSE';
 
 @Injectable()
 export class ShipmentService {
@@ -168,40 +167,17 @@ export class ShipmentService {
       plantId: Number(found.plant_id),
       itemIdByLine,
       ...(input.expedited === true
-        ? { receiptLocationId: await this.resolveReceiptLocation(input.warehouseId, found.management_level_code) }
+        ? {
+            // ⭐ 재등록(PR ⑧)과 «같은» 해소기다 — 계약 「창고면 위치를 받지 않고, 셀이면 셀까지 받는다」.
+            //   ⛔ 긴급 직행은 본문에 위치 칸이 0개라 더 깊게 관리하는 창고면 창고 칸에 400 REQUIRED 다.
+            receiptLocationId: await resolveDestinationLocation(this.prisma, {
+              warehouseId: input.warehouseId,
+              managementLevelCode: found.management_level_code,
+              warehouseField: 'warehouseId',
+            }),
+          }
         : {}),
     };
-  }
-
-  /**
-   * ⭐⭐ **긴급 직행의 장부상 입고 위치** — 본문에 위치 칸이 0개인데 `goods_receipt_line.
-   * destination_location_id` 는 NOT NULL 이다(계획서 §3-6 ⓒ).
-   * 계약 `managementLevelCode` 원문 「✅ 값 목록 확정 2026-08-31 … **이 값이 위치 입력을 가른다 —
-   * 창고면 위치를 받지 않고, 셀이면 셀까지 받는다**」(R-7 이 질의 225 를 취소한 근거).
-   * ⇒ `WAREHOUSE` 면 그 창고의 활성 위치가 «정확히 하나»여야 하고, 그보다 깊게 관리하는 창고는
-   *   위치를 받을 칸이 없어 긴급 직행을 받을 수 없다.
-   * ⛔ **사용처가 오늘 «하나»라 private 이다** — 재등록(PR ⑧)이 둘째로 오면 그때 공용으로 뺀다
-   *    (CLAUDE.md 「사용처 하나뿐인 추상화 금지」). 계획서 §3-6 ⓒ 의 「공용」은 두 PR 을 합친 말이다.
-   */
-  private async resolveReceiptLocation(warehouseId: number, level: string): Promise<bigint> {
-    if (level !== WAREHOUSE_LEVEL) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        field('warehouseId', ERROR_CODE.REQUIRED, `위치를 ${level} 단위로 관리하는 창고라 긴급 직행의 입고 위치를 받을 칸이 없습니다.`),
-      ]);
-    }
-    // `take: 2` — 0 · 1 · «둘 이상»만 가르면 된다.
-    const locations = await this.prisma.location.findMany({
-      where: { warehouse_id: BigInt(warehouseId), is_active: true },
-      select: { location_id: true },
-      orderBy: { location_id: 'asc' },
-      take: 2,
-    });
-    if (locations.length !== 1) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        field('warehouseId', ERROR_CODE.RANGE, '창고의 입고 위치를 하나로 정할 수 없습니다.'),
-      ]);
-    }
-    return locations[0].location_id;
   }
 }
 
