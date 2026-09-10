@@ -21,6 +21,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-shipment-probe';
 const PASSWORD = 'SH-출하-비밀번호';
@@ -28,7 +29,8 @@ const PREFIX = 'SHE2E';
 const BASE = '/api/logistics/shipments';
 const ROLE = 'SHE2E-ROLE';
 /** ⭐ 등록만 403 을 선언했다 — 조회 둘은 «선언 0» 이라 세션만 있으면 된다(§1-1 실측). */
-const PERMISSIONS = ['W-04-04', 'W-04-05'];
+/** ⭐ `W-01-13` 은 다형 취소 화면이다 — 자리 ⑤(출하 소유 전표가 거기서 막히는지)를 HTTP 로 본다. */
+const PERMISSIONS = ['W-04-04', 'W-04-05', 'W-04-12', 'W-01-13'];
 /** ⭐ 픽스처가 전부 이 창 안에 있고 다른 스위트의 출하는 밖에 있다. */
 const WINDOW = { shipDateFrom: '2026-08-20', shipDateTo: '2026-08-22' };
 
@@ -103,7 +105,12 @@ describe('출하 목록 (e2e)', () => {
     await makeShipments();
     await makePostFixture();
     await makeExpeditedFixture();
+    await makeCancelFixture();
     await makeUser();
+    // ⭐ 결재선은 사용자 «뒤»다 — 승인자가 이 스위트의 사용자다. 선이 없으면 상신이 코어에서 막힌다.
+    await seedRoute(prisma, 'SHIPMENT_CANCEL', [
+      (await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } })).app_user_id,
+    ]);
   }, 120_000);
 
   afterAll(async () => {
@@ -909,6 +916,255 @@ describe('출하 목록 (e2e)', () => {
     expect(await messagesOf(created.shipmentId)).toHaveLength(1);
   });
 
+  // ── 취소 `:request-cancel` · `:cancel` (PR ⑦) ─────────────────────────────
+  async function requestCancel(shipmentId: unknown, version: number, expected: number) {
+    const response = await request(app.getHttpServer())
+      .post(`${BASE}/${shipmentId as number}:request-cancel`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .send({ reason: '고객 요청으로 취소' })
+      .expect(expected);
+    return response.body as Record<string, unknown>;
+  }
+
+  async function cancelShipment(shipmentId: unknown, version: number, expected: number, key: string = randomUUID()) {
+    const response = await request(app.getHttpServer())
+      .post(`${BASE}/${shipmentId as number}:cancel`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key)
+      .set('If-Match', String(version))
+      // ⭐ 본문 영업일을 원 영업일(2026-09-01)과 «다른 날»로 둔다 — 거절하지 않고 원 영업일로 역전기한다.
+      .send({ businessDate: '2026-09-02', occurredAt: '2026-09-02T05:00:00.000Z' })
+      .expect(expected);
+    return response.body as Record<string, unknown>;
+  }
+
+  /** 승인은 결재 API 몫이다 — 여기서는 판정만 보므로 상태를 직접 올린다(취소 실행은 상태만 읽는다). */
+  const approveCancel = (shipmentId: unknown) =>
+    prisma.approval_request.updateMany({
+      where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId as number), status_code: 'PENDING' },
+      data: { status_code: 'APPROVED', decided_at: new Date() },
+    });
+
+  /** 등록 → 상신 → 승인까지 한 번에. 취소 실행 시험의 공통 앞단이다. */
+  async function approvedShipment(payload: CreateBody = body()): Promise<Record<string, unknown>> {
+    const created = await post(payload);
+    await requestCancel(created.shipmentId, await versionOf(created.shipmentId), 200);
+    await approveCancel(created.shipmentId);
+    return created;
+  }
+
+  it('X-1 ⭐ 상신 — SHIPMENT_CANCEL 결재가 서고 출하는 «그대로» UNCONFIRMED · 판 번호도 그대로다', async () => {
+    const created = await post(body());
+    const version = await versionOf(created.shipmentId);
+
+    const response = await requestCancel(created.shipmentId, version, 200);
+
+    expect(response).toMatchObject({ statusCode: 'UNCONFIRMED' });
+    const approval = await prisma.approval_request.findFirstOrThrow({
+      where: { target_type_code: 'SHIPMENT', target_id: BigInt(created.shipmentId as number) },
+    });
+    expect(approval).toMatchObject({ approval_type_code: 'SHIPMENT_CANCEL', status_code: 'PENDING', reason: '고객 요청으로 취소' });
+    // 시드 3값에 CANCEL_REQUESTED 가 없다 — 상태도 판 번호도 안 움직인다.
+    expect(await versionOf(created.shipmentId)).toBe(version);
+  });
+
+  it('X-2 ⛔ 재상신은 409 CANCEL_IN_PROGRESS — 계열 봉투다(코어의 400 이 아니다)', async () => {
+    const created = await post(body());
+    const version = await versionOf(created.shipmentId);
+    await requestCancel(created.shipmentId, version, 200);
+
+    const failed = await requestCancel(created.shipmentId, version, 409);
+
+    expect(failed).toMatchObject({ code: 'CANCEL_IN_PROGRESS' });
+  });
+
+  it('X-3 ⛔ 확정된 출하는 상신도 409 ALREADY_CONFIRMED — 「미확정 구간에서만 된다」', async () => {
+    const created = await post(body());
+    await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const failed = await requestCancel(created.shipmentId, await versionOf(created.shipmentId), 409);
+
+    expect(failed).toMatchObject({ code: 'ALREADY_CONFIRMED' });
+  });
+
+  it('X-4 ⭐⭐ 승인 없이 실행하면 400 — 상신 0건은 APPROVAL_REQUIRED · 대기 중은 APPROVAL_IN_PROGRESS', async () => {
+    const none = await post(body());
+    const noneFailed = await cancelShipment(none.shipmentId, await versionOf(none.shipmentId), 400);
+    // ⛔ 코어 assertApproved 는 요청 0건을 «통과»시킨다 — 그대로 불렀으면 상신도 안 한 취소가 실행됐다.
+    expect((noneFailed.errors as { code: string }[])[0].code).toBe('APPROVAL_REQUIRED');
+
+    const pending = await post(body());
+    await requestCancel(pending.shipmentId, await versionOf(pending.shipmentId), 200);
+    const pendingFailed = await cancelShipment(pending.shipmentId, await versionOf(pending.shipmentId), 400);
+    expect((pendingFailed.errors as { code: string }[])[0].code).toBe('APPROVAL_IN_PROGRESS');
+  });
+
+  it('X-5 ⭐ 승인 뒤 실행 — CANCELLED · 출고 전표 CANCELLED · 역전기가 «원» 영업일로 서고 on_hand 가 돌아온다', async () => {
+    const before = await balance();
+    const created = await approvedShipment();
+
+    const cancelled = await cancelShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    expect(cancelled).toMatchObject({ statusCode: 'CANCELLED' });
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    expect(issue.status_code).toBe('CANCELLED');
+    const original = await prisma.inventory_transaction.findFirstOrThrow({
+      where: { source_document_type_code: 'GOODS_ISSUE', source_document_id: issue.goods_issue_id, reversal_of_transaction_id: null },
+    });
+    const reversal = await prisma.inventory_transaction.findFirstOrThrow({
+      where: { reversal_of_transaction_id: original.inventory_transaction_id },
+    });
+    // ⛔ 본문은 2026-09-02 를 보냈다 — 역전기는 원 영업일(문의 032 · 코어 규약)이다.
+    expect(reversal.business_date.toISOString().slice(0, 10)).toBe('2026-09-01');
+    expect((await balance()).on_hand_qty.toNumber()).toBe(before.on_hand_qty.toNumber());
+  });
+
+  it('X-6 ⭐ 롤업 둘이 «되돌아온다» — 지시 라인과 수주 라인의 shipped_qty', async () => {
+    const line = () =>
+      prisma.shipment_request_line.findUniqueOrThrow({
+        where: { shipment_request_line_id: BigInt(made.postRequestLine) },
+        include: { sales_order_line: true },
+      });
+    const before = await line();
+    const created = await approvedShipment();
+
+    await cancelShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const after = await line();
+    expect(after.shipped_qty.toNumber()).toBe(before.shipped_qty.toNumber());
+    expect(after.sales_order_line?.shipped_qty.toNumber()).toBe(before.sales_order_line?.shipped_qty.toNumber());
+  });
+
+  it('X-7 ⭐⭐ 예약이 «둘»이면 소진분을 행 순서대로 풀어 P 가 내려간다(통보 212 정정 · R-13)', async () => {
+    const created = await approvedShipment(
+      body({
+        shipmentRequestId: made.cancelRequest,
+        lines: [
+          {
+            shipmentRequestLineId: made.cancelRequestLine,
+            shippedQty: 10,
+            uomId: Number(ids.uom),
+            allocations: [{ lotId: Number(ids.lotPost), allocatedQty: 10, uomId: Number(ids.uom) }],
+          },
+        ],
+      }),
+    );
+
+    await cancelShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const rows = await prisma.inventory_reservation.findMany({
+      where: { reservation_no: { startsWith: `${PREFIX}-CXL-RS` } },
+      orderBy: { inventory_reservation_id: 'asc' },
+      select: { reserved_qty: true, consumed_qty: true, released_qty: true },
+    });
+    // 첫 행(6/6) 전량 · 둘째 행(7/7)에서 남은 4 — ⛔ 둘째에서 7 을 다 풀면 소진 안 한 양까지 풀린다.
+    expect(rows.map((row) => [row.consumed_qty.toNumber(), row.released_qty.toNumber()])).toEqual([
+      [0, 6],
+      [3, 4],
+    ]);
+  });
+
+  it('X-8 ⭐⭐ 긴급 직행 취소 — 역전기가 «둘»(출고·입고)이고 입고 전표도 CANCELLED · 잔액 순증 0', async () => {
+    const created = await approvedShipment(expeditedBody());
+
+    await cancelShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const receipt = await prisma.goods_receipt.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    expect(receipt.status_code).toBe('CANCELLED');
+    const reversals = await prisma.inventory_transaction.findMany({
+      where: {
+        reversal_of_transaction_id: { not: null },
+        OR: [
+          { source_document_type_code: 'GOODS_ISSUE', source_document_id: issue.goods_issue_id },
+          { source_document_type_code: 'GOODS_RECEIPT', source_document_id: receipt.goods_receipt_id },
+        ],
+      },
+    });
+    // ⛔ 하나면 입고분 +q 가 유령 재고로 남는다.
+    expect(reversals).toHaveLength(2);
+    const row = await prisma.inventory_balance.findFirstOrThrow({ where: { lot_id: ids.lotExp, location_id: ids.location } });
+    expect(row.on_hand_qty.toNumber()).toBe(0);
+  });
+
+  it('X-9 ⭐ J-8 — 승인 뒤 그 사이 확정됐으면 실행이 409 ALREADY_CONFIRMED 이고 원장을 안 건드린다', async () => {
+    const created = await approvedShipment();
+    // 승인된(PENDING 이 아닌) 결재는 확정을 막지 않는다 — 그 틈에 확정이 들어온다.
+    await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const failed = await cancelShipment(created.shipmentId, await versionOf(created.shipmentId), 409);
+
+    expect(failed).toMatchObject({ code: 'ALREADY_CONFIRMED' });
+    expect(await prisma.inventory_transaction.count({ where: { transaction_no: { endsWith: '-R' }, source_document_type_code: 'GOODS_ISSUE', source_document_id: (await prisma.goods_issue.findFirstOrThrow({ where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) } })).goods_issue_id } })).toBe(0);
+  });
+
+  it('X-10 ⭐ 같은 멱등키 재전송은 같은 응답이고 역전기가 «한 건» 그대로다', async () => {
+    const created = await approvedShipment();
+    const version = await versionOf(created.shipmentId);
+    const key = randomUUID();
+
+    const first = await cancelShipment(created.shipmentId, version, 200, key);
+    const second = await cancelShipment(created.shipmentId, version, 200, key);
+
+    expect(second).toEqual(first);
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    expect(
+      await prisma.inventory_transaction.count({
+        where: { source_document_type_code: 'GOODS_ISSUE', source_document_id: issue.goods_issue_id, reversal_of_transaction_id: { not: null } },
+      }),
+    ).toBe(1);
+  });
+
+  it('X-11 ⭐⭐ 자리 ⑤ — 출하가 만든 출고·입고 전표는 다형 취소에서 STATE_LOCKED 로 «막힌다»', async () => {
+    const progressOf = async (typeCode: string, documentId: bigint) => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/logistics/document-progress/${typeCode}/${documentId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body as { progress: Record<string, unknown>; successors: unknown[] };
+    };
+
+    const normal = await post(body());
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(normal.shipmentId as number) },
+    });
+    const issueProgress = await progressOf('GOODS_ISSUE', issue.goods_issue_id);
+    expect(issueProgress.progress).toMatchObject({ cancellable: false, cancelBlockedReasonCode: 'STATE_LOCKED' });
+    // ⛔ 「후속」 축으로 막지 않았다 — 보이지 않는 후속을 먼저 취소하라는 안내가 안 나온다.
+    expect(issueProgress.progress.successorCount).toBe(0);
+    expect(issueProgress.successors).toEqual([]);
+
+    // ⭐ 깃발만이 아니라 «실제» 경로가 닫혔다 — 그 전표로 다형 취소를 상신하면 400 이다.
+    const refused = await request(app.getHttpServer())
+      .post(`/api/logistics/document-progress/GOODS_ISSUE/${issue.goods_issue_id}:request-cancel`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(issue.version_no))
+      .send({ reason: '출고만 따로 취소' })
+      .expect(400);
+    expect((refused.body as { errors: { code: string }[] }).errors[0].code).toBe('STATE_LOCKED');
+
+    // ⭐ 긴급 직행의 «입고» 전표도 같다 — 한 유형만 막으면 입고 쪽으로 구멍이 남는다.
+    const urgent = await post(expeditedBody());
+    const receipt = await prisma.goods_receipt.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(urgent.shipmentId as number) },
+    });
+    expect((await progressOf('GOODS_RECEIPT', receipt.goods_receipt_id)).progress).toMatchObject({
+      cancellable: false,
+      cancelBlockedReasonCode: 'STATE_LOCKED',
+    });
+  });
+
   // ── 상세 `GET /logistics/shipments/{shipmentId}` ──────────────────────────
   async function detail(shipmentId: number): Promise<{ body: ShipmentDetailBody; etag?: string }> {
     const response = await request(app.getHttpServer())
@@ -1251,6 +1507,45 @@ describe('출하 목록 (e2e)', () => {
     made.expRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
   }
 
+  /**
+   * 취소 픽스처 — 「예약 둘」이 매달린 지시(R-13). 피킹이 한 일을 흉내내 두 행 모두 «전량 소진» 상태로
+   * 둔다(reserved = consumed). ⭐ 다른 취소 시험이 이 예약을 건드리지 않도록 지시를 따로 세웠다.
+   */
+  async function makeCancelFixture(): Promise<void> {
+    const header = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-CXL`,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: {
+          create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 100, allocated_qty: 100 }],
+        },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.cancelRequest = Number(header.shipment_request_id);
+    made.cancelRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
+    for (const [index, qty] of [6, 7].entries()) {
+      await prisma.inventory_reservation.create({
+        data: {
+          reservation_no: `${PREFIX}-CXL-RS${index + 1}`,
+          reservation_type_code: 'SHIPMENT',
+          source_document_type_code: 'SHIPMENT_REQUEST_LINE',
+          source_document_id: header.shipment_request_line[0].shipment_request_line_id,
+          item_id: ids.item,
+          lot_id: ids.lotPost,
+          warehouse_id: ids.warehouse,
+          reserved_qty: qty,
+          consumed_qty: qty,
+          uom_id: ids.uom,
+          status_code: 'RESERVED',
+        },
+      });
+    }
+  }
+
   async function makeShipments(): Promise<void> {
     // 지시 1 — 라인 하나가 «배정 = 예약 합»(피킹 완료) · 지시 2 — 라인 0건 · 지시 3 — 미달.
     made.request1 = Number(await makeRequest('R1', ids.customer, { allocated: 10, reserved: 10 }));
@@ -1458,7 +1753,17 @@ describe('출하 목록 (e2e)', () => {
       // 확정이 적재한 송신 · 취소 품의 — 다형 참조라 FK 는 없지만 «이 스위트의 출하»로만 좁힌다.
       `DELETE FROM integration.integration_message
         WHERE target_type_code = 'SHIPMENT' AND target_id IN (${OUR_SHIPMENTS})`,
-      `DELETE FROM app.approval_request WHERE approval_request_no LIKE '${PREFIX}%'`,
+      `DELETE FROM app.approval_step WHERE approval_request_id IN (
+         SELECT approval_request_id FROM app.approval_request
+          WHERE (target_type_code = 'SHIPMENT' AND target_id IN (${OUR_SHIPMENTS}))
+             OR approval_request_no LIKE '${PREFIX}%')`,
+      `DELETE FROM app.approval_request
+        WHERE (target_type_code = 'SHIPMENT' AND target_id IN (${OUR_SHIPMENTS}))
+           OR approval_request_no LIKE '${PREFIX}%'`,
+      // 결재선 — 이 스위트만 SHIPMENT_CANCEL 선을 심는다(실측 0건). 둘이면 선택이 ROUTE_AMBIGUOUS 다.
+      `DELETE FROM app.approval_route_step WHERE approval_route_id IN (
+         SELECT approval_route_id FROM app.approval_route WHERE approval_type_code = 'SHIPMENT_CANCEL')`,
+      `DELETE FROM app.approval_route WHERE approval_type_code = 'SHIPMENT_CANCEL'`,
       // ⛔⛔ 원장은 «지우지 않는다» — `block_ledger_header_mutation` 트리거가 UPDATE·DELETE 를 막는다
       //    (P0001). 그것이 원장의 설계다. 남는 행은 `source_document_id` 가 다형 참조라 FK 가 없다.
       `DELETE FROM logistics.goods_issue_line WHERE goods_issue_id IN (
