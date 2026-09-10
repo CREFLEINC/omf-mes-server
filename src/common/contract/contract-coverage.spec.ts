@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/490)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/487)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -36,6 +36,9 @@ describe('계약 커버리지', () => {
     // eslint-disable-next-line no-console
     console.log(`계약 구현 커버리지: ${implemented}/${registry.size}`);
 
+    // ⭐ **분모를 «센다».** 이 시험 이름이 「n/490」인 채로 실제가 487 이 되도록 아무도 몰랐다
+    //    (부채 #337). 계약 사본을 당겨 분모가 바뀌면 여기가 빨개지고, 그때 목표 수를 다시 잡는다.
+    expect(registry.size).toBe(487);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

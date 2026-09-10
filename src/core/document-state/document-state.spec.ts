@@ -41,8 +41,42 @@ const NONCONFORMANCE_STATUS = 'quality.nonconformance.status_code';
 /** I-14 PR ④ 가 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 전기 하나뿐이다(취소 경로 0건). */
 const ADJUSTMENT_STATUS = 'inventory.inventory_adjustment.status_code';
 
+/**
+ * ⭐ **등록된 축 전건.** 위 상수 하나하나가 「어느 슬라이스가 열었나」를 달고 있다 — 그 목록이
+ * 곧 표다. ⛔ `transitions.ts` 머리 주석이 수를 글로 적고 있었고 **「일곱」인 채로 열아홉이 되도록
+ * 아무도 몰랐다**(부채 #337). 그래서 수를 주석이 아니라 여기서 «센다».
+ */
+const REGISTERED_AXES = [
+  ADJUSTMENT_STATUS,
+  APPROVAL_STATUS,
+  BREAKDOWN_STATUS,
+  EQUIPMENT_STATUS,
+  GOODS_ISSUE_STATUS,
+  GOODS_RECEIPT_STATUS,
+  INBOUND_RECEIPT_STATUS,
+  INSPECTION_RESULT_STATUS,
+  LIFECYCLE,
+  LOT_QUALITY_STATUS,
+  MAINTENANCE_ORDER_STATUS,
+  MOLD_STATUS,
+  NONCONFORMANCE_STATUS,
+  PRODUCTION_PLAN_STATUS,
+  PUTAWAY_TASK_STATUS,
+  ROUTING_COLUMN,
+  STOCK_TRANSFER_STATUS,
+  WORK_ORDER_STATUS,
+  WORK_SESSION_STATUS,
+];
+
 describe('DocumentStateService', () => {
   const service = new DocumentStateService();
+
+  it('⭐ 등록된 축은 열아홉이고, 그 열아홉이 이 파일이 이름 적은 축과 «같다»', () => {
+    // ⛔ 축을 더했으면 위 상수 목록에도 더한다 — 여기 없는 축은 이 spec 이 한 번도 안 만져 본
+    //    축이고, `test/document-state.e2e-spec.ts` 의 `STATUS_GROUPS` 도 못 채웠을 가능성이
+    //    높다(README §6-4 — 그 표가 안 채워져 main 이 두 번 빨갰다).
+    expect(Object.keys(TRANSITIONS).sort()).toEqual([...REGISTERED_AXES].sort());
+  });
 
   describe('LOT 생명주기 — 지금 등록된 유일한 상태기계', () => {
     it('대기 → 활성 (L1, 첫 실적)', () => {

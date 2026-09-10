@@ -103,10 +103,12 @@ export class InspectionResultWriteService {
     //    `P2024` 로 죽는다(`numbering.service.ts:51-53` · I-2 R-2). 결번은 허용한다.
     // ⚠ 기간 키는 `inspectedAt` 의 UTC 날짜다 — 서버가 「오늘」로 다시 잡으면 자정을 넘긴
     //    오프라인 재전송이 하루 뒤 번호를 받는다(I-7 선례 · §5-3).
-    const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
     // 확정으로 태어나는 저장은 시각·주체를 트랜잭션 «밖»에서 한 번 정한다 — `confirmed_at` 과
     // LOT 이력·보류 해제가 같은 시각을 써야 한다. 작성중이면 `undefined` 다.
+    // ⭐ 그 판정이 채번 «앞»이다(#320 m-2) — 뒤에 두면 세션 없는 확정 저장이 번호 하나를
+    //    결번으로 남기고 401 을 받는다. 결번 자체는 허용이지만 순서만 바꾸면 안 생긴다.
     const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
+    const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
 
     return this.prisma
       .$transaction(async (tx) => {
