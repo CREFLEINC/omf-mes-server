@@ -2,12 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PagedResponse, PageRequest, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  OqcInspectionRow,
-  ShipmentInspectionLine,
-  oqcPassed as lineOqcPassed,
-} from '../shipment-request/shipment-inspection';
-import { SHIPMENT_REQUEST_LINE } from '../shipment-request/shipment-progress';
+import { oqcPassedByLine } from '../shipment-request/shipment-oqc';
 import {
   MatchReasonCode,
   ShipmentAllocationMatch,
@@ -16,11 +11,6 @@ import {
   matchView,
   shipmentLotAllocationView,
 } from './shipment-allocation-view';
-
-/** ③a `oqcResults` 와 같은 좁히기 — 판정은 그 함수(`lineOqcPassed`)가 다시 한다. */
-const OQC = 'OQC';
-const LOT = 'LOT';
-const SHIPMENT_REQUEST = 'SHIPMENT_REQUEST';
 
 export interface ShipmentAllocationFilters {
   shipmentId?: number;
@@ -96,7 +86,7 @@ export class ShipmentAllocationQueryService {
     //   ⛔ `count(*) OVER ()` 는 쓰지 않는다 — 범위 밖 쪽에서 `total` 이 0 으로 접힌다(PR ④ 선례).
     const { rows, total: sqlTotal } =
       query.oqcPassed === undefined ? await this.fetchPage(where, page) : { rows: await this.fetchAll(where), total: 0 };
-    const oqcByLine = await this.oqcPassedByLine(rows.map((row) => row.shipment_request_line_id));
+    const oqcByLine = await oqcPassedByLine(this.prisma, rows.map((row) => row.shipment_request_line_id));
     let views = rows.map((row) =>
       shipmentLotAllocationView(row, oqcByLine.get(String(row.shipment_request_line_id)) ?? false),
     );
@@ -125,7 +115,7 @@ export class ShipmentAllocationQueryService {
       shipmentLotAllocationId,
     );
     if (row === undefined) throw new NotFoundException('없는 출하 LOT 배분입니다.');
-    const oqcByLine = await this.oqcPassedByLine([row.shipment_request_line_id]);
+    const oqcByLine = await oqcPassedByLine(this.prisma, [row.shipment_request_line_id]);
     return shipmentLotAllocationView(row, oqcByLine.get(String(row.shipment_request_line_id)) ?? false);
   }
 
@@ -153,84 +143,6 @@ export class ShipmentAllocationQueryService {
         ORDER BY a.shipment_lot_allocation_id DESC`,
       ...where.params,
     );
-  }
-
-  /**
-   * `shipment_line → shipment_request_line` 을 타고 ③a 의 `oqcPassed` 를 그대로 부른다(R-10) —
-   * LOT 축만으로 내면 헤더 대상 OQC 를 가진 출하에서 「합격인데 라벨을 영원히 못 뽑는」 영구
-   * 상태가 된다.
-   * ⭐⭐ LOT 모집단은 «이 배분»이 아니라 **③b/④ `picksByLine()` 과 같은 축**(`inventory_reservation`
-   * · `SHIPMENT_REQUEST_LINE`)이다 — §5-2 정본이 `picks[].lotId` 라 못박은 자리다. `shipment_lot_
-   * allocation` 에서 세우면 «배분 축»이 되어, 라인이 피킹한 LOT 중 이번 출하엔 «배정되지 않은»
-   * LOT 의 불합격이 안 보인다(검사 화면과 발행 대상 목록이 갈린다).
-   * ⭐ 후보 «행»이 아니라 그 라인들의 예약 «전건»으로 세운다 — 필터가 좁혀도(예: `handlingUnitId`)
-   *   같은 배분의 `oqcPassed` 가 필터에 따라 갈리면 안 된다.
-   */
-  private async oqcPassedByLine(lineIds: bigint[]): Promise<Map<string, boolean>> {
-    const ids = [...new Set(lineIds.map(String))].map(BigInt);
-    if (ids.length === 0) return new Map();
-    const lines = await this.prisma.shipment_request_line.findMany({
-      where: { shipment_request_line_id: { in: ids } },
-      select: {
-        shipment_request_line_id: true,
-        shipment_request_id: true,
-        shipping_inspection_required: true,
-      },
-    });
-    const picks = await this.prisma.inventory_reservation.findMany({
-      where: { source_document_type_code: SHIPMENT_REQUEST_LINE, source_document_id: { in: ids } },
-      select: { source_document_id: true, lot_id: true },
-    });
-    const lotsByLine = new Map<string, Set<string>>();
-    for (const row of picks) {
-      if (row.lot_id === null) continue;
-      const key = String(row.source_document_id);
-      const set = lotsByLine.get(key) ?? new Set<string>();
-      set.add(String(row.lot_id));
-      lotsByLine.set(key, set);
-    }
-    const inspections = await this.oqcResults(
-      lines.map((line) => line.shipment_request_id),
-      [...new Set(picks.flatMap((row) => (row.lot_id === null ? [] : [row.lot_id])))],
-    );
-    const result = new Map<string, boolean>();
-    for (const line of lines) {
-      const key = String(line.shipment_request_line_id);
-      const inspectionLine: ShipmentInspectionLine = {
-        shipmentRequestId: line.shipment_request_id,
-        shippingInspectionRequired: line.shipping_inspection_required,
-        lotIds: [...(lotsByLine.get(key) ?? new Set<string>())].map((id) => BigInt(id)),
-      };
-      result.set(key, lineOqcPassed(inspectionLine, inspections));
-    }
-    return result;
-  }
-
-  /** ③a `oqcResults` 와 같은 좁히기(둘째 그물은 `lineOqcPassed` 가 다시 판다). */
-  private async oqcResults(shipmentRequestIds: bigint[], lotIds: bigint[]): Promise<OqcInspectionRow[]> {
-    const rows = await this.prisma.inspection_result.findMany({
-      where: {
-        inspection_request: {
-          inspection_type_code: OQC,
-          OR: [
-            { lot_id: { in: lotIds } },
-            { target_type_code: LOT, target_id: { in: lotIds } },
-            { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
-          ],
-        },
-      },
-      include: { inspection_request: true },
-    });
-    return rows.map((row) => ({
-      inspectionRequestId: row.inspection_request_id,
-      inspectionTypeCode: row.inspection_request.inspection_type_code,
-      targetTypeCode: row.inspection_request.target_type_code,
-      targetId: row.inspection_request.target_id,
-      lotId: row.inspection_request.lot_id,
-      statusCode: row.status_code,
-      inspectionRound: row.inspection_round,
-      overallJudgmentCode: row.overall_judgment_code,
-    }));
   }
 
   /** `lotQ` + `shipmentId` 삼분기(§4-4) — `shipmentId` 가 없으면 `match` 자체를 안 만든다(A-13·A-17). */
