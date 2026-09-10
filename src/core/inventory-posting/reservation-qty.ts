@@ -200,20 +200,24 @@ async function consumeReservation(
 }
 
 /**
- * **되돌림 — 소진된 예약분을 「풀린 것」으로 옮긴다**(I-23 출하 취소 · 결정 통보 212).
+ * **되돌림 — 소진된 예약분을 「풀린 것」으로 «옮긴다»**(I-23 출하 취소 · 결정 통보 212).
  *
- * ⭐⭐ **`consumed_qty` 를 내린 «뒤»에 부른다.** `ck_reservation_qty` 는 **합**
- * (`released_qty + consumed_qty <= reserved_qty`)에 걸려 있어, 소진분을 그대로 둔 채
- * `released` 를 올리면 위반이다(통보 212 의 4단계 실측). ⛔ 그러나 순서를 **주석으로만**
- * 지키지 않는다 — 아래 `guard` 가 그 제약을 **앞당겨** 0행 → 400 으로 드러낸다. 순서를
- * 뒤집으면 CHECK 의 500 이 아니라 「되돌릴 예약 수량이 모자랍니다」 400 이 나간다.
+ * ⭐⭐ **한 문장에서 `consumed −q` · `released +q` 를 함께 쓴다.** `ck_reservation_qty` 는 **합**
+ * (`released_qty + consumed_qty <= reserved_qty`)에 걸려 있고 이 이동은 합을 바꾸지 않아 제약을
+ * 절대 안 건드린다. 하한은 `consumed_qty >= q` 하나다(음수 방지).
  *
- * ⭐ 취소 경로에서 `consumed` 내리기는 **이미 있다** — `pickBalances()` 의 Δ<0 갈래가
- * `consumeReservation()` 으로 내린다. 여기서 다시 내리지 않는다(두 번 내리면 음수다).
+ * ⛔⛔ **초판(이 PR 의 첫 커밋)은 틀렸다** — `released` 만 올리고 「`consumed` 내리기는
+ *    `pickBalances()` Δ<0 갈래가 이미 한다」고 적었다(통보 212 ⓐ 의 기제). 그 갈래는 잔액의
+ *    `picked_qty ≥ q` 를 요구하는데 **출하가 나간 뒤에는 출고가 그 `picked` 를 이미 소진했다**
+ *    (`consumeBalances` — 예약은 안 건드린다). ⇒ 출하 취소 시점의 예약은
+ *    `reserved N / released 0 / consumed N` 이고 초판의 하한 `reserved − released − consumed ≥ q`
+ *    는 `0 ≥ N` 이라 **언제나 400** 이었다. PR ⑦(취소)을 쓰려다 발견했다 — 호출부가 0개인 동안
+ *    단위 시험은 초록이었다. 212 가 정한 «끝 상태»(`consumed 0 · released N`)는 그대로고 «기제»만 고친다.
  *
- * ⭐ 이것이 `shipment-progress.ts:44-48` 의 뺄셈(`P = Σ(reserved − released)`)을 살린다 —
- * 취소 뒤 진행도가 `PICKED` 에서 실제로 되돌아온다. 이 함수가 없으면 그 뺄셈은 «영원히 0» 을
- * 빼는 죽은 식이다.
+ * ⛔ 잔액(`inventory_balance`)은 «안» 건드린다 — 피킹 때 `reserved` 는 이미 내려갔고 `picked` 는
+ *    출고가 소진했다. 되돌릴 잔액 쪽 수량은 원장 역전기가 `on_hand` 로 돌려준다.
+ *
+ * ⭐ 이것이 `shipment-progress.ts:44-48` 의 뺄셈(`P = Σ(reserved − released)`)을 살린다.
  */
 export async function releaseReservation(
   tx: Prisma.TransactionClient,
@@ -227,13 +231,14 @@ export async function releaseReservation(
   // (`consumeReservation` 과 같은 규약).
   const rows = await tx.$queryRaw<{ inventory_reservation_id: bigint }[]>`
     UPDATE inventory.inventory_reservation
-       SET released_qty = released_qty + ${qty}::numeric,
+       SET consumed_qty = consumed_qty - ${qty}::numeric,
+           released_qty = released_qty + ${qty}::numeric,
            version_no = version_no + 1
      WHERE inventory_reservation_id = ${reservationId}
        AND item_id = ${itemId}::bigint
-       AND reserved_qty - released_qty - consumed_qty >= ${qty}::numeric
+       AND consumed_qty >= ${qty}::numeric
     RETURNING inventory_reservation_id`;
-  if (rows.length === 0) throw negativeBalance(path, '되돌릴 예약 수량이 모자랍니다.');
+  if (rows.length === 0) throw negativeBalance(path, '되돌릴 소진 수량이 모자랍니다.');
 }
 
 /**
