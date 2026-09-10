@@ -3,7 +3,12 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { LockedBalanceRow, lockBalancesByItemLot, lockBalancesInOrder } from './balance-lock';
 import { InventoryPostingService } from './inventory-posting.service';
-import { BalanceDimension, PickMove, ReserveMove } from './reservation-qty';
+import {
+  BalanceDimension,
+  PickMove,
+  ReserveMove,
+  releaseReservation,
+} from './reservation-qty';
 
 const RESERVATION = 7n;
 /** ⭐ 예약 id 와 «다른» 값이라야 「돌려주는 id 의 출처」 변이가 죽는다(README §6-3 ⑴). */
@@ -593,5 +598,62 @@ describe('InventoryPostingService.consume', () => {
     // 11칸을 그대로 겨냥하므로 위치가 하나만 달라도 0행이다.
     expect(statements[0].sql).toContain('location_id = ?');
     expect(statements[0].values).toContain(99n);
+  });
+});
+
+/**
+ * ⭐ 되돌림(I-23 출하 취소 · 결정 통보 212) — 소진분을 풀린 것으로 «옮긴다».
+ * ⛔ 초판은 released 만 올리고 하한을 `reserved − released − consumed ≥ q` 로 걸어, 출하가 나간 뒤의
+ *    예약(`reserved N / released 0 / consumed N`)에서 언제나 0행 400 이었다. 아래 둘째 시험이 그
+ *    하한의 «부재»까지 못 박는다.
+ */
+describe('예약 되돌림 — releaseReservation', () => {
+  const RELEASE_FIELD = 'shipmentId';
+
+  it('⭐⭐ 한 문장에서 consumed 를 내리고 released 를 올린다 — 합이 안 변해 CHECK 를 안 건드린다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
+
+    expect(statements).toHaveLength(1);
+    expect(statements[0].sql).toContain('UPDATE inventory.inventory_reservation');
+    expect(statements[0].sql).toContain('consumed_qty = consumed_qty - ?');
+    expect(statements[0].sql).toContain('released_qty = released_qty + ?');
+    expect(statements[0].sql).toContain('version_no = version_no + 1');
+  });
+
+  it('⭐⭐ 하한은 consumed_qty ≥ q «하나»다 — 초판의 reserved − released − consumed 하한이 없다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
+
+    expect(statements[0].sql).toContain('AND consumed_qty >= ?');
+    // 출하 뒤 예약은 reserved N / released 0 / consumed N — 이 하한이면 0 ≥ N 이라 언제나 400 이다.
+    expect(statements[0].sql).not.toContain('reserved_qty - released_qty - consumed_qty');
+  });
+
+  it('짝이 어긋난 호출은 item_id 로 0행이 되어 400 NEGATIVE_BALANCE 다', async () => {
+    const { tx, statements } = fake([0]);
+
+    const failure = await thrown(() =>
+      releaseReservation(tx, RESERVATION, 99n, dec(10), RELEASE_FIELD),
+    );
+
+    expect(failure.getStatus()).toBe(400);
+    expect(failure.errors[0]).toMatchObject({
+      scope: 'field',
+      field: RELEASE_FIELD,
+      code: ERROR_CODE.NEGATIVE_BALANCE,
+    });
+    expect(statements[0].sql).toContain('item_id = ?::bigint');
+    expect(statements[0].values).toContain(99n);
+  });
+
+  it('⭐ 0 이면 문장을 «내지 않는다» — Δ=0 에 version_no 를 올리면 화면의 If-Match 만 낡는다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(0), RELEASE_FIELD);
+
+    expect(statements).toHaveLength(0);
   });
 });

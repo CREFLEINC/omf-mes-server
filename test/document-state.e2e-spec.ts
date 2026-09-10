@@ -66,6 +66,11 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     'quality.inspection_result.status_code': 'INSPECTION_RESULT_STATUS',
     // 부적합 처리 진행 — 판정 대기까지는 W-04-07 이, 판정 완료는 W-03-10 이 올린다(I-21 PR ④).
     'quality.nonconformance.status_code': 'NONCONFORMANCE_STATUS',
+    // ⛔⛔ 출하는 물류 전표 4값과 «다른» 그룹이다 — 자기 3값(UNCONFIRMED·CONFIRMED·CANCELLED)을
+    //    갖고 CANCEL_REQUESTED 가 «없다». 그래서 `:request-cancel` 이 상태를 안 옮긴다(I-23 PR ③).
+    //    ⚠ 이 줄을 빠뜨려 main 이 세 번째로 붉었다(#552) — 그 파일은 e2e 라 `jest --silent` 에
+    //      들어가지 않아 단위만 돌리면 못 본다.
+    'logistics.shipment.status_code': 'SHIPMENT_STATUS',
   };
 
   /**

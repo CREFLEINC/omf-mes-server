@@ -27,7 +27,12 @@ export interface LotQualityMoveContext {
   sourceDocumentIdByLot?: ReadonlyMap<bigint, bigint>;
   reasonCode?: string;
   reason?: string;
-  /** 전이표에 코드가 없는 자리(재등록)만 채운다 — 설계 미정 · 문의 089(발행 예정). */
+  /**
+   * 전이표에 코드가 «없는» 축만 채운다. ⛔ **표가 이긴다**(`:62`) — 표가 값을 가진 액션에
+   * 넘기면 무시된다. 한 사실을 두 자리에 적지 않기 위해서다(L-2-1).
+   * ⚠ 오늘 이 인자를 쓰는 호출부는 **0개**다 — 재등록이 C20 을 갖게 되면서 비었다(통보 218).
+   * 갈래를 남겨 둔 이유는 전이표에 코드가 없는 새 축이 열릴 때를 위해서다.
+   */
   transitionCode?: string;
 }
 

@@ -220,11 +220,19 @@ export const TRANSITIONS: TransitionRegistry = {
     'lot-hold-suspect': { from: ['NORMAL', 'INSPECTION_PENDING'], to: 'INSPECTION_PENDING',
       transitionCode: 'C10', sourceOperation: HOLD },
 
-    // ── I-23(레인 C · 재고 재등록)이 쓴다 ──────────────────────────
-    // ⛔ `transitionCode` 가 없다 — 이력 칸은 NOT NULL 인데 계약 enum 9값(C4~C15)에 재등록을
-    //    가리키는 코드가 «없다». 호출자가 넘기게 둔다 — 결정 · 통보 089 §7(값은 레인 C 판정).
-    'stock-reinstate': { from: ['DEFECTIVE'], to: 'NORMAL',
-      sourceOperation: 'POST /logistics/stock-reinstatements' },
+    // ── I-23(재고 재등록)이 쓴다 ───────────────────────────────────
+    // ⭐ `transitionCode` 를 여기서 못 박는다(결정 — 통보 218 · 근거는 통보 089 `:69-70`).
+    //    ⛔ 「시드의 빈 첫 번호」가 근거가 «아니다» — 실측이 C11·C12·C13·C16 을 비워 두고 있다.
+    //    ⚠ 계약 `LotStatusHistoryEvent.transitionCode`(required enum 9값)에 C20 이 없다 ⇒
+    //      `?transitionCode=C20` 은 우리 서버가 400 이다. I-17 선례대로 선반영 + 가드를 둔다.
+    // ⭐⭐ `from` 이 «셋»인 근거 — 코어 `moveWithin` 은 `from` 밖이면 «던지지 않고 skip 한다»
+    //    (`lot-quality-status.service.ts:84-88`). 좁게 잡으면 400 이 아니라 응답 `lotStatusCode`
+    //    (required · 「전이 결과」)가 **조용히 거짓**이 된다 — 그쪽이 더 나쁘다.
+    //    ⛔ `INSPECTION_PENDING` 을 빼지 마라: 반품 갈래가 원 LOT 을 그대로 써 그 값으로 들어온다
+    //    (`disposition-*` 셋이 같은 이유로 그 값을 갖는다 · `W-04-07` §5-4).
+    //    ⛔ `SCRAPPED` 는 넣지 «않는다» — 폐기된 LOT 을 되살리는 오퍼레이션이 아니다.
+    'stock-reinstate': { from: ['DEFECTIVE', 'NORMAL', 'INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C20', sourceOperation: 'POST /logistics/stock-reinstatements' },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
@@ -448,6 +456,31 @@ export const TRANSITIONS: TransitionRegistry = {
       from: ['REGISTERED'],
       to: 'POSTED',
       sourceOperation: 'POST /inventory/adjustments/{inventoryAdjustmentId}:post',
+    },
+  },
+
+  /**
+   * 출하 진행(I-23). 시드 `SHIPMENT_STATUS` **3값**(`UNCONFIRMED`·`CONFIRMED`·`CANCELLED` · 실측).
+   *
+   * ⭐⭐ **액션이 «둘»이다 — `:request-cancel` 은 전이가 0개다.** 3값에 `CANCEL_REQUESTED` 가
+   * **없어** 「취소 결재 진행 중」을 담을 상태가 없다 ⇒ 열린 `approval_request` 로만 판정한다(J-7).
+   * ⛔ 이것이 다형 취소(I-5)와 **가장 크게 갈리는 자리**다 — 그쪽은 `CANCEL_REQUESTED` 로 옮긴다.
+   * ⛔ 새 상태값을 지어 넣지 않는다: 값 집합이 시드에 있고 화면이 그 목록으로 뱃지를 그린다.
+   *
+   * ⚠ 확정에서 되돌아오는 전이는 없다 — 계약이 「확정 취소 경로가 없으므로 되돌릴 수 없다」라
+   * 적었다(`ShipmentConflictResponse.code` 설명 · `W-04-12` §5-3). 취소는 «미확정»에서만 간다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
+   */
+  'logistics.shipment.status_code': {
+    'shipment-confirm': {
+      from: ['UNCONFIRMED'],
+      to: 'CONFIRMED',
+      sourceOperation: 'POST /logistics/shipments/{shipmentId}:confirm',
+    },
+    'shipment-cancel': {
+      from: ['UNCONFIRMED'],
+      to: 'CANCELLED',
+      sourceOperation: 'POST /logistics/shipments/{shipmentId}:cancel',
     },
   },
 };

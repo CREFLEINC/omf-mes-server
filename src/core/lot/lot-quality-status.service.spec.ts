@@ -114,24 +114,36 @@ describe('LotQualityStatusService', () => {
     );
   });
 
-  it('⛔ 재등록은 전이표에 코드가 없다 — 호출자가 넘겨야 돈다 (문의 089 · 발행 예정)', async () => {
+  it('⭐ 재등록은 전이표의 C20 을 쓴다 — 호출자가 넘기지 «않는다» (결정 · 통보 218)', async () => {
     const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'DEFECTIVE' }]);
 
-    // 계약 enum 9값(C4~C15)에 재등록을 가리키는 코드가 없다. 지어내지 않으므로
-    // 이력 칸(NOT NULL)을 채울 값이 없고, 그러면 전이 자체가 서지 않는다.
-    await expect(service.moveWithin(tx, [1n], 'stock-reinstate', ctx)).rejects.toThrow(
-      /transitionCode 가 없다/,
-    );
+    // ⛔ 이 시험의 뜻이 I-23 에서 뒤집혔다. 예전엔 「전이표에 코드가 없어 호출자가 넘겨야
+    //    돈다」였다 — 계약 enum 9값에 재등록 코드가 없어 값을 지어내지 않으려던 자리다.
+    //    통보 218 이 C20 으로 확정하면서 전이표가 값을 갖게 됐고, 한 사실을 두 자리에 적지
+    //    않으므로(L-2-1) 호출자는 이제 `transitionCode` 를 «안» 넘긴다.
+    const result = await service.moveWithin(tx, [1n], 'stock-reinstate', ctx);
 
+    expect(result.movedLotIds).toEqual([1n]);
+    expect(args[calls.indexOf('event.create')].data).toMatchObject({
+      new_status_code: 'NORMAL',
+      transition_code: 'C20',
+    });
+  });
+
+  it('⛔ 전이표의 코드가 «이긴다» — 호출자가 넘겨도 무시한다 (한 사실을 두 자리에 안 적는다)', async () => {
+    const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'DEFECTIVE' }]);
+
+    // 코어가 `transition.transitionCode ?? ctx.transitionCode` 로 «표를 먼저» 본다(:62).
+    // ⇒ 표가 값을 가진 뒤로는 호출자 인자가 죽은 인자다. 그것이 옳다 — 두 자리가 갈리면
+    //   이력 코드가 호출부마다 달라진다. ⛔ `ctx.transitionCode` 갈래 자체는 지우지 않는다:
+    //   전이표에 코드가 없는 축(생명주기 밖의 새 축)이 열리면 되살려야 한다.
     const result = await service.moveWithin(tx, [1n], 'stock-reinstate', {
       ...ctx,
       transitionCode: 'C99',
     });
+
     expect(result.movedLotIds).toEqual([1n]);
-    expect(args[calls.indexOf('event.create')].data).toMatchObject({
-      new_status_code: 'NORMAL',
-      transition_code: 'C99',
-    });
+    expect(args[calls.indexOf('event.create')].data).toMatchObject({ transition_code: 'C20' });
   });
 
   it('⭐ R-12 — 원천 문서 id 를 LOT 마다 다르게 싣는다 (N LOT 보류는 자기 lot_hold_id 를 가리킨다)', async () => {

@@ -200,6 +200,48 @@ async function consumeReservation(
 }
 
 /**
+ * **되돌림 — 소진된 예약분을 「풀린 것」으로 «옮긴다»**(I-23 출하 취소 · 결정 통보 212).
+ *
+ * ⭐⭐ **한 문장에서 `consumed −q` · `released +q` 를 함께 쓴다.** `ck_reservation_qty` 는 **합**
+ * (`released_qty + consumed_qty <= reserved_qty`)에 걸려 있고 이 이동은 합을 바꾸지 않아 제약을
+ * 절대 안 건드린다. 하한은 `consumed_qty >= q` 하나다(음수 방지).
+ *
+ * ⛔⛔ **초판(이 PR 의 첫 커밋)은 틀렸다** — `released` 만 올리고 「`consumed` 내리기는
+ *    `pickBalances()` Δ<0 갈래가 이미 한다」고 적었다(통보 212 ⓐ 의 기제). 그 갈래는 잔액의
+ *    `picked_qty ≥ q` 를 요구하는데 **출하가 나간 뒤에는 출고가 그 `picked` 를 이미 소진했다**
+ *    (`consumeBalances` — 예약은 안 건드린다). ⇒ 출하 취소 시점의 예약은
+ *    `reserved N / released 0 / consumed N` 이고 초판의 하한 `reserved − released − consumed ≥ q`
+ *    는 `0 ≥ N` 이라 **언제나 400** 이었다. PR ⑦(취소)을 쓰려다 발견했다 — 호출부가 0개인 동안
+ *    단위 시험은 초록이었다. 212 가 정한 «끝 상태»(`consumed 0 · released N`)는 그대로고 «기제»만 고친다.
+ *
+ * ⛔ 잔액(`inventory_balance`)은 «안» 건드린다 — 피킹 때 `reserved` 는 이미 내려갔고 `picked` 는
+ *    출고가 소진했다. 되돌릴 잔액 쪽 수량은 원장 역전기가 `on_hand` 로 돌려준다.
+ *
+ * ⭐ 이것이 `shipment-progress.ts:44-48` 의 뺄셈(`P = Σ(reserved − released)`)을 살린다.
+ */
+export async function releaseReservation(
+  tx: Prisma.TransactionClient,
+  reservationId: bigint,
+  itemId: bigint,
+  qty: Prisma.Decimal,
+  path: string,
+): Promise<void> {
+  if (qty.isZero()) return;
+  // `item_id` 까지 겨냥해 차원과 예약의 짝이 어긋난 호출을 0행 → 400 으로 드러낸다
+  // (`consumeReservation` 과 같은 규약).
+  const rows = await tx.$queryRaw<{ inventory_reservation_id: bigint }[]>`
+    UPDATE inventory.inventory_reservation
+       SET consumed_qty = consumed_qty - ${qty}::numeric,
+           released_qty = released_qty + ${qty}::numeric,
+           version_no = version_no + 1
+     WHERE inventory_reservation_id = ${reservationId}
+       AND item_id = ${itemId}::bigint
+       AND consumed_qty >= ${qty}::numeric
+    RETURNING inventory_reservation_id`;
+  if (rows.length === 0) throw negativeBalance(path, '되돌릴 소진 수량이 모자랍니다.');
+}
+
+/**
  * 소진 — 출고가 원장에서 `on_hand` 를 내리기 «전»에 `picked` 를 같은 양 내린다.
  * ⛔ 예약은 건드리지 않는다 — 예약은 피킹에서 이미 소진됐다.
  */
