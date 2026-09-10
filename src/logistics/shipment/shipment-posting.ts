@@ -14,6 +14,13 @@ import { assertLotsReleased } from './shipment-rules';
  * 출하 등록 한 트랜잭션 — 출하 · 라인 · LOT 배분 · **출고 전표** · 원장 출고 전기 · 되짚기.
  * 「출하·라인·LOT 배분을 한 트랜잭션으로 만든다」(계약 · 공유계약 B-8).
  *
+ * ⭐⭐ **순서가 불변식이다** — ① LOT 을 읽고 품질 게이트 ② **출하 헤더** ③ 잔액 잠금·위치 해소
+ * ④ 출고 전표 ⑤ 원장(`postIssue`) ⑥ 출하 라인·배분·되짚기.
+ * ⛔ **②가 ④보다 앞이어야 한다** — 출고 전표의 원천 id 가 **이 출하**다(A-10: 판별자 `SHIPMENT`
+ * 의 짝 id 는 `logistics.shipment` 의 식별자다). 처음엔 헤더를 맨 뒤에 두고 원천 id 에
+ * **출하작업지시 id** 를 넣었다 — 「없는 표를 가리키는 유령 참조」였고 단위·e2e 가 그 틀린 값을
+ * 오히려 못 박고 있었다(PR ⑤ 작성 중 발견).
+ *
  * ⭐⭐ **판별자 — 출고 전표를 «만든다»**(자리 ① · 계획서 §3-2 ⓐ). 원장의
  * `sourceDocumentTypeCode` 는 `GOODS_ISSUE` 라 **원장 enum 5값 안에 그대로 들어간다.**
  * ⛔ 전표를 안 만들고 원장에 `SHIPMENT` 를 직접 실으면 `InventoryTransaction.
@@ -88,21 +95,26 @@ export async function postShipment(
   write: ShipmentWrite,
 ): Promise<bigint> {
   const { input } = write;
-  const sources = await resolveSources(tx, write);
+  const lots = await readLots(tx, input);
 
-  // ⭐ 품질 게이트는 잔액을 잠근 «뒤·전기 앞»이다 — 앞에 두면 잠금 없이 읽은 상태로 판정하고,
-  //   뒤에 두면 이미 깎은 재고를 되돌린다. 계약 「Release 가 아니면 400」(결정 10).
+  // ⭐ 품질 게이트가 «맨 앞»이다 — 어떤 행도 쓰기 전에 막는다. 계약 「Release 가 아니면 400」.
+  //   ⛔ 초판은 「잔액을 잠근 뒤라 안전하다」고 적었는데 **근거가 틀렸다** — 잔액 잠금은
+  //   `trace.lot` 행을 잠그지 않는다. LOT 상태를 지키는 잠금은 애초에 그 자리에 없었다.
   assertLotsReleased(
-    sources.map((source) => ({ lotId: source.lotId, statusCode: source.statusCode })),
+    [...lots.values()].map((lot) => ({ lotId: lot.lot_id, statusCode: lot.status_code })),
     (lotId) => pathOfLot(input, lotId),
   );
+
+  const shipmentId = await createShipmentHeader(tx, write);
+  const sources = await resolveSources(tx, write, lots);
 
   const issue = await tx.goods_issue.create({
     data: {
       goods_issue_no: write.goodsIssueNo,
       issue_type_code: ISSUE_TYPE,
       source_document_type_code: SOURCE_DOCUMENT_TYPE,
-      source_document_id: BigInt(input.shipmentRequestId),
+      // ⭐ 짝 id 는 «이 출하»다 — 판별자 SHIPMENT 가 가리키는 표가 logistics.shipment 다(A-10).
+      source_document_id: shipmentId,
       source_warehouse_id: BigInt(input.warehouseId),
       // ⛔ 고객에게 나간다 — 도착 두 칸은 «둘 다» NULL 이다(`ck_goods_issue_destination` 짝 규칙).
       issued_at: new Date(input.occurredAt),
@@ -158,15 +170,12 @@ export async function postShipment(
     write.appUserId,
   );
 
-  return writeShipment(tx, write, issueLines);
+  await writeShipmentLines(tx, write, shipmentId, issueLines);
+  return shipmentId;
 }
 
-/** 출하 헤더 · 라인 · 배분 + 되짚기 한 칸. 전기 «뒤»다 — 되짚을 출고 라인 id 가 필요하다. */
-async function writeShipment(
-  tx: Tx,
-  write: ShipmentWrite,
-  issueLines: GoodsIssueLineWriteInput[],
-): Promise<bigint> {
+/** 출하 헤더 — 출고 전표보다 «먼저» 선다(원천 id 가 이것이다). */
+async function createShipmentHeader(tx: Tx, write: ShipmentWrite): Promise<bigint> {
   const { input } = write;
   const shipment = await tx.shipment.create({
     data: {
@@ -188,12 +197,22 @@ async function writeShipment(
       created_by: BigInt(write.appUserId),
     },
   });
+  return shipment.shipment_id;
+}
 
+/** 출하 라인 · 배분 + 되짚기 한 칸. 전기 «뒤»다 — 되짚을 출고 라인 id 가 필요하다. */
+async function writeShipmentLines(
+  tx: Tx,
+  write: ShipmentWrite,
+  shipmentId: bigint,
+  issueLines: GoodsIssueLineWriteInput[],
+): Promise<void> {
+  const { input } = write;
   let cursor = 0;
   for (const [index, line] of input.lines.entries()) {
     const created = await tx.shipment_line.create({
       data: {
-        shipment_id: shipment.shipment_id,
+        shipment_id: shipmentId,
         line_no: index + 1,
         shipment_request_line_id: BigInt(line.shipmentRequestLineId),
         item_id: write.itemIdByLine[index],
@@ -218,7 +237,6 @@ async function writeShipment(
       cursor += 1;
     }
   }
-  return shipment.shipment_id;
 }
 
 interface FlatAllocation {
@@ -248,16 +266,26 @@ function flatten(input: ShipmentCreateWrite): FlatAllocation[] {
  * 품질·재고 상태 칸을 안 실어 **어느 것을 낼지 정할 수 없다**(출고 코어가 같은 자리에서 같은
  * 판정을 한다 · `issue-posting.ts:131-141`).
  */
-async function resolveSources(tx: Tx, write: ShipmentWrite): Promise<Source[]> {
+type LotRow = { lot_id: bigint; item_id: bigint; status_code: string };
+
+/** 배분이 가리키는 LOT 을 «한 번» 읽는다 — 품질 게이트와 위치 해소가 같은 행을 쓴다. */
+async function readLots(tx: Tx, input: ShipmentCreateWrite): Promise<Map<string, LotRow>> {
+  const lotIds = [...new Set(flatten(input).map((entry) => BigInt(entry.allocation.lotId)))];
+  const lots = await tx.lot.findMany({
+    where: { lot_id: { in: lotIds } },
+    select: { lot_id: true, item_id: true, status_code: true },
+  });
+  return new Map(lots.map((lot) => [lot.lot_id.toString(), lot]));
+}
+
+async function resolveSources(
+  tx: Tx,
+  write: ShipmentWrite,
+  lotById: Map<string, LotRow>,
+): Promise<Source[]> {
   const { input } = write;
   const errors: ErrorItem[] = [];
   const sources: Source[] = [];
-  const lotIds = [...new Set(flatten(input).map((entry) => entry.allocation.lotId))];
-  const lots = await tx.lot.findMany({
-    where: { lot_id: { in: lotIds.map((id) => BigInt(id)) } },
-    select: { lot_id: true, item_id: true, status_code: true },
-  });
-  const lotById = new Map(lots.map((lot) => [lot.lot_id.toString(), lot]));
 
   for (const entry of flatten(input)) {
     const path = `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}].lotId`;
