@@ -8,6 +8,7 @@ import {
   GoodsIssueLineWriteInput,
   postIssue,
 } from '../goods-issue/issue-posting';
+import { postReceipt } from '../goods-receipt/receipt-posting';
 import { assertLotsReleased } from './shipment-rules';
 
 /**
@@ -38,6 +39,28 @@ const ISSUE_TYPE = 'SHIPMENT';
 const SOURCE_DOCUMENT_TYPE = 'SHIPMENT';
 const POSTED = 'POSTED';
 const UNCONFIRMED = 'UNCONFIRMED';
+/**
+ * 긴급 직행이 만드는 «제품 입고»의 두 칸 — 계약이 **서버에 위임**했다(「입고 유형·원천 문서
+ * 유형은 서버가 정한다」 · 결정 통보 221).
+ * ⭐ `PRODUCT` 는 계약이 「제품입고(PRODUCT)로 확정」이라 못 박은 값이고, `SHIPMENT` 는
+ * `GoodsReceipt.sourceDocumentTypeCode` enum 4값에 실재한다(→ `logistics.shipment`).
+ * ⛔ 「그 값은 반품 클레임 입고 전용이다」는 오독이다 — A-10 규약상 값의 뜻은 «가리킬 표의
+ * 이름»이고 괄호 속 `W-04-06` 은 당시 알려진 사용처다.
+ */
+const RECEIPT_TYPE = 'PRODUCT';
+const RECEIPT_SOURCE = 'SHIPMENT';
+/** 품질 게이트가 「Release 만」을 통과시켰으므로 입고 잔액의 품질 축도 정상이다. */
+const QUALITY_NORMAL = 'NORMAL';
+const INVENTORY_AVAILABLE = 'AVAILABLE';
+/**
+ * ⭐⭐ **긴급 직행의 «피킹 소진 축»** — `postIssue` 헤더의 `sourceDocumentTypeCode` 는 **저장되지
+ * 않고** 소진 게이트에만 쓰인다(`issue-posting.ts` 의 `CONSUMES_PICKED` · 실측 사용처 하나).
+ * 출고 전표 행은 이 파일이 `SHIPMENT` 로 직접 만든다.
+ * 긴급 직행은 **피킹을 건너뛰어** 방금 입고한 재고에서 나가므로 `picked_qty` 가 0 이다 —
+ * 평시처럼 `SHIPMENT` 를 넘기면 소진이 0행이 되어 **긴급 본길이 언제나 400** 이다.
+ * ⇒ 재고의 실제 출처(«입고»)를 넘긴다 — `CONSUMES_PICKED` 밖이라 소진이 돌지 않는다.
+ */
+const EXPEDITED_CONSUME_AXIS = 'GOODS_RECEIPT';
 
 export interface ShipmentAllocationWrite {
   lotId: number;
@@ -74,6 +97,10 @@ export interface ShipmentWrite {
   input: ShipmentCreateWrite;
   shipmentNo: string;
   goodsIssueNo: string;
+  /** ⭐ 긴급 직행일 «때만» 온다 — 평시엔 입고 전표가 0건이라 번호를 안 뽑는다. */
+  goodsReceiptNo?: string;
+  /** 긴급 직행의 장부상 입고 위치 — 본문에 칸이 0개라 서비스가 창고 관리수준으로 푼다(§3-6 ⓒ). */
+  receiptLocationId?: bigint;
   /** 라인마다의 품목 — 본문에 `itemId` 가 없어 `shipment_request_line` 에서 서버가 푼다(§6). */
   itemIdByLine: bigint[];
   appUserId: number;
@@ -106,6 +133,11 @@ export async function postShipment(
   );
 
   const shipmentId = await createShipmentHeader(tx, write);
+  // ⭐⭐ **긴급 직행은 입고 전기가 출고 전기보다 «먼저»다**(§3-6 ⓐ). 대상이 「아직 입고 안 된
+  //    LOT」이라 잔액 행이 없다 — 뒤집으면 아래 `resolveSources` 가 0행으로 400 을 낸다.
+  //    ⚠ 헤더 «뒤»다 — 입고 전표의 원천 id 도 이 출하다(A-10).
+  const expedited = input.expedited === true;
+  if (expedited) await postExpeditedReceipt(tx, posting, write, shipmentId, lots);
   const sources = await resolveSources(tx, write, lots);
 
   const issue = await tx.goods_issue.create({
@@ -157,7 +189,8 @@ export async function postShipment(
         goodsIssueId: issue.goods_issue_id,
         goodsIssueNo: write.goodsIssueNo,
         // ⭐ 이 값이 «피킹 소진의 축»이다 — `CONSUMES_PICKED` 에 있어야 `picked_qty` 가 내려간다.
-        sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
+        //   긴급 직행은 피킹이 0 이라 축 밖의 값을 넘긴다(`EXPEDITED_CONSUME_AXIS`).
+        sourceDocumentTypeCode: expedited ? EXPEDITED_CONSUME_AXIS : SOURCE_DOCUMENT_TYPE,
         sourceWarehouseId: BigInt(input.warehouseId),
         destinationTypeCode: null,
         destinationId: null,
@@ -172,6 +205,63 @@ export async function postShipment(
 
   await writeShipmentLines(tx, write, shipmentId, issueLines);
   return shipmentId;
+}
+
+/**
+ * ⭐⭐ **긴급 직행의 «제품 입고»** — 계약 「참이면 서버가 제품 입고 전표와 입고 전기를 같은
+ * 트랜잭션에서 함께 만든다 — 화면이 01 계약을 따로 부르지 않는다」(`W-04-05`).
+ *
+ * ⭐ `postReceipt()` 를 «부른다» — 전표·전기·되짚기를 복제하지 않는다(같은 logistics 도메인의
+ * export 함수 · §3-6 ⓓ).
+ * ⛔ **적치 지시를 만들지 않는다**(`putawayNos: null`) — 창고 경유를 건너뛰는 경로라 물건이 곧바로
+ * 나간다. 만들면 현장이 `W-01-12` 에서 유령 작업을 본다.
+ * ⭐ 입고 위치와 출고 위치가 **같다** — 출고는 방금 선 잔액 행에서 위치를 푼다(`resolveSources`).
+ */
+async function postExpeditedReceipt(
+  tx: Tx,
+  posting: InventoryPostingService,
+  write: ShipmentWrite,
+  shipmentId: bigint,
+  lots: Map<string, LotRow>,
+): Promise<void> {
+  const { input, goodsReceiptNo, receiptLocationId } = write;
+  if (goodsReceiptNo === undefined || receiptLocationId === undefined) {
+    throw new Error('긴급 직행인데 입고 번호·위치가 없다 — 서비스가 풀지 않았다.');
+  }
+  const flat = flatten(input);
+  // 없는 LOT 이 섞였으면 입고를 세우지 않는다 — `resolveSources` 가 400 으로 짚고 전체가 되돌려진다.
+  if (flat.some((entry) => !lots.has(String(entry.allocation.lotId)))) return;
+  const warehouse = await tx.warehouse.findUniqueOrThrow({
+    where: { warehouse_id: BigInt(input.warehouseId) },
+    select: { plant_id: true },
+  });
+  await postReceipt(
+    tx,
+    posting,
+    {
+      receiptTypeCode: RECEIPT_TYPE,
+      plantId: Number(warehouse.plant_id),
+      warehouseId: input.warehouseId,
+      receiptDatetime: input.occurredAt,
+      sourceDocumentTypeCode: RECEIPT_SOURCE,
+      sourceDocumentId: Number(shipmentId),
+      // ⛔ 본문 값 그대로다 — 서버가 수신 시각으로 다시 잡지 않는다(C-8).
+      businessDate: input.businessDate,
+      lines: flat.map((entry) => ({
+        itemId: Number((lots.get(String(entry.allocation.lotId)) as LotRow).item_id),
+        lotId: entry.allocation.lotId,
+        receiptQty: entry.allocation.allocatedQty,
+        uomId: entry.allocation.uomId,
+        qualityStatusCode: QUALITY_NORMAL,
+        inventoryStatusCode: INVENTORY_AVAILABLE,
+        destinationLocationId: Number(receiptLocationId),
+      })),
+    },
+    write.appUserId,
+    goodsReceiptNo,
+    // ⛔ `null` — 적치 지시 0건. 빈 배열이면 `putawayNos[index]` 가 undefined 라 NOT NULL 위반 500 이다.
+    null,
+  );
 }
 
 /** 출하 헤더 — 출고 전표보다 «먼저» 선다(원천 id 가 이것이다). */
