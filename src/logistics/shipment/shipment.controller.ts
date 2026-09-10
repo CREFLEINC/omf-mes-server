@@ -22,6 +22,11 @@ import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentQuery } from './shipment-query.sql';
+import {
+  ShipmentCancelBody,
+  ShipmentCancelRequestBody,
+  ShipmentCancelService,
+} from './shipment-cancel.service';
 import { ShipmentConfirmService } from './shipment-confirm.service';
 import { ShipmentCreateWrite } from './shipment-posting';
 import { ShipmentService } from './shipment.service';
@@ -41,6 +46,7 @@ export class ShipmentController {
     private readonly queries: ShipmentQueryService,
     private readonly shipments: ShipmentService,
     private readonly confirms: ShipmentConfirmService,
+    private readonly cancels: ShipmentCancelService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -112,6 +118,53 @@ export class ShipmentController {
       response,
       'shipment',
       (version) => this.confirms.confirm(shipmentId, version, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+  }
+
+  /**
+   * 취소 결재 상신. ⛔ 상태를 옮기지 않는다(시드 3값에 `CANCEL_REQUESTED` 가 없다) — 판 번호도 그대로라
+   * 응답 ETag 가 요청의 If-Match 와 같다. 결재 진행 중인 출하는 확정이 409 로 막는다(J-7).
+   */
+  @Post(':shipmentId\\:request-cancel')
+  @HttpCode(HttpStatus.OK)
+  @Contract('POST /logistics/shipments/{shipmentId}:request-cancel')
+  requestCancel(
+    @Param('shipmentId', ParseIntPipe) shipmentId: number,
+    @Body() body: ShipmentCancelRequestBody,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShipmentDetailView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runVersioned<ShipmentDetailView, 'shipment'>(
+      this.idempotency,
+      request,
+      response,
+      'shipment',
+      (version) => this.cancels.requestCancel(shipmentId, version, body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+  }
+
+  /** 승인 뒤 취소 실행 — 역전기·전표 상태·예약·롤업·출하 상태가 한 트랜잭션이다(J-8 재판정 포함). */
+  @Post(':shipmentId\\:cancel')
+  @HttpCode(HttpStatus.OK)
+  @Contract('POST /logistics/shipments/{shipmentId}:cancel')
+  cancel(
+    @Param('shipmentId', ParseIntPipe) shipmentId: number,
+    @Body() body: ShipmentCancelBody,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShipmentDetailView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runVersioned<ShipmentDetailView, 'shipment'>(
+      this.idempotency,
+      request,
+      response,
+      'shipment',
+      (version) => this.cancels.cancel(shipmentId, version, body, session.userId),
       FAMILY_CONFLICT_CODE,
     );
   }

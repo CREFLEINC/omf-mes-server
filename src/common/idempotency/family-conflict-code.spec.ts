@@ -120,13 +120,14 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     expect(extra).toEqual([]);
   });
 
-  it('넘긴 호출부가 40건이다 — 계열 43건 중 구현된 몫(#414 실측 + I-25 3 · I-21 3 · I-26 1 · I-22 3 · I-23 2)', () => {
+  it('넘긴 호출부가 42건이다 — 계열 43건 중 구현된 몫(#414 실측 + I-25 3 · I-21 3 · I-26 1 · I-22 3 · I-23 4)', () => {
     // ⭐ I-23 이 `POST /logistics/shipments` 를 더했다. 이 슬라이스는 계열 오퍼레이션이 넷
     //    더 온다(`:confirm`·`:request-cancel`·`:cancel`·재등록) ⇒ 그때마다 여기가 먼저 빨개진다.
     //    ⛔ 그것이 이 표의 뜻이다 — 넘기는 것을 잊으면 409 봉투에서 required `code` 가 빠지고
     //      e2e 로는 반증이 안 된다.
     // +1 — `:confirm`(I-23 PR ⑥). `runVersioned` 여섯째 인자로 넘긴다.
-    expect(sites.filter((site) => site.passes)).toHaveLength(40);
+    // +2 — `:request-cancel`·`:cancel`(I-23 PR ⑦).
+    expect(sites.filter((site) => site.passes)).toHaveLength(42);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {

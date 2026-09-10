@@ -51,6 +51,7 @@ import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-a
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
+import { ShipmentCancelService } from './shipment/shipment-cancel.service';
 import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
 import { ShipmentService } from './shipment/shipment.service';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
@@ -124,6 +125,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentQueryService,
     ShipmentService,
     ShipmentConfirmService,
+    ShipmentCancelService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
