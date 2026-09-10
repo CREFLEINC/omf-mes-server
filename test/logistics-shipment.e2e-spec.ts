@@ -461,23 +461,75 @@ describe('출하 목록 (e2e)', () => {
     });
   });
 
-  it('P-7 ⛔ 배정 수량을 넘으면 400 RANGE — DB CHECK 의 500 을 앞당긴다', async () => {
+  it('P-7 ⛔ 한도가 «둘»이다 — 배정 초과와 수주 초과를 «메시지»로 가른다', async () => {
+    // ⛔ 둘 다 `{field:'lines[0].shippedQty', code:'RANGE'}` 라 코드로는 구별이 안 된다.
+    //    실제로 처음엔 999 하나로 재다가, 배정 가드를 지우는 변이가 «살아남아» 알았다 —
+    //    그 요청은 수주 한도(1000)에 먼저 걸리고 있었다. 한도마다 «그 한도만» 넘는 값을 쓴다.
+    const over = async (qty: number): Promise<string> => {
+      const failed = await post(
+        body({
+          lines: [
+            {
+              shipmentRequestLineId: made.postRequestLine,
+              shippedQty: qty,
+              uomId: Number(ids.uom),
+              allocations: [{ lotId: Number(ids.lotPost), allocatedQty: qty, uomId: Number(ids.uom) }],
+            },
+          ],
+        }),
+        400,
+      );
+      const [first] = failed.errors as { field: string; code: string; message: string }[];
+      expect(first).toMatchObject({ field: 'lines[0].shippedQty', code: 'RANGE' });
+      return first.message;
+    };
+
+    // 배정 200 < 300 < 수주 1000 ⇒ 배정 한도만 걸린다.
+    expect(await over(300)).toContain('배정');
+    // 배정보다도 수주보다도 큰 값 ⇒ 둘 다 걸리고 배정이 먼저 짚인다.
+    expect(await over(9999)).toContain('배정');
+  });
+
+  it('P-7b ⛔ 수주 수량 한도는 «따로» 걸린다 — 배정은 넉넉한데 수주가 모자란 자리', async () => {
+    // 배정 500 · 수주 30 인 지시를 따로 세웠다 — 배정 가드를 지워도 이쪽은 남는다.
+    const failed = await post(
+      body({
+        shipmentRequestId: made.tightRequest,
+        lines: [
+          {
+            shipmentRequestLineId: made.tightRequestLine,
+            shippedQty: 40,
+            uomId: Number(ids.uom),
+            allocations: [{ lotId: Number(ids.lotPost), allocatedQty: 40, uomId: Number(ids.uom) }],
+          },
+        ],
+      }),
+      400,
+    );
+    const [first] = failed.errors as { field: string; code: string; message: string }[];
+    expect(first).toMatchObject({ field: 'lines[0].shippedQty', code: 'RANGE' });
+    expect(first.message).toContain('수주');
+  });
+
+  it('P-7c ⛔ «남의» 지시 라인을 실으면 400 INVALID — 롤업이 다른 지시를 올린다', async () => {
+    // 헤더는 postRequest 인데 라인은 tightRequest 의 것이다. 안 막으면 이 등록이 «다른»
+    // 출하작업지시의 shipped_qty 를 올려, 그 지시가 조용히 출하 완료로 보인다.
     const failed = await post(
       body({
         lines: [
           {
-            shipmentRequestLineId: made.postRequestLine,
-            shippedQty: 999,
+            shipmentRequestLineId: made.tightRequestLine,
+            shippedQty: 4,
             uomId: Number(ids.uom),
-            allocations: [{ lotId: Number(ids.lotPost), allocatedQty: 999, uomId: Number(ids.uom) }],
+            allocations: [{ lotId: Number(ids.lotPost), allocatedQty: 4, uomId: Number(ids.uom) }],
           },
         ],
       }),
       400,
     );
     expect((failed.errors as { field: string; code: string }[])[0]).toMatchObject({
-      field: 'lines[0].shippedQty',
-      code: 'RANGE',
+      field: 'lines[0].shipmentRequestLineId',
+      code: 'INVALID',
     });
   });
 
@@ -812,6 +864,45 @@ describe('출하 목록 (e2e)', () => {
     });
     made.postRequest = Number(header.shipment_request_id);
     made.postRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
+
+    // ⭐ 「배정은 넉넉한데 수주가 모자란」 지시 — 두 한도를 «따로» 반증하는 축이다(P-7b).
+    const tightOrder = await prisma.sales_order.create({
+      data: {
+        sales_order_no: `${PREFIX}-SO-T`,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        order_date: new Date('2026-08-01T00:00:00.000Z'),
+        status_code: 'RECEIVED',
+        sales_order_line: {
+          create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, ordered_qty: 30 }],
+        },
+      },
+      include: { sales_order_line: true },
+    });
+    const tight = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-TIGHT`,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: {
+          create: [
+            {
+              line_no: 1,
+              item_id: ids.item,
+              uom_id: ids.uom,
+              requested_qty: 500,
+              allocated_qty: 500,
+              sales_order_line_id: tightOrder.sales_order_line[0].sales_order_line_id,
+            },
+          ],
+        },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.tightRequest = Number(tight.shipment_request_id);
+    made.tightRequestLine = Number(tight.shipment_request_line[0].shipment_request_line_id);
   }
 
   async function makeShipments(): Promise<void> {
