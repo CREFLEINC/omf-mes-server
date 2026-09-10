@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -16,11 +17,12 @@ import type { Request, Response } from 'express';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
-import { runIdempotent } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentQuery } from './shipment-query.sql';
+import { ShipmentConfirmService } from './shipment-confirm.service';
 import { ShipmentCreateWrite } from './shipment-posting';
 import { ShipmentService } from './shipment.service';
 import { ShipmentDetailView, ShipmentView } from './shipment-view';
@@ -38,6 +40,7 @@ export class ShipmentController {
   constructor(
     private readonly queries: ShipmentQueryService,
     private readonly shipments: ShipmentService,
+    private readonly confirms: ShipmentConfirmService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -81,6 +84,34 @@ export class ShipmentController {
       request,
       HttpStatus.CREATED,
       () => this.shipments.create(body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+  }
+
+  /**
+   * 미확정 → 확정 + ERP 송신 적재. ⭐ If-Match 가 **필수**(`IfMatchVersion`)라 가드가 헤더 없음을 400 으로
+   * 먼저 막는다 — 여기 오면 값이 있다. `runVersioned` 가 새 판 번호를 ETag 로 싣는다.
+   * ⛔ 409 봉투가 계열이라(`ShipmentConflictResponse` — `code` required) 여섯째 인자를 넘긴다.
+   */
+  @Post(':shipmentId\\:confirm')
+  // ⛔ Nest 의 @Post 기본은 201 이다 — 계약은 200 이고, runVersioned 에 넘기는 OK 는 멱등 저장용일 뿐
+  //    실제 응답 상태를 바꾸지 않는다(첫 e2e 가 201 을 받았다).
+  @HttpCode(HttpStatus.OK)
+  @Contract('POST /logistics/shipments/{shipmentId}:confirm')
+  confirm(
+    @Param('shipmentId', ParseIntPipe) shipmentId: number,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShipmentDetailView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    // ⚠ 타입 인자를 적는다 — 안 적으면 `versionNo: number` 까지 T 로 추론돼 반환이 합집합이 된다.
+    return runVersioned<ShipmentDetailView, 'shipment'>(
+      this.idempotency,
+      request,
+      response,
+      'shipment',
+      (version) => this.confirms.confirm(shipmentId, version, session.userId),
       FAMILY_CONFLICT_CODE,
     );
   }

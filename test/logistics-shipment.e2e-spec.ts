@@ -768,6 +768,160 @@ describe('출하 목록 (e2e)', () => {
     expect(await receiptOf(created.shipmentId)).toBeNull();
   });
 
+  // ── 확정 `POST /logistics/shipments/{shipmentId}:confirm` (PR ⑥) ──────────
+  async function confirmShipment(
+    shipmentId: unknown,
+    version: number | null,
+    expected: number,
+    key: string = randomUUID(),
+  ): Promise<{ body: Record<string, unknown>; etag?: string }> {
+    const call = request(app.getHttpServer())
+      .post(`${BASE}/${shipmentId as number}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key);
+    if (version !== null) call.set('If-Match', String(version));
+    const response = await call.expect(expected);
+    return { body: response.body as Record<string, unknown>, etag: response.headers.etag };
+  }
+
+  async function versionOf(shipmentId: unknown): Promise<number> {
+    const row = await prisma.shipment.findUniqueOrThrow({
+      where: { shipment_id: BigInt(shipmentId as number) },
+      select: { version_no: true },
+    });
+    return row.version_no;
+  }
+
+  const messagesOf = (shipmentId: unknown) =>
+    prisma.integration_message.findMany({
+      where: { target_type_code: 'SHIPMENT', target_id: BigInt(shipmentId as number) },
+    });
+
+  it('C-1 미확정 → 확정 200 · 확정 시각·확정자가 차고 판 번호가 오른다', async () => {
+    const created = await post(body());
+    const version = await versionOf(created.shipmentId);
+
+    const { body: confirmed, etag } = await confirmShipment(created.shipmentId, version, 200);
+
+    expect(confirmed).toMatchObject({ statusCode: 'CONFIRMED', shipmentId: created.shipmentId });
+    const row = await prisma.shipment.findUniqueOrThrow({
+      where: { shipment_id: BigInt(created.shipmentId as number) },
+    });
+    expect(row.confirmed_at).not.toBeNull();
+    expect(row.confirmed_by).not.toBeNull();
+    expect(row.version_no).toBe(version + 1);
+    expect(etag).toBe(String(version + 1));
+  });
+
+  it('C-2 ⭐ ERP 송신이 «한 행» 적재된다 — 키 2세그먼트 · PENDING · 대상은 이 출하', async () => {
+    const created = await post(body());
+
+    await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const messages = await messagesOf(created.shipmentId);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      message_key: `IF-SHIPMENT-PGI-SEND:${created.shipmentNo as string}`,
+      interface_code: 'IF-SHIPMENT-PGI-SEND',
+      direction_code: 'OUTBOUND',
+      status_code: 'PENDING',
+    });
+    expect(messages[0].payload).toMatchObject({ shipmentNo: created.shipmentNo });
+  });
+
+  it('C-3 ⛔ 이미 확정이면 409 ALREADY_CONFIRMED — code 가 봉투 맨 위에 있다', async () => {
+    const created = await post(body());
+    await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    const { body: failed } = await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 409);
+
+    // ⛔ `{errors:[…]}` 로 내리면 화면이 `body.code` 를 못 읽는다(R-3).
+    expect(failed).toMatchObject({ code: 'ALREADY_CONFIRMED' });
+    expect(failed).not.toHaveProperty('errors');
+  });
+
+  it('C-4 ⛔ 취소 결재가 열려 있으면 409 CANCEL_IN_PROGRESS(J-7)', async () => {
+    const created = await post(body());
+    const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+    await prisma.approval_request.create({
+      data: {
+        approval_request_no: `${PREFIX}-AP-${created.shipmentId as number}`,
+        approval_type_code: 'SHIPMENT_CANCEL',
+        target_type_code: 'SHIPMENT',
+        target_id: BigInt(created.shipmentId as number),
+        requested_by: user.app_user_id,
+        requested_at: new Date(),
+        status_code: 'PENDING',
+        reason: '확정 전 취소 품의',
+      },
+    });
+
+    const { body: failed } = await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 409);
+
+    expect(failed).toMatchObject({ code: 'CANCEL_IN_PROGRESS' });
+    expect(await messagesOf(created.shipmentId)).toHaveLength(0);
+  });
+
+  it('C-5 ⛔ If-Match 가 틀리면 409 VERSION_CONFLICT + currentVersion + conflictCause user', async () => {
+    const created = await post(body());
+    const version = await versionOf(created.shipmentId);
+
+    const { body: failed } = await confirmShipment(created.shipmentId, version + 7, 409);
+
+    expect(failed).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      currentVersion: String(version),
+      conflictCause: 'user',
+    });
+  });
+
+  it('C-6 ⛔ If-Match 헤더가 없으면 400 이다 — 계약이 IfMatchVersion(필수)을 걸었다', async () => {
+    const created = await post(body());
+
+    await confirmShipment(created.shipmentId, null, 400);
+  });
+
+  it('C-7 ⭐ 재고를 다시 차감하지 않는다 — 원장 행 수와 잔액이 확정 전후로 같다', async () => {
+    const created = await post(body());
+    const issue = await prisma.goods_issue.findFirstOrThrow({
+      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(created.shipmentId as number) },
+    });
+    const ledgers = () =>
+      prisma.inventory_transaction.count({
+        where: { source_document_type_code: 'GOODS_ISSUE', source_document_id: issue.goods_issue_id },
+      });
+    const [beforeLedgers, beforeBalance] = [await ledgers(), await balance()];
+
+    await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 200);
+
+    expect(await ledgers()).toBe(beforeLedgers);
+    expect((await balance()).on_hand_qty.toNumber()).toBe(beforeBalance.on_hand_qty.toNumber());
+  });
+
+  it('C-8 ⛔ 취소된 출하는 409 INVALID_STATE 다', async () => {
+    const created = await post(body());
+    await prisma.shipment.update({
+      where: { shipment_id: BigInt(created.shipmentId as number) },
+      data: { status_code: 'CANCELLED' },
+    });
+
+    const { body: failed } = await confirmShipment(created.shipmentId, await versionOf(created.shipmentId), 409);
+
+    expect(failed).toMatchObject({ code: 'INVALID_STATE' });
+  });
+
+  it('C-9 ⭐ 같은 멱등키 재전송은 같은 응답이고 적재가 «한 행» 그대로다', async () => {
+    const created = await post(body());
+    const version = await versionOf(created.shipmentId);
+    const key = randomUUID();
+
+    const first = await confirmShipment(created.shipmentId, version, 200, key);
+    const second = await confirmShipment(created.shipmentId, version, 200, key);
+
+    expect(second.body).toEqual(first.body);
+    expect(await messagesOf(created.shipmentId)).toHaveLength(1);
+  });
+
   // ── 상세 `GET /logistics/shipments/{shipmentId}` ──────────────────────────
   async function detail(shipmentId: number): Promise<{ body: ShipmentDetailBody; etag?: string }> {
     const response = await request(app.getHttpServer())
@@ -1314,6 +1468,10 @@ describe('출하 목록 (e2e)', () => {
       `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
          SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS}))`,
       `DELETE FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS})`,
+      // 확정이 적재한 송신 · 취소 품의 — 다형 참조라 FK 는 없지만 «이 스위트의 출하»로만 좁힌다.
+      `DELETE FROM integration.integration_message
+        WHERE target_type_code = 'SHIPMENT' AND target_id IN (${OUR_SHIPMENTS})`,
+      `DELETE FROM app.approval_request WHERE approval_request_no LIKE '${PREFIX}%'`,
       // ⛔⛔ 원장은 «지우지 않는다» — `block_ledger_header_mutation` 트리거가 UPDATE·DELETE 를 막는다
       //    (P0001). 그것이 원장의 설계다. 남는 행은 `source_document_id` 가 다형 참조라 FK 가 없다.
       `DELETE FROM logistics.goods_issue_line WHERE goods_issue_id IN (

@@ -6,6 +6,7 @@ import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
+import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AsnController } from './asn/asn.controller';
 import { AsnQueryService } from './asn/asn-query.service';
@@ -50,6 +51,7 @@ import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-a
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
+import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
 import { ShipmentService } from './shipment/shipment.service';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
@@ -76,6 +78,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     NumberingModule,
     ApprovalModule,
     DocumentStateModule,
+    // ⭐ 출하 확정(I-23)이 ERP 송신을 적재한다 — 물류가 아웃박스를 쓰는 첫 자리다.
+    OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
   ],
@@ -119,6 +123,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentRequestService,
     ShipmentQueryService,
     ShipmentService,
+    ShipmentConfirmService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
