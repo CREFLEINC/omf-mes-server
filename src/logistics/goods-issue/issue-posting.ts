@@ -16,8 +16,16 @@ import type { ConsumeMove } from '../../core/inventory-posting';
  * ⛔ **`inventory.lock_balance(...)` 헬퍼(baseline:3225)를 쓰지 않는다** — 행마다 한 번
  * 도는 모양이라 라인 N 개면 왕복 N 회다. 아래 한 문장이 같은 일을 한 번에 한다.
  *
- * ⭐ I-23(출하)은 `GoodsIssueHeaderWriteInput`·`GoodsIssueLineWriteInput` 을 `import type`
- * 만 한다 — `postIssue()` 를 부르지 않는다(I-4.md §7-1 · `plan-integration.md` 399~400행).
+ * ⭐⭐ **I-23(출하)이 이것을 «부른다»** — I-4 가 자기 파일에 적어 둔 「I-23 은 타입만
+ * `import type` 한다」를 I-23 이 실측으로 뒤집었다(I-23.md §3-2 ⓓ 정정 · PR ④b):
+ *   ⓐ 그 금지의 근거였던 `server-architecture.md:67`(「도메인이 다른 도메인의 service 를
+ *      부르지 않는다」)은 **이 자리에 성립하지 않는다** — 출하·출고는 **둘 다 `logistics`** 고
+ *      `postIssue` 는 service 가 아니라 **export 함수**다.
+ *   ⓑ 안 부르면 「잔액 선잠금 · 키별 합계 · 피킹 소진 · 손검사 · 원장 · 되짚기」 ~150줄을
+ *      복제해야 하고, 그중 **조용히 갈릴 자리가 셋**이다(같은 키 두 라인의 합계 · STORED 인
+ *      `available_qty` 가 소진 뒤에도 옛 값인 것 · 차원 2행+ 판정).
+ *   ⇒ 이 함수의 머리 주석이 이미 「`:post` 와 등록의 `postImmediately` 경로가 **같은
+ *      트랜잭션 안에서** 이것을 부른다」라 다중 호출자를 설계로 적어 두었다. 셋째가 온 것이다.
  */
 
 /** ⭐ 원장 판별자 4값 중 하나다 — 전표의 `source_document_type_code`(피킹·입고·처분)가 아니다. */
@@ -240,8 +248,15 @@ export async function postIssue(
 
 const ZERO = new Prisma.Decimal(0);
 
-/** ⭐ 피킹 소진의 축 — 출고 «헤더»의 원천 유형이다(I-8.md R-4). */
-const PICKING_ORDER = 'PICKING_ORDER';
+/**
+ * ⭐ 피킹 소진의 축 — 출고 «헤더»의 원천 유형이다(I-8.md R-4).
+ *
+ * ⭐⭐ **둘이다**(I-23 PR ④b 가 `SHIPMENT` 를 더했다). 출하도 `:pick` 이 예약을 `picked_qty`
+ * 로 옮겨 둔 뒤에 나가므로, 소진을 안 하면 손검사가 **피킹분을 뺀 `available`** 로 재어
+ * **정상 출하가 언제나 400** 이다 — 피킹 출고와 «글자 그대로 같은» 사고다.
+ * ⛔ 여기 없는 원천 유형(입고 반품·처분 폐기)은 피킹을 거치지 않아 소진 대상이 «아니다».
+ */
+const CONSUMES_PICKED: readonly string[] = ['PICKING_ORDER', 'SHIPMENT'];
 
 /**
  * ⭐ **손검사 «앞»**에서 돈다 — `available = on_hand − reserved − picked − blocked` 라
@@ -263,7 +278,7 @@ async function consumePicked(
   picked: Map<string, BalanceRow>,
 ): Promise<Map<string, Prisma.Decimal>> {
   const consumed = new Map<string, Prisma.Decimal>();
-  if (input.header.sourceDocumentTypeCode !== PICKING_ORDER) return consumed;
+  if (!CONSUMES_PICKED.includes(input.header.sourceDocumentTypeCode)) return consumed;
 
   const moves: ConsumeMove[] = [];
   for (const [index, line] of input.lines.entries()) {
