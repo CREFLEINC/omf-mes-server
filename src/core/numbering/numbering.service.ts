@@ -71,6 +71,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
   INVENTORY_RESERVATION: 'RS',
   /** 결정 — 통보 106: 제품 개체는 전역 일련번호 `SN-{YYYYMMDD}-{SEQ4}` 를 쓴다. */
   SERIAL_NUMBER: 'SN',
+  /** 규칙 미등재 — `RC-{YYYYMMDD}-{SEQ4}`. ⭐ 기간 축은 «본문 businessDate» 다(I-17 §6). */
+  RECYCLE_ENTRY: 'RC',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
