@@ -3,7 +3,12 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { LockedBalanceRow, lockBalancesByItemLot, lockBalancesInOrder } from './balance-lock';
 import { InventoryPostingService } from './inventory-posting.service';
-import { BalanceDimension, PickMove, ReserveMove } from './reservation-qty';
+import {
+  BalanceDimension,
+  PickMove,
+  ReserveMove,
+  releaseReservation,
+} from './reservation-qty';
 
 const RESERVATION = 7n;
 /** ⭐ 예약 id 와 «다른» 값이라야 「돌려주는 id 의 출처」 변이가 죽는다(README §6-3 ⑴). */
@@ -593,5 +598,62 @@ describe('InventoryPostingService.consume', () => {
     // 11칸을 그대로 겨냥하므로 위치가 하나만 달라도 0행이다.
     expect(statements[0].sql).toContain('location_id = ?');
     expect(statements[0].values).toContain(99n);
+  });
+});
+
+/**
+ * ⭐ 되돌림(I-23 출하 취소 · 결정 통보 212). `ck_reservation_qty` 는 **합**에 걸려 있어
+ * 순서(소진 내리기 → 되돌림 올리기)가 규약인데, 그 순서를 «주석»이 아니라 **WHERE 의 하한**이
+ * 지킨다. 여기서 보는 것은 그 하한이 실제로 실려 나가는가다.
+ */
+describe('예약 되돌림 — releaseReservation', () => {
+  const RELEASE_FIELD = 'shipmentId';
+
+  it('released_qty 를 올리고 version_no 를 함께 올린다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
+
+    expect(statements[0].sql).toContain('UPDATE inventory.inventory_reservation');
+    expect(statements[0].sql).toContain('released_qty = released_qty + ?');
+    expect(statements[0].sql).toContain('version_no = version_no + 1');
+    // ⛔ consumed_qty 를 여기서 내리지 않는다 — 취소 경로의 pick(Δ<0) 이 이미 내렸다.
+    //    두 번 내리면 음수라 app.qty_t(CHECK ≥ 0)로 500 이다.
+    expect(statements[0].sql).not.toContain('consumed_qty = consumed_qty');
+  });
+
+  it('⭐⭐ ck_reservation_qty 를 «앞당긴» 하한이 WHERE 에 실린다 — 순서가 그래서 지켜진다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
+
+    // 소진분을 안 내린 채 부르면 이 하한이 0행을 내고 400 이 된다 — CHECK 의 500 이 아니다.
+    expect(statements[0].sql).toContain('reserved_qty - released_qty - consumed_qty >= ?');
+  });
+
+  it('짝이 어긋난 호출은 item_id 로 0행이 되어 400 NEGATIVE_BALANCE 다', async () => {
+    const { tx, statements } = fake([0]);
+
+    const failure = await thrown(() =>
+      releaseReservation(tx, RESERVATION, 99n, dec(10), RELEASE_FIELD),
+    );
+
+    expect(failure.getStatus()).toBe(400);
+    expect(failure.errors[0]).toMatchObject({
+      scope: 'field',
+      field: RELEASE_FIELD,
+      code: ERROR_CODE.NEGATIVE_BALANCE,
+    });
+    // 예약 id 만 맞고 품목이 다른 호출을 드러낸다(consumeReservation 과 같은 규약).
+    expect(statements[0].sql).toContain('item_id = ?::bigint');
+    expect(statements[0].values).toContain(99n);
+  });
+
+  it('⭐ 0 이면 문장을 «내지 않는다» — Δ=0 에 version_no 를 올리면 화면의 If-Match 만 낡는다', async () => {
+    const { tx, statements } = fake([1]);
+
+    await releaseReservation(tx, RESERVATION, 30n, dec(0), RELEASE_FIELD);
+
+    expect(statements).toHaveLength(0);
   });
 });

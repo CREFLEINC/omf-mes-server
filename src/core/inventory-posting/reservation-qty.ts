@@ -200,6 +200,43 @@ async function consumeReservation(
 }
 
 /**
+ * **되돌림 — 소진된 예약분을 「풀린 것」으로 옮긴다**(I-23 출하 취소 · 결정 통보 212).
+ *
+ * ⭐⭐ **`consumed_qty` 를 내린 «뒤»에 부른다.** `ck_reservation_qty` 는 **합**
+ * (`released_qty + consumed_qty <= reserved_qty`)에 걸려 있어, 소진분을 그대로 둔 채
+ * `released` 를 올리면 위반이다(통보 212 의 4단계 실측). ⛔ 그러나 순서를 **주석으로만**
+ * 지키지 않는다 — 아래 `guard` 가 그 제약을 **앞당겨** 0행 → 400 으로 드러낸다. 순서를
+ * 뒤집으면 CHECK 의 500 이 아니라 「되돌릴 예약 수량이 모자랍니다」 400 이 나간다.
+ *
+ * ⭐ 취소 경로에서 `consumed` 내리기는 **이미 있다** — `pickBalances()` 의 Δ<0 갈래가
+ * `consumeReservation()` 으로 내린다. 여기서 다시 내리지 않는다(두 번 내리면 음수다).
+ *
+ * ⭐ 이것이 `shipment-progress.ts:44-48` 의 뺄셈(`P = Σ(reserved − released)`)을 살린다 —
+ * 취소 뒤 진행도가 `PICKED` 에서 실제로 되돌아온다. 이 함수가 없으면 그 뺄셈은 «영원히 0» 을
+ * 빼는 죽은 식이다.
+ */
+export async function releaseReservation(
+  tx: Prisma.TransactionClient,
+  reservationId: bigint,
+  itemId: bigint,
+  qty: Prisma.Decimal,
+  path: string,
+): Promise<void> {
+  if (qty.isZero()) return;
+  // `item_id` 까지 겨냥해 차원과 예약의 짝이 어긋난 호출을 0행 → 400 으로 드러낸다
+  // (`consumeReservation` 과 같은 규약).
+  const rows = await tx.$queryRaw<{ inventory_reservation_id: bigint }[]>`
+    UPDATE inventory.inventory_reservation
+       SET released_qty = released_qty + ${qty}::numeric,
+           version_no = version_no + 1
+     WHERE inventory_reservation_id = ${reservationId}
+       AND item_id = ${itemId}::bigint
+       AND reserved_qty - released_qty - consumed_qty >= ${qty}::numeric
+    RETURNING inventory_reservation_id`;
+  if (rows.length === 0) throw negativeBalance(path, '되돌릴 예약 수량이 모자랍니다.');
+}
+
+/**
  * 소진 — 출고가 원장에서 `on_hand` 를 내리기 «전»에 `picked` 를 같은 양 내린다.
  * ⛔ 예약은 건드리지 않는다 — 예약은 피킹에서 이미 소진됐다.
  */
