@@ -37,6 +37,15 @@ export interface CancelEligibility {
 
 const CANCELLED = 'CANCELLED';
 const CANCEL_REQUESTED = 'CANCEL_REQUESTED';
+/**
+ * ⭐⭐ 자리 ⑤(I-23) — 출하가 «소유한» 출고·입고 전표의 원천 유형. 그 전표를 여기서 따로 취소하면
+ * **출하는 살아 있는데 재고만 돌아온다**(원장은 소급 정정 불가). 취소는 출하의 `:cancel` 한 길뿐이다.
+ * ⛔ 「후속」 축(`SUCCESSOR_EXISTS`)으로 막지 않는다 — 출하는 그 전표의 «상류»이고 후속 유형 enum 5값에
+ *    `SHIPMENT` 가 없다. 세기만 하면 `successors:[]` 인데 `successorCount:1` 이라 화면이 보이지 않는
+ *    후속을 먼저 취소하라고 안내한다. ⇒ 차단 사유 5값 안의 `STATE_LOCKED` 로 막는다(통보 217 ⓑ —
+ *    「상류 문서가 소유한다」는 여섯째 값이 오면 안내가 정확해진다).
+ */
+const SHIPMENT_OWNER = 'SHIPMENT';
 /** 취소를 받아 줄 수 있는 상태 — 시드 `LOGISTICS_DOCUMENT_STATUS` 4값 중 둘. */
 const OPEN_STATUSES = ['REGISTERED', 'POSTED'];
 
@@ -84,11 +93,13 @@ export class CancelEligibilityService {
     const mapping = DOCUMENT_TYPES[typeCode];
     let statusCode: string | undefined;
     let cancelApprovalRequestId: bigint | undefined;
+    let ownedByShipment = false;
 
     if (mapping.cancelable) {
       const document = await this.readDocument(tx, typeCode, documentId);
       // 행이 없으면 404 는 호출자가 «이 함수 앞에서» 낸다(§6-2 ③-1 · 계약은 상세 GET 에만 선언).
       statusCode = document?.status_code;
+      ownedByShipment = document?.source_document_type_code === SHIPMENT_OWNER;
       // ⛔ 유형 접두가 필수다 — 없으면 다른 축의 승인이 취소 품의를 대신한다(I-5.md §6-2).
       const open = await tx.approval_request.findFirst({
         where: { target_type_code: mapping.entityTypeCode, target_id: documentId, approval_type_code: `${typeCode}_CANCEL`, status_code: 'PENDING' },
@@ -107,7 +118,7 @@ export class CancelEligibilityService {
       // 상태가 CANCEL_REQUESTED 인데 반려돼 열린 요청이 없는 경우가 실재한다 — 그때도 막는다
       // (되돌릴 경로가 없어 잠긴 문서다 · I-5.md §4-4 · 문의 033).
       CANCEL_IN_PROGRESS: statusCode === CANCEL_REQUESTED || cancelApprovalRequestId !== undefined,
-      STATE_LOCKED: statusCode !== undefined && !OPEN_STATUSES.includes(statusCode),
+      STATE_LOCKED: (statusCode !== undefined && !OPEN_STATUSES.includes(statusCode)) || ownedByShipment,
       SUCCESSOR_EXISTS: found.count > 0,
     };
     const blocked = BLOCK_ORDER.find((code) => hit[code]);
@@ -123,15 +134,21 @@ export class CancelEligibilityService {
   }
 
   /** 취소 3종의 상태 한 칸. ⛔ 표 이름을 SQL 로 흘리지 않는다 — delegate 를 유형마다 부른다. */
-  private async readDocument(tx: Tx, typeCode: LogisticsDocumentType, documentId: bigint): Promise<{ status_code: string } | null> {
+  private async readDocument(
+    tx: Tx,
+    typeCode: LogisticsDocumentType,
+    documentId: bigint,
+  ): Promise<{ status_code: string; source_document_type_code?: string | null } | null> {
+    // 원천 유형은 입고·출고만 갖는다 — 입하에는 그 칸이 없다(자리 ⑤ 는 두 유형을 덮는다).
     const select = { status_code: true };
+    const withSource = { status_code: true, source_document_type_code: true };
     switch (typeCode) {
       case 'INBOUND_RECEIPT':
         return tx.inbound_receipt.findUnique({ where: { inbound_receipt_id: documentId }, select });
       case 'GOODS_RECEIPT':
-        return tx.goods_receipt.findUnique({ where: { goods_receipt_id: documentId }, select });
+        return tx.goods_receipt.findUnique({ where: { goods_receipt_id: documentId }, select: withSource });
       case 'GOODS_ISSUE':
-        return tx.goods_issue.findUnique({ where: { goods_issue_id: documentId }, select });
+        return tx.goods_issue.findUnique({ where: { goods_issue_id: documentId }, select: withSource });
       default:
         return null;
     }
