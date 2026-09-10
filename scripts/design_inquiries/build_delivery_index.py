@@ -13,7 +13,7 @@
 """
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -138,6 +138,7 @@ def collect() -> list[dict[str, object]]:
 
 
 COVER = SRC / '전달분-2026-루틴마감.md'
+LETTER = SRC / '검토요청서-2026-09-10.md'
 
 
 def cover_drift(rows: list[dict[str, object]]) -> list[str]:
@@ -160,6 +161,33 @@ def cover_drift(rows: list[dict[str, object]]) -> list[str]:
             drift.append(f'⛔ 표지에서 「{what}」 수를 못 찾았다 — 문장이 바뀌었으면 이 검사도 같이 고쳐라.')
         elif int(found.group(1)) != actual:
             drift.append(f'⛔ 표지의 「{what}」 = {found.group(1)}건, 실제 = {actual}건.')
+    return drift
+
+
+def letter_drift(rows: list[dict[str, object]]) -> list[str]:
+    """검토 요청서가 손으로 적은 수가 색인의 계산과 갈렸는지 본다.
+
+    ⭐ 이 한 장이 설계팀이 «맨 처음 여는» 문서다. 여기 적힌 「질의 4건」이 틀리면
+    받는 쪽이 답해야 할 목록을 잘못 읽는다 — 표지보다 더 나쁘다.
+    ⛔ 자동 생성으로 바꾸지 않는다(문장이 전부 사람의 판단이다). 수만 지킨다."""
+    if not LETTER.exists():
+        return [f'⛔ 검토 요청서 {LETTER.name} 이 없다.']
+    text, drift = LETTER.read_text(), []
+    counts = Counter(row['kind'] for row in rows)
+    checks = [
+        (r'\*\*질의\*\* — 우리가 정하면 안 되는 것 \| \*\*(\d+)\*\*', counts['질의'], '질의'),
+        (r'\*\*통보\*\* — 우리가 정했고 구현했습니다 \| \*\*(\d+)\*\*', counts['통보'], '통보'),
+        (r'\*\*합계\*\* \| \*\*(\d+)\*\*', len(rows), '합계'),
+    ]
+    for key, name, _ in SECTIONS:
+        actual = sum(1 for row in rows if row['section'] == key)
+        checks.append((rf'\| §{key} \| \**{re.escape(name)}\** \| \**(\d+)\**', actual, f'§{key} {name}'))
+    for pattern, actual, what in checks:
+        found = re.search(pattern, text)
+        if not found:
+            drift.append(f'⛔ 요청서에서 「{what}」 수를 못 찾았다 — 문장이 바뀌었으면 이 검사도 같이 고쳐라.')
+        elif int(found.group(1)) != actual:
+            drift.append(f'⛔ 요청서의 「{what}」 = {found.group(1)}건, 실제 = {actual}건.')
     return drift
 
 
@@ -204,16 +232,16 @@ def render(rows: list[dict[str, object]]) -> str:
 
 if __name__ == '__main__':
     rows = collect()
-    body, drift = render(rows), cover_drift(rows)
+    body, drift = render(rows), cover_drift(rows) + letter_drift(rows)
     if '--check' in sys.argv:
         current = OUT.read_text() if OUT.exists() else ''
         if current != body:
             print(f'⛔ {OUT.name} 이 낡았다 — 스크립트를 다시 돌려라.')
             raise SystemExit(1)
         if drift:
-            print('\n'.join(drift + [f'  → {COVER.name} 을 고쳐라.']))
+            print('\n'.join(drift + ['  → 표지/요청서의 수를 고쳐라.']))
             raise SystemExit(1)
-        print(f'✅ {OUT.name} 최신 · 표지 수 일치')
+        print(f'✅ {OUT.name} 최신 · 표지·요청서 수 일치')
     else:
         OUT.write_text(body)
         print(f'✅ {OUT.relative_to(ROOT)}')
