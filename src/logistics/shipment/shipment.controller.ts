@@ -1,11 +1,28 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentQuery } from './shipment-query.sql';
+import { ShipmentCreateWrite } from './shipment-posting';
+import { ShipmentService } from './shipment.service';
 import { ShipmentDetailView, ShipmentView } from './shipment-view';
 
 /**
@@ -18,7 +35,11 @@ import { ShipmentDetailView, ShipmentView } from './shipment-view';
  */
 @Controller('logistics/shipments')
 export class ShipmentController {
-  constructor(private readonly queries: ShipmentQueryService) {}
+  constructor(
+    private readonly queries: ShipmentQueryService,
+    private readonly shipments: ShipmentService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get()
   @Contract('GET /logistics/shipments')
@@ -38,5 +59,29 @@ export class ShipmentController {
     //   있다. 다른 것은 값이다: 여기만 숫자(version_no)라 If-Match 로 쓸 수 있다(e2e D-2).
     setEtag(response, versionNo);
     return view;
+  }
+
+  /**
+   * ⭐ 201 본문은 **상세 뷰 그대로**다 — 계약이 `Shipment` 를 내리고 그 스키마가 `lines` 를
+   * 선택으로 갖는다. 등록 직후 화면이 라인·배분을 다시 조회하지 않는다.
+   * ⛔ 409 봉투가 **계열**이라(`ShipmentConflictResponse` — `code` 가 required) 다섯째 인자를
+   * 넘긴다. 안 넘기면 멱등 충돌 409 에서 required 칸이 빠지는데 **e2e 로는 반증이 안 되고**
+   * `family-conflict-code.spec.ts` 가 잡는다(조회 둘은 409 자체가 없어 안 넘긴다).
+   */
+  @Post()
+  @Contract('POST /logistics/shipments')
+  create(
+    @Req() request: Request,
+    @Body() body: ShipmentCreateWrite,
+  ): Promise<ShipmentDetailView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.CREATED,
+      () => this.shipments.create(body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
   }
 }
