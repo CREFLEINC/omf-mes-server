@@ -131,7 +131,7 @@
 | A4 | I-13 | `logistics.stock_transfer_line` | `handling_unit_id?` |
 | **N-1** | **I-14** | `inventory.inventory_adjustment_line` | **`inventory_count_line_id BigInt?`** + FK + `ix_inventory_adjustment_line_count_line` — 계약 `InventoryAdjustmentLine.inventoryCountLineId`·`…LineUpsert.inventoryCountLineId` 둘 다 정의했는데 물리에 칸이 없다(I-14 재수립 R-4). ⭐ 이 칸이 **I-15 `:close` 의 「조정됨」을 라인 축으로** 재게 한다(§I-15 「라인 대응이 없다」를 연다) |
 | **N-2** | **I-16** | **신설** `inventory.handling_unit_repack_event` · `handling_unit_repack_event_line` | 재포장 이벤트 헤더 + 라인(`role_code`·`qty_before`·`qty_after`) + 복합 인덱스 1. ⭐ **`plan.md` §0 #9 의 「기존 표 재사용」이 실측으로 뒤집혔다**(I-16 재수립 R-1) — `handling_unit_reconfiguration(+_line)` 은 라인 필수 6칸 중 4칸이 없고 `ck_handling_unit_reconfiguration_distinct(source ≠ target)` 가 계약 대표 경로(한 HU 의 `PUT …/contents`)를 **구조적으로 막는다**. 기존 표는 **손대지 않는다**(0행·참조 0) ⇒ 삭제 0 |
-| A5 | I-17 | `logistics.recycle_entry` | `warehouse_id?` · `remarks?` (+ `item.mes_category_code` 없음 #64 — 슬라이스에서 판정) |
+| A5 | I-17 | `logistics.recycle_entry` | **완료**(I-17 PR ① · `20260909231539_a2_i17_recycle_entry_warehouse_remarks`) — **추가 2**(`warehouse_id?` + FK · `remarks?`) **+ 완화 2**(`source_document_type_code`·`source_document_id` **DROP NOT NULL** · A-10 — 계약 본문에 원천 문서 축이 0개다) · 삭제 0 · 백필 0 · 인덱스 0 + `WAREHOUSE_REFERRERS` 1행. ⭐ `item.mes_category_code` 는 **실재한다**(`20260903100000_rename_item_mes_columns` · #64 가 절반 닫혔다) — 남은 자리는 **질의 216** |
 | A9 | I-27 | `app.document_issue_log` | 결과3+귀속3 nullable6, whole CHECK IS TRUE·FK NoAction. DEFAULT/백필0·구writer 종료/갱신→P5→환경별 응답 활성화 |
 | A10 | I-27 | `app.printer` | **유보·적용0**. 단말 매핑/관측/기본/지원 원천 전 칸5 추가만으로 완료 불가. OFFLINE/false 기본값 제안 철회 |
 | A7·A8 | I-28 | `app.notification_subscription` · **신설** `notification_subscription_recipient` | **#482 적용 완료**. zalo 칸·사용자/채널 nullable 완화·NULL/NULL 헤더 부분유일/짝 CHECK·규칙 표. 과거행 보존·백필0 (`I-28.md` R-2) |
@@ -228,7 +228,7 @@ I-32 배포 제한: 목록·상세·생성·수정4건은 #353/#357/#359/#360으
 | `POST /production/material-returns` 소유 화면 | I-10 | UI/UX §9-2 · **050 으로 발행**(I-10 재수립 R-10·R-13) |
 | 수리 `:return` 뒤 재투입 등록처 | I-25 | UI/UX §9-2 · **통보 157 로 발행**(I-25 재수립 R-1) |
 | 투입 정정(`:correct`) 부재 · 포장 해체 부재 | I-10 · I-16 | UI/UX E·F · E 는 **055 로 발행**(I-10 재수립 R-13) |
-| 재생재/입하 오류의 «미등록 품목» 생성 경로 없음 | I-17 · I-3 | UI/UX B·C |
+| 재생재/입하 오류의 «미등록 품목» 생성 경로 없음 | I-17 · I-3 | UI/UX B·C · **질의 216 으로 발행**(I-17 — B·C 를 묶었다 · `item_code` 단독 UNIQUE 실측을 근거로 더했다) |
 | 창고 «안» 위치 이동 업무 문서 없음 | I-13 | UI/UX A |
 | 라벨 무효화 규칙 없음 | I-27 | UI/UX J |
 | ~~출고·생산창고 입고 한 단말 오프라인 큐 순서~~ — **C-10 으로 해소**(공유계약 v0.7 「큐에 순서 의존이 있으면 묶음으로 거부」 · I-9 R-2) | I-9 | UI/UX K |

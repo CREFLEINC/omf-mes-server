@@ -353,8 +353,8 @@ sales_order ─㉖ shipment_request.sales_order_id (비울 수 있다 = 단독 �
 ##### I-17 · 재생재 등록 — 1건
 
 **체인 마디**: 분쇄재 → 새 자재 LOT + 재고 증가, 한 트랜잭션. `recycle_entry` 표는 **실재한다**(계약은 「담을 표가 없다」고 적었는데 물리에 있다 — 되돌림 항목).
-**원장**: ⭐ 있다(「그 수량만큼 재고를 늘린다」). 판별자가 계약에 없다 → 2단계 기준 5 → 「들어온다」이므로 `GOODS_RECEIPT` 로 두고 요청서에 싣는다. *(추측 — 계약이 말하지 않는다.)*
-**예상 설계 미정**: `item.mes_category_code`(재생재 품목 축)가 물리에 없다(#64) → 품목을 그대로 쓰고 하위 구분을 만들지 않는다.
+**원장**: ⭐ 있다(「그 수량만큼 재고를 늘린다」). 판별자는 ⭐ **`RECYCLE_ENTRY`**(enum 다섯째 값) · `sourceDocumentId = recycle_entry_id` — **질의 213 → ⓐ 확정**(2026-09-10 설계팀 합의 · 계약 사본 선반영 #572 · I-17 §3-2). ⛔ **`GOODS_RECEIPT` 는 기각됐다** — 다형 취소가 한 문서에서 원장 2행을 만나 500 을 낸다(`document-cancel-execute.service.ts:139-152` 실측). ⛔ `INVENTORY_ADJUSTMENT` 를 빌리는 초안도 3관점이 기각했다(조회 질의 축에 `sourceDocumentId` 가 없어 조정 상세에 유령 라인이 붙는다). ⛔ `transaction_type_code` 로 양성 판별하지 않는다(계약 L-2-1 금지).
+**예상 설계 미정**: `item.mes_category_code` 는 ⭐ **물리에 실재한다**(`20260903100000_rename_item_mes_columns` — `recycle_type_code` 를 개명했다 · `MES_CATEGORY` 코드군 2값 시드). 「품목을 그대로 쓰고 하위 구분을 만들지 않는다」는 결론은 유지하고, 서버는 그 칸을 ⛔ **검증하지 않는다**(ERP 정본 수신본에 칸이 없어 조이면 모든 호출이 막힌다 · I-17 §4-3). 남은 자리는 **질의 216**.
 
 
 ##### I-18 · LOT 부가 — 외부식별자·보류 조회·상태 이력·IQC 생략 — 5건
