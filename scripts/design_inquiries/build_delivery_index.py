@@ -158,7 +158,8 @@ def cover_drift(rows: list[dict[str, object]]) -> list[str]:
     text, drift = COVER.read_text(), []
     for pattern, actual, what in [
         (r'요청서는 \*\*(\d+)건\*\*이다', len(rows), '요청서'),
-        (r'답이 와야 서는 자리 — (\d+)건', len([r for r in rows if r['kind'] == '질의']), '미회신 질의'),
+        # ⚠ 표지 문구가 두 모양이다 — 열려 있을 때(「답이 와야 서는」)와 다 닫혔을 때(「답을 기다리는」).
+        (r'답(?:이 와야 서는|을 기다리는) 자리 — (\d+)건', len([r for r in rows if r['kind'] == '질의']), '미회신 질의'),
     ]:
         found = re.search(pattern, text)
         if not found:
@@ -212,12 +213,17 @@ def render(rows: list[dict[str, object]]) -> str:
         '',
         '## §0. 먼저 볼 것 — 답이 와야 서는 자리',
         '',
-        '⭐ 나머지는 전부 **알려 두는 것**이라 회신을 기다리지 않는다. **이 표만 막고 있다.**',
-        '',
-        '| # | 제목 | 레인 |',
-        '|:-:|---|:-:|',
     ]
-    out += [f"| **{r['n']}** | {r['title']} | {r['lane']} |" for r in sorted(questions, key=lambda r: r['n'])] or ['| — | (없다) | |']
+    # ⭐ 다 닫히면 문구가 바뀐다 — 빈 표 위에 「이 표만 막고 있다」가 남으면 거짓이다.
+    if questions:
+        out += ['⭐ 나머지는 전부 **알려 두는 것**이라 회신을 기다리지 않는다. **이 표만 막고 있다.**', '',
+                '| # | 제목 | 레인 |', '|:-:|---|:-:|']
+        out += [f"| **{r['n']}** | {r['title']} | {r['lane']} |" for r in sorted(questions, key=lambda r: r['n'])]
+    else:
+        out += ['⭐⭐ **없다.** 회신을 기다리는 자리가 **0건**이다 — 마지막 넷(122·211·216·276)을',
+                '2026-09-10 에 닫았다. **전건이 「우리가 이렇게 정했습니다」**다.', '',
+                '⚠ 그래도 읽어 주셔야 한다 — 판단이 다르면 되돌릴 수 있고, 각 요청서의 **「되돌릴 때」**',
+                '칸에 무엇을 고쳐야 하는지 적혀 있다. **되돌리는 비용은 시간이 갈수록 커진다.**']
 
     for key, name, note in SECTIONS:
         group = sorted(by_section.get(key, []), key=lambda r: r['n'])
