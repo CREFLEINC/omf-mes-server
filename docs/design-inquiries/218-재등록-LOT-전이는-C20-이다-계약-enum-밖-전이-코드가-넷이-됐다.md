@@ -24,6 +24,8 @@
 
 `stock-reinstate` — `from` = `DEFECTIVE` · `NORMAL` · `INSPECTION_PENDING` → `NORMAL`.
 
+⭐ **통보 184(레인 A)의 결말과 같다** — 184 가 「처분 정상(`C19`)이 재고 재등록을 선점해 `from:['DEFECTIVE']` 가 0건을 옮긴다」로 두 레인 공동 판정에 남겼고, I-23 계획(R-6)이 「가」(`from` 을 넓힌다)로 닫았다. 셋째 값 `INSPECTION_PENDING` 은 184 가 세지 않은 반품 갈래다.
+
 | 출발 | 판정 | 왜 |
 |---|---|---|
 | `DEFECTIVE` | 본길 | OQC 불합격(`C6`) 뒤 처분이 정상인 LOT |
@@ -56,4 +58,4 @@
 - `src/core/lot/lot-quality-status.service.ts:33`(호출자가 코드를 넘기던 인자가 비었다) · `src/core/lot/lot-quality-status.service.spec.ts:117`
 - `src/logistics/stock-reinstatement/stock-reinstatement-posting.ts:248-252`
 - `src/common/contract/contract-lot-transition-enum.spec.ts`
-- 통보 089 `:69-70` · 계획서 `docs/coverage-100/slices/I-23.md` R-11 · §5-2
+- 통보 089 `:69-70` · 통보 184(「가」로 닫힘) · 계획서 `docs/coverage-100/slices/I-23.md` R-11 · §5-2
