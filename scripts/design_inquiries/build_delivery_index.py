@@ -27,6 +27,7 @@ SECTIONS = [
     ('4', '제품출하', '출하지시 · 피킹 · 배분 · 출하 · 재입고'),
     ('5', '설비·툴', '고장 · 가동중지 · 보전 · 툴 · 교정'),
     ('6', '공통·기준정보', '결재 · 알림 · 발행 · 권한 · 마스터'),
+    ('7', '횡단', '한 도메인에 안 묶이는 것 — 헤더 규약 · 채번 · 코드사전 · 날짜 축'),
 ]
 
 # 번호 대역 → 레인. 정본은 `coverage-100/lanes.md` §1-1.
@@ -51,16 +52,24 @@ def kind_from_index() -> dict[int, str]:
         if not head:
             continue
         status = cells[3]
+        # 상태 칸에서 「질의」·「통보」를 그냥 찾으면 안 된다 — 30 의 상태가
+        # 「**통보** … 「승인 없이 나간 폐기 출고」 **질의** 확보」라 SQL 질의에 걸린다(145 와 같은 뿌리).
+        # ⭐ 분류 표식은 «굵게» 쓴다(`**질의(2026-…`). 먼저 나오는 굵은 표식 하나만 본다.
+        marker = re.search(r'\*\*(질의|통보)', status)
         if '회신 옴' in status or '회신 완료' in status:
             found[int(head.group(1))] = '회신 완료'
-        elif '질의' in status:
-            found[int(head.group(1))] = '질의'
-        elif '통보' in status or '구현함' in status or '건너뜀' in status:
+        elif marker:
+            found[int(head.group(1))] = marker.group(1)
+        elif '구현함' in status or '건너뜀' in status:
             found[int(head.group(1))] = '통보'
     return found
 
 
 def section_of(operations: str) -> str | None:
+    # ⭐ 도메인이 «여럿»인 것은 스스로 「횡단」이라 적는다 — 기계가 추측하지 않는다.
+    #    (예: `X-Worker-No` 규약은 6도메인 37 오퍼레이션에 걸린다.)
+    if '횡단' in operations:
+        return '7'
     if re.search(r'/logistics/(shipment|stock-reinstatement)', operations):
         return '4'
     for pattern, key in [(r'/(logistics|inventory)/', '1'), (r'/(production|trace)/', '2'),
@@ -110,7 +119,10 @@ def collect() -> list[dict[str, object]]:
         # 제목 줄이 없으면 파일 이름을 읽을 만하게 편다 — 번호를 떼고 하이픈을 띄운다.
         title = heading.group(1).strip() if heading else re.sub(r'^\d+-', '', path.stem).replace('-', ' ')
 
-        declared = re.search(r'^\*\*구분[:：]\s*(질의|통보)', text, re.M)
+        # 「구분」은 두 모양으로 쓰인다 — 머리의 `**구분: 통보**` 줄, 그리고 머리표의 `| **구분** | **통보** … |` 행.
+        # ⛔ 한쪽만 읽으면 문서가 멀쩡한데 「미분류」로 잡힌다(070·074·075·079·082 가 그랬다).
+        declared = (re.search(r'^\*\*구분[:：]\s*(질의|통보)', text, re.M)
+                    or re.search(r'^\|\s*\**구분\**\s*\|[^|\n]*?(질의|통보)', text, re.M))
         lane = lane_of(number)
         kind = (declared.group(1) if declared
                 else table.get(number)
@@ -155,7 +167,7 @@ def render(rows: list[dict[str, object]]) -> str:
                 '| # | 구분 | 제목 | 레인 |', '|:-:|:-:|---|:-:|']
         out += [f"| {r['n']} | {r['kind'] or '⚠ 미분류'} | {r['title']} | {r['lane']} |" for r in group] or ['| — | | (없다) | |']
 
-    out += ['', f'## §9. 손질 필요 — {len(unknown)}건', '',
+    out += ['', f'## §X. 손질 필요 — {len(unknown)}건 (내부용 · 전달분에 안 싣는다)', '',
             '⛔ **숨기지 않는다.** 「구분」 줄이 없거나 「걸리는 오퍼레이션」에서 도메인을 못 읽은 것들이다 —',
             '전달 전에 사람이 채운다(요청서에 `**구분: …**` 한 줄을 더하면 다음 실행부터 저절로 잡힌다).', '',
             '| # | 없는 것 | 제목 | 레인 |', '|:-:|---|---|:-:|']
