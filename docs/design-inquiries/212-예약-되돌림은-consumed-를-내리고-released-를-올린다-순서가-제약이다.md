@@ -70,3 +70,15 @@
 - `src/logistics/shipment-request/shipment-progress.ts:44-47`
 - `docs/coverage-100/slices/I-22.md` §0-재수립 R-2 · R-14 · §5-1 · §11 ① — ⛔ **레인 A 문서라 고치지 않는다.** 위 「틀린 사실 하나」를 그쪽에 반영할지는 A 가 정한다
 - ⚠ 이 판정은 **I-23 계획서 §0 이 3관점 재수립에 실어 다시 검증한다.** 뒤집히면 이 문서에 정정을 덧붙인다
+
+## ⛔ 정정 (2026-09-10 · I-23 PR ⑦ 착수 중) — «끝 상태»는 맞고 «기제» ⓐ 가 틀렸다
+
+위 「ⓐ 는 오늘 코어에 이미 있다 — `pickBalances()`/`consumeReservation()` 의 Δ<0 갈래」는 **피킹을 되돌리는 경우(출하 전)** 에만 성립한다.
+
+- 그 갈래는 잔액의 `picked_qty ≥ q` 를 요구한다(`pickBalances` 의 하한).
+- **출하가 나간 뒤에는** 출고가 `consumeBalances()` 로 잔액의 `picked_qty` 를 이미 소진했고, 그 함수는 **예약을 안 건드린다**.
+- ⇒ 출하 취소 시점의 예약은 `reserved N / released 0 / consumed N`, 잔액의 `picked` 는 0 이다. `pickBalances(Δ<0)` 는 400 이고, `released` 만 올리던 초판 `releaseReservation()` 의 하한 `reserved − released − consumed ≥ q` 는 `0 ≥ N` 이라 **언제나 400** 이었다.
+
+**고친 것** — `releaseReservation()` 이 **한 문장에서 `consumed −q` · `released +q`** 를 함께 쓴다(합 불변 ⇒ `ck_reservation_qty` 를 안 건드린다 · 하한은 `consumed ≥ q`). 잔액은 안 건드린다 — 되돌릴 잔액은 원장 역전기가 `on_hand` 로 돌려준다.
+
+**바뀌지 않은 것** — 끝 상태(`consumed 0 · released N` → `P = Σ(reserved − released)` 가 0) · 마이그 0 · 계약 변경 0 · 구분(통보). 「순서 ⓐ→ⓑ」는 **한 문장 안의 두 칸**이 되어 순서 문제 자체가 사라졌다.
