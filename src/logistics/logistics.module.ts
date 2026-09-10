@@ -41,6 +41,8 @@ import { PutawayTaskService } from './putaway/putaway-task.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
+import { RecycleEntryController } from './recycle-entry/recycle-entry.controller';
+import { RecycleEntryService } from './recycle-entry/recycle-entry.service';
 import { SalesOrderQueryService } from './sales-order/sales-order-query.service';
 import { SalesOrderController } from './sales-order/sales-order.controller';
 import { AllocationPackingService } from './shipment-allocation/allocation-packing.service';
@@ -89,6 +91,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptSplitController,
     InboundVarianceController,
     MaterialIssueRequestController,
+    RecycleEntryController,
     ShopfloorReceiptController,
     StockTransferController,
   ],
@@ -119,6 +122,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     MaterialIssueRequestQueryService,
     MaterialIssueShortageService,
     MaterialIssueRequestService,
+    RecycleEntryService,
     ShopfloorReceiptQueryService,
     ShopfloorReceiptService,
     StockTransferQueryService,

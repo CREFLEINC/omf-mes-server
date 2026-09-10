@@ -1103,7 +1103,7 @@ snake_case 로 맞춰 대조하고 **모델을 눈으로 확인한 것만** 아�
 | 피킹 | `picking_order_no` | ❌ | — | S04(서버 생성 경로는 계약에 없음 — ~~출고요청이 만든다~~ **아무도 못 만든다** · 배정 축 3겹 부재 · I-8 §5 · 문의 045) |
 | 현장 입고 | `shopfloor_receipt_no` | ❌ | `SR-{YYYYMMDD}-{SEQ4}`(계약 example `SR-2026-000077` 에서 접두어만 · `DEFAULT_PREFIX` 한 줄 · I-9 §3-7) | S04 |
 | 창고 이동 | `stock_transfer_no` | ❌ | **`ST-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `ST` 한 줄 · 계약 example `ST-2026-000260` 에서 **접두어만** 따는 것이 관행 · I-13 §4-3) | S05 |
-| 재생재 | `recycle_entry_no` | ❌ | — | S05 |
+| 재생재 | `recycle_entry_no` | ❌ | **`RC-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `RC` 한 줄 · ⭐ 기간 축은 **본문 `businessDate`** — 번호의 날짜와 원장의 영업일이 같아야 두 표를 맞댄다 · 계약 example 0건 · I-17 §6) | S05 |
 | 재고 실사 | `inventory_count_no` | ❌ | — | S07 |
 | 재고 조정 | `inventory_adjustment_no` | ❌ | — | S07 |
 | 취급 단위 | `handling_unit_no` | ❌ | **`HU-{YYYYMMDD}-{SEQ4}`**(`DEFAULT_PREFIX` `HU` 한 줄 · 기본 패턴 그대로 · 계약 example `HU-2026-000058` 은 형식만 · I-16 §4-3) | S07 |

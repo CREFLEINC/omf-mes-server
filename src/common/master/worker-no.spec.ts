@@ -46,6 +46,7 @@ const EXISTENCE_CHECKED = [
   'inventory/handling-unit/handling-unit-pack.service.ts',
   'inventory/handling-unit/handling-unit.service.ts',
   'logistics/putaway/putaway-complete.service.ts',
+  'logistics/recycle-entry/recycle-entry.service.ts',
   'logistics/stock-transfer/stock-transfer.service.ts',
   'logistics/stock-transfer/transfer-arrive.service.ts',
   'maintenance/downtime/downtime-close.service.ts',

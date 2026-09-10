@@ -288,4 +288,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
   'GET /quality/nonconformances': ['W-03-10'],
   'GET /quality/nonconformances/{nonconformanceId}': ['W-03-10'],
+
+  // `M-01-12` 재생재 등록 — ⭐ 도출표가 `['M-01-01','M-01-02']`(입하 등록·LOT 발번)이라
+  // **그 화면 권한만 가진 계정이 403** 을 받는다. 계약 본문·`plan-uiux.md:262` 가 둘 다
+  // 이 오퍼레이션의 소유 화면을 `M-01-12` 로 적었다(「근거: M-01-12 §5-1·§5-3」).
+  // ⛔ 도출표를 손으로 고치지 않는다 — `derive-map.py` 산출물이다. 두 표는 합집합으로 겹친다.
+  // 결정 — I-17 R-3
+  'POST /logistics/recycle-entries': ['M-01-12'],
 };
