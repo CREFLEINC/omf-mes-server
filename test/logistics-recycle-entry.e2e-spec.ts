@@ -163,6 +163,10 @@ describe('재생재 등록 (e2e)', () => {
     // ⛔ 가리킬 문서가 없으면 둘을 함께 비운다(A-10) — 한쪽만 채우지 않는다.
     expect(row.source_document_type_code).toBeNull();
     expect(row.source_document_id).toBeNull();
+    // ⭐ 행위자 축 — 상수로 못 박으면 감사·추적이 거짓이 된다(`plan.md` §5 규칙 9 · PR ② 리뷰 MAJ-1).
+    //    ⛔ 이 단언이 없으면 `created_by: BigInt(1)` 로 바꿔도 전층 초록이었다.
+    const actor = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+    expect(Number(row.created_by)).toBe(Number(actor.app_user_id));
   });
 
   it('⭐ 3. 201 — 창고·위치와 공장이 저장된다. 공장은 **창고에서** 푼다', async () => {
@@ -181,6 +185,11 @@ describe('재생재 등록 (e2e)', () => {
     // ⭐ 다른 공장의 창고로 보내면 공장도 갈린다 — 상수나 첫 창고로 못 박으면 RED.
     expect(Number(there.plant_id)).toBe(otherPlantId);
     expect(there.plant_id).not.toEqual(here.plant_id);
+    // ⭐ LOT 번호의 «공장 6자리»도 갈린다 — e2e 1 의 정규식은 `M\d{6}` 이라 어떤 공장이든
+    //    통과해서, 그 축을 상수로 못 박아도 전층 초록이었다(PR ② 리뷰 MIN-1).
+    const plantSegment = (id: number): string => `M${String(id).padStart(6, '0')}`;
+    expect(mine.lotNo.startsWith(plantSegment(plantId))).toBe(true);
+    expect(theirs.lotNo.startsWith(plantSegment(otherPlantId))).toBe(true);
   });
 
   it('⭐ 4. 201 — `uom_id` 가 **품목의 기본 단위**다(본문으로 받지 않는다)', async () => {

@@ -45,7 +45,7 @@ interface Recorded {
   numbered: unknown[][];
 }
 
-function fake(seed: { duplicateNo?: boolean } = {}): {
+function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
   tx: Prisma.TransactionClient;
   posting: InventoryPostingService;
   lots: LotRegistryService;
@@ -63,7 +63,7 @@ function fake(seed: { duplicateNo?: boolean } = {}): {
             new Prisma.PrismaClientKnownRequestError('중복', {
               code: 'P2002',
               clientVersion: 'test',
-              meta: { target: ['recycle_entry_no'] },
+              meta: { target: [seed.duplicateTarget ?? 'recycle_entry_no'] },
             }),
           );
         }
@@ -207,7 +207,7 @@ describe('postRecycleEntry — 원장 한 줄과 LOT 이 한 트랜잭션이다'
 });
 
 describe('RecycleEntryService — 번호는 트랜잭션 밖에서 뽑는다', () => {
-  function stub(seed: { duplicateNo?: boolean } = {}) {
+  function stub(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}) {
     const { tx, posting, lots, recorded } = fake(seed);
     const prisma = {
       item: { findUnique: () => Promise.resolve({ base_uom_id: BigInt(UOM_ID) }) },
@@ -281,14 +281,20 @@ describe('RecycleEntryService — 번호는 트랜잭션 밖에서 뽑는다', (
     expect(harness.recorded.numbered[0]).toEqual(['RECYCLE_ENTRY', BigInt(PLANT_ID), '2026-08-12']);
   });
 
-  it('11. 번호가 부딪히면 3회 재시도하고 그 뒤 409 다 — 사용자가 고칠 값이 아니다', async () => {
-    const harness = stub({ duplicateNo: true });
+  // ⭐ 축이 **셋**이다 — 이 등록은 번호를 둘 매기고(전표·LOT) 원장 번호까지 셋을 쓴다(R-11 ⓓ).
+  //    ⛔ `recycle_entry_no` 하나만 밀면 `isDuplicateNo` 의 배열을 한 칸으로 줄여도 전층 초록이었다
+  //       (PR ② 리뷰 MIN-2). 세 축을 각각 민다.
+  it.each(['recycle_entry_no', 'lot_no', 'transaction_no'])(
+    '11. %s 가 부딪히면 3회 재시도하고 그 뒤 409 다 — 사용자가 고칠 값이 아니다',
+    async (duplicateTarget) => {
+      const harness = stub({ duplicateNo: true, duplicateTarget });
 
-    const caught = await harness.service
-      .create(input(), { workerNo: 'W-1', appUserId: USER_ID })
-      .catch((error: unknown) => error);
+      const caught = await harness.service
+        .create(input(), { workerNo: 'W-1', appUserId: USER_ID })
+        .catch((error: unknown) => error);
 
-    expect(caught).toBeInstanceOf(ConflictException);
-    expect(harness.recorded.order.filter((step) => step === 'numbering.next')).toHaveLength(4);
-  });
+      expect(caught).toBeInstanceOf(ConflictException);
+      expect(harness.recorded.order.filter((step) => step === 'numbering.next')).toHaveLength(4);
+    },
+  );
 });
