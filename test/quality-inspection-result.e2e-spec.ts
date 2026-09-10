@@ -1103,6 +1103,20 @@ describe('검사 의뢰·결과 (e2e)', () => {
         select: { status_code: true },
       });
       expect(requestRow.status_code).toBe('COMPLETED');
+
+      // ⭐ ⓔ **세 표가 «한 시각»을 나눠 쓴다** — `inspection-confirm.service.ts:34` 가 그렇게
+      //    적어 두고 **재는 단언이 0건이었다**(부채 #337 n-1). 갈리면 `W-03-01` 이력에서
+      //    「확정」과 「보류 해제」가 다른 초에 찍혀 같은 사건으로 안 읽힌다.
+      //    ⛔ `new Date()` 를 갈래마다 새로 부르면 여기가 빨개진다.
+      const confirmedAt = (
+        await prisma.inspection_result.findUniqueOrThrow({
+          where: { inspection_result_id: BigInt(inspectionResultId) },
+          select: { confirmed_at: true },
+        })
+      ).confirmed_at;
+      expect(confirmedAt).not.toBeNull();
+      expect(events[0].changed_at).toEqual(confirmedAt);
+      expect(holds[0].released_at).toEqual(confirmedAt);
     });
 
     it('⭐ ⓓ 불합격은 `DEFECTIVE`+`C6` 이고 보류를 «닫지 않는다» — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」', async () => {
