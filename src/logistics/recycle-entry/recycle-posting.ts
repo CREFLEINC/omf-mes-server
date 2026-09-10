@@ -44,7 +44,8 @@ export interface RecycleEntryCreate {
   locationId: number;
   businessDate: string;
   occurredAt: string;
-  remarks?: string | null;
+  /** ⚠ 계약은 `"string"` 하나다 — `null` 은 도달 불가라 타입에 두지 않는다(A 리뷰 Nit ③). */
+  remarks?: string;
 }
 
 /** 번호 둘과 서버가 역산한 축 둘은 **트랜잭션 밖에서** 정해져 온다(§4-1·§6). */

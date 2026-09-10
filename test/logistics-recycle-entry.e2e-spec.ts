@@ -116,6 +116,7 @@ describe('재생재 등록 (e2e)', () => {
   let mixedBanLocationId: number;
   /** 남의 창고(P2)의 위치 */
   let foreignLocationId: number;
+  let inactiveLocationId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -167,6 +168,18 @@ describe('재생재 등록 (e2e)', () => {
     //    ⛔ 이 단언이 없으면 `created_by: BigInt(1)` 로 바꿔도 전층 초록이었다.
     const actor = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
     expect(Number(row.created_by)).toBe(Number(actor.app_user_id));
+
+    // ⭐⭐ 그 행위자가 **코어가 만든 둘에도** 실려야 한다 — 등록 건만 잠그면 `createWithin` 의
+    //    셋째 인자를 상수로 바꿔도 전층 초록이다(A 리뷰 M-2). LOT 과 그 수입검사 보류의
+    //    「누가」가 거짓이 되면 품질 이력 전체가 엉뚱한 사람을 가리킨다.
+    //    선례: `quality-nonconformance-write.e2e-spec.ts:141` · `quality-lot-hold.e2e-spec.ts:929`.
+    const lot = await prisma.lot.findUniqueOrThrow({
+      where: { lot_id: row.lot_id as bigint },
+      include: { lot_hold: true },
+    });
+    expect(Number(lot.created_by)).toBe(Number(actor.app_user_id));
+    expect(lot.lot_hold).toHaveLength(1);
+    expect(Number(lot.lot_hold[0].held_by)).toBe(Number(actor.app_user_id));
   });
 
   it('⭐ 3. 201 — 창고·위치와 공장이 저장된다. 공장은 **창고에서** 푼다', async () => {
@@ -333,6 +346,14 @@ describe('재생재 등록 (e2e)', () => {
       where: { recycle_entry_id: (first.body as RecycleEntryBody).recycleEntryId },
     });
     expect(rows).toHaveLength(1);
+    // ⭐ `runIdempotent` 에 넘긴 상태 코드는 **저장 칸**이라 HTTP 로 안 보인다 — 컨트롤러의
+    //    `@Post()` 기본 201 이 응답을 정하므로 `CREATED` → `OK` 변이가 전층 초록이었다
+    //    (A 리뷰 Nit ① · README §6-3 의 「e2e 로 반증 불가」 부류). 되읽어 잠근다.
+    const record = await prisma.idempotency_record.findUniqueOrThrow({
+      where: { idempotency_key: idempotencyKey },
+      select: { response_status: true },
+    });
+    expect(record.response_status).toBe(201);
   });
 
   it('⭐ 13. «다른» 멱등키로 같은 본문이면 전표와 원장이 둘 다 둘이다', async () => {
@@ -392,11 +413,21 @@ describe('재생재 등록 (e2e)', () => {
     expect(rejected.body.errors[0].code).toBe('INVALID');
   });
 
-  it('⛔ 19. 위치가 **그 창고 소속이 아니면** 400 INVALID 다', async () => {
+  it('⛔ 19. 위치가 **그 창고 소속이 아니거나 «비활성»이면** 400 INVALID 다', async () => {
     const rejected = await send({ ...body(), locationId: foreignLocationId }).expect(400);
 
     expect(rejected.body.errors[0]).toMatchObject({ field: 'locationId', code: 'INVALID' });
-    expect(rejected.body.errors[0].message).toContain('창고의 위치');
+    expect(rejected.body.errors[0].message).toContain('쓸 수 있는 위치');
+
+    // ⭐ 축이 «둘»이다 — 소속만 재면 `is_active: true` 를 빼도 초록이다(A 리뷰 M-1).
+    //    형제 물류 쓰기 셋이 전부 세 칸을 함께 건다.
+    const retired = await send({ ...body(), locationId: inactiveLocationId }).expect(400);
+    expect(retired.body.errors[0]).toMatchObject({ field: 'locationId', code: 'INVALID' });
+
+    // ⛔ 400 은 아무것도 안 남긴다 — 비활성 칸에 잔액 행이 서면 그것이 이 결함의 실제 피해다.
+    expect(
+      await prisma.inventory_balance.count({ where: { location_id: BigInt(inactiveLocationId) } }),
+    ).toBe(0);
   });
 
   it('⛔ 20. 사번이 없으면 400 REQUIRED · 없는 사번이면 400 INVALID 다', async () => {
@@ -661,6 +692,18 @@ describe('재생재 등록 (e2e)', () => {
       },
     });
     foreignLocationId = Number(foreign.location_id);
+    // ⭐ 비활성 위치 — 형제 물류 쓰기 셋이 전부 `is_active: true` 를 함께 건다. 이 픽스처가
+    //    없으면 그 칸을 빼도 초록이다(A 리뷰 M-1 · 실측: 201 + 잔액 행 1건이 섰다).
+    const retired = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-LOC4`,
+        location_name: '폐쇄된칸',
+        location_type_code: 'BIN',
+        is_active: false,
+      },
+    });
+    inactiveLocationId = Number(retired.location_id);
 
     // ⭐ 표별 id 를 «벌린다» — `recycle_entry` 는 행 0 으로 시작해 첫 id 가 1 이고, 그러면
     //    `recycleEntryId`·`lotId`·`itemId` 를 뒤바꾼 변이가 초록으로 지나간다(R-7 ⓑ).

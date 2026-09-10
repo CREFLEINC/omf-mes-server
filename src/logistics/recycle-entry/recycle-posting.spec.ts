@@ -41,6 +41,7 @@ interface Recorded {
   created: Row[];
   updated: Row[];
   lotInputs: Row[];
+  lotActors: number[];
   posted: PostingInput[];
   numbered: unknown[][];
 }
@@ -51,7 +52,7 @@ function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
   lots: LotRegistryService;
   recorded: Recorded;
 } {
-  const recorded: Recorded = { order: [], created: [], updated: [], lotInputs: [], posted: [], numbered: [] };
+  const recorded: Recorded = { order: [], created: [], updated: [], lotInputs: [], lotActors: [], posted: [], numbered: [] };
 
   const tx = {
     recycle_entry: {
@@ -78,9 +79,12 @@ function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
   } as unknown as Prisma.TransactionClient;
 
   const lots = {
-    createWithin: (_tx: Prisma.TransactionClient, lotInput: Row) => {
+    // ⭐ **셋째 인자(행위자)까지** 기록한다 — 둘째만 받으면 `appUserId` 를 상수로 못 박아도
+    //    전 층이 초록이다(A 리뷰 M-2). 그 인자가 LOT·보류의 「누가」를 정한다.
+    createWithin: (_tx: Prisma.TransactionClient, lotInput: Row, appUserId: number) => {
       recorded.order.push('lot.createWithin');
       recorded.lotInputs.push(lotInput);
+      recorded.lotActors.push(appUserId);
       return Promise.resolve({ lot_id: LOT_ID, lot_no: LOT_NO });
     },
   } as unknown as LotRegistryService;
@@ -170,7 +174,7 @@ describe('postRecycleEntry — 원장 한 줄과 LOT 이 한 트랜잭션이다'
   it('⭐ 저장 칸과 LOT 입력 — 원천 문서 짝은 둘 다 비우고 역방향 칸은 호출자가 쓴다', async () => {
     const { tx, posting, lots, recorded } = fake();
 
-    await postRecycleEntry(tx, posting, lots, write({ remarks: null }));
+    await postRecycleEntry(tx, posting, lots, write());
 
     expect(recorded.created[0]).toMatchObject({
       recycle_entry_no: NO,
@@ -203,6 +207,10 @@ describe('postRecycleEntry — 원장 한 줄과 LOT 이 한 트랜잭션이다'
       where: { recycle_entry_id: ENTRY_ID },
       data: { lot_id: LOT_ID },
     });
+    // ⭐ 행위자는 **코어에도 그대로** 넘어간다 — 그 인자가 `lot.created_by` 와
+    //    `lot_hold.held_by` 를 정한다. 상수로 못 박으면 LOT·보류의 「누가」가 거짓이 된다
+    //    (A 리뷰 M-2 · 등록 건의 `created_by` 는 직전 라운드에서 이미 잠갔다).
+    expect(recorded.lotActors).toEqual([USER_ID]);
   });
 });
 
