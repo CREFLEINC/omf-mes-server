@@ -20,6 +20,7 @@ const UOM_ID = 13;
 const USER_ID = 9;
 const SHIPMENT_NO = 'SH-20260910-0001';
 const ISSUE_NO = 'GI-20260910-0001';
+const RECEIPT_NO = 'GR-20260910-0001';
 const DAY = '2026-09-10';
 /** ⭐ 영업일과 «다른 날»의 시각이다 — 두 축을 섞으면 RED. */
 const AT = '2026-09-12T02:00:00.000Z';
@@ -46,6 +47,8 @@ interface Recorded {
   shipment: Row[];
   shipmentLines: Row[];
   allocations: Row[];
+  receipt: Row[];
+  receiptLines: Row[];
   posted: PostingInput[];
   consumed: unknown[];
 }
@@ -64,10 +67,16 @@ function fake(seed: Seed = {}): {
 } {
   const recorded: Recorded = {
     order: [], issue: [], issueLines: [], shipment: [], shipmentLines: [],
-    allocations: [], posted: [], consumed: [],
+    allocations: [], receipt: [], receiptLines: [], posted: [], consumed: [],
   };
   let issueLineSeq = 0n;
   let shipmentLineSeq = 0n;
+  let receiptLineSeq = 0n;
+  /**
+   * ⭐ 원장 되짚기 조회가 «방금 전기한» 라인 수만큼 돌려줘야 한다. 긴급 직행은 전기가 둘(입고 ·
+   * 출고)이라 출고 라인 수로 고정하면 입고 쪽 되짚기가 「라인 수가 다르다」로 던진다.
+   */
+  let lastPostedLines = 0;
 
   const tx = {
     lot: {
@@ -106,6 +115,22 @@ function fake(seed: Seed = {}): {
         return Promise.resolve({});
       },
     },
+    goods_receipt: {
+      create: ({ data }: { data: Row }) => {
+        recorded.order.push('goods_receipt.create');
+        recorded.receipt.push(data);
+        return Promise.resolve({ goods_receipt_id: 50001n, warehouse_id: BigInt(WAREHOUSE_ID) });
+      },
+    },
+    goods_receipt_line: {
+      create: ({ data }: { data: Row }) => {
+        recorded.order.push('goods_receipt_line.create');
+        recorded.receiptLines.push(data);
+        receiptLineSeq += 1n;
+        return Promise.resolve({ goods_receipt_line_id: 600000n + receiptLineSeq });
+      },
+      update: () => Promise.resolve({}),
+    },
     shipment: {
       create: ({ data }: { data: Row }) => {
         recorded.order.push('shipment.create');
@@ -131,7 +156,9 @@ function fake(seed: Seed = {}): {
     inventory_transaction_line: {
       findMany: () =>
         Promise.resolve(
-          recorded.issueLines.map((_, index) => ({ inventory_transaction_line_id: 1000n + BigInt(index) })),
+          Array.from({ length: lastPostedLines }, (_, index) => ({
+            inventory_transaction_line_id: 1000n + BigInt(index),
+          })),
         ),
     },
     /**
@@ -173,6 +200,7 @@ function fake(seed: Seed = {}): {
     post: (_tx: unknown, posted: PostingInput) => {
       recorded.order.push('posting.post');
       recorded.posted.push(posted);
+      lastPostedLines = posted.lines.length;
       return Promise.resolve({ inventoryTransactionId: 77n, businessDate: posted.businessDate, alreadyPosted: false });
     },
   } as unknown as InventoryPostingService;
@@ -404,5 +432,80 @@ describe('postShipment — 출하·출고 전표·원장이 한 트랜잭션이�
     expect(recorded.order.indexOf('lockByItemLot')).toBeLessThan(
       recorded.order.indexOf('goods_issue.create'),
     );
+  });
+});
+
+describe('postShipment — 긴급 직행(expedited)', () => {
+  const expedited = (over: Partial<ShipmentCreateWrite> = {}): ShipmentWrite => ({
+    ...write({ expedited: true, expediteReason: '고객 라인 정지', ...over }),
+    goodsReceiptNo: RECEIPT_NO,
+    receiptLocationId: BigInt(LOCATION_ID),
+  });
+
+  it('⭐⭐ 입고 전기가 출고 전기보다 «먼저»다 — 대상 LOT 에 잔액 행이 아직 없다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, expedited());
+
+    expect(recorded.posted.map((posted) => posted.sourceDocumentTypeCode)).toEqual([
+      'GOODS_RECEIPT',
+      'GOODS_ISSUE',
+    ]);
+    expect(recorded.order.indexOf('goods_receipt.create')).toBeLessThan(
+      recorded.order.indexOf('goods_issue.create'),
+    );
+  });
+
+  it('⭐ 입고의 원천은 «이 출하»다 — 유형 PRODUCT · 짝 id 는 출하 id(A-10)', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, expedited());
+
+    expect(recorded.receipt[0]).toMatchObject({
+      goods_receipt_no: RECEIPT_NO,
+      receipt_type_code: 'PRODUCT',
+      source_document_type_code: 'SHIPMENT',
+      source_document_id: Number(SHIPMENT_ID),
+    });
+    // 헤더가 입고보다도 먼저다 — 원천 id 가 그것이다.
+    expect(recorded.order.indexOf('shipment.create')).toBeLessThan(
+      recorded.order.indexOf('goods_receipt.create'),
+    );
+  });
+
+  it('⭐⭐ 피킹분을 «소진하지 않는다» — 피킹을 건너뛰어 picked 가 0 이다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, expedited());
+
+    // 평시처럼 SHIPMENT 축을 넘기면 소진이 0행이 되어 긴급 본길이 언제나 400 이다.
+    expect(recorded.consumed).toHaveLength(0);
+  });
+
+  it('⭐ 입고 위치와 출고 위치가 «같다» — 다르면 입고분이 유령 잔액으로 남는다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, expedited());
+
+    expect(recorded.receiptLines[0].destination_location_id).toBe(LOCATION_ID);
+    expect(recorded.issueLines[0].source_location_id).toBe(BigInt(LOCATION_ID));
+  });
+
+  it('⛔ 긴급도 품질 게이트를 건너뛰지 않는다 — 입고 전표조차 안 선다', async () => {
+    const { tx, posting, recorded } = fake({ lotStatus: { [LOT_A]: 'DEFECTIVE' } });
+
+    const failure = await caught(() => postShipment(tx, posting, expedited()));
+
+    expect(failure.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect(recorded.order).not.toContain('goods_receipt.create');
+  });
+
+  it('평시에는 입고 전표가 «0건»이고 전기가 하나다', async () => {
+    const { tx, posting, recorded } = fake();
+
+    await postShipment(tx, posting, write());
+
+    expect(recorded.receipt).toHaveLength(0);
+    expect(recorded.posted).toHaveLength(1);
   });
 });

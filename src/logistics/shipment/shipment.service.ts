@@ -17,6 +17,8 @@ import { ShipmentDetailView } from './shipment-view';
 
 /** 번호가 «둘»이라 재시도가 둘 다를 새로 뽑는다(I-17 R-11 ⓓ 가 한 쪽만 적어 지적받은 자리). */
 const NUMBER_RETRY = 3;
+/** 시드 `MANAGEMENT_LEVEL` 4값(WAREHOUSE·ZONE·RACK·CELL) 중 «위치를 받지 않는» 하나. */
+const WAREHOUSE_LEVEL = 'WAREHOUSE';
 
 @Injectable()
 export class ShipmentService {
@@ -33,15 +35,21 @@ export class ShipmentService {
       try {
         // ⭐ 채번은 `$transaction` «밖»이다 — 카운터가 업무 트랜잭션에 걸리면 같은 (유형·영업일)
         //    출하가 전기·잔액까지 한 줄로 서고, 롤백이 번호를 되돌려 재시도가 같은 번호를 뽑는다.
-        const [shipmentNo, goodsIssueNo] = await Promise.all([
+        const [shipmentNo, goodsIssueNo, goodsReceiptNo] = await Promise.all([
           this.numbering.next('SHIPMENT', BigInt(axis.plantId), input.businessDate),
           this.numbering.next('GOODS_ISSUE', BigInt(axis.plantId), input.businessDate),
+          // ⭐ 긴급 직행일 «때만» 셋째 번호를 뽑는다 — 평시엔 입고 전표가 0건이라 뽑으면 결번만 는다.
+          input.expedited === true
+            ? this.numbering.next('GOODS_RECEIPT', BigInt(axis.plantId), input.businessDate)
+            : Promise.resolve(undefined),
         ]);
         const shipmentId = await this.prisma.$transaction(async (tx) => {
           const created = await postShipment(tx, this.posting, {
             input,
             shipmentNo,
             goodsIssueNo,
+            goodsReceiptNo,
+            receiptLocationId: axis.receiptLocationId,
             itemIdByLine: axis.itemIdByLine,
             appUserId,
           });
@@ -86,7 +94,7 @@ export class ShipmentService {
    */
   private async assertWritable(
     input: ShipmentCreateWrite,
-  ): Promise<{ plantId: number; itemIdByLine: bigint[] }> {
+  ): Promise<{ plantId: number; itemIdByLine: bigint[]; receiptLocationId?: bigint }> {
     assertExpedite(input);
     assertShipmentQty(input.lines);
     assertAllocationSum(input.lines);
@@ -95,7 +103,7 @@ export class ShipmentService {
     const [warehouse, request, lines] = await Promise.all([
       this.prisma.warehouse.findFirst({
         where: { warehouse_id: BigInt(input.warehouseId), is_active: true },
-        select: { plant_id: true },
+        select: { plant_id: true, management_level_code: true },
       }),
       this.prisma.shipment_request.findUnique({
         where: { shipment_request_id: BigInt(input.shipmentRequestId) },
@@ -155,7 +163,45 @@ export class ShipmentService {
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-    return { plantId: Number((warehouse as { plant_id: bigint }).plant_id), itemIdByLine };
+    const found = warehouse as { plant_id: bigint; management_level_code: string };
+    return {
+      plantId: Number(found.plant_id),
+      itemIdByLine,
+      ...(input.expedited === true
+        ? { receiptLocationId: await this.resolveReceiptLocation(input.warehouseId, found.management_level_code) }
+        : {}),
+    };
+  }
+
+  /**
+   * ⭐⭐ **긴급 직행의 장부상 입고 위치** — 본문에 위치 칸이 0개인데 `goods_receipt_line.
+   * destination_location_id` 는 NOT NULL 이다(계획서 §3-6 ⓒ).
+   * 계약 `managementLevelCode` 원문 「✅ 값 목록 확정 2026-08-31 … **이 값이 위치 입력을 가른다 —
+   * 창고면 위치를 받지 않고, 셀이면 셀까지 받는다**」(R-7 이 질의 225 를 취소한 근거).
+   * ⇒ `WAREHOUSE` 면 그 창고의 활성 위치가 «정확히 하나»여야 하고, 그보다 깊게 관리하는 창고는
+   *   위치를 받을 칸이 없어 긴급 직행을 받을 수 없다.
+   * ⛔ **사용처가 오늘 «하나»라 private 이다** — 재등록(PR ⑧)이 둘째로 오면 그때 공용으로 뺀다
+   *    (CLAUDE.md 「사용처 하나뿐인 추상화 금지」). 계획서 §3-6 ⓒ 의 「공용」은 두 PR 을 합친 말이다.
+   */
+  private async resolveReceiptLocation(warehouseId: number, level: string): Promise<bigint> {
+    if (level !== WAREHOUSE_LEVEL) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('warehouseId', ERROR_CODE.REQUIRED, `위치를 ${level} 단위로 관리하는 창고라 긴급 직행의 입고 위치를 받을 칸이 없습니다.`),
+      ]);
+    }
+    // `take: 2` — 0 · 1 · «둘 이상»만 가르면 된다.
+    const locations = await this.prisma.location.findMany({
+      where: { warehouse_id: BigInt(warehouseId), is_active: true },
+      select: { location_id: true },
+      orderBy: { location_id: 'asc' },
+      take: 2,
+    });
+    if (locations.length !== 1) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('warehouseId', ERROR_CODE.RANGE, '창고의 입고 위치를 하나로 정할 수 없습니다.'),
+      ]);
+    }
+    return locations[0].location_id;
   }
 }
 
@@ -185,6 +231,8 @@ function isDuplicateNo(error: unknown): boolean {
   const target = error.meta?.target;
   const columns = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
   return columns.some((column) =>
-    ['shipment_no', 'goods_issue_no', 'transaction_no'].some((name) => column.includes(name)),
+    ['shipment_no', 'goods_issue_no', 'goods_receipt_no', 'transaction_no'].some((name) =>
+      column.includes(name),
+    ),
   );
 }

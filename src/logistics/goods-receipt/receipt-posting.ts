@@ -59,6 +59,11 @@ export interface GoodsReceiptCreate {
  * (유형·영업일) 입고가 전기·잔액·적치까지 한 줄로 서고, 롤백이 번호를 되돌려 호출자의
  * 재시도가 «같은 번호»를 다시 뽑는다(I-2.md R-2). `putawayNos` 는 **라인 수만큼** —
  * 적치 지시는 라인마다 하나다.
+ *
+ * ⭐⭐ **`putawayNos` 가 `null` 이면 적치 지시를 «만들지 않는다»**(I-23 PR ⑤ 가 더했다).
+ * 긴급 직행 출하(`W-04-05`)는 **창고 경유를 건너뛰는** 경로라 장부상 입고 직후 그대로 나간다 —
+ * 지시를 만들면 **현장 작업자가 `W-01-12` 에서 «유령 작업»을 본다**(물건이 이미 없다).
+ * ⛔ 빈 배열로 대신하지 마라 — `putawayNos[index]` 가 `undefined` 가 되어 NOT NULL 위반 500 이다.
  */
 export async function postReceipt(
   tx: Prisma.TransactionClient,
@@ -66,7 +71,7 @@ export async function postReceipt(
   input: GoodsReceiptCreate,
   appUserId: number,
   receiptNo: string,
-  putawayNos: string[],
+  putawayNos: string[] | null,
 ): Promise<bigint> {
   const receipt = await tx.goods_receipt.create({
     data: {
@@ -156,6 +161,7 @@ export async function postReceipt(
       where: { goods_receipt_line_id: goodsReceiptLineId },
       data: { inventory_transaction_line_id: ledger[index].inventory_transaction_line_id },
     });
+    if (putawayNos === null) continue;
     await createPutawayTask(
       tx,
       receipt,
