@@ -11,6 +11,10 @@
     python3 scripts/design_inquiries/build_delivery_index.py            # 쓴다
     python3 scripts/design_inquiries/build_delivery_index.py --check    # 낡았으면 exit 1
 """
+# ⛔ 3.9 에서 `str | None` 이 def 평가 때 터진다(TypeError). 이 한 줄이 주석을 미뤄 3.9 도 돈다 —
+#    macOS 기본 파이썬이 아직 3.9.6 이라 「내 노트북에서는 됐다」가 남의 손에서 멈춘다.
+from __future__ import annotations
+
 import re
 import sys
 from collections import Counter, defaultdict
