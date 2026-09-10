@@ -19,6 +19,13 @@ export const OUTBOX_DIRECTION = 'OUTBOUND';
 export const OUTBOX_PENDING = 'PENDING';
 /** W/O 마감 송신 인터페이스. ⚠ `interface_definition` 0행 — 문의 037-b(알려둘 것). */
 export const IF_WO_CLOSE = 'IF-WO-CLOSE-SEND';
+/**
+ * 출하 확정 PGI 송신 인터페이스(I-23 `:confirm`). ⚠ `interface_definition` 0행 — 「알려둘 것」.
+ * ⭐ 키는 `outboxMessageKey()` 그대로(2세그먼트)다 — 계약에 **확정 취소 경로가 없어** 한 출하는
+ * 평생 한 번만 적재된다(아래 규약 주석의 「평생 1회 송신」 갈래). `shipment_no` 100자 + 접두어
+ * 21 = 122 ≤ `message_key` 150 이라 `resync` 처럼 id 로 갈아탈 이유도 없다.
+ */
+export const IF_SHIPMENT_PGI = 'IF-SHIPMENT-PGI-SEND';
 
 export type Tx = Prisma.TransactionClient;
 
