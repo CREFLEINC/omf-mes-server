@@ -242,5 +242,9 @@ def catalog_summary(catalog: dict[str, Any]) -> dict[str, Any]:
         "partition_count": sum(table["is_partition"] for table in tables),
         "column_count": sum(len(table["columns"]) for table in tables),
         "relationship_count": len(catalog["relationships"]),
+        # 옛 카탈로그에는 없는 칸이라 기본값을 둔다 — 없으면 아래 문장이 복제분을 0으로 읽는다.
+        "declared_relationship_count": catalog.get(
+            "declared_relationship_count", len(catalog["relationships"])
+        ),
         "schemas": dict(sorted(Counter(table["schema"] for table in tables).items())),
     }

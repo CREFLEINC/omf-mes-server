@@ -28,12 +28,20 @@
 
 파생 산출물은 모두 `model-catalog.json` 에서 나온다. 그것부터 살아 있는 DB 에서 내보낸다.
 
+⛔ **`omf_mes`(e2e DB)에 대고 돌리지 마라.** 아래 첫 줄이 `_prisma_migrations` 를 지우는데,
+e2e DB 에서 그것을 지우면 **마이그레이션 이력이 사라져** `migrate deploy` 와 드리프트 검사가
+망가진다. **버리는 DB 를 새로 세워서** 쓴다.
+
 ```bash
-# 마이그레이션을 모두 적용한 DB 에서 카탈로그를 내보낸다.
-# _prisma_migrations 는 먼저 지운다 — export_catalog.sql 이 시스템 스키마만 빼고 전부
-# 담으므로, 남겨 두면 업무 표 하나로 섞여 표·컬럼·FK 수가 통째로 어긋난다.
-psql -d omf_mes -c 'DROP TABLE IF EXISTS public._prisma_migrations'
-psql -d omf_mes -tA -X -f scripts/data_model/export_catalog.sql \
+# ① 버리는 DB 에 마이그레이션을 전부 적용한다.
+psql -d postgres -c 'DROP DATABASE IF EXISTS omf_mes_catalog' -c 'CREATE DATABASE omf_mes_catalog'
+DATABASE_URL="postgresql://postgres@127.0.0.1:55432/omf_mes_catalog?schema=public" \
+  ./node_modules/.bin/prisma migrate deploy
+
+# ② _prisma_migrations 는 먼저 지운다 — export_catalog.sql 이 시스템 스키마만 빼고 전부
+#    담으므로, 남겨 두면 업무 표 하나로 섞여 표·컬럼·FK 수가 통째로 어긋난다.
+psql -d omf_mes_catalog -c 'DROP TABLE IF EXISTS public._prisma_migrations'
+psql -d omf_mes_catalog -tA -X -f scripts/data_model/export_catalog.sql \
   > docs/data-model/model-catalog.json
 
 python3 scripts/data_model/generate_artifacts.py
@@ -44,22 +52,28 @@ python3 scripts/data_model/generate_artifacts.py --check
 node scripts/data_model/verify_html_report.mjs
 ```
 
-전체 DDL(`02-omf-mes-postgresql-v4.sql`)은 카탈로그와 별개로 `pg_dump` 로 뜬다.
-명령은 그 파일 머리말에 적혀 있다.
+⚠ 전체 DDL(`02-omf-mes-postgresql-v4.sql`)은 **이 절차가 다시 만들지 않는다** — 카탈로그와
+별개로 `pg_dump` 로 뜨고, 명령은 그 파일 머리말에 적혀 있다. **지금은 v4 시점에 멈춰 있다**
+(표 174 · `FOREIGN KEY` 528 · 카탈로그는 표 190 · FK 601). ⛔ **그 파일로 DB 를 세우지 마라** —
+빈 DB 구축도 `prisma migrate deploy` 를 쓴다(`deploy/RELEASE.md` §0). XLSX 의 「전체 DDL 재설치」
+게이트가 그래서 **`STALE`** 로 뜬다. 정상이다.
 
 XLSX 를 다시 만들었으면 **수식 재계산을 반드시 함께 돌린다** — openpyxl 은 수식만 쓰고
 값을 남기지 않아, 빠뜨리면 계산 캐시가 빈 채로 전달된다. 자세한 항목별 재현 조건은
 `04-verification-report.md` 를 본다.
 
+⚠ 기본 출력 경로가 **저장소 «안»**(`outputs/…`)인데 그 폴더는 `.gitignore` 에 없다 —
+**경로를 줘서 저장소 밖으로 내보내라.** XLSX 는 커밋 대상이 아니다.
+
 ```bash
-python3 scripts/data_model/build_logical_spec_workbook.py
+OUT=/tmp/omf-xlsx
+python3 scripts/data_model/build_logical_spec_workbook.py "$OUT/omf-mes-logical-table-spec-v4.xlsx"
 
 # LibreOffice 는 OOXML 을 열 때 재계산하므로 변환만으로 캐시가 채워진다.
 # 왕복해도 시트·표·조건부서식·주석·틀고정은 보존된다.
-soffice --headless --norestore --convert-to xlsx --outdir /tmp/omf-xlsx \
-  outputs/01a0376d-9b7c-7ce0-be72-2df4ecd65d94/omf-mes-logical-table-spec-v4.xlsx
-cp /tmp/omf-xlsx/omf-mes-logical-table-spec-v4.xlsx \
-  outputs/01a0376d-9b7c-7ce0-be72-2df4ecd65d94/omf-mes-logical-table-spec-v4.xlsx
+# -env:UserInstallation 은 이미 떠 있는 LibreOffice 와 프로필이 부딪히지 않게 한다.
+soffice --headless --norestore --nologo -env:UserInstallation=file://"$OUT/profile" \
+  --convert-to xlsx --outdir "$OUT/recalc" "$OUT/omf-mes-logical-table-spec-v4.xlsx"
 ```
 
 재계산됐는지는 Validation 시트로 확인한다. 게이트 7개가 모두 PASS 로 보여야 하며,
