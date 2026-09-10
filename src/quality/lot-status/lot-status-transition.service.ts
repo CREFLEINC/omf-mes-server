@@ -127,6 +127,13 @@ function rowOf(
   // R-13 — `allowed` 는 전이표 `from` 판정만 한다(실행 가능성·열린 보류 개수는 안 본다) —
   // 계산 자체는 `lotId` 하나로 가능하지만(열린 보류 «개수» · 전량 보류 존재) 조회 한 건에
   // 질의를 더 붙이는 값이 크지 않고, 최종 판정은 실행측이 409/200 으로 낸다. // 결정 — 통보 084
+  //
+  // ⛔⛔ **그래서 `allowed=true` 는 「실행하면 된다」가 아니다.** 그 갈림을 재는 자리가 오래
+  //    비어 있었다(부채 #337 · I-20 §12-1 ⓐ) — 다음 사람이 ⓐ 이 칸을 「실행 가능」으로 읽거나
+  //    ⓑ 질의를 더 붙여 조용히 뜻을 바꿀 수 있었다. 이제 못 박혀 있다:
+  //    `test/quality-lot-hold.e2e-spec.ts` 의 「특성화 — 조회의 `allowed=true` 는 …」 — 열린
+  //    전량 보류가 있는 LOT 이 여기서는 `allowed=true` 인데 바로 위 시험에서 **409
+  //    `DUPLICATE_HOLD`** 를 받는다. ⛔ 그 시험이 빨개지면 통보 084 를 다시 여는 자리다.
   const allowed = transition.from.includes(current);
   const actionCode = transition.sourceOperation === RELEASE_HOLD_OP ? 'RELEASE_HOLD' : 'CREATE_HOLD';
 

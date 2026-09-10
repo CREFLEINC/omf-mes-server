@@ -855,6 +855,41 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   );
 
   it(
+    '⛔⛔ 특성화 — 조회의 `allowed=true` 는 「실행하면 된다」가 «아니다» · ' +
+      '바로 위 시험이 «같은 LOT» 에서 409 DUPLICATE_HOLD 를 받는다 (I-20 §12-1 ⓐ · 부채 #337)',
+    async () => {
+      // ⭐ 이 단언은 **버그를 잡는 것이 아니라 갈림을 «못 박는» 것**이다.
+      //    `lot-status-transition.service.ts:rowOf` 의 `allowed` 는 전이표 `from` 판정 «하나»다 —
+      //    열린 보류 개수도 전량 보류 존재도 안 본다(결정 — 통보 084). 최종 판정은 실행측이
+      //    409/200 으로 낸다. 그 결정이 옳든 그르든, **재는 자리가 0건**이라 다음 사람이
+      //    ⓐ `allowed` 를 「실행 가능」으로 읽거나 ⓑ 질의를 더 붙여 «조용히» 뜻을 바꿀 수 있었다.
+      // ⛔ 이 시험이 빨개지면 「고쳐서 초록으로」 만들지 마라 — 통보 084 를 다시 여는 자리다.
+      const openHolds = await prisma.lot_hold.count({
+        where: { lot_id: BigInt(lotId.WDUP2), released_at: null },
+      });
+      expect(openHolds).toBe(1); // 픽스처 전제 — 열린 «전량» 보류가 하나 있다.
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/quality/lot-status-transitions?lotId=${lotId.WDUP2}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const body = response.body as {
+        currentLotStatusCode: string;
+        transitions: { actionCode: string; allowed: boolean; blockedReason?: string }[];
+      };
+
+      expect(body.currentLotStatusCode).toBe('NORMAL');
+      const createHolds = body.transitions.filter((row) => row.actionCode === 'CREATE_HOLD');
+      // 공허 방지 — 걸러진 것이 0건이면 아래 루프가 아무것도 안 본다.
+      expect(createHolds.length).toBeGreaterThan(0);
+      for (const row of createHolds) {
+        expect(row.allowed).toBe(true);
+        expect(row).not.toHaveProperty('blockedReason');
+      }
+    },
+  );
+
+  it(
     '⭐⭐ 등록 — 해제된 «전량» 보류가 있는 LOT 은 «다시» 보류할 수 있다(클레임·리콜 재Hold) ' +
       '(↩ assertNoOpenFullHold 에서 `released_at: null` 을 지우면 409 DUPLICATE_HOLD 로 막혀, 한 번 풀린 LOT 이 ' +
       '영영 재Hold 불가가 된다 — ⑤(:release)가 서면 해제된 LOT 전건이 그 상태다 · 리뷰 Major-2)',
