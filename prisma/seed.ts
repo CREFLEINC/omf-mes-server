@@ -535,6 +535,9 @@ const SEED: CodeGroupSeed[] = [
       { code: 'C17', codeName: '처분 재작업 → 검사 대기', order: 100 },
       { code: 'C18', codeName: '처분 폐기 → 폐기', order: 110 },
       { code: 'C19', codeName: '처분 정상 → 정상', order: 120 },
+      // ⭐ 재등록(I-23)은 «우리가 정했다» — 결정 · 통보 218(근거는 통보 089 `:69-70`).
+      //    배포는 시드를 안 돌리므로 마이그레이션에도 같은 한 줄이 있다.
+      { code: 'C20', codeName: '재등록 → 정상', order: 130 },
     ],
   },
   {
