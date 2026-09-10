@@ -1,7 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { LotRegistryService, mesLotNo } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
@@ -36,7 +37,12 @@ export class RecycleEntryService {
   ) {}
 
   async create(input: RecycleEntryCreate, context: RecycleEntryContext): Promise<RecycleEntryView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    // ⚠ 사번은 **읽고 버린다** — `logistics.recycle_entry` 에 행위자 칸이 0개다(`created_by` 는
+    //   `app.app_user` 축, 사번은 `mdm.worker.worker_no` 축). 계약이 required 로 못박았고 헤더는
+    //   계약 검증 가드가 안 본다.
+    // ⭐ 공용 판정을 «부른다» — `src/common/master/worker-no.ts` 가 그 판정을 한 벌로 모았고
+    //   `worker-no.spec.ts` 가 사본을 금한다(README §6-4). 사본을 쓰면 그 불변식이 RED 다.
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     const axis = await this.assertWritable(input);
 
     for (let attempt = 0; ; attempt += 1) {
@@ -108,20 +114,6 @@ export class RecycleEntryService {
       throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     }
     return { plantId: Number(warehouse.plant_id), uomId: Number(item.base_uom_id) };
-  }
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — `logistics.recycle_entry` 에 행위자 칸이 0개다(`created_by` 는
- * `app.app_user` 축, 사번은 `mdm.worker.worker_no` 축). 계약이 required 로 못박았고 헤더는
- * 계약 검증 가드가 안 본다. ⛔ 공용화하지 않는다(열째 사본 · I-11 R-11 이 아직 살아 있다).
- */
-async function assertWorkerNo(prisma: PrismaService, workerNo: string | undefined): Promise<void> {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-  }
-  if ((await prisma.worker.count({ where: { worker_no: workerNo } })) === 0) {
-    throw one(field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
   }
 }
 

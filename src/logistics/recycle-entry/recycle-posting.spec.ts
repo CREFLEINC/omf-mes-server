@@ -213,7 +213,8 @@ describe('RecycleEntryService — 번호는 트랜잭션 밖에서 뽑는다', (
       item: { findUnique: () => Promise.resolve({ base_uom_id: BigInt(UOM_ID) }) },
       warehouse: { findUnique: () => Promise.resolve({ plant_id: BigInt(PLANT_ID) }) },
       location: { findFirst: () => Promise.resolve({ location_id: BigInt(LOCATION_ID) }) },
-      worker: { count: () => Promise.resolve(1) },
+      // ⭐ 공용 판정 `assertWorkerNoExists` 는 `findUnique` 를 쓴다(`worker-no.ts:62`) — `count` 가 아니다.
+      worker: { findUnique: () => Promise.resolve({ worker_id: 1n }) },
       lot: {
         count: () => {
           recorded.order.push('lot.count');
