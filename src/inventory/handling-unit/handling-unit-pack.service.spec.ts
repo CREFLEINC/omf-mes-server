@@ -41,7 +41,7 @@ function fake(locked: { status_code: string; version_no: number } | null) {
   const prisma = {
     // 사번 확인은 이 스펙의 주제가 아니다 — 있는 것으로 두고 지난다(트랜잭션 «밖»이라
     // `calls` 에도 안 남는다 ⇒ 「첫 문장」 단언이 그것에 안 흔들린다).
-    worker: { count: async () => 1 },
+    worker: { findUnique: async () => ({ worker_id: 1n }) },
     $transaction: async (work: (client: unknown) => Promise<unknown>) => {
       recorded.calls.push('transaction');
       return work(tx);

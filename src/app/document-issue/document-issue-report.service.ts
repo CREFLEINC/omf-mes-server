@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
+import { resolveWorkerId } from '../../common/master';
 import { loadDocumentIssueReasons } from './document-issue-query.service';
 import { DocumentIssueReportContext } from './document-issue-report-context';
 import { loadDocumentIssueTargets } from './document-issue-target-lookup';
@@ -33,22 +34,14 @@ export class DocumentIssueReportService {
     const locked = await lockIssue(tx, documentIssueLogId);
     assertPending(locked.print_outcome_code);
     const failureReason = reportFailureReason(input);
-    const worker = await tx.worker.findUnique({
-      where: { worker_no: context.workerNo },
-      select: { worker_id: true },
-    });
-    if (worker === null) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'),
-      ]);
-    }
+    const workerId = await resolveWorkerId(tx, context.workerNo);
     const row = await tx.document_issue_log.update({
       where: { document_issue_log_id: locked.document_issue_log_id },
       data: {
         print_outcome_code: input.outcome,
         print_failure_reason: failureReason,
         print_reported_at: new Date(),
-        print_reported_worker_id: worker.worker_id,
+        print_reported_worker_id: workerId,
         print_reported_by: BigInt(context.appUserId),
       },
       include: DOCUMENT_ISSUE_INCLUDE,

@@ -100,7 +100,7 @@ export class RepairExecutionController {
   }
 }
 
-/** ⛔ 헤더는 계약 검증 가드가 안 본다 — 사번의 필수 판정은 서비스 몫이다(`assertWorkerNo`). */
+/** ⛔ 헤더는 계약 검증 가드가 안 본다 — 사번의 필수 판정은 서비스 몫이다(`assertWorkerNoExists`). */
 function workerNoOf(request: Request): string | undefined {
   const workerNo = request.headers['x-worker-no'];
   return typeof workerNo === 'string' ? workerNo : undefined;

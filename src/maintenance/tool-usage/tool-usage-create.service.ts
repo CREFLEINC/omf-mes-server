@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 
 import { ContractException, ERROR_CODE, field, one } from "../../common/errors";
+import { resolveWorkerId } from "../../common/master";
 import { maintenanceInstantFromEpoch } from "../maintenance-instant";
 import {
   ToolUsageProjection,
@@ -37,15 +38,7 @@ export class ToolUsageCreateService {
     context: ToolUsageWriteContext,
   ): Promise<ToolUsageCreateView> {
     const checked = checkToolUsageCreate(input);
-    const worker = await tx.worker.findUnique({
-      where: { worker_no: context.workerNo },
-      select: { worker_id: true },
-    });
-    if (!worker) {
-      throw one(
-        field("X-Worker-No", ERROR_CODE.INVALID, "없는 작업자 사번입니다."),
-      );
-    }
+    const workerId = await resolveWorkerId(tx, context.workerNo);
     const workOrder = await tx.work_order.findUnique({
       where: { work_order_id: checked.workOrderId },
       select: { work_order_id: true },
@@ -93,7 +86,7 @@ export class ToolUsageCreateService {
       VALUES
         (${checked.moldId}, ${checked.workOrderId}, ${checked.shotCount},
          ${checked.collectionMethodCode}, ${checked.conversionBaseQty}, ${checked.conversionRatio},
-         ${checked.occurredAt.sqlTimestamp}::timestamptz, ${worker.worker_id})
+         ${checked.occurredAt.sqlTimestamp}::timestamptz, ${workerId})
       RETURNING tool_usage_id`);
     const cumulative = await tx.$queryRaw<CumulativeRow[]>(Prisma.sql`
       UPDATE mdm.mold

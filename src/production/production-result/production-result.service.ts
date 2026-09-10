@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { assertNotBlank, optional } from '../../common/master';
+import { assertNotBlank, optional, resolveWorkerId } from '../../common/master';
 import { LotLifecycleService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -31,7 +31,6 @@ const RECORD_ACTION = 'production-result-recorded';
  * **이미 데이터에 있는 값**을 든다. ⛔ 이 값으로 «아무것도 거르지 않는다»(§2-3).
  */
 export const RESULT_STATUS = 'CONFIRMED';
-const WORKER_NO = 'X-Worker-No';
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 **선택** — 없으면 대조를 건너뛴다(§4-6 · C-9). */
 export interface ProductionResultContext {
@@ -65,7 +64,7 @@ export class ProductionResultService {
   ) {}
 
   async create(body: ProductionResultCreate, context: ProductionResultContext): Promise<ProductionResultView> {
-    const workerId = await this.resolveWorker(context.workerNo);
+    const workerId = await resolveWorkerId(this.prisma, context.workerNo);
     const quantities = resultQuantities(body);
     const allocations = body.lotAllocations ?? [];
     assertAllocations(allocations, quantities.good_qty);
@@ -157,22 +156,6 @@ export class ProductionResultService {
       where: { lot_id, source_type_code: WORK_ORDER_LOT_SOURCE, source_id: BigInt(workOrderId) },
       select: { lot_id: true, lifecycle_status_code: true },
     });
-  }
-
-  /**
-   * 귀속 사번 → `worker_id`. ⛔ `app_user_id` 로 세션 사용자에서 **도출하지 않는다**(계약이 헤더를
-   * required 로 못박았다 · §4-3) · ⛔ 재직 여부를 안 본다(계약이 안 적은 마스터 운영 축이다).
-   */
-  private async resolveWorker(workerNo: string | undefined): Promise<bigint> {
-    if (workerNo === undefined || workerNo.trim() === '') {
-      throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-    }
-    const worker = await this.prisma.worker.findUnique({
-      where: { worker_no: workerNo },
-      select: { worker_id: true },
-    });
-    if (worker === null) throw one(field(WORKER_NO, ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-    return worker.worker_id;
   }
 
   /** FK 존재 검증 — 없으면 400 `INVALID` 다. `P2003` 으로 흘리면 어느 칸인지 못 짚는다. */

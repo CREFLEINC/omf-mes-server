@@ -2,12 +2,13 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VERSION_CONFLICT } from '../work-order/work-order-write.service';
 import { EVENT_TYPE } from './work-session.constants';
-import { WorkSessionContext, assertWorkerNo } from './work-session.service';
+import { WorkSessionContext } from './work-session.service';
 import { WorkSessionView, workSessionView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
 type LockedSession = { started_at: Date; status_code: string; version_no: number };
@@ -34,7 +35,7 @@ export class WorkSessionEndService {
     body: WorkSessionEnd,
     context: Omit<WorkSessionContext, 'idempotencyKey'>,
   ): Promise<WorkSessionView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     return this.prisma.$transaction(async (tx: Tx) => {
       const locked = await lockSession(tx, workSessionId);
       // If-Match 가 없으면 대조를 건너뛴다 — 큐에 쌓인 요청은 토큰을 싣지 않는다(C-9).

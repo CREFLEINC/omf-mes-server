@@ -1,11 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PrecheckDecisionView, precheckDecisionView } from './precheck-decision-view';
 
-const WORKER_NO = 'X-Worker-No';
 const OVERRIDDEN = 'OVERRIDDEN';
 /** 우회를 허용하는 유일한 W/O 유형 — 서버가 이 값으로만 판정한다(계약 x-internal-note). */
 const EMERGENCY_TYPE = 'EMERGENCY';
@@ -41,7 +40,9 @@ export class PrecheckDecisionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(body: PrecheckDecisionCreate, context: PrecheckDecisionContext): Promise<PrecheckDecisionView> {
-    const workerNo = await this.resolveWorker(context.workerNo);
+    // `precheck_decision.worker_no` 는 FK 가 아니라 **헤더 문자열을 그대로 옮겨 적는 칸**이다
+    // — 실재만 보고 그대로 쓴다(`resolveWorkerId` 는 `worker_id` 를 쓰는 자리 것이다).
+    const workerNo = await assertWorkerNoExists(this.prisma, context.workerNo);
     const workOrder = await this.assertWorkOrder(body.workOrderId);
     await this.assertEquipment(body.equipmentId);
     await this.assertBasisInspection(body.basisInspectionId);
@@ -61,24 +62,6 @@ export class PrecheckDecisionService {
       },
     });
     return precheckDecisionView(row);
-  }
-
-  /**
-   * 귀속 사번 존재 확인 + 저장할 문자열 반환 — `resolveWorker`(`production-result.service.ts:159`)
-   * 형(조회 + 저장) 사본이다. `precheck_decision.worker_no` 는 FK 가 아니라 **헤더 문자열을
-   * 그대로 옮겨 적는 칸**이라 존재만 보고 그대로 돌려준다.
-   * R-11 — 세션 셋(`assertWorkerNo` 형)과 공용화하지 않는다. 공용화는 후속 PR 로 미룬다.
-   */
-  private async resolveWorker(workerNo: string | undefined): Promise<string> {
-    if (workerNo === undefined || workerNo.trim() === '') {
-      throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
-    }
-    const worker = await this.prisma.worker.findUnique({
-      where: { worker_no: workerNo },
-      select: { worker_id: true },
-    });
-    if (worker === null) throw one(field(WORKER_NO, ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));
-    return workerNo;
   }
 
   /** FK 존재 검증 + 우회 판정에 쓸 유형을 함께 돌려준다 — 조회를 두 번 하지 않는다. */

@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
+import { assertWorkerNoPresent } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -51,7 +52,7 @@ export class MaterialReturnService {
     appUserId: number,
     workerNo: string | undefined,
   ): Promise<MaterialReturnView> {
-    assertWorkerNo(workerNo);
+    assertWorkerNoPresent(workerNo);
     const plantId = await this.assertCreatable(input);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을 둘
     //    쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2 R-2). 결번은 허용한다.
@@ -147,19 +148,6 @@ export class MaterialReturnService {
       throw one(field('destinationWarehouseId', ERROR_CODE.INVALID, '출발 위치와 다른 공장의 창고입니다.'));
     }
     return plantId;
-  }
-}
-
-/**
- * ⚠ 사번을 **읽고 버린다** — `material_return` 에 `worker_id` 도 `requested_by` 도 없고
- * `created_by` 는 `app.app_user` 축이다(I-10 §4-8). 계약 `required: true` 라 부재만 거부한다.
- * `lot-complete.service.ts:164` · `picking-pick.service.ts:163` · `shopfloor-receipt.service.ts:192`
- * 에 이은 **넷째 사본 · 후속 소형 PR 이 옮긴다 — I-10 R-12**(`src/common/http/worker-no.ts`).
- * ⛔ `mdm.worker` 를 조회하지 않는다 — 저장하지 않는 값에 왕복을 늘리지 않는다.
- */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo === undefined || workerNo.trim() === '') {
-    throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
   }
 }
 

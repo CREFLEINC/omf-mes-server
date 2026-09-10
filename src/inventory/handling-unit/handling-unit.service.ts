@@ -9,12 +9,11 @@ import {
   field,
   one,
 } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { HandlingUnitQueryService } from './handling-unit-query.service';
 import { HU_STATUS_OPEN } from './handling-unit-status';
-import { assertWorkerNo } from './handling-unit-worker';
 import { HandlingUnitDetailView } from './handling-unit-view';
 
 /** 계약 `HandlingUnitContentUpsert` — 등록의 `contents[]` 와 PR ④ 의 치환이 같은 모양이다. */
@@ -76,7 +75,7 @@ export class HandlingUnitService {
     input: HandlingUnitCreate,
     context: HandlingUnitContext,
   ): Promise<{ versionNo: number; view: HandlingUnitDetailView }> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     await assertCodeValues(this.prisma, [
       { field: 'handlingUnitTypeCode', value: input.handlingUnitTypeCode, groupCode: CODE_GROUP },
     ]);

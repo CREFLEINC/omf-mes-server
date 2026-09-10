@@ -2,10 +2,10 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 // ⛔ 새 사본을 만들지 않는다 — 같은 도메인의 것을 그대로 쓴다(I-25 R-6 · 공용화는 #337 몫).
 //    PR ② 가 같은 자리에서 이 import 로 선례를 세웠다.
-import { assertWorkerNo } from '../work-session/work-session.service';
 import { RepairExecutionView, repairExecutionView } from './repair-execution-view';
 
 /** 계약 `RepairExecutionCreate` — required 4 · `repairProcessId` 만 선택이고 널을 허용한다(§1-3). */
@@ -38,7 +38,7 @@ export class RepairExecutionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(body: RepairExecutionCreate, context: RepairExecutionContext): Promise<RepairExecutionView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     await this.assertCreatable(body);
     return this.prisma.$transaction((tx) => this.write(tx, body, context));
   }

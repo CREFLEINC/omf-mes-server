@@ -87,7 +87,7 @@ function fake(over: Row = {}) {
   };
 
   const prisma = {
-    worker: { count: async () => 1 },
+    worker: { findUnique: async () => ({ worker_id: 1n }) },
     code_value: { findMany: async () => [{ code: 'NO_SPACE', code_group: { group_code: 'PUTAWAY_TASK_TEMPORARY_REASON' } }] },
     $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
       work(tx as unknown as Prisma.TransactionClient),

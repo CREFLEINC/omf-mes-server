@@ -1,10 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertEventPair, assertSessionVersion, lockWorkSession } from './work-session-rules';
-import { WorkSessionContext, assertWorkerNo } from './work-session.service';
+import { WorkSessionContext } from './work-session.service';
 import { WorkSessionEventRow, WorkSessionEventView, reasonKey, workSessionEventView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
 const STATUS_COLUMN = 'production.work_session.status_code';
@@ -30,7 +31,7 @@ export class WorkSessionEventService {
     body: WorkSessionEventCreate,
     context: Omit<WorkSessionContext, 'idempotencyKey'>,
   ): Promise<WorkSessionEventView> {
-    await assertWorkerNo(this.prisma, context.workerNo);
+    await assertWorkerNoExists(this.prisma, context.workerNo);
     const action = await assertEventPair(this.prisma, body.eventTypeCode, body.reasonCode);
     return this.prisma.$transaction((tx: Tx) => this.commit(tx, workSessionId, body, context, action));
   }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { assertWorkerNoPresent } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 이 PR 은 코어 파일을 안 고친다(`picking-pick.service.ts:8`).
 import { LockedBalanceRow, lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
@@ -88,7 +89,7 @@ export class ShipmentPickService {
     context: ShipmentPickContext,
   ): Promise<ShipmentRequestLineView> {
     // ① 가드가 헤더를 «안 본다»(`contract-validation.guard.ts:39`) — 서버가 유일한 그물이다.
-    assertWorkerNo(context.workerNo);
+    assertWorkerNoPresent(context.workerNo);
     // ③ ⭐ 04 는 `exclusiveMinimum` 이 «없다» — 01 과 달리 그물이 여기 하나뿐이다(R-6).
     const delta = assertPickedQty(body.pickedQty);
     // ⛔⛔ 채번은 `$transaction` 을 «열기 전»이다 — 안에서 부르면 한 요청이 커넥션을 둘 쥐고 풀이
@@ -166,12 +167,6 @@ export class ShipmentPickService {
     ]);
     await this.posting.pick(tx, [{ dimension, delta, inventoryReservationId, field: QTY_FIELD }]);
   }
-}
-
-/** ⚠ 사번을 **읽고 버린다** — 담을 칸이 0개다. ⛔ `mdm.worker` 조회도 `maxLength` 도 안 세운다. */
-function assertWorkerNo(workerNo: string | undefined): void {
-  if (workerNo !== undefined && workerNo.trim() !== '') return;
-  throw one(field('X-Worker-No', ERROR_CODE.REQUIRED, '작업자 사번 헤더가 필요합니다.'));
 }
 
 /**
