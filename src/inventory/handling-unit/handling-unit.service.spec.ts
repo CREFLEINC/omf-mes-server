@@ -84,7 +84,7 @@ describe('취급 단위 등록 — 채번', () => {
     const written: Record<string, unknown>[] = [];
 
     const prisma = {
-      worker: { count: async () => 1 },
+      worker: { findUnique: async () => ({ worker_id: 1n }) },
       code_value: {
         findMany: async () => [{ code: 'PALLET', code_group: { group_code: 'HANDLING_UNIT_TYPE' } }],
       },
@@ -150,7 +150,7 @@ describe('취급 단위 등록 — 채번', () => {
       meta: { target: ['handling_unit_no'] },
     });
     const prisma = {
-      worker: { count: async () => 1 },
+      worker: { findUnique: async () => ({ worker_id: 1n }) },
       code_value: {
         findMany: async () => [{ code: 'PALLET', code_group: { group_code: 'HANDLING_UNIT_TYPE' } }],
       },

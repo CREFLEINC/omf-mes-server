@@ -151,7 +151,6 @@ export class MaterialReturnService {
   }
 }
 
-
 /**
  * 몸통 형식 검증(§4-3 ⓒⓓ) — 본문 안 `(itemId, lotId)` 중복 · 수량 범위.
  * ⛔ 빈 배열의 `LINE_REQUIRED` 를 만들지 않는다 — 계약 `MaterialReturnCreate.lines.minItems = 1`

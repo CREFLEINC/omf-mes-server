@@ -189,7 +189,6 @@ export class StockTransferService {
     throw new Error('반출 전 재고 이동 전표가 실재한다 — 계약 전제가 깨졌다(문의 123).');
   }
 
-
   /**
    * ⛔ 없는 id 를 그냥 넘기면 FK 위반이 **500** 으로 샌다 — 원장까지 열고 나서 터지므로
    * 여기서 먼저 본다(입고 `assertWritable` 선례). 번호가 곧 판정 순서다(I-13.md §4-2).

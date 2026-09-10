@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 
+import { assertWorkerNoExists } from "../../common/master";
+
 import { parseMaintenanceInstant } from "../maintenance-instant";
 import { readDowntimeWithin } from "./downtime-query.service";
 import {
   assertDowntimeBreakdown,
   assertDowntimeReason,
   assertDowntimeWindow,
-  assertDowntimeWorker,
   assertNoOpenDowntime,
   type DowntimeCreate,
   type DowntimeTx,
@@ -28,7 +29,7 @@ export class DowntimeCreateService {
     input: DowntimeCreate,
     context: DowntimeCreateContext,
   ): Promise<DowntimeView> {
-    await assertDowntimeWorker(tx, context.workerNo);
+    await assertWorkerNoExists(tx, context.workerNo);
     await assertDowntimeReason(tx, input.reasonCode);
     const equipmentId = await lockDowntimeEquipment(tx, input.equipmentId);
 

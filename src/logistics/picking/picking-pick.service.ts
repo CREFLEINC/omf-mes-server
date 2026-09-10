@@ -156,7 +156,6 @@ export class PickingPickService {
   }
 }
 
-
 /** 형식만 본다 — 저장할 칸이 없다(C-8 · `goods-issue-rules.ts:110-123` 과 같은 판정). */
 function assertMoments(body: PickingLinePick): void {
   const errors: ErrorItem[] = [];

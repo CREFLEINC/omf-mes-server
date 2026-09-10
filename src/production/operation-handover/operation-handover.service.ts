@@ -2,8 +2,8 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
-import { NumberingService } from '../../core/numbering';
 import { assertWorkerNoExists } from '../../common/master';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 // ⛔ 새 사본을 만들지 않는다 — 같은 도메인의 것을 그대로 쓴다(I-25 R-6 · 공용화는 #337 몫).
 //    `lot-rules.ts` 판은 「없는 사번」 갈래가 없고 `src/trace` 로 도메인 경계를 넘는다.

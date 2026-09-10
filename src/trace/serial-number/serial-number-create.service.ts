@@ -238,7 +238,6 @@ async function assertTerminalGate(
   if (gate?.can_print_label !== true) throw denied();
 }
 
-
 function denied(): ContractException {
   return new ContractException(HttpStatus.FORBIDDEN, [
     {

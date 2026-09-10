@@ -182,7 +182,6 @@ export class ShopfloorReceiptService {
   }
 }
 
-
 /**
  * ①의 몸통 형식 검증 — 라인 1행 이상(계약 `minItems` 부재 실측 · §1-3) · 본문 안 라인
  * 중복 · 수량 범위(물리 CHECK 앞당김 · §2-3) · 차이-사유 짝(§3-3 ⓖ).

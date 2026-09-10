@@ -1,8 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { DocumentStateService } from '../../core/document-state';
 import { assertWorkerNoExists } from '../../common/master';
+import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertEventPair, assertSessionVersion, lockWorkSession } from './work-session-rules';
 import { WorkSessionContext } from './work-session.service';

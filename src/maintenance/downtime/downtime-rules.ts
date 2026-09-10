@@ -44,17 +44,6 @@ function locked(
   ]);
 }
 
-export async function assertDowntimeWorker(
-  tx: DowntimeTx,
-  workerNo: string,
-): Promise<void> {
-  const worker = await tx.worker.findUnique({
-    where: { worker_no: workerNo },
-    select: { worker_id: true },
-  });
-  if (worker === null) throw invalid("X-Worker-No", "없는 작업자 사번입니다.");
-}
-
 export async function assertDowntimeReason(
   tx: DowntimeTx,
   reasonCode: string,

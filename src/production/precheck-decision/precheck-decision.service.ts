@@ -42,8 +42,7 @@ export class PrecheckDecisionService {
   async create(body: PrecheckDecisionCreate, context: PrecheckDecisionContext): Promise<PrecheckDecisionView> {
     // `precheck_decision.worker_no` 는 FK 가 아니라 **헤더 문자열을 그대로 옮겨 적는 칸**이다
     // — 실재만 보고 그대로 쓴다(`resolveWorkerId` 는 `worker_id` 를 쓰는 자리 것이다).
-    await assertWorkerNoExists(this.prisma, context.workerNo);
-    const workerNo = context.workerNo as string;
+    const workerNo = await assertWorkerNoExists(this.prisma, context.workerNo);
     const workOrder = await this.assertWorkOrder(body.workOrderId);
     await this.assertEquipment(body.equipmentId);
     await this.assertBasisInspection(body.basisInspectionId);
@@ -64,7 +63,6 @@ export class PrecheckDecisionService {
     });
     return precheckDecisionView(row);
   }
-
 
   /** FK 존재 검증 + 우회 판정에 쓸 유형을 함께 돌려준다 — 조회를 두 번 하지 않는다. */
   private async assertWorkOrder(workOrderId: number): Promise<{ work_order_type_code: string }> {

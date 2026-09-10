@@ -169,7 +169,6 @@ export class ShipmentPickService {
   }
 }
 
-
 /**
  * ③ ⭐ 계약에 `exclusiveMinimum` 도 `multipleOf` 도 없다 — 둘 다 **서버가 막는 자리**다.
  * ⛔ 스케일을 안 보면 `0 < Δ < 0.0000005` 가 **500** 으로 샌다: ⑪·⑫ 는 `Decimal` 로 정확히

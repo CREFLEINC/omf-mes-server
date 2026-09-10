@@ -93,7 +93,6 @@ export class AllocationPackingService {
   }
 }
 
-
 /**
  * ③ ⭐ **`FOR UPDATE OF a`** — 배분 «한 행»만 잠근다. 헤더까지 잠그면 같은 출하의 다른 배분을 잇는
  * 스캔이 서로를 막는데, 여러 배분을 연달아 포장하는 것이 `P-04-01` 의 정상 흐름이다(⑥ 이

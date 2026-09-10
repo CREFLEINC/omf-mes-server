@@ -1,13 +1,13 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
+import { assertWorkerNoExists } from "../../common/master";
 import { assertUpdated } from "../../common/optimistic-lock";
 import { maintenanceInstantFromEpoch } from "../maintenance-instant";
 import { readDowntimeWithin } from "./downtime-query.service";
 import {
   assertDowntimeVersion,
   assertDowntimeWindow,
-  assertDowntimeWorker,
   lockDowntimeForUpdate,
   type DowntimeTx,
 } from "./downtime-rules";
@@ -38,7 +38,7 @@ export class DowntimeCloseService {
       ]);
     }
 
-    await assertDowntimeWorker(tx, context.workerNo);
+    await assertWorkerNoExists(tx, context.workerNo);
     const locked = await lockDowntimeForUpdate(tx, downtimeId);
     if (version !== undefined) assertDowntimeVersion(locked, version);
     if (locked.ended_epoch_us !== null) {

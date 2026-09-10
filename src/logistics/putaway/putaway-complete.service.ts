@@ -2,12 +2,11 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
+import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어를 한 줄도 안 고친다(피킹 선례).
 import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
-import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PutawayOrigin, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
@@ -232,7 +231,6 @@ async function assertBalance(
     throw short('보유 수량보다 많이 옮길 수 없습니다.');
   }
 }
-
 
 /** 계약 「사유 코드와 비고 중 적어도 하나는 있어야 한다」 — 화면의 필수 표시와 다른 축이다. */
 function assertReason(body: PutawayTaskComplete): void {

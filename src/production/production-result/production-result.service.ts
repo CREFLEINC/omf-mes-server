@@ -158,7 +158,6 @@ export class ProductionResultService {
     });
   }
 
-
   /** FK 존재 검증 — 없으면 400 `INVALID` 다. `P2003` 으로 흘리면 어느 칸인지 못 짚는다. */
   private async assertReferences(body: ProductionResultCreate): Promise<void> {
     const checks: [string, number | undefined, (id: bigint) => Promise<number>][] = [
