@@ -602,33 +602,34 @@ describe('InventoryPostingService.consume', () => {
 });
 
 /**
- * ⭐ 되돌림(I-23 출하 취소 · 결정 통보 212). `ck_reservation_qty` 는 **합**에 걸려 있어
- * 순서(소진 내리기 → 되돌림 올리기)가 규약인데, 그 순서를 «주석»이 아니라 **WHERE 의 하한**이
- * 지킨다. 여기서 보는 것은 그 하한이 실제로 실려 나가는가다.
+ * ⭐ 되돌림(I-23 출하 취소 · 결정 통보 212) — 소진분을 풀린 것으로 «옮긴다».
+ * ⛔ 초판은 released 만 올리고 하한을 `reserved − released − consumed ≥ q` 로 걸어, 출하가 나간 뒤의
+ *    예약(`reserved N / released 0 / consumed N`)에서 언제나 0행 400 이었다. 아래 둘째 시험이 그
+ *    하한의 «부재»까지 못 박는다.
  */
 describe('예약 되돌림 — releaseReservation', () => {
   const RELEASE_FIELD = 'shipmentId';
 
-  it('released_qty 를 올리고 version_no 를 함께 올린다', async () => {
+  it('⭐⭐ 한 문장에서 consumed 를 내리고 released 를 올린다 — 합이 안 변해 CHECK 를 안 건드린다', async () => {
     const { tx, statements } = fake([1]);
 
     await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
 
+    expect(statements).toHaveLength(1);
     expect(statements[0].sql).toContain('UPDATE inventory.inventory_reservation');
+    expect(statements[0].sql).toContain('consumed_qty = consumed_qty - ?');
     expect(statements[0].sql).toContain('released_qty = released_qty + ?');
     expect(statements[0].sql).toContain('version_no = version_no + 1');
-    // ⛔ consumed_qty 를 여기서 내리지 않는다 — 취소 경로의 pick(Δ<0) 이 이미 내렸다.
-    //    두 번 내리면 음수라 app.qty_t(CHECK ≥ 0)로 500 이다.
-    expect(statements[0].sql).not.toContain('consumed_qty = consumed_qty');
   });
 
-  it('⭐⭐ ck_reservation_qty 를 «앞당긴» 하한이 WHERE 에 실린다 — 순서가 그래서 지켜진다', async () => {
+  it('⭐⭐ 하한은 consumed_qty ≥ q «하나»다 — 초판의 reserved − released − consumed 하한이 없다', async () => {
     const { tx, statements } = fake([1]);
 
     await releaseReservation(tx, RESERVATION, 30n, dec(10), RELEASE_FIELD);
 
-    // 소진분을 안 내린 채 부르면 이 하한이 0행을 내고 400 이 된다 — CHECK 의 500 이 아니다.
-    expect(statements[0].sql).toContain('reserved_qty - released_qty - consumed_qty >= ?');
+    expect(statements[0].sql).toContain('AND consumed_qty >= ?');
+    // 출하 뒤 예약은 reserved N / released 0 / consumed N — 이 하한이면 0 ≥ N 이라 언제나 400 이다.
+    expect(statements[0].sql).not.toContain('reserved_qty - released_qty - consumed_qty');
   });
 
   it('짝이 어긋난 호출은 item_id 로 0행이 되어 400 NEGATIVE_BALANCE 다', async () => {
@@ -644,7 +645,6 @@ describe('예약 되돌림 — releaseReservation', () => {
       field: RELEASE_FIELD,
       code: ERROR_CODE.NEGATIVE_BALANCE,
     });
-    // 예약 id 만 맞고 품목이 다른 호출을 드러낸다(consumeReservation 과 같은 규약).
     expect(statements[0].sql).toContain('item_id = ?::bigint');
     expect(statements[0].values).toContain(99n);
   });
