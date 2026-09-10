@@ -67,6 +67,9 @@ mkdir -p "$APP_DIR" "$DOCKER_CONFIG_DIR"
 [[ -f "$SCRIPT_DIR/../docker-compose.prod.yml" ]] || die "docker-compose.prod.yml을 설치 패키지에서 찾을 수 없습니다."
 [[ -f "$SCRIPT_DIR/deploy.sh" ]] || die "deploy.sh를 설치 패키지에서 찾을 수 없습니다."
 [[ -f "$SCRIPT_DIR/rollback.sh" ]] || die "rollback.sh를 설치 패키지에서 찾을 수 없습니다."
+[[ -f "$SCRIPT_DIR/seed/load-mes-initial-data.sh" ]] || die "기초데이터 실행 스크립트를 설치 패키지에서 찾을 수 없습니다."
+[[ -f "$SCRIPT_DIR/seed/mes-initial-data.sql" ]] || die "기초데이터 SQL을 설치 패키지에서 찾을 수 없습니다."
+[[ -f "$SCRIPT_DIR/seed/README.md" ]] || die "기초데이터 안내 문서를 설치 패키지에서 찾을 수 없습니다."
 
 if [[ -e "$ENV_FILE" ]]; then
   die "$ENV_FILE이 이미 존재합니다. 기존 설정을 보존하기 위해 중단합니다. 백업 후 다시 실행하세요."
@@ -91,6 +94,10 @@ JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
 install -m 644 "$SCRIPT_DIR/../docker-compose.prod.yml" "$APP_DIR/docker-compose.prod.yml"
 install -m 755 "$SCRIPT_DIR/deploy.sh" "$APP_DIR/deploy.sh"
 install -m 755 "$SCRIPT_DIR/rollback.sh" "$APP_DIR/rollback.sh"
+install -d -m 755 "$APP_DIR/seed"
+install -m 755 "$SCRIPT_DIR/seed/load-mes-initial-data.sh" "$APP_DIR/seed/load-mes-initial-data.sh"
+install -m 644 "$SCRIPT_DIR/seed/mes-initial-data.sql" "$APP_DIR/seed/mes-initial-data.sql"
+install -m 644 "$SCRIPT_DIR/seed/README.md" "$APP_DIR/seed/README.md"
 
 tmp_env="$(mktemp "$APP_DIR/.env.prod.XXXXXX")"
 trap 'rm -f "$tmp_env"' EXIT
@@ -124,3 +131,5 @@ DOCKER_CONFIG="$DOCKER_CONFIG_DIR" docker compose -f docker-compose.prod.yml --e
 DOCKER_CONFIG="$DOCKER_CONFIG_DIR" ./deploy.sh
 
 printf '\n초기 배포가 완료되었습니다.\n접속 주소: http://<서버 LAN IP>:%s\n' "$API_PORT"
+printf '기초데이터 확인: %s/seed/load-mes-initial-data.sh --dry-run\n' "$APP_DIR"
+printf '기초데이터 적재: %s/seed/load-mes-initial-data.sh\n' "$APP_DIR"

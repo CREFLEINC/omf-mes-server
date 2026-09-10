@@ -78,10 +78,17 @@ curl -s localhost:3100/api/health     # {"status":"ok","db":"up"}
 `ADMIN_INITIAL_PASSWORD`에 평문으로 보관한다. 최초 `admin`은 이 값으로 만들어지며 첫 로그인
 비밀번호 변경을 강제하지 않는다.
 
+하노이 최초 설치에서는 고객 기초데이터 스크립트를 쓴다. 이 스크립트가 먼저 표준 애플리케이션
+시드(`node dist/seed.js`)를 실행한 뒤, 정적 SQL에 포함된 조직·ERP 기준정보를 적재한다.
+
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod \
-  run --rm migrate node dist/seed.js
+./seed/load-mes-initial-data.sh --dry-run
+./seed/load-mes-initial-data.sh
 ```
+
+관리자 초기 비밀번호는 `install-deploy.sh`가 `.env.prod`에 기록한
+`ADMIN_INITIAL_PASSWORD`를 사용한다. 고객 검토가 필요한 임시값과 적재 건수는
+`seed/README.md`에 있다.
 
 ⛔ **`prisma db seed` 를 쓰지 마라.** `prisma.config.ts` 가 `NODE_ENV` 로 갈리는데 `migrate`
 서비스에는 그 값이 없어 `ts-node prisma/seed.ts` 로 빠지고, **운영 이미지에는 ts-node 도

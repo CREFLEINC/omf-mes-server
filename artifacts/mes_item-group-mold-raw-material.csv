@@ -1,0 +1,6 @@
+plant_cd,item_cd,item_nm,spec,item_acct_cd,item_acct_nm,item_group_cd,item_group_nm,item_class,item_class_nm,basic_unit,if_seq,create_type,is_canceled,source_inf_id,synced_at
+PL11,100699,"Thép làm lõi khuôn-Steel (for make core) -33.5*100.5*125.5","Thép làm lõi khuôn-Steel (for make core) -33.5*100.5*125.5",30,"Raw Material",MZ000,Mold,"","",EA,1,A,0,233,"2026-08-25 15:39:08"
+PL11,100699-1,"Thép làm lõi khuôn-Steel (for make core)-30.5*100.5*12.5","Thép làm lõi khuôn-Steel (for make core)-30.5*100.5*12.5",30,"Raw Material",MZ000,Mold,"","",EA,1,A,0,234,"2026-08-25 15:39:08"
+PL11,100699-2,"Thép làm lõi khuôn-Steel (for make core) 31.6*110.5*120.5","Thép làm lõi khuôn-Steel (for make core) 31.6*110.5*120.5",30,"Raw Material",MZ000,Mold,"","",EA,1,A,0,235,"2026-08-25 15:39:08"
+PL11,100838,"VỎ KHUÔN-Mold cover CI2030","VỎ KHUÔN-Mold cover CI2030",30,"Raw Material",MZ000,Mold,"","",EA,1,A,0,236,"2026-08-25 15:39:08"
+PL11,100838-1,"VỎ KHUÔN-Mold cover -SC2030","VỎ KHUÔN-Mold cover -SC2030",30,"Raw Material",MZ000,Mold,"","",EA,1,A,0,237,"2026-08-25 15:39:08"
