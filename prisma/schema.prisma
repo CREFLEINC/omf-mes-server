@@ -1279,6 +1279,8 @@ model shipment {
   cancelled_at                             DateTime?        @db.Timestamptz(6)
   cancelled_by                             BigInt?
   cancellation_reason_code                 String?          @db.VarChar(50)
+  expedited                                Boolean          @default(false)
+  expedite_reason                          String?
   app_user_shipment_cancelled_byToapp_user app_user?        @relation("shipment_cancelled_byToapp_user", fields: [cancelled_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   partner                                  partner?         @relation(fields: [carrier_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_shipment_confirmed_byToapp_user app_user?        @relation("shipment_confirmed_byToapp_user", fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1461,6 +1463,8 @@ model stock_transfer {
   version_no                                                        Int                   @default(1)
   reason_code                                                       String?               @db.VarChar(50)
   remarks                                                           String?
+  disposition_decision_id                                           BigInt?
+  disposition_decision                                              disposition_decision? @relation(fields: [disposition_decision_id], references: [disposition_decision_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit_stock_transfer_from_business_unit_idTobusiness_unit business_unit         @relation("stock_transfer_from_business_unit_idTobusiness_unit", fields: [from_business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   warehouse_stock_transfer_from_warehouse_idTowarehouse             warehouse             @relation("stock_transfer_from_warehouse_idTowarehouse", fields: [from_warehouse_id], references: [warehouse_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit_stock_transfer_to_business_unit_idTobusiness_unit   business_unit         @relation("stock_transfer_to_business_unit_idTobusiness_unit", fields: [to_business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3245,6 +3249,7 @@ model disposition_decision {
   uom                     uom               @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   approval_request        approval_request? @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_disposition_approval")
   sorting_result          sorting_result[]
+  stock_transfer          stock_transfer[]
 
   @@index([nonconformance_id], map: "ix_disposition_decision_nonconformance")
   @@schema("quality")
