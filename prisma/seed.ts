@@ -1685,9 +1685,10 @@ async function seedNumberingRules(): Promise<void> {
 /**
  * 최초 관리자 부트스트랩.
  *
- * 비밀번호는 ADMIN_INITIAL_PASSWORD로 주고, 없으면 무작위 생성해 **1회만** 출력한다.
+ * 비밀번호는 비어 있지 않은 ADMIN_INITIAL_PASSWORD로 주고, 없거나 빈 문자열이면
+ * 무작위 생성해 **1회만** 출력한다.
  * 하드코딩된 기본 비밀번호를 두지 않기 위해서다 — 그런 값은 운영까지 그대로 살아남는다.
- * 어느 경우든 must_change_password=true라 첫 로그인에서 변경해야 한다.
+ * 설치 시 관리자가 확정한 값을 계속 쓸 수 있도록 최초 비밀번호 변경은 강제하지 않는다.
  *
  * 해시 형식은 src/auth/password.service.ts와 같아야 한다(scrypt$N$r$p$salt$hash).
  */
@@ -1761,7 +1762,11 @@ async function seedAdmin(): Promise<void> {
     return;
   }
 
-  const password = process.env.ADMIN_INITIAL_PASSWORD ?? randomBytes(12).toString('base64url');
+  const configuredPassword = process.env.ADMIN_INITIAL_PASSWORD;
+  const password =
+    configuredPassword && configuredPassword.length > 0
+      ? configuredPassword
+      : randomBytes(12).toString('base64url');
   const salt = randomBytes(16);
   const derived = await new Promise<Buffer>((resolve, reject) =>
     scrypt(password, salt, 64, { N: 2 ** 15, r: 8, p: 1, maxmem: 128 * 2 ** 15 * 8 * 2 }, (e, d) =>
@@ -1771,13 +1776,13 @@ async function seedAdmin(): Promise<void> {
   const hash = ['scrypt', 2 ** 15, 8, 1, salt.toString('base64'), derived.toString('base64')].join('$');
 
   await prisma.user_credential.create({
-    data: { app_user_id: admin.app_user_id, password_hash: hash, must_change_password: true },
+    data: { app_user_id: admin.app_user_id, password_hash: hash, must_change_password: false },
   });
 
   // eslint-disable-next-line no-console
   console.log(
-    process.env.ADMIN_INITIAL_PASSWORD
-      ? 'seeded admin (비밀번호=ADMIN_INITIAL_PASSWORD, 첫 로그인에서 변경 필요)'
+    configuredPassword
+      ? 'seeded admin (비밀번호=ADMIN_INITIAL_PASSWORD, 변경 강제 없음)'
       : `seeded admin — 초기 비밀번호: ${password}  ← 지금 기록하십시오. 다시 표시되지 않습니다.`,
   );
 }

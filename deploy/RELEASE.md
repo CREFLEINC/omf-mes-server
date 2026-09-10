@@ -74,10 +74,13 @@ curl -s localhost:3100/api/health     # {"status":"ok","db":"up"}
 ⇒ 시드를 빼면 **화면 드롭다운이 전부 비고**, 코드값을 검사하는 오퍼레이션이 **전건 400** 이다.
 게다가 계정이 0개라 **아무도 로그인할 수 없다.**
 
+`install-deploy.sh`는 8자 이상의 관리자 비밀번호를 두 번 입력받아 `.env.prod`의
+`ADMIN_INITIAL_PASSWORD`에 평문으로 보관한다. 최초 `admin`은 이 값으로 만들어지며 첫 로그인
+비밀번호 변경을 강제하지 않는다.
+
 ```bash
-# ⭐ 미리 비밀번호를 정해 둔다 — 안 주면 임의 문자열을 만들어 로그에 한 번 찍고 만다.
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
-  run --rm -e ADMIN_INITIAL_PASSWORD='<정한 값>' migrate node dist/seed.js
+  run --rm migrate node dist/seed.js
 ```
 
 ⛔ **`prisma db seed` 를 쓰지 마라.** `prisma.config.ts` 가 `NODE_ENV` 로 갈리는데 `migrate`
