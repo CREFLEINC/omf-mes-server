@@ -265,7 +265,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 
   // ⚠ 부르는 화면이 «0건»이다 — `M-01-10` §5-6 액션 7종에 라인 편집이 없다. 그래도 가드가
   // 등록을 요구한다(미등록이면 500 · 선례 `PUT /logistics/goods-issues/{id}/lines`). 소유자를
-  // 이동 문서의 유일한 화면으로 둔다 — 잠정(설계 미정 · 문의 123).
+  // 이동 문서의 유일한 화면으로 둔다(결정 — 통보 123).
   'PUT /logistics/stock-transfers/{stockTransferId}/lines': ['M-01-10'],
 
   // `GET /app/approval-requests` — ⭐ 도출표에 «이미 있는» 키에 호출 셸을 더한다(`GET /app/users` 와 같은 모양).

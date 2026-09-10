@@ -186,7 +186,7 @@ export class StockTransferService {
     //    생성·반출을 한 번에 하고 x-internal-note 가 `:depart` 를 없앴다 · 통보 123).
     //    ⭐ 위 400 으로 «같이» 닫지 않는다 — 그러면 `shipped_at` 을 아예 안 읽는 구현과 모든
     //    테스트가 같아져 자물쇠가 조용히 사라져도 아무도 모른다.
-    throw new Error('반출 전 재고 이동 전표가 실재한다 — 계약 전제가 깨졌다(문의 123).');
+    throw new Error('반출 전 재고 이동 전표가 실재한다 — 계약 전제가 깨졌다(통보 123).');
   }
 
   /**
@@ -198,7 +198,7 @@ export class StockTransferService {
     const errors: ErrorItem[] = [];
     // ⭐ 물리 CHECK `ck_stock_transfer_warehouses` 는 2026-08-26 에 DROP 됐다 — 계약
     //    `StockTransfer.description` 「출발 창고와 도착 창고가 같을 수 없다」를 지키는
-    //    그물이 서버뿐이다(I-13.md §2-2 · 문의 121).
+    //    그물이 서버뿐이다(I-13.md §2-2 · 결정 — 통보 121).
     if (input.fromWarehouseId === input.toWarehouseId) {
       errors.push(field('toWarehouseId', ERROR_CODE.INVALID, '출발 창고와 도착 창고가 같을 수 없습니다.'));
     }
