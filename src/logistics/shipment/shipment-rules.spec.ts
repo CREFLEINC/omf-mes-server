@@ -63,10 +63,14 @@ describe('배분 합 불변식', () => {
     expect(() => assertAllocationSum([line(10, 6, 4)])).not.toThrow();
   });
 
-  it('⭐ Decimal 로 센다 — 0.1 + 0.2 를 number 로 더하면 정상 요청이 400 이 된다', () => {
+  it('⭐⭐ 더하기를 Decimal 로 한다 — number 로 더하면 «정상» 요청이 400 이 된다', () => {
     // ⛔ `0.1 + 0.2 === 0.30000000000000004` 다. `0.15 + 0.15` 는 JS 에서 정확히 0.3 이라
     //    함정을 안 건드린다(README §6-3 ⑸).
     expect(() => assertAllocationSum([line(0.3, 0.1, 0.2)])).not.toThrow();
+    // ⭐ 함정은 «비교»가 아니라 «합»이다 — 합만 정확하면 비교를 toNumber() 로 해도 통과한다.
+    //   그 사실을 변이 점검에서 알았다(비교를 바꾸는 변이가 살아남았다).
+    expect(() => assertAllocationSum([line(0.7, 0.1, 0.2, 0.4)])).not.toThrow();
+    expect(() => assertAllocationSum([line(1.1, 0.1, 0.2, 0.3, 0.5)])).not.toThrow();
   });
 
   it('⛔ 어긋나면 400 RANGE — DB 에 이 불변식을 보는 제약이 «없다»', () => {
