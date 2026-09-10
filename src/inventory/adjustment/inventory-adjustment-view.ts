@@ -10,7 +10,7 @@ import { Prisma } from '@prisma/client';
  * ⛔ `inventoryTransactionLineId` 는 라인이 채우지만 응답에 안 싣는다 — 화면은 원장을
  * `GET /inventory/transactions?sourceDocumentTypeCode=INVENTORY_ADJUSTMENT&sourceDocumentId=`
  * 로 역조회한다(I-14.md §1-4).
- * ⛔ `erpMessageQueued` 는 담을 칸이 없어 늘 `false` 다(I-14.md §1-4 · 문의 134).
+ * ⛔ `erpMessageQueued` 는 담을 칸이 없어 늘 `false` 다(I-14.md §1-4 · 결정 — 통보 134).
  */
 
 export type InventoryAdjustmentRow = Prisma.inventory_adjustmentGetPayload<object>;

@@ -126,7 +126,8 @@ export async function postAdjustment(
         field(at, ERROR_CODE.NEGATIVE_BALANCE, '이 위치의 재고 차원이 없어 조정할 수 없습니다.'),
       );
     } else if (rows.length > 1) {
-      // 설계 미정 — 문의 130. 어느 차원의 잔액을 조정할지 계약이 말하지 않는다.
+      // 어느 차원의 잔액을 조정할지 계약이 말하지 않아 «거절»한다(결정 — 통보 130).
+      // ⛔ 하나를 골라 조용히 전기하면 소급 정정이 불가능하다 — 거절은 나중에 열 수 있다.
       errors.push(field(at, ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 조정할지 정할 수 없습니다.'));
     } else {
       picked.set(id, rows[0]);
