@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { LotRegistryService, nextMesLotNos } from '../../core/lot';
@@ -12,6 +12,10 @@ import { RecycleEntryCreate, postRecycleEntry } from './recycle-posting';
 
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다(입고·조정과 같은 판정). */
 const NUMBER_RETRY = 3;
+
+/** `app.qty_t` = `numeric(20,6)` — 스케일 6 · 정수부 14. */
+const QTY_SCALE = 6;
+const QTY_INT_LIMIT = '100000000000000';
 
 /** 헤더는 계약 검증 가드가 안 본다 — 컨트롤러가 꺼내 넘긴다(취급 단위 선례). */
 export interface RecycleEntryContext {
@@ -90,6 +94,8 @@ export class RecycleEntryService {
    * 품목의 기본 단위에서(계약 「단위를 본문으로 받지 않는다」).
    */
   private async assertWritable(input: RecycleEntryCreate): Promise<{ plantId: number; uomId: number }> {
+    // ⛔ 본문만 보고 거를 수 있는 것은 DB 왕복 «전»에 거른다.
+    assertQuantity(input.quantity);
     const [item, warehouse, location] = await Promise.all([
       this.prisma.item.findUnique({ where: { item_id: input.itemId }, select: { base_uom_id: true } }),
       this.prisma.warehouse.findUnique({ where: { warehouse_id: input.warehouseId }, select: { plant_id: true } }),
@@ -112,6 +118,34 @@ export class RecycleEntryService {
       throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     }
     return { plantId: Number(warehouse.plant_id), uomId: Number(item.base_uom_id) };
+  }
+}
+
+/**
+ * ⛔ **조용한 반올림 금지**(`disposition-write.service.ts:203`). 계약 `quantity` 는
+ * `{ type: 'number', exclusiveMinimum: 0 }` 뿐이고 **`multipleOf` 가 없다** — 그런데 이 값이
+ * 흘러드는 칸이 **넷 다 `numeric(20,6)`** 이다: `recycle_entry.recycle_qty` · `lot.initial_qty` ·
+ * `inventory_transaction_line.qty` · `inventory_balance.on_hand_qty`.
+ *
+ * ⭐ 막지 않으면 두 갈래로 터진다(실측):
+ *   ⓐ `10.0000005` → `10.000001` 로 **조용히 반올림**돼 원장·잔액까지 박힌다. 마이그는
+ *      forward-only 이고 원장 헤더는 `block_ledger_header_mutation` 으로 잠겨 **소급 정정이 불가능**하다.
+ *   ⓑ `1e15` → `numeric field overflow` 가 raw Postgres 오류라 그물에 안 걸려 **500** 으로 샌다.
+ *      이 오퍼레이션이 선언한 응답은 201·400·403·409 뿐이라 계약 위반이다.
+ *
+ * ⚠ `Infinity`(JSON `1e400`)는 `decimalPlaces()` 가 `NaN` 이라 자릿수 검사를 지나간다 —
+ *   정수부 검사가 그것을 잡는다.
+ * ⭐ 선례 — `handling-unit.service.ts:292`(자릿수 + 정수부 둘 다) · `shipment-pick.service.ts:183` ·
+ *   `nonconformance-rules.ts:45` · `lot-hold-rules.ts:123`.
+ *   ⚠ 같은 판정이 **7개 도메인에 9벌**이다 — 공용화 후보다(§11-2 인계).
+ */
+function assertQuantity(quantity: number): void {
+  const qty = new Prisma.Decimal(quantity);
+  if (qty.decimalPlaces() > QTY_SCALE) {
+    throw one(field('quantity', ERROR_CODE.RANGE, `수량은 소수점 ${QTY_SCALE}자리까지입니다.`));
+  }
+  if (qty.gte(QTY_INT_LIMIT)) {
+    throw one(field('quantity', ERROR_CODE.RANGE, '수량은 정수 14자리를 넘을 수 없습니다.'));
   }
 }
 

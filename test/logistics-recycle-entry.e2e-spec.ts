@@ -430,6 +430,31 @@ describe('재생재 등록 (e2e)', () => {
     ).toBe(0);
   });
 
+  it('⭐ 19-b. 수량 소수 7자리는 400 RANGE — 6자리는 통과한다(조용한 반올림 금지)', async () => {
+    // ⛔ 계약은 `exclusiveMinimum: 0` 뿐이고 `multipleOf` 가 없다. 막지 않으면
+    //    `numeric(20,6)` 이 7째 자리를 반올림해 **원장·잔액까지** 박히고 forward-only 라
+    //    소급 복구가 안 된다(`disposition-write.service.ts:203` 「조용한 반올림 금지」).
+    const rounded = await send({ ...body(), quantity: 10.0000005 }).expect(400);
+    expect(rounded.body.errors[0]).toMatchObject({ field: 'quantity', code: 'RANGE' });
+
+    // ⭐ 경계 — 6자리는 «살아야» 한다. 이 줄이 없으면 자릿수 상한을 5로 낮춰도 초록이다.
+    const ok = await send({ ...body(), quantity: 10.000001 }).expect(201);
+    const row = await entry((ok.body as RecycleEntryBody).recycleEntryId);
+    expect(row.recycle_qty.toString()).toBe('10.000001');
+  });
+
+  it('⭐ 19-c. 정수부가 14자리를 넘으면 400 RANGE — 계약 미선언 500 이 아니다', async () => {
+    // ⛔ `1e15` 는 `numeric(20,6)` 이 못 담아 raw Postgres 오류가 되고, 그물에 안 걸려 500 으로
+    //    샌다. 이 오퍼레이션이 선언한 응답은 201·400·403·409 뿐이다.
+    // ⚠ `decimalPlaces()` 가 `Infinity` 에 `NaN` 을 주므로 자릿수 검사로는 안 잡힌다 —
+    //    정수부 검사가 그 자리다.
+    const overflow = await send({ ...body(), quantity: 1e15 }).expect(400);
+    expect(overflow.body.errors[0]).toMatchObject({ field: 'quantity', code: 'RANGE' });
+
+    // ⛔ 아무것도 남기지 않는다 — 원장이 섰다면 그것이 이 결함의 실제 피해다.
+    expect(await prisma.recycle_entry.count({ where: { recycle_qty: 1e15 } })).toBe(0);
+  });
+
   it('⛔ 20. 사번이 없으면 400 REQUIRED · 없는 사번이면 400 INVALID 다', async () => {
     const missing = await send(body(), { workerNo: null }).expect(400);
     expect(missing.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
