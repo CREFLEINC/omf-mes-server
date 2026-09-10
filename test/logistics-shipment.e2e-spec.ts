@@ -366,11 +366,16 @@ describe('출하 목록 (e2e)', () => {
   it('P-2 ⭐ goods_issue + goods_issue_line 이 «같은 트랜잭션»에서 선다(자리 ①)', async () => {
     const created = await post(body());
 
+    // ⭐⭐ 짝 id 는 «이 출하»다(A-10). ⛔ 초판은 여기서 출하작업지시 id 로 찾았고 그것이 결함을
+    //    «지키는» 단언이었다 — 판별자 SHIPMENT 가 가리키는 표는 logistics.shipment 다.
     const issue = await prisma.goods_issue.findFirstOrThrow({
-      where: { source_document_type_code: 'SHIPMENT', source_document_id: BigInt(made.postRequest) },
-      orderBy: { goods_issue_id: 'desc' },
+      where: {
+        source_document_type_code: 'SHIPMENT',
+        source_document_id: BigInt(created.shipmentId as number),
+      },
       include: { goods_issue_line: true },
     });
+    expect(issue.source_document_id).not.toBe(BigInt(made.postRequest));
     expect(issue).toMatchObject({ issue_type_code: 'SHIPMENT', status_code: 'POSTED' });
     expect(issue.source_warehouse_id).toBe(ids.warehouse);
     expect(issue.goods_issue_line).toHaveLength(1);
@@ -384,11 +389,13 @@ describe('출하 목록 (e2e)', () => {
   });
 
   it('P-3 ⭐ 원장이 GOODS_ISSUE/goods_issue_id 로 «한 건» 서고 라인에 from 만 있다', async () => {
-    await post(body());
+    const created = await post(body());
 
     const issue = await prisma.goods_issue.findFirstOrThrow({
-      where: { source_document_type_code: 'SHIPMENT' },
-      orderBy: { goods_issue_id: 'desc' },
+      where: {
+        source_document_type_code: 'SHIPMENT',
+        source_document_id: BigInt(created.shipmentId as number),
+      },
       include: { goods_issue_line: true },
     });
     const ledger = await prisma.inventory_transaction.findFirstOrThrow({
