@@ -69,6 +69,7 @@ services:
     environment:
       TZ: UTC
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
     command: ['node_modules/.bin/prisma', 'migrate', 'deploy']
     depends_on:
       postgres:

@@ -31,6 +31,33 @@ validate_port() {
   [[ "$1" =~ ^[0-9]+$ ]] && (( 1 <= 10#$1 && 10#$1 <= 65535 ))
 }
 
+prompt_admin_password() {
+  local password confirmation
+
+  while true; do
+    read -r -s -p '초기 관리자 비밀번호 (8자 이상): ' password
+    printf '\n' >&2
+    if (( ${#password} < 8 )); then
+      printf '%s\n' '초기 관리자 비밀번호는 8자 이상이어야 합니다.' >&2
+      continue
+    fi
+    if [[ "$password" == *"'"* ]]; then
+      printf '%s\n' "초기 관리자 비밀번호에는 작은따옴표(')를 사용할 수 없습니다." >&2
+      continue
+    fi
+
+    read -r -s -p '초기 관리자 비밀번호 확인: ' confirmation
+    printf '\n' >&2
+    if [[ "$password" != "$confirmation" ]]; then
+      printf '%s\n' '입력한 초기 관리자 비밀번호가 일치하지 않습니다.' >&2
+      continue
+    fi
+
+    printf '%s' "$password"
+    return
+  done
+}
+
 command -v docker >/dev/null 2>&1 || die "docker가 설치되어 있지 않습니다."
 command -v openssl >/dev/null 2>&1 || die "openssl이 설치되어 있지 않습니다."
 docker compose version >/dev/null 2>&1 || die "docker compose 플러그인을 사용할 수 없습니다."
@@ -58,8 +85,7 @@ IMAGE_TAG="$(prompt_default '배포할 이미지 태그' 'v1.0.0')"
 LOG_TZ="$(prompt_default '로그 표기 타임존' 'Asia/Seoul')"
 COOKIE_SECURE="$(prompt_default 'COOKIE_SECURE (TLS 사용 시 true)' 'false')"
 [[ "$COOKIE_SECURE" == true || "$COOKIE_SECURE" == false ]] || die "COOKIE_SECURE는 true 또는 false여야 합니다."
-read -r -s -p '초기 관리자 비밀번호 (비우면 자동 생성): ' ADMIN_INITIAL_PASSWORD
-printf '\n'
+ADMIN_INITIAL_PASSWORD="$(prompt_admin_password)"
 JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
 
 install -m 644 "$SCRIPT_DIR/../docker-compose.prod.yml" "$APP_DIR/docker-compose.prod.yml"
@@ -76,7 +102,9 @@ chmod 600 "$tmp_env"
   printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
   printf 'JWT_EXPIRES_IN_SECONDS=28800\n'
   printf 'COOKIE_SECURE=%s\n' "$COOKIE_SECURE"
-  printf 'ADMIN_INITIAL_PASSWORD=%s\n' "$ADMIN_INITIAL_PASSWORD"
+  # 이 파일은 Docker Compose와 셸에서 함께 읽는다. 작은따옴표로 감싸면 공백·$·#가
+  # 들어간 비밀번호도 두 파서가 같은 평문 값으로 해석한다.
+  printf "ADMIN_INITIAL_PASSWORD='%s'\n" "$ADMIN_INITIAL_PASSWORD"
   printf 'API_PORT=%s\n' "$API_PORT"
   printf 'REGISTRY=%s\n' "$REGISTRY"
   printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_DIR"
