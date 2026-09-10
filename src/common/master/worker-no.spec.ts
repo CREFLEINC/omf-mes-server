@@ -29,7 +29,23 @@ const SRC = join(__dirname, '../..');
 const CONTRACTS = join(SRC, '../contracts');
 const SHARED = 'common/master/worker-no.ts';
 
-/** ⭐ **형식만 본다** — 사번을 읽고 버리는 자리(담을 칸이 0개다). */
+/**
+ * ⛔⛔ **이 갈림은 «원칙»이 아니라 «내력»이다.** 판정이 열다섯 벌로 흩어져 있던 동안 슬라이스마다
+ * 따로 쓰였고, 한 벌로 모을 때 **행동을 보존했다**(#337 · #575). 그래서 「어느 쪽이 옳은가」의
+ * 답이 코드 어디에도 없다.
+ *
+ * ⚠ **그런데 갈림에 실질 영향이 있다** — 오프라인 큐가 마스터에 없는 사번으로 재전송하면
+ * 실재 쪽은 400 `INVALID` 로 **영영 막히고** 형식 쪽은 그대로 통과한다. 같은 헤더, 다른 운명이다.
+ * ⇒ **설계 판정 대기**(통보 예정 · #338). 그 답이 오면 한쪽으로 모은다.
+ *
+ * ⭐ **그때까지 새 자리를 넣는 규칙 — 「형제를 따른다」**: 같은 도메인의 같은 종류 쓰기가 쓰는
+ * 갈래를 쓴다. `recycle-entry` 를 실재 쪽에 넣은 근거가 그것이다(재고를 늘리는 물류 쓰기
+ * `putaway-complete`·`transfer-arrive`·`stock-transfer` 가 전부 실재까지 본다 · #576 리뷰 m-1).
+ * ⛔ **「사번 칸이 있나」로 고르지 마라** — 실재 쪽 열여섯 중 `stock_transfer`·`handling_unit`·
+ * `recycle_entry` 는 worker 칸이 **0개**다. 그 기준은 이미 표와 안 맞는다.
+ */
+
+/** **형식만 본다** — `mdm.worker` 를 조회하지 않는다. */
 const PRESENCE_ONLY = [
   'logistics/picking/picking-pick.service.ts',
   'logistics/shipment-allocation/allocation-packing.service.ts',
@@ -40,7 +56,7 @@ const PRESENCE_ONLY = [
   'trace/lot/lot-iqc-skip.service.ts',
 ];
 
-/** ⭐ **실재까지 본다** — 사번 «문자열»을 저장하거나, 저장 전 마스터에 있어야 하는 자리. */
+/** **실재까지 본다** — 형식 + `mdm.worker` 조회 한 번. 고르는 근거는 위 주석에 있다. */
 const EXISTENCE_CHECKED = [
   'inventory/handling-unit/handling-unit-content.service.ts',
   'inventory/handling-unit/handling-unit-pack.service.ts',
