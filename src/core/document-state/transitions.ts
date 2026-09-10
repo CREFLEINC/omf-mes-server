@@ -241,8 +241,9 @@ export const TRANSITIONS: TransitionRegistry = {
     //    이거나 `INSPECTION_PENDING` 이다. 좁히면 반품 갈래 본길이 통째로 400 으로 죽는다.
     // ⚠ `disposition-normal` 과 `stock-reinstate` 는 도착이 같아도 겹치지 않는다 — 코어가
     //    (칸, 액션명)으로 찾고 여는 오퍼레이션이 다르며 이력 코드도 갈린다(C19 ↔ 미정).
-    //    ⛔ 겹치는 것은 «본길 순서»다: 처분 정상이 먼저 오면 재등록의 `from:['DEFECTIVE']` 가
-    //    0건을 옮긴다. 그 자리는 레인 C 의 판정이라 남의 행을 안 고치고 통보 184 로 남겼다.
+    //    ⛔ 겹치는 것은 «본길 순서»다: 처분 정상이 먼저 오면 재등록이 0건을 옮긴다.
+    //    ⭐ 그래서 위 `stock-reinstate.from` 이 셋이다 — 2026-09-10 에 닫았다(통보 184).
+    //    ⚠ `from` 밖은 «던지지 않고» 건너뛴다 — 좁히면 400 이 아니라 응답이 조용히 거짓이 된다.
     'disposition-rework': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'INSPECTION_PENDING',
       transitionCode: 'C17', sourceOperation: DECIDE },
     'disposition-scrap': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'SCRAPPED',
