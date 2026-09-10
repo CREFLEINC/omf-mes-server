@@ -50,6 +50,7 @@ import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-a
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
+import { ShipmentService } from './shipment/shipment.service';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
@@ -117,6 +118,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentRequestQueryService,
     ShipmentRequestService,
     ShipmentQueryService,
+    ShipmentService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
