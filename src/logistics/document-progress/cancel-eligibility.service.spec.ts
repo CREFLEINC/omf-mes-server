@@ -9,7 +9,7 @@ type Args = Record<string, unknown>;
 
 interface Seed {
   /** 대상 문서 행. `undefined` 면 찾지 못한 것으로 둔다. */
-  document?: { status_code: string };
+  document?: { status_code: string; source_document_type_code?: string | null };
   /** 열린(`PENDING`) 취소 승인 요청의 id. */
   openApproval?: bigint;
   /** 이 문서가 만든 LOT — 입하는 널이 섞인다. */
@@ -66,6 +66,48 @@ function fake(seed: Seed = {}) {
 
 describe('CancelEligibilityService', () => {
   const service = new CancelEligibilityService();
+
+  describe('⭐⭐ 자리 ⑤ — 출하가 «소유한» 출고·입고 전표(I-23)', () => {
+    it('출하가 만든 출고 전표는 열린 상태(POSTED)여도 STATE_LOCKED 로 막힌다', async () => {
+      const { tx } = fake({ document: { status_code: 'POSTED', source_document_type_code: 'SHIPMENT' } });
+
+      const result = await service.evaluate(tx, 'GOODS_ISSUE', DOC_ID);
+
+      // 그 전표를 여기서 따로 취소하면 출하는 살아 있는데 재고만 돌아온다 — 취소는 출하의 :cancel 뿐이다.
+      expect(result.cancellable).toBe(false);
+      expect(result.cancelBlockedReasonCode).toBe('STATE_LOCKED');
+      // ⛔ 후속 축으로 막지 않는다 — successorCount 는 «안 바뀐다».
+      expect(result.successorCount).toBe(0);
+    });
+
+    it('⭐ 긴급 직행이 만든 «입고» 전표도 똑같이 막힌다 — 한 유형만 막으면 입고 쪽으로 구멍이 남는다', async () => {
+      const { tx } = fake({ document: { status_code: 'POSTED', source_document_type_code: 'SHIPMENT' } });
+
+      const result = await service.evaluate(tx, 'GOODS_RECEIPT', DOC_ID);
+
+      expect(result.cancellable).toBe(false);
+      expect(result.cancelBlockedReasonCode).toBe('STATE_LOCKED');
+    });
+
+    it('다른 원천의 출고 전표(피킹)는 그대로 취소할 수 있다 — 자리 ⑤ 는 원천 SHIPMENT 만 막는다', async () => {
+      const { tx } = fake({ document: { status_code: 'POSTED', source_document_type_code: 'PICKING_ORDER' } });
+
+      const result = await service.evaluate(tx, 'GOODS_ISSUE', DOC_ID);
+
+      expect(result.cancellable).toBe(true);
+      expect(result).not.toHaveProperty('cancelBlockedReasonCode');
+    });
+
+    it('출고·입고 조회는 원천 유형 칸을 «함께» 읽는다 — 안 읽으면 위 판정이 언제나 거짓이다', async () => {
+      const { tx, args } = fake({ document: { status_code: 'POSTED' } });
+
+      await service.evaluate(tx, 'GOODS_ISSUE', DOC_ID);
+
+      expect(args['goods_issue.findUnique']?.[0]).toMatchObject({
+        select: { status_code: true, source_document_type_code: true },
+      });
+    });
+  });
 
   it('판정 — 취소 경로가 없는 6종은 TYPE_NOT_CANCELABLE 이다(행을 읽지 않는다)', async () => {
     const { tx, calls } = fake({ document: { status_code: 'REGISTERED' } });
