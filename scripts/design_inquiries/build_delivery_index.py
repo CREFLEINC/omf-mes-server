@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""설계 요청서 174건을 «슬라이스(주제)별»로 묶은 전달 색인을 만든다.
+"""설계 요청서 176건을 «슬라이스(주제)별»로 묶은 전달 색인을 만든다.
 
 ⛔ 레인별로 묶지 않는다. 레인은 «우리» 사정이고 받는 쪽 사정이 아니다 — 레인 C 가 멈춘 뒤
 슬라이스가 인계되면서 **같은 주제가 두 대역에 갈렸다**(취급단위 = C 140~145 + A2 몫,
@@ -137,6 +137,32 @@ def collect() -> list[dict[str, object]]:
     return rows
 
 
+COVER = SRC / '전달분-2026-루틴마감.md'
+
+
+def cover_drift(rows: list[dict[str, object]]) -> list[str]:
+    """표지가 손으로 적은 두 수가 색인의 계산과 갈렸는지 본다.
+
+    ⭐ 표지는 사람이 쓴다 — 그래서 **낡는다**. 요청서를 더하거나 질의 하나가 회신으로 닫히면
+    표지의 「176건」·「4건」이 조용히 틀린다(#577 이 고친 「낡은 수」와 같은 모양이다).
+    ⛔ 표지를 자동 생성으로 바꾸지 않는다 — 나머지가 전부 사람의 판단이다. 수만 지킨다."""
+    # ⛔ 없으면 조용히 넘어가지 않는다 — 표지가 사라지면 전달분에 «읽는 법»이 없다.
+    #    (§6-2 변이 M5 가 이 자리를 초록으로 통과했다.)
+    if not COVER.exists():
+        return [f'⛔ 표지 {COVER.name} 이 없다.']
+    text, drift = COVER.read_text(), []
+    for pattern, actual, what in [
+        (r'요청서는 \*\*(\d+)건\*\*이다', len(rows), '요청서'),
+        (r'답이 와야 서는 자리 — (\d+)건', len([r for r in rows if r['kind'] == '질의']), '미회신 질의'),
+    ]:
+        found = re.search(pattern, text)
+        if not found:
+            drift.append(f'⛔ 표지에서 「{what}」 수를 못 찾았다 — 문장이 바뀌었으면 이 검사도 같이 고쳐라.')
+        elif int(found.group(1)) != actual:
+            drift.append(f'⛔ 표지의 「{what}」 = {found.group(1)}건, 실제 = {actual}건.')
+    return drift
+
+
 def render(rows: list[dict[str, object]]) -> str:
     by_section: dict[str, list] = defaultdict(list)
     for row in rows:
@@ -177,13 +203,19 @@ def render(rows: list[dict[str, object]]) -> str:
 
 
 if __name__ == '__main__':
-    body = render(collect())
+    rows = collect()
+    body, drift = render(rows), cover_drift(rows)
     if '--check' in sys.argv:
         current = OUT.read_text() if OUT.exists() else ''
         if current != body:
             print(f'⛔ {OUT.name} 이 낡았다 — 스크립트를 다시 돌려라.')
             raise SystemExit(1)
-        print(f'✅ {OUT.name} 최신')
+        if drift:
+            print('\n'.join(drift + [f'  → {COVER.name} 을 고쳐라.']))
+            raise SystemExit(1)
+        print(f'✅ {OUT.name} 최신 · 표지 수 일치')
     else:
         OUT.write_text(body)
         print(f'✅ {OUT.relative_to(ROOT)}')
+        for line in drift:
+            print(line)
