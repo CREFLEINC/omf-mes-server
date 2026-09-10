@@ -1,0 +1,514 @@
+/**
+ * 출하 목록 — `GET /logistics/shipments` **13축**(I-23 PR ②a). 화면 `W-04-02`·`W-04-04`·`W-04-12`.
+ *
+ * ⭐ 축마다 값을 둘 이상 세웠다(README §6-3 ⑵) — 상태 3값 · 창고 둘 · 고객 둘 · 출하작업지시 둘 ·
+ *   `shipped_at` 값/널 · 긴급 참/거짓 · 배분 LOT 둘 · 피킹 완료/미완 · 선택 칸 값/널.
+ * ⚠ 다른 스위트와 같은 DB 를 쓰므로 정리는 접두어(`SHE2E`)로만 한다.
+ */
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import request from 'supertest';
+
+import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
+import { hashPassword } from '../src/auth/password';
+import { PrismaService } from '../src/prisma/prisma.service';
+
+const LOGIN_ID = 'e2e-shipment-probe';
+const PASSWORD = 'SH-출하-비밀번호';
+const PREFIX = 'SHE2E';
+const BASE = '/api/logistics/shipments';
+/** ⭐ 픽스처가 전부 이 창 안에 있고 다른 스위트의 출하는 밖에 있다. */
+const WINDOW = { shipDateFrom: '2026-08-20', shipDateTo: '2026-08-22' };
+
+interface ShipmentBody {
+  shipmentId: number;
+  shipmentNo: string;
+  shipmentRequestId: number;
+  warehouseId: number;
+  statusCode: string;
+  expedited: boolean;
+  shippedAt: string | null;
+  expediteReason: string | null;
+  erpDeliveryNo: string | null;
+  vehicleNo?: string;
+  versionNo?: number;
+}
+interface Paged {
+  items: ShipmentBody[];
+  page: { page: number; size: number; total: number };
+}
+
+function validator(): ValidateFunction {
+  const contract = JSON.parse(
+    readFileSync(join(__dirname, '../contracts/shipment-04제품출하.json'), 'utf8'),
+  ) as object;
+  const pointer =
+    '/paths/~1logistics~1shipments/get/responses/200/content/application~1json/schema';
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  addFormats(ajv);
+  for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
+  ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
+  return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
+}
+
+describe('출하 목록 (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let cookie: string[];
+  const ids: Record<string, bigint> = {};
+  const made: Record<string, number> = {};
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configureApp(app, 'api');
+    await app.init();
+    prisma = app.get(PrismaService);
+
+    await cleanup();
+    await makeMasters();
+    await makeShipments();
+    await makeUser();
+  }, 120_000);
+
+  afterAll(async () => {
+    await cleanup();
+    await app.close();
+  });
+
+  async function list(query: Record<string, string | number | boolean>): Promise<Paged> {
+    const response = await request(app.getHttpServer())
+      .get(BASE)
+      .query(query)
+      .set('Cookie', cookie)
+      .expect(200);
+    return response.body as Paged;
+  }
+
+  /** 접두어로 좁힌다 — 다른 스위트의 출하가 같은 창에 들어와도 단언이 흔들리지 않는다. */
+  async function ours(query: Record<string, string | number | boolean> = {}): Promise<ShipmentBody[]> {
+    const body = await list({ ...WINDOW, size: 100, ...query });
+    return body.items.filter((item) => item.shipmentNo.startsWith(PREFIX));
+  }
+
+  it('L-1 기간으로 거른다 — 기간 밖 행이 빠진다', async () => {
+    const inside = await ours();
+    expect(inside.map((item) => item.shipmentNo)).toContain(`${PREFIX}-A`);
+    // `OUT` 은 2026-07-01 이라 창 밖이다.
+    expect(inside.map((item) => item.shipmentNo)).not.toContain(`${PREFIX}-OUT`);
+    const wider = await ours({ shipDateFrom: '2026-07-01' });
+    expect(wider.map((item) => item.shipmentNo)).toContain(`${PREFIX}-OUT`);
+  });
+
+  it('L-2 shipDateFrom 이 없으면 400 REQUIRED 다', async () => {
+    const response = await request(app.getHttpServer())
+      .get(BASE)
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ field: 'shipDateFrom', code: 'REQUIRED' }),
+    ]);
+  });
+
+  it('L-3 shipDateTo 는 선택이고, 줄 때 그 날 «하루치»가 다 걸린다', async () => {
+    const open = await ours({ shipDateFrom: '2026-08-20', shipDateTo: undefined as never });
+    expect(open.length).toBeGreaterThan(0);
+    // `B` 는 2026-08-21T23:30Z 다 — `<= to::date` 로 적으면 자정만 걸려 이 행이 샌다.
+    const sameDay = await ours({ shipDateFrom: '2026-08-21', shipDateTo: '2026-08-21' });
+    expect(sameDay.map((item) => item.shipmentNo)).toEqual([`${PREFIX}-B`]);
+  });
+
+  it('L-4 statusCode 로 거른다 — 세 값 각각', async () => {
+    expect((await ours({ statusCode: 'UNCONFIRMED' })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+      `${PREFIX}-B`,
+    ]);
+    expect((await ours({ statusCode: 'CONFIRMED' })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-C`,
+    ]);
+    expect((await ours({ statusCode: 'CANCELLED' })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-D`,
+    ]);
+  });
+
+  it('L-5 ⭐ unconfirmedOnly 와 statusCode 가 함께 오면 «교집합»이다', async () => {
+    // 한쪽이 이기게 만들면 화면이 결과를 못 믿는다 — 0건이 정답이다.
+    expect(await ours({ statusCode: 'CONFIRMED', unconfirmedOnly: true })).toEqual([]);
+    expect((await ours({ unconfirmedOnly: true })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+      `${PREFIX}-B`,
+    ]);
+    // `false` 는 절을 «안 건다» — 전건이 돌아온다.
+    expect((await ours({ unconfirmedOnly: false })).length).toBeGreaterThan(2);
+  });
+
+  it('L-6 warehouseId 로 거른다 — 다른 창고 행이 빠진다', async () => {
+    const first = await ours({ warehouseId: Number(ids.warehouse) });
+    const second = await ours({ warehouseId: Number(ids.warehouse2) });
+    expect(first.map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-C`);
+    expect(second.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
+    expect(Number(ids.warehouse)).not.toBe(Number(ids.warehouse2));
+  });
+
+  it('L-7 customerId 로 거른다 — shipment 에 칸이 없어 출하작업지시를 탄다', async () => {
+    const first = await ours({ customerId: Number(ids.customer) });
+    const second = await ours({ customerId: Number(ids.customer2) });
+    expect(first.map((i) => i.shipmentNo)).toContain(`${PREFIX}-A`);
+    expect(first.map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-C`);
+    expect(second.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
+  });
+
+  it('L-8 shipmentRequestId 로 거른다', async () => {
+    const rows = await ours({ shipmentRequestId: made.request2 });
+    expect(rows.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-C`]);
+  });
+
+  it('L-9 ⛔ q 는 shipment_no «만» 본다 — 고객명·LOT 번호로는 0건', async () => {
+    expect((await ours({ q: `${PREFIX}-A` })).map((i) => i.shipmentNo)).toEqual([`${PREFIX}-A`]);
+    expect(await ours({ q: '출하검사파트너' })).toEqual([]);
+    expect(await ours({ q: `${PREFIX}-LOT` })).toEqual([]);
+  });
+
+  it('L-10 lotId 로 거른다 — 그 LOT 이 배분된 출하만', async () => {
+    expect((await ours({ lotId: Number(ids.lotA) })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+    ]);
+    expect((await ours({ lotId: Number(ids.lotB) })).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-B`,
+    ]);
+    expect(Number(ids.lotA)).not.toBe(Number(ids.lotB));
+  });
+
+  it('L-11 pickedOnly=true 는 라인 전건이 P=A 인 건만 — 라인 0건은 «빠진다»', async () => {
+    const rows = await ours({ pickedOnly: true });
+    // `A`·`D` 는 지시 1(예약 합 = 배정 ⇒ 완료) · `B` 는 지시 3(미달) · `C` 는 지시 2(라인 0건).
+    // ⛔ `C` 가 «빠지는» 것이 이 시험의 심장이다 — 공허참을 막는 앞 절이 없으면 섞여 든다.
+    expect(rows.map((i) => i.shipmentNo)).toEqual([`${PREFIX}-A`, `${PREFIX}-D`]);
+    expect(rows.map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-C`);
+  });
+
+  it('L-12 ⭐ 기본 정렬은 경과일 긴 순이다 — 배열을 «통째로» 단언한다', async () => {
+    expect((await ours()).map((i) => i.shipmentNo)).toEqual([
+      `${PREFIX}-A`,
+      `${PREFIX}-B`,
+      `${PREFIX}-C`,
+      `${PREFIX}-D`,
+    ]);
+  });
+
+  it('L-13 ⭐ shipped_at 이 NULL 인 행은 «목록에 없다» — 기간이 필수라 필연이다', async () => {
+    // 3값 논리로 `shipped_at >= from` 이 NULL 행에서 참이 아니다. 정렬 옵션을 바꿔도 마찬가지다
+    // ⇒ `NULLS LAST` 는 도달 불가한 절이라 붙이지 않았다(README ⭐ 되풀이 병).
+    // ⭐ 우리 API 로 만든 출하는 언제나 값이 있다 — `ShipmentCreate.occurredAt` 이 required 이고
+    //   그 값이 이 칸에 든다(§6). 이 갈래는 그 «앞»에 있던 행에만 성립한다 ⇒ 「알려둘 것」.
+    const stored = await prisma.shipment.findFirstOrThrow({
+      where: { shipment_no: `${PREFIX}-NULLS` },
+    });
+    expect(stored.shipped_at).toBeNull();
+    expect((await ours()).map((i) => i.shipmentNo)).not.toContain(`${PREFIX}-NULLS`);
+    expect((await ours({ sort: 'shipmentNo' })).map((i) => i.shipmentNo)).not.toContain(
+      `${PREFIX}-NULLS`,
+    );
+  });
+
+  it('L-14 sort 화이트리스트 밖은 400 INVALID 다', async () => {
+    const response = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ ...WINDOW, sort: 'customerId' })
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(response.body.errors).toEqual([
+      expect.objectContaining({ field: 'sort', code: 'INVALID' }),
+    ]);
+  });
+
+  it('L-15 page·size 와 page 메타 — total 은 쪽이 아니라 «필터 전체» 기준이다', async () => {
+    const first = await list({ ...WINDOW, size: 2, page: 1 });
+    const beyond = await list({ ...WINDOW, size: 2, page: 99 });
+    expect(first.items).toHaveLength(2);
+    expect(first.page).toMatchObject({ page: 1, size: 2 });
+    expect(first.page.total).toBeGreaterThanOrEqual(4);
+    // ⛔ `count(*) OVER ()` 로 세면 범위 밖 쪽에서 total 이 0 으로 접혀 페이저가 사라진다.
+    expect(beyond.items).toEqual([]);
+    expect(beyond.page.total).toBe(first.page.total);
+  });
+
+  it('L-16 ⭐ 목록 응답에 lines 키가 «없다» · 계약 스키마를 만족한다', async () => {
+    const body = await list({ ...WINDOW, size: 100 });
+    const validate = validator();
+    expect(validate(body)).toBe(true);
+    expect(validate.errors ?? []).toEqual([]);
+    for (const item of body.items) expect(item).not.toHaveProperty('lines');
+  });
+
+  it('L-17 required 여섯 칸과 널 정책 — 긴급 참/거짓 두 갈래', async () => {
+    const rows = await ours();
+    const a = rows.find((item) => item.shipmentNo === `${PREFIX}-A`);
+    const b = rows.find((item) => item.shipmentNo === `${PREFIX}-B`);
+    expect(a).toMatchObject({
+      shipmentId: made.shipmentA,
+      shipmentRequestId: made.request1,
+      warehouseId: Number(ids.warehouse),
+      statusCode: 'UNCONFIRMED',
+      expedited: false,
+      vehicleNo: '51C-00001',
+    });
+    expect(a?.expediteReason).toBeNull();
+    expect(a?.erpDeliveryNo).toBeNull();
+    // ⭐ 같은 축에 값이 둘이라야 「늘 거짓으로 내린다」 변이가 죽는다.
+    expect(b).toMatchObject({ expedited: true, expediteReason: '고객 라인 정지' });
+    // 널을 «못 받는» 선택 칸은 키를 생략한다.
+    expect(b).not.toHaveProperty('vehicleNo');
+    expect(made.shipmentA).not.toBe(made.request1);
+  });
+
+  // ── 픽스처 ────────────────────────────────────────────────────────────────
+  async function makeMasters(): Promise<void> {
+    const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+    const unit = await prisma.business_unit.findFirstOrThrow({
+      orderBy: { business_unit_id: 'asc' },
+    });
+    ids.plant = plant.plant_id;
+    for (const [key, suffix] of [
+      ['warehouse', 'WH1'],
+      ['warehouse2', 'WH2'],
+    ] as const) {
+      const warehouse = await prisma.warehouse.create({
+        data: {
+          plant_id: plant.plant_id,
+          business_unit_id: unit.business_unit_id,
+          warehouse_code: `${PREFIX}-${suffix}`,
+          warehouse_name: `출하검사창고${suffix}`,
+          warehouse_type_code: 'FINISHED',
+          management_level_code: 'WAREHOUSE',
+        },
+      });
+      ids[key] = warehouse.warehouse_id;
+    }
+    const [uom] = await prisma.uom.findMany({ take: 1, orderBy: { uom_id: 'asc' } });
+    ids.uom = uom.uom_id;
+    const item = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-IT`,
+        item_name: '출하검사품목',
+        item_type_code: 'FINISHED',
+        base_uom_id: ids.uom,
+      },
+    });
+    ids.item = item.item_id;
+    for (const [key, suffix] of [
+      ['customer', 'C1'],
+      ['customer2', 'C2'],
+    ] as const) {
+      const partner = await prisma.partner.create({
+        data: { partner_code: `${PREFIX}-${suffix}`, partner_name: `출하검사파트너${suffix}` },
+      });
+      ids[key] = partner.partner_id;
+    }
+    for (const [key, suffix] of [
+      ['lotA', 'LOT-A'],
+      ['lotB', 'LOT-B'],
+    ] as const) {
+      const lot = await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-${suffix}`,
+          item_id: ids.item,
+          lot_type_code: 'PRODUCT',
+          plant_id: plant.plant_id,
+          initial_qty: 100,
+          uom_id: ids.uom,
+          source_type_code: 'SHIPMENT_REQUEST',
+          source_id: 1n,
+          status_code: 'ACTIVE',
+        },
+      });
+      ids[key] = lot.lot_id;
+    }
+  }
+
+  async function makeShipments(): Promise<void> {
+    // 지시 1 — 라인 하나가 «배정 = 예약 합»(피킹 완료) · 지시 2 — 라인 0건 · 지시 3 — 미달.
+    made.request1 = Number(await makeRequest('R1', ids.customer, { allocated: 10, reserved: 10 }));
+    made.request2 = Number(await makeRequest('R2', ids.customer2, null));
+    made.request3 = Number(await makeRequest('R3', ids.customer, { allocated: 10, reserved: 4 }));
+
+    made.shipmentA = Number(
+      await makeShipment('A', made.request1, ids.warehouse, {
+        status: 'UNCONFIRMED',
+        shippedAt: new Date('2026-08-20T01:00:00.000Z'),
+        lotId: ids.lotA,
+        vehicleNo: '51C-00001',
+      }),
+    );
+    made.shipmentB = Number(
+      await makeShipment('B', made.request3, ids.warehouse, {
+        status: 'UNCONFIRMED',
+        shippedAt: new Date('2026-08-21T23:30:00.000Z'),
+        lotId: ids.lotB,
+        expedited: true,
+        expediteReason: '고객 라인 정지',
+      }),
+    );
+    await makeShipment('C', made.request2, ids.warehouse2, {
+      status: 'CONFIRMED',
+      shippedAt: new Date('2026-08-22T05:00:00.000Z'),
+    });
+    await makeShipment('D', made.request1, ids.warehouse, {
+      status: 'CANCELLED',
+      shippedAt: new Date('2026-08-22T06:00:00.000Z'),
+    });
+    await makeShipment('NULLS', made.request1, ids.warehouse, {
+      status: 'UNCONFIRMED',
+      shippedAt: null,
+    });
+    await makeShipment('OUT', made.request1, ids.warehouse, {
+      status: 'UNCONFIRMED',
+      shippedAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+  }
+
+  async function makeRequest(
+    suffix: string,
+    customerId: bigint,
+    line: { allocated: number; reserved: number } | null,
+  ): Promise<bigint> {
+    const header = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-${suffix}`,
+        customer_id: customerId,
+        ship_to_partner_id: customerId,
+        requested_ship_date: new Date('2026-08-20T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+      },
+    });
+    if (line !== null) {
+      const created = await prisma.shipment_request_line.create({
+        data: {
+          shipment_request_id: header.shipment_request_id,
+          line_no: 1,
+          item_id: ids.item,
+          uom_id: ids.uom,
+          requested_qty: 20,
+          allocated_qty: line.allocated,
+        },
+      });
+      await prisma.inventory_reservation.create({
+        data: {
+          reservation_no: `${PREFIX}-${suffix}-RS`,
+          item_id: ids.item,
+          lot_id: ids.lotA,
+          warehouse_id: ids.warehouse,
+          reserved_qty: line.reserved,
+          uom_id: ids.uom,
+          status_code: 'RESERVED',
+          reservation_type_code: 'SHIPMENT',
+          source_document_type_code: 'SHIPMENT_REQUEST_LINE',
+          source_document_id: created.shipment_request_line_id,
+        },
+      });
+    }
+    return header.shipment_request_id;
+  }
+
+  async function makeShipment(
+    suffix: string,
+    requestId: number,
+    warehouseId: bigint,
+    opts: {
+      status: string;
+      shippedAt: Date | null;
+      lotId?: bigint;
+      expedited?: boolean;
+      expediteReason?: string;
+      vehicleNo?: string;
+    },
+  ): Promise<bigint> {
+    const shipment = await prisma.shipment.create({
+      data: {
+        shipment_no: `${PREFIX}-${suffix}`,
+        shipment_request_id: BigInt(requestId),
+        warehouse_id: warehouseId,
+        status_code: opts.status,
+        shipped_at: opts.shippedAt,
+        expedited: opts.expedited ?? false,
+        expedite_reason: opts.expediteReason ?? null,
+        vehicle_no: opts.vehicleNo ?? null,
+      },
+    });
+    if (opts.lotId !== undefined) {
+      const line = await prisma.shipment_line.create({
+        data: {
+          shipment_id: shipment.shipment_id,
+          line_no: 1,
+          shipment_request_line_id: (
+            await prisma.shipment_request_line.findFirstOrThrow({
+              where: { shipment_request_id: BigInt(requestId) },
+            })
+          ).shipment_request_line_id,
+          item_id: ids.item,
+          shipped_qty: 5,
+          uom_id: ids.uom,
+        },
+      });
+      await prisma.shipment_lot_allocation.create({
+        data: {
+          shipment_line_id: line.shipment_line_id,
+          lot_id: opts.lotId,
+          allocated_qty: 5,
+          uom_id: ids.uom,
+        },
+      });
+    }
+    return shipment.shipment_id;
+  }
+
+  async function makeUser(): Promise<void> {
+    // 계약이 403 을 선언하지 않은 조회다 — 권한 없이 세션만 있으면 된다(§1-1).
+    const user = await prisma.app_user.create({
+      data: { login_id: LOGIN_ID, user_name: '출하조회프로브', status_code: 'EMPLOYED' },
+    });
+    await prisma.user_credential.create({
+      data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
+    });
+    const response = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
+      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .expect(200);
+    const raw: unknown = response.headers['set-cookie'];
+    cookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
+  async function cleanup(): Promise<void> {
+    for (const sql of [
+      `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
+         SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (
+           SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'))`,
+      `DELETE FROM logistics.shipment_line WHERE shipment_id IN (
+         SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'`,
+      `DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`,
+      `DELETE FROM logistics.shipment_request_line WHERE shipment_request_id IN (
+         SELECT shipment_request_id FROM logistics.shipment_request
+          WHERE shipment_request_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipment_request WHERE shipment_request_no LIKE '${PREFIX}%'`,
+      `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`,
+    ]) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
+    if (target) {
+      await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
+      await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
+    }
+  }
+});

@@ -48,6 +48,8 @@ import { SalesOrderController } from './sales-order/sales-order.controller';
 import { AllocationPackingService } from './shipment-allocation/allocation-packing.service';
 import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-allocation-query.service';
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
+import { ShipmentQueryService } from './shipment/shipment-query.service';
+import { ShipmentController } from './shipment/shipment.controller';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
@@ -86,6 +88,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     SalesOrderController,
     ShipmentAllocationController,
     ShipmentRequestController,
+    ShipmentController,
     AsnController,
     InboundReceiptController,
     InboundReceiptSplitController,
@@ -113,6 +116,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShipmentPickService,
     ShipmentRequestQueryService,
     ShipmentRequestService,
+    ShipmentQueryService,
     AsnQueryService,
     InboundReceiptService,
     InboundReceiptQueryService,
