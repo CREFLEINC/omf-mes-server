@@ -37,6 +37,22 @@ interface AllocationQueryRow extends ShipmentAllocationRow {
 }
 
 /**
+ * ⛔ **기본값을 두지 않는다.** `shipment_line.shipment_request_line_id` 가 **NOT NULL FK** 라
+ * `oqcPassedByLine` 이 그 라인을 «못 찾을 수 없다» — `?? false` 나 `?? true` 를 적으면 그 줄은
+ * **도달 불가**고, 「이 경우를 지켜본다」는 **반증할 수 없는 단언**이 된다(변이 M-11 이 살아남아
+ * 드러났다 · README ⭐ 되풀이 병). 없으면 조용히 값을 지어내는 대신 **터진다** —
+ * 「검사 화면은 불합격인데 라벨은 뽑힌다」보다 500 이 낫다.
+ */
+function oqcOf(passed: Map<string, boolean>, allocation: AllocationQueryRow): boolean {
+  const key = allocation.shipment_request_line_id.toString();
+  const found = passed.get(key);
+  if (found === undefined) {
+    throw new Error(`출하작업지시 라인 ${key} 의 출하검사 판정이 없다 — FK 가 깨졌다.`);
+  }
+  return found;
+}
+
+/**
  * 출하 목록 — 화면 `W-04-02`·`W-04-04`·`W-04-12` 가 함께 쓴다(계약).
  * ⛔ 멱등·If-Match·ETag·403 이 **0건**이다(계약 실측 · §1-1) — 200 뿐이다.
  */
@@ -105,11 +121,7 @@ export class ShipmentQueryService {
       shipmentLineView(
         line,
         (byLine.get(line.shipment_line_id.toString()) ?? []).map((allocation) =>
-          shipmentLotAllocationView(
-            allocation,
-            // ⛔ `?? true` 로 접지 마라 — 라인 행을 못 찾은 것과 「검사 대상이 아니다」가 같아진다.
-            passed.get(allocation.shipment_request_line_id.toString()) ?? false,
-          ),
+          shipmentLotAllocationView(allocation, oqcOf(passed, allocation)),
         ),
       ),
     );
