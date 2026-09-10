@@ -1,4 +1,11 @@
-import { ShipmentRow, shipmentView } from './shipment-view';
+import { ShipmentLotAllocationView } from '../shipment-allocation/shipment-allocation-view';
+import {
+  ShipmentLineRow,
+  ShipmentRow,
+  shipmentDetailView,
+  shipmentLineView,
+  shipmentView,
+} from './shipment-view';
 
 /**
  * ⭐⭐ **숫자 축을 모두 «다른» 값으로 둔다**(README §6-3 ⑵). `shipmentId`·`shipmentRequestId`·
@@ -119,5 +126,61 @@ describe('출하 헤더 뷰', () => {
     const view = shipmentView(row());
     expect(view.loadedAt).toBe('2026-09-10T01:00:00.000Z');
     expect(view.shippedAt).toBe('2026-09-10T02:00:00.000Z');
+  });
+});
+
+/** 숫자 축을 모두 «다른» 값으로 둔다 — 라인의 여섯 칸이 뒤바뀌어도 드러나게(§6-3 ⑴). */
+function line(overrides: Partial<ShipmentLineRow> = {}): ShipmentLineRow {
+  return {
+    shipment_line_id: 101n,
+    shipment_id: 11n,
+    line_no: 1,
+    shipment_request_line_id: 202n,
+    item_id: 303n,
+    shipped_qty: 12.5,
+    uom_id: 404n,
+    goods_issue_line_id: null,
+    created_at: new Date('2026-09-10T00:00:00.000Z'),
+    created_by: null,
+    ...overrides,
+  } as unknown as ShipmentLineRow;
+}
+
+const allocation = (id: number): ShipmentLotAllocationView =>
+  ({ shipmentLotAllocationId: id }) as ShipmentLotAllocationView;
+
+describe('출하 라인·상세 뷰', () => {
+  it('라인 required 여섯 칸이 «각자의» 물리 칸에서 온다', () => {
+    expect(shipmentLineView(line(), [])).toMatchObject({
+      shipmentLineId: 101,
+      lineNo: 1,
+      shipmentRequestLineId: 202,
+      itemId: 303,
+      shippedQty: 12.5,
+      uomId: 404,
+    });
+  });
+
+  it('⚠ goodsIssueLineId 는 널을 «받는» 칸이다 — 키를 지우지 않는다', () => {
+    // 계약이 「비어도 된다 — 출고 전표를 만들지 않고 원장에 직접 전기하는 구간이 있다」라 적었다.
+    // ⭐ 그런데 이 슬라이스의 판정(§3-2 ⓐ)에서는 «값이 찬다» — PR ④ e2e 가 그것을 못 박는다.
+    const empty = shipmentLineView(line(), []);
+    expect(empty).toHaveProperty('goodsIssueLineId', null);
+    // 같은 축에 값이 둘이라야 「늘 널로 내린다」 변이가 죽는다(§6-3 ⑵).
+    expect(shipmentLineView(line({ goods_issue_line_id: 555n }), []).goodsIssueLineId).toBe(555);
+  });
+
+  it('배분은 라인 안에 «순서대로» 들어간다', () => {
+    const view = shipmentLineView(line(), [allocation(1), allocation(2)]);
+    expect(view.allocations.map((a) => a.shipmentLotAllocationId)).toEqual([1, 2]);
+  });
+
+  it('⭐ 상세는 목록 뷰에 lines 를 «얹는다» — 헤더를 두 벌로 적지 않는다', () => {
+    const detail = shipmentDetailView(row(), [shipmentLineView(line(), [])]);
+
+    // 헤더 칸이 목록과 «글자 그대로» 같아야 한다 — 갈리면 같은 출하를 두 화면이 다르게 그린다.
+    const { lines, ...header } = detail;
+    expect(header).toEqual(shipmentView(row()));
+    expect(lines).toHaveLength(1);
   });
 });
