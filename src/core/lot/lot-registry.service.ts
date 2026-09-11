@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { LotHoldService } from './lot-hold.service';
-import { mesLotNo } from './lot-number';
+import { materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 
 /**
@@ -48,6 +48,11 @@ export interface LotRegisterInput {
   sourceId: number;
   remarks?: string | null;
   externalIdentifiers?: ExternalIdentifierInput[];
+  incomingIqc?: {
+    requestNo: string;
+    effectiveDate: string;
+    requestedAt: string;
+  };
 }
 
 /** 선발행 슬롯 N 개가 받는 칸 — 번호·수량은 이미 정해져 온다(`nextMesLotNos`·`slotQtys`). */
@@ -72,6 +77,9 @@ export class LotRegistryService {
    * 서고, `inbound_receipt_line.lot_id` 는 LOT 이 먼저 서야 채워진다.
    */
   async createWithin(tx: Tx, input: LotRegisterInput, appUserId: number): Promise<LotRow> {
+    const iqcPlanVersionId = input.incomingIqc
+      ? await resolveIncomingIqcPlanVersion(tx, input.itemId, input.incomingIqc.effectiveDate)
+      : undefined;
     const lot = await tx.lot.create({
       data: {
         lot_no: input.lotNo,
@@ -100,7 +108,13 @@ export class LotRegistryService {
       tx,
       locked,
       // `targetLotStatusCode` 는 이 보류가 LOT 을 «보낸» 곳 — 위 `lot.create` 와 같은 상수다(#351 G-5).
-      [{ lotId: lot.lot_id, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS }],
+      [
+        {
+          lotId: lot.lot_id,
+          reasonCode: INSPECTION_HOLD_REASON,
+          targetLotStatusCode: INITIAL_LOT_STATUS,
+        },
+      ],
       { by: BigInt(appUserId), at: new Date() },
     );
 
@@ -117,11 +131,33 @@ export class LotRegistryService {
       });
     }
 
+    if (input.incomingIqc && iqcPlanVersionId !== undefined) {
+      await tx.inspection_request.create({
+        data: {
+          inspection_request_no: input.incomingIqc.requestNo,
+          inspection_type_code: 'IQC',
+          inspection_plan_version_id: iqcPlanVersionId,
+          target_type_code: 'LOT',
+          target_id: lot.lot_id,
+          item_id: BigInt(input.itemId),
+          lot_id: lot.lot_id,
+          target_qty: input.initialQty,
+          uom_id: BigInt(input.uomId),
+          status_code: 'REQUESTED',
+          requested_at: new Date(input.incomingIqc.requestedAt),
+          created_by: BigInt(appUserId),
+        },
+      });
+    }
+
     if (input.sourceTypeCode === INBOUND_RECEIPT_LINE) {
       await this.attach(tx, input.sourceId, lot.lot_id);
     }
 
-    return tx.lot.findUniqueOrThrow({ where: { lot_id: lot.lot_id }, include: { lot_hold: true } });
+    return tx.lot.findUniqueOrThrow({
+      where: { lot_id: lot.lot_id },
+      include: { lot_hold: true },
+    });
   }
 
   /**
@@ -188,6 +224,31 @@ export class LotRegistryService {
   }
 }
 
+async function resolveIncomingIqcPlanVersion(tx: Tx, itemId: number, effectiveDate: string): Promise<bigint> {
+  const date = day('businessDate', effectiveDate);
+  const plans = await tx.inspection_plan_version.findMany({
+    where: {
+      status_code: 'CONFIRMED',
+      effective_from: { lte: date },
+      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
+      inspection_plan: {
+        item_id: itemId,
+        inspection_type_code: 'IQC',
+        is_active: true,
+      },
+    },
+    select: { inspection_plan_version_id: true },
+  });
+  if (plans.length !== 1) {
+    throw one({
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message: plans.length === 0 ? '유효한 IQC 검사기준이 없습니다.' : '유효한 IQC 검사기준이 여러 개입니다.',
+    });
+  }
+  return plans[0].inspection_plan_version_id;
+}
+
 // ── LOT 칸에 붙박인 값 변환(날짜는 타임존을 고르지 않는다) ──────────────────────────
 
 export function optionalDay(value: string | null | undefined): Date | null {
@@ -226,6 +287,71 @@ export function slotQtys(orderQty: Prisma.Decimal, lotSize: Prisma.Decimal): Pri
  */
 export async function nextMesLotNos(tx: Tx, plantId: number, businessDate: string, count: number): Promise<string[]> {
   const prefix = `M${String(plantId).padStart(6, '0').slice(-6)}${businessDate.replace(/-/g, '')}`;
-  const used = await tx.lot.count({ where: { plant_id: plantId, lot_no: { startsWith: prefix } } });
+  const used = await tx.lot.count({
+    where: { plant_id: plantId, lot_no: { startsWith: prefix } },
+  });
   return Array.from({ length: count }, (_, i) => mesLotNo(plantId, businessDate, used + 1 + i));
+}
+
+/**
+ * 입하 자재만의 내부 MES LOT. 원천 행과 마스터에서 분절을 읽어, 외부 공급사 LOT 번호와
+ * 절대 섞지 않는다. 충돌은 호출자가 `uq_lot` P2002만 골라 트랜잭션 전체를 재시도한다.
+ */
+export async function nextInboundMaterialLotNo(
+  tx: Tx,
+  input: {
+    plantId: number;
+    itemId: number;
+    receivedQty: number;
+    supplierId: number;
+    businessDate: string;
+  },
+): Promise<string> {
+  const [item, supplier] = await Promise.all([
+    tx.item.findUnique({
+      where: { item_id: input.itemId },
+      select: { item_code: true },
+    }),
+    tx.partner.findUnique({
+      where: { partner_id: input.supplierId },
+      select: { partner_code: true },
+    }),
+  ]);
+  if (!item) throw new Error('자재 MES LOT 대상 품목을 찾을 수 없습니다.');
+  if (!supplier) throw new Error('자재 MES LOT 대상 공급사를 찾을 수 없습니다.');
+
+  let prefix: string;
+  try {
+    // serial 이 마지막 4자리이므로, 앞 30자리만으로 같은 날 같은 입하 분절을 센다.
+    prefix = materialMesLotNo({
+      itemCode: item.item_code,
+      qty: input.receivedQty,
+      businessDate: input.businessDate,
+      supplierCode: supplier.partner_code,
+      serial: 1,
+    }).slice(0, -4);
+  } catch (error) {
+    throw error instanceof Error ? one(field('lines', ERROR_CODE.INVALID, error.message)) : error;
+  }
+  // count+1은 중간 번호가 비었거나 외부 LOT가 같은 30자리 prefix를 쓴 경우에 충돌 값을
+  // 되풀이한다. 실제 suffix 최댓값 다음을 쓰고, 동시 삽입의 유일 충돌만 호출자 재시도로 푼다.
+  const existing = await tx.lot.findMany({
+    where: { plant_id: input.plantId, lot_no: { startsWith: prefix } },
+    select: { lot_no: true },
+  });
+  const serial = existing.reduce((max, lot) => {
+    const suffix = lot.lot_no.slice(prefix.length);
+    return /^\d{4}$/.test(suffix) ? Math.max(max, Number(suffix)) : max;
+  }, 0);
+  try {
+    return materialMesLotNo({
+      itemCode: item.item_code,
+      qty: input.receivedQty,
+      businessDate: input.businessDate,
+      supplierCode: supplier.partner_code,
+      serial: serial + 1,
+    });
+  } catch (error) {
+    throw error instanceof Error ? one(field('lines', ERROR_CODE.RANGE, error.message)) : error;
+  }
 }

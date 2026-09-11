@@ -18,7 +18,10 @@ const USED_LOTS = 7;
 const dec = (v: string) => new Prisma.Decimal(v);
 
 type Args = Record<string, unknown>;
-type Seed = { line?: { lot_id: bigint | null } };
+type Seed = {
+  line?: { lot_id: bigint | null };
+  iqcPlans?: { inspection_plan_version_id: bigint }[];
+};
 
 /**
  * 「그 트랜잭션의 표」를 흉내낸다 — 어느 객체로 읽고 썼는지가 이 스위트의 목이라
@@ -27,11 +30,13 @@ type Seed = { line?: { lot_id: bigint | null } };
 function fake(seed: Seed) {
   const calls: string[] = [];
   const args: Args[] = [];
-  const record = <T>(name: string, result: (a: Args) => T) => async (a: Args) => {
-    calls.push(name);
-    args.push(a);
-    return result(a);
-  };
+  const record =
+    <T>(name: string, result: (a: Args) => T) =>
+    async (a: Args) => {
+      calls.push(name);
+      args.push(a);
+      return result(a);
+    };
   let line = seed.line ?? null;
   const created: Args[] = [];
   const tx = {
@@ -46,14 +51,27 @@ function fake(seed: Seed) {
         created.push(a.data as Args);
         return { lot_id: LOT_ID + BigInt(created.length - 1) };
       }),
-      findUniqueOrThrow: record('lot.findUniqueOrThrow', () => ({ lot_id: LOT_ID, lot_hold: [] })),
+      findUniqueOrThrow: record('lot.findUniqueOrThrow', () => ({
+        lot_id: LOT_ID,
+        lot_hold: [],
+      })),
       findMany: record('lot.findMany', () =>
-        created.map((data, i) => ({ ...data, lot_id: LOT_ID + BigInt(i), lot_hold: [] })),
+        created.map((data, i) => ({
+          ...data,
+          lot_id: LOT_ID + BigInt(i),
+          lot_hold: [],
+        })),
       ),
       count: record('lot.count', () => USED_LOTS),
     },
     lot_hold: { create: record('lot_hold.create', () => ({})) },
-    lot_external_identifier: { create: record('identifier.create', () => ({})) },
+    lot_external_identifier: {
+      create: record('identifier.create', () => ({})),
+    },
+    inspection_plan_version: {
+      findMany: record('iqc.plan.findMany', () => seed.iqcPlans ?? []),
+    },
+    inspection_request: { create: record('iqc.request.create', () => ({})) },
     inbound_receipt_line: {
       updateMany: record('line.updateMany', () => {
         const hit = line !== null && line.lot_id === null;
@@ -150,6 +168,56 @@ describe('LotRegistryService', () => {
 
     expect(calls).not.toContain('line.updateMany');
   });
+
+  it('LOT 코어 — IQC 계획이 정확히 하나면 LOT과 같은 트랜잭션에서 의뢰를 한 건 만든다', async () => {
+    const { tx, calls, args } = fake({
+      line: { lot_id: null },
+      iqcPlans: [{ inspection_plan_version_id: 55n }],
+    });
+
+    await service.createWithin(
+      tx,
+      input({
+        incomingIqc: {
+          requestNo: 'IRQ-20260911-0001',
+          effectiveDate: '2026-09-11',
+          requestedAt: '2026-09-11T01:00:00.000Z',
+        },
+      }),
+      7,
+    );
+
+    expect(calls.filter((call) => call === 'iqc.request.create')).toHaveLength(1);
+    expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({
+      inspection_request_no: 'IRQ-20260911-0001',
+      inspection_plan_version_id: 55n,
+      lot_id: LOT_ID,
+      target_qty: 10,
+      status_code: 'REQUESTED',
+    });
+  });
+
+  it('LOT 코어 — 유효한 IQC 계획이 복수면 임의 선택하지 않고 LOT 생성 전에 막는다', async () => {
+    const { tx, calls } = fake({
+      line: { lot_id: null },
+      iqcPlans: [{ inspection_plan_version_id: 55n }, { inspection_plan_version_id: 56n }],
+    });
+
+    await expect(
+      service.createWithin(
+        tx,
+        input({
+          incomingIqc: {
+            requestNo: 'IRQ-20260911-0001',
+            effectiveDate: '2026-09-11',
+            requestedAt: '2026-09-11T01:00:00.000Z',
+          },
+        }),
+        7,
+      ),
+    ).rejects.toMatchObject({ errors: [{ code: 'STATE_LOCKED' }] });
+    expect(calls).not.toContain('lot.create');
+  });
 });
 
 describe('선발행 슬롯', () => {
@@ -223,9 +291,9 @@ describe('선발행 슬롯', () => {
 
     // 짝이 어긋나면 호출자 버그다 — 400 이 아니라 Error 다.
     const half = fake({});
-    await expect(
-      service.preIssueWithin(half.tx, preIssue({ bomVersion: null }), 7),
-    ).rejects.toThrow(/ck_lot_bom_snapshot/);
+    await expect(service.preIssueWithin(half.tx, preIssue({ bomVersion: null }), 7)).rejects.toThrow(
+      /ck_lot_bom_snapshot/,
+    );
   });
 
   it('번호 — count 를 한 번 읽어 used+1…used+N 을 찍는다', async () => {

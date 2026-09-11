@@ -20,6 +20,7 @@ export interface InboundReceiptQuery {
   statusCode?: string;
   labelIssued?: boolean;
   supplierLotMissing?: boolean;
+  supplierLotLabelAttached?: boolean;
   q?: string;
   page?: number;
   size?: number;
@@ -27,12 +28,15 @@ export interface InboundReceiptQuery {
 
 export interface InboundReceiptLineQuery {
   supplierLotMissing?: boolean;
+  supplierLotLabelAttached?: boolean;
   labelIssued?: boolean;
 }
 
 /** 라벨 발행 기록 — 라인의 LOT 에 이 문서유형이 찍혀 있는가(A-21 · I-3.md §2-6 주석 ⓑ). */
 const LABEL_ISSUED: Prisma.inbound_receipt_lineWhereInput = {
-  lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } },
+  lot: {
+    document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } },
+  },
 };
 
 /** 입하·차이 조회 4건. 화면은 `W-01-03`·`M-01-06`·`P-01-01` 이 소유한다(등록·수정은 다른 PR). */
@@ -47,7 +51,20 @@ export class InboundReceiptQueryService {
     const headerLineFilters = [
       query.supplierLotMissing === undefined
         ? {}
-        : { inbound_receipt_line: { some: { supplier_lot_missing: query.supplierLotMissing } } },
+        : {
+            inbound_receipt_line: {
+              some: { supplier_lot_missing: query.supplierLotMissing },
+            },
+          },
+      query.supplierLotLabelAttached === undefined
+        ? {}
+        : {
+            inbound_receipt_line: {
+              some: {
+                supplier_lot_label_attached: query.supplierLotLabelAttached,
+              },
+            },
+          },
       labelIssuedHeaderWhere(query.labelIssued),
     ].filter((clause) => Object.keys(clause).length > 0);
     const where: Prisma.inbound_receiptWhereInput = {
@@ -62,7 +79,9 @@ export class InboundReceiptQueryService {
         ? {}
         : {
             OR: [
-              { inbound_receipt_no: { contains: query.q, mode: 'insensitive' } },
+              {
+                inbound_receipt_no: { contains: query.q, mode: 'insensitive' },
+              },
               { delivery_note_no: { contains: query.q, mode: 'insensitive' } },
             ],
           }),
@@ -89,20 +108,23 @@ export class InboundReceiptQueryService {
     });
     if (!row) throw new NotFoundException('없는 입하입니다.');
     return {
-      detail: { inboundReceipt: inboundReceiptView(row), lines: await this.lines(inboundReceiptId) },
+      detail: {
+        inboundReceipt: inboundReceiptView(row),
+        lines: await this.lines(inboundReceiptId),
+      },
       versionNo: row.version_no,
     };
   }
 
   /** 없는 입하면 빈 배열이다 — 계약이 이 경로에 404 를 선언하지 않았다(P/O `lines()` 선례). */
-  async lines(
-    inboundReceiptId: number,
-    query: InboundReceiptLineQuery = {},
-  ): Promise<InboundReceiptLineView[]> {
+  async lines(inboundReceiptId: number, query: InboundReceiptLineQuery = {}): Promise<InboundReceiptLineView[]> {
     // 두 필터는 AND 로 합친다 — 객체 스프레드는 뒤가 앞을 덮을 수 있어 배열로 모은다
     // (P/O `itemId`·`openOnly` 선례).
     const lineFilters = [
       query.supplierLotMissing === undefined ? {} : { supplier_lot_missing: query.supplierLotMissing },
+      query.supplierLotLabelAttached === undefined
+        ? {}
+        : { supplier_lot_label_attached: query.supplierLotLabelAttached },
       labelIssuedLineWhere(query.labelIssued),
     ].filter((clause) => Object.keys(clause).length > 0);
 
@@ -136,9 +158,7 @@ function receiptDateWhere(from?: string, to?: string): Prisma.inbound_receiptWhe
  *  (`lotId` 빈 라인만 있는 건도 포함한다 · I-3.md §2-6 주석 ⓑ). */
 function labelIssuedHeaderWhere(value: boolean | undefined): Prisma.inbound_receiptWhereInput {
   if (value === undefined) return {};
-  return value
-    ? { inbound_receipt_line: { some: LABEL_ISSUED } }
-    : { inbound_receipt_line: { none: LABEL_ISSUED } };
+  return value ? { inbound_receipt_line: { some: LABEL_ISSUED } } : { inbound_receipt_line: { none: LABEL_ISSUED } };
 }
 
 /** 라인 목록의 `labelIssued` — 라인 자신의 LOT 을 본다(헤더 축과 관계 깊이가 다르다). */

@@ -44,18 +44,17 @@ export class InboundReceiptSplitService {
     private readonly receipts: InboundReceiptService,
   ) {}
 
-  async create(
-    input: InboundReceiptSplitInput,
-    appUserId: number,
-  ): Promise<{ created: InboundReceiptView[] }> {
+  async create(input: InboundReceiptSplitInput, appUserId: number): Promise<{ created: InboundReceiptView[] }> {
     const parts = await this.assertWritable(input);
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 1~2회 부른다(§4-3). 두 part 의 `plantId` 가
     //    다를 수 있어 각자의 공장으로 부른다. ⛔ 재시도 루프는 없다 — 카운터가 한 문장이라
     //    동시 등록도 값이 안 겹친다. ⚠ 트랜잭션이 깨지면 뽑아 둔 번호가 결번이 된다.
     const numbers: string[] = [];
+    const iqcRequestNos: (string | undefined)[][] = [];
     for (const { part } of parts) {
       numbers.push(await this.numbering.next('INBOUND_RECEIPT', BigInt(part.plantId), input.businessDate));
+      iqcRequestNos.push(await this.receipts.allocateIqcRequestNos(part, input.businessDate));
     }
 
     const ids = await this.prisma.$transaction(
@@ -72,7 +71,18 @@ export class InboundReceiptSplitService {
 
         const created: bigint[] = [];
         for (const [index, { side, part }] of parts.entries()) {
-          created.push(await this.receipts.createWithin(tx, numbers[index], part, appUserId, `${side}.`));
+          created.push(
+            await this.receipts.createWithin(
+              tx,
+              numbers[index],
+              part,
+              appUserId,
+              `${side}.`,
+              input.businessDate,
+              iqcRequestNos[index],
+              input.occurredAt,
+            ),
+          );
         }
         return created;
       },
@@ -119,9 +129,7 @@ export class InboundReceiptSplitService {
     // 시나리오를 `uq_lot(plant_id, lot_no)` 이 막는다. 계약·화면 스펙이 안 다뤘다 — 화면이
     // 어느 칸을 고칠지 짚도록 미리 400 한다(§2 2단계 「거부하는 쪽」).
     const lotNos = new Set<string>();
-    const checks = parts.flatMap(({ side, part }) =>
-      collectHeaderErrors(`${side}.`, part, errors, lotNos),
-    );
+    const checks = parts.flatMap(({ side, part }) => collectHeaderErrors(`${side}.`, part, errors, lotNos));
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     await assertCodeValues(this.prisma, checks);

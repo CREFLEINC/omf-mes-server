@@ -1218,6 +1218,7 @@ const SEED: CodeGroupSeed[] = [
       { code: 'PENDING', codeName: '적치 대기', order: 10 },
       { code: 'COMPLETED', codeName: '적치 완료', order: 20 },
       { code: 'COMPLETED_TEMPORARY', codeName: '임시 적치 완료', order: 30 },
+      { code: 'CANCELLED', codeName: '전량 반품으로 적치 취소', order: 40 },
     ],
   },
   {

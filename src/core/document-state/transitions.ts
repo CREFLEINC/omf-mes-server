@@ -422,9 +422,10 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
-   * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 3값(DB 실재 · ⛔ 시스템 소유)이 확정했고
+   * 적치 작업 진행. 값은 시드 `PUTAWAY_TASK_STATUS` 4값(DB 실재 · ⛔ 시스템 소유)이 확정했고
    * 계약이 전이 둘을 그대로 연다. ⛔ 되돌아오는 전이는 없다 — 임시 적치에서 정상 적치로 가는
-   * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2).
+   * 오퍼레이션이 계약에 0건이다(dead end · 문의 059+2). `CANCELLED` 는 공급사 전량 반품의
+   * 부수 효과라 별도 사용자 액션을 등록하지 않는다.
    * ⚠ `conflictStatus` 는 호출자가 400 을 넘긴다 — `M-01-05` §6 「이미 완료된 지시 400 STATE_LOCKED」.
    * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다(LOT 축만 갖는 칸).
    */

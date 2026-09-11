@@ -12,13 +12,15 @@ import {
  * `assertCodeValues` 가 DB 를 보므로 `code_value` 만 흉내 낸다(고객 확장값도 통과해야 한다).
  */
 
+const ATTACHED_LOT_NO = '0000000400000000102608060000100001';
+
 const line = (overrides: Partial<InboundReceiptLineWriteInput> = {}): InboundReceiptLineWriteInput => ({
   purchaseOrderLineId: 101,
   itemId: 40,
   receivedQty: 10,
   uomId: 50,
   supplierLotMissing: false,
-  supplierLotNo: 'SL-0001',
+  supplierLotNo: ATTACHED_LOT_NO,
   ...overrides,
 });
 
@@ -38,23 +40,18 @@ function fake(codes: string[] = KNOWN): PrismaService {
   const known = new Set(codes);
   return {
     code_value: {
-      findMany: async ({
-        where,
-      }: {
-        where: { OR: { code: string; code_group: { group_code: string } }[] };
-      }) =>
-        where.OR.filter((check) => known.has(`${check.code_group.group_code} ${check.code}`)).map(
-          (check) => ({ code: check.code, code_group: { group_code: check.code_group.group_code } }),
-        ),
+      findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
+        where.OR.filter((check) => known.has(`${check.code_group.group_code} ${check.code}`)).map((check) => ({
+          code: check.code,
+          code_group: { group_code: check.code_group.group_code },
+        })),
     },
   } as unknown as PrismaService;
 }
 
 describe('입하 등록 검사', () => {
   it('등록 — purchaseOrderLineId 가 빈 라인이 있으면 exceptionTypeCode 가 필수다(계약 문자)', async () => {
-    const error = await thrown(() =>
-      assertWritable(fake(), input({ lines: [line({ purchaseOrderLineId: null })] })),
-    );
+    const error = await thrown(() => assertWritable(fake(), input({ lines: [line({ purchaseOrderLineId: null })] })));
 
     expect((error as ContractException).errors[0]).toMatchObject({
       field: 'exceptionTypeCode',
@@ -79,7 +76,11 @@ describe('입하 등록 검사', () => {
         fake(),
         input({
           lines: [
-            line({ supplierLotMissing: true, supplierLotNo: null, substituteLotReasonCode: 'NOPE' }),
+            line({
+              supplierLotMissing: true,
+              supplierLotNo: null,
+              substituteLotReasonCode: 'NOPE',
+            }),
           ],
         }),
       ),
@@ -93,9 +94,7 @@ describe('입하 등록 검사', () => {
 
   // 설계 미정 — 문의 028(계약이 막지 않는 조합을 서버가 거절한다 · README §2 3단계 흔적).
   it('등록 — supplierLotMissing=false 인데 supplierLotNo 가 비면 400 PAIR 다(lot_no 가 NOT NULL 이라 LOT 을 못 만든다 · 문의 028)', async () => {
-    const error = await thrown(() =>
-      assertWritable(fake(), input({ lines: [line({ supplierLotNo: null })] })),
-    );
+    const error = await thrown(() => assertWritable(fake(), input({ lines: [line({ supplierLotNo: null })] })));
 
     expect((error as ContractException).errors[0]).toMatchObject({
       field: 'lines.0.supplierLotNo',
@@ -116,7 +115,9 @@ describe('입하 등록 검사', () => {
     const error = await thrown(() =>
       assertWritable(
         fake(),
-        input({ lines: [line({ supplierLotNo: 'SL-같음' }), line({ supplierLotNo: 'SL-같음' })] }),
+        input({
+          lines: [line({ supplierLotNo: ATTACHED_LOT_NO }), line({ supplierLotNo: ATTACHED_LOT_NO })],
+        }),
       ),
     );
 
@@ -124,6 +125,45 @@ describe('입하 등록 검사', () => {
       field: 'lines.1.supplierLotNo',
       code: ERROR_CODE.INVALID,
     });
+  });
+
+  it('등록 — supplierLotMissing=true 와 supplierLotLabelAttached=true 는 400 PAIR 다', async () => {
+    const error = await thrown(() =>
+      assertWritable(
+        fake(),
+        input({
+          lines: [
+            line({
+              supplierLotNo: null,
+              supplierLotMissing: true,
+              supplierLotLabelAttached: true,
+              substituteLotReasonCode: 'NO_LABEL',
+            }),
+          ],
+        }),
+      ),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotLabelAttached',
+      code: ERROR_CODE.PAIR,
+    });
+  });
+
+  it('등록 — 번호가 있으나 라벨 미부착이면 외부 원문 형식을 34자리로 강제하지 않는다', async () => {
+    await expect(
+      assertWritable(
+        fake(),
+        input({
+          lines: [
+            line({
+              supplierLotNo: '납품서-LOT/A-01',
+              supplierLotLabelAttached: false,
+            }),
+          ],
+        }),
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it('assertLines — 공유 집합을 넘기면 호출을 넘어 겹침을 본다', () => {
@@ -134,7 +174,10 @@ describe('입하 등록 검사', () => {
     collectHeaderErrors('excess.', input(), errors, lotNos);
 
     expect(errors).toEqual([
-      expect.objectContaining({ field: 'excess.lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+      expect.objectContaining({
+        field: 'excess.lines.0.supplierLotNo',
+        code: ERROR_CODE.INVALID,
+      }),
     ]);
   });
 });

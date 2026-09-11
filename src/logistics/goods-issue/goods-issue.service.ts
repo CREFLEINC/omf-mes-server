@@ -179,7 +179,9 @@ export class GoodsIssueService {
         header: {
           goodsIssueId: issue.goods_issue_id,
           goodsIssueNo: issue.goods_issue_no,
+          issueTypeCode: input.issueTypeCode,
           sourceDocumentTypeCode: input.sourceDocumentTypeCode,
+          sourceDocumentId: BigInt(input.sourceDocumentId),
           sourceWarehouseId: BigInt(input.sourceWarehouseId),
           destinationTypeCode: input.destinationTypeCode ?? null,
           destinationId: input.destinationId == null ? null : BigInt(input.destinationId),
@@ -218,7 +220,8 @@ export class GoodsIssueService {
       // ⛔ 헤더를 먼저 «잠근다» — findUnique 로 읽으면 같은 순간의 두 `:post` 가 둘 다
       //    `REGISTERED` 를 보고 잔액을 두 번 깎는다(상태 잠금이 ③번째 겹이다 · §3-8).
       const [header] = await tx.$queryRaw<HeaderRow[]>`
-        SELECT goods_issue_id, goods_issue_no, source_document_type_code, source_warehouse_id,
+        SELECT goods_issue_id, goods_issue_no, issue_type_code, source_document_type_code,
+               source_document_id, source_warehouse_id,
                destination_type_code, destination_id, status_code, version_no
           FROM logistics.goods_issue
          WHERE goods_issue_id = ${goodsIssueId}
@@ -271,7 +274,9 @@ export class GoodsIssueService {
           header: {
             goodsIssueId: header.goods_issue_id,
             goodsIssueNo: header.goods_issue_no,
+            issueTypeCode: header.issue_type_code,
             sourceDocumentTypeCode: header.source_document_type_code,
+            sourceDocumentId: header.source_document_id,
             sourceWarehouseId: header.source_warehouse_id,
             destinationTypeCode: header.destination_type_code,
             destinationId: header.destination_id,
@@ -308,7 +313,9 @@ export class GoodsIssueService {
 interface HeaderRow {
   goods_issue_id: bigint;
   goods_issue_no: string;
+  issue_type_code: string;
   source_document_type_code: string;
+  source_document_id: bigint;
   source_warehouse_id: bigint;
   destination_type_code: string | null;
   destination_id: bigint | null;

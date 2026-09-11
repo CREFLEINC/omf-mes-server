@@ -22,7 +22,7 @@ const GOODS_RECEIPT_STATUS = 'logistics.goods_receipt.status_code';
 const WORK_ORDER_STATUS = 'production.work_order.status_code';
 /** I-11 PR ② 가 여는 축 — 시드 `WORK_SESSION_STATUS`(RUNNING·STOPPED·ENDED) 3값. */
 const WORK_SESSION_STATUS = 'production.work_session.status_code';
-/** I-12 PR ① 이 여는 축 — 시드 `PUTAWAY_TASK_STATUS`(PENDING·COMPLETED·COMPLETED_TEMPORARY) 3값. */
+/** I-12 PR ① 이 여는 축 — 완료 둘과 공급사 전량 반품의 자동 취소까지 포함한 적치 상태 축. */
 const PUTAWAY_TASK_STATUS = 'logistics.putaway_task.status_code';
 /** I-24 PR ③ 이 여는 축 — 시드 `PRODUCTION_PLAN_STATUS`(DRAFT·CONFIRMED) 2값. */
 const PRODUCTION_PLAN_STATUS = 'planning.production_plan.status_code';
@@ -620,6 +620,9 @@ describe('DocumentStateService', () => {
       ).toThrow();
       expect(() =>
         service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'COMPLETED_TEMPORARY'),
+      ).toThrow();
+      expect(() =>
+        service.assertTransition(PUTAWAY_TASK_STATUS, 'putaway-complete', 'CANCELLED'),
       ).toThrow();
     });
   });

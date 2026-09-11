@@ -1,9 +1,4 @@
-import {
-  MiddlewareConsumer,
-  Module,
-  NestModule,
-  RequestMethod,
-} from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
@@ -24,6 +19,7 @@ import { DocumentIssueReportService } from './document-issue/document-issue-repo
 import { DocumentIssueSummaryMiddleware } from './document-issue/document-issue-summary.middleware';
 import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
 import { DocumentIssueWriteService } from './document-issue/document-issue-write.service';
+import { DocumentIssueRenditionService } from './document-issue/document-issue-rendition.service';
 import { DocumentIssueController } from './document-issue/document-issue.controller';
 import { PrinterQueryService } from './document-issue/printer-query.service';
 import { PrinterController } from './document-issue/printer.controller';
@@ -58,13 +54,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
   // AuthModule 이 CredentialService 를 내보낸다 — 내 비밀번호 변경이 그것을 쓴다.
   // ApprovalModule(core) 은 결재함의 「현재 단계」 판정이 :approve/:reject 와 같은
   // 함수여야 해서 끌어온다(I-1.md R-2).
-  imports: [
-    PrismaModule,
-    IdempotencyModule,
-    AuthModule,
-    ApprovalModule,
-    NumberingModule,
-  ],
+  imports: [PrismaModule, IdempotencyModule, AuthModule, ApprovalModule, NumberingModule],
   controllers: [
     PermissionController,
     RoleController,
@@ -92,6 +82,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     DocumentIssueReportService,
     DocumentIssueSummaryService,
     DocumentIssueWriteService,
+    DocumentIssueRenditionService,
     PrinterQueryService,
     OperationPolicyService,
     NoticeService,

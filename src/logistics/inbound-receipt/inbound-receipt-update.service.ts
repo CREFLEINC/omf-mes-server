@@ -5,7 +5,12 @@ import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../comm
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
-import { DOCUMENT_STATUS, InboundReceiptLineWriteInput, dayOrNull } from './inbound-receipt-rules';
+import {
+  DOCUMENT_STATUS,
+  InboundReceiptLineWriteInput,
+  dayOrNull,
+  supplierLotLabelAttached,
+} from './inbound-receipt-rules';
 import {
   InboundReceiptLineView,
   InboundReceiptView,
@@ -38,8 +43,10 @@ interface Attribution {
   index?: number;
 }
 
-type ExistingLine = Pick<Prisma.inbound_receipt_lineGetPayload<object>,
-  'inbound_receipt_line_id' | 'purchase_order_line_id' | 'received_qty' | 'lot_id'>;
+type ExistingLine = Pick<
+  Prisma.inbound_receipt_lineGetPayload<object>,
+  'inbound_receipt_line_id' | 'purchase_order_line_id' | 'received_qty' | 'lot_id'
+>;
 
 /** 입하 헤더 수정 + 라인 치환. 등록은 `InboundReceiptService`, 조회는 `InboundReceiptQueryService`. */
 @Injectable()
@@ -55,7 +62,8 @@ export class InboundReceiptUpdateService {
     appUserId: number,
   ): Promise<{ inboundReceipt: InboundReceiptView; versionNo: number }> {
     const current = await this.prisma.inbound_receipt.findUnique({
-      where: { inbound_receipt_id: inboundReceiptId }, select: { status_code: true },
+      where: { inbound_receipt_id: inboundReceiptId },
+      select: { status_code: true },
     });
     if (!current) throw new NotFoundException('없는 입하입니다.');
     assertRegistered(current.status_code, '수정할');
@@ -81,7 +89,10 @@ export class InboundReceiptUpdateService {
     assertUpdated(updated.count);
     const where = { inbound_receipt_id: inboundReceiptId };
     const row = await this.prisma.inbound_receipt.findUniqueOrThrow({ where });
-    return { inboundReceipt: inboundReceiptView(row), versionNo: row.version_no };
+    return {
+      inboundReceipt: inboundReceiptView(row),
+      versionNo: row.version_no,
+    };
   }
 
   /** ⭐ 순서가 불변식이다 — 부모 `inbound_receipt` 버전 범프 → 부모 `purchase_order` 오름차순
@@ -99,13 +110,16 @@ export class InboundReceiptUpdateService {
     assertItems(items);
     const group = 'SUBSTITUTE_LOT_REASON';
     const codes = items.map((item, index) => ({
-      field: `items.${index}.substituteLotReasonCode`, value: item.substituteLotReasonCode, groupCode: group,
+      field: `items.${index}.substituteLotReasonCode`,
+      value: item.substituteLotReasonCode,
+      groupCode: group,
     }));
     await assertCodeValues(this.prisma, codes);
 
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.inbound_receipt.findUnique({
-        where: { inbound_receipt_id: inboundReceiptId }, select: { status_code: true },
+        where: { inbound_receipt_id: inboundReceiptId },
+        select: { status_code: true },
       });
       if (!current) throw new NotFoundException('없는 입하입니다.');
       assertRegistered(current.status_code, '라인을 고칠');
@@ -117,7 +131,12 @@ export class InboundReceiptUpdateService {
 
       const existing: ExistingLine[] = await tx.inbound_receipt_line.findMany({
         where: { inbound_receipt_id: inboundReceiptId },
-        select: { inbound_receipt_line_id: true, purchase_order_line_id: true, received_qty: true, lot_id: true },
+        select: {
+          inbound_receipt_line_id: true,
+          purchase_order_line_id: true,
+          received_qty: true,
+          lot_id: true,
+        },
       });
       const known = new Map(existing.map((row) => [Number(row.inbound_receipt_line_id), row]));
       assertOwnLines(items, known);
@@ -134,7 +153,8 @@ export class InboundReceiptUpdateService {
       await this.writeLines(tx, inboundReceiptId, items, removed, appUserId);
 
       const rows = await tx.inbound_receipt_line.findMany({
-        where: { inbound_receipt_id: inboundReceiptId }, orderBy: { line_no: 'asc' },
+        where: { inbound_receipt_id: inboundReceiptId },
+        orderBy: { line_no: 'asc' },
       });
       return rows.map(inboundReceiptLineView);
     }, TRANSACTION_OPTIONS);
@@ -172,7 +192,12 @@ export class InboundReceiptUpdateService {
     // 잠근 «뒤»에 수량을 다시 읽는다 — 그 전에 읽은 값은 P/O 치환이 바꿨을 수 있다.
     const locked = await tx.purchase_order_line.findMany({
       where: { purchase_order_line_id: { in: lineIds } },
-      select: { purchase_order_line_id: true, ordered_qty: true, tolerance_over_qty: true, received_qty: true },
+      select: {
+        purchase_order_line_id: true,
+        ordered_qty: true,
+        tolerance_over_qty: true,
+        received_qty: true,
+      },
     });
     for (const row of locked) {
       const delta = attributions.get(row.purchase_order_line_id);
@@ -190,7 +215,10 @@ export class InboundReceiptUpdateService {
       if (delta.qty.isZero()) continue;
       await tx.purchase_order_line.update({
         where: { purchase_order_line_id: row.purchase_order_line_id },
-        data: { received_qty: { increment: delta.qty }, updated_by: BigInt(appUserId) },
+        data: {
+          received_qty: { increment: delta.qty },
+          updated_by: BigInt(appUserId),
+        },
       });
     }
   }
@@ -203,7 +231,9 @@ export class InboundReceiptUpdateService {
     appUserId: number,
   ): Promise<void> {
     if (removed.length > 0) {
-      await tx.inbound_receipt_line.deleteMany({ where: { inbound_receipt_line_id: { in: removed } } });
+      await tx.inbound_receipt_line.deleteMany({
+        where: { inbound_receipt_line_id: { in: removed } },
+      });
     }
     await tx.$executeRaw`
       UPDATE logistics.inbound_receipt_line
@@ -223,14 +253,20 @@ export class InboundReceiptUpdateService {
         package_count: item.packageCount ?? null,
         supplier_lot_no: item.supplierLotNo ?? null,
         supplier_lot_missing: item.supplierLotMissing,
+        supplier_lot_label_attached: supplierLotLabelAttached(item),
         substitute_lot_reason_code: item.substituteLotReasonCode ?? null,
         manufactured_date: dayOrNull(`items.${index}.manufacturedDate`, item.manufacturedDate),
         expiry_date: dayOrNull(`items.${index}.expiryDate`, item.expiryDate),
         inspection_required: inspection.get(BigInt(item.itemId)) ?? false,
       };
       if (item.inboundReceiptLineId === undefined) {
-        const owner = { inbound_receipt_id: inboundReceiptId, status_code: DOCUMENT_STATUS };
-        await tx.inbound_receipt_line.create({ data: { ...owner, created_by: BigInt(appUserId), ...values } });
+        const owner = {
+          inbound_receipt_id: inboundReceiptId,
+          status_code: DOCUMENT_STATUS,
+        };
+        await tx.inbound_receipt_line.create({
+          data: { ...owner, created_by: BigInt(appUserId), ...values },
+        });
         continue;
       }
       // ⛔ `lot_id`·`status_code` 는 안 건드린다 — LOT 은 등록·`:split` 의 일이고 라인 상태는 값
@@ -283,10 +319,7 @@ function assertOwnLines(items: InboundReceiptLineWriteInput[], known: Map<number
 
 /** 삭제·수량 변경·귀속 대상 변경 셋을 한 맵으로 처리한다 — 옛 기여분을 되돌리지 않으면 누적
  *  입하가 영원히 부풀어 오른다(§3-1). */
-function attributionsOf(
-  existing: ExistingLine[],
-  items: InboundReceiptLineWriteInput[],
-): Map<bigint, Attribution> {
+function attributionsOf(existing: ExistingLine[], items: InboundReceiptLineWriteInput[]): Map<bigint, Attribution> {
   const attributions = new Map<bigint, Attribution>();
   const add = (key: bigint | null, qty: Prisma.Decimal | number, index?: number): void => {
     if (key === null) return;
@@ -320,7 +353,9 @@ async function assertNoSuccessor(tx: Prisma.TransactionClient, lineIds: bigint[]
   const successors =
     (await tx.goods_receipt_line.count({ where })) +
     (await tx.inbound_variance.count({ where })) +
-    (await tx.purchase_order.count({ where: { source_inbound_receipt_line_id: { in: lineIds } } }));
+    (await tx.purchase_order.count({
+      where: { source_inbound_receipt_line_id: { in: lineIds } },
+    }));
   if (successors > 0) {
     throw one(banner(ERROR_CODE.SUCCESSOR_EXISTS, '입고·차이가 붙은 라인은 지우거나 수량을 바꿀 수 없습니다.'));
   }

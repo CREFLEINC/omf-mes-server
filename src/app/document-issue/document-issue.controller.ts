@@ -1,30 +1,14 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  DocumentIssueListQuery,
-  DocumentIssueQueryService,
-} from './document-issue-query.service';
+import { DocumentIssueListQuery, DocumentIssueQueryService } from './document-issue-query.service';
 import { documentIssueReportContext } from './document-issue-report-context';
-import {
-  DocumentIssueReportInput,
-  DocumentIssueReportService,
-} from './document-issue-report.service';
+import { DocumentIssueReportInput, DocumentIssueReportService } from './document-issue-report.service';
 import {
   DocumentIssueSummaryQuery,
   DocumentIssueSummaryResponse,
@@ -32,12 +16,10 @@ import {
 } from './document-issue-summary.service';
 import { DocumentIssueView } from './document-issue-view';
 import { documentIssueWriteContext } from './document-issue-write-context';
-import {
-  DocumentIssueBatchResponse,
-  DocumentIssueWriteService,
-} from './document-issue-write.service';
+import { DocumentIssueBatchResponse, DocumentIssueWriteService } from './document-issue-write.service';
 import { DocumentIssueCreateInput } from './document-issue-create-rules';
 import { runDocumentIssueWriteWithRetry } from './document-issue-sequence';
+import { DocumentIssueRenditionService } from './document-issue-rendition.service';
 
 @Controller('app/document-issues')
 export class DocumentIssueController {
@@ -49,41 +31,29 @@ export class DocumentIssueController {
     private readonly idempotency: IdempotencyService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly renditions: DocumentIssueRenditionService,
   ) {}
 
   @Post()
   @Contract('POST /app/document-issues')
   @HttpCode(HttpStatus.CREATED)
-  async create(
-    @Req() request: Request,
-    @Body() body: DocumentIssueCreateInput,
-  ): Promise<DocumentIssueBatchResponse> {
-    const context = await documentIssueWriteContext(
-      request,
-      this.jwt,
-      this.prisma,
-    );
+  async create(@Req() request: Request, @Body() body: DocumentIssueCreateInput): Promise<DocumentIssueBatchResponse> {
+    const context = await documentIssueWriteContext(request, this.jwt, this.prisma);
     return runDocumentIssueWriteWithRetry(async () => {
-      const outcome = await this.idempotency.run(context, (tx) =>
-        this.writes.issueWithin(tx, body, context),
-      );
+      const outcome = await this.idempotency.run(context, (tx) => this.writes.issueWithin(tx, body, context));
       return outcome.body;
     });
   }
 
   @Get()
   @Contract('GET /app/document-issues')
-  list(
-    @Query() query: DocumentIssueListQuery,
-  ): Promise<PagedResponse<DocumentIssueView>> {
+  list(@Query() query: DocumentIssueListQuery): Promise<PagedResponse<DocumentIssueView>> {
     return this.documentIssues.list(query);
   }
 
   @Get('summary')
   @Contract('GET /app/document-issues/summary')
-  summary(
-    @Query() query: DocumentIssueSummaryQuery,
-  ): Promise<DocumentIssueSummaryResponse> {
+  summary(@Query() query: DocumentIssueSummaryQuery): Promise<DocumentIssueSummaryResponse> {
     return this.summaries.summary(query);
   }
 
@@ -95,11 +65,7 @@ export class DocumentIssueController {
     @Param('documentIssueLogId') documentIssueLogId: number,
     @Body() body: DocumentIssueReportInput,
   ): Promise<DocumentIssueView> {
-    const context = await documentIssueReportContext(
-      request,
-      this.jwt,
-      this.prisma,
-    );
+    const context = await documentIssueReportContext(request, this.jwt, this.prisma);
     const outcome = await this.idempotency.run(context, (tx) =>
       this.reports.reportWithin(tx, documentIssueLogId, body, context),
     );
@@ -108,9 +74,18 @@ export class DocumentIssueController {
 
   @Get(':documentIssueLogId')
   @Contract('GET /app/document-issues/{documentIssueLogId}')
-  get(
-    @Param('documentIssueLogId') documentIssueLogId: number,
-  ): Promise<DocumentIssueView> {
+  get(@Param('documentIssueLogId') documentIssueLogId: number): Promise<DocumentIssueView> {
     return this.documentIssues.get(documentIssueLogId);
+  }
+
+  @Get(':documentIssueLogId/rendition')
+  @Contract('GET /app/document-issues/{documentIssueLogId}/rendition')
+  async rendition(
+    @Param('documentIssueLogId') documentIssueLogId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<Buffer> {
+    const png = await this.renditions.materialLotLabel(documentIssueLogId);
+    response.type('image/png');
+    return png;
   }
 }

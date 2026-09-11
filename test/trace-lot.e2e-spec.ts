@@ -730,6 +730,7 @@ describe('LOT (e2e)', () => {
         item_id: BigInt(itemId),
         received_qty: 1,
         uom_id: BigInt(uomId),
+        supplier_lot_label_attached: true,
         inspection_required: false,
         status_code: 'REGISTERED',
       },

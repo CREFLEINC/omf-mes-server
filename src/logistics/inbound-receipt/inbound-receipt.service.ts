@@ -14,12 +14,9 @@ import {
   assertWritable,
   attachesLot,
   dayOrNull,
+  supplierLotLabelAttached,
 } from './inbound-receipt-rules';
-import {
-  InboundReceiptDetail,
-  inboundReceiptLineView,
-  inboundReceiptView,
-} from './inbound-receipt-view';
+import { InboundReceiptDetail, inboundReceiptLineView, inboundReceiptView } from './inbound-receipt-view';
 
 /**
  * 입하 등록 — 화면 `M-01-01`. 「입하·라인·자재 LOT 이 **한 트랜잭션**으로 만들어진다」
@@ -41,19 +38,23 @@ export class InboundReceiptService {
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다 — 잠근 채로 채번하면 카운터 대기가
     //    부모 P/O 잠금을 물고 늘어진다(I-3.md §3-2 · I-2 R-2).
-    const inboundReceiptNo = await this.numbering.next(
-      'INBOUND_RECEIPT',
-      BigInt(input.plantId),
-      input.businessDate,
-    );
+    const inboundReceiptNo = await this.numbering.next('INBOUND_RECEIPT', BigInt(input.plantId), input.businessDate);
+    const iqcRequestNos = await this.allocateIqcRequestNos(input, input.businessDate);
 
     const inboundReceiptId = await this.prisma.$transaction(
-      (tx) => this.createWithin(tx, inboundReceiptNo, input, appUserId),
-      // ⚠ 저장소 첫 트랜잭션 옵션이다 — 부모 P/O 잠금이 커밋까지 가므로 기본 5초를
-      //   넘기면 `P2028` 이 «알려진 오류가 아니라» 500 으로 샌다(R-4).
+      (tx) =>
+        this.createWithin(
+          tx,
+          inboundReceiptNo,
+          input,
+          appUserId,
+          '',
+          input.businessDate,
+          iqcRequestNos,
+          input.occurredAt,
+        ),
       { timeout: 15_000, maxWait: 5_000 },
     );
-
     return this.read(Number(inboundReceiptId));
   }
 
@@ -69,6 +70,9 @@ export class InboundReceiptService {
     input: InboundReceiptHeaderWriteInput,
     appUserId: number,
     at = '',
+    businessDate?: string,
+    iqcRequestNos: readonly (string | undefined)[] = [],
+    occurredAt?: string,
   ): Promise<bigint> {
     const deltas = await this.lockAttribution(tx, input.lines, at);
     const inspection = await inspectionFlags(tx, input.lines);
@@ -107,6 +111,7 @@ export class InboundReceiptService {
           package_count: line.packageCount ?? null,
           supplier_lot_no: line.supplierLotNo ?? null,
           supplier_lot_missing: line.supplierLotMissing,
+          supplier_lot_label_attached: supplierLotLabelAttached(line),
           substitute_lot_reason_code: line.substituteLotReasonCode ?? null,
           manufactured_date: dayOrNull(`${at}lines.${index}.manufacturedDate`, line.manufacturedDate),
           expiry_date: dayOrNull(`${at}lines.${index}.expiryDate`, line.expiryDate),
@@ -123,6 +128,7 @@ export class InboundReceiptService {
       await this.lots.createWithin(
         tx,
         {
+          // 사전부착 LOT의 기존 계약은 원문 번호 자체가 LOT 번호다.
           lotNo: line.supplierLotNo as string,
           itemId: line.itemId,
           lotTypeCode: MATERIAL_LOT_TYPE,
@@ -132,6 +138,14 @@ export class InboundReceiptService {
           expiryDate: line.expiryDate ?? null,
           sourceTypeCode: 'INBOUND_RECEIPT_LINE',
           sourceId: Number(created.inbound_receipt_line_id),
+          incomingIqc:
+            inspection.get(BigInt(line.itemId)) === true
+              ? {
+                  requestNo: requiredIqcValue(iqcRequestNos[index], '의뢰번호'),
+                  effectiveDate: requiredIqcValue(businessDate, '업무일자'),
+                  requestedAt: requiredIqcValue(occurredAt, '요청시각'),
+                }
+              : undefined,
         },
         appUserId,
       );
@@ -140,10 +154,27 @@ export class InboundReceiptService {
     for (const [purchaseOrderLineId, delta] of deltas) {
       await tx.purchase_order_line.update({
         where: { purchase_order_line_id: purchaseOrderLineId },
-        data: { received_qty: { increment: delta.qty }, updated_by: BigInt(appUserId) },
+        data: {
+          received_qty: { increment: delta.qty },
+          updated_by: BigInt(appUserId),
+        },
       });
     }
     return header.inbound_receipt_id;
+  }
+
+  async allocateIqcRequestNos(
+    input: InboundReceiptHeaderWriteInput,
+    businessDate: string,
+  ): Promise<(string | undefined)[]> {
+    const flags = await inspectionFlags(this.prisma, input.lines);
+    return Promise.all(
+      input.lines.map(async (line) =>
+        attachesLot(line) && flags.get(BigInt(line.itemId)) === true
+          ? this.numbering.next('INSPECTION_REQUEST', BigInt(input.plantId), businessDate)
+          : undefined,
+      ),
+    );
   }
 
   /**
@@ -151,10 +182,7 @@ export class InboundReceiptService {
    * 않는다» — 400 이 짚을 필드 경로는 부르는 쪽만 안다. `:split` 은 `createWithin` 둘을
    * 부르기 «전»에 두 part 의 합집합으로 이것을 한 번 부른다.
    */
-  async lockParentsOf(
-    tx: Prisma.TransactionClient,
-    purchaseOrderLineIds: bigint[],
-  ): Promise<Map<bigint, bigint>> {
+  async lockParentsOf(tx: Prisma.TransactionClient, purchaseOrderLineIds: bigint[]): Promise<Map<bigint, bigint>> {
     // ⛔ 잠글 부모는 트랜잭션 «안»에서 라인 → 부모 매핑을 읽어 얻는다. 없는 라인을 FK 에
     //    맡기면 오류가 최상위 칸을 짚는다(R-6 ⓐ · #193 Minor-1).
     const owners = await tx.purchase_order_line.findMany({
@@ -164,9 +192,7 @@ export class InboundReceiptService {
     const parents = new Map(owners.map((row) => [row.purchase_order_line_id, row.purchase_order_id]));
     if (parents.size === 0) return parents;
 
-    const parentIds = [...new Set(parents.values())].sort((left, right) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    );
+    const parentIds = [...new Set(parents.values())].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
     await tx.$queryRaw`
       SELECT purchase_order_id
         FROM logistics.purchase_order
@@ -202,9 +228,7 @@ export class InboundReceiptService {
     const parents = await this.lockParentsOf(tx, [...deltas.keys()]);
     for (const [purchaseOrderLineId, delta] of deltas) {
       if (!parents.has(purchaseOrderLineId)) {
-        throw one(
-          field(`${at}lines.${delta.index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '없는 P/O 라인입니다.'),
-        );
+        throw one(field(`${at}lines.${delta.index}.purchaseOrderLineId`, ERROR_CODE.INVALID, '없는 P/O 라인입니다.'));
       }
     }
 
@@ -237,9 +261,7 @@ export class InboundReceiptService {
     return deltas;
   }
 
-  private async read(
-    inboundReceiptId: number,
-  ): Promise<{ detail: InboundReceiptDetail; versionNo: number }> {
+  private async read(inboundReceiptId: number): Promise<{ detail: InboundReceiptDetail; versionNo: number }> {
     const row = await this.prisma.inbound_receipt.findUniqueOrThrow({
       where: { inbound_receipt_id: inboundReceiptId },
     });
@@ -265,7 +287,9 @@ export async function inspectionFlags(
   lines: InboundReceiptLineWriteInput[],
 ): Promise<Map<bigint, boolean>> {
   const rows = await tx.item.findMany({
-    where: { item_id: { in: [...new Set(lines.map((line) => BigInt(line.itemId)))] } },
+    where: {
+      item_id: { in: [...new Set(lines.map((line) => BigInt(line.itemId)))] },
+    },
     select: { item_id: true, inspection_required: true },
   });
   return new Map(rows.map((row) => [row.item_id, row.inspection_required]));
@@ -273,4 +297,9 @@ export async function inspectionFlags(
 
 function bigintOrNull(value: number | null | undefined): bigint | null {
   return value === null || value === undefined ? null : BigInt(value);
+}
+
+function requiredIqcValue(value: string | undefined, name: string): string {
+  if (value === undefined) throw new Error(`IQC ${name} 선할당이 없습니다.`);
+  return value;
 }

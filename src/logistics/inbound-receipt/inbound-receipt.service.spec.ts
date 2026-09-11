@@ -14,12 +14,12 @@ import { InboundReceiptService } from './inbound-receipt.service';
  */
 
 type Args = Record<string, unknown>;
+const ATTACHED_LOT_NO = '0000000400000000102608060000100001';
 
-const PO_LINES: Record<string, { parent: bigint; ordered: number; tolerance: number; received: number }> =
-  {
-    '101': { parent: 900n, ordered: 100, tolerance: 0, received: 0 },
-    '102': { parent: 800n, ordered: 100, tolerance: 0, received: 0 },
-  };
+const PO_LINES: Record<string, { parent: bigint; ordered: number; tolerance: number; received: number }> = {
+  '101': { parent: 900n, ordered: 100, tolerance: 0, received: 0 },
+  '102': { parent: 800n, ordered: 100, tolerance: 0, received: 0 },
+};
 
 const line = (overrides: Partial<InboundReceiptLineWriteInput> = {}): InboundReceiptLineWriteInput => ({
   purchaseOrderLineId: 101,
@@ -27,7 +27,7 @@ const line = (overrides: Partial<InboundReceiptLineWriteInput> = {}): InboundRec
   receivedQty: 10,
   uomId: 50,
   supplierLotMissing: false,
-  supplierLotNo: 'SL-0001',
+  supplierLotNo: ATTACHED_LOT_NO,
   ...overrides,
 });
 
@@ -61,6 +61,7 @@ function fake(options: Options = {}) {
     lines: [] as Args[],
     lots: [] as Args[],
     holds: [] as Args[],
+    inspectionRequests: [] as Args[],
     increments: [] as { purchaseOrderLineId: bigint; increment: unknown }[],
     transactionOptions: undefined as unknown,
   };
@@ -104,9 +105,14 @@ function fake(options: Options = {}) {
     },
     item: {
       findMany: async () => [
-        { item_id: 40n, inspection_required: options.inspectionRequired ?? false },
+        {
+          item_id: 40n,
+          inspection_required: options.inspectionRequired ?? false,
+        },
       ],
+      findUnique: async () => ({ item_code: '000000040' }),
     },
+    partner: { findUnique: async () => ({ partner_code: '000010' }) },
     inbound_receipt: {
       create: async ({ data }: { data: Args }) => {
         recorded.header = data;
@@ -121,6 +127,7 @@ function fake(options: Options = {}) {
       updateMany: async () => ({ count: 1 }),
     },
     lot: {
+      count: async () => 0,
       create: async ({ data }: { data: Args }) => {
         recorded.lots.push(data);
         return { lot_id: 7000n };
@@ -132,14 +139,25 @@ function fake(options: Options = {}) {
         recorded.holds.push(data);
       },
     },
+    lot_external_identifier: { create: async () => ({}) },
+    inspection_plan_version: {
+      findMany: async () => [{ inspection_plan_version_id: 6000n }],
+    },
+    inspection_request: {
+      create: async ({ data }: { data: Args }) => {
+        recorded.inspectionRequests.push(data);
+        return {};
+      },
+    },
   };
 
   const prisma = {
     code_value: {
       findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
-        where.OR.filter((check) => codes.has(`${check.code_group.group_code} ${check.code}`)).map(
-          (check) => ({ code: check.code, code_group: { group_code: check.code_group.group_code } }),
-        ),
+        where.OR.filter((check) => codes.has(`${check.code_group.group_code} ${check.code}`)).map((check) => ({
+          code: check.code,
+          code_group: { group_code: check.code_group.group_code },
+        })),
     },
     $transaction: async (work: (client: unknown) => Promise<unknown>, txOptions: unknown) => {
       recorded.calls.push('transaction');
@@ -163,6 +181,14 @@ function fake(options: Options = {}) {
           lot_id: null,
           version_no: 1,
         })),
+    },
+    item: {
+      findMany: async () => [
+        {
+          item_id: 40n,
+          inspection_required: options.inspectionRequired ?? false,
+        },
+      ],
     },
   };
 
@@ -242,8 +268,14 @@ describe('InboundReceiptService.create', () => {
     await service.create(
       input({
         lines: [
-          line({ purchaseOrderLineId: 102, supplierLotNo: 'SL-A' }),
-          line({ purchaseOrderLineId: 101, supplierLotNo: 'SL-B' }),
+          line({
+            purchaseOrderLineId: 102,
+            supplierLotNo: '0000000400000000102608060000100002',
+          }),
+          line({
+            purchaseOrderLineId: 101,
+            supplierLotNo: '0000000400000000102608060000100003',
+          }),
         ],
       }),
       99,
@@ -258,7 +290,9 @@ describe('InboundReceiptService.create', () => {
   it('귀속 — 비교는 Decimal 로 한다(Number 로 접지 않는다)', async () => {
     // 0.1 + 0.2 는 Number 로 접으면 0.30000000000000004 라 이 요청이 «통과»한다.
     const { service } = fake({
-      poLines: { '101': { parent: 900n, ordered: 0.1, tolerance: 0.2, received: 0 } },
+      poLines: {
+        '101': { parent: 900n, ordered: 0.1, tolerance: 0.2, received: 0 },
+      },
     });
 
     const error = await thrown(() =>
@@ -279,8 +313,11 @@ describe('InboundReceiptService.create', () => {
         exceptionTypeCode: 'CUSTOMER_SUPPLY',
         exceptionReason: '고객사급 자재',
         lines: [
-          line({ supplierLotNo: 'SL-A' }),
-          line({ purchaseOrderLineId: null, supplierLotNo: 'SL-B' }),
+          line({ supplierLotNo: '0000000400000000102608060000100002' }),
+          line({
+            purchaseOrderLineId: null,
+            supplierLotNo: '0000000400000000102608060000100003',
+          }),
         ],
       }),
       99,
@@ -297,7 +334,11 @@ describe('InboundReceiptService.create', () => {
     await service.create(
       input({
         lines: [
-          line({ supplierLotMissing: true, supplierLotNo: null, substituteLotReasonCode: 'NO_LABEL' }),
+          line({
+            supplierLotMissing: true,
+            supplierLotNo: null,
+            substituteLotReasonCode: 'NO_LABEL',
+          }),
         ],
       }),
       99,
@@ -307,17 +348,65 @@ describe('InboundReceiptService.create', () => {
     expect(recorded.lines[0].supplier_lot_missing).toBe(true);
   });
 
-  it('LOT — 사전부착 라인의 lot_no 는 supplierLotNo 그대로다(numberSourceCode=SUPPLIER 축)', async () => {
+  it('LOT — 사전부착 라인의 lot_no 는 supplierLotNo 그대로다', async () => {
     const { service, recorded } = fake();
 
-    await service.create(input({ lines: [line({ supplierLotNo: 'SL-2026-0001' })] }), 99);
+    await service.create(input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] }), 99);
 
     expect(recorded.lots[0]).toMatchObject({
-      lot_no: 'SL-2026-0001',
+      lot_no: ATTACHED_LOT_NO,
       item_id: 40,
       plant_id: 30,
       source_type_code: 'INBOUND_RECEIPT_LINE',
       source_id: 901,
+    });
+  });
+
+  it('LOT — 외부번호가 있지만 라벨 미부착이면 원문을 보존하고 lotId 없이 저장한다', async () => {
+    const { service, recorded } = fake();
+
+    const result = await service.create(
+      input({
+        lines: [
+          line({
+            supplierLotNo: '납품서-LOT/A-01',
+            supplierLotLabelAttached: false,
+          }),
+        ],
+      }),
+      99,
+    );
+
+    expect(recorded.lines[0]).toMatchObject({
+      supplier_lot_no: '납품서-LOT/A-01',
+      supplier_lot_missing: false,
+      supplier_lot_label_attached: false,
+    });
+    expect(recorded.lots).toEqual([]);
+    expect(result.detail.lines[0].lotId).toBeNull();
+  });
+
+  it('LOT — 부착 여부를 생략한 기존 요청은 supplierLotMissing=false이면 true로 저장한다', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(input(), 99);
+
+    expect(recorded.lines[0].supplier_lot_label_attached).toBe(true);
+    expect(recorded.lots).toHaveLength(1);
+  });
+
+  it('IQC — 사전부착 검사 대상 LOT은 유효 계획으로 의뢰를 같은 트랜잭션에서 한 건 만든다', async () => {
+    const { service, recorded } = fake({ inspectionRequired: true });
+
+    await service.create(input(), 99);
+
+    expect(recorded.inspectionRequests).toHaveLength(1);
+    expect(recorded.inspectionRequests[0]).toMatchObject({
+      inspection_type_code: 'IQC',
+      inspection_plan_version_id: 6000n,
+      lot_id: 7000n,
+      target_qty: 10,
+      status_code: 'REQUESTED',
     });
   });
 
@@ -333,7 +422,9 @@ describe('InboundReceiptService.create', () => {
     const { service, recorded } = fake();
 
     await service.create(
-      input({ lines: [line({ manufacturedDate: '2026-08-01', expiryDate: '2027-08-01' })] }),
+      input({
+        lines: [line({ manufacturedDate: '2026-08-01', expiryDate: '2027-08-01' })],
+      }),
       99,
     );
 
@@ -356,9 +447,7 @@ describe('InboundReceiptService.create', () => {
   it('귀속 — 요청의 purchaseOrderLineId 가 재조회에 없으면 400 INVALID 다(FK 에 맡기지 않는다)', async () => {
     const { service, recorded } = fake();
 
-    const error = await thrown(() =>
-      service.create(input({ lines: [line({ purchaseOrderLineId: 777 })] }), 99),
-    );
+    const error = await thrown(() => service.create(input({ lines: [line({ purchaseOrderLineId: 777 })] }), 99));
 
     expect((error as ContractException).errors[0]).toMatchObject({
       field: 'lines.0.purchaseOrderLineId',
@@ -372,7 +461,10 @@ describe('InboundReceiptService.create', () => {
 
     await service.create(input(), 99);
 
-    expect(recorded.transactionOptions).toEqual({ timeout: 15_000, maxWait: 5_000 });
+    expect(recorded.transactionOptions).toEqual({
+      timeout: 15_000,
+      maxWait: 5_000,
+    });
   });
 });
 
