@@ -33,6 +33,7 @@ const DEFAULT_PREFIX: Record<string, string> = {
    *   오퍼레이션이 계약에 0건이고 `IR` 은 이미 `INBOUND_RECEIPT` 가 쓴다.
    */
   INSPECTION_RESULT: 'IRS',
+  INSPECTION_REQUEST: 'IRQ',
   /** 규칙 미등재 — `ST-{YYYYMMDD}-{SEQ4}`. 계약 example `ST-2026-000260` 은 접두어만 준다(I-13 §4-3). */
   STOCK_TRANSFER: 'ST',
   /** 규칙 미등재 — `IA-{YYYYMMDD}-{SEQ4}` · 계약 example `IA-2026-000031` 은 형식만 준다.
@@ -181,9 +182,7 @@ export class NumberingService {
     const rule = (specific.length > 0 ? specific : found)[0];
     if (rule) {
       if (!rule.is_active) {
-        throw new Error(
-          `채번 규칙이 비활성이다: ${documentTypeCode} — 되살리거나 지워야 한다 (I-2.md R-3)`,
-        );
+        throw new Error(`채번 규칙이 비활성이다: ${documentTypeCode} — 되살리거나 지워야 한다 (I-2.md R-3)`);
       }
       return rule;
     }

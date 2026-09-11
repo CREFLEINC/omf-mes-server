@@ -19,6 +19,7 @@ const lineRow = (overrides: Args = {}): Args => ({
   package_count: null,
   supplier_lot_no: null,
   supplier_lot_missing: true,
+  supplier_lot_label_attached: false,
   substitute_lot_reason_code: null,
   manufactured_date: null,
   expiry_date: null,
@@ -73,11 +74,11 @@ describe('InboundReceiptQueryService', () => {
 
     it('목록 — supplierLotMissing 은 그런 라인을 하나 이상 가진 건만 준다(헤더 목록인데 판정은 라인 단위)', async () => {
       const { prisma, calls } = listStub();
-      await new InboundReceiptQueryService(prisma).list({ supplierLotMissing: true });
+      await new InboundReceiptQueryService(prisma).list({
+        supplierLotMissing: true,
+      });
 
-      expect(calls.where?.AND).toEqual([
-        { inbound_receipt_line: { some: { supplier_lot_missing: true } } },
-      ]);
+      expect(calls.where?.AND).toEqual([{ inbound_receipt_line: { some: { supplier_lot_missing: true } } }]);
     });
 
     it('목록 — labelIssued 는 라인의 LOT 에 MATERIAL_LOT_LABEL 발행 기록이 있는가로 가른다', async () => {
@@ -87,7 +88,28 @@ describe('InboundReceiptQueryService', () => {
       expect(calls.where?.AND).toEqual([
         {
           inbound_receipt_line: {
-            some: { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+            some: {
+              lot: {
+                document_issue_log: {
+                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
+                },
+              },
+            },
+          },
+        },
+      ]);
+    });
+
+    it('목록 — supplierLotLabelAttached=false 는 미부착 라인을 가진 입하만 고른다', async () => {
+      const { prisma, calls } = listStub();
+      await new InboundReceiptQueryService(prisma).list({
+        supplierLotLabelAttached: false,
+      });
+
+      expect(calls.where?.AND).toEqual([
+        {
+          inbound_receipt_line: {
+            some: { supplier_lot_label_attached: false },
           },
         },
       ]);
@@ -101,7 +123,13 @@ describe('InboundReceiptQueryService', () => {
       expect(calls.where?.AND).toEqual([
         {
           inbound_receipt_line: {
-            none: { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+            none: {
+              lot: {
+                document_issue_log: {
+                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
+                },
+              },
+            },
           },
         },
       ]);
@@ -109,13 +137,22 @@ describe('InboundReceiptQueryService', () => {
 
     it('목록 — supplierLotMissing 과 labelIssued 를 같이 주면 둘 다 AND 로 건다(스프레드로 덮지 않는다)', async () => {
       const { prisma, calls } = listStub();
-      await new InboundReceiptQueryService(prisma).list({ supplierLotMissing: true, labelIssued: false });
+      await new InboundReceiptQueryService(prisma).list({
+        supplierLotMissing: true,
+        labelIssued: false,
+      });
 
       expect(calls.where?.AND).toEqual([
         { inbound_receipt_line: { some: { supplier_lot_missing: true } } },
         {
           inbound_receipt_line: {
-            none: { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } },
+            none: {
+              lot: {
+                document_issue_log: {
+                  some: { document_type_code: 'MATERIAL_LOT_LABEL' },
+                },
+              },
+            },
           },
         },
       ]);
@@ -133,7 +170,9 @@ describe('InboundReceiptQueryService', () => {
 
     it('목록 — statusCode 는 값 목록 검사를 하지 않는다', async () => {
       const { prisma, calls } = listStub();
-      await new InboundReceiptQueryService(prisma).list({ statusCode: 'ANY_VALUE' });
+      await new InboundReceiptQueryService(prisma).list({
+        statusCode: 'ANY_VALUE',
+      });
 
       expect(calls.where?.status_code).toBe('ANY_VALUE');
     });
@@ -142,12 +181,32 @@ describe('InboundReceiptQueryService', () => {
   describe('lines', () => {
     it('라인 목록 — supplierLotMissing·labelIssued 두 필터가 AND 로 합쳐진다(스프레드로 덮지 않는다)', async () => {
       const { prisma, calls } = linesStub();
-      await new InboundReceiptQueryService(prisma).lines(1, { supplierLotMissing: true, labelIssued: false });
+      await new InboundReceiptQueryService(prisma).lines(1, {
+        supplierLotMissing: true,
+        labelIssued: false,
+      });
 
       expect(calls.where?.AND).toEqual([
         { supplier_lot_missing: true },
-        { NOT: { lot: { document_issue_log: { some: { document_type_code: 'MATERIAL_LOT_LABEL' } } } } },
+        {
+          NOT: {
+            lot: {
+              document_issue_log: {
+                some: { document_type_code: 'MATERIAL_LOT_LABEL' },
+              },
+            },
+          },
+        },
       ]);
+    });
+
+    it('라인 목록 — supplierLotLabelAttached=false 를 DB 컬럼에 그대로 건다', async () => {
+      const { prisma, calls } = linesStub();
+      await new InboundReceiptQueryService(prisma).lines(1, {
+        supplierLotLabelAttached: false,
+      });
+
+      expect(calls.where?.AND).toEqual([{ supplier_lot_label_attached: false }]);
     });
   });
 
@@ -157,6 +216,7 @@ describe('InboundReceiptQueryService', () => {
 
       expect(view.receivedQty).toBe(10.5);
       expect(typeof view.receivedQty).toBe('number');
+      expect(view.supplierLotLabelAttached).toBe(false);
     });
 
     it('매퍼 — 비어 있는 lotId·purchaseOrderLineId 는 널이다(키를 생략하지 않는다)', () => {

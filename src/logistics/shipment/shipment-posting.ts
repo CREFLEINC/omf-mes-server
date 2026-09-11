@@ -188,9 +188,11 @@ export async function postShipment(
       header: {
         goodsIssueId: issue.goods_issue_id,
         goodsIssueNo: write.goodsIssueNo,
+        issueTypeCode: ISSUE_TYPE,
         // ⭐ 이 값이 «피킹 소진의 축»이다 — `CONSUMES_PICKED` 에 있어야 `picked_qty` 가 내려간다.
         //   긴급 직행은 피킹이 0 이라 축 밖의 값을 넘긴다(`EXPEDITED_CONSUME_AXIS`).
         sourceDocumentTypeCode: expedited ? EXPEDITED_CONSUME_AXIS : SOURCE_DOCUMENT_TYPE,
+        sourceDocumentId: shipmentId,
         sourceWarehouseId: BigInt(input.warehouseId),
         destinationTypeCode: null,
         destinationId: null,

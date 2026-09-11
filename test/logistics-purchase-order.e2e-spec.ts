@@ -635,6 +635,7 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
         item_id: BigInt(itemId),
         received_qty: 1,
         uom_id: BigInt(uomId),
+        supplier_lot_label_attached: true,
         inspection_required: false,
         status_code: 'RECEIVED',
       },

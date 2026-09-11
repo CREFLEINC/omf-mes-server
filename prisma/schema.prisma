@@ -934,6 +934,7 @@ model inbound_receipt_line {
   package_count              Int?
   supplier_lot_no            String?              @db.VarChar(100)
   supplier_lot_missing       Boolean              @default(false)
+  supplier_lot_label_attached Boolean
   substitute_lot_reason_code String?              @db.VarChar(50)
   manufactured_date          DateTime?            @db.Date
   expiry_date                DateTime?            @db.Date

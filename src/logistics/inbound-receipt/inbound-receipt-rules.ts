@@ -21,6 +21,7 @@ export interface InboundReceiptLineWriteInput {
   packageCount?: number | null;
   supplierLotNo?: string | null;
   supplierLotMissing: boolean;
+  supplierLotLabelAttached?: boolean;
   substituteLotReasonCode?: string | null;
   manufacturedDate?: string | null;
   expiryDate?: string | null;
@@ -57,7 +58,12 @@ export function dayOrNull(path: string, value: string | null | undefined): Date 
 
 /** 사전부착 라인 — 이 라인만 등록과 같은 트랜잭션에서 LOT 을 얻는다(I-3.md §5-1). */
 export function attachesLot(line: InboundReceiptLineWriteInput): boolean {
-  return !line.supplierLotMissing;
+  return supplierLotLabelAttached(line);
+}
+
+/** 예전 클라이언트는 부착 여부를 보내지 않았다. 기존 의미를 공급사 LOT 유무로 복원한다. */
+export function supplierLotLabelAttached(line: InboundReceiptLineWriteInput): boolean {
+  return line.supplierLotLabelAttached ?? !line.supplierLotMissing;
 }
 
 /** 계약이 「최소 1행」이라 적었으나 `minItems` 를 걸지 않아 가드가 빈 배열을 통과시킨다.
@@ -104,18 +110,11 @@ export function collectHeaderErrors(
 }
 
 /** 저장하지 않는 두 칸의 형식 검사 — 분리는 이 둘을 «바깥에서 한 번만» 받는다(§2-5). */
-export function collectMomentErrors(
-  businessDate: string,
-  occurredAt: string,
-  errors: ErrorItem[],
-): void {
+export function collectMomentErrors(businessDate: string, occurredAt: string, errors: ErrorItem[]): void {
   // ⛔ 정규식만으로는 `2026-13-39` 가 통과한다 — 저장은 안 되지만 채번의 기간 축으로 들어가
   //    `IR-20261339-0001` 이 `inbound_receipt_no` 에 «영구히» 남는다. 달력에 있는 날인지 함께 본다
   //    (`lot-rules.ts:assertDay` 와 같은 축 · import 는 안 한다 · §6-4).
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(businessDate) ||
-    Number.isNaN(Date.parse(`${businessDate}T00:00:00Z`))
-  ) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || Number.isNaN(Date.parse(`${businessDate}T00:00:00Z`))) {
     errors.push(field('businessDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 형식의 실재하는 날짜여야 합니다.'));
   }
   if (Number.isNaN(Date.parse(occurredAt))) {
@@ -127,10 +126,7 @@ export function collectMomentErrors(
  * 트랜잭션을 열기 «전»의 검증 — 잠근 뒤 400 을 내면 부모 P/O 를 헛되이 붙잡는다.
  * ⛔ `src/trace/lot/lot-rules.ts` 의 날짜 도우미를 가로질러 부르지 않는다(§6-4).
  */
-export async function assertWritable(
-  prisma: PrismaService,
-  input: InboundReceiptCreateInput,
-): Promise<void> {
+export async function assertWritable(prisma: PrismaService, input: InboundReceiptCreateInput): Promise<void> {
   if (input.lines.length === 0) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [lineRequired('lines')]);
   }
@@ -161,20 +157,29 @@ function assertLines(
     const at = `${prefix}lines.${index}`;
     // 「`supplierLotMissing` 이 참일 때 필수」(계약).
     if (line.supplierLotMissing && !line.substituteLotReasonCode) {
+      errors.push(field(`${at}.substituteLotReasonCode`, ERROR_CODE.PAIR, '대체 LOT 사유가 필요합니다.'));
+    }
+    const attached = supplierLotLabelAttached(line);
+    if (line.supplierLotMissing && attached) {
       errors.push(
-        field(`${at}.substituteLotReasonCode`, ERROR_CODE.PAIR, '대체 LOT 사유가 필요합니다.'),
+        field(`${at}.supplierLotLabelAttached`, ERROR_CODE.PAIR, '공급사 LOT 번호가 없으면 라벨이 부착될 수 없습니다.'),
       );
     }
-    // 설계 미정 — 문의 028: 계약은 이 조합을 막지 않는다. lot.lot_no NOT NULL 이라 서버가 거절한다.
-    // (계약 「부착 라인의 LOT 이 없으면 이후 흐름이 통째로 막힌다」 · §2 2단계 기준 2 「거부하는 쪽」).
-    if (attachesLot(line) && !line.supplierLotNo) {
+    if (!line.supplierLotMissing && !line.supplierLotNo?.trim()) {
       errors.push(
-        field(`${at}.supplierLotNo`, ERROR_CODE.PAIR, '공급사 LOT 번호가 없으면 supplierLotMissing 이 참이어야 합니다.'),
+        field(
+          `${at}.supplierLotNo`,
+          ERROR_CODE.PAIR,
+          '공급사 LOT 번호가 없으면 supplierLotMissing 이 참이어야 합니다.',
+        ),
       );
     }
     // ⛔ 안 가르면 `uq_lot(plant_id, lot_no)` P2002 로 트랜잭션이 통째로 죽는다(R-7 ③).
     //    키는 그 유일 제약과 «같은 쌍»이다 — 공장이 다르면 같은 번호를 허용한다(물리가 허용한다).
-    if (attachesLot(line) && line.supplierLotNo) {
+    if (attached && line.supplierLotNo) {
+      if (!/^\d{34}$/.test(line.supplierLotNo)) {
+        errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '사전부착 LOT 번호는 숫자 34자리여야 합니다.'));
+      }
       const key = `${plantId}\u0000${line.supplierLotNo}`;
       if (lotNos.has(key)) {
         errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '한 요청 안에서 겹칩니다.'));

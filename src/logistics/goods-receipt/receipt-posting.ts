@@ -156,6 +156,14 @@ export async function postReceipt(
     throw new Error(`원장 라인 수가 입고 라인과 다르다: ${ledger.length} ≠ ${lines.length}`);
   }
 
+  const assignee = putawayNos === null
+    ? null
+    : await tx.worker.findFirst({
+        where: { app_user_id: BigInt(appUserId), is_active: true },
+        orderBy: { worker_id: 'asc' },
+        select: { worker_id: true },
+      });
+
   for (const [index, goodsReceiptLineId] of lines.entries()) {
     await tx.goods_receipt_line.update({
       where: { goods_receipt_line_id: goodsReceiptLineId },
@@ -169,6 +177,7 @@ export async function postReceipt(
       goodsReceiptLineId,
       putawayNos[index],
       appUserId,
+      assignee?.worker_id ?? null,
     );
   }
 
@@ -190,6 +199,7 @@ async function createPutawayTask(
   goodsReceiptLineId: bigint,
   putawayTaskNo: string,
   appUserId: number,
+  assignedWorkerId: bigint | null,
 ): Promise<void> {
   const rule = await tx.putaway_rule.findFirst({
     where: {
@@ -215,6 +225,7 @@ async function createPutawayTask(
       from_location_id: line.destinationLocationId,
       recommended_location_id: rule?.location_id ?? null,
       applied_putaway_rule_id: rule?.putaway_rule_id ?? null,
+      assigned_worker_id: assignedWorkerId,
       status_code: PUTAWAY_PENDING,
       created_by: BigInt(appUserId),
     },

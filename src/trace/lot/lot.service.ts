@@ -9,10 +9,11 @@ import {
   ExternalIdentifierInput,
   LotRegisterInput,
   LotRegistryService,
-  mesLotNo,
+  nextInboundMaterialLotNo,
   optionalDay,
   optionalInstant,
 } from '../../core/lot';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   assertDay,
@@ -47,11 +48,17 @@ import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from '.
 /** 계약이 이 경로로 오는 원천을 하나로 닫았다. */
 const SOURCE_TYPES = ['INBOUND_RECEIPT_LINE'];
 const MES_RETRY = 3;
+const MATERIAL_LOT_TYPE = 'MATERIAL';
+const SUPPLIER_LOT_IDENTIFIER = 'SUPPLIER_LOT';
+
+type InboundMesSource = Prisma.inbound_receipt_lineGetPayload<{
+  include: { inbound_receipt: true };
+}>;
 
 export type { ExternalIdentifierInput };
 
 /** 코어가 받는 칸(`LotRegisterInput`)에 이 경로만 쓰는 넷을 더한 것이다. */
-export interface LotCreate extends Omit<LotRegisterInput, 'lotNo'> {
+export interface LotCreate extends Omit<LotRegisterInput, 'lotNo' | 'incomingIqc'> {
   numberSourceCode?: string;
   /** ⚠ 코어와 달리 «없을 수» 있다 — MES 채번은 서버가 뒤에 매긴다. */
   lotNo?: string;
@@ -90,10 +97,14 @@ export class LotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly registry: LotRegistryService,
+    private readonly numbering: NumberingService,
   ) {}
 
   async list(query: LotQuery): Promise<PagedResponse<LotView>> {
-    const page = pageRequest({ page: loose(query.page), size: loose(query.size) });
+    const page = pageRequest({
+      page: loose(query.page),
+      size: loose(query.size),
+    });
     const where: Prisma.lotWhereInput = {
       ...optional('item_id', assertId('itemId', query.itemId)),
       ...optional('plant_id', assertId('plantId', query.plantId)),
@@ -113,7 +124,12 @@ export class LotService {
               { lot_no: { contains: query.q, mode: 'insensitive' } },
               {
                 lot_external_identifier: {
-                  some: { external_identifier: { contains: query.q, mode: 'insensitive' } },
+                  some: {
+                    external_identifier: {
+                      contains: query.q,
+                      mode: 'insensitive',
+                    },
+                  },
                 },
               },
             ],
@@ -143,7 +159,10 @@ export class LotService {
     });
     return {
       detail: {
-        lot: { ...lotView(row), ...(withProgress ? { progress: await this.progress(row) } : {}) },
+        lot: {
+          ...lotView(row),
+          ...(withProgress ? { progress: await this.progress(row) } : {}),
+        },
         externalIdentifiers: identifiers.map(identifierView),
         // 「해제되지 않은 보류를 함께 내린다」(계약) — 푼 것은 이력이지 지금 상태가 아니다.
         holds: row.lot_hold.filter((h) => h.released_at === null).map((h) => holdView(h, row)),
@@ -158,12 +177,20 @@ export class LotService {
    */
   async create(input: LotCreate, appUserId: number): Promise<LotDetail> {
     const source = assertNumberSource(input);
-    await this.assertWritable(input);
+    const inboundSource = source === 'MES' ? await this.inboundMesSource(input.sourceId) : undefined;
+    const effectiveInput = inboundSource === undefined ? input : this.fromInboundSource(input, inboundSource);
+    await this.assertWritable(effectiveInput);
+    const iqcRequestNo =
+      inboundSource?.inspection_required === true
+        ? await this.numbering.next('INSPECTION_REQUEST', inboundSource.inbound_receipt.plant_id, input.businessDate)
+        : undefined;
 
     for (let attempt = 0; ; attempt += 1) {
-      const lotNo = source === 'SUPPLIER' ? (input.lotNo as string) : await this.nextMesLotNo(input);
       try {
-        const row = await this.insert(input, lotNo, appUserId);
+        const row =
+          source === 'SUPPLIER'
+            ? await this.insert(effectiveInput, input.lotNo as string, appUserId)
+            : await this.insertInboundMes(effectiveInput, iqcRequestNo, appUserId);
         return (await this.get(Number(row.lot_id))).detail;
       } catch (error) {
         if (!isDuplicateLotNo(error)) throw error;
@@ -181,11 +208,7 @@ export class LotService {
    * ⛔ **이미 재고가 움직인 LOT 은 수량을 바꿀 수 없다**(계약). 원장에 그 LOT 의 라인이
    * 있으면 400 이다 — 잔액과 초기 수량이 어긋나면 어느 쪽이 참인지 알 수 없어진다.
    */
-  async update(
-    lotId: number,
-    version: number,
-    input: LotUpdate,
-  ): Promise<{ detail: LotDetail; versionNo: number }> {
+  async update(lotId: number, version: number, input: LotUpdate): Promise<{ detail: LotDetail; versionNo: number }> {
     const current = await this.row(lotId);
     if (Number(current.initial_qty) !== input.initialQty && (await this.moved(lotId))) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
@@ -235,22 +258,94 @@ export class LotService {
   }
 
   private async insert(input: LotCreate, lotNo: string, appUserId: number): Promise<LotRow> {
-    return this.prisma.$transaction((tx) =>
-      this.registry.createWithin(tx, { ...input, lotNo }, appUserId),
-    );
+    return this.prisma.$transaction((tx) => this.registry.createWithin(tx, { ...input, lotNo }, appUserId));
   }
 
-  /**
-   * ⚠ 순번은 «연속을 보장하지 않는다» — `count` 로 뽑으므로 같은 순간 두 건이면 같은
-   * 값을 얻는다. 뒤의 난수 13자리가 실제 충돌을 막고, 충돌해도 재시도가 받는다. 사람이
-   * 「몇 번째쯤인가」를 읽는 용도이지 빠짐없는 일련번호가 아니다.
-   */
-  private async nextMesLotNo(input: LotCreate): Promise<string> {
-    const day = input.businessDate.replace(/-/g, '');
-    const used = await this.prisma.lot.count({
-      where: { plant_id: input.plantId, lot_no: { startsWith: `M${pad(input.plantId)}${day}` } },
+  private async insertInboundMes(
+    input: LotCreate,
+    iqcRequestNo: string | undefined,
+    appUserId: number,
+  ): Promise<LotRow> {
+    return this.prisma.$transaction(async (tx) => {
+      const source = await this.inboundMesSource(input.sourceId, tx);
+      const current = this.fromInboundSource(input, source);
+      const lotNo = await nextInboundMaterialLotNo(tx, {
+        plantId: current.plantId,
+        itemId: current.itemId,
+        receivedQty: current.initialQty,
+        supplierId: Number(source.inbound_receipt.supplier_id),
+        businessDate: current.businessDate,
+      });
+      return this.registry.createWithin(
+        tx,
+        {
+          ...current,
+          lotNo,
+          incomingIqc: source.inspection_required
+            ? {
+                requestNo: requiredIqcRequestNo(iqcRequestNo),
+                effectiveDate: current.businessDate,
+                requestedAt: current.occurredAt,
+              }
+            : undefined,
+        },
+        appUserId,
+      );
     });
-    return mesLotNo(input.plantId, input.businessDate, used + 1);
+  }
+
+  private async inboundMesSource(
+    sourceId: number,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<InboundMesSource> {
+    const row = await tx.inbound_receipt_line.findUnique({
+      where: { inbound_receipt_line_id: sourceId },
+      include: { inbound_receipt: true },
+    });
+    if (!row) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('sourceId', ERROR_CODE.INVALID, '없는 입하 라인입니다.'),
+      ]);
+    }
+    if (row.supplier_lot_label_attached) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('sourceId', ERROR_CODE.STATE_LOCKED, '공급사 LOT 라벨이 이미 부착된 라인입니다.'),
+      ]);
+    }
+    return row;
+  }
+
+  private fromInboundSource(input: LotCreate, source: InboundMesSource): LotCreate {
+    const errors: ErrorItem[] = [];
+    if (input.itemId !== Number(source.item_id)) {
+      errors.push(field('itemId', ERROR_CODE.INVALID, '입하 라인의 품목과 다릅니다.'));
+    }
+    if (!source.received_qty.equals(input.initialQty)) {
+      errors.push(field('initialQty', ERROR_CODE.INVALID, '입하 라인의 수량과 다릅니다.'));
+    }
+    if (input.uomId !== Number(source.uom_id)) {
+      errors.push(field('uomId', ERROR_CODE.INVALID, '입하 라인의 단위와 다릅니다.'));
+    }
+    if (input.plantId !== Number(source.inbound_receipt.plant_id)) {
+      errors.push(field('plantId', ERROR_CODE.INVALID, '입하 라인의 공장과 다릅니다.'));
+    }
+    if (input.lotTypeCode !== MATERIAL_LOT_TYPE) {
+      errors.push(field('lotTypeCode', ERROR_CODE.INVALID, '입하 라인은 자재 LOT 으로만 등록할 수 있습니다.'));
+    }
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+
+    const identifiers = (input.externalIdentifiers ?? []).filter(
+      (identifier) => identifier.identifierTypeCode !== SUPPLIER_LOT_IDENTIFIER,
+    );
+    const supplierLotNo = source.supplier_lot_no?.trim();
+    if (supplierLotNo) {
+      identifiers.push({
+        identifierTypeCode: SUPPLIER_LOT_IDENTIFIER,
+        externalIdentifier: supplierLotNo,
+        partnerId: Number(source.inbound_receipt.supplier_id),
+      });
+    }
+    return { ...input, externalIdentifiers: identifiers };
   }
 
   private async assertWritable(input: LotCreate): Promise<void> {
@@ -283,13 +378,16 @@ export class LotService {
     const row = await this.prisma.lot.findUnique({
       where: { lot_id: lotId },
       // ⭐ R-5 — `GET .../holds` 와 같은 정렬(0단계 선례 `lot-hold-query.service.ts:45`).
-      include: { lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] } },
+      include: {
+        lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] },
+      },
     });
     if (!row) throw new NotFoundException('없는 LOT 입니다.');
     return row;
   }
 }
 
-function pad(plantId: number): string {
-  return String(plantId).padStart(6, '0').slice(-6);
+function requiredIqcRequestNo(value: string | undefined): string {
+  if (value === undefined) throw new Error('IQC 의뢰번호 선할당이 없습니다.');
+  return value;
 }

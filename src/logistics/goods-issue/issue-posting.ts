@@ -31,6 +31,10 @@ import type { ConsumeMove } from '../../core/inventory-posting';
 /** ⭐ 원장 판별자 4값 중 하나다 — 전표의 `source_document_type_code`(피킹·입고·처분)가 아니다. */
 const SOURCE_DOCUMENT_TYPE = 'GOODS_ISSUE';
 const POSTED = 'POSTED';
+const SUPPLIER_RETURN = 'SUPPLIER_RETURN';
+const GOODS_RECEIPT = 'GOODS_RECEIPT';
+const PUTAWAY_PENDING = 'PENDING';
+const PUTAWAY_CANCELLED = 'CANCELLED';
 /** 도착지가 위치일 때만 원장 라인에 `to` 가 실린다 — 나머지는 나가서 없어진다. */
 const DESTINATION_LOCATION = 'LOCATION';
 
@@ -38,8 +42,10 @@ const DESTINATION_LOCATION = 'LOCATION';
 export interface GoodsIssueHeaderWriteInput {
   goodsIssueId: bigint;
   goodsIssueNo: string;
+  issueTypeCode: string;
   /** ⭐ 피킹 소진의 **축**이다 — `'PICKING_ORDER'` 면 라인 «전건»이 소진 대상이다(I-8.md R-4). */
   sourceDocumentTypeCode: string;
+  sourceDocumentId: bigint;
   sourceWarehouseId: bigint;
   destinationTypeCode: string | null;
   destinationId: bigint | null;
@@ -87,6 +93,7 @@ interface BalanceRow extends BalanceKey {
   inventory_status_code: string;
   ownership_type_code: string;
   owner_partner_id: bigint | null;
+  on_hand_qty: Prisma.Decimal;
   available_qty: Prisma.Decimal | null;
 }
 
@@ -244,6 +251,47 @@ export async function postIssue(
       data: { inventory_transaction_line_id: ledger[index].inventory_transaction_line_id },
     });
   }
+
+  await cancelFullyReturnedPutawayTasks(tx, input, demanded, picked, appUserId);
+}
+
+/**
+ * 공급사 전량 반품으로 출발 차원의 재고가 0이 되면 아직 시작하지 않은 적치 지시는 더 이상
+ * 실행할 물건이 없다. 같은 원천 입고·LOT·위치의 PENDING 지시만 닫는다. 부분 반품과 이미
+ * 완료한 지시는 건드리지 않는다.
+ */
+async function cancelFullyReturnedPutawayTasks(
+  tx: Tx,
+  input: PostIssueInput,
+  demanded: Map<string, { qty: Prisma.Decimal; index: number }>,
+  picked: Map<string, BalanceRow>,
+  appUserId: number,
+): Promise<void> {
+  const { header } = input;
+  if (header.issueTypeCode !== SUPPLIER_RETURN || header.sourceDocumentTypeCode !== GOODS_RECEIPT) {
+    return;
+  }
+
+  const emptied = [...demanded.entries()].flatMap(([key, { qty, index }]) => {
+    const balance = picked.get(key) as BalanceRow;
+    if (!balance.on_hand_qty.equals(qty)) return [];
+    const line = input.lines[index];
+    return [{ lot_id: line.lotId, item_id: line.itemId, from_location_id: line.sourceLocationId }];
+  });
+  if (emptied.length === 0) return;
+
+  await tx.putaway_task.updateMany({
+    where: {
+      status_code: PUTAWAY_PENDING,
+      goods_receipt_line: { goods_receipt_id: header.sourceDocumentId },
+      OR: emptied,
+    },
+    data: {
+      status_code: PUTAWAY_CANCELLED,
+      updated_by: BigInt(appUserId),
+      version_no: { increment: 1 },
+    },
+  });
 }
 
 const ZERO = new Prisma.Decimal(0);
@@ -365,6 +413,7 @@ async function lockBalances(tx: Tx, keys: BalanceKey[]): Promise<BalanceRow[]> {
            item_id              AS "itemId",
            COALESCE(lot_id, 0)  AS "lotKey",
            quality_status_code, inventory_status_code, ownership_type_code, owner_partner_id,
+           on_hand_qty,
            available_qty
       FROM inventory.inventory_balance
      WHERE (legal_entity_id, business_unit_id, plant_id, warehouse_id, location_id, item_id,

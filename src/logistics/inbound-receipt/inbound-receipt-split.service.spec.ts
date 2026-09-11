@@ -13,6 +13,7 @@ import { InboundReceiptService } from './inbound-receipt.service';
  */
 
 type Args = Record<string, unknown>;
+const ATTACHED_LOT_NO = '0000000400000000032608060000100001';
 
 /** 102 의 부모가 101 의 부모보다 «작다» — part 마다 잠그면 900 → 800 순이 되는 배치다. */
 const PO_LINES: Record<string, { parent: bigint; ordered: number; received: number }> = {
@@ -42,7 +43,13 @@ const excessPart = (overrides: Args = {}) =>
   part({
     plantId: 31,
     lines: [
-      { itemId: 40, receivedQty: 3, uomId: 50, supplierLotMissing: true, substituteLotReasonCode: 'NO_LABEL' },
+      {
+        itemId: 40,
+        receivedQty: 3,
+        uomId: 50,
+        supplierLotMissing: true,
+        substituteLotReasonCode: 'NO_LABEL',
+      },
     ],
     ...overrides,
   });
@@ -58,7 +65,15 @@ const poLine = (purchaseOrderLineId: number | null) => ({
 
 /** 사전부착 라인 한 벌 — 두 part 에 같은 번호를 실어 `uq_lot` 축을 본다. */
 const LOT_LINES = {
-  lines: [{ itemId: 40, receivedQty: 3, uomId: 50, supplierLotMissing: false, supplierLotNo: 'SL-같음' }],
+  lines: [
+    {
+      itemId: 40,
+      receivedQty: 3,
+      uomId: 50,
+      supplierLotMissing: false,
+      supplierLotNo: ATTACHED_LOT_NO,
+    },
+  ],
 };
 
 const input = (overrides: Args = {}): InboundReceiptSplitInput =>
@@ -106,7 +121,9 @@ function fake(codeValues?: string[]) {
             version_no: 1,
           }))
         : [],
-    item: { findMany: async () => [{ item_id: 40n, inspection_required: false }] },
+    item: {
+      findMany: async () => [{ item_id: 40n, inspection_required: false }],
+    },
     inbound_receipt: {
       create: async ({ data }: { data: Args }) => {
         recorded.headers.push(data);
@@ -128,11 +145,15 @@ function fake(codeValues?: string[]) {
   };
 
   const prisma = {
+    item: {
+      findMany: async () => [{ item_id: 40n, inspection_required: false }],
+    },
     code_value: {
       findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
-        where.OR.filter((check) => codes.has(`${check.code_group.group_code} ${check.code}`)).map(
-          (check) => ({ code: check.code, code_group: { group_code: check.code_group.group_code } }),
-        ),
+        where.OR.filter((check) => codes.has(`${check.code_group.group_code} ${check.code}`)).map((check) => ({
+          code: check.code,
+          code_group: { group_code: check.code_group.group_code },
+        })),
     },
     $transaction: async (work: (client: unknown) => Promise<unknown>) => {
       recorded.calls.push('transaction');
@@ -163,11 +184,7 @@ function fake(codeValues?: string[]) {
     numbering,
     new LotRegistryService(new LotHoldService()),
   );
-  const service = new InboundReceiptSplitService(
-    prisma as unknown as PrismaService,
-    numbering,
-    receipts,
-  );
+  const service = new InboundReceiptSplitService(prisma as unknown as PrismaService, numbering, receipts);
   return { service, receipts, recorded };
 }
 
@@ -277,24 +294,30 @@ describe('InboundReceiptSplitService.create', () => {
 
   it('분리 — 두 part 에 같은 공장의 같은 supplierLotNo 가 실리면 excess.lines.{i}.supplierLotNo 를 짚는 400 INVALID 다', async () => {
     const error = await thrown(() =>
-      fake().service.create(input({ normal: part(LOT_LINES), excess: excessPart({ plantId: 30, ...LOT_LINES }) }), 99),
+      fake().service.create(
+        input({
+          normal: part(LOT_LINES),
+          excess: excessPart({ plantId: 30, ...LOT_LINES }),
+        }),
+        99,
+      ),
     );
 
     expect((error as ContractException).errors).toEqual([
-      expect.objectContaining({ field: 'excess.lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+      expect.objectContaining({
+        field: 'excess.lines.0.supplierLotNo',
+        code: ERROR_CODE.INVALID,
+      }),
     ]);
   });
 
   it('분리 — 두 part 의 plantId 가 다르면 같은 supplierLotNo 를 허용한다', async () => {
     const { service, recorded } = fake();
 
-    const created = await service.create(
-      input({ normal: part(LOT_LINES), excess: excessPart(LOT_LINES) }),
-      99,
-    );
+    const created = await service.create(input({ normal: part(LOT_LINES), excess: excessPart(LOT_LINES) }), 99);
 
     expect(created.created).toHaveLength(2);
-    expect(recorded.lines.map((row) => row.supplier_lot_no)).toEqual(['SL-같음', 'SL-같음']);
+    expect(recorded.lines.map((row) => row.supplier_lot_no)).toEqual([ATTACHED_LOT_NO, ATTACHED_LOT_NO]);
   });
 
   it('분리 — createWithin 전에 두 part 의 P/O 부모 합집합을 한 번 잠근다', async () => {
@@ -321,7 +344,12 @@ describe('InboundReceiptSplitService.create', () => {
   it('분리 — exceptionTypeCode 가 code_value 에 없으면 400 이다', async () => {
     const error = await thrown(() =>
       fake().service.create(
-        input({ excess: excessPart({ exceptionTypeCode: '없는코드', exceptionReason: '초과' }) }),
+        input({
+          excess: excessPart({
+            exceptionTypeCode: '없는코드',
+            exceptionReason: '초과',
+          }),
+        }),
         99,
       ),
     );

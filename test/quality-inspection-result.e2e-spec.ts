@@ -1425,7 +1425,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     const lineOf = async (suffix: string, receiptId: bigint) =>
       prisma.inbound_receipt_line.create({
-        data: { inbound_receipt_id: receiptId, line_no: 1, item_id: item1.item_id, received_qty: 100, uom_id: uom.uom_id, inspection_required: true, status_code: 'RECEIVED' },
+        data: { inbound_receipt_id: receiptId, line_no: 1, item_id: item1.item_id, received_qty: 100, uom_id: uom.uom_id, supplier_lot_label_attached: true, inspection_required: true, status_code: 'RECEIVED' },
       });
     const lineA = await lineOf('A', receiptA.inbound_receipt_id);
     const lineB = await lineOf('B', receiptB.inbound_receipt_id);

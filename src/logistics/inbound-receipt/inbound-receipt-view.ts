@@ -40,6 +40,7 @@ export interface InboundReceiptLineView {
   packageCount: number | null;
   supplierLotNo: string | null;
   supplierLotMissing: boolean;
+  supplierLotLabelAttached: boolean;
   substituteLotReasonCode: string | null;
   manufacturedDate: string | null;
   expiryDate: string | null;
@@ -85,6 +86,7 @@ export function inboundReceiptLineView(row: InboundReceiptLineRow): InboundRecei
     packageCount: row.package_count,
     supplierLotNo: row.supplier_lot_no,
     supplierLotMissing: row.supplier_lot_missing,
+    supplierLotLabelAttached: row.supplier_lot_label_attached,
     substituteLotReasonCode: row.substitute_lot_reason_code,
     manufacturedDate: toDateString(row.manufactured_date),
     expiryDate: toDateString(row.expiry_date),

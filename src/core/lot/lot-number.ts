@@ -16,6 +16,14 @@ import { randomBytes } from 'node:crypto';
 
 export const LOT_NO_LENGTH = 34;
 
+export const MATERIAL_LOT_SEGMENT_LENGTHS = {
+  itemCode: 9,
+  qty: 9,
+  date: 6,
+  supplier: 6,
+  serial: 4,
+} as const;
+
 /** 사람이 라벨에서 읽고 받아 적는 값이라 헷갈리는 글자(0·O·1·I)를 뺀다. */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -33,6 +41,41 @@ export function mesLotNo(plantId: number, businessDate: string, todaySeq: number
     String(todaySeq).padStart(6, '0').slice(-6) +
     randomChars(13);
   return no;
+}
+
+/**
+ * 자재 입하의 MES 내부 LOT. 모바일 스캔 화면의 정본 형식과 같은 숫자 34자리다.
+ * 생산 LOT은 이 함수가 아니라 기존 `mesLotNo` 체계를 계속 쓴다.
+ */
+export function materialMesLotNo(input: {
+  itemCode: string;
+  qty: number;
+  businessDate: string;
+  supplierCode: string;
+  serial: number;
+}): string {
+  const itemCode = numeric(input.itemCode, MATERIAL_LOT_SEGMENT_LENGTHS.itemCode, '품목 코드');
+  const supplierCode = numeric(input.supplierCode, MATERIAL_LOT_SEGMENT_LENGTHS.supplier, '공급사 코드');
+  const date = /^\d{2}(\d{2})-(\d{2})-(\d{2})$/.exec(input.businessDate);
+  if (!date) throw new Error('자재 MES LOT 업무일자는 YYYY-MM-DD 여야 합니다.');
+  const qty = integer(input.qty, MATERIAL_LOT_SEGMENT_LENGTHS.qty, '수량');
+  const serial = integer(input.serial, MATERIAL_LOT_SEGMENT_LENGTHS.serial, '순번');
+  return `${itemCode}${qty}${date[1]}${date[2]}${date[3]}${supplierCode}${serial}`;
+}
+
+function numeric(value: string, length: number, name: string): string {
+  if (!new RegExp(`^\\d{${String(length)}}$`).test(value)) {
+    throw new Error(`${name}는 자재 MES LOT ${String(length)}자리 숫자로 표현할 수 없습니다.`);
+  }
+  return value;
+}
+
+function integer(value: number, length: number, name: string): string {
+  const max = 10 ** length - 1;
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) {
+    throw new Error(`${name}는 자재 MES LOT ${String(length)}자리 양의 정수로 표현할 수 없습니다.`);
+  }
+  return String(value).padStart(length, '0');
 }
 
 function randomChars(length: number): string {

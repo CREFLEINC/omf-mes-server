@@ -35,6 +35,7 @@ interface BalanceSeed extends Row {
   inventory_status_code: string;
   ownership_type_code: string;
   owner_partner_id: bigint | null;
+  on_hand_qty: Prisma.Decimal;
   available_qty: Prisma.Decimal | null;
 }
 
@@ -50,6 +51,7 @@ const balance = (over: Partial<BalanceSeed> = {}): BalanceSeed => ({
   inventory_status_code: 'AVAILABLE',
   ownership_type_code: 'OWNED',
   owner_partner_id: null,
+  on_hand_qty: new Prisma.Decimal(100),
   available_qty: new Prisma.Decimal(100),
   ...over,
 });
@@ -78,6 +80,7 @@ function fake(seed: Seed = {}) {
   /** 문장 순서가 불변식이다 — 잠금 → consume → post(I-8.md R-6). */
   const order: string[] = [];
   const backfilled: Row[] = [];
+  const cancelledPutaways: Row[] = [];
   const touched = new Set<string>();
   let requested = 0;
 
@@ -106,6 +109,12 @@ function fake(seed: Seed = {}) {
     },
     goods_issue_line: {
       update: async (args: Row) => void backfilled.push(args),
+    },
+    putaway_task: {
+      updateMany: async (args: Row) => {
+        cancelledPutaways.push(args);
+        return { count: 1 };
+      },
     },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       raws.push({ sql: strings.join('?'), values });
@@ -136,14 +145,16 @@ function fake(seed: Seed = {}) {
     },
   } as unknown as InventoryPostingService;
 
-  return { tx, posting, posted, consumed, order, raws, backfilled, touched };
+  return { tx, posting, posted, consumed, order, raws, backfilled, cancelledPutaways, touched };
 }
 
 const input = (over: Partial<PostIssueInput> = {}): PostIssueInput => ({
   header: {
     goodsIssueId: ISSUE_ID,
     goodsIssueNo: 'GI-20260504-0001',
+    issueTypeCode: 'OTHER',
     sourceDocumentTypeCode: 'GOODS_RECEIPT',
+    sourceDocumentId: 600n,
     sourceWarehouseId: WH,
     destinationTypeCode: null,
     destinationId: null,
@@ -192,7 +203,9 @@ describe('출고 전기', () => {
         header: {
           goodsIssueId: ISSUE_ID,
           goodsIssueNo: 'GI-20260504-0001',
+          issueTypeCode: 'OTHER',
           sourceDocumentTypeCode: 'GOODS_RECEIPT',
+          sourceDocumentId: 600n,
           sourceWarehouseId: WH,
           destinationTypeCode: 'LOCATION',
           destinationId: DEST_LOC,
@@ -221,7 +234,9 @@ describe('출고 전기', () => {
           header: {
             goodsIssueId: ISSUE_ID,
             goodsIssueNo: 'GI-20260504-0001',
+            issueTypeCode: 'OTHER',
             sourceDocumentTypeCode: 'GOODS_RECEIPT',
+            sourceDocumentId: 600n,
             sourceWarehouseId: WH,
             destinationTypeCode,
             destinationId: destinationTypeCode === null ? null : 55n,
@@ -340,7 +355,9 @@ describe('출고 전기', () => {
         header: {
           goodsIssueId: ISSUE_ID,
           goodsIssueNo: 'GI-20260504-0001',
+          issueTypeCode: 'OTHER',
           sourceDocumentTypeCode: 'GOODS_RECEIPT',
+          sourceDocumentId: 600n,
           sourceWarehouseId: WH,
           destinationTypeCode: 'LOCATION',
           destinationId: DEST_LOC,
@@ -482,7 +499,9 @@ describe('출고 전기', () => {
         header: {
           goodsIssueId: ISSUE_ID,
           goodsIssueNo: 'GI-20260504-0001',
+          issueTypeCode: 'PRODUCTION',
           sourceDocumentTypeCode: 'PICKING_ORDER',
+          sourceDocumentId: 600n,
           sourceWarehouseId: WH,
           destinationTypeCode: null,
           destinationId: null,
@@ -511,5 +530,80 @@ describe('출고 전기', () => {
 
     expect(consumed).toEqual([]);
     expect(order).toEqual(['lock', 'post']);
+  });
+
+  it('공급사 전량 반품 — 원천 입고의 같은 LOT·위치 PENDING 적치 지시를 취소한다', async () => {
+    const { tx, posting, cancelledPutaways } = fake({
+      balances: [
+        balance({
+          on_hand_qty: new Prisma.Decimal(10),
+          available_qty: new Prisma.Decimal(10),
+        }),
+      ],
+    });
+
+    await postIssue(
+      tx,
+      posting,
+      input({
+        header: {
+          goodsIssueId: ISSUE_ID,
+          goodsIssueNo: 'GI-20260504-0001',
+          issueTypeCode: 'SUPPLIER_RETURN',
+          sourceDocumentTypeCode: 'GOODS_RECEIPT',
+          sourceDocumentId: 600n,
+          sourceWarehouseId: WH,
+          destinationTypeCode: 'PARTNER',
+          destinationId: 55n,
+        },
+      }),
+      7,
+    );
+
+    expect(cancelledPutaways).toEqual([
+      {
+        where: {
+          status_code: 'PENDING',
+          goods_receipt_line: { goods_receipt_id: 600n },
+          OR: [{ lot_id: LOT, item_id: ITEM, from_location_id: LOC }],
+        },
+        data: {
+          status_code: 'CANCELLED',
+          updated_by: 7n,
+          version_no: { increment: 1 },
+        },
+      },
+    ]);
+  });
+
+  it('공급사 부분 반품 — 출발 차원 잔액이 남으면 적치 지시를 유지한다', async () => {
+    const { tx, posting, cancelledPutaways } = fake({
+      balances: [
+        balance({
+          on_hand_qty: new Prisma.Decimal(100),
+          available_qty: new Prisma.Decimal(100),
+        }),
+      ],
+    });
+
+    await postIssue(
+      tx,
+      posting,
+      input({
+        header: {
+          goodsIssueId: ISSUE_ID,
+          goodsIssueNo: 'GI-20260504-0001',
+          issueTypeCode: 'SUPPLIER_RETURN',
+          sourceDocumentTypeCode: 'GOODS_RECEIPT',
+          sourceDocumentId: 600n,
+          sourceWarehouseId: WH,
+          destinationTypeCode: 'PARTNER',
+          destinationId: 55n,
+        },
+      }),
+      7,
+    );
+
+    expect(cancelledPutaways).toHaveLength(0);
   });
 });
