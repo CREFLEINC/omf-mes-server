@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -10,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
@@ -48,6 +50,10 @@ const EXCLUDED_OPERATIONS = new Map([
 
 const PARTIAL_OPERATIONS = new Map([
   [
+    "POST /app/document-issues",
+    "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 나머지 지원 조합만 기록을 생성한다.",
+  ],
+  [
     "POST /planning/production-orders/{productionOrderId}:resync",
     "재송신 대상을 가르는 축이 없어 재송신 자체는 수행하지 않는다.",
   ],
@@ -62,6 +68,18 @@ const PARTIAL_OPERATIONS = new Map([
   [
     "PUT /app/notification-subscriptions",
     "zaloEnabled 값은 저장하지만 실제 Zalo 발송 경로는 없다.",
+  ],
+  [
+    "GET /app/printers",
+    "실제 프린터 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다.",
+  ],
+  [
+    "POST /maintenance/results",
+    "closed=true와 resetCounter=true는 항상 422 INVALID다. 마감하지 않고 누계를 초기화하지 않는 실적만 등록한다.",
+  ],
+  [
+    "PUT /maintenance/results/{maintenanceResultId}",
+    "closed=true는 항상 422 INVALID다. 마감 전 실적 수정만 처리한다.",
   ],
 ]);
 
@@ -130,7 +148,7 @@ const KNOWN_DIFFERENCES = [
       "POST /logistics/stock-reinstatements",
     ],
     summary:
-      "긴급 직행과 재등록은 창고 관리 수준에 따라 위치 입력을 검증하며 409 응답에 conflictCause가 포함될 수 있다.",
+      "긴급 직행과 재등록은 창고 관리 수준에 따라 위치 입력을 검증하며 409 응답에는 conflictCause가 항상 포함된다.",
   },
   {
     id: "222",
@@ -143,9 +161,33 @@ const KNOWN_DIFFERENCES = [
   },
   {
     id: "273",
-    operations: ["GET /inventory/counts/{inventoryCountId}/lines"],
+    operations: [
+      "GET /inventory/counts/{inventoryCountId}/lines",
+      "PUT /inventory/counts/{inventoryCountId}/lines",
+    ],
     summary:
-      "블라인드 실사의 미실사 라인은 systemQty를 생략한다. counted=false로 미실사를 판정한다.",
+      "블라인드 실사는 counted 값과 관계없이 systemQty를 생략한다. 미실사 여부는 counted=false로 판정한다.",
+  },
+  {
+    id: "109",
+    operations: ["POST /maintenance/downtimes/{downtimeId}:close"],
+    summary:
+      "종료시각은 클라이언트 발생시각이 아니라 서버의 최초 처리시각이다. 같은 멱등 키 재전송은 최초 시각을 유지한다.",
+  },
+  {
+    id: "113·114",
+    operations: [
+      "POST /maintenance/results",
+      "PUT /maintenance/results/{maintenanceResultId}",
+    ],
+    summary:
+      "closed=true와 resetCounter=true의 의미가 확정되지 않아 서버가 해당 입력을 422로 거부한다.",
+  },
+  {
+    id: "I-27",
+    operations: ["POST /app/document-issues"],
+    summary:
+      "IDENTIFICATION_TAG와 DELIVERY_LABEL 발행 입력은 현재 서버가 각각 422 STATE_LOCKED·INVALID로 거부한다.",
   },
 ];
 
@@ -198,6 +240,18 @@ function addBadRequest(operation) {
   };
 }
 
+function addUnauthorized(operation) {
+  operation.responses ??= {};
+  operation.responses["401"] ??= {
+    description: "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+    content: {
+      "application/json": {
+        schema: { $ref: "#/components/schemas/ErrorResponse" },
+      },
+    },
+  };
+}
+
 function addEnumValues(schema, values) {
   assert(Array.isArray(schema.enum), "enum 스키마가 아닙니다.");
   for (const value of values)
@@ -208,12 +262,71 @@ function appendDescription(target, sentence) {
   target.description = `${target.description ?? ""}\n\n${sentence}`.trim();
 }
 
+function assertSourceMatchesServerCommit() {
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: ROOT_DIR, encoding: "utf8" }).trim();
+  const currentSourceTree = git("rev-parse", "HEAD:src");
+  const baselineSourceTree = git("rev-parse", `${SERVER_COMMIT}:src`);
+  const dirtySource = git(
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--",
+    "src",
+  );
+  assert(
+    currentSourceTree === baselineSourceTree && dirtySource.length === 0,
+    `현재 src가 서버 기준 커밋 ${SERVER_COMMIT}과 다릅니다. 기준 버전을 갱신한 뒤 생성하세요.`,
+  );
+}
+
+function applyAuthentication(document, key, operation) {
+  document.components.securitySchemes ??= {};
+  document.components.securitySchemes.omfSession = {
+    type: "apiKey",
+    in: "cookie",
+    name: "omf_session",
+    description:
+      "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다.",
+  };
+
+  if (key === "POST /app/sessions") {
+    operation.security = [];
+    const success = operation.responses?.["200"];
+    assert(success, "POST /app/sessions의 200 응답이 없습니다.");
+    success.headers ??= {};
+    success.headers["Set-Cookie"] = {
+      description:
+        "omf_session HttpOnly 세션 쿠키. SameSite=Lax, Path=/이며 Secure는 COOKIE_SECURE 설정을 따른다.",
+      schema: { type: "string" },
+    };
+    return;
+  }
+
+  operation.security = [{ omfSession: [] }];
+  addUnauthorized(operation);
+}
+
 function applyLogisticsPatches(document) {
   const schemas = document.components.schemas;
 
   addEnumValues(schemas.GoodsIssue.properties.sourceDocumentTypeCode, [
     "SHIPMENT",
   ]);
+  schemas.GoodsIssue.properties.sourceDocumentTypeCode.description =
+    schemas.GoodsIssue.properties.sourceDocumentTypeCode.description
+      .replace(
+        "처분 결정(`DISPOSITION_DECISION` → `quality.disposition_decision`, 제품 폐기) 셋이다.",
+        "처분 결정(`DISPOSITION_DECISION` → `quality.disposition_decision`, 제품 폐기) · 출하(`SHIPMENT` → `logistics.shipment`, 출하 확정) 넷이다.",
+      )
+      .replace("`enum` 3값", "`enum` 4값");
+  schemas.GoodsIssue.properties.sourceDocumentTypeCode["x-internal-note"] =
+    schemas.GoodsIssue.properties.sourceDocumentTypeCode[
+      "x-internal-note"
+    ].replace(
+      "2026-09-01 `omf-mes#336` — 자유 문자열에서 `enum` 3값으로 닫았다.",
+      "2026-09-01 `omf-mes#336`에서 원본 계약을 `enum` 3값으로 닫았고, v0.1.2 서버 구현 기준선이 응답값 SHIPMENT를 더해 4값으로 확장한다.",
+    );
   appendDescription(
     schemas.GoodsIssue.properties.sourceDocumentTypeCode,
     "서버 구현 기준 추가값: SHIPMENT → logistics.shipment. 출하 등록이 내부에서 만든 출고 전표의 원천이다(통보 217).",
@@ -225,6 +338,21 @@ function applyLogisticsPatches(document) {
     "C19",
     "C20",
   ]);
+  schemas.LotStatusHistoryEvent.description =
+    schemas.LotStatusHistoryEvent.description.replace(
+      "도식스펙03 §1.3 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15) 전건을 담는다.",
+      "원본 설계의 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15)에 서버 구현 전이 C17·C18·C19·C20을 더해 13종을 담는다.",
+    );
+  schemas.LotStatusHistoryEvent.properties.transitionCode.description =
+    schemas.LotStatusHistoryEvent.properties.transitionCode.description.replace(
+      "전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표",
+      "원본 설계 전이 9종 — 도식스펙03 §1.3 · W-03-01 §5-1 표. 서버 구현 기준 C17·C18·C19·C20을 더해 응답은 13종이다",
+    );
+  schemas.LotStatusHistoryEvent.properties.sourceDocumentTypeCode.description =
+    schemas.LotStatusHistoryEvent.properties.sourceDocumentTypeCode.description.replace(
+      "전이 9종에서 도출했다",
+      "기존 전이 9종에서 도출했다",
+    );
   appendDescription(
     schemas.LotStatusHistoryEvent.properties.transitionCode,
     "서버 구현 기준 추가값: C17·C18·C19=처분 전이, C20=재고 재등록 후 정상 전이(통보 089·218).",
@@ -242,7 +370,7 @@ function applyLogisticsPatches(document) {
     schemas.InventoryCountLine.required.filter((name) => name !== "systemQty");
   appendDescription(
     schemas.InventoryCountLine.properties.systemQty,
-    "서버 구현 기준: 블라인드 실사이고 counted=false이면 이 키를 생략한다(통보 273).",
+    "서버 구현 기준: 블라인드 실사이면 counted 값과 관계없이 이 키를 생략한다(통보 273 및 구현 코드 대조).",
   );
 
   const goodsReceiptSource =
@@ -254,6 +382,82 @@ function applyLogisticsPatches(document) {
   appendDescription(
     documentProgressReason,
     "서버 구현 기준: 출하가 소유한 하위 입고·출고 전표의 개별 취소 차단도 현재 STATE_LOCKED로 반환한다(통보 217).",
+  );
+
+  const lotStatusEvents = getOperation(
+    document,
+    "GET /trace/lot-status-events",
+  );
+  lotStatusEvents.summary =
+    "LOT 상태 변경이력 조회 — 서버 구현 기준 전이 13종 전건";
+  lotStatusEvents.description = lotStatusEvents.description.replace(
+    "도식스펙03 §1.3 공통 범례가 요구하는 상태 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15) 전건을 사건별 행으로 낸다",
+    "원본 설계 상태 전이 9종(C4·C5·C6·C7·C8·C9·C10·C14·C15)과 서버 구현 전이 C17·C18·C19·C20을 합친 13종을 사건별 행으로 낸다",
+  );
+  addBadRequest(lotStatusEvents);
+}
+
+function applyEquipmentPatches(document) {
+  const schemas = document.components.schemas;
+  schemas.MaintenanceResultCreate.properties.closed.description =
+    "서버 v0.1.2 구현 기준: true는 결과코드별 완료 의미가 확정되지 않아 항상 422 INVALID다. false 또는 생략만 사용한다(통보 113).";
+  schemas.MaintenanceResultCreate.properties.resetCounter.description =
+    "서버 v0.1.2 구현 기준: true는 예방보전 시행일 기준이 확정되지 않아 항상 422 INVALID다. false 또는 생략만 사용한다(통보 114).";
+  schemas.MaintenanceResultCreate.properties.shotCountAfterReset.description =
+    "서버 v0.1.2 구현 기준: 누계 리셋을 지원하지 않으므로 null 또는 생략만 허용한다(통보 114).";
+  schemas.MaintenanceResultCreate.properties.shotCountAfterReset.example = null;
+  schemas.MaintenanceResultUpdate.properties.closed.description =
+    "서버 v0.1.2 구현 기준: true는 항상 422 INVALID다. 마감 전 수정만 지원한다(통보 113).";
+  schemas.MaintenanceResultUpdate.properties.closed.example = false;
+
+  schemas.MaintenanceResult.properties.resetCounter.description =
+    "툴 누계 리셋 여부. 서버 v0.1.2의 신규 등록·수정에서는 false로 고정되며, 기존 데이터와 원본 계약 호환을 위해 응답 필드를 유지한다(통보 114).";
+  schemas.MaintenanceResult.properties.shotCountBeforeReset.description =
+    "리셋 직전 누계 스냅샷. 서버 v0.1.2의 신규 등록·수정에서는 null로 고정되며 기존 데이터 조회용 필드로 유지한다(통보 114).";
+  schemas.MaintenanceResult.properties.shotCountBeforeReset.example = null;
+  schemas.MaintenanceResult.properties.shotCountAfterReset.description =
+    "리셋 후 시작값. 서버 v0.1.2의 신규 등록·수정에서는 null로 고정되며 기존 데이터 조회용 필드로 유지한다(통보 114).";
+  schemas.MaintenanceResult.properties.shotCountAfterReset.example = null;
+  appendDescription(
+    schemas.MaintenanceResult.properties.closed,
+    "서버 v0.1.2의 신규 등록·수정에서는 false로 고정된다(통보 113).",
+  );
+
+  getOperation(document, "POST /maintenance/results").description =
+    "지시에서 이어받거나 고장에서 바로 등록한다. 지시가 없어도 성립한다. 서버 v0.1.2는 closed=true·resetCounter=true를 항상 422 INVALID로 거부하므로 마감하지 않고 누계를 초기화하지 않는 실적만 등록한다(통보 113·114).";
+  appendDescription(
+    getOperation(document, "PUT /maintenance/results/{maintenanceResultId}"),
+    "서버 v0.1.2는 closed=true를 항상 422 INVALID로 거부한다(통보 113).",
+  );
+
+  appendDescription(
+    getOperation(document, "POST /maintenance/downtimes/{downtimeId}:close"),
+    "서버 구현 기준: 종료시각은 이 API에 한해 서버의 최초 처리시각을 사용한다. 오프라인 전송 지연을 허용하며 같은 Idempotency-Key 재전송에는 최초 종료시각과 응답을 재생한다(통보 109).",
+  );
+
+  const breakdownCreate = getOperation(
+    document,
+    "POST /maintenance/breakdowns",
+  );
+  breakdownCreate.description = breakdownCreate.description.replace(
+    "사진은 이 요청에 싣지 않는다 — 만들어진 건에 따로 붙인다.",
+    "사진은 이 요청에 싣지 않으며 현재 첨부 API도 미구현이므로 사진 첨부를 제공하지 않는다.",
+  );
+}
+
+function applyAppPatches(document) {
+  const login = getOperation(document, "POST /app/sessions");
+  login["x-internal-note"] =
+    "v0.1.2 서버 구현 기준: 인증 세션은 omf_session HttpOnly 쿠키로 운반한다. 로그인 성공 응답이 쿠키를 설정하고 이후 요청은 브라우저 자격증명을 포함한다.";
+  document.components.schemas.LoginRequest["x-internal-note"] =
+    "v0.1.2 서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다.";
+  appendDescription(
+    getOperation(document, "POST /app/document-issues"),
+    "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 두 문서 유형은 현재 클라이언트에서 발행 요청하지 않는다(I-27 마감 결정).",
+  );
+  appendDescription(
+    getOperation(document, "GET /app/printers"),
+    "서버 구현 기준: 실제 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다. 연결 상태 판정에 사용하지 않는다.",
   );
 }
 
@@ -304,12 +508,19 @@ function applyShipmentPatches(document) {
 
   const stockConflict = schemas.StockReinstatementConflictResponse;
   const shipmentConflict = schemas.ShipmentConflictResponse;
+  shipmentConflict.required.push("conflictCause");
+  shipmentConflict.properties.conflictCause.description =
+    shipmentConflict.properties.conflictCause.description.replace(
+      " — code=VERSION_CONFLICT 일 때 함께 내린다",
+      ". code와 독립적인 필수 원인 축으로 모든 409 응답에 포함된다",
+    );
   stockConflict.properties.conflictCause = structuredClone(
     shipmentConflict.properties.conflictCause,
   );
+  stockConflict.required.push("conflictCause");
   appendDescription(
     stockConflict.properties.conflictCause,
-    "서버는 공용 충돌 봉투를 사용하므로 StockReinstatementConflictResponse에도 이 키를 실을 수 있다(통보 221).",
+    "서버는 공용 충돌 봉투를 사용하므로 StockReinstatementConflictResponse에도 이 키를 항상 싣는다(통보 221).",
   );
 
   for (const key of [
@@ -347,6 +558,7 @@ function applyShipmentPatches(document) {
     "customerId",
     "shipmentRequestNo",
   ];
+  requestSort.schema.example = "requestedShipDate";
   appendDescription(
     requestSort,
     "서버 구현 기준 허용 키는 requestedShipDate·customerId·shipmentRequestNo다(통보 201).",
@@ -356,6 +568,7 @@ function applyShipmentPatches(document) {
   getParameter(shipments, "shipDateFrom").required = true;
   const shipmentSort = getParameter(shipments, "sort");
   shipmentSort.schema.enum = ["shippedAt", "shipmentNo"];
+  shipmentSort.schema.example = "shippedAt";
   appendDescription(
     shipmentSort,
     "서버 구현 기준 허용 키는 shippedAt·shipmentNo다(통보 219).",
@@ -391,16 +604,40 @@ function readImplementedBindings() {
       file.endsWith(".controller.ts") &&
       !file.split(/[\\/]/).some((segment) => segment.startsWith("__")),
   );
-  const pattern = /@Contract\(\s*["']([A-Z]+\s+\/[^"']+)["']\s*\)/g;
-
   for (const file of sourceFiles) {
     const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(pattern)) bindings.push(match[1]);
+    const sourceFile = ts.createSourceFile(
+      file,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const visit = (node) => {
+      const decorators = ts.canHaveDecorators(node)
+        ? (ts.getDecorators(node) ?? [])
+        : [];
+      for (const decorator of decorators) {
+        const expression = decorator.expression;
+        if (
+          ts.isCallExpression(expression) &&
+          ts.isIdentifier(expression.expression) &&
+          expression.expression.text === "Contract" &&
+          expression.arguments.length === 1 &&
+          ts.isStringLiteralLike(expression.arguments[0])
+        ) {
+          bindings.push(expression.arguments[0].text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
   }
   return bindings;
 }
 
 function build() {
+  assertSourceMatchesServerCommit();
   const contractFiles = readdirSync(CONTRACT_DIR)
     .filter((file) => file.endsWith(".json"))
     .sort();
@@ -437,6 +674,13 @@ function build() {
     phantomBindings.length === 0,
     `계약에 없는 @Contract 바인딩: ${phantomBindings.join(", ")}`,
   );
+  const invalidPartialOperations = [...PARTIAL_OPERATIONS.keys()].filter(
+    (key) => !documentsByOperation.has(key) || !implementedBindings.has(key),
+  );
+  assert(
+    invalidPartialOperations.length === 0,
+    `부분 구현 목록에 없거나 미구현인 오퍼레이션이 있습니다: ${invalidPartialOperations.join(", ")}`,
+  );
   const bindingCounts = new Map();
   for (const key of bindingKeys) {
     bindingCounts.set(key, (bindingCounts.get(key) ?? 0) + 1);
@@ -464,6 +708,9 @@ function build() {
     missingOperations.every((key) => EXCLUDED_OPERATIONS.has(key)),
     `예상하지 못한 미구현 오퍼레이션: ${missingOperations.join(", ")}`,
   );
+  const fullyImplementedCount = [...documentsByOperation.keys()].filter(
+    (key) => implementedBindings.has(key) && !PARTIAL_OPERATIONS.has(key),
+  ).length;
 
   for (const [key, { operation }] of documentsByOperation) {
     const isImplemented = implementedBindings.has(key);
@@ -480,11 +727,17 @@ function build() {
         : {}),
       ...(!isImplemented ? { reason: EXCLUDED_OPERATIONS.get(key) } : {}),
     };
+    if (isImplemented) {
+      const { file } = documentsByOperation.get(key);
+      applyAuthentication(documents.get(file), key, operation);
+    }
   }
 
   applyLogisticsPatches(documents.get("logistics-01자재창고.json"));
   applyQualityPatches(documents.get("quality-03품질.json"));
   applyShipmentPatches(documents.get("shipment-04제품출하.json"));
+  applyEquipmentPatches(documents.get("equipment-05설비툴.json"));
+  applyAppPatches(documents.get("app-공통.json"));
   applyKnownDifferences(documentsByOperation);
 
   rmSync(OPENAPI_DIR, { recursive: true, force: true });
@@ -528,9 +781,17 @@ function build() {
     serverCommit: SERVER_COMMIT,
     operationCounts: {
       contract: documentsByOperation.size,
-      implemented: documentsByOperation.size - missingOperations.length,
+      available: documentsByOperation.size - missingOperations.length,
+      implemented: fullyImplementedCount,
       notImplemented: missingOperations.length,
       partial: PARTIAL_OPERATIONS.size,
+    },
+    authentication: {
+      scheme: "omfSession",
+      cookieName: "omf_session",
+      anonymousOperations: ["POST /app/sessions"],
+      protectedAvailableOperations:
+        documentsByOperation.size - missingOperations.length - 1,
     },
     notImplementedOperations: missingOperations
       .sort()

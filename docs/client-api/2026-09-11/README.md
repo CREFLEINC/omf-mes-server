@@ -20,11 +20,18 @@
    - `not-implemented`: 호출하지 않는다
 4. 설계팀 확정본이 오면 이 기준선을 계속 수정하지 말고, 확정본으로 교체한 뒤 차이를 다시 대조한다.
 
+## 인증 공통 규칙
+
+- `POST /app/sessions` 성공 응답은 `omf_session` HttpOnly 쿠키를 발급한다. 이 로그인 API만 익명 호출이다.
+- 로그인 외 현재 제공 API 481건은 쿠키 인증이 필요하며, 쿠키가 없거나 유효하지 않으면 401 `ErrorResponse`를 반환한다. 미구현 5건은 서버 경로 자체가 없으므로 호출하지 않는다.
+- 브라우저 `fetch`는 `credentials: "include"`, Axios는 `withCredentials: true`를 사용한다. 개발 환경에서 교차 출처 호출할 때도 같다.
+- 로그인 자체의 401은 공통 `ErrorResponse`가 아니라 기존 `LoginFailure`다.
+
 ## 이 자료가 반영한 것
 
-- 계약 오퍼레이션 487건과 서버 `@Contract` 바인딩을 전수 대조해 **482건 구현·5건 미구현** 상태를 오퍼레이션마다 표시했다.
+- 계약 오퍼레이션 487건과 서버 `@Contract` 바인딩을 전수 대조해 **474건 구현·8건 부분 구현·5건 미구현** 상태를 오퍼레이션마다 표시했다. 호출 가능한 바인딩은 구현·부분 구현을 합쳐 482건이다.
 - 서버가 실제로 반환하지만 원본 계약 enum에 없던 읽기 값(`SHIPMENT`, `C17`~`C20`, `DISPOSITION_DECISION`, `STOCK_TRANSFER`)을 **응답 스키마**에 반영했다.
-- 블라인드 실사의 `systemQty` 조건부 생략, 재등록 409의 `conflictCause`, 서버가 내는 400 응답을 반영했다.
+- 블라인드 실사의 `systemQty` 생략, 출하·재등록 409의 필수 `conflictCause`, 서버가 내는 400 응답을 반영했다.
 - 출하 목록의 필수 기간과 실제 허용 정렬 키를 반영했다.
 - 요청 허용 범위는 서버 검증과 다르게 넓히지 않았다. 예를 들어 `GET /trace/lot-status-events?transitionCode=C20`은 현재 서버가 400으로 거부하므로 질의 enum은 그대로다.
 - 설계팀이 아직 이름을 정하지 않은 값은 만들지 않았다. 출하 소유 전표의 취소 차단은 현재 서버가 반환하는 `STATE_LOCKED`로 설명만 보강했다.
@@ -50,6 +57,8 @@
 ```bash
 node scripts/client-api/build-implementation-baseline.mjs
 node --check scripts/client-api/build-implementation-baseline.mjs
+for spec in docs/client-api/2026-09-11/openapi/*.json; do pnpm exec openapi-typescript "$spec" -o "/tmp/$(basename "$spec" .json).d.ts"; done
+git diff --exit-code -- docs/client-api/2026-09-11
 ```
 
 생성기는 다음 조건이 달라지면 실패한다.
@@ -57,6 +66,7 @@ node --check scripts/client-api/build-implementation-baseline.mjs
 - 계약 오퍼레이션 수가 487이 아님
 - 구현되지 않은 오퍼레이션이 현재 확정한 5건과 다름
 - 계약에 없는 `@Contract` 바인딩이 생김
+- 현재 `src` 트리가 문서에 표시한 서버 커밋과 다름
 - 보정 대상 스키마·오퍼레이션·파라미터가 사라짐
 
 ## 전달 범위 밖

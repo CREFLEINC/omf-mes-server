@@ -4,34 +4,39 @@
 
 ## P0 — 지금 반영
 
-| 영역                  | 현재 서버 동작                                                                                                 | 클라이언트 대응                                                                                                                 | 근거                           |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| 재고 조정 사유        | 코드 그룹은 `INVENTORY_ADJUSTMENT_REASON`이다                                                                  | `ADJUST_REASON` 하드코딩을 교체한다                                                                                             | 설계 검토 요청서 §3-1          |
-| 블라인드 실사         | `counted=false`인 미실사 라인은 `systemQty` 키를 생략하고 `countedQty=0`, `varianceQty=0`을 반환한다           | `systemQty`를 optional로 생성하고, 미실사는 반드시 `counted`로 판정한다                                                         | 통보 273                       |
-| 재생재 원장           | `InventoryTransaction.sourceDocumentTypeCode`가 `RECYCLE_ENTRY`일 수 있다                                      | 읽기 enum과 거래 원장 필터에 `RECYCLE_ENTRY`를 허용한다                                                                         | 회신 완료 213                  |
-| 출하가 만든 출고 전표 | `GoodsIssue.sourceDocumentTypeCode`가 `SHIPMENT`일 수 있다                                                     | 읽기 enum에 `SHIPMENT`를 허용한다. 일반 출고 등록 요청의 enum은 넓히지 않는다                                                   | 통보 217                       |
-| LOT 상태 이력         | 응답 `transitionCode`가 `C17`·`C18`·`C19`·`C20`, 원천 유형이 `DISPOSITION_DECISION`·`STOCK_TRANSFER`일 수 있다 | 읽기 enum에 여섯 값을 허용한다. **현재 `transitionCode` 질의 필터로 C17~C20을 보내지 않는다**—서버 계약 가드가 400으로 거부한다 | 통보 089·218 및 구현 코드 대조 |
-| 재등록 충돌           | 409 응답에 `conflictCause`가 포함될 수 있다                                                                    | 공용 충돌 안내와 같이 `user`·`erpSync`·`workerLease`를 처리한다                                                                 | 통보 221                       |
-| 불량 이력 조회        | `GET /quality/defect-records`와 `/distribution`은 `detectedFrom`·`detectedTo` 둘 다 필수다                     | 첫 호출부터 두 기간 값을 모두 보낸다. 400 표준 오류 봉투를 처리한다                                                             | 통보 074                       |
-| 부적합 목록           | `GET /quality/nonconformances`는 `openedFrom`·`openedTo` 둘 다 필수다                                          | 첫 호출부터 두 값을 모두 보낸다                                                                                                 | 통보 186                       |
-| 출하 요청 목록·요약   | `shipDateFrom`이 없으면 400이다                                                                                | 목록과 요약의 첫 호출부터 `shipDateFrom`을 보낸다                                                                               | 통보 201                       |
-| 출하 목록             | `shipDateFrom`이 없으면 400이다. 허용 정렬은 `shippedAt`·`shipmentNo`다                                        | 첫 호출부터 기간을 보내고 두 정렬 키 외에는 사용하지 않는다                                                                     | 통보 219                       |
-| 출하 요청 정렬        | 허용 정렬은 `requestedShipDate`·`customerId`·`shipmentRequestNo`다                                             | 세 키 외에는 사용하지 않는다                                                                                                    | 통보 201                       |
-| 조회 오류 봉투        | 품질 조회 7건·출하 조회 5건은 원본 계약에 없던 400을 낼 수 있다                                                | 400을 미정의 오류로 버리지 말고 공용 `ErrorResponse`로 처리한다                                                                 | 통보 074·186·201·219           |
+| 영역                  | 현재 서버 동작                                                                                                        | 클라이언트 대응                                                                                                                 | 근거                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| 세션 인증             | 로그인 성공 시 `omf_session` HttpOnly 쿠키를 발급하며 로그인 외 현재 제공 API 481건은 유효한 쿠키가 없으면 401이다    | 브라우저 `fetch`는 `credentials: "include"`, Axios는 `withCredentials: true`를 사용하고 401 `ErrorResponse`를 공통 처리한다     | 서버 인증 가드·세션 구현 대조  |
+| 재고 조정 사유        | 코드 그룹은 `INVENTORY_ADJUSTMENT_REASON`이다                                                                         | `ADJUST_REASON` 하드코딩을 교체한다                                                                                             | 설계 검토 요청서 §3-1          |
+| 블라인드 실사         | 블라인드 실사의 모든 라인은 `systemQty`를 생략한다. 그중 `counted=false`인 미실사 라인은 수량·차이를 0으로 마스킹한다 | `systemQty`를 optional로 생성하고, 미실사 여부는 반드시 `counted`로 판정한다                                                    | 통보 273 및 구현 코드 대조     |
+| 재생재 원장           | `InventoryTransaction.sourceDocumentTypeCode`가 `RECYCLE_ENTRY`일 수 있다                                             | 읽기 enum과 거래 원장 필터에 `RECYCLE_ENTRY`를 허용한다                                                                         | 회신 완료 213                  |
+| 출하가 만든 출고 전표 | `GoodsIssue.sourceDocumentTypeCode`가 `SHIPMENT`일 수 있다                                                            | 읽기 enum에 `SHIPMENT`를 허용한다. 일반 출고 등록 요청의 enum은 넓히지 않는다                                                   | 통보 217                       |
+| LOT 상태 이력         | 응답 `transitionCode`가 `C17`·`C18`·`C19`·`C20`, 원천 유형이 `DISPOSITION_DECISION`·`STOCK_TRANSFER`일 수 있다        | 읽기 enum에 여섯 값을 허용한다. **현재 `transitionCode` 질의 필터로 C17~C20을 보내지 않는다**—서버 계약 가드가 400으로 거부한다 | 통보 089·218 및 구현 코드 대조 |
+| 재등록·출하 충돌      | 409 응답은 업무 `code`와 별개로 `conflictCause`를 항상 포함한다                                                       | `conflictCause`를 필수로 생성하고 `user`·`erpSync`·`workerLease`를 처리한다                                                     | 통보 221 및 구현 코드 대조     |
+| LOT 이력 조회 오류    | 필수 기간 누락이나 허용되지 않은 전이 필터는 400 `ErrorResponse`다                                                    | 400을 공용 요청 오류로 처리하고 C17~C20은 응답에서만 허용한다                                                                   | 통보 218 및 e2e 대조           |
+| 비가동 종료 시각      | 종료시각은 단말 버튼 시각이 아니라 서버의 최초 처리시각이다. 같은 멱등 키 재전송은 최초 응답을 재생한다               | 서버 응답 `endedAt`을 정본으로 사용하며 오프라인 전송 지연이 비가동 시간에 포함될 수 있음을 표시한다                            | 통보 109                       |
+| 불량 이력 조회        | `GET /quality/defect-records`와 `/distribution`은 `detectedFrom`·`detectedTo` 둘 다 필수다                            | 첫 호출부터 두 기간 값을 모두 보낸다. 400 표준 오류 봉투를 처리한다                                                             | 통보 074                       |
+| 부적합 목록           | `GET /quality/nonconformances`는 `openedFrom`·`openedTo` 둘 다 필수다                                                 | 첫 호출부터 두 값을 모두 보낸다                                                                                                 | 통보 186                       |
+| 출하 요청 목록·요약   | `shipDateFrom`이 없으면 400이다                                                                                       | 목록과 요약의 첫 호출부터 `shipDateFrom`을 보낸다                                                                               | 통보 201                       |
+| 출하 목록             | `shipDateFrom`이 없으면 400이다. 허용 정렬은 `shippedAt`·`shipmentNo`다                                               | 첫 호출부터 기간을 보내고 두 정렬 키 외에는 사용하지 않는다                                                                     | 통보 219                       |
+| 출하 요청 정렬        | 허용 정렬은 `requestedShipDate`·`customerId`·`shipmentRequestNo`다                                                    | 세 키 외에는 사용하지 않는다                                                                                                    | 통보 201                       |
+| 조회 오류 봉투        | 품질 조회 7건·출하 조회 5건은 원본 계약에 없던 400을 낼 수 있다                                                       | 400을 미정의 오류로 버리지 말고 공용 `ErrorResponse`로 처리한다                                                                 | 통보 074·186·201·219           |
 
 400 반영 대상은 생성된 OpenAPI의 `responses.400`으로 확인한다.
 
 ## P1 — 호출·화면 제한 반영
 
-| 영역             | 현재 서버 동작                                                                                                | 클라이언트 대응                                                                               | 근거                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------- |
-| 미구현 5건       | 첨부 업로드 2건·첨부 내용 1건·발행 rendition 1건·대시보드 요약 1건은 구현하지 않았다                          | 기능을 노출하지 않거나 “준비 중”으로 처리한다. 엔드포인트를 호출하지 않는다                   | 커버리지 마감 보고 §1 |
-| 불량 반출 사유   | `POST /logistics/stock-transfers`는 `reasonCode`·`remarks`를 받지 않고 저장하지 않는다                        | 사유 입력을 숨기고 알 수 없는 필드를 보내지 않는다                                            | 통보 122              |
-| 긴급 직행 위치   | `expedited=true`는 창고 단위 관리 창고에서 활성 위치가 정확히 하나일 때만 위치 없이 처리된다. 그 밖은 400이다 | 위치 입력 칸이 생기기 전에는 창고 단위 관리 창고만 선택 가능하게 한다                         | 통보 221              |
-| 재등록 진입 목록 | `followUpPending`과 `reinstatable` 중 어느 것도 완료 건을 제외한 재등록 대기열을 완전히 표현하지 못한다       | 목록에서 이미 처리된 건이 보일 수 있음을 허용하고, POST의 409 `ALREADY_REINSTATED`를 처리한다 | 통보 222              |
-| 취소 차단 안내   | 출하가 소유한 하위 입고·출고 전표의 개별 취소는 `STATE_LOCKED`로 막힌다                                       | 해당 전표에서는 직접 취소를 유도하지 말고 출하 취소 경로를 안내한다                           | 통보 217              |
-| 프린터 상태      | 실제 상태 수집 축이 없어 `OFFLINE` 고정이다                                                                   | 이 값을 실제 연결 상태로 해석하지 않는다                                                      | 루틴 마감 전달분 §8   |
-| 결재함 이동      | 대상 화면 원천이 없어 `openable=false`일 수 있다                                                              | `false`일 때 상세 화면 이동을 제공하지 않는다                                                 | 루틴 마감 전달분 §8   |
+| 영역                | 현재 서버 동작                                                                                                | 클라이언트 대응                                                                               | 근거                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------- |
+| 미구현 5건          | 첨부 업로드 2건·첨부 내용 1건·발행 rendition 1건·대시보드 요약 1건은 구현하지 않았다                          | 기능을 노출하지 않거나 “준비 중”으로 처리한다. 엔드포인트를 호출하지 않는다                   | 커버리지 마감 보고 §1 |
+| 불량 반출 사유      | `POST /logistics/stock-transfers`는 `reasonCode`·`remarks`를 받지 않고 저장하지 않는다                        | 사유 입력을 숨기고 알 수 없는 필드를 보내지 않는다                                            | 통보 122              |
+| 긴급 직행 위치      | `expedited=true`는 창고 단위 관리 창고에서 활성 위치가 정확히 하나일 때만 위치 없이 처리된다. 그 밖은 400이다 | 위치 입력 칸이 생기기 전에는 창고 단위 관리 창고만 선택 가능하게 한다                         | 통보 221              |
+| 재등록 진입 목록    | `followUpPending`과 `reinstatable` 중 어느 것도 완료 건을 제외한 재등록 대기열을 완전히 표현하지 못한다       | 목록에서 이미 처리된 건이 보일 수 있음을 허용하고, POST의 409 `ALREADY_REINSTATED`를 처리한다 | 통보 222              |
+| 취소 차단 안내      | 출하가 소유한 하위 입고·출고 전표의 개별 취소는 `STATE_LOCKED`로 막힌다                                       | 해당 전표에서는 직접 취소를 유도하지 말고 출하 취소 경로를 안내한다                           | 통보 217              |
+| 프린터 상태         | 실제 상태 수집 축이 없어 `OFFLINE` 고정이다                                                                   | 이 값을 실제 연결 상태로 해석하지 않는다                                                      | 루틴 마감 전달분 §8   |
+| 보전 실적 마감·리셋 | `POST /maintenance/results`의 `closed=true`·`resetCounter=true`, 수정의 `closed=true`를 항상 422로 거부한다   | 해당 동작을 노출하지 말고 `closed=false`, `resetCounter=false` 또는 생략만 전송한다           | 통보 113·114          |
+| 공용 문서 발행      | `IDENTIFICATION_TAG`는 422 `STATE_LOCKED`, `DELIVERY_LABEL`은 422 `INVALID`로 항상 거부한다                   | 두 문서 유형의 발행 동작을 숨기고 `POST /app/document-issues`로 전송하지 않는다               | I-27 마감 결정        |
+| 결재함 이동         | 대상 화면 원천이 없어 `openable=false`일 수 있다                                                              | `false`일 때 상세 화면 이동을 제공하지 않는다                                                 | 루틴 마감 전달분 §8   |
 
 ## P2 — 오류 코드에 과도하게 결합하지 않기
 
@@ -45,10 +50,14 @@
 
 | API/필드                                                      | 구현 경계                                                    |
 | ------------------------------------------------------------- | ------------------------------------------------------------ |
+| `POST /app/document-issues`                                   | `IDENTIFICATION_TAG`·`DELIVERY_LABEL`은 항상 거부한다        |
 | `POST /planning/production-orders/{productionOrderId}:resync` | 재송신 대상을 가르는 축이 없어 실제 재송신을 수행하지 않는다 |
 | `POST /production/work-orders/{workOrderId}:close`            | 연동 아웃박스 적재까지만 한다                                |
 | `POST /logistics/shipments/{shipmentId}:confirm`              | 연동 아웃박스 적재까지만 한다                                |
 | `PUT /app/notification-subscriptions`의 `zaloEnabled`         | 값은 저장하지만 실제 Zalo 발송 경로는 없다                   |
+| `GET /app/printers`                                           | 상태 수집 없이 `OFFLINE`으로 고정한다                        |
+| `POST /maintenance/results`                                   | 마감과 누계 리셋은 거부하고 진행 중 실적 등록만 처리한다     |
+| `PUT /maintenance/results/{maintenanceResultId}`              | 마감 전 수정만 처리한다                                      |
 
 ## 설계팀 확정본까지 보류
 

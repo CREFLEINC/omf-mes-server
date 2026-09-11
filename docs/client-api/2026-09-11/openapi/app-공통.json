@@ -117,13 +117,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -176,6 +191,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -191,7 +216,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-routes/{approvalRouteId}": {
@@ -232,6 +262,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "대상 없음",
             "content": {
@@ -247,7 +287,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -303,6 +348,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -338,7 +393,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-routes/{approvalRouteId}:deactivate": {
@@ -387,6 +447,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -422,7 +492,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-routes/{approvalRouteId}:activate": {
@@ -481,6 +556,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -517,7 +602,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-routes/{approvalRouteId}/steps": {
@@ -549,6 +639,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "대상 없음",
             "content": {
@@ -564,7 +664,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -611,6 +716,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -646,7 +761,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-requests": {
@@ -816,6 +936,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -832,7 +962,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-requests/{approvalRequestId}": {
@@ -873,6 +1008,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -898,7 +1043,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-requests/{approvalRequestId}:approve": {
@@ -967,6 +1117,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -1002,7 +1162,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/approval-requests/{approvalRequestId}:reject": {
@@ -1071,6 +1236,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -1106,7 +1281,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/document-issues": {
@@ -1244,13 +1424,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -1258,7 +1453,7 @@
         ],
         "operationId": "createDocumentIssues",
         "summary": "발행 · 재발행",
-        "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.",
+        "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.\n\n서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 두 문서 유형은 현재 클라이언트에서 발행 요청하지 않는다(I-27 마감 결정).",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -1288,6 +1483,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "이 단말에 출력 권한이 없다.",
             "content": {
@@ -1310,10 +1515,22 @@
           }
         },
         "x-omf-server-implementation": {
-          "status": "implemented",
+          "status": "partial",
           "serverVersion": "v0.1.2",
-          "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+          "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645",
+          "limitation": "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 나머지 지원 조합만 기록을 생성한다."
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "I-27",
+            "summary": "IDENTIFICATION_TAG와 DELIVERY_LABEL 발행 입력은 현재 서버가 각각 422 STATE_LOCKED·INVALID로 거부한다."
+          }
+        ]
       }
     },
     "/app/document-issues/{documentIssueLogId}": {
@@ -1348,6 +1565,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "없다.",
             "content": {
@@ -1363,7 +1590,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/document-issues/{documentIssueLogId}/rendition": {
@@ -1502,6 +1734,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "없다.",
             "content": {
@@ -1528,7 +1770,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/printers": {
@@ -1538,7 +1785,7 @@
         ],
         "operationId": "listPrinters",
         "summary": "프린터 목록 · 상태",
-        "description": "이 단말이 쓸 수 있는 프린터와 그 상태. 화면 머리에 상시 보인다 — 인쇄가 안 될 때 사용자가 가장 먼저 보는 곳이다.",
+        "description": "이 단말이 쓸 수 있는 프린터와 그 상태. 화면 머리에 상시 보인다 — 인쇄가 안 될 때 사용자가 가장 먼저 보는 곳이다.\n\n서버 구현 기준: 실제 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다. 연결 상태 판정에 사용하지 않는다.",
         "parameters": [
           {
             "name": "terminalId",
@@ -1581,13 +1828,29 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
-          "status": "implemented",
+          "status": "partial",
           "serverVersion": "v0.1.2",
-          "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+          "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645",
+          "limitation": "실제 프린터 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다."
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/document-issues/summary": {
@@ -1687,6 +1950,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-envelope-exempt": "짝 목록의 «요약»이 아니라 targetIds 로 여러 대상을 한 번에 조회하는 «배치»다 — 발행한 적 없는 대상도 issueCount:0 으로 돌려주므로 목록의 필터 축(issuedFrom·lotId·printOutcome)이 뜻을 갖지 않는다.",
@@ -1694,7 +1967,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/sessions": {
@@ -1726,6 +2004,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "omf_session HttpOnly 세션 쿠키. SameSite=Lax, Path=/이며 Secure는 COOKIE_SECURE 설정을 따른다.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1761,12 +2047,13 @@
             }
           }
         },
-        "x-internal-note": "관리웹 계정 세션의 운반 수단(쿠키 / Bearer)이 미확정이다 — 공유계약 F-2 · §I-3. 확정 전까지 securitySchemes 에 스킴을 두지 않는다.",
+        "x-internal-note": "v0.1.2 서버 구현 기준: 인증 세션은 omf_session HttpOnly 쿠키로 운반한다. 로그인 성공 응답이 쿠키를 설정하고 이후 요청은 브라우저 자격증명을 포함한다.",
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": []
       }
     },
     "/app/sessions/current": {
@@ -1786,13 +2073,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1807,13 +2109,28 @@
         "responses": {
           "204": {
             "description": "끝났다"
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/users/me:change-password": {
@@ -1867,7 +2184,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notifications": {
@@ -1969,13 +2291,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notifications/unread-count": {
@@ -2004,13 +2341,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notifications/{notificationId}:read": {
@@ -2039,6 +2391,16 @@
           "204": {
             "description": "읽음으로 표시됐다"
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2064,7 +2426,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notifications:read-all": {
@@ -2098,13 +2465,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notification-events": {
@@ -2135,6 +2517,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-internal-note": "발생 지점 — 설비 고장 발생 = POST /maintenance/breakdowns(equipment-05) 뒤 · 적정타수 초과 = POST /maintenance/tool-usages 저장 뒤 서버가 적정타수 대비 비율을 판정 · P/O 변경 수신 = ERP 수신 메시지가 P/O 변경을 담을 때 · 연계 실패 = 연계 메시지가 실패로 떨어질 때 · 승인 요청·결재 도착 = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. ⛔ 검교정 만료 임박 = 미확정 — 시간 트리거(배치)이고 임박 일수 기준이 정해진 적이 없다. 소관 화면 W-05-10 에는 「알림」이라는 낱말이 0건이다. ⛔ eventCode 에 enum 을 넣지 않는다 — 코드 문자열 자체가 아직 확정된 적이 없어 이 표는 «이벤트명»으로만 적는다. 각 쓰기 쪽 계약에 「이 쓰기 뒤에 이벤트 X 가 난다」를 적는 것은 이 지시서 밖(A7·A8 소관)이다.",
@@ -2142,7 +2534,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notification-subscriptions": {
@@ -2195,6 +2592,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2210,7 +2617,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -2267,6 +2679,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2293,7 +2715,12 @@
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645",
           "limitation": "zaloEnabled 값은 저장하지만 실제 Zalo 발송 경로는 없다."
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices": {
@@ -2424,6 +2851,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-internal-note": "표시 순서(확인 요구 먼저·최신순)는 W-CO-04 §8 미결 5 — 권고 단계이지 확정이 아니다.",
@@ -2431,7 +2868,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -2475,6 +2917,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2490,7 +2942,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices/{noticeId}": {
@@ -2531,6 +2988,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "없다",
             "content": {
@@ -2546,7 +3013,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -2603,6 +3075,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2638,7 +3120,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices/{noticeId}:publish": {
@@ -2677,6 +3164,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2712,7 +3209,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices/{noticeId}:close": {
@@ -2751,6 +3253,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2786,7 +3298,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices/{noticeId}:acknowledge": {
@@ -2818,6 +3335,16 @@
           "204": {
             "description": "확인됐다"
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2853,7 +3380,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notices/{noticeId}/acknowledgements": {
@@ -2925,6 +3457,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -2950,7 +3492,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/dashboard-summary": {
@@ -3117,13 +3664,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -3167,6 +3729,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -3182,7 +3754,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/operation-policies/effective": {
@@ -3261,13 +3838,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/operation-policies/{operationPolicyId}": {
@@ -3307,13 +3899,28 @@
                 "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다."
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       },
       "put": {
         "tags": [
@@ -3369,6 +3976,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한 없음",
             "content": {
@@ -3395,7 +4012,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/attachments": {
@@ -3547,13 +4169,28 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/attachments/{attachmentId}/content": {
@@ -3659,6 +4296,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -3684,7 +4331,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     },
     "/app/notification-subscriptions/recipients:preview": {
@@ -3776,6 +4428,16 @@
               }
             }
           },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "권한·단말 게이팅에 막혔다",
             "content": {
@@ -3797,7 +4459,12 @@
           "status": "implemented",
           "serverVersion": "v0.1.2",
           "serverCommit": "72a960c0599711458a0ce4198b34a11d5353a645"
-        }
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
       }
     }
   },
@@ -5097,7 +5764,7 @@
             "description": "평문은 저장하지도 기록하지도 않는다"
           }
         },
-        "x-internal-note": "app.app_user 에 password_hash·failed_login_count·last_login_at 이 셋 다 없다(W-CO-01 §5-B 가 [신설] 로 표시). 계약이 앞서 있고 모델 요청은 공통 트랙 묶음 이슈로 나간다."
+        "x-internal-note": "v0.1.2 서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다."
       },
       "LoginFailure": {
         "type": "object",
@@ -6189,6 +6856,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "POP·모바일 단말 토큰. 단말 등록 때 발급한 값을 기기가 저장해 보낸다. 서버는 이 토큰의 «종류»로 X-Worker-No 필수 여부를 가른다."
+      },
+      "omfSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "omf_session",
+        "description": "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다."
       }
     }
   },
