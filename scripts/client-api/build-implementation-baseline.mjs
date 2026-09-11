@@ -385,18 +385,17 @@ function applyKnownDifferences(documentsByOperation) {
 }
 
 function readImplementedBindings() {
-  const bindings = new Set();
+  const bindings = [];
   const sourceFiles = listFiles(join(ROOT_DIR, "src")).filter(
     (file) =>
-      file.endsWith(".ts") &&
-      !file.endsWith(".spec.ts") &&
-      !file.includes("/__fixtures__/"),
+      file.endsWith(".controller.ts") &&
+      !file.split(/[\\/]/).some((segment) => segment.startsWith("__")),
   );
   const pattern = /@Contract\(\s*["']([A-Z]+\s+\/[^"']+)["']\s*\)/g;
 
   for (const file of sourceFiles) {
     const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(pattern)) bindings.add(match[1]);
+    for (const match of source.matchAll(pattern)) bindings.push(match[1]);
   }
   return bindings;
 }
@@ -405,7 +404,8 @@ function build() {
   const contractFiles = readdirSync(CONTRACT_DIR)
     .filter((file) => file.endsWith(".json"))
     .sort();
-  const implementedBindings = readImplementedBindings();
+  const bindingKeys = readImplementedBindings();
+  const implementedBindings = new Set(bindingKeys);
   const documents = new Map();
   const documentsByOperation = new Map();
   const originalHashes = new Map();
@@ -436,6 +436,17 @@ function build() {
   assert(
     phantomBindings.length === 0,
     `계약에 없는 @Contract 바인딩: ${phantomBindings.join(", ")}`,
+  );
+  const bindingCounts = new Map();
+  for (const key of bindingKeys) {
+    bindingCounts.set(key, (bindingCounts.get(key) ?? 0) + 1);
+  }
+  const duplicateBindings = [...bindingCounts]
+    .filter(([, count]) => count > 1)
+    .map(([key]) => key);
+  assert(
+    duplicateBindings.length === 0,
+    `두 컨트롤러가 같은 계약을 주장합니다: ${duplicateBindings.join(", ")}`,
   );
   assert(
     documentsByOperation.size === 487,
