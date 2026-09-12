@@ -80,11 +80,15 @@ export class AppUserController {
     return { appUser, editability };
   }
 
+  /**
+   * ⛔ 비밀번호를 안 보내면 서버가 뽑은 임시 비밀번호가 «이 응답에서 한 번만» 보인다.
+   * 멱등 재전송이 저장된 앞의 응답을 그대로 돌려주는 것도 `:reset-password` 와 같다.
+   */
   @Post()
   @Contract('POST /app/users')
   create(@Req() request: Request, @Body() body: AppUserCreate): Promise<unknown> {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.users.create(body),
+      this.users.create(body, currentSession(request)?.userId),
     );
   }
 

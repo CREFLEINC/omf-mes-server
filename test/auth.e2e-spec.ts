@@ -203,6 +203,22 @@ describe('인증 (실 DB)', () => {
       expect(validate({ userId: 1, loginId: 'x' })).toBe(false);
     });
 
+    it('⭐ 강제 변경 표시를 세션이 그대로 싣는다 — 화면이 비밀번호 변경으로 보낼 근거다', async () => {
+      expect((await sessions.build(Number(userId), null))?.mustChangePassword).toBe(false);
+
+      await prisma.user_credential.update({
+        where: { app_user_id: userId },
+        data: { must_change_password: true },
+      });
+
+      expect((await sessions.build(Number(userId), null))?.mustChangePassword).toBe(true);
+
+      await prisma.user_credential.update({
+        where: { app_user_id: userId },
+        data: { must_change_password: false },
+      });
+    });
+
     it('is_active 가 꺼진 사용자는 세션이 서지 않는다', async () => {
       await prisma.app_user.update({ where: { app_user_id: userId }, data: { is_active: false } });
 

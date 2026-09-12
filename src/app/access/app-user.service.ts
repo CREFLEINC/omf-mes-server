@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { generateTemporaryPassword, hashPassword } from '../../auth/password';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import {
   Editability,
@@ -31,6 +32,9 @@ const LOGIN_ID_EDITABILITY: Editability = {
   referenceCount: null,
 };
 
+/** 계약 `PasswordChangeRequest.newPassword` 와 같은 값. 두 자리가 갈리면 안 된다. */
+const MIN_PASSWORD_LENGTH = 8;
+
 /** 계약 `AppUser` 와 동형. 필드는 `x-source-column` 을 그대로 따른다. */
 interface AppUserView {
   appUserId: number;
@@ -48,6 +52,20 @@ export interface AppUserCreate {
   departmentId?: number | null;
   email?: string | null;
   statusCode?: string;
+  /**
+   * 관리자가 직접 정하는 초기 비밀번호. 생략하면 서버가 임시 비밀번호를 뽑는다
+   * (사용자 결정 2026-09-12). 계약 사본에는 아직 없는 칸이라 길이 검사를 서버가 한다 —
+   * 계약 `PasswordChangeRequest.newPassword` 와 같은 최소 8이다.
+   */
+  password?: string;
+}
+
+/**
+ * 등록 응답. `temporaryPassword` 는 **서버가 뽑았을 때만** 실린다 — 요청에 `password` 를
+ * 담았으면 오지 않는다. 「모르는 값」이 아니라 「그 경로에는 없는 값」이다.
+ */
+export interface AppUserCreated extends AppUserView {
+  temporaryPassword?: string;
 }
 
 export interface AppUserUpdate {
@@ -100,16 +118,29 @@ export class AppUserService {
     return { appUser: view(row), editability: LOGIN_ID_EDITABILITY, versionNo: row.version_no };
   }
 
-  async create(input: AppUserCreate): Promise<AppUserView> {
+  /**
+   * 등록은 «자격까지» 만든다. 계정만 만들고 자격을 뒤로 미루면 로그인이 안 되는 계정이
+   * 정상 상태로 남고, 그 증상은 「비밀번호가 틀리다」와 구분되지 않는다.
+   *
+   * ⭐ 비밀번호를 받으면 그 값으로 두고 **강제 변경을 걸지 않는다**(사용자 결정 2026-09-12).
+   * 안 받으면 서버가 뽑아 응답에 «한 번만» 싣고 강제 변경을 건다 — 그 값은 관리자가 읽어
+   * 주고 작업자가 받아 적는 값이라 그대로 남으면 안 된다.
+   */
+  async create(input: AppUserCreate, actorId?: number): Promise<AppUserCreated> {
     assertNotBlank([
       ['loginId', input.loginId],
       ['userName', input.userName],
     ]);
+    const chosen = readPassword(input.password);
     await this.assertReferences(input.statusCode, input.departmentId);
     await this.assertLoginIdFree(input.loginId);
 
-    return view(
-      await this.prisma.app_user.create({
+    const password = chosen ?? generateTemporaryPassword();
+    const password_hash = await hashPassword(password);
+
+    // ⛔ 한 트랜잭션이다. 계정만 남고 자격이 빠지면 이 메서드가 없애려는 그 상태가 된다.
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.app_user.create({
         data: {
           login_id: input.loginId,
           user_name: input.userName,
@@ -118,8 +149,22 @@ export class AppUserService {
           // 안 보내면 물리 모델 DEFAULT('EMPLOYED')가 채운다(계약).
           ...optional('status_code', input.statusCode),
         },
-      }),
-    );
+      });
+      await tx.user_credential.create({
+        data: {
+          app_user_id: created.app_user_id,
+          password_hash,
+          must_change_password: chosen === undefined,
+          ...(actorId === undefined ? {} : { created_by: actorId }),
+        },
+      });
+      return created;
+    });
+
+    return {
+      ...view(row),
+      ...(chosen === undefined ? { temporaryPassword: password } : {}),
+    };
   }
 
   /** ⛔ `loginId` 는 본문에 없다 — 한 번 만들면 고치지 않는다(계약 `AppUserUpdate`). */
@@ -237,4 +282,27 @@ function view(row: AppUserRow): AppUserView {
     statusCode: row.status_code,
     isActive: row.is_active,
   };
+}
+
+/**
+ * ⚠ 계약 사본에 `AppUserCreate.password` 가 아직 없다 — 계약 검증 가드가 이 칸을 통째로
+ * 지나치므로 **여기가 유일한 문지기다**. 타입까지 보는 이유가 그것이다: 문자열이 아닌 값을
+ * 그대로 흘리면 scrypt 가 던져 400 이어야 할 자리가 500 이 된다.
+ *
+ * ⛔ `null` 은 「안 보냈다」로 읽는다 — JSON `null` 하나가 500 이 되는 길을 막는다.
+ */
+function readPassword(password: unknown): string | undefined {
+  if (password === undefined || password === null) return undefined;
+
+  if (typeof password !== 'string') throw badPassword(ERROR_CODE.INVALID, '비밀번호는 문자열입니다.');
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw badPassword(ERROR_CODE.RANGE, `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`);
+  }
+  return password;
+}
+
+function badPassword(code: string, message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field: 'password', code, message },
+  ]);
 }

@@ -289,6 +289,79 @@ describe('사용자 마스터 (e2e)', () => {
     expect(badDepartment.body.errors[0]).toMatchObject({ field: 'departmentId', code: 'INVALID' });
   });
 
+  it('⭐ 비밀번호를 안 보내면 임시 비밀번호가 응답에 실리고 그 값으로 바로 로그인된다', async () => {
+    const loginId = `${PREFIX}-pw-temp`;
+    const created = await request(app.getHttpServer())
+      .post('/api/app/users')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ loginId, userName: '임시 비밀번호' })
+      .expect(201);
+
+    const temporaryPassword = created.body.temporaryPassword as string;
+    expect(typeof temporaryPassword).toBe('string');
+
+    const session = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', key())
+      .send({ loginId, password: temporaryPassword })
+      .expect(200);
+    // 서버가 뽑은 값은 관리자가 읽어 주고 작업자가 받아 적는 값이라 반드시 바꾸게 한다.
+    expect(session.body.mustChangePassword).toBe(true);
+  });
+
+  it('⭐ 비밀번호를 보내면 그 값으로 로그인되고 강제 변경이 걸리지 않는다', async () => {
+    const loginId = `${PREFIX}-pw-set`;
+    const chosen = '관리자가-정한-비밀번호';
+    const created = await request(app.getHttpServer())
+      .post('/api/app/users')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ loginId, userName: '지정 비밀번호', password: chosen })
+      .expect(201);
+    // ⛔ 보낸 값을 되돌려주지 않는다 — 응답에 실릴 이유가 없다.
+    expect(created.body.temporaryPassword).toBeUndefined();
+
+    const session = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', key())
+      .send({ loginId, password: chosen })
+      .expect(200);
+    expect(session.body.mustChangePassword).toBe(false);
+  });
+
+  it('⛔ 8자 미만 비밀번호는 400 RANGE 이고 계정도 남지 않는다', async () => {
+    const loginId = `${PREFIX}-pw-short`;
+    const rejected = await request(app.getHttpServer())
+      .post('/api/app/users')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ loginId, userName: '짧다', password: '1234567' })
+      .expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'password', code: 'RANGE' });
+    expect(await prisma.app_user.findUnique({ where: { login_id: loginId } })).toBeNull();
+  });
+
+  it('⛔ 문자열이 아닌 비밀번호는 400 이다 — null 은 「안 보냈다」로 읽는다', async () => {
+    const rejected = await request(app.getHttpServer())
+      .post('/api/app/users')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ loginId: `${PREFIX}-pw-type`, userName: '숫자', password: 12345678 })
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'password', code: 'INVALID' });
+
+    // null 을 400 으로 막지 않는다 — 안 보낸 것과 같이 임시 비밀번호를 뽑는다.
+    const created = await request(app.getHttpServer())
+      .post('/api/app/users')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ loginId: `${PREFIX}-pw-null`, userName: '널', password: null })
+      .expect(201);
+    expect(typeof created.body.temporaryPassword).toBe('string');
+  });
+
   it('⛔ 낡은 If-Match 는 409 STALE_VERSION 이다', async () => {
     const created = await create(`${PREFIX}-i`);
     await request(app.getHttpServer())

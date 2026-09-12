@@ -23,6 +23,7 @@ export class SessionService {
       // 않는다 — 휴직인데 계정은 살려 두는 경우가 실재한다(계약 AppUser.statusCode).
       where: { app_user_id: appUserId, is_active: true },
       include: {
+        user_credential: { select: { must_change_password: true } },
         user_data_scope: true,
         user_role: { include: { role: { include: { role_permission: true } } } },
       },
@@ -43,6 +44,9 @@ export class SessionService {
           businessUnitId: Number(scope.business_unit_id),
           ...(scope.plant_id === null ? {} : { plantId: Number(scope.plant_id) }),
         })),
+      // 자격이 없는 계정은 로그인 자체가 안 된다 — 여기 닿는 길은 관리자가 자격을 지운
+      // 뒤 세션만 남은 자리뿐이라 「바꿔야 한다」로 몰지 않는다.
+      mustChangePassword: user.user_credential?.must_change_password ?? false,
       roles: activeRoles.map((role) => role.role_code).sort(),
       permissions: [
         ...new Set(
