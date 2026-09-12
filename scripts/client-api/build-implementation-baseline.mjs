@@ -22,8 +22,14 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
 // 기준 커밋이 태그보다 앞선다 — v0.1.3 뒤의 미출시 지점이라 「-next」로 적는다.
 // 정확한 지점은 SERVER_COMMIT 이 고정한다.
+//
+// ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 이 저장소는 PR 을 squash 로 병합하므로
+// 작업 브랜치의 커밋 해시는 병합과 함께 사라진다(원격 브랜치도 자동 삭제된다). 사라진
+// 해시를 적어 두면 아래 assertSourceMatchesServerCommit 의 `git rev-parse <sha>:src` 가
+// 새 클론에서 죽는다 — 지금 로컬에서 돌아가는 것은 객체가 아직 남아 있어서일 뿐이다.
+// 그래서 전달본은 «병합된 뒤» 그 병합 커밋을 적어 다시 뽑는다.
 const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "21c83c41b9d21bdb41f217a9521cb61984b56938";
+const SERVER_COMMIT = "af53be7f90c21e55e54d19da7d0bf4e20eb00031";
 const GENERATED_VERSION = "0.1.3-next-server.20260912";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),

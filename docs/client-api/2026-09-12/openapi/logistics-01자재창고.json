@@ -137,7 +137,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -221,7 +221,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -292,7 +292,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -344,7 +344,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -452,7 +452,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -552,7 +552,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -653,7 +653,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -891,7 +891,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1018,7 +1018,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1101,7 +1101,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1172,7 +1172,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1277,7 +1277,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1378,7 +1378,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1488,7 +1488,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1603,7 +1603,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1689,7 +1689,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1760,7 +1760,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1812,7 +1812,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1913,7 +1913,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -1976,7 +1976,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2090,7 +2090,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2214,7 +2214,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2376,7 +2376,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2449,7 +2449,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2583,7 +2583,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2645,7 +2645,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2697,7 +2697,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2869,7 +2869,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -2952,7 +2952,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3105,7 +3105,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3215,7 +3215,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3286,7 +3286,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3338,7 +3338,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3436,7 +3436,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3536,7 +3536,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3637,7 +3637,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3771,7 +3771,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3849,7 +3849,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3920,7 +3920,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -3972,7 +3972,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4024,7 +4024,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4101,7 +4101,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4250,7 +4250,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4350,7 +4350,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4421,7 +4421,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4518,7 +4518,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4596,7 +4596,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4694,7 +4694,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4771,7 +4771,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4888,7 +4888,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -4976,7 +4976,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5039,7 +5039,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5101,7 +5101,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5209,7 +5209,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5271,7 +5271,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5384,7 +5384,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5529,7 +5529,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5613,7 +5613,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5684,7 +5684,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5781,7 +5781,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5833,7 +5833,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -5940,7 +5940,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6041,7 +6041,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6168,7 +6168,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6239,7 +6239,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6343,7 +6343,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6447,7 +6447,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6540,7 +6540,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6639,7 +6639,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6730,7 +6730,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6792,7 +6792,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -6927,7 +6927,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7027,7 +7027,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7108,7 +7108,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7160,7 +7160,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7258,7 +7258,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7362,7 +7362,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7564,7 +7564,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7664,7 +7664,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7746,7 +7746,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7843,7 +7843,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7895,7 +7895,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -7993,7 +7993,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8056,7 +8056,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8169,7 +8169,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8276,7 +8276,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8377,7 +8377,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8491,7 +8491,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8616,7 +8616,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -8731,7 +8731,7 @@
         "x-omf-server-implementation": {
           "status": "implemented",
           "serverVersion": "v0.1.3-next",
-          "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938"
+          "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031"
         },
         "security": [
           {
@@ -16322,7 +16322,7 @@
     "designContractCommit": "a6a87e144116ebaa32c01df5a12a0fd2924427e7",
     "designContractVersion": "0.1.2-server.20260911",
     "serverVersion": "v0.1.3-next",
-    "serverCommit": "21c83c41b9d21bdb41f217a9521cb61984b56938",
+    "serverCommit": "af53be7f90c21e55e54d19da7d0bf4e20eb00031",
     "replacementPolicy": "설계팀 확정본 수신 시 폐기하고 공식 계약으로 교체한다."
   }
 }
