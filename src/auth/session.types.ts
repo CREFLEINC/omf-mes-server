@@ -14,6 +14,11 @@ export interface Session {
   scopes: SessionScope[];
   roles: string[];
   permissions: string[];
+  /**
+   * 임시 비밀번호로 들어왔는가. 화면은 이 값이 `true` 면 비밀번호 변경으로 보낸다.
+   * ⛔ 불리언은 늘 아는 값이라 «언제나» 싣는다 — 부재를 「모른다」로 읽을 자리를 만들지 않는다.
+   */
+  mustChangePassword: boolean;
 }
 
 /** 계약 `#/components/schemas/LoginFailure`. */

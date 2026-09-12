@@ -18,6 +18,7 @@ function requestOf(userId = 11, body: unknown = undefined): Request {
     scopes: [],
     roles: [],
     permissions: [],
+    mustChangePassword: false,
   });
   return request;
 }
