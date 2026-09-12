@@ -10,7 +10,8 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 | `docs/server-architecture.md` | 서버 내부 구조 — 코어 6건·모듈 배치. **도메인 구현 전 필독** |
 | `docs/development-strategy.md` | 개발 순서 전략 |
 | `docs/계약-되돌림-mdm.md` | mdm 구현 중 계약에 되돌릴 것 — 답이 필요한 5건 · 알려둘 8건 |
-| `docs/coverage-100/계약-사본-당길-때.md` | ⭐ `contracts:update` **전에 필독** — 계약이 바뀌면 서버가 따라 고칠 자리와, «의도적으로» 빨개지는 spec 셋 |
+| `docs/계약-선행-수정항목.md` | ⭐ `contracts:update` **전에 필독** — 서버가 계약보다 앞서 나간 자리. 계속 쌓는 «열린» 장부 |
+| `docs/coverage-100/계약-사본-당길-때.md` | `contracts:update` 전에 함께 읽는다 — 마감된 루틴(2026-09-10)이 남긴 목록. ⛔ 여기 «덧붙이지» 않는다 |
 | `docs/deployment.md` | 배포 구조·서버·운영. 배포/인프라 파일 수정 전 필독 |
 | `deploy/RELEASE.md` | 하노이 배포 런북 |
 | `deploy/HANDOFF.md` | 남은 작업 인계 |
