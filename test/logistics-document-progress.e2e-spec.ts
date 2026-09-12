@@ -33,6 +33,16 @@ import { seedRoute } from './approval-request.fixture';
 const LOGIN_ID = 'e2e-dp-probe';
 const PASSWORD = 'DP-진행현황-비밀번호';
 const PREFIX = 'DPE2E';
+/**
+ * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
+ * **6자리 숫자**로 그대로 담고, 사전부착 공급사 LOT 번호는 **숫자 34자리**여야 한다(#610).
+ * 이 셋만 숫자로 두고 나머지 마스터 코드는 PREFIX 를 그대로 쓴다.
+ */
+const ITEM_CODE = '900000201';
+const PO_SUPPLIER_BASE = 910000;
+const SUPPLIER_BASE = 920000;
+const supplierCodeOf = (base: number, seq: number): string => String(base + seq);
+const supplierLotNoOf = (seq: number): string => `9002${String(seq).padStart(30, '0')}`;
 const ROLE = `${PREFIX}-ROLE`;
 const AT = '2026-05-04T02:00:00.000Z';
 /** `AT` 의 영업일. ⛔ 서버가 도출하지 않는다 — 클라이언트가 보낸다(C-8). */
@@ -679,7 +689,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
   ): Promise<{ inboundReceiptId: number; purchaseOrderLineId: number }> {
     inboundSeq += 1;
     const supplier = await prisma.partner.create({
-      data: { partner_code: `${PREFIX}-POSUP-${inboundSeq}`, partner_name: '발주검사공급사' },
+      data: { partner_code: supplierCodeOf(PO_SUPPLIER_BASE, inboundSeq), partner_name: '발주검사공급사' },
     });
     const order = await prisma.purchase_order.create({
       data: {
@@ -717,7 +727,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
             purchaseOrderLineId: Number(line.purchase_order_line_id),
             receivedQty,
             uomId,
-            supplierLotNo: `${PREFIX}-SL-${inboundSeq}`,
+            supplierLotNo: supplierLotNoOf(inboundSeq),
             supplierLotMissing: false,
           },
         ],
@@ -756,7 +766,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
   async function insertInboundReceipt(): Promise<{ inboundReceiptId: number }> {
     inboundSeq += 1;
     const supplier = await prisma.partner.create({
-      data: { partner_code: `${PREFIX}-SUP-${inboundSeq}`, partner_name: '진행현황검사공급사' },
+      data: { partner_code: supplierCodeOf(SUPPLIER_BASE, inboundSeq), partner_name: '진행현황검사공급사' },
     });
     const receipt = await prisma.inbound_receipt.create({
       data: {
@@ -958,7 +968,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
 
     const item = await prisma.item.create({
       data: {
-        item_code: `${PREFIX}-IT`,
+        item_code: ITEM_CODE,
         item_name: '진행현황검사품목',
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
@@ -1035,7 +1045,7 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     await prisma.approval_route.deleteMany({ where: cancelTypes });
     // ⭐ API 로 만든 전표는 번호를 채번이 짓는다(PREFIX 가 아니다) — 공장·창고·품목으로 짚는다.
     const plantScope = `(SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
-    const itemScope = `(SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`;
+    const itemScope = `(SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`;
     const warehouseScope = `(SELECT warehouse_id FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%')`;
     await prisma.$executeRawUnsafe(
       `DELETE FROM app.document_cancellation
@@ -1076,11 +1086,16 @@ describe('물류 문서 진행현황 목록 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM logistics.purchase_order WHERE plant_id IN ${plantScope}`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code = '${ITEM_CODE}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
+    // ⛔ 공급사 코드가 «숫자»라 접두로 못 짚는다. 코드 패턴으로 지우면 남의 스위트·시드가
+    //    만든 6자리 코드까지 쓸어 간다 — 이 스위트만 쓰는 «이름»으로 짚는다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM mdm.partner
+       WHERE partner_code LIKE '${PREFIX}%'
+          OR partner_name IN ('발주검사공급사', '진행현황검사공급사')`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.process WHERE process_code LIKE '${PREFIX}%'`);
 
     const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });

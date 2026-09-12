@@ -26,6 +26,13 @@ const LOGIN_ID = 'e2e-lot-probe';
 const NOPERM_ID = 'e2e-lot-noperm';
 const PASSWORD = 'LOT-검사-비밀번호';
 const PREFIX = 'LOTE2E';
+/**
+ * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
+ * **6자리 숫자**로 «그대로» 담는다. `LOTE2E-…` 같은 코드는 400 이 된다 — 그래서 이 둘만
+ * 숫자로 둔다. 다른 마스터 코드는 PREFIX 를 그대로 쓴다.
+ */
+const ITEM_CODE = '900000001';
+const SUPPLIER_CODE = '900001';
 const ROLE = 'E2E_LOT';
 const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04', 'M-01-13'];
 const DAY = '2026-05-01';
@@ -137,7 +144,12 @@ describe('LOT (e2e)', () => {
     expect(first.lotNo).toHaveLength(LOT_NO_LENGTH);
     expect(second.lotNo).toHaveLength(LOT_NO_LENGTH);
     expect(first.lotNo).not.toBe(second.lotNo);
-    expect(first.lotNo.startsWith('M')).toBe(true);
+    // ⛔ 「M 으로 시작한다」가 아니다 — 입하에서 난 자재 LOT 은 `materialMesLotNo` 가 매기고
+    // 품목 코드 9자리로 «시작한다»(생산 LOT 만 기존 `mesLotNo` 의 M 체계를 쓴다 · #610).
+    expect(first.lotNo.startsWith(ITEM_CODE)).toBe(true);
+    expect(second.lotNo.startsWith(ITEM_CODE)).toBe(true);
+    // 34자리가 전부 숫자다 — 모바일 스캔 화면의 정본 형식.
+    expect(first.lotNo).toMatch(/^\d{34}$/);
   });
 
   it('⭐ 등록 즉시 보류가 걸린다 — 화면이 보내지 않고 서버가 건다', async () => {
@@ -559,7 +571,7 @@ describe('LOT (e2e)', () => {
   it('⛔ 요청 «안» 5칸 중복은 400 UNIQUE_VIOLATION · partnerId 만 다르면 통과한다', async () => {
     const lot = await create({ numberSourceCode: 'MES' });
     const supplier = await prisma.partner.findFirstOrThrow({
-      where: { partner_code: `${PREFIX}-SUP` },
+      where: { partner_code: SUPPLIER_CODE },
     });
     const same = { identifierTypeCode: 'SUPPLIER_LOT', externalIdentifier: `${PREFIX}-DUPID` };
 
@@ -728,9 +740,9 @@ describe('LOT (e2e)', () => {
         inbound_receipt_id: inboundReceiptId,
         line_no: lineNo,
         item_id: BigInt(itemId),
-        received_qty: 1,
+        received_qty: 10,
         uom_id: BigInt(uomId),
-        supplier_lot_label_attached: true,
+        supplier_lot_label_attached: false,
         inspection_required: false,
         status_code: 'REGISTERED',
       },
@@ -871,7 +883,7 @@ describe('LOT (e2e)', () => {
     uomId = Number(uom.uom_id);
     const item = await prisma.item.create({
       data: {
-        item_code: `${PREFIX}-IT`,
+        item_code: ITEM_CODE,
         item_name: 'LOT검사품목',
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
@@ -907,7 +919,7 @@ describe('LOT (e2e)', () => {
 
     // 등록이 채우는 `inbound_receipt_line.lot_id` 의 상대 — 등록 경로가 없어 직접 심는다.
     const supplier = await prisma.partner.create({
-      data: { partner_code: `${PREFIX}-SUP`, partner_name: 'LOT검사공급사' },
+      data: { partner_code: SUPPLIER_CODE, partner_name: 'LOT검사공급사' },
     });
     const receipt = await prisma.inbound_receipt.create({
       data: {
@@ -962,10 +974,11 @@ describe('LOT (e2e)', () => {
     );
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.inventory_balance
-       WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`);
+       WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code = '${ITEM_CODE}')`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot_external_identifier
-       WHERE lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '%${PREFIX}%' OR lot_no LIKE 'M%')`);
+       WHERE lot_id IN (SELECT lot_id FROM trace.lot
+                         WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'))`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.inbound_receipt_line
        WHERE inbound_receipt_id IN (SELECT inbound_receipt_id FROM logistics.inbound_receipt
@@ -980,10 +993,10 @@ describe('LOT (e2e)', () => {
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
     );
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code = '${SUPPLIER_CODE}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code = '${ITEM_CODE}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);

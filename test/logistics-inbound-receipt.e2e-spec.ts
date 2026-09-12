@@ -24,6 +24,13 @@ const LOGIN_ID = 'e2e-ir-probe';
 const NOPERM_ID = 'e2e-ir-noperm';
 const PASSWORD = '입하-등록-검사-비밀번호';
 const PREFIX = 'IRE2E';
+/**
+ * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
+ * **6자리 숫자**로 그대로 담는다. 입하 등록이 라인마다 LOT 을 세우므로 이 둘이 숫자가
+ * 아니면 등록 자체가 400 이다. 다른 마스터 코드는 PREFIX 를 그대로 쓴다.
+ */
+const ITEM_CODE = '900000101';
+const SUPPLIER_CODE = '900101';
 const ROLE = 'E2E_IR';
 /** `W-01-11` 은 동시성 검사 하나가 P/O 라인 치환을 함께 걸기 위해서다. */
 const PERMISSIONS = ['M-01-01', 'W-01-11', 'W-01-03', 'M-01-06'];
@@ -195,7 +202,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   it('입하 — 사전부착 라인의 lotId 가 응답에 채워진다', async () => {
-    const supplierLotNo = `${PREFIX}-SL-${(lotSeq += 1)}`;
+    const supplierLotNo = supplierLotNoOf((lotSeq += 1));
     const detail = await create({ lines: [{ ...(await lineDraft()), supplierLotNo }] });
 
     const lotId = detail.lines[0].lotId;
@@ -944,6 +951,15 @@ describe('입하 등록 (e2e)', () => {
     };
   }
 
+/**
+ * 사전부착(`supplierLotLabelAttached`) 라인의 공급사 LOT 번호는 **숫자 34자리**여야 한다
+ * (`inbound-receipt-rules.ts:180` · #610). `uq_lot(plant_id, lot_no)` 때문에 호출마다 새 값이라
+ * 뒤 6자리에 순번을 넣는다.
+ */
+function supplierLotNoOf(seq: number): string {
+  return `9001${String(seq).padStart(30, '0')}`;
+}
+
   /** `uq_lot(plant_id, lot_no)` 때문에 공급사 LOT 번호는 호출마다 새 값이다. */
   async function lineDraft(): Promise<LineDraft> {
     lotSeq += 1;
@@ -951,7 +967,7 @@ describe('입하 등록 (e2e)', () => {
       itemId,
       receivedQty: 10,
       uomId,
-      supplierLotNo: `${PREFIX}-SL-${lotSeq}`,
+      supplierLotNo: supplierLotNoOf(lotSeq),
       supplierLotMissing: false,
     };
   }
@@ -1165,7 +1181,7 @@ describe('입하 등록 (e2e)', () => {
     // `inspection_required` 는 이 품목에서 승계된다(계약 · I-3.md §5-2).
     const item = await prisma.item.create({
       data: {
-        item_code: `${PREFIX}-IT`,
+        item_code: ITEM_CODE,
         item_name: '입하검사품목',
         item_type_code: 'RAW_MATERIAL',
         base_uom_id: uom.uom_id,
@@ -1173,9 +1189,30 @@ describe('입하 등록 (e2e)', () => {
       },
     });
     itemId = Number(item.item_id);
+    // ⛔ 검사 대상 품목은 «확정된» IQC 검사기준이 «정확히 하나» 있어야 LOT 이 선다
+    //    (`lot-registry.service.ts:227` · #610). 없으면 입하 등록 자체가 400 STATE_LOCKED 다.
+    const iqcPlan = await prisma.inspection_plan.create({
+      data: {
+        inspection_plan_code: `${PREFIX}-IQC`,
+        inspection_plan_name: '입하검사기준',
+        inspection_type_code: 'IQC',
+        item_id: item.item_id,
+        is_active: true,
+      },
+    });
+    await prisma.inspection_plan_version.create({
+      data: {
+        inspection_plan_id: iqcPlan.inspection_plan_id,
+        plan_version: 1,
+        effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        sampling_method_code: 'FULL',
+        inspection_frequency_code: 'EVERY_LOT',
+        status_code: 'CONFIRMED',
+      },
+    });
 
     const supplier = await prisma.partner.create({
-      data: { partner_code: `${PREFIX}-SUP`, partner_name: '입하검사공급사' },
+      data: { partner_code: SUPPLIER_CODE, partner_name: '입하검사공급사' },
     });
     supplierId = Number(supplier.partner_id);
 
@@ -1269,6 +1306,16 @@ describe('입하 등록 (e2e)', () => {
     );
     // `app.document_issue_log` 가 `trace.lot` 을 가리킨다(labelIssued 픽스처) — lot 보다 먼저(R-10).
     await prisma.$executeRawUnsafe(`DELETE FROM app.document_issue_log WHERE lot_id IN ${ownLots}`);
+    // ⛔ 검사 대상 품목의 LOT 이 서면 IQC 의뢰가 «자동으로» 딸려 난다(#610). 그것도 lot 보다
+    //    먼저 지운다 — 안 지우면 lot 삭제가 FK 로 막혀 스위트가 통째로 죽는다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM quality.inspection_result
+       WHERE inspection_request_id IN (
+         SELECT inspection_request_id FROM quality.inspection_request WHERE lot_id IN ${ownLots}
+       )`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM quality.inspection_request WHERE lot_id IN ${ownLots}`,
+    );
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE plant_id IN ${ownPlants}`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.purchase_order_line
@@ -1281,8 +1328,16 @@ describe('입하 등록 (e2e)', () => {
       DELETE FROM mdm.location
        WHERE warehouse_id IN (SELECT warehouse_id FROM mdm.warehouse WHERE plant_id IN ${ownPlants})`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE plant_id IN ${ownPlants}`);
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM quality.inspection_plan_version
+       WHERE inspection_plan_id IN (
+         SELECT inspection_plan_id FROM quality.inspection_plan
+          WHERE inspection_plan_code LIKE '${PREFIX}%'
+       )`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code = '${ITEM_CODE}'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.partner WHERE partner_code = '${SUPPLIER_CODE}'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,

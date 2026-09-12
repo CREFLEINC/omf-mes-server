@@ -119,9 +119,11 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
  * ⚠ **`mdm.worker` 를 직접 읽는 자리 전건.** 위 표들은 «공용 함수를 부르는» 자리만 잡는다 —
  * 조회를 본문에 인라인하면 그 그물을 지나간다.
  *
- * 넷은 **사번 판정이 아니다**: `mdm/organization/*` 둘(마스터 CRUD·참조 수) ·
+ * 다섯은 **사번 판정이 아니다**: `mdm/organization/*` 둘(마스터 CRUD·참조 수) ·
  * `work-session-worker.service.ts` 와 `work-session.service.ts`(둘 다 본문 `workerIds` 를 세는
- * «명단» 축이지 헤더 축이 아니다 — 후자는 헤더 축으로 `assertWorkerNoExists` 도 따로 부른다).
+ * «명단» 축이지 헤더 축이 아니다 — 후자는 헤더 축으로 `assertWorkerNoExists` 도 따로 부른다) ·
+ * `receipt-posting.ts`(적치 작업의 담당자를 «세션 계정»에서 푼다 — `app_user_id` 로 찾지
+ * `worker_no` 를 보지 않는다. 헤더가 없어도 성립하므로 사번 축에 얹으면 안 된다).
  *
  * 나머지 다섯은 **안 모은 것**이고 사유가 자리마다 다르다:
  * `document-issue-write`·`inventory-count-update`(`WorkerNoOptional` — 부재가 `null` 이다) ·
@@ -135,6 +137,7 @@ const WORKER_TABLE_READERS = [
   'app/document-issue/document-issue-write.service.ts',
   SHARED,
   'inventory/count/inventory-count-update.service.ts',
+  'logistics/goods-receipt/receipt-posting.ts',
   'maintenance/breakdown/breakdown-create.service.ts',
   'maintenance/inspection/inspection-write.service.ts',
   'mdm/organization/department.service.ts',
