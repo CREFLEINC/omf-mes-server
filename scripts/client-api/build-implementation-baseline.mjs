@@ -16,12 +16,15 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const OUTPUT_DIR = join(ROOT_DIR, "docs/client-api/2026-09-11");
+const GENERATED_ON = "2026-09-12";
+const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
-const SERVER_VERSION = "v0.1.2";
-const SERVER_COMMIT = "72a960c0599711458a0ce4198b34a11d5353a645";
-const GENERATED_VERSION = "0.1.2-server.20260911";
+// 기준 커밋이 태그보다 앞선다 — v0.1.3 뒤의 미출시 지점이라 「-next」로 적는다.
+// 정확한 지점은 SERVER_COMMIT 이 고정한다.
+const SERVER_VERSION = "v0.1.3-next";
+const SERVER_COMMIT = "21c83c41b9d21bdb41f217a9521cb61984b56938";
+const GENERATED_VERSION = "0.1.3-next-server.20260912";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -29,10 +32,6 @@ const CONTRACT_COMMIT = readFileSync(
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 
 const EXCLUDED_OPERATIONS = new Map([
-  [
-    "GET /app/document-issues/{documentIssueLogId}/rendition",
-    "렌더링 산출물 저장·수명 규약이 없다.",
-  ],
   [
     "GET /app/dashboard-summary",
     "집계 대상 도메인 완성 뒤 구현하기로 이번 루틴에서 제외했다.",
@@ -49,6 +48,10 @@ const EXCLUDED_OPERATIONS = new Map([
 ]);
 
 const PARTIAL_OPERATIONS = new Map([
+  [
+    "GET /app/document-issues/{documentIssueLogId}/rendition",
+    "MATERIAL_LOT_LABEL 발행 기록만 PNG로 렌더링한다. 다른 문서 유형은 422다. 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다.",
+  ],
   [
     "POST /app/document-issues",
     "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 나머지 지원 조합만 기록을 생성한다.",
@@ -182,6 +185,12 @@ const KNOWN_DIFFERENCES = [
     ],
     summary:
       "closed=true와 resetCounter=true의 의미가 확정되지 않아 서버가 해당 입력을 422로 거부한다.",
+  },
+  {
+    id: "사용자결정 2026-09-12",
+    operations: ["POST /app/users", "POST /app/sessions"],
+    summary:
+      "등록이 초기 비밀번호까지 만든다. AppUserCreate.password를 보내면 그 값으로 정해지고 강제 변경이 걸리지 않으며, 생략하면 응답 temporaryPassword로 임시 비밀번호가 한 번만 내려오고 Session.mustChangePassword가 true가 된다.",
   },
   {
     id: "I-27",
@@ -448,9 +457,25 @@ function applyEquipmentPatches(document) {
 function applyAppPatches(document) {
   const login = getOperation(document, "POST /app/sessions");
   login["x-internal-note"] =
-    "v0.1.2 서버 구현 기준: 인증 세션은 omf_session HttpOnly 쿠키로 운반한다. 로그인 성공 응답이 쿠키를 설정하고 이후 요청은 브라우저 자격증명을 포함한다.";
+    "서버 구현 기준: 인증 세션은 omf_session HttpOnly 쿠키로 운반한다. 로그인 성공 응답이 쿠키를 설정하고 이후 요청은 브라우저 자격증명을 포함한다.";
   document.components.schemas.LoginRequest["x-internal-note"] =
-    "v0.1.2 서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다.";
+    "서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다.";
+
+  // 서버는 이 값을 이미 계산하고 있었으나 원본 계약에 칸이 없어 내리지 못했다.
+  // 화면이 강제 변경으로 보낼 근거가 이것뿐이라 기준선에서 칸을 연다.
+  const session = document.components.schemas.Session;
+  session.properties.mustChangePassword = {
+    type: "boolean",
+    example: false,
+    description:
+      "임시 비밀번호로 들어왔는가. true면 화면은 곧바로 비밀번호 변경(POST /app/users/me:change-password)으로 보낸다. 서버가 뽑아 준 임시 비밀번호로 로그인하면 true이고, 관리자가 등록할 때 직접 정한 비밀번호로 로그인하면 false다.",
+  };
+  // 서버가 «언제나» 싣는다 — 부재를 「모른다」로 읽을 자리를 만들지 않는다(공유계약 G-9).
+  session.required.push("mustChangePassword");
+  appendDescription(
+    session,
+    "서버 구현 기준: mustChangePassword는 로그인 응답과 GET /app/sessions/current 양쪽에 항상 실린다.",
+  );
   appendDescription(
     getOperation(document, "POST /app/document-issues"),
     "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 두 문서 유형은 현재 클라이언트에서 발행 요청하지 않는다(I-27 마감 결정).",
@@ -458,6 +483,58 @@ function applyAppPatches(document) {
   appendDescription(
     getOperation(document, "GET /app/printers"),
     "서버 구현 기준: 실제 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다. 연결 상태 판정에 사용하지 않는다.",
+  );
+}
+
+/**
+ * 사용자 등록이 초기 비밀번호까지 만든다(사용자 결정 2026-09-12).
+ * 원본 계약은 비밀번호를 :reset-password 한 곳에만 두어, 등록만으로는 로그인할 수 없는
+ * 계정이 남았다. 기준선은 서버가 실제로 받는 칸과 내리는 칸을 그대로 적는다.
+ */
+function applyMdmPatches(document) {
+  const schemas = document.components.schemas;
+
+  schemas.AppUserCreate.properties.password = {
+    type: "string",
+    format: "password",
+    writeOnly: true,
+    minLength: 8,
+    "x-no-example": "비밀번호에 예시를 두지 않는다",
+    description:
+      "관리자가 직접 정하는 초기 비밀번호. 보내면 그 값이 계정의 비밀번호가 되고 첫 로그인 강제 변경이 걸리지 않는다(Session.mustChangePassword=false). 생략하면 서버가 임시 비밀번호를 만들어 응답 temporaryPassword로 한 번만 내려주고 강제 변경을 건다. 최소 길이 8만 검사하며 조합 규칙은 없다 — PasswordChangeRequest.newPassword와 같은 기준이다.",
+  };
+  appendDescription(
+    schemas.AppUserCreate,
+    "서버 구현 기준: 등록은 계정과 자격을 한 트랜잭션으로 만든다. password를 생략해도 계정은 즉시 로그인할 수 있다. 8자 미만은 400 RANGE, 문자열이 아니면 400 INVALID이며 null은 「보내지 않음」으로 읽는다.",
+  );
+
+  schemas.AppUserCreated = {
+    description:
+      "사용자 등록 응답. temporaryPassword는 요청에 password를 담지 «않았을» 때만 실린다 — 담았다면 그 칸 자체가 없다.",
+    allOf: [
+      { $ref: "#/components/schemas/AppUser" },
+      {
+        type: "object",
+        properties: {
+          temporaryPassword: {
+            type: "string",
+            readOnly: true,
+            "x-no-example": "실제 임시 비밀번호 모양을 남기지 않는다",
+            description:
+              "서버가 만든 임시 비밀번호. 이 응답에서 한 번만 보이고 서버는 해시만 저장한다(:reset-password와 같은 규약). 같은 Idempotency-Key로 재전송하면 저장된 앞 응답을 그대로 돌려주므로 값이 바뀌지 않는다. 이 값으로 로그인하면 Session.mustChangePassword가 true다.",
+          },
+        },
+      },
+    ],
+  };
+
+  const create = getOperation(document, "POST /app/users");
+  create.responses["201"].content["application/json"].schema = {
+    $ref: "#/components/schemas/AppUserCreated",
+  };
+  appendDescription(
+    create,
+    "서버 구현 기준: 비밀번호를 함께 정할 수 있다. 생략하면 응답 temporaryPassword로 임시 비밀번호가 한 번만 내려온다 — 화면은 이 값을 그 자리에서 관리자에게 보여 주어야 한다. 다시 받을 길은 :reset-password로 새로 뽑는 것뿐이다.",
   );
 }
 
@@ -701,8 +778,8 @@ function build() {
     (key) => !implementedBindings.has(key),
   );
   assert(
-    missingOperations.length === 5,
-    `미구현 오퍼레이션 수가 5가 아닙니다: ${missingOperations.length}`,
+    missingOperations.length === 4,
+    `미구현 오퍼레이션 수가 4가 아닙니다: ${missingOperations.length}`,
   );
   assert(
     missingOperations.every((key) => EXCLUDED_OPERATIONS.has(key)),
@@ -738,6 +815,7 @@ function build() {
   applyShipmentPatches(documents.get("shipment-04제품출하.json"));
   applyEquipmentPatches(documents.get("equipment-05설비툴.json"));
   applyAppPatches(documents.get("app-공통.json"));
+  applyMdmPatches(documents.get("mdm-기준정보.json"));
   applyKnownDifferences(documentsByOperation);
 
   rmSync(OPENAPI_DIR, { recursive: true, force: true });
@@ -749,7 +827,7 @@ function build() {
     document.info.version = GENERATED_VERSION;
     document["x-omf-server-baseline"] = {
       status: "interim-server-implementation-baseline",
-      generatedOn: "2026-09-11",
+      generatedOn: GENERATED_ON,
       designContractCommit: CONTRACT_COMMIT,
       designContractVersion: originalVersion,
       serverVersion: SERVER_VERSION,
@@ -775,7 +853,7 @@ function build() {
 
   const manifest = {
     status: "interim-server-implementation-baseline",
-    generatedOn: "2026-09-11",
+    generatedOn: GENERATED_ON,
     designContractCommit: CONTRACT_COMMIT,
     serverVersion: SERVER_VERSION,
     serverCommit: SERVER_COMMIT,
