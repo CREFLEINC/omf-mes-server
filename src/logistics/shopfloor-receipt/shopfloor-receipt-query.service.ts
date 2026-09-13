@@ -29,11 +29,12 @@ export interface ShopfloorReceiptQuery {
 export class ShopfloorReceiptQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ShopfloorReceiptQuery): Promise<PagedResponse<ShopfloorReceiptView>> {
+  async list(query: ShopfloorReceiptQuery, terminalPlantId?: bigint): Promise<PagedResponse<ShopfloorReceiptView>> {
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const where: Prisma.shopfloor_receiptWhereInput = {
       ...filter('work_order_id', numeric('workOrderId', query.workOrderId)),
       ...filter('goods_issue_id', numeric('goodsIssueId', query.goodsIssueId)),
+      ...(terminalPlantId === undefined ? {} : { work_order: { production_line: { plant_id: terminalPlantId } } }),
       // 문자 그대로 건다 — 4값 대조를 걸면 값이 늘 때 목록이 400 을 낸다(피킹·출고 목록 선례).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
     };

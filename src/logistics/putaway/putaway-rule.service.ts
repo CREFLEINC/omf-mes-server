@@ -74,11 +74,12 @@ export interface PutawayRuleResult {
 export class PutawayRuleService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PutawayRuleQuery): Promise<PagedResponse<PutawayRuleView>> {
+  async list(query: PutawayRuleQuery, terminalPlantId?: bigint): Promise<PagedResponse<PutawayRuleView>> {
     const page = pageRequest(query);
     const where: Prisma.putaway_ruleWhereInput = {
       ...(query.includeInactive ? {} : { is_active: true }),
       ...filter('warehouse_id', query.warehouseId),
+      ...(terminalPlantId === undefined ? {} : { warehouse: { plant_id: terminalPlantId } }),
       ...filter('item_id', query.itemId),
       ...filter('location_id', query.locationId),
     };

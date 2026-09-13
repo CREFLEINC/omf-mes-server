@@ -14,6 +14,8 @@ import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { GoodsIssueCreate, REGISTERED, assertCreatable } from './goods-issue-rules';
 import {
   GoodsIssueDetail,
@@ -59,8 +61,9 @@ export class GoodsIssueService {
    */
   async create(
     input: GoodsIssueCreate,
-    appUserId: number,
+    actorOrUser: LogisticsWriteActor | number,
   ): Promise<{ detail: GoodsIssueDetail; versionNo: number }> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     const plantId = await assertCreatable(this.prisma, input);
 
     for (let attempt = 0; ; attempt += 1) {
@@ -71,7 +74,7 @@ export class GoodsIssueService {
         //    않는다(공유계약 C-8 · CLAUDE.md).
         const issueNo = await this.numbering.next('GOODS_ISSUE', plantId, input.businessDate);
         return await this.prisma.$transaction(
-          (tx) => this.write(tx, input, issueNo, appUserId),
+          (tx) => this.write(tx, input, issueNo, actor),
           TRANSACTION_OPTIONS,
         );
       } catch (error) {
@@ -88,7 +91,7 @@ export class GoodsIssueService {
     tx: Prisma.TransactionClient,
     input: GoodsIssueCreate,
     issueNo: string,
-    appUserId: number,
+    actor: LogisticsWriteActor,
   ): Promise<{ detail: GoodsIssueDetail; versionNo: number }> {
     const issue = await tx.goods_issue.create({
       data: {
@@ -105,7 +108,7 @@ export class GoodsIssueService {
         reason_code: input.reasonCode ?? null,
         replacement_expected: input.replacementExpected ?? null,
         remarks: input.remarks ?? null,
-        created_by: BigInt(appUserId),
+        created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
       },
     });
     // ⛔ `businessDate`·`occurredAt`·`sendToErp` 를 헤더에 «안 담는다» — 칸이 없다. 앞의 둘은
@@ -125,7 +128,7 @@ export class GoodsIssueService {
           issue_qty: line.issueQty,
           uom_id: line.uomId,
           source_location_id: line.sourceLocationId,
-          created_by: BigInt(appUserId),
+          created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
         },
       });
       lines.push({
@@ -140,8 +143,11 @@ export class GoodsIssueService {
     }
 
     if (input.postImmediately === true) {
-      await this.postOnCreate(tx, issue, lines, input, appUserId);
+      await this.postOnCreate(tx, issue, lines, input, actor.appUserId);
     }
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'GOODS_ISSUE', targetId: issue.goods_issue_id, eventTypeCode: 'CREATE',
+    });
 
     // 상세 매퍼는 PR ① 것을 그대로 쓴다 — 전기가 상태·되짚기를 바꿔 두므로 되읽는다.
     const row = await tx.goods_issue.findUniqueOrThrow({
@@ -167,7 +173,7 @@ export class GoodsIssueService {
     issue: { goods_issue_id: bigint; goods_issue_no: string },
     lines: GoodsIssueLineWriteInput[],
     input: GoodsIssueCreate,
-    appUserId: number,
+    appUserId: number | undefined,
   ): Promise<void> {
     // 방금 만든 전표라 승인 요청이 있을 수 없다 — 게이트는 언제나 통과한다. 폐기 출고가 이
     // 값으로 오면 승인을 건너뛴다 — 계약이 막지 않았다(문의 030 갈래 ③).

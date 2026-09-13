@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpStatus, NotFoundException, Param, ParseIntPi
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
@@ -67,8 +68,8 @@ export class DispositionController {
 
   @Get('nonconformances/:nonconformanceId/disposition-decisions')
   @Contract('GET /quality/nonconformances/{nonconformanceId}/disposition-decisions')
-  byNonconformance(@Param('nonconformanceId', ParseIntPipe) nonconformanceId: number): Promise<DispositionsByNonconformance> {
-    return dispositionsByNonconformance(this.prisma, nonconformanceId);
+  byNonconformance(@Req() request: Request, @Param('nonconformanceId', ParseIntPipe) nonconformanceId: number): Promise<DispositionsByNonconformance> {
+    return dispositionsByNonconformance(this.prisma, nonconformanceId, currentTerminalQualityReadScope(request));
   }
 
   /**

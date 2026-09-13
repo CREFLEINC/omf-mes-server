@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
@@ -25,6 +26,7 @@ export interface LotCompleteContext {
   workerNo: string | undefined;
   version: number | undefined;
   appUserId: number | undefined;
+  terminalAudit?: Omit<TerminalWorkerAuditActor, 'workerId'>;
 }
 
 /**
@@ -100,6 +102,15 @@ export class LotCompleteService {
       },
       include: { lot_hold: true },
     });
+    if (context.terminalAudit !== undefined) {
+      const worker = await tx.worker.findUnique({ where: { worker_no: context.terminalAudit.workerNo },
+        select: { worker_id: true } });
+      if (!worker) throw new UnauthorizedException('작업자를 찾을 수 없습니다.');
+      await recordTerminalWorkerAudit(tx, {
+        actor: { ...context.terminalAudit, workerId: worker.worker_id },
+        targetTypeCode: 'LOT', targetId: updated.lot_id, eventTypeCode: 'COMPLETED',
+      });
+    }
     return lotView(updated);
   }
 }

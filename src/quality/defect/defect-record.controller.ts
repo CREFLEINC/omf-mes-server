@@ -1,6 +1,8 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 import { Contract } from '../../common/contract';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { PagedResponse } from '../../common/pagination';
 import { DefectDistributionQuery, DefectDistributionService } from './defect-distribution.service';
 import { DefectRecordListQuery, DefectRecordService } from './defect-record.service';
@@ -20,8 +22,8 @@ export class DefectRecordController {
 
   @Get()
   @Contract('GET /quality/defect-records')
-  list(@Query() query: DefectRecordListQuery): Promise<PagedResponse<DefectRecordView>> {
-    return this.records.list(query);
+  list(@Req() request: Request, @Query() query: DefectRecordListQuery): Promise<PagedResponse<DefectRecordView>> {
+    return this.records.list(query, currentTerminalQualityReadScope(request));
   }
 
   @Get('distribution')

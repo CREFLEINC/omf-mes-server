@@ -11,16 +11,16 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminalInventoryScope } from '../../auth/terminal-inventory-scope';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { inventoryWriteActorOf } from '../inventory-write-actor';
 import { HandlingUnitContentService } from './handling-unit-content.service';
 import { HandlingUnitPack, HandlingUnitPackService } from './handling-unit-pack.service';
 import { HandlingUnitQuery, HandlingUnitQueryService } from './handling-unit-query.service';
@@ -48,8 +48,8 @@ export class HandlingUnitController {
 
   @Get()
   @Contract('GET /inventory/handling-units')
-  list(@Query() query: HandlingUnitQuery): Promise<PagedResponse<HandlingUnitView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: HandlingUnitQuery): Promise<PagedResponse<HandlingUnitView>> {
+    return this.queries.list(query, currentTerminalInventoryScope(request)?.plantId);
   }
 
   @Get(':handlingUnitId')
@@ -89,7 +89,7 @@ export class HandlingUnitController {
       this.idempotency,
       request,
       HttpStatus.CREATED,
-      () => this.units.create(body, contextOf(request)),
+      () => this.units.create(body, contextOf(request, 'POST /inventory/handling-units')),
     );
     setEtag(response, versionNo);
     return view;
@@ -109,7 +109,7 @@ export class HandlingUnitController {
     @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
     @Body() body: { items: HandlingUnitContentUpsert[] },
   ): Promise<{ items: HandlingUnitContentView[] }> {
-    const context = contextOf(request);
+    const context = contextOf(request, 'PUT /inventory/handling-units/{handlingUnitId}/contents');
     const version = ifMatchVersion(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.contentWrites.replace(handlingUnitId, version, body.items, context),
@@ -130,7 +130,7 @@ export class HandlingUnitController {
     @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
     @Body() body: HandlingUnitPack,
   ): Promise<HandlingUnitDetailView> {
-    const context = contextOf(request);
+    const context = contextOf(request, 'POST /inventory/handling-units/{handlingUnitId}:pack');
     const version = ifMatchVersion(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
       this.packs.pack(handlingUnitId, version, body, context),
@@ -148,9 +148,8 @@ export class HandlingUnitController {
 }
 
 /** 헤더는 계약 검증 가드가 «안» 본다 — 사번 필수 판정은 서비스 몫이다(이동 도착 선례). */
-function contextOf(request: Request): HandlingUnitContext {
+function contextOf(request: Request, operationKey: string): HandlingUnitContext {
   const workerNo = request.header('X-Worker-No');
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return { workerNo: typeof workerNo === 'string' ? workerNo : undefined, appUserId: session.userId };
+  return { workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+    ...inventoryWriteActorOf(request, operationKey) };
 }

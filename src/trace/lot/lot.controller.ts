@@ -16,6 +16,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -31,6 +32,7 @@ import { LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
+import { lotWriteActorOf } from './lot-write-actor';
 
 /** LOT. 화면은 `M-01-02`·`P-01-01` 이 만들고 여러 화면이 읽는다. */
 @Controller('trace/lots')
@@ -82,9 +84,9 @@ export class LotController {
   @Post()
   @Contract('POST /trace/lots')
   create(@Req() request: Request, @Body() body: LotCreate): Promise<unknown> {
-    const userId = userOf(request);
+    const actor = lotWriteActorOf(request, 'POST /trace/lots');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.lots.create(body, userId),
+      this.lots.create(body, actor),
     );
   }
 
@@ -116,10 +118,19 @@ export class LotController {
   ): Promise<LotView> {
     // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:206-207`) — 사번의 필수 판정은 서비스 몫이다.
     const workerNo = request.headers['x-worker-no'];
+    const terminal = currentTerminal(request);
     const context = {
       workerNo: typeof workerNo === 'string' ? workerNo : undefined,
       version: ifMatchVersion(request),
       appUserId: currentSession(request)?.userId,
+      ...(terminal === undefined || typeof workerNo !== 'string' ? {} : {
+        terminalAudit: {
+          workerNo, terminalId: terminal.terminalId,
+          plantId: terminal.plantId,
+          correlationId: String(request.headers['idempotency-key']),
+          operationKey: 'POST /trace/lots/{lotId}:complete',
+        },
+      }),
     };
     // ⛔ `setEtag` 를 부르지 않는다 — 계약이 `:complete` 200 에 ETag 를 선언하지 않았다(I-7 §1-1 ·
     //    I-6 §8-2 와 같은 가름). `version_no` 는 올라가므로 화면은 완료 뒤 `GET` 으로 새 토큰을 받는다(ⓦ).
@@ -159,10 +170,10 @@ export class LotController {
   ): Promise<{ approvalRequestId: number }> {
     // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:96`) — 사번의 필수 판정은 서비스 몫이다.
     const workerNo = request.headers['x-worker-no'];
+    const actor = lotWriteActorOf(request, 'POST /trace/lots/{lotId}:request-iqc-skip');
     const context = {
       workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-      // ⚠ 주체는 세션 계정이다 — 사번을 `requested_by` 로 풀지 않는다(`plan.md` §5 규칙 9).
-      appUserId: userOf(request),
+      ...actor,
     };
     return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
       this.iqcSkips.requestSkip(lotId, body.reason, context),

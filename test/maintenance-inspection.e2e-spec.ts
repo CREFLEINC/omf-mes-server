@@ -322,7 +322,6 @@ describe("설비 점검 I-30 ①·⑤ (e2e)", () => {
   it.each([
     { inspectedFrom: "2026-02-30" },
     { inspectedTo: "2026-9-01" },
-    { inspectedFrom: "2026-09-01T00:00:00Z" },
     { sort: "elapsedDesc" },
     { withoutMaintenanceOrder: "unknown" },
     { overallResultCode: "OK" },
@@ -339,6 +338,18 @@ describe("설비 점검 I-30 ①·⑤ (e2e)", () => {
         .expect(400);
     },
   );
+
+  it('모바일 ISO date-time 조회도 같은 공장 설비에서 허용한다', async () => {
+    await request(app.getHttpServer())
+      .get(PATH)
+      .set('Cookie', cookie)
+      .query({
+        equipmentId: Number(ids.equipment),
+        inspectedFrom: '2026-09-01T00:00:00Z',
+        inspectedTo: '2026-09-01T23:59:59Z',
+      })
+      .expect(200);
+  });
 
   it.each(["Bad/Timezone", ""])(
     "E-I05 관련 공장의 잘못되거나 없는 시간대는 INTERNAL_ERROR다: %j",

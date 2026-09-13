@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 
 /** 조회 2건(I-19 PR ②). */
@@ -33,9 +34,12 @@ const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
 export class InspectionRequestService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: InspectionRequestListQuery): Promise<PagedResponse<InspectionRequestView>> {
+  async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestView>> {
     const page = pageRequest(query);
-    const where = buildWhere(query);
+    const where: Prisma.inspection_requestWhereInput = {
+      ...buildWhere(query),
+      ...(scope === undefined ? {} : { work_order: terminalQualityWorkOrderWhere(scope) }),
+    };
     const [rows, total] = await Promise.all([
       this.prisma.inspection_request.findMany({ where, orderBy: ORDER_BY, skip: page.skip, take: page.take }),
       this.prisma.inspection_request.count({ where }),
@@ -43,9 +47,10 @@ export class InspectionRequestService {
     return pagedResponse(rows.map(inspectionRequestView), total, page);
   }
 
-  async detail(inspectionRequestId: number): Promise<InspectionRequestView> {
-    const row = await this.prisma.inspection_request.findUnique({
-      where: { inspection_request_id: inspectionRequestId },
+  async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestView> {
+    const row = await this.prisma.inspection_request.findFirst({
+      where: { inspection_request_id: inspectionRequestId,
+        ...(scope === undefined ? {} : { work_order: terminalQualityWorkOrderWhere(scope) }) },
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
     return inspectionRequestView(row);

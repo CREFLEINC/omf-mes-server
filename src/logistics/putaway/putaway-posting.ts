@@ -31,7 +31,7 @@ export interface PutawayMove {
   businessDate: string; occurredAt: Date; plantId: number;
   putawayTaskId: number; putawayTaskNo: string;
   itemId: number; lotId: number; qty: Prisma.Decimal; uomId: number;
-  origin: PutawayOrigin; toWarehouseId: number; toLocationId: number; createdBy: number;
+  origin: PutawayOrigin; toWarehouseId: number; toLocationId: number; createdBy: number | undefined;
 }
 
 /** 돌려주는 것은 지시가 되짚을 원장 **라인** id 다. */

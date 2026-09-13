@@ -12,6 +12,8 @@ import {
 import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { InventoryWriteActor } from '../inventory-write-actor';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { HandlingUnitQueryService } from './handling-unit-query.service';
 import { HU_STATUS_OPEN } from './handling-unit-status';
 import { HandlingUnitDetailView } from './handling-unit-view';
@@ -34,10 +36,7 @@ export interface HandlingUnitCreate {
 }
 
 /** 헤더는 계약 검증 가드가 안 본다 — 컨트롤러가 꺼내 서비스에 넘긴다(이동 도착 선례). */
-export interface HandlingUnitContext {
-  workerNo: string | undefined;
-  appUserId: number;
-}
+export type HandlingUnitContext = InventoryWriteActor & { workerNo: string | undefined };
 
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다(조정·이동과 같은 판정). */
 const NUMBER_RETRY = 3;
@@ -94,7 +93,7 @@ export class HandlingUnitService {
         const periodDate = new Date().toISOString().slice(0, 10);
         const handlingUnitNo = await this.numbering.next('HANDLING_UNIT', null, periodDate);
         const id = await this.prisma.$transaction((tx) =>
-          this.write(tx, input, contents, handlingUnitNo, context.appUserId),
+          this.write(tx, input, contents, handlingUnitNo, context),
         );
         const detail = await this.queries.get(Number(id));
         return {
@@ -119,7 +118,7 @@ export class HandlingUnitService {
     input: HandlingUnitCreate,
     contents: HandlingUnitContentUpsert[],
     handlingUnitNo: string,
-    appUserId: number,
+    actor: InventoryWriteActor,
   ): Promise<bigint> {
     await assertParentAcyclic(tx, input.parentHandlingUnitId ?? null);
     const header = await tx.handling_unit.create({
@@ -131,19 +130,23 @@ export class HandlingUnitService {
         warehouse_id: input.warehouseId ?? null,
         location_id: input.locationId ?? null,
         status_code: HU_STATUS_OPEN,
-        created_by: appUserId,
-        updated_by: appUserId,
+        created_by: actor.appUserId ?? null,
+        updated_by: actor.appUserId ?? null,
         handling_unit_content: {
           create: contents.map((line) => ({
             item_id: line.itemId,
             lot_id: line.lotId,
             qty: line.qty,
             uom_id: line.uomId,
-            created_by: appUserId,
+            created_by: actor.appUserId ?? null,
           })),
         },
       },
       select: { handling_unit_id: true },
+    });
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'HANDLING_UNIT', targetId: header.handling_unit_id,
+      eventTypeCode: 'CREATE',
     });
     return header.handling_unit_id;
   }

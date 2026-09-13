@@ -1,3 +1,5 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -8,11 +10,9 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -41,8 +41,8 @@ export class ShopfloorReceiptController {
 
   @Get()
   @Contract('GET /logistics/shopfloor-receipts')
-  list(@Query() query: ShopfloorReceiptQuery): Promise<PagedResponse<ShopfloorReceiptView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: ShopfloorReceiptQuery): Promise<PagedResponse<ShopfloorReceiptView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':shopfloorReceiptId')
@@ -66,16 +66,10 @@ export class ShopfloorReceiptController {
     @Req() request: Request,
     @Body() body: ShopfloorReceiptCreate,
   ): Promise<ShopfloorReceiptDetail> {
-    const appUserId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/shopfloor-receipts');
     const workerNo = request.headers['x-worker-no'];
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.receipts.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined),
+      this.receipts.create(body, actor, typeof workerNo === 'string' ? workerNo : undefined),
     );
   }
-}
-
-function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return session.userId;
 }

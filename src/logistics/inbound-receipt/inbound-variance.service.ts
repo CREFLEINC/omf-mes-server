@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { assertCodeValues } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { InboundVarianceView, inboundVarianceView } from './inbound-variance-view';
 
 /** 계약 `InboundVarianceCreate`. ⛔ `approvalRequestId` 는 요청 칸이 아니다 — 채우는 경로가
@@ -25,7 +27,7 @@ export class InboundVarianceService {
   async create(
     inboundReceiptLineId: number,
     input: InboundVarianceCreateInput,
-    appUserId: number,
+    actor: LogisticsWriteActor,
   ): Promise<InboundVarianceView> {
     const line = await this.prisma.inbound_receipt_line.findUnique({
       where: { inbound_receipt_line_id: inboundReceiptLineId },
@@ -39,16 +41,20 @@ export class InboundVarianceService {
       { field: 'reasonCode', value: input.reasonCode, groupCode: 'INBOUND_VARIANCE_REASON' },
     ]);
 
-    const row = await this.prisma.inbound_variance.create({
-      data: {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.inbound_variance.create({ data: {
         inbound_receipt_line_id: line.inbound_receipt_line_id,
         variance_type_code: input.varianceTypeCode,
         variance_qty: input.varianceQty,
         uom_id: input.uomId,
         reason_code: input.reasonCode ?? null,
-        // 주체는 계정 세션이다 — `X-Worker-No` 는 덧붙임이라 없어도 400 이 아니다(§6-4).
-        created_by: BigInt(appUserId),
-      },
+        created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
+      } });
+      if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: actor.terminalAudit, targetTypeCode: 'INBOUND_VARIANCE',
+        targetId: created.inbound_variance_id, eventTypeCode: 'CREATE',
+      });
+      return created;
     });
     return inboundVarianceView(row);
   }

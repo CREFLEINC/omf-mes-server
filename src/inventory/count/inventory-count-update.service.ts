@@ -8,6 +8,8 @@ import { PagedResponse } from '../../common/pagination';
 import { InventoryCountQueryService } from './inventory-count-query.service';
 import { snapshotOf } from './inventory-count-create.service';
 import { InventoryCountLineView } from './inventory-count-view';
+import { InventoryWriteActor } from '../inventory-write-actor';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 export interface InventoryCountLineReplace {
   locationId: number;
@@ -27,15 +29,15 @@ export interface InventoryCountLineUpsert {
   countedAt: string;
 }
 
-export interface InventoryCountUpdateContext {
-  appUserId: number;
+export type InventoryCountUpdateContext = InventoryWriteActor & {
   workerNo?: string;
   version?: number;
-}
+};
 
 interface LockedCount {
   inventory_count_id: bigint;
   warehouse_id: bigint;
+  blind_count: boolean;
   status_code: string;
   version_no: number;
 }
@@ -67,12 +69,13 @@ export class InventoryCountUpdateService {
       },
       orderBy: [{ line_no: 'asc' }, { inventory_count_line_id: 'asc' }],
     });
-    const countedBy = await countedByOf(tx, context);
+    const countedActor = await countedByOf(tx, context);
     await assertReferences(tx, input.lines);
     const snapshot = input.lines.some((line) => line.inventoryCountLineId === undefined)
       ? await snapshotOf(tx, count.warehouse_id)
       : [];
-    const prepared = prepareLines(existing, input.lines, snapshot, countedBy, context.appUserId);
+    const prepared = prepareLines(existing, input.lines, snapshot, countedActor,
+      context.appUserId ?? null, count.blind_count);
     await assertCodeValues(tx, prepared.codeChecks);
 
     if (prepared.omittedIds.length > 0) {
@@ -83,6 +86,7 @@ export class InventoryCountUpdateService {
           counted_qty: 0,
           variance_reason_code: null,
           counted_by: null,
+          counted_worker_id: null,
         },
       });
     }
@@ -115,10 +119,14 @@ export class InventoryCountUpdateService {
       data: {
         status_code: count.status_code === 'PLANNED' ? 'IN_PROGRESS' : count.status_code,
         version_no: { increment: 1 },
-        updated_by: context.appUserId,
+        updated_by: context.appUserId ?? null,
       },
     });
     assertUpdated(moved.count);
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'INVENTORY_COUNT', targetId: count.inventory_count_id,
+      eventTypeCode: 'COUNT_LINES_REPLACE',
+    });
     return this.queries.linesWithin(tx, inventoryCountId, { locationId: input.locationId });
   }
 }
@@ -129,7 +137,7 @@ async function lockCount(
   version: number | undefined,
 ): Promise<LockedCount> {
   const rows = await tx.$queryRaw<LockedCount[]>`
-    SELECT inventory_count_id, warehouse_id, status_code, version_no
+    SELECT inventory_count_id, warehouse_id, blind_count, status_code, version_no
       FROM inventory.inventory_count
      WHERE inventory_count_id = ${BigInt(inventoryCountId)}
        FOR UPDATE`;
@@ -164,18 +172,19 @@ async function assertLocation(
 async function countedByOf(
   tx: Prisma.TransactionClient,
   context: InventoryCountUpdateContext,
-): Promise<bigint | null> {
-  if (context.workerNo === undefined) return BigInt(context.appUserId);
+): Promise<{ appUserId: bigint | null; workerId: bigint | null }> {
+  if (context.workerId !== undefined) return { appUserId: null, workerId: context.workerId };
+  if (context.workerNo === undefined) return { appUserId: BigInt(context.appUserId), workerId: null };
   const worker = await tx.worker.findUnique({
     where: { worker_no: context.workerNo },
-    select: { app_user_id: true },
+    select: { worker_id: true, app_user_id: true },
   });
   if (worker === null) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       field('X-Worker-No', ERROR_CODE.INVALID, '없는 작업자 사번입니다.'),
     ]);
   }
-  return worker.app_user_id;
+  return { appUserId: worker.app_user_id, workerId: worker.worker_id };
 }
 
 async function assertReferences(
@@ -228,8 +237,9 @@ function prepareLines(
   existing: ExistingLine[],
   input: InventoryCountLineUpsert[],
   snapshot: Awaited<ReturnType<typeof snapshotOf>>,
-  countedBy: bigint | null,
-  appUserId: number,
+  countedActor: { appUserId: bigint | null; workerId: bigint | null },
+  appUserId: number | null,
+  blindCount: boolean,
 ): PreparedLines {
   const byId = new Map(existing.map((line) => [Number(line.inventory_count_line_id), line]));
   const suppliedIds = new Set(
@@ -287,7 +297,16 @@ function prepareLines(
     }
     const countedQty = new Prisma.Decimal(line.countedQty);
     const variance = countedQty.minus(systemQty);
-    if (!variance.isZero() && !line.varianceReasonCode?.trim()) {
+    const unchanged = existingLine?.counted === true
+      && existingLine.counted_qty.eq(countedQty)
+      && existingLine.counted_at.getTime() === new Date(line.countedAt).getTime();
+    const reason = line.varianceReasonCode === undefined && unchanged
+      ? existingLine?.variance_reason_code ?? null : line.varianceReasonCode ?? null;
+    // 블라인드 첫 계수는 장부 차이를 보지 못한다. 아직 사유를 보완하지 않은
+    // 라인을 그대로 동봉할 때만 예외를 유지하며, 기존 수량/시각 변경은 다시 사유를 요구한다.
+    const blindException = blindCount &&
+      (existingLine === undefined || !existingLine.counted || unchanged && existingLine.variance_reason_code === null);
+    if (!variance.isZero() && !reason?.trim() && !blindException) {
       errors.push(
         field(
           `lines.${index}.varianceReasonCode`,
@@ -312,13 +331,16 @@ function prepareLines(
     }
     const data = {
       counted_qty: countedQty,
-      variance_reason_code: line.varianceReasonCode ?? null,
-      counted_by: countedBy,
+      variance_reason_code: reason ?? null,
+      counted_by: countedActor.appUserId,
+      counted_worker_id: countedActor.workerId,
       counted_at: new Date(line.countedAt),
       counted: true,
     };
     if (existingLine !== undefined) {
-      updates.push({ inventoryCountLineId: existingLine.inventory_count_line_id, data });
+      // 같은 줄의 재전송은 최초 계수자/작업자 귀속을 덮어쓰지 않는다.
+      if (!unchanged || reason !== existingLine.variance_reason_code)
+        updates.push({ inventoryCountLineId: existingLine.inventory_count_line_id, data });
     } else {
       creates.push({
         location_id: line.locationId,

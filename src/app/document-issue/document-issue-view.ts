@@ -35,7 +35,8 @@ export interface DocumentIssueView {
   issueSeq: number;
   reissueReasonCode: string | null;
   reissueReasonName: string | null;
-  issuedBy: number;
+  issuedBy: number | null;
+  issuedWorkerId: number | null;
   issuedByName: string;
   issuedAt: string;
   terminalId: number | null;
@@ -47,6 +48,7 @@ export interface DocumentIssueView {
 
 export const DOCUMENT_ISSUE_INCLUDE = {
   app_user: true,
+  issued_worker: true,
   lot: true,
 } satisfies Prisma.document_issue_logInclude;
 export type DocumentIssueRow = Prisma.document_issue_logGetPayload<{
@@ -104,8 +106,9 @@ export function documentIssueView(
     issueSeq: positiveInt(row.issue_seq, 'issueSeq'),
     reissueReasonCode: reasonCode,
     reissueReasonName: reasonName,
-    issuedBy: safeInt(row.issued_by, 'issuedBy'),
-    issuedByName: text(row.app_user.user_name, 200, 'issuedByName'),
+    issuedBy: nullableInt(row.issued_by, 'issuedBy'),
+    issuedWorkerId: nullableInt(row.issued_worker_id, 'issuedWorkerId'),
+    issuedByName: text(issuerName(row.app_user?.user_name, row.issued_worker?.worker_name), 200, 'issuedByName'),
     issuedAt: row.issued_at.toISOString(),
     terminalId: nullableInt(row.terminal_id, 'terminalId'),
     printerName: nullableText(row.printer_name, 100, 'printerName'),
@@ -116,6 +119,12 @@ export function documentIssueView(
     ),
     remarks: row.remarks,
   });
+}
+
+function issuerName(accountName: string | undefined, workerName: string | undefined): string {
+  const name = accountName ?? workerName;
+  if (!name) throw new Error('Document issue actor is missing');
+  return name;
 }
 
 function enumValue<T extends string>(

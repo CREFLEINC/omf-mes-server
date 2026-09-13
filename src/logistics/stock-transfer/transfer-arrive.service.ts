@@ -7,6 +7,8 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { StockTransferDetail, stockTransferLineView, stockTransferView } from './stock-transfer-view';
 import { TransferArriveOrigin, postTransferArrive } from './transfer-posting';
 
@@ -31,12 +33,11 @@ export interface StockTransferArrive {
   businessDate: string; occurredAt: string; lines: StockTransferArriveLine[];
 }
 
-export interface ArriveContext {
+export type ArriveContext = {
   workerNo?: string;
   /** **선택**이다 — 없으면 대조하지 않는다(계약 `IfMatchVersionOptional` · C-9). */
   version?: number;
-  appUserId: number;
-}
+} & ({ actor: LogisticsWriteActor; appUserId?: never } | { appUserId: number; actor?: never });
 
 interface LockedTransfer {
   stock_transfer_id: bigint; stock_transfer_no: string; to_warehouse_id: bigint;
@@ -113,7 +114,7 @@ export class TransferArriveService {
           };
         }),
       },
-      context.appUserId,
+      context.actor?.appUserId ?? context.appUserId,
     );
 
     let posted = 0;
@@ -144,10 +145,14 @@ export class TransferArriveService {
       data: {
         // ⛔ 서버 시각이 아니다 — 오프라인 큐가 몇 시간 뒤에 닿는다(C-1).
         received_at: new Date(body.occurredAt), status_code: statusCode,
-        updated_by: context.appUserId, version_no: { increment: 1 },
+        updated_by: context.actor?.appUserId ?? context.appUserId ?? null, version_no: { increment: 1 },
       },
     });
     assertUpdated(changed.count);
+    if (context.actor?.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.actor.terminalAudit, targetTypeCode: 'STOCK_TRANSFER',
+      targetId: locked.stock_transfer_id, eventTypeCode: 'ARRIVE',
+    });
 
     const header = await tx.stock_transfer.findUniqueOrThrow({
       where: { stock_transfer_id: locked.stock_transfer_id },
@@ -252,4 +257,3 @@ const receivedOf = (items: StockTransferArriveLine[], row: ArriveRow): number =>
 
 const at = (index: number, name: string, code: string, message: string): ErrorItem =>
   field(`lines[${index}].${name}`, code, message);
-

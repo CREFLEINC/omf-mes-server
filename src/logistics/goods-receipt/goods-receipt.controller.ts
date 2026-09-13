@@ -1,3 +1,4 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   Body,
   Controller,
@@ -9,11 +10,9 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -59,15 +58,9 @@ export class GoodsReceiptController {
   @Post()
   @Contract('POST /logistics/goods-receipts')
   create(@Req() request: Request, @Body() body: GoodsReceiptCreate): Promise<unknown> {
-    const userId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/goods-receipts');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.receipts.create(body, userId),
+      this.receipts.create(body, actor),
     );
   }
-}
-
-function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
-  return session.userId;
 }

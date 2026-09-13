@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoPresent } from '../../common/master';
@@ -22,7 +23,8 @@ export interface LotQualification {
 /** 본문 밖에서 오는 것. ⚠ 주체는 세션 계정이다 — 사번은 읽고 버린다(`plan.md` §5 규칙 9). */
 export interface IqcSkipContext {
   workerNo: string | undefined;
-  appUserId: number;
+  appUserId?: number;
+  terminalAudit?: TerminalWorkerAuditActor;
 }
 
 /**
@@ -74,16 +76,22 @@ export class LotIqcSkipService {
       assertSkippable(locked);
       // 「진행 중인 요청은 하나」·결재선 선택·단계 전개를 코어가 한 번에 한다 — 여기서 다시
       // 부르지 않고, 코어가 던지는 `ROUTE_NOT_FOUND`·`APPROVAL_IN_PROGRESS` 를 감싸지도 않는다.
-      return this.approvals.request(tx, {
+      const approval = await this.approvals.request(tx, {
         approvalRequestNo,
         approvalTypeCode: IQC_SKIP_TYPE,
         targetTypeCode: IQC_SKIP_TARGET_TYPE,
         targetId: BigInt(lotId),
         // ⚠ 9 상신자 중 P/O 만 전표 값을 준다 — LOT 에는 사업부 축이 없다(문의 022).
         businessUnitId: null,
-        requestedBy: BigInt(context.appUserId),
+        ...(context.appUserId === undefined ? {} : { requestedBy: BigInt(context.appUserId) }),
+        ...(context.terminalAudit === undefined ? {} : { requestedWorkerId: context.terminalAudit.workerId }),
         reason,
       });
+      if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: context.terminalAudit, targetTypeCode: 'APPROVAL_REQUEST',
+        targetId: approval.approvalRequestId, eventTypeCode: 'CREATED',
+      });
+      return approval;
     });
     return { approvalRequestId: Number(created.approvalRequestId) };
   }

@@ -1092,7 +1092,8 @@
         "GOODS_ISSUE_LINE",
         "MOLD",
         "LOCATION",
-        "INSPECTION_RESULT"
+        "INSPECTION_RESULT",
+        "SHIPMENT_LOT_ALLOCATION"
        ],
        "example": "LOT"
       },
@@ -1522,7 +1523,8 @@
         "GOODS_ISSUE_LINE",
         "MOLD",
         "LOCATION",
-        "INSPECTION_RESULT"
+        "INSPECTION_RESULT",
+        "SHIPMENT_LOT_ALLOCATION"
        ],
        "example": "LOT"
       },
@@ -3281,12 +3283,13 @@
        "maxLength": 40,
        "enum": [
         "WAREHOUSE",
-        "NOTICE"
+        "NOTICE",
+        "BREAKDOWN"
        ],
        "example": "WAREHOUSE"
       },
       "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
-      "description": "무엇에 붙은 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⭐ 값 문자열을 확정했다(2026-09-02) — 두 화면이 이미 이 문자열을 스펙에 적어 두고 있었다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참)"
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진. BREAKDOWN 등록은 전용 POST /maintenance/breakdowns/{breakdownId}/attachments 에서 작업자와 최대 세 장을 검증한다."
      },
      {
       "name": "targetId",
@@ -4179,6 +4182,11 @@
      "isMyTurn"
     ],
     "properties": {
+     "requestedWorkerId": {
+      "type": ["integer", "null"],
+      "format": "int64",
+      "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
+     },
      "approvalRequestId": {
       "x-source-column": "approval_request_id",
       "type": "integer",
@@ -4211,13 +4219,15 @@
      },
      "requestedBy": {
       "x-source-column": "requested_by",
-      "type": "integer",
+      "type": ["integer", "null"],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
      },
      "requestedByName": {
       "type": "string",
-      "example": "박물류"
+      "example": "박물류",
+      "description": "계정 사용자 또는 실제 현장 작업자의 표시 이름."
      },
      "requestedAt": {
       "x-source-column": "requested_at",
@@ -4330,7 +4340,8 @@
        "GOODS_ISSUE_LINE",
        "MOLD",
        "LOCATION",
-       "INSPECTION_RESULT"
+       "INSPECTION_RESULT",
+       "SHIPMENT_LOT_ALLOCATION"
       ],
       "example": "LOT"
      },
@@ -4367,6 +4378,11 @@
      "printOutcome"
     ],
     "properties": {
+     "issuedWorkerId": {
+      "type": ["integer", "null"],
+      "format": "int64",
+      "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
+     },
      "documentIssueLogId": {
       "type": "integer",
       "format": "int64",
@@ -4435,14 +4451,16 @@
       "example": "인쇄 실패"
      },
      "issuedBy": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "format": "int64",
-      "example": 3101
+      "example": 3101,
+      "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
      },
      "issuedByName": {
       "type": "string",
       "maxLength": 200,
-      "example": "샘플 작업자"
+      "example": "샘플 작업자",
+      "description": "계정 사용자 또는 실제 현장 작업자의 표시 이름."
      },
      "issuedAt": {
       "type": "string",
@@ -4544,7 +4562,8 @@
           "GOODS_ISSUE_LINE",
           "MOLD",
           "LOCATION",
-          "INSPECTION_RESULT"
+          "INSPECTION_RESULT",
+          "SHIPMENT_LOT_ALLOCATION"
          ],
          "example": "LOT",
          "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE"
@@ -4763,7 +4782,8 @@
        "GOODS_ISSUE_LINE",
        "MOLD",
        "LOCATION",
-       "INSPECTION_RESULT"
+       "INSPECTION_RESULT",
+       "SHIPMENT_LOT_ALLOCATION"
       ],
       "example": "LOT"
      },
@@ -5870,7 +5890,7 @@
    },
    "Attachment": {
     "type": "object",
-    "description": "다형 참조다 — 창고 도면과 공지 첨부가 현재 사용처다.",
+    "description": "다형 참조다 — 창고 도면, 공지 첨부, 설비 고장 사진에 사용한다.",
     "required": [
      "attachmentId",
      "targetTypeCode",
@@ -5890,11 +5910,12 @@
       "type": "string",
       "maxLength": 40,
       "x-no-example": true,
-      "description": "무엇에 붙은 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⭐ 값 문자열을 확정했다(2026-09-02) — 두 화면이 이미 이 문자열을 스펙에 적어 두고 있었다. ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참)",
+      "description": "무엇에 붙은 첨부인가 — WAREHOUSE 창고 도면, NOTICE 공지, BREAKDOWN 설비 고장 사진. BREAKDOWN은 전용 업로드 경로에서만 등록한다.",
       "x-code-key": "CD-ATTACHMENT-TARGET-TYPE",
       "enum": [
        "WAREHOUSE",
-       "NOTICE"
+       "NOTICE",
+       "BREAKDOWN"
       ],
       "example": "WAREHOUSE"
      },

@@ -41,7 +41,8 @@ export interface ReserveMove {
   sourceDocumentId: bigint;
   uomId: bigint;
   statusCode: string;
-  createdBy: bigint;
+  /** Account actor when present. Terminal writes persist their worker actor in the same transaction audit. */
+  createdBy?: bigint;
   /** 400 의 field 경로. */
   field: string;
 }
@@ -134,7 +135,7 @@ export async function reserveBalances(
       VALUES (${move.reservationNo}, ${move.reservationTypeCode}, ${move.sourceDocumentTypeCode},
               ${move.sourceDocumentId}::bigint, ${d.itemId}::bigint, ${d.lotId}::bigint,
               ${d.warehouseId}::bigint, ${d.locationId}::bigint, ${move.qty}::numeric,
-              ${move.uomId}::bigint, ${move.statusCode}, ${move.createdBy}::bigint)
+              ${move.uomId}::bigint, ${move.statusCode}, ${move.createdBy ?? null}::bigint)
       RETURNING inventory_reservation_id`;
     ids.push(reservation[0].inventory_reservation_id);
   }

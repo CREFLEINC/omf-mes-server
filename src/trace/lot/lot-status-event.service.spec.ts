@@ -24,6 +24,7 @@ function row(overrides: Partial<LotStatusEventRow> = {}): LotStatusEventRow {
     source_document_id: null,
     changed_at: CHANGED_AT,
     changed_by: 5n,
+    changed_worker_id: null,
     created_at: CHANGED_AT,
     transition_code: 'C4',
     lot: { lot_no: 'LOT-0001' },
@@ -84,6 +85,7 @@ describe('LOT 상태 변경이력 조회 (I-18 PR ①)', () => {
       toStatusCode: 'INSPECTION_PENDING',
       transitionCode: 'C4',
       changedBy: 5,
+      changedWorkerId: null,
       changedAt: CHANGED_AT.toISOString(),
     });
   });

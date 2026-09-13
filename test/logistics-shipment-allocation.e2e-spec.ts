@@ -440,7 +440,8 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const line = await makeShipmentLine(shipment, { item: 1 });
     const lot = await makeLot('A19');
     const allocationId = await makeAllocation(line, { lot, handlingUnitId: null, qty: 40 });
-    const hu = await makeHandlingUnit();
+    const hu = await makeHandlingUnit({ status: 'PACKED' });
+    await fillHandlingUnit(hu, lot, 40);
 
     const body = await pack(allocationId, hu);
 
@@ -473,7 +474,8 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
     const allocationId = await makeAllocation(line, { lot: lotA, handlingUnitId: null });
     await makeOqc('LOT', lotA, null, [{ judgment: 'ACCEPTED' }]);
     await makeOqc('LOT', lotB, null, [{ judgment: 'REJECTED' }]);
-    const hu = await makeHandlingUnit();
+    const hu = await makeHandlingUnit({ status: 'PACKED' });
+    await fillHandlingUnit(hu, lotA, 50);
 
     const body = await pack(allocationId, hu);
 
@@ -485,9 +487,12 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   it('A-20 ⭐ 다른 HU 가 이미 붙었으면 409 INVALID_STATE 이고 문구가 «현재 HU» 를 싣는다', async () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1 });
-    const first = await makeHandlingUnit();
-    const second = await makeHandlingUnit();
-    const allocationId = await makeAllocation(line, { lot: await makeLot('A20'), handlingUnitId: first });
+    const first = await makeHandlingUnit({ status: 'PACKED' });
+    const second = await makeHandlingUnit({ status: 'PACKED' });
+    const lot = await makeLot('A20');
+    await fillHandlingUnit(first, lot, 50);
+    await fillHandlingUnit(second, lot, 50);
+    const allocationId = await makeAllocation(line, { lot, handlingUnitId: first });
 
     const response = await put(allocationId, { handlingUnitId: Number(second) }).expect(409);
 
@@ -504,8 +509,10 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   it('A-21 ⭐ 같은 HU 를 다시 주면 200 이고 행이 안 바뀐다(멱등 — 409 로 내면 깨진다)', async () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1 });
-    const hu = await makeHandlingUnit();
-    const allocationId = await makeAllocation(line, { lot: await makeLot('A21'), handlingUnitId: null });
+    const hu = await makeHandlingUnit({ status: 'PACKED' });
+    const lot = await makeLot('A21');
+    await fillHandlingUnit(hu, lot, 50);
+    const allocationId = await makeAllocation(line, { lot, handlingUnitId: null });
 
     await pack(allocationId, hu);
     const before = await xminOf(allocationId);
@@ -553,7 +560,8 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
   it('A-24 ⭐ 포장 가능 상태가 아닌 HU 면 400 이고, 확정된 포장(PACKED)은 통과한다', async () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1 });
-    const allocationId = await makeAllocation(line, { lot: await makeLot('A24'), handlingUnitId: null });
+    const lot = await makeLot('A24');
+    const allocationId = await makeAllocation(line, { lot, handlingUnitId: null });
     // 결정 — 통보 후보. 저장소에 폐기·해체 상태값이 «0개»라(통보 142) 허용 목록 밖의 값으로 겨눈다.
     const dead = await makeHandlingUnit({ status: 'SCRAPPED' });
 
@@ -564,6 +572,7 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
 
     // ⭐ 축의 «반대쪽» — `:pack` 이 닫은 포장에도 붙는다. 허용 목록을 `OPEN` 하나로 좁히면 깨진다.
     const packed = await makeHandlingUnit({ status: 'PACKED' });
+    await fillHandlingUnit(packed, lot, 50);
     expect((await pack(allocationId, packed)).handlingUnitId).toBe(Number(packed));
   });
 
@@ -752,6 +761,13 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
       },
     });
     return hu.handling_unit_id;
+  }
+
+  async function fillHandlingUnit(handlingUnitId: bigint, lotId: bigint, qty: number): Promise<void> {
+    await prisma.handling_unit_content.create({
+      data: { handling_unit_id: handlingUnitId, item_id: ids.item1,
+        lot_id: lotId, qty, uom_id: ids.uom },
+    });
   }
 
   async function handlingUnitNoOf(handlingUnitId: bigint): Promise<string> {
@@ -992,6 +1008,9 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
       DELETE FROM quality.inspection_request WHERE inspection_request_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM inventory.inventory_reservation WHERE reservation_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM inventory.handling_unit_content WHERE handling_unit_id IN
+        (SELECT handling_unit_id FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`

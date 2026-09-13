@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import type { MobileProductionWriteActor } from '../mobile-production-write-actor';
 
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
@@ -39,6 +41,7 @@ export class RepairExecutionReturnService {
     repairExecutionId: number,
     body: RepairExecutionReturn,
     workerNo: string | undefined,
+    actor?: MobileProductionWriteActor,
   ): Promise<RepairExecutionView> {
     await assertWorkerNoExists(this.prisma, workerNo);
     return this.prisma.$transaction(async (tx: Tx) => {
@@ -56,6 +59,10 @@ export class RepairExecutionReturnService {
         where: { repair_execution_id: BigInt(repairExecutionId) },
         // ⭐ 둘을 «함께» 쓴다 — CHECK `ck_repair_execution_return` 이 짝을 강제한다.
         data: { returned_at: returnedAt, repair_result_code: body.repairResultCode },
+      });
+      if (actor?.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: actor.terminalAudit, targetTypeCode: 'REPAIR_EXECUTION',
+        targetId: row.repair_execution_id, eventTypeCode: 'RETURNED',
       });
       return repairExecutionView(row);
     });

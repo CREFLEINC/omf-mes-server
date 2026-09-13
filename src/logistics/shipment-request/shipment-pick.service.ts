@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoPresent } from '../../common/master';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import type { LogisticsWriteActor } from '../logistics-write-actor';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 이 PR 은 코어 파일을 안 고친다(`picking-pick.service.ts:8`).
 import { LockedBalanceRow, lockBalancesByItemLot } from '../../core/inventory-posting/balance-lock';
 import { NumberingService } from '../../core/numbering';
@@ -19,11 +21,10 @@ export interface ShipmentLinePick {
   uomId: number;
 }
 
-export interface ShipmentPickContext {
+export type ShipmentPickContext = LogisticsWriteActor & {
   /** ⚠ 저장하지 않는다 — 담을 칸이 두 표에 0개다(§7-4). */
   workerNo?: string;
-  appUserId: number;
-}
+};
 
 /**
  * ⭐⭐ 409 **네 사유가 전부 이 값**이다 — enum 다섯에 「가용 부족」도 「배정 초과」도 없다(§1-6).
@@ -50,11 +51,13 @@ interface LineRow {
   uom_id: bigint;
   allocated_qty: Prisma.Decimal;
   minimum_remaining_shelf_life_days: number | null;
+  fulfillment_plant_id: bigint | null;
 }
 
 interface LotRow {
   lot_id: bigint;
   item_id: bigint;
+  plant_id: bigint;
   status_code: string;
   expiry_date: Date | null;
 }
@@ -103,16 +106,27 @@ export class ShipmentPickService {
       // ④ 두 id 가 안 맞아도 404 다 — 남의 작업지시의 라인을 열지 않는다.
       const line = await lockLine(tx, shipmentRequestId, shipmentRequestLineId);
       if (line === undefined) throw new NotFoundException('없는 출하작업지시 라인입니다.');
+      if (line.fulfillment_plant_id === null) {
+        throw conflict('이행 공장이 지정되지 않은 출하작업지시는 피킹할 수 없습니다.');
+      }
 
       const lot = await assertLot(tx, body, line);
       await assertPickable(tx, lot);
       assertShelfLife(lot, line, now);
 
-      const balance = await lockBalance(tx, line.item_id, lot.lot_id);
+      const balance = await lockBalance(tx, line.item_id, lot.lot_id, line.fulfillment_plant_id);
       assertAvailable(balance, delta);
       await assertWithinAllocation(tx, line, delta);
 
-      await this.reserveAndPick(tx, line, balance, delta, reservationNo, context.appUserId);
+      await this.reserveAndPick(tx, line, balance, delta, reservationNo, context);
+      if (context.terminalAudit !== undefined) {
+        await recordTerminalWorkerAudit(tx, {
+          actor: context.terminalAudit,
+          targetTypeCode: 'SHIPMENT_REQUEST_LINE',
+          targetId: line.shipment_request_line_id,
+          eventTypeCode: 'PICK',
+        });
+      }
     });
 
     // ⑭ 되읽기는 ③b 의 상세 뷰 그대로다 — 롤업이라 라인 한 줄로는 못 짓는다(§1-4-1).
@@ -133,7 +147,7 @@ export class ShipmentPickService {
     balance: LockedBalanceRow,
     delta: Prisma.Decimal,
     reservationNo: string,
-    appUserId: number,
+    context: ShipmentPickContext,
   ): Promise<void> {
     const dimension = {
       legalEntityId: balance.legalEntityId,
@@ -161,7 +175,7 @@ export class ShipmentPickService {
         sourceDocumentId: line.shipment_request_line_id,
         uomId: line.uom_id,
         statusCode: RESERVATION_REGISTERED,
-        createdBy: BigInt(appUserId),
+        ...(context.appUserId === undefined ? {} : { createdBy: BigInt(context.appUserId) }),
         field: QTY_FIELD,
       },
     ]);
@@ -199,12 +213,12 @@ async function lockLine(
 ): Promise<LineRow | undefined> {
   const [line] = await tx.$queryRaw<LineRow[]>`
     SELECT l.shipment_request_line_id, l.item_id, l.uom_id, l.allocated_qty,
-           l.minimum_remaining_shelf_life_days
+           l.minimum_remaining_shelf_life_days, h.fulfillment_plant_id
       FROM logistics.shipment_request_line l
       JOIN logistics.shipment_request h ON h.shipment_request_id = l.shipment_request_id
      WHERE l.shipment_request_line_id = ${shipmentRequestLineId}
        AND l.shipment_request_id = ${shipmentRequestId}
-       FOR UPDATE OF l`;
+       FOR UPDATE OF l FOR SHARE OF h`;
   return line;
 }
 
@@ -216,9 +230,9 @@ async function assertLot(
 ): Promise<LotRow> {
   const lot = await tx.lot.findUnique({
     where: { lot_id: body.lotId },
-    select: { lot_id: true, item_id: true, status_code: true, expiry_date: true },
+    select: { lot_id: true, item_id: true, plant_id: true, status_code: true, expiry_date: true },
   });
-  if (lot === null || lot.item_id !== line.item_id) {
+  if (lot === null || lot.item_id !== line.item_id || lot.plant_id !== line.fulfillment_plant_id) {
     throw one(field('lotId', ERROR_CODE.INVALID, '이 라인의 품목이 아닌 LOT 입니다.'));
   }
   // ⑥ ⛔ 환산이 없다 — 다르면 거부한다.
@@ -272,8 +286,9 @@ async function lockBalance(
   tx: Prisma.TransactionClient,
   itemId: bigint,
   lotId: bigint,
+  plantId: bigint,
 ): Promise<LockedBalanceRow> {
-  const rows = await lockBalancesByItemLot(tx, itemId, lotId);
+  const rows = (await lockBalancesByItemLot(tx, itemId, lotId)).filter((row) => row.plantId === plantId);
   if (rows.length === 0) throw conflict('그 LOT 의 재고가 없습니다.');
   if (rows.length > 1) {
     throw one(field('lotId', ERROR_CODE.INVALID, '재고 차원이 둘 이상이라 어느 것을 낼지 정할 수 없습니다.'));

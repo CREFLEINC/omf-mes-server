@@ -2,6 +2,7 @@ import { HttpStatus, UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 
 import { currentSession } from "../../auth/session-resolver.service";
+import { maintenanceWriteActorOf, type MaintenanceWriteActor } from "../terminal-maintenance-actor";
 import {
   IdempotencyContext,
   requestFingerprint,
@@ -9,8 +10,8 @@ import {
 import { ERROR_CODE, field, one } from "../../common/errors";
 
 export type DowntimeWriteContext = IdempotencyContext & { appUserId: number };
-export type DowntimeCreateContext = DowntimeWriteContext & { workerNo: string };
-export type DowntimeCloseContext = DowntimeWriteContext & { workerNo: string };
+export type DowntimeCreateContext = IdempotencyContext & MaintenanceWriteActor & { workerNo: string };
+export type DowntimeCloseContext = IdempotencyContext & MaintenanceWriteActor & { workerNo: string };
 
 function workerProblem(code: string, message: string) {
   return one(field("X-Worker-No", code, message));
@@ -31,11 +32,29 @@ function workerNo(request: Request): string {
 }
 
 export function downtimeCreateContext(request: Request): DowntimeCreateContext {
-  return context(request, HttpStatus.CREATED, { workerNo: workerNo(request) });
+  return terminalOrAccountContext(request, HttpStatus.CREATED, workerNo(request), 'POST /maintenance/downtimes');
 }
 
 export function downtimeCloseContext(request: Request): DowntimeCloseContext {
-  return context(request, HttpStatus.OK, { workerNo: workerNo(request) });
+  return terminalOrAccountContext(request, HttpStatus.OK, workerNo(request), 'POST /maintenance/downtimes/{downtimeId}:close');
+}
+
+function terminalOrAccountContext(
+  request: Request, successStatus: number, workerNoValue: string, operationKey: string,
+): DowntimeCreateContext {
+  const actor = maintenanceWriteActorOf(request, operationKey);
+  return {
+    key: String(request.headers['idempotency-key']),
+    ...actor,
+    workerNo: workerNoValue,
+    successStatus,
+    fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
+      ...(actor.appUserId === undefined
+        ? { actorWorkerId: actor.terminalAudit.workerId.toString(), terminalId: actor.terminalAudit.terminalId.toString() }
+        : { actorUserId: actor.appUserId }),
+      workerNo: workerNoValue, body: request.body,
+    }),
+  };
 }
 
 export function downtimeUpdateContext(request: Request): DowntimeWriteContext {

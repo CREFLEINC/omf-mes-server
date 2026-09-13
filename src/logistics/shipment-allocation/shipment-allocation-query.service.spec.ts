@@ -1,19 +1,21 @@
-import { allocationWhereSql } from './shipment-allocation-query.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { allocationWhereSql, ShipmentAllocationQueryService } from './shipment-allocation-query.service';
 
-/**
- * ⭐ `q` 가 「절이 아니라 `FALSE`」라는 것과 「각 필터가 «독립» 절을 만든다」는 e2e 로도 보이지만,
- * 조립된 SQL 문자열 자체(§6-3 ⑹)는 여기서 직접 본다 — 리뷰가 diff 를 읽을 때 바로 확인되도록.
- */
 describe('출하 LOT 배분 목록 질의 조립', () => {
   it('필터가 없으면 TRUE 하나다', () => {
     expect(allocationWhereSql({})).toEqual({ sql: 'TRUE', params: [] });
   });
 
-  it('⭐ q 를 주면 다른 필터와 무관하게 FALSE 로 접는다 — 절이 아니라 상수다(R-8)', () => {
-    const built = allocationWhereSql({ q: '아무값', shipmentId: 1 });
-    expect(built.sql).toBe('FALSE');
-    // q 가 있으면 다른 필터를 바인딩하지 않는다 — 검색이 실제로 실행되지 않는다는 뜻이다.
-    expect(built.params).toEqual([]);
+  it('납품라벨 번호만 정확 일치로 찾고 다른 필터와 AND로 결합한다', () => {
+    const built = allocationWhereSql({ q: 'DL-20260912-0001', shipmentId: 1 });
+    expect(built).toEqual({
+      sql: 'a.delivery_label_no = $1\n      AND sl.shipment_id = $2::bigint',
+      params: ['DL-20260912-0001', 1],
+    });
+  });
+
+  it('빈 스캔값도 다른 식별자로 치환하지 않는다', () => {
+    expect(allocationWhereSql({ q: '' })).toEqual({ sql: 'a.delivery_label_no = $1', params: [''] });
   });
 
   it('네 축이 각각 «독립» 절을 하나씩 늘린다', () => {
@@ -39,5 +41,31 @@ describe('출하 LOT 배분 목록 질의 조립', () => {
   it('unpackedOnly=true 만 IS NULL 절을 만든다 — false 는 절이 없다', () => {
     expect(allocationWhereSql({ unpackedOnly: true }).sql).toBe('a.handling_unit_id IS NULL');
     expect(allocationWhereSql({ unpackedOnly: false })).toEqual({ sql: 'TRUE', params: [] });
+  });
+});
+
+
+describe('단말의 납품라벨 조회 범위', () => {
+  it('페이지와 total 모두 라벨 정확 일치와 출하 창고 공장 조건을 함께 적용한다', async () => {
+    const calls: Array<{ sql: string; params: unknown[] }> = [];
+    const prisma = {
+      $queryRawUnsafe: async (sql: string, ...params: unknown[]) => {
+        calls.push({ sql, params });
+        return sql.includes('count(*)') ? [{ total: 0 }] : [];
+      },
+    } as unknown as PrismaService;
+
+    const result = await new ShipmentAllocationQueryService(prisma).list(
+      { q: 'DL-20260912-0001', size: 20 }, 7n,
+    );
+
+    expect(result.items).toEqual([]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.sql).toContain('a.delivery_label_no = $1');
+      expect(call.sql).toContain('tw.plant_id = $2::bigint');
+      expect(call.params).toEqual(['DL-20260912-0001', 7n]);
+      expect(call.sql).not.toContain('ILIKE');
+    }
   });
 });

@@ -31,11 +31,12 @@ export interface PickingOrderQuery {
 export class PickingQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PickingOrderQuery): Promise<PagedResponse<PickingOrderView>> {
+  async list(query: PickingOrderQuery, terminalPlantId?: bigint): Promise<PagedResponse<PickingOrderView>> {
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const where: Prisma.picking_orderWhereInput = {
       ...filter('assigned_worker_id', numeric('assignedWorkerId', query.assignedWorkerId)),
       ...filter('warehouse_id', numeric('warehouseId', query.warehouseId)),
+      ...(terminalPlantId === undefined ? {} : { warehouse: { plant_id: terminalPlantId } }),
       // 문자 그대로 건다 — 4값 대조를 걸면 값이 늘 때 목록이 400 을 낸다(출고 목록 선례).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       // ⚠ `sourceDocumentTypeCode` 질의가 계약에 없어 자재 피킹과 제품 피킹이 섞인다 — 계약대로 둔다.

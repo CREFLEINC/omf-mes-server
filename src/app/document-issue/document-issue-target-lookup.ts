@@ -8,6 +8,7 @@ export const DOCUMENT_TARGET_TYPES = [
   'MOLD',
   'LOCATION',
   'INSPECTION_RESULT',
+  'SHIPMENT_LOT_ALLOCATION',
 ] as const;
 
 export type DocumentTargetType = (typeof DOCUMENT_TARGET_TYPES)[number];
@@ -36,7 +37,7 @@ export async function loadDocumentIssueTargets(
         .map((row) => row.target_id),
     ),
   ];
-  const [lots, serials, units, issueLines, molds, locations, inspections] =
+  const [lots, serials, units, issueLines, molds, locations, inspections, allocations] =
     await Promise.all([
       tx.lot.findMany({
         where: { lot_id: { in: ids('LOT') } },
@@ -69,6 +70,12 @@ export async function loadDocumentIssueTargets(
       tx.inspection_result.findMany({
         where: { inspection_result_id: { in: ids('INSPECTION_RESULT') } },
         select: { inspection_result_id: true, inspection_result_no: true },
+      }),
+      ids('SHIPMENT_LOT_ALLOCATION').length === 0
+        ? Promise.resolve([] as Array<{ shipment_lot_allocation_id: bigint; delivery_label_no: string | null }>)
+        : tx.shipment_lot_allocation.findMany({
+        where: { shipment_lot_allocation_id: { in: ids('SHIPMENT_LOT_ALLOCATION') } },
+        select: { shipment_lot_allocation_id: true, delivery_label_no: true },
       }),
     ]);
 
@@ -108,5 +115,9 @@ export async function loadDocumentIssueTargets(
       'W-04-03',
     ),
   );
+  allocations.forEach((row) => add(
+    'SHIPMENT_LOT_ALLOCATION', row.shipment_lot_allocation_id,
+    row.delivery_label_no ?? `출하 LOT 배분 #${row.shipment_lot_allocation_id}`, 'P-04-02',
+  ));
   return targets;
 }

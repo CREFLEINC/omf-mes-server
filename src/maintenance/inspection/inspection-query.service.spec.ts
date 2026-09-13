@@ -1,10 +1,20 @@
 import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../prisma/prisma.service";
-import { InspectionQueryService } from "./inspection-query.service";
+import { InspectionQueryService, inspectionTimeRange } from "./inspection-query.service";
 import { InspectionRow } from "./inspection-view";
 
 describe("InspectionQueryService", () => {
+  it("keeps POP calendar days and MOBILE ISO instants with their distinct end bounds", () => {
+    expect(inspectionTimeRange("2026-09-12", "2026-09-12", "Asia/Ho_Chi_Minh")).toEqual({
+      gte: new Date("2026-09-11T17:00:00.000Z"),
+      lt: new Date("2026-09-12T17:00:00.000Z"),
+    });
+    expect(inspectionTimeRange("2026-09-12T00:00:00.000Z", "2026-09-12T10:00:00.000Z", "Asia/Ho_Chi_Minh")).toEqual({
+      gte: new Date("2026-09-12T00:00:00.000Z"),
+      lte: new Date("2026-09-12T10:00:00.000Z"),
+    });
+  });
   const raw = jest.fn();
   const findMany = jest.fn();
   const findUnique = jest.fn();
@@ -143,6 +153,25 @@ describe("InspectionQueryService", () => {
         { field: "inspectedTo", code: "REQUIRED" },
       ],
     });
+  });
+
+  it("POP 사전점검의 설비별 최근 1건은 inspectedFrom만으로 조회한다", async () => {
+    raw.mockResolvedValueOnce([{
+      plant_id: 10n, timezone_code: 'Asia/Seoul', has_missing_time: false,
+    }]).mockResolvedValueOnce([]).mockResolvedValueOnce([{ total: 0n }]);
+    findMany.mockResolvedValue([]);
+    await expect(service.list({
+      equipmentId: 1, inspectionTypeCode: 'DAILY', inspectedFrom: '2026-09-12',
+      sort: 'inspectedAtDesc', page: 1, size: 1,
+    })).resolves.toMatchObject({ totalCount: 0 });
+    const count = raw.mock.calls[2][0] as Prisma.Sql;
+    expect(count.values).toContainEqual(new Date('2026-09-11T15:00:00.000Z'));
+    expect(count.values).toHaveLength(4);
+  });
+
+  it("범위가 넓은 단일 시작일 이력 검색은 inspectedTo를 요구한다", async () => {
+    await expect(service.list({ equipmentId: 1, inspectedFrom: '2026-09-12', size: 20 }))
+      .rejects.toMatchObject({ errors: [{ field: 'inspectedTo', code: 'REQUIRED' }] });
   });
 
   it("없는 상세는 404이고 존재하는 결손행은 내부 불변식 실패다", async () => {

@@ -4,6 +4,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { assertCodeValues } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   InboundReceiptHeaderWriteInput,
   collectHeaderErrors,
@@ -44,7 +45,7 @@ export class InboundReceiptSplitService {
     private readonly receipts: InboundReceiptService,
   ) {}
 
-  async create(input: InboundReceiptSplitInput, appUserId: number): Promise<{ created: InboundReceiptView[] }> {
+  async create(input: InboundReceiptSplitInput, actorOrUser: LogisticsWriteActor | number): Promise<{ created: InboundReceiptView[] }> {
     const parts = await this.assertWritable(input);
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 1~2회 부른다(§4-3). 두 part 의 `plantId` 가
@@ -76,7 +77,7 @@ export class InboundReceiptSplitService {
               tx,
               numbers[index],
               part,
-              appUserId,
+              actorOrUser,
               `${side}.`,
               input.businessDate,
               iqcRequestNos[index],

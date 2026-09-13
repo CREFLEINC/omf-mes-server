@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
@@ -22,6 +23,7 @@ export interface RepairExecutionContext {
   workerNo: string | undefined;
   appUserId: number | undefined;
   terminalId: bigint | null;
+  terminalAudit?: TerminalWorkerAuditActor;
 }
 
 /**
@@ -75,6 +77,10 @@ export class RepairExecutionService {
         terminal_id: context.terminalId,
         created_by: context.appUserId,
       },
+    });
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'REPAIR_EXECUTION',
+      targetId: row.repair_execution_id, eventTypeCode: 'CREATED',
     });
     return repairExecutionView(row);
   }

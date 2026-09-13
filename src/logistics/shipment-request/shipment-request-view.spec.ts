@@ -57,6 +57,7 @@ function header(overrides: Partial<ShipmentRequestRow> = {}): ShipmentRequestRow
     ship_time_slot_end: null,
     ship_time_slot_code: null,
     sales_order_id: null,
+    fulfillment_plant_id: null,
     shipment_request_line: [line()],
     ...overrides,
   };
@@ -96,7 +97,7 @@ describe('ShipmentRequest 뷰', () => {
     const view = shipmentRequestView(header(), picksOf(pick({ lot: null })), []);
 
     // `type: ['x','null']` 인 칸은 «키가 있고 값이 null» 이다 — 생략하면 화면이 못 읽는다.
-    for (const key of ['salesOrderId', 'timeSlotCode']) {
+    for (const key of ['salesOrderId', 'fulfillmentPlantId', 'timeSlotCode']) {
       expect(Object.keys(view)).toContain(key);
       expect(view[key as 'salesOrderId']).toBeNull();
     }
@@ -116,11 +117,16 @@ describe('ShipmentRequest 뷰', () => {
 
     // 값이 있으면 그대로 싣는다 — 「늘 생략한다」로 짜면 여기서 깨진다.
     const filled = shipmentRequestView(
-      header({ sales_order_id: 1001n, ship_time_slot_code: 'MORNING' }),
+      header({ sales_order_id: 1001n, fulfillment_plant_id: 21n, ship_time_slot_code: 'MORNING' }),
       picksOf(pick()),
       [],
     );
-    expect(filled).toMatchObject({ salesOrderId: 1001, timeSlotCode: 'MORNING', versionNo: 7 });
+    expect(filled).toMatchObject({
+      salesOrderId: 1001,
+      fulfillmentPlantId: 21,
+      timeSlotCode: 'MORNING',
+      versionNo: 7,
+    });
     expect(lineOf(filled).picks[0].lotNo).toBe('LOT-0001');
   });
 

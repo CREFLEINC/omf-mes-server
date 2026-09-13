@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 import { ConflictException } from '../../common/errors';
 import { optional } from '../../common/master';
@@ -106,6 +107,11 @@ export class InspectionResultWriteService {
             rejectedQty: body.rejectedQty,
           });
         }
+        if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+          actor: context.terminalAudit, targetTypeCode: 'INSPECTION_RESULT',
+          targetId: created.inspection_result_id,
+          eventTypeCode: born === undefined ? 'CREATED' : 'CREATED_CONFIRMED',
+        });
         return this.reread(tx, created.inspection_result_id);
       })
       .catch((error: unknown) => throwRoundConflict(error));
@@ -210,4 +216,3 @@ export class InspectionResultWriteService {
     return inspectionResultView(row);
   }
 }
-

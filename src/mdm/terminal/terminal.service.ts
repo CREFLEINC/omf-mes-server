@@ -207,12 +207,13 @@ export class TerminalService {
 
     const row = await this.prisma.terminal.findUniqueOrThrow({
       where: { terminal_id: terminalId },
-      select: { token_version: true },
+      select: { token_version: true, terminal_code: true, plant_id: true },
     });
     const token = await this.jwt.signAsync(
       // ⛔ 종류를 담는다. 세션 쿠키와 «같은 비밀키»로 서명하므로, 종류가 없으면 이 토큰을
       // 쿠키로 들이밀었을 때 sub(단말 번호)가 같은 번호의 사용자로 풀린다.
-      { sub: terminalId, typ: TOKEN_TYPE.TERMINAL, tv: row.token_version },
+      { sub: terminalId, typ: TOKEN_TYPE.TERMINAL, tv: row.token_version,
+        terminalCode: row.terminal_code, plantId: Number(row.plant_id) },
       { expiresIn: TOKEN_TTL_SECONDS },
     );
 

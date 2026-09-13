@@ -1412,6 +1412,7 @@ describe('출하 목록 (e2e)', () => {
     const header = await prisma.shipment_request.create({
       data: {
         shipment_request_no: `${PREFIX}-POST`,
+        fulfillment_plant_id: ids.plant,
         customer_id: ids.customer,
         ship_to_partner_id: ids.customer,
         requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
@@ -1452,6 +1453,7 @@ describe('출하 목록 (e2e)', () => {
     const tight = await prisma.shipment_request.create({
       data: {
         shipment_request_no: `${PREFIX}-TIGHT`,
+        fulfillment_plant_id: ids.plant,
         customer_id: ids.customer,
         ship_to_partner_id: ids.customer,
         requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
@@ -1506,6 +1508,7 @@ describe('출하 목록 (e2e)', () => {
     const header = await prisma.shipment_request.create({
       data: {
         shipment_request_no: `${PREFIX}-EXP`,
+        fulfillment_plant_id: ids.plant,
         customer_id: ids.customer,
         ship_to_partner_id: ids.customer,
         requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
@@ -1528,6 +1531,7 @@ describe('출하 목록 (e2e)', () => {
     const header = await prisma.shipment_request.create({
       data: {
         shipment_request_no: `${PREFIX}-CXL`,
+        fulfillment_plant_id: ids.plant,
         customer_id: ids.customer,
         ship_to_partner_id: ids.customer,
         requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
@@ -1621,6 +1625,7 @@ describe('출하 목록 (e2e)', () => {
     const header = await prisma.shipment_request.create({
       data: {
         shipment_request_no: `${PREFIX}-${suffix}`,
+        fulfillment_plant_id: ids.plant,
         customer_id: customerId,
         ship_to_partner_id: customerId,
         requested_ship_date: new Date('2026-08-20T00:00:00.000Z'),

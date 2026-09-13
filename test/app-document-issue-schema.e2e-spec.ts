@@ -203,17 +203,13 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
     }
   });
 
-  it("S05 성공 보고는 시각·보고 계정·보고 작업자가 모두 필요하고 사유는 거부된다", async () => {
+  it("S05 성공 보고는 시각·보고 작업자가 필요하고, 계정 없는 현장 작업자도 허용한다", async () => {
     for (const data of [
       {
         print_reported_worker_id: reporterWorkerId,
         print_reported_by: reporterId,
       },
       { print_reported_at: REPORTED_AT, print_reported_by: reporterId },
-      {
-        print_reported_at: REPORTED_AT,
-        print_reported_worker_id: reporterWorkerId,
-      },
     ]) {
       const row = await createIssue({ print_outcome_code: "PENDING" });
       await expect(
@@ -223,6 +219,14 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
         }),
       ).rejects.toThrow("ck_document_issue_print_report");
     }
+    const workerOnly = await createIssue({ print_outcome_code: "PENDING" });
+    const reported = await prisma.document_issue_log.update({
+      where: { document_issue_log_id: workerOnly.document_issue_log_id },
+      data: { print_outcome_code: "SUCCEEDED", print_reported_at: REPORTED_AT,
+        print_reported_worker_id: reporterWorkerId },
+    });
+    expect(reported.print_reported_by).toBeNull();
+    expect(reported.print_reported_worker_id).toBe(reporterWorkerId);
     const row = await createIssue({ print_outcome_code: "PENDING" });
     await expect(
       prisma.document_issue_log.update({
@@ -260,11 +264,6 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
         print_reported_at: REPORTED_AT,
         print_reported_by: reporterId,
       },
-      {
-        print_failure_reason: "용지 걸림",
-        print_reported_at: REPORTED_AT,
-        print_reported_worker_id: reporterWorkerId,
-      },
     ]) {
       const row = await createIssue({ print_outcome_code: "PENDING" });
       await expect(
@@ -274,6 +273,13 @@ describe("I-27 A9 발행 결과·귀속 물리 계약 (e2e)", () => {
         }),
       ).rejects.toThrow("ck_document_issue_print_report");
     }
+    const workerOnly = await createIssue({ print_outcome_code: "PENDING" });
+    const reported = await prisma.document_issue_log.update({
+      where: { document_issue_log_id: workerOnly.document_issue_log_id },
+      data: { print_outcome_code: "FAILED", print_reported_at: REPORTED_AT,
+        print_reported_worker_id: reporterWorkerId, print_failure_reason: "용지 걸림" },
+    });
+    expect(reported.print_reported_by).toBeNull();
 
     // DB btrim은 일반공백 최소 제약이다. 탭/개행까지의 거부는 report API가 맡는다.
     const tabReason = await createIssue({ print_outcome_code: "PENDING" });

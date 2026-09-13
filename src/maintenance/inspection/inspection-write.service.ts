@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { recordTerminalWorkerAudit } from "../../audit/terminal-worker-audit";
 
 import {
   ContractException,
@@ -121,7 +122,7 @@ export class InspectionWriteService {
     if (worker === null)
       throw new Error("Worker validation did not stop the write");
 
-    const actorId = BigInt(context.appUserId);
+    const actorId = context.appUserId === undefined ? null : BigInt(context.appUserId);
     const row = await tx.equipment_inspection.create({
       data: {
         inspection_no: inspectionNo,
@@ -148,6 +149,10 @@ export class InspectionWriteService {
         remarks: line.remarks ?? null,
         created_by: actorId,
       })),
+    });
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'EQUIPMENT_INSPECTION',
+      targetId: row.equipment_inspection_id, eventTypeCode: 'CREATED',
     });
     const created = await tx.equipment_inspection.findUnique({
       where: { equipment_inspection_id: row.equipment_inspection_id },

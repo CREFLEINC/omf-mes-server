@@ -29,7 +29,7 @@ export interface StockTransferQuery {
 export class StockTransferQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: StockTransferQuery): Promise<PagedResponse<StockTransferView>> {
+  async list(query: StockTransferQuery, terminalPlantId?: bigint): Promise<PagedResponse<StockTransferView>> {
     // `page`·`size` 는 형제 목록과 같이 «자른다»(`pagination.ts`) — 400 은 식별자 축에만.
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const fromWarehouseId = numeric('fromWarehouseId', query.fromWarehouseId);
@@ -38,6 +38,10 @@ export class StockTransferQueryService {
     const where: Prisma.stock_transferWhereInput = {
       ...filter('from_warehouse_id', fromWarehouseId),
       ...filter('to_warehouse_id', toWarehouseId),
+      ...(terminalPlantId === undefined ? {} : {
+        warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: terminalPlantId },
+        warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: terminalPlantId },
+      }),
       ...(query.transferTypeCode === undefined ? {} : { transfer_type_code: query.transferTypeCode }),
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       // ⭐ 「반출됐으나 도착하지 않은 건만」 — M-01-10 §5-4 의 「미완 이동」 목록이다.

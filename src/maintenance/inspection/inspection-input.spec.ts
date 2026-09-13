@@ -59,6 +59,26 @@ describe("inspection input", () => {
     expect(checkInspectionInput(input()).overallResultCode).toBe("PASS");
   });
 
+  it("모바일 OK/NG를 저장 판정 PASS/FAIL로 정규화한다", () => {
+    const checked = checkInspectionInput(
+      input({
+        remarks: "이상",
+        lines: [
+          { inspectionItemId: 11, resultCode: "OK" },
+          { inspectionItemId: 12, resultCode: "NG" },
+        ],
+      }),
+    );
+    expect(checked.overallResultCode).toBe("FAIL");
+    expect(checked.lines.map((line) => line.resultCode)).toEqual(["PASS", "FAIL"]);
+  });
+
+  it("모바일 NG도 불합격 비고를 요구한다", () => {
+    const error = caught(input({ lines: [{ inspectionItemId: 11, resultCode: "NG" }] }));
+    expect(error.getStatus()).toBe(422);
+    expect(error.errors[0]).toMatchObject({ field: "remarks", code: ERROR_CODE.REQUIRED });
+  });
+
   it.each([undefined, null, "", "   "])(
     "FAIL인데 헤더 비고가 %p이면 422 REQUIRED다",
     (remarks) => {

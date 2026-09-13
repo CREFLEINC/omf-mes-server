@@ -408,7 +408,9 @@ describe('LOT (e2e)', () => {
         lot_id: BigInt(lot.lotId),
         reason_code: 'INCOMING_INSPECTION_WAIT',
         status_code: 'HELD',
+        held_by: probeUserId,
         held_at: new Date(),
+        released_by: probeUserId,
         released_at: new Date(),
         release_reason_code: 'INSPECTION_PASSED',
       },
@@ -433,7 +435,9 @@ describe('LOT (e2e)', () => {
         lot_id: BigInt(lot.lotId),
         reason_code: 'INCOMING_INSPECTION_WAIT',
         status_code: 'HELD',
+        held_by: probeUserId,
         held_at: new Date(),
+        released_by: probeUserId,
         released_at: new Date(),
         release_reason_code: 'INSPECTION_PASSED',
       },
@@ -457,6 +461,7 @@ describe('LOT (e2e)', () => {
           lot_id: BigInt(lot.lotId),
           reason_code: 'INCOMING_INSPECTION_WAIT',
           status_code: 'HELD',
+          held_by: probeUserId,
           held_at: tie,
         },
       });
@@ -789,7 +794,7 @@ describe('LOT (e2e)', () => {
   async function release(lotId: number): Promise<void> {
     await prisma.lot_hold.updateMany({
       where: { lot_id: lotId },
-      data: { released_at: new Date(), release_reason_code: 'INSPECTION_PASSED' },
+      data: { released_by: probeUserId, released_at: new Date(), release_reason_code: 'INSPECTION_PASSED' },
     });
   }
 

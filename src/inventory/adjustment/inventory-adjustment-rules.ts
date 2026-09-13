@@ -34,6 +34,9 @@ export interface InventoryAdjustmentLineCreate {
 export interface InventoryAdjustmentCreate {
   reasonCode: string;
   inventoryCountId?: number | null;
+  /** 단말 호퍼 실측은 단말이 고정한 한 시점의 업무일·발생시각을 보낸다. */
+  businessDate?: string;
+  occurredAt?: string;
   /** ⛔ 받아서 «버린다» — 담을 칸이 없다. `erpMessageQueued` 는 늘 false 다. */
   sendToErp?: boolean | null;
   lines: InventoryAdjustmentLineCreate[];

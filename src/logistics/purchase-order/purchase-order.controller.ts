@@ -1,3 +1,4 @@
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -44,8 +45,8 @@ export class PurchaseOrderController {
 
   @Get()
   @Contract('GET /logistics/purchase-orders')
-  list(@Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
+    return this.queries.list(plantQuery(query, request));
   }
 
   @Get(':purchaseOrderId')
@@ -146,4 +147,9 @@ function userOf(request: Request): number {
   const session = currentSession(request);
   if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
   return session.userId;
+}
+
+function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
+  const plantId = currentTerminal(request)?.plantId;
+  return plantId === undefined ? query : { ...query, plantId: Number(plantId) };
 }

@@ -14,6 +14,8 @@ import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { InventoryWriteActor } from '../inventory-write-actor';
 import { postAdjustment } from './adjustment-posting';
 import { InventoryAdjustmentQueryService } from './inventory-adjustment-query.service';
 import {
@@ -28,8 +30,7 @@ import { InventoryAdjustmentDetail, InventoryAdjustmentView, inventoryAdjustment
 
 /**
  * 재고 조정 쓰기 — 등록과 `:post` 전기. 치환·상신은 `InventoryAdjustmentUpdateService` 다.
- * ⛔ 등록은 재고를 «안 움직인다» — 잔액을 읽기만 하고 언제나 `REGISTERED` 로 끝난다
- * (계약 `InventoryAdjustmentCreate` 4칸에 `postImmediately` 가 0건이다).
+ * 관리자 등록은 `REGISTERED` 로 끝난다. 단말 호퍼 실측은 같은 트랜잭션에서 등록·전기·감사를 끝낸다.
  */
 
 /** 계약 `PostRequest` — required 2. 서버가 도출하지 않는다(C-8 · C-1). */
@@ -59,22 +60,31 @@ export class InventoryAdjustmentService {
 
   async create(
     input: InventoryAdjustmentCreate,
-    appUserId: number,
+    actor: InventoryWriteActor,
   ): Promise<{ detail: InventoryAdjustmentDetail; versionNo: number }> {
     const dimensions = await assertCreatable(this.prisma, input);
+    const terminalAudit = actor.terminalAudit;
+    const terminalPost = terminalAudit === undefined ? undefined : terminalHopperPost(input);
 
     for (let attempt = 0; ; attempt += 1) {
       try {
         // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 열린 트랜잭션 안에서 부르면 한
         //    요청이 커넥션을 둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2.md R-2).
-        // ⚠ 기간 축은 «서버 UTC 오늘»이다 — 본문에 날짜 칸이 0개다. 하노이(UTC+7)
-        //    00:00–07:00 의 등록은 전날 번호를 받는다. 이 표는 `business_date` 를 안 실어
-        //    공유계약 C-8 자리가 아니다(결정 — 통보 135).
+        // ⚠ 채번 기간은 «서버 UTC 오늘»이다. 단말 업무일은 전기 원장에만 사용한다.
+        //    조정 헤더에는 business_date 칸이 없다(결정 — 통보 135).
         const periodDate = new Date().toISOString().slice(0, 10);
         const adjustmentNo = await this.numbering.next('INVENTORY_ADJUSTMENT', null, periodDate);
-        const id = await this.prisma.$transaction((tx) =>
-          this.write(tx, input, dimensions, adjustmentNo, appUserId),
-        );
+        const id = await this.prisma.$transaction(async (tx) => {
+          const createdId = await this.write(tx, input, dimensions, adjustmentNo, actor);
+          if (terminalPost !== undefined && terminalAudit !== undefined) {
+            await this.postWithin(tx, Number(createdId), 1, terminalPost, actor);
+            await recordTerminalWorkerAudit(tx, {
+              actor: terminalAudit, targetTypeCode: 'INVENTORY_ADJUSTMENT',
+              targetId: createdId, eventTypeCode: 'HOPPER_MEASUREMENT_POST',
+            });
+          }
+          return createdId;
+        }, TRANSACTION_OPTIONS);
         return this.queries.get(Number(id));
       } catch (error) {
         if (!isDuplicateNo(error)) throw error;
@@ -102,9 +112,19 @@ export class InventoryAdjustmentService {
     // ⚠ 형식 검증이 트랜잭션 «밖»이라 「없는 전표 + 잘못된 businessDate」는 404 가 아니라
     //    400 이다(입고·출고와 같은 형상 — §3-9).
     assertPostRequest(input);
-    const occurredAt = new Date(input.occurredAt);
+    return this.prisma.$transaction((tx) =>
+      this.postWithin(tx, inventoryAdjustmentId, version, input, { appUserId }),
+    TRANSACTION_OPTIONS);
+  }
 
-    return this.prisma.$transaction(async (tx) => {
+  private async postWithin(
+    tx: Prisma.TransactionClient,
+    inventoryAdjustmentId: number,
+    version: number,
+    input: PostAdjustmentRequest,
+    actor: InventoryWriteActor,
+  ): Promise<InventoryAdjustmentView> {
+    const occurredAt = new Date(input.occurredAt);
       // ⛔ 헤더를 먼저 «잠근다» — findUnique 로 읽으면 같은 순간의 두 `:post` 가 둘 다
       //    `REGISTERED` 를 보고 잔액을 두 번 움직인다(상태 잠금이 셋째 겹이다).
       const [header] = await tx.$queryRaw<HeaderRow[]>`
@@ -159,13 +179,13 @@ export class InventoryAdjustmentService {
           businessDate: input.businessDate,
           occurredAt,
         },
-        appUserId,
+        actor,
       );
 
       const moved = await tx.inventory_adjustment.updateMany({
         where: { inventory_adjustment_id: header.inventory_adjustment_id, version_no: version },
         // ⛔ `adjusted_at` 은 본문 `occurredAt` 이다 — 서버 `now()` 를 지어 넣지 않는다(C-1).
-        data: { status_code: POSTED, adjusted_at: occurredAt, version_no: { increment: 1 }, updated_by: appUserId },
+        data: { status_code: POSTED, adjusted_at: occurredAt, version_no: { increment: 1 }, updated_by: actor.appUserId ?? null },
       });
       assertUpdated(moved.count);
       // ⭐ 200 은 상세가 아니라 **헤더 하나**다(계약 응답 스키마 `InventoryAdjustment`).
@@ -173,7 +193,6 @@ export class InventoryAdjustmentService {
         where: { inventory_adjustment_id: header.inventory_adjustment_id },
       });
       return inventoryAdjustmentView(row);
-    }, TRANSACTION_OPTIONS);
   }
 
   /** 헤더 → 라인 N. 한 트랜잭션이다. */
@@ -182,7 +201,7 @@ export class InventoryAdjustmentService {
     input: InventoryAdjustmentCreate,
     dimensions: LineDimension[],
     adjustmentNo: string,
-    appUserId: number,
+    actor: InventoryWriteActor,
   ): Promise<bigint> {
     const header = await tx.inventory_adjustment.create({
       data: {
@@ -190,8 +209,8 @@ export class InventoryAdjustmentService {
         inventory_count_id: input.inventoryCountId ?? null,
         reason_code: input.reasonCode,
         status_code: REGISTERED,
-        created_by: appUserId,
-        updated_by: appUserId,
+        created_by: actor.appUserId ?? null,
+        updated_by: actor.appUserId ?? null,
         inventory_adjustment_line: {
           create: input.lines.map((line, index) => ({
             // 계약 「서버가 부여하며 화면이 정하지 않는다」 — 요청 순서대로 1..N 이다.
@@ -208,7 +227,7 @@ export class InventoryAdjustmentService {
             // 이행한다 — 안 보낸 라인은 헤더 사유를 물려받는다(§5-3).
             reason_code: line.reasonCode ?? input.reasonCode,
             inventory_count_line_id: line.inventoryCountLineId ?? null,
-            created_by: appUserId,
+            created_by: actor.appUserId ?? null,
           })),
         },
       },
@@ -224,6 +243,20 @@ interface HeaderRow {
   inventory_adjustment_no: string;
   status_code: string;
   version_no: number;
+}
+
+/** 단말 등록은 모바일 호퍼 실측 한 건만 즉시 전기한다. 관리자 등록은 기존 등록 상태를 보존한다. */
+function terminalHopperPost(input: InventoryAdjustmentCreate): PostAdjustmentRequest {
+  if (input.reasonCode !== 'HOPPER_MEASUREMENT' || input.inventoryCountId != null
+    || input.lines.length !== 1
+    || input.lines.some((line) => line.reasonCode != null && line.reasonCode !== 'HOPPER_MEASUREMENT')) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      field('reasonCode', ERROR_CODE.INVALID, '단말은 호퍼 실측 한 건만 등록할 수 있습니다.'),
+    ]);
+  }
+  const post = { businessDate: input.businessDate ?? '', occurredAt: input.occurredAt ?? '' };
+  assertPostRequest(post);
+  return post;
 }
 
 /** 형식 검증은 트랜잭션 «밖»이다 — 입고 `goods-receipt.service.ts:156-161` 선례. */

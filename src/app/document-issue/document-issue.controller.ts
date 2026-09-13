@@ -82,10 +82,9 @@ export class DocumentIssueController {
   @Contract('GET /app/document-issues/{documentIssueLogId}/rendition')
   async rendition(
     @Param('documentIssueLogId') documentIssueLogId: number,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<Buffer> {
-    const png = await this.renditions.materialLotLabel(documentIssueLogId);
-    response.type('image/png');
-    return png;
+    @Res() response: Response,
+  ): Promise<void> {
+    const png = await this.renditions.rendition(documentIssueLogId);
+    response.status(HttpStatus.OK).type('image/png').end(png);
   }
 }

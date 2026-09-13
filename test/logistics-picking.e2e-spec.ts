@@ -77,6 +77,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let actorUserId: bigint;
 
   let plantId: number;
   let warehouseId: number;
@@ -155,6 +156,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
         lot_id: heldLot,
         reason_code: 'INCOMING_INSPECTION_WAIT',
         status_code: 'HELD',
+        held_by: actorUserId,
         held_at: new Date('2026-05-04T02:00:00.000Z'),
       },
     });
@@ -304,6 +306,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
         lot_id: lotId,
         reason_code: 'INCOMING_INSPECTION_WAIT',
         status_code: 'HELD',
+        held_by: actorUserId,
         held_at: new Date(AT),
       },
     });
@@ -626,6 +629,7 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '피킹조회검사', status_code: 'EMPLOYED' },
     });
+    actorUserId = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });

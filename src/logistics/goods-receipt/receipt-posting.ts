@@ -69,9 +69,10 @@ export async function postReceipt(
   tx: Prisma.TransactionClient,
   posting: InventoryPostingService,
   input: GoodsReceiptCreate,
-  appUserId: number,
+  appUserId: number | undefined,
   receiptNo: string,
   putawayNos: string[] | null,
+  terminalWorkerId?: bigint,
 ): Promise<bigint> {
   const receipt = await tx.goods_receipt.create({
     data: {
@@ -85,7 +86,7 @@ export async function postReceipt(
       source_document_id: input.sourceDocumentId ?? null,
       reason_code: input.reasonCode ?? null,
       remarks: input.remarks ?? null,
-      created_by: BigInt(appUserId),
+      created_by: appUserId == null ? null : BigInt(appUserId),
     },
   });
 
@@ -104,7 +105,7 @@ export async function postReceipt(
         inventory_status_code: line.inventoryStatusCode,
         destination_location_id: line.destinationLocationId,
         original_shipment_lot_allocation_id: line.originalShipmentLotAllocationId ?? null,
-        created_by: BigInt(appUserId),
+        created_by: appUserId == null ? null : BigInt(appUserId),
       },
     });
     lines.push(created.goods_receipt_line_id);
@@ -156,7 +157,7 @@ export async function postReceipt(
     throw new Error(`원장 라인 수가 입고 라인과 다르다: ${ledger.length} ≠ ${lines.length}`);
   }
 
-  const assignee = putawayNos === null
+  const assignee = putawayNos === null || appUserId === undefined || terminalWorkerId !== undefined
     ? null
     : await tx.worker.findFirst({
         where: { app_user_id: BigInt(appUserId), is_active: true },
@@ -177,7 +178,7 @@ export async function postReceipt(
       goodsReceiptLineId,
       putawayNos[index],
       appUserId,
-      assignee?.worker_id ?? null,
+      terminalWorkerId ?? assignee?.worker_id ?? null,
     );
   }
 
@@ -198,7 +199,7 @@ async function createPutawayTask(
   line: GoodsReceiptLineCreate,
   goodsReceiptLineId: bigint,
   putawayTaskNo: string,
-  appUserId: number,
+  appUserId: number | undefined,
   assignedWorkerId: bigint | null,
 ): Promise<void> {
   const rule = await tx.putaway_rule.findFirst({
@@ -227,7 +228,7 @@ async function createPutawayTask(
       applied_putaway_rule_id: rule?.putaway_rule_id ?? null,
       assigned_worker_id: assignedWorkerId,
       status_code: PUTAWAY_PENDING,
-      created_by: BigInt(appUserId),
+      created_by: appUserId == null ? null : BigInt(appUserId),
     },
   });
 }

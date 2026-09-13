@@ -134,10 +134,26 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
  * 부재가 곧 오류가 아니라 계정에서 검사자를 푼다).
  */
 const WORKER_TABLE_READERS = [
+  // 발급 대상의 현장 작업자와 감사 재검증 — 둘 다 활성·동일 공장을 확인한다.
+  'app/document-issue/document-issue-delivery.ts',
   'app/document-issue/document-issue-write.service.ts',
+  'audit/terminal-worker-audit.ts',
+  // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.
+  'auth/terminal-app-read-scope.ts',
+  'auth/terminal-app-write-scope.ts',
+  'auth/terminal-inventory-scope.ts',
+  'auth/terminal-logistics-scope.ts',
+  'auth/terminal-lot-write-scope.ts',
+  'auth/terminal-maintenance-scope.ts',
+  'auth/terminal-mobile-production-scope.ts',
+  'auth/terminal-production-scope.ts',
+  'auth/terminal-quality-write-scope.ts',
+  'auth/terminal-read-policy.ts',
   SHARED,
   'inventory/count/inventory-count-update.service.ts',
   'logistics/goods-receipt/receipt-posting.ts',
+  // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
+  'maintenance/breakdown/breakdown-attachment.service.ts',
   'maintenance/breakdown/breakdown-create.service.ts',
   'maintenance/inspection/inspection-write.service.ts',
   'mdm/organization/department.service.ts',
@@ -145,6 +161,8 @@ const WORKER_TABLE_READERS = [
   'production/work-session/work-session-worker.service.ts',
   'production/work-session/work-session.service.ts',
   'quality/inspection/inspection-result-write-rules.ts',
+  'trace/lot/lot-complete.service.ts',
+  'trace/serial-number/serial-number-write-context.ts',
 ];
 
 interface Source {
@@ -222,7 +240,7 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     expect(all).toHaveLength(new Set(all).size);
   });
 
-  it('⚠ `mdm.worker` 를 직접 읽는 자리가 열이다 — 늘면 판정이 하나 더 생긴 것이다', () => {
+  it('⚠ `mdm.worker` 직접 조회 목록은 검토한 단말 범위·감사·도메인 자리와 같다', () => {
     // ⭐ `count|findUnique|findFirst|findMany` 넷만 보면 `findUniqueOrThrow`·`aggregate` 가
     //    지나간다(리뷰 #575 M-C ⑷ 변이 X7). 메서드 이름을 안 가린다.
     const readers = sources()

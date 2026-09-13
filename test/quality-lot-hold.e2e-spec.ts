@@ -125,6 +125,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   let uomId: number;
   let heldByAId: number;
   let heldByBId: number;
+  let heldWorkerId: number;
 
   const lotId: Record<string, number> = {};
   const lotHoldId: Record<string, number> = {};
@@ -364,24 +365,25 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   );
 
   it(
-    '⭐ 목록 — held_at 동률 구간이 page 경계에 걸려도 중복·누락이 없다(size=2, page=1/2) ' +
+    '⭐ 목록 — held_at 동률 구간이 page 경계에 걸려도 중복·누락이 없다(size=1) ' +
       '(↩ 2차 정렬 키를 지우면 동률 구간의 페이지 경계가 흔들린다)',
     async () => {
-      const page = async (n: number): Promise<number[]> => {
+      const page = async (n: number): Promise<number> => {
         const response = await request(app.getHttpServer())
-          .get(`/api/quality/lot-holds?open=false&size=2&page=${n}`)
+          .get(`/api/quality/lot-holds?open=false&size=1&page=${n}`)
           .set('Cookie', cookie)
           .expect(200);
-        return (response.body as LotHoldListBody).items
-          .filter((i) => i.lotNo.startsWith(PREFIX))
-          .map((i) => i.lotHoldId);
+        return (response.body as LotHoldListBody).items[0].lotHoldId;
       };
-      // 3중 동률(EXACT2·EXACT1·OPEN) 의 셋째 행(OPEN)이 page=1/2 경계에 걸린다.
-      const page1 = await page(1);
-      const page2 = await page(2);
-      expect(page1).toEqual([lotHoldId.EXACT2, lotHoldId.EXACT1]);
-      expect(page2).toEqual([lotHoldId.OPEN, lotHoldId.LEGACY]);
-      expect(new Set([...page1, ...page2]).size).toBe(page1.length + page2.length); // 중복 0
+      // 다른 스위트의 보류가 앞 페이지에 있어도 실제 전역 위치를 기준으로 경계를 잰다.
+      const all = await listAll('open=false');
+      const expected = [lotHoldId.EXACT2, lotHoldId.EXACT1, lotHoldId.OPEN, lotHoldId.LEGACY];
+      const indexes = expected.map((id) => all.items.findIndex((item) => item.lotHoldId === id));
+      expect(indexes.every((index) => index >= 0)).toBe(true);
+      expect(indexes.slice(1).every((index, i) => index === indexes[i] + 1)).toBe(true);
+      const pages = await Promise.all(indexes.map((index) => page(index + 1)));
+      expect(pages).toEqual(expected);
+      expect(new Set(pages).size).toBe(pages.length);
     },
   );
 
@@ -548,7 +550,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   // ── 16. 사건 — actorId 키 생략 ────────────────────────────────────────
 
   it(
-    '⭐ 사건 — held_by 가 NULL 인 보류는 actorId·actorName 키가 «없다»(계약 required 결손 특성화 · 통보 072) · ' +
+    '⭐ 사건 — 계정 없는 작업자 보류는 actorId·actorName 키가 «없다»(계약 required 결손 특성화 · 통보 072) · ' +
       'target_lot_status_code 가 NULL 이면 targetLotStatusCode 키도 «없다» ' +
       '(↩ 0 을 넣거나 null 을 그대로 실으면 깨진다 · 뒤 단언은 리뷰 Minor-5)',
     async () => {
@@ -1730,6 +1732,16 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: 'LOT보류검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
     plantId = Number(plant.plant_id);
+    const heldWorker = await prisma.worker.create({
+      data: {
+        worker_no: PREFIX + '-WK-NOACCOUNT',
+        worker_name: 'LOT보류검사현장작업자',
+        business_unit_id: unit.business_unit_id,
+        plant_id: plant.plant_id,
+        status_code: 'EMPLOYED',
+      },
+    });
+    heldWorkerId = Number(heldWorker.worker_id);
 
     // ④ #25·#26 — `inventory_balance.on_hand_qty` 가 「보유 수량」의 원천이라 창고·위치가 필요하다.
     const warehouse = await prisma.warehouse.create({
@@ -1795,18 +1807,18 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
 
     lotId.EXACT1 = await newLot('EXACT1', item1Id, 'NORMAL');
     const exact1Hold = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
     });
     lotHoldId.EXACT1 = Number(exact1Hold.lot_hold_id);
     lotId.EXACT2 = await newLot('EXACT2', item1Id, 'NORMAL');
     const exact2Hold = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T2) },
     });
     lotHoldId.EXACT2 = Number(exact2Hold.lot_hold_id);
 
     lotId.LEGACY = await newLot('LEGACY', item1Id, 'INSPECTION_PENDING');
     const legacyHold = await prisma.lot_hold.create({
-      data: {
+      data: { held_worker_id: BigInt(heldWorkerId),
         lot_id: lotId.LEGACY,
         reason_code: 'INCOMING_INSPECTION_WAIT',
         status_code: 'HELD',
@@ -1876,7 +1888,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
 
     lotId.EVLEGACY = await newLot('EVLEGACY', item1Id, 'INSPECTION_PENDING');
     const legacy2 = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EVLEGACY, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_12) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EVLEGACY, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_12) },
     });
     lotHoldId.EVLEGACY = Number(legacy2.lot_hold_id);
 
@@ -1908,14 +1920,14 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
 
     lotId.EVBOUNDARY = await newLot('EVBOUNDARY', item1Id, 'INSPECTION_PENDING');
     const boundary = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EVBOUNDARY, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(EV_TO) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EVBOUNDARY, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(EV_TO) },
     });
     lotHoldId.EVBOUNDARY = Number(boundary.lot_hold_id);
 
     // ⭐ 리뷰 Major-2 — 부분 해제(R-2): LOT 을 안 옮겨 release_target_lot_status_code 가 NULL 이다.
     lotId.EVPARTIAL = await newLot('EVPARTIAL', item2Id, 'INSPECTION_PENDING');
     const partial = await prisma.lot_hold.create({
-      data: {
+      data: { held_worker_id: BigInt(heldWorkerId),
         lot_id: lotId.EVPARTIAL,
         reason_code: 'APPEARANCE_ABNORMAL',
         status_code: 'HELD',
@@ -1935,13 +1947,13 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     // 테스트가 행 수 증가로 깨진다(실측 — 최초 시도에서 그렇게 깨졌다).
     lotId.EV_EXACT1 = await newLot('EV_EXACT1', item1Id, 'NORMAL');
     const evExact1 = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EV_EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EV_EXACT1, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
     });
     lotHoldId.EV_EXACT1 = Number(evExact1.lot_hold_id);
 
     lotId.EV_EXACT2 = await newLot('EV_EXACT2', item1Id, 'NORMAL');
     const evExact2 = await prisma.lot_hold.create({
-      data: { lot_id: lotId.EV_EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: lotId.EV_EXACT2, reason_code: 'OTHER', status_code: 'HELD', held_at: new Date(T_16) },
     });
     lotHoldId.EV_EXACT2 = Number(evExact2.lot_hold_id);
   }
@@ -1980,7 +1992,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     await newPartialHold(lotId.WQTYOK, 500);
     // 「안 걸리는 행」 — 해제된 보류는 합계에 들지 않는다(필터를 지우면 #25 가 409 로 깨진다).
     await prisma.lot_hold.create({
-      data: {
+      data: { released_worker_id: BigInt(heldWorkerId), held_worker_id: BigInt(heldWorkerId),
         lot_id: lotId.WQTYOK,
         hold_qty: 9999,
         uom_id: BigInt(uomId),
@@ -2012,7 +2024,7 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
     // 전건이 그 상태가 된다.
     lotId.WREHOLD = await newLot('WREHOLD', item1Id, 'NORMAL');
     await prisma.lot_hold.create({
-      data: {
+      data: { held_worker_id: BigInt(heldWorkerId),
         lot_id: lotId.WREHOLD,
         reason_code: 'CLAIM_RECALL',
         status_code: 'HELD',
@@ -2030,13 +2042,13 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
   function newFullHold(forLotId: number) {
     return prisma.lot_hold.create({
       // ⛔ 전량 보류는 `hold_qty` 가 **NULL** 이다(0 이 아니다) — DUPLICATE_HOLD 의 판정 축.
-      data: { lot_id: forLotId, reason_code: 'CLAIM_RECALL', status_code: 'HELD', held_at: new Date(W_SEED) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: forLotId, reason_code: 'CLAIM_RECALL', status_code: 'HELD', held_at: new Date(W_SEED) },
     });
   }
 
   function newPartialHold(forLotId: number, qty: number) {
     return prisma.lot_hold.create({
-      data: { lot_id: forLotId, hold_qty: qty, uom_id: BigInt(uomId), reason_code: 'DIMENSION_ABNORMAL', status_code: 'HELD', held_at: new Date(W_SEED) },
+      data: { held_worker_id: BigInt(heldWorkerId), lot_id: forLotId, hold_qty: qty, uom_id: BigInt(uomId), reason_code: 'DIMENSION_ABNORMAL', status_code: 'HELD', held_at: new Date(W_SEED) },
     });
   }
 
@@ -2089,9 +2101,9 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       where: { inspection_request: { inspection_request_no: { startsWith: PREFIX } } },
     });
     await prisma.inspection_request.deleteMany({ where: { inspection_request_no: { startsWith: PREFIX } } });
-    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.inventory_balance.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });

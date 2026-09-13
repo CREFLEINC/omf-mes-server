@@ -89,6 +89,17 @@ describe('LotQualityStatusService', () => {
     expect(data.location_id).toBeUndefined();
   });
 
+  it('계정 없는 POP 검사 판정은 변경 작업자 FK에 기록된다', async () => {
+    const { tx, calls, args } = fake([{ lot_id: 1n, status_code: 'INSPECTION_PENDING' }]);
+    await service.moveWithin(tx, [1n], 'inspection-accepted', {
+      changedWorkerId: 23n, changedAt: ctx.changedAt,
+      sourceDocumentTypeCode: 'INSPECTION_RESULT', sourceDocumentId: 91n,
+    });
+    expect(args[calls.indexOf('event.create')].data).toMatchObject({
+      changed_by: null, changed_worker_id: 23n,
+    });
+  });
+
   it('품질 축 — 읽기는 FOR UPDATE 로 잠근다 (검사·보류·재등록이 같은 LOT 을 노린다)', async () => {
     const { tx, args, calls } = fake([{ lot_id: 1n, status_code: 'NORMAL' }]);
 

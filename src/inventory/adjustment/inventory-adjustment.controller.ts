@@ -21,6 +21,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { inventoryWriteActorOf } from '../inventory-write-actor';
 import {
   InventoryAdjustmentQuery,
   InventoryAdjustmentQueryService,
@@ -68,7 +69,7 @@ export class InventoryAdjustmentController {
   }
 
   /**
-   * 등록. 언제나 `REGISTERED` 로 끝난다 — 계약 본문에 `postImmediately` 가 없다.
+   * 관리자 등록은 `REGISTERED`, 단말 호퍼 실측은 같은 트랜잭션에서 `POSTED`로 끝난다.
    * ⭐ 201 에 ETag 를 «내린다» — 계약이 이 자리에 헤더를 선언했다(입고 201 과 갈린다).
    * ⛔ If-Match 는 안 받는다 — 새 자원이라 대조할 버전이 없다(C-9).
    */
@@ -80,7 +81,7 @@ export class InventoryAdjustmentController {
     @Body() body: InventoryAdjustmentCreate,
   ): Promise<InventoryAdjustmentDetail> {
     const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.adjustments.create(body, userOf(request)),
+      this.adjustments.create(body, inventoryWriteActorOf(request, 'POST /inventory/adjustments')),
     );
     setEtag(response, result.versionNo);
     return result.detail;

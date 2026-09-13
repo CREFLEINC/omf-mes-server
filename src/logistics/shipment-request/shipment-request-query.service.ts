@@ -54,9 +54,15 @@ export class ShipmentRequestQueryService {
    * ⭐ **`lines` 를 싣는다**(R-9) — `W-04-02` 7열 중 «유일한 수량 열»과 `W-04-05` 의 「배정 500」이
    * 라인 없이는 못 선다. `ShipmentRequest` 에 합계 칸이 0개다.
    */
-  async list(query: ShipmentRequestQuery): Promise<PagedResponse<ShipmentRequestView>> {
+  async list(query: ShipmentRequestQuery, terminalPlantId?: bigint): Promise<PagedResponse<ShipmentRequestView>> {
     const page = pageRequest(query);
     const where = whereSql(query);
+    if (terminalPlantId !== undefined) {
+      // 이행 공장이 없는 이전 요청은 터미널에 보이지 않는다. 출하가 생긴 뒤의 창고를
+      // 역추적하면 아직 피킹하지 않은 요청과 다른 공장 혼재를 모두 안전하게 가르지 못한다.
+      where.sql = `(${where.sql}) AND sr.fulfillment_plant_id = $${where.params.length + 1}::bigint`;
+      where.params.push(terminalPlantId);
+    }
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고,
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다(리뷰 실측 · e2e L-40b).

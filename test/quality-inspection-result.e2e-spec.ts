@@ -971,6 +971,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
           lot_id: lot.lot_id,
           reason_code: reason,
           status_code: 'HELD',
+          held_worker_id: ids.worker,
           held_at: new Date(HELD_AT),
           remarks: HOLD_REMARKS,
         },
@@ -1630,11 +1631,11 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await prisma.inspection_result.deleteMany({ where: resultScope });
     await prisma.inspection_item_spec.deleteMany({ where: { inspection_item_code: { startsWith: PREFIX } } });
     await prisma.inspection_request.deleteMany({ where: { inspection_request_no: { startsWith: PREFIX } } });
-    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.inbound_receipt_line.deleteMany({ where: { inbound_receipt: { plant: { plant_code: { startsWith: PREFIX } } } } });
     await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     // 확정(PR ④) 픽스처가 처음 심는 표다 — LOT 보다 먼저 지워야 FK 가 안 막는다.
     await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.inbound_receipt.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });

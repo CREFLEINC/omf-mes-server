@@ -45,6 +45,7 @@ interface Options {
   poLines?: typeof PO_LINES;
   codes?: string[];
   inspectionRequired?: boolean;
+  auditFails?: boolean;
 }
 
 function fake(options: Options = {}) {
@@ -64,6 +65,8 @@ function fake(options: Options = {}) {
     inspectionRequests: [] as Args[],
     increments: [] as { purchaseOrderLineId: bigint; increment: unknown }[],
     transactionOptions: undefined as unknown,
+    audits: [] as Args[],
+    committed: false,
   };
 
   const rows = (where: Args) => {
@@ -80,6 +83,13 @@ function fake(options: Options = {}) {
   };
 
   const tx = {
+    worker: { findFirst: async () => ({ worker_id: 8n }) },
+    terminal: { findFirst: async () => ({ terminal_id: 4n }) },
+    audit_event: { create: async ({ data }: { data: Args }) => {
+      recorded.audits.push(data);
+      if (options.auditFails) throw new Error('audit unavailable');
+      return {};
+    } },
     purchase_order_line: {
       findMany: async ({ where }: { where: Args }) => rows(where),
       update: async ({ where, data }: { where: Args; data: Args }) => {
@@ -162,7 +172,9 @@ function fake(options: Options = {}) {
     $transaction: async (work: (client: unknown) => Promise<unknown>, txOptions: unknown) => {
       recorded.calls.push('transaction');
       recorded.transactionOptions = txOptions;
-      return work(tx);
+      const result = await work(tx);
+      recorded.committed = true;
+      return result;
     },
     inbound_receipt: {
       findUniqueOrThrow: async () => ({
@@ -209,6 +221,20 @@ function fake(options: Options = {}) {
 }
 
 describe('InboundReceiptService.create', () => {
+  it('계정 없는 단말 입하는 같은 tx의 LOT/입하 감사 없이는 커밋되지 않는다', async () => {
+    const actor = { workerId: 8n, terminalAudit: { workerId: 8n, workerNo: 'W8',
+      terminalId: 4n, plantId: 30n, correlationId: 'inbound-1',
+      operationKey: 'POST /logistics/inbound-receipts' } };
+    const ok = fake();
+    await ok.service.create(input(), actor);
+    expect(ok.recorded.header).toMatchObject({ created_by: null, received_by: null });
+    expect(ok.recorded.holds[0]).toMatchObject({ held_worker_id: 8n, held_by: null });
+    expect(ok.recorded.audits.map((row) => row.target_type_code)).toEqual(['LOT', 'INBOUND_RECEIPT']);
+    expect(ok.recorded.committed).toBe(true);
+    const fail = fake({ auditFails: true });
+    await expect(fail.service.create(input(), actor)).rejects.toThrow('audit unavailable');
+    expect(fail.recorded.committed).toBe(false);
+  });
   it('등록 — inspectionRequired 는 품목 마스터에서 읽는다(요청 스키마에 칸이 없다)', async () => {
     const { service, recorded } = fake({ inspectionRequired: true });
 

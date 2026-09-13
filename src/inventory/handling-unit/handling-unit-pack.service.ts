@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { assertReferences } from './handling-unit-content.service';
 import { HandlingUnitQueryService } from './handling-unit-query.service';
 import { HU_STATUS_PACKED } from './handling-unit-status';
@@ -90,7 +91,7 @@ export class HandlingUnitPackService {
           lot_id: line.lotId,
           qty: line.qty,
           uom_id: line.uomId,
-          created_by: context.appUserId,
+          created_by: context.appUserId ?? null,
         })),
       });
 
@@ -102,8 +103,12 @@ export class HandlingUnitPackService {
           //    것은 「비운다」이고 그 둘을 `??` 로 접으면 위치가 조용히 지워진다(§3-1 ⑩).
           ...('locationId' in input ? { location_id: input.locationId ?? null } : {}),
           version_no: { increment: 1 },
-          updated_by: context.appUserId,
+          updated_by: context.appUserId ?? null,
         },
+      });
+      if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: context.terminalAudit, targetTypeCode: 'HANDLING_UNIT', targetId: BigInt(handlingUnitId),
+        eventTypeCode: 'PACK',
       });
     });
 

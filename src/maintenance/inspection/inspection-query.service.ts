@@ -49,23 +49,27 @@ export class InspectionQueryService {
   async list(query: InspectionQuery): Promise<InspectionList> {
     const page = pageRequest(query);
     if (query.withoutMaintenanceOrder !== true) {
-      // 설계 미정 — 문의 094: 설비·유형·size=1도 전 이력의 기간을 대신하지 않는다.
+      // POP 사전점검의 최근 1건은 시작일만 보낸다. 설비·유형·내림차순·size=1인
+      // 그 조회만 상한 없이 허용하고, 일반 이력 검색은 기존 양쪽 기간을 유지한다.
+      const popLatest = query.equipmentId !== undefined
+        && query.inspectionTypeCode !== undefined
+        && query.inspectedFrom !== undefined
+        && query.inspectedTo === undefined
+        && query.sort === 'inspectedAtDesc'
+        && page.take === 1;
       const missing = (["inspectedFrom", "inspectedTo"] as const)
-        .filter((name) => query[name] === undefined)
+        .filter((name) => query[name] === undefined && !(name === 'inspectedTo' && popLatest))
         .map((name) =>
           field(name, ERROR_CODE.REQUIRED, "점검 조회 기간이 필요합니다."),
         );
       if (missing.length)
         throw new ContractException(HttpStatus.BAD_REQUEST, missing);
     }
-    if (
-      query.inspectedFrom &&
-      query.inspectedTo &&
-      query.inspectedFrom > query.inspectedTo
-    ) {
+    if (query.inspectedFrom !== undefined && query.inspectedTo !== undefined
+      && isCalendarDay(query.inspectedFrom) && isCalendarDay(query.inspectedTo)
+      && query.inspectedFrom > query.inspectedTo) {
       return { ...pagedResponse<InspectionView>([], 0, page), totalCount: 0 };
     }
-
     // 공장 설정·count·페이지·라인이 같은 스냅샷을 읽는다. 업무 id는 한 페이지뿐이다.
     return this.prisma.$transaction(
       async (tx) => {
@@ -101,7 +105,7 @@ export class InspectionQueryService {
             // 설계 미정 — 문의 091: 기간 소속을 알 수 없는 행을 날짜 WHERE로 숨기지 않는다.
             if (plant.has_missing_time)
               throw new Error("Missing required inspection time");
-            const range = maintenanceDateRange(
+            const range = inspectionTimeRange(
               query.inspectedFrom,
               query.inspectedTo,
               plant.timezone_code,
@@ -110,6 +114,7 @@ export class InspectionQueryService {
             if (range.gte)
               bounds.push(Prisma.sql`i.inspected_at >= ${range.gte}`);
             if (range.lt) bounds.push(Prisma.sql`i.inspected_at < ${range.lt}`);
+            if (range.lte) bounds.push(Prisma.sql`i.inspected_at <= ${range.lte}`);
             return Prisma.sql`(${Prisma.join(bounds, " AND ")})`;
           });
           conditions.push(
@@ -162,4 +167,19 @@ export class InspectionQueryService {
     if (!row) throw new NotFoundException("없는 점검 기록입니다.");
     return inspectionView(row);
   }
+}
+
+/** Date inputs mean whole plant-local days; date-time inputs mean exact instants. */
+export function inspectionTimeRange(from: string | undefined, to: string | undefined, timezone: string): {
+  gte?: Date; lt?: Date; lte?: Date;
+} {
+  const day = maintenanceDateRange(isCalendarDay(from) ? from : undefined, isCalendarDay(to) ? to : undefined, timezone);
+  return {
+    ...(from === undefined ? {} : { gte: isCalendarDay(from) ? day.gte : new Date(from) }),
+    ...(to === undefined ? {} : isCalendarDay(to) ? { lt: day.lt } : { lte: new Date(to) }),
+  };
+}
+
+function isCalendarDay(value: string | undefined): boolean {
+  return value !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

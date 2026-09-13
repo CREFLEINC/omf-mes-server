@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { resolveWorkerId } from '../../common/master';
@@ -42,9 +43,15 @@ export class DocumentIssueReportService {
         print_failure_reason: failureReason,
         print_reported_at: new Date(),
         print_reported_worker_id: workerId,
-        print_reported_by: BigInt(context.appUserId),
+        print_reported_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
       },
       include: DOCUMENT_ISSUE_INCLUDE,
+    });
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: { ...context.terminalAudit, workerId },
+      targetTypeCode: 'DOCUMENT_ISSUE_LOG',
+      targetId: locked.document_issue_log_id,
+      eventTypeCode: 'PRINT_REPORTED',
     });
     const [targets, reasons] = await Promise.all([
       loadDocumentIssueTargets(tx, [row]),

@@ -106,7 +106,7 @@ export class ShipmentService {
       }),
       this.prisma.shipment_request.findUnique({
         where: { shipment_request_id: BigInt(input.shipmentRequestId) },
-        select: { shipment_request_id: true },
+        select: { shipment_request_id: true, fulfillment_plant_id: true },
       }),
       this.prisma.shipment_request_line.findMany({
         where: { shipment_request_line_id: { in: lineIds } },
@@ -127,6 +127,10 @@ export class ShipmentService {
     }
     if (request === null) {
       errors.push(field('shipmentRequestId', ERROR_CODE.INVALID, '없는 출하작업지시입니다.'));
+    } else if (request.fulfillment_plant_id === null) {
+      errors.push(field('shipmentRequestId', ERROR_CODE.INVALID, '이행 공장이 지정되지 않은 출하작업지시입니다.'));
+    } else if (warehouse !== null && warehouse.plant_id !== request.fulfillment_plant_id) {
+      errors.push(field('warehouseId', ERROR_CODE.INVALID, '출하작업지시 이행 공장과 다른 창고입니다.'));
     }
     const byId = new Map(lines.map((line) => [line.shipment_request_line_id.toString(), line]));
     const itemIdByLine: bigint[] = [];

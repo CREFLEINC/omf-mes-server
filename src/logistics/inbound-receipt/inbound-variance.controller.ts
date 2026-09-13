@@ -1,3 +1,4 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   Body,
   Controller,
@@ -7,11 +8,9 @@ import {
   ParseIntPipe,
   Post,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -42,10 +41,9 @@ export class InboundVarianceController {
     @Body() body: InboundVarianceCreateInput,
   ): Promise<InboundVarianceView> {
     // ⛔ ETag 가 없다 — 「한 번 등록하면 고칠 수 없다」라 대조할 버전 자체가 없다(계약).
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.variances.create(inboundReceiptLineId, body, session.userId),
+      this.variances.create(inboundReceiptLineId, body,
+        logisticsWriteActorOf(request, 'POST /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances')),
     );
   }
 }

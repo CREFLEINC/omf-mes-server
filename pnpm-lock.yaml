@@ -66,6 +66,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      '@jest/test-sequencer':
+        specifier: 29.7.0
+        version: 29.7.0
       '@nestjs/cli':
         specifier: ^11.0.0
         version: 11.0.24(@swc/cli@0.8.1(@swc/core@1.15.46)(chokidar@4.0.3)(supports-color@10.2.2))(@swc/core@1.15.46)(@types/node@22.20.1)(prettier@3.9.6)(uglify-js@3.19.3)

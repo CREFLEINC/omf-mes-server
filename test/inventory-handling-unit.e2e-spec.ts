@@ -506,10 +506,14 @@ describe('취급 단위 조회·등록 (e2e)', () => {
       'performed_by',
       'occurred_at',
       'created_at',
+      'performed_worker_id',
     ]);
     // ⛔ 헤더에 `handling_unit_id`·`reason_code`·`repack_event_no` 를 «만들지 않았다»
     //   (MERGE 는 원본이 여럿이라 헤더 한 칸이 거짓말이 되고, 나머지는 계약에 원천이 0이다).
-    expect(header.every((c) => c.is_nullable === 'NO')).toBe(true);
+    expect(header.filter((c) => c.is_nullable === 'YES').map((c) => c.column_name)).toEqual([
+      'performed_by',
+      'performed_worker_id',
+    ]);
     expect(header.find((c) => c.column_name === 'repack_type_code')?.domain_name).toBe('code_t');
 
     const line = await columnsOf('handling_unit_repack_event_line');
@@ -545,8 +549,16 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     const header = await prisma.$queryRaw<{ conname: string; confdeltype: string }[]>`
       SELECT conname, confdeltype::text FROM pg_constraint
        WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass AND contype = 'f'`;
-    expect(header.map((c) => c.conname)).toEqual(['handling_unit_repack_event_performed_by_fkey']);
-    expect(header.map((c) => c.confdeltype)).toEqual(['a']);
+    expect(header.map((c) => c.conname)).toEqual([
+      'handling_unit_repack_event_performed_by_fkey',
+      'handling_unit_repack_event_performed_worker_fkey',
+    ]);
+    expect(header.map((c) => c.confdeltype)).toEqual(['a', 'a']);
+    const actorCheck = await prisma.$queryRaw<{ conname: string }[]>`
+      SELECT conname FROM pg_constraint
+       WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass
+         AND contype = 'c' AND conname = 'handling_unit_repack_event_actor_check'`;
+    expect(actorCheck).toHaveLength(1);
 
     const constraints = await prisma.$queryRaw<
       { conname: string; contype: string; confdeltype: string }[]
@@ -584,7 +596,7 @@ describe('취급 단위 조회·등록 (e2e)', () => {
     const headerChecks = await prisma.$queryRaw<{ conname: string }[]>`
       SELECT conname FROM pg_constraint
        WHERE conrelid = 'inventory.handling_unit_repack_event'::regclass AND contype = 'c'`;
-    expect(headerChecks).toEqual([]);
+    expect(headerChecks).toEqual([{ conname: 'handling_unit_repack_event_actor_check' }]);
 
     // `GET …/repack-events` 의 «유일한» 축이자 커버링 인덱스다(§2-4).
     const indexes = await prisma.$queryRaw<{ indexdef: string }[]>`

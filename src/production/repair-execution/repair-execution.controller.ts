@@ -13,7 +13,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { resolveTerminalId } from '../../auth/terminal-token';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
@@ -30,6 +31,7 @@ import {
 } from './repair-execution-query.service';
 import { RepairExecutionView } from './repair-execution-view';
 import { RepairExecutionCreate, RepairExecutionService } from './repair-execution.service';
+import { mobileProductionWriteActorOf } from '../mobile-production-write-actor';
 
 /**
  * 수리 실행 목록 조회 1건(I-25 PR ①) + 투입·반출 등록 2건(PR ③).
@@ -50,8 +52,8 @@ export class RepairExecutionController {
 
   @Get()
   @Contract('GET /production/repair-executions')
-  list(@Query() query: RepairExecutionListQuery): Promise<PagedResponse<RepairExecutionView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: RepairExecutionListQuery): Promise<PagedResponse<RepairExecutionView>> {
+    return this.queries.list(query, currentTerminalQualityReadScope(request)?.plantId);
   }
 
   /** 투입 등록 — 구간을 연다. 단말은 계약이 ⌜서버가 푼다⌝ 라 적어 여기서 토큰을 푼다(§5 ④). */
@@ -61,12 +63,14 @@ export class RepairExecutionController {
     @Req() request: Request,
     @Body() body: RepairExecutionCreate,
   ): Promise<RepairExecutionView> {
+    const actor = mobileProductionWriteActorOf(request, 'POST /production/repair-executions');
     const context = {
       workerNo: workerNoOf(request),
-      appUserId: currentSession(request)?.userId,
+      appUserId: actor.appUserId,
+      terminalAudit: actor.terminalAudit,
       // 헤더가 없으면 `null` 이다 — 던지지 않는다(`terminal-token.ts:28`). 「없음」은 여기서
       // 거부 사유가 아니다(세션 열기와 달리 계약이 `can_*` 게이팅을 안 적었다).
-      terminalId: await resolveTerminalId(this.jwt, this.prisma, request),
+      terminalId: currentTerminal(request)?.terminalId ?? await resolveTerminalId(this.jwt, this.prisma, request),
     };
     return runIdempotent(
       this.idempotency,
@@ -90,11 +94,12 @@ export class RepairExecutionController {
     @Param('repairExecutionId', ParseIntPipe) repairExecutionId: number,
     @Body() body: RepairExecutionReturn,
   ): Promise<RepairExecutionView> {
+    const actor = mobileProductionWriteActorOf(request, 'POST /production/repair-executions/{repairExecutionId}:return');
     return runIdempotent(
       this.idempotency,
       request,
       HttpStatus.OK,
-      () => this.returns.close(repairExecutionId, body, workerNoOf(request)),
+      () => this.returns.close(repairExecutionId, body, workerNoOf(request), actor),
       FAMILY_CONFLICT_CODE,
     );
   }

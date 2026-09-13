@@ -893,6 +893,14 @@
          "$ref": "#/components/schemas/ShipmentRequest"
         }
        }
+      },
+      "headers": {
+       "ETag": {
+        "schema": {
+         "type": "string"
+        },
+        "description": "출하작업지시 version_no 낙관적 잠금 토큰"
+       }
       }
      },
      "404": {
@@ -907,6 +915,66 @@
      }
     },
     "x-internal-note": "편성 취소 경로를 두지 않았다 — 화면이 「⛔ 두지 않는다 — 출하작업지시 취소는 범위 밖」이라 적었다(W-04-01 §5-7)."
+   },
+   "put": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하작업지시 이행 공장 지정",
+    "description": "기존 미배정 요청의 이행 공장을 지정한다. 피킹 이력이 있으면 바꾸지 않으며, 이미 연결된 출하가 있으면 모든 출하 창고가 대상 공장에 속해야 한다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShipmentRequestUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "공장 지정됨",
+      "headers": {
+       "ETag": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentRequest"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+     },
+     "404": {
+      "description": "없다",
+      "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+     },
+     "409": {
+      "description": "피킹 또는 최신 판 충돌",
+      "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ShipmentConflictResponse" } } }
+     }
+    }
    }
   },
   "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick": {
@@ -3176,6 +3244,14 @@
    "ShipmentRequest": {
     "type": "object",
     "properties": {
+     "fulfillmentPlantId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+     },
      "shipmentRequestId": {
       "type": "integer",
       "format": "int64",
@@ -3331,9 +3407,31 @@
     ],
     "description": "W-04-02 요약 구획 — 필터 전체 기준(목록 페이지와 다른 모집단). 근거: W-04-02 §4-B · omf-mes#232"
    },
+   "ShipmentRequestUpdate": {
+    "type": "object",
+    "properties": {
+     "fulfillmentPlantId": {
+      "type": "integer",
+      "format": "int64",
+      "minimum": 1,
+      "description": "기존 미배정 출하작업지시를 활성·권한 공장에 지정한다. null 해제는 이번 경로에 없다. 이미 피킹한 요청은 바꿀 수 없고, 연결된 출하가 있으면 그 모든 출하 창고의 공장과 같아야 한다."
+     }
+    },
+    "required": [
+     "fulfillmentPlantId"
+    ]
+   },
    "ShipmentRequestCreate": {
     "type": "object",
     "properties": {
+     "fulfillmentPlantId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+     },
      "salesOrderId": {
       "type": [
        "integer",

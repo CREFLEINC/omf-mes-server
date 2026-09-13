@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictExtra, ContractException, ERROR_CODE, field, one } from '../../common/errors';
@@ -14,6 +14,7 @@ import {
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
 
@@ -29,8 +30,8 @@ export interface ConfirmEffectsInput {
   inspectionRequestId: bigint;
   judgment: string;
   rejectedQty: number;
-  /** `lot_status_event.changed_by` 가 NOT NULL — 계정 세션이 유일한 원천이다. */
-  appUserId: number;
+  appUserId?: number;
+  terminalAudit?: TerminalWorkerAuditActor;
   /** `confirmed_at`·`lot_status_event.changed_at`·`lot_hold.released_at` 이 한 시각을 나눠 쓴다. */
   changedAt: Date;
 }
@@ -160,13 +161,21 @@ export class InspectionConfirmService {
    * ⛔ 호출자가 연 `tx` 안에서만 돈다 — 결과 행 쓰기와 같은 트랜잭션이어야 부분 확정이 없다.
    */
   async applyConfirmEffects(tx: Tx, input: ConfirmEffectsInput): Promise<void> {
+    if ((input.appUserId === undefined) === (input.terminalAudit === undefined))
+      throw new UnauthorizedException('검사 확정에는 계정 또는 단말 작업자 주체 하나가 필요합니다.');
+    const terminalAudit = input.terminalAudit;
     const action = ACTION_BY_JUDGMENT[input.judgment];
     if (action === undefined) {
       throw one(field('overallJudgmentCode', ERROR_CODE.INVALID, '값 목록 밖의 종합 판정입니다.'));
     }
     const request = await this.completeRequest(tx, input.inspectionRequestId, input.appUserId);
+    const actor = input.appUserId !== undefined
+      ? { changedBy: BigInt(input.appUserId) }
+      : terminalAudit !== undefined
+        ? { changedWorkerId: terminalAudit.workerId }
+        : (() => { throw new UnauthorizedException('검사 확정 작업자가 필요합니다.'); })();
     const moveContext: LotQualityMoveContext = {
-      changedBy: BigInt(input.appUserId),
+      ...actor,
       changedAt: input.changedAt,
       sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
       sourceDocumentId: input.inspectionResultId,
@@ -180,10 +189,10 @@ export class InspectionConfirmService {
    * 출발이 `REQUESTED`·`IN_PROGRESS` 둘이라 액션 하나로 못 묶는다. 자기 스키마(`quality`)라
    * 서비스가 직접 UPDATE 한다(§7-3 의 유일한 예외).
    */
-  private completeRequest(tx: Tx, inspectionRequestId: bigint, appUserId: number) {
+  private completeRequest(tx: Tx, inspectionRequestId: bigint, appUserId: number | undefined) {
     return tx.inspection_request.update({
       where: { inspection_request_id: inspectionRequestId },
-      data: { status_code: REQUEST_COMPLETED, updated_by: appUserId, version_no: { increment: 1 } },
+      data: { status_code: REQUEST_COMPLETED, updated_by: appUserId ?? null, version_no: { increment: 1 } },
       select: {
         lot_id: true,
         work_order_id: true,
@@ -222,7 +231,9 @@ export class InspectionConfirmService {
         locked,
         { lotId, reasonCode: INSPECTION_HOLD_REASON },
         { releaseReasonCode: HOLD_RELEASE_REASON },
-        { by: context.changedBy, at: context.changedAt },
+        context.changedBy !== undefined
+          ? { by: context.changedBy, at: context.changedAt }
+          : { workerId: context.changedWorkerId as bigint, at: context.changedAt },
       );
       if (openAfter > 0) return;
     }

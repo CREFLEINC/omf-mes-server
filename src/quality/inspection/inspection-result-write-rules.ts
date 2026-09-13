@@ -119,9 +119,14 @@ export function assertCodes(
  * 가 NOT NULL 이고 `X-Worker-No` 가 푸는 `worker_id` 는 그 칸의 축이 아니다(`:confirm` 컨트롤러의
  * `userOf` 와 같은 자리). 오프라인 큐도 로그인 세션으로 온다.
  */
-export function bornConfirmed(context: InspectionResultWriteContext): { appUserId: number; changedAt: Date } {
-  if (context.appUserId === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
-  return { appUserId: context.appUserId, changedAt: new Date() };
+export function bornConfirmed(context: InspectionResultWriteContext): {
+  appUserId?: number;
+  terminalAudit?: InspectionResultWriteContext['terminalAudit'];
+  changedAt: Date;
+} {
+  if (context.appUserId === undefined && context.terminalAudit === undefined)
+    throw new UnauthorizedException('검사 확정 주체가 필요합니다.');
+  return { appUserId: context.appUserId, terminalAudit: context.terminalAudit, changedAt: new Date() };
 }
 
 /**

@@ -24,10 +24,10 @@ import type { Tx } from './lot-registry.service';
 export const HOLD_STATUS = 'HELD';
 
 /** 보류가 남기는 「이 사람·이 시각」 — 한 트랜잭션의 여러 행이 같은 값을 나눠 쓴다. */
-export interface LotHoldActor {
-  by: bigint;
-  at: Date;
-}
+export type LotHoldActor = { at: Date } & (
+  | { by: bigint; workerId?: never }
+  | { by?: never; workerId: bigint }
+);
 
 /** 보류 한 건이 받는 칸 — 계약 `LotHoldCreate` 의 전 칸이 여기 담긴다(`lots[]` 는 LOT 참조뿐이다). */
 export interface LotHoldInput {
@@ -118,9 +118,10 @@ export class LotHoldService {
             release_condition: input.releaseCondition ?? null,
             target_lot_status_code: input.targetLotStatusCode ?? null,
             remarks: input.remarks ?? null,
-            held_by: actor.by,
+            held_by: actor.by ?? null,
+            held_worker_id: actor.workerId ?? null,
             held_at: actor.at,
-            created_by: actor.by,
+            created_by: actor.by ?? null,
           },
         }),
       );
@@ -167,7 +168,8 @@ export class LotHoldService {
           where: { lot_hold_id: hold.lot_hold_id },
           data: {
             released_at: actor.at,
-            released_by: actor.by,
+            released_by: actor.by ?? null,
+            released_worker_id: actor.workerId ?? null,
             release_reason_code: input.releaseReasonCode,
             release_target_lot_status_code: input.releaseTargetLotStatusCode ?? null,
             ...optional('remarks', input.remarks),
@@ -187,9 +189,10 @@ export class LotHoldService {
           remarks: hold.remarks,
           hold_qty: rest,
           // 잔량은 «지금·이 사람»이 새로 건 보류다 — 원 행의 시각을 베끼면 이력이 거꾸로 선다(문의 079).
-          held_by: actor.by,
+          held_by: actor.by ?? null,
+          held_worker_id: actor.workerId ?? null,
           held_at: actor.at,
-          created_by: actor.by,
+          created_by: actor.by ?? null,
         },
       });
     }

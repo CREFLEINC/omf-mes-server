@@ -248,6 +248,8 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
         uom_id: ids.uom,
         status_code: 'PLANNED',
         default_wip_location_id: ids.location,
+        default_fg_location_id: ids.location,
+        default_scrap_location_id: ids.location,
       },
     });
     await request(app.getHttpServer())

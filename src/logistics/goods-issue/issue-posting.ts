@@ -110,7 +110,7 @@ export async function postIssue(
   tx: Tx,
   posting: InventoryPostingService,
   input: PostIssueInput,
-  appUserId: number,
+  appUserId: number | undefined,
 ): Promise<void> {
   const { header, lines } = input;
   await assertLotNotBlocked(tx, lines);
@@ -265,7 +265,7 @@ async function cancelFullyReturnedPutawayTasks(
   input: PostIssueInput,
   demanded: Map<string, { qty: Prisma.Decimal; index: number }>,
   picked: Map<string, BalanceRow>,
-  appUserId: number,
+  appUserId: number | undefined,
 ): Promise<void> {
   const { header } = input;
   if (header.issueTypeCode !== SUPPLIER_RETURN || header.sourceDocumentTypeCode !== GOODS_RECEIPT) {
@@ -288,7 +288,7 @@ async function cancelFullyReturnedPutawayTasks(
     },
     data: {
       status_code: PUTAWAY_CANCELLED,
-      updated_by: BigInt(appUserId),
+      updated_by: appUserId == null ? null : BigInt(appUserId),
       version_no: { increment: 1 },
     },
   });

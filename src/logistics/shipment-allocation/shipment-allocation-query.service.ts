@@ -50,14 +50,15 @@ interface QueryRow extends ShipmentAllocationRow {
 }
 
 /**
- * `q` 는 겨냥할 칸이 없다(계약 명시 · R-8) — 다른 필터를 바인딩하지 않고 `FALSE` 하나로 끝낸다.
- * `q=''`(빈 문자열)도 마찬가지다 — 값과 무관하게 항상 빈 목록이다.
+ * `q` 는 발급 때 영속화한 납품라벨 번호의 정확 일치 축이다. 아직 발급되지 않은 배분은
+ * `delivery_label_no IS NULL` 이어서 어떤 스캔값에도 걸리지 않는다. 출하번호·LOT·포장번호로
+ * 대신 찾으면 다른 물건을 납품라벨로 오인하므로 검색 범위를 넓히지 않는다.
  */
 export function allocationWhereSql(filters: ShipmentAllocationFilters): BuiltWhere {
-  if (filters.q !== undefined) return { sql: 'FALSE', params: [] };
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
   const and: string[] = [];
+  if (filters.q !== undefined) and.push(`a.delivery_label_no = ${bind(filters.q)}`);
   if (filters.shipmentId !== undefined) and.push(`sl.shipment_id = ${bind(filters.shipmentId)}::bigint`);
   if (filters.shipmentLineId !== undefined) {
     and.push(`a.shipment_line_id = ${bind(filters.shipmentLineId)}::bigint`);
@@ -78,9 +79,13 @@ export function allocationWhereSql(filters: ShipmentAllocationFilters): BuiltWhe
 export class ShipmentAllocationQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ShipmentAllocationFilters): Promise<ShipmentAllocationListResponse> {
+  async list(query: ShipmentAllocationFilters, terminalPlantId?: bigint): Promise<ShipmentAllocationListResponse> {
     const page = pageRequest(query);
     const where = allocationWhereSql(query);
+    if (terminalPlantId !== undefined) {
+      where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
+      where.params.push(terminalPlantId);
+    }
     // ⭐ `oqcPassed` 를 준 요청만 SQL 로 못 자른다(파생 축이라) — 그때만 후보 전건을 읽어 TS 에서
     //   거르고 자른다. 준 게 없으면(대부분) SQL `LIMIT/OFFSET` + 별도 `count(*)` 를 그대로 쓴다.
     //   ⛔ `count(*) OVER ()` 는 쓰지 않는다 — 범위 밖 쪽에서 `total` 이 0 으로 접힌다(PR ④ 선례).

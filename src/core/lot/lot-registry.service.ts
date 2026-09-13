@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
+import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { LotHoldService } from './lot-hold.service';
 import { materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
@@ -26,6 +27,7 @@ export const PRODUCTION_LOT_TYPE = 'PRODUCTION';
 
 export type Tx = Prisma.TransactionClient;
 export type LotRow = Prisma.lotGetPayload<{ include: { lot_hold: true } }>;
+export type LotRegisterActor = number | { workerId: bigint; terminalAudit: TerminalWorkerAuditActor };
 
 export interface ExternalIdentifierInput {
   identifierTypeCode: string;
@@ -76,7 +78,8 @@ export class LotRegistryService {
    * 순서 불변식: **라인 → LOT → 라인 UPDATE** — `lot.source_id` 가 라인 id 라 라인이 먼저
    * 서고, `inbound_receipt_line.lot_id` 는 LOT 이 먼저 서야 채워진다.
    */
-  async createWithin(tx: Tx, input: LotRegisterInput, appUserId: number): Promise<LotRow> {
+  async createWithin(tx: Tx, input: LotRegisterInput, actor: LotRegisterActor): Promise<LotRow> {
+    const appUserId = typeof actor === 'number' ? actor : undefined;
     const iqcPlanVersionId = input.incomingIqc
       ? await resolveIncomingIqcPlanVersion(tx, input.itemId, input.incomingIqc.effectiveDate)
       : undefined;
@@ -94,7 +97,7 @@ export class LotRegistryService {
         manufactured_at: optionalInstant(input.manufacturedAt),
         expiry_date: optionalDay(input.expiryDate),
         remarks: input.remarks ?? null,
-        created_by: BigInt(appUserId),
+        created_by: appUserId === undefined ? null : BigInt(appUserId),
       },
     });
 
@@ -115,7 +118,9 @@ export class LotRegistryService {
           targetLotStatusCode: INITIAL_LOT_STATUS,
         },
       ],
-      { by: BigInt(appUserId), at: new Date() },
+      typeof actor === 'number'
+        ? { by: BigInt(actor), at: new Date() }
+        : { workerId: actor.workerId, at: new Date() },
     );
 
     for (const identifier of input.externalIdentifiers ?? []) {
@@ -126,13 +131,13 @@ export class LotRegistryService {
           external_identifier: identifier.externalIdentifier,
           partner_id: identifier.partnerId ?? null,
           external_system_code: identifier.externalSystemCode ?? null,
-          created_by: BigInt(appUserId),
+          created_by: appUserId === undefined ? null : BigInt(appUserId),
         },
       });
     }
 
     if (input.incomingIqc && iqcPlanVersionId !== undefined) {
-      await tx.inspection_request.create({
+      const request = await tx.inspection_request.create({
         data: {
           inspection_request_no: input.incomingIqc.requestNo,
           inspection_type_code: 'IQC',
@@ -145,14 +150,22 @@ export class LotRegistryService {
           uom_id: BigInt(input.uomId),
           status_code: 'REQUESTED',
           requested_at: new Date(input.incomingIqc.requestedAt),
-          created_by: BigInt(appUserId),
+          created_by: appUserId === undefined ? null : BigInt(appUserId),
         },
+      });
+      if (typeof actor !== 'number') await recordTerminalWorkerAudit(tx, {
+        actor: actor.terminalAudit, targetTypeCode: 'INSPECTION_REQUEST',
+        targetId: request.inspection_request_id, eventTypeCode: 'CREATED',
       });
     }
 
     if (input.sourceTypeCode === INBOUND_RECEIPT_LINE) {
       await this.attach(tx, input.sourceId, lot.lot_id);
     }
+
+    if (typeof actor !== 'number') await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'LOT', targetId: lot.lot_id, eventTypeCode: 'CREATED',
+    });
 
     return tx.lot.findUniqueOrThrow({
       where: { lot_id: lot.lot_id },

@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./document-issue-create-rules";
 import { lockDocumentIssueGoodsIssueTargets } from "./document-issue-goods-issue-lock";
 import { lockDocumentIssueInspectionTargets } from "./document-issue-inspection-lock";
+import { assignDeliveryLabelNumbers, lockDeliveryAllocations } from './document-issue-delivery';
 import { loadDocumentIssueReasons } from "./document-issue-query.service";
 import {
   DocumentIssueSequence,
@@ -53,6 +55,7 @@ export class DocumentIssueWriteService {
       await lockSimpleDocumentIssueTargets(tx, input.documentTypeCode, targets),
       await lockDocumentIssueGoodsIssueTargets(tx, targets),
       await lockDocumentIssueInspectionTargets(tx, targets),
+      await lockDeliveryAllocations(tx, targets, context.terminalId, context.workerNo),
     );
     const sequences = await nextDocumentIssueSequences(
       tx,
@@ -77,6 +80,7 @@ export class DocumentIssueWriteService {
     const workerId = await resolveWorker(tx, context.workerNo);
     const reason = await resolveReason(tx, input, qualified);
     const now = new Date();
+    await assignDeliveryLabelNumbers(tx, facts.values(), now);
     const created = await tx.document_issue_log.createManyAndReturn({
       data: qualified.map(({ target, lotId, sequence }) => ({
         document_type_code: input.documentTypeCode,
@@ -85,7 +89,7 @@ export class DocumentIssueWriteService {
         lot_id: lotId,
         issue_seq: sequence.next,
         reissue_reason_code: sequence.current === 0 ? null : reason,
-        issued_by: BigInt(context.appUserId),
+        issued_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
         issued_at: now,
         terminal_id: context.terminalId,
         printer_name: input.printerName ?? null,
@@ -105,6 +109,15 @@ export class DocumentIssueWriteService {
         issue_seq: true,
       },
     });
+    if (context.terminalAudit !== undefined) {
+      if (workerId === null) throw new Error('Terminal document issue worker is missing');
+      for (const issue of created) await recordTerminalWorkerAudit(tx, {
+        actor: { ...context.terminalAudit, workerId },
+        targetTypeCode: 'DOCUMENT_ISSUE_LOG',
+        targetId: issue.document_issue_log_id,
+        eventTypeCode: 'ISSUED',
+      });
+    }
     const ids = createdIds(input.documentTypeCode, qualified, created);
     const rows = await tx.document_issue_log.findMany({
       where: { document_issue_log_id: { in: ids } },

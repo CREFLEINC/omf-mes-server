@@ -3,9 +3,12 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
-import { PagedResponse, pagedResponse } from '../../common/pagination';
+import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Editability, ReferenceQuery, filter, referencePage, referenceWhere } from '../../common/master';
+import { Editability, ReferenceQuery, filter, referenceWhere } from '../../common/master';
+
+// 현장 작업자 디렉터리는 한 공장 최대 500명을 한 장으로 읽는다.
+const WORKER_DIRECTORY_MAX_SIZE = 500;
 
 /** 계약 `Worker` 와 동형. */
 interface WorkerView {
@@ -71,7 +74,7 @@ export class WorkerService {
       businessUnitId?: number;
     },
   ): Promise<PagedResponse<WorkerView>> {
-    const page = referencePage(query);
+    const page = pageRequest(query, WORKER_DIRECTORY_MAX_SIZE);
     const where = referenceWhere(
       query,
       { code: 'worker_no', name: 'worker_name' },

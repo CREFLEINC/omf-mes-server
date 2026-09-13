@@ -1,7 +1,7 @@
-import { Body, Controller, HttpStatus, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { Body, Controller, HttpStatus, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -34,7 +34,6 @@ export class RecycleEntryController {
 
 function contextOf(request: Request): RecycleEntryContext {
   const workerNo = request.header('X-Worker-No');
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return { workerNo: typeof workerNo === 'string' ? workerNo : undefined, appUserId: session.userId };
+  return { workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+    actor: logisticsWriteActorOf(request, 'POST /logistics/recycle-entries') };
 }

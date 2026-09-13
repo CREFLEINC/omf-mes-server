@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { resolveTerminalId } from '../../auth/terminal-token';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import {
@@ -12,7 +13,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type SerialNumberWriteContext = IdempotencyContext & {
-  appUserId: number;
+  appUserId?: number;
   workerNo: string;
   terminalId: bigint | null;
 };
@@ -23,20 +24,30 @@ export async function serialNumberWriteContext(
   prisma: PrismaService,
 ): Promise<SerialNumberWriteContext> {
   const session = currentSession(request);
-  if (session === undefined)
+  const terminal = currentTerminal(request);
+  if (session === undefined && terminal === undefined)
     throw new UnauthorizedException('로그인이 필요합니다.');
   const workerNo = requiredWorkerNo(request.headers['x-worker-no']);
   const terminalId = await resolveTerminalId(jwt, prisma, request);
+  // A field worker need not have an app account. Keep the worker number and
+  // terminal as the actor; use a linked account for created_by only if one exists.
+  const worker = terminal === undefined ? null : await prisma.worker.findFirst({
+    where: { worker_no: workerNo, plant_id: terminal.plantId, is_active: true },
+    select: { app_user_id: true },
+  });
+  if (terminal !== undefined && worker === null) throw new UnauthorizedException('작업자를 확인할 수 없습니다.');
+  const appUserId = session?.userId ?? (worker?.app_user_id === undefined || worker?.app_user_id === null
+    ? undefined : Number(worker.app_user_id));
   return {
     key: String(request.headers['idempotency-key']),
-    appUserId: session.userId,
+    ...(appUserId === undefined ? {} : { appUserId }),
     workerNo,
     terminalId,
     successStatus: HttpStatus.CREATED,
     fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
       body: request.body,
       actor: {
-        appUserId: session.userId,
+        appUserId: appUserId ?? null,
         workerNo,
         terminalId: terminalId?.toString() ?? null,
       },

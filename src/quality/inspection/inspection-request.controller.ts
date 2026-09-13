@@ -1,6 +1,8 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 
 import { Contract } from '../../common/contract';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { PagedResponse } from '../../common/pagination';
 import { InspectionRequestListQuery, InspectionRequestService } from './inspection-request.service';
 import { InspectionRequestView } from './inspection-request-view';
@@ -12,14 +14,14 @@ export class InspectionRequestController {
 
   @Get()
   @Contract('GET /quality/inspection-requests')
-  list(@Query() query: InspectionRequestListQuery): Promise<PagedResponse<InspectionRequestView>> {
-    return this.requests.list(query);
+  list(@Req() request: Request, @Query() query: InspectionRequestListQuery): Promise<PagedResponse<InspectionRequestView>> {
+    return this.requests.list(query, currentTerminalQualityReadScope(request));
   }
 
   /** ⛔ ETag 를 안 낸다(계약 미선언). */
   @Get(':inspectionRequestId')
   @Contract('GET /quality/inspection-requests/{inspectionRequestId}')
-  detail(@Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionRequestView> {
-    return this.requests.detail(inspectionRequestId);
+  detail(@Req() request: Request, @Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionRequestView> {
+    return this.requests.detail(inspectionRequestId, currentTerminalQualityReadScope(request));
   }
 }

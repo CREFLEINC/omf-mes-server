@@ -17,6 +17,8 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
+import { currentTerminalQualityWorkerId } from '../../auth/terminal-quality-write-scope';
 import { resolveTerminalId } from '../../auth/terminal-token';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
@@ -129,12 +131,20 @@ export class InspectionResultController {
    */
   private async contextOf(request: Request): Promise<InspectionResultWriteContext> {
     const workerNo = request.headers['x-worker-no'];
+    const terminal = currentTerminal(request);
+    const workerId = terminal === undefined ? undefined : currentTerminalQualityWorkerId(request);
+    const idempotencyKey = String(request.headers['idempotency-key']);
     return {
       workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-      idempotencyKey: String(request.headers['idempotency-key']),
+      idempotencyKey,
       version: ifMatchVersion(request),
       appUserId: currentSession(request)?.userId,
-      terminalId: await resolveTerminalId(this.jwt, this.prisma, request),
+      terminalId: terminal?.terminalId ?? await resolveTerminalId(this.jwt, this.prisma, request),
+      ...(terminal !== undefined && workerId !== undefined && typeof workerNo === 'string'
+        ? { terminalAudit: {
+          workerId, workerNo, terminalId: terminal.terminalId, plantId: terminal.plantId,
+          correlationId: idempotencyKey, operationKey: 'POST /quality/inspection-results',
+        } } : {}),
     };
   }
 }

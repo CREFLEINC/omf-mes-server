@@ -1,5 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import type { MobileProductionWriteActor } from '../mobile-production-write-actor';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
@@ -53,7 +55,7 @@ export class OperationHandoverService {
 
   async create(
     input: OperationHandoverCreate,
-    appUserId: number,
+    appUserId: number | MobileProductionWriteActor,
     workerNo: string | undefined,
   ): Promise<OperationHandoverView> {
     await assertWorkerNoExists(this.prisma, workerNo);
@@ -61,7 +63,8 @@ export class OperationHandoverService {
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을 둘
     //    쥐어 풀 고갈 시 `P2024` 로 죽는다(§4-1 ⑤). 결번은 허용한다.
     const no = await this.numbering.next('OPERATION_HANDOVER', null, utcDate(input.handedOverAt));
-    return this.prisma.$transaction((tx) => this.write(tx, input, no, locations, appUserId));
+    const actor = typeof appUserId === 'number' ? { appUserId } : appUserId;
+    return this.prisma.$transaction((tx) => this.write(tx, input, no, locations, actor));
   }
 
   /** §4-1 ⑥~⑧ — 헤더 INSERT → createMany(`line_no` 1..N) → 같은 tx 되읽기. */
@@ -70,7 +73,7 @@ export class OperationHandoverService {
     input: OperationHandoverCreate,
     handoverNo: string,
     locations: HandoverLocations,
-    appUserId: number,
+    actor: MobileProductionWriteActor,
   ): Promise<OperationHandoverView> {
     const handedOverAt = new Date(input.handedOverAt);
     const header = await tx.operation_handover.create({
@@ -83,7 +86,7 @@ export class OperationHandoverService {
         // ⭐ 계약이 인계·인수를 «한 행위»로 접었다 — ⌜받는 쪽 화면이 없어 `received_at` 을 채울
         //    경로가 생기지 않는다. 화면을 따라 인계 확정 시 두 시각을 함께 찍는다⌝(R-2).
         received_at: handedOverAt,
-        created_by: appUserId,
+        created_by: actor.appUserId ?? null,
       },
     });
     await tx.operation_handover_line.createMany({
@@ -100,8 +103,13 @@ export class OperationHandoverService {
         // 모든 라인이 같은 두 값을 받는다 — 계약이 라인별 위치를 안 받는다(§4-2).
         source_location_id: locations.source,
         destination_location_id: locations.destination,
-        created_by: appUserId,
+        created_by: actor.appUserId ?? null,
       })),
+    });
+
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'OPERATION_HANDOVER',
+      targetId: header.operation_handover_id, eventTypeCode: 'CREATED',
     });
 
     const row = await tx.operation_handover.findUniqueOrThrow({

@@ -19,7 +19,7 @@ export interface PutawayTaskQuery {
 export class PutawayTaskService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: PutawayTaskQuery): Promise<PagedResponse<PutawayTaskView>> {
+  async list(query: PutawayTaskQuery, terminalPlantId?: bigint): Promise<PagedResponse<PutawayTaskView>> {
     const page = pageRequest(query);
     const goodsReceiptId = numeric('goodsReceiptId', query.goodsReceiptId);
     const warehouseId = numeric('warehouseId', query.warehouseId);
@@ -34,6 +34,7 @@ export class PutawayTaskService {
         query.temporaryOnly === true ? { status_code: 'COMPLETED_TEMPORARY' } : {},
         goodsReceiptId === undefined ? {} : { goods_receipt_line: { goods_receipt_id: goodsReceiptId } },
         warehouseId === undefined ? {} : { goods_receipt_line: { goods_receipt: { warehouse_id: warehouseId } } },
+        terminalPlantId === undefined ? {} : { goods_receipt_line: { goods_receipt: { plant_id: terminalPlantId } } },
       ],
     };
 

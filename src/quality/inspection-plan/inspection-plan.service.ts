@@ -17,6 +17,7 @@ import {
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 
 /** `quality.inspection_plan` 을 FK 로 가리키는 자리 전부. 실측이고 e2e 가 대조한다. */
@@ -95,9 +96,12 @@ export class InspectionPlanService {
     return pagedResponse(rows.map(view), total, page);
   }
 
-  async get(inspectionPlanId: number): Promise<InspectionPlanResult> {
-    const row = await this.prisma.inspection_plan.findUnique({
-      where: { inspection_plan_id: inspectionPlanId },
+  async get(inspectionPlanId: number, scope?: TerminalQualityReadScope): Promise<InspectionPlanResult> {
+    const row = await this.prisma.inspection_plan.findFirst({
+      where: { inspection_plan_id: inspectionPlanId,
+        ...(scope === undefined ? {} : { inspection_plan_version: { some: { inspection_request: {
+          some: { work_order: terminalQualityWorkOrderWhere(scope) },
+        } } } }) },
     });
     if (!row) throw new NotFoundException('없는 검사기준입니다.');
 

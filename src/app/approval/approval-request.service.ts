@@ -5,6 +5,7 @@ import { ApprovalService } from '../../core/approval';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalApprovalListScope } from '../../auth/terminal-app-read-scope';
 import {
   ApprovalRequestDetailView,
   ApprovalRequestView,
@@ -30,6 +31,7 @@ export interface ApprovalRequestQuery {
 
 const INCLUDE = {
   app_user: true,
+  requested_worker: true,
   approval_step: { include: { app_user: true }, orderBy: { step_no: 'asc' as const } },
 };
 type RequestRow = Prisma.approval_requestGetPayload<{ include: typeof INCLUDE }>;
@@ -85,6 +87,57 @@ export class ApprovalRequestService {
     const mine = all.filter((row) => this.currentStepInfo(row).approverId === actorId);
     const sliced = mine.slice(page.skip, page.skip + page.take);
     return pagedResponse(sliced.map((row) => this.toView(row, actorId)), mine.length, page);
+  }
+
+  /** 모바일 IQC 상신 조회는 계정 세션 대신 검증된 LOT 또는 현장 작업자로 한정한다. */
+  async listForTerminal(
+    query: ApprovalRequestQuery,
+    scope: TerminalApprovalListScope,
+  ): Promise<PagedResponse<ApprovalRequestView>> {
+    const page = pageRequest(query);
+    let lotIds: bigint[];
+    if (scope.lotId !== undefined) {
+      lotIds = [scope.lotId];
+    } else {
+      const ownTargets = await this.prisma.approval_request.findMany({
+        where: {
+          requested_worker_id: scope.workerId,
+          approval_type_code: 'IQC_SKIP',
+          target_type_code: 'INBOUND_LOT',
+        },
+        select: { target_id: true },
+        distinct: ['target_id'],
+      });
+      const lots = ownTargets.length === 0 ? [] : await this.prisma.lot.findMany({
+        where: {
+          lot_id: { in: ownTargets.map((row) => row.target_id) },
+          plant_id: scope.plantId,
+          source_type_code: 'INBOUND_RECEIPT_LINE',
+        },
+        select: { lot_id: true },
+      });
+      lotIds = lots.map((lot) => lot.lot_id);
+    }
+    const where: Prisma.approval_requestWhereInput = {
+      approval_type_code: 'IQC_SKIP',
+      target_type_code: 'INBOUND_LOT',
+      target_id: { in: lotIds },
+      ...(scope.lotId !== undefined ? { status_code: 'PENDING' } : { requested_worker_id: scope.workerId }),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.approval_request.findMany({
+        where,
+        include: INCLUDE,
+        orderBy: { requested_at: 'desc' },
+        skip: page.skip,
+        take: page.take,
+      }),
+      this.prisma.approval_request.count({ where }),
+    ]);
+    return pagedResponse(rows.map((row) => toApprovalRequest(row, {
+      currentStepNo: this.currentStepInfo(row).stepNo,
+      isMyTurn: false,
+    })), total, page);
   }
 
   async get(

@@ -11686,6 +11686,16 @@
         ],
         "description": "재고 조정 등록. 실사에서 불러오거나 직접 입력한다. 근거: W-01-12 §5-6",
         "properties": {
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "description": "단말 HOPPER_MEASUREMENT 조정의 발생 업무일. 기존 관리자 초안 등록에서는 생략할 수 있다."
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "단말에서 고정한 실제 조정 발생시각. 단말 HOPPER_MEASUREMENT의 즉시 전기에 필수이며 오프라인 재전송에도 원래 시각을 유지한다."
+          },
           "inventoryCountId": {
             "x-source-column": "inventory_count_id",
             "type": [
@@ -12617,7 +12627,7 @@
               "null"
             ],
             "maxLength": 50,
-            "description": "차이가 0 이 아니면 필수. 값 = MISPLACED·DAMAGED_IN_TRANSIT·SPILL·COUNT_ERROR·THEFT_LOSS·EVAPORATION_LOSS (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "description": "차이가 0이 아니면 활성 사유가 필수다. 단, 블라인드 미실사 라인의 최초 계수 제출(현장 신규 라인 포함)에서는 사유를 생략할 수 있고, 계수 후 관리 화면에서 보완한다. 제공한 사유는 최초 제출 예외에서도 활성값인지 검증한다. 값 = MISPLACED·DAMAGED_IN_TRANSIT·SPILL·COUNT_ERROR·THEFT_LOSS·EVAPORATION_LOSS (2026-09-03 코드 사전 등재) — ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31) ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=VARIANCE_REASON 로 받는다(공유계약 G-32 · omf-mes#198 확정). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. 기존 블라인드 라인의 수량·계수시각을 바꾸지 않고 전량 치환에 그대로 포함하는 경우에는 사후 보완 대기 중인 미입력 사유를 유지할 수 있다. 계수값을 수정하는 경우에는 최초 제출 예외를 다시 적용하지 않는다.",
             "example": "MISPLACED",
             "x-internal-note": "status_code 가 app.code_t 맨몸이라 값 집합이 데이터에 없다(#64 계열). enum 을 못박으면 값이 정해질 때 계약이 깨진다 — 공유계약 G-2 를 계약에도 적용한다.",
             "x-code-key": "CD-VARIANCE-REASON"
@@ -13849,6 +13859,11 @@
           "changedAt"
         ],
         "properties": {
+          "changedWorkerId": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
+          },
           "lotStatusHistoryId": {
             "type": "integer",
             "format": "int64",
@@ -13931,9 +13946,10 @@
             "example": 1001
           },
           "changedBy": {
-            "type": "integer",
+            "type": ["integer", "null"],
             "format": "int64",
-            "example": 1001
+            "example": 1001,
+            "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
           },
           "changedAt": {
             "type": "string",

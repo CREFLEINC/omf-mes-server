@@ -75,7 +75,7 @@ export async function postTransferIssue(
   tx: Tx,
   posting: InventoryPostingService,
   input: PostTransferIssueInput,
-  appUserId: number,
+  appUserId: number | undefined,
 ): Promise<bigint[]> {
   const { lines } = input;
   const source = await orgAxis(tx, input.fromWarehouseId);
@@ -256,7 +256,7 @@ const dimOf = (
  * 두 끝점이 다 도착 창고 안이라 조직 3축이 하나다.
  */
 export async function postTransferArrive(
-  tx: Tx, posting: InventoryPostingService, input: PostTransferArriveInput, appUserId: number,
+  tx: Tx, posting: InventoryPostingService, input: PostTransferArriveInput, appUserId: number | undefined,
 ): Promise<bigint[]> {
   const { lines } = input;
   const axis = await orgAxis(tx, input.toWarehouseId);

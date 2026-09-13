@@ -5,6 +5,8 @@ import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   DOCUMENT_STATUS,
   InboundReceiptCreateInput,
@@ -32,8 +34,9 @@ export class InboundReceiptService {
 
   async create(
     input: InboundReceiptCreateInput,
-    appUserId: number,
+    actorOrUser: LogisticsWriteActor | number,
   ): Promise<{ detail: InboundReceiptDetail; versionNo: number }> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     await assertWritable(this.prisma, input);
 
     // ⛔ 채번은 `$transaction` 을 «열기 전»에 부른다 — 잠근 채로 채번하면 카운터 대기가
@@ -47,7 +50,7 @@ export class InboundReceiptService {
           tx,
           inboundReceiptNo,
           input,
-          appUserId,
+          actor,
           '',
           input.businessDate,
           iqcRequestNos,
@@ -68,12 +71,13 @@ export class InboundReceiptService {
     tx: Prisma.TransactionClient,
     inboundReceiptNo: string,
     input: InboundReceiptHeaderWriteInput,
-    appUserId: number,
+    actorOrUser: LogisticsWriteActor | number,
     at = '',
     businessDate?: string,
     iqcRequestNos: readonly (string | undefined)[] = [],
     occurredAt?: string,
   ): Promise<bigint> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     const deltas = await this.lockAttribution(tx, input.lines, at);
     const inspection = await inspectionFlags(tx, input.lines);
 
@@ -92,8 +96,8 @@ export class InboundReceiptService {
         status_code: DOCUMENT_STATUS,
         // 요청 스키마에 `receivedBy` 칸이 없다 — 주체는 계정 세션이다(`X-Worker-No` 는
         // 덧붙임이라 없어도 400 이 아니다 · I-3.md §6-4).
-        received_by: BigInt(appUserId),
-        created_by: BigInt(appUserId),
+        received_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
+        created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
       },
     });
 
@@ -117,7 +121,7 @@ export class InboundReceiptService {
           expiry_date: dayOrNull(`${at}lines.${index}.expiryDate`, line.expiryDate),
           inspection_required: inspection.get(BigInt(line.itemId)) ?? false,
           status_code: DOCUMENT_STATUS,
-          created_by: BigInt(appUserId),
+          created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
         },
       });
 
@@ -147,7 +151,8 @@ export class InboundReceiptService {
                 }
               : undefined,
         },
-        appUserId,
+        actor.terminalAudit === undefined ? actor.appUserId as number
+          : { workerId: actor.workerId, terminalAudit: actor.terminalAudit },
       );
     }
 
@@ -156,10 +161,14 @@ export class InboundReceiptService {
         where: { purchase_order_line_id: purchaseOrderLineId },
         data: {
           received_qty: { increment: delta.qty },
-          updated_by: BigInt(appUserId),
+          updated_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
         },
       });
     }
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'INBOUND_RECEIPT',
+      targetId: header.inbound_receipt_id, eventTypeCode: 'CREATE',
+    });
     return header.inbound_receipt_id;
   }
 

@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 
 import {
   ContractException,
@@ -106,7 +107,7 @@ export class BreakdownCreateService {
       throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     }
 
-    const actorId = BigInt(context.appUserId);
+    const actorId = context.appUserId === undefined ? null : BigInt(context.appUserId);
     const row = await tx.breakdown.create({
       data: {
         breakdown_no: breakdownNo,
@@ -131,6 +132,10 @@ export class BreakdownCreateService {
         created_by: actorId,
         updated_by: actorId,
       },
+    });
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'BREAKDOWN', targetId: row.breakdown_id,
+      eventTypeCode: 'CREATED',
     });
     const created = await tx.breakdown.findUnique({
       where: { breakdown_id: row.breakdown_id },

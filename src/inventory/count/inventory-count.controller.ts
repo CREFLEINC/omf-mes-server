@@ -15,12 +15,14 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { currentTerminalInventoryScope } from '../../auth/terminal-inventory-scope';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService, requestFingerprint } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
+import { inventoryWriteActorOf } from '../inventory-write-actor';
 import {
   InventoryCountLineQuery,
   InventoryCountQuery,
@@ -56,8 +58,8 @@ export class InventoryCountController {
 
   @Get()
   @Contract('GET /inventory/counts')
-  list(@Query() query: InventoryCountQuery): Promise<PagedResponse<InventoryCountView>> {
-    return this.counts.list(query);
+  list(@Req() request: Request, @Query() query: InventoryCountQuery): Promise<PagedResponse<InventoryCountView>> {
+    return this.counts.list(query, currentTerminalInventoryScope(request)?.plantId);
   }
 
   @Post()
@@ -106,12 +108,10 @@ export class InventoryCountController {
     @Param('inventoryCountId', ParseIntPipe) inventoryCountId: number,
     @Body() body: InventoryCountLineReplace,
   ): Promise<PagedResponse<InventoryCountLineView>> {
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
     const workerNo = request.headers['x-worker-no'];
     return runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) =>
       this.updates.replaceWithin(tx, inventoryCountId, body, {
-        appUserId: session.userId,
+        ...inventoryWriteActorOf(request, 'PUT /inventory/counts/{inventoryCountId}/lines'),
         version: ifMatchVersion(request),
         workerNo: typeof workerNo === 'string' ? workerNo : undefined,
       }),

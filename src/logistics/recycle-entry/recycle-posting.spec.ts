@@ -41,12 +41,12 @@ interface Recorded {
   created: Row[];
   updated: Row[];
   lotInputs: Row[];
-  lotActors: number[];
+  lotActors: unknown[];
   posted: PostingInput[];
   numbered: unknown[][];
 }
 
-function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
+function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string; auditFails?: boolean } = {}): {
   tx: Prisma.TransactionClient;
   posting: InventoryPostingService;
   lots: LotRegistryService;
@@ -55,6 +55,13 @@ function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
   const recorded: Recorded = { order: [], created: [], updated: [], lotInputs: [], lotActors: [], posted: [], numbered: [] };
 
   const tx = {
+    worker: { findFirst: async () => ({ worker_id: 8n }) },
+    terminal: { findFirst: async () => ({ terminal_id: 4n }) },
+    audit_event: { create: async () => {
+      recorded.order.push('audit_event.create');
+      if (seed.auditFails) throw new Error('audit unavailable');
+      return {};
+    } },
     recycle_entry: {
       create: ({ data }: { data: Row }) => {
         recorded.order.push('recycle_entry.create');
@@ -81,7 +88,7 @@ function fake(seed: { duplicateNo?: boolean; duplicateTarget?: string } = {}): {
   const lots = {
     // ⭐ **셋째 인자(행위자)까지** 기록한다 — 둘째만 받으면 `appUserId` 를 상수로 못 박아도
     //    전 층이 초록이다(A 리뷰 M-2). 그 인자가 LOT·보류의 「누가」를 정한다.
-    createWithin: (_tx: Prisma.TransactionClient, lotInput: Row, appUserId: number) => {
+    createWithin: (_tx: Prisma.TransactionClient, lotInput: Row, appUserId: unknown) => {
       recorded.order.push('lot.createWithin');
       recorded.lotInputs.push(lotInput);
       recorded.lotActors.push(appUserId);
@@ -114,6 +121,20 @@ const write = (over: Partial<RecycleEntryCreate> = {}) => ({
 });
 
 describe('postRecycleEntry — 원장 한 줄과 LOT 이 한 트랜잭션이다', () => {
+  it('계정 없는 단말 작업자는 LOT actor와 등록 감사에 남고 감사 실패가 전기 전체를 거절한다', async () => {
+    const actor = { workerId: 8n, terminalAudit: {
+      workerId: 8n, workerNo: 'W8', terminalId: 4n, plantId: 5n,
+      correlationId: 'recycle-1', operationKey: 'POST /logistics/recycle-entries',
+    } };
+    const ok = fake();
+    await postRecycleEntry(ok.tx, ok.posting, ok.lots, { ...write(), appUserId: undefined, actor });
+    expect(ok.recorded.created[0]).toMatchObject({ created_by: null });
+    expect(ok.recorded.lotActors[0]).toEqual(actor);
+    expect(ok.recorded.order.indexOf('audit_event.create')).toBeGreaterThan(ok.recorded.order.indexOf('posting.post'));
+    const fail = fake({ auditFails: true });
+    await expect(postRecycleEntry(fail.tx, fail.posting, fail.lots, { ...write(), appUserId: undefined, actor }))
+      .rejects.toThrow('audit unavailable');
+  });
   it('6. `PostingInput` 열한 칸을 객체 통째로 — 칸 하나를 바꾸면 RED 다', async () => {
     const { tx, posting, lots, recorded } = fake();
 
