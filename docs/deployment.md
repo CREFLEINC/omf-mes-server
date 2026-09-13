@@ -31,8 +31,16 @@ git 태그 문자열과 이미지 태그가 글자 그대로 일치합니다(`v`
 
 ## TLS 를 두지 않는다 — 확정 2026-09-02 (사용자)
 
-API 는 평문 HTTP `:3100` 으로 노출한다. 리버스 프록시도 인증서도 두지 않는다.
+API 는 평문 HTTP `:3100` 으로 노출한다. 인증서를 두지 않는다.
 전제는 `C11` 이다 — 운영은 **사내망 전용**이고 인터넷은 설치·유지보수 시점에만 열린다.
+
+⚠ **개발 서버는 앞에 리버스 프록시가 있다**(`mesapi.crefle.ai` → `192.168.1.72`, nginx).
+외부에서 닿게 하려고 둔 것이고 **TLS 는 종단하지 않는다**(평문 HTTP 를 그대로 넘긴다).
+저장소의 `docker-compose.prod.yml` 에는 프록시가 없다 — 호스팅 쪽 구성이다.
+
+⭐ 그래서 **#621(TLS 전환)은 생각보다 가볍다.** 개발 서버는 인증서를 그 프록시에 붙이면 되고
+컨테이너 구성은 그대로다. 남는 것은 앱 쪽 둘뿐이다 — `COOKIE_SECURE` 가 컨테이너에 닿게 하고,
+교차 호스트면 `SameSite=None` 스위치를 만드는 것. 하노이는 프록시가 아직 없다.
 
 **그래서 이렇게 돼 있다**
 
@@ -130,18 +138,25 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 
 | | 개발 서버 (한국) | 하노이 운영 서버 |
 |---|---|---|
-| 배포 경로 | `/opt/omf-mes` | `/opt/omf-mes` (미구성) |
-| 계정 | `hulk` — docker 그룹, sudo 가능 | |
-| 서버 TZ | `Etc/UTC` | |
-| `IMAGE_TAG` | `main` | `stable` / `vX.Y.Z` |
+| 주소 | **`192.168.1.72`** | (미구성) |
+| 도메인 | **`mesapi.crefle.ai`** — 리버스 프록시로 외부 공개 | |
+| 프로토콜 | **HTTP** (TLS 없음 — 아래 참조) | |
+| 배포 경로 | **`/opt/services/omf-mes-server`** | `install-deploy.sh` 기본값과 같음 |
+| 러너 계정 | **`github-runner`** | (러너 없음) |
+| 러너 이름 | `captain-System-Product-Name` · 라벨 `self-hosted,Linux,X64,omf-mes-server` | |
+| `IMAGE_TAG` | `vX.Y.Z` — 워크플로가 형식을 강제합니다 | `stable` / `vX.Y.Z` |
 | `LOG_TZ` | `Asia/Seoul` | `Asia/Ho_Chi_Minh` |
-| 배포 | runner 자동 + 수동 버튼 | `deploy.sh` 수동 |
+| 배포 | Actions 수동 실행(`deploy-dev.yml`) | `deploy.sh` 수동 (`RELEASE.md`) |
 
-배포 디렉터리는 `/opt/omf-mes` 이고, 소유자를 배포 계정으로 넘겨 **일상 운영에는 sudo 가 필요 없습니다.**
+⚠ **`192.168.1.111` 은 예전 개발 서버입니다.** 아직 살아 있고 `/api/health` 도 200 을 주지만
+**배포 대상이 아니라 낡은 이미지가 그대로 돌고 있습니다.** 확인할 때 이쪽을 보면 「배포했는데
+안 바뀌었다」로 오해합니다 — 현재 배포처는 `192.168.1.72` / `mesapi.crefle.ai` 입니다.
+
+배포 디렉터리 소유자를 배포 계정으로 넘겨 **일상 운영에는 sudo 가 필요 없습니다.**
 
 ```bash
-sudo mkdir -p /opt/omf-mes/logs
-sudo chown -R hulk:hulk /opt/omf-mes
+sudo mkdir -p /opt/services/omf-mes-server/logs
+sudo chown -R github-runner:github-runner /opt/services/omf-mes-server
 ```
 
 `sudo` 가 필요한 것은 최초 디렉터리 생성과 러너 서비스 등록(`svc.sh install`) 두 번뿐입니다. `deploy.sh`·`rollback.sh` 에는 `sudo` 를 넣지 마세요 — **두 서버가 같은 스크립트를 쓰고**, 스크립트는 **자신이 놓인 위치를 배포 디렉터리로 인식**하므로 경로 하드코딩도 없습니다.
