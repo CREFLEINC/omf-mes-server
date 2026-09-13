@@ -260,10 +260,17 @@ Harbor `mes` 프로젝트, `mes/backend` 저장소, 레포 Secrets(`HARBOR_USERN
 
 ### T-6. 개발 서버 초기 구성 (수동, 1회)
 
-2026-09-08에 `http://192.168.1.111:3100/api/health`는 `status=ok`, `db=up`으로
-응답했습니다. 최초 구성 자체는 끝났지만 배포된 OpenAPI는 경로 2개·작업 2개뿐이라 최신
-`main`(경로 351개·작업 487개)과 크게 어긋납니다. 아래 최초 구성 절차를 반복하지 말고,
-T-5·T-7을 복구한 뒤 현재 이미지를 새로 빌드·배포합니다.
+⭐ **2026-09-13 갱신 — 배포처가 바뀌었습니다.** 지금 배포되는 개발 서버는
+**`192.168.1.72`**(도메인 `mesapi.crefle.ai`, HTTP, 리버스 프록시로 외부 공개)이고,
+배포 경로는 **`/opt/services/omf-mes-server`**, 러너 계정은 **`github-runner`** 입니다.
+이 항목이 적어 온 `192.168.1.111` / `hulk` / `/opt/omf-mes` 는 **예전 서버**입니다.
+정본 표는 `docs/deployment.md` 의 「서버」 절입니다.
+
+⚠ `192.168.1.111` 은 아직 살아 있지만 **낡은 이미지가 돌고 있고 배포 대상이 아닙니다.**
+거기서 확인하면 「배포했는데 안 바뀌었다」로 오해합니다.
+
+아래는 2026-09-08 당시 기록입니다 — `http://192.168.1.111:3100/api/health` 는
+`status=ok`, `db=up` 이었으나 배포된 OpenAPI 는 경로 2개·작업 2개뿐이었습니다.
 
 SSH는 아직 호스트 키를 신뢰 목록에 넣지 않았습니다. 2026-09-08에 서버가 제시한 ED25519
 지문은 `SHA256:CEgFfZucSd8x1MOwXLhuG72t4L2wsN0NtbTRMA7pZIg`입니다. 서버 콘솔이나
@@ -335,7 +342,7 @@ GitHub Free 조직의 **private 레포에는 브랜치 보호도 Ruleset 도 걸
 ```
 .github/workflows/ 수정 권한  →  main 의 워크플로가 omf-dev 러너에서 실행
                              →  hulk 로 임의 셸 명령  →  docker 그룹 = root
-                             →  192.168.1.111 의 root
+                             →  개발 서버(당시 192.168.1.111)의 root
                              →  cvat · reporter · homepage · oapm · traefik 등 30여 개 서비스가 함께 있는 서버
 ```
 
