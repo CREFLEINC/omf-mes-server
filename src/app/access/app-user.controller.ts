@@ -18,6 +18,7 @@ import type { Request, Response } from 'express';
 import { CredentialService } from '../../auth/credential.service';
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
@@ -71,10 +72,25 @@ export class AppUserController {
   @Get(':appUserId')
   @Contract('GET /app/users/{appUserId}')
   async get(
+    @Req() request: Request,
     @Param('appUserId', ParseIntPipe) appUserId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<unknown> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+    // 계약이 이 상세 조회에 403 을 선언하지 않아 PermissionGuard 가 건너뛴다.
+    // 본인 이외의 사용자 상세는 사용자 관리 권한으로 명시적으로 보호한다(P-6).
+    if (session.userId !== appUserId && !session.permissions.includes('W-CO-02')) {
+      throw new ContractException(HttpStatus.FORBIDDEN, [
+        { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 기능을 쓸 권한이 없습니다.' },
+      ]);
+    }
+
     const { appUser, editability, versionNo } = await this.users.get(appUserId);
+    // 개인정보 응답은 브라우저에 저장하지 않는다. 예전 버전 ETag 의 조건부 요청도
+    // Express 가 304 로 바꾸지 못하게 무시하고, 항상 현재 본문을 다시 보낸다.
+    response.setHeader('Cache-Control', 'private, no-store');
+    delete request.headers['if-none-match'];
     // 계약이 이 자리에 ETag 를 선언했다 — 다음 쓰기의 If-Match 가 이 값을 담는다.
     setEtag(response, versionNo);
     return { appUser, editability };
