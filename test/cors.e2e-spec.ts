@@ -143,6 +143,9 @@ describe('CORS (e2e)', () => {
         .set('Access-Control-Request-Method', 'POST')
         .set('Access-Control-Request-Headers', 'x-not-in-contract');
 
+      // ⚠ 헤더가 «있는지»부터 본다 — 없으면 String(undefined) 가 'undefined' 가 되어
+      //    아래 단언이 조용히 통과한다.
+      expect(response.headers['access-control-allow-headers']).toBeDefined();
       const allowed = String(response.headers['access-control-allow-headers']).toLowerCase();
       expect(allowed).not.toContain('x-not-in-contract');
     });
