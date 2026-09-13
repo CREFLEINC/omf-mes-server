@@ -72,7 +72,14 @@ jobs:
           #    rollback.sh 는 이름과 달리 「.env.prod 에 태그를 쓰고 배포」다. CI 배포는
           #    「잠깐 띄워 보기」가 아니라 「이제부터 이게 돈다」이므로 이쪽이 맞다.
           #    일회성으로 띄워 보는 용도는 종전대로 `IMAGE_TAG=vX ./deploy.sh` 다.
-          ./rollback.sh "$IMAGE_TAG"
+          #
+          # ⭐ 셸 IMAGE_TAG 를 «지우고» 부른다. 남겨 두면 deploy.sh 가 그것을 일회성
+          #    덮어쓰기로 써서, .env.prod 에 제대로 쓰였는지와 무관하게 배포가 성공한다.
+          #    지우면 rollback.sh 가 쓴 .env.prod 값이 «유일한 출처»가 되므로,
+          #    쓰기가 실패하면 배포가 그 자리에서 틀어진다.
+          tag="$IMAGE_TAG"
+          unset IMAGE_TAG
+          ./rollback.sh "$tag"
 
       - name: 배포 확인
         env:
