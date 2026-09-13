@@ -160,6 +160,72 @@ describe('CORS (e2e)', () => {
     });
   });
 
+  /**
+   * ⭐ 현장 셸(PDA)이 보내는 오리진을 미리 적을 수 없어 열어 둔 길이다(#612).
+   *
+   * ⛔ 여기서 지키는 것은 **「반사하되 글자 `*` 를 돌려주지 않는다」**이다. `credentials` 를
+   * 켠 응답에 `Access-Control-Allow-Origin: *` 가 오면 브라우저가 통째로 거절해서,
+   * 「다 열었는데 아무것도 안 된다」가 된다.
+   */
+  describe('* 는 어떤 오리진이든 연다', () => {
+    const STRANGER = 'http://192.168.77.7:8080';
+    let app: INestApplication;
+    beforeAll(async () => {
+      app = await boot('*');
+    });
+    afterAll(async () => {
+      await app.close();
+    });
+
+    it('⭐ 받은 오리진을 «그대로» 돌려준다 — 글자 * 가 아니다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/probe/etag')
+        .set('Origin', STRANGER)
+        .expect(200);
+
+      expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
+      expect(response.headers['access-control-allow-origin']).not.toBe('*');
+      expect(response.headers['access-control-allow-credentials']).toBe('true');
+    });
+
+    // 반사한 값은 오리진마다 다르므로 캐시가 섞이면 남의 오리진 값을 받는다.
+    it('⛔ Vary 에 Origin 이 있다 — 없으면 캐시가 오리진을 섞는다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/probe/etag')
+        .set('Origin', STRANGER)
+        .expect(200);
+
+      expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
+      expect(String(response.headers['vary'])).toContain('Origin');
+    });
+
+    it('⭐ 낯선 오리진의 preflight 도 계약 헤더를 모두 허용한다', async () => {
+      const response = await request(app.getHttpServer())
+        .options('/api/probe/etag')
+        .set('Origin', STRANGER)
+        .set('Access-Control-Request-Method', 'PUT')
+        .set('Access-Control-Request-Headers', 'authorization,x-worker-no');
+
+      expect(response.status).toBeLessThan(300);
+      // ⛔ 이 단언이 본체다 — cors 패키지는 오리진을 «거절»해도 allow-headers 는 실어
+      //    보내므로, 헤더 목록만 보면 열렸는지 닫혔는지 구분이 안 된다.
+      expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
+      const allowed = String(response.headers['access-control-allow-headers']).toLowerCase();
+      expect(allowed).toContain('authorization');
+      expect(allowed).toContain('x-worker-no');
+    });
+
+    it('⭐ ETag 노출은 그대로다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/probe/etag')
+        .set('Origin', STRANGER)
+        .expect(200);
+
+      expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
+      expect(response.headers['access-control-expose-headers']).toContain('ETag');
+    });
+  });
+
   describe('목록 파싱', () => {
     it.each([
       ['', []],

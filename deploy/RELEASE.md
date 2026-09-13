@@ -125,9 +125,15 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres \
     WHERE g.is_active GROUP BY g.group_code HAVING count(v.code)=0 ORDER BY 1"
 ```
 
-**③ `CORS_ORIGINS` 를 채운다.** `install-deploy.sh` 는 이 값을 **비워 둔 채** `.env.prod` 를
-만든다 — 설치 시점에는 관리웹 주소가 대개 안 정해져 있기 때문이다. 비어 있으면 **CORS 가 꺼진
-채로 뜨고, 브라우저에서 부르는 화면이 전부 막힌다**(#612). 주소가 정해지면 채우고 다시 띄운다.
+**③ `CORS_ORIGINS` 가 비어 있지 않은지 본다.** `install-deploy.sh` 는 `*`(어떤 오리진이든)로
+써 넣으므로 대개 그대로 두면 된다. **비어 있으면 CORS 가 꺼진 채 뜨고 브라우저에서 부르는 화면이
+전부 막힌다**(#612).
+
+```bash
+grep '^CORS_ORIGINS=' /opt/omf-mes/.env.prod      # CORS_ORIGINS=*
+```
+
+주소가 확정되면 목록으로 좁힌다 — **재배포 없이 값만 바꾸고 다시 띄우면 된다.**
 
 ```bash
 # 오리진이다 — 스킴+호스트+포트. 끝에 / 를 붙이지 않는다. 여러 개면 쉼표.
@@ -135,7 +141,9 @@ vi /opt/omf-mes/.env.prod        # CORS_ORIGINS=http://mes.crefle.ai,http://192.
 /opt/omf-mes/deploy.sh
 ```
 
-⚠ **`http` 와 `https` 는 다른 오리진이다.** 나중에 TLS 를 앞에 두면 이 값도 함께 바꾼다(#621).
+⛔⛔ **TLS 를 앞에 두고 `SameSite=None` 으로 가려면 그 «전에» `*` 를 목록으로 좁혀야 한다**(#621).
+지금 `*` 가 안전한 것은 쿠키가 `SameSite=Lax` 라 교차 사이트 요청에 안 실리기 때문이다.
+⚠ 그때 `http` 와 `https` 가 다른 오리진이라는 점도 함께 걸린다.
 
 ---
 
