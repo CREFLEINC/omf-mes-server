@@ -86,13 +86,15 @@ export class PurchaseOrderQueryService {
   }
 
   /**
-   * 「아직 입하가 끝나지 않은 건만」(계약) — 받은 수량이 발주 수량에 못 미치는 라인이
-   * 하나라도 있는 P/O. 같은 표 두 컬럼 비교는 Prisma 5.0 GA `fields` 참조로 관계 필터
-   * 한 줄에 접는다(프리뷰 불필요). `tolerance_under_qty` 는 빼지 않는다(I-2.md §6-4).
+   * 「아직 입하가 끝나지 않은 건만」(계약) — 종료/취소되지 않았고 받은 수량이
+   * 발주 수량에 못 미치는 라인이 하나라도 있는 P/O. CLOSED 헤더의 잔량이
+   * 남아 있더라도 모바일의 미마감 선택 목록에는 들어가지 않는다.
+   * 같은 표 두 컬럼 비교는 Prisma `fields` 참조로 관계 필터에 접는다.
    */
   private openWhere(openOnly: boolean | undefined): Prisma.purchase_orderWhereInput {
     if (!openOnly) return {};
     return {
+      status_code: { notIn: ['CLOSED', 'CANCELLED'] },
       purchase_order_line: {
         some: { received_qty: { lt: this.prisma.purchase_order_line.fields.ordered_qty } },
       },

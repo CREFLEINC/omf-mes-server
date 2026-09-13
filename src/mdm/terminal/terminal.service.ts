@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 
 import { TOKEN_TYPE } from '../../auth/session-resolver.service';
+import type { TerminalContext } from '../../auth/terminal-context';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
@@ -31,6 +32,8 @@ interface TerminalView {
   isActive: boolean;
   tokenIssuedAt?: string;
   tokenVersion: number;
+  registrationStatusCode: 'UNREGISTERED' | 'REGISTERED';
+  registrationConfirmedAt: string | null;
   versionNo: number;
 }
 
@@ -87,6 +90,13 @@ export interface RegistrationToken {
   token: string;
   issuedAt: string;
   expiresAt: string;
+}
+
+export interface RegistrationConfirmation {
+  terminalId: number;
+  tokenVersion: number;
+  registrationStatusCode: 'REGISTERED';
+  registrationConfirmedAt: string;
 }
 
 type TerminalRow = Prisma.terminalGetPayload<{
@@ -190,8 +200,8 @@ export class TerminalService {
   /**
    * 기기에 넣을 등록 토큰을 낸다.
    *
-   * ⭐ 관리웹이 받아 **QR 로 그려** 보이고 기기가 스캔해 읽는다 — 기기는 서버를 부르지
-   * 않는다. 그래서 토큰 없이 열리는 경로가 생기지 않는다(M-CO-01 §5-2 B안).
+   * ⭐ 관리웹이 받아 **QR 로 그려** 보이고 기기가 읽는다. FR-007 등록 완료 확인은
+   * 이 토큰을 Bearer 로 제시한 기기만 호출한다(P-7); 토큰 없이 열리는 경로는 없다.
    *
    * ⛔ 발급마다 `token_version` 을 올린다. 이전 기기의 토큰은 클레임 `tv` 가 어긋나
    * 거부된다 — 「재발급하면 이전 기기 전부가 끊긴다」(공유계약 F-4). 화면이 그 사실을
@@ -201,7 +211,8 @@ export class TerminalService {
     const issuedAt = new Date();
     const updated = await this.prisma.terminal.updateMany({
       where: { terminal_id: terminalId },
-      data: { token_version: { increment: 1 }, token_issued_at: issuedAt },
+      data: { token_version: { increment: 1 }, token_issued_at: issuedAt,
+        version_no: { increment: 1 } },
     });
     if (updated.count === 0) throw new NotFoundException('없는 단말입니다.');
 
@@ -222,6 +233,50 @@ export class TerminalService {
       token,
       issuedAt: issuedAt.toISOString(),
       expiresAt: new Date(issuedAt.getTime() + TOKEN_TTL_SECONDS * 1000).toISOString(),
+    };
+  }
+
+  /** Mark only the currently authenticated MOBILE token generation as registered. */
+  async confirmRegistration(
+    terminalId: number,
+    terminal: TerminalContext,
+  ): Promise<RegistrationConfirmation> {
+    if (terminal.terminalId !== BigInt(terminalId) || terminal.terminalTypeCode !== 'MOBILE'
+      || terminal.tokenVersion === undefined) throw registrationDenied();
+
+    // The token can be reissued between the auth guard and this write. The
+    // guarded UPDATE closes that race; retries preserve the original timestamp.
+    const rows = await this.prisma.$queryRaw<{
+      terminal_id: bigint; token_version: number; registration_confirmed_at: Date;
+    }[]>(Prisma.sql`
+      UPDATE mdm.terminal
+      SET registered_token_version = token_version,
+          registration_confirmed_at = CASE
+            WHEN registered_token_version = token_version
+              AND registration_confirmed_at IS NOT NULL THEN registration_confirmed_at
+            ELSE clock_timestamp()
+          END,
+          version_no = version_no + CASE
+            WHEN registered_token_version = token_version
+              AND registration_confirmed_at IS NOT NULL THEN 0
+            ELSE 1
+          END
+      WHERE terminal_id = ${terminal.terminalId}
+        AND terminal_code = ${terminal.terminalCode}
+        AND plant_id = ${terminal.plantId}
+        AND terminal_type_code = 'MOBILE'
+        AND token_version = ${terminal.tokenVersion}
+        AND token_issued_at IS NOT NULL
+        AND is_active = true
+      RETURNING terminal_id, token_version, registration_confirmed_at
+    `);
+    const row = rows[0];
+    if (!row) throw registrationDenied();
+    return {
+      terminalId: Number(row.terminal_id),
+      tokenVersion: row.token_version,
+      registrationStatusCode: 'REGISTERED',
+      registrationConfirmedAt: row.registration_confirmed_at.toISOString(),
     };
   }
 
@@ -348,6 +403,8 @@ function assertProcesses(items: TerminalProcessInput[]): void {
 }
 
 function view(row: TerminalRow): TerminalView {
+  const registered = row.registered_token_version === row.token_version
+    && row.registration_confirmed_at !== null;
   return {
     terminalId: Number(row.terminal_id),
     terminalCode: row.terminal_code,
@@ -363,6 +420,15 @@ function view(row: TerminalRow): TerminalView {
       ? {}
       : { tokenIssuedAt: row.token_issued_at.toISOString() }),
     tokenVersion: row.token_version,
+    registrationStatusCode: registered ? 'REGISTERED' : 'UNREGISTERED',
+    registrationConfirmedAt: registered ? row.registration_confirmed_at?.toISOString() ?? null : null,
     versionNo: row.version_no,
   };
+}
+
+function registrationDenied(): ContractException {
+  return new ContractException(HttpStatus.UNAUTHORIZED, [
+    { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
+      message: '단말 등록 토큰이 유효하지 않습니다.' },
+  ]);
 }

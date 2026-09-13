@@ -15,7 +15,10 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
+import { TerminalRegistrationOperation } from '../../auth/terminal-registration-operation';
 import { Contract } from '../../common/contract';
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
@@ -102,6 +105,38 @@ export class TerminalController {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.terminals.issueToken(terminalId),
     );
+  }
+
+  /** Forward-only operation; the design contract copy does not yet define it. */
+  @Post(':terminalId\\:confirm-registration')
+  @TerminalRegistrationOperation()
+  @HttpCode(HttpStatus.OK)
+  confirmRegistration(
+    @Req() request: Request,
+    @Param('terminalId', ParseIntPipe) terminalId: number,
+    @Body() body: unknown,
+  ): Promise<unknown> {
+    const header = request.headers['idempotency-key'];
+    const idempotencyKey = Array.isArray(header) ? header[0] : header;
+    if (!idempotencyKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'screen', code: idempotencyKey ? ERROR_CODE.INVALID : ERROR_CODE.REQUIRED,
+          message: 'Idempotency-Key 헤더에 UUID가 필요합니다.' },
+      ]);
+    }
+    if (body !== undefined && (body === null || typeof body !== 'object'
+      || Array.isArray(body) || Object.keys(body).length !== 0)) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'screen', code: ERROR_CODE.INVALID, message: '등록 확인 본문은 비어 있어야 합니다.' },
+      ]);
+    }
+    const terminal = currentTerminal(request);
+    if (!terminal) {
+      throw new ContractException(HttpStatus.UNAUTHORIZED, [
+        { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '단말 인증이 필요합니다.' },
+      ]);
+    }
+    return this.terminals.confirmRegistration(terminalId, terminal);
   }
 
   @Get(':terminalId/processes')

@@ -247,6 +247,77 @@ describe('단말 마스터 (e2e)', () => {
     expect(row.token_version).toBe(2);
   });
 
+  it('FR-007 MOBILE 등록 확인은 현재 토큰 세대만 기록하고 재발급 뒤 미등록으로 돌아간다', async () => {
+    const { id } = await create(`${PREFIX}-REG`, { terminalTypeCode: 'MOBILE' });
+    const path = `/api/mdm/terminals/${id}:confirm-registration`;
+    const detail = async () => request(app.getHttpServer())
+      .get(`/api/mdm/terminals/${id}`).set('Cookie', cookie).expect(200);
+
+    expect((await detail()).body).toMatchObject({
+      registrationStatusCode: 'UNREGISTERED', registrationConfirmedAt: null,
+    });
+    const firstToken = (await issueToken(id)).body.token;
+    expect((await detail()).body.registrationStatusCode).toBe('UNREGISTERED');
+
+    // A valid admin cookie is not a device registration confirmation.
+    await request(app.getHttpServer()).post(path).set('Cookie', cookie)
+      .set('Idempotency-Key', key()).send({}).expect(401);
+    await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).send({}).expect(400);
+    await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({ registered: true }).expect(400);
+    await request(app.getHttpServer()).post(`/api/mdm/terminals/${id + 1}:confirm-registration`)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(401);
+    expect((await detail()).body.registrationStatusCode).toBe('UNREGISTERED');
+
+    const confirmed = await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+    expect(confirmed.body).toMatchObject({
+      terminalId: id, tokenVersion: 2, registrationStatusCode: 'REGISTERED',
+      registrationConfirmedAt: expect.any(String),
+    });
+    const registered = await detail();
+    expect(registered.body.registrationConfirmedAt).toBe(confirmed.body.registrationConfirmedAt);
+    expect(registered.body.registrationStatusCode).toBe('REGISTERED');
+    const list = await request(app.getHttpServer())
+      .get(`/api/mdm/terminals?q=${PREFIX}-REG`).set('Cookie', cookie).expect(200);
+    expect(list.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ terminalId: id, registrationStatusCode: 'REGISTERED' }),
+    ]));
+
+    const repeated = await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+    expect(repeated.body.registrationConfirmedAt).toBe(confirmed.body.registrationConfirmedAt);
+    expect((await detail()).headers.etag).toBe(registered.headers.etag);
+
+    const secondToken = (await issueToken(id)).body.token;
+    expect((await detail()).body).toMatchObject({
+      tokenVersion: 3, registrationStatusCode: 'UNREGISTERED', registrationConfirmedAt: null,
+    });
+    await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(401);
+    const newConfirmation = await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${secondToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+    expect(newConfirmation.body.registrationStatusCode).toBe('REGISTERED');
+  });
+
+  it('FR-007 POP token cannot confirm a MOBILE registration', async () => {
+    const { id } = await create(`${PREFIX}-REG-POP`);
+    const token = (await issueToken(id)).body.token;
+    await request(app.getHttpServer())
+      .post(`/api/mdm/terminals/${id}:confirm-registration`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', key())
+      .send({}).expect(401);
+    const row = await prisma.terminal.findUniqueOrThrow({ where: { terminal_id: id } });
+    expect(row.registration_confirmed_at).toBeNull();
+  });
+
   // ── 공정 구성 ───────────────────────────────────────────────────────────
 
   it('⭐ 공정 구성을 통째로 바꾼다 — 안 보낸 권한은 닫힌다', async () => {

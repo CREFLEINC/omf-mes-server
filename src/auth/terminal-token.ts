@@ -56,6 +56,7 @@ export async function resolveTerminalContext(jwt: JwtService, prisma: PrismaServ
     plantId: terminal.plant_id,
     terminalTypeCode: terminal.terminal_type_code,
     equipmentId: terminal.equipment_id,
+    tokenVersion: terminal.token_version,
   };
 }
 

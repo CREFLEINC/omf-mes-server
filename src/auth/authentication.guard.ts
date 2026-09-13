@@ -20,6 +20,7 @@ import { TERMINAL_QUALITY_WRITE_OPERATIONS, assertTerminalQualityWriteScope } fr
 import { TERMINAL_MOBILE_PRODUCTION_OPERATIONS, assertTerminalMobileProductionScope } from './terminal-mobile-production-scope';
 import { TERMINAL_LOT_WRITE_OPERATIONS, assertTerminalLotWriteScope } from './terminal-lot-write-scope';
 import { resolveTerminalContext } from './terminal-token';
+import { TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
 
 /**
  * 인증 없이 도는 오퍼레이션. **로그인 하나뿐이다.**
@@ -48,6 +49,23 @@ export class AuthenticationGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // This forward-only registration mutation is not in the read-only contract
+    // copy. It must still have the same global authentication boundary.
+    if (this.reflector.get<boolean>(TERMINAL_REGISTRATION_OPERATION, context.getHandler())) {
+      const request = context.switchToHttp().getRequest<Request>();
+      if (!request.headers.authorization) throw loginRequired();
+      let terminal;
+      try {
+        terminal = await resolveTerminalContext(this.jwt, this.prisma, request);
+      } catch (error) {
+        if (!(error instanceof ContractException)) throw error;
+        throw loginRequired();
+      }
+      if (!terminal || terminal.terminalTypeCode !== 'MOBILE' || terminal.tokenVersion === undefined)
+        throw loginRequired();
+      attachTerminal(request, terminal);
+      return true;
+    }
     const key = this.reflector.get<string | undefined>(CONTRACT_OPERATION, context.getHandler());
     // 계약에 묶이지 않은 자리(헬스체크 등)는 이 가드의 대상이 아니다.
     if (!key || ANONYMOUS.has(key)) return true;
