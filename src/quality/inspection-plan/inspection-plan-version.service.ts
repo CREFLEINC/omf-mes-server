@@ -15,6 +15,7 @@ import {
 } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { REVISION_STATUS } from '../../planning/revision-status';
 
 /** `quality.inspection_plan_version` 을 FK 로 가리키는 자리 전부. e2e 가 대조한다. */
@@ -122,8 +123,8 @@ export class InspectionPlanVersionService {
     return rows.map(view);
   }
 
-  async get(versionId: number): Promise<VersionResult> {
-    const row = await this.load(versionId);
+  async get(versionId: number, scope?: TerminalQualityReadScope): Promise<VersionResult> {
+    const row = await this.load(versionId, scope);
     const referenceCount = await countReferences(
       this.prisma,
       PLAN_VERSION_REFERRERS,
@@ -202,8 +203,8 @@ export class InspectionPlanVersionService {
 
   // ── 검사 항목 ───────────────────────────────────────────────────────────
 
-  async listItems(versionId: number): Promise<ItemSpecView[]> {
-    await this.load(versionId);
+  async listItems(versionId: number, scope?: TerminalQualityReadScope): Promise<ItemSpecView[]> {
+    await this.load(versionId, scope);
     return this.readItems(versionId);
   }
 
@@ -367,9 +368,12 @@ export class InspectionPlanVersionService {
     return rows.map(itemView);
   }
 
-  private async load(versionId: number): Promise<VersionRow> {
-    const row = await this.prisma.inspection_plan_version.findUnique({
-      where: { inspection_plan_version_id: versionId },
+  private async load(versionId: number, scope?: TerminalQualityReadScope): Promise<VersionRow> {
+    const row = await this.prisma.inspection_plan_version.findFirst({
+      where: { inspection_plan_version_id: versionId,
+        ...(scope === undefined ? {} : { inspection_request: {
+          some: { work_order: terminalQualityWorkOrderWhere(scope) },
+        } }) },
     });
     if (!row) throw new NotFoundException('없는 검사기준 버전입니다.');
     return row;

@@ -40,7 +40,7 @@ const APPROVER_ROLE = 'E2E_PRODUCTION_RESULT_APPROVER';
  * 403 을 선언한 것은 `:close`(`W-02-05`) · 실적 등록(POP 화면 넷 중 하나면 된다) · 정정·상신(`W-02-05`)
  * 넷이다 — 조회 셋은 미선언이라 가드가 아예 안 본다(`permission.guard.ts:37-41`).
  */
-const PERMISSIONS = ['W-02-05', 'P-02-04', 'W-02-07', 'P-02-06'];
+const PERMISSIONS = ['W-02-03', 'W-02-05', 'P-02-04', 'W-02-07', 'P-02-06'];
 /** 결재함 상세 GET 과 `:approve`/`:reject` 가 같은 한 벌을 쓴다(`derived-permissions.ts:17·143`). */
 const APPROVER_PERMISSIONS = ['W-03-09'];
 /** 승인 다형 축 — 서버가 채우는 값 그대로다(계약 x-internal-note). */
@@ -99,7 +99,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   let approverCookie: string[];
   let approverUserId: bigint;
   let correctRouteId: bigint;
-  const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n, productionPlan: 0n, routingOperation: 0n };
+  const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n, productionPlan: 0n, routingOperation: 0n, wipLocation: 0n, fgLocation: 0n, scrapLocation: 0n };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -731,13 +731,34 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
         })
         .expect(201);
       const workOrderId = created.body.workOrderId as number;
-      await request(app.getHttpServer())
-        .post(`${WORK_ORDERS}/${workOrderId}:release`)
+      const configured = await request(app.getHttpServer())
+        .put(`${WORK_ORDERS}/${workOrderId}`)
         .set('Cookie', cookie)
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', created.headers.etag as string)
+        .send({
+          defaultWipLocationId: Number(ids.wipLocation),
+          defaultFgLocationId: Number(ids.fgLocation),
+          defaultScrapLocationId: Number(ids.scrapLocation),
+        })
+        .expect(200);
+      expect(configured.body).toMatchObject({
+        defaultWipLocationId: Number(ids.wipLocation),
+        defaultFgLocationId: Number(ids.fgLocation),
+        defaultScrapLocationId: Number(ids.scrapLocation),
+        versionNo: Number(created.body.versionNo) + 1,
+      });
+      const released = await request(app.getHttpServer())
+        .post(`${WORK_ORDERS}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', String(configured.body.versionNo))
         .send({ lotSize })
         .expect(200);
+      expect(released.body).toMatchObject({
+        statusCode: 'RELEASED',
+        versionNo: Number(configured.body.versionNo) + 1,
+      });
       const slots = await prisma.lot.findMany({
         where: { source_type_code: LOT_SOURCE, source_id: BigInt(workOrderId) },
         orderBy: { work_order_lot_seq: 'asc' },
@@ -965,6 +986,29 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       },
     });
     ids.plant = plant.plant_id;
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: PREFIX + '-WH',
+        warehouse_name: '생산실적검사창고',
+        warehouse_type_code: 'RAW',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const [wip, fg, scrap] = await Promise.all(
+      ['WIP', 'FG', 'SCRAP'].map((suffix) => prisma.location.create({
+        data: {
+          warehouse_id: warehouse.warehouse_id,
+          location_code: PREFIX + '-' + suffix,
+          location_name: '생산실적검사' + suffix + '위치',
+          location_type_code: 'BIN',
+        },
+      })),
+    );
+    ids.wipLocation = wip.location_id;
+    ids.fgLocation = fg.location_id;
+    ids.scrapLocation = scrap.location_id;
     const uom = await prisma.uom.findFirstOrThrow();
     ids.uom = uom.uom_id;
 
@@ -1335,6 +1379,8 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });

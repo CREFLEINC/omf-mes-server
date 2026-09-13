@@ -1,3 +1,6 @@
+import { logisticsAppUserId } from '../../auth/terminal-logistics-scope';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -10,11 +13,9 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -43,8 +44,8 @@ export class InboundReceiptController {
 
   @Get()
   @Contract('GET /logistics/inbound-receipts')
-  list(@Query() query: InboundReceiptQuery): Promise<PagedResponse<InboundReceiptView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: InboundReceiptQuery): Promise<PagedResponse<InboundReceiptView>> {
+    return this.queries.list(plantQuery(query, request));
   }
 
   @Get(':inboundReceiptId')
@@ -77,9 +78,9 @@ export class InboundReceiptController {
     // ⛔ `runVersioned` 가 아니다 — 계약의 `If-Match` 는 «선택»이고 새 자원을 만드는
     //    POST 라 대조할 버전이 없다. 값이 실려 와도 무시한다(오프라인 큐는 토큰을 안
     //    싣는다 · 공유계약 C-9 · I-3.md §6-3).
-    const appUserId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');
     const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.inboundReceipts.create(body, appUserId),
+      this.inboundReceipts.create(body, actor),
     );
     setEtag(response, result.versionNo);
     return result.detail;
@@ -141,15 +142,18 @@ export class InboundReceiptSplitController {
   ): Promise<{ created: InboundReceiptView[] }> {
     // ⛔ `If-Match` 가 아예 없다 — 계약이 등록과 달리 이 경로에 파라미터를 안 걸었다(§6-3).
     //    ETag 도 안 내린다(응답 헤더 선언 0건).
-    const appUserId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts:split');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.splits.create(body, appUserId),
+      this.splits.create(body, actor),
     );
   }
 }
 
 function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
-  return session.userId;
+  return logisticsAppUserId(request);
+}
+
+function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
+  const plantId = currentTerminal(request)?.plantId;
+  return plantId === undefined ? query : { ...query, plantId: Number(plantId) };
 }

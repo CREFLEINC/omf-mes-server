@@ -8,11 +8,10 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
+import { mobileProductionWriteActorOf } from '../mobile-production-write-actor';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -60,20 +59,14 @@ export class OperationHandoverController {
   @Post()
   @Contract('POST /production/operation-handovers')
   create(@Req() request: Request, @Body() body: OperationHandoverCreate): Promise<OperationHandoverView> {
-    const appUserId = userOf(request);
+    const actor = mobileProductionWriteActorOf(request, 'POST /production/operation-handovers');
     const workerNo = request.headers['x-worker-no'];
     return runIdempotent(
       this.idempotency,
       request,
       HttpStatus.CREATED,
-      () => this.handovers.create(body, appUserId, typeof workerNo === 'string' ? workerNo : undefined),
+      () => this.handovers.create(body, actor, typeof workerNo === 'string' ? workerNo : undefined),
       FAMILY_CONFLICT_CODE,
     );
   }
-}
-
-function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return session.userId;
 }

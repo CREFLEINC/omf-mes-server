@@ -7,6 +7,8 @@ import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../
 import { assertCodeValues } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   GoodsReceiptDetail,
   GoodsReceiptLineView,
@@ -95,7 +97,8 @@ export class GoodsReceiptService {
     return rows.map(receiptLineView);
   }
 
-  async create(input: GoodsReceiptCreate, appUserId: number): Promise<GoodsReceiptDetail> {
+  async create(input: GoodsReceiptCreate, actorOrUser: LogisticsWriteActor | number): Promise<GoodsReceiptDetail> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     await this.assertWritable(input);
 
     for (let attempt = 0; ; attempt += 1) {
@@ -109,9 +112,13 @@ export class GoodsReceiptService {
         for (let line = 0; line < input.lines.length; line += 1) {
           putawayNos.push(await this.numbering.next('PUTAWAY_TASK', plantId, input.businessDate));
         }
-        const goodsReceiptId = await this.prisma.$transaction((tx) =>
-          postReceipt(tx, this.posting, input, appUserId, receiptNo, putawayNos),
-        );
+        const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
+          const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos, actor.workerId);
+          if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+            actor: actor.terminalAudit, targetTypeCode: 'GOODS_RECEIPT', targetId: id, eventTypeCode: 'CREATE',
+          });
+          return id;
+        });
         return (await this.get(Number(goodsReceiptId))).detail;
       } catch (error) {
         if (!isDuplicateNo(error)) throw error;

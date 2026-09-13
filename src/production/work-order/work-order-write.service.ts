@@ -34,9 +34,9 @@ export interface WorkOrderUpdate {
   plannedShiftId?: number | null;
   productionLineId?: number | null;
   responsibleWorkerId?: number | null;
-  defaultWipLocationId?: number;
-  defaultFgLocationId?: number;
-  defaultScrapLocationId?: number;
+  defaultWipLocationId?: number | null;
+  defaultFgLocationId?: number | null;
+  defaultScrapLocationId?: number | null;
   remarks?: string | null;
 }
 

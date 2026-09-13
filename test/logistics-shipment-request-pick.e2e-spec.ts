@@ -121,6 +121,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
   let noPermCookie: string[];
   let probeUserId = 0;
   let seq = 0;
+  let actorUserId: bigint;
 
   const ids = {
     entity: 0n,
@@ -704,6 +705,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
         salesOrderId: Number(ids.salesOrder),
         customerId: ids.customer,
         shipToPartnerId: ids.shipTo,
+        fulfillmentPlantId: Number(ids.plant),
         requestedShipDate: SHIP_DATE,
         lines: [
           {
@@ -780,6 +782,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
         shipment_request_no: `${PREFIX}-SR-${seq}`,
         customer_id: BigInt(ids.customer),
         ship_to_partner_id: BigInt(ids.shipTo),
+        fulfillment_plant_id: BigInt(ids.plant),
         requested_ship_date: new Date(`${SHIP_DATE}T00:00:00.000Z`),
         status_code: 'REGISTERED',
       },
@@ -869,11 +872,13 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
           lot_id: lot.lot_id,
           reason_code: HOLD_REASON,
           status_code: 'HELD',
+          held_by: actorUserId,
           held_at: new Date('2026-09-01T00:00:00.000Z'),
           // ⛔ `ck_lot_hold_release_reason` 이 해제 시각과 해제 사유를 «함께» 요구한다.
           ...(spec.hold === 'released'
             ? {
                 released_at: new Date('2026-09-02T00:00:00.000Z'),
+                released_by: actorUserId,
                 release_reason_code: `${PREFIX}-RELEASED`,
               }
             : {}),
@@ -1140,6 +1145,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: '제품피킹검사', status_code: 'EMPLOYED' },
     });
+    actorUserId = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
@@ -1148,6 +1154,9 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })),
     });
     await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    await prisma.user_data_scope.create({ data: {
+      app_user_id: user.app_user_id, business_unit_id: ids.unit, plant_id: ids.plant,
+    } });
     probeUserId = Number(user.app_user_id);
 
     const noPerm = await prisma.app_user.create({
@@ -1193,6 +1202,8 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       `DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.location WHERE warehouse_id IN (${warehouses})`,
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
+      `DELETE FROM app.user_data_scope WHERE app_user_id IN (
+         SELECT app_user_id FROM app.app_user WHERE login_id IN ('${LOGIN_ID}', '${NOPERM_ID}'))`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
@@ -1207,6 +1218,7 @@ describe('제품 LOT 피킹 확정 (e2e)', () => {
       if (!target) continue;
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
+      await prisma.user_data_scope.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }

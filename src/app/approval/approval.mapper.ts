@@ -98,7 +98,8 @@ export interface ApprovalRequestView {
   approvalRequestId: number;
   approvalRequestNo: string;
   approvalTypeCode: string;
-  requestedBy: number;
+  requestedBy: number | null;
+  requestedWorkerId: number | null;
   requestedByName: string;
   requestedAt: string;
   statusCode: string;
@@ -115,7 +116,8 @@ export interface ApprovalRequestDetailView {
 }
 
 type RequestRow = Prisma.approval_requestGetPayload<{
-  include: { app_user: true; approval_step: { include: { app_user: true } } };
+  include: { app_user: true; requested_worker: true;
+    approval_step: { include: { app_user: true } } };
 }>;
 
 export function toApprovalRequest(
@@ -126,8 +128,9 @@ export function toApprovalRequest(
     approvalRequestId: Number(row.approval_request_id),
     approvalRequestNo: row.approval_request_no,
     approvalTypeCode: row.approval_type_code,
-    requestedBy: Number(row.requested_by),
-    requestedByName: row.app_user.user_name,
+    requestedBy: row.requested_by === null ? null : Number(row.requested_by),
+    requestedWorkerId: row.requested_worker_id === null ? null : Number(row.requested_worker_id),
+    requestedByName: actorName(row.app_user?.user_name, row.requested_worker?.worker_name),
     requestedAt: row.requested_at.toISOString(),
     statusCode: row.status_code,
     reason: row.reason,
@@ -136,6 +139,12 @@ export function toApprovalRequest(
     totalStepNo: row.approval_step.length,
     isMyTurn: derived.isMyTurn,
   };
+}
+
+function actorName(accountName: string | undefined, workerName: string | undefined): string {
+  const name = accountName ?? workerName;
+  if (!name) throw new Error('Approval request actor is missing');
+  return name;
 }
 
 /** 계약 `ApprovalStep` 과 동형. */

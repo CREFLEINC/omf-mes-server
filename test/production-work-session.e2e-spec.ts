@@ -26,7 +26,7 @@ const NOPERM_ID = 'e2e-wse-noperm';
 const PASSWORD = 'WSE-작업세션-비밀번호';
 const ROLE = 'E2E_WORK_SESSION';
 /** 세션 열기 P-02-01 · `:end`·`:hold` P-02-10 · W/O 발행 W-02-02 · 배포 W-02-04 · 토큰 M-CO-01. */
-const PERMISSIONS = ['P-02-01', 'P-02-10', 'W-02-02', 'W-02-04', 'M-CO-01'];
+const PERMISSIONS = ['P-02-01', 'P-02-10', 'W-02-02', 'W-02-03', 'W-02-04', 'M-CO-01'];
 const PREFIX = 'WSE2E';
 const BASE = '/api/production/work-sessions';
 const WORK_ORDERS = '/api/production/work-orders';
@@ -258,13 +258,34 @@ describe('작업 세션 조회 4건 (e2e)', () => {
           uomId: Number(ids.uom),
         })
         .expect(201);
-      await request(app.getHttpServer())
-        .post(`${WORK_ORDERS}/${created.body.workOrderId}:release`)
+      const configured = await request(app.getHttpServer())
+        .put(`${WORK_ORDERS}/${created.body.workOrderId}`)
         .set('Cookie', cookie)
         .set('Idempotency-Key', idem())
         .set('If-Match', created.headers.etag as string)
+        .send({
+          defaultWipLocationId: Number(ids.wipLocation),
+          defaultFgLocationId: Number(ids.fgLocation),
+          defaultScrapLocationId: Number(ids.scrapLocation),
+        })
+        .expect(200);
+      expect(configured.body).toMatchObject({
+        defaultWipLocationId: Number(ids.wipLocation),
+        defaultFgLocationId: Number(ids.fgLocation),
+        defaultScrapLocationId: Number(ids.scrapLocation),
+        versionNo: Number(created.body.versionNo) + 1,
+      });
+      const released = await request(app.getHttpServer())
+        .post(`${WORK_ORDERS}/${created.body.workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', idem())
+        .set('If-Match', String(configured.body.versionNo))
         .send({ lotSize: 50 })
         .expect(200);
+      expect(released.body).toMatchObject({
+        statusCode: 'RELEASED',
+        versionNo: Number(configured.body.versionNo) + 1,
+      });
       return created.body.workOrderId as number;
     }
 
@@ -784,6 +805,29 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '작업세션검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: PREFIX + '-WH',
+        warehouse_name: '작업세션검사창고',
+        warehouse_type_code: 'RAW',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const [wip, fg, scrap] = await Promise.all(
+      ['WIP', 'FG', 'SCRAP'].map((suffix) => prisma.location.create({
+        data: {
+          warehouse_id: warehouse.warehouse_id,
+          location_code: PREFIX + '-' + suffix,
+          location_name: '작업세션검사' + suffix + '위치',
+          location_type_code: 'BIN',
+        },
+      })),
+    );
+    ids.wipLocation = wip.location_id;
+    ids.fgLocation = fg.location_id;
+    ids.scrapLocation = scrap.location_id;
     const uom = await prisma.uom.findFirstOrThrow();
     const item = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT`, item_name: '작업세션검사품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
@@ -990,6 +1034,8 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });

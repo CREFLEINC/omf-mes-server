@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { recordTerminalWorkerAudit } from "../../audit/terminal-worker-audit";
 
 import { ContractException, ERROR_CODE, field, one } from "../../common/errors";
 import { resolveWorkerId } from "../../common/master";
@@ -92,13 +93,17 @@ export class ToolUsageCreateService {
       UPDATE mdm.mold
       SET current_shot_count = current_shot_count + ${checked.shotCount},
           version_no = version_no + 1,
-          updated_by = ${BigInt(context.appUserId)}
+          updated_by = ${context.appUserId === undefined ? null : BigInt(context.appUserId)}
       WHERE mold_id = ${checked.moldId}
       RETURNING current_shot_count,
         (extract(epoch FROM updated_at) * 1000000)::numeric(30,0)::text
           AS updated_epoch_microseconds`);
     if (!usages[0] || !cumulative[0])
       throw new Error("Tool usage write disappeared");
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'TOOL_USAGE',
+      targetId: usages[0].tool_usage_id, eventTypeCode: 'CREATED',
+    });
     const projection = await readCreated(tx, usages[0].tool_usage_id);
     if (projection === null) throw new Error("Created tool usage is missing");
     return {

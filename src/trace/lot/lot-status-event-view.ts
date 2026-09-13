@@ -31,7 +31,8 @@ export function lotStatusEventView(row: LotStatusEventRow) {
     reason: row.reason ?? undefined,
     sourceDocumentTypeCode: row.source_document_type_code ?? undefined,
     sourceDocumentId: row.source_document_id === null ? undefined : Number(row.source_document_id),
-    changedBy: Number(row.changed_by),
+    changedBy: row.changed_by === null ? null : Number(row.changed_by),
+    changedWorkerId: row.changed_worker_id === null ? null : Number(row.changed_worker_id),
     changedAt: row.changed_at.toISOString(),
   });
 }

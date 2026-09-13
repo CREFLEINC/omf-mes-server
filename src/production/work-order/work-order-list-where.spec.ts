@@ -1,5 +1,7 @@
 import { ContractException } from '../../common/errors';
-import { RELEASABLE_ELIGIBLE_WHERE, buildOrderBy, buildWorkOrderWhere } from './work-order-list-where';
+import { Prisma } from '@prisma/client';
+import { RELEASABLE_ELIGIBLE_WHERE, achievementOrderedIds, achievementSortDirection,
+  buildOrderBy, buildWorkOrderWhere } from './work-order-list-where';
 
 describe('work-order-list-where', () => {
   describe('buildWorkOrderWhere', () => {
@@ -59,7 +61,7 @@ describe('work-order-list-where', () => {
   });
 
   describe('buildOrderBy', () => {
-    it('정렬 — 허용 키 넷 밖은 400 이다', () => {
+    it('Prisma 직접 정렬에 파생 달성률 키를 넘기면 400 이다', () => {
       expect(() => buildOrderBy('achievementRate,desc')).toThrow(ContractException);
       try {
         buildOrderBy('achievementRate,desc');
@@ -77,6 +79,32 @@ describe('work-order-list-where', () => {
     it('정렬 — 동률은 PK 오름차순으로 닫는다', () => {
       expect(buildOrderBy(undefined)).toEqual([{ priority_no: 'asc' }, { work_order_id: 'asc' }]);
       expect(buildOrderBy('workOrderNo,desc')).toEqual([{ work_order_no: 'desc' }, { work_order_id: 'asc' }]);
+    });
+  });
+
+  describe('achievementRate sort', () => {
+    const period = { plannedStartFrom: '2026-09-01T00:00:00+09:00',
+      plannedStartTo: '2026-10-01T00:00:00+09:00' };
+
+    it('기간이 좁을 때만 허용하며 넓거나 미지정이면 400이다', () => {
+      expect(achievementSortDirection({ ...period, sort: 'achievementRate,desc' })).toBe('desc');
+      expect(achievementSortDirection({ ...period, sort: 'achievementRate' })).toBe('asc');
+      expect(achievementSortDirection({ ...period, sort: 'priorityNo,asc' })).toBeNull();
+      expect(() => achievementSortDirection({ sort: 'achievementRate,desc' })).toThrow(ContractException);
+      expect(() => achievementSortDirection({ ...period,
+        plannedStartTo: '2027-01-01T00:00:00+09:00', sort: 'achievementRate,desc' })).toThrow(ContractException);
+    });
+
+    it('필터된 전체 집합의 실적합/지시량으로 정렬하고 동률은 ID순이다', () => {
+      const decimal = (value: number) => new Prisma.Decimal(value);
+      const candidates = [
+        { work_order_id: 3n, order_qty: decimal(100) },
+        { work_order_id: 1n, order_qty: decimal(10) },
+        { work_order_id: 2n, order_qty: decimal(20) },
+      ];
+      const good = new Map<bigint, Prisma.Decimal | null>([[3n, decimal(50)], [1n, decimal(5)]]);
+      expect(achievementOrderedIds(candidates, good, 'desc')).toEqual([1n, 3n, 2n]);
+      expect(achievementOrderedIds(candidates, good, 'asc')).toEqual([2n, 1n, 3n]);
     });
   });
 });

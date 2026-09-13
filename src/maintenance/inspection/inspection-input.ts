@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, field, one } from "../../common/errors";
 
 export interface InspectionLineCreate {
   inspectionItemId: number;
-  resultCode: "PASS" | "FAIL";
+  resultCode: "PASS" | "FAIL" | "OK" | "NG";
   measuredValue?: number | null;
   remarks?: string | null;
 }
@@ -18,7 +18,8 @@ export interface InspectionCreate {
   lines: InspectionLineCreate[];
 }
 
-export interface CheckedInspectionLine extends InspectionLineCreate {
+export interface CheckedInspectionLine extends Omit<InspectionLineCreate, "resultCode"> {
+  resultCode: "PASS" | "FAIL";
   numericValue: Prisma.Decimal | null;
 }
 
@@ -47,7 +48,11 @@ export function checkInspectionInput(input: InspectionCreate): {
       );
     }
     seen.add(line.inspectionItemId);
-    return { ...line, numericValue: decimalValue(line.measuredValue, index) };
+    return {
+      ...line,
+      resultCode: line.resultCode === "OK" ? "PASS" : line.resultCode === "NG" ? "FAIL" : line.resultCode,
+      numericValue: decimalValue(line.measuredValue, index),
+    };
   });
   const overallResultCode = lines.some((line) => line.resultCode === "FAIL")
     ? "FAIL"

@@ -36,7 +36,7 @@ const SUPPLIER_DESTINATION_TYPES = ['PARTNER', 'DISPOSAL_SITE'];
 export class GoodsIssueQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: GoodsIssueQuery): Promise<PagedResponse<GoodsIssueView>> {
+  async list(query: GoodsIssueQuery, terminalPlantId?: bigint): Promise<PagedResponse<GoodsIssueView>> {
     // `page`·`size` 는 형제 목록과 같이 «자른다»(`pagination.ts`) — 400 은 식별자 축에만.
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const sourceWarehouseId = numeric('sourceWarehouseId', query.sourceWarehouseId);
@@ -45,6 +45,7 @@ export class GoodsIssueQueryService {
 
     const where: Prisma.goods_issueWhereInput = {
       ...filter('source_warehouse_id', sourceWarehouseId),
+      ...(terminalPlantId === undefined ? {} : { warehouse: { plant_id: terminalPlantId } }),
       ...(query.issueTypeCode === undefined ? {} : { issue_type_code: query.issueTypeCode }),
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...(query.reasonCode === undefined ? {} : { reason_code: query.reasonCode }),

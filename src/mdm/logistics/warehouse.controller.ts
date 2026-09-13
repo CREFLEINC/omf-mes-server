@@ -13,6 +13,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { currentTerminal } from '../../auth/terminal-context';
 
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
@@ -31,8 +32,8 @@ export class WarehouseController {
 
   @Get()
   @Contract('GET /mdm/warehouses')
-  list(@Query() query: WarehouseQuery): Promise<PagedResponse<unknown>> {
-    return this.warehouses.list(query);
+  list(@Req() request: Request, @Query() query: WarehouseQuery): Promise<PagedResponse<unknown>> {
+    return this.warehouses.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':warehouseId')

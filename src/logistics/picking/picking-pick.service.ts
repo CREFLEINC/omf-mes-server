@@ -8,6 +8,8 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어는 PR ① 로 닫혔고 이 PR 은 코어 파일을 안 고친다.
 import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { PickingQueryService } from './picking-query.service';
 import { PickingLineView } from './picking-view';
 
@@ -19,13 +21,12 @@ export interface PickingLinePick {
   occurredAt: string;
 }
 
-export interface PickContext {
+export type PickContext = {
   /** ⚠ 저장하지 않는다 — 담을 칸이 두 표에 없다(§6-7). */
   workerNo?: string;
   /** **선택**이다 — 없으면 대조하지 않는다(계약 `IfMatchVersionOptional`). */
   version?: number;
-  appUserId: number;
-}
+} & ({ actor: LogisticsWriteActor; appUserId?: never } | { appUserId: number; actor?: never });
 
 /** ①의 `FOR UPDATE` 가 내리는 것 — 라인 축 + 지시의 창고(잔액 차원의 조직 3칸이 거기서 난다). */
 interface LineRow {
@@ -95,9 +96,14 @@ export class PickingPickService {
         data: {
           picked_qty: pickedQty,
           version_no: { increment: 1 },
-          updated_by: BigInt(context.appUserId),
+          updated_by: context.actor?.appUserId == null && context.appUserId == null
+            ? null : BigInt(context.actor?.appUserId ?? context.appUserId as number),
           updated_at: new Date(),
         },
+      });
+      if (context.actor?.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: context.actor.terminalAudit, targetTypeCode: 'PICKING_LINE',
+        targetId: line.picking_line_id, eventTypeCode: 'PICK',
       });
     });
 

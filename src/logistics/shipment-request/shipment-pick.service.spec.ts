@@ -33,6 +33,8 @@ interface Recorded {
 }
 
 interface Overrides {
+  lotPlantId?: bigint;
+  balancePlantId?: bigint;
   allocatedQty?: string;
   minimumRemainingShelfLifeDays?: number | null;
   expiryDate?: Date | null;
@@ -65,6 +67,7 @@ function stub(overrides: Overrides = {}) {
   // ⛔ `??` 로 쓰면 `null` 을 「안 준 것」으로 접어 그 갈래를 영영 못 태운다.
   const balance = {
     ...BALANCE,
+    plantId: overrides.balancePlantId ?? BALANCE.plantId,
     available_qty: 'availableQty' in overrides ? overrides.availableQty : BALANCE.available_qty,
   };
   const tx = {
@@ -83,6 +86,7 @@ function stub(overrides: Overrides = {}) {
               overrides.minimumRemainingShelfLifeDays === undefined
                 ? null
                 : overrides.minimumRemainingShelfLifeDays,
+            fulfillment_plant_id: 3n,
           },
         ];
       }
@@ -95,6 +99,7 @@ function stub(overrides: Overrides = {}) {
         return {
           lot_id: 61n,
           item_id: 21n,
+          plant_id: overrides.lotPlantId ?? 3n,
           status_code: 'NORMAL',
           expiry_date: overrides.expiryDate === undefined ? null : overrides.expiryDate,
         };
@@ -183,6 +188,22 @@ const run = (harness: ReturnType<typeof stub>, pickedQty = 30) =>
   });
 
 describe('제품 LOT 피킹 — 트랜잭션 순서·잠금 대상 (§3-2)', () => {
+  it('이행 공장 밖의 LOT은 예약·피킹 전에 거부한다', async () => {
+    const harness = stub({ lotPlantId: 4n });
+    const error = await run(harness).catch((caught: unknown) => caught);
+    expect((error as { getStatus: () => number }).getStatus()).toBe(400);
+    expect(harness.recorded.order).not.toContain('reserve');
+    expect(harness.recorded.order).not.toContain('pick');
+  });
+
+  it('LOT은 같은 공장이더라도 잔액이 다른 공장이면 예약·피킹 전에 거부한다', async () => {
+    const harness = stub({ balancePlantId: 4n });
+    const error = await run(harness).catch((caught: unknown) => caught);
+    expect((error as { getStatus: () => number }).getStatus()).toBe(409);
+    expect(harness.recorded.order).not.toContain('reserve');
+    expect(harness.recorded.order).not.toContain('pick');
+  });
+
   it('⭐⭐ 번호를 $transaction 「밖」에서 뽑고 14단계를 계약 문장 순서로 돈다', async () => {
     const harness = stub();
 
@@ -215,16 +236,15 @@ describe('제품 LOT 피킹 — 트랜잭션 순서·잠금 대상 (§3-2)', () 
     expect(harness.recorded.numbered).toEqual([['INVENTORY_RESERVATION', null, today]]);
   });
 
-  it('⭐⭐ 라인만 잠근다 — `FOR UPDATE OF l` 이고 헤더는 JOIN 일 뿐이다', async () => {
+  it('⭐⭐ 라인은 배타·헤더는 공유 잠금이라 공장 지정과 피킹이 교차하지 않는다', async () => {
     const harness = stub();
 
     await run(harness);
 
     const [lockSql] = harness.recorded.sql;
-    // ⛔ `OF l` 을 빼면 헤더까지 잠겨 «같은 작업지시의 두 라인 피킹»이 서로를 막는다 —
-    //   그것이 `M-04-01` 의 정상 흐름이다(e2e P-11 이 같은 자리를 HTTP 로 본다).
+    // 라인 배타 잠금은 같은 라인의 누적 피킹을 직렬화하고, 헤더 공유 잠금은 공장 변경만 막는다.
     expect(lockSql).toMatch(/FOR UPDATE OF l/);
-    expect(lockSql).not.toMatch(/FOR UPDATE\s*$/);
+    expect(lockSql).toMatch(/FOR SHARE OF h/);
     expect(lockSql).toMatch(/JOIN logistics\.shipment_request h/);
   });
 

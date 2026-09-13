@@ -1,3 +1,6 @@
+import { logisticsAppUserId } from '../../auth/terminal-logistics-scope';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -11,11 +14,9 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -44,8 +45,8 @@ export class GoodsIssueController {
 
   @Get()
   @Contract('GET /logistics/goods-issues')
-  list(@Query() query: GoodsIssueQuery): Promise<PagedResponse<GoodsIssueView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: GoodsIssueQuery): Promise<PagedResponse<GoodsIssueView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':goodsIssueId')
@@ -79,9 +80,9 @@ export class GoodsIssueController {
     @Res({ passthrough: true }) response: Response,
     @Body() body: GoodsIssueCreate,
   ): Promise<GoodsIssueDetail> {
-    const appUserId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/goods-issues');
     const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.issues.create(body, appUserId),
+      this.issues.create(body, actor),
     );
     setEtag(response, result.versionNo);
     return result.detail;
@@ -154,7 +155,5 @@ function versionOf(request: Request): number {
 }
 
 function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return session.userId;
+  return logisticsAppUserId(request);
 }

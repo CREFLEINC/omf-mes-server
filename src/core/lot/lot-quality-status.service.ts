@@ -10,8 +10,10 @@ import { Tx } from './lot-registry.service';
 const QUALITY_COLUMN = 'trace.lot.status_code';
 
 export interface LotQualityMoveContext {
-  /** `lot_status_event.changed_by` 는 NOT NULL — 이 축은 사람이 전이시킨다(생명주기 축과 다르다). */
-  changedBy: bigint;
+  /** Account actor, when the transition is made from an account session. */
+  changedBy?: bigint;
+  /** Real worker actor for an accountless terminal transition. */
+  changedWorkerId?: bigint;
   changedAt: Date;
   /**
    * ⛔ `ck_lot_status_event_source` — 유형과 id 는 **함께 산다**. R-12 로 id 쪽이 두 칸이 되어
@@ -54,6 +56,9 @@ export class LotQualityStatusService {
     action: ActionName,
     ctx: LotQualityMoveContext,
   ): Promise<LotMoveResult> {
+    if ((ctx.changedBy === undefined) === (ctx.changedWorkerId === undefined)) {
+      throw new Error('LOT 품질 전이에는 계정 또는 작업자 주체 하나가 필요합니다.');
+    }
     const moved: bigint[] = [];
     const skipped: bigint[] = [];
     const transition = TRANSITIONS[QUALITY_COLUMN]?.[action];
@@ -107,7 +112,8 @@ export class LotQualityStatusService {
           source_document_type_code: ctx.sourceDocumentTypeCode,
           source_document_id: sourceIdOf(lot.lot_id),
           changed_at: ctx.changedAt,
-          changed_by: ctx.changedBy,
+          changed_by: ctx.changedBy ?? null,
+          changed_worker_id: ctx.changedWorkerId ?? null,
           // ⛔ `quality_status_code`·`inventory_status_code`·`location_id` 는 비운다 —
           //    재고 «행»의 차원을 정할 축이 이 전이에 없다(원장을 지나지 않는다).
         },

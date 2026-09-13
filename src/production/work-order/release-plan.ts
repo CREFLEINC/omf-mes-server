@@ -1,7 +1,7 @@
-import { NotFoundException } from '@nestjs/common';
+import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { slotQtys } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,6 +15,8 @@ const RELEASE_SELECT = {
   routing_operation_id: true,
   work_order_type_code: true,
   default_wip_location_id: true,
+  default_fg_location_id: true,
+  default_scrap_location_id: true,
   routing_operation: { select: { standard_cycle_time_sec: true, standard_yield_rate: true } },
   production_plan: {
     select: {
@@ -65,6 +67,18 @@ export async function releasePlan(
     );
   }
 
+  const missingLocations = [
+    ['defaultWipLocationId', row.default_wip_location_id],
+    ['defaultFgLocationId', row.default_fg_location_id],
+    ['defaultScrapLocationId', row.default_scrap_location_id],
+  ] as const;
+  const locationErrors = missingLocations
+    .filter(([, value]) => value === null)
+    .map(([name]) => field(name, ERROR_CODE.REQUIRED, '배포 전에 기본 위치를 지정해야 합니다.'));
+  if (locationErrors.length > 0) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, locationErrors);
+  }
+
   // 채번보다 «앞»이다 — `lotSize ≤ 0` 이면 여기서 400 이 나고 번호를 안 뽑는다.
   const qtys = slotQtys(row.order_qty, new Prisma.Decimal(lotSize));
   const components = await bomComponents(prisma, row, plan.bom_id);
@@ -91,14 +105,13 @@ export async function releasePlan(
  * 담을 BOM 라인 — **이 공정의 것만**이다. ⛔ `routing_operation_id IS NULL` 은 담지
  * 않는다(「공정 미지정 = 전 공정 공통」은 우리가 지어내는 뜻이다). 전건을 담으면 같은
  * 계획의 공정 W/O 여럿이 같은 자재를 겹쳐 요청한다.
- * ⚠ 도착 위치를 못 풀면 아예 안 담는다 — 요청 «없이» 배포는 성공한다(400 이 아니다).
  */
 function bomComponents(
   prisma: PrismaService,
   row: ReleaseRow,
   bomId: bigint,
 ): Promise<BomComponentRow[]> {
-  if (skipsMaterialIssue(row.work_order_type_code) || row.default_wip_location_id === null) {
+  if (skipsMaterialIssue(row.work_order_type_code)) {
     return Promise.resolve([]);
   }
   return prisma.bom_component.findMany({

@@ -118,7 +118,7 @@ describe('첨부 목록 (e2e)', () => {
   });
 
   it('⛔ enum 밖 targetTypeCode 는 400 이다 — N2(통보 156)', async () => {
-    await request(app.getHttpServer()).get(`${PATH}?targetTypeCode=BREAKDOWN`).set('Cookie', cookie).expect(400);
+    await request(app.getHttpServer()).get(`${PATH}?targetTypeCode=UNSUPPORTED_TARGET`).set('Cookie', cookie).expect(400);
   });
 
   it('⛔ 정수가 아닌 targetId 는 400 이다 — N3', async () => {

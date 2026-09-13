@@ -30,7 +30,7 @@ export interface HandlingUnitQuery {
 export class HandlingUnitQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: HandlingUnitQuery): Promise<PagedResponse<HandlingUnitView>> {
+  async list(query: HandlingUnitQuery, terminalPlantId?: bigint): Promise<PagedResponse<HandlingUnitView>> {
     // `page`·`size` 는 형제 목록과 같이 «자른다»(`pagination.ts`) — 400 은 식별자 축에만.
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
     const warehouseId = numeric('warehouseId', query.warehouseId);
@@ -46,6 +46,9 @@ export class HandlingUnitQueryService {
         : { handling_unit_type_code: query.handlingUnitTypeCode }),
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...(query.q === undefined ? {} : { handling_unit_no: { contains: query.q } }),
+      ...(terminalPlantId === undefined
+        ? {}
+        : { OR: [{ warehouse: { plant_id: terminalPlantId } }, { location: { warehouse: { plant_id: terminalPlantId } } }] }),
     };
 
     const [rows, total] = await Promise.all([

@@ -8,6 +8,8 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 // ⛔ `index.ts` 가 재수출하지 않는다 — 코어를 한 줄도 안 고친다(피킹 선례).
 import { lockBalancesInOrder } from '../../core/inventory-posting/balance-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { PutawayOrigin, postPutaway } from './putaway-posting';
 import { PutawayTaskView, TASK_INCLUDE, taskView } from './putaway-task-view';
 
@@ -25,12 +27,11 @@ export interface PutawayTaskComplete {
   businessDate: string; occurredAt: string;
 }
 
-export interface PutawayCompleteContext {
+export type PutawayCompleteContext = {
   workerNo?: string;
   /** **선택**이다 — 없으면 대조하지 않는다(계약 `IfMatchVersionOptional` · C-9). */
   version?: number;
-  appUserId: number;
-}
+} & ({ actor: LogisticsWriteActor; appUserId?: never } | { appUserId: number; actor?: never });
 
 export type PutawayMode = 'NORMAL' | 'TEMPORARY';
 
@@ -97,7 +98,7 @@ export class PutawayCompleteService {
       itemId: Number(task.item_id), lotId: Number(task.lot_id),
       qty: task.task_qty, uomId: Number(task.uom_id), origin,
       toWarehouseId: Number(task.warehouse_id), toLocationId: body.actualLocationId,
-      createdBy: context.appUserId,
+      createdBy: context.actor?.appUserId ?? context.appUserId,
     });
     const row = await tx.putaway_task.update({
       where: { putaway_task_id: task.putaway_task_id },
@@ -108,9 +109,15 @@ export class PutawayCompleteService {
         ...(mode === 'TEMPORARY'
           ? { reason_code: body.reasonCode ?? null, remarks: body.remarks ?? null }
           : {}),
-        updated_by: BigInt(context.appUserId), version_no: { increment: 1 },
+        updated_by: context.actor?.appUserId == null && context.appUserId == null
+          ? null : BigInt(context.actor?.appUserId ?? context.appUserId as number),
+        version_no: { increment: 1 },
       },
       include: TASK_INCLUDE,
+    });
+    if (context.actor?.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.actor.terminalAudit, targetTypeCode: 'PUTAWAY_TASK',
+      targetId: task.putaway_task_id, eventTypeCode: mode === 'TEMPORARY' ? 'COMPLETE_TEMPORARY' : 'COMPLETE',
     });
     // ⛔ `setEtag` 를 부르지 않는다 — 계약이 두 200 에 응답 헤더를 선언하지 않았다.
     return taskView(row);

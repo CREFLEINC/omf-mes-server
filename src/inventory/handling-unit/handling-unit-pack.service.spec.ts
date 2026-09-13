@@ -65,6 +65,40 @@ const thrown = async (run: () => Promise<unknown>): Promise<unknown> => {
 };
 
 describe('HandlingUnitPackService.pack — 자물쇠와 409 순서', () => {
+  it('단말 포장 확정은 계정 없이도 성공하고 감사 사용자 칸은 null로 남긴다', async () => {
+    const created = jest.fn().mockResolvedValue({ count: 1 });
+    const updated = jest.fn().mockResolvedValue({});
+    const tx = {
+      worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 8n }) },
+      terminal: { findFirst: jest.fn().mockResolvedValue({ terminal_id: 7n }) },
+      audit_event: { create: jest.fn().mockResolvedValue({}) },
+      $queryRaw: jest.fn().mockResolvedValue([{ status_code: 'OPEN', version_no: 1 }]),
+      item: { findMany: jest.fn().mockResolvedValue([{ item_id: 101n }]) },
+      lot: { findMany: jest.fn().mockResolvedValue([{ lot_id: 201n, item_id: 101n }]) },
+      uom: { findMany: jest.fn().mockResolvedValue([{ uom_id: 301n }]) },
+      handling_unit_content: { deleteMany: jest.fn(), createMany: created },
+      handling_unit: { update: updated },
+    };
+    const prisma = {
+      worker: { findUnique: jest.fn().mockResolvedValue({ worker_id: 8n }) },
+      $transaction: (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+    } as unknown as PrismaService;
+    const queries = { get: jest.fn().mockResolvedValue({ handlingUnit: { handlingUnitId: HU }, contents: [] }) };
+    const service = new HandlingUnitPackService(prisma, queries as never);
+
+    await service.pack(HU, undefined, BODY, { workerNo: 'W1', workerId: 8n, terminalAudit: {
+      workerId: 8n, workerNo: 'W1', terminalId: 7n, plantId: 3n,
+      correlationId: 'pack-1', operationKey: 'POST /inventory/handling-units/{handlingUnitId}:pack',
+    } });
+
+    expect(created).toHaveBeenCalledWith({ data: [expect.objectContaining({ created_by: null })] });
+    expect(updated).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ updated_by: null }) }));
+    expect(tx.audit_event.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      target_type_code: 'HANDLING_UNIT', target_id: BigInt(HU), event_type_code: 'PACK',
+      terminal_id: 7n, correlation_id: 'pack-1',
+    }) });
+  });
+
   it('⭐ 트랜잭션 «첫 문장»이 그 행 하나의 `FOR UPDATE` 다 — 0행이면 404 다', async () => {
     const { service, recorded } = fake(null);
 

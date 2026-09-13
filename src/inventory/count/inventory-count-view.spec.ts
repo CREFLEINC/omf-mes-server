@@ -81,6 +81,7 @@ function line(over: Partial<InventoryCountLineRow>): InventoryCountLineRow {
     uom_id: 61n,
     variance_reason_code: 'COUNT_ERROR',
     counted_by: 71n,
+    counted_worker_id: null,
     counted_at: at,
     counted: true,
     created_at: at,

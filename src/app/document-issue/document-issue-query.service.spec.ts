@@ -115,7 +115,7 @@ describe('발행 이력 조회 (I-27 P1)', () => {
     });
   });
 
-  it('저장 행의 16칸과 target 이름·화면·비활성 과거 사유명을 계약 모양으로 낸다', () => {
+  it('저장 행의 발행 계정·작업자와 target 이름·화면·비활성 과거 사유명을 계약 모양으로 낸다', () => {
     const targets: TargetLookup = new Map([
       [targetKey('LOT', 201n), { displayName: 'LOT-201', screenId: 'P-02-07' }],
     ]);
@@ -135,6 +135,7 @@ describe('발행 이력 조회 (I-27 P1)', () => {
       reissueReasonCode: 'PRINT_FAILURE',
       reissueReasonName: '인쇄 실패',
       issuedBy: 301,
+      issuedWorkerId: 501,
       issuedByName: '발행 계정',
       issuedAt: '2026-09-08T01:02:03.456Z',
       terminalId: 401,

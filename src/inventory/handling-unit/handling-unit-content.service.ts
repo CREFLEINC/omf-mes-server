@@ -1,10 +1,11 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { HandlingUnitContentView, handlingUnitContentView } from './handling-unit-view';
 import {
   HandlingUnitContentUpsert,
@@ -65,6 +66,10 @@ export class HandlingUnitContentService {
 
     return this.prisma.$transaction(async (tx) => {
       const versionNo = await lockHandlingUnit(tx, handlingUnitId, version);
+      const linkedAllocations = await tx.shipment_lot_allocation.count({ where: { handling_unit_id: handlingUnitId } });
+      if (linkedAllocations > 0) {
+        throw new ConflictException('user', '출하에 배분된 취급 단위는 구성을 바꿀 수 없습니다.');
+      }
       // ⭐ 잠근 «뒤»에 치환 전 구성을 읽는다 — 먼저 읽으면 두 치환이 겹칠 때 앞의 결과를
       //    못 보고 `qty_before` 를 잃는다(§5-2 ⑥ · 단위 3).
       const before = await tx.handling_unit_content.findMany({
@@ -81,18 +86,23 @@ export class HandlingUnitContentService {
           lot_id: line.lotId,
           qty: line.qty,
           uom_id: line.uomId,
-          created_by: context.appUserId,
+          created_by: context.appUserId ?? null,
         })),
       });
-      await writeRepackEvent(tx, handlingUnitId, before, items, context.appUserId);
+      await writeRepackEvent(tx, handlingUnitId, before, items, context);
 
       // ⛔ `status_code` 는 «안» 옮긴다 · `updated_at` 은 `app.set_updated_at()` 트리거 몫이다.
       const bumped = await tx.handling_unit.updateMany({
         where: { handling_unit_id: handlingUnitId, version_no: versionNo },
-        data: { version_no: { increment: 1 }, updated_by: context.appUserId },
+        data: { version_no: { increment: 1 }, updated_by: context.appUserId ?? null },
       });
       // 잠그고 비교했으니 0행일 수 없다 — 그래도 조건을 걸어 둔다(같은 축의 마지막 그물).
       assertUpdated(bumped.count);
+
+      if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: context.terminalAudit, targetTypeCode: 'HANDLING_UNIT', targetId: BigInt(handlingUnitId),
+        eventTypeCode: 'REPACK',
+      });
 
       const rows = await tx.handling_unit_content.findMany({
         where: { handling_unit_id: handlingUnitId },
@@ -141,13 +151,14 @@ async function writeRepackEvent(
   handlingUnitId: number,
   before: { item_id: bigint; lot_id: bigint; qty: Prisma.Decimal; uom_id: bigint }[],
   items: HandlingUnitContentUpsert[],
-  appUserId: number,
+  actor: HandlingUnitContext,
 ): Promise<void> {
   const lines = repackLines(before, items);
   await tx.handling_unit_repack_event.create({
     data: {
       repack_type_code: REPACK_TYPE_RECONFIGURE,
-      performed_by: appUserId,
+      performed_by: actor.appUserId ?? null,
+      performed_worker_id: actor.workerId ?? null,
       occurred_at: new Date(),
       lines: {
         create: lines.map((line, index) => ({

@@ -96,9 +96,10 @@ export type WarehouseResult = {
 export class WarehouseService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: WarehouseQuery): Promise<PagedResponse<WarehouseView>> {
+  async list(query: WarehouseQuery, terminalPlantId?: bigint): Promise<PagedResponse<WarehouseView>> {
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'warehouse_code', name: 'warehouse_name' }, {
+      ...(terminalPlantId === undefined ? {} : { plant_id: terminalPlantId }),
       ...(query.warehouseTypeCode === undefined
         ? {}
         : { warehouse_type_code: query.warehouseTypeCode }),
@@ -253,4 +254,3 @@ function view(row: WarehouseRow): WarehouseView {
     isActive: row.is_active,
   };
 }
-

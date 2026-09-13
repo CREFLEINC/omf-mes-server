@@ -492,7 +492,7 @@ describe('출하작업지시 편성 (e2e)', () => {
     expect(response.body.errors[0]).toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
-  it('W-28 ⭐ 응답 ShipmentRequest 12칸이 «제 출처»에서 온다', async () => {
+  it('W-28 ⭐ 응답 ShipmentRequest 13칸이 «제 출처»에서 온다', async () => {
     const body = await create(
       payload({
         salesOrderId: ids.salesOrder,
@@ -516,6 +516,7 @@ describe('출하작업지시 편성 (e2e)', () => {
       shipmentRequestId: Number(stored.shipment_request_id),
       shipmentRequestNo: stored.shipment_request_no,
       salesOrderId: ids.salesOrder,
+      fulfillmentPlantId: stored.fulfillment_plant_id === null ? null : Number(stored.fulfillment_plant_id),
       customerId: ids.customer,
       shipToPartnerId: ids.shipTo,
       requestedShipDate: SHIP_DATE,

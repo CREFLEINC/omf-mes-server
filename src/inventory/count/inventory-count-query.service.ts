@@ -40,9 +40,9 @@ type CountClient = Pick<Prisma.TransactionClient, 'inventory_count' | 'inventory
 export class InventoryCountQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: InventoryCountQuery): Promise<PagedResponse<InventoryCountView>> {
+  async list(query: InventoryCountQuery, terminalPlantId?: bigint): Promise<PagedResponse<InventoryCountView>> {
     const page = pageRequest({ page: number(query.page), size: number(query.size) });
-    const where = inventoryCountWhere(query);
+    const where = inventoryCountWhere(query, terminalPlantId);
     const [rows, total] = await Promise.all([
       this.prisma.inventory_count.findMany({
         where,
@@ -121,9 +121,10 @@ export class InventoryCountQueryService {
   }
 }
 
-export function inventoryCountWhere(query: InventoryCountQuery): Prisma.inventory_countWhereInput {
+export function inventoryCountWhere(query: InventoryCountQuery, terminalPlantId?: bigint): Prisma.inventory_countWhereInput {
   const warehouseId = numeric('warehouseId', query.warehouseId);
   return {
+    ...(terminalPlantId === undefined ? {} : { warehouse: { plant_id: terminalPlantId } }),
     ...filter('warehouse_id', warehouseId),
     ...(query.countTypeCode === undefined ? {} : { count_type_code: query.countTypeCode }),
     ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),

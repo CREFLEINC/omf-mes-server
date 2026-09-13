@@ -53,6 +53,40 @@ const SORT_FIELDS: Record<string, keyof Prisma.work_orderOrderByWithRelationInpu
   statusCode: 'status_code',
 };
 
+/** 관리자 진행현황 화면의 파생 정렬은 기간이 92일 이하일 때만 계산한다. */
+export function achievementSortDirection(query: WorkOrderListQuery): 'asc' | 'desc' | null {
+  const [key, direction = 'asc', extra] = (query.sort ?? '').split(',');
+  if (key !== 'achievementRate') return null;
+  const from = query.plannedStartFrom === undefined ? NaN : new Date(query.plannedStartFrom).getTime();
+  const to = query.plannedStartTo === undefined ? NaN : new Date(query.plannedStartTo).getTime();
+  if (extra !== undefined || (direction !== 'asc' && direction !== 'desc')
+    || !Number.isFinite(from) || !Number.isFinite(to) || to <= from
+    || to - from > 92 * 86_400_000) {
+    throw one(field('sort', ERROR_CODE.INVALID,
+      '달성률 정렬은 계획 시작 기간이 92일 이하일 때만 사용할 수 있습니다.'));
+  }
+  return direction;
+}
+
+export function achievementOrderedIds(
+  candidates: Array<{ work_order_id: bigint; order_qty: Prisma.Decimal }>,
+  goodQtyByWorkOrder: ReadonlyMap<bigint, Prisma.Decimal | null>,
+  direction: 'asc' | 'desc',
+): bigint[] {
+  return candidates.map((row) => ({ id: row.work_order_id,
+    rate: row.order_qty.isZero() ? null
+      : (goodQtyByWorkOrder.get(row.work_order_id) ?? new Prisma.Decimal(0)).dividedBy(row.order_qty),
+  })).sort((left, right) => {
+    if (left.rate === null || right.rate === null) {
+      if (left.rate !== right.rate) return left.rate === null ? 1 : -1;
+    } else {
+      const compared = left.rate.comparedTo(right.rate);
+      if (compared !== 0) return direction === 'asc' ? compared : -compared;
+    }
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  }).map((row) => row.id);
+}
+
 /** `releasable` 자신은 뺀 나머지 전부 — 서비스가 후보 집합을 좁힌 뒤 `work_order_id` 필터를 얹는다. */
 export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orderWhereInput {
   const clauses: Prisma.work_orderWhereInput[] = [

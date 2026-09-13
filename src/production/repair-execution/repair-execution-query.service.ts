@@ -39,7 +39,7 @@ export const REPAIR_EXECUTION_ORDER_BY: Prisma.repair_executionOrderByWithRelati
 export class RepairExecutionQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: RepairExecutionListQuery): Promise<PagedResponse<RepairExecutionView>> {
+  async list(query: RepairExecutionListQuery, terminalPlantId?: bigint): Promise<PagedResponse<RepairExecutionView>> {
     const page = pageRequest(query);
     // ⭐ 여집합 — `open ?? true` → `returned_at: null` · `false` → `{ not: null }`
     //   (`work-session-query.service.ts:56` 사본 · I-25 §0 자리 3 ⓐ).
@@ -51,6 +51,13 @@ export class RepairExecutionQueryService {
     };
     const where: Prisma.repair_executionWhereInput = {
       returned_at: open ? null : { not: null },
+      ...(terminalPlantId === undefined ? {} : { OR: [
+        { defect_record: { lot: { plant_id: terminalPlantId }, OR: [
+          { work_order_id: null },
+          { work_order: { production_line: { plant_id: terminalPlantId } } },
+        ] } },
+        { defect_record: { lot_id: null, work_order: { production_line: { plant_id: terminalPlantId } } } },
+      ] }),
       ...filter('defect_record_id', numeric('defectRecordId', query.defectRecordId)),
       // ⭐ `lotId` 는 이 표의 칸이 아니다 — 원 불량이 매인 LOT 으로 1홉 중첩 필터한다(§3-3).
       //   `defect_record.lot_id` 는 nullable 이라 LOT 이 없는 불량은 여기 걸리지 않는다.

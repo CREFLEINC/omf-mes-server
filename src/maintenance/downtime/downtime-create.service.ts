@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { recordTerminalWorkerAudit } from "../../audit/terminal-worker-audit";
 
 import { assertWorkerNoExists } from "../../common/master";
 
@@ -42,7 +43,7 @@ export class DowntimeCreateService {
     if (ended === null) await assertNoOpenDowntime(tx, equipmentId);
     await assertDowntimeBreakdown(tx, input.breakdownId, equipmentId, "create");
 
-    const actorId = BigInt(context.appUserId);
+    const actorId = context.appUserId === undefined ? null : BigInt(context.appUserId);
     const rows = await tx.$queryRaw<CreatedDowntime[]>`
       INSERT INTO maintenance.equipment_downtime
         (equipment_id,reason_code,started_at,ended_at,breakdown_id,remarks,
@@ -63,6 +64,11 @@ export class DowntimeCreateService {
     ) {
       throw new Error("Stored downtime instant differs from the request");
     }
+
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'EQUIPMENT_DOWNTIME',
+      targetId: created.downtime_id, eventTypeCode: 'CREATED',
+    });
 
     const row = await readDowntimeWithin(tx, created.downtime_id);
     if (row === null) throw new Error("Created downtime is missing");

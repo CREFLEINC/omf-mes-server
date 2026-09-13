@@ -55,6 +55,7 @@ const FOLDABLE = [
 ] as const;
 
 export interface BalanceFilters {
+  plantId?: bigint;
   warehouseId?: number;
   itemId?: number;
   lotId?: number;
@@ -115,6 +116,7 @@ const FROM = `
 
 function conditionsOf(filters: BalanceFilters, withExpiry: boolean): Conditions {
   const c = new Conditions();
+  if (filters.plantId !== undefined) c.add((p) => `b.plant_id = ${p}::bigint`, filters.plantId);
   if (filters.warehouseId !== undefined) c.add((p) => `b.warehouse_id = ${p}::bigint`, filters.warehouseId);
   if (filters.itemId !== undefined) c.add((p) => `b.item_id = ${p}::bigint`, filters.itemId);
   if (filters.lotId !== undefined) c.add((p) => `b.lot_id = ${p}::bigint`, filters.lotId);
@@ -199,9 +201,9 @@ export function balanceSummaryQuery(filters: BalanceFilters): BuiltQuery {
   return { sql, params: c.params };
 }
 
-/** 창고·품목·LOT 중 적어도 하나는 있어야 한다 — 셋 다 비면 전 재고를 훑는다(계약). */
-export function assertScoped(filters: Pick<BalanceFilters, 'warehouseId' | 'itemId' | 'lotId'>): void {
-  if (filters.warehouseId !== undefined || filters.itemId !== undefined || filters.lotId !== undefined) {
+/** 창고·위치·품목·LOT 중 하나는 있어야 한다. 위치도 단일 재고 범위다. */
+export function assertScoped(filters: Pick<BalanceFilters, 'warehouseId' | 'locationId' | 'itemId' | 'lotId'>): void {
+  if (filters.warehouseId !== undefined || filters.locationId !== undefined || filters.itemId !== undefined || filters.lotId !== undefined) {
     return;
   }
   const errors: ErrorItem[] = ['warehouseId', 'itemId', 'lotId'].map((field) => ({

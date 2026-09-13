@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { PageMeta } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
+import { NotFoundException } from '@nestjs/common';
 import { dispositionByNonconformanceQuery } from './disposition-query';
 import { DispositionRemainingSummary, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
@@ -54,7 +56,17 @@ async function targetOf(prisma: PrismaService, nonconformanceId: number): Promis
   return { affectedQtyTotal, uomId: lots.length > 0 ? Number(lots[0].uom_id) : Number(nc.item.base_uom_id) };
 }
 
-export async function dispositionsByNonconformance(prisma: PrismaService, nonconformanceId: number): Promise<DispositionsByNonconformance> {
+export async function dispositionsByNonconformance(
+  prisma: PrismaService, nonconformanceId: number, scope?: TerminalQualityReadScope,
+): Promise<DispositionsByNonconformance> {
+  if (scope !== undefined) {
+    const owned = await prisma.nonconformance.findFirst({
+      where: { nonconformance_id: BigInt(nonconformanceId),
+        work_order_nonconformance_work_order_idTowork_order: terminalQualityWorkOrderWhere(scope) },
+      select: { nonconformance_id: true },
+    });
+    if (!owned) throw new NotFoundException('없는 부적합입니다.');
+  }
   const built = dispositionByNonconformanceQuery(nonconformanceId);
   const [rows, target] = await Promise.all([prisma.$queryRawUnsafe<DispositionDecisionRow[]>(built.sql, ...built.params), targetOf(prisma, nonconformanceId)]);
   const items = rows.map((row) => dispositionDecisionView(row).view);

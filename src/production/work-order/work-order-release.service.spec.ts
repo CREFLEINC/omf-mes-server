@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { ContractException } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotRegistryService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
@@ -24,6 +25,8 @@ const component = (id: bigint, requiredQty: number): Row => ({
 function stub(options: {
   typeCode?: string;
   destination?: bigint | null;
+  fgDestination?: bigint | null;
+  scrapDestination?: bigint | null;
   components?: Row[];
 }) {
   /** 부른 순서 — 채번이 트랜잭션 «밖»인지 이 배열이 가른다. */
@@ -41,6 +44,8 @@ function stub(options: {
     routing_operation_id: ROUTING_OPERATION,
     work_order_type_code: options.typeCode ?? 'NORMAL',
     default_wip_location_id: options.destination === undefined ? 77n : options.destination,
+    default_fg_location_id: options.fgDestination === undefined ? 78n : options.fgDestination,
+    default_scrap_location_id: options.scrapDestination === undefined ? 79n : options.scrapDestination,
     routing_operation: { standard_cycle_time_sec: null, standard_yield_rate: null },
     production_plan: {
       bom_id: BOM,
@@ -172,16 +177,32 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.calls).not.toContain('numbering');
   });
 
-  it('배포 — 도착 위치를 못 풀면 요청 없이 배포는 성공한다', async () => {
-    const harness = stub({ destination: null, components: [component(1n, 2)] });
+  it('배포 — 기본 위치가 빠지면 세 필드의 400을 내고 아무 결과도 쓰지 않는다', async () => {
+    const harness = stub({
+      destination: null,
+      fgDestination: null,
+      scrapDestination: null,
+      components: [component(1n, 2)],
+    });
 
-    await release(harness);
+    let caught: unknown;
+    try {
+      await release(harness);
+    } catch (error) {
+      caught = error;
+    }
 
-    // 400 이 아니다 — 요청은 배포의 곁들임이지 게이트가 아니다.
-    expect(harness.updated[0]).toMatchObject({ status_code: 'RELEASED' });
-    expect(harness.lots).toHaveLength(2);
+    expect(caught).toBeInstanceOf(ContractException);
+    expect((caught as ContractException).errors).toEqual([
+      expect.objectContaining({ field: 'defaultWipLocationId', code: 'REQUIRED' }),
+      expect.objectContaining({ field: 'defaultFgLocationId', code: 'REQUIRED' }),
+      expect.objectContaining({ field: 'defaultScrapLocationId', code: 'REQUIRED' }),
+    ]);
+    expect(harness.updated).toEqual([]);
+    expect(harness.lots).toEqual([]);
     expect(harness.requests).toEqual([]);
     expect(harness.componentWheres).toEqual([]);
+    expect(harness.calls).toEqual([]);
   });
 
   it('배포 — 채번은 `$transaction` 을 열기 전에 부른다', async () => {

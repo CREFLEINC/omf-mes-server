@@ -17,6 +17,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -66,8 +67,8 @@ export class WorkOrderController {
 
   @Get()
   @Contract('GET /production/work-orders')
-  list(@Query() query: WorkOrderListQuery): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: WorkOrderListQuery): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
+    return this.queries.list(query, currentTerminal(request));
   }
 
   @Get(':workOrderId')

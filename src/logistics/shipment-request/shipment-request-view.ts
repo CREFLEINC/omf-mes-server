@@ -69,6 +69,7 @@ export interface ShipmentRequestView {
   shipmentRequestId: number;
   shipmentRequestNo: string;
   salesOrderId: number | null;
+  fulfillmentPlantId: number | null;
   customerId: number;
   shipToPartnerId: number;
   requestedShipDate: string;
@@ -113,6 +114,8 @@ export function shipmentRequestView(
     shipmentRequestId: Number(row.shipment_request_id),
     shipmentRequestNo: row.shipment_request_no,
     salesOrderId: row.sales_order_id === null ? null : Number(row.sales_order_id),
+    fulfillmentPlantId:
+      row.fulfillment_plant_id === null ? null : Number(row.fulfillment_plant_id),
     customerId: Number(row.customer_id),
     shipToPartnerId: Number(row.ship_to_partner_id),
     requestedShipDate: toDateString(row.requested_ship_date) as string,

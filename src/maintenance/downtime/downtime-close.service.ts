@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { recordTerminalWorkerAudit } from "../../audit/terminal-worker-audit";
 
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
 import { assertWorkerNoExists } from "../../common/master";
@@ -65,7 +66,7 @@ export class DowntimeCloseService {
     const rows = await tx.$queryRaw<ClosedDowntime[]>`
       UPDATE maintenance.equipment_downtime
       SET ended_at=${ended.sqlTimestamp}::timestamptz,
-        closed_by=${BigInt(context.appUserId)},
+        closed_by=${context.appUserId === undefined ? null : BigInt(context.appUserId)},
         closed_by_worker_no=${context.workerNo},
         version_no=version_no+1
       WHERE equipment_downtime_id=${locked.downtime_id}
@@ -81,6 +82,11 @@ export class DowntimeCloseService {
     ) {
       throw new Error("Stored downtime close differs from the server instant");
     }
+
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: context.terminalAudit, targetTypeCode: 'EQUIPMENT_DOWNTIME',
+      targetId: closed.downtime_id, eventTypeCode: 'CLOSED',
+    });
 
     const row = await readDowntimeWithin(tx, closed.downtime_id);
     if (row === null) throw new Error("Closed downtime is missing");

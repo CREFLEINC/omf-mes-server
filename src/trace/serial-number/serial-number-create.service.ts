@@ -117,7 +117,7 @@ export class SerialNumberCreateService {
     const producedAt = input.producedAt ?? null;
     const values = serialNos.map(
       (serialNo) =>
-        Prisma.sql`(${serialNo},${lot.item_id},${BigInt(input.lotId)},${INITIAL_STATUS},${producedAt}::timestamptz,${BigInt(context.appUserId)})`,
+        Prisma.sql`(${serialNo},${lot.item_id},${BigInt(input.lotId)},${INITIAL_STATUS},${producedAt}::timestamptz,${context.appUserId === undefined ? null : BigInt(context.appUserId)})`,
     );
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO trace.serial_number (serial_no,item_id,lot_id,status_code,produced_at,created_by)

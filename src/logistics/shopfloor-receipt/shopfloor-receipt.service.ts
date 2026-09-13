@@ -5,6 +5,8 @@ import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../comm
 import { assertCodeValues, assertWorkerNoPresent } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   SHOPFLOOR_RECEIPT_INCLUDE,
   ShopfloorReceiptDetail,
@@ -61,16 +63,17 @@ export class ShopfloorReceiptService {
 
   async create(
     input: ShopfloorReceiptCreate,
-    appUserId: number,
+    actorOrUser: LogisticsWriteActor | number,
     workerNo: string | undefined,
   ): Promise<ShopfloorReceiptDetail> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     assertWorkerNoPresent(workerNo);
     const plantId = await this.assertCreatable(input);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을
     //    둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `material-issue-request.service.ts:62`
     //    그대로). 결번은 허용한다. 기간 축은 클라이언트가 준 `businessDate` 그대로다(C-8).
     const no = await this.numbering.next('SHOPFLOOR_RECEIPT', plantId, input.businessDate);
-    return this.prisma.$transaction((tx) => this.write(tx, input, no, appUserId));
+    return this.prisma.$transaction((tx) => this.write(tx, input, no, actor));
   }
 
   /** §3-8 잠금 → INSERT → createMany → 같은 tx 되읽기(§3-1 ⑥~⑩). */
@@ -78,7 +81,7 @@ export class ShopfloorReceiptService {
     tx: Prisma.TransactionClient,
     input: ShopfloorReceiptCreate,
     shopfloorReceiptNo: string,
-    appUserId: number,
+    actor: LogisticsWriteActor,
   ): Promise<ShopfloorReceiptDetail> {
     // 목적은 재고가 아니라 «중복 수령»이다 — UNIQUE(goods_issue_id) 가 없어 행 잠금으로 레이스를 막는다(I-9 §3-8).
     await tx.$queryRaw`SELECT status_code FROM logistics.goods_issue WHERE goods_issue_id = ${input.goodsIssueId} FOR UPDATE`;
@@ -92,10 +95,10 @@ export class ShopfloorReceiptService {
         work_order_id: input.workOrderId,
         destination_location_id: input.destinationLocationId,
         received_at: new Date(input.receivedAt),
-        // 주체는 세션 계정이다 — `received_by` FK 는 `app.app_user` 다(사번 칸이 아니다 · §3-6).
-        received_by: appUserId,
+        // 계정 없는 단말은 같은 tx의 worker 감사 이벤트가 실제 행위자를 보존한다.
+        received_by: actor.appUserId ?? null,
         status_code: RECEIPT_REGISTERED,
-        created_by: appUserId,
+        created_by: actor.appUserId ?? null,
       },
     });
     // `variance_qty` 는 GENERATED STORED 다 — data 에 넣지 않는다(I-9.md §2-2).
@@ -109,8 +112,13 @@ export class ShopfloorReceiptService {
         received_qty: line.receivedQty,
         uom_id: line.uomId,
         variance_reason_code: line.varianceReasonCode ?? null,
-        created_by: appUserId,
+        created_by: actor.appUserId ?? null,
       })),
+    });
+
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'SHOPFLOOR_RECEIPT',
+      targetId: header.shopfloor_receipt_id, eventTypeCode: 'CREATE',
     });
 
     const row = await tx.shopfloor_receipt.findUniqueOrThrow({

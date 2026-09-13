@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { assertDetectedPeriodRequired, DefectRecordView, defectRecordView, detectedAtWhere } from './defect-view';
 
 /**
@@ -28,10 +29,13 @@ export interface DefectRecordListQuery {
 export class DefectRecordService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: DefectRecordListQuery): Promise<PagedResponse<DefectRecordView>> {
+  async list(query: DefectRecordListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<DefectRecordView>> {
     assertDetectedPeriodRequired(query);
     const page = pageRequest(query);
-    const where = buildDefectRecordWhere(query);
+    const where: Prisma.defect_recordWhereInput = {
+      ...buildDefectRecordWhere(query),
+      ...(scope === undefined ? {} : { lot: { plant_id: scope.plantId } }),
+    };
     // 기본 정렬 detected_at DESC 고정 — 계약에 sort 질의가 없다. 동률은 defect_record_id 로
     // 깬다(R-10 자리) — 안 그러면 반환 순서가 보장되지 않는다(I-24 선례).
     const orderBy: Prisma.defect_recordOrderByWithRelationInput[] = [{ detected_at: 'desc' }, { defect_record_id: 'desc' }];

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpStatus, Param, ParseIntPipe, Post, Query, Re
 import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -51,10 +52,19 @@ export class MaterialConsumptionController {
   create(@Req() request: Request, @Body() body: MaterialConsumptionCreate): Promise<MaterialConsumptionView> {
     // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:206-207`) — 사번의 필수 판정은 서비스 몫이다.
     const workerNo = request.headers['x-worker-no'];
+    const terminal = currentTerminal(request);
     const context = {
       workerNo: typeof workerNo === 'string' ? workerNo : undefined,
       idempotencyKey: String(request.headers['idempotency-key']),
       appUserId: currentSession(request)?.userId,
+      ...(terminal === undefined || typeof workerNo !== 'string' ? {} : {
+        terminalAudit: {
+          workerNo, terminalId: terminal.terminalId,
+          plantId: terminal.plantId,
+          correlationId: String(request.headers['idempotency-key']),
+          operationKey: 'POST /production/material-consumptions',
+        },
+      }),
     };
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.consumptions.create(body, context), FAMILY_CONFLICT_CODE);
   }

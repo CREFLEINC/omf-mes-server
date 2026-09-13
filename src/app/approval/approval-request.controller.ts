@@ -15,6 +15,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminalApprovalListScope } from '../../auth/terminal-app-read-scope';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runVersioned } from '../../common/master';
@@ -50,7 +51,10 @@ export class ApprovalRequestController {
     @Req() request: Request,
     @Query() query: ApprovalRequestQuery,
   ): Promise<PagedResponse<ApprovalRequestView>> {
-    return this.requests.list(query, actorId(request));
+    const terminalScope = currentTerminalApprovalListScope(request);
+    return terminalScope
+      ? this.requests.listForTerminal(query, terminalScope)
+      : this.requests.list(query, actorId(request));
   }
 
   @Get(':approvalRequestId')

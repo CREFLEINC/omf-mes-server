@@ -85,6 +85,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     workOrder: 0n,
     terminal: 0n,
     location: 0n,
+    fgLocation: 0n,
+    scrapLocation: 0n,
     componentItemA: 0n,
     componentItemB: 0n,
     overflowPlan: 0n,
@@ -264,7 +266,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         .set('Cookie', cookie)
         .expect(200);
 
-      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
+      const validate = validator('GET /production/work-orders');
+      const valid = validate(response.body);
+      if (!valid) throw new Error(JSON.stringify(validate.errors));
+      expect(valid).toBe(true);
     });
 
     it('목록 — withSummary=true 면 요약이 필터 전체 기준이다', async () => {
@@ -636,6 +641,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           uom_id: ids.uom,
           status_code: 'PLANNED',
           default_wip_location_id: ids.location,
+          default_fg_location_id: ids.fgLocation,
+          default_scrap_location_id: ids.scrapLocation,
           ...data,
         },
       });
@@ -696,17 +703,36 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(held).toBe(0);
     });
 
-    it('배포 — 라인·기본 위치가 없어도 계획으로 공장이 풀린다', async () => {
-      const workOrderId = await planned({ default_wip_location_id: null, production_line_id: null });
+    it('배포 — 생산 라인이 없어도 계획으로 공장이 풀린다', async () => {
+      const workOrderId = await planned({ production_line_id: null });
 
       await call(workOrderId, 100).expect(200);
 
-      // R-7 — 공장은 `production_plan → production_order.plant_id` 한 축으로만 푼다.
+      // R-7 — 공장은 계획의 생산오더 공장 한 축으로만 푼다.
       const lots = await slots(workOrderId);
       expect(lots).toHaveLength(1);
       expect(lots[0].plant_id).toBe(ids.plant);
-      // 도착 위치를 못 풀면 요청 없이 배포는 성공한다(400 이 아니다).
+      expect((await requests(workOrderId))[0].destination_location_id).toBe(ids.location);
+    });
+
+    it('배포 — 기본 위치 세 곳이 빠지면 필드별 400이며 슬롯·요청을 만들지 않는다', async () => {
+      const workOrderId = await planned({
+        default_wip_location_id: null,
+        default_fg_location_id: null,
+        default_scrap_location_id: null,
+      });
+
+      const response = await call(workOrderId, 100).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field: 'defaultWipLocationId', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'defaultFgLocationId', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'defaultScrapLocationId', code: 'REQUIRED' }),
+      ]);
+      expect(await slots(workOrderId)).toEqual([]);
       expect(await requests(workOrderId)).toEqual([]);
+      expect((await prisma.work_order.findUniqueOrThrow({
+        where: { work_order_id: BigInt(workOrderId) },
+      })).status_code).toBe('PLANNED');
     });
 
     it('배포 — 출고요청 1건과 BOM 라인 수만큼의 라인이 생긴다', async () => {
@@ -817,6 +843,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           uom_id: ids.uom,
           status_code: 'PLANNED',
           default_wip_location_id: ids.location,
+          default_fg_location_id: ids.fgLocation,
+          default_scrap_location_id: ids.scrapLocation,
         },
       });
       const workOrderId = Number(row.work_order_id);
@@ -897,20 +925,35 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
         })
         .expect(201);
       const workOrderId: number = created.body.workOrderId;
-      // ⚠ `WorkOrderCreate` 에 기본 WIP 위치 칸이 없다 — 화면은 `PUT` 으로 채운다. 마디의
-      //    관심은 배포가 요청을 «자동 발행»하는지라 그 한 칸만 픽스처로 심는다(버전은 그대로다).
-      await prisma.work_order.update({
-        where: { work_order_id: BigInt(workOrderId) },
-        data: { default_wip_location_id: ids.location },
-      });
-
-      await request(app.getHttpServer())
-        .post(`${base}/${workOrderId}:release`)
+      const configured = await request(app.getHttpServer())
+        .put(`${base}/${workOrderId}`)
         .set('Cookie', cookie)
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', created.headers.etag)
+        .send({
+          defaultWipLocationId: Number(ids.location),
+          defaultFgLocationId: Number(ids.fgLocation),
+          defaultScrapLocationId: Number(ids.scrapLocation),
+        })
+        .expect(200);
+      expect(configured.body).toMatchObject({
+        defaultWipLocationId: Number(ids.location),
+        defaultFgLocationId: Number(ids.fgLocation),
+        defaultScrapLocationId: Number(ids.scrapLocation),
+        versionNo: created.body.versionNo + 1,
+      });
+
+      const released = await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', String(configured.body.versionNo))
         .send({ lotSize: 30 })
         .expect(200);
+      expect(released.body).toMatchObject({
+        statusCode: 'RELEASED',
+        versionNo: Number(configured.body.versionNo) + 1,
+      });
 
       const detail = await request(app.getHttpServer())
         .get(`${base}/${workOrderId}?withPreIssuedLots=true`)
@@ -1291,6 +1334,18 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     ids.location = location.location_id;
+    const [fg, scrap] = await Promise.all(
+      ['FG', 'SCRAP'].map((suffix) => prisma.location.create({
+        data: {
+          warehouse_id: warehouse.warehouse_id,
+          location_code: PREFIX + '-' + suffix,
+          location_name: '작업지시검사' + suffix + '위치',
+          location_type_code: 'BIN',
+        },
+      })),
+    );
+    ids.fgLocation = fg.location_id;
+    ids.scrapLocation = scrap.location_id;
     // ⭐ 설비와 작업자를 «같은 숫자 id» 로 심는다 — 배정 유일키가 `resource_type_code` 를 함께
     //    보는지(같은 id 라도 유형이 다르면 배정된다)를 볼 유일한 길이다. 두 시퀀스는 서로
     //    모르므로 값을 못박고, 다음 자동 채번이 부딪히지 않게 시퀀스를 그 뒤로 민다.

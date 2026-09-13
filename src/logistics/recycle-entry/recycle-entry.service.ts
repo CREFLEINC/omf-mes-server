@@ -7,6 +7,7 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { LotRegistryService, nextMesLotNos } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { RecycleEntryView, recycleEntryView } from './recycle-entry-view';
 import { RecycleEntryCreate, postRecycleEntry } from './recycle-posting';
 
@@ -18,10 +19,8 @@ const QTY_SCALE = 6;
 const QTY_INT_LIMIT = '100000000000000';
 
 /** 헤더는 계약 검증 가드가 안 본다 — 컨트롤러가 꺼내 넘긴다(취급 단위 선례). */
-export interface RecycleEntryContext {
-  workerNo: string | undefined;
-  appUserId: number;
-}
+export type RecycleEntryContext = { workerNo: string | undefined } &
+  ({ actor: LogisticsWriteActor; appUserId?: never } | { appUserId: number; actor?: never });
 
 /**
  * 재생재 등록 하나(화면 `M-01-12`). ⛔ 조회 오퍼레이션이 **0건**이라 목록·상세가 없다.
@@ -67,7 +66,8 @@ export class RecycleEntryService {
         const [lotNo] = await nextMesLotNos(this.prisma, axis.plantId, input.businessDate, 1);
         const recycleEntryId = await this.prisma.$transaction((tx) =>
           postRecycleEntry(tx, this.posting, this.lots, {
-            input, recycleEntryNo: no, lotNo, ...axis, appUserId: context.appUserId,
+            input, recycleEntryNo: no, lotNo, ...axis,
+            actor: context.actor ?? { appUserId: context.appUserId as number },
           }),
         );
         return await this.read(recycleEntryId, input.businessDate);

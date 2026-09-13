@@ -3,7 +3,15 @@ import { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { PostingInput } from '../../core/inventory-posting/posting.types';
-import { AdjustmentLineWriteInput, PostAdjustmentInput, postAdjustment } from './adjustment-posting';
+import { AdjustmentLineWriteInput, PostAdjustmentInput, postAdjustment as postWithActor } from './adjustment-posting';
+
+/** Existing account-session posting contract, expressed through the explicit actor type. */
+const postAdjustment = (
+  tx: Parameters<typeof postWithActor>[0],
+  posting: Parameters<typeof postWithActor>[1],
+  input: PostAdjustmentInput,
+  appUserId: number,
+) => postWithActor(tx, posting, input, { appUserId });
 
 const LE = 1n;
 const BU = 2n;

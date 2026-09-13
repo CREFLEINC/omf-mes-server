@@ -176,6 +176,7 @@ describe('LotHoldService', () => {
       release_condition: '재검',
       remarks: null,
       held_by: 7n,
+      held_worker_id: null,
       held_at: NOW,
       created_by: 7n,
     });
@@ -183,6 +184,16 @@ describe('LotHoldService', () => {
     expect(args[2].data).toMatchObject({ lot_id: 2n, hold_qty: null, target_lot_status_code: 'INSPECTION_PENDING' });
     // 반환 순서가 입력 순서여야 호출자가 LOT 마다 `lot_hold_id` 를 되짚는다(R-12).
     expect(rows.map((r) => r.lot_id)).toEqual([1n, 2n]);
+  });
+
+  it('단말 보류와 해제는 앱 계정 대신 실제 작업자 FK를 남긴다', async () => {
+    const { tx, args } = fake([1n], [openRow({ hold_qty: null })]);
+    const locked = await service.lockLotsWithin(tx, [1n]);
+    const actor = { workerId: 23n, at: NOW };
+    await service.holdWithin(tx, locked, [holdInput()], actor);
+    await service.releaseWithin(tx, locked, { lotId: 1n, reasonCode: HELD_REASON }, RELEASE, actor);
+    expect(args[1].data).toMatchObject({ held_by: null, held_worker_id: 23n, created_by: null });
+    expect(args[3].data).toMatchObject({ released_by: null, released_worker_id: 23n });
   });
 
   it('⭐⭐ R-5 — 재계수가 잠금 «안»이다(코어가 세어 돌려주므로 호출자가 밖으로 못 흘린다)', async () => {
@@ -213,6 +224,7 @@ describe('LotHoldService', () => {
     expect(args[2].data).toEqual({
       released_at: NOW,
       released_by: 7n,
+      released_worker_id: null,
       release_reason_code: 'RETEST_PASS',
       release_target_lot_status_code: 'NORMAL',
       remarks: '풀었다',

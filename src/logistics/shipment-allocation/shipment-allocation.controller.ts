@@ -1,3 +1,4 @@
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -14,6 +15,7 @@ import type { Request } from 'express';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { AllocationPackingService, ShipmentLotAllocationPacking } from './allocation-packing.service';
 import {
   ShipmentAllocationFilters,
@@ -38,8 +40,8 @@ export class ShipmentAllocationController {
 
   @Get()
   @Contract('GET /logistics/shipment-lot-allocations')
-  list(@Query() query: ShipmentAllocationFilters): Promise<ShipmentAllocationListResponse> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: ShipmentAllocationFilters): Promise<ShipmentAllocationListResponse> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   /**
@@ -59,6 +61,7 @@ export class ShipmentAllocationController {
     @Body() body: ShipmentLotAllocationPacking,
   ): Promise<ShipmentLotAllocationView> {
     const workerNo = request.headers['x-worker-no'];
+    const actor = logisticsWriteActorOf(request, 'PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}');
     return runIdempotent(
       this.idempotency,
       request,
@@ -66,6 +69,7 @@ export class ShipmentAllocationController {
       () =>
         this.packing.pack(shipmentLotAllocationId, body, {
           workerNo: typeof workerNo === 'string' ? workerNo : undefined,
+          actor,
         }),
       FAMILY_CONFLICT_CODE,
     );

@@ -1,17 +1,14 @@
-import { HttpStatus, UnauthorizedException } from "@nestjs/common";
+import { HttpStatus } from "@nestjs/common";
 import type { Request } from "express";
 
-import { currentSession } from "../../auth/session-resolver.service";
+import { maintenanceWriteActorOf, type MaintenanceWriteActor } from "../terminal-maintenance-actor";
 import {
   IdempotencyContext,
   requestFingerprint,
 } from "../../common/idempotency";
 import { ERROR_CODE, field, one } from "../../common/errors";
 
-export type InspectionWriteContext = IdempotencyContext & {
-  appUserId: number;
-  workerNo: string;
-};
+export type InspectionWriteContext = IdempotencyContext & MaintenanceWriteActor & { workerNo: string };
 
 export function inspectionWriteContext(
   request: Request,
@@ -31,18 +28,17 @@ export function inspectionWriteContext(
       ),
     );
   }
-  const session = currentSession(request);
-  if (session === undefined)
-    throw new UnauthorizedException("로그인이 필요합니다.");
-  const appUserId = session.userId;
+  const actor = maintenanceWriteActorOf(request, 'POST /maintenance/inspections');
   return {
     key: String(request.headers["idempotency-key"]),
     fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
-      actorUserId: appUserId,
+      ...(actor.appUserId === undefined
+        ? { actorWorkerId: actor.terminalAudit.workerId.toString(), terminalId: actor.terminalAudit.terminalId.toString() }
+        : { actorUserId: actor.appUserId }),
       workerNo,
       body: request.body,
     }),
-    appUserId,
+    ...actor,
     workerNo,
     successStatus: HttpStatus.CREATED,
   };

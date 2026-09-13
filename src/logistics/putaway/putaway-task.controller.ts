@@ -1,10 +1,10 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -25,8 +25,8 @@ export class PutawayTaskController {
 
   @Get()
   @Contract('GET /logistics/putaway-tasks')
-  list(@Query() query: PutawayTaskQuery): Promise<PagedResponse<unknown>> {
-    return this.tasks.list(query);
+  list(@Req() request: Request, @Query() query: PutawayTaskQuery): Promise<PagedResponse<unknown>> {
+    return this.tasks.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':putawayTaskId')
@@ -52,7 +52,8 @@ export class PutawayTaskController {
     @Body() body: PutawayTaskComplete,
   ): Promise<PutawayTaskView> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.completes.complete(putawayTaskId, body, contextOf(request), 'NORMAL'),
+      this.completes.complete(putawayTaskId, body,
+        contextOf(request, 'POST /logistics/putaway-tasks/{putawayTaskId}:complete'), 'NORMAL'),
     );
   }
 
@@ -65,19 +66,18 @@ export class PutawayTaskController {
     @Body() body: PutawayTaskComplete,
   ): Promise<PutawayTaskView> {
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.completes.complete(putawayTaskId, body, contextOf(request), 'TEMPORARY'),
+      this.completes.complete(putawayTaskId, body,
+        contextOf(request, 'POST /logistics/putaway-tasks/{putawayTaskId}:complete-temporary'), 'TEMPORARY'),
     );
   }
 }
 
 /** 헤더는 계약 검증 가드가 안 본다 — 사번 필수 판정은 서비스 몫이다(피킹 선례). */
-function contextOf(request: Request): PutawayCompleteContext {
+function contextOf(request: Request, operationKey: string): PutawayCompleteContext {
   const workerNo = request.headers['x-worker-no'];
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
   return {
     workerNo: typeof workerNo === 'string' ? workerNo : undefined,
     version: ifMatchVersion(request),
-    appUserId: session.userId,
+    actor: logisticsWriteActorOf(request, operationKey),
   };
 }

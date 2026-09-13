@@ -5,6 +5,7 @@ import { DocumentStateModule } from "../core/document-state";
 import { NumberingModule } from "../core/numbering";
 import { PrismaModule } from "../prisma/prisma.module";
 import { BreakdownController } from "./breakdown/breakdown.controller";
+import { BreakdownAttachmentService } from "./breakdown/breakdown-attachment.service";
 import { BreakdownCreateService } from "./breakdown/breakdown-create.service";
 import { BreakdownHandlingService } from "./breakdown/breakdown-handling.service";
 import { BreakdownQueryService } from "./breakdown/breakdown-query.service";
@@ -64,6 +65,7 @@ import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
     InspectionWriteService,
     NumberedMaintenanceWrite,
     BreakdownCreateService,
+    BreakdownAttachmentService,
     BreakdownHandlingService,
     BreakdownQueryService,
     DowntimeQueryService,

@@ -1,3 +1,4 @@
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -52,8 +53,8 @@ export class ShipmentController {
 
   @Get()
   @Contract('GET /logistics/shipments')
-  list(@Query() query: ShipmentQuery): Promise<PagedResponse<ShipmentView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: ShipmentQuery): Promise<PagedResponse<ShipmentView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':shipmentId')

@@ -7,6 +7,8 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { StockTransferQueryService } from './stock-transfer-query.service';
 import { StockTransferDetail } from './stock-transfer-view';
 import { TransferLineWriteInput, postTransferIssue } from './transfer-posting';
@@ -62,8 +64,9 @@ export class StockTransferService {
   async create(
     input: StockTransferCreate,
     workerNo: string | undefined,
-    appUserId: number,
+    actorOrUser: LogisticsWriteActor | number,
   ): Promise<{ detail: StockTransferDetail; versionNo: number }> {
+    const actor: LogisticsWriteActor = typeof actorOrUser === 'number' ? { appUserId: actorOrUser } : actorOrUser;
     await assertWorkerNoExists(this.prisma, workerNo);
     const plantId = await this.assertWritable(input);
 
@@ -72,7 +75,7 @@ export class StockTransferService {
         // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 열린 트랜잭션 안에서 부르면 한
         //    요청이 커넥션을 둘 쥐어 풀 고갈 시 `P2024` 로 죽는다(I-2.md R-2).
         const transferNo = await this.numbering.next('STOCK_TRANSFER', plantId, input.businessDate);
-        const id = await this.prisma.$transaction((tx) => this.write(tx, input, transferNo, appUserId));
+        const id = await this.prisma.$transaction((tx) => this.write(tx, input, transferNo, actor));
         const { stockTransfer, lines, versionNo } = await this.queries.get(Number(id));
         return { detail: { stockTransfer, lines }, versionNo };
       } catch (error) {
@@ -89,7 +92,7 @@ export class StockTransferService {
     tx: Prisma.TransactionClient,
     input: StockTransferCreate,
     transferNo: string,
-    appUserId: number,
+    actor: LogisticsWriteActor,
   ): Promise<bigint> {
     const occurredAt = new Date(input.occurredAt);
     const header = await tx.stock_transfer.create({
@@ -106,8 +109,8 @@ export class StockTransferService {
         // 생성과 반출이 한 오퍼레이션이라 태어나는 순간 반출이 끝나 있다.
         shipped_at: occurredAt,
         status_code: REGISTERED,
-        created_by: appUserId,
-        updated_by: appUserId,
+        created_by: actor.appUserId ?? null,
+        updated_by: actor.appUserId ?? null,
         stock_transfer_line: {
           create: input.lines.map((line, index) => ({
             // 계약 「서버가 부여하며 화면이 정하지 않는다」.
@@ -121,7 +124,7 @@ export class StockTransferService {
             from_location_id: line.fromLocationId,
             to_location_id: line.toLocationId,
             handling_unit_id: line.handlingUnitId ?? null,
-            created_by: appUserId,
+            created_by: actor.appUserId ?? null,
           })),
         },
       },
@@ -157,7 +160,7 @@ export class StockTransferService {
         businessDate: input.businessDate,
         occurredAt,
       },
-      appUserId,
+      actor.appUserId,
     );
     for (const [index, line] of lines.entries()) {
       await tx.stock_transfer_line.update({
@@ -165,6 +168,10 @@ export class StockTransferService {
         data: { issue_transaction_line_id: ledgerLineIds[index] },
       });
     }
+    if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: actor.terminalAudit, targetTypeCode: 'STOCK_TRANSFER', targetId: header.stock_transfer_id,
+      eventTypeCode: 'CREATE',
+    });
     return header.stock_transfer_id;
   }
 

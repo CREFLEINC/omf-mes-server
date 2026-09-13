@@ -1,3 +1,4 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import {
   Body,
   Controller,
@@ -9,11 +10,10 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { currentTerminal } from '../../auth/terminal-context';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -39,8 +39,8 @@ export class PickingController {
 
   @Get()
   @Contract('GET /logistics/picking-orders')
-  list(@Query() query: PickingOrderQuery): Promise<PagedResponse<PickingOrderView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: PickingOrderQuery): Promise<PagedResponse<PickingOrderView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':pickingOrderId')
@@ -68,12 +68,10 @@ export class PickingController {
   ): Promise<PickingLineView> {
     // ⛔ 헤더는 계약 검증 가드가 안 본다(`contract-validator.ts:206-207`) — 필수 판정은 서비스 몫이다.
     const workerNo = request.headers['x-worker-no'];
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
     const context = {
       workerNo: typeof workerNo === 'string' ? workerNo : undefined,
       version: ifMatchVersion(request),
-      appUserId: session.userId,
+      actor: logisticsWriteActorOf(request, 'POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick'),
     };
 
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>

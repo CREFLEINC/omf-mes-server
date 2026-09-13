@@ -7,8 +7,9 @@ export type AttachmentView = ReturnType<typeof attachmentView>;
  * 계약 `Attachment`(required 7 · 프로퍼티 8)로 옮기는 자리(I-34.md §1-3).
  *
  * ⭐ 형제 뷰와 달리 `omitEmpty` 를 쓰지 않는다 — 계약 8칸이 «전건» 언제나 값을 갖는다
- * (널 가능 칸 0개). `uploadedBy` 도 계약은 `[integer,null]` 로 적었지만 물리
- * `uploaded_by` 가 `NOT NULL FK` 라 언제나 값이 있다. `storageKey`·`checksumSha256`
+ * (널 가능 칸 0개). `uploadedBy` 는 계약대로 계정 업로드에서 정수,
+ * 단말 작업자 업로드에서 null 이다. 작업자 귀속은 `uploaded_worker_id` 에 보존한다.
+ * `storageKey`·`checksumSha256`
  * 은 계약에 없는 칸이라 애초에 담지 않는다 — 외부 저장소 키를 새지 않는다(§3).
  */
 export function attachmentView(row: AttachmentRow) {
@@ -20,6 +21,6 @@ export function attachmentView(row: AttachmentRow) {
     contentType: row.mime_type,
     byteSize: Number(row.file_size),
     uploadedAt: row.uploaded_at.toISOString(),
-    uploadedBy: Number(row.uploaded_by),
+    uploadedBy: row.uploaded_by === null ? null : Number(row.uploaded_by),
   };
 }

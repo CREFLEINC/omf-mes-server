@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { optional, resolveWorkerId } from '../../common/master';
@@ -42,6 +43,7 @@ export interface MaterialConsumptionContext {
   workerNo: string | undefined;
   idempotencyKey: string;
   appUserId: number | undefined;
+  terminalAudit?: Omit<TerminalWorkerAuditActor, 'workerId'>;
 }
 
 /** 트랜잭션 «밖»에서 다 푼 값 — 안에서는 INSERT 와 되읽기만 한다. */
@@ -127,6 +129,11 @@ export class MaterialConsumptionService {
         created_by: context.appUserId,
       },
       select: { material_consumption_id: true },
+    });
+    if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+      actor: { ...context.terminalAudit, workerId: resolved.workerId },
+      targetTypeCode: 'MATERIAL_CONSUMPTION', targetId: created.material_consumption_id,
+      eventTypeCode: 'CREATED',
     });
     const row = await tx.material_consumption.findUniqueOrThrow({
       where: { material_consumption_id: created.material_consumption_id },

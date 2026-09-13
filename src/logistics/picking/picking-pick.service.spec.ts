@@ -42,12 +42,15 @@ interface Seed {
   issuedLine?: boolean;
   held?: boolean;
   blocked?: boolean;
+  auditFails?: boolean;
 }
 
 function fake(seed: Seed = {}) {
   const picks: PickMove[][] = [];
   const updates: Row[] = [];
   const issuedWhere: Row[] = [];
+  const audits: string[] = [];
+  let committed = false;
 
   const line: Row | undefined =
     seed.line === undefined
@@ -65,6 +68,13 @@ function fake(seed: Seed = {}) {
       : seed.line;
 
   const tx: Row = {
+    worker: { findFirst: async () => ({ worker_id: 8n }) },
+    terminal: { findFirst: async () => ({ terminal_id: 4n }) },
+    audit_event: { create: async () => {
+      audits.push('create');
+      if (seed.auditFails) throw new Error('audit unavailable');
+      return {};
+    } },
     $queryRaw: async (strings: TemplateStringsArray) => {
       const sql = strings.join('?');
       // 잔액 잠금과 라인 잠금이 같은 문으로 오므로 표 이름으로 가른다.
@@ -95,8 +105,11 @@ function fake(seed: Seed = {}) {
   };
 
   const prisma = {
-    $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
-      work(tx as unknown as Prisma.TransactionClient),
+    $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+      const result = await work(tx as unknown as Prisma.TransactionClient);
+      committed = true;
+      return result;
+    },
   } as unknown as PrismaService;
 
   const posting = {
@@ -107,7 +120,8 @@ function fake(seed: Seed = {}) {
     get: async () => ({ pickingOrder: {}, lines: [{ pickingLineId: LINE, pickedQty: 7 }] }),
   } as unknown as PickingQueryService;
 
-  return { service: new PickingPickService(prisma, posting, queries), picks, updates, issuedWhere };
+  return { service: new PickingPickService(prisma, posting, queries), picks, updates, issuedWhere,
+    audits, committed: () => committed };
 }
 
 const body = (over: Partial<PickingLinePick> = {}): PickingLinePick => ({
@@ -132,6 +146,20 @@ const codeOf = (error: ContractException): string =>
   (error.getResponse() as { errors: { code: string; field?: string }[] }).errors[0].code;
 
 describe('라인 피킹 :pick', () => {
+  it('계정 없는 단말 피킹은 작업자 감사가 같은 트랜잭션에서 성공해야 커밋한다', async () => {
+    const actor = { workerId: 8n, terminalAudit: { workerId: 8n, workerNo: 'W-001',
+      terminalId: 4n, plantId: 3n, correlationId: 'pick-1',
+      operationKey: 'POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick' } };
+    const ok = fake();
+    await ok.service.pick(ORDER, LINE, body(), { workerNo: 'W-001', actor });
+    expect(ok.updates[0].data).toMatchObject({ updated_by: null });
+    expect(ok.audits).toEqual(['create']);
+    expect(ok.committed()).toBe(true);
+    const fail = fake({ auditFails: true });
+    await expect(fail.service.pick(ORDER, LINE, body(), { workerNo: 'W-001', actor }))
+      .rejects.toThrow('audit unavailable');
+    expect(fail.committed()).toBe(false);
+  });
   it('blocks_picking 행이 없으면 통과한다(오늘의 데이터)', async () => {
     const { service, picks, updates } = fake();
 

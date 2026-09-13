@@ -77,4 +77,14 @@ describe('ContractValidationGuard', () => {
 
     expect(request.body).toBe(body);
   });
+
+  it('accepts both POP calendar dates and MOBILE ISO instants for inspection windows', () => {
+    for (const query of [
+      { equipmentId: '5', inspectedFrom: '2026-09-12', inspectedTo: '2026-09-12' },
+      { equipmentId: '5', inspectedFrom: '2026-09-12T00:00:00.000Z', inspectedTo: '2026-09-12T10:00:00.000Z' },
+    ]) {
+      const { context } = contextFor('GET /maintenance/inspections', { query });
+      expect(guard.canActivate(context)).toBe(true);
+    }
+  });
 });

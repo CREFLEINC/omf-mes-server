@@ -1,3 +1,5 @@
+import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -11,11 +13,9 @@ import {
   Query,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
@@ -46,8 +46,8 @@ export class StockTransferController {
 
   @Get()
   @Contract('GET /logistics/stock-transfers')
-  list(@Query() query: StockTransferQuery): Promise<PagedResponse<StockTransferView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: StockTransferQuery): Promise<PagedResponse<StockTransferView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   @Get(':stockTransferId')
@@ -72,10 +72,10 @@ export class StockTransferController {
     @Res({ passthrough: true }) response: Response,
     @Body() body: StockTransferCreate,
   ): Promise<StockTransferDetail> {
-    const appUserId = userOf(request);
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/stock-transfers');
     const workerNo = request.header('X-Worker-No') ?? undefined;
     const result = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
-      this.transfers.create(body, workerNo, appUserId),
+      this.transfers.create(body, workerNo, actor),
     );
     setEtag(response, result.versionNo);
     return result.detail;
@@ -138,18 +138,12 @@ function versionOf(request: Request): number {
   return version;
 }
 
-function userOf(request: Request): number {
-  const session = currentSession(request);
-  if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-  return session.userId;
-}
-
 /** 헤더는 계약 검증 가드가 안 본다 — 사번 필수 판정은 서비스 몫이다(적치 선례). */
 function contextOf(request: Request): ArriveContext {
   const workerNo = request.header('X-Worker-No');
   return {
     workerNo: typeof workerNo === 'string' ? workerNo : undefined,
     version: ifMatchVersion(request),
-    appUserId: userOf(request),
+    actor: logisticsWriteActorOf(request, 'POST /logistics/stock-transfers/{stockTransferId}:arrive'),
   };
 }

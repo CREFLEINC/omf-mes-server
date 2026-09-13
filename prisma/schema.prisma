@@ -89,7 +89,8 @@ model approval_request {
   approval_type_code                             String                 @db.VarChar(50)
   target_type_code                               String                 @db.VarChar(50)
   target_id                                      BigInt
-  requested_by                                   BigInt
+  requested_by                                   BigInt?
+  requested_worker_id                            BigInt?
   requested_at                                   DateTime               @db.Timestamptz(6)
   status_code                                    String                 @db.VarChar(50)
   reason                                         String
@@ -100,7 +101,8 @@ model approval_request {
   decided_at                                     DateTime?              @db.Timestamptz(6)
   decided_by                                     BigInt?
   app_user_approval_request_decided_byToapp_user app_user?              @relation("approval_request_decided_byToapp_user", fields: [decided_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
-  app_user                                       app_user               @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                                       app_user?              @relation(fields: [requested_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  requested_worker                               worker?                @relation(fields: [requested_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   approval_step                                  approval_step[]
   inventory_adjustment                           inventory_adjustment[]
   goods_issue                                    goods_issue[]
@@ -181,10 +183,13 @@ model attachment {
   mime_type        String   @db.VarChar(150)
   file_size        BigInt
   checksum_sha256  String?  @db.VarChar(64)
-  uploaded_by      BigInt
+  uploaded_by      BigInt?
+  uploaded_worker_id BigInt?
   uploaded_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  app_user         app_user @relation(fields: [uploaded_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user         app_user? @relation(fields: [uploaded_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  worker           worker?   @relation(fields: [uploaded_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([uploaded_worker_id], map: "ix_attachment_uploaded_worker")
   @@schema("app")
 }
 
@@ -197,7 +202,7 @@ model document_issue_log {
   lot_id                BigInt?
   issue_seq             Int       @default(1)
   reissue_reason_code   String?   @db.VarChar(50)
-  issued_by             BigInt
+  issued_by             BigInt?
   issued_at             DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   terminal_id           BigInt?
   printer_name          String?   @db.VarChar(100)
@@ -208,7 +213,7 @@ model document_issue_log {
   issued_worker_id         BigInt?
   print_reported_worker_id BigInt?
   print_reported_by        BigInt?
-  app_user                 app_user  @relation("document_issue_log_issued_by", fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                 app_user? @relation("document_issue_log_issued_by", fields: [issued_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   print_reported_user      app_user? @relation("document_issue_log_print_reported_by", fields: [print_reported_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   issued_worker            worker?   @relation("document_issue_log_issued_worker", fields: [issued_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   print_reported_worker    worker?   @relation("document_issue_log_print_reported_worker", fields: [print_reported_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
@@ -579,11 +584,13 @@ model inventory_count_line {
   uom_id                  BigInt
   variance_reason_code    String?         @db.VarChar(50)
   counted_by              BigInt?
+  counted_worker_id       BigInt?
   counted_at              DateTime        @db.Timestamptz(6)
   counted                 Boolean         @default(false)
   created_at              DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by              BigInt?
   app_user                app_user?       @relation(fields: [counted_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_inventory_count_line_counted_by")
+  counted_worker          worker?         @relation(fields: [counted_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   inventory_adjustment_line inventory_adjustment_line[]
   inventory_count         inventory_count @relation(fields: [inventory_count_id], references: [inventory_count_id], onDelete: NoAction, onUpdate: NoAction)
   item                    item            @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
@@ -593,6 +600,7 @@ model inventory_count_line {
 
   @@unique([inventory_count_id, line_no], map: "uq_inventory_count_line")
   @@index([location_id], map: "ix_inventory_count_line_location")
+  @@index([counted_worker_id], map: "ix_inventory_count_line_counted_worker")
   @@schema("inventory")
 }
 
@@ -1324,6 +1332,7 @@ model shipment_lot_allocation {
   shipment_line_id           BigInt
   lot_id                     BigInt
   handling_unit_id           BigInt?
+  delivery_label_no          String?              @unique(map: "uq_shipment_lot_allocation_delivery_label_no") @db.VarChar(50)
   allocated_qty              Decimal              @db.Decimal(20, 6)
   uom_id                     BigInt
   created_at                 DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -1355,14 +1364,17 @@ model shipment_request {
   ship_time_slot_end                                   DateTime?               @db.Time(6)
   ship_time_slot_code                                  String?                 @db.VarChar(50)
   sales_order_id                                       BigInt?
+  fulfillment_plant_id                                 BigInt?
   shipment                                             shipment[]
   partner_shipment_request_customer_idTopartner        partner                 @relation("shipment_request_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_shipment_request_ship_to_partner_idTopartner partner                 @relation("shipment_request_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order                                          sales_order?            @relation(fields: [sales_order_id], references: [sales_order_id], onDelete: NoAction, onUpdate: NoAction)
+  fulfillment_plant                                    plant?                  @relation(fields: [fulfillment_plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   shipment_request_line                                shipment_request_line[]
 
   @@index([customer_id, requested_ship_date, status_code], map: "ix_shipment_customer_date")
   @@index([sales_order_id], map: "ix_shipment_request_sales_order")
+  @@index([fulfillment_plant_id, status_code], map: "ix_shipment_request_fulfillment_plant_status")
   @@schema("logistics")
 }
 
@@ -2101,6 +2113,7 @@ model plant {
   worker                    worker[]
   production_order          production_order[]
   lot                       lot[]
+  shipment_request          shipment_request[]
 
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
@@ -2397,6 +2410,9 @@ model worker {
   maintenance_result             maintenance_result[]
   tool_usage                     tool_usage[]
   issued_document_issue_log      document_issue_log[]             @relation("document_issue_log_issued_worker")
+  attachment                     attachment[]
+  counted_inventory_lines         inventory_count_line[]
+  performed_repack_events         handling_unit_repack_event[]
   reported_document_issue_log    document_issue_log[]             @relation("document_issue_log_print_reported_worker")
   app_user                       app_user?                        @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit                  business_unit                    @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2410,6 +2426,10 @@ model worker {
   work_session_worker            work_session_worker[]
   defect_record                  defect_record[]
   inspection_result              inspection_result[]
+  requested_approval_requests    approval_request[]
+  changed_lot_status_events      lot_status_event[]
+  held_lot_holds                 lot_hold[]                       @relation("lot_hold_held_worker")
+  released_lot_holds             lot_hold[]                       @relation("lot_hold_released_worker")
   repair_result                  repair_result[]
   sorting_result                 sorting_result[]
 
@@ -3682,8 +3702,10 @@ model lot_hold {
   release_condition                       String?
   status_code                             String    @db.VarChar(50)
   held_by                                 BigInt?
+  held_worker_id                          BigInt?
   held_at                                 DateTime  @db.Timestamptz(6)
   released_by                             BigInt?
+  released_worker_id                      BigInt?
   released_at                             DateTime? @db.Timestamptz(6)
   remarks                                 String?
   created_at                              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -3693,8 +3715,10 @@ model lot_hold {
   release_target_lot_status_code          String?   @db.VarChar(50)
   version_no                              Int       @default(1)
   app_user_lot_hold_held_byToapp_user     app_user? @relation("lot_hold_held_byToapp_user", fields: [held_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  held_worker                             worker?   @relation("lot_hold_held_worker", fields: [held_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                     lot       @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   app_user_lot_hold_released_byToapp_user app_user? @relation("lot_hold_released_byToapp_user", fields: [released_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  released_worker                         worker?   @relation("lot_hold_released_worker", fields: [released_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   uom                                     uom?      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([held_at(sort: Desc)], map: "ix_lot_hold_held_at")
@@ -4817,11 +4841,13 @@ model lot_status_event {
   source_document_type_code String?   @db.VarChar(50)
   source_document_id        BigInt?
   changed_at                DateTime  @db.Timestamptz(6)
-  changed_by                BigInt
+  changed_by                BigInt?
+  changed_worker_id         BigInt?
   created_at                DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   transition_code           String    @db.VarChar(50)
   reason                    String?
-  app_user                  app_user  @relation(fields: [changed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                  app_user? @relation(fields: [changed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  changed_worker            worker?   @relation(fields: [changed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   location                  location? @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   lot                       lot       @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -5055,12 +5081,15 @@ model interface_column_mapping {
 model handling_unit_repack_event {
   handling_unit_repack_event_id BigInt                            @id @default(autoincrement())
   repack_type_code              String                            @db.VarChar(50)
-  performed_by                  BigInt
+  performed_by                  BigInt?
+  performed_worker_id           BigInt?
   occurred_at                   DateTime                          @db.Timestamptz(6)
   created_at                    DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  app_user                      app_user                          @relation(fields: [performed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                      app_user?                         @relation(fields: [performed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  performed_worker              worker?                           @relation(fields: [performed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   lines                         handling_unit_repack_event_line[]
 
+  @@index([performed_worker_id], map: "ix_handling_unit_repack_event_worker")
   @@schema("inventory")
 }
 

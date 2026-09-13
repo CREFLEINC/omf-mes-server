@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
 import { SourceCode, nonconformanceSourceWhere } from './nonconformance-source';
 import { NONCONFORMANCE_INCLUDE, NonconformanceView, assertOpenedPeriodRequired, nonconformanceView, openedAtWhere } from './nonconformance-view';
 
@@ -60,9 +61,12 @@ export class NonconformanceQueryService {
    * §0 판정 #5). 다른 계약 파일(`quality-03품질.json`)이 그 값을 다시 쓰는 «원천 검사기가 못
    * 보는» 자리라 여기 주석에 남긴다.
    */
-  async get(nonconformanceId: number): Promise<{ view: NonconformanceView; versionNo: number }> {
-    const row = await this.prisma.nonconformance.findUnique({
-      where: { nonconformance_id: BigInt(nonconformanceId) },
+  async get(nonconformanceId: number, scope?: TerminalQualityReadScope): Promise<{ view: NonconformanceView; versionNo: number }> {
+    const row = await this.prisma.nonconformance.findFirst({
+      where: { nonconformance_id: BigInt(nonconformanceId),
+        ...(scope === undefined ? {} : {
+          work_order_nonconformance_work_order_idTowork_order: terminalQualityWorkOrderWhere(scope),
+        }) },
       include: NONCONFORMANCE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 부적합입니다.');

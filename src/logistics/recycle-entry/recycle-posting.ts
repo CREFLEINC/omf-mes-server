@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client';
 
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { LotRegistryService } from '../../core/lot';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 
 /**
  * 재생재 등록 한 트랜잭션 — 등록 건 · LOT · 원장 전기 · 잔액.
@@ -49,14 +51,15 @@ export interface RecycleEntryCreate {
 }
 
 /** 번호 둘과 서버가 역산한 축 둘은 **트랜잭션 밖에서** 정해져 온다(§4-1·§6). */
-export interface RecycleEntryWrite {
+interface RecycleEntryWriteBase {
   input: RecycleEntryCreate;
   recycleEntryNo: string;
   lotNo: string;
   plantId: number;
   uomId: number;
-  appUserId: number;
 }
+export type RecycleEntryWrite = RecycleEntryWriteBase &
+  ({ actor: LogisticsWriteActor; appUserId?: never } | { actor?: never; appUserId: number });
 
 /**
  * 순서 불변식(입하와 같은 모양): ① 등록 건 INSERT(`lot_id = NULL`) ← `lot.source_id` 가 이 id 라
@@ -70,6 +73,7 @@ export async function postRecycleEntry(
   lots: LotRegistryService,
   write: RecycleEntryWrite,
 ): Promise<bigint> {
+  const actor: LogisticsWriteActor = write.actor ?? { appUserId: write.appUserId as number };
   const { input } = write;
   const entry = await tx.recycle_entry.create({
     data: {
@@ -86,7 +90,7 @@ export async function postRecycleEntry(
       processed_at: new Date(input.occurredAt),
       remarks: input.remarks ?? null,
       // ⛔ 원천 문서 짝은 **둘 다 NULL** — 가리킬 문서가 없으면 둘을 함께 비운다(A-10).
-      created_by: BigInt(write.appUserId),
+      created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
     },
   });
 
@@ -99,7 +103,8 @@ export async function postRecycleEntry(
       plantId: write.plantId, initialQty: input.quantity, uomId: write.uomId,
       sourceTypeCode: SOURCE_DOCUMENT_TYPE, sourceId: Number(entry.recycle_entry_id),
     },
-    write.appUserId,
+    actor.terminalAudit === undefined ? actor.appUserId as number
+      : { workerId: actor.workerId, terminalAudit: actor.terminalAudit },
   );
   await tx.recycle_entry.update({
     where: { recycle_entry_id: entry.recycle_entry_id },
@@ -120,7 +125,7 @@ export async function postRecycleEntry(
     sourceDocumentId: Number(entry.recycle_entry_id),
     // 헤더값이 아니라 «결정적» 키다 — 같은 등록을 다른 헤더 키로 보내도 원장이 하나다.
     idempotencyKey: `${SOURCE_DOCUMENT_TYPE}:${write.recycleEntryNo}`,
-    createdBy: write.appUserId,
+    createdBy: actor.appUserId,
     // ⛔ `from` 이 없다 — 그것이 「들어왔다」의 표현이다(원장은 유형 표를 두지 않는다).
     lines: [{
       itemId: input.itemId, lotId: Number(lot.lot_id), qty: input.quantity, uomId: write.uomId,
@@ -132,5 +137,9 @@ export async function postRecycleEntry(
     }],
   });
 
+  if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+    actor: actor.terminalAudit, targetTypeCode: 'RECYCLE_ENTRY',
+    targetId: entry.recycle_entry_id, eventTypeCode: 'CREATE',
+  });
   return entry.recycle_entry_id;
 }

@@ -51,10 +51,10 @@ export interface PagedResponse<T> {
  * → 400 `RANGE`). `skip` 을 만드는 자리가 여기 하나뿐이라 여기로 모은다.
  * `size` 는 `MAX_SIZE` 로 이미 잘려 이 문제가 없다.
  */
-export function pageRequest(query: { page?: number; size?: number } = {}): PageRequest {
+export function pageRequest(query: { page?: number; size?: number } = {}, maxSize = MAX_SIZE): PageRequest {
   const page = Math.max(DEFAULT_PAGE, Math.trunc(query.page ?? DEFAULT_PAGE) || DEFAULT_PAGE);
   const requested = Math.trunc(query.size ?? DEFAULT_SIZE) || DEFAULT_SIZE;
-  const size = Math.min(MAX_SIZE, Math.max(1, requested));
+  const size = Math.min(maxSize, Math.max(1, requested));
 
   const skip = (page - 1) * size;
   if (!Number.isSafeInteger(skip)) {

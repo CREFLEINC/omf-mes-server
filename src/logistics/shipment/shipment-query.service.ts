@@ -64,9 +64,13 @@ export class ShipmentQueryService {
    * ⛔ **`lines` 를 싣지 않는다**(§4-3) — `Shipment.required` 에 없고 목록 화면 어느 열도 라인을
    * 읽지 않는다. 상세(PR ②b)가 싣는다.
    */
-  async list(query: ShipmentQuery): Promise<PagedResponse<ShipmentView>> {
+  async list(query: ShipmentQuery, terminalPlantId?: bigint): Promise<PagedResponse<ShipmentView>> {
     const page = pageRequest(query);
     const where = whereSql(query);
+    if (terminalPlantId !== undefined) {
+      where.sql = `(${where.sql}) AND EXISTS (SELECT 1 FROM mdm.warehouse tw WHERE tw.warehouse_id = s.warehouse_id AND tw.plant_id = $${where.params.length + 1}::bigint)`;
+      where.params.push(terminalPlantId);
+    }
     const order = orderBySql(query.sort);
     // ⛔ `count(*) OVER ()` 로 세지 마라 — 범위 «밖» 쪽은 행이 0개라 `total` 이 0 으로 접히고
     //    화면 페이저가 사라져 1쪽으로 돌아올 길이 없어진다. `total` 은 쪽이 아니라 필터

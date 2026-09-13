@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { InventoryWriteActor } from '../inventory-write-actor';
 import type { BalanceLockKey } from '../../core/inventory-posting/balance-lock';
 import {
   LOCATION_ORG_SELECT,
@@ -82,7 +83,7 @@ export async function postAdjustment(
   tx: Tx,
   posting: InventoryPostingService,
   input: PostAdjustmentInput,
-  appUserId: number,
+  actor: InventoryWriteActor,
 ): Promise<void> {
   const { lines } = input;
   const orgs = await locationOrgs(tx, lines);
@@ -147,7 +148,7 @@ export async function postAdjustment(
     sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
     sourceDocumentId: Number(input.inventoryAdjustmentId),
     idempotencyKey: `${SOURCE_DOCUMENT_TYPE}:${input.inventoryAdjustmentNo}`,
-    createdBy: appUserId,
+    createdBy: actor.appUserId,
     lines: lines.map((line, index) => {
       // ⚠ 소유 축은 라인에 저장할 칸이 없다 — «잠근 잔액 행»에서 되읽는다(§3-3).
       const balance = picked.get(keyOf(keys[index])) as LockedRow;

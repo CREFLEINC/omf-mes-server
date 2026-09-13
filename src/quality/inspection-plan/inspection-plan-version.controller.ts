@@ -15,6 +15,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { Contract } from '../../common/contract';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { setEtag } from '../../common/optimistic-lock';
@@ -42,10 +43,11 @@ export class InspectionPlanVersionController {
   @Get(':inspectionPlanVersionId')
   @Contract('GET /quality/inspection-plan-versions/{inspectionPlanVersionId}')
   async get(
+    @Req() request: Request,
     @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<unknown> {
-    const { inspectionPlanVersion, editability, versionNo } = await this.versions.get(versionId);
+    const { inspectionPlanVersion, editability, versionNo } = await this.versions.get(versionId, currentTerminalQualityReadScope(request));
     setEtag(response, versionNo);
     return { inspectionPlanVersion, editability };
   }
@@ -78,9 +80,10 @@ export class InspectionPlanVersionController {
   @Get(':inspectionPlanVersionId/items')
   @Contract('GET /quality/inspection-plan-versions/{inspectionPlanVersionId}/items')
   async listItems(
+    @Req() request: Request,
     @Param('inspectionPlanVersionId', ParseIntPipe) versionId: number,
   ): Promise<unknown> {
-    return { items: await this.versions.listItems(versionId) };
+    return { items: await this.versions.listItems(versionId, currentTerminalQualityReadScope(request)) };
   }
 
   @Put(':inspectionPlanVersionId/items')

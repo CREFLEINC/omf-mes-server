@@ -47,7 +47,8 @@ interface EventLine {
 
 interface EventData {
   repack_type_code: string;
-  performed_by: number;
+  performed_by: number | null;
+  performed_worker_id: bigint | null;
   occurred_at: Date;
   lines: { create: EventLine[] };
 }
@@ -73,6 +74,7 @@ function fake(
   before: BeforeRow[],
   locked: { version_no: number } | null = { version_no: 3 },
   bumped = 1,
+  linkedAllocations = 0,
 ) {
   const recorded: Recorded = {
     calls: [],
@@ -84,11 +86,20 @@ function fake(
   let contentReads = 0;
 
   const tx = {
+    worker: { findFirst: async () => ({ worker_id: 8n }) },
+    terminal: { findFirst: async () => ({ terminal_id: 7n }) },
+    audit_event: { create: async () => ({}) },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       recorded.calls.push('lock');
       recorded.lockSql = strings.join('?');
       recorded.lockValues = values;
       return locked === null ? [] : [locked];
+    },
+    shipment_lot_allocation: {
+      count: async () => {
+        recorded.calls.push('allocation-check');
+        return linkedAllocations;
+      },
     },
     handling_unit_content: {
       findMany: async () => {
@@ -162,6 +173,24 @@ async function linesOf(
 }
 
 describe('구성 치환 — 자물쇠와 호출 순서(단위 3)', () => {
+  it('출하 배분에 연결된 HU는 잠금 안에서 거절하고 내용물을 건드리지 않는다', async () => {
+    const { service, recorded } = fake([row(ITEM_A, LOT_1, '3', UOM_EA)], { version_no: 3 }, 1, 1);
+
+    await expect(service.replace(HU, undefined, [], CONTEXT)).rejects.toBeInstanceOf(ConflictException);
+    expect(recorded.calls).toEqual(['transaction', 'lock', 'allocation-check']);
+  });
+
+  it('단말 작업자의 재포장 이력에는 worker_id를 남기고 계정 사용자를 비운다', async () => {
+    const { service, recorded } = fake([row(ITEM_A, LOT_1, '10', UOM_EA)]);
+
+    await service.replace(HU, undefined, [], { workerNo: 'W-1', workerId: 8n, terminalAudit: {
+      workerId: 8n, workerNo: 'W-1', terminalId: 7n, plantId: 3n,
+      correlationId: 'repack-1', operationKey: 'PUT /inventory/handling-units/{handlingUnitId}/contents',
+    } });
+
+    expect(recorded.event).toMatchObject({ performed_by: null, performed_worker_id: 8n });
+  });
+
   it('⭐ 부모를 `$transaction` 안에서 `FOR UPDATE` 로 잠그고, 그 «뒤»에 치환 전 구성을 읽는다', async () => {
     const { service, recorded } = fake([row(ITEM_A, LOT_1, '10', UOM_EA)]);
 
@@ -172,6 +201,7 @@ describe('구성 치환 — 자물쇠와 호출 순서(단위 3)', () => {
     expect(recorded.calls).toEqual([
       'transaction',
       'lock',
+      'allocation-check',
       'read-before',
       'delete',
       'create',

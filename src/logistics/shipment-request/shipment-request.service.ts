@@ -1,8 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
+import type { SessionScope } from '../../auth/session.types';
+import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertCodeValues, day } from '../../common/master';
+import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
@@ -29,11 +31,22 @@ export interface ShipmentRequestLineCreate {
 /** 계약 `ShipmentRequestCreate` — required 4 · 프로퍼티 6. */
 export interface ShipmentRequestCreate {
   salesOrderId?: number | null;
+  fulfillmentPlantId?: number | null;
   customerId: number;
   shipToPartnerId: number;
   requestedShipDate: string;
   timeSlotCode?: string | null;
   lines: ShipmentRequestLineCreate[];
+}
+
+/** 기존 미배정 요청에 공장을 지정하는 좁은 갱신 본문이다. */
+export interface ShipmentRequestUpdate {
+  fulfillmentPlantId: number;
+}
+
+export interface ShipmentRequestActor {
+  appUserId: number;
+  scopes: readonly SessionScope[];
 }
 
 /**
@@ -52,8 +65,8 @@ export class ShipmentRequestService {
     private readonly queries: ShipmentRequestQueryService,
   ) {}
 
-  async create(input: ShipmentRequestCreate, appUserId: number): Promise<ShipmentRequestView> {
-    await this.assertCreatable(input);
+  async create(input: ShipmentRequestCreate, actor: ShipmentRequestActor): Promise<ShipmentRequestView> {
+    await this.assertCreatable(input, actor);
     // ⛔⛔ 채번은 `$transaction` 을 «열기 전»이다 — 안에서 부르면 한 요청이 커넥션을 둘 쥐고,
     //    동시 요청이 풀에 이르면 서로를 기다려 `P2024` 로 죽는다(`numbering.service.ts:87-89`).
     //    결번은 허용한다(I-2 R-2). ⛔ 기간 축은 «클라이언트가 준» `requestedShipDate` 다 —
@@ -64,11 +77,95 @@ export class ShipmentRequestService {
       input.requestedShipDate,
     );
     const shipmentRequestId = await this.prisma.$transaction((tx) =>
-      this.write(tx, input, no, appUserId),
+      this.write(tx, input, no, actor.appUserId),
     );
     // ⭐ 201 본문은 ③b 의 상세 뷰 **그대로**다 — 파생 축 둘(진행·검사)을 여기서 다시 판정하면
     //   같은 건이 편성 직후와 재조회에서 다르게 보인다.
     return this.queries.get(Number(shipmentRequestId));
+  }
+
+  /**
+   * 구버전이 만든 미배정 요청을 이행 공장에 연결한다. 피킹이 시작된 요청은 소유를 옮기지
+   * 않고, 이미 출하가 있으면 그 출하 창고가 모두 같은 공장인지 확인한다.
+   */
+  async updateFulfillmentPlant(
+    shipmentRequestId: number,
+    expectedVersion: number,
+    input: ShipmentRequestUpdate,
+    actor: ShipmentRequestActor,
+  ): Promise<{ shipmentRequest: ShipmentRequestView; versionNo: number }> {
+    await this.assertFulfillmentPlant(input.fulfillmentPlantId, actor);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ shipment_request_id: bigint }[]>`
+        SELECT shipment_request_id
+          FROM logistics.shipment_request
+         WHERE shipment_request_id = ${BigInt(shipmentRequestId)}
+         FOR UPDATE`;
+      if (locked.length === 0) {
+        throw new NotFoundException('없는 출하작업지시입니다.');
+      }
+      const request = await tx.shipment_request.findUnique({
+        where: { shipment_request_id: BigInt(shipmentRequestId) },
+        include: {
+          shipment: { select: { warehouse: { select: { plant_id: true } } } },
+          shipment_request_line: { select: { shipment_request_line_id: true } },
+        },
+      });
+      if (request === null) throw new NotFoundException('없는 출하작업지시입니다.');
+      if (request.version_no !== expectedVersion) {
+        assertUpdated(0, 'user', {
+          code: 'VERSION_CONFLICT',
+          currentVersion: String(request.version_no),
+        });
+      }
+
+      const targetPlantId = BigInt(input.fulfillmentPlantId);
+      if (request.fulfillment_plant_id === targetPlantId) {
+        return { versionNo: request.version_no };
+      }
+
+      const lineIds = request.shipment_request_line.map((line) => line.shipment_request_line_id);
+      const picked =
+        lineIds.length === 0
+          ? null
+          : await tx.inventory_reservation.findFirst({
+              where: {
+                source_document_type_code: 'SHIPMENT_REQUEST_LINE',
+                source_document_id: { in: lineIds },
+              },
+              select: { inventory_reservation_id: true },
+            });
+      if (picked !== null) {
+        throw new ConflictException('user', '피킹이 시작된 출하작업지시는 공장을 바꿀 수 없습니다.', {
+          code: 'INVALID_STATE',
+        });
+      }
+      if (request.shipment.some((shipment) => shipment.warehouse.plant_id !== targetPlantId)) {
+        throw new ConflictException('user', '기존 출하 창고와 다른 공장을 지정할 수 없습니다.', {
+          code: 'INVALID_STATE',
+        });
+      }
+
+      const updated = await tx.shipment_request.updateMany({
+        where: {
+          shipment_request_id: request.shipment_request_id,
+          version_no: expectedVersion,
+        },
+        data: {
+          fulfillment_plant_id: targetPlantId,
+          updated_by: actor.appUserId,
+          version_no: { increment: 1 },
+        },
+      });
+      assertUpdated(updated.count, 'user', {
+        code: 'VERSION_CONFLICT',
+        currentVersion: String(request.version_no),
+      });
+      return { versionNo: expectedVersion + 1 };
+    });
+    const shipmentRequest = await this.queries.get(shipmentRequestId);
+    return { shipmentRequest, versionNo: result.versionNo };
   }
 
   /** 헤더 → 라인. ⛔ 되읽기는 트랜잭션 «밖»이다 — ③b 의 질의가 `PrismaService` 로 돈다. */
@@ -82,6 +179,7 @@ export class ShipmentRequestService {
       data: {
         shipment_request_no: shipmentRequestNo,
         sales_order_id: input.salesOrderId ?? null,
+        fulfillment_plant_id: input.fulfillmentPlantId ?? null,
         customer_id: input.customerId,
         ship_to_partner_id: input.shipToPartnerId,
         requested_ship_date: day('requestedShipDate', input.requestedShipDate),
@@ -120,10 +218,10 @@ export class ShipmentRequestService {
    * 한다(`W-04-01` §5-7)」다. ⇒ e2e W-8 이 그 자리의 **유일한** 그물이다.
    * ⛔ `lines: []` 를 여기서 다시 막지 않는다 — 계약 `minItems: 1` 이 이미 400 을 낸다(I-21 R-15).
    */
-  private async assertCreatable(input: ShipmentRequestCreate): Promise<void> {
+  private async assertCreatable(input: ShipmentRequestCreate, actor: ShipmentRequestActor): Promise<void> {
     // ⛔ 순서가 판정이다(§3-4) — 모양이 틀린 본문으로 참조 질의를 쏘지 않는다.
     this.assertShape(input);
-    await this.assertReferences(input);
+    await this.assertReferences(input, actor);
     // 값이 오면 코드 목록을 본다 — `null` 은 통과다(계약이 nullable 이고 「일부 항목」만 채운다).
     await assertCodeValues(this.prisma, [
       { field: 'timeSlotCode', value: input.timeSlotCode, groupCode: SHIPMENT_TIME_SLOT_GROUP },
@@ -158,7 +256,7 @@ export class ShipmentRequestService {
   }
 
   /** ② 참조 무결 — 존재 넷 + 짝 하나. 축마다 한 번씩 `IN` 으로 모아 읽는다(왕복 5회). */
-  private async assertReferences(input: ShipmentRequestCreate): Promise<void> {
+  private async assertReferences(input: ShipmentRequestCreate, actor: ShipmentRequestActor): Promise<void> {
     const errors: ErrorItem[] = [];
     const ids = (of: (l: ShipmentRequestLineCreate) => number | null | undefined): number[] =>
       [...new Set(input.lines.map(of).filter((id): id is number => id != null))];
@@ -204,5 +302,35 @@ export class ShipmentRequestService {
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+    if (input.fulfillmentPlantId !== undefined && input.fulfillmentPlantId !== null) {
+      await this.assertFulfillmentPlant(input.fulfillmentPlantId, actor);
+    }
+  }
+
+  private async assertFulfillmentPlant(plantId: number, actor: ShipmentRequestActor): Promise<void> {
+    if (!Number.isSafeInteger(plantId) || plantId < 1) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('fulfillmentPlantId', ERROR_CODE.RANGE, '이행 공장은 양의 정수여야 합니다.'),
+      ]);
+    }
+    const plant = await this.prisma.plant.findFirst({
+      where: { plant_id: BigInt(plantId), is_active: true },
+      select: { business_unit_id: true },
+    });
+    if (plant === null) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('fulfillmentPlantId', ERROR_CODE.INVALID, '사용 가능한 공장이 아닙니다.'),
+      ]);
+    }
+    const authorized = actor.scopes.some(
+      (scope) =>
+        scope.plantId === plantId ||
+        (scope.plantId === undefined && plant.business_unit_id !== null && scope.businessUnitId === Number(plant.business_unit_id)),
+    );
+    if (!authorized) {
+      throw new ContractException(HttpStatus.FORBIDDEN, [
+        field('fulfillmentPlantId', ERROR_CODE.PERMISSION_DENIED, '이 공장에 대한 데이터 권한이 없습니다.'),
+      ]);
+    }
   }
 }

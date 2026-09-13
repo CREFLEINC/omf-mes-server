@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AllocationPackingService } from './allocation-packing.service';
@@ -31,13 +32,31 @@ interface Overrides {
   currentHandlingUnitId?: bigint | null;
   huWarehouseId?: bigint | null;
   huStatusCode?: string;
+  contentQty?: number | null;
+  linkedQty?: number;
+  auditFails?: boolean;
 }
 
 function stub(overrides: Overrides = {}) {
   const recorded = { order: [] as string[], sql: [] as string[], got: [] as number[] };
   const tx = {
+    worker: { findFirst: async () => ({ worker_id: 8n }) },
+    terminal: { findFirst: async () => ({ terminal_id: 4n }) },
+    audit_event: { create: async () => {
+      recorded.order.push('audit');
+      if (overrides.auditFails) throw new Error('audit unavailable');
+      return {};
+    } },
     $queryRaw: async (strings: TemplateStringsArray) => {
-      recorded.sql.push([...strings].join('?'));
+      const sql = [...strings].join('?');
+      recorded.sql.push(sql);
+      if (sql.includes('FROM inventory.handling_unit')) {
+        recorded.order.push('handling-unit');
+        return [{
+          warehouse_id: overrides.huWarehouseId === undefined ? WAREHOUSE_ID : overrides.huWarehouseId,
+          status_code: overrides.huStatusCode ?? 'PACKED',
+        }];
+      }
       recorded.order.push('lock-allocation');
       return [
         {
@@ -47,19 +66,24 @@ function stub(overrides: Overrides = {}) {
             overrides.currentHandlingUnitId === undefined ? null : overrides.currentHandlingUnitId,
           current_handling_unit_no: 'HU-0001',
           warehouse_id: WAREHOUSE_ID,
+          item_id: 11n,
+          lot_id: 21n,
+          uom_id: 31n,
+          allocated_qty: new Prisma.Decimal(3),
         },
       ];
     },
-    handling_unit: {
-      findUnique: async () => {
-        recorded.order.push('handling-unit');
-        return {
-          warehouse_id: overrides.huWarehouseId === undefined ? WAREHOUSE_ID : overrides.huWarehouseId,
-          status_code: overrides.huStatusCode ?? 'OPEN',
-        };
+    handling_unit_content: {
+      findFirst: async () => {
+        recorded.order.push('content');
+        return overrides.contentQty === null ? null : { qty: new Prisma.Decimal(overrides.contentQty ?? 3) };
       },
     },
     shipment_lot_allocation: {
+      aggregate: async () => {
+        recorded.order.push('linked-quantity');
+        return { _sum: { allocated_qty: new Prisma.Decimal(overrides.linkedQty ?? 0) } };
+      },
       update: async () => {
         recorded.order.push('update');
         return {};
@@ -105,7 +129,7 @@ describe('배분 포장 연결 — e2e 가 못 보는 축', () => {
 
     // ⛔ 값이 같은 UPDATE 라도 돌면 행이 다시 쓰인다 — 그 표에 `version_no`·`updated_at` 이 없어
     //   응답으로는 안 갈리고, e2e 는 `xmin` 으로만 본다.
-    expect(harness.recorded.order).toEqual(['lock-allocation', 'handling-unit', 'read-back']);
+    expect(harness.recorded.order).toEqual(['lock-allocation', 'handling-unit', 'content', 'linked-quantity', 'read-back']);
   });
 
   it('붙은 HU 가 없으면 UPDATE 뒤에 되읽기다', async () => {
@@ -113,7 +137,49 @@ describe('배분 포장 연결 — e2e 가 못 보는 축', () => {
 
     await pack(harness);
 
-    expect(harness.recorded.order).toEqual(['lock-allocation', 'handling-unit', 'update', 'read-back']);
+    expect(harness.recorded.order).toEqual(['lock-allocation', 'handling-unit', 'content', 'linked-quantity', 'update', 'read-back']);
+  });
+
+  it('단말 연결은 같은 트랜잭션에서 실제 작업자 감사를 남기고 감사 실패를 전파한다', async () => {
+    const actor = { workerId: 8n, terminalAudit: {
+      workerId: 8n, workerNo: 'W1', terminalId: 4n, plantId: 1n,
+      correlationId: 'link-1', operationKey: 'PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}',
+    } };
+    const passing = stub();
+    await passing.service.pack(ALLOCATION_ID, { handlingUnitId: Number(HU_ID) }, { workerNo: 'W1', actor });
+    expect(passing.recorded.order.indexOf('audit')).toBeGreaterThan(passing.recorded.order.indexOf('update'));
+    const failing = stub({ auditFails: true });
+    await expect(failing.service.pack(ALLOCATION_ID, { handlingUnitId: Number(HU_ID) }, { workerNo: 'W1', actor }))
+      .rejects.toThrow('audit unavailable');
+    expect(failing.recorded.order).not.toContain('read-back');
+  });
+
+  it('배분 3개를 내용물 2개만 남은 HU에 연결하지 않아 packedQty 과대를 막는다', async () => {
+    const harness = stub({ contentQty: 2 });
+
+    await expect(pack(harness)).rejects.toMatchObject({
+      errors: [expect.objectContaining({ field: 'handlingUnitId', code: 'INVALID' })],
+    });
+    expect(harness.recorded.order).not.toContain('update');
+    expect(harness.recorded.order).not.toContain('read-back');
+  });
+
+  it('클라이언트 확정 순서대로 PACKED HU만 연결하고 OPEN은 거절한다', async () => {
+    const harness = stub({ huStatusCode: 'OPEN' });
+
+    await expect(pack(harness)).rejects.toMatchObject({
+      errors: [expect.objectContaining({ field: 'handlingUnitId', code: 'INVALID' })],
+    });
+    expect(harness.recorded.order).not.toContain('update');
+  });
+
+  it('같은 HU와 LOT에 이미 연결한 배분을 더한 수량도 내용물 이하이어야 한다', async () => {
+    const insufficient = stub({ contentQty: 5, linkedQty: 3 });
+    await expect(pack(insufficient)).rejects.toBeInstanceOf(ContractException);
+    expect(insufficient.recorded.order).not.toContain('update');
+
+    const sufficient = stub({ contentQty: 6, linkedQty: 3 });
+    await expect(pack(sufficient)).resolves.toEqual(VIEW);
   });
 
   it('다른 HU 가 이미 붙었으면 UPDATE 도 되읽기도 «안» 한다', async () => {

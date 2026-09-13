@@ -1,4 +1,4 @@
-import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import { OqcInspectionRow, ShipmentInspectionLine, oqcPassed } from './shipment-inspection';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 
@@ -24,7 +24,7 @@ const SHIPMENT_REQUEST = 'SHIPMENT_REQUEST';
 export type OqcPassedByLine = Map<string, boolean>;
 
 export async function oqcPassedByLine(
-  prisma: PrismaService,
+  prisma: Pick<Prisma.TransactionClient, 'shipment_request_line' | 'inventory_reservation' | 'inspection_result'>,
   lineIds: bigint[],
 ): Promise<OqcPassedByLine> {
   const ids = [...new Set(lineIds.map(String))].map(BigInt);
@@ -72,7 +72,7 @@ export async function oqcPassedByLine(
  * (헤더 대상 의뢰와 LOT 대상 의뢰가 병존할 수 있어 여기서 좁히면 놓친다).
  */
 async function oqcResults(
-  prisma: PrismaService,
+  prisma: Pick<Prisma.TransactionClient, 'inspection_result'>,
   shipmentRequestIds: bigint[],
   lotIds: bigint[],
 ): Promise<OqcInspectionRow[]> {

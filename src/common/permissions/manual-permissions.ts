@@ -50,6 +50,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // `W-CO-06` 단말 관리 — §3 이 「등록·토큰 발급·공정 구성」만 적어 수정과 중지가
   // 도출표에 안 들어왔다. 같은 화면의 같은 자원이다.
   'PUT /mdm/terminals/{terminalId}': ['W-CO-06'],
+  // FR-004 P01: 같은 관리자 단말 화면이 QR 발급을 누른다. 도출표의 M-CO-01은 유지한다.
+  'POST /mdm/terminals/{terminalId}:issue-token': ['W-CO-06'],
   // 툴도 같다 — 도출표에 :deactivate·:dispose 만 들어왔다. 재개는 중지의 짝이다.
   'POST /mdm/molds/{moldId}:activate': ['W-05-13'],
   'POST /mdm/terminals/{terminalId}:deactivate': ['W-CO-06'],

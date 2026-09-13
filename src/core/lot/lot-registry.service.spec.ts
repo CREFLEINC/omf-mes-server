@@ -71,7 +71,10 @@ function fake(seed: Seed) {
     inspection_plan_version: {
       findMany: record('iqc.plan.findMany', () => seed.iqcPlans ?? []),
     },
-    inspection_request: { create: record('iqc.request.create', () => ({})) },
+    inspection_request: { create: record('iqc.request.create', () => ({ inspection_request_id: 88n })) },
+    worker: { findFirst: record('worker.findFirst', () => ({ worker_id: 23n })) },
+    terminal: { findFirst: record('terminal.findFirst', () => ({ terminal_id: 9n })) },
+    audit_event: { create: record('audit.create', () => ({})) },
     inbound_receipt_line: {
       updateMany: record('line.updateMany', () => {
         const hit = line !== null && line.lot_id === null;
@@ -114,6 +117,21 @@ function preIssue(extra: Partial<LotPreIssueInput> = {}): LotPreIssueInput {
 
 describe('LotRegistryService', () => {
   const service = new LotRegistryService(new LotHoldService());
+
+  it('계정 없는 단말 LOT과 IQC 의뢰가 같은 tx에서 작업자 귀속을 남긴다', async () => {
+    const { tx, calls, args } = fake({ line: { lot_id: null }, iqcPlans: [{ inspection_plan_version_id: 42n }] });
+    const terminalAudit = {
+      workerId: 23n, workerNo: 'W-23', terminalId: 9n, plantId: 2n,
+      correlationId: 'idem-lot-1', operationKey: 'POST /logistics/inbound-receipts',
+    };
+    await service.createWithin(tx, input({ incomingIqc: {
+      requestNo: 'IQC-1', effectiveDate: '2026-09-12', requestedAt: '2026-09-12T01:00:00Z',
+    } }), { workerId: 23n, terminalAudit });
+    expect(args[calls.indexOf('lot.create')].data).toMatchObject({ created_by: null });
+    expect(args[calls.indexOf('lot_hold.create')].data).toMatchObject({ held_by: null, held_worker_id: 23n });
+    expect(calls.filter((name) => name === 'audit.create')).toHaveLength(2);
+    expect(calls.indexOf('audit.create')).toBeLessThan(calls.indexOf('lot.findUniqueOrThrow'));
+  });
 
   it('LOT 코어 — 읽기도 tx 로 한다(같은 트랜잭션의 라인을 본다)', async () => {
     // 라인은 «이 트랜잭션 안»에만 있다 — 코어가 다른 연결로 읽으면 못 보고 400 이 된다.

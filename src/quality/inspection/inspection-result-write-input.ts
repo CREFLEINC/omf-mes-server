@@ -60,4 +60,5 @@ export interface InspectionResultWriteContext {
   version: number | undefined;
   appUserId: number | undefined;
   terminalId: bigint | null;
+  terminalAudit?: import('../../audit/terminal-worker-audit').TerminalWorkerAuditActor;
 }

@@ -52,6 +52,11 @@ function fake(workerId: bigint | null) {
 }
 
 describe('입고 적치 지시 배정', () => {
+  it('계정 없는 단말 작업자의 지시 귀속은 worker_id이고 app_user 칸은 NULL이다', async () => {
+    const { tx, posting, tasks } = fake(null);
+    await postReceipt(tx, posting, input, undefined, 'GR-20260912-0002', ['PT-20260912-0002'], 88n);
+    expect(tasks[0]).toMatchObject({ assigned_worker_id: 88n, created_by: null });
+  });
   it.each([
     { linkedWorkerId: 77n, expected: 77n },
     { linkedWorkerId: null, expected: null },

@@ -5,8 +5,10 @@ import { ConflictException, ContractException, ERROR_CODE, field, one } from '..
 import { assertWorkerNoPresent } from '../../common/master';
 // ⭐ 01 자재창고가 «소유한» 상수를 그대로 쓴다 — 값을 베끼면 저쪽이 늘 때 여기만 조용히 뒤처진다
 //    (README §6-4). 도메인 간 상수 import 선례: `inspection-plan.service.ts:20` 의 `REVISION_STATUS`.
-import { HU_STATUS_OPEN, HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
+import { HU_STATUS_PACKED } from '../../inventory/handling-unit/handling-unit-status';
 import { PrismaService } from '../../prisma/prisma.service';
+import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
+import { LogisticsWriteActor } from '../logistics-write-actor';
 import { ShipmentAllocationQueryService } from './shipment-allocation-query.service';
 import { ShipmentLotAllocationView } from './shipment-allocation-view';
 
@@ -18,6 +20,7 @@ export interface ShipmentLotAllocationPacking {
 export interface AllocationPackingContext {
   /** ⚠ 저장하지 않는다 — `shipment_lot_allocation` 에 담을 칸이 0개다(§7-4 「읽고 버림」형). */
   workerNo?: string;
+  actor?: LogisticsWriteActor;
 }
 
 /** 409 enum 다섯 중 이 자리가 쓰는 하나. `code` 는 계약 required 라 명시로 넘긴다(R-18). */
@@ -25,24 +28,20 @@ const INVALID_STATE = 'INVALID_STATE';
 const HU_FIELD = 'handlingUnitId';
 
 /**
- * ⑥ 「포장 가능 상태」 — ⛔ 값 목록을 «지어내지 않았다». 실측: 계약이 `HandlingUnit.statusCode` 를
- * `x-no-code-key` 로 닫아 코드 그룹 시드가 **0행**이고, 저장소가 쥔 값은
- * `src/inventory/handling-unit/handling-unit-status.ts:10-11` 의 둘뿐이며(`OPEN`·`PACKED`)
- * **폐기·해체를 뜻하는 값은 0개**다(통보 142 — 해체 화면이 계약에 0건).
- * ⇒ 결정 — 통보 후보. README §2 기준 2(거부하는 쪽)로 «허용 목록»을 골랐다: 없는 폐기 값 이름을
- *   지어 «거부 목록»을 세우면 기준 5(새 개념 0)에 걸린다.
- * ⭐ **값을 베끼지 않고 그 파일을 `import` 한다** — 두 벌이면 01 이 문자열을 바꿀 때 여기만 뒤처져
- *   포장 연결이 400 으로 «조용히» 막힌다(README §6-4). ⚠ 01 이 «셋째» 상태를 더하는 경우는 이
- *   목록이 자동으로 늘지 않는다 — 허용 목록이라 의도한 바이고, 그때 여기 한 줄을 더한다.
- * ⚠ 픽스처의 셋째 값 `'ACTIVE'`(통보 164 ⓐ)는 여기서 거부된다 — 통보 후보.
+ * The packing-result client completes :pack before linking. Requiring PACKED
+ * prevents an OPEN unit from changing its contents after a reported full pack.
  */
-const PACKABLE_STATUS: ReadonlySet<string> = new Set([HU_STATUS_OPEN, HU_STATUS_PACKED]);
+const PACKABLE_STATUS: ReadonlySet<string> = new Set([HU_STATUS_PACKED]);
 
 interface AllocationRow {
   shipment_lot_allocation_id: bigint;
   handling_unit_id: bigint | null;
   current_handling_unit_no: string | null;
   warehouse_id: bigint;
+  item_id: bigint;
+  lot_id: bigint;
+  uom_id: bigint;
+  allocated_qty: Prisma.Decimal;
 }
 
 /**
@@ -71,6 +70,7 @@ export class AllocationPackingService {
       if (allocation === undefined) throw new NotFoundException('없는 출하 LOT 배분입니다.');
 
       await assertPackable(tx, handlingUnitId, allocation.warehouse_id);
+      await assertContentCoversAllocation(tx, handlingUnitId, allocation);
 
       // ⑦ ⭐ 멱등의 방향이 «둘»이다 — 같은 HU 면 행을 건드리지 않고 200, 다른 HU 면 409.
       //    ⛔ 둘 중 하나만 걸면 나머지 변이가 조용히 산다(A-20·A-21 이 서로를 죽인다).
@@ -84,6 +84,10 @@ export class AllocationPackingService {
       await tx.shipment_lot_allocation.update({
         where: { shipment_lot_allocation_id: allocation.shipment_lot_allocation_id },
         data: { handling_unit_id: handlingUnitId },
+      });
+      if (context.actor?.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
+        actor: context.actor.terminalAudit, targetTypeCode: 'SHIPMENT_LOT_ALLOCATION',
+        targetId: allocation.shipment_lot_allocation_id, eventTypeCode: 'LINK_HANDLING_UNIT',
       });
     });
 
@@ -104,6 +108,7 @@ async function lockAllocation(
 ): Promise<AllocationRow | undefined> {
   const [row] = await tx.$queryRaw<AllocationRow[]>`
     SELECT a.shipment_lot_allocation_id, a.handling_unit_id, s.warehouse_id,
+           sl.item_id, a.lot_id, a.uom_id, a.allocated_qty,
            hu.handling_unit_no AS current_handling_unit_no
       FROM logistics.shipment_lot_allocation a
       JOIN logistics.shipment_line sl ON sl.shipment_line_id = a.shipment_line_id
@@ -125,15 +130,47 @@ async function assertPackable(
   handlingUnitId: bigint,
   shipmentWarehouseId: bigint,
 ): Promise<void> {
-  const hu = await tx.handling_unit.findUnique({
-    where: { handling_unit_id: handlingUnitId },
-    select: { warehouse_id: true, status_code: true },
-  });
-  if (hu === null) throw invalid('없는 취급 단위입니다.');
+  const [hu] = await tx.$queryRaw<{ warehouse_id: bigint | null; status_code: string }[]>`
+    SELECT warehouse_id, status_code FROM inventory.handling_unit
+     WHERE handling_unit_id = ${handlingUnitId} FOR UPDATE`;
+  if (hu === undefined) throw invalid('없는 취급 단위입니다.');
   if (hu.warehouse_id === null) throw invalid('취급 단위의 창고를 알 수 없어 연결할 수 없습니다.');
   if (hu.warehouse_id !== shipmentWarehouseId) throw invalid('출하 창고와 다른 창고의 취급 단위입니다.');
   if (!PACKABLE_STATUS.has(hu.status_code)) {
     throw invalid(`포장할 수 없는 취급 단위 상태입니다. (${hu.status_code})`);
+  }
+}
+
+/** An allocation is reported fully packed once linked, so the HU must hold at
+ * least the sum of every linked allocation for this exact item/LOT/UOM. The HU
+ * lock serializes competing links and content replacement around this check. */
+async function assertContentCoversAllocation(
+  tx: Prisma.TransactionClient,
+  handlingUnitId: bigint,
+  allocation: AllocationRow,
+): Promise<void> {
+  const dimension = {
+    handling_unit_id: handlingUnitId,
+    item_id: allocation.item_id,
+    lot_id: allocation.lot_id,
+    uom_id: allocation.uom_id,
+  };
+  const [content, linked] = await Promise.all([
+    tx.handling_unit_content.findFirst({ where: dimension, select: { qty: true } }),
+    tx.shipment_lot_allocation.aggregate({
+      where: {
+        handling_unit_id: handlingUnitId,
+        lot_id: allocation.lot_id,
+        uom_id: allocation.uom_id,
+        shipment_line: { item_id: allocation.item_id },
+      },
+      _sum: { allocated_qty: true },
+    }),
+  ]);
+  const alreadyLinked = linked._sum.allocated_qty ?? new Prisma.Decimal(0);
+  const needed = alreadyLinked.plus(allocation.handling_unit_id === handlingUnitId ? 0 : allocation.allocated_qty);
+  if (content === null || content.qty.lt(needed)) {
+    throw invalid('취급 단위의 해당 품목·LOT·단위 수량이 배분 수량보다 적습니다.');
   }
 }
 

@@ -2388,13 +2388,20 @@
       "description": "W/O 번호 검색. ⚠ P/O 번호는 이 축으로 검색되지 않는다 — P/O 는 productionOrderId 로 좁힌다"
      },
      {
-      "name": "sort",
-      "in": "query",
-      "schema": {
-       "type": "string",
-       "default": "priorityNo,asc"
-      },
-      "description": "정렬 키는 제한한다. 근거: 공유계약 L-4"
+     "name": "sort",
+     "in": "query",
+     "schema": {
+      "type": "string",
+      "enum": [
+       "workOrderNo", "workOrderNo,asc", "workOrderNo,desc",
+       "plannedStartAt", "plannedStartAt,asc", "plannedStartAt,desc",
+       "statusCode", "statusCode,asc", "statusCode,desc",
+       "priorityNo", "priorityNo,asc", "priorityNo,desc",
+       "achievementRate", "achievementRate,asc", "achievementRate,desc"
+      ],
+      "default": "priorityNo,asc"
+     },
+     "description": "W/O 번호·계획 시작 시각·상태·우선순위 및 달성률(achievementRate)을 받는다. 방향은 asc·desc이며 생략하면 asc다. 달성률 정렬은 plannedStartFrom과 plannedStartTo를 모두 지정한 92일 이하의 계획 시작기간에서만 허용한다. 전체 필터 결과의 실적 합계/지시량으로 정렬한 다음 페이지를 나눈다."
      },
      {
       "name": "withProgress",
@@ -6785,19 +6792,22 @@
       "description": "명시적 null = 해제(비움으로 되돌림) · 필드 생략 = 기존 값 유지. 근거: omf-mes#200·#201"
      },
      "defaultWipLocationId": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
      },
      "defaultFgLocationId": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
      },
      "defaultScrapLocationId": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "format": "int64",
-      "example": 1001
+      "example": 1001,
+      "description": "명시적 null = 해제 · 필드 생략 = 기존 값 유지."
      },
      "remarks": {
       "type": [

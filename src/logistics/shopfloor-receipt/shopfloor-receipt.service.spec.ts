@@ -17,12 +17,14 @@ interface StubOptions {
   locationMissing?: boolean;
   reasonCodes?: string[];
   goodsIssueLine?: { goods_issue_line_id: bigint; item_id: bigint; lot_id: bigint; uom_id: bigint; issue_qty: number };
+  auditFails?: boolean;
 }
 
 /** 출고 라인 하나(id=1 · itemId=10 · lotId=20 · uomId=30 · issueQty=100) + W/O 공장 1 + 위치 실재. */
 function stub(options: StubOptions = {}) {
   const created: Created = { header: {}, lines: [] };
   const calls: string[] = [];
+  let committed = false;
   const line =
     options.goodsIssueLine ?? { goods_issue_line_id: 1n, item_id: 10n, lot_id: 20n, uom_id: 30n, issue_qty: 100 };
 
@@ -48,7 +50,14 @@ function stub(options: StubOptions = {}) {
     },
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
       calls.push('transaction');
-      return work({
+      const result = await work({
+        worker: { findFirst: async () => ({ worker_id: 8n }) },
+        terminal: { findFirst: async () => ({ terminal_id: 4n }) },
+        audit_event: { create: async () => {
+          calls.push('audit');
+          if (options.auditFails) throw new Error('audit unavailable');
+          return {};
+        } },
         $queryRaw: async () => [{ status_code: 'POSTED' }],
         shopfloor_receipt: {
           count: async () => 0,
@@ -88,6 +97,8 @@ function stub(options: StubOptions = {}) {
           },
         },
       });
+      committed = true;
+      return result;
     },
   };
 
@@ -105,6 +116,7 @@ function stub(options: StubOptions = {}) {
     created,
     calls,
     periods,
+    committed: () => committed,
   };
 }
 
@@ -132,6 +144,22 @@ async function errorsOf(work: Promise<unknown>): Promise<ErrorItem[]> {
 }
 
 describe('생산창고 입고 등록', () => {
+  const terminalActor = { workerId: 8n, terminalAudit: {
+    workerId: 8n, workerNo: 'W001', terminalId: 4n, plantId: 1n,
+    correlationId: 'shopfloor-1', operationKey: 'POST /logistics/shopfloor-receipts',
+  } };
+
+  it('연결 계정 없는 작업자 입고도 같은 트랜잭션 감사가 있어야 커밋한다', async () => {
+    const ok = stub();
+    await ok.service.create(body(), terminalActor, 'W001');
+    expect(ok.created.header).toMatchObject({ created_by: null, received_by: null });
+    expect(ok.calls).toContain('audit');
+    expect(ok.committed()).toBe(true);
+
+    const failed = stub({ auditFails: true });
+    await expect(failed.service.create(body(), terminalActor, 'W001')).rejects.toThrow('audit unavailable');
+    expect(failed.committed()).toBe(false);
+  });
   it('lines 가 비면 400 LINE_REQUIRED', async () => {
     // ⭐ 계약에 minItems 가 없어 가드가 안 막는다 — 서비스가 유일한 방어다(§1-3).
     const { service } = stub();

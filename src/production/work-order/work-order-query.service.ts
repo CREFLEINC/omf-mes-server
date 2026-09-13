@@ -2,12 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest } from '../../common/pagination';
+import type { TerminalContext } from '../../auth/terminal-context';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ValidationSummary, summarize, validateWorkOrder } from './validation';
 import {
   RELEASABLE_ELIGIBLE_WHERE,
   WorkOrderListQuery,
+  achievementOrderedIds,
+  achievementSortDirection,
   buildOrderBy,
   buildWorkOrderWhere,
 } from './work-order-list-where';
@@ -49,16 +52,33 @@ export class WorkOrderQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** where 는 순수 함수가 짓고 `releasable`ⓒ 만 후보를 좁혀 뺀다(N+1 금지 · §7-5). */
-  async list(query: WorkOrderListQuery): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
+  async list(query: WorkOrderListQuery, terminal?: TerminalContext): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
     const page = pageRequest(query);
-    const orderBy = buildOrderBy(query.sort);
-    const where = await this.releasableWhere(buildWorkOrderWhere(query), query.releasable);
+    const achievementDirection = achievementSortDirection(query);
+    const orderBy = achievementDirection === null ? buildOrderBy(query.sort) : undefined;
+    const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
+      ? (await this.prisma.terminal_process.findMany({
+          where: { terminal_id: terminal.terminalId, can_start_work: true },
+          select: { process_id: true },
+        })).map((row) => row.process_id)
+      : undefined;
+    const scopedWhere: Prisma.work_orderWhereInput = terminal === undefined
+      ? buildWorkOrderWhere(query)
+      : { AND: [buildWorkOrderWhere(query), { production_line: { plant_id: terminal.plantId } },
+          ...(terminalProcessIds === undefined ? []
+            : [{ routing_operation: { process_id: { in: terminalProcessIds } } }]),
+        ] };
+    const where = await this.releasableWhere(scopedWhere, query.releasable);
     const now = new Date();
 
     // `withSummary` 는 목록·건수·요약을 «같은 트랜잭션»에서 낸다(계약).
     const { rows, total, summary } = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.work_order.findMany({ where, orderBy, skip: page.skip, take: page.take, include: DISPLAY_JOIN });
-      const total = await tx.work_order.count({ where });
+      const achievement = achievementDirection === null ? null
+        : await this.achievementPage(tx, where, achievementDirection, page.skip, page.take);
+      const rows = achievement === null
+        ? await tx.work_order.findMany({ where, orderBy, skip: page.skip, take: page.take, include: DISPLAY_JOIN })
+        : achievement.rows;
+      const total = achievement === null ? await tx.work_order.count({ where }) : achievement.total;
       const summary = query.withSummary === true ? await this.summaryOf(tx, where, total, now) : undefined;
       return { rows, total, summary };
     });
@@ -80,6 +100,39 @@ export class WorkOrderQueryService {
       return query.withValidation === true ? { ...view, validation: validation?.get(row.work_order_id) } : view;
     });
     return { items, page: { page: page.page, size: page.size, total }, summary };
+  }
+
+  private async achievementPage(
+    tx: Prisma.TransactionClient,
+    where: Prisma.work_orderWhereInput,
+    direction: 'asc' | 'desc',
+    skip: number,
+    take: number,
+  ): Promise<{ rows: WorkOrderRow[]; total: number }> {
+    // Prisma cannot order by a ratio of an aggregate and a parent column. Filter the complete
+    // bounded-period population first, aggregate active result rows once, then slice the order.
+    const candidates = await tx.work_order.findMany({
+      where, select: { work_order_id: true, order_qty: true },
+    });
+    if (candidates.length === 0) return { rows: [], total: 0 };
+    const groups = await tx.production_result.groupBy({
+      by: ['work_order_id'],
+      where: { work_order_id: { in: candidates.map((row) => row.work_order_id) }, ...ACTIVE_RESULT_WHERE },
+      _sum: { good_qty: true },
+    });
+    const goodQtyByWorkOrder = new Map(groups.map((row) => [row.work_order_id, row._sum.good_qty]));
+    const orderedIds = achievementOrderedIds(candidates, goodQtyByWorkOrder, direction);
+    const pageIds = orderedIds.slice(skip, skip + take);
+    if (pageIds.length === 0) return { rows: [], total: candidates.length };
+    const fetched = await tx.work_order.findMany({
+      where: { work_order_id: { in: pageIds } }, include: DISPLAY_JOIN,
+    });
+    const byId = new Map(fetched.map((row) => [row.work_order_id, row]));
+    return { rows: pageIds.map((id) => {
+      const row = byId.get(id);
+      if (!row) throw new Error('달성률 정렬 중 작업지시가 조회되지 않았습니다.');
+      return row;
+    }), total: candidates.length };
   }
 
   /** ⓐⓑ+유형으로 좁힌 후보만 `validateWorkOrder`(③)를 부른다 — 페이지 밖도 봐야 「true 의 여집합」이 맞다(비용 · PR 본문). */

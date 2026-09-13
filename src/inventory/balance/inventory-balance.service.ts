@@ -106,8 +106,8 @@ type RawRow = Record<string, unknown> & { manufactured_at: Date | null };
 export class InventoryBalanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: BalanceQuery): Promise<BalanceResponse> {
-    const filters = await this.filtersOf(query);
+  async list(query: BalanceQuery, terminalPlantId?: bigint): Promise<BalanceResponse> {
+    const filters = await this.filtersOf(query, terminalPlantId);
     assertScoped(filters);
     const groupBy = assertGroupBy(query.groupBy);
     const sort = assertSort(query.sort);
@@ -144,9 +144,10 @@ export class InventoryBalanceService {
    * 질의를 필터로 옮기며 숫자 축을 가른다. 「임박」의 기준일은 **공장 로컬 오늘**이다 —
    * 창고를 주면 그 창고의 공장으로 푼다(CLAUDE.md · `plant.timezone_code`).
    */
-  private async filtersOf(query: BalanceQuery): Promise<BalanceFilters> {
+  private async filtersOf(query: BalanceQuery, terminalPlantId?: bigint): Promise<BalanceFilters> {
     const warehouseId = assertId('warehouseId', query.warehouseId);
     return {
+      ...(terminalPlantId === undefined ? {} : { plantId: terminalPlantId }),
       warehouseId,
       itemId: assertId('itemId', query.itemId),
       lotId: assertId('lotId', query.lotId),

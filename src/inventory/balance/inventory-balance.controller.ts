@@ -1,5 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 
+import { currentTerminalInventoryScope } from '../../auth/terminal-inventory-scope';
 import { Contract } from '../../common/contract';
 import {
   BalanceQuery,
@@ -14,7 +16,7 @@ export class InventoryBalanceController {
 
   @Get()
   @Contract('GET /inventory/balances')
-  list(@Query() query: BalanceQuery): Promise<BalanceResponse> {
-    return this.balances.list(query);
+  list(@Req() request: Request, @Query() query: BalanceQuery): Promise<BalanceResponse> {
+    return this.balances.list(query, currentTerminalInventoryScope(request)?.plantId);
   }
 }

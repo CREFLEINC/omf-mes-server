@@ -263,6 +263,7 @@ export const DERIVED_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   'PUT /integration/outbound-item-settings': ['W-06-12'],
   'PUT /inventory/handling-units/{handlingUnitId}/contents': ['M-04-03'],
   'PUT /logistics/shipment-lot-allocations/{shipmentLotAllocationId}': ['P-04-01'],
+  'PUT /logistics/shipment-requests/{shipmentRequestId}': ['W-04-01'],
   'PUT /maintenance/breakdowns/{breakdownId}': ['W-05-04'],
   'PUT /maintenance/collection-channels/{collectionChannelId}': ['W-05-07'],
   'PUT /mdm/equipment-groups/{equipmentGroupId}': ['W-05-12'],

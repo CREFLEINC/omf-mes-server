@@ -183,7 +183,7 @@ describe('재고 재등록 (e2e)', () => {
     });
     const holdQty = opts.holdQty === undefined ? 10 : opts.holdQty;
     const hold = await prisma.lot_hold.create({
-      data: {
+      data: { held_by: ids.actor,
         lot_id: lot.lot_id,
         hold_qty: holdQty,
         uom_id: holdQty === null ? null : ids.uom,
@@ -332,7 +332,7 @@ describe('재고 재등록 (e2e)', () => {
     // 같은 결정에 다른 보류·새 토큰을 들고 다시 온다.
     const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: c.lotId } });
     const again = await prisma.lot_hold.create({
-      data: { lot_id: c.lotId, hold_qty: 5, uom_id: ids.uom, reason_code: 'SUSPECT', status_code: 'HOLD', held_at: new Date('2026-09-03T03:00:00.000Z') },
+      data: { held_by: ids.actor, lot_id: c.lotId, hold_qty: 5, uom_id: ids.uom, reason_code: 'SUSPECT', status_code: 'HOLD', held_at: new Date('2026-09-03T03:00:00.000Z') },
     });
 
     const failed = await reinstate(
@@ -416,6 +416,7 @@ describe('재고 재등록 (e2e)', () => {
       user_name: '재등록프로브',
       status_code: 'EMPLOYED',
     });
+    ids.actor = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });

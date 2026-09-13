@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post,
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
@@ -52,10 +53,11 @@ export class NonconformanceController {
   @Get('nonconformances/:nonconformanceId')
   @Contract('GET /quality/nonconformances/{nonconformanceId}')
   async get(
+    @Req() request: Request,
     @Param('nonconformanceId', ParseIntPipe) nonconformanceId: number,
     @Res({ passthrough: true }) response: Response,
   ): Promise<NonconformanceView> {
-    const { view, versionNo } = await this.nonconformances.get(nonconformanceId);
+    const { view, versionNo } = await this.nonconformances.get(nonconformanceId, currentTerminalQualityReadScope(request));
     setEtag(response, versionNo);
     return view;
   }

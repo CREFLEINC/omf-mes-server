@@ -100,6 +100,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
 
   let legalEntityId: bigint;
   let plantId: number;
+  let heldById: bigint;
   let itemId: number;
   let uomId: number;
   let warehouse1Id: number;
@@ -542,6 +543,7 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
     const user = await prisma.app_user.create({
       data: { login_id: LOGIN_ID, user_name: 'LOT상태검사', status_code: 'EMPLOYED' },
     });
+    heldById = user.app_user_id;
     await prisma.user_credential.create({
       data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
@@ -614,19 +616,19 @@ describe('LOT 품질 상태 목록 (e2e)', () => {
 
     // L2 — 전량 보류(열림) · INCOMING_INSPECTION_WAIT.
     await prisma.lot_hold.create({
-      data: { lot_id: lotId.L2, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', held_at: new Date(T2) },
+      data: { held_by: heldById, lot_id: lotId.L2, reason_code: 'INCOMING_INSPECTION_WAIT', status_code: 'HELD', held_at: new Date(T2) },
     });
     // L3 — 부분 보류(열림 500).
     await prisma.lot_hold.create({
-      data: { lot_id: lotId.L3, hold_qty: 500, uom_id: uomId, reason_code: 'DIMENSION_ABNORMAL', status_code: 'HELD', held_at: new Date(T3) },
+      data: { held_by: heldById, lot_id: lotId.L3, hold_qty: 500, uom_id: uomId, reason_code: 'DIMENSION_ABNORMAL', status_code: 'HELD', held_at: new Date(T3) },
     });
     // L4 — 전량 보류(열림) · CLAIM_RECALL.
     await prisma.lot_hold.create({
-      data: { lot_id: lotId.L4, reason_code: 'CLAIM_RECALL', status_code: 'HELD', held_at: new Date(T4) },
+      data: { held_by: heldById, lot_id: lotId.L4, reason_code: 'CLAIM_RECALL', status_code: 'HELD', held_at: new Date(T4) },
     });
     // L5 — 전량 보류(해제됨). held=T1 · released=T5(경계값) — fullyHeld·기간 반열림 단언이 이 값을 쓴다.
     await prisma.lot_hold.create({
-      data: {
+      data: { released_by: heldById, held_by: heldById,
         lot_id: lotId.L5,
         reason_code: 'APPEARANCE_ABNORMAL',
         status_code: 'HELD',

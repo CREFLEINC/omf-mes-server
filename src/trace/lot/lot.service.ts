@@ -8,6 +8,7 @@ import { PagedResponse, pagedResponse, pageRequest } from '../../common/paginati
 import {
   ExternalIdentifierInput,
   LotRegisterInput,
+  LotRegisterActor,
   LotRegistryService,
   nextInboundMaterialLotNo,
   optionalDay,
@@ -31,6 +32,7 @@ import {
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
 import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
+import type { LotWriteActor } from './lot-write-actor';
 
 /**
  * LOT — 추적성의 뿌리. 화면은 `M-01-02`(자재LOT 스캔등록)·`P-01-01`(LOT 등록·라벨발행)이
@@ -175,7 +177,10 @@ export class LotService {
    * ⚠ 201 이 돌려주는 것은 `Lot` 이 아니라 **`LotDetailResponse`** 다 — 등록이 외부
    * 식별자와 보류를 «함께» 만들므로 그 셋을 한 번에 보인다(계약).
    */
-  async create(input: LotCreate, appUserId: number): Promise<LotDetail> {
+  async create(input: LotCreate, actor: number | LotWriteActor): Promise<LotDetail> {
+    const registerActor: LotRegisterActor = typeof actor === 'number' ? actor
+      : actor.appUserId !== undefined ? actor.appUserId
+      : { workerId: actor.terminalAudit.workerId, terminalAudit: actor.terminalAudit };
     const source = assertNumberSource(input);
     const inboundSource = source === 'MES' ? await this.inboundMesSource(input.sourceId) : undefined;
     const effectiveInput = inboundSource === undefined ? input : this.fromInboundSource(input, inboundSource);
@@ -189,8 +194,8 @@ export class LotService {
       try {
         const row =
           source === 'SUPPLIER'
-            ? await this.insert(effectiveInput, input.lotNo as string, appUserId)
-            : await this.insertInboundMes(effectiveInput, iqcRequestNo, appUserId);
+            ? await this.insert(effectiveInput, input.lotNo as string, registerActor)
+            : await this.insertInboundMes(effectiveInput, iqcRequestNo, registerActor);
         return (await this.get(Number(row.lot_id))).detail;
       } catch (error) {
         if (!isDuplicateLotNo(error)) throw error;
@@ -257,14 +262,14 @@ export class LotService {
     return line !== null;
   }
 
-  private async insert(input: LotCreate, lotNo: string, appUserId: number): Promise<LotRow> {
-    return this.prisma.$transaction((tx) => this.registry.createWithin(tx, { ...input, lotNo }, appUserId));
+  private async insert(input: LotCreate, lotNo: string, actor: LotRegisterActor): Promise<LotRow> {
+    return this.prisma.$transaction((tx) => this.registry.createWithin(tx, { ...input, lotNo }, actor));
   }
 
   private async insertInboundMes(
     input: LotCreate,
     iqcRequestNo: string | undefined,
-    appUserId: number,
+    actor: LotRegisterActor,
   ): Promise<LotRow> {
     return this.prisma.$transaction(async (tx) => {
       const source = await this.inboundMesSource(input.sourceId, tx);
@@ -289,7 +294,7 @@ export class LotService {
               }
             : undefined,
         },
-        appUserId,
+        actor,
       );
     });
   }

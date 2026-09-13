@@ -39,6 +39,7 @@ describe('위치별 재고 실사 입력', () => {
         counted_qty: 0,
         variance_reason_code: null,
         counted_by: null,
+        counted_worker_id: null,
       },
     });
     expect(mockOf(tx.inventory_count_line.update)).toHaveBeenCalledWith({
@@ -47,6 +48,7 @@ describe('위치별 재고 실사 입력', () => {
         counted_qty: new Prisma.Decimal(10),
         variance_reason_code: null,
         counted_by: 81n,
+        counted_worker_id: 8n,
         counted_at: NOW,
         counted: true,
       },
@@ -64,6 +66,7 @@ describe('위치별 재고 실사 입력', () => {
           uom_id: 41,
           variance_reason_code: 'COUNT_ERROR',
           counted_by: 81n,
+          counted_worker_id: 8n,
           counted_at: NOW,
           counted: true,
           created_by: 71,
@@ -92,7 +95,7 @@ describe('위치별 재고 실사 입력', () => {
 
   it('사번에 연결 계정이 없으면 countedBy null을 보존한다', async () => {
     const { service, tx } = fixture();
-    mockOf(tx.worker.findUnique).mockResolvedValue({ app_user_id: null });
+    mockOf(tx.worker.findUnique).mockResolvedValue({ worker_id: 8n, app_user_id: null });
 
     await service.replaceWithin(
       tx,
@@ -104,6 +107,34 @@ describe('위치별 재고 실사 입력', () => {
     expect(mockOf(tx.inventory_count_line.update)).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ counted_by: null }) }),
     );
+  });
+
+  it('단말 작업자는 계정 없이도 실제 worker_id를 실사 라인에 기록한다', async () => {
+    const { service, tx } = fixture();
+
+    await service.replaceWithin(
+      tx,
+      91,
+      body([
+        line({ countedQty: 8, varianceReasonCode: 'COUNT_ERROR' }),
+        line({ inventoryCountLineId: undefined, itemId: 22, lotId: 32, countedQty: 3, varianceReasonCode: 'COUNT_ERROR' }),
+      ]),
+      { workerId: 8n, workerNo: 'W-NO-ACCOUNT', terminalAudit: {
+        workerId: 8n, workerNo: 'W-NO-ACCOUNT', terminalId: 7n, plantId: 3n,
+        correlationId: 'count-1', operationKey: 'PUT /inventory/counts/{inventoryCountId}/lines',
+      } },
+    );
+
+    expect(tx.worker.findUnique).not.toHaveBeenCalled();
+    expect(mockOf(tx.inventory_count_line.update)).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ counted_by: null, counted_worker_id: 8n }) }),
+    );
+    expect(mockOf(tx.inventory_count.updateMany)).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ updated_by: null }) }),
+    );
+    expect(mockOf(tx.inventory_count_line.createMany)).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ created_by: null, counted_by: null, counted_worker_id: 8n })],
+    });
   });
 
   it('제공한 사번이 없으면 INVALID이고 세션 사용자로 대체하지 않는다', async () => {
@@ -223,6 +254,64 @@ describe('위치별 재고 실사 입력', () => {
     });
   });
 
+  it('블라인드 첫 계수는 차이를 몰라도 사유 없이 기존/신규 라인을 기록한다', async () => {
+    const { service, tx } = fixture({ blindCount: true });
+    await service.replaceWithin(tx, 91, body([
+      line({ countedQty: 8, varianceReasonCode: undefined }),
+      line({ inventoryCountLineId: undefined, itemId: 22, lotId: 32,
+        countedQty: 3, varianceReasonCode: undefined }),
+    ]), { appUserId: 71, workerNo: 'W-001' });
+    expect(mockOf(tx.inventory_count_line.update)).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ counted_qty: new Prisma.Decimal(8),
+        variance_reason_code: null, counted_by: 81n, counted_worker_id: 8n }) }),
+    );
+    expect(mockOf(tx.inventory_count_line.createMany)).toHaveBeenCalledWith({ data: [
+      expect.objectContaining({ counted_qty: new Prisma.Decimal(3), variance_reason_code: null }),
+    ] });
+  });
+
+  it('블라인드 미보완 라인을 그대로 동봉하면 원래 계수자 귀속을 보존한다', async () => {
+    const { service, tx } = fixture({ blindCount: true });
+    const old = existingLine(101n, 1, 21n, 31n, 10);
+    old.counted = true;
+    old.counted_qty = new Prisma.Decimal(8);
+    old.counted_by = 44n;
+    old.counted_worker_id = 6n;
+    mockOf(tx.inventory_count_line.findMany).mockResolvedValue([old]);
+    await service.replaceWithin(tx, 91, body([line({ countedQty: 8, varianceReasonCode: undefined })]),
+      { appUserId: 71 });
+    expect(tx.inventory_count_line.update).not.toHaveBeenCalled();
+  });
+
+  it('블라인드라도 기존 계수 수량이나 시각을 바꾸면 사유를 요구한다', async () => {
+    const { service, tx } = fixture({ blindCount: true });
+    const old = existingLine(101n, 1, 21n, 31n, 10);
+    old.counted = true;
+    old.counted_qty = new Prisma.Decimal(8);
+    mockOf(tx.inventory_count_line.findMany).mockResolvedValue([old]);
+    for (const submitted of [line({ countedQty: 7, varianceReasonCode: undefined }),
+      line({ countedQty: 8, countedAt: '2026-09-09T04:04:05.000Z', varianceReasonCode: undefined })]) {
+      await expect(service.replaceWithin(tx, 91, body([submitted]), { appUserId: 71 }))
+        .rejects.toMatchObject({ response: { errors: [expect.objectContaining({
+          field: 'lines.0.varianceReasonCode', code: 'REQUIRED',
+        })] } });
+    }
+  });
+
+  it('기존 차이 사유를 명시적으로 null로 지우면 무변경 계수라도 거부한다', async () => {
+    const { service, tx } = fixture({ blindCount: true });
+    const old = existingLine(101n, 1, 21n, 31n, 10);
+    old.counted = true;
+    old.counted_qty = new Prisma.Decimal(8);
+    old.variance_reason_code = 'COUNT_ERROR';
+    mockOf(tx.inventory_count_line.findMany).mockResolvedValue([old]);
+    await expect(service.replaceWithin(tx, 91,
+      body([line({ countedQty: 8, varianceReasonCode: null })]), { appUserId: 71 }))
+      .rejects.toMatchObject({ response: { errors: [expect.objectContaining({
+        field: 'lines.0.varianceReasonCode', code: 'REQUIRED',
+      })] } });
+  });
+
   it('신규 차원의 장부가 없으면 systemQty 0이고 음수이면 질의 276 경계로 거부한다', async () => {
     const zero = fixture({ snapshotQty: null });
     await zero.service.replaceWithin(
@@ -274,7 +363,7 @@ function line(
   };
 }
 
-function fixture(options: { statusCode?: string; snapshotQty?: number | null } = {}): {
+function fixture(options: { statusCode?: string; snapshotQty?: number | null; blindCount?: boolean } = {}): {
   service: InventoryCountUpdateService;
   tx: Prisma.TransactionClient;
   queries: jest.Mocked<InventoryCountQueryService>;
@@ -294,6 +383,7 @@ function fixture(options: { statusCode?: string; snapshotQty?: number | null } =
           {
             inventory_count_id: 91n,
             warehouse_id: 51n,
+            blind_count: options.blindCount ?? false,
             status_code: options.statusCode ?? 'PLANNED',
             version_no: 4,
           },
@@ -317,7 +407,10 @@ function fixture(options: { statusCode?: string; snapshotQty?: number | null } =
           ];
     }),
     location: { findUnique: jest.fn().mockResolvedValue({ warehouse_id: 51n }) },
-    worker: { findUnique: jest.fn().mockResolvedValue({ app_user_id: 81n }) },
+    worker: { findUnique: jest.fn().mockResolvedValue({ worker_id: 8n, app_user_id: 81n }),
+      findFirst: jest.fn().mockResolvedValue({ worker_id: 8n }) },
+    terminal: { findFirst: jest.fn().mockResolvedValue({ terminal_id: 7n }) },
+    audit_event: { create: jest.fn().mockResolvedValue({}) },
     item: {
       findMany: jest.fn().mockResolvedValue([{ item_id: 21n }, { item_id: 22n }]),
     },
@@ -368,6 +461,7 @@ function existingLine(
     uom_id: 41n,
     variance_reason_code: null,
     counted_by: null,
+    counted_worker_id: null,
     counted_at: NOW,
     counted: false,
     created_at: NOW,

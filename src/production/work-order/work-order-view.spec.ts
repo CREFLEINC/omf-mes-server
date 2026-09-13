@@ -103,6 +103,23 @@ describe('WorkOrder 뷰', () => {
     });
   });
 
+  it('뷰 — 저장된 기본 위치 세 칸을 API 필드로 그대로 낸다', () => {
+    const view = workOrderView(
+      workOrderRow({
+        default_wip_location_id: 101n,
+        default_fg_location_id: 102n,
+        default_scrap_location_id: 103n,
+      }),
+      { erpMessageQueued: false },
+    );
+
+    expect(view).toMatchObject({
+      defaultWipLocationId: 101,
+      defaultFgLocationId: 102,
+      defaultScrapLocationId: 103,
+    });
+  });
+
   it('뷰 — resourceId 는 resource_type_code 로 갈라 읽는다(COALESCE 가 아니다)', () => {
     // 판별자와 다른 칸이 함께 차 있어도 판별자가 가리키는 칸만 읽는다.
     const worker = workOrderResourcePlanView(

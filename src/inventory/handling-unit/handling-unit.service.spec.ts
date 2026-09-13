@@ -93,6 +93,9 @@ describe('취급 단위 등록 — 채번', () => {
       uom: { findMany: async () => [] },
       $transaction: async (work: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         work({
+          worker: { findFirst: async () => ({ worker_id: 8n }) },
+          terminal: { findFirst: async () => ({ terminal_id: 7n }) },
+          audit_event: { create: async () => ({}) },
           handling_unit: {
             create: async ({ data }: { data: Record<string, unknown> }) => {
               written.push(data);
@@ -138,6 +141,15 @@ describe('취급 단위 등록 — 채번', () => {
     ]);
     // ⭐ ETag 의 원천이 «캐시되는 본문»에 실린다 — 빠지면 재전송 응답이 토큰을 잃는다(§4-1).
     expect(result.versionNo).toBe(1);
+
+    await service.create(
+      { handlingUnitTypeCode: 'PALLET' },
+      { workerNo: '100027', workerId: 8n, terminalAudit: {
+        workerId: 8n, workerNo: '100027', terminalId: 7n, plantId: 3n,
+        correlationId: 'create-1', operationKey: 'POST /inventory/handling-units',
+      } },
+    );
+    expect(written[1]).toMatchObject({ created_by: null, updated_by: null });
   });
 
   it('⭐ 번호가 부딪히면 다시 뽑는다 — 사용자가 고칠 수 없는 값이라 400 으로 되돌리지 않는다', async () => {

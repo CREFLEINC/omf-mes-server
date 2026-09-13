@@ -1,3 +1,4 @@
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -36,8 +37,8 @@ export class PutawayRuleController {
 
   @Get()
   @Contract('GET /logistics/putaway-rules')
-  list(@Query() query: PutawayRuleQuery): Promise<PagedResponse<unknown>> {
-    return this.rules.list(query);
+  list(@Req() request: Request, @Query() query: PutawayRuleQuery): Promise<PagedResponse<unknown>> {
+    return this.rules.list(query, currentTerminal(request)?.plantId);
   }
 
   /**

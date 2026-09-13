@@ -14,10 +14,6 @@ export const IDENTIFICATION_LABEL_ELIGIBILITY_POLICY = {
   code: ERROR_CODE.STATE_LOCKED,
   message: "개체별 발행 자격 원천이 확정되지 않았습니다.",
 } as const;
-export const DELIVERY_ALLOCATION_TARGET_POLICY = {
-  code: ERROR_CODE.INVALID,
-  message: "납품 라벨의 대상 유형이 계약에 없습니다.",
-} as const;
 
 export type DocumentIssueDocumentType = DocumentIssueView["documentTypeCode"];
 
@@ -76,6 +72,14 @@ export type DocumentIssueTargetFacts =
       lotId: bigint | null;
       statusCode: string;
       confirmedAt: Date | null;
+    }
+  | {
+      targetTypeCode: "SHIPMENT_LOT_ALLOCATION";
+      targetId: bigint;
+      lotId: bigint;
+      plantId: bigint;
+      oqcPassed: boolean;
+      deliveryLabelNo: string | null;
     };
 
 export function prepareDocumentIssueTargets(
@@ -188,7 +192,10 @@ export function qualifyDocumentIssueTarget(
     case "LOCATION_LABEL":
       break;
     case "DELIVERY_LABEL":
-      return failTarget(target, DELIVERY_ALLOCATION_TARGET_POLICY);
+      if (facts.targetTypeCode !== "SHIPMENT_LOT_ALLOCATION" || !facts.oqcPassed)
+        failTarget(target, ERROR_CODE.STATE_LOCKED, "OQC 합격 출하 배분만 납품 라벨을 발행할 수 있습니다.");
+      sourceLotId = facts.lotId;
+      break;
   }
 
   assertLotMatches(target, sourceLotId);
@@ -243,6 +250,7 @@ function assertSupportedPair(
     CERTIFICATE_OF_ANALYSIS: ["INSPECTION_RESULT"],
     TOOL_LABEL: ["MOLD"],
     LOCATION_LABEL: ["LOCATION"],
+    DELIVERY_LABEL: ["SHIPMENT_LOT_ALLOCATION"],
   };
   if (!(supported[documentTypeCode] ?? []).includes(targetTypeCode))
     fail(

@@ -3,7 +3,9 @@ import { JwtService } from "@nestjs/jwt";
 import type { Request } from "express";
 
 import { currentSession } from "../../auth/session-resolver.service";
+import { currentTerminal } from "../../auth/terminal-context";
 import { resolveTerminalId } from "../../auth/terminal-token";
+import type { TerminalWorkerAuditActor } from "../../audit/terminal-worker-audit";
 import { ContractException, ERROR_CODE, field } from "../../common/errors";
 import {
   IdempotencyContext,
@@ -12,9 +14,10 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 
 export type DocumentIssueWriteContext = IdempotencyContext & {
-  appUserId: number;
+  appUserId?: number;
   workerNo?: string;
   terminalId: bigint | null;
+  terminalAudit?: Omit<TerminalWorkerAuditActor, 'workerId'>;
 };
 
 export async function documentIssueWriteContext(
@@ -23,24 +26,32 @@ export async function documentIssueWriteContext(
   prisma: PrismaService,
 ): Promise<DocumentIssueWriteContext> {
   const session = currentSession(request);
-  if (session === undefined)
+  const terminal = currentTerminal(request);
+  if (session === undefined && terminal === undefined)
     throw new UnauthorizedException("로그인이 필요합니다.");
-  const terminalId = await resolveTerminalId(jwt, prisma, request);
+  const terminalId = terminal?.terminalId ?? await resolveTerminalId(jwt, prisma, request);
   const workerNo = optionalWorkerNo(
     request.headers["x-worker-no"],
-    terminalId !== null,
+    terminal !== undefined || terminalId !== null,
   );
+  if (terminal !== undefined && workerNo === undefined)
+    throw workerError(ERROR_CODE.REQUIRED, "작업자 사번이 필요합니다.");
+  const key = String(request.headers["idempotency-key"]);
   return {
-    key: String(request.headers["idempotency-key"]),
-    appUserId: session.userId,
+    key,
+    appUserId: session?.userId,
     workerNo,
     terminalId,
+    terminalAudit: terminal === undefined || workerNo === undefined ? undefined : {
+      workerNo, terminalId: terminal.terminalId, plantId: terminal.plantId,
+      correlationId: key, operationKey: 'POST /app/document-issues',
+    },
     successStatus: HttpStatus.CREATED,
     fingerprint: requestFingerprint(`${request.method} ${request.path}`, {
       body: request.body,
       query: request.query,
       actor: {
-        appUserId: session.userId,
+        appUserId: session?.userId ?? null,
         workerNo: workerNo ?? null,
         terminalId: terminalId?.toString() ?? null,
       },

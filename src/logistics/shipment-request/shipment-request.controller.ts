@@ -1,3 +1,4 @@
+import { currentTerminal } from '../../auth/terminal-context';
 import {
   Body,
   Controller,
@@ -9,14 +10,18 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  Put,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { logisticsWriteActorOf } from '../logistics-write-actor';
 import { Contract } from '../../common/contract';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
-import { runIdempotent } from '../../common/master';
+import { runIdempotent, runVersioned } from '../../common/master';
+import { setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
   ShipmentRequestQueryService,
@@ -25,7 +30,11 @@ import {
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
 import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
 import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
-import { ShipmentRequestCreate, ShipmentRequestService } from './shipment-request.service';
+import {
+  ShipmentRequestCreate,
+  ShipmentRequestService,
+  ShipmentRequestUpdate,
+} from './shipment-request.service';
 
 /**
  * MES 출하작업지시 — 화면 `W-04-01`(편성) · `W-04-02`(목록·요약·상세) · `M-04-01`(피킹).
@@ -46,8 +55,8 @@ export class ShipmentRequestController {
 
   @Get()
   @Contract('GET /logistics/shipment-requests')
-  list(@Query() query: ShipmentRequestQuery): Promise<PagedResponse<ShipmentRequestView>> {
-    return this.queries.list(query);
+  list(@Req() request: Request, @Query() query: ShipmentRequestQuery): Promise<PagedResponse<ShipmentRequestView>> {
+    return this.queries.list(query, currentTerminal(request)?.plantId);
   }
 
   /**
@@ -64,10 +73,14 @@ export class ShipmentRequestController {
 
   @Get(':shipmentRequestId')
   @Contract('GET /logistics/shipment-requests/{shipmentRequestId}')
-  get(
+  async get(
     @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ShipmentRequestView> {
-    return this.queries.get(shipmentRequestId);
+    const view = await this.queries.get(shipmentRequestId);
+    if (view.versionNo === undefined) throw new Error('출하작업지시 versionNo가 없습니다.');
+    setEtag(response, view.versionNo);
+    return view;
   }
 
   /**
@@ -90,7 +103,32 @@ export class ShipmentRequestController {
       this.idempotency,
       request,
       HttpStatus.CREATED,
-      () => this.requests.create(body, session.userId),
+      () => this.requests.create(body, { appUserId: session.userId, scopes: session.scopes }),
+      FAMILY_CONFLICT_CODE,
+    );
+  }
+
+  /** 기존 미배정 요청에 공장을 지정한다. If-Match와 멱등 키는 계약에서 모두 필수다. */
+  @Put(':shipmentRequestId')
+  @Contract('PUT /logistics/shipment-requests/{shipmentRequestId}')
+  updateFulfillmentPlant(
+    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+    @Body() body: ShipmentRequestUpdate,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShipmentRequestView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+    return runVersioned<ShipmentRequestView, 'shipmentRequest'>(
+      this.idempotency,
+      request,
+      response,
+      'shipmentRequest',
+      (version) =>
+        this.requests.updateFulfillmentPlant(shipmentRequestId, version, body, {
+          appUserId: session.userId,
+          scopes: session.scopes,
+        }),
       FAMILY_CONFLICT_CODE,
     );
   }
@@ -114,8 +152,7 @@ export class ShipmentRequestController {
     @Body() body: ShipmentLinePick,
   ): Promise<ShipmentRequestLineView> {
     const workerNo = request.headers['x-worker-no'];
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
+
     return runIdempotent(
       this.idempotency,
       request,
@@ -123,7 +160,10 @@ export class ShipmentRequestController {
       () =>
         this.picks.pick(shipmentRequestId, shipmentRequestLineId, body, {
           workerNo: typeof workerNo === 'string' ? workerNo : undefined,
-          appUserId: session.userId,
+          ...logisticsWriteActorOf(
+            request,
+            'POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick',
+          ),
         }),
       FAMILY_CONFLICT_CODE,
     );

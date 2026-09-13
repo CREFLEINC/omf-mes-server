@@ -21,14 +21,14 @@ const PAIRS: ReadonlyArray<[DocumentType, readonly DocumentTargetType[]]> = [
   ["PRODUCTION_LOT_LABEL", ["LOT"]],
   ["IDENTIFICATION_TAG", ["SERIAL_NUMBER"]],
   ["PACKING_LABEL", ["HANDLING_UNIT"]],
-  ["DELIVERY_LABEL", []],
+  ["DELIVERY_LABEL", ["SHIPMENT_LOT_ALLOCATION"]],
   ["CERTIFICATE_OF_ANALYSIS", ["INSPECTION_RESULT"]],
   ["TOOL_LABEL", ["MOLD"]],
   ["LOCATION_LABEL", ["LOCATION"]],
 ];
 
 describe("발행 요청 규칙 (I-27 C1)", () => {
-  it("9개 문서와 7개 대상의 짝을 정확히 닫는다", () => {
+  it("9개 문서와 8개 대상의 짝을 정확히 닫는다", () => {
     for (const [documentTypeCode, allowed] of PAIRS) {
       for (const targetTypeCode of DOCUMENT_TARGET_TYPES) {
         const run = () =>
@@ -299,6 +299,19 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
       ERROR_CODE.PAIR,
       "targets[0].lotId",
     );
+  });
+
+  it("납품 라벨은 OQC 합격 배분의 LOT과만 짝짓는다", () => {
+    const target = { ...prepared("SHIPMENT_LOT_ALLOCATION"), requestedLotId: 50n };
+    const facts: DocumentIssueTargetFacts = {
+      targetTypeCode: "SHIPMENT_LOT_ALLOCATION", targetId: target.targetId,
+      lotId: 50n, plantId: 1n, oqcPassed: true, deliveryLabelNo: null,
+    };
+    expect(qualifyDocumentIssueTarget("DELIVERY_LABEL", target, facts)).toBe(50n);
+    expectFailure(() => qualifyDocumentIssueTarget("DELIVERY_LABEL", target,
+      { ...facts, oqcPassed: false }), ERROR_CODE.STATE_LOCKED, "targets[0].targetId");
+    expectFailure(() => qualifyDocumentIssueTarget("DELIVERY_LABEL",
+      { ...target, requestedLotId: 51n }, facts), ERROR_CODE.PAIR, "targets[0].lotId");
   });
 
   it("재발행이면 비공백 활성 사유가 필수이고 원문을 보존한다", () => {
