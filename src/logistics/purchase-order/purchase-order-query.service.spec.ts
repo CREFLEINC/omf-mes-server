@@ -60,7 +60,10 @@ describe('PurchaseOrderQueryService', () => {
       const { prisma, calls } = listStub();
       await new PurchaseOrderQueryService(prisma).list({ openOnly: true }); // tolerance_under_qty 안 뺌(§6-4)
 
-      expect(calls.where?.AND).toEqual([{ purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } }]);
+      expect(calls.where?.AND).toEqual([{
+        status_code: { notIn: ['CLOSED', 'CANCELLED'] },
+        purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } },
+      }]);
     });
 
     it('목록 — openOnly 를 안 주면 라인 조건을 안 건다', async () => {
@@ -83,7 +86,8 @@ describe('PurchaseOrderQueryService', () => {
       // 스프레드로 합치면 뒤(openOnly)가 앞(itemId)을 덮어쓴다 — AND 로 둘 다 걸려야 한다.
       expect(calls.where?.AND).toEqual([
         { purchase_order_line: { some: { item_id: 42 } } },
-        { purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
+        { status_code: { notIn: ['CLOSED', 'CANCELLED'] },
+          purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
       ]);
     });
 

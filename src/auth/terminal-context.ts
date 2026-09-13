@@ -6,6 +6,8 @@ export interface TerminalContext {
   plantId: bigint;
   terminalTypeCode: string;
   equipmentId: bigint | null;
+  /** Only JWT-verified contexts contain this; legacy test scope fixtures omit it. */
+  tokenVersion?: number;
 }
 
 const ATTACHED_TERMINAL = Symbol('terminal');

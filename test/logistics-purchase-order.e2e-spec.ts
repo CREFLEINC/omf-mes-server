@@ -203,6 +203,19 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
     );
   });
 
+  it('P/O — 잔량이 있어도 CLOSED 헤더는 openOnly 목록에서 제외한다', async () => {
+    const detail = await create();
+    const id = detail.purchaseOrder.purchaseOrderId;
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(id) },
+      data: { status_code: 'CLOSED' },
+    });
+    expect((await list(`plantId=${plantId}&statusCode=CLOSED`)).items.map((row) => row.purchaseOrderId))
+      .toContain(id);
+    expect((await list(`plantId=${plantId}&openOnly=true`)).items.map((row) => row.purchaseOrderId))
+      .not.toContain(id);
+  });
+
   it('P/O — 헤더 수정에 If-Match 가 없으면 400 이다', async () => {
     const detail = await create();
     await request(app.getHttpServer())

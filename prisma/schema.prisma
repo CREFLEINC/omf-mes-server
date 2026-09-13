@@ -2221,6 +2221,8 @@ model terminal {
   token_version        Int                    @default(1)
   equipment_id         BigInt?
   token_issued_at      DateTime?              @db.Timestamptz(6)
+  registered_token_version Int?
+  registration_confirmed_at DateTime?          @db.Timestamptz(6)
   document_issue_log   document_issue_log[]
   audit_event          audit_event[]
   equipment            equipment?             @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
