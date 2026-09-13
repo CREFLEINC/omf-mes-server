@@ -46,7 +46,42 @@ API 는 평문 HTTP `:3100` 으로 노출한다. 리버스 프록시도 인증�
 전제로 하며, 그 전제가 바뀌면(무선 구간 추가·외부 접속 허용) **먼저 되돌려야 하는 결정**이다.
 
 **되돌리는 방법** — 앞단에 TLS 를 두고 `.env.prod` 에 `COOKIE_SECURE=true` 를 넣는다.
-코드는 그것만 보므로 다른 변경은 필요 없다.
+다만 **환경변수 하나로 끝나지 않는다.** 실제로 필요한 것은 넷이다(#621).
+
+| 필요 | 성격 |
+|---|---|
+| 앞단에 TLS 종단기 | 인프라 — 앱 변경 없음 |
+| `COOKIE_SECURE=true` 가 **컨테이너에 닿게** | ⚠ `docker-compose.prod.yml` 의 `api.environment` 에 이 변수가 **없다.** 지금은 의도값이 `false` = 코드 기본값이라 증상이 없지만, 켜는 날 조용히 무시된다 |
+| `CORS_ORIGINS` 를 `https://…` 로 교체 | `http` 와 `https` 는 **다른 오리진**이다. 안 바꾸면 관리웹이 CORS 에서 막힌다 |
+| `SameSite=None` | ⚠ `session-cookie.ts:45`·`:56` 에 `'lax'` 가 **하드코딩**이라 코드 변경이 필요하다. 관리웹이 다른 **호스트**에 있을 때만 해당 — 포트만 다른 것은 같은 사이트라 지금도 쿠키가 간다 |
+
+## CORS — 브라우저가 다른 오리진에서 부를 수 있게 여는 목록
+
+`.env.prod` 의 `CORS_ORIGINS` 하나로 정한다. **비어 있으면 꺼진다**(`src/common/http/cors.ts:38`).
+목록 없이 여는 것은 「아무 사이트나 사용자 쿠키로 이 API 를 부를 수 있다」와 같아서 기본을 꺼짐으로 둔다.
+
+| | |
+|---|---|
+| 값의 형태 | **오리진** — 스킴+호스트+포트. 끝에 `/` 를 붙이지 않는다. 여러 개면 쉼표 |
+| 일치 방식 | 글자 그대로. 와일드카드·서브도메인 패턴·포트 생략이 **없다** — 쿠키를 쓰느라 `credentials` 를 켜야 하고, 그때 브라우저가 `*` 를 거절한다 |
+| 확인 | 기동 로그 끝이 `CORS 꺼짐` 인지 `CORS <목록>` 인지(`src/main.ts:42`) |
+
+⛔ **꺼진 상태의 증상이 원인을 가린다.** `enableCors` 를 안 부르면 NestJS 가 `OPTIONS` 핸들러를
+달지 않아 preflight 가 **404** 로 떨어진다. 브라우저 콘솔에는 CORS 오류로만 보이고 서버 로그에는
+아무것도 안 남는다 — 하노이에서 실제로 이렇게 막혔다(#612).
+
+```bash
+# 운영에서 확인
+curl -i -X OPTIONS http://<서버>:3100/api/mdm/workers \
+  -H 'Origin: http://<관리웹 오리진>' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization'
+# 204 + Access-Control-Allow-Origin 이 나와야 한다. 404 면 CORS 가 꺼진 것이다.
+```
+
+허용 요청 헤더는 `cors.ts` 가 **명시 목록**으로 가진다(`Authorization`·`Content-Type`·
+`Idempotency-Key`·`If-Match`·`X-Worker-No`). 명시하면 cors 패키지가 요청 헤더를 반사하지 않으므로,
+서버가 새 요청 헤더를 읽기 시작하면 **이 목록에도 더해야** 한다.
 
 ## 건드리면 깨지는 것들
 
@@ -75,6 +110,12 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 **5. `.env.prod` 는 서버에만 존재합니다**
 
 커밋하지 않습니다. 배포 워크플로도 이 파일을 건드리지 않습니다. 템플릿은 `.env.prod.example` 입니다.
+
+**6. `docker-compose.prod.yml` 의 `api.environment` 에서 `CORS_ORIGINS` 를 빼지 마세요**
+
+`docker compose --env-file` 은 **compose 파일의 `${}` 치환용**이지 컨테이너 주입이 아닙니다.
+`api.environment` 에 적힌 변수만 컨테이너가 봅니다 — 빼면 `.env.prod` 에 아무리 적어도 CORS 가
+꺼진 채 뜨고, 증상은 브라우저 쪽 CORS 오류로만 나타납니다(#612). 새 환경변수를 늘릴 때도 같습니다.
 
 ## 서버
 

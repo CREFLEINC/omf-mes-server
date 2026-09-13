@@ -46,6 +46,7 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 - `deploy-dev.yml` 에 `pull_request` 트리거 금지.
 - `.env.prod` 커밋 금지. 템플릿: `.env.prod.example`.
 - `deploy.sh`·`rollback.sh` 에 `sudo` 금지.
+- `docker-compose.prod.yml` 의 `api.environment` 에서 `CORS_ORIGINS` 제거 금지 — `--env-file` 은 `${}` 치환용이라 여기 없으면 컨테이너가 못 본다(#612).
 
 ## Agent skills
 

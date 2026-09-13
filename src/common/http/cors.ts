@@ -6,6 +6,12 @@ import { INestApplication } from '@nestjs/common';
  * ⛔ 기본은 꺼짐이다. `CORS_ORIGINS` 에 오리진을 적은 환경에서만 켜진다 — 목록 없이
  * 여는 것은 「아무 사이트나 사용자의 쿠키로 이 API 를 부를 수 있다」와 같다.
  *
+ * ⚠ **컨테이너에서는 `docker-compose.prod.yml` 의 `api.environment` 가 이 변수를 넘겨야
+ * 한다.** `docker compose --env-file` 은 compose 파일의 `${}` 치환용이지 컨테이너 주입이
+ * 아니다 — 거기 없으면 `.env.prod` 에 아무리 적어도 서버는 빈 값을 본다. 꺼진 상태에서는
+ * `enableCors` 가 안 불려 NestJS 가 `OPTIONS` 핸들러를 달지 않으므로 preflight 가
+ * **404** 로 떨어진다(#612 실측).
+ *
  * ⛔ `origin: '*'` 를 쓸 수 없다. 인증이 **쿠키**라 `credentials` 를 켜야 하고, 그때
  * 브라우저는 와일드카드를 거절한다 — 정확한 오리진을 돌려줘야 한다.
  *
@@ -34,8 +40,22 @@ export function configureCors(app: INestApplication, raw: string | undefined): s
   app.enableCors({
     origin: origins,
     credentials: true,
-    // 계약이 쓰는 요청 헤더 셋. 빠뜨리면 그 헤더를 단 요청이 preflight 에서 막힌다.
-    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'If-Match'],
+    // 계약이 쓰는 요청 헤더 전부.
+    //
+    // ⛔ 이 목록을 «명시»하면 cors 패키지는 `Access-Control-Request-Headers` 를 반사하지
+    // 않고 이 값만 돌려준다 — 여기 없는 헤더를 단 요청은 preflight 에서 막힌다. 그래서
+    // 서버가 실제로 읽는 헤더를 모두 적어 둔다(실측: `idempotency-key`·`if-match`·`x-worker-no`).
+    //
+    // `X-Worker-No` 는 계약 7벌 중 6벌이 header 파라미터로 선언한다(`mdm` 만 안 쓴다).
+    // `Authorization` 은 단말 토큰의 운반 수단이다(`auth/terminal-token.ts`) — 다만 이것을
+    // 여는 것으로 PDA 가 통하지는 않는다. 가드가 쿠키만 보므로 본 요청은 여전히 401 이다(#611).
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Idempotency-Key',
+      'If-Match',
+      'X-Worker-No',
+    ],
     // ⛔ 이것이 없으면 화면이 낙관적 잠금 토큰을 못 읽는다.
     exposedHeaders: ['ETag'],
   });
