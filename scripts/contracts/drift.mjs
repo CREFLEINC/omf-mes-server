@@ -16,7 +16,7 @@
  *
  * 어긋난 것을 발견하면 지우기 전에 `docs/계약-선행-수정항목.md` 에 항목을 연다.
  *
- * 종료 코드 — 0 사본이 고정 커밋과 같다 · 1 어긋남 · 2 확인 불가(gh 없음).
+ * 종료 코드 — 0 사본이 고정 커밋과 같다 · 1 어긋남 · 2 확인 불가(gh 없음 · 읽지 못한 파일).
  */
 
 import { readFileSync } from 'node:fs';
@@ -58,15 +58,14 @@ function compare(pinned, local) {
   };
 }
 
-function report(label, diff, limit = 12) {
-  const lines = [
-    ...diff.added.map((k) => `      + ${label} ${k}   (사본에만 있다)`),
-    ...diff.removed.map((k) => `      - ${label} ${k}   (정본에만 있다)`),
-    ...diff.changed.map((k) => `      ~ ${label} ${k}`),
-  ];
-  for (const line of lines.slice(0, limit)) console.log(line);
-  if (lines.length > limit) console.log(`      … ${label} ${lines.length - limit}건 더`);
-  return lines.length;
+/**
+ * ⛔ 줄이지 않고 **전부** 찍는다. 이 목록이 곧 「다음 `update` 가 지울 것들」이라,
+ * 「…N건 더」로 접으면 접힌 자리가 그대로 조용히 사라진다.
+ */
+function report(label, diff) {
+  for (const k of diff.added) console.log(`      + ${label} ${k}   (사본에만 있다)`);
+  for (const k of diff.removed) console.log(`      - ${label} ${k}   (정본에만 있다)`);
+  for (const k of diff.changed) console.log(`      ~ ${label} ${k}`);
 }
 
 if (!(await ghAvailable())) {
@@ -84,9 +83,20 @@ console.log(`사본 ↔ 고정 커밋 ${pinnedRef.slice(0, 7)}\n`);
 
 let drifted = 0;
 let total = 0;
+let unreadable = 0;
 for (const { file } of CONTRACTS) {
-  const local = JSON.parse(readFileSync(localPath(file), 'utf8'));
-  const pinned = JSON.parse(await fetchContract(file, pinnedRef));
+  // ⛔ 「읽지 못했다」를 「어긋남」으로도 「이상 없음」으로도 적지 않는다 — 셋은 다른 사실이다.
+  //    사본이 없을 수도, 정본이 깨져 있을 수도 있다(`KNOWN_BROKEN` 참조).
+  let local;
+  let pinned;
+  try {
+    local = JSON.parse(readFileSync(localPath(file), 'utf8'));
+    pinned = JSON.parse(await fetchContract(file, pinnedRef));
+  } catch (error) {
+    console.log(`  ? ${file} — 대조하지 못했다: ${error.message}`);
+    unreadable += 1;
+    continue;
+  }
 
   const ops = compare(operationMap(pinned), operationMap(local));
   const schemas = compare(pinned.components?.schemas ?? {}, local.components?.schemas ?? {});
@@ -105,6 +115,10 @@ for (const { file } of CONTRACTS) {
   report('스키마', schemas);
 }
 
+if (unreadable > 0) {
+  console.log(`\n${unreadable}개 파일을 대조하지 못했다. 「검사하지 못함」은 「이상 없음」이 아니다.`);
+  process.exit(2);
+}
 if (drifted === 0) {
   console.log('\n사본이 고정 커밋 그대로다.');
   process.exit(0);
