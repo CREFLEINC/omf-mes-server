@@ -1,6 +1,6 @@
 # CI/CD 구축 인계 문서
 
-작성: 2026-07-30 · 전역 규칙은 저장소 루트의 `CLAUDE.md`, 배포·운영 상세는 `docs/deployment.md` 참조.
+작성: 2026-07-30 · 재점검: 2026-09-08 · 전역 규칙은 저장소 루트의 `CLAUDE.md`, 배포·운영 상세는 `docs/deployment.md` 참조.
 
 이 문서는 **남은 작업 목록**입니다. 다 끝나면 삭제하세요.
 
@@ -9,11 +9,15 @@
 ## 현재 상태
 
 ```
-main            8bbf5c1  Merge PR #1 (chore/ci-cd)      ← Harbor 파이프라인 반영 완료
-현재 브랜치      fix/deploy-timezone                     ← T-1~T-4 커밋·푸시 완료
+main                 origin/main 과 일치 (2026-09-08 재점검 시점)
+로컬 API             Node 22 · /api/health 200 · db=up
+개발 서버 API         /api/health 200 · db=up, 그러나 OpenAPI 작업 2개인 초기 이미지
+GitHub Actions       CI · Build & Push · Deploy 세 워크플로 모두 수동 비활성화
+self-hosted runner   GitHub 화면에서 0 available runners
 ```
 
-브랜치에 담긴 변경 (타임존 정책 + 배포 경로 정리 + runner 전환):
+아래는 2026-07-30 당시 브랜치에 담겼던 변경 기록입니다
+(타임존 정책 + 배포 경로 정리 + runner 전환).
 
 ```
  M docker-compose.yml                 TZ UTC 통일, postgres -c timezone
@@ -217,9 +221,9 @@ git push -u origin fix/deploy-timezone
 
 | | 상태 |
 |---|---|
-| T-5 Harbor · Secrets | ✅ 확인됨 (아래) |
-| T-6 개발 서버 초기 구성 | 자산 배치·`.env.prod`·Harbor 로그인 완료. **`./deploy.sh` 첫 성공과 시드는 아직** |
-| T-7 러너 설치 | ✅ `omf-dev-01` online |
+| T-5 Harbor · Secrets | ⚠️ 2026-07-30 성공 이력은 있으나 GitHub 결제/지출 한도로 2026-08-10부터 job 시작 실패 |
+| T-6 개발 서버 초기 구성 | ⚠️ API·DB는 실행 중이나 초기 이미지(경로 2·작업 2)로 확인됨. 최신 main은 경로 351·작업 487 |
+| T-7 러너 설치 | ❌ GitHub 화면에서 self-hosted runner 0개. 기존 `omf-dev-01` 복구 필요 |
 | T-8 docker 그룹 | ✅ `hulk` 이미 docker·sudo 그룹 |
 | T-9 브랜치 보호 | ❌ **플랜 제약으로 불가** (아래) |
 | T-10 릴리스·롤백 리허설 | 미착수 |
@@ -228,7 +232,20 @@ git push -u origin fix/deploy-timezone
 
 ## 남은 작업
 
-### ~~T-5. Harbor · GitHub Secrets 상태 확인~~ ✅ 완료
+### T-5. Harbor · GitHub Actions 상태 복구
+
+2026-09-08 재점검 결과, CI·Build & Push·Deploy 워크플로가 모두 수동 비활성화돼 있습니다.
+Build & Push 마지막 실행(run 31359387337)은 다음 이유로 job 시작 전에 실패했습니다.
+
+```
+The job was not started because recent account payments have failed or
+your spending limit needs to be increased.
+```
+
+조직의 결제 상태 또는 Actions 지출 한도를 먼저 정상화하고 세 워크플로를 다시 활성화해야 합니다.
+해결 전에는 활성화해도 이미지 빌드가 시작되지 않습니다.
+
+아래는 2026-07-30 당시 정상 동작을 확인한 기록입니다.
 
 PR #1 빌드 로그(run 30504184498)에서 확인했습니다.
 
@@ -238,9 +255,19 @@ PR #1 빌드 로그(run 30504184498)에서 확인했습니다.
                       pushing manifest for hub.crefle.com/mes/backend:sha-8bbf5c1
 ```
 
-Harbor `mes` 프로젝트, `mes/backend` 저장소, 레포 Secrets(`HARBOR_USERNAME`/`HARBOR_PASSWORD`) 모두 정상입니다.
+Harbor `mes` 프로젝트, `mes/backend` 저장소, 레포 Secrets(`HARBOR_USERNAME`/`HARBOR_PASSWORD`)은 당시 정상이었습니다.
+복구 후 현재 자격증명으로 다시 검증해야 합니다.
 
 ### T-6. 개발 서버 초기 구성 (수동, 1회)
+
+2026-09-08에 `http://192.168.1.111:3100/api/health`는 `status=ok`, `db=up`으로
+응답했습니다. 최초 구성 자체는 끝났지만 배포된 OpenAPI는 경로 2개·작업 2개뿐이라 최신
+`main`(경로 351개·작업 487개)과 크게 어긋납니다. 아래 최초 구성 절차를 반복하지 말고,
+T-5·T-7을 복구한 뒤 현재 이미지를 새로 빌드·배포합니다.
+
+SSH는 아직 호스트 키를 신뢰 목록에 넣지 않았습니다. 2026-09-08에 서버가 제시한 ED25519
+지문은 `SHA256:CEgFfZucSd8x1MOwXLhuG72t4L2wsN0NtbTRMA7pZIg`입니다. 서버 콘솔이나
+관리자에게 이 지문을 별도 경로로 확인한 뒤에만 `known_hosts`에 추가합니다.
 
 `deploy/RUNNER.md` 의 1번 절 참조. 요점:
 
@@ -269,9 +296,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 
 관리자 초기 비밀번호가 **이때 한 번만** 출력됩니다.
 
-### ~~T-7. self-hosted runner 설치~~ ✅ 완료
+### T-7. self-hosted runner 복구
 
-`omf-dev-01` 이 `online`, 라벨 `self-hosted, Linux, X64, omf-dev`.
+2026-09-08 GitHub `Settings → Actions → Runners → Self-hosted`에는 사용 가능한 러너가
+0개입니다. 서버의 사용자 systemd 서비스와 러너 등록을 확인해 `omf-dev-01`을 다시
+`online`으로 만들고 `self-hosted, Linux, X64, omf-dev` 라벨을 확인합니다.
+
+아래는 2026-07-30 당시 설치 기록입니다.
 
 **문서와 다르게 설치했습니다** — 서버 실태에 맞춘 것이니 다음 사람은 `RUNNER.md` 2·3번 절을 그대로 따르면 됩니다.
 
@@ -340,6 +371,20 @@ git tag v0.1.0 && git push origin v0.1.0     # Harbor 에 v0.1.0, stable 확인
 ./rollback.sh v0.1.0 && curl -s localhost:3100/api/health
 ./rollback.sh main                            # 반드시 되돌리기
 ```
+
+### 복구 실행 순서 (2026-09-08)
+
+1. GitHub 조직 결제 상태 또는 Actions 지출 한도를 정상화합니다.
+2. 개발 서버의 SSH ED25519 지문을 별도 경로로 확인하고 안전하게 접속합니다.
+3. `gh-runner-omf.service`와 러너 등록을 복구해 `omf-dev-01`을 online으로 만듭니다.
+4. CI → Build & Push to Harbor → Deploy to dev server 순으로 워크플로를 활성화합니다.
+5. 현재 `main`으로 CI와 이미지 빌드를 성공시키고 Harbor의 `:main`, `:sha-<커밋>`을 확인합니다.
+6. 개발 서버에 배포한 뒤 `DEPLOYED.git_revision`, `/api/health`, OpenAPI 작업 수를 대조합니다.
+7. T-10의 버전 태그 배포·롤백·`main` 복귀 리허설을 수행합니다.
+
+2026-08-07 마지막으로 실제 실행된 개발 배포(run 31151698278)는 새 이미지에서
+`Cannot find module 'express'`로 헬스체크에 실패해 직전 이미지로 자동 롤백됐습니다.
+현재 Dockerfile과 의존성으로 새 이미지를 빌드해 이 오류가 재현되지 않는지 5번에서 반드시 확인합니다.
 
 ---
 
