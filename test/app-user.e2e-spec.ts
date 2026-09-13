@@ -46,6 +46,7 @@ describe('사용자 마스터 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string[];
   let noPermCookie: string[];
+  let noPermUserId: number;
   let departmentId: number;
   let businessUnitId: number;
   let plantId: number;
@@ -67,6 +68,7 @@ describe('사용자 마스터 (e2e)', () => {
     const other = await prisma.app_user.create({
       data: { login_id: NOPERM_ID, user_name: '권한없음', status_code: 'EMPLOYED' },
     });
+    noPermUserId = Number(other.app_user_id);
     await prisma.user_credential.create({
       data: { app_user_id: other.app_user_id, password_hash: await hashPassword(PASSWORD) },
     });
@@ -404,6 +406,41 @@ describe('사용자 마스터 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', '1')
       .expect(404);
+  });
+
+  it('⛔ 사용자 상세는 본인 또는 W-CO-02 만 읽고, 이전 ETag 로 304 를 재사용하지 않는다', async () => {
+    const managed = await create(`${PREFIX}-detail-guard`);
+
+    const admin = await request(app.getHttpServer())
+      .get(`/api/app/users/${managed.appUserId}`)
+      .set('Cookie', cookie)
+      .set('If-None-Match', '1')
+      .expect(200);
+    expect(admin.body.appUser.appUserId).toBe(managed.appUserId);
+    expect(admin.headers.etag).toBe('1');
+    expect(admin.headers['cache-control']).toBe('private, no-store');
+
+    const denied = await request(app.getHttpServer())
+      .get(`/api/app/users/${managed.appUserId}`)
+      .set('Cookie', noPermCookie)
+      .set('If-None-Match', '1')
+      .expect(403);
+    expect(denied.body.errors[0].code).toBe('PERMISSION_DENIED');
+
+    const self = await request(app.getHttpServer())
+      .get(`/api/app/users/${noPermUserId}`)
+      .set('Cookie', noPermCookie)
+      .expect(200);
+    expect(self.body.appUser.appUserId).toBe(noPermUserId);
+
+    await request(app.getHttpServer())
+      .get(`/api/app/users/${managed.appUserId}`)
+      .expect(401);
+    const current = await request(app.getHttpServer())
+      .get('/api/app/sessions/current')
+      .set('Cookie', noPermCookie)
+      .expect(200);
+    expect(current.body.userId).toBe(noPermUserId);
   });
 
   // ── 역할 배정 ───────────────────────────────────────────────────────────
