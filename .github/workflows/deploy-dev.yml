@@ -64,7 +64,35 @@ jobs:
           }
           echo "IMAGE_TAG=$IMAGE_TAG"
           cd "$DEPLOY_DIR"
-          ./deploy.sh
+          # ⛔ `./deploy.sh` 를 직접 부르지 않는다. 그것은 셸 IMAGE_TAG 를 «이번 실행에만»
+          #    쓰고 .env.prod 에 남기지 않는다(deploy.sh 는 .env.prod 를 읽기만 한다).
+          #    그러면 나중에 누가 서버에서 맨손으로 ./deploy.sh 를 한 번만 돌려도
+          #    .env.prod 의 옛 태그로 «조용히» 되돌아간다 — 실제로 그렇게 됐다(#628).
+          #
+          #    rollback.sh 는 이름과 달리 「.env.prod 에 태그를 쓰고 배포」다. CI 배포는
+          #    「잠깐 띄워 보기」가 아니라 「이제부터 이게 돈다」이므로 이쪽이 맞다.
+          #    일회성으로 띄워 보는 용도는 종전대로 `IMAGE_TAG=vX ./deploy.sh` 다.
+          ./rollback.sh "$IMAGE_TAG"
+
+      - name: 배포 확인
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          # 배포가 「성공했는데 옛 버전」인 상태를 여기서 잡는다. 둘 다 봐야 한다 —
+          # DEPLOYED 는 «이번에 뜬 것», .env.prod 는 «다음에 뜰 것» 이다.
+          deployed="$(sed -n 's/^image_tag=//p' "$DEPLOY_DIR/DEPLOYED")"
+          persisted="$(sed -n 's/^IMAGE_TAG=//p' "$DEPLOY_DIR/.env.prod")"
+          echo "요청=$IMAGE_TAG  이번에 뜬 것=$deployed  .env.prod=$persisted"
+          [[ "$deployed" == "$IMAGE_TAG" ]] || {
+            echo "::error::배포된 태그가 요청과 다릅니다 ($deployed ≠ $IMAGE_TAG)"
+            exit 1
+          }
+          [[ "$persisted" == "$IMAGE_TAG" ]] || {
+            echo "::error::.env.prod 에 태그가 남지 않았습니다 ($persisted ≠ $IMAGE_TAG) — 다음 배포가 되돌아갑니다"
+            exit 1
+          }
+          echo "확인 통과"
 
       - name: 배포 결과 요약
         if: always()
