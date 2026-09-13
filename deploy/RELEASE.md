@@ -97,7 +97,7 @@ curl -s localhost:3100/api/health     # {"status":"ok","db":"up"}
 
 시드는 `upsert` 라 **여러 번 돌려도 안전하다.**
 
-#### 그 다음 — 사람이 해야 하는 것 둘
+#### 그 다음 — 사람이 해야 하는 것 셋
 
 **① 역할별 권한을 준다.** 시드는 `ROLE_SYS_ADMIN` 에만 권한 3개(`W-CO-01`·`W-CO-02`·`W-CO-10`)를
 주고 **나머지 세 역할은 권한 0 으로 둔다** — 설계 확정(2026-09-01)대로 **고객이 `W-CO-02` 에서
@@ -124,6 +124,18 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres \
      LEFT JOIN mdm.code_value v ON v.code_group_id=g.code_group_id AND v.is_active
     WHERE g.is_active GROUP BY g.group_code HAVING count(v.code)=0 ORDER BY 1"
 ```
+
+**③ `CORS_ORIGINS` 를 채운다.** `install-deploy.sh` 는 이 값을 **비워 둔 채** `.env.prod` 를
+만든다 — 설치 시점에는 관리웹 주소가 대개 안 정해져 있기 때문이다. 비어 있으면 **CORS 가 꺼진
+채로 뜨고, 브라우저에서 부르는 화면이 전부 막힌다**(#612). 주소가 정해지면 채우고 다시 띄운다.
+
+```bash
+# 오리진이다 — 스킴+호스트+포트. 끝에 / 를 붙이지 않는다. 여러 개면 쉼표.
+vi /opt/omf-mes/.env.prod        # CORS_ORIGINS=http://mes.crefle.ai,http://192.168.1.50:5173
+/opt/omf-mes/deploy.sh
+```
+
+⚠ **`http` 와 `https` 는 다른 오리진이다.** 나중에 TLS 를 앞에 두면 이 값도 함께 바꾼다(#621).
 
 ---
 
@@ -199,6 +211,24 @@ cat /opt/omf-mes/DEPLOYED
 
 ```bash
 git rev-list -n1 v1.2.0        # 이 값과 DEPLOYED 의 git_revision 이 같아야 한다
+```
+
+**브라우저가 부를 수 있는지도 확인하세요.** 헬스체크는 같은 기계에서 `curl` 로 부르므로 CORS 가
+꺼져 있어도 통과합니다 — 화면이 막힌 것은 거기서 안 드러납니다.
+
+```bash
+curl -i -X OPTIONS localhost:3100/api/mdm/workers \
+  -H 'Origin: http://<관리웹 오리진>' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization'
+```
+
+`204` 와 `Access-Control-Allow-Origin` 이 나와야 합니다. **`404` 면 CORS 가 꺼진 것**입니다 —
+`.env.prod` 의 `CORS_ORIGINS` 를 보세요(0번 ③). 기동 로그 끝에서도 같은 것을 볼 수 있습니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs api | grep CORS
+# "CORS 꺼짐" 이면 목록이 비어 있다는 뜻입니다.
 ```
 
 그리고 **POP 단말 1대에서 실제 트랜잭션을 한 번 돌려보세요.** 헬스체크는 `SELECT 1` 만 하므로 통과해도 업무 로직이 정상이라는 보장은 없습니다.

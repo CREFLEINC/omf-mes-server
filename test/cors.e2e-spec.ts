@@ -62,6 +62,20 @@ describe('CORS (e2e)', () => {
 
       expect(response.headers['access-control-allow-origin']).toBeUndefined();
     });
+
+    /**
+     * ⛔ #612 실측의 «정체». 목록이 비면 `enableCors` 를 안 부르고, 그러면 NestJS 가
+     * `OPTIONS` 핸들러를 달지 않아 라우터가 404 를 낸다. 브라우저 쪽에는 CORS 오류로만
+     * 보이고 서버 로그에는 아무것도 안 남아 원인이 드러나지 않는다 — 그 인과를 고정한다.
+     */
+    it('⛔ preflight 가 404 다 — 라우터에 OPTIONS 핸들러가 없다', async () => {
+      const response = await request(app.getHttpServer())
+        .options('/api/probe/etag')
+        .set('Origin', ALLOWED)
+        .set('Access-Control-Request-Method', 'PUT');
+
+      expect(response.status).toBe(404);
+    });
   });
 
   describe('목록에 있으면 연다', () => {
@@ -93,18 +107,47 @@ describe('CORS (e2e)', () => {
       expect(response.headers['access-control-expose-headers']).toContain('ETag');
     });
 
-    it('⭐ preflight 가 계약이 쓰는 요청 헤더 셋을 허용한다', async () => {
+    /**
+     * ⭐ `Authorization`·`X-Worker-No` 가 빠져 있어 현장 셸의 교차 오리진 호출이 전부
+     * 막혔다(#612). `allowedHeaders` 를 «명시»하면 cors 패키지는 요청 헤더를 반사하지
+     * 않고 이 목록만 돌려주므로, 서버가 읽는 헤더가 하나라도 빠지면 그대로 차단된다.
+     */
+    const CONTRACT_HEADERS = [
+      'authorization',
+      'content-type',
+      'idempotency-key',
+      'if-match',
+      'x-worker-no',
+    ];
+
+    it('⭐ preflight 가 계약이 쓰는 요청 헤더를 모두 허용한다', async () => {
       const response = await request(app.getHttpServer())
         .options('/api/probe/etag')
         .set('Origin', ALLOWED)
         .set('Access-Control-Request-Method', 'PUT')
-        .set('Access-Control-Request-Headers', 'content-type,idempotency-key,if-match');
+        .set('Access-Control-Request-Headers', CONTRACT_HEADERS.join(','));
 
       expect(response.status).toBeLessThan(300);
       const allowed = String(response.headers['access-control-allow-headers']).toLowerCase();
-      for (const header of ['content-type', 'idempotency-key', 'if-match']) {
+      for (const header of CONTRACT_HEADERS) {
         expect(allowed).toContain(header);
       }
+    });
+
+    // ⛔ 허용 목록은 «허용 목록»이어야 한다. `allowedHeaders` 를 지우면 cors 패키지가
+    //    요청한 헤더를 그대로 반사해 무엇이든 통과하는데, 위 테스트는 그것을 못 잡는다.
+    it('⛔ 목록에 없는 헤더는 허용하지 않는다', async () => {
+      const response = await request(app.getHttpServer())
+        .options('/api/probe/etag')
+        .set('Origin', ALLOWED)
+        .set('Access-Control-Request-Method', 'POST')
+        .set('Access-Control-Request-Headers', 'x-not-in-contract');
+
+      // ⚠ 헤더가 «있는지»부터 본다 — 없으면 String(undefined) 가 'undefined' 가 되어
+      //    아래 단언이 조용히 통과한다.
+      expect(response.headers['access-control-allow-headers']).toBeDefined();
+      const allowed = String(response.headers['access-control-allow-headers']).toLowerCase();
+      expect(allowed).not.toContain('x-not-in-contract');
     });
 
     it('⛔ 목록 밖 오리진은 열지 않는다', async () => {

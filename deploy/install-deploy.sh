@@ -109,6 +109,13 @@ chmod 600 "$tmp_env"
   printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
   printf 'JWT_EXPIRES_IN_SECONDS=28800\n'
   printf 'COOKIE_SECURE=%s\n' "$COOKIE_SECURE"
+  # 관리웹·PDA 오리진. 설치 시점에는 주소가 아직 안 정해진 경우가 많아 묻지 않고
+  # 비워 둔다 — 정해지면 .env.prod 에서 채우고 ./deploy.sh 로 다시 띄운다.
+  # ⛔ 비어 있으면 CORS 가 꺼진 채 뜨고 브라우저의 preflight 가 404 가 된다.
+  printf '# 관리웹·PDA 오리진. 스킴+호스트+포트를 붙여 쓰고 끝에 / 를 붙이지 않는다.\n'
+  printf '#   여러 개면 쉼표로 구분. 비우면 CORS 가 꺼진다 (자세한 설명은 .env.prod.example).\n'
+  printf '#   예) CORS_ORIGINS=http://mes.example.lan,http://192.168.1.50:5173\n'
+  printf 'CORS_ORIGINS=\n'
   # 이 파일은 Docker Compose와 셸에서 함께 읽는다. 작은따옴표로 감싸면 공백·$·#가
   # 들어간 비밀번호도 두 파서가 같은 평문 값으로 해석한다.
   printf "ADMIN_INITIAL_PASSWORD='%s'\n" "$ADMIN_INITIAL_PASSWORD"

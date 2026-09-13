@@ -86,6 +86,12 @@ services:
       # 없거나 32자 미만이면 서버가 기동하지 않는다 — 약한 키로 조용히 뜨는 것보다 낫다.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요 — openssl rand -base64 48}
       JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
+      # 브라우저가 다른 오리진에서 부를 수 있게 여는 목록. 쉼표로 구분한다.
+      # ⛔ 여기 적어야 컨테이너가 본다 — --env-file 은 이 파일의 ${} 치환용이지
+      #    컨테이너 주입이 아니다. 빠뜨리면 .env.prod 에 적어도 CORS 가 꺼진 채 뜨고,
+      #    preflight(OPTIONS)가 404 로 떨어진다.
+      # 비워 두면 종전대로 꺼짐이다 — 목록 없이 여는 것은 위험하므로 기본을 바꾸지 않는다.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       TZ: UTC
     ports:
       - '${API_PORT:-3100}:3100'
