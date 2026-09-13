@@ -23,6 +23,7 @@
     "prisma:generate": "prisma generate",
     "contracts:update": "node scripts/contracts/update.mjs",
     "contracts:check": "node scripts/contracts/check.mjs",
+    "contracts:drift": "node scripts/contracts/drift.mjs",
     "contracts:generate": "node scripts/contracts/generate.mjs",
     "db:pull": "prisma db pull && prisma generate",
     "prisma:migrate": "prisma migrate dev",

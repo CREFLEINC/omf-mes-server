@@ -18,14 +18,19 @@
 ## 명령
 
 ```bash
-pnpm contracts:check          # 설계 저장소 main 과 대조만 한다
+pnpm contracts:check          # 설계 저장소 main 과 대조만 한다 — 「설계가 움직였나」
 pnpm contracts:check <sha>    # 특정 커밋과 대조
+
+pnpm contracts:drift          # COMMIT.txt 의 «고정» 커밋과 대조 — 「우리가 고쳤나」
 
 pnpm contracts:update         # main 최신을 받아온다
 pnpm contracts:update <sha>   # 특정 커밋으로 고정
 
 pnpm contracts:generate       # contracts/*.json → src/contracts/<slug>.d.ts
 ```
+
+⛔ **`check` 와 `drift` 는 다른 질문이다.** `check` 하나만으로는 「설계가 앞서갔다」와
+「우리가 사본을 고쳤다」가 **같은 빨간불**로 보인다. 실제로 그 때문에 사고가 났다 — 아래.
 
 `gh` 의 로그인 자격증명을 쓴다. 설계 저장소가 비공개라 읽기 권한이 있는 계정이어야 한다.
 `gh` 가 없으면 `check` 는 **종료 코드 2(SKIP)** 로 빠진다 — 확인하지 못한 것을
@@ -37,6 +42,32 @@ pnpm contracts:generate       # contracts/*.json → src/contracts/<slug>.d.ts
 46 → 103 으로 늘었다. 갱신을 사람이 하는 이상 「하는 걸 잊었다」를 막을 것이 필요하다.
 
 `update` 뒤의 `git diff contracts/` 가 곧 계약 변경 알림이다.
+
+## ⛔ 사본을 고치면 다음 `update` 가 조용히 지운다 — 2026-09-13
+
+`#610` 이 **클라이언트 전달본 생성기의 출력**(`scripts/client-api/build-implementation-baseline.mjs`)
+을 `logistics-01자재창고.json` 에 덮어썼다. 그 생성기는 `docs/client-api/<날짜>/` 에만 쓰는데,
+결과물이 사본 자리로 들어왔다.
+
+사본에만 있고 설계 저장소에는 고정본·최신본 **양쪽 다 0건**이던 것들:
+
+| | 수 |
+|---|---|
+| `"security": [{"omfSession": []}]` | 90 |
+| `"x-omf-server-implementation"` (`serverCommit` 이 #608 을 가리켰다) | 90 |
+| 생성기가 붙인 `401` 응답 | 90 |
+| `"x-omf-known-differences"` | 5 |
+| `components.securitySchemes.omfSession` · `info.version` | 2 |
+
+2026-09-13 에 전부 도려냈다. 서버는 이것들을 읽지 않는다 — 계약 검증 가드는
+**요청(body·query·params)만** 본다.
+
+⚠ 같은 커밋이 **실질적인 파생**도 함께 넣었고 그쪽은 서버가 기대고 있어 남겼다. 남은 자리는
+`pnpm contracts:drift` 가 전수로 보여 주고, 하나하나 `docs/계약-선행-수정항목.md` 의 `P-` 항목에
+적혀 있다. **`update` 전에 그 문서를 읽는다.**
+
+⭐ 고칠 것이 생기면 `bad2e95` 를 본보기로 삼는다 — 근거·위험을 커밋에 적고, 값이 사라지면
+빨개지는 spec(`src/common/contract/contract-recycle-entry-enum.spec.ts`)을 함께 둔다.
 
 ## 파일과 생성 타입
 
