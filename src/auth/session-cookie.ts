@@ -41,6 +41,12 @@ function isSecure(): boolean {
 export function setSessionCookie(response: Response, token: string, maxAgeSeconds: number): void {
   response.cookie(SESSION_COOKIE, token, {
     // 스크립트가 못 읽게 하는 것이 핵심이고, sameSite=lax 가 크로스사이트 POST 를 막는다.
+    //
+    // ⛔⛔ `'none'` 으로 바꾸려면 **먼저 `CORS_ORIGINS` 의 `*` 를 목록으로 좁혀라**(#621).
+    // 운영은 오리진을 반사하도록 열려 있고(현장 셸의 오리진을 미리 적을 수 없어서다 — #612),
+    // 지금 그것이 안전한 이유는 CORS 가 아니라 **여기 `lax` 가 교차 사이트 요청에 이 쿠키를
+    // 안 싣기 때문**이다. 두 설정이 다른 파일에 있어 한쪽만 바꾸기 쉬운데, 그 한쪽이 이쪽이면
+    // 아무 사이트나 로그인된 사용자의 세션으로 API 를 부르게 된다.
     httpOnly: true,
     sameSite: 'lax',
     secure: isSecure(),
