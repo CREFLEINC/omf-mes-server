@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""설계 요청서 176건을 «슬라이스(주제)별»로 묶은 전달 색인을 만든다.
+"""설계 요청서를 «슬라이스(주제)별»로 묶은 전달 색인을 만든다.
 
-⛔ 레인별로 묶지 않는다. 레인은 «우리» 사정이고 받는 쪽 사정이 아니다 — 레인 C 가 멈춘 뒤
-슬라이스가 인계되면서 **같은 주제가 두 대역에 갈렸다**(취급단위 = C 140~145 + A2 몫,
-출하지시 = A 190~208, 재생재 = A2 213~216). 레인별로 내면 설계팀이 한 주제를 두 곳에서 본다.
+⛔ 번호 순으로 묶지 않는다 — 같은 주제가 떨어진 번호에 갈려 있다(취급단위 140~145 와 그 뒤 몫,
+출하지시 190~208, 재생재 213~216). 번호 순으로 내면 설계팀이 한 주제를 두 곳에서 본다.
 
 ⭐ **묶는 축은 「걸리는 오퍼레이션」의 경로**다 — 요청서가 스스로 적어 둔 사실이라 우리가
 새로 판정하지 않는다. 못 읽은 것은 **숨기지 않고 §9 에 남긴다.**
@@ -34,14 +33,11 @@ SECTIONS = [
     ('7', '횡단', '한 도메인에 안 묶이는 것 — 헤더 규약 · 채번 · 코드사전 · 날짜 축'),
 ]
 
-# 번호 대역 → 레인. 정본은 `coverage-100/lanes.md` §1-1.
-BANDS = [('A', 16, 89), ('B', 90, 119), ('C', 120, 149), ('A2', 150, 179),
-         ('A', 180, 209), ('A2', 210, 239), ('A', 240, 269), ('B', 270, 299)]
-
-# 「구분」 줄이 없는 옛 요청서(016~119)의 판정 원천. 각 레인이 스스로 정리한 표다.
+# 「구분」 줄이 없는 옛 요청서(016~119)의 판정 원천 — 2026-09-08 재분류 표.
 RECLASSIFIED = ['재정리-2026-09-08-레인A.md', '재정리-2026-09-08-레인C.md']
-# B 정산본은 표가 «번호 범위»라 번호마다 못 읽는다 — #342 본문이 셋만 예외로 못 박았다.
-B_EXCEPTIONS = {276: '질의', 105: '회신 완료'}
+# `정산-2026-09-09-레인B.md` 는 표가 «번호 범위»라 번호마다 못 읽는다 — 090~119 는 통보로 정산됐고
+# 105 만 회신 완료다(#342). 위 셋으로 판정이 안 선 번호에만 쓴다.
+SETTLED = {**{number: '통보' for number in range(90, 120)}, 105: '회신 완료'}
 
 
 def kind_from_index() -> dict[int, str]:
@@ -83,12 +79,8 @@ def section_of(operations: str) -> str | None:
     return None
 
 
-def lane_of(number: int) -> str:
-    return next((lane for lane, low, high in BANDS if low <= number <= high), '?')
-
-
 def kind_from_tables() -> dict[int, str]:
-    """레인 재정리표에서 번호별 구분을 읽는다. 행 모양: `| **122** | 제목 | ⭐ **질의** | 근거 |`"""
+    """재분류 표에서 번호별 구분을 읽는다. 행 모양: `| **122** | 제목 | ⭐ **질의** | 근거 |`"""
     found: dict[int, str] = {}
     for name in RECLASSIFIED:
         path = SRC / name
@@ -127,17 +119,14 @@ def collect() -> list[dict[str, object]]:
         # ⛔ 한쪽만 읽으면 문서가 멀쩡한데 「미분류」로 잡힌다(070·074·075·079·082 가 그랬다).
         declared = (re.search(r'^\*\*구분[:：]\s*(질의|통보)', text, re.M)
                     or re.search(r'^\|\s*\**구분\**\s*\|[^|\n]*?(질의|통보)', text, re.M))
-        lane = lane_of(number)
         kind = (declared.group(1) if declared
                 else table.get(number)
                 or index.get(number)
-                or B_EXCEPTIONS.get(number)
-                or ('통보' if lane == 'B' else None))
+                or SETTLED.get(number))
 
         operations = re.search(r'걸리는 오퍼레이션[^|\n]*\|([^|\n]*)\|', text)
         section = section_of(operations.group(1) if operations else '') or section_of(text)
-        rows.append({'n': number, 'title': title, 'kind': kind, 'section': section,
-                     'lane': lane, 'file': path.name})
+        rows.append({'n': number, 'title': title, 'kind': kind, 'section': section, 'file': path.name})
     return rows
 
 
@@ -217,8 +206,8 @@ def render(rows: list[dict[str, object]]) -> str:
     # ⭐ 다 닫히면 문구가 바뀐다 — 빈 표 위에 「이 표만 막고 있다」가 남으면 거짓이다.
     if questions:
         out += ['⭐ 나머지는 전부 **알려 두는 것**이라 회신을 기다리지 않는다. **이 표만 막고 있다.**', '',
-                '| # | 제목 | 레인 |', '|:-:|---|:-:|']
-        out += [f"| **{r['n']}** | {r['title']} | {r['lane']} |" for r in sorted(questions, key=lambda r: r['n'])]
+                '| # | 제목 |', '|:-:|---|']
+        out += [f"| **{r['n']}** | {r['title']} |" for r in sorted(questions, key=lambda r: r['n'])]
     else:
         out += ['⭐⭐ **없다.** 회신을 기다리는 자리가 **0건**이다 — 마지막 넷(122·211·216·276)을',
                 '2026-09-10 에 닫았다. **전건이 「우리가 이렇게 정했습니다」**다.', '',
@@ -228,15 +217,15 @@ def render(rows: list[dict[str, object]]) -> str:
     for key, name, note in SECTIONS:
         group = sorted(by_section.get(key, []), key=lambda r: r['n'])
         out += ['', f'## §{key}. {name} — {len(group)}건', '', f'> {note}', '',
-                '| # | 구분 | 제목 | 레인 |', '|:-:|:-:|---|:-:|']
-        out += [f"| {r['n']} | {r['kind'] or '⚠ 미분류'} | {r['title']} | {r['lane']} |" for r in group] or ['| — | | (없다) | |']
+                '| # | 구분 | 제목 |', '|:-:|:-:|---|']
+        out += [f"| {r['n']} | {r['kind'] or '⚠ 미분류'} | {r['title']} |" for r in group] or ['| — | | (없다) |']
 
     out += ['', f'## §X. 손질 필요 — {len(unknown)}건 (내부용 · 전달분에 안 싣는다)', '',
             '⛔ **숨기지 않는다.** 「구분」 줄이 없거나 「걸리는 오퍼레이션」에서 도메인을 못 읽은 것들이다 —',
             '전달 전에 사람이 채운다(요청서에 `**구분: …**` 한 줄을 더하면 다음 실행부터 저절로 잡힌다).', '',
-            '| # | 없는 것 | 제목 | 레인 |', '|:-:|---|---|:-:|']
-    out += [f"| {r['n']} | {'구분' if r['kind'] is None else ''}{' · ' if r['kind'] is None and r['section'] is None else ''}{'도메인' if r['section'] is None else ''} | {r['title']} | {r['lane']} |"
-            for r in sorted(unknown, key=lambda r: r['n'])] or ['| — | | (없다) | |']
+            '| # | 없는 것 | 제목 |', '|:-:|---|---|']
+    out += [f"| {r['n']} | {'구분' if r['kind'] is None else ''}{' · ' if r['kind'] is None and r['section'] is None else ''}{'도메인' if r['section'] is None else ''} | {r['title']} |"
+            for r in sorted(unknown, key=lambda r: r['n'])] or ['| — | | (없다) |']
     return '\n'.join(out) + '\n'
 
 
