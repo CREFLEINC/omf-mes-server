@@ -36,7 +36,7 @@ API 는 평문 HTTP `:3100` 으로 노출한다. 인증서를 두지 않는다.
 
 ⚠ **개발 서버는 앞에 리버스 프록시가 있다**(`mesapi.crefle.ai` → `192.168.1.72`, nginx).
 외부에서 닿게 하려고 둔 것이고 **TLS 는 종단하지 않는다**(평문 HTTP 를 그대로 넘긴다).
-저장소의 `docker-compose.prod.yml` 에는 프록시가 없다 — 호스팅 쪽 구성이다.
+이 외부 프록시는 호스팅 쪽 구성이다 — 저장소 compose 의 `proxy`(블루-그린 전환용, 아래)와 다른 것이다.
 
 ⭐ 그래서 **#621(TLS 전환)은 생각보다 가볍다.** 개발 서버는 인증서를 그 프록시에 붙이면 되고
 컨테이너 구성은 그대로다. 남는 것은 앱 쪽 둘뿐이다 — `COOKIE_SECURE` 가 컨테이너에 닿게 하고,
@@ -59,7 +59,7 @@ API 는 평문 HTTP `:3100` 으로 노출한다. 인증서를 두지 않는다.
 | 필요 | 성격 |
 |---|---|
 | 앞단에 TLS 종단기 | 인프라 — 앱 변경 없음 |
-| `COOKIE_SECURE=true` 가 **컨테이너에 닿게** | ⚠ `docker-compose.prod.yml` 의 `api.environment` 에 이 변수가 **없다.** 지금은 의도값이 `false` = 코드 기본값이라 증상이 없지만, 켜는 날 조용히 무시된다 |
+| `COOKIE_SECURE=true` 가 **컨테이너에 닿게** | ⚠ `docker-compose.prod.yml` 의 `x-api.environment` 에 이 변수가 **없다.** 지금은 의도값이 `false` = 코드 기본값이라 증상이 없지만, 켜는 날 조용히 무시된다 |
 | `CORS_ORIGINS` 를 `https://…` 로 교체 | `http` 와 `https` 는 **다른 오리진**이다. 안 바꾸면 관리웹이 CORS 에서 막힌다 |
 | `SameSite=None` | ⚠ `session-cookie.ts:45`·`:56` 에 `'lax'` 가 **하드코딩**이라 코드 변경이 필요하다. 관리웹이 다른 **호스트**에 있을 때만 해당 — 포트만 다른 것은 같은 사이트라 지금도 쿠키가 간다 |
 
@@ -118,7 +118,7 @@ curl -i -X OPTIONS http://<서버>:3100/api/mdm/workers \
 x-api-image: &api-image ${REGISTRY:-hub.crefle.com}/mes/backend:${IMAGE_TAG:-main}
 ```
 
-`migrate` 와 `api` 가 반드시 같은 이미지를 써야 합니다. 따로 적으면 한쪽 태그만 고치는 사고가 나고, 구버전 코드가 신버전 스키마를 보게 됩니다.
+`migrate` 와 `api-blue`·`api-green` 이 반드시 같은 이미지를 써야 합니다. 따로 적으면 한쪽 태그만 고치는 사고가 나고, 구버전 코드가 신버전 스키마를 보게 됩니다.
 
 **4. `deploy-dev.yml` 에 `pull_request` 트리거를 추가하지 마세요**
 
@@ -128,10 +128,10 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 
 커밋하지 않습니다. 배포 워크플로도 이 파일을 건드리지 않습니다. 템플릿은 `.env.prod.example` 입니다.
 
-**6. `docker-compose.prod.yml` 의 `api.environment` 에서 `CORS_ORIGINS` 를 빼지 마세요**
+**6. `docker-compose.prod.yml` 의 `x-api.environment` 에서 `CORS_ORIGINS` 를 빼지 마세요**
 
 `docker compose --env-file` 은 **compose 파일의 `${}` 치환용**이지 컨테이너 주입이 아닙니다.
-`api.environment` 에 적힌 변수만 컨테이너가 봅니다 — 빼면 `.env.prod` 에 아무리 적어도 CORS 가
+`x-api.environment`(api-blue·api-green 공통)에 적힌 변수만 컨테이너가 봅니다 — 빼면 `.env.prod` 에 아무리 적어도 CORS 가
 꺼진 채 뜨고, 증상은 브라우저 쪽 CORS 오류로만 나타납니다(#612). 새 환경변수를 늘릴 때도 같습니다.
 
 ## 서버
@@ -161,18 +161,67 @@ sudo chown -R github-runner:github-runner /opt/services/omf-mes-server
 
 `sudo` 가 필요한 것은 최초 디렉터리 생성과 러너 서비스 등록(`svc.sh install`) 두 번뿐입니다. `deploy.sh`·`rollback.sh` 에는 `sudo` 를 넣지 마세요 — **두 서버가 같은 스크립트를 쓰고**, 스크립트는 **자신이 놓인 위치를 배포 디렉터리로 인식**하므로 경로 하드코딩도 없습니다.
 
+## 블루-그린 배포 — 2026-09-14
+
+배포 중에도 3100 이 끊기지 않게 한다. 전에는 api 를 멈춘 뒤 migrate·재기동을 해 **30~60초** 응답이 없었다.
+
+```
+외부 nginx(mesapi.crefle.ai) ─┐
+사내망 클라이언트 ────────────┴─▶ :3100 proxy(nginx 컨테이너) ─▶ api-blue  ┐ 평소엔
+                                                              └▶ api-green ┘ 한쪽만 뜬다
+```
+
+| | |
+|---|---|
+| 켜진 쪽 | `proxy/active/upstream.conf` 한 줄(`server api-blue:3100 resolve;`). `deploy.sh` 만 쓴다. `DEPLOYED` 의 `active_color` 도 같은 값 |
+| 고정 설정 | `proxy/conf.d/omf-api.conf` ← 저장소 `deploy/proxy/omf-api.conf`(배포 때 동기화) |
+| 전환 | 반대쪽을 새 이미지로 띄워 healthy → upstream 교체·`nginx -s reload` → proxy 를 거쳐 `/api/health` → 15초 드레인 → 이전 쪽 `stop`(지우지 않음) |
+| 실패 | migrate·새 쪽 헬스체크·`nginx -t` 에서 실패하면 **전환하지 않는다**(켜진 쪽이 계속 받는다). 전환 뒤 proxy 경유 헬스체크가 실패하면 이전 쪽으로 되돌린다 |
+| 첫 전환 | 옛 단일 `api` 컨테이너가 있으면 새 쪽이 healthy 가 된 뒤 그것을 멈추고 proxy 가 3100 을 넘겨받는다 |
+
+**실측** — 2026-09-14 로컬 리허설. 실제 `v0.1.7`·`v0.1.8` 이미지, 동시 10 연결로 헬스체크·세션 조회를 계속 부르며 배포.
+
+| 시험 | 결과 |
+|---|---|
+| 평소 전환 | 약 15만 건 중 실패 **1**(reload 순간 keep-alive 연결 경합) · 최대 지연 128ms |
+| 첫 전환(옛 단일 api → proxy) | 실패 40건이 **100ms** 안에 몰림 · 최대 지연 1.1초 |
+| migrate 실패 · 새 쪽 헬스체크 실패 · nginx 설정 오류 | 세 번 모두 전환 안 함 · 그동안 실패 0 |
+| 켜진 api 컨테이너 재생성(IP 바뀜) | 부팅하는 5.8초만 502, reload 없이 복구 |
+| 옛 compose·`deploy.sh` 로 되돌려 배포 | proxy·api-blue·api-green 을 지우고 api 가 3100 을 다시 잡는다 |
+
+**그래서 지켜야 하는 것**
+
+- ⛔ **서버에서 맨손 `docker compose up -d` 금지.** 두 쪽이 다 뜨고 켜진 쪽이 재생성되며 끊긴다. 재기동도 `deploy.sh` 로 한다.
+- ⚠ **옛 코드가 새 스키마 위에서 수십 초 돈다**(새 쪽 기동~드레인). 컬럼 이름 변경·기본값 없는 `NOT NULL` 추가도 두 릴리스로 나눈다 — `deploy/RELEASE.md` 「마이그레이션 작성 규칙」.
+- ⚠ **proxy 정의(이미지·포트·마운트)를 바꾼 배포는 proxy 가 재생성되며 잠깐 끊긴다.** `omf-api.conf` 내용만 바꾼 것은 reload 로 들어가 끊기지 않는다.
+- `client_max_body_size 12m` 를 앱 업로드 상한(10MB) 아래로 줄이지 않는다 — nginx 기본은 1MB 다.
+- 로그는 `logs api-blue api-green proxy`. 앱이 보는 접속 IP 는 proxy 다(지금 코드는 IP 를 쓰지 않는다).
+
+**급할 때 이전 쪽으로 되돌리기** — 보통은 `./rollback.sh <이전 태그>` 로 충분하다(같은 방식으로 끊김 없이 다시 전환, 1분 안팎). 그것도 못 기다릴 때만, 멈춰 있는 이전 쪽을 켜서 넘긴다:
+
+```bash
+C="docker compose -f docker-compose.prod.yml --env-file .env.prod"
+$C start api-blue                                   # DEPLOYED 의 active_color 반대편
+docker ps --filter name=api-blue                    # (healthy) 확인
+printf 'server api-blue:3100 resolve;\n' > proxy/active/upstream.conf
+$C exec proxy nginx -t && $C exec proxy nginx -s reload
+```
+
+⚠ 이렇게 넘기면 `.env.prod`·`DEPLOYED` 가 실제와 달라진다. 뒤이어 `./rollback.sh <그 태그>` 로 맞춰 둔다.
+
 ## 파일 지도
 
 | 파일 | 역할 |
 |---|---|
 | `Dockerfile` | 4단계 멀티스테이지. `deps`/`prod-deps` 에 `prisma generate` |
-| `docker-compose.prod.yml` | 배포용. Harbor 이미지 + postgres + migrate + api |
+| `docker-compose.prod.yml` | 배포용. Harbor 이미지 + postgres + migrate + api-blue·api-green + proxy(nginx) |
 | `docker-compose.yml` | 로컬 개발 DB 만 |
 | `.env.prod.example` | 배포 환경변수 템플릿 |
 | `.github/workflows/ci.yml` | PR 검증 — lint·typecheck·unit / docker build / e2e |
 | `.github/workflows/build-push.yml` | main·태그 push → Harbor 업로드 |
 | `.github/workflows/deploy-dev.yml` | 개발 서버 배포 (self-hosted runner) |
-| `deploy/deploy.sh` | pull → migrate → api → 헬스체크 → 실패 시 자동 롤백 |
+| `deploy/deploy.sh` | 블루-그린: pull → migrate → 반대쪽 api → 전환 → 이전 쪽 중지 |
+| `deploy/proxy/omf-api.conf` | proxy(nginx) 고정 설정 — 서버의 `proxy/conf.d/` 로 동기화 |
 | `deploy/rollback.sh` | `IMAGE_TAG` 를 바꾸고 배포 (릴리스 적용에도 사용) |
 | `deploy/RUNNER.md` | 개발 서버 runner 구성 절차 |
 | `deploy/RELEASE.md` | 하노이 현장 배포 런북 |
@@ -182,7 +231,7 @@ sudo chown -R github-runner:github-runner /opt/services/omf-mes-server
 
 ## 알아둘 동작
 
-**`docker compose` 는 셸 환경변수를 `--env-file` 보다 우선합니다.** `deploy.sh` 도 같은 규칙을 따르게 맞춰뒀습니다(`IMAGE_TAG_OVERRIDE`). 두 쪽이 어긋나면 롤백 시 엉뚱한 태그에 이미지를 붙입니다.
+**`docker compose` 는 셸 환경변수를 `--env-file` 보다 우선합니다.** `deploy.sh` 도 같은 규칙을 따르게 맞춰뒀습니다(`IMAGE_TAG_OVERRIDE`). 두 쪽이 어긋나면 `DEPLOYED` 의 `image_tag` 가 실제로 뜬 이미지와 달라집니다.
 
 ```bash
 IMAGE_TAG=v1.2.0 ./deploy.sh    # 일회성, .env.prod 는 그대로
@@ -218,7 +267,7 @@ git rev-parse origin/main                   # 로컬 — 같아야 함
 
 `api_image_id` 는 **config blob digest** 이고 Harbor·빌드 로그가 보여주는 것은 **manifest digest** 입니다. 같은 이미지인데도 값이 달라서 서로 대조하면 안 됩니다. Harbor 와 맞춰볼 값은 `image_digest` 입니다.
 
-**헬스체크(`/api/health`)는 DB 까지 찌릅니다**(`SELECT 1`). Prisma 초기화 실패도 여기서 걸리고, `deploy.sh` 가 자동 롤백합니다. 다만 업무 로직 정상까지 보장하지는 않습니다.
+**헬스체크(`/api/health`)는 DB 까지 찌릅니다**(`SELECT 1`). Prisma 초기화 실패도 여기서 걸리고, 새 쪽이 걸리면 `deploy.sh` 는 전환하지 않습니다. 다만 업무 로직 정상까지 보장하지는 않습니다.
 
 **개발 서버 배포는 `workflow_run` 으로 연쇄됩니다.** 이 트리거는 기본 브랜치에 있는 워크플로 파일만 동작하므로, 브랜치에서 테스트해도 자동 실행은 안 걸립니다. `workflow_dispatch`(수동 버튼)로 시험하세요.
 
