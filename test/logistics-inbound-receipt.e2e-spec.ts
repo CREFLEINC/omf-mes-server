@@ -25,14 +25,16 @@ const NOPERM_ID = 'e2e-ir-noperm';
 const PASSWORD = '입하-등록-검사-비밀번호';
 const PREFIX = 'IRE2E';
 /**
- * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
- * **6자리 숫자**로 그대로 담는다. 입하 등록이 라인마다 LOT 을 세우므로 이 둘이 숫자가
- * 아니면 등록 자체가 400 이다. 다른 마스터 코드는 PREFIX 를 그대로 쓴다. *
- * ⛔ 여기 쓰는 숫자 코드는 **규칙에 맞춘 «가짜»** 다. 하노이 실 품목 9,813건 중 이 형식을
- * 통과하는 것은 5건뿐이다 — 이 스위트가 초록이라고 형식이 맞다는 뜻이 «아니다»(#620).
+ * 자재 MES LOT 번호(`materialMesLotNo`)는 구분자 5칸 형식이라(통보 277) 품목·공급사 코드를
+ * **원본 그대로** 담는다 — 실 하노이 품목 코드 모양(하이픈 포함)을 그대로 쓴다. 옛 34자리
+ * 전부-숫자 형식은 이런 코드를 전부 거절했다(#620) — 여기 값이 그 형식을 통과하는 것 자체가
+ * #620 회귀 확인이다.
+ *
+ * ⚠ `item_code`/`partner_code` 는 마스터에 유일 제약이 있다 — 다른 e2e 파일(`trace-lot`·
+ * `logistics-document-progress`)과 값이 겹치면 병렬 실행에서 충돌한다. 파일마다 접미어를 다르게 둔다.
  */
-const ITEM_CODE = '900000101';
-const SUPPLIER_CODE = '900101';
+const ITEM_CODE = '040101-00023S';
+const SUPPLIER_CODE = '100020';
 const ROLE = 'E2E_IR';
 /** `W-01-11` 은 동시성 검사 하나가 P/O 라인 치환을 함께 걸기 위해서다. */
 const PERMISSIONS = ['M-01-01', 'W-01-11', 'W-01-03', 'M-01-06'];
@@ -954,12 +956,12 @@ describe('입하 등록 (e2e)', () => {
   }
 
 /**
- * 사전부착(`supplierLotLabelAttached`) 라인의 공급사 LOT 번호는 **숫자 34자리**여야 한다
- * (`inbound-receipt-rules.ts:180` · #610). `uq_lot(plant_id, lot_no)` 때문에 호출마다 새 값이라
- * 뒤 6자리에 순번을 넣는다.
+ * 사전부착(`supplierLotLabelAttached`) 라인의 공급사 LOT 번호는 구분자 5칸 형식이어야 한다
+ * (`inbound-receipt-rules.ts` · 통보 277). `uq_lot(plant_id, lot_no)` 때문에 호출마다 새 값이라
+ * 번호 칸에 순번을 넣는다.
  */
 function supplierLotNoOf(seq: number): string {
-  return `9001${String(seq).padStart(30, '0')}`;
+  return `${ITEM_CODE}|10|${BUSINESS_DATE.replace(/-/g, '').slice(2)}|${SUPPLIER_CODE}|${String(seq).padStart(4, '0')}`;
 }
 
   /** `uq_lot(plant_id, lot_no)` 때문에 공급사 LOT 번호는 호출마다 새 값이다. */

@@ -13,7 +13,7 @@ import { InboundReceiptService } from './inbound-receipt.service';
  */
 
 type Args = Record<string, unknown>;
-const ATTACHED_LOT_NO = '0000000400000000032608060000100001';
+const ATTACHED_LOT_NO = '040101-00023S|10|260806|100020|0001';
 
 /** 102 의 부모가 101 의 부모보다 «작다» — part 마다 잠그면 900 → 800 순이 되는 배치다. */
 const PO_LINES: Record<string, { parent: bigint; ordered: number; received: number }> = {

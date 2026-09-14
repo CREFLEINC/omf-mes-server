@@ -14,7 +14,7 @@ import { InboundReceiptService } from './inbound-receipt.service';
  */
 
 type Args = Record<string, unknown>;
-const ATTACHED_LOT_NO = '0000000400000000102608060000100001';
+const ATTACHED_LOT_NO = '040101-00022S|10|260806|100019|0001';
 
 const PO_LINES: Record<string, { parent: bigint; ordered: number; tolerance: number; received: number }> = {
   '101': { parent: 900n, ordered: 100, tolerance: 0, received: 0 },
@@ -296,11 +296,11 @@ describe('InboundReceiptService.create', () => {
         lines: [
           line({
             purchaseOrderLineId: 102,
-            supplierLotNo: '0000000400000000102608060000100002',
+            supplierLotNo: '040101-00022S|10|260806|100019|0002',
           }),
           line({
             purchaseOrderLineId: 101,
-            supplierLotNo: '0000000400000000102608060000100003',
+            supplierLotNo: '040101-00022S|10|260806|100019|0003',
           }),
         ],
       }),
@@ -339,10 +339,10 @@ describe('InboundReceiptService.create', () => {
         exceptionTypeCode: 'CUSTOMER_SUPPLY',
         exceptionReason: '고객사급 자재',
         lines: [
-          line({ supplierLotNo: '0000000400000000102608060000100002' }),
+          line({ supplierLotNo: '040101-00022S|10|260806|100019|0002' }),
           line({
             purchaseOrderLineId: null,
-            supplierLotNo: '0000000400000000102608060000100003',
+            supplierLotNo: '040101-00022S|10|260806|100019|0003',
           }),
         ],
       }),

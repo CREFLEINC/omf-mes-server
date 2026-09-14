@@ -2,6 +2,10 @@ import { HttpStatus } from '@nestjs/common';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { CodeCheck, assertCodeValues, day } from '../../common/master';
+// ⛔ §6-4 — 다른 슬라이스(`src/trace/`)를 가로질러 부르지 않는다. `core/lot` 은 공용(모든
+//    도메인이 가져다 쓰는 코어)이라 그 규칙 밖이다 — `recycle-entry.service.ts` 도 같은 자리에서
+//    `core/lot` 을 가져온다.
+import { parseMaterialLotNo } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 요청 스키마에 `statusCode` 칸이 없어 서버가 정한다. ⛔ 라인 진행은 이 값으로 판정하지
@@ -177,8 +181,10 @@ function assertLines(
     // ⛔ 안 가르면 `uq_lot(plant_id, lot_no)` P2002 로 트랜잭션이 통째로 죽는다(R-7 ③).
     //    키는 그 유일 제약과 «같은 쌍»이다 — 공장이 다르면 같은 번호를 허용한다(물리가 허용한다).
     if (attached && line.supplierLotNo) {
-      if (!/^\d{34}$/.test(line.supplierLotNo)) {
-        errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '사전부착 LOT 번호는 숫자 34자리여야 합니다.'));
+      try {
+        parseMaterialLotNo(line.supplierLotNo);
+      } catch {
+        errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '사전부착 LOT 번호 형식이 올바르지 않습니다.'));
       }
       const key = `${plantId}\u0000${line.supplierLotNo}`;
       if (lotNos.has(key)) {

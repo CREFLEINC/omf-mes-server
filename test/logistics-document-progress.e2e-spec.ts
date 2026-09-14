@@ -34,17 +34,20 @@ const LOGIN_ID = 'e2e-dp-probe';
 const PASSWORD = 'DP-진행현황-비밀번호';
 const PREFIX = 'DPE2E';
 /**
- * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
- * **6자리 숫자**로 그대로 담고, 사전부착 공급사 LOT 번호는 **숫자 34자리**여야 한다(#610).
- * 이 셋만 숫자로 두고 나머지 마스터 코드는 PREFIX 를 그대로 쓴다. *
- * ⛔ 여기 쓰는 숫자 코드는 **규칙에 맞춘 «가짜»** 다. 하노이 실 품목 9,813건 중 이 형식을
- * 통과하는 것은 5건뿐이다 — 이 스위트가 초록이라고 형식이 맞다는 뜻이 «아니다»(#620).
+ * 자재 MES LOT 번호(`materialMesLotNo`)는 구분자 5칸 형식이라(통보 277) 품목·공급사 코드를
+ * **원본 그대로** 담는다 — 실 하노이 품목 코드 모양을 쓴다. 옛 34자리 전부-숫자 형식은
+ * 이런 코드를 전부 거절했다(#620).
+ *
+ * ⚠ `item_code`는 마스터 유일 제약이 있다 — 다른 e2e 파일(`trace-lot`·
+ * `logistics-inbound-receipt`)과 값이 겹치면 병렬 실행에서 충돌한다. 파일마다 접미어를 다르게 둔다.
  */
-const ITEM_CODE = '900000201';
+const ITEM_CODE = '040101-00024S';
 const PO_SUPPLIER_BASE = 910000;
 const SUPPLIER_BASE = 920000;
 const supplierCodeOf = (base: number, seq: number): string => String(base + seq);
-const supplierLotNoOf = (seq: number): string => `9002${String(seq).padStart(30, '0')}`;
+/** `inboundAgainstOrder` 가 그 호출에서 만든 공급사(`PO_SUPPLIER_BASE`)와 같은 코드를 싣는다. */
+const supplierLotNoOf = (seq: number): string =>
+  `${ITEM_CODE}|1|260504|${supplierCodeOf(PO_SUPPLIER_BASE, seq)}|${String(seq).padStart(4, '0')}`;
 const ROLE = `${PREFIX}-ROLE`;
 const AT = '2026-05-04T02:00:00.000Z';
 /** `AT` 의 영업일. ⛔ 서버가 도출하지 않는다 — 클라이언트가 보낸다(C-8). */
