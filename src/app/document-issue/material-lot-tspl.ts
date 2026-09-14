@@ -28,8 +28,9 @@ export function materialLotTspl(values: MaterialLotLabelValues): Buffer {
   ].join('\r\n'), 'ascii');
 }
 
+// `|` 는 통보 277 자재 LOT 번호 구분자다 — TSPL 따옴표 안 리터럴 문자라 명령을 쪼개지 않는다.
 function safe(value: string, maximum: number): string {
-  if (value.length === 0 || value.length > maximum || !/^[A-Za-z0-9._-]+$/.test(value)) {
+  if (value.length === 0 || value.length > maximum || !/^[A-Za-z0-9._|-]+$/.test(value)) {
     throw new UnprocessableEntityException('라벨 값에 TSPL로 출력할 수 없는 문자가 있습니다.');
   }
   return value;
