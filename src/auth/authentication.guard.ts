@@ -20,7 +20,7 @@ import { TERMINAL_QUALITY_WRITE_OPERATIONS, assertTerminalQualityWriteScope } fr
 import { TERMINAL_MOBILE_PRODUCTION_OPERATIONS, assertTerminalMobileProductionScope } from './terminal-mobile-production-scope';
 import { TERMINAL_LOT_WRITE_OPERATIONS, assertTerminalLotWriteScope } from './terminal-lot-write-scope';
 import { resolveTerminalContext } from './terminal-token';
-import { TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
+import { TERMINAL_ACCESSIBLE_SCREENS_OPERATION, TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
 
 /**
  * 인증 없이 도는 오퍼레이션. **로그인 하나뿐이다.**
@@ -49,6 +49,27 @@ export class AuthenticationGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Forward-only device navigation: a POP may read only its own current generation.
+    if (this.reflector.get<boolean>(TERMINAL_ACCESSIBLE_SCREENS_OPERATION, context.getHandler())) {
+      const request = context.switchToHttp().getRequest<Request>();
+      if (!request.headers.authorization) throw loginRequired();
+      let terminal;
+      try {
+        terminal = await resolveTerminalContext(this.jwt, this.prisma, request);
+      } catch (error) {
+        if (!(error instanceof ContractException)) throw error;
+        throw loginRequired();
+      }
+      const pathId = request.params.terminalId;
+      const ownPathId = typeof pathId === 'string' && /^[1-9]\d*$/.test(pathId)
+        && BigInt(pathId) === terminal?.terminalId;
+      if (!terminal || terminal.terminalTypeCode !== 'POP' || terminal.tokenVersion === undefined
+        || !ownPathId) {
+        throw loginRequired();
+      }
+      attachTerminal(request, terminal);
+      return true;
+    }
     // This forward-only registration mutation is not in the read-only contract
     // copy. It must still have the same global authentication boundary.
     if (this.reflector.get<boolean>(TERMINAL_REGISTRATION_OPERATION, context.getHandler())) {
@@ -61,8 +82,8 @@ export class AuthenticationGuard implements CanActivate {
         if (!(error instanceof ContractException)) throw error;
         throw loginRequired();
       }
-      if (!terminal || terminal.terminalTypeCode !== 'MOBILE' || terminal.tokenVersion === undefined)
-        throw loginRequired();
+      if (!terminal || !['MOBILE', 'POP'].includes(terminal.terminalTypeCode)
+        || terminal.tokenVersion === undefined) throw loginRequired();
       attachTerminal(request, terminal);
       return true;
     }

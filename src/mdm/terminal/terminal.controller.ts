@@ -16,7 +16,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { currentTerminal } from '../../auth/terminal-context';
-import { TerminalRegistrationOperation } from '../../auth/terminal-registration-operation';
+import { TerminalAccessibleScreensOperation, TerminalRegistrationOperation } from '../../auth/terminal-registration-operation';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
@@ -54,6 +54,14 @@ export class TerminalController {
     const { terminal, versionNo } = await this.terminals.get(terminalId);
     setEtag(response, versionNo);
     return terminal;
+  }
+
+  /** Forward-only POP navigation: current active bearer and own terminal are checked in the auth guard. */
+  @Get(':terminalId/accessible-screens')
+  @TerminalAccessibleScreensOperation()
+  accessibleScreens(@Res({ passthrough: true }) response: Response): { screenCodes: string[] } {
+    response.setHeader('Cache-Control', 'private, no-store');
+    return { screenCodes: ['P-01-01'] };
   }
 
   @Post()

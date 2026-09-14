@@ -45,6 +45,20 @@ describe('DocumentIssueRenditionService', () => {
     expect(png.byteLength).toBeGreaterThan(10_000);
   });
 
+  it('자재 LOT TSPL 렌디션은 발행 기록의 실제 LOT/품목/수량을 사용한다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue({
+        document_type_code: 'MATERIAL_LOT_LABEL', issue_seq: 2,
+        lot: { lot_no: '9900200010000001002609111000190001',
+          initial_qty: new Prisma.Decimal(100), item: { item_code: '990020001' } },
+      }) },
+    } as unknown as PrismaService;
+    const bytes = await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl');
+    expect(bytes.toString('ascii')).toContain('ITEM 990020001');
+    expect(bytes.toString('ascii')).toContain('QTY 100  ISSUE 2');
+    expect(prisma.document_issue_log.findUnique).toHaveBeenCalledTimes(2);
+  });
+
   it('자재 LOT 라벨이 아닌 발행 기록은 422다', async () => {
     const prisma = {
       document_issue_log: {

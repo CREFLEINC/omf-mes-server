@@ -36,7 +36,13 @@ export class ContractValidationGuard implements CanActivate {
     const query = { ...request.query } as Record<string, unknown>;
     const params = { ...request.params } as Record<string, unknown>;
 
-    const errors = this.validator.validate(key, { body: request.body, query, params });
+    // P-8: the design copy has png/pdf only. Validate the same operation's path
+    // and all other query fields while admitting the forward-only TSPL format.
+    const forwardTspl = key === 'GET /app/document-issues/{documentIssueLogId}/rendition'
+      && query.format === 'tspl';
+    const validatedQuery = forwardTspl ? { ...query, format: 'png' } : query;
+    const errors = this.validator.validate(key, { body: request.body, query: validatedQuery, params });
+    if (forwardTspl) query.format = 'tspl';
     if (errors.length > 0) {
       throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     }
