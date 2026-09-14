@@ -39,6 +39,13 @@ RECLASSIFIED = ['재정리-2026-09-08-레인A.md', '재정리-2026-09-08-레인C
 # 105 만 회신 완료다(#342). 위 셋으로 판정이 안 선 번호에만 쓴다.
 SETTLED = {**{number: '통보' for number in range(90, 120)}, 105: '회신 완료'}
 
+# ⭐ 2026-09-14 — 루틴은 #276 에서 끝났다(레인 작업 완료). 표지 `전달분-2026-루틴마감.md` 와
+# `검토요청서-2026-09-10.md` 는 **그날 이미 전달된 날짜 고정 기록**이다 — 277 이후 통보를 더할
+# 때마다 그 두 문서의 손으로 쓴 개수(182건 등)를 되돌려 고치는 것은 과거에 보낸 문서를 조작하는
+# 것과 같다. 그래서 색인 계산 자체를 #276 까지로 막는다 — 277 이후는 개별 전달이고 이 색인에
+# 싣지 않는다(파일은 `docs/design-inquiries/` 에 그대로 있다, 직접 연다).
+ROUTINE_MAX = 276
+
 
 def kind_from_index() -> dict[int, str]:
     """옛 요청서(016~119)는 「구분」 줄이 없다. `README.md` 색인의 «상태» 칸은 번호마다 있고,
@@ -110,7 +117,10 @@ def collect() -> list[dict[str, object]]:
         head = re.match(r'(\d+)-', path.name)
         if not head:
             continue
-        number, text = int(head.group(1)), path.read_text()
+        number = int(head.group(1))
+        if number > ROUTINE_MAX:
+            continue  # 루틴 마감(#276) 뒤 통보 — 색인·표지 개수 계산에서 뺀다(위 ROUTINE_MAX 참조).
+        text = path.read_text()
         heading = re.search(r'^#\s*\d+\.\s*(.+)$', text, re.M)
         # 제목 줄이 없으면 파일 이름을 읽을 만하게 편다 — 번호를 떼고 하이픈을 띄운다.
         title = heading.group(1).strip() if heading else re.sub(r'^\d+-', '', path.stem).replace('-', ' ')
@@ -199,6 +209,9 @@ def render(rows: list[dict[str, object]]) -> str:
         '요청서를 더하거나 「구분」을 바꾸면 **다시 돌린다**. 표지·횡단·배포 노트는 `전달분-2026-루틴마감.md` 에 있다.',
         '',
         f'요청서 **{len(rows)}건** · 미회신 질의 **{len(questions)}건** · 손질 필요 **{len(unknown)}건**.',
+        '',
+        f'⚠ 루틴 마감(#{ROUTINE_MAX}) 뒤의 통보는 개별 전달이라 이 색인에 싣지 않는다 — '
+        f'`docs/design-inquiries/` 의 {ROUTINE_MAX} 이후 파일을 직접 본다.',
         '',
         '## §0. 먼저 볼 것 — 답이 와야 서는 자리',
         '',
