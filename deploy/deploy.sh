@@ -215,6 +215,15 @@ if ! "${COMPOSE[@]}" pull "api-${TARGET}"; then
        docker --config '${DOCKER_CONFIG}' login ${REGISTRY} -u 'robot\$mes+server-pull'"
 fi
 
+# proxy(nginx) 이미지는 «없을 때만» 여기서 받는다.
+# - 전환 단계에서 받으면 옛 api 를 멈춘 뒤라 받는 동안 끊긴다(개발 서버 첫 전환 실측 약 6초).
+# - 매번 받으면 같은 태그에 새 패치가 나올 때마다 proxy 가 재생성되며 끊긴다.
+PROXY_IMAGE=$("${COMPOSE[@]}" config --images proxy 2>/dev/null | head -1 || true)
+if [[ -z "$PROXY_IMAGE" ]] || ! docker image inspect "$PROXY_IMAGE" >/dev/null 2>&1; then
+  log "proxy 이미지 pull (${PROXY_IMAGE:-이름 확인 실패})..."
+  "${COMPOSE[@]}" pull proxy || die "proxy 이미지 pull 실패 — 아무것도 바꾸지 않았습니다."
+fi
+
 # --- 3) migrate ---
 # 스키마 변경이 있으면 여기서 적용된다. 켜진 쪽은 계속 서비스한다.
 # 스키마를 바꾸는 릴리스라면 배포 전 DB 백업을 권장한다 — deploy/RELEASE.md 3번 참조.
