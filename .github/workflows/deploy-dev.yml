@@ -51,6 +51,8 @@ jobs:
           install -m 644 deploy/omf-mes-deploy.logrotate "$DEPLOY_DIR/"
           install -m 755 deploy/deploy.sh                "$DEPLOY_DIR/"
           install -m 755 deploy/rollback.sh              "$DEPLOY_DIR/"
+          # proxy/active/ 는 deploy.sh 가 쓰는 «켜진 쪽» 기록이라 동기화하지 않는다.
+          install -D -m 644 deploy/proxy/omf-api.conf    "$DEPLOY_DIR/proxy/conf.d/omf-api.conf"
           echo "동기화 완료"
 
       - name: 배포
