@@ -7,18 +7,22 @@ const QRCode = require('qrcode') as {
 };
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { materialLotTspl } from './material-lot-tspl';
 
 @Injectable()
 export class DocumentIssueRenditionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async rendition(issueId: number): Promise<Buffer> {
+  async rendition(issueId: number, format: 'png' | 'tspl' = 'png'): Promise<Buffer> {
     const issue = await this.prisma.document_issue_log.findUnique({
       where: { document_issue_log_id: issueId },
       select: { document_type_code: true },
     });
     if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
-    if (issue.document_type_code === 'MATERIAL_LOT_LABEL') return this.materialLotLabel(issueId);
+    if (issue.document_type_code === 'MATERIAL_LOT_LABEL') {
+      return format === 'tspl' ? this.materialLotLabelTspl(issueId) : this.materialLotLabel(issueId);
+    }
+    if (format === 'tspl') throw new UnprocessableEntityException('이 출력물의 TSPL 렌디션은 지원하지 않습니다.');
     if (issue.document_type_code === 'DELIVERY_LABEL') return this.deliveryLabel(issueId);
     throw new UnprocessableEntityException('이 출력물의 PNG 렌디션은 아직 지원하지 않습니다.');
   }
@@ -58,6 +62,23 @@ export class DocumentIssueRenditionService {
     const image = await (await import('@napi-rs/canvas')).loadImage(dataUrl);
     ctx.drawImage(image, 610, 190, 170, 170);
     return canvas.toBuffer('image/png');
+  }
+
+  async materialLotLabelTspl(issueId: number): Promise<Buffer> {
+    const issue = await this.prisma.document_issue_log.findUnique({
+      where: { document_issue_log_id: issueId },
+      include: { lot: { include: { item: true } } },
+    });
+    if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
+    if (issue.document_type_code !== 'MATERIAL_LOT_LABEL' || issue.lot === null) {
+      throw new UnprocessableEntityException('자재 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
+    }
+    return materialLotTspl({
+      itemCode: issue.lot.item.item_code,
+      lotNo: issue.lot.lot_no,
+      quantity: String(issue.lot.initial_qty),
+      issueSequence: String(issue.issue_seq),
+    });
   }
 
   async materialLotLabel(issueId: number): Promise<Buffer> {

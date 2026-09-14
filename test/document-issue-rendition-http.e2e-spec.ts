@@ -47,3 +47,44 @@ it('sends the rendition as PNG bytes over HTTP', async () => {
     await app.close();
   }
 });
+
+it('sends TSPL as command bytes and rejects unsupported PDF without PNG fallback', async () => {
+  const tspl = Buffer.from('SIZE 100 mm, 60 mm\r\nCLS\r\nPRINT 1,1\r\n', 'ascii');
+  const rendition = { rendition: jest.fn().mockResolvedValue(tspl) };
+  const module = await Test.createTestingModule({
+    controllers: [DocumentIssueController],
+    providers: [
+      DocumentIssueQueryService, DocumentIssueSummaryService, DocumentIssueReportService,
+      DocumentIssueWriteService, IdempotencyService, JwtService, PrismaService,
+      { provide: DocumentIssueRenditionService, useValue: rendition },
+    ],
+  }).overrideProvider(DocumentIssueQueryService).useValue({})
+    .overrideProvider(DocumentIssueSummaryService).useValue({})
+    .overrideProvider(DocumentIssueReportService).useValue({})
+    .overrideProvider(DocumentIssueWriteService).useValue({})
+    .overrideProvider(IdempotencyService).useValue({})
+    .overrideProvider(JwtService).useValue({})
+    .overrideProvider(PrismaService).useValue({})
+    .compile();
+  const app: INestApplication = module.createNestApplication();
+  await app.init();
+  try {
+    const response = await request(app.getHttpServer())
+      .get('/app/document-issues/7/rendition?format=tspl')
+      .buffer(true)
+      .parse((stream, callback) => {
+        const chunks: Buffer[] = [];
+        stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+        stream.on('end', () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200)
+      .expect('Content-Type', /application\/vnd\.tspl/);
+    expect(response.body).toEqual(tspl);
+    expect(rendition.rendition).toHaveBeenCalledWith('7', 'tspl');
+    await request(app.getHttpServer())
+      .get('/app/document-issues/7/rendition?format=pdf').expect(422);
+    expect(rendition.rendition).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
+  }
+});

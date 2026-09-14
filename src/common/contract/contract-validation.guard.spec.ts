@@ -78,6 +78,21 @@ describe('ContractValidationGuard', () => {
     expect(request.body).toBe(body);
   });
 
+  it('P-8 permits only the forward TSPL rendition format and keeps path validation', () => {
+    const key = 'GET /app/document-issues/{documentIssueLogId}/rendition';
+    const allowed = contextFor(key, { query: { format: 'tspl' }, params: { documentIssueLogId: '7' } });
+    expect(guard.canActivate(allowed.context)).toBe(true);
+    expect(allowed.request.query).toEqual({ format: 'tspl' });
+    expect(allowed.request.params).toEqual({ documentIssueLogId: 7 });
+
+    for (const query of [{ format: 'zpl' }, { format: 'TSPL' }]) {
+      const denied = contextFor(key, { query, params: { documentIssueLogId: '7' } });
+      expect(() => guard.canActivate(denied.context)).toThrow(ContractException);
+    }
+    const badPath = contextFor(key, { query: { format: 'tspl' }, params: { documentIssueLogId: 'oops' } });
+    expect(() => guard.canActivate(badPath.context)).toThrow(ContractException);
+  });
+
   it('accepts both POP calendar dates and MOBILE ISO instants for inspection windows', () => {
     for (const query of [
       { equipmentId: '5', inspectedFrom: '2026-09-12', inspectedTo: '2026-09-12' },

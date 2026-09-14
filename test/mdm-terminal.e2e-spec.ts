@@ -307,15 +307,66 @@ describe('단말 마스터 (e2e)', () => {
     expect(newConfirmation.body.registrationStatusCode).toBe('REGISTERED');
   });
 
-  it('FR-007 POP token cannot confirm a MOBILE registration', async () => {
+  it('FR-002 POP 등록 확인은 자기 단말의 현재 세대만 기록한다', async () => {
     const { id } = await create(`${PREFIX}-REG-POP`);
-    const token = (await issueToken(id)).body.token;
-    await request(app.getHttpServer())
-      .post(`/api/mdm/terminals/${id}:confirm-registration`)
-      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', key())
+    const path = `/api/mdm/terminals/${id}:confirm-registration`;
+    const detail = async () => request(app.getHttpServer())
+      .get(`/api/mdm/terminals/${id}`).set('Cookie', cookie).expect(200);
+    const firstToken = (await issueToken(id)).body.token;
+    expect((await detail()).body.registrationStatusCode).toBe('UNREGISTERED');
+
+    await request(app.getHttpServer()).post(path)
+      .set('Idempotency-Key', key()).send({}).expect(401);
+    await request(app.getHttpServer()).post(`/api/mdm/terminals/${id + 1}:confirm-registration`)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
       .send({}).expect(401);
-    const row = await prisma.terminal.findUniqueOrThrow({ where: { terminal_id: id } });
-    expect(row.registration_confirmed_at).toBeNull();
+    expect((await detail()).body.registrationStatusCode).toBe('UNREGISTERED');
+
+    const confirmed = await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+    expect(confirmed.body).toMatchObject({
+      terminalId: id, tokenVersion: 2, registrationStatusCode: 'REGISTERED',
+      registrationConfirmedAt: expect.any(String),
+    });
+    expect((await detail()).body.registrationConfirmedAt).toBe(confirmed.body.registrationConfirmedAt);
+    const repeated = await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+    expect(repeated.body.registrationConfirmedAt).toBe(confirmed.body.registrationConfirmedAt);
+
+    const nextToken = (await issueToken(id)).body.token;
+    expect((await detail()).body).toMatchObject({
+      tokenVersion: 3, registrationStatusCode: 'UNREGISTERED', registrationConfirmedAt: null,
+    });
+    await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${firstToken}`).set('Idempotency-Key', key())
+      .send({}).expect(401);
+    await request(app.getHttpServer()).post(path)
+      .set('Authorization', `Bearer ${nextToken}`).set('Idempotency-Key', key())
+      .send({}).expect(200);
+  });
+
+  it('FR-002 POP 화면 조회는 자기 현재세대에만 P-01-01을 반환한다', async () => {
+    const { id } = await create(`${PREFIX}-SCREENS`);
+    const path = `/api/mdm/terminals/${id}/accessible-screens`;
+    const token = (await issueToken(id)).body.token;
+    await request(app.getHttpServer()).get(path).expect(401);
+    await request(app.getHttpServer()).get(path).set('Cookie', cookie).expect(401);
+    await request(app.getHttpServer()).get(`/api/mdm/terminals/${id + 1}/accessible-screens`)
+      .set('Authorization', `Bearer ${token}`).expect(401);
+    const owned = await request(app.getHttpServer()).get(path)
+      .set('Authorization', `Bearer ${token}`).expect(200);
+    expect(owned.body).toEqual({ screenCodes: ['P-01-01'] });
+    expect(owned.headers['cache-control']).toBe('private, no-store');
+    await issueToken(id);
+    await request(app.getHttpServer()).get(path)
+      .set('Authorization', `Bearer ${token}`).expect(401);
+
+    const mobile = await create(`${PREFIX}-SCREENS-MOBILE`, { terminalTypeCode: 'MOBILE' });
+    const mobileToken = (await issueToken(mobile.id)).body.token;
+    await request(app.getHttpServer()).get(`/api/mdm/terminals/${mobile.id}/accessible-screens`)
+      .set('Authorization', `Bearer ${mobileToken}`).expect(401);
   });
 
   // ── 공정 구성 ───────────────────────────────────────────────────────────

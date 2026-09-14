@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req, Res, UnprocessableEntityException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
 
@@ -82,9 +82,14 @@ export class DocumentIssueController {
   @Contract('GET /app/document-issues/{documentIssueLogId}/rendition')
   async rendition(
     @Param('documentIssueLogId') documentIssueLogId: number,
+    @Query('format') format: string | undefined,
     @Res() response: Response,
   ): Promise<void> {
-    const png = await this.renditions.rendition(documentIssueLogId);
-    response.status(HttpStatus.OK).type('image/png').end(png);
+    if (format !== undefined && format !== 'png' && format !== 'tspl') {
+      throw new UnprocessableEntityException('이 출력물의 요청 형식은 지원하지 않습니다.');
+    }
+    const chosen = format ?? 'png';
+    const bytes = await this.renditions.rendition(documentIssueLogId, chosen);
+    response.status(HttpStatus.OK).type(chosen === 'tspl' ? 'application/vnd.tspl' : 'image/png').end(bytes);
   }
 }

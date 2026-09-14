@@ -236,12 +236,13 @@ export class TerminalService {
     };
   }
 
-  /** Mark only the currently authenticated MOBILE token generation as registered. */
+  /** Mark only the authenticated POP or MOBILE token generation as registered. */
   async confirmRegistration(
     terminalId: number,
     terminal: TerminalContext,
   ): Promise<RegistrationConfirmation> {
-    if (terminal.terminalId !== BigInt(terminalId) || terminal.terminalTypeCode !== 'MOBILE'
+    if (terminal.terminalId !== BigInt(terminalId)
+      || !['MOBILE', 'POP'].includes(terminal.terminalTypeCode)
       || terminal.tokenVersion === undefined) throw registrationDenied();
 
     // The token can be reissued between the auth guard and this write. The
@@ -264,7 +265,7 @@ export class TerminalService {
       WHERE terminal_id = ${terminal.terminalId}
         AND terminal_code = ${terminal.terminalCode}
         AND plant_id = ${terminal.plantId}
-        AND terminal_type_code = 'MOBILE'
+        AND terminal_type_code = ${terminal.terminalTypeCode}
         AND token_version = ${terminal.tokenVersion}
         AND token_issued_at IS NOT NULL
         AND is_active = true

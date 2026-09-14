@@ -11,14 +11,15 @@ import { currentSession } from './session-resolver.service';
 import { SessionResolver } from './session-resolver.service';
 import { currentTerminal } from './terminal-context';
 import { currentTerminalInventoryScope } from './terminal-inventory-scope';
+import { TERMINAL_ACCESSIBLE_SCREENS_OPERATION, TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
 import { TERMINAL_READ_OPERATIONS } from './terminal-read-policy';
 import { TERMINAL_QUALITY_READ_OPERATIONS } from './terminal-quality-read-scope';
 
 const jwt = new JwtService({ secret: 'fr004-terminal-auth-test-secret-long-enough' });
 
-function setup(type: 'POP' | 'MOBILE' = 'MOBILE', options: { active?: boolean; version?: number; account?: boolean } = {}) {
+function setup(type: 'POP' | 'MOBILE' = 'MOBILE', options: { active?: boolean; version?: number; account?: boolean; plantId?: bigint } = {}) {
   const terminal = {
-    terminal_id: 7n, terminal_code: 'FR004-DEVICE-01', plant_id: 3n,
+    terminal_id: 7n, terminal_code: 'FR004-DEVICE-01', plant_id: options.plantId ?? 3n,
     terminal_type_code: type, equipment_id: 5n,
     is_active: options.active ?? true, token_version: options.version ?? 2,
   };
@@ -56,6 +57,18 @@ function context(key: string, query: Record<string, unknown>, params: Record<str
   return { request, execution };
 }
 
+function registrationContext(authorization?: string) {
+  const result = context('POST /mdm/terminals/{terminalId}:confirm-registration', {}, { terminalId: '7' }, authorization);
+  Reflect.defineMetadata(TERMINAL_REGISTRATION_OPERATION, true, result.execution.getHandler());
+  return result;
+}
+
+function accessibleScreensContext(authorization?: string, terminalId = '7') {
+  const result = context('GET /mdm/terminals/{terminalId}/accessible-screens', {}, { terminalId }, authorization);
+  Reflect.defineMetadata(TERMINAL_ACCESSIBLE_SCREENS_OPERATION, true, result.execution.getHandler());
+  return result;
+}
+
 async function statusOf(promise: Promise<unknown>): Promise<number> {
   const error = await promise.catch((caught: unknown) => caught);
   expect(error).toBeInstanceOf(ContractException);
@@ -63,6 +76,37 @@ async function statusOf(promise: Promise<unknown>): Promise<number> {
 }
 
 describe('FR-004/005 terminal bearer authentication', () => {
+  it('accepts POP registration only with its current, active, same-plant bearer', async () => {
+    const pop = setup('POP');
+    const own = registrationContext(`Bearer ${pop.token}`);
+    expect(await pop.guard.canActivate(own.execution)).toBe(true);
+    expect(currentTerminal(own.request)).toMatchObject({ terminalId: 7n, plantId: 3n, terminalTypeCode: 'POP' });
+    expect(await statusOf(pop.guard.canActivate(registrationContext().execution))).toBe(401);
+    expect(await statusOf(setup('POP', { version: 3 }).guard.canActivate(
+      registrationContext(`Bearer ${pop.token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP', { active: false }).guard.canActivate(
+      registrationContext(`Bearer ${pop.token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP', { plantId: 4n }).guard.canActivate(
+      registrationContext(`Bearer ${pop.token}`).execution))).toBe(401);
+  });
+
+  it('allows only the own current POP bearer to read accessible screens', async () => {
+    const pop = setup('POP');
+    const own = accessibleScreensContext(`Bearer ${pop.token}`);
+    expect(await pop.guard.canActivate(own.execution)).toBe(true);
+    expect(currentTerminal(own.request)).toMatchObject({ terminalId: 7n, plantId: 3n, terminalTypeCode: 'POP' });
+    expect(await statusOf(pop.guard.canActivate(accessibleScreensContext().execution))).toBe(401);
+    expect(await statusOf(pop.guard.canActivate(accessibleScreensContext(`Bearer ${pop.token}`, '8').execution))).toBe(401);
+    expect(await statusOf(setup('MOBILE').guard.canActivate(
+      accessibleScreensContext(`Bearer ${setup('MOBILE').token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP', { version: 3 }).guard.canActivate(
+      accessibleScreensContext(`Bearer ${pop.token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP', { active: false }).guard.canActivate(
+      accessibleScreensContext(`Bearer ${pop.token}`).execution))).toBe(401);
+    expect(await statusOf(setup('POP', { plantId: 4n }).guard.canActivate(
+      accessibleScreensContext(`Bearer ${pop.token}`).execution))).toBe(401);
+  });
+
   it('keeps the 42 reviewed generic and quality read keys disjoint', () => {
     const generic = Object.keys(TERMINAL_READ_OPERATIONS);
     const quality = Object.keys(TERMINAL_QUALITY_READ_OPERATIONS);
