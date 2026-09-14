@@ -76,6 +76,15 @@ export function lineRequired(at: string): ErrorItem {
   return field(at, ERROR_CODE.LINE_REQUIRED, '입하 라인이 1건 이상이어야 합니다.');
 }
 
+/** 사전부착 LOT 번호에서 파싱된 제품코드·공급사코드를 실 라인/공급사와 대조할 자리 한 건. */
+export interface MaterialLotCodeCheck {
+  at: string;
+  itemId: number;
+  itemCode: string;
+  supplierId: number;
+  supplierCode: string;
+}
+
 /**
  * 헤더 한 벌의 형식·짝·라인 검증. `at` 은 계약 필드 경로의 앞머리다(등록 `''` · 분리
  * `'normal.'`·`'excess.'`). 돌려주는 것은 DB 를 봐야 하는 코드값 검사 목록이다.
@@ -89,6 +98,8 @@ export function collectHeaderErrors(
   errors: ErrorItem[],
   /** 호출을 «가로질러» 공급사 LOT 겹침을 보려면 한 집합을 넘긴다(`:split` 의 두 part). */
   lotNos = new Set<string>(),
+  /** 같은 이유로 제품코드·공급사 대조 대상도 호출을 가로질러 모은다(`:split` 의 두 part). */
+  lotCodeChecks: MaterialLotCodeCheck[] = [],
 ): CodeCheck[] {
   if (Number.isNaN(Date.parse(header.receiptDatetime))) {
     errors.push(field(`${at}receiptDatetime`, ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
@@ -97,7 +108,7 @@ export function collectHeaderErrors(
   if (header.exceptionTypeCode != null && !header.exceptionReason) {
     errors.push(field(`${at}exceptionReason`, ERROR_CODE.PAIR, '예외 유형과 사유는 짝입니다.'));
   }
-  assertLines(at, header.plantId, header.lines, errors, lotNos);
+  assertLines(at, header.plantId, header.supplierId, header.lines, errors, lotNos, lotCodeChecks);
 
   return [
     {
@@ -136,7 +147,8 @@ export async function assertWritable(prisma: PrismaService, input: InboundReceip
   }
 
   const errors: ErrorItem[] = [];
-  const checks = collectHeaderErrors('', input, errors);
+  const lotCodeChecks: MaterialLotCodeCheck[] = [];
+  const checks = collectHeaderErrors('', input, errors, undefined, lotCodeChecks);
   collectMomentErrors(input.businessDate, input.occurredAt, errors);
   // ⭐ 「P/O 를 고르지 않고 진행할 때 필수」(계약 `InboundReceiptCreate` description) —
   //   무발주 입하에 승인을 걸지 않는 대신 예외 유형·사유 기록이 통제다(R-7 ②).
@@ -145,17 +157,60 @@ export async function assertWritable(prisma: PrismaService, input: InboundReceip
       field('exceptionTypeCode', ERROR_CODE.REQUIRED, 'P/O 를 고르지 않은 라인이 있으면 예외 유형이 필요합니다.'),
     );
   }
+  errors.push(...(await assertAttachedLotCodes(prisma, lotCodeChecks)));
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
   await assertCodeValues(prisma, checks);
 }
 
+/**
+ * 사전부착 LOT 번호(통보 277 형식)에서 파싱된 제품코드·공급사코드가 실 입하 라인·공급사와
+ * 같은지 대조한다(§2-3 결정 5). 수량 칸은 스냅샷이라 비교하지 않는다.
+ *
+ * ⛔ 마스터 행이 없으면 조용히 건너뛴다 — 「없는 품목/공급사」를 여기서 새 오류로 만들지
+ *    않는다(그건 다른 결정 사안). ⛔ `InboundReceiptService` 의 기존 `item.findMany`
+ *    (검사대상 여부 조회)와 합치지 않는다 — 트랜잭션 밖·안이 다르고, 이 검사는 사전-트랜잭션
+ *    전용이라는 이 파일의 불변식을 지킨다.
+ */
+export async function assertAttachedLotCodes(
+  prisma: PrismaService,
+  checks: readonly MaterialLotCodeCheck[],
+): Promise<ErrorItem[]> {
+  if (checks.length === 0) return [];
+
+  const itemIds = [...new Set(checks.map((check) => check.itemId))];
+  const supplierIds = [...new Set(checks.map((check) => check.supplierId))];
+  const [items, suppliers] = await Promise.all([
+    prisma.item.findMany({ where: { item_id: { in: itemIds } }, select: { item_id: true, item_code: true } }),
+    prisma.partner.findMany({ where: { partner_id: { in: supplierIds } }, select: { partner_id: true, partner_code: true } }),
+  ]);
+  const itemCodeOf = new Map(items.map((item) => [item.item_id.toString(), item.item_code]));
+  const supplierCodeOf = new Map(suppliers.map((supplier) => [supplier.partner_id.toString(), supplier.partner_code]));
+
+  const errors: ErrorItem[] = [];
+  for (const check of checks) {
+    const itemCode = itemCodeOf.get(check.itemId.toString());
+    const supplierCode = supplierCodeOf.get(check.supplierId.toString());
+    if (itemCode === undefined || supplierCode === undefined) continue;
+    if (itemCode !== check.itemCode) {
+      errors.push(field(check.at, ERROR_CODE.INVALID, '사전부착 LOT 번호의 제품코드가 입하 라인의 품목과 다릅니다.'));
+      continue;
+    }
+    if (supplierCode !== check.supplierCode) {
+      errors.push(field(check.at, ERROR_CODE.INVALID, '사전부착 LOT 번호의 공급사코드가 입하 공급사와 다릅니다.'));
+    }
+  }
+  return errors;
+}
+
 function assertLines(
   prefix: string,
   plantId: number,
+  supplierId: number,
   lines: InboundReceiptLineWriteInput[],
   errors: ErrorItem[],
   lotNos: Set<string>,
+  lotCodeChecks: MaterialLotCodeCheck[],
 ): void {
   for (const [index, line] of lines.entries()) {
     const at = `${prefix}lines.${index}`;
@@ -181,8 +236,17 @@ function assertLines(
     // ⛔ 안 가르면 `uq_lot(plant_id, lot_no)` P2002 로 트랜잭션이 통째로 죽는다(R-7 ③).
     //    키는 그 유일 제약과 «같은 쌍»이다 — 공장이 다르면 같은 번호를 허용한다(물리가 허용한다).
     if (attached && line.supplierLotNo) {
+      // 형식이 깨진 라인은 여기서 이미 INVALID 를 보고했다 — 파싱 못 한 값으로 제품코드·
+      // 공급사 대조를 «또» 시도해 같은 라인에 오류 두 개를 겹쳐 싣지 않는다.
       try {
-        parseMaterialLotNo(line.supplierLotNo);
+        const segments = parseMaterialLotNo(line.supplierLotNo);
+        lotCodeChecks.push({
+          at: `${at}.supplierLotNo`,
+          itemId: line.itemId,
+          itemCode: segments.itemCode,
+          supplierId,
+          supplierCode: segments.supplierCode,
+        });
       } catch {
         errors.push(field(`${at}.supplierLotNo`, ERROR_CODE.INVALID, '사전부착 LOT 번호 형식이 올바르지 않습니다.'));
       }

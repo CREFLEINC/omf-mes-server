@@ -146,7 +146,10 @@ function fake(codeValues?: string[]) {
 
   const prisma = {
     item: {
-      findMany: async () => [{ item_id: 40n, inspection_required: false }],
+      findMany: async () => [{ item_id: 40n, item_code: '040101-00023S', inspection_required: false }],
+    },
+    partner: {
+      findMany: async () => [{ partner_id: 10n, partner_code: '100020' }],
     },
     code_value: {
       findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
@@ -309,6 +312,46 @@ describe('InboundReceiptSplitService.create', () => {
         code: ERROR_CODE.INVALID,
       }),
     ]);
+  });
+
+  it('분리 — normal 사전부착 LOT 번호의 제품코드가 실 품목과 다르면 400 INVALID다(§2-3 결정 5)', async () => {
+    const wrongItemLot = '999999-00000X|10|260806|100020|0001';
+    const error = await thrown(() =>
+      fake().service.create(
+        input({
+          normal: part({
+            lines: [{ itemId: 40, receivedQty: 10, uomId: 50, supplierLotMissing: false, supplierLotNo: wrongItemLot }],
+          }),
+        }),
+        99,
+      ),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'normal.lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
+  });
+
+  it('분리 — excess 사전부착 LOT 번호의 공급사코드가 실 공급사와 다르면 400 INVALID다(§2-3 결정 5, `:split` 경로도 대조를 받는다)', async () => {
+    const wrongSupplierLot = '040101-00023S|3|260806|999999|0001';
+    const error = await thrown(() =>
+      fake().service.create(
+        input({
+          excess: excessPart({
+            lines: [
+              { itemId: 40, receivedQty: 3, uomId: 50, supplierLotMissing: false, supplierLotNo: wrongSupplierLot },
+            ],
+          }),
+        }),
+        99,
+      ),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'excess.lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
   });
 
   it('분리 — 두 part 의 plantId 가 다르면 같은 supplierLotNo 를 허용한다', async () => {
