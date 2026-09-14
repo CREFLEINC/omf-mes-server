@@ -12,7 +12,7 @@ import {
  * `assertCodeValues` 가 DB 를 보므로 `code_value` 만 흉내 낸다(고객 확장값도 통과해야 한다).
  */
 
-const ATTACHED_LOT_NO = '0000000400000000102608060000100001';
+const ATTACHED_LOT_NO = '040101-00022S|10|260806|100019|0001';
 
 const line = (overrides: Partial<InboundReceiptLineWriteInput> = {}): InboundReceiptLineWriteInput => ({
   purchaseOrderLineId: 101,
@@ -150,7 +150,7 @@ describe('입하 등록 검사', () => {
     });
   });
 
-  it('등록 — 번호가 있으나 라벨 미부착이면 외부 원문 형식을 34자리로 강제하지 않는다', async () => {
+  it('등록 — 번호가 있으나 라벨 미부착이면 외부 원문 형식을 강제하지 않는다', async () => {
     await expect(
       assertWritable(
         fake(),
@@ -164,6 +164,32 @@ describe('입하 등록 검사', () => {
         }),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('등록 — 사전부착 LOT 번호가 구분자 5칸 형식이면 통과한다(통보 277)', async () => {
+    await expect(assertWritable(fake(), input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] }))).resolves.toBeUndefined();
+  });
+
+  it('등록 — 사전부착 LOT 번호가 옛 34자리 숫자면 400이다(구분자가 없어 칸이 1개다)', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake(), input({ lines: [line({ supplierLotNo: '0000000400000000102608060000100001' })] })),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
+  });
+
+  it('등록 — 사전부착 LOT 번호가 4칸이면(구분자 1개 부족) 400이다', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake(), input({ lines: [line({ supplierLotNo: '040101-00022S|10|260806|100019' })] })),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
   });
 
   it('assertLines — 공유 집합을 넘기면 호출을 넘어 겹침을 본다', () => {
