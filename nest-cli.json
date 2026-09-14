@@ -5,6 +5,7 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "typeCheck": true,
+    "assets": ["app/document-issue/fonts/*"],
     "builder": {
       "type": "swc",
       "options": {

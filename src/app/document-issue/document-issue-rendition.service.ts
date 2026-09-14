@@ -7,6 +7,7 @@ const QRCode = require('qrcode') as {
 };
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { LABEL_FONT } from './label-font';
 import { materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
 import type { MaterialLotLabelValues } from './material-lot-label-layout';
 import { materialLotTspl } from './material-lot-tspl';
@@ -49,11 +50,11 @@ export class DocumentIssueRenditionService {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, 800, 400);
     ctx.fillStyle = '#111';
-    ctx.font = 'bold 30px sans-serif';
+    ctx.font = `bold 30px ${LABEL_FONT}`;
     ctx.fillText('DELIVERY LABEL', 32, 52);
-    ctx.font = 'bold 28px sans-serif';
+    ctx.font = `bold 28px ${LABEL_FONT}`;
     ctx.fillText(number, 32, 100);
-    ctx.font = '22px sans-serif';
+    ctx.font = `22px ${LABEL_FONT}`;
     ctx.fillText(`SHIPMENT  ${allocation.shipment_line.shipment.shipment_no}`, 32, 147);
     ctx.fillText(`ITEM  ${allocation.lot.item.item_code}`, 32, 187);
     ctx.fillText(`LOT  ${allocation.lot.lot_no}`, 32, 227);

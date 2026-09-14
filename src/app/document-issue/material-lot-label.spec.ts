@@ -1,8 +1,9 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 import { Prisma } from '@prisma/client';
 
+import { LABEL_FONT } from './label-font';
 import { labelDateTime, labelQty, materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
-import { layoutMaterialLotLabel } from './material-lot-label-layout';
+import { DPI, layoutMaterialLotLabel } from './material-lot-label-layout';
 
 describe('material LOT label values', () => {
   const row = {
@@ -65,5 +66,28 @@ describe('material LOT label values', () => {
       }
     }
     expect(mismatches).toEqual([]);
+  });
+
+  it('글자는 등록한 라벨 글꼴로 그린다 — 시스템 글꼴이 없는 운영 이미지에서도 빠지지 않는다', async () => {
+    expect(GlobalFonts.has(LABEL_FONT)).toBe(true);
+    const values = materialLotLabelValues(row);
+    const partNo = layoutMaterialLotLabel(values).texts[1];
+    const px = Math.round((partNo.point * DPI) / 72);
+    const region = (ctx: SKRSContext2D): number[] => [...ctx.getImageData(partNo.x, partNo.y, partNo.width, px).data];
+
+    const image = await loadImage(materialLotLabelPng(values));
+    const actual = createCanvas(image.width, image.height).getContext('2d');
+    actual.drawImage(image, 0, 0);
+
+    const expected = createCanvas(image.width, image.height).getContext('2d');
+    expected.fillStyle = '#fff';
+    expected.fillRect(0, 0, image.width, image.height);
+    expected.fillStyle = '#000';
+    expected.textBaseline = 'top';
+    expected.font = `${String(px)}px ${LABEL_FONT}`;
+    expected.fillText(partNo.content, partNo.x, partNo.y, partNo.width);
+
+    expect(region(expected).some((value, index) => index % 4 === 0 && value < 128)).toBe(true);
+    expect(region(actual)).toEqual(region(expected));
   });
 });
