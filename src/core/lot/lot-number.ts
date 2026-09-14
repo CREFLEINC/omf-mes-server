@@ -92,3 +92,137 @@ function randomChars(length: number): string {
   }
   return out;
 }
+
+/**
+ * 자재 LOT 번호 — 구분자 5칸 형식 (통보 277 · 2026-09-14).
+ *
+ * ⚠ **이 아래는 아직 `materialMesLotNo()` 에서 쓰이지 않는다.** 옛 34자리 형식과 나란히
+ * 두고, 다음 PR 에서 `materialMesLotNo()` 를 이 조각들로 재조립한다 — 그래야 이 PR 이
+ * 기존 스펙·e2e 를 하나도 안 건드리고 단독으로 초록이다.
+ *
+ * ```
+ * 040101-00022S|12.5|260731|100019|0001
+ * 제품코드      |수량 |날짜  |공급사|번호
+ * ```
+ *
+ * 칸 값은 `|`·비ASCII·제어문자·빈 문자열을 금지한다(printable ASCII 만). 전체 64자 이하
+ * (`lot.lot_no` 는 `varchar(100)` 이지만, 실 데이터로 잰 자재 품목코드 최대 13자·공급사
+ * 코드 최대 10자 기준으로 여유 있게 잡은 상한이다).
+ */
+
+export const MATERIAL_LOT_SEPARATOR = '|';
+export const MATERIAL_LOT_MAX_LENGTH = 64;
+
+export interface MaterialLotSegments {
+  itemCode: string;
+  /** 파싱 시엔 정규형이 아니어도(`12.50`) 통과한다 — `parseMaterialLotNo` 머리말 참조. */
+  qty: string;
+  /** `YYMMDD`. */
+  date: string;
+  supplierCode: string;
+  /** 1~9999. */
+  serial: number;
+}
+
+/** `kind` — `SEGMENT` 는 칸 값(문자·날짜·번호) 위반, `LENGTH` 는 조립 길이 초과. */
+export class MaterialLotFormatError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'SEGMENT' | 'LENGTH',
+  ) {
+    super(message);
+    this.name = 'MaterialLotFormatError';
+  }
+}
+
+/** printable ASCII 만 허용한다 — 스캐너가 키보드 입력처럼 흘려보내므로 재현 안 되는 문자를 막는다. */
+function assertMaterialLotSegment(value: string, name: string): string {
+  if (value === '' || value.includes(MATERIAL_LOT_SEPARATOR) || !/^[\x20-\x7E]*$/.test(value)) {
+    throw new MaterialLotFormatError(`${name}에는 구분자·빈 값·비ASCII·제어문자를 쓸 수 없습니다.`, 'SEGMENT');
+  }
+  return value;
+}
+
+/**
+ * DB 스케일(`Decimal(20,6)`)과 일치하는 정규형 문자열로 만든다 — 그래야 라벨에 찍힌 수량과
+ * 실제 저장값이 항상 같다. 후행 0 을 떼고, 정수면 소수점을 남기지 않는다.
+ */
+export function normalizeLotQty(qty: number): string {
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new MaterialLotFormatError('수량은 0보다 큰 유한한 값이어야 합니다.', 'SEGMENT');
+  }
+  const fixed = qty.toFixed(6);
+  return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed;
+}
+
+/** 2000년대로 고정해 윤년까지 실재 여부를 본다 — 이 번호의 날짜는 업무 판단에 쓰지 않으므로 세기 규약은 뜻이 없다. */
+function isRealCalendarDate(yy: number, mm: number, dd: number): boolean {
+  const d = new Date(Date.UTC(2000 + yy, mm - 1, dd));
+  return d.getUTCFullYear() === 2000 + yy && d.getUTCMonth() === mm - 1 && d.getUTCDate() === dd;
+}
+
+/**
+ * `businessDate`(`YYYY-MM-DD`)를 `YYMMDD` 로 줄인다. ⛔ 자르기만 하면 `260230` 같은 없는
+ * 날짜가 샌다 — 실재하는 달력 날짜만 통과시킨다.
+ */
+function materialLotDateSegment(businessDate: string): string {
+  const match = /^\d{2}(\d{2})-(\d{2})-(\d{2})$/.exec(businessDate);
+  if (!match || !isRealCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
+    throw new MaterialLotFormatError('업무일자가 YYYY-MM-DD 형식의 실재하는 날짜가 아닙니다.', 'SEGMENT');
+  }
+  return `${match[1]}${match[2]}${match[3]}`;
+}
+
+/**
+ * 앞 4칸(제품코드·수량·날짜·공급사) + 구분자 — 접두 조회용. 번호(마지막 4칸)는 아직 없다.
+ * `nextInboundMaterialLotNo` 가 이 접두로 기존 LOT 을 세어 다음 번호를 정한다.
+ */
+export function materialLotPrefix(input: {
+  itemCode: string;
+  qty: number;
+  businessDate: string;
+  supplierCode: string;
+}): string {
+  const segments = [
+    assertMaterialLotSegment(input.itemCode, '제품코드'),
+    normalizeLotQty(input.qty),
+    materialLotDateSegment(input.businessDate),
+    assertMaterialLotSegment(input.supplierCode, '공급사 코드'),
+  ];
+  const prefix = segments.join(MATERIAL_LOT_SEPARATOR) + MATERIAL_LOT_SEPARATOR;
+  // 번호 칸은 항상 4자다 — 여기서 미리 셈해 둔다.
+  if (prefix.length + 4 > MATERIAL_LOT_MAX_LENGTH) {
+    throw new MaterialLotFormatError(`자재 LOT 번호가 ${String(MATERIAL_LOT_MAX_LENGTH)}자를 넘습니다.`, 'LENGTH');
+  }
+  return prefix;
+}
+
+/**
+ * 스캔값·기존 행을 칸으로 되읽는다.
+ *
+ * ⭐ **수량 칸은 관대하게 본다.** 공급사가 라벨에 `12.50`을 찍어도(우리 정규형은 `12.5`)
+ * 파싱은 통과시킨다 — 이 칸은 비교 대상이 아니고(수량 스냅샷은 분할·부분 입고로 실제와
+ * 달라질 수 있다), 현장 작업자는 공급사 라벨을 다시 찍을 수 없다. 형태(`\d+(\.\d+)?`)만 본다.
+ */
+export function parseMaterialLotNo(lotNo: string): MaterialLotSegments {
+  const parts = lotNo.split(MATERIAL_LOT_SEPARATOR);
+  if (parts.length !== 5) {
+    throw new MaterialLotFormatError('자재 LOT 번호는 5칸이어야 합니다.', 'SEGMENT');
+  }
+  const [itemCode, qty, date, supplierCode, serialText] = parts;
+  assertMaterialLotSegment(itemCode, '제품코드');
+  assertMaterialLotSegment(supplierCode, '공급사 코드');
+  if (!/^\d+(\.\d+)?$/.test(qty)) {
+    throw new MaterialLotFormatError('수량 칸 형식이 올바르지 않습니다.', 'SEGMENT');
+  }
+  const dateMatch = /^(\d{2})(\d{2})(\d{2})$/.exec(date);
+  if (!dateMatch || !isRealCalendarDate(Number(dateMatch[1]), Number(dateMatch[2]), Number(dateMatch[3]))) {
+    throw new MaterialLotFormatError('날짜 칸이 실재하는 날짜가 아닙니다.', 'SEGMENT');
+  }
+  const serialMatch = /^(\d{4})$/.exec(serialText);
+  const serial = serialMatch ? Number(serialMatch[1]) : NaN;
+  if (!serialMatch || serial < 1) {
+    throw new MaterialLotFormatError('번호 칸은 0001~9999 의 4자리 숫자여야 합니다.', 'SEGMENT');
+  }
+  return { itemCode, qty, date, supplierCode, serial };
+}
