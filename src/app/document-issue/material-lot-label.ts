@@ -1,6 +1,7 @@
 import { createCanvas } from '@napi-rs/canvas';
 import type { Prisma } from '@prisma/client';
 
+import { LABEL_FONT } from './label-font';
 import { DPI, layoutMaterialLotLabel, type MaterialLotLabelValues } from './material-lot-label-layout';
 
 export interface MaterialLotLabelRow {
@@ -65,7 +66,7 @@ export function materialLotLabelPng(values: MaterialLotLabelValues): Buffer {
   ctx.fillRect(width - border, 0, border, height);
   ctx.textBaseline = 'top';
   for (const text of layout.texts) {
-    ctx.font = `${String(Math.round((text.point * DPI) / 72))}px sans-serif`;
+    ctx.font = `${String(Math.round((text.point * DPI) / 72))}px ${LABEL_FONT}`;
     // 실제 글꼴 폭은 어림보다 넓을 수 있다 — 칸을 넘으면 가로로 줄여 옆 칸을 덮지 않는다.
     ctx.fillText(text.content, text.x, text.y, text.width);
   }
