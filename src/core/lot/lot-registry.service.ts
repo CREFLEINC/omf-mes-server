@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { LotHoldService } from './lot-hold.service';
@@ -362,6 +362,13 @@ export async function nextInboundMaterialLotNo(
     const matches = lot.lot_no.length === prefix.length + 4 && lot.lot_no.startsWith(prefix) && /^\d{4}$/.test(suffix);
     return matches ? Math.max(max, Number(suffix)) : max;
   }, 0);
+  // ⛔ 「번호를 매기지 못했다」와 다르다 — 그건 부딪혀서 «다시 뽑으면» 풀리는 것이고, 이건
+  // 같은 (제품코드·수량·날짜·공급사) 조합의 4자리 자리가 «실제로 다 찼다»는 뜻이라
+  // 재시도로 풀리지 않는다. 계약 「사용자가 고칠 수 없는 값은 400 이 아니다」에 따라
+  // 여기서 바로 409 로 낸다 — `materialMesLotNo` 의 방어적 1~9999 검사(400)까지 안 간다.
+  if (serial + 1 > 9999) {
+    throw new ConflictException('user', '같은 제품코드·수량·날짜·공급사로는 번호를 더 매길 수 없습니다.');
+  }
   try {
     return materialMesLotNo({
       itemCode: item.item_code,
