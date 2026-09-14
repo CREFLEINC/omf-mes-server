@@ -7,14 +7,17 @@ import { LotCreate, LotService } from './lot.service';
 
 type Args = Record<string, unknown>;
 
-const source = {
+const ITEM_CODE = '040101-00022S';
+const SUPPLIER_CODE = '100019';
+
+const source = (receivedQty: number) => ({
   inbound_receipt_line_id: 77n,
   inbound_receipt_id: 88n,
   line_no: 1,
   purchase_order_line_id: 99n,
   asn_line_id: null,
   item_id: 9270n,
-  received_qty: new Prisma.Decimal(100),
+  received_qty: new Prisma.Decimal(receivedQty),
   uom_id: 8401n,
   package_count: null,
   supplier_lot_no: '납품서-LOT/A-01',
@@ -36,7 +39,7 @@ const source = {
     supplier_id: 19n,
     plant_id: 1n,
   },
-};
+});
 
 const input = (overrides: Partial<LotCreate> = {}): LotCreate => ({
   numberSourceCode: 'MES',
@@ -52,21 +55,29 @@ const input = (overrides: Partial<LotCreate> = {}): LotCreate => ({
   ...overrides,
 });
 
-function fake() {
+/**
+ * @param receivedQty 입하 라인 수량 — `source().received_qty` 와 `nextInboundMaterialLotNo` 접두
+ *   양쪽에 같은 값을 먹인다(`fromInboundSource` 가 `Decimal.equals` 로 대조하기 때문).
+ * @param existingLotNoSuffix 기존 LOT 하나를 심어 다음 번호가 그 뒤를 잇는지 본다.
+ */
+function fake(receivedQty = 100, existingLotNoSuffix = '0009') {
   const recorded = {
     register: undefined as Args | undefined,
     numbering: [] as unknown[][],
   };
+  const receiptLine = source(receivedQty);
   const tx = {
-    inbound_receipt_line: { findUnique: async () => source },
-    item: { findUnique: async () => ({ item_code: '990020001' }) },
-    partner: { findUnique: async () => ({ partner_code: '100019' }) },
+    inbound_receipt_line: { findUnique: async () => receiptLine },
+    item: { findUnique: async () => ({ item_code: ITEM_CODE }) },
+    partner: { findUnique: async () => ({ partner_code: SUPPLIER_CODE }) },
     lot: {
-      findMany: async () => [{ lot_no: '9900200010000001002609111000190009' }],
+      findMany: async () => [
+        { lot_no: `${ITEM_CODE}|${String(receivedQty)}|260911|${SUPPLIER_CODE}|${existingLotNoSuffix}` },
+      ],
     },
   };
   const prisma = {
-    inbound_receipt_line: { findUnique: async () => source },
+    inbound_receipt_line: { findUnique: async () => receiptLine },
     code_value: {
       findMany: async ({ where }: { where: { OR: Args[] } }) =>
         where.OR.map((check) => ({
@@ -101,13 +112,13 @@ function fake() {
 }
 
 describe('LotService.create — 입하 MES 자재 LOT', () => {
-  it('원천 라인으로 숫자34 번호를 만들고 공급사 원문 식별자와 IQC 의뢰 문맥을 함께 넘긴다', async () => {
+  it('원천 라인으로 구분자 5칸 번호를 만들고 공급사 원문 식별자와 IQC 의뢰 문맥을 함께 넘긴다', async () => {
     const { service, recorded } = fake();
 
     await service.create(input(), 7);
 
     expect(recorded.register).toMatchObject({
-      lotNo: '9900200010000001002609111000190010',
+      lotNo: `${ITEM_CODE}|100|260911|${SUPPLIER_CODE}|0010`,
       itemId: 9270,
       initialQty: 100,
       uomId: 8401,
@@ -135,5 +146,17 @@ describe('LotService.create — 입하 MES 자재 LOT', () => {
       errors: [{ field: 'initialQty', code: 'INVALID' }],
     });
     expect(recorded.register).toBeUndefined();
+  });
+
+  // ⭐ 옛 34자리 형식은 수량 칸이 정수 9자리 고정이라 소수 수량이 400으로 막혔다(materialMesLotNo
+  // 의 integer() 가정). 구분자 형식은 정규형 소수 문자열을 쓰므로 이 경로가 열린다 — 회귀 확인.
+  it('소수 수량(KG 등)도 LOT 번호에 정규형으로 그대로 실린다 — 옛 정수 전용 제약의 회귀 확인', async () => {
+    const { service, recorded } = fake(12.5, '0002');
+
+    await service.create(input({ initialQty: 12.5 }), 7);
+
+    expect(recorded.register).toMatchObject({
+      lotNo: `${ITEM_CODE}|12.5|260911|${SUPPLIER_CODE}|0003`,
+    });
   });
 });

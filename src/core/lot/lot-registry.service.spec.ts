@@ -8,6 +8,7 @@ import {
   LotRegisterInput,
   LotRegistryService,
   Tx,
+  nextInboundMaterialLotNo,
   nextMesLotNos,
   slotQtys,
 } from './lot-registry.service';
@@ -322,5 +323,103 @@ describe('선발행 슬롯', () => {
     expect(calls.filter((c) => c === 'lot.count')).toHaveLength(1);
     expect(lotNos.map((no) => no.slice(15, 21))).toEqual(['000008', '000009', '000010']);
     expect(new Set(lotNos).size).toBe(3);
+  });
+});
+
+/**
+ * `nextInboundMaterialLotNo` 첫 단위 테스트 — 지금까지 이 함수는 `LotService.create` 를 거친
+ * 간접 커버리지뿐이었다. `item`/`partner` 조회와 `where` 필터(공장·접두)까지 흉내 내는 별도
+ * fake 를 둔다 — 위 `fake()` 는 `createWithin`/`preIssueWithin` 전용이라 모양이 다르다.
+ */
+describe('nextInboundMaterialLotNo', () => {
+  const ITEM_CODE = '040101-00022S';
+  const SUPPLIER_CODE = '100019';
+  const PLANT_ID = 3;
+  const INPUT = {
+    plantId: PLANT_ID,
+    itemId: 501,
+    receivedQty: 12.5,
+    supplierId: 601,
+    businessDate: '2026-07-31',
+  };
+  const PREFIX = '040101-00022S|12.5|260731|100019|';
+
+  /** `where.plant_id`·`where.lot_no.startsWith` 를 실제 Prisma 처럼 걸러 준다. */
+  function fakeNumbering(rows: { plantId: number; lotNo: string }[]): Tx {
+    return {
+      item: { findUnique: async () => ({ item_code: ITEM_CODE }) },
+      partner: { findUnique: async () => ({ partner_code: SUPPLIER_CODE }) },
+      lot: {
+        findMany: async (args: { where: { plant_id: number; lot_no: { startsWith: string } } }) =>
+          rows
+            .filter((r) => r.plantId === args.where.plant_id && r.lotNo.startsWith(args.where.lot_no.startsWith))
+            .map((r) => ({ lot_no: r.lotNo })),
+      },
+    } as unknown as Tx;
+  }
+
+  it('기존 행이 없으면 0001 이다', async () => {
+    expect(await nextInboundMaterialLotNo(fakeNumbering([]), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('기존 행 0001·0002 → 0003 이다', async () => {
+    const rows = [
+      { plantId: PLANT_ID, lotNo: `${PREFIX}0001` },
+      { plantId: PLANT_ID, lotNo: `${PREFIX}0002` },
+    ];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0003`);
+  });
+
+  it('결번(0001·0003)이 있어도 0004다 — 0002가 아니다(count+1 함정 회귀)', async () => {
+    const rows = [
+      { plantId: PLANT_ID, lotNo: `${PREFIX}0001` },
+      { plantId: PLANT_ID, lotNo: `${PREFIX}0003` },
+    ];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0004`);
+  });
+
+  it('앞 4칸 중 품목이 다르면 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: 'DIFFERENT-ITEM|12.5|260731|100019|0009' }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('앞 4칸 중 수량이 다르면 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: '040101-00022S|99|260731|100019|0009' }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('앞 4칸 중 날짜가 다르면 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: '040101-00022S|12.5|260101|100019|0009' }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('앞 4칸 중 공급사가 다르면 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: '040101-00022S|12.5|260731|999999|0009' }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('정규형이 아닌 수량 칸(12.50)을 가진 행은 세지 않는다 — 문자열 정확 비교', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: '040101-00022S|12.50|260731|100019|0009' }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('공장이 다른 행은 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID + 1, lotNo: `${PREFIX}0009` }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('접두 뒤 나머지가 4자가 아닌 행은 세지 않는다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: `${PREFIX}00009` }];
+    expect(await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT)).toBe(`${PREFIX}0001`);
+  });
+
+  it('없는 품목은 기존 오류를 유지한다', async () => {
+    const tx = { item: { findUnique: async () => null }, partner: { findUnique: async () => ({ partner_code: SUPPLIER_CODE }) } } as unknown as Tx;
+    await expect(nextInboundMaterialLotNo(tx, INPUT)).rejects.toThrow('자재 MES LOT 대상 품목을 찾을 수 없습니다.');
+  });
+
+  it('없는 공급사는 기존 오류를 유지한다', async () => {
+    const tx = { item: { findUnique: async () => ({ item_code: ITEM_CODE }) }, partner: { findUnique: async () => null } } as unknown as Tx;
+    await expect(nextInboundMaterialLotNo(tx, INPUT)).rejects.toThrow('자재 MES LOT 대상 공급사를 찾을 수 없습니다.');
   });
 });

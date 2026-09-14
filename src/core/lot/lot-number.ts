@@ -10,19 +10,12 @@ import { randomBytes } from 'node:crypto';
  *
  * ⛔ MES 충돌에 400 을 내지 않는다 — 「사용자가 고칠 수 있는 값이 아니기 때문」(계약).
  *
- * ⚠ 형식은 계약이 **34자리 고정폭만** 확정했다(MLOT #16). 도출·검증 규칙은 정하지
- * 않았으므로 아래는 서버가 고른 것이고, 규칙이 확정되면 이 파일만 바뀐다(되돌림 §Z-1).
+ * ⚠ **자재** LOT(아래 `materialMesLotNo`)의 형식은 계약이 34자리 고정폭만 확정했었으나
+ * (MLOT #16), **통보 277(2026-09-14)로 구분자 5칸 가변폭으로 바뀌었다**(되돌림 §Z-1).
+ * **생산** LOT(`mesLotNo`)은 이 개정과 무관하게 그대로 34자리다.
  */
 
 export const LOT_NO_LENGTH = 34;
-
-export const MATERIAL_LOT_SEGMENT_LENGTHS = {
-  itemCode: 9,
-  qty: 9,
-  date: 6,
-  supplier: 6,
-  serial: 4,
-} as const;
 
 /** 사람이 라벨에서 읽고 받아 적는 값이라 헷갈리는 글자(0·O·1·I)를 뺀다. */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -43,41 +36,6 @@ export function mesLotNo(plantId: number, businessDate: string, todaySeq: number
   return no;
 }
 
-/**
- * 자재 입하의 MES 내부 LOT. 모바일 스캔 화면의 정본 형식과 같은 숫자 34자리다.
- * 생산 LOT은 이 함수가 아니라 기존 `mesLotNo` 체계를 계속 쓴다.
- */
-export function materialMesLotNo(input: {
-  itemCode: string;
-  qty: number;
-  businessDate: string;
-  supplierCode: string;
-  serial: number;
-}): string {
-  const itemCode = numeric(input.itemCode, MATERIAL_LOT_SEGMENT_LENGTHS.itemCode, '품목 코드');
-  const supplierCode = numeric(input.supplierCode, MATERIAL_LOT_SEGMENT_LENGTHS.supplier, '공급사 코드');
-  const date = /^\d{2}(\d{2})-(\d{2})-(\d{2})$/.exec(input.businessDate);
-  if (!date) throw new Error('자재 MES LOT 업무일자는 YYYY-MM-DD 여야 합니다.');
-  const qty = integer(input.qty, MATERIAL_LOT_SEGMENT_LENGTHS.qty, '수량');
-  const serial = integer(input.serial, MATERIAL_LOT_SEGMENT_LENGTHS.serial, '순번');
-  return `${itemCode}${qty}${date[1]}${date[2]}${date[3]}${supplierCode}${serial}`;
-}
-
-function numeric(value: string, length: number, name: string): string {
-  if (!new RegExp(`^\\d{${String(length)}}$`).test(value)) {
-    throw new Error(`${name}는 자재 MES LOT ${String(length)}자리 숫자로 표현할 수 없습니다.`);
-  }
-  return value;
-}
-
-function integer(value: number, length: number, name: string): string {
-  const max = 10 ** length - 1;
-  if (!Number.isSafeInteger(value) || value < 1 || value > max) {
-    throw new Error(`${name}는 자재 MES LOT ${String(length)}자리 양의 정수로 표현할 수 없습니다.`);
-  }
-  return String(value).padStart(length, '0');
-}
-
 function randomChars(length: number): string {
   // ⛔ `%` 로 자르지 않고 버리고 다시 뽑는다 — 256 이 알파벳 길이의 배수가 아니면
   // 나머지 연산이 앞쪽 글자를 더 자주 뽑는다(모듈로 편향).
@@ -95,10 +53,6 @@ function randomChars(length: number): string {
 
 /**
  * 자재 LOT 번호 — 구분자 5칸 형식 (통보 277 · 2026-09-14).
- *
- * ⚠ **이 아래는 아직 `materialMesLotNo()` 에서 쓰이지 않는다.** 옛 34자리 형식과 나란히
- * 두고, 다음 PR 에서 `materialMesLotNo()` 를 이 조각들로 재조립한다 — 그래야 이 PR 이
- * 기존 스펙·e2e 를 하나도 안 건드리고 단독으로 초록이다.
  *
  * ```
  * 040101-00022S|12.5|260731|100019|0001
@@ -173,6 +127,14 @@ function materialLotDateSegment(businessDate: string): string {
   return `${match[1]}${match[2]}${match[3]}`;
 }
 
+/** 1~9999 의 4자리 0채움 — 방어용 검사다. 소진(다음 번호가 9999 를 넘음) 판정은 registry 가 미리 한다. */
+function materialLotSerialSegment(serial: number): string {
+  if (!Number.isInteger(serial) || serial < 1 || serial > 9999) {
+    throw new MaterialLotFormatError('번호는 1~9999 사이의 정수여야 합니다.', 'SEGMENT');
+  }
+  return String(serial).padStart(4, '0');
+}
+
 /**
  * 앞 4칸(제품코드·수량·날짜·공급사) + 구분자 — 접두 조회용. 번호(마지막 4칸)는 아직 없다.
  * `nextInboundMaterialLotNo` 가 이 접두로 기존 LOT 을 세어 다음 번호를 정한다.
@@ -225,4 +187,19 @@ export function parseMaterialLotNo(lotNo: string): MaterialLotSegments {
     throw new MaterialLotFormatError('번호 칸은 0001~9999 의 4자리 숫자여야 합니다.', 'SEGMENT');
   }
   return { itemCode, qty, date, supplierCode, serial };
+}
+
+/**
+ * 입하 자재의 MES 내부 LOT. 앞 4칸 + 번호(마지막 4칸)를 조립한다 — 각 칸의 규칙은
+ * `materialLotPrefix`/`materialLotSerialSegment` 를 본다. 생산 LOT은 이 함수가 아니라
+ * `mesLotNo` 체계를 계속 쓴다.
+ */
+export function materialMesLotNo(input: {
+  itemCode: string;
+  qty: number;
+  businessDate: string;
+  supplierCode: string;
+  serial: number;
+}): string {
+  return materialLotPrefix(input) + materialLotSerialSegment(input.serial);
 }
