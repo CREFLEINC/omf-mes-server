@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException } from '../../common/errors';
+import { ConflictException, ContractException } from '../../common/errors';
 import { LotHoldService } from './lot-hold.service';
 import {
   LotPreIssueInput,
@@ -421,5 +421,13 @@ describe('nextInboundMaterialLotNo', () => {
   it('없는 공급사는 기존 오류를 유지한다', async () => {
     const tx = { item: { findUnique: async () => ({ item_code: ITEM_CODE }) }, partner: { findUnique: async () => null } } as unknown as Tx;
     await expect(nextInboundMaterialLotNo(tx, INPUT)).rejects.toThrow('자재 MES LOT 대상 공급사를 찾을 수 없습니다.');
+  });
+
+  it('앞 4칸의 번호가 9999면 409다 — 다시 시도해도 안 풀리는 소진이라 재시도-소진 409와 메시지가 다르다', async () => {
+    const rows = [{ plantId: PLANT_ID, lotNo: `${PREFIX}9999` }];
+    const error = await nextInboundMaterialLotNo(fakeNumbering(rows), INPUT).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).conflict).toMatchObject({ conflictCause: 'user' });
+    expect((error as ConflictException).conflict.message).not.toBe('LOT 번호를 매기지 못했습니다. 다시 시도해 주세요.');
   });
 });
