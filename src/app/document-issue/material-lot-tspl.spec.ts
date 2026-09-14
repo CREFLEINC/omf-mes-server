@@ -21,4 +21,12 @@ describe('materialLotTspl', () => {
       expect(() => materialLotTspl({ ...values, lotNo })).toThrow();
     }
   });
+
+  it('통보 277 구분자 형식(| 포함) LOT 번호는 통과한다', () => {
+    const lotNo = '040101-00022S|100|260911|100019|0001';
+    const bytes = materialLotTspl({ ...values, lotNo });
+    const text = bytes.toString('ascii');
+    expect(text).toContain(`QRCODE 600,175,L,5,A,0,M2,S7,"${lotNo}"\r\n`);
+    expect(text).toContain(`LOT ${lotNo}`);
+  });
 });
