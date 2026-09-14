@@ -69,6 +69,32 @@ describe('ContractValidationGuard', () => {
     expect(request.query).toEqual({ businessUnitId: 10, activeOnly: true });
   });
 
+  it('explode:false 배열 질의는 쉼표로 나눠 검증한다 — 단일값도 배열이다(PLAN-WO-01 D1)', () => {
+    const csv = contextFor('GET /mdm/equipments', { query: { equipmentTypeCode: 'INJECTION_MOLDING,PRESS' } });
+    expect(guard.canActivate(csv.context)).toBe(true);
+    expect(csv.request.query).toEqual({ equipmentTypeCode: ['INJECTION_MOLDING', 'PRESS'] });
+
+    const single = contextFor('GET /mdm/equipments', { query: { equipmentTypeCode: 'PRESS' } });
+    expect(guard.canActivate(single.context)).toBe(true);
+    expect(single.request.query).toEqual({ equipmentTypeCode: ['PRESS'] });
+
+    const absent = contextFor('GET /mdm/equipments', { query: { plantId: '4' } });
+    expect(guard.canActivate(absent.context)).toBe(true);
+    expect('equipmentTypeCode' in (absent.request.query as object)).toBe(false);
+  });
+
+  it('CSV 는 중복·순서·빈 토큰을 보존하고, 반복 키 배열의 원소는 다시 나누지 않는다 — 요약 targetIds', () => {
+    const key = 'GET /app/document-issues/summary';
+    const ordered = contextFor(key, { query: { targetTypeCode: 'LOT', targetIds: '2,1,2' } });
+    expect(guard.canActivate(ordered.context)).toBe(true);
+    expect(ordered.request.query).toEqual({ targetTypeCode: 'LOT', targetIds: [2, 1, 2] });
+
+    for (const targetIds of ['2,,1', ['2', '1,3']]) {
+      const denied = contextFor(key, { query: { targetTypeCode: 'LOT', targetIds } });
+      expect(() => guard.canActivate(denied.context)).toThrow(ContractException);
+    }
+  });
+
   it('본문은 되돌려 쓰지 않는다 — 강제 변환을 하지 않으므로 바뀔 것이 없다', () => {
     const body = { roleCode: 'ROLE_X', roleName: '역할' };
     const { context, request } = contextFor('POST /app/roles', { body });

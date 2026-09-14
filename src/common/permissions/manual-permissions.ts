@@ -132,6 +132,13 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 행별 라인 Select 근거 — I-24.md R-13).
   'PUT /planning/production-plans/{productionPlanId}': ['W-02-02'],
 
+  // `W-02-04` W/O 확정·배포 — 배포 화면이 확정 게이트와 If-Match ETag 를 유효성 판정·상세
+  // 조회로 다시 읽는다(클라이언트 실측 · PLAN-WO-01 W6). 도출표에 없어 이 권한만 가진 계정은
+  // 유효성 GET 이 403 이라 배포 버튼이 막힌다. 상세 GET 은 계약이 403 을 선언하지 않아 가드가
+  // 보지 않지만, 화면이 부르는 자리를 같은 줄로 남긴다.
+  'GET /production/work-orders/{workOrderId}/validation': ['W-02-04'],
+  'GET /production/work-orders/{workOrderId}': ['W-02-04'],
+
   // `W-06-10` 연계 동기화 현황·실패 재처리 — 계약 x-internal-note 가 「소관 = W-06-10
   // (공유계약 B-4-1 ④ · 중복 구현 금지)」라 직접 적었다. `W-06-10` §5-1 액션 8건에 이
   // 액션이 «없다» — 잠정 등록이다(I-24.md R-13). 부르는 화면이 오늘 0건이어도 가드가
