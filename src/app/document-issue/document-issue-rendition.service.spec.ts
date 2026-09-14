@@ -31,9 +31,9 @@ describe('DocumentIssueRenditionService', () => {
           document_type_code: 'MATERIAL_LOT_LABEL',
           issue_seq: 2,
           lot: {
-            lot_no: '9900200010000001002609111000190001',
+            lot_no: '040101-00022S|100|260911|100019|0001',
             initial_qty: new Prisma.Decimal(100),
-            item: { item_code: '990020001', item_name: 'FR002 TEST MATERIAL' },
+            item: { item_code: '040101-00022S', item_name: 'FR002 TEST MATERIAL' },
           },
         }),
       },

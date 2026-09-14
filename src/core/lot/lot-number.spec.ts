@@ -7,17 +7,61 @@ import {
 } from './lot-number';
 
 describe('materialMesLotNo', () => {
-  it('2026-09-11을 YYMMDD=260911로 넣어 모바일 34자리 분절과 왕복된다', () => {
+  it('실 자재 코드로 구분자 5칸 번호를 조립한다(#620 회귀 확인 — 옛 형식은 이 코드를 거절했다)', () => {
     const lotNo = materialMesLotNo({
-      itemCode: '990020001',
-      qty: 100,
-      businessDate: '2026-09-11',
+      itemCode: '040101-00022S',
+      qty: 12.5,
+      businessDate: '2026-07-31',
       supplierCode: '100019',
       serial: 1,
     });
-    expect(lotNo).toBe('9900200010000001002609111000190001');
-    expect(lotNo).toHaveLength(34);
-    expect(lotNo).toMatch(/^\d{34}$/);
+    expect(lotNo).toBe('040101-00022S|12.5|260731|100019|0001');
+  });
+
+  it('소수 수량이 정규형으로 실린다 — 100.000000 대신 100', () => {
+    const lotNo = materialMesLotNo({
+      itemCode: 'A',
+      qty: 100,
+      businessDate: '2026-07-31',
+      supplierCode: 'S',
+      serial: 1,
+    });
+    expect(lotNo).toBe('A|100|260731|S|0001');
+  });
+
+  it('materialLotPrefix 가 던진 오류를 그대로 낸다 — 제품코드에 구분자가 섞이면 SEGMENT', () => {
+    expect(() =>
+      materialMesLotNo({ itemCode: 'A|B', qty: 1, businessDate: '2026-07-31', supplierCode: 'S', serial: 1 }),
+    ).toThrow(MaterialLotFormatError);
+  });
+
+  it('번호가 1~9999 를 벗어나면 거절한다 — 0', () => {
+    expect(() =>
+      materialMesLotNo({ itemCode: 'A', qty: 1, businessDate: '2026-07-31', supplierCode: 'S', serial: 0 }),
+    ).toThrow(MaterialLotFormatError);
+  });
+
+  it('번호가 1~9999 를 벗어나면 거절한다 — 10000', () => {
+    expect(() =>
+      materialMesLotNo({ itemCode: 'A', qty: 1, businessDate: '2026-07-31', supplierCode: 'S', serial: 10000 }),
+    ).toThrow(MaterialLotFormatError);
+  });
+
+  it('materialMesLotNo 가 만든 값을 parseMaterialLotNo 로 되읽으면 같은 칸이 나온다', () => {
+    const lotNo = materialMesLotNo({
+      itemCode: '040101-00022S',
+      qty: 12.5,
+      businessDate: '2026-07-31',
+      supplierCode: '100019',
+      serial: 7,
+    });
+    expect(parseMaterialLotNo(lotNo)).toEqual({
+      itemCode: '040101-00022S',
+      qty: '12.5',
+      date: '260731',
+      supplierCode: '100019',
+      serial: 7,
+    });
   });
 });
 

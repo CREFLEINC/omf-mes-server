@@ -18,7 +18,6 @@ import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { InventoryPostingModule, InventoryPostingService } from '../src/core/inventory-posting';
 import { PostingEndpoint } from '../src/core/inventory-posting/posting.types';
-import { LOT_NO_LENGTH } from '../src/core/lot/lot-number';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { seedRoute } from './approval-request.fixture';
 
@@ -27,14 +26,13 @@ const NOPERM_ID = 'e2e-lot-noperm';
 const PASSWORD = 'LOT-검사-비밀번호';
 const PREFIX = 'LOTE2E';
 /**
- * ⛔ 자재 MES LOT 번호(`materialMesLotNo`)가 품목 코드를 **9자리 숫자**, 공급사 코드를
- * **6자리 숫자**로 «그대로» 담는다. `LOTE2E-…` 같은 코드는 400 이 된다 — 그래서 이 둘만
- * 숫자로 둔다. 다른 마스터 코드는 PREFIX 를 그대로 쓴다. *
- * ⛔ 여기 쓰는 숫자 코드는 **규칙에 맞춘 «가짜»** 다. 하노이 실 품목 9,813건 중 이 형식을
- * 통과하는 것은 5건뿐이다 — 이 스위트가 초록이라고 형식이 맞다는 뜻이 «아니다»(#620).
+ * 자재 MES LOT 번호(`materialMesLotNo`)는 이제 구분자 5칸 형식이라(통보 277), 품목·공급사
+ * 코드를 **원본 그대로** 담는다 — 하이픈·글자가 섞인 실 하노이 품목 코드 모양을 그대로 쓴다.
+ * ⭐ 옛 34자리 전부-숫자 형식은 이런 코드를 전부 거절했다(#620 — 실 품목 9,813건 중 5건만
+ * 통과). 여기 값이 그 형식을 통과하는 것 자체가 #620 회귀 확인이다.
  */
-const ITEM_CODE = '900000001';
-const SUPPLIER_CODE = '900001';
+const ITEM_CODE = '040101-00022S';
+const SUPPLIER_CODE = '100019';
 const ROLE = 'E2E_LOT';
 const PERMISSIONS = ['M-01-02', 'P-01-01', 'M-01-04', 'M-01-13'];
 const DAY = '2026-05-01';
@@ -139,19 +137,21 @@ describe('LOT (e2e)', () => {
     });
   });
 
-  it('⭐ MES 는 서버가 34자리로 매긴다 — 화면은 번호를 안 보낸다', async () => {
+  it('⭐ MES 는 서버가 구분자 5칸으로 매긴다 — 화면은 번호를 안 보낸다. 두 번째 등록은 번호가 오른다', async () => {
     const first = await create({ numberSourceCode: 'MES' });
     const second = await create({ numberSourceCode: 'MES' });
 
-    expect(first.lotNo).toHaveLength(LOT_NO_LENGTH);
-    expect(second.lotNo).toHaveLength(LOT_NO_LENGTH);
-    expect(first.lotNo).not.toBe(second.lotNo);
     // ⛔ 「M 으로 시작한다」가 아니다 — 입하에서 난 자재 LOT 은 `materialMesLotNo` 가 매기고
-    // 품목 코드 9자리로 «시작한다»(생산 LOT 만 기존 `mesLotNo` 의 M 체계를 쓴다 · #610).
-    expect(first.lotNo.startsWith(ITEM_CODE)).toBe(true);
-    expect(second.lotNo.startsWith(ITEM_CODE)).toBe(true);
-    // 34자리가 전부 숫자다 — 모바일 스캔 화면의 정본 형식.
-    expect(first.lotNo).toMatch(/^\d{34}$/);
+    // 품목 코드로 «시작한다»(생산 LOT 만 기존 `mesLotNo` 의 M 체계를 쓴다 · #610).
+    // 이 스위트에서 처음 성공하는 MES 발번 둘이라 번호(마지막 4칸)가 0001·0002 로 오른다 —
+    // 같은 값이 그대로 「앞 4칸이 같은 LOT 끼리 센다」(결정 4)의 회귀 확인이다.
+    expect(first.lotNo).toBe(`${ITEM_CODE}|10|260501|${SUPPLIER_CODE}|0001`);
+    expect(second.lotNo).toBe(`${ITEM_CODE}|10|260501|${SUPPLIER_CODE}|0002`);
+  });
+
+  it('소수 수량(KG 등) 입하도 MES 발번이 된다 — 정수 9자리로 막던 옛 형식의 회귀 확인', async () => {
+    const lot = await create({ numberSourceCode: 'MES', initialQty: 12.5 });
+    expect(lot.lotNo).toBe(`${ITEM_CODE}|12.5|260501|${SUPPLIER_CODE}|0001`);
   });
 
   it('⭐ 등록 즉시 보류가 걸린다 — 화면이 보내지 않고 서버가 건다', async () => {
@@ -726,28 +726,32 @@ describe('LOT (e2e)', () => {
    * 라인 하나에 LOT 은 하나라 호출마다 새 라인을 심는다.
    */
   async function body(extra: Record<string, unknown>): Promise<Record<string, unknown>> {
+    // ⚠ 라인 수량은 `extra.initialQty` 를 따른다 — LOT 번호의 수량 칸이 이 라인 수량 그대로
+    // 실리므로(§2-2 — 단위는 미정, 막지 않는다), 소수 수량 케이스를 만들려면 라인도 같은
+    // 값을 받아야 `fromInboundSource` 의 `Decimal.equals` 대조를 통과한다.
+    const qty = typeof extra.initialQty === 'number' ? extra.initialQty : 10;
     return {
       itemId,
       lotTypeCode: 'MATERIAL',
       plantId,
-      initialQty: 10,
+      initialQty: qty,
       uomId,
       sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-      sourceId: await newLine(),
+      sourceId: await newLine(qty),
       businessDate: DAY,
       occurredAt: `${DAY}T02:00:00.000Z`,
       ...extra,
     };
   }
 
-  async function newLine(): Promise<number> {
+  async function newLine(qty: number = 10): Promise<number> {
     lineNo += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
         inbound_receipt_id: inboundReceiptId,
         line_no: lineNo,
         item_id: BigInt(itemId),
-        received_qty: 10,
+        received_qty: qty,
         uom_id: BigInt(uomId),
         supplier_lot_label_attached: false,
         inspection_required: false,

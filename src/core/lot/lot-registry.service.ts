@@ -5,7 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { LotHoldService } from './lot-hold.service';
-import { materialMesLotNo, mesLotNo } from './lot-number';
+import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 
 /**
@@ -335,26 +335,32 @@ export async function nextInboundMaterialLotNo(
 
   let prefix: string;
   try {
-    // serial 이 마지막 4자리이므로, 앞 30자리만으로 같은 날 같은 입하 분절을 센다.
-    prefix = materialMesLotNo({
+    prefix = materialLotPrefix({
       itemCode: item.item_code,
       qty: input.receivedQty,
       businessDate: input.businessDate,
       supplierCode: supplier.partner_code,
-      serial: 1,
-    }).slice(0, -4);
+    });
   } catch (error) {
-    throw error instanceof Error ? one(field('lines', ERROR_CODE.INVALID, error.message)) : error;
+    // 구분자 5칸에서는 «앞 4칸 조립»과 «번호까지 붙인 최종 조립」이 같은 실패 모드(SEGMENT/LENGTH)
+    // 뿐이다 — 옛 34자리 형식 시절의 「접두 실패 → INVALID / 최종 실패 → RANGE」 구분이 없어졌다.
+    const code = error instanceof MaterialLotFormatError && error.kind === 'LENGTH' ? ERROR_CODE.RANGE : ERROR_CODE.INVALID;
+    throw error instanceof Error ? one(field('lines', code, error.message)) : error;
   }
-  // count+1은 중간 번호가 비었거나 외부 LOT가 같은 30자리 prefix를 쓴 경우에 충돌 값을
-  // 되풀이한다. 실제 suffix 최댓값 다음을 쓰고, 동시 삽입의 유일 충돌만 호출자 재시도로 푼다.
+  // ⭐ 문자열을 «정확히» 같은 행만 센다 — `parseMaterialLotNo` 로 다시 파싱하지 않는다.
+  //    구분자 `|` 는 칸 값에 못 들어가므로(형식 규칙), 「길이가 접두+4 · 접두로 시작 ·
+  //    나머지가 4자리 숫자」는 「앞 4칸이 문자열로 정확히 같다」와 완전히 같은 뜻이다.
+  //    정규형이 아닌 수량을 쓴 행(예: 공급사가 `12.50`을 찍은 행)은 문자열이 달라 안 세인다.
+  // ⛔ `startsWith` 가 `_`·`%` 를 SQL LIKE 와일드카드로 넓게 잡아 후보가 과다해질 수 있지만,
+  //    아래 정확 비교가 걸러내므로 결과는 항상 옳다 — 이스케이프가 필요 없다.
   const existing = await tx.lot.findMany({
     where: { plant_id: input.plantId, lot_no: { startsWith: prefix } },
     select: { lot_no: true },
   });
   const serial = existing.reduce((max, lot) => {
     const suffix = lot.lot_no.slice(prefix.length);
-    return /^\d{4}$/.test(suffix) ? Math.max(max, Number(suffix)) : max;
+    const matches = lot.lot_no.length === prefix.length + 4 && lot.lot_no.startsWith(prefix) && /^\d{4}$/.test(suffix);
+    return matches ? Math.max(max, Number(suffix)) : max;
   }, 0);
   try {
     return materialMesLotNo({
