@@ -3,9 +3,14 @@
 # 이미지는 서버에서 빌드하지 않고 Harbor 에서 받아온다.
 # 배포 서버에는 소스코드가 없어도 되고, 개발자 PC 와 운영 서버가 "같은 바이너리"를 쓴다는 게 보장된다.
 #
-# 실행:  ./deploy.sh                 (권장 — pull · 헬스체크 · 실패 시 자동 롤백)
-# 수동:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# 블루-그린: 3100 은 proxy(nginx)가 받고 api-blue·api-green 중 «켜진 쪽»으로 넘긴다.
+# 평소에는 한쪽만 떠 있다. 배포는 반대쪽을 새 이미지로 띄워 전환한다 — docs/deployment.md 「블루-그린 배포」.
+#
+# 실행:  ./deploy.sh                 (pull · migrate · 반대쪽 기동 · 전환 · 이전 쪽 중지)
 # 중지:  docker compose -f docker-compose.prod.yml --env-file .env.prod down
+#
+# ⛔ `up -d` 를 맨손으로 치지 않는다 — api-blue·api-green 이 둘 다 뜨고, 켜진 쪽이 새 이미지로
+#    재생성되며 끊긴다. 배포·재기동은 deploy.sh 로 한다.
 #
 # 배포 대상은 .env.prod 의 IMAGE_TAG 로 갈린다.
 #   개발 서버(한국)   IMAGE_TAG=main    — main 머지 후 self-hosted runner 가 자동 배포
@@ -31,6 +36,51 @@ name: omf-mes
 # migrate 와 api 가 반드시 같은 이미지를 쓰도록 앵커로 묶는다.
 # 따로 적으면 한쪽 태그만 고치는 사고가 난다 — 구버전 코드가 신버전 스키마를 보게 된다.
 x-api-image: &api-image ${REGISTRY:-hub.crefle.com}/mes/backend:${IMAGE_TAG:-main}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '5'
+
+# api-blue·api-green 이 함께 쓰는 정의.
+x-api: &api
+  image: *api-image
+  restart: unless-stopped
+  environment:
+    NODE_ENV: production
+    PORT: 3100
+    API_PREFIX: api
+    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    # 없거나 32자 미만이면 서버가 기동하지 않는다 — 약한 키로 조용히 뜨는 것보다 낫다.
+    JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요 — openssl rand -base64 48}
+    JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
+    # 브라우저가 다른 오리진에서 부를 수 있게 여는 목록. 쉼표로 구분한다.
+    # ⛔ 여기 적어야 컨테이너가 본다 — --env-file 은 이 파일의 ${} 치환용이지
+    #    컨테이너 주입이 아니다. 빠뜨리면 .env.prod 에 적어도 CORS 가 꺼진 채 뜨고,
+    #    preflight(OPTIONS)가 404 로 떨어진다.
+    # 비워 두면 종전대로 꺼짐이다 — 목록 없이 여는 것은 위험하므로 기본을 바꾸지 않는다.
+    CORS_ORIGINS: ${CORS_ORIGINS:-}
+    TZ: UTC
+  # migrate 는 기다리지 않는다 — deploy.sh 가 migrate 를 먼저 끝낸 뒤 한쪽씩 띄운다.
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    # 이미지에 curl이 없다 — Node 22의 내장 fetch를 쓴다.
+    # 이 엔드포인트는 DB까지 찌른다(SELECT 1) — Prisma 초기화 실패도 여기서 걸린다.
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+      ]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 20s
+  logging: *logging
 
 services:
   postgres:
@@ -75,51 +125,30 @@ services:
       postgres:
         condition: service_healthy
 
-  api:
-    image: *api-image
+  # 두 쪽은 정의가 같다 — 차이는 «지금 켜진 쪽인가»뿐이고 그것은 proxy/active/upstream.conf 가 정한다.
+  # 호스트 포트를 열지 않는다. 3100 은 proxy 가 받는다.
+  api-blue:
+    <<: *api
+
+  api-green:
+    <<: *api
+
+  proxy:
+    # upstream `resolve`(컨테이너 IP 가 바뀌어도 reload 없이 따라감)는 nginx 1.27.3 부터 무료판에 있다.
+    image: nginx:1.30-alpine
     restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      PORT: 3100
-      API_PREFIX: api
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
-      # 없거나 32자 미만이면 서버가 기동하지 않는다 — 약한 키로 조용히 뜨는 것보다 낫다.
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요 — openssl rand -base64 48}
-      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-28800}
-      # 브라우저가 다른 오리진에서 부를 수 있게 여는 목록. 쉼표로 구분한다.
-      # ⛔ 여기 적어야 컨테이너가 본다 — --env-file 은 이 파일의 ${} 치환용이지
-      #    컨테이너 주입이 아니다. 빠뜨리면 .env.prod 에 적어도 CORS 가 꺼진 채 뜨고,
-      #    preflight(OPTIONS)가 404 로 떨어진다.
-      # 비워 두면 종전대로 꺼짐이다 — 목록 없이 여는 것은 위험하므로 기본을 바꾸지 않는다.
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      TZ: UTC
     ports:
       - '${API_PORT:-3100}:3100'
-    depends_on:
-      postgres:
-        condition: service_healthy
-      # 마이그레이션이 끝난 뒤에 뜬다
-      migrate:
-        condition: service_completed_successfully
+    # 파일이 아니라 «디렉터리»를 건다. 파일 하나를 걸면 교체(mv·install)된 새 파일을 컨테이너가 못 본다.
+    volumes:
+      - ./proxy/conf.d:/etc/nginx/conf.d:ro
+      - ./proxy/active:/etc/nginx/omf-active:ro
     healthcheck:
-      # 이미지에 curl이 없다 — Node 22의 내장 fetch를 쓴다.
-      # 이 엔드포인트는 DB까지 찌른다(SELECT 1) — Prisma 초기화 실패도 여기서 걸린다.
-      test:
-        [
-          'CMD',
-          'node',
-          '-e',
-          "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:3100/_proxy/health']
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 20s
-    logging:
-      driver: json-file
-      options:
-        max-size: '20m'
-        max-file: '5'
+      retries: 3
+    logging: *logging
 
 volumes:
   pgdata:
