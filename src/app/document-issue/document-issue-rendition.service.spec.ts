@@ -23,39 +23,47 @@ describe('DocumentIssueRenditionService', () => {
     }));
   });
 
-  it('실제 자재 LOT 데이터와 스캔 가능한 QR을 담은 PNG를 렌더링한다', async () => {
+  const materialLotIssue = {
+    document_type_code: 'MATERIAL_LOT_LABEL',
+    issue_seq: 2,
+    issued_at: new Date('2026-09-11T02:00:00Z'),
+    lot: {
+      lot_no: '040101-00022S|1250|260911|100019|0001',
+      lot_type_code: 'MATERIAL',
+      status_code: 'INSPECTION_PENDING',
+      initial_qty: new Prisma.Decimal('1250.000000'),
+      manufactured_at: null,
+      item: { item_code: '040101-00022S' },
+      uom: { uom_code: 'EA' },
+      plant: { timezone_code: 'Asia/Ho_Chi_Minh' },
+    },
+  };
+
+  it('자재 LOT PNG 렌디션은 발행 기록의 LOT 값으로 80×30mm 라벨을 그린다', async () => {
     const prisma = {
-      document_issue_log: {
-        findUnique: async () => ({
-          document_issue_log_id: 1n,
-          document_type_code: 'MATERIAL_LOT_LABEL',
-          issue_seq: 2,
-          lot: {
-            lot_no: '040101-00022S|100|260911|100019|0001',
-            initial_qty: new Prisma.Decimal(100),
-            item: { item_code: '040101-00022S', item_name: 'FR002 TEST MATERIAL' },
-          },
-        }),
-      },
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue(materialLotIssue) },
     } as unknown as PrismaService;
 
-    const png = await new DocumentIssueRenditionService(prisma).materialLotLabel(1);
+    const png = await new DocumentIssueRenditionService(prisma).rendition(7);
 
     expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    expect(png.byteLength).toBeGreaterThan(10_000);
+    // IHDR 너비·높이 — 203dpi 80×30mm.
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([639, 240]);
   });
 
-  it('자재 LOT TSPL 렌디션은 발행 기록의 실제 LOT/품목/수량을 사용한다', async () => {
+  it('자재 LOT TSPL 렌디션은 발행 기록의 LOT·품목·수량·단위·회차·공장 시각을 쓴다', async () => {
     const prisma = {
-      document_issue_log: { findUnique: jest.fn().mockResolvedValue({
-        document_type_code: 'MATERIAL_LOT_LABEL', issue_seq: 2,
-        lot: { lot_no: '9900200010000001002609111000190001',
-          initial_qty: new Prisma.Decimal(100), item: { item_code: '990020001' } },
-      }) },
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue(materialLotIssue) },
     } as unknown as PrismaService;
-    const bytes = await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl');
-    expect(bytes.toString('ascii')).toContain('ITEM 990020001');
-    expect(bytes.toString('ascii')).toContain('QTY 100  ISSUE 2');
+    const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
+    expect(text.startsWith('SIZE ')).toBe(true);
+    expect(text).toContain('"RAW  INSPECTION_PENDING"');
+    expect(text).toContain('"PART NO.: 040101-00022S"');
+    expect(text).toContain('"QTY: 1,250 EA"');
+    expect(text).toContain('"LOT NO.: 040101-00022S|1250|260911|100019|0001"');
+    expect(text).toContain('"MFG DT: 26-09-11 09:00"');
+    expect(text).toContain('"ISSUE NO.: 2"');
+    expect(text).toContain(',"040101-00022S|1250|260911|100019|0001"\r\nPRINT 1\r\n');
     expect(prisma.document_issue_log.findUnique).toHaveBeenCalledTimes(2);
   });
 

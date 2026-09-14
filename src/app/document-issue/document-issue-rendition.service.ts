@@ -7,6 +7,8 @@ const QRCode = require('qrcode') as {
 };
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
+import type { MaterialLotLabelValues } from './material-lot-label-layout';
 import { materialLotTspl } from './material-lot-tspl';
 
 @Injectable()
@@ -65,50 +67,23 @@ export class DocumentIssueRenditionService {
   }
 
   async materialLotLabelTspl(issueId: number): Promise<Buffer> {
-    const issue = await this.prisma.document_issue_log.findUnique({
-      where: { document_issue_log_id: issueId },
-      include: { lot: { include: { item: true } } },
-    });
-    if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
-    if (issue.document_type_code !== 'MATERIAL_LOT_LABEL' || issue.lot === null) {
-      throw new UnprocessableEntityException('자재 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
-    }
-    return materialLotTspl({
-      itemCode: issue.lot.item.item_code,
-      lotNo: issue.lot.lot_no,
-      quantity: String(issue.lot.initial_qty),
-      issueSequence: String(issue.issue_seq),
-    });
+    return materialLotTspl(await this.materialLotLabelValues(issueId));
   }
 
   async materialLotLabel(issueId: number): Promise<Buffer> {
+    return materialLotLabelPng(await this.materialLotLabelValues(issueId));
+  }
+
+  private async materialLotLabelValues(issueId: number): Promise<MaterialLotLabelValues> {
     const issue = await this.prisma.document_issue_log.findUnique({
       where: { document_issue_log_id: issueId },
-      include: { lot: { include: { item: true } } },
+      include: { lot: { include: { item: true, uom: true, plant: true } } },
     });
     if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
-    if (issue.document_type_code !== 'MATERIAL_LOT_LABEL' || issue.lot === null) {
+    const { lot } = issue;
+    if (issue.document_type_code !== 'MATERIAL_LOT_LABEL' || lot === null) {
       throw new UnprocessableEntityException('자재 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
     }
-    const canvas = createCanvas(800, 400);
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, 800, 400);
-    ctx.fillStyle = '#111';
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('MATERIAL LOT LABEL', 32, 52);
-    ctx.font = '24px sans-serif';
-    ctx.fillText(`ITEM  ${issue.lot.item.item_code}`, 32, 105);
-    ctx.fillText(issue.lot.item.item_name.slice(0, 42), 32, 140);
-    ctx.fillText(`LOT   ${issue.lot.lot_no}`, 32, 185);
-    ctx.fillText(`QTY   ${String(issue.lot.initial_qty)}   ISSUE ${String(issue.issue_seq)}`, 32, 225);
-    const dataUrl = await QRCode.toDataURL(issue.lot.lot_no, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 150,
-    });
-    const image = await (await import('@napi-rs/canvas')).loadImage(dataUrl);
-    ctx.drawImage(image, 610, 210, 150, 150);
-    return canvas.toBuffer('image/png');
+    return materialLotLabelValues({ ...issue, lot });
   }
 }
