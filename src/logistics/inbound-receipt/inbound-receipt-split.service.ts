@@ -7,6 +7,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
   InboundReceiptHeaderWriteInput,
+  MaterialLotCodeCheck,
+  assertAttachedLotCodes,
   collectHeaderErrors,
   collectMomentErrors,
   lineRequired,
@@ -130,7 +132,11 @@ export class InboundReceiptSplitService {
     // 시나리오를 `uq_lot(plant_id, lot_no)` 이 막는다. 계약·화면 스펙이 안 다뤘다 — 화면이
     // 어느 칸을 고칠지 짚도록 미리 400 한다(§2 2단계 「거부하는 쪽」).
     const lotNos = new Set<string>();
-    const checks = parts.flatMap(({ side, part }) => collectHeaderErrors(`${side}.`, part, errors, lotNos));
+    const lotCodeChecks: MaterialLotCodeCheck[] = [];
+    const checks = parts.flatMap(({ side, part }) =>
+      collectHeaderErrors(`${side}.`, part, errors, lotNos, lotCodeChecks),
+    );
+    errors.push(...(await assertAttachedLotCodes(this.prisma, lotCodeChecks)));
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     await assertCodeValues(this.prisma, checks);

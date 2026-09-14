@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   InboundReceiptCreateInput,
   InboundReceiptLineWriteInput,
+  MaterialLotCodeCheck,
+  assertAttachedLotCodes,
   assertWritable,
   collectHeaderErrors,
 } from './inbound-receipt-rules';
@@ -35,9 +37,12 @@ const input = (overrides: Partial<InboundReceiptCreateInput> = {}): InboundRecei
 });
 
 const KNOWN = ['INBOUND_RECEIPT_EXCEPTION_TYPE CUSTOMER_SUPPLY', 'SUBSTITUTE_LOT_REASON NO_LABEL'];
+/** `ATTACHED_LOT_NO` 의 제품코드·공급사코드와 맞춘 마스터 값 — `line().itemId`/`input().supplierId` 대응. */
+const ITEM_CODE = '040101-00022S';
+const SUPPLIER_CODE = '100019';
 
-function fake(codes: string[] = KNOWN): PrismaService {
-  const known = new Set(codes);
+function fake(options: { codes?: string[]; itemCode?: string; supplierCode?: string } = {}): PrismaService {
+  const known = new Set(options.codes ?? KNOWN);
   return {
     code_value: {
       findMany: async ({ where }: { where: { OR: { code: string; code_group: { group_code: string } }[] } }) =>
@@ -46,6 +51,8 @@ function fake(codes: string[] = KNOWN): PrismaService {
           code_group: { group_code: check.code_group.group_code },
         })),
     },
+    item: { findMany: async () => [{ item_id: 40n, item_code: options.itemCode ?? ITEM_CODE }] },
+    partner: { findMany: async () => [{ partner_id: 10n, partner_code: options.supplierCode ?? SUPPLIER_CODE }] },
   } as unknown as PrismaService;
 }
 
@@ -170,6 +177,67 @@ describe('입하 등록 검사', () => {
     await expect(assertWritable(fake(), input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] }))).resolves.toBeUndefined();
   });
 
+  it('등록 — 사전부착 LOT 번호의 제품코드가 실 품목과 다르면 400 INVALID다(§2-3 결정 5)', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake({ itemCode: '다른코드' }), input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] })),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
+  });
+
+  it('등록 — 사전부착 LOT 번호의 공급사코드가 실 공급사와 다르면 400 INVALID다(§2-3 결정 5)', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake({ supplierCode: '다른코드' }), input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] })),
+    );
+
+    expect((error as ContractException).errors[0]).toMatchObject({
+      field: 'lines.0.supplierLotNo',
+      code: ERROR_CODE.INVALID,
+    });
+  });
+
+  it('등록 — 사전부착 LOT 번호의 수량 칸이 실제 입하 수량과 달라도 통과한다(스냅샷이라 비교하지 않는다 · §2-3 결정 5)', async () => {
+    const mismatchedQty = '040101-00022S|999|260806|100019|0001';
+
+    await expect(
+      assertWritable(fake(), input({ lines: [line({ receivedQty: 10, supplierLotNo: mismatchedQty })] })),
+    ).resolves.toBeUndefined();
+  });
+
+  it('등록 — 형식이 깨진 사전부착 LOT 번호는 오류를 한 번만 보고한다(제품코드·공급사 대조를 이중으로 안 한다)', async () => {
+    const error = await thrown(() =>
+      assertWritable(fake(), input({ lines: [line({ supplierLotNo: '040101-00022S|10|260806|100019' })] })),
+    );
+
+    expect((error as ContractException).errors).toHaveLength(1);
+  });
+
+  it('등록 — 라벨 미부착 라인은 제품코드·공급사 대조를 건너뛴다', async () => {
+    await expect(
+      assertWritable(
+        fake({ itemCode: '다른코드', supplierCode: '다른코드' }),
+        input({
+          lines: [line({ supplierLotNo: '납품서-LOT/A-01', supplierLotLabelAttached: false })],
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('등록 — 대조 대상 품목·공급사 마스터 행이 없으면 조용히 건너뛴다(「없는 품목」은 다른 결정 사안)', async () => {
+    const noMaster = {
+      code_value: { findMany: async () => [] },
+      item: { findMany: async () => [] },
+      partner: { findMany: async () => [] },
+    } as unknown as PrismaService;
+
+    await expect(
+      assertWritable(noMaster, input({ lines: [line({ supplierLotNo: ATTACHED_LOT_NO })] })),
+    ).resolves.toBeUndefined();
+  });
+
   it('등록 — 사전부착 LOT 번호가 옛 34자리 숫자면 400이다(구분자가 없어 칸이 1개다)', async () => {
     const error = await thrown(() =>
       assertWritable(fake(), input({ lines: [line({ supplierLotNo: '0000000400000000102608060000100001' })] })),
@@ -205,6 +273,55 @@ describe('입하 등록 검사', () => {
         code: ERROR_CODE.INVALID,
       }),
     ]);
+  });
+});
+
+describe('assertAttachedLotCodes', () => {
+  const check = (overrides: Partial<MaterialLotCodeCheck> = {}): MaterialLotCodeCheck => ({
+    at: 'lines.0.supplierLotNo',
+    itemId: 40,
+    itemCode: ITEM_CODE,
+    supplierId: 10,
+    supplierCode: SUPPLIER_CODE,
+    ...overrides,
+  });
+
+  it('대조 대상이 없으면 조회 없이 빈 배열을 돌려준다', async () => {
+    const blowsUp = {
+      item: { findMany: async () => { throw new Error('불러선 안 된다'); } },
+      partner: { findMany: async () => { throw new Error('불러선 안 된다'); } },
+    } as unknown as PrismaService;
+
+    await expect(assertAttachedLotCodes(blowsUp, [])).resolves.toEqual([]);
+  });
+
+  it('제품코드·공급사코드가 모두 일치하면 빈 배열을 돌려준다', async () => {
+    await expect(assertAttachedLotCodes(fake(), [check()])).resolves.toEqual([]);
+  });
+
+  it('제품코드가 다르면 해당 칸을 짚는 INVALID 를 돌려준다', async () => {
+    const errors = await assertAttachedLotCodes(fake(), [check({ itemCode: '다른코드' })]);
+
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+    ]);
+  });
+
+  it('공급사코드가 다르면 해당 칸을 짚는 INVALID 를 돌려준다', async () => {
+    const errors = await assertAttachedLotCodes(fake(), [check({ supplierCode: '다른코드' })]);
+
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'lines.0.supplierLotNo', code: ERROR_CODE.INVALID }),
+    ]);
+  });
+
+  it('마스터 행이 없으면 조용히 건너뛴다', async () => {
+    const noMaster = {
+      item: { findMany: async () => [] },
+      partner: { findMany: async () => [] },
+    } as unknown as PrismaService;
+
+    await expect(assertAttachedLotCodes(noMaster, [check()])).resolves.toEqual([]);
   });
 });
 

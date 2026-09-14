@@ -198,9 +198,13 @@ function fake(options: Options = {}) {
       findMany: async () => [
         {
           item_id: 40n,
+          item_code: '040101-00022S',
           inspection_required: options.inspectionRequired ?? false,
         },
       ],
+    },
+    partner: {
+      findMany: async () => [{ partner_id: 10n, partner_code: '100019' }],
     },
   };
 
