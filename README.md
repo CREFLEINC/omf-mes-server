@@ -111,7 +111,7 @@ cd /opt/services/omf-mes-server
 ```
 
 `rollback.sh`는 이름과 달리 `.env.prod`의 `IMAGE_TAG`를 지정한 버전으로 바꾸고 `deploy.sh`를 실행한다.
-배포 스크립트가 이미지 pull, Prisma migration, healthcheck, 실패 시 자동 롤백을 수행한다.
+배포 스크립트가 이미지 pull, Prisma migration, 블루-그린 전환(새 쪽 healthcheck 실패 시 전환하지 않음)을 수행한다.
 
 스크립트를 사용하지 않고 수동 구성해야 한다면 `.env.prod`를 직접 작성한 뒤 다음 명령을 사용한다.
 

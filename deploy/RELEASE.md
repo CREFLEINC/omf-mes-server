@@ -17,21 +17,22 @@
 
 ## 다운타임
 
-배포하면 `api` 컨테이너가 재생성됩니다.
+배포는 블루-그린입니다(`docs/deployment.md` 「블루-그린 배포」). 새 쪽 api 가 뜨는 동안 켜진 쪽이
+계속 받으므로 **평소 배포는 끊기지 않습니다.**
 
-```
-migrate deploy          스키마 변경 없으면 1~3초, 있으면 마이그레이션 크기에 비례
-api 컨테이너 재생성      즉시
-NestJS 부팅             5~15초
-헬스체크 start_period    20초 (이 시간이 지나야 healthy 판정)
-────────────────────────────────────────────
-합계                    통상 30~60초
-```
+| 배포 | 끊김 (2026-09-14 리허설 실측) |
+|---|---|
+| 평소 | 없음 — reload 순간 keep-alive 경합으로 드물게 한 건(약 15만 건 중 1) |
+| **블루-그린 첫 전환**(옛 단일 api → proxy) | 약 1초 — 실패가 100ms 안에 몰림 |
+| proxy 정의(이미지·포트·마운트)를 바꾼 배포 | proxy 재생성 몇 초 |
+| 파괴적 마이그레이션 | 끊기지는 않지만 새 쪽 기동~드레인 사이 **옛 코드 요청이 실패할 수 있음** — 아래 규칙으로 나눕니다 |
 
-이 시간 동안 POP 단말은 서버 응답을 받지 못합니다. 마이그레이션 이력에 `work_session_idempotency_key` 가 있으므로 단말이 재시도하도록 되어 있다면 대부분 흡수됩니다 — **단말 재시도 동작을 먼저 확인하세요.** 재시도가 없다면 작업자가 실적 등록을 다시 해야 합니다.
+배포 자체는 pull·migrate·새 쪽 부팅으로 1분 안팎 걸립니다. 끊기는 짧은 순간의 요청은 POP 단말이 재시도해야
+흡수됩니다 — 마이그레이션 이력에 `work_session_idempotency_key` 가 있으니 **단말 재시도 동작을 확인하세요.**
 
 ## 배포 창 고르기
 
+위 표에서 끊김이 있는 배포(첫 전환·proxy 변경·파괴적 마이그레이션)일 때 창을 고릅니다.
 3교대라면 교대 전환 시점에 라인이 잠시 멈추는 구간이 있습니다. 그때가 POP 사용이 가장 적습니다.
 
 ```
@@ -57,7 +58,7 @@ NestJS 부팅             5~15초
 
 ```bash
 cd /opt/omf-mes
-./deploy.sh                    # postgres → migrate(79개) → api
+./deploy.sh                    # postgres → migrate(79개) → api-blue → proxy
 curl -s localhost:3100/api/health     # {"status":"ok","db":"up"}
 ```
 
@@ -235,7 +236,7 @@ curl -i -X OPTIONS localhost:3100/api/mdm/workers \
 `.env.prod` 의 `CORS_ORIGINS` 를 보세요(0번 ③). 기동 로그 끝에서도 같은 것을 볼 수 있습니다.
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod logs api | grep CORS
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs api-blue api-green | grep CORS
 # "CORS 꺼짐" 이면 목록이 비어 있다는 뜻입니다.
 ```
 
@@ -248,7 +249,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod logs api | grep C
 curl -s localhost:3100/api/health
 ```
 
-`deploy.sh` 는 헬스체크 실패 시 **자동으로 직전 이미지로 되돌립니다.** 수동 롤백은 "떴지만 업무 로직이 잘못된" 경우에 씁니다.
+`deploy.sh` 는 새 쪽이 헬스체크를 통과하지 못하면 **전환하지 않습니다** — 켜진 쪽이 그대로 서비스합니다. 수동 롤백은 "떴지만 업무 로직이 잘못된" 경우에 쓰며, 이것도 블루-그린으로 끊김 없이 넘어갑니다. 1분도 못 기다릴 때 멈춰 둔 이전 쪽으로 바로 넘기는 법은 `docs/deployment.md` 「블루-그린 배포」에 있습니다.
 
 스키마를 바꾼 릴리스를 되돌리는 경우, 구버전 코드가 신버전 스키마 위에서 돕니다. 컬럼 추가 정도면 대개 무사하지만 파괴적 변경이 있었다면 3번에서 뜬 백업으로 복구해야 합니다.
 
@@ -268,3 +269,11 @@ v1.3.0  컬럼을 삭제
 ```
 
 한 릴리스에서 "사용 제거 + 삭제"를 동시에 하면 그 배포는 되돌릴 수 없는 배포가 됩니다.
+
+**블루-그린이라 하나 더 — 옛 코드가 깨지는 변경도 나눈다.** 새 쪽이 뜨고 이전 쪽이 드레인될 때까지
+(수십 초) **옛 코드가 새 스키마 위에서 요청을 받습니다.**
+
+| 변경 | 나누는 법 |
+|---|---|
+| 컬럼 이름 변경 | 새 컬럼 추가·코드가 양쪽에 씀 → 다음 릴리스에서 옛 컬럼 삭제 |
+| 기본값 없는 `NOT NULL` 추가 | nullable 로 추가·코드가 채움 → 다음 릴리스에서 `NOT NULL` |
