@@ -86,6 +86,9 @@ function stub(options: {
 
   const prisma = {
     work_order: { findUnique: () => Promise.resolve(row) },
+    // 가용 재고가 없다 — 피킹 지시는 0건이고 채번도 안 부른다(피킹 규칙은 `core/picking` spec).
+    inventory_balance: { findMany: () => Promise.resolve([]) },
+    item: { findMany: () => Promise.resolve([]) },
     bom_component: {
       findMany: ({ where }: { where: Row }) => {
         componentWheres.push(where);

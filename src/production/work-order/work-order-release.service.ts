@@ -3,8 +3,9 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { DocumentStateService } from '../../core/document-state';
 import { LotRegistryService, nextMesLotNos, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ISSUE_REGISTERED, materialRequirements } from './material-issue';
+import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -18,10 +19,17 @@ export interface WorkOrderRelease {
 const STATUS_COLUMN = 'production.work_order.status_code';
 const RELEASE_ACTION = 'work-order-release';
 
+/** 출고요청 한 건과 그 피킹 배정 — 트랜잭션을 열기 전에 다 정한다. */
+interface IssuePlan {
+  issueRequestNo: string;
+  lines: MaterialIssueLine[];
+  picking: PickingPlan;
+}
+
 /**
- * 확정·배포 + 생산LOT 선발행 + 자재 출고요청 자동 발행 — 계약이 ⌜한 트랜잭션⌝ 이라 적었다.
- * 순서는 §4-1 그대로다: 검증·읽기·채번은 `release-plan.ts` 가 트랜잭션 «밖»에서 끝내고,
- * 여기서는 상태·슬롯·요청을 한 트랜잭션에 쓴다. 중간에 끊기면 전체를 되돌린다(B-8).
+ * 확정·배포 + 생산LOT 선발행 + 자재 출고요청 자동 발행 + 피킹 지시 생성(P-12) — 계약이
+ * ⌜한 트랜잭션⌝ 이라 적었다. 순서는 §4-1 그대로다: 검증·읽기·채번은 트랜잭션 «밖»에서
+ * 끝내고, 여기서는 상태·슬롯·요청·지시를 한 트랜잭션에 쓴다. 중간에 끊기면 전체를 되돌린다(B-8).
  */
 @Injectable()
 export class WorkOrderReleaseService {
@@ -39,7 +47,24 @@ export class WorkOrderReleaseService {
     appUserId: number,
   ): Promise<void> {
     const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
-    await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, plan, appUserId));
+    const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
+    await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, plan, issue, appUserId));
+  }
+
+  private async issuePlan(plan: ReleasePlan, issueRequestNo: string): Promise<IssuePlan> {
+    const lines = materialRequirements(plan.components, plan.row.order_qty, plan.plan.bom.base_qty);
+    const picking = await planPicking(this.prisma, this.numbering, {
+      plantId: plan.plan.production_order.plant_id,
+      demands: lines.map((line) => ({
+        lineNo: line.line_no,
+        itemId: line.item_id,
+        uomId: line.uom_id,
+        qty: line.requested_qty,
+      })),
+      periodDate: plan.businessDate,
+      assignedWorkerId: plan.row.responsible_worker_id,
+    });
+    return { issueRequestNo, lines, picking };
   }
 
   private async commit(
@@ -47,6 +72,7 @@ export class WorkOrderReleaseService {
     workOrderId: number,
     version: number,
     plan: ReleasePlan,
+    issue: IssuePlan | null,
     appUserId: number,
   ): Promise<void> {
     const locked = await lockWorkOrder(tx, workOrderId);
@@ -89,22 +115,21 @@ export class WorkOrderReleaseService {
     );
 
     const destination = plan.row.default_wip_location_id;
-    if (plan.issueRequestNo !== null && destination !== null) {
-      await this.issueRequest(tx, workOrderId, plan, plan.issueRequestNo, destination, appUserId);
+    if (issue !== null && destination !== null) {
+      await this.issueRequest(tx, workOrderId, issue, destination, appUserId);
     }
   }
 
   private async issueRequest(
     tx: Tx,
     workOrderId: number,
-    plan: ReleasePlan,
-    issueRequestNo: string,
+    issue: IssuePlan,
     destinationLocationId: bigint,
     appUserId: number,
   ): Promise<void> {
     const header = await tx.material_issue_request.create({
       data: {
-        issue_request_no: issueRequestNo,
+        issue_request_no: issue.issueRequestNo,
         work_order_id: BigInt(workOrderId),
         destination_location_id: destinationLocationId,
         status_code: ISSUE_REGISTERED,
@@ -115,12 +140,17 @@ export class WorkOrderReleaseService {
       },
       select: { material_issue_request_id: true },
     });
-    const lines = materialRequirements(plan.components, plan.row.order_qty, plan.plan.bom.base_qty);
     await tx.material_issue_request_line.createMany({
-      data: lines.map((line) => ({
+      data: issue.lines.map((line) => ({
         ...line,
         material_issue_request_id: header.material_issue_request_id,
       })),
     });
+    await writePicking(
+      tx,
+      issue.picking,
+      { materialIssueRequestId: header.material_issue_request_id, issueRequestNo: issue.issueRequestNo },
+      appUserId,
+    );
   }
 }

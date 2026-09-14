@@ -17,6 +17,7 @@ const RELEASE_SELECT = {
   default_wip_location_id: true,
   default_fg_location_id: true,
   default_scrap_location_id: true,
+  responsible_worker_id: true,
   routing_operation: { select: { standard_cycle_time_sec: true, standard_yield_rate: true } },
   production_plan: {
     select: {

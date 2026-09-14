@@ -25,7 +25,7 @@ export interface PickingOrderQuery {
 
 /**
  * 피킹 지시 조회 2건. 화면은 `M-01-08`(자재 출고 피킹)이 소유한다.
- * ⛔ 지시·라인을 **만들지 않는다** — 계약에 생성 오퍼레이션이 0건이다(I-8.md §5 · 문의 045).
+ * ⛔ 여기서는 지시·라인을 만들지 않는다 — 출고요청이 발행될 때 `core/picking` 이 만든다(P-12 · 문의 045).
  */
 @Injectable()
 export class PickingQueryService {

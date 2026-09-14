@@ -35,6 +35,8 @@ function stub(options: { status?: string; reasonCodes?: string[] } = {}) {
       }),
     },
     location: { count: async () => 1 },
+    // 가용 재고가 없다 — 피킹 지시는 0건이다(피킹 규칙은 `core/picking` spec).
+    inventory_balance: { findMany: async () => [] },
     item: { findMany: async () => [{ item_id: 10n }] },
     uom: { findMany: async () => [{ uom_id: 20n }] },
     bom_component: { findMany: async () => [] },
