@@ -121,12 +121,15 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
   });
 
   it.each([
-    ["MATERIAL", "DEFECTIVE", null],
-    ["PRODUCTION", "NORMAL", null],
-    ["PRODUCTION", "DEFECTIVE", new Date()],
-  ])(
-    "부적격 LOT %s/%s/%p를 422 STATE_LOCKED로 거부한다",
-    (lotTypeCode, statusCode, completedAt) => {
+    ["MATERIAL", "DEFECTIVE", null, undefined],
+    // ⭐ 「실적이 반영되지 않았다」가 거부의 축이다(P-18) — 완료 여부가 아니다.
+    ["PRODUCTION", "NORMAL", null, "WAITING"],
+    ["PRODUCTION", "NORMAL", null, undefined],
+    ["PRODUCTION", "DEFECTIVE", new Date(), "ACTIVE"],
+    ["PRODUCTION", "SCRAPPED", null, "ACTIVE"],
+  ] as const)(
+    "부적격 LOT %s/%s/%p/%s를 422 STATE_LOCKED로 거부한다",
+    (lotTypeCode, statusCode, completedAt, lifecycleStatusCode) => {
       const target = prepared("LOT");
       const documentTypeCode =
         lotTypeCode === "MATERIAL"
@@ -139,6 +142,7 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
             targetId: target.targetId,
             lotTypeCode,
             statusCode,
+            lifecycleStatusCode,
             completedAt,
           }),
         ERROR_CODE.STATE_LOCKED,
@@ -147,18 +151,30 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
     },
   );
 
-  it("완료된 정상 생산 LOT은 미달 여부를 추정하지 않고 허용한다", () => {
-    const target = prepared("LOT");
-    expect(
-      qualifyDocumentIssueTarget("PRODUCTION_LOT_LABEL", target, {
-        targetTypeCode: "LOT",
-        targetId: target.targetId,
-        lotTypeCode: "PRODUCTION",
-        statusCode: "NORMAL",
-        completedAt: new Date(),
-      }),
-    ).toBe(target.targetId);
-  });
+  it.each([
+    // ⭐ P-18 — 마감 «전»에도 낸다. P-02-04 는 라벨을 찍어 그것을 스캔하는 것이 마감 입력이라,
+    //    완료를 요구하면 라벨과 마감이 서로를 기다린다.
+    ["실적만 반영된 검사대기 LOT", "INSPECTION_PENDING", "ACTIVE", null],
+    ["실적이 반영된 정상 LOT", "NORMAL", "ACTIVE", null],
+    // 마감된 LOT 은 그대로 받는다 — 재발행이 회차로 열려 있다.
+    ["완료된 정상 LOT(재발행)", "NORMAL", null, new Date()],
+    ["완료된 검사대기 LOT", "INSPECTION_PENDING", null, new Date()],
+  ] as const)(
+    "%s은 생산 LOT 라벨을 낼 수 있다",
+    (_name, statusCode, lifecycleStatusCode, completedAt) => {
+      const target = prepared("LOT");
+      expect(
+        qualifyDocumentIssueTarget("PRODUCTION_LOT_LABEL", target, {
+          targetTypeCode: "LOT",
+          targetId: target.targetId,
+          lotTypeCode: "PRODUCTION",
+          statusCode,
+          lifecycleStatusCode,
+          completedAt,
+        }),
+      ).toBe(target.targetId);
+    },
+  );
 
   it.each([
     ["GOODS_ISSUE_LINE", true, "POSTED", 31n],

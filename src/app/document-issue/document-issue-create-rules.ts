@@ -15,6 +15,18 @@ export const IDENTIFICATION_LABEL_ELIGIBILITY_POLICY = {
   message: "개체별 발행 자격 원천이 확정되지 않았습니다.",
 } as const;
 
+/**
+ * 생산 LOT 라벨을 낼 수 있는 품질 상태(P-18). 선발행 LOT 은 `INSPECTION_PENDING` 으로 태어나고
+ * 공정 검사가 서야 `NORMAL` 이 된다 — 검사 전에도 라벨은 필요하다. ⛔ `DEFECTIVE`·`SCRAPPED`
+ * 는 넣지 않는다.
+ */
+const ISSUABLE_PRODUCTION_LOT_STATUS: readonly string[] = [
+  "INSPECTION_PENDING",
+  "NORMAL",
+];
+/** 실적이 한 번이라도 반영된 슬롯(`production-result-recorded` 가 `WAITING` 에서 옮긴다). */
+const PRODUCTION_LOT_ACTIVE = "ACTIVE";
+
 export type DocumentIssueDocumentType = DocumentIssueView["documentTypeCode"];
 
 export interface DocumentIssueCreateTargetInput {
@@ -44,6 +56,8 @@ export type DocumentIssueTargetFacts =
       targetId: bigint;
       lotTypeCode: string;
       statusCode: string;
+      /** 생산 LOT 라벨 자격의 「실적이 반영됐나」 축(P-18). 선발행 직후는 `WAITING` 이다. */
+      lifecycleStatusCode?: string | null;
       completedAt: Date | null;
       sourceTypeCode?: string;
       sourceId?: bigint;
@@ -139,16 +153,23 @@ export function qualifyDocumentIssueTarget(
       sourceLotId = facts.targetId;
       break;
     case "PRODUCTION_LOT_LABEL":
+      // ⭐ 자격을 «마감 전»으로 연다(P-18 · 사용자 결정 2026-09-15). 전에는 「완료된 정상 LOT」
+      // 이었는데, P-02-04 는 **라벨을 찍어 그 라벨을 스캔하는 것이 마감 입력**이다 — 완료를
+      // 요구하면 라벨과 마감이 서로를 기다린다. 그래서 「실적이 반영됐나」로 바꾼다.
+      //  ⓐ 실적 반영 = 생명주기 `ACTIVE`(`production-result-recorded` 가 WAITING 에서 옮긴다)
+      //  ⓑ 이미 마감된 LOT 도 그대로 받는다 — 재발행이 회차로 열려 있다
+      //  ⛔ 품질 축은 좁게 남긴다 — 불량·폐기 LOT 의 라벨은 계속 막는다.
       if (
         facts.targetTypeCode !== "LOT" ||
         facts.lotTypeCode !== "PRODUCTION" ||
-        facts.statusCode !== "NORMAL" ||
-        facts.completedAt === null
+        !ISSUABLE_PRODUCTION_LOT_STATUS.includes(facts.statusCode) ||
+        (facts.lifecycleStatusCode !== PRODUCTION_LOT_ACTIVE &&
+          facts.completedAt === null)
       )
         failTarget(
           target,
           ERROR_CODE.STATE_LOCKED,
-          "완료된 정상 생산 LOT만 발행할 수 있습니다.",
+          "실적이 반영된 생산 LOT만 발행할 수 있습니다.",
         );
       sourceLotId = facts.targetId;
       break;
