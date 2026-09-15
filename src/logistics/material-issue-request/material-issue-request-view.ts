@@ -40,8 +40,8 @@ export function materialIssueRequestLineView(
     bomComponentId: id(row.bom_component_id),
     itemId: Number(row.item_id),
     requestedQty: Number(row.requested_qty),
-    // ⛔ 오늘 언제나 0 이다 — 이 칸을 올리는 오퍼레이션이 계약에 0건이다(문의 046).
-    //    `shortage` 의 기출고는 이 칸이 아니라 출고 전표 축으로 센다.
+    // 출고 전기가 올린다(P-16 · 문의 046 해소) — 피킹 라인이 요청 라인을 가리킬 때만이다.
+    // `shortage` 의 기출고는 여전히 출고 전표 축으로 센다(축이 다르다 · `shortage.service.ts`).
     issuedQty: Number(row.issued_qty),
     uomId: Number(row.uom_id),
   };

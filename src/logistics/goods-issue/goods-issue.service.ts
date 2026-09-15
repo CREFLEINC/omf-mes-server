@@ -23,6 +23,8 @@ import {
   goodsIssueLineView,
   goodsIssueView,
 } from './goods-issue-view';
+import { IssueDestination, resolveIssueDestination } from './issue-destination';
+import { followUpIssue } from './issue-followup';
 import { GoodsIssueLineWriteInput, postIssue } from './issue-posting';
 
 /** 계약 `PostRequest` — required 2. 서버가 도출하지 않는다(C-8 · C-1). */
@@ -93,6 +95,9 @@ export class GoodsIssueService {
     issueNo: string,
     actor: LogisticsWriteActor,
   ): Promise<{ detail: GoodsIssueDetail; versionNo: number }> {
+    // ⭐ 도착지가 비고 자재 피킹 출고면 서버가 푼다(P-15) — 전표가 「어디로 갔는지」를 담아야
+    //    `postImmediately` 경로와 `:post` 경로가 한 값을 본다.
+    const destination = await resolveIssueDestination(tx, input);
     const issue = await tx.goods_issue.create({
       data: {
         goods_issue_no: issueNo,
@@ -100,9 +105,9 @@ export class GoodsIssueService {
         source_document_type_code: input.sourceDocumentTypeCode,
         source_document_id: input.sourceDocumentId,
         source_warehouse_id: input.sourceWarehouseId,
-        // 짝 그대로 담는다 — 자체 폐기면 둘 다 널이다(계약 · `ck_goods_issue_destination`).
-        destination_type_code: input.destinationTypeCode ?? null,
-        destination_id: input.destinationId ?? null,
+        // 짝으로 담는다 — 자체 폐기면 둘 다 널이다(계약 · `ck_goods_issue_destination`).
+        destination_type_code: destination.typeCode,
+        destination_id: destination.id,
         issued_at: new Date(input.issuedAt),
         status_code: REGISTERED,
         reason_code: input.reasonCode ?? null,
@@ -143,7 +148,7 @@ export class GoodsIssueService {
     }
 
     if (input.postImmediately === true) {
-      await this.postOnCreate(tx, issue, lines, input, actor.appUserId);
+      await this.postOnCreate(tx, issue, lines, input, destination, actor.appUserId);
     }
     if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
       actor: actor.terminalAudit, targetTypeCode: 'GOODS_ISSUE', targetId: issue.goods_issue_id, eventTypeCode: 'CREATE',
@@ -173,6 +178,7 @@ export class GoodsIssueService {
     issue: { goods_issue_id: bigint; goods_issue_no: string },
     lines: GoodsIssueLineWriteInput[],
     input: GoodsIssueCreate,
+    destination: IssueDestination,
     appUserId: number | undefined,
   ): Promise<void> {
     // 방금 만든 전표라 승인 요청이 있을 수 없다 — 게이트는 언제나 통과한다. 폐기 출고가 이
@@ -189,8 +195,8 @@ export class GoodsIssueService {
           sourceDocumentTypeCode: input.sourceDocumentTypeCode,
           sourceDocumentId: BigInt(input.sourceDocumentId),
           sourceWarehouseId: BigInt(input.sourceWarehouseId),
-          destinationTypeCode: input.destinationTypeCode ?? null,
-          destinationId: input.destinationId == null ? null : BigInt(input.destinationId),
+          destinationTypeCode: destination.typeCode,
+          destinationId: destination.id,
         },
         lines,
         // ⛔ 본문 값 그대로다 — 참일 때만 원장 키의 일부가 된다(§2-5 · C-8 · C-1).
@@ -202,6 +208,13 @@ export class GoodsIssueService {
     await tx.goods_issue.update({
       where: { goods_issue_id: issue.goods_issue_id },
       data: { status_code: POSTED },
+    });
+    // ⭐ 상태를 옮긴 «뒤»다 — 누적 출고량이 자기 몫을 세야 피킹 지시가 닫힌다(P-14 · P-16).
+    await followUpIssue(tx, this.documentState, {
+      sourceDocumentTypeCode: input.sourceDocumentTypeCode,
+      sourceDocumentId: BigInt(input.sourceDocumentId),
+      lines,
+      appUserId,
     });
   }
 
@@ -307,6 +320,16 @@ export class GoodsIssueService {
         data: { status_code: 'POSTED', version_no: { increment: 1 }, updated_by: BigInt(appUserId) },
       });
       assertUpdated(moved.count);
+      // ⭐ 상태를 옮긴 «뒤»다 — 등록 경로와 같은 순서다(P-14 · P-16).
+      await followUpIssue(tx, this.documentState, {
+        sourceDocumentTypeCode: header.source_document_type_code,
+        sourceDocumentId: header.source_document_id,
+        lines: lines.map((line) => ({
+          pickingLineId: line.picking_line_id,
+          issueQty: line.issue_qty,
+        })),
+        appUserId,
+      });
       // ⭐ 200 은 상세가 아니라 **헤더 하나**다(계약 응답 스키마 `GoodsIssue`).
       const row = await tx.goods_issue.findUniqueOrThrow({
         where: { goods_issue_id: header.goods_issue_id },

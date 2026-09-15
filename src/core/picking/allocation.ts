@@ -14,6 +14,7 @@ import { Prisma } from '@prisma/client';
  */
 
 export interface PickingDemand {
+  /** 요청 라인 번호 — 결품 보고와 «기출고 되짚기»(P-16)가 둘 다 이 축을 쓴다. */
   lineNo: number;
   itemId: bigint;
   uomId: bigint;
@@ -38,6 +39,11 @@ export interface PickingLineDraft {
   locationId: bigint;
   uomId: bigint;
   plannedQty: Prisma.Decimal;
+  /**
+   * 이 라인이 나온 **요청 라인 번호**. 한 요청 라인이 LOT 별로 갈리면 여럿이 같은 값을 문다.
+   * 요청 라인 id 는 발행(INSERT) 뒤에야 나므로 번호로 들고 있다가 `writePicking` 이 푼다.
+   */
+  requestLineNo: number;
 }
 
 export interface PickingOrderDraft {
@@ -91,6 +97,7 @@ export function allocatePicking(
           locationId: slot.candidate.locationId,
           uomId: demand.uomId,
           plannedQty: take,
+          requestLineNo: demand.lineNo,
         });
         linesByWarehouse.set(warehouseId, lines);
       }

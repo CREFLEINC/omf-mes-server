@@ -81,6 +81,14 @@ function stub(options: {
         lines.push(...data);
         return Promise.resolve({ count: data.length });
       },
+      // 기출고를 되짚는 축을 물리려고 방금 만든 라인을 되읽는다(P-16) — 번호 그대로 id 를 짓는다.
+      findMany: () =>
+        Promise.resolve(
+          lines.map((line) => ({
+            material_issue_request_line_id: BigInt(Number(line.line_no)),
+            line_no: Number(line.line_no),
+          })),
+        ),
     },
   };
 

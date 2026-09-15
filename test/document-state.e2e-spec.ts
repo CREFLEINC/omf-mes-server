@@ -50,6 +50,11 @@ describe('전표 상태기계 ↔ 시드 (실 DB)', () => {
     'logistics.inbound_receipt.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'logistics.goods_receipt.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     'logistics.putaway_task.status_code': 'PUTAWAY_TASK_STATUS',
+    // 피킹 지시·자재 출고요청도 물류 전표 4값을 쓴다 — 계약이 두 `statusCode` 에
+    // `CD-LOGISTICS-DOCUMENT-STATUS` 를 적었다. 「피킹완료」 값이 없어 전량 출고를
+    // `POSTED` 로 닫는다(P-14 · P-16). ⛔ 라인 축은 세우지 않는다 — 계약 `x-no-code-key`.
+    'logistics.picking_order.status_code': 'LOGISTICS_DOCUMENT_STATUS',
+    'logistics.material_issue_request.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     // 재고 이동도 물류 전표 4값을 쓴다 — `REGISTERED` → `POSTED` 하나만 연다(I-13 PR ③).
     'logistics.stock_transfer.status_code': 'LOGISTICS_DOCUMENT_STATUS',
     // 재고 조정도 같다(I-14 §179·§811 · `plan-api.md` S07 「조정은 LOGISTICS_DOCUMENT_STATUS」).

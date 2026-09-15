@@ -362,6 +362,42 @@ export const TRANSITIONS: TransitionRegistry = {
   },
 
   /**
+   * 피킹 지시 진행(P-14 · 사용자 결정 2026-09-15). 값은 시드 `LOGISTICS_DOCUMENT_STATUS`
+   * 4값이고 계약 `PickingOrder.statusCode` 가 그 그룹을 지목한다 — 「피킹완료」에 해당하는
+   * 값이 없어 **전기완료**로 닫는다(전기는 출고가 한다).
+   *
+   * ⛔ 피킹(`:pick`)은 이 전이를 부르지 않는다 — 출고 전기가 «전 라인 전량» 나갔을 때만
+   *    부른다. 부분 출고에서 닫으면 나머지를 집으러 돌아올 길이 사라진다(`issue-followup.ts`).
+   * ⛔ 라인 축(`picking_line.status_code`)은 **세우지 않는다** — 계약이 `x-no-code-key` 로
+   *    「코드 그룹을 세우지 않는다 — 라인 진행은 `plannedQty ↔ pickedQty` 가 담는다」라 적었다.
+   * ⛔ 취소 두 액션을 안 붙인다 — `document-type-registry.ts` 가 `cancelable: false` 다.
+   * ⛔ 이력 표가 없다 — `transitionCode` 를 쓰지 않는다.
+   */
+  'logistics.picking_order.status_code': {
+    'picking-issue': {
+      from: ['REGISTERED'],
+      to: 'POSTED',
+      sourceOperation: 'POST /logistics/goods-issues',
+    },
+  },
+
+  /**
+   * 자재 출고요청 진행(P-16 · 문의 046 해소). 값은 같은 `LOGISTICS_DOCUMENT_STATUS` 4값이고
+   * 계약 `MaterialIssueRequest.statusCode` 가 그 그룹을 지목한다.
+   *
+   * ⛔ 전 라인이 요청 수량만큼 나갔을 때만 옮긴다 — 라인이 0건이면 「다 나갔다」가 공허한
+   *    참이라 옮기지 않는다(`issue-followup.ts`).
+   * ⛔ 취소 두 액션을 안 붙인다 — 역시 `cancelable: false` 다. 그래서 되돌리는 전이도 없다.
+   */
+  'logistics.material_issue_request.status_code': {
+    'material-issue-request-issue': {
+      from: ['REGISTERED'],
+      to: 'POSTED',
+      sourceOperation: 'POST /logistics/goods-issues',
+    },
+  },
+
+  /**
    * 입하·입고 전표 진행. 출고와 «같은 두 액션»만 갖는다 — 세 유형이 한 취소 경로를 탄다
    * (계약 `documentTypeCode` enum 3값 · I-5.md §6-1).
    *
