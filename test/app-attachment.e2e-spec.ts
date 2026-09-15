@@ -1,8 +1,8 @@
 /**
  * 첨부 목록 `GET /app/attachments`(I-34 PR ①).
  *
- * `app.attachment` 의 유일한 writer 가 이 슬라이스에는 없다(`POST` 는 건너뜀 확정) —
- * 사건 행은 `prisma.attachment.createMany` 로 직접 심는다(선례 `test/trace-lot-status-event.e2e-spec.ts`).
+ * 목록만 본다 — 올리기·내려받기는 `app-attachment-upload`·`app-attachment-content` 스펙(#652)이 따로 검사한다.
+ * 정렬·필터 좌표를 정확히 집으려고 행은 `prisma.attachment.createMany` 로 직접 심는다(선례 `test/trace-lot-status-event.e2e-spec.ts`).
  * ⭐ `uploaded_at` 은 «명시»한다 — 물리 기본값이 `clock_timestamp()`(행마다 다름)라
  * 안 주면 동률이 안 서고 2차 키(`attachment_id desc`) 단언이 조용히 죽는다(I-34.md R-6).
  */
