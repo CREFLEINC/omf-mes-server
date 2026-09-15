@@ -189,6 +189,7 @@ model attachment {
   app_user         app_user? @relation(fields: [uploaded_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
   worker           worker?   @relation(fields: [uploaded_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@index([target_type_code, target_id, uploaded_at(sort: Desc)], map: "ix_attachment_target")
   @@index([uploaded_worker_id], map: "ix_attachment_uploaded_worker")
   @@schema("app")
 }
