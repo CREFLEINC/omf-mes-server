@@ -11,7 +11,7 @@ import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -22,9 +22,11 @@ import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-attachment-upload-probe';
+const NOTICE_ONLY_ID = 'e2e-attachment-upload-notice-only';
 const PASSWORD = '첨부올리기-검사-비밀번호';
 const PREFIX = 'ATTUP-E2E';
 const ROLE = 'E2E_ATTUP_LAYOUT';
+const NOTICE_ROLE = 'E2E_ATTUP_NOTICE';
 const PATH = '/api/app/attachments';
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082', 'hex');
@@ -47,6 +49,7 @@ describe('첨부 올리기 (e2e)', () => {
   let prisma: PrismaService;
   let root: string;
   let cookie: string[];
+  let noticeOnlyCookie: string[];
   let warehouseId: number;
   let noticeId: number;
 
@@ -147,6 +150,51 @@ describe('첨부 올리기 (e2e)', () => {
     }
   });
 
+  it('⛔ 10MB 를 넘으면 413 이고 파일이 남지 않는다', async () => {
+    const before = await filesUnder(root);
+    const tooLarge = Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]);
+    await upload({ targetTypeCode: 'WAREHOUSE', targetId: warehouseId }, tooLarge, 'huge.png', 'image/png').expect(413);
+    expect(await filesUnder(root)).toEqual(before);
+  });
+
+  it('⛔ W-CO-08 이 없으면 403 이다 — 공지 화면(W-CO-04)만 가진 사용자도 막힌다(도출표 한계)', async () => {
+    await request(app.getHttpServer())
+      .post(PATH).set('Cookie', noticeOnlyCookie).set('Idempotency-Key', randomUUID())
+      .field('targetTypeCode', 'NOTICE').field('targetId', String(noticeId))
+      .attach('file', PDF, { filename: '공지.pdf', contentType: 'application/pdf' })
+      .expect(403);
+  });
+
+  it('⭐ 같은 키·같은 파일은 같은 첨부를 재생하고 행·파일이 하나뿐이다', async () => {
+    const key = randomUUID();
+    const before = (await filesUnder(root)).length;
+    const first = await upload({ targetTypeCode: 'NOTICE', targetId: noticeId }, PDF, 'replay.pdf', 'application/pdf', key)
+      .expect(201);
+    const again = await upload({ targetTypeCode: 'NOTICE', targetId: noticeId }, PDF, 'replay.pdf', 'application/pdf', key)
+      .expect(201);
+
+    expect(again.body).toEqual(first.body);
+    expect(await prisma.attachment.count({ where: { file_name: 'replay.pdf' } })).toBe(1);
+    expect(await filesUnder(root)).toHaveLength(before + 1);
+  });
+
+  it('⛔ 같은 키·다른 파일은 409 이고 파일을 쓰지 않는다', async () => {
+    const key = randomUUID();
+    await upload({ targetTypeCode: 'NOTICE', targetId: noticeId }, PDF, 'conflict.pdf', 'application/pdf', key).expect(201);
+    const before = await filesUnder(root);
+    await upload({ targetTypeCode: 'NOTICE', targetId: noticeId }, PNG, 'conflict.png', 'image/png', key).expect(409);
+    expect(await filesUnder(root)).toEqual(before);
+  });
+
+  it('⛔ 저장 경로가 없으면 503 이다', async () => {
+    delete process.env.ATTACHMENT_STORAGE_ROOT;
+    try {
+      await upload({ targetTypeCode: 'WAREHOUSE', targetId: warehouseId }, PNG, 'drawing.png', 'image/png').expect(503);
+    } finally {
+      process.env.ATTACHMENT_STORAGE_ROOT = root;
+    }
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function upload(
@@ -165,6 +213,11 @@ describe('첨부 올리기 (e2e)', () => {
       .attach('file', bytes, { filename, contentType });
   }
 
+  async function filesUnder(directory: string): Promise<string[]> {
+    const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+    return entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name)).sort();
+  }
+
   async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
@@ -176,7 +229,10 @@ describe('첨부 올리기 (e2e)', () => {
   }
 
   async function makeFixture(): Promise<void> {
-    for (const [loginId, roleCode, permission] of [[LOGIN_ID, ROLE, 'W-CO-08']] as const) {
+    for (const [loginId, roleCode, permission] of [
+      [LOGIN_ID, ROLE, 'W-CO-08'],
+      [NOTICE_ONLY_ID, NOTICE_ROLE, 'W-CO-04'],
+    ] as const) {
       const user = await prisma.app_user.create({ data: { login_id: loginId, user_name: loginId, status_code: 'EMPLOYED' } });
       await prisma.user_credential.create({
         data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) },
@@ -186,6 +242,7 @@ describe('첨부 올리기 (e2e)', () => {
       await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     }
     cookie = await login(LOGIN_ID);
+    noticeOnlyCookie = await login(NOTICE_ONLY_ID);
 
     const plant = await prisma.plant.findFirstOrThrow();
     const unit = await prisma.business_unit.findFirstOrThrow();
@@ -209,7 +266,7 @@ describe('첨부 올리기 (e2e)', () => {
 
   async function cleanup(): Promise<void> {
     const users = await prisma.app_user.findMany({
-      where: { login_id: { in: [LOGIN_ID] } },
+      where: { login_id: { in: [LOGIN_ID, NOTICE_ONLY_ID] } },
       select: { app_user_id: true },
     });
     const userIds = users.map((user) => user.app_user_id);
@@ -218,9 +275,9 @@ describe('첨부 올리기 (e2e)', () => {
     await prisma.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });
     await prisma.user_credential.deleteMany({ where: { app_user_id: { in: userIds } } });
     await prisma.app_user.deleteMany({ where: { app_user_id: { in: userIds } } });
-    const roles = await prisma.role.findMany({ where: { role_code: { in: [ROLE] } } });
+    const roles = await prisma.role.findMany({ where: { role_code: { in: [ROLE, NOTICE_ROLE] } } });
     await prisma.role_permission.deleteMany({ where: { role_id: { in: roles.map((role) => role.role_id) } } });
-    await prisma.role.deleteMany({ where: { role_code: { in: [ROLE] } } });
+    await prisma.role.deleteMany({ where: { role_code: { in: [ROLE, NOTICE_ROLE] } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.notice.deleteMany({ where: { notice_no: { startsWith: PREFIX } } });
   }
