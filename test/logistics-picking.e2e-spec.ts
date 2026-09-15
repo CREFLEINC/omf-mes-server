@@ -447,8 +447,9 @@ describe('피킹 지시 조회 2건 — 목록 · 상세 (e2e)', () => {
 
   /**
    * `picking_order` 1행 + `picking_line` N행. ④b(`:pick`)와 M2 체인 e2e 가 그대로 쓴다.
-   * `status_code` 는 `'REGISTERED'` 리터럴이다 — **서버가 그 값을 판정에 쓰는 자리가 0건**이라
-   * `src/` 에 상수를 두지 않는다(I-8.md R-10 · CLAUDE.md 「사용처 하나뿐인 추상화 금지」).
+   * `status_code` 는 `'REGISTERED'` 리터럴이다 — 서버가 이 값을 쓰는 자리는 **닫을 때 하나**다
+   * (출고 전기가 전량 나간 지시를 `POSTED` 로 옮긴다 · P-14 · `issue-followup.ts`).
+   * 픽스처는 여는 쪽이라 리터럴로 둔다(I-8.md R-10 · CLAUDE.md 「사용처 하나뿐인 추상화 금지」).
    * 라인의 `location_id` 는 지시의 창고 안이어야 한다(`goods-issue-rules.ts` 가 그렇게 본다).
    */
   async function insertPickingOrder(
