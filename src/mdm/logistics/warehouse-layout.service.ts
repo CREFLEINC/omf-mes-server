@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
+import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -84,7 +84,11 @@ export class WarehouseLayoutService {
     input: LayoutReplace,
     appUserId?: number,
   ): Promise<LayoutView> {
-    await this.assertMarkers(warehouseId, input.markers);
+    const errors = [
+      ...(await this.drawingErrors(warehouseId, input.drawingAttachmentId)),
+      ...(await this.markerErrors(warehouseId, input.markers)),
+    ];
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     await this.prisma.$transaction(async (tx) => {
       const bumped = await tx.warehouse.updateMany({
@@ -131,10 +135,29 @@ export class WarehouseLayoutService {
   }
 
   /**
+   * 도면 id 도 jsonb 라 FK 가 없다(#652). 없는 첨부·다른 창고의 도면·공지 첨부를 찍으면 화면이
+   * `GET /app/attachments/{id}/content` 로 엉뚱한 파일을 그리거나 못 그린다. 빼고 보내면 도면이 지워진다(통째 교체).
+   */
+  private async drawingErrors(warehouseId: number, drawingAttachmentId: number | undefined): Promise<ErrorItem[]> {
+    if (drawingAttachmentId === undefined) return [];
+    const drawing = Number.isSafeInteger(drawingAttachmentId) && drawingAttachmentId > 0
+      ? await this.prisma.attachment.findUnique({
+        where: { attachment_id: drawingAttachmentId },
+        select: { target_type_code: true, target_id: true },
+      })
+      : null;
+    if (!drawing) return [field('drawingAttachmentId', ERROR_CODE.INVALID, '없는 도면입니다.')];
+    if (drawing.target_type_code !== 'WAREHOUSE' || drawing.target_id !== BigInt(warehouseId)) {
+      return [field('drawingAttachmentId', ERROR_CODE.INVALID, '이 창고에 올린 도면이 아닙니다.')];
+    }
+    return [];
+  }
+
+  /**
    * 점이 가리키는 위치가 «이 창고»의 것인지 본다. jsonb 라 FK 가 없어 DB 는 아무것도
    * 막지 않는다 — 다른 창고의 위치를 찍으면 화면이 이름을 못 찾고 점만 떠 있게 된다.
    */
-  private async assertMarkers(warehouseId: number, markers: Marker[]): Promise<void> {
+  private async markerErrors(warehouseId: number, markers: Marker[]): Promise<ErrorItem[]> {
     const errors: ErrorItem[] = [];
     const seen = new Map<number, number>();
     markers.forEach((marker, index) => {
@@ -169,7 +192,7 @@ export class WarehouseLayoutService {
       }
     }
 
-    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+    return errors;
   }
 
   private async warehouseVersion(warehouseId: number): Promise<number> {

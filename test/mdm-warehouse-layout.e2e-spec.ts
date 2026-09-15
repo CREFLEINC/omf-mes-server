@@ -48,6 +48,10 @@ describe('창고 배치도 (e2e)', () => {
   let otherWarehouseId: number;
   let locationIds: number[];
   let outsiderLocationId: number;
+  // 도면 — 이 창고에 올린 것 · 다른 창고에 올린 것 · 같은 id 의 공지 첨부(파일은 필요 없다 · 행만 본다).
+  let drawingId: number;
+  let otherDrawingId: number;
+  let noticeAttachmentId: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -85,6 +89,9 @@ describe('창고 배치도 (e2e)', () => {
       await createLocation(warehouseId, `${PREFIX}-L2`),
     ];
     outsiderLocationId = await createLocation(otherWarehouseId, `${PREFIX}-L3`);
+    drawingId = await createAttachment('WAREHOUSE', warehouseId, user.app_user_id);
+    otherDrawingId = await createAttachment('WAREHOUSE', otherWarehouseId, user.app_user_id);
+    noticeAttachmentId = await createAttachment('NOTICE', warehouseId, user.app_user_id);
   });
 
   afterAll(async () => {
@@ -135,7 +142,7 @@ describe('창고 배치도 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', before.etag)
       .send({
-        drawingAttachmentId: 1001,
+        drawingAttachmentId: drawingId,
         markers: [
           { locationId: locationIds[0], x: 0.42, y: 0.18 },
           { locationId: locationIds[1], x: 0.9, y: 0.75 },
@@ -146,7 +153,7 @@ describe('창고 배치도 (e2e)', () => {
     const validate = validator('PUT /mdm/warehouses/{warehouseId}/layout');
     expect(validate(saved.body)).toBe(true);
     expect(saved.body.markers).toHaveLength(2);
-    expect(saved.body.drawingAttachmentId).toBe(1001);
+    expect(saved.body.drawingAttachmentId).toBe(drawingId);
     // 저장하면 ETag 가 «반드시» 바뀐다 — 같은 값으로 두 번 저장해 앞의 것을 덮지 못한다.
     expect(Number(saved.headers.etag)).toBe(Number(before.etag) + 1);
 
@@ -253,6 +260,40 @@ describe('창고 배치도 (e2e)', () => {
     expect(rejected.body.errors[0]).toMatchObject({ field: 'markers[0].x', code: 'RANGE' });
   });
 
+  it('⛔ 없는 도면 id 는 drawingAttachmentId 칸의 400 이다', async () => {
+    const rejected = await save({ drawingAttachmentId: 999999999, markers: [] }, 400);
+    expect(rejected.body.errors).toEqual([
+      { scope: 'field', field: 'drawingAttachmentId', code: 'INVALID', message: '없는 도면입니다.' },
+    ]);
+  });
+
+  it('⛔ 다른 창고에 올린 도면·공지 첨부는 이 창고의 도면이 될 수 없다', async () => {
+    for (const drawingAttachmentId of [otherDrawingId, noticeAttachmentId]) {
+      const rejected = await save({ drawingAttachmentId, markers: [] }, 400);
+      expect(rejected.body.errors).toEqual([
+        { scope: 'field', field: 'drawingAttachmentId', code: 'INVALID', message: '이 창고에 올린 도면이 아닙니다.' },
+      ]);
+    }
+  });
+
+  it('⭐ 도면 id 를 빼고 저장하면 도면이 지워진다 — 통째 교체다', async () => {
+    const withDrawing = await save({ drawingAttachmentId: drawingId, markers: [] }, 200);
+    expect(withDrawing.body.drawingAttachmentId).toBe(drawingId);
+
+    const withoutDrawing = await save({ markers: [] }, 200);
+    expect(withoutDrawing.body.drawingAttachmentId).toBeUndefined();
+    expect((await getLayout()).body).not.toHaveProperty('drawingAttachmentId');
+  });
+
+  it('⛔ 도면과 점이 함께 틀리면 한 번에 짚는다', async () => {
+    const rejected = await save({
+      drawingAttachmentId: 999999999,
+      markers: [{ locationId: outsiderLocationId, x: 0.5, y: 0.5 }],
+    }, 400);
+    expect(rejected.body.errors.map((error: { field: string }) => error.field))
+      .toEqual(['drawingAttachmentId', 'markers[0].locationId']);
+  });
+
   it('⛔ 거절된 저장은 아무것도 바꾸지 않는다 — 한 트랜잭션이다', async () => {
     const before = await getLayout();
 
@@ -270,6 +311,27 @@ describe('창고 배치도 (e2e)', () => {
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  async function save(body: object, status: number): Promise<request.Response> {
+    const { etag } = await getLayout();
+    return request(app.getHttpServer())
+      .put(`/api/mdm/warehouses/${warehouseId}/layout`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send(body)
+      .expect(status);
+  }
+
+  async function createAttachment(targetTypeCode: string, targetId: number, uploadedBy: bigint): Promise<number> {
+    const created = await prisma.attachment.create({
+      data: {
+        target_type_code: targetTypeCode, target_id: targetId, file_name: `${PREFIX}-drawing.png`,
+        storage_key: 'e2e/layout/not-a-real-key', mime_type: 'image/png', file_size: 1, uploaded_by: uploadedBy,
+      },
+    });
+    return Number(created.attachment_id);
+  }
 
   async function getLayout(): Promise<{ etag: string; body: { markers: unknown[] } }> {
     const response = await request(app.getHttpServer())
@@ -334,6 +396,7 @@ describe('창고 배치도 (e2e)', () => {
     await prisma.warehouse_layout.deleteMany({ where: { warehouse_id: { in: ids } } });
     await prisma.location.deleteMany({ where: { warehouse_id: { in: ids } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.attachment.deleteMany({ where: { file_name: `${PREFIX}-drawing.png` } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
