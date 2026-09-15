@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
@@ -16,7 +16,6 @@ import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentService } from './attachment/attachment.service';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
 import { DocumentIssueReportService } from './document-issue/document-issue-report.service';
-import { DocumentIssueSummaryMiddleware } from './document-issue/document-issue-summary.middleware';
 import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
 import { DocumentIssueWriteService } from './document-issue/document-issue-write.service';
 import { DocumentIssueRenditionService } from './document-issue/document-issue-rendition.service';
@@ -94,11 +93,4 @@ import { UserAssignmentService } from './access/user-assignment.service';
     ApprovalRequestService,
   ],
 })
-export class AppDomainModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(DocumentIssueSummaryMiddleware).forRoutes({
-      path: 'app/document-issues/summary',
-      method: RequestMethod.GET,
-    });
-  }
-}
+export class AppDomainModule {}

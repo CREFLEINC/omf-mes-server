@@ -120,6 +120,24 @@ describe('설비 마스터 (e2e)', () => {
     expect(validate.errors ?? []).toEqual([]);
   });
 
+  it('⭐ 설비 유형 필터가 계약의 쉼표 배열을 받는다 — 복수값·단일값 (PLAN-WO-01 D1)', async () => {
+    const press = await create(`${PREFIX}-TYPE-PRESS`, { equipmentTypeCode: 'PRESS' });
+    const molding = await create(`${PREFIX}-TYPE-MOLD`);
+    const heater = await create(`${PREFIX}-TYPE-HEAT`, { equipmentTypeCode: 'WATER_HEATER' });
+    const listed = async (types: string): Promise<number[]> => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/mdm/equipments?plantId=${plantId}&q=${PREFIX}-TYPE&equipmentTypeCode=${types}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body.items.map((item: { equipmentId: number }) => item.equipmentId).sort((a: number, b: number) => a - b);
+    };
+    const sorted = (...values: number[]) => values.sort((a, b) => a - b);
+
+    expect(await listed('INJECTION_MOLDING,PRESS')).toEqual(sorted(press.id, molding.id));
+    expect(await listed('PRESS')).toEqual([press.id]);
+    expect(await listed('INJECTION_MOLDING,PRESS,WATER_HEATER')).toEqual(sorted(press.id, molding.id, heater.id));
+  });
+
   it('⛔ 권한이 없으면 등록이 403 이다', async () => {
     await request(app.getHttpServer())
       .post('/api/mdm/equipments')

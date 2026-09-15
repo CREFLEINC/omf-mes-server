@@ -369,6 +369,31 @@ describe('단말 마스터 (e2e)', () => {
       .set('Authorization', `Bearer ${mobileToken}`).expect(401);
   });
 
+  it('FR-007 단말은 자기 현재 세대 상세만 읽는다 — 모바일이 등록 확인 전에 유형을 가른다 (P-11)', async () => {
+    const mobile = await create(`${PREFIX}-DETAIL-MOBILE`, { terminalTypeCode: 'MOBILE' });
+    const pop = await create(`${PREFIX}-DETAIL-POP`);
+    const mobileToken = (await issueToken(mobile.id)).body.token;
+    const popToken = (await issueToken(pop.id)).body.token;
+    const read = (id: number, token: string) => request(app.getHttpServer())
+      .get(`/api/mdm/terminals/${id}`).set('Authorization', `Bearer ${token}`);
+
+    expect((await read(mobile.id, mobileToken).expect(200)).body).toMatchObject({
+      terminalId: mobile.id, terminalTypeCode: 'MOBILE', registrationStatusCode: 'UNREGISTERED',
+    });
+    // 모바일에 POP 코드를 넣으면 이 응답의 유형으로 거절한다 — 등록 행을 건드리기 전이다.
+    expect((await read(pop.id, popToken).expect(200)).body).toMatchObject({
+      terminalId: pop.id, terminalTypeCode: 'POP',
+    });
+    await read(pop.id, mobileToken).expect(401);
+    await read(mobile.id, popToken).expect(401);
+
+    const nextMobileToken = (await issueToken(mobile.id)).body.token;
+    await read(mobile.id, mobileToken).expect(401);
+    await read(mobile.id, nextMobileToken).expect(200);
+    await request(app.getHttpServer()).get(`/api/mdm/terminals/${mobile.id}/processes`)
+      .set('Authorization', `Bearer ${nextMobileToken}`).expect(401);
+  });
+
   // ── 공정 구성 ───────────────────────────────────────────────────────────
 
   it('⭐ 공정 구성을 통째로 바꾼다 — 안 보낸 권한은 닫힌다', async () => {

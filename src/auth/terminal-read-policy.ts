@@ -10,7 +10,8 @@ type TerminalType = 'POP' | 'MOBILE';
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
 export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /mdm/workers': ['POP', 'MOBILE'],
-  'GET /mdm/terminals/{terminalId}': ['POP'],
+  // MOBILE also reads its own row so registration can reject a non-MOBILE token before confirming (P-11).
+  'GET /mdm/terminals/{terminalId}': ['POP', 'MOBILE'],
   'GET /production/work-orders': ['POP', 'MOBILE'],
   'GET /production/work-sessions': ['POP'],
   'GET /mdm/terminals/{terminalId}/processes': ['POP'],

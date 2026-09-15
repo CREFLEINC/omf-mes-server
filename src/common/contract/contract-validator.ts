@@ -58,6 +58,7 @@ interface Parameter {
   in: string;
   required?: boolean;
   schema?: unknown;
+  explode?: boolean;
 }
 
 export interface RequestParts {
@@ -78,6 +79,8 @@ interface CompiledOperation {
   bodyOptional?: boolean;
   query?: ValidateFunction;
   path?: ValidateFunction;
+  /** `style: form` · `explode: false` 배열 질의 — 한 문자열 `a,b` 로 온다. */
+  csvQuery?: string[];
 }
 
 /** `parameters` 는 경로·질의용 인스턴스라는 뜻이다 — 본문용과 두 가지가 갈린다. */
@@ -165,6 +168,32 @@ function parameterSchema(
   return { type: 'object', properties, ...(required.length ? { required } : {}) };
 }
 
+function csvQueryNames(
+  document: OpenApiDocument,
+  entries: { parameter: Parameter; pointer: string }[],
+): string[] {
+  return entries
+    .filter(({ parameter }) => {
+      if (parameter.in !== 'query' || parameter.explode !== false) return false;
+      const raw = parameter.schema as { $ref?: string } | undefined;
+      const schema = (raw?.$ref ? resolveRef(document, raw.$ref) : raw) as { type?: unknown } | undefined;
+      return [schema?.type].flat().includes('array');
+    })
+    .map(({ parameter }) => parameter.name);
+}
+
+/**
+ * 계약이 `explode: false` 로 적은 배열 질의는 쉼표로 이은 한 문자열이다(OpenAPI form 스타일).
+ * 검증 «전»에 나눠야 `must be array` 로 막히지 않는다. 같은 키를 반복해 이미 배열로 온 값은
+ * 원소 안의 쉼표를 다시 나누지 않는다 — 빈 토큰도 버리지 않아 계약 검증이 400 으로 가른다.
+ */
+function splitCsvQuery(query: Record<string, unknown>, names: string[] | undefined): void {
+  for (const name of names ?? []) {
+    const value = query[name];
+    if (typeof value === 'string') query[name] = value.split(',');
+  }
+}
+
 function requestBodyOf(
   entry: ContractOperation,
 ): { required?: boolean; content?: Record<string, unknown> } | undefined {
@@ -203,6 +232,7 @@ export class ContractValidator {
     if (compiled.path && !compiled.path(request.params ?? {})) {
       items.push(...toErrorItems(compiled.path.errors ?? []));
     }
+    if (request.query) splitCsvQuery(request.query, compiled.csvQuery);
     if (compiled.query && !compiled.query(request.query ?? {})) {
       items.push(...toErrorItems(compiled.query.errors ?? []));
     }
@@ -245,10 +275,12 @@ export class ContractValidator {
     const pathSchema = parameterSchema(ids.params, parameters, 'path');
     const querySchema = parameterSchema(ids.params, parameters, 'query');
     const bodyPointer = bodySchemaPointer(entry);
+    const csvQuery = csvQueryNames(entry.document, parameters);
 
     const compiled: CompiledOperation = {
       ...(pathSchema ? { path: ajv.params.compile(pathSchema) } : {}),
       ...(querySchema ? { query: ajv.params.compile(querySchema) } : {}),
+      ...(csvQuery.length > 0 ? { csvQuery } : {}),
       ...(bodyPointer ? { body: ajv.body.compile(refTo(ids.body, bodyPointer)) } : {}),
       ...(requestBodyOf(entry)?.required === false ? { bodyOptional: true } : {}),
     };

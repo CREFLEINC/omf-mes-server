@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { NumberingService } from '../../core/numbering';
+import { PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   MaterialIssueRequestDetail,
@@ -39,9 +40,9 @@ export interface MaterialIssueRequestCreate {
 const STATE_LOCKED = new Set(['CANCELLED', 'CLOSED']);
 
 /**
- * 추가 자재 출고 요청 발행(`W-02-10` §5-6). 자동 발행(`work-order-release.service.ts:105~`)과
- * 공유하는 것은 상태 상수 하나다 — 라인의 출처가 달라 도메인 간 호출이 0 이다(§4-2).
- * ⛔ 예약·피킹 지시를 만들지 않는다(거는 근거가 계약에 없다 · §5 · 045) · ⛔ 중복 요청·BOM 밖
+ * 추가 자재 출고 요청 발행(`W-02-10` §5-6). 자동 발행(`work-order-release.service.ts`)과
+ * 공유하는 것은 상태 상수와 피킹 지시 생성 코어(`core/picking` · P-12)다 — 라인의 출처가 달라
+ * 도메인 간 호출은 0 이다(§4-2). ⛔ 예약은 걸지 않는다(045 ⓑ 결정) · ⛔ 중복 요청·BOM 밖
  * 품목을 막지 않는다(`W-02-10` §8 #4 · §5-3).
  */
 @Injectable()
@@ -55,12 +56,23 @@ export class MaterialIssueRequestService {
     input: MaterialIssueRequestCreate,
     appUserId: number,
   ): Promise<MaterialIssueRequestDetail> {
-    const plantId = await this.assertCreatable(input);
+    const { plantId, responsibleWorkerId } = await this.assertCreatable(input);
     // ⛔ 번호는 `$transaction` 을 «열기 전»에 뽑는다 — 안에서 부르면 한 요청이 커넥션을 둘 쥐어
     //    풀 고갈 시 `P2024` 로 죽는다(I-2 R-2 · `release-plan.ts:78-86`). 결번은 허용한다.
     //    기간 축은 클라이언트가 준 `businessDate` 그대로다(공유계약 C-8 · CLAUDE.md).
     const no = await this.numbering.next('MATERIAL_ISSUE_REQUEST', plantId, input.businessDate);
-    return this.prisma.$transaction((tx) => this.write(tx, input, no, appUserId));
+    const picking = await planPicking(this.prisma, this.numbering, {
+      plantId,
+      demands: input.lines.map((line, index) => ({
+        lineNo: index + 1,
+        itemId: BigInt(line.itemId),
+        uomId: BigInt(line.uomId),
+        qty: new Prisma.Decimal(line.requestedQty),
+      })),
+      periodDate: input.businessDate,
+      assignedWorkerId: responsibleWorkerId,
+    });
+    return this.prisma.$transaction((tx) => this.write(tx, input, no, picking, appUserId));
   }
 
   /** 헤더 → 라인 → 같은 트랜잭션에서 되읽기(§4-1 ②③④ · 상세 매퍼는 PR ② 것 그대로다). */
@@ -68,6 +80,7 @@ export class MaterialIssueRequestService {
     tx: Prisma.TransactionClient,
     input: MaterialIssueRequestCreate,
     issueRequestNo: string,
+    picking: PickingPlan,
     appUserId: number,
   ): Promise<MaterialIssueRequestDetail> {
     const header = await tx.material_issue_request.create({
@@ -99,6 +112,12 @@ export class MaterialIssueRequestService {
         created_by: appUserId,
       })),
     });
+    await writePicking(
+      tx,
+      picking,
+      { materialIssueRequestId: header.material_issue_request_id, issueRequestNo },
+      appUserId,
+    );
     const lines = await tx.material_issue_request_line.findMany({
       where: { material_issue_request_id: header.material_issue_request_id },
       orderBy: { line_no: 'asc' },
@@ -115,7 +134,9 @@ export class MaterialIssueRequestService {
    * ⛔ 없는 id 를 넘기면 FK 위반이 500 으로 샌다 — 밖의 읽기라 FK 가 최종 방어다
    *    (`goods-issue-rules.ts:10-12` 와 같은 규약).
    */
-  private async assertCreatable(input: MaterialIssueRequestCreate): Promise<bigint> {
+  private async assertCreatable(
+    input: MaterialIssueRequestCreate,
+  ): Promise<{ plantId: bigint; responsibleWorkerId: bigint | null }> {
     const errors: ErrorItem[] = [];
     // 계약이 `minItems: 1` 을 걸었으나 서비스가 스스로 선다(가드 밖에서 부르는 자리가 생겨도).
     if (input.lines.length === 0) errors.push(field('lines', ERROR_CODE.LINE_REQUIRED, '요청 라인이 1건 이상이어야 합니다.'));
@@ -134,6 +155,7 @@ export class MaterialIssueRequestService {
         where: { work_order_id: input.workOrderId },
         select: {
           status_code: true,
+          responsible_worker_id: true,
           production_plan: { select: { production_order: { select: { plant_id: true } } } },
         },
       }),
@@ -176,7 +198,7 @@ export class MaterialIssueRequestService {
     const plantId = workOrder?.production_plan?.production_order.plant_id;
     // I-6 R-6 이 계획 없는 배포를 막았으나 그 전에 생긴 W/O 가 남아 있을 수 있다.
     if (plantId == null) throw one(field('workOrderId', ERROR_CODE.INVALID, '공장을 풀 계획이 없습니다(문의 040).'));
-    return plantId;
+    return { plantId, responsibleWorkerId: workOrder?.responsible_worker_id ?? null };
   }
 }
 

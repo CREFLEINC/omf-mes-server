@@ -139,11 +139,21 @@ describe('FR-004/005 terminal bearer authentication', () => {
     expect(await statusOf(guard.canActivate(context('GET /app/sessions/current', {}, {}, `Bearer ${token}`).execution))).toBe(401);
   });
 
-  it('denies wrong terminal type and another terminal ID', async () => {
-    const { guard, token } = setup();
-    expect(await statusOf(guard.canActivate(context('GET /mdm/terminals/{terminalId}', {}, { terminalId: '7' }, `Bearer ${token}`).execution))).toBe(401);
-    const pop = setup('POP');
-    expect(await statusOf(pop.guard.canActivate(context('GET /mdm/terminals/{terminalId}', {}, { terminalId: '8' }, `Bearer ${pop.token}`).execution))).toBe(401);
+  it('lets POP and MOBILE read only their own current terminal detail', async () => {
+    for (const type of ['POP', 'MOBILE'] as const) {
+      const own = setup(type);
+      const read = context('GET /mdm/terminals/{terminalId}', {}, { terminalId: '7' }, `Bearer ${own.token}`);
+      expect(await own.guard.canActivate(read.execution)).toBe(true);
+      expect(currentTerminal(read.request)).toMatchObject({ terminalId: 7n, terminalTypeCode: type });
+      expect(await statusOf(own.guard.canActivate(context('GET /mdm/terminals/{terminalId}', {}, { terminalId: '8' }, `Bearer ${own.token}`).execution))).toBe(401);
+      for (const stale of [{ version: 3 }, { active: false }, { plantId: 4n }]) {
+        const denied = setup(type, stale);
+        expect(await statusOf(denied.guard.canActivate(context('GET /mdm/terminals/{terminalId}', {}, { terminalId: '7' }, `Bearer ${own.token}`).execution))).toBe(401);
+      }
+    }
+    // The process map stays POP-only; MOBILE gains the detail row, not work configuration.
+    const mobile = setup();
+    expect(await statusOf(mobile.guard.canActivate(context('GET /mdm/terminals/{terminalId}/processes', {}, { terminalId: '7' }, `Bearer ${mobile.token}`).execution))).toBe(401);
   });
 
   it('allows POP inspection items only for its installed same-plant equipment', async () => {

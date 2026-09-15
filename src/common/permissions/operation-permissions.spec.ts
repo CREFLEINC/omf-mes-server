@@ -112,4 +112,14 @@ describe('오퍼레이션 권한 매핑', () => {
       'W-01-04',
     ]);
   });
+
+  it('⛔ 배포 화면(W-02-04)이 다시 읽는 유효성·상세를 부를 수 있다 — PLAN-WO-01 W6', () => {
+    for (const key of [
+      'GET /production/work-orders/{workOrderId}/validation',
+      'GET /production/work-orders/{workOrderId}',
+    ]) {
+      // 도출된 화면이 빠지면 안 된다 — 합집합이어야 한다.
+      expect(OPERATION_PERMISSIONS[key]).toEqual(expect.arrayContaining([...DERIVED_PERMISSIONS[key], 'W-02-04']));
+    }
+  });
 });

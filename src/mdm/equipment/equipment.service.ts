@@ -89,7 +89,8 @@ export interface EquipmentQuery extends ReferenceQuery {
   plantId?: number;
   processId?: number;
   productionLineId?: number;
-  equipmentTypeCode?: string;
+  /** 계약 `type: array` · `explode: false` — 계약 검증기가 쉼표를 나눠 배열로 넘긴다. */
+  equipmentTypeCode?: string[];
   calibrationRequired?: boolean;
   statusCode?: string;
 }
@@ -116,7 +117,7 @@ export class EquipmentService {
       ...optional('plant_id', query.plantId),
       ...optional('process_id', query.processId),
       ...optional('production_line_id', query.productionLineId),
-      ...optional('equipment_type_code', query.equipmentTypeCode),
+      ...optional('equipment_type_code', query.equipmentTypeCode && { in: query.equipmentTypeCode }),
       ...optional('calibration_required', query.calibrationRequired),
       ...optional('status_code', query.statusCode),
     });
