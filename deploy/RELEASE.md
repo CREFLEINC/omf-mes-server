@@ -192,6 +192,21 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 ls -lh backup/
 ```
 
+**첨부 파일도 함께 뜹니다.** 첨부(창고 도면·공지 첨부·고장 사진)는 DB 밖 이름 있는 볼륨
+`omf-mes_attachments` 에 있어 `pg_dump` 에 들지 않습니다. **DB 를 먼저, 볼륨을 다음에** 뜹니다 — 파일은
+DB 행보다 먼저 쓰이므로, 이 순서면 덤프에 있는 모든 첨부 행의 파일이 tar 에 들어 있습니다.
+켜진 api 컨테이너 안에서 받으므로 sudo 도, 별도 이미지도 필요 없습니다.
+
+```bash
+C="docker compose -f docker-compose.prod.yml --env-file .env.prod"
+ACTIVE=$(sed -n 's/^active_color=//p' DEPLOYED)
+$C exec -T "api-$ACTIVE" tar -C /var/lib/omf-mes/attachments -cf - . \
+  | gzip > backup/$(date -u +%Y%m%dT%H%M%SZ)-attachments.tar.gz
+
+# 복원
+gunzip -c backup/<파일>-attachments.tar.gz | $C exec -T "api-$ACTIVE" tar -C /var/lib/omf-mes/attachments -xf -
+```
+
 ### 4. 현장 협의
 
 배포 창을 확정하고 현장에 공지합니다. **작업자가 "서버가 안 된다"고 놀라지 않도록** 미리 알리는 것이 중요합니다.
