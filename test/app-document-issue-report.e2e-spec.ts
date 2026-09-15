@@ -137,6 +137,61 @@ describe('발행 인쇄 결과 보고 (I-27 P3 e2e)', () => {
     );
   });
 
+  /**
+   * ⭐ D7 — 「한 번만」이 아니라 「성공만 잠근다」다. `P-02-04` 의 [발행된 라벨 다시 인쇄]는
+   * 새 회차를 만들지 않고 같은 발행 기록을 다시 찍으므로, 그 결과를 보고할 길이 없으면
+   * 프린터가 한 번 죽은 LOT 은 영영 마감되지 않는다.
+   */
+  it('⭐ FAILED 뒤 SUCCEEDED 보고는 200 이고 사유가 지워진다', async () => {
+    const issue = await createIssue();
+    await report(issue.document_issue_log_id, {
+      outcome: 'FAILED',
+      failureReason: '프린터 응답 없음',
+    }).expect(200);
+
+    const retried = await report(issue.document_issue_log_id, { outcome: 'SUCCEEDED' }).expect(200);
+
+    expect(retried.body.printOutcome).toBe('SUCCEEDED');
+    expect(await storedIssue(issue.document_issue_log_id)).toMatchObject({
+      print_outcome_code: 'SUCCEEDED',
+      print_failure_reason: null,
+    });
+  });
+
+  it('⭐ FAILED 뒤 새 사유의 FAILED 보고도 200 이고 사유가 갱신된다', async () => {
+    const issue = await createIssue();
+    await report(issue.document_issue_log_id, {
+      outcome: 'FAILED',
+      failureReason: '프린터 응답 없음',
+    }).expect(200);
+
+    await report(issue.document_issue_log_id, {
+      outcome: 'FAILED',
+      failureReason: '용지 없음',
+    }).expect(200);
+
+    expect(await storedIssue(issue.document_issue_log_id)).toMatchObject({
+      print_outcome_code: 'FAILED',
+      print_failure_reason: '용지 없음',
+    });
+  });
+
+  it('⛔ SUCCEEDED 뒤의 보고는 422 STATE_LOCKED 이고 기록이 그대로다', async () => {
+    const issue = await createIssue();
+    await report(issue.document_issue_log_id, { outcome: 'SUCCEEDED' }).expect(200);
+
+    const rejected = await report(issue.document_issue_log_id, {
+      outcome: 'FAILED',
+      failureReason: '되돌리기 시도',
+    }).expect(422);
+
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'outcome', code: 'STATE_LOCKED' });
+    expect(await storedIssue(issue.document_issue_log_id)).toMatchObject({
+      print_outcome_code: 'SUCCEEDED',
+      print_failure_reason: null,
+    });
+  });
+
   it('FAILED 사유 원문을 보존하고 후속 재발행 PENDING이 이전 실패를 덮지 않는다', async () => {
     const first = await createIssue();
     await report(first.document_issue_log_id, {

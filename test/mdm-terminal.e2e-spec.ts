@@ -347,7 +347,7 @@ describe('단말 마스터 (e2e)', () => {
       .send({}).expect(200);
   });
 
-  it('FR-002 POP 화면 조회는 자기 현재세대에만 P-01-01을 반환한다', async () => {
+  it('FR-002 POP 화면 조회는 자기 현재세대에만 후보를 반환한다 (D3)', async () => {
     const { id } = await create(`${PREFIX}-SCREENS`);
     const path = `/api/mdm/terminals/${id}/accessible-screens`;
     const token = (await issueToken(id)).body.token;
@@ -357,7 +357,8 @@ describe('단말 마스터 (e2e)', () => {
       .set('Authorization', `Bearer ${token}`).expect(401);
     const owned = await request(app.getHttpServer()).get(path)
       .set('Authorization', `Bearer ${token}`).expect(200);
-    expect(owned.body).toEqual({ screenCodes: ['P-01-01'] });
+    // ⭐ D3 — 공정 매핑이 0행인 단말은 «축 없는 화면»만 받는다. 전에는 `['P-01-01']` 고정이었다.
+    expect(owned.body).toEqual({ screenCodes: ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02'] });
     expect(owned.headers['cache-control']).toBe('private, no-store');
     await issueToken(id);
     await request(app.getHttpServer()).get(path)
@@ -414,6 +415,29 @@ describe('단말 마스터 (e2e)', () => {
     // 「기본은 닫힘이다」(계약) — 안 보낸 권한이 열려 있으면 오조작이 열린다.
     expect(saved.body.items[0].canCompleteWork).toBe(false);
     expect(saved.body.items[0].canPrintLabel).toBe(false);
+  });
+
+  it('⭐ D3 — 화면 이동 후보가 공정 매핑 플래그를 따른다', async () => {
+    const { id } = await create(`${PREFIX}-SCREENS-FLAG`);
+    await putProcesses(id, [{
+      processId: processIds[0],
+      canStartWork: true, canInputMaterial: true, canInputResult: true, canPrintLabel: true,
+    }]);
+    // ⛔ 토큰은 공정 구성 «뒤»에 뽑는다 — 발급이 token_version 을 올려 옛 토큰이 끊긴다.
+    const token = (await issueToken(id)).body.token;
+
+    const screens = await request(app.getHttpServer())
+      .get(`/api/mdm/terminals/${id}/accessible-screens`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    // WIP-CHAIN-01 의 단말 10 구성 — 작업 사슬 화면이 전부 나온다.
+    for (const code of ['P-01-01', 'P-02-01', 'P-02-03', 'P-02-04']) {
+      expect(screens.body.screenCodes).toContain(code);
+    }
+    // 켜지 않은 축은 닫혀 있다.
+    expect(screens.body.screenCodes).not.toContain('P-02-08');
+    expect(screens.body.screenCodes).not.toContain('P-02-13');
   });
 
   it('⭐ 빠진 공정은 지워진다', async () => {

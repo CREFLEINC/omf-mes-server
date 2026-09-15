@@ -31,7 +31,7 @@ root가 초안467줄, DB161줄, 독립 API82/UIUX94/통합70줄, CSV 프로브16
 |---|---|---|
 | LOCATION_LABEL | 기존LOCATION·lotNULL·계정사번/terminal생략가능 | 다른짝/nonnullLOT거부. 존재외새활성/공정조건0 |
 | MATERIAL_LOT_LABEL | LOT typeMATERIAL·status INSPECTION_PENDING 또는 NORMAL, 자기LOT FK. 초기incoming hold허용 | 다른상태는자재재발행자격미확정가장자리422 STATE_LOCKED, `MATERIAL_LABEL_UNRESOLVED_STATE_POLICY='REJECT'`. 모든source_type을INBOUND로새제한0·hold/blocked_qty일괄차단0. 최소정상source증명과유일허용source를혼동하지 않는다 |
-| PRODUCTION_LOT_LABEL | LOT typePRODUCTION·completed_at존재·status NORMAL, 자기LOT FK. 미달완료도같음 | 미완료/미확정·불량상태422 STATE_LOCKED. 관리웹에는새source제한0, terminal이면실제WORK_ORDER공정축확인/해당flag403. 개체별품질로외삽0 |
+| PRODUCTION_LOT_LABEL | ⚠ **2026-09-15 정정(P-18)** — 「`completed_at` 존재·status NORMAL」을 「생명주기 ACTIVE(실적 반영) **또는** completed_at 존재 · status ∈ {INSPECTION_PENDING, NORMAL}」로 **완화**했다. P-02-04 는 라벨을 찍어 그 라벨을 스캔하는 것이 마감 입력이라, 완료를 요구하면 라벨과 마감이 서로를 기다린다(사용자 결정). 원래 결정: LOT typePRODUCTION·completed_at존재·status NORMAL, 자기LOT FK. 미달완료도같음 | 실적 미반영·불량/폐기 상태 422 STATE_LOCKED. 관리웹에는새source제한0, terminal이면실제WORK_ORDER공정축확인/해당flag403. 개체별품질로외삽0 |
 | GOODS_ISSUE_QR | 기존GI_LINE+부모POSTED·정확lineLOT, 또는기존HU+content최소1·lotNULL | line부모미전기/빈HU422 STATE_LOCKED. HU의출고소유FK가없으므로literal존재+비어있지않음만채택(0단계화면);‘출고확정소유검증완료’주장0/새FK0·별도문의. GI의반품/폐기를LOT NORMAL게이트로제거0 |
 | PACKING_LABEL | 기존HANDLING_UNIT·lotNULL, 비어있는HU도추가금지문자없어임의거부0 | PACKING+LOT실제화면충돌은422 INVALID·`PACKING_LOT_TARGET_POLICY='REJECT'`. 특정‘라벨대기’상태를없던생산자로만들거나필수화0 |
 | CERTIFICATE_OF_ANALYSIS | 기존INSPECTION_RESULT statusCONFIRMED+confirmed_at존재, request.lot_id(nullable)그대로 | 미확인결과422 STATE_LOCKED. ACCEPTED/PASS/latest검사조건0. 양식부재는rendition만;record계정정상진행. CoA writer그래프/terminal공정축은R5/R11의구현전확인사항 |
