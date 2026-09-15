@@ -1,7 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, posix } from 'node:path';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 
 /**
  * 첨부 파일 한 장의 상한 — 창고 도면·공지 첨부·고장 사진이 함께 쓴다.
@@ -66,6 +66,23 @@ export async function storeAttachment<T>(
     return outcome.body;
   } catch (error) {
     await unlink(absolute).catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * 저장 키로 파일을 읽는다. 키가 루트 밖을 가리키거나(`..`·절대 경로·NUL) 파일이 없으면 undefined —
+ * 404 판정은 부르는 쪽이 한다. 키는 서버가 만들지만 DB 값이라 경로 이탈을 한 번 더 막는다.
+ */
+export async function readAttachment(root: string, storageKey: string): Promise<Buffer | undefined> {
+  if (storageKey.length === 0 || storageKey.includes('\0') || isAbsolute(storageKey)) return undefined;
+  const base = resolve(root);
+  const within = relative(base, resolve(base, storageKey));
+  if (within === '' || within === '..' || within.startsWith(`..${sep}`) || isAbsolute(within)) return undefined;
+  try {
+    return await readFile(join(base, within));
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return undefined;
     throw error;
   }
 }

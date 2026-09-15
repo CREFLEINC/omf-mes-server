@@ -4,6 +4,7 @@ export {
   attachmentFileName,
   attachmentRoot,
   imageMimeOf,
+  readAttachment,
   storeAttachment,
 } from './attachment-storage';
 export type { ImageMime } from './attachment-storage';
