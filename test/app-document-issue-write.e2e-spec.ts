@@ -412,6 +412,169 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     ).toBe(1_000);
   });
 
+  /**
+   * ⭐ P-18 — 생산 LOT 라벨 자격을 «마감 전»으로 열었다. `P-02-04` 는 라벨을 찍어 그 라벨을
+   * 스캔하는 것이 마감 입력이라, 완료를 요구하면 라벨과 마감이 서로를 기다린다.
+   * 축은 「실적이 반영됐나」 = 생명주기 `ACTIVE`(또는 이미 마감된 LOT)다.
+   */
+  describe("생산 LOT 라벨 자격 (P-18)", () => {
+    it.each([
+      ["실적만 반영된 검사대기 LOT", "INSPECTION_PENDING", "ACTIVE", false],
+      ["실적이 반영된 정상 LOT", "NORMAL", "ACTIVE", false],
+      ["완료된 정상 LOT(재발행 경로)", "NORMAL", null, true],
+    ] as const)(
+      "%s은 201 로 발행된다",
+      async (name, statusCode, lifecycle, completed) => {
+        const lotId = await newProductionLot(name, statusCode, lifecycle, completed);
+
+        const response = await issueProductionLot(lotId).expect(201);
+
+        expect(response.body.issuedCount).toBe(1);
+        expect(
+          await prisma.document_issue_log.count({
+            where: { document_type_code: "PRODUCTION_LOT_LABEL", lot_id: lotId },
+          }),
+        ).toBe(1);
+      },
+    );
+
+    it.each([
+      ["실적이 한 번도 반영되지 않은 슬롯", "INSPECTION_PENDING", "WAITING", false],
+      ["생명주기가 비어 있는 LOT", "NORMAL", null, false],
+      ["불량 LOT", "DEFECTIVE", "ACTIVE", true],
+      ["폐기 LOT", "SCRAPPED", "ACTIVE", true],
+    ] as const)(
+      "%s은 422 STATE_LOCKED 로 막힌다",
+      async (name, statusCode, lifecycle, completed) => {
+        const lotId = await newProductionLot(name, statusCode, lifecycle, completed);
+
+        const rejected = await issueProductionLot(lotId).expect(422);
+
+        expect(rejected.body.errors[0]).toMatchObject({ code: "STATE_LOCKED" });
+        expect(
+          await prisma.document_issue_log.count({
+            where: { document_type_code: "PRODUCTION_LOT_LABEL", lot_id: lotId },
+          }),
+        ).toBe(0);
+      },
+    );
+  });
+
+  /**
+   * ⭐ D5 — POP 이 실적 뒤 라벨을 찍으려면 이 렌디션을 받아야 한다. 전에는 단말 읽기 범위에
+   * 생산 LOT 라벨이 없어 401 이었고, 열고 나서도 그릴 판이 없어 422 였다.
+   */
+  describe("생산 LOT 라벨 렌디션 (D5)", () => {
+    it.each([
+      ["png", /image\/png/],
+      ["tspl", /application\/vnd\.tspl/],
+    ] as const)("POP 단말이 자기 공장 LOT 라벨을 %s 로 받는다", async (format, contentType) => {
+      const lotId = await newProductionLot(`RENDITION_${format}`, "NORMAL", "ACTIVE", false);
+      const issued = await issueProductionLot(lotId).expect(201);
+      const logId = issued.body.items[0].documentIssueLogId;
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/app/document-issues/${String(logId)}/rendition?format=${format}`)
+        .set("Authorization", `Bearer ${await popToken(plantId)}`)
+        .buffer(true)
+        .parse((stream, callback) => {
+          const chunks: Buffer[] = [];
+          stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+          stream.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200)
+        .expect("Content-Type", contentType);
+
+      expect(response.body.length).toBeGreaterThan(100);
+    });
+
+    it("⛔ 남의 공장 단말은 401 이다", async () => {
+      const lotId = await newProductionLot("RENDITION_FOREIGN", "NORMAL", "ACTIVE", false);
+      const issued = await issueProductionLot(lotId).expect(201);
+      const logId = issued.body.items[0].documentIssueLogId;
+      const foreignPlant = await prisma.plant.create({
+        data: {
+          legal_entity_id: (await prisma.plant.findUniqueOrThrow({
+            where: { plant_id: plantId },
+          })).legal_entity_id,
+          plant_code: `${PREFIX}-FOREIGN`,
+          plant_name: "남의 공장",
+          timezone_code: "Asia/Seoul",
+        },
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/app/document-issues/${String(logId)}/rendition?format=png`)
+        .set("Authorization", `Bearer ${await popToken(foreignPlant.plant_id)}`)
+        .expect(401);
+    });
+  });
+
+  let terminalSeq = 0;
+
+  /** 그 공장의 POP 단말 하나를 만들고 현재 세대 토큰을 낸다. */
+  async function popToken(plant: bigint): Promise<string> {
+    terminalSeq += 1;
+    const terminal = await prisma.terminal.create({
+      data: {
+        terminal_code: `${PREFIX}-POP-${terminalSeq}`,
+        plant_id: plant,
+        terminal_type_code: "POP",
+        status_code: "RUNNING",
+      },
+    });
+    return app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id),
+      typ: "terminal",
+      tv: terminal.token_version,
+      terminalCode: terminal.terminal_code,
+      plantId: Number(plant),
+    });
+  }
+
+  function issueProductionLot(lotId: bigint): request.Test {
+    return request(app.getHttpServer())
+      .post(PATH)
+      .set("Cookie", cookie)
+      .set("Idempotency-Key", newKey())
+      .send({
+        documentTypeCode: "PRODUCTION_LOT_LABEL",
+        targets: [{ targetTypeCode: "LOT", targetId: Number(lotId) }],
+        remarks: `${PREFIX}_PRODUCTION_LOT`,
+      });
+  }
+
+  let productionLotSeq = 0;
+
+  async function newProductionLot(
+    suffix: string,
+    statusCode: string,
+    lifecycleStatusCode: string | null,
+    completed: boolean,
+  ): Promise<bigint> {
+    productionLotSeq += 1;
+    const row = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}_PLOT_${productionLotSeq}`,
+        item_id: itemId,
+        lot_type_code: "PRODUCTION",
+        plant_id: plantId,
+        initial_qty: 100,
+        uom_id: uomId,
+        // 생산 LOT 은 W/O 를 원천으로 난다 — 라벨 자격은 원천 유형을 보지 않지만 실제 모양대로 둔다.
+        source_type_code: "WORK_ORDER",
+        source_id: plantId,
+        status_code: statusCode,
+        ...(lifecycleStatusCode === null
+          ? {}
+          : { lifecycle_status_code: lifecycleStatusCode }),
+        ...(completed ? { completed_at: new Date() } : {}),
+        remarks: suffix,
+      },
+    });
+    return row.lot_id;
+  }
+
   function issue(
     targetIds: bigint[],
     options: {
@@ -873,6 +1036,13 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     });
     await prisma.uom.deleteMany({
       where: { uom_code: { startsWith: PREFIX } },
+    });
+    // D5 회귀가 만든 POP 단말과 「남의 공장」을 걷는다.
+    await prisma.terminal.deleteMany({
+      where: { terminal_code: { startsWith: PREFIX } },
+    });
+    await prisma.plant.deleteMany({
+      where: { plant_code: { startsWith: PREFIX } },
     });
     await prisma.location.deleteMany({
       where: { location_code: { startsWith: PREFIX } },

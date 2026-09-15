@@ -8,6 +8,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { accessibleScreenCodes } from './terminal-accessible-screens';
 import {
   ReferenceQuery,
   assertCodeValues,
@@ -339,6 +340,21 @@ export class TerminalService {
     });
 
     return this.listProcesses(terminalId);
+  }
+
+  /**
+   * POP [화면 이동] 후보(D3). 단말의 공정 매핑 플래그로 가른다 — 표는
+   * `terminal-accessible-screens.ts` 에 있고 근거도 거기 적었다.
+   */
+  async accessibleScreenCodes(terminalId: number): Promise<string[]> {
+    const rows = await this.prisma.terminal_process.findMany({
+      where: { terminal_id: terminalId },
+      select: {
+        can_start_work: true, can_input_material: true, can_input_result: true,
+        can_input_inspection: true, can_print_label: true, can_complete_work: true,
+      },
+    });
+    return accessibleScreenCodes(rows);
   }
 
   private async readProcesses(terminalId: number): Promise<TerminalProcessView[]> {

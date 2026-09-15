@@ -161,23 +161,63 @@ describe('인쇄 결과 보고 (I-27 P3)', () => {
     },
   );
 
-  it.each(['SUCCEEDED', 'FAILED'])(
-    '이미 %s인 행의 새 보고는 422 STATE_LOCKED다',
-    async (outcome) => {
-      const { service, tx, update } = fixture({
-        locked: { document_issue_log_id: 101n, print_outcome_code: outcome },
-      });
-      await expect(
-        service.reportWithin(tx, 101, { outcome: 'SUCCEEDED' }, context),
-      ).rejects.toMatchObject({
-        status: 422,
-        errors: [
-          expect.objectContaining({ field: 'outcome', code: 'STATE_LOCKED' }),
-        ],
-      });
-      expect(update).not.toHaveBeenCalled();
-    },
-  );
+  // ⭐ D7 — 「한 번만」이 아니라 「성공만 잠근다」다. 실패한 인쇄를 다시 찍고 그 결과를 보고할
+  //    길이 없으면, 프린터가 한 번 죽은 LOT 은 영영 마감되지 않는다(화면이 인쇄 성공 뒤에만
+  //    마감을 연다). `P-02-04` [발행된 라벨 다시 인쇄]는 새 회차를 만들지 않는다.
+  it('이미 SUCCEEDED인 행의 새 보고는 422 STATE_LOCKED다 — 나온 라벨을 되돌리지 않는다', async () => {
+    const { service, tx, update } = fixture({
+      locked: { document_issue_log_id: 101n, print_outcome_code: 'SUCCEEDED' },
+    });
+
+    await expect(
+      service.reportWithin(tx, 101, { outcome: 'SUCCEEDED' }, context),
+    ).rejects.toMatchObject({
+      status: 422,
+      errors: [expect.objectContaining({ field: 'outcome', code: 'STATE_LOCKED' })],
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('⭐ FAILED 뒤 SUCCEEDED 보고는 덮어쓴다 — 사유는 비우고 시각을 새로 찍는다', async () => {
+    const { service, tx, update } = fixture({
+      locked: { document_issue_log_id: 101n, print_outcome_code: 'FAILED' },
+    });
+
+    await service.reportWithin(tx, 101, { outcome: 'SUCCEEDED' }, context);
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect((update.mock.calls[0][0] as { data: Record<string, unknown> }).data).toMatchObject({
+      print_outcome_code: 'SUCCEEDED',
+      print_failure_reason: null,
+    });
+  });
+
+  it('⭐ FAILED 뒤 새 사유의 FAILED 보고도 받는다 — 다시 시도했다가 또 실패한 자리다', async () => {
+    const { service, tx, update } = fixture({
+      locked: { document_issue_log_id: 101n, print_outcome_code: 'FAILED' },
+    });
+
+    await service.reportWithin(tx, 101, { outcome: 'FAILED', failureReason: '용지 없음' }, context);
+
+    expect((update.mock.calls[0][0] as { data: Record<string, unknown> }).data).toMatchObject({
+      print_outcome_code: 'FAILED',
+      print_failure_reason: '용지 없음',
+    });
+  });
+
+  it('⛔ FAILED 를 다시 보고할 때도 사유는 여전히 필수다', async () => {
+    const { service, tx, update } = fixture({
+      locked: { document_issue_log_id: 101n, print_outcome_code: 'FAILED' },
+    });
+
+    await expect(
+      service.reportWithin(tx, 101, { outcome: 'FAILED' }, context),
+    ).rejects.toMatchObject({
+      status: 422,
+      errors: [expect.objectContaining({ field: 'failureReason', code: 'REQUIRED' })],
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
 
   it.each([null, 'UNKNOWN'])(
     '저장 outcome %p 결손은 500 원인이다',

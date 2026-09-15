@@ -27,6 +27,11 @@ export interface MaterialLotLabelValues {
   lotNo: string;
   mfgDt: string;
   issueSeq: number;
+  /**
+   * 머리줄 오른쪽에 덧붙는 값 — 생산 LOT 라벨이 W/O 번호를 싣는다(`production-lot-label.ts`).
+   * 자재 라벨은 비운다(줄 내용이 전과 «한 글자도» 달라지지 않는다).
+   */
+  workOrderNo?: string;
 }
 
 export interface QrModules {
@@ -86,8 +91,15 @@ function printable(value: string): void {
   }
 }
 
+/** 머리줄 — 유형·상태, 그리고 있으면 W/O 번호. 없으면 전과 같은 두 칸 그대로다. */
+function head(values: MaterialLotLabelValues): string {
+  const base = `${values.type}  ${values.status}`;
+  return values.workOrderNo ? `${base}  ${values.workOrderNo}` : base;
+}
+
 export function layoutMaterialLotLabel(values: MaterialLotLabelValues): MaterialLotLabelLayout {
-  [values.type, values.status, values.partNo, values.qty, values.lotNo, values.mfgDt].forEach(printable);
+  [values.type, values.status, values.partNo, values.qty, values.lotNo, values.mfgDt,
+    values.workOrderNo ?? ''].forEach(printable);
   const width = dots(80);
   const height = dots(30);
   const pad = dots(2);
@@ -115,7 +127,7 @@ export function layoutMaterialLotLabel(values: MaterialLotLabelValues): Material
     height,
     border: 2,
     texts: [
-      fitted(ROWS.head, `${values.type}  ${values.status}`, 10, beside),
+      fitted(ROWS.head, head(values), 10, beside),
       fitted(ROWS.partNo, `PART NO.: ${values.partNo}`, 12, beside),
       fitted(ROWS.qty, `QTY: ${values.qty}`, 12, below),
       fitted(ROWS.lot, `LOT NO.: ${values.lotNo}`, 10, below),

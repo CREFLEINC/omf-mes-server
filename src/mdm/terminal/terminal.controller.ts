@@ -56,12 +56,19 @@ export class TerminalController {
     return terminal;
   }
 
-  /** Forward-only POP navigation: current active bearer and own terminal are checked in the auth guard. */
+  /**
+   * Forward-only POP navigation: current active bearer and own terminal are checked in the auth guard.
+   * ⭐ 후보를 단말의 공정 매핑 플래그로 가린다(D3) — 전에는 `['P-01-01']` 고정이라 키오스크에서
+   * 작업 시작·투입·실적으로 갈 길이 없었다. 표와 근거는 `terminal-accessible-screens.ts`.
+   */
   @Get(':terminalId/accessible-screens')
   @TerminalAccessibleScreensOperation()
-  accessibleScreens(@Res({ passthrough: true }) response: Response): { screenCodes: string[] } {
+  async accessibleScreens(
+    @Param('terminalId', ParseIntPipe) terminalId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ screenCodes: string[] }> {
     response.setHeader('Cache-Control', 'private, no-store');
-    return { screenCodes: ['P-01-01'] };
+    return { screenCodes: await this.terminals.accessibleScreenCodes(terminalId) };
   }
 
   @Post()
@@ -155,6 +162,9 @@ export class TerminalController {
   ): Promise<unknown> {
     const { items, versionNo } = await this.terminals.listProcesses(terminalId);
     setEtag(response, versionNo);
+    // ⛔ 캐시하지 않는다(D4) — 이 값은 «게이팅 판정값»이라 낡은 응답을 재사용하면 막아야 할
+    //    작업이 열리거나(반대로) 열려야 할 화면이 닫힌다. POP 렌더러가 실제로 그랬다.
+    response.setHeader('Cache-Control', 'private, no-store');
     return { items };
   }
 

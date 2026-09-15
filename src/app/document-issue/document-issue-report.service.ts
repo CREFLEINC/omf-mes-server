@@ -33,7 +33,7 @@ export class DocumentIssueReportService {
   ): Promise<DocumentIssueView> {
     assertSafeId(documentIssueLogId);
     const locked = await lockIssue(tx, documentIssueLogId);
-    assertPending(locked.print_outcome_code);
+    assertReportable(locked.print_outcome_code);
     const failureReason = reportFailureReason(input);
     const workerId = await resolveWorkerId(tx, context.workerNo);
     const row = await tx.document_issue_log.update({
@@ -77,15 +77,27 @@ async function lockIssue(
   return rows[0];
 }
 
-function assertPending(value: string | null): void {
+/**
+ * 결과를 다시 받을 수 있는가(D7).
+ *
+ * ⭐ **실패는 다시 보고할 수 있다.** 프린터가 한 번 죽으면 셸이 다시 인쇄하는데
+ * (`P-02-04` [발행된 라벨 다시 인쇄]는 **새 회차를 만들지 않고 같은 발행 기록을 다시 찍는다**),
+ * 그 결과를 보고할 길이 없으면 **그 LOT 은 영영 마감되지 않는다**(화면이 인쇄 성공 뒤에만
+ * 마감을 연다). 그래서 `FAILED` 는 «잠금»이 아니라 «다시 시도할 수 있는 상태»로 읽는다.
+ *
+ * ⛔ **`SUCCEEDED` 는 그대로 잠근다** — 이미 나온 라벨을 「안 나왔다」로 되돌리지 않는다.
+ * ⚠ 헤더 한 벌만 남는다(이력 표가 없다 · 물리 `document_issue_log` 의 `print_*` 4칸뿐) —
+ *   앞선 실패 사유는 덮인다. 단말 호출이면 시도마다 `audit.audit_event` 가 남아 흔적은 거기 있다.
+ */
+function assertReportable(value: string | null): void {
   if (value === null || !['PENDING', 'SUCCEEDED', 'FAILED'].includes(value)) {
     throw new Error('Invalid stored document issue field: printOutcome');
   }
-  if (value !== 'PENDING') {
+  if (value === 'SUCCEEDED') {
     throw reportError(
       'outcome',
       ERROR_CODE.STATE_LOCKED,
-      '이미 인쇄 결과가 보고된 발행 기록입니다.',
+      '이미 인쇄 성공으로 보고된 발행 기록입니다.',
     );
   }
 }

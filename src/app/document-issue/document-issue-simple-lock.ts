@@ -14,6 +14,8 @@ interface LotRow {
   lot_id: bigint;
   lot_type_code: string;
   status_code: string;
+  /** 생산 LOT 라벨 자격이 「실적이 반영됐나」를 이 칸으로 본다(P-18). */
+  lifecycle_status_code: string | null;
   completed_at: Date | null;
   source_type_code: string;
   source_id: bigint;
@@ -62,7 +64,8 @@ async function lockLots(
 ): Promise<void> {
   if (ids.length === 0) return;
   const rows = await tx.$queryRaw<LotRow[]>(Prisma.sql`
-    SELECT lot_id,lot_type_code,status_code,completed_at,source_type_code,source_id
+    SELECT lot_id,lot_type_code,status_code,lifecycle_status_code,completed_at,
+           source_type_code,source_id
     FROM trace.lot
     WHERE lot_id IN (${joinedIds(ids)})
     ORDER BY lot_id FOR NO KEY UPDATE`);
@@ -72,6 +75,7 @@ async function lockLots(
       targetId: row.lot_id,
       lotTypeCode: row.lot_type_code,
       statusCode: row.status_code,
+      lifecycleStatusCode: row.lifecycle_status_code,
       completedAt: row.completed_at,
       sourceTypeCode: row.source_type_code,
       sourceId: row.source_id,

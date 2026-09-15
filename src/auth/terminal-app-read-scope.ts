@@ -14,6 +14,16 @@ export const TERMINAL_APP_READ_OPERATIONS: Readonly<Record<string, readonly ('PO
   'GET /app/operation-policies/effective': ['POP'],
 };
 
+/**
+ * 단말이 내려받을 수 있는 출력물(D5). ⛔ 자기 공장 소유 대상인지는 `assertOwnedTarget` 이
+ * 따로 본다 — 이 목록은 「어떤 출력물이냐」만 가린다.
+ */
+const RENDITION_DOCUMENT_TYPES: readonly string[] = [
+  'MATERIAL_LOT_LABEL',
+  'PRODUCTION_LOT_LABEL',
+  'DELIVERY_LABEL',
+];
+
 export type TerminalApprovalListScope =
   | { plantId: bigint; lotId: bigint; workerId?: never }
   | { plantId: bigint; workerId: bigint; lotId?: never };
@@ -73,7 +83,10 @@ export async function assertTerminalAppReadScope(
         where: { document_issue_log_id: logId },
         select: { document_type_code: true, target_type_code: true, target_id: true },
       });
-      if (!issue || !['MATERIAL_LOT_LABEL', 'DELIVERY_LABEL'].includes(issue.document_type_code)) throw denied();
+      // ⭐ 생산 LOT 라벨을 더한다(D5). POP 이 실적 뒤 라벨을 찍으려면 이 렌디션을 받아야 하는데
+      //    목록에 없어 401 이었다 — 셸이 인쇄 데이터를 못 받아 인쇄가 실패로 기록됐다.
+      //    ⚠ 범위만 연 것이다. 생산 LOT 라벨의 렌디션 «구현»은 아직 없다(아래 서비스가 422).
+      if (!issue || !RENDITION_DOCUMENT_TYPES.includes(issue.document_type_code)) throw denied();
       await assertOwnedTarget(prisma, terminal, issue.target_type_code, issue.target_id);
       break;
     }
@@ -82,9 +95,17 @@ export async function assertTerminalAppReadScope(
         throw denied();
       break;
     case 'GET /app/operation-policies/effective':
-      // The POP tool-usage screen requests global policy values with only policyCode.
-      if (query.plantId !== undefined || query.businessUnitId !== undefined
-        || query.itemId !== undefined || query.processId !== undefined) throw denied();
+      // ⭐ 범위 축을 «좁혀» 묻는 것을 받는다(D2 · 2026-09-15). 전에는 `policyCode` 하나만 오는
+      // 공구 사용 화면만 상정해 축이 하나라도 오면 막았는데, 작업 전 점검 게이트(P-02-02)는
+      // 단말의 공장과 W/O 의 공정으로 좁혀 묻는다 — 그래서 시작 자체가 401 이었다.
+      // 계약의 ⌜범위 축을 비워 보내도 된다⌝ 는 비우는 것을 «허용»할 뿐 금지가 아니다.
+      //  ⛔ `plantId` 는 단말의 공장과 «같아야» 한다 — 이 축이 단말의 소속이다.
+      //  ⚠ 나머지 셋은 형식만 본다. 정책 «값»을 좁혀 읽을 뿐이라 남의 id 를 넣어도 새로 열리는
+      //    것이 없다(업무 데이터가 아니라 마스터 설정값이다).
+      if (query.plantId !== undefined && positiveId(query.plantId) !== terminal.plantId) throw denied();
+      for (const axis of [query.businessUnitId, query.itemId, query.processId]) {
+        if (axis !== undefined && positiveId(axis) === null) throw denied();
+      }
       break;
     default:
       throw denied();
