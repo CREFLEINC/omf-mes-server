@@ -17,6 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 
+import { ATTACHMENT_UPLOAD_OPTIONS } from '../../common/attachment-storage';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
@@ -39,7 +40,7 @@ import {
   breakdownManagementContext,
   breakdownWriteContext,
 } from './breakdown-write-context';
-import { BreakdownAttachmentService, MAX_BREAKDOWN_PHOTO_BYTES } from './breakdown-attachment.service';
+import { BreakdownAttachmentService } from './breakdown-attachment.service';
 
 @Controller('maintenance/breakdowns')
 export class BreakdownController {
@@ -80,7 +81,7 @@ export class BreakdownController {
   @Post(':breakdownId/attachments')
   @Contract('POST /maintenance/breakdowns/{breakdownId}/attachments')
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_BREAKDOWN_PHOTO_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', ATTACHMENT_UPLOAD_OPTIONS))
   uploadAttachment(
     @Req() request: Request,
     @Param('breakdownId', ParseIntPipe) breakdownId: number,
