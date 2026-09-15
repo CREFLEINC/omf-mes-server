@@ -13,6 +13,7 @@ import { AppUserController } from './access/app-user.controller';
 import { AppUserService } from './access/app-user.service';
 import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
+import { AttachmentUploadService } from './attachment/attachment-upload.service';
 import { AttachmentService } from './attachment/attachment.service';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
 import { DocumentIssueReportService } from './document-issue/document-issue-report.service';
@@ -77,6 +78,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     AppUserService,
     UserAssignmentService,
     AttachmentService,
+    AttachmentUploadService,
     DocumentIssueQueryService,
     DocumentIssueReportService,
     DocumentIssueSummaryService,
