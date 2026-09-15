@@ -1030,6 +1030,7 @@ model material_issue_request_line {
   item                           item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   material_issue_request         material_issue_request @relation(fields: [material_issue_request_id], references: [material_issue_request_id], onDelete: NoAction, onUpdate: NoAction)
   uom                            uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  picking_line                   picking_line[]
 
   @@unique([material_issue_request_id, line_no], map: "uq_material_issue_request_line")
   @@schema("logistics")
@@ -1037,29 +1038,31 @@ model material_issue_request_line {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model picking_line {
-  picking_line_id          BigInt                 @id @default(autoincrement())
-  picking_order_id         BigInt
-  line_no                  Int
-  item_id                  BigInt
-  lot_id                   BigInt
-  location_id              BigInt
-  planned_qty              Decimal                @db.Decimal(20, 6)
-  picked_qty               Decimal                @default(0) @db.Decimal(20, 6)
-  uom_id                   BigInt
-  inventory_reservation_id BigInt?
-  status_code              String                 @db.VarChar(50)
-  created_at               DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  created_by               BigInt?
-  updated_at               DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
-  updated_by               BigInt?
-  version_no               Int                    @default(1)
-  goods_issue_line         goods_issue_line[]
-  inventory_reservation    inventory_reservation? @relation(fields: [inventory_reservation_id], references: [inventory_reservation_id], onDelete: NoAction, onUpdate: NoAction)
-  item                     item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
-  location                 location               @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
-  lot                      lot                    @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
-  picking_order            picking_order          @relation(fields: [picking_order_id], references: [picking_order_id], onDelete: NoAction, onUpdate: NoAction)
-  uom                      uom                    @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
+  picking_line_id                BigInt                       @id @default(autoincrement())
+  picking_order_id               BigInt
+  line_no                        Int
+  item_id                        BigInt
+  lot_id                         BigInt
+  location_id                    BigInt
+  planned_qty                    Decimal                      @db.Decimal(20, 6)
+  picked_qty                     Decimal                      @default(0) @db.Decimal(20, 6)
+  uom_id                         BigInt
+  inventory_reservation_id       BigInt?
+  status_code                    String                       @db.VarChar(50)
+  created_at                     DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                     BigInt?
+  updated_at                     DateTime                     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                     BigInt?
+  version_no                     Int                          @default(1)
+  material_issue_request_line_id BigInt?
+  goods_issue_line               goods_issue_line[]
+  inventory_reservation          inventory_reservation?       @relation(fields: [inventory_reservation_id], references: [inventory_reservation_id], onDelete: NoAction, onUpdate: NoAction)
+  item                           item                         @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  location                       location                     @relation(fields: [location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                            lot                          @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  material_issue_request_line    material_issue_request_line? @relation(fields: [material_issue_request_line_id], references: [material_issue_request_line_id], onDelete: NoAction, onUpdate: NoAction)
+  picking_order                  picking_order                @relation(fields: [picking_order_id], references: [picking_order_id], onDelete: NoAction, onUpdate: NoAction)
+  uom                            uom                          @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([picking_order_id, line_no], map: "uq_picking_line")
   @@index([location_id], map: "ix_picking_line_location")
