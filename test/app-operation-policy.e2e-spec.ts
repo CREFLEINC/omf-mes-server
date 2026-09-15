@@ -5,6 +5,7 @@
  * 한다 — 화면이 우선순위를 다시 구현하지 않는다」로 못 박은 자리다.
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -51,6 +52,7 @@ describe('운영 정책 (e2e)', () => {
   let plantId: number;
   let itemId: number;
   let processId: number;
+  let popToken: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -81,6 +83,18 @@ describe('운영 정책 (e2e)', () => {
       },
     });
     processId = Number(process.process_id);
+
+    // D2 회귀용 POP 단말 — 작업 전 점검 게이트가 단말 토큰으로 정책을 좁혀 묻는다.
+    const terminal = await prisma.terminal.create({
+      data: {
+        terminal_code: `${PREFIX}-POP`, plant_id: BigInt(plantId),
+        terminal_type_code: 'POP', status_code: 'RUNNING',
+      },
+    });
+    popToken = app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version,
+      terminalCode: terminal.terminal_code, plantId,
+    });
   });
 
   afterAll(async () => {
@@ -276,6 +290,33 @@ describe('운영 정책 (e2e)', () => {
     return { id: created.body.operationPolicyId, etag: detail.headers.etag };
   }
 
+  /**
+   * ⭐ D2 — 작업 전 점검 게이트(P-02-02)는 단말 토큰으로 **공장·공정을 좁혀** 묻는다.
+   * 전에는 범위 축이 하나라도 오면 단말 읽기 가드가 401 이라 작업 시작 자체가 막혔다.
+   */
+  it('⭐ POP 단말이 자기 공장·공정으로 좁혀 정책을 읽는다 — 남의 공장은 401 이다', async () => {
+    await create({ policyCode: 'PRECHECK_CONTROL_LEVEL', valueText: 'WARN', plantId });
+
+    const narrowed = await request(app.getHttpServer())
+      .get(`/api/app/operation-policies/effective?policyCode=PRECHECK_CONTROL_LEVEL`
+        + `&plantId=${plantId}&processId=${processId}`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .expect(200);
+    expect(narrowed.body).toMatchObject({ policyCode: 'PRECHECK_CONTROL_LEVEL', valueText: 'WARN' });
+
+    // 축을 비운 공구 사용 화면의 조회도 그대로 선다.
+    await request(app.getHttpServer())
+      .get('/api/app/operation-policies/effective?policyCode=PRECHECK_CONTROL_LEVEL')
+      .set('Authorization', `Bearer ${popToken}`)
+      .expect(200);
+
+    // ⛔ 남의 공장으로 좁히면 막는다.
+    await request(app.getHttpServer())
+      .get(`/api/app/operation-policies/effective?policyCode=PRECHECK_CONTROL_LEVEL&plantId=${plantId + 1}`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .expect(401);
+  });
+
   async function effective(query: string): Promise<Record<string, unknown>> {
     const response = await request(app.getHttpServer())
       .get(`/api/app/operation-policies/effective?${query}`)
@@ -323,6 +364,7 @@ describe('운영 정책 (e2e)', () => {
   }
 
   async function cleanup(): Promise<void> {
+    await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
     const items = await prisma.item.findMany({
       where: { item_code: { startsWith: PREFIX } },
       select: { item_id: true },
