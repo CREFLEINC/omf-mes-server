@@ -41,6 +41,10 @@ const STOCK_TRANSFER_STATUS = 'logistics.stock_transfer.status_code';
 const NONCONFORMANCE_STATUS = 'quality.nonconformance.status_code';
 /** I-14 PR ④ 가 여는 축 — 시드 `LOGISTICS_DOCUMENT_STATUS`. 전기 하나뿐이다(취소 경로 0건). */
 const ADJUSTMENT_STATUS = 'inventory.inventory_adjustment.status_code';
+/** PICK-ISSUE-01(P-14)이 여는 축 — 출고 전기가 «전량» 나간 지시를 닫는다. 취소 경로 0건. */
+const PICKING_ORDER_STATUS = 'logistics.picking_order.status_code';
+/** PICK-ISSUE-01(P-16 · 문의 046)이 여는 축 — 전 라인이 다 나가면 요청이 닫힌다. */
+const MATERIAL_ISSUE_REQUEST_STATUS = 'logistics.material_issue_request.status_code';
 
 /**
  * ⭐ **등록된 축 전건.** 위 상수 하나하나가 「어느 슬라이스가 열었나」를 달고 있다 — 그 목록이
@@ -59,8 +63,10 @@ const REGISTERED_AXES = [
   LIFECYCLE,
   LOT_QUALITY_STATUS,
   MAINTENANCE_ORDER_STATUS,
+  MATERIAL_ISSUE_REQUEST_STATUS,
   MOLD_STATUS,
   NONCONFORMANCE_STATUS,
+  PICKING_ORDER_STATUS,
   PRODUCTION_PLAN_STATUS,
   PUTAWAY_TASK_STATUS,
   ROUTING_COLUMN,
@@ -545,8 +551,10 @@ describe('DocumentStateService', () => {
           LIFECYCLE,
           LOT_QUALITY_STATUS,
           MAINTENANCE_ORDER_STATUS,
+          MATERIAL_ISSUE_REQUEST_STATUS,
           MOLD_STATUS,
           NONCONFORMANCE_STATUS,
+          PICKING_ORDER_STATUS,
           PRODUCTION_PLAN_STATUS,
           PUTAWAY_TASK_STATUS,
           ROUTING_COLUMN,
@@ -569,7 +577,9 @@ describe('DocumentStateService', () => {
       // +1 — 재고 조정 전기 키 신설(I-14 PR ④).
       // +2 — 출하 확정·취소 키 신설(I-23 PR ③). ⛔ `:request-cancel` 은 전이가 «0개»다 —
       //      시드 SHIPMENT_STATUS 3값에 CANCEL_REQUESTED 가 없어 담을 상태가 없다.
-      expect(service.registered()).toHaveLength(50);
+      // +2 — 피킹 지시 닫기(P-14) · 자재 출고요청 닫기(P-16 · 문의 046) 키 신설.
+      //      둘 다 전이 하나뿐이다 — 취소 경로가 계약에 0건이다(`cancelable: false`).
+      expect(service.registered()).toHaveLength(52);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

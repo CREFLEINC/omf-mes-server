@@ -46,8 +46,11 @@ const REGISTERED = 'REGISTERED';
 
 /**
  * 라인 피킹 — `picked_qty` 를 **대체**하고 그 차이만큼 잔액의 `picked` 를 옮긴다(I-8.md §6).
- * ⛔ `status_code` 도 헤더 상태도 안 옮긴다 — 계약 `x-no-code-key` 가 「라인 진행은
- * `plannedQty ↔ pickedQty` 가 담는다」라 적었고 `picking_order` 4값에 「완료」가 없다(§6-6).
+ * ⛔ 라인 `status_code` 를 안 옮긴다 — 계약 `x-no-code-key` 가 「코드 그룹을 세우지 않는다 —
+ * 라인 진행은 `plannedQty ↔ pickedQty` 가 담는다」라 적었다(§6-6).
+ * ⛔ **헤더 상태도 여기서 안 옮긴다.** 닫는 것은 출고 전기이고, 그것도 «전 라인 전량»이
+ * 나갔을 때만이다(P-14 · `issue-followup.ts`) — 부분 출고에서 닫으면 나머지를 집으러
+ * 돌아올 길이 사라진다(`M-01-08` 목록이 `statusCode=REGISTERED` 로 거른다).
  * ⛔ 예약을 «걸지» 않는다 — 거는 오퍼레이션이 계약에 0건이다(문의 045).
  */
 @Injectable()

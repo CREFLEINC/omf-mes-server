@@ -107,21 +107,28 @@ export class MaterialIssueRequestService {
         bom_component_id: line.bomComponentId ?? null,
         item_id: line.itemId,
         requested_qty: line.requestedQty,
-        // ⛔ `issued_qty` 는 기본값 0 그대로다 — 올리는 오퍼레이션이 계약에 0건이다(046).
+        // 발행은 0 으로 만든다 — 올리는 것은 출고 전기다(P-16 · 046 해소).
         uom_id: line.uomId,
         created_by: appUserId,
       })),
     });
-    await writePicking(
-      tx,
-      picking,
-      { materialIssueRequestId: header.material_issue_request_id, issueRequestNo },
-      appUserId,
-    );
     const lines = await tx.material_issue_request_line.findMany({
       where: { material_issue_request_id: header.material_issue_request_id },
       orderBy: { line_no: 'asc' },
     });
+    await writePicking(
+      tx,
+      picking,
+      {
+        materialIssueRequestId: header.material_issue_request_id,
+        issueRequestNo,
+        // 기출고를 되짚는 축 — `createMany` 가 id 를 안 줘 되읽은 것을 쓴다(P-16).
+        requestLineIds: new Map(
+          lines.map((line) => [line.line_no, line.material_issue_request_line_id]),
+        ),
+      },
+      appUserId,
+    );
     return {
       materialIssueRequest: materialIssueRequestView(header),
       lines: lines.map(materialIssueRequestLineView),

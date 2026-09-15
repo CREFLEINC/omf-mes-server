@@ -146,10 +146,21 @@ export class WorkOrderReleaseService {
         material_issue_request_id: header.material_issue_request_id,
       })),
     });
+    // 방금 만든 라인의 id 를 되읽어 피킹에 물린다 — `createMany` 는 id 를 안 돌려준다(P-16).
+    const requestLines = await tx.material_issue_request_line.findMany({
+      where: { material_issue_request_id: header.material_issue_request_id },
+      select: { material_issue_request_line_id: true, line_no: true },
+    });
     await writePicking(
       tx,
       issue.picking,
-      { materialIssueRequestId: header.material_issue_request_id, issueRequestNo: issue.issueRequestNo },
+      {
+        materialIssueRequestId: header.material_issue_request_id,
+        issueRequestNo: issue.issueRequestNo,
+        requestLineIds: new Map(
+          requestLines.map((line) => [line.line_no, line.material_issue_request_line_id]),
+        ),
+      },
       appUserId,
     );
   }

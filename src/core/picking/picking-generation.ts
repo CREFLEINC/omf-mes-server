@@ -101,11 +101,19 @@ export async function planPicking(
   return { ...allocation, orderNos, assignedWorkerId: input.assignedWorkerId };
 }
 
-/** 창고마다 헤더 하나 — 모든 라인이 결품이면 헤더도 없다(ⓓ). */
+/**
+ * 창고마다 헤더 하나 — 모든 라인이 결품이면 헤더도 없다(ⓓ).
+ * `requestLineIds` 는 «요청 라인 번호 → id» 다. 요청 라인은 이 트랜잭션에서 방금 INSERT 되어
+ * 계획을 세울 때는 id 가 없었다 — 그래서 번호로 들고 있다가 여기서 푼다(P-16 · 문의 046).
+ */
 export async function writePicking(
   tx: Prisma.TransactionClient,
   plan: PickingPlan,
-  source: { materialIssueRequestId: bigint; issueRequestNo: string },
+  source: {
+    materialIssueRequestId: bigint;
+    issueRequestNo: string;
+    requestLineIds: ReadonlyMap<number, bigint>;
+  },
   appUserId: number,
 ): Promise<void> {
   for (const shortage of plan.shortages) {
@@ -138,6 +146,9 @@ export async function writePicking(
         planned_qty: line.plannedQty,
         uom_id: line.uomId,
         status_code: PICKING_REGISTERED,
+        // ⭐ 출고 전기가 `issued_qty` 를 되짚는 축이다(P-16 · 문의 046). 못 풀면 비운다 —
+        //    그 라인의 기출고는 안 오르고, 짝을 품목으로 «지어내지» 않는다.
+        material_issue_request_line_id: source.requestLineIds.get(line.requestLineNo) ?? null,
         created_by: appUserId,
       })),
     });
