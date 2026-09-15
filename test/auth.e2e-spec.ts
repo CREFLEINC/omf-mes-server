@@ -179,8 +179,15 @@ describe('인증 (실 DB)', () => {
 
       const session = await sessions.build(Number(userId), null);
 
+      // 기대값을 시드 목록으로 적지 않는다 — 운영자 권한은 시나리오마다 늘어난다(#653·#652).
+      // 여기서 지키는 것은 «활성 역할의 부여만 들고, 중지된 역할의 W-01-04 는 빠진다»이다.
+      const granted = await prisma.role_permission.findMany({
+        where: { role_id: active.role_id },
+        select: { permission_code: true },
+      });
       expect(session?.roles).toEqual(['ROLE_SYS_ADMIN']);
-      expect(session?.permissions).toEqual(['W-CO-01', 'W-CO-02', 'W-CO-10']);
+      expect([...(session?.permissions ?? [])].sort()).toEqual(granted.map((row) => row.permission_code).sort());
+      expect(session?.permissions).not.toContain('W-01-04');
       builtSession = session;
     });
 
