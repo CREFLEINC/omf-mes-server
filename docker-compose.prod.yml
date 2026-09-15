@@ -8,6 +8,7 @@
 #
 # 실행:  ./deploy.sh                 (pull · migrate · 반대쪽 기동 · 전환 · 이전 쪽 중지)
 # 중지:  docker compose -f docker-compose.prod.yml --env-file .env.prod down
+#        ⛔ `down -v` 는 이름 있는 볼륨(pgdata · attachments)까지 지운다 — DB 와 첨부 파일이 사라진다.
 #
 # ⛔ `up -d` 를 맨손으로 치지 않는다 — api-blue·api-green 이 둘 다 뜨고, 켜진 쪽이 새 이미지로
 #    재생성되며 끊긴다. 배포·재기동은 deploy.sh 로 한다.
@@ -43,6 +44,10 @@ x-logging: &logging
     max-size: '20m'
     max-file: '5'
 
+# 첨부 파일(창고 도면·공지 첨부·고장 사진) 저장 경로. 환경변수와 볼륨 마운트가 어긋나지 않게
+# 한 앵커로 묶는다. Dockerfile 이 이 경로를 node 소유로 만들어 둔다.
+x-attachment-root: &attachment-root /var/lib/omf-mes/attachments
+
 # api-blue·api-green 이 함께 쓰는 정의.
 x-api: &api
   image: *api-image
@@ -62,6 +67,14 @@ x-api: &api
     # 비워 두면 종전대로 꺼짐이다 — 목록 없이 여는 것은 위험하므로 기본을 바꾸지 않는다.
     CORS_ORIGINS: ${CORS_ORIGINS:-}
     TZ: UTC
+    # 상수다 — .env.prod 로 빼지 않는다. 빠지면 첨부 올리기·내려받기가 503 이다.
+    ATTACHMENT_STORAGE_ROOT: *attachment-root
+  # 두 쪽이 «같은» 볼륨을 건다 — 전환 뒤에도 올린 파일을 그대로 내려받는다.
+  # 파일은 uuid 키에 새 파일로만 쓰고 DB 행은 쓴 뒤 커밋되므로 함께 떠 있어도 안전하다.
+  volumes:
+    - type: volume
+      source: attachments
+      target: *attachment-root
   # migrate 는 기다리지 않는다 — deploy.sh 가 migrate 를 먼저 끝낸 뒤 한쪽씩 띄운다.
   depends_on:
     postgres:
@@ -152,3 +165,5 @@ services:
 
 volumes:
   pgdata:
+  # 첨부 파일. pg_dump 에 들지 않는다 — 백업은 deploy/RELEASE.md 3번의 볼륨 백업을 함께 뜬다.
+  attachments:

@@ -134,6 +134,13 @@ self-hosted runner 가 사내 서버에 있습니다. PR 검증(`ci.yml`)은 Git
 `x-api.environment`(api-blue·api-green 공통)에 적힌 변수만 컨테이너가 봅니다 — 빼면 `.env.prod` 에 아무리 적어도 CORS 가
 꺼진 채 뜨고, 증상은 브라우저 쪽 CORS 오류로만 나타납니다(#612). 새 환경변수를 늘릴 때도 같습니다.
 
+**7. `x-api` 의 `attachments` 볼륨·`ATTACHMENT_STORAGE_ROOT` 를 빼지 마세요**
+
+첨부 파일은 이름 있는 볼륨 `omf-mes_attachments` 에 있고, 두 api 가 같은 경로(`x-attachment-root` 앵커)에 겁니다.
+환경변수가 빠지면 첨부 업로드·내려받기가 503, 한쪽 api 에서 볼륨이 빠지면 그쪽이 켜졌을 때 올린 파일이 404 가 됩니다.
+볼륨 소유권은 이미지가 만든 디렉터리(`Dockerfile` 의 `install -d -o node`)에서 **처음 한 번** 복사됩니다 — 이미지의
+node uid(1000)가 바뀌면 기존 볼륨과 어긋납니다.
+
 ## 서버
 
 | | 개발 서버 (한국) | 하노이 운영 서버 |
@@ -198,6 +205,7 @@ sudo chown -R github-runner:github-runner /opt/services/omf-mes-server
 - ⚠ **옛 코드가 새 스키마 위에서 수십 초 돈다**(새 쪽 기동~드레인). 컬럼 이름 변경·기본값 없는 `NOT NULL` 추가도 두 릴리스로 나눈다 — `deploy/RELEASE.md` 「마이그레이션 작성 규칙」.
 - ⚠ **proxy 정의(이미지·포트·마운트)를 바꾼 배포는 proxy 가 재생성되며 잠깐 끊긴다.** `omf-api.conf` 내용만 바꾼 것은 reload 로 들어가 끊기지 않는다.
 - `client_max_body_size 12m` 를 앱 업로드 상한(10MB) 아래로 줄이지 않는다 — nginx 기본은 1MB 다.
+- 첨부 파일은 두 쪽이 함께 거는 이름 있는 볼륨 `omf-mes_attachments` 에 있다 — 전환해도 올린 파일이 그대로다. `pg_dump` 에는 들지 않아 백업은 `deploy/RELEASE.md` 3번의 볼륨 백업을 함께 뜬다.
 - 로그는 `logs api-blue api-green proxy`. 앱이 보는 접속 IP 는 proxy 다(지금 코드는 IP 를 쓰지 않는다).
 
 **급할 때 이전 쪽으로 되돌리기** — 보통은 `./rollback.sh <이전 태그>` 로 충분하다(같은 방식으로 끊김 없이 다시 전환, 1분 안팎). 그것도 못 기다릴 때만, 멈춰 있는 이전 쪽을 켜서 넘긴다:

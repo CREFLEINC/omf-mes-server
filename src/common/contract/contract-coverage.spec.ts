@@ -53,4 +53,25 @@ describe('운영 이미지 불변식', () => {
     // 아니라 여기서 잡는다 — build 스테이지에만 있고 runtime 에 없던 것이 실제 상태였다.
     expect(runtime).toMatch(/^COPY contracts \.\/contracts$/m);
   });
+
+  it('runtime 스테이지가 첨부 저장 경로를 USER node 전에 node 소유로 만든다 — 빈 이름 있는 볼륨이 이 소유권을 복사해 간다', () => {
+    const dockerfile = readFileSync(join(SRC, '../Dockerfile'), 'utf8');
+    const runtime = dockerfile.slice(dockerfile.indexOf('FROM base AS runtime'));
+    const created = runtime.search(/^RUN install -d -o node -g node -m 0700 \/var\/lib\/omf-mes\/attachments$/m);
+
+    expect(created).toBeGreaterThan(-1);
+    expect(created).toBeLessThan(runtime.search(/^USER node$/m));
+  });
+
+  it('x-api 가 attachments 볼륨을 ATTACHMENT_STORAGE_ROOT 와 같은 경로에 건다 — api-blue·api-green 이 같은 볼륨을 본다', () => {
+    const compose = readFileSync(join(SRC, '../docker-compose.prod.yml'), 'utf8');
+    const api = compose.slice(compose.indexOf('x-api: &api'), compose.indexOf('\nservices:'));
+
+    expect(compose).toMatch(/^x-attachment-root: &attachment-root \/var\/lib\/omf-mes\/attachments$/m);
+    expect(api).toMatch(/^ {4}ATTACHMENT_STORAGE_ROOT: \*attachment-root$/m);
+    expect(api).toMatch(/^ {6}source: attachments\n {6}target: \*attachment-root$/m);
+    expect(compose.slice(compose.lastIndexOf('\nvolumes:'))).toMatch(/^ {2}attachments:$/m);
+    expect(compose).toMatch(/^ {2}api-blue:\n {4}<<: \*api$/m);
+    expect(compose).toMatch(/^ {2}api-green:\n {4}<<: \*api$/m);
+  });
 });

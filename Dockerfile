@@ -89,6 +89,9 @@ COPY prisma.config.ts ./
 # 계약 검증기가 부팅 때 읽는다. 빼면 「계약 파일이 없다」로 죽는다 —
 # 타입 생성(build 스테이지)과 달리 런타임에도 원본이 필요하다.
 COPY contracts ./contracts
+# 첨부 파일 저장 경로. compose 가 이 자리에 이름 있는 볼륨을 건다 — 빈 볼륨이 처음 붙을 때
+# Docker 가 이 디렉터리의 소유권(node)을 볼륨으로 복사해 가서, 서버에서 sudo chown 없이 쓸 수 있다.
+RUN install -d -o node -g node -m 0700 /var/lib/omf-mes/attachments
 
 # node 이미지에 기본 포함된 비루트 사용자로 실행한다
 USER node
