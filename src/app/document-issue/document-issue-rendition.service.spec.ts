@@ -4,23 +4,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentIssueRenditionService } from './document-issue-rendition.service';
 
 describe('DocumentIssueRenditionService', () => {
-  it('납품 라벨 PNG는 배분에 저장된 번호를 사용한다', async () => {
+  // ⭐ 종전에는 서버가 배분의 `delivery_label_no` 로 납품 라벨 PNG 를 그렸다. 주인이 출하
+  //    단위로 옮겨가며(SHIP-UNIT-01) 그 그리기를 걷었다 — POP 이 상세 값으로 그린다.
+  it('납품 라벨은 서버가 그리지 않는다 — 422다', async () => {
     const prisma = {
       document_issue_log: { findUnique: jest.fn()
-        .mockResolvedValueOnce({ document_type_code: 'DELIVERY_LABEL' })
-        .mockResolvedValueOnce({ target_type_code: 'SHIPMENT_LOT_ALLOCATION', target_id: 9n }) },
-      shipment_lot_allocation: { findUnique: jest.fn().mockResolvedValue({
-        delivery_label_no: 'DL-20260912-0012', allocated_qty: new Prisma.Decimal(3),
-        lot: { lot_no: 'LOT-9', item: { item_code: 'ITEM-9' } },
-        shipment_line: { shipment: { shipment_no: 'SH-9' } },
-      }) },
+        .mockResolvedValue({ document_type_code: 'DELIVERY_LABEL' }) },
     } as unknown as PrismaService;
-    const png = await new DocumentIssueRenditionService(prisma).rendition(7);
-    expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    expect(png.byteLength).toBeGreaterThan(10_000);
-    expect(prisma.shipment_lot_allocation.findUnique).toHaveBeenCalledWith(expect.objectContaining({
-      where: { shipment_lot_allocation_id: 9n },
-    }));
+    await expect(new DocumentIssueRenditionService(prisma).rendition(7)).rejects.toMatchObject({
+      status: 422,
+    });
   });
 
   const materialLotIssue = {

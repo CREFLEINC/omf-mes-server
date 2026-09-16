@@ -73,10 +73,10 @@ export async function loadDocumentIssueTargets(
         select: { inspection_result_id: true, inspection_result_no: true },
       }),
       ids('SHIPMENT_LOT_ALLOCATION').length === 0
-        ? Promise.resolve([] as Array<{ shipment_lot_allocation_id: bigint; delivery_label_no: string | null }>)
+        ? Promise.resolve([] as Array<{ shipment_lot_allocation_id: bigint }>)
         : tx.shipment_lot_allocation.findMany({
         where: { shipment_lot_allocation_id: { in: ids('SHIPMENT_LOT_ALLOCATION') } },
-        select: { shipment_lot_allocation_id: true, delivery_label_no: true },
+        select: { shipment_lot_allocation_id: true },
       }),
       // ⛔ 배분 쪽과 같은 가드다 — 대상이 없으면 조회 자체를 하지 않는다. 유형별 호출 수를
       //    세는 시험이 있어서이기도 하고, 빈 `IN ()` 를 보내지 않기 위해서다.
@@ -127,9 +127,11 @@ export async function loadDocumentIssueTargets(
   // ⛔ 배분 분기를 «남긴다» — 납품 라벨의 주인은 출하 단위로 옮겨갔지만(SHIP-UNIT-01),
   //    그전에 발행된 이력이 이 대상을 가리키고 그 표시명을 여기서 푼다. 지우면 과거 이력이
   //    「TYPE #id」 로 떨어진다. 빠지는 것은 발행 «허용 쌍»(쓰기)에서뿐이다.
+  // ⚠ 표시명이 「출하 LOT 배분 #id」 로 고정된다 — 종전에는 배분의 `delivery_label_no` 를
+  //    먼저 썼는데 그 칸을 폐기한다(P-27). 그 이름을 갖던 기록은 0행이라 잃는 것이 없다.
   allocations.forEach((row) => add(
     'SHIPMENT_LOT_ALLOCATION', row.shipment_lot_allocation_id,
-    row.delivery_label_no ?? `출하 LOT 배분 #${row.shipment_lot_allocation_id}`, 'P-04-02',
+    `출하 LOT 배분 #${row.shipment_lot_allocation_id}`, 'P-04-02',
   ));
   // ⭐ 표시명이 곧 납품 라벨 번호다 — 별도 번호를 두지 않는다.
   shippingUnits.forEach((row) => add(

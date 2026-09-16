@@ -13,7 +13,7 @@ import {
 } from "./document-issue-create-rules";
 import { lockDocumentIssueGoodsIssueTargets } from "./document-issue-goods-issue-lock";
 import { lockDocumentIssueInspectionTargets } from "./document-issue-inspection-lock";
-import { assignDeliveryLabelNumbers, lockDeliveryAllocations } from './document-issue-delivery';
+import { lockDeliveryAllocations } from './document-issue-delivery';
 import { loadShippingUnitFacts } from './document-issue-shipping-unit';
 import { loadDocumentIssueReasons } from "./document-issue-query.service";
 import {
@@ -83,7 +83,6 @@ export class DocumentIssueWriteService {
     const workerId = await resolveWorker(tx, context.workerNo);
     const reason = await resolveReason(tx, input, qualified);
     const now = new Date();
-    await assignDeliveryLabelNumbers(tx, facts.values(), now);
     const created = await tx.document_issue_log.createManyAndReturn({
       data: qualified.map(({ target, lotId, sequence }) => ({
         document_type_code: input.documentTypeCode,

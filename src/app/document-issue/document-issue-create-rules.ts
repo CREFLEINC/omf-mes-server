@@ -93,7 +93,6 @@ export type DocumentIssueTargetFacts =
       lotId: bigint;
       plantId: bigint;
       oqcPassed: boolean;
-      deliveryLabelNo: string | null;
     }
   | {
       /** 납품 라벨의 새 주인(SHIP-UNIT-01). ⛔ `lotId` 가 «없다» — 한 단위에 LOT 이 여럿이다. */

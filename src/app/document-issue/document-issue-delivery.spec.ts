@@ -1,33 +1,14 @@
 import { Prisma } from '@prisma/client';
 
-import { assignDeliveryLabelNumbers, lockDeliveryAllocations } from './document-issue-delivery';
-import { DocumentIssueTargetFacts } from './document-issue-create-rules';
+import { lockDeliveryAllocations } from './document-issue-delivery';
 
-describe('delivery label allocation ownership and numbering', () => {
-  it('first issue persists the Seoul business-day number and reissue leaves it unchanged', async () => {
-    const updates: object[] = [];
-    const raw = jest.fn()
-      .mockResolvedValueOnce([{ numbering_rule_id: 4n, pattern: 'DL-{YYYYMMDD}-{SEQ4}', is_active: true }])
-      .mockResolvedValueOnce([{ last_value: 12n }]);
-    const tx = {
-      $queryRaw: raw,
-      shipment_lot_allocation: { update: jest.fn().mockImplementation(async (args: object) => { updates.push(args); }) },
-    } as unknown as Prisma.TransactionClient;
-    const first: DocumentIssueTargetFacts = { targetTypeCode: 'SHIPMENT_LOT_ALLOCATION',
-      targetId: 9n, lotId: 3n, plantId: 2n, oqcPassed: true, deliveryLabelNo: null };
-    // 2026-09-11 15:01 UTC is 2026-09-12 in Korea.
-    await assignDeliveryLabelNumbers(tx, [first], new Date('2026-09-11T15:01:00Z'));
-    expect(updates).toEqual([{ where: { shipment_lot_allocation_id: 9n },
-      data: { delivery_label_no: 'DL-20260912-0012' } }]);
-    await assignDeliveryLabelNumbers(tx, [first], new Date('2026-09-13T12:00:00Z'));
-    expect(raw).toHaveBeenCalledTimes(2);
-    expect(updates).toHaveLength(1);
-  });
-
+// ⭐ 배분은 더 이상 납품 라벨의 대상이 아니다(SHIP-UNIT-01) — 이 잠금은 기존 이력을 되읽는
+//    경로만 받친다. 배분에 번호를 매기던 `assignDeliveryLabelNumbers` 는 함께 걷었다(P-27).
+describe('delivery label allocation ownership', () => {
   it('foreign warehouse plant is denied even when OQC is not required', async () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ shipment_lot_allocation_id: 9n, lot_id: 3n,
-        shipment_request_line_id: 7n, plant_id: 4n, delivery_label_no: null }]),
+        shipment_request_line_id: 7n, plant_id: 4n }]),
       terminal: { findUnique: jest.fn().mockResolvedValue({ plant_id: 2n,
         terminal_type_code: 'POP', is_active: true }) },
       worker: { findUnique: jest.fn().mockResolvedValue({ plant_id: 2n, is_active: true }) },
