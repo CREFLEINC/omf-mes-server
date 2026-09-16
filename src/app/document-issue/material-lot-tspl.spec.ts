@@ -53,10 +53,19 @@ describe('materialLotTspl', () => {
     );
   });
 
-  it('제어문자·비ASCII·따옴표·역슬래시가 든 값은 명령을 만들지 않고 422 다', () => {
-    for (const lotNo of ['LOT-1"\r\nPRINT 2,2', 'LOT-1\\X', 'LOT-1\u0000', 'LOT-\u01AF']) {
+  it('⛔ 명령을 깨는 값은 명령을 만들지 않고 422 다 — 따옴표·역슬래시·제어문자', () => {
+    for (const lotNo of ['LOT-1"\r\nPRINT 2,2', 'LOT-1\\X', 'LOT-1\u0000']) {
       expect(() => materialLotTspl({ ...values, lotNo })).toThrow(expect.objectContaining({ status: 422 }));
     }
     expect(() => materialLotTspl({ ...values, partNo: 'A"B' })).toThrow(expect.objectContaining({ status: 422 }));
+  });
+
+  // ERP 품목 코드에 전각 괄호가 섞인 값이 실제로 있다(`FS-536（SD）`). ASCII 를 강제하던 때는
+  // 그 품목의 라벨을 아예 못 찍었다 — 모양이 깨지는 것과 명령이 깨지는 것은 다르다.
+  it('⭐ ASCII 밖 값도 명령을 만든다 — 바이트를 뭉개지 않는다', () => {
+    const partNo = 'FS-536（SD）';
+    const bytes = materialLotTspl({ ...values, partNo });
+
+    expect(bytes.includes(Buffer.from(partNo, 'utf8'))).toBe(true);
   });
 });

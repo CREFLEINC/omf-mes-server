@@ -1,4 +1,4 @@
-import { clip, dots, fit, printable } from './label-layout';
+import { assertTsplSafe, clip, dots, fit } from './label-layout';
 
 /**
  * 기대치를 «숫자로» 박는다 — 어림 공식(`charWidth`)을 여기서 다시 계산하면 공식이 바뀔 때
@@ -41,18 +41,28 @@ describe('label-layout 공통 도구', () => {
     });
   });
 
-  describe('printable', () => {
+  describe('assertTsplSafe', () => {
     it('ASCII 를 통과시킨다', () => {
-      expect(() => printable('Hello, World! #123-ABC')).not.toThrow();
+      expect(() => assertTsplSafe('Hello, World! #123-ABC')).not.toThrow();
+    });
+
+    // 프린터가 못 찍는 것과 명령이 깨지는 것은 다르다 — 앞은 «모양», 뒤는 «다른 것이 찍힘» 이다.
+    it.each([
+      ['한글', '자재 기본 위치'],
+      ['베트남어 성조 문자', 'Kho Hàng Xưởng'],
+      ['전각 괄호(실제 ERP 품목 코드)', 'FS-536（SD）'],
+    ])('%s 도 통과시킨다 — 깨지는 것은 모양뿐이다', (_label, value) => {
+      expect(() => assertTsplSafe(value)).not.toThrow();
     });
 
     it.each([
-      ['한글', '위치명'],
-      ['베트남어 성조 문자', 'Xưởng'],
       ['따옴표', 'A"B'],
       ['역슬래시', 'A\\B'],
-    ])('%s 는 422 로 거절한다', (_label, value) => {
-      expect(() => printable(value)).toThrow(expect.objectContaining({ status: 422 }));
+      ['줄바꿈', 'A\nB'],
+      ['캐리지 리턴', 'A\rB'],
+      ['NUL', 'A\u0000B'],
+    ])('⛔ %s 는 422 다 — TSPL 명령이 깨진다', (_label, value) => {
+      expect(() => assertTsplSafe(value)).toThrow(expect.objectContaining({ status: 422 }));
     });
   });
 });
