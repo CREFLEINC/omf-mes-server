@@ -16,7 +16,7 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const GENERATED_ON = "2026-09-12";
+const GENERATED_ON = "2026-09-17";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -28,9 +28,12 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // 해시를 적어 두면 아래 assertSourceMatchesServerCommit 의 `git rev-parse <sha>:src` 가
 // 새 클론에서 죽는다 — 지금 로컬에서 돌아가는 것은 객체가 아직 남아 있어서일 뿐이다.
 // 그래서 전달본은 «병합된 뒤» 그 병합 커밋을 적어 다시 뽑는다.
+// ⚠ **지금 적힌 것은 «브랜치» 커밋이다**(SHIP-UNIT-01 `final-routine/ship-unit-01-server`).
+// 위 경고대로 squash 병합이면 이 해시가 사라지므로, **병합 뒤 그 병합 커밋으로 다시 뽑는다.**
+// 클라이언트가 `gen:api` 를 지금 돌려야 해서 통합 결정으로 먼저 낸 임시 기준이다.
 const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "af53be7f90c21e55e54d19da7d0bf4e20eb00031";
-const GENERATED_VERSION = "0.1.3-next-server.20260912";
+const SERVER_COMMIT = "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d";
+const GENERATED_VERSION = "0.1.3-next-server.20260917";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -775,17 +778,24 @@ function build() {
     duplicateBindings.length === 0,
     `두 컨트롤러가 같은 계약을 주장합니다: ${duplicateBindings.join(", ")}`,
   );
+  // ⚠ 이 수치는 **제 변경 전부터 실제와 1 어긋나 있었다** — 사본을 마지막으로 뽑은 뒤
+  //    FR-005 이행 공장 지정 PUT 1건이 들어왔는데 여기만 487 로 남았다(실측: 선반영 직전이
+  //    이미 488). SHIP-UNIT-01 출하 단위 6건(장부 P-24)을 더해 **494** 다.
+  //    `contract-registry.spec.ts`·`contract-coverage.spec.ts` 의 같은 수치와 맞춘다.
   assert(
-    documentsByOperation.size === 487,
-    `계약 오퍼레이션 수가 487이 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 494,
+    `계약 오퍼레이션 수가 494가 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(
     (key) => !implementedBindings.has(key),
   );
+  // ⚠ 이 수치도 사본 상태를 따라 움직인다. 4 → **1** — 종전 넷 중 첨부 셋이 그 사이 구현됐고,
+  //    SHIP-UNIT-01 ③b 3경로는 이 전달본 시점에 «구현돼» 미구현이 아니다.
+  //    ⛔ 남은 하나는 `GET /app/dashboard-summary` 다(집계 대상 도메인 미완).
   assert(
-    missingOperations.length === 4,
-    `미구현 오퍼레이션 수가 4가 아닙니다: ${missingOperations.length}`,
+    missingOperations.length === 1,
+    `미구현 오퍼레이션 수가 1이 아닙니다: ${missingOperations.length}`,
   );
   assert(
     missingOperations.every((key) => EXCLUDED_OPERATIONS.has(key)),

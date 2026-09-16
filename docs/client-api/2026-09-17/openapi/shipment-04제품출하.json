@@ -1,0 +1,5511 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "omf-mes 04 제품출하 도메인 API (초안)",
+    "version": "0.1.3-next-server.20260917",
+    "description": "04 제품출하 도메인 API 계약. 출하 3층(고객사 지시서 수신본 - MES 출하작업지시 - 실물 출하)과 출하 LOT 배분, 부적합, 처분 결정 조회를 덮는다. 출하지시서는 연계 수신이 기본이라 등록 경로를 두지 않고, 상위 지시가 없는 단독 편성이 상시 구조다. 출하는 2단 확정이다 — 출하 처리가 «재고 차감»과 미확정 출하 생성을 한 트랜잭션으로 하고, 확정이 연계 송신 적재를 건다. 확정 취소 경로는 없다. 이 계약은 남의 계약을 많이 쓴다 — 검사는 품질, 입고·출고·재고·취급 단위는 자재창고, 실적은 생산실행, 승인과 출력물은 공통, 품목과 연계는 기준정보가 소유한다. ⛔ 오프라인 대상 오퍼레이션이 없다 — 이 계약의 테이블에 쓰는 현장 화면 하나가 판정값을 캐시할 수 없어 오프라인 진입을 차단하기 때문이다.",
+    "x-internal-note": "설계·도출 근거는 uiux/2026-08-13-API스펙-04제품출하/ 의 00~03 단계 문서다. 대상 화면 16 — 도메인 배지 18 에서 출력물 계약이 덮는 P-04-02·P-04-04 를 뺀 것이다. 리소스 5 · 라인 4 · 읽기만 1 · 액션 근거 147건(화면 액션 표 · 본문 도출 0). 미해소를 계약이 드러낸다 — ⛔⛔ 처분 결정을 만드는 화면이 인벤토리 116 전체에 0건이라 세 화면(W-04-10·W-04-11·P-04-03)의 진입 목록이 빈다 «(정합주: 2026-09-01 — ⭐ 2026-08-13 DR-008 확정 3-A 로 처분 판정 화면 W-03-10 이 신설돼 해소됐다)». ⛔ 01 계약에 POST /inventory/reservations 가 없어 M-04-01 제품 피킹이 걸린다. omf-mes#117(재구성 이벤트 기록 테이블 부재)로 M-04-03 되돌리기 경로를 두지 않았다. omf-mes#118 로 선별 실행 경로를 두지 않았다."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "온프레미스 설치형"
+    }
+  ],
+  "tags": [
+    {
+      "name": "shipment",
+      "description": "출하 — 지시서 · 작업지시 · 출하 · LOT 배분"
+    },
+    {
+      "name": "quality",
+      "description": "부적합과 처분 결정 — 판정은 03 품질 소관이다"
+    }
+  ],
+  "paths": {
+    "/logistics/sales-orders": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하지시서 목록",
+        "description": "고객사 지시서 수신본. 연계가 채운다 — 등록 경로가 없다. 근거: W-04-01 §5-6",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "값"
+            },
+            "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02)."
+          },
+          {
+            "name": "orderDateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            }
+          },
+          {
+            "name": "orderDateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            }
+          },
+          {
+            "name": "unassignedOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "아직 편성되지 않은 것만 — 「편성 여부」 필터"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "값"
+            },
+            "description": "지시서 번호 검색"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SalesOrder"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "201",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      }
+    },
+    "/logistics/sales-orders/{salesOrderId}": {
+      "parameters": [
+        {
+          "name": "salesOrderId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하지시서 한 건",
+        "description": "라인을 함께 내린다. 근거: W-04-01 §3",
+        "responses": {
+          "200": {
+            "description": "상세",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesOrder"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "파일 업로드 경로를 두지 않았다 — 고객사마다 형식이 달라 요청 본문을 정할 수 없고 화면도 「비활성 + 사유」로 물러났다(W-04-01 §5-6 · 공유계약 G-9). 형식이 정해지면 그때 더한다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-lot-allocations": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 LOT 배분 목록",
+        "description": "P-04-01 이 납품라벨↔생산LOT 매칭을 판정받고, P-04-02 가 납품라벨 대상을 고른다. ⭐ 매칭 판정을 화면이 하지 않는다 — 서버가 배분을 보고 판정한다(P-04-01 §5-1 · 공유계약 C-6). 근거: P-04-01 · P-04-02 §5",
+        "parameters": [
+          {
+            "name": "shipmentId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "shipmentLineId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "lotId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "handlingUnitId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "unpackedOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "아직 포장에 담기지 않은 것만 — 배분 잔여가 남은 것"
+          },
+          {
+            "name": "oqcPassed",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "⭐ 출하검사 합격분만. ⚠ P-24 — 납품 라벨이 더 이상 배분을 대상으로 하지 않으므로 「납품라벨 대상 목록이 합격만 활성」이라는 종전 쓰임은 사라졌다. 남은 쓰임은 포장 화면의 합격 여부 표시다"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "스캔한 «상자 번호»(handlingUnitNo)로 배분을 찾는다. ⭐ P-26 — 전에는 납품라벨 번호를 겨눴는데, 납품 라벨의 주인이 배분에서 «출하 단위»로 옮겨가 배분에 그 번호가 없어졌다. ⛔ 정확 일치다 — 부분 일치로 넓히면 스캔값 하나가 여러 배분을 물어 다른 물건을 집는다. ⚠ 아직 포장되지 않은 배분(handlingUnitId 없음)은 어떤 스캔값에도 걸리지 않는다. 일치하는 배분이 없으면 «빈 목록»이고 404 를 내지 않는다(종전과 같다)"
+          },
+          {
+            "name": "lotQ",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "스캔한 생산 LOT 값. shipmentId(납품라벨 스캔으로 정해진 출하)와 함께 주면 서버가 「이 출하의 배분에 이 LOT 이 있는가」를 판정한다 — 화면이 목록을 받아 비교하지 않는다(P-04-01 §5-1 · 공유계약 C-6) ⭐ 이 shipmentId 는 첫 스캔(q) 응답의 ShipmentLotAllocation.shipmentId 에서 그대로 얻는다 — 화면이 출하를 다시 조회하지 않는다(omf-mes#330 A)."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ShipmentLotAllocation"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    },
+                    "match": {
+                      "type": "object",
+                      "description": "lotQ 를 준 요청에만 실린다. 서버의 매칭 판정 — 화면이 목록을 받아 비교하지 않는다(P-04-01 §5-1 · 공유계약 C-6)",
+                      "properties": {
+                        "matched": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "reasonCode": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "matched 가 거짓일 때의 사유 — LABEL_ITEM_MISMATCH(이 납품라벨은 다른 품목용이다) · LOT_NOT_ALLOCATED(이 출하에 배분되지 않은 LOT 이다). ⭐ 서버가 판정해 내리는 값이고 화면은 이 값으로 «문구»를 가른다 — 동작이 값에 걸리므로 설계가 닫는다(공유계약 G-31). ⛔ 공통코드 그룹이 아니다 — 고객이 늘리지 않는다(A-16 「가」 참). matched 가 참이면 null 이다.",
+                          "example": "LOT_NOT_ALLOCATED",
+                          "enum": [
+                            "LABEL_ITEM_MISMATCH",
+                            "LOT_NOT_ALLOCATED"
+                          ],
+                          "x-code-key": "CD-SHIPMENT-LOT-MATCH-FAIL-REASON"
+                        }
+                      },
+                      "required": [
+                        "matched"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "등록 경로를 두지 않았다 — shipment_lot_allocation.shipment_line_id 가 NOT NULL 이라 출하보다 먼저 생길 수 없고, 출하 처리가 한 트랜잭션으로 만든다(W-04-04 §4-B). 제품 피킹(M-04-01)은 배분을 만들지 않는다 — 2026-08-26 에 :pick 액션(POST /logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick)을 이 계약에 세웠고, 서버가 그 결과로 inventory.inventory_reservation 을 건다. 01 자재창고 계약의 「예약은 화면이 직접 쓰지 않는다」 규약을 그대로 지킨다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "201",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-lot-allocations/{shipmentLotAllocationId}": {
+      "parameters": [
+        {
+          "name": "shipmentLotAllocationId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "배분에 포장 단위 연결",
+        "description": "P-04-01 이 포장을 확정할 때 배분과 취급 단위를 잇는다. 취급 단위 자체는 01 자재창고 계약이 소유한다(POST /inventory/handling-units · :pack). 근거: P-04-01 §4-C",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentLotAllocationPacking"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "연결됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentLotAllocation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "If-Match 를 쓰지 않는다 — shipment_lot_allocation 에 version_no 가 없다(기록 전용). 같은 배분에 다른 포장이 이미 붙어 있으면 409 다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/stock-reinstatements": {
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "재고 재등록 확정",
+        "description": "판정이 끝난 반품품을 판매 가능 재고로 되돌린다. 반출·도착·보류 해제·Lot Status 전이를 한 트랜잭션으로 처리한다 — 이 화면의 「재등록 확정」은 한 번의 확정이고 중간 상태를 남기지 않는다(공유계약 B-8 규칙 1 · B-8-1). ⭐ 이 경로에서만 반영 목적의 Hold → 정상 전이가 허용된다 — 「Release 로 할 것인가」를 정하는 것은 W-03-02·W-04-03 이고 이 경로는 그 결정을 재고에 반영할 뿐이다(공유계약 B-13). ⛔ 창고 간 이동의 2단계 스캔(POST /logistics/stock-transfers → :arrive)을 쓰지 않는다 — 재등록은 이동 중 구간이 없는 한 번의 행위라 그 형태가 맞지 않는다. 근거: W-04-11 §0 · §5-3 · §5-6",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockReinstatementCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "재등록됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockReinstatementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockReinstatementConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "WorkerNo 계열을 넣지 않는다 — 관리웹 전용이고 서버가 계정 토큰에서 행위자를 푼다(공유계약 D-5 · F-2) — POST /quality/lot-holds/{id}:release 와 같은 형태다. If-Match 헤더를 넣지 않는다 — 컬렉션 POST 라 헤더 토큰의 원천이 될 GET 이 없다(공유계약 B-1-1) — 토큰은 본문 lot.versionNo 로 싣는다(A-4-1). 201 에 ETag 를 두지 않는다 — 만들어진 이동 문서를 이 화면이 다시 고치지 않는다(W-04-11 §5-6 「되돌리기 ⛔ 두지 않는다」).",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "218",
+            "summary": "LOT 상태 이력 응답은 C17~C20 및 원천 유형 DISPOSITION_DECISION·STOCK_TRANSFER를 반환할 수 있지만 transitionCode 질의는 아직 C17~C20을 거부한다."
+          },
+          {
+            "designRecord": "221",
+            "summary": "긴급 직행과 재등록은 창고 관리 수준에 따라 위치 입력을 검증하며 409 응답에는 conflictCause가 항상 포함된다."
+          },
+          {
+            "designRecord": "222",
+            "summary": "재등록 진입 목록의 followUpPending·reinstatable 축이 아직 한 개의 완결된 대기열을 만들지 못한다."
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-requests": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하작업지시 목록",
+        "description": "W-04-02 출하 예정 목록. 기간이 필수다(공유계약 L-3). 근거: W-04-02 §5",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "shipToPartnerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            },
+            "description": "이 품목이 담긴 라인이 있는 작업지시만. ⭐ 긴급 직행 출하(W-04-05)가 고른 제품 LOT 의 품목으로 지시를 좁히는 축이다 — 이 축이 없으면 화면이 이번 쪽 안에서만 거를 수 있어 맞는 지시가 있는데도 안 보인다(공유계약 L-11). 근거: W-04-05 §5-7"
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
+            },
+            "description": "⛔ 이 축으로는 거를 수 없다 — 「칸 불필요」로 닫힌 칸이다(A-21 · 사용자 결정 2026-09-02). 진행은 shipmentProgressCode, 검사 대상 여부는 shippingInspectionRequired 가 받는다. 근거: omf-mes#402",
+            "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
+          },
+          {
+            "name": "shipmentProgressCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NOT_ALLOCATED",
+                "PARTIALLY_ALLOCATED",
+                "PICKING",
+                "PICKED",
+                "PARTIALLY_SHIPPED",
+                "SHIPPED"
+              ],
+              "example": "PICKING"
+            },
+            "description": "진행 축 필터 — W-04-02 §3 「상태」 드롭다운이 이 축이다. ⛔ statusCode 로는 거를 수 없다(그 칸은 「칸 불필요」로 닫혔다). ⭐ 서버가 라인 수량으로 판정한다 — 같은 리소스의 pickingCompleteOnly·shippableRemainderOnly 와 같은 방식이고 저장 칸이 없다(공유계약 L-2 · A-17). 값 뜻은 응답 ShipmentRequest.shipmentProgressCode 의 설명이 정본이다. 근거: W-04-02 §5-5 · omf-mes#402",
+            "x-code-key": "CD-SHIPMENT-PROGRESS"
+          },
+          {
+            "name": "timeSlotCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "MORNING"
+            },
+            "description": "출하 희망 시간대 필터 — 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). W-04-02 시간대 필터 축. 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41) 값 = `MORNING`·`AFTERNOON`·`NIGHT`. 값 목록은 `GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31).",
+            "x-code-key": "CD-SHIPMENT-TIME-SLOT"
+          },
+          {
+            "name": "shippingInspectionRequired",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "검사 상태 필터"
+          },
+          {
+            "name": "shipDateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            },
+            "description": "필수 — 공유계약 L-3",
+            "required": true
+          },
+          {
+            "name": "shipDateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            }
+          },
+          {
+            "name": "pickingCompleteOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "라인 전체가 pickedQty = allocatedQty 인 작업지시만. ⭐ W-04-04 출하 처리의 진입 필터다 — 출하는 이 화면이 만들므로 /logistics/shipments 로는 진입할 수 없다. 근거: W-04-04 §3·§5-4"
+          },
+          {
+            "name": "shippableRemainderOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "출하 잔여가 남은 작업지시만 — 라인 중 shippedQty < allocatedQty 인 것이 하나라도 있는 건. ⭐ 부분 출하 후 잔여도 다시 잡힌다(W-04-04 §5-7·§8-6)"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "requestedShipDate",
+              "enum": [
+                "requestedShipDate",
+                "customerId",
+                "shipmentRequestNo"
+              ]
+            },
+            "description": "출하일·고객·작업지시번호 셋만. 근거: 공유계약 L-4\n\n서버 구현 기준 허용 키는 requestedShipDate·customerId·shipmentRequestNo다(통보 201)."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ShipmentRequest"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "201",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하작업지시 편성",
+        "description": "W-04-01 「편성」과 「단독 생성」을 한 경로로 받는다. ⭐ salesOrderId 를 비우면 단독 생성이다 — 무지시 standalone 이 예외가 아니라 상시 구조다. 배정 수량은 요청 수량을 넘을 수 없다. 근거: W-04-01 §5-1·§5-2",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentRequestCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "편성됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-requests/summary": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하작업지시 요약",
+        "description": "W-04-02 요약 구획(작업지시 건수·요청/배정/출하 합계·미배정·검사 대기·피킹 미완) — 필터 전체 기준. 목록(GET /logistics/shipment-requests)과 같은 필터를 쓰되 page/size/sort 는 없다. ⛔ 화면이 페이지를 모아 더하지 않는다 — 필터 전체와 다른 수가 나온다(공유계약 L-2). 근거: W-04-02 §4-B · omf-mes#232 ⭐ 질의 축은 짝 목록(GET /logistics/shipment-requests)과 같다 — page·size·sort 만 뺀다(공유계약 L-1-1 ⑶).",
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "shipToPartnerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
+            },
+            "description": "⛔ 이 축으로는 거를 수 없다 — 「칸 불필요」로 닫힌 칸이다(A-21 · 사용자 결정 2026-09-02). 진행은 shipmentProgressCode, 검사 대상 여부는 shippingInspectionRequired 가 받는다. 근거: omf-mes#402",
+            "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02)."
+          },
+          {
+            "name": "shipmentProgressCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NOT_ALLOCATED",
+                "PARTIALLY_ALLOCATED",
+                "PICKING",
+                "PICKED",
+                "PARTIALLY_SHIPPED",
+                "SHIPPED"
+              ],
+              "example": "PICKING"
+            },
+            "description": "진행 축 필터 — W-04-02 §3 「상태」 드롭다운이 이 축이다. ⛔ statusCode 로는 거를 수 없다(그 칸은 「칸 불필요」로 닫혔다). ⭐ 서버가 라인 수량으로 판정한다 — 같은 리소스의 pickingCompleteOnly·shippableRemainderOnly 와 같은 방식이고 저장 칸이 없다(공유계약 L-2 · A-17). 값 뜻은 응답 ShipmentRequest.shipmentProgressCode 의 설명이 정본이다. 근거: W-04-02 §5-5 · omf-mes#402",
+            "x-code-key": "CD-SHIPMENT-PROGRESS"
+          },
+          {
+            "name": "timeSlotCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "MORNING"
+            },
+            "description": "출하 희망 시간대 필터 — 목록(GET /logistics/shipment-requests)과 같은 축. 공통코드 그룹 `SHIPMENT_TIME_SLOT`(`MORNING`·`AFTERNOON`·`NIGHT`). 근거: W-04-02 §5-2, 2026-08-31 결정(omf-mes-server#41) 값 = `MORNING`·`AFTERNOON`·`NIGHT`. 값 목록은 `GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다. ⭐ 고객이 늘린다 — 위 값은 초기 시드다(공유계약 G-31).",
+            "x-code-key": "CD-SHIPMENT-TIME-SLOT"
+          },
+          {
+            "name": "shippingInspectionRequired",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "검사 상태 필터"
+          },
+          {
+            "name": "shipDateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            },
+            "description": "필수 — 공유계약 L-3. 목록과 같은 기준을 쓴다",
+            "required": true
+          },
+          {
+            "name": "shipDateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            }
+          },
+          {
+            "name": "pickingCompleteOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "라인 전체가 pickedQty = allocatedQty 인 작업지시만. ⭐ W-04-04 출하 처리의 진입 필터다 — 출하는 이 화면이 만들므로 /logistics/shipments 로는 진입할 수 없다. 근거: W-04-04 §3·§5-4"
+          },
+          {
+            "name": "shippableRemainderOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "출하 잔여가 남은 작업지시만 — 라인 중 shippedQty < allocatedQty 인 것이 하나라도 있는 건. ⭐ 부분 출하 후 잔여도 다시 잡힌다(W-04-04 §5-7·§8-6)"
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            },
+            "description": "이 품목이 담긴 라인이 있는 작업지시만. ⭐ 긴급 직행 출하(W-04-05)가 고른 제품 LOT 의 품목으로 지시를 좁히는 축이다 — 이 축이 없으면 화면이 이번 쪽 안에서만 거를 수 있어 맞는 지시가 있는데도 안 보인다(공유계약 L-11). 근거: W-04-05 §5-7"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "요약",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentRequestSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "201",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-requests/{shipmentRequestId}": {
+      "parameters": [
+        {
+          "name": "shipmentRequestId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하작업지시 한 건",
+        "description": "라인을 함께 내린다",
+        "responses": {
+          "200": {
+            "description": "상세",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentRequest"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "출하작업지시 version_no 낙관적 잠금 토큰"
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "편성 취소 경로를 두지 않았다 — 화면이 「⛔ 두지 않는다 — 출하작업지시 취소는 범위 밖」이라 적었다(W-04-01 §5-7).",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하작업지시 이행 공장 지정",
+        "description": "기존 미배정 요청의 이행 공장을 지정한다. 피킹 이력이 있으면 바꾸지 않으며, 이미 연결된 출하가 있으면 모든 출하 창고가 대상 공장에 속해야 한다.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentRequestUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "공장 지정됨",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한 없음",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "피킹 또는 최신 판 충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipment-requests/{shipmentRequestId}/lines/{shipmentRequestLineId}:pick": {
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "제품 LOT 피킹 확정",
+        "description": "현장이 집은 제품 LOT 과 수량을 이 라인에 기록한다. ⭐ 화면이 예약을 직접 쓰지 않는다 — 서버가 이 피킹의 결과로 inventory_reservation 을 걸고 푼다(01 자재창고 계약 · M-01-08 §5-5 와 같은 규약). 자재 피킹의 :pick 과 대칭이다. ⛔ 오프라인 대상이 아니다 — Release 판정값을 캐시할 수 없어 이 화면은 온라인에서만 돈다(공유계약 C-6 · M-04-01 §5-6). 권장 외 LOT 을 집어도 막지 않는다 — 경고 후 통과이고 사유는 남기지 않는다(M-04-01 §5-5). 근거: M-04-01 §5-7",
+        "parameters": [
+          {
+            "name": "shipmentRequestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "shipmentRequestLineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentLinePick"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "피킹됨 — 갱신된 라인",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentRequestLine"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "단말·권한 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "라인이 없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌 — LOT 이 Hold 이거나 가용이 모자라거나 배정을 넘는다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "서버가 막는 것 셋 — ① lot_hold 가 걸린 LOT ② 가용 수량 초과 ③ allocatedQty − pickedQty 초과. 잔여 유효기간 하한(minimumRemainingShelfLifeDays)도 서버가 판정한다. customerLotRequirement 는 자유 텍스트라 서버도 화면도 해석하지 않는다(M-04-01 §5-3 · 공유계약 A-12 읽는 쪽 판).",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipments": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 목록",
+        "description": "W-04-02·W-04-04·W-04-12 가 함께 쓴다. 기간 필수(L-3)",
+        "parameters": [
+          {
+            "name": "shipmentRequestId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "값"
+            },
+            "x-code-key": "CD-SHIPMENT-STATUS",
+            "description": "출하의 진행 상태 — 미확정(UNCONFIRMED) · 확정(CONFIRMED) · 취소(CANCELLED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 확정이 PGI 송신을 부르고 취소가 그것을 되돌린다(W-04-04 §5-1 · W-04-12 §5-2). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "pickedOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "피킹이 끝난 건만"
+          },
+          {
+            "name": "hasUnassignedPackedBox",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "⭐ 선행 구현(P-24) — 포장이 끝났는데 아직 어느 출하 단위에도 들어가지 않은 상자가 하나라도 있는 출하만. P-04-05 의 출하 선택 목록이 「구성할 것이 남은 출하」를 이 축으로 좁힌다. ⛔ false 는 절을 걸지 않는다(unconfirmedOnly 와 같은 관례)"
+          },
+          {
+            "name": "unconfirmedOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "example": true
+            },
+            "description": "미확정만 — W-04-12 기본"
+          },
+          {
+            "name": "shipDateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            },
+            "description": "필수\n\n서버 구현 기준: shippedAt을 출하 창고가 속한 공장의 로컬 날짜로 비교한다(통보 219).",
+            "required": true
+          },
+          {
+            "name": "shipDateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-08-13"
+            },
+            "description": "서버 구현 기준: 끝 날짜를 포함하며 다음 날 공장 자정 미만으로 비교한다(통보 219)."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "SH-2026-0813-0031"
+            },
+            "description": "출하 번호 검색. ⛔ 범위는 shipment_no 하나다 — 고객은 customerId 를, LOT 은 lotId 를 쓴다(omf-mes#170 과 같은 처리). 근거: W-04-06 §3"
+          },
+          {
+            "name": "lotId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            },
+            "description": "이 제품 LOT 이 배분된 출하만. ⭐ 반품에서 라벨만 남았을 때 원 출하를 찾는 경로다(W-04-06 §5-3) — 조인은 서버 몫이다"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "shippedAt",
+              "enum": [
+                "shippedAt",
+                "shipmentNo"
+              ]
+            },
+            "description": "경과일 긴 순이 기본이다. 근거: W-04-12 §5-7\n\n서버 구현 기준 허용 키는 shippedAt·shipmentNo다(통보 219)."
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Shipment"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "219",
+            "summary": "shipDateFrom은 필수이며 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다."
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 처리",
+        "description": "출하·라인·LOT 배분을 한 트랜잭션으로 만든다(공유계약 B-8). ⛔ 확정하지 않는다 — 미확정 출하까지이고 확정은 :confirm 이다(2026-08-07 출하 2단 확정). 긴급 직행이면 expedited 를 참으로 보내고 사유가 필수다(W-04-05). 근거: W-04-04 §5 · W-04-05 §5-5",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "출하됨 — 미확정",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "재고 차감(goods_issue)은 01 자재창고 계약이, ERP 송신 적재는 06 연계가 소유한다 — 2026-08-07 출하 2단 확정으로 «ERP 송신 적재만» W-04-12 확정 시점으로 갔고 재고 차감은 이 시점에 남았다(W-04-04 §5-1 도식). shipment_line.goods_issue_line_id 가 nullable 인 것은 1차 판정(출고 전표를 만든다)의 잔재다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "217",
+            "summary": "출하가 만든 GoodsIssue 응답은 sourceDocumentTypeCode=SHIPMENT를 반환할 수 있다."
+          },
+          {
+            "designRecord": "221",
+            "summary": "긴급 직행과 재등록은 창고 관리 수준에 따라 위치 입력을 검증하며 409 응답에는 conflictCause가 항상 포함된다."
+          }
+        ]
+      }
+    },
+    "/logistics/shipments/{shipmentId}": {
+      "parameters": [
+        {
+          "name": "shipmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 한 건",
+        "description": "라인과 LOT 배분을 함께 내린다 — genealogy 종결점이다",
+        "responses": {
+          "200": {
+            "description": "상세",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다."
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipments/{shipmentId}:cancel": {
+      "parameters": [
+        {
+          "name": "shipmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 취소 실행",
+        "description": "승인 완료 후 실행한다. ⭐ 승인만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이 확정됐으면 409 다. 근거: W-04-12 §5-8",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentCancel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "취소됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipments/{shipmentId}:confirm": {
+      "parameters": [
+        {
+          "name": "shipmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 확정",
+        "description": "미확정 → 확정. ⭐ 이 시점에 ERP 송신 적재가 걸린다(2026-08-07 출하 2단 확정) — 재고는 앞 단계(출하 처리)에서 이미 차감됐다. 취소 결재가 진행 중이면 409 CANCEL_IN_PROGRESS 다(공유계약 J-7). ⛔ 확정 취소 경로가 없다 — 되돌릴 수 없다. 근거: W-04-12 §5-3·§5-8",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "확정됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "partial",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d",
+          "limitation": "연동 메시지는 아웃박스 적재까지만 수행한다."
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipments/{shipmentId}:request-cancel": {
+      "parameters": [
+        {
+          "name": "shipmentId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 취소 요청",
+        "description": "미확정 구간에서만 된다. 사유가 필수다. 승인은 공통 계약이 소유한다. 01 자재창고가 쓰는 :request-cancel 과 같은 형태다. 근거: W-04-12 §5-8",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "상신됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shipment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/quality/disposition-candidates": {
+      "get": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "처분 판정 대상 목록",
+        "description": "처분 판정을 기다리는 대상 목록 — `W-04-07` 의 진입 목록이다. ⭐ **부적합 유무를 가리지 않고** 낸다: 아직 부적합을 만들지 않은 대상은 nonconformanceId 가 null 이고, 만든 것은 그 건의 상태(NOT_REQUESTED·PENDING_DECISION·DECIDED)를 함께 싣는다 — 화면 목업의 배지 넷이 이 한 목록에서 나온다. ⭐ 원천 둘을 한 목록으로 합쳐 낸다 — 반품 입고(RETURN)와 OQC 불합격(PRODUCT). 화면이 두 질의를 합치지 않는다(공유계약 L-2). ⛔ 화면이 응답을 걸러 「아직 안 만든 것」을 고르지 않는다 — 목록이 페이지 단위라 성립하지 않는다(형제 오퍼레이션 GET /quality/disposition-decisions 의 같은 경고). 그 축은 withoutNonconformanceOnly 가 서버에서 판정한다. 근거: W-04-07 §3·§5-7 · REQ-PR-0025 「판정은 불량창고 입고 후」 · 프로세스 05 S11",
+        "parameters": [
+          {
+            "name": "sourceCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PRODUCT",
+                "RETURN"
+              ]
+            },
+            "description": "원천 — 제품(PRODUCT · OQC 불합격) · 반품(RETURN · 반품·클레임 입고). 비우면 둘 다.",
+            "x-code-key": "CD-NONCONFORMANCE-SOURCE"
+          },
+          {
+            "name": "withoutNonconformanceOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "참이면 **아직 부적합을 만들지 않은 대상만** 낸다. ⭐ 같은 대상을 두 번 등록하는 것을 막는 축이다 — 선례 GET /maintenance/inspections?withoutMaintenanceOrder=true(W-05-05 §7 「이미 지시가 있는 트리거는 목록에서 제외한다」). ⛔ 화면이 응답을 걸러 대신하지 않는다(페이지 단위)."
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "불량창고로 좁힐 때 쓴다 — 목록은 GET /mdm/warehouses?isDefect=true 가 준다(DR-012 3-C)."
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "lotId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "receivedFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "대상이 불량창고에 들어온 날. ⚠ 기간을 «필수»로 두지 않는다 — 이 목록은 「지금 판정을 기다리는 것」이라 재고성이고, 기간을 강제하면 오래된 미처리 건이 화면에서 사라진다. 양끝 포함(공유계약 L-3 — date 축)."
+          },
+          {
+            "name": "receivedTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "LOT 번호·입고번호·품목 검색"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "page"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DispositionCandidate"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "신설 2026-09-03(사용자 확정) — `W-04-07` §8-6 차단 미결의 해소다. §5-7 이 진입 목록을 GET /quality/nonconformances 로 매핑해 두었는데 그것은 «이미 만들어진» 부적합만 내므로, 부적합을 만드는 화면이 이 화면 하나로 확정된 뒤(요구서 §3-6) **아직 부적합이 없는 대상은 목록에 뜰 수 없었다** — 자기 자신을 입력으로 요구하는 순환이었다. ⭐ 축을 04 에 세운 이유 — 원천이 01(반품 입고)과 03(OQC 검사 결과)으로 갈려 있어 어느 한쪽 계약에 「부적합 미생성」 축을 달면 그 계약이 quality.nonconformance 를 알아야 한다. nonconformance 는 04 소유이므로(요구서 §1-1) 여기서 합치는 것이 소관에 맞다. ⚠ W-05-05 는 반대로 갔지만(원천별 축 + 화면이 합침) 거기는 원천이 «같은 도메인» 안이었다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "186",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      }
+    },
+    "/quality/nonconformances": {
+      "get": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "부적합 목록",
+        "description": "W-04-07 조회·필터. 상태는 의뢰 전 · 판정 대기 · 판정 완료 세 값이다 — ⭐ 세 값짜리 진행 단계라 열림/닫힘 두 값으로 판정하지 않는다. 근거: W-04-07 §5",
+        "parameters": [
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "값"
+            },
+            "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "x-code-key": "CD-NONCONFORMANCE-STATUS"
+          },
+          {
+            "name": "sourceCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "PRODUCT",
+              "enum": [
+                "PRODUCT",
+                "RETURN"
+              ]
+            },
+            "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). ⭐ 서버가 대상 LOT 의 입고 유형으로 «파생»하는 축이라 화면이 보내지 않는다(2026-09-01). W-03-10 §5-4 원천 필터가 쓴다. ⛔ DefectRecord 의 sourceCode(CD-DEFECT-RECORD-SOURCE)와 이름만 같고 축이 다르다 — 저쪽은 «어디서 발견했나», 여기는 «어디서 들어온 물건인가»다",
+            "x-code-key": "CD-NONCONFORMANCE-SOURCE"
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "lotId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 1001
+            }
+          },
+          {
+            "name": "severityCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "값"
+            },
+            "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+            "description": "부적합 심각도 — 중대(CRITICAL) · 중(MAJOR) · 경(MINOR). ⭐ 화면 목업이 「심각도 중대」(W-03-10 §3)·「심각도 중」(W-04-07 §3)을 그려 3단계 축이 이미 서 있다. ⭐ 고객이 늘릴 수 있다 — 아래는 초기값(기본값)이지 닫힌 목록이 아니다. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          },
+          {
+            "name": "openedFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-08-13T10:22:00+09:00"
+            },
+            "description": "기간 필수 — 공유계약 L-3",
+            "required": true
+          },
+          {
+            "name": "openedTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-08-13T10:22:00+09:00"
+            },
+            "required": true
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Nonconformance"
+                      }
+                    },
+                    "page": {
+                      "$ref": "#/components/schemas/PageMeta"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ],
+        "x-omf-known-differences": [
+          {
+            "designRecord": "186",
+            "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "부적합 등록",
+        "description": "W-04-07 「부적합 등록」과 W-04-07 «하나»가 만든다 «(정합주: 2026-09-01 확정 — 요구서 §3-6 · W-04-06 v0.3. 반품 입고는 부적합을 만들지 않는다)». 심각도와 내용이 필수다 — 내용은 판정자의 유일한 입력이라 비울 수 없다(공유계약 A-12). 근거: W-04-07 §5-3",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NonconformanceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "등록됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nonconformance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "반품 입고 자체는 01 자재창고 계약이 소유한다 — POST /logistics/goods-receipts 의 receiptTypeCode·reasonCode 가 이미 일반형이고 화면도 「원천 구분을 reason_code 에 접어 넣는다」로 설계돼 있다(W-04-06 §5-2). 한 화면이 두 계약을 쓴다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/quality/nonconformances/{nonconformanceId}": {
+      "parameters": [
+        {
+          "name": "nonconformanceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "부적합 한 건",
+        "description": "영향 LOT 을 함께 내린다. ⭐ 부르는 화면은 W-03-10(처분 판정 처리)이다 — W-03-09 「부적합 열기」는 API 호출이 아니라 ?nonconformanceId={id} 로 W-03-10 으로 이동하는 화면 전환이다. ⭐ 이 응답의 ETag 는 품질 계약의 처분 판정 저장(POST /quality/nonconformances/{nonconformanceId}/disposition-decisions)이 If-Match 로 받는 토큰이다",
+        "responses": {
+          "200": {
+            "description": "상세",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nonconformance"
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "description": "낙관적 잠금 토큰 — 이 행의 version_no. 다음 쓰기의 If-Match 에 그대로 담는다. 본문 필드로는 내리지 않는다 — 표시하지 않되 전달한다",
+                "schema": {
+                  "type": "string"
+                },
+                "x-internal-note": "본문 필드로 내리지 않는 이유는 공유계약 A-4 이고, 전송 자체는 B-1(낙관적 잠금) 구현에 필요하다."
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-internal-note": "2026-08-13 에 이 경로를 세울 때의 근거는 「03 계약에 부적합을 열 경로가 없었다」였고 호출자를 W-03-09 로 적었다. 실제 호출자는 W-03-10 이다 — omf-mes#194 §3(2026-08-2x 회신)이 「부적합 상세를 소유한 화면은 W-03-10」·「W-03-09 는 ?nonconformanceId 로 이동한다」로 확정했다.",
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/quality/nonconformances/{nonconformanceId}:request-disposition": {
+      "parameters": [
+        {
+          "name": "nonconformanceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "quality"
+        ],
+        "summary": "처분 판정 의뢰",
+        "description": "⭐ 04 는 의뢰만 한다 — 재작업/폐기 판정은 전 도메인에서 03 품질 소관으로 통일돼 있다(F04 정합 확정 2026-07-07). 화면도 「판정」 버튼을 두지 않는다. 근거: W-04-07 §5-1·§5-7",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "의뢰됨",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nonconformance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "충돌",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipping-units": {
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 단위 목록",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. P-04-05 가 그 출하의 단위를 나열한다. 세션과 POP 단말 모두 부른다 — 단말이면 그 단말의 공장으로 범위가 좁혀진다",
+        "parameters": [
+          {
+            "name": "shipmentId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 3001
+            }
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "CLOSED"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "SU-20260916-0001"
+            },
+            "description": "출하 단위 번호 부분 일치"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "description": "1 부터"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "example": 50
+            },
+            "description": "기본 50"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnitList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. 고쳐야 풀린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 단위 열기",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자를 담을 빈 단위를 만든다. 출하가 취소됐으면 400 STATE_LOCKED 다 — 확정 여부는 묻지 않는다(출하 확정과 무관하다)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingUnitCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "열렸다. ETag 에 versionNo 가 실린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "검증 실패. STATE_LOCKED/shipmentId = 취소된 출하 · INVALID/shippingUnitTypeCode = 없는 유형",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는 출하다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipping-units/{shippingUnitId}": {
+      "parameters": [
+        {
+          "name": "shippingUnitId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7001
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 단위 상세 — 납품 라벨 값 전부",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자 목록과 품목별 합계까지 담는다. POP 은 이 응답만으로 납품 라벨을 그린다 — 렌디션을 부르지 않는다",
+        "responses": {
+          "200": {
+            "description": "상세. ETag 에 versionNo 가 실린다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnitDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipping-units/{shippingUnitId}:add-box": {
+      "parameters": [
+        {
+          "name": "shippingUnitId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "상자 넣기(포장 라벨 스캔)",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 포장 라벨을 스캔해 그 상자를 단위에 넣는다. ⛔ 거절은 전부 400 + errors[].code·field 다(409 는 저장 충돌 전용). STATE_LOCKED/shippingUnitId = 마감된 단위 · STATE_LOCKED/handlingUnitNo = 포장 확정되지 않은 상자 · INVALID/handlingUnitNo = 포장 실적이 없는 상자 · PAIR/handlingUnitNo = 다른 출하의 상자 · UNIQUE_VIOLATION/handlingUnitNo = 이미 다른 단위에 구성된 상자 · STATE_LOCKED/shipmentId = 취소된 출하. ⭐ 같은 단위에 같은 상자를 다시 스캔하면 200 이고 아무것도 바뀌지 않는다(멱등 · P-24)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShippingUnitAddBox"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "들어갔다(또는 이미 들어 있었다). ETag 가 갱신된다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnitDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "거절. code·field 로 갈린다 — 설명 참조",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는 출하 단위이거나 없는 상자다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}": {
+      "parameters": [
+        {
+          "name": "shippingUnitId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7001
+          }
+        },
+        {
+          "name": "handlingUnitId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 4001
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "상자 빼기",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 마감 «전»에만 뺀다. ⛔ 204 가 아니라 200 + 상세를 돌려준다 — 화면이 목록과 품목별 합계를 그 자리에서 다시 그린다. seq 는 재부여하지 않는다",
+        "responses": {
+          "200": {
+            "description": "빠졌다. ETag 가 갱신된다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnitDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "STATE_LOCKED/shippingUnitId = 이미 마감된 단위다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는 출하 단위이거나 그 단위에 없는 상자다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    },
+    "/logistics/shipping-units/{shippingUnitId}:close": {
+      "parameters": [
+        {
+          "name": "shippingUnitId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7001
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "shipment"
+        ],
+        "summary": "출하 단위 마감",
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. OPEN → CLOSED. ⛔ 되돌릴 수 없다 — 취소·해체 경로를 두지 않는다(취급 단위와 같은 태도 · 통보 142). 마감돼야 납품 라벨을 발행할 수 있다",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfMatchVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/WorkerNo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "마감됐다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShippingUnitDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "STATE_LOCKED/shippingUnitId = 이미 마감 · INVALID/boxes = 상자가 한 개도 없다 · STATE_LOCKED/shipmentId = 취소된 출하",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "로그인이 필요하다 — omf_session 쿠키가 없거나 유효하지 않다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "권한·단말 게이팅에 막혔다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "저장 충돌. 다시 읽어 If-Match 를 새로 받는다",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentConflictResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-omf-server-implementation": {
+          "status": "implemented",
+          "serverVersion": "v0.1.3-next",
+          "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d"
+        },
+        "security": [
+          {
+            "omfSession": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "전 쓰기 API 필수. 같은 키로 다시 보내면 새 전표를 만들지 않는다.",
+        "x-internal-note": "근거: deliverables/02-SW설계사양서 §3.3 · 공유계약 C-1. 원장의 유일 제약이 (idempotency_key, business_date) 라 재전송 판정에 영업일이 함께 쓰인다(C-8)."
+      },
+      "IfMatchVersion": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "낙관적 잠금용 version_no. 값은 같은 리소스의 상세 GET 200 이 내려주는 ETag 응답 헤더에서 받는다. 근거: 공유계약 B-1"
+      },
+      "IfMatchVersionOptional": {
+        "name": "If-Match",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "오프라인에서도 쓰는 오퍼레이션에서는 선택이다 — 없으면 낙관적 잠금 검사를 건너뛴다. 큐에 쌓인 요청은 토큰을 싣지 않는다. 근거: 공유계약 C-9",
+        "x-internal-note": "관리웹 전용 오퍼레이션에는 IfMatchVersion(required)을 그대로 쓴다 — 이 완화는 오프라인 대상에만 적용한다(02-URL동작규약.md §5)."
+      },
+      "WorkerNo": {
+        "name": "X-Worker-No",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "description": "귀속용 사번 — 이 쓰기를 「누가 한 일」로 기록할 것인가. 인증이 아니다. 현장 단말·모바일은 계정 로그인이 없어 서버가 행위자를 풀 근거가 이 헤더뿐이다. 없으면 서버가 거부한다. 값은 작업자 사번(전역 유일). 근거: 공유계약 D-5 · F-2 ⭐ 형식 — 실물은 «6자리 숫자»다(✓확정 2026-07-28 「POP 단말인증 설계검토」 §3.3 실측 — 다만 표본이 2건이다). ⛔ 그러나 «강제하지 않는다» — 786건 중 표본 2건만 확인했고, 강제했다가 다른 형식의 사번이 하나라도 있으면 그 사람이 단말을 아예 못 쓴다. 그래서 pattern 을 두지 않는다(A-9 등급 ⓑ — 화면이 «경고»하고 «확인은 눌리게» 한다 · P-CO-01 §5-2). 근거: omf-mes#367",
+        "x-internal-note": "⛔ 귀속을 인증으로 승격시키지 않는다 — 사번에 비밀번호·실패 잠금·세션 만료를 붙이면 REQ-PR-0023 이 요구한 「로그인 생략」을 우회로 되살리는 것이다(공유계약 F-2 단서 · P-CO-01 §5-1). 도용 리스크는 수용하고, 화면이 현재 귀속 대상을 상시 보이는 것으로 방어한다(D-5). 원천 컬럼은 mdm.worker.worker_no. 이슈 #178.",
+        "example": "100027"
+      }
+    },
+    "schemas": {
+      "DispositionRequest": {
+        "type": "object",
+        "properties": {
+          "requestedQty": {
+            "type": "number",
+            "format": "double",
+            "description": "판정을 의뢰할 수량. 1 이상이어야 한다(W-04-07 §5-7)",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "remarks": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "값"
+          }
+        },
+        "required": [
+          "requestedQty",
+          "uomId"
+        ],
+        "description": "판정 의뢰. ⭐ 이 화면은 판정하지 않는다 — 재작업/폐기 판정은 전 도메인에서 03 품질 소관으로 통일돼 있다(F04 정합 확정 2026-07-07 · W-04-07 §5-1). 받는 화면은 W-03-10 이고 처분 결정 자원은 품질 계약이 소유한다(DR-008 확정 3-A)"
+      },
+      "ErrorItem": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "field",
+              "screen"
+            ],
+            "description": "오류의 범위. 근거: 공유계약 G-1",
+            "example": "field"
+          },
+          "field": {
+            "type": "string",
+            "description": "scope=field 일 때 대상 프로퍼티명",
+            "example": "shippedQty"
+          },
+          "code": {
+            "type": "string",
+            "description": "기계가 읽는 오류 코드. STATE_LOCKED 계열은 확정·종결된 것이라 재로드해도 풀리지 않는다 — 재로드로 풀리는 저장 충돌(409)과 구분한다(공유계약 G-1).",
+            "example": "QTY_EXCEEDS_ALLOCATION"
+          },
+          "uniqueScope": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "code=UNIQUE_VIOLATION 일 때 어느 유일키 범위에서 중복인지. 근거: 공유계약 A-1 — 범위 없이 「중복」만 오면 화면이 문구를 만들 수 없다"
+          },
+          "message": {
+            "type": "string",
+            "description": "화면이 그대로 보여도 되는 문장. 「어떻게 풀 것인가」를 담는다. 근거: 공유계약 G-3",
+            "example": "값"
+          }
+        },
+        "required": [
+          "scope",
+          "code",
+          "message"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorItem"
+            }
+          }
+        },
+        "required": [
+          "errors"
+        ]
+      },
+      "DispositionCandidate": {
+        "type": "object",
+        "required": [
+          "lotId",
+          "lotNo",
+          "itemId",
+          "quantity",
+          "uomId",
+          "warehouseId",
+          "sourceCode"
+        ],
+        "description": "처분 판정 대상 한 건 — «LOT 단위»다. ⭐ 단위가 LOT 인 근거: 부적합 등록이 NonconformanceCreate.lots[](minItems 1)로 LOT 을 받고, W-04-07 §3 목업의 목록 행도 LOT 이다. 상세 머리의 입고번호·입고일·거래처는 «그 LOT 이 들어온 전표»의 정보다.",
+        "properties": {
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotNo": {
+            "type": "string",
+            "example": "FG-1001-0288"
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "itemCode": {
+            "type": "string",
+            "example": "FG-1001",
+            "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 · 2026-09-02 판정). 품목 마스터 «한 행»을 가리킨다. ⛔ 코드 사전 키를 붙이지 않는다 — 붙이면 «값의 목록»을 공통코드가 갖는다는 뜻이 되어, 실제로 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
+          },
+          "itemName": {
+            "type": "string",
+            "example": "표시명"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double",
+            "example": 200,
+            "description": "판정 대상 수량 — 그 LOT 이 불량창고에 들어온 수량이다"
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "warehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "warehouseName": {
+            "type": "string",
+            "example": "표시명"
+          },
+          "sourceCode": {
+            "type": "string",
+            "enum": [
+              "PRODUCT",
+              "RETURN"
+            ],
+            "example": "RETURN",
+            "description": "원천 — 제품(PRODUCT · OQC 불합격) · 반품(RETURN · 반품·클레임 입고). ⭐ 서버가 그 LOT 이 들어온 경로로 파생한다 — 화면이 고르지 않는다.",
+            "x-code-key": "CD-NONCONFORMANCE-SOURCE"
+          },
+          "goodsReceiptId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001,
+            "description": "반품 갈래의 입고 전표. sourceCode=PRODUCT 면 null 이다"
+          },
+          "receiptNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "RT-2026-0044",
+            "description": "반품 갈래의 입고번호 — 화면 상세 머리가 그린다"
+          },
+          "receivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "example": "2026-08-04",
+            "description": "불량창고에 들어온 날"
+          },
+          "partnerName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "표시명",
+            "description": "반품 갈래의 거래처 이름 — 원 출하 고객이다. ⭐ 서버가 원 출하를 거슬러 풀어 준다(화면이 따로 조회하지 않는다 · 공유계약 L-2)"
+          },
+          "inspectionResultId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001,
+            "description": "OQC 갈래의 검사 결과. sourceCode=RETURN 이면 null 이다 — 부적합 등록 시 NonconformanceCreate.inspectionResultId 로 그대로 넘긴다"
+          },
+          "nonconformanceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001,
+            "description": "⭐ **이 대상에 이미 만들어진 부적합.** null 이면 아직 만들지 않았다 — 화면의 「부적합 없음」 상태다"
+          },
+          "nonconformanceNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "NC-2026-0031"
+          },
+          "nonconformanceStatusCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "PENDING_DECISION",
+            "description": "이미 만든 부적합의 진행 상태 — 의뢰 전(NOT_REQUESTED)·판정 대기(PENDING_DECISION)·판정 완료(DECIDED). nonconformanceId 가 null 이면 이 값도 null 이다. 값 = `NOT_REQUESTED`·`PENDING_DECISION`·`DECIDED`. 값 목록은 `GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS` 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "x-code-key": "CD-NONCONFORMANCE-STATUS"
+          }
+        }
+      },
+      "Nonconformance": {
+        "type": "object",
+        "properties": {
+          "nonconformanceId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "nonconformanceNo": {
+            "type": "string",
+            "example": "NC-2026-0813-0042"
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "workOrderId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "inspectionResultId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "검사에서 나온 부적합이면 가리킨다. 검사 결과는 03 품질 계약이 소유한다",
+            "example": 1001
+          },
+          "sourceCode": {
+            "type": "string",
+            "description": "부적합 원천 — 제품(PRODUCT) · 반품(RETURN). 서버가 대상 LOT 의 입고 유형으로 파생한다",
+            "x-code-key": "CD-NONCONFORMANCE-SOURCE",
+            "enum": [
+              "PRODUCT",
+              "RETURN"
+            ],
+            "example": "PRODUCT"
+          },
+          "severityCode": {
+            "type": "string",
+            "example": "CRITICAL",
+            "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+            "description": "부적합 심각도 — 중대 · 중 · 경. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          },
+          "description": {
+            "type": "string",
+            "description": "⭐ 판정자의 유일한 입력이다 — 「불량」 두 글자면 뒤에서 판단이 안 된다. 화면이 형식을 유도한다. 근거: W-04-07 §5-3 · 공유계약 A-12",
+            "example": "값"
+          },
+          "responsibleDepartmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "actionDescription": {
+            "type": "string",
+            "example": "값"
+          },
+          "actionOwnerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "actionDueDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-08-13"
+          },
+          "actionCompletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-13T10:22:00+09:00"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "부적합 건의 진행 상태 — 의뢰 전(NOT_REQUESTED) · 판정 대기(PENDING_DECISION) · 판정 완료(DECIDED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 이 값이 처분 판정 화면의 진입 목록을 가른다(W-04-07 §3 · W-03-10 §5-5). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "example": "NOT_REQUESTED",
+            "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 04 계약 1단계 §3. 값 목록 확정 추적은 W-03-10 §8 이 갖는다.",
+            "x-code-key": "CD-NONCONFORMANCE-STATUS"
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-13T10:22:00+09:00"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "종료 시각. 개시보다 빠를 수 없다",
+            "example": "2026-08-13T10:22:00+09:00"
+          },
+          "affectedQtyTotal": {
+            "type": "number",
+            "format": "double",
+            "description": "대상 LOT 영향 수량 합(nonconformance_lot.affected_qty). ⭐ 서버가 센다 — 화면이 lots 를 순회해 더하지 않는다(공유계약 L-2). 근거: W-03-10 §4-A",
+            "example": 320
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "affectedQtyTotal 의 단위",
+            "example": 1001
+          },
+          "dispositionProgressCode": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "PARTIAL",
+              "COMPLETED"
+            ],
+            "description": "⭐ W-03-10 ① 「판정 진행」 열의 판정 근거 — 대상 수량 합(04 nonconformance_lot)과 처분 결정 수량 합(03 품질 disposition-decisions)을 서버가 롤업해 하나로 낸다. NOT_STARTED=처분 결정 0건(「미판정」) · PARTIAL=결정이 있고 남은 수량 > 0(「⚠ 일부 판정」) · COMPLETED=남은 수량 0(「완료」). ⛔ 화면이 처분 결정을 세어 판정하지 않는다 — 03 계약과의 조인은 서버 몫이다. ⚠ statusCode 와 축이 다르다 — statusCode 의 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다. 근거: W-03-10 §4-A · omf-mes#253",
+            "example": "PARTIAL",
+            "x-code-key": "CD-DISPOSITION-PROGRESS"
+          },
+          "lots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NonconformanceLot"
+            },
+            "description": "영향 LOT. 상세와 목록이 이 한 스키마를 공유하므로 필수로 둔다 — 상세(W-04-07 · W-03-10 ②)가 대상 LOT 표를 그리는 데 보장이 필요하다. ⛔ 목록의 「수량」 열은 이 배열을 세어 만들지 않는다 — affectedQtyTotal 이 그 자리다. 근거: W-03-10 §3 · §4-A · omf-mes#253"
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "nonconformanceId",
+          "nonconformanceNo",
+          "itemId",
+          "severityCode",
+          "description",
+          "statusCode",
+          "openedAt",
+          "affectedQtyTotal",
+          "uomId",
+          "dispositionProgressCode",
+          "lots",
+          "sourceCode"
+        ],
+        "description": "부적합. W-04-07 「부적합 등록」이 만든다. 판정은 W-03-10 이 한다 — affectedQtyTotal·dispositionProgressCode 는 그 화면의 목록이 쓰는 서버 집계다. sourceCode 는 서버가 항상 파생해 내린다 — lots 가 minItems:1 필수라 대상 LOT 이 반드시 있다"
+      },
+      "NonconformanceCreate": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "workOrderId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          },
+          "inspectionResultId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          },
+          "severityCode": {
+            "type": "string",
+            "example": "CRITICAL",
+            "x-code-key": "CD-NONCONFORMANCE-SEVERITY",
+            "description": "부적합 심각도 — 중대 · 중 · 경. 값 목록은 GET /mdm/code-values?codeGroupCode=NONCONFORMANCE_SEVERITY 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "판정의 유일한 입력이라 비울 수 없다. 근거: 공유계약 A-12",
+            "example": "값"
+          },
+          "responsibleDepartmentId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          },
+          "lots": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/NonconformanceLotCreate"
+            }
+          }
+        },
+        "required": [
+          "itemId",
+          "severityCode",
+          "description",
+          "lots"
+        ]
+      },
+      "NonconformanceLot": {
+        "type": "object",
+        "properties": {
+          "nonconformanceLotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "affectedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "qualityStatusBeforeCode": {
+            "type": "string",
+            "example": "NORMAL",
+            "x-code-key": "CD-LOT-STATUS",
+            "description": "부적합 등록 «전» 의 LOT 품질 상태. LOT 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          },
+          "qualityStatusAfterCode": {
+            "type": "string",
+            "example": "NORMAL",
+            "x-code-key": "CD-LOT-STATUS",
+            "description": "부적합 등록 «후» 의 LOT 품질 상태. LOT 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다."
+          }
+        },
+        "required": [
+          "nonconformanceLotId",
+          "lotId",
+          "affectedQty",
+          "uomId",
+          "qualityStatusBeforeCode",
+          "qualityStatusAfterCode"
+        ]
+      },
+      "NonconformanceLotCreate": {
+        "type": "object",
+        "properties": {
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "affectedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        },
+        "required": [
+          "lotId",
+          "affectedQty",
+          "uomId"
+        ]
+      },
+      "PageMeta": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "example": 1
+          },
+          "size": {
+            "type": "integer",
+            "example": 50
+          },
+          "total": {
+            "type": "integer",
+            "example": 84
+          }
+        },
+        "required": [
+          "page",
+          "size",
+          "total"
+        ]
+      },
+      "SalesOrder": {
+        "type": "object",
+        "properties": {
+          "salesOrderId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "salesOrderNo": {
+            "type": "string",
+            "example": "SO-2026-0813-0042"
+          },
+          "erpSalesOrderNo": {
+            "type": "string",
+            "description": "ERP 원번호. 연계로 들어온 건에만 있다",
+            "example": "ERP-SO-99001"
+          },
+          "customerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipToPartnerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "orderDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-08-13"
+          },
+          "statusCode": {
+            "type": "string",
+            "x-no-code-key": "코드 그룹을 세우지 않는다 — 편성 여부는 계약이 이미 unassignedOnly(boolean)로 받고 있고 이 칸의 쿼리를 부르는 화면이 0건이다. ⛔ 이 리소스는 수신본이라 등록·수정 경로가 없다 — 상태를 «올릴» 주체가 MES 안에 없다(A-21 · 사용자 결정 2026-09-02).",
+            "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesOrderLine"
+            }
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "salesOrderId",
+          "salesOrderNo",
+          "customerId",
+          "shipToPartnerId",
+          "orderDate",
+          "statusCode"
+        ],
+        "description": "고객사 출하지시서 수신본. ⛔ 등록 경로를 두지 않는다 — ⭐ 원천이 «둘»이다 — 고객사 출하지시서(엑셀) import 와 ERP 연계 수신을 «모두» 쓴다(사용자 확정 2026-09-02). 어느 쪽이든 MES 는 받기만 하므로 목록에 그냥 나타난다(W-04-01 §5-6). 파일 업로드는 고객사마다 형식이 달라 요청 본문을 정할 수 없고 화면도 비활성이다. ⭐ 상위지시는 nullable 이 확정이다 — 무지시 standalone 이 예외가 아니라 상시 구조다"
+      },
+      "SalesOrderLine": {
+        "type": "object",
+        "properties": {
+          "salesOrderLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lineNo": {
+            "type": "integer",
+            "example": 1
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "orderedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "requestedDeliveryDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-08-13"
+          },
+          "shippedQty": {
+            "type": "number",
+            "format": "double",
+            "description": "누적 출하 수량. 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2)",
+            "example": 120
+          }
+        },
+        "required": [
+          "salesOrderLineId",
+          "lineNo",
+          "itemId",
+          "orderedQty",
+          "uomId",
+          "shippedQty"
+        ]
+      },
+      "Shipment": {
+        "type": "object",
+        "properties": {
+          "shipmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipmentNo": {
+            "type": "string",
+            "example": "SH-2026-0813-0031"
+          },
+          "shipmentRequestId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "warehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "vehicleNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "driverName": {
+            "type": "string",
+            "example": "값"
+          },
+          "sealNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "transportDocumentNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "loadingWorkerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "carrierId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "loadedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "상차 시각. ⚠ 시작 시각이 필수가 아니라 구간 형이 아니다 — 상태 전이의 부수 기록이다",
+            "example": "2026-08-13T10:22:00+09:00"
+          },
+          "shippedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "출하 시각",
+            "example": "2026-08-13T10:22:00+09:00"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "출하의 진행 상태 — 미확정(UNCONFIRMED) · 확정(CONFIRMED) · 취소(CANCELLED). ⛔ 시스템 소유다 — 고객이 W-06-06 에서 이 값을 편집하면 안 된다. 확정이 PGI 송신을 부르고 취소가 그것을 되돌린다(W-04-04 §5-1 · W-04-12 §5-2). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_STATUS 로 받는다(공유계약 G-32 · 2026-09-02 등재). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "example": "UNCONFIRMED",
+            "x-code-key": "CD-SHIPMENT-STATUS"
+          },
+          "erpDeliveryNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ERP 납품 번호. 확정 후 연계가 채운다 — 04 가 쓰지 않는다",
+            "example": "SH-2026-0813-0031"
+          },
+          "remarks": {
+            "type": "string",
+            "example": "값"
+          },
+          "unassignedPackedBoxCount": {
+            "type": "integer",
+            "description": "⭐ 선행 구현(P-24) — 포장이 끝났는데 아직 어느 출하 단위에도 들어가지 않은 상자 수. 목록에서만 채운다(상세는 세지 않는다). 한 상자가 배분 여럿에 걸릴 수 있어 상자 기준으로 센다",
+            "example": 2
+          },
+          "expedited": {
+            "type": "boolean",
+            "default": false,
+            "description": "긴급 직행 출하로 만들어진 건인가(W-04-05).",
+            "example": false
+          },
+          "expediteReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "긴급 사유. expedited 가 참인 건에만 있다(공유계약 A-12).",
+            "example": "값"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentLine"
+            }
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "shipmentId",
+          "shipmentNo",
+          "shipmentRequestId",
+          "warehouseId",
+          "statusCode",
+          "expedited"
+        ],
+        "description": "실물 출하. ⭐ 2026-08-07 「출하 2단 확정」으로 ERP 송신 적재가 W-04-12 확정 시점으로 갔다 — 이 리소스를 만드는 것은 미확정 출하까지이고, 실물이 나갔으므로 재고는 그 시점에 차감한다(W-04-04 §5-1)"
+      },
+      "ShipmentCancel": {
+        "type": "object",
+        "properties": {
+          "remarks": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "값"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "description": "영업일(발생일). 취소는 재고를 되돌리므로 원장을 지난다 — 유일 제약에 영업일이 들어 있다(공유계약 C-8 · W-04-12 §5-8).",
+            "example": "2026-08-06"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "취소를 실행한 시각. 근거: 공유계약 C-1",
+            "example": "2026-08-06T09:12:00+09:00"
+          }
+        },
+        "required": [
+          "businessDate",
+          "occurredAt"
+        ],
+        "description": "취소 실행. ⭐ 승인 완료만으로 통과시키지 않는다 — 실행 시점에 후속을 다시 판정한다(공유계약 J-8). 그 사이에 확정됐으면 409 ALREADY_CONFIRMED 다"
+      },
+      "ShipmentCancelRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "취소 사유. 필수다 — 근거: W-04-12 §5-8 · 공유계약 A-12",
+            "example": "값"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "ShipmentCreate": {
+        "type": "object",
+        "properties": {
+          "shipmentRequestId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "warehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "vehicleNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "driverName": {
+            "type": "string",
+            "example": "값"
+          },
+          "sealNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "transportDocumentNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "loadingWorkerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "carrierId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "expedited": {
+            "type": "boolean",
+            "default": false,
+            "description": "⭐ 긴급 직행 출하인가(W-04-05) — 창고 경유·피킹·Packing 을 건너뛴다. ⛔ 품질 게이트는 건너뛰지 않는다 — 배분 LOT 이 Release 가 아니면 400 이다(결정 10 · W-04-05 §5-3). ⭐ 참이면 서버가 제품 입고 전표와 입고 전기를 같은 트랜잭션에서 함께 만든다 — 화면이 01 계약을 따로 부르지 않는다. 입고 유형·원천 문서 유형은 서버가 정한다(01 계약 receiptTypeCode·sourceDocumentTypeCode). 입고 유형은 제품입고(PRODUCT)로 확정됐고(2026-08-31 · 공유계약 G-32 등록부 RECEIPT_TYPE), 원천 문서 유형은 SHIPMENT로 구현됐다(통보 221). 장부상 입고 창고는 본문의 warehouseId 다 — 화면이 고른다(W-04-05 §5-1·§5-4)",
+            "example": true,
+            "x-internal-note": "서버 구현 기준: receiptTypeCode=PRODUCT, sourceDocumentTypeCode=SHIPMENT, sourceDocumentId=shipmentId다(통보 221)."
+          },
+          "expediteReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "expedited 가 참이면 필수다. 근거: W-04-05 §5-5 · 공유계약 A-12",
+            "example": "값"
+          },
+          "remarks": {
+            "type": "string",
+            "example": "값"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "description": "영업일(발생일). ⛔ 서버가 수신 시각으로 다시 잡지 않는다 — 재고 원장의 유일 제약이 (idempotency_key, business_date) 라 자정을 넘긴 재시도에서 같은 키로도 전표가 두 벌 생긴다. 근거: 공유계약 C-8 · W-04-05 §5-6",
+            "example": "2026-08-06"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "실물이 나간 시각. 근거: 공유계약 C-1",
+            "example": "2026-08-06T09:12:00+09:00"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ShipmentLineCreate"
+            }
+          }
+        },
+        "required": [
+          "shipmentRequestId",
+          "warehouseId",
+          "businessDate",
+          "occurredAt",
+          "lines"
+        ],
+        "description": "출하 처리. 출하·라인·LOT 배분을 한 트랜잭션으로 만든다(공유계약 B-8). ⛔ 확정하지 않는다 — 미확정 출하까지다. 확정은 :confirm 이다. ⭐ 재고 차감(수불 원장 전기 = 출고 전기)은 이 오퍼레이션 안이다 — 실물이 나갔으므로 여기서 차감한다(W-04-04 §5-1 도식). expedited=true 이면 제품 입고 전표와 입고 전기를 여기서 함께 만든다. ⛔ :confirm 으로 가는 것은 ERP 송신 적재 하나뿐이다(2026-08-07 출하 2단 확정 · W-04-05 §5-1 · 공유계약 B-8). ⭐ businessDate·occurredAt 을 반드시 싣는다 — 이 오퍼레이션이 재고 원장을 지나고 그 유일 제약에 영업일이 들어 있다(공유계약 C-8)"
+      },
+      "ShipmentLine": {
+        "type": "object",
+        "properties": {
+          "shipmentLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lineNo": {
+            "type": "integer",
+            "example": 1
+          },
+          "shipmentRequestLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shippedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "goodsIssueLineId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "⚠ 비어도 된다 — 출고 전표를 만들지 않고 원장에 직접 전기하는 구간이 있다(W-04-04 §5-2·§8-2)",
+            "example": 1001
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentLotAllocation"
+            }
+          }
+        },
+        "required": [
+          "shipmentLineId",
+          "lineNo",
+          "shipmentRequestLineId",
+          "itemId",
+          "shippedQty",
+          "uomId"
+        ]
+      },
+      "ShipmentLineCreate": {
+        "type": "object",
+        "properties": {
+          "shipmentRequestLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shippedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "allocations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ShipmentLotAllocationCreate"
+            }
+          }
+        },
+        "required": [
+          "shipmentRequestLineId",
+          "shippedQty",
+          "uomId",
+          "allocations"
+        ]
+      },
+      "ShipmentLotAllocation": {
+        "type": "object",
+        "properties": {
+          "shipmentLotAllocationId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001,
+            "description": "이 배분이 속한 출하. ⛔ 없으면 P-04-01 의 둘째 스캔을 부를 수 없다 — 첫 스캔(q)이 주는 것은 shipmentLineId 까지인데 lotQ 판정은 «출하» 범위를 요구한다(같은 오퍼레이션의 lotQ 설명). 질의 축에는 있는데 응답에 없어 «거를 수는 있고 받을 수는 없던» 자리다 — 항상 내린다. 근거: P-04-01 §5-1 · omf-mes#330 A"
+          },
+          "shipmentLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001,
+            "description": "이 배분의 품목. shipment_line.item_id 를 그대로 내린다. ⛔ 없으면 포장 확정 본문(01 계약 HandlingUnitContentUpsert.itemId 필수)을 채울 수 없다 — 표시가 아니라 «쓰기»가 막힌다. 항상 내린다. 근거: P-04-01 §4-B·§5-6 · omf-mes#330 A"
+          },
+          "itemCode": {
+            "type": "string",
+            "maxLength": 50,
+            "example": "ABC-123",
+            "description": "화면에 그대로 그리는 품목 코드. ⛔ 화면이 itemId→코드 대응을 따로 조회하지 않는다 — 계약이 표시 문자열까지 내려 준다(공유계약 A-10 보강 · W-02-06 ProductionOrderChangedField.label 과 같은 형태). P-04-01 §3 포장 구성 표의 「품목」 열과 불일치 문구(「이 납품라벨은 FG-1002 용입니다」)가 이 값이다. ⚠ itemName 은 두지 않는다 — POP 1024×768 의 세로·가로 예산(E-1·E-2)에 이름 열이 들어갈 자리가 없다",
+            "x-no-code-key": "코드 그룹이 아니다 — 개체 «식별자»다(공유계약 A-16 · 2026-09-02 판정). 품목 마스터의 행을 가리킨다 — Item.itemCode 가 같은 판정으로 이미 닫혔다. ⛔ 코드 사전 키를 붙이지 않는다 — 값의 목록을 공통코드가 갖는다는 뜻이 되어, 실제로 마스터 표가 갖는 행 목록과 두 벌이 된다(L-2-1)."
+          },
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "handlingUnitId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "⚠ 비어도 된다 — 포장하지 않는 출하도 있다(P-04-01 §4-C)",
+            "example": 1001
+          },
+          "warehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001,
+            "description": "이 배분이 나가는 창고(shipment.warehouse_id). ⛔ 없으면 P-04-01 이 상위 포장 후보를 좁힐 수 없어 창고 전체가 후보가 된다 — 01 계약 GET /inventory/handling-units 의 warehouseId 질의에 넣는 값이다(새 질의 축을 만들지 않는다). 새로 만드는 취급 단위의 warehouseId 도 이 값이다. 근거: P-04-01 §5-2 · omf-mes#330 D"
+          },
+          "allocatedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "oqcPassed": {
+            "type": "boolean",
+            "description": "⭐ 서버가 판정한 값 — 이 배분의 LOT 이 출하검사에 합격했는가. 납품라벨 대상 목록이 「합격」만 활성하는 데 쓴다(P-04-02 §5). 검사 결과는 03 품질 계약이 소유한다 ⛔ 없으면 납품라벨 대상을 가릴 수 없다 — 항상 내린다(P-04-02 §5-1). ⛔ 검사 대상이 아닌 배분(해당 라인의 shippingInspectionRequired=false)은 true 로 내린다 — 「검사를 안 거쳤다」가 「발행하면 안 된다」가 아니다.",
+            "example": true
+          },
+          "packedQty": {
+            "type": "number",
+            "format": "double",
+            "description": "이미 포장에 담긴 수량. 배분 잔여 = allocatedQty − packedQty 를 서버가 파생한다(L-2) ⛔ 없으면 화면이 잔여를 계산할 수 없다 — 항상 내린다(P-04-01 §5-6).",
+            "example": 120
+          }
+        },
+        "required": [
+          "shipmentLotAllocationId",
+          "shipmentId",
+          "shipmentLineId",
+          "itemId",
+          "itemCode",
+          "lotId",
+          "warehouseId",
+          "allocatedQty",
+          "uomId",
+          "packedQty",
+          "oqcPassed"
+        ],
+        "description": "출하 LOT 배분 — genealogy 종결점이다. ⛔ 등록 경로를 두지 않는다 — 출하 처리가 shipment·shipment_line 과 한 트랜잭션으로 만든다(W-04-04 §5 · 공유계약 B-8). shipment_line_id 가 NOT NULL 이라 출하보다 먼저 생길 수 없다"
+      },
+      "ShipmentLotAllocationCreate": {
+        "type": "object",
+        "properties": {
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "allocatedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "handlingUnitId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          }
+        },
+        "required": [
+          "lotId",
+          "allocatedQty",
+          "uomId"
+        ]
+      },
+      "ShipmentLotAllocationPacking": {
+        "type": "object",
+        "properties": {
+          "handlingUnitId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "이 배분을 담은 포장 단위. 취급 단위는 01 자재창고 계약이 소유한다",
+            "example": 1001
+          }
+        },
+        "required": [
+          "handlingUnitId"
+        ],
+        "description": "포장 연결. P-04-01 이 포장을 확정할 때 배분에 포장 단위를 잇는다"
+      },
+      "ShipmentRequest": {
+        "type": "object",
+        "properties": {
+          "fulfillmentPlantId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+          },
+          "shipmentRequestId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipmentRequestNo": {
+            "type": "string",
+            "example": "SR-2026-0813-0108"
+          },
+          "salesOrderId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "⛔ 필수가 아니다 — 단독 생성 경로가 상시 구조다(W-04-01 §5-2)",
+            "example": 1001
+          },
+          "customerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipToPartnerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "requestedShipDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-08-13"
+          },
+          "timeSlotCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터). 고객 확정 3값: `MORNING`·`AFTERNOON`·`NIGHT`(2026-08-31, omf-mes-server#41 회신).",
+            "example": "MORNING",
+            "x-code-key": "CD-SHIPMENT-TIME-SLOT"
+          },
+          "statusCode": {
+            "type": "string",
+            "x-no-code-key": "코드 그룹을 세우지 않는다 — ⛔ 화면이 그리는 「미편성·피킹중·검사대기·출하완료」는 «파생 진행» 축이지 이 칸이 아니다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⭐ 선례가 같은 계약 파일에 있다 — Nonconformance 가 statusCode 옆에 dispositionProgressCode(enum)를 «따로» 두고 「statusCode 와 축이 다르다 — 「판정 대기」 한 값이 NOT_STARTED 와 PARTIAL 을 함께 담아 이 열을 대신할 수 없다」로 못박았다. ⚠ 진행 축 필드 신설은 별건이다. 이 칸을 «움직이는» 액션도 계약에 0건이다(A-21 · 사용자 결정 2026-09-02).",
+            "x-no-example": "「칸 불필요」로 닫힌 칸이라 값이 없다(A-21 · 사용자 결정 2026-09-02) — omf-mes#402"
+          },
+          "shippingInspectionStatusCode": {
+            "type": "string",
+            "enum": [
+              "NOT_REQUIRED",
+              "PENDING",
+              "PASSED",
+              "REJECTED",
+              "HELD"
+            ],
+            "description": "⭐ W-04-02 「검사」 열의 판정 근거 — 라인 전체(shippingInspectionRequired + 03 품질 inspection-results)를 서버가 롤업해 하나로 낸다. NOT_REQUIRED=대상 라인 없음(「—」) · PENDING=대상인데 결과 없음(「● 대기」) · PASSED=전 대상 라인 합격(「✅ 합격」) · REJECTED=불합격 라인 존재(「⛔ 불합격」) · HELD=보류 라인 존재, 불합격 없음(「⚠ 보류」). ⭐ 롤업 우선순위(가장 나쁜 것이 이긴다): REJECTED > HELD > PENDING > PASSED > NOT_REQUIRED. ⛔ 화면이 라인을 순회해 판정하지 않는다(공유계약 G-8과 같은 결 — W-04-02 §5-3) — 03 계약과의 조인은 서버 몫이다. ⚠ 이 필드를 이미 소비 중인 코드는 PASSED 외 값을 몰라도 PENDING과 동일하게(대기 취급) 두면 당장은 안전하다. 근거: W-04-02 §5-3·§5-4 · omf-mes#232 · omf-mes#235",
+            "example": "PENDING",
+            "x-code-key": "CD-SHIPPING-INSPECTION-STATUS"
+          },
+          "shipmentProgressCode": {
+            "type": "string",
+            "enum": [
+              "NOT_ALLOCATED",
+              "PARTIALLY_ALLOCATED",
+              "PICKING",
+              "PICKED",
+              "PARTIALLY_SHIPPED",
+              "SHIPPED"
+            ],
+            "description": "⭐ W-04-02 「진행」 열의 판정 근거 — 출하작업지시 «한 건»의 진행이다. 라인 전체의 요청·배정·피킹·출하 4수량을 서버가 롤업해 하나로 낸다. ⛔ 서버가 계산한다 — 화면이 다시 계산하지 않는다(공유계약 L-2 · L-2-1 ⑴). ⛔ 저장하지 않는다 — A-17 의 두 질문이 둘 다 「아니오」다(달력이 값을 바꾸지 않고, 과거 값을 얼릴 이유도 없다). NOT_ALLOCATED=배정 합 0 · PARTIALLY_ALLOCATED=0 보다 크고 요청 합보다 작은 배정 합 · PICKING=배정 합이 요청 합과 같고 피킹 합이 배정 합보다 작다 · PICKED=피킹 합이 배정 합과 같고 출하 합 0 · PARTIALLY_SHIPPED=출하 합이 0 보다 크고 배정 합보다 작다 · SHIPPED=출하 합이 배정 합과 같다. ⭐ 판정 순서는 뒤가 이긴다 — NOT_ALLOCATED, PARTIALLY_ALLOCATED, PICKING, PICKED, PARTIALLY_SHIPPED, SHIPPED. ⚠ statusCode 와 축이 다르다 — 그 칸은 「칸 불필요」로 닫혔고(x-no-code-key) 값이 없다. ⚠ shippingInspectionStatusCode 와도 축이 다르다 — 「검사 대기」는 이 축의 값이 아니라 그 축의 PENDING 이다. 한 칸에 두 축을 담으면 어느 쪽도 못 읽는다. ⛔ 화면이 라인을 순회해 판정하지 않는다 — W-04-01·W-04-02·W-04-04 가 각자 접으면 같은 건을 다르게 부른다(W-04-02 §9-1). 근거: W-04-02 §3·§4-A·§5-3 · W-04-04 §3·§5-4 · omf-mes#402",
+            "example": "PICKING",
+            "x-code-key": "CD-SHIPMENT-PROGRESS"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentRequestLine"
+            }
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1
+          }
+        },
+        "required": [
+          "shipmentRequestId",
+          "shipmentRequestNo",
+          "customerId",
+          "shipToPartnerId",
+          "requestedShipDate",
+          "statusCode",
+          "shippingInspectionStatusCode",
+          "shipmentProgressCode"
+        ],
+        "description": "MES 출하작업지시. W-04-01 「편성」·「단독 생성」이 만든다"
+      },
+      "ShipmentRequestSummary": {
+        "type": "object",
+        "properties": {
+          "requestCount": {
+            "type": "integer",
+            "description": "필터 전체 기준 작업지시 건수",
+            "example": 24
+          },
+          "requestedQtyTotal": {
+            "type": "number",
+            "format": "double",
+            "example": 12400
+          },
+          "allocatedQtyTotal": {
+            "type": "number",
+            "format": "double",
+            "example": 11900
+          },
+          "shippedQtyTotal": {
+            "type": "number",
+            "format": "double",
+            "example": 3200
+          },
+          "unallocatedQtyTotal": {
+            "type": "number",
+            "format": "double",
+            "description": "요청 − 배정. ⭐ 서버가 계산한다(공유계약 L-2) — 화면이 requestedQtyTotal·allocatedQtyTotal 을 받아 다시 빼지 않는다",
+            "example": 500
+          },
+          "pendingInspectionCount": {
+            "type": "integer",
+            "description": "shippingInspectionStatusCode=PENDING 인 작업지시 건수",
+            "example": 4
+          },
+          "incompletePickingCount": {
+            "type": "integer",
+            "description": "피킹이 끝나지 않은 작업지시 건수",
+            "example": 9
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time",
+            "description": "서버 집계 기준 시각(공유계약 L-5) — 화면 헤더 「기준 …」에 쓴다",
+            "example": "2026-08-07T14:32:00+09:00"
+          }
+        },
+        "required": [
+          "requestCount",
+          "requestedQtyTotal",
+          "allocatedQtyTotal",
+          "shippedQtyTotal",
+          "unallocatedQtyTotal",
+          "pendingInspectionCount",
+          "incompletePickingCount",
+          "asOf"
+        ],
+        "description": "W-04-02 요약 구획 — 필터 전체 기준(목록 페이지와 다른 모집단). 근거: W-04-02 §4-B · omf-mes#232"
+      },
+      "ShipmentRequestUpdate": {
+        "type": "object",
+        "properties": {
+          "fulfillmentPlantId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "기존 미배정 출하작업지시를 활성·권한 공장에 지정한다. null 해제는 이번 경로에 없다. 이미 피킹한 요청은 바꿀 수 없고, 연결된 출하가 있으면 그 모든 출하 창고의 공장과 같아야 한다."
+          }
+        },
+        "required": [
+          "fulfillmentPlantId"
+        ]
+      },
+      "ShipmentRequestCreate": {
+        "type": "object",
+        "properties": {
+          "fulfillmentPlantId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "이 출하작업지시의 이행 공장. 기존 호출 호환을 위해 생성에서는 선택값이며, null 또는 생략된 요청은 관리자에게는 보이되 POP·모바일 목록·피킹에서는 제외된다. 새 관리자 편성은 활성이고 사용자 데이터 범위가 허용한 공장을 반드시 보낸다."
+          },
+          "salesOrderId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "지시서를 경유하면 채우고 단독 생성이면 비운다",
+            "example": 1001
+          },
+          "customerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "shipToPartnerId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "requestedShipDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-08-13"
+          },
+          "timeSlotCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "출하 희망 시간대(코드형). nullable — 지시서가 시간대를 지정한 라인이 있는 건만 채운다(「일부 항목」, W-04-01 §5-3). 값 목록은 GET /mdm/code-values?codeGroupCode=SHIPMENT_TIME_SLOT 로 받는다(공유계약 G-31·G-32 — 동작이 값에 걸리지 않는 필터·표시용이라 고객 마스터).",
+            "example": "MORNING",
+            "x-code-key": "CD-SHIPMENT-TIME-SLOT"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/ShipmentRequestLineCreate"
+            }
+          }
+        },
+        "required": [
+          "customerId",
+          "shipToPartnerId",
+          "requestedShipDate",
+          "lines"
+        ],
+        "description": "편성. 라인 1건 이상이고 배정 수량이 1 이상이어야 한다(W-04-01 §5-7). ⛔ 편성 취소를 두지 않는다 — 출하작업지시 취소는 범위 밖이다"
+      },
+      "ShipmentRequestLine": {
+        "type": "object",
+        "properties": {
+          "shipmentRequestLineId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lineNo": {
+            "type": "integer",
+            "example": 1
+          },
+          "salesOrderLineId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "⛔ 비어도 된다 — 단독 생성이면 상위 지시서가 없다",
+            "example": 1001
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "requestedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "allocatedQty": {
+            "type": "number",
+            "format": "double",
+            "description": "배정 수량. 요청 수량을 넘을 수 없다(W-04-01 §5-1)",
+            "example": 120
+          },
+          "pickedQty": {
+            "type": "number",
+            "example": 120,
+            "x-source-column": "picked_qty",
+            "description": "누적 피킹 수량. ⭐ 서버가 유지한다 — 화면이 더하지 않는다(공유계약 L-2). 배정 잔여 = allocatedQty − pickedQty"
+          },
+          "shippedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "customerLotRequirement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "고객이 지정한 LOT 조건. 피킹이 이것을 지켜야 한다(M-04-01)",
+            "example": "값"
+          },
+          "shippingInspectionRequired": {
+            "type": "boolean",
+            "description": "출하검사 대상인가. 라인마다 토글한다(W-04-01)",
+            "example": true
+          },
+          "minimumRemainingShelfLifeDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "잔여 유효기간 하한. 피킹이 이것으로 LOT 을 거른다",
+            "example": 1
+          },
+          "picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentLinePickedLot"
+            },
+            "description": "이 라인에서 실제로 집은 제품 LOT 별 내역. ⭐ 서버가 유지한다 — W-04-04 출하 처리가 ShipmentCreate.lines[].allocations 를 채우는 원천이 이것이다(공유계약 L-2). 근거: M-04-01 §5-7 · W-04-04 §3"
+          }
+        },
+        "required": [
+          "shipmentRequestLineId",
+          "lineNo",
+          "itemId",
+          "requestedQty",
+          "allocatedQty",
+          "shippedQty",
+          "uomId",
+          "shippingInspectionRequired",
+          "pickedQty",
+          "picks"
+        ]
+      },
+      "ShipmentRequestLineCreate": {
+        "type": "object",
+        "properties": {
+          "salesOrderLineId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "example": 1001
+          },
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "requestedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "allocatedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "customerLotRequirement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "값"
+          },
+          "shippingInspectionRequired": {
+            "type": "boolean",
+            "example": true
+          },
+          "minimumRemainingShelfLifeDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "itemId",
+          "requestedQty",
+          "allocatedQty",
+          "uomId",
+          "shippingInspectionRequired"
+        ]
+      },
+      "ShipmentConflictResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VERSION_CONFLICT",
+              "DUPLICATE_KEY",
+              "INVALID_STATE",
+              "ALREADY_CONFIRMED",
+              "CANCEL_IN_PROGRESS"
+            ],
+            "description": "ALREADY_CONFIRMED 는 이미 확정된 출하라는 뜻이다 — 확정 취소 경로가 없으므로 되돌릴 수 없다(W-04-12 §5-3). CANCEL_IN_PROGRESS 는 취소 결재가 진행 중이라 확정할 수 없다는 뜻이다(J-7). 근거: W-04-12 §5-8",
+            "example": "VERSION_CONFLICT"
+          },
+          "message": {
+            "type": "string",
+            "example": "값"
+          },
+          "currentVersion": {
+            "type": "string",
+            "description": "VERSION_CONFLICT 일 때 서버의 현재 version_no",
+            "example": "값"
+          },
+          "conflictCause": {
+            "type": "string",
+            "enum": [
+              "user",
+              "erpSync",
+              "workerLease"
+            ],
+            "description": "충돌 원인. 근거: 공유계약 B-1 확장 — user=다른 사용자, erpSync=ERP 재동기화 배치, workerLease=워커가 처리 중. 구분 없이 내려주면 화면이 「다른 사용자가 먼저 수정했습니다」라는 사실과 다른 안내를 하게 된다. code와 독립적인 필수 원인 축으로 모든 409 응답에 포함된다",
+            "example": "user"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "conflictCause"
+        ],
+        "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166)."
+      },
+      "ShipmentLinePick": {
+        "type": "object",
+        "description": "피킹 확정 요청. 사번은 본문이 아니라 X-Worker-No 헤더로 보낸다",
+        "required": [
+          "lotId",
+          "pickedQty",
+          "uomId"
+        ],
+        "properties": {
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001,
+            "description": "현장이 실제로 집은 제품 LOT. 권장 1순위가 아니어도 된다"
+          },
+          "pickedQty": {
+            "type": "number",
+            "example": 180,
+            "description": "이번에 집은 수량. 0 보다 커야 한다"
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          }
+        }
+      },
+      "ShipmentLinePickedLot": {
+        "type": "object",
+        "description": "라인이 집은 제품 LOT 한 건. 서버가 유지하는 읽기 전용 기록이다",
+        "properties": {
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotNo": {
+            "type": "string",
+            "example": "값"
+          },
+          "pickedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 120
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "pickedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-13T10:22:00+09:00"
+          }
+        },
+        "required": [
+          "lotId",
+          "pickedQty",
+          "uomId",
+          "pickedAt"
+        ]
+      },
+      "StockReinstatementCreate": {
+        "type": "object",
+        "properties": {
+          "dispositionDecisionId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "진입 목록에서 고른 처분 결정. 서버가 이 값으로 followUpPending 을 내린다 — 처리한 건이 목록에 남아 같은 LOT 을 두 번 재등록하는 것을 막는다. 근거: GET /quality/disposition-decisions 의 followUpPending",
+            "example": 1001
+          },
+          "lot": {
+            "type": "object",
+            "properties": {
+              "lotId": {
+                "type": "integer",
+                "format": "int64",
+                "example": 1001
+              },
+              "versionNo": {
+                "type": "integer",
+                "example": 3
+              }
+            },
+            "required": [
+              "lotId",
+              "versionNo"
+            ],
+            "description": "낙관적 잠금 토큰을 본문으로 싣는다 — 원천은 GET /quality/lot-statuses 의 versionNo 다. POST /quality/lot-holds 의 lots[].versionNo 와 같은 축·같은 원천이다. 화면이 표시하지 않는다. 근거: 공유계약 A-4 · A-4-1",
+            "x-no-example": "하위 프로퍼티(lotId·versionNo)가 각각 example 을 갖는다 — 객체 통째 예시는 중복이다"
+          },
+          "lotHoldId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "닫을 보류 문서. GET /quality/lot-holds?lotId=&open=true 에서 얻는다 — 식별자이지 잠금 토큰이 아니다",
+            "example": 1001
+          },
+          "toWarehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "되돌릴 창고(완제품창고)",
+            "example": 1001
+          },
+          "toLocationId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "창고가 위치를 관리하면 필수 — 서버가 판정한다. 근거: W-04-11 §4-B",
+            "example": 1001
+          },
+          "qty": {
+            "type": "number",
+            "format": "double",
+            "exclusiveMinimum": 0,
+            "description": "현재 보유 이하. 부분 재등록을 허용한다. 근거: W-04-11 §6",
+            "example": 200
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "releaseReasonCode": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "보류 해제 사유 — 필수다. LotHoldRelease 와 같은 축을 유지한다. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_HOLD_RELEASE_REASON. 근거: 공유계약 G-32 · omf-mes#293",
+            "example": "RETEST_PASS",
+            "x-code-key": "CD-LOT-HOLD-RELEASE-REASON"
+          },
+          "reasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 50,
+            "description": "재등록 사유. ⭐ 「재등록이 몇 건인가」를 세려면 코드 축이어야 한다(§I-41 · omf-mes#84). 값 목록은 GET /mdm/code-values?codeGroupCode=STOCK_REINSTATEMENT_REASON 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+            "x-no-example": "값 목록이 아직 확정 전이다(공유계약 G-2) — 확정 전에는 예시를 지어내지 않는다.",
+            "x-internal-note": "만들어지는 이동 문서의 logistics.stock_transfer.reason_code 에 실린다.",
+            "x-code-key": "CD-STOCK-REINSTATEMENT-REASON"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date",
+            "description": "근거: 공유계약 C-8",
+            "example": "2026-08-06"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "재등록 확정 시각. 근거: 공유계약 C-1",
+            "example": "2026-08-06T09:12:00+09:00"
+          },
+          "remarks": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "부가 비고 — 사유는 releaseReasonCode·reasonCode 가 정본이다",
+            "example": "값"
+          }
+        },
+        "required": [
+          "dispositionDecisionId",
+          "lot",
+          "lotHoldId",
+          "toWarehouseId",
+          "qty",
+          "uomId",
+          "releaseReasonCode",
+          "businessDate",
+          "occurredAt"
+        ],
+        "x-internal-note": "⛔ transferTypeCode 를 받지 않는다 — 재등록의 이동 유형은 하나로 정해진 값이라 사람이 고를 것이 아니다. 서버가 정한다 — 미확정 업무 코드 목록(G-2) 노출을 이 화면에서 없앤다. ⛔ targetLotStatusCode 를 받지 않는다 — 재등록은 정의상 정상 복귀이고 무엇으로 갈지는 판정 화면 W-03-02·W-04-03 이 이미 정했다(B-13 「정한다 ↔ 반영한다」). 화면이 다시 고르면 그 구분이 무너진다."
+      },
+      "StockReinstatementResponse": {
+        "type": "object",
+        "properties": {
+          "stockTransferId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "만들어진 이동 문서",
+            "example": 1001
+          },
+          "stockTransferNo": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "receivedAt 이 채워진 상태로 만들어진다 — 반출과 도착이 이 한 번에 끝났다",
+            "example": "ST-2026-000260"
+          },
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "lotStatusCode": {
+            "type": "string",
+            "description": "전이 결과 — 화면이 확정 후 「무엇이 풀렸는가」를 말할 근거다(공유계약 B-8 규칙 4). 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS. 근거: 공유계약 G-32",
+            "example": "NORMAL",
+            "x-code-key": "CD-LOT-STATUS"
+          },
+          "releasedLotHoldId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "닫힌 보류",
+            "example": 1001
+          },
+          "reinstatedQty": {
+            "type": "number",
+            "format": "double",
+            "example": 200
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "toWarehouseId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1001
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-06T09:12:00+09:00"
+          },
+          "remainingHeldQty": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "부분 재등록 후 불량창고에 남은 수량. 근거: W-04-11 §6",
+            "example": 80
+          }
+        },
+        "required": [
+          "stockTransferId",
+          "stockTransferNo",
+          "lotId",
+          "lotStatusCode",
+          "releasedLotHoldId",
+          "reinstatedQty",
+          "uomId",
+          "toWarehouseId",
+          "occurredAt"
+        ]
+      },
+      "StockReinstatementConflictResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VERSION_CONFLICT",
+              "DUPLICATE_KEY",
+              "INVALID_STATE",
+              "ALREADY_REINSTATED",
+              "HOLD_ALREADY_RELEASED",
+              "DISPOSITION_NOT_REINSTATABLE"
+            ],
+            "description": "ALREADY_REINSTATED 는 이 처분 결정이 이미 재등록됐다는 뜻이다 — followUpPending 이 이미 내려갔다. HOLD_ALREADY_RELEASED 는 다른 경로에서 보류가 먼저 풀렸다는 뜻이다(판정 화면 W-03-02 가 그럴 수 있다). DISPOSITION_NOT_REINSTATABLE 은 처분이 폐기이거나 아직 판정 대기라는 뜻이다. 근거: W-04-11 §5-2 · §6",
+            "example": "VERSION_CONFLICT"
+          },
+          "message": {
+            "type": "string",
+            "example": "값"
+          },
+          "currentVersion": {
+            "type": "string",
+            "description": "VERSION_CONFLICT 일 때 서버의 현재 version_no",
+            "example": "값"
+          },
+          "conflictCause": {
+            "type": "string",
+            "enum": [
+              "user",
+              "erpSync",
+              "workerLease"
+            ],
+            "description": "충돌 원인. 근거: 공유계약 B-1 확장 — user=다른 사용자, erpSync=ERP 재동기화 배치, workerLease=워커가 처리 중. 구분 없이 내려주면 화면이 「다른 사용자가 먼저 수정했습니다」라는 사실과 다른 안내를 하게 된다. code와 독립적인 필수 원인 축으로 모든 409 응답에 포함된다\n\n서버는 공용 충돌 봉투를 사용하므로 StockReinstatementConflictResponse에도 이 키를 항상 싣는다(통보 221).",
+            "example": "user"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "conflictCause"
+        ],
+        "x-internal-note": "ShipmentConflictResponse 의 enum 을 넓히지 않고 따로 만들었다 — 그 스키마는 W-04-12 출하 확정·취소가 쓰는데, 응답 enum 이 넓어지면 그 화면이 모르는 값을 받는다."
+      },
+      "ShippingUnitCreate": {
+        "type": "object",
+        "required": [
+          "shipmentId",
+          "shippingUnitTypeCode"
+        ],
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 출하 단위를 연다. 상자는 :add-box 로 넣는다.",
+        "properties": {
+          "shipmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 3001
+          },
+          "shippingUnitTypeCode": {
+            "type": "string",
+            "example": "PALLET",
+            "x-code-key": "SHIPPING_UNIT_TYPE",
+            "description": "값 목록은 GET /mdm/code-values?codeGroupCode=SHIPPING_UNIT_TYPE 로 받는다. ⭐ 고객이 늘린다 — PALLET·BUNDLE 은 초기 시드다(G-31)"
+          }
+        }
+      },
+      "ShippingUnit": {
+        "type": "object",
+        "required": [
+          "shippingUnitId",
+          "shippingUnitNo",
+          "shippingUnitTypeCode",
+          "statusCode",
+          "shipmentId",
+          "shipmentNo",
+          "customer",
+          "shipTo",
+          "boxCount",
+          "createdAt",
+          "versionNo"
+        ],
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자를 묶어 내보내는 단위. 납품 라벨 한 장이 이 단위 하나에 붙는다.",
+        "properties": {
+          "shippingUnitId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 7001
+          },
+          "shippingUnitNo": {
+            "type": "string",
+            "example": "SU-20260916-0001",
+            "description": "⭐ 납품 라벨 번호로 «그대로» 쓴다 — 출하 단위 : 납품 라벨이 1:1 이라 별도 번호를 두지 않는다(P-24)"
+          },
+          "shippingUnitTypeCode": {
+            "type": "string",
+            "example": "PALLET",
+            "x-code-key": "SHIPPING_UNIT_TYPE"
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ],
+            "example": "OPEN",
+            "x-no-code-key": "편도 OPEN → CLOSED. 코드 그룹을 두지 않는다 — handling_unit·shipment 와 같은 관례다"
+          },
+          "shipmentId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 3001
+          },
+          "shipmentNo": {
+            "type": "string",
+            "example": "SH-20260916-0003"
+          },
+          "customer": {
+            "type": "object",
+            "required": [
+              "partnerId",
+              "partnerCode",
+              "partnerName"
+            ],
+            "properties": {
+              "partnerId": {
+                "type": "integer",
+                "format": "int64",
+                "example": 100003
+              },
+              "partnerCode": {
+                "type": "string",
+                "example": "100003"
+              },
+              "partnerName": {
+                "type": "string",
+                "example": "Cong ty Samjin"
+              }
+            },
+            "description": "고객. 출하 전표 → 출하작업지시 → 거래처로 서버가 조인한다(FK 사슬이 전부 NOT NULL 이라 끊기지 않는다)"
+          },
+          "shipTo": {
+            "type": "object",
+            "required": [
+              "partnerId",
+              "partnerCode",
+              "partnerName"
+            ],
+            "properties": {
+              "partnerId": {
+                "type": "integer",
+                "format": "int64",
+                "example": 100003
+              },
+              "partnerCode": {
+                "type": "string",
+                "example": "100003"
+              },
+              "partnerName": {
+                "type": "string",
+                "example": "Cong ty Samjin"
+              }
+            },
+            "description": "납품처. 조인 경로는 customer 와 같다"
+          },
+          "boxCount": {
+            "type": "integer",
+            "example": 2,
+            "description": "이 단위에 든 상자 수"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "versionNo": {
+            "type": "integer",
+            "example": 1,
+            "description": "ETag 축. ⭐ :add-box·DELETE 도 이 값을 올린다 — 안 올리면 낡은 ETag 로 마감이 통과한다(P-24)"
+          }
+        }
+      },
+      "ShippingUnitBoxContent": {
+        "type": "object",
+        "required": [
+          "itemId",
+          "itemCode",
+          "itemName",
+          "lotId",
+          "lotNo",
+          "qty",
+          "uomId",
+          "uomCode"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 501
+          },
+          "itemCode": {
+            "type": "string",
+            "example": "F534F50200"
+          },
+          "itemName": {
+            "type": "string",
+            "example": "제품명"
+          },
+          "lotId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 9001
+          },
+          "lotNo": {
+            "type": "string",
+            "example": "SEED-S240-0001"
+          },
+          "qty": {
+            "type": "number",
+            "example": 240
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "uomCode": {
+            "type": "string",
+            "example": "EA"
+          }
+        }
+      },
+      "ShippingUnitBox": {
+        "type": "object",
+        "required": [
+          "handlingUnitId",
+          "handlingUnitNo",
+          "seq",
+          "contents"
+        ],
+        "properties": {
+          "handlingUnitId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 4001
+          },
+          "handlingUnitNo": {
+            "type": "string",
+            "example": "HU-20260916-0001"
+          },
+          "seq": {
+            "type": "integer",
+            "example": 1,
+            "description": "스캔 순서. ⛔ 빼기 뒤 재부여하지 않는다 — 화면에 찍힌 번호가 흔들린다(P-24)"
+          },
+          "contents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShippingUnitBoxContent"
+            }
+          }
+        }
+      },
+      "ShippingUnitItemTotal": {
+        "type": "object",
+        "required": [
+          "itemId",
+          "itemCode",
+          "itemName",
+          "qty",
+          "uomId",
+          "uomCode"
+        ],
+        "description": "납품 라벨 본문. ⭐ 묶음 키는 (itemId, uomId) 다 — 같은 품목이라도 단위가 다르면 두 행이다. itemCode 오름차순(P-24)",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 501
+          },
+          "itemCode": {
+            "type": "string",
+            "example": "F534F50200"
+          },
+          "itemName": {
+            "type": "string",
+            "example": "제품명"
+          },
+          "qty": {
+            "type": "number",
+            "example": 480
+          },
+          "uomId": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1
+          },
+          "uomCode": {
+            "type": "string",
+            "example": "EA"
+          }
+        }
+      },
+      "ShippingUnitDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ShippingUnit"
+          },
+          {
+            "type": "object",
+            "required": [
+              "boxes",
+              "itemTotals"
+            ],
+            "properties": {
+              "boxes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShippingUnitBox"
+                }
+              },
+              "itemTotals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShippingUnitItemTotal"
+                }
+              }
+            }
+          }
+        ],
+        "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 납품 라벨에 실을 값을 «전부» 담는다 — 서버는 값만 주고 POP 이 그린다(통보 277 §4 의 원칙을 납품 라벨로 넓힌 것)."
+      },
+      "ShippingUnitAddBox": {
+        "type": "object",
+        "required": [
+          "handlingUnitNo"
+        ],
+        "properties": {
+          "handlingUnitNo": {
+            "type": "string",
+            "example": "HU-20260916-0001",
+            "description": "포장 라벨 QR 원문(= 취급 단위 번호). ⭐ id 가 아니라 번호로 받는다 — 스캐너가 주는 값이 그것이다(P-24)"
+          }
+        }
+      },
+      "ShippingUnitList": {
+        "type": "object",
+        "required": [
+          "items",
+          "page"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShippingUnit"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "omfSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "omf_session",
+        "description": "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다."
+      }
+    }
+  },
+  "x-omf-server-baseline": {
+    "status": "interim-server-implementation-baseline",
+    "generatedOn": "2026-09-17",
+    "designContractCommit": "a6a87e144116ebaa32c01df5a12a0fd2924427e7",
+    "designContractVersion": "0.1.0",
+    "serverVersion": "v0.1.3-next",
+    "serverCommit": "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d",
+    "replacementPolicy": "설계팀 확정본 수신 시 폐기하고 공식 계약으로 교체한다."
+  }
+}
