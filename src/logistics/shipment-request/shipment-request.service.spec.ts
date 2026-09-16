@@ -19,10 +19,11 @@ interface Recorded {
   numbered: [string, bigint | null, string][];
   header: Record<string, unknown>;
   lines: Record<string, unknown>[];
+  oqc: Record<string, unknown>[];
 }
 
 function stub() {
-  const recorded: Recorded = { order: [], numbered: [], header: {}, lines: [] };
+  const recorded: Recorded = { order: [], numbered: [], header: {}, lines: [], oqc: [] };
   const prisma = {
     sales_order: { count: async () => 1 },
     partner: { findMany: async () => [{ partner_id: 11n }, { partner_id: 12n }] },
@@ -34,9 +35,24 @@ function stub() {
     code_value: {
       findMany: async () => [{ code: 'MORNING', code_group: { group_code: 'SHIPMENT_TIME_SLOT' } }],
     },
+    // 검사 필수 라인이 있을 때만 불린다(기본 본문은 불요라 안 불린다).
+    inspection_plan_version: {
+      findMany: async () => {
+        recorded.order.push('oqc-plan');
+        return [{ inspection_plan_version_id: 77n }];
+      },
+    },
     $transaction: async (work: (tx: unknown) => Promise<unknown>) => {
       recorded.order.push('transaction');
       return work({
+        inspection_request: {
+          findMany: async () => [],
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            recorded.order.push('oqc-request');
+            recorded.oqc.push(data);
+            return { inspection_request_id: 91n };
+          },
+        },
         shipment_request: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
             recorded.order.push('header');
@@ -59,6 +75,11 @@ function stub() {
       recorded.order.push('numbering');
       recorded.numbered.push([type, plantId, periodDate]);
       return 'SR-20260921-0001';
+    },
+    nextMany: async (type: string, plantId: bigint | null, periodDate: string, count: number) => {
+      recorded.order.push('oqc-numbering');
+      recorded.numbered.push([type, plantId, periodDate]);
+      return Array.from({ length: count }, (_, i) => `IRQ-20260921-000${i + 1}`);
     },
   };
   const queries = {
@@ -104,6 +125,42 @@ describe('출하작업지시 편성 — 트랜잭션 순서 (§3-1)', () => {
       'lines',
       'readback',
     ]);
+  });
+
+  it('⭐⭐ OQC 기준 조회와 의뢰 채번도 $transaction 「밖」이다', async () => {
+    const harness = stub();
+
+    await harness.service.create(
+      body({
+        lines: [
+          { itemId: 21, requestedQty: 100, allocatedQty: 60, uomId: 31, shippingInspectionRequired: true },
+        ],
+      }),
+      ACTOR,
+    );
+
+    // ⛔ 채번이 트랜잭션 안으로 들어가면 커넥션을 둘 쥔다(위 시험과 같은 이유).
+    // ⛔ 기준 조회도 밖이다 — 없으면 400 으로 «편성을 막는» 검사라, 트랜잭션을 열어 놓고
+    //    던지면 롤백할 것이 없는데도 커넥션을 잡고 있게 된다.
+    expect(harness.recorded.order).toEqual([
+      'numbering',
+      'oqc-plan',
+      'oqc-numbering',
+      'transaction',
+      'header',
+      'lines',
+      'oqc-request',
+      'readback',
+    ]);
+    expect(harness.recorded.oqc).toHaveLength(1);
+    expect(harness.recorded.oqc[0]).toMatchObject({
+      inspection_type_code: 'OQC',
+      target_type_code: 'SHIPMENT_REQUEST',
+      target_id: 77n,
+      lot_id: null,
+      status_code: 'REQUESTED',
+      inspection_plan_version_id: 77n,
+    });
   });
 
   it('⭐ 채번 기간 축이 requestedShipDate 다 — 서버가 「오늘」로 다시 잡지 않는다', async () => {
