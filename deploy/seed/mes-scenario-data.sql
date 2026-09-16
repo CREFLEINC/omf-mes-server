@@ -7,6 +7,8 @@
 --   S240 위치 1  — 기초 데이터에 mdm.location 이 0건이라 재고 잔량·입고 모두 위치가 없으면 막힌다
 --   제품 LOT 10  — 제품입고 전표 GR-SEED-0001 한 건으로 S240 에 전기한다(원장 → 잔량)
 --   자재 P/O 5   — PO-SEED-0001~0005, 건마다 라인 1
+--   제품 OQC 기준 10 — 출하작업지시 편성이 검사 의뢰를 자동으로 만들 수 있게(아래 절)
+--   관리자 계정 준비 — 데이터 범위(사업부+PL13) · 검사자 연결(901463) — 제품 출하 화면 4곳이 요구한다
 --
 -- 번호는 SEED 접두어다 — 서버 채번(PO-YYYYMMDD-SEQ4 등)과 겹치지 않아 채번 카운터를 건드리지 않는다.
 -- 발주일·business_date 는 적재 당일의 PL13 현지 날짜(plant.timezone_code)다.
@@ -422,6 +424,64 @@ JOIN quality.inspection_plan_version version
   ON version.inspection_plan_id = plan.inspection_plan_id
 WHERE plan.inspection_plan_code LIKE 'OQC-SEED-%'
 ORDER BY item.item_code;
+
+\echo 'OMF MES scenario seed: 관리자 계정 준비(데이터 범위 · 검사자 연결)'
+-- 제품 출하 시나리오를 관리자 계정 `admin` 하나로 돌리려면 기능 권한 말고도 둘이 더 있어야 한다.
+-- 둘 다 파이널 루틴 SHIP-FINAL-01(2026-09-17)에서 «없어서 막혔던» 자리다.
+--   A. 데이터 범위 — W-04-01 편성이 이행 공장에 대한 데이터 권한(`app.user_data_scope`)을 본다.
+--      표준 시드는 관리자에게 범위를 주지 않아(0행) 첫 편성이 403(`fulfillmentPlantId`)이다.
+--      ⚠ 공장만 넣으면 세션이 그 행을 버린다 — `session.service.ts` 는 `business_unit_id` 가 NULL 인
+--        범위를 걸러 낸다. 반드시 공장의 사업부와 «함께» 넣는다.
+--   B. 검사자 연결 — W-04-03 OQC 판정 저장은 검사자(작업자)를 요구한다. 관리자 웹은 사번 헤더를
+--      싣지 않으므로 서버가 «계정에 연결된 작업자»(`mdm.worker.app_user_id`)로 푼다
+--      (`inspection-result-write-rules.ts` resolveInspector). 연결이 없으면 400 이고, 계약에 연결
+--      화면·API 가 없어 여기서 넣는다. 작업자는 시나리오 작업자 901463(기초데이터의 실재 사번).
+--      ⛔ admin 에 이미 다른 작업자가 연결돼 있거나 901463 이 다른 계정에 묶여 있으면 건드리지 않는다.
+-- 기능 권한(W-04-01·02·03·04·12 · W-01-13 · W-01-07)은 표준 시드 `seed.js` 의 ROLE_SYS_ADMIN 이 넣는다 —
+-- 로더가 적용할 때마다 그것을 먼저 돌리므로 여기 적지 않는다(두 곳에 적으면 값이 갈린다).
+DO $$
+DECLARE
+  worker_count integer;
+BEGIN
+  SELECT count(*) INTO worker_count FROM mdm.worker WHERE worker_no = '901463';
+  IF worker_count <> 1 THEN
+    RAISE EXCEPTION '작업자 901463 이 없습니다 — mes-initial-data.sql 을 먼저 적재하세요';
+  END IF;
+END $$;
+
+INSERT INTO app.user_data_scope (app_user_id, business_unit_id, plant_id, created_by)
+SELECT context.admin_user_id, context.plant_business_unit_id, context.plant_id, context.admin_user_id
+FROM scenario_context context
+WHERE context.admin_user_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM app.user_data_scope scope
+    WHERE scope.app_user_id = context.admin_user_id
+      AND scope.business_unit_id = context.plant_business_unit_id
+      AND scope.plant_id = context.plant_id
+  );
+
+UPDATE mdm.worker worker
+   SET app_user_id = context.admin_user_id,
+       version_no = worker.version_no + 1,
+       updated_by = context.admin_user_id
+  FROM scenario_context context
+ WHERE worker.worker_no = '901463'
+   AND worker.app_user_id IS NULL
+   AND NOT EXISTS (SELECT 1 FROM mdm.worker linked WHERE linked.app_user_id = context.admin_user_id);
+
+SELECT 'admin-data-scope' AS kind,
+       count(*) FILTER (WHERE scope.business_unit_id = context.plant_business_unit_id AND scope.plant_id = context.plant_id) AS matched,
+       count(*) AS total
+FROM scenario_context context
+LEFT JOIN app.user_data_scope scope ON scope.app_user_id = context.admin_user_id
+GROUP BY context.admin_user_id
+UNION ALL
+SELECT 'admin-inspector(901463)',
+       count(*) FILTER (WHERE worker.app_user_id = context.admin_user_id),
+       count(*)
+FROM scenario_context context
+LEFT JOIN mdm.worker worker ON worker.worker_no = '901463'
+GROUP BY context.admin_user_id;
 
 \if :apply
 COMMIT;
