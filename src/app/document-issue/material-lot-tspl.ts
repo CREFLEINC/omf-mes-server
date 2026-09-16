@@ -15,5 +15,8 @@ export function materialLotTspl(values: MaterialLotLabelValues): Buffer {
       `TEXT ${String(text.x)},${String(text.y)},"0",0,${String(text.point)},${String(text.point)},"${text.content}"`),
     `QRCODE ${String(qr.x)},${String(qr.y)},M,${String(qr.cell)},A,0,M2,S7,"${values.lotNo}"`,
     'PRINT 1',
-  ].join('\r\n') + '\r\n', 'ascii');
+    // ⚠ `ascii` 가 아니라 `utf8` 이다 — `ascii` 는 ASCII 밖 문자를 하위 7비트로 «뭉개» 값을 바꾼다.
+    //    ERP 품목 코드에 전각 괄호가 섞인 값이 있어(`FS-536（SD）`) 실제로 닿는다. 프린터가 못
+    //    찍는 것과 서버가 값을 망가뜨리는 것은 다른 일이다.
+  ].join('\r\n') + '\r\n', 'utf8');
 }

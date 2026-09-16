@@ -1,4 +1,4 @@
-import { clip, dots, fit, printable, type LabelText, type QrModules } from './label-layout';
+import { assertTsplSafe, clip, dots, fit, type LabelText, type QrModules } from './label-layout';
 
 // qrcode has no bundled declarations in this workspace; only the module matrix is used here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -54,7 +54,7 @@ function head(values: MaterialLotLabelValues): string {
 
 export function layoutMaterialLotLabel(values: MaterialLotLabelValues): MaterialLotLabelLayout {
   [values.type, values.status, values.partNo, values.qty, values.lotNo, values.mfgDt,
-    values.workOrderNo ?? ''].forEach(printable);
+    values.workOrderNo ?? ''].forEach(assertTsplSafe);
   const width = dots(80);
   const height = dots(30);
   const pad = dots(2);
