@@ -86,6 +86,15 @@ describe('terminal logistics scope', () => {
     }));
   });
 
+  it('takes the goods issue list from both POP and mobile and still pins a queried plant', async () => {
+    // P-01-02 는 출고번호로 전표를 찾아 들어간다(U3) — 라인 QR 은 `goodsIssueLineId` 축으로 푼다.
+    for (const terminal of [pop, mobile]) {
+      await assertTerminalLogisticsScope(prisma(), request({}, {}, { q: 'GI-20260916-0001' }), 'GET /logistics/goods-issues', terminal);
+      await assertTerminalLogisticsScope(prisma(), request({}, {}, { goodsIssueLineId: '17' }), 'GET /logistics/goods-issues', terminal);
+      await expect(assertTerminalLogisticsScope(prisma(), request({}, {}, { plantId: '4' }), 'GET /logistics/goods-issues', terminal)).rejects.toBeDefined();
+    }
+  });
+
   it('requires a picking line to belong to the order in the path', async () => {
     const db = prisma({ picking_line: { findFirst: jest.fn().mockResolvedValue(null) } });
     await expect(assertTerminalLogisticsScope(db, request({ pickingOrderId: '12', pickingLineId: '13' }), 'POST /logistics/picking-orders/{pickingOrderId}/lines/{pickingLineId}:pick', mobile)).rejects.toBeDefined();

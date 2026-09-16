@@ -19,6 +19,7 @@
  * (I-4.md §8-3 ⓘ).
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -102,6 +103,9 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
   let uomId: number;
   let lotId: number;
   let goodsReceiptId: number;
+  let popToken: string;
+  let foreignPlantId: number;
+  let foreignWarehouseId: bigint;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -118,6 +122,7 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
     // 조회 e2e 가 쓰는 기본 LOT 에도 잔액을 세워 둔다 — 원천 문서 id 가 여기서 난다.
     const seed = await stock(lotId);
     goodsReceiptId = seed.goodsReceiptId;
+    await makePopTerminal();
   });
 
   afterAll(async () => {
@@ -248,6 +253,39 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
     expect(list.status).not.toBe(403);
     expect(detail.status).not.toBe(403);
     expect(lines.status).not.toBe(403);
+  });
+
+  /**
+   * ⭐ P-01-02(출고 QR 발행)가 출고번호로 전표를 찾아 들어간다(사용자 결정 U3).
+   * 전에는 `GET /logistics/goods-issues` 가 MOBILE 전용이라 POP 토큰이 401 이었다.
+   * ⛔ 공장 강제는 **컨트롤러가 단말의 `plantId` 를 목록 질의에 넘겨** 건다 — 범위 표를
+   *   열어도 남의 공장 전표는 안 보여야 한다. 그 자리를 여기서 잠근다.
+   */
+  it('⭐ POP 단말이 출고 목록을 읽는다 — 자기 공장만 보이고 라인 축도 POP 에서 돈다', async () => {
+    const mine = await insertRegisteredIssue();
+    const foreign = await insertForeignPlantIssue();
+
+    const byNo = await request(app.getHttpServer())
+      .get(`/api/logistics/goods-issues?q=${PREFIX}&size=100`)
+      .set('Authorization', `Bearer ${popToken}`);
+    expect(byNo.status).toBe(200);
+    const numbers = byNo.body.items.map((row: { goodsIssueNo: string }) => row.goodsIssueNo);
+    expect(numbers).toContain(mine.goodsIssueNo);
+    expect(numbers).not.toContain(foreign.goodsIssueNo);
+
+    // QR 이 싣는 축 — 라인 id 하나로 부모 전표를 되짚는다.
+    const byLine = await request(app.getHttpServer())
+      .get(`/api/logistics/goods-issues?goodsIssueLineId=${mine.goodsIssueLineId}`)
+      .set('Authorization', `Bearer ${popToken}`);
+    expect(byLine.status).toBe(200);
+    expect(byLine.body.items).toHaveLength(1);
+    expect(byLine.body.items[0].goodsIssueNo).toBe(mine.goodsIssueNo);
+
+    // 남의 공장을 대놓고 물으면 열리지 않는다.
+    const otherPlant = await request(app.getHttpServer())
+      .get(`/api/logistics/goods-issues?plantId=${foreignPlantId}`)
+      .set('Authorization', `Bearer ${popToken}`);
+    expect(otherPlant.status).toBe(401);
   });
 
   it('POST …:post — 200 · balance 가 줄고 inventory_transaction_line 이 선다', async () => {
@@ -917,6 +955,67 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
    * ⭐ PR ③ 이 `approvalRequestId`·`reasonCode` 와 **라인 배열**을 더했다 — 「같은 위치·LOT
    * 라인이 둘」과 승인 갈래가 그것을 쓴다. 기존 호출은 인자 없이 그대로 통과한다.
    */
+  /** P-01-02 회귀용 POP 단말 — 출고 QR 화면이 이 토큰으로 전표를 찾는다(U3). */
+  async function makePopTerminal(): Promise<void> {
+    const terminal = await prisma.terminal.create({
+      data: {
+        terminal_code: `${PREFIX}-POP`,
+        plant_id: BigInt(plantId),
+        terminal_type_code: 'POP',
+        status_code: 'RUNNING',
+      },
+    });
+    popToken = app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version,
+      terminalCode: terminal.terminal_code, plantId,
+    });
+  }
+
+  /** 남의 공장 전표 한 건 — 단말 목록에 새어 나오면 안 되는 쪽이다. */
+  async function insertForeignPlantIssue(): Promise<{ goodsIssueNo: string }> {
+    if (foreignWarehouseId === undefined) {
+      const entity = await prisma.legal_entity.findFirstOrThrow({
+        where: { legal_entity_code: `${PREFIX}-LE` },
+      });
+      const unit = await prisma.business_unit.findFirstOrThrow({
+        where: { business_unit_code: `${PREFIX}-BU` },
+      });
+      const plant = await prisma.plant.create({
+        data: {
+          legal_entity_id: entity.legal_entity_id,
+          plant_code: `${PREFIX}-P2`,
+          plant_name: '출고조회검사이웃공장',
+          timezone_code: 'Asia/Ho_Chi_Minh',
+        },
+      });
+      foreignPlantId = Number(plant.plant_id);
+      const warehouse = await prisma.warehouse.create({
+        data: {
+          plant_id: plant.plant_id,
+          business_unit_id: unit.business_unit_id,
+          warehouse_code: `${PREFIX}-WH2`,
+          warehouse_name: '출고조회검사이웃창고',
+          warehouse_type_code: 'RAW',
+          management_level_code: 'LOCATION',
+        },
+      });
+      foreignWarehouseId = warehouse.warehouse_id;
+    }
+    issueSeq += 1;
+    const issue = await prisma.goods_issue.create({
+      data: {
+        goods_issue_no: `${PREFIX}-${issueSeq}`,
+        issue_type_code: 'OTHER',
+        source_document_type_code: 'GOODS_RECEIPT',
+        source_document_id: goodsReceiptId,
+        source_warehouse_id: Number(foreignWarehouseId),
+        issued_at: new Date(AT),
+        status_code: 'REGISTERED',
+      },
+    });
+    return { goodsIssueNo: issue.goods_issue_no };
+  }
+
   async function insertRegisteredIssue(
     overrides: {
       issueTypeCode?: string;
@@ -1227,6 +1326,8 @@ describe('출고 7건 — 조회 3 · 전기 · 등록 · 라인 치환 · 상�
       routeIds.length = 0;
     }
     await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
+    // 단말은 공장을 짚으므로 공장보다 먼저 지운다.
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);

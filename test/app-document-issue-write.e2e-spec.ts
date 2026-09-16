@@ -284,6 +284,35 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     }
   });
 
+  /**
+   * ⭐ 이 스위트의 출고 QR 판정은 여태 **거부 쪽만** 봤다(REGISTERED 픽스처 → 422 STATE_LOCKED).
+   * 전기된 전표에서 «되는» 것을 아무도 잠그지 않아, 자격 규칙이 반대로 뒤집혀도 초록이었다.
+   * P-01-02(출고 QR 발행)가 서는 자리가 바로 이 성공 경로다.
+   */
+  it("⭐ 전기된 출고의 라인은 출고 QR 발행이 된다(거부 쪽만 보던 그물을 닫는다)", async () => {
+    const fixture = await newPostedGoodsIssue("POSTED_OK");
+
+    const response = await issueGoodsIssueLine(fixture, "POSTED_OK");
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      issuedCount: 1,
+      items: [
+        {
+          documentTypeCode: "GOODS_ISSUE_QR",
+          issueSeq: 1,
+          printOutcome: "PENDING",
+          target: {
+            targetTypeCode: "GOODS_ISSUE_LINE",
+            targetId: Number(fixture.goodsIssueLineId),
+            screenId: "P-01-02",
+          },
+        },
+      ],
+    });
+    expect(await goodsIssueDocumentCount(fixture.goodsIssueLineId)).toBe(1);
+  });
+
   it("출고 라인 writer가 먼저 잠그면 변경 경로를 다시 읽고 발행 전건을 롤백한다", async () => {
     const fixture = await newRegisteredGoodsIssue("WRITER_FIRST");
     const blocker = await blockGoodsIssue(fixture.goodsIssueId);
@@ -706,6 +735,18 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         target_id: lineId,
       },
     });
+  }
+
+  async function newPostedGoodsIssue(
+    suffix: string,
+  ): Promise<GoodsIssueFixture> {
+    const fixture = await newRegisteredGoodsIssue(suffix);
+    const posted = await prisma.goods_issue.update({
+      where: { goods_issue_id: BigInt(fixture.goodsIssueId) },
+      data: { status_code: "POSTED" },
+      select: { version_no: true },
+    });
+    return { ...fixture, versionNo: posted.version_no };
   }
 
   async function newRegisteredGoodsIssue(
