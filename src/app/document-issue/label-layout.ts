@@ -11,10 +11,10 @@ export const DPI = 203;
 export const dots = (millimetres: number): number => Math.round((millimetres / 25.4) * DPI);
 
 /** 203dpi 에서 이 아래는 읽히지 않는다(라벨 사양서 §4.2). */
-export const MIN_POINT = 7;
+const MIN_POINT = 7;
 
 /** 내장 폰트 자폭을 잴 수 없어 point 의 0.5 배로 어림한다 — 목업·POP 셸과 같은 어림이다. */
-export const charWidth = (point: number): number => point * 0.5 * (DPI / 72);
+const charWidth = (point: number): number => point * 0.5 * (DPI / 72);
 
 export function fit(content: string, point: number, available: number): number {
   let chosen = point;

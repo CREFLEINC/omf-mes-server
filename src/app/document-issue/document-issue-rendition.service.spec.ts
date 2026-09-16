@@ -81,4 +81,75 @@ describe('DocumentIssueRenditionService', () => {
       status: 422,
     });
   });
+
+  const locationIssue = { document_type_code: 'LOCATION_LABEL' };
+  const locationTarget = { issue_seq: 4, target_type_code: 'LOCATION', target_id: 42n };
+  const locationRow = {
+    location_code: 'A-01-03',
+    location_name: 'RACK A1',
+    warehouse: { warehouse_code: 'WH01' },
+  };
+
+  it('LOCATION_LABEL은 png를 낸다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn()
+        .mockResolvedValueOnce(locationIssue)
+        .mockResolvedValueOnce(locationTarget) },
+      location: { findUnique: jest.fn().mockResolvedValue(locationRow) },
+    } as unknown as PrismaService;
+
+    const png = await new DocumentIssueRenditionService(prisma).rendition(11);
+
+    expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  });
+
+  it('LOCATION_LABEL은 tspl을 낸다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn()
+        .mockResolvedValueOnce(locationIssue)
+        .mockResolvedValueOnce(locationTarget) },
+      location: { findUnique: jest.fn().mockResolvedValue(locationRow) },
+    } as unknown as PrismaService;
+
+    const text = (await new DocumentIssueRenditionService(prisma).rendition(11, 'tspl')).toString('ascii');
+
+    expect(text.startsWith('SIZE ')).toBe(true);
+    expect(text).toContain('"WH01/A-01-03"');
+  });
+
+  it('대상 유형이 LOCATION이 아니면 422다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn()
+        .mockResolvedValueOnce(locationIssue)
+        .mockResolvedValueOnce({ ...locationTarget, target_type_code: 'LOT' }) },
+      location: { findUnique: jest.fn().mockResolvedValue(locationRow) },
+    } as unknown as PrismaService;
+
+    await expect(new DocumentIssueRenditionService(prisma).rendition(11)).rejects.toMatchObject({
+      status: 422,
+    });
+  });
+
+  it('가리키는 위치가 지워졌으면 422다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn()
+        .mockResolvedValueOnce(locationIssue)
+        .mockResolvedValueOnce(locationTarget) },
+      location: { findUnique: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+
+    await expect(new DocumentIssueRenditionService(prisma).rendition(11)).rejects.toMatchObject({
+      status: 422,
+    });
+  });
+
+  it('없는 발행 기록은 404다', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+
+    await expect(new DocumentIssueRenditionService(prisma).rendition(11)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
 });

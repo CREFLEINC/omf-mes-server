@@ -1,5 +1,7 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 
+import { LABEL_FONT } from './label-font';
+import { DPI } from './label-layout';
 import { layoutLocationLabel, locationQrPayload, type LocationLabelValues } from './location-label-layout';
 import { locationLabelPng, locationLabelValues, type LocationLabelRow } from './location-label';
 
@@ -126,6 +128,29 @@ describe('위치 라벨 PNG (location-label)', () => {
     // IHDR 은 시그니처(8) 뒤 첫 청크다: 길이(4)+타입(4) 다음이 폭(4)·높이(4).
     expect(png.readUInt32BE(16)).toBe(639);
     expect(png.readUInt32BE(20)).toBe(240);
+  });
+
+  it('위치 코드 줄이 등록한 라벨 글꼴로 그려진다 — 글자만 빠진 PNG 를 잡는다', async () => {
+    expect(GlobalFonts.has(LABEL_FONT)).toBe(true);
+    const code = layoutLocationLabel(STANDARD).texts[1];
+    const px = Math.round((code.point * DPI) / 72);
+    const region = (ctx: SKRSContext2D): number[] => [...ctx.getImageData(code.x, code.y, code.width, px).data];
+
+    const image = await loadImage(locationLabelPng(STANDARD));
+    const actual = createCanvas(image.width, image.height).getContext('2d');
+    actual.drawImage(image, 0, 0);
+
+    const expected = createCanvas(image.width, image.height).getContext('2d');
+    expected.fillStyle = '#fff';
+    expected.fillRect(0, 0, image.width, image.height);
+    expected.fillStyle = '#000';
+    expected.textBaseline = 'top';
+    expected.font = `${String(px)}px ${LABEL_FONT}`;
+    expected.fillText(code.content, code.x, code.y, code.width);
+
+    // 기대 그림에 검은 점이 있는지부터 본다 — 둘 다 새하얗기만 해도 통과하는 단언을 막는다.
+    expect(region(expected).some((value, index) => index % 4 === 0 && value < 128)).toBe(true);
+    expect(region(actual)).toEqual(region(expected));
   });
 
   it('QR 모듈이 PNG 에 그대로 찍힌다', async () => {
