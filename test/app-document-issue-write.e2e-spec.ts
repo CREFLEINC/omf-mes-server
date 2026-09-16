@@ -617,7 +617,9 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       expect(qrLine).toContain(`"${warehouseCode}/${locationCode}"`);
     });
 
-    it("⛔ 위치명이 한글이면 422 다", async () => {
+    // 영문은 권고일 뿐이라 한글 이름도 막지 않는다 — 프린터에서 그 줄만 깨지고, 라벨의 일
+    // (QR·코드로 위치를 특정하는 것)은 그대로 된다.
+    it("⭐ 위치명이 한글이어도 발행·인쇄된다 — 영문은 권고이지 제약이 아니다", async () => {
       const logId = await issueLocationLabel("KOREAN");
       await prisma.location.update({
         where: { location_id: locationId },
@@ -625,10 +627,12 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       });
 
       try {
-        await request(app.getHttpServer())
-          .get(`/api/app/document-issues/${String(logId)}/rendition?format=png`)
-          .set("Cookie", cookie)
-          .expect(422);
+        const response = await renditionBytes(logId, "tspl")
+          .expect(200)
+          .expect("Content-Type", /application\/vnd\.tspl/);
+
+        // 서버가 값을 뭉개지 않았는지 본다 — `ascii` 인코딩이면 원문 바이트가 사라진다.
+        expect((response.body as Buffer).includes(Buffer.from("한글위치명", "utf8"))).toBe(true);
       } finally {
         await prisma.location.update({
           where: { location_id: locationId },

@@ -50,6 +50,14 @@ describe('locationTspl', () => {
     expect(boxLine).toBe('BOX 0,0,638,239,2');
   });
 
+  it('한글 위치명의 바이트를 뭉개지 않고 그대로 내보낸다 — 못 찍는 것은 프린터 사정이다', () => {
+    const korean = '자재 기본 위치';
+    const bytes = locationTspl({ ...STANDARD, locationName: korean });
+
+    // `ascii` 로 인코딩했다면 하위 7비트만 남아 원문이 사라진다.
+    expect(bytes.includes(Buffer.from(korean, 'utf8'))).toBe(true);
+  });
+
   it('줄을 CRLF 로 잇는다', () => {
     const tspl = locationTspl(STANDARD).toString('ascii');
     // '\n' 은 모두 '\r\n' 의 일부다 — 맨앞에 홀로 선 '\r' 없는 '\n' 이 없다.

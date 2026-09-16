@@ -1,4 +1,6 @@
-import { clip, dots, fit, printable, type LabelText, type QrModules } from './label-layout';
+import { UnprocessableEntityException } from '@nestjs/common';
+
+import { clip, dots, fit, type LabelText, type QrModules } from './label-layout';
 
 // qrcode has no bundled declarations in this workspace; only the module matrix is used here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -21,14 +23,18 @@ const QRCode = require('qrcode') as {
  * 계약의 스캔 조회 축은 「창고는 적치 지시·화면 문맥이 준다」는 전제지만, 벽에 붙은 라벨은
  * 문맥 없이 혼자 읽히므로 그 전제가 서지 않는다.
  *
- * ⛔ 창고 «이름» 을 싣지 않는다 — 이름은 한글·베트남어라 프린터 내장 폰트로 못 찍는다
- * (`printable` 이 422 로 막는다). 창고는 코드로만 적고, 영문으로 입력한 위치명을 그 아래 둔다.
+ * ⛔ 창고 «이름» 을 싣지 않는다 — 줄이 모자라고, 창고는 코드로 이미 특정된다.
+ *
+ * ⚠ **글자를 ASCII 로 제한하지 않는다**(2026-09-16 사용자 결정). 프린터 내장 폰트(TSPL `TEXT`
+ * 의 폰트 `"0"`)에 한글·베트남어 글리프가 없어 그 줄은 깨져 나오지만, 그건 «모양» 문제이고
+ * 라벨의 일(QR·코드로 위치를 특정하는 것)은 그대로 된다. 영문 입력은 **권고이지 제약이 아니다**
+ * — 자재 LOT 라벨(`layoutMaterialLotLabel`)이 `printable` 로 거절하는 것과 일부러 다르다.
  */
 
 export interface LocationLabelValues {
   warehouseCode: string;
   locationCode: string;
-  /** 영문이어야 한다 — 한글·베트남어면 `printable` 이 422 로 막는다. */
+  /** 영문 «권고». 한글이어도 발행은 되고, 그 줄만 프린터에서 깨져 나온다. */
   locationName: string;
   issueSeq: number;
 }
@@ -53,8 +59,26 @@ const QR_CELL_MAX = 8;
 const ROWS = { warehouse: 24, code: 60, name: 128, issue: 172 };
 const POINTS = { warehouse: 10, code: 20, name: 10, issue: 8 };
 
+/**
+ * 막는 것은 **명령을 깨는 글자뿐**이다 — 「이상하게 찍힌다」가 아니라 「다른 것이 찍히거나
+ * 인쇄가 깨진다」인 것들이다. 한글이든 무엇이든 그 밖의 글자는 그대로 보낸다.
+ *
+ * - 따옴표·역슬래시 — TSPL 은 값을 `"…"` 로 감싸 보내므로 값 안의 따옴표가 그 문자열을 미리
+ *   닫고 **뒤쪽이 명령으로 잘못 읽힌다.** 목업은 `\"` 로 벗기지만 실기 펌웨어에서 확인한 적이
+ *   없어, 값을 바꿔 찍을 위험 대신 거절한다.
+ * - 제어 문자 — TSPL 은 **CRLF 로 명령을 가른다.** 값 안의 줄바꿈은 거기서 새 «명령 줄» 을
+ *   만든다(`location_name` 은 자유 문자열이라 실제로 들어올 수 있다).
+ */
+function assertTsplSafe(value: string): void {
+  // 제어 문자는 정규식이 아니라 글자로 가린다 — 정규식에 넣으면 `no-control-regex` 가 막는다.
+  const hasControl = [...value].some((char) => char < ' ' || char === '');
+  if (value.includes('"') || value.includes('\\') || hasControl) {
+    throw new UnprocessableEntityException('라벨 값에 따옴표·역슬래시·줄바꿈을 쓸 수 없습니다.');
+  }
+}
+
 export function layoutLocationLabel(values: LocationLabelValues): LocationLabelLayout {
-  [values.warehouseCode, values.locationCode, values.locationName].forEach(printable);
+  [values.warehouseCode, values.locationCode, values.locationName].forEach(assertTsplSafe);
   const width = dots(80);
   const height = dots(30);
   const pad = dots(2);

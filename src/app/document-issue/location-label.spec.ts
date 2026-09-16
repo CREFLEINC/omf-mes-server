@@ -108,14 +108,22 @@ describe('위치 라벨 배치 (location-label-layout)', () => {
     expect(clipped.texts[2].content).toBe(`${'B'.repeat(37)}~`);
   });
 
-  it('한글 위치명은 422 다 — 프린터 내장 폰트가 ASCII 전용이다', () => {
-    expect(() => layoutLocationLabel({ ...STANDARD, locationName: '자재 기본 위치' })).toThrow(
-      expect.objectContaining({ status: 422 }),
-    );
+  it.each([
+    ['한글', '자재 기본 위치'],
+    ['베트남어 성조 문자', 'Kho Hàng Xưởng'],
+  ])('%s 위치명도 그대로 싣는다 — 영문은 권고이지 제약이 아니다', (_label, locationName) => {
+    const { texts } = layoutLocationLabel({ ...STANDARD, locationName });
+
+    expect(texts[2].content).toBe(locationName);
   });
 
-  it('베트남어 성조 문자도 422 다', () => {
-    expect(() => layoutLocationLabel({ ...STANDARD, locationName: 'Kho Hàng Xưởng' })).toThrow(
+  it.each([
+    ['따옴표', 'A"B'],
+    ['역슬래시', 'A\\B'],
+    ['줄바꿈', 'A\nB'],
+    ['캐리지 리턴', 'A\rB'],
+  ])('⛔ 위치명의 %s 는 422 다 — 모양이 아니라 TSPL 명령이 깨진다', (_label, locationName) => {
+    expect(() => layoutLocationLabel({ ...STANDARD, locationName })).toThrow(
       expect.objectContaining({ status: 422 }),
     );
   });
