@@ -386,6 +386,65 @@ describe('출하 목록 (e2e)', () => {
 
     // ⛔ false 는 절을 걸지 않는다 — 전건이 그대로 온다(`unconfirmedOnly` 와 같은 관례).
     expect((await ours({ hasUnassignedPackedBox: false })).length).toBe(all.length);
+
+    // 자기가 만든 것은 자기가 치운다 — 다음 시험이 이 잔재에 얽히면 원인을 찾기 어렵다.
+    await prisma.shipping_unit_handling_unit.deleteMany({
+      where: { shipping_unit_id: unit.shipping_unit_id },
+    });
+    await prisma.shipping_unit.delete({ where: { shipping_unit_id: unit.shipping_unit_id } });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'OPEN' },
+    });
+  });
+
+  /**
+   * ⭐ `shipDateFrom` 은 필수인데(L-2) **이 축을 줄 때만 예외**다(P-24).
+   * 「구성할 것이 남았나」는 날짜와 무관하다 — 기간을 강제하면 어제 출하한 건의 남은 상자가
+   * 창 밖으로 빠져 `P-04-05` 에서 영영 안 보인다.
+   */
+  it('L-19 ⭐ hasUnassignedPackedBox 를 주면 기간이 «선택»이다 — 안 주면 여전히 400 이다', async () => {
+    const box = await prisma.handling_unit.findFirstOrThrow({
+      where: { handling_unit_no: { startsWith: PREFIX } },
+    });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'PACKED' },
+    });
+
+    // 기간 없이 부른다 — 200 이고 그 출하가 보인다.
+    const response = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ hasUnassignedPackedBox: true, size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    const ours = response.body.items.filter((item: ShipmentBody) =>
+      item.shipmentNo.startsWith(PREFIX),
+    );
+    expect(ours.length).toBeGreaterThan(0);
+    for (const item of ours) expect(item.unassignedPackedBoxCount).toBeGreaterThan(0);
+
+    // ⛔ 그 축이 없으면 기간은 여전히 필수다.
+    const required = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ size: 100 })
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(required.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'shipDateFrom', code: 'REQUIRED' }),
+    );
+
+    // false 는 예외가 아니다 — 절을 안 걸 뿐 기간 필수는 그대로다.
+    await request(app.getHttpServer())
+      .get(BASE)
+      .query({ hasUnassignedPackedBox: false, size: 100 })
+      .set('Cookie', cookie)
+      .expect(400);
+
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'OPEN' },
+    });
   });
 
   // ── 등록 `POST /logistics/shipments` ──────────────────────────────────────
