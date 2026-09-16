@@ -19,7 +19,9 @@ export function logisticsAppUserId(request: Request): number {
 
 /** Contract operation keys reached by the POP and mobile clients. */
 export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
-  'GET /logistics/goods-issues': ['MOBILE'],
+  // ⭐ POP 을 더한다 — P-01-02(출고 QR 발행)가 출고번호로 전표를 찾아 들어간다(사용자 결정 U3).
+  //    공장 강제는 컨트롤러가 단말의 `plantId` 를 목록 질의에 넘겨 이미 걸린다.
+  'GET /logistics/goods-issues': ['POP', 'MOBILE'],
   'GET /logistics/goods-issues/{goodsIssueId}': ['POP'],
   'GET /logistics/goods-issues/{goodsIssueId}/lines': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipt-lines/{inboundReceiptLineId}/variances': ['MOBILE'],
