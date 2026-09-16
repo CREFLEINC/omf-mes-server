@@ -8,6 +8,9 @@ const QRCode = require('qrcode') as {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { LABEL_FONT } from './label-font';
+import { locationLabelPng, locationLabelValues } from './location-label';
+import type { LocationLabelValues } from './location-label-layout';
+import { locationTspl } from './location-tspl';
 import { materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
 import type { MaterialLotLabelValues } from './material-lot-label-layout';
 import { materialLotTspl } from './material-lot-tspl';
@@ -31,6 +34,12 @@ export class DocumentIssueRenditionService {
     if (issue.document_type_code === 'PRODUCTION_LOT_LABEL') {
       const values = await this.productionLotLabelValues(issueId);
       return format === 'tspl' ? materialLotTspl(values) : materialLotLabelPng(values);
+    }
+    // ⭐ 위치 라벨은 «판이 다르다» — 랙에 붙은 것을 거리를 두고 찍어야 해서 QR 이 훨씬 크다
+    //    (`location-label-layout.ts`). 그래서 자재 판을 재사용한 생산 LOT 라벨과 달리 따로 그린다.
+    if (issue.document_type_code === 'LOCATION_LABEL') {
+      const values = await this.locationLabelValues(issueId);
+      return format === 'tspl' ? locationTspl(values) : locationLabelPng(values);
     }
     if (format === 'tspl') throw new UnprocessableEntityException('이 출력물의 TSPL 렌디션은 지원하지 않습니다.');
     if (issue.document_type_code === 'DELIVERY_LABEL') return this.deliveryLabel(issueId);
@@ -124,6 +133,24 @@ export class DocumentIssueRenditionService {
       },
       workOrderNo: workOrder?.work_order_no ?? '',
     });
+  }
+
+  private async locationLabelValues(issueId: number): Promise<LocationLabelValues> {
+    const issue = await this.prisma.document_issue_log.findUnique({
+      where: { document_issue_log_id: issueId },
+      select: { issue_seq: true, target_type_code: true, target_id: true },
+    });
+    if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
+    if (issue.target_type_code !== 'LOCATION') {
+      throw new UnprocessableEntityException('위치 라벨의 대상이 올바르지 않습니다.');
+    }
+    const location = await this.prisma.location.findUnique({
+      where: { location_id: issue.target_id },
+      select: { location_code: true, location_name: true, warehouse: { select: { warehouse_code: true } } },
+    });
+    // 발행 뒤 위치가 지워졌을 수 있다 — 기록은 남아 있어도 그릴 값이 없다.
+    if (!location) throw new UnprocessableEntityException('없는 위치입니다.');
+    return locationLabelValues({ ...location, issue_seq: issue.issue_seq });
   }
 
   private async materialLotLabelValues(issueId: number): Promise<MaterialLotLabelValues> {

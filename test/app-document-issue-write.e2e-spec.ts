@@ -539,6 +539,105 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
     });
   });
 
+  /**
+   * 위치 라벨은 랙에 붙여 관리웹 화면에서 찍는다 — POP 단말이 아니라 `cookie` 로 인증한다.
+   * 모든 `locationIds` 는 앞선 스위트에서 이미 한 번씩 발행됐으므로, 여기서 다시 발행하려면
+   * 재발행 사유(`REASON`)가 필요하다.
+   */
+  describe("위치 라벨 렌디션", () => {
+    const READABLE_NAME = `${PREFIX}_LOC_READABLE`;
+    // ⚠ describe 본문은 `beforeAll` 보다 먼저(동기로) 도는데, 그때는 `locationIds` 가 아직
+    //   비어 있다 — 그래서 인덱싱은 `beforeAll` 안에서 한다.
+    let locationId: bigint;
+    let warehouseCode: string;
+    let locationCode: string;
+
+    beforeAll(async () => {
+      locationId = locationIds[3];
+      const location = await prisma.location.update({
+        where: { location_id: locationId },
+        data: { location_name: READABLE_NAME },
+        select: { location_code: true, warehouse: { select: { warehouse_code: true } } },
+      });
+      locationCode = location.location_code;
+      warehouseCode = location.warehouse.warehouse_code;
+    });
+
+    async function issueLocationLabel(suffix: string): Promise<number> {
+      const response = await issue([locationId], {
+        remarks: `${PREFIX}_LOC_${suffix}`,
+        reissueReasonCode: REASON,
+      }).expect(201);
+      return response.body.items[0].documentIssueLogId;
+    }
+
+    function renditionBytes(logId: number, format: "png" | "tspl"): request.Test {
+      return request(app.getHttpServer())
+        .get(`/api/app/document-issues/${String(logId)}/rendition?format=${format}`)
+        .set("Cookie", cookie)
+        .buffer(true)
+        .parse((stream, callback) => {
+          const chunks: Buffer[] = [];
+          stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+          stream.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+    }
+
+    it("⭐ 위치 라벨을 png 로 받는다", async () => {
+      const logId = await issueLocationLabel("PNG");
+
+      const response = await renditionBytes(logId, "png")
+        .expect(200)
+        .expect("Content-Type", /image\/png/);
+
+      expect(response.body.length).toBeGreaterThan(0);
+      expect((response.body as Buffer).subarray(0, 8)).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+    });
+
+    it("⭐ 위치 라벨을 tspl 로 받는다", async () => {
+      const logId = await issueLocationLabel("TSPL");
+
+      const response = await renditionBytes(logId, "tspl")
+        .expect(200)
+        .expect("Content-Type", /application\/vnd\.tspl/);
+
+      expect((response.body as Buffer).toString("ascii").startsWith("SIZE ")).toBe(true);
+    });
+
+    it("⭐ QR 에 창고코드/위치코드 가 실린다", async () => {
+      const logId = await issueLocationLabel("QR");
+
+      const response = await renditionBytes(logId, "tspl").expect(200);
+      const text = (response.body as Buffer).toString("ascii");
+      const qrLine = text.split("\r\n").find((line) => line.startsWith("QRCODE "));
+
+      expect(qrLine).toBeDefined();
+      expect(qrLine).toContain(`"${warehouseCode}/${locationCode}"`);
+    });
+
+    it("⛔ 위치명이 한글이면 422 다", async () => {
+      const logId = await issueLocationLabel("KOREAN");
+      await prisma.location.update({
+        where: { location_id: locationId },
+        data: { location_name: "한글위치명" },
+      });
+
+      try {
+        await request(app.getHttpServer())
+          .get(`/api/app/document-issues/${String(logId)}/rendition?format=png`)
+          .set("Cookie", cookie)
+          .expect(422);
+      } finally {
+        await prisma.location.update({
+          where: { location_id: locationId },
+          data: { location_name: READABLE_NAME },
+        });
+      }
+    });
+  });
+
   let terminalSeq = 0;
 
   /** 그 공장의 POP 단말 하나를 만들고 현재 세대 토큰을 낸다. */
