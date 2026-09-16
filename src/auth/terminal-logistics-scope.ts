@@ -39,6 +39,11 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/shipment-lot-allocations': ['POP', 'MOBILE'],
   'GET /logistics/shipment-requests': ['MOBILE'],
   'GET /logistics/shipments': ['POP'],
+  // ⭐ 출하 단위(P-04-05) — POP 전용이다. 모바일은 이 화면을 갖지 않는다.
+  //    공장 강제는 서비스가 단말의 `plantId` 로 좁힌다(목록·상세·생성 모두).
+  'GET /logistics/shipping-units': ['POP'],
+  'GET /logistics/shipping-units/{shippingUnitId}': ['POP'],
+  'POST /logistics/shipping-units': ['POP'],
   'GET /logistics/shipments/{shipmentId}': ['POP'],
   'GET /logistics/shopfloor-receipts': ['POP', 'MOBILE'],
   'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}': ['POP'],
@@ -120,6 +125,7 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/putaway-tasks':
     case 'GET /logistics/shipment-lot-allocations':
     case 'GET /logistics/shipment-requests':
+    case 'GET /logistics/shipping-units':
     case 'GET /logistics/shipments':
     case 'GET /logistics/shopfloor-receipts':
     case 'GET /logistics/stock-transfers':
@@ -138,6 +144,14 @@ export async function assertTerminalLogisticsScope(
       await check(await prisma.putaway_rule.findFirst({ where: { putaway_rule_id: id(p.putawayRuleId), warehouse: { plant_id: plant } }, select: { putaway_rule_id: true } })); break;
     case 'GET /logistics/putaway-tasks/{putawayTaskId}': await putaway(p.putawayTaskId); break;
     case 'GET /logistics/shipments/{shipmentId}': await shipment(p.shipmentId); break;
+    // 출하 단위의 소유는 그 출하 전표의 창고 공장이다(배분 PUT 과 같은 축).
+    case 'GET /logistics/shipping-units/{shippingUnitId}':
+      await check(await prisma.shipping_unit.findFirst({ where: {
+        shipping_unit_id: id(p.shippingUnitId), shipment: { warehouse: { plant_id: plant } },
+      }, select: { shipping_unit_id: true } })); break;
+    // ⛔ 본문의 `shipmentId` 는 아래 `checkBodyResources` 가 `issue` 가 아니라 `shipment` 로
+    //   판정한다 — 이름이 같아도 다른 표다(`names` 표에 `shipmentId: 'shipment'`).
+    case 'POST /logistics/shipping-units': break;
     case 'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}':
       await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), work_order: { production_line: { plant_id: plant } } }, select: { shopfloor_receipt_id: true } })); break;
     case 'GET /logistics/stock-transfers/{stockTransferId}/lines': await transfer(p.stockTransferId); break;

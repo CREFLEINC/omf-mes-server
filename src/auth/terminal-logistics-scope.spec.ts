@@ -28,8 +28,8 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(37);
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter((key) => key.startsWith('POST ') || key.startsWith('PUT '))).toHaveLength(14);
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(40);
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter((key) => key.startsWith('POST ') || key.startsWith('PUT '))).toHaveLength(15);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
   });

@@ -264,7 +264,7 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     expect(Object.values(judges).filter((code) => code === 'INVALID')).toHaveLength(1);
   });
 
-  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 37 이다 — 늘면 갈래를 정해야 한다', () => {
+  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 40 이다 — 늘면 갈래를 정해야 한다', () => {
     let required = 0;
     for (const file of readdirSync(CONTRACTS).filter((name) => name.endsWith('.json'))) {
       const document = JSON.parse(readFileSync(join(CONTRACTS, file), 'utf8')) as {
@@ -278,7 +278,9 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     }
 
     // ⛔ 이 숫자가 늘었는데 위 세 표가 그대로면, 새 오퍼레이션이 판정을 «안 하고» 있다는 뜻이다.
-    expect(required).toBe(37);
+    // SHIP-UNIT-01 출하 단위 쓰기 셋(생성·상자 넣기·마감 · 장부 P-24): 37 → 40.
+    // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
+    expect(required).toBe(40);
   });
 });
 

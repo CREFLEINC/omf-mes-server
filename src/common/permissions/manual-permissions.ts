@@ -304,4 +304,20 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⛔ 도출표를 손으로 고치지 않는다 — `derive-map.py` 산출물이다. 두 표는 합집합으로 겹친다.
   // 결정 — I-17 R-3
   'POST /logistics/recycle-entries': ['M-01-12'],
+
+  // `P-04-05` 출하 단위 구성 — ⭐ 도출표가 이 셋을 못 준다. 요구서 §3 은 «설계가 적은»
+  // 화면 액션에서 나오는데, 이 경로들은 설계 정본에 아직 없고 우리가 사본에 먼저 적었다
+  // (장부 P-24). 소유 화면은 하나뿐이라 지어낸 것이 아니다 — 이 셋을 부르는 화면이
+  // `P-04-05` 말고 없다.
+  // ⛔ 설계팀이 정본에 실어 오면 `derive-map.py` 가 같은 짝을 낼 것이고, 그때 이 세 줄은
+  //   도출표와 겹쳐 검사가 막는다 — 그 시점에 여기서 지운다.
+  // ⚠ 뒤 셋은 아직 컨트롤러가 없다(상자 넣기·빼기·마감은 다음 커밋이다). 그래도 여기
+  //   적는다 — 계약이 403 을 선언한 자리는 «전건» 등록돼야 한다는 검사가 있고, 라우트가
+  //   없는 동안에는 이 줄이 아무 일도 하지 않는다.
+  'GET /logistics/shipping-units': ['P-04-05'],
+  'GET /logistics/shipping-units/{shippingUnitId}': ['P-04-05'],
+  'POST /logistics/shipping-units': ['P-04-05'],
+  'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['P-04-05'],
+  'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
+  'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
 };
