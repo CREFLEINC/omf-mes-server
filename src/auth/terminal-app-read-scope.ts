@@ -72,7 +72,7 @@ export async function assertTerminalAppReadScope(
       await assertOwnedTarget(prisma, terminal, query.targetTypeCode, query.targetId);
       break;
     case 'GET /app/document-issues/summary': {
-      const ids = Array.isArray(query.targetIds) ? query.targetIds : [query.targetIds];
+      const ids = csvQueryValues(query.targetIds);
       if (ids.length < 1 || ids.length > 1000) throw denied();
       for (const id of ids) await assertOwnedTarget(prisma, terminal, query.targetTypeCode, id);
       break;
@@ -163,6 +163,24 @@ export async function assertOwnedTarget(
       throw denied();
   }
   if (!owned) throw denied();
+}
+
+/**
+ * `style: form` · `explode: false` 배열 질의를 «계약 검증기와 같은 규칙»으로 푼다(D7).
+ *
+ * ⛔ **이 가드는 계약 검증 «앞»에서 돈다**(`app.module.ts`: 인증 → 권한 → 계약 검증).
+ * 그래서 `targetIds=1,2,3` 이 아직 나뉘지 않은 문자열 하나로 들어온다 — 전에는 그것을
+ * id 하나로 보아 `positiveId("1,2,3")` 이 null 이 되고, 자기 공장 전표인데도 401 이었다.
+ * 계약이 그렇게 직렬화하라고 적은 값이라 **클라이언트는 옳았다.**
+ *
+ * ⚠ **이미 배열로 온 값은 원소 안의 쉼표를 다시 나누지 않는다** — `contract-validator.ts`
+ * 의 `splitCsvQuery` 와 한 글자도 다르지 않게 맞춘 자리다. 여기서 더 나누면 두 파서가
+ * 이번엔 «반대 방향»으로 어긋나, 계약 검증이 400 으로 가를 값을 이 가드가 먼저 통과시킨다.
+ */
+function csvQueryValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return value.split(',');
+  return [value];
 }
 
 function positiveId(value: unknown): bigint | null {

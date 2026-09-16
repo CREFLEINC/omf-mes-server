@@ -72,6 +72,7 @@ describe('발행 이력 목록·상세 (I-27 P1 e2e)', () => {
   let userId: bigint;
   let workerId: bigint;
   let terminalId: bigint;
+  let popToken: string;
   let itemId: bigint;
   let lotId: bigint;
   let longLotId: bigint;
@@ -324,6 +325,40 @@ describe('발행 이력 목록·상세 (I-27 P1 e2e)', () => {
     expect(second.page).toEqual({ page: 2, size: 200, total: 205 });
   });
 
+  /**
+   * ⭐ D7 — POP `P-01-02` 대기 목록이 통째로 401 이었다. 계약이 `explode: false` 라
+   * `targetIds=1,2,3` 한 문자열로 오는데, 단말 범위 검사가 계약 검증 «앞»이라 아직 안 나뉜
+   * 값을 id 하나로 보았다. 이 스위트의 CSV 검사는 전부 세션 쿠키였고 **단말 토큰 경로만
+   * 비어 있어** 빠져나갔다 — 그 자리를 여기서 닫는다.
+   */
+  it('⭐ POP 단말이 쉼표로 이은 요약 대상을 읽는다 — 남의 공장 id 가 섞이면 401 이다', async () => {
+    const summary = `/api/app/document-issues/summary`;
+
+    const ok = await request(app.getHttpServer())
+      .get(summary)
+      .query({
+        targetTypeCode: 'GOODS_ISSUE_LINE',
+        targetIds: `${issueLineId},${issueLineId}`,
+        documentTypeCode: 'GOODS_ISSUE_QR',
+      })
+      .set('Authorization', `Bearer ${popToken}`);
+    expect(ok.status).toBe(200);
+    // 중복은 입력 그대로 보존된다 — 두 칸 모두 그 라인의 발행 1건을 센다.
+    expect(ok.body.items).toHaveLength(2);
+    expect(ok.body.items[0]).toMatchObject({
+      targetTypeCode: 'GOODS_ISSUE_LINE',
+      targetId: Number(issueLineId),
+      issueCount: 1,
+    });
+
+    // 남의 공장 대상이 하나라도 섞이면 전건을 막는다(0 은 어느 공장에도 없다).
+    const foreign = await request(app.getHttpServer())
+      .get(summary)
+      .query({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: `${issueLineId},0` })
+      .set('Authorization', `Bearer ${popToken}`);
+    expect(foreign.status).toBe(401);
+  });
+
   it.each([
     [`${PATH}?targetTypeCode=LOT&targetId=9007199254740992`, 'targetId'],
     [`${PATH}?lotId=9007199254740992`, 'lotId'],
@@ -404,6 +439,11 @@ describe('발행 이력 목록·상세 (I-27 P1 e2e)', () => {
       },
     });
     terminalId = terminal.terminal_id;
+    // D7 회귀용 POP 단말 토큰 — 대기 목록이 단말 토큰으로 요약을 묻는다.
+    popToken = jwt.sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version,
+      terminalCode: terminal.terminal_code, plantId: Number(plant.plant_id),
+    });
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,

@@ -32,6 +32,42 @@ describe('POP app read scope', () => {
       'GET /app/document-issues/summary', terminal)).rejects.toMatchObject({ status: 401 });
   });
 
+  /**
+   * ⭐ D7 — 계약이 `explode: false` 로 적어 `targetIds=1,2,3` 한 문자열로 온다. 이 가드는 계약
+   * 검증 «앞»이라 아직 안 나뉜 값을 본다. 전에는 그것을 id 하나로 보아 자기 공장 전표인데도
+   * 401 이었다(POP `P-01-02` 대기 목록이 통째로 막혔다).
+   */
+  it('⭐ 쉼표로 직렬화된 summary 대상을 나눠 본다 — 남의 것이 섞이면 여전히 401 이다', async () => {
+    const line = prisma.goods_issue_line.findFirst as jest.Mock;
+    line.mockClear();
+
+    await expect(assertTerminalAppReadScope(prisma,
+      request({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: '1,2,3' }),
+      'GET /app/document-issues/summary', terminal)).resolves.toBeUndefined();
+    expect(line).toHaveBeenCalledTimes(3);
+    expect(line.mock.calls.map(([args]) => args.where.goods_issue_line_id)).toEqual([1n, 2n, 3n]);
+
+    // 셋 중 하나가 남의 공장이면 전건을 막는다.
+    line.mockResolvedValueOnce({ goods_issue_line_id: 1n }).mockResolvedValueOnce(null);
+    await expect(assertTerminalAppReadScope(prisma,
+      request({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: '1,2,3' }),
+      'GET /app/document-issues/summary', terminal)).rejects.toMatchObject({ status: 401 });
+
+    // 토큰 하나라도 id 가 아니면 막는다.
+    await expect(assertTerminalAppReadScope(prisma,
+      request({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: '1,,3' }),
+      'GET /app/document-issues/summary', terminal)).rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalAppReadScope(prisma,
+      request({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: '1,-2' }),
+      'GET /app/document-issues/summary', terminal)).rejects.toMatchObject({ status: 401 });
+
+    // ⛔ 이미 배열로 온 값은 원소 안의 쉼표를 다시 나누지 않는다 — 계약 검증기와 같은 규칙이다.
+    //    (여기서 더 나누면 계약 검증이 400 으로 가를 값을 이 가드가 먼저 통과시킨다.)
+    await expect(assertTerminalAppReadScope(prisma,
+      request({ targetTypeCode: 'GOODS_ISSUE_LINE', targetIds: ['1', '2,3'] }),
+      'GET /app/document-issues/summary', terminal)).rejects.toMatchObject({ status: 401 });
+  });
+
   it('requires a target for issue history and the owned target for a rendition', async () => {
     await expect(assertTerminalAppReadScope(prisma, request(),
       'GET /app/document-issues', terminal)).rejects.toMatchObject({ status: 401 });
