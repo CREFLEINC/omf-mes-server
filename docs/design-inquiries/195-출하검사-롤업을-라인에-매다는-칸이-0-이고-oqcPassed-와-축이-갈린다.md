@@ -56,6 +56,33 @@ OQC 를 **헤더 대상**(`target_type_code='SHIPMENT_REQUEST'`)으로만 낸 �
 2. **헤더 대상 OQC 하나가 그 작업지시의 «모든» 필수 라인을 물들이는 것이 맞습니까?** (`lot_id` 가 채워져 있으면 그 LOT 을 집은 라인만 물들이도록 좁혔습니다.)
 3. ⚠ 계약이 「검사 대상이 아닌 배분(`shippingInspectionRequired=false`)은 **`oqcPassed=true`** 로 내린다」라 적었습니다 — **「검사를 안 했다」가 「합격」으로 표시됩니다.** 의도가 맞는지 확인해 주십시오.
 
+### ⭐ 2 번은 선행 구현으로 「맞다」를 택했습니다 (2026-09-16 · SHIP-UNIT-01)
+
+출하작업지시 **편성**(`POST /logistics/shipment-requests`)이 OQC 의뢰를 자동으로 만들게 되면서
+2 번의 답이 구현에 박혔습니다. 회신이 오면 이 자리를 그 답에 맞춥니다.
+
+**왜 그 답밖에 없었나** — 편성 시점에는 **LOT 이 아직 없습니다**(예약은 `:pick` 이 겁니다).
+그래서 의뢰는 `target_type_code='SHIPMENT_REQUEST'` · `lot_id=NULL` 인 헤더 대상일 수밖에
+없고, 그 모양이 곧 「모든 필수 라인을 물들인다」입니다. 1 번(라인 축)은 `targetTypeCode`
+enum 에 `SHIPMENT_REQUEST_LINE` 이 없어 **표현 자체가 불가능**합니다.
+
+**⚠ 그 결과 판정이 거칠어집니다.** 물리가 `item_id`·`uom_id`·`target_qty` 를 NOT NULL 로
+요구해 의뢰를 **품목별로** 나누는데, 나눠 만든 의뢰들이 저마다 헤더 축이라 **서로의 라인까지
+함께 물들입니다.** 실질은 「전 의뢰 합격 = 전 라인 PASSED」입니다. 품목 하나가 떨어지면 전
+라인이 막히는 쪽이라 안전한 방향으로 거칠어지는 것이라 받아들였습니다.
+
+**함께 남기는 범위 밖 사실 셋**
+
+1. **PQC 의뢰는 여전히 공백입니다.** 계약(`quality.d.ts`)이 「서버가 입하·실적·출하 시점에
+   REQUESTED 로 만든다」고 적었는데 구현은 입하(IQC)와 출하(OQC) 둘뿐이고, 실적(PQC)을
+   만드는 코드가 0 건입니다. e2e 가 Prisma 로 직접 심고 있습니다.
+2. **`GET /quality/inspection-requests` 에 `targetTypeCode`·`targetId` 필터가 없습니다.**
+   그래서 `W-04-03` 이 「이 출하작업지시의 OQC 의뢰」를 직접 집을 수 없고,
+   `inspectionTypeCode=OQC` + `pendingOnly` 로 훑는 수밖에 없습니다.
+3. **단말에서는 이 의뢰가 안 보입니다.** `terminal-quality-read-scope.ts` 가 `work_order` 를
+   통해 범위를 좁히는데 헤더 대상 OQC 의뢰는 `work_order_id` 가 NULL 이라 0 건이 됩니다.
+   관리자 웹(`W-04-03`)은 무관합니다.
+
 ## 🔎 이 통보가 «흡수»한 것 (3관점 재검토 · 2026-09-09)
 
 | 어디서 왔나 | 무엇 |

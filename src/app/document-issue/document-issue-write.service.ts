@@ -13,7 +13,8 @@ import {
 } from "./document-issue-create-rules";
 import { lockDocumentIssueGoodsIssueTargets } from "./document-issue-goods-issue-lock";
 import { lockDocumentIssueInspectionTargets } from "./document-issue-inspection-lock";
-import { assignDeliveryLabelNumbers, lockDeliveryAllocations } from './document-issue-delivery';
+import { lockDeliveryAllocations } from './document-issue-delivery';
+import { loadShippingUnitFacts } from './document-issue-shipping-unit';
 import { loadDocumentIssueReasons } from "./document-issue-query.service";
 import {
   DocumentIssueSequence,
@@ -56,6 +57,8 @@ export class DocumentIssueWriteService {
       await lockDocumentIssueGoodsIssueTargets(tx, targets),
       await lockDocumentIssueInspectionTargets(tx, targets),
       await lockDeliveryAllocations(tx, targets, context.terminalId, context.workerNo),
+      // ⭐ 납품 라벨의 새 주인(SHIP-UNIT-01). 배분 쪽은 과거 이력을 읽는 자리로 남는다.
+      await loadShippingUnitFacts(tx, targets, context.terminalId, context.workerNo),
     );
     const sequences = await nextDocumentIssueSequences(
       tx,
@@ -80,7 +83,6 @@ export class DocumentIssueWriteService {
     const workerId = await resolveWorker(tx, context.workerNo);
     const reason = await resolveReason(tx, input, qualified);
     const now = new Date();
-    await assignDeliveryLabelNumbers(tx, facts.values(), now);
     const created = await tx.document_issue_log.createManyAndReturn({
       data: qualified.map(({ target, lotId, sequence }) => ({
         document_type_code: input.documentTypeCode,

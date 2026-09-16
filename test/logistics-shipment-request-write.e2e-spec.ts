@@ -437,6 +437,87 @@ describe('출하작업지시 편성 (e2e)', () => {
   });
 
   // ── W-24 ~ W-26 · 채번 · 멱등 ───────────────────────────────────────────
+  /**
+   * ⭐ 편성이 OQC 의뢰를 만든다(PR ⑦). 계약이 「서버가 입하·실적·«출하» 시점에 REQUESTED 로
+   * 만든다」고 이미 적었는데 입하만 구현돼 있었다.
+   * ⛔ 헤더 대상(`SHIPMENT_REQUEST` · `lot_id` null)일 수밖에 없다 — 편성 시점에 LOT 이 없다.
+   *   그래서 품목별로 갈린다(`item_id`·`uom_id`·`target_qty` 가 NOT NULL 이라서).
+   */
+  it('W-29 ⭐ 편성이 검사 필수 라인의 «품목별로» OQC 의뢰를 세운다', async () => {
+    const body = await create(payload({
+      lines: [
+        line({ itemId: ids.item1, allocatedQty: 20, shippingInspectionRequired: true }),
+        line({ itemId: ids.item1, allocatedQty: 30, shippingInspectionRequired: true }),
+        line({ itemId: ids.item2, allocatedQty: 7, shippingInspectionRequired: true }),
+        line({ itemId: ids.item2, allocatedQty: 99, shippingInspectionRequired: false }),
+      ],
+    }));
+
+    const requests = await prisma.inspection_request.findMany({
+      where: {
+        inspection_type_code: 'OQC',
+        target_type_code: 'SHIPMENT_REQUEST',
+        target_id: BigInt(body.shipmentRequestId),
+      },
+      orderBy: { item_id: 'asc' },
+    });
+
+    // 품목 둘 → 의뢰 둘. 같은 품목의 두 라인은 수량이 합쳐진다(20+30).
+    expect(requests).toHaveLength(2);
+    expect(requests.map((row) => Number(row.item_id))).toEqual([ids.item1, ids.item2]);
+    expect(Number(requests[0].target_qty)).toBe(50);
+    // ⛔ 검사 불요 라인(99)은 합계에 안 들어간다.
+    expect(Number(requests[1].target_qty)).toBe(7);
+    for (const row of requests) {
+      expect(row.lot_id).toBeNull();
+      expect(row.status_code).toBe('REQUESTED');
+      expect(row.inspection_plan_version_id).not.toBeNull();
+      expect(row.inspection_request_no).toMatch(/^IRQ-\d{8}-\d{4}$/);
+    }
+  });
+
+  it('W-30 검사 필수 라인이 하나도 없으면 의뢰를 만들지 않는다', async () => {
+    const body = await create(payload({
+      lines: [line({ itemId: ids.item1, shippingInspectionRequired: false })],
+    }));
+
+    await expect(
+      prisma.inspection_request.count({
+        where: { target_type_code: 'SHIPMENT_REQUEST', target_id: BigInt(body.shipmentRequestId) },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  /**
+   * ⛔ 마스터 결손을 조용히 넘기지 않는다. 라인의 `shippingInspectionRequired` 가 이미
+   * 「검사 불요」를 뜻하므로, 필수라고 해 놓고 기준이 없는 것은 고쳐야 할 결손이다.
+   * 넘기면 결과가 영영 안 생겨 그 출하의 검사 판정이 `PENDING` 에 갇힌다.
+   */
+  it('W-31 ⭐ 검사 필수인데 유효한 OQC 기준이 없으면 400 STATE_LOCKED 로 편성을 막는다', async () => {
+    const orphan = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-NOPLAN`,
+        item_name: '출하편성검사기준없음',
+        item_type_code: 'FINISHED',
+        base_uom_id: BigInt(ids.uom1),
+      },
+    });
+    const before = await countOurs();
+
+    const response = await request(app.getHttpServer())
+      .post(BASE)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send(payload({
+        lines: [line({ itemId: Number(orphan.item_id), shippingInspectionRequired: true })],
+      }))
+      .expect(400);
+
+    expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    // ⛔ 전표도 남지 않는다 — 기준 검사는 트랜잭션을 열기 «전»이다.
+    await expect(countOurs()).resolves.toBe(before);
+  });
+
   it('W-24 shipmentRequestNo 가 SR-{YYYYMMDD}-{SEQ4} 다', async () => {
     const body = await create(payload());
 
@@ -612,6 +693,29 @@ describe('출하작업지시 편성 (e2e)', () => {
         },
       });
       ids[key] = Number(item.item_id);
+      // ⭐ 편성이 검사 필수 라인마다 OQC 의뢰를 만들고, 그때 «유효한 기준 버전»을 요구한다.
+      //   없으면 400 STATE_LOCKED 로 편성 자체가 막힌다 — 마스터 결손을 조용히 넘기지 않는다.
+      const plan = await prisma.inspection_plan.create({
+        data: {
+          inspection_plan_code: `${PREFIX}-OQC-${suffix}`,
+          inspection_plan_name: `출하편성검사기준${suffix}`,
+          item_id: item.item_id,
+          inspection_type_code: 'OQC',
+          is_active: true,
+        },
+      });
+      await prisma.inspection_plan_version.create({
+        data: {
+          inspection_plan_id: plan.inspection_plan_id,
+          plan_version: 1,
+          effective_from: new Date('2020-01-01'),
+          // ⛔ 코드 그룹의 «살아 있는» 값이다 — `EVERY_LOT` 은 폐기됐고 `FULL` 은 없는 값이다.
+          //    DB CHECK 가 없어 아무 문자열이나 들어가므로 여기서 지킨다.
+          sampling_method_code: 'FULL_INSPECTION',
+          inspection_frequency_code: 'PRODUCTION_LOT',
+          status_code: 'CONFIRMED',
+        },
+      });
     }
     // ⭐ 배송처를 고객과 «다른» 파트너로 세운다 — 같으면 두 칸을 뒤바꿔도 안 잡힌다(§6-3 ⑵).
     for (const [key, suffix] of [
@@ -712,6 +816,13 @@ describe('출하작업지시 편성 (e2e)', () => {
       `DELETE FROM logistics.sales_order_line WHERE sales_order_id IN (
          SELECT sales_order_id FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%')`,
       `DELETE FROM logistics.sales_order WHERE sales_order_no LIKE '${PREFIX}%'`,
+      // ⭐ 편성이 만든 OQC 의뢰와 그 기준 — 품목보다 «먼저» 지운다(item_id FK).
+      `DELETE FROM quality.inspection_request
+        WHERE item_id IN (SELECT item_id FROM mdm.item WHERE item_code LIKE '${PREFIX}%')`,
+      `DELETE FROM quality.inspection_plan_version WHERE inspection_plan_id IN (
+         SELECT inspection_plan_id FROM quality.inspection_plan
+          WHERE inspection_plan_code LIKE '${PREFIX}%')`,
+      `DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.partner WHERE partner_code LIKE '${PREFIX}%'`,
       // ⭐ W-25 가 「각각 0001」을 보므로 이 스위트가 쓴 기간 카운터를 지운다.

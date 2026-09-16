@@ -16,7 +16,7 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const GENERATED_ON = "2026-09-12";
+const GENERATED_ON = "2026-09-17";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
@@ -28,9 +28,12 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // 해시를 적어 두면 아래 assertSourceMatchesServerCommit 의 `git rev-parse <sha>:src` 가
 // 새 클론에서 죽는다 — 지금 로컬에서 돌아가는 것은 객체가 아직 남아 있어서일 뿐이다.
 // 그래서 전달본은 «병합된 뒤» 그 병합 커밋을 적어 다시 뽑는다.
+// ⚠ **지금 적힌 것은 «브랜치» 커밋이다**(SHIP-UNIT-01 `final-routine/ship-unit-01-server`).
+// 위 경고대로 squash 병합이면 이 해시가 사라지므로, **병합 뒤 그 병합 커밋으로 다시 뽑는다.**
+// 클라이언트가 `gen:api` 를 지금 돌려야 해서 통합 결정으로 먼저 낸 임시 기준이다.
 const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "af53be7f90c21e55e54d19da7d0bf4e20eb00031";
-const GENERATED_VERSION = "0.1.3-next-server.20260912";
+const SERVER_COMMIT = "2e9f234b4a4937704fb2d48195215787c3289164";
+const GENERATED_VERSION = "0.1.3-next-server.20260917";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -56,11 +59,11 @@ const EXCLUDED_OPERATIONS = new Map([
 const PARTIAL_OPERATIONS = new Map([
   [
     "GET /app/document-issues/{documentIssueLogId}/rendition",
-    "MATERIAL_LOT_LABEL 발행 기록만 PNG로 렌더링한다. 다른 문서 유형은 422다. 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다.",
+    "MATERIAL_LOT_LABEL·PRODUCTION_LOT_LABEL·LOCATION_LABEL 세 유형만 그린다(png·tspl 둘 다). 다른 문서 유형은 422다. ⛔ DELIVERY_LABEL도 422다 — 서버가 그리지 않고 POP이 출하 단위 상세의 값으로 그린다(SHIP-UNIT-01). 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다.",
   ],
   [
     "POST /app/document-issues",
-    "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 나머지 지원 조합만 기록을 생성한다.",
+    "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 마감된 출하 단위(SHIPPING_UNIT)에만 붙고 그 밖은 422 STATE_LOCKED다 — 종전의 「항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다(SHIP-UNIT-01). 나머지 지원 조합만 기록을 생성한다.",
   ],
   [
     "POST /planning/production-orders/{productionOrderId}:resync",
@@ -148,7 +151,7 @@ const KNOWN_DIFFERENCES = [
     id: "219",
     operations: ["GET /logistics/shipments"],
     summary:
-      "shipDateFrom은 필수이며 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다.",
+      "shipDateFrom은 hasUnassignedPackedBox=true를 함께 줄 때만 «선택»이고 그 밖에는 필수다. 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다.",
   },
   {
     id: "221",
@@ -202,7 +205,7 @@ const KNOWN_DIFFERENCES = [
     id: "I-27",
     operations: ["POST /app/document-issues"],
     summary:
-      "IDENTIFICATION_TAG와 DELIVERY_LABEL 발행 입력은 현재 서버가 각각 422 STATE_LOCKED·INVALID로 거부한다.",
+      "IDENTIFICATION_TAG 발행 입력은 현재 서버가 422 STATE_LOCKED로 거부한다. DELIVERY_LABEL은 SHIP-UNIT-01 로 대상이 출하 단위(SHIPPING_UNIT)가 되어 마감된 단위에 발행된다.",
   },
 ];
 
@@ -484,7 +487,7 @@ function applyAppPatches(document) {
   );
   appendDescription(
     getOperation(document, "POST /app/document-issues"),
-    "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 두 문서 유형은 현재 클라이언트에서 발행 요청하지 않는다(I-27 마감 결정).",
+    "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 SHIP-UNIT-01로 대상이 SHIPPING_UNIT이 되어 마감(CLOSED)된 출하 단위에 발행된다 — 다른 대상 유형은 422 INVALID, 안 닫힌 단위는 422 STATE_LOCKED다. 종전의 「DELIVERY_LABEL은 항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다.",
   );
   appendDescription(
     getOperation(document, "GET /app/printers"),
@@ -648,7 +651,17 @@ function applyShipmentPatches(document) {
   );
 
   const shipments = getOperation(document, "GET /logistics/shipments");
-  getParameter(shipments, "shipDateFrom").required = true;
+  // ⛔ shipDateFrom 을 `required: true` 로 «올리지 않는다» — 조건부 필수이기 때문이다.
+  //    hasUnassignedPackedBox=true 를 함께 주면 선택이다(P-24 ⑨b · e2e L-19 가 양방향을 잠근다).
+  //    OpenAPI 의 `required` 는 정적이라 「조건부」를 적을 수 없다. 억지로 true 로 두면 생성
+  //    타입이 기간을 강요해서, 클라이언트가 설계상 허용된 호출을 «컴파일 단계에서» 못 한다.
+  //    같은 저장소의 전례를 따른다 — `GET /mdm/code-values` 의 codeGroupId·codeGroupCode 가
+  //    「둘 중 정확히 하나」인데 둘 다 선택으로 두고 조건은 설명과 400 이 지킨다.
+  //    ⚠ 형제인 `GET /logistics/shipment-requests`(위)는 «무조건» 필수라 그대로 올린다.
+  appendDescription(
+    getParameter(shipments, "shipDateFrom"),
+    "서버 구현 기준: hasUnassignedPackedBox=true가 아니면 필수이고, 빠지면 400 REQUIRED다. 조건부라서 required로 선언하지 못한다(통보 219·P-24).",
+  );
   const shipmentSort = getParameter(shipments, "sort");
   shipmentSort.schema.enum = ["shippedAt", "shipmentNo"];
   shipmentSort.schema.example = "shippedAt";
@@ -775,17 +788,24 @@ function build() {
     duplicateBindings.length === 0,
     `두 컨트롤러가 같은 계약을 주장합니다: ${duplicateBindings.join(", ")}`,
   );
+  // ⚠ 이 수치는 **제 변경 전부터 실제와 1 어긋나 있었다** — 사본을 마지막으로 뽑은 뒤
+  //    FR-005 이행 공장 지정 PUT 1건이 들어왔는데 여기만 487 로 남았다(실측: 선반영 직전이
+  //    이미 488). SHIP-UNIT-01 출하 단위 6건(장부 P-24)을 더해 **494** 다.
+  //    `contract-registry.spec.ts`·`contract-coverage.spec.ts` 의 같은 수치와 맞춘다.
   assert(
-    documentsByOperation.size === 487,
-    `계약 오퍼레이션 수가 487이 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 494,
+    `계약 오퍼레이션 수가 494가 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(
     (key) => !implementedBindings.has(key),
   );
+  // ⚠ 이 수치도 사본 상태를 따라 움직인다. 4 → **1** — 종전 넷 중 첨부 셋이 그 사이 구현됐고,
+  //    SHIP-UNIT-01 ③b 3경로는 이 전달본 시점에 «구현돼» 미구현이 아니다.
+  //    ⛔ 남은 하나는 `GET /app/dashboard-summary` 다(집계 대상 도메인 미완).
   assert(
-    missingOperations.length === 4,
-    `미구현 오퍼레이션 수가 4가 아닙니다: ${missingOperations.length}`,
+    missingOperations.length === 1,
+    `미구현 오퍼레이션 수가 1이 아닙니다: ${missingOperations.length}`,
   );
   assert(
     missingOperations.every((key) => EXCLUDED_OPERATIONS.has(key)),

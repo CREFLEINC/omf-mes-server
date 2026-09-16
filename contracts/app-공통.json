@@ -1093,7 +1093,8 @@
         "MOLD",
         "LOCATION",
         "INSPECTION_RESULT",
-        "SHIPMENT_LOT_ALLOCATION"
+        "SHIPMENT_LOT_ALLOCATION",
+        "SHIPPING_UNIT"
        ],
        "example": "LOT"
       },
@@ -1524,7 +1525,8 @@
         "MOLD",
         "LOCATION",
         "INSPECTION_RESULT",
-        "SHIPMENT_LOT_ALLOCATION"
+        "SHIPMENT_LOT_ALLOCATION",
+        "SHIPPING_UNIT"
        ],
        "example": "LOT"
       },
@@ -4341,7 +4343,8 @@
        "MOLD",
        "LOCATION",
        "INSPECTION_RESULT",
-       "SHIPMENT_LOT_ALLOCATION"
+       "SHIPMENT_LOT_ALLOCATION",
+       "SHIPPING_UNIT"
       ],
       "example": "LOT"
      },
@@ -4563,7 +4566,8 @@
           "MOLD",
           "LOCATION",
           "INSPECTION_RESULT",
-          "SHIPMENT_LOT_ALLOCATION"
+          "SHIPMENT_LOT_ALLOCATION",
+          "SHIPPING_UNIT"
          ],
          "example": "LOT",
          "x-code-key": "CD-DOCUMENT-ISSUE-TARGET-TYPE"
@@ -4783,7 +4787,8 @@
        "MOLD",
        "LOCATION",
        "INSPECTION_RESULT",
-       "SHIPMENT_LOT_ALLOCATION"
+       "SHIPMENT_LOT_ALLOCATION",
+       "SHIPPING_UNIT"
       ],
       "example": "LOT"
      },

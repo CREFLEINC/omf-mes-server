@@ -237,7 +237,7 @@
        "type": "boolean",
        "example": true
       },
-      "description": "⭐ 출하검사 합격분만. 납품라벨 대상 목록이 「합격」만 활성하는 데 쓴다(P-04-02 §5)"
+      "description": "⭐ 출하검사 합격분만. ⚠ P-24 — 납품 라벨이 더 이상 배분을 대상으로 하지 않으므로 「납품라벨 대상 목록이 합격만 활성」이라는 종전 쓰임은 사라졌다. 남은 쓰임은 포장 화면의 합격 여부 표시다"
      },
      {
       "name": "q",
@@ -245,7 +245,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "스캔한 납품라벨 값으로 배분을 찾는다. ⛔ 범위는 납품라벨 번호 하나다 — LOT 번호는 lotId 를, 포장은 handlingUnitId 를 쓴다. ⭐ P-04-01 매칭 스캔의 진입이다(P-04-01 §5-1 · 공유계약 D-2). 일치하는 배분이 없으면 «빈 목록»이다 — 화면은 items 가 비었는지로 「없는 납품라벨」을 판정한다. ⛔ 404 를 내지 않는다 — 같은 오퍼레이션의 lotQ 가 이미 200 + match 로 판정을 내리므로, 파라미터에 따라 상태 코드가 갈리면 예외가 는다"
+      "description": "스캔한 «상자 번호»(handlingUnitNo)로 배분을 찾는다. ⭐ P-26 — 전에는 납품라벨 번호를 겨눴는데, 납품 라벨의 주인이 배분에서 «출하 단위»로 옮겨가 배분에 그 번호가 없어졌다. ⛔ 정확 일치다 — 부분 일치로 넓히면 스캔값 하나가 여러 배분을 물어 다른 물건을 집는다. ⚠ 아직 포장되지 않은 배분(handlingUnitId 없음)은 어떤 스캔값에도 걸리지 않는다. 일치하는 배분이 없으면 «빈 목록»이고 404 를 내지 않는다(종전과 같다)"
      },
      {
       "name": "lotQ",
@@ -1132,6 +1132,15 @@
       "description": "피킹이 끝난 건만"
      },
      {
+      "name": "hasUnassignedPackedBox",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "example": true
+      },
+      "description": "⭐ 선행 구현(P-24) — 포장이 끝났는데 아직 어느 출하 단위에도 들어가지 않은 상자가 하나라도 있는 출하만. P-04-05 의 출하 선택 목록이 「구성할 것이 남은 출하」를 이 축으로 좁힌다. ⛔ false 는 절을 걸지 않는다(unconfirmedOnly 와 같은 관례)"
+     },
+     {
       "name": "unconfirmedOnly",
       "in": "query",
       "schema": {
@@ -1148,7 +1157,7 @@
        "format": "date",
        "example": "2026-08-13"
       },
-      "description": "필수"
+      "description": "필수. ⭐ 예외 하나 — hasUnassignedPackedBox=true 를 함께 주면 «선택»이다(P-24). 그 축은 「구성할 것이 남았나」를 묻는 것이라 날짜와 무관하고, 기간을 강제하면 어제 출하한 건의 남은 상자가 창 밖으로 빠져 P-04-05 에서 영영 안 보인다. 기간을 비우면 아직 나가지 않은 출하(shippedAt 없음)도 함께 오며 정렬에서 뒤로 간다"
      },
      {
       "name": "shipDateTo",
@@ -2086,6 +2095,454 @@
      }
     }
    }
+  },
+  "/logistics/shipping-units": {
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 단위 목록",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. P-04-05 가 그 출하의 단위를 나열한다. 세션과 POP 단말 모두 부른다 — 단말이면 그 단말의 공장으로 범위가 좁혀진다",
+    "parameters": [
+     {
+      "name": "shipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 3001
+      }
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "OPEN",
+        "CLOSED"
+       ]
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "SU-20260916-0001"
+      },
+      "description": "출하 단위 번호 부분 일치"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "example": 50
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitList"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 단위 열기",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자를 담을 빈 단위를 만든다. 출하가 취소됐으면 400 STATE_LOCKED 다 — 확정 여부는 묻지 않는다(출하 확정과 무관하다)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShippingUnitCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "열렸다. ETag 에 versionNo 가 실린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnit"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. STATE_LOCKED/shipmentId = 취소된 출하 · INVALID/shippingUnitTypeCode = 없는 유형",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 출하다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shipping-units/{shippingUnitId}": {
+   "parameters": [
+    {
+     "name": "shippingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 단위 상세 — 납품 라벨 값 전부",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자 목록과 품목별 합계까지 담는다. POP 은 이 응답만으로 납품 라벨을 그린다 — 렌디션을 부르지 않는다",
+    "responses": {
+     "200": {
+      "description": "상세. ETag 에 versionNo 가 실린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitDetail"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shipping-units/{shippingUnitId}:add-box": {
+   "parameters": [
+    {
+     "name": "shippingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "상자 넣기(포장 라벨 스캔)",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 포장 라벨을 스캔해 그 상자를 단위에 넣는다. ⛔ 거절은 전부 400 + errors[].code·field 다(409 는 저장 충돌 전용). STATE_LOCKED/shippingUnitId = 마감된 단위 · STATE_LOCKED/handlingUnitNo = 포장 확정되지 않은 상자 · INVALID/handlingUnitNo = 포장 실적이 없는 상자 · PAIR/handlingUnitNo = 다른 출하의 상자 · UNIQUE_VIOLATION/handlingUnitNo = 이미 다른 단위에 구성된 상자 · STATE_LOCKED/shipmentId = 취소된 출하. ⭐ 같은 단위에 같은 상자를 다시 스캔하면 200 이고 아무것도 바뀌지 않는다(멱등 · P-24)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShippingUnitAddBox"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "들어갔다(또는 이미 들어 있었다). ETag 가 갱신된다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "거절. code·field 로 갈린다 — 설명 참조",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 출하 단위이거나 없는 상자다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}": {
+   "parameters": [
+    {
+     "name": "shippingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     }
+    },
+    {
+     "name": "handlingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 4001
+     }
+    }
+   ],
+   "delete": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "상자 빼기",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 마감 «전»에만 뺀다. ⛔ 204 가 아니라 200 + 상세를 돌려준다 — 화면이 목록과 품목별 합계를 그 자리에서 다시 그린다. seq 는 재부여하지 않는다",
+    "responses": {
+     "200": {
+      "description": "빠졌다. ETag 가 갱신된다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "STATE_LOCKED/shippingUnitId = 이미 마감된 단위다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 출하 단위이거나 그 단위에 없는 상자다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/shipping-units/{shippingUnitId}:close": {
+   "parameters": [
+    {
+     "name": "shippingUnitId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "출하 단위 마감",
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. OPEN → CLOSED. ⛔ 되돌릴 수 없다 — 취소·해체 경로를 두지 않는다(취급 단위와 같은 태도 · 통보 142). 마감돼야 납품 라벨을 발행할 수 있다",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/WorkerNo"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "마감됐다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShippingUnitDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "STATE_LOCKED/shippingUnitId = 이미 마감 · INVALID/boxes = 상자가 한 개도 없다 · STATE_LOCKED/shipmentId = 취소된 출하",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 If-Match 를 새로 받는다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -2845,6 +3302,11 @@
      "remarks": {
       "type": "string",
       "example": "값"
+     },
+     "unassignedPackedBoxCount": {
+      "type": "integer",
+      "description": "⭐ 선행 구현(P-24) — 포장이 끝났는데 아직 어느 출하 단위에도 들어가지 않은 상자 수. 목록에서만 채운다(상세는 세지 않는다). 한 상자가 배분 여럿에 걸릴 수 있어 상자 기준으로 센다",
+      "example": 2
      },
      "expedited": {
       "type": "boolean",
@@ -3957,6 +4419,327 @@
      "message"
     ],
     "x-internal-note": "ShipmentConflictResponse 의 enum 을 넓히지 않고 따로 만들었다 — 그 스키마는 W-04-12 출하 확정·취소가 쓰는데, 응답 enum 이 넓어지면 그 화면이 모르는 값을 받는다."
+   },
+   "ShippingUnitCreate": {
+    "type": "object",
+    "required": [
+     "shipmentId",
+     "shippingUnitTypeCode"
+    ],
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 출하 단위를 연다. 상자는 :add-box 로 넣는다.",
+    "properties": {
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 3001
+     },
+     "shippingUnitTypeCode": {
+      "type": "string",
+      "example": "PALLET",
+      "x-code-key": "SHIPPING_UNIT_TYPE",
+      "description": "값 목록은 GET /mdm/code-values?codeGroupCode=SHIPPING_UNIT_TYPE 로 받는다. ⭐ 고객이 늘린다 — PALLET·BUNDLE 은 초기 시드다(G-31)"
+     }
+    }
+   },
+   "ShippingUnit": {
+    "type": "object",
+    "required": [
+     "shippingUnitId",
+     "shippingUnitNo",
+     "shippingUnitTypeCode",
+     "statusCode",
+     "shipmentId",
+     "shipmentNo",
+     "customer",
+     "shipTo",
+     "boxCount",
+     "createdAt",
+     "versionNo"
+    ],
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 상자를 묶어 내보내는 단위. 납품 라벨 한 장이 이 단위 하나에 붙는다.",
+    "properties": {
+     "shippingUnitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 7001
+     },
+     "shippingUnitNo": {
+      "type": "string",
+      "example": "SU-20260916-0001",
+      "description": "⭐ 납품 라벨 번호로 «그대로» 쓴다 — 출하 단위 : 납품 라벨이 1:1 이라 별도 번호를 두지 않는다(P-24)"
+     },
+     "shippingUnitTypeCode": {
+      "type": "string",
+      "example": "PALLET",
+      "x-code-key": "SHIPPING_UNIT_TYPE"
+     },
+     "statusCode": {
+      "type": "string",
+      "enum": [
+       "OPEN",
+       "CLOSED"
+      ],
+      "example": "OPEN",
+      "x-no-code-key": "편도 OPEN → CLOSED. 코드 그룹을 두지 않는다 — handling_unit·shipment 와 같은 관례다"
+     },
+     "shipmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 3001
+     },
+     "shipmentNo": {
+      "type": "string",
+      "example": "SH-20260916-0003"
+     },
+     "customer": {
+      "type": "object",
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ],
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 100003
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "100003"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "Cong ty Samjin"
+       }
+      },
+      "description": "고객. 출하 전표 → 출하작업지시 → 거래처로 서버가 조인한다(FK 사슬이 전부 NOT NULL 이라 끊기지 않는다)"
+     },
+     "shipTo": {
+      "type": "object",
+      "required": [
+       "partnerId",
+       "partnerCode",
+       "partnerName"
+      ],
+      "properties": {
+       "partnerId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 100003
+       },
+       "partnerCode": {
+        "type": "string",
+        "example": "100003"
+       },
+       "partnerName": {
+        "type": "string",
+        "example": "Cong ty Samjin"
+       }
+      },
+      "description": "납품처. 조인 경로는 customer 와 같다"
+     },
+     "boxCount": {
+      "type": "integer",
+      "example": 2,
+      "description": "이 단위에 든 상자 수"
+     },
+     "closedAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "versionNo": {
+      "type": "integer",
+      "example": 1,
+      "description": "ETag 축. ⭐ :add-box·DELETE 도 이 값을 올린다 — 안 올리면 낡은 ETag 로 마감이 통과한다(P-24)"
+     }
+    }
+   },
+   "ShippingUnitBoxContent": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "itemCode",
+     "itemName",
+     "lotId",
+     "lotNo",
+     "qty",
+     "uomId",
+     "uomCode"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 501
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "F534F50200"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "제품명"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 9001
+     },
+     "lotNo": {
+      "type": "string",
+      "example": "SEED-S240-0001"
+     },
+     "qty": {
+      "type": "number",
+      "example": 240
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "EA"
+     }
+    }
+   },
+   "ShippingUnitBox": {
+    "type": "object",
+    "required": [
+     "handlingUnitId",
+     "handlingUnitNo",
+     "seq",
+     "contents"
+    ],
+    "properties": {
+     "handlingUnitId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 4001
+     },
+     "handlingUnitNo": {
+      "type": "string",
+      "example": "HU-20260916-0001"
+     },
+     "seq": {
+      "type": "integer",
+      "example": 1,
+      "description": "스캔 순서. ⛔ 빼기 뒤 재부여하지 않는다 — 화면에 찍힌 번호가 흔들린다(P-24)"
+     },
+     "contents": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShippingUnitBoxContent"
+      }
+     }
+    }
+   },
+   "ShippingUnitItemTotal": {
+    "type": "object",
+    "required": [
+     "itemId",
+     "itemCode",
+     "itemName",
+     "qty",
+     "uomId",
+     "uomCode"
+    ],
+    "description": "납품 라벨 본문. ⭐ 묶음 키는 (itemId, uomId) 다 — 같은 품목이라도 단위가 다르면 두 행이다. itemCode 오름차순(P-24)",
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 501
+     },
+     "itemCode": {
+      "type": "string",
+      "example": "F534F50200"
+     },
+     "itemName": {
+      "type": "string",
+      "example": "제품명"
+     },
+     "qty": {
+      "type": "number",
+      "example": 480
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "EA"
+     }
+    }
+   },
+   "ShippingUnitDetail": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/ShippingUnit"
+     },
+     {
+      "type": "object",
+      "required": [
+       "boxes",
+       "itemTotals"
+      ],
+      "properties": {
+       "boxes": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/ShippingUnitBox"
+        }
+       },
+       "itemTotals": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/ShippingUnitItemTotal"
+        }
+       }
+      }
+     }
+    ],
+    "description": "⭐ 선행 구현(P-24) — 설계 사본에 서버가 먼저 적은 자리다. 납품 라벨에 실을 값을 «전부» 담는다 — 서버는 값만 주고 POP 이 그린다(통보 277 §4 의 원칙을 납품 라벨로 넓힌 것)."
+   },
+   "ShippingUnitAddBox": {
+    "type": "object",
+    "required": [
+     "handlingUnitNo"
+    ],
+    "properties": {
+     "handlingUnitNo": {
+      "type": "string",
+      "example": "HU-20260916-0001",
+      "description": "포장 라벨 QR 원문(= 취급 단위 번호). ⭐ id 가 아니라 번호로 받는다 — 스캐너가 주는 값이 그것이다(P-24)"
+     }
+    }
+   },
+   "ShippingUnitList": {
+    "type": "object",
+    "required": [
+     "items",
+     "page"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ShippingUnit"
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
+     }
+    }
    }
   }
  }

@@ -50,15 +50,26 @@ interface QueryRow extends ShipmentAllocationRow {
 }
 
 /**
- * `q` 는 발급 때 영속화한 납품라벨 번호의 정확 일치 축이다. 아직 발급되지 않은 배분은
- * `delivery_label_no IS NULL` 이어서 어떤 스캔값에도 걸리지 않는다. 출하번호·LOT·포장번호로
- * 대신 찾으면 다른 물건을 납품라벨로 오인하므로 검색 범위를 넓히지 않는다.
+ * `q` 는 **상자 번호(`handling_unit_no`)의 정확 일치** 축이다(SHIP-UNIT-01 · 장부 P-25).
+ *
+ * ⭐ 전에는 납품라벨 번호(`a.delivery_label_no`)를 겨눴다. 납품 라벨의 주인이 배분에서
+ * **출하 단위**로 옮겨가면서 배분은 더 이상 납품 라벨 번호를 갖지 않는다 — 그 축이
+ * 사라진다. 스캔으로 배분을 찾는 자리가 남아 있어 겨냥을 상자 번호로 옮긴다.
+ *
+ * ⛔ **정확 일치를 유지한다.** 부분 일치로 넓히면 스캔값 하나가 여러 배분을 물어 다른
+ * 물건을 집게 된다 — 옛 주석이 경계한 바로 그 사고다.
+ * ⚠ 아직 포장되지 않은 배분(`handling_unit_id IS NULL`)은 어떤 스캔값에도 걸리지 않는다.
+ * 그 성질은 전과 같다(전에는 라벨 미발급이 같은 자리였다).
  */
 export function allocationWhereSql(filters: ShipmentAllocationFilters): BuiltWhere {
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
   const and: string[] = [];
-  if (filters.q !== undefined) and.push(`a.delivery_label_no = ${bind(filters.q)}`);
+  if (filters.q !== undefined) {
+    and.push(`EXISTS (SELECT 1 FROM inventory.handling_unit hu
+                   WHERE hu.handling_unit_id = a.handling_unit_id
+                     AND hu.handling_unit_no = ${bind(filters.q)})`);
+  }
   if (filters.shipmentId !== undefined) and.push(`sl.shipment_id = ${bind(filters.shipmentId)}::bigint`);
   if (filters.shipmentLineId !== undefined) {
     and.push(`a.shipment_line_id = ${bind(filters.shipmentLineId)}::bigint`);

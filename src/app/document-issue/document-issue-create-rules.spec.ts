@@ -21,7 +21,7 @@ const PAIRS: ReadonlyArray<[DocumentType, readonly DocumentTargetType[]]> = [
   ["PRODUCTION_LOT_LABEL", ["LOT"]],
   ["IDENTIFICATION_TAG", ["SERIAL_NUMBER"]],
   ["PACKING_LABEL", ["HANDLING_UNIT"]],
-  ["DELIVERY_LABEL", ["SHIPMENT_LOT_ALLOCATION"]],
+  ["DELIVERY_LABEL", ["SHIPPING_UNIT"]],
   ["CERTIFICATE_OF_ANALYSIS", ["INSPECTION_RESULT"]],
   ["TOOL_LABEL", ["MOLD"]],
   ["LOCATION_LABEL", ["LOCATION"]],
@@ -317,17 +317,21 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
     );
   });
 
-  it("납품 라벨은 OQC 합격 배분의 LOT과만 짝짓는다", () => {
-    const target = { ...prepared("SHIPMENT_LOT_ALLOCATION"), requestedLotId: 50n };
+  /**
+   * ⭐ 납품 라벨의 주인이 출하 LOT 배분에서 **출하 단위**로 옮겨갔다(SHIP-UNIT-01).
+   * 종전에는 상자 하나에 라벨이 여러 장 나왔다 — 단위 하나에 한 장이 된다.
+   * ⛔ OQC 자격 검사를 **뺐다** — 출하 처리 관문이 이미 걸러서 여기서 또 보면 두 곳이 갈린다.
+   * ⛔ LOT 을 짝짓지 «않는다» — 한 단위에 LOT 이 여럿이라 하나를 고를 수 없다.
+   */
+  it("납품 라벨은 마감된 출하 단위에만 붙고 LOT 을 짝짓지 않는다", () => {
+    const target = prepared("SHIPPING_UNIT");
     const facts: DocumentIssueTargetFacts = {
-      targetTypeCode: "SHIPMENT_LOT_ALLOCATION", targetId: target.targetId,
-      lotId: 50n, plantId: 1n, oqcPassed: true, deliveryLabelNo: null,
+      targetTypeCode: "SHIPPING_UNIT", targetId: target.targetId,
+      plantId: 1n, statusCode: "CLOSED",
     };
-    expect(qualifyDocumentIssueTarget("DELIVERY_LABEL", target, facts)).toBe(50n);
+    expect(qualifyDocumentIssueTarget("DELIVERY_LABEL", target, facts)).toBeNull();
     expectFailure(() => qualifyDocumentIssueTarget("DELIVERY_LABEL", target,
-      { ...facts, oqcPassed: false }), ERROR_CODE.STATE_LOCKED, "targets[0].targetId");
-    expectFailure(() => qualifyDocumentIssueTarget("DELIVERY_LABEL",
-      { ...target, requestedLotId: 51n }, facts), ERROR_CODE.PAIR, "targets[0].lotId");
+      { ...facts, statusCode: "OPEN" }), ERROR_CODE.STATE_LOCKED, "targets[0].targetId");
   });
 
   it("재발행이면 비공백 활성 사유가 필수이고 원문을 보존한다", () => {

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
+import { resolveInspectionPlanVersion } from '../quality/inspection-plan-version';
 import { LotHoldService } from './lot-hold.service';
 import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
@@ -237,29 +238,9 @@ export class LotRegistryService {
   }
 }
 
+/** 입하 IQC 의 기준 버전. 조회는 출하(OQC)와 **한 함수**를 쓴다 — 두 벌이면 답이 둘이 된다. */
 async function resolveIncomingIqcPlanVersion(tx: Tx, itemId: number, effectiveDate: string): Promise<bigint> {
-  const date = day('businessDate', effectiveDate);
-  const plans = await tx.inspection_plan_version.findMany({
-    where: {
-      status_code: 'CONFIRMED',
-      effective_from: { lte: date },
-      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
-      inspection_plan: {
-        item_id: itemId,
-        inspection_type_code: 'IQC',
-        is_active: true,
-      },
-    },
-    select: { inspection_plan_version_id: true },
-  });
-  if (plans.length !== 1) {
-    throw one({
-      scope: 'screen',
-      code: ERROR_CODE.STATE_LOCKED,
-      message: plans.length === 0 ? '유효한 IQC 검사기준이 없습니다.' : '유효한 IQC 검사기준이 여러 개입니다.',
-    });
-  }
-  return plans[0].inspection_plan_version_id;
+  return resolveInspectionPlanVersion(tx, 'IQC', itemId, effectiveDate);
 }
 
 // ── LOT 칸에 붙박인 값 변환(날짜는 타임존을 고르지 않는다) ──────────────────────────

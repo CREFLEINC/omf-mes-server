@@ -49,6 +49,10 @@ import { SalesOrderController } from './sales-order/sales-order.controller';
 import { AllocationPackingService } from './shipment-allocation/allocation-packing.service';
 import { ShipmentAllocationQueryService } from './shipment-allocation/shipment-allocation-query.service';
 import { ShipmentAllocationController } from './shipment-allocation/shipment-allocation.controller';
+import { ShippingUnitBoxService } from './shipping-unit/shipping-unit-box.service';
+import { ShippingUnitQueryService } from './shipping-unit/shipping-unit-query.service';
+import { ShippingUnitController } from './shipping-unit/shipping-unit.controller';
+import { ShippingUnitService } from './shipping-unit/shipping-unit.service';
 import { ShipmentQueryService } from './shipment/shipment-query.service';
 import { ShipmentController } from './shipment/shipment.controller';
 import { ShipmentCancelService } from './shipment/shipment-cancel.service';
@@ -95,6 +99,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PurchaseOrderController,
     SalesOrderController,
     ShipmentAllocationController,
+    ShippingUnitController,
     ShipmentRequestController,
     ShipmentController,
     StockReinstatementController,
@@ -122,6 +127,9 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     SalesOrderQueryService,
     AllocationPackingService,
     ShipmentAllocationQueryService,
+    ShippingUnitBoxService,
+    ShippingUnitQueryService,
+    ShippingUnitService,
     ShipmentPickService,
     ShipmentRequestQueryService,
     ShipmentRequestService,

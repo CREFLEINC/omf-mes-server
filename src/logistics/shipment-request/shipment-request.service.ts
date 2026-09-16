@@ -7,6 +7,7 @@ import { assertCodeValues, day } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { prepareOqcRequests, writeOqcRequests } from './shipment-oqc-request';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestView } from './shipment-request-view';
 import {
@@ -76,9 +77,21 @@ export class ShipmentRequestService {
       null,
       input.requestedShipDate,
     );
-    const shipmentRequestId = await this.prisma.$transaction((tx) =>
-      this.write(tx, input, no, actor.appUserId),
+    // ⭐ 출하검사(OQC) 의뢰도 편성이 만든다 — 계약이 「서버가 입하·실적·«출하» 시점에
+    //   REQUESTED 로 만든다」고 적었는데 입하만 구현돼 있었다(PQC 는 아직 공백이다).
+    //   ⛔ 채번·기준 조회를 «여기서» 끝낸다 — 트랜잭션 안에서 부르면 커넥션을 둘 쥔다.
+    const oqc = await prepareOqcRequests(
+      this.prisma,
+      this.numbering,
+      input.lines,
+      input.requestedShipDate,
     );
+    const requestedAt = new Date();
+    const shipmentRequestId = await this.prisma.$transaction(async (tx) => {
+      const id = await this.write(tx, input, no, actor.appUserId);
+      await writeOqcRequests(tx, id, oqc, actor.appUserId, requestedAt);
+      return id;
+    });
     // ⭐ 201 본문은 ③b 의 상세 뷰 **그대로**다 — 파생 축 둘(진행·검사)을 여기서 다시 판정하면
     //   같은 건이 편성 직후와 재조회에서 다르게 보인다.
     return this.queries.get(Number(shipmentRequestId));

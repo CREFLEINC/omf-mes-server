@@ -667,6 +667,17 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
+    // ⭐ 상자를 묶어 내보내는 단위(SHIP-UNIT-01). 납품 라벨 한 장이 이 단위 하나에 붙는다.
+    // ⛔ `isSystemOwned` 를 «적지 않는다» — 기본 false 가 곧 「고객이 늘린다」다(G-31).
+    //    아래 둘은 초기 시드일 뿐이고 서버는 값을 하드코딩하지 않는다(DB 코드값을 조회한다).
+    groupCode: 'SHIPPING_UNIT_TYPE',
+    groupName: '출하단위 유형',
+    values: [
+      { code: 'PALLET', codeName: '팔레트', order: 10 },
+      { code: 'BUNDLE', codeName: '번들', order: 20 },
+    ],
+  },
+  {
     groupCode: 'LOT_EXTERNAL_IDENTIFIER_TYPE',
     groupName: 'LOT 외부식별자 유형',
     values: [

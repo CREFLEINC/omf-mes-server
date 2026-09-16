@@ -41,6 +41,7 @@ interface ShipmentBody {
   warehouseId: number;
   statusCode: string;
   expedited: boolean;
+  unassignedPackedBoxCount?: number;
   shippedAt: string | null;
   expediteReason: string | null;
   erpDeliveryNo: string | null;
@@ -327,6 +328,123 @@ describe('출하 목록 (e2e)', () => {
     // 널을 «못 받는» 선택 칸은 키를 생략한다.
     expect(b).not.toHaveProperty('vehicleNo');
     expect(made.shipmentA).not.toBe(made.request1);
+  });
+
+  /**
+   * ⭐ SHIP-UNIT-01(장부 P-24) — `P-04-05` 의 출하 선택 목록이 「구성할 것이 남은 출하」를
+   * 이 축으로 좁힌다. 「포장이 끝났는데(`PACKED`) 아직 어느 출하 단위에도 안 들어간 상자」다.
+   * ⛔ 이 스위트의 기본 픽스처 HU 는 전부 `OPEN` 이다 — 포장 확정 전이라 세지 않는 것이 맞다.
+   */
+  it('L-18 ⭐ 미구성 포장 상자 — 수를 세고 그 축으로 거른다', async () => {
+    const all = await ours();
+    // 기본 픽스처는 HU 가 OPEN 이라 한 건도 안 센다.
+    for (const item of all) expect(item.unassignedPackedBoxCount).toBe(0);
+    expect(await ours({ hasUnassignedPackedBox: true })).toEqual([]);
+
+    // 그중 하나의 상자를 포장 확정한다.
+    const target = all[0];
+    const box = await prisma.handling_unit.findFirstOrThrow({
+      where: {
+        handling_unit_no: { startsWith: PREFIX },
+        shipment_lot_allocation: {
+          some: { shipment_line: { shipment_id: BigInt(target.shipmentId) } },
+        },
+      },
+    });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'PACKED' },
+    });
+
+    const packed = await ours();
+    expect(packed.find((item) => item.shipmentId === target.shipmentId)?.unassignedPackedBoxCount)
+      .toBe(1);
+    const filtered = await ours({ hasUnassignedPackedBox: true });
+    expect(filtered.map((item) => item.shipmentId)).toEqual([target.shipmentId]);
+
+    // ⭐ 출하 단위에 넣으면 「미구성」에서 빠진다 — 그것이 이 축의 뜻이다.
+    const unit = await prisma.shipping_unit.create({
+      data: {
+        shipping_unit_no: `${PREFIX}-SU1`,
+        shipment_id: BigInt(target.shipmentId),
+        shipping_unit_type_code: 'PALLET',
+        status_code: 'OPEN',
+      },
+    });
+    await prisma.shipping_unit_handling_unit.create({
+      data: {
+        shipping_unit_id: unit.shipping_unit_id,
+        handling_unit_id: box.handling_unit_id,
+        seq: 1,
+      },
+    });
+
+    expect(await ours({ hasUnassignedPackedBox: true })).toEqual([]);
+    const after = await ours();
+    expect(after.find((item) => item.shipmentId === target.shipmentId)?.unassignedPackedBoxCount)
+      .toBe(0);
+
+    // ⛔ false 는 절을 걸지 않는다 — 전건이 그대로 온다(`unconfirmedOnly` 와 같은 관례).
+    expect((await ours({ hasUnassignedPackedBox: false })).length).toBe(all.length);
+
+    // 자기가 만든 것은 자기가 치운다 — 다음 시험이 이 잔재에 얽히면 원인을 찾기 어렵다.
+    await prisma.shipping_unit_handling_unit.deleteMany({
+      where: { shipping_unit_id: unit.shipping_unit_id },
+    });
+    await prisma.shipping_unit.delete({ where: { shipping_unit_id: unit.shipping_unit_id } });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'OPEN' },
+    });
+  });
+
+  /**
+   * ⭐ `shipDateFrom` 은 필수인데(L-2) **이 축을 줄 때만 예외**다(P-24).
+   * 「구성할 것이 남았나」는 날짜와 무관하다 — 기간을 강제하면 어제 출하한 건의 남은 상자가
+   * 창 밖으로 빠져 `P-04-05` 에서 영영 안 보인다.
+   */
+  it('L-19 ⭐ hasUnassignedPackedBox 를 주면 기간이 «선택»이다 — 안 주면 여전히 400 이다', async () => {
+    const box = await prisma.handling_unit.findFirstOrThrow({
+      where: { handling_unit_no: { startsWith: PREFIX } },
+    });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'PACKED' },
+    });
+
+    // 기간 없이 부른다 — 200 이고 그 출하가 보인다.
+    const response = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ hasUnassignedPackedBox: true, size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    const ours = response.body.items.filter((item: ShipmentBody) =>
+      item.shipmentNo.startsWith(PREFIX),
+    );
+    expect(ours.length).toBeGreaterThan(0);
+    for (const item of ours) expect(item.unassignedPackedBoxCount).toBeGreaterThan(0);
+
+    // ⛔ 그 축이 없으면 기간은 여전히 필수다.
+    const required = await request(app.getHttpServer())
+      .get(BASE)
+      .query({ size: 100 })
+      .set('Cookie', cookie)
+      .expect(400);
+    expect(required.body.errors).toContainEqual(
+      expect.objectContaining({ field: 'shipDateFrom', code: 'REQUIRED' }),
+    );
+
+    // false 는 예외가 아니다 — 절을 안 걸 뿐 기간 필수는 그대로다.
+    await request(app.getHttpServer())
+      .get(BASE)
+      .query({ hasUnassignedPackedBox: false, size: 100 })
+      .set('Cookie', cookie)
+      .expect(400);
+
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'OPEN' },
+    });
   });
 
   // ── 등록 `POST /logistics/shipments` ──────────────────────────────────────
@@ -1765,6 +1883,11 @@ describe('출하 목록 (e2e)', () => {
     // ⛔ 순서가 FK 의 역순이다. ⛔ «이 스위트의 출하»로만 좁힌다 — 원천이 SHIPMENT 인 전표를 통째로
     //    지우면 반품 클레임 입고(W-04-06) 같은 남의 스위트 행까지 사라진다.
     for (const sql of [
+      // ⛔ 출하 단위는 출하를, 링크는 상자를 짚는다 — 둘 다 그 둘보다 «먼저» 지운다.
+      `DELETE FROM logistics.shipping_unit_handling_unit
+        WHERE shipping_unit_id IN (SELECT shipping_unit_id FROM logistics.shipping_unit
+               WHERE shipping_unit_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipping_unit WHERE shipping_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
          SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS}))`,
       `DELETE FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS})`,

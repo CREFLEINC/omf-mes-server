@@ -61,6 +61,10 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   { code: 'P-04-01', flag: 'can_complete_work' },
   { code: 'P-04-03', flag: 'can_input_result' },
   { code: 'P-04-04', flag: 'can_print_label' },
+  // ⭐ 출하 단위 구성 — 마감하면 **납품 라벨이 나온다.** 그래서 `can_print_label` 이다
+  //    (`P-04-04` 재구성 라벨과 같은 축). 포장(`P-04-01`)의 `can_complete_work` 와 갈린다 —
+  //    이 화면은 실적을 닫지 않고 라벨을 낸다.
+  { code: 'P-04-05', flag: 'can_print_label' },
   // 공구·비가동은 공정 매핑과 무관한 설비 축이다.
   { code: 'P-05-01', flag: null },
   { code: 'P-05-02', flag: null },

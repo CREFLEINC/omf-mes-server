@@ -136,6 +136,8 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
 const WORKER_TABLE_READERS = [
   // 발급 대상의 현장 작업자와 감사 재검증 — 둘 다 활성·동일 공장을 확인한다.
   'app/document-issue/document-issue-delivery.ts',
+  // 납품 라벨의 새 주인 — 배분과 «같은» 판정을 한다(POP 전용 · 작업자와 단말의 공장 일치).
+  'app/document-issue/document-issue-shipping-unit.ts',
   'app/document-issue/document-issue-write.service.ts',
   'audit/terminal-worker-audit.ts',
   // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.
@@ -264,7 +266,7 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     expect(Object.values(judges).filter((code) => code === 'INVALID')).toHaveLength(1);
   });
 
-  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 37 이다 — 늘면 갈래를 정해야 한다', () => {
+  it('⭐ 계약이 이 헤더를 «필수»로 건 오퍼레이션은 40 이다 — 늘면 갈래를 정해야 한다', () => {
     let required = 0;
     for (const file of readdirSync(CONTRACTS).filter((name) => name.endsWith('.json'))) {
       const document = JSON.parse(readFileSync(join(CONTRACTS, file), 'utf8')) as {
@@ -278,7 +280,9 @@ describe('X-Worker-No 판정 — 한 벌로 모은 자리', () => {
     }
 
     // ⛔ 이 숫자가 늘었는데 위 세 표가 그대로면, 새 오퍼레이션이 판정을 «안 하고» 있다는 뜻이다.
-    expect(required).toBe(37);
+    // SHIP-UNIT-01 출하 단위 쓰기 셋(생성·상자 넣기·마감 · 장부 P-24): 37 → 40.
+    // 판정은 `logisticsWriteActorOf` 가 한다 — 위 표들이 그 자리를 이미 덮는다.
+    expect(required).toBe(40);
   });
 });
 

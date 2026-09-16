@@ -13,8 +13,14 @@ interface AllocationRow {
   lot_id: bigint;
   shipment_request_line_id: bigint;
   plant_id: bigint;
-  delivery_label_no: string | null;
 }
+
+/**
+ * ⭐ 배분은 이제 납품 라벨의 대상이 «아니다»(SHIP-UNIT-01 · 장부 P-24) — 자격 판정에서
+ * 걸러 422 가 난다. 이 잠금은 **기존 발행 이력을 되읽는 경로**만 받치므로 남긴다.
+ * ⛔ 배분에 번호를 매기던 `delivery_label_no` 는 더 쓰지 않는다(장부 P-27). 컬럼 삭제는
+ *    다음 릴리스다 — 마이그레이션 하위 호환 규칙(사용 제거 배포 → 다음 릴리스에서 삭제).
+ */
 
 export async function lockDeliveryAllocations(
   tx: Tx,
@@ -27,7 +33,7 @@ export async function lockDeliveryAllocations(
   const ids = [...relevant.map((target) => target.targetId)].sort(bigintOrder);
   const rows = await tx.$queryRaw<AllocationRow[]>(Prisma.sql`
     SELECT a.shipment_lot_allocation_id,a.lot_id,
-           sl.shipment_request_line_id,w.plant_id,a.delivery_label_no
+           sl.shipment_request_line_id,w.plant_id
     FROM logistics.shipment_lot_allocation a
     JOIN logistics.shipment_line sl ON sl.shipment_line_id=a.shipment_line_id
     JOIN logistics.shipment s ON s.shipment_id=sl.shipment_id
@@ -57,49 +63,8 @@ export async function lockDeliveryAllocations(
       lotId: row.lot_id,
       plantId: row.plant_id,
       oqcPassed: oqc.get(String(row.shipment_request_line_id)) === true,
-      deliveryLabelNo: row.delivery_label_no,
     }];
   }));
-}
-
-export async function assignDeliveryLabelNumbers(
-  tx: Tx,
-  facts: Iterable<DocumentIssueTargetFacts>,
-  issuedAt: Date,
-): Promise<void> {
-  const rows = [...facts].filter((fact): fact is Extract<DocumentIssueTargetFacts,
-    { targetTypeCode: 'SHIPMENT_LOT_ALLOCATION' }> => fact.targetTypeCode === 'SHIPMENT_LOT_ALLOCATION');
-  for (const row of rows) {
-    if (row.deliveryLabelNo !== null) continue;
-    const number = await nextDeliveryNumberWithin(tx, issuedAt);
-    await tx.shipment_lot_allocation.update({
-      where: { shipment_lot_allocation_id: row.targetId },
-      data: { delivery_label_no: number },
-    });
-    row.deliveryLabelNo = number;
-  }
-}
-
-async function nextDeliveryNumberWithin(tx: Tx, issuedAt: Date): Promise<string> {
-  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric',
-    month: '2-digit', day: '2-digit' }).format(issuedAt).replace(/-/g, '');
-  const rules = await tx.$queryRaw<Array<{ numbering_rule_id: bigint; pattern: string; is_active: boolean }>>(Prisma.sql`
-    INSERT INTO app.numbering_rule (document_type_code,pattern,reset_cycle_code)
-    VALUES ('DELIVERY_LABEL','DL-{YYYYMMDD}-{SEQ4}','DAILY')
-    ON CONFLICT (document_type_code,COALESCE(plant_id,0),COALESCE(lot_type_code,''))
-      DO UPDATE SET updated_at=clock_timestamp()
-    RETURNING numbering_rule_id,pattern,is_active`);
-  const rule = rules[0];
-  if (!rule || !rule.is_active || rule.pattern !== 'DL-{YYYYMMDD}-{SEQ4}')
-    throw new Error('납품 라벨 번호 규칙이 비활성이거나 승인된 형식과 다릅니다.');
-  const counter = await tx.$queryRaw<Array<{ last_value: bigint }>>(Prisma.sql`
-    INSERT INTO app.numbering_counter (numbering_rule_id,period_key,last_value)
-    VALUES (${rule.numbering_rule_id},${day},1)
-    ON CONFLICT ON CONSTRAINT uq_numbering_counter
-      DO UPDATE SET last_value=app.numbering_counter.last_value+1,
-                    updated_at=clock_timestamp()
-    RETURNING last_value`);
-  return `DL-${day}-${String(counter[0].last_value).padStart(4, '0')}`;
 }
 
 function forbidden(): ContractException {

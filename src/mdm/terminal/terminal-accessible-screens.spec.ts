@@ -32,7 +32,7 @@ describe('POP 화면 이동 후보 (D3)', () => {
     ['can_input_material', ['P-02-03', 'P-02-11']],
     ['can_input_result', ['P-02-04', 'P-04-03']],
     ['can_input_inspection', ['P-02-13']],
-    ['can_print_label', ['P-01-02', 'P-02-09', 'P-04-04']],
+    ['can_print_label', ['P-01-02', 'P-02-09', 'P-04-04', 'P-04-05']],
     ['can_complete_work', ['P-02-08', 'P-04-01']],
   ] as const)('%s 하나만 켜면 그 화면들만 더 나온다', (flag, expected) => {
     const codes = accessibleScreenCodes([flags({ [flag]: true })]);
@@ -66,11 +66,12 @@ describe('POP 화면 이동 후보 (D3)', () => {
     expect(codes).not.toContain('P-02-13');
   });
 
-  it('표가 카탈로그와 같은 16 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
+  it('표가 카탈로그와 같은 17 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
     const codes = POP_SCREEN_REQUIREMENTS.map((row) => row.code);
 
-    expect(codes).toHaveLength(16);
-    expect(new Set(codes).size).toBe(16);
+    // SHIP-UNIT-01 이 `P-04-05`(출하 단위 구성)를 더했다: 16 → 17.
+    expect(codes).toHaveLength(17);
+    expect(new Set(codes).size).toBe(17);
     expect(codes).not.toContain('P-CO-01');
   });
 });

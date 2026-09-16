@@ -153,6 +153,12 @@ export async function assertOwnedTarget(
         inspection_result_id: id, inspection_request: { work_order: { production_line: { plant_id: plantId } } },
       }, select: { inspection_result_id: true } });
       break;
+    case 'SHIPPING_UNIT':
+      // 소유는 그 출하 전표의 창고 공장이다(배분과 같은 축).
+      owned = !!await prisma.shipping_unit.findFirst({ where: {
+        shipping_unit_id: id, shipment: { warehouse: { plant_id: plantId } },
+      }, select: { shipping_unit_id: true } });
+      break;
     case 'SHIPMENT_LOT_ALLOCATION':
       owned = !!await prisma.shipment_lot_allocation.findFirst({ where: {
         shipment_lot_allocation_id: id,

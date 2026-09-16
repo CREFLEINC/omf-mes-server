@@ -20,7 +20,7 @@ function contractValidator(): ValidateFunction {
 
 describe('기능 권한 목록', () => {
   it('권한이 117건이다 — 설계 자료 실측치와 같다', () => {
-    expect(PERMISSIONS).toHaveLength(117);
+    expect(PERMISSIONS).toHaveLength(118);
   });
 
   it('도메인 축이 7개이고 축별 건수가 설계 자료와 같다', () => {
@@ -30,7 +30,7 @@ describe('기능 권한 목록', () => {
     }, {});
 
     // 권한목록.md 의 절 제목이 선언한 건수. 그쪽이 바뀌면 여기도 바뀌어야 한다.
-    expect(byGroup).toEqual({ '01': 26, '02': 24, '03': 6, '04': 18, '05': 17, '06': 14, CO: 12 });
+    expect(byGroup).toEqual({ '01': 26, '02': 24, '03': 6, '04': 19, '05': 17, '06': 14, CO: 12 });
   });
 
   it('code 가 유일하다 — 격자 열이 겹치면 부여가 어느 쪽에 가는지 알 수 없다', () => {

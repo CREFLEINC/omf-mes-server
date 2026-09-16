@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -139,11 +140,37 @@ export class ShipmentQueryService {
    */
   private async views(ids: bigint[]): Promise<ShipmentView[]> {
     if (ids.length === 0) return [];
-    const rows = await this.prisma.shipment.findMany({ where: { shipment_id: { in: ids } } });
+    const [rows, unassigned] = await Promise.all([
+      this.prisma.shipment.findMany({ where: { shipment_id: { in: ids } } }),
+      this.unassignedPackedBoxCounts(ids),
+    ]);
     const byId = new Map(rows.map((row) => [row.shipment_id.toString(), row]));
     return ids.flatMap((id) => {
       const row = byId.get(id.toString());
-      return row === undefined ? [] : [shipmentView(row)];
+      return row === undefined ? [] : [shipmentView(row, unassigned.get(id.toString()) ?? 0)];
     });
+  }
+
+  /**
+   * 포장이 끝났는데 아직 어느 출하 단위에도 안 들어간 상자 수(SHIP-UNIT-01 · 장부 P-24).
+   *
+   * ⭐ 한 상자가 배분 여럿에 걸릴 수 있어 **`DISTINCT` 로 센다** — 안 세면 배분 수만큼
+   * 부풀어 「구성할 것이 남았다」가 과장된다.
+   * ⛔ 0 건인 출하도 키를 갖는다(호출부가 `?? 0` 으로 메운다) — 키가 없으면 화면이 「0」과
+   * 「모른다」를 가를 수 없다.
+   */
+  private async unassignedPackedBoxCounts(ids: bigint[]): Promise<Map<string, number>> {
+    const rows = await this.prisma.$queryRaw<{ shipment_id: bigint; count: number }[]>(Prisma.sql`
+      SELECT sl.shipment_id, count(DISTINCT hu.handling_unit_id)::int AS count
+        FROM logistics.shipment_line sl
+        JOIN logistics.shipment_lot_allocation a ON a.shipment_line_id = sl.shipment_line_id
+        JOIN inventory.handling_unit hu ON hu.handling_unit_id = a.handling_unit_id
+       WHERE sl.shipment_id IN (${Prisma.join(ids)})
+         AND hu.status_code = 'PACKED'
+         AND NOT EXISTS (SELECT 1 FROM logistics.shipping_unit_handling_unit link
+                          WHERE link.handling_unit_id = hu.handling_unit_id)
+       GROUP BY sl.shipment_id
+    `);
+    return new Map(rows.map((row) => [row.shipment_id.toString(), row.count]));
   }
 }
