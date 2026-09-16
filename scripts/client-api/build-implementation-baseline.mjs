@@ -32,7 +32,7 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // 위 경고대로 squash 병합이면 이 해시가 사라지므로, **병합 뒤 그 병합 커밋으로 다시 뽑는다.**
 // 클라이언트가 `gen:api` 를 지금 돌려야 해서 통합 결정으로 먼저 낸 임시 기준이다.
 const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "27c2d9e9f462606ffd99bdfb09c7948d320d090d";
+const SERVER_COMMIT = "2e9f234b4a4937704fb2d48195215787c3289164";
 const GENERATED_VERSION = "0.1.3-next-server.20260917";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
@@ -59,7 +59,7 @@ const EXCLUDED_OPERATIONS = new Map([
 const PARTIAL_OPERATIONS = new Map([
   [
     "GET /app/document-issues/{documentIssueLogId}/rendition",
-    "MATERIAL_LOT_LABEL 발행 기록만 PNG로 렌더링한다. 다른 문서 유형은 422다. 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다.",
+    "MATERIAL_LOT_LABEL·PRODUCTION_LOT_LABEL·LOCATION_LABEL 세 유형만 그린다(png·tspl 둘 다). 다른 문서 유형은 422다. ⛔ DELIVERY_LABEL도 422다 — 서버가 그리지 않고 POP이 출하 단위 상세의 값으로 그린다(SHIP-UNIT-01). 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다.",
   ],
   [
     "POST /app/document-issues",
@@ -151,7 +151,7 @@ const KNOWN_DIFFERENCES = [
     id: "219",
     operations: ["GET /logistics/shipments"],
     summary:
-      "shipDateFrom은 필수이며 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다.",
+      "shipDateFrom은 hasUnassignedPackedBox=true를 함께 줄 때만 «선택»이고 그 밖에는 필수다. 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다.",
   },
   {
     id: "221",
@@ -487,7 +487,7 @@ function applyAppPatches(document) {
   );
   appendDescription(
     getOperation(document, "POST /app/document-issues"),
-    "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 두 문서 유형은 현재 클라이언트에서 발행 요청하지 않는다(I-27 마감 결정).",
+    "서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 SHIP-UNIT-01로 대상이 SHIPPING_UNIT이 되어 마감(CLOSED)된 출하 단위에 발행된다 — 다른 대상 유형은 422 INVALID, 안 닫힌 단위는 422 STATE_LOCKED다. 종전의 「DELIVERY_LABEL은 항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다.",
   );
   appendDescription(
     getOperation(document, "GET /app/printers"),
@@ -651,7 +651,17 @@ function applyShipmentPatches(document) {
   );
 
   const shipments = getOperation(document, "GET /logistics/shipments");
-  getParameter(shipments, "shipDateFrom").required = true;
+  // ⛔ shipDateFrom 을 `required: true` 로 «올리지 않는다» — 조건부 필수이기 때문이다.
+  //    hasUnassignedPackedBox=true 를 함께 주면 선택이다(P-24 ⑨b · e2e L-19 가 양방향을 잠근다).
+  //    OpenAPI 의 `required` 는 정적이라 「조건부」를 적을 수 없다. 억지로 true 로 두면 생성
+  //    타입이 기간을 강요해서, 클라이언트가 설계상 허용된 호출을 «컴파일 단계에서» 못 한다.
+  //    같은 저장소의 전례를 따른다 — `GET /mdm/code-values` 의 codeGroupId·codeGroupCode 가
+  //    「둘 중 정확히 하나」인데 둘 다 선택으로 두고 조건은 설명과 400 이 지킨다.
+  //    ⚠ 형제인 `GET /logistics/shipment-requests`(위)는 «무조건» 필수라 그대로 올린다.
+  appendDescription(
+    getParameter(shipments, "shipDateFrom"),
+    "서버 구현 기준: hasUnassignedPackedBox=true가 아니면 필수이고, 빠지면 400 REQUIRED다. 조건부라서 required로 선언하지 못한다(통보 219·P-24).",
+  );
   const shipmentSort = getParameter(shipments, "sort");
   shipmentSort.schema.enum = ["shippedAt", "shipmentNo"];
   shipmentSort.schema.example = "shippedAt";
