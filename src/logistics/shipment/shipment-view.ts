@@ -35,6 +35,11 @@ export interface ShipmentView {
   erpDeliveryNo: string | null;
   remarks?: string;
   expedited: boolean;
+  /**
+   * 포장이 끝났는데 아직 어느 출하 단위에도 안 들어간 상자 수(SHIP-UNIT-01 · 장부 P-24).
+   * ⭐ `P-04-05` 가 「구성할 것이 남았나」를 이 수로 본다. 목록에서만 채운다 — 상세는 안 센다.
+   */
+  unassignedPackedBoxCount?: number;
   expediteReason: string | null;
   versionNo?: number;
 }
@@ -90,8 +95,9 @@ export function shipmentDetailView(
 /** `null` 을 «키 없음»으로 접는다 — 위 널 정책의 뒤쪽 갈래에 쓴다. */
 const skip = <T>(value: T | null): T | undefined => value ?? undefined;
 
-export function shipmentView(row: ShipmentRow): ShipmentView {
+export function shipmentView(row: ShipmentRow, unassignedPackedBoxCount?: number): ShipmentView {
   return omitEmpty({
+    ...(unassignedPackedBoxCount === undefined ? {} : { unassignedPackedBoxCount }),
     shipmentId: Number(row.shipment_id),
     shipmentNo: row.shipment_no,
     shipmentRequestId: Number(row.shipment_request_id),

@@ -329,6 +329,64 @@ describe('출하 목록 (e2e)', () => {
     expect(made.shipmentA).not.toBe(made.request1);
   });
 
+  /**
+   * ⭐ SHIP-UNIT-01(장부 P-24) — `P-04-05` 의 출하 선택 목록이 「구성할 것이 남은 출하」를
+   * 이 축으로 좁힌다. 「포장이 끝났는데(`PACKED`) 아직 어느 출하 단위에도 안 들어간 상자」다.
+   * ⛔ 이 스위트의 기본 픽스처 HU 는 전부 `OPEN` 이다 — 포장 확정 전이라 세지 않는 것이 맞다.
+   */
+  it('L-18 ⭐ 미구성 포장 상자 — 수를 세고 그 축으로 거른다', async () => {
+    const all = await ours();
+    // 기본 픽스처는 HU 가 OPEN 이라 한 건도 안 센다.
+    for (const item of all) expect(item.unassignedPackedBoxCount).toBe(0);
+    expect(await ours({ hasUnassignedPackedBox: true })).toEqual([]);
+
+    // 그중 하나의 상자를 포장 확정한다.
+    const target = all[0];
+    const box = await prisma.handling_unit.findFirstOrThrow({
+      where: {
+        handling_unit_no: { startsWith: PREFIX },
+        shipment_lot_allocation: {
+          some: { shipment_line: { shipment_id: BigInt(target.shipmentId) } },
+        },
+      },
+    });
+    await prisma.handling_unit.update({
+      where: { handling_unit_id: box.handling_unit_id },
+      data: { status_code: 'PACKED' },
+    });
+
+    const packed = await ours();
+    expect(packed.find((item) => item.shipmentId === target.shipmentId)?.unassignedPackedBoxCount)
+      .toBe(1);
+    const filtered = await ours({ hasUnassignedPackedBox: true });
+    expect(filtered.map((item) => item.shipmentId)).toEqual([target.shipmentId]);
+
+    // ⭐ 출하 단위에 넣으면 「미구성」에서 빠진다 — 그것이 이 축의 뜻이다.
+    const unit = await prisma.shipping_unit.create({
+      data: {
+        shipping_unit_no: `${PREFIX}-SU1`,
+        shipment_id: BigInt(target.shipmentId),
+        shipping_unit_type_code: 'PALLET',
+        status_code: 'OPEN',
+      },
+    });
+    await prisma.shipping_unit_handling_unit.create({
+      data: {
+        shipping_unit_id: unit.shipping_unit_id,
+        handling_unit_id: box.handling_unit_id,
+        seq: 1,
+      },
+    });
+
+    expect(await ours({ hasUnassignedPackedBox: true })).toEqual([]);
+    const after = await ours();
+    expect(after.find((item) => item.shipmentId === target.shipmentId)?.unassignedPackedBoxCount)
+      .toBe(0);
+
+    // ⛔ false 는 절을 걸지 않는다 — 전건이 그대로 온다(`unconfirmedOnly` 와 같은 관례).
+    expect((await ours({ hasUnassignedPackedBox: false })).length).toBe(all.length);
+  });
+
   // ── 등록 `POST /logistics/shipments` ──────────────────────────────────────
   interface CreateBody {
     shipmentRequestId: number;
@@ -1765,6 +1823,11 @@ describe('출하 목록 (e2e)', () => {
     // ⛔ 순서가 FK 의 역순이다. ⛔ «이 스위트의 출하»로만 좁힌다 — 원천이 SHIPMENT 인 전표를 통째로
     //    지우면 반품 클레임 입고(W-04-06) 같은 남의 스위트 행까지 사라진다.
     for (const sql of [
+      // ⛔ 출하 단위는 출하를, 링크는 상자를 짚는다 — 둘 다 그 둘보다 «먼저» 지운다.
+      `DELETE FROM logistics.shipping_unit_handling_unit
+        WHERE shipping_unit_id IN (SELECT shipping_unit_id FROM logistics.shipping_unit
+               WHERE shipping_unit_no LIKE '${PREFIX}%')`,
+      `DELETE FROM logistics.shipping_unit WHERE shipping_unit_no LIKE '${PREFIX}%'`,
       `DELETE FROM logistics.shipment_lot_allocation WHERE shipment_line_id IN (
          SELECT shipment_line_id FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS}))`,
       `DELETE FROM logistics.shipment_line WHERE shipment_id IN (${OUR_SHIPMENTS})`,

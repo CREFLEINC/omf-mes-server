@@ -78,6 +78,24 @@ describe('계약 사본 — 선반영한 출하 단위 규격 (P-24·P-25)', () 
     expect(app.split('"SHIPPING_UNIT"').length - 1).toBe(5);
   });
 
+  /**
+   * ⛔ `P-04-05` 의 출하 선택 목록이 이 둘에 기댄다 — 사라지면 「구성할 것이 남은 출하」를
+   * 가릴 수단이 없어져 화면이 모든 출하를 늘어놓는다.
+   */
+  it('⛔ 출하 목록에 hasUnassignedPackedBox 질의와 unassignedPackedBoxCount 응답이 있다', () => {
+    const shipments = shipment.paths['/logistics/shipments'] as {
+      get: { parameters: { name: string }[] };
+    };
+    expect(shipments.get.parameters.map((parameter) => parameter.name)).toContain(
+      'hasUnassignedPackedBox',
+    );
+
+    const schema = shipment.components.schemas.Shipment as {
+      properties: Record<string, unknown>;
+    };
+    expect(schema.properties.unassignedPackedBoxCount).toBeDefined();
+  });
+
   /** ⭐ 납품 라벨 대상이 옮겨갔다는 사실 자체가 설명문에 남아 있어야 한다(P-26). */
   it('⛔ 배분 q 설명이 상자 번호를 겨눈다 — 납품라벨 번호로 되돌아가면 겨냥할 열이 없다', () => {
     const allocations = shipment.paths['/logistics/shipment-lot-allocations'] as {

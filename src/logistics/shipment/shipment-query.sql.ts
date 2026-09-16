@@ -18,6 +18,7 @@ export interface ShipmentFilters {
   shipDateTo?: string;
   q?: string;
   lotId?: number;
+  hasUnassignedPackedBox?: boolean;
 }
 
 export interface ShipmentQuery extends ShipmentFilters {
@@ -45,6 +46,26 @@ export const FROM_SQL = 'logistics.shipment s';
  * 전건을 내리는 것**이다(§2 2단계 기준 4).
  * ⛔ 앞 절(`EXISTS(라인)`)을 빼지 마라 — 라인 0건이 `NOT EXISTS` 만으로는 **공허참**이다.
  */
+/**
+ * `hasUnassignedPackedBox` — 「포장이 끝났는데 **아직 어느 출하 단위에도 안 들어간** 상자가
+ * 하나라도 있는 출하」(SHIP-UNIT-01 · 장부 P-24).
+ *
+ * ⭐ `P-04-05` 의 출하 선택 목록이 이 축으로 좁힌다 — 구성할 것이 남은 출하만 보여야 한다.
+ * ⛔ 상자의 「포장 끝남」은 `handling_unit.status_code = 'PACKED'` 이고, 그 상자가 «이» 출하의
+ *   것이라는 근거는 배분이다(취급 단위 자체는 출하를 모른다).
+ * ⚠ 미소속 판정은 링크 표의 부재다 — `handling_unit_id` 가 그 표의 PK 라 한 상자는 한 단위에만
+ *   들어간다. 그래서 「없으면 미소속」이 참이다.
+ */
+export const UNASSIGNED_PACKED_BOX_SQL = `EXISTS (
+        SELECT 1
+          FROM logistics.shipment_line sl
+          JOIN logistics.shipment_lot_allocation a ON a.shipment_line_id = sl.shipment_line_id
+          JOIN inventory.handling_unit hu ON hu.handling_unit_id = a.handling_unit_id
+         WHERE sl.shipment_id = s.shipment_id
+           AND hu.status_code = 'PACKED'
+           AND NOT EXISTS (SELECT 1 FROM logistics.shipping_unit_handling_unit link
+                            WHERE link.handling_unit_id = hu.handling_unit_id))`;
+
 export const PICKED_ONLY_SQL = `(EXISTS (SELECT 1 FROM logistics.shipment_request_line l
                     WHERE l.shipment_request_id = s.shipment_request_id)
         AND NOT EXISTS (SELECT 1 FROM logistics.shipment_request_line l
@@ -116,6 +137,8 @@ export function whereSql(query: ShipmentFilters): BuiltWhere {
   //    계약이 한 방향만 적었으므로 `false` 는 절을 «안 건다»(선례 `unassignedOnly`).
   if (query.unconfirmedOnly === true) and.push(`s.status_code = '${UNCONFIRMED}'`);
   if (query.pickedOnly === true) and.push(PICKED_ONLY_SQL);
+  // 계약이 한 방향만 적었으므로 `false` 는 절을 «안 건다»(`unconfirmedOnly` 와 같은 관례).
+  if (query.hasUnassignedPackedBox === true) and.push(UNASSIGNED_PACKED_BOX_SQL);
   // ⛔ 범위는 `shipment_no` 하나다 — 계약이 「고객은 customerId 를, LOT 은 lotId 를 쓴다」로 닫았다.
   if (query.q !== undefined) and.push(`s.shipment_no ILIKE '%' || ${bind(query.q)} || '%'`);
   if (query.lotId !== undefined) {
