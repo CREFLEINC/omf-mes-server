@@ -2,8 +2,9 @@ import { createCanvas, GlobalFonts, loadImage, type SKRSContext2D } from '@napi-
 import { Prisma } from '@prisma/client';
 
 import { LABEL_FONT } from './label-font';
+import { DPI } from './label-layout';
 import { labelDateTime, labelQty, materialLotLabelPng, materialLotLabelValues } from './material-lot-label';
-import { DPI, layoutMaterialLotLabel } from './material-lot-label-layout';
+import { layoutMaterialLotLabel } from './material-lot-label-layout';
 
 describe('material LOT label values', () => {
   const row = {

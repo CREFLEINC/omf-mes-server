@@ -2,7 +2,8 @@ import { createCanvas } from '@napi-rs/canvas';
 import type { Prisma } from '@prisma/client';
 
 import { LABEL_FONT } from './label-font';
-import { DPI, layoutMaterialLotLabel, type MaterialLotLabelValues } from './material-lot-label-layout';
+import { DPI } from './label-layout';
+import { layoutMaterialLotLabel, type MaterialLotLabelValues } from './material-lot-label-layout';
 
 export interface MaterialLotLabelRow {
   issue_seq: number;
