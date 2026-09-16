@@ -347,17 +347,37 @@ describe('출하 LOT 배분 목록 (e2e)', () => {
 
   // ── A-12 — q ──────────────────────────────────────────────────────────
 
-  it('A-12 ⭐ q 를 아무 값(HU 번호와 «같은» 값 포함)으로 줘도 빈 목록이고 404 가 아니다', async () => {
+  /**
+   * ⭐ P-25 — `q` 의 겨냥이 **납품라벨 번호에서 상자 번호로 옮겨갔다.**
+   * 전에는 이 시험이 「HU 번호를 줘도 빈 목록」을 잠갔다(R-8 — 그때는 `q` 가
+   * `delivery_label_no` 였고 배분이 그 번호를 가졌다). 납품 라벨의 주인이 배분에서
+   * 출하 단위로 가면서 배분에 그 번호가 없어져, 스캔 축을 상자 번호로 옮긴다.
+   */
+  it('A-12 ⭐ q 는 상자 번호를 정확 일치로 찾는다 — 미포장 배분과 없는 번호는 빈 목록이다', async () => {
     const shipment = await makeShipment();
     const line = await makeShipmentLine(shipment, { item: 1 });
     const hu = await makeHandlingUnit();
-    await makeAllocation(line, { lot: await makeLot('A12'), handlingUnitId: hu });
+    const packed = await makeAllocation(line, { lot: await makeLot('A12'), handlingUnitId: hu });
+    // 같은 출하에 포장되지 않은 배분을 하나 둔다 — 스캔에 걸리면 안 되는 쪽이다.
+    await makeAllocation(line, { lot: await makeLot('A12U') });
     const huRow = await prisma.handling_unit.findUniqueOrThrow({ where: { handling_unit_id: hu } });
 
-    // ⛔ `handling_unit_no` 에 얹으면 이 값이 걸려 목록이 안 빈다(R-8).
-    const body = await list({ shipmentId: shipment.shipmentId, q: huRow.handling_unit_no });
-    expect(body.items).toEqual([]);
-    expect(body.page.total).toBe(0);
+    const hit = await list({ shipmentId: shipment.shipmentId, q: huRow.handling_unit_no });
+    expect(hit.items).toHaveLength(1);
+    expect(hit.items[0].shipmentLotAllocationId).toBe(packed);
+    expect(hit.items[0].handlingUnitId).toBe(Number(hu));
+
+    // 없는 번호는 404 가 아니라 빈 목록이다(전과 같다).
+    const miss = await list({ shipmentId: shipment.shipmentId, q: `${huRow.handling_unit_no}-NONE` });
+    expect(miss.items).toEqual([]);
+    expect(miss.page.total).toBe(0);
+
+    // ⛔ 부분 일치로 넓히지 않는다 — 앞 조각만으로는 안 걸린다.
+    const prefix = await list({
+      shipmentId: shipment.shipmentId,
+      q: huRow.handling_unit_no.slice(0, -1),
+    });
+    expect(prefix.items).toEqual([]);
   });
 
   // ── A-13 ~ A-17 — match 삼분기 ────────────────────────────────────────────
