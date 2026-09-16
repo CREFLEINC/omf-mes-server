@@ -13,6 +13,7 @@
 | 1 | PLAN-WO-01 | ERP 생산오더 → 생산계획 → 확정(W/O) → 배포(자재 출고요청·피킹 지시) |
 | 2 | PICK-ISSUE-01 | 모바일 피킹·출고 확정 → 생산창고 입고 → 관리자 웹 확인 |
 | 3 | WIP-CHAIN-01 | POP 사출 작업 시작 → 자재 투입 → 실적·생산 LOT 라벨·완료 → 모바일 WIP 인계 → POP 조립 → 관리자 웹 확인 |
+| (선택) | 제품 출하 피킹 | 출하작업지시 편성 → 모바일 제품 피킹 → POP 포장 → 출하 처리 → 출하 확정. 제품 재고 시드(`mes-scenario-data.sql`)를 함께 넣으면 위 흐름과 같은 DB 에서 돌릴 수 있다 |
 
 ## 0. 전제
 
@@ -26,6 +27,7 @@
 |---|---|
 | `mes-scenario-plan-wo-01.sql` | 공정·라인·설비·위치·라우팅·BOM 공정 매핑·시작 재고·ERP 생산오더 |
 | `mes-scenario-pick-wip-01.sql` | 라우팅 공정 선후행 · 교대(24시간) · 단말 3대 · POP 단말-공정 매핑 |
+| `mes-scenario-data.sql` (선택) | 제품 출하 피킹용 — S240 위치 1 · 제품 재고 10종(`SEED-S240-0001`~`0010`, 입고 전표 `GR-SEED-0001`) · 자재 P/O 5건. 위 두 파일과 독립이라 순서를 가리지 않는다 |
 
 - 진행 중 쓰는 compose 명령은 아래 한 줄로 줄여 둔다.
 
@@ -93,6 +95,10 @@ $C run --rm -T migrate
 seed/load-mes-initial-data.sh --dry-run
 seed/load-mes-initial-data.sh
 
+# (1b · 선택) 제품 출하 피킹용 제품 재고 — 넣지 않으면 아래 9번의 «제품 출하 피킹»만 못 한다
+SQL_FILE=seed/mes-scenario-data.sql seed/load-mes-initial-data.sh --dry-run
+SQL_FILE=seed/mes-scenario-data.sql seed/load-mes-initial-data.sh
+
 # (2) PLAN-WO-01 — 공정·설비·라우팅·위치·시작 재고·생산오더
 SQL_FILE=seed/mes-scenario-plan-wo-01.sql seed/load-mes-initial-data.sh --dry-run
 SQL_FILE=seed/mes-scenario-plan-wo-01.sql seed/load-mes-initial-data.sh
@@ -132,6 +138,7 @@ UNION ALL SELECT 'terminal', count(*) FROM mdm.terminal WHERE terminal_code LIKE
 UNION ALL SELECT 'terminal-process', count(*) FROM mdm.terminal_process
 UNION ALL SELECT 'seed-lot', count(*) FROM trace.lot WHERE lot_no LIKE 'SEED-S230-%'
 UNION ALL SELECT 'production-order', count(*) FROM planning.production_order WHERE production_order_no LIKE 'PO-ERP-%'
+UNION ALL SELECT 's240-lot (선택)', count(*) FROM trace.lot WHERE lot_no LIKE 'SEED-S240-%'
 UNION ALL SELECT 'plan+wo (0 이어야)', (SELECT count(*) FROM planning.production_plan) + (SELECT count(*) FROM production.work_order);"
 ```
 
@@ -145,6 +152,7 @@ UNION ALL SELECT 'plan+wo (0 이어야)', (SELECT count(*) FROM planning.product
 | terminal-process | 2 |
 | seed-lot | 8 (완성형 3 + 연습형 5) |
 | production-order | 5 |
+| s240-lot | 10 (`mes-scenario-data.sql` 을 넣었을 때 · 안 넣었으면 0) |
 | plan+wo | 0 |
 
 ## 8. 단말 재등록
@@ -166,6 +174,18 @@ DB 를 비웠으므로 이전 단말 등록은 모두 무효다. 기기 쪽에 �
 2. **PICK-ISSUE-01** — 모바일 M-01-08 에서 피킹·출고 확정, M-01-09 에서 생산창고 입고. W-01-13 · W-01-07 · W-02-10 에서 확인한다.
 3. **WIP-CHAIN-01** — POP(사출) 에서 작업 시작 → 자재 투입 → 실적·생산 LOT 라벨·작업 완료. 모바일 M-02-01 에서 사출 LOT 을
    조립 W/O 로 인계. POP(조립) 에서 같은 흐름. W-02-08 에서 확인한다.
+
+### (선택) 제품 출하 피킹
+
+`mes-scenario-data.sql` 을 넣었을 때. 위 생산 흐름과 같은 DB·같은 단말로 돌린다. ERP 출하지시서(sales order)는 연계가
+채우는 것이라 여기서는 만들지 않고, W-04-01 의 **단독 생성**으로 출하작업지시를 편성한다.
+
+1. **W-04-01 출하작업지시 편성** — 출하지시서를 고르지 않고 단독 생성. 고객·납품처(기초데이터 거래처, 예: `100003`),
+   출하 희망일, **이행 공장 PL13**(비우면 모바일·POP 목록에 나오지 않는다), 라인에 S240 재고 품목
+   (예: `F534F50200` 480 EA 중 100). 최소 잔존기한은 비운다 — 시드 LOT 에 유통기한이 없어 값을 넣으면 피킹이 거절된다.
+2. **모바일 M-04-01 제품 피킹** — 지시 라인에 S240 의 제품 LOT(`SEED-S240-…`)을 집어 피킹 확정.
+3. **POP P-04-01 포장 실적** — 피킹된 배분을 포장 단위에 잇는다. 시드 POP 단말은 `can_complete_work` 가 켜져 있어 이 화면이 열린다.
+4. **W-04-04 출하 처리** — 상차·실물 출고. 5. **W-04-12 출하 확정** — 확정은 되돌릴 수 없다.
 
 시나리오별 데이터의 뜻과 알려진 한계는 `README.md` 의 해당 절에 있다.
 
