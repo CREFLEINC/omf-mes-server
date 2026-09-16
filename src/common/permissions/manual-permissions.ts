@@ -102,7 +102,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 라벨·출력물 발행 — 도출표에는 기존 여덟 화면이 있지만 재구성 라벨(`P-04-04`)과
   // 검사성적서(`W-04-03`) 호출 셸이 빠졌다. 둘 다 같은 발행 POST를 사용한다(I-27 R11).
   // GET·결과보고에는 계약상 403이 없으므로 이 권한을 확대하지 않는다. // 결정 — 통보(레인 B)
-  'POST /app/document-issues': ['P-04-04', 'W-04-03'],
+  // ⭐ `P-04-05`(출하 단위 구성)를 더한다 — 마감 직후 그 화면이 «스스로» 납품 라벨을
+  //    발행한다(SHIP-UNIT-01). `P-04-02` 는 «재»발행 화면이라 다른 자리다.
+  'POST /app/document-issues': ['P-04-04', 'W-04-03', 'P-04-05'],
   'POST /app/roles/{roleId}:activate': ['W-CO-02'],
   'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
   'PUT /app/roles/{roleId}/permissions': ['W-CO-02'],
@@ -321,3 +323,4 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
 };
+

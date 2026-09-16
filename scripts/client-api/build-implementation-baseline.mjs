@@ -63,7 +63,7 @@ const PARTIAL_OPERATIONS = new Map([
   ],
   [
     "POST /app/document-issues",
-    "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED, DELIVERY_LABEL은 항상 422 INVALID다. 나머지 지원 조합만 기록을 생성한다.",
+    "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 마감된 출하 단위(SHIPPING_UNIT)에만 붙고 그 밖은 422 STATE_LOCKED다 — 종전의 「항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다(SHIP-UNIT-01). 나머지 지원 조합만 기록을 생성한다.",
   ],
   [
     "POST /planning/production-orders/{productionOrderId}:resync",
@@ -205,7 +205,7 @@ const KNOWN_DIFFERENCES = [
     id: "I-27",
     operations: ["POST /app/document-issues"],
     summary:
-      "IDENTIFICATION_TAG와 DELIVERY_LABEL 발행 입력은 현재 서버가 각각 422 STATE_LOCKED·INVALID로 거부한다.",
+      "IDENTIFICATION_TAG 발행 입력은 현재 서버가 422 STATE_LOCKED로 거부한다. DELIVERY_LABEL은 SHIP-UNIT-01 로 대상이 출하 단위(SHIPPING_UNIT)가 되어 마감된 단위에 발행된다.",
   },
 ];
 

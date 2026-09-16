@@ -463,7 +463,89 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
       .toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
   });
 
+  // ── 납품 라벨 발행 (④) ──────────────────────────────────────────────────
+
+  /**
+   * ⭐ 납품 라벨의 주인이 출하 LOT 배분에서 **출하 단위**로 옮겨갔다(SHIP-UNIT-01).
+   * 종전에는 상자 하나에 라벨이 여러 장 나왔다 — 단위 하나에 한 장이 된다.
+   * ⛔ OQC 자격 검사가 **없다** — 출하 처리 관문이 이미 걸렀다.
+   * ⛔ `lotId` 가 null 이다 — 한 단위에 LOT 이 여럿이라 하나를 고를 수 없다.
+   */
+  it('U-18 ⭐ 마감된 출하 단위에 납품 라벨을 발행한다 — lotId 는 null 이고 표시명이 단위 번호다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 30);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+
+    // 마감 «전»에는 발행할 수 없다.
+    const early = await issueDeliveryLabel(unit.shippingUnitId, 422);
+    expect(early.body.errors[0]).toMatchObject({
+      field: 'targets[0].targetId',
+      code: 'STATE_LOCKED',
+    });
+
+    await close(unit.shippingUnitId, added.body.versionNo, 200);
+    const issued = await issueDeliveryLabel(unit.shippingUnitId, 201);
+
+    expect(issued.body.issuedCount).toBe(1);
+    expect(issued.body.items[0]).toMatchObject({
+      documentTypeCode: 'DELIVERY_LABEL',
+      issueSeq: 1,
+      // ⛔ 한 단위에 LOT 이 여럿이라 고를 수 없다.
+      lotId: null,
+      target: {
+        targetTypeCode: 'SHIPPING_UNIT',
+        targetId: unit.shippingUnitId,
+        // ⭐ 표시명이 곧 납품 라벨 번호다 — 별도 번호를 두지 않는다.
+        displayName: unit.shippingUnitNo,
+        screenId: 'P-04-05',
+      },
+    });
+  });
+
+  it('U-19 ⛔ 출하 LOT 배분에는 더 이상 납품 라벨을 발행할 수 없다', async () => {
+    const shipment = await makeShipment();
+    const box = await makePackedBox(shipment, 10);
+    const allocation = await prisma.shipment_lot_allocation.findFirstOrThrow({
+      where: { handling_unit_id: BigInt(box.handlingUnitId) },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/api/app/document-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        documentTypeCode: 'DELIVERY_LABEL',
+        targets: [
+          {
+            targetTypeCode: 'SHIPMENT_LOT_ALLOCATION',
+            targetId: Number(allocation.shipment_lot_allocation_id),
+          },
+        ],
+      })
+      .expect(422);
+
+    // 허용 쌍에서 빠졌다 — 대상 «유형» 자체가 거절된다.
+    expect(response.body.errors[0]).toMatchObject({
+      field: 'targets[0].targetTypeCode',
+      code: 'INVALID',
+    });
+  });
+
   // ── 헬퍼 ────────────────────────────────────────────────────────────────
+
+  function issueDeliveryLabel(shippingUnitId: number, expected: number): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/app/document-issues')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        documentTypeCode: 'DELIVERY_LABEL',
+        targets: [{ targetTypeCode: 'SHIPPING_UNIT', targetId: shippingUnitId }],
+      })
+      .expect(expected);
+  }
+
 
   function addBox(
     shippingUnitId: number,
@@ -765,6 +847,13 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
   }
 
   async function cleanup(): Promise<void> {
+    // ⛔ 발행 로그는 FK 가 없다(다형) — 단위를 지우기 «전»에 손으로 지운다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM app.document_issue_log
+       WHERE target_type_code = 'SHIPPING_UNIT'
+         AND target_id IN (SELECT shipping_unit_id FROM logistics.shipping_unit
+              WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment
+                     WHERE shipment_no LIKE '${PREFIX}%'))`);
     // ⛔ 링크 → 단위 → 출하 → 지시 순이다(FK).
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.shipping_unit_handling_unit

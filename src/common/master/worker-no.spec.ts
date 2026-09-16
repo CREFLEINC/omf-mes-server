@@ -136,6 +136,8 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
 const WORKER_TABLE_READERS = [
   // 발급 대상의 현장 작업자와 감사 재검증 — 둘 다 활성·동일 공장을 확인한다.
   'app/document-issue/document-issue-delivery.ts',
+  // 납품 라벨의 새 주인 — 배분과 «같은» 판정을 한다(POP 전용 · 작업자와 단말의 공장 일치).
+  'app/document-issue/document-issue-shipping-unit.ts',
   'app/document-issue/document-issue-write.service.ts',
   'audit/terminal-worker-audit.ts',
   // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.

@@ -41,6 +41,7 @@ interface ShipmentBody {
   warehouseId: number;
   statusCode: string;
   expedited: boolean;
+  unassignedPackedBoxCount?: number;
   shippedAt: string | null;
   expediteReason: string | null;
   erpDeliveryNo: string | null;

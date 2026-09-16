@@ -14,6 +14,7 @@ import {
 import { lockDocumentIssueGoodsIssueTargets } from "./document-issue-goods-issue-lock";
 import { lockDocumentIssueInspectionTargets } from "./document-issue-inspection-lock";
 import { assignDeliveryLabelNumbers, lockDeliveryAllocations } from './document-issue-delivery';
+import { loadShippingUnitFacts } from './document-issue-shipping-unit';
 import { loadDocumentIssueReasons } from "./document-issue-query.service";
 import {
   DocumentIssueSequence,
@@ -56,6 +57,8 @@ export class DocumentIssueWriteService {
       await lockDocumentIssueGoodsIssueTargets(tx, targets),
       await lockDocumentIssueInspectionTargets(tx, targets),
       await lockDeliveryAllocations(tx, targets, context.terminalId, context.workerNo),
+      // ⭐ 납품 라벨의 새 주인(SHIP-UNIT-01). 배분 쪽은 과거 이력을 읽는 자리로 남는다.
+      await loadShippingUnitFacts(tx, targets, context.terminalId, context.workerNo),
     );
     const sequences = await nextDocumentIssueSequences(
       tx,

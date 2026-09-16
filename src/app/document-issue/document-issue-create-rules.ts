@@ -94,6 +94,13 @@ export type DocumentIssueTargetFacts =
       plantId: bigint;
       oqcPassed: boolean;
       deliveryLabelNo: string | null;
+    }
+  | {
+      /** 납품 라벨의 새 주인(SHIP-UNIT-01). ⛔ `lotId` 가 «없다» — 한 단위에 LOT 이 여럿이다. */
+      targetTypeCode: "SHIPPING_UNIT";
+      targetId: bigint;
+      plantId: bigint;
+      statusCode: string;
     };
 
 export function prepareDocumentIssueTargets(
@@ -213,9 +220,14 @@ export function qualifyDocumentIssueTarget(
     case "LOCATION_LABEL":
       break;
     case "DELIVERY_LABEL":
-      if (facts.targetTypeCode !== "SHIPMENT_LOT_ALLOCATION" || !facts.oqcPassed)
-        failTarget(target, ERROR_CODE.STATE_LOCKED, "OQC 합격 출하 배분만 납품 라벨을 발행할 수 있습니다.");
-      sourceLotId = facts.lotId;
+      // ⭐ 주인이 출하 LOT 배분에서 **출하 단위**로 옮겨갔다(SHIP-UNIT-01 · 사용자 결정).
+      //    종전에는 상자 하나에 라벨이 여러 장 나왔다 — 단위 하나에 한 장이 된다.
+      // ⛔ OQC 자격 검사를 **뺐다.** 출하 처리 관문이 이미 걸러서 여기서 또 보면 두 곳이
+      //    갈릴 뿐이고, 출하 단위는 그 관문을 지난 상자만 담는다.
+      // ⛔ `sourceLotId` 를 채우지 않는다 — 한 단위에 LOT 이 여럿이라 하나를 고를 수 없다.
+      //    발행 기록의 LOT 칸은 null 이 된다.
+      if (facts.targetTypeCode !== "SHIPPING_UNIT" || facts.statusCode !== "CLOSED")
+        failTarget(target, ERROR_CODE.STATE_LOCKED, "마감된 출하 단위만 납품 라벨을 발행할 수 있습니다.");
       break;
   }
 
@@ -271,7 +283,7 @@ function assertSupportedPair(
     CERTIFICATE_OF_ANALYSIS: ["INSPECTION_RESULT"],
     TOOL_LABEL: ["MOLD"],
     LOCATION_LABEL: ["LOCATION"],
-    DELIVERY_LABEL: ["SHIPMENT_LOT_ALLOCATION"],
+    DELIVERY_LABEL: ["SHIPPING_UNIT"],
   };
   if (!(supported[documentTypeCode] ?? []).includes(targetTypeCode))
     fail(

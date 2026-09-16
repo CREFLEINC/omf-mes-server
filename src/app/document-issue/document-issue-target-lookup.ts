@@ -9,6 +9,7 @@ export const DOCUMENT_TARGET_TYPES = [
   'LOCATION',
   'INSPECTION_RESULT',
   'SHIPMENT_LOT_ALLOCATION',
+  'SHIPPING_UNIT',
 ] as const;
 
 export type DocumentTargetType = (typeof DOCUMENT_TARGET_TYPES)[number];
@@ -37,7 +38,7 @@ export async function loadDocumentIssueTargets(
         .map((row) => row.target_id),
     ),
   ];
-  const [lots, serials, units, issueLines, molds, locations, inspections, allocations] =
+  const [lots, serials, units, issueLines, molds, locations, inspections, allocations, shippingUnits] =
     await Promise.all([
       tx.lot.findMany({
         where: { lot_id: { in: ids('LOT') } },
@@ -77,6 +78,14 @@ export async function loadDocumentIssueTargets(
         where: { shipment_lot_allocation_id: { in: ids('SHIPMENT_LOT_ALLOCATION') } },
         select: { shipment_lot_allocation_id: true, delivery_label_no: true },
       }),
+      // ⛔ 배분 쪽과 같은 가드다 — 대상이 없으면 조회 자체를 하지 않는다. 유형별 호출 수를
+      //    세는 시험이 있어서이기도 하고, 빈 `IN ()` 를 보내지 않기 위해서다.
+      ids('SHIPPING_UNIT').length === 0
+        ? Promise.resolve([] as Array<{ shipping_unit_id: bigint; shipping_unit_no: string }>)
+        : tx.shipping_unit.findMany({
+        where: { shipping_unit_id: { in: ids('SHIPPING_UNIT') } },
+        select: { shipping_unit_id: true, shipping_unit_no: true },
+      }),
     ]);
 
   const targets: TargetLookup = new Map();
@@ -115,9 +124,16 @@ export async function loadDocumentIssueTargets(
       'W-04-03',
     ),
   );
+  // ⛔ 배분 분기를 «남긴다» — 납품 라벨의 주인은 출하 단위로 옮겨갔지만(SHIP-UNIT-01),
+  //    그전에 발행된 이력이 이 대상을 가리키고 그 표시명을 여기서 푼다. 지우면 과거 이력이
+  //    「TYPE #id」 로 떨어진다. 빠지는 것은 발행 «허용 쌍»(쓰기)에서뿐이다.
   allocations.forEach((row) => add(
     'SHIPMENT_LOT_ALLOCATION', row.shipment_lot_allocation_id,
     row.delivery_label_no ?? `출하 LOT 배분 #${row.shipment_lot_allocation_id}`, 'P-04-02',
+  ));
+  // ⭐ 표시명이 곧 납품 라벨 번호다 — 별도 번호를 두지 않는다.
+  shippingUnits.forEach((row) => add(
+    'SHIPPING_UNIT', row.shipping_unit_id, row.shipping_unit_no, 'P-04-05',
   ));
   return targets;
 }
