@@ -32,7 +32,7 @@ const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 // 위 경고대로 squash 병합이면 이 해시가 사라지므로, **병합 뒤 그 병합 커밋으로 다시 뽑는다.**
 // 클라이언트가 `gen:api` 를 지금 돌려야 해서 통합 결정으로 먼저 낸 임시 기준이다.
 const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "7d6f2a32aba8adbaa45574f48bce9e3a7126af2d";
+const SERVER_COMMIT = "27c2d9e9f462606ffd99bdfb09c7948d320d090d";
 const GENERATED_VERSION = "0.1.3-next-server.20260917";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
