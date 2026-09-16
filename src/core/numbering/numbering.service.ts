@@ -84,6 +84,15 @@ const DEFAULT_PREFIX: Record<string, string> = {
    * 한 번 더 만들지 않는다.
    */
   SHIPMENT: 'SH',
+  /**
+   * 규칙 미등재 — `SU-{YYYYMMDD}-{SEQ4}`(SHIP-UNIT-01).
+   * ⭐ 이 번호가 **납품 라벨 번호로 그대로 쓰인다** — 출하 단위 : 납품 라벨이 1:1 이라 별도
+   * 번호를 두지 않는다. 배분의 `delivery_label_no`(`DL-…`)를 대신한다.
+   * ⛔ 그 옛 채번은 일자 키가 **KST** 였고 공용 서비스를 거치지 않았다(`document-issue-delivery.ts`).
+   * 이 자리로 옮기면서 그 예외가 사라진다 — 기간 축은 다른 형제와 같이 서버 UTC 날짜다.
+   * ⚠ `SU` 는 실측으로 비어 있었다(겹친 것은 `SR` 뿐 · 통보 191).
+   */
+  SHIPPING_UNIT: 'SU',
 };
 
 /** 규칙이 없는 문서 유형의 기본 패턴은 `{PREFIX}-{YYYYMMDD}-{SEQ4}` 다(`plan.md` §0 #3) —
