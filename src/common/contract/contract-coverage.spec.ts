@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/488)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/494)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -39,7 +39,10 @@ describe('계약 커버리지', () => {
     // ⭐ **분모를 «센다».** 이 시험 이름이 「n/490」인 채로 실제가 487 이 되도록 아무도 몰랐다
     //    (부채 #337). 계약 사본을 당겨 분모가 바뀌면 여기가 빨개지고, 그때 목표 수를 다시 잡는다.
     // FR-005 출하작업지시 이행 공장 지정 PUT 1건: 원격 main 487 → 현 사본 488.
-    expect(registry.size).toBe(488);
+    // SHIP-UNIT-01 출하 단위 6 오퍼레이션(경로 5개 · 장부 P-24): 488 → 494.
+    // ⚠ 이 6 건은 설계 사본에 «우리가» 적은 것이다 — 설계팀이 정본에 실어 오면 그때
+    //   드리프트에서 빠지지만 분모는 그대로다. 수를 되돌릴 일은 없다.
+    expect(registry.size).toBe(494);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });
