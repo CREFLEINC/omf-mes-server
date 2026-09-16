@@ -374,6 +374,55 @@ JOIN logistics.purchase_order_line line
 JOIN mdm.item item ON item.item_id = line.item_id
 ORDER BY source.seq;
 
+\echo 'OMF MES scenario seed: 제품 출하검사(OQC) 기준'
+-- ⭐ **없으면 출하작업지시 편성이 400 으로 막힌다.** 편성(`POST /logistics/shipment-requests`)이
+--    검사 필수 라인의 품목마다 OQC 의뢰를 만드는데, 그때 「그 날짜에 유효한 기준 버전」을
+--    요구한다. 0 건이든 2 건 이상이든 `STATE_LOCKED` 로 거절한다 — 라인의
+--    `shipping_inspection_required` 가 이미 「검사 불요」를 뜻하므로, 필수라고 해 놓고 기준이
+--    없는 것은 마스터 결손이고 조용히 넘기면 그 출하의 검사 판정이 영영 `PENDING` 에 갇힌다.
+-- ⛔ 위 기초재고 10건의 제품 품목 «전부»에 건다 — 어느 것으로 시나리오를 돌려도 막히지 않게.
+-- ⚠ 값은 코드 그룹의 살아 있는 것만 쓴다(`INSPECTION_SAMPLING_METHOD`·`INSPECTION_FREQUENCY`).
+--   물리에 CHECK 가 없어 아무 문자열이나 들어가므로 여기서 지킨다.
+INSERT INTO quality.inspection_plan
+  (inspection_plan_code, inspection_plan_name, item_id, inspection_type_code, is_active, created_by)
+SELECT 'OQC-SEED-' || item.item_code,
+       item.item_name || ' 출하검사 기준',
+       item.item_id,
+       'OQC',
+       true,
+       context.admin_user_id
+FROM scenario_stock_source source
+JOIN mdm.item item ON item.item_code = source.item_code
+CROSS JOIN scenario_context context
+WHERE NOT EXISTS (
+  SELECT 1 FROM quality.inspection_plan plan
+  WHERE plan.item_id = item.item_id AND plan.inspection_type_code = 'OQC'
+);
+
+-- 유효기간은 열어 둔다(`effective_to` NULL) — 시나리오를 언제 돌려도 「그 날짜에 유효」해야 한다.
+-- ⛔ 기준당 «정확히 하나»여야 한다. 둘이면 서버가 고르지 않고 400 으로 막는다.
+INSERT INTO quality.inspection_plan_version
+  (inspection_plan_id, plan_version, effective_from, effective_to,
+   sampling_method_code, inspection_frequency_code, status_code, created_by)
+SELECT plan.inspection_plan_id, 1, DATE '2020-01-01', NULL,
+       'FULL_INSPECTION', 'PRODUCTION_LOT', 'CONFIRMED', context.admin_user_id
+FROM quality.inspection_plan plan
+CROSS JOIN scenario_context context
+WHERE plan.inspection_plan_code LIKE 'OQC-SEED-%'
+  AND NOT EXISTS (
+    SELECT 1 FROM quality.inspection_plan_version version
+    WHERE version.inspection_plan_id = plan.inspection_plan_id
+  );
+
+SELECT plan.inspection_plan_code, item.item_code, version.plan_version,
+       version.effective_from, version.status_code, version.sampling_method_code
+FROM quality.inspection_plan plan
+JOIN mdm.item item ON item.item_id = plan.item_id
+JOIN quality.inspection_plan_version version
+  ON version.inspection_plan_id = plan.inspection_plan_id
+WHERE plan.inspection_plan_code LIKE 'OQC-SEED-%'
+ORDER BY item.item_code;
+
 \if :apply
 COMMIT;
 \echo 'OMF MES scenario seed committed'

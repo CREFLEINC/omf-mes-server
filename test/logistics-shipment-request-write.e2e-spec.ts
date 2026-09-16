@@ -709,8 +709,10 @@ describe('출하작업지시 편성 (e2e)', () => {
           inspection_plan_id: plan.inspection_plan_id,
           plan_version: 1,
           effective_from: new Date('2020-01-01'),
-          sampling_method_code: 'FULL',
-          inspection_frequency_code: 'EVERY_LOT',
+          // ⛔ 코드 그룹의 «살아 있는» 값이다 — `EVERY_LOT` 은 폐기됐고 `FULL` 은 없는 값이다.
+          //    DB CHECK 가 없어 아무 문자열이나 들어가므로 여기서 지킨다.
+          sampling_method_code: 'FULL_INSPECTION',
+          inspection_frequency_code: 'PRODUCTION_LOT',
           status_code: 'CONFIRMED',
         },
       });
