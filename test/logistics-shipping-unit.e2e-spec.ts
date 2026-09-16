@@ -72,6 +72,9 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
     foreignWarehouse: 0n,
     customer: 0n,
     shipTo: 0n,
+    item: 0n,
+    lot: 0n,
+    uom: 0n,
   };
 
   beforeAll(async () => {
@@ -314,7 +317,233 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
       .expect(401);
   });
 
+  // ── 상자 넣기·빼기·마감 (③b) ────────────────────────────────────────────
+
+  it('U-12 ⭐ 포장 라벨 번호로 상자를 넣는다 — seq·합계·버전이 함께 오른다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const first = await makePackedBox(shipment, 100);
+    const second = await makePackedBox(shipment, 40);
+
+    const one = await addBox(unit.shippingUnitId, first.handlingUnitNo);
+    expect(one.body.boxCount).toBe(1);
+    // ⭐ 상자가 드나들면 버전이 오른다 — 안 오르면 낡은 ETag 로 마감이 통과한다.
+    expect(one.body.versionNo).toBe(2);
+    expect(one.headers.etag).toBe('2');
+
+    const two = await addBox(unit.shippingUnitId, second.handlingUnitNo);
+    expect(two.body.boxes.map((box: { seq: number }) => box.seq)).toEqual([1, 2]);
+    expect(two.body.versionNo).toBe(3);
+    // 같은 품목·단위라 한 줄로 합쳐진다.
+    expect(two.body.itemTotals).toEqual([
+      expect.objectContaining({ itemId: Number(ids.item), qty: 140, uomId: Number(ids.uom) }),
+    ]);
+  });
+
+  /** ⭐ 스캐너가 한 번에 두 번 읽는 일이 흔하다 — 그걸 오류로 만들면 작업자가 멈춘다. */
+  it('U-13 ⭐ 같은 상자를 다시 스캔하면 200 이고 버전도 안 오른다(멱등)', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+
+    const first = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+    const again = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+
+    expect(again.body.boxCount).toBe(1);
+    expect(again.body.versionNo).toBe(first.body.versionNo);
+  });
+
+  it('U-14 ⭐ 넣기 거절 다섯 갈래가 code·field 로 갈린다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+
+    // ① 없는 상자 → 404
+    await request(app.getHttpServer())
+      .post(`${BASE}/${unit.shippingUnitId}:add-box`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ handlingUnitNo: `${PREFIX}-NOPE` })
+      .expect(404);
+
+    // ② 포장 확정되지 않은 상자 → STATE_LOCKED / handlingUnitNo
+    const open = await makePackedBox(shipment, 5, { status: 'OPEN' });
+    expect((await addBox(unit.shippingUnitId, open.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'handlingUnitNo', code: 'STATE_LOCKED' });
+
+    // ③ 포장 실적(배분)이 없는 상자 → INVALID
+    const bare = await makePackedBox(shipment, 5, { allocate: false });
+    expect((await addBox(unit.shippingUnitId, bare.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'handlingUnitNo', code: 'INVALID' });
+
+    // ④ 다른 출하의 상자 → PAIR
+    const otherShipment = await makeShipment();
+    const foreign = await makePackedBox(otherShipment, 5);
+    expect((await addBox(unit.shippingUnitId, foreign.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'handlingUnitNo', code: 'PAIR' });
+
+    // ⑤ 이미 다른 단위에 구성된 상자 → UNIQUE_VIOLATION
+    const taken = await makePackedBox(shipment, 5);
+    const otherUnit = (await create(shipment.shipmentId)) as UnitBody;
+    await addBox(otherUnit.shippingUnitId, taken.handlingUnitNo);
+    expect((await addBox(unit.shippingUnitId, taken.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'handlingUnitNo', code: 'UNIQUE_VIOLATION' });
+  });
+
+  it('U-15 상자를 빼면 200 + 상세이고 seq 는 재부여되지 않는다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const first = await makePackedBox(shipment, 10);
+    const second = await makePackedBox(shipment, 20);
+    await addBox(unit.shippingUnitId, first.handlingUnitNo);
+    await addBox(unit.shippingUnitId, second.handlingUnitNo);
+
+    const removed = await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${first.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    // ⛔ 204 가 아니라 상세다 — 화면이 목록·합계를 그 자리에서 다시 그린다.
+    expect(removed.body.boxCount).toBe(1);
+    // 남은 상자의 seq 는 2 그대로다 — 재부여하면 화면에 찍힌 번호가 흔들린다.
+    expect(removed.body.boxes.map((box: { seq: number }) => box.seq)).toEqual([2]);
+    expect(removed.body.versionNo).toBe(4);
+
+    // 그 단위에 없는 상자를 빼면 404
+    await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${first.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(404);
+  });
+
+  it('U-16 ⭐ 마감은 If-Match 를 요구하고 편도다 — 상자 0 은 400 INVALID', async () => {
+    const shipment = await makeShipment();
+    const empty = (await create(shipment.shipmentId)) as UnitBody;
+
+    // 상자가 없으면 마감할 수 없다.
+    const blocked = await close(empty.shippingUnitId, empty.versionNo, 400);
+    expect(blocked.body.errors[0]).toMatchObject({ field: 'boxes', code: 'INVALID' });
+
+    const box = await makePackedBox(shipment, 30);
+    const added = await addBox(empty.shippingUnitId, box.handlingUnitNo);
+
+    // ⛔ 낡은 버전으로는 못 닫는다 — 상자를 넣으며 버전이 올랐다.
+    const stale = await close(empty.shippingUnitId, empty.versionNo, 409);
+    expect(stale.body).toMatchObject({ conflictCause: 'user' });
+
+    const closed = await close(empty.shippingUnitId, added.body.versionNo, 200);
+    expect(closed.body.statusCode).toBe('CLOSED');
+    expect(closed.body.closedAt).toEqual(expect.any(String));
+
+    // 마감된 뒤에는 넣기·빼기·재마감이 전부 막힌다(편도다).
+    const more = await makePackedBox(shipment, 5);
+    expect((await addBox(empty.shippingUnitId, more.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'shippingUnitId', code: 'STATE_LOCKED' });
+    await request(app.getHttpServer())
+      .delete(`${BASE}/${empty.shippingUnitId}/boxes/${box.handlingUnitId}`)
+      .set('Cookie', cookie)
+      .expect(400);
+    await close(empty.shippingUnitId, closed.body.versionNo, 400);
+  });
+
+  it('U-17 ⛔ 출하가 취소되면 넣기도 마감도 막힌다', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 10);
+    const added = await addBox(unit.shippingUnitId, box.handlingUnitNo);
+
+    await prisma.shipment.update({
+      where: { shipment_id: BigInt(shipment.shipmentId) },
+      data: { status_code: 'CANCELLED' },
+    });
+
+    const more = await makePackedBox(shipment, 5);
+    expect((await addBox(unit.shippingUnitId, more.handlingUnitNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+    expect((await close(unit.shippingUnitId, added.body.versionNo, 400)).body.errors[0])
+      .toMatchObject({ field: 'shipmentId', code: 'STATE_LOCKED' });
+  });
+
   // ── 헬퍼 ────────────────────────────────────────────────────────────────
+
+  function addBox(
+    shippingUnitId: number,
+    handlingUnitNo: string,
+    expected = 200,
+  ): request.Test {
+    return request(app.getHttpServer())
+      .post(`${BASE}/${shippingUnitId}:add-box`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .send({ handlingUnitNo })
+      .expect(expected);
+  }
+
+  function close(shippingUnitId: number, version: number, expected = 200): request.Test {
+    return request(app.getHttpServer())
+      .post(`${BASE}/${shippingUnitId}:close`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', String(version))
+      .expect(expected);
+  }
+
+  /** 포장이 끝난 상자 하나 — 배분까지 붙여야 「그 출하의 상자」가 된다. */
+  async function makePackedBox(
+    shipment: { shipmentId: number; requestLineId: bigint },
+    qty: number,
+    options: { status?: string; allocate?: boolean } = {},
+  ): Promise<{ handlingUnitId: number; handlingUnitNo: string }> {
+    seq += 1;
+    const box = await prisma.handling_unit.create({
+      data: {
+        handling_unit_no: `${PREFIX}-HU-${seq}`,
+        handling_unit_type_code: 'BOX',
+        warehouse_id: ids.warehouse,
+        status_code: options.status ?? 'PACKED',
+      },
+    });
+    if (options.allocate !== false) {
+      // ⛔ `line_no` 는 출하 안에서 유일하다(`uq_shipment_line`) — 그 출하의 마지막 뒤에 붙인다.
+      const last = await prisma.shipment_line.findFirst({
+        where: { shipment_id: BigInt(shipment.shipmentId) },
+        orderBy: { line_no: 'desc' },
+        select: { line_no: true },
+      });
+      const line = await prisma.shipment_line.create({
+        data: {
+          shipment_id: BigInt(shipment.shipmentId),
+          shipment_request_line_id: shipment.requestLineId,
+          line_no: (last?.line_no ?? 0) + 1,
+          item_id: ids.item,
+          shipped_qty: qty,
+          uom_id: ids.uom,
+        },
+      });
+      await prisma.shipment_lot_allocation.create({
+        data: {
+          shipment_line_id: line.shipment_line_id,
+          lot_id: ids.lot,
+          handling_unit_id: box.handling_unit_id,
+          allocated_qty: qty,
+          uom_id: ids.uom,
+        },
+      });
+      await prisma.handling_unit_content.create({
+        data: {
+          handling_unit_id: box.handling_unit_id,
+          item_id: ids.item,
+          lot_id: ids.lot,
+          qty,
+          uom_id: ids.uom,
+        },
+      });
+    }
+    return {
+      handlingUnitId: Number(box.handling_unit_id),
+      handlingUnitNo: box.handling_unit_no,
+    };
+  }
+
 
   async function create(shipmentId: number): Promise<unknown> {
     const response = await request(app.getHttpServer())
@@ -340,7 +569,7 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
   async function makeShipment(
     statusCode = 'REGISTERED',
     foreign = false,
-  ): Promise<{ shipmentId: number }> {
+  ): Promise<{ shipmentId: number; requestLineId: bigint }> {
     seq += 1;
     const header = await prisma.shipment_request.create({
       data: {
@@ -351,6 +580,18 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
         status_code: 'REGISTERED',
       },
     });
+    // ⛔ `shipment_line.shipment_request_line_id` 가 필수다 — 출하 라인은 지시 라인에서 나온다.
+    const requestLine = await prisma.shipment_request_line.create({
+      data: {
+        shipment_request_id: header.shipment_request_id,
+        line_no: 1,
+        item_id: ids.item,
+        requested_qty: 1000,
+        allocated_qty: 1000,
+        uom_id: ids.uom,
+        shipping_inspection_required: false,
+      },
+    });
     const shipment = await prisma.shipment.create({
       data: {
         shipment_no: `${PREFIX}-SH-${seq}`,
@@ -359,7 +600,10 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
         status_code: statusCode,
       },
     });
-    return { shipmentId: Number(shipment.shipment_id) };
+    return {
+      shipmentId: Number(shipment.shipment_id),
+      requestLineId: requestLine.shipment_request_line_id,
+    };
   }
 
   async function makeMasters(): Promise<void> {
@@ -427,6 +671,32 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
         });
       }
     }
+
+    const uom = await prisma.uom.findFirstOrThrow({ orderBy: { uom_id: 'asc' } });
+    ids.uom = uom.uom_id;
+    const item = await prisma.item.create({
+      data: {
+        item_code: `${PREFIX}-IT`,
+        item_name: '출하단위검사품목',
+        item_type_code: 'FINISHED',
+        base_uom_id: uom.uom_id,
+      },
+    });
+    ids.item = item.item_id;
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT`,
+        item_id: item.item_id,
+        lot_type_code: 'PRODUCT',
+        plant_id: ids.plant,
+        initial_qty: 1000,
+        uom_id: uom.uom_id,
+        source_type_code: 'GOODS_RECEIPT_LINE',
+        source_id: 1,
+        status_code: 'NORMAL',
+      },
+    });
+    ids.lot = lot.lot_id;
 
     const customer = await prisma.partner.create({
       data: { partner_code: `${PREFIX}-CUST`, partner_name: '출하단위검사고객' },
@@ -504,12 +774,31 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
     await prisma.$executeRawUnsafe(`
       DELETE FROM logistics.shipping_unit
        WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.shipment_lot_allocation
+       WHERE handling_unit_id IN (SELECT handling_unit_id FROM inventory.handling_unit
+              WHERE handling_unit_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM inventory.handling_unit_content
+       WHERE handling_unit_id IN (SELECT handling_unit_id FROM inventory.handling_unit
+              WHERE handling_unit_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM inventory.handling_unit WHERE handling_unit_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.shipment_line
+       WHERE shipment_id IN (SELECT shipment_id FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM logistics.shipment_request_line
+       WHERE shipment_request_id IN (SELECT shipment_request_id FROM logistics.shipment_request
+              WHERE shipment_request_no LIKE '${PREFIX}%')`);
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.shipment WHERE shipment_no LIKE '${PREFIX}%'`,
     );
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.shipment_request WHERE shipment_request_no LIKE '${PREFIX}%'`,
     );
+    await prisma.$executeRawUnsafe(`DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);

@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -14,11 +16,12 @@ import type { Request, Response } from 'express';
 
 import { currentTerminal } from '../../auth/terminal-context';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
-import { setEtag } from '../../common/optimistic-lock';
+import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import { logisticsWriteActorOf } from '../logistics-write-actor';
+import { ShippingUnitAddBox, ShippingUnitBoxService } from './shipping-unit-box.service';
 import { ShippingUnitFilters, ShippingUnitQueryService } from './shipping-unit-query.service';
 import { ShippingUnitCreate, ShippingUnitService } from './shipping-unit.service';
 import { ShippingUnitDetailView, ShippingUnitView } from './shipping-unit-view';
@@ -39,6 +42,7 @@ export class ShippingUnitController {
   constructor(
     private readonly queries: ShippingUnitQueryService,
     private readonly units: ShippingUnitService,
+    private readonly boxes: ShippingUnitBoxService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -82,6 +86,82 @@ export class ShippingUnitController {
         appUserId: actor.appUserId,
         plantId: currentTerminal(request)?.plantId,
       }),
+    );
+    setEtag(response, detail.versionNo);
+    return detail;
+  }
+
+  /**
+   * 포장 라벨 스캔으로 상자를 넣는다. ⭐ 같은 상자를 다시 스캔하면 200 이고 아무것도
+   * 바뀌지 않는다 — 스캐너가 한 번에 두 번 읽는 일이 흔하다.
+   * ⚠ `handlingUnitNo`(번호)로 받는다 — 스캐너가 주는 값이 id 가 아니라 그것이다.
+   */
+  // ⛔ Nest 의 `@Post` 기본 상태는 201 이다 — 이 경로는 «만들지» 않고 구성만 바꾸므로 200 이다.
+  @HttpCode(HttpStatus.OK)
+  @Post(':shippingUnitId\\:add-box')
+  @Contract('POST /logistics/shipping-units/{shippingUnitId}:add-box')
+  async addBox(
+    @Req() request: Request,
+    @Param('shippingUnitId', ParseIntPipe) shippingUnitId: number,
+    @Body() body: ShippingUnitAddBox,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShippingUnitDetailView> {
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/shipping-units/{shippingUnitId}:add-box');
+    const detail = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.boxes.addBox(shippingUnitId, body, {
+        appUserId: actor.appUserId,
+        plantId: currentTerminal(request)?.plantId,
+      }),
+    );
+    setEtag(response, detail.versionNo);
+    return detail;
+  }
+
+  /** ⛔ 204 가 아니라 200 + 상세다 — 화면이 상자 목록과 품목별 합계를 그 자리에서 다시 그린다. */
+  @Delete(':shippingUnitId/boxes/:handlingUnitId')
+  @Contract('DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}')
+  async removeBox(
+    @Req() request: Request,
+    @Param('shippingUnitId', ParseIntPipe) shippingUnitId: number,
+    @Param('handlingUnitId', ParseIntPipe) handlingUnitId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShippingUnitDetailView> {
+    const actor = logisticsWriteActorOf(
+      request,
+      'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}',
+    );
+    const detail = await this.boxes.removeBox(shippingUnitId, handlingUnitId, {
+      appUserId: actor.appUserId,
+      plantId: currentTerminal(request)?.plantId,
+    });
+    setEtag(response, detail.versionNo);
+    return detail;
+  }
+
+  /** 마감. ⛔ 되돌릴 수 없다 — 취소·해체 경로를 두지 않는다(통보 142 와 같은 태도). */
+  @HttpCode(HttpStatus.OK)
+  @Post(':shippingUnitId\\:close')
+  @Contract('POST /logistics/shipping-units/{shippingUnitId}:close')
+  async close(
+    @Req() request: Request,
+    @Param('shippingUnitId', ParseIntPipe) shippingUnitId: number,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ShippingUnitDetailView> {
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/shipping-units/{shippingUnitId}:close');
+    const expected = ifMatchVersion(request);
+    // 계약이 `If-Match` 를 required 로 걸어 가드가 이미 400 을 냈다 — 여기까지 왔는데 없으면
+    // 계약 선언과 가드가 어긋난 것이다(선례: `document-progress.controller.ts`).
+    if (expected === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const detail = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.boxes.close(shippingUnitId, expected, {
+        appUserId: actor.appUserId,
+        plantId: currentTerminal(request)?.plantId,
+      }),
+      // ⛔ 이 경로의 409 봉투는 계열이라 `code` 가 required 다 — 안 넘기면 멱등 충돌 409 에서
+      //    그 칸이 빠진다. e2e 로는 반증되지 않아 `family-conflict-code.spec.ts` 가 유일한 그물이다.
+      FAMILY_CONFLICT_CODE,
     );
     setEtag(response, detail.versionNo);
     return detail;
