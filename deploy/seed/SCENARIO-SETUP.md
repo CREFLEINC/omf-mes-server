@@ -27,7 +27,7 @@
 |---|---|
 | `mes-scenario-plan-wo-01.sql` | 공정·라인·설비·위치·라우팅·BOM 공정 매핑·시작 재고·ERP 생산오더 |
 | `mes-scenario-pick-wip-01.sql` | 라우팅 공정 선후행 · 교대(24시간) · 단말 3대 · POP 단말-공정 매핑 |
-| `mes-scenario-data.sql` (선택) | 제품 출하용 — S240 위치 1 · 제품 재고 10종(`SEED-S240-0001`~`0010`, 입고 전표 `GR-SEED-0001`) · 자재 P/O 5건 · **제품 10종의 OQC 검사 기준**(`OQC-SEED-…`). 위 두 파일과 독립이라 순서를 가리지 않는다 |
+| `mes-scenario-data.sql` (선택) | 제품 출하용 — S240 위치 1 · 제품 재고 10종(`SEED-S240-0001`~`0010`, 입고 전표 `GR-SEED-0001`) · 자재 P/O 5건 · **제품 10종의 OQC 검사 기준**(`OQC-SEED-…`) · **관리자 계정 준비**(데이터 범위 사업부+PL13, 작업자 901463 검사자 연결). 위 두 파일과 독립이라 순서를 가리지 않는다 |
 
 - 진행 중 쓰는 compose 명령은 아래 한 줄로 줄여 둔다.
 
@@ -116,6 +116,11 @@ SQL_FILE=seed/mes-scenario-pick-wip-01.sql seed/load-mes-initial-data.sh
 - ⭐ **코드 그룹은 SQL 시드가 아니라 `node dist/seed.js` 가 넣는다** — 로더가 적용할 때마다 그것을 먼저
   돌리므로 따로 할 일이 없다. 출하 단위 유형(`SHIPPING_UNIT_TYPE` · `PALLET`·`BUNDLE`)도 그 경로로 들어온다.
   ⛔ 그래서 SQL 시드에 코드값을 중복해 적지 않는다 — 두 곳에 적으면 값이 갈린다.
+- ⭐ **관리자 계정 `admin` 으로 시나리오를 돌린다.** 기능 권한은 표준 시드 ROLE_SYS_ADMIN(22개 — 공통·생산·설비에
+  출하 W-04-01·02·03·04·12 와 재고 현황 W-01-13·물류 문서 진행현황 W-01-07 포함)이 넣고, 제품 출하가 추가로 요구하는
+  **데이터 범위**(이행 공장 PL13 — 사업부와 함께)와 **검사자 연결**(작업자 901463 ↔ admin)은 (1b) `mes-scenario-data.sql`
+  이 넣는다. 셋 중 하나라도 빠지면 W-04-01 편성이 403, W-04-03 판정 저장이 400 이다.
+  ⚠ 로그인한 채 권한·범위를 바꾸면 세션이 옛 값을 쥐고 있다 — 시드 뒤에는 **로그아웃 후 다시 로그인**한다.
 
 ## 6. api 재기동
 
@@ -142,6 +147,10 @@ UNION ALL SELECT 'terminal-process', count(*) FROM mdm.terminal_process
 UNION ALL SELECT 'seed-lot', count(*) FROM trace.lot WHERE lot_no LIKE 'SEED-S230-%'
 UNION ALL SELECT 'production-order', count(*) FROM planning.production_order WHERE production_order_no LIKE 'PO-ERP-%'
 UNION ALL SELECT 's240-lot (선택)', count(*) FROM trace.lot WHERE lot_no LIKE 'SEED-S240-%'
+UNION ALL SELECT 'oqc-plan (선택)', count(*) FROM quality.inspection_plan WHERE inspection_plan_code LIKE 'OQC-SEED-%'
+UNION ALL SELECT 'admin-scope (선택)', count(*) FROM app.user_data_scope s JOIN app.app_user u USING (app_user_id) JOIN mdm.plant p USING (plant_id) WHERE u.login_id = 'admin' AND p.plant_code = 'PL13' AND s.business_unit_id IS NOT NULL
+UNION ALL SELECT 'admin-inspector (선택)', count(*) FROM mdm.worker w JOIN app.app_user u USING (app_user_id) WHERE w.worker_no = '901463' AND u.login_id = 'admin'
+UNION ALL SELECT 'admin-permissions', count(*) FROM app.role_permission rp JOIN app.role r USING (role_id) WHERE r.role_code = 'ROLE_SYS_ADMIN'
 UNION ALL SELECT 'plan+wo (0 이어야)', (SELECT count(*) FROM planning.production_plan) + (SELECT count(*) FROM production.work_order);"
 ```
 
@@ -156,6 +165,10 @@ UNION ALL SELECT 'plan+wo (0 이어야)', (SELECT count(*) FROM planning.product
 | seed-lot | 8 (완성형 3 + 연습형 5) |
 | production-order | 5 |
 | s240-lot | 10 (`mes-scenario-data.sql` 을 넣었을 때 · 안 넣었으면 0) |
+| oqc-plan | 10 (위와 같음) |
+| admin-scope | 1 (위와 같음) |
+| admin-inspector | 1 (위와 같음) |
+| admin-permissions | 22 이상 (표준 시드 — 고객이 더한 것은 살아남는다) |
 | plan+wo | 0 |
 
 ## 8. 단말 재등록
@@ -188,9 +201,13 @@ DB 를 비웠으므로 이전 단말 등록은 모두 무효다. 기기 쪽에 �
    (예: `F534F50200` 480 EA 중 100). 최소 잔존기한은 비운다 — 시드 LOT 에 유통기한이 없어 값을 넣으면 피킹이 거절된다.
    ⭐ 라인의 **검사 「필요」를 켠다** — 켜면 편성이 그 품목의 **OQC 검사 의뢰를 자동으로 만든다**(품목별 1건).
    ⛔ 그 품목에 유효한 OQC 기준이 없으면 편성이 **400** 이다. 시드가 제품 10종에 기준을 넣어 두므로 시드를 넣었으면 열린다.
+   ⛔ 첫 제출이 **403** 이면 권한이나 데이터 범위다 — `PERMISSION_DENIED`(screen) 는 ROLE_SYS_ADMIN 권한(표준 시드),
+   `fulfillmentPlantId` 는 데이터 범위(1b 시드). 시드를 넣은 뒤 로그아웃·재로그인했는지 먼저 본다.
 2. **모바일 M-04-01 제품 피킹** — 지시 라인에 S240 의 제품 LOT(`SEED-S240-…`)을 집어 피킹 확정.
 3. **W-04-03 출하검사(OQC) 판정** — 목록에서 `OQC` + 「대기만」으로 1번이 만든 의뢰를 찾아 결과를 넣고 확정한다.
    ⚠ 목록에 「이 출하작업지시」로 좁히는 필터가 없다 — 유형·대기 조합으로 훑는다.
+   ⛔ 저장이 400 「검사자를 풀 수 없습니다」이면 검사자 연결이 없는 것이다 — 1b 시드가 작업자 901463 을 `admin` 에 연결한다.
+   판정은 그 작업자의 이름으로 남는다(관리자 웹은 사번 헤더를 싣지 않는다).
    합격이 나와야 다음이 열린다. 결과가 없으면 판정이 `PENDING` 이라 출하 처리가 막힌다.
 4. **W-04-04 출하 처리** — 재고를 차감하고 출하 전표와 LOT 배분을 만든다.
 5. **POP P-04-01 포장 실적** — 피킹된 배분을 상자(포장 단위)에 잇는다. 확정하면 **포장 라벨만** 발행된다(납품 라벨은 여기서 안 나온다).
