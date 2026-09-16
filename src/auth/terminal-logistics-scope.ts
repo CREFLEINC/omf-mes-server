@@ -41,9 +41,14 @@ export const TERMINAL_LOGISTICS_OPERATIONS: Readonly<Record<string, readonly Ter
   'GET /logistics/shipments': ['POP'],
   // ⭐ 출하 단위(P-04-05) — POP 전용이다. 모바일은 이 화면을 갖지 않는다.
   //    공장 강제는 서비스가 단말의 `plantId` 로 좁힌다(목록·상세·생성 모두).
+  // ⛔ **쓰기 셋을 반드시 함께 둔다.** 이 화면은 「열고 → 담고 → 마감」이 한 흐름이라 읽기와
+  //    생성만 열어 두면 첫 상자 스캔에서 401 로 막힌다 — 실제로 그렇게 났다(SHIP-FINAL-01 D2).
   'GET /logistics/shipping-units': ['POP'],
   'GET /logistics/shipping-units/{shippingUnitId}': ['POP'],
   'POST /logistics/shipping-units': ['POP'],
+  'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['POP'],
+  'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['POP'],
+  'POST /logistics/shipping-units/{shippingUnitId}:close': ['POP'],
   'GET /logistics/shipments/{shipmentId}': ['POP'],
   'GET /logistics/shopfloor-receipts': ['POP', 'MOBILE'],
   'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}': ['POP'],
@@ -99,6 +104,7 @@ export async function assertTerminalLogisticsScope(
   const goodsIssueLine = async (v: unknown) => check(await prisma.goods_issue_line.findFirst({ where: { goods_issue_line_id: id(v), goods_issue: { warehouse: { plant_id: plant } } }, select: { goods_issue_line_id: true } }));
   const pickingLine = async (v: unknown) => check(await prisma.picking_line.findFirst({ where: { picking_line_id: id(v), picking_order: { warehouse: { plant_id: plant } } }, select: { picking_line_id: true } }));
   const shipmentLine = async (v: unknown) => check(await prisma.shipment_line.findFirst({ where: { shipment_line_id: id(v), shipment: { warehouse: { plant_id: plant } } }, select: { shipment_line_id: true } }));
+  const shippingUnit = async (v: unknown) => check(await prisma.shipping_unit.findFirst({ where: { shipping_unit_id: id(v), shipment: { warehouse: { plant_id: plant } } }, select: { shipping_unit_id: true } }));
   const shipmentAllocation = async (v: unknown) => check(await prisma.shipment_lot_allocation.findFirst({ where: { shipment_lot_allocation_id: id(v), shipment_line: { shipment: { warehouse: { plant_id: plant } } } }, select: { shipment_lot_allocation_id: true } }));
   const stockTransferLine = async (v: unknown) => check(await prisma.stock_transfer_line.findFirst({ where: { stock_transfer_line_id: id(v), stock_transfer: { warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: plant }, warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: plant } } }, select: { stock_transfer_line_id: true } }));
 
@@ -114,7 +120,9 @@ export async function assertTerminalLogisticsScope(
   ]);
   if (q.plantId !== undefined && id(q.plantId) !== plant) throw denied();
 
-  if (key.startsWith('POST ') || key.startsWith('PUT ')) await workerNo();
+  // ⛔ `DELETE` 도 쓰기다 — 여기서 작업자를 심지 않으면 `logisticsWriteActorOf` 가 단말
+  //    경로에서 workerId 를 못 찾아 401 을 낸다. 허용 목록에 넣는 것만으로는 안 통한다.
+  if (isWrite(key)) await workerNo();
 
   switch (key) {
     case 'GET /logistics/goods-issues':
@@ -146,12 +154,21 @@ export async function assertTerminalLogisticsScope(
     case 'GET /logistics/shipments/{shipmentId}': await shipment(p.shipmentId); break;
     // 출하 단위의 소유는 그 출하 전표의 창고 공장이다(배분 PUT 과 같은 축).
     case 'GET /logistics/shipping-units/{shippingUnitId}':
-      await check(await prisma.shipping_unit.findFirst({ where: {
-        shipping_unit_id: id(p.shippingUnitId), shipment: { warehouse: { plant_id: plant } },
-      }, select: { shipping_unit_id: true } })); break;
+      await shippingUnit(p.shippingUnitId); break;
     // ⛔ 본문의 `shipmentId` 는 아래 `checkBodyResources` 가 `issue` 가 아니라 `shipment` 로
     //   판정한다 — 이름이 같아도 다른 표다(`names` 표에 `shipmentId: 'shipment'`).
     case 'POST /logistics/shipping-units': break;
+    // 쓰기 셋의 소유도 상세와 «같은 축»이다 — 출하 단위 → 출하 전표 → 창고의 공장.
+    case 'POST /logistics/shipping-units/{shippingUnitId}:add-box':
+    case 'POST /logistics/shipping-units/{shippingUnitId}:close':
+      await shippingUnit(p.shippingUnitId); break;
+    // ⛔ 상자 제거는 한 단계 더 본다 — 그 상자가 «이 단위의» 자식인지까지. 공장만 맞으면
+    //   남의 단위에 든 상자를 빼낼 수 있고, 링크 표는 상자 하나에 한 행뿐이라 되돌릴 수 없다.
+    case 'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}':
+      await shippingUnit(p.shippingUnitId);
+      await check(await prisma.shipping_unit_handling_unit.findFirst({ where: {
+        handling_unit_id: id(p.handlingUnitId), shipping_unit_id: id(p.shippingUnitId),
+      }, select: { handling_unit_id: true } })); break;
     case 'GET /logistics/shopfloor-receipts/{shopfloorReceiptId}':
       await check(await prisma.shopfloor_receipt.findFirst({ where: { shopfloor_receipt_id: id(p.shopfloorReceiptId), work_order: { production_line: { plant_id: plant } } }, select: { shopfloor_receipt_id: true } })); break;
     case 'GET /logistics/stock-transfers/{stockTransferId}/lines': await transfer(p.stockTransferId); break;
@@ -190,7 +207,7 @@ export async function assertTerminalLogisticsScope(
     default: throw denied();
   }
 
-  if (key.startsWith('POST ') || key.startsWith('PUT ')) await checkBodyResources(b, { warehouse, location, lot, worker, issue, inbound, inboundLine, pickOrder, putaway, shipment, transfer, workOrder, handlingUnit, purchaseOrderLine, goodsReceiptLine, goodsIssueLine, pickingLine, shipmentLine, stockTransferLine, shipmentAllocation }, plant);
+  if (isWrite(key)) await checkBodyResources(b, { warehouse, location, lot, worker, issue, inbound, inboundLine, pickOrder, putaway, shipment, transfer, workOrder, handlingUnit, purchaseOrderLine, goodsReceiptLine, goodsIssueLine, pickingLine, shipmentLine, stockTransferLine, shipmentAllocation }, plant);
 }
 
 async function checkBodyResources(
@@ -231,6 +248,10 @@ function id(value: unknown): bigint {
   if ((typeof value !== 'string' && typeof value !== 'number') || !/^\d+$/.test(String(value))) return -1n;
   const parsed = BigInt(value);
   return parsed > 0n && parsed < 9223372036854775808n ? parsed : -1n;
+}
+/** 쓰기로 치는 동사 — 작업자 사번과 본문 자원 검사가 걸리는 기준이다. */
+function isWrite(key: string): boolean {
+  return key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE ');
 }
 function denied(): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '단말 인증 범위 밖입니다.' }]);
