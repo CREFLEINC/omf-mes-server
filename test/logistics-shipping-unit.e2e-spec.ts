@@ -503,6 +503,63 @@ describe('출하 단위 — 생성·목록·상세 (SHIP-UNIT-01 ③a e2e)', () 
     });
   });
 
+  // ⭐ SHIP-FINAL-01 D2 — ③b 의 쓰기 시험이 «전부 세션 쿠키»로만 돌아서, 단말 허용 목록에
+  //    쓰기 셋이 빠진 것을 아무도 못 잡았다. P-04-05 는 POP 전용이라 그 경로가 곧 본선이다.
+  //    ⛔ 이 시험은 세 경로를 «POP 토큰으로» 한 흐름으로 탄다 — 하나라도 목록에서 빠지면 401.
+  it('U-20 ⭐ POP 단말이 담고·빼고·마감까지 한 흐름으로 간다 (D2 회귀)', async () => {
+    const shipment = await makeShipment();
+    const unit = (await create(shipment.shipmentId)) as UnitBody;
+    const keep = await makePackedBox(shipment, 30);
+    const drop = await makePackedBox(shipment, 70);
+
+    const popWrite = (path: string) => request(app.getHttpServer())
+      .post(`${BASE}/${unit.shippingUnitId}${path}`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .set('X-Worker-No', WORKER_NO)
+      .set('Idempotency-Key', randomUUID());
+
+    await popWrite(':add-box').send({ handlingUnitNo: keep.handlingUnitNo }).expect(200);
+    const added = await popWrite(':add-box').send({ handlingUnitNo: drop.handlingUnitNo }).expect(200);
+    expect(added.body.boxCount).toBe(2);
+
+    // ⛔ DELETE 도 쓰기다 — 허용 목록에만 넣고 작업자를 안 심으면 여기서 401 이 난다.
+    const removed = await request(app.getHttpServer())
+      .delete(`${BASE}/${unit.shippingUnitId}/boxes/${drop.handlingUnitId}`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .set('X-Worker-No', WORKER_NO)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    expect(removed.body.boxCount).toBe(1);
+
+    const closed = await popWrite(':close')
+      .set('If-Match', `"${String(removed.body.versionNo)}"`)
+      .send({})
+      .expect(200);
+    expect(closed.body.statusCode).toBe('CLOSED');
+  });
+
+  it('U-21 ⛔ POP 단말도 남의 단위에 든 상자는 빼내지 못한다 — 공장이 같아도', async () => {
+    const shipment = await makeShipment();
+    const mine = (await create(shipment.shipmentId)) as UnitBody;
+    const other = (await create(shipment.shipmentId)) as UnitBody;
+    const box = await makePackedBox(shipment, 15);
+    await addBox(other.shippingUnitId, box.handlingUnitNo);
+
+    await request(app.getHttpServer())
+      .delete(`${BASE}/${mine.shippingUnitId}/boxes/${box.handlingUnitId}`)
+      .set('Authorization', `Bearer ${popToken}`)
+      .set('X-Worker-No', WORKER_NO)
+      .set('Idempotency-Key', randomUUID())
+      .expect(401);
+
+    // 원래 단위에는 그대로 남아 있다.
+    const still = await prisma.shipping_unit_handling_unit.findUnique({
+      where: { handling_unit_id: BigInt(box.handlingUnitId) },
+      select: { shipping_unit_id: true },
+    });
+    expect(still?.shipping_unit_id).toBe(BigInt(other.shippingUnitId));
+  });
+
   it('U-19 ⛔ 출하 LOT 배분에는 더 이상 납품 라벨을 발행할 수 없다', async () => {
     const shipment = await makeShipment();
     const box = await makePackedBox(shipment, 10);

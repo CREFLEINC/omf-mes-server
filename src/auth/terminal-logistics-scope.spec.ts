@@ -28,10 +28,60 @@ const prisma = (overrides: Record<string, unknown> = {}) => ({
 
 describe('terminal logistics scope', () => {
   it('enumerates the client logistics surface and denies an unlisted operation or channel', async () => {
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(40);
-    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter((key) => key.startsWith('POST ') || key.startsWith('PUT '))).toHaveLength(15);
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS)).toHaveLength(43);
+    // ⛔ 쓰기는 `DELETE` 도 센다 — 상자 제거가 첫 DELETE 다(SHIP-UNIT-02). 작업자 사번을
+    //    요구하는 집합이 곧 이 집합이라, 동사 목록이 어긋나면 그 자리가 401 로 막힌다.
+    expect(Object.keys(TERMINAL_LOGISTICS_OPERATIONS).filter(
+      (key) => key.startsWith('POST ') || key.startsWith('PUT ') || key.startsWith('DELETE '),
+    )).toHaveLength(18);
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/shipments', mobile)).rejects.toBeDefined();
     await expect(assertTerminalLogisticsScope(prisma(), request(), 'POST /logistics/goods-issues', pop)).rejects.toBeDefined();
+  });
+
+  // ⭐ SHIP-FINAL-01 D2 — 읽기·생성만 열어 두어 첫 상자 스캔이 401 로 막혔다. 세 경로를
+  //    한 벌로 잠근다. 하나라도 빠지면 「열고 → 담고 → 마감」 흐름이 중간에서 끊긴다.
+  it('출하 단위의 쓰기 셋은 POP 에 열려 있고 모바일에는 닫혀 있다', async () => {
+    const writes = [
+      'POST /logistics/shipping-units/{shippingUnitId}:add-box',
+      'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}',
+      'POST /logistics/shipping-units/{shippingUnitId}:close',
+    ];
+    for (const key of writes) {
+      expect(TERMINAL_LOGISTICS_OPERATIONS[key]).toEqual(['POP']);
+      await expect(assertTerminalLogisticsScope(prisma(), request(), key, mobile)).rejects.toBeDefined();
+    }
+  });
+
+  it('상자 제거는 DELETE 인데도 작업자를 심는다 — 안 심으면 쓰기 행위자가 401 이다', async () => {
+    const db = prisma({
+      shipping_unit: { findFirst: jest.fn().mockResolvedValue({ shipping_unit_id: 1n }) },
+      shipping_unit_handling_unit: { findFirst: jest.fn().mockResolvedValue({ handling_unit_id: 2n }) },
+    });
+    const req = request({ shippingUnitId: '1', handlingUnitId: '2' });
+    await assertTerminalLogisticsScope(db, req,
+      'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}', pop);
+    expect(currentTerminalLogisticsWorkerId(req)).toBe(5n);
+  });
+
+  it('남의 단위에 든 상자는 공장이 같아도 빼내지 못한다', async () => {
+    const db = prisma({
+      shipping_unit: { findFirst: jest.fn().mockResolvedValue({ shipping_unit_id: 1n }) },
+      shipping_unit_handling_unit: { findFirst: jest.fn().mockResolvedValue(null) },
+    });
+    await expect(assertTerminalLogisticsScope(db, request({ shippingUnitId: '1', handlingUnitId: '2' }),
+      'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}', pop)).rejects.toBeDefined();
+    expect(db.shipping_unit_handling_unit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { handling_unit_id: 2n, shipping_unit_id: 1n },
+    }));
+  });
+
+  it('다른 공장의 출하 단위에는 상자를 담지 못한다', async () => {
+    const db = prisma({ shipping_unit: { findFirst: jest.fn().mockResolvedValue(null) } });
+    await expect(assertTerminalLogisticsScope(db, request({ shippingUnitId: '1' }, { handlingUnitId: 2 }),
+      'POST /logistics/shipping-units/{shippingUnitId}:add-box', pop)).rejects.toBeDefined();
+    expect(db.shipping_unit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { shipping_unit_id: 1n, shipment: { warehouse: { plant_id: 3n } } },
+    }));
   });
 
   it('rejects another plant goods issue before detail is returned', async () => {
