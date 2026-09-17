@@ -16,7 +16,7 @@ const STANDARD: LocationLabelValues = {
 const NAME_ROW = dots(30);
 
 // 실측(2026-09-17, 100×60 판 · QR 은 위치 코드만): 페이로드 · 모듈 · 셀 · QR dot · y.
-// 영숫자(대문자·숫자·`-`)는 QR 영숫자 모드라 소문자보다 덜 자란다 — 최악은 소문자 50자다.
+// 영숫자(대문자·숫자·`-`)는 QR 영숫자 모드라 가장 덜 자란다 — 최악은 한글 50자(150바이트)다.
 const CASES: Array<{ name: string; values: LocationLabelValues; modules: number; cell: number; qrDot: number; y: number }> = [
   { name: 'S230-01', values: STANDARD, modules: 21, cell: 8, qrDot: 168, y: 40 },
   {
@@ -34,6 +34,14 @@ const CASES: Array<{ name: string; values: LocationLabelValues; modules: number;
     cell: 5,
     qrDot: 165,
     y: 40,
+  },
+  {
+    name: '가×50',
+    values: { warehouseCode: 'W', locationCode: '가'.repeat(50), locationName: 'X', issueSeq: 1 },
+    modules: 49,
+    cell: 4,
+    qrDot: 196,
+    y: 28,
   },
 ];
 

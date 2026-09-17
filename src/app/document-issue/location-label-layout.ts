@@ -72,8 +72,9 @@ export function layoutLocationLabel(values: LocationLabelValues): LocationLabelL
    * `ROWS.name - border` 다 — QR 과 그 위·아래 여백이 테두리와 위치명 줄 사이에 다 들어가야
    * 위치명 줄이 QR 을 깔고 앉지 않는다. 여백을 라벨 여백(3mm)으로 갈음하면 셀 8dot 에서 3모듈
    * 뿐이라 규격 미달인데, 이 라벨은 «거리를 두고» 찍는 것이 목적이라 여백이 인식률을 가른다.
-   * 위치 코드가 `VarChar(50)` 이라 페이로드 최악이 50자(소문자면 33모듈)이고 그때 셀 5·20.6mm
-   * 다. 그래서 「너무 길어 못 담는다」는 거절 가지가 없다.
+   * 위치 코드가 `VarChar(50)` 이고 한글도 받으므로 페이로드 최악은 한글 50자(UTF-8 150바이트·
+   * 49모듈)다 — 그때도 셀 4·24.5mm 로 여백까지 담긴다. 그래서 「너무 길어 못 담는다」는 거절
+   * 가지가 없다.
    */
   const cell = Math.min(QR_CELL_MAX, Math.floor((ROWS.name - border) / (code.modules.size + 8)));
   const qrSize = code.modules.size * cell;
