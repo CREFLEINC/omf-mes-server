@@ -34,12 +34,12 @@ describe('locationTspl', () => {
     ]);
   });
 
-  it('QRCODE 명령에 창고코드/위치코드가 실리고 셀 크기가 배치와 같다', () => {
+  it('QRCODE 명령에 위치 코드가 실리고 셀 크기가 배치와 같다', () => {
     const { qr } = layoutLocationLabel(STANDARD);
     const qrLine = lines(locationTspl(STANDARD)).find((line) => line.startsWith('QRCODE '));
 
     expect(qrLine).toBe(`QRCODE ${String(qr.x)},${String(qr.y)},M,${String(qr.cell)},A,0,M2,S7,"${locationQrPayload(STANDARD)}"`);
-    expect(qrLine).toBe('QRCODE 599,40,M,8,A,0,M2,S7,"S230/S230-01"');
+    expect(qrLine).toBe('QRCODE 599,40,M,8,A,0,M2,S7,"S230-01"');
   });
 
   it('BOX 가 라벨 경계다', () => {

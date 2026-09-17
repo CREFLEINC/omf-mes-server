@@ -606,7 +606,8 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       expect((response.body as Buffer).toString("ascii").startsWith("SIZE ")).toBe(true);
     });
 
-    it("⭐ QR 에 창고코드/위치코드 가 실린다", async () => {
+    // 적치 화면들이 스캔 값을 위치 코드 조회에 그대로 넣는다 — 창고를 붙이면 조회가 0건이다.
+    it("⭐ QR 에 위치 코드만 실린다 — 창고 코드를 붙이지 않는다", async () => {
       const logId = await issueLocationLabel("QR");
 
       const response = await renditionBytes(logId, "tspl").expect(200);
@@ -614,7 +615,8 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
       const qrLine = text.split("\r\n").find((line) => line.startsWith("QRCODE "));
 
       expect(qrLine).toBeDefined();
-      expect(qrLine).toContain(`"${warehouseCode}/${locationCode}"`);
+      expect(qrLine?.endsWith(`,"${locationCode}"`)).toBe(true);
+      expect(qrLine).not.toContain(`${warehouseCode}/`);
     });
 
     // 영문은 권고일 뿐이라 한글 이름도 막지 않는다 — 프린터에서 그 줄만 깨지고, 라벨의 일

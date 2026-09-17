@@ -21,12 +21,12 @@ const QRCode = require('qrcode') as {
  *      판의 여섯 줄 자리에는 이만한 2D 코드가 들어갈 칸이 없다.
  *   ⓑ 실을 값이 다르다 — 수량·날짜가 없고 창고·위치 축만 있다.
  *
- * ⭐ 2D 코드에 **`창고코드/위치코드`** 를 싣는다. 위치 코드만으로는 모자라다 — `uq_location`
- * 이 «창고 안에서만» 유일해서, 계약 예시값 `A-01-03` 처럼 창고마다 같은 코드가 반복될 수 있다.
- * 계약의 스캔 조회 축은 「창고는 적치 지시·화면 문맥이 준다」는 전제지만, 벽에 붙은 라벨은
- * 문맥 없이 혼자 읽히므로 그 전제가 서지 않는다.
- *
- * ⛔ 창고 «이름» 을 싣지 않는다 — 위치명 줄은 있어도 창고는 코드로 이미 특정된다.
+ * ⭐ 2D 코드에는 **위치 코드만** 싣는다(2026-09-17 사용자 결정 — 처음엔 `창고코드/위치코드`였다).
+ * 이 라벨을 읽는 곳은 적치 위치 검증이고, 모바일 화면들(적치·임시 적치·제품 입고·재고 이동·
+ * 실물 카운트)은 스캔 값을 **그대로** `GET /mdm/locations?warehouseId=&locationCode=` 에 넣는다 —
+ * 창고는 작업이 준다. 창고를 붙이면 그 조회가 0건이라 검증이 막힌다(개발 서버 실측).
+ * ⚠ 대가: `uq_location` 은 «창고 안에서만» 유일하므로 QR 만으로는 창고가 풀리지 않는다 — 다른
+ * 창고에 붙은 같은 코드의 라벨은 작업 창고의 위치로 읽힌다. 창고는 면의 `WH:` 줄로 사람이 본다.
  *
  * ⚠ 글자는 ASCII 로 제한하지 않는다 — 영문 입력은 **권고이지 제약이 아니다**(2026-09-16 사용자
  * 결정). 무엇을 왜 막는지는 `assertTsplSafe` 에 적었다. 자재 LOT 라벨도 같은 기준을 쓴다.
@@ -48,12 +48,8 @@ export interface LocationLabelLayout {
   qr: { x: number; y: number; cell: number; modules: QrModules };
 }
 
-/**
- * 2D 코드에 싣는 값. 첫 `/` 가 창고와 위치를 가른다 — 창고 코드에는 `/` 를 쓰지 않는다는
- * 전제이며, 읽는 쪽도 **첫 `/` 기준**으로 가른다.
- */
-export const locationQrPayload = (values: LocationLabelValues): string =>
-  `${values.warehouseCode}/${values.locationCode}`;
+/** 2D 코드에 싣는 값 — 스캔 화면이 위치 코드 조회에 그대로 넣는 값이어야 한다(위 머리말). */
+export const locationQrPayload = (values: LocationLabelValues): string => values.locationCode;
 
 /** 거리를 두고 읽히려면 이만해야 한다(2026-09-16 결정 · 목업과 같은 21mm). 코드가 길어 모듈이
  *  늘면 여기서 줄인다. */
@@ -76,8 +72,8 @@ export function layoutLocationLabel(values: LocationLabelValues): LocationLabelL
    * `ROWS.name - border` 다 — QR 과 그 위·아래 여백이 테두리와 위치명 줄 사이에 다 들어가야
    * 위치명 줄이 QR 을 깔고 앉지 않는다. 여백을 라벨 여백(3mm)으로 갈음하면 셀 8dot 에서 3모듈
    * 뿐이라 규격 미달인데, 이 라벨은 «거리를 두고» 찍는 것이 목적이라 여백이 인식률을 가른다.
-   * 두 코드가 각각 `VarChar(50)` 이라 페이로드 최악이 101자(41모듈)이고 그때 셀 4 — 203dpi
-   * 에서 0.5mm/모듈이라 아직 찍힌다. 그래서 「너무 길어 못 담는다」는 거절 가지가 없다.
+   * 위치 코드가 `VarChar(50)` 이라 페이로드 최악이 50자(소문자면 33모듈)이고 그때 셀 5·20.6mm
+   * 다. 그래서 「너무 길어 못 담는다」는 거절 가지가 없다.
    */
   const cell = Math.min(QR_CELL_MAX, Math.floor((ROWS.name - border) / (code.modules.size + 8)));
   const qrSize = code.modules.size * cell;
