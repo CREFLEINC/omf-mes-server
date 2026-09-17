@@ -15,24 +15,33 @@ const STANDARD: LocationLabelValues = {
 // 위치명 줄의 y — quiet zone 단언에서 QR 의 아래 여백을 재는 기준이다(`ROWS.name`).
 const NAME_ROW = dots(30);
 
-// 실측(2026-09-17, 100×60 판): 페이로드 · 모듈 · 셀 · QR dot · y.
+// 실측(2026-09-17, 100×60 판 · QR 은 위치 코드만): 페이로드 · 모듈 · 셀 · QR dot · y.
+// 영숫자(대문자·숫자·`-`)는 QR 영숫자 모드라 가장 덜 자란다 — 최악은 한글 50자(150바이트)다.
 const CASES: Array<{ name: string; values: LocationLabelValues; modules: number; cell: number; qrDot: number; y: number }> = [
-  { name: 'S230 / S230-01', values: STANDARD, modules: 21, cell: 8, qrDot: 168, y: 40 },
+  { name: 'S230-01', values: STANDARD, modules: 21, cell: 8, qrDot: 168, y: 40 },
   {
-    name: 'WH-HANOI-01 / A-01-03-C12-SHELF-7',
-    values: { warehouseCode: 'WH-HANOI-01', locationCode: 'A-01-03-C12-SHELF-7', locationName: 'X', issueSeq: 1 },
+    name: 'A-01-03-C12-SHELF-7-LEVEL-02',
+    values: { warehouseCode: 'WH-HANOI-01', locationCode: 'A-01-03-C12-SHELF-7-LEVEL-02', locationName: 'X', issueSeq: 1 },
     modules: 25,
     cell: 7,
     qrDot: 175,
     y: 37,
   },
   {
-    name: 'W×50 / l×50',
+    name: 'l×50',
     values: { warehouseCode: 'W'.repeat(50), locationCode: 'l'.repeat(50), locationName: 'X', issueSeq: 1 },
-    modules: 41,
-    cell: 4,
-    qrDot: 164,
+    modules: 33,
+    cell: 5,
+    qrDot: 165,
     y: 40,
+  },
+  {
+    name: '가×50',
+    values: { warehouseCode: 'W', locationCode: '가'.repeat(50), locationName: 'X', issueSeq: 1 },
+    modules: 49,
+    cell: 4,
+    qrDot: 196,
+    y: 28,
   },
 ];
 
@@ -55,8 +64,10 @@ describe('위치 라벨 값 (location-label)', () => {
 });
 
 describe('위치 라벨 배치 (location-label-layout)', () => {
-  it('QR 페이로드가 창고코드/위치코드다', () => {
-    expect(locationQrPayload(STANDARD)).toBe('S230/S230-01');
+  // 적치·재고 이동 화면이 스캔 값을 위치 코드 조회에 «그대로» 넣는다 — 창고를 붙이면 0건이다.
+  it('QR 페이로드가 위치 코드 그 자체다 — 창고 코드를 붙이지 않는다', () => {
+    expect(locationQrPayload(STANDARD)).toBe('S230-01');
+    expect(locationQrPayload({ ...STANDARD, warehouseCode: 'S240' })).toBe('S230-01');
   });
 
   it('표준 입력의 줄 넷이 실측대로다', () => {

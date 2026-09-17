@@ -130,7 +130,7 @@ describe('POP 창고 적재 위치 라벨 (장부 P-28 e2e)', () => {
     const text = (rendition.body as Buffer).toString('utf8');
     expect(text.startsWith('SIZE ')).toBe(true);
     const qr = text.split('\r\n').find((line) => line.startsWith('QRCODE '));
-    expect(qr).toContain(`"${PREFIX}-WH-P1/${PREFIX}-LOC-2"`);
+    expect(qr?.endsWith(`,"${PREFIX}-LOC-2"`)).toBe(true);
 
     const reported = await asPop(request(app.getHttpServer())
       .post(`/api/app/document-issues/${String(logId)}:report-print`)
