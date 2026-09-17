@@ -27,10 +27,10 @@ describe('locationTspl', () => {
       ),
     );
     expect(textLines).toEqual([
-      'TEXT 28,24,"0",0,10,10,"WH: S230"',
-      'TEXT 28,60,"0",0,20,20,"S230-01"',
-      'TEXT 28,128,"0",0,10,10,"MATERIAL DEFAULT LOC"',
-      'TEXT 28,172,"0",0,8,8,"ISSUE NO.: 1"',
+      'TEXT 40,32,"0",0,12,12,"WH: S230"',
+      'TEXT 40,104,"0",0,28,28,"S230-01"',
+      'TEXT 40,240,"0",0,13,13,"MATERIAL DEFAULT LOC"',
+      'TEXT 40,320,"0",0,11,11,"ISSUE NO.: 1"',
     ]);
   });
 
@@ -39,7 +39,7 @@ describe('locationTspl', () => {
     const qrLine = lines(locationTspl(STANDARD)).find((line) => line.startsWith('QRCODE '));
 
     expect(qrLine).toBe(`QRCODE ${String(qr.x)},${String(qr.y)},M,${String(qr.cell)},A,0,M2,S7,"${locationQrPayload(STANDARD)}"`);
-    expect(qrLine).toBe('QRCODE 439,36,M,8,A,0,M2,S7,"S230/S230-01"');
+    expect(qrLine).toBe('QRCODE 599,40,M,8,A,0,M2,S7,"S230/S230-01"');
   });
 
   it('BOX 가 라벨 경계다', () => {
@@ -47,7 +47,7 @@ describe('locationTspl', () => {
     const boxLine = lines(locationTspl(STANDARD)).find((line) => line.startsWith('BOX '));
 
     expect(boxLine).toBe(`BOX 0,0,${String(width - 1)},${String(height - 1)},${String(border)}`);
-    expect(boxLine).toBe('BOX 0,0,638,239,2');
+    expect(boxLine).toBe('BOX 0,0,798,479,3');
   });
 
   it('한글 위치명의 바이트를 뭉개지 않고 그대로 내보낸다 — 못 찍는 것은 프린터 사정이다', () => {
