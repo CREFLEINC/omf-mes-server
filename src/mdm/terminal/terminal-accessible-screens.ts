@@ -68,6 +68,11 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   // 공구·비가동은 공정 매핑과 무관한 설비 축이다.
   { code: 'P-05-01', flag: null },
   { code: 'P-05-02', flag: null },
+  // ⭐ P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 클라이언트 화면이다(장부 P-28). P-01-01(자재LOT
+  //    등록·라벨 발행)처럼 **공장 축** → 항상이다 — 서버는 위치 라벨 발행을 공정 플래그로 막지
+  //    않는다. ⛔ 「창고 단말」로 가를 축도 없다: 단말에 창고 속성이 없고, `terminal.location_id`
+  //    는 선택값인 설치 위치라 축으로 쓰지 않는다.
+  { code: 'P-06-01', flag: null },
 ];
 
 /** 판정에 들어가는 한 행 — 단말의 공정 하나가 가진 플래그들. */

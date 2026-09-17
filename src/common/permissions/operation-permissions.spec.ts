@@ -105,6 +105,11 @@ describe('오퍼레이션 권한 매핑', () => {
     );
   });
 
+  // P-06-01(창고 적재 위치 라벨 발행)은 설계 밖 화면이라 도출표가 영영 주지 않는다 — 장부 P-28.
+  it('⛔ 발행 POST에 창고 적재 위치 라벨 발행 화면이 있다 — 장부 P-28', () => {
+    expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toContain('P-06-01');
+  });
+
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
     expect(OPERATION_PERMISSIONS['PUT /inventory/counts/{inventoryCountId}/lines']).toEqual([
       'M-01-11',

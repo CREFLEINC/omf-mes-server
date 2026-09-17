@@ -14,7 +14,7 @@ const NONE: TerminalProcessFlags = {
 };
 
 /** 축이 없어 언제나 담기는 화면 — 매핑이 0행이어도 이만큼은 나온다. */
-const ALWAYS = ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02'];
+const ALWAYS = ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02', 'P-06-01'];
 
 const flags = (on: Partial<TerminalProcessFlags>): TerminalProcessFlags => ({ ...NONE, ...on });
 
@@ -66,12 +66,14 @@ describe('POP 화면 이동 후보 (D3)', () => {
     expect(codes).not.toContain('P-02-13');
   });
 
-  it('표가 카탈로그와 같은 17 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
+  it('표가 카탈로그와 같은 18 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
     const codes = POP_SCREEN_REQUIREMENTS.map((row) => row.code);
 
     // SHIP-UNIT-01 이 `P-04-05`(출하 단위 구성)를 더했다: 16 → 17.
-    expect(codes).toHaveLength(17);
-    expect(new Set(codes).size).toBe(17);
+    // 장부 P-28 이 `P-06-01`(창고 적재 위치 라벨 발행)을 더했다: 17 → 18 — 카탈로그 순서대로 끝이다.
+    expect(codes).toHaveLength(18);
+    expect(new Set(codes).size).toBe(18);
+    expect(codes.at(-1)).toBe('P-06-01');
     expect(codes).not.toContain('P-CO-01');
   });
 });

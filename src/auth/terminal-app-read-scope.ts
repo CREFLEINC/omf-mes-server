@@ -22,6 +22,9 @@ const RENDITION_DOCUMENT_TYPES: readonly string[] = [
   'MATERIAL_LOT_LABEL',
   'PRODUCTION_LOT_LABEL',
   'DELIVERY_LABEL',
+  // P-06-01(창고 적재 위치 라벨 발행)이 발행한 뒤 tspl 로 받아 찍는다(장부 P-28).
+  // 대상 `LOCATION` 의 소유는 `assertOwnedTarget` 이 위치의 창고 공장으로 본다.
+  'LOCATION_LABEL',
 ];
 
 export type TerminalApprovalListScope =
@@ -85,7 +88,8 @@ export async function assertTerminalAppReadScope(
       });
       // ⭐ 생산 LOT 라벨을 더한다(D5). POP 이 실적 뒤 라벨을 찍으려면 이 렌디션을 받아야 하는데
       //    목록에 없어 401 이었다 — 셸이 인쇄 데이터를 못 받아 인쇄가 실패로 기록됐다.
-      //    ⚠ 범위만 연 것이다. 생산 LOT 라벨의 렌디션 «구현»은 아직 없다(아래 서비스가 422).
+      //    ⚠ 이 가드는 범위만 본다 — 그릴 수 있는지는 `document-issue-rendition.service.ts` 가
+      //      가른다(납품 라벨은 서버가 그리지 않아 목록을 통과해도 422 다).
       if (!issue || !RENDITION_DOCUMENT_TYPES.includes(issue.document_type_code)) throw denied();
       await assertOwnedTarget(prisma, terminal, issue.target_type_code, issue.target_id);
       break;

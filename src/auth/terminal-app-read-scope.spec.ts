@@ -20,6 +20,7 @@ describe('POP app read scope', () => {
       document_type_code: 'MATERIAL_LOT_LABEL', target_type_code: 'LOT', target_id: 43n,
     }) },
     shipment_lot_allocation: { findFirst: jest.fn().mockResolvedValue({ shipment_lot_allocation_id: 71n }) },
+    location: { findFirst: jest.fn().mockResolvedValue({ location_id: 81n }) },
   } as unknown as PrismaService;
 
   it('checks every summary target and denies a foreign one', async () => {
@@ -126,6 +127,27 @@ describe('POP app read scope', () => {
     });
     (prisma.lot.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(assertTerminalAppReadScope(prisma, request({}, { documentIssueLogId: '9' }),
+      'GET /app/document-issues/{documentIssueLogId}/rendition', terminal)).rejects.toMatchObject({ status: 401 });
+  });
+
+  // 장부 P-28 — P-06-01(창고 적재 위치 라벨 발행)이 위치 라벨을 발행한 뒤 이 렌디션을 받아 찍는다.
+  it('⭐ 위치 라벨 렌디션은 단말 공장 창고의 위치일 때만 받는다', async () => {
+    const location = prisma.location.findFirst as jest.Mock;
+    (prisma.document_issue_log.findUnique as jest.Mock).mockResolvedValueOnce({
+      document_type_code: 'LOCATION_LABEL', target_type_code: 'LOCATION', target_id: 81n,
+    });
+    await expect(assertTerminalAppReadScope(prisma, request({}, { documentIssueLogId: '12' }),
+      'GET /app/document-issues/{documentIssueLogId}/rendition', terminal)).resolves.toBeUndefined();
+    expect(location).toHaveBeenLastCalledWith({
+      where: { location_id: 81n, warehouse: { plant_id: 3n } }, select: { location_id: true },
+    });
+
+    // ⛔ 남의 공장 창고의 위치면 막는다.
+    (prisma.document_issue_log.findUnique as jest.Mock).mockResolvedValueOnce({
+      document_type_code: 'LOCATION_LABEL', target_type_code: 'LOCATION', target_id: 82n,
+    });
+    location.mockResolvedValueOnce(null);
+    await expect(assertTerminalAppReadScope(prisma, request({}, { documentIssueLogId: '13' }),
       'GET /app/document-issues/{documentIssueLogId}/rendition', terminal)).rejects.toMatchObject({ status: 401 });
   });
 

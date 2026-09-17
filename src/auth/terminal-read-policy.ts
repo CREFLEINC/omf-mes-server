@@ -23,10 +23,13 @@ export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly Terminal
   'GET /mdm/items': ['POP', 'MOBILE'],
   'GET /logistics/putaway-tasks': ['MOBILE'],
   'GET /logistics/picking-orders': ['MOBILE'],
-  'GET /mdm/warehouses': ['MOBILE'],
+  // ⭐ POP 도 읽는다 — P-06-01(창고 적재 위치 라벨 발행)이 창고를 고르고 그 위치를 뽑는다(장부
+  //    P-28). 범위 판정은 채널을 가리지 않는다: 창고 목록은 컨트롤러가 단말 공장으로 좁히고,
+  //    위치 목록은 아래 case 가 `warehouseId` 를 단말 공장 창고로 묶는다.
+  'GET /mdm/warehouses': ['POP', 'MOBILE'],
   'GET /logistics/inbound-receipts': ['MOBILE'],
   'GET /mdm/equipments/{equipmentId}/inspection-items': ['POP', 'MOBILE'],
-  'GET /mdm/locations': ['MOBILE'],
+  'GET /mdm/locations': ['POP', 'MOBILE'],
   'GET /mdm/code-values': ['POP', 'MOBILE'],
   'GET /mdm/items/{itemId}': ['POP', 'MOBILE'],
   'GET /mdm/molds': ['POP'],
