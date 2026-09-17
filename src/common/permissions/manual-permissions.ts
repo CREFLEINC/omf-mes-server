@@ -104,7 +104,11 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // GET·결과보고에는 계약상 403이 없으므로 이 권한을 확대하지 않는다. // 결정 — 통보(레인 B)
   // ⭐ `P-04-05`(출하 단위 구성)를 더한다 — 마감 직후 그 화면이 «스스로» 납품 라벨을
   //    발행한다(SHIP-UNIT-01). `P-04-02` 는 «재»발행 화면이라 다른 자리다.
-  'POST /app/document-issues': ['P-04-04', 'W-04-03', 'P-04-05'],
+  // ⭐ P-06-01(창고 적재 위치 라벨 발행)을 더한다 — 그 화면이 «스스로» 위치 라벨을 발행한다
+  //    (장부 P-28). 설계 화면 목록에 없는 화면이라 도출표가 줄 수 없다.
+  //    ⚠ 이 줄 말고는 넣지 않는다. `PermissionGuard` 는 세션이 없으면 보지 않는데 이 화면은
+  //      POP 전용이다 — 다른 경로에 넣어도 단말에는 효과가 없고, 이 권한을 가진 «계정»에게만 열린다.
+  'POST /app/document-issues': ['P-04-04', 'W-04-03', 'P-04-05', 'P-06-01'],
   'POST /app/roles/{roleId}:activate': ['W-CO-02'],
   'POST /app/roles/{roleId}:deactivate': ['W-CO-02'],
   'PUT /app/roles/{roleId}/permissions': ['W-CO-02'],

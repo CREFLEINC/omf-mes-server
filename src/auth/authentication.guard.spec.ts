@@ -262,6 +262,26 @@ describe('FR-004/005 terminal bearer authentication', () => {
     }
   });
 
+  // 장부 P-28 — P-06-01(창고 적재 위치 라벨 발행)이 POP 에서 창고를 고르고 위치를 뽑는다.
+  it('⭐ POP 도 창고·위치 목록을 읽되 위치는 단말 공장 창고로 묶인다', async () => {
+    const pop = setup('POP');
+    const bearer = `Bearer ${pop.token}`;
+    const warehouses = context('GET /mdm/warehouses', { includeInactive: 'false' }, {}, bearer);
+    expect(await pop.guard.canActivate(warehouses.execution)).toBe(true);
+    // 공장 좁힘은 컨트롤러가 이 단말 컨텍스트로 한다.
+    expect(currentTerminal(warehouses.request)).toMatchObject({ plantId: 3n, terminalTypeCode: 'POP' });
+
+    expect(await pop.guard.canActivate(context('GET /mdm/locations',
+      { warehouseId: '29', includeInactive: 'true' }, {}, bearer).execution)).toBe(true);
+    expect(pop.prisma.warehouse.findFirst).toHaveBeenCalledWith({
+      where: { warehouse_id: 29n, plant_id: 3n }, select: { warehouse_id: true },
+    });
+    (pop.prisma.warehouse.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    expect(await statusOf(pop.guard.canActivate(context('GET /mdm/locations',
+      { warehouseId: '30' }, {}, bearer).execution))).toBe(401);
+    expect(await statusOf(pop.guard.canActivate(context('GET /mdm/locations', {}, {}, bearer).execution))).toBe(401);
+  });
+
   it('scopes mold and equipment lists and rejects out-of-plant detail IDs', async () => {
     const pop = setup('POP');
     const moldList = context('GET /mdm/molds', { q: 'FR005-MOLD' }, {}, `Bearer ${pop.token}`);

@@ -124,6 +124,10 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-05-12', name: '설비·설비그룹 마스터', groupCode: '05' },
   { code: 'W-05-13', name: '툴/금형/지그 마스터', groupCode: '05' },
   // 06 기준정보
+  // ⚠ 생성기 산출물이 아니다 — P-06-01(창고 적재 위치 라벨 발행)은 설계 화면 목록에 없는
+  //   클라이언트 화면이라 손으로 넣었다(사용자 지시 · 장부 P-28). 설계가 등재하면 생성기
+  //   결과로 바꿔 옮긴다.
+  { code: 'P-06-01', name: '창고 적재 위치 라벨 발행', groupCode: '06' },
   { code: 'W-06-01', name: 'Routing(공정) 등록·관리', groupCode: '06' },
   { code: 'W-06-02', name: '검사기준 등록 (IQC/PQC/OQC) — **검사정책 포함**', groupCode: '06' },
   { code: 'W-06-03', name: '불량·원인코드 2계층 마스터', groupCode: '06' },
