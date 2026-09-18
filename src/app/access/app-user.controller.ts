@@ -16,7 +16,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { CredentialService } from '../../auth/credential.service';
-import { currentSession } from '../../auth/session-resolver.service';
+import { SessionResolver, currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { IdempotencyService } from '../../common/idempotency';
@@ -38,6 +38,7 @@ export class AppUserController {
     private readonly users: AppUserService,
     private readonly assignments: UserAssignmentService,
     private readonly credentials: CredentialService,
+    private readonly sessionResolver: SessionResolver,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -53,6 +54,7 @@ export class AppUserController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
     @Body() body: { currentPassword: string; newPassword: string },
   ): Promise<void> {
     const session = currentSession(request);
@@ -61,6 +63,8 @@ export class AppUserController {
       await this.credentials.changePassword(session.userId, body.currentPassword, body.newPassword);
       return null;
     });
+    // 변경 시각이 올라 이 쿠키도 「변경 전 발급」이 됐다 — 바꾼 본인은 새 쿠키로 살린다.
+    await this.sessionResolver.reissue(request, response);
   }
 
   @Get()
@@ -169,15 +173,21 @@ export class AppUserController {
   @Post(':appUserId\\:reset-password')
   @Contract('POST /app/users/{appUserId}:reset-password')
   @HttpCode(HttpStatus.OK)
-  resetPassword(
+  async resetPassword(
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
     @Param('appUserId', ParseIntPipe) appUserId: number,
   ): Promise<unknown> {
+    const actorId = currentSession(request)?.userId;
     // ⛔ 임시 비밀번호는 «이 응답에서 한 번만» 보인다. 멱등 재전송은 저장된 앞의 응답을
     // 그대로 돌려준다 — 새로 뽑으면 앞에 알려 준 값이 조용히 무효가 된다.
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.assignments.resetPassword(appUserId, currentSession(request)?.userId),
+    const result = await runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.assignments.resetPassword(appUserId, actorId),
     );
+    // 초기화는 그 계정의 기존 로그인을 전부 끊는다(`issuedBeforePasswordChange`). 자기 계정을
+    // 초기화한 관리자는 지금 이 창에서 임시 비밀번호를 읽어야 하므로 이 세션만 살린다.
+    if (actorId === appUserId) await this.sessionResolver.reissue(request, response);
+    return result;
   }
 
   @Post(':appUserId\\:activate')

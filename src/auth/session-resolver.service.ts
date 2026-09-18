@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
-import { readSessionCookie } from './session-cookie';
+import { readSessionCookie, setSessionCookie } from './session-cookie';
 import { SessionService } from './session.service';
 import { Session } from './session.types';
 
@@ -19,6 +19,9 @@ export interface SessionToken {
   typ: typeof TOKEN_TYPE.SESSION;
   /** 이번 로그인 «직전» 시각. 계약 `Session.lastLoginAt` 이 그 뜻이다. */
   lla?: string;
+  /** 서명할 때 붙는 발급·만료 시각(초). 비밀번호 변경 전 발급을 가르는 데 쓴다. */
+  iat?: number;
+  exp?: number;
 }
 
 const ATTACHED = Symbol('session');
@@ -52,9 +55,46 @@ export class SessionResolver {
       // ⛔ 종류를 확인한다. 없으면 단말 등록 토큰(sub = 단말 번호)이 같은 번호의
       // 사용자 세션으로 풀린다 — 비밀키가 하나라 서명은 유효하다.
       if (payload.typ !== TOKEN_TYPE.SESSION) return null;
-      return await this.sessions.build(payload.sub, payload.lla ? new Date(payload.lla) : null);
+      // ⛔ `iat` 가 없는 토큰은 받지 않는다 — 비밀번호 변경 전 발급인지 가를 수 없다.
+      // 이 서버가 서명한 세션 토큰에는 언제나 붙는다(`noTimestamp` 를 쓰지 않는다).
+      if (payload.iat === undefined) return null;
+      return await this.sessions.build(
+        payload.sub,
+        payload.lla ? new Date(payload.lla) : null,
+        payload.iat,
+      );
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 지금 요청의 세션 쿠키를 새 발급 시각으로 다시 준다. 비밀번호를 바꾼 «그 요청의» 세션을
+   * 살리는 데 쓴다 — 바꾼 뒤 다시 로그인시키지 않는다(계약 `me:change-password`).
+   *
+   * 만료 시각은 원래 것을 그대로 둔다. 비밀번호를 바꿨다고 로그인이 연장되지는 않는다.
+   * 쿠키가 없거나 풀리지 않으면 아무것도 하지 않는다 — 인증 가드를 지난 요청이라 정상 경로에서는
+   * 언제나 풀린다.
+   */
+  async reissue(request: Request, response: Response): Promise<void> {
+    const token = readSessionCookie(request.headers.cookie);
+    if (!token) return;
+
+    const payload = await this.jwt.verifyAsync<SessionToken>(token).catch(() => null);
+    if (payload?.typ !== TOKEN_TYPE.SESSION || payload.exp === undefined) return;
+
+    const remainingSeconds = payload.exp - Math.floor(Date.now() / 1000);
+    if (remainingSeconds <= 0) return;
+
+    const next: SessionToken = {
+      sub: payload.sub,
+      typ: TOKEN_TYPE.SESSION,
+      ...(payload.lla === undefined ? {} : { lla: payload.lla }),
+    };
+    setSessionCookie(
+      response,
+      await this.jwt.signAsync(next, { expiresIn: remainingSeconds }),
+      remainingSeconds,
+    );
   }
 }

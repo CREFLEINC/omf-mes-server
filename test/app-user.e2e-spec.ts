@@ -633,6 +633,42 @@ describe('사용자 마스터 (e2e)', () => {
       .expect(200);
   });
 
+  it('⭐ 초기화하면 그 계정의 기존 로그인이 끊기고, 관리자 자신의 세션은 그대로다', async () => {
+    const created = await create(`${PREFIX}-p4`);
+    const first = await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+    const signedIn = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', randomUUID())
+      .send({ loginId: `${PREFIX}-p4`, password: first.body.temporaryPassword })
+      .expect(200);
+    const targetCookie = signedIn.headers['set-cookie'] as unknown as string[];
+    await request(app.getHttpServer())
+      .get('/api/app/sessions/current')
+      .set('Cookie', targetCookie)
+      .expect(200);
+
+    // 발급 시각은 초 단위라 같은 초 안의 초기화는 가르지 못한다 — 초를 넘긴 뒤 초기화한다.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await request(app.getHttpServer())
+      .post(`/api/app/users/${created.appUserId}:reset-password`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/api/app/sessions/current')
+      .set('Cookie', targetCookie)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/app/sessions/current')
+      .set('Cookie', cookie)
+      .expect(200);
+  });
+
   it('⭐ 같은 멱등키로 다시 부르면 «같은» 임시 비밀번호를 준다', async () => {
     const created = await create(`${PREFIX}-p3`);
     const idempotencyKey = key();

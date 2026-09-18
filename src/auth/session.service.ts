@@ -3,6 +3,22 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Session } from './session.types';
 
+/**
+ * 세션 토큰이 마지막 비밀번호 변경보다 먼저 발급됐는가 — 그렇다면 그 세션은 끊는다.
+ *
+ * 관리웹 세션은 서명 쿠키뿐이라 서버에 끊을 표가 없다. 그래서 «언제 발급됐나»(`iat`)를
+ * 자격의 `password_changed_at` 과 견준다. 관리자 초기화(`:reset-password`)와 본인 변경
+ * (`me:change-password`)이 둘 다 이 시각을 올리므로 두 경로에서 다른 기기의 로그인이 풀린다.
+ * 바꾼 요청을 보낸 세션만은 `SessionResolver.reissue` 가 새 쿠키를 줘서 살린다.
+ *
+ * ⚠ `iat` 는 초 단위다. 변경 시각도 초로 내려 견준다 — 밀리초로 견주면 변경과 같은 초에
+ * 새로 받은 쿠키(재발급·재로그인)가 「변경 전 발급」으로 거부된다. 그 대가로 변경과 같은 초에
+ * 먼저 발급된 쿠키 하나는 살아남는다(최대 1초 창).
+ */
+export function issuedBeforePasswordChange(issuedAtSeconds: number, passwordChangedAt: Date): boolean {
+  return issuedAtSeconds < Math.floor(passwordChangedAt.getTime() / 1000);
+}
+
 @Injectable()
 export class SessionService {
   constructor(private readonly prisma: PrismaService) {}
@@ -17,18 +33,29 @@ export class SessionService {
    * 화면은 이 배열로 액션을 활성·비활성한다 — 403 을 받아 보고 아는 것이 아니라
    * «누르기 전에» 판정한다(계약 `Session.permissions`).
    */
-  async build(appUserId: number, lastLoginAt: Date | null): Promise<Session | null> {
+  async build(
+    appUserId: number,
+    lastLoginAt: Date | null,
+    issuedAtSeconds?: number,
+  ): Promise<Session | null> {
     const user = await this.prisma.app_user.findFirst({
       // ⛔ is_active 가 계정 사용 여부를 정한다. status_code 는 «인사» 상태라 판정에 쓰지
       // 않는다 — 휴직인데 계정은 살려 두는 경우가 실재한다(계약 AppUser.statusCode).
       where: { app_user_id: appUserId, is_active: true },
       include: {
-        user_credential: { select: { must_change_password: true } },
+        user_credential: { select: { must_change_password: true, password_changed_at: true } },
         user_data_scope: true,
         user_role: { include: { role: { include: { role_permission: true } } } },
       },
     });
     if (!user) return null;
+    if (
+      issuedAtSeconds !== undefined &&
+      user.user_credential &&
+      issuedBeforePasswordChange(issuedAtSeconds, user.user_credential.password_changed_at)
+    ) {
+      return null;
+    }
 
     const activeRoles = user.user_role.map((link) => link.role).filter((role) => role.is_active);
 
