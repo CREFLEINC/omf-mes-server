@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/494)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/495)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -42,7 +42,8 @@ describe('계약 커버리지', () => {
     // SHIP-UNIT-01 출하 단위 6 오퍼레이션(경로 5개 · 장부 P-24): 488 → 494.
     // ⚠ 이 6 건은 설계 사본에 «우리가» 적은 것이다 — 설계팀이 정본에 실어 오면 그때
     //   드리프트에서 빠지지만 분모는 그대로다. 수를 되돌릴 일은 없다.
-    expect(registry.size).toBe(494);
+    // 테스트용 P/O 등록 1 오퍼레이션(장부 P-30): 494 → 495.
+    expect(registry.size).toBe(495);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

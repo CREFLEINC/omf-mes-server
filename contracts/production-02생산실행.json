@@ -169,6 +169,70 @@
      }
     },
     "x-internal-note": "확인 이력 컬럼(acknowledged_at·acknowledged_by·acknowledge_decision_code)은 물리 모델에 아직 없다 — 미결-대장 W-02-06 #2 · omf-mes#87 1번 항목. design/schema/data-model-boundary.md 「모델이 화면 요구를 못 담을 때 → 계약은 화면대로 쓴다 · 기다리지 않는다」에 따라 계약이 앞서 있다."
+   },
+   "post": {
+    "tags": [
+     "planning"
+    ],
+    "summary": "생산오더 수기 등록(테스트용)",
+    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-30). ERP 수신 연동이 서기 전까지 테스트용으로 생산오더를 직접 넣는다. 상태는 RECEIVED 로 고정되고, 사업부는 공장의 사업부를 따른다.",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductionOrderCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "생성됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionOrder"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — 같은 생산오더 번호가 이미 있다(DUPLICATE_KEY)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionConflictResponse"
+        }
+       }
+      }
+     }
+    }
    }
   },
   "/planning/production-orders/{productionOrderId}": {
@@ -5360,6 +5424,61 @@
      "orderQty",
      "uomId",
      "statusCode"
+    ]
+   },
+   "ProductionOrderCreate": {
+    "type": "object",
+    "description": "⚠ 개발팀 선행(P-30). 생산오더 수기 등록 요청.",
+    "properties": {
+     "productionOrderNo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "생산오더 번호. 전체에서 유일하다",
+      "example": "PO-ERP-TEST-001"
+     },
+     "erpOrderNo": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "ERP 수신 원번호"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "orderQty": {
+      "type": "number",
+      "format": "double",
+      "exclusiveMinimum": 0,
+      "example": 100
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "생략하면 품목의 기본 단위",
+      "example": 1001
+     },
+     "dueDate": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-09-30"
+     },
+     "remarks": {
+      "type": "string",
+      "example": "값"
+     }
+    },
+    "required": [
+     "productionOrderNo",
+     "plantId",
+     "itemId",
+     "orderQty"
     ]
    },
    "ProductionOrderAcknowledge": {

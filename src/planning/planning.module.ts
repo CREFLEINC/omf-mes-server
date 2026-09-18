@@ -10,6 +10,7 @@ import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
 import { AcknowledgeService } from './production-order/acknowledge.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
+import { ProductionOrderCreateService } from './production-order/production-order-create.service';
 import { ProductionOrderService } from './production-order/production-order.service';
 import { ResyncService } from './production-order/resync.service';
 import { PlanConfirmService } from './production-plan/plan-confirm.service';
@@ -34,6 +35,7 @@ import { RoutingService } from './routing/routing.service';
     ProductionPlanService,
     PlanConfirmService,
     ProductionOrderService,
+    ProductionOrderCreateService,
     AcknowledgeService,
     ResyncService,
   ],

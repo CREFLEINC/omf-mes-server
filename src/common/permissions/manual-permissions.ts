@@ -151,6 +151,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 등록을 요구한다(미등록이면 500 · 선례 `POST /production/material-returns`).
   'POST /planning/production-orders/{productionOrderId}:resync': ['W-06-10'],
 
+  // `W-02-01` ERP W/O 수신·조회 — 테스트용 P/O 수기 등록(P-30 · 설계에 없는 경로). 그 화면이
+  // P/O 를 소유한다. 화면에 버튼은 없다 — API 로만 부른다.
+  'POST /planning/production-orders': ['W-02-01'],
+
   // `W-06-03` 불량·원인코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
   // 수정·활성 전이와 원인코드 목록이 도출표에 안 들어왔다. 한 화면의 두 탭이다.
   'GET /quality/cause-codes': ['W-06-03'],
