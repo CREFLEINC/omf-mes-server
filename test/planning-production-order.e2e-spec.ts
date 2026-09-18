@@ -1,6 +1,7 @@
 /**
  * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④) +
- * 권한 403 6건(PR ③ — `:confirm` 이 서고 나서야 여섯을 한자리에서 물을 수 있다).
+ * 권한 403 6건(PR ③ — `:confirm` 이 서고 나서야 여섯을 한자리에서 물을 수 있다) +
+ * 테스트용 등록 `POST`(장부 P-30).
  *
  * ⛔ P/O 는 이 시스템이 만들지 않는다(수신기 부재 · I-24.md §2-2) — `prisma` 로 직접
  * INSERT 한다. `production_order_change_field`·`production_order_acknowledgement` 도 같다.
@@ -37,12 +38,12 @@ interface ChangedField {
   beforeQty: number | null;
 }
 
-function validator(operation: string): ValidateFunction {
+function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
     readFileSync(join(__dirname, '../contracts/production-02생산실행.json'), 'utf8'),
   ) as object;
   const [method, path] = operation.split(' ');
-  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/200/content/application~1json/schema`;
+  const pointer = `/paths/${path.replace(/~/g, '~0').replace(/\//g, '~1')}/${method.toLowerCase()}/responses/${status}/content/application~1json/schema`;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const f of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(f, true);
@@ -60,6 +61,9 @@ describe('P/O 조회 (e2e)', () => {
   let treeBusinessUnitId = 0;
   let plantId = 0;
   let itemId = 0;
+  /** P-30 등록용 — 사업부가 붙은 공장. `plantId` 는 사업부가 없어 등록이 400 이다. */
+  let createPlantId = 0;
+  let uomId = 0;
 
   let orderMainId = 0;
   let orderWithPlanId = 0;
@@ -479,6 +483,78 @@ describe('P/O 조회 (e2e)', () => {
     });
   });
 
+  describe('등록 — 테스트용 P/O(장부 P-30)', () => {
+    const post = (body: object) =>
+      request(app.getHttpServer())
+        .post('/api/planning/production-orders')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send(body);
+
+    it('22. 201 — RECEIVED 로 서고, 사업부는 공장의 것·단위는 품목 기본 단위다', async () => {
+      const response = await post({
+        productionOrderNo: `${PREFIX}-NEW-1`,
+        erpOrderNo: 'ERP-0001',
+        plantId: createPlantId,
+        itemId,
+        orderQty: 50,
+        dueDate: '2026-09-30',
+        remarks: '수기 등록',
+      }).expect(201);
+
+      expect(response.body).toMatchObject({
+        productionOrderNo: `${PREFIX}-NEW-1`,
+        erpOrderNo: 'ERP-0001',
+        businessUnitId: mainBusinessUnitId,
+        plantId: createPlantId,
+        itemId,
+        orderQty: 50,
+        uomId,
+        dueDate: '2026-09-30',
+        statusCode: 'RECEIVED',
+        remarks: '수기 등록',
+        expandedWorkOrderCount: 0,
+        plannedWorkOrderCount: 0,
+      });
+      expect(response.body.lastChange).toBeUndefined();
+      expect(validator('POST /planning/production-orders', 201)(response.body)).toBe(true);
+
+      // 등록한 P/O 가 목록에 뜬다 — 계획 화면이 여기서 고른다.
+      const list = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ plantId: createPlantId })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(list.body.items.map((item: { productionOrderId: number }) => item.productionOrderId)).toContain(
+        response.body.productionOrderId,
+      );
+    });
+
+    it('23. 409 — 같은 생산오더 번호는 DUPLICATE_KEY 다', async () => {
+      const response = await post({ productionOrderNo: `${PREFIX}-PO-MAIN`, plantId: createPlantId, itemId, orderQty: 1 }).expect(409);
+      expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
+    });
+
+    it('24. 400 — 사업부 없는 공장·없는 품목·없는 단위를 한 번에 알린다', async () => {
+      const response = await post({ productionOrderNo: `${PREFIX}-NEW-BAD`, plantId, itemId: 999999999, uomId: 999999999, orderQty: 1 }).expect(400);
+      const fields = response.body.errors.map((error: { field: string }) => error.field).sort();
+      expect(fields).toEqual(['itemId', 'plantId', 'uomId']);
+    });
+
+    it('25. 400 — 필수 누락·0 수량은 계약 가드가 막는다', async () => {
+      await post({ productionOrderNo: `${PREFIX}-NEW-REQ`, plantId: createPlantId, itemId }).expect(400);
+      await post({ productionOrderNo: `${PREFIX}-NEW-ZERO`, plantId: createPlantId, itemId, orderQty: 0 }).expect(400);
+    });
+
+    it('26. 403 — 무권한 계정', async () => {
+      await request(app.getHttpServer())
+        .post('/api/planning/production-orders')
+        .set('Cookie', strangerCookie)
+        .send({})
+        .expect(403);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: 'PO조회검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -495,7 +571,18 @@ describe('P/O 조회 (e2e)', () => {
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: 'PO조회검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
     plantId = Number(plant.plant_id);
+    const createPlant = await prisma.plant.create({
+      data: {
+        legal_entity_id: entity.legal_entity_id,
+        business_unit_id: mainUnit.business_unit_id,
+        plant_code: `${PREFIX}-P2`,
+        plant_name: 'PO등록검사공장',
+        timezone_code: 'Asia/Ho_Chi_Minh',
+      },
+    });
+    createPlantId = Number(createPlant.plant_id);
     const uom = await prisma.uom.findFirstOrThrow();
+    uomId = Number(uom.uom_id);
 
     const item = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT`, item_name: 'PO조회검사품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
