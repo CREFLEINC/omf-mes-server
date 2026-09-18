@@ -185,16 +185,19 @@ export class LotService {
     const inboundSource = source === 'MES' ? await this.inboundMesSource(input.sourceId) : undefined;
     const effectiveInput = inboundSource === undefined ? input : this.fromInboundSource(input, inboundSource);
     await this.assertWritable(effectiveInput);
+    // ⭐ IQC 의뢰는 번호 출처와 상관없이 입하 라인의 검사 여부를 따른다 — SUPPLIER(사전부착)도
+    //    MES 와 같이 의뢰를 만든다. 안 만들면 보류만 걸리고 검사할 의뢰가 없다(omf-all-around#18).
+    const iqcSource = inboundSource ?? (await this.inboundLine(input.sourceId));
     const iqcRequestNo =
-      inboundSource?.inspection_required === true
-        ? await this.numbering.next('INSPECTION_REQUEST', inboundSource.inbound_receipt.plant_id, input.businessDate)
+      iqcSource?.inspection_required === true
+        ? await this.numbering.next('INSPECTION_REQUEST', iqcSource.inbound_receipt.plant_id, input.businessDate)
         : undefined;
 
     for (let attempt = 0; ; attempt += 1) {
       try {
         const row =
           source === 'SUPPLIER'
-            ? await this.insert(effectiveInput, input.lotNo as string, registerActor)
+            ? await this.insert(effectiveInput, input.lotNo as string, iqcRequestNo, registerActor)
             : await this.insertInboundMes(effectiveInput, iqcRequestNo, registerActor);
         return (await this.get(Number(row.lot_id))).detail;
       } catch (error) {
@@ -262,8 +265,26 @@ export class LotService {
     return line !== null;
   }
 
-  private async insert(input: LotCreate, lotNo: string, actor: LotRegisterActor): Promise<LotRow> {
-    return this.prisma.$transaction((tx) => this.registry.createWithin(tx, { ...input, lotNo }, actor));
+  private async insert(
+    input: LotCreate,
+    lotNo: string,
+    iqcRequestNo: string | undefined,
+    actor: LotRegisterActor,
+  ): Promise<LotRow> {
+    return this.prisma.$transaction((tx) =>
+      this.registry.createWithin(
+        tx,
+        {
+          ...input,
+          lotNo,
+          incomingIqc:
+            iqcRequestNo === undefined
+              ? undefined
+              : { requestNo: iqcRequestNo, effectiveDate: input.businessDate, requestedAt: input.occurredAt },
+        },
+        actor,
+      ),
+    );
   }
 
   private async insertInboundMes(
@@ -297,6 +318,15 @@ export class LotService {
         actor,
       );
     });
+  }
+
+  /** SUPPLIER 경로의 원천 라인 — 없으면 `undefined`. 없는 라인의 400 은 코어의 `attach` 가 낸다. */
+  private async inboundLine(sourceId: number): Promise<InboundMesSource | undefined> {
+    const row = await this.prisma.inbound_receipt_line.findUnique({
+      where: { inbound_receipt_line_id: sourceId },
+      include: { inbound_receipt: true },
+    });
+    return row ?? undefined;
   }
 
   private async inboundMesSource(
