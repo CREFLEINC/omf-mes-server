@@ -10,7 +10,7 @@ type Args = Record<string, unknown>;
 const ITEM_CODE = '040101-00022S';
 const SUPPLIER_CODE = '100019';
 
-const source = (receivedQty: number) => ({
+const source = (receivedQty: number, inspectionRequired = true) => ({
   inbound_receipt_line_id: 77n,
   inbound_receipt_id: 88n,
   line_no: 1,
@@ -26,7 +26,7 @@ const source = (receivedQty: number) => ({
   substitute_lot_reason_code: null,
   manufactured_date: null,
   expiry_date: null,
-  inspection_required: true,
+  inspection_required: inspectionRequired,
   status_code: 'REGISTERED',
   created_at: new Date(),
   created_by: 1n,
@@ -59,13 +59,14 @@ const input = (overrides: Partial<LotCreate> = {}): LotCreate => ({
  * @param receivedQty 입하 라인 수량 — `source().received_qty` 와 `nextInboundMaterialLotNo` 접두
  *   양쪽에 같은 값을 먹인다(`fromInboundSource` 가 `Decimal.equals` 로 대조하기 때문).
  * @param existingLotNoSuffix 기존 LOT 하나를 심어 다음 번호가 그 뒤를 잇는지 본다.
+ * @param inspectionRequired 원천 라인이 IQC 대상인가.
  */
-function fake(receivedQty = 100, existingLotNoSuffix = '0009') {
+function fake(receivedQty = 100, existingLotNoSuffix = '0009', inspectionRequired = true) {
   const recorded = {
     register: undefined as Args | undefined,
     numbering: [] as unknown[][],
   };
-  const receiptLine = source(receivedQty);
+  const receiptLine = source(receivedQty, inspectionRequired);
   const tx = {
     inbound_receipt_line: { findUnique: async () => receiptLine },
     item: { findUnique: async () => ({ item_code: ITEM_CODE }) },
@@ -158,5 +159,33 @@ describe('LotService.create — 입하 MES 자재 LOT', () => {
     expect(recorded.register).toMatchObject({
       lotNo: `${ITEM_CODE}|12.5|260911|${SUPPLIER_CODE}|0003`,
     });
+  });
+});
+
+describe('LotService.create — 입하 SUPPLIER(사전부착) 자재 LOT', () => {
+  it('IQC 대상 라인이면 MES 와 같이 의뢰번호를 선할당하고 IQC 의뢰 문맥을 넘긴다(omf-all-around#18)', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(input({ numberSourceCode: 'SUPPLIER', lotNo: 'SUP-LOT-0001' }), 7);
+
+    expect(recorded.register).toMatchObject({
+      lotNo: 'SUP-LOT-0001',
+      incomingIqc: {
+        requestNo: 'IRQ-20260911-0001',
+        effectiveDate: '2026-09-11',
+        requestedAt: '2026-09-11T08:00:00+07:00',
+      },
+    });
+    expect(recorded.numbering).toEqual([['INSPECTION_REQUEST', 1n, '2026-09-11']]);
+  });
+
+  it('IQC 대상이 아닌 라인이면 의뢰번호를 뽑지 않고 IQC 문맥도 넘기지 않는다', async () => {
+    const { service, recorded } = fake(100, '0009', false);
+
+    await service.create(input({ numberSourceCode: 'SUPPLIER', lotNo: 'SUP-LOT-0002' }), 7);
+
+    expect(recorded.register).toMatchObject({ lotNo: 'SUP-LOT-0002' });
+    expect(recorded.register?.incomingIqc).toBeUndefined();
+    expect(recorded.numbering).toEqual([]);
   });
 });

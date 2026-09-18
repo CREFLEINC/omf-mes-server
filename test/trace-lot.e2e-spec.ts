@@ -719,6 +719,59 @@ describe('LOT (e2e)', () => {
     await requestIqcSkip(lot.lotId, { as: noPermCookie }).expect(403);
   });
 
+  // ── omf-all-around#18 — SUPPLIER(사전부착)도 IQC 대상 라인이면 IQC 의뢰를 만든다 ──────────
+  // 순서가 뜻이다: 기준이 «없을 때» 두 건을 먼저 보고, 마지막 건이 확정 기준을 세운다.
+
+  it('⭐ SUPPLIER — IQC 대상이 아닌 라인은 의뢰를 만들지 않는다', async () => {
+    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOIQC` });
+
+    expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
+  });
+
+  it('⛔ SUPPLIER — IQC 대상 라인인데 확정 기준이 없으면 입하·MES 경로와 같이 STATE_LOCKED 로 막는다', async () => {
+    const sourceId = await newLine(10, true);
+    const rejected = await post(
+      await body({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOPLAN`, sourceId }),
+    ).expect(400);
+
+    expect(rejected.body.errors).toMatchObject([{ code: 'STATE_LOCKED' }]);
+    expect(await prisma.lot.count({ where: { lot_no: `${PREFIX}-SUP-NOPLAN` } })).toBe(0);
+  });
+
+  it('⭐ SUPPLIER — IQC 대상 라인에 확정 기준이 있으면 LOT 과 함께 IQC 의뢰(REQUESTED)가 선다', async () => {
+    const plan = await prisma.inspection_plan.create({
+      data: {
+        inspection_plan_code: `${PREFIX}-IQC`,
+        inspection_plan_name: 'LOT검사 입하검사기준',
+        inspection_type_code: 'IQC',
+        item_id: BigInt(itemId),
+        is_active: true,
+      },
+    });
+    const version = await prisma.inspection_plan_version.create({
+      data: {
+        inspection_plan_id: plan.inspection_plan_id,
+        plan_version: 1,
+        effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        sampling_method_code: 'FULL',
+        inspection_frequency_code: 'EVERY_LOT',
+        status_code: 'CONFIRMED',
+      },
+    });
+    const sourceId = await newLine(10, true);
+
+    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-IQC`, sourceId });
+
+    const requests = await prisma.inspection_request.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      inspection_type_code: 'IQC',
+      status_code: 'REQUESTED',
+      target_type_code: 'LOT',
+      inspection_plan_version_id: version.inspection_plan_version_id,
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   /**
@@ -744,7 +797,7 @@ describe('LOT (e2e)', () => {
     };
   }
 
-  async function newLine(qty: number = 10): Promise<number> {
+  async function newLine(qty: number = 10, inspectionRequired = false): Promise<number> {
     lineNo += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -754,7 +807,7 @@ describe('LOT (e2e)', () => {
         received_qty: qty,
         uom_id: BigInt(uomId),
         supplier_lot_label_attached: false,
-        inspection_required: false,
+        inspection_required: inspectionRequired,
         status_code: 'REGISTERED',
       },
     });
@@ -998,9 +1051,21 @@ describe('LOT (e2e)', () => {
       DELETE FROM trace.lot_hold
        WHERE lot_id IN (SELECT lot_id FROM trace.lot
                          WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'))`);
+    // omf-all-around#18 — IQC 의뢰가 LOT 을 FK 로 쥔다. LOT 보다 먼저 지운다.
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM quality.inspection_request
+       WHERE lot_id IN (SELECT lot_id FROM trace.lot
+                         WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'))`);
     await prisma.$executeRawUnsafe(`
       DELETE FROM trace.lot
        WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM quality.inspection_plan_version
+       WHERE inspection_plan_id IN (
+         SELECT inspection_plan_id FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%')`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM quality.inspection_plan WHERE inspection_plan_code LIKE '${PREFIX}%'`,
+    );
     await prisma.$executeRawUnsafe(
       `DELETE FROM logistics.inbound_receipt WHERE inbound_receipt_no LIKE '${PREFIX}%'`,
     );
