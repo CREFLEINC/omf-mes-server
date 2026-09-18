@@ -79,13 +79,17 @@ describe('내 비밀번호 변경 (e2e)', () => {
     await login(FIRST);
   });
 
-  it('⭐ 바꾸면 204 이고, 강제 변경이 풀리며, 세션은 그대로다', async () => {
+  it('⭐ 바꾸면 204 이고, 강제 변경이 풀리며, 바꾼 쪽 세션은 그대로다', async () => {
+    // 같은 계정의 «다른 기기» 로그인 — 변경 뒤 끊겨야 한다.
+    const otherDevice = await login(FIRST);
+    // 발급 시각은 초 단위라 같은 초 안의 변경은 가르지 못한다 — 초를 넘긴 뒤 바꾼다.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     const before = await prisma.user_credential.findUniqueOrThrow({
       where: { app_user_id: userId },
     });
     expect(before.must_change_password).toBe(true);
 
-    await change(FIRST, SECOND).expect(204);
+    const changed = await change(FIRST, SECOND).expect(204);
 
     const after = await prisma.user_credential.findUniqueOrThrow({
       where: { app_user_id: userId },
@@ -94,11 +98,17 @@ describe('내 비밀번호 변경 (e2e)', () => {
     expect(after.password_hash).not.toBe(before.password_hash);
     expect(after.password_changed_at.getTime()).toBeGreaterThan(before.password_changed_at.getTime());
 
-    // ⛔ 다시 로그인시키지 않는다 — 같은 쿠키가 계속 통해야 한다(계약 §5-3).
+    // ⛔ 다시 로그인시키지 않는다(계약 §5-3) — 변경 응답이 새 쿠키를 주고 그것이 통한다.
+    cookie = setCookieOf(changed);
     await request(app.getHttpServer())
       .get('/api/app/sessions/current')
       .set('Cookie', cookie)
       .expect(200);
+    // 변경 전에 발급된 다른 기기의 쿠키는 끊긴다.
+    await request(app.getHttpServer())
+      .get('/api/app/sessions/current')
+      .set('Cookie', otherDevice)
+      .expect(401);
   });
 
   it('⭐ 새 비밀번호로 로그인되고 옛 비밀번호는 막힌다', async () => {
@@ -134,6 +144,10 @@ describe('내 비밀번호 변경 (e2e)', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ loginId: LOGIN_ID, password })
       .expect(200);
+    return setCookieOf(response);
+  }
+
+  function setCookieOf(response: request.Response): string[] {
     const raw: unknown = response.headers['set-cookie'];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
   }
