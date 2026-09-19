@@ -72,7 +72,6 @@ export async function postReceipt(
   appUserId: number | undefined,
   receiptNo: string,
   putawayNos: string[] | null,
-  terminalWorkerId?: bigint,
 ): Promise<bigint> {
   const receipt = await tx.goods_receipt.create({
     data: {
@@ -157,14 +156,6 @@ export async function postReceipt(
     throw new Error(`원장 라인 수가 입고 라인과 다르다: ${ledger.length} ≠ ${lines.length}`);
   }
 
-  const assignee = putawayNos === null || appUserId === undefined || terminalWorkerId !== undefined
-    ? null
-    : await tx.worker.findFirst({
-        where: { app_user_id: BigInt(appUserId), is_active: true },
-        orderBy: { worker_id: 'asc' },
-        select: { worker_id: true },
-      });
-
   for (const [index, goodsReceiptLineId] of lines.entries()) {
     await tx.goods_receipt_line.update({
       where: { goods_receipt_line_id: goodsReceiptLineId },
@@ -178,7 +169,6 @@ export async function postReceipt(
       goodsReceiptLineId,
       putawayNos[index],
       appUserId,
-      terminalWorkerId ?? assignee?.worker_id ?? null,
     );
   }
 
@@ -200,7 +190,6 @@ async function createPutawayTask(
   goodsReceiptLineId: bigint,
   putawayTaskNo: string,
   appUserId: number | undefined,
-  assignedWorkerId: bigint | null,
 ): Promise<void> {
   const rule = await tx.putaway_rule.findFirst({
     where: {
@@ -226,7 +215,10 @@ async function createPutawayTask(
       from_location_id: line.destinationLocationId,
       recommended_location_id: rule?.location_id ?? null,
       applied_putaway_rule_id: rule?.putaway_rule_id ?? null,
-      assigned_worker_id: assignedWorkerId,
+      // 적치에 담당자를 두지 않는다(omf-all-around#26 · 2026-09-19 사용자 결정) — 입고 화면
+      // W-01-10 에 담당자 칸이 없어 처리 계정의 연결 작업자로 채웠는데, 관리웹 계정엔 연결이
+      // 없어 늘 비었고 모바일 「내 담당」 목록에서 지시가 사라졌다. 단말 공장의 대기 지시를 누구나 소화한다.
+      assigned_worker_id: null,
       status_code: PUTAWAY_PENDING,
       created_by: appUserId == null ? null : BigInt(appUserId),
     },
