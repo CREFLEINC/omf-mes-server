@@ -113,7 +113,7 @@ export class GoodsReceiptService {
           putawayNos.push(await this.numbering.next('PUTAWAY_TASK', plantId, input.businessDate));
         }
         const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
-          const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos, actor.workerId);
+          const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos);
           if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
             actor: actor.terminalAudit, targetTypeCode: 'GOODS_RECEIPT', targetId: id, eventTypeCode: 'CREATE',
           });

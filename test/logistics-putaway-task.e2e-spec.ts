@@ -7,6 +7,7 @@
  * `prisma.putaway_task.update` 로 상태 칸만 직접 심는다(원장 없이).
  */
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import Ajv2020, { ValidateFunction } from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
@@ -147,6 +148,19 @@ describe('적치 지시 조회 (e2e)', () => {
     const pendingIds = byStatus.items.map((task) => task.putawayTaskId);
     expect(pendingIds).toEqual(expect.arrayContaining([taskR1, taskR2, taskR4]));
     expect(pendingIds).not.toContain(taskR3);
+  });
+
+  // omf-all-around#26 — 관리웹 입고는 담당자를 못 채운다(계정↔작업자 연결 없음). 적치에 담당자는
+  // 필요 없다(2026-09-19 사용자 결정): 모바일은 담당자 없이 단말 공장의 대기 지시를 읽는다.
+  it('⭐ MOBILE 단말이 assignedWorkerId 없이 읽으면 미배정 대기 지시가 나온다', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/logistics/putaway-tasks?statusCode=PENDING&size=100')
+      .set('Authorization', `Bearer ${await mobileToken()}`)
+      .expect(200);
+    const ids = (response.body as { items: TaskBody[] }).items.map((task) => task.putawayTaskId);
+
+    expect(ids).toEqual(expect.arrayContaining([taskR1, taskR2, taskR4]));
+    expect(ids).not.toContain(taskR3);
   });
 
   it('⭐ temporaryOnly=true 는 COMPLETED_TEMPORARY 만 낸다', async () => {
@@ -624,6 +638,21 @@ describe('적치 지시 조회 (e2e)', () => {
       .set('Cookie', cookie);
   }
 
+  async function mobileToken(): Promise<string> {
+    const terminal = await prisma.terminal.create({
+      data: {
+        terminal_code: `${PREFIX}-PDA`,
+        plant_id: BigInt(plantId),
+        terminal_type_code: 'MOBILE',
+        status_code: 'RUNNING',
+      },
+    });
+    return app.get(JwtService).sign({
+      sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version,
+      terminalCode: terminal.terminal_code, plantId,
+    });
+  }
+
   async function list(query: string): Promise<{ items: TaskBody[] }> {
     const response = await request(app.getHttpServer())
       .get(`/api/logistics/putaway-tasks?${query}`)
@@ -932,6 +961,7 @@ describe('적치 지시 조회 (e2e)', () => {
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.worker WHERE worker_no LIKE '${PREFIX}%'`);
+    await prisma.$executeRawUnsafe(`DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`);
     await prisma.$executeRawUnsafe(`DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`);

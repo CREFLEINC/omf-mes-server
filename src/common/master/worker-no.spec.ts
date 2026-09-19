@@ -119,11 +119,10 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
  * ⚠ **`mdm.worker` 를 직접 읽는 자리 전건.** 위 표들은 «공용 함수를 부르는» 자리만 잡는다 —
  * 조회를 본문에 인라인하면 그 그물을 지나간다.
  *
- * 다섯은 **사번 판정이 아니다**: `mdm/organization/*` 둘(마스터 CRUD·참조 수) ·
+ * 넷은 **사번 판정이 아니다**: `mdm/organization/*` 둘(마스터 CRUD·참조 수) ·
  * `work-session-worker.service.ts` 와 `work-session.service.ts`(둘 다 본문 `workerIds` 를 세는
- * «명단» 축이지 헤더 축이 아니다 — 후자는 헤더 축으로 `assertWorkerNoExists` 도 따로 부른다) ·
- * `receipt-posting.ts`(적치 작업의 담당자를 «세션 계정»에서 푼다 — `app_user_id` 로 찾지
- * `worker_no` 를 보지 않는다. 헤더가 없어도 성립하므로 사번 축에 얹으면 안 된다).
+ * «명단» 축이지 헤더 축이 아니다 — 후자는 헤더 축으로 `assertWorkerNoExists` 도 따로 부른다).
+ * (`receipt-posting.ts` 는 적치 담당자를 두지 않게 되어 빠졌다 — omf-all-around#26.)
  *
  * 나머지 다섯은 **안 모은 것**이고 사유가 자리마다 다르다:
  * `document-issue-write`·`inventory-count-update`(`WorkerNoOptional` — 부재가 `null` 이다) ·
@@ -153,7 +152,6 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-read-policy.ts',
   SHARED,
   'inventory/count/inventory-count-update.service.ts',
-  'logistics/goods-receipt/receipt-posting.ts',
   // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
   'maintenance/breakdown/breakdown-attachment.service.ts',
   'maintenance/breakdown/breakdown-create.service.ts',

@@ -22,7 +22,7 @@ const input: GoodsReceiptCreate = {
   ],
 };
 
-function fake(workerId: bigint | null) {
+function fake() {
   const tasks: Array<Record<string, unknown>> = [];
   const tx = {
     goods_receipt: {
@@ -34,9 +34,6 @@ function fake(workerId: bigint | null) {
     },
     inventory_transaction_line: {
       findMany: async () => [{ inventory_transaction_line_id: 30n }],
-    },
-    worker: {
-      findFirst: async () => (workerId === null ? null : { worker_id: workerId }),
     },
     putaway_rule: {
       findFirst: async () => ({ putaway_rule_id: 40n, location_id: 7n }),
@@ -51,25 +48,27 @@ function fake(workerId: bigint | null) {
   return { tx, posting, tasks };
 }
 
+// omf-all-around#26 — 적치에 담당자를 두지 않는다(2026-09-19 사용자 결정). 누가 입고하든
+// 지시는 미배정으로 생기고, 모바일은 단말 공장의 대기 지시를 담당자 없이 읽는다.
 describe('입고 적치 지시 배정', () => {
-  it('계정 없는 단말 작업자의 지시 귀속은 worker_id이고 app_user 칸은 NULL이다', async () => {
-    const { tx, posting, tasks } = fake(null);
-    await postReceipt(tx, posting, input, undefined, 'GR-20260912-0002', ['PT-20260912-0002'], 88n);
-    expect(tasks[0]).toMatchObject({ assigned_worker_id: 88n, created_by: null });
-  });
-  it.each([
-    { linkedWorkerId: 77n, expected: 77n },
-    { linkedWorkerId: null, expected: null },
-  ])('입고 처리자 연결 작업자가 $expected 이면 생성 지시에 그대로 반영한다', async ({ linkedWorkerId, expected }) => {
-    const { tx, posting, tasks } = fake(linkedWorkerId);
+  it('처리 계정과 무관하게 적치 지시를 담당자 없이 만든다', async () => {
+    const { tx, posting, tasks } = fake();
 
     await postReceipt(tx, posting, input, 9, 'GR-20260912-0001', ['PT-20260912-0001']);
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
-      assigned_worker_id: expected,
+      assigned_worker_id: null,
       status_code: 'PENDING',
       created_by: 9n,
     });
+  });
+
+  it('계정 없는 단말 입고도 지시는 담당자 없이 만들고 app_user 칸은 NULL이다', async () => {
+    const { tx, posting, tasks } = fake();
+
+    await postReceipt(tx, posting, input, undefined, 'GR-20260912-0002', ['PT-20260912-0002']);
+
+    expect(tasks[0]).toMatchObject({ assigned_worker_id: null, created_by: null });
   });
 });
