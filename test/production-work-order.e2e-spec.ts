@@ -713,7 +713,9 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
 
       await call(workOrderId, 100).expect(200);
 
-      // R-7 — 공장은 계획의 생산오더 공장 한 축으로만 푼다(라인은 배포 «전제»일 뿐이다).
+      // R-7 — 공장은 계획의 생산오더 공장으로 푼다(라인은 배포 «전제»일 뿐이다).
+      // ⚠ 라인이 배포 전제가 된 뒤로 이 검사는 «두 축이 갈리는» 경우를 못 만든다 — 다른 공장
+      //   라인은 400 이라 200 이 안 나온다. 축이 새는 회귀는 단말 권한 검사 쪽 e2e 가 잡는다.
       const lots = await slots(workOrderId);
       expect(lots).toHaveLength(1);
       expect(lots[0].plant_id).toBe(ids.plant);
