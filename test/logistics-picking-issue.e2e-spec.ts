@@ -319,6 +319,8 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
         order_qty: 100,
         uom_id: ids.uom,
         status_code: 'PLANNED',
+        // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+        production_line_id: ids.productionLine,
         responsible_worker_id: ids.worker,
         default_wip_location_id: destinationLocationId,
         default_fg_location_id: destinationLocationId,
@@ -339,6 +341,11 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '출고검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
     ids.plant = plant.plant_id;
+    ids.productionLine = (
+      await prisma.production_line.create({
+        data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '출고검사라인' },
+      })
+    ).production_line_id;
     ids.uom = (await prisma.uom.findFirstOrThrow()).uom_id;
     ids.itemFg = (await prisma.item.create({
       data: { item_code: `${PREFIX}-FG`, item_name: 'FG', item_type_code: 'FINISHED', base_uom_id: ids.uom },
@@ -468,6 +475,7 @@ describe('피킹 출고가 원천 전표를 닫고 기출고를 올린다 (PICK-
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });

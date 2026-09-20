@@ -88,6 +88,7 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
     warehouse: 0n,
     location: 0n,
     productionPlan: 0n,
+    productionLine: 0n,
     workOrder: 0n,
     postWorkOrder: 0n,
     lot: 0n,
@@ -247,6 +248,8 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
         order_qty: 100,
         uom_id: ids.uom,
         status_code: 'PLANNED',
+        // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+        production_line_id: ids.productionLine,
         default_wip_location_id: ids.location,
         default_fg_location_id: ids.location,
         default_scrap_location_id: ids.location,
@@ -414,6 +417,12 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
       },
     });
     ids.plant = plant.plant_id;
+    // omf-all-around#36 — 배포는 같은 공장의 생산라인을 요구한다.
+    ids.productionLine = (
+      await prisma.production_line.create({
+        data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '출고요청검사라인' },
+      })
+    ).production_line_id;
     const uom = await prisma.uom.findFirstOrThrow();
     ids.uom = uom.uom_id;
 
@@ -725,6 +734,7 @@ describe('자재 출고요청 조회 3건 + 발행 (e2e)', () => {
       `DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.item WHERE item_code LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.production_line WHERE line_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,

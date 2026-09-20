@@ -90,6 +90,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     componentItemA: 0n,
     componentItemB: 0n,
     overflowPlan: 0n,
+    /** 배포 전 필수 — W/O 공장과 같은 공장의 라인(omf-all-around#36). */
+    productionLine: 0n,
+    /** 배포가 막아야 할 어긋난 라인 — 다른 공장 소속이다. */
+    otherPlantLine: 0n,
   };
 
   beforeAll(async () => {
@@ -629,7 +633,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     const base = '/api/production/work-orders';
     let seq = 0;
 
-    /** 배포 대상 W/O — 상태·기본 위치를 픽스처로 못박는다(발행 경로는 ④가 이미 본다). */
+    /** 배포 대상 W/O — 상태·기본 위치·라인을 픽스처로 못박는다(발행 경로는 ④가 이미 본다). */
     async function planned(data: Record<string, unknown> = {}): Promise<number> {
       const row = await prisma.work_order.create({
         data: {
@@ -640,6 +644,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           order_qty: 100,
           uom_id: ids.uom,
           status_code: 'PLANNED',
+          production_line_id: ids.productionLine,
           default_wip_location_id: ids.location,
           default_fg_location_id: ids.fgLocation,
           default_scrap_location_id: ids.scrapLocation,
@@ -703,16 +708,47 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(held).toBe(0);
     });
 
-    it('배포 — 생산 라인이 없어도 계획으로 공장이 풀린다', async () => {
-      const workOrderId = await planned({ production_line_id: null });
+    it('배포 — 라인이 있으면 공장은 여전히 계획 한 축으로 풀린다', async () => {
+      const workOrderId = await planned();
 
       await call(workOrderId, 100).expect(200);
 
-      // R-7 — 공장은 계획의 생산오더 공장 한 축으로만 푼다.
+      // R-7 — 공장은 계획의 생산오더 공장 한 축으로만 푼다(라인은 배포 «전제»일 뿐이다).
       const lots = await slots(workOrderId);
       expect(lots).toHaveLength(1);
       expect(lots[0].plant_id).toBe(ids.plant);
       expect((await requests(workOrderId))[0].destination_location_id).toBe(ids.location);
+    });
+
+    /**
+     * omf-all-around#36 — 라인 없는 W/O 는 배포·출고까지 되고 현장 단말에서만 전부 막혔다.
+     * 단말 권한 검사가 «라인의 공장»으로 판정하기 때문이다. 배포에서 먼저 막는다.
+     */
+    it('배포 — 생산라인이 비어 있으면 400 REQUIRED 이며 슬롯·요청을 만들지 않는다', async () => {
+      const workOrderId = await planned({ production_line_id: null });
+
+      const response = await call(workOrderId, 100).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field: 'productionLineId', code: 'REQUIRED' }),
+      ]);
+      expect(await slots(workOrderId)).toEqual([]);
+      expect(await requests(workOrderId)).toEqual([]);
+      expect((await prisma.work_order.findUniqueOrThrow({
+        where: { work_order_id: BigInt(workOrderId) },
+      })).status_code).toBe('PLANNED');
+    });
+
+    it('배포 — 다른 공장 라인이면 400 INVALID 다(배포돼도 단말이 거부할 짝이다)', async () => {
+      const workOrderId = await planned({ production_line_id: ids.otherPlantLine });
+
+      const response = await call(workOrderId, 100).expect(400);
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ field: 'productionLineId', code: 'INVALID' }),
+      ]);
+      expect(await slots(workOrderId)).toEqual([]);
+      expect((await prisma.work_order.findUniqueOrThrow({
+        where: { work_order_id: BigInt(workOrderId) },
+      })).status_code).toBe('PLANNED');
     });
 
     it('배포 — 기본 위치 세 곳이 빠지면 필드별 400이며 슬롯·요청을 만들지 않는다', async () => {
@@ -842,6 +878,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           order_qty: 100,
           uom_id: ids.uom,
           status_code: 'PLANNED',
+          // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+          production_line_id: ids.productionLine,
           default_wip_location_id: ids.location,
           default_fg_location_id: ids.fgLocation,
           default_scrap_location_id: ids.scrapLocation,
@@ -934,6 +972,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           defaultWipLocationId: Number(ids.location),
           defaultFgLocationId: Number(ids.fgLocation),
           defaultScrapLocationId: Number(ids.scrapLocation),
+          // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+          productionLineId: Number(ids.productionLine),
         })
         .expect(200);
       expect(configured.body).toMatchObject({
@@ -1246,6 +1286,29 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       },
     });
     ids.plant = plant.plant_id;
+    // omf-all-around#36 — 배포는 라인을 요구한다. 같은 공장 라인 하나와 어긋난 라인 하나.
+    ids.productionLine = (
+      await prisma.production_line.create({
+        data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '작업지시검사라인' },
+      })
+    ).production_line_id;
+    const otherPlant = await prisma.plant.create({
+      data: {
+        legal_entity_id: entity.legal_entity_id,
+        plant_code: `${PREFIX}-P2`,
+        plant_name: '작업지시검사딴공장',
+        timezone_code: 'Asia/Ho_Chi_Minh',
+      },
+    });
+    ids.otherPlantLine = (
+      await prisma.production_line.create({
+        data: {
+          plant_id: otherPlant.plant_id,
+          line_code: `${PREFIX}-LN2`,
+          line_name: '작업지시검사딴라인',
+        },
+      })
+    ).production_line_id;
     const uom = await prisma.uom.findFirstOrThrow();
     ids.uom = uom.uom_id;
 
@@ -1642,6 +1705,8 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
+    // W/O·설비가 라인을 FK 로 잡는다 — 둘을 비운 뒤에 지운다.
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });

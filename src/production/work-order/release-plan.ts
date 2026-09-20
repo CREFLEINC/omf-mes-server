@@ -18,6 +18,10 @@ const RELEASE_SELECT = {
   default_fg_location_id: true,
   default_scrap_location_id: true,
   responsible_worker_id: true,
+  // 배포 자체는 라인을 안 쓴다 — 현장 단말의 권한 검사가 «라인의 공장»으로 판정하므로
+  // 라인이 비었거나 다른 공장이면 배포 뒤 전부 거부된다(omf-all-around#36). 여기서 막는다.
+  production_line_id: true,
+  production_line: { select: { plant_id: true } },
   routing_operation: { select: { standard_cycle_time_sec: true, standard_yield_rate: true } },
   production_plan: {
     select: {
@@ -76,8 +80,9 @@ export async function releasePlan(
   const locationErrors = missingLocations
     .filter(([, value]) => value === null)
     .map(([name]) => field(name, ERROR_CODE.REQUIRED, '배포 전에 기본 위치를 지정해야 합니다.'));
-  if (locationErrors.length > 0) {
-    throw new ContractException(HttpStatus.BAD_REQUEST, locationErrors);
+  const preconditionErrors = [...locationErrors, ...lineErrors(row, plan)];
+  if (preconditionErrors.length > 0) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, preconditionErrors);
   }
 
   // 채번보다 «앞»이다 — `lotSize ≤ 0` 이면 여기서 400 이 나고 번호를 안 뽑는다.
@@ -100,6 +105,30 @@ export async function releasePlan(
             businessDate,
           ),
   };
+}
+
+/**
+ * 배포 전 생산라인 검사(omf-all-around#36 · 사용자 2026-09-19). 배포·출고는 계획의 공장
+ * 한 축으로 돌지만(R-7) 단말 권한 검사는 `work_order.production_line.plant_id` 로 판정한다.
+ * 두 길이 갈리면 관리웹에서는 배포·출고까지 되고 현장 단말에서만 전부 막힌다 — 배포에서 막는다.
+ * ⛔ 단말 권한 검사 쪽 기준은 바꾸지 않는다.
+ */
+function lineErrors(row: ReleaseRow, plan: NonNullable<ReleaseRow['production_plan']>) {
+  if (row.production_line_id === null || row.production_line === null) {
+    return [
+      field('productionLineId', ERROR_CODE.REQUIRED, '배포 전에 생산라인을 지정해야 합니다.'),
+    ];
+  }
+  if (row.production_line.plant_id !== plan.production_order.plant_id) {
+    return [
+      field(
+        'productionLineId',
+        ERROR_CODE.INVALID,
+        '생산라인의 공장이 작업지시 공장과 다릅니다.',
+      ),
+    ];
+  }
+  return [];
 }
 
 /**
