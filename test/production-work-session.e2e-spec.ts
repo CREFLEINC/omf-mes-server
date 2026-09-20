@@ -267,6 +267,8 @@ describe('작업 세션 조회 4건 (e2e)', () => {
           defaultWipLocationId: Number(ids.wipLocation),
           defaultFgLocationId: Number(ids.fgLocation),
           defaultScrapLocationId: Number(ids.scrapLocation),
+          // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+          productionLineId: Number(ids.productionLine),
         })
         .expect(200);
       expect(configured.body).toMatchObject({
@@ -805,6 +807,12 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '작업세션검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    // omf-all-around#36 — 배포는 같은 공장의 생산라인을 요구한다.
+    ids.productionLine = (
+      await prisma.production_line.create({
+        data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '작업세션검사라인' },
+      })
+    ).production_line_id;
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,
@@ -1036,6 +1044,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });

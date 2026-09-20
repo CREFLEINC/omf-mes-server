@@ -28,6 +28,8 @@ function stub(options: {
   fgDestination?: bigint | null;
   scrapDestination?: bigint | null;
   components?: Row[];
+  /** 배포 전제 — 라인의 공장(omf-all-around#36). `null` 이면 라인이 없는 W/O 다. */
+  linePlant?: bigint | null;
 }) {
   /** 부른 순서 — 채번이 트랜잭션 «밖»인지 이 배열이 가른다. */
   const calls: string[] = [];
@@ -46,6 +48,9 @@ function stub(options: {
     default_wip_location_id: options.destination === undefined ? 77n : options.destination,
     default_fg_location_id: options.fgDestination === undefined ? 78n : options.fgDestination,
     default_scrap_location_id: options.scrapDestination === undefined ? 79n : options.scrapDestination,
+    // 배포 전제 — 기본은 계획 공장(5n)과 같은 라인이다(omf-all-around#36).
+    production_line_id: options.linePlant === null ? null : 33n,
+    production_line: options.linePlant === null ? null : { plant_id: options.linePlant ?? 5n },
     routing_operation: { standard_cycle_time_sec: null, standard_yield_rate: null },
     production_plan: {
       bom_id: BOM,
@@ -213,6 +218,49 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.lots).toEqual([]);
     expect(harness.requests).toEqual([]);
     expect(harness.componentWheres).toEqual([]);
+    expect(harness.calls).toEqual([]);
+  });
+
+  /**
+   * omf-all-around#36 — 단말 권한 검사는 «라인의 공장»으로 판정한다. 라인이 없거나 다른
+   * 공장이면 배포는 되는데 현장 단말에서 전부 막힌다. 배포에서 먼저 가른다.
+   */
+  it('배포 — 생산라인이 비면 `productionLineId` REQUIRED 400 이고 아무 결과도 쓰지 않는다', async () => {
+    const harness = stub({ linePlant: null, components: [component(1n, 2)] });
+
+    let caught: unknown;
+    try {
+      await release(harness);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ContractException);
+    expect((caught as ContractException).errors).toEqual([
+      expect.objectContaining({ field: 'productionLineId', code: 'REQUIRED' }),
+    ]);
+    expect(harness.updated).toEqual([]);
+    expect(harness.lots).toEqual([]);
+    expect(harness.requests).toEqual([]);
+    expect(harness.calls).toEqual([]);
+  });
+
+  it('배포 — 라인이 다른 공장 것이면 `productionLineId` INVALID 400 이다', async () => {
+    const harness = stub({ linePlant: 6n, components: [component(1n, 2)] });
+
+    let caught: unknown;
+    try {
+      await release(harness);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ContractException);
+    expect((caught as ContractException).errors).toEqual([
+      expect.objectContaining({ field: 'productionLineId', code: 'INVALID' }),
+    ]);
+    expect(harness.updated).toEqual([]);
+    expect(harness.lots).toEqual([]);
     expect(harness.calls).toEqual([]);
   });
 

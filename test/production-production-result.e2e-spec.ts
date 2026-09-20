@@ -99,7 +99,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   let approverCookie: string[];
   let approverUserId: bigint;
   let correctRouteId: bigint;
-  const ids = { plant: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n, productionPlan: 0n, routingOperation: 0n, wipLocation: 0n, fgLocation: 0n, scrapLocation: 0n };
+  const ids = { plant: 0n, productionLine: 0n, uom: 0n, item: 0n, worker: 0n, shift: 0n, productionPlan: 0n, routingOperation: 0n, wipLocation: 0n, fgLocation: 0n, scrapLocation: 0n };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -740,6 +740,8 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
           defaultWipLocationId: Number(ids.wipLocation),
           defaultFgLocationId: Number(ids.fgLocation),
           defaultScrapLocationId: Number(ids.scrapLocation),
+          // 배포 전제 — 라인이 비면 `:release` 가 400 이다(omf-all-around#36).
+          productionLineId: Number(ids.productionLine),
         })
         .expect(200);
       expect(configured.body).toMatchObject({
@@ -986,6 +988,12 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       },
     });
     ids.plant = plant.plant_id;
+    // omf-all-around#36 — 배포는 같은 공장의 생산라인을 요구한다.
+    ids.productionLine = (
+      await prisma.production_line.create({
+        data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '생산실적검사라인' },
+      })
+    ).production_line_id;
     const warehouse = await prisma.warehouse.create({
       data: {
         plant_id: plant.plant_id,
@@ -1381,6 +1389,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
