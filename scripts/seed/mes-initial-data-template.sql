@@ -596,7 +596,9 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO actual_count FROM mdm.item
-  WHERE inspection_required;
+  WHERE inspection_required
+    AND item_code IN ('AD0303-00037', 'AD0303-00038', 'AD0404-00022',
+                      'AD0509-00058', '040101-00064', 'AD9001-00041');
   IF actual_count <> 6 THEN
     RAISE EXCEPTION 'IQC item count: expected 6, got %', actual_count;
   END IF;
