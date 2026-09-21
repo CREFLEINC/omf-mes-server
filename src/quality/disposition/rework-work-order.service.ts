@@ -78,8 +78,8 @@ export class ReworkWorkOrderService {
   /**
    * 201 + ETag(부적합의 **새** `version_no`) — 판정 저장과 같은 토큰이다.
    *
-   * 갈래 순서: 존재(404) → 재작업 판정 없음(409 `INVALID_STATE`) → 잔량 초과(409
-   * `DISPOSITION_QTY_EXCEEDED`) → 공정 없음(400) → 판 번호(409 `VERSION_CONFLICT`).
+   * 갈래 순서: 존재(404) → 재작업 판정 없음(409 `INVALID_STATE`) → 단위 다름(400) → 잔량
+   * 초과(409 `DISPOSITION_QTY_EXCEEDED`) → 공정 없음(400) → 판 번호(409 `VERSION_CONFLICT`).
    *
    * ⛔ **채번은 트랜잭션 «밖»이다** — 안에서 부르면 한 요청이 커넥션을 둘 쥔다(저장소 관례).
    *    실패하면 번호가 결번으로 남지만 계약이 번호의 연속을 요구하지 않는다.
@@ -100,6 +100,18 @@ export class ReworkWorkOrderService {
       /* ⛔ 재작업 판정이 없으면 발행할 근거가 없다 — 폐기·정상 판정만 있는 부적합이다. */
       if (scope.decidedQty.lessThanOrEqualTo(0)) {
         throw new ConflictException('user', '재작업으로 판정된 수량이 없습니다.', { code: INVALID_STATE });
+      }
+
+      /*
+       * ⛔ **단위를 바꿔 받지 않는다.** 상한(판정 합 − 발행 합)은 «부적합의 단위» 기준인데 본문이
+       *    다른 단위를 실으면 환산 없이 그 수만 비교해 「60 EA 판정」에 「40 BOX 재작업」이 선다.
+       *    판정 저장이 같은 자리를 같은 규칙으로 막는다(`disposition-write.service.ts` ⓐ).
+       *    계약이 칸을 남겨 둔 것은 «명시해도 된다»는 뜻이지 바꿔도 된다는 뜻이 아니다.
+       */
+      if (body.uomId !== undefined && BigInt(body.uomId) !== scope.uomId) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          field('uomId', ERROR_CODE.INVALID, '부적합의 단위와 같아야 합니다.'),
+        ]);
       }
 
       const orderQty = new Prisma.Decimal(body.orderQty);
@@ -145,7 +157,8 @@ export class ReworkWorkOrderService {
           routing_operation_id: BigInt(body.routingOperationId),
           item_id: scope.itemId,
           order_qty: orderQty,
-          uom_id: body.uomId === undefined ? scope.uomId : BigInt(body.uomId),
+          /* 부적합의 단위로 고정된다 — 본문이 다른 값을 실으면 위에서 이미 400 이다. */
+          uom_id: scope.uomId,
           work_order_type_code: REWORK,
           status_code: WORK_ORDER_INITIAL_STATUS,
           /* ⭐ 이 셋이 P-04-03 이 대상을 찾는 축이다 — 비우면 화면이 원천 수량과 대조하지 못한다. */

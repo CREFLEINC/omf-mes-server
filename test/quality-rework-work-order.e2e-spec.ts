@@ -357,6 +357,13 @@ describe('재작업 W/O 발행 (e2e)', () => {
   /** FK 역순으로 지운다. `beforeAll`·`afterAll` 둘 다 부른다(자가 치유). */
   async function cleanup(): Promise<void> {
     const byItem = { item: { item_code: { startsWith: `${PREFIX}-IT` } } };
+    /*
+     * ⛔ **부적합과 W/O 는 서로를 가리킨다** — `nonconformance.work_order_id` → `work_order` 와
+     *    `work_order.rework_source_nonconformance_id` → `nonconformance` 가 함께 있어 어느 쪽을
+     *    먼저 지워도 FK 에 막힌다. 고리를 먼저 끊고(W/O 축을 null 로) 지운다. 끊지 않으면
+     *    `afterAll` 이 죽어 잔재가 남고, 다음 실행의 `beforeAll` 까지 계속 빨개진다.
+     */
+    await prisma.nonconformance.updateMany({ where: byItem, data: { work_order_id: null } });
     /* 발행된 재작업 W/O 와 원천 W/O 를 함께 — 품목으로 건다(발행분은 번호를 채번이 짓는다). */
     await prisma.work_order.deleteMany({ where: { item: { item_code: { startsWith: `${PREFIX}-IT` } } } });
     await prisma.disposition_decision.deleteMany({ where: { nonconformance: byItem } });

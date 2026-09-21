@@ -134,7 +134,9 @@ describe('재작업 W/O 발행 (omf-all-around#47)', () => {
   it('판정 잔량을 넘으면 409 로 막고 아무것도 만들지 않는다', async () => {
     const harness = stub({ decided: [60], issued: 50 });
 
-    await expect(issue(harness, 20)).rejects.toMatchObject({ response: expect.anything() });
+    await expect(issue(harness, 20)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'DISPOSITION_QTY_EXCEEDED' }),
+    });
     expect(harness.created).toEqual([]);
   });
 
@@ -150,7 +152,13 @@ describe('재작업 W/O 발행 (omf-all-around#47)', () => {
   it('재작업 판정이 없으면 409 다', async () => {
     const harness = stub({ decided: [] });
 
-    await expect(issue(harness)).rejects.toMatchObject({ response: expect.anything() });
+    /*
+     * ⛔ `code` 까지 본다 — 판정이 없으면 잔량도 0 이라 **뒤의 잔량 갈래가 대신 던진다.** 그냥
+     *    「거절됐다」만 보면 이 갈래를 통째로 지워도 초록이다(리뷰 2026-09-21 실측).
+     */
+    await expect(issue(harness)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'INVALID_STATE' }),
+    });
     expect(harness.created).toEqual([]);
   });
 
@@ -173,6 +181,34 @@ describe('재작업 W/O 발행 (omf-all-around#47)', () => {
   it('부적합 판 번호가 다르면 409 다', async () => {
     const harness = stub({ updatedCount: 0 });
 
-    await expect(issue(harness)).rejects.toMatchObject({ response: expect.anything() });
+    await expect(issue(harness)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'VERSION_CONFLICT' }),
+    });
+  });
+
+  /*
+   * ⛔ 상한은 «부적합의 단위» 기준이다 — 다른 단위를 실어 보내면 환산 없이 수만 비교해
+   *    「60 EA 판정」에 「40 BOX 재작업」이 선다. 판정 저장과 같은 규칙으로 막는다.
+   */
+  it('부적합과 다른 단위로는 발행하지 못한다', async () => {
+    const harness = stub({ decided: [60] });
+
+    await expect(
+      harness.service.issue(NONCONFORMANCE, 3, { routingOperationId: ROUTING_OPERATION, orderQty: 40, uomId: 999 }, 7),
+    ).rejects.toBeInstanceOf(ContractException);
+    expect(harness.created).toEqual([]);
+  });
+
+  it('같은 단위를 명시하는 것은 통한다', async () => {
+    const harness = stub({ decided: [60] });
+
+    const result = await harness.service.issue(
+      NONCONFORMANCE,
+      3,
+      { routingOperationId: ROUTING_OPERATION, orderQty: 40, uomId: 22 },
+      7,
+    );
+
+    expect(result.view.uomId).toBe(22);
   });
 });
