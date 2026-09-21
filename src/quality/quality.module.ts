@@ -16,6 +16,7 @@ import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
 import { DispositionController } from './disposition/disposition.controller';
 import { DispositionWriteService } from './disposition/disposition-write.service';
+import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
@@ -96,6 +97,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     NonconformanceQueryService,
     NonconformanceWriteService,
     DispositionWriteService,
+    ReworkWorkOrderService,
   ],
 })
 export class QualityModule {}

@@ -2,6 +2,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionController } from './disposition.controller';
 import { DispositionWriteService } from './disposition-write.service';
+import { ReworkWorkOrderService } from './rework-work-order.service';
 import { DispositionDecisionRow } from './disposition-view';
 
 /**
@@ -38,6 +39,7 @@ function controllerWith(rows: DispositionDecisionRow[], total: number): Disposit
   return new DispositionController(
     { $queryRawUnsafe: queryRawUnsafe } as unknown as PrismaService,
     {} as unknown as DispositionWriteService,
+    {} as unknown as ReworkWorkOrderService,
     {} as unknown as IdempotencyService,
   );
 }
