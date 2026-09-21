@@ -178,7 +178,6 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
         {
           inspection_plan_version_id: 501n,
           sampling_method_code: 'FULL_INSPECTION',
-          sampling_qty: null,
           sampling_ratio: null,
           inspection_plan: { process_id: 66n, routing_id: null },
         },
@@ -234,8 +233,8 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
         {
           inspection_plan_version_id: 502n,
           sampling_method_code: 'SAMPLE_BY_UNIT',
-          sampling_qty: null,
-          sampling_ratio: new Prisma.Decimal(0.035),
+          /* ⚠ **백분율**이다 — 3.5 는 3.5% 다(계약·마이그 20260903800000). */
+          sampling_ratio: new Prisma.Decimal(3.5),
           inspection_plan: { process_id: 66n, routing_id: null },
         },
       ],
@@ -243,8 +242,58 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
 
     await release(harness);
 
-    /* 100 × 0.035 = 3.5 → 4. 밑돌지 않게 올린다. */
+    /* 100 의 3.5% = 3.5 → 4. 밑돌지 않게 올린다. */
     expect(String(harness.inspectionRequests[0].target_qty)).toBe('4');
+  });
+
+  /*
+   * ⛔⛔ **비율은 백분율이다**(마이그 `20260903800000` · 계약 「샘플 비율(%)」 · 확정 2026-07-15).
+   *    분수로 읽으면 검사 강도가 **백 배** 갈린다 — 10(%)을 비율로 읽으면 지시수량의 열 배가
+   *    검사 대상이 되고, 발행된 의뢰를 지울 경로는 계약에 없다. 앞 판이 이 자리를 틀렸고
+   *    「올림」만 재던 시험은 그것을 통과시켰다(리뷰 지적 2026-09-21).
+   */
+  it('PQC — 샘플 비율은 백분율이다 — 10 은 10% 이지 열 배가 아니다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 503n,
+          sampling_method_code: 'SAMPLE_BY_UNIT',
+          sampling_ratio: new Prisma.Decimal(10),
+          inspection_plan: { process_id: 66n, routing_id: null },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    /* 지시 100 의 10% = 10. 분수로 읽으면 1000 이 된다. */
+    expect(String(harness.inspectionRequests[0].target_qty)).toBe('10');
+  });
+
+  /* 라우팅만 지정한 기준도 「좁은 쪽」이다 — 품목 전체 기준과 함께 서면 이쪽이 이긴다. */
+  it('PQC — 라우팅 지정 기준이 품목 전체 기준을 이긴다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 601n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: null, routing_id: null },
+        },
+        {
+          inspection_plan_version_id: 602n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: null, routing_id: 77n },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: 602n });
   });
 
   /* ⛔ 같은 W/O 에 살아 있는 의뢰가 있으면 또 만들지 않는다 — 물리 유니크가 없는 자리다. */

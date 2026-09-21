@@ -28,7 +28,7 @@ import type { Tx } from '../../core/lot';
 interface PqcPlanVersion {
   inspectionPlanVersionId: bigint;
   samplingMethodCode: string;
-  samplingQty: Prisma.Decimal | null;
+  /** **백분율**이다(0 초과 100 이하) — 비율이 아니다. */
   samplingRatio: Prisma.Decimal | null;
 }
 
@@ -72,14 +72,17 @@ async function resolvePqcPlanVersion(
     select: {
       inspection_plan_version_id: true,
       sampling_method_code: true,
-      sampling_qty: true,
       sampling_ratio: true,
       inspection_plan: { select: { process_id: true, routing_id: true } },
     },
   });
   if (versions.length === 0) return null;
 
-  const scoped = versions.filter((version) => version.inspection_plan.process_id !== null);
+  /* 공정·라우팅을 지정한 기준이 품목 전체 기준을 이긴다 — 둘 다 「이 공정의 답」을 적은 것이다. */
+  const scoped = versions.filter(
+    (version) =>
+      version.inspection_plan.process_id !== null || version.inspection_plan.routing_id !== null,
+  );
   const candidates = scoped.length > 0 ? scoped : versions;
   /* 좁힌 뒤에도 둘 이상이면 고르지 않는다 — 임의로 고르면 어느 기준으로 검사했는지가 기록에서 사라진다. */
   if (candidates.length !== 1) return null;
@@ -88,24 +91,28 @@ async function resolvePqcPlanVersion(
   return {
     inspectionPlanVersionId: only.inspection_plan_version_id,
     samplingMethodCode: only.sampling_method_code,
-    samplingQty: only.sampling_qty,
     samplingRatio: only.sampling_ratio,
   };
 }
 
 /**
- * 검사 수량 — 전수면 지시수량, 샘플이면 **수량 지정이 비율보다 앞선다**(지정한 수가 곧 답이다).
- * 둘 다 비면 전수로 본다 — 샘플이라면서 몇 개인지 말하지 않은 기준은 줄일 근거가 없다.
+ * 검사 수량 — 전수면 지시수량, 샘플이면 **비율(%)로 줄인 수**다.
  *
- * ⚠ 올림한다. 비율이 0.1 이고 지시가 11 이면 1.1 개인데, 검사는 개수라 2 개가 아니라 «2» 로
- *   올려야 기준을 밑돌지 않는다.
+ * ⛔ **`sampling_ratio` 는 비율(0~1)이 아니라 백분율(0 초과 100 이하)이다**(마이그
+ *    `20260903800000_inspection_sampling_ratio_percent` · 계약 「샘플 비율(%)」 · 확정 2026-07-15).
+ *    같은 숫자가 두 뜻을 갖는 자리라 조용히 틀린다 — 10 을 비율로 읽으면 지시수량의 **열 배**가
+ *    검사 대상이 되고, 발행된 의뢰를 지울 경로는 계약에 없다.
+ *
+ * ⚠ 올림한다. 3.5% 로 지시가 100 이면 3.5 인데, 검사는 개수라 4 로 올려야 기준을 밑돌지 않는다.
+ *
+ * ⛔ **`sampling_qty` 는 보지 않는다.** 계약에 그 칸이 없고(「수량은 파생값이라 두지 않는다」 A-8)
+ *    쓰기 경로도 없어 언제나 비어 있다 — 안 타는 분기를 규칙처럼 두면 다음 사람이 그것을 정본으로 읽는다.
  */
 function inspectionQty(orderQty: Prisma.Decimal, version: PqcPlanVersion | null): Prisma.Decimal {
   if (version === null || version.samplingMethodCode === FULL_INSPECTION) return orderQty;
-  if (version.samplingQty !== null) return version.samplingQty;
   if (version.samplingRatio === null) return orderQty;
 
-  const sampled = orderQty.mul(version.samplingRatio).ceil();
+  const sampled = orderQty.mul(version.samplingRatio).div(100).ceil();
   /* 비율이 아무리 작아도 한 개는 검사한다 — 0 건짜리 의뢰는 열 수 없다. */
   return sampled.lessThan(1) ? new Prisma.Decimal(1) : sampled;
 }

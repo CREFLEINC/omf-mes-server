@@ -1072,10 +1072,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           plan_version: 1,
           effective_from: new Date('2026-01-01T00:00:00.000Z'),
           status_code: 'CONFIRMED',
-          /* 샘플 10% — 검사 수량이 지시수량과 «다르게» 서는지 본다. */
           inspection_frequency_code: 'EVERY_LOT',
           sampling_method_code: 'SAMPLE_BY_UNIT',
-          sampling_ratio: 0.1,
+          /* 샘플 10% — **백분율**이다(계약 「샘플 비율(%)」 · 마이그 20260903800000). */
+          sampling_ratio: 10,
         },
       });
 
@@ -1097,7 +1097,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
           production_result_id: null,
           status_code: 'REQUESTED',
         });
-        /* 90 × 0.1 = 9. */
+        /* 90 의 10% = 9. */
         expect(Number(requests[0].target_qty)).toBe(9);
 
         /* 화면이 그 의뢰를 목록에서 찾을 수 있어야 한다 — P-02-13 이 여는 길이다. */
