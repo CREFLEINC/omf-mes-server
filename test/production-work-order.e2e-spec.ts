@@ -1010,6 +1010,123 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       expect(await prisma.material_issue_request.count({ where: { work_order_id: BigInt(workOrderId) } })).toBe(1);
     });
 
+    /** 발행 → 기본 위치·라인 지정 → 배포까지. PQC 시험이 쓰는 최소 경로다. */
+    async function releaseWorkOrder(orderQty: number): Promise<number> {
+      const created = await request(app.getHttpServer())
+        .post(base)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          productionPlanId: Number(ids.productionPlan),
+          routingOperationId: Number(ids.routingOperation),
+          itemId: Number(ids.item),
+          orderQty,
+          uomId: Number(ids.uom),
+        })
+        .expect(201);
+      const workOrderId: number = created.body.workOrderId;
+      const configured = await request(app.getHttpServer())
+        .put(`${base}/${workOrderId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', created.headers.etag)
+        .send({
+          defaultWipLocationId: Number(ids.location),
+          defaultFgLocationId: Number(ids.fgLocation),
+          defaultScrapLocationId: Number(ids.scrapLocation),
+          productionLineId: Number(ids.productionLine),
+        })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`${base}/${workOrderId}:release`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', String(configured.body.versionNo))
+        .send({ lotSize: 30 })
+        .expect(200);
+      return workOrderId;
+    }
+
+    /*
+     * ⭐ **PQC 검사 의뢰는 배포가 만든다**(omf-all-around#46 · 설계 REQ-OA-0003 opt-in).
+     *    그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13(POP 제품 검사)이 열릴 대상이
+     *    0건이었다 — 이 시험이 그 공백을 막는다.
+     */
+    it('PQC — 검사 공정을 배포하면 작업지시 대상 의뢰가 선다', async () => {
+      await prisma.routing_operation.update({
+        where: { routing_operation_id: ids.routingOperation },
+        data: { inspection_managed: true },
+      });
+      const plan = await prisma.inspection_plan.create({
+        data: {
+          inspection_plan_code: `${PREFIX}-PQC`,
+          inspection_plan_name: 'PQC 공정검사',
+          inspection_type_code: 'PQC',
+          item_id: ids.item,
+          process_id: ids.process,
+        },
+      });
+      const planVersion = await prisma.inspection_plan_version.create({
+        data: {
+          inspection_plan_id: plan.inspection_plan_id,
+          plan_version: 1,
+          effective_from: new Date('2026-01-01T00:00:00.000Z'),
+          status_code: 'CONFIRMED',
+          /* 샘플 10% — 검사 수량이 지시수량과 «다르게» 서는지 본다. */
+          inspection_frequency_code: 'EVERY_LOT',
+          sampling_method_code: 'SAMPLE_BY_UNIT',
+          sampling_ratio: 0.1,
+        },
+      });
+
+      try {
+        const workOrderId = await releaseWorkOrder(90);
+
+        const requests = await prisma.inspection_request.findMany({
+          where: { work_order_id: BigInt(workOrderId) },
+        });
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({
+          inspection_type_code: 'PQC',
+          target_type_code: 'WORK_ORDER',
+          target_id: BigInt(workOrderId),
+          inspection_plan_version_id: planVersion.inspection_plan_version_id,
+          item_id: ids.item,
+          /* 공정검사는 실적 «전»이라 LOT·실적이 아직 없다(계약). */
+          lot_id: null,
+          production_result_id: null,
+          status_code: 'REQUESTED',
+        });
+        /* 90 × 0.1 = 9. */
+        expect(Number(requests[0].target_qty)).toBe(9);
+
+        /* 화면이 그 의뢰를 목록에서 찾을 수 있어야 한다 — P-02-13 이 여는 길이다. */
+        const listed = await request(app.getHttpServer())
+          .get(`/api/quality/inspection-requests?inspectionTypeCode=PQC&workOrderId=${workOrderId}`)
+          .set('Cookie', cookie)
+          .expect(200);
+        expect(listed.body.items).toHaveLength(1);
+        expect(listed.body.items[0]).toMatchObject({
+          inspectionTypeCode: 'PQC',
+          targetTypeCode: 'WORK_ORDER',
+          workOrderId,
+          statusCode: 'REQUESTED',
+        });
+      } finally {
+        await prisma.routing_operation.update({
+          where: { routing_operation_id: ids.routingOperation },
+          data: { inspection_managed: false },
+        });
+      }
+    });
+
+    /* ⛔ 검사 공정이 아니면 의뢰를 만들지 않는다 — 전 공정에 붙으면 현장이 검사에 파묻힌다. */
+    it('PQC — 검사 공정이 아니면 의뢰가 서지 않는다', async () => {
+      const workOrderId = await releaseWorkOrder(60);
+
+      expect(await prisma.inspection_request.count({ where: { work_order_id: BigInt(workOrderId) } })).toBe(0);
+    });
+
     it('마감 — 열린 세션이 있으면 409 `OPEN_SESSION_EXISTS` 다', async () => {
       const workOrderId = await closable(100, 100);
       await prisma.work_session.create({
@@ -1697,6 +1814,12 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     await prisma.material_issue_request.deleteMany({ where: { work_order: orderScope } });
     await prisma.lot_lifecycle_history.deleteMany({ where: { lot: plantScope } });
     await prisma.lot.deleteMany({ where: plantScope });
+    // PQC 의뢰는 W/O 를 FK 로 건다 — W/O 를 지우기 전에 먼저 비운다(omf-all-around#46).
+    await prisma.inspection_request.deleteMany({ where: { work_order: orderScope } });
+    await prisma.inspection_plan_version.deleteMany({
+      where: { inspection_plan: { item: { item_code: { startsWith: PREFIX } } } },
+    });
+    await prisma.inspection_plan.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.work_order_resource_assignment.deleteMany({ where: { work_order: orderScope } });
     await prisma.work_session.deleteMany({ where: { work_order: orderScope } });
     // FK 가 `work_order` 를 막는다 — 지우기 전에 의존 표를 먼저 비운다.
