@@ -30,6 +30,12 @@ function stub(options: {
   components?: Row[];
   /** 배포 전제 — 라인의 공장(omf-all-around#36). `null` 이면 라인이 없는 W/O 다. */
   linePlant?: bigint | null;
+  /** 라우팅이 「검사 공정」이라 적었는가 — PQC 의뢰의 opt-in 축(omf-all-around#46). */
+  inspectionManaged?: boolean;
+  /** 이 공정에 유효한 PQC 기준 버전들. 비면 기준 없이 의뢰만 선다. */
+  pqcVersions?: Row[];
+  /** 이미 살아 있는 PQC 의뢰가 있는가 — 있으면 또 만들지 않는다. */
+  pqcExists?: boolean;
 }) {
   /** 부른 순서 — 채번이 트랜잭션 «밖»인지 이 배열이 가른다. */
   const calls: string[] = [];
@@ -38,6 +44,7 @@ function stub(options: {
   const requests: Row[] = [];
   const lines: Row[] = [];
   const componentWheres: Row[] = [];
+  const inspectionRequests: Row[] = [];
 
   const row = {
     order_qty: new Prisma.Decimal(100),
@@ -51,7 +58,13 @@ function stub(options: {
     // 배포 전제 — 기본은 계획 공장(5n)과 같은 라인이다(omf-all-around#36).
     production_line_id: options.linePlant === null ? null : 33n,
     production_line: options.linePlant === null ? null : { plant_id: options.linePlant ?? 5n },
-    routing_operation: { standard_cycle_time_sec: null, standard_yield_rate: null },
+    routing_operation: {
+      standard_cycle_time_sec: null,
+      standard_yield_rate: null,
+      inspection_managed: options.inspectionManaged ?? false,
+      process_id: 66n,
+      routing_id: 77n,
+    },
     production_plan: {
       bom_id: BOM,
       bom: { bom_version: 2, base_qty: new Prisma.Decimal(1) },
@@ -74,6 +87,14 @@ function stub(options: {
         return Promise.resolve({ lot_id: BigInt(lots.length) });
       },
       findMany: () => Promise.resolve([]),
+    },
+    inspection_request: {
+      findFirst: () =>
+        Promise.resolve(options.pqcExists === true ? { inspection_request_id: 1n } : null),
+      create: ({ data }: { data: Row }) => {
+        inspectionRequests.push(data);
+        return Promise.resolve({ inspection_request_id: 5n });
+      },
     },
     material_issue_request: {
       create: ({ data }: { data: Row }) => {
@@ -102,6 +123,7 @@ function stub(options: {
     // 가용 재고가 없다 — 피킹 지시는 0건이고 채번도 안 부른다(피킹 규칙은 `core/picking` spec).
     inventory_balance: { findMany: () => Promise.resolve([]) },
     item: { findMany: () => Promise.resolve([]) },
+    inspection_plan_version: { findMany: () => Promise.resolve(options.pqcVersions ?? []) },
     bom_component: {
       findMany: ({ where }: { where: Row }) => {
         componentWheres.push(where);
@@ -115,9 +137,11 @@ function stub(options: {
   } as unknown as PrismaService;
 
   const numbering = {
-    next: () => {
-      calls.push('numbering');
-      return Promise.resolve('MIR-20260906-0001');
+    next: (documentTypeCode: string) => {
+      calls.push(documentTypeCode === 'INSPECTION_REQUEST' ? 'numbering:pqc' : 'numbering');
+      return Promise.resolve(
+        documentTypeCode === 'INSPECTION_REQUEST' ? 'IRQ-20260921-0001' : 'MIR-20260906-0001',
+      );
     },
   } as unknown as NumberingService;
 
@@ -127,13 +151,160 @@ function stub(options: {
     numbering,
     new LotRegistryService(new LotHoldService()),
   );
-  return { service, calls, updated, lots, requests, lines, componentWheres };
+  return { service, calls, updated, lots, requests, lines, componentWheres, inspectionRequests };
 }
 
 const release = (harness: ReturnType<typeof stub>, lotSize = 50) =>
   harness.service.release(WORK_ORDER, 1, { lotSize }, 7);
 
 describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
+  /*
+   * ⭐ PQC 의뢰는 **라우팅이 검사 공정이라 적은 공정**에만 선다(설계 REQ-OA-0003 opt-in).
+   *    그전까지 서버에 PQC 의뢰를 만드는 코드가 없어 P-02-13 이 열릴 대상이 없었다(#46).
+   */
+  it('PQC — 검사 공정이 아니면 의뢰를 만들지 않는다', async () => {
+    const harness = stub({});
+
+    await release(harness);
+
+    expect(harness.inspectionRequests).toEqual([]);
+    expect(harness.calls).not.toContain('numbering:pqc');
+  });
+
+  it('PQC — 검사 공정이면 작업지시 대상 의뢰 한 건을 만든다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 501n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: 66n, routing_id: null },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests).toHaveLength(1);
+    expect(harness.inspectionRequests[0]).toMatchObject({
+      inspection_request_no: 'IRQ-20260921-0001',
+      inspection_type_code: 'PQC',
+      inspection_plan_version_id: 501n,
+      target_type_code: 'WORK_ORDER',
+      target_id: BigInt(WORK_ORDER),
+      work_order_id: BigInt(WORK_ORDER),
+      /* 공정검사는 실적 «전»이라 검사할 LOT 이 아직 없다(계약). */
+      lot_id: null,
+      status_code: 'REQUESTED',
+    });
+    /* 전수검사 — 지시수량 그대로. */
+    expect(String(harness.inspectionRequests[0].target_qty)).toBe('100');
+  });
+
+  /* ⛔ 채번은 트랜잭션 «밖»이다 — 안에서 부르면 한 요청이 커넥션을 둘 쥔다. */
+  it('PQC — 의뢰 번호를 트랜잭션 밖에서 뽑는다', async () => {
+    const harness = stub({ inspectionManaged: true });
+
+    await release(harness);
+
+    expect(harness.calls.indexOf('numbering:pqc')).toBeLessThan(harness.calls.indexOf('transaction'));
+  });
+
+  /*
+   * ⛔ **기준이 없다고 배포를 막지 않는다.** IQC·OQC 는 400 으로 막지만 배포는 훨씬 자주 도는
+   *    액션이라 같은 규칙이면 기준 미등록 품목의 생산이 통째로 선다. 계약도 PQC 의뢰의
+   *    기준이 비는 것을 허용한다.
+   */
+  it('PQC — 기준을 못 고르면 비운 채로 의뢰를 만든다', async () => {
+    const harness = stub({ inspectionManaged: true, pqcVersions: [] });
+
+    await release(harness);
+
+    expect(harness.updated[0]).toMatchObject({ status_code: 'RELEASED' });
+    expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: null });
+  });
+
+  /* 샘플이면 검사 수량만 줄인다 — 어느 LOT 을 검사할지는 이 자리에서 정하지 않는다(#46 후속). */
+  it('PQC — 샘플 비율이면 올림한 수량으로 선다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 502n,
+          sampling_method_code: 'SAMPLE_BY_UNIT',
+          /* ⚠ **백분율**이다 — 3.5 는 3.5% 다(계약·마이그 20260903800000). */
+          sampling_ratio: new Prisma.Decimal(3.5),
+          inspection_plan: { process_id: 66n, routing_id: null },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    /* 100 의 3.5% = 3.5 → 4. 밑돌지 않게 올린다. */
+    expect(String(harness.inspectionRequests[0].target_qty)).toBe('4');
+  });
+
+  /*
+   * ⛔⛔ **비율은 백분율이다**(마이그 `20260903800000` · 계약 「샘플 비율(%)」 · 확정 2026-07-15).
+   *    분수로 읽으면 검사 강도가 **백 배** 갈린다 — 10(%)을 비율로 읽으면 지시수량의 열 배가
+   *    검사 대상이 되고, 발행된 의뢰를 지울 경로는 계약에 없다. 앞 판이 이 자리를 틀렸고
+   *    「올림」만 재던 시험은 그것을 통과시켰다(리뷰 지적 2026-09-21).
+   */
+  it('PQC — 샘플 비율은 백분율이다 — 10 은 10% 이지 열 배가 아니다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 503n,
+          sampling_method_code: 'SAMPLE_BY_UNIT',
+          sampling_ratio: new Prisma.Decimal(10),
+          inspection_plan: { process_id: 66n, routing_id: null },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    /* 지시 100 의 10% = 10. 분수로 읽으면 1000 이 된다. */
+    expect(String(harness.inspectionRequests[0].target_qty)).toBe('10');
+  });
+
+  /* 라우팅만 지정한 기준도 「좁은 쪽」이다 — 품목 전체 기준과 함께 서면 이쪽이 이긴다. */
+  it('PQC — 라우팅 지정 기준이 품목 전체 기준을 이긴다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 601n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: null, routing_id: null },
+        },
+        {
+          inspection_plan_version_id: 602n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: null, routing_id: 77n },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: 602n });
+  });
+
+  /* ⛔ 같은 W/O 에 살아 있는 의뢰가 있으면 또 만들지 않는다 — 물리 유니크가 없는 자리다. */
+  it('PQC — 이미 살아 있는 의뢰가 있으면 만들지 않는다', async () => {
+    const harness = stub({ inspectionManaged: true, pqcExists: true });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests).toEqual([]);
+  });
+
   it('배포 — 긴급 유형이면 출고요청을 만들지 않는다', async () => {
     const harness = stub({ typeCode: 'EMERGENCY' });
 

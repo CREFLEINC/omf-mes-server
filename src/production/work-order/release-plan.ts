@@ -22,7 +22,16 @@ const RELEASE_SELECT = {
   // 라인이 비었거나 다른 공장이면 배포 뒤 전부 거부된다(omf-all-around#36). 여기서 막는다.
   production_line_id: true,
   production_line: { select: { plant_id: true } },
-  routing_operation: { select: { standard_cycle_time_sec: true, standard_yield_rate: true } },
+  routing_operation: {
+    select: {
+      standard_cycle_time_sec: true,
+      standard_yield_rate: true,
+      /* PQC 는 라우팅이 「검사 공정」이라 명시한 공정에만 붙는다(설계 REQ-OA-0003 · opt-in). */
+      inspection_managed: true,
+      process_id: true,
+      routing_id: true,
+    },
+  },
   production_plan: {
     select: {
       bom_id: true,

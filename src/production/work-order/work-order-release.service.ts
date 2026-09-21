@@ -6,6 +6,7 @@ import { NumberingService } from '../../core/numbering';
 import { PickingPlan, planPicking, writePicking } from '../../core/picking';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ISSUE_REGISTERED, MaterialIssueLine, materialRequirements } from './material-issue';
+import { PqcRequestPlan, preparePqcRequest, writePqcRequest } from './work-order-pqc-request';
 import { ReleasePlan, operationSettings, releasePlan } from './release-plan';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -48,7 +49,18 @@ export class WorkOrderReleaseService {
   ): Promise<void> {
     const plan = await releasePlan(this.prisma, this.numbering, workOrderId, body.lotSize);
     const issue = plan.issueRequestNo === null ? null : await this.issuePlan(plan, plan.issueRequestNo);
-    await this.prisma.$transaction((tx) => this.commit(tx, workOrderId, version, plan, issue, appUserId));
+    /* 검사 공정이면 PQC 의뢰도 이 배포가 만든다 — 채번·기준 조회는 트랜잭션 밖이다. */
+    const pqc = await preparePqcRequest(this.prisma, this.numbering, {
+      inspectionManaged: plan.row.routing_operation.inspection_managed,
+      itemId: plan.row.item_id,
+      processId: plan.row.routing_operation.process_id,
+      routingId: plan.row.routing_operation.routing_id,
+      orderQty: plan.row.order_qty,
+      businessDate: plan.businessDate,
+    });
+    await this.prisma.$transaction((tx) =>
+      this.commit(tx, workOrderId, version, plan, issue, pqc, appUserId),
+    );
   }
 
   private async issuePlan(plan: ReleasePlan, issueRequestNo: string): Promise<IssuePlan> {
@@ -73,6 +85,7 @@ export class WorkOrderReleaseService {
     version: number,
     plan: ReleasePlan,
     issue: IssuePlan | null,
+    pqc: PqcRequestPlan | null,
     appUserId: number,
   ): Promise<void> {
     const locked = await lockWorkOrder(tx, workOrderId);
@@ -113,6 +126,14 @@ export class WorkOrderReleaseService {
       },
       appUserId,
     );
+
+    if (pqc !== null) {
+      await writePqcRequest(
+        tx,
+        { workOrderId, itemId: plan.row.item_id, uomId: plan.row.uom_id, plan: pqc },
+        appUserId,
+      );
+    }
 
     const destination = plan.row.default_wip_location_id;
     if (issue !== null && destination !== null) {
