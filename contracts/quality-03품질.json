@@ -2598,6 +2598,96 @@
      }
     }
    }
+  },
+  "/quality/nonconformances/{nonconformanceId}:issue-rework-work-order": {
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "재작업 W/O 발행",
+    "description": "처분 판정이 재작업(REWORK)으로 확정된 부적합을 근거로 **재작업 작업지시를 발행한다**. ⛔ 판정만으로 자동 생성하지 않는다 — 수량·공정·시점을 담당자가 정해 발행한다(사용자 결정 2026-09-21). ⭐ 발행된 W/O 는 `workOrderTypeCode=REWORK` 이고 `reworkSourceNonconformanceId` 에 이 부적합이 실린다 — P-04-03(재작업 실적 등록)이 그 축으로 대상을 찾는다. 수량은 그 부적합의 **재작업 판정 수량 합에서 이미 발행한 재작업 W/O 수량을 뺀 잔량** 이하여야 한다. 공정은 담당자가 고른다 — 원천 LOT 의 공정이 기본값이나 수리 공정으로 발행할 수 있다. 근거: W-03-10 · omf-all-around#47",
+    "parameters": [
+     {
+      "name": "nonconformanceId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReworkWorkOrderIssue"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "발행됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReworkWorkOrder"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QualityConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버가 계약보다 앞서 적은 경로다(장부 P-33 · 선례 P-30). If-Match 는 W/O 가 아니라 **부적합 상세의 ETag** 다 — 잠그는 대상이 부적합이라서다(판정 저장과 같은 규율)."
+   }
   }
  },
  "components": {
@@ -4676,6 +4766,103 @@
       ],
       "description": "차기 검교정 예정일 — 만료 경고 문구용",
       "example": "2026-07-28"
+     }
+    }
+   },
+   "ReworkWorkOrderIssue": {
+    "type": "object",
+    "required": [
+     "routingOperationId",
+     "orderQty"
+    ],
+    "properties": {
+     "routingOperationId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "재작업을 수행할 공정. 원천 LOT 의 공정이 기본값이나 수리 공정으로 바꿀 수 있다"
+     },
+     "orderQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "발행 수량. 재작업 판정 수량 합에서 이미 발행한 몫을 뺀 잔량 이하여야 한다"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "생략하면 부적합의 단위를 쓴다"
+     },
+     "plannedStartAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "plannedEndAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "remarks": {
+      "type": "string",
+      "maxLength": 500
+     }
+    }
+   },
+   "ReworkWorkOrder": {
+    "type": "object",
+    "required": [
+     "workOrderId",
+     "workOrderNo",
+     "workOrderTypeCode",
+     "statusCode",
+     "orderQty",
+     "uomId",
+     "routingOperationId",
+     "itemId",
+     "reworkSourceNonconformanceId",
+     "remainingQty"
+    ],
+    "properties": {
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "workOrderNo": {
+      "type": "string"
+     },
+     "workOrderTypeCode": {
+      "type": "string",
+      "description": "언제나 REWORK"
+     },
+     "statusCode": {
+      "type": "string"
+     },
+     "orderQty": {
+      "type": "number"
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "routingOperationId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "reworkSourceNonconformanceId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "reworkSourceLotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "remainingQty": {
+      "type": "number",
+      "description": "이 발행 뒤 남은 재작업 잔량 — 화면이 중복 발행을 막는 데 쓴다"
      }
     }
    }

@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionsByNonconformance, dispositionsByNonconformance } from './disposition-by-nonconformance';
 import { DispositionFilters, dispositionByIdQuery, dispositionCountQuery, dispositionRowsQuery } from './disposition-query';
 import { DispositionDecisionCreate, DispositionWriteService } from './disposition-write.service';
+import { ReworkWorkOrderIssue, ReworkWorkOrderService, ReworkWorkOrderView } from './rework-work-order.service';
 import { DispositionDecisionRow, DispositionDecisionView, assertFollowUpInvariant, dispositionDecisionView } from './disposition-view';
 
 export interface DispositionListQuery extends DispositionFilters {
@@ -34,6 +35,7 @@ export class DispositionController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly writes: DispositionWriteService,
+    private readonly rework: ReworkWorkOrderService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -110,6 +112,39 @@ export class DispositionController {
       request,
       HttpStatus.CREATED,
       () => this.writes.create(nonconformanceId, version, body, session.userId),
+      FAMILY_CONFLICT_CODE,
+    );
+    setEtag(response, result.versionNo);
+    return result.view;
+  }
+
+  /**
+   * ⭐ **재작업 W/O 발행**(omf-all-around#47 · 장부 P-33). 판정이 재작업이어도 지시는 자동으로
+   *    서지 않는다 — 담당자가 수량·공정을 정해 여기서 발행한다.
+   * ⭐ If-Match 는 **부적합 상세의 ETag** 다(판정 저장과 같은 토큰) — 잠그는 대상이 부적합이고,
+   *    발행이 그 부적합의 남은 재작업을 바꾸기 때문이다.
+   * 403 게이트는 `manual-permissions.ts` 의 `W-03-10` 이 연다.
+   */
+  @Post('nonconformances/:nonconformanceId\\:issue-rework-work-order')
+  @Contract('POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order')
+  async issueRework(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('nonconformanceId', ParseIntPipe) nonconformanceId: number,
+    @Body() body: ReworkWorkOrderIssue,
+  ): Promise<ReworkWorkOrderView> {
+    const version = ifMatchVersion(request);
+    if (version === undefined) {
+      throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
+    }
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+
+    const result = await runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.CREATED,
+      () => this.rework.issue(nonconformanceId, version, body, session.userId),
       FAMILY_CONFLICT_CODE,
     );
     setEtag(response, result.versionNo);

@@ -307,6 +307,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['W-03-10'],
   'GET /quality/nonconformances': ['W-03-10'],
   'GET /quality/nonconformances/{nonconformanceId}': ['W-03-10'],
+  // 재작업 W/O 발행도 같은 화면의 조작이다(omf-all-around#47 · 장부 P-33) — 생산 쪽 발행 경로는
+  // `W-02-02`·`W-02-07` 이라 품질 담당이 403 을 받는다.
+  'POST /quality/nonconformances/{nonconformanceId}:issue-rework-work-order': ['W-03-10'],
 
   // `M-01-12` 재생재 등록 — ⭐ 도출표가 `['M-01-01','M-01-02']`(입하 등록·LOT 발번)이라
   // **그 화면 권한만 가진 계정이 403** 을 받는다. 계약 본문·`plan-uiux.md:262` 가 둘 다
