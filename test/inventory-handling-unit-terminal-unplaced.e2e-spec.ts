@@ -3,7 +3,8 @@
  *
  * POP 포장 작업(P-02-08)은 `POST /inventory/handling-units` 에 창고·위치를 싣지 않는다. 판정이
  * 창고·위치만 보던 때는 그 포장이 어느 공장에도 속하지 않아 `:pack` 이 401 이었고, 모바일
- * 번호 검색(M-04-04·M-04-03)에서도 빠졌다. 요청은 화면이 보내는 모양 그대로다.
+ * 번호 검색(M-04-04·M-04-03)에서도 빠졌고, 포장 라벨 발행(`/app/document-issues`)도 401 이었다.
+ * 요청은 화면이 보내는 모양 그대로다.
  * ⚠ 단말 토큰은 `terminal.service.ts` 가 서명하는 클레임 그대로 직접 낸다(다른 단말 e2e 와 같은 관례).
  */
 import { INestApplication } from '@nestjs/common';
@@ -93,6 +94,25 @@ describe('창고 없이 단말이 만든 포장 (omf-all-around#57 e2e)', () => 
     expect(packed.body.contents).toHaveLength(1);
   });
 
+  it('포장 라벨 발행 — 남의 공장 단말은 401, 만든 공장 단말은 201', async () => {
+    const body = {
+      documentTypeCode: 'PACKING_LABEL',
+      targets: [{ targetTypeCode: 'HANDLING_UNIT', targetId: ids.unit }],
+    };
+    const other = await as(foreign, request(app.getHttpServer()).post('/api/app/document-issues'))
+      .set('Idempotency-Key', key()).send(body);
+    expect(other.status).toBe(401);
+
+    const issued = await as(pop, request(app.getHttpServer()).post('/api/app/document-issues'))
+      .set('Idempotency-Key', key()).send(body);
+    expect(issued.status).toBe(201);
+    expect(issued.body.items).toHaveLength(1);
+    expect(issued.body.items[0]).toMatchObject({ documentTypeCode: 'PACKING_LABEL' });
+    expect(await prisma.document_issue_log.count({ where: {
+      document_type_code: 'PACKING_LABEL', target_type_code: 'HANDLING_UNIT', target_id: ids.unit, terminal_id: pop.terminalId,
+    } })).toBe(1);
+  });
+
   function as(session: TerminalSession, test: request.Test): request.Test {
     return test.set('Authorization', `Bearer ${session.token}`).set('X-Worker-No', session.workerNo);
   }
@@ -165,6 +185,7 @@ describe('창고 없이 단말이 만든 포장 (omf-all-around#57 e2e)', () => 
       select: { target_id: true },
     })).map((row) => row.target_id);
     await prisma.audit_event.deleteMany({ where: { terminal_id: { in: terminalIds } } });
+    await prisma.document_issue_log.deleteMany({ where: { terminal_id: { in: terminalIds } } });
     await prisma.handling_unit_content.deleteMany({ where: { handling_unit_id: { in: unitIds } } });
     await prisma.handling_unit.deleteMany({ where: { handling_unit_id: { in: unitIds } } });
     await prisma.terminal.deleteMany({ where: { terminal_id: { in: terminalIds } } });
