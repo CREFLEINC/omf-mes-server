@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { handlingUnitInPlant } from './handling-unit-plant';
 import { TerminalContext } from './terminal-context';
 import { currentSession } from './session-resolver.service';
 
@@ -98,7 +99,7 @@ export async function assertTerminalLogisticsScope(
   const shipmentRequest = async (v: unknown) => check(await prisma.shipment_request.findFirst({ where: { shipment_request_id: id(v), fulfillment_plant_id: plant }, select: { shipment_request_id: true } }));
   const transfer = async (v: unknown) => check(await prisma.stock_transfer.findFirst({ where: { stock_transfer_id: id(v), warehouse_stock_transfer_from_warehouse_idTowarehouse: { plant_id: plant }, warehouse_stock_transfer_to_warehouse_idTowarehouse: { plant_id: plant } }, select: { stock_transfer_id: true } }));
   const workOrder = async (v: unknown) => check(await prisma.work_order.findFirst({ where: { work_order_id: id(v), production_line: { plant_id: plant } }, select: { work_order_id: true } }));
-  const handlingUnit = async (v: unknown) => check(await prisma.handling_unit.findFirst({ where: { handling_unit_id: id(v), OR: [{ warehouse: { plant_id: plant } }, { location: { warehouse: { plant_id: plant } } }] }, select: { handling_unit_id: true } }));
+  const handlingUnit = async (v: unknown) => check(await handlingUnitInPlant(prisma, id(v), plant));
   const purchaseOrderLine = async (v: unknown) => check(await prisma.purchase_order_line.findFirst({ where: { purchase_order_line_id: id(v), purchase_order: { plant_id: plant } }, select: { purchase_order_line_id: true } }));
   const goodsReceiptLine = async (v: unknown) => check(await prisma.goods_receipt_line.findFirst({ where: { goods_receipt_line_id: id(v), goods_receipt: { plant_id: plant } }, select: { goods_receipt_line_id: true } }));
   const goodsIssueLine = async (v: unknown) => check(await prisma.goods_issue_line.findFirst({ where: { goods_issue_line_id: id(v), goods_issue: { warehouse: { plant_id: plant } } }, select: { goods_issue_line_id: true } }));
