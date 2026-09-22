@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { createdByPlantTerminal, placedInPlant } from '../../auth/handling-unit-plant';
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
@@ -38,7 +39,7 @@ export class HandlingUnitQueryService {
 
     // ⛔ 값 목록 검증을 «안» 건다 — 없는 코드로 물으면 빈 목록이 정상이다(400 아님).
     //    저장소에 이미 세 번째 status_code 값('ACTIVE')이 굴러다닌다(통보 164 ⓐ · S-11).
-    const where: Prisma.handling_unitWhereInput = {
+    const base: Prisma.handling_unitWhereInput = {
       ...filter('warehouse_id', warehouseId),
       ...filter('location_id', locationId),
       ...(query.handlingUnitTypeCode === undefined
@@ -46,10 +47,10 @@ export class HandlingUnitQueryService {
         : { handling_unit_type_code: query.handlingUnitTypeCode }),
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...(query.q === undefined ? {} : { handling_unit_no: { contains: query.q } }),
-      ...(terminalPlantId === undefined
-        ? {}
-        : { OR: [{ warehouse: { plant_id: terminalPlantId } }, { location: { warehouse: { plant_id: terminalPlantId } } }] }),
     };
+    const where: Prisma.handling_unitWhereInput = terminalPlantId === undefined
+      ? base
+      : { ...base, OR: [...placedInPlant(terminalPlantId), ...await this.unplacedInPlant(base, terminalPlantId, warehouseId, locationId)] };
 
     const [rows, total] = await Promise.all([
       this.prisma.handling_unit.findMany({
@@ -62,6 +63,22 @@ export class HandlingUnitQueryService {
       this.prisma.handling_unit.count({ where }),
     ]);
     return pagedResponse(rows.map(handlingUnitView), total, page);
+  }
+
+  /**
+   * 창고·위치 없이 이 공장 단말이 만든 포장(`handling-unit-plant.ts` · omf-all-around#57).
+   * ⚠ 같은 필터의 «창고·위치가 빈» 포장을 전부 후보로 읽는다 — 그런 포장이 쌓이면 이 조회가 커진다.
+   */
+  private async unplacedInPlant(
+    base: Prisma.handling_unitWhereInput, plantId: bigint, warehouseId?: number, locationId?: number,
+  ): Promise<Prisma.handling_unitWhereInput[]> {
+    if (warehouseId !== undefined || locationId !== undefined) return [];
+    const candidates = await this.prisma.handling_unit.findMany({
+      where: { ...base, warehouse_id: null, location_id: null },
+      select: { handling_unit_id: true },
+    });
+    const ids = await createdByPlantTerminal(this.prisma, candidates.map((row) => row.handling_unit_id), plantId);
+    return ids.length === 0 ? [] : [{ handling_unit_id: { in: ids } }];
   }
 
   /** 계약 선언 — 없으면 404 다. */

@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { handlingUnitInPlant } from './handling-unit-plant';
 import { TerminalContext } from './terminal-context';
 
 type TerminalType = 'POP' | 'MOBILE';
@@ -142,10 +143,7 @@ async function assertCount(prisma: PrismaService, value: unknown, plantId: bigin
 
 async function assertHandlingUnit(prisma: PrismaService, value: unknown, plantId: bigint): Promise<void> {
   const id = positiveId(value);
-  if (id === null || !await prisma.handling_unit.findFirst({
-    where: { handling_unit_id: id, OR: [{ warehouse: { plant_id: plantId } }, { location: { warehouse: { plant_id: plantId } } }] },
-    select: { handling_unit_id: true },
-  })) throw denied();
+  if (id === null || !await handlingUnitInPlant(prisma, id, plantId)) throw denied();
 }
 
 async function assertActiveWorker(prisma: PrismaService, workerNo: string | undefined, plantId: bigint): Promise<bigint> {
