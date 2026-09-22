@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
+import { createdByPlantTerminal } from './handling-unit-plant';
 import { TerminalContext } from './terminal-context';
 
 export const TERMINAL_APP_READ_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
@@ -136,7 +137,12 @@ export async function assertOwnedTarget(
     case 'HANDLING_UNIT': {
       const row = await prisma.handling_unit.findUnique({ where: { handling_unit_id: id },
         select: { warehouse: { select: { plant_id: true } }, location: { select: { warehouse: { select: { plant_id: true } } } } } });
-      owned = !!row && !!(row.warehouse || row.location)
+      // 창고·위치가 둘 다 비었으면 만든 단말의 공장이다(`handling-unit-plant.ts` · omf-all-around#57).
+      if (row && row.warehouse === null && row.location === null) {
+        owned = (await createdByPlantTerminal(prisma, [id], plantId)).length > 0;
+        break;
+      }
+      owned = !!row
         && (row.warehouse === null || row.warehouse.plant_id === plantId)
         && (row.location === null || row.location.warehouse.plant_id === plantId);
       break;
