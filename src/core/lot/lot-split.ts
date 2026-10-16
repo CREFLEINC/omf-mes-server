@@ -38,7 +38,7 @@ export async function splitLotWithin(tx: Tx, input: LotSplitInput): Promise<LotS
     where: { lot_id: input.parentLotId },
     select: {
       lot_no: true, item_id: true, lot_type_code: true, plant_id: true, uom_id: true,
-      status_code: true, manufactured_at: true, expiry_date: true, bom_id: true,
+      status_code: true, manufactured_at: true, expiry_date: true, bom_id: true, bom_version: true,
     },
   });
   const siblings = await tx.lot.count({ where: { parent_lot_id: input.parentLotId } });
@@ -57,7 +57,9 @@ export async function splitLotWithin(tx: Tx, input: LotSplitInput): Promise<LotS
       status_code: parent.status_code,
       manufactured_at: parent.manufactured_at,
       expiry_date: parent.expiry_date,
+      // ⛔ BOM 은 id·버전을 «함께» 옮긴다 — `ck_lot_bom_snapshot`((bom_id IS NULL) = (bom_version IS NULL)).
       bom_id: parent.bom_id,
+      bom_version: parent.bom_version,
       created_by: input.createdBy,
     },
     select: { lot_id: true, lot_no: true },

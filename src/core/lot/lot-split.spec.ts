@@ -11,7 +11,7 @@ describe('splitLotWithin', () => {
       lot: {
         findUniqueOrThrow: jest.fn().mockResolvedValue({
           lot_no: 'LOT-1', item_id: 7n, lot_type_code: 'PRODUCTION', plant_id: 3n, uom_id: 1n,
-          status_code: 'INSPECTION_PENDING', manufactured_at: null, expiry_date: null, bom_id: null,
+          status_code: 'INSPECTION_PENDING', manufactured_at: null, expiry_date: null, bom_id: 3n, bom_version: 2,
         }),
         count: jest.fn().mockResolvedValue(siblings),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -34,6 +34,8 @@ describe('splitLotWithin', () => {
     expect(created[0]).toMatchObject({
       lot_no: 'LOT-1-S1', item_id: 7n, plant_id: 3n, status_code: 'INSPECTION_PENDING',
       source_type_code: 'LOT_SPLIT', source_id: 10n, parent_lot_id: 10n,
+      // BOM 은 id·버전이 짝이다 — 하나만 옮기면 ck_lot_bom_snapshot 위반(500)이다.
+      bom_id: 3n, bom_version: 2,
     });
     expect(relations[0]).toMatchObject({
       source_lot_id: 10n, target_lot_id: 91n, relation_type_code: 'SPLIT',
