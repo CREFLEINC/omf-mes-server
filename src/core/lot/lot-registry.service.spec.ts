@@ -216,26 +216,30 @@ describe('LotRegistryService', () => {
     });
   });
 
-  it('LOT 코어 — 유효한 IQC 계획이 복수면 임의 선택하지 않고 LOT 생성 전에 막는다', async () => {
-    const { tx, calls } = fake({
-      line: { lot_id: null },
-      iqcPlans: [{ inspection_plan_version_id: 55n }, { inspection_plan_version_id: 56n }],
-    });
+  /* omf-all-around#101 결정 A — 기준이 정해지지 않아도 LOT·라벨은 막지 않고, 기준 칸이 빈 의뢰를 세운다. */
+  it.each([
+    ['없으면', []],
+    ['복수면(임의로 고르지 않는다)', [{ inspection_plan_version_id: 55n }, { inspection_plan_version_id: 56n }]],
+  ])('LOT 코어 — 유효한 IQC 계획이 %s LOT 과 기준 빈 의뢰를 만든다', async (_label, iqcPlans) => {
+    const { tx, calls, args } = fake({ line: { lot_id: null }, iqcPlans });
 
-    await expect(
-      service.createWithin(
-        tx,
-        input({
-          incomingIqc: {
-            requestNo: 'IRQ-20260911-0001',
-            effectiveDate: '2026-09-11',
-            requestedAt: '2026-09-11T01:00:00.000Z',
-          },
-        }),
-        7,
-      ),
-    ).rejects.toMatchObject({ errors: [{ code: 'STATE_LOCKED' }] });
-    expect(calls).not.toContain('lot.create');
+    await service.createWithin(
+      tx,
+      input({
+        incomingIqc: {
+          requestNo: 'IRQ-20260911-0001',
+          effectiveDate: '2026-09-11',
+          requestedAt: '2026-09-11T01:00:00.000Z',
+        },
+      }),
+      7,
+    );
+
+    expect(calls).toContain('lot.create');
+    expect(args[calls.indexOf('iqc.request.create')].data).toMatchObject({
+      inspection_plan_version_id: null,
+      status_code: 'REQUESTED',
+    });
   });
 });
 

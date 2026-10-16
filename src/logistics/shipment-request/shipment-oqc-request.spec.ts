@@ -76,7 +76,8 @@ describe('출하검사 의뢰 준비', () => {
   });
 
   it('⛔ 유효한 기준이 없으면 400 STATE_LOCKED 로 편성을 막는다', async () => {
-    (prisma.inspection_plan_version.findMany as jest.Mock).mockResolvedValueOnce([]);
+    // 품목 전용 · 전 품목 공통(omf-all-around#101) 둘 다 없다.
+    (prisma.inspection_plan_version.findMany as jest.Mock).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await expect(
       prepareOqcRequests(prisma, numbering, [line(10, 1)], '2026-09-16'),

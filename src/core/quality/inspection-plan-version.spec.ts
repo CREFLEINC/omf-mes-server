@@ -1,0 +1,52 @@
+import { Prisma } from '@prisma/client';
+
+import { ContractException } from '../../common/errors';
+import { resolveInspectionPlanVersion } from './inspection-plan-version';
+
+/** 품목 칸 값(`item_id`)별로 활성 버전 id 를 돌려주는 스텁. `null` 은 「전 품목 공통」이다. */
+function stub(byItem: Map<number | null, bigint[]>) {
+  const asked: (number | null)[] = [];
+  const tx = {
+    inspection_plan_version: {
+      findMany: async ({ where }: { where: { inspection_plan: { item_id: number | null } } }) => {
+        asked.push(where.inspection_plan.item_id);
+        return (byItem.get(where.inspection_plan.item_id) ?? []).map((id) => ({ inspection_plan_version_id: id }));
+      },
+    },
+  };
+  return { tx: tx as unknown as Prisma.TransactionClient, asked };
+}
+
+describe('resolveInspectionPlanVersion — 전 품목 공통 기준 (omf-all-around#101)', () => {
+  it('품목 전용 기준이 있으면 그것을 쓰고 공통 기준은 보지 않는다', async () => {
+    const { tx, asked } = stub(new Map([[10, [1n]], [null, [2n]]]));
+
+    await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).resolves.toBe(1n);
+    expect(asked).toEqual([10]);
+  });
+
+  it('품목 전용 기준이 없으면 공통 기준을 쓴다', async () => {
+    const { tx } = stub(new Map([[null, [2n]]]));
+
+    await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).resolves.toBe(2n);
+  });
+
+  it('둘 다 없으면 종전처럼 400 이다', async () => {
+    const { tx } = stub(new Map());
+
+    await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
+  });
+
+  it('OQC 는 공통 기준으로 내려가지 않는다 — 품목 전용 기준이 없으면 종전처럼 400 이다', async () => {
+    const { tx, asked } = stub(new Map([[null, [2n]]]));
+
+    await expect(resolveInspectionPlanVersion(tx, 'OQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
+    expect(asked).toEqual([10]);
+  });
+
+  it('공통 기준이 여러 개면 종전처럼 400 이다', async () => {
+    const { tx } = stub(new Map([[null, [2n, 3n]]]));
+
+    await expect(resolveInspectionPlanVersion(tx, 'IQC', 10, '2026-10-16')).rejects.toBeInstanceOf(ContractException);
+  });
+});

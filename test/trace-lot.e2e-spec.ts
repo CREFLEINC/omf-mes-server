@@ -728,14 +728,14 @@ describe('LOT (e2e)', () => {
     expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
   });
 
-  it('⛔ SUPPLIER — IQC 대상 라인인데 확정 기준이 없으면 입하·MES 경로와 같이 STATE_LOCKED 로 막는다', async () => {
+  /* omf-all-around#101 결정 A — 기준이 없어도 LOT·라벨을 막지 않고 기준 칸이 빈 IQC 의뢰를 세운다. */
+  it('⭐ SUPPLIER — IQC 대상 라인에 확정 기준이 없어도 LOT 이 서고 기준 빈 IQC 의뢰가 선다', async () => {
     const sourceId = await newLine(10, true);
-    const rejected = await post(
-      await body({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOPLAN`, sourceId }),
-    ).expect(400);
+    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOPLAN`, sourceId });
 
-    expect(rejected.body.errors).toMatchObject([{ code: 'STATE_LOCKED' }]);
-    expect(await prisma.lot.count({ where: { lot_no: `${PREFIX}-SUP-NOPLAN` } })).toBe(0);
+    const requests = await prisma.inspection_request.findMany({ where: { lot_id: BigInt(lot.lotId) } });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ inspection_type_code: 'IQC', status_code: 'REQUESTED', inspection_plan_version_id: null });
   });
 
   it('⭐ SUPPLIER — IQC 대상 라인에 확정 기준이 있으면 LOT 과 함께 IQC 의뢰(REQUESTED)가 선다', async () => {

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
 import { day } from '../../common/master';
 import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
-import { resolveInspectionPlanVersion } from '../quality/inspection-plan-version';
+import { findInspectionPlanVersion } from '../quality/inspection-plan-version';
 import { LotHoldService } from './lot-hold.service';
 import { MaterialLotFormatError, materialLotPrefix, materialMesLotNo, mesLotNo } from './lot-number';
 import { WORK_ORDER_LOT_SOURCE } from './lot-source';
@@ -138,6 +138,7 @@ export class LotRegistryService {
     }
 
     if (input.incomingIqc && iqcPlanVersionId !== undefined) {
+      // ⚠ 기준 버전이 `null` 일 수 있다 — 기준이 없어도 의뢰는 선다(#101 결정 A). 판정은 항목 없이 수량·판정만 한다.
       const request = await tx.inspection_request.create({
         data: {
           inspection_request_no: input.incomingIqc.requestNo,
@@ -238,9 +239,13 @@ export class LotRegistryService {
   }
 }
 
-/** 입하 IQC 의 기준 버전. 조회는 출하(OQC)와 **한 함수**를 쓴다 — 두 벌이면 답이 둘이 된다. */
-async function resolveIncomingIqcPlanVersion(tx: Tx, itemId: number, effectiveDate: string): Promise<bigint> {
-  return resolveInspectionPlanVersion(tx, 'IQC', itemId, effectiveDate);
+/**
+ * 입하 IQC 의 기준 버전. 조회는 출하(OQC)와 **같은 후보 규칙**을 쓴다 — 두 벌이면 답이 둘이 된다.
+ * ⭐ 막지 않는다 — 기준이 정해지지 않으면 `null` 이다(omf-all-around#101: 기준 때문에 라벨 발행이 막히면
+ *    입하 다음 단계가 모두 멈춘다).
+ */
+async function resolveIncomingIqcPlanVersion(tx: Tx, itemId: number, effectiveDate: string): Promise<bigint | null> {
+  return findInspectionPlanVersion(tx, 'IQC', itemId, effectiveDate);
 }
 
 // ── LOT 칸에 붙박인 값 변환(날짜는 타임존을 고르지 않는다) ──────────────────────────
