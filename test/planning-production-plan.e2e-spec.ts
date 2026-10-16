@@ -584,7 +584,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject(routingRejected);
     });
 
-    it('29. 계획 뒤에 Routing 이 폐기되면 — 수량 수정은 되고 확정은 400 INVALID 이며 W/O 가 서지 않는다', async () => {
+    it('29. 계획 뒤에 Routing 이 폐기되면 — 수량 수정(같은 routingId 재전송 포함)은 되고 확정은 400 INVALID 이며 W/O 가 서지 않는다', async () => {
       const planId = await createPlanOn(unusableRoutingIds.laterObsolete, '2026-11-12');
       await prisma.routing.update({
         where: { routing_id: BigInt(unusableRoutingIds.laterObsolete) },
@@ -597,6 +597,15 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         .set('Idempotency-Key', randomUUID())
         .set('If-Match', await etagOf(planId))
         .send({ plannedQty: 6 })
+        .expect(200);
+
+      // 전체 본문처럼 같은 routingId 를 다시 실어도 바꾼 것이 아니다 — 검사하지 않는다.
+      await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${planId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .send({ plannedQty: 7, routingId: unusableRoutingIds.laterObsolete })
         .expect(200);
 
       const response = await request(app.getHttpServer())

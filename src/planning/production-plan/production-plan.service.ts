@@ -182,11 +182,14 @@ export class ProductionPlanService {
       }
       // Routing 을 «바꿀 때만» 본다 — 계획 뒤에 Rev 가 폐기돼도 수량·날짜는 고칠 수 있고, 확정이 막는다.
       if (body.routingId !== undefined) {
-        const { production_order: order } = await tx.production_plan.findUniqueOrThrow({
+        const current = await tx.production_plan.findUniqueOrThrow({
           where: { production_plan_id: BigInt(productionPlanId) },
-          select: { production_order: { select: { item_id: true } } },
+          select: { routing_id: true, production_order: { select: { item_id: true } } },
         });
-        await assertPlannableRouting(tx, body.routingId, order.item_id);
+        // 전체 본문을 싣는 호출자가 같은 값을 다시 보내도 «바꾼» 것이 아니다.
+        if (current.routing_id !== BigInt(body.routingId)) {
+          await assertPlannableRouting(tx, body.routingId, current.production_order.item_id);
+        }
       }
       const updated = await tx.production_plan.update({
         where: { production_plan_id: BigInt(productionPlanId) },
