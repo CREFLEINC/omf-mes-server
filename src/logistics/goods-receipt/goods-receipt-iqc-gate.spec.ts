@@ -78,7 +78,15 @@ describe('GoodsReceiptService — IQC 합격 전 입고 차단 (omf-all-around#1
     expect(JSON.stringify((error as ContractException).getResponse())).toContain('STATE_LOCKED');
   });
 
-  it('IQC 대상이어도 합격(NORMAL) LOT 은 통과한다', async () => {
+  /* 불합격(C6 → DEFECTIVE)·보류 판정 LOT 도 입고되지 않는다 — 처분(C19 정상·특채)으로 NORMAL 이 된 뒤에만 들어간다. */
+  it.each(['DEFECTIVE', 'SCRAPPED'])('IQC 대상 %s LOT 은 막는다', async (status) => {
+    const error = await errorOf(stub(inboundLot(status), true));
+
+    expect(error).toBeInstanceOf(ContractException);
+    expect(JSON.stringify((error as ContractException).getResponse())).toContain('STATE_LOCKED');
+  });
+
+  it('IQC 대상이어도 합격(NORMAL) LOT 은 통과한다 — 처분 정상(C19)으로 돌아온 LOT 도 같다', async () => {
     const error = await errorOf(stub(inboundLot('NORMAL'), true));
     expect((error as Error).message).toBe('PASSED_VALIDATION');
   });
