@@ -1095,6 +1095,8 @@ describe("발행·재발행 (I-27 C3d e2e)", () => {
         data: {
           worker_no: `${PREFIX}_COA_WORKER`,
           worker_name: "I-27 CoA 경합 검사자",
+          // #104 — 관리웹 확정은 계정에 지정된 작업자가 있어야 한다.
+          app_user_id: userId,
           business_unit_id: businessUnit.business_unit_id,
           plant_id: plant.plant_id,
           status_code: "EMPLOYED",
