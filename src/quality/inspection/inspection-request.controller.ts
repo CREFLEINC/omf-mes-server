@@ -4,13 +4,17 @@ import type { Request } from 'express';
 import { Contract } from '../../common/contract';
 import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
 import { PagedResponse } from '../../common/pagination';
+import { InspectionHistory, InspectionHistoryService } from './inspection-history.service';
 import { InspectionRequestListQuery, InspectionRequestService } from './inspection-request.service';
 import { InspectionRequestView } from './inspection-request-view';
 
 /** 검사 의뢰 조회 2건(I-19 PR ②). 등록 경로는 두지 않는다 — 서버가 입고·실적에서 만든다(계약). */
 @Controller('quality/inspection-requests')
 export class InspectionRequestController {
-  constructor(private readonly requests: InspectionRequestService) {}
+  constructor(
+    private readonly requests: InspectionRequestService,
+    private readonly histories: InspectionHistoryService,
+  ) {}
 
   @Get()
   @Contract('GET /quality/inspection-requests')
@@ -23,5 +27,12 @@ export class InspectionRequestController {
   @Contract('GET /quality/inspection-requests/{inspectionRequestId}')
   detail(@Req() request: Request, @Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionRequestView> {
     return this.requests.detail(inspectionRequestId, currentTerminalQualityReadScope(request));
+  }
+
+  /** 검사 대상 이력 — 전달 · 회차 · LOT 상태 전이를 시간순으로(omf-all-around#61 · 장부 P-55). */
+  @Get(':inspectionRequestId/history')
+  @Contract('GET /quality/inspection-requests/{inspectionRequestId}/history')
+  history(@Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionHistory> {
+    return this.histories.history(inspectionRequestId);
   }
 }

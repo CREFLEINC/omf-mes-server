@@ -700,6 +700,50 @@
     }
    }
   },
+  "/quality/inspection-requests/{inspectionRequestId}/history": {
+   "parameters": [
+    {
+     "name": "inspectionRequestId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사 대상 이력",
+    "description": "한 검사 의뢰가 앞 단계에서 넘어온 문서(source)와, 전달(의뢰 생성) · 회차 저장·확정 · 그 회차가 일으킨 LOT 상태 전이를 시간순으로 낸다. 새로 쌓지 않고 의뢰·회차·LOT 상태 이력을 엮는다. 근거: omf-all-around#61 (서버 선행 · 장부 P-55)",
+    "responses": {
+     "200": {
+      "description": "이력",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InspectionHistory"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 의뢰",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-55. ⛔ 같은 LOT 의 다른 일(보류·처분)은 담지 않는다 — LOT 현황(W-03-01) 몫이다."
+   }
+  },
   "/quality/inspection-requests/{inspectionRequestId}": {
    "get": {
     "tags": [
@@ -2736,6 +2780,114 @@
    }
   },
   "schemas": {
+   "InspectionHistory": {
+    "type": "object",
+    "required": [
+     "inspectionRequestId",
+     "inspectionRequestNo",
+     "inspectionTypeCode",
+     "source",
+     "events"
+    ],
+    "description": "검사 대상 이력(서버 선행 · 장부 P-55 · omf-all-around#61).",
+    "properties": {
+     "inspectionRequestId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "inspectionRequestNo": {
+      "type": "string"
+     },
+     "inspectionTypeCode": {
+      "type": "string"
+     },
+     "source": {
+      "type": "object",
+      "required": [
+       "targetTypeCode",
+       "targetId"
+      ],
+      "description": "앞 단계가 넘긴 문서 — IQC 는 입하 번호, PQC 는 작업지시 번호, OQC 는 출하 지시 번호(documentNo).",
+      "properties": {
+       "targetTypeCode": {
+        "type": "string"
+       },
+       "targetId": {
+        "type": "integer",
+        "format": "int64"
+       },
+       "documentNo": {
+        "type": "string"
+       },
+       "lotNo": {
+        "type": "string"
+       }
+      }
+     },
+     "events": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionHistoryEvent"
+      }
+     }
+    }
+   },
+   "InspectionHistoryEvent": {
+    "type": "object",
+    "required": [
+     "occurredAt",
+     "eventTypeCode"
+    ],
+    "properties": {
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "eventTypeCode": {
+      "type": "string",
+      "enum": [
+       "REQUESTED",
+       "RESULT_SAVED",
+       "RESULT_CONFIRMED",
+       "LOT_STATUS_CHANGED"
+      ],
+      "description": "전달(의뢰 생성) · 회차 저장 · 회차 확정 · LOT 상태 전이"
+     },
+     "actorName": {
+      "type": "string"
+     },
+     "inspectionResultNo": {
+      "type": "string"
+     },
+     "inspectionRound": {
+      "type": "integer"
+     },
+     "overallJudgmentCode": {
+      "type": "string"
+     },
+     "acceptedQty": {
+      "type": "number"
+     },
+     "rejectedQty": {
+      "type": "number"
+     },
+     "heldQty": {
+      "type": "number"
+     },
+     "previousStatusCode": {
+      "type": "string"
+     },
+     "newStatusCode": {
+      "type": "string"
+     },
+     "transitionCode": {
+      "type": "string"
+     },
+     "lotNo": {
+      "type": "string"
+     }
+    }
+   },
    "Concession": {
     "type": "object",
     "properties": {
