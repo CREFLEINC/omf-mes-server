@@ -76,7 +76,8 @@ async function candidatePlanVersions(
     });
   // 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준 · W-06-02)으로 내려간다
   // (omf-all-around#101) — 둘을 한 번에 세면 전용 기준이 있는 품목이 「여러 개」로 막힌다.
+  // ⛔ 공통 기준으로 내려가는 것은 입하 IQC 뿐이다 — 출하 OQC 는 품목 전용 기준이 없으면 종전처럼 막는다(범위 밖).
   const own = await find(itemId);
-  const plans = own.length > 0 ? own : await find(null);
+  const plans = own.length > 0 || inspectionTypeCode !== 'IQC' ? own : await find(null);
   return plans.map((plan) => plan.inspection_plan_version_id);
 }
