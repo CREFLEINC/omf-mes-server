@@ -462,7 +462,8 @@
        "enum": [
         "REWORK",
         "SCRAP",
-        "NORMAL"
+        "NORMAL",
+        "SORT"
        ]
       },
       "description": "재작업 · 폐기 · 정상",
