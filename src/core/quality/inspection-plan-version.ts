@@ -24,6 +24,41 @@ export async function resolveInspectionPlanVersion(
   itemId: number,
   effectiveDate: string,
 ): Promise<bigint> {
+  const plans = await candidatePlanVersions(tx, inspectionTypeCode, itemId, effectiveDate);
+  if (plans.length !== 1) {
+    throw one({
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message:
+        plans.length === 0
+          ? `유효한 ${inspectionTypeCode} 검사기준이 없습니다.`
+          : `유효한 ${inspectionTypeCode} 검사기준이 여러 개입니다.`,
+    });
+  }
+  return plans[0];
+}
+
+/**
+ * 막지 않는 판 — 하나로 정해지면 그 버전, 아니면 `null`(omf-all-around#101 · 2026-10-16 결정 A).
+ * 입하 IQC 는 기준이 없거나 둘 이상이어도 LOT·라벨 발행을 막지 않고 **기준 칸이 빈 의뢰**를 세운다 —
+ * 임의로 하나를 고르지 않는다(위 「어느 기준으로 검사했는지」 규칙은 그대로다).
+ */
+export async function findInspectionPlanVersion(
+  tx: Prisma.TransactionClient,
+  inspectionTypeCode: string,
+  itemId: number,
+  effectiveDate: string,
+): Promise<bigint | null> {
+  const plans = await candidatePlanVersions(tx, inspectionTypeCode, itemId, effectiveDate);
+  return plans.length === 1 ? plans[0] : null;
+}
+
+async function candidatePlanVersions(
+  tx: Prisma.TransactionClient,
+  inspectionTypeCode: string,
+  itemId: number,
+  effectiveDate: string,
+): Promise<bigint[]> {
   const date = day('businessDate', effectiveDate);
   const find = (planItemId: number | null) =>
     tx.inspection_plan_version.findMany({
@@ -43,15 +78,5 @@ export async function resolveInspectionPlanVersion(
   // (omf-all-around#101) — 둘을 한 번에 세면 전용 기준이 있는 품목이 「여러 개」로 막힌다.
   const own = await find(itemId);
   const plans = own.length > 0 ? own : await find(null);
-  if (plans.length !== 1) {
-    throw one({
-      scope: 'screen',
-      code: ERROR_CODE.STATE_LOCKED,
-      message:
-        plans.length === 0
-          ? `유효한 ${inspectionTypeCode} 검사기준이 없습니다.`
-          : `유효한 ${inspectionTypeCode} 검사기준이 여러 개입니다.`,
-    });
-  }
-  return plans[0].inspection_plan_version_id;
+  return plans.map((plan) => plan.inspection_plan_version_id);
 }
