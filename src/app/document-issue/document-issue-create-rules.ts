@@ -158,6 +158,21 @@ export function qualifyDocumentIssueTarget(
         failTarget(target, MATERIAL_LABEL_UNRESOLVED_STATE_POLICY);
       sourceLotId = facts.targetId;
       break;
+    case "IQC_LABEL":
+      // 수입검사 대기 자재 LOT 의 IQC 라벨(omf-all-around#110 · P-40). 무검사 자재는 등록 때부터
+      // 정상이라(#105) 「검사 대기」가 곧 IQC 대상이다 — 판정이 끝난 LOT 에는 붙일 일이 없다.
+      if (
+        facts.targetTypeCode !== "LOT" ||
+        facts.lotTypeCode !== "MATERIAL" ||
+        facts.statusCode !== "INSPECTION_PENDING"
+      )
+        failTarget(
+          target,
+          ERROR_CODE.STATE_LOCKED,
+          "수입검사 대기 중인 자재 LOT만 IQC 라벨을 발행할 수 있습니다.",
+        );
+      sourceLotId = facts.targetId;
+      break;
     case "PRODUCTION_LOT_LABEL":
       // ⭐ 자격을 «마감 전»으로 연다(P-18 · 사용자 결정 2026-09-15). 전에는 「완료된 정상 LOT」
       // 이었는데, P-02-04 는 **라벨을 찍어 그 라벨을 스캔하는 것이 마감 입력**이다 — 완료를
@@ -282,6 +297,7 @@ function assertSupportedPair(
     CERTIFICATE_OF_ANALYSIS: ["INSPECTION_RESULT"],
     TOOL_LABEL: ["MOLD"],
     LOCATION_LABEL: ["LOCATION"],
+    IQC_LABEL: ["LOT"],
     DELIVERY_LABEL: ["SHIPPING_UNIT"],
   };
   if (!(supported[documentTypeCode] ?? []).includes(targetTypeCode))

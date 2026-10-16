@@ -25,6 +25,8 @@ const RENDITION_DOCUMENT_TYPES: readonly string[] = [
   // P-06-01(창고 적재 위치 라벨 발행)이 발행한 뒤 tspl 로 받아 찍는다(장부 P-28).
   // 대상 `LOCATION` 의 소유는 `assertOwnedTarget` 이 위치의 창고 공장으로 본다.
   'LOCATION_LABEL',
+  // POP 자재 LOT 등록이 자재 라벨과 함께 발행한다(omf-all-around#110 · P-40).
+  'IQC_LABEL',
 ];
 
 export type TerminalApprovalListScope =
