@@ -579,7 +579,8 @@ describe('DocumentStateService', () => {
       //      시드 SHIPMENT_STATUS 3값에 CANCEL_REQUESTED 가 없어 담을 상태가 없다.
       // +2 — 피킹 지시 닫기(P-14) · 자재 출고요청 닫기(P-16 · 문의 046) 키 신설.
       //      둘 다 전이 하나뿐이다 — 취소 경로가 계약에 0건이다(`cancelable: false`).
-      expect(service.registered()).toHaveLength(52);
+      // +2 — 검사 비대상(C21)·IQC 생략 실행(C22) 품질 전이(omf-all-around#105 · 장부 P-35·P-36).
+      expect(service.registered()).toHaveLength(54);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

@@ -10,6 +10,7 @@ import { LotLifecycleEventController } from './lot/lot-lifecycle-event.controlle
 import { LotCompleteService } from './lot/lot-complete.service';
 import { LotExternalIdentifierService } from './lot/lot-external-identifier.service';
 import { LotHoldListService } from './lot/lot-hold-list.service';
+import { LotIqcSkipExecuteService } from './lot/lot-iqc-skip-execute.service';
 import { LotIqcSkipService } from './lot/lot-iqc-skip.service';
 import { LotLifecycleEventService } from './lot/lot-lifecycle-event.service';
 import { LotStatusEventController } from './lot/lot-status-event.controller';
@@ -33,6 +34,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
     LotExternalIdentifierService,
     LotHoldListService,
     LotIqcSkipService,
+    LotIqcSkipExecuteService,
     LotLifecycleEventService,
     LotStatusEventService,
     SerialNumberQueryService,
