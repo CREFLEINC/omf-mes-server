@@ -1027,6 +1027,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'CLAIM', codeName: '클레임', order: 50 },
       // 수입검사 불합격 사유(omf-all-around#106) — 마이그 20261016100000 에도 같은 줄이 있다.
       { code: 'IQC', codeName: '수입검사', order: 60 },
+      // 투입 뒤 발견한 자재 불량(omf-all-around#108) — 마이그 20261016120000 에도 같은 줄이 있다.
+      { code: 'MATERIAL', codeName: '자재 불량', order: 70 },
     ],
   },
   {
