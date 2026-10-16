@@ -133,6 +133,8 @@ const HEADER_LENGTH_JUDGES: Record<string, 'RANGE' | 'INVALID'> = {
  * 부재가 곧 오류가 아니라 계정에서 검사자를 푼다).
  */
 const WORKER_TABLE_READERS = [
+  // 관리웹 계정 ↔ 작업자 연결(omf-all-around#104 · P-38) — 활성·중복 연결을 확인한다. 사번 헤더 판정이 아니다.
+  'app/access/user-worker-link.service.ts',
   // 발급 대상의 현장 작업자와 감사 재검증 — 둘 다 활성·동일 공장을 확인한다.
   'app/document-issue/document-issue-delivery.ts',
   // 납품 라벨의 새 주인 — 배분과 «같은» 판정을 한다(POP 전용 · 작업자와 단말의 공장 일치).

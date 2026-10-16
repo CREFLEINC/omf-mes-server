@@ -117,6 +117,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /app/users/{appUserId}:deactivate': ['W-CO-02'],
   'PUT /app/users/{appUserId}/roles': ['W-CO-02'],
   'PUT /app/users/{appUserId}/data-scopes': ['W-CO-02'],
+  // 계정 ↔ 작업자 연결도 같은 사용자 관리 화면의 조작이다(omf-all-around#104 · 장부 P-38).
+  'PUT /app/users/{appUserId}/worker': ['W-CO-02'],
 
   // `W-06-01` Routing 등록·관리 — §3-2 가 「신규 Rev 발행」·「저장」·「확정」·「폐기」를
   // 적어 헤더 수정과 기본 Rev 지정이 도출표에 안 들어왔다. 셋 다 이 화면의 같은 자리다.

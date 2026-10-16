@@ -30,6 +30,7 @@ import {
   AppUserUpdate,
 } from './app-user.service';
 import { ScopeInput, UserAssignmentService } from './user-assignment.service';
+import { UserWorkerLinkService } from './user-worker-link.service';
 
 /** 사용자 마스터. 화면은 `W-CO-02`(사용자·역할·권한 관리)가 소유한다. */
 @Controller('app/users')
@@ -37,6 +38,7 @@ export class AppUserController {
   constructor(
     private readonly users: AppUserService,
     private readonly assignments: UserAssignmentService,
+    private readonly workerLinks: UserWorkerLinkService,
     private readonly credentials: CredentialService,
     private readonly sessionResolver: SessionResolver,
     private readonly idempotency: IdempotencyService,
@@ -146,6 +148,26 @@ export class AppUserController {
         currentSession(request)?.userId,
       ),
     }));
+  }
+
+  /** 계정에 연결된 작업자(omf-all-around#104 · 장부 P-38). 연결이 없으면 세 칸이 `null` 이다. */
+  @Get(':appUserId/worker')
+  @Contract('GET /app/users/{appUserId}/worker')
+  getWorker(@Param('appUserId', ParseIntPipe) appUserId: number): Promise<unknown> {
+    return this.workerLinks.get(appUserId);
+  }
+
+  /** 연결 치환 — `workerId: null` 이면 해제다. ⚠ If-Match 를 두지 않는다(역할 치환과 같은 모양). */
+  @Put(':appUserId/worker')
+  @Contract('PUT /app/users/{appUserId}/worker')
+  replaceWorker(
+    @Req() request: Request,
+    @Param('appUserId', ParseIntPipe) appUserId: number,
+    @Body() body: { workerId: number | null },
+  ): Promise<unknown> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.workerLinks.replace(appUserId, body.workerId, currentSession(request)?.userId),
+    );
   }
 
   @Get(':appUserId/data-scopes')

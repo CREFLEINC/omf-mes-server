@@ -48,6 +48,7 @@ describe('SessionService.build — 비밀번호 변경 전 발급', () => {
             credential === null ? null : { must_change_password: true, ...credential },
           user_data_scope: [],
           user_role: [],
+          worker: [],
         }),
       },
     } as unknown as PrismaService;

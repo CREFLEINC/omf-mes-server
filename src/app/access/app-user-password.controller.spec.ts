@@ -7,6 +7,7 @@ import { IdempotencyService } from '../../common/idempotency';
 import { AppUserController } from './app-user.controller';
 import { AppUserService } from './app-user.service';
 import { UserAssignmentService } from './user-assignment.service';
+import { UserWorkerLinkService } from './user-worker-link.service';
 
 const RESET = { appUserId: 1002, temporaryPassword: 'SynTmp9x2kAb', resetAt: '2026-09-18T03:00:00.000Z' };
 
@@ -25,6 +26,7 @@ const setup = (actorId: number) => {
   const controller = new AppUserController(
     {} as AppUserService,
     assignments,
+    {} as UserWorkerLinkService,
     credentials,
     resolver,
     idempotency,
