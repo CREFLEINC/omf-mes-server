@@ -40,6 +40,8 @@ export class UserWorkerLinkService {
     await this.assertUser(appUserId);
     const by = actorId === undefined ? null : BigInt(actorId);
     await this.prisma.$transaction(async (tx) => {
+      // 같은 계정에 대한 동시 요청을 한 줄로 세운다 — 둘 다 「앞 연결 풀기」를 지나 작업자 둘이 붙지 않게.
+      await tx.$queryRaw`SELECT app_user_id FROM app.app_user WHERE app_user_id = ${BigInt(appUserId)} FOR UPDATE`;
       if (workerId !== null) {
         const worker = await tx.worker.findUnique({
           where: { worker_id: BigInt(workerId) },
@@ -60,10 +62,12 @@ export class UserWorkerLinkService {
         data: { app_user_id: null, updated_by: by, version_no: { increment: 1 } },
       });
       if (workerId !== null) {
-        await tx.worker.updateMany({
+        const linked = await tx.worker.updateMany({
           where: { worker_id: BigInt(workerId), app_user_id: null },
           data: { app_user_id: BigInt(appUserId), updated_by: by, version_no: { increment: 1 } },
         });
+        // 위 검사 뒤 다른 계정이 먼저 연결했다 — 던져서 앞 연결 풀기까지 되돌린다(200 으로 연결이 사라지지 않게).
+        if (linked.count === 0) throw invalid('이미 다른 계정에 연결된 작업자입니다.');
       }
     });
     return this.get(appUserId);

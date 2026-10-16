@@ -27,7 +27,8 @@ function harness(workers: WorkerRow[], userExists = true) {
   const prisma = {
     app_user: { findUnique: async () => (userExists ? { app_user_id: 1n } : null) },
     worker,
-    $transaction: (work: (tx: { worker: typeof worker }) => Promise<unknown>) => work({ worker }),
+    $transaction: (work: (tx: { worker: typeof worker; $queryRaw: () => Promise<unknown[]> }) => Promise<unknown>) =>
+      work({ worker, $queryRaw: async () => [] }),
   } as unknown as PrismaService;
   return { service: new UserWorkerLinkService(prisma), rows };
 }
@@ -73,6 +74,26 @@ describe('UserWorkerLinkService (omf-all-around#104)', () => {
 
     expect(await fieldOf(service.replace(1, 10, 9))).toMatchObject({ field: 'workerId', code: 'INVALID' });
     expect(rows[0].app_user_id).toBe(2n);
+  });
+
+  it('검사 뒤 다른 계정이 먼저 연결하면 400 이고 앞 연결 풀기도 되돌린다', async () => {
+    const { service, rows } = harness([W(10, 1n), W(11, null)]);
+    // 검사(findUnique)는 비어 있다고 보지만, 연결 직전에 다른 계정이 차지한 경합을 흉내 낸다.
+    const original = rows[1];
+    let raced = false;
+    const prismaWorker = (service as unknown as { prisma: { worker: { updateMany: (a: never) => Promise<{ count: number }> } } }).prisma.worker;
+    const update = prismaWorker.updateMany;
+    prismaWorker.updateMany = async (args: never) => {
+      const where = (args as { where: { worker_id?: bigint } }).where;
+      if (where.worker_id === 11n && !raced) {
+        raced = true;
+        original.app_user_id = 2n;
+      }
+      return update(args);
+    };
+
+    expect(await fieldOf(service.replace(1, 11, 9))).toMatchObject({ field: 'workerId', code: 'INVALID' });
+    expect(rows[1].app_user_id).toBe(2n);
   });
 
   it('비활성 작업자와 없는 작업자는 400 이다', async () => {
