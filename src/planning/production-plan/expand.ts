@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
+import { PlanWindow } from './plan-window';
 
 /** 트랜잭션을 열기 «전»에 읽어 둔 전개 재료(§3-1 ①~③). */
 export interface PlanToExpand {
@@ -10,6 +11,8 @@ export interface PlanToExpand {
   plannedQty: Prisma.Decimal;
   uomId: bigint;
   operationIds: bigint[];
+  /** 계획일의 근무일 하루 — 전개분 전부가 같은 창을 갖는다. */
+  window: PlanWindow;
   dependencies: { predecessor_operation_id: bigint; successor_operation_id: bigint; dependency_type_code: string }[];
 }
 
@@ -29,6 +32,8 @@ export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUse
     item_id: plan.itemId,
     order_qty: plan.plannedQty,
     uom_id: plan.uomId,
+    planned_start_at: plan.window.plannedStartAt,
+    planned_end_at: plan.window.plannedEndAt,
     work_order_type_code: WORK_ORDER_DEFAULT_TYPE,
     priority_no: WORK_ORDER_DEFAULT_PRIORITY,
     status_code: WORK_ORDER_INITIAL_STATUS,

@@ -227,8 +227,8 @@ export class RoutingService {
 }
 
 /**
- * 생산계획이 W/O 를 전개할 Routing — 목록의 `usableOnly` 와 같은 조건에 생산오더 품목의 것이어야 한다
- * (omf-all-around#91). 작성중 Rev 로 계획을 확정하면 고칠 수 있는 공정이 그대로 W/O 가 된다.
+ * 생산계획이 W/O 를 전개할 Routing — 목록의 `usableOnly` 와 같은 조건에 생산오더 품목의 것이어야 한다.
+ * 작성중 Rev 로 계획을 확정하면 고칠 수 있는 공정이 그대로 W/O 가 된다.
  */
 export async function assertPlannableRouting(
   prisma: Pick<Prisma.TransactionClient, 'routing'>,

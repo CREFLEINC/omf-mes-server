@@ -9,6 +9,7 @@ const plan = (overrides: Partial<PlanToExpand> = {}): PlanToExpand => ({
   plannedQty: new Prisma.Decimal(40),
   uomId: 3n,
   operationIds: [101n, 102n, 103n],
+  window: { plannedStartAt: new Date('2026-11-20T00:00:00.000Z'), plannedEndAt: new Date('2026-11-21T00:00:00.000Z') },
   dependencies: [],
   ...overrides,
 });
@@ -35,8 +36,12 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
       status_code: 'PLANNED',
       created_by: 9,
       updated_by: 9,
+      planned_start_at: new Date('2026-11-20T00:00:00.000Z'),
+      planned_end_at: new Date('2026-11-21T00:00:00.000Z'),
     });
     expect(rows.map((row) => Number(row.order_qty))).toEqual([40, 40, 40]);
+    // 교대는 정하지 않는다 — 현장이 4M 에서 고른다.
+    expect(rows[0]).not.toHaveProperty('planned_shift_id');
     // ⛔ 라인·기본 위치·스냅샷은 칸 자체를 싣지 않는다 — PUT 이 채운다(R-5).
     for (const column of ['production_line_id', 'default_wip_location_id', 'operation_settings_snapshot']) {
       expect(rows[0]).not.toHaveProperty(column);

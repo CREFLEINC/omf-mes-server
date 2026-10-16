@@ -8,6 +8,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
 import { PlanToExpand, dependencyRows, workOrderRows } from './expand';
+import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
 
@@ -46,11 +47,14 @@ export class PlanConfirmService {
     }
   }
 
-  /** tx 밖 ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED`, 쓸 수 없는 Routing 은 400 `INVALID` 다(§3-7 · #91). */
+  /** tx 밖 ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED`, 쓸 수 없는 Routing 은 400 `INVALID` 다(§3-7). */
   private async read(productionPlanId: number): Promise<PlanToExpand> {
     const plan = await this.prisma.production_plan.findUnique({
       where: { production_plan_id: BigInt(productionPlanId) },
-      select: { planned_qty: true, routing_id: true, status_code: true, uom_id: true, production_order: { select: { item_id: true } } },
+      select: {
+        planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true,
+        production_order: { select: { item_id: true, plant_id: true } },
+      },
     });
     if (!plan) throw new NotFoundException('없는 생산계획입니다.');
 
@@ -67,8 +71,19 @@ export class PlanConfirmService {
       where: { predecessor_operation_id: { in: operationIds }, successor_operation_id: { in: operationIds } },
       select: { predecessor_operation_id: true, successor_operation_id: true, dependency_type_code: true },
     });
-    const { item_id: itemId } = plan.production_order;
-    return { productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id, operationIds, dependencies };
+    const { item_id: itemId, plant_id: plantId } = plan.production_order;
+    const window = await this.planWindow(plantId, plan.plan_date);
+    return { productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id, operationIds, window, dependencies };
+  }
+
+  /** 근무일 하루 — 가장 이른 활성 교대 시작부터 24시간. 교대가 없으면 08:00 부터다. */
+  private async planWindow(plantId: bigint, planDate: Date): Promise<PlanWindow> {
+    const [plant, firstShift] = await Promise.all([
+      this.prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId }, select: { timezone_code: true } }),
+      this.prisma.shift.findFirst({ where: { plant_id: plantId, is_active: true }, orderBy: { start_time: 'asc' }, select: { start_time: true } }),
+    ]);
+    const dayStart = firstShift === null ? DEFAULT_DAY_START : timeOfColumn(firstShift.start_time);
+    return dayWindow(planDate.toISOString().slice(0, 10), dayStart, plant.timezone_code);
   }
 
   /**
