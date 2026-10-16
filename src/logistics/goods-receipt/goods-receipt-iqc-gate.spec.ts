@@ -12,9 +12,9 @@ jest.mock('../../common/master', () => ({
 }));
 
 /** 입고 전 검증(`assertWritable`)까지만 답하는 스텁 — 통과하면 채번에서 멈춘다. */
-function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null) {
+function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null, isDefect = false) {
   const prisma = {
-    warehouse: { findUnique: async () => ({ plant_id: 1n }) },
+    warehouse: { findUnique: async () => ({ plant_id: 1n, is_defect: isDefect }) },
     plant: { findUnique: async () => ({ plant_id: 1n }) },
     uom: { findUnique: async () => ({ uom_id: 1n }) },
     location: { findFirst: async () => ({ location_id: 1n }) },
@@ -78,8 +78,24 @@ describe('GoodsReceiptService — IQC 합격 전 입고 차단 (omf-all-around#1
     expect(JSON.stringify((error as ContractException).getResponse())).toContain('STATE_LOCKED');
   });
 
-  /* 불합격(C6 → DEFECTIVE)·보류 판정 LOT 도 입고되지 않는다 — 처분(C19 정상·특채)으로 NORMAL 이 된 뒤에만 들어간다. */
-  it.each(['DEFECTIVE', 'SCRAPPED'])('IQC 대상 %s LOT 은 막는다', async (status) => {
+  /* omf-all-around#84 · P-43 — IQC 불합격 LOT 은 불량창고로만 입고된다. */
+  it('IQC 불합격(DEFECTIVE) LOT 을 불량창고로 입고하면 통과한다', async () => {
+    const error = await errorOf(stub(inboundLot('DEFECTIVE'), true, true));
+    expect((error as Error).message).toBe('PASSED_VALIDATION');
+  });
+
+  it('IQC 불합격 LOT 을 일반 창고로 입고하면 불량창고 안내로 막는다', async () => {
+    const error = await errorOf(stub(inboundLot('DEFECTIVE'), true, false));
+    expect(JSON.stringify((error as ContractException).getResponse())).toContain('불량창고로만');
+  });
+
+  it('검사 대기 LOT 은 불량창고로도 입고되지 않는다', async () => {
+    const error = await errorOf(stub(inboundLot('INSPECTION_PENDING'), true, true));
+    expect(JSON.stringify((error as ContractException).getResponse())).toContain('합격 전인');
+  });
+
+  /* 불합격(C6 → DEFECTIVE)·보류 판정 LOT 은 일반 창고로 입고되지 않는다 — 처분(C19 정상·특채)으로 NORMAL 이 된 뒤에만 들어간다. */
+  it.each(['DEFECTIVE', 'SCRAPPED'])('IQC 대상 %s LOT 은 일반 창고로 막는다', async (status) => {
     const error = await errorOf(stub(inboundLot(status), true));
 
     expect(error).toBeInstanceOf(ContractException);
