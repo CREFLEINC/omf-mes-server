@@ -8,9 +8,17 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { IdempotencyService, requestFingerprint } from '../../common/idempotency';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AttachmentView, attachmentView } from './attachment-view';
+import { documentTypeOf } from './document-type';
 
 const OPERATION = 'POST /app/attachments';
-const MISSING_TARGET = { WAREHOUSE: '없는 창고입니다.', NOTICE: '없는 공지입니다.' } as const;
+const MISSING_TARGET = {
+  WAREHOUSE: '없는 창고입니다.',
+  NOTICE: '없는 공지입니다.',
+  // 검사 문서(omf-all-around#58 · 장부 P-57) — 시험성적서·검사 기록. 사람이 볼 수 있는 문서만 받는다.
+  LOT: '없는 LOT 입니다.',
+  INSPECTION_RESULT: '없는 검사 결과입니다.',
+} as const;
+const DOCUMENT_TARGETS: readonly string[] = ['LOT', 'INSPECTION_RESULT'];
 type TargetType = keyof typeof MISSING_TARGET;
 const INT64_MAX = 2n ** 63n - 1n;
 /** 계약 `Attachment.contentType` 이 100자다(물리 칸은 150). */
@@ -74,7 +82,13 @@ export class AttachmentUploadService {
     const exists = targetId < 1n || targetId > INT64_MAX ? null
       : targetType === 'WAREHOUSE'
         ? await this.prisma.warehouse.findUnique({ where: { warehouse_id: targetId }, select: { warehouse_id: true } })
-        : await this.prisma.notice.findUnique({ where: { notice_id: targetId }, select: { notice_id: true } });
+        : targetType === 'LOT'
+          ? await this.prisma.lot.findUnique({ where: { lot_id: targetId }, select: { lot_id: true } })
+          : targetType === 'INSPECTION_RESULT'
+            ? await this.prisma.inspection_result.findUnique({
+              where: { inspection_result_id: targetId }, select: { inspection_result_id: true },
+            })
+            : await this.prisma.notice.findUnique({ where: { notice_id: targetId }, select: { notice_id: true } });
     if (!exists) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [field('targetId', ERROR_CODE.INVALID, MISSING_TARGET[targetType])]);
     }
@@ -87,9 +101,11 @@ function parseUpload(body: unknown, file: Express.Multer.File | undefined): Uplo
   const errors: ErrorItem[] = [];
 
   const rawType = fields.targetTypeCode;
-  const targetType = rawType === 'WAREHOUSE' || rawType === 'NOTICE' ? rawType : undefined;
+  const targetType = typeof rawType === 'string' && rawType in MISSING_TARGET ? (rawType as TargetType) : undefined;
   if (rawType === undefined) errors.push(field('targetTypeCode', ERROR_CODE.REQUIRED, '대상 유형이 필요합니다.'));
-  else if (!targetType) errors.push(field('targetTypeCode', ERROR_CODE.INVALID, 'WAREHOUSE 또는 NOTICE 여야 합니다.'));
+  else if (!targetType) {
+    errors.push(field('targetTypeCode', ERROR_CODE.INVALID, 'WAREHOUSE·NOTICE·LOT·INSPECTION_RESULT 중 하나여야 합니다.'));
+  }
 
   const rawId = fields.targetId;
   const targetId = typeof rawId === 'string' && /^-?\d+$/.test(rawId) ? BigInt(rawId) : undefined;
@@ -104,6 +120,13 @@ function parseUpload(body: unknown, file: Express.Multer.File | undefined): Uplo
   else if (targetType === 'WAREHOUSE' && image !== 'image/png' && image !== 'image/jpeg') {
     errors.push(field('file', ERROR_CODE.INVALID, '도면은 PNG·JPEG 이미지만 올릴 수 있습니다.'));
   }
+  const document = file && fileName && targetType !== undefined && DOCUMENT_TARGETS.includes(targetType)
+    ? documentTypeOf(file.buffer, fileName)
+    : undefined;
+  if (file && fileName && targetType !== undefined && DOCUMENT_TARGETS.includes(targetType) && document === undefined
+    && file.buffer.length > 0) {
+    errors.push(field('file', ERROR_CODE.INVALID, '볼 수 있는 문서(PDF·이미지·엑셀/워드/파워포인트·CSV)만 올릴 수 있습니다.'));
+  }
 
   if (errors.length > 0 || !targetType || targetId === undefined || !file || !fileName) {
     throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -111,6 +134,9 @@ function parseUpload(body: unknown, file: Express.Multer.File | undefined): Uplo
   if (targetType === 'WAREHOUSE') {
     const contentType = image as 'image/png' | 'image/jpeg';
     return { targetType, targetId, fileName, contentType, extension: contentType === 'image/png' ? 'png' : 'jpg', bytes: file.buffer };
+  }
+  if (document !== undefined) {
+    return { targetType, targetId, fileName, contentType: document.contentType, extension: document.extension, bytes: file.buffer };
   }
   const declared = file.mimetype.toLowerCase();
   const contentType = declared.length <= 100 && MIME.test(declared) ? declared : 'application/octet-stream';

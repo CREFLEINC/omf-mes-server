@@ -11,7 +11,8 @@ import { AttachmentQuery, AttachmentService } from './attachment.service';
 import { AttachmentView } from './attachment-view';
 
 /** 계약이 선언한 이미지 두 가지만 그대로 싣고, 나머지는 브라우저가 실행하지 않게 내려받기로 준다. */
-const INLINE_TYPES = new Set(['image/png', 'image/jpeg']);
+// 검사 문서(#58)의 PDF 는 브라우저에서 바로 연다 — 나머지(오피스 등)는 내려받는다.
+const INLINE_TYPES = new Set(['image/png', 'image/jpeg', 'application/pdf']);
 
 /**
  * 첨부 — 다형 참조(`targetTypeCode`,`targetId`)라 기존 `notice`·`access` 등 어디에도 안 붙는다.
