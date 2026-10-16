@@ -154,6 +154,28 @@ describe('검사기준 버전 (e2e)', () => {
     expect(tooBig.body.errors[0].code).toBe('RANGE');
   });
 
+  /* omf-all-around#103 — 샘플링 방식과 비율(%)은 짝이다(장부 P-37). */
+  it('⛔ 샘플 방식인데 비율이 없거나, 전수검사인데 비율이 있으면 400 samplingRatio 다', async () => {
+    const post = (extra: Record<string, unknown>) =>
+      createPlan().then((planId) =>
+        request(app.getHttpServer())
+          .post('/api/quality/inspection-plan-versions')
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key())
+          .send({ ...versionBody(planId), ...extra }),
+      );
+
+    const noRatio = await post({ samplingRatio: null });
+    expect(noRatio.status).toBe(400);
+    expect(noRatio.body.errors[0]).toMatchObject({ field: 'samplingRatio', code: 'REQUIRED' });
+
+    const fullWithRatio = await post({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: 10 });
+    expect(fullWithRatio.status).toBe(400);
+    expect(fullWithRatio.body.errors[0]).toMatchObject({ field: 'samplingRatio', code: 'INVALID' });
+
+    expect((await post({ samplingMethodCode: 'FULL_INSPECTION', samplingRatio: null })).status).toBe(201);
+  });
+
   it('⛔ 기준에 버전이 이미 있으면 등록이 400 이다 — 신규 버전은 다른 경로다', async () => {
     const planId = await createPlan();
     await createVersion(planId);
@@ -399,6 +421,8 @@ describe('검사기준 버전 (e2e)', () => {
       inspectionPlanId,
       effectiveFrom: '2026-01-01',
       samplingMethodCode: 'SAMPLE_BY_LOT',
+      // 샘플 방식은 비율이 필수다(omf-all-around#103 · P-37).
+      samplingRatio: 10,
       inspectionFrequencyCode: 'PRODUCTION_LOT',
     };
   }
