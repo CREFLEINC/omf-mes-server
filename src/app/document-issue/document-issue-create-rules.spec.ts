@@ -25,10 +25,11 @@ const PAIRS: ReadonlyArray<[DocumentType, readonly DocumentTargetType[]]> = [
   ["CERTIFICATE_OF_ANALYSIS", ["INSPECTION_RESULT"]],
   ["TOOL_LABEL", ["MOLD"]],
   ["LOCATION_LABEL", ["LOCATION"]],
+  ["IQC_LABEL", ["LOT"]],
 ];
 
 describe("발행 요청 규칙 (I-27 C1)", () => {
-  it("9개 문서와 8개 대상의 짝을 정확히 닫는다", () => {
+  it("10개 문서와 8개 대상의 짝을 정확히 닫는다", () => {
     for (const [documentTypeCode, allowed] of PAIRS) {
       for (const targetTypeCode of DOCUMENT_TARGET_TYPES) {
         const run = () =>
@@ -101,6 +102,24 @@ describe("발행 요청 규칙 (I-27 C1)", () => {
         ),
       ERROR_CODE.INVALID,
       "targets[0].targetId",
+    );
+  });
+
+  /* omf-all-around#110 — IQC 라벨은 수입검사 대기 자재 LOT 에만(P-40). */
+  it("IQC 라벨은 수입검사 대기 자재 LOT 으로만 발행한다", () => {
+    const target = prepared("LOT");
+    const facts = (statusCode: string, lotTypeCode = "MATERIAL") => ({
+      targetTypeCode: "LOT" as const,
+      targetId: target.targetId,
+      lotTypeCode,
+      statusCode,
+      completedAt: null,
+    });
+    expect(qualifyDocumentIssueTarget("IQC_LABEL", target, facts("INSPECTION_PENDING"))).toBe(target.targetId);
+    expectFailure(() => qualifyDocumentIssueTarget("IQC_LABEL", target, facts("NORMAL")), ERROR_CODE.STATE_LOCKED);
+    expectFailure(
+      () => qualifyDocumentIssueTarget("IQC_LABEL", target, facts("INSPECTION_PENDING", "PRODUCTION")),
+      ERROR_CODE.STATE_LOCKED,
     );
   });
 

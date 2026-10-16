@@ -60,6 +60,18 @@ describe('DocumentIssueRenditionService', () => {
     expect(prisma.document_issue_log.findUnique).toHaveBeenCalledTimes(2);
   });
 
+  /* omf-all-around#110 — IQC 라벨은 자재 판을 쓰고 유형 칸만 IQC 다(양식은 #86 확정 후 교체 · P-40). */
+  it('IQC 라벨 TSPL 은 자재 라벨 판에 유형 IQC 를 찍는다', async () => {
+    const iqcIssue = { ...materialLotIssue, document_type_code: 'IQC_LABEL' };
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue(iqcIssue) },
+    } as unknown as PrismaService;
+    const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
+
+    expect(text).toContain('"IQC  INSPECTION_PENDING"');
+    expect(text).toContain('"LOT NO.: 040101-00022S|1250|260911|100019|0001"');
+  });
+
   it('자재 LOT 라벨이 아닌 발행 기록은 422다', async () => {
     const prisma = {
       document_issue_log: {

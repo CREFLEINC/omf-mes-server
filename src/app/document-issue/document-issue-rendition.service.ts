@@ -22,6 +22,12 @@ export class DocumentIssueRenditionService {
     if (issue.document_type_code === 'MATERIAL_LOT_LABEL') {
       return format === 'tspl' ? this.materialLotLabelTspl(issueId) : this.materialLotLabel(issueId);
     }
+    // ⭐ IQC 라벨은 자재 라벨 «판»을 그대로 쓰고 유형 칸만 `IQC` 로 찍는다(omf-all-around#110 · P-40).
+    //    ⚠ 양식은 임시다 — 라벨 항목·형식은 #86 확정 후 교체한다.
+    if (issue.document_type_code === 'IQC_LABEL') {
+      const values = { ...(await this.materialLotLabelValues(issueId)), type: 'IQC' };
+      return format === 'tspl' ? materialLotTspl(values) : materialLotLabelPng(values);
+    }
     // ⭐ 생산 LOT 라벨도 자재 라벨과 «같은 판»으로 낸다(D5) — P-02-04 가 라벨을 찍어 그것을
     //    스캔하는 것이 마감 입력이라, 렌디션이 없으면 사슬이 끊긴다.
     if (issue.document_type_code === 'PRODUCTION_LOT_LABEL') {
@@ -120,7 +126,7 @@ export class DocumentIssueRenditionService {
     });
     if (!issue) throw new NotFoundException('없는 발행 기록입니다.');
     const { lot } = issue;
-    if (issue.document_type_code !== 'MATERIAL_LOT_LABEL' || lot === null) {
+    if (!['MATERIAL_LOT_LABEL', 'IQC_LABEL'].includes(issue.document_type_code) || lot === null) {
       throw new UnprocessableEntityException('자재 LOT 라벨 발행 기록만 렌더링할 수 있습니다.');
     }
     return materialLotLabelValues({ ...issue, lot });

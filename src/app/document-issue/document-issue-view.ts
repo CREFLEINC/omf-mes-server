@@ -17,6 +17,8 @@ const DOCUMENT_TYPES = [
   'CERTIFICATE_OF_ANALYSIS',
   'TOOL_LABEL',
   'LOCATION_LABEL',
+  // 수입검사용 라벨(omf-all-around#110 · 장부 P-40) — 자재 라벨 판을 재사용한다.
+  'IQC_LABEL',
 ] as const;
 const PRINT_OUTCOMES = ['PENDING', 'SUCCEEDED', 'FAILED'] as const;
 
