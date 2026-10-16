@@ -16,11 +16,13 @@ import {
   Tx,
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { assertAccountWorker } from './inspection-result-write-rules';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
+import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 2. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
@@ -38,6 +40,10 @@ export interface ConfirmEffectsInput {
   terminalAudit?: TerminalWorkerAuditActor;
   /** `confirmed_at`·`lot_status_event.changed_at`·`lot_hold.released_at` 이 한 시각을 나눠 쓴다. */
   changedAt: Date;
+  /** IQC 불합격이면 미리 받은 부적합 번호(트랜잭션 밖 채번 · P-41). 없으면 부적합을 세우지 않는다. */
+  nonconformanceNo?: string;
+  /** 불합격 수량이 0 인 전량 판정의 부적합 수량. */
+  inspectedQty?: number;
 }
 
 const VERSION_CONFLICT = 'VERSION_CONFLICT';
@@ -94,6 +100,7 @@ export class InspectionConfirmService {
     private readonly state: DocumentStateService,
     private readonly lots: LotQualityStatusService,
     private readonly holds: LotHoldService,
+    private readonly numbering: NumberingService,
   ) {}
 
   async confirm(
@@ -108,6 +115,21 @@ export class InspectionConfirmService {
     ]);
     await assertAccountWorker(this.prisma, appUserId);
     const resultId = BigInt(inspectionResultId);
+    // IQC 불합격이면 부적합 번호를 트랜잭션 «밖»에서 받는다(P-41 · 채번 규약). 판정은 본문이 우선이다.
+    const stored = await this.prisma.inspection_result.findUnique({
+      where: { inspection_result_id: resultId },
+      select: { inspection_request_id: true, overall_judgment_code: true },
+    });
+    const nonconformanceNo =
+      stored === null
+        ? undefined
+        : await allocateIqcNonconformanceNo(
+            this.prisma,
+            this.numbering,
+            stored.inspection_request_id,
+            body.overallJudgmentCode ?? stored.overall_judgment_code ?? undefined,
+            new Date(),
+          );
 
     return this.prisma.$transaction(async (tx) => {
       const result = await lockResult(tx, resultId);
@@ -151,8 +173,10 @@ export class InspectionConfirmService {
         inspectionRequestId: result.inspection_request_id,
         judgment: judgment as string,
         rejectedQty: Number(result.rejected_qty),
+        inspectedQty: Number(result.inspected_qty),
         appUserId,
         changedAt,
+        nonconformanceNo,
       });
 
       return { view: await reread(tx, resultId), versionNo: result.version_no + 1 };
@@ -189,6 +213,16 @@ export class InspectionConfirmService {
       sourceDocumentId: input.inspectionResultId,
     };
     await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
+    if (input.nonconformanceNo !== undefined && needsIqcNonconformance(request.inspection_type_code, input.judgment, request.lot_id)) {
+      await createIqcNonconformanceWithin(tx, {
+        nonconformanceNo: input.nonconformanceNo,
+        inspectionResultId: input.inspectionResultId,
+        request,
+        qty: input.rejectedQty > 0 ? input.rejectedQty : (input.inspectedQty ?? input.rejectedQty),
+        appUserId: input.appUserId,
+        at: input.changedAt,
+      });
+    }
     const c14 = await this.spreadC14(tx, request, input.rejectedQty, moveContext);
     // ⛔ C14 가 걸린 합격은 정상 전환을 하지 않는다 — 방금 검사 대기로 돌린 LOT 을 같은 트랜잭션에서 되돌린다(#105 리뷰).
     if (!c14) await this.releasePqcLots(tx, request, input.judgment, moveContext);
@@ -233,6 +267,8 @@ export class InspectionConfirmService {
       data: { status_code: REQUEST_COMPLETED, updated_by: appUserId ?? null, version_no: { increment: 1 } },
       select: {
         lot_id: true,
+        item_id: true,
+        uom_id: true,
         work_order_id: true,
         inspection_type_code: true,
         inspection_plan_version: { select: { acceptance_number: true } },

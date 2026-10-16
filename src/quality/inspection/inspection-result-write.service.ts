@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
 import { prepareRejectionDefects } from './inspection-rejection-defects';
+import { allocateIqcNonconformanceNo } from './iqc-nonconformance';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import {
   InspectionMeasurementInput,
@@ -69,6 +70,11 @@ export class InspectionResultWriteService {
     //    결번으로 남기고 401 을 받는다. 결번 자체는 허용이지만 순서만 바꾸면 안 생긴다.
     const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
     const defectTarget = await prepareRejectionDefects(this.prisma, this.defects, body, born !== undefined);
+    // 확정으로 태어나는 IQC 불합격은 부적합 번호도 미리 받는다(P-41 · 채번은 트랜잭션 밖).
+    const nonconformanceNo =
+      born === undefined
+        ? undefined
+        : await allocateIqcNonconformanceNo(this.prisma, this.numbering, BigInt(body.inspectionRequestId), body.overallJudgmentCode, born.changedAt);
     const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
 
     return this.prisma
@@ -119,6 +125,8 @@ export class InspectionResultWriteService {
             // `assertConfirmedShape()` 가 확정에는 판정이 있음을 이미 400 으로 강제했다.
             judgment: body.overallJudgmentCode as string,
             rejectedQty: body.rejectedQty,
+            inspectedQty: body.inspectedQty,
+            nonconformanceNo,
           });
         }
         if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
