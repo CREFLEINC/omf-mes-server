@@ -25,19 +25,24 @@ export async function resolveInspectionPlanVersion(
   effectiveDate: string,
 ): Promise<bigint> {
   const date = day('businessDate', effectiveDate);
-  const plans = await tx.inspection_plan_version.findMany({
-    where: {
-      status_code: 'CONFIRMED',
-      effective_from: { lte: date },
-      OR: [{ effective_to: null }, { effective_to: { gte: date } }],
-      inspection_plan: {
-        item_id: itemId,
-        inspection_type_code: inspectionTypeCode,
-        is_active: true,
+  const find = (planItemId: number | null) =>
+    tx.inspection_plan_version.findMany({
+      where: {
+        status_code: 'CONFIRMED',
+        effective_from: { lte: date },
+        OR: [{ effective_to: null }, { effective_to: { gte: date } }],
+        inspection_plan: {
+          item_id: planItemId,
+          inspection_type_code: inspectionTypeCode,
+          is_active: true,
+        },
       },
-    },
-    select: { inspection_plan_version_id: true },
-  });
+      select: { inspection_plan_version_id: true },
+    });
+  // 품목 전용 기준이 먼저다. 없을 때만 「전 품목 공통」(품목 칸이 빈 기준 · W-06-02)으로 내려간다
+  // (omf-all-around#101) — 둘을 한 번에 세면 전용 기준이 있는 품목이 「여러 개」로 막힌다.
+  const own = await find(itemId);
+  const plans = own.length > 0 ? own : await find(null);
   if (plans.length !== 1) {
     throw one({
       scope: 'screen',
