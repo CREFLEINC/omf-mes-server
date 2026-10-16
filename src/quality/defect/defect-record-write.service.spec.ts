@@ -36,7 +36,7 @@ function harness(options: {
     material_consumption: {
       findFirst: async () =>
         options.consumption === undefined
-          ? { work_order_id: 41n, actual_use_process_id: 33n, work_order: { routing_operation: { process_id: 34n } } }
+          ? { material_consumption_id: 61n, work_order_id: 41n, actual_use_process_id: 33n, work_order: { routing_operation: { process_id: 34n } } }
           : options.consumption,
     },
     defect_record: {
@@ -101,7 +101,7 @@ describe('DefectRecordWriteService', () => {
 
   it('공정을 주면 그대로 쓴다(#108 PQC 자재 불량)', async () => {
     const { service, created } = harness();
-    await service.create(iqc({ sourceCode: 'PQC', occurrenceProcessId: 11, detectionProcessId: 12, inspectionResultId: null }), { appUserId: 9 });
+    await service.create(iqc({ sourceCode: 'PQC', occurrenceProcessId: 11, detectionProcessId: 12 }), { appUserId: 9 });
 
     expect(created[0]).toMatchObject({ occurrence_process_id: 11n, detection_process_id: 12n });
   });
@@ -118,6 +118,13 @@ describe('DefectRecordWriteService', () => {
     const error = await service.create(iqc(), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ field: 'inspectionResultId', code: 'INVALID' });
+  });
+
+  it('검사 결과도 생산 실적도 없으면 500 이 아니라 400 REQUIRED 다(ck_defect_source)', async () => {
+    const { service, created } = harness();
+    const error = await service.create(iqc({ inspectionResultId: null }), { appUserId: 9 }).catch((caught: unknown) => caught);
+    expect(firstError(error)).toMatchObject({ field: 'inspectionResultId', code: 'REQUIRED' });
+    expect(created).toHaveLength(0);
   });
 
   it('수량이 0 이하면 400 RANGE 다', async () => {
@@ -182,6 +189,7 @@ describe('자재 불량(MATERIAL)', () => {
     expect(created[0]).toMatchObject({
       source_type_code: 'MATERIAL', lot_id: 20n, work_order_id: 41n,
       occurrence_process_id: 33n, detection_process_id: 33n,
+      source_document_id: 61n, // ck_defect_source — 투입 기록이 원천 문서다
     });
   });
 

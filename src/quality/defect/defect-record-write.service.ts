@@ -77,6 +77,10 @@ export class DefectRecordWriteService {
     if (input.occurredAt != null && Number.isNaN(Date.parse(input.occurredAt))) {
       errors.push(field('occurredAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
     }
+    // DB 제약 ck_defect_source — 검사 결과·생산 실적·원천 문서 중 하나는 있어야 한다. 자재 불량은 투입 기록이 원천이다.
+    if (input.sourceCode !== MATERIAL_SOURCE && input.inspectionResultId == null && input.productionResultId == null) {
+      errors.push(field('inspectionResultId', ERROR_CODE.REQUIRED, '검사 결과나 생산 실적이 있어야 불량 기록을 남길 수 있습니다.'));
+    }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
     const material = await this.materialDefaults(input);
@@ -105,6 +109,7 @@ export class DefectRecordWriteService {
         detection_process_id: processes.detection,
         inspection_result_id: optionalId(input.inspectionResultId),
         production_result_id: optionalId(input.productionResultId),
+        source_document_id: material === null ? null : material.consumptionId,
         work_order_id: target.workOrderId,
         lot_id: target.lotId,
         suspected_cause_code_id: optionalId(input.suspectedCauseCodeId),
@@ -175,13 +180,16 @@ export class DefectRecordWriteService {
    * ⛔ 투입 기록이 없는 LOT 은 받지 않는다 — 「투입 뒤 발견」이 아닌 자재를 이 원천으로 남기면 영향 범위가
    *    0건으로 나와 «영향 없음»처럼 읽힌다.
    */
-  private async materialDefaults(input: DefectRecordCreate): Promise<{ workOrderId: number; processId: number } | null> {
+  private async materialDefaults(
+    input: DefectRecordCreate,
+  ): Promise<{ workOrderId: number; processId: number; consumptionId: bigint } | null> {
     if (input.sourceCode !== MATERIAL_SOURCE) return null;
     if (input.lotId == null) throw one('lotId', ERROR_CODE.REQUIRED, '자재 불량은 자재 LOT 이 필요합니다.');
     const consumption = await this.prisma.material_consumption.findFirst({
       where: { lot_id: BigInt(input.lotId) },
       orderBy: [{ occurred_at: 'desc' }, { material_consumption_id: 'desc' }],
       select: {
+        material_consumption_id: true,
         work_order_id: true,
         actual_use_process_id: true,
         work_order: { select: { routing_operation: { select: { process_id: true } } } },
@@ -189,6 +197,7 @@ export class DefectRecordWriteService {
     });
     if (consumption === null) throw one('lotId', ERROR_CODE.INVALID, '투입 기록이 없는 LOT 입니다.');
     return {
+      consumptionId: consumption.material_consumption_id,
       workOrderId: Number(consumption.work_order_id),
       processId: Number(consumption.actual_use_process_id ?? consumption.work_order.routing_operation.process_id),
     };
