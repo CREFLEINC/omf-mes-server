@@ -340,6 +340,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['P-04-05'],
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
+  // `W-03-11` PQC 검사 등록·조회(설계 밖 관리웹 화면 · 장부 P-51) — 그 화면이 «스스로» PQC 판정을
+  // 확정한다. 도출표의 `P-02-13`(POP)과 합집합이다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
+  // 코드)는 계약에 403 이 없어 권한표가 보지 않으므로 적지 않는다.
+  'POST /quality/inspection-results': ['W-03-11'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이(PQC 화면 W-03-11 은 그 화면과 함께 더한다) LOT·검사 결과에 시험성적서를 붙인다.
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
 };
