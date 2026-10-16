@@ -5,15 +5,17 @@ import { ConflictException, ContractException, ERROR_CODE, field, one } from '..
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { LotQualityStatusService, Tx } from '../../core/lot';
+import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
+import { assertSortShape, DispositionSortService, SORT, type SortQuantities, type SortResult } from './disposition-sort';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
 
 /** 계약 `DispositionDecisionCreate` — required 4 · 프로퍼티 4(**전건 필수**). */
-export interface DispositionDecisionCreate {
+export interface DispositionDecisionCreate extends SortQuantities {
   dispositionTypeCode: string;
   decisionQty: number;
   uomId: number;
@@ -57,6 +59,8 @@ export class DispositionWriteService {
     private readonly prisma: PrismaService,
     private readonly documentState: DocumentStateService,
     private readonly lots: LotQualityStatusService,
+    private readonly sorts: DispositionSortService,
+    private readonly numbering: NumberingService,
   ) {}
 
   /**
@@ -71,14 +75,20 @@ export class DispositionWriteService {
     version: number,
     body: DispositionDecisionCreate,
     appUserId: number,
-  ): Promise<{ view: DispositionDecisionView; versionNo: number }> {
+  ): Promise<{ view: DispositionDecisionView & { sortResult?: SortResult | null }; versionNo: number }> {
     const id = BigInt(nonconformanceId);
     const decidedAt = new Date();
+    const isSort = body.dispositionTypeCode === SORT;
+    // ⛔ 채번은 트랜잭션을 «열기 전»이다(코어 규약) — 선별 불량분이 열 부적합의 번호다.
+    const splitNonconformanceNo = isSort && (body.rejectedQty ?? 0) > 0
+      ? await this.numbering.next('NONCONFORMANCE', null, decidedAt.toISOString().slice(0, 10))
+      : null;
     return this.prisma.$transaction(async (tx) => {
       const locked = await lockNonconformance(tx, id);
       const target = await readTarget(tx, id);
       // ⛔ `decisionQty > 0` 과 `dispositionTypeCode` enum 은 **계약 가드가 이미** 400 을 낸다(R-15).
       assertShape(body, target);
+      if (isSort) assertSortShape(body, target.lotIds.length, target.uomScale);
       // 계약 「409 는 둘이다 — 남은 수량을 넘길 때, 그리고 이미 닫힌 부적합일 때」.
       if (locked.status_code === DECIDED) {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
@@ -102,25 +112,13 @@ export class DispositionWriteService {
       // ⭐ **이 부적합의 `nonconformance_lot` 전건**을 옮긴다. 부분 처분이면 매 판정마다 돌아
       //    **마지막 판정의 도착 상태가 남는다**(§0 판정 #2).
       // ⛔ `ctx.transitionCode` 를 안 넘긴다 — 전이표가 코드를 가진 자리라 죽은 인자다(R-1 ⓑ).
-      const { movedLotIds } = await this.lots.moveWithin(tx, target.lotIds, MOVE_ACTION[body.dispositionTypeCode], {
-        changedBy: BigInt(appUserId),
-        changedAt: decidedAt,
-        sourceDocumentTypeCode: SOURCE_TYPE,
-        sourceDocumentId: decision.disposition_decision_id,
-        reason: body.reason,
-      });
-      // ⭐ 코어는 `from` 밖 LOT 을 조용히 건너뛴다(집합 전이라 그렇다). 「하나도 못 옮겼다」를
-      //    201 로 내면 처분과 LOT 이 갈린다 — 재로드해도 안 풀리므로 400 이다(문의 088 선례).
-      if (movedLotIds.length === 0) {
-        throw new ContractException(HttpStatus.BAD_REQUEST, [
-          { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '지금 LOT 상태에서는 이 처분으로 옮길 수 없습니다.' },
-        ]);
-      }
-      // 재작업이면 IQC 의뢰를 다시 연다 — 판정 화면 대기 큐에 다시 떠야 재검사 회차를 쓴다(장부 P-43).
-      if (body.dispositionTypeCode === 'REWORK') {
-        await reopenIqcRequestForReworkWithin(tx, id, movedLotIds, appUserId);
-      }
-
+      const sortResult = isSort
+        ? await this.sorts.applyWithin(tx, body, {
+          nonconformanceId: id, decisionId: decision.disposition_decision_id, lotIds: target.lotIds,
+          decisionQty: body.decisionQty, uomId: target.uomId, uomScale: target.uomScale, reason: body.reason,
+          appUserId, decidedAt, splitNonconformanceNo,
+        })
+        : await this.moveLots(tx, id, target.lotIds, body, decision.disposition_decision_id, appUserId, decidedAt);
       // ⭐ 종결 판정이 전이 «뒤»다 — LOT 이 못 움직이면 부적합을 닫지 않는다. 「남은 수량 0」의
       //    정의도 조회와 한 함수다(계약 `dispositionProgressCode.COMPLETED`).
       const closing = dispositionProgressCode(
@@ -145,7 +143,8 @@ export class DispositionWriteService {
 
       const built = dispositionByIdQuery(Number(decision.disposition_decision_id));
       const rows = await tx.$queryRawUnsafe<DispositionDecisionRow[]>(built.sql, ...built.params);
-      return { view: dispositionDecisionView(rows[0]).view, versionNo: locked.version_no + 1 };
+      const view = dispositionDecisionView(rows[0]).view;
+      return { view: isSort ? { ...view, sortResult } : view, versionNo: locked.version_no + 1 };
     });
   }
 
@@ -154,6 +153,32 @@ export class DispositionWriteService {
    * ⚠ `from` 이 `PENDING_DECISION` 하나라 **의뢰를 안 거친 부적합의 «전량» 판정은 409** 다 —
    *   부분 판정은 종결시킬 것이 없어 이 전이를 안 타고 통과한다. 전이표가 정본이다.
    */
+  private async moveLots(
+    tx: Tx, nonconformanceId: bigint, lotIds: bigint[], body: DispositionDecisionCreate, decisionId: bigint,
+    appUserId: number, decidedAt: Date,
+  ): Promise<null> {
+    const { movedLotIds } = await this.lots.moveWithin(tx, lotIds, MOVE_ACTION[body.dispositionTypeCode], {
+      changedBy: BigInt(appUserId),
+      changedAt: decidedAt,
+      sourceDocumentTypeCode: SOURCE_TYPE,
+      sourceDocumentId: decisionId,
+      reason: body.reason,
+    });
+    // ⭐ 코어는 `from` 밖 LOT 을 조용히 건너뛴다(집합 전이라 그렇다). 「하나도 못 옮겼다」를
+    //    201 로 내면 처분과 LOT 이 갈린다 — 재로드해도 안 풀리므로 400 이다(문의 088 선례).
+    if (movedLotIds.length === 0) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '지금 LOT 상태에서는 이 처분으로 옮길 수 없습니다.' },
+      ]);
+    }
+    // 재작업이면 IQC 의뢰를 다시 연다 — 판정 화면 대기 큐에 다시 떠야 재검사 회차를 쓴다(장부 P-43).
+    if (body.dispositionTypeCode === 'REWORK') {
+      await reopenIqcRequestForReworkWithin(tx, nonconformanceId, movedLotIds, appUserId);
+    }
+
+    return null;
+  }
+
   private assertDecidable(currentStatus: string): { to: string } {
     try {
       return this.documentState.assertTransition(STATUS_COLUMN, 'nonconformance-decide', currentStatus);
