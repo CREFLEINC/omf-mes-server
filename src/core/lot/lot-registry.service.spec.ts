@@ -88,6 +88,12 @@ function fake(seed: Seed) {
   return { tx: tx as unknown as Tx, calls, args, created };
 }
 
+const IQC = {
+  requestNo: 'IRQ-20260911-0001',
+  effectiveDate: '2026-09-11',
+  requestedAt: '2026-09-11T01:00:00.000Z',
+};
+
 function input(extra: Partial<LotRegisterInput> = {}): LotRegisterInput {
   return {
     lotNo: 'SUP-1',
@@ -169,15 +175,44 @@ describe('LotRegistryService', () => {
   });
 
   it('LOT 코어 — 라인 → LOT → 라인 UPDATE 순서다', async () => {
-    const { tx, calls } = fake({ line: { lot_id: null } });
+    const { tx, calls } = fake({ line: { lot_id: null }, iqcPlans: [{ inspection_plan_version_id: 55n }] });
 
-    await service.createWithin(tx, input(), 7);
+    await service.createWithin(tx, input({ incomingIqc: IQC }), 7);
 
     // 라인은 코어가 불리기 «전에» 서 있다(`lot.source_id` 가 라인 id 다).
     expect(calls.indexOf('lot.create')).toBeLessThan(calls.indexOf('line.updateMany'));
     expect(calls.indexOf('lot_hold.create')).toBeGreaterThan(calls.indexOf('lot.create'));
     // ⭐⭐ R-5 — 보류 쓰기 «앞»에 `lot` 잠금이 선다(코어가 표식으로 강제하는 순서다).
     expect(calls.indexOf('lot.lock')).toBeLessThan(calls.indexOf('lot_hold.create'));
+  });
+
+  /* omf-all-around#105 — 무검사 = 검사하지 않는다. 보류 없이 정상으로 선다. */
+  it('LOT 코어 — 무검사 입하 LOT 은 보류를 걸지 않고 정상으로 선다', async () => {
+    const { tx, calls, created } = fake({ line: { lot_id: null } });
+
+    await service.createWithin(tx, input(), 7);
+
+    expect(created[0].status_code).toBe('NORMAL');
+    expect(calls).not.toContain('lot_hold.create');
+    expect(calls).not.toContain('iqc.request.create');
+  });
+
+  it('LOT 코어 — IQC 대상 입하 LOT 은 검사 대기 + 수입검사 보류다', async () => {
+    const { tx, calls, created } = fake({ line: { lot_id: null }, iqcPlans: [{ inspection_plan_version_id: 55n }] });
+
+    await service.createWithin(tx, input({ incomingIqc: IQC }), 7);
+
+    expect(created[0].status_code).toBe('INSPECTION_PENDING');
+    expect(calls).toContain('lot_hold.create');
+  });
+
+  it('LOT 코어 — 입하가 아닌 원천은 종전처럼 검사 대기 + 보류다', async () => {
+    const { tx, calls, created } = fake({});
+
+    await service.createWithin(tx, input({ sourceTypeCode: 'RECYCLE_ENTRY' }), 7);
+
+    expect(created[0].status_code).toBe('INSPECTION_PENDING');
+    expect(calls).toContain('lot_hold.create');
   });
 
   it('LOT 코어 — 입하 라인이 아닌 원천은 라인을 만지지 않는다', async () => {
