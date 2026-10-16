@@ -14,6 +14,7 @@ import { ConcessionController } from './concession/concession.controller';
 import { DefectDistributionService } from './defect/defect-distribution.service';
 import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
+import { DefectRecordWriteService } from './defect/defect-record-write.service';
 import { DispositionController } from './disposition/disposition.controller';
 import { DispositionWriteService } from './disposition/disposition-write.service';
 import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
@@ -91,6 +92,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionSummaryService,
     InspectionMeasurementService,
     DefectRecordService,
+    DefectRecordWriteService,
     DefectDistributionService,
     LotStatusService,
     LotStatusTransitionService,

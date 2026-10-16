@@ -201,6 +201,16 @@
       }
      },
      {
+      "name": "inspectionResultId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "그 검사 결과에 붙은 불량만. 주면 기간(detectedFrom·detectedTo)이 필요 없다. 서버 선행 · 장부 P-39 · omf-all-around#106"
+     },
+     {
       "name": "defectCodeId",
       "in": "query",
       "schema": {
@@ -303,6 +313,61 @@
      }
     },
     "x-internal-note": "등록 경로를 두지 않았다 — 03 화면 7장에 불량코드 입력이 0건이다. 이 계약에 만드는 경로가 없다. M-02-02(수리 왕복)는 읽어 쓰는 쪽이고(POST /production/repair-executions 가 defectRecordId 를 필수로 받는다), P-04-03 은 04 계약 미착수다. omf-mes#83 은 2026-08-25 CLOSED — 「#83 로 막힘」 표기는 낡았다. ⛔ 04 트랙이 POST 를 더할 때 새 경로를 만들지 말고 이 경로에 얹는다 — 접두어는 공유해도 경로는 한 계약에만 둔다(03 계약 2단계 §3)."
+   },
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "불량 기록 등록",
+    "description": "불량 코드와 사유를 기록한다. 검사 결과(inspectionResultId)를 주면 LOT·작업지시는 그 검사의 의뢰가 정하고, 요청이 다른 값을 실으면 400 이다. sourceCode=IQC 이면 발생·검출 공정을 생략할 수 있다 — 기준정보의 수입검사 공정(process_code=IQC)이 들어간다(없으면 400 code=STATE_LOCKED). 귀속 작업자는 계정에 연결된 작업자다(P-38). 근거: W-01-01 · omf-all-around#106 · #108 (서버 선행 · 장부 P-39)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DefectRecordCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DefectRecord"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-39. 계약 원문은 등록 경로를 두지 않았다(03 화면 7장에 불량코드 입력 0건) — IQC 불합격 사유(#106)가 첫 사용처다."
    }
   },
   "/quality/defect-records/distribution": {
@@ -1547,7 +1612,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
+      "description": "검증 실패. 고쳐야 풀린다 ⭐ IQC 불합격(REJECTED) 확정은 그 결과에 불량 기록이 1건 이상 있어야 한다 — 없으면 field=defectRecords, code=REQUIRED(서버 선행 · 장부 P-39).",
       "content": {
        "application/json": {
         "schema": {
@@ -5015,6 +5080,118 @@
      "remainingQty": {
       "type": "number",
       "description": "이 발행 뒤 남은 재작업 잔량 — 화면이 중복 발행을 막는 데 쓴다"
+     }
+    }
+   },
+   "DefectRecordCreate": {
+    "type": "object",
+    "required": [
+     "sourceCode",
+     "defectCodeId",
+     "defectQty",
+     "uomId",
+     "detectedAt"
+    ],
+    "description": "불량 기록 등록 본문(서버 선행 · 장부 P-39 · omf-all-around#106).",
+    "properties": {
+     "sourceCode": {
+      "type": "string",
+      "description": "불량 기록 원천. 값 목록은 GET /mdm/code-values?codeGroupCode=DEFECT_RECORD_SOURCE — 수입검사(IQC)를 서버가 더했다(P-39)."
+     },
+     "defectCodeId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "defectQty": {
+      "type": "number",
+      "exclusiveMinimum": 0
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "detectedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "occurrenceProcessId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "sourceCode=IQC 이면 생략할 수 있다."
+     },
+     "detectionProcessId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "sourceCode=IQC 이면 생략할 수 있다."
+     },
+     "inspectionResultId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "productionResultId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "workOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "lotId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "suspectedCauseCodeId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "defectDescription": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "사유(글)."
+     },
+     "equipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "moldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "occurredAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
      }
     }
    }

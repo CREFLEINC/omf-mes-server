@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/500)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/501)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -47,7 +47,8 @@ describe('계약 커버리지', () => {
     // 계정-작업자 연결 2 오퍼레이션(장부 P-38): 496 → 498.
     // 검사 대상 이력 1 오퍼레이션(#61 · 장부 P-55): 498 → 499.
     // IQC 생략 실행 1 오퍼레이션(장부 P-36): 499 → 500.
-    expect(registry.size).toBe(500);
+    // 불량 기록 등록 1 오퍼레이션(#106 · 장부 P-42): 500 → 501.
+    expect(registry.size).toBe(501);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

@@ -15,6 +15,8 @@ import { assertDetectedPeriodRequired, DefectRecordView, defectRecordView, detec
 export interface DefectRecordListQuery {
   workOrderId?: number;
   lotId?: number;
+  /** 그 검사 결과에 붙은 불량(omf-all-around#106 · P-39) — IQC 이력(S32)이 불합격 사유를 읽는다. */
+  inspectionResultId?: number;
   defectCodeId?: number;
   occurrenceProcessId?: number;
   detectionProcessId?: number;
@@ -30,7 +32,8 @@ export class DefectRecordService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(query: DefectRecordListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<DefectRecordView>> {
-    assertDetectedPeriodRequired(query);
+    // 검사 결과 하나로 좁히면 기간이 필요 없다 — 한 결과의 불량은 많아야 몇 줄이다(P-39 · 완화).
+    if (query.inspectionResultId === undefined) assertDetectedPeriodRequired(query);
     const page = pageRequest(query);
     const where: Prisma.defect_recordWhereInput = {
       ...buildDefectRecordWhere(query),
@@ -54,6 +57,7 @@ export function buildDefectRecordWhere(query: DefectRecordListQuery): Prisma.def
     // 포함된다. `work_order` 를 조인하지 않는다 — 이 목록은 원천이 `defect_record` 한 표다.
     ...filter('work_order_id', query.workOrderId),
     ...filter('lot_id', query.lotId),
+    ...filter('inspection_result_id', query.inspectionResultId),
     ...filter('defect_code_id', query.defectCodeId),
     ...filter('occurrence_process_id', query.occurrenceProcessId),
     ...filter('detection_process_id', query.detectionProcessId),

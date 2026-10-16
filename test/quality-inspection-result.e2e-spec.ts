@@ -1043,6 +1043,32 @@ describe('검사 의뢰·결과 (e2e)', () => {
     return { inspectionRequestId, inspectionResultId: await newDraft(inspectionRequestId, quantities), lotId };
   }
 
+  /** IQC 불합격의 사유 한 줄(omf-all-around#106). 등록 경로의 검증은 `defect-record-write.service.spec.ts` 몫이다. */
+  async function recordDefect(inspectionResultId: number): Promise<void> {
+    const process = await prisma.process.upsert({
+      where: { process_code: 'IQC' },
+      update: {},
+      create: { process_code: 'IQC', process_name: '수입검사', process_type_code: 'INSPECTION' },
+    });
+    const code = await prisma.defect_code.upsert({
+      where: { defect_code: 'E2E-IQC-DEFECT' },
+      update: {},
+      create: { defect_code: 'E2E-IQC-DEFECT', defect_name: 'e2e 수입검사 불량' },
+    });
+    await prisma.defect_record.create({
+      data: {
+        source_type_code: 'IQC',
+        defect_code_id: code.defect_code_id,
+        defect_qty: 1,
+        uom_id: ids.uom,
+        occurrence_process_id: process.process_id,
+        detection_process_id: process.process_id,
+        inspection_result_id: BigInt(inspectionResultId),
+        detected_at: new Date(),
+      },
+    });
+  }
+
   function confirm(
     inspectionResultId: number,
     body: Record<string, unknown>,
@@ -1135,6 +1161,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     it('⭐ ⓓ 불합격은 `DEFECTIVE`+`C6` 이고 보류를 «닫지 않는다» — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
+      await recordDefect(inspectionResultId);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 
@@ -1143,6 +1170,16 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const holds = await holdsOf(lotId);
       expect(holds[0].released_at).toBeNull();
       expect(holds[0].release_reason_code).toBeNull();
+    });
+
+    /* omf-all-around#106 — IQC 불합격은 사유(불량 기록)가 있어야 확정된다(장부 P-39). */
+    it('⛔ IQC 불합격인데 불량 기록이 없으면 400 defectRecords 이고 LOT 이 움직이지 않는다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
+
+      const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'defectRecords', code: 'REQUIRED' });
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
     });
 
     it('보류 판정은 `INSPECTION_PENDING`+`C5` 이고 역시 보류를 닫지 않는다', async () => {
@@ -1308,6 +1345,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
       const inspectionRequestId = await newConfirmRequest({ workOrderId, planVersionId: ids.c14PlanVersion });
       const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+      await recordDefect(inspectionResultId);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 

@@ -45,6 +45,8 @@ const REQUEST_COMPLETED = 'COMPLETED';
 const JUDGMENT_GROUP = 'INSPECTION_RESULT_OVERALL_JUDGMENT';
 const ACCEPTED = 'ACCEPTED';
 const PQC = 'PQC';
+const IQC = 'IQC';
+const REJECTED = 'REJECTED';
 /** `lot_status_event.source_document_type_code` — 이 전이를 일으킨 전표. */
 const SOURCE_DOCUMENT_TYPE = 'INSPECTION_RESULT';
 /**
@@ -131,6 +133,7 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
+      await assertRejectionRecorded(tx, resultId, result.inspection_request_id, judgment);
       const changedAt = new Date();
       await tx.inspection_result.update({
         where: { inspection_result_id: resultId },
@@ -330,6 +333,29 @@ export class InspectionConfirmService {
     );
     return true;
   }
+}
+
+/**
+ * IQC 불합격 확정은 불합격 사유(불량 기록)가 있어야 한다(omf-all-around#106 · 2026-10-16 결정 ② · 장부 P-39).
+ * 화면(W-01-01)이 먼저 막지만 다른 클라이언트가 사유 없이 불합격을 확정하지 못하게 서버도 막는다.
+ * ⚠ `:confirm` 경로에만 건다 — 오프라인 큐(`POST …/inspection-results` 확정)는 결과 id 를 몰라 불량 기록을
+ *    먼저 붙일 수 없다. PQC·OQC 는 이번 결정 범위가 아니다.
+ */
+export async function assertRejectionRecorded(
+  tx: Tx,
+  inspectionResultId: bigint,
+  inspectionRequestId: bigint,
+  judgment: string | undefined,
+): Promise<void> {
+  if (judgment !== REJECTED) return;
+  const request = await tx.inspection_request.findUnique({
+    where: { inspection_request_id: inspectionRequestId },
+    select: { inspection_type_code: true },
+  });
+  if (request?.inspection_type_code !== IQC) return;
+  const recorded = await tx.defect_record.count({ where: { inspection_result_id: inspectionResultId } });
+  if (recorded > 0) return;
+  throw one(field('defectRecords', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 먼저 기록해야 합니다.'));
 }
 
 /** ⛔ `SELECT … FOR UPDATE` — 읽고 판정하고 쓰는 사이에 같은 결과가 확정되면 두 번 전이한다. */
