@@ -543,6 +543,9 @@ const SEED: CodeGroupSeed[] = [
       // ⭐ 검사 비대상·생략(omf-all-around#105) — 마이그 20261016090000 에도 같은 두 줄이 있다.
       { code: 'C21', codeName: '검사 비대상 → 정상', order: 140 },
       { code: 'C22', codeName: 'IQC 생략 → 정상', order: 150 },
+      // 처분 선별(omf-all-around#108) — 마이그 20261016130000 에도 같은 줄이 있다. C21·C22 는 #105 몫이다.
+      { code: 'C23', codeName: '처분 선별 → 정상(양품)', order: 160 },
+      { code: 'C24', codeName: '처분 선별 → 불량(불량분 분할)', order: 170 },
     ],
   },
   {
@@ -1115,6 +1118,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'INBOUND_RECEIPT_LINE', codeName: '입하 라인', order: 10 },
       { code: 'RECYCLE_ENTRY', codeName: '재생재 등록', order: 20 },
       { code: 'WORK_ORDER', codeName: '작업지시(선발행)', order: 30 },
+      // 처분 선별의 불량분 LOT — 원 LOT 이 원천이다(omf-all-around#108 · 마이그 20261016130000).
+      { code: 'LOT_SPLIT', codeName: 'LOT 분할(선별 불량분)', order: 40 },
     ],
   },
   {
