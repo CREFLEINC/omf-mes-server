@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { LotQualityStatusService } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService } from '../../core/lot';
 import { assertSortShape, DispositionSortService } from './disposition-sort';
 
 /** omf-all-around#108 — 처분 선별(장부 P-53). */
@@ -55,7 +55,11 @@ const harness = (balances: unknown[]) => {
     },
     nonconformance_lot: { create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => createdNcLot.push(data)) },
   } as unknown as Prisma.TransactionClient;
-  return { service: new DispositionSortService(lots, posting), tx, moves, posted, createdNc, createdNcLot };
+  const holds = {
+    lockLotsWithin: jest.fn().mockResolvedValue([{ lot_id: 90n }]),
+    releaseWithin: jest.fn().mockResolvedValue({ released: [], openAfter: 0 }),
+  } as unknown as LotHoldService;
+  return { service: new DispositionSortService(lots, posting, holds), tx, moves, posted, createdNc, createdNcLot, holds };
 };
 
 const body = (accepted: number, rejected: number) => ({ acceptedQty: accepted, rejectedQty: rejected, businessDate: '2026-10-16' });
@@ -86,6 +90,21 @@ describe('DispositionSortService', () => {
     ]);
     expect(h.createdNc[0]).toMatchObject({ nonconformance_no: 'NC-2', status_code: 'PENDING_DECISION', work_order_id: 41n });
     expect(h.createdNcLot[0]).toMatchObject({ lot_id: 91n, quality_status_before_code: 'DEFECTIVE' });
+  });
+
+  /* 장부 P-63 — 양품분(원 LOT)의 수입검사 대기 보류를 닫아 입고·피킹으로 잇는다. 불량분 자식은 손대지 않는다. */
+  it('양품분 원 LOT 의 수입검사 대기 보류만 처분 정상 사유로 닫는다', async () => {
+    const h = harness([balance(100)]);
+    await h.service.applyWithin(h.tx, body(70, 30), ctx);
+
+    expect(h.holds.releaseWithin).toHaveBeenCalledTimes(1);
+    expect(h.holds.releaseWithin).toHaveBeenCalledWith(
+      h.tx,
+      expect.any(Array),
+      { lotId: 10n, reasonCode: 'INCOMING_INSPECTION_WAIT' },
+      { releaseReasonCode: 'DISPOSITION_NORMAL' },
+      expect.objectContaining({ at: expect.any(Date) }),
+    );
   });
 
   it('재고가 없는 LOT(공정 중)은 LOT 기록만 나눈다', async () => {

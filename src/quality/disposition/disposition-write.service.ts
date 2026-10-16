@@ -4,13 +4,14 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
-import { LotQualityStatusService, Tx } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
 import { assertSortShape, DispositionSortService, SORT, type SortQuantities, type SortResult } from './disposition-sort';
+import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
 
@@ -61,6 +62,7 @@ export class DispositionWriteService {
     private readonly lots: LotQualityStatusService,
     private readonly sorts: DispositionSortService,
     private readonly numbering: NumberingService,
+    private readonly holds: LotHoldService,
   ) {}
 
   /**
@@ -170,6 +172,10 @@ export class DispositionWriteService {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '지금 LOT 상태에서는 이 처분으로 옮길 수 없습니다.' },
       ]);
+    }
+    // 정상 처분이면 수입검사 대기 보류도 닫는다 — 정상이 됐는데 보류가 남으면 입고 뒤 피킹·투입이 막힌다(장부 P-63).
+    if (body.dispositionTypeCode === 'NORMAL') {
+      await releaseInspectionHoldsWithin(tx, this.holds, movedLotIds, { by: BigInt(appUserId), at: decidedAt });
     }
     // 재작업이면 IQC 의뢰를 다시 연다 — 판정 화면 대기 큐에 다시 떠야 재검사 회차를 쓴다(장부 P-43).
     if (body.dispositionTypeCode === 'REWORK') {

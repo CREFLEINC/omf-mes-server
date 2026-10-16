@@ -3,8 +3,9 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
-import { LotQualityStatusService, splitLotWithin, Tx } from '../../core/lot';
+import { LotHoldService, LotQualityStatusService, splitLotWithin, Tx } from '../../core/lot';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
+import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 
 /** 처분 «선별»(omf-all-around#108 · 장부 P-53). 양품은 정상, 불량분은 자식 LOT 으로 떼어 불량이다. */
 export const SORT = 'SORT';
@@ -85,6 +86,7 @@ export class DispositionSortService {
   constructor(
     private readonly lots: LotQualityStatusService,
     private readonly posting: InventoryPostingService,
+    private readonly holds: LotHoldService,
   ) {}
 
   async applyWithin(tx: Tx, body: SortQuantities, ctx: SortContext): Promise<SortResult | null> {
@@ -110,6 +112,8 @@ export class DispositionSortService {
     }
     const moved = await this.lots.moveWithin(tx, [parentLotId], 'disposition-sort', move);
     if (moved.movedLotIds.length === 0) throw stateLocked();
+    // 양품분(원 LOT)이 정상이 됐다 — 수입검사 대기 보류도 닫는다(장부 P-63). 불량분 자식은 그대로다.
+    await releaseInspectionHoldsWithin(tx, this.holds, moved.movedLotIds, { by: BigInt(ctx.appUserId), at: ctx.decidedAt });
     return result;
   }
 
