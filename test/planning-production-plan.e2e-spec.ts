@@ -50,6 +50,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   let bomId = 0;
   let routingId = 0;
   let emptyRoutingId = 0; // 공정 0건 — 400 LINE_REQUIRED 용
+  const unusableRoutingIds = { draft: 0, expired: 0, otherItem: 0, laterObsolete: 0 };
   let operationIds: number[] = []; // seq 10·20·30 순
   let lineId = 0;
 
@@ -554,6 +555,87 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     });
   });
 
+  describe('Routing 상태 검사 — omf-all-around#91', () => {
+    const routingRejected = { field: 'routingId', code: 'INVALID' };
+
+    it.each([
+      ['작성중(DRAFT)', 'draft'],
+      ['유효 기간이 지난', 'expired'],
+      ['다른 품목의', 'otherItem'],
+    ] as const)('27. %s Routing 으로 계획을 만들면 400 INVALID', async (_label, key) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/planning/production-plans')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ productionOrderId: orderWId, planDate: '2026-11-10', plannedQty: 5, uomId, bomId, routingId: unusableRoutingIds[key] })
+        .expect(400);
+      expect(response.body.errors[0]).toMatchObject(routingRejected);
+    });
+
+    it('28. 수정에서 Routing 을 작성중 Rev 로 바꾸면 400 INVALID', async () => {
+      const planId = await createPlan('2026-11-11', 5);
+      const response = await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${planId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .send({ routingId: unusableRoutingIds.draft })
+        .expect(400);
+      expect(response.body.errors[0]).toMatchObject(routingRejected);
+    });
+
+    it('29. 계획 뒤에 Routing 이 폐기되면 — 수량 수정(같은 routingId 재전송 포함)은 되고 확정은 400 INVALID 이며 W/O 가 서지 않는다', async () => {
+      const planId = await createPlanOn(unusableRoutingIds.laterObsolete, '2026-11-12');
+      await prisma.routing.update({
+        where: { routing_id: BigInt(unusableRoutingIds.laterObsolete) },
+        data: { status_code: 'OBSOLETE' },
+      });
+
+      await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${planId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .send({ plannedQty: 6 })
+        .expect(200);
+
+      // 전체 본문처럼 같은 routingId 를 다시 실어도 바꾼 것이 아니다 — 검사하지 않는다.
+      await request(app.getHttpServer())
+        .put(`/api/planning/production-plans/${planId}`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .send({ plannedQty: 7, routingId: unusableRoutingIds.laterObsolete })
+        .expect(200);
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${planId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .expect(400);
+      expect(response.body.errors[0]).toMatchObject(routingRejected);
+      expect(await workOrdersOf(planId)).toHaveLength(0);
+    });
+
+    it('30. 이미 확정된 계획은 Routing 을 쓸 수 없게 돼도 재확정이 400 STATE_LOCKED 다(Routing 검사가 앞서지 않는다)', async () => {
+      const planId = await createPlan('2026-11-13', 5);
+      await confirmPlan(planId);
+      await prisma.production_plan.update({
+        where: { production_plan_id: BigInt(planId) },
+        data: { routing_id: BigInt(unusableRoutingIds.draft) },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/planning/production-plans/${planId}:confirm`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', await etagOf(planId))
+        .expect(400);
+      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    });
+  });
+
   /** `:confirm` 200 — 확정도 실제 오퍼레이션으로 한다(§8-1 관행). */
   async function confirmPlan(productionPlanId: number): Promise<request.Response> {
     return request(app.getHttpServer())
@@ -633,7 +715,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       data: { process_code: `${PREFIX}-PR`, process_name: '사출공정', process_type_code: 'MOLDING' },
     });
     const routing = await prisma.routing.create({
-      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'ACTIVE' },
+      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT`, routing_version: 1, status_code: 'CONFIRMED' },
     });
     routingId = Number(routing.routing_id);
     const operations = await Promise.all(
@@ -645,9 +727,26 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     );
     operationIds = operations.map((operation) => Number(operation.routing_operation_id));
     const emptyRouting = await prisma.routing.create({
-      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT-EMPTY`, routing_version: 1, status_code: 'ACTIVE' },
+      data: { item_id: item.item_id, routing_code: `${PREFIX}-RT-EMPTY`, routing_version: 1, status_code: 'CONFIRMED' },
     });
     emptyRoutingId = Number(emptyRouting.routing_id);
+    // #91 — 계획에 걸 수 없는 Routing 셋. 공정을 하나씩 달아 LINE_REQUIRED 와 섞이지 않게 한다.
+    const otherItem = await prisma.item.create({
+      data: { item_code: `${PREFIX}-IT-OTHER`, item_name: '계획조회검사다른품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
+    });
+    const unusable = [
+      { key: 'draft', item_id: item.item_id, routing_version: 2, status_code: 'DRAFT' },
+      { key: 'expired', item_id: item.item_id, routing_version: 3, status_code: 'CONFIRMED', effective_to: new Date('2026-01-01T00:00:00.000Z') },
+      { key: 'otherItem', item_id: otherItem.item_id, routing_version: 1, status_code: 'CONFIRMED' },
+      { key: 'laterObsolete', item_id: item.item_id, routing_version: 4, status_code: 'CONFIRMED' },
+    ] as const;
+    for (const { key, ...data } of unusable) {
+      const row = await prisma.routing.create({ data: { ...data, routing_code: `${PREFIX}-RT-${key}` } });
+      await prisma.routing_operation.create({
+        data: { routing_id: row.routing_id, operation_seq: 10, process_id: process.process_id, operation_name: '공정10' },
+      });
+      unusableRoutingIds[key] = Number(row.routing_id);
+    }
     // `:confirm` 이 옮길 의존 2행(§3-4).
     await prisma.routing_operation_dependency.createMany({
       data: [

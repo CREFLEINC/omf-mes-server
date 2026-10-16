@@ -7,6 +7,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertPlannableRouting } from '../routing/routing.service';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
 
 /** 조회 2 + CRUD 3(PR ①a·②) — `:confirm` 은 PR ③ 몫이다. */
@@ -121,11 +122,12 @@ export class ProductionPlanService {
     // ⛔ 404 가 아니다(계약 미선언) — 없는 P/O 는 필드 오류로 낸다.
     const order = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(body.productionOrderId) },
-      select: { plant_id: true },
+      select: { plant_id: true, item_id: true },
     });
     if (!order) {
       throw one(field('productionOrderId', ERROR_CODE.INVALID, '없는 생산오더입니다.'));
     }
+    await assertPlannableRouting(this.prisma, body.routingId, order.item_id);
 
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -177,6 +179,17 @@ export class ProductionPlanService {
       // 흘리면 DB CHECK 위반이 500 으로 나간다(POST 와 같은 그물 · 리뷰 #276 Major).
       if (body.plannedQty !== undefined && body.plannedQty <= 0) {
         throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
+      }
+      // Routing 을 «바꿀 때만» 본다 — 계획 뒤에 Rev 가 폐기돼도 수량·날짜는 고칠 수 있고, 확정이 막는다.
+      if (body.routingId !== undefined) {
+        const current = await tx.production_plan.findUniqueOrThrow({
+          where: { production_plan_id: BigInt(productionPlanId) },
+          select: { routing_id: true, production_order: { select: { item_id: true } } },
+        });
+        // 전체 본문을 싣는 호출자가 같은 값을 다시 보내도 «바꾼» 것이 아니다.
+        if (current.routing_id !== BigInt(body.routingId)) {
+          await assertPlannableRouting(tx, body.routingId, current.production_order.item_id);
+        }
       }
       const updated = await tx.production_plan.update({
         where: { production_plan_id: BigInt(productionPlanId) },
