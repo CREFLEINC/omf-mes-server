@@ -69,6 +69,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-11', name: '러닝체인지 부품 교체 등록', groupCode: '02' },
   { code: 'P-02-12', name: '긴급 W/O 현장 투입·실적', groupCode: '02' },
   { code: 'P-02-13', name: 'PQC 제품 검사·검사 결과 입력', groupCode: '02' },
+  // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-52).
+  { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
   { code: 'W-02-01', name: 'P/O 수신·조회', groupCode: '02' },
   { code: 'W-02-02', name: 'W/O 전개·편성', groupCode: '02' },
   { code: 'W-02-03', name: '4M 자원배정·유효성 점검', groupCode: '02' },

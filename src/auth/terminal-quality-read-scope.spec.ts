@@ -71,7 +71,8 @@ describe('terminal quality read scope', () => {
     expect(db.lot.findFirst).toHaveBeenCalledWith({ where: { lot_id: 6n, plant_id: 3n }, select: { lot_id: true } });
     await assertTerminalQualityReadScope(db, request(), 'GET /quality/defect-codes', terminal('MOBILE'));
     await expect(assertTerminalQualityReadScope(db, request(), 'GET /quality/defect-records', terminal('MOBILE'))).rejects.toMatchObject({ status: 401 });
-    await expect(assertTerminalQualityReadScope(db, request(), 'GET /quality/defect-codes', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+    // POP 은 P-02-14 자재 불량 등록이 불량 코드를 고른다(장부 P-52).
+    await assertTerminalQualityReadScope(db, request(), 'GET /quality/defect-codes', terminal('POP'));
   });
 
   it('ties POP plan/version/NCR details to an actual mapped inspection or work order', async () => {

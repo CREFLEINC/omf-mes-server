@@ -6345,6 +6345,49 @@
     }
    }
   },
+  "/trace/lots/{lotId}/affected-production-lots": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 LOT 영향 생산 LOT(작업지시 기준 추정)",
+    "description": "자재 LOT 이 투입된 작업지시의 생산 LOT 전부를 낸다. ⚠ 추정이다 — 자재 투입이 LOT 계보를 만들지 않아(I-10 §3-9 · 문의 052) 실제로 들어간 생산 LOT 보다 넓다. basis=WORK_ORDER_ESTIMATE 가 그 사실을 말하고 화면은 「작업지시 기준 추정」으로 밝힌다. 근거: omf-all-around#108 (서버 선행 · 장부 P-52)",
+    "responses": {
+     "200": {
+      "description": "영향 범위",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AffectedProductionLots"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-52. 계보가 서면 이 경로가 계보 기준으로 바뀐다."
+   }
+  },
   "/trace/lot-status-events": {
    "get": {
     "tags": [
@@ -14543,6 +14586,81 @@
       ],
       "format": "int64",
       "example": 1001
+     }
+    }
+   },
+   "AffectedProductionLots": {
+    "type": "object",
+    "required": [
+     "basis",
+     "workOrders",
+     "items"
+    ],
+    "description": "자재 LOT 영향 범위(서버 선행 · 장부 P-52 · omf-all-around#108).",
+    "properties": {
+     "basis": {
+      "type": "string",
+      "enum": [
+       "WORK_ORDER_ESTIMATE"
+      ],
+      "description": "어떻게 셌는가 — 지금은 작업지시 기준 추정 하나다."
+     },
+     "workOrders": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "workOrderId",
+        "workOrderNo"
+       ],
+       "properties": {
+        "workOrderId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "workOrderNo": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "lotId",
+        "lotNo",
+        "itemId",
+        "statusCode",
+        "workOrderId",
+        "workOrderNo"
+       ],
+       "properties": {
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string"
+        },
+        "itemId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "statusCode": {
+         "type": "string",
+         "description": "LOT 품질 상태. 값 목록은 GET /mdm/code-values?codeGroupCode=LOT_STATUS"
+        },
+        "workOrderId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "workOrderNo": {
+         "type": "string"
+        }
+       }
+      }
      }
     }
    }

@@ -5,7 +5,9 @@ import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent } from '../../common/master';
+import { currentTerminal } from '../../auth/terminal-context';
 import { currentTerminalQualityReadScope } from '../../auth/terminal-quality-read-scope';
+import { currentTerminalQualityWorkerId } from '../../auth/terminal-quality-write-scope';
 import { PagedResponse } from '../../common/pagination';
 import { DefectDistributionQuery, DefectDistributionService } from './defect-distribution.service';
 import { DefectRecordListQuery, DefectRecordService } from './defect-record.service';
@@ -30,9 +32,15 @@ export class DefectRecordController {
   @Post()
   @Contract('POST /quality/defect-records')
   create(@Req() request: Request, @Body() body: DefectRecordCreate): Promise<DefectRecordView> {
+    // ⭐ POP(P-02-14 · 장부 P-52)은 단말 범위 가드가 사번으로 정한 작업자가 기록 주체다.
+    const workerId = currentTerminal(request) === undefined ? undefined : currentTerminalQualityWorkerId(request);
+    if (workerId !== undefined) {
+      return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, { workerId }));
+    }
     const session = currentSession(request);
     if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, session.userId));
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
+      this.writes.create(body, { appUserId: session.userId }));
   }
 
   @Get()
