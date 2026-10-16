@@ -51,6 +51,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   let routingId = 0;
   let emptyRoutingId = 0; // 공정 0건 — 400 LINE_REQUIRED 용
   const unusableRoutingIds = { draft: 0, expired: 0, otherItem: 0, laterObsolete: 0 };
+  let plantId = BigInt(0);
   let operationIds: number[] = []; // seq 10·20·30 순
   let lineId = 0;
 
@@ -555,7 +556,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     });
   });
 
-  describe('Routing 상태 검사 — omf-all-around#91', () => {
+  describe('Routing 상태 검사', () => {
     const routingRejected = { field: 'routingId', code: 'INVALID' };
 
     it.each([
@@ -636,6 +637,49 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     });
   });
 
+  describe('W/O 계획 시각 — 근무일 하루', () => {
+    /** 확정된 계획의 W/O 하나의 계획 창을 ISO 로 돌려준다. */
+    async function windowOf(planId: number) {
+      const [workOrder] = await workOrdersOf(planId);
+      return {
+        start: workOrder.planned_start_at?.toISOString(),
+        end: workOrder.planned_end_at?.toISOString(),
+        shiftId: workOrder.planned_shift_id,
+      };
+    }
+
+    it('31. 교대가 없는 공장은 계획일 08:00 부터 24시간(공장 시각)이고 교대는 비운다', async () => {
+      const planId = await createPlan('2026-11-20', 5);
+      await confirmPlan(planId);
+
+      // Asia/Ho_Chi_Minh = UTC+7 — 현지 08:00 은 UTC 01:00.
+      expect(await windowOf(planId)).toEqual({
+        start: '2026-11-20T01:00:00.000Z',
+        end: '2026-11-21T01:00:00.000Z',
+        shiftId: null,
+      });
+    });
+
+    it('32. 교대가 있으면 가장 이른 «활성» 교대 시작부터 24시간 — 야간을 넘겨도 계획일 하루다', async () => {
+      const time = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
+      await prisma.shift.createMany({
+        data: [
+          { plant_id: plantId, shift_code: `${PREFIX}-DAY`, shift_name: '주간', start_time: time('07:00'), end_time: time('19:00') },
+          { plant_id: plantId, shift_code: `${PREFIX}-NIGHT`, shift_name: '야간', start_time: time('19:00'), end_time: time('07:00'), crosses_midnight: true },
+          { plant_id: plantId, shift_code: `${PREFIX}-OLD`, shift_name: '폐지', start_time: time('05:00'), end_time: time('13:00'), is_active: false },
+        ],
+      });
+      const planId = await createPlan('2026-11-21', 5);
+      await confirmPlan(planId);
+
+      expect(await windowOf(planId)).toEqual({
+        start: '2026-11-21T00:00:00.000Z',
+        end: '2026-11-22T00:00:00.000Z',
+        shiftId: null,
+      });
+    });
+  });
+
   /** `:confirm` 200 — 확정도 실제 오퍼레이션으로 한다(§8-1 관행). */
   async function confirmPlan(productionPlanId: number): Promise<request.Response> {
     return request(app.getHttpServer())
@@ -706,6 +750,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     const plant = await prisma.plant.create({
       data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '계획조회검사공장', timezone_code: 'Asia/Ho_Chi_Minh' },
     });
+    plantId = plant.plant_id;
     const uom = await prisma.uom.findFirstOrThrow();
     uomId = Number(uom.uom_id);
     const item = await prisma.item.create({
@@ -730,7 +775,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       data: { item_id: item.item_id, routing_code: `${PREFIX}-RT-EMPTY`, routing_version: 1, status_code: 'CONFIRMED' },
     });
     emptyRoutingId = Number(emptyRouting.routing_id);
-    // #91 — 계획에 걸 수 없는 Routing 셋. 공정을 하나씩 달아 LINE_REQUIRED 와 섞이지 않게 한다.
+    // 계획에 걸 수 없는 Routing 셋. 공정을 하나씩 달아 LINE_REQUIRED 와 섞이지 않게 한다.
     const otherItem = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT-OTHER`, item_name: '계획조회검사다른품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
     });
@@ -915,6 +960,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.shift.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
