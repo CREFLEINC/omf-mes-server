@@ -689,6 +689,19 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.inspectorId).not.toBe(Number(ids.worker));
     });
 
+    it('⛔ 계정의 작업자 지정을 해제하면 사번 헤더를 실어도 400 이다(omf-all-around#104)', async () => {
+      const inspectionRequestId = await newRequest();
+      await prisma.worker.update({ where: { worker_id: ids.sessionWorker }, data: { app_user_id: null } });
+      try {
+        const response = await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'REQUIRED' });
+        expect(await prisma.inspection_result.count({ where: { inspection_request_id: BigInt(inspectionRequestId) } })).toBe(0);
+      } finally {
+        const owner = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID }, select: { app_user_id: true } });
+        await prisma.worker.update({ where: { worker_id: ids.sessionWorker }, data: { app_user_id: owner.app_user_id } });
+      }
+    });
+
     it('⭐ 확정 행에 판정이 비면 물리 CHECK 가 둘째 그물로 막는다(`ck_inspection_result_judgment`)', async () => {
       // 서비스가 400 `REQUIRED` 로 먼저 막지만(위 단언), M-e ⓒ 가 NOT NULL 을 푼 뒤로 «DB 는»
       // 아무것도 못 막고 있었다. 이 PR 의 마이그가 그 자리를 닫았는지 물리로 직접 확인한다.

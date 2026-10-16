@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
+import { assertAccountWorker } from './inspection-result-write-rules';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 2. 판정을 비우면 저장된 값을 쓴다. */
@@ -100,6 +101,7 @@ export class InspectionConfirmService {
     await assertCodeValues(this.prisma, [
       { field: 'overallJudgmentCode', value: body.overallJudgmentCode, groupCode: JUDGMENT_GROUP },
     ]);
+    await assertAccountWorker(this.prisma, appUserId);
     const resultId = BigInt(inspectionResultId);
 
     return this.prisma.$transaction(async (tx) => {

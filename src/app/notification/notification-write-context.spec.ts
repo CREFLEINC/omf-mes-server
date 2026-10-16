@@ -19,6 +19,7 @@ function requestOf(userId = 11, body: unknown = undefined): Request {
     roles: [],
     permissions: [],
     mustChangePassword: false,
+    worker: null,
   });
   return request;
 }

@@ -1399,6 +1399,112 @@
     "x-internal-note": "공유계약 B-6(부여·회수 테이블은 INSERT/DELETE 이며 물리 삭제 금지 규칙을 적용하지 않는다)"
    }
   },
+  "/app/users/{appUserId}/worker": {
+   "parameters": [
+    {
+     "name": "appUserId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "계정에 연결된 작업자",
+    "description": "관리웹 계정에 연결된 작업자(사번). 연결이 없으면 세 칸이 모두 null 이다. 검사 판정 등 작업자 귀속이 필요한 관리웹 쓰기가 이 연결로 작업자를 정한다. 근거: W-CO-02 · omf-all-around#104 (서버 선행 · 장부 P-38)",
+    "responses": {
+     "200": {
+      "description": "연결",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppUserWorker"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 사용자",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "app"
+    ],
+    "summary": "계정-작업자 연결 치환",
+    "description": "최종 상태를 통째로 보낸다 — workerId 가 null 이면 연결을 푼다. 한 작업자는 한 계정에만, 한 계정에는 작업자 하나만 연결한다(바꾸면 앞의 연결이 풀린다). 없는 작업자·비활성 작업자·다른 계정에 연결된 작업자는 400(field=workerId, code=INVALID). 근거: W-CO-02 · omf-all-around#104 (서버 선행 · 장부 P-38)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AppUserWorkerUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "치환됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AppUserWorker"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 사용자",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/app/users/{appUserId}/data-scopes": {
    "parameters": [
     {
@@ -22954,6 +23060,52 @@
      "isActive": {
       "type": "boolean",
       "example": true
+     }
+    }
+   },
+   "AppUserWorker": {
+    "type": "object",
+    "required": [
+     "workerId",
+     "workerNo",
+     "workerName"
+    ],
+    "description": "계정에 연결된 작업자. 연결이 없으면 세 칸이 모두 null (서버 선행 · 장부 P-38).",
+    "properties": {
+     "workerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "workerNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "workerName": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   },
+   "AppUserWorkerUpdate": {
+    "type": "object",
+    "required": [
+     "workerId"
+    ],
+    "properties": {
+     "workerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "연결할 작업자. null 이면 연결을 푼다."
      }
     }
    }

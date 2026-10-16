@@ -19,6 +19,11 @@ export interface Session {
    * ⛔ 불리언은 늘 아는 값이라 «언제나» 싣는다 — 부재를 「모른다」로 읽을 자리를 만들지 않는다.
    */
   mustChangePassword: boolean;
+  /**
+   * 이 계정에 연결된 작업자(omf-all-around#104 · 장부 P-38). 없으면 `null` — 부재를 「모른다」로
+   * 읽지 않도록 «언제나» 싣는다(P-2 와 같은 규율). 관리웹 IQC 판정은 이 값이 없으면 저장 전에 안내한다.
+   */
+  worker: { workerId: number; workerNo: string; workerName: string } | null;
 }
 
 /** 계약 `#/components/schemas/LoginFailure`. */

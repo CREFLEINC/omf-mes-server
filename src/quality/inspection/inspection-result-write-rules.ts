@@ -31,11 +31,32 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
  * 주석 ⓑ) — 그 셋은 부재를 400 으로 막는데 여기는 **계정 폴백**이 있어 부재가 곧 오류가 아니다.
  * 둘 다 없을 때에만 400 이다.
  */
+/**
+ * 관리웹 계정에 지정된 작업자 — 없으면 400(omf-all-around#104). 작성·수정·확정 셋이 같은 규칙을 쓴다:
+ * 지정을 해제한 계정이 앞서 만든 임시저장을 고치거나 확정하는 길도 함께 닫는다.
+ */
+export async function assertAccountWorker(
+  prisma: Pick<PrismaService, 'worker'> | Prisma.TransactionClient,
+  appUserId: number,
+): Promise<bigint> {
+  const linked = await prisma.worker.findFirst({ where: { app_user_id: BigInt(appUserId) }, select: { worker_id: true } });
+  if (linked === null) {
+    throw one(field(WORKER_NO, ERROR_CODE.REQUIRED, '이 계정에 지정된 작업자가 없어 판정을 저장할 수 없습니다 — 사용자 관리에서 작업자를 지정하세요.'));
+  }
+  return linked.worker_id;
+}
+
 export async function resolveInspector(
   prisma: PrismaService,
   context: InspectionResultWriteContext,
 ): Promise<bigint> {
   const workerNo = context.workerNo;
+  // ⛔ 관리웹 계정(단말 아님)은 계정에 «지정된» 작업자가 있어야 저장한다(omf-all-around#104 · 2026-10-16 담당자 검증) —
+  //    지정을 해제한 계정이 사번 헤더만 실어 저장하던 빈틈을 닫는다. 지정된 계정의 헤더 우선(§5-5)은 그대로다.
+  if (context.terminalId === null && context.appUserId !== undefined) {
+    const linked = await assertAccountWorker(prisma, context.appUserId);
+    if (workerNo === undefined || workerNo.trim() === '') return linked;
+  }
   if (workerNo !== undefined && workerNo.trim() !== '') {
     const worker = await prisma.worker.findUnique({ where: { worker_no: workerNo }, select: { worker_id: true } });
     if (worker === null) throw one(field(WORKER_NO, ERROR_CODE.INVALID, '없는 작업자 사번입니다.'));

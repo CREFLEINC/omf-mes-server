@@ -20,6 +20,7 @@ import {
   assertCodes,
   assertReferences,
   bornConfirmed,
+  assertAccountWorker,
   resolveInspector,
   throwRoundConflict,
 } from './inspection-result-write-rules';
@@ -135,6 +136,7 @@ export class InspectionResultWriteService {
     await assertCodes(this.prisma, undefined, body.overallJudgmentCode, body.measurements);
     assertQuantityBounds(body);
     assertMeasurementValues(body.measurements);
+    if (context.terminalId === null && context.appUserId !== undefined) await assertAccountWorker(this.prisma, context.appUserId);
 
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.inspection_result.findUnique({

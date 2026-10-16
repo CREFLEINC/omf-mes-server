@@ -40,6 +40,7 @@ import { RolePermissionService } from './access/role-permission.service';
 import { RoleController } from './access/role.controller';
 import { RoleService } from './access/role.service';
 import { UserAssignmentService } from './access/user-assignment.service';
+import { UserWorkerLinkService } from './access/user-worker-link.service';
 
 /**
  * 계약 최상위 경로 `/app` — 사용자·역할·권한, 알림, 공지, 첨부, 결재, 문서 발행.
@@ -77,6 +78,7 @@ import { UserAssignmentService } from './access/user-assignment.service';
     RolePermissionService,
     AppUserService,
     UserAssignmentService,
+    UserWorkerLinkService,
     AttachmentService,
     AttachmentUploadService,
     DocumentIssueQueryService,

@@ -1553,6 +1553,8 @@ describe('LOT 보류 목록·상세 (e2e)', () => {
       data: {
         worker_no: `${PREFIX}-WK`,
         worker_name: 'LOT보류검사원',
+        // #104 — 관리웹 확정은 계정에 지정된 작업자가 있어야 한다.
+        app_user_id: BigInt(heldByAId),
         business_unit_id: businessUnitId,
         plant_id: BigInt(plantId),
         status_code: 'EMPLOYED',
