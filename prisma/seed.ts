@@ -444,6 +444,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'MANAGER_OVERRIDE', codeName: '관리자 직권 해제', order: 40 },
       // 승인된 IQC 생략의 실행(omf-all-around#105) — 마이그 20261016090000 에도 있다.
       { code: 'INCOMING_INSPECTION_SKIPPED', codeName: '수입검사 생략', order: 50 },
+      // 처분 정상·선별 양품(omf-all-around#108 · 장부 P-63) — 마이그 20261016150000 에도 같은 줄이 있다.
+      { code: 'DISPOSITION_NORMAL', codeName: '처분 정상(입고 가능)', order: 60 },
     ],
   },
   {
