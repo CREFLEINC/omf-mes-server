@@ -7,7 +7,9 @@ import { optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
+import { prepareRejectionDefects } from './inspection-rejection-defects';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import {
   InspectionMeasurementInput,
@@ -45,6 +47,7 @@ export class InspectionResultWriteService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly confirms: InspectionConfirmService,
+    private readonly defects: DefectRecordWriteService,
   ) {}
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
@@ -65,6 +68,7 @@ export class InspectionResultWriteService {
     // ⭐ 그 판정이 채번 «앞»이다(#320 m-2) — 뒤에 두면 세션 없는 확정 저장이 번호 하나를
     //    결번으로 남기고 401 을 받는다. 결번 자체는 허용이지만 순서만 바꾸면 안 생긴다.
     const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
+    const defectTarget = await prepareRejectionDefects(this.prisma, this.defects, body, born !== undefined);
     const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
 
     return this.prisma
@@ -98,6 +102,15 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        // 사유가 확정 효과(LOT 전이)보다 «먼저» 선다 — `:confirm` 이 불량 기록을 먼저 요구하는 것과 같은 순서다.
+        if (defectTarget !== null) {
+          await this.defects.writeInspectionDefectsWithin(
+            tx,
+            defectTarget.prepared,
+            { ...defectTarget.target, inspectionResultId: created.inspection_result_id, detectedAt: inspectedAt },
+            { appUserId: context.appUserId, workerId: inspectorId },
+          );
+        }
         if (born !== undefined) {
           await this.confirms.applyConfirmEffects(tx, {
             ...born,
@@ -117,6 +130,7 @@ export class InspectionResultWriteService {
       })
       .catch((error: unknown) => throwRoundConflict(error));
   }
+
 
   /**
    * ⭐ **작성중인 것만 고친다** — 확정본은 **409 `INVALID_STATE`** 다. 계약이 이 자리에만 409 를

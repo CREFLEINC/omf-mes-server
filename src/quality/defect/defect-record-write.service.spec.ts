@@ -116,4 +116,40 @@ describe('DefectRecordWriteService', () => {
 
     expect(firstError(error)).toMatchObject({ field: 'defectQty', code: 'RANGE' });
   });
+
+  /* 오프라인 확정 본문의 사유(P-39) — 트랜잭션 밖 검증과 안의 쓰기가 갈린다. */
+  it('검사 결과 본문의 사유를 수입검사 공정으로 준비하고, 0 이하 수량은 400 이다', async () => {
+    const { service } = harness();
+
+    await expect(service.prepareInspectionDefects([{ defectCodeId: 5, defectQty: 2 }], 1)).resolves.toMatchObject({
+      processId: 70n,
+      uomId: 1,
+    });
+    const error = await service.prepareInspectionDefects([{ defectCodeId: 5, defectQty: 0 }], 1).catch((e: unknown) => e);
+    expect(firstError(error)).toMatchObject({ field: 'defects[0].defectQty', code: 'RANGE' });
+  });
+
+  it('사유를 검사 결과·LOT 에 붙여 같은 트랜잭션에서 쓴다', async () => {
+    const { service } = harness();
+    const rows: Record<string, unknown>[] = [];
+    const tx = { defect_record: { create: async ({ data }: { data: Record<string, unknown> }) => rows.push(data) } };
+
+    await service.writeInspectionDefectsWithin(
+      tx as never,
+      { rows: [{ defectCodeId: 5, defectQty: 2, defectDescription: '찍힘' }], processId: 70n, uomId: 1 },
+      { inspectionResultId: 40n, lotId: 20n, workOrderId: null, detectedAt: new Date('2026-10-16T02:00:00Z') },
+      { workerId: 8n },
+    );
+
+    expect(rows[0]).toMatchObject({
+      source_type_code: 'IQC',
+      inspection_result_id: 40n,
+      lot_id: 20n,
+      occurrence_process_id: 70n,
+      detection_process_id: 70n,
+      defect_description: '찍힘',
+      worker_id: 8n,
+      created_by: null,
+    });
+  });
 });

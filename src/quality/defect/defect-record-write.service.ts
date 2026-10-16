@@ -26,6 +26,21 @@ export interface DefectRecordCreate {
   occurredAt?: string | null;
 }
 
+/** 검사 결과 본문에 함께 실리는 불합격 사유 한 줄(장부 P-39 · 오프라인 확정 경로). */
+export interface InspectionDefectInput {
+  defectCodeId: number;
+  defectQty: number;
+  defectDescription?: string | null;
+  suspectedCauseCodeId?: number | null;
+}
+
+/** 트랜잭션 «밖»에서 검증을 마친 사유 — 안에서는 쓰기만 한다. */
+export interface PreparedInspectionDefects {
+  rows: InspectionDefectInput[];
+  processId: bigint;
+  uomId: number;
+}
+
 const IQC_SOURCE = 'IQC';
 /** 시드 `seedSystemProcesses` 의 수입검사 공정 — 같은 값이다. */
 const IQC_PROCESS_CODE = 'IQC';
@@ -89,6 +104,56 @@ export class DefectRecordWriteService {
       },
     });
     return defectRecordView(row);
+  }
+
+  /**
+   * IQC 검사 결과 본문의 사유를 검증한다(오프라인 확정 `POST …/inspection-results` · omf-all-around#106).
+   * ⛔ 트랜잭션 «밖»이다 — 읽기 커넥션을 업무 트랜잭션이 쥐지 않는다(채번과 같은 규율).
+   */
+  async prepareInspectionDefects(rows: InspectionDefectInput[], uomId: number): Promise<PreparedInspectionDefects> {
+    const errors: ErrorItem[] = [];
+    for (const [index, row] of rows.entries()) {
+      if (!(row.defectQty > 0)) errors.push(field(`defects[${index}].defectQty`, ERROR_CODE.RANGE, '불량 수량은 0 보다 커야 합니다.'));
+      const code = await this.prisma.defect_code.findUnique({
+        where: { defect_code_id: BigInt(row.defectCodeId) },
+        select: { is_active: true },
+      });
+      if (code === null || !code.is_active) {
+        errors.push(field(`defects[${index}].defectCodeId`, ERROR_CODE.INVALID, '사용할 수 없는 불량 코드입니다.'));
+      }
+    }
+    if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
+    const { occurrence } = await this.resolveProcesses({ sourceCode: IQC_SOURCE } as DefectRecordCreate);
+    return { rows, processId: occurrence, uomId };
+  }
+
+  /** 검사 결과와 «같은 트랜잭션»에서 사유를 남긴다 — 결과만 서고 사유가 빠지는 부분 확정이 없다. */
+  async writeInspectionDefectsWithin(
+    tx: Prisma.TransactionClient,
+    prepared: PreparedInspectionDefects,
+    target: { inspectionResultId: bigint; lotId: bigint | null; workOrderId: bigint | null; detectedAt: Date },
+    actor: { appUserId?: number; workerId?: bigint | null },
+  ): Promise<void> {
+    for (const row of prepared.rows) {
+      await tx.defect_record.create({
+        data: {
+          source_type_code: IQC_SOURCE,
+          defect_code_id: BigInt(row.defectCodeId),
+          defect_qty: new Prisma.Decimal(row.defectQty),
+          uom_id: BigInt(prepared.uomId),
+          detected_at: target.detectedAt,
+          occurrence_process_id: prepared.processId,
+          detection_process_id: prepared.processId,
+          inspection_result_id: target.inspectionResultId,
+          lot_id: target.lotId,
+          work_order_id: target.workOrderId,
+          suspected_cause_code_id: optionalId(row.suspectedCauseCodeId),
+          defect_description: row.defectDescription ?? null,
+          worker_id: actor.workerId ?? null,
+          created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
+        },
+      });
+    }
   }
 
   /** 검사 결과가 있으면 그 의뢰의 LOT·W/O 를 따른다. 요청 값과 다르면 400. */

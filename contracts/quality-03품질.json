@@ -4081,6 +4081,13 @@
       "type": "string",
       "description": "검사 비고. ⭐ 검사 기준이 없는 의뢰에서는 이 칸이 「자유 입력」의 자리다 — 항목별 규격이 없으므로 무엇을 어떻게 보았는지가 여기에만 남는다(P-02-13 §5-2). 기준이 있는 정상 갈래에서는 선택 입력이다. 근거: omf-mes#251",
       "example": "값"
+     },
+     "defects": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionDefectInput"
+      },
+      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 서버 선행 · 장부 P-39 · omf-all-around#106"
      }
     },
     "required": [
@@ -5192,6 +5199,37 @@
        "null"
       ],
       "format": "date-time"
+     }
+    }
+   },
+   "InspectionDefectInput": {
+    "type": "object",
+    "required": [
+     "defectCodeId",
+     "defectQty"
+    ],
+    "description": "IQC 불합격 사유 한 줄 — 확정으로 태어나는 저장(오프라인 큐)이 결과와 함께 싣는다(서버 선행 · 장부 P-39).",
+    "properties": {
+     "defectCodeId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "defectQty": {
+      "type": "number",
+      "exclusiveMinimum": 0
+     },
+     "defectDescription": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "suspectedCauseCodeId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
      }
     }
    }

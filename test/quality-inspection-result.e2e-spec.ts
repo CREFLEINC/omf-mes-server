@@ -635,6 +635,32 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(await eventsOf(scrapped)).toHaveLength(0);
     });
 
+    /* omf-all-around#106 — 오프라인 확정도 IQC 불합격 사유가 필요하다. 사유는 같은 본문 `defects` 로 온다(P-39). */
+    it('⛔ `POST` IQC 불합격 확정은 `defects` 가 없으면 400 이고, 있으면 같은 트랜잭션에서 불량 기록이 선다', async () => {
+      const inspectionRequestId = await newConfirmRequest();
+      const rejected = draftBody(inspectionRequestId, {
+        statusCode: 'CONFIRMED',
+        acceptedQty: 80,
+        rejectedQty: 20,
+        overallJudgmentCode: 'REJECTED',
+      });
+
+      const missing = await post(rejected, { workerNo: WORKER_HEADER }).expect(400);
+      expect(missing.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+
+      const { defectCodeId } = await ensureIqcDefectSetup();
+      const created = await post(
+        { ...rejected, defects: [{ defectCodeId: Number(defectCodeId), defectQty: 20, defectDescription: '외관 불량' }] },
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      const rows = await prisma.defect_record.findMany({
+        where: { inspection_result_id: BigInt(created.body.inspectionResultId) },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ source_type_code: 'IQC', defect_description: '외관 불량' });
+    });
+
     it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
       // ⛔ 공유 픽스처 `r5` 를 안 쓴다 — 확정 저장이 의뢰를 `COMPLETED` 로 변형해 앞 describe 의
       //    `r5` 단언과 실행 순서로 결합된다(#320 m-3). 같은 갈래(`기준 없음`)를 자기 의뢰로 세운다.
@@ -1044,7 +1070,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
   }
 
   /** IQC 불합격의 사유 한 줄(omf-all-around#106). 등록 경로의 검증은 `defect-record-write.service.spec.ts` 몫이다. */
-  async function recordDefect(inspectionResultId: number): Promise<void> {
+  /** 수입검사 공정과 불량 코드 하나 — 시드가 아니라 이 스위트가 세운다(다시 불러도 같다). */
+  async function ensureIqcDefectSetup(): Promise<{ processId: bigint; defectCodeId: bigint }> {
     const process = await prisma.process.upsert({
       where: { process_code: 'IQC' },
       update: {},
@@ -1055,6 +1082,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
       update: {},
       create: { defect_code: 'E2E-IQC-DEFECT', defect_name: 'e2e 수입검사 불량' },
     });
+    return { processId: process.process_id, defectCodeId: code.defect_code_id };
+  }
+
+  async function recordDefect(inspectionResultId: number): Promise<void> {
+    const setup = await ensureIqcDefectSetup();
+    const process = { process_id: setup.processId };
+    const code = { defect_code_id: setup.defectCodeId };
     await prisma.defect_record.create({
       data: {
         source_type_code: 'IQC',
