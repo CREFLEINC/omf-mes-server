@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertPlannableRouting } from '../routing/routing.service';
 import { PlanToExpand, dependencyRows, workOrderRows } from './expand';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
@@ -45,7 +46,7 @@ export class PlanConfirmService {
     }
   }
 
-  /** tx 밖 ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED` 다(§3-7). */
+  /** tx 밖 ①~③ — 없는 계획은 404, 공정 0건 Routing 은 400 `LINE_REQUIRED`, 쓸 수 없는 Routing 은 400 `INVALID` 다(§3-7 · #91). */
   private async read(productionPlanId: number): Promise<PlanToExpand> {
     const plan = await this.prisma.production_plan.findUnique({
       where: { production_plan_id: BigInt(productionPlanId) },
@@ -59,6 +60,8 @@ export class PlanConfirmService {
       select: { routing_operation_id: true },
     });
     if (operations.length === 0) throw one(field('routingId', ERROR_CODE.LINE_REQUIRED, '공정이 한 줄도 없습니다.'));
+    // 작성 중 계획만 본다 — 확정된 계획의 재확정은 아래 전이 판정이 400 STATE_LOCKED 로 막는다.
+    if (plan.status_code === DRAFT) await assertPlannableRouting(this.prisma, plan.routing_id, plan.production_order.item_id);
     const operationIds = operations.map((operation) => operation.routing_operation_id);
     const dependencies = await this.prisma.routing_operation_dependency.findMany({
       where: { predecessor_operation_id: { in: operationIds }, successor_operation_id: { in: operationIds } },

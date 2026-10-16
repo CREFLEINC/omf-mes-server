@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import {
   Editability,
   Referrer,
@@ -224,6 +224,22 @@ export class RoutingService {
     if (!exists) throw new NotFoundException('없는 Routing 입니다.');
     assertUpdated(0);
   }
+}
+
+/**
+ * 생산계획이 W/O 를 전개할 Routing — 목록의 `usableOnly` 와 같은 조건에 생산오더 품목의 것이어야 한다
+ * (omf-all-around#91). 작성중 Rev 로 계획을 확정하면 고칠 수 있는 공정이 그대로 W/O 가 된다.
+ */
+export async function assertPlannableRouting(
+  prisma: Pick<Prisma.TransactionClient, 'routing'>,
+  routingId: number | bigint,
+  itemId: bigint,
+): Promise<void> {
+  const usable = await prisma.routing.count({
+    where: { routing_id: BigInt(routingId), item_id: itemId, ...usableWhere() },
+  });
+  if (usable > 0) return;
+  throw one(field('routingId', ERROR_CODE.INVALID, '확정되고 유효 기간 안인 이 품목의 Routing 만 쓸 수 있습니다.'));
 }
 
 /**
