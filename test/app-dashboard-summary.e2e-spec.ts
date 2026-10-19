@@ -86,6 +86,11 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(card(cards, 'PRODUCTION_QTY')).toMatchObject({ value: 1100, deltaRatio: 1.2, valueStatusCode: 'AVAILABLE' });
     // (양품 900 + 정정본 100 + 재작업 합격 10) ÷ 1100
     expect(card(cards, 'YIELD_RATE').value).toBeCloseTo((1010 / 1100) * 100, 6);
+    const { production } = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      production: Record<string, number | null>;
+    };
+    // NG = 불량 상태 수량만(불량 50 + 폐기 30 + 재작업 20) — 재작업 합격 10 은 양품에만 더하고 NG 에서 빼지 않는다
+    expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 100, holdQty: 0, defectRate: (100 / 1100) * 100 });
     expect(trend.points).toHaveLength(9);
     expect(trend.points[0]).toEqual({ label: '08-24', value: 0 });
     expect(trend.points.slice(-2)).toEqual([
@@ -139,6 +144,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   it('설비 현황 — 기준일이 지났으면 기준일 끝에 판단하고, 교대가 끝난 뒤라 비가동이다', async () => {
     const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
       equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
+      quality: { pqc: { equipmentDefectRates: { equipmentId: number; defectRate: number }[] } };
     };
     const item = body.equipment.items.find((row) => row.equipmentId === Number(ids.equipment));
 
@@ -153,6 +159,87 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       currentWorkOrderNo: null,
     });
     expect(item?.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
+    expect(body.quality.pqc.equipmentDefectRates).toEqual([
+      { equipmentId: Number(ids.equipment), equipmentCode: PREFIX, defectRate: (100 / 1100) * 100, ngQty: 100 },
+    ]);
+  });
+
+  it('품질 — 재검사 뒤 합격은 합격으로 센다(최종 회차), 없는 값은 null 이다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      quality: Record<string, Record<string, unknown>>;
+      shipment: Record<string, unknown>;
+    };
+    const { pqc, iqc, nonconformance } = body.quality;
+
+    expect(pqc).toMatchObject({
+      monthPassRate: 100,
+      monthLots: { accepted: 1, rejected: 0, held: 0 },
+      todayLots: { accepted: 1, rejected: 0, held: 0 },
+      monthDefectQty: 0,
+      defectPhenomena: [],
+    });
+    expect(pqc.recentLots).toEqual([
+      expect.objectContaining({ judgmentCode: 'ACCEPTED', equipmentCode: PREFIX, lotNo: null, counterpartName: null }),
+    ]);
+    expect(iqc).toMatchObject({ monthPassRate: 0, monthLots: { accepted: 0, rejected: 1, held: 0 }, fullReinspect: null });
+    // 한 LOT 의 입하 줄 2개를 두 번 세지 않고, 취소된 입하의 공급사는 넣지 않는다.
+    expect(iqc.vendorDefects).toEqual([{ partnerId: Number(ids.supplier), partnerName: `${PREFIX}-SUPPLIER`, rejectedQty: 5 }]);
+    expect(nonconformance).toMatchObject({ overdueCount: null, openCount: 0, phenomena: [] });
+  });
+
+  it('출하 — 확정·대기·다음 출하·납기 경과, 공장 미지정 요청은 어느 공장을 골라도 넣는다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      shipment: Record<string, unknown>;
+      quality: { oqc: { monthLots: Record<string, number> } };
+    };
+
+    expect(body.shipment).toEqual({
+      // 09-01 에 실제 출하한 확정 출하 1건(10). 08-31 출하분(4)은 기준일이 아니다.
+      todayShippedQty: 10,
+      todayShipmentCount: 1,
+      // 대기 = 요청일 ≤ 기준일인 미출하 요청: 출하 창고로 공장이 정해진 요청(08-30) + 공장 미지정 요청(09-01).
+      // 다른 공장 요청(08-29)은 빠진다.
+      waitingRequestCount: 2,
+      oldestWaitingShipDate: '2026-08-30',
+      nextShipment: {
+        shipmentRequestId: Number(ids.nextRequest),
+        shipmentRequestNo: `${PREFIX}-SR-NEXT`,
+        customerName: `${PREFIX}-CUSTOMER`,
+        requestedShipDate: '2026-09-03',
+        requestedQty: 7,
+      },
+      // 납기 경과 수주 줄: 창고로 공장이 정해진 요청 줄 + 공장 미지정 요청 줄. 다른 공장 · 출하 완료 줄은 빠진다.
+      overdueCount: 2,
+    });
+    // OQC — 공장 미지정 요청의 합격은 넣고, 다른 공장 요청의 합격은 뺀다.
+    expect(body.quality.oqc.monthLots).toEqual({ accepted: 1, rejected: 0, held: 0 });
+
+    const other = (await read({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() })) as unknown as typeof body;
+    // 다른 공장을 골라도 공장 미지정 요청은 대기·납기 경과·OQC 에 들어간다.
+    expect(other.shipment).toMatchObject({
+      todayShippedQty: 0,
+      waitingRequestCount: 2,
+      oldestWaitingShipDate: '2026-08-29',
+      nextShipment: null,
+      overdueCount: 2,
+    });
+    expect(other.quality.oqc.monthLots).toEqual({ accepted: 2, rejected: 0, held: 0 });
+  });
+
+  it('공장에 데이터가 없어도 세 섹션을 빈 값으로 싣는다 — 키 없음은 「미지원」으로 읽힌다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: '8999999999' })) as unknown as Record<string, unknown>;
+
+    expect(validateResponse(body)).toBe(true);
+    expect(body.equipment).toMatchObject({
+      items: [],
+      statusCounts: { RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 0 },
+    });
+    expect(body.shipment).toMatchObject({ todayShipmentCount: 0, nextShipment: null });
+    expect(body.production).toEqual({ totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, defectRate: null });
+    expect(body.quality).toMatchObject({
+      iqc: { monthPassRate: null, recentLots: [], fullReinspect: null },
+      nonconformance: { overdueCount: null, monthQty: 0 },
+    });
   });
 
   it('설비 현황 — 이상 상태 고장도 정지, 비가동 여럿은 하나라도 교체가 아니면 정지, 계측기는 뺀다', async () => {
@@ -403,6 +490,9 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       });
     }
 
+    await shipmentFixtures();
+    await iqcFixtures();
+
     const event = await prisma.notification_event.create({
       data: {
         event_type_code: 'EQUIPMENT_BREAKDOWN_OCCURRED',
@@ -480,6 +570,230 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     await add('-MACHINE', 'MACHINE');
   }
 
+  /**
+   * 출하 — 기준일 09-01. 공장 셋: 이 공장(창고 W) · 다른 공장(창고 W2) · 공장 미지정(fulfillment 없음 · 출하 없음).
+   * | 요청 | 공장 | 요청일 | 요청/출하 | 수주 줄 |
+   * | SR-CONF | 지정(이 공장) | 08-31 | 10/10 (09-01 출하 확정) | 출하 완료 |
+   * | SR-WAIT | 비었음 → 출하 창고 W | 08-30 | 10/4 (08-31 출하) | 납기 08-30 미출하 |
+   * | SR-NOPLANT | 미지정 | 09-01 | 10/0 | 납기 08-30 미출하 |
+   * | SR-OTHER | 다른 공장 | 08-29 | 10/0 | 납기 08-30 미출하 |
+   * | SR-NEXT | 지정(이 공장) | 09-03 | 7/0 | — |
+   */
+  async function shipmentFixtures(): Promise<void> {
+    ids.otherPlant = (
+      await prisma.plant.create({
+        data: {
+          legal_entity_id: ids.legal,
+          business_unit_id: ids.unit,
+          plant_code: `${PREFIX}-OTHER`,
+          plant_name: PREFIX,
+          timezone_code: 'Asia/Ho_Chi_Minh',
+        },
+      })
+    ).plant_id;
+    const warehouse = async (plantId: bigint, code: string) =>
+      (
+        await prisma.warehouse.create({
+          data: {
+            plant_id: plantId,
+            business_unit_id: ids.unit,
+            warehouse_code: `${PREFIX}-${code}`,
+            warehouse_name: PREFIX,
+            warehouse_type_code: 'FINISHED_GOODS',
+            management_level_code: 'LOCATION',
+          },
+        })
+      ).warehouse_id;
+    const mainWarehouse = await warehouse(ids.plant, 'W');
+    await warehouse(ids.otherPlant, 'W2');
+    ids.customer = (
+      await prisma.partner.create({ data: { partner_code: `${PREFIX}-CUSTOMER`, partner_name: `${PREFIX}-CUSTOMER` } })
+    ).partner_id;
+    const order = await prisma.sales_order.create({
+      data: {
+        sales_order_no: PREFIX,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        order_date: new Date('2026-08-20'),
+        status_code: 'REGISTERED',
+      },
+    });
+    let orderLineNo = 0;
+    const orderLine = async (shippedQty: number) =>
+      (
+        await prisma.sales_order_line.create({
+          data: {
+            sales_order_id: order.sales_order_id,
+            line_no: (orderLineNo += 1),
+            item_id: ids.item,
+            ordered_qty: 10,
+            shipped_qty: shippedQty,
+            uom_id: ids.uom,
+            requested_delivery_date: new Date('2026-08-30'),
+          },
+        })
+      ).sales_order_line_id;
+    const addRequest = async (
+      code: string,
+      plantId: bigint | null,
+      shipDate: string,
+      qty: number,
+      shippedQty: number,
+      salesOrderLineId: bigint | null,
+    ) => {
+      const created = await prisma.shipment_request.create({
+        data: {
+          shipment_request_no: `${PREFIX}-${code}`,
+          customer_id: ids.customer,
+          ship_to_partner_id: ids.customer,
+          requested_ship_date: new Date(shipDate),
+          status_code: 'REGISTERED',
+          fulfillment_plant_id: plantId,
+        },
+      });
+      const line = await prisma.shipment_request_line.create({
+        data: {
+          shipment_request_id: created.shipment_request_id,
+          line_no: 1,
+          sales_order_line_id: salesOrderLineId,
+          item_id: ids.item,
+          requested_qty: qty,
+          allocated_qty: shippedQty,
+          shipped_qty: shippedQty,
+          uom_id: ids.uom,
+        },
+      });
+      return { requestId: created.shipment_request_id, lineId: line.shipment_request_line_id };
+    };
+    const ship = async (request: { requestId: bigint; lineId: bigint }, code: string, qty: number, shippedAt: string) => {
+      const shipment = await prisma.shipment.create({
+        data: {
+          shipment_no: `${PREFIX}-${code}`,
+          shipment_request_id: request.requestId,
+          warehouse_id: mainWarehouse,
+          shipped_at: new Date(shippedAt),
+          status_code: 'CONFIRMED',
+        },
+      });
+      await prisma.shipment_line.create({
+        data: {
+          shipment_id: shipment.shipment_id,
+          line_no: 1,
+          shipment_request_line_id: request.lineId,
+          item_id: ids.item,
+          shipped_qty: qty,
+          uom_id: ids.uom,
+        },
+      });
+    };
+
+    await ship(await addRequest('SR-CONF', ids.plant, '2026-08-31', 10, 10, await orderLine(10)), 'S-CONF', 10, '2026-09-01T03:00:00Z');
+    await ship(await addRequest('SR-WAIT', null, '2026-08-30', 10, 4, await orderLine(4)), 'S-WAIT', 4, '2026-08-31T03:00:00Z');
+    ids.noPlantRequest = (await addRequest('SR-NOPLANT', null, BASE_DATE, 10, 0, await orderLine(0))).requestId;
+    ids.otherRequest = (await addRequest('SR-OTHER', ids.otherPlant, '2026-08-29', 10, 0, await orderLine(0))).requestId;
+    ids.nextRequest = (await addRequest('SR-NEXT', ids.plant, '2026-09-03', 7, 0, null)).requestId;
+
+    // OQC 합격 — 공장 미지정 요청 1건 · 다른 공장 요청 1건(이 공장 조회에서는 빠진다).
+    for (const [code, requestId] of [
+      ['OQC-NOPLANT', ids.noPlantRequest],
+      ['OQC-OTHER', ids.otherRequest],
+    ] as const) {
+      await addInspection(code, 'OQC', { target_type_code: 'SHIPMENT_REQUEST', target_id: requestId }, 'ACCEPTED', 0);
+    }
+  }
+
+  /**
+   * IQC 불합격 5 — LOT 하나가 입하 줄 2개에 실려 있고, 그보다 먼저 만든 «취소된» 입하에도 실려 있다.
+   * 업체별 불합격은 취소 안 된 입하의 첫 줄 공급사로 한 번만 센다.
+   */
+  async function iqcFixtures(): Promise<void> {
+    const partner = async (code: string) =>
+      (await prisma.partner.create({ data: { partner_code: `${PREFIX}-${code}`, partner_name: `${PREFIX}-${code}` } }))
+        .partner_id;
+    ids.supplier = await partner('SUPPLIER');
+    const cancelledSupplier = await partner('SUPPLIER-CANCELLED');
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-LOT`,
+        item_id: ids.item,
+        lot_type_code: 'MATERIAL',
+        plant_id: ids.plant,
+        initial_qty: 20,
+        uom_id: ids.uom,
+        source_type_code: 'INBOUND_RECEIPT',
+        source_id: 0,
+        status_code: 'ACTIVE',
+      },
+    });
+    const receipt = async (code: string, supplierId: bigint, statusCode: string, lines: number) => {
+      const created = await prisma.inbound_receipt.create({
+        data: {
+          inbound_receipt_no: `${PREFIX}-${code}`,
+          supplier_id: supplierId,
+          plant_id: ids.plant,
+          receipt_datetime: new Date('2026-09-01T01:00:00Z'),
+          status_code: statusCode,
+        },
+      });
+      for (let lineNo = 1; lineNo <= lines; lineNo += 1) {
+        await prisma.inbound_receipt_line.create({
+          data: {
+            inbound_receipt_id: created.inbound_receipt_id,
+            line_no: lineNo,
+            item_id: ids.item,
+            lot_id: lot.lot_id,
+            received_qty: 10,
+            uom_id: ids.uom,
+            supplier_lot_label_attached: false,
+            inspection_required: true,
+            status_code: 'REGISTERED',
+          },
+        });
+      }
+    };
+    await receipt('IR-CANCELLED', cancelledSupplier, 'CANCELLED', 1);
+    await receipt('IR', ids.supplier, 'REGISTERED', 2);
+    await addInspection('IQC', 'IQC', { target_type_code: 'LOT', target_id: lot.lot_id, lot_id: lot.lot_id }, 'REJECTED', 5);
+  }
+
+  async function addInspection(
+    code: string,
+    type: string,
+    target: { target_type_code: string; target_id: bigint; lot_id?: bigint },
+    judgment: 'ACCEPTED' | 'REJECTED',
+    rejectedQty: number,
+  ): Promise<void> {
+    const created = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-${code}`,
+        inspection_type_code: type,
+        ...target,
+        item_id: ids.item,
+        target_qty: 10,
+        uom_id: ids.uom,
+        status_code: 'COMPLETED',
+        requested_at: new Date('2026-09-01T02:00:00Z'),
+      },
+    });
+    await prisma.inspection_result.create({
+      data: {
+        inspection_result_no: `${PREFIX}-${code}-1`,
+        inspection_request_id: created.inspection_request_id,
+        inspection_round: 1,
+        inspected_qty: 10,
+        accepted_qty: 10 - rejectedQty,
+        rejected_qty: rejectedQty,
+        held_qty: 0,
+        uom_id: ids.uom,
+        overall_judgment_code: judgment,
+        inspector_id: ids.worker,
+        inspected_at: new Date('2026-09-01T05:00:00Z'),
+        status_code: 'CONFIRMED',
+        idempotency_key: `${PREFIX}-${code}-1`,
+      },
+    });
+  }
+
   async function addOrder(type: string): Promise<bigint> {
     return (
       await prisma.work_order.create({
@@ -539,7 +853,21 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
     await prisma.production_result.deleteMany({ where: { production_result_no: { startsWith: PREFIX } } });
     await prisma.inspection_result.deleteMany({ where: { inspection_result_no: { startsWith: PREFIX } } });
-    await prisma.inspection_request.deleteMany({ where: { inspection_request_no: PREFIX } });
+    await prisma.inspection_request.deleteMany({ where: { inspection_request_no: { startsWith: PREFIX } } });
+    const shipmentScope = { shipment_no: { startsWith: PREFIX } };
+    await prisma.shipment_line.deleteMany({ where: { shipment: shipmentScope } });
+    await prisma.shipment.deleteMany({ where: shipmentScope });
+    const requestScope = { shipment_request_no: { startsWith: PREFIX } };
+    await prisma.shipment_request_line.deleteMany({ where: { shipment_request: requestScope } });
+    await prisma.shipment_request.deleteMany({ where: requestScope });
+    await prisma.sales_order_line.deleteMany({ where: { sales_order: { sales_order_no: PREFIX } } });
+    await prisma.sales_order.deleteMany({ where: { sales_order_no: PREFIX } });
+    const receiptScope = { inbound_receipt_no: { startsWith: PREFIX } };
+    await prisma.inbound_receipt_line.deleteMany({ where: { inbound_receipt: receiptScope } });
+    await prisma.inbound_receipt.deleteMany({ where: receiptScope });
+    await prisma.lot.deleteMany({ where: { lot_no: `${PREFIX}-LOT` } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });
     await prisma.work_session_event.deleteMany({ where: { work_session: { idempotency_key: { startsWith: PREFIX } } } });
     await prisma.work_session.deleteMany({ where: { idempotency_key: { startsWith: PREFIX } } });
     await prisma.work_order.deleteMany({ where: { work_order_no: { startsWith: PREFIX } } });
@@ -562,7 +890,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });
-    await prisma.plant.deleteMany({ where: { plant_code: PREFIX } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.business_unit.deleteMany({ where: { business_unit_code: PREFIX } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: PREFIX } });
     await prisma.user_role.deleteMany({ where: { app_user_id: { in: userIds } } });

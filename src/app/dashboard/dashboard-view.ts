@@ -1,7 +1,12 @@
 import { omitEmpty } from '../../common/http/omit-empty';
 import { NotificationView } from '../notification/notification-view';
 import type { AvailabilityFigures } from './dashboard-availability.service';
-import type { DashboardEquipment } from './dashboard-sections';
+import type {
+  DashboardEquipment,
+  DashboardProduction,
+  DashboardQuality,
+  DashboardShipment,
+} from './dashboard-sections';
 
 export type DashboardCardCode =
   | 'PRODUCTION_QTY'
@@ -38,10 +43,13 @@ export interface DashboardSummary {
   asOf: string;
   trend: DashboardTrend;
   /**
-   * 계약보다 앞선 선택 섹션(장부 P-59). ⛔ 데이터가 없어도 생략하지 않는다 —
+   * 아래 셋은 계약보다 앞선 선택 섹션이다(장부 P-59). ⛔ 데이터가 없어도 생략하지 않는다 —
    * 클라이언트는 키가 없으면 「서버가 아직 지원하지 않음」으로 읽는다(빈 값과 구분한다).
    */
+  production?: DashboardProduction;
   equipment?: DashboardEquipment;
+  shipment?: DashboardShipment;
+  quality?: DashboardQuality;
 }
 
 /** 일자별 생산 합 — 재작업 W/O 실적은 `reworkGoodQty` 로만 들어온다(총생산에 넣지 않는다). */
@@ -190,5 +198,24 @@ export function oeeCard(parts: readonly DashboardCard[]): DashboardCard {
     unit: '%',
     note: APPROXIMATE,
     valueStatusCode: parts.some((card) => card.valueStatusCode === 'PARTIAL') ? 'PARTIAL' : 'AVAILABLE',
+  };
+}
+
+/**
+ * 공장 단위 생산 합 — 1차 생산 수량·양품률 카드와 같은 원천·규칙이다(같은 일자 집계를 쓴다).
+ * 재작업 합격분은 양품에만 더한다. `ngQty` 는 그 기간 실적의 불량 상태 수량(불량+폐기+재작업)만 센다 — 재작업 합격분을
+ * 빼지 않으므로 음수가 되지 않는다(사용자 결정 2026-10-19 「총 불량은 음수가 될 수 없다 · 불량 상태 데이터만 센다」).
+ * 불량률은 0~100 으로 자른다(capRate).
+ */
+export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, baseDate: string): DashboardProduction {
+  const today = byDay.get(baseDate);
+  const totalQty = today?.totalQty ?? 0;
+  const ngQty = today?.ngQty ?? 0;
+  return {
+    totalQty,
+    goodQty: (today?.goodQty ?? 0) + (today?.reworkGoodQty ?? 0),
+    ngQty,
+    holdQty: today?.holdQty ?? 0,
+    defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null,
   };
 }

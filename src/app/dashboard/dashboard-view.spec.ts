@@ -4,6 +4,7 @@ import {
   oeeCard,
   performanceCard,
   productionCards,
+  productionSection,
   productionTrend,
   trailingDays,
 } from './dashboard-view';
@@ -44,6 +45,35 @@ describe('dashboard view', () => {
     expect(production.value).toBe(0);
     expect(production).not.toHaveProperty('deltaRatio');
     expect(yieldRate.valueStatusCode).toBe('NOT_YET');
+  });
+
+  it('공장 생산 합은 카드와 같은 총생산이고, NG 는 불량 상태 수량만 센다(재작업 합격분은 양품에만 더한다)', () => {
+    const byDay = new Map([
+      day({ day: '2026-10-16', totalQty: 1000, goodQty: 880, ngQty: 100, holdQty: 20, reworkGoodQty: 30 }),
+    ]);
+    const section = productionSection(byDay, '2026-10-16');
+    expect(section).toMatchObject({ totalQty: 1000, goodQty: 910, ngQty: 100, holdQty: 20 });
+    expect(section.defectRate).toBeCloseTo(10, 9);
+    expect(productionSection(new Map(), '2026-10-16')).toEqual({
+      totalQty: 0,
+      goodQty: 0,
+      ngQty: 0,
+      holdQty: 0,
+      defectRate: null,
+    });
+  });
+
+  it('재작업 합격분만 있는 날도 NG 는 음수가 되지 않는다(0), 불량률은 0~100', () => {
+    const section = productionSection(
+      new Map([day({ day: '2026-10-16', totalQty: 0, goodQty: 0, ngQty: 0, reworkGoodQty: 12 })]),
+      '2026-10-16',
+    );
+    expect(section).toEqual({ totalQty: 0, goodQty: 12, ngQty: 0, holdQty: 0, defectRate: null });
+    const mixed = productionSection(
+      new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, ngQty: 0, reworkGoodQty: 20 })]),
+      '2026-10-16',
+    );
+    expect(mixed).toEqual({ totalQty: 100, goodQty: 120, ngQty: 0, holdQty: 0, defectRate: 0 });
   });
 
   it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {

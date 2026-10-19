@@ -7,6 +7,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { notificationView } from '../notification/notification-view';
 import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availability.service';
 import { DashboardEquipmentService } from './dashboard-equipment.service';
+import { DashboardQualityService } from './dashboard-quality.service';
+import { dashboardPeriod } from './dashboard-scope';
+import { DashboardShipmentService } from './dashboard-shipment.service';
 import {
   DailyProduction,
   DashboardCard,
@@ -17,6 +20,7 @@ import {
   oeeCard,
   performanceCard,
   productionCards,
+  productionSection,
   productionTrend,
   trailingDays,
 } from './dashboard-view';
@@ -59,6 +63,8 @@ export class DashboardSummaryService {
     private readonly prisma: PrismaService,
     private readonly availability: DashboardAvailabilityService,
     private readonly equipment: DashboardEquipmentService,
+    private readonly shipments: DashboardShipmentService,
+    private readonly quality: DashboardQualityService,
   ) {}
 
   async read(actorUserId: number, query: DashboardSummaryQuery): Promise<DashboardSummary> {
@@ -98,7 +104,10 @@ export class DashboardSummaryService {
           alerts: alarms.alerts,
           asOf,
           trend: productionTrend(byDay, baseDate, asOf),
+          production: productionSection(byDay, baseDate),
           equipment,
+          shipment: await this.shipments.read(tx, plants, baseDate, query.plantId !== undefined),
+          quality: await this.quality.read(tx, plants, dashboardPeriod(baseDate), equipment.items),
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
