@@ -68,7 +68,7 @@ export class DashboardSummaryService {
     const asOf = now.toISOString();
     return this.prisma.$transaction(
       async (tx) => {
-        const { plantRows, range, period, plants } = await dashboardScope(tx, query, now);
+        const { plantRows, range, period, plants } = await dashboardScope(tx, query, now, actorUserId);
         const baseDate = range.to;
 
         const byDay = await this.dailyProduction(tx, plants, {

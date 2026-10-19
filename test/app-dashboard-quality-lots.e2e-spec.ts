@@ -223,6 +223,19 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
     });
   });
 
+  it('데이터 범위 밖 공장은 403 — 요약과 같은 공장 규칙(omf-all-around#120 · P-62)', async () => {
+    await prisma.user_data_scope.create({ data: { app_user_id: ids.user, plant_id: ids.plant } });
+    try {
+      await get(PATH, { status: 'NC_OPEN', plantId: ids.plant.toString() }).expect(200);
+      const denied = await get(PATH, { status: 'NC_OPEN', plantId: '8999999999' }).expect(403);
+      expect(denied.body).toEqual({
+        errors: [{ scope: 'field', field: 'plantId', code: 'PERMISSION_DENIED', message: '이 공장에 대한 데이터 권한이 없습니다.' }],
+      });
+    } finally {
+      await prisma.user_data_scope.deleteMany({ where: { app_user_id: ids.user } });
+    }
+  });
+
   it('status 누락·잘못된 값, 날짜 오류는 400(field 오류)', async () => {
     expect(await errors({})).toEqual([{ scope: 'field', field: 'status', code: 'REQUIRED' }]);
     expect(await errors({ status: 'HELD' })).toEqual([{ scope: 'field', field: 'status', code: 'INVALID' }]);
