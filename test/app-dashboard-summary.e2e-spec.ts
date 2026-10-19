@@ -358,6 +358,54 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(body.equipment.statusCounts).toMatchObject({ STOPPED: 3, CHANGEOVER: 1 });
   });
 
+  describe('사용자 데이터 범위(omf-all-around#120 · P-62)', () => {
+    const setScopes = async (scopes: { business_unit_id?: bigint; plant_id?: bigint; legal_entity_id?: bigint }[]) => {
+      await prisma.user_data_scope.deleteMany({ where: { app_user_id: ids.user } });
+      if (scopes.length > 0) {
+        await prisma.user_data_scope.createMany({ data: scopes.map((scope) => ({ app_user_id: ids.user, ...scope })) });
+      }
+    };
+    const status = (query: Record<string, string>) =>
+      request(app.getHttpServer()).get(PATH).query(query).set('Cookie', cookie);
+
+    afterEach(() => setScopes([]));
+
+    it('공장 범위 — 범위 밖 공장은 403, 「전체」는 범위 안 공장만 합산한다', async () => {
+      await setScopes([{ business_unit_id: ids.unit, plant_id: ids.plant }]);
+
+      const denied = await status({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() }).expect(403);
+      expect(denied.body).toEqual({
+        errors: [{ scope: 'field', field: 'plantId', code: 'PERMISSION_DENIED', message: '이 공장에 대한 데이터 권한이 없습니다.' }],
+      });
+      const one = await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
+      const all = await read({ baseDate: BASE_DATE });
+      expect(validateResponse(all)).toBe(true);
+      expect(card(all.cards, 'PRODUCTION_QTY').value).toBe(card(one.cards, 'PRODUCTION_QTY').value);
+      const equipmentOf = (body: unknown) => (body as { equipment: { items: unknown[] } }).equipment.items;
+      expect(equipmentOf(all)).toEqual(equipmentOf(one));
+    });
+
+    it('공장만 지정한 줄(사업부 없음)도 범위다 — 세션 scopes 가 버리는 줄', async () => {
+      await setScopes([{ plant_id: ids.plant }]);
+
+      await status({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() }).expect(403);
+      await status({ baseDate: BASE_DATE, plantId: ids.plant.toString() }).expect(200);
+    });
+
+    it('사업부 범위 · 법인 범위 — 그 아래 공장 모두', async () => {
+      await setScopes([{ business_unit_id: ids.unit }]);
+      await status({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() }).expect(200);
+
+      await setScopes([{ legal_entity_id: ids.legal }]);
+      await status({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() }).expect(200);
+    });
+
+    it('범위 미등록 — 제한 없음(지금 동작 유지 · 사용자 결정 2026-10-19)', async () => {
+      await setScopes([]);
+      await status({ baseDate: BASE_DATE, plantId: ids.otherPlant.toString() }).expect(200);
+    });
+  });
+
   async function fixtures(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' },
@@ -1007,6 +1055,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   async function cleanup(): Promise<void> {
     const users = await prisma.app_user.findMany({ where: { login_id: `${PREFIX}-USER` } });
     const userIds = users.map((row) => row.app_user_id);
+    await prisma.user_data_scope.deleteMany({ where: { app_user_id: { in: userIds } } });
     const notifications = await prisma.notification.findMany({ where: { recipient_user_id: { in: userIds } } });
     await prisma.notification.deleteMany({ where: { recipient_user_id: { in: userIds } } });
     await prisma.notification_event.deleteMany({

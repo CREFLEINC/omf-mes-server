@@ -1,5 +1,7 @@
+import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { maintenanceDateRange } from '../../maintenance/maintenance-calendar';
 
 import type { DashboardPlant } from './dashboard-availability.service';
@@ -107,15 +109,54 @@ export interface DashboardScopeQuery extends DashboardRangeQuery {
 }
 
 /**
- * 공장·조회 기간·누계 구간 — 대시보드와 상태별 LOT 목록이 같은 규칙으로 푼다.
- * 기간 검증 오류(400)도 여기서 난다.
+ * 사용자 데이터 범위(`app.user_data_scope`)가 허락하는 공장 조건(omf-all-around#120 · 장부 P-62).
+ * 줄마다 가장 좁은 축 하나로 본다 — 공장 > 사업부 > 법인. 줄이 없으면 null(제한 없음 — 사용자 결정 2026-10-19).
+ * ⚠ 세션의 `scopes` 가 아니라 DB 를 읽는다 — 세션은 사업부가 빈 줄(공장만 지정)을 버리고, 로그인 뒤 바뀐 범위를 모른다.
  */
-export async function dashboardScope(tx: Prisma.TransactionClient, query: DashboardScopeQuery, now: Date) {
+async function scopedPlantWhere(tx: Prisma.TransactionClient, actorUserId: number): Promise<Prisma.plantWhereInput | null> {
+  const rows = await tx.user_data_scope.findMany({
+    where: { app_user_id: BigInt(actorUserId) },
+    select: { legal_entity_id: true, business_unit_id: true, plant_id: true },
+  });
+  if (rows.length === 0) return null;
+  return {
+    OR: rows.map((row) =>
+      row.plant_id !== null
+        ? { plant_id: row.plant_id }
+        : row.business_unit_id !== null
+          ? { business_unit_id: row.business_unit_id }
+          : { legal_entity_id: row.legal_entity_id ?? BigInt(0) },
+    ),
+  };
+}
+
+function plantDenied(): ContractException {
+  return new ContractException(HttpStatus.FORBIDDEN, [
+    field('plantId', ERROR_CODE.PERMISSION_DENIED, '이 공장에 대한 데이터 권한이 없습니다.'),
+  ]);
+}
+
+/**
+ * 공장·조회 기간·누계 구간 — 대시보드와 상태별 LOT 목록이 같은 규칙으로 푼다.
+ * 기간 검증 오류(400)와 데이터 범위 밖 공장 거절(403)도 여기서 난다.
+ * 공장을 고르면 범위 안이어야 하고, 고르지 않으면(전체) 범위 안의 활성 공장만 합산한다.
+ */
+export async function dashboardScope(
+  tx: Prisma.TransactionClient,
+  query: DashboardScopeQuery,
+  now: Date,
+  actorUserId: number,
+) {
+  const scoped = await scopedPlantWhere(tx, actorUserId);
+  const base: Prisma.plantWhereInput =
+    query.plantId === undefined ? { is_active: true } : { plant_id: BigInt(query.plantId) };
   const plantRows = await tx.plant.findMany({
-    where: query.plantId === undefined ? { is_active: true } : { plant_id: BigInt(query.plantId) },
+    where: scoped === null ? base : { AND: [base, scoped] },
     select: { plant_id: true, timezone_code: true },
     orderBy: { plant_id: 'asc' },
   });
+  /* 범위가 있는데 남는 공장이 없다 — 고른 공장이 범위 밖이거나, 범위의 공장이 모두 비활성이다. */
+  if (scoped !== null && plantRows.length === 0) throw plantDenied();
   const today = localToday(now, plantRows.length === 1 && query.plantId !== undefined
     ? plantRows[0].timezone_code
     : DEFAULT_TIMEZONE);

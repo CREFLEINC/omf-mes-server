@@ -86,12 +86,12 @@ const INT64_MAX = 2n ** 63n - 1n;
 export class DashboardQualityLotsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async read(query: DashboardQualityLotsQuery): Promise<DashboardQualityLots> {
+  async read(actorUserId: number, query: DashboardQualityLotsQuery): Promise<DashboardQualityLots> {
     const { status, inspectionType, scopeQuery } = parseQuery(query);
     const now = new Date();
     return this.prisma.$transaction(
       async (tx) => {
-        const { plants, period } = await dashboardScope(tx, scopeQuery, now);
+        const { plants, period } = await dashboardScope(tx, scopeQuery, now, actorUserId);
         if (plants.length === 0) {
           return { status, asOf: now.toISOString(), totalCount: 0, ...lotRecordCount(undefined), items: [] };
         }

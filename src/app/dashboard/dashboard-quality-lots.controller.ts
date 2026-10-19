@@ -32,6 +32,6 @@ export class DashboardQualityLotsController {
     if (session === null) throw loginRequired();
     attachSession(request, session);
     assertOperationPermission(session, SUMMARY_OPERATION);
-    return this.lots.read(query);
+    return this.lots.read(session.userId, query);
   }
 }
