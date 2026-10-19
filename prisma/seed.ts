@@ -1025,6 +1025,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'OQC', codeName: '출하검사', order: 30 },
       { code: 'REPAIR', codeName: '수리', order: 40 },
       { code: 'CLAIM', codeName: '클레임', order: 50 },
+      // 수입검사 불합격 사유(omf-all-around#106) — 마이그 20261016100000 에도 같은 줄이 있다.
+      { code: 'IQC', codeName: '수입검사', order: 60 },
     ],
   },
   {
@@ -1676,9 +1678,29 @@ async function main(): Promise<void> {
   }
 
   await seedEntityTypes();
+  await seedSystemProcesses();
   await seedNumberingRules();
   await seedRoles();
   await seedAdmin();
+}
+
+/** 수입검사 공정 — 서버 `defect-record-write.service.ts` 의 IQC 기본 공정과 같은 값이다. */
+const IQC_PROCESS_CODE = 'IQC';
+
+/**
+ * 시스템이 아는 공정(omf-all-around#106 · 2026-10-16 결정 ④). 수입검사(IQC) 단계 불량은 발생·검출
+ * 공정을 이 공정으로 남긴다 — `defect_record` 의 두 공정 칸이 NOT NULL 이라서다(스키마 변경 없음).
+ * ⛔ 이미 있으면 건드리지 않는다 — 고객이 이름을 바꿨을 수 있다. 운영 DB 반영 SQL 은
+ *    `deploy/seed/mes-iqc-process.sql`(제시만 · 배포가 시드를 돌리지 않는다).
+ */
+async function seedSystemProcesses(): Promise<void> {
+  await prisma.process.upsert({
+    where: { process_code: IQC_PROCESS_CODE },
+    update: {},
+    create: { process_code: IQC_PROCESS_CODE, process_name: '수입검사', process_type_code: 'INSPECTION' },
+  });
+  // eslint-disable-next-line no-console
+  console.log('seeded system process (IQC)');
 }
 
 async function seedEntityTypes(): Promise<void> {

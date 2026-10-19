@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { LotQualityStatusService, Tx } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
+import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
@@ -114,6 +115,10 @@ export class DispositionWriteService {
         throw new ContractException(HttpStatus.BAD_REQUEST, [
           { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '지금 LOT 상태에서는 이 처분으로 옮길 수 없습니다.' },
         ]);
+      }
+      // 재작업이면 IQC 의뢰를 다시 연다 — 판정 화면 대기 큐에 다시 떠야 재검사 회차를 쓴다(장부 P-43).
+      if (body.dispositionTypeCode === 'REWORK') {
+        await reopenIqcRequestForReworkWithin(tx, id, movedLotIds, appUserId);
       }
 
       // ⭐ 종결 판정이 전이 «뒤»다 — LOT 이 못 움직이면 부적합을 닫지 않는다. 「남은 수량 0」의
