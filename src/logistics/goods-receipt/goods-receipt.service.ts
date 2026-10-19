@@ -33,7 +33,7 @@ const NUMBER_RETRY = 3;
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** IQC 합격 확정이 LOT 을 옮기는 상태(시드 `LOT_STATUS` · 전이 C4). */
 const IQC_PASSED_LOT_STATUS = 'NORMAL';
-/** IQC 불합격 확정(C6)이 LOT 을 옮기는 상태 — 불량창고 입고만 허용한다(P-43). */
+/** IQC 불합격 확정(C6)이 LOT 을 옮기는 상태 — 불량창고 입고만 허용한다(P-45). */
 const DEFECTIVE_LOT_STATUS = 'DEFECTIVE';
 
 export interface GoodsReceiptQuery {
@@ -237,7 +237,7 @@ export class GoodsReceiptService {
         select: { inspection_required: true },
       });
       if (inbound?.inspection_required === true) {
-        // ⭐ 예외: IQC 불합격(LOT 불량)은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-43) —
+        // ⭐ 예외: IQC 불합격(LOT 불량)은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) —
         //    불합격 자재를 불량창고로 옮겨 처분·반품을 기다린다. 일반 창고는 계속 막는다. 검사 대기는 어디로도 안 된다.
         const toDefectWarehouse =
           lot.status_code === DEFECTIVE_LOT_STATUS &&

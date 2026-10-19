@@ -78,7 +78,7 @@ describe('GoodsReceiptService — IQC 합격 전 입고 차단 (omf-all-around#1
     expect(JSON.stringify((error as ContractException).getResponse())).toContain('STATE_LOCKED');
   });
 
-  /* omf-all-around#84 · P-43 — IQC 불합격 LOT 은 불량창고로만 입고된다. */
+  /* omf-all-around#84 · P-45 — IQC 불합격 LOT 은 불량창고로만 입고된다. */
   it('IQC 불합격(DEFECTIVE) LOT 을 불량창고로 입고하면 통과한다', async () => {
     const error = await errorOf(stub(inboundLot('DEFECTIVE'), true, true));
     expect((error as Error).message).toBe('PASSED_VALIDATION');
