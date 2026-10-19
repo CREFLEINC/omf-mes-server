@@ -41,10 +41,6 @@ const CONTRACT_COMMIT = readFileSync(
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 
 const EXCLUDED_OPERATIONS = new Map([
-  [
-    "GET /app/dashboard-summary",
-    "집계 대상 도메인 완성 뒤 구현하기로 이번 루틴에서 제외했다.",
-  ],
   ["POST /app/attachments", "바이너리 저장소가 이번 범위 밖이다."],
   [
     "GET /app/attachments/{attachmentId}/content",
@@ -800,12 +796,12 @@ function build() {
   const missingOperations = [...documentsByOperation.keys()].filter(
     (key) => !implementedBindings.has(key),
   );
-  // ⚠ 이 수치도 사본 상태를 따라 움직인다. 4 → **1** — 종전 넷 중 첨부 셋이 그 사이 구현됐고,
-  //    SHIP-UNIT-01 ③b 3경로는 이 전달본 시점에 «구현돼» 미구현이 아니다.
-  //    ⛔ 남은 하나는 `GET /app/dashboard-summary` 다(집계 대상 도메인 미완).
+  // ⚠ 이 수치도 사본 상태를 따라 움직인다. 4 → 1 → **0** — 종전 넷 중 첨부 셋이 그 사이 구현됐고,
+  //    마지막 `GET /app/dashboard-summary` 도 구현됐다(omf-all-around#118).
+  //    ⚠ 그래서 SERVER_COMMIT 이 #118 병합 커밋 이후여야 이 검사가 선다 — 다음 전달본에서 함께 올린다.
   assert(
-    missingOperations.length === 1,
-    `미구현 오퍼레이션 수가 1이 아닙니다: ${missingOperations.length}`,
+    missingOperations.length === 0,
+    `미구현 오퍼레이션 수가 0이 아닙니다: ${missingOperations.length}`,
   );
   assert(
     missingOperations.every((key) => EXCLUDED_OPERATIONS.has(key)),

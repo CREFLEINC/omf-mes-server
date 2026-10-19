@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { NumberingModule } from '../core/numbering';
+import { DowntimeSummaryCalendarService } from '../maintenance/downtime/downtime-summary-calendar.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ApprovalRequestController } from './approval/approval-request.controller';
 import { ApprovalRequestService } from './approval/approval-request.service';
@@ -15,6 +16,9 @@ import { PermissionController } from './access/permission.controller';
 import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentUploadService } from './attachment/attachment-upload.service';
 import { AttachmentService } from './attachment/attachment.service';
+import { DashboardAvailabilityService } from './dashboard/dashboard-availability.service';
+import { DashboardSummaryService } from './dashboard/dashboard-summary.service';
+import { DashboardController } from './dashboard/dashboard.controller';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
 import { DocumentIssueReportService } from './document-issue/document-issue-report.service';
 import { DocumentIssueSummaryService } from './document-issue/document-issue-summary.service';
@@ -61,6 +65,7 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     RoleController,
     AppUserController,
     AttachmentController,
+    DashboardController,
     DocumentIssueController,
     PrinterController,
     OperationPolicyController,
@@ -81,6 +86,10 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     UserWorkerLinkService,
     AttachmentService,
     AttachmentUploadService,
+    DashboardSummaryService,
+    DashboardAvailabilityService,
+    // 시간가동률의 계획 가동시간을 설비 비가동 집계와 같은 근무달력 해석으로 센다.
+    DowntimeSummaryCalendarService,
     DocumentIssueQueryService,
     DocumentIssueReportService,
     DocumentIssueSummaryService,
