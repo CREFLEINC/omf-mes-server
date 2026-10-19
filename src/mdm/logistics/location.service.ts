@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Editability, ReferenceQuery, Referrer, assertCodeValues, countReferences, optional, referencePage, referenceWhere } from '../../common/master';
 
 /**
- * 로케이션을 FK 로 가리키는 자리 전부 — 서른세 곳이다. `pg_constraint` 에서 뽑았고,
+ * 로케이션을 FK 로 가리키는 자리 전부다. `pg_constraint` 에서 뽑았고,
  * e2e 가 같은 질의로 다시 뽑아 대조한다(#116 과 같은 장치).
  */
 export const LOCATION_REFERRERS: readonly Referrer[] = [

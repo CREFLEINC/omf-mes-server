@@ -29,8 +29,8 @@ export interface PlanLine {
 const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
 
 /**
- * 공정 N → W/O N 벌. 라인·기본 위치 셋은 계획의 라인과 그 라인 기본값으로 미리 채운다 — 계약은
- * 「생성 후 `W-02-03`·`W-02-04` 의 PUT 으로 채운다」였다(R-5 · 장부 P-40). 비어 있으면 4M 에서 고른다.
+ * 라인·기본 위치 셋을 계획 라인에서 미리 채운다 — 배포가 기본 위치 셋을 요구하는데 W/O 마다 4M 에서
+ * 고르게 하면 하루 수백 건을 손으로 넣어야 한다. 계약 생성 규칙과 다른 동작이다(`docs/계약-선행-수정항목.md`).
  * `operation_settings_snapshot` 은 안 쓴다 — `:release` 가 뜬다(I-6).
  */
 export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUserId: number | undefined): Prisma.work_orderCreateManyInput[] {
