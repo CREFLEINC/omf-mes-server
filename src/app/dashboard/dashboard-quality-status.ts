@@ -1,5 +1,11 @@
 import { Prisma } from '@prisma/client';
 
+import { InspectionType, finalResultCte } from './dashboard-inspection';
+import type { DashboardPeriod } from './dashboard-scope';
+
+export const QUALITY_LOT_STATUSES = ['INSPECTION_HELD', 'RECEIPT_HOLD', 'PQC_PENDING', 'NC_OPEN'] as const;
+export type QualityLotStatus = (typeof QUALITY_LOT_STATUSES)[number];
+
 /**
  * 품질 종합 「현재 현황」의 상태 정의 — 대시보드 숫자와 상태별 LOT 목록(장부 P-58)이 «같은 조각»을 쓴다.
  * 조건을 한쪽만 고치면 숫자와 목록 건수가 갈라진다. ⚠ 모두 앞에 `plant_scope` CTE 가 있어야 한다.
@@ -44,6 +50,48 @@ export const SCOPED_NC_CTE = Prisma.sql`scoped_nc AS (
 
 /** 미종결 부적합 — 기간과 무관하다. `scoped_nc nc` 에 건다. */
 export const OPEN_NC_WHERE = Prisma.sql`nc.closed_at IS NULL`;
+
+/** 검사 보류 기록 — 누계 구간의 최종 판정 HELD. `final_result fr` 에 건다. 유형이 오면 그 유형만. */
+export function heldWhere(period: DashboardPeriod, type?: InspectionType): Prisma.Sql {
+  return Prisma.sql`fr.judgment = 'HELD' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
+    AND ${type === undefined ? Prisma.sql`TRUE` : Prisma.sql`fr.type = ${type}`}`;
+}
+
+export interface LotRecordRow {
+  lot_count: number;
+  record_count: number;
+}
+
+/**
+ * 「n LOT · m건」 — 기록 수와 고유 LOT 수. LOT 없는 기록은 기록 수에만 든다(COUNT DISTINCT 는 null 을 세지 않는다).
+ * 기록 = 검사 보류: 최종 판정 HELD 결과 · 입고 보류: 미해제 보류 행 · 검사 대기: 의뢰 · 미종결 부적합: 부적합(LOT = 대상 LOT 전부).
+ * 대시보드 `quality.statusCounts` 와 상태별 LOT 목록이 이 한 식을 쓴다. `scope` = `plant_scope` CTE 본문.
+ */
+export function lotRecordCountSql(
+  scope: Prisma.Sql,
+  status: QualityLotStatus,
+  period: DashboardPeriod,
+  type?: InspectionType,
+): Prisma.Sql {
+  const count = (record: Prisma.Sql, lot: Prisma.Sql) =>
+    Prisma.sql`SELECT COUNT(DISTINCT ${lot})::int AS lot_count, COUNT(DISTINCT ${record})::int AS record_count`;
+  switch (status) {
+    case 'INSPECTION_HELD':
+      return Prisma.sql`WITH ${scope}, ${finalResultCte(period)}
+        ${count(Prisma.sql`fr.inspection_result_id`, Prisma.sql`fr.lot_id`)} FROM final_result fr WHERE ${heldWhere(period, type)}`;
+    case 'RECEIPT_HOLD':
+      return Prisma.sql`WITH ${scope}, ${RECEIPT_HOLD_CTE}
+        ${count(Prisma.sql`h.lot_hold_id`, Prisma.sql`h.lot_id`)} FROM receipt_hold h`;
+    case 'PQC_PENDING':
+      return Prisma.sql`WITH ${scope}, ${PQC_PENDING_CTE}
+        ${count(Prisma.sql`q.inspection_request_id`, Prisma.sql`q.lot_id`)} FROM pqc_pending q`;
+    case 'NC_OPEN':
+      return Prisma.sql`WITH ${scope}, ${SCOPED_NC_CTE}
+        ${count(Prisma.sql`nc.nonconformance_id`, Prisma.sql`nl.lot_id`)} FROM scoped_nc nc
+        LEFT JOIN quality.nonconformance_lot nl ON nl.nonconformance_id = nc.nonconformance_id
+        WHERE ${OPEN_NC_WHERE}`;
+  }
+}
 
 /** IQC LOT 의 공급사 이름 — 그 LOT 을 실은 첫 입하 라인의 공급사. */
 export function lotSupplierName(lotId: Prisma.Sql): Prisma.Sql {

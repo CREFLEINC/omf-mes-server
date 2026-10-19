@@ -1,6 +1,6 @@
 import { EquipmentSignals, equipmentStatus, pickDowntime } from './dashboard-equipment-status';
 import { JudgmentRow, passRate, qualityTypeBlock } from './dashboard-inspection';
-import { topEquipmentDefectRates } from './dashboard-quality.service';
+import { fullReinspect, lotRecordCount, topEquipmentDefectRates } from './dashboard-quality.service';
 import { dashboardPeriod } from './dashboard-scope';
 
 const at = (iso: string) => new Date(iso);
@@ -164,5 +164,23 @@ describe('dashboard equipment defect rates', () => {
       'E-2-3',
     ]);
     expect(top[0]).toEqual({ equipmentId: 4, equipmentCode: 'E-1-4', defectRate: 9, ngQty: 9 });
+  });
+});
+
+describe('dashboard iqc full reinspect', () => {
+  it('재검사 회차의 검사 수량 합 = 투입, 합격 수량 합 = 양품 복원이다', () => {
+    expect(fullReinspect({ input_qty: '30.500000', restored_qty: '18.000000' })).toEqual({ inputQty: 30.5, restoredQty: 18 });
+  });
+
+  it('재검사 회차가 없으면 null 이 아니라 0 이다 — 화면이 칸을 숨기지 않는다', () => {
+    expect(fullReinspect({ input_qty: '0', restored_qty: '0' })).toEqual({ inputQty: 0, restoredQty: 0 });
+    expect(fullReinspect(undefined)).toEqual({ inputQty: 0, restoredQty: 0 });
+  });
+});
+
+describe('dashboard quality status counts', () => {
+  it('행을 lotCount·recordCount 로 옮기고, 행이 없으면(공장 없음) 0 이다', () => {
+    expect(lotRecordCount({ lot_count: 1, record_count: 3 })).toEqual({ lotCount: 1, recordCount: 3 });
+    expect(lotRecordCount(undefined)).toEqual({ lotCount: 0, recordCount: 0 });
   });
 });

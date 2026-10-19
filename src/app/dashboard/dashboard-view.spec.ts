@@ -79,16 +79,17 @@ describe('dashboard view', () => {
     expect(mixed).toEqual({ totalQty: 100, goodQty: 120, ngQty: 0, holdQty: 0, defectRate: 0 });
   });
 
-  it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {
+  it('추이는 기준일 포함 9일이고 실적 기록 없는 날은 null, 기록은 있는데 합 0 인 날은 0, 라벨은 MM-DD 다', () => {
     const trend = productionTrend(
-      new Map([day({ day: '2026-10-14', totalQty: 30 })]),
+      new Map([day({ day: '2026-10-14', totalQty: 30 }), day({ day: '2026-10-15', totalQty: 0, reworkGoodQty: 5 })]),
       chartDays(one('2026-10-16')),
       'now',
     );
     expect(trend.points).toHaveLength(9);
-    expect(trend.points[0]).toEqual({ label: '10-08', value: 0 });
+    expect(trend.points[0]).toEqual({ label: '10-08', value: null });
     expect(trend.points[6]).toEqual({ label: '10-14', value: 30 });
-    expect(trend.points.at(-1)).toEqual({ label: '10-16', value: 0 });
+    expect(trend.points[7]).toEqual({ label: '10-15', value: 0 });
+    expect(trend.points.at(-1)).toEqual({ label: '10-16', value: null });
     expect(trend).toMatchObject({ seriesName: '일일 생산실적', unit: 'EA', targetValue: null });
   });
 
@@ -108,7 +109,7 @@ describe('dashboard view', () => {
     expect(productionSection(byDay, range)).toMatchObject({ totalQty: 400, ngQty: 40, defectRate: 10 });
     expect(productionTrend(byDay, chartDays(range), 'now').points).toEqual([
       { label: '10-14', value: 300 },
-      { label: '10-15', value: 0 },
+      { label: '10-15', value: null },
       { label: '10-16', value: 100 },
     ]);
   });

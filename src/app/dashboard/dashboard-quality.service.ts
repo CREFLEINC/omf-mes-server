@@ -7,13 +7,28 @@ import {
   JudgmentRow,
   RecentLot,
   finalResultCte,
+  iqcReinspectCte,
   qualityTypeBlock,
 } from './dashboard-inspection';
 import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
-import { PQC_PENDING_CTE, RECEIPT_HOLD_CTE, lotSupplierName, pqcEquipmentCode } from './dashboard-quality-status';
+import {
+  LotRecordRow,
+  PQC_PENDING_CTE,
+  QualityLotStatus,
+  RECEIPT_HOLD_CTE,
+  lotRecordCountSql,
+  lotSupplierName,
+  pqcEquipmentCode,
+} from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
-import { DashboardQuality, DefectPhenomenon, EquipmentDefectRate } from './dashboard-sections';
+import {
+  DashboardQuality,
+  DefectPhenomenon,
+  EquipmentDefectRate,
+  LotRecordCount,
+  QualityStatusCounts,
+} from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
 
@@ -36,6 +51,11 @@ interface PhenomenonRow {
   defect_code: string;
   defect_name: string;
   qty: string;
+}
+
+export interface ReinspectRow {
+  input_qty: string;
+  restored_qty: string;
 }
 
 export interface EquipmentDefectRow {
@@ -63,10 +83,11 @@ export class DashboardQualityService {
     period: DashboardPeriod,
   ): Promise<DashboardQuality> {
     // 공장이 없어도 섹션은 낸다 — 빈 원천으로 같은 조립을 탄다(0 · 빈 배열 · null).
-    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance, equipmentRows] =
+    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance, equipmentRows, reinspect] =
       plants.length === 0
-        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), []]
+        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), [], []]
         : await this.queries(tx, plants, period);
+    const statusCounts = await this.statusCounts(tx, plants, period);
 
     const block = (type: InspectionType) =>
       qualityTypeBlock(
@@ -89,8 +110,7 @@ export class DashboardQualityService {
           itemName: row.item_name,
           qty: num(row.qty),
         })),
-        // 양품 복원(C15)을 표시하는 데이터가 없다 — 지어내지 않는다(#118 2차 결정 9).
-        fullReinspect: null,
+        fullReinspect: fullReinspect(reinspect[0]),
         receiptHoldLotCount: holds[0]?.lot_count ?? 0,
       },
       pqc: {
@@ -101,6 +121,33 @@ export class DashboardQualityService {
       },
       oqc: { ...block('OQC'), customerReturnQty: nonconformance.customerReturnQty },
       nonconformance: nonconformance.block,
+      statusCounts,
+    };
+  }
+
+  /** 「현재 현황」 n LOT · m건 — 상태별 LOT 목록의 lotCount·recordCount 와 같은 식(`lotRecordCountSql`). */
+  private async statusCounts(
+    tx: Tx,
+    plants: readonly DashboardPlant[],
+    period: DashboardPeriod,
+  ): Promise<QualityStatusCounts> {
+    const read = async (status: QualityLotStatus, type?: InspectionType): Promise<LotRecordCount> => {
+      if (plants.length === 0) return lotRecordCount(undefined);
+      const [row] = await tx.$queryRaw<LotRecordRow[]>(lotRecordCountSql(plantScope(plants), status, period, type));
+      return lotRecordCount(row);
+    };
+    return {
+      INSPECTION_HELD: {
+        ...(await read('INSPECTION_HELD')),
+        byType: {
+          IQC: await read('INSPECTION_HELD', 'IQC'),
+          PQC: await read('INSPECTION_HELD', 'PQC'),
+          OQC: await read('INSPECTION_HELD', 'OQC'),
+        },
+      },
+      RECEIPT_HOLD: await read('RECEIPT_HOLD'),
+      PQC_PENDING: await read('PQC_PENDING'),
+      NC_OPEN: await read('NC_OPEN'),
     };
   }
 
@@ -146,6 +193,10 @@ export class DashboardQualityService {
         SELECT COUNT(*)::int AS request_count FROM pqc_pending`),
       this.nonconformances.read(tx, plants, period),
       this.equipmentDefects(tx, plants, period),
+      // 전수 재검사 = IQC 재검사 회차 합. 누계 구간·공장·판정 시각은 monthLots 와 같다(#118 사용자 결정 2026-10-19).
+      tx.$queryRaw<ReinspectRow[]>(Prisma.sql`WITH ${plantScope(plants)}, ${iqcReinspectCte(period)}
+        SELECT COALESCE(SUM(inspected_qty), 0)::text AS input_qty, COALESCE(SUM(accepted_qty), 0)::text AS restored_qty
+        FROM iqc_reinspect WHERE local_date BETWEEN ${period.from}::date AND ${period.to}::date`),
     ]);
   }
 
@@ -219,6 +270,15 @@ export function topEquipmentDefectRates(rows: readonly EquipmentDefectRow[]): Eq
         a.equipmentCode.localeCompare(b.equipmentCode, undefined, { numeric: true }),
     )
     .slice(0, EQUIPMENT_TOP);
+}
+
+/** 재검사 회차가 없어도 0 으로 싣는다 — null 이면 화면이 칸을 숨긴다(사용자 결정 2026-10-19). */
+export function fullReinspect(row: ReinspectRow | undefined): DashboardQuality['iqc']['fullReinspect'] {
+  return { inputQty: num(row?.input_qty), restoredQty: num(row?.restored_qty) };
+}
+
+export function lotRecordCount(row: LotRecordRow | undefined): LotRecordCount {
+  return { lotCount: row?.lot_count ?? 0, recordCount: row?.record_count ?? 0 };
 }
 
 function phenomenon(row: PhenomenonRow): DefectPhenomenon {
