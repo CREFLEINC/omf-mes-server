@@ -220,6 +220,32 @@ $C exec proxy nginx -t && $C exec proxy nginx -s reload
 
 ⚠ 이렇게 넘기면 `.env.prod`·`DEPLOYED` 가 실제와 달라진다. 뒤이어 `./rollback.sh <그 태그>` 로 맞춰 둔다.
 
+## ERP 연동 — 중계 DB(MSSQL)에서 받기
+
+api 안에서 주기로 돈다(`src/integration/erp/`). 기본은 꺼져 있다. 하노이 운영 서버만 켠다 — 한국 개발 서버는
+현장 중계 DB(192.168.1.2)에 닿지 않는다.
+
+| 변수 | 기본 | 뜻 |
+|---|---|---|
+| `ERP_SYNC_ENABLED` | `false` | `true` 면 돈다. 꺼져 있으면 MSSQL 에 연결하지 않는다 |
+| `ERP_DB_HOST`·`ERP_DB_USER`·`ERP_DB_PASSWORD`·`ERP_DB_NAME` | — | 켜져 있는데 하나라도 비면 api 가 기동하지 않는다 |
+| `ERP_DB_PORT` | `1433` | |
+| `ERP_DB_ENCRYPT` | `true` | `false` 일 때만 TLS 를 끈다. 서버 인증서는 검사하지 않는다 |
+| `ERP_SYNC_MASTER_INTERVAL_SEC` | `43200` | 기준정보 5종(공통코드·사원·품목·거래처·BOM). 회차가 끝나고 이만큼 뒤에 다음 회차 |
+| `ERP_SYNC_ORDER_INTERVAL_SEC` | `900` | 전표 3종(발주·수주·제조오더) |
+
+`x-api.environment` 에 모두 있다(6번 규칙).
+
+- **블루-그린** — 두 api 가 다 떠 있어도 `integration.sync_lease` 행을 쥔 쪽만 돈다(120초, 묶음마다 갱신). 쥔 쪽이
+  멈추면 다른 쪽이 60초 안에 잇는다.
+- **종료** — 도는 회차는 묶음(500행) 경계에서 멈춘다. 반영과 원본 확인 표시 사이에서 끊기면 다음 회차에 같은 행을
+  다시 받는다 — 결과는 같다.
+- **연결 실패** — 1분부터 배로 늘려 다시 시도한다. 최대는 1시간과 그 줄 간격 중 짧은 쪽이다.
+- **처음 켤 때** — 운영 초기 데이터(`deploy/seed/mes-initial-data.sql`)가 들어간 DB 에서는 품목 판이 한 번 오른다(규격·품목그룹
+  칸이 채워진다). BOM 은 소요량 0 이나 기준수량이 섞인 모품목만 새 판이 선다. 첫 회차 기준정보 3만 4천 행이 약 1분이다.
+- **확인** — 로그 `[InboundCycle] <중계 표> 읽음 n · 반영 n · 실패 n · 보류 n`. 실패 사유는 중계 표의 `MES_APPLY_ERROR` 와
+  연계 현황 화면(`GET /integration/messages?directionCode=INBOUND`)에 남는다. 다섯 번 실패한 행은 격리되고 `:retry` 로 푼다.
+
 ## 파일 지도
 
 | 파일 | 역할 |
