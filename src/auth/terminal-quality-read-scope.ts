@@ -12,6 +12,9 @@ type TerminalType = 'POP' | 'MOBILE';
 export const TERMINAL_QUALITY_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /quality/inspection-requests': ['POP'],
   'GET /quality/inspection-requests/{inspectionRequestId}': ['POP'],
+  // PQC 패널이 작성중 회차를 되살린다(omf-all-around#107 · 장부 P-49) — 볼 수 있는 의뢰의 회차·측정치만.
+  'GET /quality/inspection-results': ['POP'],
+  'GET /quality/inspection-results/{inspectionResultId}/measurements': ['POP'],
   'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['POP'],
   'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}/items': ['POP'],
   'GET /quality/inspection-plans/{inspectionPlanId}': ['POP'],
@@ -89,6 +92,18 @@ export async function assertTerminalQualityReadScope(
       const id = positiveId(request.params.inspectionRequestId);
       if (id === null) throw denied();
       await ownInspectionRequest({ inspection_request_id: id });
+      break;
+    }
+    case 'GET /quality/inspection-results': {
+      const id = positiveId(query.inspectionRequestId);
+      if (id === null) throw denied();
+      await ownInspectionRequest({ inspection_request_id: id });
+      break;
+    }
+    case 'GET /quality/inspection-results/{inspectionResultId}/measurements': {
+      const id = positiveId(request.params.inspectionResultId);
+      if (id === null) throw denied();
+      await ownInspectionRequest({ inspection_result: { some: { inspection_result_id: id } } });
       break;
     }
     case 'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}':

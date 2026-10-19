@@ -107,12 +107,12 @@ describe('FR-004/005 terminal bearer authentication', () => {
       accessibleScreensContext(`Bearer ${pop.token}`).execution))).toBe(401);
   });
 
-  it('keeps the 42 reviewed generic and quality read keys disjoint', () => {
+  it('keeps the 44 reviewed generic and quality read keys disjoint', () => {
     const generic = Object.keys(TERMINAL_READ_OPERATIONS);
     const quality = Object.keys(TERMINAL_QUALITY_READ_OPERATIONS);
     expect(generic).toHaveLength(32);
-    expect(quality).toHaveLength(10);
-    expect(new Set([...generic, ...quality]).size).toBe(42);
+    expect(quality).toHaveLength(12);
+    expect(new Set([...generic, ...quality]).size).toBe(44);
     expect([...generic, ...quality].every((key) => key.startsWith('GET '))).toBe(true);
   });
 

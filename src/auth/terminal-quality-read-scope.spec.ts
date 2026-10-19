@@ -21,8 +21,9 @@ const prisma = () => ({
 }) as unknown as PrismaService;
 
 describe('terminal quality read scope', () => {
-  it('contains only the ten client quality/repair GETs with exact channels', () => {
-    expect(Object.keys(TERMINAL_QUALITY_READ_OPERATIONS)).toHaveLength(10);
+  it('contains only the twelve client quality/repair GETs with exact channels', () => {
+    // +2 — PQC 패널이 작성중 회차·측정치를 되살린다(omf-all-around#107 · 장부 P-49).
+    expect(Object.keys(TERMINAL_QUALITY_READ_OPERATIONS)).toHaveLength(12);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-requests']).toEqual(['POP']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/defect-records']).toEqual(['MOBILE']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-plans']).toBeUndefined();
@@ -45,6 +46,22 @@ describe('terminal quality read scope', () => {
     (db.inspection_request.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(assertTerminalQualityReadScope(db, request({}, { inspectionRequestId: '43' }),
       'GET /quality/inspection-requests/{inspectionRequestId}', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('opens PQC rounds and their measurements only through an inspection request mapped to this terminal', async () => {
+    const db = prisma();
+    await assertTerminalQualityReadScope(db, request({ inspectionRequestId: '42' }), 'GET /quality/inspection-results', terminal('POP'));
+    expect((db.inspection_request.findFirst as jest.Mock).mock.calls[0][0].where).toMatchObject({ inspection_request_id: 42n });
+    await assertTerminalQualityReadScope(db, request({}, { inspectionResultId: '12' }),
+      'GET /quality/inspection-results/{inspectionResultId}/measurements', terminal('POP'));
+    expect((db.inspection_request.findFirst as jest.Mock).mock.calls[1][0].where).toMatchObject({
+      inspection_result: { some: { inspection_result_id: 12n } },
+    });
+    // 의뢰 없이 훑는 회차 목록은 열지 않는다.
+    await expect(assertTerminalQualityReadScope(db, request({}), 'GET /quality/inspection-results', terminal('POP')))
+      .rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalQualityReadScope(db, request({ inspectionRequestId: '42' }),
+      'GET /quality/inspection-results', terminal('MOBILE'))).rejects.toMatchObject({ status: 401 });
   });
 
   it('requires a MOBILE defect LOT in the same plant and leaves shared defect codes global', async () => {
