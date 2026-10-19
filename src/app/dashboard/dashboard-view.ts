@@ -203,7 +203,8 @@ export function oeeCard(parts: readonly DashboardCard[]): DashboardCard {
 
 /**
  * 공장 단위 생산 합 — 1차 생산 수량·양품률 카드와 같은 원천·규칙이다(같은 일자 집계를 쓴다).
- * 재작업 합격분은 NG 에서 양품으로 옮긴다. 그래서 지난 NG 의 재작업이 몰린 날은 NG 가 음수일 수 있다 — 깎지 않는다.
+ * 재작업 합격분은 NG 에서 양품으로 옮긴다. 그래서 지난 NG 의 재작업이 몰린 날은 NG 가 음수일 수 있다 — 수량은 깎지 않고
+ * 불량률만 0~100 으로 자른다(capRate · 양품률 카드와 짝).
  */
 export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, baseDate: string): DashboardProduction {
   const today = byDay.get(baseDate);
@@ -214,6 +215,6 @@ export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, b
     goodQty: (today?.goodQty ?? 0) + (today?.reworkGoodQty ?? 0),
     ngQty,
     holdQty: today?.holdQty ?? 0,
-    defectRate: totalQty > 0 ? (ngQty / totalQty) * 100 : null,
+    defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null,
   };
 }

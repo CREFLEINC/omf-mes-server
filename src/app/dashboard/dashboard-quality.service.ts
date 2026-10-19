@@ -131,9 +131,14 @@ export class DashboardQualityService {
       tx.$queryRaw<{ partner_id: bigint; partner_name: string; rejected_qty: string }[]>(Prisma.sql`${head}
         SELECT p.partner_id, p.partner_name, SUM(fr.rejected_qty)::text AS rejected_qty
         FROM final_result fr
-        JOIN logistics.inbound_receipt_line irl ON irl.lot_id = fr.lot_id
-        JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
-        JOIN mdm.partner p ON p.partner_id = rc.supplier_id
+        -- LOT 하나에 입하 줄이 여럿이어도 한 번만 센다 — 최근 목록과 같이 첫 줄, 취소된 입하는 뺀다.
+        JOIN LATERAL (
+          SELECT rc.supplier_id FROM logistics.inbound_receipt_line irl
+          JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
+          WHERE irl.lot_id = fr.lot_id AND rc.status_code <> 'CANCELLED'
+          ORDER BY irl.inbound_receipt_line_id LIMIT 1
+        ) supplier ON TRUE
+        JOIN mdm.partner p ON p.partner_id = supplier.supplier_id
         WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.monthStart}::date AND ${period.baseDate}::date
         GROUP BY p.partner_id HAVING SUM(fr.rejected_qty) > 0
         ORDER BY SUM(fr.rejected_qty) DESC, p.partner_id LIMIT ${TOP}`),

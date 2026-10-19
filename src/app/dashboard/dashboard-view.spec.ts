@@ -63,6 +63,14 @@ describe('dashboard view', () => {
     });
   });
 
+  it('재작업 합격분이 몰려 NG 가 음수여도 수량은 그대로, 불량률은 0 에서 자른다', () => {
+    const section = productionSection(
+      new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, ngQty: 0, reworkGoodQty: 20 })]),
+      '2026-10-16',
+    );
+    expect(section).toEqual({ totalQty: 100, goodQty: 120, ngQty: -20, holdQty: 0, defectRate: 0 });
+  });
+
   it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {
     const trend = productionTrend(new Map([day({ day: '2026-10-14', totalQty: 30 })]), '2026-10-16', 'now');
     expect(trend.points).toHaveLength(9);
