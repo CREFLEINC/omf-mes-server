@@ -66,6 +66,16 @@ describe('POP material defect and hold', () => {
       'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
   });
 
+  /* #108 review m1 — W/O·process·source document are filled from the consumption record; POP may not send them. */
+  it.each([
+    'workOrderId', 'occurrenceProcessId', 'detectionProcessId', 'inspectionResultId', 'productionResultId', 'equipmentId', 'moldId',
+  ])('rejects a MATERIAL defect that carries %s', async (name) => {
+    const prisma = db(1);
+    await expect(assertTerminalQualityWriteScope(prisma, req({ sourceCode: 'MATERIAL', lotId: 31, [name]: 7 }),
+      'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
+    expect(prisma.lot.count).not.toHaveBeenCalled();
+  });
+
   it('holds only when every LOT belongs to the terminal plant', async () => {
     await assertTerminalQualityWriteScope(db(2), req({ lots: [{ lotId: 31 }, { lotId: 32 }] }),
       'POST /quality/lot-holds', terminal);

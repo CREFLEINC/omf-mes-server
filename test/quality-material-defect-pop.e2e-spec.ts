@@ -90,18 +90,20 @@ describe('POP 자재 불량 등록 (e2e)', () => {
     expect(event).toMatchObject({ changed_worker_id: own.workerId, changed_by: null });
   });
 
-  it('⛔ POP 은 남의 공장 LOT 에 불량·보류를 남기지 못하고, 자재 불량이 아닌 원천도 못 남긴다 — 401', async () => {
-    const defect = (lotId: bigint, sourceCode: string) => asPop(request(app.getHttpServer())
+  it('⛔ POP 은 남의 공장 LOT 에 불량·보류를 남기지 못하고, 자재 불량이 아닌 원천·서버가 채우는 칸도 못 보낸다 — 401', async () => {
+    const defect = (lotId: bigint, sourceCode: string, extra: Record<string, unknown> = {}) => asPop(request(app.getHttpServer())
       .post('/api/quality/defect-records')
       .set('Idempotency-Key', newKey())
       .send({
         sourceCode, defectCodeId: Number(ids.defectCode), defectQty: 1, uomId: Number(ids.uom),
-        detectedAt: `${DAY}T04:10:00.000Z`, lotId: Number(lotId),
-        occurrenceProcessId: Number(ids.process), detectionProcessId: Number(ids.process),
+        detectedAt: `${DAY}T04:10:00.000Z`, lotId: Number(lotId), ...extra,
       }), own);
 
     await defect(ids.foreignLot, 'MATERIAL').expect(401);
     await defect(ids.materialLot, 'FIELD').expect(401);
+    // #108 리뷰 m1 — W/O·공정은 서버가 투입 기록에서 채운다. 단말이 실어 보내면 받지 않는다.
+    await defect(ids.materialLot, 'MATERIAL', { workOrderId: Number(ids.workOrder) }).expect(401);
+    await defect(ids.materialLot, 'MATERIAL', { occurrenceProcessId: Number(ids.process) }).expect(401);
     await asPop(request(app.getHttpServer())
       .post('/api/quality/lot-holds')
       .set('Idempotency-Key', newKey())

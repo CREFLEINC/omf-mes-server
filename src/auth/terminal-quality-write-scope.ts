@@ -61,6 +61,8 @@ async function assertOwnTarget(
     }, select: { inspection_request_id: true } })) throw denied();
     return;
   }
+  // POP 자재 불량은 W/O·공정·원천을 서버가 투입 기록에서 채운다 — 단말이 다른 공장·다른 문서를 가리키지 못하게 칸 자체를 받지 않는다(#108 리뷰 m1).
+  if (key === 'POST /quality/defect-records' && POP_SERVER_FILLED_FIELDS.some((name) => body[name] != null)) throw denied();
   const lotIds = key === 'POST /quality/defect-records'
     ? (body.sourceCode === POP_DEFECT_SOURCE ? [positiveId(body.lotId)] : [null])
     : (Array.isArray(body.lots) ? body.lots : [null]).map((ref) =>
@@ -70,6 +72,11 @@ async function assertOwnTarget(
   const owned = await prisma.lot.count({ where: { lot_id: { in: ids }, plant_id: terminal.plantId } });
   if (owned !== ids.length) throw denied();
 }
+
+/** POP 자재 불량 본문에서 받지 않는 칸 — 서버가 LOT 의 투입 기록에서 채운다. */
+const POP_SERVER_FILLED_FIELDS = [
+  'workOrderId', 'occurrenceProcessId', 'detectionProcessId', 'inspectionResultId', 'productionResultId', 'equipmentId', 'moldId',
+] as const;
 
 function positiveId(value: unknown): bigint | null {
   if (typeof value !== 'number' && typeof value !== 'string') return null;
