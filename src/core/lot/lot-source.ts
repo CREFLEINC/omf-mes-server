@@ -8,6 +8,6 @@ export const WORK_ORDER_LOT_SOURCE = 'WORK_ORDER';
 
 /**
  * 처분 «선별»이 떼어 낸 불량분 LOT 의 원천 — `source_id` 는 원 LOT 이다(omf-all-around#108 · P-53).
- * 시드 `LOT_SOURCE_TYPE` 에 함께 등재한다(마이그 20261016130000).
+ * 시드 `LOT_SOURCE_TYPE` 에 함께 등재한다(마이그 20261020110000).
  */
 export const LOT_SPLIT_SOURCE = 'LOT_SPLIT';
