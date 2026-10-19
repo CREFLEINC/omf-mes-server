@@ -72,7 +72,7 @@ export function shiftDate(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-function isDate(value: string | undefined): value is string {
+export function isDate(value: string | undefined): value is string {
   if (value === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = Date.parse(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;

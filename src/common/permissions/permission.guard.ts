@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import type { Session } from '../../auth/session.types';
 import { CONTRACT_OPERATION, ContractRegistry } from '../contract';
 import { ContractException, ERROR_CODE } from '../errors';
 import { OPERATION_PERMISSIONS } from './operation-permissions';
@@ -23,6 +24,31 @@ import { OPERATION_PERMISSIONS } from './operation-permissions';
  *
  * 여러 화면이 같은 경로를 쓰면 그중 **하나**만 가지면 된다.
  */
+/**
+ * 그 오퍼레이션의 기능 권한 중 하나라도 있는지 본다 — 없으면 403. 가드와, 사본에 없는 경로가 «같은
+ * 오퍼레이션의 권한»을 빌려 쓰는 자리(장부 P-58)가 함께 부른다.
+ */
+export function assertOperationPermission(session: Session, key: string): void {
+  const required = OPERATION_PERMISSIONS[key];
+  if (!required) {
+    throw new Error(
+      `권한이 등록되지 않았다: ${key} — ` +
+        'scripts/permissions/derive-map.py 를 돌려 더하거나, 도출이 안 되는 자리면 ' +
+        'operation-permissions.ts 에 근거와 함께 적는다 (공유계약 F-6)',
+    );
+  }
+
+  if (!required.some((permission) => session.permissions.includes(permission))) {
+    throw new ContractException(HttpStatus.FORBIDDEN, [
+      {
+        scope: 'screen',
+        code: ERROR_CODE.PERMISSION_DENIED,
+        message: '이 기능을 쓸 권한이 없습니다.',
+      },
+    ]);
+  }
+}
+
 @Injectable()
 export class PermissionGuard implements CanActivate {
   constructor(
@@ -44,24 +70,7 @@ export class PermissionGuard implements CanActivate {
     // 세션이 없으면 인증 가드가 이미 막았거나 익명 자리다 — 여기서 다시 세지 않는다.
     if (!session) return true;
 
-    const required = OPERATION_PERMISSIONS[key];
-    if (!required) {
-      throw new Error(
-        `권한이 등록되지 않았다: ${key} — ` +
-          'scripts/permissions/derive-map.py 를 돌려 더하거나, 도출이 안 되는 자리면 ' +
-          'operation-permissions.ts 에 근거와 함께 적는다 (공유계약 F-6)',
-      );
-    }
-
-    if (!required.some((permission) => session.permissions.includes(permission))) {
-      throw new ContractException(HttpStatus.FORBIDDEN, [
-        {
-          scope: 'screen',
-          code: ERROR_CODE.PERMISSION_DENIED,
-          message: '이 기능을 쓸 권한이 없습니다.',
-        },
-      ]);
-    }
+    assertOperationPermission(session, key);
     return true;
   }
 

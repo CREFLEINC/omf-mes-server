@@ -11,6 +11,7 @@ import {
 } from './dashboard-inspection';
 import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
+import { PQC_PENDING_CTE, RECEIPT_HOLD_CTE, lotSupplierName, pqcEquipmentCode } from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
 import { DashboardQuality, DefectPhenomenon, EquipmentDefectRate } from './dashboard-sections';
 
@@ -138,19 +139,11 @@ export class DashboardQualityService {
         WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
         GROUP BY i.item_id HAVING SUM(fr.rejected_qty) > 0
         ORDER BY SUM(fr.rejected_qty) DESC, i.item_id LIMIT ${TOP}`),
-      // 「입하 보류」는 LOT 상태가 아니라 풀리지 않은 수입검사 대기 보류다 — LOT 상태에 HOLD 가 없다.
-      tx.$queryRaw<{ lot_count: number }[]>(Prisma.sql`WITH ${plantScope(plants)}
-        SELECT COUNT(DISTINCT h.lot_id)::int AS lot_count
-        FROM trace.lot_hold h JOIN trace.lot l ON l.lot_id = h.lot_id
-        JOIN plant_scope ps ON ps.plant_id = l.plant_id
-        WHERE h.released_at IS NULL AND h.reason_code = 'INCOMING_INSPECTION_WAIT'`),
-      tx.$queryRaw<{ request_count: number }[]>(Prisma.sql`WITH ${plantScope(plants)}
-        SELECT COUNT(*)::int AS request_count
-        FROM quality.inspection_request req
-        JOIN production.work_order wo ON wo.work_order_id = req.work_order_id
-        JOIN mdm.production_line pl ON pl.production_line_id = wo.production_line_id
-        JOIN plant_scope ps ON ps.plant_id = pl.plant_id
-        WHERE req.inspection_type_code = 'PQC' AND req.status_code IN ('REQUESTED', 'IN_PROGRESS')`),
+      // 「입하 보류」·「검사 대기」 조건은 상태별 LOT 목록과 같은 조각이다(dashboard-quality-status.ts).
+      tx.$queryRaw<{ lot_count: number }[]>(Prisma.sql`WITH ${plantScope(plants)}, ${RECEIPT_HOLD_CTE}
+        SELECT COUNT(DISTINCT lot_id)::int AS lot_count FROM receipt_hold`),
+      tx.$queryRaw<{ request_count: number }[]>(Prisma.sql`WITH ${plantScope(plants)}, ${PQC_PENDING_CTE}
+        SELECT COUNT(*)::int AS request_count FROM pqc_pending`),
       this.nonconformances.read(tx, plants, period),
       this.equipmentDefects(tx, plants, period),
     ]);
@@ -196,17 +189,10 @@ export class DashboardQualityService {
       SELECT r.type, r.inspection_result_id, r.inspected_at, r.inspected_qty::text AS qty, r.judgment,
         i.item_code, i.item_name, lot.lot_no,
         CASE r.type
-          WHEN 'IQC' THEN (SELECT p.partner_name FROM logistics.inbound_receipt_line irl
-            JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
-            JOIN mdm.partner p ON p.partner_id = rc.supplier_id
-            WHERE irl.lot_id = r.lot_id ORDER BY irl.inbound_receipt_line_id LIMIT 1)
+          WHEN 'IQC' THEN ${lotSupplierName(Prisma.sql`r.lot_id`)}
           WHEN 'OQC' THEN (SELECT p.partner_name FROM mdm.partner p WHERE p.partner_id = r.customer_id)
         END AS counterpart_name,
-        CASE WHEN r.type = 'PQC' THEN (SELECT e.equipment_code FROM mdm.equipment e
-          WHERE e.equipment_id = COALESCE(r.planned_equipment_id, (
-            SELECT ws.equipment_id FROM production.work_session ws
-            WHERE ws.work_order_id = r.work_order_id AND ws.equipment_id IS NOT NULL
-            ORDER BY ws.started_at DESC LIMIT 1)))
+        CASE WHEN r.type = 'PQC' THEN ${pqcEquipmentCode(Prisma.sql`r.work_order_id`, Prisma.sql`r.planned_equipment_id`)}
         END AS equipment_code
       FROM ranked r
       JOIN mdm.item i ON i.item_id = r.item_id
