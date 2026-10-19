@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertDetectedPeriodRequired, detectedAtWhere } from './defect-view';
+import { assertDetectedPeriodRequired, CONFIRMED_INSPECTION_ONLY, detectedAtWhere } from './defect-view';
 
 export type DefectDistributionGroupBy = 'defectCode' | 'occurrenceProcess' | 'detectionProcess';
 
@@ -163,6 +163,7 @@ function buildDistributionWhere(query: DefectDistributionQuery): Prisma.defect_r
     // 로 판정한다(lot_id 가 없는 행은 이 필터가 오면 자연히 빠진다).
     ...(query.itemId === undefined ? {} : { lot: { item_id: query.itemId } }),
     ...detectedAtWhere(query.detectedFrom as string, query.detectedTo as string),
+    ...CONFIRMED_INSPECTION_ONLY,
   };
 }
 

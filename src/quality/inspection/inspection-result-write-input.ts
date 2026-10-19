@@ -43,7 +43,7 @@ export interface InspectionResultCreate {
 }
 
 /**
- * 계약 `InspectionResultUpdate` — required **0** · 프로퍼티 **8**.
+ * 계약 `InspectionResultUpdate` — required **0** · 프로퍼티 **9**.
  * ⛔ `statusCode` 가 없다 — `PUT` 으로 확정할 수 없다(확정 경로는 `POST statusCode=CONFIRMED` 와 `:confirm` 둘).
  * ⛔ `previousResultId`·`reinspectionReasonCode` 가 없다 — 회차 사슬은 못 고친다(B-10 「번복은 재검이지 수정이 아니다」).
  * ⚠ `[string,null]`·`[integer,null]` 형이 **하나도 없다** — 명시 null 로 «해제»하는 칸이 0 이라
@@ -58,6 +58,11 @@ export interface InspectionResultUpdate {
   inspectedAt?: string;
   measurements?: InspectionMeasurementInput[];
   remarks?: string;
+  /**
+   * IQC 불합격 사유(omf-all-around#122 · 장부 P-48) — 실으면 그 회차의 IQC 불량 기록을 갈아 끼운다(빈 배열 = 지움),
+   * 생략하면 손대지 않는다. 1줄 이상은 IQC 불합격 판정에만.
+   */
+  defects?: InspectionDefectInput[];
 }
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 `POST` 에서 **선택**이고 `PUT` 에서 필수다. */

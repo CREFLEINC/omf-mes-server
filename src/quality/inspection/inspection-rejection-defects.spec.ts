@@ -54,6 +54,22 @@ describe('prepareRejectionDefects', () => {
     await expect(prepareRejectionDefects(prisma, defects, body(), true)).resolves.toBeNull();
   });
 
+  /* #122 · P-48 — 작성중으로 태어나는 회차도 불합격 판정일 때만 사유를 받는다. */
+  it.each([
+    ['판정 없는 작성중', { overallJudgmentCode: undefined }],
+    ['합격 작성중', { overallJudgmentCode: 'ACCEPTED' }],
+  ])('%s 에 사유를 실으면 400 defects INVALID 다', async (_label, extra) => {
+    const { prisma, defects } = harness('IQC');
+    const error = await prepareRejectionDefects(prisma, defects, body({ ...extra, defects: reason }), false).catch((e: unknown) => e);
+
+    expect(firstError(error)).toMatchObject({ field: 'defects', code: 'INVALID' });
+  });
+
+  it('불합격 작성중에 실은 사유는 받는다', async () => {
+    const { prisma, defects } = harness('IQC');
+    await expect(prepareRejectionDefects(prisma, defects, body({ defects: reason }), false)).resolves.not.toBeNull();
+  });
+
   it('IQC 가 아닌 결과에 사유를 실으면 400 이다', async () => {
     const { prisma, defects } = harness('OQC');
     const error = await prepareRejectionDefects(prisma, defects, body({ defects: reason }), true).catch((e: unknown) => e);

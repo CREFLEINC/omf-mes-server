@@ -4,7 +4,7 @@
  * 실제 API 로 잇는다 — LOT 등록(P-01-01) · 판정(W-01-01) · 처분(W-03-10) · 입고(W-01-10).
  *
  * 걸리는 규칙: #100(합격 전 입고 차단 · 불합격은 불량창고로만) · #106(불합격 사유 필수 · 부적합 자동 등록 P-41 ·
- * 재작업이 의뢰를 다시 연다 P-43 · 처분 전 재검사 차단) · #121(확정이 사유를 갈아 끼운다 P-47).
+ * 재작업이 의뢰를 다시 연다 P-43 · 처분 전 재검사 차단) · #121(확정이 사유를 갈아 끼운다 P-47) · #122(임시 저장이 사유를 남긴다 P-48).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -23,7 +23,8 @@ const ITEM_CODE = 'IQCFLOW-ITEM';
 const SUPPLIER_CODE = 'IQCFLOW-SUP';
 const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10'];
+// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스).
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06'];
 const DAY = '2026-10-16';
 
 const key = (): string => randomUUID();
@@ -138,6 +139,75 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await lotStatus(lotId)).toBe('NORMAL');
   });
 
+  /* #122 · 장부 P-48 — 임시 저장이 사유를 그 회차의 불량 기록으로 갈아 끼우고, 확정 전 기록은 집계·기간 목록에 안 잡힌다. */
+  it('⭐ 임시 저장한 불합격 사유가 다시 읽히고, 사유 없이 확정하면 그 사유로 확정된다', async () => {
+    const { lotId, requestId } = await registerIqcLot(10);
+    const created = await request(app.getHttpServer())
+      .post('/api/quality/inspection-results')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({
+        inspectionRequestId: requestId, inspectedQty: 10, acceptedQty: 0, rejectedQty: 10, heldQty: 0, uomId,
+        inspectedAt: `${DAY}T03:00:00.000Z`, statusCode: 'DRAFT', overallJudgmentCode: 'REJECTED',
+        defects: [{ defectCodeId, defectQty: 10, defectDescription: '처음 사유' }],
+      })
+      .expect(201);
+    const resultId = created.body.inspectionResultId as number;
+    expect(await reasonsOf(resultId)).toEqual(['처음 사유']);
+
+    await saveDraft(resultId, 1, { defects: [{ defectCodeId, defectQty: 10, defectDescription: '고친 사유' }] }).expect(200);
+    expect(await reasonsOf(resultId)).toEqual(['고친 사유']);
+    // 한 결과로 좁히면 작성중 사유도 돌려준다(화면 복원) · 기간 목록에는 아직 없다.
+    expect(await listedReasons({ inspectionResultId: resultId })).toEqual(['고친 사유']);
+    expect(await listedReasons({ lotId })).toEqual([]);
+
+    await confirmWith(resultId, { overallJudgmentCode: 'REJECTED' }, 2).expect(200);
+    expect(await reasonsOf(resultId)).toEqual(['고친 사유']);
+    expect(await listedReasons({ lotId })).toEqual(['고친 사유']);
+  });
+
+  it('⭐ 합격으로 바꿔 임시 저장하면 사유가 지워지고, 합격 작성중에 사유를 실으면 400', async () => {
+    const { requestId } = await registerIqcLot(10);
+    const resultId = await draft(requestId, { acceptedQty: 10, rejectedQty: 0 });
+    const reason = [{ defectCodeId, defectQty: 1, defectDescription: '사유' }];
+
+    await saveDraft(resultId, 1, { overallJudgmentCode: 'REJECTED', defects: reason }).expect(200);
+    expect(await reasonsOf(resultId)).toEqual(['사유']);
+    const invalid = await saveDraft(resultId, 2, { overallJudgmentCode: 'ACCEPTED', defects: reason }).expect(400);
+    expect(JSON.stringify(invalid.body)).toContain('defects');
+
+    await saveDraft(resultId, 2, { overallJudgmentCode: 'ACCEPTED', defects: [] }).expect(200);
+    expect(await reasonsOf(resultId)).toEqual([]);
+  });
+
+  /* #122 리뷰 m3 — 단말에서 온 계정 저장(Bearer 단말 토큰 + 세션)도 불량 기록의 귀속 작업자를 POST 처럼 푼다. */
+  it('⭐ 단말 토큰을 함께 실은 임시 저장의 사유도 귀속 작업자가 남는다', async () => {
+    const { requestId } = await registerIqcLot(10);
+    const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
+    const terminal = await prisma.terminal.create({
+      data: { terminal_code: `${PREFIX}-T1`, plant_id: BigInt(plantId), terminal_type_code: 'POP', status_code: 'RUNNING' },
+    });
+    const issued = await request(app.getHttpServer())
+      .post(`/api/mdm/terminals/${Number(terminal.terminal_id)}:issue-token`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+
+    await saveDraft(
+      resultId,
+      1,
+      { overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId, defectQty: 10, defectDescription: '단말 사유' }] },
+      { Authorization: `Bearer ${issued.body.token as string}` },
+    ).expect(200);
+
+    const worker = await prisma.worker.findUniqueOrThrow({ where: { worker_no: `${PREFIX}-W1` }, select: { worker_id: true } });
+    const rows = await prisma.defect_record.findMany({
+      where: { inspection_result_id: BigInt(resultId) },
+      select: { defect_description: true, worker_id: true },
+    });
+    expect(rows).toEqual([{ defect_description: '단말 사유', worker_id: worker.worker_id }]);
+  });
+
   /* #106 · 3단계 검증 — 처분(재작업) 없이 불합격 LOT 을 재검사하지 못한다. 작성중·확정 어느 쪽으로도 회차가 생기지 않는다. */
   it('⛔ 처분 전 불합격 LOT 에는 재검사 회차를 만들 수 없다 — LOT 은 불량 그대로, 의뢰도 완료 그대로', async () => {
     const { lotId, requestId, resultId } = await rejectedLot(10);
@@ -250,6 +320,34 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', `W/"${version}"`)
       .send(body);
+  }
+
+  function saveDraft(
+    resultId: number,
+    version: number,
+    body: Record<string, unknown>,
+    headers: Record<string, string> = {},
+  ): request.Test {
+    return request(app.getHttpServer())
+      .put(`/api/quality/inspection-results/${resultId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', `W/"${version}"`)
+      .set(headers)
+      .send(body);
+  }
+
+  /** `GET /quality/defect-records` 가 돌려주는 사유 — 결과로 좁히거나(기간 불필요) LOT 과 넓은 기간으로 본다. */
+  async function listedReasons(filter: { inspectionResultId?: number; lotId?: number }): Promise<(string | null)[]> {
+    const query = filter.inspectionResultId === undefined
+      ? { lotId: filter.lotId, detectedFrom: '2000-01-01T00:00:00.000Z', detectedTo: '2100-01-01T00:00:00.000Z' }
+      : { inspectionResultId: filter.inspectionResultId };
+    const response = await request(app.getHttpServer())
+      .get('/api/quality/defect-records')
+      .query({ ...query, page: 1, size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    return (response.body.items as { defectDescription?: string | null }[]).map((row) => row.defectDescription ?? null);
   }
 
   async function reasonsOf(resultId: number): Promise<(string | null)[]> {
@@ -460,6 +558,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       `DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.item WHERE item_code = '${ITEM_CODE}'`,
+      `DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
