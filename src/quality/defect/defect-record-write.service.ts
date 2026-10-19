@@ -6,7 +6,7 @@ import { assertCodeValues } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordView, defectRecordView } from './defect-view';
 
-/** 계약 `DefectRecordCreate`(장부 P-39). 두 공정은 IQC 원천일 때만 생략할 수 있다. */
+/** 계약 `DefectRecordCreate`(장부 P-42). 두 공정은 IQC 원천일 때만 생략할 수 있다. */
 export interface DefectRecordCreate {
   sourceCode: string;
   defectCodeId: number;
@@ -26,7 +26,7 @@ export interface DefectRecordCreate {
   occurredAt?: string | null;
 }
 
-/** 검사 결과 본문에 함께 실리는 불합격 사유 한 줄(장부 P-39 · 오프라인 확정 경로). */
+/** 검사 결과 본문에 함께 실리는 불합격 사유 한 줄(장부 P-42 · 오프라인 확정 경로). */
 export interface InspectionDefectInput {
   defectCodeId: number;
   defectQty: number;
@@ -46,7 +46,7 @@ const IQC_SOURCE = 'IQC';
 const IQC_PROCESS_CODE = 'IQC';
 
 /**
- * 불량 기록 등록(omf-all-around#106 · 장부 P-39). 계약이 등록 경로를 두지 않았던 자리다
+ * 불량 기록 등록(omf-all-around#106 · 장부 P-42). 계약이 등록 경로를 두지 않았던 자리다
  * (「03 화면 7장에 불량코드 입력이 0건」) — IQC 불합격 사유가 첫 사용처이고, PQC 자재 불량(#108)이
  * 같은 경로를 쓴다.
  *

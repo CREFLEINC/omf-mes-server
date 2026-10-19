@@ -208,7 +208,7 @@
        "format": "int64",
        "example": 1001
       },
-      "description": "그 검사 결과에 붙은 불량만. 주면 기간(detectedFrom·detectedTo)이 필요 없다. 서버 선행 · 장부 P-39 · omf-all-around#106"
+      "description": "그 검사 결과에 붙은 불량만. 주면 기간(detectedFrom·detectedTo)이 필요 없다. 서버 선행 · 장부 P-42 · omf-all-around#106"
      },
      {
       "name": "defectCodeId",
@@ -319,7 +319,7 @@
      "quality"
     ],
     "summary": "불량 기록 등록",
-    "description": "불량 코드와 사유를 기록한다. 검사 결과(inspectionResultId)를 주면 LOT·작업지시는 그 검사의 의뢰가 정하고, 요청이 다른 값을 실으면 400 이다. sourceCode=IQC 이면 발생·검출 공정을 생략할 수 있다 — 기준정보의 수입검사 공정(process_code=IQC)이 들어간다(없으면 400 code=STATE_LOCKED). 귀속 작업자는 계정에 연결된 작업자다(P-38). 근거: W-01-01 · omf-all-around#106 · #108 (서버 선행 · 장부 P-39)",
+    "description": "불량 코드와 사유를 기록한다. 검사 결과(inspectionResultId)를 주면 LOT·작업지시는 그 검사의 의뢰가 정하고, 요청이 다른 값을 실으면 400 이다. sourceCode=IQC 이면 발생·검출 공정을 생략할 수 있다 — 기준정보의 수입검사 공정(process_code=IQC)이 들어간다(없으면 400 code=STATE_LOCKED). 귀속 작업자는 계정에 연결된 작업자다(P-38). 근거: W-01-01 · omf-all-around#106 · #108 (서버 선행 · 장부 P-42)",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -367,7 +367,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-39. 계약 원문은 등록 경로를 두지 않았다(03 화면 7장에 불량코드 입력 0건) — IQC 불합격 사유(#106)가 첫 사용처다."
+    "x-internal-note": "서버 선행 · 장부 P-42. 계약 원문은 등록 경로를 두지 않았다(03 화면 7장에 불량코드 입력 0건) — IQC 불합격 사유(#106)가 첫 사용처다."
    }
   },
   "/quality/defect-records/distribution": {
@@ -1612,7 +1612,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다 ⭐ IQC 불합격(REJECTED) 확정은 그 결과에 불량 기록이 1건 이상 있어야 한다 — 없으면 field=defectRecords, code=REQUIRED(서버 선행 · 장부 P-39).",
+      "description": "검증 실패. 고쳐야 풀린다 ⭐ IQC 불합격(REJECTED) 확정은 그 결과에 불량 기록이 1건 이상 있어야 한다 — 없으면 field=defectRecords, code=REQUIRED(서버 선행 · 장부 P-42).",
       "content": {
        "application/json": {
         "schema": {
@@ -4087,7 +4087,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 서버 선행 · 장부 P-39 · omf-all-around#106"
+      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 서버 선행 · 장부 P-42 · omf-all-around#106"
      }
     },
     "required": [
@@ -5099,11 +5099,11 @@
      "uomId",
      "detectedAt"
     ],
-    "description": "불량 기록 등록 본문(서버 선행 · 장부 P-39 · omf-all-around#106).",
+    "description": "불량 기록 등록 본문(서버 선행 · 장부 P-42 · omf-all-around#106).",
     "properties": {
      "sourceCode": {
       "type": "string",
-      "description": "불량 기록 원천. 값 목록은 GET /mdm/code-values?codeGroupCode=DEFECT_RECORD_SOURCE — 수입검사(IQC)를 서버가 더했다(P-39)."
+      "description": "불량 기록 원천. 값 목록은 GET /mdm/code-values?codeGroupCode=DEFECT_RECORD_SOURCE — 수입검사(IQC)를 서버가 더했다(P-42)."
      },
      "defectCodeId": {
       "type": "integer",
@@ -5208,7 +5208,7 @@
      "defectCodeId",
      "defectQty"
     ],
-    "description": "IQC 불합격 사유 한 줄 — 확정으로 태어나는 저장(오프라인 큐)이 결과와 함께 싣는다(서버 선행 · 장부 P-39).",
+    "description": "IQC 불합격 사유 한 줄 — 확정으로 태어나는 저장(오프라인 큐)이 결과와 함께 싣는다(서버 선행 · 장부 P-42).",
     "properties": {
      "defectCodeId": {
       "type": "integer",

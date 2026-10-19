@@ -13,7 +13,7 @@ import { DefectRecordCreate, DefectRecordWriteService } from './defect-record-wr
 import { DefectRecordView } from './defect-view';
 
 /**
- * 불량 실적 조회 2건(I-20 PR ①b) + 등록 1건(omf-all-around#106 · 서버 선행 P-39 — 계약은 등록 경로를
+ * 불량 실적 조회 2건(I-20 PR ①b) + 등록 1건(omf-all-around#106 · 서버 선행 P-42 — 계약은 등록 경로를
  * 두지 않았다). 등록은 관리웹 계정의 조작이다 — 단말 경로(#108 POP)는 그 이슈가 범위를 연다.
  * ⛔ 조회 2건은 계약이 403 을 선언하지 않았다(`permission.guard.ts:37-41`) — 권한 등록 0줄.
  * ⛔ 멱등·If-Match·ETag 0 — 계약 미선언.

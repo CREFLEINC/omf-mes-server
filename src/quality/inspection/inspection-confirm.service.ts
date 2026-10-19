@@ -372,7 +372,7 @@ export class InspectionConfirmService {
 }
 
 /**
- * IQC 불합격 확정은 불합격 사유(불량 기록)가 있어야 한다(omf-all-around#106 · 2026-10-16 결정 ② · 장부 P-39).
+ * IQC 불합격 확정은 불합격 사유(불량 기록)가 있어야 한다(omf-all-around#106 · 2026-10-16 결정 ② · 장부 P-42).
  * 화면(W-01-01)이 먼저 막지만 다른 클라이언트가 사유 없이 불합격을 확정하지 못하게 서버도 막는다.
  * ⚠ `:confirm` 경로에만 건다 — 오프라인 큐(`POST …/inspection-results` 확정)는 결과 id 를 몰라 불량 기록을
  *    먼저 붙일 수 없다. PQC·OQC 는 이번 결정 범위가 아니다.

@@ -5,7 +5,7 @@ const COMPLETED = 'COMPLETED';
 const IN_PROGRESS = 'IN_PROGRESS';
 
 /**
- * 끝난 검사 의뢰를 «진행»으로 되돌린다(`COMPLETED → IN_PROGRESS` · 장부 P-58 · 3단계 검증 2026-10-16 승인).
+ * 끝난 검사 의뢰를 «진행»으로 되돌린다(`COMPLETED → IN_PROGRESS` · 장부 P-43 · 3단계 검증 2026-10-16 승인).
  *
  * ⭐ 계약은 의뢰 상태를 «이미 있는 액션의 부수 효과»로만 옮긴다 — 그중 「재검사 회차 추가가 다시
  *    `IN_PROGRESS`」를 여기서 한다. 서버 선행으로 「처분 재작업이 IQC 불합격 LOT 을 검사 대기로 되돌릴 때」도

@@ -36,7 +36,7 @@ export interface InspectionResultCreate {
   measurements?: InspectionMeasurementInput[];
   remarks?: string;
   /**
-   * IQC 불합격 사유(omf-all-around#106 · 장부 P-39) — 확정으로 태어나는 저장(오프라인 큐)은 결과 id 를
+   * IQC 불합격 사유(omf-all-around#106 · 장부 P-42) — 확정으로 태어나는 저장(오프라인 큐)은 결과 id 를
    * 모르니 사유를 «같은 본문»에 싣는다. 서버가 결과와 한 트랜잭션에서 불량 기록으로 남긴다.
    */
   defects?: InspectionDefectInput[];

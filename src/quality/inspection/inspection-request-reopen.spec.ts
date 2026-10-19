@@ -1,7 +1,7 @@
 import { Tx } from '../../core/lot';
 import { reopenInspectionRequestWithin, reopenIqcRequestForReworkWithin } from './inspection-request-reopen';
 
-/** 끝난 의뢰를 다시 여는 두 갈래(장부 P-58) — 재검사 회차 추가 · 처분 재작업. */
+/** 끝난 의뢰를 다시 여는 두 갈래(장부 P-43) — 재검사 회차 추가 · 처분 재작업. */
 const txWith = (request: { inspection_request_id: bigint; inspection_type_code: string; lot_id: bigint | null } | null) => {
   const updateMany = jest.fn().mockResolvedValue({ count: 1 });
   const findUnique = jest.fn().mockResolvedValue(

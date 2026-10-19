@@ -7,7 +7,7 @@ const IQC = 'IQC';
 const REJECTED = 'REJECTED';
 
 /**
- * IQC 불합격 사유(omf-all-around#106 · 장부 P-39) — 확정으로 태어나는 IQC 불합격은 본문 `defects` 가
+ * IQC 불합격 사유(omf-all-around#106 · 장부 P-42) — 확정으로 태어나는 IQC 불합격은 본문 `defects` 가
  * 1줄 이상이어야 한다(`:confirm` 의 `assertRejectionRecorded` 와 같은 규칙 · 2026-10-16 결정).
  * ⛔ 거부는 채번 «앞»이다 — 400 이 될 저장에 번호를 태우지 않는다.
  */

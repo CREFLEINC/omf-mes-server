@@ -9,7 +9,7 @@ jest.mock('../../common/master', () => ({
 
 type Row = Record<string, unknown>;
 
-/** omf-all-around#106 — 불량 기록 등록(장부 P-39). */
+/** omf-all-around#106 — 불량 기록 등록(장부 P-42). */
 function harness(options: { iqcProcess?: boolean; result?: { lot_id: bigint | null; work_order_id: bigint | null } | null } = {}) {
   const created: Row[] = [];
   const prisma = {
@@ -117,7 +117,7 @@ describe('DefectRecordWriteService', () => {
     expect(firstError(error)).toMatchObject({ field: 'defectQty', code: 'RANGE' });
   });
 
-  /* 오프라인 확정 본문의 사유(P-39) — 트랜잭션 밖 검증과 안의 쓰기가 갈린다. */
+  /* 오프라인 확정 본문의 사유(P-42) — 트랜잭션 밖 검증과 안의 쓰기가 갈린다. */
   it('검사 결과 본문의 사유를 수입검사 공정으로 준비하고, 0 이하 수량은 400 이다', async () => {
     const { service } = harness();
 

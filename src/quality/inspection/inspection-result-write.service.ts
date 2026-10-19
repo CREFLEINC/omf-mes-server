@@ -109,7 +109,7 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
-        // 재검사 회차를 작성중으로 더하면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-58). 확정으로 태어나면 아래가 닫는다.
+        // 재검사 회차를 작성중으로 더하면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43). 확정으로 태어나면 아래가 닫는다.
         if (born === undefined && body.previousResultId !== undefined) {
           await reopenInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
         }

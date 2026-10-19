@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import { assertRejectionRecorded } from './inspection-confirm.service';
 
-/** omf-all-around#106 — IQC 불합격 확정은 불량 기록(사유)이 있어야 한다(장부 P-39). */
+/** omf-all-around#106 — IQC 불합격 확정은 불량 기록(사유)이 있어야 한다(장부 P-42). */
 function tx(type: string, recorded: number) {
   return {
     inspection_request: { findUnique: jest.fn().mockResolvedValue({ inspection_type_code: type }) },
