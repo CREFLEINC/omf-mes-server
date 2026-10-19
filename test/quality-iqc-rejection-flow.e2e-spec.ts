@@ -23,8 +23,8 @@ const ITEM_CODE = 'IQCFLOW-ITEM';
 const SUPPLIER_CODE = 'IQCFLOW-SUP';
 const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
-// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스).
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06'];
+// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스). W-04-11 — 재고 재등록(#108 리뷰 M1).
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11'];
 const DAY = '2026-10-16';
 
 const key = (): string => randomUUID();
@@ -173,6 +173,48 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       where: { lot_id: { in: [BigInt(lotId), BigInt(childLotId)] } }, _sum: { on_hand_qty: true },
     });
     expect(Number(total._sum.on_hand_qty)).toBe(10);
+  });
+
+  /* #108 리뷰 M1 · 담당자 결정 (a) — 불량창고에 이미 입고된 LOT 은 처분 정상이 보류를 닫지 않는다. 재고 재등록(W-04-11)이 닫으며 옮긴다. */
+  it('⭐ 경로 ①-b 불량창고 입고 → 처분 정상 → 수입검사 대기 보류 유지 → 재고 재등록이 보류를 닫고 일반 창고로 옮긴다', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+    const nc = await openNonconformance(lotId);
+
+    const decided = await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 10 }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(1);
+
+    const hold = await prisma.lot_hold.findFirstOrThrow({
+      where: { lot_id: BigInt(lotId), reason_code: 'INCOMING_INSPECTION_WAIT', released_at: null },
+      select: { lot_hold_id: true },
+    });
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId) }, select: { version_no: true } });
+    await request(app.getHttpServer())
+      .post('/api/logistics/stock-reinstatements')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({
+        dispositionDecisionId: decided.body.dispositionDecisionId as number,
+        lot: { lotId, versionNo: lot.version_no },
+        lotHoldId: Number(hold.lot_hold_id),
+        toWarehouseId: warehouseId,
+        toLocationId: locationId,
+        qty: 10,
+        uomId,
+        releaseReasonCode: 'RETEST_PASS',
+        reasonCode: null,
+        businessDate: DAY,
+        occurredAt: `${DAY}T06:00:00.000Z`,
+      })
+      .expect(201);
+
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    const general = await prisma.inventory_balance.aggregate({
+      where: { lot_id: BigInt(lotId), warehouse_id: BigInt(warehouseId) }, _sum: { on_hand_qty: true },
+    });
+    expect(Number(general._sum.on_hand_qty)).toBe(10);
   });
 
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
@@ -626,6 +668,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
     await prisma.$executeRawUnsafe(`TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`);
     for (const sql of [
+      `DELETE FROM logistics.stock_transfer_line WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM logistics.stock_transfer WHERE disposition_decision_id IN (SELECT disposition_decision_id FROM quality.disposition_decision WHERE nonconformance_id IN (SELECT nonconformance_id FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})))`,
       `DELETE FROM logistics.putaway_task WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.goods_receipt_line WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.goods_receipt WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`,
