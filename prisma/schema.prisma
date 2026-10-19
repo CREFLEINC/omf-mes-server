@@ -1251,6 +1251,9 @@ model sales_order {
   updated_at                                      DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                                      BigInt?
   version_no                                      Int                @default(1)
+  erp_order_type_code                             String?            @db.VarChar(5)
+  erp_movement_type_code                          String?            @db.VarChar(3)
+  erp_sales_group_code                            String?            @db.VarChar(4)
   partner_sales_order_customer_idTopartner        partner            @relation("sales_order_customer_idTopartner", fields: [customer_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   partner_sales_order_ship_to_partner_idTopartner partner            @relation("sales_order_ship_to_partner_idTopartner", fields: [ship_to_partner_id], references: [partner_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order_line                                sales_order_line[]
@@ -1274,6 +1277,8 @@ model sales_order_line {
   updated_at              DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by              BigInt?
   version_no              Int                     @default(1)
+  erp_storage_location_code String?               @db.VarChar(7)
+  cancelled_at            DateTime?               @db.Timestamptz(6)
   item                    item                    @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   sales_order             sales_order             @relation(fields: [sales_order_id], references: [sales_order_id], onDelete: NoAction, onUpdate: NoAction)
   uom                     uom                     @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
