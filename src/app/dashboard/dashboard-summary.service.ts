@@ -6,6 +6,7 @@ import { maintenanceDateRange } from '../../maintenance/maintenance-calendar';
 import { PrismaService } from '../../prisma/prisma.service';
 import { notificationView } from '../notification/notification-view';
 import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availability.service';
+import { DashboardEquipmentService } from './dashboard-equipment.service';
 import {
   DailyProduction,
   DashboardCard,
@@ -57,6 +58,7 @@ export class DashboardSummaryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly availability: DashboardAvailabilityService,
+    private readonly equipment: DashboardEquipmentService,
   ) {}
 
   async read(actorUserId: number, query: DashboardSummaryQuery): Promise<DashboardSummary> {
@@ -80,6 +82,7 @@ export class DashboardSummaryService {
         const availabilityRate = availabilityCard(availability);
         const performanceRate = performanceCard(await this.performance(tx, plants), availability);
         const alarms = await this.alarms(tx, actorUserId);
+        const equipment = await this.equipment.read(tx, plants, baseDate, now.getTime());
 
         return omitEmpty({
           baseDate,
@@ -95,6 +98,7 @@ export class DashboardSummaryService {
           alerts: alarms.alerts,
           asOf,
           trend: productionTrend(byDay, baseDate, asOf),
+          equipment,
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
