@@ -31,7 +31,21 @@ export class LotIqcSkipExecuteService {
   async execute(lotId: number, appUserId: number): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const lot = await lockLot(tx, lotId);
-      assertSkippable(lot);
+      assertSkippable(lot, 'execute');
+      // ⛔ IQC 의뢰가 아직 열려 있어야 한다(#105 리뷰) — 보류(HELD)로 확정돼 끝난 의뢰나 이미 생략된 의뢰에 승인을 쓰면
+      //    판정을 건너뛰고 정상이 된다. 생략이 의뢰를 SKIPPED 로 닫으므로 같은 승인의 재사용도 여기서 막힌다.
+      const openRequests = await tx.inspection_request.count({
+        where: { lot_id: BigInt(lotId), inspection_type_code: 'IQC', status_code: { in: OPEN_REQUEST_STATUSES } },
+      });
+      if (openRequests === 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: '이 LOT 의 IQC 검사가 이미 끝났거나 생략돼 생략을 실행할 수 없습니다.',
+          },
+        ]);
+      }
       const approval = await tx.approval_request.findFirst({
         where: {
           approval_type_code: IQC_SKIP_TYPE,
@@ -61,7 +75,16 @@ export class LotIqcSkipExecuteService {
         { releaseReasonCode: SKIP_RELEASE_REASON },
         { by, at: changedAt },
       );
-      if (openAfter > 0) return;
+      // 다른 보류가 남으면 성공으로 내지 않는다 — 200 인데 LOT 이 검사 대기 그대로면 실행된 줄 안다. 던져서 전부 되돌린다(#105 리뷰).
+      if (openAfter > 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [
+          {
+            scope: 'screen',
+            code: ERROR_CODE.STATE_LOCKED,
+            message: '다른 보류가 남아 있어 정상으로 옮기지 못했습니다. 그 보류를 먼저 해제하세요.',
+          },
+        ]);
+      }
       await this.qualities.moveWithin(tx, [BigInt(lotId)], 'iqc-skipped', { changedBy: by, changedAt });
     });
   }

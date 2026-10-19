@@ -106,13 +106,15 @@ export class LotIqcSkipService {
  * ⛔ 열린 `INCOMING_INSPECTION_WAIT` 보류의 «유무»는 보지 않는다 — I-19 `:confirm` 이 그 보류를
  *    닫으므로 검사 «중»인 LOT 이 정당하게 막힌다(통보 150).
  */
-export function assertSkippable(lot: LotQualification): void {
+export function assertSkippable(lot: LotQualification, action: 'request' | 'execute' = 'request'): void {
+  // 요청과 실행이 같은 판정을 쓴다 — 문구만 그 동작에 맞춘다(#105 리뷰: 실행 거절에 「요청할 수 있습니다」가 떴다).
+  const verb = action === 'request' ? '요청' : '실행';
   if (lot.source_type_code !== INBOUND_LOT_SOURCE) {
-    throw one(field('lotId', ERROR_CODE.INVALID, '입하 LOT 만 IQC 생략을 요청할 수 있습니다.'));
+    throw one(field('lotId', ERROR_CODE.INVALID, `입하 LOT 만 IQC 생략을 ${verb}할 수 있습니다.`));
   }
   if (lot.status_code !== INITIAL_LOT_STATUS) {
     throw one(
-      field('lotId', ERROR_CODE.STATE_LOCKED, '수입검사 대기 LOT 만 IQC 생략을 요청할 수 있습니다.'),
+      field('lotId', ERROR_CODE.STATE_LOCKED, `수입검사 대기 LOT 만 IQC 생략을 ${verb}할 수 있습니다.`),
     );
   }
 }
