@@ -42,9 +42,25 @@ interface EquipmentGroupView {
   groupTypeCode: string;
   parentGroupId: number | null;
   isActive: boolean;
+  defaultWipLocationId: number | null;
+  defaultFgLocationId: number | null;
+  defaultScrapLocationId: number | null;
 }
 
-export interface EquipmentGroupCreate {
+/** 라인 기본 위치 셋 — 계획 확정·4M 라인 선택 때 W/O 기본 위치로 복사된다. 생략 = 유지, null = 비움. */
+interface LineDefaultLocations {
+  defaultWipLocationId?: number | null;
+  defaultFgLocationId?: number | null;
+  defaultScrapLocationId?: number | null;
+}
+
+const DEFAULT_LOCATION_COLUMNS = {
+  defaultWipLocationId: 'default_wip_location_id',
+  defaultFgLocationId: 'default_fg_location_id',
+  defaultScrapLocationId: 'default_scrap_location_id',
+} as const;
+
+export interface EquipmentGroupCreate extends LineDefaultLocations {
   plantId: number;
   groupCode: string;
   groupName: string;
@@ -52,7 +68,7 @@ export interface EquipmentGroupCreate {
   parentGroupId?: number | null;
 }
 
-export interface EquipmentGroupUpdate {
+export interface EquipmentGroupUpdate extends LineDefaultLocations {
   groupCode?: string;
   groupName: string;
   groupTypeCode: string;
@@ -125,6 +141,7 @@ export class EquipmentGroupService {
     if (input.parentGroupId != null) {
       await this.assertParent(input.plantId, input.parentGroupId, null);
     }
+    await this.assertDefaultLocations(input.plantId, input);
     return view(
       await this.prisma.production_line.create({
         data: {
@@ -133,6 +150,7 @@ export class EquipmentGroupService {
           line_name: input.groupName,
           line_type_code: input.groupTypeCode,
           ...optional('parent_line_id', input.parentGroupId),
+          ...defaultLocationData(input),
         },
       }),
     );
@@ -152,6 +170,7 @@ export class EquipmentGroupService {
     if (input.parentGroupId != null) {
       await this.assertParent(Number(current.plant_id), input.parentGroupId, equipmentGroupId);
     }
+    await this.assertDefaultLocations(Number(current.plant_id), input);
 
     const updated = await this.prisma.production_line.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -161,6 +180,7 @@ export class EquipmentGroupService {
         line_type_code: input.groupTypeCode,
         ...optional('line_code', input.groupCode),
         ...optional('parent_line_id', input.parentGroupId),
+        ...defaultLocationData(input),
         version_no: { increment: 1 },
       },
     });
@@ -223,6 +243,27 @@ export class EquipmentGroupService {
     }
   }
 
+  /**
+   * 기본 위치는 그 라인 공장의, 자재창고가 아닌 창고 위치여야 한다 — 다른 공장 위치면 재고가 공장을 넘고,
+   * 자재창고 위치면 WIP 출고가 창고 안에서 맴돈다. 칸별 창고 유형은 고객이 유형을 늘릴 수 있어 화면이 거른다.
+   */
+  private async assertDefaultLocations(plantId: number, input: LineDefaultLocations): Promise<void> {
+    for (const field of Object.keys(DEFAULT_LOCATION_COLUMNS) as (keyof LineDefaultLocations)[]) {
+      const locationId = input[field];
+      if (locationId === undefined || locationId === null) continue;
+      const location = await this.prisma.location.findUnique({
+        where: { location_id: locationId },
+        select: { warehouse: { select: { plant_id: true, warehouse_type_code: true } } },
+      });
+      if (location === null || Number(location.warehouse.plant_id) !== plantId) {
+        throw locationError(field, '이 공장의 위치가 아닙니다.');
+      }
+      if (location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE) {
+        throw locationError(field, '자재창고 위치는 라인 기본 위치로 둘 수 없습니다.');
+      }
+    }
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(equipmentGroupId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -235,11 +276,32 @@ export class EquipmentGroupService {
   }
 }
 
+const MATERIAL_WAREHOUSE = 'MATERIAL';
+
+function locationError(field: string, message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field, code: ERROR_CODE.INVALID, message },
+  ]);
+}
+
 function parentError(message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [
     { scope: 'field', field: 'parentGroupId', code: ERROR_CODE.INVALID, message },
   ]);
 }
+
+type DefaultLocationColumn = (typeof DEFAULT_LOCATION_COLUMNS)[keyof typeof DEFAULT_LOCATION_COLUMNS];
+
+function defaultLocationData(input: LineDefaultLocations): Partial<Record<DefaultLocationColumn, number | null>> {
+  const data: Partial<Record<DefaultLocationColumn, number | null>> = {};
+  for (const [field, column] of Object.entries(DEFAULT_LOCATION_COLUMNS)) {
+    const value = input[field as keyof LineDefaultLocations];
+    if (value !== undefined) data[column] = value;
+  }
+  return data;
+}
+
+const idOrNull = (value: bigint | null): number | null => (value === null ? null : Number(value));
 
 function view(row: LineRow): EquipmentGroupView {
   return {
@@ -250,5 +312,8 @@ function view(row: LineRow): EquipmentGroupView {
     groupTypeCode: row.line_type_code,
     parentGroupId: row.parent_line_id === null ? null : Number(row.parent_line_id),
     isActive: row.is_active,
+    defaultWipLocationId: idOrNull(row.default_wip_location_id),
+    defaultFgLocationId: idOrNull(row.default_fg_location_id),
+    defaultScrapLocationId: idOrNull(row.default_scrap_location_id),
   };
 }
