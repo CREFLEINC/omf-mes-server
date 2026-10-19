@@ -29,7 +29,6 @@ export interface RivalWindow extends PlanWindow { planned_equipment_id: bigint |
 /** `QUALIFICATION_TYPE` 시드 4값 중 공정 작업 자격. */
 const PROCESS_OPERATION = 'PROCESS_OPERATION';
 
-
 /** #1 설비 가동 상태. */
 export function checkEquipment(ids: bigint[], facts: Map<bigint, EquipmentFacts>): ValidationFinding[] {
   return ids

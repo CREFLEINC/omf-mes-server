@@ -2197,7 +2197,7 @@ model plant {
   production_order          production_order[]
   lot                       lot[]
   shipment_request          shipment_request[]
-  item_resource_map                                  item_resource_map[]
+  item_resource_map         item_resource_map[]
 
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")

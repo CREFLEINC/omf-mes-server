@@ -38,14 +38,17 @@ export function assignResources(operations: OperationNeed[], maps: DefaultMap[])
     const own = maps.find((map) => map.processId === operation.processId);
     let equipmentId = own?.equipmentId ?? null;
     let equipmentLineId = own?.equipmentId == null ? null : own.equipmentLineId;
-    if (equipmentId === null && operation.equipmentRequired && !commonEquipmentUsed && common?.equipmentId != null) {
-      equipmentId = common.equipmentId;
-      equipmentLineId = common.equipmentLineId;
+    if (operation.equipmentRequired && !commonEquipmentUsed) {
+      // 첫 필요 공정이 자기 매핑으로 채웠어도 공통 몫은 끝난다 — 뒤 공정에 같은 설비가 겹쳐 붙지 않게.
+      if (equipmentId === null && common?.equipmentId != null) {
+        equipmentId = common.equipmentId;
+        equipmentLineId = common.equipmentLineId;
+      }
       commonEquipmentUsed = true;
     }
     let moldId = own?.moldId ?? null;
-    if (moldId === null && operation.moldRequired && !commonMoldUsed && common?.moldId != null) {
-      moldId = common.moldId;
+    if (operation.moldRequired && !commonMoldUsed) {
+      if (moldId === null && common?.moldId != null) moldId = common.moldId;
       commonMoldUsed = true;
     }
     result.set(operation.routingOperationId, { equipmentId, moldId, equipmentLineId });

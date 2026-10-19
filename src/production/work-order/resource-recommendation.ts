@@ -80,7 +80,7 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
     }),
   ]);
 
-  // 품목 공통 매핑은 설비·금형이 필요한 공정에서만 추천한다 — 전개의 자동 배정과 같은 규칙.
+  // 품목 공통 매핑은 설비·금형이 필요한 공정에서만 추천한다 — 전개와 같은 기준(첫 공정 제한은 배정에만 둔다).
   const ordered = processFirst(maps);
   const own = (map: MapRow, required: boolean): boolean => map.process_id !== null || required;
   const sourceOf = (map: MapRow): RecommendationSource => (map.is_default ? 'DEFAULT' : 'MAPPED');

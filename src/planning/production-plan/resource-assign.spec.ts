@@ -39,6 +39,14 @@ describe('assignResources — 전개의 설비·금형 자동 배정(순수)', (
     expect(result.get(101n)).toMatchObject({ equipmentId: 51n, moldId: 61n });
     expect(result.get(103n)).toMatchObject({ equipmentId: null, moldId: null });
   });
+
+  it('첫 필요 공정이 자기 매핑으로 채웠으면 품목 공통 매핑은 뒤 공정에 주지 않는다', () => {
+    const second: OperationNeed = { routingOperationId: 103n, processId: 3n, equipmentRequired: true, moldRequired: true };
+    const result = assignResources([injection, second], [map({ processId: 1n, equipmentId: 52n }), map({ equipmentId: 51n, moldId: 61n })]);
+
+    expect(result.get(101n)).toMatchObject({ equipmentId: 52n, moldId: 61n });
+    expect(result.get(103n)).toMatchObject({ equipmentId: null, moldId: null });
+  });
 });
 
 describe('toDefaultMap — 가동 상태가 아닌 자원은 배정 후보에서 지운다', () => {
