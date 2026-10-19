@@ -31,7 +31,8 @@ type Card = { cardCode: string; value: number; valueStatusCode: string; deltaRat
 
 /**
  * 하노이 공장(+07) 하루 — 교대 08~17시(9h) − 계획 정지 12~13시 = 계획 8h.
- * 세션 08~16시(8h) − STOP 10~11시 = 실제 7h → 시간가동률 87.5%.
+ * 세션 08~16시(8h) − STOP 10~11시 − 계획 정지와 겹친 12~13시 = 실제 6h → 시간가동률 75%.
+ * (실제는 계획과 같은 구간으로 자른다 — 계획 정지 중 작업은 세지 않는다. 사용자 결정 2026-10-19)
  */
 describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   let app: INestApplication;
@@ -96,10 +97,20 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   it('시간가동률은 계획 가동시간 기준, 성능가동률은 C/T×수량÷캐비티 ÷ 실제 가동시간이다', async () => {
     const { cards } = await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
 
-    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 87.5, valueStatusCode: 'AVAILABLE' });
-    // 10초 × (1100 + 재작업 10) ÷ 캐비티 2 = 5550초 ÷ 7h(25200초) — 성능률은 재작업 실적도 센다
-    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((5550 / 25200) * 100, 6);
-    expect(card(cards, 'OEE').value).toBeCloseTo(0.875 * (5550 / 25200) * (1010 / 1100) * 100, 6);
+    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 75, valueStatusCode: 'AVAILABLE' });
+    // 10초 × (1100 + 재작업 10) ÷ 캐비티 2 = 5550초 ÷ 6h(21600초) — 성능률은 재작업 실적도 센다
+    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((5550 / 21600) * 100, 6);
+    expect(card(cards, 'OEE').value).toBeCloseTo(0.75 * (5550 / 21600) * (1010 / 1100) * 100, 6);
+  });
+
+  it('시간가동률은 근무 시간 밖 작업을 세지 않아 100% 를 넘지 않는다 — 성능률 분모도 같은 가동시간이다', async () => {
+    const { cards } = await read({ baseDate: '2026-08-31', plantId: ids.plant.toString() });
+
+    // 세션 16h 중 교대 안 9h ÷ 계획 9h — 분자를 자르지 않으면 177.8% 다.
+    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 100, valueStatusCode: 'AVAILABLE' });
+    // 10초 × 500 ÷ 캐비티 2 = 2500초 ÷ 9h(32400초)
+    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((2500 / 32400) * 100, 6);
+    expect(card(cards, 'OEE').value).toBeCloseTo((2500 / 32400) * 100, 6);
   });
 
   it('미처리 알람은 로그인 사용자의 안 읽은 알림이다', async () => {
@@ -241,8 +252,12 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         effective_from: new Date('2026-01-01'),
       },
     });
-    await prisma.work_calendar_day.create({
-      data: { work_calendar_id: ids.calendar, calendar_date: new Date(BASE_DATE), day_type_code: 'WORKING' },
+    await prisma.work_calendar_day.createMany({
+      data: [BASE_DATE, '2026-08-31'].map((date) => ({
+        work_calendar_id: ids.calendar,
+        calendar_date: new Date(date),
+        day_type_code: 'WORKING',
+      })),
     });
     await prisma.planned_stop.create({
       data: {
@@ -307,6 +322,20 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         { work_session_id: ids.session, event_type_code: 'STOP', occurred_at: new Date('2026-09-01T03:00:00Z') },
         { work_session_id: ids.session, event_type_code: 'RESUME', occurred_at: new Date('2026-09-01T04:00:00Z') },
       ],
+    });
+
+    // 08-31 — 교대(08~17시 = 01~10Z) 밖으로 넘친 세션 03~19시(16h). 근무 시간 안 9h 만 가동으로 센다.
+    await prisma.work_session.create({
+      data: {
+        work_order_id: ids.order,
+        session_no: 2,
+        equipment_id: ids.equipment,
+        terminal_id: ids.terminal,
+        started_at: new Date('2026-08-30T20:00:00Z'),
+        ended_at: new Date('2026-08-31T12:00:00Z'),
+        status_code: 'ENDED',
+        idempotency_key: `${PREFIX}-SESSION-OFFSHIFT`,
+      },
     });
 
     await addResult(ids.order, 1, '2026-09-01T02:00:00Z', { good_qty: 900, defect_qty: 50, scrap_qty: 30, rework_qty: 20 });
