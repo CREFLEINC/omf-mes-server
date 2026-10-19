@@ -8,8 +8,8 @@ import { notificationView } from '../notification/notification-view';
 import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availability.service';
 import { DashboardEquipmentService } from './dashboard-equipment.service';
 import { DashboardQualityService } from './dashboard-quality.service';
-import { DashboardRange, DashboardRangeQuery, dashboardRange, previousRange } from './dashboard-range';
-import { dashboardPeriod, localToday } from './dashboard-scope';
+import { DashboardRange, DashboardRangeQuery, previousRange } from './dashboard-range';
+import { dashboardPlant, dashboardScope, localToday } from './dashboard-scope';
 import { DashboardShipmentService } from './dashboard-shipment.service';
 import {
   DailyProduction,
@@ -28,8 +28,6 @@ export interface DashboardSummaryQuery extends DashboardRangeQuery {
   plantId?: number;
 }
 
-/** 공장을 고르지 않았을 때 「오늘」을 정하는 시간대 — 현장이 하노이 한 곳이다. */
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const ALERT_LIMIT = 5;
 
 /**
@@ -70,18 +68,8 @@ export class DashboardSummaryService {
     const asOf = now.toISOString();
     return this.prisma.$transaction(
       async (tx) => {
-        const plantRows = await tx.plant.findMany({
-          where: query.plantId === undefined ? { is_active: true } : { plant_id: BigInt(query.plantId) },
-          select: { plant_id: true, timezone_code: true },
-          orderBy: { plant_id: 'asc' },
-        });
-        const today = localToday(now, plantRows.length === 1 && query.plantId !== undefined
-          ? plantRows[0].timezone_code
-          : DEFAULT_TIMEZONE);
-        const range = dashboardRange(query, today);
+        const { plantRows, range, period, plants } = await dashboardScope(tx, query, now);
         const baseDate = range.to;
-        const period = dashboardPeriod(range);
-        const plants = plantRows.map((row) => dashboardPlant(row.plant_id, row.timezone_code, range, now.getTime()));
 
         const byDay = await this.dailyProduction(tx, plants, {
           from: [previousRange(range).from, period.chartDays[0]].sort()[0],
@@ -230,21 +218,3 @@ export class DashboardSummaryService {
     return { card, alerts: rows.map(notificationView) };
   }
 }
-
-function dashboardPlant(plantId: bigint, timezone: string, range: DashboardRange, now: number): DashboardPlant {
-  const span = localSpan(range.from, range.to, timezone);
-  return {
-    plantId,
-    timezone,
-    range: span,
-    day: localSpan(range.to, range.to, timezone),
-    measured: { start: span.start, end: Math.max(span.start, Math.min(span.end, now)) },
-  };
-}
-
-function localSpan(from: string, to: string, timezone: string): { start: number; end: number } {
-  const range = maintenanceDateRange(from, to, timezone);
-  if (range.gte === undefined || range.lt === undefined) throw new Error('Cannot resolve dashboard day');
-  return { start: range.gte.getTime(), end: range.lt.getTime() };
-}
-

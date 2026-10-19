@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { DashboardPlant } from './dashboard-availability.service';
+import { OPEN_NC_WHERE, SCOPED_NC_CTE } from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
 import { DashboardQuality } from './dashboard-sections';
 
@@ -21,17 +22,6 @@ export interface NonconformanceFigures {
   readonly reworkRequestCount: number;
   readonly customerReturnQty: number;
 }
-
-/**
- * 부적합의 공장 — 원천 W/O 라인의 공장, W/O 가 없으면(입하·반품 부적합) 첫 대상 LOT 의 공장.
- * 품목 쪽이 아니라 거래 쪽의 공장이다(같은 품목코드가 두 공장에 있다).
- */
-const NONCONFORMANCE_PLANT = Prisma.sql`COALESCE(
-  (SELECT pl.plant_id FROM production.work_order wo
-   JOIN mdm.production_line pl ON pl.production_line_id = wo.production_line_id
-   WHERE wo.work_order_id = nc.work_order_id),
-  (SELECT lot.plant_id FROM quality.nonconformance_lot nl JOIN trace.lot lot ON lot.lot_id = nl.lot_id
-   WHERE nl.nonconformance_id = nc.nonconformance_id ORDER BY nl.nonconformance_lot_id LIMIT 1))`;
 
 const EMPTY_FIGURES: NonconformanceFigures = {
   block: {
@@ -57,11 +47,7 @@ export class DashboardNonconformanceService {
         AND ${localDate(column, timezone)} BETWEEN ${from}::date AND ${to}::date`;
     const ncTimezone = Prisma.sql`nc.tz`;
     const [row] = await tx.$queryRaw<MonthRow[]>(Prisma.sql`
-      WITH ${plantScope(plants)},
-      scoped_nc AS (
-        SELECT nc.*, ps.tz FROM quality.nonconformance nc
-        JOIN plant_scope ps ON ps.plant_id = ${NONCONFORMANCE_PLANT}
-      )
+      WITH ${plantScope(plants)}, ${SCOPED_NC_CTE}
       SELECT
         (SELECT SUM(nl.affected_qty) FROM scoped_nc nc
           JOIN quality.nonconformance_lot nl ON nl.nonconformance_id = nc.nonconformance_id
@@ -72,7 +58,7 @@ export class DashboardNonconformanceService {
         (SELECT COUNT(*) FROM scoped_nc nc
           JOIN quality.disposition_decision d ON d.nonconformance_id = nc.nonconformance_id
           WHERE d.disposition_type_code = 'REWORK' AND ${inMonth(Prisma.sql`d.decided_at`, ncTimezone)})::int AS rework_request_count,
-        (SELECT COUNT(*) FROM scoped_nc nc WHERE nc.closed_at IS NULL)::int AS open_count,
+        (SELECT COUNT(*) FROM scoped_nc nc WHERE ${OPEN_NC_WHERE})::int AS open_count,
         (SELECT SUM(pr.good_qty) FROM production.production_result pr
           JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
           JOIN mdm.production_line pl ON pl.production_line_id = wo.production_line_id

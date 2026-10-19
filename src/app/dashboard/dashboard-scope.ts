@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client';
 
+import { maintenanceDateRange } from '../../maintenance/maintenance-calendar';
+
 import type { DashboardPlant } from './dashboard-availability.service';
-import { DashboardRange, previousRange, shiftDate } from './dashboard-range';
+import { DashboardRange, DashboardRangeQuery, dashboardRange, previousRange, shiftDate } from './dashboard-range';
 import { chartDays } from './dashboard-view';
 
 /**
@@ -75,4 +77,50 @@ export function num(value: string | number | null | undefined): number {
 export function localToday(now: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
     .format(now);
+}
+
+/** 공장을 고르지 않았을 때 「오늘」을 정하는 시간대 — 현장이 하노이 한 곳이다. */
+const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+export interface DashboardScopeQuery extends DashboardRangeQuery {
+  plantId?: number | bigint;
+}
+
+/**
+ * 공장·조회 기간·누계 구간 — 대시보드와 상태별 LOT 목록이 같은 규칙으로 푼다.
+ * 기간 검증 오류(400)도 여기서 난다.
+ */
+export async function dashboardScope(tx: Prisma.TransactionClient, query: DashboardScopeQuery, now: Date) {
+  const plantRows = await tx.plant.findMany({
+    where: query.plantId === undefined ? { is_active: true } : { plant_id: BigInt(query.plantId) },
+    select: { plant_id: true, timezone_code: true },
+    orderBy: { plant_id: 'asc' },
+  });
+  const today = localToday(now, plantRows.length === 1 && query.plantId !== undefined
+    ? plantRows[0].timezone_code
+    : DEFAULT_TIMEZONE);
+  const range = dashboardRange(query, today);
+  return {
+    plantRows,
+    range,
+    period: dashboardPeriod(range),
+    plants: plantRows.map((row) => dashboardPlant(row.plant_id, row.timezone_code, range, now.getTime())),
+  };
+}
+
+export function dashboardPlant(plantId: bigint, timezone: string, range: DashboardRange, now: number): DashboardPlant {
+  const span = localSpan(range.from, range.to, timezone);
+  return {
+    plantId,
+    timezone,
+    range: span,
+    day: localSpan(range.to, range.to, timezone),
+    measured: { start: span.start, end: Math.max(span.start, Math.min(span.end, now)) },
+  };
+}
+
+function localSpan(from: string, to: string, timezone: string): { start: number; end: number } {
+  const range = maintenanceDateRange(from, to, timezone);
+  if (range.gte === undefined || range.lt === undefined) throw new Error('Cannot resolve dashboard day');
+  return { start: range.gte.getTime(), end: range.lt.getTime() };
 }

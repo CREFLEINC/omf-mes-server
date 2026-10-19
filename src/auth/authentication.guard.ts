@@ -133,7 +133,7 @@ export class AuthenticationGuard implements CanActivate {
   }
 }
 
-function loginRequired(): ContractException {
+export function loginRequired(): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [
     { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '로그인이 필요합니다.' },
   ]);
