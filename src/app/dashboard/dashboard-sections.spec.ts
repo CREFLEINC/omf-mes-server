@@ -1,4 +1,4 @@
-import { EquipmentSignals, equipmentStatus } from './dashboard-equipment-status';
+import { EquipmentSignals, equipmentStatus, pickDowntime } from './dashboard-equipment-status';
 
 const at = (iso: string) => new Date(iso);
 const idleSignals: EquipmentSignals = {
@@ -30,6 +30,21 @@ describe('dashboard equipment status', () => {
     const downtime = (reasonCode: string) => ({ since: at('2026-10-16T01:00:00Z'), reasonCode, reasonName: null });
     expect(equipmentStatus({ ...idleSignals, downtime: downtime('MOLD_CHANGE') }).statusCode).toBe('CHANGEOVER');
     expect(equipmentStatus({ ...idleSignals, downtime: downtime('MATERIAL_WAIT') }).statusCode).toBe('STOPPED');
+  });
+
+  it('열린 비가동이 여럿이면 하나라도 MOLD_CHANGE 가 아니면 정지, 모두 MOLD_CHANGE 일 때만 교체다', () => {
+    const row = (reasonCode: string | null, since: string) => ({ since: at(since), reasonCode });
+    const mixed = [row('MATERIAL_WAIT', '2026-10-16T01:00:00Z'), row('MOLD_CHANGE', '2026-10-16T02:00:00Z')];
+    expect(pickDowntime(mixed)).toEqual(mixed[0]);
+    expect(equipmentStatus({ ...idleSignals, downtime: { ...mixed[0], reasonName: null } })).toMatchObject({
+      statusCode: 'STOPPED',
+      statusReasonCode: 'MATERIAL_WAIT',
+    });
+    // 사유 없는 기록도 MOLD_CHANGE 가 아니다 → 정지
+    expect(pickDowntime([row('MOLD_CHANGE', '2026-10-16T01:00:00Z'), row(null, '2026-10-16T00:30:00Z')])?.reasonCode).toBeNull();
+    const molds = [row('MOLD_CHANGE', '2026-10-16T01:00:00Z'), row('MOLD_CHANGE', '2026-10-16T02:00:00Z')];
+    expect(pickDowntime(molds)).toEqual(molds[1]);
+    expect(pickDowntime([])).toBeNull();
   });
 
   it('진행 중 세션의 STOP 은 사유가 MOLD_CHANGE 면 교체, 아니면 정지 — 계획 정지보다 먼저다', () => {

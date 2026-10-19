@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { DowntimeSummaryCalendarService } from '../../maintenance/downtime/downtime-summary-calendar.service';
 import { plannedSpans } from '../../maintenance/downtime/downtime-summary-planned';
 import type { DashboardPlant } from './dashboard-availability.service';
-import { EquipmentSignals, equipmentStatus } from './dashboard-equipment-status';
+import { EquipmentSignals, equipmentStatus, pickDowntime } from './dashboard-equipment-status';
 import { Span, clip, subtract, union } from './dashboard-intervals';
 import { num } from './dashboard-scope';
 import { DashboardEquipment, DashboardEquipmentItem, EQUIPMENT_STATUSES } from './dashboard-sections';
@@ -45,7 +45,15 @@ interface ProductionRow {
 }
 
 /**
- * 설비 현황 — 공장의 사용 중 생산 설비(EQUIPMENT_TYPE 공통코드에 있는 유형 · 계측기 제외)마다
+ * 생산 설비 — 계측기(유형이 INSTRUMENT_TYPE 계열이거나 옛 계측기 유형 INSPECTION)를 뺀다(#118 헤더 결정 2026-10-19).
+ * 유형 코드가 비활성이거나 EQUIPMENT_TYPE 에 없다는 이유로는 빼지 않는다. ⚠ 설비 별칭이 `e` 여야 한다.
+ */
+export const PRODUCTION_EQUIPMENT = Prisma.sql`(e.equipment_type_code <> 'INSPECTION' AND NOT EXISTS (
+  SELECT 1 FROM mdm.code_value iv JOIN mdm.code_group ig ON ig.code_group_id = iv.code_group_id
+  WHERE ig.group_code = 'INSTRUMENT_TYPE' AND iv.code = e.equipment_type_code))`;
+
+/**
+ * 설비 현황 — 공장의 사용 중 생산 설비(PRODUCTION_EQUIPMENT · 계측기 제외)마다
  * 판단 시각의 상태를 정한다. 판단 시각 = 지금, 기준일이 지났으면 기준일 끝.
  */
 @Injectable()
@@ -71,10 +79,10 @@ export class DashboardEquipmentService {
       SELECT e.equipment_id, e.equipment_code, e.equipment_name, e.equipment_type_code,
         cv.code_name AS type_name, e.production_line_id, l.line_name
       FROM mdm.equipment e
-      JOIN mdm.code_group cg ON cg.group_code = 'EQUIPMENT_TYPE'
-      JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id AND cv.code = e.equipment_type_code
+      LEFT JOIN mdm.code_group cg ON cg.group_code = 'EQUIPMENT_TYPE'
+      LEFT JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id AND cv.code = e.equipment_type_code
       LEFT JOIN mdm.production_line l ON l.production_line_id = e.production_line_id
-      WHERE e.plant_id = ${plant.plantId} AND e.is_active AND e.status_code = 'IN_SERVICE'
+      WHERE e.plant_id = ${plant.plantId} AND e.is_active AND e.status_code = 'IN_SERVICE' AND ${PRODUCTION_EQUIPMENT}
       ORDER BY e.equipment_code`);
     if (equipment.length === 0) return [];
     const ids = equipment.map((row) => row.equipment_id);
@@ -123,7 +131,6 @@ export class DashboardEquipmentService {
     const rows = await tx.breakdown.findMany({
       where: {
         equipment_id: { in: ids },
-        occurrence_state_code: 'STOPPED',
         reported_at: { lte: at },
         OR: [{ completed_at: { gt: at } }, { completed_at: null, status_code: { not: 'DONE' } }],
       },
@@ -140,12 +147,14 @@ export class DashboardEquipmentService {
       select: { equipment_id: true, started_at: true, reason_code: true },
     });
     const names = await codeNames(tx, 'DOWNTIME_REASON', rows.map((row) => row.reason_code));
-    return new Map(
-      rows.map((row) => [
-        row.equipment_id,
-        { since: row.started_at, reasonCode: row.reason_code, reasonName: names.get(row.reason_code ?? '') ?? null },
-      ]),
-    );
+    const result = new Map<bigint, EquipmentSignals['downtime']>();
+    for (const id of new Set(rows.map((row) => row.equipment_id))) {
+      const picked = pickDowntime(
+        rows.filter((row) => row.equipment_id === id).map((row) => ({ since: row.started_at, reasonCode: row.reason_code })),
+      );
+      if (picked !== null) result.set(id, { ...picked, reasonName: names.get(picked.reasonCode ?? '') ?? null });
+    }
+    return result;
   }
 
   /** 설비마다 판단 시각 전에 시작한 마지막 세션 — 끝나지 않았으면 STOP·RESUME 이벤트로 멈춤을 가린다. */

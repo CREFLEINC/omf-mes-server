@@ -140,9 +140,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
       equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
     };
-    const [item] = body.equipment.items;
+    const item = body.equipment.items.find((row) => row.equipmentId === Number(ids.equipment));
 
-    expect(body.equipment.items).toHaveLength(1);
     expect(item).toMatchObject({
       equipmentId: Number(ids.equipment),
       statusCode: 'IDLE',
@@ -153,8 +152,26 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       standardCycleTimeSec: 10,
       currentWorkOrderNo: null,
     });
-    expect(item.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
-    expect(body.equipment.statusCounts).toEqual({ RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 1 });
+    expect(item?.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
+  });
+
+  it('설비 현황 — 이상 상태 고장도 정지, 비가동 여럿은 하나라도 교체가 아니면 정지, 계측기는 뺀다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      equipment: { statusCounts: Record<string, number>; items: { equipmentCode: string; statusCode: string }[] };
+    };
+    const status = Object.fromEntries(body.equipment.items.map((row) => [row.equipmentCode.slice(PREFIX.length), row]));
+
+    // 계측기(INSTRUMENT_TYPE 계열 CALIPER · 옛 유형 INSPECTION)는 빠지고, 비활성·미등록 유형 코드(MACHINE)는 남는다.
+    expect(Object.keys(status).sort()).toEqual(['', '-BRK-ABNORMAL', '-BRK-NULL', '-DT-MIXED', '-DT-MOLD', '-MACHINE']);
+    expect(status['-BRK-ABNORMAL']).toMatchObject({ statusCode: 'STOPPED', statusReasonName: '유압 이상' });
+    expect(status['-BRK-NULL']).toMatchObject({ statusCode: 'STOPPED' });
+    expect(status['-DT-MIXED']).toMatchObject({ statusCode: 'STOPPED', statusReasonCode: 'MATERIAL_WAIT' });
+    expect(status['-DT-MOLD']).toMatchObject({
+      statusCode: 'CHANGEOVER',
+      statusReasonCode: 'MOLD_CHANGE',
+      statusSince: '2026-09-01T03:00:00.000Z',
+    });
+    expect(body.equipment.statusCounts).toMatchObject({ STOPPED: 3, CHANGEOVER: 1 });
   });
 
   async function fixtures(): Promise<void> {
@@ -201,6 +218,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         },
       })
     ).equipment_id;
+    await equipmentFixtures();
     ids.mold = (
       await prisma.mold.create({
         data: {
@@ -419,6 +437,49 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
   }
 
+  /** 설비 현황 규칙용 설비 — 기록은 09-01 에 열려 아직 닫히지 않았다(판단 시각과 무관하게 걸려 있다). */
+  async function equipmentFixtures(): Promise<void> {
+    const add = async (suffix: string, typeCode = 'PRESS'): Promise<bigint> =>
+      (
+        await prisma.equipment.create({
+          data: {
+            plant_id: ids.plant,
+            equipment_code: `${PREFIX}${suffix}`,
+            equipment_name: PREFIX,
+            equipment_type_code: typeCode,
+            status_code: 'IN_SERVICE',
+          },
+        })
+      ).equipment_id;
+    const breakdown = async (equipmentId: bigint, no: string, occurrence: string | null) =>
+      prisma.breakdown.create({
+        data: {
+          breakdown_no: `${PREFIX}-${no}`,
+          equipment_id: equipmentId,
+          reported_at: new Date('2026-09-01T02:00:00Z'),
+          description: '유압 이상',
+          status_code: 'RECEIVED',
+          occurrence_state_code: occurrence,
+        },
+      });
+    const downtime = async (equipmentId: bigint, reasonCode: string, startedAt: string) =>
+      prisma.equipment_downtime.create({
+        data: { equipment_id: equipmentId, started_at: new Date(startedAt), reason_code: reasonCode },
+      });
+
+    await breakdown(await add('-BRK-ABNORMAL'), 'ABNORMAL', 'ABNORMAL');
+    await breakdown(await add('-BRK-NULL'), 'NULL', null);
+    const mixed = await add('-DT-MIXED');
+    await downtime(mixed, 'MATERIAL_WAIT', '2026-09-01T01:00:00Z');
+    await downtime(mixed, 'MOLD_CHANGE', '2026-09-01T02:00:00Z');
+    const mold = await add('-DT-MOLD');
+    await downtime(mold, 'MOLD_CHANGE', '2026-09-01T01:00:00Z');
+    await downtime(mold, 'MOLD_CHANGE', '2026-09-01T03:00:00Z');
+    await add('-CALIPER', 'CALIPER');
+    await add('-INSPECTION', 'INSPECTION');
+    await add('-MACHINE', 'MACHINE');
+  }
+
   async function addOrder(type: string): Promise<bigint> {
     return (
       await prisma.work_order.create({
@@ -494,7 +555,10 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     await prisma.work_calendar.deleteMany({ where: { calendar_code: PREFIX } });
     await prisma.shift.deleteMany({ where: { shift_code: PREFIX } });
     await prisma.mold.deleteMany({ where: { mold_code: PREFIX } });
-    await prisma.equipment.deleteMany({ where: { equipment_code: PREFIX } });
+    const equipmentScope = { equipment: { equipment_code: { startsWith: PREFIX } } };
+    await prisma.equipment_downtime.deleteMany({ where: equipmentScope });
+    await prisma.breakdown.deleteMany({ where: equipmentScope });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });

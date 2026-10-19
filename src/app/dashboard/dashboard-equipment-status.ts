@@ -4,7 +4,7 @@ export const MOLD_CHANGE = 'MOLD_CHANGE';
 
 /** 판단 시각에 설비에 걸려 있는 기록들. 없으면 null. */
 export interface EquipmentSignals {
-  /** 끝나지 않은 고장 — 발생 상태가 STOPPED 인 것만(ABNORMAL 은 설비가 돌고 있다). */
+  /** 끝나지 않은 고장 — 발생 상태와 무관하다(STOPPED·ABNORMAL·옛 데이터 null 모두 정지 · 사용자 결정 2026-10-19). */
   readonly breakdown: { readonly since: Date; readonly description: string } | null;
   readonly downtime: {
     readonly since: Date;
@@ -36,6 +36,16 @@ export interface EquipmentStatus {
 }
 
 const BREAKDOWN_TEXT_LIMIT = 100;
+
+/**
+ * 설비에 열린 비가동 기록이 여럿이면 하나라도 MOLD_CHANGE 가 아니면 정지, 모두 MOLD_CHANGE 일 때만 교체다.
+ * 그래서 MOLD_CHANGE 아닌 기록 중 가장 늦게 시작한 것을, 없으면 가장 늦게 시작한 MOLD_CHANGE 를 고른다.
+ * `rows` 는 시작 시각 오름차순이다.
+ */
+export function pickDowntime<T extends { readonly reasonCode: string | null }>(rows: readonly T[]): T | null {
+  const stopping = rows.filter((row) => row.reasonCode !== MOLD_CHANGE);
+  return stopping.at(-1) ?? rows.at(-1) ?? null;
+}
 
 function status(
   statusCode: EquipmentStatusCode,
