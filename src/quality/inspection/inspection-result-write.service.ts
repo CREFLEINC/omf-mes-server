@@ -28,6 +28,7 @@ import {
   throwRoundConflict,
 } from './inspection-result-write-rules';
 import { CONFIRMED, assertConfirmedShape, assertMeasurementValues, assertQuantityBounds } from './inspection-rules';
+import { reopenInspectionRequestWithin } from './inspection-request-reopen';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
@@ -108,6 +109,10 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        // 재검사 회차를 작성중으로 더하면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-58). 확정으로 태어나면 아래가 닫는다.
+        if (born === undefined && body.previousResultId !== undefined) {
+          await reopenInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
+        }
         // 사유가 확정 효과(LOT 전이)보다 «먼저» 선다 — `:confirm` 이 불량 기록을 먼저 요구하는 것과 같은 순서다.
         if (defectTarget !== null) {
           await this.defects.writeInspectionDefectsWithin(
