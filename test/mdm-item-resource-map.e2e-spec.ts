@@ -79,7 +79,7 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
     const plain = await post({ equipmentId, moldId: moldB, priorityNo: 10 }).expect(201);
     expect(validator('POST /mdm/item-resource-maps', '201')(plain.body)).toBe(true);
     const preferred = await post({ equipmentId, moldId: moldA, isDefault: true, priorityNo: 50 }).expect(201);
-    expect(preferred.body).toMatchObject({ equipmentCode: `${PREFIX}-EQ`, moldCode: `${PREFIX}-MOLD-A`, isDefault: true });
+    expect(preferred.body).toMatchObject({ equipmentCode: `${PREFIX}-EQ`, moldCode: `${PREFIX}-MOLD-A`, isDefault: true, versionNo: 1 });
 
     const list = await request(app.getHttpServer()).get(PATH).query({ itemId }).set('Cookie', cookie).expect(200);
     expect(validator('GET /mdm/item-resource-maps')(list.body)).toBe(true);

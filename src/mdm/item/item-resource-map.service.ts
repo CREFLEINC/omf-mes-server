@@ -25,6 +25,8 @@ export interface ItemResourceMapView {
   priorityNo: number;
   isActive: boolean;
   remarks: string | null;
+  /** 행마다 수정하므로 목록에서 바로 If-Match 를 만들 수 있게 싣는다. */
+  versionNo: number;
 }
 
 export interface ItemResourceMapCreate {
@@ -248,5 +250,6 @@ function view(row: MapRow): ItemResourceMapView {
     priorityNo: row.priority_no,
     isActive: row.is_active,
     remarks: row.remarks,
+    versionNo: row.version_no,
   };
 }

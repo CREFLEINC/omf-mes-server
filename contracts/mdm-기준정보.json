@@ -23472,7 +23472,8 @@
      "moldId",
      "isDefault",
      "priorityNo",
-     "isActive"
+     "isActive",
+     "versionNo"
     ],
     "properties": {
      "itemResourceMapId": {
@@ -23581,6 +23582,10 @@
        "null"
       ],
       "description": "비고"
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "수정의 If-Match 값 — 행마다 수정하므로 목록에서 바로 쓴다"
      }
     }
    },
