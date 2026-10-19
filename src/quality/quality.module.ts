@@ -23,6 +23,7 @@ import { InspectionPlanController } from './inspection-plan/inspection-plan.cont
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
 import { InspectionConfirmService } from './inspection/inspection-confirm.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
+import { InspectionHistoryService } from './inspection/inspection-history.service';
 import { InspectionRequestService } from './inspection/inspection-request.service';
 import { InspectionResultController } from './inspection/inspection-result.controller';
 import { InspectionResultQueryService } from './inspection/inspection-result-query.service';
@@ -83,6 +84,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     InspectionPlanService,
     InspectionPlanVersionService,
     InspectionRequestService,
+    InspectionHistoryService,
     InspectionResultQueryService,
     InspectionResultWriteService,
     InspectionConfirmService,
