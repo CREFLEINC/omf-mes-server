@@ -788,9 +788,9 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ field: 'measurements[0]', code: 'INVALID' });
     });
 
-    it('⭐ #304 M-2 — 같은 의뢰에 뿌리를 둘 세우면 409 `DUPLICATE_KEY` 다(`uq_inspection_round`)', async () => {
+    it('⭐ #304 M-2 — 확정된 뿌리 위에 또 세우면 409 `DUPLICATE_KEY` 다(`uq_inspection_round`)', async () => {
       const inspectionRequestId = await newRequest();
-      await newDraft(inspectionRequestId);
+      await newDraft(inspectionRequestId, { acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', statusCode: 'CONFIRMED' });
       // 두 번째 저장도 previousResultId 가 없어 회차 1 을 노린다 — (의뢰, 회차) UNIQUE 가 막는다.
       const response = await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(409);
 
@@ -798,6 +798,13 @@ describe('검사 의뢰·결과 (e2e)', () => {
       // 봉투가 `QualityConflictResponse` 다 — required(`code`·`message`)를 계약 스키마로 확인한다.
       expect(validator('POST /quality/inspection-results', 409)(response.body)).toBe(true);
       expect(response.body.errors).toBeUndefined();
+    });
+
+    it('IQC 는 작성중 뿌리 위에 또 세워도 409 그대로다 — 작성중 덮기(장부 P-49)는 PQC 한정', async () => {
+      const inspectionRequestId = await newConfirmRequest();
+      await newDraft(inspectionRequestId);
+      const response = await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(409);
+      expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY' });
     });
 
     it('⭐ #314 Major — 물리 하한이 400 이다(500 아니다): `inspectedQty` 0 · `acceptedQty` 음수 · `sampleNo` 0', async () => {
@@ -824,6 +831,102 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     it('무권한 계정은 `POST` 에서 403 이다', async () => {
       await post(draftBody(await newRequest()), { session: noPermCookie, workerNo: WORKER_HEADER }).expect(403);
+    });
+  });
+
+  /** omf-all-around#107 · 장부 P-49 — PQC 는 실적이 먼저이고, 오프라인 큐의 `POST` 가 작성중 1회차를 덮는다. */
+  describe('PQC 실적 선행 · 작성중 1회차 덮기 (P-49)', () => {
+    const resultsOf = (inspectionRequestId: number) =>
+      prisma.inspection_result.findMany({ where: { inspection_request_id: BigInt(inspectionRequestId) } });
+    const requestStatusOf = async (inspectionRequestId: number) =>
+      (
+        await prisma.inspection_request.findUniqueOrThrow({
+          where: { inspection_request_id: BigInt(inspectionRequestId) },
+          select: { status_code: true },
+        })
+      ).status_code;
+
+    it('⛔ 그 W/O 에 생산 실적이 없으면 작성중·확정 모두 400 `STATE_LOCKED` — 작업자가 읽을 문구다', async () => {
+      confirmSeq += 1;
+      const bare = await prisma.work_order.create({
+        data: {
+          work_order_no: `${PREFIX}-WO-NR${confirmSeq}`,
+          routing_operation_id: ids.routingOperation,
+          item_id: ids.item2,
+          order_qty: 100,
+          uom_id: ids.uom,
+          status_code: 'IN_PROGRESS',
+        },
+      });
+      const inspectionRequestId = await newConfirmRequest({ typeCode: 'PQC', workOrderId: bare.work_order_id });
+
+      for (const body of [
+        draftBody(inspectionRequestId),
+        draftBody(inspectionRequestId, { acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', statusCode: 'CONFIRMED' }),
+      ]) {
+        const response = await post(body, { workerNo: WORKER_HEADER }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({
+          code: 'STATE_LOCKED',
+          message: '이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
+        });
+      }
+      expect(await resultsOf(inspectionRequestId)).toHaveLength(0);
+    });
+
+    it('⭐ 작성중 1회차가 있으면 다시 온 작성중 `POST` 가 그 회차를 고친다 — 새 행·새 번호가 없다', async () => {
+      const inspectionRequestId = await newRequest();
+      const first = await post(draftBody(inspectionRequestId, { overallJudgmentCode: 'ACCEPTED', remarks: '첫 저장' }), {
+        workerNo: WORKER_HEADER,
+      }).expect(201);
+
+      const second = await post(draftBody(inspectionRequestId, { acceptedQty: 60, heldQty: 40 }), {
+        workerNo: WORKER_HEADER,
+      }).expect(201);
+
+      expect(second.body).toMatchObject({
+        inspectionResultId: first.body.inspectionResultId,
+        inspectionResultNo: first.body.inspectionResultNo,
+        inspectionRound: 1,
+        acceptedQty: 60,
+        heldQty: 40,
+        statusCode: 'DRAFT',
+      });
+      // 회차 전체를 싣는 저장이라 안 온 칸은 비운다.
+      expect(second.body.overallJudgmentCode).toBeUndefined();
+      expect(second.body.remarks).toBeUndefined();
+      const rows = await resultsOf(inspectionRequestId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].version_no).toBe(2);
+    });
+
+    it('⭐ 작성중 1회차 위의 확정 `POST` 는 그 자리에서 확정한다 — 확정 저장과 같은 부수효과', async () => {
+      const inspectionRequestId = await newRequest();
+      const draftId = await newDraft(inspectionRequestId);
+
+      const confirmed = await post(
+        draftBody(inspectionRequestId, { acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', statusCode: 'CONFIRMED' }),
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      expect(confirmed.body).toMatchObject({ inspectionResultId: draftId, statusCode: 'CONFIRMED', inspectionRound: 1 });
+      expect(confirmed.body.confirmedAt).toBeDefined();
+      expect(await requestStatusOf(inspectionRequestId)).toBe('COMPLETED');
+      expect(await resultsOf(inspectionRequestId)).toHaveLength(1);
+      // 확정된 뒤의 또 다른 뿌리는 지금처럼 409 다.
+      await post(draftBody(inspectionRequestId), { workerNo: WORKER_HEADER }).expect(409);
+    });
+
+    it('같은 `Idempotency-Key` 로 덮기를 다시 보내면 같은 응답이고 행이 늘지 않는다', async () => {
+      const inspectionRequestId = await newRequest();
+      await newDraft(inspectionRequestId);
+      const key = randomUUID();
+      const body = draftBody(inspectionRequestId, { acceptedQty: 100, overallJudgmentCode: 'ACCEPTED', statusCode: 'CONFIRMED' });
+
+      const once = await post(body, { workerNo: WORKER_HEADER, key }).expect(201);
+      const again = await post(body, { workerNo: WORKER_HEADER, key }).expect(201);
+
+      expect(again.body).toEqual(once.body);
+      expect(await resultsOf(inspectionRequestId)).toHaveLength(1);
     });
   });
 
@@ -1019,6 +1122,29 @@ describe('검사 의뢰·결과 (e2e)', () => {
     return lot.lot_id;
   }
 
+  /**
+   * PQC 는 그 W/O 의 생산 실적이 먼저다(omf-all-around#107 · 장부 P-49) — PQC 를 쓰는 W/O 마다 실적 한 건을 세운다.
+   * 생산LOT 배분·LOT 전이는 이 파일이 재는 것이 아니라 행만 둔다.
+   */
+  let productionResultSeq = 0;
+  async function seedProductionResult(workOrderId: bigint): Promise<void> {
+    productionResultSeq += 1;
+    await prisma.production_result.create({
+      data: {
+        production_result_no: `${PREFIX}-PR-${productionResultSeq}`,
+        work_order_id: workOrderId,
+        result_sequence: 1,
+        good_qty: 100,
+        uom_id: ids.uom,
+        result_source_code: 'MANUAL',
+        occurred_at: new Date(INSPECTED_W),
+        worker_id: ids.worker,
+        status_code: 'CONFIRMED',
+        idempotency_key: randomUUID(),
+      },
+    });
+  }
+
   async function newWorkOrder(): Promise<bigint> {
     confirmSeq += 1;
     const row = await prisma.work_order.create({
@@ -1031,6 +1157,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
         status_code: 'IN_PROGRESS',
       },
     });
+    await seedProductionResult(row.work_order_id);
     return row.work_order_id;
   }
 
@@ -1590,6 +1717,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       data: { worker_no: `${PREFIX}-WK`, worker_name: '검사의뢰검사원', business_unit_id: businessUnit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
     });
     ids.worker = worker.worker_id;
+    await seedProductionResult(ids.workOrder);
 
     const resultOf = async (
       suffix: string,
@@ -1724,6 +1852,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
     await prisma.lot_status_event.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
     // 확정(PR ④) 픽스처가 처음 심는 표다 — LOT 보다 먼저 지워야 FK 가 안 막는다.
     await prisma.lot_hold.deleteMany({ where: { lot: { plant: { plant_code: { startsWith: PREFIX } } } } });
+    await prisma.production_result.deleteMany({ where: { production_result_no: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.lot.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
     await prisma.inbound_receipt.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });

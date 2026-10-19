@@ -21,7 +21,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertAccountWorker } from './inspection-result-write-rules';
+import { assertAccountWorker, assertPqcAfterProduction } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
@@ -126,6 +126,8 @@ export class InspectionConfirmService {
       where: { inspection_result_id: resultId },
       select: { inspection_request_id: true, overall_judgment_code: true },
     });
+    // PQC 는 그 W/O 의 생산 실적이 먼저다 — 저장(`POST`)과 같은 판정(장부 P-49).
+    if (stored !== null) await assertPqcAfterProduction(this.prisma, stored.inspection_request_id);
     const nonconformanceNo =
       stored === null
         ? undefined

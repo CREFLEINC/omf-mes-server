@@ -144,6 +144,61 @@ export function assertIqcReinspectable(inspectionTypeCode: string, lotStatusCode
   ]);
 }
 
+/** 생산 실적 상태 — 실적은 취소·삭제가 없고 정정도 새 «확정» 행이다(`production-result-correct.service.ts`). */
+const PRODUCTION_RESULT_CONFIRMED = 'CONFIRMED';
+const DRAFT = 'DRAFT';
+
+/**
+ * PQC 결과 쓰기 앞의 판정 두 가지(omf-all-around#107 · 장부 P-49). PQC 가 아니면 아무것도 하지 않는다.
+ *
+ * 1. **실적이 먼저다**(사용자 결정 2026-10-19 「실적 입력해야 PQC 가 가능한 게 맞다」) — 그 W/O 에 생산 실적이
+ *    한 건도 없으면 작성중이든 확정이든 받지 않는다. 실적은 «원본» 행만 센다(`corrects_production_result_id`
+ *    가 빈 행 — 정정본은 원본이 있어야 생긴다). 실적에는 취소 상태가 없다.
+ * 2. **작성중 1회차를 덮는다** — 오프라인 큐는 서버가 만든 id 를 몰라 `PUT`·`:confirm` 을 못 부르고 늘 `POST` 로
+ *    온다. 앞 회차 없이 온 저장인데 그 의뢰의 1회차가 «작성중»이면 409 대신 그 회차를 고친다(확정이면 그 자리에서
+ *    확정). 1회차가 이미 확정이면 지금처럼 409 `DUPLICATE_KEY` 다. 고칠 회차의 id 를 돌려준다.
+ */
+export async function preparePqcWrite(
+  prisma: PrismaService,
+  body: Pick<InspectionResultCreate, 'inspectionRequestId' | 'previousResultId'>,
+  round: number,
+): Promise<bigint | null> {
+  if (!(await assertPqcAfterProduction(prisma, BigInt(body.inspectionRequestId)))) return null;
+  if (body.previousResultId !== undefined || round !== 1) return null;
+  const first = await prisma.inspection_result.findFirst({
+    where: { inspection_request_id: BigInt(body.inspectionRequestId), inspection_round: 1 },
+    select: { inspection_result_id: true, status_code: true },
+  });
+  return first?.status_code === DRAFT ? first.inspection_result_id : null;
+}
+
+/** 위 1번 — `:confirm` 도 같은 판정을 탄다. PQC 의뢰면 `true`(실적이 없으면 400), 아니면 `false`. */
+export async function assertPqcAfterProduction(prisma: PrismaService, inspectionRequestId: bigint): Promise<boolean> {
+  const request = await prisma.inspection_request.findUnique({
+    where: { inspection_request_id: inspectionRequestId },
+    select: { inspection_type_code: true, work_order_id: true },
+  });
+  if (request?.inspection_type_code !== 'PQC') return false;
+  const results =
+    request.work_order_id === null
+      ? 0
+      : await prisma.production_result.count({
+          where: {
+            work_order_id: request.work_order_id,
+            status_code: PRODUCTION_RESULT_CONFIRMED,
+            corrects_production_result_id: null,
+          },
+        });
+  if (results > 0) return true;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message: '이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
+    },
+  ]);
+}
+
 /** ⛔ 종합 판정과 항목 판정은 **그룹이 다르다** — 항목에는 「보류」가 없다(§1-5). */
 export function assertCodes(
   prisma: PrismaService,
