@@ -2602,6 +2602,7 @@ model bom_component {
   lot_trace_required          Boolean                       @default(false)
   backflush_allowed           Boolean                       @default(false)
   sequence_no                 Int                           @default(1)
+  erp_child_item_seq          Int?
   created_at                  DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                  BigInt?
   updated_at                  DateTime                      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
