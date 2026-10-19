@@ -19,7 +19,7 @@ export interface DowntimeCalendarSlot {
 type Span = { readonly startUs: bigint; readonly endUs: bigint };
 const DAY_TYPES = new Set(["WORKING", "HOLIDAY", "PARTIAL"]);
 
-function plannedSpans(row: DowntimeCalendarSlot): Span[] | null {
+export function plannedSpans(row: DowntimeCalendarSlot): Span[] | null {
   if (
     row.calendarActive !== true ||
     !row.dayType ||

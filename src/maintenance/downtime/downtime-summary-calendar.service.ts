@@ -27,6 +27,11 @@ type CalendarRow = {
   range_end_us: bigint;
 };
 
+type CalendarEquipment = Pick<
+  SummaryEquipmentSource,
+  "equipmentId" | "plantId" | "productionLineId"
+>;
+
 function instant(value: string | null): bigint | null {
   return value === null ? null : BigInt(value);
 }
@@ -37,7 +42,7 @@ export class DowntimeSummaryCalendarService {
 
   resolve(
     plants: readonly SummaryPlantSource[],
-    equipment: readonly SummaryEquipmentSource[],
+    equipment: readonly CalendarEquipment[],
     startedFrom: string,
     startedTo: string,
   ): Promise<bigint | null> {
@@ -50,11 +55,25 @@ export class DowntimeSummaryCalendarService {
   async resolveWithin(
     tx: Prisma.TransactionClient,
     plants: readonly SummaryPlantSource[],
-    equipment: readonly SummaryEquipmentSource[],
+    equipment: readonly CalendarEquipment[],
     startedFrom: string,
     startedTo: string,
   ): Promise<bigint | null> {
     if (!equipment.length) return 0n;
+    return summarizePlannedDowntime(
+      await this.slotsWithin(tx, plants, equipment, startedFrom, startedTo),
+    );
+  }
+
+  /** 설비·날짜·교대마다 근무달력을 해석한 칸 — 대시보드 시간가동률이 계획 가동시간을 같은 해석으로 센다. */
+  async slotsWithin(
+    tx: Prisma.TransactionClient,
+    plants: readonly SummaryPlantSource[],
+    equipment: readonly CalendarEquipment[],
+    startedFrom: string,
+    startedTo: string,
+  ): Promise<DowntimeCalendarSlot[]> {
+    if (!equipment.length) return [];
     if (startedFrom > startedTo)
       throw new Error("Invalid planned downtime date range");
     const plantById = new Map(plants.map((plant) => [plant.plantId, plant]));
@@ -145,7 +164,7 @@ export class DowntimeSummaryCalendarService {
         AND (NOT scope.carryover OR shift.crosses_midnight)
       WHERE NOT scope.carryover OR shift.shift_id IS NOT NULL
       ORDER BY scope.equipment_id,scope.calendar_date,shift.shift_id`);
-    return summarizePlannedDowntime(rows.map((row) => this.slot(row)));
+    return rows.map((row) => this.slot(row));
   }
 
   private slot(row: CalendarRow): DowntimeCalendarSlot {
