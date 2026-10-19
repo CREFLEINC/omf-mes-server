@@ -27,7 +27,14 @@ function responseValidator(): ValidateFunction {
   });
 }
 
-type Card = { cardCode: string; value: number; valueStatusCode: string; deltaRatio?: number; excludedCount?: number };
+type Card = {
+  cardCode: string;
+  value: number;
+  valueStatusCode: string;
+  deltaRatio?: number;
+  excludedCount?: number;
+  notYetReasonCode?: string;
+};
 
 /**
  * 하노이 공장(+07) 하루 — 교대 08~17시(9h) − 계획 정지 12~13시 = 계획 8h.
@@ -132,6 +139,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     for (const code of ['YIELD_RATE', 'AVAILABILITY_RATE', 'PERFORMANCE_RATE', 'OEE']) {
       expect(card(cards, code).valueStatusCode).toBe('NOT_YET');
     }
+    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ notYetReasonCode: 'NO_SESSION' });
+    expect(card(cards, 'OEE')).not.toHaveProperty('notYetReasonCode');
   });
 
   it('기준일이 없으면 그 공장의 오늘로 정한다', async () => {
@@ -141,26 +150,99 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(body.baseDate).toBe(today);
   });
 
-  it('설비 현황 — 기준일이 지났으면 기준일 끝에 판단하고, 교대가 끝난 뒤라 비가동이다', async () => {
-    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
-      equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
-      quality: { pqc: { equipmentDefectRates: { equipmentId: number; defectRate: number }[] } };
+  it('기간 조회 — 합계는 기간 안, 추이는 기간 안 일별, baseDate 는 종료일, 적용 기간을 함께 싣는다(P-59)', async () => {
+    const query = { dateFrom: '2026-08-31', dateTo: BASE_DATE, plantId: ids.plant.toString() };
+    const body = (await read(query)) as Awaited<ReturnType<typeof read>> & {
+      dateFrom: string;
+      dateTo: string;
+      production: { totalQty: number };
     };
+
+    expect(validateResponse(body)).toBe(true);
+    expect(body).toMatchObject({ baseDate: BASE_DATE, dateFrom: '2026-08-31', dateTo: BASE_DATE });
+    // 직전 같은 길이(08-29~08-30)는 실적이 없어 증감을 비운다.
+    expect(card(body.cards, 'PRODUCTION_QTY').value).toBe(1600);
+    expect(card(body.cards, 'PRODUCTION_QTY')).not.toHaveProperty('deltaRatio');
+    expect(body.production.totalQty).toBe(1600);
+    expect(body.trend.points).toEqual([
+      { label: '08-31', value: 500 },
+      { label: '09-01', value: 1100 },
+    ]);
+    // 계획 = 08-31 교대 9h + 09-01 8h(계획 정지 1h 제외) = 17h,
+    // 실제 = 08-31 교대 안 9h(교대 밖 7h 제외) + 09-01 6h(계획 정지와 겹친 1h 제외) = 15h
+    expect(card(body.cards, 'AVAILABILITY_RATE').value).toBeCloseTo((15 / 17) * 100, 6);
+    expect(card(body.cards, 'AVAILABILITY_RATE')).not.toHaveProperty('notYetReasonCode');
+    // 08-30 은 근무달력 날짜가 없다 — 기간에 하루라도 끼면 시간가동률 전체를 내지 않는다.
+    const gap = await read({ ...query, dateFrom: '2026-08-30' });
+    expect(card(gap.cards, 'AVAILABILITY_RATE')).toMatchObject({
+      valueStatusCode: 'NOT_YET',
+      notYetReasonCode: 'CALENDAR_UNRESOLVED',
+    });
+  });
+
+  it('기간 조회 — 하루 기간은 baseDate 와 같은 값이다', async () => {
+    const byBase = await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
+    const byRange = await read({ dateFrom: BASE_DATE, dateTo: BASE_DATE, plantId: ids.plant.toString() });
+
+    expect(byRange.cards).toEqual(byBase.cards);
+    expect(byRange.trend.points).toEqual(byBase.trend.points);
+  });
+
+  it('기간 조회 — 계약 가드가 안 보는 쿼리라 여기서 400 을 낸다(같은 오류 모양)', async () => {
+    const reject = async (query: Record<string, string>) =>
+      ((await request(app.getHttpServer()).get(PATH).query(query).set('Cookie', cookie).expect(400)).body as {
+        errors: { scope: string; field: string; code: string }[];
+      }).errors.map(({ scope, field, code }) => ({ scope, field, code }));
+
+    expect(await reject({ dateFrom: '2026-05-31', dateTo: BASE_DATE })).toEqual([
+      { scope: 'field', field: 'dateTo', code: 'RANGE' },
+    ]);
+    expect(await reject({ dateFrom: BASE_DATE, dateTo: '2999-01-01' })).toEqual([
+      { scope: 'field', field: 'dateTo', code: 'RANGE' },
+    ]);
+    expect(await reject({ dateFrom: BASE_DATE })).toEqual([{ scope: 'field', field: 'dateTo', code: 'REQUIRED' }]);
+    expect(await reject({ baseDate: BASE_DATE, dateFrom: BASE_DATE, dateTo: BASE_DATE })).toEqual([
+      { scope: 'field', field: 'baseDate', code: 'INVALID' },
+    ]);
+  });
+
+  it('설비 현황은 기준일·기간과 무관하게 «지금» 상태와 공장 «오늘» 생산량이다', async () => {
+    type Body = { equipment: { asOf: string; statusCounts: Record<string, number>; items: Record<string, unknown>[] } };
+    const before = Date.now();
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as Body;
     const item = body.equipment.items.find((row) => row.equipmentId === Number(ids.equipment));
 
+    expect(Date.parse(body.equipment.asOf)).toBeGreaterThanOrEqual(before);
+    // 세션은 09-01 09:00Z 에 끝났고 오늘은 근무달력이 없다(비근무로 단정하지 않는다) → 대기.
     expect(item).toMatchObject({
       equipmentId: Number(ids.equipment),
-      statusCode: 'IDLE',
-      // 하노이 교대 끝 17:00 = 10:00Z
-      statusSince: '2026-09-01T10:00:00.000Z',
-      todayTotalQty: 1100,
-      todayNgQty: 100,
+      statusCode: 'WAITING',
+      statusSince: '2026-09-01T09:00:00.000Z',
+      todayTotalQty: 100,
+      todayNgQty: 10,
+      defectRate: 10,
       standardCycleTimeSec: 10,
       currentWorkOrderNo: null,
     });
-    expect(item?.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
-    expect(body.quality.pqc.equipmentDefectRates).toEqual([
+    // 이 설비·MACHINE 유형 설비 = 대기, 고장 2·비가동 섞임 1 = 정지, 교체 1(설비 현황 규칙 테스트의 설비들).
+    expect(body.equipment.statusCounts).toEqual({ RUNNING: 0, STOPPED: 3, WAITING: 2, CHANGEOVER: 1, IDLE: 0 });
+
+    const ranged = (await read({ dateFrom: '2026-08-31', dateTo: BASE_DATE, plantId: ids.plant.toString() })) as unknown as Body;
+    expect(ranged.equipment.items).toEqual(body.equipment.items);
+  });
+
+  it('호기별 불량률은 설비 현황(오늘)이 아니라 품질 누계 구간이다 — 하루면 당월, 기간이면 그 기간', async () => {
+    type Body = { quality: { pqc: { equipmentDefectRates: Record<string, unknown>[] } } };
+    const rate = async (query: Record<string, string>) =>
+      ((await read({ ...query, plantId: ids.plant.toString() })) as unknown as Body).quality.pqc.equipmentDefectRates;
+
+    // 09-01 당월 = 09-01 하루: 총생산 1100(정정 원본·재작업 W/O 제외), NG 100. 오늘 실적(100·NG 10)은 들어가지 않는다.
+    expect(await rate({ baseDate: BASE_DATE })).toEqual([
       { equipmentId: Number(ids.equipment), equipmentCode: PREFIX, defectRate: (100 / 1100) * 100, ngQty: 100 },
+    ]);
+    // 기간 08-31~09-01: 08-31 실적 500 이 더해진다.
+    expect(await rate({ dateFrom: '2026-08-31', dateTo: BASE_DATE })).toEqual([
+      { equipmentId: Number(ids.equipment), equipmentCode: PREFIX, defectRate: (100 / 1600) * 100, ngQty: 100 },
     ]);
   });
 
@@ -449,6 +531,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     // 정정본만 센다 — 원본 777 은 빠지고 100 이 들어간다(수량 0 은 DB 제약이 막는다).
     await addResult(ids.order, 4, '2026-09-01T02:30:00Z', { good_qty: 100 }, original);
     await addResult(ids.rework, 1, '2026-09-01T07:00:00Z', { good_qty: 10 });
+    // 설비 현황(공장 오늘)용 — 기준일 집계에는 들어가지 않는다.
+    await addResult(ids.order, 5, new Date().toISOString(), { good_qty: 90, defect_qty: 10 });
 
     // PQC: 1회차 불합격 → 재검사 2회차 합격. 최종 회차만 센다.
     ids.request = (

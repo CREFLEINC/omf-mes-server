@@ -3,15 +3,18 @@ import { Prisma } from '@prisma/client';
 
 import { DowntimeSummaryCalendarService } from '../../maintenance/downtime/downtime-summary-calendar.service';
 import { plannedSpans } from '../../maintenance/downtime/downtime-summary-planned';
+import type { DashboardRange } from './dashboard-range';
 import { Span, clip, intersect, stoppedSpans, subtract, totalLength, union } from './dashboard-intervals';
 
 export interface DashboardPlant {
   readonly plantId: bigint;
   readonly timezone: string;
-  /** 기준일의 공장 현지 하루 [start, end) — epoch ms. */
+  /** 조회 기간의 공장 현지 [첫날 0시, 끝날 다음날 0시) — epoch ms. */
+  readonly range: Span;
+  /** 이 단면의 마지막 하루. 설비 현황은 공장 «오늘»로 만든 단면을 따로 받는다. */
   readonly day: Span;
   /**
-   * 가동률·성능률을 재는 구간 — 하루 시작 ~ min(하루 끝, 집계 시각).
+   * 가동률·성능률을 재는 구간 — 기간 시작 ~ min(기간 끝, 집계 시각).
    * ⛔ 오늘을 하루 전체로 재면 분모(계획)는 저녁 교대까지, 분자(실제)는 지금까지라 낮에는 늘 낮게 나온다.
    */
   readonly measured: Span;
@@ -39,7 +42,7 @@ export interface AvailabilityFigures {
 }
 
 /**
- * 분모에 넣을 설비 — «그날 작업세션이 있었던 설비»(omf-all-around#118 Q3 (a)).
+ * 분모에 넣을 설비 — «조회 기간에 작업세션이 있었던 설비»(omf-all-around#118 Q3 (a)).
  * ⚠ 사용자 확인 중이라 「공장 활성 설비 전부」로 바뀔 수 있다. 범위는 이 함수 한 곳에서만 정한다.
  */
 function scopeEquipment(sessions: readonly SessionRow[]): ScopedEquipment[] {
@@ -64,7 +67,7 @@ export class DashboardAvailabilityService {
   async figures(
     tx: Prisma.TransactionClient,
     plants: readonly DashboardPlant[],
-    baseDate: string,
+    range: DashboardRange,
     asOf: number,
   ): Promise<AvailabilityFigures> {
     let plannedMs: number | null = 0;
@@ -76,7 +79,7 @@ export class DashboardAvailabilityService {
       excludedSessionCount += sessions.filter((row) => row.equipment_id === null).length;
       const equipment = scopeEquipment(sessions);
       if (equipment.length === 0) continue;
-      const planned = await this.planned(tx, plant, equipment, baseDate);
+      const planned = await this.planned(tx, plant, equipment, range);
       plannedMs = planned === null || plannedMs === null ? null : plannedMs + sumLengths(planned);
       actualMs += await this.actual(tx, plant, sessions, asOf, planned);
       equipmentCount += equipment.length;
@@ -93,8 +96,8 @@ export class DashboardAvailabilityService {
       LEFT JOIN mdm.production_line l ON l.production_line_id = wo.production_line_id
       LEFT JOIN mdm.equipment e ON e.equipment_id = ws.equipment_id
       WHERE COALESCE(e.plant_id, l.plant_id) = ${plant.plantId}
-        AND ws.started_at < ${new Date(plant.day.end)}
-        AND (ws.ended_at IS NULL OR ws.ended_at > ${new Date(plant.day.start)})
+        AND ws.started_at < ${new Date(plant.range.end)}
+        AND (ws.ended_at IS NULL OR ws.ended_at > ${new Date(plant.range.start)})
       ORDER BY ws.work_session_id`);
   }
 
@@ -102,14 +105,14 @@ export class DashboardAvailabilityService {
     tx: Prisma.TransactionClient,
     plant: DashboardPlant,
     equipment: readonly ScopedEquipment[],
-    baseDate: string,
+    range: DashboardRange,
   ): Promise<Map<bigint, Span[]> | null> {
     const source = {
       plantId: plant.plantId.toString(),
       businessUnitId: null,
       timezone: plant.timezone,
-      rangeStartUs: BigInt(plant.day.start) * 1000n,
-      rangeEndUs: BigInt(plant.day.end) * 1000n,
+      rangeStartUs: BigInt(plant.range.start) * 1000n,
+      rangeEndUs: BigInt(plant.range.end) * 1000n,
     };
     const slots = await this.calendars.slotsWithin(
       tx,
@@ -119,8 +122,8 @@ export class DashboardAvailabilityService {
         plantId: source.plantId,
         productionLineId: item.productionLineId?.toString() ?? null,
       })),
-      baseDate,
-      baseDate,
+      range.from,
+      range.to,
     );
     const stops = await this.plannedStops(tx, plant, equipment);
     const byEquipment = new Map<bigint, Span[]>();
@@ -150,8 +153,8 @@ export class DashboardAvailabilityService {
           { equipment_id: { in: equipment.map((item) => item.equipmentId) } },
           { production_line_id: { in: equipment.flatMap((item) => item.productionLineId ?? []) } },
         ],
-        planned_start_at: { lt: new Date(plant.day.end) },
-        planned_end_at: { gt: new Date(plant.day.start) },
+        planned_start_at: { lt: new Date(plant.range.end) },
+        planned_end_at: { gt: new Date(plant.range.start) },
       },
       select: { equipment_id: true, production_line_id: true, planned_start_at: true, planned_end_at: true },
     });

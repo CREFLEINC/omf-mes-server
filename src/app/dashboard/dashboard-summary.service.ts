@@ -8,25 +8,23 @@ import { notificationView } from '../notification/notification-view';
 import { DashboardAvailabilityService, DashboardPlant } from './dashboard-availability.service';
 import { DashboardEquipmentService } from './dashboard-equipment.service';
 import { DashboardQualityService } from './dashboard-quality.service';
-import { dashboardPeriod } from './dashboard-scope';
+import { DashboardRange, DashboardRangeQuery, dashboardRange, previousRange } from './dashboard-range';
+import { dashboardPeriod, localToday } from './dashboard-scope';
 import { DashboardShipmentService } from './dashboard-shipment.service';
 import {
   DailyProduction,
   DashboardCard,
   DashboardSummary,
   PerformanceFigures,
-  TREND_DAYS,
   availabilityCard,
   oeeCard,
   performanceCard,
   productionCards,
   productionSection,
   productionTrend,
-  trailingDays,
 } from './dashboard-view';
 
-export interface DashboardSummaryQuery {
-  baseDate?: string;
+export interface DashboardSummaryQuery extends DashboardRangeQuery {
   plantId?: number;
 }
 
@@ -77,21 +75,33 @@ export class DashboardSummaryService {
           select: { plant_id: true, timezone_code: true },
           orderBy: { plant_id: 'asc' },
         });
-        const baseDate = query.baseDate ?? localToday(now, plantRows.length === 1 && query.plantId !== undefined
+        const today = localToday(now, plantRows.length === 1 && query.plantId !== undefined
           ? plantRows[0].timezone_code
           : DEFAULT_TIMEZONE);
-        const plants = plantRows.map((row) => dashboardPlant(row.plant_id, row.timezone_code, baseDate, now.getTime()));
+        const range = dashboardRange(query, today);
+        const baseDate = range.to;
+        const period = dashboardPeriod(range);
+        const plants = plantRows.map((row) => dashboardPlant(row.plant_id, row.timezone_code, range, now.getTime()));
 
-        const byDay = await this.dailyProduction(tx, plants, baseDate);
-        const [productionCard, yieldCard] = productionCards(byDay, baseDate);
-        const availability = await this.availability.figures(tx, plants, baseDate, now.getTime());
+        const byDay = await this.dailyProduction(tx, plants, {
+          from: [previousRange(range).from, period.chartDays[0]].sort()[0],
+          to: baseDate,
+        });
+        const [productionCard, yieldCard] = productionCards(byDay, range);
+        const availability = await this.availability.figures(tx, plants, range, now.getTime());
         const availabilityRate = availabilityCard(availability);
         const performanceRate = performanceCard(await this.performance(tx, plants), availability);
         const alarms = await this.alarms(tx, actorUserId);
-        const equipment = await this.equipment.read(tx, plants, baseDate, now.getTime());
+        const todayPlants = plantRows.map((row) => {
+          const date = localToday(now, row.timezone_code);
+          return dashboardPlant(row.plant_id, row.timezone_code, { from: date, to: date }, now.getTime());
+        });
+        const equipment = await this.equipment.read(tx, todayPlants, now.getTime());
 
         return omitEmpty({
           baseDate,
+          dateFrom: range.from,
+          dateTo: range.to,
           plantId: query.plantId,
           cards: [
             productionCard,
@@ -103,11 +113,11 @@ export class DashboardSummaryService {
           ],
           alerts: alarms.alerts,
           asOf,
-          trend: productionTrend(byDay, baseDate, asOf),
-          production: productionSection(byDay, baseDate),
+          trend: productionTrend(byDay, period.chartDays, asOf),
+          production: productionSection(byDay, range),
           equipment,
-          shipment: await this.shipments.read(tx, plants, baseDate, query.plantId !== undefined),
-          quality: await this.quality.read(tx, plants, dashboardPeriod(baseDate), equipment.items),
+          shipment: await this.shipments.read(tx, plants, range, query.plantId !== undefined),
+          quality: await this.quality.read(tx, plants, period),
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
@@ -121,12 +131,11 @@ export class DashboardSummaryService {
   private async dailyProduction(
     tx: Prisma.TransactionClient,
     plants: readonly DashboardPlant[],
-    baseDate: string,
+    days: DashboardRange,
   ): Promise<Map<string, DailyProduction>> {
-    const days = trailingDays(baseDate, TREND_DAYS);
     const byDay = new Map<string, DailyProduction>();
     for (const plant of plants) {
-      const range = maintenanceDateRange(days[0], baseDate, plant.timezone);
+      const range = maintenanceDateRange(days.from, days.to, plant.timezone);
       const rows = await tx.$queryRaw<DailyRow[]>(Prisma.sql`
         SELECT to_char((pr.occurred_at AT TIME ZONE ${plant.timezone})::date, 'YYYY-MM-DD') AS day,
           COALESCE(SUM(pr.good_qty + pr.defect_qty + pr.hold_qty + pr.scrap_qty + pr.rework_qty)
@@ -222,14 +231,20 @@ export class DashboardSummaryService {
   }
 }
 
-function dashboardPlant(plantId: bigint, timezone: string, baseDate: string, now: number): DashboardPlant {
-  const range = maintenanceDateRange(baseDate, baseDate, timezone);
-  if (range.gte === undefined || range.lt === undefined) throw new Error('Cannot resolve dashboard day');
-  const day = { start: range.gte.getTime(), end: range.lt.getTime() };
-  return { plantId, timezone, day, measured: { start: day.start, end: Math.max(day.start, Math.min(day.end, now)) } };
+function dashboardPlant(plantId: bigint, timezone: string, range: DashboardRange, now: number): DashboardPlant {
+  const span = localSpan(range.from, range.to, timezone);
+  return {
+    plantId,
+    timezone,
+    range: span,
+    day: localSpan(range.to, range.to, timezone),
+    measured: { start: span.start, end: Math.max(span.start, Math.min(span.end, now)) },
+  };
 }
 
-function localToday(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
-    .format(now);
+function localSpan(from: string, to: string, timezone: string): { start: number; end: number } {
+  const range = maintenanceDateRange(from, to, timezone);
+  if (range.gte === undefined || range.lt === undefined) throw new Error('Cannot resolve dashboard day');
+  return { start: range.gte.getTime(), end: range.lt.getTime() };
 }
+

@@ -1,6 +1,7 @@
 import { omitEmpty } from '../../common/http/omit-empty';
 import { NotificationView } from '../notification/notification-view';
 import type { AvailabilityFigures } from './dashboard-availability.service';
+import { DashboardRange, datesBetween, previousRange } from './dashboard-range';
 import type {
   DashboardEquipment,
   DashboardProduction,
@@ -25,7 +26,11 @@ export interface DashboardCard {
   note?: string | null;
   valueStatusCode: 'AVAILABLE' | 'NOT_YET' | 'PARTIAL';
   excludedCount?: number | null;
+  /** 시간가동률이 NOT_YET 인 까닭(장부 P-59) — 화면이 note 문구 비교 없이 가른다. 그 밖에는 싣지 않는다. */
+  notYetReasonCode?: AvailabilityNotYetReason;
 }
+
+export type AvailabilityNotYetReason = 'NO_SESSION' | 'CALENDAR_UNRESOLVED' | 'NO_PLANNED_TIME';
 
 export interface DashboardTrend {
   seriesName: string;
@@ -36,7 +41,11 @@ export interface DashboardTrend {
 }
 
 export interface DashboardSummary {
+  /** 조회 종료일 — 실시간 칸(설비 상태·출하 대기)의 기준일이다. */
   baseDate: string;
+  /** 실제 적용한 조회 기간(장부 P-59 — 계약보다 앞선 선택 키). */
+  dateFrom?: string;
+  dateTo?: string;
   plantId?: number;
   cards: DashboardCard[];
   alerts: NotificationView[];
@@ -65,6 +74,11 @@ export interface DailyProduction {
 
 export const TREND_DAYS = 9;
 
+/** 일별 차트 날짜 — 하루 조회면 그날 포함 최근 9일, 이틀 이상이면 기간 안의 날(최대 92). */
+export function chartDays(range: DashboardRange): string[] {
+  return range.from === range.to ? trailingDays(range.to, TREND_DAYS) : datesBetween(range);
+}
+
 /** baseDate 를 끝으로 하는 연속 날짜(오름차순). 달력 날짜 산술이라 UTC 로 세도 시간대와 무관하다. */
 export function trailingDays(baseDate: string, count: number): string[] {
   const end = Date.parse(`${baseDate}T00:00:00.000Z`);
@@ -92,13 +106,11 @@ export function notYet(cardCode: DashboardCardCode, label: string, note?: string
  */
 export function productionCards(
   byDay: ReadonlyMap<string, DailyProduction>,
-  baseDate: string,
+  range: DashboardRange,
 ): DashboardCard[] {
-  const [previousDate] = trailingDays(baseDate, 2);
-  const today = byDay.get(baseDate);
-  const previous = byDay.get(previousDate);
+  const today = sumDays(byDay, range);
   const totalQty = today?.totalQty ?? 0;
-  const previousQty = previous?.totalQty ?? 0;
+  const previousQty = sumDays(byDay, previousRange(range))?.totalQty ?? 0;
   const production: DashboardCard = omitEmpty({
     cardCode: 'PRODUCTION_QTY' as const,
     label: '생산 수량',
@@ -124,14 +136,14 @@ export function productionCards(
 
 export function productionTrend(
   byDay: ReadonlyMap<string, DailyProduction>,
-  baseDate: string,
+  days: readonly string[],
   asOf: string,
 ): DashboardTrend {
   return {
     seriesName: '일일 생산실적',
     unit: 'EA',
     targetValue: null,
-    points: trailingDays(baseDate, TREND_DAYS).map((day) => ({
+    points: days.map((day) => ({
       label: day.slice(5),
       value: byDay.get(day)?.totalQty ?? 0,
     })),
@@ -154,11 +166,15 @@ function partialIf(excluded: number): Pick<DashboardCard, 'valueStatusCode' | 'e
 
 export function availabilityCard(figures: AvailabilityFigures): DashboardCard {
   const label = '시간가동률';
-  if (figures.equipmentCount === 0) return notYet('AVAILABILITY_RATE', label, '작업세션이 있는 설비가 없습니다.');
+  const notYetBecause = (notYetReasonCode: AvailabilityNotYetReason, note: string): DashboardCard => ({
+    ...notYet('AVAILABILITY_RATE', label, note),
+    notYetReasonCode,
+  });
+  if (figures.equipmentCount === 0) return notYetBecause('NO_SESSION', '작업세션이 있는 설비가 없습니다.');
   if (figures.plannedMs === null) {
-    return notYet('AVAILABILITY_RATE', label, '근무달력·교대가 등록되지 않은 설비가 있습니다.');
+    return notYetBecause('CALENDAR_UNRESOLVED', '근무달력·교대가 등록되지 않은 설비가 있습니다.');
   }
-  if (figures.plannedMs <= 0) return notYet('AVAILABILITY_RATE', label, '계획 가동시간이 없습니다.');
+  if (figures.plannedMs <= 0) return notYetBecause('NO_PLANNED_TIME', '계획 가동시간이 없습니다.');
   return {
     cardCode: 'AVAILABILITY_RATE',
     label,
@@ -207,8 +223,8 @@ export function oeeCard(parts: readonly DashboardCard[]): DashboardCard {
  * 빼지 않으므로 음수가 되지 않는다(사용자 결정 2026-10-19 「총 불량은 음수가 될 수 없다 · 불량 상태 데이터만 센다」).
  * 불량률은 0~100 으로 자른다(capRate).
  */
-export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, baseDate: string): DashboardProduction {
-  const today = byDay.get(baseDate);
+export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, range: DashboardRange): DashboardProduction {
+  const today = sumDays(byDay, range);
   const totalQty = today?.totalQty ?? 0;
   const ngQty = today?.ngQty ?? 0;
   return {
@@ -218,4 +234,18 @@ export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, b
     holdQty: today?.holdQty ?? 0,
     defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null,
   };
+}
+
+/** 기간 안 일자 합 — 실적이 하루도 없으면 undefined. */
+function sumDays(byDay: ReadonlyMap<string, DailyProduction>, range: DashboardRange): DailyProduction | undefined {
+  const rows = datesBetween(range).flatMap((day) => byDay.get(day) ?? []);
+  if (rows.length === 0) return undefined;
+  return rows.reduce((sum, row) => ({
+    day: range.to,
+    totalQty: sum.totalQty + row.totalQty,
+    goodQty: sum.goodQty + row.goodQty,
+    ngQty: sum.ngQty + row.ngQty,
+    holdQty: sum.holdQty + row.holdQty,
+    reworkGoodQty: sum.reworkGoodQty + row.reworkGoodQty,
+  }));
 }

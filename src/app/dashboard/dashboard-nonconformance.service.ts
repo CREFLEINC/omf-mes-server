@@ -51,10 +51,10 @@ const EMPTY_FIGURES: NonconformanceFigures = {
 export class DashboardNonconformanceService {
   async read(tx: Tx, plants: readonly DashboardPlant[], period: DashboardPeriod): Promise<NonconformanceFigures> {
     if (plants.length === 0) return EMPTY_FIGURES;
-    const { monthStart, baseDate } = period;
+    const { from, to } = period;
     const inMonth = (column: Prisma.Sql, timezone?: Prisma.Sql) =>
-      Prisma.sql`${coarseRange(column, monthStart, baseDate)}
-        AND ${localDate(column, timezone)} BETWEEN ${monthStart}::date AND ${baseDate}::date`;
+      Prisma.sql`${coarseRange(column, from, to)}
+        AND ${localDate(column, timezone)} BETWEEN ${from}::date AND ${to}::date`;
     const ncTimezone = Prisma.sql`nc.tz`;
     const [row] = await tx.$queryRaw<MonthRow[]>(Prisma.sql`
       WITH ${plantScope(plants)},
@@ -103,7 +103,7 @@ export class DashboardNonconformanceService {
     };
   }
 
-  /** 당월 불량 기록의 현상(파레토)·원인 대분류. 원인은 확정 → 추정 순, 대분류는 상위 원인(없으면 자신). */
+  /** 누계 구간(당월 또는 조회 기간) 불량 기록의 현상(파레토)·원인 대분류. 원인은 확정 → 추정 순, 대분류는 상위 원인(없으면 자신). */
   private async defectRecords(tx: Tx, plants: readonly DashboardPlant[], period: DashboardPeriod) {
     const head = Prisma.sql`WITH ${plantScope(plants)},
       scoped_record AS (
@@ -112,8 +112,8 @@ export class DashboardNonconformanceService {
         LEFT JOIN mdm.production_line pl ON pl.production_line_id = wo.production_line_id
         LEFT JOIN trace.lot lot ON lot.lot_id = dr.lot_id
         JOIN plant_scope ps ON ps.plant_id = COALESCE(pl.plant_id, lot.plant_id)
-        WHERE ${coarseRange(Prisma.sql`dr.detected_at`, period.monthStart, period.baseDate)}
-          AND ${localDate(Prisma.sql`dr.detected_at`)} BETWEEN ${period.monthStart}::date AND ${period.baseDate}::date
+        WHERE ${coarseRange(Prisma.sql`dr.detected_at`, period.from, period.to)}
+          AND ${localDate(Prisma.sql`dr.detected_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
       )`;
     const phenomena = await tx.$queryRaw<
       { defect_code_id: bigint; defect_code: string; defect_name: string; qty: string }[]

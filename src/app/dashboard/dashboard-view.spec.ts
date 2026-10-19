@@ -1,6 +1,7 @@
 import {
   DailyProduction,
   availabilityCard,
+  chartDays,
   oeeCard,
   performanceCard,
   productionCards,
@@ -14,6 +15,8 @@ const day = (value: Partial<DailyProduction> & { day: string }): [string, DailyP
   { totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, reworkGoodQty: 0, ...value },
 ];
 
+const one = (date: string) => ({ from: date, to: date });
+
 const availability = { plannedMs: 8 * 3_600_000, actualMs: 6 * 3_600_000, equipmentCount: 2, excludedSessionCount: 0 };
 
 describe('dashboard view', () => {
@@ -26,22 +29,22 @@ describe('dashboard view', () => {
       day({ day: '2026-10-15', totalQty: 800 }),
       day({ day: '2026-10-16', totalQty: 1000, goodQty: 900, reworkGoodQty: 50 }),
     ]);
-    const [production, yieldRate] = productionCards(byDay, '2026-10-16');
+    const [production, yieldRate] = productionCards(byDay, one('2026-10-16'));
     expect(production).toMatchObject({ cardCode: 'PRODUCTION_QTY', value: 1000, deltaRatio: 0.25, valueStatusCode: 'AVAILABLE' });
     expect(yieldRate).toMatchObject({ cardCode: 'YIELD_RATE', value: 95, unit: '%', valueStatusCode: 'AVAILABLE' });
   });
 
   it('재작업 합격분으로 양품률이 100% 를 넘으면 100 에서 자르고 note 를 붙인다', () => {
     const byDay = new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, reworkGoodQty: 20 })]);
-    const [, yieldRate] = productionCards(byDay, '2026-10-16');
+    const [, yieldRate] = productionCards(byDay, one('2026-10-16'));
     expect(yieldRate).toMatchObject({ value: 100, note: '재작업 합격분 포함' });
-    const [, exact] = productionCards(new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100 })]), '2026-10-16');
+    const [, exact] = productionCards(new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100 })]), one('2026-10-16'));
     expect(exact).toMatchObject({ value: 100 });
     expect(exact).not.toHaveProperty('note');
   });
 
   it('실적이 없으면 생산 수량은 0, 양품률은 NOT_YET, 전일 실적이 없으면 증감을 비운다', () => {
-    const [production, yieldRate] = productionCards(new Map(), '2026-10-16');
+    const [production, yieldRate] = productionCards(new Map(), one('2026-10-16'));
     expect(production.value).toBe(0);
     expect(production).not.toHaveProperty('deltaRatio');
     expect(yieldRate.valueStatusCode).toBe('NOT_YET');
@@ -51,10 +54,10 @@ describe('dashboard view', () => {
     const byDay = new Map([
       day({ day: '2026-10-16', totalQty: 1000, goodQty: 880, ngQty: 100, holdQty: 20, reworkGoodQty: 30 }),
     ]);
-    const section = productionSection(byDay, '2026-10-16');
+    const section = productionSection(byDay, one('2026-10-16'));
     expect(section).toMatchObject({ totalQty: 1000, goodQty: 910, ngQty: 100, holdQty: 20 });
     expect(section.defectRate).toBeCloseTo(10, 9);
-    expect(productionSection(new Map(), '2026-10-16')).toEqual({
+    expect(productionSection(new Map(), one('2026-10-16'))).toEqual({
       totalQty: 0,
       goodQty: 0,
       ngQty: 0,
@@ -66,23 +69,48 @@ describe('dashboard view', () => {
   it('재작업 합격분만 있는 날도 NG 는 음수가 되지 않는다(0), 불량률은 0~100', () => {
     const section = productionSection(
       new Map([day({ day: '2026-10-16', totalQty: 0, goodQty: 0, ngQty: 0, reworkGoodQty: 12 })]),
-      '2026-10-16',
+      one('2026-10-16'),
     );
     expect(section).toEqual({ totalQty: 0, goodQty: 12, ngQty: 0, holdQty: 0, defectRate: null });
     const mixed = productionSection(
       new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, ngQty: 0, reworkGoodQty: 20 })]),
-      '2026-10-16',
+      one('2026-10-16'),
     );
     expect(mixed).toEqual({ totalQty: 100, goodQty: 120, ngQty: 0, holdQty: 0, defectRate: 0 });
   });
 
   it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {
-    const trend = productionTrend(new Map([day({ day: '2026-10-14', totalQty: 30 })]), '2026-10-16', 'now');
+    const trend = productionTrend(
+      new Map([day({ day: '2026-10-14', totalQty: 30 })]),
+      chartDays(one('2026-10-16')),
+      'now',
+    );
     expect(trend.points).toHaveLength(9);
     expect(trend.points[0]).toEqual({ label: '10-08', value: 0 });
     expect(trend.points[6]).toEqual({ label: '10-14', value: 30 });
     expect(trend.points.at(-1)).toEqual({ label: '10-16', value: 0 });
     expect(trend).toMatchObject({ seriesName: '일일 생산실적', unit: 'EA', targetValue: null });
+  });
+
+  it('기간 조회: 합계는 기간 안의 날, 증감은 바로 앞 같은 길이 기간 대비, 추이는 기간 안 일별이다', () => {
+    const byDay = new Map([
+      day({ day: '2026-10-11', totalQty: 100 }),
+      day({ day: '2026-10-12', totalQty: 100 }),
+      day({ day: '2026-10-13', totalQty: 50 }),
+      day({ day: '2026-10-14', totalQty: 300, goodQty: 270, ngQty: 30 }),
+      day({ day: '2026-10-16', totalQty: 100, goodQty: 90, ngQty: 10 }),
+    ]);
+    const range = { from: '2026-10-14', to: '2026-10-16' };
+    const [production, yieldRate] = productionCards(byDay, range);
+    // 직전 같은 길이 = 10-11 ~ 10-13 (250)
+    expect(production).toMatchObject({ value: 400, deltaRatio: 0.6 });
+    expect(yieldRate.value).toBe(90);
+    expect(productionSection(byDay, range)).toMatchObject({ totalQty: 400, ngQty: 40, defectRate: 10 });
+    expect(productionTrend(byDay, chartDays(range), 'now').points).toEqual([
+      { label: '10-14', value: 300 },
+      { label: '10-15', value: 0 },
+      { label: '10-16', value: 100 },
+    ]);
   });
 
   it('시간가동률 = 실제 ÷ 계획, 설비 없는 세션이 있으면 PARTIAL', () => {
@@ -93,9 +121,20 @@ describe('dashboard view', () => {
     });
   });
 
-  it('시간가동률은 작업 설비가 없거나 달력을 못 풀면 NOT_YET', () => {
-    expect(availabilityCard({ ...availability, equipmentCount: 0 }).valueStatusCode).toBe('NOT_YET');
-    expect(availabilityCard({ ...availability, plannedMs: null }).valueStatusCode).toBe('NOT_YET');
+  it('시간가동률 NOT_YET 은 까닭 코드를 싣는다 — 세션 없음 · 달력 못 풂 · 계획 0, 값이 있으면 코드 없음', () => {
+    expect(availabilityCard({ ...availability, equipmentCount: 0 })).toMatchObject({
+      valueStatusCode: 'NOT_YET',
+      notYetReasonCode: 'NO_SESSION',
+    });
+    expect(availabilityCard({ ...availability, plannedMs: null })).toMatchObject({
+      valueStatusCode: 'NOT_YET',
+      notYetReasonCode: 'CALENDAR_UNRESOLVED',
+    });
+    expect(availabilityCard({ ...availability, plannedMs: 0 })).toMatchObject({
+      valueStatusCode: 'NOT_YET',
+      notYetReasonCode: 'NO_PLANNED_TIME',
+    });
+    expect(availabilityCard(availability)).not.toHaveProperty('notYetReasonCode');
   });
 
   it('성능가동률은 100% 를 넘으면 100 에서 자르고, C/T 없는 실적이 있으면 PARTIAL', () => {
@@ -127,7 +166,7 @@ describe('dashboard view', () => {
     const performance = performanceCard({ idealSec: 12 * 3600, includedResultCount: 1, excludedResultCount: 0 }, availability);
     const [, yieldRate] = productionCards(
       new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, reworkGoodQty: 30 })]),
-      '2026-10-16',
+      one('2026-10-16'),
     );
     const full = { plannedMs: 6 * 3_600_000, actualMs: 6 * 3_600_000, equipmentCount: 1, excludedSessionCount: 0 };
     expect([performance.value, yieldRate.value]).toEqual([100, 100]);

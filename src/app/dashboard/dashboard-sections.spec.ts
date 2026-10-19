@@ -1,5 +1,6 @@
 import { EquipmentSignals, equipmentStatus, pickDowntime } from './dashboard-equipment-status';
 import { JudgmentRow, passRate, qualityTypeBlock } from './dashboard-inspection';
+import { topEquipmentDefectRates } from './dashboard-quality.service';
 import { dashboardPeriod } from './dashboard-scope';
 
 const at = (iso: string) => new Date(iso);
@@ -90,13 +91,19 @@ describe('dashboard quality block', () => {
     rejected_qty,
   });
 
-  it('dashboardPeriod 는 당월 1일과 전월 처음·끝을 낸다', () => {
-    expect(dashboardPeriod('2026-03-05')).toEqual({
-      baseDate: '2026-03-05',
-      monthStart: '2026-03-01',
-      previousMonthStart: '2026-02-01',
-      previousMonthEnd: '2026-02-28',
+  it('하루 조회의 누계는 당월 1일~기준일 · 전월이다(기본 화면 유지)', () => {
+    expect(dashboardPeriod({ from: '2026-03-05', to: '2026-03-05' })).toMatchObject({
+      from: '2026-03-01',
+      to: '2026-03-05',
+      previousFrom: '2026-02-01',
+      previousTo: '2026-02-28',
     });
+  });
+
+  it('기간 조회의 누계는 그 기간 · 바로 앞 같은 길이 기간이고, 일별은 기간 안의 날이다', () => {
+    const period = dashboardPeriod({ from: '2026-10-14', to: '2026-10-16' });
+    expect(period).toMatchObject({ from: '2026-10-14', to: '2026-10-16', previousFrom: '2026-10-11', previousTo: '2026-10-13' });
+    expect(period.chartDays).toEqual(['2026-10-14', '2026-10-15', '2026-10-16']);
   });
 
   it('합격률은 보류를 빼고, 모수가 0 이면 null 이다', () => {
@@ -113,7 +120,7 @@ describe('dashboard quality block', () => {
         row('2026-10-16', 'REJECTED', 1, '7'),
         row('2026-10-16', 'HELD', 2),
       ],
-      dashboardPeriod('2026-10-16'),
+      dashboardPeriod({ from: '2026-10-16', to: '2026-10-16' }),
       [],
       [],
     );
@@ -125,5 +132,37 @@ describe('dashboard quality block', () => {
     expect(block.dailyPassRates).toHaveLength(9);
     expect(block.dailyPassRates.at(-1)).toEqual({ date: '2026-10-16', passRate: 50 });
     expect(block.dailyPassRates[0]).toEqual({ date: '2026-10-08', passRate: null });
+  });
+});
+
+describe('dashboard equipment defect rates', () => {
+  const row = (id: number, code: string, total: number, ng: number) => ({
+    equipment_id: BigInt(id),
+    equipment_code: code,
+    total_qty: String(total),
+    ng_qty: String(ng),
+  });
+
+  it('불량률 → NG 수 → 설비 코드 자연 정렬 순 상위 8, 총생산 0 은 뺀다', () => {
+    const rows = [
+      row(1, 'E-1-10', 100, 5),
+      row(2, 'E-1-2', 100, 5),
+      row(3, 'E-1-3', 200, 10),
+      row(4, 'E-1-4', 100, 9),
+      row(5, 'E-1-5', 0, 0),
+      ...Array.from({ length: 6 }, (_, index) => row(10 + index, `E-2-${index}`, 100, 1)),
+    ];
+    const top = topEquipmentDefectRates(rows);
+    expect(top.map((item) => item.equipmentCode)).toEqual([
+      'E-1-4',
+      'E-1-3',
+      'E-1-2',
+      'E-1-10',
+      'E-2-0',
+      'E-2-1',
+      'E-2-2',
+      'E-2-3',
+    ]);
+    expect(top[0]).toEqual({ equipmentId: 4, equipmentCode: 'E-1-4', defectRate: 9, ngQty: 9 });
   });
 });
