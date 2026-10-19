@@ -87,6 +87,14 @@ export function trailingDays(baseDate: string, count: number): string[] {
   );
 }
 
+/**
+ * 대시보드의 률(%)은 0~100 이다(사용자 결정 2026-10-19 · 장부 P-59). 정의상 넘을 수 있는 률(성능률·양품률)은
+ * 100 에서 자른다 — 넘었다는 사실은 그 카드의 기존 note 가 있으면 그것으로만 알린다.
+ */
+export function capRate(value: number): number {
+  return Math.min(100, Math.max(0, value));
+}
+
 export function notYet(cardCode: DashboardCardCode, label: string, note?: string): DashboardCard {
   return omitEmpty({ cardCode, label, value: 0, note, valueStatusCode: 'NOT_YET' as const });
 }
@@ -94,7 +102,7 @@ export function notYet(cardCode: DashboardCardCode, label: string, note?: string
 /**
  * 총생산 = 양품+불량+보류+폐기+재작업. 양품률 = 양품 ÷ 총생산 — 재작업 W/O 에서 합격한 수량은
  * 그 실적이 난 날 NG 에서 양품으로 옮긴다(#116 사용자 결정). 그래서 지난날 NG 의 재작업이
- * 몰린 날은 양품률이 100% 를 넘을 수 있다 — 값을 깎지 않는다.
+ * 몰린 날은 계산값이 100% 를 넘을 수 있다 — 값은 100 에서 자르고 note 로 알린다(capRate).
  */
 export function productionCards(
   byDay: ReadonlyMap<string, DailyProduction>,
@@ -114,13 +122,13 @@ export function productionCards(
   if (today === undefined || totalQty <= 0) {
     return [production, notYet('YIELD_RATE', '양품률', '생산 실적이 없습니다.')];
   }
-  const value = ((today.goodQty + today.reworkGoodQty) / totalQty) * 100;
+  const raw = ((today.goodQty + today.reworkGoodQty) / totalQty) * 100;
   const yieldRate: DashboardCard = omitEmpty({
     cardCode: 'YIELD_RATE' as const,
     label: '양품률',
-    value,
+    value: capRate(raw),
     unit: '%',
-    note: value > 100 ? '재작업 합격분 포함' : undefined,
+    note: raw > 100 ? '재작업 합격분 포함' : undefined,
     valueStatusCode: 'AVAILABLE' as const,
   });
   return [production, yieldRate];
@@ -170,14 +178,15 @@ export function availabilityCard(figures: AvailabilityFigures): DashboardCard {
   return {
     cardCode: 'AVAILABILITY_RATE',
     label,
-    value: (figures.actualMs / figures.plannedMs) * 100,
+    // 분자를 분모와 같은 구간으로 잘라 계산상 100 을 넘지 않는다(DashboardAvailabilityService.actual).
+    value: capRate((figures.actualMs / figures.plannedMs) * 100),
     unit: '%',
     note: `계획 가동시간 기준입니다(설비 비가동 집계와 정의가 다릅니다). 작업한 설비 ${figures.equipmentCount}대.`,
     ...partialIf(figures.excludedSessionCount),
   };
 }
 
-/** 100% 를 넘어도 자르지 않는다 — 표준 C/T 오류를 숨기지 않는다(#118 결정). */
+/** 100% 에서 자른다(사용자 결정 2026-10-19 — 「100% 초과는 그대로 표시」 #118 결정을 대체). */
 export function performanceCard(figures: PerformanceFigures, availability: AvailabilityFigures): DashboardCard {
   const label = '성능가동률';
   if (figures.includedResultCount === 0) return notYet('PERFORMANCE_RATE', label, '표준 C/T 가 있는 실적이 없습니다.');
@@ -185,7 +194,7 @@ export function performanceCard(figures: PerformanceFigures, availability: Avail
   return {
     cardCode: 'PERFORMANCE_RATE',
     label,
-    value: ((figures.idealSec * 1000) / availability.actualMs) * 100,
+    value: capRate(((figures.idealSec * 1000) / availability.actualMs) * 100),
     unit: '%',
     note: APPROXIMATE,
     ...partialIf(figures.excludedResultCount),
@@ -197,6 +206,7 @@ export function oeeCard(parts: readonly DashboardCard[]): DashboardCard {
   if (parts.some((card) => card.valueStatusCode === 'NOT_YET')) {
     return notYet('OEE', label, '시간가동률·성능가동률·양품률 중 아직 없는 값이 있습니다.');
   }
+  // 세 비율이 이미 0~100 이라 곱도 그 안이다.
   return {
     cardCode: 'OEE',
     label,
@@ -209,7 +219,8 @@ export function oeeCard(parts: readonly DashboardCard[]): DashboardCard {
 
 /**
  * 공장 단위 생산 합 — 1차 생산 수량·양품률 카드와 같은 원천·규칙이다(같은 일자 집계를 쓴다).
- * 재작업 합격분은 NG 에서 양품으로 옮긴다. 그래서 지난 NG 의 재작업이 몰린 날은 NG 가 음수일 수 있다 — 깎지 않는다.
+ * 재작업 합격분은 NG 에서 양품으로 옮긴다. 그래서 지난 NG 의 재작업이 몰린 날은 NG 가 음수일 수 있다 — 수량은 깎지 않고
+ * 불량률만 0~100 으로 자른다(capRate · 양품률 카드와 짝).
  */
 export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, range: DashboardRange): DashboardProduction {
   const today = sumDays(byDay, range);
@@ -220,7 +231,7 @@ export function productionSection(byDay: ReadonlyMap<string, DailyProduction>, r
     goodQty: (today?.goodQty ?? 0) + (today?.reworkGoodQty ?? 0),
     ngQty,
     holdQty: today?.holdQty ?? 0,
-    defectRate: totalQty > 0 ? (ngQty / totalQty) * 100 : null,
+    defectRate: totalQty > 0 ? capRate((ngQty / totalQty) * 100) : null,
   };
 }
 

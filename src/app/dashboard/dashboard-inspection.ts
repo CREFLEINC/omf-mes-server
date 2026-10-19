@@ -1,13 +1,14 @@
 import { Prisma } from '@prisma/client';
 
-import { DashboardPeriod, coarseRange, periodStart } from './dashboard-scope';
+import { DashboardPeriod, coarseRange, periodStart, requestPlant } from './dashboard-scope';
 import { DefectPhenomenon, JudgmentCode, LotCounts, QualityTypeBlock } from './dashboard-sections';
 
 export type InspectionType = 'IQC' | 'PQC' | 'OQC';
 
 /**
  * `final_result` CTE — 확정된 검사 결과 중 의뢰마다 «최종 회차»만(재검사 후 합격 = 합격).
- * 공장: IQC = LOT 의 공장 · PQC = W/O 라인의 공장 · OQC = 출하요청의 출하 공장(비면 빠진다).
+ * 공장: IQC = LOT 의 공장 · PQC = W/O 라인의 공장 · OQC = 출하요청의 공장(`requestPlant` — 출하 섹션과 같은 식).
+ * 공장 미지정 출하요청의 OQC 는 어느 공장을 골라도 넣는다 — 범위의 첫 공장 시간대로 날짜를 푼다(사용자 결정 2026-10-19).
  * ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
  */
 export function finalResultCte(period: DashboardPeriod): Prisma.Sql {
@@ -24,7 +25,10 @@ export function finalResultCte(period: DashboardPeriod): Prisma.Sql {
     LEFT JOIN logistics.shipment_request sr
       ON req.target_type_code = 'SHIPMENT_REQUEST' AND sr.shipment_request_id = req.target_id
     JOIN plant_scope ps ON ps.plant_id = CASE req.inspection_type_code
-      WHEN 'IQC' THEN lot.plant_id WHEN 'PQC' THEN pl.plant_id WHEN 'OQC' THEN sr.fulfillment_plant_id END
+      WHEN 'IQC' THEN lot.plant_id WHEN 'PQC' THEN pl.plant_id
+      WHEN 'OQC' THEN CASE WHEN sr.shipment_request_id IS NOT NULL
+        THEN COALESCE(${requestPlant(Prisma.sql`sr`)}, (SELECT MIN(plant_id) FROM plant_scope)) END
+    END
     WHERE ir.status_code = 'CONFIRMED' AND ir.overall_judgment_code IN ('ACCEPTED', 'REJECTED', 'HELD')
       AND ${coarseRange(Prisma.sql`ir.inspected_at`, periodStart(period), period.to)}
       AND ir.inspection_round = (

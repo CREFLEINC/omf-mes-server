@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { DowntimeSummaryCalendarService } from '../../maintenance/downtime/downtime-summary-calendar.service';
 import { plannedSpans } from '../../maintenance/downtime/downtime-summary-planned';
 import type { DashboardRange } from './dashboard-range';
-import { Span, clip, stoppedSpans, subtract, totalLength, union } from './dashboard-intervals';
+import { Span, clip, intersect, stoppedSpans, subtract, totalLength, union } from './dashboard-intervals';
 
 export interface DashboardPlant {
   readonly plantId: bigint;
@@ -80,8 +80,8 @@ export class DashboardAvailabilityService {
       const equipment = scopeEquipment(sessions);
       if (equipment.length === 0) continue;
       const planned = await this.planned(tx, plant, equipment, range);
-      plannedMs = planned === null || plannedMs === null ? null : plannedMs + planned;
-      actualMs += await this.actual(tx, plant, sessions, asOf);
+      plannedMs = planned === null || plannedMs === null ? null : plannedMs + sumLengths(planned);
+      actualMs += await this.actual(tx, plant, sessions, asOf, planned);
       equipmentCount += equipment.length;
     }
     return { plannedMs, actualMs, equipmentCount, excludedSessionCount };
@@ -106,7 +106,7 @@ export class DashboardAvailabilityService {
     plant: DashboardPlant,
     equipment: readonly ScopedEquipment[],
     range: DashboardRange,
-  ): Promise<number | null> {
+  ): Promise<Map<bigint, Span[]> | null> {
     const source = {
       plantId: plant.plantId.toString(),
       businessUnitId: null,
@@ -126,7 +126,7 @@ export class DashboardAvailabilityService {
       range.to,
     );
     const stops = await this.plannedStops(tx, plant, equipment);
-    let total = 0;
+    const byEquipment = new Map<bigint, Span[]>();
     for (const item of equipment) {
       const shifts: Span[] = [];
       const cuts: Span[] = [...(stops.get(item.equipmentId) ?? [])];
@@ -137,9 +137,9 @@ export class DashboardAvailabilityService {
         cuts.push(...holidays.map((span) => ({ start: Number(span.startUs / 1000n), end: Number(span.endUs / 1000n) })));
       }
       const inDay = shifts.map((span) => clip(span, plant.measured)).filter((span): span is Span => span !== null);
-      total += totalLength(subtract(inDay, cuts));
+      byEquipment.set(item.equipmentId, subtract(inDay, cuts));
     }
-    return total;
+    return byEquipment;
   }
 
   private async plannedStops(
@@ -172,12 +172,18 @@ export class DashboardAvailabilityService {
     return byEquipment;
   }
 
-  /** 설비가 있는 세션만 센다 — 설비 없는 세션은 분모(설비 범위)에 없으니 분자에도 넣지 않는다. */
+  /**
+   * 설비가 있는 세션만 센다 — 설비 없는 세션은 분모(설비 범위)에 없으니 분자에도 넣지 않는다.
+   * 분자는 분모와 같은 구간(그 설비의 계획 가동 구간)으로 자른다 — 근무 시간 밖 작업이 가동률을
+   * 100% 넘게 올리지 않는다(사용자 결정 2026-10-19 · 장부 P-59). 근무달력을 못 풀면(`planned === null`)
+   * 가동률은 NOT_YET 이고 이 값은 성능률 분모로만 쓰여 자르지 않는다.
+   */
   private async actual(
     tx: Prisma.TransactionClient,
     plant: DashboardPlant,
     sessions: readonly SessionRow[],
     asOf: number,
+    planned: ReadonlyMap<bigint, Span[]> | null,
   ): Promise<number> {
     const scoped = sessions.filter((row) => row.equipment_id !== null);
     const events = await tx.work_session_event.findMany({
@@ -204,9 +210,14 @@ export class DashboardAvailabilityService {
     }
     // 같은 설비에 겹친 세션은 한 번만 센다 — 설비-시간이다.
     let total = 0;
-    for (const spans of byEquipment.values()) {
-      total += totalLength(union(spans).flatMap((span) => clip(span, plant.measured) ?? []));
+    for (const [equipmentId, spans] of byEquipment) {
+      const measured = union(spans).flatMap((span) => clip(span, plant.measured) ?? []);
+      total += totalLength(planned === null ? measured : intersect(measured, planned.get(equipmentId) ?? []));
     }
     return total;
   }
+}
+
+function sumLengths(byEquipment: ReadonlyMap<bigint, Span[]>): number {
+  return [...byEquipment.values()].reduce((sum, spans) => sum + totalLength(spans), 0);
 }

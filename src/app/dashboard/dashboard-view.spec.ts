@@ -34,10 +34,13 @@ describe('dashboard view', () => {
     expect(yieldRate).toMatchObject({ cardCode: 'YIELD_RATE', value: 95, unit: '%', valueStatusCode: 'AVAILABLE' });
   });
 
-  it('재작업 합격분으로 양품률이 100% 를 넘으면 자르지 않고 note 를 붙인다', () => {
+  it('재작업 합격분으로 양품률이 100% 를 넘으면 100 에서 자르고 note 를 붙인다', () => {
     const byDay = new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, reworkGoodQty: 20 })]);
     const [, yieldRate] = productionCards(byDay, one('2026-10-16'));
-    expect(yieldRate).toMatchObject({ value: 120, note: '재작업 합격분 포함' });
+    expect(yieldRate).toMatchObject({ value: 100, note: '재작업 합격분 포함' });
+    const [, exact] = productionCards(new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100 })]), one('2026-10-16'));
+    expect(exact).toMatchObject({ value: 100 });
+    expect(exact).not.toHaveProperty('note');
   });
 
   it('실적이 없으면 생산 수량은 0, 양품률은 NOT_YET, 전일 실적이 없으면 증감을 비운다', () => {
@@ -61,6 +64,14 @@ describe('dashboard view', () => {
       holdQty: 0,
       defectRate: null,
     });
+  });
+
+  it('재작업 합격분이 몰려 NG 가 음수여도 수량은 그대로, 불량률은 0 에서 자른다', () => {
+    const section = productionSection(
+      new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, ngQty: 0, reworkGoodQty: 20 })]),
+      one('2026-10-16'),
+    );
+    expect(section).toEqual({ totalQty: 100, goodQty: 120, ngQty: -20, holdQty: 0, defectRate: 0 });
   });
 
   it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {
@@ -121,10 +132,14 @@ describe('dashboard view', () => {
     expect(availabilityCard(availability)).not.toHaveProperty('notYetReasonCode');
   });
 
-  it('성능가동률은 100% 를 넘어도 자르지 않고, C/T 없는 실적이 있으면 PARTIAL', () => {
+  it('성능가동률은 100% 를 넘으면 100 에서 자르고, C/T 없는 실적이 있으면 PARTIAL', () => {
+    // 7h ÷ 6h = 116.67% → 100
     const card = performanceCard({ idealSec: 7 * 3600, includedResultCount: 4, excludedResultCount: 1 }, availability);
-    expect(card.value).toBeCloseTo(116.67, 2);
-    expect(card).toMatchObject({ valueStatusCode: 'PARTIAL', excludedCount: 1 });
+    expect(card.value).toBe(100);
+    expect(card).toMatchObject({ valueStatusCode: 'PARTIAL', excludedCount: 1, note: '표준 C/T 기준 근사값입니다.' });
+    expect(
+      performanceCard({ idealSec: 3 * 3600, includedResultCount: 1, excludedResultCount: 0 }, availability).value,
+    ).toBeCloseTo(50, 6);
     expect(
       performanceCard({ idealSec: 0, includedResultCount: 0, excludedResultCount: 2 }, availability).valueStatusCode,
     ).toBe('NOT_YET');
@@ -140,5 +155,17 @@ describe('dashboard view', () => {
     expect(oeeCard([rate(90), rate(80), rate(50)]).value).toBeCloseTo(36, 6);
     expect(oeeCard([rate(90), rate(80, 'PARTIAL'), rate(50)]).valueStatusCode).toBe('PARTIAL');
     expect(oeeCard([rate(90), rate(0, 'NOT_YET'), rate(50)]).valueStatusCode).toBe('NOT_YET');
+  });
+
+  it('OEE 는 100 에서 자른 성능률·양품률로 곱한다 — 100 을 넘지 않는다', () => {
+    const performance = performanceCard({ idealSec: 12 * 3600, includedResultCount: 1, excludedResultCount: 0 }, availability);
+    const [, yieldRate] = productionCards(
+      new Map([day({ day: '2026-10-16', totalQty: 100, goodQty: 100, reworkGoodQty: 30 })]),
+      one('2026-10-16'),
+    );
+    const full = { plannedMs: 6 * 3_600_000, actualMs: 6 * 3_600_000, equipmentCount: 1, excludedSessionCount: 0 };
+    expect([performance.value, yieldRate.value]).toEqual([100, 100]);
+    expect(oeeCard([availabilityCard(availability), performance, yieldRate]).value).toBeCloseTo(75, 6);
+    expect(oeeCard([availabilityCard(full), performance, yieldRate]).value).toBe(100);
   });
 });
