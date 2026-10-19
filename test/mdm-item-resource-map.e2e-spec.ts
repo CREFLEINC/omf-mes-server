@@ -43,7 +43,7 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
   let equipmentId: number;
   let moldA: number;
   let moldB: number;
-  let otherPlantMold: number | null = null;
+  let otherPlantMold: number;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -54,8 +54,8 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
 
     await cleanup();
     await makeUsers();
-    const plants = await prisma.plant.findMany({ take: 2, orderBy: { plant_id: 'asc' } });
-    plantId = Number(plants[0].plant_id);
+    const plant = await prisma.plant.findFirstOrThrow({ orderBy: { plant_id: 'asc' } });
+    plantId = Number(plant.plant_id);
     const uom = await prisma.uom.findFirstOrThrow();
     const item = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT`, item_name: '매핑검사품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id },
@@ -67,7 +67,14 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
     equipmentId = Number(equipment.equipment_id);
     moldA = await makeMold(plantId, 'A');
     moldB = await makeMold(plantId, 'B');
-    if (plants[1] !== undefined) otherPlantMold = await makeMold(Number(plants[1].plant_id), 'X');
+    // 다른 공장 검사가 DB 의 공장 수에 따라 사라지지 않게 공장을 직접 만든다.
+    const entity = await prisma.legal_entity.create({
+      data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '매핑검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
+    });
+    const otherPlant = await prisma.plant.create({
+      data: { legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P`, plant_name: '매핑검사다른공장', timezone_code: 'Asia/Ho_Chi_Minh' },
+    });
+    otherPlantMold = await makeMold(Number(otherPlant.plant_id), 'X');
   });
 
   afterAll(async () => {
@@ -107,11 +114,22 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
     expect(empty.body.errors[0]).toMatchObject({ field: 'equipmentId', code: 'REQUIRED' });
 
     const duplicate = await post({ equipmentId, moldId: moldA }).expect(400);
-    expect(duplicate.body.errors[0]).toMatchObject({ code: 'UNIQUE_VIOLATION' });
+    expect(duplicate.body.errors[0]).toMatchObject({ scope: 'screen', code: 'UNIQUE_VIOLATION' });
 
-    if (otherPlantMold === null) return;
     const cross = await post({ moldId: otherPlantMold }).expect(400);
     expect(cross.body.errors[0]).toMatchObject({ field: 'moldId', code: 'INVALID' });
+  });
+
+  it('⛔ 수정에서 설비·금형을 둘 다 null 로 비우면 400 REQUIRED 다', async () => {
+    const target = (await listOf()).find((row) => row.moldId === moldB);
+    const response = await request(app.getHttpServer())
+      .put(`${PATH}/${target?.itemResourceMapId}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', randomUUID())
+      .set('If-Match', await etagOf(target?.itemResourceMapId ?? 0))
+      .send({ equipmentId: null, moldId: null })
+      .expect(400);
+    expect(response.body.errors[0]).toMatchObject({ field: 'equipmentId', code: 'REQUIRED' });
   });
 
   it('⭐ 사용 중지하면 기본 목록에서 빠지고, 낡은 If-Match 는 409 다', async () => {
@@ -199,6 +217,8 @@ describe('품목 설비·금형 매핑 (e2e)', () => {
     await prisma.mold.deleteMany({ where: { mold_code: { startsWith: PREFIX } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
+    await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;

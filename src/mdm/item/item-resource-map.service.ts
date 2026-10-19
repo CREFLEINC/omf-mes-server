@@ -202,8 +202,14 @@ export class ItemResourceMapService {
   }
 }
 
-/** 기본은 품목·공정마다 하나다 — 새 기본을 세우기 전에 같은 자리의 기본을 내린다. */
+/**
+ * 기본은 품목·공정마다 하나다 — 새 기본을 세우기 전에 같은 자리의 기본을 내린다.
+ * ⛔ 같은 자리를 먼저 잠근다. 두 요청이 동시에 기본을 세우면 서로 상대가 막 넣은 행을 못 봐 둘 다 내릴 것이 없고,
+ *    부분 유일 인덱스 위반이 「같은 조합이 있다」로 잘못 보인다.
+ */
 async function demoteDefault(tx: Prisma.TransactionClient, target: Target, exceptId: bigint | null): Promise<void> {
+  const key = `item_resource_map:${target.plantId}:${target.itemId}:${target.processId ?? '-'}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
   await tx.item_resource_map.updateMany({
     where: {
       plant_id: target.plantId,
@@ -216,11 +222,15 @@ async function demoteDefault(tx: Prisma.TransactionClient, target: Target, excep
   });
 }
 
+/** 다섯 칸 조합의 유일 위반이라 어느 한 칸을 짚지 않는다 — 범위만 알린다(`prisma-error.ts` 와 같은 태도). */
 function rethrowDuplicate(error: unknown): never {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-    throw new ContractException(HttpStatus.BAD_REQUEST, [
-      fieldError('moldId', ERROR_CODE.UNIQUE_VIOLATION, '같은 품목·공정·설비·금형 매핑이 이미 있습니다.'),
-    ]);
+    throw new ContractException(HttpStatus.BAD_REQUEST, [{
+      scope: 'screen',
+      code: ERROR_CODE.UNIQUE_VIOLATION,
+      message: '같은 품목·공정·설비·금형 매핑이 이미 있습니다.',
+      uniqueScope: ['plantId', 'itemId', 'processId', 'equipmentId', 'moldId'],
+    }]);
   }
   throw error;
 }

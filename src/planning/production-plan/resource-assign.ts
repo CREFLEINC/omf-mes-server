@@ -1,6 +1,7 @@
+import { unusable } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
 
-/** 전개가 공정마다 읽는 Routing 공정의 칸. */
+/** 전개가 공정마다 읽는 Routing 공정의 칸. 공정 순서대로 넘긴다. */
 export interface OperationNeed {
   routingOperationId: bigint;
   processId: bigint;
@@ -23,25 +24,31 @@ export interface OperationResource {
   equipmentLineId: bigint | null;
 }
 
-const IN_SERVICE = 'IN_SERVICE';
-
 /**
- * 공정별 기본 매핑을 고른다. 그 공정을 지정한 매핑이 공정 미지정(품목 공통) 매핑을 이긴다.
- * 품목 공통 매핑은 금형이 필요한 공정에만 금형을, 설비가 필요한 공정에만 설비를 준다 —
- * 사출 품목의 조립 공정에 사출 금형이 붙지 않게 한다.
+ * 공정별로 설비·금형을 칸마다 고른다. 그 공정을 지정한 매핑의 칸이 있으면 그것을, 비었으면 품목 공통 매핑의 칸을 쓴다.
+ * 품목 공통 매핑은 그 칸이 필요한(`equipment_required`·`mold_required`) «첫» 공정에만 준다 —
+ * 사출 품목의 조립 공정에 사출 금형이 붙지 않게, 같은 설비가 같은 계획 시간대의 W/O 여럿에 겹쳐 붙지 않게.
  */
 export function assignResources(operations: OperationNeed[], maps: DefaultMap[]): Map<bigint, OperationResource> {
   const common = maps.find((map) => map.processId === null);
+  let commonEquipmentUsed = false;
+  let commonMoldUsed = false;
   const result = new Map<bigint, OperationResource>();
   for (const operation of operations) {
     const own = maps.find((map) => map.processId === operation.processId);
-    const equipment = own ?? (operation.equipmentRequired ? common : undefined);
-    const mold = own ?? (operation.moldRequired ? common : undefined);
-    result.set(operation.routingOperationId, {
-      equipmentId: equipment?.equipmentId ?? null,
-      moldId: mold?.moldId ?? null,
-      equipmentLineId: equipment?.equipmentId == null ? null : equipment.equipmentLineId,
-    });
+    let equipmentId = own?.equipmentId ?? null;
+    let equipmentLineId = own?.equipmentId == null ? null : own.equipmentLineId;
+    if (equipmentId === null && operation.equipmentRequired && !commonEquipmentUsed && common?.equipmentId != null) {
+      equipmentId = common.equipmentId;
+      equipmentLineId = common.equipmentLineId;
+      commonEquipmentUsed = true;
+    }
+    let moldId = own?.moldId ?? null;
+    if (moldId === null && operation.moldRequired && !commonMoldUsed && common?.moldId != null) {
+      moldId = common.moldId;
+      commonMoldUsed = true;
+    }
+    result.set(operation.routingOperationId, { equipmentId, moldId, equipmentLineId });
   }
   return result;
 }
@@ -56,17 +63,20 @@ export async function readDefaultMaps(prisma: PrismaService, plantId: bigint, it
       mold: { select: { mold_id: true, status_code: true, is_active: true } },
     },
   });
-  return rows.map((row) => {
-    const equipment = row.equipment !== null && usable(row.equipment) ? row.equipment : null;
-    const mold = row.mold !== null && usable(row.mold) ? row.mold : null;
-    return {
-      processId: row.process_id,
-      equipmentId: equipment?.equipment_id ?? null,
-      equipmentLineId: equipment?.production_line_id ?? null,
-      moldId: mold?.mold_id ?? null,
-    };
-  });
+  return rows.map((row) => toDefaultMap(row));
 }
 
-const usable = (resource: { status_code: string; is_active: boolean }): boolean =>
-  resource.status_code === IN_SERVICE && resource.is_active;
+export function toDefaultMap(row: {
+  process_id: bigint | null;
+  equipment: { equipment_id: bigint; status_code: string; is_active: boolean; production_line_id: bigint | null } | null;
+  mold: { mold_id: bigint; status_code: string; is_active: boolean } | null;
+}): DefaultMap {
+  const equipment = row.equipment !== null && !unusable(row.equipment) ? row.equipment : null;
+  const mold = row.mold !== null && !unusable(row.mold) ? row.mold : null;
+  return {
+    processId: row.process_id,
+    equipmentId: equipment?.equipment_id ?? null,
+    equipmentLineId: equipment?.production_line_id ?? null,
+    moldId: mold?.mold_id ?? null,
+  };
+}

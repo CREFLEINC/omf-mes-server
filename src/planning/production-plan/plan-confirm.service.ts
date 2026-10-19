@@ -92,7 +92,7 @@ export class PlanConfirmService {
   private async equipmentLines(lineIds: (bigint | null)[]): Promise<Map<bigint, PlanLine>> {
     const ids = [...new Set(lineIds.filter((id) => id !== null))];
     const lines = await Promise.all(ids.map((id) => this.planLine(id)));
-    return new Map(lines.map((line) => [line.productionLineId as bigint, line]));
+    return new Map(ids.map((id, index) => [id, lines[index]]));
   }
 
   /** 계획의 라인과 그 라인의 기본 위치 셋 — 4M 에서 W/O 마다 고르지 않게 미리 채운다. */
