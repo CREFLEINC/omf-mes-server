@@ -56,6 +56,8 @@ export class AttachmentController {
     response.setHeader('Content-Disposition', contentDisposition(inline ? 'inline' : 'attachment', fileName));
     response.setHeader('Cache-Control', 'private, no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    // 바로 여는 PDF 안의 스크립트가 이 출처로 돌지 않게 가둔다(omf-all-around#58).
+    if (inline) response.setHeader('Content-Security-Policy', 'sandbox');
     response.end(bytes);
   }
 }

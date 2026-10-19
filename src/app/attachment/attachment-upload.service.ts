@@ -20,6 +20,17 @@ const MISSING_TARGET = {
 } as const;
 const DOCUMENT_TARGETS: readonly string[] = ['LOT', 'INSPECTION_RESULT'];
 type TargetType = keyof typeof MISSING_TARGET;
+
+/**
+ * 대상 종류마다 올릴 수 있는 화면 권한(omf-all-around#58) — 오퍼레이션 권한표는 `POST /app/attachments` 하나라
+ * 종류를 가리지 않는다. 창고 도면·공지는 종전 `W-CO-08`, 검사 문서는 IQC(`W-01-01`)·OQC(`W-04-03`) 판정 화면.
+ */
+const TARGET_PERMISSIONS: Record<TargetType, readonly string[]> = {
+  WAREHOUSE: ['W-CO-08'],
+  NOTICE: ['W-CO-08'],
+  LOT: ['W-01-01', 'W-04-03'],
+  INSPECTION_RESULT: ['W-01-01', 'W-04-03'],
+};
 const INT64_MAX = 2n ** 63n - 1n;
 /** 계약 `Attachment.contentType` 이 100자다(물리 칸은 150). */
 const MIME = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
@@ -48,6 +59,11 @@ export class AttachmentUploadService {
     if (!session) throw new Error('첨부 올리기는 로그인 세션에서만 온다 — 인증 가드가 먼저 막아야 한다.');
     const root = attachmentRoot();
     const input = parseUpload(body, file);
+    if (!TARGET_PERMISSIONS[input.targetType].some((code) => session.permissions.includes(code))) {
+      throw new ContractException(HttpStatus.FORBIDDEN, [
+        { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '이 대상에 문서를 올릴 권한이 없습니다.' },
+      ]);
+    }
     await this.assertTarget(input.targetType, input.targetId);
 
     const checksum = createHash('sha256').update(input.bytes).digest('hex');
@@ -125,7 +141,7 @@ function parseUpload(body: unknown, file: Express.Multer.File | undefined): Uplo
     : undefined;
   if (file && fileName && targetType !== undefined && DOCUMENT_TARGETS.includes(targetType) && document === undefined
     && file.buffer.length > 0) {
-    errors.push(field('file', ERROR_CODE.INVALID, '볼 수 있는 문서(PDF·이미지·엑셀/워드/파워포인트·CSV)만 올릴 수 있습니다.'));
+    errors.push(field('file', ERROR_CODE.INVALID, '볼 수 있는 문서(PDF·이미지·엑셀/워드/파워포인트·CSV·TXT)만 올릴 수 있습니다.'));
   }
 
   if (errors.length > 0 || !targetType || targetId === undefined || !file || !fileName) {
