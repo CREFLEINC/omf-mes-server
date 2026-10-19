@@ -35,8 +35,8 @@ export async function prepareRejectionDefects(
   if (rows.length > 0 && !isIqc) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   }
-  // 합격·보류로 태어나는 회차에는 불량 기록을 두지 않는다 — `:confirm` 과 같은 규칙(#121 · 장부 P-47).
-  if (rows.length > 0 && bornConfirmed && body.overallJudgmentCode !== REJECTED) {
+  // 불합격이 아닌 회차에는 불량 기록을 두지 않는다 — `:confirm`(#121 · P-47)·작성중 저장(#122 · P-48)과 같은 규칙.
+  if (rows.length > 0 && body.overallJudgmentCode !== REJECTED) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격 판정에만 함께 보낼 수 있습니다.'));
   }
   if (rows.length === 0) {
@@ -107,6 +107,66 @@ export async function syncConfirmDefectsWithin(
   if (input.prepared !== null && !isRejected) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격으로 확정할 때만 보낼 수 있습니다.'));
   }
+  await replaceIqcDefectsWithin(tx, defects, request, input);
+}
+
+/**
+ * 작성중 저장(`PUT …/inspection-results/{id}`)의 불합격 사유(omf-all-around#122 · 장부 P-48) — 트랜잭션 «밖» 검증.
+ * `undefined` = 싣지 않음(기록에 손대지 않는다) · `{ prepared: null }` = 빈 배열(그 회차의 IQC 기록을 지운다).
+ */
+export async function prepareDraftDefects(
+  prisma: PrismaService,
+  defects: DefectRecordWriteService,
+  inspectionResultId: number,
+  body: { overallJudgmentCode?: string; defects?: InspectionDefectInput[] },
+): Promise<{ prepared: PreparedInspectionDefects | null } | undefined> {
+  if (body.defects === undefined) return undefined;
+  if (body.defects.length === 0) return { prepared: null };
+  const result = await prisma.inspection_result.findUnique({
+    where: { inspection_result_id: BigInt(inspectionResultId) },
+    select: { uom_id: true, overall_judgment_code: true, inspection_request: { select: { inspection_type_code: true } } },
+  });
+  // 없는 결과는 트랜잭션이 404 로 답한다.
+  if (result === null) return undefined;
+  if (result.inspection_request.inspection_type_code !== IQC) {
+    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
+  }
+  if ((body.overallJudgmentCode ?? result.overall_judgment_code) !== REJECTED) {
+    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격 판정에만 함께 보낼 수 있습니다.'));
+  }
+  return { prepared: await defects.prepareInspectionDefects(body.defects, Number(result.uom_id)) };
+}
+
+/** 작성중 회차의 IQC 불량 기록을 저장 본문으로 갈아 끼운다 — 저장과 같은 트랜잭션. IQC 가 아니면 손대지 않는다. */
+export async function replaceDraftDefectsWithin(
+  tx: Prisma.TransactionClient,
+  defects: DefectRecordWriteService,
+  input: {
+    inspectionResultId: bigint;
+    prepared: PreparedInspectionDefects | null;
+    detectedAt: Date;
+    actor: { appUserId?: number; workerId?: bigint | null };
+  },
+): Promise<void> {
+  const result = await tx.inspection_result.findUniqueOrThrow({
+    where: { inspection_result_id: input.inspectionResultId },
+    select: { inspection_request: { select: { inspection_type_code: true, lot_id: true, work_order_id: true } } },
+  });
+  if (result.inspection_request.inspection_type_code !== IQC) return;
+  await replaceIqcDefectsWithin(tx, defects, result.inspection_request, input);
+}
+
+async function replaceIqcDefectsWithin(
+  tx: Prisma.TransactionClient,
+  defects: DefectRecordWriteService,
+  request: { lot_id: bigint | null; work_order_id: bigint | null },
+  input: {
+    inspectionResultId: bigint;
+    prepared: PreparedInspectionDefects | null;
+    detectedAt: Date;
+    actor: { appUserId?: number; workerId?: bigint | null };
+  },
+): Promise<void> {
   await removeIqcDefectsWithin(tx, input.inspectionResultId);
   if (input.prepared === null) return;
   await defects.writeInspectionDefectsWithin(

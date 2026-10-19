@@ -49,6 +49,16 @@ export function assertDetectedPeriodRequired(query: { detectedFrom?: string; det
   throw one(field(missing, ERROR_CODE.REQUIRED, '기간(detectedFrom·detectedTo)이 필요합니다.'));
 }
 
+/**
+ * 집계·기간 목록은 «확정된» 검사 결과의 불량 기록만 센다(omf-all-around#122 · 장부 P-48). 작성중 회차에 임시 저장한
+ * IQC 불합격 사유는 아직 판정이 아니다 — 확정이 갈아 끼우거나(불합격) 지운다(합격·보류).
+ * 검사 결과에 붙지 않은 기록(PQC 자재 불량 등)은 그대로 센다.
+ * ⛔ `NOT { inspection_result: … }` 로 쓰지 않는다 — 결과 칸이 null 인 행까지 빠질 수 있다.
+ */
+export const CONFIRMED_INSPECTION_ONLY: Prisma.defect_recordWhereInput = {
+  OR: [{ inspection_result_id: null }, { inspection_result: { is: { status_code: 'CONFIRMED' } } }],
+};
+
 /** ⛔ 끝 경계는 «미만»이다(반열림 · 공유계약 L-3-1) — `detected_at >= from AND detected_at < to`. */
 export function detectedAtWhere(from: string, to: string): Prisma.defect_recordWhereInput {
   return { detected_at: { gte: new Date(from), lt: new Date(to) } };

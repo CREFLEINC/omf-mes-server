@@ -4153,6 +4153,13 @@
      "remarks": {
       "type": "string",
       "example": "값"
+     },
+     "defects": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionDefectInput"
+      },
+      "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 일 때만 — 아니면 400 INVALID. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",

@@ -9,7 +9,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
-import { prepareRejectionDefects } from './inspection-rejection-defects';
+import { prepareDraftDefects, prepareRejectionDefects, replaceDraftDefectsWithin } from './inspection-rejection-defects';
 import { allocateIqcNonconformanceNo } from './iqc-nonconformance';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import {
@@ -163,7 +163,11 @@ export class InspectionResultWriteService {
     await assertCodes(this.prisma, undefined, body.overallJudgmentCode, body.measurements);
     assertQuantityBounds(body);
     assertMeasurementValues(body.measurements);
-    if (context.terminalId === null && context.appUserId !== undefined) await assertAccountWorker(this.prisma, context.appUserId);
+    const workerId =
+      context.terminalId === null && context.appUserId !== undefined
+        ? await assertAccountWorker(this.prisma, context.appUserId)
+        : null;
+    const draftDefects = await prepareDraftDefects(this.prisma, this.defects, inspectionResultId, body);
 
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.inspection_result.findUnique({
@@ -201,6 +205,14 @@ export class InspectionResultWriteService {
       if (body.measurements !== undefined) {
         await tx.inspection_measurement.deleteMany({ where: { inspection_result_id: BigInt(inspectionResultId) } });
         await this.writeMeasurements(tx, BigInt(inspectionResultId), body.measurements, context.appUserId);
+      }
+      if (draftDefects !== undefined) {
+        await replaceDraftDefectsWithin(tx, this.defects, {
+          inspectionResultId: BigInt(inspectionResultId),
+          prepared: draftDefects.prepared,
+          detectedAt: new Date(),
+          actor: { appUserId: context.appUserId, workerId },
+        });
       }
       return { view: await this.reread(tx, BigInt(inspectionResultId)), versionNo: current.version_no + 1 };
     });
