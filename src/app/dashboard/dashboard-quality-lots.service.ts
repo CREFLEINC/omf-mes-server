@@ -4,19 +4,23 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionType, finalResultCte } from './dashboard-inspection';
+import { lotRecordCount } from './dashboard-quality.service';
 import {
+  LotRecordRow,
   OPEN_NC_WHERE,
   PQC_PENDING_CTE,
+  QUALITY_LOT_STATUSES,
+  QualityLotStatus,
   RECEIPT_HOLD_CTE,
   SCOPED_NC_CTE,
+  heldWhere,
+  lotRecordCountSql,
   lotSupplierName,
   pqcEquipmentCode,
 } from './dashboard-quality-status';
 import { isDate } from './dashboard-range';
 import { DashboardScopeQuery, dashboardScope, num, plantScope } from './dashboard-scope';
 
-export const QUALITY_LOT_STATUSES = ['INSPECTION_HELD', 'RECEIPT_HOLD', 'PQC_PENDING', 'NC_OPEN'] as const;
-export type QualityLotStatus = (typeof QUALITY_LOT_STATUSES)[number];
 export const INSPECTION_TYPES: readonly InspectionType[] = ['IQC', 'PQC', 'OQC'];
 
 export interface DashboardQualityLotItem {
@@ -38,6 +42,9 @@ export interface DashboardQualityLots {
   status: QualityLotStatus;
   asOf: string;
   totalCount: number;
+  /** 고유 LOT 수(LOT 없는 줄 제외) · 기록 수 — 대시보드 `quality.statusCounts` 와 같은 식이다. 200줄 제한 전 값. */
+  lotCount: number;
+  recordCount: number;
   items: DashboardQualityLotItem[];
 }
 
@@ -85,13 +92,17 @@ export class DashboardQualityLotsService {
     return this.prisma.$transaction(
       async (tx) => {
         const { plants, period } = await dashboardScope(tx, scopeQuery, now);
-        if (plants.length === 0) return { status, asOf: now.toISOString(), totalCount: 0, items: [] };
+        if (plants.length === 0) {
+          return { status, asOf: now.toISOString(), totalCount: 0, ...lotRecordCount(undefined), items: [] };
+        }
         const scope = plantScope(plants);
         const rows = await tx.$queryRaw<LotRow[]>(listSql(status, scope, period, inspectionType));
+        const [counts] = await tx.$queryRaw<LotRecordRow[]>(lotRecordCountSql(scope, status, period, inspectionType));
         return {
           status,
           asOf: now.toISOString(),
           totalCount: rows[0]?.total_count ?? 0,
+          ...lotRecordCount(counts),
           items: rows.map(item),
         };
       },
@@ -128,8 +139,7 @@ function listSql(
           JOIN mdm.item i ON i.item_id = fr.item_id
           LEFT JOIN trace.lot lot ON lot.lot_id = fr.lot_id
           LEFT JOIN mdm.uom u ON u.uom_id = ir.uom_id
-          WHERE fr.judgment = 'HELD' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
-            AND ${inspectionType === undefined ? Prisma.sql`TRUE` : Prisma.sql`fr.type = ${inspectionType}`}
+          WHERE ${heldWhere(period, inspectionType)}
         ) held ${tail}`;
     case 'RECEIPT_HOLD':
       // 숫자는 LOT 수(COUNT DISTINCT) — 한 LOT 에 보류가 둘이면 먼저 걸린 것 한 줄.

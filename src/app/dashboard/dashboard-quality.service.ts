@@ -12,9 +12,23 @@ import {
 } from './dashboard-inspection';
 import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
-import { PQC_PENDING_CTE, RECEIPT_HOLD_CTE, lotSupplierName, pqcEquipmentCode } from './dashboard-quality-status';
+import {
+  LotRecordRow,
+  PQC_PENDING_CTE,
+  QualityLotStatus,
+  RECEIPT_HOLD_CTE,
+  lotRecordCountSql,
+  lotSupplierName,
+  pqcEquipmentCode,
+} from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
-import { DashboardQuality, DefectPhenomenon, EquipmentDefectRate } from './dashboard-sections';
+import {
+  DashboardQuality,
+  DefectPhenomenon,
+  EquipmentDefectRate,
+  LotRecordCount,
+  QualityStatusCounts,
+} from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
 
@@ -73,6 +87,7 @@ export class DashboardQualityService {
       plants.length === 0
         ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), [], []]
         : await this.queries(tx, plants, period);
+    const statusCounts = await this.statusCounts(tx, plants, period);
 
     const block = (type: InspectionType) =>
       qualityTypeBlock(
@@ -106,6 +121,33 @@ export class DashboardQualityService {
       },
       oqc: { ...block('OQC'), customerReturnQty: nonconformance.customerReturnQty },
       nonconformance: nonconformance.block,
+      statusCounts,
+    };
+  }
+
+  /** 「현재 현황」 n LOT · m건 — 상태별 LOT 목록의 lotCount·recordCount 와 같은 식(`lotRecordCountSql`). */
+  private async statusCounts(
+    tx: Tx,
+    plants: readonly DashboardPlant[],
+    period: DashboardPeriod,
+  ): Promise<QualityStatusCounts> {
+    const read = async (status: QualityLotStatus, type?: InspectionType): Promise<LotRecordCount> => {
+      if (plants.length === 0) return lotRecordCount(undefined);
+      const [row] = await tx.$queryRaw<LotRecordRow[]>(lotRecordCountSql(plantScope(plants), status, period, type));
+      return lotRecordCount(row);
+    };
+    return {
+      INSPECTION_HELD: {
+        ...(await read('INSPECTION_HELD')),
+        byType: {
+          IQC: await read('INSPECTION_HELD', 'IQC'),
+          PQC: await read('INSPECTION_HELD', 'PQC'),
+          OQC: await read('INSPECTION_HELD', 'OQC'),
+        },
+      },
+      RECEIPT_HOLD: await read('RECEIPT_HOLD'),
+      PQC_PENDING: await read('PQC_PENDING'),
+      NC_OPEN: await read('NC_OPEN'),
     };
   }
 
@@ -233,6 +275,10 @@ export function topEquipmentDefectRates(rows: readonly EquipmentDefectRow[]): Eq
 /** 재검사 회차가 없어도 0 으로 싣는다 — null 이면 화면이 칸을 숨긴다(사용자 결정 2026-10-19). */
 export function fullReinspect(row: ReinspectRow | undefined): DashboardQuality['iqc']['fullReinspect'] {
   return { inputQty: num(row?.input_qty), restoredQty: num(row?.restored_qty) };
+}
+
+export function lotRecordCount(row: LotRecordRow | undefined): LotRecordCount {
+  return { lotCount: row?.lot_count ?? 0, recordCount: row?.record_count ?? 0 };
 }
 
 function phenomenon(row: PhenomenonRow): DefectPhenomenon {

@@ -326,6 +326,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(body.quality).toMatchObject({
       iqc: { monthPassRate: null, recentLots: [], fullReinspect: { inputQty: 0, restoredQty: 0 } },
       nonconformance: { overdueCount: null, monthQty: 0 },
+      statusCounts: { RECEIPT_HOLD: { lotCount: 0, recordCount: 0 }, NC_OPEN: { lotCount: 0, recordCount: 0 } },
     });
   });
 

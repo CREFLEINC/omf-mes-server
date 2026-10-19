@@ -101,6 +101,20 @@ export interface EquipmentDefectRate {
   ngQty: number;
 }
 
+/** 「n LOT · m건」 — LOT 없는 기록은 recordCount 에만 든다. */
+export interface LotRecordCount {
+  lotCount: number;
+  recordCount: number;
+}
+
+/** 품질 「현재 현황」 상태별 건수 — 키는 상태별 LOT 목록의 `status` 값이다. */
+export interface QualityStatusCounts {
+  INSPECTION_HELD: LotRecordCount & { byType: Record<'IQC' | 'PQC' | 'OQC', LotRecordCount> };
+  RECEIPT_HOLD: LotRecordCount;
+  PQC_PENDING: LotRecordCount;
+  NC_OPEN: LotRecordCount;
+}
+
 export interface DashboardQuality {
   iqc: QualityTypeBlock & {
     vendorDefects: { partnerId: number; partnerName: string; rejectedQty: number }[];
@@ -124,4 +138,5 @@ export interface DashboardQuality {
     /** 조치 기한(`action_due_date`)을 쓰는 경로가 없다 — 지금은 늘 null(#118 2차 결정 13). */
     overdueCount: number | null;
   };
+  statusCounts: QualityStatusCounts;
 }
