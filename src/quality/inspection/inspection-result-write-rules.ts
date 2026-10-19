@@ -1,7 +1,7 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException, ERROR_CODE, field, one } from '../../common/errors';
+import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { CodeCheck, assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -88,7 +88,12 @@ export async function assertReferences(
 ): Promise<number> {
   const request = await prisma.inspection_request.findUnique({
     where: { inspection_request_id: body.inspectionRequestId },
-    select: { inspection_request_id: true, version_no: true },
+    select: {
+      inspection_request_id: true,
+      version_no: true,
+      inspection_type_code: true,
+      lot: { select: { status_code: true } },
+    },
   });
   if (request === null) throw one(field('inspectionRequestId', ERROR_CODE.INVALID, '없는 검사 의뢰입니다.'));
   // If-Match 는 **선택**이다(오프라인 큐가 토큰을 안 싣는다 · C-9). 값이 오면 의뢰의 버전과
@@ -109,11 +114,34 @@ export async function assertReferences(
   if (previous.inspection_request_id !== request.inspection_request_id) {
     throw one(field('previousResultId', ERROR_CODE.INVALID, '앞 회차가 다른 검사 의뢰의 것입니다.'));
   }
+  assertIqcReinspectable(request.inspection_type_code, request.lot?.status_code);
   const max = await prisma.inspection_result.aggregate({
     where: { inspection_request_id: request.inspection_request_id },
     _max: { inspection_round: true },
   });
   return (max._max.inspection_round ?? 0) + 1;
+}
+
+/**
+ * IQC 재검사 회차는 LOT 이 «검사 대기»일 때만 받는다(omf-all-around#106 · 3단계 검증 2026-10-16).
+ *
+ * ⛔ 불합격(불량) LOT 은 처분 판정을 거쳐야 한다 — 재작업이 검사 대기로 되돌린 뒤에 재검사한다(장부 P-43). 이 가드가 없을 때
+ *    API 로는 처분 전 불량 LOT 에 재검사 회차를 «작성중»으로 만들 수 있었고, 그 회차는 확정할 수 없어(합격·불합격 전이 모두
+ *    `from` 밖 → 400) 영영 남았다. 합격·폐기 LOT 도 다시 검사할 대상이 아니다.
+ * ⚠ 보류 판정(`HELD`)은 LOT 을 검사 대기로 두므로 그대로 재검사할 수 있다. PQC·OQC 재검사는 지금 동작 그대로다.
+ */
+export function assertIqcReinspectable(inspectionTypeCode: string, lotStatusCode: string | undefined): void {
+  if (inspectionTypeCode !== 'IQC' || lotStatusCode === undefined || lotStatusCode === 'INSPECTION_PENDING') return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message:
+        lotStatusCode === 'DEFECTIVE'
+          ? '불합격 LOT 은 처분 판정(재작업) 뒤에 재검사할 수 있습니다.'
+          : '검사 대기 중인 LOT 만 재검사할 수 있습니다.',
+    },
+  ]);
 }
 
 /** ⛔ 종합 판정과 항목 판정은 **그룹이 다르다** — 항목에는 「보류」가 없다(§1-5). */

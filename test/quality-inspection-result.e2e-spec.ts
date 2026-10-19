@@ -635,6 +635,32 @@ describe('검사 의뢰·결과 (e2e)', () => {
       expect(await eventsOf(scrapped)).toHaveLength(0);
     });
 
+    /* omf-all-around#106 — 오프라인 확정도 IQC 불합격 사유가 필요하다. 사유는 같은 본문 `defects` 로 온다(P-42). */
+    it('⛔ `POST` IQC 불합격 확정은 `defects` 가 없으면 400 이고, 있으면 같은 트랜잭션에서 불량 기록이 선다', async () => {
+      const inspectionRequestId = await newConfirmRequest();
+      const rejected = draftBody(inspectionRequestId, {
+        statusCode: 'CONFIRMED',
+        acceptedQty: 80,
+        rejectedQty: 20,
+        overallJudgmentCode: 'REJECTED',
+      });
+
+      const missing = await post(rejected, { workerNo: WORKER_HEADER }).expect(400);
+      expect(missing.body.errors[0]).toMatchObject({ field: 'defects', code: 'REQUIRED' });
+
+      const { defectCodeId } = await ensureIqcDefectSetup();
+      const created = await post(
+        { ...rejected, defects: [{ defectCodeId: Number(defectCodeId), defectQty: 20, defectDescription: '외관 불량' }] },
+        { workerNo: WORKER_HEADER },
+      ).expect(201);
+
+      const rows = await prisma.defect_record.findMany({
+        where: { inspection_result_id: BigInt(created.body.inspectionResultId) },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ source_type_code: 'IQC', defect_description: '외관 불량' });
+    });
+
     it('⭐ 기준 없는 의뢰(`inspectionPlanVersionId=null`)에 `measurements` 없이 201 이 난다', async () => {
       // ⛔ 공유 픽스처 `r5` 를 안 쓴다 — 확정 저장이 의뢰를 `COMPLETED` 로 변형해 앞 describe 의
       //    `r5` 단언과 실행 순서로 결합된다(#320 m-3). 같은 갈래(`기준 없음`)를 자기 의뢰로 세운다.
@@ -1043,6 +1069,40 @@ describe('검사 의뢰·결과 (e2e)', () => {
     return { inspectionRequestId, inspectionResultId: await newDraft(inspectionRequestId, quantities), lotId };
   }
 
+  /** IQC 불합격의 사유 한 줄(omf-all-around#106). 등록 경로의 검증은 `defect-record-write.service.spec.ts` 몫이다. */
+  /** 수입검사 공정과 불량 코드 하나 — 시드가 아니라 이 스위트가 세운다(다시 불러도 같다). */
+  async function ensureIqcDefectSetup(): Promise<{ processId: bigint; defectCodeId: bigint }> {
+    const process = await prisma.process.upsert({
+      where: { process_code: 'IQC' },
+      update: {},
+      create: { process_code: 'IQC', process_name: '수입검사', process_type_code: 'INSPECTION' },
+    });
+    const code = await prisma.defect_code.upsert({
+      where: { defect_code: 'E2E-IQC-DEFECT' },
+      update: {},
+      create: { defect_code: 'E2E-IQC-DEFECT', defect_name: 'e2e 수입검사 불량' },
+    });
+    return { processId: process.process_id, defectCodeId: code.defect_code_id };
+  }
+
+  async function recordDefect(inspectionResultId: number): Promise<void> {
+    const setup = await ensureIqcDefectSetup();
+    const process = { process_id: setup.processId };
+    const code = { defect_code_id: setup.defectCodeId };
+    await prisma.defect_record.create({
+      data: {
+        source_type_code: 'IQC',
+        defect_code_id: code.defect_code_id,
+        defect_qty: 1,
+        uom_id: ids.uom,
+        occurrence_process_id: process.process_id,
+        detection_process_id: process.process_id,
+        inspection_result_id: BigInt(inspectionResultId),
+        detected_at: new Date(),
+      },
+    });
+  }
+
   function confirm(
     inspectionResultId: number,
     body: Record<string, unknown>,
@@ -1135,6 +1195,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
 
     it('⭐ ⓓ 불합격은 `DEFECTIVE`+`C6` 이고 보류를 «닫지 않는다» — `W-01-01` §5-1 「불합격 = Hold 유지 → 반품」', async () => {
       const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
+      await recordDefect(inspectionResultId);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 
@@ -1143,6 +1204,16 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const holds = await holdsOf(lotId);
       expect(holds[0].released_at).toBeNull();
       expect(holds[0].release_reason_code).toBeNull();
+    });
+
+    /* omf-all-around#106 — IQC 불합격은 사유(불량 기록)가 있어야 확정된다(장부 P-42). */
+    it('⛔ IQC 불합격인데 불량 기록이 없으면 400 defectRecords 이고 LOT 이 움직이지 않는다', async () => {
+      const { inspectionResultId, lotId } = await newConfirmable('INSPECTION_PENDING', [INCOMING_HOLD], { rejectedQty: 100 });
+
+      const rejected = await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(400);
+
+      expect(rejected.body.errors[0]).toMatchObject({ field: 'defectRecords', code: 'REQUIRED' });
+      expect(await lotOfId(lotId)).toEqual({ status_code: 'INSPECTION_PENDING', version_no: 1 });
     });
 
     it('보류 판정은 `INSPECTION_PENDING`+`C5` 이고 역시 보류를 닫지 않는다', async () => {
@@ -1308,6 +1379,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const slot = await newLot('NORMAL', { workOrderId, seq: 1 });
       const inspectionRequestId = await newConfirmRequest({ workOrderId, planVersionId: ids.c14PlanVersion });
       const inspectionResultId = await newDraft(inspectionRequestId, { acceptedQty: 80, rejectedQty: 20 });
+      await recordDefect(inspectionResultId);
 
       await confirm(inspectionResultId, { overallJudgmentCode: 'REJECTED' }, 1).expect(200);
 
@@ -1638,6 +1710,10 @@ describe('검사 의뢰·결과 (e2e)', () => {
     };
     // `inspection_measurement` 는 `inspection_result`·`inspection_item_spec` 둘의 자식이다 — 맨 먼저.
     await prisma.inspection_measurement.deleteMany({ where: { inspection_result: resultScope } });
+    // 불합격 확정이 세우는 불량 기록·부적합(omf-all-around#106 · P-42·P-41)도 결과를 쥔다 — 먼저 지운다.
+    await prisma.nonconformance_lot.deleteMany({ where: { nonconformance: { inspection_result: resultScope } } });
+    await prisma.nonconformance.deleteMany({ where: { inspection_result: resultScope } });
+    await prisma.defect_record.deleteMany({ where: { inspection_result: resultScope } });
     // `inspection_result` 는 `inspection_request`·`worker` 둘을 참조한다 — 그 둘보다 먼저 지운다.
     // 회차 자식이 부모를 가리키므로 두 번 돈다(자식 먼저 · §8-2).
     await prisma.inspection_result.deleteMany({ where: { AND: [resultScope, { previous_result_id: { not: null } }] } });

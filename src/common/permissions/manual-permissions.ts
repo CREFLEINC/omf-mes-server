@@ -94,6 +94,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /trace/lots/{lotId}:request-iqc-skip': ['M-01-13'],
   // 승인된 IQC 생략의 실행 — 생략을 승인하는 결재 화면 W-01-02 의 조작이다(omf-all-around#105 · 장부 P-36).
   'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02'],
+  // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
+  // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
+  'POST /quality/defect-records': ['W-01-01'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.

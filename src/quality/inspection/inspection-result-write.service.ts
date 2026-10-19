@@ -7,7 +7,10 @@ import { optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
+import { prepareRejectionDefects } from './inspection-rejection-defects';
+import { allocateIqcNonconformanceNo } from './iqc-nonconformance';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import {
   InspectionMeasurementInput,
@@ -25,6 +28,7 @@ import {
   throwRoundConflict,
 } from './inspection-result-write-rules';
 import { CONFIRMED, assertConfirmedShape, assertMeasurementValues, assertQuantityBounds } from './inspection-rules';
+import { reopenInspectionRequestWithin } from './inspection-request-reopen';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
@@ -45,6 +49,7 @@ export class InspectionResultWriteService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly confirms: InspectionConfirmService,
+    private readonly defects: DefectRecordWriteService,
   ) {}
 
   async create(body: InspectionResultCreate, context: InspectionResultWriteContext): Promise<InspectionResultView> {
@@ -65,6 +70,12 @@ export class InspectionResultWriteService {
     // ⭐ 그 판정이 채번 «앞»이다(#320 m-2) — 뒤에 두면 세션 없는 확정 저장이 번호 하나를
     //    결번으로 남기고 401 을 받는다. 결번 자체는 허용이지만 순서만 바꾸면 안 생긴다.
     const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
+    const defectTarget = await prepareRejectionDefects(this.prisma, this.defects, body, born !== undefined);
+    // 확정으로 태어나는 IQC 불합격은 부적합 번호도 미리 받는다(P-41 · 채번은 트랜잭션 밖).
+    const nonconformanceNo =
+      born === undefined
+        ? undefined
+        : await allocateIqcNonconformanceNo(this.prisma, this.numbering, BigInt(body.inspectionRequestId), body.overallJudgmentCode, born.changedAt);
     const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
 
     return this.prisma
@@ -98,6 +109,19 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
+        // 재검사 회차를 작성중으로 더하면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43). 확정으로 태어나면 아래가 닫는다.
+        if (born === undefined && body.previousResultId !== undefined) {
+          await reopenInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
+        }
+        // 사유가 확정 효과(LOT 전이)보다 «먼저» 선다 — `:confirm` 이 불량 기록을 먼저 요구하는 것과 같은 순서다.
+        if (defectTarget !== null) {
+          await this.defects.writeInspectionDefectsWithin(
+            tx,
+            defectTarget.prepared,
+            { ...defectTarget.target, inspectionResultId: created.inspection_result_id, detectedAt: inspectedAt },
+            { appUserId: context.appUserId, workerId: inspectorId },
+          );
+        }
         if (born !== undefined) {
           await this.confirms.applyConfirmEffects(tx, {
             ...born,
@@ -106,6 +130,8 @@ export class InspectionResultWriteService {
             // `assertConfirmedShape()` 가 확정에는 판정이 있음을 이미 400 으로 강제했다.
             judgment: body.overallJudgmentCode as string,
             rejectedQty: body.rejectedQty,
+            inspectedQty: body.inspectedQty,
+            nonconformanceNo,
           });
         }
         if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
@@ -117,6 +143,7 @@ export class InspectionResultWriteService {
       })
       .catch((error: unknown) => throwRoundConflict(error));
   }
+
 
   /**
    * ⭐ **작성중인 것만 고친다** — 확정본은 **409 `INVALID_STATE`** 다. 계약이 이 자리에만 409 를

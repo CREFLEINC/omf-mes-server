@@ -162,6 +162,8 @@ const WORKER_TABLE_READERS = [
   'mdm/organization/worker.service.ts',
   'production/work-session/work-session-worker.service.ts',
   'production/work-session/work-session.service.ts',
+  // 불량 기록의 귀속 작업자 — 계정에 연결된 작업자(omf-all-around#106 · P-42). 사번 헤더 판정이 아니다.
+  'quality/defect/defect-record-write.service.ts',
   'quality/inspection/inspection-result-write-rules.ts',
   'trace/lot/lot-complete.service.ts',
   'trace/serial-number/serial-number-write-context.ts',
