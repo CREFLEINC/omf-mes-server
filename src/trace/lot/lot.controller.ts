@@ -28,6 +28,7 @@ import {
   LotExternalIdentifierUpsert,
 } from './lot-external-identifier.service';
 import { LotHoldListService } from './lot-hold-list.service';
+import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
 import { LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
@@ -44,6 +45,7 @@ export class LotController {
     private readonly externalIdentifiers: LotExternalIdentifierService,
     private readonly holdList: LotHoldListService,
     private readonly iqcSkips: LotIqcSkipService,
+    private readonly iqcSkipExecutes: LotIqcSkipExecuteService,
   ) {}
 
   @Get()
@@ -178,6 +180,21 @@ export class LotController {
     return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
       this.iqcSkips.requestSkip(lotId, body.reason, context),
     );
+  }
+
+  /**
+   * 승인된 IQC 생략의 실행(omf-all-around#105 · 장부 P-36) — 결재함(W-01-02)의 계정 조작이다.
+   * ⛔ If-Match 를 안 읽는다 — 대상 LOT 을 잠근 뒤 상태로 판정한다(같은 LOT 의 두 번째 실행은 400).
+   */
+  @Post(':lotId\\:skip-iqc')
+  @Contract('POST /trace/lots/{lotId}:skip-iqc')
+  @HttpCode(HttpStatus.OK)
+  skipIqc(@Req() request: Request, @Param('lotId', ParseIntPipe) lotId: number): Promise<unknown> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.iqcSkipExecutes.execute(lotId, appUserId);
+      return (await this.lots.get(lotId, false)).detail;
+    });
   }
 }
 

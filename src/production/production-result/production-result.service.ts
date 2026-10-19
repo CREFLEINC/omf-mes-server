@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { assertNotBlank, optional, resolveWorkerId } from '../../common/master';
-import { LotLifecycleService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import {
+  LotHoldService,
+  LotLifecycleService,
+  LotQualityStatusService,
+  lotsFreeOfOpenHolds,
+  pqcAcceptanceExceeded,
+  Tx,
+  WORK_ORDER_LOT_SOURCE,
+} from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
@@ -31,6 +39,9 @@ const RECORD_ACTION = 'production-result-recorded';
  * **이미 데이터에 있는 값**을 든다. ⛔ 이 값으로 «아무것도 거르지 않는다»(§2-3).
  */
 export const RESULT_STATUS = 'CONFIRMED';
+const PQC = 'PQC';
+const CANCELLED = 'CANCELLED';
+const ACCEPTED = 'ACCEPTED';
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 **선택** — 없으면 대조를 건너뛴다(§4-6 · C-9). */
 export interface ProductionResultContext {
@@ -61,6 +72,8 @@ export class ProductionResultService {
     private readonly prisma: PrismaService,
     private readonly numbering: NumberingService,
     private readonly lots: LotLifecycleService,
+    private readonly qualities: LotQualityStatusService,
+    private readonly holds: LotHoldService,
   ) {}
 
   async create(body: ProductionResultCreate, context: ProductionResultContext): Promise<ProductionResultView> {
@@ -117,7 +130,61 @@ export class ProductionResultService {
       // 전이 시각은 단말이 보낸 «사건» 시각 — 수신 시각을 쓰면 재전송이 하루 뒤 이력을 찍는다.
       changedAt: occurredAt,
     });
+    await this.releaseUninspectedLots(tx, prepared);
     return productionResultView(row);
+  }
+
+  /**
+   * 배분한 생산LOT 을 검사대기 → 정상으로 올린다(omf-all-around#105). PQC 의뢰가 없는 W/O 는
+   * 검사를 하지 않으므로 실적이 곧 정상이고(C21), 이미 PQC 합격 확정이 난 W/O 는 그 판정을 따른다(C4).
+   * PQC 가 열려 있거나 불합격·보류면 그대로 둔다 — 확정이 옮긴다.
+   * ⚠ 이력 원천: C4 는 그 합격 검사 결과를 가리키고, C21 은 비운다 — 계약의 원천 유형 enum 에
+   *   생산 실적이 없다(값을 늘리지 않는다 · 유형·id 는 함께 비는 것이 허용된다).
+   */
+  private async releaseUninspectedLots(tx: Tx, prepared: PreparedResult): Promise<void> {
+    if (prepared.allocations.length === 0) return;
+    const pqc = await tx.inspection_request.findMany({
+      where: { work_order_id: BigInt(prepared.body.workOrderId), inspection_type_code: PQC, status_code: { not: CANCELLED } },
+      select: {
+        status_code: true,
+        inspection_plan_version: { select: { acceptance_number: true } },
+        inspection_result: {
+          where: { status_code: RESULT_STATUS },
+          orderBy: { inspection_round: 'desc' },
+          take: 1,
+          select: { inspection_result_id: true, overall_judgment_code: true, rejected_qty: true },
+        },
+      },
+    });
+    // ⛔ 합격이어도 C14(불합격 수 > 합격판정개수)가 걸린 결과는 정상 전환의 근거가 아니다 — 확정이 검사 대기로 돌린 것을 덮는다(#105 리뷰).
+    const accepted = pqc.every((request) => {
+      const latest = request.inspection_result[0];
+      return (
+        latest?.overall_judgment_code === ACCEPTED &&
+        !pqcAcceptanceExceeded(latest.rejected_qty.toNumber(), request.inspection_plan_version?.acceptance_number)
+      );
+    });
+    if (pqc.length > 0 && !accepted) return;
+    const source =
+      pqc.length === 0
+        ? {}
+        : { sourceDocumentTypeCode: 'INSPECTION_RESULT', sourceDocumentId: pqc[0].inspection_result[0].inspection_result_id };
+    const actor =
+      prepared.context.appUserId !== undefined
+        ? { changedBy: BigInt(prepared.context.appUserId) }
+        : { changedWorkerId: prepared.workerId };
+    // 다른 열린 보류(의심자재 등)가 있는 LOT 은 올리지 않는다 — IQC 확정과 같은 규율(#105 리뷰).
+    const free = await lotsFreeOfOpenHolds(
+      tx,
+      this.holds,
+      prepared.allocations.map((allocation) => BigInt(allocation.lotId)),
+    );
+    await this.qualities.moveWithin(
+      tx,
+      free,
+      pqc.length === 0 ? 'inspection-not-required' : 'inspection-accepted',
+      { ...actor, changedAt: prepared.occurredAt, ...source },
+    );
   }
 
   private insertHeader(tx: Tx, prepared: PreparedResult, resultSequence: number) {

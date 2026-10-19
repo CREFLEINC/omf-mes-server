@@ -10,6 +10,9 @@ import {
   LotHoldService,
   LotQualityMoveContext,
   LotQualityStatusService,
+  lotsFreeOfOpenHolds,
+  pqcAcceptanceExceeded,
+  PREISSUED_LIFECYCLE,
   Tx,
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
@@ -183,7 +186,37 @@ export class InspectionConfirmService {
       sourceDocumentId: input.inspectionResultId,
     };
     await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
-    await this.spreadC14(tx, request, input.rejectedQty, moveContext);
+    const c14 = await this.spreadC14(tx, request, input.rejectedQty, moveContext);
+    // ⛔ C14 가 걸린 합격은 정상 전환을 하지 않는다 — 방금 검사 대기로 돌린 LOT 을 같은 트랜잭션에서 되돌린다(#105 리뷰).
+    if (!c14) await this.releasePqcLots(tx, request, input.judgment, moveContext);
+  }
+
+  /**
+   * PQC 합격이면 그 W/O 의 **생산된** 검사대기 생산LOT 을 정상으로 올린다(omf-all-around#105 · C4).
+   * PQC 의뢰는 W/O 대상이라(`lot_id` null) `moveTargetLot` 이 LOT 을 옮기지 못한다 — 그대로 두면
+   * 생산LOT 이 정상이 되는 길이 없어 다음 공정 투입·출하가 막힌다.
+   * ⛔ 아직 실적이 없는 슬롯(`WAITING`)은 옮기지 않는다 — 실물이 없는 LOT 을 정상으로 만들지 않는다.
+   */
+  private async releasePqcLots(
+    tx: Tx,
+    request: { inspection_type_code: string; work_order_id: bigint | null },
+    judgment: string,
+    context: LotQualityMoveContext,
+  ): Promise<void> {
+    if (request.inspection_type_code !== PQC || request.work_order_id === null || judgment !== ACCEPTED) return;
+    const lots = await tx.lot.findMany({
+      where: {
+        source_type_code: WORK_ORDER_LOT_SOURCE,
+        source_id: request.work_order_id,
+        work_order_lot_seq: { not: null },
+        status_code: 'INSPECTION_PENDING',
+        lifecycle_status_code: { not: PREISSUED_LIFECYCLE },
+      },
+      select: { lot_id: true },
+    });
+    // 다른 열린 보류(의심자재 등)가 있는 LOT 은 올리지 않는다 — IQC 확정과 같은 규율(#105 리뷰).
+    const free = await lotsFreeOfOpenHolds(tx, this.holds, lots.map((lot) => lot.lot_id));
+    await this.lots.moveWithin(tx, free, 'inspection-accepted', context);
   }
 
   /**
@@ -274,11 +307,11 @@ export class InspectionConfirmService {
     },
     rejectedQty: number,
     context: LotQualityMoveContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const acceptanceNumber = request.inspection_plan_version?.acceptance_number ?? null;
     const workOrderId = request.work_order_id;
-    if (request.inspection_type_code !== PQC || workOrderId === null || acceptanceNumber === null) return;
-    if (rejectedQty <= acceptanceNumber) return;
+    if (request.inspection_type_code !== PQC || workOrderId === null) return false;
+    if (!pqcAcceptanceExceeded(rejectedQty, acceptanceNumber)) return false;
 
     const lots = await tx.lot.findMany({
       // 선발행 슬롯이 생산LOT 이다(`lot-registry.service.ts:145-160`) — 두 칸으로 좁힌다.
@@ -295,6 +328,7 @@ export class InspectionConfirmService {
       'pqc-acceptance-exceeded',
       context,
     );
+    return true;
   }
 }
 

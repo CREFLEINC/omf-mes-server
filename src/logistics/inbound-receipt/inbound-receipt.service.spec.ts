@@ -156,7 +156,7 @@ function fake(options: Options = {}) {
     inspection_request: {
       create: async ({ data }: { data: Args }) => {
         recorded.inspectionRequests.push(data);
-        return {};
+        return { inspection_request_id: 6100n };
       },
     },
   };
@@ -229,13 +229,18 @@ describe('InboundReceiptService.create', () => {
     const actor = { workerId: 8n, terminalAudit: { workerId: 8n, workerNo: 'W8',
       terminalId: 4n, plantId: 30n, correlationId: 'inbound-1',
       operationKey: 'POST /logistics/inbound-receipts' } };
-    const ok = fake();
+    // IQC 대상 품목이어야 보류가 선다(무검사는 보류가 없다 · omf-all-around#105).
+    const ok = fake({ inspectionRequired: true });
     await ok.service.create(input(), actor);
     expect(ok.recorded.header).toMatchObject({ created_by: null, received_by: null });
     expect(ok.recorded.holds[0]).toMatchObject({ held_worker_id: 8n, held_by: null });
-    expect(ok.recorded.audits.map((row) => row.target_type_code)).toEqual(['LOT', 'INBOUND_RECEIPT']);
+    expect(ok.recorded.audits.map((row) => row.target_type_code)).toEqual([
+      'INSPECTION_REQUEST',
+      'LOT',
+      'INBOUND_RECEIPT',
+    ]);
     expect(ok.recorded.committed).toBe(true);
-    const fail = fake({ auditFails: true });
+    const fail = fake({ auditFails: true, inspectionRequired: true });
     await expect(fail.service.create(input(), actor)).rejects.toThrow('audit unavailable');
     expect(fail.recorded.committed).toBe(false);
   });
@@ -462,8 +467,16 @@ describe('InboundReceiptService.create', () => {
     expect(recorded.lines[0].manufactured_date).toEqual(new Date('2026-08-01T00:00:00.000Z'));
   });
 
-  it('LOT — 등록 즉시 lot_hold 가 선다(INCOMING_INSPECTION_WAIT · HELD)', async () => {
+  it('LOT — 무검사 품목은 lot_hold 가 서지 않는다(omf-all-around#105)', async () => {
     const { service, recorded } = fake();
+
+    await service.create(input(), 99);
+
+    expect(recorded.holds).toHaveLength(0);
+  });
+
+  it('LOT — IQC 대상은 등록 즉시 lot_hold 가 선다(INCOMING_INSPECTION_WAIT · HELD)', async () => {
+    const { service, recorded } = fake({ inspectionRequired: true });
 
     await service.create(input(), 99);
 

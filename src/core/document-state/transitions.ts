@@ -234,6 +234,15 @@ export const TRANSITIONS: TransitionRegistry = {
     'stock-reinstate': { from: ['DEFECTIVE', 'NORMAL', 'INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C20', sourceOperation: 'POST /logistics/stock-reinstatements' },
 
+    // ── 검사 생략·비대상(omf-all-around#105 · 2026-10-16 결정) ─────────────
+    // ⭐ 코드는 «우리가 정했다» — 계약 응답 enum 에 없다(P-35 · 지킴이 `contract-lot-transition-enum.spec.ts`).
+    // PQC 의뢰가 없는 W/O 의 생산LOT 은 실적이 곧 정상이다(검사를 하지 않는다).
+    'inspection-not-required': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C21', sourceOperation: 'POST /production/production-results' },
+    // 승인된 IQC 생략의 실행 — 승인 자체는 LOT 을 옮기지 않는다(공유계약 J-8).
+    'iqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C22', sourceOperation: 'POST /trace/lots/{lotId}:skip-iqc' },
+
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
     // ⭐ `from` 이 셋인 근거 — 대상 LOT 의 출발이 원천 둘로 갈린다. `PRODUCT`(OQC 불합격)는

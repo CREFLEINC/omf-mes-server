@@ -442,6 +442,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'RETEST_FAIL', codeName: '재검사 불합격', order: 20 },
       { code: 'INVESTIGATION_CLEARED', codeName: '조사 종결', order: 30 },
       { code: 'MANAGER_OVERRIDE', codeName: '관리자 직권 해제', order: 40 },
+      // 승인된 IQC 생략의 실행(omf-all-around#105) — 마이그 20261016090000 에도 있다.
+      { code: 'INCOMING_INSPECTION_SKIPPED', codeName: '수입검사 생략', order: 50 },
     ],
   },
   {
@@ -538,6 +540,9 @@ const SEED: CodeGroupSeed[] = [
       // ⭐ 재등록(I-23)은 «우리가 정했다» — 결정 · 통보 218(근거는 통보 089 `:69-70`).
       //    배포는 시드를 안 돌리므로 마이그레이션에도 같은 한 줄이 있다.
       { code: 'C20', codeName: '재등록 → 정상', order: 130 },
+      // ⭐ 검사 비대상·생략(omf-all-around#105) — 마이그 20261016090000 에도 같은 두 줄이 있다.
+      { code: 'C21', codeName: '검사 비대상 → 정상', order: 140 },
+      { code: 'C22', codeName: 'IQC 생략 → 정상', order: 150 },
     ],
   },
   {

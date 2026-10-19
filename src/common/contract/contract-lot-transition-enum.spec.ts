@@ -15,6 +15,11 @@ const LOT_QUALITY_STATUS = 'trace.lot.status_code';
 
 /** v0.1.2 응답 enum에는 들어왔지만 질의 enum에는 아직 없는 값(계약 x-omf-known-differences). */
 const KNOWN_QUERY_GAP = ['C17', 'C18', 'C19', 'C20'];
+/**
+ * 서버가 계약보다 먼저 쓰는 코드(P-35 · omf-all-around#105). 계약 사본이 받아 오면 이 목록을
+ * 비우고 위 기대가 다시 `[]` 가 된다 — ⛔ 사본을 직접 고치지 않는다.
+ */
+const SERVER_AHEAD_CODES = ['C21', 'C22'];
 
 describe('계약 사본 — LOT 전이 코드의 enum 간극 (통보 089·218)', () => {
   const contract = JSON.parse(readFileSync(CONTRACT, 'utf8')) as {
@@ -39,10 +44,10 @@ describe('계약 사본 — LOT 전이 코드의 enum 간극 (통보 089·218)',
       .flatMap((transition) => (transition.transitionCode === undefined ? [] : [transition.transitionCode]))
       .sort();
 
-  it('⭐ v0.1.2 응답 enum은 서버가 쓰는 LOT 전이 코드 전건을 담는다', () => {
+  it('⭐ v0.1.2 응답 enum은 서버가 쓰는 LOT 전이 코드 전건을 담는다 — 선행 C21·C22 만 예외다', () => {
     const outside = usedCodes().filter((code) => !responseEnum().includes(code));
 
-    expect(outside).toEqual([]);
+    expect(outside).toEqual(SERVER_AHEAD_CODES);
   });
 
   it('⚠ v0.1.2에 명시된 질의 enum 간극은 C17~C20 넷으로 고정된다', () => {
@@ -54,8 +59,8 @@ describe('계약 사본 — LOT 전이 코드의 enum 간극 (통보 089·218)',
   it('⭐ 응답 enum은 실제 사용 코드보다 넓을 수 있다', () => {
     const used = usedCodes();
 
-    expect(used.filter((code) => !responseEnum().includes(code))).toEqual([]);
+    expect(used.filter((code) => !responseEnum().includes(code))).toEqual(SERVER_AHEAD_CODES);
     // 계약 9값 중 우리가 «안 쓰는» 것도 있다 — 그것은 정상이다(다른 슬라이스가 열 자리).
-    expect(used.length).toBeLessThan(responseEnum().length);
+    expect(used.filter((code) => !SERVER_AHEAD_CODES.includes(code)).length).toBeLessThan(responseEnum().length);
   });
 });

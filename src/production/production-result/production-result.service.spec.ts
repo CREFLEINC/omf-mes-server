@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
-import { LotLifecycleService, LotMoveInput } from '../../core/lot';
+import { LotHoldService, LotLifecycleService, LotMoveInput, LotQualityStatusService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductionResultCreate } from './production-result-rules';
@@ -49,12 +49,21 @@ interface StubOptions {
   maxSequence?: number | null;
   slots?: { lot_id: bigint; lifecycle_status_code: string | null }[];
   worker?: boolean;
+  /** 그 W/O 의 PQC 의뢰와 최신 확정 결과 — 비우면 PQC 비대상이다(omf-all-around#105). */
+  pqc?: {
+    status_code: string;
+    inspection_plan_version?: { acceptance_number: number | null } | null;
+    inspection_result: { inspection_result_id: bigint; overall_judgment_code: string; rejected_qty: Prisma.Decimal }[];
+  }[];
+  /** 다른 열린 보류가 있는 LOT — 정상으로 올리지 않는다(#105 리뷰). */
+  heldLotIds?: bigint[];
 }
 
 function stub(options: StubOptions = {}) {
   const created: Row[] = [];
   const allocated: Row[] = [];
   const moves: LotMoveInput[] = [];
+  const qualityMoves: { lotIds: bigint[]; action: string; ctx: Row }[] = [];
   const numbered: unknown[][] = [];
   const workerWheres: Row[] = [];
   const resultWheres: Row[] = [];
@@ -63,6 +72,8 @@ function stub(options: StubOptions = {}) {
   const order: string[] = [];
 
   const tx = {
+    inspection_request: { findMany: () => Promise.resolve(options.pqc ?? []) },
+    lot_hold: { findMany: () => Promise.resolve((options.heldLotIds ?? []).map((lot_id) => ({ lot_id }))) },
     $queryRaw: () => {
       order.push('lock');
       return Promise.resolve([
@@ -139,9 +150,18 @@ function stub(options: StubOptions = {}) {
       return Promise.resolve({ movedLotIds: input.lotIds, skippedLotIds: [] });
     },
   } as unknown as LotLifecycleService;
+  const qualities = {
+    moveWithin: (_tx: unknown, lotIds: bigint[], action: string, ctx: Row) => {
+      qualityMoves.push({ lotIds, action, ctx });
+      return Promise.resolve({ movedLotIds: lotIds, skippedLotIds: [] });
+    },
+  } as unknown as LotQualityStatusService;
 
   return {
-    service: new ProductionResultService(prisma, numbering, lots),
+    service: new ProductionResultService(prisma, numbering, lots, qualities, {
+      lockLotsWithin: () => Promise.resolve([]),
+    } as unknown as LotHoldService),
+    qualityMoves,
     created,
     allocated,
     moves,
@@ -230,6 +250,52 @@ describe('생산 실적 등록 (I-7 PR ②)', () => {
     // ⛔ `UNIQUE_VIOLATION` 이 아니다 — 요청 안의 중복은 저장 충돌이 아니라 입력 오류다.
     expect(errorsOf(caught)).toMatchObject([{ field: 'lotAllocations', code: ERROR_CODE.INVALID }]);
     expect(harness.next).not.toHaveBeenCalled();
+  });
+
+  /* omf-all-around#105 — 생산LOT 이 정상이 되는 자리. */
+  describe('품질 판정 — 검사대기 생산LOT 정상 전환', () => {
+    const record = (pqc?: StubOptions['pqc'], heldLotIds?: bigint[]) => {
+      const harness = stub({ slots: [slot(31n, 'WAITING')], pqc, heldLotIds });
+      return harness.service
+        .create(body({ goodQty: 10, lotAllocations: [{ lotId: 31, allocatedQty: 3 }] }), context())
+        .then(() => harness.qualityMoves);
+    };
+
+    it('PQC 의뢰가 없는 W/O 는 실적이 곧 정상이다(C21 · 원천 없음)', async () => {
+      const moves = await record();
+      expect(moves).toEqual([{ lotIds: [31n], action: 'inspection-not-required', ctx: expect.objectContaining({ changedBy: 9n }) }]);
+      expect(moves[0].ctx).not.toHaveProperty('sourceDocumentTypeCode');
+    });
+
+    it('PQC 가 열려 있으면 옮기지 않는다 — 확정이 옮긴다', async () => {
+      expect(await record([{ status_code: 'REQUESTED', inspection_result: [] }])).toEqual([]);
+    });
+
+    it('PQC 가 불합격·보류면 옮기지 않는다', async () => {
+      const result = [{ inspection_result_id: 5n, overall_judgment_code: 'HELD', rejected_qty: new Prisma.Decimal(0) }];
+      expect(await record([{ status_code: 'COMPLETED', inspection_result: result }])).toEqual([]);
+    });
+
+    it('이미 PQC 합격이면 그 판정을 따른다(C4 · 검사 결과 원천)', async () => {
+      const result = [{ inspection_result_id: 5n, overall_judgment_code: 'ACCEPTED', rejected_qty: new Prisma.Decimal(0) }];
+      const moves = await record([{ status_code: 'COMPLETED', inspection_result: result }]);
+      expect(moves[0]).toMatchObject({
+        action: 'inspection-accepted',
+        ctx: { sourceDocumentTypeCode: 'INSPECTION_RESULT', sourceDocumentId: 5n },
+      });
+    });
+
+    /* #105 리뷰 — 확정이 C14 로 검사 대기에 둔 W/O 에서 실적이 「최신 PQC 합격」만 보고 정상으로 올리면 C14 를 덮는다. */
+    it('⛔ 최신 PQC 가 합격이어도 C14(불합격 수 > 합격판정개수)가 걸렸으면 옮기지 않는다', async () => {
+      const result = [{ inspection_result_id: 5n, overall_judgment_code: 'ACCEPTED', rejected_qty: new Prisma.Decimal(3) }];
+      const pqc = [{ status_code: 'COMPLETED', inspection_plan_version: { acceptance_number: 1 }, inspection_result: result }];
+      expect(await record(pqc)).toEqual([]);
+    });
+
+    it('⛔ 다른 열린 보류가 있는 LOT 은 정상으로 올리지 않는다(C21 도 같다)', async () => {
+      const moves = await record(undefined, [31n]);
+      expect(moves).toEqual([{ lotIds: [], action: 'inspection-not-required', ctx: expect.anything() }]);
+    });
   });
 
   it('배분 — 이 W/O 의 슬롯이 아니면 400 이다', async () => {

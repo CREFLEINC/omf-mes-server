@@ -6596,6 +6596,74 @@
     "x-internal-note": "approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id 로 서버가 채운다(M-01-13 §5-A · 공유계약 A-16 등재 대상)."
    }
   },
+  "/trace/lots/{lotId}:skip-iqc": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "승인된 IQC 생략 실행",
+    "description": "긴급 IQC 생략 요청이 **승인된** 입하 LOT 의 수입검사를 생략한다 — 열린 IQC 의뢰를 `SKIPPED` 로 닫고, 수입검사 대기 보류를 `INCOMING_INSPECTION_SKIPPED` 사유로 해제하고, 다른 열린 보류가 없으면 LOT 을 `NORMAL` 로 옮긴다(전이 C22). ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 승인된 요청이 없거나 LOT 이 수입검사 대기가 아니면 400(code=STATE_LOCKED). 근거: W-01-02 · omf-all-around#105 (서버 선행 · 장부 P-36)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "생략 실행됨 — 실행 뒤 LOT 상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LotDetailResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "승인 조회: approval_type_code=IQC_SKIP · target_type_code=INBOUND_LOT · target_id=lot_id · status_code=APPROVED. 서버 선행(장부 P-36)."
+   }
+  },
   "/trace/lots/{lotId}:complete": {
    "parameters": [
     {

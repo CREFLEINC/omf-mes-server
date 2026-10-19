@@ -19,6 +19,8 @@ import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 export const INSPECTION_HOLD_REASON = 'INCOMING_INSPECTION_WAIT';
 /** 등록 시점의 품질 판정 — 검사 대기다(시드 `LOT_STATUS`). */
 export const INITIAL_LOT_STATUS = 'INSPECTION_PENDING';
+/** 무검사 입하 LOT 의 등록 상태 — 검사를 하지 않으므로 처음부터 정상이다(omf-all-around#105). */
+const NO_INSPECTION_LOT_STATUS = 'NORMAL';
 /** 이 원천만 역방향(라인 → LOT) 칸을 갖는다. */
 const INBOUND_RECEIPT_LINE = 'INBOUND_RECEIPT_LINE';
 /** 선발행 슬롯의 생명주기 첫 상태 — 「예약」에 해당한다(시드 `LOT_LIFECYCLE_STATUS`). */
@@ -81,6 +83,9 @@ export class LotRegistryService {
    */
   async createWithin(tx: Tx, input: LotRegisterInput, actor: LotRegisterActor): Promise<LotRow> {
     const appUserId = typeof actor === 'number' ? actor : undefined;
+    // 무검사(IQC 비대상) 입하 LOT 은 검사 대기 보류를 걸지 않고 정상으로 세운다(omf-all-around#105 ·
+    // 2026-10-16 결정). 입하가 아닌 원천(재생재 I-17 등)은 종전 그대로 검사 대기다.
+    const awaitsInspection = input.incomingIqc !== undefined || input.sourceTypeCode !== INBOUND_RECEIPT_LINE;
     const iqcPlanVersionId = input.incomingIqc
       ? await resolveIncomingIqcPlanVersion(tx, input.itemId, input.incomingIqc.effectiveDate)
       : undefined;
@@ -94,7 +99,7 @@ export class LotRegistryService {
         uom_id: input.uomId,
         source_type_code: input.sourceTypeCode,
         source_id: input.sourceId,
-        status_code: INITIAL_LOT_STATUS,
+        status_code: awaitsInspection ? INITIAL_LOT_STATUS : NO_INSPECTION_LOT_STATUS,
         manufactured_at: optionalInstant(input.manufacturedAt),
         expiry_date: optionalDay(input.expiryDate),
         remarks: input.remarks ?? null,
@@ -107,22 +112,7 @@ export class LotRegistryService {
     //    그래도 부르는 이유는 **표식에 예외를 두지 않으려는 것** — 예외를 내려면 `LockedLot` 발급
     //    경로가 하나 더 생기고 그러면 리뷰가 실측한 우회가 «권장 관용구»가 된다.
     //    비용: LOT 마다 왕복 1회(입하는 라인 수만큼).
-    const locked = await this.holds.lockLotsWithin(tx, [lot.lot_id]);
-    await this.holds.holdWithin(
-      tx,
-      locked,
-      // `targetLotStatusCode` 는 이 보류가 LOT 을 «보낸» 곳 — 위 `lot.create` 와 같은 상수다(#351 G-5).
-      [
-        {
-          lotId: lot.lot_id,
-          reasonCode: INSPECTION_HOLD_REASON,
-          targetLotStatusCode: INITIAL_LOT_STATUS,
-        },
-      ],
-      typeof actor === 'number'
-        ? { by: BigInt(actor), at: new Date() }
-        : { workerId: actor.workerId, at: new Date() },
-    );
+    if (awaitsInspection) await this.holdForInspection(tx, lot.lot_id, actor);
 
     for (const identifier of input.externalIdentifiers ?? []) {
       await tx.lot_external_identifier.create({
@@ -173,6 +163,17 @@ export class LotRegistryService {
       where: { lot_id: lot.lot_id },
       include: { lot_hold: true },
     });
+  }
+
+  private async holdForInspection(tx: Tx, lotId: bigint, actor: LotRegisterActor): Promise<void> {
+    const locked = await this.holds.lockLotsWithin(tx, [lotId]);
+    await this.holds.holdWithin(
+      tx,
+      locked,
+      // `targetLotStatusCode` 는 이 보류가 LOT 을 «보낸» 곳 — `lot.create` 와 같은 상수다(#351 G-5).
+      [{ lotId, reasonCode: INSPECTION_HOLD_REASON, targetLotStatusCode: INITIAL_LOT_STATUS }],
+      typeof actor === 'number' ? { by: BigInt(actor), at: new Date() } : { workerId: actor.workerId, at: new Date() },
+    );
   }
 
   /**
