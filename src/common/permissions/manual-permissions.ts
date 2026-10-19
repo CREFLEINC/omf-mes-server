@@ -38,6 +38,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 적었다). 편집이 그 화면의 본체다.
   'PUT /mdm/items/{itemId}': ['W-06-05'],
   'PUT /mdm/items/{itemId}/bu-item-maps': ['W-06-05'],
+  // 품목 설비·금형 매핑도 같은 화면(「설비·금형」 탭)의 품목 기준정보다(장부 P-61).
+  'POST /mdm/item-resource-maps': ['W-06-05'],
+  'PUT /mdm/item-resource-maps/{itemResourceMapId}': ['W-06-05'],
   'PUT /mdm/items/{itemId}/external-codes': ['W-06-05'],
   'PUT /mdm/items/{itemId}/uom-conversions': ['W-06-05'],
 

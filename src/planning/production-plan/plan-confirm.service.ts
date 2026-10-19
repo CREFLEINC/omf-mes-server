@@ -10,6 +10,7 @@ import { assertPlannableRouting } from '../routing/routing.service';
 import { PlanLine, PlanToExpand, dependencyRows, workOrderRows } from './expand';
 import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
+import { assignResources, readDefaultMaps } from './resource-assign';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
 
 const STATUS_COLUMN = 'planning.production_plan.status_code';
@@ -61,7 +62,7 @@ export class PlanConfirmService {
     const operations = await this.prisma.routing_operation.findMany({
       where: { routing_id: plan.routing_id },
       orderBy: { operation_seq: 'asc' },
-      select: { routing_operation_id: true },
+      select: { routing_operation_id: true, process_id: true, equipment_required: true, mold_required: true },
     });
     if (operations.length === 0) throw one(field('routingId', ERROR_CODE.LINE_REQUIRED, '공정이 한 줄도 없습니다.'));
     // 작성 중 계획만 본다 — 확정된 계획의 재확정은 아래 전이 판정이 400 STATE_LOCKED 로 막는다.
@@ -74,7 +75,24 @@ export class PlanConfirmService {
     const { item_id: itemId, plant_id: plantId } = plan.production_order;
     const window = await this.planWindow(plantId, plan.plan_date);
     const line = await this.planLine(plan.planned_line_id);
-    return { productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id, operationIds, window, line, dependencies };
+    const needs = operations.map((operation) => ({
+      routingOperationId: operation.routing_operation_id,
+      processId: operation.process_id,
+      equipmentRequired: operation.equipment_required,
+      moldRequired: operation.mold_required,
+    }));
+    const resources = assignResources(needs, await readDefaultMaps(this.prisma, plantId, itemId));
+    const equipmentLines = await this.equipmentLines([...resources.values()].map((resource) => resource.equipmentLineId));
+    return {
+      productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id,
+      operationIds, window, line, resources, equipmentLines, dependencies,
+    };
+  }
+
+  private async equipmentLines(lineIds: (bigint | null)[]): Promise<Map<bigint, PlanLine>> {
+    const ids = [...new Set(lineIds.filter((id) => id !== null))];
+    const lines = await Promise.all(ids.map((id) => this.planLine(id)));
+    return new Map(ids.map((id, index) => [id, lines[index]]));
   }
 
   /** 계획의 라인과 그 라인의 기본 위치 셋 — 4M 에서 W/O 마다 고르지 않게 미리 채운다. */

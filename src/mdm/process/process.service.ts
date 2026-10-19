@@ -27,6 +27,7 @@ export const PROCESS_REFERRERS: readonly Referrer[] = [
   ['logistics.subcontract_order', 'process_id'],
   ['maintenance.collection_channel', 'process_id'],
   ['mdm.equipment', 'process_id'],
+  ['mdm.item_resource_map', 'process_id'],
   ['mdm.terminal_process', 'process_id'],
   ['mdm.worker_qualification', 'process_id'],
   ['planning.bom_component', 'actual_use_process_id'],

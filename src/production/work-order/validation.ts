@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 
+import { UsableResource, unusable } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -19,19 +20,14 @@ export interface ValidationFinding { severity: ValidationSeverity; field: string
 export interface ValidationReport { passed: boolean; findings: ValidationFinding[] }
 export interface ValidationSummary { passed: boolean; blockCount: number; warnCount: number }
 
-export interface Usable { status_code: string; is_active: boolean }
+export type Usable = UsableResource;
 export interface EquipmentFacts extends Usable { equipment_id: bigint; calibration_required: boolean; calibration_due_date: Date | null }
 export interface MoldFacts extends Usable { mold_id: bigint; guaranteed_shot_count: bigint | null; current_shot_count: bigint }
 export interface PlanWindow { planned_start_at: Date | null; planned_end_at: Date | null }
 export interface RivalWindow extends PlanWindow { planned_equipment_id: bigint | null }
 
-/** 설비·금형이 「쓸 수 있는」 유일한 값 — `transitions.ts` 의 두 축이 `IN_SERVICE`→`DISPOSED` 다. */
-const IN_SERVICE = 'IN_SERVICE';
 /** `QUALIFICATION_TYPE` 시드 4값 중 공정 작업 자격. */
 const PROCESS_OPERATION = 'PROCESS_OPERATION';
-
-/** 마스터에 없는 id 도 못 쓰는 자원으로 본다 — FK 상 없을 수 없지만 조용히 통과시키지 않는다. */
-const unusable = (fact: Usable | undefined): boolean => fact === undefined || fact.status_code !== IN_SERVICE || !fact.is_active;
 
 /** #1 설비 가동 상태. */
 export function checkEquipment(ids: bigint[], facts: Map<bigint, EquipmentFacts>): ValidationFinding[] {
@@ -149,16 +145,7 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
       },
       select: { worker_id: true },
     })),
-    // 겹침 판정 자체는 순수 함수가 한다 — 여기서는 후보만 좁힌다(같은 산수를 두 곳에 두지 않는다).
-    when(equipmentIds, () => prisma.work_order.findMany({
-      where: {
-        work_order_id: { not: BigInt(workOrderId) },
-        planned_equipment_id: { in: equipmentIds },
-        planned_start_at: { not: null },
-        planned_end_at: { not: null },
-      },
-      select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
-    })),
+    rivalWindows(prisma, workOrderId, equipmentIds),
   ]);
 
   const byEquipment = new Map(equipments.map((item) => [item.equipment_id, item]));
@@ -172,6 +159,19 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
     ...checkDoubleBooked(equipmentIds, row, rivals),
   ];
   return { passed: findings.every((item) => item.severity !== 'BLOCK'), findings };
+}
+
+/** 겹침 판정 자체는 순수 함수가 한다 — 여기서는 후보만 좁힌다(같은 산수를 두 곳에 두지 않는다). 4M 추천도 이 조회를 쓴다. */
+export function rivalWindows(prisma: PrismaService, workOrderId: number, equipmentIds: bigint[]): Promise<RivalWindow[]> | RivalWindow[] {
+  return when(equipmentIds, () => prisma.work_order.findMany({
+    where: {
+      work_order_id: { not: BigInt(workOrderId) },
+      planned_equipment_id: { in: equipmentIds },
+      planned_start_at: { not: null },
+      planned_end_at: { not: null },
+    },
+    select: { planned_equipment_id: true, planned_start_at: true, planned_end_at: true },
+  }));
 }
 
 /** 배정이 없는 축은 질의하지 않는다 — `in: []` 를 던지면 빈 IN 절이 돈다. */

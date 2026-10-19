@@ -79,6 +79,8 @@ model app_user {
   lot_status_event                                       lot_status_event[]
   shipping_unit                                          shipping_unit[]
   shipping_unit_handling_unit                            shipping_unit_handling_unit[]
+  item_resource_map_created_byToapp_user item_resource_map[] @relation("item_resource_map_created_byToapp_user")
+  item_resource_map_updated_byToapp_user item_resource_map[] @relation("item_resource_map_updated_byToapp_user")
 
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
@@ -1814,9 +1816,41 @@ model equipment {
   equipment_calibration                equipment_calibration[]
   inspection_item_spec                 inspection_item_spec[]
   inspection_measurement               inspection_measurement[]
+  item_resource_map                    item_resource_map[]
 
   @@unique([plant_id, equipment_code], map: "uq_equipment")
   @@index([location_id], map: "ix_equipment_location")
+  @@schema("mdm")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model item_resource_map {
+  item_resource_map_id BigInt     @id @default(autoincrement())
+  plant_id             BigInt
+  item_id              BigInt
+  process_id           BigInt?
+  equipment_id         BigInt?
+  mold_id              BigInt?
+  is_default           Boolean    @default(false)
+  priority_no          Int        @default(100)
+  is_active            Boolean    @default(true)
+  remarks              String?
+  created_at           DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by           BigInt?
+  updated_at           DateTime   @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by           BigInt?
+  version_no           Int        @default(1)
+  plant                plant      @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
+  item                 item       @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  process              process?   @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
+  equipment            equipment? @relation(fields: [equipment_id], references: [equipment_id], onDelete: NoAction, onUpdate: NoAction)
+  mold                 mold?      @relation(fields: [mold_id], references: [mold_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_item_resource_map_created_byToapp_user app_user? @relation("item_resource_map_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_item_resource_map_updated_byToapp_user app_user? @relation("item_resource_map_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([item_id], map: "ix_item_resource_map_item")
+  @@index([equipment_id], map: "ix_item_resource_map_equipment")
+  @@index([mold_id], map: "ix_item_resource_map_mold")
   @@schema("mdm")
 }
 
@@ -1896,6 +1930,7 @@ model item {
   nonconformance                                       nonconformance[]
   lot                                                  lot[]
   serial_number                                        serial_number[]
+  item_resource_map                                    item_resource_map[]
 
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
@@ -2069,6 +2104,7 @@ model mold {
   work_order_resource_assignment work_order_resource_assignment[]
   work_session                   work_session[]
   defect_record                  defect_record[]
+  item_resource_map              item_resource_map[]
 
   @@unique([plant_id, mold_code], map: "uq_mold")
   @@schema("mdm")
@@ -2161,6 +2197,7 @@ model plant {
   production_order          production_order[]
   lot                       lot[]
   shipment_request          shipment_request[]
+  item_resource_map         item_resource_map[]
 
   @@unique([legal_entity_id, plant_code], map: "uq_plant")
   @@schema("mdm")
@@ -2195,6 +2232,7 @@ model process {
   defect_record_defect_record_occurrence_process_idToprocess defect_record[]        @relation("defect_record_occurrence_process_idToprocess")
   inspection_plan                                            inspection_plan[]
   collection_channel                                        collection_channel[]
+  item_resource_map                                          item_resource_map[]
 
   @@schema("mdm")
 }
