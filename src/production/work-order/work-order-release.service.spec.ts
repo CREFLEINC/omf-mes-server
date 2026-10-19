@@ -342,14 +342,15 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(lines[0]).toMatchObject({ bom_component_id: 1n, item_id: 101n, uom_id: 22n });
   });
 
-  it('배포 — 이 공정의 BOM 라인만 담고 공정 미지정 라인은 안 담는다', async () => {
+  it('배포 — 이 공정의 소요량이 있는 BOM 라인만 담고 공정 미지정 라인은 안 담는다', async () => {
     const harness = stub({ components: [component(1n, 2)] });
 
     await release(harness);
 
     // ⛔ `routing_operation_id` 를 «값으로» 걸므로 `IS NULL` 행은 애초에 안 걸린다.
+    // 소요량 0 인 라인(ERP BOM 에 있다)은 꺼낼 것이 없어 조회에서 뺀다.
     expect(harness.componentWheres).toEqual([
-      { bom_id: BOM, routing_operation_id: ROUTING_OPERATION },
+      { bom_id: BOM, routing_operation_id: ROUTING_OPERATION, required_qty: { gt: 0 } },
     ]);
   });
 

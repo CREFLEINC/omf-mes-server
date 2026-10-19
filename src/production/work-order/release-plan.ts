@@ -154,7 +154,13 @@ function bomComponents(
     return Promise.resolve([]);
   }
   return prisma.bom_component.findMany({
-    where: { bom_id: bomId, routing_operation_id: row.routing_operation_id },
+    // 소요량 0 인 구성품은 꺼낼 것이 없다 — ERP BOM 에 720행 있다. 담으면 출고요청 라인의
+    // `requested_qty > 0` 에 걸리고, 전부 0 이면 라인 없는 헤더가 선다.
+    where: {
+      bom_id: bomId,
+      routing_operation_id: row.routing_operation_id,
+      required_qty: { gt: 0 },
+    },
     select: BOM_COMPONENT_SELECT,
     orderBy: { sequence_no: 'asc' },
   });
