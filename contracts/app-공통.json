@@ -3212,8 +3212,11 @@
           "description": "무엇에 붙이는 첨부인가 — WAREHOUSE → 창고 도면(W-CO-08 §3) · NOTICE → 공지 첨부(W-CO-04 §4). ⛔ 다형 참조 판별자라 값이 «우리 계약의 대상 표 이름»이다 — 고객이 늘릴 수 없고, 붙일 곳이 늘면 계약을 고친다(공유계약 A-10 · A-16 「가」·「나」 참). ⭐ 읽는 쪽 Attachment.targetTypeCode 와 같은 값집합이다.",
           "enum": [
            "WAREHOUSE",
-           "NOTICE"
+           "NOTICE",
+           "LOT",
+           "INSPECTION_RESULT"
           ],
+          "x-server-ahead": "LOT·INSPECTION_RESULT 는 서버 선행(장부 P-57 · omf-all-around#58) — 검사 문서(시험성적서 등). 사람이 볼 수 있는 문서만(PDF·PNG·JPEG·WEBP·엑셀/워드/파워포인트·CSV·TXT) 받고 파일 머리 바이트로 판정한다. 크기 10MB.",
           "example": "WAREHOUSE",
           "x-code-key": "CD-ATTACHMENT-TARGET-TYPE"
          },
@@ -3289,7 +3292,9 @@
        "enum": [
         "WAREHOUSE",
         "NOTICE",
-        "BREAKDOWN"
+        "BREAKDOWN",
+        "LOT",
+        "INSPECTION_RESULT"
        ],
        "example": "WAREHOUSE"
       },
@@ -5926,7 +5931,9 @@
       "enum": [
        "WAREHOUSE",
        "NOTICE",
-       "BREAKDOWN"
+       "BREAKDOWN",
+       "LOT",
+       "INSPECTION_RESULT"
       ],
       "example": "WAREHOUSE"
      },

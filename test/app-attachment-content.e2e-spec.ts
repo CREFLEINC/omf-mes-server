@@ -83,13 +83,21 @@ describe('첨부 내려받기 (e2e)', () => {
     );
   });
 
-  it('⭐ PNG·JPEG 가 아닌 첨부는 application/octet-stream · attachment 로 내린다', async () => {
+  it('⭐ PDF 는 브라우저에서 바로 연다(inline · #58 검사 문서)', async () => {
     const id = await upload('NOTICE', noticeId, PDF, 'notice.pdf', 'application/pdf');
     const response = await content(id, cookie).expect(200);
 
     expect(response.body).toEqual(PDF);
+    expect(response.headers['content-type']).toMatch(/^application\/pdf/);
+    expect(response.headers['content-disposition']).toMatch(/^inline; filename="notice\.pdf"/);
+  });
+
+  it('⭐ PNG·JPEG·PDF 가 아닌 첨부는 application/octet-stream · attachment 로 내린다', async () => {
+    const id = await upload('NOTICE', noticeId, Buffer.from('a,b\n1,2\n'), 'notice.csv', 'text/csv');
+    const response = await content(id, cookie).expect(200);
+
     expect(response.headers['content-type']).toBe('application/octet-stream');
-    expect(response.headers['content-disposition']).toMatch(/^attachment; filename="notice\.pdf"/);
+    expect(response.headers['content-disposition']).toMatch(/^attachment; filename="notice\.csv"/);
   });
 
   it('⛔ 없는 첨부는 404 ErrorResponse 다', async () => {
