@@ -1,20 +1,47 @@
 import { Prisma } from '@prisma/client';
 
 import type { DashboardPlant } from './dashboard-availability.service';
-import { trailingDays } from './dashboard-view';
+import { DashboardRange, previousRange, shiftDate } from './dashboard-range';
+import { chartDays } from './dashboard-view';
 
-/** 기준일·당월·전월 — 공장 현지 달력 날짜(YYYY-MM-DD). 당월은 1일~기준일이다. */
+/**
+ * 품질·부적합의 누계 구간 — 공장 현지 달력 날짜(YYYY-MM-DD). 응답 칸 이름은 「당월·전월·금일」 그대로다.
+ * - 하루 조회: 누계 = 당월 1일~기준일, 비교 = 전월(#118 기간 조회 결정 B — 기본 화면 유지).
+ * - 이틀 이상: 누계 = 조회 기간, 비교 = 바로 앞 같은 길이 기간.
+ */
 export interface DashboardPeriod {
-  readonly baseDate: string;
-  readonly monthStart: string;
-  readonly previousMonthStart: string;
-  readonly previousMonthEnd: string;
+  readonly from: string;
+  /** 언제나 조회 종료일이다. */
+  readonly to: string;
+  readonly previousFrom: string;
+  readonly previousTo: string;
+  /** 「금일」 칸 = 조회 기간. */
+  readonly range: DashboardRange;
+  /** 일별 차트 날짜 — 생산 추이와 같은 규칙. */
+  readonly chartDays: readonly string[];
 }
 
-export function dashboardPeriod(baseDate: string): DashboardPeriod {
-  const monthStart = `${baseDate.slice(0, 8)}01`;
-  const [previousMonthEnd] = trailingDays(monthStart, 2);
-  return { baseDate, monthStart, previousMonthStart: `${previousMonthEnd.slice(0, 8)}01`, previousMonthEnd };
+export function dashboardPeriod(range: DashboardRange): DashboardPeriod {
+  const chart = chartDays(range);
+  if (range.from !== range.to) {
+    const previous = previousRange(range);
+    return { from: range.from, to: range.to, previousFrom: previous.from, previousTo: previous.to, range, chartDays: chart };
+  }
+  const monthStart = `${range.to.slice(0, 8)}01`;
+  const previousTo = shiftDate(monthStart, -1);
+  return {
+    from: monthStart,
+    to: range.to,
+    previousFrom: `${previousTo.slice(0, 8)}01`,
+    previousTo,
+    range,
+    chartDays: chart,
+  };
+}
+
+/** 이 구간의 가장 이른 날 — 거친 UTC 경계를 거는 데 쓴다. */
+export function periodStart(period: DashboardPeriod): string {
+  return [period.previousFrom, period.chartDays[0], period.range.from].sort()[0];
 }
 
 /**
@@ -42,4 +69,10 @@ export function coarseRange(column: Prisma.Sql, from: string, to: string): Prism
 
 export function num(value: string | number | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
+}
+
+/** 그 시간대의 오늘(YYYY-MM-DD). */
+export function localToday(now: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(now);
 }

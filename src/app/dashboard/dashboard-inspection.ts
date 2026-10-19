@@ -1,11 +1,9 @@
 import { Prisma } from '@prisma/client';
 
-import { DashboardPeriod, coarseRange } from './dashboard-scope';
+import { DashboardPeriod, coarseRange, periodStart } from './dashboard-scope';
 import { DefectPhenomenon, JudgmentCode, LotCounts, QualityTypeBlock } from './dashboard-sections';
-import { trailingDays } from './dashboard-view';
 
 export type InspectionType = 'IQC' | 'PQC' | 'OQC';
-export const DAILY_PASS_DAYS = 9;
 
 /**
  * `final_result` CTE — 확정된 검사 결과 중 의뢰마다 «최종 회차»만(재검사 후 합격 = 합격).
@@ -28,7 +26,7 @@ export function finalResultCte(period: DashboardPeriod): Prisma.Sql {
     JOIN plant_scope ps ON ps.plant_id = CASE req.inspection_type_code
       WHEN 'IQC' THEN lot.plant_id WHEN 'PQC' THEN pl.plant_id WHEN 'OQC' THEN sr.fulfillment_plant_id END
     WHERE ir.status_code = 'CONFIRMED' AND ir.overall_judgment_code IN ('ACCEPTED', 'REJECTED', 'HELD')
-      AND ${coarseRange(Prisma.sql`ir.inspected_at`, period.previousMonthStart, period.baseDate)}
+      AND ${coarseRange(Prisma.sql`ir.inspected_at`, periodStart(period), period.to)}
       AND ir.inspection_round = (
         SELECT MAX(x.inspection_round) FROM quality.inspection_result x
         WHERE x.inspection_request_id = ir.inspection_request_id AND x.status_code = 'CONFIRMED')
@@ -69,19 +67,19 @@ export function qualityTypeBlock(
   phenomena: DefectPhenomenon[],
   recentLots: RecentLot[],
 ): QualityTypeBlock {
-  const { baseDate, monthStart } = period;
-  const monthLots = countBetween(rows, monthStart, baseDate);
+  const { from, to } = period;
+  const monthLots = countBetween(rows, from, to);
   return {
     monthPassRate: passRate(monthLots),
-    prevMonthPassRate: passRate(countBetween(rows, period.previousMonthStart, period.previousMonthEnd)),
-    dailyPassRates: trailingDays(baseDate, DAILY_PASS_DAYS).map((date) => ({
+    prevMonthPassRate: passRate(countBetween(rows, period.previousFrom, period.previousTo)),
+    dailyPassRates: period.chartDays.map((date) => ({
       date,
       passRate: passRate(countBetween(rows, date, date)),
     })),
-    todayLots: countBetween(rows, baseDate, baseDate),
+    todayLots: countBetween(rows, period.range.from, period.range.to),
     monthLots,
     monthDefectQty: rows
-      .filter((row) => row.local_date >= monthStart && row.local_date <= baseDate)
+      .filter((row) => row.local_date >= from && row.local_date <= to)
       .reduce((sum, row) => sum + Number(row.rejected_qty), 0),
     defectPhenomena: phenomena.slice(0, 5),
     recentLots,

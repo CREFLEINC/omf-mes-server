@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { DashboardPlant } from './dashboard-availability.service';
+import type { DashboardRange } from './dashboard-range';
 import { coarseRange, localDate, num, plantScope } from './dashboard-scope';
 import { DashboardShipment } from './dashboard-sections';
 
@@ -22,7 +23,8 @@ interface OpenRequestRow {
 
 /**
  * 출하 현황(#118 2차 · 결정 5·6·7).
- * - 출하 확정 = 상태 CONFIRMED 이고 «실제 출하 시각(shipped_at)»이 기준일인 출하. 공장은 출하 창고의 공장.
+ * - 출하 확정 = 상태 CONFIRMED 이고 «실제 출하 시각(shipped_at)»이 조회 기간인 출하. 공장은 출하 창고의 공장.
+ * - 대기·다음 출하·납기 경과는 실시간 칸이라 조회 종료일 기준이다.
  * - 미출하 요청 = Σ출하 < Σ요청. 요청 상태는 늘 REGISTERED 라 상태로 가르지 못한다.
  * - 요청의 공장 = `fulfillment_plant_id`, 비었으면 그 요청을 출하한 창고의 공장.
  */
@@ -31,9 +33,10 @@ export class DashboardShipmentService {
   async read(
     tx: Tx,
     plants: readonly DashboardPlant[],
-    baseDate: string,
+    range: DashboardRange,
     plantFiltered: boolean,
   ): Promise<DashboardShipment> {
+    const baseDate = range.to;
     if (plants.length === 0) {
       return { todayShippedQty: 0, todayShipmentCount: 0, waitingRequestCount: 0, oldestWaitingShipDate: null, nextShipment: null,
         overdueCount: 0 };
@@ -47,8 +50,8 @@ export class DashboardShipmentService {
       JOIN plant_scope ps ON ps.plant_id = w.plant_id
       JOIN logistics.shipment_line sl ON sl.shipment_id = s.shipment_id
       WHERE s.status_code = 'CONFIRMED'
-        AND ${coarseRange(Prisma.sql`s.shipped_at`, baseDate, baseDate)}
-        AND ${localDate(Prisma.sql`s.shipped_at`)} = ${baseDate}::date`);
+        AND ${coarseRange(Prisma.sql`s.shipped_at`, range.from, range.to)}
+        AND ${localDate(Prisma.sql`s.shipped_at`)} BETWEEN ${range.from}::date AND ${range.to}::date`);
 
     const open = await tx.$queryRaw<OpenRequestRow[]>(Prisma.sql`
       WITH ${scope},

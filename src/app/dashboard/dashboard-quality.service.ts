@@ -10,8 +10,8 @@ import {
   qualityTypeBlock,
 } from './dashboard-inspection';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
-import { DashboardPeriod, num, plantScope } from './dashboard-scope';
-import { DashboardEquipmentItem, DashboardQuality, DefectPhenomenon } from './dashboard-sections';
+import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
+import { DashboardQuality, DefectPhenomenon, EquipmentDefectRate } from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
 
@@ -36,6 +36,13 @@ interface PhenomenonRow {
   qty: string;
 }
 
+export interface EquipmentDefectRow {
+  equipment_id: bigint;
+  equipment_code: string;
+  total_qty: string;
+  ng_qty: string;
+}
+
 const RECENT_LIMIT = 5;
 const TOP = 5;
 const EQUIPMENT_TOP = 8;
@@ -52,14 +59,12 @@ export class DashboardQualityService {
     tx: Tx,
     plants: readonly DashboardPlant[],
     period: DashboardPeriod,
-    equipment: readonly DashboardEquipmentItem[],
   ): Promise<DashboardQuality> {
     // 공장이 없어도 섹션은 낸다 — 빈 원천으로 같은 조립을 탄다(0 · 빈 배열 · null).
-    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance] =
+    const [judgments, recent, phenomena, vendors, items, holds, pending, nonconformance, equipmentRows] =
       plants.length === 0
-        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period)]
+        ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), []]
         : await this.queries(tx, plants, period);
-
 
     const block = (type: InspectionType) =>
       qualityTypeBlock(
@@ -90,23 +95,7 @@ export class DashboardQualityService {
         ...block('PQC'),
         pendingLotCount: pending[0]?.request_count ?? 0,
         reworkRequestCount: nonconformance.reworkRequestCount,
-        // 생산실적 기준 NG ÷ 총생산 — 검사 의뢰와 설비를 잇는 칸이 없다(결정 11).
-        equipmentDefectRates: equipment
-          .filter((item) => item.defectRate !== null)
-          // 동률은 NG 수 → 설비 코드 자연 정렬(1-2 가 1-10 앞) 순이다.
-          .sort(
-            (a, b) =>
-              (b.defectRate ?? 0) - (a.defectRate ?? 0) ||
-              b.todayNgQty - a.todayNgQty ||
-              a.equipmentCode.localeCompare(b.equipmentCode, undefined, { numeric: true }),
-          )
-          .slice(0, EQUIPMENT_TOP)
-          .map((item) => ({
-            equipmentId: item.equipmentId,
-            equipmentCode: item.equipmentCode,
-            defectRate: item.defectRate ?? 0,
-            ngQty: item.todayNgQty,
-          })),
+        equipmentDefectRates: topEquipmentDefectRates(equipmentRows),
       },
       oqc: { ...block('OQC'), customerReturnQty: nonconformance.customerReturnQty },
       nonconformance: nonconformance.block,
@@ -126,7 +115,7 @@ export class DashboardQualityService {
         FROM final_result fr
         JOIN quality.defect_record dr ON dr.inspection_result_id = fr.inspection_result_id
         JOIN quality.defect_code dc ON dc.defect_code_id = dr.defect_code_id
-        WHERE fr.local_date BETWEEN ${period.monthStart}::date AND ${period.baseDate}::date
+        WHERE fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
         GROUP BY fr.type, dc.defect_code_id ORDER BY SUM(dr.defect_qty) DESC`),
       tx.$queryRaw<{ partner_id: bigint; partner_name: string; rejected_qty: string }[]>(Prisma.sql`${head}
         SELECT p.partner_id, p.partner_name, SUM(fr.rejected_qty)::text AS rejected_qty
@@ -134,13 +123,13 @@ export class DashboardQualityService {
         JOIN logistics.inbound_receipt_line irl ON irl.lot_id = fr.lot_id
         JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
         JOIN mdm.partner p ON p.partner_id = rc.supplier_id
-        WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.monthStart}::date AND ${period.baseDate}::date
+        WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
         GROUP BY p.partner_id HAVING SUM(fr.rejected_qty) > 0
         ORDER BY SUM(fr.rejected_qty) DESC, p.partner_id LIMIT ${TOP}`),
       tx.$queryRaw<{ item_id: bigint; item_code: string; item_name: string; qty: string }[]>(Prisma.sql`${head}
         SELECT i.item_id, i.item_code, i.item_name, SUM(fr.rejected_qty)::text AS qty
         FROM final_result fr JOIN mdm.item i ON i.item_id = fr.item_id
-        WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.monthStart}::date AND ${period.baseDate}::date
+        WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
         GROUP BY i.item_id HAVING SUM(fr.rejected_qty) > 0
         ORDER BY SUM(fr.rejected_qty) DESC, i.item_id LIMIT ${TOP}`),
       // 「입하 보류」는 LOT 상태가 아니라 풀리지 않은 수입검사 대기 보류다 — LOT 상태에 HOLD 가 없다.
@@ -157,7 +146,36 @@ export class DashboardQualityService {
         JOIN plant_scope ps ON ps.plant_id = pl.plant_id
         WHERE req.inspection_type_code = 'PQC' AND req.status_code IN ('REQUESTED', 'IN_PROGRESS')`),
       this.nonconformances.read(tx, plants, period),
+      this.equipmentDefects(tx, plants, period),
     ]);
+  }
+
+  /**
+   * 호기별 불량률의 원천 — 누계 구간(하루면 당월, 기간이면 그 기간)의 생산실적 NG ÷ 총생산(결정 11 · #118 사용자 결정).
+   * 검사 의뢰와 설비를 잇는 칸이 없어 PQC 판정이 아니라 실적으로 센다. 설비 범위·실적 규칙은 설비 현황과 같다
+   * (생산 설비 · 정정 원본 제외 · 재작업 W/O 실적 제외 · 재작업 합격 이동 없음).
+   */
+  private equipmentDefects(
+    tx: Tx,
+    plants: readonly DashboardPlant[],
+    period: DashboardPeriod,
+  ): Promise<EquipmentDefectRow[]> {
+    return tx.$queryRaw<EquipmentDefectRow[]>(Prisma.sql`WITH ${plantScope(plants)}
+      SELECT e.equipment_id, e.equipment_code,
+        SUM(pr.good_qty + pr.defect_qty + pr.hold_qty + pr.scrap_qty + pr.rework_qty)::text AS total_qty,
+        SUM(pr.defect_qty + pr.scrap_qty + pr.rework_qty)::text AS ng_qty
+      FROM production.production_result pr
+      JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
+      JOIN mdm.equipment e ON e.equipment_id = pr.equipment_id
+      JOIN plant_scope ps ON ps.plant_id = e.plant_id
+      JOIN mdm.code_group cg ON cg.group_code = 'EQUIPMENT_TYPE'
+      JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id AND cv.code = e.equipment_type_code
+      WHERE e.is_active AND e.status_code = 'IN_SERVICE' AND wo.work_order_type_code <> 'REWORK'
+        AND ${coarseRange(Prisma.sql`pr.occurred_at`, period.from, period.to)}
+        AND ${localDate(Prisma.sql`pr.occurred_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
+        AND NOT EXISTS (SELECT 1 FROM production.production_result c
+          WHERE c.corrects_production_result_id = pr.production_result_id)
+      GROUP BY e.equipment_id`);
   }
 
   /**
@@ -169,7 +187,7 @@ export class DashboardQualityService {
       ranked AS (
         SELECT fr.*, ROW_NUMBER() OVER (PARTITION BY fr.type ORDER BY fr.inspected_at DESC,
           fr.inspection_result_id DESC) AS rank
-        FROM final_result fr WHERE fr.local_date <= ${period.baseDate}::date
+        FROM final_result fr WHERE fr.local_date <= ${period.to}::date
       )
       SELECT r.type, r.inspection_result_id, r.inspected_at, r.inspected_qty::text AS qty, r.judgment,
         i.item_code, i.item_name, lot.lot_no,
@@ -192,6 +210,25 @@ export class DashboardQualityService {
       WHERE r.rank <= ${RECENT_LIMIT}
       ORDER BY r.type, r.rank`);
   }
+}
+
+/** 호기별 불량률 — 불량률 내림차순 → NG 수 내림차순 → 설비 코드 자연 정렬(1-2 가 1-10 앞), 상위 8. 총생산 0 은 뺀다. */
+export function topEquipmentDefectRates(rows: readonly EquipmentDefectRow[]): EquipmentDefectRate[] {
+  return rows
+    .filter((row) => num(row.total_qty) > 0)
+    .map((row) => ({
+      equipmentId: Number(row.equipment_id),
+      equipmentCode: row.equipment_code,
+      defectRate: (num(row.ng_qty) / num(row.total_qty)) * 100,
+      ngQty: num(row.ng_qty),
+    }))
+    .sort(
+      (a, b) =>
+        b.defectRate - a.defectRate ||
+        b.ngQty - a.ngQty ||
+        a.equipmentCode.localeCompare(b.equipmentCode, undefined, { numeric: true }),
+    )
+    .slice(0, EQUIPMENT_TOP);
 }
 
 function phenomenon(row: PhenomenonRow): DefectPhenomenon {

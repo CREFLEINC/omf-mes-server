@@ -6,7 +6,7 @@ import { plannedSpans } from '../../maintenance/downtime/downtime-summary-planne
 import type { DashboardPlant } from './dashboard-availability.service';
 import { EquipmentSignals, equipmentStatus } from './dashboard-equipment-status';
 import { Span, clip, subtract, union } from './dashboard-intervals';
-import { num } from './dashboard-scope';
+import { localToday, num } from './dashboard-scope';
 import { DashboardEquipment, DashboardEquipmentItem, EQUIPMENT_STATUSES } from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
@@ -46,24 +46,22 @@ interface ProductionRow {
 
 /**
  * 설비 현황 — 공장의 사용 중 생산 설비(EQUIPMENT_TYPE 공통코드에 있는 유형 · 계측기 제외)마다
- * 판단 시각의 상태를 정한다. 판단 시각 = 지금, 기준일이 지났으면 기준일 끝.
+ * «지금»의 상태와 공장 «오늘»의 생산량을 낸다 — 조회 기간·기준일과 무관하다(#118 사용자 결정).
  */
 @Injectable()
 export class DashboardEquipmentService {
   constructor(private readonly calendars: DowntimeSummaryCalendarService) {}
 
-  async read(tx: Tx, plants: readonly DashboardPlant[], baseDate: string, now: number): Promise<DashboardEquipment> {
+  /** ⚠ `plants` 의 `day` 는 공장 «오늘»이어야 한다 — 조회 기간과 무관한 실시간 칸이다(#118 사용자 결정). */
+  async read(tx: Tx, plants: readonly DashboardPlant[], now: number): Promise<DashboardEquipment> {
     const items: DashboardEquipmentItem[] = [];
-    let judgedAt = 0;
     for (const plant of plants) {
-      const at = Math.min(now, plant.day.end - 1);
-      judgedAt = Math.max(judgedAt, at);
-      items.push(...(await this.plantItems(tx, plant, baseDate, new Date(at))));
+      items.push(...(await this.plantItems(tx, plant, localToday(new Date(now), plant.timezone), new Date(now))));
     }
     items.sort((a, b) => a.equipmentCode.localeCompare(b.equipmentCode));
     const statusCounts = Object.fromEntries(EQUIPMENT_STATUSES.map((code) => [code, 0])) as DashboardEquipment['statusCounts'];
     for (const item of items) statusCounts[item.statusCode] += 1;
-    return { asOf: new Date(judgedAt || now).toISOString(), statusCounts, items };
+    return { asOf: new Date(now).toISOString(), statusCounts, items };
   }
 
   private async plantItems(tx: Tx, plant: DashboardPlant, baseDate: string, at: Date): Promise<DashboardEquipmentItem[]> {
@@ -192,7 +190,7 @@ export class DashboardEquipmentService {
     );
   }
 
-  /** 기준일 설비별 총생산·NG — 1차 카드와 같은 규칙(정정 원본 제외 · 재작업 W/O 실적 제외). */
+  /** 공장 오늘의 설비별 총생산·NG — 1차 카드와 같은 규칙(정정 원본 제외 · 재작업 W/O 실적 제외). */
   private async production(tx: Tx, ids: bigint[], plant: DashboardPlant): Promise<Map<bigint, ProductionRow>> {
     const rows = await tx.$queryRaw<ProductionRow[]>(Prisma.sql`
       SELECT pr.equipment_id,
