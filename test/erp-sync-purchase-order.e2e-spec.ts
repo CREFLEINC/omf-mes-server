@@ -180,4 +180,18 @@ describeRelay('ERP 발주 받기 (e2e · 중계 DB)', () => {
     expect(po.purchase_order_line).toHaveLength(2);
     expect(po.purchase_order_line.every((l) => l.cancelled_at instanceof Date)).toBe(true);
   });
+
+  it('라인의 품목이 바뀌면 판 순서대로 반영한다 — 품목코드 순이 아니다', async () => {
+    const other = { PO_NO: `${PREFIX}0002` };
+    await insertRow(sa, COPY, line(1, 'I2', 10, { ...other, IF_SEQ: 1 }));
+    await insertRow(sa, COPY, line(1, 'I1', 10, { ...other, IF_SEQ: 2 }));
+
+    await cycle.run(TABLE);
+
+    const po = await prisma.purchase_order.findFirstOrThrow({
+      where: { erp_purchase_order_no: other.PO_NO },
+      include: { purchase_order_line: { include: { item: true } } },
+    });
+    expect(po.purchase_order_line.map((l) => l.item.item_code)).toEqual([`${PREFIX}I1`]);
+  });
 });
