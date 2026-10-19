@@ -47,6 +47,8 @@ describe('설비 그룹 (e2e)', () => {
   let noPermCookie: string[];
   let plantId: number;
   let otherPlantId: number | null;
+  let locationId: number;
+  let otherPlantLocationId: number | null = null;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -80,6 +82,8 @@ describe('설비 그룹 (e2e)', () => {
     const plants = await prisma.plant.findMany({ take: 2, orderBy: { plant_id: 'asc' } });
     plantId = Number(plants[0].plant_id);
     otherPlantId = plants[1] === undefined ? null : Number(plants[1].plant_id);
+    locationId = await makeLocation(plantId, 'A');
+    if (otherPlantId !== null) otherPlantLocationId = await makeLocation(otherPlantId, 'B');
   });
 
   afterAll(async () => {
@@ -279,6 +283,65 @@ describe('설비 그룹 (e2e)', () => {
     expect(on.body.isActive).toBe(true);
   });
 
+  it('⭐ 라인 기본 위치 셋을 등록·조회하고, 생산라인 목록에도 싣는다', async () => {
+    const locations = { defaultWipLocationId: locationId, defaultFgLocationId: locationId, defaultScrapLocationId: null };
+    const { id } = await create(`${PREFIX}-LOC`, locations);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/mdm/equipment-groups/${id}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(detail.body.equipmentGroup).toMatchObject(locations);
+    expect(validator('GET /mdm/equipment-groups/{equipmentGroupId}')(detail.body)).toBe(true);
+
+    const lines = await request(app.getHttpServer())
+      .get(`/api/mdm/production-lines?q=${PREFIX}-LOC`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(lines.body.items.find((line: { productionLineId: number }) => line.productionLineId === id)).toMatchObject(locations);
+  });
+
+  it('⭐ 수정에서 기본 위치를 바꾸고 null 로 비운다 — 생략하면 그대로 둔다', async () => {
+    const { id, etag } = await create(`${PREFIX}-LOCU`, { defaultWipLocationId: locationId });
+
+    const cleared = await request(app.getHttpServer())
+      .put(`/api/mdm/equipment-groups/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', etag)
+      .send({ ...updateBody(`${PREFIX}-LOCU`), defaultWipLocationId: null, defaultScrapLocationId: locationId })
+      .expect(200);
+    expect(cleared.body).toMatchObject({ defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: locationId });
+
+    const kept = await request(app.getHttpServer())
+      .put(`/api/mdm/equipment-groups/${id}`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', cleared.headers.etag)
+      .send({ ...updateBody(`${PREFIX}-LOCU`), groupName: '이름만' })
+      .expect(200);
+    expect(kept.body).toMatchObject({ groupName: '이름만', defaultScrapLocationId: locationId });
+  });
+
+  it('⛔ 없는 위치·다른 공장 위치는 400 INVALID 다', async () => {
+    const missing = await request(app.getHttpServer())
+      .post('/api/mdm/equipment-groups')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-LOCX`, { defaultWipLocationId: 999999999 }))
+      .expect(400);
+    expect(missing.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
+
+    if (otherPlantLocationId === null) return;
+    const cross = await request(app.getHttpServer())
+      .post('/api/mdm/equipment-groups')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-LOCY`, { defaultScrapLocationId: otherPlantLocationId }))
+      .expect(400);
+    expect(cross.body.errors[0]).toMatchObject({ field: 'defaultScrapLocationId', code: 'INVALID' });
+  });
+
   it('⛔ 없는 그룹은 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/mdm/equipment-groups/999999999')
@@ -318,6 +381,29 @@ describe('설비 그룹 (e2e)', () => {
     return { id: created.body.equipmentGroupId, ...(await detailOf(created.body.equipmentGroupId)) };
   }
 
+  async function makeLocation(inPlant: number, suffix: string): Promise<number> {
+    const unit = await prisma.business_unit.findFirstOrThrow();
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: inPlant,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH${suffix}`,
+        warehouse_name: `설비그룹검사창고${suffix}`,
+        warehouse_type_code: 'GENERAL',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const location = await prisma.location.create({
+      data: {
+        warehouse_id: warehouse.warehouse_id,
+        location_code: `${PREFIX}-LOC${suffix}`,
+        location_name: `설비그룹검사위치${suffix}`,
+        location_type_code: 'BIN',
+      },
+    });
+    return Number(location.location_id);
+  }
+
   async function login(loginId: string = LOGIN_ID): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
@@ -335,6 +421,8 @@ describe('설비 그룹 (e2e)', () => {
       where: { line_code: { startsWith: PREFIX }, NOT: { parent_line_id: null } },
     });
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
       if (!target) continue;
