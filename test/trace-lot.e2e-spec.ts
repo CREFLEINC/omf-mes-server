@@ -197,6 +197,15 @@ describe('LOT (e2e)', () => {
     expect(lot.statusCode).toBe('INSPECTION_PENDING');
   });
 
+  /* omf-all-around#105 — 무검사(IQC 비대상) 입하 LOT 은 검사를 하지 않는다: 보류 없이 정상이다. */
+  it('⭐ 무검사 입하 LOT 은 보류 없이 정상으로 선다', async () => {
+    const lot = await create({ numberSourceCode: 'MES', iqc: false });
+    expect(lot.statusCode).toBe('NORMAL');
+    expect(lot.held).toBe(false);
+    expect(await prisma.lot_hold.count({ where: { lot_id: lot.lotId } })).toBe(0);
+    expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
+  });
+
   it('⭐ 외부 식별자를 함께 받는다', async () => {
     const lot = await create({
       numberSourceCode: 'SUPPLIER',
@@ -723,7 +732,7 @@ describe('LOT (e2e)', () => {
   // 순서가 뜻이다: 기준이 «없을 때» 두 건을 먼저 보고, 마지막 건이 확정 기준을 세운다.
 
   it('⭐ SUPPLIER — IQC 대상이 아닌 라인은 의뢰를 만들지 않는다', async () => {
-    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOIQC` });
+    const lot = await create({ numberSourceCode: 'SUPPLIER', lotNo: `${PREFIX}-SUP-NOIQC`, iqc: false });
 
     expect(await prisma.inspection_request.count({ where: { lot_id: BigInt(lot.lotId) } })).toBe(0);
   });
@@ -783,6 +792,9 @@ describe('LOT (e2e)', () => {
     // 실리므로(§2-2 — 단위는 미정, 막지 않는다), 소수 수량 케이스를 만들려면 라인도 같은
     // 값을 받아야 `fromInboundSource` 의 `Decimal.equals` 대조를 통과한다.
     const qty = typeof extra.initialQty === 'number' ? extra.initialQty : 10;
+    // ⭐ 기본 라인은 IQC 대상이다 — 이 스위트의 보류·검사 대기 단언은 «수입검사를 기다리는» 입하 LOT 의 것이다.
+    //    무검사 라인은 보류 없이 정상으로 선다(omf-all-around#105) — `iqc: false` 로 따로 잰다.
+    const { iqc, ...rest } = extra;
     return {
       itemId,
       lotTypeCode: 'MATERIAL',
@@ -790,10 +802,10 @@ describe('LOT (e2e)', () => {
       initialQty: qty,
       uomId,
       sourceTypeCode: 'INBOUND_RECEIPT_LINE',
-      sourceId: await newLine(qty),
+      sourceId: await newLine(qty, iqc !== false),
       businessDate: DAY,
       occurredAt: `${DAY}T02:00:00.000Z`,
-      ...extra,
+      ...rest,
     };
   }
 
