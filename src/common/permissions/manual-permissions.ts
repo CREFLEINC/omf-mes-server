@@ -335,5 +335,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /logistics/shipping-units/{shippingUnitId}:add-box': ['P-04-05'],
   'DELETE /logistics/shipping-units/{shippingUnitId}/boxes/{handlingUnitId}': ['P-04-05'],
   'POST /logistics/shipping-units/{shippingUnitId}:close': ['P-04-05'],
+  // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이(PQC 화면 W-03-11 은 그 화면과 함께 더한다) LOT·검사 결과에 시험성적서를 붙인다.
+  'POST /app/attachments': ['W-01-01', 'W-04-03'],
 };
 

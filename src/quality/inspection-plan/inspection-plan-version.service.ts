@@ -398,6 +398,7 @@ export class InspectionPlanVersionService {
         groupCode: 'INSPECTION_FREQUENCY',
       },
     ]);
+    assertSamplingRatio(input);
     if (input.effectiveTo != null && input.effectiveTo < input.effectiveFrom) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         {
@@ -689,4 +690,25 @@ function itemView(row: SpecRow): ItemSpecView {
     requiredFlag: row.required_flag,
     automaticJudgment: row.automatic_judgment,
   };
+}
+
+/** 전수검사 — 검사 수량이 의뢰 수량 그대로라 비율이 뜻이 없다(시드 `INSPECTION_SAMPLING_METHOD`). */
+const FULL_INSPECTION = 'FULL_INSPECTION';
+
+/**
+ * 샘플링 방식과 비율(%)의 짝(omf-all-around#103 · 장부 P-37). 샘플 방식은 비율로 검사 수량을 환산하므로
+ * 비율이 있어야 하고, 전수검사에 비율이 실리면 화면과 다른 기준이 저장된다. 기존 버전은 다시 저장할 때만 걸린다.
+ */
+export function assertSamplingRatio(input: Pick<VersionWrite, 'samplingMethodCode' | 'samplingRatio'>): void {
+  const hasRatio = input.samplingRatio != null;
+  if (input.samplingMethodCode === FULL_INSPECTION && hasRatio) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.INVALID, message: '전수검사에는 샘플 비율(%)을 넣지 않습니다.' },
+    ]);
+  }
+  if (input.samplingMethodCode !== FULL_INSPECTION && !hasRatio) {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'field', field: 'samplingRatio', code: ERROR_CODE.REQUIRED, message: '샘플링 방식이면 샘플 비율(%)을 입력하세요.' },
+    ]);
+  }
 }
