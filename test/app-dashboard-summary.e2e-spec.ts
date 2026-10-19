@@ -21,6 +21,13 @@ function responseValidator(): ValidateFunction {
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const format of ['int64', 'int32', 'double', 'float', 'binary', 'password']) ajv.addFormat(format, true);
+  // ⚠ 장부 P-60 보정 — 사본은 추이 값이 number 뿐이다. 실적 기록 없는 날 null 을 여기서만 더 받는다(사본은 고치지 않는다).
+  // 사본이 아직 number 뿐임은 src/common/contract/contract-dashboard-trend.spec.ts 가 지킨다.
+  type Schema = { type?: unknown; properties?: Record<string, Schema>; items?: Schema };
+  const schemas = (contract as { components: { schemas: Record<string, Schema> } }).components.schemas;
+  const value = schemas.DashboardSummary?.properties?.trend?.properties?.points?.items?.properties?.value;
+  if (value === undefined) throw new Error('사본에 trend.points[].value 가 없다 — P-60 보정을 다시 본다');
+  value.type = ['number', 'null'];
   ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
   return ajv.compile({
     $ref: 'https://omf-mes.invalid/contract#/paths/~1app~1dashboard-summary/get/responses/200/content/application~1json/schema',
@@ -73,7 +80,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       plantId?: number;
       cards: Card[];
       alerts: { notificationId: number }[];
-      trend: { points: { label: string; value: number }[] };
+      trend: { points: { label: string; value: number | null }[] };
     };
   const card = (cards: Card[], code: string): Card => cards.find((item) => item.cardCode === code) as Card;
 
@@ -99,7 +106,9 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     // NG = 불량 상태 수량만(불량 50 + 폐기 30 + 재작업 20) — 재작업 합격 10 은 양품에만 더하고 NG 에서 빼지 않는다
     expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 100, holdQty: 0, defectRate: (100 / 1100) * 100 });
     expect(trend.points).toHaveLength(9);
-    expect(trend.points[0]).toEqual({ label: '08-24', value: 0 });
+    // 실적 기록 없는 날 null, 기록은 있는데 합 0 인 날 0(P-60).
+    expect(trend.points[0]).toEqual({ label: '08-24', value: null });
+    expect(trend.points[4]).toEqual({ label: '08-28', value: 0 });
     expect(trend.points.slice(-2)).toEqual([
       { label: '08-31', value: 500 },
       { label: '09-01', value: 1100 },
@@ -537,6 +546,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     // 정정본만 센다 — 원본 777 은 빠지고 100 이 들어간다(수량 0 은 DB 제약이 막는다).
     await addResult(ids.order, 4, '2026-09-01T02:30:00Z', { good_qty: 100 }, original);
     await addResult(ids.rework, 1, '2026-09-01T07:00:00Z', { good_qty: 10 });
+    // 추이 — 재작업 W/O 실적만 있는 날(08-28)은 기록은 있고 총생산 0 이다.
+    await addResult(ids.rework, 2, '2026-08-28T03:00:00Z', { good_qty: 5 });
     // 설비 현황(공장 오늘)용 — 기준일 집계에는 들어가지 않는다.
     await addResult(ids.order, 5, new Date().toISOString(), { good_qty: 90, defect_qty: 10 });
 

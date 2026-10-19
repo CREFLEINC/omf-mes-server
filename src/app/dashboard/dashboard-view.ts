@@ -36,7 +36,8 @@ export interface DashboardTrend {
   seriesName: string;
   unit: string;
   targetValue: number | null;
-  points: { label: string; value: number }[];
+  /** 실적 기록이 없는 날은 null, 기록은 있는데 합이 0 이면 0(장부 P-60 — 계약은 number 만). */
+  points: { label: string; value: number | null }[];
   asOf: string;
 }
 
@@ -145,7 +146,8 @@ export function productionTrend(
     targetValue: null,
     points: days.map((day) => ({
       label: day.slice(5),
-      value: byDay.get(day)?.totalQty ?? 0,
+      // 재작업 W/O 실적만 있는 날도 «기록 있음»이다 — 총생산에서 빠져 0 이다.
+      value: byDay.get(day)?.totalQty ?? null,
     })),
     asOf,
   };
