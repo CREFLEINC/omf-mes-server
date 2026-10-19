@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import type { DashboardPlant } from './dashboard-availability.service';
 import { OPEN_NC_WHERE, SCOPED_NC_CTE } from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
-import { DashboardQuality } from './dashboard-sections';
+import { NonconformanceBlock } from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
 
@@ -18,7 +18,7 @@ interface MonthRow {
 }
 
 export interface NonconformanceFigures {
-  readonly block: DashboardQuality['nonconformance'];
+  readonly block: NonconformanceBlock;
   readonly reworkRequestCount: number;
   readonly customerReturnQty: number;
 }

@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { openNonconformanceSql } from '../src/app/dashboard/dashboard-nonconformance-open';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = 'E2E-AA118-PQCOQC';
@@ -91,6 +92,54 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
     ]);
   });
 
+  it('미종결 부적합 목록 — openCount 와 같은 모집단, 발생 오래된 순 → id, 5건', async () => {
+    const body = (await request(app.getHttpServer())
+      .get(SUMMARY)
+      .query({ plantId: ids.plant.toString(), baseDate: BASE_DATE })
+      .set('Cookie', cookie)
+      .expect(200)).body as { quality: { nonconformance: { openCount: number; openList: Record<string, unknown>[] } } };
+    const { openCount, openList } = body.quality.nonconformance;
+
+    // 같은 조건 전체(LIMIT 없이) = openCount — 픽스처: 미종결 7(새 5 + 반품 LOT 부적합 + 대상 LOT 없는 부적합) · 종결 1 은 빠진다.
+    const plant = { plantId: ids.plant, timezone: 'Asia/Ho_Chi_Minh' } as Parameters<typeof openNonconformanceSql>[0][number];
+    const all = await prisma.$queryRaw<{ nonconformance_no: string }[]>(openNonconformanceSql([plant], null));
+    expect(all).toHaveLength(openCount);
+    expect(openCount).toBe(7);
+    expect(openList.map((row) => row.nonconformanceNo)).toEqual(all.slice(0, 5).map((row) => row.nonconformance_no));
+    // 09-01 둘(같은 시각 → id 순) · 09-02 · 09-03 · 09-04. 종결(08-31)은 없다.
+    expect(openList.map((row) => row.nonconformanceNo)).toEqual([
+      `${PREFIX}-NC-OPEN-1`,
+      `${PREFIX}-NC-OPEN-2`,
+      `${PREFIX}-NC-OPEN-3`,
+      `${PREFIX}-NC-OPEN-4`,
+      `${PREFIX}-NC-OPEN-5`,
+    ]);
+    expect(openList[0]).toEqual({
+      nonconformanceId: expect.any(Number),
+      nonconformanceNo: `${PREFIX}-NC-OPEN-1`,
+      itemCode: PREFIX,
+      itemName: PREFIX,
+      severityCode: 'CRITICAL',
+      severityName: expect.any(String),
+      statusCode: 'PENDING_DECISION',
+      statusName: '판정 대기',
+      openedAt: '2026-09-01T03:00:00.000Z',
+    });
+  });
+
+  it('반복 부적합 품목 — 누계 구간 2건 이상, 건수 → 최근 발생 → id, 전체 품목 수', async () => {
+    const { nonconformance } = (await quality({ plantId: ids.plant.toString(), baseDate: BASE_DATE })) as unknown as {
+      nonconformance: { repeatedItems: Record<string, unknown>[]; repeatedItemCount: number };
+    };
+    // 주 품목 7건(미종결 7 · 08-31 종결은 기간 밖) · B 2건 · E 2건. C(1건)·D(기간 안 1건)는 빠진다.
+    expect(nonconformance.repeatedItems).toEqual([
+      { itemId: Number(ids.item), itemCode: PREFIX, itemName: PREFIX, ncCount: 7, lastOpenedAt: '2026-09-09T02:00:00.000Z' },
+      { itemId: Number(ids.itemB), itemCode: `${PREFIX}-B`, itemName: `${PREFIX}-B`, ncCount: 2, lastOpenedAt: '2026-09-15T03:00:00.000Z' },
+      { itemId: Number(ids.itemE), itemCode: `${PREFIX}-E`, itemName: `${PREFIX}-E`, ncCount: 2, lastOpenedAt: '2026-09-10T03:00:00.000Z' },
+    ]);
+    expect(nonconformance.repeatedItemCount).toBe(3);
+  });
+
   it('데이터 없는 공장 — 0 · 빈 배열 · null', async () => {
     const { pqc, oqc } = await quality({ plantId: '8999999999', baseDate: BASE_DATE });
 
@@ -102,6 +151,13 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
     });
     expect(oqc).toMatchObject({ returnReasons: [], pendingReturnLotCount: { lotCount: 0, recordCount: 0 }, customerDefects: [] });
     expect((oqc.dailyReturnOutQty as unknown[]).length).toBe(9);
+    const empty = (await request(app.getHttpServer())
+      .get(SUMMARY)
+      .query({ plantId: '8999999999', baseDate: BASE_DATE })
+      .set('Cookie', cookie)
+      .expect(200)).body as { quality: { nonconformance: Record<string, unknown> & { openList: unknown[] } } };
+    expect(empty.quality.nonconformance.openList).toEqual([]);
+    expect(empty.quality.nonconformance).toMatchObject({ repeatedItems: [], repeatedItemCount: 0 });
   });
 
   async function fixtures(): Promise<void> {
@@ -410,6 +466,52 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
       },
     });
     await rework(lotless.nonconformance_id, '2026-09-09T03:00:00Z');
+    // 미종결 부적합 목록 — 작업지시 공장(PL 범위)으로 묶인 새 부적합 5(09-01 둘은 같은 시각) + 종결 1(08-31).
+    const openNc = (key: string, at: string, closed = false) =>
+      prisma.nonconformance.create({
+        data: {
+          nonconformance_no: `${PREFIX}-NC-${key}`,
+          item_id: ids.item,
+          work_order_id: ids.order,
+          severity_code: 'CRITICAL',
+          description: PREFIX,
+          status_code: closed ? 'DECIDED' : 'PENDING_DECISION',
+          opened_at: new Date(at),
+          ...(closed ? { closed_at: new Date('2026-09-02T00:00:00Z') } : {}),
+        },
+      });
+    await openNc('OPEN-1', '2026-09-01T03:00:00Z');
+    await openNc('OPEN-2', '2026-09-01T03:00:00Z');
+    await openNc('OPEN-3', '2026-09-02T03:00:00Z');
+    await openNc('OPEN-4', '2026-09-03T03:00:00Z');
+    await openNc('OPEN-5', '2026-09-04T03:00:00Z');
+    await openNc('CLOSED', '2026-08-31T03:00:00Z', true);
+    // 반복 부적합 품목 — 종결 부적합으로 만들어 openCount 와 섞지 않는다(반복은 종결 여부와 무관).
+    // B: 2건(09-15 최근) · E: 2건(09-10) · C: 1건(제외) · D: 09-12 + 08-25(기간 밖 → 1건, 제외).
+    for (const [code, at] of [
+      ['B', '2026-09-14T03:00:00Z'], ['B', '2026-09-15T03:00:00Z'],
+      ['E', '2026-09-09T03:00:00Z'], ['E', '2026-09-10T03:00:00Z'],
+      ['C', '2026-09-11T03:00:00Z'],
+      ['D', '2026-09-12T03:00:00Z'], ['D', '2026-08-25T03:00:00Z'],
+    ] as const) {
+      ids[`item${code}`] ??= (
+        await prisma.item.create({
+          data: { item_code: `${PREFIX}-${code}`, item_name: `${PREFIX}-${code}`, item_type_code: 'FINISHED', base_uom_id: ids.uom },
+        })
+      ).item_id;
+      await prisma.nonconformance.create({
+        data: {
+          nonconformance_no: `${PREFIX}-NC-REP-${code}-${at.slice(5, 10)}`,
+          item_id: ids[`item${code}`],
+          work_order_id: ids.order,
+          severity_code: 'MINOR',
+          description: PREFIX,
+          status_code: 'DECIDED',
+          opened_at: new Date(at),
+          closed_at: new Date('2026-09-16T00:00:00Z'),
+        },
+      });
+    }
     const issue = async (key: string, qty: number, at: string, status = 'POSTED') => {
       const created = await prisma.goods_issue.create({
         data: {
@@ -462,7 +564,7 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
     await prisma.routing_operation.deleteMany({ where: { operation_name: PREFIX } });
     await prisma.routing.deleteMany({ where: { routing_code: PREFIX } });
     await prisma.process.deleteMany({ where: { process_code: PREFIX } });
-    await prisma.item.deleteMany({ where: { item_code: PREFIX } });
+    await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });

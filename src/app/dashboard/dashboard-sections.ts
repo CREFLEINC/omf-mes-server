@@ -117,6 +117,40 @@ export interface QualityStatusCounts {
   NC_OPEN: LotRecordCount;
 }
 
+/** 부적합 집계 칸(부적합 서비스가 채운다). */
+export interface NonconformanceBlock {
+  monthQty: number;
+  phenomena: DefectPhenomenon[];
+  causeGroups: { causeCodeId: number; causeName: string; qty: number }[];
+  scrapQty: number;
+  reworkReleasedQty: number;
+  openCount: number;
+  /** 조치 기한(`action_due_date`)을 쓰는 경로가 없다 — 지금은 늘 null(#118 2차 결정 13). */
+  overdueCount: number | null;
+}
+
+/** 미종결 부적합 목록 한 줄 — `openCount` 와 같은 모집단의 오래된 순 상위 5(장부 P-59). */
+export interface OpenNonconformance {
+  nonconformanceId: number;
+  nonconformanceNo: string;
+  itemCode: string | null;
+  itemName: string | null;
+  severityCode: string;
+  severityName: string | null;
+  statusCode: string;
+  statusName: string | null;
+  openedAt: string;
+}
+
+/** 반복 부적합 품목 — 누계 구간에 부적합 2건 이상(장부 P-59). */
+export interface RepeatedItem {
+  itemId: number;
+  itemCode: string;
+  itemName: string;
+  ncCount: number;
+  lastOpenedAt: string;
+}
+
 export interface DashboardQuality {
   iqc: QualityTypeBlock & {
     vendorDefects: { partnerId: number; partnerName: string; rejectedQty: number }[];
@@ -130,15 +164,10 @@ export interface DashboardQuality {
     equipmentDefectRates: EquipmentDefectRate[];
   };
   oqc: QualityTypeBlock & OqcExtra & { customerReturnQty: number };
-  nonconformance: {
-    monthQty: number;
-    phenomena: DefectPhenomenon[];
-    causeGroups: { causeCodeId: number; causeName: string; qty: number }[];
-    scrapQty: number;
-    reworkReleasedQty: number;
-    openCount: number;
-    /** 조치 기한(`action_due_date`)을 쓰는 경로가 없다 — 지금은 늘 null(#118 2차 결정 13). */
-    overdueCount: number | null;
+  nonconformance: NonconformanceBlock & {
+    openList: OpenNonconformance[];
+    repeatedItems: RepeatedItem[];
+    repeatedItemCount: number;
   };
   statusCounts: QualityStatusCounts;
 }
