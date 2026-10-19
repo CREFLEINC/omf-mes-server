@@ -29,6 +29,18 @@ export function iqcReinspectCte(period: DashboardPeriod): Prisma.Sql {
   );
 }
 
+/**
+ * `pqc_reinspect` CTE — PQC 「재검사 회차」. `iqc_reinspect` 와 같은 본문에 유형만 PQC(공장 = W/O 라인의 공장).
+ * ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
+ */
+export function pqcReinspectCte(period: DashboardPeriod): Prisma.Sql {
+  return confirmedResultCte(
+    Prisma.sql`pqc_reinspect`,
+    period,
+    Prisma.sql`req.inspection_type_code = 'PQC' AND ir.previous_result_id IS NOT NULL`,
+  );
+}
+
 function confirmedResultCte(name: Prisma.Sql, period: DashboardPeriod, filter: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`${name} AS (
     SELECT ir.inspection_result_id, ir.inspected_at, ir.inspected_qty, ir.accepted_qty, ir.rejected_qty,

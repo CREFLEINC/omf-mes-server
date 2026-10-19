@@ -1,3 +1,5 @@
+import type { OqcExtra, PqcExtra } from './dashboard-quality-pqc-oqc';
+
 /**
  * 대시보드 응답의 선택 섹션 — 계약보다 앞선 응답 확장이다(장부 P-59 · omf-all-around#118 2차).
  * MES DB 에 없는 값은 만들지 않고 null 로 둔다.
@@ -122,12 +124,12 @@ export interface DashboardQuality {
     fullReinspect: { inputQty: number; restoredQty: number } | null;
     receiptHoldLotCount: number;
   };
-  pqc: QualityTypeBlock & {
+  pqc: QualityTypeBlock & PqcExtra & {
     pendingLotCount: number;
     reworkRequestCount: number;
     equipmentDefectRates: EquipmentDefectRate[];
   };
-  oqc: QualityTypeBlock & { customerReturnQty: number };
+  oqc: QualityTypeBlock & OqcExtra & { customerReturnQty: number };
   nonconformance: {
     monthQty: number;
     phenomena: DefectPhenomenon[];
