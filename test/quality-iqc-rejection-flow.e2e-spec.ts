@@ -206,7 +206,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
         releaseReasonCode: 'RETEST_PASS',
         reasonCode: null,
         businessDate: DAY,
-        occurredAt: `${DAY}T06:00:00.000Z`,
+        // ⚠ 해제 시각(released_at)이 된다 — 입하 때 지금 시각으로 선 보류보다 앞서면 ck_lot_hold_release 에 걸린다.
+        occurredAt: new Date().toISOString(),
       })
       .expect(201);
 
