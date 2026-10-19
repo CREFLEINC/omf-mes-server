@@ -484,6 +484,66 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       }
     });
 
+    it('⭐ 품목 기본 매핑의 설비·금형을 필요한 공정에만 배정하고, 계획에 라인이 없으면 설비의 라인을 쓴다', async () => {
+      await prisma.production_line.update({
+        where: { production_line_id: BigInt(lineId) },
+        data: { default_wip_location_id: BigInt(locationId), default_fg_location_id: BigInt(locationId) },
+      });
+      const equipment = await prisma.equipment.create({
+        data: { plant_id: plantId, equipment_code: `${PREFIX}-EQ`, equipment_name: '계획검사사출기', equipment_type_code: 'PRESS', status_code: 'IN_SERVICE', production_line_id: BigInt(lineId) },
+      });
+      const mold = await prisma.mold.create({
+        data: { plant_id: plantId, mold_code: `${PREFIX}-MOLD`, mold_name: '계획검사금형', status_code: 'IN_SERVICE', tool_type_code: 'MOLD' },
+      });
+      const other = await prisma.mold.create({
+        data: { plant_id: plantId, mold_code: `${PREFIX}-MOLD-2`, mold_name: '계획검사예비금형', status_code: 'IN_SERVICE', tool_type_code: 'MOLD' },
+      });
+      const order = await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: BigInt(orderWId) } });
+      await prisma.item_resource_map.createMany({
+        data: [
+          { plant_id: plantId, item_id: order.item_id, equipment_id: equipment.equipment_id, mold_id: mold.mold_id, is_default: true },
+          { plant_id: plantId, item_id: order.item_id, mold_id: other.mold_id, priority_no: 10 },
+        ],
+      });
+      await prisma.routing_operation.update({
+        where: { routing_operation_id: BigInt(operationIds[0]) },
+        data: { equipment_required: true, mold_required: true },
+      });
+      try {
+        const planId = await createPlan('2026-11-05', 40);
+        await confirmPlan(planId);
+
+        const [injection, ...rest] = await workOrdersOf(planId);
+        expect(injection).toMatchObject({
+          planned_equipment_id: equipment.equipment_id,
+          planned_mold_id: mold.mold_id,
+          production_line_id: BigInt(lineId),
+          default_wip_location_id: BigInt(locationId),
+        });
+        for (const workOrder of rest) {
+          expect(workOrder).toMatchObject({ planned_equipment_id: null, planned_mold_id: null, production_line_id: null });
+        }
+
+        const recommended = await request(app.getHttpServer())
+          .get(`/api/production/work-orders/${injection.work_order_id}/resource-recommendations`)
+          .set('Cookie', cookie)
+          .expect(200);
+        expect(validator('GET /production/work-orders/{workOrderId}/resource-recommendations')(recommended.body)).toBe(true);
+        expect(recommended.body.equipments).toEqual([
+          expect.objectContaining({ equipmentId: Number(equipment.equipment_id), source: 'DEFAULT', inService: true, busy: false }),
+        ]);
+        expect(recommended.body.molds.map((row: { moldId: number; source: string }) => [row.moldId, row.source])).toEqual([
+          [Number(mold.mold_id), 'DEFAULT'],
+          [Number(other.mold_id), 'MAPPED'],
+        ]);
+      } finally {
+        await prisma.routing_operation.update({
+          where: { routing_operation_id: BigInt(operationIds[0]) },
+          data: { equipment_required: false, mold_required: false },
+        });
+      }
+    });
+
     it('23. 의존이 마스터 짝을 그대로 옮기고 두 코드 값이 마스터·기본값이다', async () => {
       const planId = await createPlan('2026-11-04', 40);
       await confirmPlan(planId);
@@ -976,6 +1036,9 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       },
     });
     await prisma.work_order.deleteMany({ where: { work_order_id: { in: workOrderIds } } });
+    await prisma.item_resource_map.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
+    await prisma.mold.deleteMany({ where: { mold_code: { startsWith: PREFIX } } });
     await prisma.production_plan.deleteMany({ where: { ...scope, split_of_plan_id: { not: null } } });
     await prisma.production_plan.deleteMany({ where: scope });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
