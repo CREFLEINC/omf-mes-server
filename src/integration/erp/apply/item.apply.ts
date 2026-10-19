@@ -1,5 +1,6 @@
 import { RowTable, Tx } from '../inbound-cycle';
 import { ITEM, RelayRow, isCancel, requiredText, text } from '../relay-tables';
+import { uomIdsByCode } from './lookup';
 
 /**
  * ERP 품목 → `mdm.item`. ERP 는 공장별로 보내지만 MES 품목은 품목코드 하나다 — 두 공장에 모두
@@ -18,7 +19,8 @@ export const itemTable: RowTable = {
       erp_spec: text(row, 'SPEC') === '' ? null : text(row, 'SPEC'),
       erp_item_group_code: text(row, 'ITEM_GROUP_CD') === '' ? null : text(row, 'ITEM_GROUP_CD'),
     };
-    const uomId = await uomOf(tx, requiredText(row, 'BASIC_UNIT'));
+    const unit = requiredText(row, 'BASIC_UNIT');
+    const uomId = (await uomIdsByCode(tx, [unit])).get(unit) as bigint;
 
     const item = await tx.item.findUnique({ where: { item_code: itemCode } });
     if (item === null) {
@@ -72,11 +74,4 @@ function itemTypeOf(account: string): string {
   const type = ITEM_TYPES[account];
   if (type === undefined) throw new Error(`모르는 품목계정 ${account}`);
   return type;
-}
-
-/** ERP 단위 코드를 글자 그대로 찾는다 — GR 을 G 로 바꾸지 않는다. */
-async function uomOf(tx: Tx, uomCode: string): Promise<bigint> {
-  const uom = await tx.uom.findUnique({ where: { uom_code: uomCode }, select: { uom_id: true } });
-  if (uom === null) throw new Error(`단위 ${uomCode} 이 없다`);
-  return uom.uom_id;
 }

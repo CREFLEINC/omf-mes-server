@@ -79,6 +79,7 @@ x-api: &api
     ERP_DB_NAME: ${ERP_DB_NAME:-}
     ERP_DB_ENCRYPT: ${ERP_DB_ENCRYPT:-true}
     ERP_SYNC_MASTER_INTERVAL_SEC: ${ERP_SYNC_MASTER_INTERVAL_SEC:-43200}
+    ERP_SYNC_ORDER_INTERVAL_SEC: ${ERP_SYNC_ORDER_INTERVAL_SEC:-900}
   # 두 쪽이 «같은» 볼륨을 건다 — 전환 뒤에도 올린 파일을 그대로 내려받는다.
   # 파일은 uuid 키에 새 파일로만 쓰고 DB 행은 쓴 뒤 커밋되므로 함께 떠 있어도 안전하다.
   volumes:

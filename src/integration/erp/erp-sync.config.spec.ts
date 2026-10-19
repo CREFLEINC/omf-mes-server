@@ -30,6 +30,7 @@ describe('erpSyncConfig', () => {
 
     expect(settings.relay).toMatchObject({ port: 1433, encrypt: true });
     expect(settings.masterIntervalMs).toBe(43_200_000);
+    expect(settings.orderIntervalMs).toBe(900_000);
   });
 
   it('ERP_DB_ENCRYPT=false 일 때만 암호화를 끈다', () => {

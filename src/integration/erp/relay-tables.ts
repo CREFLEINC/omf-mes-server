@@ -71,6 +71,15 @@ export const BOM: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
+/** 발주. 한 행이 발주 라인 하나다 — 헤더 칸(공장·거래처·유형·일자)은 라인마다 같이 온다. */
+export const PURCHASE_ORDER: RelayTable = {
+  interfaceCode: 'IF-ERP-PO-RECV',
+  name: 'T_IF_SND_PO_INFOR_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['PO_NO', 'PO_SEQ_NO', 'ITEM_CD', 'PLANT_CD'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];

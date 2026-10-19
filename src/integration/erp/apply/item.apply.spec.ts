@@ -10,8 +10,10 @@ function fake(item: Row | null = null) {
   const writes: { op: string; data: Row }[] = [];
   const tx = {
     uom: {
-      findUnique: async (a: { where: { uom_code: string } }) =>
-        UOMS[a.where.uom_code] === undefined ? null : { uom_id: UOMS[a.where.uom_code] },
+      findMany: async (a: { where: { uom_code: { in: string[] } } }) =>
+        a.where.uom_code.in
+          .filter((code) => UOMS[code] !== undefined)
+          .map((code) => ({ uom_code: code, uom_id: UOMS[code] })),
     },
     item: {
       findUnique: async () => item,

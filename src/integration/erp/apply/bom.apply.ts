@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { REVISION_STATUS } from '../../../planning/revision-status';
 import { Tx, UnitTable } from '../inbound-cycle';
 import { BOM, RelayRow, isCancel, requiredText, text } from '../relay-tables';
+import { dateOf, itemIdsByCode, plantByCode, plantToday, uomIdsByCode } from './lookup';
 
 type Decimal = Prisma.Decimal;
 const Decimal = Prisma.Decimal;
@@ -22,12 +23,15 @@ export const bomTable: UnitTable = {
     const plantCodes = new Set(rows.map((row) => requiredText(row, 'PLANT_CD')));
     if (plantCodes.size > 1) throw new Error(`모품목 ${parentCode} 의 BOM 이 두 공장에서 왔다`);
 
-    const items = await itemIds(tx, [
+    const items = await itemIdsByCode(tx, [
       parentCode,
       ...rows.map((r) => requiredText(r, 'CHILD_ITEM_CD')),
     ]);
     const parentId = items.get(parentCode) as bigint;
-    const uoms = await uomIds(tx, rows);
+    const uoms = await uomIdsByCode(
+      tx,
+      rows.flatMap((row) => [text(row, 'CHILD_ITEM_UNIT'), text(row, 'PRNT_ITEM_UNIT')]),
+    );
     const bomCode = `ERP-${parentCode}`;
     const current = await tx.bom.findFirst({
       where: { parent_item_id: parentId, bom_code: bomCode },
@@ -80,7 +84,7 @@ export const bomTable: UnitTable = {
       return;
     }
 
-    const today = await plantToday(tx, [...plantCodes][0]);
+    const today = plantToday(await plantByCode(tx, [...plantCodes][0]));
     if (live !== null) {
       const from = live.effective_from.toISOString().slice(0, 10);
       await tx.bom.update({
@@ -245,68 +249,4 @@ async function baseUomOf(
   if (unit !== '') return uoms.get(unit) as bigint;
   const parent = await tx.item.findUniqueOrThrow({ where: { item_id: parentId } });
   return parent.base_uom_id;
-}
-
-/**
- * 품목코드 → id. 같은 품목을 반각·전각으로 달리 적는 곳이 있어(`FS-536（SD）`) 그대로 못 찾으면
- * NFKC 로 맞춘다 — 운영 초기 데이터와 같은 방법이다. 둘 이상 맞으면 고르지 않고 실패로 남긴다.
- */
-async function itemIds(tx: Tx, codes: string[]): Promise<Map<string, bigint>> {
-  const wanted = [...new Set(codes)];
-  const exact = await tx.item.findMany({
-    where: { item_code: { in: wanted } },
-    select: { item_id: true, item_code: true },
-  });
-  const found = new Map(exact.map((item) => [item.item_code, item.item_id]));
-  const missing = wanted.filter((code) => !found.has(code));
-  if (missing.length > 0) {
-    const normalized = missing.map((code) => code.normalize('NFKC'));
-    const loose = await tx.$queryRaw<{ item_id: bigint; item_code: string }[]>`
-      SELECT item_id, item_code FROM mdm.item WHERE normalize(item_code, NFKC) = ANY(${normalized}::text[])`;
-    for (const code of missing) {
-      const matches = loose.filter(
-        (item) => item.item_code.normalize('NFKC') === code.normalize('NFKC'),
-      );
-      if (matches.length === 1) found.set(code, matches[0].item_id);
-      else throw new Error(`품목 ${code} 이 ${matches.length === 0 ? '없다' : '둘 이상이다'}`);
-    }
-  }
-  return found;
-}
-
-async function uomIds(tx: Tx, rows: RelayRow[]): Promise<Map<string, bigint>> {
-  const codes = [
-    ...new Set(rows.flatMap((row) => [text(row, 'CHILD_ITEM_UNIT'), text(row, 'PRNT_ITEM_UNIT')])),
-  ].filter((code) => code !== '');
-  const uoms = await tx.uom.findMany({
-    where: { uom_code: { in: codes } },
-    select: { uom_id: true, uom_code: true },
-  });
-  const found = new Map(uoms.map((uom) => [uom.uom_code, uom.uom_id]));
-  const missing = codes.find((code) => !found.has(code));
-  if (missing !== undefined) throw new Error(`단위 ${missing} 이 없다`);
-  return found;
-}
-
-/** 새 판의 유효 시작일 — 그 공장의 오늘(`plant.timezone_code`). */
-async function plantToday(tx: Tx, plantCode: string): Promise<string> {
-  const plants = await tx.plant.findMany({
-    where: { plant_code: plantCode },
-    select: { timezone_code: true },
-    take: 2,
-  });
-  if (plants.length !== 1) {
-    throw new Error(`공장 ${plantCode} 이 ${plants.length === 0 ? '없다' : '둘 이상이다'}`);
-  }
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: plants[0].timezone_code,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
-
-/** `@db.Date` 칸 — 타임존 캐스팅 없이 그 날짜 그대로. */
-function dateOf(day: string): Date {
-  return new Date(`${day}T00:00:00.000Z`);
 }
