@@ -89,8 +89,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     const { production } = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
       production: Record<string, number | null>;
     };
-    // NG 100(불량 50 + 폐기 30 + 재작업 20) − 재작업 합격 10
-    expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 90, holdQty: 0, defectRate: (90 / 1100) * 100 });
+    // NG = 불량 상태 수량만(불량 50 + 폐기 30 + 재작업 20) — 재작업 합격 10 은 양품에만 더하고 NG 에서 빼지 않는다
+    expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 100, holdQty: 0, defectRate: (100 / 1100) * 100 });
     expect(trend.points).toHaveLength(9);
     expect(trend.points[0]).toEqual({ label: '08-24', value: 0 });
     expect(trend.points.slice(-2)).toEqual([
