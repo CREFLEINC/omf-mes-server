@@ -83,6 +83,15 @@ export const PURCHASE_ORDER: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
+/** 수주. 발주와 같은 모양이다. */
+export const SALES_ORDER: RelayTable = {
+  interfaceCode: 'IF-ERP-SO-RECV',
+  name: 'T_IF_SND_SO_INFOR_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['SO_NO', 'SO_SEQ_NO'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];
