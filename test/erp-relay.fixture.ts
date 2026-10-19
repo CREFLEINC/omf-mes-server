@@ -8,6 +8,7 @@
 import * as mssql from 'mssql';
 
 import { RelayConfig } from '../src/integration/erp/relay-client';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 export const RELAY: RelayConfig = {
   host: process.env.ERP_E2E_DB_HOST ?? '127.0.0.1',
@@ -73,4 +74,29 @@ export async function flagsOf(
     .request()
     .query<Record<string, string>>(`SELECT ${key} AS k, ${flag} AS f FROM dbo.${copy}`);
   return Object.fromEntries(result.recordset.map((r) => [r.k, r.f]));
+}
+
+/**
+ * 공장 코드가 없으면 첫 사업부 밑에 만든다. 만든 것만 `created` 에 담는다 — 끝나면 그것만 지운다.
+ * 운영 DB 에는 PL11·PL13 이 미리 있어야 한다(`deploy/seed/mes-initial-data.sql`).
+ */
+export async function ensurePlant(
+  prisma: PrismaService,
+  code: string,
+  created: bigint[],
+): Promise<void> {
+  if ((await prisma.plant.count({ where: { plant_code: code } })) > 0) return;
+  const businessUnit = await prisma.business_unit.findFirstOrThrow({
+    orderBy: { business_unit_id: 'asc' },
+  });
+  const plant = await prisma.plant.create({
+    data: {
+      plant_code: code,
+      plant_name: `e2e ${code}`,
+      legal_entity_id: businessUnit.legal_entity_id,
+      business_unit_id: businessUnit.business_unit_id,
+      timezone_code: 'Asia/Ho_Chi_Minh',
+    },
+  });
+  created.push(plant.plant_id);
 }

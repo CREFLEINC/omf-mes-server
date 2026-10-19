@@ -8,11 +8,23 @@ import { RelayRow, RelayTable, businessKey, orderColumns } from './relay-tables'
 
 export type Tx = Prisma.TransactionClient;
 
-/** 받는 표 하나 — 원본 표와 MES 에 옮기는 법. */
-export interface InboundTable {
+/**
+ * 받는 표 하나 — 원본 표와 MES 에 옮기는 법. 보통은 행 하나씩 반영하고, BOM 처럼 여러 행이
+ * 한 MES 행(모품목의 BOM 판)을 이루면 `unitOf` 로 묶어 한 트랜잭션에 반영한다.
+ * ⛔ 값이 그대로면 아무것도 바꾸지 않는다 — 같은 행이 다시 와도 결과가 같아야 한다.
+ */
+export type InboundTable = RowTable | UnitTable;
+
+export interface RowTable {
   readonly source: RelayTable;
-  /** ⛔ 값이 그대로면 아무것도 바꾸지 않는다 — 같은 행이 다시 와도 결과가 같아야 한다. */
   apply(tx: Tx, row: RelayRow): Promise<void>;
+}
+
+export interface UnitTable {
+  readonly source: RelayTable;
+  /** 함께 반영할 행의 열쇠. 읽는 순서가 업무 키 순이라 같은 열쇠의 행은 붙어서 온다. */
+  unitOf(row: RelayRow): string;
+  applyUnit(tx: Tx, rows: RelayRow[]): Promise<void>;
 }
 
 export interface InboundResult {
@@ -51,36 +63,44 @@ export class InboundCycle {
     for (let after: unknown[] | undefined; ;) {
       const rows = await this.relay.fetchPending(source, after, BATCH_SIZE);
       if (rows.length === 0) break;
-      result.read += rows.length;
-      after = orderColumns(source).map((column) => rows[rows.length - 1][column]);
+      const full = rows.length === BATCH_SIZE;
+      const units = unitsOf(table, rows, full);
+      const taken = units.flat();
+      result.read += taken.length;
+      after = orderColumns(source).map((column) => taken[taken.length - 1][column]);
 
       const applied: number[] = [];
       const failures: [number, string][] = [];
-      for (const row of rows) {
-        const key = businessKey(source, row);
-        if (quarantined.has(row.MES_INF_ID) || blocked.has(key)) {
-          blocked.add(key);
-          result.held += 1;
+      for (const unit of units) {
+        const keys = unit.map((row) => businessKey(source, row));
+        if (
+          unit.some((row) => quarantined.has(row.MES_INF_ID)) ||
+          keys.some((key) => blocked.has(key))
+        ) {
+          keys.forEach((key) => blocked.add(key));
+          result.held += unit.length;
           continue;
         }
         try {
           await this.prisma.$transaction(async (tx) => {
-            await table.apply(tx, row);
-            await recordDone(tx, source, row);
+            await ('applyUnit' in table ? table.applyUnit(tx, unit) : table.apply(tx, unit[0]));
+            for (const row of unit) await recordDone(tx, source, row);
           });
-          applied.push(row.MES_INF_ID);
-          result.applied += 1;
+          applied.push(...unit.map((row) => row.MES_INF_ID));
+          result.applied += unit.length;
         } catch (error) {
-          blocked.add(key);
-          result.failed += 1;
-          failures.push([row.MES_INF_ID, await recordFailure(this.prisma, source, row, error)]);
+          keys.forEach((key) => blocked.add(key));
+          result.failed += unit.length;
+          for (const row of unit) {
+            failures.push([row.MES_INF_ID, await recordFailure(this.prisma, source, row, error)]);
+          }
         }
       }
 
       await this.relay.ack(source, applied);
       for (const [id, message] of failures) await this.relay.writeError(source, id, message);
       await afterBatch?.();
-      if (rows.length < BATCH_SIZE) break;
+      if (!full) break;
     }
 
     this.logger.log(
@@ -102,6 +122,24 @@ export class InboundCycle {
     });
     return new Map(messages.map((m) => [Number(m.target_id), (m.payload as { key: string }).key]));
   }
+}
+
+/**
+ * 반영 단위로 나눈다. 꽉 찬 묶음의 마지막 단위는 다음 묶음에 이어질 수 있어 미룬다 — 커서가
+ * 그 앞에서 멈추므로 다음 묶음이 처음부터 다시 읽는다. 묶음 전체가 한 단위면 미룰 곳이 없다
+ * (모품목 하나의 구성품은 263행이 가장 많았다).
+ */
+export function unitsOf(table: InboundTable, rows: RelayRow[], full: boolean): RelayRow[][] {
+  if (!('unitOf' in table)) return rows.map((row) => [row]);
+  const units: RelayRow[][] = [];
+  let current: string | undefined;
+  for (const row of rows) {
+    const unit = table.unitOf(row);
+    if (unit !== current) units.push([]);
+    units[units.length - 1].push(row);
+    current = unit;
+  }
+  return full && units.length > 1 ? units.slice(0, -1) : units;
 }
 
 function messageKey(source: RelayTable, row: RelayRow): string {

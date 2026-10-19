@@ -16,6 +16,7 @@ import {
   createCopy,
   describeRelay,
   dropCopy,
+  ensurePlant,
   flagsOf,
   insertRow,
 } from './erp-relay.fixture';
@@ -42,8 +43,8 @@ describeRelay('ERP 사원 받기 (e2e · 중계 DB)', () => {
     relay = new RelayClient(RELAY);
     cycle = new InboundCycle(prisma, relay);
     await cleanup();
-    await ensurePlant('PL11');
-    await ensurePlant('PL13');
+    await ensurePlant(prisma, 'PL11', createdPlants);
+    await ensurePlant(prisma, 'PL13', createdPlants);
   });
 
   afterAll(async () => {
@@ -54,23 +55,6 @@ describeRelay('ERP 사원 받기 (e2e · 중계 DB)', () => {
     await relay?.close();
     await prisma?.$disconnect();
   });
-
-  async function ensurePlant(code: string): Promise<void> {
-    if ((await prisma.plant.count({ where: { plant_code: code } })) > 0) return;
-    const businessUnit = await prisma.business_unit.findFirstOrThrow({
-      orderBy: { business_unit_id: 'asc' },
-    });
-    const plant = await prisma.plant.create({
-      data: {
-        plant_code: code,
-        plant_name: `e2e ${code}`,
-        legal_entity_id: businessUnit.legal_entity_id,
-        business_unit_id: businessUnit.business_unit_id,
-        timezone_code: 'Asia/Ho_Chi_Minh',
-      },
-    });
-    createdPlants.push(plant.plant_id);
-  }
 
   async function cleanup(): Promise<void> {
     await prisma.integration_message.deleteMany({

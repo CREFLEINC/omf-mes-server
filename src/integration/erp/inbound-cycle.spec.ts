@@ -1,6 +1,6 @@
 import { MESSAGE_STATUS } from '../message/integration-message.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { INBOUND, InboundCycle, InboundTable, MAX_ATTEMPTS, Tx } from './inbound-cycle';
+import { INBOUND, InboundCycle, InboundTable, MAX_ATTEMPTS, Tx, UnitTable } from './inbound-cycle';
 import { RelayClient, RelayCursor } from './relay-client';
 import { RelayRow, RelayTable, orderColumns } from './relay-tables';
 
@@ -16,6 +16,18 @@ type Message = Record<string, unknown>;
 
 function row(id: number, code: string, seq = 1): RelayRow {
   return { MES_INF_ID: id, CODE: code, T_SEQ: seq, IF_YN: 'N' };
+}
+
+/** 코드 앞 네 글자가 같은 행을 한 단위로 묶는다(BOM 의 모품목 자리). */
+function unitTable(units: string[][], fail: string[] = []): UnitTable {
+  return {
+    source: SOURCE,
+    unitOf: (r) => (r.CODE as string).slice(0, 4),
+    applyUnit: async (_: Tx, rows: RelayRow[]) => {
+      if (rows.some((r) => fail.includes(r.CODE as string))) throw new Error('단위 실패');
+      units.push(rows.map((r) => r.CODE as string));
+    },
+  };
 }
 
 /** 앞에서부터 비교한다 — 실제 쿼리의 ORDER BY 와 같은 순서. */
@@ -223,6 +235,62 @@ describe('InboundCycle', () => {
       status_code: MESSAGE_STATUS.DONE,
       last_error_message: null,
     });
+  });
+
+  it('묶음 열쇠가 같은 이웃 행은 한 트랜잭션에 함께 반영한다', async () => {
+    const units: string[][] = [];
+    const f = fake([row(1, 'P001-a'), row(2, 'P001-b'), row(3, 'P002-a')]);
+
+    const result = await f.cycle.run(unitTable(units));
+
+    expect(result).toEqual({ read: 3, applied: 3, failed: 0, held: 0 });
+    expect(units).toEqual([['P001-a', 'P001-b'], ['P002-a']]);
+    expect(f.calls).toContain('ack 1,2,3');
+  });
+
+  it('꽉 찬 묶음의 끝에서 잘린 단위는 다음 묶음으로 미뤄 한 번에 반영한다', async () => {
+    const units: string[][] = [];
+    // 단위마다 3행 — 500행 묶음의 끝 단위(167번째)는 2행만 들어와 잘린다.
+    const rows = Array.from({ length: 501 }, (_, i) =>
+      row(i + 1, `${String(Math.floor(i / 3)).padStart(4, '0')}-${i % 3}`),
+    );
+    const f = fake(rows);
+
+    const result = await f.cycle.run(unitTable(units));
+
+    expect(result).toEqual({ read: 501, applied: 501, failed: 0, held: 0 });
+    expect(units).toHaveLength(167);
+    expect(units.every((unit) => unit.length === 3)).toBe(true);
+  });
+
+  it('단위의 한 행이라도 격리돼 있으면 단위 전체를 보류한다', async () => {
+    const units: string[][] = [];
+    const quarantined = {
+      message_key: 'IF-TEST-RECV:2',
+      interface_code: SOURCE.interfaceCode,
+      status_code: MESSAGE_STATUS.FAILED,
+      retry_count: MAX_ATTEMPTS,
+      target_id: 2n,
+      // 업무 키가 없는 기록이라도 행 번호로 막는다.
+      payload: {},
+    };
+    const f = fake([row(1, 'P001-a'), row(2, 'P001-b'), row(3, 'P002-a')], {
+      messages: [quarantined],
+    });
+
+    const result = await f.cycle.run(unitTable(units));
+
+    expect(result).toEqual({ read: 3, applied: 1, failed: 0, held: 2 });
+    expect(units).toEqual([['P002-a']]);
+  });
+
+  it('단위 반영이 실패하면 그 단위의 행이 모두 실패로 남는다', async () => {
+    const f = fake([row(1, 'P001-a'), row(2, 'P001-b'), row(3, 'P002-a')]);
+
+    const result = await f.cycle.run(unitTable([], ['P001-b']));
+
+    expect(result).toEqual({ read: 3, applied: 1, failed: 2, held: 0 });
+    expect(f.calls).toEqual(['fetch', 'ack 3', 'error 1 단위 실패', 'error 2 단위 실패']);
   });
 
   it('Postgres 트랜잭션 안에서 중계 DB 를 부르지 않는다', async () => {

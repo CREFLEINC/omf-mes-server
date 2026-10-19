@@ -1,4 +1,4 @@
-import { InboundTable, Tx } from '../inbound-cycle';
+import { RowTable, Tx } from '../inbound-cycle';
 import { PARTNER, RelayRow, isCancel, requiredText } from '../relay-tables';
 
 /**
@@ -8,7 +8,7 @@ import { PARTNER, RelayRow, isCancel, requiredText } from '../relay-tables';
  *
  * 주소·대표자·사업자번호·전화는 담을 칸이 없어 원본 기록(payload)에만 남는다.
  */
-export const partnerTable: InboundTable = {
+export const partnerTable: RowTable = {
   source: PARTNER,
   async apply(tx: Tx, row: RelayRow): Promise<void> {
     const code = requiredText(row, 'BP_CD');
