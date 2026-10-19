@@ -31,7 +31,8 @@ type Card = { cardCode: string; value: number; valueStatusCode: string; deltaRat
 
 /**
  * 하노이 공장(+07) 하루 — 교대 08~17시(9h) − 계획 정지 12~13시 = 계획 8h.
- * 세션 08~16시(8h) − STOP 10~11시 = 실제 7h → 시간가동률 87.5%.
+ * 세션 08~16시(8h) − STOP 10~11시 − 계획 정지와 겹친 12~13시 = 실제 6h → 시간가동률 75%.
+ * (실제는 계획과 같은 구간으로 자른다 — 계획 정지 중 작업은 세지 않는다. 사용자 결정 2026-10-19)
  */
 describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   let app: INestApplication;
@@ -101,10 +102,20 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   it('시간가동률은 계획 가동시간 기준, 성능가동률은 C/T×수량÷캐비티 ÷ 실제 가동시간이다', async () => {
     const { cards } = await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() });
 
-    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 87.5, valueStatusCode: 'AVAILABLE' });
-    // 10초 × (1100 + 재작업 10) ÷ 캐비티 2 = 5550초 ÷ 7h(25200초) — 성능률은 재작업 실적도 센다
-    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((5550 / 25200) * 100, 6);
-    expect(card(cards, 'OEE').value).toBeCloseTo(0.875 * (5550 / 25200) * (1010 / 1100) * 100, 6);
+    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 75, valueStatusCode: 'AVAILABLE' });
+    // 10초 × (1100 + 재작업 10) ÷ 캐비티 2 = 5550초 ÷ 6h(21600초) — 성능률은 재작업 실적도 센다
+    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((5550 / 21600) * 100, 6);
+    expect(card(cards, 'OEE').value).toBeCloseTo(0.75 * (5550 / 21600) * (1010 / 1100) * 100, 6);
+  });
+
+  it('시간가동률은 근무 시간 밖 작업을 세지 않아 100% 를 넘지 않는다 — 성능률 분모도 같은 가동시간이다', async () => {
+    const { cards } = await read({ baseDate: '2026-08-31', plantId: ids.plant.toString() });
+
+    // 세션 16h 중 교대 안 9h ÷ 계획 9h — 분자를 자르지 않으면 177.8% 다.
+    expect(card(cards, 'AVAILABILITY_RATE')).toMatchObject({ value: 100, valueStatusCode: 'AVAILABLE' });
+    // 10초 × 500 ÷ 캐비티 2 = 2500초 ÷ 9h(32400초)
+    expect(card(cards, 'PERFORMANCE_RATE').value).toBeCloseTo((2500 / 32400) * 100, 6);
+    expect(card(cards, 'OEE').value).toBeCloseTo((2500 / 32400) * 100, 6);
   });
 
   it('미처리 알람은 로그인 사용자의 안 읽은 알림이다', async () => {
@@ -135,9 +146,8 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
       quality: { pqc: { equipmentDefectRates: { equipmentId: number; defectRate: number }[] } };
     };
-    const [item] = body.equipment.items;
+    const item = body.equipment.items.find((row) => row.equipmentId === Number(ids.equipment));
 
-    expect(body.equipment.items).toHaveLength(1);
     expect(item).toMatchObject({
       equipmentId: Number(ids.equipment),
       statusCode: 'IDLE',
@@ -148,8 +158,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
       standardCycleTimeSec: 10,
       currentWorkOrderNo: null,
     });
-    expect(item.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
-    expect(body.equipment.statusCounts).toEqual({ RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 1 });
+    expect(item?.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
     expect(body.quality.pqc.equipmentDefectRates).toEqual([
       { equipmentId: Number(ids.equipment), equipmentCode: PREFIX, defectRate: (100 / 1100) * 100, ngQty: 100 },
     ]);
@@ -200,6 +209,25 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
   });
 
+  it('설비 현황 — 이상 상태 고장도 정지, 비가동 여럿은 하나라도 교체가 아니면 정지, 계측기는 뺀다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      equipment: { statusCounts: Record<string, number>; items: { equipmentCode: string; statusCode: string }[] };
+    };
+    const status = Object.fromEntries(body.equipment.items.map((row) => [row.equipmentCode.slice(PREFIX.length), row]));
+
+    // 계측기(INSTRUMENT_TYPE 계열 CALIPER · 옛 유형 INSPECTION)는 빠지고, 비활성·미등록 유형 코드(MACHINE)는 남는다.
+    expect(Object.keys(status).sort()).toEqual(['', '-BRK-ABNORMAL', '-BRK-NULL', '-DT-MIXED', '-DT-MOLD', '-MACHINE']);
+    expect(status['-BRK-ABNORMAL']).toMatchObject({ statusCode: 'STOPPED', statusReasonName: '유압 이상' });
+    expect(status['-BRK-NULL']).toMatchObject({ statusCode: 'STOPPED' });
+    expect(status['-DT-MIXED']).toMatchObject({ statusCode: 'STOPPED', statusReasonCode: 'MATERIAL_WAIT' });
+    expect(status['-DT-MOLD']).toMatchObject({
+      statusCode: 'CHANGEOVER',
+      statusReasonCode: 'MOLD_CHANGE',
+      statusSince: '2026-09-01T03:00:00.000Z',
+    });
+    expect(body.equipment.statusCounts).toMatchObject({ STOPPED: 3, CHANGEOVER: 1 });
+  });
+
   async function fixtures(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' },
@@ -244,6 +272,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         },
       })
     ).equipment_id;
+    await equipmentFixtures();
     ids.mold = (
       await prisma.mold.create({
         data: {
@@ -295,8 +324,12 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         effective_from: new Date('2026-01-01'),
       },
     });
-    await prisma.work_calendar_day.create({
-      data: { work_calendar_id: ids.calendar, calendar_date: new Date(BASE_DATE), day_type_code: 'WORKING' },
+    await prisma.work_calendar_day.createMany({
+      data: [BASE_DATE, '2026-08-31'].map((date) => ({
+        work_calendar_id: ids.calendar,
+        calendar_date: new Date(date),
+        day_type_code: 'WORKING',
+      })),
     });
     await prisma.planned_stop.create({
       data: {
@@ -361,6 +394,20 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
         { work_session_id: ids.session, event_type_code: 'STOP', occurred_at: new Date('2026-09-01T03:00:00Z') },
         { work_session_id: ids.session, event_type_code: 'RESUME', occurred_at: new Date('2026-09-01T04:00:00Z') },
       ],
+    });
+
+    // 08-31 — 교대(08~17시 = 01~10Z) 밖으로 넘친 세션 03~19시(16h). 근무 시간 안 9h 만 가동으로 센다.
+    await prisma.work_session.create({
+      data: {
+        work_order_id: ids.order,
+        session_no: 2,
+        equipment_id: ids.equipment,
+        terminal_id: ids.terminal,
+        started_at: new Date('2026-08-30T20:00:00Z'),
+        ended_at: new Date('2026-08-31T12:00:00Z'),
+        status_code: 'ENDED',
+        idempotency_key: `${PREFIX}-SESSION-OFFSHIFT`,
+      },
     });
 
     await addResult(ids.order, 1, '2026-09-01T02:00:00Z', { good_qty: 900, defect_qty: 50, scrap_qty: 30, rework_qty: 20 });
@@ -444,6 +491,49 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
   }
 
+  /** 설비 현황 규칙용 설비 — 기록은 09-01 에 열려 아직 닫히지 않았다(판단 시각과 무관하게 걸려 있다). */
+  async function equipmentFixtures(): Promise<void> {
+    const add = async (suffix: string, typeCode = 'PRESS'): Promise<bigint> =>
+      (
+        await prisma.equipment.create({
+          data: {
+            plant_id: ids.plant,
+            equipment_code: `${PREFIX}${suffix}`,
+            equipment_name: PREFIX,
+            equipment_type_code: typeCode,
+            status_code: 'IN_SERVICE',
+          },
+        })
+      ).equipment_id;
+    const breakdown = async (equipmentId: bigint, no: string, occurrence: string | null) =>
+      prisma.breakdown.create({
+        data: {
+          breakdown_no: `${PREFIX}-${no}`,
+          equipment_id: equipmentId,
+          reported_at: new Date('2026-09-01T02:00:00Z'),
+          description: '유압 이상',
+          status_code: 'RECEIVED',
+          occurrence_state_code: occurrence,
+        },
+      });
+    const downtime = async (equipmentId: bigint, reasonCode: string, startedAt: string) =>
+      prisma.equipment_downtime.create({
+        data: { equipment_id: equipmentId, started_at: new Date(startedAt), reason_code: reasonCode },
+      });
+
+    await breakdown(await add('-BRK-ABNORMAL'), 'ABNORMAL', 'ABNORMAL');
+    await breakdown(await add('-BRK-NULL'), 'NULL', null);
+    const mixed = await add('-DT-MIXED');
+    await downtime(mixed, 'MATERIAL_WAIT', '2026-09-01T01:00:00Z');
+    await downtime(mixed, 'MOLD_CHANGE', '2026-09-01T02:00:00Z');
+    const mold = await add('-DT-MOLD');
+    await downtime(mold, 'MOLD_CHANGE', '2026-09-01T01:00:00Z');
+    await downtime(mold, 'MOLD_CHANGE', '2026-09-01T03:00:00Z');
+    await add('-CALIPER', 'CALIPER');
+    await add('-INSPECTION', 'INSPECTION');
+    await add('-MACHINE', 'MACHINE');
+  }
+
   async function addOrder(type: string): Promise<bigint> {
     return (
       await prisma.work_order.create({
@@ -519,7 +609,10 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     await prisma.work_calendar.deleteMany({ where: { calendar_code: PREFIX } });
     await prisma.shift.deleteMany({ where: { shift_code: PREFIX } });
     await prisma.mold.deleteMany({ where: { mold_code: PREFIX } });
-    await prisma.equipment.deleteMany({ where: { equipment_code: PREFIX } });
+    const equipmentScope = { equipment: { equipment_code: { startsWith: PREFIX } } };
+    await prisma.equipment_downtime.deleteMany({ where: equipmentScope });
+    await prisma.breakdown.deleteMany({ where: equipmentScope });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.terminal.deleteMany({ where: { terminal_code: PREFIX } });
     await prisma.worker.deleteMany({ where: { worker_no: PREFIX } });
     await prisma.production_line.deleteMany({ where: { line_code: PREFIX } });
