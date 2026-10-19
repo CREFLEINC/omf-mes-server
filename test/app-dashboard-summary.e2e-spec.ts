@@ -246,7 +246,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     ]);
   });
 
-  it('품질 — 재검사 뒤 합격은 합격으로 센다(최종 회차), 없는 값은 null 이다', async () => {
+  it('품질 — 재검사 뒤 합격은 합격으로 센다(최종 회차), 전수 재검사는 당월 재검사 회차 합, 없는 값은 null 이다', async () => {
     const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
       quality: Record<string, Record<string, unknown>>;
       shipment: Record<string, unknown>;
@@ -263,7 +263,12 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(pqc.recentLots).toEqual([
       expect.objectContaining({ judgmentCode: 'ACCEPTED', equipmentCode: PREFIX, lotNo: null, counterpartName: null }),
     ]);
-    expect(iqc).toMatchObject({ monthPassRate: 0, monthLots: { accepted: 0, rejected: 1, held: 0 }, fullReinspect: null });
+    // 최종 회차: 불합격 LOT 1 + 재검사 끝에 합격한 LOT 1. 전수 재검사 = 당월 재검사 회차(3회차)만의 합.
+    expect(iqc).toMatchObject({
+      monthPassRate: 50,
+      monthLots: { accepted: 1, rejected: 1, held: 0 },
+      fullReinspect: { inputQty: 10, restoredQty: 10 },
+    });
     // 한 LOT 의 입하 줄 2개를 두 번 세지 않고, 취소된 입하의 공급사는 넣지 않는다.
     expect(iqc.vendorDefects).toEqual([{ partnerId: Number(ids.supplier), partnerName: `${PREFIX}-SUPPLIER`, rejectedQty: 5 }]);
     expect(nonconformance).toMatchObject({ overdueCount: null, openCount: 0, phenomena: [] });
@@ -319,7 +324,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(body.shipment).toMatchObject({ todayShipmentCount: 0, nextShipment: null });
     expect(body.production).toEqual({ totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, defectRate: null });
     expect(body.quality).toMatchObject({
-      iqc: { monthPassRate: null, recentLots: [], fullReinspect: null },
+      iqc: { monthPassRate: null, recentLots: [], fullReinspect: { inputQty: 0, restoredQty: 0 } },
       nonconformance: { overdueCount: null, monthQty: 0 },
     });
   });
@@ -838,6 +843,69 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     await receipt('IR-CANCELLED', cancelledSupplier, 'CANCELLED', 1);
     await receipt('IR', ids.supplier, 'REGISTERED', 2);
     await addInspection('IQC', 'IQC', { target_type_code: 'LOT', target_id: lot.lot_id, lot_id: lot.lot_id }, 'REJECTED', 5);
+    await iqcReinspectFixtures();
+  }
+
+  /**
+   * IQC 재검사 — 1회차(08-30 불합격) → 재검사 2회차(08-31 불합격) → 재검사 3회차(09-01 합격, 불합격 0).
+   * 당월 「전수 재검사」에는 3회차만 들어간다(2회차는 전월, 1회차는 재검사가 아니다). LOT 하나에 IQC 의뢰는 하나라 LOT 을 따로 둔다.
+   */
+  async function iqcReinspectFixtures(): Promise<void> {
+    const lotId = (
+      await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-LOT-RE`,
+          item_id: ids.item,
+          lot_type_code: 'MATERIAL',
+          plant_id: ids.plant,
+          initial_qty: 10,
+          uom_id: ids.uom,
+          source_type_code: 'INBOUND_RECEIPT',
+          source_id: 0,
+          status_code: 'ACTIVE',
+        },
+      })
+    ).lot_id;
+    const request = await prisma.inspection_request.create({
+      data: {
+        inspection_request_no: `${PREFIX}-IQC-RE`,
+        inspection_type_code: 'IQC',
+        target_type_code: 'LOT',
+        target_id: lotId,
+        lot_id: lotId,
+        item_id: ids.item,
+        target_qty: 10,
+        uom_id: ids.uom,
+        status_code: 'COMPLETED',
+        requested_at: new Date('2026-08-30T02:00:00Z'),
+      },
+    });
+    let previous: bigint | null = null;
+    for (const [round, judgment, inspectedAt] of [
+      [1, 'REJECTED', '2026-08-30T03:00:00Z'],
+      [2, 'REJECTED', '2026-08-31T03:00:00Z'],
+      [3, 'ACCEPTED', '2026-09-01T03:00:00Z'],
+    ] as const) {
+      const created: { inspection_result_id: bigint } = await prisma.inspection_result.create({
+        data: {
+          inspection_result_no: `${PREFIX}-IQC-RE-${round}`,
+          inspection_request_id: request.inspection_request_id,
+          inspection_round: round,
+          inspected_qty: 10,
+          accepted_qty: judgment === 'ACCEPTED' ? 10 : 0,
+          rejected_qty: judgment === 'REJECTED' ? 10 : 0,
+          held_qty: 0,
+          uom_id: ids.uom,
+          overall_judgment_code: judgment,
+          inspector_id: ids.worker,
+          inspected_at: new Date(inspectedAt),
+          status_code: 'CONFIRMED',
+          previous_result_id: previous,
+          idempotency_key: `${PREFIX}-IQC-RE-${round}`,
+        },
+      });
+      previous = created.inspection_result_id;
+    }
   }
 
   async function addInspection(
@@ -949,7 +1017,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     const receiptScope = { inbound_receipt_no: { startsWith: PREFIX } };
     await prisma.inbound_receipt_line.deleteMany({ where: { inbound_receipt: receiptScope } });
     await prisma.inbound_receipt.deleteMany({ where: receiptScope });
-    await prisma.lot.deleteMany({ where: { lot_no: `${PREFIX}-LOT` } });
+    await prisma.lot.deleteMany({ where: { lot_no: { in: [`${PREFIX}-LOT`, `${PREFIX}-LOT-RE`] } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.partner.deleteMany({ where: { partner_code: { startsWith: PREFIX } } });
     await prisma.work_session_event.deleteMany({ where: { work_session: { idempotency_key: { startsWith: PREFIX } } } });

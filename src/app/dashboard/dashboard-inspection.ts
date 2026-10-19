@@ -12,8 +12,26 @@ export type InspectionType = 'IQC' | 'PQC' | 'OQC';
  * ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
  */
 export function finalResultCte(period: DashboardPeriod): Prisma.Sql {
-  return Prisma.sql`final_result AS (
-    SELECT ir.inspection_result_id, ir.inspected_at, ir.inspected_qty, ir.rejected_qty,
+  return confirmedResultCte(Prisma.sql`final_result`, period, Prisma.sql`ir.inspection_round = (
+        SELECT MAX(x.inspection_round) FROM quality.inspection_result x
+        WHERE x.inspection_request_id = ir.inspection_request_id AND x.status_code = 'CONFIRMED')`);
+}
+
+/**
+ * `iqc_reinspect` CTE — IQC 「재검사 회차」(`previous_result_id` 가 있는 결과)를 회차마다 모두 싣는다(#118 사용자 결정 2026-10-19).
+ * 공장·판정 시각·확정 조건은 `final_result` 와 같은 조각이다. ⚠ 앞에 `plant_scope` CTE 가 있어야 한다.
+ */
+export function iqcReinspectCte(period: DashboardPeriod): Prisma.Sql {
+  return confirmedResultCte(
+    Prisma.sql`iqc_reinspect`,
+    period,
+    Prisma.sql`req.inspection_type_code = 'IQC' AND ir.previous_result_id IS NOT NULL`,
+  );
+}
+
+function confirmedResultCte(name: Prisma.Sql, period: DashboardPeriod, filter: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`${name} AS (
+    SELECT ir.inspection_result_id, ir.inspected_at, ir.inspected_qty, ir.accepted_qty, ir.rejected_qty,
       ir.overall_judgment_code AS judgment, req.inspection_type_code AS type, req.item_id, req.lot_id,
       req.work_order_id, wo.planned_equipment_id, sr.customer_id,
       (ir.inspected_at AT TIME ZONE ps.tz)::date AS local_date
@@ -31,9 +49,7 @@ export function finalResultCte(period: DashboardPeriod): Prisma.Sql {
     END
     WHERE ir.status_code = 'CONFIRMED' AND ir.overall_judgment_code IN ('ACCEPTED', 'REJECTED', 'HELD')
       AND ${coarseRange(Prisma.sql`ir.inspected_at`, periodStart(period), period.to)}
-      AND ir.inspection_round = (
-        SELECT MAX(x.inspection_round) FROM quality.inspection_result x
-        WHERE x.inspection_request_id = ir.inspection_request_id AND x.status_code = 'CONFIRMED')
+      AND ${filter}
   )`;
 }
 
