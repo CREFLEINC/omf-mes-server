@@ -4,6 +4,7 @@ import { DocumentStateService } from '../../core/document-state';
 import { LotHoldService, LotQualityStatusService } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DefectRecordWriteService } from '../defect/defect-record-write.service';
 import { InspectionConfirmService } from './inspection-confirm.service';
 
 /** omf-all-around#105 — PQC 합격 확정이 그 W/O 의 생산된 검사대기 생산LOT 을 정상으로 올린다. */
@@ -27,7 +28,7 @@ function harness(
   } as unknown as Prisma.TransactionClient;
   const lots = { moveWithin: jest.fn().mockResolvedValue({ movedLotIds: [] }) } as unknown as LotQualityStatusService;
   const holds = { lockLotsWithin: jest.fn().mockResolvedValue([]) } as unknown as LotHoldService;
-  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService);
+  const service = new InspectionConfirmService({} as PrismaService, {} as DocumentStateService, lots, holds, {} as NumberingService, {} as DefectRecordWriteService);
   const run = () =>
     service.applyConfirmEffects(tx, {
       inspectionResultId: 8n,

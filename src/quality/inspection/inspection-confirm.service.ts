@@ -18,16 +18,20 @@ import {
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { assertAccountWorker } from './inspection-result-write-rules';
+import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 
-/** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 2. 판정을 비우면 저장된 값을 쓴다. */
+/** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 3. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
   overallJudgmentCode?: string;
   remarks?: string;
+  /** IQC 불합격 사유 — 확정과 한 트랜잭션에서 그 회차의 불량 기록을 갈아 끼운다(장부 P-47 · omf-all-around#121). */
+  defects?: InspectionDefectInput[];
 }
 
 /** `applyConfirmEffects()` 의 입력 — 확정 경로 둘이 각자 모아 «같은 모양»으로 넘긴다. */
@@ -101,6 +105,7 @@ export class InspectionConfirmService {
     private readonly lots: LotQualityStatusService,
     private readonly holds: LotHoldService,
     private readonly numbering: NumberingService,
+    private readonly defects: DefectRecordWriteService,
   ) {}
 
   async confirm(
@@ -113,8 +118,9 @@ export class InspectionConfirmService {
     await assertCodeValues(this.prisma, [
       { field: 'overallJudgmentCode', value: body.overallJudgmentCode, groupCode: JUDGMENT_GROUP },
     ]);
-    await assertAccountWorker(this.prisma, appUserId);
+    const workerId = await assertAccountWorker(this.prisma, appUserId);
     const resultId = BigInt(inspectionResultId);
+    const preparedDefects = await prepareConfirmDefects(this.prisma, this.defects, resultId, body);
     // IQC 불합격이면 부적합 번호를 트랜잭션 «밖»에서 받는다(P-41 · 채번 규약). 판정은 본문이 우선이다.
     const stored = await this.prisma.inspection_result.findUnique({
       where: { inspection_result_id: resultId },
@@ -155,8 +161,16 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
-      await assertRejectionRecorded(tx, resultId, result.inspection_request_id, judgment);
       const changedAt = new Date();
+      await syncConfirmDefectsWithin(tx, this.defects, {
+        inspectionResultId: resultId,
+        inspectionRequestId: result.inspection_request_id,
+        judgment,
+        prepared: preparedDefects,
+        detectedAt: changedAt,
+        actor: { appUserId, workerId },
+      });
+      await assertRejectionRecorded(tx, resultId, result.inspection_request_id, judgment);
       await tx.inspection_result.update({
         where: { inspection_result_id: resultId },
         data: {
