@@ -98,6 +98,7 @@ export class DispositionWriteService {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
       }
       assertWithinRemaining(body, target);
+      if (isSort) assertSortWholeRemaining(body, target);
 
       // ⛔ `decidedBy`·`decidedAt` 은 서버가 채운다(B-6). `approval_request_id` 는 비운다(결재 0).
       const decision = await tx.disposition_decision.create({
@@ -258,6 +259,18 @@ function assertShape(body: DispositionDecisionCreate, target: Target): void {
  * 파싱하지 않는다」라 못 박아 구조화 칸으로 내린다(`W-03-10` §6). ⭐ 기준값이
  * `remainingSummary()` 가 낸 «그 값»이라 화면이 보는 수와 거절 기준이 한 자리에서 나온다.
  */
+/**
+ * 선별은 부적합의 «남은 수량 전체»일 때만 한다(#108 리뷰 m3 · 담당자 결정 (a) · 장부 P-53). 일부만 선별하면
+ * 원 LOT 이 정상(C23)으로 가면서 남은 판정 대상까지 정상이 된다 — LOT 하나를 수량으로 나눠 판정할 축이 없다.
+ */
+function assertSortWholeRemaining(body: DispositionDecisionCreate, target: Target): void {
+  const { remainingQty } = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
+  if (new Prisma.Decimal(body.decisionQty).equals(remainingQty)) return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    field('decisionQty', ERROR_CODE.INVALID, `선별은 부적합의 남은 수량 전체(${String(remainingQty)})로만 판정할 수 있습니다.`),
+  ]);
+}
+
 function assertWithinRemaining(body: DispositionDecisionCreate, target: Target): void {
   const summary = remainingSummary(target.affectedQtyTotal, target.decidedQtyTotal, target.uomId);
   if (new Prisma.Decimal(body.decisionQty).lessThanOrEqualTo(summary.remainingQty)) return;

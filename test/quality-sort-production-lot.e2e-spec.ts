@@ -109,6 +109,21 @@ describe('처분 선별 — 생산 LOT (e2e)', () => {
     expect(await onHand(lotId)).toBe(50);
   });
 
+  /* #108 리뷰 m3 · 담당자 결정 (a) — 선별은 부적합의 남은 수량 전체일 때만이다. */
+  it('⛔ 선별 — 남은 수량의 일부만 판정하면 400 이고 아무것도 갈리지 않는다', async () => {
+    const { lotId } = await productionLot(100, 'DEFECTIVE', { stock: 100 });
+    const nc = await nonconformance(lotId, 100, 'DEFECTIVE');
+
+    const response = await decide(nc, {
+      dispositionTypeCode: 'SORT', decisionQty: 60, acceptedQty: 40, rejectedQty: 20, businessDate: DAY,
+    }).expect(400);
+
+    expect(JSON.stringify(response.body)).toContain('남은 수량 전체');
+    expect(await prisma.lot.count({ where: { parent_lot_id: lotId } })).toBe(0);
+    expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+    expect(await onHand(lotId)).toBe(100);
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function decide(nonconformanceId: bigint, body: Record<string, unknown>): request.Test {
