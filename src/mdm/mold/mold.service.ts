@@ -39,6 +39,7 @@ export const MOLD_REFERRERS: readonly Referrer[] = [
   ['maintenance.maintenance_order', 'mold_id'],
   ['maintenance.maintenance_result', 'mold_id'],
   ['maintenance.tool_usage', 'mold_id'],
+  ['mdm.item_resource_map', 'mold_id'],
   ['production.production_result', 'mold_id'],
   ['production.work_order', 'planned_mold_id'],
   ['production.work_order_resource_assignment', 'mold_id'],
