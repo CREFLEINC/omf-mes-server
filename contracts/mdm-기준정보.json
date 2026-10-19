@@ -19603,7 +19603,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -19613,7 +19613,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -19623,7 +19623,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      }
     },
@@ -20750,7 +20750,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -20760,7 +20760,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -20770,7 +20770,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      }
     }
@@ -20826,7 +20826,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -20836,7 +20836,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -20846,7 +20846,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      }
     }
@@ -20896,7 +20896,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 WIP 위치. 계획 확정·4M 라인 선택 때 W/O defaultWipLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_wip_location_id"
      },
      "defaultFgLocationId": {
@@ -20906,7 +20906,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 완제품 위치. 계획 확정·4M 라인 선택 때 W/O defaultFgLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_fg_location_id"
      },
      "defaultScrapLocationId": {
@@ -20916,7 +20916,7 @@
       ],
       "example": 3001,
       "format": "int64",
-      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
+      "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
      }
     }

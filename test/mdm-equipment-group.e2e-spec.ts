@@ -323,6 +323,17 @@ describe('설비 그룹 (e2e)', () => {
     expect(kept.body).toMatchObject({ groupName: '이름만', defaultScrapLocationId: locationId });
   });
 
+  it('⛔ 자재창고 위치는 기본 위치로 둘 수 없다 — 400 INVALID', async () => {
+    const materialLocationId = await makeLocation(plantId, 'M', 'MATERIAL');
+    const rejected = await request(app.getHttpServer())
+      .post('/api/mdm/equipment-groups')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send(body(`${PREFIX}-LOCM`, { defaultWipLocationId: materialLocationId }))
+      .expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'defaultWipLocationId', code: 'INVALID' });
+  });
+
   it('⛔ 없는 위치·다른 공장 위치는 400 INVALID 다', async () => {
     const missing = await request(app.getHttpServer())
       .post('/api/mdm/equipment-groups')
@@ -381,7 +392,7 @@ describe('설비 그룹 (e2e)', () => {
     return { id: created.body.equipmentGroupId, ...(await detailOf(created.body.equipmentGroupId)) };
   }
 
-  async function makeLocation(inPlant: number, suffix: string): Promise<number> {
+  async function makeLocation(inPlant: number, suffix: string, warehouseTypeCode = 'GENERAL'): Promise<number> {
     const unit = await prisma.business_unit.findFirstOrThrow();
     const warehouse = await prisma.warehouse.create({
       data: {
@@ -389,7 +400,7 @@ describe('설비 그룹 (e2e)', () => {
         business_unit_id: unit.business_unit_id,
         warehouse_code: `${PREFIX}-WH${suffix}`,
         warehouse_name: `설비그룹검사창고${suffix}`,
-        warehouse_type_code: 'GENERAL',
+        warehouse_type_code: warehouseTypeCode,
         management_level_code: 'LOCATION',
       },
     });

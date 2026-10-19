@@ -243,19 +243,23 @@ export class EquipmentGroupService {
     }
   }
 
-  /** 기본 위치는 그 라인 공장의 창고 위치여야 한다 — 다른 공장 위치로 출고되면 재고가 공장을 넘는다. */
+  /**
+   * 기본 위치는 그 라인 공장의, 자재창고가 아닌 창고 위치여야 한다 — 다른 공장 위치면 재고가 공장을 넘고,
+   * 자재창고 위치면 WIP 출고가 창고 안에서 맴돈다. 칸별 창고 유형은 고객이 유형을 늘릴 수 있어 화면이 거른다.
+   */
   private async assertDefaultLocations(plantId: number, input: LineDefaultLocations): Promise<void> {
     for (const field of Object.keys(DEFAULT_LOCATION_COLUMNS) as (keyof LineDefaultLocations)[]) {
       const locationId = input[field];
       if (locationId === undefined || locationId === null) continue;
       const location = await this.prisma.location.findUnique({
         where: { location_id: locationId },
-        select: { warehouse: { select: { plant_id: true } } },
+        select: { warehouse: { select: { plant_id: true, warehouse_type_code: true } } },
       });
       if (location === null || Number(location.warehouse.plant_id) !== plantId) {
-        throw new ContractException(HttpStatus.BAD_REQUEST, [
-          { scope: 'field', field, code: ERROR_CODE.INVALID, message: '이 공장의 위치가 아닙니다.' },
-        ]);
+        throw locationError(field, '이 공장의 위치가 아닙니다.');
+      }
+      if (location.warehouse.warehouse_type_code === MATERIAL_WAREHOUSE) {
+        throw locationError(field, '자재창고 위치는 라인 기본 위치로 둘 수 없습니다.');
       }
     }
   }
@@ -270,6 +274,14 @@ export class EquipmentGroupService {
     if (!exists) throw new NotFoundException('없는 설비 그룹입니다.');
     assertUpdated(0);
   }
+}
+
+const MATERIAL_WAREHOUSE = 'MATERIAL';
+
+function locationError(field: string, message: string): ContractException {
+  return new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field, code: ERROR_CODE.INVALID, message },
+  ]);
 }
 
 function parentError(message: string): ContractException {
