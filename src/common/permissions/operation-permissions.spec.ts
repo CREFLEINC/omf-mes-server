@@ -116,6 +116,13 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(OPERATION_PERMISSIONS['POST /app/document-issues']).toContain('P-06-01');
   });
 
+  // W-03-11(PQC 검사 등록·조회)은 설계 밖 관리웹 화면이다 — 장부 P-51. 도출된 화면이 빠지지 않아야 한다.
+  it('⛔ 검사 결과 저장에 관리웹 PQC 화면이 도출된 화면들과 함께 있다 — 장부 P-51', () => {
+    expect(OPERATION_PERMISSIONS['POST /quality/inspection-results']).toEqual(
+      expect.arrayContaining(['P-02-13', 'W-01-01', 'W-04-03', 'W-03-11']),
+    );
+  });
+
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
     expect(OPERATION_PERMISSIONS['PUT /inventory/counts/{inventoryCountId}/lines']).toEqual([
       'M-01-11',

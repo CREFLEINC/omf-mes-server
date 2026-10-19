@@ -23,6 +23,7 @@ import {
   assertCodes,
   assertReferences,
   bornConfirmed,
+  preparePqcWrite,
   assertAccountWorker,
   resolveInspector,
   throwRoundConflict,
@@ -34,6 +35,7 @@ import { reopenInspectionRequestWithin } from './inspection-request-reopen';
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
 /** 계약 `QualityConflictResponse.code` — required 라 409 를 낼 때마다 싣는다. */
 const INVALID_STATE = 'INVALID_STATE';
+const DUPLICATE_KEY = 'DUPLICATE_KEY';
 
 /**
  * 검사 결과 저장(PR ③b) · 수정(PR ③c).
@@ -60,6 +62,8 @@ export class InspectionResultWriteService {
     assertMeasurementValues(body.measurements);
     const inspectorId = await resolveInspector(this.prisma, context);
     const round = await assertReferences(this.prisma, body, context.version);
+    // PQC 는 실적이 먼저이고, 작성중 1회차가 있으면 새로 만들지 않고 그 회차를 덮는다(장부 P-49).
+    const draftResultId = await preparePqcWrite(this.prisma, body, round);
     const inspectedAt = new Date(body.inspectedAt);
     // ⛔ 채번은 `$transaction` 을 «열기 전»이다 — 안에서 부르면 커넥션을 둘 쥐고 풀이 마르면
     //    `P2024` 로 죽는다(`numbering.service.ts:51-53` · I-2 R-2). 결번은 허용한다.
@@ -76,11 +80,16 @@ export class InspectionResultWriteService {
       born === undefined
         ? undefined
         : await allocateIqcNonconformanceNo(this.prisma, this.numbering, BigInt(body.inspectionRequestId), body.overallJudgmentCode, born.changedAt);
-    const resultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10));
+    const resultNo =
+      draftResultId === null
+        ? await this.numbering.next(NUMBERING_DOCUMENT, null, inspectedAt.toISOString().slice(0, 10))
+        : '';
 
     return this.prisma
       .$transaction(async (tx) => {
-        const created = await tx.inspection_result.create({
+        const created = draftResultId !== null
+          ? await this.overwriteDraft(tx, draftResultId, body, { inspectorId, inspectedAt, confirmedAt: born?.changedAt, context })
+          : await tx.inspection_result.create({
           data: {
             inspection_result_no: resultNo,
             inspection_request_id: BigInt(body.inspectionRequestId),
@@ -137,7 +146,7 @@ export class InspectionResultWriteService {
         if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
           actor: context.terminalAudit, targetTypeCode: 'INSPECTION_RESULT',
           targetId: created.inspection_result_id,
-          eventTypeCode: born === undefined ? 'CREATED' : 'CREATED_CONFIRMED',
+          eventTypeCode: (draftResultId === null ? 'CREATED' : 'UPDATED') + (born === undefined ? '' : '_CONFIRMED'),
         });
         return this.reread(tx, created.inspection_result_id);
       })
@@ -227,6 +236,44 @@ export class InspectionResultWriteService {
    * 내지 않는다(그 목록은 `WorkerNo`(필수)를 단 열 자리뿐이고 여기는 아니다).
    * ⚠ 관리자 계정에 `worker` 행이 없으면 관리웹이 검사를 저장할 수 없다 — 설계 미정 · 미발행 · I-19 §9-2 후보 11.
    */
+
+  /**
+   * PQC 작성중 1회차를 «새로 온 저장» 그대로 덮는다(장부 P-49). 오프라인 큐의 `POST` 는 회차 전체를 싣으므로
+   * 안 온 칸(판정·비고)은 비우고 측정치도 통째로 갈아 끼운다. 회차·번호·앞 회차는 그대로다.
+   * ⚠ 그 사이 누가 확정했으면 0건이 고쳐진다 — 회차 충돌과 같은 409 `DUPLICATE_KEY` 다.
+   */
+  private async overwriteDraft(
+    tx: Prisma.TransactionClient,
+    inspectionResultId: bigint,
+    body: InspectionResultCreate,
+    at: { inspectorId: bigint; inspectedAt: Date; confirmedAt: Date | undefined; context: InspectionResultWriteContext },
+  ): Promise<{ inspection_result_id: bigint }> {
+    const updated = await tx.inspection_result.updateMany({
+      where: { inspection_result_id: inspectionResultId, status_code: 'DRAFT' },
+      data: {
+        inspected_qty: body.inspectedQty,
+        accepted_qty: body.acceptedQty,
+        rejected_qty: body.rejectedQty,
+        held_qty: body.heldQty,
+        uom_id: BigInt(body.uomId),
+        overall_judgment_code: body.overallJudgmentCode ?? null,
+        inspector_id: at.inspectorId,
+        inspected_at: at.inspectedAt,
+        confirmed_at: at.confirmedAt ?? null,
+        terminal_id: at.context.terminalId,
+        status_code: body.statusCode,
+        idempotency_key: at.context.idempotencyKey,
+        remarks: body.remarks ?? null,
+        updated_by: at.context.appUserId ?? null,
+        version_no: { increment: 1 },
+      },
+    });
+    if (updated.count === 0) {
+      throw new ConflictException('user', '같은 의뢰에 같은 회차가 이미 있습니다. 다시 불러온 뒤 저장하세요.', { code: DUPLICATE_KEY });
+    }
+    await tx.inspection_measurement.deleteMany({ where: { inspection_result_id: inspectionResultId } });
+    return { inspection_result_id: inspectionResultId };
+  }
 
   private async writeMeasurements(
     tx: Prisma.TransactionClient,
