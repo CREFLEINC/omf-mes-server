@@ -1,4 +1,4 @@
-import { dailyReturnOut, returnReasons } from './dashboard-quality-pqc-oqc';
+import { PQC_RECENT_MORE_LIMIT, dailyReturnOut, recentLot, returnReasons } from './dashboard-quality-pqc-oqc';
 import { dashboardPeriod } from './dashboard-scope';
 
 describe('dashboard quality PQC·OQC extras', () => {
@@ -27,5 +27,31 @@ describe('dashboard quality PQC·OQC extras', () => {
       { date: '2026-09-13', qty: 0 },
       { date: '2026-09-14', qty: null },
     ]);
+  });
+
+  it('PQC 최근 판정 더 보기는 15건까지이고, 기존 recentLots 와 같은 형태(상대 없음)로 옮긴다', () => {
+    expect(PQC_RECENT_MORE_LIMIT).toBe(15);
+    expect(
+      recentLot({
+        inspection_result_id: 7n,
+        inspected_at: new Date('2026-09-06T03:00:00Z'),
+        equipment_code: 'P-1',
+        item_code: 'A',
+        item_name: 'B',
+        lot_no: null,
+        qty: '10.000000',
+        judgment: 'REJECTED',
+      }),
+    ).toEqual({
+      inspectionResultId: 7,
+      inspectedAt: '2026-09-06T03:00:00.000Z',
+      counterpartName: null,
+      equipmentCode: 'P-1',
+      itemCode: 'A',
+      itemName: 'B',
+      lotNo: null,
+      qty: 10,
+      judgmentCode: 'REJECTED',
+    });
   });
 });
