@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { LOT_SPLIT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
@@ -17,6 +18,7 @@ import {
   receiptLineView,
   receiptView,
 } from './goods-receipt-view';
+import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
 /**
@@ -229,11 +231,19 @@ export class GoodsReceiptService {
     if (Number(lot.item_id) !== line.itemId) {
       errors.push(field(`${at}.itemId`, ERROR_CODE.INVALID, '이 LOT 의 품목이 아닙니다.'));
     }
+    // 입하에서 온 LOT — 선별로 떼어 낸 자식(`LOT_SPLIT`)은 조상의 입하 라인을 따른다(장부 P-56).
+    const inboundLineId =
+      lot.source_type_code === INBOUND_LOT_SOURCE
+        ? lot.source_id
+        : lot.source_type_code === LOT_SPLIT_SOURCE
+          ? await inboundLineOfLot(this.prisma, BigInt(line.lotId))
+          : null;
+    if (inboundLineId !== null) await this.assertReceivable(line, at, errors);
     // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17).
     // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
-    if (lot.source_type_code === INBOUND_LOT_SOURCE && lot.status_code !== IQC_PASSED_LOT_STATUS) {
+    if (inboundLineId !== null && lot.status_code !== IQC_PASSED_LOT_STATUS) {
       const inbound = await this.prisma.inbound_receipt_line.findUnique({
-        where: { inbound_receipt_line_id: lot.source_id },
+        where: { inbound_receipt_line_id: inboundLineId },
         select: { inspection_required: true },
       });
       if (inbound?.inspection_required === true) {
@@ -256,6 +266,26 @@ export class GoodsReceiptService {
         }
       }
     }
+  }
+
+  /**
+   * 입고 상한(장부 P-56) — 입하 LOT 은 «입고 가능 수량»까지만 입고한다. 선별로 떼어 낸 불량분(자식 LOT)과 이미 입고한 수량을 뺀 값이다.
+   * ⚠ 전기 트랜잭션 밖의 확인이다(이 파일의 다른 검사와 같다) — 같은 LOT 을 동시에 두 번 입고하면 둘 다 통과할 수 있다.
+   */
+  private async assertReceivable(
+    line: GoodsReceiptCreate['lines'][number],
+    at: string,
+    errors: ErrorItem[],
+  ): Promise<void> {
+    const receivable = (await receivableQtyOf(this.prisma, [BigInt(line.lotId)])).get(BigInt(line.lotId));
+    if (receivable === undefined || receivable.greaterThanOrEqualTo(line.receiptQty)) return;
+    errors.push(
+      field(
+        `${at}.receiptQty`,
+        ERROR_CODE.INVALID,
+        `이 LOT 은 ${receivable.toString()} 까지 입고할 수 있습니다(선별로 떼어 낸 불량분·이미 입고한 수량 제외).`,
+      ),
+    );
   }
 }
 

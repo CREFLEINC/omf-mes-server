@@ -9423,6 +9423,46 @@
       "type": "boolean",
       "description": "공급사 LOT 라벨이 실물에 부착됐는지. 번호 유무와 별도 축이며 false 인 라인은 LOT 생성 전 lotId=null 이다.",
       "example": false
+     },
+     "receivableQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "서버 선행 P-56 — 이 라인 LOT 의 입고 가능 수량(initial_qty − 선별로 떼어 낸 자식 LOT 수량 − 이미 전기된 입고 수량). 입고 화면의 기본 수량이고 서버 입고 상한이다. LOT 이 없으면 null. 라인 목록(GET …/lines)·상세만 싣는다.",
+      "example": 35
+     },
+     "splitLots": {
+      "type": "array",
+      "description": "서버 선행 P-56 — 이 라인 LOT 에서 선별(SORT)로 떼어 낸 자식 LOT(불량분). 입고 화면이 「선별 불량분」 줄로 세운다(불량이면 불량창고로만 입고). 없으면 빈 배열.",
+      "items": {
+       "type": "object",
+       "required": [
+        "lotId",
+        "lotNo",
+        "statusCode",
+        "receivableQty"
+       ],
+       "properties": {
+        "lotId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 1002
+        },
+        "lotNo": {
+         "type": "string",
+         "example": "AD9001-00041|50|261016|100001|0001-S1"
+        },
+        "statusCode": {
+         "type": "string",
+         "example": "DEFECTIVE"
+        },
+        "receivableQty": {
+         "type": "number",
+         "example": 15
+        }
+       }
+      }
      }
     }
    },

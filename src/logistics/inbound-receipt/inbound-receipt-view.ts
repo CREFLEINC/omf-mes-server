@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { SplitLotView } from '../goods-receipt/lot-receivable';
 
 import { toDateString } from '../../common/master';
 
@@ -47,6 +48,13 @@ export interface InboundReceiptLineView {
   inspectionRequired: boolean;
   statusCode: string;
   lotId: number | null;
+  /**
+   * 서버 선행 P-56 — 이 라인 LOT 의 입고 가능 수량(선별로 떼어 낸 불량분·이미 입고한 수량 제외). LOT 이 없으면 `null`.
+   * 라인 목록(`GET …/lines`·상세)만 싣는다.
+   */
+  receivableQty?: number | null;
+  /** 서버 선행 P-56 — 이 라인 LOT 에서 선별로 떼어 낸 자식 LOT(불량분). 없으면 빈 배열. */
+  splitLots?: SplitLotView[];
 }
 
 export interface InboundReceiptDetail {

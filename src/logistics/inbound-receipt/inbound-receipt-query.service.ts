@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { receivableQtyOf, splitLotsOf } from '../goods-receipt/lot-receivable';
 
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
@@ -135,7 +136,17 @@ export class InboundReceiptQueryService {
       },
       orderBy: { line_no: 'asc' },
     });
-    return rows.map(inboundReceiptLineView);
+    // 입고 화면이 기본 수량·선별 불량분 줄을 세우는 근거(장부 P-56) — 라인 LOT 마다 한 번에 센다.
+    const lotIds = rows.flatMap((row) => (row.lot_id === null ? [] : [row.lot_id]));
+    const [receivable, splits] = await Promise.all([
+      receivableQtyOf(this.prisma, lotIds),
+      splitLotsOf(this.prisma, lotIds),
+    ]);
+    return rows.map((row) => ({
+      ...inboundReceiptLineView(row),
+      receivableQty: row.lot_id === null ? null : (receivable.get(row.lot_id)?.toNumber() ?? null),
+      splitLots: row.lot_id === null ? [] : (splits.get(row.lot_id) ?? []),
+    }));
   }
 }
 

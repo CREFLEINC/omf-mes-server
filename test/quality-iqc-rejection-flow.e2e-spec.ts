@@ -84,6 +84,57 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
   });
 
+  it('⭐ 경로 ① 처분 정상 → 보류 해제 → 입고', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 10 }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    await receive(lotId, lineId, 10).expect(201);
+  });
+
+  it('⭐ 경로 ② 선별 → 양품분(원 LOT) 정상·보류 해제 → 양품 수량 입고 · 불량분은 새 LOT 불량', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, {
+      dispositionTypeCode: 'SORT',
+      decisionQty: 10,
+      acceptedQty: 7,
+      rejectedQty: 3,
+      businessDate: DAY,
+    }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
+    expect(children).toHaveLength(1);
+    const childLotId = Number(children[0].target_lot_id);
+    expect(await lotStatus(childLotId)).toBe('DEFECTIVE');
+
+    // 장부 P-56 — 입고 화면은 입고 가능 수량(양품 7)과 선별 불량분(-S1 3)을 받는다.
+    const lines = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
+      .find((row) => row.inboundReceiptLineId === lineId);
+    expect(line).toMatchObject({
+      receivableQty: 7,
+      splitLots: [expect.objectContaining({ lotId: childLotId, statusCode: 'DEFECTIVE', receivableQty: 3 })],
+    });
+
+    // ⛔ 입하 수량(10)으로는 입고되지 않는다 — 떼어 낸 불량분 3 이 빠진다.
+    await receive(lotId, lineId, 10).expect(400);
+    await receive(lotId, lineId, 7).expect(201);
+    await receive(lotId, lineId, 1).expect(400);
+    // 선별 불량분은 조상의 입하 라인을 따라 불량창고로만 입고된다(P-45).
+    await receive(childLotId, lineId, 3).expect(400);
+    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+  });
+
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
     const { lotId, lineId, requestId, resultId } = await rejectedLot(10);
     const nc = await openNonconformance(lotId);
