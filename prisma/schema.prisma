@@ -2673,6 +2673,10 @@ model production_order {
   updated_by                       BigInt?
   version_no                       Int                                @default(1)
   last_change_received_at          DateTime?                          @db.Timestamptz(6)
+  erp_operation_no                 String?                            @db.VarChar(3)
+  erp_storage_location_code        String?                            @db.VarChar(7)
+  erp_rework_flag                  String?                            @db.VarChar(2)
+  planned_start_date               DateTime?                          @db.Date
   business_unit                    business_unit                      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   item                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   parent_production_order          production_order?                  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
@@ -4998,6 +5002,7 @@ model production_order_change_field {
   before_order_qty                 Decimal?         @db.Decimal(20, 6)
   before_due_date                  DateTime?        @db.Date
   before_status_code               String?          @db.VarChar(50)
+  before_planned_start_date        DateTime?        @db.Date
   production_order                 production_order @relation(fields: [production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([production_order_id, field_code], map: "uq_po_change_field")
