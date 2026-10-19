@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { assertNotBlank, optional, resolveWorkerId } from '../../common/master';
-import { LotLifecycleService, LotQualityStatusService, Tx, WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import {
+  LotHoldService,
+  LotLifecycleService,
+  LotQualityStatusService,
+  lotsFreeOfOpenHolds,
+  pqcAcceptanceExceeded,
+  Tx,
+  WORK_ORDER_LOT_SOURCE,
+} from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
@@ -65,6 +73,7 @@ export class ProductionResultService {
     private readonly numbering: NumberingService,
     private readonly lots: LotLifecycleService,
     private readonly qualities: LotQualityStatusService,
+    private readonly holds: LotHoldService,
   ) {}
 
   async create(body: ProductionResultCreate, context: ProductionResultContext): Promise<ProductionResultView> {
@@ -138,15 +147,23 @@ export class ProductionResultService {
       where: { work_order_id: BigInt(prepared.body.workOrderId), inspection_type_code: PQC, status_code: { not: CANCELLED } },
       select: {
         status_code: true,
+        inspection_plan_version: { select: { acceptance_number: true } },
         inspection_result: {
           where: { status_code: RESULT_STATUS },
           orderBy: { inspection_round: 'desc' },
           take: 1,
-          select: { inspection_result_id: true, overall_judgment_code: true },
+          select: { inspection_result_id: true, overall_judgment_code: true, rejected_qty: true },
         },
       },
     });
-    const accepted = pqc.every((request) => request.inspection_result[0]?.overall_judgment_code === ACCEPTED);
+    // ⛔ 합격이어도 C14(불합격 수 > 합격판정개수)가 걸린 결과는 정상 전환의 근거가 아니다 — 확정이 검사 대기로 돌린 것을 덮는다(#105 리뷰).
+    const accepted = pqc.every((request) => {
+      const latest = request.inspection_result[0];
+      return (
+        latest?.overall_judgment_code === ACCEPTED &&
+        !pqcAcceptanceExceeded(latest.rejected_qty.toNumber(), request.inspection_plan_version?.acceptance_number)
+      );
+    });
     if (pqc.length > 0 && !accepted) return;
     const source =
       pqc.length === 0
@@ -156,9 +173,15 @@ export class ProductionResultService {
       prepared.context.appUserId !== undefined
         ? { changedBy: BigInt(prepared.context.appUserId) }
         : { changedWorkerId: prepared.workerId };
+    // 다른 열린 보류(의심자재 등)가 있는 LOT 은 올리지 않는다 — IQC 확정과 같은 규율(#105 리뷰).
+    const free = await lotsFreeOfOpenHolds(
+      tx,
+      this.holds,
+      prepared.allocations.map((allocation) => BigInt(allocation.lotId)),
+    );
     await this.qualities.moveWithin(
       tx,
-      prepared.allocations.map((allocation) => BigInt(allocation.lotId)),
+      free,
       pqc.length === 0 ? 'inspection-not-required' : 'inspection-accepted',
       { ...actor, changedAt: prepared.occurredAt, ...source },
     );
