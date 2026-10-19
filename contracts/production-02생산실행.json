@@ -2973,6 +2973,49 @@
     "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 02 계약 2단계 §4-1"
    }
   },
+  "/production/work-orders/{workOrderId}/resource-recommendations": {
+   "get": {
+    "tags": [
+     "production"
+    ],
+    "summary": "4M 설비·금형 추천",
+    "description": "품목 설비·금형 매핑과 최근 사용으로 이 W/O 에 쓸 설비·금형 후보를 기본 → 매핑 → 최근 순으로 낸다. 저장하지 않는다. 장부 P-61",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "추천 후보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResourceRecommendations"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/production/work-orders/{workOrderId}:cancel": {
    "post": {
     "tags": [
@@ -6272,6 +6315,107 @@
       "example": 1001
      }
     }
+   },
+   "ResourceRecommendations": {
+    "type": "object",
+    "required": [
+     "equipments",
+     "molds"
+    ],
+    "properties": {
+     "equipments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/EquipmentRecommendation"
+      }
+     },
+     "molds": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/MoldRecommendation"
+      }
+     }
+    }
+   },
+   "EquipmentRecommendation": {
+    "type": "object",
+    "required": [
+     "equipmentId",
+     "equipmentCode",
+     "equipmentName",
+     "productionLineId",
+     "source",
+     "inService",
+     "busy"
+    ],
+    "properties": {
+     "equipmentId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "equipmentCode": {
+      "type": "string"
+     },
+     "equipmentName": {
+      "type": "string"
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "source": {
+      "$ref": "#/components/schemas/ResourceRecommendationSource"
+     },
+     "inService": {
+      "type": "boolean",
+      "description": "가동 상태이고 활성이다"
+     },
+     "busy": {
+      "type": "boolean",
+      "description": "같은 시간대의 다른 W/O 에 이미 배정됐다 — 4M 점검의 EQUIPMENT_DOUBLE_BOOKED 와 같은 판정"
+     }
+    }
+   },
+   "MoldRecommendation": {
+    "type": "object",
+    "required": [
+     "moldId",
+     "moldCode",
+     "moldName",
+     "source",
+     "inService"
+    ],
+    "properties": {
+     "moldId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "moldCode": {
+      "type": "string"
+     },
+     "moldName": {
+      "type": "string"
+     },
+     "source": {
+      "$ref": "#/components/schemas/ResourceRecommendationSource"
+     },
+     "inService": {
+      "type": "boolean",
+      "description": "가동 상태이고 활성이다"
+     }
+    }
+   },
+   "ResourceRecommendationSource": {
+    "type": "string",
+    "enum": [
+     "DEFAULT",
+     "MAPPED",
+     "RECENT"
+    ],
+    "description": "DEFAULT = 품목 기본 매핑 · MAPPED = 그 밖의 매핑(우선순위 순) · RECENT = 같은 품목·공정의 최근 W/O 가 쓴 것. 장부 P-61"
    },
    "ValidationReport": {
     "type": "object",

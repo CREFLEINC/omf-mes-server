@@ -25,6 +25,7 @@ import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose } from './close-rules';
+import { ResourceRecommendations, recommendResources } from './resource-recommendation';
 import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order-close.service';
@@ -245,6 +246,12 @@ export class WorkOrderController {
   @Contract('GET /production/work-orders/{workOrderId}/validation')
   validation(@Param('workOrderId', ParseIntPipe) workOrderId: number): Promise<ValidationReport> {
     return validateWorkOrder(this.prisma, workOrderId);
+  }
+
+  @Get(':workOrderId/resource-recommendations')
+  @Contract('GET /production/work-orders/{workOrderId}/resource-recommendations')
+  resourceRecommendations(@Param('workOrderId', ParseIntPipe) workOrderId: number): Promise<ResourceRecommendations> {
+    return recommendResources(this.prisma, workOrderId);
   }
 }
 

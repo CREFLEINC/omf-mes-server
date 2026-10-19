@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { WORK_ORDER_DEFAULT_PRIORITY, WORK_ORDER_DEFAULT_TYPE, WORK_ORDER_INITIAL_STATUS } from '../../core/work-order';
 import { PlanWindow } from './plan-window';
+import { OperationResource } from './resource-assign';
 
 /** 트랜잭션을 열기 «전»에 읽어 둔 전개 재료(§3-1 ①~③). */
 export interface PlanToExpand {
@@ -15,6 +16,10 @@ export interface PlanToExpand {
   window: PlanWindow;
   /** 계획의 라인과 그 라인의 기본 위치 셋. 계획에 라인이 없으면 넷 다 비운다. */
   line: PlanLine;
+  /** 공정별 기본 매핑의 설비·금형. 매핑이 없는 공정은 키가 없다. */
+  resources: Map<bigint, OperationResource>;
+  /** 배정 설비의 라인별 기본 위치 셋 — 계획에 라인이 없을 때 W/O 라인을 설비에서 얻는다. */
+  equipmentLines: Map<bigint, PlanLine>;
   dependencies: { predecessor_operation_id: bigint; successor_operation_id: bigint; dependency_type_code: string }[];
 }
 
@@ -29,30 +34,41 @@ export interface PlanLine {
 const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
 
 /**
- * 라인·기본 위치 셋을 계획 라인에서 미리 채운다 — 배포가 기본 위치 셋을 요구하는데 W/O 마다 4M 에서
+ * 라인·기본 위치 셋을 계획 라인에서(없으면 배정 설비의 라인에서) 미리 채운다 — 배포가 기본 위치 셋을 요구하는데 W/O 마다 4M 에서
  * 고르게 하면 하루 수백 건을 손으로 넣어야 한다. 계약 생성 규칙과 다른 동작이다(`docs/계약-선행-수정항목.md`).
  * `operation_settings_snapshot` 은 안 쓴다 — `:release` 가 뜬다(I-6).
  */
 export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUserId: number | undefined): Prisma.work_orderCreateManyInput[] {
-  return plan.operationIds.map((routingOperationId, index) => ({
-    work_order_no: workOrderNos[index],
-    production_plan_id: BigInt(plan.productionPlanId),
-    routing_operation_id: routingOperationId,
-    item_id: plan.itemId,
-    order_qty: plan.plannedQty,
-    uom_id: plan.uomId,
-    planned_start_at: plan.window.plannedStartAt,
-    planned_end_at: plan.window.plannedEndAt,
-    production_line_id: plan.line.productionLineId,
-    default_wip_location_id: plan.line.defaultWipLocationId,
-    default_fg_location_id: plan.line.defaultFgLocationId,
-    default_scrap_location_id: plan.line.defaultScrapLocationId,
-    work_order_type_code: WORK_ORDER_DEFAULT_TYPE,
-    priority_no: WORK_ORDER_DEFAULT_PRIORITY,
-    status_code: WORK_ORDER_INITIAL_STATUS,
-    created_by: appUserId ?? null,
-    updated_by: appUserId ?? null,
-  }));
+  return plan.operationIds.map((routingOperationId, index) => {
+    const resource = plan.resources.get(routingOperationId);
+    const line = lineOf(plan, resource);
+    return {
+      work_order_no: workOrderNos[index],
+      production_plan_id: BigInt(plan.productionPlanId),
+      routing_operation_id: routingOperationId,
+      item_id: plan.itemId,
+      order_qty: plan.plannedQty,
+      uom_id: plan.uomId,
+      planned_start_at: plan.window.plannedStartAt,
+      planned_end_at: plan.window.plannedEndAt,
+      production_line_id: line.productionLineId,
+      default_wip_location_id: line.defaultWipLocationId,
+      default_fg_location_id: line.defaultFgLocationId,
+      default_scrap_location_id: line.defaultScrapLocationId,
+      planned_equipment_id: resource?.equipmentId ?? null,
+      planned_mold_id: resource?.moldId ?? null,
+      work_order_type_code: WORK_ORDER_DEFAULT_TYPE,
+      priority_no: WORK_ORDER_DEFAULT_PRIORITY,
+      status_code: WORK_ORDER_INITIAL_STATUS,
+      created_by: appUserId ?? null,
+      updated_by: appUserId ?? null,
+    };
+  });
+}
+
+function lineOf(plan: PlanToExpand, resource: OperationResource | undefined): PlanLine {
+  if (plan.line.productionLineId !== null || resource?.equipmentLineId == null) return plan.line;
+  return plan.equipmentLines.get(resource.equipmentLineId) ?? plan.line;
 }
 
 /**

@@ -21,6 +21,7 @@ export const EQUIPMENT_REFERRERS: readonly Referrer[] = [
   ['maintenance.tool_usage', 'equipment_id'],
   ['mdm.equipment_group_member', 'equipment_id'],
   ['mdm.equipment_inspection_item_assignment', 'equipment_id'],
+  ['mdm.item_resource_map', 'equipment_id'],
   ['mdm.spare_part_equipment', 'equipment_id'],
   ['mdm.terminal', 'equipment_id'],
   ['production.precheck_decision', 'equipment_id'],

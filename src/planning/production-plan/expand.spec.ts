@@ -11,6 +11,8 @@ const plan = (overrides: Partial<PlanToExpand> = {}): PlanToExpand => ({
   operationIds: [101n, 102n, 103n],
   window: { plannedStartAt: new Date('2026-11-20T00:00:00.000Z'), plannedEndAt: new Date('2026-11-21T00:00:00.000Z') },
   line: { productionLineId: null, defaultWipLocationId: null, defaultFgLocationId: null, defaultScrapLocationId: null },
+  resources: new Map(),
+  equipmentLines: new Map(),
   dependencies: [],
   ...overrides,
 });
@@ -48,6 +50,32 @@ describe('expand — 계획 확정 전개 조립(순수)', () => {
     for (const column of ['operation_settings_snapshot']) {
       expect(rows[0]).not.toHaveProperty(column);
     }
+  });
+
+  it('기본 매핑의 설비·금형을 싣고, 계획에 라인이 없으면 설비의 라인과 그 기본 위치를 쓴다', () => {
+    const equipmentLine = { productionLineId: 22n, defaultWipLocationId: 41n, defaultFgLocationId: 42n, defaultScrapLocationId: 43n };
+    const rows = workOrderRows(
+      plan({
+        resources: new Map([[101n, { equipmentId: 51n, moldId: 61n, equipmentLineId: 22n }]]),
+        equipmentLines: new Map([[22n, equipmentLine]]),
+      }),
+      ['WO-A', 'WO-B', 'WO-C'],
+      9,
+    );
+
+    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, planned_mold_id: 61n, production_line_id: 22n, default_wip_location_id: 41n, default_scrap_location_id: 43n });
+    expect(rows[1]).toMatchObject({ planned_equipment_id: null, planned_mold_id: null, production_line_id: null });
+  });
+
+  it('계획 라인이 있으면 설비의 라인보다 계획 라인이 이긴다', () => {
+    const line = { productionLineId: 21n, defaultWipLocationId: 31n, defaultFgLocationId: 32n, defaultScrapLocationId: null };
+    const rows = workOrderRows(
+      plan({ line, resources: new Map([[101n, { equipmentId: 51n, moldId: null, equipmentLineId: 22n }]]) }),
+      ['WO-A', 'WO-B', 'WO-C'],
+      9,
+    );
+
+    expect(rows[0]).toMatchObject({ planned_equipment_id: 51n, production_line_id: 21n, default_wip_location_id: 31n });
   });
 
   it('계획 라인이 있으면 라인과 기본 위치 셋을 전개분 전부에 싣는다', () => {

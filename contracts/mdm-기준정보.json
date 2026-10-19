@@ -13795,6 +13795,237 @@
      }
     }
    }
+  },
+  "/mdm/item-resource-maps": {
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "품목 설비·금형 매핑 목록",
+    "description": "기본이 먼저, 그다음 우선순위 순. 기본은 사용 중인 것만 — includeInactive 로 넓힌다. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "parameters": [
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "equipmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "설비"
+     },
+     {
+      "name": "moldId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "금형"
+     },
+     {
+      "name": "includeInactive",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "사용 중지 포함"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ItemResourceMap"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "품목 설비·금형 매핑 등록",
+    "description": "설비·금형 중 하나는 있어야 한다(400 equipmentId REQUIRED). 설비·금형은 그 공장의 것이어야 한다(400 INVALID). 같은 조합이 있으면 400 UNIQUE_VIOLATION. isDefault=true 면 같은 품목·공정의 기존 기본을 내린다. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ItemResourceMapCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ItemResourceMap"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-05",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mdm/item-resource-maps/{itemResourceMapId}": {
+   "parameters": [
+    {
+     "name": "itemResourceMapId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "put": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "품목 설비·금형 매핑 수정",
+    "description": "생략 = 유지, null = 비움. 공장·품목은 바꾸지 않는다. 사용 중지는 isActive=false. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ItemResourceMapUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "수정됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ItemResourceMap"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-06-05",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 매핑",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "낙관적 잠금 충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -23226,6 +23457,242 @@
       ],
       "format": "int64",
       "description": "연결할 작업자. null 이면 연결을 푼다."
+     }
+    }
+   },
+   "ItemResourceMap": {
+    "type": "object",
+    "description": "품목을 어느 설비·금형으로 만드는가. 계획 확정 때 W/O 설비·금형 자동 배정(기본)과 4M 추천의 근거다. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "required": [
+     "itemResourceMapId",
+     "plantId",
+     "itemId",
+     "processId",
+     "equipmentId",
+     "moldId",
+     "isDefault",
+     "priorityNo",
+     "isActive",
+     "versionNo"
+    ],
+    "properties": {
+     "itemResourceMapId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "매핑 식별자"
+     },
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공장"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "공정. 비면 그 품목의 모든 공정"
+     },
+     "processCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "공정 코드(표시용)"
+     },
+     "processName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "공정 이름(표시용)"
+     },
+     "equipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "설비. 설비·금형 중 하나는 있다"
+     },
+     "equipmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "설비 코드(표시용)"
+     },
+     "equipmentName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "설비 이름(표시용)"
+     },
+     "productionLineId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "설비의 라인 — 계획에 라인이 없을 때 W/O 라인으로 쓴다"
+     },
+     "moldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "금형"
+     },
+     "moldCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "금형 코드(표시용)"
+     },
+     "moldName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "금형 이름(표시용)"
+     },
+     "isDefault": {
+      "type": "boolean",
+      "description": "자동 배정에 쓰는 기본 — 품목·공정마다 하나"
+     },
+     "priorityNo": {
+      "type": "integer",
+      "description": "추천 순서(작을수록 먼저)"
+     },
+     "isActive": {
+      "type": "boolean"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "비고"
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "수정의 If-Match 값 — 행마다 수정하므로 목록에서 바로 쓴다"
+     }
+    }
+   },
+   "ItemResourceMapCreate": {
+    "type": "object",
+    "description": "설비·금형 중 하나는 있어야 한다(400 equipmentId REQUIRED). 설비·금형은 그 공장의 것이어야 한다(400 INVALID). 같은 조합이 있으면 400 UNIQUE_VIOLATION. isDefault=true 면 같은 품목·공정의 기존 기본을 내린다. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "required": [
+     "plantId",
+     "itemId"
+    ],
+    "properties": {
+     "plantId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "공장"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "공정"
+     },
+     "equipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "설비"
+     },
+     "moldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "금형"
+     },
+     "isDefault": {
+      "type": "boolean",
+      "default": false
+     },
+     "priorityNo": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 100
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "비고"
+     }
+    }
+   },
+   "ItemResourceMapUpdate": {
+    "type": "object",
+    "description": "생략 = 유지, null = 비움. 공장·품목은 바꾸지 않는다. 사용 중지는 isActive=false. 근거: 서버 선행 · 장부 P-61 · W-06-05 「설비·금형」 탭",
+    "properties": {
+     "processId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "공정"
+     },
+     "equipmentId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "설비"
+     },
+     "moldId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "금형"
+     },
+     "isDefault": {
+      "type": "boolean"
+     },
+     "priorityNo": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "isActive": {
+      "type": "boolean"
+     },
+     "remarks": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "비고"
      }
     }
    }
