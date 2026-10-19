@@ -12,6 +12,8 @@ import {
 } from './dashboard-inspection';
 import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
+import { readOpenNonconformances, readRepeatedItems } from './dashboard-nonconformance-open';
+import { readPqcOqcExtra } from './dashboard-quality-pqc-oqc';
 import {
   LotRecordRow,
   PQC_PENDING_CTE,
@@ -88,6 +90,10 @@ export class DashboardQualityService {
         ? [[], [], [], [], [], [], [], await this.nonconformances.read(tx, plants, period), [], []]
         : await this.queries(tx, plants, period);
     const statusCounts = await this.statusCounts(tx, plants, period);
+    // PQC·OQC 추가 칸 — 기존 칸과 따로 센다(기존 집계·값은 그대로).
+    const extra = await readPqcOqcExtra(tx, plants, period);
+    const openList = await readOpenNonconformances(tx, plants);
+    const repeated = await readRepeatedItems(tx, plants, period);
 
     const block = (type: InspectionType) =>
       qualityTypeBlock(
@@ -115,12 +121,13 @@ export class DashboardQualityService {
       },
       pqc: {
         ...block('PQC'),
+        ...extra.pqc,
         pendingLotCount: pending[0]?.request_count ?? 0,
         reworkRequestCount: nonconformance.reworkRequestCount,
         equipmentDefectRates: topEquipmentDefectRates(equipmentRows),
       },
-      oqc: { ...block('OQC'), customerReturnQty: nonconformance.customerReturnQty },
-      nonconformance: nonconformance.block,
+      oqc: { ...block('OQC'), ...extra.oqc, customerReturnQty: nonconformance.customerReturnQty },
+      nonconformance: { ...nonconformance.block, openList, ...repeated },
       statusCounts,
     };
   }
