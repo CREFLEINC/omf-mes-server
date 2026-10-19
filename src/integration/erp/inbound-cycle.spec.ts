@@ -1,0 +1,248 @@
+import { MESSAGE_STATUS } from '../message/integration-message.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { INBOUND, InboundCycle, InboundTable, MAX_ATTEMPTS, Tx } from './inbound-cycle';
+import { RelayClient, RelayCursor } from './relay-client';
+import { RelayRow, RelayTable, orderColumns } from './relay-tables';
+
+const SOURCE: RelayTable = {
+  interfaceCode: 'IF-TEST-RECV',
+  name: 'T_TEST',
+  flagColumn: 'IF_YN',
+  keyColumns: ['CODE'],
+  versionColumn: 'T_SEQ',
+};
+
+type Message = Record<string, unknown>;
+
+function row(id: number, code: string, seq = 1): RelayRow {
+  return { MES_INF_ID: id, CODE: code, T_SEQ: seq, IF_YN: 'N' };
+}
+
+/** 앞에서부터 비교한다 — 실제 쿼리의 ORDER BY 와 같은 순서. */
+function compare(a: unknown[], b: unknown[]): number {
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] === b[i]) continue;
+    return (a[i] as number | string) < (b[i] as number | string) ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * 중계 DB 와 MES 를 흉내낸다. 무엇을 어떤 순서로 불렀는지(`calls`)와 트랜잭션 안에서
+ * 중계 DB 를 불렀는지(`relayInTx`)가 이 스위트의 목이다.
+ */
+function fake(rows: RelayRow[], seed: { messages?: Message[] } = {}) {
+  const calls: string[] = [];
+  const messages = new Map<string, Message>(
+    (seed.messages ?? []).map((m) => [m.message_key as string, m]),
+  );
+  let inTx = false;
+  let relayInTx = false;
+  const key = (r: RelayRow): unknown[] => orderColumns(SOURCE).map((c) => r[c]);
+
+  const relay = {
+    fetchPending: async (_: RelayTable, after: RelayCursor | undefined, limit: number) => {
+      relayInTx ||= inTx;
+      calls.push('fetch');
+      return rows
+        .filter((r) => r.IF_YN === 'N' && (after === undefined || compare(key(r), after) > 0))
+        .sort((a, b) => compare(key(a), key(b)))
+        .slice(0, limit);
+    },
+    ack: async (_: RelayTable, ids: number[]) => {
+      relayInTx ||= inTx;
+      calls.push(`ack ${ids.join(',')}`);
+      rows.filter((r) => ids.includes(r.MES_INF_ID)).forEach((r) => (r.IF_YN = 'Y'));
+    },
+  };
+
+  const upsert = async (a: {
+    where: { message_key: string };
+    create: Message;
+    update: Message;
+  }) => {
+    const found = messages.get(a.where.message_key);
+    if (found === undefined) {
+      messages.set(a.where.message_key, { message_key: a.where.message_key, ...a.create });
+      return;
+    }
+    const increment = (a.update.retry_count as { increment?: number } | undefined)?.increment;
+    messages.set(a.where.message_key, {
+      ...found,
+      ...a.update,
+      retry_count: (found.retry_count as number) + (increment ?? 0),
+    });
+  };
+  const integration_message = {
+    upsert,
+    findMany: async (a: { where: Message }) =>
+      [...messages.values()].filter(
+        (m) =>
+          m.interface_code === a.where.interface_code &&
+          m.status_code === a.where.status_code &&
+          (m.retry_count as number) >= (a.where.retry_count as { gte: number }).gte,
+      ),
+  };
+  const prisma = {
+    integration_message,
+    $transaction: async (fn: (tx: Tx) => Promise<void>) => {
+      inTx = true;
+      try {
+        await fn({ integration_message } as unknown as Tx);
+      } finally {
+        inTx = false;
+      }
+    },
+  };
+  const cycle = new InboundCycle(
+    prisma as unknown as PrismaService,
+    relay as unknown as RelayClient,
+  );
+  return { cycle, calls, messages, rows, relayInTx: () => relayInTx };
+}
+
+/** `fail` 에 든 코드는 반영에서 던진다. */
+function table(fail: string[] = [], applied: string[] = []): InboundTable {
+  return {
+    source: SOURCE,
+    apply: async (_: Tx, r: RelayRow) => {
+      if (fail.includes(r.CODE as string)) throw new Error(`${r.CODE as string} 반영 실패`);
+      applied.push(`${r.CODE as string}#${r.T_SEQ as number}`);
+    },
+  };
+}
+
+describe('InboundCycle', () => {
+  it('반영한 행만 확인 표시하고 실패한 행은 N 으로 둔다', async () => {
+    const f = fake([row(1, 'A'), row(2, 'B'), row(3, 'C')]);
+
+    const result = await f.cycle.run(table(['B']));
+
+    expect(result).toEqual({ read: 3, applied: 2, failed: 1, held: 0 });
+    expect(f.calls).toContain('ack 1,3');
+    expect(f.rows.map((r) => r.IF_YN)).toEqual(['Y', 'N', 'Y']);
+    expect(f.messages.get('IF-TEST-RECV:2')).toMatchObject({
+      direction_code: INBOUND,
+      target_type_code: 'T_TEST',
+      target_id: 2,
+      status_code: MESSAGE_STATUS.FAILED,
+      retry_count: 1,
+      last_error_message: 'B 반영 실패',
+    });
+    expect(f.messages.get('IF-TEST-RECV:1')).toMatchObject({
+      status_code: MESSAGE_STATUS.DONE,
+      payload: { key: 'A', seq: 1, row: row(1, 'A') },
+    });
+  });
+
+  it('앞 판이 실패한 업무 키의 뒤 판은 반영도 표시도 하지 않는다', async () => {
+    const applied: string[] = [];
+    const f = fake([row(1, 'A', 1), row(2, 'A', 2), row(3, 'B', 1)]);
+
+    const result = await f.cycle.run({
+      source: SOURCE,
+      apply: async (_: Tx, r: RelayRow) => {
+        if (r.MES_INF_ID === 1) throw new Error('첫 판 실패');
+        applied.push(`${r.CODE as string}#${r.T_SEQ as number}`);
+      },
+    });
+
+    expect(result).toEqual({ read: 3, applied: 1, failed: 1, held: 1 });
+    expect(applied).toEqual(['B#1']);
+    expect(f.rows.map((r) => r.IF_YN)).toEqual(['N', 'N', 'Y']);
+    expect(f.messages.has('IF-TEST-RECV:2')).toBe(false);
+  });
+
+  it(`${MAX_ATTEMPTS}번 실패한 행과 그 업무 키의 뒤 판은 반영하지 않는다`, async () => {
+    const applied: string[] = [];
+    const quarantined = {
+      message_key: 'IF-TEST-RECV:1',
+      interface_code: SOURCE.interfaceCode,
+      direction_code: INBOUND,
+      status_code: MESSAGE_STATUS.FAILED,
+      retry_count: MAX_ATTEMPTS,
+      target_id: 1n,
+      payload: { key: 'A' },
+    };
+    const f = fake([row(1, 'A', 1), row(2, 'A', 2), row(3, 'B', 1)], { messages: [quarantined] });
+
+    const result = await f.cycle.run(table([], applied));
+
+    expect(result).toEqual({ read: 3, applied: 1, failed: 0, held: 2 });
+    expect(applied).toEqual(['B#1']);
+    expect(f.messages.get('IF-TEST-RECV:1')).toMatchObject({ retry_count: MAX_ATTEMPTS });
+  });
+
+  it(`${MAX_ATTEMPTS - 1}번 실패한 행은 다시 시도하고, 또 실패하면 격리 기준에 닿는다`, async () => {
+    const tried = {
+      message_key: 'IF-TEST-RECV:1',
+      interface_code: SOURCE.interfaceCode,
+      status_code: MESSAGE_STATUS.FAILED,
+      retry_count: MAX_ATTEMPTS - 1,
+      target_id: 1n,
+      payload: { key: 'A' },
+    };
+    const f = fake([row(1, 'A')], { messages: [tried] });
+
+    const result = await f.cycle.run(table(['A']));
+
+    expect(result.failed).toBe(1);
+    expect(f.messages.get('IF-TEST-RECV:1')).toMatchObject({ retry_count: MAX_ATTEMPTS });
+  });
+
+  it('표시 전에 멈춰 같은 행이 다시 와도 메시지는 하나다', async () => {
+    const f = fake([row(1, 'A')]);
+    await f.cycle.run(table());
+    f.rows[0].IF_YN = 'N'; // 'Y' 를 올리기 전에 죽은 것과 같다.
+
+    await f.cycle.run(table());
+
+    expect([...f.messages.keys()]).toEqual(['IF-TEST-RECV:1']);
+    expect(f.messages.get('IF-TEST-RECV:1')).toMatchObject({ status_code: MESSAGE_STATUS.DONE });
+  });
+
+  it('실패했던 행이 다음 회차에 반영되면 DONE 으로 바뀌고 오류를 지운다', async () => {
+    const f = fake([row(1, 'A')]);
+    await f.cycle.run(table(['A']));
+
+    await f.cycle.run(table());
+
+    expect(f.messages.get('IF-TEST-RECV:1')).toMatchObject({
+      status_code: MESSAGE_STATUS.DONE,
+      last_error_message: null,
+    });
+  });
+
+  it('Postgres 트랜잭션 안에서 중계 DB 를 부르지 않는다', async () => {
+    const f = fake([row(1, 'A'), row(2, 'B')]);
+
+    await f.cycle.run(table(['B']));
+
+    expect(f.relayInTx()).toBe(false);
+  });
+
+  it('남은 행이 없을 때까지 묶음을 되풀이한다', async () => {
+    const rows = Array.from({ length: 1001 }, (_, i) =>
+      row(i + 1, `K${String(i).padStart(4, '0')}`),
+    );
+    const f = fake(rows);
+
+    const result = await f.cycle.run(table());
+
+    expect(result.applied).toBe(1001);
+    expect(f.calls.filter((c) => c === 'fetch')).toHaveLength(3);
+    expect(f.rows.every((r) => r.IF_YN === 'Y')).toBe(true);
+  });
+
+  it('실패로 N 에 남은 행을 같은 회차에 다시 읽지 않는다', async () => {
+    const rows = Array.from({ length: 501 }, (_, i) =>
+      row(i + 1, `K${String(i).padStart(4, '0')}`),
+    );
+    const f = fake(rows);
+
+    const result = await f.cycle.run(table(['K0000']));
+
+    expect(result).toEqual({ read: 501, applied: 500, failed: 1, held: 0 });
+    expect(f.calls.filter((c) => c === 'fetch')).toHaveLength(2);
+  });
+});
