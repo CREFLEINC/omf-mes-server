@@ -173,9 +173,10 @@ export function dailyReturnOut(
 }
 
 /**
- * 처분 대기 반품 LOT(지금 기준, 기간 무관) — 처분 후보(`GET /quality/disposition-candidates`)의 반품 갈래와 같은 모집단:
- * 반품 입고(`RETURN`·`POSTED`)된 LOT 중 불량창고(`is_defect`) 잔액이 남아 있고, 그 LOT 을 대상으로 한 부적합에 처분 판정
- * (`disposition_decision`)이 하나도 없는 것. 기록 = 그 LOT 들의 반품 입고 라인. 공장 = 반품 입고의 공장.
+ * 처분 대기 반품 LOT(지금 기준, 기간 무관) — 반품 입고(`RETURN`·`POSTED`)된 LOT 중 불량창고(`is_defect`) 잔액이 남아 있고,
+ * 그 LOT 을 대상으로 한 부적합에 처분 판정(`disposition_decision`)이 시점과 무관하게 하나도 없는 것. 판정이 어느 반품에 대한
+ * 것인지 가리키는 칸이 없어, 판정 뒤 다시 반품된 LOT 도 빠진다. 처분 후보 목록과는 모집단이 다르다(후보는 판정 유무로 거르지 않는다).
+ * 기록 = 그 LOT 들의 반품 입고 라인(과거 반품 포함). 공장 = 반품 입고의 공장.
  */
 async function pendingReturnLots(tx: Tx, scope: Prisma.Sql): Promise<LotRecordCount> {
   const [row] = await tx.$queryRaw<{ lot_count: number; record_count: number }[]>(Prisma.sql`WITH ${scope}
