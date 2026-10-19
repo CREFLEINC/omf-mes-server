@@ -63,12 +63,6 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
     expect(pqc.itemDefects).toEqual([{ itemId: Number(ids.item), itemCode: PREFIX, itemName: PREFIX, qty: 4 }]);
     // 요청 09-07 · 진행 09-08 → 가장 오래된 것. 끝난 의뢰(09-01)는 대기가 아니다.
     expect(pqc.oldestPendingSince).toBe('2026-09-07T03:00:00.000Z');
-    // 최근 판정 더 보기 — 16건 중 15건, 앞 5건은 기존 recentLots 와 같다.
-    const more = pqc.recentLotsMore as { inspectedAt: string }[];
-    expect(more).toHaveLength(15);
-    expect(more.slice(0, 5)).toEqual(pqc.recentLots);
-    expect(more[0].inspectedAt).toBe('2026-09-16T02:00:00.000Z');
-    expect(more.map((row) => row.inspectedAt)).toEqual([...more.map((row) => row.inspectedAt)].sort().reverse());
     // 재작업 요청 — 건수는 기존 reworkRequestCount 와 같고, LOT 은 대상 LOT 이 있는 부적합의 고유 LOT(LOT-2).
     expect(pqc.reworkRequestCounts).toEqual({ lotCount: 1, recordCount: 3 });
     expect((pqc.reworkRequestCounts as { recordCount: number }).recordCount).toBe(pqc.reworkRequestCount);
@@ -105,7 +99,6 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
       itemDefects: [],
       oldestPendingSince: null,
       reworkRequestCounts: { lotCount: 0, recordCount: 0 },
-      recentLotsMore: [],
     });
     expect(oqc).toMatchObject({ returnReasons: [], pendingReturnLotCount: { lotCount: 0, recordCount: 0 }, customerDefects: [] });
     expect((oqc.dailyReturnOutQty as unknown[]).length).toBe(9);
@@ -246,12 +239,6 @@ describe('통합 대시보드 품질 PQC·OQC 추가 칸 (omf-all-around#118 · 
     await request_('WAIT-1', 'PQC', 'REQUESTED', '2026-09-07T03:00:00Z');
     await request_('WAIT-2', 'PQC', 'IN_PROGRESS', '2026-09-08T03:00:00Z');
     await request_('DONE', 'PQC', 'COMPLETED', '2026-09-01T03:00:00Z');
-    // 최근 판정 더 보기 — 합격 15건(09-02 ~ 09-16, 불합격 0 이라 품목별 불합격·재검사에 영향 없음) + 위 PQC 1건 = 16건.
-    for (let n = 1; n <= 15; n += 1) {
-      const day = String(n + 1).padStart(2, '0');
-      const id = await request_(`RECENT-${n}`, 'PQC', 'COMPLETED', `2026-09-${day}T01:00:00Z`);
-      await result(`RECENT-${n}`, id, 1, `2026-09-${day}T02:00:00Z`, 10, 0, null);
-    }
   }
 
   /** OQC: 공장이 정해진 출하요청에 불합격 3. */

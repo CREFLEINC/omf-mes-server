@@ -1,16 +1,14 @@
 import { Prisma } from '@prisma/client';
 
 import type { DashboardPlant } from './dashboard-availability.service';
-import { RecentLot, finalResultCte, pqcReinspectCte } from './dashboard-inspection';
-import { PQC_PENDING_CTE, SCOPED_NC_CTE, pqcEquipmentCode } from './dashboard-quality-status';
+import { finalResultCte, pqcReinspectCte } from './dashboard-inspection';
+import { PQC_PENDING_CTE, SCOPED_NC_CTE } from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
 import { LotRecordCount } from './dashboard-sections';
 
 type Tx = Prisma.TransactionClient;
 
 const TOP = 5;
-/** PQC 탭 최근 판정 더 보기 — 기존 `recentLots`(5건)는 그대로 두고 따로 싣는다. */
-export const PQC_RECENT_MORE_LIMIT = 15;
 /** 공급사 반품 출고를 반품 사유 목록에 섞을 때의 코드 — 입고 사유 코드와 겹치지 않게 따로 둔다. */
 export const SUPPLIER_RETURN_OUT = 'SUPPLIER_RETURN_OUT';
 
@@ -19,7 +17,6 @@ export interface PqcExtra {
   itemDefects: { itemId: number; itemCode: string; itemName: string; qty: number }[];
   oldestPendingSince: string | null;
   reworkRequestCounts: LotRecordCount;
-  recentLotsMore: RecentLot[];
 }
 
 export interface OqcExtra {
@@ -56,7 +53,6 @@ export async function readPqcOqcExtra(
         itemDefects: [],
         oldestPendingSince: null,
         reworkRequestCounts: { lotCount: 0, recordCount: 0 },
-        recentLotsMore: [],
       },
       oqc: {
         returnReasons: [],
@@ -102,7 +98,6 @@ export async function readPqcOqcExtra(
       })),
       oldestPendingSince: oldest?.since ? oldest.since.toISOString() : null,
       reworkRequestCounts: await reworkRequests(tx, scope, period),
-      recentLotsMore: (await pqcRecentRows(tx, scope, period)).map(recentLot),
     },
     oqc: {
       returnReasons: returnReasons(await reasonRows(tx, scope, period)),
@@ -212,48 +207,6 @@ async function reworkRequests(tx: Tx, scope: Prisma.Sql, period: DashboardPeriod
     WHERE d.disposition_type_code = 'REWORK' AND ${coarseRange(Prisma.sql`d.decided_at`, period.from, period.to)}
       AND ${localDate(Prisma.sql`d.decided_at`, Prisma.sql`nc.tz`)} BETWEEN ${period.from}::date AND ${period.to}::date`);
   return { lotCount: row?.lot_count ?? 0, recordCount: row?.record_count ?? 0 };
-}
-
-interface RecentRow {
-  inspection_result_id: bigint;
-  inspected_at: Date;
-  equipment_code: string | null;
-  item_code: string;
-  item_name: string;
-  lot_no: string | null;
-  qty: string;
-  judgment: RecentLot['judgmentCode'];
-}
-
-/**
- * PQC 최근 판정 최대 15건 — 기존 `recentLots`(dashboard-quality.service.ts `recent`)의 PQC 갈래와 같은 조건·정렬·형태:
- * 최종 회차 · 현지 날짜 ≤ 조회 종료일 · 판정 시각 → 결과 id 내림차순. 상대는 없고(null), 호기 = 계획 설비 또는 마지막 세션 설비.
- */
-function pqcRecentRows(tx: Tx, scope: Prisma.Sql, period: DashboardPeriod): Promise<RecentRow[]> {
-  return tx.$queryRaw<RecentRow[]>(Prisma.sql`WITH ${scope}, ${finalResultCte(period)}
-    SELECT fr.inspection_result_id, fr.inspected_at, fr.inspected_qty::text AS qty, fr.judgment,
-      i.item_code, i.item_name, lot.lot_no,
-      ${pqcEquipmentCode(Prisma.sql`fr.work_order_id`, Prisma.sql`fr.planned_equipment_id`)} AS equipment_code
-    FROM final_result fr
-    JOIN mdm.item i ON i.item_id = fr.item_id
-    LEFT JOIN trace.lot lot ON lot.lot_id = fr.lot_id
-    WHERE fr.type = 'PQC' AND fr.local_date <= ${period.to}::date
-    ORDER BY fr.inspected_at DESC, fr.inspection_result_id DESC
-    LIMIT ${PQC_RECENT_MORE_LIMIT}`);
-}
-
-export function recentLot(row: RecentRow): RecentLot {
-  return {
-    inspectionResultId: Number(row.inspection_result_id),
-    inspectedAt: row.inspected_at.toISOString(),
-    counterpartName: null,
-    equipmentCode: row.equipment_code,
-    itemCode: row.item_code,
-    itemName: row.item_name,
-    lotNo: row.lot_no,
-    qty: num(row.qty),
-    judgmentCode: row.judgment,
-  };
 }
 
 function codeName(groupCode: string): Prisma.Sql {
