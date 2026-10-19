@@ -2029,6 +2029,9 @@ model location {
   work_order_work_order_default_fg_location_idTolocation                            work_order[]                 @relation("work_order_default_fg_location_idTolocation")
   work_order_work_order_default_scrap_location_idTolocation                         work_order[]                 @relation("work_order_default_scrap_location_idTolocation")
   work_order_work_order_default_wip_location_idTolocation                           work_order[]                 @relation("work_order_default_wip_location_idTolocation")
+  production_line_default_wip                                                       production_line[]            @relation("production_line_default_wip_location_idTolocation")
+  production_line_default_fg                                                        production_line[]            @relation("production_line_default_fg_location_idTolocation")
+  production_line_default_scrap                                                     production_line[]            @relation("production_line_default_scrap_location_idTolocation")
   lot_status_event                                                                  lot_status_event[]
 
   @@unique([warehouse_id, location_code], map: "uq_location")
@@ -2205,6 +2208,9 @@ model production_line {
   line_name                       String                            @db.VarChar(200)
   line_type_code                  String                            @default("LINE") @db.VarChar(50)
   is_active                       Boolean                           @default(true)
+  default_wip_location_id         BigInt?
+  default_fg_location_id          BigInt?
+  default_scrap_location_id       BigInt?
   created_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                      BigInt?
   updated_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -2218,6 +2224,9 @@ model production_line {
   plant                           plant                             @relation(fields: [plant_id], references: [plant_id], onDelete: NoAction, onUpdate: NoAction)
   production_plan                 production_plan[]
   work_order                      work_order[]
+  default_wip_location            location?                         @relation("production_line_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  default_fg_location             location?                         @relation("production_line_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  default_scrap_location          location?                         @relation("production_line_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([plant_id, line_code], map: "uq_production_line")
   @@schema("mdm")
