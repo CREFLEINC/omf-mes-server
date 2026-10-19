@@ -9,6 +9,7 @@ import {
   finalResultCte,
   qualityTypeBlock,
 } from './dashboard-inspection';
+import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
 import { DashboardQuality, DefectPhenomenon, EquipmentDefectRate } from './dashboard-sections';
@@ -173,9 +174,7 @@ export class DashboardQualityService {
       JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
       JOIN mdm.equipment e ON e.equipment_id = pr.equipment_id
       JOIN plant_scope ps ON ps.plant_id = e.plant_id
-      JOIN mdm.code_group cg ON cg.group_code = 'EQUIPMENT_TYPE'
-      JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id AND cv.code = e.equipment_type_code
-      WHERE e.is_active AND e.status_code = 'IN_SERVICE' AND wo.work_order_type_code <> 'REWORK'
+      WHERE ${PRODUCTION_EQUIPMENT} AND e.is_active AND e.status_code = 'IN_SERVICE' AND wo.work_order_type_code <> 'REWORK'
         AND ${coarseRange(Prisma.sql`pr.occurred_at`, period.from, period.to)}
         AND ${localDate(Prisma.sql`pr.occurred_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
         AND NOT EXISTS (SELECT 1 FROM production.production_result c
