@@ -166,8 +166,8 @@ async function recordDone(tx: Tx, source: RelayTable, row: RelayRow): Promise<vo
       message_key: messageKey(source, row),
       interface_code: source.interfaceCode,
       direction_code: INBOUND,
-      // 원본 행이 대상이다 — 반영 전에는 MES 쪽 id 가 없다.
-      target_type_code: source.name,
+      // id 는 원본 행의 것이다 — 반영 전에는 MES 쪽 id 가 없다(계약: FK 가 아니다).
+      target_type_code: source.targetTypeCode,
       target_id: row.MES_INF_ID,
       payload,
       status_code: MESSAGE_STATUS.DONE,
@@ -196,7 +196,7 @@ async function recordFailure(
       message_key: messageKey(source, row),
       interface_code: source.interfaceCode,
       direction_code: INBOUND,
-      target_type_code: source.name,
+      target_type_code: source.targetTypeCode,
       target_id: row.MES_INF_ID,
       payload,
       status_code: MESSAGE_STATUS.FAILED,

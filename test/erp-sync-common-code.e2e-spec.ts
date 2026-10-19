@@ -104,6 +104,8 @@ describeRelay('ERP 공통코드 받기 (e2e · 중계 DB)', () => {
     expect(messages).toHaveLength(2);
     expect(messages.every((m) => m.direction_code === INBOUND)).toBe(true);
     expect(messages.every((m) => m.status_code === MESSAGE_STATUS.DONE)).toBe(true);
+    // 계약 어휘(`INTERFACE_TARGET`) — 중계 표 이름이 아니다. id 는 중계 행의 것이다.
+    expect(messages.map((m) => m.target_type_code)).toEqual(['COMMON_CODE', 'COMMON_CODE']);
   });
 
   it('뒤 판이 오면 이름을 고치고 version_no 를 올리며, D 면 끈다', async () => {
