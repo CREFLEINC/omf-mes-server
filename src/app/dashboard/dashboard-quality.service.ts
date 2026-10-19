@@ -9,6 +9,7 @@ import {
   finalResultCte,
   qualityTypeBlock,
 } from './dashboard-inspection';
+import { PRODUCTION_EQUIPMENT } from './dashboard-equipment.service';
 import { DashboardNonconformanceService } from './dashboard-nonconformance.service';
 import { PQC_PENDING_CTE, RECEIPT_HOLD_CTE, lotSupplierName, pqcEquipmentCode } from './dashboard-quality-status';
 import { DashboardPeriod, coarseRange, localDate, num, plantScope } from './dashboard-scope';
@@ -121,9 +122,14 @@ export class DashboardQualityService {
       tx.$queryRaw<{ partner_id: bigint; partner_name: string; rejected_qty: string }[]>(Prisma.sql`${head}
         SELECT p.partner_id, p.partner_name, SUM(fr.rejected_qty)::text AS rejected_qty
         FROM final_result fr
-        JOIN logistics.inbound_receipt_line irl ON irl.lot_id = fr.lot_id
-        JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
-        JOIN mdm.partner p ON p.partner_id = rc.supplier_id
+        -- LOT 하나에 입하 줄이 여럿이어도 한 번만 센다 — 최근 목록과 같이 첫 줄, 취소된 입하는 뺀다.
+        JOIN LATERAL (
+          SELECT rc.supplier_id FROM logistics.inbound_receipt_line irl
+          JOIN logistics.inbound_receipt rc ON rc.inbound_receipt_id = irl.inbound_receipt_id
+          WHERE irl.lot_id = fr.lot_id AND rc.status_code <> 'CANCELLED'
+          ORDER BY irl.inbound_receipt_line_id LIMIT 1
+        ) supplier ON TRUE
+        JOIN mdm.partner p ON p.partner_id = supplier.supplier_id
         WHERE fr.type = 'IQC' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
         GROUP BY p.partner_id HAVING SUM(fr.rejected_qty) > 0
         ORDER BY SUM(fr.rejected_qty) DESC, p.partner_id LIMIT ${TOP}`),
@@ -161,9 +167,7 @@ export class DashboardQualityService {
       JOIN production.work_order wo ON wo.work_order_id = pr.work_order_id
       JOIN mdm.equipment e ON e.equipment_id = pr.equipment_id
       JOIN plant_scope ps ON ps.plant_id = e.plant_id
-      JOIN mdm.code_group cg ON cg.group_code = 'EQUIPMENT_TYPE'
-      JOIN mdm.code_value cv ON cv.code_group_id = cg.code_group_id AND cv.code = e.equipment_type_code
-      WHERE e.is_active AND e.status_code = 'IN_SERVICE' AND wo.work_order_type_code <> 'REWORK'
+      WHERE ${PRODUCTION_EQUIPMENT} AND e.is_active AND e.status_code = 'IN_SERVICE' AND wo.work_order_type_code <> 'REWORK'
         AND ${coarseRange(Prisma.sql`pr.occurred_at`, period.from, period.to)}
         AND ${localDate(Prisma.sql`pr.occurred_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
         AND NOT EXISTS (SELECT 1 FROM production.production_result c

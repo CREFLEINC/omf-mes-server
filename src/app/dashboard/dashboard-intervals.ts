@@ -37,6 +37,11 @@ export function subtract(spans: readonly Span[], cuts: readonly Span[]): Span[] 
   return result;
 }
 
+/** 두 구간 묶음이 겹치는 부분. */
+export function intersect(spans: readonly Span[], mask: readonly Span[]): Span[] {
+  return subtract(spans, subtract(spans, mask));
+}
+
 export function totalLength(spans: readonly Span[]): number {
   return union(spans).reduce((sum, span) => sum + (span.end - span.start), 0);
 }

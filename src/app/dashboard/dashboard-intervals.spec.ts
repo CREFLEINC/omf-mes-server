@@ -1,4 +1,4 @@
-import { clip, stoppedSpans, subtract, totalLength, union } from './dashboard-intervals';
+import { clip, intersect, stoppedSpans, subtract, totalLength, union } from './dashboard-intervals';
 
 describe('dashboard intervals', () => {
   it('clip 은 범위 밖을 자르고 겹치지 않으면 null 이다', () => {
@@ -46,5 +46,16 @@ describe('dashboard intervals', () => {
       { eventTypeCode: 'RESUME', occurredAt: 30 },
     ];
     expect(stoppedSpans(events, 100)).toEqual([{ start: 10, end: 30 }]);
+  });
+
+  it('intersect 는 겹친 부분만 남긴다 — 근무 구간 밖 가동은 빠진다', () => {
+    const running = [{ start: 0, end: 100 }];
+    const shifts = [{ start: 20, end: 50 }, { start: 60, end: 80 }, { start: 90, end: 140 }];
+    expect(intersect(running, shifts)).toEqual([
+      { start: 20, end: 50 },
+      { start: 60, end: 80 },
+      { start: 90, end: 100 },
+    ]);
+    expect(intersect(running, [])).toEqual([]);
   });
 });
