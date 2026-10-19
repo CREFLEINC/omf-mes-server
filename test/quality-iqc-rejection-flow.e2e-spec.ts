@@ -119,6 +119,10 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
     await confirmWith(resultId, reason('고친 사유'), 1).expect(200);
     expect(await reasonsOf(resultId)).toEqual(['고친 사유']);
+    // 자동으로 서는 부적합(P-41)도 갈아 끼운 사유를 읽는다.
+    const nc = await prisma.nonconformance.findFirstOrThrow({ where: { inspection_result_id: BigInt(resultId) }, select: { description: true } });
+    expect(nc.description).toContain('고친 사유');
+    expect(nc.description).not.toContain('외관 긁힘');
   });
 
   it('⭐ 불합격 사유를 남긴 뒤 합격으로 확정하면 그 회차의 불량 기록이 지워진다 · 합격에 사유를 실으면 400', async () => {

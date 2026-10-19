@@ -35,6 +35,10 @@ export async function prepareRejectionDefects(
   if (rows.length > 0 && !isIqc) {
     throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 IQC 검사 결과에만 함께 보낼 수 있습니다.'));
   }
+  // 합격·보류로 태어나는 회차에는 불량 기록을 두지 않는다 — `:confirm` 과 같은 규칙(#121 · 장부 P-47).
+  if (rows.length > 0 && bornConfirmed && body.overallJudgmentCode !== REJECTED) {
+    throw one(field('defects', ERROR_CODE.INVALID, '불합격 사유는 불합격 판정에만 함께 보낼 수 있습니다.'));
+  }
   if (rows.length === 0) {
     if (isIqc) throw one(field('defects', ERROR_CODE.REQUIRED, '불합격이면 불량 코드와 사유를 함께 보내야 합니다.'));
     return null;
