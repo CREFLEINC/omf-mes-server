@@ -440,6 +440,14 @@ model integration_message {
   @@schema("integration")
 }
 
+model sync_lease {
+  lease_name  String   @id @db.VarChar(50)
+  owner_token String   @db.VarChar(100)
+  expires_at  DateTime @db.Timestamptz(6)
+
+  @@schema("integration")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model handling_unit {
   handling_unit_id                                                                                   BigInt                          @id @default(autoincrement())
