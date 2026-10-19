@@ -52,6 +52,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
   let emptyRoutingId = 0; // 공정 0건 — 400 LINE_REQUIRED 용
   const unusableRoutingIds = { draft: 0, expired: 0, otherItem: 0, laterObsolete: 0 };
   let plantId = BigInt(0);
+  let locationId = 0;
   let operationIds: number[] = []; // seq 10·20·30 순
   let lineId = 0;
 
@@ -448,7 +449,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       expect(workOrders.every((row) => row.work_order_no.startsWith('WO-'))).toBe(true);
     });
 
-    it('⭐ (R-5) 전개된 W/O 의 default_wip_location_id·production_line_id 는 NULL 이다', async () => {
+    it('⭐ 계획에 라인이 없으면 전개된 W/O 의 라인·기본 위치 셋은 비어 있다', async () => {
       const planId = await createPlan('2026-11-03', 40);
       await confirmPlan(planId);
 
@@ -456,6 +457,29 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
         expect(workOrder.production_line_id).toBeNull();
         expect(workOrder.default_wip_location_id).toBeNull();
         expect(workOrder.default_fg_location_id).toBeNull();
+        expect(workOrder.default_scrap_location_id).toBeNull();
+      }
+    });
+
+    it('⭐ 계획에 라인이 있으면 전개된 W/O 에 그 라인과 라인의 기본 위치 셋을 넣는다', async () => {
+      await prisma.production_line.update({
+        where: { production_line_id: BigInt(lineId) },
+        data: { default_wip_location_id: BigInt(locationId), default_fg_location_id: BigInt(locationId) },
+      });
+      const response = await request(app.getHttpServer())
+        .post('/api/planning/production-plans')
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .send({ productionOrderId: orderWId, planDate: '2026-11-04', plannedQty: 40, uomId, bomId, routingId, plannedLineId: lineId })
+        .expect(201);
+      const planId = response.body.productionPlanId as number;
+      await confirmPlan(planId);
+
+      for (const workOrder of await workOrdersOf(planId)) {
+        expect(workOrder.production_line_id).toBe(BigInt(lineId));
+        expect(workOrder.default_wip_location_id).toBe(BigInt(locationId));
+        expect(workOrder.default_fg_location_id).toBe(BigInt(locationId));
+        // 라인에 비어 있는 칸은 W/O 에도 비운다 — 4M 에서 고른다.
         expect(workOrder.default_scrap_location_id).toBeNull();
       }
     });
@@ -815,6 +839,20 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
       data: { plant_id: plant.plant_id, line_code: `${PREFIX}-LN`, line_name: '계획조회검사라인' },
     });
     lineId = Number(line.production_line_id);
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        plant_id: plant.plant_id,
+        business_unit_id: unit.business_unit_id,
+        warehouse_code: `${PREFIX}-WH`,
+        warehouse_name: '계획조회검사창고',
+        warehouse_type_code: 'GENERAL',
+        management_level_code: 'LOCATION',
+      },
+    });
+    const location = await prisma.location.create({
+      data: { warehouse_id: warehouse.warehouse_id, location_code: `${PREFIX}-LOC`, location_name: '계획조회검사위치', location_type_code: 'BIN' },
+    });
+    locationId = Number(location.location_id);
 
     const orderA = await prisma.production_order.create({
       data: {
@@ -958,6 +996,8 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
+    await prisma.location.deleteMany({ where: { location_code: { startsWith: PREFIX } } });
+    await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
     await prisma.process.deleteMany({ where: { process_code: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { plant: { plant_code: { startsWith: PREFIX } } } });
