@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { commonCodeTable } from './apply/common-code.apply';
 import { employeeTable } from './apply/employee.apply';
 import { itemTable } from './apply/item.apply';
+import { partnerTable } from './apply/partner.apply';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncRunner } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
@@ -26,7 +27,7 @@ import { SyncLease } from './sync-lease';
         const master = {
           name: '기준정보',
           // 참조되는 쪽이 앞이다.
-          tables: [commonCodeTable, employeeTable, itemTable],
+          tables: [commonCodeTable, employeeTable, itemTable, partnerTable],
           intervalMs: settings.masterIntervalMs,
         };
         return new ErpSyncRunner(
