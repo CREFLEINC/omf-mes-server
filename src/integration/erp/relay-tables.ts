@@ -10,12 +10,15 @@ export interface RelayTable {
   interfaceCode: string;
   /** `dbo` 아래 표 이름. */
   name: string;
-  /** 'N' 이 미반영, 'Y' 가 반영. TIG_DOWN 계열은 `IF_YN`, SND 계열은 `MES_APPLY_FLAG`. */
-  flagColumn: 'IF_YN';
+  /**
+   * 'N' 이 미반영, 'Y' 가 반영. TIG_DOWN 계열은 `IF_YN` 뿐이고, SND 계열(`MES_APPLY_FLAG`)은
+   * 반영 시각·실패 사유 칸(`MES_APPLY_DT`·`MES_APPLY_ERROR`)과 수정자 칸을 함께 쓴다.
+   */
+  flagColumn: 'IF_YN' | 'MES_APPLY_FLAG';
   /** 업무 키. 같은 키의 앞 판이 막히면 뒤 판도 반영하지 않는다(옛 값이 새 값을 덮지 않게). */
   keyColumns: readonly string[];
-  /** 같은 업무 키 안에서 판의 순서. */
-  versionColumn: 'T_SEQ';
+  /** 같은 업무 키 안에서 판의 순서. 같은 판의 취소(CREATE_TYPE=C)는 IDENTITY 가 가른다. */
+  versionColumn: 'T_SEQ' | 'IF_SEQ';
 }
 
 /** 행 하나. `MES_INF_ID` 는 중계 DB 의 IDENTITY 다. */
@@ -39,6 +42,15 @@ export const EMPLOYEE: RelayTable = {
   versionColumn: 'T_SEQ',
 };
 
+/** 품목. 공장별로 오지만 MES 품목은 품목코드 하나다 — 두 공장 544건은 값이 모두 같았다. */
+export const ITEM: RelayTable = {
+  interfaceCode: 'IF-ERP-ITEM-RECV',
+  name: 'T_IF_SND_ITEM_INFOR_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['ITEM_CD', 'PLANT_CD'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];
@@ -52,6 +64,11 @@ export function businessKey(table: RelayTable, row: RelayRow): string {
 export function text(row: RelayRow, column: string): string {
   const value = row[column];
   return value === null || value === undefined ? '' : String(value).trim();
+}
+
+/** SND 계열의 취소 행 — 지우지 않고 끈다. */
+export function isCancel(row: RelayRow): boolean {
+  return text(row, 'CREATE_TYPE') === 'C';
 }
 
 export function requiredText(row: RelayRow, column: string): string {
