@@ -70,6 +70,9 @@ export function buildDefectRecordWhere(query: DefectRecordListQuery): Prisma.def
     ...filter('occurrence_process_id', query.occurrenceProcessId),
     ...filter('detection_process_id', query.detectionProcessId),
     ...(query.sourceCode === undefined ? {} : { source_type_code: query.sourceCode }),
-    ...detectedAtWhere(query.detectedFrom as string, query.detectedTo as string),
+    // 결과 하나로 좁힌 조회는 기간 없이 온다(P-42 완화) — 기간이 있을 때만 건다. 없는 채로 걸면 Invalid Date 로 500 이다.
+    ...(query.detectedFrom === undefined || query.detectedTo === undefined
+      ? {}
+      : detectedAtWhere(query.detectedFrom, query.detectedTo)),
   };
 }
