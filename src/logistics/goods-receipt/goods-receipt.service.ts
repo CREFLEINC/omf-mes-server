@@ -30,6 +30,11 @@ import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다 — LOT 과 같은 판정이다. */
 const NUMBER_RETRY = 3;
+const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
+/** IQC 합격 확정이 LOT 을 옮기는 상태(시드 `LOT_STATUS` · 전이 C4). */
+const IQC_PASSED_LOT_STATUS = 'NORMAL';
+/** IQC 불합격 확정(C6)이 LOT 을 옮기는 상태 — 불량창고 입고만 허용한다(P-45). */
+const DEFECTIVE_LOT_STATUS = 'DEFECTIVE';
 
 export interface GoodsReceiptQuery {
   receiptDateFrom?: string;
@@ -200,7 +205,10 @@ export class GoodsReceiptService {
   ): Promise<void> {
     const at = `lines[${index}]`;
     const [lot, uom, location] = await Promise.all([
-      this.prisma.lot.findUnique({ where: { lot_id: line.lotId }, select: { item_id: true } }),
+      this.prisma.lot.findUnique({
+        where: { lot_id: line.lotId },
+        select: { item_id: true, status_code: true, source_type_code: true, source_id: true },
+      }),
       this.prisma.uom.findUnique({ where: { uom_id: line.uomId }, select: { uom_id: true } }),
       // ⛔ 목적지는 «그 창고의» 위치여야 한다 — 남의 창고 위치에 전기하면 잔량 차원이
       //    창고와 위치가 서로 다른 곳을 가리키는 행이 된다.
@@ -220,6 +228,33 @@ export class GoodsReceiptService {
     // LOT 과 품목이 어긋나면 원장이 거짓을 적는다 — 계보가 그 두 축으로 이어진다.
     if (Number(lot.item_id) !== line.itemId) {
       errors.push(field(`${at}.itemId`, ERROR_CODE.INVALID, '이 LOT 의 품목이 아닙니다.'));
+    }
+    // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17).
+    // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
+    if (lot.source_type_code === INBOUND_LOT_SOURCE && lot.status_code !== IQC_PASSED_LOT_STATUS) {
+      const inbound = await this.prisma.inbound_receipt_line.findUnique({
+        where: { inbound_receipt_line_id: lot.source_id },
+        select: { inspection_required: true },
+      });
+      if (inbound?.inspection_required === true) {
+        // ⭐ 예외: IQC 불합격(LOT 불량)은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) —
+        //    불합격 자재를 불량창고로 옮겨 처분·반품을 기다린다. 일반 창고는 계속 막는다. 검사 대기는 어디로도 안 된다.
+        const toDefectWarehouse =
+          lot.status_code === DEFECTIVE_LOT_STATUS &&
+          (await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { is_defect: true } }))
+            ?.is_defect === true;
+        if (!toDefectWarehouse) {
+          errors.push(
+            field(
+              `${at}.lotId`,
+              ERROR_CODE.STATE_LOCKED,
+              lot.status_code === DEFECTIVE_LOT_STATUS
+                ? 'IQC 불합격 LOT 은 불량창고로만 입고할 수 있습니다.'
+                : 'IQC 수입검사 합격 전인 LOT 은 입고할 수 없습니다.',
+            ),
+          );
+        }
+      }
     }
   }
 }
