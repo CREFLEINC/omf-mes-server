@@ -16,10 +16,10 @@ const LOT_QUALITY_STATUS = 'trace.lot.status_code';
 /** v0.1.2 응답 enum에는 들어왔지만 질의 enum에는 아직 없는 값(계약 x-omf-known-differences). */
 const KNOWN_QUERY_GAP = ['C17', 'C18', 'C19', 'C20'];
 /**
- * 서버가 계약보다 먼저 쓰는 코드(P-35 · omf-all-around#105). 계약 사본이 받아 오면 이 목록을
- * 비우고 위 기대가 다시 `[]` 가 된다 — ⛔ 사본을 직접 고치지 않는다.
+ * 서버가 계약보다 먼저 쓰는 코드 — 검사 비대상·IQC 생략 C21·C22(P-35 · omf-all-around#105), 처분 선별 C23·C24
+ * (P-53 · omf-all-around#108). 계약 사본이 받아 오면 이 목록을 비우고 위 기대가 다시 `[]` 가 된다 — ⛔ 사본을 직접 고치지 않는다.
  */
-const SERVER_AHEAD_CODES = ['C21', 'C22'];
+const SERVER_AHEAD_CODES = ['C21', 'C22', 'C23', 'C24'];
 
 describe('계약 사본 — LOT 전이 코드의 enum 간극 (통보 089·218)', () => {
   const contract = JSON.parse(readFileSync(CONTRACT, 'utf8')) as {
@@ -44,7 +44,7 @@ describe('계약 사본 — LOT 전이 코드의 enum 간극 (통보 089·218)',
       .flatMap((transition) => (transition.transitionCode === undefined ? [] : [transition.transitionCode]))
       .sort();
 
-  it('⭐ v0.1.2 응답 enum은 서버가 쓰는 LOT 전이 코드 전건을 담는다 — 선행 C21·C22 만 예외다', () => {
+  it('⭐ v0.1.2 응답 enum은 서버가 쓰는 LOT 전이 코드 전건을 담는다 — 선행 코드만 예외다', () => {
     const outside = usedCodes().filter((code) => !responseEnum().includes(code));
 
     expect(outside).toEqual(SERVER_AHEAD_CODES);

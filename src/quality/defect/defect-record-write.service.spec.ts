@@ -10,7 +10,11 @@ jest.mock('../../common/master', () => ({
 type Row = Record<string, unknown>;
 
 /** omf-all-around#106 — 불량 기록 등록(장부 P-42). */
-function harness(options: { iqcProcess?: boolean; result?: { lot_id: bigint | null; work_order_id: bigint | null } | null } = {}) {
+function harness(options: {
+  iqcProcess?: boolean;
+  result?: { lot_id: bigint | null; work_order_id: bigint | null } | null;
+  consumption?: Row | null;
+} = {}) {
   const created: Row[] = [];
   const prisma = {
     inspection_result: {
@@ -29,6 +33,12 @@ function harness(options: { iqcProcess?: boolean; result?: { lot_id: bigint | nu
     uom: { findUnique: async () => ({ uom_id: 1n }) },
     lot: { findUnique: async () => ({ lot_id: 20n }) },
     worker: { findFirst: async () => ({ worker_id: 8n }) },
+    material_consumption: {
+      findFirst: async () =>
+        options.consumption === undefined
+          ? { material_consumption_id: 61n, work_order_id: 41n, actual_use_process_id: 33n, work_order: { routing_operation: { process_id: 34n } } }
+          : options.consumption,
+    },
     defect_record: {
       create: async ({ data }: { data: Row }) => {
         created.push(data);
@@ -61,7 +71,7 @@ const firstError = (error: unknown) => (error as ContractException).errors[0];
 describe('DefectRecordWriteService', () => {
   it('IQC 는 공정을 생략하면 수입검사 공정으로 채우고, LOT 은 검사 의뢰의 것을 따른다', async () => {
     const { service, created } = harness();
-    await service.create(iqc(), 9);
+    await service.create(iqc(), { appUserId: 9 });
 
     expect(created[0]).toMatchObject({
       source_type_code: 'IQC',
@@ -77,42 +87,49 @@ describe('DefectRecordWriteService', () => {
 
   it('수입검사 공정이 기준정보에 없으면 400 STATE_LOCKED 다', async () => {
     const { service } = harness({ iqcProcess: false });
-    const error = await service.create(iqc(), 9).catch((e: unknown) => e);
+    const error = await service.create(iqc(), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ code: 'STATE_LOCKED' });
   });
 
   it('IQC 가 아니면 공정이 필수다', async () => {
     const { service } = harness();
-    const error = await service.create(iqc({ sourceCode: 'PQC' }), 9).catch((e: unknown) => e);
+    const error = await service.create(iqc({ sourceCode: 'PQC' }), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ field: 'occurrenceProcessId', code: 'REQUIRED' });
   });
 
   it('공정을 주면 그대로 쓴다(#108 PQC 자재 불량)', async () => {
     const { service, created } = harness();
-    await service.create(iqc({ sourceCode: 'PQC', occurrenceProcessId: 11, detectionProcessId: 12, inspectionResultId: null }), 9);
+    await service.create(iqc({ sourceCode: 'PQC', occurrenceProcessId: 11, detectionProcessId: 12 }), { appUserId: 9 });
 
     expect(created[0]).toMatchObject({ occurrence_process_id: 11n, detection_process_id: 12n });
   });
 
   it('검사 결과의 LOT 과 다른 LOT 을 실으면 400 이다', async () => {
     const { service } = harness();
-    const error = await service.create(iqc({ lotId: 21 }), 9).catch((e: unknown) => e);
+    const error = await service.create(iqc({ lotId: 21 }), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ field: 'lotId', code: 'INVALID' });
   });
 
   it('없는 검사 결과는 400 이다', async () => {
     const { service } = harness({ result: null });
-    const error = await service.create(iqc(), 9).catch((e: unknown) => e);
+    const error = await service.create(iqc(), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ field: 'inspectionResultId', code: 'INVALID' });
   });
 
+  it('검사 결과도 생산 실적도 없으면 500 이 아니라 400 REQUIRED 다(ck_defect_source)', async () => {
+    const { service, created } = harness();
+    const error = await service.create(iqc({ inspectionResultId: null }), { appUserId: 9 }).catch((caught: unknown) => caught);
+    expect(firstError(error)).toMatchObject({ field: 'inspectionResultId', code: 'REQUIRED' });
+    expect(created).toHaveLength(0);
+  });
+
   it('수량이 0 이하면 400 RANGE 다', async () => {
     const { service } = harness();
-    const error = await service.create(iqc({ defectQty: 0 }), 9).catch((e: unknown) => e);
+    const error = await service.create(iqc({ defectQty: 0 }), { appUserId: 9 }).catch((e: unknown) => e);
 
     expect(firstError(error)).toMatchObject({ field: 'defectQty', code: 'RANGE' });
   });
@@ -151,5 +168,48 @@ describe('DefectRecordWriteService', () => {
       worker_id: 8n,
       created_by: null,
     });
+  });
+});
+
+/** omf-all-around#108 — 투입 뒤 자재 불량(장부 P-52). */
+describe('자재 불량(MATERIAL)', () => {
+  const material = (extra: Partial<DefectRecordCreate> = {}): DefectRecordCreate => ({
+    sourceCode: 'MATERIAL',
+    defectCodeId: 5,
+    defectQty: 3,
+    uomId: 1,
+    detectedAt: '2026-10-16T01:00:00Z',
+    lotId: 20,
+    ...extra,
+  });
+
+  it('투입 기록에서 작업지시와 투입 공정을 채운다', async () => {
+    const { service, created } = harness();
+    await service.create(material(), { appUserId: 9 });
+    expect(created[0]).toMatchObject({
+      source_type_code: 'MATERIAL', lot_id: 20n, work_order_id: 41n,
+      occurrence_process_id: 33n, detection_process_id: 33n,
+      source_document_id: 61n, // ck_defect_source — 투입 기록이 원천 문서다
+    });
+  });
+
+  it('투입 공정이 비면 그 작업지시의 라우팅 공정이다', async () => {
+    const { service, created } = harness({
+      consumption: { work_order_id: 41n, actual_use_process_id: null, work_order: { routing_operation: { process_id: 34n } } },
+    });
+    await service.create(material(), { appUserId: 9 });
+    expect(created[0]).toMatchObject({ occurrence_process_id: 34n, detection_process_id: 34n });
+  });
+
+  it('LOT 이 없거나 투입 기록이 없으면 400 이다', async () => {
+    const { service } = harness({ consumption: null });
+    await expect(service.create(material({ lotId: null }), { appUserId: 9 })).rejects.toBeInstanceOf(ContractException);
+    await expect(service.create(material(), { appUserId: 9 })).rejects.toBeInstanceOf(ContractException);
+  });
+
+  it('단말 작업자가 주체면 계정 없이 그 작업자로 남긴다', async () => {
+    const { service, created } = harness();
+    await service.create(material(), { workerId: 77n });
+    expect(created[0]).toMatchObject({ worker_id: 77n, created_by: null });
   });
 });

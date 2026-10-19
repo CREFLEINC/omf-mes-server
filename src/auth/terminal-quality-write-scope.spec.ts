@@ -38,3 +38,50 @@ it('rejects a request outside the terminal process and wrong terminal type', asy
     ...terminal, terminalTypeCode: 'MOBILE',
   })).rejects.toHaveProperty('status', 401);
 });
+
+/** P-02-14 자재 불량 등록(장부 P-52) — 자재 불량 원천 · 단말 공장 LOT 만. */
+describe('POP material defect and hold', () => {
+  const db = (ownedLots: number) => ({
+    worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 23n }) },
+    lot: { count: jest.fn().mockResolvedValue(ownedLots) },
+  }) as unknown as PrismaService;
+  const req = (body: Record<string, unknown>) => ({
+    headers: { 'x-worker-no': 'W-23', 'idempotency-key': 'quality-2' }, body,
+  }) as unknown as Request;
+
+  it('records a MATERIAL defect for a LOT of the terminal plant and attaches the worker', async () => {
+    const prisma = db(1);
+    const request = req({ sourceCode: 'MATERIAL', lotId: 31 });
+    await assertTerminalQualityWriteScope(prisma, request, 'POST /quality/defect-records', terminal);
+    expect(currentTerminalQualityWorkerId(request)).toBe(23n);
+    expect(prisma.lot.count).toHaveBeenCalledWith({ where: { lot_id: { in: [31n] }, plant_id: 3n } });
+  });
+
+  it('rejects other defect sources, missing LOT and LOTs of another plant', async () => {
+    await expect(assertTerminalQualityWriteScope(db(1), req({ sourceCode: 'PQC', lotId: 31 }),
+      'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
+    await expect(assertTerminalQualityWriteScope(db(1), req({ sourceCode: 'MATERIAL' }),
+      'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
+    await expect(assertTerminalQualityWriteScope(db(0), req({ sourceCode: 'MATERIAL', lotId: 31 }),
+      'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
+  });
+
+  /* #108 review m1 — W/O·process·source document are filled from the consumption record; POP may not send them. */
+  it.each([
+    'workOrderId', 'occurrenceProcessId', 'detectionProcessId', 'inspectionResultId', 'productionResultId', 'equipmentId', 'moldId',
+  ])('rejects a MATERIAL defect that carries %s', async (name) => {
+    const prisma = db(1);
+    await expect(assertTerminalQualityWriteScope(prisma, req({ sourceCode: 'MATERIAL', lotId: 31, [name]: 7 }),
+      'POST /quality/defect-records', terminal)).rejects.toHaveProperty('status', 401);
+    expect(prisma.lot.count).not.toHaveBeenCalled();
+  });
+
+  it('holds only when every LOT belongs to the terminal plant', async () => {
+    await assertTerminalQualityWriteScope(db(2), req({ lots: [{ lotId: 31 }, { lotId: 32 }] }),
+      'POST /quality/lot-holds', terminal);
+    await expect(assertTerminalQualityWriteScope(db(1), req({ lots: [{ lotId: 31 }, { lotId: 32 }] }),
+      'POST /quality/lot-holds', terminal)).rejects.toHaveProperty('status', 401);
+    await expect(assertTerminalQualityWriteScope(db(0), req({ lots: [] }),
+      'POST /quality/lot-holds', terminal)).rejects.toHaveProperty('status', 401);
+  });
+});

@@ -259,6 +259,14 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'C18', sourceOperation: DECIDE },
     'disposition-normal': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
       transitionCode: 'C19', sourceOperation: DECIDE },
+    // ── 처분 «선별»(omf-all-around#108 · 장부 P-53) — 한 판정이 LOT 을 둘로 가른다 ──────
+    // 원 LOT(양품분)은 정상(C23), 불량분으로 떼어 낸 자식 LOT 은 불량(C24). 자식은 원 LOT 의
+    // 상태로 태어나 이 전이로 옮긴다 — 상태 이력을 코어 한 자리(`moveWithin`)만 쓴다.
+    // ⚠ `from` 은 위 셋과 같다(반품 갈래가 `NORMAL`·`INSPECTION_PENDING` 으로 들어온다).
+    'disposition-sort': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
+      transitionCode: 'C23', sourceOperation: DECIDE },
+    'disposition-sort-defect': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'DEFECTIVE',
+      transitionCode: 'C24', sourceOperation: DECIDE },
   },
 
   /**

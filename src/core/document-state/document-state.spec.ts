@@ -279,10 +279,13 @@ describe('DocumentStateService', () => {
         .map((entry) => entry.action)
         .sort();
 
+      // ⭐ 처분 «선별»(#108 · 장부 P-53)이 둘을 더했다 — 같은 처분 오퍼레이션의 갈래라 `from` 도 같다.
       expect(withDefective).toEqual([
         'disposition-normal',
         'disposition-rework',
         'disposition-scrap',
+        'disposition-sort',
+        'disposition-sort-defect',
         'stock-reinstate',
       ]);
       // ⭐ I-23 이 셋으로 넓혔다 — 코어가 `from` 밖을 «던지지 않고 skip» 해서, 좁으면 400 이
@@ -580,7 +583,8 @@ describe('DocumentStateService', () => {
       // +2 — 피킹 지시 닫기(P-14) · 자재 출고요청 닫기(P-16 · 문의 046) 키 신설.
       //      둘 다 전이 하나뿐이다 — 취소 경로가 계약에 0건이다(`cancelable: false`).
       // +2 — 검사 비대상(C21)·IQC 생략 실행(C22) 품질 전이(omf-all-around#105 · 장부 P-35·P-36).
-      expect(service.registered()).toHaveLength(54);
+      // +2 — LOT 품질 축에 처분 선별 양품(C23)·불량분(C24)(omf-all-around#108 · 장부 P-53).
+      expect(service.registered()).toHaveLength(56);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

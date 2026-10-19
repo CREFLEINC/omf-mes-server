@@ -15,6 +15,8 @@ import {
 import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
+import { currentTerminal } from '../../auth/terminal-context';
+import { currentTerminalQualityWorkerId } from '../../auth/terminal-quality-write-scope';
 import { Contract } from '../../common/contract';
 import { ContractException, ERROR_CODE, field } from '../../common/errors';
 import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
@@ -99,15 +101,17 @@ export class LotHoldController {
    * ⛔ `runVersioned` 가 아니라 `runIdempotent` 다 — 이 등록만 헤더 `If-Match` 를 «안 쓴다»
    *    (계약 `:4091` — 여러 LOT 이라 토큰이 여럿이다). 토큰은 본문 `lots[].versionNo` 로 온다.
    * ⛔ ETag 를 안 낸다 — 계약이 201 에 선언하지 않았고 응답이 «배열»이라 실을 행이 없다.
-   * ⛔ `X-Worker-No` 를 안 읽는다 — `lot_status_event.changed_by` 가 NOT NULL 이라 계정
-   *    세션이 유일한 원천이다(0단계 선례 `inspection-result.controller.ts`).
+   * ⚠ 관리웹은 계정 세션이 주체다. POP 은 단말 범위 가드(`terminal-quality-write-scope.ts`)가
+   *    `X-Worker-No` 로 정한 작업자다 — 이력은 `changed_worker_id` 로 남는다(장부 P-52).
    * 403 게이트는 `derived-permissions.ts:252` 에 이미 있다 — `manual-permissions.ts` 0줄.
    */
   @Post('lot-holds')
   @Contract('POST /quality/lot-holds')
   create(@Req() request: Request, @Body() body: LotHoldCreate): Promise<LotHoldView[]> {
-    const appUserId = userOf(request);
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, appUserId), FAMILY_CONFLICT_CODE);
+    // ⭐ POP(P-02-14 · 장부 P-52) — 단말 범위 가드가 사번으로 정한 작업자가 주체다.
+    const workerId = currentTerminal(request) === undefined ? undefined : currentTerminalQualityWorkerId(request);
+    const by = workerId !== undefined ? { workerId } : { appUserId: userOf(request) };
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.writes.create(body, by), FAMILY_CONFLICT_CODE);
   }
 
   /**

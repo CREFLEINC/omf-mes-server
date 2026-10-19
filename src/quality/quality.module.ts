@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { DocumentStateModule } from '../core/document-state';
+import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -16,6 +17,7 @@ import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
 import { DefectRecordWriteService } from './defect/defect-record-write.service';
 import { DispositionController } from './disposition/disposition.controller';
+import { DispositionSortService } from './disposition/disposition-sort';
 import { DispositionWriteService } from './disposition/disposition-write.service';
 import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
@@ -56,6 +58,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     IdempotencyModule,
     NumberingModule,
     DocumentStateModule,
+    InventoryPostingModule,
     LotRegistryModule,
   ],
   controllers: [
@@ -101,6 +104,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     NonconformanceQueryService,
     NonconformanceWriteService,
     DispositionWriteService,
+    DispositionSortService,
     ReworkWorkOrderService,
   ],
 })

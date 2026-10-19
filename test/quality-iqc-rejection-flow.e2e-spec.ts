@@ -23,8 +23,8 @@ const ITEM_CODE = 'IQCFLOW-ITEM';
 const SUPPLIER_CODE = 'IQCFLOW-SUP';
 const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
-// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스).
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06'];
+// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스). W-04-11 — 재고 재등록(#108 리뷰 M1).
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11'];
 const DAY = '2026-10-16';
 
 const key = (): string => randomUUID();
@@ -82,6 +82,140 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(JSON.stringify(rejected.body)).toContain('불량창고로만');
     await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+  });
+
+  it('⭐ 경로 ① 처분 정상 → 보류 해제 → 입고', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 10 }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    await receive(lotId, lineId, 10).expect(201);
+  });
+
+  it('⭐ 경로 ② 선별 → 양품분(원 LOT) 정상·보류 해제 → 양품 수량 입고 · 불량분은 새 LOT 불량', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, {
+      dispositionTypeCode: 'SORT',
+      decisionQty: 10,
+      acceptedQty: 7,
+      rejectedQty: 3,
+      businessDate: DAY,
+    }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
+    expect(children).toHaveLength(1);
+    const childLotId = Number(children[0].target_lot_id);
+    expect(await lotStatus(childLotId)).toBe('DEFECTIVE');
+
+    // 장부 P-56 — 입고 화면은 입고 가능 수량(양품 7)과 선별 불량분(-S1 3)을 받는다.
+    const lines = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
+      .find((row) => row.inboundReceiptLineId === lineId);
+    expect(line).toMatchObject({
+      receivableQty: 7,
+      splitLots: [expect.objectContaining({ lotId: childLotId, statusCode: 'DEFECTIVE', receivableQty: 3 })],
+    });
+
+    // ⛔ 입하 수량(10)으로는 입고되지 않는다 — 떼어 낸 불량분 3 이 빠진다.
+    await receive(lotId, lineId, 10).expect(400);
+    await receive(lotId, lineId, 7).expect(201);
+    await receive(lotId, lineId, 1).expect(400);
+    // 선별 불량분은 조상의 입하 라인을 따라 불량창고로만 입고된다(P-45).
+    await receive(childLotId, lineId, 3).expect(400);
+    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+  });
+
+  /* #108 리뷰 C1 — 불량창고에 입고한 «뒤» 선별하면 불량분 재고는 원장 이동으로 생긴다. 입고 화면이 다시 입고하게 두지 않는다. */
+  it('⭐ 경로 ②-b 불량창고 입고 → 선별 → 원 LOT·불량분 모두 입고 가능 0 · 재입고 400', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, {
+      dispositionTypeCode: 'SORT',
+      decisionQty: 10,
+      acceptedQty: 7,
+      rejectedQty: 3,
+      businessDate: DAY,
+    }).expect(201);
+
+    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
+    expect(children).toHaveLength(1);
+    const childLotId = Number(children[0].target_lot_id);
+    // 불량분 3 은 같은 불량창고 위치로 이미 옮겨져 있다.
+    const childStock = await prisma.inventory_balance.aggregate({ where: { lot_id: BigInt(childLotId) }, _sum: { on_hand_qty: true } });
+    expect(Number(childStock._sum.on_hand_qty)).toBe(3);
+
+    const lines = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
+      .find((row) => row.inboundReceiptLineId === lineId);
+    expect(line).toMatchObject({
+      receivableQty: 0,
+      splitLots: [expect.objectContaining({ lotId: childLotId, receivableQty: 0 })],
+    });
+
+    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
+    await receive(lotId, lineId, 1, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
+    const total = await prisma.inventory_balance.aggregate({
+      where: { lot_id: { in: [BigInt(lotId), BigInt(childLotId)] } }, _sum: { on_hand_qty: true },
+    });
+    expect(Number(total._sum.on_hand_qty)).toBe(10);
+  });
+
+  /* #108 리뷰 M1 · 담당자 결정 (a) — 불량창고에 이미 입고된 LOT 은 처분 정상이 보류를 닫지 않는다. 재고 재등록(W-04-11)이 닫으며 옮긴다. */
+  it('⭐ 경로 ①-b 불량창고 입고 → 처분 정상 → 수입검사 대기 보류 유지 → 재고 재등록이 보류를 닫고 일반 창고로 옮긴다', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+    const nc = await openNonconformance(lotId);
+
+    const decided = await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 10 }).expect(201);
+
+    expect(await lotStatus(lotId)).toBe('NORMAL');
+    expect(await openInspectionHolds(lotId)).toBe(1);
+
+    const hold = await prisma.lot_hold.findFirstOrThrow({
+      where: { lot_id: BigInt(lotId), reason_code: 'INCOMING_INSPECTION_WAIT', released_at: null },
+      select: { lot_hold_id: true },
+    });
+    const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(lotId) }, select: { version_no: true } });
+    await request(app.getHttpServer())
+      .post('/api/logistics/stock-reinstatements')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({
+        dispositionDecisionId: decided.body.dispositionDecisionId as number,
+        lot: { lotId, versionNo: lot.version_no },
+        lotHoldId: Number(hold.lot_hold_id),
+        toWarehouseId: warehouseId,
+        toLocationId: locationId,
+        qty: 10,
+        uomId,
+        releaseReasonCode: 'RETEST_PASS',
+        reasonCode: null,
+        businessDate: DAY,
+        // ⚠ 해제 시각(released_at)이 된다 — 입하 때 지금 시각으로 선 보류보다 앞서면 ck_lot_hold_release 에 걸린다.
+        occurredAt: new Date().toISOString(),
+      })
+      .expect(201);
+
+    expect(await openInspectionHolds(lotId)).toBe(0);
+    const general = await prisma.inventory_balance.aggregate({
+      where: { lot_id: BigInt(lotId), warehouse_id: BigInt(warehouseId) }, _sum: { on_hand_qty: true },
+    });
+    expect(Number(general._sum.on_hand_qty)).toBe(10);
   });
 
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
@@ -535,6 +669,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
     await prisma.$executeRawUnsafe(`TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`);
     for (const sql of [
+      `DELETE FROM logistics.stock_transfer_line WHERE lot_id IN (${lotsOfPlant})`,
+      `DELETE FROM logistics.stock_transfer WHERE disposition_decision_id IN (SELECT disposition_decision_id FROM quality.disposition_decision WHERE nonconformance_id IN (SELECT nonconformance_id FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})))`,
       `DELETE FROM logistics.putaway_task WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.goods_receipt_line WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.goods_receipt WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`,

@@ -8,7 +8,13 @@ import { terminalQualityWorkOrderWhere } from './terminal-quality-read-scope';
 
 export const TERMINAL_QUALITY_WRITE_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'POST /quality/inspection-results': ['POP'],
+  // ⭐ P-02-14 자재 불량 등록(장부 P-52) — 기록과, 고르면 그 LOT 의 보류.
+  'POST /quality/defect-records': ['POP'],
+  'POST /quality/lot-holds': ['POP'],
 };
+
+/** POP 이 남길 수 있는 불량 기록 원천 — 자재 불량 하나다. 검사 불량은 검사 화면의 몫이다. */
+const POP_DEFECT_SOURCE = 'MATERIAL';
 
 const ATTACHED = Symbol('terminalQualityWorkerId');
 
@@ -16,30 +22,61 @@ export function currentTerminalQualityWorkerId(request: Request): bigint | undef
   return (request as Request & { [ATTACHED]?: bigint })[ATTACHED];
 }
 
-/** A POP result may only target an inspection request for one of its assigned plant processes. */
+/**
+ * POP 쓰기 범위. 셋 다 **사번 헤더가 단말 공장의 재직 작업자**여야 하고 그 작업자가 기록 주체다.
+ * - 검사 결과: 이 단말 공정의 W/O 의뢰
+ * - 불량 기록(P-02-14): 자재 불량 원천 · 단말 공장의 LOT
+ * - LOT 보류(P-02-14): 보류할 LOT 이 전부 단말 공장의 것
+ */
 export async function assertTerminalQualityWriteScope(
   prisma: PrismaService, request: Request, key: string, terminal: TerminalContext,
 ): Promise<void> {
-  if (key !== 'POST /quality/inspection-results' || terminal.terminalTypeCode !== 'POP') throw denied();
+  if (!TERMINAL_QUALITY_WRITE_OPERATIONS[key] || terminal.terminalTypeCode !== 'POP') throw denied();
   const workerNo = request.headers['x-worker-no'];
-  const requestId = positiveId((request.body as Record<string, unknown> | undefined)?.inspectionRequestId);
   const correlationId = request.headers['idempotency-key'];
-  if (typeof workerNo !== 'string' || !workerNo.trim() || typeof correlationId !== 'string' || !correlationId.trim()
-    || requestId === null) throw denied();
-  const [worker, inspection] = await Promise.all([
+  if (typeof workerNo !== 'string' || !workerNo.trim() || typeof correlationId !== 'string' || !correlationId.trim()) {
+    throw denied();
+  }
+  const body = (request.body as Record<string, unknown> | undefined) ?? {};
+  const [worker] = await Promise.all([
     prisma.worker.findFirst({ where: {
       worker_no: workerNo, plant_id: terminal.plantId, is_active: true,
     }, select: { worker_id: true } }),
-    prisma.inspection_request.findFirst({ where: {
+    assertOwnTarget(prisma, key, body, terminal),
+  ]);
+  if (!worker) throw denied();
+  Object.defineProperty(request, ATTACHED, { value: worker.worker_id, configurable: true });
+}
+
+async function assertOwnTarget(
+  prisma: PrismaService, key: string, body: Record<string, unknown>, terminal: TerminalContext,
+): Promise<void> {
+  if (key === 'POST /quality/inspection-results') {
+    const requestId = positiveId(body.inspectionRequestId);
+    if (requestId === null || !await prisma.inspection_request.findFirst({ where: {
       inspection_request_id: requestId,
       work_order: terminalQualityWorkOrderWhere({
         plantId: terminal.plantId, terminalId: terminal.terminalId, terminalTypeCode: 'POP',
       }),
-    }, select: { inspection_request_id: true } }),
-  ]);
-  if (!worker || !inspection) throw denied();
-  Object.defineProperty(request, ATTACHED, { value: worker.worker_id, configurable: true });
+    }, select: { inspection_request_id: true } })) throw denied();
+    return;
+  }
+  // POP 자재 불량은 W/O·공정·원천을 서버가 투입 기록에서 채운다 — 단말이 다른 공장·다른 문서를 가리키지 못하게 칸 자체를 받지 않는다(#108 리뷰 m1).
+  if (key === 'POST /quality/defect-records' && POP_SERVER_FILLED_FIELDS.some((name) => body[name] != null)) throw denied();
+  const lotIds = key === 'POST /quality/defect-records'
+    ? (body.sourceCode === POP_DEFECT_SOURCE ? [positiveId(body.lotId)] : [null])
+    : (Array.isArray(body.lots) ? body.lots : [null]).map((ref) =>
+      positiveId((ref as Record<string, unknown> | null)?.lotId));
+  if (lotIds.length === 0 || lotIds.some((id) => id === null)) throw denied();
+  const ids = [...new Set(lotIds as bigint[])];
+  const owned = await prisma.lot.count({ where: { lot_id: { in: ids }, plant_id: terminal.plantId } });
+  if (owned !== ids.length) throw denied();
 }
+
+/** POP 자재 불량 본문에서 받지 않는 칸 — 서버가 LOT 의 투입 기록에서 채운다. */
+const POP_SERVER_FILLED_FIELDS = [
+  'workOrderId', 'occurrenceProcessId', 'detectionProcessId', 'inspectionResultId', 'productionResultId', 'equipmentId', 'moldId',
+] as const;
 
 function positiveId(value: unknown): bigint | null {
   if (typeof value !== 'number' && typeof value !== 'string') return null;

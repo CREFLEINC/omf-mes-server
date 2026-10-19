@@ -42,6 +42,13 @@ export interface PreparedInspectionDefects {
 }
 
 const IQC_SOURCE = 'IQC';
+/** 투입 뒤 발견한 자재 불량(omf-all-around#108 · 장부 P-52). */
+const MATERIAL_SOURCE = 'MATERIAL';
+
+/**
+ * 누가 기록했나. 관리웹은 계정 세션, POP(P-02-14)은 단말 사번이 정한 작업자다 — 단말 요청에는 계정이 없다.
+ */
+export type DefectRecordActor = { appUserId: number; workerId?: never } | { appUserId?: never; workerId: bigint };
 /** 시드 `seedSystemProcesses` 의 수입검사 공정 — 같은 값이다. */
 const IQC_PROCESS_CODE = 'IQC';
 
@@ -60,7 +67,7 @@ const IQC_PROCESS_CODE = 'IQC';
 export class DefectRecordWriteService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: DefectRecordCreate, appUserId: number): Promise<DefectRecordView> {
+  async create(input: DefectRecordCreate, actor: DefectRecordActor): Promise<DefectRecordView> {
     await assertCodeValues(this.prisma, [
       { field: 'sourceCode', value: input.sourceCode, groupCode: 'DEFECT_RECORD_SOURCE' },
     ]);
@@ -70,16 +77,25 @@ export class DefectRecordWriteService {
     if (input.occurredAt != null && Number.isNaN(Date.parse(input.occurredAt))) {
       errors.push(field('occurredAt', ERROR_CODE.INVALID, '시각 형식이 아닙니다.'));
     }
+    // DB 제약 ck_defect_source — 검사 결과·생산 실적·원천 문서 중 하나는 있어야 한다. 자재 불량은 투입 기록이 원천이다.
+    if (input.sourceCode !== MATERIAL_SOURCE && input.inspectionResultId == null && input.productionResultId == null) {
+      errors.push(field('inspectionResultId', ERROR_CODE.REQUIRED, '검사 결과나 생산 실적이 있어야 불량 기록을 남길 수 있습니다.'));
+    }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 
-    const target = await this.resolveTarget(input);
-    const processes = await this.resolveProcesses(input);
+    const material = await this.materialDefaults(input);
+    const target = await this.resolveTarget({ ...input, workOrderId: input.workOrderId ?? material?.workOrderId ?? null });
+    const processes = await this.resolveProcesses({
+      ...input,
+      occurrenceProcessId: input.occurrenceProcessId ?? material?.processId ?? null,
+      detectionProcessId: input.detectionProcessId ?? material?.processId ?? null,
+    });
     await this.assertReferences(input);
-    const worker = await this.prisma.worker.findFirst({
-      where: { app_user_id: BigInt(appUserId) },
+    const workerId = actor.workerId ?? (await this.prisma.worker.findFirst({
+      where: { app_user_id: BigInt(actor.appUserId as number) },
       orderBy: { worker_id: 'asc' },
       select: { worker_id: true },
-    });
+    }))?.worker_id ?? null;
 
     const row = await this.prisma.defect_record.create({
       data: {
@@ -93,14 +109,15 @@ export class DefectRecordWriteService {
         detection_process_id: processes.detection,
         inspection_result_id: optionalId(input.inspectionResultId),
         production_result_id: optionalId(input.productionResultId),
+        source_document_id: material === null ? null : material.consumptionId,
         work_order_id: target.workOrderId,
         lot_id: target.lotId,
         suspected_cause_code_id: optionalId(input.suspectedCauseCodeId),
         defect_description: input.defectDescription ?? null,
         equipment_id: optionalId(input.equipmentId),
         mold_id: optionalId(input.moldId),
-        worker_id: worker?.worker_id ?? null,
-        created_by: BigInt(appUserId),
+        worker_id: workerId,
+        created_by: actor.appUserId === undefined ? null : BigInt(actor.appUserId),
       },
     });
     return defectRecordView(row);
@@ -154,6 +171,35 @@ export class DefectRecordWriteService {
         },
       });
     }
+  }
+
+  /**
+   * ⭐ 자재 불량은 **투입 기록**에서 작업지시와 공정을 채운다(사용자 결정 2026-10-16 — 발생·검출 공정은 투입
+   * 공정). 그 LOT 의 가장 최근 투입이 기준이다. 투입 공정이 비어 있으면 그 W/O 의 라우팅 공정이다.
+   * ⛔ 투입 기록이 없는 LOT 은 받지 않는다 — 「투입 뒤 발견」이 아닌 자재를 이 원천으로 남기면 영향 범위가
+   *    0건으로 나와 «영향 없음»처럼 읽힌다.
+   */
+  private async materialDefaults(
+    input: DefectRecordCreate,
+  ): Promise<{ workOrderId: number; processId: number; consumptionId: bigint } | null> {
+    if (input.sourceCode !== MATERIAL_SOURCE) return null;
+    if (input.lotId == null) throw one('lotId', ERROR_CODE.REQUIRED, '자재 불량은 자재 LOT 이 필요합니다.');
+    const consumption = await this.prisma.material_consumption.findFirst({
+      where: { lot_id: BigInt(input.lotId) },
+      orderBy: [{ occurred_at: 'desc' }, { material_consumption_id: 'desc' }],
+      select: {
+        material_consumption_id: true,
+        work_order_id: true,
+        actual_use_process_id: true,
+        work_order: { select: { routing_operation: { select: { process_id: true } } } },
+      },
+    });
+    if (consumption === null) throw one('lotId', ERROR_CODE.INVALID, '투입 기록이 없는 LOT 입니다.');
+    return {
+      consumptionId: consumption.material_consumption_id,
+      workOrderId: Number(consumption.work_order_id),
+      processId: Number(consumption.actual_use_process_id ?? consumption.work_order.routing_operation.process_id),
+    };
   }
 
   /** 검사 결과가 있으면 그 의뢰의 LOT·W/O 를 따른다. 요청 값과 다르면 400. */

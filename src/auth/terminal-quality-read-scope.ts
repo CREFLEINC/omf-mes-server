@@ -20,7 +20,8 @@ export const TERMINAL_QUALITY_READ_OPERATIONS: Readonly<Record<string, readonly 
   'GET /quality/inspection-plans/{inspectionPlanId}': ['POP'],
   'GET /quality/nonconformances/{nonconformanceId}': ['POP'],
   'GET /quality/nonconformances/{nonconformanceId}/disposition-decisions': ['POP'],
-  'GET /quality/defect-codes': ['MOBILE'],
+  // POP 은 P-02-14 자재 불량 등록이 고른다(장부 P-52).
+  'GET /quality/defect-codes': ['POP', 'MOBILE'],
   'GET /quality/defect-records': ['MOBILE'],
   'GET /production/repair-executions': ['MOBILE'],
 };

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ConflictException, ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues, optional } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
-import { LockedLot, LotHoldInput, LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
+import { LockedLot, LotHoldActor, LotHoldInput, LotHoldService, LotQualityStatusService, Tx } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   HOLD_REASON_GROUP,
@@ -47,7 +47,11 @@ export class LotHoldWriteService {
     private readonly lots: LotQualityStatusService,
   ) {}
 
-  async create(body: LotHoldCreate, appUserId: number): Promise<LotHoldView[]> {
+  /**
+   * ⭐ 주체는 계정(관리웹) 또는 단말 작업자(POP P-02-14 · 장부 P-52)다. 보류·전이 코어가 둘 다 받는다
+   * (`LotHoldActor` · `changedWorkerId`) — 검사 확정의 단말 갈래와 같은 모양이다.
+   */
+  async create(body: LotHoldCreate, by: { appUserId: number } | { workerId: bigint }): Promise<LotHoldView[]> {
     // (0) 값 목록 대조는 트랜잭션 «밖»이다 — 코드 표를 읽는 커넥션을 업무 tx 가 쥐지 않는다.
     await assertCodeValues(this.prisma, [
       { field: 'reasonCode', value: body.reasonCode, groupCode: HOLD_REASON_GROUP },
@@ -58,7 +62,8 @@ export class LotHoldWriteService {
 
     const lotIds = body.lots.map((ref) => BigInt(ref.lotId));
     // `held_at`·`lot_status_event.changed_at` 이 한 시각을 나눠 쓴다.
-    const actor = { by: BigInt(appUserId), at: new Date() };
+    const at = new Date();
+    const actor: LotHoldActor = 'workerId' in by ? { workerId: by.workerId, at } : { by: BigInt(by.appUserId), at };
 
     return this.prisma.$transaction(async (tx) => {
       // (a) ⭐⭐ 잠금이 먼저다 — 읽고 판정하고 쓰는 사이에 다른 등록·해제가 끼어들면 옛
@@ -78,7 +83,7 @@ export class LotHoldWriteService {
       // (f) 전이. ⭐ **R-12** — LOT 마다 «자기» `lot_hold_id` 를 가리킨다. 배치 한 칸
       //     (`sourceDocumentId`)으로는 첫 것밖에 못 담아 나머지 LOT 의 이력이 남의 문서를 가리킨다.
       const { skippedLotIds } = await this.lots.moveWithin(tx, lotIds, action, {
-        changedBy: actor.by,
+        ...(actor.by !== undefined ? { changedBy: actor.by } : { changedWorkerId: actor.workerId }),
         changedAt: actor.at,
         sourceDocumentTypeCode: HOLD_SOURCE_DOCUMENT_TYPE,
         sourceDocumentIdByLot: new Map(rows.map((row) => [row.lot_id, row.lot_hold_id])),

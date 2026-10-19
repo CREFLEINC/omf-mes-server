@@ -29,6 +29,7 @@ import {
 } from './lot-external-identifier.service';
 import { LotHoldListService } from './lot-hold-list.service';
 import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
+import { LotImpactService, type AffectedProductionLots } from './lot-impact.service';
 import { LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
@@ -46,6 +47,7 @@ export class LotController {
     private readonly holdList: LotHoldListService,
     private readonly iqcSkips: LotIqcSkipService,
     private readonly iqcSkipExecutes: LotIqcSkipExecuteService,
+    private readonly impacts: LotImpactService,
   ) {}
 
   @Get()
@@ -64,6 +66,13 @@ export class LotController {
     const { detail, versionNo } = await this.lots.get(lotId, bool(withProgress) === true);
     setEtag(response, versionNo);
     return detail;
+  }
+
+  /** 자재 LOT 이 들어간 생산 LOT — 작업지시 기준 추정(장부 P-52 · omf-all-around#108). */
+  @Get(':lotId/affected-production-lots')
+  @Contract('GET /trace/lots/{lotId}/affected-production-lots')
+  affectedProductionLots(@Param('lotId', ParseIntPipe) lotId: number): Promise<AffectedProductionLots> {
+    return this.impacts.affectedProductionLots(lotId);
   }
 
   @Get(':lotId/external-identifiers')

@@ -17,6 +17,7 @@ import { LotStatusEventController } from './lot/lot-status-event.controller';
 import { LotStatusEventService } from './lot/lot-status-event.service';
 import { LotController } from './lot/lot.controller';
 import { LotService } from './lot/lot.service';
+import { LotImpactService } from './lot/lot-impact.service';
 import { SerialNumberQueryService } from './serial-number/serial-number-query.service';
 import { SerialNumberCreateService } from './serial-number/serial-number-create.service';
 import { SerialNumberController } from './serial-number/serial-number.controller';
@@ -30,6 +31,7 @@ import { SerialNumberController } from './serial-number/serial-number.controller
   controllers: [LotController, LotLifecycleEventController, LotStatusEventController, SerialNumberController],
   providers: [
     LotService,
+    LotImpactService,
     LotCompleteService,
     LotExternalIdentifierService,
     LotHoldListService,
