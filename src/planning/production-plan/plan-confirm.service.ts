@@ -7,7 +7,7 @@ import { DocumentStateService } from '../../core/document-state';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertPlannableRouting } from '../routing/routing.service';
-import { PlanToExpand, dependencyRows, workOrderRows } from './expand';
+import { PlanLine, PlanToExpand, dependencyRows, workOrderRows } from './expand';
 import { DEFAULT_DAY_START, PlanWindow, dayWindow, timeOfColumn } from './plan-window';
 import { assertPlanVersion, lockPlan } from './production-plan.service';
 import { ProductionPlanView, productionPlanView } from './production-plan-view';
@@ -52,7 +52,7 @@ export class PlanConfirmService {
     const plan = await this.prisma.production_plan.findUnique({
       where: { production_plan_id: BigInt(productionPlanId) },
       select: {
-        planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true,
+        planned_qty: true, routing_id: true, status_code: true, uom_id: true, plan_date: true, planned_line_id: true,
         production_order: { select: { item_id: true, plant_id: true } },
       },
     });
@@ -73,7 +73,22 @@ export class PlanConfirmService {
     });
     const { item_id: itemId, plant_id: plantId } = plan.production_order;
     const window = await this.planWindow(plantId, plan.plan_date);
-    return { productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id, operationIds, window, dependencies };
+    const line = await this.planLine(plan.planned_line_id);
+    return { productionPlanId, statusCode: plan.status_code, itemId, plannedQty: plan.planned_qty, uomId: plan.uom_id, operationIds, window, line, dependencies };
+  }
+
+  /** 계획의 라인과 그 라인의 기본 위치 셋 — 4M 에서 W/O 마다 고르지 않게 미리 채운다. */
+  private async planLine(lineId: bigint | null): Promise<PlanLine> {
+    const row = lineId === null ? null : await this.prisma.production_line.findUnique({
+      where: { production_line_id: lineId },
+      select: { default_wip_location_id: true, default_fg_location_id: true, default_scrap_location_id: true },
+    });
+    return {
+      productionLineId: lineId,
+      defaultWipLocationId: row?.default_wip_location_id ?? null,
+      defaultFgLocationId: row?.default_fg_location_id ?? null,
+      defaultScrapLocationId: row?.default_scrap_location_id ?? null,
+    };
   }
 
   /** 근무일 하루 — 가장 이른 활성 교대 시작부터 24시간. 교대가 없으면 08:00 부터다. */

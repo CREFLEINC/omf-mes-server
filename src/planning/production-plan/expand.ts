@@ -13,16 +13,25 @@ export interface PlanToExpand {
   operationIds: bigint[];
   /** 계획일의 근무일 하루 — 전개분 전부가 같은 창을 갖는다. */
   window: PlanWindow;
+  /** 계획의 라인과 그 라인의 기본 위치 셋. 계획에 라인이 없으면 넷 다 비운다. */
+  line: PlanLine;
   dependencies: { predecessor_operation_id: bigint; successor_operation_id: bigint; dependency_type_code: string }[];
+}
+
+export interface PlanLine {
+  productionLineId: bigint | null;
+  defaultWipLocationId: bigint | null;
+  defaultFgLocationId: bigint | null;
+  defaultScrapLocationId: bigint | null;
 }
 
 /** 마스터(`routing_operation_dependency`)에 칸이 없다 — 기본값을 명시한다(§3-4). */
 const REQUIRED_QTY_RULE = 'AVAILABLE_GOOD_QTY';
 
 /**
- * 공정 N → W/O N 벌. ⛔ `production_line_id`·기본 위치 셋은 **비운다** — 계약이 「생성 후
- * `W-02-03`·`W-02-04` 의 PUT 으로 채운다」라 적었다(R-5). `operation_settings_snapshot` 도
- * 안 쓴다 — `:release` 가 뜬다(I-6).
+ * 라인·기본 위치 셋을 계획 라인에서 미리 채운다 — 배포가 기본 위치 셋을 요구하는데 W/O 마다 4M 에서
+ * 고르게 하면 하루 수백 건을 손으로 넣어야 한다. 계약 생성 규칙과 다른 동작이다(`docs/계약-선행-수정항목.md`).
+ * `operation_settings_snapshot` 은 안 쓴다 — `:release` 가 뜬다(I-6).
  */
 export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUserId: number | undefined): Prisma.work_orderCreateManyInput[] {
   return plan.operationIds.map((routingOperationId, index) => ({
@@ -34,6 +43,10 @@ export function workOrderRows(plan: PlanToExpand, workOrderNos: string[], appUse
     uom_id: plan.uomId,
     planned_start_at: plan.window.plannedStartAt,
     planned_end_at: plan.window.plannedEndAt,
+    production_line_id: plan.line.productionLineId,
+    default_wip_location_id: plan.line.defaultWipLocationId,
+    default_fg_location_id: plan.line.defaultFgLocationId,
+    default_scrap_location_id: plan.line.defaultScrapLocationId,
     work_order_type_code: WORK_ORDER_DEFAULT_TYPE,
     priority_no: WORK_ORDER_DEFAULT_PRIORITY,
     status_code: WORK_ORDER_INITIAL_STATUS,

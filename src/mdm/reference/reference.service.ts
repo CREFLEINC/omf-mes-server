@@ -160,6 +160,10 @@ export class ReferenceService {
         lineName: row.line_name,
         lineTypeCode: row.line_type_code,
         isActive: row.is_active,
+        // 4M 이 라인을 고를 때 W/O 기본 위치를 이 값으로 채운다.
+        defaultWipLocationId: row.default_wip_location_id === null ? null : Number(row.default_wip_location_id),
+        defaultFgLocationId: row.default_fg_location_id === null ? null : Number(row.default_fg_location_id),
+        defaultScrapLocationId: row.default_scrap_location_id === null ? null : Number(row.default_scrap_location_id),
       })),
       total,
       page,
