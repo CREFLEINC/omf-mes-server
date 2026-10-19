@@ -4094,7 +4094,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 서버 선행 · 장부 P-42 · omf-all-around#106"
+      "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 작성중(statusCode=DRAFT) 저장도 1줄 이상은 overallJudgmentCode=REJECTED 일 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122). 서버 선행 · 장부 P-42 · omf-all-around#106"
      }
     },
     "required": [
@@ -4159,7 +4159,7 @@
       "items": {
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
-      "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 일 때만 — 아니면 400 INVALID. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
+      "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 일 때만 — 아니면 400 INVALID. 갈아 끼울 기록에 수리 이력(수리 결과·수리 실행)이 붙어 있으면 지우지 않고 400 STATE_LOCKED. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
@@ -4914,7 +4914,7 @@
      "code",
      "message"
     ],
-    "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166). ⚠ 이 계약에 400 STATE_LOCKED 가 0건인 것은 결손이 아니다 — 03 은 업무 사유 거부를 409 QualityConflictResponse.code 로 말한다(PUT /quality/inspection-results/{inspectionResultId} = 「작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE」 · 공유계약 B-10). 400 STATE_LOCKED 규약(공유계약 G-1)과 어느 쪽이 정본인지는 횡단 단일안 소관이다."
+    "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166). ⚠ 원 계약이 400 STATE_LOCKED 를 선언하지 않은 것은 결손이 아니다 — 03 은 업무 사유 거부를 409 QualityConflictResponse.code 로 말한다. 다만 서버 선행으로 400 STATE_LOCKED 를 내는 자리가 있다(`:confirm` 재확정 · IQC 공정 미등록 시 불량 기록 등록 P-42 · 처분 전 재검사 차단 P-43 · 수리 이력이 붙은 불량 기록의 교체 P-47·P-48)(PUT /quality/inspection-results/{inspectionResultId} = 「작성중인 것만 고친다. 확정된 것은 409 INVALID_STATE」 · 공유계약 B-10). 400 STATE_LOCKED 규약(공유계약 G-1)과 어느 쪽이 정본인지는 횡단 단일안 소관이다."
    },
    "MeasurementItemSummary": {
     "type": "object",
