@@ -163,11 +163,14 @@ export class InspectionResultWriteService {
     await assertCodes(this.prisma, undefined, body.overallJudgmentCode, body.measurements);
     assertQuantityBounds(body);
     assertMeasurementValues(body.measurements);
-    const workerId =
+    const accountWorkerId =
       context.terminalId === null && context.appUserId !== undefined
         ? await assertAccountWorker(this.prisma, context.appUserId)
         : null;
     const draftDefects = await prepareDraftDefects(this.prisma, this.defects, inspectionResultId, body);
+    // 불량 기록을 쓰는 저장만 귀속 작업자를 POST 와 같이 푼다(단말은 사번 헤더 · #122 리뷰 m3). 사유 없는 PUT 은 종전 그대로다.
+    const workerId =
+      draftDefects?.prepared != null ? await resolveInspector(this.prisma, context) : accountWorkerId;
 
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.inspection_result.findUnique({

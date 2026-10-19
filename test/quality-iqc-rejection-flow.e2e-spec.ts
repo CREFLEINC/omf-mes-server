@@ -23,7 +23,8 @@ const ITEM_CODE = 'IQCFLOW-ITEM';
 const SUPPLIER_CODE = 'IQCFLOW-SUP';
 const DEFECT_CODE = 'IQCFLOW-DEF';
 const ROLE = 'E2E_IQC_FLOW';
-const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10'];
+// W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스).
+const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06'];
 const DAY = '2026-10-16';
 
 const key = (): string => randomUUID();
@@ -179,6 +180,34 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await reasonsOf(resultId)).toEqual([]);
   });
 
+  /* #122 리뷰 m3 — 단말에서 온 계정 저장(Bearer 단말 토큰 + 세션)도 불량 기록의 귀속 작업자를 POST 처럼 푼다. */
+  it('⭐ 단말 토큰을 함께 실은 임시 저장의 사유도 귀속 작업자가 남는다', async () => {
+    const { requestId } = await registerIqcLot(10);
+    const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
+    const terminal = await prisma.terminal.create({
+      data: { terminal_code: `${PREFIX}-T1`, plant_id: BigInt(plantId), terminal_type_code: 'POP', status_code: 'RUNNING' },
+    });
+    const issued = await request(app.getHttpServer())
+      .post(`/api/mdm/terminals/${Number(terminal.terminal_id)}:issue-token`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .expect(201);
+
+    await saveDraft(
+      resultId,
+      1,
+      { overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId, defectQty: 10, defectDescription: '단말 사유' }] },
+      { Authorization: `Bearer ${issued.body.token as string}` },
+    ).expect(200);
+
+    const worker = await prisma.worker.findUniqueOrThrow({ where: { worker_no: `${PREFIX}-W1` }, select: { worker_id: true } });
+    const rows = await prisma.defect_record.findMany({
+      where: { inspection_result_id: BigInt(resultId) },
+      select: { defect_description: true, worker_id: true },
+    });
+    expect(rows).toEqual([{ defect_description: '단말 사유', worker_id: worker.worker_id }]);
+  });
+
   /* #106 · 3단계 검증 — 처분(재작업) 없이 불합격 LOT 을 재검사하지 못한다. 작성중·확정 어느 쪽으로도 회차가 생기지 않는다. */
   it('⛔ 처분 전 불합격 LOT 에는 재검사 회차를 만들 수 없다 — LOT 은 불량 그대로, 의뢰도 완료 그대로', async () => {
     const { lotId, requestId, resultId } = await rejectedLot(10);
@@ -293,12 +322,18 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .send(body);
   }
 
-  function saveDraft(resultId: number, version: number, body: Record<string, unknown>): request.Test {
+  function saveDraft(
+    resultId: number,
+    version: number,
+    body: Record<string, unknown>,
+    headers: Record<string, string> = {},
+  ): request.Test {
     return request(app.getHttpServer())
       .put(`/api/quality/inspection-results/${resultId}`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', `W/"${version}"`)
+      .set(headers)
       .send(body);
   }
 
@@ -523,6 +558,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       `DELETE FROM mdm.location WHERE location_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.warehouse WHERE warehouse_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.item WHERE item_code = '${ITEM_CODE}'`,
+      `DELETE FROM mdm.terminal WHERE terminal_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.business_unit WHERE business_unit_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.legal_entity WHERE legal_entity_code LIKE '${PREFIX}%'`,
