@@ -17,6 +17,7 @@ import { AttachmentController } from './attachment/attachment.controller';
 import { AttachmentUploadService } from './attachment/attachment-upload.service';
 import { AttachmentService } from './attachment/attachment.service';
 import { DashboardAvailabilityService } from './dashboard/dashboard-availability.service';
+import { DashboardEquipmentService } from './dashboard/dashboard-equipment.service';
 import { DashboardSummaryService } from './dashboard/dashboard-summary.service';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { DocumentIssueQueryService } from './document-issue/document-issue-query.service';
@@ -88,6 +89,7 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     AttachmentUploadService,
     DashboardSummaryService,
     DashboardAvailabilityService,
+    DashboardEquipmentService,
     // 시간가동률의 계획 가동시간을 설비 비가동 집계와 같은 근무달력 해석으로 센다.
     DowntimeSummaryCalendarService,
     DocumentIssueQueryService,

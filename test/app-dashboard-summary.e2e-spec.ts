@@ -125,6 +125,27 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(body.baseDate).toBe(today);
   });
 
+  it('설비 현황 — 기준일이 지났으면 기준일 끝에 판단하고, 교대가 끝난 뒤라 비가동이다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
+    };
+    const [item] = body.equipment.items;
+
+    expect(body.equipment.items).toHaveLength(1);
+    expect(item).toMatchObject({
+      equipmentId: Number(ids.equipment),
+      statusCode: 'IDLE',
+      // 하노이 교대 끝 17:00 = 10:00Z
+      statusSince: '2026-09-01T10:00:00.000Z',
+      todayTotalQty: 1100,
+      todayNgQty: 100,
+      standardCycleTimeSec: 10,
+      currentWorkOrderNo: null,
+    });
+    expect(item.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
+    expect(body.equipment.statusCounts).toEqual({ RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 1 });
+  });
+
   async function fixtures(): Promise<void> {
     const user = await prisma.app_user.create({
       data: { login_id: `${PREFIX}-USER`, user_name: PREFIX, status_code: 'EMPLOYED' },

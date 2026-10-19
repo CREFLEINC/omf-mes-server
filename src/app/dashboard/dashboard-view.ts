@@ -1,6 +1,7 @@
 import { omitEmpty } from '../../common/http/omit-empty';
 import { NotificationView } from '../notification/notification-view';
 import type { AvailabilityFigures } from './dashboard-availability.service';
+import type { DashboardEquipment } from './dashboard-sections';
 
 export type DashboardCardCode =
   | 'PRODUCTION_QTY'
@@ -36,6 +37,11 @@ export interface DashboardSummary {
   alerts: NotificationView[];
   asOf: string;
   trend: DashboardTrend;
+  /**
+   * 계약보다 앞선 선택 섹션(장부 P-59). ⛔ 데이터가 없어도 생략하지 않는다 —
+   * 클라이언트는 키가 없으면 「서버가 아직 지원하지 않음」으로 읽는다(빈 값과 구분한다).
+   */
+  equipment?: DashboardEquipment;
 }
 
 /** 일자별 생산 합 — 재작업 W/O 실적은 `reworkGoodQty` 로만 들어온다(총생산에 넣지 않는다). */
