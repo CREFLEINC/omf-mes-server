@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
-import { finalResultCte } from './dashboard-inspection';
+import { InspectionType, finalResultCte } from './dashboard-inspection';
 import {
   OPEN_NC_WHERE,
   PQC_PENDING_CTE,
@@ -17,6 +17,7 @@ import { DashboardScopeQuery, dashboardScope, num, plantScope } from './dashboar
 
 export const QUALITY_LOT_STATUSES = ['INSPECTION_HELD', 'RECEIPT_HOLD', 'PQC_PENDING', 'NC_OPEN'] as const;
 export type QualityLotStatus = (typeof QUALITY_LOT_STATUSES)[number];
+export const INSPECTION_TYPES: readonly InspectionType[] = ['IQC', 'PQC', 'OQC'];
 
 export interface DashboardQualityLotItem {
   key: string;
@@ -46,6 +47,8 @@ export interface DashboardQualityLotsQuery {
   baseDate?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** `INSPECTION_HELD` 에만 걸린다 — 그 검사 유형의 보류만(= 대시보드 `quality.<유형>.monthLots.held`). */
+  inspectionType?: string;
 }
 
 interface LotRow {
@@ -77,14 +80,14 @@ export class DashboardQualityLotsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async read(query: DashboardQualityLotsQuery): Promise<DashboardQualityLots> {
-    const { status, scopeQuery } = parseQuery(query);
+    const { status, inspectionType, scopeQuery } = parseQuery(query);
     const now = new Date();
     return this.prisma.$transaction(
       async (tx) => {
         const { plants, period } = await dashboardScope(tx, scopeQuery, now);
         if (plants.length === 0) return { status, asOf: now.toISOString(), totalCount: 0, items: [] };
         const scope = plantScope(plants);
-        const rows = await tx.$queryRaw<LotRow[]>(listSql(status, scope, period));
+        const rows = await tx.$queryRaw<LotRow[]>(listSql(status, scope, period, inspectionType));
         return {
           status,
           asOf: now.toISOString(),
@@ -102,11 +105,13 @@ function listSql(
   status: QualityLotStatus,
   scope: Prisma.Sql,
   period: Parameters<typeof finalResultCte>[0],
+  inspectionType: InspectionType | undefined,
 ): Prisma.Sql {
   const tail = Prisma.sql`ORDER BY occurred_at, key LIMIT ${LIMIT}`;
   switch (status) {
     case 'INSPECTION_HELD':
       // 대시보드 숫자 = IQC·PQC·OQC 의 누계 구간 monthLots.held 합(qualityTypeBlock 과 같은 날짜 경계).
+      // inspectionType 이 오면 그 유형의 monthLots.held 다.
       return Prisma.sql`WITH ${scope}, ${finalResultCte(period)}
         SELECT * FROM (
           SELECT 'IR-' || fr.inspection_result_id AS key, lot.lot_no, i.item_code, i.item_name,
@@ -124,6 +129,7 @@ function listSql(
           LEFT JOIN trace.lot lot ON lot.lot_id = fr.lot_id
           LEFT JOIN mdm.uom u ON u.uom_id = ir.uom_id
           WHERE fr.judgment = 'HELD' AND fr.local_date BETWEEN ${period.from}::date AND ${period.to}::date
+            AND ${inspectionType === undefined ? Prisma.sql`TRUE` : Prisma.sql`fr.type = ${inspectionType}`}
         ) held ${tail}`;
     case 'RECEIPT_HOLD':
       // 숫자는 LOT 수(COUNT DISTINCT) — 한 LOT 에 보류가 둘이면 먼저 걸린 것 한 줄.
@@ -208,6 +214,7 @@ function item(row: LotRow): DashboardQualityLotItem {
  */
 export function parseQuery(query: DashboardQualityLotsQuery): {
   status: QualityLotStatus;
+  inspectionType: InspectionType | undefined;
   scopeQuery: DashboardScopeQuery;
 } {
   const errors: ErrorItem[] = [];
@@ -223,9 +230,15 @@ export function parseQuery(query: DashboardQualityLotsQuery): {
   if (query.baseDate !== undefined && !isDate(query.baseDate)) {
     errors.push(field('baseDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 날짜여야 합니다.'));
   }
+  // 잘못된 값은 어느 status 에서나 400 이다 — 적용만 INSPECTION_HELD 에 한다.
+  const inspectionType = INSPECTION_TYPES.find((value) => value === query.inspectionType);
+  if (query.inspectionType !== undefined && inspectionType === undefined) {
+    errors.push(field('inspectionType', ERROR_CODE.INVALID, `inspectionType 은 ${INSPECTION_TYPES.join(' · ')} 중 하나여야 합니다.`));
+  }
   if (errors.length > 0 || status === undefined) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   return {
     status,
+    inspectionType: status === 'INSPECTION_HELD' ? inspectionType : undefined,
     scopeQuery: {
       plantId: plantId === undefined ? undefined : BigInt(plantId),
       baseDate: query.baseDate,

@@ -93,6 +93,25 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
     ]);
   });
 
+  it('검사 보류 inspectionType — 그 유형의 보류만, totalCount = 대시보드 그 유형 monthLots.held, 다른 status 는 무시', async () => {
+    const plant = { plantId: ids.plant.toString() };
+    const queries: Record<string, string>[] = [{ baseDate: BASE_DATE }, { dateFrom: '2026-08-15', dateTo: BASE_DATE }];
+    for (const query of queries) {
+      const q = await quality({ ...plant, ...query });
+      for (const type of ['IQC', 'PQC', 'OQC'] as const) {
+        const body = await lots({ ...plant, ...query, status: 'INSPECTION_HELD', inspectionType: type });
+        const key = type.toLowerCase() as 'iqc' | 'pqc' | 'oqc';
+        expect(body.totalCount).toBe(q[key].monthLots.held);
+        expect(body.items.every((item) => item.inspectionType === type)).toBe(true);
+      }
+    }
+    const iqc = await lots({ ...plant, baseDate: BASE_DATE, status: 'INSPECTION_HELD', inspectionType: 'IQC' });
+    // 픽스처: 기준일 누계의 보류는 IQC 1 · PQC 1 — 0 끼리 같아서 통과하는 것을 막는다.
+    expect(iqc.items.map((item) => item.refNo)).toEqual([`${PREFIX}-IQC-HELD`]);
+    const receipt = await lots({ ...plant, status: 'RECEIPT_HOLD', inspectionType: 'PQC' });
+    expect(receipt.totalCount).toBe((await lots({ ...plant, status: 'RECEIPT_HOLD' })).totalCount);
+  });
+
   it('검사 보류 줄 — IQC 는 LOT·공급사, PQC 는 호기, 보류 수량·단위·검사결과 번호', async () => {
     const body = await lots({ plantId: ids.plant.toString(), baseDate: BASE_DATE, status: 'INSPECTION_HELD' });
 
@@ -165,6 +184,9 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
   it('status 누락·잘못된 값, 날짜 오류는 400(field 오류)', async () => {
     expect(await errors({})).toEqual([{ scope: 'field', field: 'status', code: 'REQUIRED' }]);
     expect(await errors({ status: 'HELD' })).toEqual([{ scope: 'field', field: 'status', code: 'INVALID' }]);
+    expect(await errors({ status: 'INSPECTION_HELD', inspectionType: 'FQC' })).toEqual([
+      { scope: 'field', field: 'inspectionType', code: 'INVALID' },
+    ]);
     expect(await errors({ status: 'NC_OPEN', plantId: 'abc' })).toEqual([
       { scope: 'field', field: 'plantId', code: 'INVALID' },
     ]);
