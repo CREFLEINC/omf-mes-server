@@ -4003,6 +4003,13 @@
      "remarks": {
       "type": "string",
       "example": "값"
+     },
+     "defects": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionDefectInput"
+      },
+      "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나 불합격 확정이 아닌데 실으면 400 INVALID, IQC 불합격에 빈 배열이면 400 REQUIRED. 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
      }
     },
     "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 독립 경로를 두지 않는다(결정 10 · B-8)"

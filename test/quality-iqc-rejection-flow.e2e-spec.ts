@@ -4,7 +4,7 @@
  * 실제 API 로 잇는다 — LOT 등록(P-01-01) · 판정(W-01-01) · 처분(W-03-10) · 입고(W-01-10).
  *
  * 걸리는 규칙: #100(합격 전 입고 차단 · 불합격은 불량창고로만) · #106(불합격 사유 필수 · 부적합 자동 등록 P-41 ·
- * 재작업이 의뢰를 다시 연다 P-43 · 처분 전 재검사 차단).
+ * 재작업이 의뢰를 다시 연다 P-43 · 처분 전 재검사 차단) · #121(확정이 사유를 갈아 끼운다 P-47).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -104,6 +104,34 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await lotStatus(lotId)).toBe('NORMAL');
     expect(await openInspectionHolds(lotId)).toBe(0);
     await receive(lotId, lineId, 10).expect(201);
+  });
+
+  /* #121 · 장부 P-47 — 사유를 `:confirm` 에 실으면 확정과 한 트랜잭션에서 그 회차의 기록을 갈아 끼운다. */
+  it('⭐ 불합격 확정 재시도에도 그 회차의 사유는 확정 시점 입력 1벌이다', async () => {
+    const { requestId } = await registerIqcLot(10);
+    const resultId = await draft(requestId, { acceptedQty: 0, rejectedQty: 10 });
+    const reason = (description: string) => ({ overallJudgmentCode: 'REJECTED', defects: [{ defectCodeId, defectQty: 10, defectDescription: description }] });
+
+    // 옛 화면이 먼저 남긴 기록 + 확정 실패(버전 어긋남) — 실패한 확정은 기록을 바꾸지 않는다.
+    await recordReason(resultId);
+    await confirmWith(resultId, reason('처음 사유'), 9).expect(409);
+    expect(await reasonsOf(resultId)).toEqual(['외관 긁힘']);
+
+    await confirmWith(resultId, reason('고친 사유'), 1).expect(200);
+    expect(await reasonsOf(resultId)).toEqual(['고친 사유']);
+  });
+
+  it('⭐ 불합격 사유를 남긴 뒤 합격으로 확정하면 그 회차의 불량 기록이 지워진다 · 합격에 사유를 실으면 400', async () => {
+    const { lotId, requestId } = await registerIqcLot(10);
+    const resultId = await draft(requestId, { acceptedQty: 10, rejectedQty: 0 });
+    await recordReason(resultId);
+
+    const invalid = await confirmWith(resultId, { overallJudgmentCode: 'ACCEPTED', defects: [{ defectCodeId, defectQty: 1 }] }, 1).expect(400);
+    expect(JSON.stringify(invalid.body)).toContain('defects');
+    await confirm(resultId, 'ACCEPTED').expect(200);
+
+    expect(await reasonsOf(resultId)).toEqual([]);
+    expect(await lotStatus(lotId)).toBe('NORMAL');
   });
 
   /* #106 · 3단계 검증 — 처분(재작업) 없이 불합격 LOT 을 재검사하지 못한다. 작성중·확정 어느 쪽으로도 회차가 생기지 않는다. */
@@ -209,6 +237,24 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
       .set('Idempotency-Key', key())
       .set('If-Match', 'W/"1"')
       .send({ overallJudgmentCode: judgment });
+  }
+
+  function confirmWith(resultId: number, body: Record<string, unknown>, version: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/quality/inspection-results/${resultId}:confirm`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', `W/"${version}"`)
+      .send(body);
+  }
+
+  async function reasonsOf(resultId: number): Promise<(string | null)[]> {
+    const rows = await prisma.defect_record.findMany({
+      where: { inspection_result_id: BigInt(resultId) },
+      orderBy: { defect_record_id: 'asc' },
+      select: { defect_description: true },
+    });
+    return rows.map((row) => row.defect_description);
   }
 
   async function recordReason(resultId: number): Promise<void> {
