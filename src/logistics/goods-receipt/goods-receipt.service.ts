@@ -193,8 +193,13 @@ export class GoodsReceiptService {
     });
     if (!plant) errors.push(field('plantId', ERROR_CODE.INVALID, '없는 공장입니다.'));
 
+    // 같은 LOT 이 여러 줄이면 상한은 줄마다가 아니라 «LOT 합계»로 본다(#108 리뷰 m2).
+    const lotTotals = new Map<number, Prisma.Decimal>();
+    for (const line of input.lines) {
+      lotTotals.set(line.lotId, (lotTotals.get(line.lotId) ?? new Prisma.Decimal(0)).plus(line.receiptQty));
+    }
     for (const [index, line] of input.lines.entries()) {
-      await this.assertLine(input.warehouseId, index, line, errors);
+      await this.assertLine(input.warehouseId, index, line, errors, lotTotals.get(line.lotId) as Prisma.Decimal);
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
@@ -204,6 +209,7 @@ export class GoodsReceiptService {
     index: number,
     line: GoodsReceiptCreate['lines'][number],
     errors: ErrorItem[],
+    lotTotal: Prisma.Decimal,
   ): Promise<void> {
     const at = `lines[${index}]`;
     const [lot, uom, location] = await Promise.all([
@@ -238,7 +244,7 @@ export class GoodsReceiptService {
         : lot.source_type_code === LOT_SPLIT_SOURCE
           ? await inboundLineOfLot(this.prisma, BigInt(line.lotId))
           : null;
-    if (inboundLineId !== null) await this.assertReceivable(line, at, errors);
+    if (inboundLineId !== null) await this.assertReceivable(line, at, errors, lotTotal);
     // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17).
     // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
     if (inboundLineId !== null && lot.status_code !== IQC_PASSED_LOT_STATUS) {
@@ -270,15 +276,17 @@ export class GoodsReceiptService {
 
   /**
    * 입고 상한(장부 P-56) — 입하 LOT 은 «입고 가능 수량»까지만 입고한다. 선별로 떼어 낸 불량분(자식 LOT)과 이미 입고한 수량을 뺀 값이다.
+   * 비교 대상은 이 요청 안 같은 LOT 줄의 합계다(`lotTotal`).
    * ⚠ 전기 트랜잭션 밖의 확인이다(이 파일의 다른 검사와 같다) — 같은 LOT 을 동시에 두 번 입고하면 둘 다 통과할 수 있다.
    */
   private async assertReceivable(
     line: GoodsReceiptCreate['lines'][number],
     at: string,
     errors: ErrorItem[],
+    lotTotal: Prisma.Decimal,
   ): Promise<void> {
     const receivable = (await receivableQtyOf(this.prisma, [BigInt(line.lotId)])).get(BigInt(line.lotId));
-    if (receivable === undefined || receivable.greaterThanOrEqualTo(line.receiptQty)) return;
+    if (receivable === undefined || receivable.greaterThanOrEqualTo(lotTotal)) return;
     errors.push(
       field(
         `${at}.receiptQty`,

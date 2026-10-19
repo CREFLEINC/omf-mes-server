@@ -20,6 +20,8 @@ interface Quantities {
   splitQty?: number;
   /** 이미 전기된 입고 수량 합. */
   receivedQty?: number;
+  /** 선별 원장 이동으로 그 LOT 에 이미 들어온 수량(입고 뒤 선별한 자식 LOT). */
+  sortedInQty?: number;
   /** 선별 자식이면 그 부모 — `findUnique` 가 lot_id 로 갈라 답한다. */
   parent?: Record<string, unknown>;
 }
@@ -41,6 +43,10 @@ function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null, 
     goods_receipt_line: {
       groupBy: async () =>
         qty.receivedQty === undefined ? [] : [{ lot_id: 20n, _sum: { receipt_qty: new Prisma.Decimal(qty.receivedQty) } }],
+    },
+    inventory_transaction_line: {
+      groupBy: async () =>
+        qty.sortedInQty === undefined ? [] : [{ lot_id: 20n, _sum: { qty: new Prisma.Decimal(qty.sortedInQty) } }],
     },
     inbound_receipt_line: {
       findUnique: async () => (inspectionRequired === null ? null : { inspection_required: inspectionRequired }),
@@ -171,6 +177,16 @@ describe('GoodsReceiptService — 입하 LOT 입고 상한 (P-56)', () => {
     expect(JSON.stringify(((await errorFor(service, 20)) as ContractException).getResponse())).toContain('receiptQty');
   });
 
+  /* #108 리뷰 m2 — 같은 LOT 을 여러 줄로 나눠 보내도 상한은 LOT 합계로 본다. */
+  it('⛔ 같은 LOT 의 줄 합계가 입고 가능 수량을 넘으면 막는다', async () => {
+    const service = stub(inboundLot('NORMAL'), true, false, { initialQty: 50, splitQty: 15 });
+    const twoLines = { ...input, lines: [{ ...input.lines[0], receiptQty: 20 }, { ...input.lines[0], receiptQty: 20 }] };
+
+    const error = await service.create(twoLines, 1).then(() => undefined, (caught: unknown) => caught);
+
+    expect(JSON.stringify((error as ContractException).getResponse())).toContain('receiptQty');
+  });
+
   it('입하가 아닌 LOT(생산 등)은 상한을 보지 않는다 — 제품 LOT 선별은 그대로다', async () => {
     const service = stub(
       { item_id: 10n, status_code: 'NORMAL', source_type_code: 'WORK_ORDER', source_id: 1n },
@@ -190,6 +206,14 @@ describe('GoodsReceiptService — 입하 LOT 입고 상한 (P-56)', () => {
     it('⛔ 조상의 입하 라인을 따라 IQC 규칙이 걸린다 — 일반 창고는 막는다', async () => {
       const service = stub(child, true, false, { initialQty: 15, parent });
       expect(JSON.stringify(((await errorFor(service, 15)) as ContractException).getResponse())).toContain('불량창고로만');
+    });
+
+    /* #108 리뷰 C1 — 불량창고에 입고한 뒤 선별하면 불량분 재고는 원장 이동으로 이미 생겼다. 다시 입고하지 않는다. */
+    it('⛔ 선별 원장 이동으로 재고가 이미 들어온 자식 LOT 은 입고 가능 0 이다', async () => {
+      const service = stub(child, true, true, { initialQty: 3, parent, sortedInQty: 3 });
+      const body = JSON.stringify(((await errorFor(service, 3)) as ContractException).getResponse());
+      expect(body).toContain('receiptQty');
+      expect(body).toContain('0 까지');
     });
 
     it('불량창고로는 그 수량만큼 입고된다', async () => {

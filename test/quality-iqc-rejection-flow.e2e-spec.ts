@@ -135,6 +135,46 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
   });
 
+  /* #108 리뷰 C1 — 불량창고에 입고한 «뒤» 선별하면 불량분 재고는 원장 이동으로 생긴다. 입고 화면이 다시 입고하게 두지 않는다. */
+  it('⭐ 경로 ②-b 불량창고 입고 → 선별 → 원 LOT·불량분 모두 입고 가능 0 · 재입고 400', async () => {
+    const { lotId, lineId } = await rejectedLot(10);
+    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+    const nc = await openNonconformance(lotId);
+
+    await decide(nc.nonconformance_id, {
+      dispositionTypeCode: 'SORT',
+      decisionQty: 10,
+      acceptedQty: 7,
+      rejectedQty: 3,
+      businessDate: DAY,
+    }).expect(201);
+
+    const children = await prisma.lot_relation.findMany({ where: { source_lot_id: BigInt(lotId) }, select: { target_lot_id: true } });
+    expect(children).toHaveLength(1);
+    const childLotId = Number(children[0].target_lot_id);
+    // 불량분 3 은 같은 불량창고 위치로 이미 옮겨져 있다.
+    const childStock = await prisma.inventory_balance.aggregate({ where: { lot_id: BigInt(childLotId) }, _sum: { on_hand_qty: true } });
+    expect(Number(childStock._sum.on_hand_qty)).toBe(3);
+
+    const lines = await request(app.getHttpServer())
+      .get(`/api/logistics/inbound-receipts/${String(inboundReceiptId)}/lines`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const line = (lines.body.items as { inboundReceiptLineId: number; receivableQty: number; splitLots: unknown[] }[])
+      .find((row) => row.inboundReceiptLineId === lineId);
+    expect(line).toMatchObject({
+      receivableQty: 0,
+      splitLots: [expect.objectContaining({ lotId: childLotId, receivableQty: 0 })],
+    });
+
+    await receive(childLotId, lineId, 3, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
+    await receive(lotId, lineId, 1, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(400);
+    const total = await prisma.inventory_balance.aggregate({
+      where: { lot_id: { in: [BigInt(lotId), BigInt(childLotId)] } }, _sum: { on_hand_qty: true },
+    });
+    expect(Number(total._sum.on_hand_qty)).toBe(10);
+  });
+
   it('⭐ 재작업 → 검사 대기(보류 유지) → 재검 회차 합격 → 보류 해제 → 입고', async () => {
     const { lotId, lineId, requestId, resultId } = await rejectedLot(10);
     const nc = await openNonconformance(lotId);
