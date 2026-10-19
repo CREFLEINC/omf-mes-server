@@ -1,4 +1,6 @@
 import { EquipmentSignals, equipmentStatus } from './dashboard-equipment-status';
+import { JudgmentRow, passRate, qualityTypeBlock } from './dashboard-inspection';
+import { dashboardPeriod } from './dashboard-scope';
 
 const at = (iso: string) => new Date(iso);
 const idleSignals: EquipmentSignals = {
@@ -61,5 +63,52 @@ describe('dashboard equipment status', () => {
     expect(
       equipmentStatus({ ...idleSignals, lastSessionEndedAt: at('2026-10-15T09:00:00Z') }),
     ).toMatchObject({ statusCode: 'WAITING', statusSince: '2026-10-15T09:00:00.000Z' });
+  });
+});
+
+describe('dashboard quality block', () => {
+  const row = (local_date: string, judgment: JudgmentRow['judgment'], lot_count: number, rejected_qty = '0'): JudgmentRow => ({
+    type: 'IQC',
+    local_date,
+    judgment,
+    lot_count,
+    rejected_qty,
+  });
+
+  it('dashboardPeriod 는 당월 1일과 전월 처음·끝을 낸다', () => {
+    expect(dashboardPeriod('2026-03-05')).toEqual({
+      baseDate: '2026-03-05',
+      monthStart: '2026-03-01',
+      previousMonthStart: '2026-02-01',
+      previousMonthEnd: '2026-02-28',
+    });
+  });
+
+  it('합격률은 보류를 빼고, 모수가 0 이면 null 이다', () => {
+    expect(passRate({ accepted: 3, rejected: 1, held: 5 })).toBe(75);
+    expect(passRate({ accepted: 0, rejected: 0, held: 2 })).toBeNull();
+  });
+
+  it('당월·전월·일별·오늘을 현지 날짜로 가르고, 당월 불합격 수량을 더한다', () => {
+    const block = qualityTypeBlock(
+      [
+        row('2026-09-30', 'REJECTED', 1, '5'),
+        row('2026-10-01', 'ACCEPTED', 3),
+        row('2026-10-16', 'ACCEPTED', 1),
+        row('2026-10-16', 'REJECTED', 1, '7'),
+        row('2026-10-16', 'HELD', 2),
+      ],
+      dashboardPeriod('2026-10-16'),
+      [],
+      [],
+    );
+    expect(block.monthLots).toEqual({ accepted: 4, rejected: 1, held: 2 });
+    expect(block.monthPassRate).toBe(80);
+    expect(block.prevMonthPassRate).toBe(0);
+    expect(block.todayLots).toEqual({ accepted: 1, rejected: 1, held: 2 });
+    expect(block.monthDefectQty).toBe(7);
+    expect(block.dailyPassRates).toHaveLength(9);
+    expect(block.dailyPassRates.at(-1)).toEqual({ date: '2026-10-16', passRate: 50 });
+    expect(block.dailyPassRates[0]).toEqual({ date: '2026-10-08', passRate: null });
   });
 });

@@ -4,6 +4,7 @@ import {
   oeeCard,
   performanceCard,
   productionCards,
+  productionSection,
   productionTrend,
   trailingDays,
 } from './dashboard-view';
@@ -41,6 +42,22 @@ describe('dashboard view', () => {
     expect(production.value).toBe(0);
     expect(production).not.toHaveProperty('deltaRatio');
     expect(yieldRate.valueStatusCode).toBe('NOT_YET');
+  });
+
+  it('공장 생산 합은 카드와 같은 총생산이고, NG 는 재작업 합격분만큼 줄어든다', () => {
+    const byDay = new Map([
+      day({ day: '2026-10-16', totalQty: 1000, goodQty: 880, ngQty: 100, holdQty: 20, reworkGoodQty: 30 }),
+    ]);
+    const section = productionSection(byDay, '2026-10-16');
+    expect(section).toMatchObject({ totalQty: 1000, goodQty: 910, ngQty: 70, holdQty: 20 });
+    expect(section.defectRate).toBeCloseTo(7, 9);
+    expect(productionSection(new Map(), '2026-10-16')).toEqual({
+      totalQty: 0,
+      goodQty: 0,
+      ngQty: 0,
+      holdQty: 0,
+      defectRate: null,
+    });
   });
 
   it('추이는 기준일 포함 9일이고 실적 없는 날은 0, 라벨은 MM-DD 다', () => {

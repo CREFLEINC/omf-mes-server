@@ -85,6 +85,11 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     expect(card(cards, 'PRODUCTION_QTY')).toMatchObject({ value: 1100, deltaRatio: 1.2, valueStatusCode: 'AVAILABLE' });
     // (양품 900 + 정정본 100 + 재작업 합격 10) ÷ 1100
     expect(card(cards, 'YIELD_RATE').value).toBeCloseTo((1010 / 1100) * 100, 6);
+    const { production } = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      production: Record<string, number | null>;
+    };
+    // NG 100(불량 50 + 폐기 30 + 재작업 20) − 재작업 합격 10
+    expect(production).toEqual({ totalQty: 1100, goodQty: 1010, ngQty: 90, holdQty: 0, defectRate: (90 / 1100) * 100 });
     expect(trend.points).toHaveLength(9);
     expect(trend.points[0]).toEqual({ label: '08-24', value: 0 });
     expect(trend.points.slice(-2)).toEqual([
@@ -128,6 +133,7 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
   it('설비 현황 — 기준일이 지났으면 기준일 끝에 판단하고, 교대가 끝난 뒤라 비가동이다', async () => {
     const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
       equipment: { statusCounts: Record<string, number>; items: Record<string, unknown>[] };
+      quality: { pqc: { equipmentDefectRates: { equipmentId: number; defectRate: number }[] } };
     };
     const [item] = body.equipment.items;
 
@@ -144,6 +150,54 @@ describe('통합 대시보드 집계 (omf-all-around#118)', () => {
     });
     expect(item.defectRate).toBeCloseTo((100 / 1100) * 100, 6);
     expect(body.equipment.statusCounts).toEqual({ RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 1 });
+    expect(body.quality.pqc.equipmentDefectRates).toEqual([
+      { equipmentId: Number(ids.equipment), equipmentCode: PREFIX, defectRate: (100 / 1100) * 100, ngQty: 100 },
+    ]);
+  });
+
+  it('품질 — 재검사 뒤 합격은 합격으로 센다(최종 회차), 없는 값은 null 이다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: ids.plant.toString() })) as unknown as {
+      quality: Record<string, Record<string, unknown>>;
+      shipment: Record<string, unknown>;
+    };
+    const { pqc, iqc, nonconformance } = body.quality;
+
+    expect(pqc).toMatchObject({
+      monthPassRate: 100,
+      monthLots: { accepted: 1, rejected: 0, held: 0 },
+      todayLots: { accepted: 1, rejected: 0, held: 0 },
+      monthDefectQty: 0,
+      defectPhenomena: [],
+    });
+    expect(pqc.recentLots).toEqual([
+      expect.objectContaining({ judgmentCode: 'ACCEPTED', equipmentCode: PREFIX, lotNo: null, counterpartName: null }),
+    ]);
+    expect(iqc).toMatchObject({ monthPassRate: null, fullReinspect: null, vendorDefects: [] });
+    expect(nonconformance).toMatchObject({ overdueCount: null, openCount: 0, phenomena: [] });
+    expect(body.shipment).toEqual({
+      todayShippedQty: 0,
+      todayShipmentCount: 0,
+      waitingRequestCount: 0,
+      oldestWaitingShipDate: null,
+      nextShipment: null,
+      overdueCount: 0,
+    });
+  });
+
+  it('공장에 데이터가 없어도 세 섹션을 빈 값으로 싣는다 — 키 없음은 「미지원」으로 읽힌다', async () => {
+    const body = (await read({ baseDate: BASE_DATE, plantId: '8999999999' })) as unknown as Record<string, unknown>;
+
+    expect(validateResponse(body)).toBe(true);
+    expect(body.equipment).toMatchObject({
+      items: [],
+      statusCounts: { RUNNING: 0, STOPPED: 0, WAITING: 0, CHANGEOVER: 0, IDLE: 0 },
+    });
+    expect(body.shipment).toMatchObject({ todayShipmentCount: 0, nextShipment: null });
+    expect(body.production).toEqual({ totalQty: 0, goodQty: 0, ngQty: 0, holdQty: 0, defectRate: null });
+    expect(body.quality).toMatchObject({
+      iqc: { monthPassRate: null, recentLots: [], fullReinspect: null },
+      nonconformance: { overdueCount: null, monthQty: 0 },
+    });
   });
 
   async function fixtures(): Promise<void> {
