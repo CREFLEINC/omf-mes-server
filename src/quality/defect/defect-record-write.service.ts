@@ -173,7 +173,6 @@ export class DefectRecordWriteService {
     }
   }
 
-  /** 검사 결과가 있으면 그 의뢰의 LOT·W/O 를 따른다. 요청 값과 다르면 400. */
   /**
    * ⭐ 자재 불량은 **투입 기록**에서 작업지시와 공정을 채운다(사용자 결정 2026-10-16 — 발생·검출 공정은 투입
    * 공정). 그 LOT 의 가장 최근 투입이 기준이다. 투입 공정이 비어 있으면 그 W/O 의 라우팅 공정이다.
@@ -203,6 +202,7 @@ export class DefectRecordWriteService {
     };
   }
 
+  /** 검사 결과가 있으면 그 의뢰의 LOT·W/O 를 따른다. 요청 값과 다르면 400. */
   private async resolveTarget(input: DefectRecordCreate): Promise<{ lotId: bigint | null; workOrderId: bigint | null }> {
     const requested = { lotId: optionalId(input.lotId), workOrderId: optionalId(input.workOrderId) };
     if (input.inspectionResultId == null) return requested;

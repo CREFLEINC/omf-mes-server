@@ -44,8 +44,8 @@ interface SortContext {
   splitNonconformanceNo: string | null;
 }
 
-/** 본문 검사 — 트랜잭션 전에 부른다. 양품 + 불량 = 판정 수량, LOT 은 하나. */
-export function assertSortShape(body: SortQuantities & { decisionQty: number }, lotCount: number, uomScale: number): void {
+/** 본문 검사 — 채번·트랜잭션 «앞»에 부른다(400 이 될 저장에 번호를 태우지 않는다). 양품 + 불량 = 판정 수량. */
+export function assertSortShape(body: SortQuantities & { decisionQty: number }): void {
   const errors: ErrorItem[] = [];
   const accepted = body.acceptedQty;
   const rejected = body.rejectedQty;
@@ -55,13 +55,17 @@ export function assertSortShape(body: SortQuantities & { decisionQty: number }, 
     errors.push(field('businessDate', ERROR_CODE.REQUIRED, '업무 일자(YYYY-MM-DD)가 필요합니다.'));
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  assertQtyPrecision('acceptedQty', accepted as number, uomScale);
-  assertQtyPrecision('rejectedQty', rejected as number, uomScale);
   if (!new Prisma.Decimal(accepted as number).plus(rejected as number).equals(body.decisionQty)) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [
       field('rejectedQty', ERROR_CODE.INVALID, '양품 수량과 불량 수량의 합이 판정 수량과 같아야 합니다.'),
     ]);
   }
+}
+
+/** 부적합을 읽은 뒤의 선별 검증 — 단위 소수 자리와 LOT 수. 트랜잭션 안에서 부른다. */
+export function assertSortFitsTarget(body: SortQuantities, lotCount: number, uomScale: number): void {
+  assertQtyPrecision('acceptedQty', body.acceptedQty as number, uomScale);
+  assertQtyPrecision('rejectedQty', body.rejectedQty as number, uomScale);
   // ⛔ 판정이 LOT 을 가리키지 않는다 — 여럿이면 어느 LOT 을 나눌지 정할 수 없다.
   if (lotCount !== 1) {
     throw new ContractException(HttpStatus.BAD_REQUEST, [

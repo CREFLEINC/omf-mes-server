@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { reopenIqcRequestForReworkWithin } from '../inspection/inspection-request-reopen';
 import { assertQtyPrecision } from '../nonconformance/nonconformance-rules';
 import { dispositionByIdQuery } from './disposition-query';
-import { assertSortShape, DispositionSortService, SORT, type SortQuantities, type SortResult } from './disposition-sort';
+import { assertSortFitsTarget, assertSortShape, DispositionSortService, SORT, type SortQuantities, type SortResult } from './disposition-sort';
 import { releaseInspectionHoldsWithin } from './disposition-hold-release';
 import { dispositionProgressCode, remainingSummary } from './disposition-rollup';
 import { DispositionDecisionRow, DispositionDecisionView, dispositionDecisionView } from './disposition-view';
@@ -81,6 +81,8 @@ export class DispositionWriteService {
     const id = BigInt(nonconformanceId);
     const decidedAt = new Date();
     const isSort = body.dispositionTypeCode === SORT;
+    // 형식 검사가 채번 «앞»이다 — 400 이 될 저장에 번호를 태우지 않는다(#108 리뷰 m4).
+    if (isSort) assertSortShape(body);
     // ⛔ 채번은 트랜잭션을 «열기 전»이다(코어 규약) — 선별 불량분이 열 부적합의 번호다.
     const splitNonconformanceNo = isSort && (body.rejectedQty ?? 0) > 0
       ? await this.numbering.next('NONCONFORMANCE', null, decidedAt.toISOString().slice(0, 10))
@@ -90,7 +92,7 @@ export class DispositionWriteService {
       const target = await readTarget(tx, id);
       // ⛔ `decisionQty > 0` 과 `dispositionTypeCode` enum 은 **계약 가드가 이미** 400 을 낸다(R-15).
       assertShape(body, target);
-      if (isSort) assertSortShape(body, target.lotIds.length, target.uomScale);
+      if (isSort) assertSortFitsTarget(body, target.lotIds.length, target.uomScale);
       // 계약 「409 는 둘이다 — 남은 수량을 넘길 때, 그리고 이미 닫힌 부적합일 때」.
       if (locked.status_code === DECIDED) {
         throw new ConflictException('user', '이미 종결된 부적합이라 판정을 저장할 수 없습니다.', { code: INVALID_STATE });
@@ -150,11 +152,7 @@ export class DispositionWriteService {
     });
   }
 
-  /**
-   * ⛔ 코어 `assertTransition` 은 계열 봉투를 몰라 `code` 없이 409 를 낸다 — 여기서 씌운다.
-   * ⚠ `from` 이 `PENDING_DECISION` 하나라 **의뢰를 안 거친 부적합의 «전량» 판정은 409** 다 —
-   *   부분 판정은 종결시킬 것이 없어 이 전이를 안 타고 통과한다. 전이표가 정본이다.
-   */
+  /** 정상·재작업·폐기 — 부적합의 LOT 전부를 처분 전이로 옮긴다. 선별은 `DispositionSortService` 가 맡는다. */
   private async moveLots(
     tx: Tx, nonconformanceId: bigint, lotIds: bigint[], body: DispositionDecisionCreate, decisionId: bigint,
     appUserId: number, decidedAt: Date,
@@ -185,6 +183,11 @@ export class DispositionWriteService {
     return null;
   }
 
+  /**
+   * ⛔ 코어 `assertTransition` 은 계열 봉투를 몰라 `code` 없이 409 를 낸다 — 여기서 씌운다.
+   * ⚠ `from` 이 `PENDING_DECISION` 하나라 **의뢰를 안 거친 부적합의 «전량» 판정은 409** 다 —
+   *   부분 판정은 종결시킬 것이 없어 이 전이를 안 타고 통과한다. 전이표가 정본이다.
+   */
   private assertDecidable(currentStatus: string): { to: string } {
     try {
       return this.documentState.assertTransition(STATUS_COLUMN, 'nonconformance-decide', currentStatus);

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { LotHoldService, LotQualityStatusService } from '../../core/lot';
-import { assertSortShape, DispositionSortService } from './disposition-sort';
+import { assertSortFitsTarget, assertSortShape, DispositionSortService } from './disposition-sort';
 
 /** omf-all-around#108 — 처분 선별(장부 P-53). */
 
@@ -66,11 +66,13 @@ const body = (accepted: number, rejected: number) => ({ acceptedQty: accepted, r
 
 describe('assertSortShape', () => {
   it('양품 + 불량 = 판정 수량, 업무 일자, LOT 하나를 요구한다', () => {
-    expect(() => assertSortShape({ ...body(70, 30), decisionQty: 100 }, 1, 0)).not.toThrow();
-    expect(() => assertSortShape({ ...body(70, 20), decisionQty: 100 }, 1, 0)).toThrow(ContractException);
-    expect(() => assertSortShape({ acceptedQty: 70, rejectedQty: 30, decisionQty: 100 }, 1, 0)).toThrow(ContractException);
-    expect(() => assertSortShape({ rejectedQty: 30, businessDate: '2026-10-16', decisionQty: 30 }, 1, 0)).toThrow(ContractException);
-    expect(() => assertSortShape({ ...body(70, 30), decisionQty: 100 }, 2, 0)).toThrow(ContractException);
+    expect(() => assertSortShape({ ...body(70, 30), decisionQty: 100 })).not.toThrow();
+    expect(() => assertSortShape({ ...body(70, 20), decisionQty: 100 })).toThrow(ContractException);
+    expect(() => assertSortShape({ acceptedQty: 70, rejectedQty: 30, decisionQty: 100 })).toThrow(ContractException);
+    expect(() => assertSortShape({ rejectedQty: 30, businessDate: '2026-10-16', decisionQty: 30 })).toThrow(ContractException);
+    expect(() => assertSortFitsTarget(body(70, 30), 2, 0)).toThrow(ContractException);
+    expect(() => assertSortFitsTarget(body(70.5, 29.5), 1, 0)).toThrow(ContractException);
+    expect(() => assertSortFitsTarget(body(70, 30), 1, 0)).not.toThrow();
   });
 });
 
