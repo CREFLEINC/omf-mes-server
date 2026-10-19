@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { commonCodeTable } from './apply/common-code.apply';
+import { employeeTable } from './apply/employee.apply';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncRunner } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
@@ -23,7 +24,8 @@ import { SyncLease } from './sync-lease';
         const relay = new RelayClient(settings.relay);
         const master = {
           name: '기준정보',
-          tables: [commonCodeTable],
+          // 참조되는 쪽이 앞이다.
+          tables: [commonCodeTable, employeeTable],
           intervalMs: settings.masterIntervalMs,
         };
         return new ErpSyncRunner(
