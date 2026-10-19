@@ -8,6 +8,8 @@ import { buildContractDocument, servedOperations } from './common/contract';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  // 종료 신호에 모듈의 종료 훅을 부른다 — ERP 연동이 묶음 경계에서 멈추고 리스를 놓는다.
+  app.enableShutdownHooks();
   const config = app.get(ConfigService);
 
   // 계약(mdm-기준정보.json)의 servers 가 /api 다. 프리픽스를 바꾸면 전 경로가 어긋난다.
