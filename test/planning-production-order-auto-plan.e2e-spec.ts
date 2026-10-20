@@ -21,7 +21,7 @@ import { InboundCycle } from '../src/integration/erp/inbound-cycle';
 import { RelayClient } from '../src/integration/erp/relay-client';
 import { PRODUCTION_ORDER, RelayRow } from '../src/integration/erp/relay-tables';
 import { AutoPlanService } from '../src/planning/production-order/auto-plan.service';
-import { ProductionPlanService } from '../src/planning/production-plan/production-plan.service';
+import { PlanConfirmService } from '../src/planning/production-plan/plan-confirm.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const LOGIN_ID = 'e2e-ap74-probe';
@@ -70,6 +70,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
   let ambiguousOrderId = 0;
   let partialOrderId = 0;
   let erpChangedOrderId = 0;
+  let cancelledOrderId = 0;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -127,7 +128,8 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
 
     it('4. 자동 계획이 실패해도 등록은 201 이고, :auto-plan 으로 다시 세운다', async () => {
-      const spy = jest.spyOn(app.get(ProductionPlanService), 'create').mockRejectedValueOnce(new Error('자동 계획 강제 실패'));
+      // 자동 계획 첫걸음(점유)에서 실패해도 시도 시각은 수신이 이미 찍었다.
+      const spy = jest.spyOn(app.get(AutoPlanService), 'run').mockRejectedValueOnce(new Error('자동 계획 강제 실패'));
       const response = await postOrder('FAIL', items.ok, 30).expect(201);
       spy.mockRestore();
       const orderId = response.body.productionOrderId as number;
@@ -230,16 +232,69 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       await autoPlan(999999999).expect(404);
     });
 
-    it('9-1. 같은 오더에 동시에 두 번 불러도 계획은 하나다', async () => {
+    it('9-1. 같은 오더에 동시에 두 번 불러도 계획은 하나다 — 늦은 쪽은 409 INVALID_STATE 이거나 앞의 계획을 본다', async () => {
       const order = await insertOrder('RACE', items.ok, 25);
       const orderId = Number(order.production_order_id);
 
-      const [first, second] = await Promise.all([autoPlan(orderId), autoPlan(orderId)]);
+      const responses = await Promise.all([autoPlan(orderId), autoPlan(orderId)]);
 
-      expect([first.status, second.status]).toEqual([200, 200]);
-      expect([first.body.outcome, second.body.outcome]).toEqual(['CONFIRMED', 'CONFIRMED']);
-      expect(first.body.productionPlanId).toBe(second.body.productionPlanId);
+      expect(responses.some((response) => response.status === 200)).toBe(true);
+      for (const response of responses) {
+        if (response.status === 409) expect(response.body).toMatchObject({ code: 'INVALID_STATE' });
+        else expect(response.body).toMatchObject({ outcome: 'CONFIRMED' });
+      }
       expect(await plansOf(orderId)).toHaveLength(1);
+      const after = await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: order.production_order_id } });
+      expect(after.auto_plan_running_until).toBeNull();
+    });
+
+    it('9-1-1. 확정이 5초를 넘겨도 등록은 201 이고, 같은 키 재전송도 201 이며 계획은 하나다', async () => {
+      const confirms = app.get(PlanConfirmService);
+      const original = confirms.confirm.bind(confirms);
+      const spy = jest.spyOn(confirms, 'confirm').mockImplementationOnce(async (...args) => {
+        await new Promise((resolve) => setTimeout(resolve, 6_000));
+        return original(...args);
+      });
+      const key = randomUUID();
+      const send = () =>
+        request(app.getHttpServer())
+          .post('/api/planning/production-orders')
+          .set('Cookie', cookie)
+          .set('Idempotency-Key', key)
+          .send({ productionOrderNo: `${PREFIX}-PO-SLOW`, plantId: Number(plantId), itemId: Number(items.ok), orderQty: 12 });
+
+      const first = await send().expect(201);
+      spy.mockRestore();
+      expect(first.body.autoPlan).toEqual({ status: 'DONE', reasons: [] });
+
+      const again = await send().expect(201);
+      expect(again.body.productionOrderId).toBe(first.body.productionOrderId);
+      expect(await plansOf(first.body.productionOrderId as number)).toHaveLength(1);
+    }, 20_000);
+
+    it('9-1-2. 취소된 ERP W/O 는 400 STATE_LOCKED 이고 autoPlan 이 null 이다', async () => {
+      const order = await prisma.production_order.create({
+        data: {
+          production_order_no: `${PREFIX}-PO-CANCEL`,
+          business_unit_id: businessUnitId,
+          plant_id: plantId,
+          item_id: items.ok,
+          order_qty: 5,
+          uom_id: uomId,
+          status_code: 'CANCELLED',
+          // 받은 뒤 취소된 오더 — 시도한 적이 있어도 「확인 필요」로 남지 않는다.
+          auto_plan_attempted_at: new Date(),
+        },
+      });
+      cancelledOrderId = Number(order.production_order_id);
+
+      const response = await autoPlan(cancelledOrderId).expect(400);
+      expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'STATE_LOCKED' });
+      const detail = await request(app.getHttpServer())
+        .get(`/api/planning/production-orders/${cancelledOrderId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(detail.body.autoPlan).toBeNull();
     });
 
     it('9-2. ERP W/O 목록 권한(W-02-01)만으로 부를 수 있고, 권한이 없으면 403', async () => {
@@ -388,6 +443,26 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       const done = await idsOf('DONE');
       expect(done).toEqual(expect.arrayContaining([okOrderId, moldOrderId]));
       expect(done).not.toContain(erpChangedOrderId);
+      expect([...review, ...done]).not.toContain(cancelledOrderId);
+    });
+
+    it('11-1. autoPlanStatus 는 다른 필터·계층 펼침과 함께 걸린다', async () => {
+      const byQ = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ plantId: Number(plantId), autoPlanStatus: 'DONE', q: `${PREFIX.toLowerCase()}-po-ok` })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect((byQ.body.items as { productionOrderId: number }[]).map((item) => item.productionOrderId)).toEqual([okOrderId]);
+      expect(byQ.body.page.total).toBe(1);
+
+      const tree = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ plantId: Number(plantId), autoPlanStatus: 'NEEDS_REVIEW', includeChildren: true, size: 2 })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(tree.body.page.total).toBe(3);
+      expect(tree.body.items).toHaveLength(2);
+      expect(validator('GET /planning/production-orders')(tree.body)).toBe(true);
     });
 
     it('12. 모르는 autoPlanStatus 는 400', async () => {
