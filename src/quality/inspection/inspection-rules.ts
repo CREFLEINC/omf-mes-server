@@ -173,3 +173,63 @@ export function assertQuantityBounds(body: {
   });
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
+
+/** 자동 판정이 보는 수량 세 칸 — 검사 결과 수량과 같은 이름이다. */
+export interface JudgmentQuantities {
+  acceptedQty: number;
+  rejectedQty: number;
+  heldQty: number;
+}
+
+/** 종합 판정 3값(`INSPECTION_RESULT_OVERALL_JUDGMENT`). */
+export type ExpectedJudgment = 'ACCEPTED' | 'REJECTED' | 'HELD';
+
+/**
+ * 합격판정개수(`inspection_plan_version.acceptance_number`) 기준 자동 판정(omf-all-around#125 · QI-02 · 장부 P-70).
+ * 불합격 > 합격판정개수 → 불합격 · 아니면 보류 > 0 → 보류 · 아니면 합격.
+ * ⛔ 합격판정개수가 없으면(기준 없음·칸 비움) 자동 판정이 없다 — `null`(사람이 고른 판정을 그대로 쓴다).
+ * ⚠ 검사 유형을 보지 않는다 — 어느 검사에 걸지는 부르는 쪽이 정한다(지금은 IQC 만 · OQC 는 별도 이슈).
+ */
+export function expectedJudgment(qty: JudgmentQuantities, acceptanceNumber: number | null): ExpectedJudgment | null {
+  if (acceptanceNumber === null) return null;
+  if (qty.rejectedQty > acceptanceNumber) return 'REJECTED';
+  if (qty.heldQty > 0) return 'HELD';
+  return 'ACCEPTED';
+}
+
+const JUDGMENT_CHANGE_REASON = 'judgmentChangeReason';
+
+function expectedJudgmentBasis(expected: ExpectedJudgment, acceptanceNumber: number): string {
+  if (expected === 'REJECTED') return `불합격 수량이 합격판정개수(${acceptanceNumber})를 넘어 자동 판정은 불합격입니다.`;
+  if (expected === 'HELD') return `보류 수량이 있어 자동 판정은 보류입니다(합격판정개수 ${acceptanceNumber} 기준).`;
+  return `불합격 수량이 합격판정개수(${acceptanceNumber}) 이하이고 보류가 없어 자동 판정은 합격입니다.`;
+}
+
+/**
+ * 확정 판정이 자동 판정과 다르면 변경 사유가 있어야 한다(#125 · P-70). 다르게 확정하면 다듬은 사유를 돌려주고,
+ * 같거나 자동 판정이 없으면 `undefined` 다(사유를 실어도 버린다). 공백만인 사유는 없는 것으로 본다.
+ */
+export function assertJudgmentChangeReason(
+  qty: JudgmentQuantities,
+  judgment: string,
+  acceptanceNumber: number | null,
+  reason: string | undefined,
+): string | undefined {
+  const expected = expectedJudgment(qty, acceptanceNumber);
+  if (expected === null || acceptanceNumber === null || judgment === expected) return undefined;
+  const trimmed = reason?.trim() ?? '';
+  if (trimmed !== '') return trimmed;
+  throw one(
+    field(
+      JUDGMENT_CHANGE_REASON,
+      ERROR_CODE.REQUIRED,
+      `${expectedJudgmentBasis(expected, acceptanceNumber)} 다른 판정으로 확정하려면 변경 사유가 필요합니다.`,
+    ),
+  );
+}
+
+/** 판정 변경 사유는 검사 비고 맨 앞에 남긴다 — `[판정 변경 사유] <사유>` 다음 줄에 원래 비고(P-70). */
+export function remarksWithJudgmentChange(reason: string, remarks: string | null | undefined): string {
+  const head = `[판정 변경 사유] ${reason}`;
+  return remarks === null || remarks === undefined || remarks === '' ? head : `${head}\n${remarks}`;
+}

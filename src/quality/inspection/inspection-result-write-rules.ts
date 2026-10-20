@@ -10,6 +10,7 @@ import {
   InspectionResultCreate,
   InspectionResultWriteContext,
 } from './inspection-result-write-input';
+import { JudgmentQuantities, assertJudgmentChangeReason } from './inspection-rules';
 
 /**
  * 검사 결과 쓰기의 **판정** — 쓰기 서비스에서 떼어 냈다(#337 ⓒ · #320 m-4).
@@ -197,6 +198,25 @@ export async function assertPqcAfterProduction(prisma: PrismaService, inspection
       message: '이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
     },
   ]);
+}
+
+/**
+ * IQC 확정의 판정 변경 사유(omf-all-around#125 · 장부 P-70) — 의뢰의 검사기준 버전에 합격판정개수가 있으면
+ * 자동 판정과 다른 확정에 사유를 요구한다. 확정 경로 둘(`:confirm`·`POST` 확정)이 같은 함수를 부른다.
+ * 기록할 사유(다르게 확정할 때만)를 돌려준다. IQC 가 아니거나 합격판정개수가 없으면 종전 그대로 `undefined`.
+ */
+export async function assertIqcJudgmentChange(
+  prisma: Pick<PrismaService, 'inspection_request'> | Prisma.TransactionClient,
+  inspectionRequestId: bigint,
+  input: JudgmentQuantities & { judgment: string; reason: string | undefined },
+): Promise<string | undefined> {
+  const request = await prisma.inspection_request.findUnique({
+    where: { inspection_request_id: inspectionRequestId },
+    select: { inspection_type_code: true, inspection_plan_version: { select: { acceptance_number: true } } },
+  });
+  if (request?.inspection_type_code !== 'IQC') return undefined;
+  const acceptanceNumber = request.inspection_plan_version?.acceptance_number ?? null;
+  return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason);
 }
 
 /** ⛔ 종합 판정과 항목 판정은 **그룹이 다르다** — 항목에는 「보류」가 없다(§1-5). */

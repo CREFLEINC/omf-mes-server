@@ -4059,6 +4059,12 @@
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
       "description": "⭐ IQC 불합격 확정의 사유. 실으면 확정과 한 트랜잭션에서 그 회차의 불량 기록을 이 값으로 갈아 끼운다(재시도해도 1벌). 비우면(생략) 이미 붙은 불량 기록을 쓴다. IQC 가 아니거나 불합격 확정이 아닌데 실으면 400 INVALID, IQC 불합격에 빈 배열이면 400 REQUIRED. 합격·보류 확정은 그 회차의 확정 전 불량 기록을 지운다. 서버 선행 · 장부 P-47 · omf-all-around#121"
+     },
+     "judgmentChangeReason": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "⭐ IQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC 가 아니면 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125",
+      "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      }
     },
     "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 독립 경로를 두지 않는다(결정 10 · B-8)"
@@ -4144,6 +4150,12 @@
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
       "description": "⭐ IQC 의뢰를 statusCode=CONFIRMED · overallJudgmentCode=REJECTED 로 저장하면 1줄 이상 필수(없으면 400 field=defects, code=REQUIRED) — `:confirm` 이 불량 기록을 요구하는 것과 같은 규칙이다. 결과와 한 트랜잭션에서 불량 기록(원천 IQC · 수입검사 공정)으로 남는다. IQC 가 아닌 결과에 실으면 400 INVALID. 작성중(statusCode=DRAFT) 저장도 1줄 이상은 overallJudgmentCode=REJECTED 일 때만 받는다(아니면 400 INVALID · 장부 P-48 · omf-all-around#122). 서버 선행 · 장부 P-42 · omf-all-around#106"
+     },
+     "judgmentChangeReason": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "⭐ IQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC 가 아니면 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125",
+      "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      }
     },
     "required": [
