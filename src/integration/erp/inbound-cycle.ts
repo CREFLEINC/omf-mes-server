@@ -41,6 +41,8 @@ export const INBOUND = 'INBOUND';
 /** 이만큼 실패한 행은 사람이 `:retry` 하기 전까지 건너뛴다. */
 export const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 500;
+/** 커밋 뒤 할 일을 이만큼 할 때마다 `afterBatch` 로 리스를 늘린다 — 한 건이 길어(자동 계획) 묶음 하나가 리스를 넘기지 않게. */
+const AFTER_COMMIT_RENEW_EVERY = 20;
 
 /**
  * 표 하나의 한 회차 — 읽기 → 반영 → 'Y' 표시, 남은 행이 없을 때까지.
@@ -74,6 +76,7 @@ export class InboundCycle {
 
       const applied: number[] = [];
       const failures: [number, string][] = [];
+      const afterCommits: AfterCommit[] = [];
       for (const unit of units) {
         const keys = unit.map((row) => businessKey(source, row));
         if (
@@ -84,32 +87,28 @@ export class InboundCycle {
           result.held += unit.length;
           continue;
         }
-        let afterCommit: void | AfterCommit;
         try {
-          afterCommit = await this.prisma.$transaction(async (tx) => {
+          const afterCommit = await this.prisma.$transaction(async (tx) => {
             const after = await ('applyUnit' in table ? table.applyUnit(tx, unit) : table.apply(tx, unit[0]));
             for (const row of unit) await recordDone(tx, source, row);
             return after;
           });
           applied.push(...unit.map((row) => row.MES_INF_ID));
           result.applied += unit.length;
+          if (afterCommit) afterCommits.push(afterCommit);
         } catch (error) {
           keys.forEach((key) => blocked.add(key));
           result.failed += unit.length;
           for (const row of unit) {
             failures.push([row.MES_INF_ID, await recordFailure(this.prisma, source, row, error)]);
           }
-          continue;
         }
-        // ⛔ 반영은 이미 커밋됐다 — 여기서 실패해도 그 행을 실패로 돌리지 않는다.
-        await afterCommit?.().catch((error: unknown) =>
-          this.logger.warn(`${source.name} 반영 뒤 처리 실패 — ${error instanceof Error ? error.message : String(error)}`),
-        );
       }
 
       await this.relay.ack(source, applied);
       for (const [id, message] of failures) await this.relay.writeError(source, id, message);
       await afterBatch?.();
+      await this.runAfterCommits(source, afterCommits, afterBatch);
       if (!full) break;
     }
 
@@ -117,6 +116,19 @@ export class InboundCycle {
       `${source.name} 읽음 ${result.read} · 반영 ${result.applied} · 실패 ${result.failed} · 보류 ${result.held}`,
     );
     return result;
+  }
+
+  /**
+   * 확인 표시를 마친 «뒤»에 돈다 — 반영은 이미 커밋·표시됐다. ⛔ 실패해도 그 행을 실패로 돌리지 않는다.
+   * `afterBatch` 가 멈춤·리스 상실로 던지면 남은 일은 하지 않는다 — 자동 계획이면 그 오더는 「확인 필요」로 남는다.
+   */
+  private async runAfterCommits(source: RelayTable, afterCommits: AfterCommit[], afterBatch?: () => Promise<void>): Promise<void> {
+    for (let index = 0; index < afterCommits.length; index += 1) {
+      if (index > 0 && index % AFTER_COMMIT_RENEW_EVERY === 0) await afterBatch?.();
+      await afterCommits[index]().catch((error: unknown) =>
+        this.logger.warn(`${source.name} 반영 뒤 처리 실패 — ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }
   }
 
   /** 격리된 행 → 그 업무 키. `:retry` 가 PENDING 으로 돌리면 여기서 빠진다. */
