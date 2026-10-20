@@ -9812,7 +9812,7 @@
       }
      },
      "400": {
-      "description": "검증 실패. 고쳐야 풀린다",
+      "description": "검증 실패. 고쳐야 풀린다 — 같은 공정이 두 줄이면 items[i].processId UNIQUE_VIOLATION, 기능 플래그(can*)가 모두 false 이거나 빠진 줄은 items[i] INVALID(「기능을 하나 이상 켜야 합니다.」 · 장부 P-76)",
       "content": {
        "application/json": {
         "schema": {

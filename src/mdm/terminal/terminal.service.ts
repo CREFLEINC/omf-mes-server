@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { TOKEN_TYPE } from '../../auth/session-resolver.service';
 import type { TerminalContext } from '../../auth/terminal-context';
-import { ContractException, ERROR_CODE } from '../../common/errors';
+import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -398,15 +398,32 @@ export class TerminalService {
 }
 
 /** `uq_terminal_process` — 같은 공정이 두 줄이면 어느 줄인지 짚는다. */
-function assertProcesses(items: TerminalProcessInput[]): void {
+/** 매핑 한 줄의 기능 플래그 — 하나도 켜지 않은 줄은 그 공정에서 아무것도 못 하므로 받지 않는다. */
+const CAPABILITY_FLAGS = [
+  'canStartWork',
+  'canCompleteWork',
+  'canInputMaterial',
+  'canInputResult',
+  'canInputInspection',
+  'canPrintLabel',
+  'canCancelInput',
+  'canReturnMaterial',
+] as const satisfies readonly (keyof TerminalProcessInput)[];
+
+export function assertProcesses(items: TerminalProcessInput[]): void {
   const seen = new Map<number, number>();
   const errors = items.flatMap((item, index) => {
+    const found: ErrorItem[] = [];
+    if (!CAPABILITY_FLAGS.some((flag) => item[flag] === true)) {
+      found.push({ scope: 'field', field: `items[${index}]`, code: ERROR_CODE.INVALID, message: '기능을 하나 이상 켜야 합니다.' });
+    }
     const first = seen.get(item.processId);
     if (first === undefined) {
       seen.set(item.processId, index);
-      return [];
+      return found;
     }
     return [
+      ...found,
       {
         scope: 'field' as const,
         field: `items[${index}].processId`,
