@@ -132,7 +132,7 @@ export class ProductionOrderService {
 
   /**
    * 「끝」은 확정 계획 수량이 오더 수량을 채운 것이다 — 그 집합을 SQL 로 모아 `in`·`notIn` 으로 건다.
-   * 이유(`reasons`)는 거르지 않는다 — 상태만 거른다.
+   * 이유(`reasons`)는 거르지 않는다 — 상태만 거른다. 상태가 없는 오더(시도한 적 없고 계획도 없음)는 어느 쪽에도 들지 않는다.
    */
   private async byAutoPlanStatus(
     base: Prisma.production_orderWhereInput,
@@ -146,7 +146,8 @@ export class ProductionOrderService {
       HAVING sum(p.planned_qty) >= o.order_qty`);
     const ids = rows.map((r) => r.production_order_id);
     if (status === 'DONE') return { AND: [base, { production_order_id: { in: ids } }] };
-    return ids.length === 0 ? base : { AND: [base, { production_order_id: { notIn: ids } }] };
+    const hasStatus: Prisma.production_orderWhereInput = { OR: [{ auto_plan_attempted_at: { not: null } }, { production_plan: { some: {} } }] };
+    return { AND: [base, hasStatus, ...(ids.length === 0 ? [] : [{ production_order_id: { notIn: ids } }])] };
   }
 
   /** 페이지 파생 — 집계 2칸 + 확인 3칸을 한 쿼리로, (요청 시) 변경 이력을 더한다. 행마다 돌지 않는다. */
@@ -164,7 +165,7 @@ export class ProductionOrderService {
         plannedWorkOrderCount: d?.planned ?? 0,
         acknowledgement: d?.acknowledgedAt === null || d?.acknowledgedAt === undefined ? undefined : { acknowledgedAt: d.acknowledgedAt, acknowledgedBy: d.acknowledgedBy, acknowledgeDecisionCode: d.acknowledgeDecisionCode },
         lastChange: changes.get(row.production_order_id),
-        autoPlan: autoPlans.get(row.production_order_id),
+        autoPlan: autoPlans.get(row.production_order_id) ?? null,
       });
     });
   }

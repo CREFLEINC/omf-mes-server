@@ -34,7 +34,7 @@ export interface ProductionOrderExtras {
   plannedWorkOrderCount: number;
   acknowledgement?: ProductionOrderAcknowledgement;
   lastChange?: ProductionOrderLastChange;
-  autoPlan?: AutoPlanView;
+  autoPlan?: AutoPlanView | null;
 }
 
 export type ProductionOrderView = ReturnType<typeof productionOrderView>;

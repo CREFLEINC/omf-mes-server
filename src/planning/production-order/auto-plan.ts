@@ -72,8 +72,15 @@ export interface PlanFact {
 /**
  * 확정 계획 수량이 오더 수량을 채우면 끝이다. 아니면 사람이 볼 이유를 낸다 — 계획이 없으면
  * 자동 계획을 막은 이유(`unplannedReasons`), 작성중 계획이 있으면 미확정과 그 원인, 확정분이 모자라면 잔량.
+ * 자동 계획을 시도한 적이 없고 계획도 없으면 상태가 없다(null) — 그 기능 전에 받은 오더를 「확인 필요」로 쌓지 않는다.
  */
-export function autoPlanView(orderQty: Prisma.Decimal, plans: readonly PlanFact[], unplannedReasons: readonly AutoPlanReason[]): AutoPlanView {
+export function autoPlanView(
+  orderQty: Prisma.Decimal,
+  plans: readonly PlanFact[],
+  unplannedReasons: readonly AutoPlanReason[],
+  attempted: boolean,
+): AutoPlanView | null {
+  if (!attempted && plans.length === 0) return null;
   const confirmedQty = plans
     .filter((plan) => plan.confirmed)
     .reduce((sum, plan) => sum.plus(plan.plannedQty), new Prisma.Decimal(0));

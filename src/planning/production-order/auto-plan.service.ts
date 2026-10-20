@@ -1,4 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+
+import { toDateString } from '../../common/master';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -10,6 +12,8 @@ import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
 import { AutoPlanReason, AutoPlanView, MasterChoice, PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
 
 const CONFIRMED = 'CONFIRMED';
+/** 수신 때 자동 계획하는 상태 — 취소·마감된 오더는 계획하지 않는다. */
+const RECEIVED = 'RECEIVED';
 /** 잠금을 쥔 채 계획 생성·확정 전개를 기다린다 — 기본 5초로는 공정이 많은 Routing 의 확정이 모자랄 수 있다. */
 const LOCK_OPTIONS = { timeout: 30_000, maxWait: 5_000 };
 
@@ -19,6 +23,7 @@ export interface AutoPlanOrder {
   plant_id: bigint;
   item_id: bigint;
   order_qty: Prisma.Decimal;
+  auto_plan_attempted_at: Date | null;
 }
 
 /** 계약 `ProductionOrderAutoPlanResult`. */
@@ -61,9 +66,20 @@ export class AutoPlanService {
     private readonly confirms: PlanConfirmService,
   ) {}
 
-  /** 오더 수신 직후. ⛔ 실패가 수신을 되돌리지 않는다 — 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다. */
+  /**
+   * 오더 수신 직후. ⛔ 실패가 수신을 되돌리지 않는다 — 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다.
+   * 받은 상태가 아니거나 납기가 공장 현지 오늘보다 앞이면 시도하지 않는다 — 지난 오더를 몰아 받을 때 계획이 쏟아지지 않게.
+   * 그런 오더도 `:auto-plan` 으로는 세울 수 있다.
+   */
   async planReceived(productionOrderId: number, appUserId: number | undefined): Promise<void> {
     try {
+      const order = await this.prisma.production_order.findUnique({
+        where: { production_order_id: BigInt(productionOrderId) },
+        select: { status_code: true, due_date: true, plant: { select: { timezone_code: true } } },
+      });
+      if (order === null || order.status_code !== RECEIVED) return;
+      const dueDate = toDateString(order.due_date);
+      if (dueDate !== null && dueDate < localDate(new Date(), order.plant.timezone_code)) return;
       await this.run(productionOrderId, appUserId);
     } catch (error) {
       this.logger.warn(`ERP W/O ${String(productionOrderId)} 자동 계획 실패 — ${error instanceof Error ? error.message : String(error)}`);
@@ -84,25 +100,29 @@ export class AutoPlanService {
   }
 
   private async runLocked(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
-    const order = await this.prisma.production_order.findUnique({
+    const found = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(productionOrderId) },
       select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true },
     });
-    if (!order) throw new NotFoundException('없는 생산오더입니다.');
+    if (!found) throw new NotFoundException('없는 생산오더입니다.');
+    // 판을 올리지 않는다 — 업무 값이 아니라서, 확인(`:acknowledge`)의 If-Match 를 낡게 만들면 안 된다.
+    const attemptedAt = new Date();
+    await this.prisma.production_order.update({ where: { production_order_id: found.production_order_id }, data: { auto_plan_attempted_at: attemptedAt } });
+    const order = { ...found, auto_plan_attempted_at: attemptedAt };
     const facts = (await this.factsOf([order])).get(order.production_order_id) as OrderFacts;
     const { outcome, productionPlanId } = await this.act(order, facts, appUserId);
-    const view = (await this.viewsOf([order])).get(order.production_order_id) as AutoPlanView;
-    return { productionOrderId, outcome, productionPlanId, reasons: view.reasons };
+    const view = (await this.viewsOf([order])).get(order.production_order_id);
+    return { productionOrderId, outcome, productionPlanId, reasons: view?.reasons ?? [] };
   }
 
   /** 페이지 단위로 읽는다 — 오더마다 돌지 않는다. */
-  async viewsOf(orders: readonly AutoPlanOrder[]): Promise<Map<bigint, AutoPlanView>> {
+  async viewsOf(orders: readonly AutoPlanOrder[]): Promise<Map<bigint, AutoPlanView | null>> {
     const facts = await this.factsOf(orders);
     return new Map(
       orders.map((order) => {
         const fact = facts.get(order.production_order_id) as OrderFacts;
         const unplanned = [...(fact.choice?.reasons ?? []), ...(fact.choiceLineKnown === false ? (['LINE_UNKNOWN'] as const) : [])];
-        return [order.production_order_id, autoPlanView(order.order_qty, fact.plans, unplanned)];
+        return [order.production_order_id, autoPlanView(order.order_qty, fact.plans, unplanned, order.auto_plan_attempted_at !== null)];
       }),
     );
   }
@@ -168,7 +188,8 @@ export class AutoPlanService {
     });
     const plansOf = groupBy(planRows, (plan) => plan.production_order_id);
 
-    const unplanned = orders.filter((order) => !plansOf.has(order.production_order_id));
+    // 시도한 적 없는 미계획 오더는 상태가 없다 — BOM·Routing 을 읽지 않는다.
+    const unplanned = orders.filter((order) => !plansOf.has(order.production_order_id) && order.auto_plan_attempted_at !== null);
     const itemIds = [...new Set(unplanned.map((order) => order.item_id))];
     const [boms, routings] =
       itemIds.length === 0

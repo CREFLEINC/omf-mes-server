@@ -1,9 +1,11 @@
 import { Prisma } from '@prisma/client';
 
 import { DefaultMap, OperationNeed } from '../production-plan/resource-assign';
-import { PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
+import { AutoPlanReason, PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
 
 const qty = (value: number) => new Prisma.Decimal(value);
+/** 자동 계획을 시도한 오더의 상태. */
+const attempted = (orderQty: Prisma.Decimal, plans: PlanFact[], unplanned: AutoPlanReason[]) => autoPlanView(orderQty, plans, unplanned, true);
 const plan = (overrides: Partial<PlanFact>): PlanFact => ({ confirmed: false, plannedQty: qty(100), lineKnown: true, ...overrides });
 const injection: OperationNeed = { routingOperationId: 101n, processId: 1n, equipmentRequired: true, moldRequired: true };
 const map = (overrides: Partial<DefaultMap>): DefaultMap => ({ processId: null, equipmentId: null, equipmentLineId: null, moldId: null, ...overrides });
@@ -60,34 +62,42 @@ describe('expansionHasLine — 전개한 W/O 에 라인이 서는가', () => {
 
 describe('autoPlanView — 목록·상세의 자동 계획 상태', () => {
   it('확정 계획 수량이 오더 수량을 채우면 DONE 이고 사유가 없다', () => {
-    expect(autoPlanView(qty(100), [plan({ confirmed: true, plannedQty: qty(60) }), plan({ confirmed: true, plannedQty: qty(40) })], [])).toEqual({
+    expect(attempted(qty(100), [plan({ confirmed: true, plannedQty: qty(60) }), plan({ confirmed: true, plannedQty: qty(40) })], [])).toEqual({
       status: 'DONE',
       reasons: [],
     });
   });
 
   it('계획이 없으면 자동 계획을 막은 사유를 낸다', () => {
-    expect(autoPlanView(qty(100), [], ['ROUTING_MISSING'])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['ROUTING_MISSING'] });
+    expect(attempted(qty(100), [], ['ROUTING_MISSING'])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['ROUTING_MISSING'] });
   });
 
   it('계획이 있으면 계획 전 사유는 보지 않는다', () => {
-    expect(autoPlanView(qty(100), [plan({})], ['ROUTING_MISSING']).reasons).toEqual(['PLAN_NOT_CONFIRMED']);
+    expect(attempted(qty(100), [plan({})], ['ROUTING_MISSING'])?.reasons).toEqual(['PLAN_NOT_CONFIRMED']);
   });
 
   it('라인을 몰라 남은 작성중 계획이면 LINE_UNKNOWN 과 PLAN_NOT_CONFIRMED 를 함께 낸다', () => {
-    expect(autoPlanView(qty(100), [plan({ lineKnown: false })], []).reasons).toEqual(['LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED']);
+    expect(attempted(qty(100), [plan({ lineKnown: false })], [])?.reasons).toEqual(['LINE_UNKNOWN', 'PLAN_NOT_CONFIRMED']);
   });
 
   it('확정분이 모자라면 QTY_REMAINING', () => {
-    expect(autoPlanView(qty(100), [plan({ confirmed: true, plannedQty: qty(60) })], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['QTY_REMAINING'] });
+    expect(attempted(qty(100), [plan({ confirmed: true, plannedQty: qty(60) })], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: ['QTY_REMAINING'] });
   });
 
   it('확정분이 모자라고 작성중 계획도 있으면 둘 다 낸다', () => {
     const plans = [plan({ confirmed: true, plannedQty: qty(60) }), plan({ plannedQty: qty(40) })];
-    expect(autoPlanView(qty(100), plans, []).reasons).toEqual(['PLAN_NOT_CONFIRMED', 'QTY_REMAINING']);
+    expect(attempted(qty(100), plans, [])?.reasons).toEqual(['PLAN_NOT_CONFIRMED', 'QTY_REMAINING']);
+  });
+
+  it('시도한 적이 없고 계획도 없으면 상태가 없다(null)', () => {
+    expect(autoPlanView(qty(100), [], [], false)).toBeNull();
+  });
+
+  it('시도한 적이 없어도 확정 계획이 수량을 채우면 DONE 이다', () => {
+    expect(autoPlanView(qty(100), [plan({ confirmed: true })], [], false)).toEqual({ status: 'DONE', reasons: [] });
   });
 
   it('계획이 없고 막는 것도 없으면 사유 없는 NEEDS_REVIEW 다', () => {
-    expect(autoPlanView(qty(100), [], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: [] });
+    expect(attempted(qty(100), [], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: [] });
   });
 });
