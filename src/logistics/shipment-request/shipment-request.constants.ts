@@ -18,3 +18,6 @@ export const SHIPMENT_TIME_SLOT_GROUP = 'SHIPMENT_TIME_SLOT';
 
 /** 계약에 `maxLength` 가 없다 — 물리 `varchar(200)` 를 앞당기지 않으면 초과가 **500** 이다. */
 export const CUSTOMER_LOT_REQUIREMENT_MAX = 200;
+
+/** 출하작업지시 등록과 출하가 함께 쓴다(장부 P-73). */
+export const CANCELLED_SO_LINE = 'ERP 에서 취소한 수주 라인입니다.';

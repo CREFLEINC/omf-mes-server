@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { recordTerminalWorkerAudit } from '../../audit/terminal-worker-audit';
 import { LogisticsWriteActor } from '../logistics-write-actor';
 import {
+  CANCELLED_PO_LINE,
   DOCUMENT_STATUS,
   InboundReceiptCreateInput,
   InboundReceiptHeaderWriteInput,
@@ -249,11 +250,16 @@ export class InboundReceiptService {
         ordered_qty: true,
         tolerance_over_qty: true,
         received_qty: true,
+        cancelled_at: true,
       },
     });
     for (const row of locked) {
       const delta = deltas.get(row.purchase_order_line_id);
       if (delta === undefined) continue;
+      // ERP 가 취소한 라인에는 더 받지 않는다 — 그 입고를 ERP 가 받지 않는다(장부 P-73).
+      if (row.cancelled_at != null) {
+        throw one(field(`${at}lines.${delta.index}.purchaseOrderLineId`, ERROR_CODE.INVALID, CANCELLED_PO_LINE));
+      }
       // ⛔ `Decimal` 로 비교한다 — `Number()` 로 접으면 `@db.Decimal(20,6)` 의 끝자리에서
       //    판정이 갈리고 `ck_po_line_received` 가 500 으로 샌다(I-3.md §3-3).
       const room = row.ordered_qty.plus(row.tolerance_over_qty).minus(row.received_qty);

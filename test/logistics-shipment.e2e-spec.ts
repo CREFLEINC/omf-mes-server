@@ -657,6 +657,36 @@ describe('출하 목록 (e2e)', () => {
     expect(first.message).toContain('수주');
   });
 
+  it('P-7d ⛔ 지시 뒤 ERP 가 그 수주 라인을 취소했으면 400 INVALID 이고 수주 라인이 그대로다(장부 P-73)', async () => {
+    const { sales_order_line_id: salesOrderLineId } = await prisma.shipment_request_line.findUniqueOrThrow({
+      where: { shipment_request_line_id: BigInt(made.postRequestLine) },
+      select: { sales_order_line_id: true },
+    });
+    if (salesOrderLineId === null) throw new Error('픽스처: 출하 지시 라인에 수주 라인이 없다');
+    const before = await prisma.sales_order_line.update({
+      where: { sales_order_line_id: salesOrderLineId },
+      data: { cancelled_at: new Date() },
+    });
+    try {
+      const failed = await post(body(), 400);
+
+      expect((failed.errors as { field: string; code: string; message: string }[])[0]).toMatchObject({
+        field: 'lines[0].shipmentRequestLineId',
+        code: 'INVALID',
+        message: 'ERP 에서 취소한 수주 라인입니다.',
+      });
+      const after = await prisma.sales_order_line.findUniqueOrThrow({
+        where: { sales_order_line_id: salesOrderLineId },
+      });
+      expect(after.shipped_qty.equals(before.shipped_qty)).toBe(true);
+    } finally {
+      await prisma.sales_order_line.update({
+        where: { sales_order_line_id: salesOrderLineId },
+        data: { cancelled_at: null },
+      });
+    }
+  });
+
   it('P-7c ⛔ «남의» 지시 라인을 실으면 400 INVALID — 롤업이 다른 지시를 올린다', async () => {
     // 헤더는 postRequest 인데 라인은 tightRequest 의 것이다. 안 막으면 이 등록이 «다른»
     // 출하작업지시의 shipped_qty 를 올려, 그 지시가 조용히 출하 완료로 보인다.

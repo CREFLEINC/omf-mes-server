@@ -6,6 +6,7 @@ import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  CANCELLED_PO_LINE,
   DOCUMENT_STATUS,
   InboundReceiptLineWriteInput,
   dayOrNull,
@@ -197,11 +198,16 @@ export class InboundReceiptUpdateService {
         ordered_qty: true,
         tolerance_over_qty: true,
         received_qty: true,
+        cancelled_at: true,
       },
     });
     for (const row of locked) {
       const delta = attributions.get(row.purchase_order_line_id);
       if (delta === undefined) continue;
+      // ERP 가 취소한 라인에는 더 받지 않는다. 줄이기(되돌리기)는 막지 않는다(장부 P-73).
+      if (row.cancelled_at != null && delta.qty.greaterThan(0)) {
+        throw one(at(delta.index, 'purchaseOrderLineId', ERROR_CODE.INVALID, CANCELLED_PO_LINE));
+      }
       // ⛔ `Decimal` 로 비교한다 — `Number()` 로 접으면 끝자리에서 판정이 갈리고 CHECK 위반이 500 으로
       //    샌다(§3-3). 하한은 `app.qty_t` 의 `CHECK (VALUE >= 0)` 다 — 조용히 0 으로 깎지 않는다(R-5).
       const next = row.received_qty.plus(delta.qty);
