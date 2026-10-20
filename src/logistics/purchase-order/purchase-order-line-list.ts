@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { toDateString } from '../../common/master';
 
 /**
- * 입하 예정 — 구매발주 «라인» 목록(장부 P-77 · #741). 계약 사본에 없는 경로라 질의를 여기서 손으로 검사한다
+ * 입하 예정 — 구매발주 «라인» 목록(장부 P-78 · #741). 계약 사본에 없는 경로라 질의를 여기서 손으로 검사한다
  * (가드가 보지 않는다). 오류 모양은 가드와 같다 — 400 field `INVALID`.
  */
 

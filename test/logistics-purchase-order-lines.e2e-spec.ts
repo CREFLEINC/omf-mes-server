@@ -1,5 +1,5 @@
 /**
- * 입하 예정 — 구매발주 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-77 · #741).
+ * 입하 예정 — 구매발주 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-78 · #741).
  * 계약 사본에 없는 경로라 인증·질의 검증을 컨트롤러가 직접 한다 — 401·400 도 여기서 본다.
  * 발주 목록 `openOnly` 가 ERP 취소 라인만 남은 발주를 빼는 것(같은 기준)도 함께 본다.
  */

@@ -92,7 +92,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
-    // 입하 예정 라인 목록(P-77)이 가드 밖이라 세션을 직접 푼다.
+    // 입하 예정 라인 목록(P-78)이 가드 밖이라 세션을 직접 푼다.
     AuthModule,
   ],
   controllers: [
