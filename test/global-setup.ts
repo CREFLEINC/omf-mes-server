@@ -13,6 +13,7 @@ import { join } from 'node:path';
  * 두 전제 모두 «검사 밖»에 있다. 스위트가 만들지 않고 있다고 «전제»한다.
  */
 export default async function globalSetup(): Promise<void> {
+  disableErpSync();
   const prisma = new PrismaClient();
   try {
     await assertMigrationsApplied(prisma);
@@ -21,6 +22,16 @@ export default async function globalSetup(): Promise<void> {
   } finally {
     await prisma.$disconnect();
   }
+}
+
+/**
+ * ⛔ e2e 가 띄우는 서버에서는 ERP 연동 실행기를 늘 끈다. 개발 서버용 `.env` 에 `ERP_SYNC_ENABLED=true` 가 있으면
+ * 검사마다 실행기가 떠서 중계 DB 의 미반영 행을 시험 DB 로 읽어 가고 「읽음」으로 표시한다 — 개발 서버가 받을 행이 빠진다.
+ * 프로세스 환경이 `.env` 보다 앞서므로(`ConfigModule`) 여기서 덮으면 된다. 실행기를 직접 만드는 중계 DB e2e
+ * (`ERP_RELAY_E2E=1`)는 이 값을 읽지 않는다.
+ */
+function disableErpSync(): void {
+  process.env.ERP_SYNC_ENABLED = 'false';
 }
 
 /**
