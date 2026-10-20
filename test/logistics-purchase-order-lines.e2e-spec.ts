@@ -91,10 +91,10 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     expect(keys(page)).toEqual(['A#1', 'A#2', 'D#1', 'B#1']);
     expect(page.page.total).toBe(4);
     expect(page.items.map((i) => [i.receiptStatusCode, i.remainingQty])).toEqual([
-      ['OPEN', 100],
+      ['NOT_STARTED', 100],
       ['PARTIAL', 30],
-      ['OPEN', 8],
-      ['OPEN', 5],
+      ['NOT_STARTED', 8],
+      ['NOT_STARTED', 5],
     ]);
     expect(page.items[3].expectedReceiptDate).toBeNull();
   });
@@ -103,13 +103,13 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     const page = await list({ openOnly: 'false' });
     expect(keys(page)).toEqual(['A#1', 'A#2', 'A#3', 'A#4', 'C#1', 'D#1', 'B#1', 'E#1']);
     expect(page.items.map((i) => `${i.receiptStatusCode}:${i.remainingQty}`)).toEqual([
-      'OPEN:100',
+      'NOT_STARTED:100',
       'PARTIAL:30',
-      'COMPLETE:0',
+      'COMPLETED:0',
       'CANCELLED:0',
       'CANCELLED:0',
-      'OPEN:8',
-      'OPEN:5',
+      'NOT_STARTED:8',
+      'NOT_STARTED:5',
       'CANCELLED:0',
     ]);
   });

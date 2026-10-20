@@ -100,11 +100,11 @@ describe('입하 예정 라인 목록 — 질의', () => {
 });
 
 describe('입하 예정 라인 목록 — 입하 진행 판정', () => {
-  it('받은 것이 없으면 OPEN · 일부면 PARTIAL · 발주 수량에 닿으면 COMPLETE', () => {
-    expect(receiptStatusOf(row())).toBe('OPEN');
+  it('받은 것이 없으면 NOT_STARTED · 일부면 PARTIAL · 발주 수량에 닿으면 COMPLETED', () => {
+    expect(receiptStatusOf(row())).toBe('NOT_STARTED');
     expect(receiptStatusOf(row({ received_qty: new Prisma.Decimal('40') }))).toBe('PARTIAL');
-    expect(receiptStatusOf(row({ received_qty: new Prisma.Decimal('100') }))).toBe('COMPLETE');
-    expect(receiptStatusOf(row({ received_qty: new Prisma.Decimal('104') }))).toBe('COMPLETE');
+    expect(receiptStatusOf(row({ received_qty: new Prisma.Decimal('100') }))).toBe('COMPLETED');
+    expect(receiptStatusOf(row({ received_qty: new Prisma.Decimal('104') }))).toBe('COMPLETED');
   });
 
   it('⛔ 부족 허용치 안이어도 끝난 것이 아니다 — 발주 목록 openOnly 와 같은 기준', () => {
