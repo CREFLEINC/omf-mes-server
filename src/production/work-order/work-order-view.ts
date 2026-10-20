@@ -4,18 +4,18 @@ import { omitEmpty } from '../../common/http/omit-empty';
 import { PreIssuedLotSummaryView, WorkOrderProgressView } from './work-order-progress';
 
 /**
- * 계약 `WorkOrder`(40칸) · `WorkOrderResourcePlan` 으로 옮기는 자리. 상세(PR ①)와 목록(PR ②)이
+ * 계약 `WorkOrder` · `WorkOrderResourcePlan` 으로 옮기는 자리. 상세(PR ①)와 목록(PR ②)이
  * 같은 매퍼를 쓴다 — 물리 칸 이름 그대로 camelCase 이고 대조표는 I-6.md §2-1 이다.
  *
  * ⛔ 값이 없는 칸은 **키를 생략**한다 — 널을 내리면 계약의 「선택 필드」와 뜻이 갈린다
  * (`plan.md` §5 규칙 7 · 형제 `document-progress-view.ts` 관행).
- * ⛔ 40칸을 인터페이스로 한 벌 더 적지 않는다 — 두 곳에 두면 갈린다. 매퍼가 정본이다.
+ * ⛔ 칸들을 인터페이스로 한 벌 더 적지 않는다 — 두 곳에 두면 갈린다. 매퍼가 정본이다.
  */
 
-/** 표시용 파생 넷의 조인 — 물리에 칸이 없다. ERP W/O 는 계획을 경유해 잇는다(계약이 그렇게 적었다). */
+/** 표시용 파생 칸의 조인 — 물리에 칸이 없다. 공정 셋은 Routing 공정의 공정이다(POP 이 단말 공정 매핑과 견준다). ERP W/O 는 계획을 경유해 잇는다(계약이 그렇게 적었다). */
 export const DISPLAY_JOIN = {
   production_plan: { select: { production_order_id: true, production_order: { select: { production_order_no: true } } } },
-  routing_operation: { select: { operation_name: true } },
+  routing_operation: { select: { operation_name: true, process: { select: { process_id: true, process_code: true, process_name: true } } } },
   item: { select: { item_code: true } },
 } as const;
 
@@ -62,6 +62,9 @@ export function workOrderView(
     productionOrderId: id(row.production_plan?.production_order_id ?? null),
     productionOrderNo: row.production_plan?.production_order.production_order_no,
     routingOperationName: row.routing_operation.operation_name,
+    processId: Number(row.routing_operation.process.process_id),
+    processCode: row.routing_operation.process.process_code,
+    processName: row.routing_operation.process.process_name,
     itemCode: row.item.item_code,
     poMismatch: row.po_mismatch,
     versionNo: row.version_no,
