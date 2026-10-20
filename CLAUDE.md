@@ -19,7 +19,7 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 
 ## 도메인
 
-- 용어: **P/O** = 구매오더(`purchase_order`) · **ERP W/O** = ERP 생산 지시(`production_order`) · **MES W/O** = 작업지시(`work_order`, 그냥 「W/O」도 이것). 「생산오더」·「제조오더」라고 쓰지 않는다. 오류 메시지·권한 이름·공통코드 이름은 설계 회신(요청 282) 뒤 함께 바꾼다. 상세: `CONTEXT.md`.
+- 용어: **P/O** = 구매오더(`purchase_order`) · **ERP W/O** = ERP 생산 지시(`production_order`) · **MES W/O** = 작업지시(`work_order`, 그냥 「W/O」도 이것). 「생산오더」·「제조오더」라고 쓰지 않는다. 오류 메시지·권한 이름·공통코드 이름도 이 말을 쓴다(장부 P-74). 상세: `CONTEXT.md`.
 - `business_date` 는 **클라이언트가 보낸다. 서버가 수신 시각으로 다시 잡지 않는다** (공유계약 C-8 — 자정을 넘긴 오프라인 재전송이 이중 전기가 된다). 실린 표는 3개뿐(`inventory_transaction`·그 파티션·`inventory_transaction_line`). ⚠ 도출 규칙(야간조 경계)은 **설계 미정**이라 도출 함수를 만들지 않는다. 상세: `docs/server-architecture.md` C-3.
 - 날짜 타임존 캐스팅 금지 (`shift.crosses_midnight`). 공장 로컬은 `plant.timezone_code` 로만 푼다. `@db.Date` 49자리.
 - 서버·컨테이너·DB TZ = UTC 고정. 공장 로컬 시각은 `plant.timezone_code` 사용.

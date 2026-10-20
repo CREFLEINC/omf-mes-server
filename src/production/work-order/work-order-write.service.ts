@@ -68,7 +68,7 @@ export async function lockWorkOrder(
       FROM production.work_order
      WHERE work_order_id = ${BigInt(workOrderId)}
        FOR UPDATE`;
-  if (rows.length === 0) throw new NotFoundException('없는 작업지시입니다.');
+  if (rows.length === 0) throw new NotFoundException('없는 MES W/O 입니다.');
   return rows[0];
 }
 
@@ -175,7 +175,7 @@ export class WorkOrderWriteService {
       assertVersion(locked, version);
       if (locked.released_at !== null) {
         throw one(
-          field('statusCode', ERROR_CODE.STATE_LOCKED, '배포된 작업지시는 고칠 수 없습니다.'),
+          field('statusCode', ERROR_CODE.STATE_LOCKED, '배포된 MES W/O 는 고칠 수 없습니다.'),
         );
       }
       // 한 칸만 와도 잠긴 행의 짝과 대조한다 — `plannedEndAt` 만 고치면 저장된

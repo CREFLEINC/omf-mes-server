@@ -223,7 +223,7 @@ async function assertTerminalGate(
       field(
         'lotId',
         ERROR_CODE.INVALID,
-        '생산 LOT의 작업지시를 찾을 수 없습니다.',
+        '생산 LOT의 MES W/O 를 찾을 수 없습니다.',
       ),
     );
   const gate = await db.terminal_process.findUnique({

@@ -70,7 +70,7 @@ export class PrecheckDecisionService {
       where: { work_order_id: BigInt(workOrderId) },
       select: { work_order_type_code: true },
     });
-    if (workOrder === null) throw one(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+    if (workOrder === null) throw one(field('workOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     return workOrder;
   }
 
@@ -105,7 +105,7 @@ export class PrecheckDecisionService {
     }
     // 우회는 긴급 W/O 일 때만 허용한다 — 서버가 `work_order_type_code` 로 판정한다(계약 x-internal-note).
     if (workOrderTypeCode !== EMERGENCY_TYPE) {
-      throw one(field('overrideReasonCode', ERROR_CODE.INVALID, '긴급 작업지시에서만 우회할 수 있습니다.'));
+      throw one(field('overrideReasonCode', ERROR_CODE.INVALID, '긴급 MES W/O 에서만 우회할 수 있습니다.'));
     }
     await assertCodeValues(this.prisma, [
       { field: 'overrideReasonCode', value: overrideReasonCode, groupCode: CONTROL_OVERRIDE_REASON_GROUP },

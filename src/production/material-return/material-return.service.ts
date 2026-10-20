@@ -132,7 +132,7 @@ export class MaterialReturnService {
     ]);
 
     // ⛔ W/O 는 존재만 본다 — 상태 게이트를 걸지 않는다(계약·화면 침묵 · §4-2 ⓐ).
-    if (workOrderCount === 0) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+    if (workOrderCount === 0) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     // ⛔ 「생산창고 위치인가」를 검사하지 않는다 — `LOCATION_TYPE` 에 그 축이 없다(§4-2 ⓑ).
     if (location === null) errors.push(field('sourceLocationId', ERROR_CODE.INVALID, '없는 위치입니다.'));
     // ⛔ `WAREHOUSE_TYPE` 으로 「자재창고여야 한다」를 걸지 않는다 — 계약이 안 적었다(§4-2 ⓒ).

@@ -42,7 +42,7 @@ export class PlanConfirmService {
       } catch (error) {
         if (!isDuplicateWorkOrderNo(error)) throw error;
         if (attempt >= NUMBER_RETRY) {
-          throw new ConflictException('user', '작업지시번호를 매기지 못했습니다. 다시 시도해 주세요.', { code: DUPLICATE_KEY });
+          throw new ConflictException('user', 'MES W/O 번호를 매기지 못했습니다. 다시 시도해 주세요.', { code: DUPLICATE_KEY });
         }
       }
     }

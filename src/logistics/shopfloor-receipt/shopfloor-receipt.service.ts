@@ -168,7 +168,7 @@ export class ShopfloorReceiptService {
       assertIssueStatus(issue.status_code, errors);
       assertLinesAgainstIssue(input, issue.goods_issue_line, errors);
     }
-    if (workOrder === null) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+    if (workOrder === null) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     // ⛔ `work_order.status_code` 를 안 본다 — 출고가 이미 전기돼 물건이 떠났다. 취소된
     //    W/O 라도 도착한 실물 기록을 거부하지 않는다(R-8).
     if (locationCount === 0) errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.'));

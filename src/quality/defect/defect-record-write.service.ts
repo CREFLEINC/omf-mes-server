@@ -216,7 +216,7 @@ export class DefectRecordWriteService {
       throw one('lotId', ERROR_CODE.INVALID, '이 검사 결과의 LOT 이 아닙니다.');
     }
     if (requested.workOrderId !== null && own.work_order_id !== null && requested.workOrderId !== own.work_order_id) {
-      throw one('workOrderId', ERROR_CODE.INVALID, '이 검사 결과의 작업지시가 아닙니다.');
+      throw one('workOrderId', ERROR_CODE.INVALID, '이 검사 결과의 MES W/O 가 아닙니다.');
     }
     return { lotId: own.lot_id ?? requested.lotId, workOrderId: own.work_order_id ?? requested.workOrderId };
   }

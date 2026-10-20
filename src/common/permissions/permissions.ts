@@ -56,7 +56,7 @@ export const PERMISSIONS: readonly Permission[] = [
   // 02 생산 실행
   { code: 'M-02-01', name: 'WIP 공정 이동 스캔', groupCode: '02' },
   { code: 'M-02-02', name: '수리 왕복 투입·반출 스캔', groupCode: '02' },
-  { code: 'P-02-01', name: '작업 시작 (작업지시 선택)', groupCode: '02' },
+  { code: 'P-02-01', name: '작업 시작 (MES W/O 선택)', groupCode: '02' },
   { code: 'P-02-02', name: '작업 전 점검 이력 확인·통제', groupCode: '02' },
   { code: 'P-02-03', name: '자재 투입 스캔·오투입 검증', groupCode: '02' },
   { code: 'P-02-04', name: '작업실적 등록 (LOT·제품 선택)', groupCode: '02' },
@@ -71,12 +71,12 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-13', name: 'PQC 제품 검사·검사 결과 입력', groupCode: '02' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-52).
   { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
-  { code: 'W-02-01', name: 'P/O 수신·조회', groupCode: '02' },
+  { code: 'W-02-01', name: 'ERP W/O 수신·조회', groupCode: '02' },
   { code: 'W-02-02', name: 'W/O 전개·편성', groupCode: '02' },
   { code: 'W-02-03', name: '4M 자원배정·유효성 점검', groupCode: '02' },
   { code: 'W-02-04', name: 'W/O 확정·배포·생산LOT 선발행', groupCode: '02' },
   { code: 'W-02-05', name: 'W/O 마감·ERP 실적 송신', groupCode: '02' },
-  { code: 'W-02-06', name: 'P/O 변경 관리자 확인', groupCode: '02' },
+  { code: 'W-02-06', name: 'ERP W/O 변경 관리자 확인', groupCode: '02' },
   { code: 'W-02-07', name: '긴급 W/O 발행', groupCode: '02' },
   { code: 'W-02-08', name: 'W/O 진행현황 조회(생산 실적 집계 포함)', groupCode: '02' },
   { code: 'W-02-10', name: '추가 자재 출고 요청(수동)', groupCode: '02' },

@@ -288,7 +288,7 @@ export class RoutingOperationService {
       errors.push({
         scope: 'screen',
         code: ERROR_CODE.STATE_LOCKED,
-        message: '작업지시나 BOM 이 쓰고 있는 공정은 뺄 수 없습니다.',
+        message: 'MES W/O 나 BOM 이 쓰고 있는 공정은 뺄 수 없습니다.',
       });
     }
     if (dependencies.length > 0) {

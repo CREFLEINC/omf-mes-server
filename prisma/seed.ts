@@ -278,7 +278,7 @@ const SEED: CodeGroupSeed[] = [
     groupCode: 'INSPECTION_FREQUENCY',
     groupName: '검사 주기',
     values: [
-      { code: 'WORK_ORDER', codeName: '매 작업지시', order: 10 },
+      { code: 'WORK_ORDER', codeName: '매 MES W/O', order: 10 },
       { code: 'PRODUCTION_LOT', codeName: '매 생산 LOT', order: 20 },
       { code: 'MATERIAL_LOT', codeName: '매 자재 LOT', order: 30 },
       { code: 'SHIFT', codeName: '근무조별', order: 40 },
@@ -331,7 +331,7 @@ const SEED: CodeGroupSeed[] = [
      * 설계 회신이 이 겹침을 알고 확정한 것이다.
      */
     groupCode: 'WORK_ORDER_STATUS',
-    groupName: '작업지시 상태',
+    groupName: 'MES W/O 상태',
     isSystemOwned: true,
     values: [
       { code: 'PLANNED', codeName: '편성', order: 10 },
@@ -455,7 +455,7 @@ const SEED: CodeGroupSeed[] = [
     groupCode: 'MATERIAL_ISSUE_REQUEST_REASON',
     groupName: '자재 출고요청 사유',
     values: [
-      { code: 'URGENT_WO_RESPONSE', codeName: '긴급 작업지시 대응', order: 10 },
+      { code: 'URGENT_WO_RESPONSE', codeName: '긴급 MES W/O 대응', order: 10 },
       { code: 'SHORTAGE_SUPPLEMENT', codeName: '부족분 보충', order: 20 },
       { code: 'DEFECT_REPLACEMENT', codeName: '불량 대체', order: 30 },
       { code: 'OTHER', codeName: '기타', order: 40 },
@@ -510,7 +510,7 @@ const SEED: CodeGroupSeed[] = [
     values: [
       { code: 'L1', codeName: '대기 → 활성(첫 실적)', order: 10 },
       { code: 'L2', codeName: '대기 → 폐번(마감, 실적 없는 슬롯)', order: 20 },
-      { code: 'L3', codeName: '활성 → 폐번(작업지시 취소)', order: 30 },
+      { code: 'L3', codeName: '활성 → 폐번(MES W/O 취소)', order: 30 },
     ],
   },
   {
@@ -738,7 +738,7 @@ const SEED: CodeGroupSeed[] = [
     groupCode: 'CONTROL_OVERRIDE_REASON',
     groupName: '통제 우회 사유',
     values: [
-      { code: 'EMERGENCY_WORK_ORDER', codeName: '긴급작업지시 우회', order: 10 },
+      { code: 'EMERGENCY_WORK_ORDER', codeName: '긴급 MES W/O 우회', order: 10 },
       { code: 'OTHER', codeName: '기타(관리자 승인 예외)', order: 20 },
     ],
   },
@@ -1121,7 +1121,7 @@ const SEED: CodeGroupSeed[] = [
     values: [
       { code: 'INBOUND_RECEIPT_LINE', codeName: '입하 라인', order: 10 },
       { code: 'RECYCLE_ENTRY', codeName: '재생재 등록', order: 20 },
-      { code: 'WORK_ORDER', codeName: '작업지시(선발행)', order: 30 },
+      { code: 'WORK_ORDER', codeName: 'MES W/O(선발행)', order: 30 },
       // 처분 선별의 불량분 LOT — 원 LOT 이 원천이다(omf-all-around#108 · 마이그 20261020110000).
       { code: 'LOT_SPLIT', codeName: 'LOT 분할(선별 불량분)', order: 40 },
     ],
@@ -1213,9 +1213,9 @@ const SEED: CodeGroupSeed[] = [
     ],
   },
   {
-    // UPDATED 는 W-02-06 의 P/O 변경 이벤트를 담는 값 — ERP 매핑 없음(2026-09-02).
+    // UPDATED 는 W-02-06 의 ERP W/O 변경 이벤트를 담는 값 — ERP 매핑 없음(2026-09-02).
     groupCode: 'PRODUCTION_ORDER_STATUS',
-    groupName: 'P/O 상태',
+    groupName: 'ERP W/O 상태',
     isSystemOwned: true,
     values: [
       { code: 'RECEIVED', codeName: '수신', order: 10 },
@@ -1309,12 +1309,12 @@ const SEED: CodeGroupSeed[] = [
   },
   {
     groupCode: 'WORK_ORDER_HOLD_REASON',
-    groupName: '작업지시 보류 사유',
+    groupName: 'MES W/O 보류 사유',
     values: [],
   },
   {
     groupCode: 'WORK_ORDER_TYPE',
-    groupName: '작업지시 유형',
+    groupName: 'MES W/O 유형',
     isSystemOwned: true,
     values: [
       { code: 'NORMAL', codeName: '일반', order: 10 },

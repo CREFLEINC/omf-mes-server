@@ -99,10 +99,10 @@ export class AutoPlanService {
       where: { production_order_id: BigInt(productionOrderId) },
       select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true, planned_start_date: true, status_code: true },
     });
-    if (!found) throw new NotFoundException('없는 생산오더입니다.');
+    if (!found) throw new NotFoundException('없는 ERP W/O 입니다.');
     if (found.status_code === CANCELLED) {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
-        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 생산오더는 계획을 세우지 않습니다.' },
+        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 ERP W/O 는 계획을 세우지 않습니다.' },
       ]);
     }
     const claimedUntil = await this.claim(found.production_order_id);
@@ -128,7 +128,7 @@ export class AutoPlanService {
          AND (auto_plan_running_until IS NULL OR auto_plan_running_until < clock_timestamp())
       RETURNING auto_plan_running_until`;
     if (claimed.length === 0) {
-      throw new ConflictException('user', '이 생산오더의 자동 계획이 이미 진행 중입니다. 잠시 뒤 다시 시도하세요.', { code: INVALID_STATE });
+      throw new ConflictException('user', '이 ERP W/O 의 자동 계획이 이미 진행 중입니다. 잠시 뒤 다시 시도하세요.', { code: INVALID_STATE });
     }
     return claimed[0].auto_plan_running_until;
   }

@@ -153,12 +153,12 @@ async function recordVarianceReason(tx: Tx, workOrderId: bigint, reasonCode: str
     where: { work_order_id: workOrderId },
     select: { closed_at: true },
   });
-  if (workOrder === null) throw one(field('lotId', ERROR_CODE.INVALID, '원천 작업지시가 없습니다.'));
+  if (workOrder === null) throw one(field('lotId', ERROR_CODE.INVALID, '원천 MES W/O 가 없습니다.'));
   // ⭐ 트리거 `trg_work_order_closed_immutable`(BEFORE UPDATE · `OLD.closed_at IS NOT NULL` 이면
   //    RAISE)을 앞당겨 400 으로 막는다 — 그냥 두면 500 이 샌다. 정상·초과는 여기 오지 않으므로
   //    마감된 W/O 의 LOT 이라도 통과한다.
   if (workOrder.closed_at !== null) {
-    throw one(field('lotId', ERROR_CODE.STATE_LOCKED, '마감된 작업지시의 LOT 은 미달로 완료할 수 없습니다.'));
+    throw one(field('lotId', ERROR_CODE.STATE_LOCKED, '마감된 MES W/O 의 LOT 은 미달로 완료할 수 없습니다.'));
   }
   // ⛔ `status_code` 도 `version_no` 도 안 건드린다 — 옮기는 것은 사유 한 칸뿐이다(§3-3).
   await tx.work_order.update({

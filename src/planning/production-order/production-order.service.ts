@@ -82,7 +82,7 @@ export class ProductionOrderService {
   /** 없으면 404 다(계약 선언). */
   async detail(id: number, query: ProductionOrderDetailQuery): Promise<{ view: ProductionOrderView; versionNo: number }> {
     const row = await this.prisma.production_order.findUnique({ where: { production_order_id: id } });
-    if (!row) throw new NotFoundException('없는 생산오더입니다.');
+    if (!row) throw new NotFoundException('없는 ERP W/O 입니다.');
     const [view] = await this.viewsOf([row], query.withLastChange === true);
     return { view, versionNo: row.version_no };
   }

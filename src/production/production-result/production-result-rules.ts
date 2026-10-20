@@ -94,7 +94,7 @@ export function assertAllocations(allocations: readonly ResultLotAllocation[], g
  */
 export function assertResultAccepted(statusCode: string): void {
   if (NO_SLOT_STATUS.includes(statusCode)) {
-    throw one(field('workOrderId', ERROR_CODE.STATE_LOCKED, '실적을 받을 수 없는 작업지시 상태입니다.'));
+    throw one(field('workOrderId', ERROR_CODE.STATE_LOCKED, '실적을 받을 수 없는 MES W/O 상태입니다.'));
   }
 }
 
@@ -110,7 +110,7 @@ export function assertSlots(allocations: readonly ResultLotAllocation[], slots: 
   for (const allocation of allocations) {
     const slot = byId.get(allocation.lotId);
     if (slot === undefined) {
-      throw one(field('lotAllocations', ERROR_CODE.INVALID, '이 작업지시의 선발행 LOT 이 아닙니다.'));
+      throw one(field('lotAllocations', ERROR_CODE.INVALID, '이 MES W/O 의 선발행 LOT 이 아닙니다.'));
     }
     if (slot.lifecycle_status_code === VOIDED) {
       throw one(field('lotAllocations', ERROR_CODE.STATE_LOCKED, '폐번된 LOT 에는 배분할 수 없습니다.'));
