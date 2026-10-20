@@ -27,6 +27,12 @@ const LOGIN_ID = 'e2e-ap74-probe';
 const PASSWORD = 'AP74-검사-비밀번호';
 const PREFIX = 'AP74';
 const ROLE = 'E2E_AP74';
+/** ERP W/O 목록 권한만 — 재시도 버튼이 그 화면에 있다. */
+const LIST_ONLY_ID = 'e2e-ap74-list-only';
+const LIST_ONLY_ROLE = 'E2E_AP74_LIST_ONLY';
+/** 권한이 한 줄도 없는 계정. */
+const STRANGER_ID = 'e2e-ap74-stranger';
+const STRANGER_ROLE = 'E2E_AP74_STRANGER';
 const TIMEZONE = 'Asia/Ho_Chi_Minh';
 const ERP_SOURCE = { ...PRODUCTION_ORDER, interfaceCode: 'E2E-AP74-PRODORD-RECV' };
 
@@ -73,7 +79,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     await cleanup();
     await makeCatalog();
     await makeUser();
-    cookie = await login();
+    cookie = await login(LOGIN_ID);
   });
 
   afterAll(async () => {
@@ -190,6 +196,35 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
 
     it('9. 없는 ERP W/O 는 404', async () => {
       await autoPlan(999999999).expect(404);
+    });
+
+    it('9-1. 같은 오더에 동시에 두 번 불러도 계획은 하나다', async () => {
+      const order = await insertOrder('RACE', items.ok, 25);
+      const orderId = Number(order.production_order_id);
+
+      const [first, second] = await Promise.all([autoPlan(orderId), autoPlan(orderId)]);
+
+      expect([first.status, second.status]).toEqual([200, 200]);
+      expect([first.body.outcome, second.body.outcome]).toEqual(['CONFIRMED', 'CONFIRMED']);
+      expect(first.body.productionPlanId).toBe(second.body.productionPlanId);
+      expect(await plansOf(orderId)).toHaveLength(1);
+    });
+
+    it('9-2. ERP W/O 목록 권한(W-02-01)만으로 부를 수 있고, 권한이 없으면 403', async () => {
+      const listOnly = await login(LIST_ONLY_ID);
+      await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${noRoutingOrderId}:auto-plan`)
+        .set('Cookie', listOnly)
+        .set('Idempotency-Key', randomUUID())
+        .send({})
+        .expect(200);
+
+      const stranger = await login(STRANGER_ID);
+      await request(app.getHttpServer())
+        .post(`/api/planning/production-orders/${noRoutingOrderId}:auto-plan`)
+        .set('Cookie', stranger)
+        .send({})
+        .expect(403);
     });
   });
 
@@ -463,22 +498,32 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
   }
 
   async function makeUser(): Promise<void> {
-    const user = await prisma.app_user.create({
-      data: { login_id: LOGIN_ID, user_name: '자동계획검사', status_code: 'EMPLOYED' },
-    });
-    await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
-    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '자동계획검사용' } });
-    await prisma.role_permission.createMany({
-      data: ['W-02-01', 'W-02-02'].map((permission_code) => ({ role_id: role.role_id, permission_code })),
-    });
-    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    const accounts: [string, string, string[]][] = [
+      [LOGIN_ID, ROLE, ['W-02-01', 'W-02-02']],
+      [LIST_ONLY_ID, LIST_ONLY_ROLE, ['W-02-01']],
+      // 권한 0줄짜리 역할 — 「역할 없음」이 아니라 「권한 없음」이라야 403 이 권한 판정이다.
+      [STRANGER_ID, STRANGER_ROLE, []],
+    ];
+    for (const [loginId, roleCode, permissions] of accounts) {
+      const user = await prisma.app_user.create({
+        data: { login_id: loginId, user_name: '자동계획검사', status_code: 'EMPLOYED' },
+      });
+      await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+      const role = await prisma.role.create({ data: { role_code: roleCode, role_name: '자동계획검사용' } });
+      if (permissions.length > 0) {
+        await prisma.role_permission.createMany({
+          data: permissions.map((permission_code) => ({ role_id: role.role_id, permission_code })),
+        });
+      }
+      await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    }
   }
 
-  async function login(): Promise<string[]> {
+  async function login(loginId: string): Promise<string[]> {
     const response = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
-      .send({ loginId: LOGIN_ID, password: PASSWORD })
+      .send({ loginId, password: PASSWORD })
       .expect(200);
     const raw: unknown = response.headers['set-cookie'];
     return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
@@ -514,15 +559,17 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     await prisma.business_unit.deleteMany({ where: { business_unit_code: { startsWith: PREFIX } } });
     await prisma.legal_entity.deleteMany({ where: { legal_entity_code: { startsWith: PREFIX } } });
 
-    const target = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
-    if (target) {
+    for (const loginId of [LOGIN_ID, LIST_ONLY_ID, STRANGER_ID]) {
+      const target = await prisma.app_user.findUnique({ where: { login_id: loginId } });
+      if (!target) continue;
       await prisma.user_role.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: target.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: target.app_user_id } });
     }
-    const role = await prisma.role.findUnique({ where: { role_code: ROLE } });
-    if (role) {
+    for (const roleCode of [ROLE, LIST_ONLY_ROLE, STRANGER_ROLE]) {
+      const role = await prisma.role.findUnique({ where: { role_code: roleCode } });
+      if (!role) continue;
       await prisma.role_permission.deleteMany({ where: { role_id: role.role_id } });
       await prisma.role.delete({ where: { role_id: role.role_id } });
     }
