@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TerminalContext } from './terminal-context';
-import { terminalQualityWorkOrderWhere } from './terminal-quality-read-scope';
+import { terminalInspectionRequestWhere } from './terminal-quality-read-scope';
 
 export const TERMINAL_QUALITY_WRITE_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'POST /quality/inspection-results': ['POP'],
@@ -24,7 +24,7 @@ export function currentTerminalQualityWorkerId(request: Request): bigint | undef
 
 /**
  * POP 쓰기 범위. 셋 다 **사번 헤더가 단말 공장의 재직 작업자**여야 하고 그 작업자가 기록 주체다.
- * - 검사 결과: 이 단말 공정의 W/O 의뢰
+ * - 검사 결과: 이 단말 공정의 W/O 의뢰(PQC) 또는 단말 공장의 OQC 의뢰(P-04-06 · 장부 P-80)
  * - 불량 기록(P-02-14): 자재 불량 원천 · 단말 공장의 LOT
  * - LOT 보류(P-02-14): 보류할 LOT 이 전부 단말 공장의 것
  */
@@ -53,12 +53,13 @@ async function assertOwnTarget(
 ): Promise<void> {
   if (key === 'POST /quality/inspection-results') {
     const requestId = positiveId(body.inspectionRequestId);
-    if (requestId === null || !await prisma.inspection_request.findFirst({ where: {
-      inspection_request_id: requestId,
-      work_order: terminalQualityWorkOrderWhere({
-        plantId: terminal.plantId, terminalId: terminal.terminalId, terminalTypeCode: 'POP',
-      }),
-    }, select: { inspection_request_id: true } })) throw denied();
+    if (requestId === null) throw denied();
+    const scope = await terminalInspectionRequestWhere(prisma, {
+      plantId: terminal.plantId, terminalId: terminal.terminalId, terminalTypeCode: 'POP',
+    });
+    if (!await prisma.inspection_request.findFirst({
+      where: { AND: [{ inspection_request_id: requestId }, scope] }, select: { inspection_request_id: true },
+    })) throw denied();
     return;
   }
   // POP 자재 불량은 W/O·공정·원천을 서버가 투입 기록에서 채운다 — 단말이 다른 공장·다른 문서를 가리키지 못하게 칸 자체를 받지 않는다(#108 리뷰 m1).
