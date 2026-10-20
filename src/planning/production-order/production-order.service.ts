@@ -40,8 +40,12 @@ export interface ProductionOrderDetailQuery {
   withLastChange?: boolean;
 }
 
-/** 정렬은 계약에 축이 없다 — 서버가 고정한다(§1-2). */
+/**
+ * 정렬은 계약에 축이 없다 — 서버가 고정한다(§1-2). ERP P/O 는 납기 없이 계획 시작일만 와서
+ * 시작일이 먼저다(사용자 결정 2026-10-20). 시작일이 없는 MES 등록 P/O 는 뒤에 납기 순으로 선다.
+ */
 const ORDER_BY: Prisma.production_orderOrderByWithRelationInput[] = [
+  { planned_start_date: { sort: 'asc', nulls: 'last' } },
   { due_date: { sort: 'asc', nulls: 'last' } },
   { production_order_id: 'asc' },
 ];
