@@ -92,6 +92,15 @@ export const SALES_ORDER: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
+/** 제조오더. 한 행이 P/O 하나다. */
+export const PRODUCTION_ORDER: RelayTable = {
+  interfaceCode: 'IF-ERP-PRODORD-RECV',
+  name: 'T_IF_SND_PROD_ORD_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['PRODT_ORDER_NO'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];

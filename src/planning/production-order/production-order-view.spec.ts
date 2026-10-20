@@ -14,6 +14,7 @@ function changeRow(overrides: Partial<ProductionOrderChangeFieldRow>): Productio
     before_order_qty: null,
     before_due_date: null,
     before_status_code: null,
+    before_planned_start_date: null,
     ...overrides,
   };
 }
@@ -60,6 +61,19 @@ describe('changedFieldsOf — §5-4 고정 순 · beforeQty 규칙', () => {
 
     expect(result).toEqual([]);
   });
+
+  it('ERP 계획 시작일 변경은 저장만 하고 싣지 않는다 — 계약 enum 에 아직 없다', () => {
+    const rows = [
+      changeRow({
+        field_code: 'PLANNED_START_DATE',
+        before_planned_start_date: new Date('2026-06-08T00:00:00.000Z'),
+      }),
+    ];
+
+    const result = changedFieldsOf(rows, 'UPDATED', new Prisma.Decimal(1200), null, (code) => code);
+
+    expect(result).toEqual([]);
+  });
 });
 
 describe('productionOrderView — §2-3 확인 3칸 키 생략', () => {
@@ -83,6 +97,10 @@ describe('productionOrderView — §2-3 확인 3칸 키 생략', () => {
     updated_by: null,
     version_no: 1,
     last_change_received_at: null,
+    erp_operation_no: null,
+    erp_storage_location_code: null,
+    erp_rework_flag: null,
+    planned_start_date: null,
   };
 
   it('⑦ 확인 이력이 없으면 acknowledgedAt·acknowledgedBy·acknowledgeDecisionCode 키가 생략된다', () => {
