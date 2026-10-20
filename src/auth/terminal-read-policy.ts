@@ -94,9 +94,10 @@ export async function assertTerminalReadScope(
       break;
     case 'GET /production/work-orders':
       if (terminal.terminalTypeCode === 'POP') {
-        if (terminal.equipmentId === null || query.open !== 'true'
+        // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다) — 설비를 걸 때만 자기 설비여야 한다.
+        if (query.open !== 'true'
           || (query.plannedEquipmentId !== undefined
-            && positiveId(query.plannedEquipmentId) !== terminal.equipmentId)) throw denied();
+            && (terminal.equipmentId === null || positiveId(query.plannedEquipmentId) !== terminal.equipmentId))) throw denied();
         // The query service intersects the list with this terminal's can_start_work processes.
       } else {
         await ownWorkOrder(query.successorOfWorkOrderId);

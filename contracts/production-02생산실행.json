@@ -2501,6 +2501,15 @@
       "description": "계획 설비로 거른다. POP 작업 시작 화면(P-02-01 §4 ②)의 기본 목록 「이 설비 · 배포됨」이 이 축으로 선다 — 응답의 plannedEquipmentId 를 클라이언트가 거르는 것으로는 성립하지 않는다(목록이 페이지 단위라 페이지 안에서만 걸러진다). 저장 자리가 실재하므로 필터를 둔다(공유계약 L-11 의 반대쪽). 근거: P-02-01 §4·§5-5 · omf-mes#247"
      },
      {
+      "name": "includeUnplannedEquipment",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "plannedEquipmentId 와 함께 쓴다 — 참이면 그 설비의 W/O 와 아직 설비가 정해지지 않은 W/O 를 함께 낸다(그 설비에서 시작할 수 있다). plannedEquipmentId 가 없으면 무시한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-78)"
+     },
+     {
       "name": "workOrderTypeCode",
       "in": "query",
       "schema": {

@@ -16,6 +16,7 @@ export interface WorkOrderListQuery {
   processId?: number;
   productionLineId?: number;
   plannedEquipmentId?: number;
+  includeUnplannedEquipment?: boolean;
   workOrderTypeCode?: string;
   plannedStartFrom?: string;
   plannedStartTo?: string;
@@ -111,13 +112,23 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     // ⚠ 직접 칸이 아니다 — routingOperationId → routing_operation.process_id 1단 조인.
     query.processId === undefined ? {} : { routing_operation: { process_id: query.processId } },
     eq('production_line_id', query.productionLineId),
-    eq('planned_equipment_id', query.plannedEquipmentId),
+    plannedEquipmentWhere(query.plannedEquipmentId, query.includeUnplannedEquipment),
     eq('work_order_type_code', query.workOrderTypeCode),
     plannedStartWhere(query.plannedStartFrom, query.plannedStartTo),
     // ⛔ ERP W/O 번호는 이 축으로 검색되지 않는다(계약 자인) — `work_order_no` 만 본다.
     query.q === undefined ? {} : { work_order_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
   ].filter((clause) => Object.keys(clause).length > 0);
   return clauses.length === 0 ? {} : { AND: clauses };
+}
+
+/**
+ * 설비 W/O 목록 — `includeUnplannedEquipment` 면 아직 설비가 정해지지 않은 W/O 도 함께 낸다(그 설비에서 시작할 수 있다).
+ * 설비 축이 없으면 그 스위치는 뜻이 없다 — 무시한다.
+ */
+function plannedEquipmentWhere(equipmentId?: number, includeUnplanned?: boolean): Prisma.work_orderWhereInput {
+  if (equipmentId === undefined) return {};
+  if (includeUnplanned !== true) return { planned_equipment_id: equipmentId };
+  return { OR: [{ planned_equipment_id: equipmentId }, { planned_equipment_id: null }] };
 }
 
 /** «계획 시작 시각» 반열림(From 이상·To 미만) — 비워도 400 이 아니다(계약 자인 · `plan.md` §5 규칙 11). */

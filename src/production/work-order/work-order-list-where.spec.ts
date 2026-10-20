@@ -5,6 +5,15 @@ import { RELEASABLE_ELIGIBLE_WHERE, achievementOrderedIds, achievementSortDirect
 
 describe('work-order-list-where', () => {
   describe('buildWorkOrderWhere', () => {
+    it('where — includeUnplannedEquipment 면 그 설비 또는 설비 미지정 W/O 다', () => {
+      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: true })).toEqual({
+        AND: [{ OR: [{ planned_equipment_id: 5 }, { planned_equipment_id: null }] }],
+      });
+      expect(buildWorkOrderWhere({ plannedEquipmentId: 5, includeUnplannedEquipment: false })).toEqual({ AND: [{ planned_equipment_id: 5 }] });
+      // 설비 축이 없으면 스위치는 뜻이 없다.
+      expect(buildWorkOrderWhere({ includeUnplannedEquipment: true })).toEqual({});
+    });
+
     it('where — released=false 는 released_at IS NULL 이고 미지정과 다르다', () => {
       expect(buildWorkOrderWhere({ released: false })).toEqual({ AND: [{ released_at: null }] });
       // 미지정은 그 축을 아예 안 건다 — false 와 같은 뜻이 아니다.
