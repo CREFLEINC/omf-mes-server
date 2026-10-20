@@ -22,6 +22,8 @@ export interface InspectionResultListQuery {
   statusCode?: string;
   processId?: number;
   itemId?: number;
+  /** 서버 선행(omf-all-around#85 · 장부 P-76) — 그 LOT 의 검사 의뢰 결과만. 주면 기간이 필요 없다. */
+  lotId?: number;
   inspectedFrom?: string;
   inspectedTo?: string;
   finalRoundOnly?: boolean;
@@ -140,6 +142,7 @@ export function buildInspectionResultWhere(
   const requestWhere: Prisma.inspection_requestWhereInput = {
     ...(query.inspectionTypeCode === undefined ? {} : { inspection_type_code: query.inspectionTypeCode }),
     ...filter('item_id', query.itemId),
+    ...filter('lot_id', query.lotId),
     ...processWhere(query.processId),
   };
   return {
