@@ -29,6 +29,9 @@ interface ItemView {
   developmentItem: boolean;
   defaultLotStorageUomId: number | null;
   defaultProductionLotSize: number | null;
+  /** ERP 규격(SPEC)·품목그룹(ITEM_GROUP_CD) — 계약 밖 칸(장부 P-75). MES 에서 만든 품목은 null. */
+  erpSpec: string | null;
+  erpItemGroupCode: string | null;
 }
 
 export interface ItemUpdate {
@@ -214,5 +217,7 @@ function view(row: ItemRow): ItemView {
       row.default_lot_storage_uom_id === null ? null : Number(row.default_lot_storage_uom_id),
     defaultProductionLotSize:
       row.default_production_lot_size === null ? null : Number(row.default_production_lot_size),
+    erpSpec: row.erp_spec,
+    erpItemGroupCode: row.erp_item_group_code,
   };
 }

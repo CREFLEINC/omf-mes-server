@@ -314,6 +314,41 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
     expect(Number(line.ordered_qty)).not.toBe(99);
   });
 
+  it('P/O — ERP 원본 칸과 라인 취소 시각이 상세에 실린다 · MES 발주는 null 이다 — 계약 밖(장부 P-75)', async () => {
+    const erpId = await newOrder();
+    const mesId = await newOrder();
+    const cancelledAt = new Date('2026-10-20T01:02:03.000Z');
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(erpId) },
+      data: {
+        erp_purchase_order_no: `${PREFIX}-ERP-${erpId}`,
+        erp_order_type_code: 'SC',
+        erp_purchase_group_code: 'P10',
+        erp_io_type_code: 'I01',
+      },
+    });
+    await prisma.purchase_order_line.updateMany({
+      where: { purchase_order_id: BigInt(erpId) },
+      data: { erp_storage_location_code: 'S110', cancelled_at: cancelledAt },
+    });
+
+    const detailOf = async (id: number) =>
+      (
+        await request(app.getHttpServer())
+          .get(`/api/logistics/purchase-orders/${id}`)
+          .set('Cookie', cookie)
+          .expect(200)
+      ).body;
+    const erp = await detailOf(erpId);
+    const mes = await detailOf(mesId);
+
+    expect(erp.purchaseOrder).toMatchObject({ erpOrderTypeCode: 'SC', erpPurchaseGroupCode: 'P10', erpIoTypeCode: 'I01' });
+    expect(erp.lines[0]).toMatchObject({ erpStorageLocationCode: 'S110', cancelledAt: cancelledAt.toISOString() });
+    expect(mes.purchaseOrder).toMatchObject({ erpOrderTypeCode: null, erpPurchaseGroupCode: null, erpIoTypeCode: null });
+    expect(mes.lines[0]).toMatchObject({ erpStorageLocationCode: null, cancelledAt: null });
+    expect(validator('GET /logistics/purchase-orders/{purchaseOrderId}')(erp)).toBe(true);
+  });
+
   it('라인 — 배열 순서가 lineNo 1..N 이 된다(요청이 lineNo 를 보내지 않는다)', async () => {
     const id = await newOrder();
 

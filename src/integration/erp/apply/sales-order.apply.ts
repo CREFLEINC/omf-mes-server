@@ -4,10 +4,7 @@ import { RowTable, Tx } from '../inbound-cycle';
 import { RelayRow, SALES_ORDER, isCancel, requiredText, text } from '../relay-tables';
 import { dateOf, itemIdsByCode, partnerIdByCode, uomIdsByCode } from './lookup';
 
-/**
- * 수주 상태. 수주는 수신본이라 MES 에 상태를 바꾸는 길이 없다 — 이 둘 사이만 오간다.
- * 값 목록(코드 그룹)이 없는 칸이라(`x-no-code-key`) 문자 그대로 둔다.
- */
+/** 시드 `SALES_ORDER_STATUS`. 수주는 수신본이라 MES 에 상태를 바꾸는 길이 없다 — 이 둘 사이만 오간다. */
 const RECEIVED = 'RECEIVED';
 const CANCELLED = 'CANCELLED';
 

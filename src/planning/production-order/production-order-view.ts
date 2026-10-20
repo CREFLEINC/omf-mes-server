@@ -9,9 +9,17 @@ import { AutoPlanView } from './auto-plan';
 export type ProductionOrderRow = Prisma.production_orderGetPayload<object>;
 export type ProductionOrderChangeFieldRow = Prisma.production_order_change_fieldGetPayload<object>;
 
-/** 서버가 «수량 → 납기 → 상태» 고정 순으로 낸다(§5-4) — 화면이 정렬하지 않는다. */
-export const CHANGED_FIELD_ORDER = ['ORDER_QTY', 'DUE_DATE', 'STATUS_CODE'] as const;
-const FIELD_LABEL: Record<(typeof CHANGED_FIELD_ORDER)[number], string> = { ORDER_QTY: '수량', DUE_DATE: '납기', STATUS_CODE: '상태' };
+/**
+ * 서버가 «수량 → 계획 시작일 → 납기 → 상태» 고정 순으로 낸다(§5-4) — 화면이 정렬하지 않는다.
+ * `PLANNED_START_DATE` 는 계약 enum 밖이다 — ERP 가 바꾸는 날짜가 시작일뿐이라 서버가 더했다(장부 P-66).
+ */
+export const CHANGED_FIELD_ORDER = ['ORDER_QTY', 'PLANNED_START_DATE', 'DUE_DATE', 'STATUS_CODE'] as const;
+const FIELD_LABEL: Record<(typeof CHANGED_FIELD_ORDER)[number], string> = {
+  ORDER_QTY: '수량',
+  PLANNED_START_DATE: '계획 시작일',
+  DUE_DATE: '납기',
+  STATUS_CODE: '상태',
+};
 
 export interface ProductionOrderChangedField {
   field: string;
@@ -53,6 +61,11 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
     orderQty: Number(row.order_qty),
     uomId: Number(row.uom_id),
     dueDate: toDateString(row.due_date) ?? undefined,
+    // ↓ 계약 밖 칸 넷(장부 P-66·P-75) — ERP 가 보낸 계획 시작일과 생산입고 송신에 돌려줄 원본 값.
+    plannedStartDate: toDateString(row.planned_start_date) ?? undefined,
+    erpOperationNo: row.erp_operation_no ?? undefined,
+    erpStorageLocationCode: row.erp_storage_location_code ?? undefined,
+    erpReworkFlag: row.erp_rework_flag ?? undefined,
     statusCode: row.status_code,
     acknowledgedAt: ack?.acknowledgedAt.toISOString(),
     acknowledgedBy: ack === undefined ? undefined : id(ack.acknowledgedBy),
@@ -70,9 +83,7 @@ export function productionOrderView(row: ProductionOrderRow, extras: ProductionO
  * `beforeQty` 는 `ORDER_QTY` 일 때만 값이다. `statusName` 은 페이지 단위 조회 맵을 찾을 뿐이다. */
 export function changedFieldsOf(
   rows: readonly ProductionOrderChangeFieldRow[],
-  currentStatusCode: string,
-  currentOrderQty: Prisma.Decimal,
-  currentDueDate: Date | null,
+  current: Pick<ProductionOrderRow, 'status_code' | 'order_qty' | 'planned_start_date' | 'due_date'>,
   statusName: (code: string) => string,
 ): ProductionOrderChangedField[] {
   const byCode = new Map(rows.map((row) => [row.field_code, row]));
@@ -84,18 +95,21 @@ export function changedFieldsOf(
         field: code,
         label,
         beforeText: r.before_order_qty === null ? '' : r.before_order_qty.toString(),
-        afterText: currentOrderQty.toString(),
+        afterText: current.order_qty.toString(),
         beforeQty: r.before_order_qty === null ? null : Number(r.before_order_qty),
       };
     }
+    if (code === 'PLANNED_START_DATE') {
+      return { field: code, label, beforeText: toDateString(r.before_planned_start_date) ?? '', afterText: toDateString(current.planned_start_date) ?? '', beforeQty: null };
+    }
     if (code === 'DUE_DATE') {
-      return { field: code, label, beforeText: toDateString(r.before_due_date) ?? '', afterText: toDateString(currentDueDate) ?? '', beforeQty: null };
+      return { field: code, label, beforeText: toDateString(r.before_due_date) ?? '', afterText: toDateString(current.due_date) ?? '', beforeQty: null };
     }
     return {
       field: code,
       label,
       beforeText: r.before_status_code === null ? '' : statusName(r.before_status_code),
-      afterText: statusName(currentStatusCode),
+      afterText: statusName(current.status_code),
       beforeQty: null,
     };
   });
