@@ -1,5 +1,6 @@
 import { RowTable, Tx } from '../inbound-cycle';
 import { EMPLOYEE, RelayRow, requiredText, text } from '../relay-tables';
+import { businessUnitOf, plantByCode } from './lookup';
 
 /**
  * ERP 사원 → `mdm.department` / `mdm.worker`. ERP 에 부서 마스터가 없어 사원 행의
@@ -84,14 +85,15 @@ async function upsertWorker(tx: Tx, row: RelayRow, departmentId: bigint | null):
 
   const worker = await tx.worker.findUnique({ where: { worker_no: workerNo } });
   if (worker === null) {
-    const plant = await plantOf(tx, plantCodeOf(text(row, 'DEPT_NAME')));
+    const plantCode = plantCodeOf(text(row, 'DEPT_NAME'));
+    const plant = await plantByCode(tx, plantCode);
     await tx.worker.create({
       data: {
         worker_no: workerNo,
         worker_name: workerName,
         name_vi: workerName,
         plant_id: plant.plant_id,
-        business_unit_id: plant.business_unit_id,
+        business_unit_id: businessUnitOf(plantCode, plant),
         department_id: departmentId,
         status_code: status,
         is_active: !resigned,
@@ -117,22 +119,4 @@ async function upsertWorker(tx: Tx, row: RelayRow, departmentId: bigint | null):
       },
     });
   }
-}
-
-/** ⛔ 같은 코드의 공장이 둘이면 어느 쪽인지 정할 수 없다 — 고르지 않고 실패로 남긴다. */
-async function plantOf(
-  tx: Tx,
-  plantCode: string,
-): Promise<{ plant_id: bigint; business_unit_id: bigint }> {
-  const plants = await tx.plant.findMany({
-    where: { plant_code: plantCode },
-    select: { plant_id: true, business_unit_id: true },
-    take: 2,
-  });
-  if (plants.length !== 1) {
-    throw new Error(`공장 ${plantCode} 이 ${plants.length === 0 ? '없다' : '둘 이상이다'}`);
-  }
-  const [plant] = plants;
-  if (plant.business_unit_id === null) throw new Error(`공장 ${plantCode} 에 사업부가 없다`);
-  return { plant_id: plant.plant_id, business_unit_id: plant.business_unit_id };
 }

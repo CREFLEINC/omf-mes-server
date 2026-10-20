@@ -7,6 +7,7 @@ import { commonCodeTable } from './apply/common-code.apply';
 import { employeeTable } from './apply/employee.apply';
 import { itemTable } from './apply/item.apply';
 import { partnerTable } from './apply/partner.apply';
+import { purchaseOrderTable } from './apply/purchase-order.apply';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncRunner } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
@@ -25,15 +26,20 @@ import { SyncLease } from './sync-lease';
       useFactory: (config: ConfigService, prisma: PrismaService): ErpSyncRunner => {
         const settings = erpSyncConfig(config);
         const relay = new RelayClient(settings.relay);
+        // 참조되는 쪽이 앞이다. 전표는 기준정보 회차가 끝난 뒤 같은 줄에서 돈다(실행기가 순서대로).
         const master = {
           name: '기준정보',
-          // 참조되는 쪽이 앞이다.
           tables: [commonCodeTable, employeeTable, itemTable, partnerTable, bomTable],
           intervalMs: settings.masterIntervalMs,
         };
+        const orders = {
+          name: '전표',
+          tables: [purchaseOrderTable],
+          intervalMs: settings.orderIntervalMs,
+        };
         return new ErpSyncRunner(
           settings.enabled,
-          [master],
+          [master, orders],
           new InboundCycle(prisma, relay),
           new SyncLease(prisma),
           relay,

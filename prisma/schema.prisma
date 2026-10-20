@@ -1125,6 +1125,9 @@ model purchase_order {
   version_no                     Int                   @default(1)
   approval_request_id            BigInt?
   source_inbound_receipt_line_id BigInt?
+  erp_order_type_code            String?               @db.VarChar(5)
+  erp_purchase_group_code        String?               @db.VarChar(4)
+  erp_io_type_code               String?               @db.VarChar(5)
   approval_request               approval_request?     @relation(fields: [approval_request_id], references: [approval_request_id], onDelete: NoAction, onUpdate: NoAction)
   business_unit                  business_unit         @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   inbound_receipt_line           inbound_receipt_line? @relation(fields: [source_inbound_receipt_line_id], references: [inbound_receipt_line_id], onDelete: NoAction, onUpdate: NoAction)
@@ -1151,6 +1154,8 @@ model purchase_order_line {
   updated_at             DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by             BigInt?
   version_no             Int                    @default(1)
+  erp_storage_location_code String?   @db.VarChar(7)
+  cancelled_at              DateTime? @db.Timestamptz(6)
   asn_line               asn_line[]
   inbound_receipt_line   inbound_receipt_line[]
   item                   item                   @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)

@@ -6,10 +6,13 @@ export interface ErpSyncConfig {
   enabled: boolean;
   relay: RelayConfig;
   masterIntervalMs: number;
+  orderIntervalMs: number;
 }
 
 /** 기준정보(공통코드·사원·품목·거래처·BOM)는 하루 두 번이면 된다 — 게이트웨이 기본값과 같다. */
 const MASTER_INTERVAL_SEC = 43_200;
+/** 전표(발주·수주·제조오더)는 15분 — ERP 가 넣은 발주를 현장이 그날 안에 받아야 한다. */
+const ORDER_INTERVAL_SEC = 900;
 
 /**
  * ⛔ 켜져 있는데 접속 정보가 비면 부팅에서 죽는다. 조용히 뜨면 ERP 기준정보가 안 들어오는
@@ -37,5 +40,7 @@ export function erpSyncConfig(config: ConfigService): ErpSyncConfig {
     },
     masterIntervalMs:
       (Number(config.get('ERP_SYNC_MASTER_INTERVAL_SEC')) || MASTER_INTERVAL_SEC) * 1000,
+    orderIntervalMs:
+      (Number(config.get('ERP_SYNC_ORDER_INTERVAL_SEC')) || ORDER_INTERVAL_SEC) * 1000,
   };
 }
