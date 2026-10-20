@@ -810,6 +810,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
 
   describe('POP 의 MES W/O 목록 — 설비 미지정 W/O', () => {
     let equipmentId = 0n;
+    let otherEquipmentId = 0n;
     let equippedToken = '';
     const listed: Record<string, number> = {};
 
@@ -820,7 +821,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
           data: { plant_id: plantId, equipment_code: code, equipment_name: code, equipment_type_code: 'PRESS', status_code: 'IN_SERVICE', production_line_id: ids.productionLine },
         });
       equipmentId = (await equipment(`${PREFIX}-EQ`)).equipment_id;
-      const otherEquipmentId = (await equipment(`${PREFIX}-EQ2`)).equipment_id;
+      otherEquipmentId = (await equipment(`${PREFIX}-EQ2`)).equipment_id;
       const equipped = await prisma.terminal.create({
         data: { terminal_code: `${PREFIX}-TD`, plant_id: plantId, terminal_type_code: 'POP', status_code: 'RUNNING', equipment_id: equipmentId },
       });
@@ -890,6 +891,32 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       const response = await list(terminalToken, { plannedEquipmentId: Number(equipmentId) });
 
       expect(response.status).not.toBe(200);
+    });
+
+    /** 단말 토큰만 싣는 생산 쓰기 — 단말 범위(`terminal-production-scope.ts`)를 탄다. */
+    const terminalPost = (path: string, body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', `Bearer ${terminalToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Worker-No', `${PREFIX}-W1`)
+        .send(body);
+    const precheck = (workOrderId: number, equipment: bigint) =>
+      terminalPost('/api/production/precheck-decisions', {
+        workOrderId, equipmentId: Number(equipment), decidedAt: START_AT, controlLevelCode: 'WARN', decisionCode: 'PASSED',
+      });
+
+    it('설비 없는 POP 단말은 W/O 의 계획 설비로 작업 전 점검을 기록한다 — 다른 설비는 막힌다', async () => {
+      await precheck(listed.own, equipmentId).expect(201);
+      expect((await precheck(listed.own, otherEquipmentId)).status).not.toBe(201);
+    });
+
+    it('W/O 에도 설비가 없으면 점검할 설비가 없고, 점검 없이 설비 없는 세션을 연다', async () => {
+      expect((await precheck(listed.unplanned, equipmentId)).status).not.toBe(201);
+
+      const opened = await terminalPost(BASE, { workOrderId: listed.unplanned, startedAt: START_AT }).expect(201);
+      const session = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(opened.body.workSessionId) } });
+      expect(session.equipment_id).toBeNull();
     });
   });
 
@@ -1126,6 +1153,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     // API 로 배포한 W/O 는 선발행 LOT 을 달고 나온다 — 그 사슬을 먼저 지운다.
     await prisma.lot_lifecycle_history.deleteMany({ where: { lot: plantScope } });
     await prisma.lot.deleteMany({ where: plantScope });
+    await prisma.precheck_decision.deleteMany({ where: { work_order: { production_plan: { plan_no: { startsWith: PREFIX } } } } });
     await prisma.work_order.deleteMany({ where: { production_plan: { plan_no: { startsWith: PREFIX } } } });
     await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: PREFIX } } });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });

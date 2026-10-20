@@ -40,7 +40,7 @@ describe('POP production terminal scope', () => {
         routing_operation: { process: { terminal_process: {
           some: { terminal_id: 7n, can_start_work: true },
         } } },
-      }, select: { work_order_id: true },
+      }, select: { work_order_id: true, planned_equipment_id: true },
     });
   });
 
@@ -56,6 +56,40 @@ describe('POP production terminal scope', () => {
     await expect(assertTerminalProductionScope(prisma,
       request({ workOrderId: 11, equipmentId: 5 }, {}, '900028'),
       'POST /production/work-sessions', terminal)).rejects.toMatchObject({ status: 401 });
+  });
+
+  describe('설비 없는 단말의 작업 전 점검·세션 설비', () => {
+    const bare: TerminalContext = { ...terminal, equipmentId: null };
+    const precheck = (equipmentId: unknown, who = bare) =>
+      assertTerminalProductionScope(prisma, request({ workOrderId: 11, equipmentId }, {}, '900028'), 'POST /production/precheck-decisions', who);
+
+    it('설비 없는 단말은 W/O 의 계획 설비로 점검한다 — 다른 설비는 막는다', async () => {
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue({ work_order_id: 11n, planned_equipment_id: 8n });
+      await expect(precheck(8)).resolves.toBeUndefined();
+      await expect(precheck(5)).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('W/O 에도 설비가 없으면 점검할 설비가 없다', async () => {
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue({ work_order_id: 11n, planned_equipment_id: null });
+      await expect(precheck(8)).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('설비 단말은 W/O 계획 설비와 상관없이 자기 설비만이다', async () => {
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue({ work_order_id: 11n, planned_equipment_id: 8n });
+      await expect(precheck(5, terminal)).resolves.toBeUndefined();
+      await expect(precheck(8, terminal)).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('세션 설비도 같은 원칙이다 — 설비 없는 단말·설비 없는 W/O 는 설비 없이 연다', async () => {
+      const start = (body: Record<string, unknown>) =>
+        assertTerminalProductionScope(prisma, request({ workOrderId: 11, ...body }, {}, '900028'), 'POST /production/work-sessions', bare);
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue({ work_order_id: 11n, planned_equipment_id: 8n });
+      await expect(start({ equipmentId: 8 })).resolves.toBeUndefined();
+      await expect(start({ equipmentId: 5 })).rejects.toMatchObject({ status: 401 });
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue({ work_order_id: 11n, planned_equipment_id: null });
+      await expect(start({})).resolves.toBeUndefined();
+      await expect(start({ equipmentId: 8 })).rejects.toMatchObject({ status: 401 });
+    });
   });
 
   it('requires its own work session for read events and writes', async () => {
