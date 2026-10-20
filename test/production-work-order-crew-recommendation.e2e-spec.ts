@@ -71,7 +71,7 @@ describe('4M 교대·작업자 추천 (e2e)', () => {
   const recommend = (workOrderId: bigint) =>
     request(app.getHttpServer()).get(`/api/production/work-orders/${workOrderId}/resource-recommendations`).set('Cookie', cookie).expect(200);
 
-  it('1. 교대는 공장의 활성 교대 전부이고, 같은 설비가 같은 근무일에 쓰는 교대가 뒤로 간다', async () => {
+  it('1. 교대는 공장의 활성 교대 전부이고, 같은 설비가 같은 근무일에 쓰는 교대가 뒤로 간다 — 취소·완료 W/O 는 교대를 붙잡지 않는다', async () => {
     const response = await recommend(targetId);
 
     expect(validator('GET /production/work-orders/{workOrderId}/resource-recommendations')(response.body)).toBe(true);
@@ -165,6 +165,8 @@ describe('4M 교대·작업자 추천 (e2e)', () => {
     await workOrder({ line: ids.line, equipment: ids.equipment, shift: ids.dayShift, start: day, end: hanoi('2026-11-02T20:00:00'), worker: workers.onEquipment });
     // 같은 설비·같은 근무일·야간이지만 취소 — 야간은 비어 있다. 다른 공장 사람은 추천하지 않는다.
     await workOrder({ line: ids.line, equipment: ids.equipment, shift: ids.nightShift, start: hanoi('2026-11-02T21:00:00'), status: 'CANCELLED', worker: workers.far });
+    // 같은 설비·같은 근무일·야간이지만 완료 — 끝난 일은 교대를 붙잡지 않는다.
+    await workOrder({ line: ids.line, equipment: ids.equipment, shift: ids.nightShift, start: hanoi('2026-11-02T22:00:00'), status: 'COMPLETED' });
     // 비활성 작업자 — 설비 이력이라도 빠진다.
     await workOrder({ line: ids.line, equipment: ids.equipment, start: hanoi('2026-10-01T08:00:00'), worker: workers.inactive });
     // 같은 라인(설비 없음) — 앞 출처에 나온 사람은 다시 넣지 않는다.
