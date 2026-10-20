@@ -10,3 +10,7 @@ allowBuilds:
   '@swc/core': true
   # 사용 분석 전송 — 대외비 프로젝트라 차단한다
   '@scarf/scarf': false
+
+# mssql(ERP 중계 DB 드라이버)의 하위 의존. 최근 판이 며칠 간격으로 나와 2주 이상 지난 판으로 묶는다.
+overrides:
+  tedious: 20.3.3
