@@ -1,0 +1,225 @@
+{
+  "status": "interim-server-implementation-baseline",
+  "generatedOn": "2026-09-17",
+  "designContractCommit": "a6a87e144116ebaa32c01df5a12a0fd2924427e7",
+  "serverVersion": "v0.1.3-next",
+  "serverCommit": "2e9f234b4a4937704fb2d48195215787c3289164",
+  "operationCounts": {
+    "contract": 494,
+    "available": 493,
+    "implemented": 484,
+    "notImplemented": 1,
+    "partial": 9
+  },
+  "authentication": {
+    "scheme": "omfSession",
+    "cookieName": "omf_session",
+    "anonymousOperations": [
+      "POST /app/sessions"
+    ],
+    "protectedAvailableOperations": 492
+  },
+  "notImplementedOperations": [
+    {
+      "operation": "GET /app/dashboard-summary",
+      "reason": "집계 대상 도메인 완성 뒤 구현하기로 이번 루틴에서 제외했다."
+    }
+  ],
+  "partialOperations": [
+    {
+      "operation": "GET /app/document-issues/{documentIssueLogId}/rendition",
+      "limitation": "MATERIAL_LOT_LABEL·PRODUCTION_LOT_LABEL·LOCATION_LABEL 세 유형만 그린다(png·tspl 둘 다). 다른 문서 유형은 422다. ⛔ DELIVERY_LABEL도 422다 — 서버가 그리지 않고 POP이 출하 단위 상세의 값으로 그린다(SHIP-UNIT-01). 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다."
+    },
+    {
+      "operation": "POST /app/document-issues",
+      "limitation": "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 마감된 출하 단위(SHIPPING_UNIT)에만 붙고 그 밖은 422 STATE_LOCKED다 — 종전의 「항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다(SHIP-UNIT-01). 나머지 지원 조합만 기록을 생성한다."
+    },
+    {
+      "operation": "POST /planning/production-orders/{productionOrderId}:resync",
+      "limitation": "재송신 대상을 가르는 축이 없어 재송신 자체는 수행하지 않는다."
+    },
+    {
+      "operation": "POST /production/work-orders/{workOrderId}:close",
+      "limitation": "연동 메시지는 아웃박스 적재까지만 수행한다."
+    },
+    {
+      "operation": "POST /logistics/shipments/{shipmentId}:confirm",
+      "limitation": "연동 메시지는 아웃박스 적재까지만 수행한다."
+    },
+    {
+      "operation": "PUT /app/notification-subscriptions",
+      "limitation": "zaloEnabled 값은 저장하지만 실제 Zalo 발송 경로는 없다."
+    },
+    {
+      "operation": "GET /app/printers",
+      "limitation": "실제 프린터 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다."
+    },
+    {
+      "operation": "POST /maintenance/results",
+      "limitation": "closed=true와 resetCounter=true는 항상 422 INVALID다. 마감하지 않고 누계를 초기화하지 않는 실적만 등록한다."
+    },
+    {
+      "operation": "PUT /maintenance/results/{maintenanceResultId}",
+      "limitation": "closed=true는 항상 422 INVALID다. 마감 전 실적 수정만 처리한다."
+    }
+  ],
+  "knownDifferenceRecords": [
+    {
+      "id": "074",
+      "operations": [
+        "GET /quality/defect-records",
+        "GET /quality/defect-records/distribution"
+      ],
+      "summary": "detectedFrom·detectedTo가 모두 없거나 한쪽만 있으면 서버는 400 REQUIRED를 반환한다."
+    },
+    {
+      "id": "122",
+      "operations": [
+        "POST /logistics/stock-transfers"
+      ],
+      "summary": "reasonCode·remarks를 요청으로 받지 않는다. 알 수 없는 키로 보내도 계약 검증상 저장되지 않는다."
+    },
+    {
+      "id": "186",
+      "operations": [
+        "GET /quality/nonconformances",
+        "GET /quality/disposition-candidates",
+        "GET /quality/nonconformances/{nonconformanceId}/disposition-decisions",
+        "GET /quality/disposition-decisions",
+        "GET /quality/concessions"
+      ],
+      "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+    },
+    {
+      "id": "201",
+      "operations": [
+        "GET /logistics/sales-orders",
+        "GET /logistics/shipment-requests",
+        "GET /logistics/shipment-requests/summary",
+        "GET /logistics/shipment-lot-allocations"
+      ],
+      "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+    },
+    {
+      "id": "217",
+      "operations": [
+        "GET /logistics/goods-issues",
+        "POST /logistics/shipments"
+      ],
+      "summary": "출하가 만든 GoodsIssue 응답은 sourceDocumentTypeCode=SHIPMENT를 반환할 수 있다."
+    },
+    {
+      "id": "218",
+      "operations": [
+        "GET /trace/lot-status-events",
+        "POST /logistics/stock-reinstatements"
+      ],
+      "summary": "LOT 상태 이력 응답은 C17~C20 및 원천 유형 DISPOSITION_DECISION·STOCK_TRANSFER를 반환할 수 있지만 transitionCode 질의는 아직 C17~C20을 거부한다."
+    },
+    {
+      "id": "219",
+      "operations": [
+        "GET /logistics/shipments"
+      ],
+      "summary": "shipDateFrom은 hasUnassignedPackedBox=true를 함께 줄 때만 «선택»이고 그 밖에는 필수다. 정렬 키는 shippedAt·shipmentNo만 허용한다. 잘못된 요청은 400이다."
+    },
+    {
+      "id": "221",
+      "operations": [
+        "POST /logistics/shipments",
+        "POST /logistics/stock-reinstatements"
+      ],
+      "summary": "긴급 직행과 재등록은 창고 관리 수준에 따라 위치 입력을 검증하며 409 응답에는 conflictCause가 항상 포함된다."
+    },
+    {
+      "id": "222",
+      "operations": [
+        "GET /quality/disposition-decisions",
+        "POST /logistics/stock-reinstatements"
+      ],
+      "summary": "재등록 진입 목록의 followUpPending·reinstatable 축이 아직 한 개의 완결된 대기열을 만들지 못한다."
+    },
+    {
+      "id": "273",
+      "operations": [
+        "GET /inventory/counts/{inventoryCountId}/lines",
+        "PUT /inventory/counts/{inventoryCountId}/lines"
+      ],
+      "summary": "블라인드 실사는 counted 값과 관계없이 systemQty를 생략한다. 미실사 여부는 counted=false로 판정한다."
+    },
+    {
+      "id": "109",
+      "operations": [
+        "POST /maintenance/downtimes/{downtimeId}:close"
+      ],
+      "summary": "종료시각은 클라이언트 발생시각이 아니라 서버의 최초 처리시각이다. 같은 멱등 키 재전송은 최초 시각을 유지한다."
+    },
+    {
+      "id": "113·114",
+      "operations": [
+        "POST /maintenance/results",
+        "PUT /maintenance/results/{maintenanceResultId}"
+      ],
+      "summary": "closed=true와 resetCounter=true의 의미가 확정되지 않아 서버가 해당 입력을 422로 거부한다."
+    },
+    {
+      "id": "사용자결정 2026-09-12",
+      "operations": [
+        "POST /app/users",
+        "POST /app/sessions"
+      ],
+      "summary": "등록이 초기 비밀번호까지 만든다. AppUserCreate.password를 보내면 그 값으로 정해지고 강제 변경이 걸리지 않으며, 생략하면 응답 temporaryPassword로 임시 비밀번호가 한 번만 내려오고 Session.mustChangePassword가 true가 된다."
+    },
+    {
+      "id": "I-27",
+      "operations": [
+        "POST /app/document-issues"
+      ],
+      "summary": "IDENTIFICATION_TAG 발행 입력은 현재 서버가 422 STATE_LOCKED로 거부한다. DELIVERY_LABEL은 SHIP-UNIT-01 로 대상이 출하 단위(SHIPPING_UNIT)가 되어 마감된 단위에 발행된다."
+    }
+  ],
+  "files": [
+    {
+      "file": "openapi/app-공통.json",
+      "sourceSha256": "27ff5e8463a3a7f40020b53c6e80b67c36975bb7e292e0282bd27df68add831a",
+      "generatedSha256": "fe8cdcce0c128a8cac136fac9bb7fa17ab9b6be02370e66475b328f6f89fb506",
+      "operations": 49
+    },
+    {
+      "file": "openapi/equipment-05설비툴.json",
+      "sourceSha256": "2578f107c672eafc730e2ac7188f71c7d92514fd90087e89f788aacb34ed0e7e",
+      "generatedSha256": "7f1b748bdb52c9da896b4a093413b5b463018eca6165bb09efb965bf3d542c72",
+      "operations": 36
+    },
+    {
+      "file": "openapi/logistics-01자재창고.json",
+      "sourceSha256": "1465803c5d96b3ff8a909ed1e2e0d79d830ef25ea9c2435b17c49049a1c888d9",
+      "generatedSha256": "9271742a8119c8624f0ad5883de8058d4c06e734009d0a9c6b3a584c9597f438",
+      "operations": 90
+    },
+    {
+      "file": "openapi/mdm-기준정보.json",
+      "sourceSha256": "f111d69ec8e671e246960e6e1393baad97e1b5441ab616c516db64ea9f620402",
+      "generatedSha256": "a84e91d19c4f5adc1466206f15df75a19cea13d5a8687a96040ecb456011a41f",
+      "operations": 211
+    },
+    {
+      "file": "openapi/production-02생산실행.json",
+      "sourceSha256": "9c5ca88286c92fe8a5a2cfe62d0d1f329564039fb61850a8f301679e8f9fd767",
+      "generatedSha256": "f638d66712838880d2ff3f247b4865774657d7520315878963bea01476712f08",
+      "operations": 53
+    },
+    {
+      "file": "openapi/quality-03품질.json",
+      "sourceSha256": "62a3b06b7df8558c35b2386fd84f87c8cb1b943dc70eaffa18ab918372db0c25",
+      "generatedSha256": "92e8d35b2b4ca247a6749c77fb41e111a782c319430f502575d0674a80ec821f",
+      "operations": 27
+    },
+    {
+      "file": "openapi/shipment-04제품출하.json",
+      "sourceSha256": "199ba47342bc6643d5a5f67b5d53b16697ca780a29f912c3434580759e5d2d28",
+      "generatedSha256": "cfdf6d378b4d4ea8d40309f93004959442eeaefba3fe783b4636d26b17730a62",
+      "operations": 28
+    }
+  ]
+}
