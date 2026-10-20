@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { IdempotencyModule } from '../common/idempotency';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ErpSyncModule } from './erp/erp-sync.module';
 import { InterfaceDefinitionController } from './interface/interface-definition.controller';
 import {
   IntegrationMessageBatchController,
@@ -17,7 +18,7 @@ import { InterfaceDefinitionService } from './interface/interface-definition.ser
  * (`docs/server-architecture.md` §1 「모듈 배치는 계약 경로를 따른다」)
  */
 @Module({
-  imports: [PrismaModule, IdempotencyModule],
+  imports: [PrismaModule, IdempotencyModule, ErpSyncModule],
   controllers: [
     InterfaceDefinitionController,
     IntegrationMessageBatchController,

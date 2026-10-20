@@ -41,7 +41,8 @@ export class InboundCycle {
     private readonly relay: RelayClient,
   ) {}
 
-  async run(table: InboundTable): Promise<InboundResult> {
+  /** `afterBatch` 는 묶음마다 부른다 — 실행기가 리스를 늘리고 멈출 때인지 보는 자리다. */
+  async run(table: InboundTable, afterBatch?: () => Promise<void>): Promise<InboundResult> {
     const { source } = table;
     const quarantined = await this.quarantined(source);
     const blocked = new Set(quarantined.values());
@@ -76,6 +77,7 @@ export class InboundCycle {
       }
 
       await this.relay.ack(source, applied);
+      await afterBatch?.();
       if (rows.length < BATCH_SIZE) break;
     }
 

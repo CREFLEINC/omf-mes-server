@@ -69,6 +69,16 @@ x-api: &api
     TZ: UTC
     # 상수다 — .env.prod 로 빼지 않는다. 빠지면 첨부 올리기·내려받기가 503 이다.
     ATTACHMENT_STORAGE_ROOT: *attachment-root
+    # ERP 연동. 기본은 꺼짐이고, 켜면 접속 정보가 비었을 때 api 가 기동하지 않는다.
+    # ⛔ CORS_ORIGINS 와 같은 이유로 여기 적어야 컨테이너가 본다.
+    ERP_SYNC_ENABLED: ${ERP_SYNC_ENABLED:-false}
+    ERP_DB_HOST: ${ERP_DB_HOST:-}
+    ERP_DB_PORT: ${ERP_DB_PORT:-1433}
+    ERP_DB_USER: ${ERP_DB_USER:-}
+    ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:-}
+    ERP_DB_NAME: ${ERP_DB_NAME:-}
+    ERP_DB_ENCRYPT: ${ERP_DB_ENCRYPT:-true}
+    ERP_SYNC_MASTER_INTERVAL_SEC: ${ERP_SYNC_MASTER_INTERVAL_SEC:-43200}
   # 두 쪽이 «같은» 볼륨을 건다 — 전환 뒤에도 올린 파일을 그대로 내려받는다.
   # 파일은 uuid 키에 새 파일로만 쓰고 DB 행은 쓴 뒤 커밋되므로 함께 떠 있어도 안전하다.
   volumes:
