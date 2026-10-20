@@ -49,6 +49,10 @@ function fake(rows: RelayRow[], seed: { messages?: Message[] } = {}) {
         .sort((a, b) => compare(key(a), key(b)))
         .slice(0, limit);
     },
+    writeError: async (_: RelayTable, id: number, message: string) => {
+      relayInTx ||= inTx;
+      calls.push(`error ${id} ${message}`);
+    },
     ack: async (_: RelayTable, ids: number[]) => {
       relayInTx ||= inTx;
       calls.push(`ack ${ids.join(',')}`);
@@ -133,6 +137,14 @@ describe('InboundCycle', () => {
       status_code: MESSAGE_STATUS.DONE,
       payload: { key: 'A', seq: 1, row: row(1, 'A') },
     });
+  });
+
+  it('실패 사유는 표시를 마친 뒤 원본 행에 남긴다', async () => {
+    const f = fake([row(1, 'A'), row(2, 'B')]);
+
+    await f.cycle.run(table(['B']));
+
+    expect(f.calls).toEqual(['fetch', 'ack 1', 'error 2 B 반영 실패']);
   });
 
   it('앞 판이 실패한 업무 키의 뒤 판은 반영도 표시도 하지 않는다', async () => {

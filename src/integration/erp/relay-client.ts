@@ -55,9 +55,28 @@ export class RelayClient {
       request.input(`id${index}`, mssql.BigInt, id);
       return `@id${index}`;
     });
+    const applied = isSnd(table)
+      ? `, MES_APPLY_DT = GETDATE(), MES_APPLY_ERROR = NULL${touched(request)}`
+      : '';
     await request.query(
-      `UPDATE dbo.${table.name} SET ${table.flagColumn} = 'Y' ` +
+      `UPDATE dbo.${table.name} SET ${table.flagColumn} = 'Y'${applied} ` +
         `WHERE MES_INF_ID IN (${params.join(', ')}) AND ${table.flagColumn} = 'N'`,
+    );
+  }
+
+  /**
+   * 반영 실패 사유를 원본 행에 남긴다 — 플래그는 'N' 그대로라 다음 회차에 다시 잡힌다
+   * (중계 DB 규약에 실패 플래그 값이 없다). TIG_DOWN 계열은 사유 칸이 없어 MES 기록에만 남는다.
+   */
+  async writeError(table: RelayTable, id: number, message: string): Promise<void> {
+    if (!isSnd(table)) return;
+    const request = (await this.connect()).request();
+    request.input('id', mssql.BigInt, id);
+    // varchar(500) 이다. 넘치면 UPDATE 가 통째로 실패한다.
+    request.input('error', mssql.VarChar(500), message.slice(0, 500));
+    await request.query(
+      `UPDATE dbo.${table.name} SET MES_APPLY_ERROR = @error${touched(request)} ` +
+        `WHERE MES_INF_ID = @id AND ${table.flagColumn} = 'N'`,
     );
   }
 
@@ -89,6 +108,16 @@ export class RelayClient {
       });
     return this.pool;
   }
+}
+
+function isSnd(table: RelayTable): boolean {
+  return table.flagColumn === 'MES_APPLY_FLAG';
+}
+
+/** SND 계열은 행을 고친 쪽을 남긴다(NOT NULL). ERP 쪽에서 «MES 가 손댄 행»으로 보인다. */
+function touched(request: mssql.Request): string {
+  request.input('updtUser', mssql.VarChar(20), 'MES');
+  return ', UPDT_USER_ID = @updtUser, UPDT_DT = GETDATE()';
 }
 
 /**

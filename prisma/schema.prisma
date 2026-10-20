@@ -1890,6 +1890,8 @@ model item {
   name_ko                                              String?                              @db.VarChar(200)
   name_vi                                              String?                              @db.VarChar(200)
   lot_controlled                                       Boolean                              @default(false)
+  erp_spec                                             String?
+  erp_item_group_code                                  String?                              @db.VarChar(10)
   operation_policy                                     operation_policy[]
   outbound_item_setting                                outbound_item_setting[]
   handling_unit_content                                handling_unit_content[]

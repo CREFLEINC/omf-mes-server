@@ -41,6 +41,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'SEMI_FINISHED', codeName: '반제품', order: 20 },
       { code: 'FINISHED', codeName: '제품', order: 30 },
       { code: 'MERCHANDISE', codeName: '상품', order: 40 },
+      // ERP 품목계정 35. 원자재에 합치면 ERP 로 돌려보낼 때 구분을 잃는다.
+      { code: 'SUBSIDIARY_MATERIAL', codeName: '부자재', order: 50 },
     ],
     retired: ['DEV'],
   },
@@ -1607,6 +1609,12 @@ const UOMS = [
   { code: 'M', name: '미터', scale: 3 },
   { code: 'BOX', name: '박스', scale: 0 },
   { code: 'PLT', name: '파렛트', scale: 0 },
+  // ERP 단위를 글자 그대로 둔다 — 실적을 ERP 로 돌려보낼 때 G·EA 로 바꿔 두면 되돌려야 한다.
+  // 이름은 운영 초기 데이터(`deploy/seed/mes-initial-data.sql`)와 같게 — 둘 다 돌아도 덮지 않게.
+  { code: 'GR', name: '그램(ERP)', scale: 3 },
+  { code: 'PC', name: '개(ERP)', scale: 0 },
+  { code: 'M2', name: '제곱미터', scale: 3 },
+  { code: 'SH', name: '장', scale: 0 },
 ];
 
 async function main(): Promise<void> {

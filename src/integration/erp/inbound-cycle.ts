@@ -55,6 +55,7 @@ export class InboundCycle {
       after = orderColumns(source).map((column) => rows[rows.length - 1][column]);
 
       const applied: number[] = [];
+      const failures: [number, string][] = [];
       for (const row of rows) {
         const key = businessKey(source, row);
         if (quarantined.has(row.MES_INF_ID) || blocked.has(key)) {
@@ -72,11 +73,12 @@ export class InboundCycle {
         } catch (error) {
           blocked.add(key);
           result.failed += 1;
-          await recordFailure(this.prisma, source, row, error);
+          failures.push([row.MES_INF_ID, await recordFailure(this.prisma, source, row, error)]);
         }
       }
 
       await this.relay.ack(source, applied);
+      for (const [id, message] of failures) await this.relay.writeError(source, id, message);
       await afterBatch?.();
       if (rows.length < BATCH_SIZE) break;
     }
@@ -147,7 +149,7 @@ async function recordFailure(
   source: RelayTable,
   row: RelayRow,
   error: unknown,
-): Promise<void> {
+): Promise<string> {
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
   const payload = payloadOf(source, row);
   await prisma.integration_message.upsert({
@@ -170,4 +172,5 @@ async function recordFailure(
       last_error_message: message,
     },
   });
+  return message;
 }
