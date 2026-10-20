@@ -148,6 +148,7 @@ export class PurchaseOrderService {
       where: { purchase_order_id: purchaseOrderId },
     });
     if (!current) throw new NotFoundException('없는 P/O 입니다.');
+    assertMesOwned(current.erp_purchase_order_no);
     if (current.status_code !== 'REGISTERED') {
       throw new ContractException(HttpStatus.BAD_REQUEST, [
         field('statusCode', ERROR_CODE.STATE_LOCKED, '작성중 상태에서만 수정할 수 있습니다.'),
@@ -199,9 +200,10 @@ export class PurchaseOrderService {
     const lines = await this.prisma.$transaction(async (tx) => {
       const current = await tx.purchase_order.findUnique({
         where: { purchase_order_id: purchaseOrderId },
-        select: { status_code: true },
+        select: { status_code: true, erp_purchase_order_no: true },
       });
       if (!current) throw new NotFoundException('없는 P/O 입니다.');
+      assertMesOwned(current.erp_purchase_order_no);
       if (current.status_code !== 'REGISTERED') {
         throw new ContractException(HttpStatus.BAD_REQUEST, [
           field('statusCode', ERROR_CODE.STATE_LOCKED, '작성중 상태에서만 라인을 고칠 수 있습니다.'),
@@ -386,6 +388,19 @@ export class PurchaseOrderService {
       ]);
     }
   }
+}
+
+/** ERP 에서 받은 발주는 고칠 수 없다 — 고쳐도 다음 ERP 판이 덮는다(사용자 결정 2026-10-20). */
+function assertMesOwned(erpPurchaseOrderNo: string | null): void {
+  if (erpPurchaseOrderNo === null) return;
+  // 400 이다 — 재로드해도 풀리지 않는 잠김이다(부서 `assertMesOwned` 와 같은 모양).
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    {
+      scope: 'screen',
+      code: ERROR_CODE.STATE_LOCKED,
+      message: '기간계에서 받은 발주라 고칠 수 없습니다.',
+    },
+  ]);
 }
 
 function field(name: string, code: string, message: string): ErrorItem {
