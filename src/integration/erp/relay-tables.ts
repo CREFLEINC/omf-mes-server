@@ -51,6 +51,14 @@ export const ITEM: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
+export const PARTNER: RelayTable = {
+  interfaceCode: 'IF-ERP-BP-RECV',
+  name: 'T_IF_SND_BIZ_PARTNER_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['BP_CD'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];
