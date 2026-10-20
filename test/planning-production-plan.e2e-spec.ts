@@ -45,7 +45,7 @@ describe('생산 계획 조회 · CRUD (e2e)', () => {
 
   let orderAId = 0;
   let orderBId = 0;
-  let orderWId = 0; // POST·PUT·DELETE 전용 P/O — 목록 테스트와 겹치지 않는다.
+  let orderWId = 0; // POST·PUT·DELETE 전용 ERP W/O — 목록 테스트와 겹치지 않는다.
   let uomId = 0;
   let bomId = 0;
   let routingId = 0;

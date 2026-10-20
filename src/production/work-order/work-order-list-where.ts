@@ -114,7 +114,7 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     eq('planned_equipment_id', query.plannedEquipmentId),
     eq('work_order_type_code', query.workOrderTypeCode),
     plannedStartWhere(query.plannedStartFrom, query.plannedStartTo),
-    // ⛔ P/O 번호는 이 축으로 검색되지 않는다(계약 자인) — `work_order_no` 만 본다.
+    // ⛔ ERP W/O 번호는 이 축으로 검색되지 않는다(계약 자인) — `work_order_no` 만 본다.
     query.q === undefined ? {} : { work_order_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
   ].filter((clause) => Object.keys(clause).length > 0);
   return clauses.length === 0 ? {} : { AND: clauses };

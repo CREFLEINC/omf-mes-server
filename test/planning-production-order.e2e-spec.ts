@@ -1,9 +1,9 @@
 /**
- * P/O(생산오더, ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④) +
+ * ERP W/O(ERP 수신) 조회 2건(I-24 PR ①) + `:acknowledge`·`:resync`(PR ④) +
  * 권한 403 6건(PR ③ — `:confirm` 이 서고 나서야 여섯을 한자리에서 물을 수 있다) +
  * 테스트용 등록 `POST`(장부 P-30).
  *
- * ⛔ P/O 는 이 시스템이 만들지 않는다(수신기 부재 · I-24.md §2-2) — `prisma` 로 직접
+ * ⛔ ERP W/O 는 이 시스템이 만들지 않는다(수신기 부재 · I-24.md §2-2) — `prisma` 로 직접
  * INSERT 한다. `production_order_change_field`·`production_order_acknowledgement` 도 같다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -27,7 +27,7 @@ const ROLE = 'E2E_PO24';
 /** 권한이 한 줄도 없는 계정 — 403 여섯 갈래 검사용(§8-4 21). */
 const STRANGER_ID = 'e2e-po24-stranger';
 const STRANGER_ROLE = 'E2E_PO24_STRANGER';
-/** R-11 — `{인터페이스}:{P/O id}:{멱등키}`. 문서번호를 쓰지 않는다. */
+/** R-11 — `{인터페이스}:{ERP W/O id}:{멱등키}`. 문서번호를 쓰지 않는다. */
 const RESYNC_KEY_PREFIX = 'IF-PO-RESYNC-REQUEST:';
 
 interface ChangedField {
@@ -51,7 +51,7 @@ function validator(operation: string, status = 200): ValidateFunction {
   return ajv.compile({ $ref: `https://omf-mes.invalid/contract#${pointer}` });
 }
 
-describe('P/O 조회 (e2e)', () => {
+describe('ERP W/O 조회 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
@@ -72,7 +72,7 @@ describe('P/O 조회 (e2e)', () => {
   let orderChangeFullId = 0;
   let orderChangeEmptyId = 0;
 
-  // PR ④ — 확인·재동기용. 확인은 W/O 를 고치므로 시험마다 P/O 를 따로 둔다.
+  // PR ④ — 확인·재동기용. 확인은 MES W/O 를 고치므로 시험마다 ERP W/O 를 따로 둔다.
   let ackApplyOrderId = 0;
   let ackEmptyOrderId = 0;
   let ackBadOrderId = 0;
@@ -145,7 +145,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(ids).toEqual([orderMainId]);
     });
 
-    it('3. q 가 P/O 번호 부분일치다', async () => {
+    it('3. q 가 ERP W/O 번호 부분일치다', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
         .query({ businessUnitId: mainBusinessUnitId, q: 'MAIN' })
@@ -156,7 +156,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(ids).toEqual([orderMainId]);
     });
 
-    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP P/O 는 납기가 없다', async () => {
+    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP ERP W/O 는 납기가 없다', async () => {
       const day = (text: string): Date => new Date(`${text}T00:00:00.000Z`);
       // 만든 순서(id 순)와 기대 순서를 일부러 어긋나게 둔다.
       const rows: [string, Date | null, Date | null][] = [
@@ -209,7 +209,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(response.body.plannedWorkOrderCount).toBe(3);
     });
 
-    it('6. 계획이 없는 P/O 는 0/0 이다', async () => {
+    it('6. 계획이 없는 ERP W/O 는 0/0 이다', async () => {
       const response = await request(app.getHttpServer())
         .get(`/api/planning/production-orders/${orderMainId}`)
         .set('Cookie', cookie)
@@ -222,7 +222,7 @@ describe('P/O 조회 (e2e)', () => {
 
   describe('includeChildren', () => {
     // 계약이 「**참이면** 필터·page·size·total 은 «루트 P/O» 기준」이라 한정했다 — 거짓은 루트로
-    // 안 세는 «평면 목록»이다. 자식에 도달할 질의 칸이 0이라 루트만 내면 자식 P/O 가 어떤 질의로도
+    // 안 세는 «평면 목록»이다. 자식에 도달할 질의 칸이 0이라 루트만 내면 자식 ERP W/O 가 어떤 질의로도
     // 안 보인다(I-24 리뷰 #274 §5 — 계획서 §8-4 7번 이름을 이 판정으로 정정했다).
     it('7. includeChildren 미지정은 필터 그대로의 평면 목록이다 — 자식도 실린다', async () => {
       const response = await request(app.getHttpServer())
@@ -304,7 +304,7 @@ describe('P/O 조회 (e2e)', () => {
   });
 
   describe('unacknowledgedOnly', () => {
-    it('13. 미확인 P/O 를 낸다', async () => {
+    it('13. 미확인 ERP W/O 를 낸다', async () => {
       const response = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
         .query({ businessUnitId: mainBusinessUnitId, unacknowledgedOnly: true })
@@ -346,7 +346,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(response.body.acknowledgedAt).toBeDefined();
       expect(response.body.acknowledgeDecisionCode).toBe('APPLY');
       expect(response.body.acknowledgedBy).toBeDefined();
-      // ⑨ P/O 의 version_no 는 안 오른다 — 같은 토큰으로 다시 확인할 수 있다.
+      // ⑨ ERP W/O 의 version_no 는 안 오른다 — 같은 토큰으로 다시 확인할 수 있다.
       expect(response.body.versionNo).toBe(1);
       expect(validator('POST /planning/production-orders/{productionOrderId}:acknowledge')(response.body)).toBe(true);
 
@@ -412,7 +412,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(untouched?.version_no).toBe(1);
     });
 
-    it('18. 본문 versionNo 어긋남은 409 user · P/O If-Match 어긋남은 409 erpSync 다', async () => {
+    it('18. 본문 versionNo 어긋남은 409 user · ERP W/O If-Match 어긋남은 409 erpSync 다', async () => {
       const byBody = await request(app.getHttpServer())
         .post(`/api/planning/production-orders/${ackVersionOrderId}:acknowledge`)
         .set('Cookie', cookie)
@@ -485,7 +485,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(rows[0].message_key.length).toBeLessThanOrEqual(150);
     });
 
-    it('같은 P/O 를 다른 멱등키로 두 번 부르면 행이 2건이다 — 요청 1건 = 행 1건(R-11)', async () => {
+    it('같은 ERP W/O 를 다른 멱등키로 두 번 부르면 행이 2건이다 — 요청 1건 = 행 1건(R-11)', async () => {
       await request(app.getHttpServer())
         .post(`/api/planning/production-orders/${resyncOrderId}:resync`)
         .set('Cookie', cookie)
@@ -497,7 +497,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(rows).toHaveLength(2);
     });
 
-    it('20. 없는 P/O 의 :resync 는 404 다', async () => {
+    it('20. 없는 ERP W/O 의 :resync 는 404 다', async () => {
       await request(app.getHttpServer())
         .post('/api/planning/production-orders/999999999:resync')
         .set('Cookie', cookie)
@@ -524,7 +524,7 @@ describe('P/O 조회 (e2e)', () => {
     });
   });
 
-  describe('등록 — 테스트용 P/O(장부 P-30)', () => {
+  describe('등록 — 테스트용 ERP W/O(장부 P-30)', () => {
     const post = (body: object) =>
       request(app.getHttpServer())
         .post('/api/planning/production-orders')
@@ -560,7 +560,7 @@ describe('P/O 조회 (e2e)', () => {
       expect(response.body.lastChange).toBeUndefined();
       expect(validator('POST /planning/production-orders', 201)(response.body)).toBe(true);
 
-      // 등록한 P/O 가 목록에 뜬다 — 계획 화면이 여기서 고른다.
+      // 등록한 ERP W/O 가 목록에 뜬다 — 계획 화면이 여기서 고른다.
       const list = await request(app.getHttpServer())
         .get('/api/planning/production-orders')
         .query({ plantId: createPlantId })
@@ -571,7 +571,7 @@ describe('P/O 조회 (e2e)', () => {
       );
     });
 
-    it('23. 409 — 같은 생산오더 번호는 DUPLICATE_KEY 다', async () => {
+    it('23. 409 — 같은 ERP W/O 번호는 DUPLICATE_KEY 다', async () => {
       const response = await post({ productionOrderNo: `${PREFIX}-PO-MAIN`, plantId: createPlantId, itemId, orderQty: 1 }).expect(409);
       expect(response.body).toMatchObject({ code: 'DUPLICATE_KEY', conflictCause: 'user' });
     });
@@ -629,7 +629,7 @@ describe('P/O 조회 (e2e)', () => {
       data: { item_code: `${PREFIX}-IT`, item_name: 'PO조회검사품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
     });
     itemId = Number(item.item_id);
-    // 하위 P/O(전개 레벨)의 품목 — 루트와 다른 품목이라 itemId 필터가 자연히 하위를 뺀다(§8-4 7).
+    // 하위 ERP W/O(전개 레벨)의 품목 — 루트와 다른 품목이라 itemId 필터가 자연히 하위를 뺀다(§8-4 7).
     const componentItem = await prisma.item.create({
       data: { item_code: `${PREFIX}-CI`, item_name: 'PO조회검사구성품', item_type_code: 'RAW_MATERIAL', base_uom_id: uom.uom_id, lot_controlled: true },
     });

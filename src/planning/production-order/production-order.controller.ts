@@ -13,7 +13,7 @@ import { ProductionOrderDetailQuery, ProductionOrderListQuery, ProductionOrderSe
 import { ProductionOrderView } from './production-order-view';
 import { ResyncService } from './resync.service';
 
-/** P/O 조회 2건(PR ①) + `:acknowledge`·`:resync`(PR ④) + 테스트용 등록(P-30). */
+/** ERP W/O 조회 2건(PR ①) + `:acknowledge`·`:resync`(PR ④) + 테스트용 등록(P-30). */
 @Controller('planning/production-orders')
 export class ProductionOrderController {
   constructor(

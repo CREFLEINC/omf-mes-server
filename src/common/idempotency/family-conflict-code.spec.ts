@@ -130,7 +130,7 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // +1 — `POST /logistics/stock-reinstatements`(I-23 PR ⑧). ⭐ 이로써 계열 43건이 다 넘긴다.
     // 이행 공장 지정 PUT도 409 계열 봉투 code를 넘긴다: 43 → 44.
     // SHIP-UNIT-01 출하 단위 마감(`:close`)이 계열 409 를 쓴다(장부 P-24): 44 → 45.
-    // 테스트용 P/O 등록이 계열 409(`DUPLICATE_KEY`)를 쓴다(장부 P-30): 45 → 46.
+    // 테스트용 ERP W/O 등록이 계열 409(`DUPLICATE_KEY`)를 쓴다(장부 P-30): 45 → 46.
     // 재작업 W/O 발행이 계열 409(`DISPOSITION_QTY_EXCEEDED`·`INVALID_STATE`)를 쓴다(장부 P-33): 46 → 47.
     expect(sites.filter((site) => site.passes)).toHaveLength(47);
   });

@@ -12,7 +12,7 @@ import { PreIssuedLotSummaryView, WorkOrderProgressView } from './work-order-pro
  * ⛔ 40칸을 인터페이스로 한 벌 더 적지 않는다 — 두 곳에 두면 갈린다. 매퍼가 정본이다.
  */
 
-/** 표시용 파생 넷의 조인 — 물리에 칸이 없다. P/O 는 계획을 경유해 잇는다(계약이 그렇게 적었다). */
+/** 표시용 파생 넷의 조인 — 물리에 칸이 없다. ERP W/O 는 계획을 경유해 잇는다(계약이 그렇게 적었다). */
 export const DISPLAY_JOIN = {
   production_plan: { select: { production_order_id: true, production_order: { select: { production_order_no: true } } } },
   routing_operation: { select: { operation_name: true } },

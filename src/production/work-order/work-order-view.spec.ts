@@ -84,7 +84,7 @@ describe('WorkOrder 뷰', () => {
     expect(view).toMatchObject({ workOrderId: 7, poMismatch: false, versionNo: 3, itemCode: 'ITM-0001' });
   });
 
-  it('뷰 — 표시용 파생 넷은 계획 → P/O 조인으로 낸다', () => {
+  it('뷰 — 표시용 파생 넷은 계획 → ERP W/O 조인으로 낸다', () => {
     const view = workOrderView(
       workOrderRow({
         production_plan_id: 21n,

@@ -1,7 +1,7 @@
 /**
- * ⭐⭐ **계약 사본에 «우리가» 먼저 적은 테스트용 P/O 등록을 지킨다**(장부 P-30).
+ * ⭐⭐ **계약 사본에 «우리가» 먼저 적은 테스트용 ERP W/O 등록을 지킨다**(장부 P-30).
  *
- * ERP 수신기가 없어 P/O 를 만들 길이 시드 SQL 뿐이었다. 테스트용 등록 경로를 사본에 먼저 적었다.
+ * ERP 수신기가 없어 ERP W/O 를 만들 길이 시드 SQL 뿐이었다. 테스트용 등록 경로를 사본에 먼저 적었다.
  * 다음 `contracts:update` 가 정본에 없는 이 편집을 조용히 덮으면 `@Contract('POST
  * /planning/production-orders')` 가 팬텀이 되고, 그전에 **요청 검증이 사라져** 아무도 안 막는
  * API 가 된다(`contract-validator.ts`). 하나라도 사라지면 당기는 그 순간 여기가 빨개진다.
@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 const CONTRACT = join(__dirname, '../../../contracts/production-02생산실행.json');
 
-describe('계약 사본 — 선반영한 P/O 등록 (P-30)', () => {
+describe('계약 사본 — 선반영한 ERP W/O 등록 (P-30)', () => {
   const contract = JSON.parse(readFileSync(CONTRACT, 'utf8')) as {
     paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
     components: { schemas: Record<string, { required?: string[]; properties?: Record<string, unknown> }> };

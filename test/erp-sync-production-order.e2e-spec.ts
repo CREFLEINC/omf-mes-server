@@ -1,5 +1,5 @@
 /**
- * ERP 제조오더 받기 — 실제 MSSQL 에 붙는다(`erp-relay.fixture.ts`).
+ * ERP W/O 받기 — 실제 MSSQL 에 붙는다(`erp-relay.fixture.ts`).
  */
 import * as mssql from 'mssql';
 
@@ -25,7 +25,7 @@ const TABLE = {
   source: { ...PRODUCTION_ORDER, interfaceCode: 'E2E-IF-ERP-PRODORD-RECV', name: COPY },
 };
 
-describeRelay('ERP 제조오더 받기 (e2e · 중계 DB)', () => {
+describeRelay('ERP W/O 받기 (e2e · 중계 DB)', () => {
   let prisma: PrismaService;
   let sa: mssql.ConnectionPool;
   let relay: RelayClient;
@@ -101,7 +101,7 @@ describeRelay('ERP 제조오더 받기 (e2e · 중계 DB)', () => {
       include: { production_order_change_field: { orderBy: { field_code: 'asc' } } },
     });
 
-  it('처음 받으면 P/O 를 세우고 계획 시작일·ERP 칸을 담는다 — 납기는 비운다', async () => {
+  it('처음 받으면 ERP W/O 를 세우고 계획 시작일·ERP 칸을 담는다 — 납기는 비운다', async () => {
     await insertRow(sa, COPY, order());
 
     const result = await cycle.run(TABLE);
