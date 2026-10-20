@@ -22,7 +22,7 @@ describe('계약 사본 — 선반영한 ERP W/O 등록 (P-30)', () => {
 
   it('⛔ POST /planning/production-orders 가 있고 403 을 선언한다 — 없으면 권한 가드가 안 본다', () => {
     const post = contract.paths['/planning/production-orders']?.post;
-    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['201', '400', '403', '409']);
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['201', '400', '401', '403', '409']);
   });
 
   it('⛔ 요청 스키마 ProductionOrderCreate 의 칸과 필수가 그대로다', () => {
