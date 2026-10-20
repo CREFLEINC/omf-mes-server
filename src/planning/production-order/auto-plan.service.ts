@@ -10,6 +10,8 @@ import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
 import { AutoPlanReason, AutoPlanView, MasterChoice, PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
 
 const CONFIRMED = 'CONFIRMED';
+/** 잠금을 쥔 채 계획 생성·확정 전개를 기다린다 — 기본 5초로는 공정이 많은 Routing 의 확정이 모자랄 수 있다. */
+const LOCK_OPTIONS = { timeout: 30_000, maxWait: 5_000 };
 
 /** 판정에 쓰는 오더 칸만. */
 export interface AutoPlanOrder {
@@ -73,6 +75,15 @@ export class AutoPlanService {
    * 확정 계획이 수량을 채웠으면 바꾸지 않는다. 확정에서 막히면 확정의 오류를 그대로 낸다.
    */
   async run(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
+    // ⛔ 오더마다 줄 세운다 — 「계획이 있나」를 본 뒤 세우기까지 사이에 다른 호출이 끼면 둘 다 계획을 세운다.
+    //    계획 생성·확정은 각자 연결로 커밋하므로, 잠금을 쥔 트랜잭션은 그것들이 끝날 때까지 열어 두기만 한다.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`auto-plan:${String(productionOrderId)}`}))`;
+      return this.runLocked(productionOrderId, appUserId);
+    }, LOCK_OPTIONS);
+  }
+
+  private async runLocked(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
     const order = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(productionOrderId) },
       select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true },
