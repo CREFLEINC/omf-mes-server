@@ -32,6 +32,11 @@ export function dayWindow(planDate: string, dayStart: string, timezone: string):
   return { plannedStartAt, plannedEndAt: new Date(plannedStartAt.getTime() + DAY_MS) };
 }
 
+/** 그 순간 `timezone` 의 벽시계 날짜(`YYYY-MM-DD`). */
+export function localDate(instant: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
+}
+
 /** 그 순간 `timezone` 의 벽시계가 UTC 보다 몇 ms 앞서는가. */
 function offsetMs(instant: Date, timezone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {

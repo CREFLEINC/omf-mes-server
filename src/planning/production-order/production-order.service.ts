@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PageRequest, PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AutoPlanStatus } from './auto-plan';
+import { AutoPlanService } from './auto-plan.service';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -33,6 +35,7 @@ export interface ProductionOrderListQuery {
   q?: string;
   includeChildren?: boolean;
   withLastChange?: boolean;
+  autoPlanStatus?: AutoPlanStatus;
   page?: number;
   size?: number;
 }
@@ -52,12 +55,16 @@ const ORDER_BY: Prisma.production_orderOrderByWithRelationInput[] = [
 
 @Injectable()
 export class ProductionOrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly autoPlans: AutoPlanService,
+  ) {}
 
   async list(query: ProductionOrderListQuery): Promise<PagedResponse<ProductionOrderView>> {
     const page = pageRequest(query);
     const base = buildWhere(query);
-    const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
+    const acknowledged = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
+    const where = query.autoPlanStatus === undefined ? acknowledged : await this.byAutoPlanStatus(acknowledged, query.autoPlanStatus);
     const withLastChange = query.withLastChange === true;
     if (query.includeChildren === true) return this.listWithChildren(where, page, withLastChange);
 
@@ -123,12 +130,32 @@ export class ProductionOrderService {
     return ids.length === 0 ? base : { AND: [base, { production_order_id: { notIn: ids } }] };
   }
 
+  /**
+   * 「끝」은 확정 계획 수량이 오더 수량을 채운 것이다 — 그 집합을 SQL 로 모아 `in`·`notIn` 으로 건다.
+   * 이유(`reasons`)는 거르지 않는다 — 상태만 거른다.
+   */
+  private async byAutoPlanStatus(
+    base: Prisma.production_orderWhereInput,
+    status: AutoPlanStatus,
+  ): Promise<Prisma.production_orderWhereInput> {
+    const rows = await this.prisma.$queryRaw<{ production_order_id: bigint }[]>(Prisma.sql`
+      SELECT p.production_order_id FROM planning.production_plan p
+        JOIN planning.production_order o USING (production_order_id)
+       WHERE p.status_code = 'CONFIRMED'
+       GROUP BY p.production_order_id, o.order_qty
+      HAVING sum(p.planned_qty) >= o.order_qty`);
+    const ids = rows.map((r) => r.production_order_id);
+    if (status === 'DONE') return { AND: [base, { production_order_id: { in: ids } }] };
+    return ids.length === 0 ? base : { AND: [base, { production_order_id: { notIn: ids } }] };
+  }
+
   /** 페이지 파생 — 집계 2칸 + 확인 3칸을 한 쿼리로, (요청 시) 변경 이력을 더한다. 행마다 돌지 않는다. */
   private async viewsOf(rows: ProductionOrderRow[], withLastChange: boolean): Promise<ProductionOrderView[]> {
     const ids = rows.map((r) => r.production_order_id);
-    const [derived, changes] = await Promise.all([
+    const [derived, changes, autoPlans] = await Promise.all([
       this.derivedOf(ids),
       withLastChange ? this.lastChangesOf(rows) : Promise.resolve(new Map<bigint, ProductionOrderLastChange>()),
+      this.autoPlans.viewsOf(rows),
     ]);
     return rows.map((row) => {
       const d = derived.get(row.production_order_id);
@@ -137,6 +164,7 @@ export class ProductionOrderService {
         plannedWorkOrderCount: d?.planned ?? 0,
         acknowledgement: d?.acknowledgedAt === null || d?.acknowledgedAt === undefined ? undefined : { acknowledgedAt: d.acknowledgedAt, acknowledgedBy: d.acknowledgedBy, acknowledgeDecisionCode: d.acknowledgeDecisionCode },
         lastChange: changes.get(row.production_order_id),
+        autoPlan: autoPlans.get(row.production_order_id),
       });
     });
   }

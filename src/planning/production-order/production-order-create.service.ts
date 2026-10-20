@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AutoPlanService } from './auto-plan.service';
 
 /** 계약 `ProductionOrderCreate`(P-30 선행) — 형식·필수·길이는 계약 가드가 이미 막았다. */
 export interface ProductionOrderCreate {
@@ -27,7 +28,10 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
  */
 @Injectable()
 export class ProductionOrderCreateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly autoPlans: AutoPlanService,
+  ) {}
 
   async create(body: ProductionOrderCreate, appUserId: number | undefined): Promise<number> {
     const [plant, item, uom, duplicate] = await Promise.all([
@@ -59,6 +63,7 @@ export class ProductionOrderCreateService {
     if (errors.length > 0 || businessUnitId === null || uomId === undefined) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     if (duplicate !== null) throw duplicateNo();
 
+    let productionOrderId: number;
     try {
       const created = await this.prisma.production_order.create({
         data: {
@@ -77,12 +82,14 @@ export class ProductionOrderCreateService {
         },
         select: { production_order_id: true },
       });
-      return Number(created.production_order_id);
+      productionOrderId = Number(created.production_order_id);
     } catch (error) {
       // 선조회와 INSERT 사이에 같은 번호가 먼저 들어온 경합.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw duplicateNo();
       throw error;
     }
+    await this.autoPlans.planReceived(productionOrderId, appUserId);
+    return productionOrderId;
   }
 }
 

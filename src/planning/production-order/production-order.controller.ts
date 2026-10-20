@@ -8,6 +8,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { AcknowledgeService, ProductionOrderAcknowledge } from './acknowledge.service';
+import { AutoPlanResult, AutoPlanService } from './auto-plan.service';
 import { ProductionOrderCreate, ProductionOrderCreateService } from './production-order-create.service';
 import { ProductionOrderDetailQuery, ProductionOrderListQuery, ProductionOrderService } from './production-order.service';
 import { ProductionOrderView } from './production-order-view';
@@ -21,6 +22,7 @@ export class ProductionOrderController {
     private readonly acknowledges: AcknowledgeService,
     private readonly resyncs: ResyncService,
     private readonly creates: ProductionOrderCreateService,
+    private readonly autoPlans: AutoPlanService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -71,6 +73,18 @@ export class ProductionOrderController {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
       return (await this.queries.detail(productionOrderId, {})).view;
     }, FAMILY_CONFLICT_CODE);
+  }
+
+  /** 수신 때 못 세웠거나 확정하지 못한 계획을 다시 시도한다 — 기준정보·계획 라인을 고친 뒤. */
+  @Post(':productionOrderId\\:auto-plan')
+  @Contract('POST /planning/production-orders/{productionOrderId}:auto-plan')
+  @HttpCode(HttpStatus.OK)
+  autoPlan(
+    @Req() request: Request,
+    @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
+  ): Promise<AutoPlanResult> {
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.autoPlans.run(productionOrderId, currentSession(request)?.userId), FAMILY_CONFLICT_CODE);
   }
 
   /** ⭐ 202 에 본문이 없다 — 계약이 content 를 주지 않았다. 결과는 연계 수신으로 온다. */

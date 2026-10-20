@@ -251,7 +251,7 @@ export async function assertPlannableRouting(
  * 로컬 00:00~07:00 에는 UTC 날짜가 하루 이르므로, 그 시간대에 「오늘부터」인 Rev 가
  * 아직 안 걸린다. 되돌림 §S 에 적었다.
  */
-function usableWhere(): Prisma.routingWhereInput {
+export function usableWhere(): Prisma.routingWhereInput {
   const today = new Date(new Date().toISOString().slice(0, 10));
   return {
     status_code: REVISION_STATUS.CONFIRMED,
