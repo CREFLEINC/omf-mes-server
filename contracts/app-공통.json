@@ -3443,6 +3443,133 @@
     ]
    }
   },
+  "/app/dashboard-quality-lots": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "품질 종합 상태별 LOT 목록",
+    "description": "통합 대시보드 품질 종합 「현재 현황」 숫자 하나를 눌렀을 때 그 상태의 LOT·기록 목록. 건수(totalCount)는 대시보드 숫자와 같은 조건으로 센다. 기간은 INSPECTION_HELD(검사 보류)에만 걸리고 나머지 상태는 지금 기준이다. 오래 묵은 것부터 최대 200줄 — totalCount·lotCount·recordCount 는 자르기 전 값이다. 권한은 GET /app/dashboard-summary 와 같다(같은 화면의 숫자와 그 목록). 공장 규칙도 요약과 같다 — 사용자 데이터 범위 밖 공장은 403. 근거: 장부 P-58 · omf-all-around#118",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "INSPECTION_HELD",
+        "RECEIPT_HOLD",
+        "PQC_PENDING",
+        "NC_OPEN"
+       ]
+      },
+      "description": "검사 보류 · 입고 보류 · 공정검사 대기 · 미결 부적합"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1,
+       "example": 1001
+      },
+      "description": "없으면 데이터 범위 안의 활성 공장 전체"
+     },
+     {
+      "name": "baseDate",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-13"
+      },
+      "description": "기준 날짜. 없으면 오늘. dateFrom·dateTo 와 함께 쓸 수 없다"
+     },
+     {
+      "name": "dateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-01"
+      },
+      "description": "기간 시작 — dateTo 와 함께 보낸다"
+     },
+     {
+      "name": "dateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date",
+       "example": "2026-08-13"
+      },
+      "description": "기간 끝 — dateFrom 과 함께 보낸다. 오늘 이후 불가 · 최대 기간은 대시보드와 같다"
+     },
+     {
+      "name": "inspectionType",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "IQC",
+        "PQC",
+        "OQC"
+       ]
+      },
+      "description": "INSPECTION_HELD 에만 적용 — 그 검사 유형의 보류만. 다른 상태에서는 무시하되 잘못된 값은 400"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상태별 LOT 목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DashboardQualityLots"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "질의가 틀렸다 — status 누락·값 오류, 날짜 형식·짝·범위 오류",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한(W-CO-05) 또는 공장 데이터 범위에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
+   }
+  },
   "/app/operation-policies": {
    "get": {
     "tags": [
@@ -6366,6 +6493,145 @@
       ],
       "description": "분모에서 제외한 건수. 화면이 「N품목 제외」로 적는다",
       "example": 3
+     }
+    }
+   },
+   "DashboardQualityLots": {
+    "type": "object",
+    "required": [
+     "status",
+     "asOf",
+     "totalCount",
+     "lotCount",
+     "recordCount",
+     "items"
+    ],
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "INSPECTION_HELD",
+       "RECEIPT_HOLD",
+       "PQC_PENDING",
+       "NC_OPEN"
+      ]
+     },
+     "asOf": {
+      "type": "string",
+      "format": "date-time",
+      "description": "서버가 센 시각"
+     },
+     "totalCount": {
+      "type": "integer",
+      "description": "자르기 전 줄 수 — 대시보드 숫자와 같은 조건"
+     },
+     "lotCount": {
+      "type": "integer",
+      "description": "고유 LOT 수(LOT 없는 줄 제외) — 대시보드 quality.statusCounts 와 같은 식"
+     },
+     "recordCount": {
+      "type": "integer",
+      "description": "기록 수"
+     },
+     "items": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+       "$ref": "#/components/schemas/DashboardQualityLotItem"
+      }
+     }
+    }
+   },
+   "DashboardQualityLotItem": {
+    "type": "object",
+    "required": [
+     "key",
+     "lotNo",
+     "itemCode",
+     "itemName",
+     "qty",
+     "unitCode",
+     "occurredAt",
+     "refNo",
+     "inspectionType",
+     "counterpartName",
+     "equipmentCode",
+     "detail"
+    ],
+    "description": "DB 에 없는 값은 null 이다",
+    "properties": {
+     "key": {
+      "type": "string",
+      "description": "줄 식별 — 출처 접두어와 원본 id(IR-·HOLD- 등)",
+      "example": "IR-1001"
+     },
+     "lotNo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "qty": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "unitCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "그 상태가 된 시각 — 목록은 이 순서(오래된 것부터)"
+     },
+     "refNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "검사 결과·부적합 등 원본 문서 번호"
+     },
+     "inspectionType": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "IQC",
+       "PQC",
+       "OQC",
+       null
+      ]
+     },
+     "counterpartName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "IQC 는 공급사, OQC 는 고객사"
+     },
+     "equipmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "PQC 의 설비"
+     },
+     "detail": {
+      "type": [
+       "string",
+       "null"
+      ]
      }
     }
    },

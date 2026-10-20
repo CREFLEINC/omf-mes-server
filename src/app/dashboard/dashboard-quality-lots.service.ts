@@ -1,7 +1,6 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionType, finalResultCte } from './dashboard-inspection';
 import { lotRecordCount } from './dashboard-quality.service';
@@ -9,7 +8,6 @@ import {
   LotRecordRow,
   OPEN_NC_WHERE,
   PQC_PENDING_CTE,
-  QUALITY_LOT_STATUSES,
   QualityLotStatus,
   RECEIPT_HOLD_CTE,
   SCOPED_NC_CTE,
@@ -18,10 +16,7 @@ import {
   lotSupplierName,
   pqcEquipmentCode,
 } from './dashboard-quality-status';
-import { isDate } from './dashboard-range';
 import { DashboardScopeQuery, dashboardScope, num, plantScope } from './dashboard-scope';
-
-export const INSPECTION_TYPES: readonly InspectionType[] = ['IQC', 'PQC', 'OQC'];
 
 export interface DashboardQualityLotItem {
   key: string;
@@ -48,14 +43,15 @@ export interface DashboardQualityLots {
   items: DashboardQualityLotItem[];
 }
 
+/** 계약 검증 가드를 지난 질의 — status 는 필수·enum, plantId 는 가드가 정수로 바꿔 둔다. */
 export interface DashboardQualityLotsQuery {
-  status?: string;
-  plantId?: string;
+  status: QualityLotStatus;
+  plantId?: number;
   baseDate?: string;
   dateFrom?: string;
   dateTo?: string;
   /** `INSPECTION_HELD` 에만 걸린다 — 그 검사 유형의 보류만(= 대시보드 `quality.<유형>.monthLots.held`). */
-  inspectionType?: string;
+  inspectionType?: InspectionType;
 }
 
 interface LotRow {
@@ -75,7 +71,6 @@ interface LotRow {
 }
 
 const LIMIT = 200;
-const INT64_MAX = 2n ** 63n - 1n;
 
 /**
  * 품질 종합 「현재 현황」 상태별 LOT 목록(장부 P-58). 건수(`totalCount`)는 대시보드의 현재 현황 숫자와 같은
@@ -219,45 +214,23 @@ function item(row: LotRow): DashboardQualityLotItem {
 }
 
 /**
- * ⛔ 이 경로는 계약 사본에 없어 계약 검증 가드가 질의를 보지 않는다(장부 P-58) — 여기서 같은 오류 모양으로 막는다.
- * 기간 순서·길이·미래는 `dashboardRange` 가 대시보드와 같은 규칙으로 막는다.
+ * 형식은 계약 검증 가드가 이미 봤다(`GET /app/dashboard-quality-lots`). 기간 짝·순서·길이·미래는
+ * `dashboardRange` 가 대시보드와 같은 규칙으로 막는다. 잘못된 inspectionType 은 어느 status 에서나 400(가드)이고,
+ * 적용만 INSPECTION_HELD 에 한다.
  */
 export function parseQuery(query: DashboardQualityLotsQuery): {
   status: QualityLotStatus;
   inspectionType: InspectionType | undefined;
   scopeQuery: DashboardScopeQuery;
 } {
-  const errors: ErrorItem[] = [];
-  const status = QUALITY_LOT_STATUSES.find((value) => value === query.status);
-  if (query.status === undefined || query.status === '') {
-    errors.push(field('status', ERROR_CODE.REQUIRED, 'status 는 필수입니다.'));
-  } else if (status === undefined) {
-    errors.push(field('status', ERROR_CODE.INVALID, `status 는 ${QUALITY_LOT_STATUSES.join(' · ')} 중 하나여야 합니다.`));
-  }
-  const plantId = query.plantId;
-  const validPlant = plantId === undefined || (/^[1-9]\d{0,18}$/.test(plantId) && BigInt(plantId) <= INT64_MAX);
-  if (!validPlant) errors.push(field('plantId', ERROR_CODE.INVALID, '양의 정수여야 합니다.'));
-  if (query.baseDate !== undefined && !isDate(query.baseDate)) {
-    errors.push(field('baseDate', ERROR_CODE.INVALID, 'YYYY-MM-DD 날짜여야 합니다.'));
-  }
-  // 잘못된 값은 어느 status 에서나 400 이다 — 적용만 INSPECTION_HELD 에 한다.
-  const inspectionType = INSPECTION_TYPES.find((value) => value === query.inspectionType);
-  if (query.inspectionType !== undefined && inspectionType === undefined) {
-    errors.push(field('inspectionType', ERROR_CODE.INVALID, `inspectionType 은 ${INSPECTION_TYPES.join(' · ')} 중 하나여야 합니다.`));
-  }
-  if (errors.length > 0 || status === undefined) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   return {
-    status,
-    inspectionType: status === 'INSPECTION_HELD' ? inspectionType : undefined,
+    status: query.status,
+    inspectionType: query.status === 'INSPECTION_HELD' ? query.inspectionType : undefined,
     scopeQuery: {
-      plantId: plantId === undefined ? undefined : BigInt(plantId),
+      plantId: query.plantId === undefined ? undefined : BigInt(query.plantId),
       baseDate: query.baseDate,
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
     },
   };
-}
-
-function field(name: string, code: string, message: string): ErrorItem {
-  return { scope: 'field', field: name, code, message };
 }

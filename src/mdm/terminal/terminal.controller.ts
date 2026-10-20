@@ -57,11 +57,12 @@ export class TerminalController {
   }
 
   /**
-   * Forward-only POP navigation: current active bearer and own terminal are checked in the auth guard.
+   * POP 자기 단말 전용 — 토큰 종류·자기 단말·현재 세대는 인증 가드가 본다(`TerminalAccessibleScreensOperation`).
    * ⭐ 후보를 단말의 공정 매핑 플래그로 가린다(D3) — 전에는 `['P-01-01']` 고정이라 키오스크에서
    * 작업 시작·투입·실적으로 갈 길이 없었다. 표와 근거는 `terminal-accessible-screens.ts`.
    */
   @Get(':terminalId/accessible-screens')
+  @Contract('GET /mdm/terminals/{terminalId}/accessible-screens')
   @TerminalAccessibleScreensOperation()
   async accessibleScreens(
     @Param('terminalId', ParseIntPipe) terminalId: number,
@@ -122,29 +123,18 @@ export class TerminalController {
     );
   }
 
-  /** Forward-only operation; the design contract copy does not yet define it. */
+  /**
+   * 단말 토큰 전용 — 토큰 종류·현재 세대는 인증 가드가(`TerminalRegistrationOperation`), 자기 단말은 서비스가 본다.
+   * Idempotency-Key 와 빈 본문은 계약이 요구한다(멱등 가드 · 계약 검증 가드).
+   */
   @Post(':terminalId\\:confirm-registration')
+  @Contract('POST /mdm/terminals/{terminalId}:confirm-registration')
   @TerminalRegistrationOperation()
   @HttpCode(HttpStatus.OK)
   confirmRegistration(
     @Req() request: Request,
     @Param('terminalId', ParseIntPipe) terminalId: number,
-    @Body() body: unknown,
   ): Promise<unknown> {
-    const header = request.headers['idempotency-key'];
-    const idempotencyKey = Array.isArray(header) ? header[0] : header;
-    if (!idempotencyKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        { scope: 'screen', code: idempotencyKey ? ERROR_CODE.INVALID : ERROR_CODE.REQUIRED,
-          message: 'Idempotency-Key 헤더에 UUID가 필요합니다.' },
-      ]);
-    }
-    if (body !== undefined && (body === null || typeof body !== 'object'
-      || Array.isArray(body) || Object.keys(body).length !== 0)) {
-      throw new ContractException(HttpStatus.BAD_REQUEST, [
-        { scope: 'screen', code: ERROR_CODE.INVALID, message: '등록 확인 본문은 비어 있어야 합니다.' },
-      ]);
-    }
     const terminal = currentTerminal(request);
     if (!terminal) {
       throw new ContractException(HttpStatus.UNAUTHORIZED, [

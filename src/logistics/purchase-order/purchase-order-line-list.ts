@@ -1,16 +1,28 @@
-import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { toDateString } from '../../common/master';
 
 /**
- * 입하 예정 — 구매발주 «라인» 목록(장부 P-78 · #741). 계약 사본에 없는 경로라 질의를 여기서 손으로 검사한다
- * (가드가 보지 않는다). 오류 모양은 가드와 같다 — 400 field `INVALID`.
+ * 입하 예정 — 구매발주 «라인» 목록(장부 P-78 · #741). 질의 검증은 계약 검증 가드가 한다
+ * (`GET /logistics/purchase-order-lines`) — 여기는 검증을 지난 값을 서비스 형으로 옮기기만 한다.
  */
 
 /** 발주가 끝난 헤더 상태 — 발주 목록 `openOnly` 와 같은 둘이다(`purchase-order-query.service.ts`). */
 export const CLOSED_ORDER_STATUSES = ['CLOSED', 'CANCELLED'];
+
+/** 계약 검증 가드를 지난 질의 — 정수·불리언은 가드가 이미 형을 바꿔 둔다. */
+export interface PurchaseOrderLineListRawQuery {
+  expectedReceiptDateFrom?: string;
+  expectedReceiptDateTo?: string;
+  supplierId?: number;
+  plantId?: number;
+  itemId?: number;
+  q?: string;
+  openOnly?: boolean;
+  overdueOnly?: boolean;
+  page?: number;
+  size?: number;
+}
 
 export interface PurchaseOrderLineListQuery {
   expectedReceiptDateFrom?: string;
@@ -27,50 +39,20 @@ export interface PurchaseOrderLineListQuery {
   size?: number;
 }
 
-const INT64_MAX = 2n ** 63n - 1n;
-const ID_FIELDS = ['supplierId', 'plantId', 'itemId'] as const;
-const DATE_FIELDS = ['expectedReceiptDateFrom', 'expectedReceiptDateTo'] as const;
-const FLAG_FIELDS = ['openOnly', 'overdueOnly'] as const;
-const PAGE_FIELDS = ['page', 'size'] as const;
-
-export function parseLineListQuery(raw: Record<string, unknown>): PurchaseOrderLineListQuery {
-  const errors: ErrorItem[] = [];
-  const parsed: PurchaseOrderLineListQuery = { openOnly: true, overdueOnly: false };
-
-  for (const name of ID_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && /^[1-9]\d{0,18}$/.test(value) && BigInt(value) <= INT64_MAX) {
-      parsed[name] = BigInt(value);
-    } else {
-      errors.push(invalid(name, '양의 정수여야 합니다.'));
-    }
-  }
-  for (const name of DATE_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && isDate(value)) parsed[name] = value;
-    else errors.push(invalid(name, 'YYYY-MM-DD 형식입니다.'));
-  }
-  for (const name of FLAG_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (value === 'true' || value === 'false') parsed[name] = value === 'true';
-    else errors.push(invalid(name, 'true 나 false 여야 합니다.'));
-  }
-  for (const name of PAGE_FIELDS) {
-    const value = raw[name];
-    if (value === undefined) continue;
-    if (typeof value === 'string' && /^[1-9]\d{0,8}$/.test(value)) parsed[name] = Number(value);
-    else errors.push(invalid(name, '1 이상의 정수여야 합니다.'));
-  }
-  if (raw.q !== undefined) {
-    if (typeof raw.q !== 'string') errors.push(invalid('q', '문자열이어야 합니다.'));
-    else if (raw.q.trim() !== '') parsed.q = raw.q.trim();
-  }
-
-  if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
-  return parsed;
+export function lineListQuery(raw: PurchaseOrderLineListRawQuery): PurchaseOrderLineListQuery {
+  const q = raw.q?.trim();
+  return {
+    ...(raw.supplierId === undefined ? {} : { supplierId: BigInt(raw.supplierId) }),
+    ...(raw.plantId === undefined ? {} : { plantId: BigInt(raw.plantId) }),
+    ...(raw.itemId === undefined ? {} : { itemId: BigInt(raw.itemId) }),
+    ...(raw.expectedReceiptDateFrom === undefined ? {} : { expectedReceiptDateFrom: raw.expectedReceiptDateFrom }),
+    ...(raw.expectedReceiptDateTo === undefined ? {} : { expectedReceiptDateTo: raw.expectedReceiptDateTo }),
+    ...(q ? { q } : {}),
+    openOnly: raw.openOnly ?? true,
+    overdueOnly: raw.overdueOnly ?? false,
+    ...(raw.page === undefined ? {} : { page: raw.page }),
+    ...(raw.size === undefined ? {} : { size: raw.size }),
+  };
 }
 
 /**
@@ -146,14 +128,4 @@ export function lineListItem(row: LineRow): PurchaseOrderLineListItem {
 /** `expected_receipt_date` 는 `@db.Date` 다 — 타임존 캐스팅 없이 그대로 비교한다(CLAUDE.md). */
 export function dateOnly(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
-}
-
-/** 형식만이 아니라 실제 있는 날인지도 본다 — `2026-02-30` 은 JS 가 3월 2일로 굴린다. */
-function isDate(value: string): boolean {
-  const date = dateOnly(value);
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
-}
-
-function invalid(name: string, message: string): ErrorItem {
-  return field(name, ERROR_CODE.INVALID, message);
 }

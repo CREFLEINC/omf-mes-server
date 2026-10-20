@@ -279,6 +279,7 @@ describe('단말 마스터 (e2e)', () => {
       terminalId: id, tokenVersion: 2, registrationStatusCode: 'REGISTERED',
       registrationConfirmedAt: expect.any(String),
     });
+    expect(validator('POST /mdm/terminals/{terminalId}:confirm-registration')(confirmed.body)).toBe(true);
     const registered = await detail();
     expect(registered.body.registrationConfirmedAt).toBe(confirmed.body.registrationConfirmedAt);
     expect(registered.body.registrationStatusCode).toBe('REGISTERED');
@@ -360,6 +361,7 @@ describe('단말 마스터 (e2e)', () => {
     // ⭐ D3 — 공정 매핑이 0행인 단말은 «축 없는 화면»만 받는다. 전에는 `['P-01-01']` 고정이었다.
     //    P-06-01(창고 적재 위치 라벨 발행)도 공장 축이라 여기 든다(장부 P-28).
     expect(owned.body).toEqual({ screenCodes: ['P-01-01', 'P-02-12', 'P-05-01', 'P-05-02', 'P-06-01'] });
+    expect(validator('GET /mdm/terminals/{terminalId}/accessible-screens')(owned.body)).toBe(true);
     expect(owned.headers['cache-control']).toBe('private, no-store');
     await issueToken(id);
     await request(app.getHttpServer()).get(path)

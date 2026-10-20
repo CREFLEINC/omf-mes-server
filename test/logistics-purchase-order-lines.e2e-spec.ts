@@ -1,6 +1,6 @@
 /**
  * 입하 예정 — 구매발주 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-78 · #741).
- * 계약 사본에 없는 경로라 인증·질의 검증을 컨트롤러가 직접 한다 — 401·400 도 여기서 본다.
+ * 인증·질의 검증은 가드가 한다(계약 `GET /logistics/purchase-order-lines`) — 401·400 도 여기서 본다.
  * 발주 목록 `openOnly` 가 ERP 취소 라인만 남은 발주를 빼는 것(같은 기준)도 함께 본다.
  */
 import { INestApplication } from '@nestjs/common';
@@ -13,9 +13,11 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { contractResponse } from './contract-response.fixture';
 
 const PREFIX = 'E2E-POLINES';
 const PATH = '/api/logistics/purchase-order-lines';
+const listResponse = contractResponse('logistics-01자재창고.json', 'GET', '/logistics/purchase-order-lines', 200);
 const PAST = '2000-01-10';
 const SOON = '2099-01-01';
 const LATER = '2099-12-01';
@@ -68,7 +70,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     ).body as Page;
   const keys = (page: Page): string[] => page.items.map((i) => `${i.purchaseOrderNo.slice(PREFIX.length + 1)}#${i.lineNo}`);
 
-  it('⛔ 로그인이 없으면 401 이다 — 가드 밖 경로라 컨트롤러가 직접 막는다', async () => {
+  it('⛔ 로그인이 없으면 401 이다 — 인증 가드가 막는다', async () => {
     const response = await request(app.getHttpServer()).get(PATH).expect(401);
     expect(response.body.errors[0]).toMatchObject({ scope: 'screen', code: 'PERMISSION_DENIED' });
   });
@@ -97,6 +99,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
       ['NOT_STARTED', 5],
     ]);
     expect(page.items[3].expectedReceiptDate).toBeNull();
+    expect(listResponse(page)).toEqual([]);
   });
 
   it('openOnly=false 면 끝난 라인도 판정과 함께 싣는다 — 취소 라인의 남은 수량은 0', async () => {

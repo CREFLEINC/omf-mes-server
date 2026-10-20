@@ -1,8 +1,7 @@
 import { Prisma } from '@prisma/client';
 
-import { ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
-import { lineListItem, parseLineListQuery, receiptStatusOf } from './purchase-order-line-list';
+import { lineListItem, lineListQuery, receiptStatusOf } from './purchase-order-line-list';
 import { PurchaseOrderLineListService } from './purchase-order-line-list.service';
 
 type Row = Parameters<typeof lineListItem>[0];
@@ -36,34 +35,24 @@ const row = (line: Partial<Row> = {}, order: Partial<Row['purchase_order']> = {}
     },
   }) as Row;
 
-function errorsOf(raw: Record<string, unknown>): unknown {
-  try {
-    parseLineListQuery(raw);
-  } catch (error) {
-    if (error instanceof ContractException) return (error.getResponse() as { errors: unknown }).errors;
-    throw error;
-  }
-  throw new Error('400 이 나야 한다');
-}
-
 describe('입하 예정 라인 목록 — 질의', () => {
   it('비우면 남은 라인만(openOnly=true) 보고 납기 지남은 거르지 않는다', () => {
-    expect(parseLineListQuery({})).toEqual({ openOnly: true, overdueOnly: false });
+    expect(lineListQuery({})).toEqual({ openOnly: true, overdueOnly: false });
   });
 
-  it('값을 받아 형에 맞춰 옮긴다 · q 는 다듬고 빈 q 는 버린다', () => {
+  it('가드가 형을 바꾼 값을 옮긴다 — id 는 BigInt · q 는 다듬고 빈 q 는 버린다', () => {
     expect(
-      parseLineListQuery({
-        supplierId: '10',
-        plantId: '30',
-        itemId: '100',
+      lineListQuery({
+        supplierId: 10,
+        plantId: 30,
+        itemId: 100,
         expectedReceiptDateFrom: '2026-10-01',
         expectedReceiptDateTo: '2026-10-31',
-        openOnly: 'false',
-        overdueOnly: 'true',
+        openOnly: false,
+        overdueOnly: true,
         q: '  PO-1 ',
-        page: '2',
-        size: '20',
+        page: 2,
+        size: 20,
       }),
     ).toEqual({
       supplierId: 10n,
@@ -77,25 +66,7 @@ describe('입하 예정 라인 목록 — 질의', () => {
       page: 2,
       size: 20,
     });
-    expect(parseLineListQuery({ q: '   ' })).not.toHaveProperty('q');
-  });
-
-  it('⛔ 틀린 값은 칸마다 400 INVALID 로 모아 낸다 — 없는 날(2026-02-30)도 막는다', () => {
-    expect(
-      errorsOf({ plantId: '0', expectedReceiptDateTo: '2026-02-30', openOnly: 'yes', page: '-1', itemId: ['1', '2'] }),
-    ).toEqual([
-      expect.objectContaining({ field: 'plantId', code: 'INVALID' }),
-      expect.objectContaining({ field: 'itemId', code: 'INVALID' }),
-      expect.objectContaining({ field: 'expectedReceiptDateTo', code: 'INVALID' }),
-      expect.objectContaining({ field: 'openOnly', code: 'INVALID' }),
-      expect.objectContaining({ field: 'page', code: 'INVALID' }),
-    ]);
-  });
-
-  it('⛔ int64 를 넘는 id 는 400 이다 — Prisma 까지 가면 500 이 된다', () => {
-    expect(errorsOf({ supplierId: '9223372036854775808' })).toEqual([
-      expect.objectContaining({ field: 'supplierId', code: 'INVALID' }),
-    ]);
+    expect(lineListQuery({ q: '   ' })).not.toHaveProperty('q');
   });
 });
 
@@ -178,7 +149,7 @@ describe('입하 예정 라인 목록 — 거르기', () => {
   };
 
   it('기본(openOnly)은 취소 안 된 남은 라인과 끝나지 않은 헤더만 건다', async () => {
-    const where = await service().service.where(parseLineListQuery({}), new Date());
+    const where = await service().service.where(lineListQuery({}), new Date());
     expect(where).toEqual({
       cancelled_at: null,
       received_qty: { lt: ORDERED_QTY },
@@ -187,13 +158,13 @@ describe('입하 예정 라인 목록 — 거르기', () => {
   });
 
   it('openOnly=false 면 라인·헤더 상태를 거르지 않는다', async () => {
-    const where = await service().service.where(parseLineListQuery({ openOnly: 'false' }), new Date());
+    const where = await service().service.where(lineListQuery({ openOnly: false }), new Date());
     expect(where).toEqual({ AND: [{ purchase_order: { is: {} } }] });
   });
 
   it('q 는 MES 발주번호와 ERP 발주번호 둘 다 본다 · 납기 범위는 날짜 그대로 비교한다', async () => {
     const where = await service().service.where(
-      parseLineListQuery({ openOnly: 'false', q: 'A1', expectedReceiptDateFrom: '2026-10-01', expectedReceiptDateTo: '2026-10-31' }),
+      lineListQuery({ openOnly: false, q: 'A1', expectedReceiptDateFrom: '2026-10-01', expectedReceiptDateTo: '2026-10-31' }),
       new Date(),
     );
     expect(where.AND).toEqual([
@@ -218,7 +189,7 @@ describe('입하 예정 라인 목록 — 거르기', () => {
     // UTC 2026-10-20 16:30 = 하노이 23:30(20일) · 서울 01:30(21일).
     const now = new Date('2026-10-20T16:30:00.000Z');
     const { service: s } = service();
-    const where = await s.where(parseLineListQuery({ openOnly: 'false', overdueOnly: 'true' }), now);
+    const where = await s.where(lineListQuery({ openOnly: false, overdueOnly: true }), now);
     expect(where).toMatchObject({ cancelled_at: null, received_qty: { lt: ORDERED_QTY } });
     expect(where.AND).toEqual([
       { purchase_order: { is: { status_code: { notIn: ['CLOSED', 'CANCELLED'] } } } },
@@ -233,7 +204,7 @@ describe('입하 예정 라인 목록 — 거르기', () => {
 
   it('공장을 고르면 그 공장의 오늘만 본다', async () => {
     const { service: s, plantWhere } = service();
-    const where = await s.where(parseLineListQuery({ plantId: '31', overdueOnly: 'true' }), new Date('2026-10-20T16:30:00.000Z'));
+    const where = await s.where(lineListQuery({ plantId: 31, overdueOnly: true }), new Date('2026-10-20T16:30:00.000Z'));
     expect(plantWhere).toEqual([{ plant_id: 31n }]);
     expect((where.AND as unknown[])[1]).toEqual({
       OR: [{ purchase_order: { is: { plant_id: 31n, expected_receipt_date: { lt: new Date('2026-10-21T00:00:00.000Z') } } } }],

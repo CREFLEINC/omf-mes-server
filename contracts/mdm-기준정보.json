@@ -9380,6 +9380,143 @@
     ]
    }
   },
+  "/integration/erp-sync/tables": {
+   "get": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "ERP 받기 표별 상태",
+    "description": "ERP 에서 «받는» 표(인터페이스)마다 마지막 회차 결과·다음 예정·「지금 읽기」 요청 여부. 권한은 GET /integration/messages 와 같다(연계 메시지 목록을 보는 화면이 함께 본다). 근거: W-06-10 「ERP 연동 현황·이력」 · 장부 P-81",
+    "responses": {
+     "200": {
+      "description": "표별 상태",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErpSyncStatus"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 연계 메시지를 보는 화면(W-02-06·W-06-06·W-06-09·W-06-10)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
+   }
+  },
+  "/integration/erp-sync/tables/{interfaceCode}:run": {
+   "post": {
+    "tags": [
+     "integration"
+    ],
+    "summary": "ERP 받기 「지금 읽기」",
+    "description": "그 표의 다음 회차를 지금 돌리라고 «적어 두기만» 한다(202). 실행기가 10초 안에 집어 간다 — 돌았는지는 목록의 requestedAt·running·lastFinishedAt 으로 본다. 이미 걸린 요청이 있으면 처음 시각을 지킨다 — 여러 번 눌러도 한 번 돈다. 그래서 Idempotency-Key 를 요구하지 않는다. ERP 연동이 꺼진 서버(enabled=false)는 400 STATE_LOCKED. 권한은 POST /integration/messages:retry-batch 와 같다(W-06-10). 근거: 장부 P-81",
+    "parameters": [
+     {
+      "name": "interfaceCode",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "ErpSyncTableStatus.interfaceCode"
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "요청이 적혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "interfaceCode",
+          "requestedAt"
+         ],
+         "properties": {
+          "interfaceCode": {
+           "type": "string"
+          },
+          "requestedAt": {
+           "type": "string",
+           "format": "date-time",
+           "description": "걸려 있던 요청이 있으면 그 처음 시각"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "이 서버는 ERP 연동이 꺼져 있다 — STATE_LOCKED",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — W-06-10 전용",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 ERP 받기 표",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
+   }
+  },
   "/audit/events": {
    "get": {
     "tags": [
@@ -12221,6 +12358,138 @@
     "security": [
      {
       "omfSession": []
+     }
+    ]
+   }
+  },
+  "/mdm/terminals/{terminalId}/accessible-screens": {
+   "get": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "POP [화면 이동] 후보",
+    "description": "POP 단말이 «자기» 화면 이동 후보를 읽는다. 단말 토큰 전용 — POP 종류이고, 경로의 terminalId 가 토큰의 단말이고, 토큰이 현재 세대여야 한다. 하나라도 어긋나면 401(관리웹 세션 쿠키도 401). 후보는 단말의 공정 매핑 플래그로 가른다 — 플래그 축이 없는 화면은 늘 담는다. 차례는 클라이언트 POP 화면 카탈로그 순서다. 진입 화면 P-CO-01 은 담지 않는다. 캐시하지 않는다(Cache-Control: private, no-store). 근거: 장부 P-10 · WIP-CHAIN-01 D3",
+    "parameters": [
+     {
+      "name": "terminalId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "화면 코드",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "screenCodes"
+         ],
+         "properties": {
+          "screenCodes": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "example": "P-01-01"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "단말 인증이 필요하다 — 단말 토큰이 없거나 현재 세대가 아니다. 관리웹 세션 쿠키로는 부를 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "terminalToken": []
+     }
+    ]
+   }
+  },
+  "/mdm/terminals/{terminalId}:confirm-registration": {
+   "post": {
+    "tags": [
+     "mdm"
+    ],
+    "summary": "단말 등록 확인",
+    "description": "기기가 QR 로 받은 토큰을 저장한 뒤 «그 토큰으로» 부른다 — 서버가 그 세대를 등록됨으로 적는다(registrationStatusCode=REGISTERED). 단말 토큰 전용 — MOBILE·POP 이고, 경로의 terminalId 가 토큰의 단말이고, 토큰이 현재 세대여야 한다. 어긋나면 401(관리웹 세션 쿠키도 401). 같은 세대로 다시 부르면 처음 시각을 그대로 돌려준다. 토큰을 재발급하면 다시 UNREGISTERED 가 된다. 본문은 없거나 빈 객체다. 근거: FR-002 · FR-007",
+    "parameters": [
+     {
+      "name": "terminalId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "maxProperties": 0
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "등록됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TerminalRegistrationConfirmation"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Idempotency-Key 가 없거나 UUID 가 아니다 · 본문이 비어 있지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "단말 인증이 필요하다 — 단말 토큰이 없거나 현재 세대가 아니다. 관리웹 세션 쿠키로는 부를 수 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "terminalToken": []
      }
     ]
    }
@@ -24009,6 +24278,165 @@
      }
     },
     "x-internal-note": "✅ 재발급하면 이전 기기 전부가 끊긴다 — tokenVersion 을 발급마다 올리고 클레임 tv 와 대조한다(공유계약 F-4, 2026-08-30 되살림). 화면은 이 규칙대로 「재발급 시 이전 토큰 전부가 끊깁니다」를 그린다."
+   },
+   "ErpSyncStatus": {
+    "type": "object",
+    "required": [
+     "enabled",
+     "items"
+    ],
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "description": "이 서버에서 ERP 연동이 켜져 있는가(ERP_SYNC_ENABLED). 꺼져 있으면 「지금 읽기」가 400 이다"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ErpSyncTableStatus"
+      }
+     }
+    }
+   },
+   "ErpSyncTableStatus": {
+    "type": "object",
+    "required": [
+     "interfaceCode",
+     "name",
+     "laneCode",
+     "laneName",
+     "running",
+     "requestedAt",
+     "lastStartedAt",
+     "lastFinishedAt",
+     "lastStatusCode",
+     "lastReadCount",
+     "lastAppliedCount",
+     "lastFailedCount",
+     "lastHeldCount",
+     "lastErrorMessage",
+     "nextRunAt"
+    ],
+    "properties": {
+     "interfaceCode": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "laneCode": {
+      "type": "string",
+      "enum": [
+       "MASTER",
+       "ORDER"
+      ],
+      "description": "실행 묶음 — 기준정보 · 오더"
+     },
+     "laneName": {
+      "type": "string"
+     },
+     "running": {
+      "type": "boolean",
+      "description": "지금 이 표를 도는 중 — 시작이 마지막 끝보다 늦고 실행기가 리스를 쥐고 있다"
+     },
+     "requestedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "「지금 읽기」가 걸려 있으면 그 시각. 실행기가 돌기 시작하면 지운다"
+     },
+     "lastStartedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "lastFinishedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "last* 결과 칸은 마지막으로 «끝난» 회차의 것이다 — 도는 중이면 그 앞 회차"
+     },
+     "lastStatusCode": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "lastReadCount": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "lastAppliedCount": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "lastFailedCount": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "lastHeldCount": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "lastErrorMessage": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "nextRunAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "다음 주기 회차 예정. 실행기가 아직 한 번도 돌지 않았으면 null"
+     }
+    }
+   },
+   "TerminalRegistrationConfirmation": {
+    "type": "object",
+    "required": [
+     "terminalId",
+     "tokenVersion",
+     "registrationStatusCode",
+     "registrationConfirmedAt"
+    ],
+    "properties": {
+     "terminalId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "tokenVersion": {
+      "type": "integer",
+      "description": "등록된 토큰 세대"
+     },
+     "registrationStatusCode": {
+      "type": "string",
+      "enum": [
+       "REGISTERED"
+      ]
+     },
+     "registrationConfirmedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
    },
    "TerminalProcess": {
     "x-source-table": "mdm.terminal_process",

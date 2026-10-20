@@ -24,10 +24,7 @@ import { OPERATION_PERMISSIONS } from './operation-permissions';
  *
  * 여러 화면이 같은 경로를 쓰면 그중 **하나**만 가지면 된다.
  */
-/**
- * 그 오퍼레이션의 기능 권한 중 하나라도 있는지 본다 — 없으면 403. 가드와, 사본에 없는 경로가 «같은
- * 오퍼레이션의 권한»을 빌려 쓰는 자리(장부 P-58)가 함께 부른다.
- */
+/** 그 오퍼레이션의 기능 권한 중 하나라도 있는지 본다 — 없으면 403. */
 export function assertOperationPermission(session: Session, key: string): void {
   const required = OPERATION_PERMISSIONS[key];
   if (!required) {

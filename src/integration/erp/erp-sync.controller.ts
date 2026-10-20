@@ -1,52 +1,37 @@
 import { Controller, Get, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { currentSession } from '../../auth/session-resolver.service';
 import { loginRequired } from '../../auth/authentication.guard';
-import { attachSession, SessionResolver } from '../../auth/session-resolver.service';
-import type { Session } from '../../auth/session.types';
-import { assertOperationPermission } from '../../common/permissions';
+import { Contract } from '../../common/contract';
 import { ErpSyncStatus, ErpSyncStatusService } from './erp-sync-status.service';
-
-/** 상태는 연계 메시지 목록을 보는 화면이 함께 본다(W-02-06·W-06-06·W-06-09·W-06-10). */
-const STATUS_OPERATION = 'GET /integration/messages';
-/** 「지금 읽기」는 실패 재처리와 같은 화면의 일이다(W-06-10). */
-const RUN_OPERATION = 'POST /integration/messages:retry-batch';
 
 /**
  * ERP 받기 표별 상태와 「지금 읽기」(장부 P-81). 화면은 관리웹 「ERP 연동 현황·이력」 탭(W-06-10).
- * ⛔ 이 경로들은 계약 사본에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가 이 핸들러를 보지 않는다.
- * 가드가 쓰는 같은 함수(세션 해석 · 로그인 필요 401 · 오퍼레이션 권한 403)를 여기서 부른다(P-58 과 같은 길).
- * 정본에 경로가 실려 오면 `@Contract` 를 달고 이 수동 인증을 지운다.
+ * 권한은 같은 화면의 오퍼레이션 것을 그대로 쓴다(`manual-permissions.ts`) — 상태는 연계 메시지 목록,
+ * 「지금 읽기」는 실패 재처리와 같다.
  */
 @Controller('integration/erp-sync/tables')
 export class ErpSyncController {
-  constructor(
-    private readonly resolver: SessionResolver,
-    private readonly status: ErpSyncStatusService,
-  ) {}
+  constructor(private readonly status: ErpSyncStatusService) {}
 
   @Get()
-  async list(@Req() request: Request): Promise<ErpSyncStatus> {
-    await this.authorize(request, STATUS_OPERATION);
+  @Contract('GET /integration/erp-sync/tables')
+  list(): Promise<ErpSyncStatus> {
     return this.status.list();
   }
 
   /** 202 — 적어 두기만 한다. 돌았는지는 목록의 `requestedAt`·`running`·`lastFinishedAt` 으로 본다. */
   @Post(':interfaceCode\\:run')
+  @Contract('POST /integration/erp-sync/tables/{interfaceCode}:run')
   @HttpCode(HttpStatus.ACCEPTED)
-  async run(
+  run(
     @Req() request: Request,
     @Param('interfaceCode') interfaceCode: string,
   ): Promise<{ interfaceCode: string; requestedAt: string }> {
-    const session = await this.authorize(request, RUN_OPERATION);
+    // 계약이 세션 전용이라 인증 가드를 지났으면 세션이 있다.
+    const session = currentSession(request);
+    if (session === undefined) throw loginRequired();
     return this.status.request(interfaceCode, session.userId);
-  }
-
-  private async authorize(request: Request, operation: string): Promise<Session> {
-    const session = await this.resolver.resolve(request);
-    if (session === null) throw loginRequired();
-    attachSession(request, session);
-    assertOperationPermission(session, operation);
-    return session;
   }
 }

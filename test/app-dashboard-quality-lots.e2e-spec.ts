@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { contractResponse } from './contract-response.fixture';
 
 const PREFIX = 'E2E-AA118-QLOTS';
 const PATH = '/api/app/dashboard-quality-lots';
@@ -28,7 +29,7 @@ type Quality = {
 
 /**
  * 품질 종합 「현재 현황」 상태별 LOT 목록(장부 P-58). ⭐ totalCount 가 대시보드 숫자와 같아야 한다.
- * ⛔ 계약 사본에 없는 경로라 가드 대신 컨트롤러가 인증·권한·질의를 막는다 — 401·403·400 을 여기서 고정한다.
+ * 인증·권한·질의는 가드가 막는다(계약 `GET /app/dashboard-quality-lots`) — 401·403·400 모양을 여기서 고정한다.
  */
 describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () => {
   let app: INestApplication;
@@ -60,7 +61,13 @@ describe('품질 종합 상태별 LOT 목록 (omf-all-around#118 · P-58)', () =
 
   const get = (path: string, query: Record<string, string>, as = cookie) =>
     request(app.getHttpServer()).get(path).query(query).set('Cookie', as);
-  const lots = async (query: Record<string, string>) => (await get(PATH, query).expect(200)).body as Lots;
+  const lotsResponse = contractResponse('app-공통.json', 'GET', '/app/dashboard-quality-lots', 200);
+  // 목록을 읽을 때마다 계약 응답 스키마로도 본다 — 가드는 요청만 본다.
+  const lots = async (query: Record<string, string>) => {
+    const body = (await get(PATH, query).expect(200)).body as Lots;
+    expect(lotsResponse(body)).toEqual([]);
+    return body;
+  };
   const quality = async (query: Record<string, string>) =>
     ((await get(SUMMARY, query).expect(200)).body as { quality: Quality }).quality;
   const errors = async (query: Record<string, string>) =>

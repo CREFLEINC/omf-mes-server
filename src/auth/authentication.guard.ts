@@ -70,8 +70,8 @@ export class AuthenticationGuard implements CanActivate {
       attachTerminal(request, terminal);
       return true;
     }
-    // This forward-only registration mutation is not in the read-only contract
-    // copy. It must still have the same global authentication boundary.
+    // Device registration confirmation is terminal-token only (MOBILE·POP, current generation);
+    // a session cookie never opens it, so it bypasses the session-first path below.
     if (this.reflector.get<boolean>(TERMINAL_REGISTRATION_OPERATION, context.getHandler())) {
       const request = context.switchToHttp().getRequest<Request>();
       if (!request.headers.authorization) throw loginRequired();

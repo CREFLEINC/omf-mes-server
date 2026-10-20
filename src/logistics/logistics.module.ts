@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 
-import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
@@ -93,8 +92,6 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
-    // 입하 예정 라인 목록(P-78)이 가드 밖이라 세션을 직접 푼다.
-    AuthModule,
   ],
   controllers: [
     GoodsIssueController,

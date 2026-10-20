@@ -1,6 +1,6 @@
 /**
  * ERP 받기 표별 상태 `GET /integration/erp-sync/tables`·「지금 읽기」 `POST …/{interfaceCode}:run`(장부 P-81).
- * 계약 사본에 없는 경로라 인증·권한을 컨트롤러가 직접 한다 — 401·403 도 여기서 본다.
+ * 인증·권한은 가드가 본다(계약 `GET /integration/erp-sync/tables` · `POST …:run`) — 401·403 도 여기서 본다.
  *
  * ⚠ 이 시험 서버는 ERP 연동이 꺼져 있다(실행기가 돌지 않는다). 「켜진 서버」 갈래는 요청 시점의
  * `ConfigService` 만 켠 것으로 바꿔 본다 — 실행기는 부팅 때 꺼진 채로 만들어져 요청을 집어 가지 않는다.
@@ -16,9 +16,12 @@ import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
 import { SyncState } from '../src/integration/erp/sync-state';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { contractResponse } from './contract-response.fixture';
 
 const PREFIX = 'E2E-ERPSYNC';
 const PATH = '/api/integration/erp-sync/tables';
+const statusResponse = contractResponse('mdm-기준정보.json', 'GET', '/integration/erp-sync/tables', 200);
+const runResponse = contractResponse('mdm-기준정보.json', 'POST', '/integration/erp-sync/tables/{interfaceCode}:run', 202);
 const CODE = 'IF-ERP-SO-RECV';
 const CODES = [
   'IF-ERP-CODE-RECV',
@@ -81,7 +84,7 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
       .mockImplementation(((name: string) => (name === 'ERP_SYNC_ENABLED' ? 'true' : original(name))) as never);
   };
 
-  it('⛔ 로그인이 없으면 둘 다 401 이다 — 가드 밖 경로라 컨트롤러가 직접 막는다', async () => {
+  it('⛔ 로그인이 없으면 둘 다 401 이다 — 인증 가드가 막는다', async () => {
     await request(app.getHttpServer()).get(PATH).expect(401);
     await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).expect(401);
   });
@@ -96,6 +99,7 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
   it('⭐ 여덟 표를 묶음 순서(기준정보 → 전표)로 낸다 — 꺼진 서버는 enabled=false', async () => {
     const response = await request(app.getHttpServer()).get(PATH).set('Cookie', cookies.operator).expect(200);
     expect(response.body.enabled).toBe(false);
+    expect(statusResponse(response.body)).toEqual([]);
     expect(response.body.items.map((i: { interfaceCode: string }) => i.interfaceCode)).toEqual(CODES);
     expect(response.body.items[0]).toMatchObject({ name: '공통코드', laneCode: 'MASTER', laneName: '기준정보' });
     expect(response.body.items[7]).toMatchObject({ name: 'ERP W/O', laneCode: 'ORDER', laneName: '전표' });
@@ -116,6 +120,7 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
     enable();
     const first = await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).set('Cookie', cookies.operator).expect(202);
     expect(first.body).toEqual({ interfaceCode: CODE, requestedAt: expect.any(String) });
+    expect(runResponse(first.body)).toEqual([]);
     const second = await request(app.getHttpServer()).post(`${PATH}/${CODE}:run`).set('Cookie', cookies.operator).expect(202);
     expect(second.body.requestedAt).toBe(first.body.requestedAt);
 
@@ -125,6 +130,7 @@ describe('ERP 받기 표별 상태·지금 읽기 (e2e)', () => {
     const status = await request(app.getHttpServer()).get(PATH).set('Cookie', cookies.operator).expect(200);
     const item = status.body.items.find((i: { interfaceCode: string }) => i.interfaceCode === CODE);
     expect(item).toMatchObject({ requestedAt: first.body.requestedAt, running: false, lastFinishedAt: null });
+    expect(statusResponse(status.body)).toEqual([]);
   });
 
   it('⭐ 실행기는 돌기 시작한 시각까지의 요청만 지운다 — 도는 사이에 또 누른 요청은 남는다', async () => {

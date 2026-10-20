@@ -363,5 +363,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],
+  // 품질 종합 상태별 LOT 목록(장부 P-58) — 통합 대시보드(W-CO-05)가 그 숫자를 눌러 목록을 본다.
+  // 계약에 올리기 전에도 컨트롤러가 `GET /app/dashboard-summary` 의 권한을 빌려 봤다 — 같은 값이다.
+  'GET /app/dashboard-quality-lots': ['W-CO-05'],
+  // ERP 받기 표별 상태·「지금 읽기」(장부 P-81) — 계약에 올리기 전에도 컨트롤러가 같은 화면의 오퍼레이션 권한을 빌려 봤다.
+  // 상태는 연계 메시지 목록(`GET /integration/messages`)을 보는 화면이, 「지금 읽기」는 실패 재처리
+  // (`POST /integration/messages:retry-batch`)와 같은 W-06-10 이 한다.
+  'GET /integration/erp-sync/tables': ['W-02-06', 'W-06-06', 'W-06-09', 'W-06-10'],
+  'POST /integration/erp-sync/tables/{interfaceCode}:run': ['W-06-10'],
 };
-
