@@ -160,6 +160,12 @@ describe('오퍼레이션 권한 매핑', () => {
     expect(gated).toEqual([]);
   });
 
+  // 입하 예정 P/O 라인 목록은 설계 밖 경로다 — 장부 P-77. ASN 목록을 소유하던 W-01-09 가 잇는다.
+  it('⛔ 입하 예정 P/O 라인 목록을 입하 예정 조회(W-01-09)가 소유한다 — 장부 P-77', () => {
+    expect(OPERATION_PERMISSIONS['GET /logistics/purchase-order-lines']).toEqual(['W-01-09']);
+    expect(OPERATION_PERMISSIONS['GET /logistics/asns']).toContain('W-01-09');
+  });
+
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
     expect(OPERATION_PERMISSIONS['PUT /inventory/counts/{inventoryCountId}/lines']).toEqual([
       'M-01-11',

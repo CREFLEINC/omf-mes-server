@@ -238,6 +238,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'PUT /logistics/purchase-orders/{purchaseOrderId}/lines': ['W-01-11'],
   'POST /logistics/purchase-orders/{purchaseOrderId}:request-approval': ['W-01-11'],
 
+  // `W-01-09` 입하 예정 조회 — 입하 예정을 ASN 대신 P/O 라인으로 본다(장부 P-77 · 설계에 없는 경로).
+  // 그 화면이 도출표에서 `GET /logistics/asns` 를 소유하던 자리를 이 경로가 잇는다. 계약 사본에 403 을
+  // 선언하지 않아(형제 조회 `GET /logistics/asns`·`/logistics/purchase-orders` 와 같다) 가드가 보지는 않는다 —
+  // 소유 화면을 적어 두는 줄이다.
+  'GET /logistics/purchase-order-lines': ['W-01-09'],
+
   // `W-01-12` 재고조정 §5-6 액션 표 「전기 — 승인 후(또는 승인 불요 시 상신 즉시)」.
   // 도출표는 화면 «액션»만 긁어 「조정 상신」만 들어왔고 전기가 빠졌다.
   'POST /inventory/adjustments/{inventoryAdjustmentId}:post': ['W-01-12'],

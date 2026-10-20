@@ -4243,6 +4243,132 @@
     "x-internal-note": "오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9)."
    }
   },
+  "/logistics/purchase-order-lines": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입하 예정 — P/O 라인 목록",
+    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-77). 입하 예정을 ASN 이 아니라 P/O 라인으로 본다 — ASN 이 들어오는 길이 없고 고객사가 ASN 을 쓰지 않는다(omf-mes-server#741). 라인 하나가 행 하나이고 헤더 칸을 함께 싣는다. 남은 수량(remainingQty)·입하 진행(receiptStatusCode)은 서버가 계산한다 — 다 들어왔다 = 누적 입하 ≥ 발주 수량(부족 허용치를 빼지 않는다 · openOnly 와 같은 기준). 기본 정렬은 입고 예정일(헤더 expectedReceiptDate) 오름차순 — 없는 것은 뒤 — 같으면 발주번호·라인번호. 근거: W-01-09",
+    "parameters": [
+     {
+      "name": "expectedReceiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입고 예정일(헤더 expected_receipt_date) 시작 — 이날 포함. 주면 예정일이 없는 P/O 는 빠진다"
+     },
+     {
+      "name": "expectedReceiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입고 예정일 종료 — 이날 포함"
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "발주번호·ERP 발주번호 부분 검색"
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": true
+      },
+      "description": "아직 다 들어오지 않은 라인만 — 누적 입하 < 발주 수량 · 라인이 ERP 취소(cancelledAt)되지 않았고 · 헤더가 CLOSED·CANCELLED 가 아니다. 기본 true — false 면 다 들어온 라인·취소 라인도 낸다"
+     },
+     {
+      "name": "overdueOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "입고 예정일이 공장 현지(plant.timezone_code) 오늘보다 앞인데 아직 다 들어오지 않은 라인만 — openOnly 의 조건을 늘 함께 건다(openOnly=false 여도)"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/InboundScheduleLine"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "조회 전용. 권한 가드는 보지 않는다(403 미선언 — 형제 조회 GET /logistics/asns·/logistics/purchase-orders 와 같다). 소유 화면은 W-01-09(수동표)."
+   }
+  },
   "/logistics/purchase-orders": {
    "get": {
     "tags": [
@@ -9918,6 +10044,175 @@
       "items": {
        "$ref": "#/components/schemas/InboundVariance"
       }
+     }
+    }
+   },
+   "InboundScheduleLine": {
+    "type": "object",
+    "description": "⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-77). 입하 예정 한 줄 — P/O 라인 하나와 그 헤더 칸. 근거: W-01-09",
+    "required": [
+     "purchaseOrderId",
+     "purchaseOrderNo",
+     "erpPurchaseOrderNo",
+     "supplierId",
+     "plantId",
+     "orderDate",
+     "expectedReceiptDate",
+     "statusCode",
+     "purchaseOrderLineId",
+     "lineNo",
+     "itemId",
+     "uomId",
+     "orderedQty",
+     "receivedQty",
+     "remainingQty",
+     "toleranceOverQty",
+     "toleranceUnderQty",
+     "erpStorageLocationCode",
+     "cancelledAt",
+     "receiptStatusCode"
+    ],
+    "properties": {
+     "purchaseOrderId": {
+      "x-source-column": "purchase_order.purchase_order_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "purchaseOrderNo": {
+      "x-source-column": "purchase_order.purchase_order_no",
+      "type": "string",
+      "example": "PO-20261020-0001"
+     },
+     "erpPurchaseOrderNo": {
+      "x-source-column": "purchase_order.erp_purchase_order_no",
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "ERP 발주번호. MES 에서 등록한 P/O 는 null",
+      "example": "PO2610200001"
+     },
+     "supplierId": {
+      "x-source-column": "purchase_order.supplier_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "plantId": {
+      "x-source-column": "purchase_order.plant_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "orderDate": {
+      "x-source-column": "purchase_order.order_date",
+      "type": "string",
+      "format": "date",
+      "example": "2026-10-20"
+     },
+     "expectedReceiptDate": {
+      "x-source-column": "purchase_order.expected_receipt_date",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "description": "입고 예정일(납기) — 헤더 칸이다. ERP 가 라인별 납기를 주지 않는다",
+      "example": "2026-10-25"
+     },
+     "statusCode": {
+      "x-source-column": "purchase_order.status_code",
+      "type": "string",
+      "description": "헤더 상태(PurchaseOrder.statusCode 와 같다)",
+      "example": "REGISTERED"
+     },
+     "purchaseOrderLineId": {
+      "x-source-column": "purchase_order_line_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lineNo": {
+      "x-source-column": "line_no",
+      "type": "integer",
+      "minimum": 1,
+      "example": 1
+     },
+     "itemId": {
+      "x-source-column": "item_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "uomId": {
+      "x-source-column": "uom_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "orderedQty": {
+      "x-source-column": "ordered_qty",
+      "type": "number",
+      "description": "발주 수량",
+      "example": 100
+     },
+     "receivedQty": {
+      "x-source-column": "received_qty",
+      "type": "number",
+      "minimum": 0,
+      "description": "누적 입하 수량",
+      "example": 40
+     },
+     "remainingQty": {
+      "type": "number",
+      "minimum": 0,
+      "readOnly": true,
+      "description": "파생 — 발주 수량 − 누적 입하. 초과 입하로 음수가 되면 0",
+      "example": 60
+     },
+     "toleranceOverQty": {
+      "x-source-column": "tolerance_over_qty",
+      "type": "number",
+      "minimum": 0,
+      "description": "초과 허용치",
+      "example": 5
+     },
+     "toleranceUnderQty": {
+      "x-source-column": "tolerance_under_qty",
+      "type": "number",
+      "minimum": 0,
+      "description": "부족 허용치 — 표시만 한다. 다 들어왔는가 판정에 쓰지 않는다",
+      "example": 5
+     },
+     "erpStorageLocationCode": {
+      "x-source-column": "erp_storage_location_code",
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "ERP 입고창고(SL_CD) — P-75 와 같은 칸",
+      "example": "W100"
+     },
+     "cancelledAt": {
+      "x-source-column": "cancelled_at",
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "ERP 가 이 라인을 취소한 시각 — P-75 와 같은 칸. 있으면 입하가 막힌다(P-73)"
+     },
+     "receiptStatusCode": {
+      "type": "string",
+      "enum": [
+       "NOT_STARTED",
+       "PARTIAL",
+       "COMPLETED"
+      ],
+      "readOnly": true,
+      "description": "파생 — 입하 진행. COMPLETED = 누적 입하 ≥ 발주 수량 · PARTIAL = 0 < 누적 입하 < 발주 수량 · NOT_STARTED = 누적 입하 0. 부족 허용치는 빼지 않는다. 취소 여부는 cancelledAt 으로 본다",
+      "example": "PARTIAL"
      }
     }
    },

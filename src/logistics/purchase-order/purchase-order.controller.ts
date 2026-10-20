@@ -149,7 +149,7 @@ function userOf(request: Request): number {
   return session.userId;
 }
 
-function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
+export function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
   const plantId = currentTerminal(request)?.plantId;
   return plantId === undefined ? query : { ...query, plantId: Number(plantId) };
 }
