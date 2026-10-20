@@ -463,8 +463,7 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       },
-      "description": "기간 필수 — 공유계약 L-3",
-      "required": true
+      "description": "기간 필수 — 공유계약 L-3\n\n서버 구현 기준: inspectionResultId 로 좁힌 조회는 기간 없이 받는다(P-42). 그 밖에는 detectedFrom·detectedTo 를 함께 보낸다."
      },
      {
       "name": "detectedTo",
@@ -474,7 +473,7 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       },
-      "required": true
+      "description": "서버 구현 기준: inspectionResultId 로 좁힌 조회는 기간 없이 받는다(P-42). 그 밖에는 detectedFrom·detectedTo 를 함께 보낸다."
      },
      {
       "name": "page",
@@ -549,12 +548,6 @@
      },
      {
       "terminalToken": []
-     }
-    ],
-    "x-omf-known-differences": [
-     {
-      "designRecord": "074",
-      "summary": "detectedFrom·detectedTo가 모두 없거나 한쪽만 있으면 서버는 400 REQUIRED를 반환한다."
      }
     ]
    },
