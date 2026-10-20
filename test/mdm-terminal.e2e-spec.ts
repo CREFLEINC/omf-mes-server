@@ -445,8 +445,8 @@ describe('단말 마스터 (e2e)', () => {
     const { id } = await create(`${PREFIX}-PROC2`);
     if (processIds.length < 2) return;
 
-    await putProcesses(id, [{ processId: processIds[0] }, { processId: processIds[1] }]);
-    const shrunk = await putProcesses(id, [{ processId: processIds[1] }]);
+    await putProcesses(id, [{ processId: processIds[0], canStartWork: true }, { processId: processIds[1], canStartWork: true }]);
+    const shrunk = await putProcesses(id, [{ processId: processIds[1], canStartWork: true }]);
 
     expect(shrunk.body.items).toHaveLength(1);
     expect(shrunk.body.items[0].processId).toBe(processIds[1]);
@@ -460,13 +460,29 @@ describe('단말 마스터 (e2e)', () => {
       .set('Cookie', cookie)
       .set('Idempotency-Key', key())
       .set('If-Match', await processEtag(id))
-      .send({ items: [{ processId: processIds[0] }, { processId: processIds[0] }] })
+      .send({ items: [{ processId: processIds[0], canStartWork: true }, { processId: processIds[0], canStartWork: true }] })
       .expect(400);
 
     expect(rejected.body.errors[0]).toMatchObject({
       field: 'items[1].processId',
       code: 'UNIQUE_VIOLATION',
     });
+  });
+
+  it('⛔ 기능을 하나도 켜지 않은 줄은 그 줄을 짚어 400 INVALID 다', async () => {
+    const { id } = await create(`${PREFIX}-PROC4`);
+
+    const rejected = await request(app.getHttpServer())
+      .put(`/api/mdm/terminals/${id}/processes`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', await processEtag(id))
+      .send({ items: [{ processId: processIds[0], canStartWork: false, canPrintLabel: false }] })
+      .expect(400);
+
+    expect(rejected.body.errors).toEqual([
+      expect.objectContaining({ scope: 'field', field: 'items[0]', code: 'INVALID', message: '기능을 하나 이상 켜야 합니다.' }),
+    ]);
   });
 
   it('⭐ 창고 전용 단말은 공정 0건이 정상이다 — F-1 적용 범위', async () => {

@@ -128,6 +128,10 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       itemCode: `${PREFIX}-IT`,
       routingOperationName: '사출',
       productionOrderNo: `${PREFIX}-PO`,
+      // POP 이 단말 공정 매핑과 견주는 공정 셋 — Routing 공정의 공정이다.
+      processId: Number(ids.process),
+      processCode: `${PREFIX}-PR`,
+      processName: '사출공정',
     });
     // 마감 전이라 `erpMessageQueued` 는 «키가 없다» · 상세에는 `validation` 스위치가 없다.
     expect(Object.keys(response.body as object)).not.toContain('erpMessageQueued');
@@ -274,6 +278,15 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       const valid = validate(response.body);
       if (!valid) throw new Error(JSON.stringify(validate.errors));
       expect(valid).toBe(true);
+      // 기본 쪽에 이 W/O 가 든다는 보장이 없다(공유 DB) — 번호로 좁혀 목록 항목의 공정 셋을 본다.
+      const { work_order_no: workOrderNo } = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: BigInt(workOrderId) } });
+      const narrowed = await request(app.getHttpServer())
+        .get('/api/production/work-orders')
+        .query({ q: workOrderNo })
+        .set('Cookie', cookie)
+        .expect(200);
+      const mine = (narrowed.body.items as { workOrderId: number }[]).find((item) => item.workOrderId === workOrderId);
+      expect(mine).toMatchObject({ processId: Number(ids.process), processCode: `${PREFIX}-PR`, processName: '사출공정' });
     });
 
     it('목록 — withSummary=true 면 요약이 필터 전체 기준이다', async () => {
