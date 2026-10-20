@@ -28,6 +28,7 @@ function resultRow(overrides: Partial<InspectionResultRow> = {}): InspectionResu
     updated_at: new Date('2026-09-07T00:00:00.000Z'),
     updated_by: null,
     version_no: 1,
+    worker: { worker_name: '검사원' },
     inspection_request: {
       inspection_request_no: 'IR-2026-0907-0001',
       inspection_type_code: 'IQC',
@@ -67,6 +68,10 @@ describe('InspectionResult 뷰', () => {
     expect(view).not.toHaveProperty('overallJudgmentCode');
     expect(view.statusCode).toBe('DRAFT');
     expect(view).not.toHaveProperty('confirmedAt');
+  });
+
+  it('inspectorName 은 검사자(작업자) 조인에서 파생한다(omf-all-around#85 · P-76)', () => {
+    expect(inspectionResultView(resultRow())).toMatchObject({ inspectorId: 31, inspectorName: '검사원' });
   });
 
   it('lotNo 는 의뢰의 LOT 조인에서 파생한다', () => {

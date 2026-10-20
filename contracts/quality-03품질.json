@@ -920,6 +920,16 @@
       }
      },
      {
+      "name": "lotId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      },
+      "description": "그 LOT 의 검사 의뢰 결과만. 주면 기간(inspectedFrom·inspectedTo)이 필요 없다 — LOT 하나의 전 이력. 서버 선행 · 장부 P-76 · omf-all-around#85"
+     },
+     {
       "name": "inspectedFrom",
       "in": "query",
       "schema": {
@@ -3955,6 +3965,11 @@
       "type": "integer",
       "format": "int64",
       "example": 1001
+     },
+     "inspectorName": {
+      "type": "string",
+      "description": "파생 — 서버가 inspectorId 의 작업자 이름을 풀어 내린다(표시용). 서버 선행 · 장부 P-76 · omf-all-around#85",
+      "example": "홍길동"
      },
      "inspectedAt": {
       "type": "string",

@@ -9,6 +9,8 @@ import { omitEmpty } from '../../common/http/omit-empty';
  * 먼저 보고 비면 ⓐ 기준 축(3단)으로 떨어진다 — 계약 「2단」과 홉 수가 맞는 쪽이 ⓑ 다(미발행 · I-19 §9-2 후보 5).
  */
 export const INSPECTION_RESULT_JOIN = {
+  // 검사자 이름(omf-all-around#85 · 장부 P-76) — 목록이 행마다 작업자를 따로 읽지 않게 같은 쿼리로 묶는다.
+  worker: { select: { worker_name: true } },
   inspection_request: {
     select: {
       inspection_request_no: true,
@@ -52,6 +54,7 @@ export function inspectionResultView(row: InspectionResultRow) {
     // 키를 생략한다(값을 지어내면 F-6 위반). 설계 미정 — 문의 085(054 와 같은 자리 · 묶어 답).
     overallJudgmentCode: row.overall_judgment_code ?? undefined,
     inspectorId: Number(row.inspector_id),
+    inspectorName: row.worker.worker_name,
     inspectedAt: row.inspected_at.toISOString(),
     confirmedAt: row.confirmed_at?.toISOString(),
     terminalId: row.terminal_id === null ? undefined : Number(row.terminal_id),

@@ -10,14 +10,17 @@ import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../comm
  */
 export function assertScopedOrPeriod(query: {
   inspectionRequestId?: number;
+  lotId?: number;
   inspectedFrom?: string;
   inspectedTo?: string;
 }): void {
   assertPeriodPair(query);
   if (query.inspectionRequestId !== undefined) return;
+  // LOT 하나로 묶이면 기간 없이 그 LOT 의 전 이력을 본다(omf-all-around#85 · 장부 P-76) — 의뢰 하나와 같은 «범위가 정해진» 조회다.
+  if (query.lotId !== undefined) return;
   if (query.inspectedFrom !== undefined) return; // 위에서 쌍임을 확인했으니 하나만 봐도 된다
   throw new ContractException(HttpStatus.BAD_REQUEST, [
-    field('inspectionRequestId', ERROR_CODE.REQUIRED, 'inspectionRequestId 또는 기간(inspectedFrom·inspectedTo) 중 하나가 필요합니다.'),
+    field('inspectionRequestId', ERROR_CODE.REQUIRED, 'inspectionRequestId·lotId 또는 기간(inspectedFrom·inspectedTo) 중 하나가 필요합니다.'),
   ]);
 }
 

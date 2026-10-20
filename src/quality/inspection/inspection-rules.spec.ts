@@ -19,6 +19,14 @@ describe('assertScopedOrPeriod — inspectionRequestId 또는 기간 중 하나(
     expect(() => assertScopedOrPeriod({ inspectionRequestId: 1 })).not.toThrow();
   });
 
+  it('lotId 만 있어도 통과한다 — LOT 하나의 전 이력(omf-all-around#85 · P-76)', () => {
+    expect(() => assertScopedOrPeriod({ lotId: 7 })).not.toThrow();
+  });
+
+  it('⛔ lotId 가 있어도 기간을 한쪽만 주면 400 PAIR 다', () => {
+    expect(() => assertScopedOrPeriod({ lotId: 7, inspectedFrom: '2026-09-01T00:00:00.000Z' })).toThrow();
+  });
+
   it('기간을 쌍으로 주면 통과한다', () => {
     expect(() =>
       assertScopedOrPeriod({ inspectedFrom: '2026-09-01T00:00:00.000Z', inspectedTo: '2026-09-02T00:00:00.000Z' }),
