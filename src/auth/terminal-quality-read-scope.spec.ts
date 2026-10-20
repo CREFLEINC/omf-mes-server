@@ -18,29 +18,39 @@ const prisma = () => ({
   nonconformance: { findFirst: jest.fn().mockResolvedValue({ nonconformance_id: 1n }) },
   work_order: { findFirst: jest.fn().mockResolvedValue({ work_order_id: 1n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 1n }) },
+  shipment_request: { findMany: jest.fn().mockResolvedValue([{ shipment_request_id: 31n }]) },
 }) as unknown as PrismaService;
+const mappedWorkOrder = {
+  production_line: { plant_id: 3n },
+  routing_operation: { process: { terminal_process: {
+    some: { terminal_id: 7n, can_start_work: true },
+  } } },
+};
+const popInspection = { OR: [
+  { work_order: mappedWorkOrder },
+  { inspection_type_code: 'OQC', OR: [
+    { lot: { plant_id: 3n } },
+    { target_type_code: 'SHIPMENT_REQUEST', target_id: { in: [31n] } },
+  ] },
+] };
 
 describe('terminal quality read scope', () => {
   it('contains only the twelve client quality/repair GETs with exact channels', () => {
     // +2 — PQC 패널이 작성중 회차·측정치를 되살린다(omf-all-around#107 · 장부 P-49).
     expect(Object.keys(TERMINAL_QUALITY_READ_OPERATIONS)).toHaveLength(12);
+    expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-results']).toEqual(['POP']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-requests']).toEqual(['POP']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/defect-records']).toEqual(['MOBILE']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-plans']).toBeUndefined();
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/nonconformances']).toBeUndefined();
   });
 
-  it('requires a POP inspection request to belong to a W/O mapped to this terminal', async () => {
+  it('requires a POP inspection request to be a mapped W/O request or a same-plant OQC request', async () => {
     const db = prisma();
     const req = request({}, { inspectionRequestId: '42' });
     await assertTerminalQualityReadScope(db, req, 'GET /quality/inspection-requests/{inspectionRequestId}', terminal('POP'));
     expect(db.inspection_request.findFirst).toHaveBeenCalledWith({
-      where: { inspection_request_id: 42n, work_order: {
-        production_line: { plant_id: 3n },
-        routing_operation: { process: { terminal_process: {
-          some: { terminal_id: 7n, can_start_work: true },
-        } } },
-      } }, select: { inspection_request_id: true },
+      where: { AND: [{ inspection_request_id: 42n }, popInspection] }, select: { inspection_request_id: true },
     });
     expect(currentTerminalQualityReadScope(req)).toMatchObject({ plantId: 3n, terminalId: 7n });
     (db.inspection_request.findFirst as jest.Mock).mockResolvedValueOnce(null);
@@ -48,18 +58,32 @@ describe('terminal quality read scope', () => {
       'GET /quality/inspection-requests/{inspectionRequestId}', terminal('POP'))).rejects.toMatchObject({ status: 401 });
   });
 
-  it('opens PQC rounds and their measurements only through an inspection request mapped to this terminal', async () => {
+  it('opens the POP OQC queue without a W/O but keeps other W/O-less lists closed', async () => {
     const db = prisma();
-    await assertTerminalQualityReadScope(db, request({ inspectionRequestId: '42' }), 'GET /quality/inspection-results', terminal('POP'));
-    expect((db.inspection_request.findFirst as jest.Mock).mock.calls[0][0].where).toMatchObject({ inspection_request_id: 42n });
+    await assertTerminalQualityReadScope(db, request({ inspectionTypeCode: 'OQC' }),
+      'GET /quality/inspection-requests', terminal('POP'));
+    expect(db.work_order.findFirst).not.toHaveBeenCalled();
+    await expect(assertTerminalQualityReadScope(db, request({ inspectionTypeCode: 'PQC' }),
+      'GET /quality/inspection-requests', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalQualityReadScope(db, request(),
+      'GET /quality/inspection-requests', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('opens POP inspection rounds only for one visible inspection request', async () => {
+    const db = prisma();
+    await assertTerminalQualityReadScope(db, request({ inspectionRequestId: '42' }),
+      'GET /quality/inspection-results', terminal('POP'));
+    expect(db.inspection_request.findFirst).toHaveBeenCalledWith({
+      where: { AND: [{ inspection_request_id: 42n }, popInspection] }, select: { inspection_request_id: true },
+    });
+    // 측정치는 PQC 패널만 부른다 — 공정 매핑 W/O 의 회차로만 연다(omf-all-around#107).
     await assertTerminalQualityReadScope(db, request({}, { inspectionResultId: '12' }),
       'GET /quality/inspection-results/{inspectionResultId}/measurements', terminal('POP'));
     expect((db.inspection_request.findFirst as jest.Mock).mock.calls[1][0].where).toMatchObject({
-      inspection_result: { some: { inspection_result_id: 12n } },
+      inspection_result: { some: { inspection_result_id: 12n } }, work_order: mappedWorkOrder,
     });
-    // 의뢰 없이 훑는 회차 목록은 열지 않는다.
-    await expect(assertTerminalQualityReadScope(db, request({}), 'GET /quality/inspection-results', terminal('POP')))
-      .rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalQualityReadScope(db, request(),
+      'GET /quality/inspection-results', terminal('POP'))).rejects.toMatchObject({ status: 401 });
     await expect(assertTerminalQualityReadScope(db, request({ inspectionRequestId: '42' }),
       'GET /quality/inspection-results', terminal('MOBILE'))).rejects.toMatchObject({ status: 401 });
   });

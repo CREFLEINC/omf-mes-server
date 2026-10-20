@@ -31,7 +31,7 @@ describe('POP 화면 이동 후보 (D3)', () => {
     ['can_start_work', ['P-02-01', 'P-02-10']],
     ['can_input_material', ['P-02-03', 'P-02-11']],
     ['can_input_result', ['P-02-04', 'P-04-03']],
-    ['can_input_inspection', ['P-02-13', 'P-02-14']],
+    ['can_input_inspection', ['P-02-13', 'P-02-14', 'P-04-06']],
     ['can_print_label', ['P-01-02', 'P-02-09', 'P-04-04', 'P-04-05']],
     ['can_complete_work', ['P-02-08', 'P-04-01']],
   ] as const)('%s 하나만 켜면 그 화면들만 더 나온다', (flag, expected) => {
@@ -66,14 +66,15 @@ describe('POP 화면 이동 후보 (D3)', () => {
     expect(codes).not.toContain('P-02-13');
   });
 
-  it('표가 카탈로그와 같은 19 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
+  it('표가 카탈로그와 같은 20 화면을 덮는다 — 진입 화면 P-CO-01 은 담지 않는다', () => {
     const codes = POP_SCREEN_REQUIREMENTS.map((row) => row.code);
 
     // SHIP-UNIT-01 이 `P-04-05`(출하 단위 구성)를 더했다: 16 → 17.
     // 장부 P-28 이 `P-06-01`(창고 적재 위치 라벨 발행)을 더했다: 17 → 18 — 카탈로그 순서대로 끝이다.
     // 장부 P-52 가 `P-02-14`(자재 불량 등록)를 `P-02-13` 뒤에 더했다: 18 → 19.
-    expect(codes).toHaveLength(19);
-    expect(new Set(codes).size).toBe(19);
+    // 장부 P-80 이 `P-04-06`(OQC 출하검사 판정)을 `P-04-05` 뒤에 더했다: 19 → 20.
+    expect(codes).toHaveLength(20);
+    expect(new Set(codes).size).toBe(20);
     expect(codes.at(-1)).toBe('P-06-01');
     expect(codes).not.toContain('P-CO-01');
   });

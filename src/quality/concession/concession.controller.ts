@@ -1,10 +1,29 @@
-import { Controller, Get, NotFoundException, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request } from 'express';
+
+import { currentSession } from '../../auth/session-resolver.service';
 
 import { Contract } from '../../common/contract';
+import { IdempotencyService } from '../../common/idempotency';
+import { runIdempotent } from '../../common/master';
 import { PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConcessionFilters, concessionByIdQuery, concessionCountQuery, concessionRowsQuery, todayUtc } from './concession-query';
 import { ConcessionRow, ConcessionView, assertUsableInvariant, concessionView } from './concession-view';
+import { ConcessionCreate, ConcessionWriteService } from './concession-write.service';
 
 export interface ConcessionListQuery extends ConcessionFilters {
   page?: number;
@@ -21,7 +40,32 @@ export interface ConcessionListQuery extends ConcessionFilters {
  */
 @Controller('quality')
 export class ConcessionController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly writes: ConcessionWriteService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
+
+  /** 특채 요청(omf-all-around#84 · 장부 P-79) — 특채(PENDING)와 결재 요청을 함께 만든다. */
+  @Post('concessions')
+  @Contract('POST /quality/concessions')
+  create(@Req() request: Request, @Body() body: ConcessionCreate): Promise<ConcessionView> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () =>
+      this.get(await this.writes.request(body, appUserId)));
+  }
+
+  /** 특채 적용 — 승인됐으면 LOT 을 정상으로 열고, 반려됐으면 특채를 닫는다. */
+  @Post('concessions/:concessionId\\:apply')
+  @Contract('POST /quality/concessions/{concessionId}:apply')
+  @HttpCode(HttpStatus.OK)
+  apply(@Req() request: Request, @Param('concessionId', ParseIntPipe) concessionId: number): Promise<ConcessionView> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.writes.apply(concessionId, appUserId);
+      return this.get(concessionId);
+    });
+  }
 
   @Get('concessions')
   @Contract('GET /quality/concessions')
@@ -51,4 +95,10 @@ export class ConcessionController {
     if (rows.length === 0) throw new NotFoundException('없는 특채입니다.');
     return concessionView(rows[0], todayUtc());
   }
+}
+
+function userOf(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return session.userId;
 }

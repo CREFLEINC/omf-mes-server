@@ -60,4 +60,18 @@ describe('releaseInspectionHoldsWithin', () => {
 
     expect(holds.lockLotsWithin).not.toHaveBeenCalled();
   });
+
+  /* #84 · 장부 P-79 — 담당자 결정 2026-10-20 「현행 유지」: 특채 적용은 불량창고 재고가 남아 있어도 보류를 닫는다. */
+  it('특채 적용(CONCESSION_APPROVED)은 불량창고 재고가 있어도 건너뛰지 않는다', async () => {
+    const holds = {
+      lockLotsWithin: jest.fn().mockResolvedValue([{ lot_id: 1n }]),
+      releaseWithin: jest.fn().mockResolvedValue({ released: [], openAfter: 0 }),
+    } as unknown as LotHoldService;
+    const client = tx([1n]);
+
+    await releaseInspectionHoldsWithin(client, holds, [1n], { by: 9n, at: new Date() }, 'CONCESSION_APPROVED');
+
+    expect(holds.lockLotsWithin).toHaveBeenCalledWith(client, [1n]);
+    expect((holds.releaseWithin as jest.Mock).mock.calls[0][3]).toEqual({ releaseReasonCode: 'CONCESSION_APPROVED' });
+  });
 });

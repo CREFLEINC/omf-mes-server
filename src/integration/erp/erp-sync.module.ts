@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AuthModule } from '../../auth/auth.module';
 import { AutoPlanService } from '../../planning/production-order/auto-plan.service';
 import { PlanningModule } from '../../planning/planning.module';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,32 +13,38 @@ import { partnerTable } from './apply/partner.apply';
 import { productionOrderTable } from './apply/production-order.apply';
 import { purchaseOrderTable } from './apply/purchase-order.apply';
 import { salesOrderTable } from './apply/sales-order.apply';
+import { ERP_SYNC_LANES, ErpSyncStatusService } from './erp-sync-status.service';
 import { erpSyncConfig } from './erp-sync.config';
-import { ErpSyncRunner } from './erp-sync.runner';
+import { ErpSyncController } from './erp-sync.controller';
+import { ErpSyncRunner, Lane } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
 import { RelayClient } from './relay-client';
 import { SyncLease } from './sync-lease';
+import { SyncState } from './sync-state';
 
 /**
  * ERP 연동 — api 프로세스 안에서 돈다. 다른 모듈에는 받은 ERP W/O 의 자동 계획에만 기댄다 — ERP 가 느려 화면에
  * 영향이 보이면 이 모듈만 띄우는 worker 로 떼어 낸다(2026-10-16 결정).
+ * 인증 모듈은 연동 현황·「지금 읽기」 API(P-81)가 가드 밖에서 세션을 풀려고 쓴다 — 떼어 낼 때 그 API 는 api 쪽에 남긴다.
  */
 @Module({
-  imports: [PlanningModule],
+  imports: [PlanningModule, AuthModule],
+  controllers: [ErpSyncController],
   providers: [
     {
-      provide: ErpSyncRunner,
-      inject: [ConfigService, PrismaService, AutoPlanService],
-      useFactory: (config: ConfigService, prisma: PrismaService, autoPlans: AutoPlanService): ErpSyncRunner => {
+      provide: ERP_SYNC_LANES,
+      inject: [ConfigService, AutoPlanService],
+      useFactory: (config: ConfigService, autoPlans: AutoPlanService): Lane[] => {
         const settings = erpSyncConfig(config);
-        const relay = new RelayClient(settings.relay);
         // 참조되는 쪽이 앞이다. 전표는 기준정보 회차가 끝난 뒤 같은 줄에서 돈다(실행기가 순서대로).
-        const master = {
+        const master: Lane = {
+          code: 'MASTER',
           name: '기준정보',
           tables: [commonCodeTable, employeeTable, itemTable, partnerTable, bomTable],
           intervalMs: settings.masterIntervalMs,
         };
-        const orders = {
+        const orders: Lane = {
+          code: 'ORDER',
           name: '전표',
           tables: [
             purchaseOrderTable,
@@ -47,15 +54,26 @@ import { SyncLease } from './sync-lease';
           ],
           intervalMs: settings.orderIntervalMs,
         };
+        return [master, orders];
+      },
+    },
+    {
+      provide: ErpSyncRunner,
+      inject: [ConfigService, PrismaService, ERP_SYNC_LANES],
+      useFactory: (config: ConfigService, prisma: PrismaService, lanes: Lane[]): ErpSyncRunner => {
+        const settings = erpSyncConfig(config);
+        const relay = new RelayClient(settings.relay);
         return new ErpSyncRunner(
           settings.enabled,
-          [master, orders],
+          lanes,
           new InboundCycle(prisma, relay),
           new SyncLease(prisma),
           relay,
+          new SyncState(prisma),
         );
       },
     },
+    ErpSyncStatusService,
   ],
 })
 export class ErpSyncModule {}

@@ -242,6 +242,14 @@ export const TRANSITIONS: TransitionRegistry = {
     // 승인된 IQC 생략의 실행 — 승인 자체는 LOT 을 옮기지 않는다(공유계약 J-8).
     'iqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
       transitionCode: 'C22', sourceOperation: 'POST /trace/lots/{lotId}:skip-iqc' },
+    // PQC 기준이 «생략 허용»이라 배포가 PQC 의뢰를 생략(SKIPPED)으로 만든 W/O 의 생산LOT — 실적이 곧 정상이다
+    // (omf-all-around#119 · 장부 P-82). C21(비대상)과 이력 코드로 가른다. ⚠ C25 는 #84(특채)가 쓴다.
+    'pqc-skipped': { from: ['INSPECTION_PENDING'], to: 'NORMAL',
+      transitionCode: 'C26', sourceOperation: 'POST /production/production-results' },
+    // 승인된 OQC 생략 실행 — 그 출하작업지시가 집은 LOT 에 「검사를 생략하고 출하」를 남긴다(omf-all-around#119 · 장부 P-83).
+    // OQC 는 헤더 대상이라 LOT 은 이미 정상이다 — 상태는 그대로 두고 이력만 쌓는다(C4 의 정상 → 정상과 같은 자리).
+    'oqc-skipped': { from: ['NORMAL'], to: 'NORMAL',
+      transitionCode: 'C27', sourceOperation: 'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc' },
 
     // ── I-21(처분 판정)이 쓴다 · 여기서는 등록만 한다 ──────────────
     // 셋이 «한 오퍼레이션»에서 `dispositionTypeCode`(REWORK·SCRAP·NORMAL)로 갈린다.
@@ -267,6 +275,10 @@ export const TRANSITIONS: TransitionRegistry = {
       transitionCode: 'C23', sourceOperation: DECIDE },
     'disposition-sort-defect': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'DEFECTIVE',
       transitionCode: 'C24', sourceOperation: DECIDE },
+    // ── 특채 적용(omf-all-around#84 · 장부 P-79) — 승인된 특채가 불합격 LOT 을 조건부로 쓰게 연다 ──
+    // ⚠ `from` 은 처분 셋과 같다 — IQC 불합격(C6)은 `DEFECTIVE`, 보류 판정은 `INSPECTION_PENDING` 으로 온다.
+    'concession-apply': { from: ['NORMAL', 'INSPECTION_PENDING', 'DEFECTIVE'], to: 'NORMAL',
+      transitionCode: 'C25', sourceOperation: 'POST /quality/concessions/{concessionId}:apply' },
   },
 
   /**

@@ -15,6 +15,8 @@ export interface RelayTable {
   targetTypeCode: string;
   /** `dbo` 아래 표 이름. */
   name: string;
+  /** 화면에 보이는 이름 — 연동 현황 탭의 「지금 읽기」 줄(장부 P-81). */
+  label: string;
   /**
    * 'N' 이 미반영, 'Y' 가 반영. TIG_DOWN 계열은 `IF_YN` 뿐이고, SND 계열(`MES_APPLY_FLAG`)은
    * 반영 시각·실패 사유 칸(`MES_APPLY_DT`·`MES_APPLY_ERROR`)과 수정자 칸을 함께 쓴다.
@@ -33,6 +35,7 @@ export const COMMON_CODE: RelayTable = {
   interfaceCode: 'IF-ERP-CODE-RECV',
   targetTypeCode: 'COMMON_CODE',
   name: 'T_ERP_TYPE_TIG_DOWN',
+  label: '공통코드',
   flagColumn: 'IF_YN',
   // PLANT_CD 는 키에 넣지 않는다 — MES 코드 값의 키가 (그룹, 코드)이고 244행 전부 비어서 온다.
   keyColumns: ['TYPE_CODE', 'CODE'],
@@ -44,6 +47,7 @@ export const EMPLOYEE: RelayTable = {
   interfaceCode: 'IF-ERP-EMP-RECV',
   targetTypeCode: 'WORKER',
   name: 'T_ERP_EMP_TIG_DOWN',
+  label: '사원',
   flagColumn: 'IF_YN',
   keyColumns: ['EMP_CODE'],
   versionColumn: 'T_SEQ',
@@ -54,6 +58,7 @@ export const ITEM: RelayTable = {
   interfaceCode: 'IF-ERP-ITEM-RECV',
   targetTypeCode: 'ITEM',
   name: 'T_IF_SND_ITEM_INFOR_KO324',
+  label: '품목',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['ITEM_CD', 'PLANT_CD'],
   versionColumn: 'IF_SEQ',
@@ -63,6 +68,7 @@ export const PARTNER: RelayTable = {
   interfaceCode: 'IF-ERP-BP-RECV',
   targetTypeCode: 'PARTNER',
   name: 'T_IF_SND_BIZ_PARTNER_KO324',
+  label: '거래처',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['BP_CD'],
   versionColumn: 'IF_SEQ',
@@ -76,6 +82,7 @@ export const BOM: RelayTable = {
   interfaceCode: 'IF-ERP-BOM-RECV',
   targetTypeCode: 'BOM',
   name: 'T_IF_SND_BOM_INFOR_KO324',
+  label: 'BOM',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PRNT_ITEM_CD', 'PLANT_CD', 'CHILD_ITEM_SEQ', 'CHILD_ITEM_CD'],
   versionColumn: 'IF_SEQ',
@@ -89,6 +96,7 @@ export const PURCHASE_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-PO-RECV',
   targetTypeCode: 'PURCHASE_ORDER',
   name: 'T_IF_SND_PO_INFOR_KO324',
+  label: '구매발주',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PO_NO', 'PO_SEQ_NO'],
   versionColumn: 'IF_SEQ',
@@ -99,6 +107,7 @@ export const SALES_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-SO-RECV',
   targetTypeCode: 'SALES_ORDER',
   name: 'T_IF_SND_SO_INFOR_KO324',
+  label: '수주',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['SO_NO', 'SO_SEQ_NO'],
   versionColumn: 'IF_SEQ',
@@ -109,6 +118,7 @@ export const PRODUCTION_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-PRODORD-RECV',
   targetTypeCode: 'PRODUCTION_ORDER',
   name: 'T_IF_SND_PROD_ORD_KO324',
+  label: 'ERP W/O',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PRODT_ORDER_NO'],
   versionColumn: 'IF_SEQ',

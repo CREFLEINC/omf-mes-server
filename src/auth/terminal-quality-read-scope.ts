@@ -8,6 +8,9 @@ import { TerminalContext } from './terminal-context';
 
 type TerminalType = 'POP' | 'MOBILE';
 
+const OQC = 'OQC';
+const SHIPMENT_REQUEST = 'SHIPMENT_REQUEST';
+
 /** Exact quality/repair GETs in the POP and MOBILE client API inventory. */
 export const TERMINAL_QUALITY_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /quality/inspection-requests': ['POP'],
@@ -48,6 +51,36 @@ export function terminalQualityWorkOrderWhere(scope: TerminalQualityReadScope): 
   };
 }
 
+/**
+ * ⭐ POP OQC 출하검사 판정(P-04-06 · 장부 P-80) — OQC 의뢰에는 W/O 가 없어 위 공정 축으로 못 가른다.
+ * 단말과 같은 공장이면 연다. 출하지시 대상은 다형 참조(`target_id`)라 관계로 못 걸어 지시 id 를
+ * 먼저 푼다. ⛔ 출하 공장이 비어 있는 지시의 의뢰는 담지 않는다 — 「모른다」를 허용으로 읽지 않는다.
+ */
+async function terminalOqcRequestWhere(
+  prisma: PrismaService, plantId: bigint,
+): Promise<Prisma.inspection_requestWhereInput> {
+  const shipments = await prisma.shipment_request.findMany({
+    where: { fulfillment_plant_id: plantId }, select: { shipment_request_id: true },
+  });
+  return {
+    inspection_type_code: OQC,
+    OR: [
+      { lot: { plant_id: plantId } },
+      { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipments.map((row) => row.shipment_request_id) } },
+    ],
+  };
+}
+
+/** 단말이 볼 수 있는 검사 의뢰 — 공정 매핑 W/O 의 의뢰(PQC) 또는 같은 공장의 OQC 의뢰. */
+export async function terminalInspectionRequestWhere(
+  prisma: PrismaService, scope: TerminalQualityReadScope,
+): Promise<Prisma.inspection_requestWhereInput> {
+  return { OR: [
+    { work_order: terminalQualityWorkOrderWhere(scope) },
+    await terminalOqcRequestWhere(prisma, scope.plantId),
+  ] };
+}
+
 export async function assertTerminalQualityReadScope(
   prisma: PrismaService, request: Request, key: string, terminal: TerminalContext,
 ): Promise<void> {
@@ -76,6 +109,13 @@ export async function assertTerminalQualityReadScope(
       where: { ...where, work_order: mappedWorkOrder }, select: { inspection_request_id: true },
     })) throw denied();
   };
+  const ownPopInspectionRequest = async (value: unknown): Promise<void> => {
+    const id = positiveId(value);
+    if (id === null || !await prisma.inspection_request.findFirst({
+      where: { AND: [{ inspection_request_id: id }, await terminalInspectionRequestWhere(prisma, scope)] },
+      select: { inspection_request_id: true },
+    })) throw denied();
+  };
   const ownNonconformance = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     if (id === null || !await prisma.nonconformance.findFirst({
@@ -87,20 +127,17 @@ export async function assertTerminalQualityReadScope(
 
   switch (key) {
     case 'GET /quality/inspection-requests':
+      // OQC 목록은 W/O 없이 온다 — 공장 범위는 서비스가 `terminalInspectionRequestWhere` 로 좁힌다.
+      if (query.workOrderId === undefined && query.inspectionTypeCode === OQC) break;
       await ownWorkOrder(query.workOrderId);
       break;
-    case 'GET /quality/inspection-requests/{inspectionRequestId}': {
-      const id = positiveId(request.params.inspectionRequestId);
-      if (id === null) throw denied();
-      await ownInspectionRequest({ inspection_request_id: id });
+    case 'GET /quality/inspection-requests/{inspectionRequestId}':
+      await ownPopInspectionRequest(request.params.inspectionRequestId);
       break;
-    }
-    case 'GET /quality/inspection-results': {
-      const id = positiveId(query.inspectionRequestId);
-      if (id === null) throw denied();
-      await ownInspectionRequest({ inspection_request_id: id });
+    case 'GET /quality/inspection-results':
+      // 회차 이력 — 볼 수 있는 의뢰 하나로만 연다.
+      await ownPopInspectionRequest(query.inspectionRequestId);
       break;
-    }
     case 'GET /quality/inspection-results/{inspectionResultId}/measurements': {
       const id = positiveId(request.params.inspectionResultId);
       if (id === null) throw denied();

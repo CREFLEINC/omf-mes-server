@@ -128,6 +128,138 @@
       }
      }
     }
+   },
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "특채 요청",
+    "description": "부적합의 불합격 LOT 을 조건부로 쓰겠다고 결재를 올린다. 특채(PENDING)와 결재 요청(approvalTypeCode=CONCESSION · 대상 NONCONFORMANCE)을 한 번에 만든다 — 승인은 W-03-09(POST /app/approval-requests/{id}:approve), 적용은 :apply 다. 사용 가능 수량은 그 부적합의 남은 수량 이하. 결재선이 없으면 400 ROUTE_NOT_FOUND. 근거: omf-all-around#84 (서버 선행 · 장부 P-79)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ConcessionCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "요청됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Concession"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 부적합",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-79. 계약 원문은 생성 경로를 두지 않았다(W-03-09 §8 #4 「특채 요청은 어느 화면이 만드나」 미결) — 처분 판정 화면(W-03-10)이 만든다로 정했다."
+   }
+  },
+  "/quality/concessions/{concessionId}:apply": {
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "특채 적용",
+    "description": "승인된 특채를 적용한다 — 한 트랜잭션에서 특채 APPROVED · 부적합에 처분 판정(CONCESSION) 1건 · LOT 정상(C25) · 수입검사 대기 보류 해제(CONCESSION_APPROVED). 결재가 진행 중이면 400 APPROVAL_IN_PROGRESS, 반려면 특채를 REJECTED 로 닫고 200(statusCode=REJECTED · LOT 은 그대로). 이미 적용·반려된 특채는 400 STATE_LOCKED. 근거: omf-all-around#84 (서버 선행 · 장부 P-79)",
+    "parameters": [
+     {
+      "name": "concessionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "적용됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Concession"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 · 승인 전 · 이미 적용·반려됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 특채",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-79. 「승인 → 실행」을 나눈 것은 IQC 생략(:skip-iqc)·실적 정정과 같은 방식이다 — 결재 코어는 대상 업무를 모른다."
    }
   },
   "/quality/concessions/{concessionId}": {
@@ -463,7 +595,8 @@
         "REWORK",
         "SCRAP",
         "NORMAL",
-        "SORT"
+        "SORT",
+        "CONCESSION"
        ]
       },
       "description": "재작업 · 폐기 · 정상",
@@ -2964,6 +3097,77 @@
      }
     }
    },
+   "ConcessionCreate": {
+    "type": "object",
+    "required": [
+     "nonconformanceId",
+     "lotId",
+     "approvedQty",
+     "uomId",
+     "validFrom",
+     "reason"
+    ],
+    "description": "특채 요청 본문(서버 선행 · 장부 P-79 · omf-all-around#84).",
+    "properties": {
+     "nonconformanceId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "그 부적합의 LOT 이어야 한다."
+     },
+     "approvedQty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "사용 가능 수량 — 그 부적합의 남은 수량 이하."
+     },
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "부적합 단위와 같아야 한다."
+     },
+     "validFrom": {
+      "type": "string",
+      "format": "date"
+     },
+     "validTo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date",
+      "description": "비우면 끝없음."
+     },
+     "allowedWorkOrderId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "allowedProcessId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "allowedCustomerId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64"
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "특채 사유 — 결재 요청 사유와 특채 비고에 함께 남는다."
+     }
+    }
+   },
    "Concession": {
     "type": "object",
     "properties": {
@@ -3362,7 +3566,8 @@
        "REWORK",
        "SCRAP",
        "NORMAL",
-       "SORT"
+       "SORT",
+       "CONCESSION"
       ],
       "x-server-ahead": "SORT(선별)은 서버 선행 — 장부 P-53 · omf-all-around#108. 양품은 정상, 불량분은 자식 LOT 으로 떼어 불량·새 부적합으로 넘긴다.",
       "x-code-key": "CD-DISPOSITION-DECISION-DISPOSITION-TYPE"
@@ -3547,7 +3752,8 @@
        "REWORK",
        "SCRAP",
        "NORMAL",
-       "SORT"
+       "SORT",
+       "CONCESSION"
       ],
       "x-server-ahead": "SORT(선별)은 서버 선행 — 장부 P-53 · omf-all-around#108. 양품은 정상, 불량분은 자식 LOT 으로 떼어 불량·새 부적합으로 넘긴다.",
       "x-code-key": "CD-DISPOSITION-DECISION-DISPOSITION-TYPE"
@@ -4078,7 +4284,7 @@
      "judgmentChangeReason": {
       "type": "string",
       "maxLength": 500,
-      "description": "⭐ IQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC 가 아니면 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125",
+      "description": "⭐ IQC·OQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      }
     },
@@ -4169,7 +4375,7 @@
      "judgmentChangeReason": {
       "type": "string",
       "maxLength": 500,
-      "description": "⭐ IQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC 가 아니면 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125",
+      "description": "⭐ IQC·OQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
      }
     },

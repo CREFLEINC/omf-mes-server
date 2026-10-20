@@ -3,6 +3,9 @@ import { hostname } from 'node:os';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** 실행기의 리스 이름 — 연동 현황(P-79)이 「지금 도는 중」을 가를 때 이 줄의 만료를 본다. */
+export const ERP_SYNC_LEASE = 'erp-sync';
+
 /**
  * 「한 쪽만 돈다」 — 블루-그린 전환 중에는 api 가 둘 떠 있다. 쥔 쪽만 회차를 돈다.
  * 쥔 쪽이 묶음마다 늘리고, 죽으면 120초 뒤 다른 쪽이 가져간다.
@@ -13,7 +16,7 @@ export class SyncLease {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly name = 'erp-sync',
+    private readonly name = ERP_SYNC_LEASE,
   ) {}
 
   /** 잡거나 늘린다. 남이 쥐고 있고 아직 안 끝났으면 false. */

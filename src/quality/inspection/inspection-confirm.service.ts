@@ -18,10 +18,11 @@ import {
 } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertOqcPicked, oqcPickedLots } from '../../logistics/shipment-request/shipment-oqc-lots';
 import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertAccountWorker, assertIqcJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
+import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
@@ -32,7 +33,7 @@ export interface InspectionResultConfirm {
   remarks?: string;
   /** IQC 불합격 사유 — 확정과 한 트랜잭션에서 그 회차의 불량 기록을 갈아 끼운다(장부 P-47 · omf-all-around#121). */
   defects?: InspectionDefectInput[];
-  /** IQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125). 같으면 버린다. */
+  /** IQC·OQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125·#126). 같으면 버린다. */
   judgmentChangeReason?: string;
 }
 
@@ -57,6 +58,8 @@ const REQUEST_COMPLETED = 'COMPLETED';
 const JUDGMENT_GROUP = 'INSPECTION_RESULT_OVERALL_JUDGMENT';
 const ACCEPTED = 'ACCEPTED';
 const PQC = 'PQC';
+const OQC = 'OQC';
+const SHIPMENT_REQUEST_TARGET = 'SHIPMENT_REQUEST';
 const IQC = 'IQC';
 const REJECTED = 'REJECTED';
 /** `lot_status_event.source_document_type_code` — 이 전이를 일으킨 전표. */
@@ -166,8 +169,8 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
-      // IQC 는 합격판정개수 기준 자동 판정과 다르면 변경 사유가 있어야 한다 — 사유는 비고 맨 앞에 남긴다(P-70 · #125).
-      const changeReason = await assertIqcJudgmentChange(tx, result.inspection_request_id, {
+      // IQC·OQC 는 합격판정개수 기준 자동 판정과 다르면 변경 사유가 있어야 한다 — 사유는 비고 맨 앞에 남긴다(P-70 · #125·#126).
+      const changeReason = await assertJudgmentChange(tx, result.inspection_request_id, {
         acceptedQty: Number(result.accepted_qty),
         rejectedQty: Number(result.rejected_qty),
         heldQty: Number(result.held_qty),
@@ -242,6 +245,7 @@ export class InspectionConfirmService {
       sourceDocumentId: input.inspectionResultId,
     };
     await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
+    await this.movePickedOqcLots(tx, request, input.judgment, moveContext);
     if (input.nonconformanceNo !== undefined && needsIqcNonconformance(request.inspection_type_code, input.judgment, request.lot_id)) {
       await createIqcNonconformanceWithin(tx, {
         nonconformanceNo: input.nonconformanceNo,
@@ -286,6 +290,28 @@ export class InspectionConfirmService {
   }
 
   /**
+   * 출하작업지시 OQC(헤더 대상 · `lot_id` 없음)의 판정을 그 품목 검사 대상 라인이 집은 LOT 에 남긴다
+   * (omf-all-around#119 · 2026-10-20 결정 D6-A·D6-b·D6-c · 장부 P-83). 그전에는 LOT 이력에 아무것도 남지 않았고,
+   * 불합격이어도 LOT 이 정상이라 다음 출하·피킹에 그대로 쓰였다(업무시나리오 OQ-02).
+   * - 피킹이 덜 끝났으면 400 — 확정 시점에 남길 LOT 이 모자란다(D6-b · 판정 전 피킹이 설계 흐름이다).
+   * - 합격 C4(정상 → 정상 · 이력만) · 불합격 C6(정상 → 불량 · D6-c).
+   * ⚠ 보류(HELD)는 LOT 을 옮기지 않는다(2026-10-20 결정 (A)) — 출하는 관문이 `HELD` 로 막는다.
+   */
+  private async movePickedOqcLots(
+    tx: Tx,
+    request: { inspection_type_code: string; target_type_code: string; target_id: bigint; lot_id: bigint | null; item_id: bigint },
+    judgment: string,
+    context: LotQualityMoveContext,
+  ): Promise<void> {
+    if (request.inspection_type_code !== OQC || request.target_type_code !== SHIPMENT_REQUEST_TARGET) return;
+    if (request.lot_id !== null) return;
+    const picked = await oqcPickedLots(tx, request.target_id, request.item_id);
+    assertOqcPicked(picked, '판정하세요');
+    if (judgment === ACCEPTED) await this.lots.moveWithin(tx, picked.lotIds, 'inspection-accepted', context);
+    if (judgment === REJECTED) await this.lots.moveWithin(tx, picked.lotIds, 'inspection-rejected', context);
+  }
+
+  /**
    * ⚠ 전이표 «밖»이다 — 계약이 「`:confirm` 이 `COMPLETED` 로 옮긴다」를 **부수 효과**로 적었고
    * 출발이 `REQUESTED`·`IN_PROGRESS` 둘이라 액션 하나로 못 묶는다. 자기 스키마(`quality`)라
    * 서비스가 직접 UPDATE 한다(§7-3 의 유일한 예외).
@@ -300,6 +326,8 @@ export class InspectionConfirmService {
         uom_id: true,
         work_order_id: true,
         inspection_type_code: true,
+        target_type_code: true,
+        target_id: true,
         inspection_plan_version: { select: { acceptance_number: true } },
       },
     });

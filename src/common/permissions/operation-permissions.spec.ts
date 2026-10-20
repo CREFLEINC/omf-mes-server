@@ -66,7 +66,9 @@ describe('오퍼레이션 권한 매핑', () => {
     // 불량 기록 등록 1건(장부 P-42) — `W-01-01` 소유다: 262.
     // 품목 설비·금형 매핑 등록·수정 2건(장부 P-61) — `W-06-05` 소유다: 264.
     // ERP W/O 자동 계획 재시도 1건(장부 P-67) — `W-02-01`·`W-02-02` 소유다: 265.
-    expect(declares403).toHaveLength(265);
+    // 특채 요청·적용 2건(장부 P-79) — `W-03-10` 소유다: 267.
+    // OQC 생략 요청·실행 2건(#119 · 장부 P-83) — `W-04-03` 소유다: 269.
+    expect(declares403).toHaveLength(269);
     // ⭐ 2026-09-09 — 미등록이 0 이 됐다. 옛 단언은 `covered.length >= 152` 하한이라 «되돌려도
     // 안 깨지는» 절이 됐다. 전건 일치로 조인다 — 새 오퍼레이션이 403 을 선언하면서 권한을
     // 안 등록하면 여기서 **이름째** 드러난다.
@@ -124,8 +126,9 @@ describe('오퍼레이션 권한 매핑', () => {
     );
   });
 
-  // W-06-16~23(ERP 데이터 조회 8)은 설계 밖 관리웹 화면이다 — 장부 P-71. 그 화면이 부르는 조회는 계약에 403 이
-  // 없어 게이트가 보지 않으니 권한표에 적지 않았다. 사본이 403 을 붙이면 여기가 빨개진다 — 그때 수동표에 더한다.
+  // W-06-16~23(ERP 데이터 조회 8)은 IA 밖에서 생긴 관리웹 화면이다 — 장부 P-71. 그 화면이 부르는 조회는 계약에
+  // 403 이 없어 지금은 게이트가 보지 않는다. 사본이 403 을 붙이면 여기가 빨개진다 — 그때 W-06-16~23 만 가진 역할을
+  // 지키는 것은 아래 시험(도출표가 이미 그 화면을 싣는다)이다.
   it('⛔ ERP 데이터 조회 화면 여덟이 부르는 조회는 계약에 403 이 없다 — 장부 P-71', () => {
     const reads = [
       'GET /mdm/code-groups',
@@ -158,6 +161,63 @@ describe('오퍼레이션 권한 매핑', () => {
       return responses !== undefined && '403' in responses;
     });
     expect(gated).toEqual([]);
+  });
+
+  // 요구서 §3-15~§3-22(설계 omf-mes#666)가 화면마다 부르는 조회를 적었고, 도출표가 그것을 옮겼다. 이 화면 코드만
+  // 가진 역할이 자기 화면의 조회를 «하나라도» 못 부르면 그 탭이 빈 표나 이름 없는 코드로 선다.
+  it('⛔ ERP 데이터 조회 화면 여덟이 자기가 부르는 조회에 실려 있다 — 장부 P-71', () => {
+    const readsByScreen: Record<string, string[]> = {
+      'W-06-16': ['GET /mdm/workers', 'GET /mdm/workers/{workerId}'],
+      'W-06-17': ['GET /mdm/items', 'GET /mdm/items/{itemId}', 'GET /mdm/code-values', 'GET /mdm/uoms'],
+      'W-06-18': [
+        'GET /planning/boms',
+        'GET /planning/boms/{bomId}/components',
+        'GET /mdm/items',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+        'GET /mdm/uoms',
+      ],
+      'W-06-19': [
+        'GET /mdm/partners',
+        'GET /mdm/partners/{partnerId}',
+        'GET /mdm/partners/{partnerId}/roles',
+      ],
+      'W-06-20': ['GET /mdm/code-groups', 'GET /mdm/code-values'],
+      'W-06-21': [
+        'GET /logistics/purchase-orders',
+        'GET /logistics/purchase-orders/{purchaseOrderId}',
+        'GET /mdm/partners',
+        'GET /mdm/plants',
+        'GET /mdm/uoms',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+      ],
+      'W-06-22': [
+        'GET /logistics/sales-orders',
+        'GET /logistics/sales-orders/{salesOrderId}',
+        'GET /mdm/partners',
+        'GET /mdm/uoms',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+      ],
+      'W-06-23': [
+        'GET /planning/production-orders',
+        'GET /planning/production-orders/{productionOrderId}',
+        'GET /mdm/items',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/business-units',
+        'GET /mdm/plants',
+        'GET /mdm/uoms',
+        'GET /mdm/code-values',
+      ],
+    };
+
+    const missing = Object.entries(readsByScreen).flatMap(([screen, keys]) =>
+      keys
+        .filter((key) => !(OPERATION_PERMISSIONS[key] ?? []).includes(screen))
+        .map((key) => `${screen} → ${key}`),
+    );
+    expect(missing).toEqual([]);
   });
 
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {

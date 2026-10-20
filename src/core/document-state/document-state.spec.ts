@@ -281,6 +281,7 @@ describe('DocumentStateService', () => {
 
       // ⭐ 처분 «선별»(#108 · 장부 P-53)이 둘을 더했다 — 같은 처분 오퍼레이션의 갈래라 `from` 도 같다.
       expect(withDefective).toEqual([
+        'concession-apply',
         'disposition-normal',
         'disposition-rework',
         'disposition-scrap',
@@ -584,7 +585,10 @@ describe('DocumentStateService', () => {
       //      둘 다 전이 하나뿐이다 — 취소 경로가 계약에 0건이다(`cancelable: false`).
       // +2 — 검사 비대상(C21)·IQC 생략 실행(C22) 품질 전이(omf-all-around#105 · 장부 P-35·P-36).
       // +2 — LOT 품질 축에 처분 선별 양품(C23)·불량분(C24)(omf-all-around#108 · 장부 P-53).
-      expect(service.registered()).toHaveLength(56);
+      // +1 — LOT 품질 축에 특채 적용(C25 · omf-all-around#84 · 장부 P-79).
+      // +1 — PQC 생략 허용(C26 · omf-all-around#119 · 장부 P-82).
+      // +1 — 승인된 OQC 생략 실행(C27 · omf-all-around#119 · 장부 P-83).
+      expect(service.registered()).toHaveLength(59);
     });
 
     it('⭐ 출하 상태 — 확정·취소 «둘»뿐이고 :request-cancel 은 전이가 아니다', () => {

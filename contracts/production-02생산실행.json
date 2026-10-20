@@ -2507,7 +2507,7 @@
        "type": "boolean",
        "default": false
       },
-      "description": "plannedEquipmentId 와 함께 쓴다 — 참이면 그 설비의 W/O 와 아직 설비가 정해지지 않은 W/O 를 함께 낸다(그 설비에서 시작할 수 있다). plannedEquipmentId 가 없으면 무시한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-78)"
+      "description": "plannedEquipmentId 와 함께 쓴다 — 참이면 그 설비의 W/O 와 아직 설비가 정해지지 않은 W/O 를 함께 낸다(그 설비에서 시작할 수 있다). plannedEquipmentId 가 없으면 무시한다. ⚠ 개발팀 선행(docs/계약-선행-수정항목.md P-84)"
      },
      {
       "name": "workOrderTypeCode",
@@ -6943,7 +6943,7 @@
        "null"
       ],
       "example": "EQ-INJ-01",
-      "description": "계획 설비의 설비 코드 — 계획 설비가 없으면 null. 설비 없는 POP 단말이 이 설비로 작업 전 점검을 한다. 장부 P-78"
+      "description": "계획 설비의 설비 코드 — 계획 설비가 없으면 null. 설비 없는 POP 단말이 이 설비로 작업 전 점검을 한다. 장부 P-84"
      },
      "plannedEquipmentName": {
       "type": [
@@ -6951,7 +6951,7 @@
        "null"
       ],
       "example": "사출기 1호",
-      "description": "계획 설비의 설비명 — 계획 설비가 없으면 null. 장부 P-78"
+      "description": "계획 설비의 설비명 — 계획 설비가 없으면 null. 장부 P-84"
      },
      "itemCode": {
       "type": "string",

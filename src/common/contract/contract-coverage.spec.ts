@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/507)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/511)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -51,7 +51,9 @@ describe('계약 커버리지', () => {
     // 품목 설비·금형 매핑 3 오퍼레이션 + 4M 설비·금형 추천 1(장부 P-61): 501 → 505.
     // 자재 LOT 영향 범위 1 오퍼레이션(#108 · 장부 P-52): 505 → 506.
     // ERP W/O 자동 계획 재시도 1 오퍼레이션(장부 P-67): 506 → 507.
-    expect(registry.size).toBe(507);
+    // 특채 요청·적용 2 오퍼레이션(#84 · 장부 P-79): 507 → 509.
+    // OQC 생략 요청·실행 2 오퍼레이션(#119 · 장부 P-83): 509 → 511.
+    expect(registry.size).toBe(511);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

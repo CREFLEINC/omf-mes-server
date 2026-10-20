@@ -267,6 +267,13 @@ describe('생산 실적 등록 (I-7 PR ②)', () => {
       expect(moves[0].ctx).not.toHaveProperty('sourceDocumentTypeCode');
     });
 
+    /* #119 · 장부 P-82 — PQC 기준이 생략 허용이라 배포가 생략(SKIPPED)으로 만든 의뢰뿐이면 C26 이다. */
+    it('PQC 의뢰가 생략(SKIPPED)뿐이면 실적이 곧 정상이다(C26 · 원천 없음)', async () => {
+      const moves = await record([{ status_code: 'SKIPPED', inspection_result: [] }]);
+      expect(moves).toEqual([{ lotIds: [31n], action: 'pqc-skipped', ctx: expect.objectContaining({ changedBy: 9n }) }]);
+      expect(moves[0].ctx).not.toHaveProperty('sourceDocumentTypeCode');
+    });
+
     it('PQC 가 열려 있으면 옮기지 않는다 — 확정이 옮긴다', async () => {
       expect(await record([{ status_code: 'REQUESTED', inspection_result: [] }])).toEqual([]);
     });

@@ -37,6 +37,15 @@ const EMPTY_FIGURES: NonconformanceFigures = {
   customerReturnQty: 0,
 };
 
+/**
+ * 불량 기록 중 집계에 넣는 것(omf-all-around#124) — 검사 결과에 붙은 기록은 그 결과가 «확정»일 때만 센다.
+ * 작성중 저장(장부 P-48)이 남긴 IQC 불합격 사유가 확정 전에 파레토·원인에 들어가지 않게 한다.
+ * 결과 없는 기록(POP 자재 불량 등)은 그대로 센다 — `defect-view.ts` 의 `CONFIRMED_INSPECTION_ONLY` 와 같은 뜻이다.
+ */
+export const CONFIRMED_INSPECTION_RECORD = Prisma.sql`(dr.inspection_result_id IS NULL OR EXISTS (
+  SELECT 1 FROM quality.inspection_result ir
+  WHERE ir.inspection_result_id = dr.inspection_result_id AND ir.status_code = 'CONFIRMED'))`;
+
 @Injectable()
 export class DashboardNonconformanceService {
   async read(tx: Tx, plants: readonly DashboardPlant[], period: DashboardPeriod): Promise<NonconformanceFigures> {
@@ -100,6 +109,7 @@ export class DashboardNonconformanceService {
         JOIN plant_scope ps ON ps.plant_id = COALESCE(pl.plant_id, lot.plant_id)
         WHERE ${coarseRange(Prisma.sql`dr.detected_at`, period.from, period.to)}
           AND ${localDate(Prisma.sql`dr.detected_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
+          AND ${CONFIRMED_INSPECTION_RECORD}
       )`;
     const phenomena = await tx.$queryRaw<
       { defect_code_id: bigint; defect_code: string; defect_name: string; qty: string }[]

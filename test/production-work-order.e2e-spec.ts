@@ -1133,6 +1133,59 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       }
     });
 
+    /* #119 · 장부 P-82 — 고른 PQC 기준이 「생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다. */
+    it('PQC — 기준이 생략 허용이면 의뢰를 SKIPPED 로 세우고 목록의 대기·진행에는 안 뜬다', async () => {
+      await prisma.routing_operation.update({
+        where: { routing_operation_id: ids.routingOperation },
+        data: { inspection_managed: true },
+      });
+      const existing = await prisma.inspection_plan.findUnique({ where: { inspection_plan_code: `${PREFIX}-PQC` } });
+      const plan =
+        existing ??
+        (await prisma.inspection_plan.create({
+          data: {
+            inspection_plan_code: `${PREFIX}-PQC`,
+            inspection_plan_name: 'PQC 공정검사',
+            inspection_type_code: 'PQC',
+            item_id: ids.item,
+            process_id: ids.process,
+          },
+        }));
+      if (existing === null) {
+        await prisma.inspection_plan_version.create({
+          data: {
+            inspection_plan_id: plan.inspection_plan_id,
+            plan_version: 1,
+            effective_from: new Date('2026-01-01T00:00:00.000Z'),
+            status_code: 'CONFIRMED',
+            inspection_frequency_code: 'EVERY_LOT',
+            sampling_method_code: 'FULL_INSPECTION',
+          },
+        });
+      }
+      await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { pqc_skip_allowed: true } });
+
+      try {
+        const workOrderId = await releaseWorkOrder(40);
+
+        const requests = await prisma.inspection_request.findMany({ where: { work_order_id: BigInt(workOrderId) } });
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({ inspection_type_code: 'PQC', status_code: 'SKIPPED', lot_id: null });
+
+        const pending = await request(app.getHttpServer())
+          .get(`/api/quality/inspection-requests?inspectionTypeCode=PQC&workOrderId=${workOrderId}&pendingOnly=true`)
+          .set('Cookie', cookie)
+          .expect(200);
+        expect(pending.body.items).toHaveLength(0);
+      } finally {
+        await prisma.inspection_plan.update({ where: { inspection_plan_id: plan.inspection_plan_id }, data: { pqc_skip_allowed: false } });
+        await prisma.routing_operation.update({
+          where: { routing_operation_id: ids.routingOperation },
+          data: { inspection_managed: false },
+        });
+      }
+    });
+
     /* ⛔ 검사 공정이 아니면 의뢰를 만들지 않는다 — 전 공정에 붙으면 현장이 검사에 파묻힌다. */
     it('PQC — 검사 공정이 아니면 의뢰가 서지 않는다', async () => {
       const workOrderId = await releaseWorkOrder(60);

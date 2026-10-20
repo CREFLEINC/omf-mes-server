@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { OqcInspectionRow, ShipmentInspectionLine, oqcPassed } from './shipment-inspection';
+import { OqcInspectionRow, ShipmentInspectionLine, oqcPassed, skippedOqcRows } from './shipment-inspection';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 
 /**
@@ -24,7 +24,10 @@ const SHIPMENT_REQUEST = 'SHIPMENT_REQUEST';
 export type OqcPassedByLine = Map<string, boolean>;
 
 export async function oqcPassedByLine(
-  prisma: Pick<Prisma.TransactionClient, 'shipment_request_line' | 'inventory_reservation' | 'inspection_result'>,
+  prisma: Pick<
+    Prisma.TransactionClient,
+    'shipment_request_line' | 'inventory_reservation' | 'inspection_result' | 'inspection_request'
+  >,
   lineIds: bigint[],
 ): Promise<OqcPassedByLine> {
   const ids = [...new Set(lineIds.map(String))].map(BigInt);
@@ -72,24 +75,24 @@ export async function oqcPassedByLine(
  * (헤더 대상 의뢰와 LOT 대상 의뢰가 병존할 수 있어 여기서 좁히면 놓친다).
  */
 async function oqcResults(
-  prisma: Pick<Prisma.TransactionClient, 'inspection_result'>,
+  prisma: Pick<Prisma.TransactionClient, 'inspection_result' | 'inspection_request'>,
   shipmentRequestIds: bigint[],
   lotIds: bigint[],
 ): Promise<OqcInspectionRow[]> {
+  const targets: Prisma.inspection_requestWhereInput[] = [
+    { lot_id: { in: lotIds } },
+    { target_type_code: LOT, target_id: { in: lotIds } },
+    { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
+  ];
   const rows = await prisma.inspection_result.findMany({
-    where: {
-      inspection_request: {
-        inspection_type_code: OQC,
-        OR: [
-          { lot_id: { in: lotIds } },
-          { target_type_code: LOT, target_id: { in: lotIds } },
-          { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
-        ],
-      },
-    },
+    where: { inspection_request: { inspection_type_code: OQC, OR: targets } },
     include: { inspection_request: true },
   });
-  return rows.map((row) => ({
+  // 생략된 의뢰는 결과가 없다 — 같은 축으로 따로 읽어 «합격»으로 더한다(omf-all-around#119 · 장부 P-83).
+  const skipped = await prisma.inspection_request.findMany({
+    where: { inspection_type_code: OQC, status_code: 'SKIPPED', OR: targets },
+  });
+  return [...rows.map((row) => ({
     inspectionRequestId: row.inspection_request_id,
     inspectionTypeCode: row.inspection_request.inspection_type_code,
     targetTypeCode: row.inspection_request.target_type_code,
@@ -98,5 +101,5 @@ async function oqcResults(
     statusCode: row.status_code,
     inspectionRound: row.inspection_round,
     overallJudgmentCode: row.overall_judgment_code,
-  }));
+  })), ...skippedOqcRows(skipped)];
 }

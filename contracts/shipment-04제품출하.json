@@ -1077,6 +1077,154 @@
     "x-internal-note": "서버가 막는 것 셋 — ① lot_hold 가 걸린 LOT ② 가용 수량 초과 ③ allocatedQty − pickedQty 초과. 잔여 유효기간 하한(minimumRemainingShelfLifeDays)도 서버가 판정한다. customerLotRequirement 는 자유 텍스트라 서버도 화면도 해석하지 않는다(M-04-01 §5-3 · 공유계약 A-12 읽는 쪽 판)."
    }
   },
+  "/logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip": {
+   "parameters": [
+    {
+     "name": "shipmentRequestId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "OQC 생략 요청",
+    "description": "출하작업지시의 출하검사(OQC)를 생략하도록 결재를 요청한다. 요청을 만들기만 하고 의뢰·LOT 은 옮기지 않는다(공유계약 J-8 「승인은 자물쇠를 풀 뿐 실행하지 않는다」). 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)가 없으면 400(code=STATE_LOCKED), 결재선이 없으면 400(code=ROUTE_NOT_FOUND), 진행 중인 요청이 있으면 400(code=APPROVAL_IN_PROGRESS). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApprovalRequestCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "요청됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ApprovalRequestRef"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 출하작업지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "approval_type_code=OQC_SKIP · target_type_code=SHIPMENT_REQUEST · target_id=shipment_request_id 로 서버가 채운다(서버 선행 · 장부 P-83)."
+   }
+  },
+  "/logistics/shipment-requests/{shipmentRequestId}:skip-oqc": {
+   "parameters": [
+    {
+     "name": "shipmentRequestId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "shipment"
+    ],
+    "summary": "승인된 OQC 생략 실행",
+    "description": "OQC 생략 요청이 **승인된** 출하작업지시의 출하검사를 생략한다 — 확정 결과가 없는 열린 OQC 의뢰(REQUESTED·IN_PROGRESS)를 `SKIPPED` 로 닫고, 검사 대상 라인이 집은(피킹) LOT 마다 이력을 남긴다(정상 → 정상 · 전이 C27). 생략된 의뢰는 출하검사 판정에서 «통과»로 센다. ⛔ 승인만으로는 실행되지 않는다(공유계약 J-8). 승인된 요청이 없거나, 생략할 열린 의뢰가 없거나, 검사 대상 라인의 피킹이 끝나지 않았으면 400(code=STATE_LOCKED). 근거: W-04-03 · omf-all-around#119 (서버 선행 · 장부 P-83)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "생략 실행됨 — 실행 뒤 출하작업지시 상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShipmentRequest"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 출하작업지시",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "승인 조회: approval_type_code=OQC_SKIP · target_type_code=SHIPMENT_REQUEST · target_id=shipment_request_id · status_code=APPROVED. 서버 선행(장부 P-83)."
+   }
+  },
   "/logistics/shipments": {
    "get": {
     "tags": [
@@ -2591,6 +2739,36 @@
    }
   },
   "schemas": {
+   "ApprovalRequestCreate": {
+    "type": "object",
+    "required": [
+     "reason"
+    ],
+    "description": "승인 요청. 사유는 비울 수 없다 — 데이터가 NOT NULL 로 강제하고, 결재함 목록에서 이 문장이 요약을 겸한다(approval_request 에 업무 값이 reason 하나뿐이다). 승인 진행 상태를 읽고 결재하는 경로는 app-공통 파일이 갖는다. 근거: W-01-11 §5-6 · W-01-06 §5-7 · W-01-13 §5-5 · 공유계약 J-4 · A-12 보강",
+    "properties": {
+     "reason": {
+      "type": "string",
+      "description": "취소 요청에서는 이 사유가 곧 취소 이력이 된다 — 취소의 누가·언제·왜를 남기는 것이 이 화면의 존재 이유다(W-01-13 §5-5). 화면이 필수로 만든다(공유계약 A-12)",
+      "example": "초과 입하분 정산용 발주",
+      "minLength": 1
+     }
+    },
+    "x-internal-note": "app.approval_request 계약은 app-공통 파일 소관(01-리소스도출 §1-1). 이 오퍼레이션은 요청 생성만 하고 요청 식별자를 돌려준다."
+   },
+   "ApprovalRequestRef": {
+    "type": "object",
+    "required": [
+     "approvalRequestId"
+    ],
+    "properties": {
+     "approvalRequestId": {
+      "x-source-column": "approval_request_id",
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   },
    "DispositionRequest": {
     "type": "object",
     "properties": {

@@ -30,6 +30,8 @@ interface PqcPlanVersion {
   samplingMethodCode: string;
   /** **백분율**이다(0 초과 100 이하) — 비율이 아니다. */
   samplingRatio: Prisma.Decimal | null;
+  /** 기준 헤더의 「PQC 생략 허용」(omf-all-around#119 · 장부 P-82). */
+  pqcSkipAllowed: boolean;
 }
 
 /** 트랜잭션을 열기 전에 다 정해 두는 값 — 트랜잭션 안은 쓰기만 한다(배포 §4-1 규율). */
@@ -37,6 +39,8 @@ export interface PqcRequestPlan {
   requestNo: string;
   inspectionPlanVersionId: bigint | null;
   targetQty: Prisma.Decimal;
+  /** 고른 기준이 생략 허용이면 의뢰를 생략(SKIPPED)으로 만든다 — 실적이 C26 으로 정상이 된다(#119 · P-82). */
+  skipped: boolean;
 }
 
 /** 전수검사 — 지시수량을 그대로 검사한다. */
@@ -73,7 +77,7 @@ async function resolvePqcPlanVersion(
       inspection_plan_version_id: true,
       sampling_method_code: true,
       sampling_ratio: true,
-      inspection_plan: { select: { process_id: true, routing_id: true } },
+      inspection_plan: { select: { process_id: true, routing_id: true, pqc_skip_allowed: true } },
     },
   });
   if (versions.length === 0) return null;
@@ -92,6 +96,7 @@ async function resolvePqcPlanVersion(
     inspectionPlanVersionId: only.inspection_plan_version_id,
     samplingMethodCode: only.sampling_method_code,
     samplingRatio: only.sampling_ratio,
+    pqcSkipAllowed: only.inspection_plan.pqc_skip_allowed,
   };
 }
 
@@ -150,6 +155,7 @@ export async function preparePqcRequest(
     requestNo,
     inspectionPlanVersionId: version?.inspectionPlanVersionId ?? null,
     targetQty: inspectionQty(input.orderQty, version),
+    skipped: version?.pqcSkipAllowed === true,
   };
 }
 
@@ -175,7 +181,8 @@ export async function writePqcRequest(
     where: {
       work_order_id: BigInt(input.workOrderId),
       inspection_type_code: 'PQC',
-      status_code: { in: ['REQUESTED', 'IN_PROGRESS'] },
+      // 생략으로 만든 의뢰도 «살아 있는» 의뢰다 — 다시 배포해도 하나만 둔다(#119).
+      status_code: { in: ['REQUESTED', 'IN_PROGRESS', 'SKIPPED'] },
     },
     select: { inspection_request_id: true },
   });
@@ -194,7 +201,7 @@ export async function writePqcRequest(
       work_order_id: BigInt(input.workOrderId),
       target_qty: input.plan.targetQty,
       uom_id: input.uomId,
-      status_code: 'REQUESTED',
+      status_code: input.plan.skipped ? 'SKIPPED' : 'REQUESTED',
       requested_at: new Date(),
       created_by: appUserId,
     },
