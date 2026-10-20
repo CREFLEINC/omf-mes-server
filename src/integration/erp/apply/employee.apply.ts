@@ -1,4 +1,4 @@
-import { InboundTable, Tx } from '../inbound-cycle';
+import { RowTable, Tx } from '../inbound-cycle';
 import { EMPLOYEE, RelayRow, requiredText, text } from '../relay-tables';
 
 /**
@@ -8,7 +8,7 @@ import { EMPLOYEE, RelayRow, requiredText, text } from '../relay-tables';
  * ⭐ 작업자는 화면에서 고칠 수 없는 ERP 수신본이다(`worker.service.ts`). 다국어 이름(`name_vi`)만
  * MES 가 고치므로 처음 만들 때만 채운다.
  */
-export const employeeTable: InboundTable = {
+export const employeeTable: RowTable = {
   source: EMPLOYEE,
   async apply(tx: Tx, row: RelayRow): Promise<void> {
     // 부서는 비어 올 수 있다(중계 표에서 NULL 허용). 그때는 부서 없는 작업자다.

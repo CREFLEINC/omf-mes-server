@@ -25,6 +25,16 @@ describe('core/bom — BOM 소요식', () => {
     expect(Object.keys(component(1n, '0.5'))).not.toContain('scrap_rate');
   });
 
+  it('소요량 0 인 구성품은 줄을 만들지 않고 줄 번호는 남은 것끼리 매긴다', () => {
+    const lines = materialRequirements(
+      [component(1n, '0', 10n), component(2n, '2', 11n)],
+      new Prisma.Decimal(5),
+      new Prisma.Decimal(1),
+    );
+
+    expect(lines.map((line) => [line.line_no, line.bom_component_id])).toEqual([[1, 2n]]);
+  });
+
   it('materialRequirements 는 Decimal 로 센다', () => {
     const lines = materialRequirements(
       [component(1n, '0.1', 10n), component(2n, '0.2', 11n)],

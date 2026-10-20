@@ -1,4 +1,4 @@
-import { InboundTable, Tx } from '../inbound-cycle';
+import { RowTable, Tx } from '../inbound-cycle';
 import { ITEM, RelayRow, isCancel, requiredText, text } from '../relay-tables';
 
 /**
@@ -8,7 +8,7 @@ import { ITEM, RelayRow, isCancel, requiredText, text } from '../relay-tables';
  * ⭐ ERP 원본 칸(이름·유형·기본단위·규격·품목그룹)만 맞춘다. 번역 이름·LOT 관리·검사 여부·사용 여부
  * 같은 MES 확장 칸은 화면이 고치는 자리라 덮지 않는다(`item.service.ts` ItemUpdate).
  */
-export const itemTable: InboundTable = {
+export const itemTable: RowTable = {
   source: ITEM,
   async apply(tx: Tx, row: RelayRow): Promise<void> {
     const itemCode = requiredText(row, 'ITEM_CD');

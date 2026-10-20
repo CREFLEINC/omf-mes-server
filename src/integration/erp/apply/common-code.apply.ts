@@ -1,4 +1,4 @@
-import { InboundTable, Tx } from '../inbound-cycle';
+import { RowTable, Tx } from '../inbound-cycle';
 import { COMMON_CODE, RelayRow, requiredText, text } from '../relay-tables';
 
 /**
@@ -8,7 +8,7 @@ import { COMMON_CODE, RelayRow, requiredText, text } from '../relay-tables';
  * ⭐ ERP 가 정본이다. 그룹을 `is_system_owned` 로 세워 화면에서 못 고치게 하고, 받을 때마다
  * ERP 값으로 덮는다. `updated_by` 를 비우는 것은 세션 없는 연계가 고쳤다는 표시다.
  */
-export const commonCodeTable: InboundTable = {
+export const commonCodeTable: RowTable = {
   source: COMMON_CODE,
   async apply(tx: Tx, row: RelayRow): Promise<void> {
     const groupId = await upsertGroup(

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { bomTable } from './apply/bom.apply';
 import { commonCodeTable } from './apply/common-code.apply';
 import { employeeTable } from './apply/employee.apply';
 import { itemTable } from './apply/item.apply';
@@ -27,7 +28,7 @@ import { SyncLease } from './sync-lease';
         const master = {
           name: '기준정보',
           // 참조되는 쪽이 앞이다.
-          tables: [commonCodeTable, employeeTable, itemTable, partnerTable],
+          tables: [commonCodeTable, employeeTable, itemTable, partnerTable, bomTable],
           intervalMs: settings.masterIntervalMs,
         };
         return new ErpSyncRunner(

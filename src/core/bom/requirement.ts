@@ -43,11 +43,15 @@ export function materialRequirements(
   orderQty: Prisma.Decimal,
   baseQty: Prisma.Decimal,
 ): MaterialIssueLine[] {
-  return components.map((component, index) => ({
-    line_no: index + 1,
-    bom_component_id: component.bom_component_id,
-    item_id: component.component_item_id,
-    requested_qty: component.required_qty.times(orderQty).dividedBy(baseQty),
-    uom_id: component.uom_id,
-  }));
+  // 소요량 0 인 구성품은 줄을 만들지 않는다 — ERP BOM 이 그대로 보낸다(720행). 출고요청
+  // 라인은 `requested_qty > 0` 이라 담을 수 없고, 부족 조회에도 0 줄이 섞이지 않게 한 자리에서 거른다.
+  return components
+    .filter((component) => !component.required_qty.isZero())
+    .map((component, index) => ({
+      line_no: index + 1,
+      bom_component_id: component.bom_component_id,
+      item_id: component.component_item_id,
+      requested_qty: component.required_qty.times(orderQty).dividedBy(baseQty),
+      uom_id: component.uom_id,
+    }));
 }

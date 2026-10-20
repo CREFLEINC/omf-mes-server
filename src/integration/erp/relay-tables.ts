@@ -59,6 +59,18 @@ export const PARTNER: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
+/**
+ * BOM. 한 행이 (모품목, 자품목, 순번) 하나다. 모품목이 키의 맨 앞이라 한 모품목의 행이 붙어서
+ * 오고, MES 는 그것을 묶어 BOM 판 하나로 반영한다. 두 공장에 걸친 모품목은 없었다.
+ */
+export const BOM: RelayTable = {
+  interfaceCode: 'IF-ERP-BOM-RECV',
+  name: 'T_IF_SND_BOM_INFOR_KO324',
+  flagColumn: 'MES_APPLY_FLAG',
+  keyColumns: ['PRNT_ITEM_CD', 'PLANT_CD', 'CHILD_ITEM_SEQ', 'CHILD_ITEM_CD'],
+  versionColumn: 'IF_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];
