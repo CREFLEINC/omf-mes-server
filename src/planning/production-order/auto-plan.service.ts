@@ -105,12 +105,11 @@ export class AutoPlanService {
         { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 생산오더는 계획을 세우지 않습니다.' },
       ]);
     }
-    await this.claim(found.production_order_id);
+    const claimedUntil = await this.claim(found.production_order_id);
     try {
       return await this.runClaimed({ ...found, auto_plan_attempted_at: new Date() }, appUserId);
     } finally {
-      await this.prisma.$executeRaw`
-        UPDATE planning.production_order SET auto_plan_running_until = NULL WHERE production_order_id = ${found.production_order_id}`;
+      await this.release(found.production_order_id, claimedUntil);
     }
   }
 
@@ -119,15 +118,32 @@ export class AutoPlanService {
    * 쥐고 기다리지 않게 행 하나의 조건부 UPDATE 로 점유하고, 못 잡으면 바로 409 다. 시도 시각도 함께 찍는다.
    * 판(`version_no`)은 올리지 않는다 — 업무 값이 아니라서, 확인(`:acknowledge`)의 If-Match 를 낡게 만들면 안 된다.
    */
-  private async claim(productionOrderId: bigint): Promise<void> {
-    const claimed = await this.prisma.$executeRaw`
+  private async claim(productionOrderId: bigint): Promise<Date> {
+    // 밀리초로 자른다 — 돌려받은 값을 JS Date 로 그대로 되돌려 대조해 풀기 때문이다(`release`).
+    const claimed = await this.prisma.$queryRaw<{ auto_plan_running_until: Date }[]>`
       UPDATE planning.production_order
-         SET auto_plan_running_until = clock_timestamp() + make_interval(secs => ${CLAIM_SECONDS}),
+         SET auto_plan_running_until = date_trunc('milliseconds', clock_timestamp()) + make_interval(secs => ${CLAIM_SECONDS}),
              auto_plan_attempted_at = clock_timestamp()
        WHERE production_order_id = ${productionOrderId}
-         AND (auto_plan_running_until IS NULL OR auto_plan_running_until < clock_timestamp())`;
-    if (claimed === 0) {
+         AND (auto_plan_running_until IS NULL OR auto_plan_running_until < clock_timestamp())
+      RETURNING auto_plan_running_until`;
+    if (claimed.length === 0) {
       throw new ConflictException('user', '이 생산오더의 자동 계획이 이미 진행 중입니다. 잠시 뒤 다시 시도하세요.', { code: INVALID_STATE });
+    }
+    return claimed[0].auto_plan_running_until;
+  }
+
+  /**
+   * 내가 잡은 점유일 때만 푼다 — 점유 시간을 넘겨 끝난 호출이 그 사이 다른 호출이 잡은 점유를 풀지 않게.
+   * ⛔ 풀기 실패는 던지지 않는다 — 본래 결과·오류를 가리면 안 되고, 점유는 시간이 지나면 저절로 풀린다.
+   */
+  private async release(productionOrderId: bigint, claimedUntil: Date): Promise<void> {
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE planning.production_order SET auto_plan_running_until = NULL
+         WHERE production_order_id = ${productionOrderId} AND auto_plan_running_until = ${claimedUntil}`;
+    } catch (error) {
+      this.logger.warn(`ERP W/O ${String(productionOrderId)} 자동 계획 점유 풀기 실패 — ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
