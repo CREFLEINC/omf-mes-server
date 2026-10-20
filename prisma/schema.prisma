@@ -2677,6 +2677,7 @@ model production_order {
   erp_storage_location_code        String?                            @db.VarChar(7)
   erp_rework_flag                  String?                            @db.VarChar(2)
   planned_start_date               DateTime?                          @db.Date
+  auto_plan_attempted_at           DateTime?                          @db.Timestamptz(6)
   business_unit                    business_unit                      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   item                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   parent_production_order          production_order?                  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
