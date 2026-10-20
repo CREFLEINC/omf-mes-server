@@ -8,6 +8,7 @@ import { employeeTable } from './apply/employee.apply';
 import { itemTable } from './apply/item.apply';
 import { partnerTable } from './apply/partner.apply';
 import { purchaseOrderTable } from './apply/purchase-order.apply';
+import { salesOrderTable } from './apply/sales-order.apply';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncRunner } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
@@ -34,7 +35,7 @@ import { SyncLease } from './sync-lease';
         };
         const orders = {
           name: '전표',
-          tables: [purchaseOrderTable],
+          tables: [purchaseOrderTable, salesOrderTable],
           intervalMs: settings.orderIntervalMs,
         };
         return new ErpSyncRunner(
