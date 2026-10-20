@@ -21,17 +21,19 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertAccountWorker, assertPqcAfterProduction } from './inspection-result-write-rules';
+import { assertAccountWorker, assertIqcJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
-import { CONFIRMED, assertConfirmedShape } from './inspection-rules';
+import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 
-/** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 3. 판정을 비우면 저장된 값을 쓴다. */
+/** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 4. 판정을 비우면 저장된 값을 쓴다. */
 export interface InspectionResultConfirm {
   overallJudgmentCode?: string;
   remarks?: string;
   /** IQC 불합격 사유 — 확정과 한 트랜잭션에서 그 회차의 불량 기록을 갈아 끼운다(장부 P-47 · omf-all-around#121). */
   defects?: InspectionDefectInput[];
+  /** IQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125). 같으면 버린다. */
+  judgmentChangeReason?: string;
 }
 
 /** `applyConfirmEffects()` 의 입력 — 확정 경로 둘이 각자 모아 «같은 모양»으로 넘긴다. */
@@ -85,6 +87,7 @@ interface LockedResult {
   accepted_qty: Prisma.Decimal;
   rejected_qty: Prisma.Decimal;
   held_qty: Prisma.Decimal;
+  remarks: string | null;
 }
 
 /**
@@ -163,6 +166,16 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
+      // IQC 는 합격판정개수 기준 자동 판정과 다르면 변경 사유가 있어야 한다 — 사유는 비고 맨 앞에 남긴다(P-70 · #125).
+      const changeReason = await assertIqcJudgmentChange(tx, result.inspection_request_id, {
+        acceptedQty: Number(result.accepted_qty),
+        rejectedQty: Number(result.rejected_qty),
+        heldQty: Number(result.held_qty),
+        judgment: judgment as string,
+        reason: body.judgmentChangeReason,
+      });
+      const remarks =
+        changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks ?? result.remarks);
       const changedAt = new Date();
       await syncConfirmDefectsWithin(tx, this.defects, {
         inspectionResultId: resultId,
@@ -179,7 +192,7 @@ export class InspectionConfirmService {
           status_code: CONFIRMED,
           confirmed_at: changedAt,
           overall_judgment_code: judgment,
-          ...optional('remarks', body.remarks),
+          ...optional('remarks', remarks),
           updated_by: appUserId,
           version_no: { increment: 1 },
         },
@@ -414,7 +427,7 @@ export async function assertRejectionRecorded(
 async function lockResult(tx: Tx, inspectionResultId: bigint): Promise<LockedResult> {
   const rows = await tx.$queryRaw<LockedResult[]>`
     SELECT inspection_request_id, status_code, version_no, overall_judgment_code,
-           inspected_qty, accepted_qty, rejected_qty, held_qty
+           inspected_qty, accepted_qty, rejected_qty, held_qty, remarks
       FROM quality.inspection_result
      WHERE inspection_result_id = ${inspectionResultId}
        FOR UPDATE`;

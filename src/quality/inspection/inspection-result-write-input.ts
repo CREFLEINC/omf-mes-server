@@ -20,7 +20,7 @@ export interface InspectionMeasurementInput {
   inspectionEquipmentId?: number;
 }
 
-/** 계약 `InspectionResultCreate` — required 8 · 프로퍼티 13. ⛔ 검사자·단말·번호·회차는 본문이 안 받는다. */
+/** 계약 `InspectionResultCreate` — required 8 · 프로퍼티 15. ⛔ 검사자·단말·번호·회차는 본문이 안 받는다. */
 export interface InspectionResultCreate {
   inspectionRequestId: number;
   inspectedQty: number;
@@ -40,6 +40,11 @@ export interface InspectionResultCreate {
    * 모르니 사유를 «같은 본문»에 싣는다. 서버가 결과와 한 트랜잭션에서 불량 기록으로 남긴다.
    */
   defects?: InspectionDefectInput[];
+  /**
+   * IQC 확정(statusCode=CONFIRMED)의 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유
+   * (omf-all-around#125 · 장부 P-70). 작성중이거나 판정이 같으면 버린다.
+   */
+  judgmentChangeReason?: string;
 }
 
 /**
