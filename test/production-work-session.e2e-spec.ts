@@ -871,10 +871,11 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(found).toEqual(expect.arrayContaining([listed.own, listed.unplanned]));
       expect(found).not.toContain(listed.other);
       expect(found).not.toContain(listed.otherProcess);
-      // 계획 설비의 코드·이름 — 설비 없는 단말이 이 설비로 작업 전 점검을 한다. 계획 설비가 없으면 null.
+      // 계획 설비의 코드·이름 — 설비 없는 단말이 이 설비로 작업 전 점검을 한다. 계획 설비가 없으면 키가 없다.
       const byId = new Map((response.body.items as { workOrderId: number }[]).map((item) => [item.workOrderId, item]));
       expect(byId.get(listed.own)).toMatchObject({ plannedEquipmentId: Number(equipmentId), plannedEquipmentCode: `${PREFIX}-EQ`, plannedEquipmentName: `${PREFIX}-EQ` });
-      expect(byId.get(listed.unplanned)).toMatchObject({ plannedEquipmentCode: null, plannedEquipmentName: null });
+      expect(Object.keys(byId.get(listed.unplanned) as object)).not.toContain('plannedEquipmentCode');
+      expect(Object.keys(byId.get(listed.unplanned) as object)).not.toContain('plannedEquipmentName');
     });
 
     it('상세도 계획 설비의 코드·이름을 싣는다', async () => {

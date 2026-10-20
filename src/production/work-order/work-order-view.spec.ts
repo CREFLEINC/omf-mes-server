@@ -110,7 +110,7 @@ describe('WorkOrder 뷰', () => {
     expect(view).toMatchObject({ processId: 41, processCode: 'PR-INJ', processName: '사출공정' });
   });
 
-  it('뷰 — 계획 설비의 코드·이름을 내고, 계획 설비가 없으면 null 이다', () => {
+  it('뷰 — 계획 설비의 코드·이름을 내고, 계획 설비가 없으면 키를 생략한다', () => {
     const planned = workOrderView(
       workOrderRow({ planned_equipment_id: 51n, equipment: { equipment_code: 'EQ-INJ-01', equipment_name: '사출기 1호' } }),
       { erpMessageQueued: false },
@@ -118,7 +118,9 @@ describe('WorkOrder 뷰', () => {
     expect(planned).toMatchObject({ plannedEquipmentId: 51, plannedEquipmentCode: 'EQ-INJ-01', plannedEquipmentName: '사출기 1호' });
 
     const unplanned = workOrderView(workOrderRow(), { erpMessageQueued: false });
-    expect(unplanned).toMatchObject({ plannedEquipmentCode: null, plannedEquipmentName: null });
+    for (const key of ['plannedEquipmentId', 'plannedEquipmentCode', 'plannedEquipmentName']) {
+      expect(Object.keys(unplanned)).not.toContain(key);
+    }
   });
 
   it('뷰 — 저장된 기본 위치 세 칸을 API 필드로 그대로 낸다', () => {

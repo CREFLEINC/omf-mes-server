@@ -6943,7 +6943,7 @@
        "null"
       ],
       "example": "EQ-INJ-01",
-      "description": "계획 설비의 설비 코드 — 계획 설비가 없으면 null. 설비 없는 POP 단말이 이 설비로 작업 전 점검을 한다. 장부 P-84"
+      "description": "계획 설비의 설비 코드 — 계획 설비가 없으면 키가 없다(옛 응답 호환으로 null 도 허용). 설비 없는 POP 단말이 이 설비로 작업 전 점검을 한다. 장부 P-84"
      },
      "plannedEquipmentName": {
       "type": [
@@ -6951,7 +6951,7 @@
        "null"
       ],
       "example": "사출기 1호",
-      "description": "계획 설비의 설비명 — 계획 설비가 없으면 null. 장부 P-84"
+      "description": "계획 설비의 설비명 — 계획 설비가 없으면 키가 없다(옛 응답 호환으로 null 도 허용). 장부 P-84"
      },
      "itemCode": {
       "type": "string",
