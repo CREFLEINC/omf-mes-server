@@ -87,7 +87,7 @@ export class PurchaseOrderQueryService {
 
   /**
    * 「아직 입하가 끝나지 않은 건만」(계약) — 종료/취소되지 않았고 받은 수량이
-   * 발주 수량에 못 미치는 라인이 하나라도 있는 P/O. CLOSED 헤더의 잔량이
+   * 발주 수량에 못 미치는 «취소되지 않은» 라인이 하나라도 있는 P/O(입하 예정 라인 목록과 같은 기준 · P-77). CLOSED 헤더의 잔량이
    * 남아 있더라도 모바일의 미마감 선택 목록에는 들어가지 않는다.
    * 같은 표 두 컬럼 비교는 Prisma `fields` 참조로 관계 필터에 접는다.
    */
@@ -96,7 +96,8 @@ export class PurchaseOrderQueryService {
     return {
       status_code: { notIn: ['CLOSED', 'CANCELLED'] },
       purchase_order_line: {
-        some: { received_qty: { lt: this.prisma.purchase_order_line.fields.ordered_qty } },
+        // ERP 가 취소한 라인은 입하할 수 없다(장부 P-73) — 남은 수량이 있어도 「열린」 라인이 아니다.
+        some: { cancelled_at: null, received_qty: { lt: this.prisma.purchase_order_line.fields.ordered_qty } },
       },
     };
   }
