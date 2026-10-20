@@ -14,19 +14,29 @@ const request = (inspectionRequestId: number) => ({
 const prisma = () => ({
   worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 23n }) },
   inspection_request: { findFirst: jest.fn().mockResolvedValue({ inspection_request_id: 11n }) },
+  shipment_request: { findMany: jest.fn().mockResolvedValue([{ shipment_request_id: 31n }]) },
 }) as unknown as PrismaService;
 
-it('permits an active worker and inspection request tied to the POP process in the same plant', async () => {
+it('permits an active worker and a PQC request of its process or an OQC request of its plant', async () => {
   const db = prisma();
   const req = request(11);
   await assertTerminalQualityWriteScope(db, req, 'POST /quality/inspection-results', terminal);
   expect(currentTerminalQualityWorkerId(req)).toBe(23n);
-  expect(db.inspection_request.findFirst).toHaveBeenCalledWith({ where: {
-    inspection_request_id: 11n,
-    work_order: { production_line: { plant_id: 3n }, routing_operation: { process: {
-      terminal_process: { some: { terminal_id: 7n, can_start_work: true } },
-    } } },
-  }, select: { inspection_request_id: true } });
+  expect(db.shipment_request.findMany).toHaveBeenCalledWith({
+    where: { fulfillment_plant_id: 3n }, select: { shipment_request_id: true },
+  });
+  expect(db.inspection_request.findFirst).toHaveBeenCalledWith({ where: { AND: [
+    { inspection_request_id: 11n },
+    { OR: [
+      { work_order: { production_line: { plant_id: 3n }, routing_operation: { process: {
+        terminal_process: { some: { terminal_id: 7n, can_start_work: true } },
+      } } } },
+      { inspection_type_code: 'OQC', OR: [
+        { lot: { plant_id: 3n } },
+        { target_type_code: 'SHIPMENT_REQUEST', target_id: { in: [31n] } },
+      ] },
+    ] },
+  ] }, select: { inspection_request_id: true } });
 });
 
 it('rejects a request outside the terminal process and wrong terminal type', async () => {

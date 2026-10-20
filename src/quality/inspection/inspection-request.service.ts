@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TerminalQualityReadScope, terminalQualityWorkOrderWhere } from '../../auth/terminal-quality-read-scope';
+import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
 import { InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 
 /** 조회 2건(I-19 PR ②). */
@@ -36,10 +36,9 @@ export class InspectionRequestService {
 
   async list(query: InspectionRequestListQuery, scope?: TerminalQualityReadScope): Promise<PagedResponse<InspectionRequestView>> {
     const page = pageRequest(query);
-    const where: Prisma.inspection_requestWhereInput = {
-      ...buildWhere(query),
-      ...(scope === undefined ? {} : { work_order: terminalQualityWorkOrderWhere(scope) }),
-    };
+    const where: Prisma.inspection_requestWhereInput = scope === undefined
+      ? buildWhere(query)
+      : { AND: [buildWhere(query), await terminalInspectionRequestWhere(this.prisma, scope)] };
     const [rows, total] = await Promise.all([
       this.prisma.inspection_request.findMany({ where, orderBy: ORDER_BY, skip: page.skip, take: page.take }),
       this.prisma.inspection_request.count({ where }),
@@ -48,9 +47,9 @@ export class InspectionRequestService {
   }
 
   async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestView> {
+    const byId: Prisma.inspection_requestWhereInput = { inspection_request_id: inspectionRequestId };
     const row = await this.prisma.inspection_request.findFirst({
-      where: { inspection_request_id: inspectionRequestId,
-        ...(scope === undefined ? {} : { work_order: terminalQualityWorkOrderWhere(scope) }) },
+      where: scope === undefined ? byId : { AND: [byId, await terminalInspectionRequestWhere(this.prisma, scope)] },
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
     return inspectionRequestView(row);

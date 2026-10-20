@@ -67,6 +67,9 @@ export const POP_SCREEN_REQUIREMENTS: readonly PopScreenRequirement[] = [
   //    (`P-04-04` 재구성 라벨과 같은 축). 포장(`P-04-01`)의 `can_complete_work` 와 갈린다 —
   //    이 화면은 실적을 닫지 않고 라벨을 낸다.
   { code: 'P-04-05', flag: 'can_print_label' },
+  // ⭐ OQC 출하검사 판정(장부 P-80) — 검사 입력 공정 단말에만 연다(사용자 결정 2026-10-16).
+  //    생산 단말에 출하검사가 보이지 않게 하려는 것이라 «항상»이 아니다.
+  { code: 'P-04-06', flag: 'can_input_inspection' },
   // 공구·비가동은 공정 매핑과 무관한 설비 축이다.
   { code: 'P-05-01', flag: null },
   { code: 'P-05-02', flag: null },
