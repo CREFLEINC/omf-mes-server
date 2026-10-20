@@ -352,6 +352,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 확정한다. 도출표의 `P-02-13`(POP)과 합집합이다. ⭐ 같은 화면이 부르는 조회(의뢰·회차·기준 항목·
   // 코드)는 계약에 403 이 없어 권한표가 보지 않으므로 적지 않는다.
   'POST /quality/inspection-results': ['W-03-11'],
+  // 특채 요청·적용(omf-all-around#84 · 장부 P-79) — 처분 판정 처리(W-03-10)가 그 부적합에서 만든다.
+  // 승인은 결재 경로(W-03-09)의 몫이라 여기 적지 않는다.
+  'POST /quality/concessions': ['W-03-10'],
+  'POST /quality/concessions/{concessionId}:apply': ['W-03-10'],
   // 검사 문서 첨부(omf-all-around#58 · 장부 P-57) — IQC·OQC 판정 화면이 LOT·검사 결과에 시험성적서를 붙인다. PQC 화면 W-03-11 은
   // 첨부를 쓰지 않아 넣지 않았다(omf-all-around#107 결정 2026-10-19).
   'POST /app/attachments': ['W-01-01', 'W-04-03'],

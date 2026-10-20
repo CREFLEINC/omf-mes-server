@@ -133,7 +133,8 @@ describe('DocumentCancelService', () => {
 
   it('요청 — approvalTypeCode 는 {유형}_CANCEL 이다(계약 enum 9값과 대조)', async () => {
     const declared = approvalTypeEnum();
-    expect(declared).toHaveLength(9);
+    // 9값 + 서버 선행 특채 CONCESSION(장부 P-79 · omf-all-around#84).
+    expect(declared).toHaveLength(10);
 
     for (const typeCode of ['INBOUND_RECEIPT', 'GOODS_RECEIPT', 'GOODS_ISSUE'] as const) {
       const { service, at } = fake({ locked: { status_code: 'POSTED', version_no: VERSION } });

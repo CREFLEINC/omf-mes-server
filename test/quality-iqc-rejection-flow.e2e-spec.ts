@@ -15,6 +15,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { seedRoute } from './approval-request.fixture';
 
 const LOGIN_ID = 'e2e-iqc-flow';
 const PASSWORD = 'IQC-흐름-비밀번호';
@@ -26,6 +27,9 @@ const ROLE = 'E2E_IQC_FLOW';
 // W-CO-06 — 단말 토큰 발급(#122 리뷰 m3 의 단말 PUT 케이스). W-04-11 — 재고 재등록(#108 리뷰 M1).
 const PERMISSIONS = ['P-01-01', 'W-01-01', 'W-03-10', 'W-01-10', 'W-CO-06', 'W-04-11'];
 const DAY = '2026-10-16';
+// 특채(#84 · 장부 P-79) — 요청·적용은 W-03-10, 결재는 W-03-09 를 가진 «다른» 계정이 한다.
+const APPROVER_LOGIN_ID = 'e2e-iqc-flow-approver';
+const APPROVER_ROLE = 'E2E_IQC_FLOW_APPROVER';
 
 const key = (): string => randomUUID();
 
@@ -33,6 +37,8 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string[];
+  let approverCookie: string[];
+  let approverUserId: bigint;
   let plantId: number;
   let itemId: number;
   let uomId: number;
@@ -53,6 +59,7 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     await cleanup();
     await makeMasters();
     await makeUser();
+    await makeApprover();
   });
 
   afterAll(async () => {
@@ -367,6 +374,116 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
+  describe('특채 — 요청 → 결재(W-03-09) → 적용(W-03-10) (#84 · 장부 P-79)', () => {
+    it('⭐ 승인 뒤 적용하면 LOT 정상(C25)·수입검사 보류 해제·처분 «특채» 기록 · 승인자·일시·사유·사용 가능 수량이 조회된다', async () => {
+      const { lotId, lineId } = await rejectedLot(10);
+      const nc = await openNonconformance(lotId);
+
+      const created = await requestConcession(nc.nonconformance_id, lotId, 6, '외관 경미 — 조건부 사용').expect(201);
+      expect(created.body).toMatchObject({ statusCode: 'PENDING', approvedQty: 6, remarks: '외관 경미 — 조건부 사용' });
+      const concessionId = created.body.concessionId as number;
+      const approvalRequestId = created.body.approvalRequestId as number;
+
+      // ⛔ 결재 전 적용은 400 — LOT 은 불량 그대로다.
+      const early = await applyConcession(concessionId).expect(400);
+      expect(JSON.stringify(early.body)).toContain('APPROVAL_IN_PROGRESS');
+      expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+
+      await decideApproval(approvalRequestId, 'approve');
+      const applied = await applyConcession(concessionId).expect(200);
+      expect(applied.body).toMatchObject({ statusCode: 'APPROVED', approvedQty: 6, usable: true });
+
+      expect(await lotStatus(lotId)).toBe('NORMAL');
+      expect(await openInspectionHolds(lotId)).toBe(0);
+      const decisions = await prisma.disposition_decision.findMany({ where: { nonconformance_id: nc.nonconformance_id } });
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0]).toMatchObject({ disposition_type_code: 'CONCESSION', approval_request_id: BigInt(approvalRequestId) });
+      expect(decisions[0].decision_qty.toNumber()).toBe(6);
+
+      // 승인자·승인 일시는 결재 상세(W-03-09 화면), 사유·사용 가능 수량은 특채 상세가 낸다.
+      const approval = await request(app.getHttpServer()).get(`/api/app/approval-requests/${approvalRequestId}`).set('Cookie', approverCookie).expect(200);
+      expect(approval.body.request).toMatchObject({ statusCode: 'APPROVED', approvalTypeCode: 'CONCESSION', reason: '외관 경미 — 조건부 사용' });
+      expect(approval.body.steps[0]).toMatchObject({ approverId: Number(approverUserId), decisionCode: 'APPROVED' });
+      expect(approval.body.steps[0].decisionAt).toEqual(expect.any(String));
+      const detail = await request(app.getHttpServer()).get(`/api/quality/concessions/${concessionId}`).set('Cookie', cookie).expect(200);
+      expect(detail.body).toMatchObject({ approvedQty: 6, consumedQty: 0, remarks: '외관 경미 — 조건부 사용', lotId });
+
+      // 특채 LOT 은 일반 창고로 입고된다(정상).
+      await receive(lotId, lineId, 10).expect(201);
+    });
+
+    it('⛔ 반려면 적용이 특채를 REJECTED 로 닫고 LOT 은 불량 그대로다', async () => {
+      const { lotId } = await rejectedLot(10);
+      const nc = await openNonconformance(lotId);
+      const created = await requestConcession(nc.nonconformance_id, lotId, 10, '반려 경계').expect(201);
+
+      await decideApproval(created.body.approvalRequestId as number, 'reject');
+      const applied = await applyConcession(created.body.concessionId as number).expect(200);
+
+      expect(applied.body).toMatchObject({ statusCode: 'REJECTED', usable: false });
+      expect(await lotStatus(lotId)).toBe('DEFECTIVE');
+      expect(await openInspectionHolds(lotId)).toBe(1);
+      expect(await prisma.disposition_decision.count({ where: { nonconformance_id: nc.nonconformance_id } })).toBe(0);
+    });
+
+    it('⭐ 불량창고 재고가 남은 LOT 도 특채 적용이 보류를 닫는다(담당자 결정 2026-10-20 「현행 유지」)', async () => {
+      const { lotId, lineId } = await rejectedLot(10);
+      await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+      const nc = await openNonconformance(lotId);
+      const created = await requestConcession(nc.nonconformance_id, lotId, 10, '불량창고 재고 특채').expect(201);
+
+      await decideApproval(created.body.approvalRequestId as number, 'approve');
+      await applyConcession(created.body.concessionId as number).expect(200);
+
+      expect(await lotStatus(lotId)).toBe('NORMAL');
+      expect(await openInspectionHolds(lotId)).toBe(0);
+    });
+
+    it('⛔ 요청 뒤 다른 처분이 수량을 먼저 쓰면 적용이 400(approvedQty)이고 특채·LOT·판정은 그대로다', async () => {
+      const { lotId } = await rejectedLot(10);
+      const nc = await openNonconformance(lotId);
+      const created = await requestConcession(nc.nonconformance_id, lotId, 6, '적용 전 처분 선행').expect(201);
+      await decideApproval(created.body.approvalRequestId as number, 'approve');
+
+      // 처분 정상 6 이 먼저 확정됐다 — 남은 수량 4 < 승인 6.
+      await decide(nc.nonconformance_id, { dispositionTypeCode: 'NORMAL', decisionQty: 6 }).expect(201);
+      const refused = await applyConcession(created.body.concessionId as number).expect(400);
+      expect(JSON.stringify(refused.body)).toContain('approvedQty');
+
+      const concession = await prisma.concession.findUniqueOrThrow({ where: { concession_id: BigInt(created.body.concessionId as number) } });
+      expect(concession.status_code).toBe('PENDING');
+      expect(await prisma.disposition_decision.count({
+        where: { nonconformance_id: nc.nonconformance_id, disposition_type_code: 'CONCESSION' },
+      })).toBe(0);
+    });
+
+    it('⛔ 같은 부적합에 승인된 특채 2건 — 첫 적용은 200, 남은 수량을 넘는 두 번째 적용은 400', async () => {
+      const { lotId } = await rejectedLot(10);
+      const nc = await openNonconformance(lotId);
+      // ⚠ 결재 코어가 같은 부적합에 «진행 중» 결재를 둘 두지 않는다 — 첫 결재가 끝난 뒤 둘째를 올린다.
+      const first = await requestConcession(nc.nonconformance_id, lotId, 6, '특채 1').expect(201);
+      await decideApproval(first.body.approvalRequestId as number, 'approve');
+      const second = await requestConcession(nc.nonconformance_id, lotId, 6, '특채 2').expect(201);
+      await decideApproval(second.body.approvalRequestId as number, 'approve');
+
+      await applyConcession(first.body.concessionId as number).expect(200);
+      const refused = await applyConcession(second.body.concessionId as number).expect(400);
+      expect(JSON.stringify(refused.body)).toContain('approvedQty');
+
+      const decisions = await prisma.disposition_decision.findMany({ where: { nonconformance_id: nc.nonconformance_id } });
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0].decision_qty.toNumber()).toBe(6);
+    });
+
+    it('⛔ 남은 수량을 넘거나 사유가 비면 400 이다', async () => {
+      const { lotId } = await rejectedLot(10);
+      const nc = await openNonconformance(lotId);
+
+      await requestConcession(nc.nonconformance_id, lotId, 11, '수량 초과').expect(400);
+      await requestConcession(nc.nonconformance_id, lotId, 5, '  ').expect(400);
+    });
+  });
+
   async function rejectedLot(qty: number) {
     const lot = await registerIqcLot(qty);
     const resultId = await draft(lot.requestId, { acceptedQty: 0, rejectedQty: qty });
@@ -641,6 +758,54 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     });
   }
 
+  function requestConcession(nonconformanceId: bigint, lotId: number, approvedQty: number, reason: string): request.Test {
+    return request(app.getHttpServer())
+      .post('/api/quality/concessions')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key())
+      .send({ nonconformanceId: Number(nonconformanceId), lotId, approvedQty, uomId, validFrom: DAY, reason });
+  }
+
+  function applyConcession(concessionId: number): request.Test {
+    return request(app.getHttpServer())
+      .post(`/api/quality/concessions/${concessionId}:apply`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', key());
+  }
+
+  /** 결재(200 까지 본다) — 상세의 ETag 로 판을 맞춘다. 반려는 사유가 필수다. */
+  async function decideApproval(approvalRequestId: number, action: 'approve' | 'reject'): Promise<void> {
+    const detail = await request(app.getHttpServer())
+      .get(`/api/app/approval-requests/${approvalRequestId}`)
+      .set('Cookie', approverCookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/app/approval-requests/${approvalRequestId}:${action}`)
+      .set('Cookie', approverCookie)
+      .set('Idempotency-Key', key())
+      .set('If-Match', String(detail.headers.etag))
+      .send(action === 'reject' ? { comment: 'e2e 반려' } : {})
+      .expect(200);
+  }
+
+  async function makeApprover(): Promise<void> {
+    const user = await prisma.app_user.create({ data: { login_id: APPROVER_LOGIN_ID, user_name: 'IQC흐름결재자', status_code: 'EMPLOYED' } });
+    approverUserId = user.app_user_id;
+    await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    const role = await prisma.role.create({ data: { role_code: APPROVER_ROLE, role_name: 'IQC흐름결재용' } });
+    await prisma.role_permission.create({ data: { role_id: role.role_id, permission_code: 'W-03-09' } });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
+    // 특채 결재는 공통본(사업부 없음) 결재선을 고른다(특채 요청이 사업부를 싣지 않는다).
+    await seedRoute(prisma, 'CONCESSION', [user.app_user_id]);
+    const response = await request(app.getHttpServer())
+      .post('/api/app/sessions')
+      .set('Idempotency-Key', key())
+      .send({ loginId: APPROVER_LOGIN_ID, password: PASSWORD })
+      .expect(200);
+    const raw: unknown = response.headers['set-cookie'];
+    approverCookie = Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+  }
+
   async function makeUser(): Promise<void> {
     const user = await prisma.app_user.create({ data: { login_id: LOGIN_ID, user_name: 'IQC흐름', status_code: 'EMPLOYED' } });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
@@ -668,6 +833,25 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
   async function cleanup(): Promise<void> {
     const lotsOfPlant = `SELECT lot_id FROM trace.lot WHERE plant_id IN (SELECT plant_id FROM mdm.plant WHERE plant_code LIKE '${PREFIX}%')`;
     await prisma.$executeRawUnsafe(`TRUNCATE inventory.inventory_transaction_line, inventory.inventory_transaction CASCADE`);
+    // 특채 결재(#84) — 특채가 결재 요청을 잡으므로 아래 목록보다 «먼저» 지운다.
+    await prisma.$executeRawUnsafe(`DELETE FROM quality.concession WHERE lot_id IN (${lotsOfPlant})`);
+    await prisma.$executeRawUnsafe(`DELETE FROM quality.disposition_decision WHERE approval_request_id IN (SELECT approval_request_id FROM app.approval_request WHERE approval_type_code = 'CONCESSION' AND requested_by IN (SELECT app_user_id FROM app.app_user WHERE login_id = '${LOGIN_ID}'))`);
+    await prisma.$executeRawUnsafe(`DELETE FROM app.approval_step WHERE approval_request_id IN (SELECT approval_request_id FROM app.approval_request WHERE approval_type_code = 'CONCESSION' AND requested_by IN (SELECT app_user_id FROM app.app_user WHERE login_id = '${LOGIN_ID}'))`);
+    await prisma.$executeRawUnsafe(`DELETE FROM app.approval_request WHERE approval_type_code = 'CONCESSION' AND requested_by IN (SELECT app_user_id FROM app.app_user WHERE login_id = '${LOGIN_ID}')`);
+    await prisma.$executeRawUnsafe(`DELETE FROM app.approval_route_step WHERE approver_user_id IN (SELECT app_user_id FROM app.app_user WHERE login_id = '${APPROVER_LOGIN_ID}')`);
+    await prisma.$executeRawUnsafe(`DELETE FROM app.approval_route WHERE approval_type_code = 'CONCESSION' AND NOT EXISTS (SELECT 1 FROM app.approval_route_step s WHERE s.approval_route_id = approval_route.approval_route_id)`);
+    const approver = await prisma.app_user.findUnique({ where: { login_id: APPROVER_LOGIN_ID } });
+    if (approver) {
+      await prisma.idempotency_record.deleteMany({ where: { app_user_id: approver.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: approver.app_user_id } });
+      await prisma.user_credential.deleteMany({ where: { app_user_id: approver.app_user_id } });
+      await prisma.app_user.delete({ where: { app_user_id: approver.app_user_id } });
+    }
+    const approverRole = await prisma.role.findUnique({ where: { role_code: APPROVER_ROLE } });
+    if (approverRole) {
+      await prisma.role_permission.deleteMany({ where: { role_id: approverRole.role_id } });
+      await prisma.role.delete({ where: { role_id: approverRole.role_id } });
+    }
     for (const sql of [
       `DELETE FROM logistics.stock_transfer_line WHERE lot_id IN (${lotsOfPlant})`,
       `DELETE FROM logistics.stock_transfer WHERE disposition_decision_id IN (SELECT disposition_decision_id FROM quality.disposition_decision WHERE nonconformance_id IN (SELECT nonconformance_id FROM quality.nonconformance_lot WHERE lot_id IN (${lotsOfPlant})))`,

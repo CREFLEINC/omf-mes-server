@@ -12,20 +12,27 @@ export const DISPOSITION_RELEASE_REASON = 'DISPOSITION_NORMAL';
  * ⛔ 재작업(C17)은 닫지 않는다 — 검사 대기로 돌아가 재검 합격 확정이 기존 규칙으로 닫는다. 폐기(C18)도 그대로다.
  * ⛔ 불량창고에 이미 재고가 있는 LOT 은 건너뛴다(#108 리뷰 M1 · 담당자 결정 (a)) — 재고 재등록(W-04-11)이 지금처럼
  *    보류를 닫으며 재고를 옮긴다. 여기서 먼저 닫으면 불량창고 재고가 «정상·보류 없음»으로 남는다. 입고 전 처분만 닫는다.
+ * ⭐ 특채 적용(`CONCESSION_APPROVED` · #84 · 장부 P-79)은 이 건너뜀을 타지 않는다 — 불량창고 재고가 남은 LOT 도 보류를
+ *    닫는다(담당자 결정 2026-10-20 「현행 유지」 · verify 7d8a251 과 같다).
  */
 export async function releaseInspectionHoldsWithin(
   tx: Tx,
   holds: LotHoldService,
   lotIds: bigint[],
   actor: { by: bigint; at: Date },
+  /** 해제 사유 — 처분은 `DISPOSITION_NORMAL`, 특채 적용은 `CONCESSION_APPROVED`(#84 · 장부 P-79). */
+  releaseReasonCode: string = DISPOSITION_RELEASE_REASON,
 ): Promise<void> {
   if (lotIds.length === 0) return;
-  const inDefectStock = new Set(
-    (await tx.inventory_balance.findMany({
-      where: { lot_id: { in: lotIds }, on_hand_qty: { gt: 0 }, warehouse: { is_defect: true } },
-      select: { lot_id: true },
-    })).map((row) => row.lot_id),
-  );
+  const inDefectStock =
+    releaseReasonCode !== DISPOSITION_RELEASE_REASON
+      ? new Set<bigint>()
+      : new Set(
+          (await tx.inventory_balance.findMany({
+            where: { lot_id: { in: lotIds }, on_hand_qty: { gt: 0 }, warehouse: { is_defect: true } },
+            select: { lot_id: true },
+          })).map((row) => row.lot_id),
+        );
   const targets = lotIds.filter((lotId) => !inDefectStock.has(lotId));
   if (targets.length === 0) return;
   const locked = await holds.lockLotsWithin(tx, targets);
@@ -34,7 +41,7 @@ export async function releaseInspectionHoldsWithin(
       tx,
       locked,
       { lotId, reasonCode: INSPECTION_HOLD_REASON },
-      { releaseReasonCode: DISPOSITION_RELEASE_REASON },
+      { releaseReasonCode },
       actor,
     );
   }
