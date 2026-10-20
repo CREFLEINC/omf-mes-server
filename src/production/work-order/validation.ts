@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { UsableResource, unusable } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -134,15 +135,7 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
       select: { mold_id: true, status_code: true, is_active: true, guaranteed_shot_count: true, current_shot_count: true },
     })),
     when(workerIds, () => prisma.worker_qualification.findMany({
-      where: {
-        worker_id: { in: workerIds },
-        qualification_type_code: PROCESS_OPERATION,
-        // ⛔ `process_id IS NULL` 인 자격 행은 이 공정 자격으로 «치지 않는다» — 「공정 미지정 =
-        //    전 공정」은 어느 문서도 적지 않은 뜻이라 지어내지 않는다(README §2 기준 4).
-        process_id: row.routing_operation.process_id,
-        valid_from: { lte: today },
-        OR: [{ valid_to: null }, { valid_to: { gte: today } }],
-      },
+      where: { worker_id: { in: workerIds }, ...validProcessQualification(row.routing_operation.process_id, today) },
       select: { worker_id: true },
     })),
     rivalWindows(prisma, workOrderId, equipmentIds),
@@ -177,8 +170,22 @@ export function rivalWindows(prisma: PrismaService, workOrderId: number, equipme
 /** 배정이 없는 축은 질의하지 않는다 — `in: []` 를 던지면 빈 IN 절이 돈다. */
 const when = <T>(ids: bigint[], query: () => Promise<T[]>): Promise<T[]> | T[] => (ids.length === 0 ? [] : query());
 
+/**
+ * 그 공정의 유효한 공정 작업 자격 — 4M 점검(#4)과 4M 작업자 추천이 같은 조건을 쓴다.
+ * ⛔ `process_id IS NULL` 인 자격 행은 이 공정 자격으로 «치지 않는다» — 「공정 미지정 =
+ *    전 공정」은 어느 문서도 적지 않은 뜻이라 지어내지 않는다(README §2 기준 4).
+ */
+export function validProcessQualification(processId: bigint, today: Date): Prisma.worker_qualificationWhereInput {
+  return {
+    qualification_type_code: PROCESS_OPERATION,
+    process_id: processId,
+    valid_from: { lte: today },
+    OR: [{ valid_to: null }, { valid_to: { gte: today } }],
+  };
+}
+
 /** `@db.Date` 는 UTC 자정으로 돌아온다 — 「오늘」도 UTC 날짜로 잡는다(입고 선례와 같은 태도). */
-const utcToday = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+export const utcToday = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
 const finding = (severity: ValidationSeverity, code: string, field: string, message: string): ValidationFinding =>
   ({ severity, field, code, message });

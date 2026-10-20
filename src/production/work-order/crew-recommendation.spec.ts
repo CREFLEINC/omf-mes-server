@@ -1,16 +1,8 @@
-import { workDayOf } from '../../planning/production-plan/plan-window';
 import { busyShiftIds, isWorkerBusy, orderShifts, pickWorkers } from './crew-recommendation';
 
 const rule = { dayStart: '08:00:00', timezone: 'Asia/Ho_Chi_Minh' };
 /** 하노이 벽시계 → UTC 순간. */
 const hanoi = (local: string): Date => new Date(new Date(`${local}Z`).getTime() - 7 * 60 * 60 * 1000);
-
-describe('workDayOf — 근무일', () => {
-  it('근무일 시작 전 새벽은 전날 근무일이다', () => {
-    expect(workDayOf(hanoi('2026-10-21T02:00:00'), '08:00:00', 'Asia/Ho_Chi_Minh')).toBe('2026-10-20');
-    expect(workDayOf(hanoi('2026-10-21T08:00:00'), '08:00:00', 'Asia/Ho_Chi_Minh')).toBe('2026-10-21');
-  });
-});
 
 describe('orderShifts — 교대 추천 순서', () => {
   it('비어 있는 교대가 먼저, 그다음 시작 시각 순이다', () => {
@@ -51,6 +43,12 @@ describe('isWorkerBusy — 작업자가 다른 W/O 를 맡고 있는가', () => 
     expect(isWorkerBusy(target, [{ planned_shift_id: 1n, planned_start_at: hanoi('2026-10-20T10:00:00'), planned_end_at: null }], rule)).toBe(true);
     expect(isWorkerBusy(target, [{ planned_shift_id: 2n, planned_start_at: hanoi('2026-10-20T10:00:00'), planned_end_at: null }], rule)).toBe(false);
     expect(isWorkerBusy(target, [{ planned_shift_id: 1n, planned_start_at: hanoi('2026-10-21T10:00:00'), planned_end_at: null }], rule)).toBe(false);
+  });
+
+  it('이 W/O 에 교대가 있어도 상대에 교대가 없으면 겹치는 계획 시간으로 본다 — 전개는 교대를 비워 둔다', () => {
+    const target = { plannedShiftId: 1n, plannedStartAt: start, plannedEndAt: end };
+    expect(isWorkerBusy(target, [{ planned_shift_id: null, planned_start_at: hanoi('2026-10-20T08:00:00'), planned_end_at: hanoi('2026-10-21T08:00:00') }], rule)).toBe(true);
+    expect(isWorkerBusy(target, [{ planned_shift_id: null, planned_start_at: hanoi('2026-10-21T08:00:00'), planned_end_at: hanoi('2026-10-22T08:00:00') }], rule)).toBe(false);
   });
 
   it('교대가 없으면 겹치는 계획 시간으로 본다 — 끝이 맞닿으면 겹치지 않는다', () => {
