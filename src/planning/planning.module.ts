@@ -41,5 +41,6 @@ import { RoutingService } from './routing/routing.service';
     AcknowledgeService,
     ResyncService,
   ],
+  exports: [AutoPlanService],
 })
 export class PlanningModule {}

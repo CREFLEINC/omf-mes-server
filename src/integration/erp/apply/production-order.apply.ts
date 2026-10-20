@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { RowTable, Tx } from '../inbound-cycle';
+import { AfterCommit, RowTable, Tx } from '../inbound-cycle';
 import { PRODUCTION_ORDER, RelayRow, isCancel, requiredText, text } from '../relay-tables';
 import { businessUnitOf, dateOf, itemIdsByCode, plantByCode, uomIdsByCode } from './lookup';
 
@@ -16,10 +16,11 @@ const CANCELLED = 'CANCELLED';
  * (`due_date`)는 비운다. 납기로 도는 MES 쪽은 설계 요청으로 고친다(2026-10-20 결정).
  * 이미 있는 ERP W/O 가 바뀌면 I-24 변경 추적을 남긴다 — 바뀐 항목의 «이전» 값만 갈아 넣고 수신 시각을
  * 찍어 관리자 확인(W-02-06)을 기다린다. 판을 올려 판정 중인 확인을 409 로 막는다.
+ * 처음 받은 ERP W/O 는 커밋 뒤 `onReceived` 로 넘긴다(자동 계획). 바뀐 ERP W/O 는 넘기지 않는다 — 변경은 확인 흐름이 맡는다.
  */
-export const productionOrderTable: RowTable = {
+export const productionOrderTable = (onReceived: (productionOrderId: bigint) => Promise<void>): RowTable => ({
   source: PRODUCTION_ORDER,
-  async apply(tx: Tx, row: RelayRow): Promise<void> {
+  async apply(tx: Tx, row: RelayRow): Promise<void | AfterCommit> {
     const orderNo = requiredText(row, 'PRODT_ORDER_NO');
     const plantCode = requiredText(row, 'PLANT_CD');
     const plant = await plantByCode(tx, plantCode);
@@ -44,7 +45,7 @@ export const productionOrderTable: RowTable = {
       SELECT production_order_id FROM planning.production_order
        WHERE production_order_no = ${orderNo} FOR UPDATE`;
     if (locked === undefined) {
-      await tx.production_order.create({
+      const created = await tx.production_order.create({
         data: {
           production_order_no: orderNo,
           erp_order_no: orderNo,
@@ -53,8 +54,9 @@ export const productionOrderTable: RowTable = {
           ...values,
           status_code: cancel ? CANCELLED : RECEIVED,
         },
+        select: { production_order_id: true },
       });
-      return;
+      return cancel ? undefined : () => onReceived(created.production_order_id);
     }
     const current = await tx.production_order.findUniqueOrThrow({
       where: { production_order_id: locked.production_order_id },
@@ -73,7 +75,7 @@ export const productionOrderTable: RowTable = {
     }
     await applyChange(tx, current, cancel ? {} : values, cancel ? CANCELLED : undefined);
   },
-};
+});
 
 type Order = Prisma.production_orderGetPayload<object>;
 type Values = Partial<

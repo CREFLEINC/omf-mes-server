@@ -17,8 +17,11 @@ export type InboundTable = RowTable | UnitTable;
 
 export interface RowTable {
   readonly source: RelayTable;
-  apply(tx: Tx, row: RelayRow): Promise<void>;
+  /** 커밋 뒤에 할 일을 돌려줄 수 있다 — 반영 트랜잭션을 길게 잡거나 그 실패로 반영을 되돌리지 않게. */
+  apply(tx: Tx, row: RelayRow): Promise<void | AfterCommit>;
 }
+
+export type AfterCommit = () => Promise<void>;
 
 export interface UnitTable {
   readonly source: RelayTable;
@@ -81,10 +84,12 @@ export class InboundCycle {
           result.held += unit.length;
           continue;
         }
+        let afterCommit: void | AfterCommit;
         try {
-          await this.prisma.$transaction(async (tx) => {
-            await ('applyUnit' in table ? table.applyUnit(tx, unit) : table.apply(tx, unit[0]));
+          afterCommit = await this.prisma.$transaction(async (tx) => {
+            const after = await ('applyUnit' in table ? table.applyUnit(tx, unit) : table.apply(tx, unit[0]));
             for (const row of unit) await recordDone(tx, source, row);
+            return after;
           });
           applied.push(...unit.map((row) => row.MES_INF_ID));
           result.applied += unit.length;
@@ -94,7 +99,12 @@ export class InboundCycle {
           for (const row of unit) {
             failures.push([row.MES_INF_ID, await recordFailure(this.prisma, source, row, error)]);
           }
+          continue;
         }
+        // ⛔ 반영은 이미 커밋됐다 — 여기서 실패해도 그 행을 실패로 돌리지 않는다.
+        await afterCommit?.().catch((error: unknown) =>
+          this.logger.warn(`${source.name} 반영 뒤 처리 실패 — ${error instanceof Error ? error.message : String(error)}`),
+        );
       }
 
       await this.relay.ack(source, applied);

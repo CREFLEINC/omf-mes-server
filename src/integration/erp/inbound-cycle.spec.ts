@@ -102,10 +102,10 @@ function fake(rows: RelayRow[], seed: { messages?: Message[] } = {}) {
   };
   const prisma = {
     integration_message,
-    $transaction: async (fn: (tx: Tx) => Promise<void>) => {
+    $transaction: async <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => {
       inTx = true;
       try {
-        await fn({ integration_message } as unknown as Tx);
+        return await fn({ integration_message } as unknown as Tx);
       } finally {
         inTx = false;
       }
@@ -115,7 +115,7 @@ function fake(rows: RelayRow[], seed: { messages?: Message[] } = {}) {
     prisma as unknown as PrismaService,
     relay as unknown as RelayClient,
   );
-  return { cycle, calls, messages, rows, relayInTx: () => relayInTx };
+  return { cycle, calls, messages, rows, relayInTx: () => relayInTx, inTx: () => inTx };
 }
 
 /** `fail` 에 든 코드는 반영에서 던진다. */
@@ -150,6 +150,25 @@ describe('InboundCycle', () => {
       status_code: MESSAGE_STATUS.DONE,
       payload: { key: 'A', seq: 1, row: row(1, 'A') },
     });
+  });
+
+  it('반영이 돌려준 커밋 뒤 할 일은 트랜잭션 밖에서 부르고, 실패해도 반영을 실패로 돌리지 않는다', async () => {
+    const f = fake([row(1, 'A'), row(2, 'B')]);
+    const seen: string[] = [];
+    const withAfter: InboundTable = {
+      source: SOURCE,
+      apply: async (_: Tx, r: RelayRow) => async () => {
+        seen.push(`${r.CODE as string} ${f.inTx() ? '안' : '밖'}`);
+        if (r.CODE === 'B') throw new Error('뒤 처리 실패');
+      },
+    };
+
+    const result = await f.cycle.run(withAfter);
+
+    expect(seen).toEqual(['A 밖', 'B 밖']);
+    expect(result).toEqual({ read: 2, applied: 2, failed: 0, held: 0 });
+    expect(f.calls).toEqual(['fetch', 'ack 1,2']);
+    expect(f.messages.get('IF-TEST-RECV:2')).toMatchObject({ status_code: MESSAGE_STATUS.DONE });
   });
 
   it('실패 사유는 표시를 마친 뒤 원본 행에 남긴다', async () => {
