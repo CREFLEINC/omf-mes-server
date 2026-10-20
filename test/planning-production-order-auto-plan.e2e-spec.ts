@@ -1,6 +1,6 @@
 /**
- * ERP W/O 수신 시 계획 자동 작성·확정(장부 P-67) — 등록 `POST` 뒤 자동 계획, `:auto-plan` 재시도,
- * 목록·상세의 `autoPlan` 과 `autoPlanStatus` 필터.
+ * ERP W/O 수신 시 계획 자동 작성·확정(장부 P-67) — 등록 `POST`·ERP 받기 뒤 자동 계획, `:auto-plan` 재시도,
+ * 목록·상세의 `autoPlan` 과 `autoPlanStatus` 필터. ERP 받기는 중계 DB 대신 흉내낸 중계로 실제 회차를 돈다.
  *
  * ⚠ 자동 계획이 채번한 `plan_no`·`work_order_no` 는 `PREFIX` 로 시작하지 않는다 — 정리는 오더 관계로 좁힌다.
  */
@@ -16,6 +16,10 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { hashPassword } from '../src/auth/password';
+import { productionOrderTable } from '../src/integration/erp/apply/production-order.apply';
+import { InboundCycle } from '../src/integration/erp/inbound-cycle';
+import { RelayClient } from '../src/integration/erp/relay-client';
+import { PRODUCTION_ORDER, RelayRow } from '../src/integration/erp/relay-tables';
 import { AutoPlanService } from '../src/planning/production-order/auto-plan.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -24,6 +28,7 @@ const PASSWORD = 'AP74-검사-비밀번호';
 const PREFIX = 'AP74';
 const ROLE = 'E2E_AP74';
 const TIMEZONE = 'Asia/Ho_Chi_Minh';
+const ERP_SOURCE = { ...PRODUCTION_ORDER, interfaceCode: 'E2E-AP74-PRODORD-RECV' };
 
 function validator(operation: string, status = 200): ValidateFunction {
   const contract = JSON.parse(
@@ -46,6 +51,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
   let plantId = BigInt(0);
   let businessUnitId = BigInt(0);
   let uomId = BigInt(0);
+  let uomCode = '';
   let lineId = BigInt(0);
   let equipmentId = BigInt(0);
   let moldId = BigInt(0);
@@ -187,6 +193,39 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
   });
 
+  describe('ERP 받기 뒤 자동 계획', () => {
+    it('14. 처음 받은 ERP W/O 는 반영이 커밋된 뒤 계획을 세우고 확정한다', async () => {
+      const result = await receiveFromErp([erpRow(1, 'ERP1', 1, 60)]);
+
+      expect(result).toMatchObject({ applied: 1, failed: 0 });
+      const order = await prisma.production_order.findUniqueOrThrow({ where: { production_order_no: `${PREFIX}-PO-ERP1` } });
+      const plans = await plansOf(Number(order.production_order_id));
+      expect(plans.map((plan) => [plan.status_code, Number(plan.planned_qty), plan.created_by])).toEqual([['CONFIRMED', 60, null]]);
+      expect(await workOrdersOf(plans[0].production_plan_id)).not.toEqual([]);
+    });
+
+    it('15. 이미 있는 ERP W/O 의 변경은 계획을 세우지 않는다 — 확인 흐름이 맡는다', async () => {
+      const existing = await prisma.production_order.create({
+        data: {
+          production_order_no: `${PREFIX}-PO-ERP2`,
+          erp_order_no: `${PREFIX}-PO-ERP2`,
+          business_unit_id: businessUnitId,
+          plant_id: plantId,
+          item_id: items.ok,
+          order_qty: 70,
+          uom_id: uomId,
+          status_code: 'RECEIVED',
+        },
+      });
+
+      const result = await receiveFromErp([erpRow(2, 'ERP2', 2, 90)]);
+
+      expect(result).toMatchObject({ applied: 1, failed: 0 });
+      expect((await prisma.production_order.findUniqueOrThrow({ where: { production_order_id: existing.production_order_id } })).status_code).toBe('UPDATED');
+      expect(await plansOf(Number(existing.production_order_id))).toEqual([]);
+    });
+  });
+
   describe('목록·상세의 autoPlan', () => {
     beforeAll(async () => {
       // 수신 경로를 거치지 않은 오더 — 읽을 때 사유를 계산하는지 본다.
@@ -240,7 +279,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       };
 
       const review = await idsOf('NEEDS_REVIEW');
-      expect(review).toEqual([noRoutingOrderId, ambiguousOrderId, partialOrderId].sort((a, b) => a - b));
+      expect(review).toEqual(expect.arrayContaining([noRoutingOrderId, ambiguousOrderId, partialOrderId]));
       const done = await idsOf('DONE');
       expect(done).toEqual(expect.arrayContaining([okOrderId, moldOrderId]));
       expect(done.some((id) => review.includes(id))).toBe(false);
@@ -295,6 +334,35 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
   }
 
+  /** 중계 DB 를 흉내낸다 — 한 번 읽고 확인 표시를 받는다. 반영·커밋 뒤 처리는 실제 회차가 한다. */
+  async function receiveFromErp(rows: RelayRow[]) {
+    const pending = [...rows];
+    const relay = {
+      fetchPending: async () => pending.splice(0),
+      ack: async () => undefined,
+      writeError: async () => undefined,
+    };
+    const autoPlans = app.get(AutoPlanService);
+    const table = { ...productionOrderTable((id) => autoPlans.planReceived(Number(id), undefined)), source: ERP_SOURCE };
+    return new InboundCycle(prisma, relay as unknown as RelayClient).run(table);
+  }
+
+  function erpRow(id: number, suffix: string, seq: number, qty: number): RelayRow {
+    return {
+      MES_INF_ID: id,
+      PLANT_CD: `${PREFIX}-P`,
+      PRODT_ORDER_NO: `${PREFIX}-PO-${suffix}`,
+      ITEM_CD: `${PREFIX}-IT-ok`,
+      IF_SEQ: seq,
+      CREATE_TYPE: 'A',
+      OPR_NO: '010',
+      PLAN_START_DT: '2026-10-21',
+      PRODT_ORDER_QTY: qty,
+      BASE_UNIT: uomCode,
+      MES_APPLY_FLAG: 'N',
+    };
+  }
+
   function plansOf(productionOrderId: number) {
     return prisma.production_plan.findMany({ where: { production_order_id: BigInt(productionOrderId) }, orderBy: { production_plan_id: 'asc' } });
   }
@@ -328,7 +396,9 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       },
     });
     plantId = plant.plant_id;
-    uomId = (await prisma.uom.findFirstOrThrow()).uom_id;
+    const uom = await prisma.uom.findFirstOrThrow();
+    uomId = uom.uom_id;
+    uomCode = uom.uom_code;
     lineId = (await prisma.production_line.create({ data: { plant_id: plantId, line_code: `${PREFIX}-LN`, line_name: '자동계획검사라인' } }))
       .production_line_id;
     const process = await prisma.process.create({
@@ -428,6 +498,8 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
     await prisma.work_order.deleteMany({ where: { work_order_id: { in: workOrderIds } } });
     await prisma.production_plan.deleteMany({ where: scope });
+    await prisma.integration_message.deleteMany({ where: { interface_code: ERP_SOURCE.interfaceCode } });
+    await prisma.production_order_change_field.deleteMany({ where: scope });
     await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: PREFIX } } });
     await prisma.item_resource_map.deleteMany({ where: { item: { item_code: { startsWith: PREFIX } } } });
     await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });

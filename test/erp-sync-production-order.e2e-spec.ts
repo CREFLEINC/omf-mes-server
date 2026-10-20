@@ -20,8 +20,12 @@ import {
 
 const COPY = 'E2E_IF_SND_PROD_ORD_KO324';
 const PREFIX = 'E2EPD-';
+/** 커밋 뒤 자동 계획으로 넘긴 ERP W/O — 처음 받은 것만 와야 한다. */
+const received: bigint[] = [];
 const TABLE = {
-  ...productionOrderTable,
+  ...productionOrderTable(async (id) => {
+    received.push(id);
+  }),
   source: { ...PRODUCTION_ORDER, interfaceCode: 'E2E-IF-ERP-PRODORD-RECV', name: COPY },
 };
 
@@ -118,6 +122,7 @@ describeRelay('ERP W/O 받기 (e2e · 중계 DB)', () => {
       last_change_received_at: null,
       production_order_change_field: [],
     });
+    expect(received).toEqual([(await productionOrder()).production_order_id]);
   });
 
   it('수량·시작일이 바뀌면 이전 값을 남기고 UPDATED 로 둔다', async () => {
@@ -143,6 +148,7 @@ describeRelay('ERP W/O 받기 (e2e · 중계 DB)', () => {
       ['ORDER_QTY', '30', null],
       ['PLANNED_START_DATE', null, new Date('2026-06-08T00:00:00.000Z')],
     ]);
+    expect(received).toHaveLength(1);
   });
 
   it('취소(C)면 CANCELLED 로 두고 지난 항목 대신 이전 상태만 남긴다', async () => {
