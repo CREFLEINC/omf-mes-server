@@ -420,6 +420,61 @@ describe('공정 인계 3건 (e2e)', () => {
       );
     });
 
+    /* omf-all-around#127 · 장부 P-69 — PQC 가 끝난 정상 LOT 만 인계한다(PQ-06). 정상 LOT 201 은 위 픽스처(created)가 이미 본다. */
+    it('⭐ 검사 대기·불량 LOT 은 400 STATE_LOCKED 이고 인계를 만들지 않는다', async () => {
+      const before = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
+      await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'INSPECTION_PENDING' } });
+      await prisma.lot.update({ where: { lot_id: BigInt(lotBId) }, data: { status_code: 'DEFECTIVE' } });
+      try {
+        const blocked = await post(handoverBody()).expect(400);
+        expect(blocked.body.errors).toContainEqual(
+          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('검사 대기') }),
+        );
+        expect(blocked.body.errors).toContainEqual(
+          expect.objectContaining({ field: 'lines[1].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('불량') }),
+        );
+        expect(await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } })).toBe(before);
+      } finally {
+        await prisma.lot.updateMany({
+          where: { lot_id: { in: [BigInt(lotAId), BigInt(lotBId)] } },
+          data: { status_code: 'NORMAL' },
+        });
+      }
+    });
+
+    /* #127 담당자 결정(2026-10-20) — 정상이어도 열린 보류가 있으면 서버도 막는다(모바일 M-02-01 과 같은 규칙). */
+    it('⭐ 열린 보류가 있는 정상 LOT 은 400 STATE_LOCKED 이고 인계를 만들지 않는다', async () => {
+      const before = await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } });
+      // CHECK ck_lot_hold_held_actor — 건 주체(계정 또는 작업자) 하나가 있어야 한다. 이 픽스처의 작업자를 쓴다.
+      const worker = await prisma.worker.findFirstOrThrow({ where: { worker_no: WORKER_NO }, select: { worker_id: true } });
+      const hold = await prisma.lot_hold.create({
+        data: {
+          lot_id: BigInt(lotAId),
+          reason_code: 'QUALITY',
+          status_code: 'HELD',
+          held_at: new Date(),
+          held_worker_id: worker.worker_id,
+        },
+      });
+      try {
+        const blocked = await post(handoverBody()).expect(400);
+        expect(blocked.body.errors).toEqual([
+          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('보류') }),
+        ]);
+        expect(await prisma.operation_handover.count({ where: { from_work_order_id: BigInt(woCId) } })).toBe(before);
+
+        // ⭐ 보류가 LOT 을 검사 대기로 옮긴 실제 모양(C10) — 보류를 먼저 보므로 「PQC 판정」이 아니라 보류 문구다(대안 ①).
+        await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'INSPECTION_PENDING' } });
+        const pending = await post(handoverBody()).expect(400);
+        expect(pending.body.errors).toEqual([
+          expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('보류') }),
+        ]);
+      } finally {
+        await prisma.lot_hold.delete({ where: { lot_hold_id: hold.lot_hold_id } });
+        await prisma.lot.update({ where: { lot_id: BigInt(lotAId) }, data: { status_code: 'NORMAL' } });
+      }
+    });
+
     it('X-Worker-No 가 없으면 400 REQUIRED · 없는 사번이면 400 INVALID', async () => {
       const absent = await post(handoverBody(), { workerNo: null }).expect(400);
       expect(absent.body.errors).toContainEqual(
