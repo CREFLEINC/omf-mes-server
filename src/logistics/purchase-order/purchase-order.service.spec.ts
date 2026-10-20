@@ -82,6 +82,25 @@ describe('PurchaseOrderService', () => {
       });
     });
 
+    it('ERP 에서 받은 발주는 400 STATE_LOCKED 다 — 다음 ERP 판이 덮는다', async () => {
+      const { prisma } = updateStub({ current: orderRow({ erp_purchase_order_no: '4500000001' }) });
+
+      const error = await thrown(() =>
+        new PurchaseOrderService(prisma, NUMBERING_STUB, QUERY_STUB, APPROVAL_STUB).update(
+          1,
+          1,
+          { supplierId: 10, orderDate: '2026-08-06' },
+          99,
+        ),
+      );
+
+      expect((error as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as ContractException).errors[0]).toMatchObject({
+        scope: 'screen',
+        code: ERROR_CODE.STATE_LOCKED,
+      });
+    });
+
     it('없는 P/O 면 404 다', async () => {
       const { prisma } = updateStub({ current: null });
 
@@ -164,6 +183,22 @@ describe('PurchaseOrderService', () => {
       expect((error as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
       expect((error as ContractException).errors[0]).toMatchObject({
         field: 'statusCode',
+        code: ERROR_CODE.STATE_LOCKED,
+      });
+    });
+
+    it('치환 — ERP 에서 받은 발주는 400 STATE_LOCKED 다', async () => {
+      const { prisma } = replaceStub({
+        current: orderRow({ erp_purchase_order_no: '4500000001' }),
+      });
+
+      const error = await thrown(() =>
+        service(prisma).replaceLines(1, 1, [{ itemId: 100, orderedQty: 1, uomId: 5 }], 99),
+      );
+
+      expect((error as ContractException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as ContractException).errors[0]).toMatchObject({
+        scope: 'screen',
         code: ERROR_CODE.STATE_LOCKED,
       });
     });

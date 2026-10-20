@@ -294,6 +294,26 @@ describe('P/O 등록·헤더 수정·라인 치환·상신 (e2e)', () => {
       .expect(403);
   });
 
+  it('P/O — ERP 에서 받은 발주는 헤더·라인 수정이 400 STATE_LOCKED 이고 값이 그대로다', async () => {
+    const id = await newOrder();
+    await prisma.purchase_order.update({
+      where: { purchase_order_id: BigInt(id) },
+      data: { erp_purchase_order_no: `${PREFIX}-ERP-${id}` },
+    });
+    const etag = await etagOf(id);
+
+    const header = await putHeader(id, etag, { supplierId, orderDate: '2026-08-09' }).expect(400);
+    expect(header.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    const lines = await putLines(id, etag, [{ itemId, orderedQty: 99, uomId }]).expect(400);
+    expect(lines.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+
+    expect(await etagOf(id)).toBe(etag);
+    const line = await prisma.purchase_order_line.findFirstOrThrow({
+      where: { purchase_order_id: BigInt(id) },
+    });
+    expect(Number(line.ordered_qty)).not.toBe(99);
+  });
+
   it('라인 — 배열 순서가 lineNo 1..N 이 된다(요청이 lineNo 를 보내지 않는다)', async () => {
     const id = await newOrder();
 
