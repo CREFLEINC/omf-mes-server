@@ -4,6 +4,11 @@ import { Tx } from '../inbound-cycle';
 import { RelayRow } from '../relay-tables';
 import { productionOrderTable } from './production-order.apply';
 
+const received: bigint[] = [];
+const table = productionOrderTable(async (id) => {
+  received.push(id);
+});
+
 const D = (value: number): Prisma.Decimal => new Prisma.Decimal(value);
 type Row = Record<string, unknown>;
 
@@ -42,7 +47,10 @@ function fake(order: Row | null = null) {
     $queryRaw: async () =>
       order === null ? [] : [{ production_order_id: order.production_order_id }],
     production_order: {
-      create: async (a: { data: Row }) => writes.push({ op: 'create', data: a.data }),
+      create: async (a: { data: Row }) => {
+        writes.push({ op: 'create', data: a.data });
+        return { production_order_id: 91n };
+      },
       findUniqueOrThrow: async () => order,
       update: async (a: { data: Row }) => writes.push({ op: 'update', data: a.data }),
     },
@@ -79,10 +87,37 @@ const fieldsOf = (writes: { op: string; data: unknown }[]) =>
   writes.find((w) => w.op === 'fields.create')?.data;
 
 describe('productionOrderTable', () => {
+  beforeEach(() => {
+    received.length = 0;
+  });
+
+  it('처음 받은 ERP W/O 는 시도 시각을 찍고 커밋 뒤 할 일로 자동 계획에 넘긴다 — 반영 안에서는 부르지 않는다', async () => {
+    const f = fake();
+    const after = await table.apply(f.tx, erp({ PLAN_START_DT: '2099-01-01' }));
+
+    expect(f.writes[0].data).toMatchObject({ auto_plan_attempted_at: expect.any(Date) });
+    expect(received).toEqual([]);
+    await (after as () => Promise<void>)();
+    expect(received).toEqual([91n]);
+  });
+
+  it('계획 시작일이 공장 현지 오늘보다 앞이면 넘기지 않고 시도 시각도 비운다', async () => {
+    const f = fake();
+
+    expect(await table.apply(f.tx, erp({ PLAN_START_DT: '2020-01-01' }))).toBeUndefined();
+    expect(f.writes[0].data).toMatchObject({ auto_plan_attempted_at: null });
+  });
+
+  it('처음 받은 행이 취소(C)거나 이미 있는 ERP W/O 가 바뀌면 자동 계획에 넘기지 않는다', async () => {
+    expect(await table.apply(fake().tx, erp({ CREATE_TYPE: 'C', PLAN_START_DT: '2099-01-01' }))).toBeUndefined();
+    expect(await table.apply(fake(ORDER).tx, erp({ IF_SEQ: 2, PRODT_ORDER_QTY: 20 }))).toBeUndefined();
+    expect(received).toEqual([]);
+  });
+
   it('처음 받으면 ERP 번호 그대로 RECEIVED 로 만들고 계획 시작일을 담는다 — 납기는 비운다', async () => {
     const f = fake();
 
-    await productionOrderTable.apply(f.tx, erp());
+    await table.apply(f.tx, erp());
 
     expect(f.writes).toEqual([
       {
@@ -101,6 +136,8 @@ describe('productionOrderTable', () => {
           erp_rework_flag: 'N',
           remarks: null,
           status_code: 'RECEIVED',
+          // 계획 시작일이 지나 받을 때 자동 계획하지 않는다.
+          auto_plan_attempted_at: null,
         },
       },
     ]);
@@ -109,7 +146,7 @@ describe('productionOrderTable', () => {
   it('처음 받는 행이 취소(C)면 CANCELLED 로 만든다', async () => {
     const f = fake();
 
-    await productionOrderTable.apply(f.tx, erp({ CREATE_TYPE: 'C' }));
+    await table.apply(f.tx, erp({ CREATE_TYPE: 'C' }));
 
     expect(f.writes[0].data).toMatchObject({ status_code: 'CANCELLED' });
   });
@@ -117,7 +154,7 @@ describe('productionOrderTable', () => {
   it('같은 값이면 아무것도 바꾸지 않는다 — 수신 시각도 찍지 않는다', async () => {
     const f = fake(ORDER);
 
-    await productionOrderTable.apply(f.tx, erp());
+    await table.apply(f.tx, erp());
 
     expect(f.writes).toEqual([]);
   });
@@ -125,7 +162,7 @@ describe('productionOrderTable', () => {
   it('수량이 바뀌면 이전 수량만 남기고 UPDATED·수신 시각·판을 올린다', async () => {
     const f = fake(ORDER);
 
-    await productionOrderTable.apply(f.tx, erp({ IF_SEQ: 2, PRODT_ORDER_QTY: 20 }));
+    await table.apply(f.tx, erp({ IF_SEQ: 2, PRODT_ORDER_QTY: 20 }));
 
     expect(f.writes.map((w) => w.op)).toEqual(['fields.delete', 'fields.create', 'update']);
     expect(fieldsOf(f.writes)).toEqual([
@@ -142,7 +179,7 @@ describe('productionOrderTable', () => {
   it('계획 시작일이 바뀌면 이전 시작일을 남긴다', async () => {
     const f = fake(ORDER);
 
-    await productionOrderTable.apply(f.tx, erp({ IF_SEQ: 2, PLAN_START_DT: '2026-06-10' }));
+    await table.apply(f.tx, erp({ IF_SEQ: 2, PLAN_START_DT: '2026-06-10' }));
 
     expect(fieldsOf(f.writes)).toEqual([
       {
@@ -156,7 +193,7 @@ describe('productionOrderTable', () => {
   it('세 항목 밖(창고)만 바뀌어도 변경으로 받는다 — 지난 항목 행은 비운다', async () => {
     const f = fake({ ...ORDER, status_code: 'UPDATED' });
 
-    await productionOrderTable.apply(f.tx, erp({ IF_SEQ: 2, SL_CD: 'S520' }));
+    await table.apply(f.tx, erp({ IF_SEQ: 2, SL_CD: 'S520' }));
 
     expect(f.writes.map((w) => w.op)).toEqual(['fields.delete', 'update']);
     expect(updateOf(f.writes)).toMatchObject({
@@ -168,7 +205,7 @@ describe('productionOrderTable', () => {
   it('취소(C)면 CANCELLED 로 두고 이전 상태를 남긴다 — 다른 칸은 보지 않는다', async () => {
     const f = fake(ORDER);
 
-    await productionOrderTable.apply(
+    await table.apply(
       f.tx,
       erp({ CREATE_TYPE: 'C', PRODT_ORDER_QTY: 1, ITEM_CD: 'A3EPWYC' }),
     );
@@ -187,7 +224,7 @@ describe('productionOrderTable', () => {
   it('이미 취소된 ERP W/O 에 취소가 또 오면 아무것도 바꾸지 않는다', async () => {
     const f = fake({ ...ORDER, status_code: 'CANCELLED' });
 
-    await productionOrderTable.apply(f.tx, erp({ CREATE_TYPE: 'C' }));
+    await table.apply(f.tx, erp({ CREATE_TYPE: 'C' }));
 
     expect(f.writes).toEqual([]);
   });
@@ -195,7 +232,7 @@ describe('productionOrderTable', () => {
   it('취소된 ERP W/O 가 다시 A 로 오면 UPDATED 로 되살리고 이전 상태를 남긴다', async () => {
     const f = fake({ ...ORDER, status_code: 'CANCELLED' });
 
-    await productionOrderTable.apply(f.tx, erp({ IF_SEQ: 2 }));
+    await table.apply(f.tx, erp({ IF_SEQ: 2 }));
 
     expect(fieldsOf(f.writes)).toEqual([
       { production_order_id: 90n, field_code: 'STATUS_CODE', before_status_code: 'CANCELLED' },
@@ -206,7 +243,7 @@ describe('productionOrderTable', () => {
   it('품목이 바뀌면 고치지 않고 실패한다', async () => {
     const f = fake(ORDER);
 
-    await expect(productionOrderTable.apply(f.tx, erp({ ITEM_CD: 'A3EPWYC' }))).rejects.toThrow(
+    await expect(table.apply(f.tx, erp({ ITEM_CD: 'A3EPWYC' }))).rejects.toThrow(
       '공장·품목·단위가 바뀌었다',
     );
     expect(f.writes).toEqual([]);
@@ -215,6 +252,6 @@ describe('productionOrderTable', () => {
   it('MES 가 만든 같은 번호의 ERP W/O 가 있으면 실패한다', async () => {
     const f = fake({ ...ORDER, erp_order_no: null });
 
-    await expect(productionOrderTable.apply(f.tx, erp())).rejects.toThrow('번호가 겹친다');
+    await expect(table.apply(f.tx, erp())).rejects.toThrow('번호가 겹친다');
   });
 });

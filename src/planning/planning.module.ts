@@ -9,6 +9,7 @@ import { RoutingOperationService } from './routing/routing-operation.service';
 import { BomController } from './bom/bom.controller';
 import { BomService } from './bom/bom.service';
 import { AcknowledgeService } from './production-order/acknowledge.service';
+import { AutoPlanService } from './production-order/auto-plan.service';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderCreateService } from './production-order/production-order-create.service';
 import { ProductionOrderService } from './production-order/production-order.service';
@@ -36,8 +37,10 @@ import { RoutingService } from './routing/routing.service';
     PlanConfirmService,
     ProductionOrderService,
     ProductionOrderCreateService,
+    AutoPlanService,
     AcknowledgeService,
     ResyncService,
   ],
+  exports: [AutoPlanService],
 })
 export class PlanningModule {}

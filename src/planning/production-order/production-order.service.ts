@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { filter } from '../../common/master';
 import { PageRequest, PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AutoPlanStatus } from './auto-plan';
+import { AutoPlanService } from './auto-plan.service';
 import {
   ProductionOrderChangeFieldRow,
   ProductionOrderLastChange,
@@ -33,6 +35,7 @@ export interface ProductionOrderListQuery {
   q?: string;
   includeChildren?: boolean;
   withLastChange?: boolean;
+  autoPlanStatus?: AutoPlanStatus;
   page?: number;
   size?: number;
 }
@@ -52,13 +55,17 @@ const ORDER_BY: Prisma.production_orderOrderByWithRelationInput[] = [
 
 @Injectable()
 export class ProductionOrderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly autoPlans: AutoPlanService,
+  ) {}
 
   async list(query: ProductionOrderListQuery): Promise<PagedResponse<ProductionOrderView>> {
     const page = pageRequest(query);
+    const withLastChange = query.withLastChange === true;
+    if (query.autoPlanStatus !== undefined) return this.listByAutoPlanStatus(query, query.autoPlanStatus, page, withLastChange);
     const base = buildWhere(query);
     const where = query.unacknowledgedOnly === true ? await this.excludeAcknowledged(base) : base;
-    const withLastChange = query.withLastChange === true;
     if (query.includeChildren === true) return this.listWithChildren(where, page, withLastChange);
 
     const [rows, total] = await Promise.all([
@@ -93,8 +100,15 @@ export class ProductionOrderService {
         select: { production_order_id: true },
       }),
     ]);
-    const rootIds = rootRows.map((r) => r.production_order_id);
     const meta = { page: page.page, size: page.size, total };
+    return this.withDescendants(rootRows.map((r) => r.production_order_id), meta, withLastChange);
+  }
+
+  private async withDescendants(
+    rootIds: bigint[],
+    meta: PagedResponse<ProductionOrderView>['page'],
+    withLastChange: boolean,
+  ): Promise<PagedResponse<ProductionOrderView>> {
     if (rootIds.length === 0) return { items: [], page: meta };
 
     const descendants = await this.prisma.$queryRaw<{ production_order_id: bigint }[]>(Prisma.sql`
@@ -123,12 +137,43 @@ export class ProductionOrderService {
     return ids.length === 0 ? base : { AND: [base, { production_order_id: { notIn: ids } }] };
   }
 
+  /**
+   * 자동 계획 상태는 확정 계획 수량 합을 오더 수량과 견줘야 해 Prisma where 로 못 건다 — 이 필터가 오면 같은 조건을 SQL 로
+   * 써서 페이지 id 만 뽑는다. ⛔ 조건에 맞는 id 전부를 바인드로 넘기지 않는다(오더가 쌓이면 바인드 한도를 넘는다).
+   * 이유(`reasons`)는 거르지 않는다 — 상태만 거른다. 상태가 없는 오더(`autoPlan` null)는 어느 쪽에도 들지 않는다.
+   */
+  private async listByAutoPlanStatus(
+    query: ProductionOrderListQuery,
+    status: AutoPlanStatus,
+    page: PageRequest,
+    withLastChange: boolean,
+  ): Promise<PagedResponse<ProductionOrderView>> {
+    const conditions = [...filterSql(query), autoPlanStatusSql(status)];
+    if (query.includeChildren === true) conditions.push(Prisma.sql`o.parent_production_order_id IS NULL`);
+    const where = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
+    const [counted, idRows] = await Promise.all([
+      this.prisma.$queryRaw<{ total: number }[]>(Prisma.sql`SELECT count(*)::int AS total FROM planning.production_order o ${where}`),
+      this.prisma.$queryRaw<{ production_order_id: bigint }[]>(Prisma.sql`
+        SELECT o.production_order_id FROM planning.production_order o ${where}
+         ORDER BY o.planned_start_date ASC NULLS LAST, o.due_date ASC NULLS LAST, o.production_order_id ASC
+         LIMIT ${page.take} OFFSET ${page.skip}`),
+    ]);
+    const ids = idRows.map((r) => r.production_order_id);
+    const meta = { page: page.page, size: page.size, total: counted[0].total };
+    if (query.includeChildren === true) return this.withDescendants(ids, meta, withLastChange);
+
+    const rows = ids.length === 0 ? [] : await this.prisma.production_order.findMany({ where: { production_order_id: { in: ids } } });
+    const byId = new Map(rows.map((row) => [row.production_order_id, row]));
+    return { items: await this.viewsOf(ids.map((id) => byId.get(id) as ProductionOrderRow), withLastChange), page: meta };
+  }
+
   /** 페이지 파생 — 집계 2칸 + 확인 3칸을 한 쿼리로, (요청 시) 변경 이력을 더한다. 행마다 돌지 않는다. */
   private async viewsOf(rows: ProductionOrderRow[], withLastChange: boolean): Promise<ProductionOrderView[]> {
     const ids = rows.map((r) => r.production_order_id);
-    const [derived, changes] = await Promise.all([
+    const [derived, changes, autoPlans] = await Promise.all([
       this.derivedOf(ids),
       withLastChange ? this.lastChangesOf(rows) : Promise.resolve(new Map<bigint, ProductionOrderLastChange>()),
+      this.autoPlans.viewsOf(rows),
     ]);
     return rows.map((row) => {
       const d = derived.get(row.production_order_id);
@@ -137,6 +182,7 @@ export class ProductionOrderService {
         plannedWorkOrderCount: d?.planned ?? 0,
         acknowledgement: d?.acknowledgedAt === null || d?.acknowledgedAt === undefined ? undefined : { acknowledgedAt: d.acknowledgedAt, acknowledgedBy: d.acknowledgedBy, acknowledgeDecisionCode: d.acknowledgeDecisionCode },
         lastChange: changes.get(row.production_order_id),
+        autoPlan: autoPlans.get(row.production_order_id) ?? null,
       });
     });
   }
@@ -213,6 +259,38 @@ export class ProductionOrderService {
     }
     return map;
   }
+}
+
+/**
+ * `buildWhere` + `unacknowledgedOnly` 를 SQL 로 — `listByAutoPlanStatus` 만 쓴다. ⛔ 목록 필터를 늘리면 두 곳을 함께 고친다.
+ * 「P/O 번호 검색」은 대소문자를 가리지 않는 부분일치다.
+ */
+function filterSql(query: ProductionOrderListQuery): Prisma.Sql[] {
+  const conditions: Prisma.Sql[] = [];
+  if (query.statusCode !== undefined) conditions.push(Prisma.sql`o.status_code = ${query.statusCode}`);
+  if (query.businessUnitId !== undefined) conditions.push(Prisma.sql`o.business_unit_id = ${BigInt(query.businessUnitId)}`);
+  if (query.plantId !== undefined) conditions.push(Prisma.sql`o.plant_id = ${BigInt(query.plantId)}`);
+  if (query.itemId !== undefined) conditions.push(Prisma.sql`o.item_id = ${BigInt(query.itemId)}`);
+  if (query.dueDateFrom !== undefined) conditions.push(Prisma.sql`o.due_date >= ${query.dueDateFrom}::date`);
+  if (query.dueDateTo !== undefined) conditions.push(Prisma.sql`o.due_date <= ${query.dueDateTo}::date`);
+  if (query.q !== undefined) conditions.push(Prisma.sql`strpos(lower(o.production_order_no), lower(${query.q})) > 0`);
+  if (query.unacknowledgedOnly === true) {
+    conditions.push(Prisma.sql`NOT EXISTS (
+      SELECT 1 FROM production.production_order_acknowledgement a
+       WHERE a.production_order_id = o.production_order_id AND a.acknowledged_at IS NOT NULL
+         AND (o.last_change_received_at IS NULL OR a.acknowledged_at >= o.last_change_received_at))`);
+  }
+  return conditions;
+}
+
+/** `AutoPlanService.viewsOf` 와 같은 판정 — DONE 은 확정 계획 수량 합 ≥ 오더 수량, 취소된 오더와 시도도 계획도 없는 오더는 상태가 없다. */
+function autoPlanStatusSql(status: AutoPlanStatus): Prisma.Sql {
+  const done = Prisma.sql`COALESCE((SELECT sum(p.planned_qty) FROM planning.production_plan p
+     WHERE p.production_order_id = o.production_order_id AND p.status_code = 'CONFIRMED'), 0) >= o.order_qty`;
+  if (status === 'DONE') return Prisma.sql`(o.status_code <> 'CANCELLED' AND ${done})`;
+  return Prisma.sql`(o.status_code <> 'CANCELLED' AND NOT (${done})
+    AND (o.auto_plan_attempted_at IS NOT NULL
+         OR EXISTS (SELECT 1 FROM planning.production_plan p WHERE p.production_order_id = o.production_order_id)))`;
 }
 
 function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhereInput {

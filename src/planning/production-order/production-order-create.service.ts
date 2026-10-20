@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
+import { localDate } from '../production-plan/plan-window';
+import { skipOnReceipt } from './auto-plan';
 
 /** 계약 `ProductionOrderCreate`(P-30 선행) — 형식·필수·길이는 계약 가드가 이미 막았다. */
 export interface ProductionOrderCreate {
@@ -29,11 +31,15 @@ const DUPLICATE_KEY = 'DUPLICATE_KEY';
 export class ProductionOrderCreateService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(body: ProductionOrderCreate, appUserId: number | undefined): Promise<number> {
+  /**
+   * `autoPlan` 이면 호출자가 커밋 «뒤»에 `AutoPlanService.planReceived` 를 부른다. 시도 시각은 여기서 함께 찍는다 —
+   * 그 뒤 무엇이 실패해도 오더가 「확인 필요」로 남게.
+   */
+  async create(body: ProductionOrderCreate, appUserId: number | undefined): Promise<{ productionOrderId: number; autoPlan: boolean }> {
     const [plant, item, uom, duplicate] = await Promise.all([
       this.prisma.plant.findUnique({
         where: { plant_id: BigInt(body.plantId) },
-        select: { is_active: true, business_unit_id: true },
+        select: { is_active: true, business_unit_id: true, timezone_code: true },
       }),
       this.prisma.item.findUnique({
         where: { item_id: BigInt(body.itemId) },
@@ -58,7 +64,9 @@ export class ProductionOrderCreateService {
     if (uom === null || uom?.is_active === false) errors.push(field('uomId', ERROR_CODE.INVALID, '없거나 사용 중지된 단위입니다.'));
     if (errors.length > 0 || businessUnitId === null || uomId === undefined) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
     if (duplicate !== null) throw duplicateNo();
+    const autoPlan = plant !== null && !skipOnReceipt(RECEIVED, body.dueDate ?? null, null, localDate(new Date(), plant.timezone_code));
 
+    let productionOrderId: number;
     try {
       const created = await this.prisma.production_order.create({
         data: {
@@ -72,17 +80,19 @@ export class ProductionOrderCreateService {
           due_date: body.dueDate === undefined ? null : new Date(`${body.dueDate}T00:00:00.000Z`),
           status_code: RECEIVED,
           remarks: body.remarks ?? null,
+          auto_plan_attempted_at: autoPlan ? new Date() : null,
           created_by: appUserId ?? null,
           updated_by: appUserId ?? null,
         },
         select: { production_order_id: true },
       });
-      return Number(created.production_order_id);
+      productionOrderId = Number(created.production_order_id);
     } catch (error) {
       // 선조회와 INSERT 사이에 같은 번호가 먼저 들어온 경합.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw duplicateNo();
       throw error;
     }
+    return { productionOrderId, autoPlan };
   }
 }
 

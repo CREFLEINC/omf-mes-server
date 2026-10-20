@@ -166,6 +166,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ERP W/O 를 소유한다. 화면에 버튼은 없다 — API 로만 부른다.
   'POST /planning/production-orders': ['W-02-01'],
 
+  // `W-02-01`·`W-02-02` — ERP W/O 자동 계획 재시도(P-67 · 설계에 없는 경로). 재시도 버튼이 ERP W/O 목록(W-02-01)에
+  // 있고, 하는 일은 수신 때 서버가 하는 것과 같다. 계획을 세우고 확정하므로 계획 화면(W-02-02)도 문다.
+  'POST /planning/production-orders/{productionOrderId}:auto-plan': ['W-02-01', 'W-02-02'],
+
   // `W-06-03` 불량·원인코드 2계층 마스터 — §3-4 가 「대분류 추가」·「상세 추가」만 적어
   // 수정·활성 전이와 원인코드 목록이 도출표에 안 들어왔다. 한 화면의 두 탭이다.
   'GET /quality/cause-codes': ['W-06-03'],

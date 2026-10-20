@@ -60,14 +60,36 @@ export function assignResources(operations: OperationNeed[], maps: DefaultMap[])
 export async function readDefaultMaps(prisma: PrismaService, plantId: bigint, itemId: bigint): Promise<DefaultMap[]> {
   const rows = await prisma.item_resource_map.findMany({
     where: { plant_id: plantId, item_id: itemId, is_default: true, is_active: true },
-    select: {
-      process_id: true,
-      equipment: { select: { equipment_id: true, status_code: true, is_active: true, production_line_id: true } },
-      mold: { select: { mold_id: true, status_code: true, is_active: true } },
-    },
+    select: DEFAULT_MAP_SELECT,
   });
   return rows.map((row) => toDefaultMap(row));
 }
+
+/** (공장·품목) 여럿의 기본 매핑을 한 번에 — 키는 `pairKey`. 목록이 행마다 읽지 않게. */
+export async function readDefaultMapsOf(
+  prisma: PrismaService,
+  pairs: readonly { plantId: bigint; itemId: bigint }[],
+): Promise<Map<string, DefaultMap[]>> {
+  const result = new Map<string, DefaultMap[]>();
+  if (pairs.length === 0) return result;
+  const rows = await prisma.item_resource_map.findMany({
+    where: { is_default: true, is_active: true, OR: pairs.map((pair) => ({ plant_id: pair.plantId, item_id: pair.itemId })) },
+    select: { plant_id: true, item_id: true, ...DEFAULT_MAP_SELECT },
+  });
+  for (const row of rows) {
+    const key = pairKey(row.plant_id, row.item_id);
+    result.set(key, [...(result.get(key) ?? []), toDefaultMap(row)]);
+  }
+  return result;
+}
+
+export const pairKey = (plantId: bigint, itemId: bigint): string => `${String(plantId)}:${String(itemId)}`;
+
+const DEFAULT_MAP_SELECT = {
+  process_id: true,
+  equipment: { select: { equipment_id: true, status_code: true, is_active: true, production_line_id: true } },
+  mold: { select: { mold_id: true, status_code: true, is_active: true } },
+} as const;
 
 export function toDefaultMap(row: {
   process_id: bigint | null;

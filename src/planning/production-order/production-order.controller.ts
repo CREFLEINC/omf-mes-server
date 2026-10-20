@@ -8,6 +8,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { AcknowledgeService, ProductionOrderAcknowledge } from './acknowledge.service';
+import { AutoPlanResult, AutoPlanService } from './auto-plan.service';
 import { ProductionOrderCreate, ProductionOrderCreateService } from './production-order-create.service';
 import { ProductionOrderDetailQuery, ProductionOrderListQuery, ProductionOrderService } from './production-order.service';
 import { ProductionOrderView } from './production-order-view';
@@ -21,6 +22,7 @@ export class ProductionOrderController {
     private readonly acknowledges: AcknowledgeService,
     private readonly resyncs: ResyncService,
     private readonly creates: ProductionOrderCreateService,
+    private readonly autoPlans: AutoPlanService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -30,15 +32,19 @@ export class ProductionOrderController {
     return this.queries.list(query);
   }
 
-  /** ⛔ ETag 를 안 내린다 — 201 에 선언하지 않았다(`POST /planning/production-plans` 와 같다). */
+  /**
+   * ⛔ ETag 를 안 내린다 — 201 에 선언하지 않았다(`POST /planning/production-plans` 와 같다).
+   * 자동 계획은 멱등 트랜잭션 «밖»에서 돈다 — 그 안에서 돌면 길어진 계획·전개가 멱등 기록을 롤백시켜 재전송이 중복 번호가 된다.
+   * 그래서 멱등 기록에는 오더 id 만 남기고, 응답은 매번 지금 상태로 다시 읽는다(재전송도 그렇다).
+   */
   @Post()
   @Contract('POST /planning/production-orders')
   @HttpCode(HttpStatus.CREATED)
-  create(@Req() request: Request, @Body() body: ProductionOrderCreate): Promise<ProductionOrderView> {
-    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, async () => {
-      const productionOrderId = await this.creates.create(body, currentSession(request)?.userId);
-      return (await this.queries.detail(productionOrderId, {})).view;
-    }, FAMILY_CONFLICT_CODE);
+  async create(@Req() request: Request, @Body() body: ProductionOrderCreate): Promise<ProductionOrderView> {
+    const appUserId = currentSession(request)?.userId;
+    const created = await runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.creates.create(body, appUserId), FAMILY_CONFLICT_CODE);
+    if (created.autoPlan) await this.autoPlans.planReceived(created.productionOrderId, appUserId);
+    return (await this.queries.detail(created.productionOrderId, {})).view;
   }
 
   @Get(':productionOrderId')
@@ -71,6 +77,21 @@ export class ProductionOrderController {
       await this.acknowledges.acknowledge(productionOrderId, version, body, appUserId);
       return (await this.queries.detail(productionOrderId, {})).view;
     }, FAMILY_CONFLICT_CODE);
+  }
+
+  /** 수신 때 못 세웠거나 확정하지 못한 계획을 다시 시도한다 — 기준정보·계획 라인을 고친 뒤. */
+  @Post(':productionOrderId\\:auto-plan')
+  @Contract('POST /planning/production-orders/{productionOrderId}:auto-plan')
+  @HttpCode(HttpStatus.OK)
+  async autoPlan(
+    @Req() request: Request,
+    @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
+  ): Promise<AutoPlanResult> {
+    // 일은 멱등 트랜잭션 «밖»에서 한다(등록과 같은 까닭). 다시 해도 지금 상태로 다시 판정할 뿐이라 멱등 기록은 키만 잡고,
+    // 응답은 같은 키 재전송이라도 이번 판정이다 — 옛 응답을 돌려주면 방금 한 일(예: 확정)과 어긋난다.
+    const result = await this.autoPlans.run(productionOrderId, currentSession(request)?.userId);
+    await runIdempotent(this.idempotency, request, HttpStatus.OK, () => Promise.resolve(undefined), FAMILY_CONFLICT_CODE);
+    return result;
   }
 
   /** ⭐ 202 에 본문이 없다 — 계약이 content 를 주지 않았다. 결과는 연계 수신으로 온다. */

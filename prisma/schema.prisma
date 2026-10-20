@@ -2677,6 +2677,8 @@ model production_order {
   erp_storage_location_code        String?                            @db.VarChar(7)
   erp_rework_flag                  String?                            @db.VarChar(2)
   planned_start_date               DateTime?                          @db.Date
+  auto_plan_attempted_at           DateTime?                          @db.Timestamptz(6)
+  auto_plan_running_until          DateTime?                          @db.Timestamptz(6)
   business_unit                    business_unit                      @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
   item                             item                               @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   parent_production_order          production_order?                  @relation("production_orderToproduction_order", fields: [parent_production_order_id], references: [production_order_id], onDelete: NoAction, onUpdate: NoAction)
@@ -2723,6 +2725,7 @@ model production_plan {
   split_children      production_plan[] @relation("production_planToproduction_plan")
 
   @@index([split_of_plan_id], map: "ix_production_plan_split_of")
+  @@index([production_order_id], map: "ix_production_plan_order")
   @@schema("planning")
 }
 
