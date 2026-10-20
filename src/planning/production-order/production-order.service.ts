@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PageRequest, PagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,6 +33,9 @@ export interface ProductionOrderListQuery {
   itemId?: number;
   dueDateFrom?: string;
   dueDateTo?: string;
+  /** 계약 밖 질의(장부 P-66) — 계약 검증이 보지 않아 형식을 여기서 본다. */
+  plannedStartDateFrom?: string;
+  plannedStartDateTo?: string;
   q?: string;
   includeChildren?: boolean;
   withLastChange?: boolean;
@@ -254,7 +258,7 @@ export class ProductionOrderService {
     for (const row of withChange) {
       map.set(row.production_order_id, {
         receivedAt: (row.last_change_received_at as Date).toISOString(),
-        changedFields: changedFieldsOf(byOrder.get(row.production_order_id) ?? [], row.status_code, row.order_qty, row.due_date, statusName),
+        changedFields: changedFieldsOf(byOrder.get(row.production_order_id) ?? [], row, statusName),
       });
     }
     return map;
@@ -300,9 +304,32 @@ function buildWhere(query: ProductionOrderListQuery): Prisma.production_orderWhe
     ...filter('plant_id', query.plantId),
     ...filter('item_id', query.itemId),
     ...dueDateWhere(query.dueDateFrom, query.dueDateTo),
+    ...plannedStartDateWhere(query.plannedStartDateFrom, query.plannedStartDateTo),
     // 「P/O 번호 검색」(계약) — 부분일치.
     ...(query.q === undefined ? {} : { production_order_no: { contains: query.q, mode: Prisma.QueryMode.insensitive } }),
   };
+}
+
+/** 계획 시작일도 `@db.Date` 다 — 납기와 같이 비교한다. */
+function plannedStartDateWhere(from?: string, to?: string): Prisma.production_orderWhereInput {
+  if (from === undefined && to === undefined) return {};
+  return {
+    planned_start_date: {
+      ...(from === undefined ? {} : { gte: dateQuery('plannedStartDateFrom', from) }),
+      ...(to === undefined ? {} : { lte: dateQuery('plannedStartDateTo', to) }),
+    },
+  };
+}
+
+/** `2026-02-30` 은 `Date` 가 3월 2일로 넘기므로 되돌려 같은지 본다. */
+function dateQuery(field: string, value: string): Date {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)) {
+    return date;
+  }
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    { scope: 'field', field, code: ERROR_CODE.INVALID, message: 'YYYY-MM-DD 형식입니다.' },
+  ]);
 }
 
 /** `due_date` 는 `@db.Date` 다 — 타임존 캐스팅 없이 그대로 비교한다(CLAUDE.md). */

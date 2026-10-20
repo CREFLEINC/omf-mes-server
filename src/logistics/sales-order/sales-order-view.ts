@@ -25,6 +25,9 @@ export interface SalesOrderLineView {
   uomId: number;
   requestedDeliveryDate?: string;
   shippedQty: number;
+  /** ERP 출고창고(SL_CD)·ERP 가 이 라인을 취소한 시각 — 계약 밖 칸(장부 P-75). */
+  erpStorageLocationCode?: string;
+  cancelledAt?: string;
 }
 
 export interface SalesOrderView {
@@ -37,14 +40,18 @@ export interface SalesOrderView {
   statusCode: string;
   lines?: SalesOrderLineView[];
   versionNo?: number;
+  /** ERP 수주유형(SO_TYPE_CD)·수불유형(MOV_TYPE)·영업그룹(SALES_GRP_CD) — 계약 밖 칸(장부 P-75). */
+  erpOrderTypeCode?: string;
+  erpMovementTypeCode?: string;
+  erpSalesGroupCode?: string;
 }
 
 /**
  * ⭐ 목록도 `lines` 를 싣는다(I-22 R-9) — `W-04-01` §3 ① 이 목록 행에 「3라인」을 그리는데
  * `SalesOrder` 에 라인 수 칸이 0개다. 라인은 롤업이 없어 단순 `include` 로 싸다.
  *
- * ⛔ `statusCode` 는 ERP·엑셀이 넣은 값을 그대로 내린다 — 등록 경로가 0건이라 MES 안에
- * 이 값을 «올릴» 주체가 없다(계약 `x-no-code-key`). 상수를 만들지 않는다.
+ * ⛔ `statusCode` 는 ERP 수신이 넣은 값을 그대로 내린다 — 이름은 공통코드 `SALES_ORDER_STATUS`
+ * 에 있다(장부 P-72 · 계약은 `x-no-code-key`). 상수를 만들지 않는다.
  */
 export function salesOrderView(row: SalesOrderRow): SalesOrderView {
   return omitEmpty({
@@ -57,6 +64,9 @@ export function salesOrderView(row: SalesOrderRow): SalesOrderView {
     statusCode: row.status_code,
     lines: row.sales_order_line.map(salesOrderLineView),
     versionNo: row.version_no,
+    erpOrderTypeCode: row.erp_order_type_code ?? undefined,
+    erpMovementTypeCode: row.erp_movement_type_code ?? undefined,
+    erpSalesGroupCode: row.erp_sales_group_code ?? undefined,
   });
 }
 
@@ -70,5 +80,7 @@ export function salesOrderLineView(row: SalesOrderLineRow): SalesOrderLineView {
     uomId: Number(row.uom_id),
     requestedDeliveryDate: toDateString(row.requested_delivery_date) ?? undefined,
     shippedQty: Number(row.shipped_qty),
+    erpStorageLocationCode: row.erp_storage_location_code ?? undefined,
+    cancelledAt: row.cancelled_at?.toISOString(),
   });
 }

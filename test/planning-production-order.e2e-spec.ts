@@ -156,7 +156,7 @@ describe('ERP W/O 조회 (e2e)', () => {
       expect(ids).toEqual([orderMainId]);
     });
 
-    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP ERP W/O 는 납기가 없다', async () => {
+    it('4. 기본 정렬은 계획 시작일 → 납기 → id 순이다 — ERP W/O 는 납기가 없다', async () => {
       const day = (text: string): Date => new Date(`${text}T00:00:00.000Z`);
       // 만든 순서(id 순)와 기대 순서를 일부러 어긋나게 둔다.
       const rows: [string, Date | null, Date | null][] = [
@@ -195,6 +195,63 @@ describe('ERP W/O 조회 (e2e)', () => {
       } finally {
         await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: `${PREFIX}-SORT-` } } });
       }
+    });
+
+    it('계획 시작일 기간으로 걸러지고 ERP 원본 칸 넷이 실린다 — 계약 밖(장부 P-66·P-75)', async () => {
+      const make = (suffix: string, start: string) =>
+        prisma.production_order.create({
+          data: {
+            production_order_no: `${PREFIX}-START-${suffix}`,
+            erp_order_no: `${PREFIX}-START-${suffix}`,
+            business_unit_id: mainBusinessUnitId,
+            plant_id: plantId,
+            item_id: itemId,
+            order_qty: 1,
+            uom_id: uomId,
+            planned_start_date: new Date(`${start}T00:00:00.000Z`),
+            erp_operation_no: '010',
+            erp_storage_location_code: 'S110',
+            erp_rework_flag: 'N',
+            status_code: 'RECEIVED',
+          },
+        });
+      try {
+        const before = await make('BEFORE', '2026-11-01');
+        const inside = await make('INSIDE', '2026-11-05');
+        const after = await make('AFTER', '2026-11-11');
+
+        const response = await request(app.getHttpServer())
+          .get('/api/planning/production-orders')
+          .query({ businessUnitId: mainBusinessUnitId, plannedStartDateFrom: '2026-11-02', plannedStartDateTo: '2026-11-10' })
+          .set('Cookie', cookie)
+          .expect(200);
+
+        const ids = response.body.items.map((item: { productionOrderId: number }) => item.productionOrderId);
+        expect(ids).toEqual([Number(inside.production_order_id)]);
+        expect(ids).not.toContain(Number(before.production_order_id));
+        expect(ids).not.toContain(Number(after.production_order_id));
+        expect(response.body.items[0]).toMatchObject({
+          plannedStartDate: '2026-11-05',
+          erpOperationNo: '010',
+          erpStorageLocationCode: 'S110',
+          erpReworkFlag: 'N',
+        });
+        expect(validator('GET /planning/production-orders')(response.body)).toBe(true);
+      } finally {
+        await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: `${PREFIX}-START-` } } });
+      }
+    });
+
+    it('계획 시작일 기간이 없는 날짜면 400 이다 — 계약 검증이 보지 않는 질의라 서버가 본다', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/planning/production-orders')
+        .query({ plannedStartDateFrom: '2026-02-30' })
+        .set('Cookie', cookie)
+        .expect(400);
+
+      expect(response.body.errors).toEqual([
+        expect.objectContaining({ scope: 'field', field: 'plannedStartDateFrom', code: 'INVALID' }),
+      ]);
     });
   });
 
@@ -289,6 +346,39 @@ describe('ERP W/O 조회 (e2e)', () => {
       expect(fields.find((f) => f.field === 'ORDER_QTY')?.beforeQty).toBe(1000);
       expect(fields.find((f) => f.field === 'DUE_DATE')?.beforeQty).toBeNull();
       expect(fields.find((f) => f.field === 'STATUS_CODE')?.beforeQty).toBeNull();
+    });
+
+    it('ERP 가 계획 시작일을 바꾸면 changedFields 에 「계획 시작일」이 실린다 — 계약 enum 밖(장부 P-66)', async () => {
+      const order = await prisma.production_order.create({
+        data: {
+          production_order_no: `${PREFIX}-START-CHANGED`,
+          business_unit_id: mainBusinessUnitId,
+          plant_id: plantId,
+          item_id: itemId,
+          order_qty: 1,
+          uom_id: uomId,
+          planned_start_date: new Date('2026-11-10T00:00:00.000Z'),
+          status_code: 'UPDATED',
+          last_change_received_at: T1,
+          production_order_change_field: {
+            create: { field_code: 'PLANNED_START_DATE', before_planned_start_date: new Date('2026-11-03T00:00:00.000Z') },
+          },
+        },
+      });
+      try {
+        const response = await request(app.getHttpServer())
+          .get(`/api/planning/production-orders/${order.production_order_id}`)
+          .query({ withLastChange: true })
+          .set('Cookie', cookie)
+          .expect(200);
+
+        expect(response.body.lastChange.changedFields).toEqual([
+          { field: 'PLANNED_START_DATE', label: '계획 시작일', beforeText: '2026-11-03', afterText: '2026-11-10', beforeQty: null },
+        ]);
+      } finally {
+        await prisma.production_order_change_field.deleteMany({ where: { production_order_id: order.production_order_id } });
+        await prisma.production_order.delete({ where: { production_order_id: order.production_order_id } });
+      }
     });
 
     it('12. 변경 행이 0건이면 changedFields 가 빈 배열이다', async () => {

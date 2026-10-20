@@ -1257,6 +1257,16 @@ const SEED: CodeGroupSeed[] = [
     values: [],
   },
   {
+    // ERP 수신이 이 둘 사이만 옮긴다 — MES 에는 수주 상태를 바꾸는 길이 없다(장부 P-72).
+    groupCode: 'SALES_ORDER_STATUS',
+    groupName: '수주 상태',
+    isSystemOwned: true,
+    values: [
+      { code: 'RECEIVED', codeName: '수신', order: 10 },
+      { code: 'CANCELLED', codeName: '취소', order: 20 },
+    ],
+  },
+  {
     // 확정이 PGI 송신을 부르고 취소가 되돌린다(W-04-04 §5-1 · W-04-12 §5-2).
     groupCode: 'SHIPMENT_STATUS',
     groupName: '출하 상태',

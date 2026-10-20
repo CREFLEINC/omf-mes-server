@@ -288,6 +288,54 @@ describe('고객사 출하지시서 조회 (e2e)', () => {
     expect((await detail(so.SO1)).versionNo).toBe(1);
   });
 
+  it('S-21 ERP 원본 칸과 라인 취소 시각을 싣고, 없는 행은 키를 «생략»한다 — 계약 밖(장부 P-75)', async () => {
+    const cancelledAt = new Date('2026-10-20T01:02:03.000Z');
+    await prisma.sales_order.update({
+      where: { sales_order_id: BigInt(so.SO2) },
+      data: { erp_order_type_code: 'RFOC', erp_movement_type_code: 'S01', erp_sales_group_code: 'S10' },
+    });
+    await prisma.sales_order_line.updateMany({
+      where: { sales_order_id: BigInt(so.SO2) },
+      data: { erp_storage_location_code: 'S210', cancelled_at: cancelledAt },
+    });
+    try {
+      type Loose = Record<string, unknown> & { lines: Record<string, unknown>[] };
+      const erp = (await detail(so.SO2)) as unknown as Loose;
+      const mes = (await detail(so.SO1)) as unknown as Loose;
+
+      expect(erp).toMatchObject({ erpOrderTypeCode: 'RFOC', erpMovementTypeCode: 'S01', erpSalesGroupCode: 'S10' });
+      expect(erp.lines[0]).toMatchObject({ erpStorageLocationCode: 'S210', cancelledAt: cancelledAt.toISOString() });
+      for (const key of ['erpOrderTypeCode', 'erpMovementTypeCode', 'erpSalesGroupCode']) {
+        expect(mes).not.toHaveProperty(key);
+      }
+      expect(mes.lines[0]).not.toHaveProperty('erpStorageLocationCode');
+      expect(mes.lines[0]).not.toHaveProperty('cancelledAt');
+      expect(validator('GET /logistics/sales-orders/{salesOrderId}')(erp)).toBe(true);
+    } finally {
+      await prisma.sales_order.update({
+        where: { sales_order_id: BigInt(so.SO2) },
+        data: { erp_order_type_code: null, erp_movement_type_code: null, erp_sales_group_code: null },
+      });
+      await prisma.sales_order_line.updateMany({
+        where: { sales_order_id: BigInt(so.SO2) },
+        data: { erp_storage_location_code: null, cancelled_at: null },
+      });
+    }
+  });
+
+  it('S-22 수주 상태 이름이 공통코드 SALES_ORDER_STATUS 에 있다 — 수신·취소(장부 P-72)', async () => {
+    const values = await prisma.code_value.findMany({
+      where: { code_group: { group_code: 'SALES_ORDER_STATUS' } },
+      orderBy: { display_order: 'asc' },
+      select: { code: true, code_name: true },
+    });
+
+    expect(values).toEqual([
+      { code: 'RECEIVED', code_name: '수신' },
+      { code: 'CANCELLED', code_name: '취소' },
+    ]);
+  });
+
   // ── 헬퍼 ────────────────────────────────────────────────────────────────
   async function list(query: string): Promise<ListBody> {
     const response = await request(app.getHttpServer())

@@ -172,6 +172,32 @@ describe('BOM (e2e)', () => {
     expect(detail.body.editability.reason).toBe('RECEIVED_FROM_ERP');
   });
 
+  it('ERP 자품목 순번이 구성품 목록·상세에 실린다 — 0 도 그대로 · 계약 밖(장부 P-75)', async () => {
+    await prisma.bom_component.update({
+      where: { bom_component_id: BigInt(componentId) },
+      data: { erp_child_item_seq: 0 },
+    });
+    try {
+      const list = await request(app.getHttpServer())
+        .get(`/api/planning/boms/${bomId}/components`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const detail = await request(app.getHttpServer())
+        .get(`/api/planning/boms/${bomId}/components/${componentId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const listed = list.body.items.find((c: { bomComponentId: number }) => c.bomComponentId === componentId);
+      expect(listed.erpChildItemSeq).toBe(0);
+      expect(detail.body.bomComponent.erpChildItemSeq).toBe(0);
+    } finally {
+      await prisma.bom_component.update({
+        where: { bom_component_id: BigInt(componentId) },
+        data: { erp_child_item_seq: null },
+      });
+    }
+  });
+
   it('⭐ MES 확장 네 칸만 바뀌고 ERP 원본 열은 그대로다', async () => {
     const saved = await request(app.getHttpServer())
       .put(`/api/planning/boms/${bomId}/components/${componentId}`)

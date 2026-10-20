@@ -23,6 +23,10 @@ export interface PurchaseOrderView {
   expectedReceiptDate: string | null;
   statusCode: string;
   approvalRequestId: number | null;
+  /** ERP 발주유형(PO_TYPE_CD)·구매그룹(PUR_GRP_CD)·입출고유형(IO_TYPE_CD) — 계약 밖 칸(장부 P-75). */
+  erpOrderTypeCode: string | null;
+  erpPurchaseGroupCode: string | null;
+  erpIoTypeCode: string | null;
 }
 
 export interface PurchaseOrderLineView {
@@ -35,6 +39,9 @@ export interface PurchaseOrderLineView {
   receivedQty: number;
   toleranceOverQty: number;
   toleranceUnderQty: number;
+  /** ERP 입고창고(SL_CD)·ERP 가 이 라인을 취소한 시각 — 계약 밖 칸(장부 P-75). */
+  erpStorageLocationCode: string | null;
+  cancelledAt: string | null;
 }
 
 export interface PurchaseOrderDetail {
@@ -54,6 +61,9 @@ export function purchaseOrderView(row: PurchaseOrderRow): PurchaseOrderView {
     expectedReceiptDate: toDateString(row.expected_receipt_date),
     statusCode: row.status_code,
     approvalRequestId: id(row.approval_request_id),
+    erpOrderTypeCode: row.erp_order_type_code,
+    erpPurchaseGroupCode: row.erp_purchase_group_code,
+    erpIoTypeCode: row.erp_io_type_code,
   };
 }
 
@@ -69,6 +79,8 @@ export function purchaseOrderLineView(row: PurchaseOrderLineRow): PurchaseOrderL
     receivedQty: Number(row.received_qty),
     toleranceOverQty: Number(row.tolerance_over_qty),
     toleranceUnderQty: Number(row.tolerance_under_qty),
+    erpStorageLocationCode: row.erp_storage_location_code,
+    cancelledAt: row.cancelled_at?.toISOString() ?? null,
   };
 }
 

@@ -126,6 +126,34 @@ describe('품목 마스터 (e2e)', () => {
     expect(withIds).not.toContain(plainItemId);
   });
 
+  it('ERP 규격·품목그룹이 목록·상세에 실린다 · 없으면 null 이다 — 계약 밖(장부 P-75)', async () => {
+    await prisma.item.update({
+      where: { item_id: BigInt(plainItemId) },
+      data: { erp_spec: '12x34 SUS', erp_item_group_code: 'G100' },
+    });
+    try {
+      const listed = await request(app.getHttpServer())
+        .get(`/api/mdm/items?q=${PREFIX}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      const byId = new Map(listed.body.items.map((i: { itemId: number }) => [i.itemId, i]));
+      expect(byId.get(plainItemId)).toMatchObject({ erpSpec: '12x34 SUS', erpItemGroupCode: 'G100' });
+      expect(byId.get(routedItemId)).toMatchObject({ erpSpec: null, erpItemGroupCode: null });
+
+      const detail = await request(app.getHttpServer())
+        .get(`/api/mdm/items/${plainItemId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(detail.body.item).toMatchObject({ erpSpec: '12x34 SUS', erpItemGroupCode: 'G100' });
+      expect(validator('GET /mdm/items/{itemId}')(detail.body)).toBe(true);
+    } finally {
+      await prisma.item.update({
+        where: { item_id: BigInt(plainItemId) },
+        data: { erp_spec: null, erp_item_group_code: null },
+      });
+    }
+  });
+
   it('⛔ 상세의 editability 는 항상 RECEIVED_FROM_ERP 다 — 계약이 고정했다', async () => {
     const detail = await request(app.getHttpServer())
       .get(`/api/mdm/items/${plainItemId}`)
