@@ -397,8 +397,6 @@ export class TerminalService {
   }
 }
 
-/** `uq_terminal_process` — 같은 공정이 두 줄이면 어느 줄인지 짚는다. */
-/** 매핑 한 줄의 기능 플래그 — 하나도 켜지 않은 줄은 그 공정에서 아무것도 못 하므로 받지 않는다. */
 const CAPABILITY_FLAGS = [
   'canStartWork',
   'canCompleteWork',
@@ -410,6 +408,11 @@ const CAPABILITY_FLAGS = [
   'canReturnMaterial',
 ] as const satisfies readonly (keyof TerminalProcessInput)[];
 
+/**
+ * 매핑 줄 검사 — 걸린 줄을 모두 짚어 한 번에 낸다.
+ * ① 기능 플래그를 하나도 켜지 않은 줄은 그 공정에서 아무것도 못 하므로 받지 않는다(`items[i]`).
+ * ② `uq_terminal_process` — 같은 공정이 두 줄이면 앞 줄 번호를 짚는다(`items[i].processId`).
+ */
 export function assertProcesses(items: TerminalProcessInput[]): void {
   const seen = new Map<number, number>();
   const errors = items.flatMap((item, index) => {
