@@ -177,11 +177,11 @@ export class MaterialIssueRequestService {
 
     // ⛔ 404 가 아니라 400 `INVALID` 다 — 계약이 이 경로에 404 를 선언하지 않았다(R-16 ⓒ).
     if (workOrder === null) {
-      errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+      errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     } else if (STATE_LOCKED.has(workOrder.status_code)) {
       // 취소·마감된 W/O 에 새 요청을 막는다. 이미 발행된 요청은 건드리지 않는다 — 038 이
       // 답하면 뒤쪽을 연다(I-8.md §4-5).
-      errors.push(field('workOrderId', ERROR_CODE.STATE_LOCKED, '취소·마감된 작업지시입니다.'));
+      errors.push(field('workOrderId', ERROR_CODE.STATE_LOCKED, '취소·마감된 MES W/O 입니다.'));
     }
     if (locations === 0) errors.push(field('destinationLocationId', ERROR_CODE.INVALID, '없는 위치입니다.'));
     const itemIds = new Set(items.map((row) => Number(row.item_id)));

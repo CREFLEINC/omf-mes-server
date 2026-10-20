@@ -71,7 +71,7 @@ export async function releasePlan(
     where: { work_order_id: workOrderId },
     select: RELEASE_SELECT,
   });
-  if (row === null) throw new NotFoundException('없는 작업지시입니다.');
+  if (row === null) throw new NotFoundException('없는 MES W/O 입니다.');
 
   const plan = row.production_plan;
   // R-6 이 계획 없는 발행을 막았으나 그 전에 생긴 행이 남아 있을 수 있어 400 으로 가른다.
@@ -133,7 +133,7 @@ function lineErrors(row: ReleaseRow, plan: NonNullable<ReleaseRow['production_pl
       field(
         'productionLineId',
         ERROR_CODE.INVALID,
-        '생산라인의 공장이 작업지시 공장과 다릅니다.',
+        '생산라인의 공장이 MES W/O 공장과 다릅니다.',
       ),
     ];
   }

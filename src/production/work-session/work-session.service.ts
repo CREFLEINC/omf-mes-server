@@ -60,7 +60,7 @@ export class WorkSessionService {
     // ⛔ `status_code` 를 안 본다 — STOPPED 도 열린 세션이다(G-16).
     const open = await tx.work_session.findFirst({ where: { work_order_id: workOrderId, ended_at: null } });
     if (open !== null) {
-      throw new ConflictException('user', '이 작업지시에 열린 세션이 이미 있습니다.', { code: ERROR_CODE.OPEN_SESSION_EXISTS });
+      throw new ConflictException('user', '이 MES W/O 에 열린 세션이 이미 있습니다.', { code: ERROR_CODE.OPEN_SESSION_EXISTS });
     }
     const plantId = await this.assertTerminalGate(tx, workOrderId, context.terminalId);
     const startedAt = new Date(body.startedAt);
@@ -173,7 +173,7 @@ export class WorkSessionService {
     });
     // 없는 W/O 는 트랜잭션 1번이 404 로 낸다 — 여기서 가로채지 않는다.
     if (workOrder === null || workOrder.work_order_type_code === EMERGENCY) return;
-    throw one(field('controlOverride.reasonCode', ERROR_CODE.INVALID, '긴급 작업지시에서만 우회할 수 있습니다.'));
+    throw one(field('controlOverride.reasonCode', ERROR_CODE.INVALID, '긴급 MES W/O 에서만 우회할 수 있습니다.'));
   }
 }
 /** 계정 권한(`PermissionGuard`)과 **다른 축**이라 가드가 아니라 서비스가 낸다(§3-2). */

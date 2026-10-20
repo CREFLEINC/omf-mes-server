@@ -97,5 +97,5 @@ export class ProductionOrderCreateService {
 }
 
 function duplicateNo(): ConflictException {
-  return new ConflictException('user', '같은 생산오더 번호가 이미 있습니다.', { code: DUPLICATE_KEY });
+  return new ConflictException('user', '같은 ERP W/O 번호가 이미 있습니다.', { code: DUPLICATE_KEY });
 }

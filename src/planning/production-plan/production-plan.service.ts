@@ -125,7 +125,7 @@ export class ProductionPlanService {
       select: { plant_id: true, item_id: true },
     });
     if (!order) {
-      throw one(field('productionOrderId', ERROR_CODE.INVALID, '없는 생산오더입니다.'));
+      throw one(field('productionOrderId', ERROR_CODE.INVALID, '없는 ERP W/O 입니다.'));
     }
     await assertPlannableRouting(this.prisma, body.routingId, order.item_id);
 

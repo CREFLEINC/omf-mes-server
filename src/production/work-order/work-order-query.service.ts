@@ -130,7 +130,7 @@ export class WorkOrderQueryService {
     const byId = new Map(fetched.map((row) => [row.work_order_id, row]));
     return { rows: pageIds.map((id) => {
       const row = byId.get(id);
-      if (!row) throw new Error('달성률 정렬 중 작업지시가 조회되지 않았습니다.');
+      if (!row) throw new Error('달성률 정렬 중 MES W/O 가 조회되지 않았습니다.');
       return row;
     }), total: candidates.length };
   }
@@ -215,7 +215,7 @@ export class WorkOrderQueryService {
   /** 없으면 404 다(계약 선언). */
   async detail(workOrderId: number, query: WorkOrderDetailQuery): Promise<{ view: WorkOrderView; versionNo: number }> {
     const row = await this.prisma.work_order.findUnique({ where: { work_order_id: workOrderId }, include: DISPLAY_JOIN });
-    if (!row) throw new NotFoundException('없는 작업지시입니다.');
+    if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
 
     const [progress, preIssuedLots, erpMessageQueued] = await Promise.all([
       query.withProgress === false ? undefined : this.progress(row),
@@ -228,7 +228,7 @@ export class WorkOrderQueryService {
   /** 404 는 계약 미선언이나 낸다 — 없는 W/O 의 빈 배열과 「배정이 없다」를 가른다(§7-3 · 선례). */
   async resourcePlans(workOrderId: number): Promise<WorkOrderResourcePlanView[]> {
     const exists = await this.prisma.work_order.findUnique({ where: { work_order_id: workOrderId }, select: { work_order_id: true } });
-    if (!exists) throw new NotFoundException('없는 작업지시입니다.');
+    if (!exists) throw new NotFoundException('없는 MES W/O 입니다.');
 
     const rows = await this.prisma.work_order_resource_assignment.findMany({
       where: { work_order_id: workOrderId },

@@ -29,7 +29,7 @@ export class WorkOrderResourcePlanService {
       where: { work_order_id: workOrderId },
       select: { work_order_id: true },
     });
-    if (!exists) throw new NotFoundException('없는 작업지시입니다.');
+    if (!exists) throw new NotFoundException('없는 MES W/O 입니다.');
 
     const target = { [TARGET_COLUMN[body.resourceTypeCode]]: BigInt(body.resourceId) };
     const where = { work_order_id: workOrderId, resource_type_code: body.resourceTypeCode, ...target };

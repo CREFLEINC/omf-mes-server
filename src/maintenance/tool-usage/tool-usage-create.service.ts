@@ -46,7 +46,7 @@ export class ToolUsageCreateService {
     });
     if (!workOrder) {
       throw one(
-        field("workOrderId", ERROR_CODE.INVALID, "없는 작업지시입니다."),
+        field("workOrderId", ERROR_CODE.INVALID, "없는 MES W/O 입니다."),
       );
     }
 

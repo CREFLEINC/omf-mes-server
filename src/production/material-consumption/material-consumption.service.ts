@@ -209,7 +209,7 @@ export class MaterialConsumptionService {
           }),
     ]);
 
-    if (workOrder === null) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+    if (workOrder === null) errors.push(field('workOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     if (itemCount === 0) errors.push(field('itemId', ERROR_CODE.INVALID, '없는 품목입니다.'));
     if (uomCount === 0) errors.push(field('uomId', ERROR_CODE.INVALID, '없는 단위입니다.'));
     if (enteredUomCount === 0) errors.push(field('enteredUomId', ERROR_CODE.INVALID, '없는 단위입니다.'));
@@ -287,7 +287,7 @@ function assertBelongs(
   if (row === undefined) return;
   if (row === null) errors.push(field(name, ERROR_CODE.INVALID, missing));
   else if (row.work_order_id !== BigInt(workOrderId)) {
-    errors.push(field(name, ERROR_CODE.INVALID, '다른 작업지시의 것입니다.'));
+    errors.push(field(name, ERROR_CODE.INVALID, '다른 MES W/O 의 것입니다.'));
   }
 }
 

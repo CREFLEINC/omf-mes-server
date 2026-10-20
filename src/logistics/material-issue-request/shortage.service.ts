@@ -41,7 +41,7 @@ export class MaterialIssueShortageService {
     });
     // ⛔ 404 가 아니라 400 이다 — 계약이 이 경로에 404 를 선언하지 않았다(§7-4).
     if (row === null || row.production_plan === null) {
-      throw one(field('workOrderId', ERROR_CODE.INVALID, 'BOM 을 풀 계획이 없는 작업지시입니다.'));
+      throw one(field('workOrderId', ERROR_CODE.INVALID, 'BOM 을 풀 계획이 없는 MES W/O 입니다.'));
     }
     const plan = row.production_plan;
 

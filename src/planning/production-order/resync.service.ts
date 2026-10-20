@@ -28,7 +28,7 @@ export class ResyncService {
       where: { production_order_id: BigInt(productionOrderId) },
       select: { production_order_no: true, erp_order_no: true },
     });
-    if (order === null) throw new NotFoundException('없는 생산오더입니다.');
+    if (order === null) throw new NotFoundException('없는 ERP W/O 입니다.');
 
     await this.prisma.$transaction((tx) =>
       this.outbox.enqueue(tx, {

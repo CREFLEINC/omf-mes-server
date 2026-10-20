@@ -127,7 +127,7 @@ export class OperationHandoverService {
     const errors: ErrorItem[] = [];
     // CHECK `ck_handover_work_orders` 앞당김 — 위반이 500 으로 새는 것을 막는다(§2).
     if (input.fromWorkOrderId === input.toWorkOrderId) {
-      errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, '보내는 작업지시와 받는 작업지시가 같습니다.'));
+      errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, '보내는 MES W/O 와 받는 MES W/O 가 같습니다.'));
     }
     input.lines.forEach((line, index) => {
       // CHECK `operation_handover_line_handover_qty_check` 앞당김.
@@ -157,10 +157,10 @@ export class OperationHandoverService {
     const wipById = new Map(workOrders.map((row) => [Number(row.work_order_id), row.default_wip_location_id]));
     // 계약이 이 경로에 404 를 선언하지 않았다 — 없는 참조는 전부 400 `INVALID` 다(§4-1 ③).
     if (!wipById.has(input.fromWorkOrderId)) {
-      errors.push(field('fromWorkOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+      errors.push(field('fromWorkOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     }
     if (!wipById.has(input.toWorkOrderId)) {
-      errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, '없는 작업지시입니다.'));
+      errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, '없는 MES W/O 입니다.'));
     }
     assertLineRefs(input, lots, uoms, errors);
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -186,10 +186,10 @@ function resolveLocations(
   const source = wipById.get(input.fromWorkOrderId) ?? null;
   const destination = wipById.get(input.toWorkOrderId) ?? null;
   if (source === null) {
-    errors.push(field('fromWorkOrderId', ERROR_CODE.INVALID, '작업지시의 기본 WIP 위치가 없습니다.'));
+    errors.push(field('fromWorkOrderId', ERROR_CODE.INVALID, 'MES W/O 의 기본 WIP 위치가 없습니다.'));
   }
   if (destination === null) {
-    errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, '작업지시의 기본 WIP 위치가 없습니다.'));
+    errors.push(field('toWorkOrderId', ERROR_CODE.INVALID, 'MES W/O 의 기본 WIP 위치가 없습니다.'));
   }
   if (source === null || destination === null) {
     throw new ContractException(HttpStatus.BAD_REQUEST, errors);

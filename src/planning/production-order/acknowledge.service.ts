@@ -46,7 +46,7 @@ export function acknowledgeBodyErrors(body: ProductionOrderAcknowledge, impacted
   const errors: ErrorItem[] = [];
   const adjustments = body.workOrderAdjustments ?? [];
   if (body.decisionCode === PROCEED) {
-    if (adjustments.length > 0) errors.push(field('workOrderAdjustments', ERROR_CODE.INVALID, '강행은 작업지시 조정을 함께 보내지 않습니다.'));
+    if (adjustments.length > 0) errors.push(field('workOrderAdjustments', ERROR_CODE.INVALID, '강행은 MES W/O 조정을 함께 보내지 않습니다.'));
     if ((body.reason ?? '').trim() === '') errors.push(field('reason', ERROR_CODE.REQUIRED, '강행이면 사유가 필요합니다.'));
   }
   const closedOf = new Map(impacted.map((row) => [Number(row.work_order_id), row.closed_at !== null]));
@@ -54,9 +54,9 @@ export function acknowledgeBodyErrors(body: ProductionOrderAcknowledge, impacted
   for (const [index, adjustment] of adjustments.entries()) {
     const at = `workOrderAdjustments[${index}]`;
     const closed = closedOf.get(adjustment.workOrderId);
-    if (closed === undefined) errors.push(field(`${at}.workOrderId`, ERROR_CODE.INVALID, '이 생산오더의 영향 작업지시가 아닙니다.'));
-    else if (closed) errors.push(field(`${at}.workOrderId`, ERROR_CODE.STATE_LOCKED, '마감된 작업지시입니다.'));
-    if (seen.has(adjustment.workOrderId)) errors.push(field(`${at}.workOrderId`, ERROR_CODE.UNIQUE_VIOLATION, '같은 작업지시가 두 번 왔습니다.'));
+    if (closed === undefined) errors.push(field(`${at}.workOrderId`, ERROR_CODE.INVALID, '이 ERP W/O 의 영향 MES W/O 가 아닙니다.'));
+    else if (closed) errors.push(field(`${at}.workOrderId`, ERROR_CODE.STATE_LOCKED, '마감된 MES W/O 입니다.'));
+    if (seen.has(adjustment.workOrderId)) errors.push(field(`${at}.workOrderId`, ERROR_CODE.UNIQUE_VIOLATION, '같은 MES W/O 가 두 번 왔습니다.'));
     seen.add(adjustment.workOrderId);
     if (adjustment.orderQty === undefined && adjustment.plannedStartAt === undefined && adjustment.plannedEndAt === undefined) {
       errors.push(field(at, ERROR_CODE.REQUIRED, 'orderQty·plannedStartAt·plannedEndAt 중 하나는 있어야 합니다.'));
@@ -83,7 +83,7 @@ export class AcknowledgeService {
     const [locked] = await tx.$queryRaw<{ version_no: number; last_change_received_at: Date | null }[]>(Prisma.sql`
       SELECT version_no, last_change_received_at FROM planning.production_order
        WHERE production_order_id = ${BigInt(orderId)} FOR UPDATE`);
-    if (locked === undefined) throw new NotFoundException('없는 생산오더입니다.');
+    if (locked === undefined) throw new NotFoundException('없는 ERP W/O 입니다.');
     // 원인이 `user` 가 아니라 `erpSync` 다 — 계약이 「409 가 나면 「ERP 가 다시 보냈다」」로 못 박았다.
     assertUpdated(locked.version_no === version ? 1 : 0, 'erpSync', { code: VERSION_CONFLICT, currentVersion: String(locked.version_no) });
     // 확인할 변경이 없다 — `received_at` NOT NULL 에 넣을 값이 없고 「오늘」로 잡는 것은 조용한 도출이다.

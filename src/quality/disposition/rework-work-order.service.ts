@@ -135,7 +135,7 @@ export class ReworkWorkOrderService {
        */
       if (scope.productionPlanId === null) {
         throw new ContractException(HttpStatus.BAD_REQUEST, [
-          field('nonconformanceId', ERROR_CODE.INVALID, '생산 작업지시에서 난 부적합이 아니라 재작업 지시를 발행할 수 없습니다.'),
+          field('nonconformanceId', ERROR_CODE.INVALID, 'MES W/O 에서 난 부적합이 아니라 재작업 지시를 발행할 수 없습니다.'),
         ]);
       }
 

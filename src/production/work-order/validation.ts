@@ -91,7 +91,7 @@ export function checkDoubleBooked(ids: bigint[], self: PlanWindow, rivals: Rival
 
   return ids
     .filter((id) => rivals.some((rival) => overlaps(rival, id)))
-    .map((id) => finding('WARN', 'EQUIPMENT_DOUBLE_BOOKED', 'plannedEquipmentId', `설비(${id})가 같은 시간대의 다른 작업지시에 배정돼 있습니다.`));
+    .map((id) => finding('WARN', 'EQUIPMENT_DOUBLE_BOOKED', 'plannedEquipmentId', `설비(${id})가 같은 시간대의 다른 MES W/O 에 배정돼 있습니다.`));
 }
 
 /** 목록 `withValidation`·상세가 쓰는 요약 — 같은 report 를 세고 `findings` 만 버린다(PR ② `releasable` ⓒ). */
@@ -110,7 +110,7 @@ export async function validateWorkOrder(prisma: PrismaService, workOrderId: numb
       routing_operation: { select: { process_id: true } },
     },
   });
-  if (!row) throw new NotFoundException('없는 작업지시입니다.');
+  if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
 
   const assignments = await prisma.work_order_resource_assignment.findMany({
     where: { work_order_id: workOrderId },

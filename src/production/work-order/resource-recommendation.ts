@@ -58,7 +58,7 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
       production_line: { select: { plant_id: true } },
     },
   });
-  if (!row) throw new NotFoundException('없는 작업지시입니다.');
+  if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
   const operation = row.routing_operation;
   const plantId = row.production_plan?.production_order.plant_id ?? row.production_line?.plant_id;
   // 공장을 모르면 어느 공장 설비든 틀릴 수 있다 — 추천하지 않는다.

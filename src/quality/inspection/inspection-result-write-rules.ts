@@ -195,7 +195,7 @@ export async function assertPqcAfterProduction(prisma: PrismaService, inspection
     {
       scope: 'screen',
       code: ERROR_CODE.STATE_LOCKED,
-      message: '이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
+      message: '이 MES W/O 의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
     },
   ]);
 }

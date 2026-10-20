@@ -867,7 +867,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
         const response = await post(body, { workerNo: WORKER_HEADER }).expect(400);
         expect(response.body.errors[0]).toMatchObject({
           code: 'STATE_LOCKED',
-          message: '이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
+          message: '이 MES W/O 의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.',
         });
       }
       expect(await resultsOf(inspectionRequestId)).toHaveLength(0);

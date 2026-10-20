@@ -81,9 +81,9 @@ export function assertScope(scopeCode: string, targetWorkOrderId: number | null 
       message: `지금은 ${SUPPORTED_SCOPES.join(' · ')} 만 받습니다.`,
     });
   } else if (scopeCode === 'WORK_ORDER' && targetWorkOrderId == null) {
-    errors.push(pair('targetWorkOrderId', '작업지시 범위에는 작업지시가 필요합니다.'));
+    errors.push(pair('targetWorkOrderId', 'MES W/O 범위에는 MES W/O 가 필요합니다.'));
   } else if (scopeCode !== 'WORK_ORDER' && targetWorkOrderId != null) {
-    errors.push(pair('targetWorkOrderId', '이 범위에는 작업지시를 담지 않습니다.'));
+    errors.push(pair('targetWorkOrderId', '이 범위에는 MES W/O 를 담지 않습니다.'));
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }

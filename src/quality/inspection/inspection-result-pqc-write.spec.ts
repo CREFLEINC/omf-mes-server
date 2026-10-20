@@ -32,7 +32,7 @@ describe('preparePqcWrite', () => {
     const { prisma } = prismaFor({ results: 0 });
     const body = await rejectionOf(() => preparePqcWrite(prisma, { inspectionRequestId: 1 }, 1));
     expect(body).toContain('STATE_LOCKED');
-    expect(body).toContain('이 작업지시의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.');
+    expect(body).toContain('이 MES W/O 의 생산 실적이 아직 없습니다. 실적을 먼저 등록하세요.');
   });
 
   it('실적은 확정된 «원본» 행만 센다 — 정정본은 따로 세지 않는다', async () => {

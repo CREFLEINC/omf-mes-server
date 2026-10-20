@@ -68,7 +68,7 @@ export const productionOrderTable = (onReceived: (productionOrderId: bigint) => 
       where: { production_order_id: locked.production_order_id },
     });
     if (current.erp_order_no !== orderNo) {
-      throw new Error(`생산오더 ${orderNo} 이 MES 에서 만든 생산오더와 번호가 겹친다`);
+      throw new Error(`ERP W/O ${orderNo} 이 MES 에서 만든 ERP W/O 와 번호가 겹친다`);
     }
     // 계획·작업지시가 이 값들을 보고 섰다 — 바꾸면 사람이 봐야 한다. 취소는 그래도 받는다.
     if (
@@ -77,7 +77,7 @@ export const productionOrderTable = (onReceived: (productionOrderId: bigint) => 
         current.item_id !== fixed.item_id ||
         current.uom_id !== fixed.uom_id)
     ) {
-      throw new Error(`생산오더 ${orderNo} 의 공장·품목·단위가 바뀌었다`);
+      throw new Error(`ERP W/O ${orderNo} 의 공장·품목·단위가 바뀌었다`);
     }
     await applyChange(tx, current, cancel ? {} : values, cancel ? CANCELLED : undefined);
   },
