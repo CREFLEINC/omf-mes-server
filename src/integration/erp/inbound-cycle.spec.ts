@@ -6,6 +6,7 @@ import { RelayRow, RelayTable, orderColumns } from './relay-tables';
 
 const SOURCE: RelayTable = {
   interfaceCode: 'IF-TEST-RECV',
+  targetTypeCode: 'TEST',
   name: 'T_TEST',
   flagColumn: 'IF_YN',
   keyColumns: ['CODE'],
@@ -139,7 +140,7 @@ describe('InboundCycle', () => {
     expect(f.rows.map((r) => r.IF_YN)).toEqual(['Y', 'N', 'Y']);
     expect(f.messages.get('IF-TEST-RECV:2')).toMatchObject({
       direction_code: INBOUND,
-      target_type_code: 'T_TEST',
+      target_type_code: 'TEST',
       target_id: 2,
       status_code: MESSAGE_STATUS.FAILED,
       retry_count: 1,

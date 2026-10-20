@@ -8,6 +8,11 @@
 export interface RelayTable {
   /** `integration_message.interface_code`. */
   interfaceCode: string;
+  /**
+   * `integration_message.target_type_code` — 계약 `IntegrationMessage.targetTypeCode` 의 어휘
+   * (`INTERFACE_TARGET`, 열린 그룹). 확정 다섯 밖의 값은 막지 않고 표식만 한다(계약).
+   */
+  targetTypeCode: string;
   /** `dbo` 아래 표 이름. */
   name: string;
   /**
@@ -26,6 +31,7 @@ export type RelayRow = Record<string, unknown> & { MES_INF_ID: number };
 
 export const COMMON_CODE: RelayTable = {
   interfaceCode: 'IF-ERP-CODE-RECV',
+  targetTypeCode: 'COMMON_CODE',
   name: 'T_ERP_TYPE_TIG_DOWN',
   flagColumn: 'IF_YN',
   // PLANT_CD 는 키에 넣지 않는다 — MES 코드 값의 키가 (그룹, 코드)이고 244행 전부 비어서 온다.
@@ -36,6 +42,7 @@ export const COMMON_CODE: RelayTable = {
 /** 사원. 부서 마스터가 따로 없어 부서도 여기서 뽑는다(DEPT_CODE·PDEPT). */
 export const EMPLOYEE: RelayTable = {
   interfaceCode: 'IF-ERP-EMP-RECV',
+  targetTypeCode: 'WORKER',
   name: 'T_ERP_EMP_TIG_DOWN',
   flagColumn: 'IF_YN',
   keyColumns: ['EMP_CODE'],
@@ -45,6 +52,7 @@ export const EMPLOYEE: RelayTable = {
 /** 품목. 공장별로 오지만 MES 품목은 품목코드 하나다 — 두 공장 544건은 값이 모두 같았다. */
 export const ITEM: RelayTable = {
   interfaceCode: 'IF-ERP-ITEM-RECV',
+  targetTypeCode: 'ITEM',
   name: 'T_IF_SND_ITEM_INFOR_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['ITEM_CD', 'PLANT_CD'],
@@ -53,6 +61,7 @@ export const ITEM: RelayTable = {
 
 export const PARTNER: RelayTable = {
   interfaceCode: 'IF-ERP-BP-RECV',
+  targetTypeCode: 'PARTNER',
   name: 'T_IF_SND_BIZ_PARTNER_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['BP_CD'],
@@ -65,6 +74,7 @@ export const PARTNER: RelayTable = {
  */
 export const BOM: RelayTable = {
   interfaceCode: 'IF-ERP-BOM-RECV',
+  targetTypeCode: 'BOM',
   name: 'T_IF_SND_BOM_INFOR_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PRNT_ITEM_CD', 'PLANT_CD', 'CHILD_ITEM_SEQ', 'CHILD_ITEM_CD'],
@@ -77,6 +87,7 @@ export const BOM: RelayTable = {
  */
 export const PURCHASE_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-PO-RECV',
+  targetTypeCode: 'PURCHASE_ORDER',
   name: 'T_IF_SND_PO_INFOR_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PO_NO', 'PO_SEQ_NO'],
@@ -86,6 +97,7 @@ export const PURCHASE_ORDER: RelayTable = {
 /** 수주. 발주와 같은 모양이다. */
 export const SALES_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-SO-RECV',
+  targetTypeCode: 'SALES_ORDER',
   name: 'T_IF_SND_SO_INFOR_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['SO_NO', 'SO_SEQ_NO'],
@@ -95,6 +107,7 @@ export const SALES_ORDER: RelayTable = {
 /** 제조오더. 한 행이 P/O 하나다. */
 export const PRODUCTION_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-PRODORD-RECV',
+  targetTypeCode: 'PRODUCTION_ORDER',
   name: 'T_IF_SND_PROD_ORD_KO324',
   flagColumn: 'MES_APPLY_FLAG',
   keyColumns: ['PRODT_ORDER_NO'],
