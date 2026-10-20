@@ -636,6 +636,46 @@ describe('입하 등록 (e2e)', () => {
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(10);
   });
 
+  it('입하 — ERP 가 취소한 P/O 라인으로 등록하면 400 이고 received_qty 가 그대로다(장부 P-73)', async () => {
+    const { purchaseOrderLineId } = await seedOrderLine(100);
+    await prisma.purchase_order_line.update({
+      where: { purchase_order_line_id: BigInt(purchaseOrderLineId) },
+      data: { cancelled_at: new Date() },
+    });
+
+    const rejected = await send(
+      await body({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 5 }] }),
+    ).expect(400);
+
+    expect(rejected.body.errors[0]).toMatchObject({
+      field: 'lines.0.purchaseOrderLineId',
+      code: 'INVALID',
+      message: 'ERP 에서 취소한 P/O 라인입니다.',
+    });
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
+  });
+
+  it('치환 — 등록 뒤 ERP 가 취소한 P/O 라인은 늘리면 400 이고 줄이기는 된다(장부 P-73)', async () => {
+    const { purchaseOrderLineId } = await seedOrderLine(100);
+    const detail = await create({
+      lines: [{ ...(await missingLotDraft()), purchaseOrderLineId, receivedQty: 30 }],
+    });
+    const id = detail.inboundReceipt.inboundReceiptId;
+    await prisma.purchase_order_line.update({
+      where: { purchase_order_line_id: BigInt(purchaseOrderLineId) },
+      data: { cancelled_at: new Date() },
+    });
+
+    const rejected = await putLines(id, await receiptEtag(id), [
+      itemOf(detail.lines[0], { receivedQty: 40 }),
+    ]).expect(400);
+    expect(rejected.body.errors[0]).toMatchObject({ field: 'items.0.purchaseOrderLineId', code: 'INVALID' });
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
+
+    await replace(id, [itemOf(detail.lines[0], { receivedQty: 10 })]);
+    expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(10);
+  });
+
   it('치환 — 라인을 지우면 received_qty 가 그만큼 내린다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
     const detail = await create({

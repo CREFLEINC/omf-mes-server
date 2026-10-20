@@ -13,6 +13,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 export const DOCUMENT_STATUS = 'REGISTERED';
 /** 시드 `LOT_TYPE` 3값 중 자재 입하가 고를 수 있는 하나(I-3.md §5-1). */
 export const MATERIAL_LOT_TYPE = 'MATERIAL';
+/** 등록·분할·수정이 함께 쓴다(장부 P-73). */
+export const CANCELLED_PO_LINE = 'ERP 에서 취소한 P/O 라인입니다.';
 
 export interface InboundReceiptLineWriteInput {
   /** ⛔ 등록에서는 «무시한다» — 언제나 신규 행이다. 계약이 허용한 칸이라 400 도 아니다(R-7 ④). */

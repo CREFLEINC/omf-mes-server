@@ -11,6 +11,7 @@ import { prepareOqcRequests, writeOqcRequests } from './shipment-oqc-request';
 import { ShipmentRequestQueryService } from './shipment-request-query.service';
 import { ShipmentRequestView } from './shipment-request-view';
 import {
+  CANCELLED_SO_LINE,
   CUSTOMER_LOT_REQUIREMENT_MAX,
   SHIPMENT_REQUEST_DOCUMENT_TYPE,
   SHIPMENT_REQUEST_REGISTERED,
@@ -285,7 +286,7 @@ export class ShipmentRequestService {
       this.prisma.uom.findMany({ where: { uom_id: { in: ids((l) => l.uomId) } }, select: { uom_id: true } }),
       this.prisma.sales_order_line.findMany({
         where: { sales_order_line_id: { in: ids((l) => l.salesOrderLineId) } },
-        select: { sales_order_line_id: true, sales_order_id: true },
+        select: { sales_order_line_id: true, sales_order_id: true, cancelled_at: true },
       }),
     ]);
 
@@ -301,6 +302,9 @@ export class ShipmentRequestService {
     const owner = new Map(
       salesOrderLines.map((row) => [Number(row.sales_order_line_id), Number(row.sales_order_id)]),
     );
+    const cancelled = new Set(
+      salesOrderLines.filter((row) => row.cancelled_at != null).map((row) => Number(row.sales_order_line_id)),
+    );
     for (const [index, line] of input.lines.entries()) {
       const at = `lines[${index}]`;
       if (!itemIds.has(line.itemId)) errors.push(field(`${at}.itemId`, ERROR_CODE.INVALID, '없는 품목입니다.'));
@@ -312,6 +316,9 @@ export class ShipmentRequestService {
         (input.salesOrderId == null || owner.get(line.salesOrderLineId) !== input.salesOrderId)
       ) {
         errors.push(field(`${at}.salesOrderLineId`, ERROR_CODE.PAIR, '출하지시서의 라인이 아닙니다.'));
+      } else if (line.salesOrderLineId != null && cancelled.has(line.salesOrderLineId)) {
+        // ERP 가 취소한 라인으로는 출하하지 않는다 — 그 출하를 ERP 가 받지 않는다(장부 P-73).
+        errors.push(field(`${at}.salesOrderLineId`, ERROR_CODE.INVALID, CANCELLED_SO_LINE));
       }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);

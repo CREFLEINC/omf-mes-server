@@ -6,6 +6,7 @@ import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { resolveDestinationLocation } from '../destination-location';
+import { CANCELLED_SO_LINE } from '../shipment-request/shipment-request.constants';
 import { ShipmentQueryService } from './shipment-query.service';
 import { ShipmentCreateWrite, postShipment } from './shipment-posting';
 import { assertAllocationSum, assertShipmentQty } from './shipment-rules';
@@ -116,7 +117,7 @@ export class ShipmentService {
           item_id: true,
           allocated_qty: true,
           shipped_qty: true,
-          sales_order_line: { select: { ordered_qty: true, shipped_qty: true } },
+          sales_order_line: { select: { ordered_qty: true, shipped_qty: true, cancelled_at: true } },
         },
       }),
     ]);
@@ -158,6 +159,11 @@ export class ShipmentService {
         );
       }
       const order = found.sales_order_line;
+      // 지시를 만든 뒤 ERP 가 그 수주 라인을 취소했을 수 있다(장부 P-73).
+      if (order?.cancelled_at != null) {
+        errors.push(field(`lines[${index}].shipmentRequestLineId`, ERROR_CODE.INVALID, CANCELLED_SO_LINE));
+        continue;
+      }
       // ⛔ `ck_sales_shipped_qty(shipped ≤ ordered)` 도 같다. ⚠ 수주 라인은 없을 수 있다.
       if (order !== null && order.shipped_qty.plus(shipped).greaterThan(order.ordered_qty)) {
         errors.push(

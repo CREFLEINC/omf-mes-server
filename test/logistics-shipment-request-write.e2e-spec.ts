@@ -302,6 +302,29 @@ describe('출하작업지시 편성 (e2e)', () => {
     expect((ok.lines as LineBody[])[0].salesOrderLineId).toBe(ids.salesOrderLine2);
   });
 
+  it('W-13b ERP 가 취소한 수주 라인을 실으면 400 INVALID 다(장부 P-73)', async () => {
+    await prisma.sales_order_line.update({
+      where: { sales_order_line_id: BigInt(ids.salesOrderLine2) },
+      data: { cancelled_at: new Date() },
+    });
+    try {
+      const errors = await reject(
+        payload({ salesOrderId: ids.salesOrder, lines: [line({ salesOrderLineId: ids.salesOrderLine2 })] }),
+      );
+
+      expect(errors[0]).toMatchObject({
+        field: 'lines[0].salesOrderLineId',
+        code: 'INVALID',
+        message: 'ERP 에서 취소한 수주 라인입니다.',
+      });
+    } finally {
+      await prisma.sales_order_line.update({
+        where: { sales_order_line_id: BigInt(ids.salesOrderLine2) },
+        data: { cancelled_at: null },
+      });
+    }
+  });
+
   it('W-14 목록에 없는 timeSlotCode 는 400 INVALID 다', async () => {
     const errors = await reject(payload({ timeSlotCode: 'NOON' }));
 
