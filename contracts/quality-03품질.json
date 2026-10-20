@@ -126,8 +126,39 @@
         }
        }
       }
+     },
+     "400": {
+      "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "186",
+      "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -190,9 +221,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-79. 계약 원문은 생성 경로를 두지 않았다(W-03-09 §8 #4 「특채 요청은 어느 화면이 만드나」 미결) — 처분 판정 화면(W-03-10)이 만든다로 정했다."
+    "x-internal-note": "서버 선행 · 장부 P-79. 계약 원문은 생성 경로를 두지 않았다(W-03-09 §8 #4 「특채 요청은 어느 화면이 만드나」 미결) — 처분 판정 화면(W-03-10)이 만든다로 정했다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/concessions/{concessionId}:apply": {
@@ -257,9 +303,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-79. 「승인 → 실행」을 나눈 것은 IQC 생략(:skip-iqc)·실적 정정과 같은 방식이다 — 결재 코어는 대상 업무를 모른다."
+    "x-internal-note": "서버 선행 · 장부 P-79. 「승인 → 실행」을 나눈 것은 IQC 생략(:skip-iqc)·실적 정정과 같은 방식이다 — 결재 코어는 대상 업무를 모른다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/concessions/{concessionId}": {
@@ -301,9 +362,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "승인·반려는 app-공통 계약이다(POST /app/approval-requests/{id}:approve · :reject). ⛔ 조건 수정 경로를 두지 않는다 — 결재는 예/아니오이고 값을 바꾸면 무엇을 승인했는지가 흐려진다(공유계약 J-10 · W-03-09 §5-4). 반려 사유로 돌려보낸다. ⛔ 생성 경로도 없다 — 특채 요청을 만드는 화면이 아직 특정되지 않았다(W-03-09 §8-4). nonconformance_id 가 NOT NULL 이라 부적합(04 계약)이 선행한다."
+    "x-internal-note": "승인·반려는 app-공통 계약이다(POST /app/approval-requests/{id}:approve · :reject). ⛔ 조건 수정 경로를 두지 않는다 — 결재는 예/아니오이고 값을 바꾸면 무엇을 승인했는지가 흐려진다(공유계약 J-10 · W-03-09 §5-4). 반려 사유로 돌려보낸다. ⛔ 생성 경로도 없다 — 특채 요청을 만드는 화면이 아직 특정되지 않았다(W-03-09 §8-4). nonconformance_id 가 NOT NULL 이라 부적합(04 계약)이 선행한다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/defect-records": {
@@ -387,7 +463,7 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       },
-      "description": "기간 필수 — 공유계약 L-3"
+      "description": "기간 필수 — 공유계약 L-3\n\n서버 구현 기준: inspectionResultId 로 좁힌 조회는 기간 없이 받는다(P-42). 그 밖에는 detectedFrom·detectedTo 를 함께 보낸다."
      },
      {
       "name": "detectedTo",
@@ -396,7 +472,8 @@
        "type": "string",
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
-      }
+      },
+      "description": "서버 구현 기준: inspectionResultId 로 좁힌 조회는 기간 없이 받는다(P-42). 그 밖에는 detectedFrom·detectedTo 를 함께 보낸다."
      },
      {
       "name": "page",
@@ -442,9 +519,37 @@
         }
        }
       }
+     },
+     "400": {
+      "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "등록 경로를 두지 않았다 — 03 화면 7장에 불량코드 입력이 0건이다. 이 계약에 만드는 경로가 없다. M-02-02(수리 왕복)는 읽어 쓰는 쪽이고(POST /production/repair-executions 가 defectRecordId 를 필수로 받는다), P-04-03 은 04 계약 미착수다. omf-mes#83 은 2026-08-25 CLOSED — 「#83 로 막힘」 표기는 낡았다. ⛔ 04 트랙이 POST 를 더할 때 새 경로를 만들지 말고 이 경로에 얹는다 — 접두어는 공유해도 경로는 한 계약에만 둔다(03 계약 2단계 §3)."
+    "x-internal-note": "등록 경로를 두지 않았다 — 03 화면 7장에 불량코드 입력이 0건이다. 이 계약에 만드는 경로가 없다. M-02-02(수리 왕복)는 읽어 쓰는 쪽이고(POST /production/repair-executions 가 defectRecordId 를 필수로 받는다), P-04-03 은 04 계약 미착수다. omf-mes#83 은 2026-08-25 CLOSED — 「#83 로 막힘」 표기는 낡았다. ⛔ 04 트랙이 POST 를 더할 때 새 경로를 만들지 말고 이 경로에 얹는다 — 접두어는 공유해도 경로는 한 계약에만 둔다(03 계약 2단계 §3).",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -497,9 +602,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-42. 계약 원문은 등록 경로를 두지 않았다(03 화면 7장에 불량코드 입력 0건) — IQC 불합격 사유(#106)가 첫 사용처다."
+    "x-internal-note": "서버 선행 · 장부 P-42. 계약 원문은 등록 경로를 두지 않았다(03 화면 7장에 불량코드 입력 0건) — IQC 불합격 사유(#106)가 첫 사용처다.",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/defect-records/distribution": {
@@ -550,7 +673,8 @@
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
       },
-      "description": "필수"
+      "description": "필수",
+      "required": true
      },
      {
       "name": "detectedTo",
@@ -559,7 +683,8 @@
        "type": "string",
        "format": "date-time",
        "example": "2026-08-12T10:22:00+09:00"
-      }
+      },
+      "required": true
      }
     ],
     "responses": {
@@ -572,9 +697,40 @@
         }
        }
       }
+     },
+     "400": {
+      "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-envelope-exempt": "모집단이 다르다 — 이 뷰는 검사 결과가 아니라 «불량 레코드»를 센다. 판정·최종회차·교정만료 축이 애초에 없다(omf-mes#192·#229 확정 · W-03-05 §5-2). 질의 축을 맞추면 그 확정을 뒤집는다."
+    "x-envelope-exempt": "모집단이 다르다 — 이 뷰는 검사 결과가 아니라 «불량 레코드»를 센다. 판정·최종회차·교정만료 축이 애초에 없다(omf-mes#192·#229 확정 · W-03-05 §5-2). 질의 축을 맞추면 그 확정을 뒤집는다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "074",
+      "summary": "detectedFrom·detectedTo가 모두 없거나 한쪽만 있으면 서버는 400 REQUIRED를 반환한다."
+     }
+    ]
    }
   },
   "/quality/disposition-decisions": {
@@ -720,8 +876,43 @@
         }
        }
       }
+     },
+     "400": {
+      "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "186",
+      "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+     },
+     {
+      "designRecord": "222",
+      "summary": "재등록 진입 목록의 followUpPending·reinstatable 축이 아직 한 개의 완결된 대기열을 만들지 못한다."
+     }
+    ]
    }
   },
   "/quality/disposition-decisions/{dispositionDecisionId}": {
@@ -763,8 +954,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-requests": {
@@ -895,8 +1101,26 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/inspection-requests/{inspectionRequestId}/history": {
@@ -938,9 +1162,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-55. ⛔ 같은 LOT 의 다른 일(보류·처분)은 담지 않는다 — LOT 현황(W-03-01) 몫이다."
+    "x-internal-note": "서버 선행 · 장부 P-55. ⛔ 같은 LOT 의 다른 일(보류·처분)은 담지 않는다 — LOT 현황(W-03-01) 몫이다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-requests/{inspectionRequestId}": {
@@ -982,9 +1221,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "등록 경로를 두지 않았다 — 화면 7장에 「의뢰 등록」 버튼이 0건이다. 서버가 입고(01)·생산 실적(02)에서 만든다. 검사 기준 버전이 NOT NULL 이라 기준이 없으면 의뢰 자체가 생기지 않고 화면은 진입할 수 없다(P-02-13 §5-2 · omf-mes#64 묶음 A)."
+    "x-internal-note": "등록 경로를 두지 않았다 — 화면 7장에 「의뢰 등록」 버튼이 0건이다. 서버가 입고(01)·생산 실적(02)에서 만든다. 검사 기준 버전이 NOT NULL 이라 기준이 없으면 의뢰 자체가 생기지 않고 화면은 진입할 수 없다(P-02-13 §5-2 · omf-mes#64 묶음 A).",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/inspection-results": {
@@ -1167,8 +1424,26 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -1237,9 +1512,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "확정 경로가 둘이다 — 이 경로에 statusCode=확정 으로 보내는 것과 :confirm 을 부르는 것. 부수 효과가 같아야 한다(Lot Status 전이 · confirmed_at 기록). 멱등키가 둘을 잇는다 — 같은 키면 어느 쪽으로 와도 한 건이다. idempotency_key 는 테이블 컬럼으로 실재하며 전역 UNIQUE 라 business_date 경계 문제가 없다(SQL 1856 · 공유계약 C-8). ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 3단계 §3-2"
+    "x-internal-note": "확정 경로가 둘이다 — 이 경로에 statusCode=확정 으로 보내는 것과 :confirm 을 부르는 것. 부수 효과가 같아야 한다(Lot Status 전이 · confirmed_at 기록). 멱등키가 둘을 잇는다 — 같은 키면 어느 쪽으로 와도 한 건이다. idempotency_key 는 테이블 컬럼으로 실재하며 전역 UNIQUE 라 business_date 경계 문제가 없다(SQL 1856 · 공유계약 C-8). ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 3단계 §3-2",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/defect-rate-trend": {
@@ -1349,8 +1642,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/summary": {
@@ -1479,8 +1787,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/{inspectionResultId}": {
@@ -1531,8 +1854,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -1618,8 +1956,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/{inspectionResultId}/measurements": {
@@ -1705,8 +2058,26 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/{inspectionResultId}:confirm": {
@@ -1794,9 +2165,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "관리웹·온라인 전용이다 — 오프라인 큐는 서버가 만든 inspectionResultId 를 모르므로 이 경로를 부를 수 없다. 큐는 POST /quality/inspection-results 에 statusCode=확정 으로 보낸다(03 계약 3단계 §3)."
+    "x-internal-note": "관리웹·온라인 전용이다 — 오프라인 큐는 서버가 만든 inspectionResultId 를 모르므로 이 경로를 부를 수 없다. 큐는 POST /quality/inspection-results 에 statusCode=확정 으로 보낸다(03 계약 3단계 §3).",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-hold-events": {
@@ -1956,8 +2342,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-holds": {
@@ -2086,9 +2487,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "⛔ Lot Status 변경이력 테이블이 없다 — trace 7테이블에 previous_status 류가 0건이다. 그래서 이 목록이 낼 수 있는 것은 보류 등록·해제뿐이고, 전이 9건 중 5건이 사라지고 2건은 반쪽이다. 화면이 결과 표 머리에 그 사실을 적는다(공유계약 A-11). 전용 테이블이냐 audit_event 규약이냐의 선후는 omf-mes#64·#68 에 코멘트로 나가 있고 전용 테이블을 권고했다(W-03-01 §5-2). ⚠ 그 두 이슈는 2026-08-25 에 닫혔다 — 코멘트는 그 자리에 남아 있고, 지금 살아 있는 추적처는 omf-mes-server#42(#64)·omf-mes-server#74(#68) 다."
+    "x-internal-note": "⛔ Lot Status 변경이력 테이블이 없다 — trace 7테이블에 previous_status 류가 0건이다. 그래서 이 목록이 낼 수 있는 것은 보류 등록·해제뿐이고, 전이 9건 중 5건이 사라지고 2건은 반쪽이다. 화면이 결과 표 머리에 그 사실을 적는다(공유계약 A-11). 전용 테이블이냐 audit_event 규약이냐의 선후는 omf-mes#64·#68 에 코멘트로 나가 있고 전용 테이블을 권고했다(W-03-01 §5-2). ⚠ 그 두 이슈는 2026-08-25 에 닫혔다 — 코멘트는 그 자리에 남아 있고, 지금 살아 있는 추적처는 omf-mes-server#42(#64)·omf-mes-server#74(#68) 다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -2164,9 +2580,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "헤더 If-Match 를 쓰지 않는 유일한 쓰기다 — 여러 LOT 을 한 트랜잭션으로 걸어 토큰이 여럿이라 헤더로 표현할 수 없다. lots[].versionNo 로 싣는다(03 계약 3단계 §4-2). 409 는 둘이다 — DUPLICATE_HOLD(해제되지 않은 전량 보류가 이미 있다) · HOLD_QTY_EXCEEDED(부분 보류 합계가 보유를 넘는다). lot_hold 에 UNIQUE 제약이 없어 서버가 판정한다(W-03-03 §5-5). ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §5"
+    "x-internal-note": "헤더 If-Match 를 쓰지 않는 유일한 쓰기다 — 여러 LOT 을 한 트랜잭션으로 걸어 토큰이 여럿이라 헤더로 표현할 수 없다. lots[].versionNo 로 싣는다(03 계약 3단계 §4-2). 409 는 둘이다 — DUPLICATE_HOLD(해제되지 않은 전량 보류가 이미 있다) · HOLD_QTY_EXCEEDED(부분 보류 합계가 보유를 넘는다). lot_hold 에 UNIQUE 제약이 없어 서버가 판정한다(W-03-03 §5-5). ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 03 계약 2단계 §5",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/quality/lot-holds/{lotHoldId}": {
@@ -2217,8 +2651,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-holds/{lotHoldId}:release": {
@@ -2306,9 +2755,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "If-Match 는 lot_hold 가 아니라 trace.lot 의 version_no 다 — lot_hold 에는 version_no 가 없다(기록 전용). B-8 로 한 트랜잭션이라 lot 의 토큰이 이 오퍼레이션의 토큰이다. ⛔ 부분 해제는 hold_qty 를 줄이지 않는다 — 원 행을 해제하고 남은 수량으로 새 행을 만든다(공유계약 B-3 · W-03-02 §5-7)."
+    "x-internal-note": "If-Match 는 lot_hold 가 아니라 trace.lot 의 version_no 다 — lot_hold 에는 version_no 가 없다(기록 전용). B-8 로 한 트랜잭션이라 lot 의 토큰이 이 오퍼레이션의 토큰이다. ⛔ 부분 해제는 hold_qty 를 줄이지 않는다 — 원 행을 해제하고 남은 수량으로 새 행을 만든다(공유계약 B-3 · W-03-02 §5-7).",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-status-summary": {
@@ -2428,9 +2892,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "⭐ 질의는 목록(/quality/lot-statuses)과 «같다» — page·size·sort 만 뺀다. 요약은 필터 전체 기준, 목록은 페이지 기준이라(공유계약 L-1) 두 요청이 같은 모집단을 봐야 한다. ⛔ 한쪽에만 있는 필터를 두지 않는다 — 화면이 필터를 걸면 카드와 목록이 서로 다른 것을 세게 된다(omf-mes#175). ⚠ 목록에 질의를 더할 때 이 경로도 «같은 판»으로 고친다 — #175 로 맞춘 짝이 #225(transitionFrom·transitionTo 신설) 때 다시 갈렸다."
+    "x-internal-note": "⭐ 질의는 목록(/quality/lot-statuses)과 «같다» — page·size·sort 만 뺀다. 요약은 필터 전체 기준, 목록은 페이지 기준이라(공유계약 L-1) 두 요청이 같은 모집단을 봐야 한다. ⛔ 한쪽에만 있는 필터를 두지 않는다 — 화면이 필터를 걸면 카드와 목록이 서로 다른 것을 세게 된다(omf-mes#175). ⚠ 목록에 질의를 더할 때 이 경로도 «같은 판»으로 고친다 — #175 로 맞춘 짝이 #225(transitionFrom·transitionTo 신설) 때 다시 갈렸다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-status-transitions": {
@@ -2472,8 +2951,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/lot-statuses": {
@@ -2649,9 +3143,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "01 계약의 GET /trace/lots 와 겹치지 않는다 — 그쪽은 물류 축(LOT 자체의 속성)이고 이쪽은 품질 축(판정 상태 + 보류 요약)이다. 창고 필터·보류 수량·최근 전이·전량 보류 여부는 01 스키마에 없어 세 화면을 그릴 수 없었다. 같은 경로를 두지 않는다는 규칙은 지킨다(03 계약 2단계 §3)."
+    "x-internal-note": "01 계약의 GET /trace/lots 와 겹치지 않는다 — 그쪽은 물류 축(LOT 자체의 속성)이고 이쪽은 품질 축(판정 상태 + 보류 요약)이다. 창고 필터·보류 수량·최근 전이·전량 보류 여부는 01 스키마에 없어 세 화면을 그릴 수 없었다. 같은 경로를 두지 않는다는 규칙은 지킨다(03 계약 2단계 §3).",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/nonconformances/{nonconformanceId}/disposition-decisions": {
@@ -2702,8 +3211,42 @@
         }
        }
       }
+     },
+     "400": {
+      "description": "요청 오류 — 필수값 누락·허용되지 않은 값·형식 오류 등 검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "186",
+      "summary": "서버가 요청 검증 실패에 400 표준 오류 봉투를 반환한다."
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -2787,9 +3330,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "409 는 둘이다 — 남은 수량을 넘겨 정하려 할 때, 그리고 이미 닫힌 부적합(status_code)일 때. 남은 수량 = nonconformance_lot.affected_qty 합 − 이 부적합의 decision_qty 합이고 서버가 판정한다(공유계약 L-2 — 잔액은 클라이언트가 계산하지 않는다). ⚠ disposition_type_code 값 목록은 미확정이다 — 2차 값 목록 제안안 대상. 토큰을 선택에서 필수로 조였다 — 이 화면은 관리웹 전용이고 오프라인 대상이 아니라(W-03-10 §6) IfMatchVersionOptional 의 완화 조건에 해당하지 않았다. 두 사람이 같은 부적합을 동시에 판정하는 경합을 이 토큰이 잡는다(W-03-03 §5-5 와 같은 형태). ⭐ 토큰을 받는 곳은 부적합 상세다 — 04 제품출하 계약 GET /quality/nonconformances/{nonconformanceId} 의 ETag 를 그대로 담는다. 잠그는 대상은 처분 결정 한 건이 아니라 부적합이다(잔량이 부적합 단위로 정해지기 때문). ⚠ 그래서 판정 저장은 nonconformance.version_no 를 올려야 한다 — 올리지 않으면 이 토큰이 경합을 못 잡는다. 📨 데이터 모델 통지 대상이고 추적은 W-03-10 §8 이 갖는다. ⚠ 토큰 원천 검사기는 한 파일 안에서만 후보를 찾아 이 자리를 못 본다 — 원천이 다른 계약에 있는 첫 사례다. 근거: omf-mes#253"
+    "x-internal-note": "409 는 둘이다 — 남은 수량을 넘겨 정하려 할 때, 그리고 이미 닫힌 부적합(status_code)일 때. 남은 수량 = nonconformance_lot.affected_qty 합 − 이 부적합의 decision_qty 합이고 서버가 판정한다(공유계약 L-2 — 잔액은 클라이언트가 계산하지 않는다). ⚠ disposition_type_code 값 목록은 미확정이다 — 2차 값 목록 제안안 대상. 토큰을 선택에서 필수로 조였다 — 이 화면은 관리웹 전용이고 오프라인 대상이 아니라(W-03-10 §6) IfMatchVersionOptional 의 완화 조건에 해당하지 않았다. 두 사람이 같은 부적합을 동시에 판정하는 경합을 이 토큰이 잡는다(W-03-03 §5-5 와 같은 형태). ⭐ 토큰을 받는 곳은 부적합 상세다 — 04 제품출하 계약 GET /quality/nonconformances/{nonconformanceId} 의 ETag 를 그대로 담는다. 잠그는 대상은 처분 결정 한 건이 아니라 부적합이다(잔량이 부적합 단위로 정해지기 때문). ⚠ 그래서 판정 저장은 nonconformance.version_no 를 올려야 한다 — 올리지 않으면 이 토큰이 경합을 못 잡는다. 📨 데이터 모델 통지 대상이고 추적은 W-03-10 §8 이 갖는다. ⚠ 토큰 원천 검사기는 한 파일 안에서만 후보를 찾아 이 자리를 못 본다 — 원천이 다른 계약에 있는 첫 사례다. 근거: omf-mes#253",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/inspection-results/{inspectionResultId}/measurement-summary": {
@@ -2848,8 +3406,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/quality/nonconformances/{nonconformanceId}:issue-rework-work-order": {
@@ -2937,9 +3510,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "서버가 계약보다 앞서 적은 경로다(장부 P-33 · 선례 P-30). If-Match 는 W/O 가 아니라 **부적합 상세의 ETag** 다 — 잠그는 대상이 부적합이라서다(판정 저장과 같은 규율)."
+    "x-internal-note": "서버가 계약보다 앞서 적은 경로다(장부 P-33 · 선례 P-30). If-Match 는 W/O 가 아니라 **부적합 상세의 ETag** 다 — 잠그는 대상이 부적합이라서다(판정 저장과 같은 규율).",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   }
  },
@@ -3203,13 +3791,13 @@
      "approvedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "consumedQty": {
       "type": "number",
       "format": "double",
       "description": "읽기 전용 — 출고·투입이 올린다. 03 은 조건만 읽는다. ck_concession_consumed 가 approved 를 넘지 못하게 막는다",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -3339,7 +3927,7 @@
      "defectQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "share": {
       "type": "number",
@@ -3371,12 +3959,12 @@
      "inspectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "rejectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "defectRate": {
       "type": "number",
@@ -3490,7 +4078,7 @@
      "defectQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -3561,7 +4149,6 @@
      "dispositionTypeCode": {
       "type": "string",
       "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31)",
-      "x-no-example": "값 목록이 미확정이라 코드 문자열을 못 박지 않는다(2차 값 목록 제안안 대상). 임의 코드를 example 로 넣으면 목이 확정값처럼 보인다",
       "enum": [
        "REWORK",
        "SCRAP",
@@ -3576,7 +4163,7 @@
       "type": "number",
       "format": "double",
       "exclusiveMinimum": 0,
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -3711,19 +4298,19 @@
       "type": "number",
       "format": "double",
       "description": "이 부적합의 대상 LOT 영향 수량 합(nonconformance_lot.affected_qty). 04 제품출하 계약이 소유하는 값을 서버가 함께 세어 내린다",
-      "example": 320.0
+      "example": 320
      },
      "decidedQtyTotal": {
       "type": "number",
       "format": "double",
       "description": "이 부적합에 이미 저장된 처분 결정 수량 합",
-      "example": 200.0
+      "example": 200
      },
      "remainingQty": {
       "type": "number",
       "format": "double",
       "description": "대상 − 결정. ⭐ 서버가 계산한다(공유계약 L-2) — 화면이 affectedQtyTotal·decidedQtyTotal 을 받아 다시 빼지 않는다. 0 이 되면 판정이 끝난다",
-      "example": 120.0
+      "example": 120
      },
      "uomId": {
       "type": "integer",
@@ -3747,7 +4334,6 @@
      "dispositionTypeCode": {
       "type": "string",
       "description": "처분 유형. ✅ **값 목록 확정 2026-09-01(사용자 · omf-mes#336)** — REWORK 재작업 · SCRAP 폐기 · NORMAL 정상 셋이다. ⛔ 선별은 1차 범위 밖이라 값이 와도 실행 화면이 없다(omf-mes#118 종결). ⚠ mdm 계약의 DefectCode.dispositionTypeCode(['REWORKABLE','SCRAP'])와 «같은 그룹이 아니다» — 그쪽은 불량코드가 가진 처분 «성향»이고 이 칸은 실제 처분 «결정»이다. 한 그룹으로 묶지 않는다(공유계약 G-32). ⚠ SCRAP 은 LOT_STATUS 의 SCRAPPED 와 낱말이 닮았으나 축이 다르다 — LOT 의 «상태» ↔ 처분의 «결정». 스키마가 갈려 있어 값 수준에서 섞이지 않는다(✓확정 2026-09-01 사용자). ⛔ 공통코드 그룹으로 받지 않는다 — 진입 목록이 이 값으로 갈리고(W-04-10·W-04-11) 후속 화면이 값마다 붙는다. 고객이 늘리면 후속 없는 처분이 생긴다(공유계약 G-31)",
-      "x-no-example": "값 목록 미확정 — 2차 값 목록 제안안 대상",
       "enum": [
        "REWORK",
        "SCRAP",
@@ -3763,7 +4349,7 @@
       "format": "double",
       "exclusiveMinimum": 0,
       "description": "0 초과다 — 물리 CHECK 가 (> 0) 이고 정수 하한이 아니다. 단위마다 소수 자릿수가 있어(mdm.uom.decimalScale) 1 미만이 성립한다. 남은 수량 이하인지는 서버가 판정한다(409). 근거: W-03-10 §2-1 · §4-B · omf-mes#253",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -3875,7 +4461,7 @@
      "numericValue": {
       "type": "number",
       "format": "double",
-      "example": 30.0,
+      "example": 30,
       "description": "dataTypeCode=NUMERIC 인 항목만 채운다. 상하한(lowerLimit·upperLimit)과 단위(uomId)가 의미를 갖는 유일한 유형이다. 근거: omf-mes#179"
      },
      "textValue": {
@@ -3935,7 +4521,7 @@
      "numericValue": {
       "type": "number",
       "format": "double",
-      "example": 30.0,
+      "example": 30,
       "description": "dataTypeCode=NUMERIC 인 항목만 채운다. 상하한(lowerLimit·upperLimit)과 단위(uomId)가 의미를 갖는 유일한 유형이다. 근거: omf-mes#179"
      },
      "textValue": {
@@ -4041,7 +4627,7 @@
      "targetQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -4139,22 +4725,22 @@
      "inspectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "acceptedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "rejectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "heldQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -4301,22 +4887,22 @@
      "inspectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "acceptedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "rejectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "heldQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -4398,22 +4984,22 @@
      "inspectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "acceptedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "rejectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "heldQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "overallJudgmentCode": {
       "type": "string",
@@ -4457,22 +5043,22 @@
      "inspectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "acceptedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "rejectedQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "heldQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "defectRate": {
       "type": "number",
@@ -4548,7 +5134,7 @@
       ],
       "minimum": 0,
       "description": "비어 있으면 전량 보류다",
-      "example": 50.0
+      "example": 50
      },
      "uomId": {
       "x-source-column": "uom_id",
@@ -4662,7 +5248,7 @@
      "holdQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -4764,7 +5350,7 @@
        "null"
       ],
       "description": "NULL = 전량 보류",
-      "example": 50.0
+      "example": 50
      },
      "uomId": {
       "type": [
@@ -4826,7 +5412,7 @@
       "type": "number",
       "format": "double",
       "description": "부분 해제. 원 행을 해제하고 남은 수량으로 새 보류 행을 만든다 — hold_qty 를 줄이지 않는다(공유계약 B-3). 근거: W-03-02 §5-7",
-      "example": 30.0
+      "example": 30
      },
      "releaseReasonCode": {
       "type": "string",
@@ -4895,19 +5481,19 @@
      "onHandQty": {
       "type": "number",
       "format": "double",
-      "example": 30.0
+      "example": 30
      },
      "heldQty": {
       "type": "number",
       "format": "double",
       "description": "미해제 보류 합계. ⭐ 서버가 lot_hold 에서 파생한다 — 화면이 더하지 않는다(공유계약 L-2)",
-      "example": 30.0
+      "example": 30
      },
      "availableQty": {
       "type": "number",
       "format": "double",
       "description": "⛔ inventory_balance 를 정본으로 쓰지 않는다 — lot_hold 가 정본이고 잔액은 파생이다(W-03-03 §5-6)",
-      "example": 30.0
+      "example": 30
      },
      "uomId": {
       "type": "integer",
@@ -5042,12 +5628,12 @@
         "type": "number",
         "format": "double",
         "description": "이미 출고된 수량 — 이 전이로 회수되지 않는다. 화면 문구: 「이미 출고된 N EA는 이 전이로 회수되지 않습니다」(§6) — ⛔ 되돌릴 수 없음을 알리는 것이지 막는 것이 아니다",
-        "example": 300.0
+        "example": 300
        }
       },
       "example": {
        "openPickingCount": 2,
-       "shippedQty": 300.0
+       "shippedQty": 300
       }
      }
     },
@@ -5162,7 +5748,7 @@
       "type": "number",
       "format": "double",
       "description": "DISPOSITION_QTY_EXCEEDED 일 때 서버가 판정한 남은 수량 — 화면 문구 「남은 수량은 120 EA 입니다」가 이 값을 쓴다. ⛔ message 자유 텍스트에서 파싱하지 않는다. 근거: W-03-10 §6",
-      "example": 120.0
+      "example": 120
      },
      "remainingQtyUomId": {
       "type": "integer",
@@ -5528,6 +6114,19 @@
       "format": "int64"
      }
     }
+   }
+  },
+  "securitySchemes": {
+   "omfSession": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "omf_session",
+    "description": "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다."
+   },
+   "terminalToken": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "POP·모바일 단말 토큰. 단말 등록 때 발급한 값을 기기가 저장해 보낸다. 서버는 이 토큰의 «종류»로 X-Worker-No 필수 여부를 가른다."
    }
   }
  }
