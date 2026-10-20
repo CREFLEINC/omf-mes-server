@@ -811,6 +811,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
   describe('POP 의 MES W/O 목록 — 설비 미지정 W/O', () => {
     let equipmentId = 0n;
     let otherEquipmentId = 0n;
+    let farEquipmentId = 0n;
     let equippedToken = '';
     const listed: Record<string, number> = {};
 
@@ -822,6 +823,14 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         });
       equipmentId = (await equipment(`${PREFIX}-EQ`)).equipment_id;
       otherEquipmentId = (await equipment(`${PREFIX}-EQ2`)).equipment_id;
+      // 다른 공장 설비 — 설비 없는 단말도 읽지 못한다.
+      const home = await prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId } });
+      const farPlant = await prisma.plant.create({
+        data: { legal_entity_id: home.legal_entity_id, plant_code: `${PREFIX}-P2`, plant_name: '작업세션검사다른공장', timezone_code: 'Asia/Ho_Chi_Minh' },
+      });
+      farEquipmentId = (await prisma.equipment.create({
+        data: { plant_id: farPlant.plant_id, equipment_code: `${PREFIX}-EQ-FAR`, equipment_name: '다른공장설비', equipment_type_code: 'PRESS', status_code: 'IN_SERVICE' },
+      })).equipment_id;
       const equipped = await prisma.terminal.create({
         data: { terminal_code: `${PREFIX}-TD`, plant_id: plantId, terminal_type_code: 'POP', status_code: 'RUNNING', equipment_id: equipmentId },
       });
@@ -921,6 +930,22 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     it('설비 없는 POP 단말은 W/O 의 계획 설비로 작업 전 점검을 기록한다 — 다른 설비는 막힌다', async () => {
       await precheck(listed.own, equipmentId).expect(201);
       expect((await precheck(listed.own, otherEquipmentId)).status).not.toBe(201);
+    });
+
+    it('설비 없는 POP 단말은 점검 게이트의 설비 읽기를 단말 공장 설비에 한해 한다 — 다른 공장 설비는 막힌다', async () => {
+      const read = (path: string, query: Record<string, unknown> = {}) =>
+        request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${terminalToken}`).query(query);
+      const gateReads = (id: bigint) => [
+        read('/api/maintenance/breakdowns', { equipmentId: Number(id), openOnly: true, page: 1, size: 1 }),
+        // 게이트가 보내는 모양 그대로(유형·기간 시작·최근 순 한 건).
+        read('/api/maintenance/inspections', {
+          equipmentId: Number(id), inspectionTypeCode: 'DAILY', inspectedFrom: START_AT, sort: 'inspectedAtDesc', page: 1, size: 1,
+        }),
+        read(`/api/mdm/equipments/${id}/inspection-items`),
+      ];
+
+      for (const response of await Promise.all(gateReads(equipmentId))) expect(response.status).toBe(200);
+      for (const response of await Promise.all(gateReads(farEquipmentId))) expect(response.status).toBe(401);
     });
 
     it('W/O 에도 설비가 없으면 점검할 설비가 없고, 점검 없이 설비 없는 세션을 연다', async () => {
