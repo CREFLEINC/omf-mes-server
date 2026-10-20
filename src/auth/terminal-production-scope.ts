@@ -25,7 +25,8 @@ export async function assertTerminalProductionScope(
 ): Promise<void> {
   if (terminal.terminalTypeCode !== 'POP' || !TERMINAL_PRODUCTION_OPERATIONS[key]) throw denied();
   const body = object(request.body);
-  const ownWorkOrder = async (value: unknown): Promise<void> => {
+  /** 단말 범위 안의 W/O 면 그 계획 설비를 돌려준다. */
+  const ownWorkOrder = async (value: unknown): Promise<bigint | null> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_order.findFirst({
       where: { work_order_id: id, production_line: { plant_id: terminal.plantId },
@@ -35,10 +36,16 @@ export async function assertTerminalProductionScope(
           some: { terminal_id: terminal.terminalId, can_start_work: true },
         } } },
       },
-      select: { work_order_id: true },
+      select: { work_order_id: true, planned_equipment_id: true },
     });
     if (!row) throw denied();
+    return row.planned_equipment_id ?? null;
   };
+  /**
+   * 이 단말이 그 W/O 에 걸 수 있는 설비 — 설비 단말은 자기 설비, 설비 없는 단말은 W/O 의 계획 설비다.
+   * 둘 다 없으면 걸 설비가 없다(작업 전 점검 없이 시작한다).
+   */
+  const usableEquipment = (plannedEquipmentId: bigint | null): bigint | null => terminal.equipmentId ?? plannedEquipmentId;
   const ownSession = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_session.findFirst({
@@ -63,13 +70,14 @@ export async function assertTerminalProductionScope(
     case 'POST /production/work-sessions/{workSessionId}:end':
       await ownSession(request.params.workSessionId);
       break;
-    case 'POST /production/precheck-decisions':
-      await ownWorkOrder(body.workOrderId);
-      if (positiveId(body.equipmentId) !== terminal.equipmentId) throw denied();
+    case 'POST /production/precheck-decisions': {
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
       break;
-    case 'POST /production/work-sessions':
-      await ownWorkOrder(body.workOrderId);
-      if (body.equipmentId !== undefined && positiveId(body.equipmentId) !== terminal.equipmentId) throw denied();
+    }
+    case 'POST /production/work-sessions': {
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
       if (body.moldId !== undefined) {
         const moldId = positiveId(body.moldId);
         if (moldId === null || !await prisma.mold.findFirst({
@@ -77,6 +85,7 @@ export async function assertTerminalProductionScope(
         })) throw denied();
       }
       break;
+    }
     case 'POST /production/work-orders/{workOrderId}:hold':
     case 'POST /production/work-orders/{workOrderId}:resume':
       await ownWorkOrder(request.params.workOrderId);

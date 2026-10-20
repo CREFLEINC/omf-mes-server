@@ -45,6 +45,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     production_plan: null,
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001' },
+    equipment: null,
     ...overrides,
   };
 }
@@ -107,6 +108,19 @@ describe('WorkOrder 뷰', () => {
     const view = workOrderView(workOrderRow(), { erpMessageQueued: false });
 
     expect(view).toMatchObject({ processId: 41, processCode: 'PR-INJ', processName: '사출공정' });
+  });
+
+  it('뷰 — 계획 설비의 코드·이름을 내고, 계획 설비가 없으면 키를 생략한다', () => {
+    const planned = workOrderView(
+      workOrderRow({ planned_equipment_id: 51n, equipment: { equipment_code: 'EQ-INJ-01', equipment_name: '사출기 1호' } }),
+      { erpMessageQueued: false },
+    );
+    expect(planned).toMatchObject({ plannedEquipmentId: 51, plannedEquipmentCode: 'EQ-INJ-01', plannedEquipmentName: '사출기 1호' });
+
+    const unplanned = workOrderView(workOrderRow(), { erpMessageQueued: false });
+    for (const key of ['plannedEquipmentId', 'plannedEquipmentCode', 'plannedEquipmentName']) {
+      expect(Object.keys(unplanned)).not.toContain(key);
+    }
   });
 
   it('뷰 — 저장된 기본 위치 세 칸을 API 필드로 그대로 낸다', () => {

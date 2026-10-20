@@ -67,9 +67,15 @@ export async function assertTerminalReadScope(
     });
     if (!row) throw denied();
   };
-  const ownEquipment = async (value: unknown): Promise<void> => {
+  /**
+   * POP 은 자기 설비만 읽는다. `precheck` 는 작업 전 점검 게이트가 쓰는 설비 읽기다 — 설비 없는 POP 은 W/O 의 계획 설비로
+   * 점검하는데 이 읽기에는 W/O 가 없으므로, 단말 공장 안의 설비면 받는다(설비 있는 POP 은 그대로 자기 설비만).
+   */
+  const popMayRead = (id: bigint, precheck: boolean): boolean =>
+    terminal.terminalTypeCode !== 'POP' || id === terminal.equipmentId || (precheck && terminal.equipmentId === null);
+  const ownEquipment = async (value: unknown, precheck = false): Promise<void> => {
     const id = positiveId(value);
-    if (id === null || (terminal.terminalTypeCode === 'POP' && id !== terminal.equipmentId)) throw denied();
+    if (id === null || !popMayRead(id, precheck)) throw denied();
     const row = await prisma.equipment.findFirst({
       where: { equipment_id: id, plant_id: plantId }, select: { equipment_id: true },
     });
@@ -94,9 +100,10 @@ export async function assertTerminalReadScope(
       break;
     case 'GET /production/work-orders':
       if (terminal.terminalTypeCode === 'POP') {
-        if (terminal.equipmentId === null || query.open !== 'true'
+        // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다) — 설비를 걸 때만 자기 설비여야 한다.
+        if (query.open !== 'true'
           || (query.plannedEquipmentId !== undefined
-            && positiveId(query.plannedEquipmentId) !== terminal.equipmentId)) throw denied();
+            && (terminal.equipmentId === null || positiveId(query.plannedEquipmentId) !== terminal.equipmentId))) throw denied();
         // The query service intersects the list with this terminal's can_start_work processes.
       } else {
         await ownWorkOrder(query.successorOfWorkOrderId);
@@ -149,13 +156,7 @@ export async function assertTerminalReadScope(
       break;
     }
     case 'GET /mdm/equipments/{equipmentId}/inspection-items': {
-      const equipmentId = positiveId(request.params.equipmentId);
-      if (terminal.terminalTypeCode === 'POP' && equipmentId !== terminal.equipmentId) throw denied();
-      const equipment = equipmentId === null ? null : await prisma.equipment.findFirst({
-        where: { equipment_id: equipmentId, plant_id: plantId },
-        select: { equipment_id: true },
-      });
-      if (!equipment) throw denied();
+      await ownEquipment(request.params.equipmentId, true);
       break;
     }
     case 'GET /mdm/locations': {
@@ -197,9 +198,11 @@ export async function assertTerminalReadScope(
     case 'GET /mdm/warehouses':
       break;
     case 'GET /maintenance/breakdowns':
+    case 'GET /maintenance/inspections':
+      await ownEquipment(query.equipmentId, true);
+      break;
     case 'GET /maintenance/downtimes':
     case 'GET /maintenance/downtimes/summary':
-    case 'GET /maintenance/inspections':
       await ownEquipment(query.equipmentId);
       break;
     case 'GET /trace/lots/{lotId}':
