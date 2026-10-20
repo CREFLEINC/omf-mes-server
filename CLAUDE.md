@@ -16,6 +16,20 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 | `deploy/RELEASE.md` | 하노이 배포 런북 |
 | `deploy/HANDOFF.md` | 남은 작업 인계 |
 | `CI-CD.md` | CI/CD 설계 배경 + 진행표 |
+| `multi-agent-team-workflow-v3.md` | 멀티 에이전트 팀 워크플로 정본 — 설계팀 우선주의·직접 소통 금지·설계 자료 고정. 이 저장소에서의 운영은 `docs/agents/team-protocol.md` |
+
+## 개발 단위
+
+- 구현 전 계약(인터페이스·DTO·마이그레이션 SQL·테스트 이름 목록) 제시 → 승인 후 구현.
+- PR diff ≤ 400줄. 초과 예상 시 분할 계획 먼저. 분할 단위: 전표 하나 + posting 연결 + e2e.
+- 코어(재고 posting, lot 계보, 전표 상태기계)는 전용 PR, diff ≤ 200줄. 보일러플레이트와 커밋 분리.
+- 마이그레이션은 별도 선행 커밋.
+
+## 코드 작성
+
+- 주석은 코드에서 유추 불가한 것만: 도메인 제약, 반직관적 선택의 이유.
+- 사용처 하나뿐인 추상화·선제적 레이어 금지. CRUD 는 기존 모듈 패턴 복제.
+- 함수 ~50줄 / 파일 ~300줄 초과는 분리 검토 신호.
 
 ## 도메인
 
@@ -35,3 +49,24 @@ OMF MES 백엔드 API. NestJS 11 + Prisma 6 + PostgreSQL 16, pnpm 11 / SWC.
 - `deploy.sh`·`rollback.sh` 에 `sudo` 금지.
 - `docker-compose.prod.yml` 의 `x-api.environment`(api-blue·api-green 공통)에서 `CORS_ORIGINS` 제거 금지 — `--env-file` 은 `${}` 치환용이라 여기 없으면 컨테이너가 못 본다(#612).
 - 배포는 블루-그린이다(proxy 가 3100). 서버에서 맨손 `docker compose up -d` 금지 — 두 쪽이 다 뜨고 켜진 쪽이 재생성된다. `deploy.sh` 로 한다.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (`gh` CLI). 상세: `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+기본 5종 라벨 그대로 사용. 상세: `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+단일 컨텍스트 — 루트 `CONTEXT.md` + `docs/adr/`. 상세: `docs/agents/domain.md`.
+
+### Team workflow
+
+설계팀·클라이언트 개발팀과의 소통은 `multi-agent-team-workflow-v3.md`를 따른다 — 직접 소통
+금지(예외: 설계팀이 여는 "설계 변동 공지"), 요청은 자료로 만들어 사용자를 통해 전달. 이 저장소의
+구체적 운영(라벨·요청 절차·설계 고정 커밋)은 `docs/agents/team-protocol.md`. 로컬 상태 확인/갱신:
+`pnpm workflow:bootstrap`.
