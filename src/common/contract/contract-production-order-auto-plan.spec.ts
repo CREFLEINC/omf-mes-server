@@ -20,7 +20,7 @@ describe('계약 사본 — 선반영한 ERP W/O 자동 계획 (P-67)', () => {
 
   it('⛔ POST …:auto-plan 이 있고 403 을 선언한다 — 없으면 권한 가드가 안 본다', () => {
     const post = contract.paths['/planning/production-orders/{productionOrderId}:auto-plan']?.post;
-    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['200', '400', '403', '404', '409']);
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['200', '400', '401', '403', '404', '409']);
   });
 
   it('⛔ 목록 질의 autoPlanStatus 와 ProductionOrder.autoPlan 이 있다', () => {

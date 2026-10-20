@@ -118,8 +118,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -181,8 +196,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-routes/{approvalRouteId}": {
@@ -232,8 +262,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -318,8 +363,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-routes/{approvalRouteId}:deactivate": {
@@ -397,8 +457,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-routes/{approvalRouteId}:activate": {
@@ -486,9 +561,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "화면이 「사용 / 사용 안 함」 토글을 갖는다(W-06-15 §5-9). 같은 요구가 W-06-14 에도 있어 mdm-기준정보.json 의 putaway-rules 에도 :activate 를 더했다."
+    "x-internal-note": "화면이 「사용 / 사용 안 함」 토글을 갖는다(W-06-15 §5-9). 같은 요구가 W-06-14 에도 있어 mdm-기준정보.json 의 putaway-rules 에도 :activate 를 더했다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-routes/{approvalRouteId}/steps": {
@@ -529,8 +619,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -606,8 +711,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-requests": {
@@ -787,9 +907,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "⚠ 물류 출고 전표의 승인 요청 식별자는 계약이 앞서 갖고 물리 모델은 작업 통지 대기다 — 공유계약 #29(2026-08-18 사용자 확정). 이 문장을 description 으로 되돌리지 말 것 — 공개된다."
+    "x-internal-note": "⚠ 물류 출고 전표의 승인 요청 식별자는 계약이 앞서 갖고 물리 모델은 작업 통지 대기다 — 공유계약 #29(2026-08-18 사용자 확정). 이 문장을 description 으로 되돌리지 말 것 — 공개된다.",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/approval-requests/{approvalRequestId}": {
@@ -849,8 +987,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-requests/{approvalRequestId}:approve": {
@@ -948,8 +1101,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/approval-requests/{approvalRequestId}:reject": {
@@ -1047,8 +1215,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/document-issues": {
@@ -1189,8 +1372,26 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -1198,7 +1399,7 @@
     ],
     "operationId": "createDocumentIssues",
     "summary": "발행 · 재발행",
-    "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.",
+    "description": "대상마다 회차를 매겨 기록을 만든다. 이미 발행된 대상이면 회차가 오르고 재발행 사유가 필수다.\n\n인쇄하지 않는다 — 이 호출은 기록만 만든다. 이미지는 별도로 받아 프린터로 보내고 결과를 따로 보고한다. 프린터가 죽어도 기록은 남는다.\n\n서버 구현 기준: IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 SHIP-UNIT-01로 대상이 SHIPPING_UNIT이 되어 마감(CLOSED)된 출하 단위에 발행된다 — 다른 대상 유형은 422 INVALID, 안 닫힌 단위는 422 STATE_LOCKED다. 종전의 「DELIVERY_LABEL은 항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -1247,8 +1448,36 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "x-omf-server-implementation": {
+     "status": "partial",
+     "limitation": "IDENTIFICATION_TAG는 항상 422 STATE_LOCKED다. DELIVERY_LABEL은 마감된 출하 단위(SHIPPING_UNIT)에만 붙고 그 밖은 422 STATE_LOCKED다 — 종전의 「항상 422」는 대상이 출하 LOT 배분이던 때의 설명이다(SHIP-UNIT-01). 나머지 지원 조합만 기록을 생성한다."
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "I-27",
+      "summary": "IDENTIFICATION_TAG 발행 입력은 현재 서버가 422 STATE_LOCKED로 거부한다. DELIVERY_LABEL은 SHIP-UNIT-01 로 대상이 출하 단위(SHIPPING_UNIT)가 되어 마감된 단위에 발행된다."
+     }
+    ]
    }
   },
   "/app/document-issues/{documentIssueLogId}": {
@@ -1292,8 +1521,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/document-issues/{documentIssueLogId}/rendition": {
@@ -1371,8 +1615,30 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "x-omf-server-implementation": {
+     "status": "partial",
+     "limitation": "MATERIAL_LOT_LABEL·PRODUCTION_LOT_LABEL·LOCATION_LABEL 세 유형만 그린다(png·tspl 둘 다). 다른 문서 유형은 422다. ⛔ DELIVERY_LABEL도 422다 — 서버가 그리지 않고 POP이 출하 단위 상세의 값으로 그린다(SHIP-UNIT-01). 산출물을 저장하지 않으므로 호출할 때마다 다시 그린다."
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/document-issues/{documentIssueLogId}:report-print": {
@@ -1445,9 +1711,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "귀속 필수판이다. 부르는 화면은 P-01-01·P-01-02·P-04-02 셋 전부 현장 단말이고 관리웹은 부르지 않는다 — W-05-13 은 QR 이미지 생성까지이고 물리 인쇄가 범위 밖이다(06-API-요구서-05설비툴.md §3-12). 같은 계열의 POST /app/document-issues 가 선택판인 것은 그쪽만 W-05-13 이 겸용하기 때문이다. 이 자리는 요구서가 POST …:report-print 로 축약해 적어 omf-mes#178 의 전수 스캔에 걸리지 않았다. 근거: 공유계약 D-5 · omf-mes#178."
+    "x-internal-note": "귀속 필수판이다. 부르는 화면은 P-01-01·P-01-02·P-04-02 셋 전부 현장 단말이고 관리웹은 부르지 않는다 — W-05-13 은 QR 이미지 생성까지이고 물리 인쇄가 범위 밖이다(06-API-요구서-05설비툴.md §3-12). 같은 계열의 POST /app/document-issues 가 선택판인 것은 그쪽만 W-05-13 이 겸용하기 때문이다. 이 자리는 요구서가 POST …:report-print 로 축약해 적어 omf-mes#178 의 전수 스캔에 걸리지 않았다. 근거: 공유계약 D-5 · omf-mes#178.",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/printers": {
@@ -1457,7 +1741,7 @@
     ],
     "operationId": "listPrinters",
     "summary": "프린터 목록 · 상태",
-    "description": "이 단말이 쓸 수 있는 프린터와 그 상태. 화면 머리에 상시 보인다 — 인쇄가 안 될 때 사용자가 가장 먼저 보는 곳이다.",
+    "description": "이 단말이 쓸 수 있는 프린터와 그 상태. 화면 머리에 상시 보인다 — 인쇄가 안 될 때 사용자가 가장 먼저 보는 곳이다.\n\n서버 구현 기준: 실제 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다. 연결 상태 판정에 사용하지 않는다.",
     "parameters": [
      {
       "name": "terminalId",
@@ -1501,8 +1785,30 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "x-omf-server-implementation": {
+     "status": "partial",
+     "limitation": "실제 프린터 상태 수집 경로가 없어 statusCode를 OFFLINE으로 고정 반환한다."
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/document-issues/summary": {
@@ -1605,9 +1911,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-envelope-exempt": "짝 목록의 «요약»이 아니라 targetIds 로 여러 대상을 한 번에 조회하는 «배치»다 — 발행한 적 없는 대상도 issueCount:0 으로 돌려주므로 목록의 필터 축(issuedFrom·lotId·printOutcome)이 뜻을 갖지 않는다."
+    "x-envelope-exempt": "짝 목록의 «요약»이 아니라 targetIds 로 여러 대상을 한 번에 조회하는 «배치»다 — 발행한 적 없는 대상도 issueCount:0 으로 돌려주므로 목록의 필터 축(issuedFrom·lotId·printOutcome)이 뜻을 갖지 않는다.",
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/sessions": {
@@ -1639,6 +1963,14 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Session"
+        }
+       }
+      },
+      "headers": {
+       "Set-Cookie": {
+        "description": "omf_session HttpOnly 세션 쿠키. SameSite=Lax, Path=/이며 Secure는 COOKIE_SECURE 설정을 따른다.",
+        "schema": {
+         "type": "string"
         }
        }
       }
@@ -1674,7 +2006,14 @@
       }
      }
     },
-    "x-internal-note": "관리웹 계정 세션의 운반 수단(쿠키 / Bearer)이 미확정이다 — 공유계약 F-2 · §I-3. 확정 전까지 securitySchemes 에 스킴을 두지 않는다."
+    "x-internal-note": "서버 구현 기준: 인증 세션은 omf_session HttpOnly 쿠키로 운반한다. 로그인 성공 응답이 쿠키를 설정하고 이후 요청은 브라우저 자격증명을 포함한다.",
+    "security": [],
+    "x-omf-known-differences": [
+     {
+      "designRecord": "사용자결정 2026-09-12",
+      "summary": "등록이 초기 비밀번호까지 만든다. AppUserCreate.password를 보내면 그 값으로 정해지고 강제 변경이 걸리지 않으며, 생략하면 응답 temporaryPassword로 임시 비밀번호가 한 번만 내려오고 Session.mustChangePassword가 true가 된다."
+     }
+    ]
    }
   },
   "/app/sessions/current": {
@@ -1694,8 +2033,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "delete": {
     "tags": [
@@ -1710,8 +2064,23 @@
     "responses": {
      "204": {
       "description": "끝났다"
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/users/me:change-password": {
@@ -1760,7 +2129,12 @@
        }
       }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notifications": {
@@ -1862,8 +2236,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notifications/unread-count": {
@@ -1892,8 +2281,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notifications/{notificationId}:read": {
@@ -1941,8 +2345,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notifications:read-all": {
@@ -1976,8 +2395,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notification-events": {
@@ -2008,9 +2442,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "발생 지점 — 설비 고장 발생 = POST /maintenance/breakdowns(equipment-05) 뒤 · 적정타수 초과 = POST /maintenance/tool-usages 저장 뒤 서버가 적정타수 대비 비율을 판정 · P/O 변경 수신 = ERP 수신 메시지가 P/O 변경을 담을 때 · 연계 실패 = 연계 메시지가 실패로 떨어질 때 · 승인 요청·결재 도착 = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. ⛔ 검교정 만료 임박 = 미확정 — 시간 트리거(배치)이고 임박 일수 기준이 정해진 적이 없다. 소관 화면 W-05-10 에는 「알림」이라는 낱말이 0건이다. ⛔ eventCode 에 enum 을 넣지 않는다 — 코드 문자열 자체가 아직 확정된 적이 없어 이 표는 «이벤트명»으로만 적는다. 각 쓰기 쪽 계약에 「이 쓰기 뒤에 이벤트 X 가 난다」를 적는 것은 이 지시서 밖(A7·A8 소관)이다."
+    "x-internal-note": "발생 지점 — 설비 고장 발생 = POST /maintenance/breakdowns(equipment-05) 뒤 · 적정타수 초과 = POST /maintenance/tool-usages 저장 뒤 서버가 적정타수 대비 비율을 판정 · P/O 변경 수신 = ERP 수신 메시지가 P/O 변경을 담을 때 · 연계 실패 = 연계 메시지가 실패로 떨어질 때 · 승인 요청·결재 도착 = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. ⛔ 검교정 만료 임박 = 미확정 — 시간 트리거(배치)이고 임박 일수 기준이 정해진 적이 없다. 소관 화면 W-05-10 에는 「알림」이라는 낱말이 0건이다. ⛔ eventCode 에 enum 을 넣지 않는다 — 코드 문자열 자체가 아직 확정된 적이 없어 이 표는 «이벤트명»으로만 적는다. 각 쓰기 쪽 계약에 「이 쓰기 뒤에 이벤트 X 가 난다」를 적는 것은 이 지시서 밖(A7·A8 소관)이다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notification-subscriptions": {
@@ -2072,8 +2521,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -2149,8 +2613,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "x-omf-server-implementation": {
+     "status": "partial",
+     "limitation": "zaloEnabled 값은 저장하지만 실제 Zalo 발송 경로는 없다."
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices": {
@@ -2281,9 +2764,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "표시 순서(확인 요구 먼저·최신순)는 W-CO-04 §8 미결 5 — 권고 단계이지 확정이 아니다."
+    "x-internal-note": "표시 순서(확인 요구 먼저·최신순)는 W-CO-04 §8 미결 5 — 권고 단계이지 확정이 아니다.",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -2336,8 +2834,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}": {
@@ -2387,8 +2900,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -2474,8 +3002,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}:publish": {
@@ -2543,8 +3086,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}:close": {
@@ -2612,8 +3170,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}:acknowledge": {
@@ -2674,8 +3247,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}/acknowledgements": {
@@ -2766,8 +3354,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/dashboard-summary": {
@@ -2818,8 +3421,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/operation-policies": {
@@ -2928,8 +3546,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "post": {
     "tags": [
@@ -2982,8 +3615,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/operation-policies/effective": {
@@ -3062,8 +3710,26 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     },
+     {
+      "terminalToken": []
+     }
+    ]
    }
   },
   "/app/operation-policies/{operationPolicyId}": {
@@ -3103,8 +3769,23 @@
         "x-internal-note": "본문 비노출은 공유계약 A-4, 전송 자체는 B-1 구현에 필요하다."
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "put": {
     "tags": [
@@ -3179,9 +3860,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "저장 충돌 보호를 붙였다(omf-mes#210). app.operation_policy 에 version_no 가 실재하므로 공유계약 B-1(version_no 를 가진 «모든» 화면)의 주어에 그대로 들어간다. ⚠ 이전 주석은 G-30 의 두 조건을 근거로 붙이지 않았는데 «주어가 다른 조항»이었다 — G-30 은 「나가는 중인 저장」의 화면 잠금 범위를 정하는 조항이고 낙관적 잠금의 정본은 B-1 이다. 정책은 설비담당·생산관리가 «같은 표»를 보고 고치며 이 값이 타발수 계산의 입력이라, 없으면 나중 저장이 앞 사람 값을 조용히 덮는다. 근거: W-05-01 §5-5·§6"
+    "x-internal-note": "저장 충돌 보호를 붙였다(omf-mes#210). app.operation_policy 에 version_no 가 실재하므로 공유계약 B-1(version_no 를 가진 «모든» 화면)의 주어에 그대로 들어간다. ⚠ 이전 주석은 G-30 의 두 조건을 근거로 붙이지 않았는데 «주어가 다른 조항»이었다 — G-30 은 「나가는 중인 저장」의 화면 잠금 범위를 정하는 조항이고 낙관적 잠금의 정본은 B-1 이다. 정책은 설비담당·생산관리가 «같은 표»를 보고 고치며 이 값이 타발수 계산의 입력이라, 없으면 나중 저장이 앞 사람 값을 조용히 덮는다. 근거: W-05-01 §5-5·§6",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/attachments": {
@@ -3275,8 +3971,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    },
    "get": {
     "tags": [
@@ -3333,8 +4044,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/attachments/{attachmentId}/content": {
@@ -3390,9 +4116,24 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
-    "x-internal-note": "이 계약에서 application/json 이 아닌 두 번째 응답이다 — 첫째는 출력물 rendition 이다(06-API-요구서-app공통출력물.md §6 편차 2)."
+    "x-internal-note": "이 계약에서 application/json 이 아닌 두 번째 응답이다 — 첫째는 출력물 rendition 이다(06-API-요구서-app공통출력물.md §6 편차 2).",
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notices/{noticeId}:dismiss": {
@@ -3453,8 +4194,23 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
-    }
+    },
+    "security": [
+     {
+      "omfSession": []
+     }
+    ]
    }
   },
   "/app/notification-subscriptions/recipients:preview": {
@@ -3555,12 +4311,27 @@
         }
        }
       }
+     },
+     "401": {
+      "description": "로그인이 필요하다 — omf_session 쿠키 또는 단말 토큰이 없거나 유효하지 않다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
      }
     },
     "x-internal-note": "Zalo 수신처 컴럼 결정 후 missingContactCount 를 응답 최상위에 더한다 — W-CO-11 §8-2 · 미결-대장 W-CO-11 #2.",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "security": [
+     {
+      "omfSession": []
      }
     ]
    }
@@ -3767,7 +4538,7 @@
        "null"
       ],
       "description": "값 구간 하한. ⚠ 1차에서는 쓰지 않는다 — 1차 범위에서 결재 분기를 값으로 가르지 않기로 했고, 값의 성격은 금액이 아니라 수량이다(공유계약 J-2)",
-      "example": 100.0
+      "example": 100
      },
      "maxValue": {
       "x-source-column": "max_value",
@@ -3776,7 +4547,7 @@
        "null"
       ],
       "description": "값 구간 상한. 둘 다 있을 때만 max >= min 을 검사한다(ck_approval_route_range)",
-      "example": 500.0
+      "example": 500
      },
      "isActive": {
       "x-source-column": "is_active",
@@ -3840,7 +4611,7 @@
        "null"
       ],
       "description": "1차 미사용",
-      "example": 100.0
+      "example": 100
      },
      "maxValue": {
       "x-source-column": "max_value",
@@ -3849,7 +4620,7 @@
        "null"
       ],
       "description": "1차 미사용",
-      "example": 500.0
+      "example": 500
      }
     }
    },
@@ -3876,7 +4647,7 @@
        "null"
       ],
       "description": "1차 미사용",
-      "example": 100.0
+      "example": 100
      },
      "maxValue": {
       "x-source-column": "max_value",
@@ -3885,7 +4656,7 @@
        "null"
       ],
       "description": "1차 미사용",
-      "example": 500.0
+      "example": 500
      }
     }
    },
@@ -4197,7 +4968,10 @@
     ],
     "properties": {
      "requestedWorkerId": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
      },
@@ -4234,7 +5008,10 @@
      },
      "requestedBy": {
       "x-source-column": "requested_by",
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 1001,
       "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
@@ -4395,7 +5172,10 @@
     ],
     "properties": {
      "issuedWorkerId": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "description": "실제 업무 행위자인 mdm.worker ID. 단말 업무에서는 감사 기록의 작업자와 같으며 앱 계정 ID를 대신 넣지 않는다."
      },
@@ -4468,7 +5248,10 @@
       "example": "인쇄 실패"
      },
      "issuedBy": {
-      "type": ["integer", "null"],
+      "type": [
+       "integer",
+       "null"
+      ],
       "format": "int64",
       "example": 3101,
       "description": "앱 계정 행위자 ID. 계정 없는 현장 작업자는 null이며 별도 작업자 ID와 같은 업무 트랜잭션의 감사 기록으로 귀속을 보존한다."
@@ -4888,7 +5671,7 @@
       "description": "평문은 저장하지도 기록하지도 않는다"
      }
     },
-    "x-internal-note": "app.app_user 에 password_hash·failed_login_count·last_login_at 이 셋 다 없다(W-CO-01 §5-B 가 [신설] 로 표시). 계약이 앞서 있고 모델 요청은 공통 트랙 묶음 이슈로 나간다."
+    "x-internal-note": "서버 구현 기준: 자격증명은 app.user_credential의 password_hash·failed_attempt_count·last_login_at으로 관리한다."
    },
    "LoginFailure": {
     "type": "object",
@@ -4914,9 +5697,10 @@
      "userId",
      "loginId",
      "userName",
-     "scopes"
+     "scopes",
+     "mustChangePassword"
     ],
-    "description": "로그인 결과이자 「지금 나는 누구이고 어디까지 보는가」.",
+    "description": "로그인 결과이자 「지금 나는 누구이고 어디까지 보는가」.\n\n서버 구현 기준: mustChangePassword는 로그인 응답과 GET /app/sessions/current 양쪽에 항상 실린다.",
     "properties": {
      "userId": {
       "type": "integer",
@@ -4963,6 +5747,11 @@
       },
       "description": "이 사용자가 지금 가진 기능 권한 코드 전부. 부여된 역할들의 권한을 서버가 합집합으로 풀어 내린다 — 화면이 역할에서 권한을 다시 계산하지 않는다. 화면은 이 배열로 액션을 활성·비활성한다: 403 을 받아 보고 아는 것이 아니라 «누르기 전에» 판정한다. ⚠ 이 필드가 «없으면» 값 목록이 아직 정해지지 않았다는 뜻이다 — 그때 화면은 판정하지 않고 컨트롤을 비활성으로 두고 사유를 보인다. 빈 배열은 「아무 기능 권한도 없다」이며 「모른다」가 아니다.",
       "x-internal-note": "공유계약 G-9(모르는 값과 없는 값을 같은 모양으로 그리지 않는다) · F-2 관리웹 축(app.role_permission.permission_code) · W-02-07 §5-5 · W-CO-02 §9-3(관리웹은 role_permission, POP 은 terminal_process — 축을 섞지 않는다). ⚠ 값 목록 자체는 회신 E-9 대기다. 확정 전까지 서버는 이 필드를 «내리지 않는다» — 부재와 빈 배열이 다른 뜻이기 때문이다. E-9 확정 시 required 승격을 별건 ⛔ 로 올린다."
+     },
+     "mustChangePassword": {
+      "type": "boolean",
+      "example": false,
+      "description": "임시 비밀번호로 들어왔는가. true면 화면은 곧바로 비밀번호 변경(POST /app/users/me:change-password)으로 보낸다. 서버가 뽑아 준 임시 비밀번호로 로그인하면 true이고, 관리자가 등록할 때 직접 정한 비밀번호로 로그인하면 false다."
      }
     }
    },
@@ -5469,7 +6258,7 @@
          "null"
         ],
         "format": "double",
-        "example": 3000.0
+        "example": 3000
        },
        "points": {
         "type": "array",
@@ -5487,7 +6276,7 @@
           "value": {
            "type": "number",
            "format": "double",
-           "example": 2850.0
+           "example": 2850
           }
          }
         }
@@ -5532,7 +6321,7 @@
      },
      "value": {
       "type": "number",
-      "example": 1240.0
+      "example": 1240
      },
      "unit": {
       "type": "string",
@@ -5983,6 +6772,12 @@
     "type": "http",
     "scheme": "bearer",
     "description": "POP·모바일 단말 토큰. 단말 등록 때 발급한 값을 기기가 저장해 보낸다. 서버는 이 토큰의 «종류»로 X-Worker-No 필수 여부를 가른다."
+   },
+   "omfSession": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "omf_session",
+    "description": "로그인 성공 시 서버가 발급하는 HttpOnly 세션 쿠키. 브라우저 교차 출처 요청은 credentials: include, Axios는 withCredentials: true를 사용한다."
    }
   }
  }
