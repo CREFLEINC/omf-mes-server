@@ -148,7 +148,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
         .post('/api/planning/production-orders')
         .set('Cookie', cookie)
         .set('Idempotency-Key', randomUUID())
-        .send({ productionOrderNo: `${PREFIX}-PO-LATE`, plantId: Number(plantId), itemId: Number(items.ok), orderQty: 15, dueDate: dayBefore(localToday()) })
+        .send({ productionOrderNo: `${PREFIX}-PO-LATE`, plantId: Number(plantId), itemId: Number(items.ok), orderQty: 15, dueDate: shiftDays(localToday(), -1) })
         .expect(201);
       const orderId = response.body.productionOrderId as number;
 
@@ -261,14 +261,29 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
   });
 
   describe('ERP 받기 뒤 자동 계획', () => {
-    it('14. 처음 받은 ERP W/O 는 반영이 커밋된 뒤 계획을 세우고 확정한다', async () => {
-      const result = await receiveFromErp([erpRow(1, 'ERP1', 1, 60)]);
+    it('14. 처음 받은 ERP W/O 는 반영이 커밋된 뒤 계획을 세우고 확정한다 — 계획일은 ERP 계획 시작일이다', async () => {
+      const planStart = shiftDays(localToday(), 3);
+      const result = await receiveFromErp([erpRow(1, 'ERP1', 1, 60, planStart)]);
 
       expect(result).toMatchObject({ applied: 1, failed: 0 });
       const order = await prisma.production_order.findUniqueOrThrow({ where: { production_order_no: `${PREFIX}-PO-ERP1` } });
       const plans = await plansOf(Number(order.production_order_id));
       expect(plans.map((plan) => [plan.status_code, Number(plan.planned_qty), plan.created_by])).toEqual([['CONFIRMED', 60, null]]);
+      expect(plans[0].plan_date.toISOString().slice(0, 10)).toBe(planStart);
       expect(await workOrdersOf(plans[0].production_plan_id)).not.toEqual([]);
+    });
+
+    it('14-1. 계획 시작일이 지난 ERP W/O 는 받을 때 계획하지 않고, :auto-plan 은 오늘로 세운다', async () => {
+      const result = await receiveFromErp([erpRow(3, 'ERP3', 1, 20, shiftDays(localToday(), -5))]);
+
+      expect(result).toMatchObject({ applied: 1, failed: 0 });
+      const order = await prisma.production_order.findUniqueOrThrow({ where: { production_order_no: `${PREFIX}-PO-ERP3` } });
+      expect(order.auto_plan_attempted_at).toBeNull();
+      expect(await plansOf(Number(order.production_order_id))).toEqual([]);
+
+      await autoPlan(Number(order.production_order_id)).expect(200);
+      const [plan] = await plansOf(Number(order.production_order_id));
+      expect(plan.plan_date.toISOString().slice(0, 10)).toBe(localToday());
     });
 
     it('15. 이미 있는 ERP W/O 의 변경은 계획을 세우지 않는다 — 확인 흐름이 맡는다', async () => {
@@ -437,7 +452,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     return new InboundCycle(prisma, relay as unknown as RelayClient).run(table);
   }
 
-  function erpRow(id: number, suffix: string, seq: number, qty: number): RelayRow {
+  function erpRow(id: number, suffix: string, seq: number, qty: number, planStart = shiftDays(localToday(), 3)): RelayRow {
     return {
       MES_INF_ID: id,
       PLANT_CD: `${PREFIX}-P`,
@@ -446,7 +461,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       IF_SEQ: seq,
       CREATE_TYPE: 'A',
       OPR_NO: '010',
-      PLAN_START_DT: '2026-10-21',
+      PLAN_START_DT: planStart,
       PRODT_ORDER_QTY: qty,
       BASE_UNIT: uomCode,
       MES_APPLY_FLAG: 'N',
@@ -464,8 +479,8 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
     });
   }
 
-  function dayBefore(date: string): string {
-    return new Date(new Date(`${date}T00:00:00.000Z`).getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  function shiftDays(date: string, days: number): string {
+    return new Date(new Date(`${date}T00:00:00.000Z`).getTime() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   }
 
   function localToday(): string {
