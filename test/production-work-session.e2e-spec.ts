@@ -366,6 +366,17 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(rows.map((row) => row.joined_at.toISOString())).toEqual([START_AT, START_AT]);
     });
 
+    it('설비 없는 POP 단말이 equipmentId 없이 세션을 연다 — 세션 설비가 비어 있다', async () => {
+      const terminal = await prisma.terminal.findUniqueOrThrow({ where: { terminal_id: ids.terminalA } });
+      expect(terminal.equipment_id).toBeNull();
+      const workOrderId = await workOrder('RELEASED');
+
+      const response = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
+
+      const session = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(response.body.workSessionId) } });
+      expect(session.equipment_id).toBeNull();
+    });
+
     it('workerIds 없이 연 세션은 workers 가 0건이다', async () => {
       // 설계 미정 — 문의 057
       const workOrderId = await workOrder('RELEASED');
@@ -797,6 +808,91 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     });
   });
 
+  describe('POP 의 MES W/O 목록 — 설비 미지정 W/O', () => {
+    let equipmentId = 0n;
+    let equippedToken = '';
+    const listed: Record<string, number> = {};
+
+    beforeAll(async () => {
+      const plantId = (await prisma.terminal.findUniqueOrThrow({ where: { terminal_id: ids.terminalA } })).plant_id;
+      const equipment = (code: string) =>
+        prisma.equipment.create({
+          data: { plant_id: plantId, equipment_code: code, equipment_name: code, equipment_type_code: 'PRESS', status_code: 'IN_SERVICE', production_line_id: ids.productionLine },
+        });
+      equipmentId = (await equipment(`${PREFIX}-EQ`)).equipment_id;
+      const otherEquipmentId = (await equipment(`${PREFIX}-EQ2`)).equipment_id;
+      const equipped = await prisma.terminal.create({
+        data: { terminal_code: `${PREFIX}-TD`, plant_id: plantId, terminal_type_code: 'POP', status_code: 'RUNNING', equipment_id: equipmentId },
+      });
+      const processId = (await prisma.routing_operation.findUniqueOrThrow({ where: { routing_operation_id: ids.routingOperation } })).process_id;
+      await prisma.terminal_process.create({ data: { terminal_id: equipped.terminal_id, process_id: processId, can_start_work: true } });
+      equippedToken = await issueToken(equipped.terminal_id);
+
+      // 단말 공정 매핑 밖의 공정 — 어느 단말 목록에도 안 나온다.
+      const otherProcess = await prisma.process.create({ data: { process_code: `${PREFIX}-PR2`, process_name: '조립공정', process_type_code: 'MOLDING' } });
+      const routingId = (await prisma.routing_operation.findUniqueOrThrow({ where: { routing_operation_id: ids.routingOperation } })).routing_id;
+      const otherOperation = await prisma.routing_operation.create({
+        data: { routing_id: routingId, operation_seq: 90, process_id: otherProcess.process_id, operation_name: '조립' },
+      });
+      const released = async (key: string, plannedEquipmentId: bigint | null, operationId = ids.routingOperation) => {
+        const row = await prisma.work_order.create({
+          data: {
+            work_order_no: `${PREFIX}-L-${key}`,
+            production_plan_id: ids.plan,
+            routing_operation_id: operationId,
+            item_id: ids.item,
+            order_qty: 10,
+            uom_id: ids.uom,
+            production_line_id: ids.productionLine,
+            planned_equipment_id: plannedEquipmentId,
+            status_code: 'RELEASED',
+            released_at: new Date('2026-09-07T00:00:00.000Z'),
+          },
+        });
+        listed[key] = Number(row.work_order_id);
+      };
+      await released('own', equipmentId);
+      await released('unplanned', null);
+      await released('other', otherEquipmentId);
+      await released('otherProcess', null, otherOperation.routing_operation_id);
+    });
+
+    const list = (token: string, query: Record<string, unknown>) =>
+      // 단말 토큰만 싣는다 — 사용자 세션이 함께 오면 그쪽이 이겨 단말 범위를 타지 않는다(`authentication.guard.ts`).
+      request(app.getHttpServer()).get(WORK_ORDERS).set('Authorization', `Bearer ${token}`).query({ open: true, size: 200, ...query });
+    const listedIds = (body: { items: { workOrderId: number }[] }) => body.items.map((item) => item.workOrderId);
+
+    it('includeUnplannedEquipment 면 자기 설비 W/O 와 설비 미지정 W/O 를 함께 낸다', async () => {
+      const response = await list(equippedToken, { plannedEquipmentId: Number(equipmentId), includeUnplannedEquipment: true }).expect(200);
+
+      expect(validator('GET /production/work-orders')(response.body)).toBe(true);
+      const found = listedIds(response.body);
+      expect(found).toEqual(expect.arrayContaining([listed.own, listed.unplanned]));
+      expect(found).not.toContain(listed.other);
+      expect(found).not.toContain(listed.otherProcess);
+    });
+
+    it('includeUnplannedEquipment 없이는 자기 설비 W/O 만이다', async () => {
+      const found = listedIds((await list(equippedToken, { plannedEquipmentId: Number(equipmentId) }).expect(200)).body);
+
+      expect(found).toContain(listed.own);
+      expect(found).not.toContain(listed.unplanned);
+    });
+
+    it('설비 없는 POP 단말도 목록을 보고, 단말 공정 매핑(작업 시작 가능)으로만 좁혀진다', async () => {
+      const found = listedIds((await list(terminalToken, {}).expect(200)).body);
+
+      expect(found).toEqual(expect.arrayContaining([listed.own, listed.unplanned, listed.other]));
+      expect(found).not.toContain(listed.otherProcess);
+    });
+
+    it('설비 없는 POP 단말이 설비를 걸면 막힌다', async () => {
+      const response = await list(terminalToken, { plannedEquipmentId: Number(equipmentId) });
+
+      expect(response.status).not.toBe(200);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: { legal_entity_code: `${PREFIX}-LE`, legal_entity_name: '작업세션검사법인', country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh' },
@@ -1041,6 +1137,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     await prisma.worker.deleteMany({ where: { worker_no: { startsWith: PREFIX } } });
     await prisma.item.deleteMany({ where: { item_code: { startsWith: PREFIX } } });
     await prisma.terminal.deleteMany({ where: { terminal_code: { startsWith: PREFIX } } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
     await prisma.shift.deleteMany({ where: { shift_code: { startsWith: PREFIX } } });
     await prisma.location.deleteMany({ where: { warehouse: { warehouse_code: { startsWith: PREFIX } } } });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
