@@ -171,7 +171,7 @@ export function rivalWindows(prisma: PrismaService, workOrderId: number, equipme
 const when = <T>(ids: bigint[], query: () => Promise<T[]>): Promise<T[]> | T[] => (ids.length === 0 ? [] : query());
 
 /**
- * 그 공정의 유효한 공정 작업 자격 — 4M 점검(#4)과 4M 작업자 추천이 같은 조건을 쓴다.
+ * 그 공정의 유효한 공정 작업 자격 — 4M 점검의 작업자 자격 검사(`checkQualification`)와 4M 작업자 추천이 같은 조건을 쓴다.
  * ⛔ `process_id IS NULL` 인 자격 행은 이 공정 자격으로 «치지 않는다» — 「공정 미지정 =
  *    전 공정」은 어느 문서도 적지 않은 뜻이라 지어내지 않는다(README §2 기준 4).
  */
