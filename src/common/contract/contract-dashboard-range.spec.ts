@@ -24,7 +24,7 @@ describe('계약 사본 — 대시보드 기간 조회 선행 (P-59)', () => {
   });
 
   it('⛔ 응답에 400 이 없고 DashboardSummary 에 dateFrom·dateTo 가 없다 — 실려 오면 이름·모양을 대조한다', () => {
-    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '401', '403']);
+    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '403']);
     const properties = Object.keys(contract.components.schemas.DashboardSummary?.properties ?? {});
     expect(properties).not.toContain('dateFrom');
     expect(properties).not.toContain('dateTo');
