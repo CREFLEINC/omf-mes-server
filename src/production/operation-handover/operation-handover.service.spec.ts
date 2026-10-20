@@ -7,10 +7,15 @@ interface StubOptions {
   /** W/O 5(from)·6(to) 의 기본 WIP 위치 — `null` 이면 자리 1 의 400 갈래다. */
   fromWip?: bigint | null;
   toWip?: bigint | null;
+  /** LOT 20·21 의 품질 상태 — 기본은 둘 다 정상이다. */
+  lotStatus?: Record<number, string>;
+  /** 열린 보류가 있는 LOT id — 기본은 없다. */
+  heldLots?: number[];
 }
 
 /** worker 실재 · W/O 5·6 · lot 20·21 · uom 30. */
 function stub(options: StubOptions = {}) {
+  const holdsOf = (lotId: number) => (options.heldLots?.includes(lotId) ? [{ lot_hold_id: BigInt(900 + lotId) }] : []);
   const created: { header: Record<string, unknown>; lines: Record<string, unknown>[] } = {
     header: {},
     lines: [],
@@ -24,7 +29,12 @@ function stub(options: StubOptions = {}) {
         { work_order_id: 6n, default_wip_location_id: options.toWip === undefined ? 42n : options.toWip },
       ],
     },
-    lot: { findMany: async () => [{ lot_id: 20n }, { lot_id: 21n }] },
+    lot: {
+      findMany: async () => [
+        { lot_id: 20n, status_code: options.lotStatus?.[20] ?? 'NORMAL', lot_hold: holdsOf(20) },
+        { lot_id: 21n, status_code: options.lotStatus?.[21] ?? 'NORMAL', lot_hold: holdsOf(21) },
+      ],
+    },
     uom: { findMany: async () => [{ uom_id: 30n }] },
     $transaction: async (work: (tx: unknown) => Promise<unknown>) =>
       work({
@@ -135,5 +145,36 @@ describe('공정 인계 확정', () => {
       [41n, 42n],
       [41n, 42n],
     ]);
+  });
+
+  /* omf-all-around#127 · 장부 P-69 — PQC 가 끝난 정상 LOT 만 인계한다(PQ-06). */
+  it('⛔ 검사 대기·불량 LOT 은 그 라인의 lotId 에 STATE_LOCKED 400 이고 아무것도 만들지 않는다', async () => {
+    const pending = stub({ lotStatus: { 20: 'INSPECTION_PENDING', 21: 'DEFECTIVE' } });
+    const errors = await errorsOf(pending.service.create(body(), 7, 'W-1'));
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('검사 대기') }),
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({ field: 'lines[1].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('불량') }),
+    );
+    expect(pending.created.lines).toEqual([]);
+  });
+
+  it('⛔ 열린 보류가 있으면 STATE_LOCKED 400 · 보류가 먼저라 보류로 검사 대기가 된 LOT 도 보류 문구다 · 한 라인에 오류는 하나', async () => {
+    const held = stub({ heldLots: [20], lotStatus: { 20: 'INSPECTION_PENDING', 21: 'DEFECTIVE' } });
+    const errors = await errorsOf(held.service.create(body(), 7, 'W-1'));
+
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'lines[0].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('보류') }),
+      expect.objectContaining({ field: 'lines[1].lotId', code: 'STATE_LOCKED', message: expect.stringContaining('불량') }),
+    ]);
+    expect(held.created.lines).toEqual([]);
+  });
+
+  it('정상 LOT 은 지금처럼 인계된다', async () => {
+    const normal = stub();
+    await normal.service.create(body(), 7, 'W-1');
+    expect(normal.created.lines).toHaveLength(2);
   });
 });

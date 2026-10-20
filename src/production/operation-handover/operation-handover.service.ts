@@ -142,7 +142,15 @@ export class OperationHandoverService {
         where: { work_order_id: { in: [input.fromWorkOrderId, input.toWorkOrderId].map(BigInt) } },
         select: { work_order_id: true, default_wip_location_id: true },
       }),
-      this.prisma.lot.findMany({ where: { lot_id: { in: idsOf(input, 'lotId') } }, select: { lot_id: true } }),
+      this.prisma.lot.findMany({
+        where: { lot_id: { in: idsOf(input, 'lotId') } },
+        // 열린 보류는 한 건만 있으면 된다 — 있느냐만 본다(released_at IS NULL · 부분 보류 포함).
+        select: {
+          lot_id: true,
+          status_code: true,
+          lot_hold: { where: { released_at: null }, select: { lot_hold_id: true }, take: 1 },
+        },
+      }),
       this.prisma.uom.findMany({ where: { uom_id: { in: idsOf(input, 'uomId') } }, select: { uom_id: true } }),
     ]);
     // ⛔ W/O 는 존재만 본다 — 상태 게이트를 걸지 않는다(계약·화면 침묵).
@@ -189,21 +197,48 @@ function resolveLocations(
   return { source, destination };
 }
 
-/** FK 그물의 라인 축(§4-1 ③) — 존재만 본다. ⛔ 잔량·LOT 상태를 안 본다(계약에 칸 0). */
+/** 인계할 수 있는 LOT 품질 상태 — PQC 가 끝난 「정상」뿐이다(PQ-06 · omf-all-around#127 · 장부 P-69). */
+const HANDOVER_LOT_STATUS = 'NORMAL';
+const INSPECTION_PENDING = 'INSPECTION_PENDING';
+const DEFECTIVE = 'DEFECTIVE';
+
+/**
+ * FK 그물의 라인 축(§4-1 ③)과 출발 LOT 의 품질 상태. ⛔ 잔량은 안 본다(HO-03 · 생산 영역).
+ *
+ * ⭐ 정상(NORMAL)이 아닌 LOT 은 `lines[n].lotId` `STATE_LOCKED` 400 이다(omf-all-around#127 · 장부 P-69) —
+ *    PQC 불합격이 같은 W/O 생산 LOT 을 검사 대기로 되돌려도(C14) 인계가 그대로 넘겼다. 입고의 IQC 상태 검사와 같은 봉투(STATE_LOCKED)다.
+ * ⭐ 열린 보류(lot_hold · released_at IS NULL)가 있으면 같은 400 이다 — 모바일 M-02-01 이 이미 막는 규칙을
+ *    서버도 지킨다(API 직접 호출 우회 차단 · #127 담당자 결정 2026-10-20). 한 라인에 오류는 하나 — **보류를 먼저** 본다:
+ *    보류 등록이 LOT 을 검사 대기로 옮기므로(C10) 원인이 보류인 검사 대기 LOT 에 「PQC 판정을 먼저」라고 하면 안내가 어긋난다(대안 ①).
+ */
 function assertLineRefs(
   input: OperationHandoverCreate,
-  lots: { lot_id: bigint }[],
+  lots: { lot_id: bigint; status_code: string; lot_hold: { lot_hold_id: bigint }[] }[],
   uoms: { uom_id: bigint }[],
   errors: ErrorItem[],
 ): void {
-  const lotIds = new Set(lots.map((row) => Number(row.lot_id)));
+  const lotById = new Map(lots.map((row) => [Number(row.lot_id), row]));
   const uomIds = new Set(uoms.map((row) => Number(row.uom_id)));
 
   input.lines.forEach((line, index) => {
     const at = `lines[${index}]`;
-    if (!lotIds.has(line.lotId)) errors.push(field(`${at}.lotId`, ERROR_CODE.INVALID, '없는 LOT 입니다.'));
+    const lot = lotById.get(line.lotId);
+    if (lot === undefined) errors.push(field(`${at}.lotId`, ERROR_CODE.INVALID, '없는 LOT 입니다.'));
+    else if (lot.lot_hold.length > 0) {
+      errors.push(
+        field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, '보류 중인 LOT 은 인계할 수 없습니다. 보류를 해제한 뒤 인계하세요.'),
+      );
+    } else if (lot.status_code !== HANDOVER_LOT_STATUS) {
+      errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, notHandoverableMessage(lot.status_code)));
+    }
     if (!uomIds.has(line.uomId)) errors.push(field(`${at}.uomId`, ERROR_CODE.INVALID, '없는 단위입니다.'));
   });
+}
+
+function notHandoverableMessage(lotStatus: string): string {
+  if (lotStatus === INSPECTION_PENDING) return '검사 대기 LOT 은 인계할 수 없습니다. PQC 판정을 먼저 마치세요.';
+  if (lotStatus === DEFECTIVE) return '불량 LOT 은 인계할 수 없습니다.';
+  return '정상 LOT 만 인계할 수 있습니다.';
 }
 
 function idsOf(input: OperationHandoverCreate, key: keyof OperationHandoverCreateLine): number[] {
