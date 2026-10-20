@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
+import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
@@ -12,6 +13,7 @@ import { DefectCodeProcessService } from './code/defect-code-process.service';
 import { DefectCodeService } from './code/defect-code.service';
 import { CauseCodeController, DefectCodeController } from './code/quality-code.controller';
 import { ConcessionController } from './concession/concession.controller';
+import { ConcessionWriteService } from './concession/concession-write.service';
 import { DefectDistributionService } from './defect/defect-distribution.service';
 import { DefectRecordController } from './defect/defect-record.controller';
 import { DefectRecordService } from './defect/defect-record.service';
@@ -57,6 +59,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     AuthModule,
     IdempotencyModule,
     NumberingModule,
+    ApprovalModule,
     DocumentStateModule,
     InventoryPostingModule,
     LotRegistryModule,
@@ -105,6 +108,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     NonconformanceWriteService,
     DispositionWriteService,
     DispositionSortService,
+    ConcessionWriteService,
     ReworkWorkOrderService,
   ],
 })

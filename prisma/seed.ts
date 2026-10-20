@@ -448,6 +448,8 @@ const SEED: CodeGroupSeed[] = [
       { code: 'INCOMING_INSPECTION_SKIPPED', codeName: '수입검사 생략', order: 50 },
       // 처분 정상·선별 양품(omf-all-around#108 · 장부 P-63) — 마이그 20261020120000 에도 같은 줄이 있다.
       { code: 'DISPOSITION_NORMAL', codeName: '처분 정상(입고 가능)', order: 60 },
+      // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
+      { code: 'CONCESSION_APPROVED', codeName: '특채 승인', order: 70 },
     ],
   },
   {
@@ -550,6 +552,8 @@ const SEED: CodeGroupSeed[] = [
       // 처분 선별(omf-all-around#108) — 마이그 20261020110000 에도 같은 줄이 있다. C21·C22 는 #105 몫이다.
       { code: 'C23', codeName: '처분 선별 → 정상(양품)', order: 160 },
       { code: 'C24', codeName: '처분 선별 → 불량(불량분 분할)', order: 170 },
+      // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
+      { code: 'C25', codeName: '특채 승인 → 정상(조건부 사용)', order: 180 },
     ],
   },
   {

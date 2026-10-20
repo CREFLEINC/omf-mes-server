@@ -60,6 +60,8 @@ const DEFAULT_PREFIX: Record<string, string> = {
    * `plantId` 는 null — `quality.nonconformance` 에 공장 축이 0개다(I-21 §3-1).
    */
   NONCONFORMANCE: 'NC',
+  // 특채(omf-all-around#84 · 장부 P-79) — `NC`(부적합)와 갈리게 세 글자다.
+  CONCESSION: 'CNC',
   /**
    * 규칙 미등재 — `SR-{YYYYMMDD}-{SEQ4}` · 계약 example `SR-2026-0813-0108` 이 접두어를 준다.
    * ⚠⚠ **`SHOPFLOOR_RECEIPT` 와 접두어가 겹친다**(결정 — 통보 191) — 두 계약 example 이 둘 다
