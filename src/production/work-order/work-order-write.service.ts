@@ -111,7 +111,7 @@ export class WorkOrderWriteService {
   ) {}
 
   /**
-   * ⛔ 계획을 비운 긴급 발행은 **아직 열지 않는다** — 내부 P/O 의 `plant_id`·
+   * ⛔ 계획을 비운 긴급 발행은 **아직 열지 않는다** — 내부 ERP W/O(`production_order`)의 `plant_id`·
    * `business_unit_id`(둘 다 NOT NULL)를 풀 값이 요청에도 물리에도 없다. 「공장이
    * 하나뿐이면 그것」은 조용한 도출이라 거부한다(I-6 R-6 · 문의 040).
    */
@@ -151,7 +151,7 @@ export class WorkOrderWriteService {
         remarks: body.remarks ?? null,
         created_by: appUserId ?? null,
         updated_by: appUserId ?? null,
-        // ⚠ `dueDate` 는 «버린다» — 계약이 그 값을 서버가 함께 만드는 내부 P/O 의 칸에
+        // ⚠ `dueDate` 는 «버린다» — 계약이 그 값을 서버가 함께 만드는 내부 ERP W/O 의 칸에
         //   싣는다고 적었는데(040 보류) 계획을 받은 경로에는 담을 칸이 없다(「알려둘 것」).
       },
       select: { work_order_id: true },

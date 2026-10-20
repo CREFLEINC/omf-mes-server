@@ -11,7 +11,7 @@ export interface ErpSyncConfig {
 
 /** 기준정보(공통코드·사원·품목·거래처·BOM)는 하루 두 번이면 된다 — 게이트웨이 기본값과 같다. */
 const MASTER_INTERVAL_SEC = 43_200;
-/** 전표(발주·수주·제조오더)는 15분 — ERP 가 넣은 발주를 현장이 그날 안에 받아야 한다. */
+/** 전표(발주·수주·ERP W/O)는 15분 — ERP 가 넣은 발주를 현장이 그날 안에 받아야 한다. */
 const ORDER_INTERVAL_SEC = 900;
 
 /**

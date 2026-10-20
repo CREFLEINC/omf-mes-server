@@ -35,8 +35,8 @@ export interface ImpactedWorkOrder {
 }
 
 /**
- * 본문 400 — **다섯 갈래**다. 넷은 계약 description(ⓐ 강행인데 조정을 실었다 ⓑ 이 P/O 의 영향
- * W/O 가 아니다 ⓒ 같은 `workOrderId` 가 두 번 ⓓ 고칠 칸을 하나도 안 담았다)이고, 다섯째는 컬럼
+ * 본문 400 — **다섯 갈래**다. 넷은 계약 description(ⓐ 강행인데 조정을 실었다 ⓑ 이 ERP W/O 의 영향
+ * MES W/O 가 아니다 ⓒ 같은 `workOrderId` 가 두 번 ⓓ 고칠 칸을 하나도 안 담았다)이고, 다섯째는 컬럼
  * 주석 `production.production_order_acknowledgement.reason` 이 준다 — 「강행이면 필요하다 — 값에
  * 따라 갈리는 규칙이라 CHECK 가 아니라 서버가 건다」.
  * 여섯째 자리(마감 W/O)만 코드가 `STATE_LOCKED` 다 — 계약은 침묵하나 아래 `markMismatch` 의
@@ -66,10 +66,10 @@ export function acknowledgeBodyErrors(body: ProductionOrderAcknowledge, impacted
 }
 
 /**
- * `POST …:acknowledge` — 관리자의 판정 한 번 + W/O 조정이 **한 트랜잭션**이다(§5-5).
- * ⛔ `production_order.status_code`·`version_no` 를 옮기지 않는다 — P/O 상태는 ERP 수신이 옮기고
+ * `POST …:acknowledge` — 관리자의 판정 한 번 + MES W/O 조정이 **한 트랜잭션**이다(§5-5).
+ * ⛔ `production_order.status_code`·`version_no` 를 옮기지 않는다 — ERP W/O 상태는 ERP 수신이 옮기고
  *    이 오퍼레이션은 판정만 적는다(`plan-api.md` 830행). If-Match 토큰이 그대로 산다.
- * ⛔ 취소 반영(W/O `:cancel`)은 이 본문에 없다 · P/O 가 `CANCELLED` 여도 400 을 안 낸다.
+ * ⛔ 취소 반영(MES W/O `:cancel`)은 이 본문에 없다 · ERP W/O 가 `CANCELLED` 여도 400 을 안 낸다.
  */
 @Injectable()
 export class AcknowledgeService {

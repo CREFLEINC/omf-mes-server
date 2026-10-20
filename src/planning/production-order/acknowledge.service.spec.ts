@@ -16,7 +16,7 @@ describe('acknowledgeBodyErrors — 본문 400 다섯 갈래 (I-24 §5-5 ④ · 
     expect(codes(input)).toContainEqual({ field: 'workOrderAdjustments', code: 'INVALID' });
   });
 
-  it('ⓑ 이 P/O 의 영향 W/O 가 아니면 INVALID 다', () => {
+  it('ⓑ 이 ERP W/O 의 영향 MES W/O 가 아니면 INVALID 다', () => {
     const input = body({ workOrderAdjustments: [{ workOrderId: 99, versionNo: 1, orderQty: 5 }] });
     expect(codes(input)).toContainEqual({ field: 'workOrderAdjustments[0].workOrderId', code: 'INVALID' });
   });

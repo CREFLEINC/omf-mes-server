@@ -104,7 +104,7 @@ export const SALES_ORDER: RelayTable = {
   versionColumn: 'IF_SEQ',
 };
 
-/** 제조오더. 한 행이 P/O 하나다. */
+/** ERP W/O. 원본 한 행이 ERP W/O 하나다. */
 export const PRODUCTION_ORDER: RelayTable = {
   interfaceCode: 'IF-ERP-PRODORD-RECV',
   targetTypeCode: 'PRODUCTION_ORDER',

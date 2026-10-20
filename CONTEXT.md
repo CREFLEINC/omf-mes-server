@@ -41,3 +41,19 @@ _Avoid_: 수정 권한, 락 상태
 저장이 거부된 이유가 누구 때문인지의 구분 — 다른 사용자, ERP 재동기화 배치,
 처리 중인 워커. 구분 없이 알리면 화면이 사실과 다른 안내를 하게 된다.
 _Avoid_: 락 충돌, 동시성 오류
+
+### 오더
+
+**P/O**:
+구매오더(발주). `logistics.purchase_order`. ERP 가 보내고 MES 는 입하·입고를 붙인다.
+_Avoid_: P/O 를 생산 쪽 오더에 쓰기
+
+**ERP W/O**:
+ERP 가 보내는 생산 지시. `planning.production_order`. 계약·API 이름은 아직
+`ProductionOrder`·`/planning/production-orders` 다.
+_Avoid_: 생산오더, 제조오더, P/O
+
+**MES W/O**:
+ERP W/O 를 MES 가 현장에 풀어 낸 작업지시. `production.work_order`. 그냥 「W/O」라고 쓰면
+MES W/O 다 — ERP W/O 와 한 문장에 나오면 「MES W/O」로 적는다. 출하작업지시와는 다른 것이다.
+_Avoid_: ERP W/O 옆의 맨 「W/O」

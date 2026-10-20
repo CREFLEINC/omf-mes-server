@@ -31,7 +31,7 @@ export interface PickingPlan extends PickingAllocation {
 }
 
 export interface PickingPlanInput {
-  /** W/O 의 공장 — 출고요청과 같이 계획의 생산오더로 푼다(R-7 단일 축). */
+  /** W/O 의 공장 — 출고요청과 같이 계획의 ERP W/O 로 푼다(R-7 단일 축). */
   plantId: bigint;
   demands: PickingDemand[];
   /** 채번 기간 키 — 출고요청 번호와 같은 값을 넘긴다. */

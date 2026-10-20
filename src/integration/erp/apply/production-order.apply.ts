@@ -10,11 +10,11 @@ const UPDATED = 'UPDATED';
 const CANCELLED = 'CANCELLED';
 
 /**
- * ERP 제조오더 → `planning.production_order`. 원본 한 행이 P/O 하나다.
+ * ERP W/O → `planning.production_order`. 원본 한 행이 ERP W/O 하나다.
  *
  * ⭐ ERP 가 보내는 날짜는 계획 시작일(PLAN_START_DT) 하나다 — `planned_start_date` 에 담고 납기
  * (`due_date`)는 비운다. 납기로 도는 MES 쪽은 설계 요청으로 고친다(2026-10-20 결정).
- * 이미 있는 P/O 가 바뀌면 I-24 변경 추적을 남긴다 — 바뀐 항목의 «이전» 값만 갈아 넣고 수신 시각을
+ * 이미 있는 ERP W/O 가 바뀌면 I-24 변경 추적을 남긴다 — 바뀐 항목의 «이전» 값만 갈아 넣고 수신 시각을
  * 찍어 관리자 확인(W-02-06)을 기다린다. 판을 올려 판정 중인 확인을 409 로 막는다.
  */
 export const productionOrderTable: RowTable = {

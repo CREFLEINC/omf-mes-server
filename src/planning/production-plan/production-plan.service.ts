@@ -78,7 +78,7 @@ export class ProductionPlanService {
     const page = pageRequest(query);
     const where: Prisma.production_planWhereInput = {
       ...filter('production_order_id', query.productionOrderId),
-      // `statusCode` 는 값 목록 검사를 하지 않는다(조회 전용 · P/O 목록 선례).
+      // `statusCode` 는 값 목록 검사를 하지 않는다(조회 전용 · ERP W/O 목록 선례).
       ...(query.statusCode === undefined ? {} : { status_code: query.statusCode }),
       ...planDateWhere(query.planDateFrom, query.planDateTo),
     };
@@ -119,7 +119,7 @@ export class ProductionPlanService {
     if (body.plannedQty <= 0) {
       throw one(field('plannedQty', ERROR_CODE.INVALID, '0보다 커야 합니다.'));
     }
-    // ⛔ 404 가 아니다(계약 미선언) — 없는 P/O 는 필드 오류로 낸다.
+    // ⛔ 404 가 아니다(계약 미선언) — 없는 ERP W/O 는 필드 오류로 낸다.
     const order = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(body.productionOrderId) },
       select: { plant_id: true, item_id: true },

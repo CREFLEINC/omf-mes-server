@@ -21,9 +21,9 @@ const RECEIVED = 'RECEIVED';
 const DUPLICATE_KEY = 'DUPLICATE_KEY';
 
 /**
- * `POST /planning/production-orders` — ERP 수신기가 없어 테스트용으로 P/O 를 직접 넣는다(P-30).
+ * `POST /planning/production-orders` — ERP 수신기가 없어 테스트용으로 ERP W/O 를 직접 넣는다(P-30).
  * ⛔ 수신기 몫(`production_order_change_field`·`last_change_received_at`·확인 행)은 건드리지 않는다 —
- *    «처음 받은» P/O 라 변경 이력이 없다.
+ *    «처음 받은» ERP W/O 라 변경 이력이 없다.
  */
 @Injectable()
 export class ProductionOrderCreateService {

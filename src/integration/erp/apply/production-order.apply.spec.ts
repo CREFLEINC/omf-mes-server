@@ -23,7 +23,7 @@ const ORDER = {
   status_code: 'RECEIVED',
 };
 
-/** 공장·품목·단위·P/O. 쓰기는 `writes` 에 남긴다. */
+/** 공장·품목·단위·ERP W/O. 쓰기는 `writes` 에 남긴다. */
 function fake(order: Row | null = null) {
   const writes: { op: string; data: unknown }[] = [];
   const tx = {
@@ -184,7 +184,7 @@ describe('productionOrderTable', () => {
     });
   });
 
-  it('이미 취소된 P/O 에 취소가 또 오면 아무것도 바꾸지 않는다', async () => {
+  it('이미 취소된 ERP W/O 에 취소가 또 오면 아무것도 바꾸지 않는다', async () => {
     const f = fake({ ...ORDER, status_code: 'CANCELLED' });
 
     await productionOrderTable.apply(f.tx, erp({ CREATE_TYPE: 'C' }));
@@ -192,7 +192,7 @@ describe('productionOrderTable', () => {
     expect(f.writes).toEqual([]);
   });
 
-  it('취소된 P/O 가 다시 A 로 오면 UPDATED 로 되살리고 이전 상태를 남긴다', async () => {
+  it('취소된 ERP W/O 가 다시 A 로 오면 UPDATED 로 되살리고 이전 상태를 남긴다', async () => {
     const f = fake({ ...ORDER, status_code: 'CANCELLED' });
 
     await productionOrderTable.apply(f.tx, erp({ IF_SEQ: 2 }));
@@ -212,7 +212,7 @@ describe('productionOrderTable', () => {
     expect(f.writes).toEqual([]);
   });
 
-  it('MES 가 만든 같은 번호의 P/O 가 있으면 실패한다', async () => {
+  it('MES 가 만든 같은 번호의 ERP W/O 가 있으면 실패한다', async () => {
     const f = fake({ ...ORDER, erp_order_no: null });
 
     await expect(productionOrderTable.apply(f.tx, erp())).rejects.toThrow('번호가 겹친다');
