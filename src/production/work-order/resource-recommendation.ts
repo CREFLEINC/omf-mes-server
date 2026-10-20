@@ -2,10 +2,11 @@ import { NotFoundException } from '@nestjs/common';
 
 import { unusable } from '../../core/work-order';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ShiftRecommendation, WorkerRecommendation, recommendCrew } from './crew-recommendation';
 import { checkDoubleBooked, rivalWindows } from './validation';
 
 /**
- * 4M 의 설비·금형 추천 — 계약 선행 `GET /production/work-orders/{workOrderId}/resource-recommendations`
+ * 4M 의 설비·금형 추천(교대·작업자는 `crew-recommendation.ts`) — 계약 선행 `GET /production/work-orders/{workOrderId}/resource-recommendations`
  * (`docs/계약-선행-수정항목.md`). 저장하지 않는다. 고르는 것은 현장이다.
  * 순서: 기본 매핑 → 나머지 매핑(우선순위) → 같은 품목·공정의 최근 W/O 가 쓴 것.
  * ⛔ 후보는 W/O 의 공장 것만 낸다 — 다른 공장 설비가 배정되면 단말 권한·재고가 공장을 넘는다.
@@ -35,11 +36,13 @@ export interface MoldRecommendation {
 export interface ResourceRecommendations {
   equipments: EquipmentRecommendation[];
   molds: MoldRecommendation[];
+  shifts: ShiftRecommendation[];
+  workers: WorkerRecommendation[];
 }
 
 /** 최근 사용은 이만큼의 W/O 만 본다 — 오래된 배정까지 끌어오면 추천이 길어지기만 한다. */
 const RECENT_LIMIT = 20;
-const EMPTY: ResourceRecommendations = { equipments: [], molds: [] };
+const EMPTY: ResourceRecommendations = { equipments: [], molds: [], shifts: [], workers: [] };
 
 interface Candidate { id: bigint; source: RecommendationSource }
 interface MapRow { process_id: bigint | null; is_default: boolean; equipment_id: bigint | null; mold_id: bigint | null }
@@ -49,6 +52,7 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
     where: { work_order_id: workOrderId },
     select: {
       item_id: true, planned_start_at: true, planned_end_at: true,
+      planned_equipment_id: true, planned_shift_id: true, production_line_id: true,
       routing_operation: { select: { process_id: true, equipment_required: true, mold_required: true } },
       production_plan: { select: { production_order: { select: { plant_id: true } } } },
       production_line: { select: { plant_id: true } },
@@ -93,7 +97,7 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
     recent.map((item) => item.planned_mold_id),
   );
 
-  const [equipments, molds, rivals] = await Promise.all([
+  const [equipments, molds, rivals, crew] = await Promise.all([
     prisma.equipment.findMany({
       where: { plant_id: plantId, equipment_id: { in: equipmentIds.map((item) => item.id) } },
       select: { equipment_id: true, equipment_code: true, equipment_name: true, production_line_id: true, status_code: true, is_active: true },
@@ -103,6 +107,16 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
       select: { mold_id: true, mold_code: true, mold_name: true, status_code: true, is_active: true },
     }),
     rivalWindows(prisma, workOrderId, equipmentIds.map((item) => item.id)),
+    recommendCrew(prisma, {
+      workOrderId: BigInt(workOrderId),
+      plantId,
+      processId: operation.process_id,
+      plannedEquipmentId: row.planned_equipment_id,
+      productionLineId: row.production_line_id,
+      plannedShiftId: row.planned_shift_id,
+      plannedStartAt: row.planned_start_at,
+      plannedEndAt: row.planned_end_at,
+    }),
   ]);
 
   const byEquipment = new Map(equipments.map((item) => [item.equipment_id, item]));
@@ -126,6 +140,7 @@ export async function recommendResources(prisma: PrismaService, workOrderId: num
       if (item === undefined) return [];
       return [{ moldId: Number(id), moldCode: item.mold_code, moldName: item.mold_name, source, inService: !unusable(item) }];
     }),
+    ...crew,
   };
 }
 

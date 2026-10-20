@@ -6493,6 +6493,20 @@
      "molds"
     ],
     "properties": {
+     "shifts": {
+      "type": "array",
+      "description": "공장의 활성 교대 전부 — 비어 있는 교대가 먼저, 그다음 시작 시각 순. 장부 P-68",
+      "items": {
+       "$ref": "#/components/schemas/ShiftRecommendation"
+      }
+     },
+     "workers": {
+      "type": "array",
+      "description": "최대 5명 — 같은 설비 → 같은 라인 → 같은 공정을 최근 맡은 사람, 그다음 그 공정의 유효 자격자. 이 W/O 공장의 활성 작업자만. 장부 P-68",
+      "items": {
+       "$ref": "#/components/schemas/WorkerRecommendation"
+      }
+     },
      "equipments": {
       "type": "array",
       "items": {
@@ -6506,6 +6520,88 @@
       }
      }
     }
+   },
+   "ShiftRecommendation": {
+    "type": "object",
+    "required": [
+     "shiftId",
+     "shiftCode",
+     "shiftName",
+     "startTime",
+     "endTime",
+     "busy"
+    ],
+    "properties": {
+     "shiftId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "shiftCode": {
+      "type": "string",
+      "example": "DAY"
+     },
+     "shiftName": {
+      "type": "string",
+      "example": "주간"
+     },
+     "startTime": {
+      "type": "string",
+      "description": "시작 시각(time)",
+      "example": "08:00:00"
+     },
+     "endTime": {
+      "type": "string",
+      "description": "종료 시각(time)",
+      "example": "20:00:00"
+     },
+     "busy": {
+      "type": "boolean",
+      "description": "이 W/O 의 설비가 같은 근무일 이 교대에 다른 W/O(취소·마감 제외)로 잡혀 있다. 이 W/O 에 설비가 없으면 늘 false"
+     }
+    }
+   },
+   "WorkerRecommendation": {
+    "type": "object",
+    "required": [
+     "workerId",
+     "workerNo",
+     "workerName",
+     "source",
+     "busy"
+    ],
+    "properties": {
+     "workerId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "workerNo": {
+      "type": "string",
+      "example": "W-0001"
+     },
+     "workerName": {
+      "type": "string",
+      "example": "값"
+     },
+     "source": {
+      "$ref": "#/components/schemas/WorkerRecommendationSource"
+     },
+     "busy": {
+      "type": "boolean",
+      "description": "다른 W/O(취소 제외)의 책임자다 — 이 W/O 에 교대가 있으면 같은 교대·같은 근무일, 없으면 겹치는 계획 시간으로 본다"
+     }
+    }
+   },
+   "WorkerRecommendationSource": {
+    "type": "string",
+    "enum": [
+     "EQUIPMENT",
+     "LINE",
+     "PROCESS",
+     "QUALIFIED"
+    ],
+    "description": "EQUIPMENT·LINE·PROCESS = 같은 설비·같은 라인·같은 공정의 최근 W/O 책임자 · QUALIFIED = 그 공정의 유효한 PROCESS_OPERATION 자격자. 장부 P-68"
    },
    "EquipmentRecommendation": {
     "type": "object",

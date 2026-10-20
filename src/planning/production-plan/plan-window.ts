@@ -53,3 +53,13 @@ function offsetMs(instant: Date, timezone: string): number {
   const wall = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
   return wall - Math.floor(instant.getTime() / 1000) * 1000;
 }
+
+/**
+ * 그 순간이 속한 근무일(`YYYY-MM-DD`) — 근무일 시작(`dayStart`) 전의 새벽은 전날 근무일이다.
+ * 자정을 넘긴 야간 W/O 도 그 생산이 시작한 날로 묶인다.
+ */
+export function workDayOf(instant: Date, dayStart: string, timezone: string): string {
+  const [hours, minutes, seconds] = dayStart.split(':').map(Number);
+  const shifted = new Date(instant.getTime() - ((hours * 60 + minutes) * 60 + seconds) * 1000);
+  return localDate(shifted, timezone);
+}
