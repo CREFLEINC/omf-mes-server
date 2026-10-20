@@ -1,3 +1,4 @@
+import { localDate } from '../../../planning/production-plan/plan-window';
 import { Tx } from '../inbound-cycle';
 
 /**
@@ -32,12 +33,7 @@ export function businessUnitOf(plantCode: string, plant: Plant): bigint {
 
 /** 그 공장의 오늘(YYYY-MM-DD) — `plant.timezone_code` 로 푼다. */
 export function plantToday(plant: Plant): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: plant.timezone_code,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+  return localDate(new Date(), plant.timezone_code);
 }
 
 /**
