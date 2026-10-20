@@ -296,6 +296,37 @@ describe('W/O 확정·배포 (I-6 PR ⑤b)', () => {
     expect(harness.inspectionRequests[0]).toMatchObject({ inspection_plan_version_id: 602n });
   });
 
+  /* #119 · 장부 P-82 — 고른 기준이 「PQC 생략 허용」이면 의뢰를 생략(SKIPPED)으로 만든다(번호·기준은 남긴다). */
+  it('PQC — 고른 기준이 생략 허용이면 의뢰를 SKIPPED 로 만든다', async () => {
+    const harness = stub({
+      inspectionManaged: true,
+      pqcVersions: [
+        {
+          inspection_plan_version_id: 701n,
+          sampling_method_code: 'FULL_INSPECTION',
+          sampling_ratio: null,
+          inspection_plan: { process_id: 66n, routing_id: null, pqc_skip_allowed: true },
+        },
+      ],
+    });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests[0]).toMatchObject({
+      inspection_request_no: 'IRQ-20260921-0001',
+      inspection_plan_version_id: 701n,
+      status_code: 'SKIPPED',
+    });
+  });
+
+  it('PQC — 기준을 못 고르면 생략하지 않는다(REQUESTED)', async () => {
+    const harness = stub({ inspectionManaged: true, pqcVersions: [] });
+
+    await release(harness);
+
+    expect(harness.inspectionRequests[0]).toMatchObject({ status_code: 'REQUESTED' });
+  });
+
   /* ⛔ 같은 W/O 에 살아 있는 의뢰가 있으면 또 만들지 않는다 — 물리 유니크가 없는 자리다. */
   it('PQC — 이미 살아 있는 의뢰가 있으면 만들지 않는다', async () => {
     const harness = stub({ inspectionManaged: true, pqcExists: true });

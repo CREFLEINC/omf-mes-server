@@ -16,6 +16,7 @@ describe('delivery label allocation ownership', () => {
         shipment_request_id: 6n, shipping_inspection_required: false }]) },
       inventory_reservation: { findMany: jest.fn().mockResolvedValue([]) },
       inspection_result: { findMany: jest.fn().mockResolvedValue([]) },
+      inspection_request: { findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as Prisma.TransactionClient;
     await expect(lockDeliveryAllocations(tx, [{ index: 0, targetTypeCode: 'SHIPMENT_LOT_ALLOCATION',
       targetId: 9n, requestedLotId: 3n }], 5n, 'W-9')).rejects.toMatchObject({ status: 403 });

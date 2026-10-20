@@ -4,6 +4,7 @@ import {
   lineInspectionStatus,
   oqcPassed,
   shipmentInspectionStatus,
+  skippedOqcRows,
 } from './shipment-inspection';
 
 /**
@@ -159,5 +160,33 @@ describe('oqcPassed — 라인 검사와 «같은 함수»다(R-10)', () => {
     expect(oqcPassed(srLine(), [row({ overallJudgmentCode: 'HELD' })])).toBe(false);
     expect(oqcPassed(srLine(), [row({ overallJudgmentCode: 'REJECTED' })])).toBe(false);
     expect(oqcPassed(srLine(), [row()])).toBe(true);
+  });
+});
+
+describe('생략된 OQC 의뢰 — «통과»로 센다(omf-all-around#119 · 장부 P-83 · D5)', () => {
+  const skipped = (over: Partial<Parameters<typeof skippedOqcRows>[0][number]> = {}) =>
+    skippedOqcRows([
+      {
+        inspection_request_id: 9201n,
+        inspection_type_code: 'OQC',
+        target_type_code: 'SHIPMENT_REQUEST',
+        target_id: BigInt(REQUEST),
+        lot_id: null,
+        ...over,
+      },
+    ]);
+
+  it('결과가 없어도 생략된 헤더 의뢰가 있으면 PASSED 다 — 출하가 PENDING 에 묶이지 않는다', () => {
+    expect(lineInspectionStatus(srLine(), skipped())).toBe('PASSED');
+    expect(oqcPassed(srLine(), skipped())).toBe(true);
+  });
+
+  it('⭐ 다른 의뢰의 불합격 확정은 생략이 덮지 않는다 — 가장 나쁜 것이 이긴다', () => {
+    const rows = [...skipped(), headerRow({ inspectionRequestId: 9102, overallJudgmentCode: 'REJECTED' })];
+    expect(lineInspectionStatus(srLine(), rows)).toBe('REJECTED');
+  });
+
+  it('다른 출하작업지시의 생략은 이 라인을 통과시키지 않는다', () => {
+    expect(lineInspectionStatus(srLine(), skipped({ target_id: 5999n }))).toBe('PENDING');
   });
 });

@@ -554,6 +554,10 @@ const SEED: CodeGroupSeed[] = [
       { code: 'C24', codeName: '처분 선별 → 불량(불량분 분할)', order: 170 },
       // 특채 적용(omf-all-around#84) — 마이그 20261021100000 에도 같은 줄이 있다.
       { code: 'C25', codeName: '특채 승인 → 정상(조건부 사용)', order: 180 },
+      // PQC 생략 허용(omf-all-around#119) — 마이그 20261021120000 에도 같은 줄이 있다. C25 는 #84(특채) 몫이다.
+      { code: 'C26', codeName: 'PQC 생략 → 정상', order: 190 },
+      // OQC 생략 실행(omf-all-around#119) — 마이그 20261021130000 에도 같은 줄이 있다.
+      { code: 'C27', codeName: 'OQC 생략 → 정상', order: 200 },
     ],
   },
   {

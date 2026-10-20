@@ -97,6 +97,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /trace/lots/{lotId}:request-iqc-skip': ['M-01-13'],
   // 승인된 IQC 생략의 실행 — 생략을 승인하는 결재 화면 W-01-02 의 조작이다(omf-all-around#105 · 장부 P-36).
   'POST /trace/lots/{lotId}:skip-iqc': ['W-01-02'],
+  // OQC 생략 요청·실행 — 출하검사 판정 화면 W-04-03 의 조작이다. 결재는 W-03-09 가 한다(omf-all-around#119 · 장부 P-83).
+  'POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip': ['W-04-03'],
+  'POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc': ['W-04-03'],
   // 불량 기록 등록 — IQC 불합격 사유를 남기는 수입검사 판정 화면의 조작이다(omf-all-around#106 · 장부 P-42).
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
@@ -311,7 +314,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 원인은 181 과 같다 — 도출 원천인 요구서 §3 이 화면보다 낡았다. // 결정 — 통보 189
   // ⛔ `M-CO-01` 은 넣지 않는다 — 계약이 그 이름을 「모바일 셸에는 계정 로그인이 없다(M-CO-01 §2)」로
   //    «인증 모델»의 근거로만 적었고 「그 화면이 이 목록을 부른다」로는 적지 않았다(통보 189 §끝).
-  'GET /app/approval-requests': ['M-01-13', 'W-01-02'],
+  // `W-04-03` — OQC 생략 구획이 자기 출하작업지시의 결재 상태(`targetTypeCode`·`targetId`)를 읽는다(omf-all-around#119 · 장부 P-83).
+  'GET /app/approval-requests': ['M-01-13', 'W-01-02', 'W-04-03'],
 
   // `W-03-10` 처분 판정 처리 — ⭐ 도출 원천이 화면보다 «낡아» 한 줄도 안 도출된 자리다(그 화면은
   // DR-008 확정 3-A 로 2026-08-13 «신설»됐다). 그 결과 판정 저장이 `P-02-13`(POP · PQC) 하나만

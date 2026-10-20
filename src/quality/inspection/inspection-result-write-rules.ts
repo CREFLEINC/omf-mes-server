@@ -93,10 +93,17 @@ export async function assertReferences(
       inspection_request_id: true,
       version_no: true,
       inspection_type_code: true,
+      status_code: true,
       lot: { select: { status_code: true } },
     },
   });
   if (request === null) throw one(field('inspectionRequestId', ERROR_CODE.INVALID, '없는 검사 의뢰입니다.'));
+  // 생략(SKIPPED)된 의뢰는 검사하지 않는다 — 결과가 서면 생략 이력(C26·C22)과 판정이 엇갈린다(omf-all-around#119 · 장부 P-82).
+  if (request.status_code === 'SKIPPED') {
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '검사를 생략한 의뢰입니다. 결과를 저장할 수 없습니다.' },
+    ]);
+  }
   // If-Match 는 **선택**이다(오프라인 큐가 토큰을 안 싣는다 · C-9). 값이 오면 의뢰의 버전과
   // 대조한다 — ⚠ 계약이 무엇의 버전인지 안 적었다(결과는 아직 없다). 설계 미정 · 미발행 · I-19 §9-2 후보 10.
   if (version !== undefined && request.version_no !== version) {
