@@ -124,6 +124,42 @@ describe('오퍼레이션 권한 매핑', () => {
     );
   });
 
+  // W-06-16~23(ERP 데이터 조회 8)은 설계 밖 관리웹 화면이다 — 장부 P-71. 그 화면이 부르는 조회는 계약에 403 이
+  // 없어 게이트가 보지 않으니 권한표에 적지 않았다. 사본이 403 을 붙이면 여기가 빨개진다 — 그때 수동표에 더한다.
+  it('⛔ ERP 데이터 조회 화면 여덟이 부르는 조회는 계약에 403 이 없다 — 장부 P-71', () => {
+    const reads = [
+      'GET /mdm/code-groups',
+      'GET /mdm/code-values',
+      'GET /mdm/workers',
+      'GET /mdm/workers/{workerId}',
+      'GET /mdm/items',
+      'GET /mdm/items/{itemId}',
+      'GET /mdm/partners',
+      'GET /mdm/partners/{partnerId}',
+      'GET /mdm/partners/{partnerId}/roles',
+      'GET /mdm/plants',
+      'GET /mdm/business-units',
+      'GET /mdm/uoms',
+      'GET /planning/boms',
+      'GET /planning/boms/{bomId}/components',
+      'GET /logistics/purchase-orders',
+      'GET /logistics/purchase-orders/{purchaseOrderId}',
+      'GET /logistics/sales-orders',
+      'GET /logistics/sales-orders/{salesOrderId}',
+      'GET /planning/production-orders',
+      'GET /planning/production-orders/{productionOrderId}',
+    ];
+    // 오타 난 키는 403 이 «없어» 보인다 — 헛통과를 막는다.
+    expect(reads.filter((key) => !registry.has(key))).toEqual([]);
+
+    const gated = reads.filter((key) => {
+      const responses = (registry.get(key)?.operation as { responses?: Record<string, unknown> })
+        .responses;
+      return responses !== undefined && '403' in responses;
+    });
+    expect(gated).toEqual([]);
+  });
+
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
     expect(OPERATION_PERMISSIONS['PUT /inventory/counts/{inventoryCountId}/lines']).toEqual([
       'M-01-11',

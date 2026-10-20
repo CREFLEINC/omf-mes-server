@@ -112,7 +112,7 @@ describe('역할·기능 권한 (e2e)', () => {
 
   // ── 기능 권한 목록 ──────────────────────────────────────────────────────
 
-  it('⭐ 권한 목록이 격자의 열 119개를 쪽 없이 통째로 낸다', async () => {
+  it('⭐ 권한 목록이 격자의 열 129개를 쪽 없이 통째로 낸다', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/app/permissions')
       .set('Cookie', cookie)
@@ -121,10 +121,11 @@ describe('역할·기능 권한 (e2e)', () => {
     const validate = validator('GET /app/permissions');
     expect(validate(response.body)).toBe(true);
     expect(validate.errors ?? []).toEqual([]);
-    // 설계 117 + 설계 밖 화면 4 — P-04-05(출하 단위 구성) · P-06-01(창고 적재 위치 라벨 발행)(장부 P-28) ·
+    // 설계 117 + 설계 밖 화면 12 — P-04-05(출하 단위 구성) · P-06-01(창고 적재 위치 라벨 발행)(장부 P-28) ·
     // W-03-11(PQC 검사 등록·조회)(장부 P-51) ·
-    // P-02-14(자재 불량 등록)(장부 P-52).
-    expect(response.body.items).toHaveLength(121);
+    // P-02-14(자재 불량 등록)(장부 P-52) ·
+    // W-06-16~23(ERP 데이터 조회 8)(장부 P-71).
+    expect(response.body.items).toHaveLength(129);
     // 이 화면 자신의 권한이 목록에 있어야 격자에서 관리자를 만들 수 있다.
     expect(response.body.items.map((p: { code: string }) => p.code)).toContain('W-CO-02');
     expect(response.body.page).toBeUndefined();
