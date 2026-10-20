@@ -8,6 +8,7 @@ const SOURCE: RelayTable = {
   interfaceCode: 'IF-TEST-RECV',
   targetTypeCode: 'TEST',
   name: 'T_TEST',
+  label: '시험',
   flagColumn: 'IF_YN',
   keyColumns: ['CODE'],
   versionColumn: 'T_SEQ',
