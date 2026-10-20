@@ -1,8 +1,10 @@
 import { Prisma } from '@prisma/client';
 
+import { toDateString } from '../../../common/master';
+import { skipOnReceipt } from '../../../planning/production-order/auto-plan';
 import { AfterCommit, RowTable, Tx } from '../inbound-cycle';
 import { PRODUCTION_ORDER, RelayRow, isCancel, requiredText, text } from '../relay-tables';
-import { businessUnitOf, dateOf, itemIdsByCode, plantByCode, uomIdsByCode } from './lookup';
+import { businessUnitOf, dateOf, itemIdsByCode, plantByCode, plantToday, uomIdsByCode } from './lookup';
 
 /** 시드 `PRODUCTION_ORDER_STATUS`. */
 const RECEIVED = 'RECEIVED';
@@ -17,6 +19,7 @@ const CANCELLED = 'CANCELLED';
  * 이미 있는 ERP W/O 가 바뀌면 I-24 변경 추적을 남긴다 — 바뀐 항목의 «이전» 값만 갈아 넣고 수신 시각을
  * 찍어 관리자 확인(W-02-06)을 기다린다. 판을 올려 판정 중인 확인을 409 로 막는다.
  * 처음 받은 ERP W/O 는 커밋 뒤 `onReceived` 로 넘긴다(자동 계획). 바뀐 ERP W/O 는 넘기지 않는다 — 변경은 확인 흐름이 맡는다.
+ * 넘길지(`skipOnReceipt`)는 여기서 정하고 시도 시각도 같은 트랜잭션에 찍는다 — 커밋 뒤 무엇이 실패해도 「확인 필요」로 남게.
  */
 export const productionOrderTable = (onReceived: (productionOrderId: bigint) => Promise<void>): RowTable => ({
   source: PRODUCTION_ORDER,
@@ -45,6 +48,8 @@ export const productionOrderTable = (onReceived: (productionOrderId: bigint) => 
       SELECT production_order_id FROM planning.production_order
        WHERE production_order_no = ${orderNo} FOR UPDATE`;
     if (locked === undefined) {
+      const status = cancel ? CANCELLED : RECEIVED;
+      const autoPlan = !skipOnReceipt(status, null, toDateString(values.planned_start_date), plantToday(plant));
       const created = await tx.production_order.create({
         data: {
           production_order_no: orderNo,
@@ -52,11 +57,12 @@ export const productionOrderTable = (onReceived: (productionOrderId: bigint) => 
           business_unit_id: businessUnitOf(plantCode, plant),
           ...fixed,
           ...values,
-          status_code: cancel ? CANCELLED : RECEIVED,
+          status_code: status,
+          auto_plan_attempted_at: autoPlan ? new Date() : null,
         },
         select: { production_order_id: true },
       });
-      return cancel ? undefined : () => onReceived(created.production_order_id);
+      return autoPlan ? () => onReceived(created.production_order_id) : undefined;
     }
     const current = await tx.production_order.findUniqueOrThrow({
       where: { production_order_id: locked.production_order_id },

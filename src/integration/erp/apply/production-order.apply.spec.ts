@@ -91,16 +91,25 @@ describe('productionOrderTable', () => {
     received.length = 0;
   });
 
-  it('처음 받은 ERP W/O 는 커밋 뒤 할 일로 자동 계획에 넘긴다 — 반영 안에서는 부르지 않는다', async () => {
-    const after = await table.apply(fake().tx, erp());
+  it('처음 받은 ERP W/O 는 시도 시각을 찍고 커밋 뒤 할 일로 자동 계획에 넘긴다 — 반영 안에서는 부르지 않는다', async () => {
+    const f = fake();
+    const after = await table.apply(f.tx, erp({ PLAN_START_DT: '2099-01-01' }));
 
+    expect(f.writes[0].data).toMatchObject({ auto_plan_attempted_at: expect.any(Date) });
     expect(received).toEqual([]);
     await (after as () => Promise<void>)();
     expect(received).toEqual([91n]);
   });
 
+  it('계획 시작일이 공장 현지 오늘보다 앞이면 넘기지 않고 시도 시각도 비운다', async () => {
+    const f = fake();
+
+    expect(await table.apply(f.tx, erp({ PLAN_START_DT: '2020-01-01' }))).toBeUndefined();
+    expect(f.writes[0].data).toMatchObject({ auto_plan_attempted_at: null });
+  });
+
   it('처음 받은 행이 취소(C)거나 이미 있는 ERP W/O 가 바뀌면 자동 계획에 넘기지 않는다', async () => {
-    expect(await table.apply(fake().tx, erp({ CREATE_TYPE: 'C' }))).toBeUndefined();
+    expect(await table.apply(fake().tx, erp({ CREATE_TYPE: 'C', PLAN_START_DT: '2099-01-01' }))).toBeUndefined();
     expect(await table.apply(fake(ORDER).tx, erp({ IF_SEQ: 2, PRODT_ORDER_QTY: 20 }))).toBeUndefined();
     expect(received).toEqual([]);
   });
@@ -127,6 +136,8 @@ describe('productionOrderTable', () => {
           erp_rework_flag: 'N',
           remarks: null,
           status_code: 'RECEIVED',
+          // 계획 시작일이 지나 받을 때 자동 계획하지 않는다.
+          auto_plan_attempted_at: null,
         },
       },
     ]);

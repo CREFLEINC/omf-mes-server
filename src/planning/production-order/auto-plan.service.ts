@@ -1,8 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-
-import { toDateString } from '../../common/master';
+import { HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { ConflictException, ContractException, ERROR_CODE } from '../../common/errors';
+import { toDateString } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
 import { localDate } from '../production-plan/plan-window';
 import { PlanConfirmService } from '../production-plan/plan-confirm.service';
@@ -18,12 +18,14 @@ import {
   autoPlanView,
   chooseMasters,
   expansionHasLine,
-  skipOnReceipt,
 } from './auto-plan';
 
 const CONFIRMED = 'CONFIRMED';
-/** 잠금을 쥔 채 계획 생성·확정 전개를 기다린다 — 기본 5초로는 공정이 많은 Routing 의 확정이 모자랄 수 있다. */
-const LOCK_OPTIONS = { timeout: 30_000, maxWait: 5_000 };
+const CANCELLED = 'CANCELLED';
+/** 점유 시간 — 계획 생성·확정 전개가 이 안에 끝난다고 본다. 프로세스가 죽으면 이만큼 뒤 다시 할 수 있다. */
+const CLAIM_SECONDS = 120;
+/** `ProductionConflictResponse.code`(required). */
+const INVALID_STATE = 'INVALID_STATE';
 
 /** 판정에 쓰는 오더 칸만. */
 export interface AutoPlanOrder {
@@ -31,6 +33,7 @@ export interface AutoPlanOrder {
   plant_id: bigint;
   item_id: bigint;
   order_qty: Prisma.Decimal;
+  status_code: string;
   auto_plan_attempted_at: Date | null;
 }
 
@@ -75,18 +78,11 @@ export class AutoPlanService {
   ) {}
 
   /**
-   * 오더 수신 직후. ⛔ 실패가 수신을 되돌리지 않는다 — 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다.
-   * 건너뛸 오더(`skipOnReceipt`)는 시도하지 않는다 — 그런 오더도 `:auto-plan` 으로는 세울 수 있다.
+   * 오더 수신 뒤 — 수신이 커밋된 «다음»에 부른다. 건너뛸지(`skipOnReceipt`)는 수신이 정하고 시도 시각도 수신 트랜잭션에서
+   * 찍는다 — 여기서 무엇이 실패해도 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다. ⛔ 실패를 던지지 않는다.
    */
   async planReceived(productionOrderId: number, appUserId: number | undefined): Promise<void> {
     try {
-      const order = await this.prisma.production_order.findUnique({
-        where: { production_order_id: BigInt(productionOrderId) },
-        select: { status_code: true, due_date: true, planned_start_date: true, plant: { select: { timezone_code: true } } },
-      });
-      if (order === null) return;
-      const today = localDate(new Date(), order.plant.timezone_code);
-      if (skipOnReceipt(order.status_code, toDateString(order.due_date), toDateString(order.planned_start_date), today)) return;
       await this.run(productionOrderId, appUserId);
     } catch (error) {
       this.logger.warn(`ERP W/O ${String(productionOrderId)} 자동 계획 실패 — ${error instanceof Error ? error.message : String(error)}`);
@@ -96,26 +92,50 @@ export class AutoPlanService {
   /**
    * 계획이 없으면 세우고(정할 수 있으면 확정), 작성중 계획이 있으면 이제 라인이 서는지 보고 확정한다.
    * 확정 계획이 수량을 채웠으면 바꾸지 않는다. 확정에서 막히면 확정의 오류를 그대로 낸다.
+   * 취소된 오더는 400 `STATE_LOCKED`, 다른 자동 계획이 돌고 있으면 409 `INVALID_STATE` 다.
    */
   async run(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
-    // ⛔ 오더마다 줄 세운다 — 「계획이 있나」를 본 뒤 세우기까지 사이에 다른 호출이 끼면 둘 다 계획을 세운다.
-    //    계획 생성·확정은 각자 연결로 커밋하므로, 잠금을 쥔 트랜잭션은 그것들이 끝날 때까지 열어 두기만 한다.
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`auto-plan:${String(productionOrderId)}`}))`;
-      return this.runLocked(productionOrderId, appUserId);
-    }, LOCK_OPTIONS);
-  }
-
-  private async runLocked(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
     const found = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(productionOrderId) },
-      select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true, planned_start_date: true },
+      select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true, planned_start_date: true, status_code: true },
     });
     if (!found) throw new NotFoundException('없는 생산오더입니다.');
-    // 판을 올리지 않는다 — 업무 값이 아니라서, 확인(`:acknowledge`)의 If-Match 를 낡게 만들면 안 된다.
-    const attemptedAt = new Date();
-    await this.prisma.production_order.update({ where: { production_order_id: found.production_order_id }, data: { auto_plan_attempted_at: attemptedAt } });
-    const order = { ...found, auto_plan_attempted_at: attemptedAt };
+    if (found.status_code === CANCELLED) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        { scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: '취소된 생산오더는 계획을 세우지 않습니다.' },
+      ]);
+    }
+    await this.claim(found.production_order_id);
+    try {
+      return await this.runClaimed({ ...found, auto_plan_attempted_at: new Date() }, appUserId);
+    } finally {
+      await this.prisma.$executeRaw`
+        UPDATE planning.production_order SET auto_plan_running_until = NULL WHERE production_order_id = ${found.production_order_id}`;
+    }
+  }
+
+  /**
+   * ⛔ 오더마다 하나씩 — 「계획이 있나」를 본 뒤 세우기까지 사이에 다른 호출이 끼면 둘 다 계획을 세운다. 트랜잭션·연결을
+   * 쥐고 기다리지 않게 행 하나의 조건부 UPDATE 로 점유하고, 못 잡으면 바로 409 다. 시도 시각도 함께 찍는다.
+   * 판(`version_no`)은 올리지 않는다 — 업무 값이 아니라서, 확인(`:acknowledge`)의 If-Match 를 낡게 만들면 안 된다.
+   */
+  private async claim(productionOrderId: bigint): Promise<void> {
+    const claimed = await this.prisma.$executeRaw`
+      UPDATE planning.production_order
+         SET auto_plan_running_until = clock_timestamp() + make_interval(secs => ${CLAIM_SECONDS}),
+             auto_plan_attempted_at = clock_timestamp()
+       WHERE production_order_id = ${productionOrderId}
+         AND (auto_plan_running_until IS NULL OR auto_plan_running_until < clock_timestamp())`;
+    if (claimed === 0) {
+      throw new ConflictException('user', '이 생산오더의 자동 계획이 이미 진행 중입니다. 잠시 뒤 다시 시도하세요.', { code: INVALID_STATE });
+    }
+  }
+
+  private async runClaimed(
+    order: AutoPlanOrder & { uom_id: bigint; planned_start_date: Date | null },
+    appUserId: number | undefined,
+  ): Promise<AutoPlanResult> {
+    const productionOrderId = Number(order.production_order_id);
     const facts = (await this.factsOf([order])).get(order.production_order_id) as OrderFacts;
     const { outcome, productionPlanId } = await this.act(order, facts, appUserId);
     const view = (await this.viewsOf([order])).get(order.production_order_id);
@@ -129,6 +149,8 @@ export class AutoPlanService {
       orders.map((order) => {
         const fact = facts.get(order.production_order_id) as OrderFacts;
         const unplanned = [...(fact.choice?.reasons ?? []), ...(fact.choiceLineKnown === false ? (['LINE_UNKNOWN'] as const) : [])];
+        // 취소된 오더는 계획할 일이 없다 — 「확인 필요」로 남기지 않는다.
+        if (order.status_code === CANCELLED) return [order.production_order_id, null];
         return [order.production_order_id, autoPlanView(order.order_qty, fact.plans, unplanned, order.auto_plan_attempted_at !== null)];
       }),
     );
@@ -195,8 +217,10 @@ export class AutoPlanService {
     });
     const plansOf = groupBy(planRows, (plan) => plan.production_order_id);
 
-    // 시도한 적 없는 미계획 오더는 상태가 없다 — BOM·Routing 을 읽지 않는다.
-    const unplanned = orders.filter((order) => !plansOf.has(order.production_order_id) && order.auto_plan_attempted_at !== null);
+    // 시도한 적 없거나 취소된 미계획 오더는 상태가 없다 — BOM·Routing 을 읽지 않는다.
+    const unplanned = orders.filter(
+      (order) => !plansOf.has(order.production_order_id) && order.auto_plan_attempted_at !== null && order.status_code !== CANCELLED,
+    );
     const itemIds = [...new Set(unplanned.map((order) => order.item_id))];
     const [boms, routings] =
       itemIds.length === 0
