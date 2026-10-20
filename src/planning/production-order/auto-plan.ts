@@ -62,6 +62,22 @@ export function expansionHasLine(planLineId: bigint | null, operations: readonly
   return [...assignResources([...operations], [...maps]).values()].some((resource) => resource.equipmentLineId !== null);
 }
 
+/**
+ * 받을 때 자동 계획을 건너뛰는가 — 받은 상태가 아니거나, 오더의 날짜(납기, 없으면 계획 시작일)가 공장 현지 오늘보다 앞이다.
+ * ERP W/O 는 납기 없이 계획 시작일만 온다 — 지난 오더를 몰아 받을 때 계획이 쏟아지지 않게 그 날짜로 본다.
+ * 날짜는 모두 `YYYY-MM-DD` 라 문자열 비교가 날짜 비교다.
+ */
+export function skipOnReceipt(statusCode: string, dueDate: string | null, plannedStartDate: string | null, today: string): boolean {
+  if (statusCode !== 'RECEIVED') return true;
+  const date = dueDate ?? plannedStartDate;
+  return date !== null && date < today;
+}
+
+/** 계획일 — ERP 계획 시작일이 오늘 이후면 그날, 없거나 지났으면 공장 현지 오늘. */
+export function autoPlanDate(plannedStartDate: string | null, today: string): string {
+  return plannedStartDate !== null && plannedStartDate >= today ? plannedStartDate : today;
+}
+
 export interface PlanFact {
   confirmed: boolean;
   plannedQty: Prisma.Decimal;

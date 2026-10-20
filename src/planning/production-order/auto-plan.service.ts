@@ -9,11 +9,19 @@ import { PlanConfirmService } from '../production-plan/plan-confirm.service';
 import { ProductionPlanService } from '../production-plan/production-plan.service';
 import { DefaultMap, OperationNeed, pairKey, readDefaultMapsOf } from '../production-plan/resource-assign';
 import { usableWhere as usableRoutingWhere } from '../routing/routing.service';
-import { AutoPlanReason, AutoPlanView, MasterChoice, PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
+import {
+  AutoPlanReason,
+  AutoPlanView,
+  MasterChoice,
+  PlanFact,
+  autoPlanDate,
+  autoPlanView,
+  chooseMasters,
+  expansionHasLine,
+  skipOnReceipt,
+} from './auto-plan';
 
 const CONFIRMED = 'CONFIRMED';
-/** 수신 때 자동 계획하는 상태 — 취소·마감된 오더는 계획하지 않는다. */
-const RECEIVED = 'RECEIVED';
 /** 잠금을 쥔 채 계획 생성·확정 전개를 기다린다 — 기본 5초로는 공정이 많은 Routing 의 확정이 모자랄 수 있다. */
 const LOCK_OPTIONS = { timeout: 30_000, maxWait: 5_000 };
 
@@ -68,18 +76,17 @@ export class AutoPlanService {
 
   /**
    * 오더 수신 직후. ⛔ 실패가 수신을 되돌리지 않는다 — 오더는 「확인 필요」로 남고 `:auto-plan` 으로 다시 한다.
-   * 받은 상태가 아니거나 납기가 공장 현지 오늘보다 앞이면 시도하지 않는다 — 지난 오더를 몰아 받을 때 계획이 쏟아지지 않게.
-   * 그런 오더도 `:auto-plan` 으로는 세울 수 있다.
+   * 건너뛸 오더(`skipOnReceipt`)는 시도하지 않는다 — 그런 오더도 `:auto-plan` 으로는 세울 수 있다.
    */
   async planReceived(productionOrderId: number, appUserId: number | undefined): Promise<void> {
     try {
       const order = await this.prisma.production_order.findUnique({
         where: { production_order_id: BigInt(productionOrderId) },
-        select: { status_code: true, due_date: true, plant: { select: { timezone_code: true } } },
+        select: { status_code: true, due_date: true, planned_start_date: true, plant: { select: { timezone_code: true } } },
       });
-      if (order === null || order.status_code !== RECEIVED) return;
-      const dueDate = toDateString(order.due_date);
-      if (dueDate !== null && dueDate < localDate(new Date(), order.plant.timezone_code)) return;
+      if (order === null) return;
+      const today = localDate(new Date(), order.plant.timezone_code);
+      if (skipOnReceipt(order.status_code, toDateString(order.due_date), toDateString(order.planned_start_date), today)) return;
       await this.run(productionOrderId, appUserId);
     } catch (error) {
       this.logger.warn(`ERP W/O ${String(productionOrderId)} 자동 계획 실패 — ${error instanceof Error ? error.message : String(error)}`);
@@ -102,7 +109,7 @@ export class AutoPlanService {
   private async runLocked(productionOrderId: number, appUserId: number | undefined): Promise<AutoPlanResult> {
     const found = await this.prisma.production_order.findUnique({
       where: { production_order_id: BigInt(productionOrderId) },
-      select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true },
+      select: { production_order_id: true, plant_id: true, item_id: true, order_qty: true, uom_id: true, planned_start_date: true },
     });
     if (!found) throw new NotFoundException('없는 생산오더입니다.');
     // 판을 올리지 않는다 — 업무 값이 아니라서, 확인(`:acknowledge`)의 If-Match 를 낡게 만들면 안 된다.
@@ -128,7 +135,7 @@ export class AutoPlanService {
   }
 
   private async act(
-    order: AutoPlanOrder & { uom_id: bigint },
+    order: AutoPlanOrder & { uom_id: bigint; planned_start_date: Date | null },
     facts: OrderFacts,
     appUserId: number | undefined,
   ): Promise<Pick<AutoPlanResult, 'outcome' | 'productionPlanId'>> {
@@ -149,7 +156,7 @@ export class AutoPlanService {
 
   /** 라인을 모르면 작성중으로 둔다 — 사람이 라인만 고르고 확정하면 된다. */
   private async planFresh(
-    order: AutoPlanOrder & { uom_id: bigint },
+    order: AutoPlanOrder & { uom_id: bigint; planned_start_date: Date | null },
     facts: OrderFacts,
     appUserId: number | undefined,
   ): Promise<Pick<AutoPlanResult, 'outcome' | 'productionPlanId'>> {
@@ -160,7 +167,7 @@ export class AutoPlanService {
     const plan = await this.plans.create(
       {
         productionOrderId: Number(order.production_order_id),
-        planDate: localDate(new Date(), plant.timezone_code),
+        planDate: autoPlanDate(toDateString(order.planned_start_date), localDate(new Date(), plant.timezone_code)),
         plannedQty: Number(order.order_qty),
         uomId: Number(order.uom_id),
         bomId: Number(choice.bomId),

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { DefaultMap, OperationNeed } from '../production-plan/resource-assign';
-import { AutoPlanReason, PlanFact, autoPlanView, chooseMasters, expansionHasLine } from './auto-plan';
+import { AutoPlanReason, PlanFact, autoPlanDate, autoPlanView, chooseMasters, expansionHasLine, skipOnReceipt } from './auto-plan';
 
 const qty = (value: number) => new Prisma.Decimal(value);
 /** 자동 계획을 시도한 오더의 상태. */
@@ -99,5 +99,45 @@ describe('autoPlanView — 목록·상세의 자동 계획 상태', () => {
 
   it('계획이 없고 막는 것도 없으면 사유 없는 NEEDS_REVIEW 다', () => {
     expect(attempted(qty(100), [], [])).toEqual({ status: 'NEEDS_REVIEW', reasons: [] });
+  });
+});
+
+describe('skipOnReceipt — 받을 때 자동 계획을 건너뛰는가', () => {
+  const today = '2026-10-20';
+
+  it('받은 상태가 아니면 건너뛴다', () => {
+    expect(skipOnReceipt('CANCELLED', null, null, today)).toBe(true);
+  });
+
+  it('납기가 오늘보다 앞이면 건너뛰고, 오늘이면 건너뛰지 않는다', () => {
+    expect(skipOnReceipt('RECEIVED', '2026-10-19', null, today)).toBe(true);
+    expect(skipOnReceipt('RECEIVED', '2026-10-20', null, today)).toBe(false);
+  });
+
+  it('납기가 없으면 계획 시작일로 본다 — ERP W/O', () => {
+    expect(skipOnReceipt('RECEIVED', null, '2026-10-01', today)).toBe(true);
+    expect(skipOnReceipt('RECEIVED', null, '2026-10-25', today)).toBe(false);
+  });
+
+  it('납기가 있으면 계획 시작일보다 납기를 본다', () => {
+    expect(skipOnReceipt('RECEIVED', '2026-10-25', '2026-10-01', today)).toBe(false);
+  });
+
+  it('날짜가 둘 다 없으면 건너뛰지 않는다', () => {
+    expect(skipOnReceipt('RECEIVED', null, null, today)).toBe(false);
+  });
+});
+
+describe('autoPlanDate — 자동 계획의 계획일', () => {
+  const today = '2026-10-20';
+
+  it('계획 시작일이 오늘 이후면 그날이다', () => {
+    expect(autoPlanDate('2026-10-25', today)).toBe('2026-10-25');
+    expect(autoPlanDate('2026-10-20', today)).toBe('2026-10-20');
+  });
+
+  it('계획 시작일이 지났거나 없으면 오늘이다', () => {
+    expect(autoPlanDate('2026-10-01', today)).toBe(today);
+    expect(autoPlanDate(null, today)).toBe(today);
   });
 });
