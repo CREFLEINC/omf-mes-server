@@ -25,7 +25,7 @@ import {
   bornConfirmed,
   preparePqcWrite,
   assertAccountWorker,
-  assertIqcJudgmentChange,
+  assertJudgmentChange,
   resolveInspector,
   throwRoundConflict,
 } from './inspection-result-write-rules';
@@ -81,11 +81,11 @@ export class InspectionResultWriteService {
     // ⭐ 그 판정이 채번 «앞»이다(#320 m-2) — 뒤에 두면 세션 없는 확정 저장이 번호 하나를
     //    결번으로 남기고 401 을 받는다. 결번 자체는 허용이지만 순서만 바꾸면 안 생긴다.
     const born = body.statusCode === CONFIRMED ? bornConfirmed(context) : undefined;
-    // IQC 확정이 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다 — `:confirm` 과 같은 규칙(P-70 · #125).
+    // IQC·OQC 확정이 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다 — `:confirm` 과 같은 규칙(P-70 · #125·#126).
     const changeReason =
       born === undefined
         ? undefined
-        : await assertIqcJudgmentChange(this.prisma, BigInt(body.inspectionRequestId), {
+        : await assertJudgmentChange(this.prisma, BigInt(body.inspectionRequestId), {
             ...body,
             judgment: body.overallJudgmentCode as string,
             reason: body.judgmentChangeReason,

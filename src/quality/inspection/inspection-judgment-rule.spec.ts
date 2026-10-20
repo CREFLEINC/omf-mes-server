@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
-import { assertIqcJudgmentChange } from './inspection-result-write-rules';
+import { assertJudgmentChange } from './inspection-result-write-rules';
 import { assertJudgmentChangeReason, expectedJudgment, remarksWithJudgmentChange } from './inspection-rules';
 
 /** omf-all-around#125 — IQC 판정은 합격판정개수 기준 자동 판정과 다르면 변경 사유가 필요하다(장부 P-70). */
@@ -71,7 +71,7 @@ describe('remarksWithJudgmentChange', () => {
   });
 });
 
-describe('assertIqcJudgmentChange', () => {
+describe('assertJudgmentChange', () => {
   function db(type: string, acceptanceNumber: number | null | undefined) {
     return {
       inspection_request: {
@@ -83,20 +83,26 @@ describe('assertIqcJudgmentChange', () => {
     } as unknown as Prisma.TransactionClient;
   }
 
-  it('IQC · 합격판정개수 5 · 불합격 10 + 합격 → 400', async () => {
+  it.each(['IQC', 'OQC'])('%s · 합격판정개수 5 · 불합격 10 + 합격 → 400 (#125·#126)', async (type) => {
     await expect(
-      assertIqcJudgmentChange(db('IQC', 5), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: undefined }),
+      assertJudgmentChange(db(type, 5), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: undefined }),
     ).rejects.toBeInstanceOf(ContractException);
+  });
+
+  it('OQC · 사유가 있으면 다듬은 사유를 돌려준다 (#126)', async () => {
+    await expect(
+      assertJudgmentChange(db('OQC', 5), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: '  고객 특채 승인  ' }),
+    ).resolves.toBe('고객 특채 승인');
   });
 
   it.each([
     ['PQC', 5],
-    ['OQC', 5],
+    ['OQC', null],
     ['IQC', null],
     ['IQC', undefined],
   ])('%s · 합격판정개수 %s 는 보지 않는다', async (type, acceptanceNumber) => {
     await expect(
-      assertIqcJudgmentChange(db(type, acceptanceNumber), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: undefined }),
+      assertJudgmentChange(db(type, acceptanceNumber), 1n, { ...qty(10), judgment: 'ACCEPTED', reason: undefined }),
     ).resolves.toBeUndefined();
   });
 });
