@@ -17,6 +17,8 @@ export const DISPLAY_JOIN = {
   production_plan: { select: { production_order_id: true, production_order: { select: { production_order_no: true } } } },
   routing_operation: { select: { operation_name: true, process: { select: { process_id: true, process_code: true, process_name: true } } } },
   item: { select: { item_code: true } },
+  // 설비 없는 단말이 W/O 의 계획 설비로 작업 전 점검을 할 때 화면이 그 설비를 보인다.
+  equipment: { select: { equipment_code: true, equipment_name: true } },
 } as const;
 
 export type WorkOrderRow = Prisma.work_orderGetPayload<{ include: typeof DISPLAY_JOIN }>;
@@ -65,6 +67,8 @@ export function workOrderView(
     processId: Number(row.routing_operation.process.process_id),
     processCode: row.routing_operation.process.process_code,
     processName: row.routing_operation.process.process_name,
+    plannedEquipmentCode: row.equipment?.equipment_code ?? null,
+    plannedEquipmentName: row.equipment?.equipment_name ?? null,
     itemCode: row.item.item_code,
     poMismatch: row.po_mismatch,
     versionNo: row.version_no,

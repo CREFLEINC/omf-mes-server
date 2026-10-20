@@ -6937,6 +6937,22 @@
       "example": "사출",
       "description": "공정명(공정 마스터). 장부 P-77"
      },
+     "plannedEquipmentCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "EQ-INJ-01",
+      "description": "계획 설비의 설비 코드 — 계획 설비가 없으면 null. 설비 없는 POP 단말이 이 설비로 작업 전 점검을 한다. 장부 P-78"
+     },
+     "plannedEquipmentName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "example": "사출기 1호",
+      "description": "계획 설비의 설비명 — 계획 설비가 없으면 null. 장부 P-78"
+     },
      "itemCode": {
       "type": "string",
       "example": "ITM-0001",
