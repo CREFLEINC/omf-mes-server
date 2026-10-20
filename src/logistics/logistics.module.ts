@@ -64,6 +64,7 @@ import { StockReinstatementService } from './stock-reinstatement/stock-reinstate
 import { ShipmentConfirmService } from './shipment/shipment-confirm.service';
 import { ShipmentService } from './shipment/shipment.service';
 import { ShipmentPickService } from './shipment-request/shipment-pick.service';
+import { ShipmentOqcSkipService } from './shipment-request/shipment-oqc-skip.service';
 import { ShipmentRequestQueryService } from './shipment-request/shipment-request-query.service';
 import { ShipmentRequestController } from './shipment-request/shipment-request.controller';
 import { ShipmentRequestService } from './shipment-request/shipment-request.service';
@@ -138,6 +139,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     ShippingUnitQueryService,
     ShippingUnitService,
     ShipmentPickService,
+    ShipmentOqcSkipService,
     ShipmentRequestQueryService,
     ShipmentRequestService,
     ShipmentQueryService,

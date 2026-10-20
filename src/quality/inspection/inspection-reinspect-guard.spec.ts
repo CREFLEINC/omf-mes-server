@@ -36,13 +36,14 @@ describe('assertIqcReinspectable', () => {
 });
 
 describe('assertReferences — 재검사 회차', () => {
-  const prismaFor = (lotStatus: string) =>
+  const prismaFor = (lotStatus: string, requestStatus = 'IN_PROGRESS') =>
     ({
       inspection_request: {
         findUnique: async () => ({
           inspection_request_id: 7n,
           version_no: 1,
           inspection_type_code: 'IQC',
+          status_code: requestStatus,
           lot: { status_code: lotStatus },
         }),
       },
@@ -60,6 +61,14 @@ describe('assertReferences — 재검사 회차', () => {
 
   it('검사 대기면 다음 회차(2)를 낸다', async () => {
     await expect(assertReferences(prismaFor('INSPECTION_PENDING'), body, undefined)).resolves.toBe(2);
+  });
+
+  /* #119 · 장부 P-82 — 생략한 의뢰에 결과가 서면 생략 이력(C26·C22)과 판정이 엇갈린다. */
+  it('⛔ 생략(SKIPPED)된 의뢰에는 결과를 저장할 수 없다', async () => {
+    const first = { inspectionRequestId: 7, uomId: 1 } as InspectionResultCreate;
+    const error = await assertReferences(prismaFor('NORMAL', 'SKIPPED'), first, undefined).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ContractException);
+    expect(JSON.stringify((error as ContractException).getResponse())).toContain('STATE_LOCKED');
   });
 
   it('첫 회차(앞 회차 없음)는 LOT 상태를 보지 않는다', async () => {

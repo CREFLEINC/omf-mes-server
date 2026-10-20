@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OqcInspectionRow } from './shipment-inspection';
+import { OqcInspectionRow, skippedOqcRows } from './shipment-inspection';
 import { SHIPMENT_REQUEST_LINE } from './shipment-progress';
 import {
   FROM_SQL,
@@ -205,20 +205,20 @@ export class ShipmentRequestQueryService {
     shipmentRequestIds: bigint[],
     lotIds: bigint[],
   ): Promise<OqcInspectionRow[]> {
+    const targets: Prisma.inspection_requestWhereInput[] = [
+      { lot_id: { in: lotIds } },
+      { target_type_code: LOT, target_id: { in: lotIds } },
+      { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
+    ];
     const rows = await this.prisma.inspection_result.findMany({
-      where: {
-        inspection_request: {
-          inspection_type_code: OQC,
-          OR: [
-            { lot_id: { in: lotIds } },
-            { target_type_code: LOT, target_id: { in: lotIds } },
-            { target_type_code: SHIPMENT_REQUEST, target_id: { in: shipmentRequestIds } },
-          ],
-        },
-      },
+      where: { inspection_request: { inspection_type_code: OQC, OR: targets } },
       include: { inspection_request: true },
     });
-    return rows.map((row) => ({
+    // 생략된 의뢰는 결과가 없다 — 같은 축으로 따로 읽어 «합격»으로 더한다(omf-all-around#119 · 장부 P-83).
+    const skipped = await this.prisma.inspection_request.findMany({
+      where: { inspection_type_code: OQC, status_code: 'SKIPPED', OR: targets },
+    });
+    return [...rows.map((row) => ({
       inspectionRequestId: row.inspection_request_id,
       inspectionTypeCode: row.inspection_request.inspection_type_code,
       targetTypeCode: row.inspection_request.target_type_code,
@@ -227,6 +227,6 @@ export class ShipmentRequestQueryService {
       statusCode: row.status_code,
       inspectionRound: row.inspection_round,
       overallJudgmentCode: row.overall_judgment_code,
-    }));
+    })), ...skippedOqcRows(skipped)];
   }
 }

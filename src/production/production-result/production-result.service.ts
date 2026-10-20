@@ -41,6 +41,8 @@ const RECORD_ACTION = 'production-result-recorded';
 export const RESULT_STATUS = 'CONFIRMED';
 const PQC = 'PQC';
 const CANCELLED = 'CANCELLED';
+/** PQC 생략(배포가 생략 허용 기준으로 만든 의뢰 · #119). */
+const SKIPPED = 'SKIPPED';
 const ACCEPTED = 'ACCEPTED';
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 **선택** — 없으면 대조를 건너뛴다(§4-6 · C-9). */
@@ -138,12 +140,13 @@ export class ProductionResultService {
    * 배분한 생산LOT 을 검사대기 → 정상으로 올린다(omf-all-around#105). PQC 의뢰가 없는 W/O 는
    * 검사를 하지 않으므로 실적이 곧 정상이고(C21), 이미 PQC 합격 확정이 난 W/O 는 그 판정을 따른다(C4).
    * PQC 가 열려 있거나 불합격·보류면 그대로 둔다 — 확정이 옮긴다.
+   * PQC 기준이 생략 허용이라 의뢰가 생략(SKIPPED)뿐인 W/O 는 C26 이다(omf-all-around#119 · 장부 P-82).
    * ⚠ 이력 원천: C4 는 그 합격 검사 결과를 가리키고, C21 은 비운다 — 계약의 원천 유형 enum 에
    *   생산 실적이 없다(값을 늘리지 않는다 · 유형·id 는 함께 비는 것이 허용된다).
    */
   private async releaseUninspectedLots(tx: Tx, prepared: PreparedResult): Promise<void> {
     if (prepared.allocations.length === 0) return;
-    const pqc = await tx.inspection_request.findMany({
+    const requests = await tx.inspection_request.findMany({
       where: { work_order_id: BigInt(prepared.body.workOrderId), inspection_type_code: PQC, status_code: { not: CANCELLED } },
       select: {
         status_code: true,
@@ -156,6 +159,9 @@ export class ProductionResultService {
         },
       },
     });
+    // PQC 기준이 생략 허용이라 배포가 생략(SKIPPED)으로 만든 의뢰는 검사가 아니다 — 그것만 있으면 C26 으로 정상이다(#119 · P-82).
+    const pqc = requests.filter((request) => request.status_code !== SKIPPED);
+    const skippedOnly = pqc.length === 0 && requests.length > 0;
     // ⛔ 합격이어도 C14(불합격 수 > 합격판정개수)가 걸린 결과는 정상 전환의 근거가 아니다 — 확정이 검사 대기로 돌린 것을 덮는다(#105 리뷰).
     const accepted = pqc.every((request) => {
       const latest = request.inspection_result[0];
@@ -182,7 +188,7 @@ export class ProductionResultService {
     await this.qualities.moveWithin(
       tx,
       free,
-      pqc.length === 0 ? 'inspection-not-required' : 'inspection-accepted',
+      pqc.length > 0 ? 'inspection-accepted' : skippedOnly ? 'pqc-skipped' : 'inspection-not-required',
       { ...actor, changedAt: prepared.occurredAt, ...source },
     );
   }

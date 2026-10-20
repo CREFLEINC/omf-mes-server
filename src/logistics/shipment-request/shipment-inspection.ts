@@ -22,6 +22,7 @@ export interface OqcInspectionRow {
   targetId: bigint | number;
   /** ⭐ `target_type_code` 와 **병존**한다 — 헤더 대상 의뢰도 어느 LOT 인지 적을 수 있다(R-5). */
   lotId: bigint | number | null;
+  /** 결과의 상태. ⭐ `SKIPPED` 는 결과가 아니라 «생략된 의뢰» 한 건을 뜻한다 — `skippedOqcRows` 가 만든다(#119). */
   statusCode: string;
   inspectionRound: number;
   overallJudgmentCode: string | null;
@@ -37,6 +38,8 @@ export interface ShipmentInspectionLine {
 const OQC = 'OQC';
 /** ⭐ 결과의 `status_code` 4값 중 확정된 것. DRAFT 를 세면 미확정 판정이 롤업에 샌다(I-21 R-3 형). */
 const CONFIRMED = 'CONFIRMED';
+/** 승인된 생략 실행이 닫은 의뢰(omf-all-around#119 · 장부 P-83) — 결과 없이 «합격»으로 센다(D5 「통과로 접는다」). */
+const SKIPPED = 'SKIPPED';
 const LOT = 'LOT';
 const SHIPMENT_REQUEST = 'SHIPMENT_REQUEST';
 
@@ -62,7 +65,10 @@ export function lineInspectionStatus(line: ShipmentInspectionLine, rows: OqcInsp
   if (!line.shippingInspectionRequired) return 'NOT_REQUIRED';
   const lots = new Set(line.lotIds.map(key));
   const confirmed = rows.filter(
-    (row) => row.inspectionTypeCode === OQC && row.statusCode === CONFIRMED && targetsLine(row, line, lots),
+    (row) =>
+      row.inspectionTypeCode === OQC &&
+      (row.statusCode === CONFIRMED || row.statusCode === SKIPPED) &&
+      targetsLine(row, line, lots),
   );
   const latest = new Map<string, number>();
   for (const row of confirmed) {
@@ -74,6 +80,33 @@ export function lineInspectionStatus(line: ShipmentInspectionLine, rows: OqcInsp
   if (counted.some((row) => row.overallJudgmentCode === 'REJECTED')) return 'REJECTED';
   if (counted.some((row) => row.overallJudgmentCode === 'HELD')) return 'HELD';
   return 'PASSED';
+}
+
+/** 생략(SKIPPED)된 OQC 의뢰 한 줄 — `inspection_request` 의 칸만 읽는다. */
+export interface SkippedOqcRequest {
+  inspection_request_id: bigint;
+  inspection_type_code: string;
+  target_type_code: string;
+  target_id: bigint;
+  lot_id: bigint | null;
+}
+
+/**
+ * 생략된 의뢰를 결과 모집단의 한 줄로 바꾼다(omf-all-around#119 · 장부 P-83). 생략은 결과를 남기지 않아 확정 결과만 보는
+ * 롤업이 그 라인을 `PENDING` 에 묶어 출하가 영영 못 나간다 ⇒ 「합격 확정 한 건」으로 세운다.
+ * ⚠ 실행은 확정 결과가 «없는» 의뢰만 닫는다 — 같은 의뢰에 확정 회차가 함께 있을 일이 없어 회차 0 이 판정을 가리지 않는다.
+ */
+export function skippedOqcRows(requests: SkippedOqcRequest[]): OqcInspectionRow[] {
+  return requests.map((request) => ({
+    inspectionRequestId: request.inspection_request_id,
+    inspectionTypeCode: request.inspection_type_code,
+    targetTypeCode: request.target_type_code,
+    targetId: request.target_id,
+    lotId: request.lot_id,
+    statusCode: SKIPPED,
+    inspectionRound: 0,
+    overallJudgmentCode: 'ACCEPTED',
+  }));
 }
 
 /** 계약 명시 — 롤업 우선순위는 「가장 나쁜 것이 이긴다」. 라인이 0건이면 `NOT_REQUIRED` 다. */

@@ -30,6 +30,7 @@ import {
 import { ShipmentRequestFilters, ShipmentRequestQuery } from './shipment-request-query.sql';
 import { ShipmentRequestLineView, ShipmentRequestView } from './shipment-request-view';
 import { ShipmentLinePick, ShipmentPickService } from './shipment-pick.service';
+import { ShipmentOqcSkipService } from './shipment-oqc-skip.service';
 import {
   ShipmentRequestCreate,
   ShipmentRequestService,
@@ -43,6 +44,7 @@ import {
  * ⛔ `OPERATION_PERMISSIONS` 를 **0줄** 건드린다 — 조회 셋은 403 을 «선언하지 않아» 더해도
  * 죽은 행이 되고, 403 을 «선언»한 둘은 `DERIVED_PERMISSIONS:180`(`W-04-01`)·`:181`(`M-04-01`)이
  * 이미 갖고 있다(§7-4). ⚠ 미등재였다면 가드가 던져 403 이 아니라 **500** 이다.
+ * ⚠ OQC 생략 요청·실행 둘(omf-all-around#119 · 장부 P-83)은 도출표에 없어 `manual-permissions.ts` 에 `W-04-03` 으로 적었다.
  */
 @Controller('logistics/shipment-requests')
 export class ShipmentRequestController {
@@ -50,6 +52,7 @@ export class ShipmentRequestController {
     private readonly queries: ShipmentRequestQueryService,
     private readonly requests: ShipmentRequestService,
     private readonly picks: ShipmentPickService,
+    private readonly oqcSkips: ShipmentOqcSkipService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -168,4 +171,45 @@ export class ShipmentRequestController {
       FAMILY_CONFLICT_CODE,
     );
   }
+
+  /**
+   * OQC 생략 요청 — 출하검사 판정(W-04-03)이 결재를 상신한다(omf-all-around#119 · 장부 P-83). 의뢰·LOT 은 옮기지 않는다(J-8).
+   */
+  @Post(':shipmentRequestId\\:request-oqc-skip')
+  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}:request-oqc-skip')
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestOqcSkip(
+    @Req() request: Request,
+    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+    @Body() body: { reason: string },
+  ): Promise<{ approvalRequestId: number }> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
+      this.oqcSkips.requestSkip(shipmentRequestId, body.reason, appUserId),
+    );
+  }
+
+  /**
+   * 승인된 OQC 생략의 실행 — 열린 OQC 의뢰를 생략으로 닫고 집은 LOT 에 C27 이력을 남긴다(장부 P-83).
+   * ⛔ If-Match 를 안 읽는다 — 출하작업지시를 잠근 뒤 상태로 판정한다(두 번째 실행은 400).
+   */
+  @Post(':shipmentRequestId\\:skip-oqc')
+  @Contract('POST /logistics/shipment-requests/{shipmentRequestId}:skip-oqc')
+  @HttpCode(HttpStatus.OK)
+  skipOqc(
+    @Req() request: Request,
+    @Param('shipmentRequestId', ParseIntPipe) shipmentRequestId: number,
+  ): Promise<ShipmentRequestView> {
+    const appUserId = userOf(request);
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
+      await this.oqcSkips.execute(shipmentRequestId, appUserId);
+      return this.queries.get(shipmentRequestId);
+    });
+  }
+}
+
+function userOf(request: Request): number {
+  const session = currentSession(request);
+  if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+  return session.userId;
 }
