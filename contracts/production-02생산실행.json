@@ -6912,6 +6912,22 @@
       "example": "사출",
       "description": "공정명 — 목록의 「공정」 열이 쓴다"
      },
+     "processId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "Routing 공정의 공정 — POP 이 단말 공정 매핑(작업 시작 가능)과 견준다. 장부 P-77"
+     },
+     "processCode": {
+      "type": "string",
+      "example": "PR-INJ",
+      "description": "공정 코드. 장부 P-77"
+     },
+     "processName": {
+      "type": "string",
+      "example": "사출",
+      "description": "공정명(공정 마스터). 장부 P-77"
+     },
      "itemCode": {
       "type": "string",
       "example": "ITM-0001",

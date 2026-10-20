@@ -43,7 +43,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     cancellation_reason_code: null,
     po_mismatch: false,
     production_plan: null,
-    routing_operation: { operation_name: '사출' },
+    routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001' },
     ...overrides,
   };
@@ -101,6 +101,12 @@ describe('WorkOrder 뷰', () => {
       itemCode: 'ITM-0001',
       erpMessageQueued: true,
     });
+  });
+
+  it('뷰 — 공정 셋은 Routing 공정의 공정에서 낸다', () => {
+    const view = workOrderView(workOrderRow(), { erpMessageQueued: false });
+
+    expect(view).toMatchObject({ processId: 41, processCode: 'PR-INJ', processName: '사출공정' });
   });
 
   it('뷰 — 저장된 기본 위치 세 칸을 API 필드로 그대로 낸다', () => {
