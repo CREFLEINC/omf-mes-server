@@ -30,6 +30,15 @@ export const COMMON_CODE: RelayTable = {
   versionColumn: 'T_SEQ',
 };
 
+/** 사원. 부서 마스터가 따로 없어 부서도 여기서 뽑는다(DEPT_CODE·PDEPT). */
+export const EMPLOYEE: RelayTable = {
+  interfaceCode: 'IF-ERP-EMP-RECV',
+  name: 'T_ERP_EMP_TIG_DOWN',
+  flagColumn: 'IF_YN',
+  keyColumns: ['EMP_CODE'],
+  versionColumn: 'T_SEQ',
+};
+
 /** 읽는 순서 — 업무 키, 판, 그리고 같은 판이 둘일 때를 가를 IDENTITY. */
 export function orderColumns(table: RelayTable): string[] {
   return [...table.keyColumns, table.versionColumn, 'MES_INF_ID'];

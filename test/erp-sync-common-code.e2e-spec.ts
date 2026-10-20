@@ -1,29 +1,24 @@
 /**
- * ERP 공통코드 받기 — 실제 MSSQL 에 붙는다.
- *
- * ⭐ `ERP_RELAY_E2E=1` 일 때만 돈다. 중계 DB 가 없는 곳에서 «몰래 통과»하지 않고 «건너뜀»으로
- * 보이게 하려는 것이다. 로컬 중계 DB 는 `erp-mock/docker`(README)로 띄운다.
- * 원본 표(실데이터 244행)를 건드리지 않으려고 같은 모양의 사본 표를 만들어 거기서 돈다 —
- * 표를 만드는 권한이 앱 계정에 없어 sa 로 만든다.
+ * ERP 공통코드 받기 — 실제 MSSQL 에 붙는다(`erp-relay.fixture.ts`).
  */
 import * as mssql from 'mssql';
 
 import { InboundCycle, INBOUND } from '../src/integration/erp/inbound-cycle';
 import { commonCodeTable } from '../src/integration/erp/apply/common-code.apply';
-import { RelayClient, RelayConfig } from '../src/integration/erp/relay-client';
+import { RelayClient } from '../src/integration/erp/relay-client';
 import { COMMON_CODE } from '../src/integration/erp/relay-tables';
 import { MESSAGE_STATUS } from '../src/integration/message/integration-message.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import {
+  RELAY,
+  connectSa,
+  createCopy,
+  describeRelay,
+  dropCopy,
+  flagsOf,
+  insertRow,
+} from './erp-relay.fixture';
 
-const RELAY: RelayConfig = {
-  host: process.env.ERP_E2E_DB_HOST ?? '127.0.0.1',
-  port: Number(process.env.ERP_E2E_DB_PORT ?? 1433),
-  user: 'mes-system',
-  password: process.env.ERP_E2E_DB_PASSWORD ?? 'LocalDev!2026',
-  database: 'sample_mes',
-  encrypt: true,
-};
-const SA_PASSWORD = process.env.ERP_E2E_SA_PASSWORD ?? 'LocalDev!2026';
 const COPY = 'E2E_ERP_TYPE_TIG_DOWN';
 /** TYPE_CODE 가 nvarchar(15) 라 짧게. */
 const PREFIX = 'E2EC_';
@@ -31,8 +26,6 @@ const TABLE = {
   ...commonCodeTable,
   source: { ...COMMON_CODE, interfaceCode: 'E2E-IF-ERP-CODE-RECV', name: COPY },
 };
-
-const describeRelay = process.env.ERP_RELAY_E2E === '1' ? describe : describe.skip;
 
 describeRelay('ERP 공통코드 받기 (e2e · 중계 DB)', () => {
   let prisma: PrismaService;
@@ -43,20 +36,8 @@ describeRelay('ERP 공통코드 받기 (e2e · 중계 DB)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    sa = await new mssql.ConnectionPool({
-      server: RELAY.host,
-      port: RELAY.port,
-      user: 'sa',
-      password: SA_PASSWORD,
-      database: RELAY.database,
-      options: { encrypt: true, trustServerCertificate: true },
-    }).connect();
-    await sa
-      .request()
-      .query(
-        `IF OBJECT_ID('dbo.${COPY}') IS NOT NULL DROP TABLE dbo.${COPY}; ` +
-          `SELECT TOP 0 * INTO dbo.${COPY} FROM dbo.${COMMON_CODE.name};`,
-      );
+    sa = await connectSa();
+    await createCopy(sa, COPY, COMMON_CODE.name);
     relay = new RelayClient(RELAY);
     cycle = new InboundCycle(prisma, relay);
     await cleanup();
@@ -64,7 +45,7 @@ describeRelay('ERP 공통코드 받기 (e2e · 중계 DB)', () => {
 
   afterAll(async () => {
     await cleanup();
-    await sa?.request().query(`IF OBJECT_ID('dbo.${COPY}') IS NOT NULL DROP TABLE dbo.${COPY}`);
+    await dropCopy(sa, COPY);
     await sa?.close();
     await relay?.close();
     await prisma?.$disconnect();
@@ -84,28 +65,19 @@ describeRelay('ERP 공통코드 받기 (e2e · 중계 DB)', () => {
     rows: { seq: number; flag: string; type: string; code: string; name: string }[],
   ) {
     for (const r of rows) {
-      await sa
-        .request()
-        .input('seq', mssql.BigInt, r.seq)
-        .input('flag', r.flag)
-        .input('type', `${PREFIX}${r.type}`)
-        .input('code', r.code)
-        .input('name', r.name)
-        .query(
-          `INSERT INTO dbo.${COPY} (T_SEQ, T_FLAG, TYPE_CODE, TYPE_NAME, CODE, CODE_NAME, IF_YN) ` +
-            `VALUES (@seq, @flag, @type, N'단위코드', @code, @name, 'N')`,
-        );
+      await insertRow(sa, COPY, {
+        T_SEQ: r.seq,
+        T_FLAG: r.flag,
+        TYPE_CODE: `${PREFIX}${r.type}`,
+        TYPE_NAME: '단위코드',
+        CODE: r.code,
+        CODE_NAME: r.name,
+        IF_YN: 'N',
+      });
     }
   }
 
-  async function flags(): Promise<Record<string, string>> {
-    const result = await sa
-      .request()
-      .query<{ CODE: string; T_SEQ: string; IF_YN: string }>(
-        `SELECT CODE, T_SEQ, IF_YN FROM dbo.${COPY}`,
-      );
-    return Object.fromEntries(result.recordset.map((r) => [`${r.CODE}#${r.T_SEQ}`, r.IF_YN]));
-  }
+  const flags = () => flagsOf(sa, COPY, "CODE + '#' + CAST(T_SEQ AS nvarchar(20))", 'IF_YN');
 
   it('처음 받은 코드를 시스템 소유 그룹으로 만들고 원본을 Y 로 올린다', async () => {
     await insert([

@@ -153,6 +153,8 @@ const WORKER_TABLE_READERS = [
   'auth/terminal-quality-write-scope.ts',
   'auth/terminal-read-policy.ts',
   SHARED,
+  // ERP 사원 수신 — 원본 행의 사번으로 작업자를 만들고 고친다. 사번 헤더 판정이 아니다.
+  'integration/erp/apply/employee.apply.ts',
   'inventory/count/inventory-count-update.service.ts',
   // 첨부는 같은 트랜잭션에서 작업자를 재확인하고, LOT 완료는 감사 기록이 재확인한다.
   'maintenance/breakdown/breakdown-attachment.service.ts',
