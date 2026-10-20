@@ -124,8 +124,9 @@ describe('오퍼레이션 권한 매핑', () => {
     );
   });
 
-  // W-06-16~23(ERP 데이터 조회 8)은 설계 밖 관리웹 화면이다 — 장부 P-71. 그 화면이 부르는 조회는 계약에 403 이
-  // 없어 게이트가 보지 않으니 권한표에 적지 않았다. 사본이 403 을 붙이면 여기가 빨개진다 — 그때 수동표에 더한다.
+  // W-06-16~23(ERP 데이터 조회 8)은 IA 밖에서 생긴 관리웹 화면이다 — 장부 P-71. 그 화면이 부르는 조회는 계약에
+  // 403 이 없어 지금은 게이트가 보지 않는다. 사본이 403 을 붙이면 여기가 빨개진다 — 그때 W-06-16~23 만 가진 역할을
+  // 지키는 것은 아래 시험(도출표가 이미 그 화면을 싣는다)이다.
   it('⛔ ERP 데이터 조회 화면 여덟이 부르는 조회는 계약에 403 이 없다 — 장부 P-71', () => {
     const reads = [
       'GET /mdm/code-groups',
@@ -158,6 +159,63 @@ describe('오퍼레이션 권한 매핑', () => {
       return responses !== undefined && '403' in responses;
     });
     expect(gated).toEqual([]);
+  });
+
+  // 요구서 §3-15~§3-22(설계 omf-mes#666)가 화면마다 부르는 조회를 적었고, 도출표가 그것을 옮겼다. 이 화면 코드만
+  // 가진 역할이 자기 화면의 조회를 «하나라도» 못 부르면 그 탭이 빈 표나 이름 없는 코드로 선다.
+  it('⛔ ERP 데이터 조회 화면 여덟이 자기가 부르는 조회에 실려 있다 — 장부 P-71', () => {
+    const readsByScreen: Record<string, string[]> = {
+      'W-06-16': ['GET /mdm/workers', 'GET /mdm/workers/{workerId}'],
+      'W-06-17': ['GET /mdm/items', 'GET /mdm/items/{itemId}', 'GET /mdm/code-values', 'GET /mdm/uoms'],
+      'W-06-18': [
+        'GET /planning/boms',
+        'GET /planning/boms/{bomId}/components',
+        'GET /mdm/items',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+        'GET /mdm/uoms',
+      ],
+      'W-06-19': [
+        'GET /mdm/partners',
+        'GET /mdm/partners/{partnerId}',
+        'GET /mdm/partners/{partnerId}/roles',
+      ],
+      'W-06-20': ['GET /mdm/code-groups', 'GET /mdm/code-values'],
+      'W-06-21': [
+        'GET /logistics/purchase-orders',
+        'GET /logistics/purchase-orders/{purchaseOrderId}',
+        'GET /mdm/partners',
+        'GET /mdm/plants',
+        'GET /mdm/uoms',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+      ],
+      'W-06-22': [
+        'GET /logistics/sales-orders',
+        'GET /logistics/sales-orders/{salesOrderId}',
+        'GET /mdm/partners',
+        'GET /mdm/uoms',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/code-values',
+      ],
+      'W-06-23': [
+        'GET /planning/production-orders',
+        'GET /planning/production-orders/{productionOrderId}',
+        'GET /mdm/items',
+        'GET /mdm/items/{itemId}',
+        'GET /mdm/business-units',
+        'GET /mdm/plants',
+        'GET /mdm/uoms',
+        'GET /mdm/code-values',
+      ],
+    };
+
+    const missing = Object.entries(readsByScreen).flatMap(([screen, keys]) =>
+      keys
+        .filter((key) => !(OPERATION_PERMISSIONS[key] ?? []).includes(screen))
+        .map((key) => `${screen} → ${key}`),
+    );
+    expect(missing).toEqual([]);
   });
 
   it('⛔ 실사 치환과 마감은 서로 다른 소유 화면을 쓴다 — I-15 통보 274·275', () => {
