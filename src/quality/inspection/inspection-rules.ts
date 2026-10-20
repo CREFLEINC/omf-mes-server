@@ -191,7 +191,7 @@ export type ExpectedJudgment = 'ACCEPTED' | 'REJECTED' | 'HELD';
  * 합격판정개수(`inspection_plan_version.acceptance_number`) 기준 자동 판정(omf-all-around#125 · QI-02 · 장부 P-70).
  * 불합격 > 합격판정개수 → 불합격 · 아니면 보류 > 0 → 보류 · 아니면 합격.
  * ⛔ 합격판정개수가 없으면(기준 없음·칸 비움) 자동 판정이 없다 — `null`(사람이 고른 판정을 그대로 쓴다).
- * ⚠ 검사 유형을 보지 않는다 — 어느 검사에 걸지는 부르는 쪽이 정한다(지금은 IQC 만 · OQC 는 별도 이슈).
+ * ⚠ 검사 유형을 보지 않는다 — 어느 검사에 걸지는 부르는 쪽이 정한다(IQC·OQC · `JUDGMENT_RULE_TYPES`).
  */
 export function expectedJudgment(qty: JudgmentQuantities, acceptanceNumber: number | null): ExpectedJudgment | null {
   if (acceptanceNumber === null) return null;

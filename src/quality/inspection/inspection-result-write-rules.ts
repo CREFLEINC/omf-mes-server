@@ -200,12 +200,16 @@ export async function assertPqcAfterProduction(prisma: PrismaService, inspection
   ]);
 }
 
+/** 합격판정개수 기준 판정 규칙을 거는 검사 유형 — IQC(#125)·OQC(#126). PQC 는 범위 밖이다(담당자 결정 2026-10-20). */
+const JUDGMENT_RULE_TYPES = new Set(['IQC', 'OQC']);
+
 /**
- * IQC 확정의 판정 변경 사유(omf-all-around#125 · 장부 P-70) — 의뢰의 검사기준 버전에 합격판정개수가 있으면
+ * IQC·OQC 확정의 판정 변경 사유(omf-all-around#125·#126 · 장부 P-70) — 의뢰의 검사기준 버전에 합격판정개수가 있으면
  * 자동 판정과 다른 확정에 사유를 요구한다. 확정 경로 둘(`:confirm`·`POST` 확정)이 같은 함수를 부른다.
- * 기록할 사유(다르게 확정할 때만)를 돌려준다. IQC 가 아니거나 합격판정개수가 없으면 종전 그대로 `undefined`.
+ * 기록할 사유(다르게 확정할 때만)를 돌려준다. 대상 유형이 아니거나 합격판정개수가 없으면 종전 그대로 `undefined`.
+ * ⭐ OQC 는 출하 관문(`shipment-inspection.ts`)이 판정 코드만 본다 — 수량과 어긋난 합격을 여기서 막는다(#126).
  */
-export async function assertIqcJudgmentChange(
+export async function assertJudgmentChange(
   prisma: Pick<PrismaService, 'inspection_request'> | Prisma.TransactionClient,
   inspectionRequestId: bigint,
   input: JudgmentQuantities & { judgment: string; reason: string | undefined },
@@ -214,7 +218,7 @@ export async function assertIqcJudgmentChange(
     where: { inspection_request_id: inspectionRequestId },
     select: { inspection_type_code: true, inspection_plan_version: { select: { acceptance_number: true } } },
   });
-  if (request?.inspection_type_code !== 'IQC') return undefined;
+  if (request === null || !JUDGMENT_RULE_TYPES.has(request.inspection_type_code)) return undefined;
   const acceptanceNumber = request.inspection_plan_version?.acceptance_number ?? null;
   return assertJudgmentChangeReason(input, input.judgment, acceptanceNumber, input.reason);
 }

@@ -41,8 +41,8 @@ export interface InspectionResultCreate {
    */
   defects?: InspectionDefectInput[];
   /**
-   * IQC 확정(statusCode=CONFIRMED)의 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유
-   * (omf-all-around#125 · 장부 P-70). 작성중이거나 판정이 같으면 버린다.
+   * IQC·OQC 확정(statusCode=CONFIRMED)의 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유
+   * (omf-all-around#125·#126 · 장부 P-70). 작성중이거나 판정이 같으면 버린다.
    */
   judgmentChangeReason?: string;
 }

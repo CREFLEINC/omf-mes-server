@@ -21,7 +21,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
-import { assertAccountWorker, assertIqcJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
+import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
@@ -32,7 +32,7 @@ export interface InspectionResultConfirm {
   remarks?: string;
   /** IQC 불합격 사유 — 확정과 한 트랜잭션에서 그 회차의 불량 기록을 갈아 끼운다(장부 P-47 · omf-all-around#121). */
   defects?: InspectionDefectInput[];
-  /** IQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125). 같으면 버린다. */
+  /** IQC·OQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125·#126). 같으면 버린다. */
   judgmentChangeReason?: string;
 }
 
@@ -166,8 +166,8 @@ export class InspectionConfirmService {
         heldQty: Number(result.held_qty),
         overallJudgmentCode: judgment,
       });
-      // IQC 는 합격판정개수 기준 자동 판정과 다르면 변경 사유가 있어야 한다 — 사유는 비고 맨 앞에 남긴다(P-70 · #125).
-      const changeReason = await assertIqcJudgmentChange(tx, result.inspection_request_id, {
+      // IQC·OQC 는 합격판정개수 기준 자동 판정과 다르면 변경 사유가 있어야 한다 — 사유는 비고 맨 앞에 남긴다(P-70 · #125·#126).
+      const changeReason = await assertJudgmentChange(tx, result.inspection_request_id, {
         acceptedQty: Number(result.accepted_qty),
         rejectedQty: Number(result.rejected_qty),
         heldQty: Number(result.held_qty),
