@@ -76,17 +76,17 @@ export function parseLineListQuery(raw: Record<string, unknown>): PurchaseOrderL
 /**
  * 라인의 입하 진행 — 서버가 판정해 화면이 규칙을 복사하지 않게 한다.
  * 「다 들어왔다」는 받은 수량이 발주 수량에 닿았을 때다. 부족 허용치(`tolerance_under_qty`)는 빼지 않는다 —
- * 발주 목록 `openOnly` 와 같은 기준이다(I-2.md §6-4).
+ * 발주 목록 `openOnly` 와 같은 기준이다(I-2.md §6-4). 이름은 저장소의 진행 어휘(처분 진행 `DispositionProgressCode`)를 따른다.
  */
-export type ReceiptStatusCode = 'OPEN' | 'PARTIAL' | 'COMPLETE' | 'CANCELLED';
+export type ReceiptStatusCode = 'NOT_STARTED' | 'PARTIAL' | 'COMPLETED' | 'CANCELLED';
 
 type LineRow = Prisma.purchase_order_lineGetPayload<{ include: { purchase_order: true } }>;
 
 export function receiptStatusOf(row: LineRow): ReceiptStatusCode {
   // 헤더 취소는 MES 취소 · ERP 가 라인을 모두 취소한 경우다 — 어느 쪽이든 더 들어올 것이 없다.
   if (row.cancelled_at !== null || row.purchase_order.status_code === 'CANCELLED') return 'CANCELLED';
-  if (row.received_qty.greaterThanOrEqualTo(row.ordered_qty)) return 'COMPLETE';
-  return row.received_qty.greaterThan(0) ? 'PARTIAL' : 'OPEN';
+  if (row.received_qty.greaterThanOrEqualTo(row.ordered_qty)) return 'COMPLETED';
+  return row.received_qty.greaterThan(0) ? 'PARTIAL' : 'NOT_STARTED';
 }
 
 export interface PurchaseOrderLineListItem {
