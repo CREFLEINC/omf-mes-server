@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
@@ -40,6 +41,8 @@ import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
+import { PurchaseOrderLineListController } from './purchase-order/purchase-order-line-list.controller';
+import { PurchaseOrderLineListService } from './purchase-order/purchase-order-line-list.service';
 import { PurchaseOrderController } from './purchase-order/purchase-order.controller';
 import { PurchaseOrderService } from './purchase-order/purchase-order.service';
 import { RecycleEntryController } from './recycle-entry/recycle-entry.controller';
@@ -89,6 +92,8 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     OutboxModule,
     LotRegistryModule,
     DocumentProgressModule,
+    // 입하 예정 라인 목록(P-78)이 가드 밖이라 세션을 직접 푼다.
+    AuthModule,
   ],
   controllers: [
     GoodsIssueController,
@@ -97,6 +102,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayRuleController,
     PutawayTaskController,
     PurchaseOrderController,
+    PurchaseOrderLineListController,
     SalesOrderController,
     ShipmentAllocationController,
     ShippingUnitController,
@@ -124,6 +130,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayTaskService,
     PurchaseOrderService,
     PurchaseOrderQueryService,
+    PurchaseOrderLineListService,
     SalesOrderQueryService,
     AllocationPackingService,
     ShipmentAllocationQueryService,

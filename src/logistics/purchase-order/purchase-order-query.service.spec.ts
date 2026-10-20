@@ -62,7 +62,7 @@ describe('PurchaseOrderQueryService', () => {
 
       expect(calls.where?.AND).toEqual([{
         status_code: { notIn: ['CLOSED', 'CANCELLED'] },
-        purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } },
+        purchase_order_line: { some: { cancelled_at: null, received_qty: { lt: ORDERED_QTY_FIELD_REF } } },
       }]);
     });
 
@@ -87,7 +87,7 @@ describe('PurchaseOrderQueryService', () => {
       expect(calls.where?.AND).toEqual([
         { purchase_order_line: { some: { item_id: 42 } } },
         { status_code: { notIn: ['CLOSED', 'CANCELLED'] },
-          purchase_order_line: { some: { received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
+          purchase_order_line: { some: { cancelled_at: null, received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
       ]);
     });
 
