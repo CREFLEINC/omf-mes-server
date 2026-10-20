@@ -87,9 +87,11 @@ export class ProductionOrderController {
     @Req() request: Request,
     @Param('productionOrderId', ParseIntPipe) productionOrderId: number,
   ): Promise<AutoPlanResult> {
-    // 일은 멱등 트랜잭션 «밖»에서 한다(등록과 같은 까닭). 다시 해도 지금 상태로 다시 판정할 뿐이라 멱등 기록은 응답만 남긴다.
+    // 일은 멱등 트랜잭션 «밖»에서 한다(등록과 같은 까닭). 다시 해도 지금 상태로 다시 판정할 뿐이라 멱등 기록은 키만 잡고,
+    // 응답은 같은 키 재전송이라도 이번 판정이다 — 옛 응답을 돌려주면 방금 한 일(예: 확정)과 어긋난다.
     const result = await this.autoPlans.run(productionOrderId, currentSession(request)?.userId);
-    return runIdempotent(this.idempotency, request, HttpStatus.OK, () => Promise.resolve(result), FAMILY_CONFLICT_CODE);
+    await runIdempotent(this.idempotency, request, HttpStatus.OK, () => Promise.resolve(undefined), FAMILY_CONFLICT_CODE);
+    return result;
   }
 
   /** ⭐ 202 에 본문이 없다 — 계약이 content 를 주지 않았다. 결과는 연계 수신으로 온다. */

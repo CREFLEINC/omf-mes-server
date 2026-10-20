@@ -175,8 +175,11 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
   });
 
   describe(':auto-plan', () => {
+    /** 5·6 이 같은 키를 쓴다 — 재전송도 옛 응답이 아니라 이번 판정을 받는지 본다. */
+    const retryKey = randomUUID();
+
     it('5. 라인을 모르는 작성중 계획은 그대로 DRAFT 다', async () => {
-      const response = await autoPlan(moldOrderId).expect(200);
+      const response = await autoPlan(moldOrderId, retryKey).expect(200);
       const [draft] = await plansOf(moldOrderId);
 
       expect(response.body).toEqual({
@@ -188,7 +191,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       expect(validator('POST /planning/production-orders/{productionOrderId}:auto-plan')(response.body)).toBe(true);
     });
 
-    it('6. 계획 라인을 고른 뒤 다시 하면 그 작성중 계획을 확정한다', async () => {
+    it('6. 계획 라인을 고른 뒤 같은 키로 다시 보내도 그 작성중 계획을 확정하고 이번 결과를 받는다', async () => {
       const [draft] = await plansOf(moldOrderId);
       await request(app.getHttpServer())
         .put(`/api/planning/production-plans/${draft.production_plan_id}`)
@@ -198,7 +201,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
         .send({ plannedLineId: Number(lineId) })
         .expect(200);
 
-      const response = await autoPlan(moldOrderId).expect(200);
+      const response = await autoPlan(moldOrderId, retryKey).expect(200);
 
       expect(response.body).toEqual({
         productionOrderId: moldOrderId,
@@ -208,6 +211,7 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       });
       const [workOrder] = await workOrdersOf(draft.production_plan_id);
       expect(workOrder).toMatchObject({ production_line_id: lineId, planned_mold_id: moldId });
+      expect((await plansOf(moldOrderId)).map((plan) => plan.status_code)).toEqual(['CONFIRMED']);
     });
 
     it('7. 이미 수량을 채운 오더는 바꾸지 않고 CONFIRMED 다', async () => {
@@ -492,11 +496,11 @@ describe('ERP W/O 자동 계획 (e2e)', () => {
       .send({ productionOrderNo: `${PREFIX}-PO-${suffix}`, plantId: Number(plantId), itemId: Number(itemId), orderQty });
   }
 
-  function autoPlan(productionOrderId: number): request.Test {
+  function autoPlan(productionOrderId: number, idempotencyKey = randomUUID()): request.Test {
     return request(app.getHttpServer())
       .post(`/api/planning/production-orders/${productionOrderId}:auto-plan`)
       .set('Cookie', cookie)
-      .set('Idempotency-Key', randomUUID())
+      .set('Idempotency-Key', idempotencyKey)
       .send({});
   }
 
