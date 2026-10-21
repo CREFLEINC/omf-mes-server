@@ -16,7 +16,17 @@ function harness(
       updateMany: jest.fn().mockResolvedValue({ count: locked }),
       update: jest.fn(),
       findUniqueOrThrow: jest.fn().mockResolvedValue({
-        template: { steps: [{ step_code: 'PROCESS_1', items: [{ inspection_sheet_template_item_id: 101n }] }] },
+        template: {
+          steps: [
+            {
+              step_code: 'PROCESS_1',
+              items: [
+                { inspection_sheet_template_item_id: 101n, method_code: 'FULL' },
+                { inspection_sheet_template_item_id: 102n, method_code: 'SAMPLE' },
+              ],
+            },
+          ],
+        },
         step_results: [],
       }),
     },
@@ -137,6 +147,25 @@ describe('InspectionSheetEntryService', () => {
       await errorOf(service.writeStep(9, 'SHIPMENT', 1, { firstJudgmentCode: 'OK', finalJudgmentCode: 'OK', items: [] }, { workerId: 8n })),
     ).toMatchObject({ field: 'stepCode', code: 'STATE_LOCKED' });
     expect(tx.inspection_sheet_step_result.upsert).not.toHaveBeenCalled();
+  });
+
+  it('전수 항목이 남았으면 NG 가 있어도 단계 판정을 저장하지 않는다 — 400 items INVALID', async () => {
+    const { service, tx } = harness();
+
+    expect(
+      await errorOf(
+        service.writeStep(9, 'PROCESS_1', 1, { firstJudgmentCode: 'NG', finalJudgmentCode: 'NG', items: [{ inspectionSheetTemplateItemId: 102, judgmentCode: 'NG' }] }, { workerId: 8n }),
+      ),
+    ).toMatchObject({ field: 'items', code: 'INVALID' });
+    expect(tx.inspection_sheet_step_result.upsert).not.toHaveBeenCalled();
+  });
+
+  it('전수 항목을 다 판정했으면 발취 항목이 비어도 단계 판정을 저장한다', async () => {
+    const { service, tx } = harness();
+
+    await service.writeStep(9, 'PROCESS_1', 1, { firstJudgmentCode: 'OK', finalJudgmentCode: 'OK', items: ITEMS }, { workerId: 8n });
+
+    expect(tx.inspection_sheet_step_result.upsert).toHaveBeenCalled();
   });
 
   it('NG 블록은 통째로 갈아 끼우고, 수리 담당은 사번을 작업자로 푼다', async () => {

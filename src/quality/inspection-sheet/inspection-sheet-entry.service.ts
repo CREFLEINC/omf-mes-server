@@ -142,6 +142,7 @@ export class InspectionSheetEntryService {
         await saveItemDraft(tx, id, stepCode, input.items);
         return;
       }
+      await assertFullItemsJudged(tx, id, stepCode, input.items);
       await this.sheets.recordStep(
         tx,
         serialNumberId,
@@ -273,6 +274,38 @@ async function saveItemDraft(
       create: { inspection_sheet_id: id, inspection_sheet_template_item_id: templateItemId, judgment_code: item.judgmentCode },
       update: { judgment_code: item.judgmentCode, updated_at: new Date() },
     });
+  }
+}
+
+/**
+ * 단계 판정은 전수 항목을 모두 판정한 뒤에만 정한다(담당자 실검증 2026-10-21 — NG 가 있어도 남은 전수 항목이 있으면 임시 저장).
+ * 발취 항목은 비어도 된다. 남으면 400 `items`·`INVALID`.
+ */
+async function assertFullItemsJudged(
+  tx: Prisma.TransactionClient,
+  id: number,
+  stepCode: string,
+  items: InspectionSheetStepWrite['items'],
+): Promise<void> {
+  const sheet = await tx.inspection_sheet.findUniqueOrThrow({
+    where: { inspection_sheet_id: id },
+    select: {
+      template: {
+        select: {
+          steps: {
+            where: { step_code: stepCode },
+            select: { items: { select: { inspection_sheet_template_item_id: true, method_code: true } } },
+          },
+        },
+      },
+    },
+  });
+  const judged = new Set(items.map((item) => BigInt(item.inspectionSheetTemplateItemId)));
+  const missing = (sheet.template.steps[0]?.items ?? []).filter(
+    (item) => item.method_code === 'FULL' && !judged.has(item.inspection_sheet_template_item_id),
+  );
+  if (missing.length > 0) {
+    throw fieldError('items', ERROR_CODE.INVALID, `전수 항목을 모두 판정해야 단계 판정을 저장합니다(남은 전수 항목 ${missing.length}개).`);
   }
 }
 
