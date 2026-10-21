@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MAX_OPEN_WORKERS, WORKER_ROLE } from './crew';
+import { EMPLOYED_WORKER, MAX_OPEN_WORKERS, NOT_EMPLOYED_MESSAGE, WORKER_ROLE } from './crew';
 import { assertLeftAfterJoined, assertSessionVersion, lockWorkSession } from './work-session-rules';
 import { WORK_SESSION_WORKER_INCLUDE, WorkSessionWorkerView, workSessionWorkerView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
@@ -36,8 +36,12 @@ export class WorkSessionWorkerService {
     body: WorkSessionWorkerJoin,
     context: WorkSessionWorkerContext,
   ): Promise<WorkSessionWorkerView> {
-    if ((await this.prisma.worker.count({ where: { worker_id: BigInt(body.workerId) } })) === 0) {
-      throw one(field('workerId', ERROR_CODE.INVALID, '없는 참조입니다.'));
+    const worker = await this.prisma.worker.findUnique({
+      where: { worker_id: BigInt(body.workerId) }, select: { status_code: true, is_active: true },
+    });
+    if (worker === null) throw one(field('workerId', ERROR_CODE.INVALID, '없는 참조입니다.'));
+    if (worker.status_code !== EMPLOYED_WORKER.status_code || !worker.is_active) {
+      throw one(field('workerId', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
     }
     if (body.workerRoleCode !== undefined && body.workerRoleCode !== WORKER_ROLE.SUB) {
       throw one(field('workerRoleCode', ERROR_CODE.INVALID, '작업 중에는 부작업자로만 참여합니다.'));

@@ -28,7 +28,7 @@ const context = (extra: Partial<WorkSessionContext> = {}): WorkSessionContext =>
   ...extra,
 });
 
-function stub(options: { status?: string; maxSessionNo?: number | null; openSession?: boolean; canStartWork?: boolean | null; timezone?: string } = {}) {
+function stub(options: { status?: string; maxSessionNo?: number | null; openSession?: boolean; canStartWork?: boolean | null; timezone?: string; notEmployed?: bigint[] } = {}) {
   const created: Row[] = [];
   const events: Row[] = [];
   const workers: Row[] = [];
@@ -129,9 +129,12 @@ function stub(options: { status?: string; maxSessionNo?: number | null; openSess
     worker: {
       // 헤더 축(`assertWorkerNoExists`)은 `findUnique`, 아래 `count` 는 본문 `workerIds` «명단» 축이다.
       findUnique: () => Promise.resolve({ worker_id: 1n }),
+      // `status_code` 가 걸린 조회는 재직자만 센다 — `notEmployed` 에 든 사람은 빠진다.
       count: ({ where }: { where: Row }) => {
-        const ids = (where.worker_id as { in?: unknown[] } | undefined)?.in;
-        return Promise.resolve(ids === undefined ? 1 : ids.length);
+        const target = where.worker_id as { in?: bigint[] } | bigint;
+        const ids = typeof target === 'bigint' ? [target] : (target.in ?? []);
+        const employedOnly = where.status_code !== undefined;
+        return Promise.resolve(ids.filter((id) => !employedOnly || !(options.notEmployed ?? []).includes(id)).length);
       },
     },
     shift: { count: () => Promise.resolve(1) },
@@ -223,6 +226,16 @@ describe('WorkSessionService.create', () => {
       expect(error.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID' });
       expect(it0.workers).toEqual([]);
     }
+  });
+
+  it('재직 중이 아닌 사람은 주작업자(X-Worker-No)도 부작업자(workerIds)도 될 수 없다', async () => {
+    const main = stub({ notEmployed: [1n] });
+    const mainError = (await main.service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
+    expect(mainError.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+    const sub = stub({ notEmployed: [8n] });
+    const subError = (await sub.service.create(body({ workerIds: [7, 8] }), context()).catch((e: unknown) => e)) as ContractException;
+    expect(subError.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+    expect(sub.workers).toEqual([]);
   });
 
   it('controlOverride.note 는 저장하지 않는다 — 담을 칸이 없다', async () => {

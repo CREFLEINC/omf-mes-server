@@ -368,6 +368,23 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(rows.map((row) => row.joined_at.toISOString())).toEqual([START_AT, START_AT, START_AT]);
     });
 
+    it('재직 중이 아닌 사람은 주작업자로 시작하지도, 부작업자로 넣지도, 작업 중 참여하지도 못한다', async () => {
+      const asMain = await openSession({ workOrderId: await workOrder('RELEASED'), startedAt: START_AT }, { workerNo: `${PREFIX}-W-OUT` }).expect(400);
+      expect(asMain.body.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+
+      const asSub = await openSession({ workOrderId: await workOrder('RELEASED'), startedAt: START_AT, workerIds: [Number(ids.resigned)] }).expect(400);
+      expect(asSub.body.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+
+      const opened = await openSession({ workOrderId: await workOrder('RELEASED'), startedAt: START_AT }).expect(201);
+      const joined = await request(app.getHttpServer())
+        .post(`${BASE}/${opened.body.workSessionId}/workers`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', idem())
+        .send({ workerId: Number(ids.resigned), joinedAt: START_AT })
+        .expect(400);
+      expect(joined.body.errors[0]).toMatchObject({ field: 'workerId', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+    });
+
     it('workerIds 에 시작한 사람이 있거나 함께 4명을 넘으면 400 이고 세션을 열지 않는다', async () => {
       for (const workerIds of [[ids.worker1, ids.worker2], [ids.worker2, ids.worker3, ids.worker4, ids.worker5]]) {
         const workOrderId = await workOrder('RELEASED');
@@ -1124,6 +1141,10 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         data: { worker_no: `${PREFIX}-W${no}`, worker_name: `작업세션검사작업자${no}`, business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
       })).worker_id;
     }
+    // 퇴사자 — 사용 중 표시가 남아 있어도 상태로 막혀야 한다.
+    ids.resigned = (await prisma.worker.create({
+      data: { worker_no: `${PREFIX}-W-OUT`, worker_name: '작업세션검사퇴사자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'RESIGNED', is_active: true },
+    })).worker_id;
 
     const order = await prisma.production_order.create({
       data: { production_order_no: `${PREFIX}-PO`, business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, item_id: item.item_id, order_qty: 100, uom_id: uom.uom_id, status_code: 'CONFIRMED' },
