@@ -113,6 +113,7 @@ function fake(options: Options = {}) {
               expiry_date: null,
               status_code: 'REGISTERED',
               lot_id: null,
+              inbound_receipt_excess: [],
             }))
           : existing.map((row) => ({ ...row, received_qty: new Prisma.Decimal(row.received_qty) })),
       deleteMany: async ({ where }: { where: Args }) => {

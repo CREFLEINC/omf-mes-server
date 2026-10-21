@@ -8,6 +8,7 @@ import { InboundVarianceService } from './inbound-variance.service';
 type Args = Record<string, unknown>;
 
 const lineRow = (overrides: Args = {}): Args => ({
+  inbound_receipt_excess: [],
   inbound_receipt_line_id: 1n,
   inbound_receipt_id: 1n,
   line_no: 1,

@@ -21,13 +21,26 @@ export async function cancelInboundReceipt(
 ): Promise<void> {
   const lines = await tx.inbound_receipt_line.findMany({
     where: { inbound_receipt_id: documentId },
-    select: { purchase_order_line_id: true, received_qty: true },
+    select: {
+      purchase_order_line_id: true,
+      received_qty: true,
+      inbound_receipt_excess: { select: { excess_qty: true, purchase_order_line_id: true } },
+    },
   });
-  const attributed = lines.flatMap((line) =>
-    line.purchase_order_line_id === null
+  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어갔고, 이어진 초과분은 그 P/O 라인에 들어갔다(장부 P-100).
+  const attributed = lines.flatMap((line) => [
+    ...(line.purchase_order_line_id === null
       ? []
-      : [{ lineId: line.purchase_order_line_id, qty: line.received_qty }],
-  );
+      : [
+          {
+            lineId: line.purchase_order_line_id,
+            qty: line.inbound_receipt_excess.reduce((qty, excess) => qty.minus(excess.excess_qty), line.received_qty),
+          },
+        ]),
+    ...line.inbound_receipt_excess.flatMap((excess) =>
+      excess.purchase_order_line_id === null ? [] : [{ lineId: excess.purchase_order_line_id, qty: excess.excess_qty }],
+    ),
+  ]);
   if (attributed.length === 0) return;
   const lineIds = attributed.map((line) => line.lineId);
 
