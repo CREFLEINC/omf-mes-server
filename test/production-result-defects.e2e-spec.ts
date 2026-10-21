@@ -50,7 +50,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
   const keys: string[] = [];
   const ids = {
     uom: 0n, worker: 0n, terminal: 0n, process: 0n, otherProcess: 0n, workOrder: 0n, equipment: 0n,
-    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, bubble: 0n, gas: 0n, oil: 0n, plant: 0n,
+    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, bubble: 0n, gas: 0n, oil: 0n, plant: 0n, session: 0n, mold: 0n,
   };
 
   beforeAll(async () => {
@@ -100,6 +100,18 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
         detected_at: new Date(OCCURRED_AT), created_by: null,
       });
     }
+  });
+
+  it('세션을 실은 실적이 설비를 생략하면 불량 기록은 세션의 설비·금형을 쓴다 — 실적 행은 그대로 비운다', async () => {
+    const response = await record({
+      goodQty: 3, workSessionId: Number(ids.session), defects: [{ defectCodeId: Number(ids.scratch), qty: 1 }],
+    }).expect(201);
+
+    const resultId = BigInt(response.body.productionResultId);
+    expect(await prisma.production_result.findUniqueOrThrow({ where: { production_result_id: resultId } }))
+      .toMatchObject({ equipment_id: null, mold_id: null });
+    expect(await prisma.defect_record.findFirstOrThrow({ where: { production_result_id: resultId } }))
+      .toMatchObject({ equipment_id: ids.equipment, mold_id: ids.mold });
   });
 
   it('⭐ 양품 0 · 불량만 있는 실적을 받는다', async () => {
@@ -376,6 +388,14 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       order_qty: 100, uom_id: uom.uom_id, status_code: 'RELEASED', production_line_id: line.production_line_id,
       released_at: new Date(OCCURRED_AT),
     } })).work_order_id;
+    ids.mold = (await prisma.mold.create({ data: {
+      plant_id: plant.plant_id, mold_code: `${PREFIX}-MOLD`, mold_name: '실적불량금형', status_code: 'ACTIVE', tool_type_code: 'MOLD',
+    } })).mold_id;
+    // 설비·금형을 건 세션 — 본문에 설비를 생략한 실적의 불량 기록이 이 값을 쓴다.
+    ids.session = (await prisma.work_session.create({ data: {
+      work_order_id: ids.workOrder, session_no: 1, equipment_id: ids.equipment, mold_id: ids.mold, terminal_id: terminal.terminal_id,
+      started_at: new Date('2026-10-21T01:00:00.000Z'), status_code: 'IN_PROGRESS', idempotency_key: `${PREFIX}-WS-1`,
+    } })).work_session_id;
 
     const user = await prisma.app_user.create({ data: { login_id: LOGIN_ID, user_name: '실적불량조회', status_code: 'EMPLOYED' } });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
@@ -405,7 +425,9 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       `DELETE FROM app.approval_request WHERE target_type_code = 'PRODUCTION_RESULT'
         AND target_id IN (SELECT production_result_id FROM production.production_result WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
+      `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`,
+      `DELETE FROM mdm.mold WHERE mold_code LIKE '${PREFIX}%'`,
       `DELETE FROM planning.routing_operation WHERE routing_id IN (SELECT routing_id FROM planning.routing WHERE routing_code LIKE '${PREFIX}%')`,
       `DELETE FROM planning.routing WHERE routing_code LIKE '${PREFIX}%'`,
       `DELETE FROM mdm.equipment WHERE equipment_code LIKE '${PREFIX}%'`,
