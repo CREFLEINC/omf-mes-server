@@ -1265,6 +1265,18 @@ const SEED: CodeGroupSeed[] = [
     values: [],
   },
   {
+    // 4M 변경품의 변경 종류(omf-all-around#63 · 장부 P-86) — 고객 회신 전 기본 4종. 마이그
+    // `20261021150000_lot_four_m_change` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
+    groupCode: 'FOUR_M_CHANGE_TYPE',
+    groupName: '4M 변경 종류',
+    values: [
+      { code: 'MAN', codeName: '사람', order: 10 },
+      { code: 'MACHINE', codeName: '설비', order: 20 },
+      { code: 'MATERIAL', codeName: '자재', order: 30 },
+      { code: 'METHOD', codeName: '방법', order: 40 },
+    ],
+  },
+  {
     // ERP 수신이 이 둘 사이만 옮긴다 — MES 에는 수주 상태를 바꾸는 길이 없다(장부 P-72).
     groupCode: 'SALES_ORDER_STATUS',
     groupName: '수주 상태',
