@@ -8,6 +8,7 @@ import { ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { oaPlantIds } from '../../core/inspection-sheet';
 import { accessibleScreenCodes } from './terminal-accessible-screens';
 import {
   ReferenceQuery,
@@ -16,6 +17,8 @@ import {
   referencePage,
   referenceWhere,
 } from '../../common/master';
+
+const INSPECTION_SHEET_SCREEN = 'P-02-15';
 
 /** 계약 `Terminal` 과 동형. 설비 코드·명을 함께 실어 왕복 한 번을 없앤다(계약). */
 interface TerminalView {
@@ -354,7 +357,12 @@ export class TerminalService {
         can_input_inspection: true, can_print_label: true, can_complete_work: true,
       },
     });
-    return accessibleScreenCodes(rows);
+    const codes = accessibleScreenCodes(rows);
+    // 제품 검사표 입력(P-02-15)은 OA 공장 단말에만(omf-all-around#89 · 장부 P-102 · 담당자 결정 2026-10-21).
+    if (!codes.includes(INSPECTION_SHEET_SCREEN)) return codes;
+    const terminal = await this.prisma.terminal.findUnique({ where: { terminal_id: terminalId }, select: { plant_id: true } });
+    const oa = terminal !== null && (await oaPlantIds(this.prisma)).includes(terminal.plant_id);
+    return oa ? codes : codes.filter((code) => code !== INSPECTION_SHEET_SCREEN);
   }
 
   private async readProcesses(terminalId: number): Promise<TerminalProcessView[]> {

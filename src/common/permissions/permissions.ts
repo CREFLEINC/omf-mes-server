@@ -71,6 +71,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'P-02-13', name: 'PQC 제품 검사·검사 결과 입력', groupCode: '02' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(사용자 결정 · 장부 P-52).
   { code: 'P-02-14', name: '자재 불량 등록', groupCode: '02' },
+  // ⚠ 생성기 산출물이 아니다 — 설계 밖 POP 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
+  { code: 'P-02-15', name: '제품 검사표 입력', groupCode: '02' },
   { code: 'W-02-01', name: 'ERP W/O 수신·조회', groupCode: '02' },
   { code: 'W-02-02', name: 'W/O 전개·편성', groupCode: '02' },
   { code: 'W-02-03', name: '4M 자원배정·유효성 점검', groupCode: '02' },
@@ -91,6 +93,10 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-03-11', name: 'PQC 검사 등록·조회', groupCode: '03' },
   // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#64 · 장부 P-87).
   { code: 'W-03-12', name: '검사 수준 관리', groupCode: '03' },
+  // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
+  { code: 'W-03-13', name: '제품 검사표 조회·출력', groupCode: '03' },
+  // ⚠ 생성기 산출물이 아니다 — 같은 조회 화면의 서명·승인 권한을 따로 둔다(omf-all-around#89 · 장부 P-102 · 담당자 결정 ③).
+  { code: 'W-03-14', name: '제품 검사표 서명·승인', groupCode: '03' },
   // 04 제품 출하
   { code: 'M-04-01', name: '제품LOT 피킹 스캔', groupCode: '04' },
   { code: 'M-04-03', name: '포장 재구성 스캔', groupCode: '04' },
@@ -158,6 +164,8 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-06-21', name: '구매발주 조회(ERP)', groupCode: '06' },
   { code: 'W-06-22', name: '수주정보 조회(ERP)', groupCode: '06' },
   { code: 'W-06-23', name: 'ERP W/O 조회(ERP)', groupCode: '06' },
+  // ⚠ 생성기 산출물이 아니다 — 설계 밖 관리웹 화면이라 손으로 넣었다(omf-all-around#89 · 장부 P-102).
+  { code: 'W-06-24', name: '검사표 기준', groupCode: '06' },
   // CO 공통
   { code: 'M-CO-01', name: '기기 등록·사번 인증', groupCode: 'CO' },
   { code: 'P-CO-01', name: '사번 경량 인증', groupCode: 'CO' },

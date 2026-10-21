@@ -1265,6 +1265,31 @@ const SEED: CodeGroupSeed[] = [
     values: [],
   },
   {
+    // OA 제품 검사표를 쓰는 공장 코드(omf-all-around#89 · 장부 P-102 · 담당자 결정 2026-10-21) — 사업부가 부품·OA 를 함께
+    // 가져 공장으로 가른다. 마이그 `20261021190000_inspection_sheet_plant` 에도 같은 줄이 있다.
+    groupCode: 'INSPECTION_SHEET_PLANT',
+    groupName: '제품 검사표 사용 공장(OA)',
+    isSystemOwned: true,
+    values: [{ code: 'PL13', codeName: 'OA Plant', order: 10 }],
+  },
+  {
+    // OA 제품 검사표의 단계(omf-all-around#89 · 장부 P-102) — 출력 배치가 이 코드로 칸을 고른다. 마이그
+    // `20261021170000_inspection_sheet` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
+    groupCode: 'INSPECTION_SHEET_STEP',
+    groupName: '제품 검사표 단계',
+    isSystemOwned: true,
+    values: [
+      { code: 'PROCESS_1', codeName: '공정검사1', order: 10 },
+      { code: 'PROCESS_2', codeName: '공정검사2', order: 20 },
+      { code: 'PROCESS_3', codeName: '공정검사3', order: 30 },
+      { code: 'PROCESS_4', codeName: '공정검사4', order: 40 },
+      { code: 'PROCESS_5', codeName: '공정검사5', order: 50 },
+      { code: 'SHIPMENT', codeName: '출하검사', order: 60 },
+      { code: 'CROSS_CHECK', codeName: '검사 교차 확인', order: 70 },
+      { code: 'SAMPLING', codeName: '발취(샘플) 검사', order: 80 },
+    ],
+  },
+  {
     // 4M 변경품의 변경 종류(omf-all-around#63 · 장부 P-86) — 고객 회신 전 기본 4종. 마이그
     // `20261021150000_lot_four_m_change` 에도 같은 줄이 있다(배포는 시드를 안 돌린다).
     groupCode: 'FOUR_M_CHANGE_TYPE',
@@ -1619,6 +1644,12 @@ const ROLES = [
       // 알림 연결 설정·발송 이력(omf-all-around#160 · 장부 P-92) — 같은 이유다.
       'W-CO-12',
       'W-CO-13',
+      // 검사표 기준(omf-all-around#89 · 장부 P-102) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
+      'W-06-24',
+      // 제품 검사표 조회·출력(omf-all-around#89 · 장부 P-102) — 설계 밖 화면이라 시드가 주지 않으면 아무도 메뉴를 볼 수 없다.
+      'W-03-13',
+      // 제품 검사표 서명·승인(#89 · 장부 P-102) — 설계 밖 권한이라 시드가 주지 않으면 아무도 서명할 수 없다.
+      'W-03-14',
       // 「ERP 연동 현황·이력」 묶음의 첫 탭 — 연동 기록·실패 재처리(사용자 결정 2026-10-20 · 장부 P-71).
       'W-06-10',
       // 관리웹 ERP 데이터 조회 여덟(W-06-16~23 · 시스템 관리 > ERP 연동 현황·이력의 탭 · 장부 P-71) —
