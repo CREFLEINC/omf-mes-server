@@ -23,6 +23,7 @@ export interface InspectionRequestListQuery {
 
 /** ⭐ 정의를 값으로 못박은 파생 축(계약) — `pendingOnly=true` ⇔ 이 2값. */
 const PENDING_STATUS_CODES = ['REQUESTED', 'IN_PROGRESS'];
+const IQC = 'IQC';
 
 /** 계약에 `sort` 가 없다 — 검사 대기 큐라 「오래 기다린 것부터」로 서버가 고정한다(§4-1). */
 const ORDER_BY: Prisma.inspection_requestOrderByWithRelationInput[] = [
@@ -45,7 +46,8 @@ export class InspectionRequestService {
       }),
       this.prisma.inspection_request.count({ where }),
     ]);
-    return pagedResponse(rows.map(inspectionRequestView), total, page);
+    const levels = await iqcInspectionLevels(this.prisma, rows);
+    return pagedResponse(rows.map((row, index) => inspectionRequestView(row, levels[index])), total, page);
   }
 
   async detail(inspectionRequestId: number, scope?: TerminalQualityReadScope): Promise<InspectionRequestView> {
@@ -55,8 +57,34 @@ export class InspectionRequestService {
       include: FOUR_M_CHANGE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
-    return inspectionRequestView(row);
+    const [level] = await iqcInspectionLevels(this.prisma, [row]);
+    return inspectionRequestView(row, level);
   }
+}
+
+/**
+ * IQC 의뢰의 검사 수준(#64 · 장부 P-87). 확정 때 기록한 값이 있으면 그것(그 LOT 을 검사한 수준)이고, 아직 대기·진행이면
+ * 품목의 현재 수준이다. 수준 미설정 품목·IQC 밖 의뢰·기록 없이 끝난 의뢰는 비운다 — 지금 수준을 지난 검사에 붙이지 않는다.
+ */
+async function iqcInspectionLevels(
+  prisma: PrismaService,
+  rows: readonly { inspection_type_code: string; status_code: string; item_id: bigint; inspection_level_code: string | null }[],
+): Promise<(string | undefined)[]> {
+  const isCurrent = (row: (typeof rows)[number]) =>
+    row.inspection_type_code === IQC && row.inspection_level_code === null && PENDING_STATUS_CODES.includes(row.status_code);
+  const itemIds = [...new Set(rows.filter(isCurrent).map((row) => row.item_id))];
+  const levels =
+    itemIds.length === 0
+      ? []
+      : await prisma.item_inspection_level.findMany({
+          where: { item_id: { in: itemIds } },
+          select: { item_id: true, inspection_level_code: true },
+        });
+  const byItem = new Map(levels.map((level) => [level.item_id, level.inspection_level_code]));
+  return rows.map((row) => {
+    if (row.inspection_type_code !== IQC) return undefined;
+    return row.inspection_level_code ?? (isCurrent(row) ? byItem.get(row.item_id) : undefined);
+  });
 }
 
 function buildWhere(query: InspectionRequestListQuery): Prisma.inspection_requestWhereInput {
