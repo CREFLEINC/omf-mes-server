@@ -60,7 +60,7 @@ export const CONFIRMED_INSPECTION_ONLY: Prisma.defect_recordWhereInput = {
 };
 
 /**
- * 생산 실적의 유형별 내역(원천 FIELD)은 «정정되지 않은» 실적 것만 센다(장부 P-89). 정정은 새 행을 덧붙이고 내역을
+ * 생산 실적의 유형별 내역(원천 FIELD)은 «정정되지 않은» 실적 것만 센다(장부 P-95). 정정은 새 행을 덧붙이고 내역을
  * 정정본에 다시 적으므로, 원본 것까지 세면 두 배가 된다. 다른 원천으로 실적에 단 기록은 정정과 무관한 사건이라 센다.
  * ⛔ `NOT { … }` 로 쓰지 않는다 — 원천·실적 칸이 null 인 행까지 빠질 수 있다. `CONFIRMED_INSPECTION_ONLY` 의 `OR` 과
  *    부딪히지 않게 `AND` 로 감싼다. 같은 조건의 SQL 판이 `dashboard-nonconformance.service.ts` 의 `LATEST_RESULT_RECORD` 다.

@@ -135,7 +135,7 @@ export class ProductionResultCorrectService {
     });
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
     // 유형을 실으면 그것이 정정본의 내역이다. 안 실으면 불량수량이 같을 때만 원본 내역을 옮긴다 — 수량이 바뀌면
-    // 옛 내역과 합이 어긋나 내역 없이 수량만 남긴다(관리웹 정정 화면이 유형을 받지 않는다 · 장부 P-89).
+    // 옛 내역과 합이 어긋나 내역 없이 수량만 남긴다(관리웹 정정 화면이 유형을 받지 않는다 · 장부 P-95).
     const inputs = body.defects ?? [];
     if (inputs.length > 0) await writeDefects(tx, row, inputs, prepared.defectProcessId, context.appUserId);
     else if (row.defect_qty.equals(original.defect_qty)) await copyDefects(tx, row, original.production_result_id, context.appUserId);
