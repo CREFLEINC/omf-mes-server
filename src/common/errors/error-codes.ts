@@ -81,6 +81,9 @@ export const ERROR_CODE = {
   // 그 둘은 `REQUIRED`/`INVALID` 를 쓰기 때문이다. I-6.md §1-6.
   REMAINDER_DISPOSITION_REQUIRED: 'REMAINDER_DISPOSITION_REQUIRED',
   REMAINDER_DISPOSITION_NOT_ALLOWED: 'REMAINDER_DISPOSITION_NOT_ALLOWED',
+  // 결재 알림(`APPROVAL_ACTION_REQUIRED`)은 그 차례 결재자에게 가서 수신자 목록이 없다 — 보내면 400.
+  // `INVALID`(중복·없는·중지 사용자)와 갈라야 화면이 「목록을 비워라」를 따로 말한다(장부 P-92).
+  RECIPIENTS_NOT_ALLOWED: 'RECIPIENTS_NOT_ALLOWED',
 } as const;
 
 /** 계약에 없는 응답이라 봉투만 맞춰 내보내는 자리. 근거: 계약에 5xx 정의가 없다. */

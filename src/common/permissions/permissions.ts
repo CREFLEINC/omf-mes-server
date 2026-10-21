@@ -171,6 +171,9 @@ export const PERMISSIONS: readonly Permission[] = [
   { code: 'W-CO-09', name: '결재함(승인 요청 목록)', groupCode: 'CO' },
   { code: 'W-CO-10', name: '비밀번호 변경', groupCode: 'CO' },
   { code: 'W-CO-11', name: '알람 수신자 설정', groupCode: 'CO' },
+  // 설계 저장소 생성본에 없는 화면 둘 — 피처 001 이벤트 알림(omf-all-around#160 · 장부 P-92). 시드가 관리자에게 준다.
+  { code: 'W-CO-12', name: '알림 연결 설정', groupCode: 'CO' },
+  { code: 'W-CO-13', name: '알림 발송 이력', groupCode: 'CO' },
 ];
 
 /** 권한 부여 요청이 「없는 코드」를 담았는지 가르는 자리. 계약이 그 검사를 요구한다. */
