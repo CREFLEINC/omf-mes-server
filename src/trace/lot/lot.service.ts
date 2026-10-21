@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { omitEmpty } from '../../common/http/omit-empty';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import {
@@ -31,6 +32,7 @@ import {
   workOrderWhere,
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
+import { type FourMChangeRow, fourMChangeView } from '../../quality/inspection/four-m-change';
 import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
 import type { LotWriteActor } from './lot-write-actor';
 
@@ -142,14 +144,18 @@ export class LotService {
       this.prisma.lot.findMany({
         where,
         // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
-        include: { lot_hold: true },
+        include: { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } } },
         orderBy: [{ created_at: 'desc' }, { lot_id: 'desc' }],
         skip: page.skip,
         take: page.take,
       }),
       this.prisma.lot.count({ where }),
     ]);
-    return pagedResponse(rows.map(lotView), total, page);
+    return pagedResponse(
+      rows.map((row) => omitEmpty({ ...lotView(row), fourMChange: fourMChangeView(row.lot_four_m_change) })),
+      total,
+      page,
+    );
   }
 
   /** `withProgress` 는 **단건에만** 있다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로 기본은 끈다⌝. */
@@ -161,10 +167,11 @@ export class LotService {
     });
     return {
       detail: {
-        lot: {
+        lot: omitEmpty({
           ...lotView(row),
           ...(withProgress ? { progress: await this.progress(row) } : {}),
-        },
+          fourMChange: fourMChangeView(row.lot_four_m_change),
+        }),
         externalIdentifiers: identifiers.map(identifierView),
         // 「해제되지 않은 보류를 함께 내린다」(계약) — 푼 것은 이력이지 지금 상태가 아니다.
         holds: row.lot_hold.filter((h) => h.released_at === null).map((h) => holdView(h, row)),
@@ -409,12 +416,14 @@ export class LotService {
     ]);
   }
 
-  private async row(lotId: number): Promise<LotRow> {
+  private async row(lotId: number): Promise<LotRow & { lot_four_m_change: FourMChangeRow | null }> {
     const row = await this.prisma.lot.findUnique({
       where: { lot_id: lotId },
       // ⭐ R-5 — `GET .../holds` 와 같은 정렬(0단계 선례 `lot-hold-query.service.ts:45`).
       include: {
         lot_hold: { orderBy: [{ held_at: 'desc' }, { lot_hold_id: 'desc' }] },
+        // 4M 변경품(장부 P-86) — 단건도 싣는다(POP 러닝 체인지·LOT 상태 상세 · omf-all-around#63 2단계).
+        lot_four_m_change: { select: { change_type_code: true, remarks: true } },
       },
     });
     if (!row) throw new NotFoundException('없는 LOT 입니다.');

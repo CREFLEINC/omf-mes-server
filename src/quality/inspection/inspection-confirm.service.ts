@@ -25,6 +25,7 @@ import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } fr
 import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
 import { prepareConfirmDefects, syncConfirmDefectsWithin } from './inspection-rejection-defects';
 import { CONFIRMED, assertConfirmedShape, remarksWithJudgmentChange } from './inspection-rules';
+import { type FourMChangeInput, prepareFourMChangeOfResult, writeFourMChangeWithin } from './four-m-change';
 import { allocateIqcNonconformanceNo, createIqcNonconformanceWithin, needsIqcNonconformance } from './iqc-nonconformance';
 
 /** 계약 `InspectionResultConfirm` — required **0** · 프로퍼티 4. 판정을 비우면 저장된 값을 쓴다. */
@@ -35,6 +36,8 @@ export interface InspectionResultConfirm {
   defects?: InspectionDefectInput[];
   /** IQC·OQC 판정이 합격판정개수 기준 자동 판정과 다를 때의 변경 사유(장부 P-70 · omf-all-around#125·#126). 같으면 버린다. */
   judgmentChangeReason?: string;
+  /** 4M 변경품 — 확정과 한 트랜잭션에서 그 LOT 의 한 줄을 갈아 끼운다(장부 P-86 · omf-all-around#63). */
+  fourMChange?: FourMChangeInput | null;
 }
 
 /** `applyConfirmEffects()` 의 입력 — 확정 경로 둘이 각자 모아 «같은 모양»으로 넘긴다. */
@@ -127,6 +130,7 @@ export class InspectionConfirmService {
     const workerId = await assertAccountWorker(this.prisma, appUserId);
     const resultId = BigInt(inspectionResultId);
     const preparedDefects = await prepareConfirmDefects(this.prisma, this.defects, resultId, body);
+    const fourMChange = await prepareFourMChangeOfResult(this.prisma, resultId, body.fourMChange);
     // IQC 불합격이면 부적합 번호를 트랜잭션 «밖»에서 받는다(P-41 · 채번 규약). 판정은 본문이 우선이다.
     const stored = await this.prisma.inspection_result.findUnique({
       where: { inspection_result_id: resultId },
@@ -189,6 +193,7 @@ export class InspectionConfirmService {
         actor: { appUserId, workerId },
       });
       await assertRejectionRecorded(tx, resultId, result.inspection_request_id, judgment);
+      await writeFourMChangeWithin(tx, fourMChange, appUserId);
       await tx.inspection_result.update({
         where: { inspection_result_id: resultId },
         data: {

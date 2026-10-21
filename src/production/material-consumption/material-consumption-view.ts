@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import { type FourMChangeRow, fourMChangeView } from '../../quality/inspection/four-m-change';
 
 /**
  * 계약 `MaterialConsumption`(25칸 · required 12)로 옮기는 자리. 목록·단건이 **같은 매퍼**를
@@ -11,7 +12,15 @@ import { omitEmpty } from '../../common/http/omit-empty';
  *    칸이 NULL 이다. 설계 미정 — 문의 054.
  * ⛔ 물리에만 있는 `idempotency_key`·감사칸·`version_no` 는 계약에 칸이 없어 내지 않는다.
  */
-export type MaterialConsumptionRow = Prisma.material_consumptionGetPayload<object>;
+export type MaterialConsumptionRow = Prisma.material_consumptionGetPayload<object> & {
+  /** 투입 LOT 의 4M 변경품(장부 P-86 · omf-all-around#63 2단계) — 조회가 `FOUR_M_CHANGE_OF_LOT` 로 실을 때만. */
+  lot?: { lot_four_m_change: FourMChangeRow | null } | null;
+};
+
+/** 투입 LOT 의 4M 변경품 한 줄 — 목록·단건이 같이 싣는다. */
+export const FOUR_M_CHANGE_OF_LOT = {
+  lot: { select: { lot_four_m_change: { select: { change_type_code: true, remarks: true } } } },
+} satisfies Prisma.material_consumptionInclude;
 export type MaterialConsumptionView = ReturnType<typeof materialConsumptionView>;
 
 export function materialConsumptionView(row: MaterialConsumptionRow) {
@@ -43,6 +52,7 @@ export function materialConsumptionView(row: MaterialConsumptionRow) {
     terminalId: id(row.terminal_id),
     statusCode: row.status_code,
     remarks: row.remarks ?? undefined,
+    fourMChange: fourMChangeView(row.lot?.lot_four_m_change),
   });
 }
 

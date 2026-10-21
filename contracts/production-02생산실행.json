@@ -3996,7 +3996,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-86"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4105,7 +4105,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-86"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4570,6 +4570,24 @@
    "MaterialConsumption": {
     "type": "object",
     "properties": {
+     "fourMChange": {
+      "type": "object",
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "description": "공통코드 FOUR_M_CHANGE_TYPE",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 투입 LOT 의 4M 변경품 — IQC 판정 때 그 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 작업지시의 「4M 변경 자재 투입」 표시가 읽는다. 서버 선행 · 장부 P-86 · omf-all-around#63"
+     },
      "materialConsumptionId": {
       "type": "integer",
       "format": "int64",
@@ -6147,7 +6165,7 @@
      },
      "workerAllocations": {
       "type": "array",
-      "description": "이 실적을 그 구간에 참여한 작업자에게 나눈 몫 — 늘 싣는다(없으면 빈 배열: 세션 없는 실적·참여자 없는 세션). 구간은 같은 세션의 직전 실적(정정본 제외)부터 이 실적까지, 첫 실적이면 세션 시작부터. 정정 실적은 원 실적의 비율로 나눈다. 주작업자가 먼저다. 장부 P-86",
+      "description": "이 실적을 그 구간에 참여한 작업자에게 나눈 몫 — 늘 싣는다(없으면 빈 배열: 세션 없는 실적·참여자 없는 세션). 구간은 같은 세션의 직전 실적(정정본 제외)부터 이 실적까지, 첫 실적이면 세션 시작부터. 정정 실적은 원 실적의 비율로 나눈다. 주작업자가 먼저다. 장부 P-87",
       "items": {
        "$ref": "#/components/schemas/ProductionResultWorkerAllocation"
       }
@@ -6177,7 +6195,7 @@
    },
    "ProductionResultWorkerAllocation": {
     "type": "object",
-    "description": "생산 실적 한 건의 작업자별 몫 — 실적 구간에 참여한 시간 비율로 다섯 수량을 나눴다(소수 여섯째 자리 반올림, 끝전은 주작업자). 참여 시간이 모두 0 이면 주작업자가 전부다. 장부 P-86",
+    "description": "생산 실적 한 건의 작업자별 몫 — 실적 구간에 참여한 시간 비율로 다섯 수량을 나눴다(소수 여섯째 자리 반올림, 끝전은 주작업자). 참여 시간이 모두 0 이면 주작업자가 전부다. 장부 P-87",
     "properties": {
      "workerId": {
       "type": "integer",
@@ -7743,12 +7761,12 @@
      "workerNo": {
       "type": "string",
       "example": "900028",
-      "description": "참여한 사람의 사번. 장부 P-86"
+      "description": "참여한 사람의 사번. 장부 P-87"
      },
      "workerName": {
       "type": "string",
       "example": "값",
-      "description": "참여한 사람의 이름. 장부 P-86"
+      "description": "참여한 사람의 이름. 장부 P-87"
      },
      "workerRoleCode": {
       "type": "string",
@@ -7765,7 +7783,7 @@
      "participatedMinutes": {
       "type": "number",
       "example": 45.5,
-      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-86"
+      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-87"
      },
      "leftAt": {
       "type": "string",

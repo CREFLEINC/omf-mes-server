@@ -5,7 +5,7 @@ import { ERROR_CODE, field, one } from '../../common/errors';
 import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { MaterialConsumptionView, materialConsumptionView } from './material-consumption-view';
+import { FOUR_M_CHANGE_OF_LOT, MaterialConsumptionView, materialConsumptionView } from './material-consumption-view';
 
 /** 계약 질의 8 전건 — 필수는 하나도 없다. 형·기본값은 `@Contract` 가드가 이미 맞춰 둔다. */
 export interface MaterialConsumptionListQuery {
@@ -50,22 +50,24 @@ export class MaterialConsumptionQueryService {
     };
 
     const [rows, total] = await Promise.all([
-      // ⛔ `include` 를 쓰지 않는다 — `MaterialConsumption` 에 표시 라벨 칸이 0개다(I-10 §5-1).
+      // 표시 라벨은 싣지 않는다(I-10 §5-1). 투입 LOT 의 4M 변경품만 싣는다(장부 P-86 · #63 2단계).
       this.prisma.material_consumption.findMany({
         where,
+        include: FOUR_M_CHANGE_OF_LOT,
         orderBy: MATERIAL_CONSUMPTION_ORDER_BY,
         skip: page.skip,
         take: page.take,
       }),
       this.prisma.material_consumption.count({ where }),
     ]);
-    return pagedResponse(rows.map(materialConsumptionView), total, page);
+    return pagedResponse(rows.map((row) => materialConsumptionView(row)), total, page);
   }
 
   /** 없으면 404(계약 선언). 목록과 **같은 매퍼**를 쓴다 — 상세 전용 스키마가 없다(§5-2). */
   async detail(materialConsumptionId: number): Promise<MaterialConsumptionView> {
     const row = await this.prisma.material_consumption.findUnique({
       where: { material_consumption_id: BigInt(materialConsumptionId) },
+      include: FOUR_M_CHANGE_OF_LOT,
     });
     if (row === null) throw new NotFoundException('없는 자재 투입입니다.');
     return materialConsumptionView(row);
