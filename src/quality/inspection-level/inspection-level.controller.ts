@@ -16,7 +16,7 @@ import {
   ItemInspectionLevelView,
 } from './inspection-level.service';
 
-/** 품목별 IQC 검사 수준(omf-all-around#64 · 장부 P-85). 화면은 품질 관리 › 검사 수준 관리(`W-03-12`)다. */
+/** 품목별 IQC 검사 수준(omf-all-around#64 · 장부 P-87). 화면은 품질 관리 › 검사 수준 관리(`W-03-12`)다. */
 @Controller('quality')
 export class InspectionLevelController {
   constructor(

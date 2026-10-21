@@ -1,5 +1,5 @@
 /**
- * 품목별 IQC 검사 수준(omf-all-around#64 · 장부 P-85). 샘플 수량·판정 기준은 바꾸지 않는다 — 표시·기록만.
+ * 품목별 IQC 검사 수준(omf-all-around#64 · 장부 P-87). 샘플 수량·판정 기준은 바꾸지 않는다 — 표시·기록만.
  * ⭐ 셈 규칙은 `nextInspectionLevel` «한 곳»이다 — 담당자 결정(2026-10-21)이 바뀌면 여기만 고친다.
  */
 export const INSPECTION_LEVELS = ['NONE', 'REDUCED', 'NORMAL', 'TIGHTENED'] as const;

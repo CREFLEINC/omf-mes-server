@@ -3624,7 +3624,7 @@ model lot_four_m_change {
   @@schema("quality")
 }
 
-/// 품목별 IQC 검사 수준과 자동 전환 상태(omf-all-around#64 · 장부 P-85). 행이 없는 품목은 수준 미설정이다.
+/// 품목별 IQC 검사 수준과 자동 전환 상태(omf-all-around#64 · 장부 P-87). 행이 없는 품목은 수준 미설정이다.
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model item_inspection_level {
   item_inspection_level_id                            BigInt    @id @default(autoincrement())
@@ -3644,7 +3644,7 @@ model item_inspection_level {
   @@schema("quality")
 }
 
-/// 검사 수준 전환 이력(장부 P-85). AUTO 는 연속 합격 수 또는 불합격 의뢰, MANUAL 은 사유를 남긴다.
+/// 검사 수준 전환 이력(장부 P-87). AUTO 는 연속 합격 수 또는 불합격 의뢰, MANUAL 은 사유를 남긴다.
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model item_inspection_level_history {
   item_inspection_level_history_id BigInt              @id @default(autoincrement())

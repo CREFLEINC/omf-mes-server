@@ -16,7 +16,7 @@ export const FOUR_M_CHANGE_INCLUDE = {
 
 export type InspectionRequestView = ReturnType<typeof inspectionRequestView>;
 
-/** `inspectionLevelCode` — IQC 검사 수준(#64 · 장부 P-85). 고르는 규칙은 `iqcInspectionLevels` 가 갖는다. */
+/** `inspectionLevelCode` — IQC 검사 수준(#64 · 장부 P-87). 고르는 규칙은 `iqcInspectionLevels` 가 갖는다. */
 export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string) {
   return omitEmpty({
     inspectionRequestId: Number(row.inspection_request_id),

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionRequestService } from './inspection-request.service';
 
-/** omf-all-around#64 — IQC 의뢰 응답의 검사 수준(장부 P-85). 기존 칸은 그대로, 칸 하나만 더한다. */
+/** omf-all-around#64 — IQC 의뢰 응답의 검사 수준(장부 P-87). 기존 칸은 그대로, 칸 하나만 더한다. */
 
 const row = (id: number, overrides: Record<string, unknown> = {}) => ({
   inspection_request_id: BigInt(id),

@@ -5,7 +5,7 @@ import { ConflictException, ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionLevelService } from './inspection-level.service';
 
-/** omf-all-around#64 — 품목 검사 수준 지정·수동 변경(장부 P-85). */
+/** omf-all-around#64 — 품목 검사 수준 지정·수동 변경(장부 P-87). */
 
 const levelRow = (overrides: Record<string, unknown> = {}) => ({
   item_inspection_level_id: 5n,

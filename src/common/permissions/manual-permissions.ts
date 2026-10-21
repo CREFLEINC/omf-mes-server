@@ -104,7 +104,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ #108(PQC 자재 불량)이 자기 화면을 여기 더한다.
   // #108 — 의심자재 등록(W-03-03)의 자재 불량 기록 · POP 자재 불량 등록(P-02-14)(장부 P-52).
   'POST /quality/defect-records': ['W-01-01', 'W-03-03', 'P-02-14'],
-  // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-85).
+  // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
   'POST /quality/item-inspection-levels': ['W-03-12'],
   'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이

@@ -1,7 +1,7 @@
 import { Tx } from '../../core/lot';
 import { countIqcJudgmentWithin, IqcJudgmentCount } from './inspection-level-switch';
 
-/** omf-all-around#64 — IQC 확정이 품목 검사 수준을 센다(장부 P-85). */
+/** omf-all-around#64 — IQC 확정이 품목 검사 수준을 센다(장부 P-87). */
 
 interface Level {
   inspection_level_code: string;

@@ -1,4 +1,4 @@
--- 품목별 IQC 검사 수준과 자동 전환(omf-all-around#64 · 장부 P-85).
+-- 품목별 IQC 검사 수준과 자동 전환(omf-all-around#64 · 장부 P-87).
 -- ⭐ 품목(mdm.item)에 칸을 달지 않는다 — 품목은 ERP 수신본이라 MES 가 고치지 않는다. 행이 없는 품목은 지금처럼 동작한다.
 -- 수준: NONE(무검사) · REDUCED(수월) · NORMAL(보통) · TIGHTENED(엄격). 샘플 수량·판정 기준은 바꾸지 않는다 — 표시·기록만.
 CREATE TABLE quality.item_inspection_level (

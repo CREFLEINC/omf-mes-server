@@ -7,7 +7,7 @@ import { PagedResponse, pagedResponse, pageRequest } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionLevelCode } from './inspection-level-rules';
 
-/** 계약 `ItemInspectionLevel`(장부 P-85). 품목 코드·이름은 화면이 따로 풀지 않게 함께 싣는다. */
+/** 계약 `ItemInspectionLevel`(장부 P-87). 품목 코드·이름은 화면이 따로 풀지 않게 함께 싣는다. */
 export interface ItemInspectionLevelView {
   itemInspectionLevelId: number;
   itemId: number;

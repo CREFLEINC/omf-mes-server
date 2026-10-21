@@ -63,7 +63,7 @@ export class InspectionRequestService {
 }
 
 /**
- * IQC 의뢰의 검사 수준(#64 · 장부 P-85). 확정 때 기록한 값이 있으면 그것(그 LOT 을 검사한 수준)이고, 아직 대기·진행이면
+ * IQC 의뢰의 검사 수준(#64 · 장부 P-87). 확정 때 기록한 값이 있으면 그것(그 LOT 을 검사한 수준)이고, 아직 대기·진행이면
  * 품목의 현재 수준이다. 수준 미설정 품목·IQC 밖 의뢰·기록 없이 끝난 의뢰는 비운다 — 지금 수준을 지난 검사에 붙이지 않는다.
  */
 async function iqcInspectionLevels(

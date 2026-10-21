@@ -2948,7 +2948,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 목록",
-    "description": "품목 코드 순. q 는 품목 코드·이름을 훑는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "품목 코드 순. q 는 품목 코드·이름을 훑는다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "name": "itemId",
@@ -3031,7 +3031,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 지정",
-    "description": "없는 품목이면 400 itemId INVALID, 이미 지정된 품목이면 400 UNIQUE_VIOLATION. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "없는 품목이면 400 itemId INVALID, 이미 지정된 품목이면 400 UNIQUE_VIOLATION. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -3098,7 +3098,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 수동 변경",
-    "description": "수준이 바뀌는데 사유가 없으면 400 reason REQUIRED. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "수준이 바뀌는데 사유가 없으면 400 reason REQUIRED. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -3185,7 +3185,7 @@
      "quality"
     ],
     "summary": "검사 수준 전환 이력",
-    "description": "최근 것부터. from·to 는 전환 일시(UTC) 범위. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "최근 것부터. from·to 는 전환 일시(UTC) 범위. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "name": "itemId",
@@ -4418,7 +4418,7 @@
        "NORMAL",
        "TIGHTENED"
       ],
-      "description": "IQC 검사 수준 — 확정된 의뢰는 검사한 그 수준(기록값), 아직이면 품목의 현재 수준. 수준 미설정 품목·IQC 밖 의뢰는 생략된다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+      "description": "IQC 검사 수준 — 확정된 의뢰는 검사한 그 수준(기록값), 아직이면 품목의 현재 수준. 수준 미설정 품목·IQC 밖 의뢰는 생략된다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
       "example": "NORMAL"
      }
     },
@@ -5964,7 +5964,7 @@
    },
    "ItemInspectionLevel": {
     "type": "object",
-    "description": "품목별 IQC 검사 수준과 자동 전환 상태. 행이 없는 품목은 수준 미설정이다(지금처럼 동작). 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "품목별 IQC 검사 수준과 자동 전환 상태. 행이 없는 품목은 수준 미설정이다(지금처럼 동작). 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "required": [
      "itemInspectionLevelId",
      "itemId",
@@ -6026,7 +6026,7 @@
    },
    "ItemInspectionLevelCreate": {
     "type": "object",
-    "description": "품목 검사 수준 최초 지정 — 전환 이력에 수동(MANUAL) 1건이 남는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "품목 검사 수준 최초 지정 — 전환 이력에 수동(MANUAL) 1건이 남는다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "required": [
      "itemId",
      "inspectionLevelCode"
@@ -6062,7 +6062,7 @@
    },
    "ItemInspectionLevelUpdate": {
     "type": "object",
-    "description": "수동 변경. 생략 = 유지. 수준이 바뀌면 사유가 필수이고 이력 1건이 남으며 연속 합격 수가 0 이 된다. 품목은 바꾸지 않는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "수동 변경. 생략 = 유지. 수준이 바뀌면 사유가 필수이고 이력 1건이 남으며 연속 합격 수가 0 이 된다. 품목은 바꾸지 않는다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "properties": {
      "inspectionLevelCode": {
       "type": "string",
@@ -6088,7 +6088,7 @@
    },
    "ItemInspectionLevelHistory": {
     "type": "object",
-    "description": "검사 수준 전환 이력. 자동(AUTO)은 연속 합격 수(consecutiveAcceptCount) 또는 불합격 의뢰(inspectionRequestNo)를, 수동(MANUAL)은 입력 사유(reason)를 싣는다. 최초 지정은 fromLevelCode 가 null 이고 사유가 비어 있을 수 있다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "검사 수준 전환 이력. 자동(AUTO)은 연속 합격 수(consecutiveAcceptCount) 또는 불합격 의뢰(inspectionRequestNo)를, 수동(MANUAL)은 입력 사유(reason)를 싣는다. 최초 지정은 fromLevelCode 가 null 이고 사유가 비어 있을 수 있다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "required": [
      "itemInspectionLevelHistoryId",
      "itemId",
