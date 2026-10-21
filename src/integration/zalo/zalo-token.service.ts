@@ -43,9 +43,10 @@ export class ZaloTokenService {
 
     const result = await this.client.refresh(row.app_id, this.box.open(row.secret_key_enc), this.box.open(row.refresh_token_enc));
     if (result.ok) {
-      // 조건부 갱신 — 그 사이 관리자가 갱신 토큰을 바꿨으면(판이 올랐으면) 덮지 않는다.
-      await this.prisma.zalo_connection.updateMany({
-        where: { zalo_connection_id: ZALO_CONNECTION_ID, version_no: row.version_no, refresh_token_enc: row.refresh_token_enc },
+      // ⛔ 판(version_no)으로 거르지 않는다 — 관리자가 템플릿만 저장해도 판이 올라 0건이 되고, 이미 회전된
+      //    새 토큰을 잃어 다음 갱신이 REAUTH_REQUIRED 로 끊긴다. 갱신 토큰을 관리자가 바꾼 때만 덮지 않는다.
+      const saved = await this.prisma.zalo_connection.updateMany({
+        where: { zalo_connection_id: ZALO_CONNECTION_ID, refresh_token_enc: row.refresh_token_enc },
         data: {
           access_token_enc: this.box.seal(result.accessToken),
           refresh_token_enc: this.box.seal(result.refreshToken),
@@ -56,12 +57,16 @@ export class ZaloTokenService {
           updated_at: new Date(),
         },
       });
+      if (saved.count === 0) {
+        this.logger.warn('Zalo 토큰을 갱신했지만 그 사이 관리자가 갱신 토큰을 바꿔 새 토큰을 저장하지 않았다 — 관리자가 넣은 토큰으로 다시 갱신한다');
+      }
       return { accessToken: result.accessToken };
     }
     // 네트워크·5xx 는 연결 상태를 바꾸지 않는다 — 다음 tick 에 다시 해 본다.
     this.logger.warn(`Zalo 토큰 갱신 실패(${result.code}) — ${result.transient ? '일시 장애' : '재인증 필요'}`);
     await this.prisma.zalo_connection.updateMany({
-      where: { zalo_connection_id: ZALO_CONNECTION_ID, version_no: row.version_no },
+      // 성공 쪽과 같은 이유로 판이 아니라 «쓴 갱신 토큰»으로 거른다 — 관리자가 새 토큰을 넣었으면 그대로 둔다.
+      where: { zalo_connection_id: ZALO_CONNECTION_ID, refresh_token_enc: row.refresh_token_enc },
       data: {
         ...(result.transient ? {} : { status_code: 'REAUTH_REQUIRED' }),
         // -124 로 무효임을 안 접속 토큰은 버린다 — 남겨 두면 갱신이 될 때까지 회차마다 같은 토큰으로 보내고 -124 를 받는다.

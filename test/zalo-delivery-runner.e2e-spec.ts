@@ -168,6 +168,39 @@ describe('Zalo 발송 러너 (e2e · 대역)', () => {
     expect(stub.requests.map((r) => r.path)).toEqual(['/v4/oa/access_token', '/message/template']);
   });
 
+  it('US7-2 갱신 요청 중 관리자가 템플릿만 저장해(판이 올라도) 회전된 새 토큰을 잃지 않는다', async () => {
+    const real = new ZaloClient({ apiBaseUrl: stub.url, oauthBaseUrl: stub.url });
+    const racing = new ZaloTokenService(prisma, box, {
+      refresh: async (...args: Parameters<ZaloClient['refresh']>) => {
+        // 갱신이 Zalo 에 가 있는 사이 W-CO-12 가 템플릿만 저장한다 — 판(version_no)만 오른다.
+        await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { version_no: { increment: 1 } } });
+        return real.refresh(...args);
+      },
+    });
+    const access = await racing.access(NOW, true);
+
+    const saved = await prisma.zalo_connection.findUniqueOrThrow({ where: { zalo_connection_id: 1 } });
+    expect(box.open(saved.refresh_token_enc as string)).toMatch(/^stub-refresh-/);
+    expect(box.open(saved.access_token_enc as string)).toBe(access?.accessToken);
+  });
+
+  it('갱신 요청 중 관리자가 갱신 토큰을 바꿨으면 관리자 값을 덮지 않는다', async () => {
+    const real = new ZaloClient({ apiBaseUrl: stub.url, oauthBaseUrl: stub.url });
+    const racing = new ZaloTokenService(prisma, box, {
+      refresh: async (...args: Parameters<ZaloClient['refresh']>) => {
+        await prisma.zalo_connection.update({
+          where: { zalo_connection_id: 1 }, data: { refresh_token_enc: box.seal('admin-new'), access_token_enc: null, version_no: { increment: 1 } },
+        });
+        return real.refresh(...args);
+      },
+    });
+    await racing.access(NOW, true);
+
+    const saved = await prisma.zalo_connection.findUniqueOrThrow({ where: { zalo_connection_id: 1 } });
+    expect(box.open(saved.refresh_token_enc as string)).toBe('admin-new');
+    expect(saved.access_token_enc).toBeNull();
+  });
+
   it('US7-2 대기 건이 없어도 12시간마다 갱신한다', async () => {
     await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { last_refreshed_at: new Date(NOW.getTime() - 13 * HOUR) } });
     await runner.tick(NOW);
