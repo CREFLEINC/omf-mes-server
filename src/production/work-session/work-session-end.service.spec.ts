@@ -16,8 +16,13 @@ function stub(options: { status?: string } = {}) {
   const updates: Row[] = [];
   const events: Row[] = [];
   const touched = new Set<string>();
+  const closed: unknown[][] = [];
 
   const target = {
+    $executeRaw: (_sql: TemplateStringsArray, ...values: unknown[]) => {
+      closed.push(values);
+      return Promise.resolve(1);
+    },
     $queryRaw: () =>
       Promise.resolve([
         { started_at: new Date(STARTED_AT), status_code: options.status ?? 'RUNNING', version_no: 1 },
@@ -62,7 +67,7 @@ function stub(options: { status?: string } = {}) {
     $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
 
-  return { service: new WorkSessionEndService(prisma, new DocumentStateService(), { notify: () => Promise.resolve() } as unknown as WorkOrderNotifier), updates, events, touched };
+  return { service: new WorkSessionEndService(prisma, new DocumentStateService(), { notify: () => Promise.resolve() } as unknown as WorkOrderNotifier), updates, events, touched, closed };
 }
 
 describe('WorkSessionEndService.end', () => {
@@ -72,6 +77,12 @@ describe('WorkSessionEndService.end', () => {
     expect(view.statusCode).toBe('ENDED');
     expect([...it0.touched]).not.toContain('work_order');
     expect(it0.events[0]).toMatchObject({ event_type_code: 'END', terminal_id: 77n });
+  });
+
+  it(':end 가 남은 참여자를 종료 시각으로 닫는다', async () => {
+    const it0 = stub();
+    await it0.service.end(SESSION, { endedAt: ENDED_AT }, context);
+    expect(it0.closed).toEqual([[new Date(ENDED_AT), BigInt(SESSION)]]);
   });
 
   it(':end 는 terminal_process 를 읽지 않는다', async () => {
