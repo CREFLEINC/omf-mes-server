@@ -73,8 +73,9 @@ export class DefectCodeService {
 
   async list(query: DefectCodeQuery): Promise<PagedResponse<DefectCodeView>> {
     const page = referencePage(query);
+    // 공정별 조회는 사용 여부를 상세에만 건다(`byProcess`) — 대분류 행은 묶음 머리라 자기 사용 여부와 무관하다.
     const where = referenceWhere(
-      query,
+      query.processId === undefined ? query : { ...query, includeInactive: true },
       { code: 'defect_code', name: 'defect_name' },
       { ...byProcess(query), ...filter('parent_defect_code_id', query.parentDefectCodeId) },
     );
@@ -273,7 +274,7 @@ function view(row: DefectCodeRow): DefectCodeView {
  * 공정별 불량 코드 — 정본은 `defect_code_process` 매핑이다(`defect_code.process_id` 가 아니다).
  * 고를 수 있는 것은 매핑된 상세뿐이다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-89).
  * 그 상세의 대분류 행도 함께 내린다 — POP 이 상세를 대분류로 묶어 보여 주는데 이름을 얻을 다른 길이 없다.
- * 대분류 자신의 매핑은 보지 않는다 — 고를 상세가 없는 대분류는 빈 묶음이다.
+ * 대분류 자신의 매핑·사용 여부는 보지 않는다 — 실린 상세가 있으면 그 이름을 보여야 하고, 고를 상세가 없으면 빈 묶음이다.
  * ⛔ `AND` 로 감싼다 — `referenceWhere` 의 검색어가 최상위 `OR` 을 쓴다.
  */
 function byProcess(query: DefectCodeQuery): Prisma.defect_codeWhereInput {

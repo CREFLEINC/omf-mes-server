@@ -157,7 +157,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       .expect(200);
 
     const codes = response.body.items.map((row: { defectCode: string }) => row.defectCode).sort();
-    // 다른 공정에만 매핑된 상세와, 고를 상세가 없는 대분류는 빠진다.
+    // 다른 공정에만 매핑된 상세와, 고를 상세가 없는 대분류는 빠진다. 비활성 대분류 APP 은 실린 상세가 있어 나온다.
     expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-DNT`, `${PREFIX}-SCR`]);
     const parent = response.body.items.find((row: { defectCode: string }) => row.defectCode === `${PREFIX}-APP`);
     expect(parent.parentDefectCodeId).toBeNull();
@@ -208,6 +208,8 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       defect_code: `${PREFIX}-${suffix}`, defect_name: name, name_vi: `${name}-vi`, parent_defect_code_id: parentId,
     } })).defect_code_id;
     ids.parent = await code('APP', '외관', null);
+    // 대분류는 묶음 머리라 비활성이어도 실린 상세가 있으면 조회에 나온다.
+    await prisma.defect_code.update({ where: { defect_code_id: ids.parent }, data: { is_active: false } });
     ids.scratch = await code('SCR', '긁힘', ids.parent);
     ids.dent = await code('DNT', '찍힘', ids.parent);
     ids.otherProcessCode = await code('BRK', '파손', ids.parent);

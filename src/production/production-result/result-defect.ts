@@ -40,6 +40,10 @@ export function resolveDefectQty(body: { defectQty?: number; defects?: readonly 
   let sum = 0;
   for (const [index, row] of defects.entries()) {
     if (!(row.qty > 0)) throw one(field(`defects[${index}].qty`, ERROR_CODE.RANGE, '불량 수량은 0보다 커야 합니다.'));
+    // 칸이 소수 여섯째 자리까지다 — 넘는 값은 저장 때 반올림돼 0 이 되면 CHECK 위반(500)이고, 아니어도 합이 어긋난다.
+    if (round6(row.qty) !== row.qty) {
+      throw one(field(`defects[${index}].qty`, ERROR_CODE.RANGE, '불량 수량은 소수 여섯째 자리까지입니다.'));
+    }
     // ⛔ `UNIQUE_VIOLATION` 이 아니다 — 요청 «안»의 중복은 저장 충돌이 아니라 입력 오류다.
     if (seen.has(row.defectCodeId)) {
       throw one(field(`defects[${index}].defectCodeId`, ERROR_CODE.INVALID, '같은 불량 코드를 두 번 실을 수 없습니다.'));

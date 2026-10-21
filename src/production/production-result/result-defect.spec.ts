@@ -55,6 +55,14 @@ describe('생산 실적 불량 유형', () => {
     expect(() => resolveDefectQty({ defects: [{ defectCodeId: 1, qty: 0 }] })).toThrow(ContractException);
   });
 
+  it('소수 여섯째 자리를 넘는 불량 유형 수량은 400 RANGE', () => {
+    const defects = [{ defectCodeId: 1, qty: 1 }, { defectCodeId: 2, qty: 0.0000001 }];
+    expect(() => resolveDefectQty({ defects })).toThrow(
+      expect.objectContaining({ errors: [expect.objectContaining({ field: 'defects[1].qty', code: 'RANGE' })] }),
+    );
+    expect(resolveDefectQty({ defects: [{ defectCodeId: 1, qty: 0.000001 }] })).toBe(0.000001);
+  });
+
   it('대분류·비활성·없는 코드·W/O 공정에 매핑되지 않은 코드는 400 — 줄마다 짚는다', async () => {
     const prisma = prismaWith(codes([{ id: 1, parent: null }, { id: 2, active: false }, { id: 3, mapped: false }, { id: 4 }]));
     const defects = [1, 2, 3, 4, 5].map((defectCodeId) => ({ defectCodeId, qty: 1 }));
