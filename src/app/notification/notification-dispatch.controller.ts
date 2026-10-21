@@ -4,7 +4,7 @@ import { Contract } from '../../common/contract';
 import { PagedResponse } from '../../common/pagination';
 import { DeliveryQuery, DispatchQuery, NotificationDispatchService } from './notification-dispatch.service';
 
-/** 알림 발송 이력(W-CO-13 · 장부 P-97). */
+/** 알림 발송 이력(W-CO-13 · 장부 P-98). */
 @Controller('app')
 export class NotificationDispatchController {
   constructor(private readonly dispatches: NotificationDispatchService) {}

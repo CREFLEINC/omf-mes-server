@@ -113,10 +113,10 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'GET /app/notification-settings/recipient-candidates': ['W-CO-11'],
   'GET /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
   'PUT /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
-  // Zalo 연결 설정 — 설계 밖 화면 W-CO-12(알림 연결 설정)의 조회·저장이다(omf-all-around#160 · 장부 P-95).
+  // Zalo 연결 설정 — 설계 밖 화면 W-CO-12(알림 연결 설정)의 조회·저장이다(omf-all-around#160 · 장부 P-96).
   'GET /app/zalo-connection': ['W-CO-12'],
   'PUT /app/zalo-connection': ['W-CO-12'],
-  // 알림 발송 이력 — 설계 밖 화면 W-CO-13(알림 발송 이력)의 두 목록이다(omf-all-around#160 · 장부 P-97).
+  // 알림 발송 이력 — 설계 밖 화면 W-CO-13(알림 발송 이력)의 두 목록이다(omf-all-around#160 · 장부 P-98).
   'GET /app/notification-dispatches': ['W-CO-13'],
   'GET /app/zalo-deliveries': ['W-CO-13'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이

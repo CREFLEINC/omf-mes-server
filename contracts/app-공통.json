@@ -3901,7 +3901,7 @@
      "app"
     ],
     "summary": "Zalo 연결 정보 조회",
-    "description": "⛔ 비밀값 원문은 내리지 않는다 — secretKeySet·refreshTokenSet 만(FR-028). 행이 없으면 미설정으로 읽고 행을 만들지 않는다. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "description": "⛔ 비밀값 원문은 내리지 않는다 — secretKeySet·refreshTokenSet 만(FR-028). 행이 없으면 미설정으로 읽고 행을 만들지 않는다. 근거: 서버 선행 · 장부 P-96 · omf-all-around#160(피처 001 W-CO-12)",
     "responses": {
      "200": {
       "description": "연결 정보",
@@ -3938,7 +3938,7 @@
      "app"
     ],
     "summary": "Zalo 연결 정보 저장",
-    "description": "비밀 키·갱신 토큰은 보낼 때만 교체하고 서버가 AES-256-GCM 으로 암호화해 둔다. 갱신 토큰을 교체하면 접속 토큰을 비운다. appId·비밀 키·갱신 토큰이 모두 있으면 ACTIVE, 하나라도 없으면 NOT_CONFIGURED — 단 REAUTH_REQUIRED 는 자격(appId·비밀 키·갱신 토큰) 중 하나를 바꿔야 풀린다. templates 의 templateId 가 null 이면 그 이벤트 템플릿을 지운다. 감사에는 바뀐 칸 이름만 남는다. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "description": "비밀 키·갱신 토큰은 보낼 때만 교체하고 서버가 AES-256-GCM 으로 암호화해 둔다. 갱신 토큰을 교체하면 접속 토큰을 비운다. appId·비밀 키·갱신 토큰이 모두 있으면 ACTIVE, 하나라도 없으면 NOT_CONFIGURED — 단 REAUTH_REQUIRED 는 자격(appId·비밀 키·갱신 토큰) 중 하나를 바꿔야 풀린다. templates 의 templateId 가 null 이면 그 이벤트 템플릿을 지운다. 감사에는 바뀐 칸 이름만 남는다. 근거: 서버 선행 · 장부 P-96 · omf-all-around#160(피처 001 W-CO-12)",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4015,7 +4015,7 @@
      "app"
     ],
     "summary": "알림 발송 이력 — 이벤트 단위",
-    "description": "알림 사건마다 처리 결과·알리지 않은 이유·알림센터 건수·Zalo 집계(FR-032). 최근 발생 순. 근거: 서버 선행 · 장부 P-97 · omf-all-around#160(피처 001 W-CO-13)",
+    "description": "알림 사건마다 처리 결과·알리지 않은 이유·알림센터 건수·Zalo 집계(FR-032). 최근 발생 순. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
     "parameters": [
      {
       "name": "from",
@@ -4130,7 +4130,7 @@
      "app"
     ],
     "summary": "Zalo 발송 이력 — 수신자 단위",
-    "description": "Zalo 발송 1건(이벤트×수신자)의 상태·시도 횟수·마지막 오류(FR-030·031). 기간은 사건 발생 시각 기준. ⛔ 전화번호는 가운데를 가린 phoneMasked 로만. 최근 생성 순. 근거: 서버 선행 · 장부 P-97 · omf-all-around#160(피처 001 W-CO-13)",
+    "description": "Zalo 발송 1건(이벤트×수신자)의 상태·시도 횟수·마지막 오류(FR-030·031). 기간은 사건 발생 시각 기준. ⛔ 전화번호는 가운데를 가린 phoneMasked 로만. 최근 생성 순. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
     "parameters": [
      {
       "name": "from",
@@ -6060,7 +6060,7 @@
      "templates",
      "deliveryEnabled"
     ],
-    "description": "Zalo ZBS 연결 정보(시스템 1행). 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "description": "Zalo ZBS 연결 정보(시스템 1행). 근거: 서버 선행 · 장부 P-96 · omf-all-around#160(피처 001 W-CO-12)",
     "properties": {
      "appId": {
       "type": [
@@ -6172,7 +6172,7 @@
      "paramMaxLength",
      "templates"
     ],
-    "description": "Zalo 연결 정보 저장. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "description": "Zalo 연결 정보 저장. 근거: 서버 선행 · 장부 P-96 · omf-all-around#160(피처 001 W-CO-12)",
     "properties": {
      "appId": {
       "type": [
@@ -6237,7 +6237,7 @@
      "items",
      "page"
     ],
-    "description": "알림 발송 이력(이벤트 단위) 쪽. 근거: 서버 선행 · 장부 P-97 · omf-all-around#160(피처 001 W-CO-13)",
+    "description": "알림 발송 이력(이벤트 단위) 쪽. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
     "properties": {
      "items": {
       "type": "array",
@@ -6391,7 +6391,7 @@
      "items",
      "page"
     ],
-    "description": "Zalo 발송 이력(수신자 단위) 쪽. 근거: 서버 선행 · 장부 P-97 · omf-all-around#160(피처 001 W-CO-13)",
+    "description": "Zalo 발송 이력(수신자 단위) 쪽. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
     "properties": {
      "items": {
       "type": "array",

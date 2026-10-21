@@ -1,5 +1,5 @@
 /**
- * 알림 발송 이력(W-CO-13 · omf-all-around#160 · 장부 P-97).
+ * 알림 발송 이력(W-CO-13 · omf-all-around#160 · 장부 P-98).
  *
  * 사건은 생성기(`NotificationEmitter`)로 만든다 — 만든 건수와 조회 건수가 같아야 한다(SC-007).
  */

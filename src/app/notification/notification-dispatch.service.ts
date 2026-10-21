@@ -32,7 +32,7 @@ const TARGET_LABEL_KEY: Readonly<Record<string, string>> = {
 };
 
 /**
- * 알림 발송 이력(W-CO-13 · 장부 P-97) — 이벤트 단위 처리 결과와 수신자 단위 Zalo 결과(FR-030~032).
+ * 알림 발송 이력(W-CO-13 · 장부 P-98) — 이벤트 단위 처리 결과와 수신자 단위 Zalo 결과(FR-030~032).
  * ⛔ 전화번호는 가운데를 가린 형태로만 내린다.
  */
 @Injectable()
