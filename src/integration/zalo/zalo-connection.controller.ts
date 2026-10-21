@@ -35,9 +35,14 @@ export class ZaloConnectionController {
   ): Promise<ZaloConnectionView> {
     const version = ifMatchVersion(request);
     if (version === undefined) throw new Error('If-Match 가 없는데 계약 가드를 지났다');
-    // 멱등 기록에는 본문의 해시와 «응답»만 남는다 — 응답에 비밀값이 없으니 원문이 저장되지 않는다.
-    const { connection, versionNo } = await runIdempotent(this.idempotency, request, HttpStatus.OK, (tx) =>
-      this.connections.replaceWithin(tx, version, body, currentSession(request)?.userId),
+    // ⛔ 멱등 지문에 비밀값의 평문 해시를 남기지 않는다 — 키 HMAC 으로 바꿔 넣는다. 응답에는 원문이 없다.
+    const { connection, versionNo } = await runIdempotent(
+      this.idempotency,
+      request,
+      HttpStatus.OK,
+      (tx) => this.connections.replaceWithin(tx, version, body, currentSession(request)?.userId),
+      undefined,
+      this.connections.fingerprintOf(body),
     );
     response.setHeader('Cache-Control', 'private, no-store');
     setEtag(response, versionNo);

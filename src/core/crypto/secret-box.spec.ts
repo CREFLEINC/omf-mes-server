@@ -30,6 +30,13 @@ describe('SecretBox', () => {
     expect(() => new SecretBox(KEY).open('plain-text')).toThrow();
   });
 
+  it('digest 는 같은 값·같은 키면 같고, 키가 다르면 다르며 원문을 담지 않는다', () => {
+    const box = new SecretBox(KEY);
+    expect(box.digest('abc')).toBe(box.digest('abc'));
+    expect(box.digest('abc')).not.toBe(new SecretBox(randomBytes(32).toString('base64')).digest('abc'));
+    expect(box.digest('abc')).not.toContain('abc');
+  });
+
   it('키가 32바이트가 아니면 만들 때 던진다', () => {
     expect(() => new SecretBox(randomBytes(16).toString('base64'))).toThrow();
     expect(() => new SecretBox('')).toThrow();

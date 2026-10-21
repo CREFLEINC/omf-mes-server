@@ -70,6 +70,8 @@ export class ZaloConnectionService {
     actorId?: number,
   ): Promise<{ connection: ZaloConnectionView; versionNo: number }> {
     assertInput(input);
+    const secretKey = input.secretKey?.trim();
+    const refreshToken = input.refreshToken?.trim();
     await tx.$executeRaw`
       INSERT INTO app.zalo_connection (zalo_connection_id) VALUES (${ZALO_CONNECTION_ID})
       ON CONFLICT (zalo_connection_id) DO NOTHING`;
@@ -78,9 +80,10 @@ export class ZaloConnectionService {
     assertUpdated(current.version_no === expectedVersion ? 1 : 0);
 
     const appId = input.appId?.trim() || null;
-    const changed = changedFields(current, input, appId);
-    const secretKeyEnc = input.secretKey === undefined ? current.secret_key_enc : this.seal(input.secretKey);
-    const refreshTokenEnc = input.refreshToken === undefined ? current.refresh_token_enc : this.seal(input.refreshToken);
+    const templatesChanged = await templatesDiffer(tx, input.templates);
+    const changed = [...changedFields(current, input, appId), ...(templatesChanged ? ['templates'] : [])];
+    const secretKeyEnc = secretKey === undefined ? current.secret_key_enc : this.seal(secretKey);
+    const refreshTokenEnc = refreshToken === undefined ? current.refresh_token_enc : this.seal(refreshToken);
     const credentialsChanged = changed.some((name) => CREDENTIAL_FIELDS.includes(name));
 
     const saved = await tx.zalo_connection.update({
@@ -89,8 +92,8 @@ export class ZaloConnectionService {
         app_id: appId,
         secret_key_enc: secretKeyEnc,
         refresh_token_enc: refreshTokenEnc,
-        // 갱신 토큰을 바꾸면 이전 접속 토큰은 쓸 수 없다 — 러너가 다음 tick 에 새로 받는다.
-        ...(input.refreshToken === undefined ? {} : { access_token_enc: null, access_token_expires_at: null }),
+        // 자격(앱·비밀 키·갱신 토큰)이 바뀌면 이전 접속 토큰은 쓸 수 없다 — 러너가 다음 tick 에 새로 받는다.
+        ...(credentialsChanged ? { access_token_enc: null, access_token_expires_at: null } : {}),
         status_code: nextStatus(current.status_code, appId !== null && secretKeyEnc !== null && refreshTokenEnc !== null, credentialsChanged),
         ...(credentialsChanged ? { last_error_code: null, last_error_message: null } : {}),
         param_max_length: input.paramMaxLength,
@@ -118,12 +121,18 @@ export class ZaloConnectionService {
         target_type_code: 'ZALO_CONNECTION',
         target_id: BigInt(ZALO_CONNECTION_ID),
         event_type_code: 'UPDATED',
-        after_value: { changedFields: [...changed, ...(input.templates.length > 0 ? ['templates'] : [])] },
+        after_value: { changedFields: changed },
         performed_by: actorId === undefined ? null : BigInt(actorId),
       },
     });
     const templates = await tx.zalo_template.findMany();
     return { connection: this.view(saved, templates), versionNo: saved.version_no };
+  }
+
+  /** 멱등 지문용 — 비밀값 자리를 키 HMAC 으로 바꾼다. 키가 없으면 어차피 저장이 400 이다. */
+  fingerprintOf(input: ZaloConnectionReplace): unknown {
+    const masked = (value: string | undefined) => (value === undefined ? undefined : (this.box?.digest(value.trim()) ?? 'set'));
+    return { ...input, secretKey: masked(input.secretKey), refreshToken: masked(input.refreshToken) };
   }
 
   private seal(plain: string): string {
@@ -163,6 +172,15 @@ function nextStatus(current: string, complete: boolean, credentialsChanged: bool
   if (!complete) return 'NOT_CONFIGURED';
   if (current === 'REAUTH_REQUIRED' && !credentialsChanged) return current;
   return 'ACTIVE';
+}
+
+/** 보낸 템플릿 중 하나라도 저장값과 다르면 바뀐 것이다(감사 칸 이름용). */
+async function templatesDiffer(tx: Tx, templates: ZaloConnectionReplace['templates']): Promise<boolean> {
+  if (templates.length === 0) return false;
+  const stored = new Map(
+    (await tx.zalo_template.findMany({ where: { event_type_code: { in: templates.map((t) => t.eventCode) } } })).map((t) => [t.event_type_code, t.template_id]),
+  );
+  return templates.some((t) => (t.templateId?.trim() || null) !== (stored.get(t.eventCode) ?? null));
 }
 
 function changedFields(current: ConnectionRow, input: ZaloConnectionReplace, appId: string | null): string[] {
