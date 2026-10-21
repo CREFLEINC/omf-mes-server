@@ -92,6 +92,21 @@ describe('POP production terminal scope', () => {
     });
   });
 
+  it('공동 작업자 참여·이탈·목록은 자기 세션이고, 참여하는 사람은 단말 공장의 재직 작업자다', async () => {
+    const join = (workerId: number) => assertTerminalProductionScope(prisma,
+      request({ workerId, joinedAt: '2026-09-07T02:00:00.000Z' }, { workSessionId: '29' }, '900028'),
+      'POST /production/work-sessions/{workSessionId}/workers', terminal);
+    await expect(join(19)).resolves.toBeUndefined();
+    (prisma.worker.findFirst as jest.Mock).mockResolvedValueOnce({ worker_id: 19n }).mockResolvedValueOnce(null);
+    await expect(join(20)).rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalProductionScope(prisma, request({}, { workSessionId: '29' }),
+      'GET /production/work-sessions/{workSessionId}/workers', terminal)).resolves.toBeUndefined();
+    (prisma.work_session.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    await expect(assertTerminalProductionScope(prisma,
+      request({ leftAt: '2026-09-07T03:00:00.000Z' }, { workSessionId: '29', workSessionWorkerId: '5' }, '900028'),
+      'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave', terminal)).rejects.toMatchObject({ status: 401 });
+  });
+
   it('requires its own work session for read events and writes', async () => {
     await assertTerminalProductionScope(prisma,
       request({}, { workSessionId: '29' }),

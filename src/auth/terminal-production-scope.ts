@@ -8,6 +8,9 @@ import type { TerminalContext } from './terminal-context';
 /** POP production actions supported by an installed terminal, never administrator actions. */
 export const TERMINAL_PRODUCTION_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'GET /production/work-sessions/{workSessionId}/events': ['POP'],
+  'GET /production/work-sessions/{workSessionId}/workers': ['POP'],
+  'POST /production/work-sessions/{workSessionId}/workers': ['POP'],
+  'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['POP'],
   'POST /production/precheck-decisions': ['POP'],
   'POST /production/work-sessions': ['POP'],
   'POST /production/work-orders/{workOrderId}:hold': ['POP'],
@@ -66,10 +69,21 @@ export async function assertTerminalProductionScope(
   if (key.startsWith('POST ')) await activeWorker(prisma, request, terminal.plantId);
   switch (key) {
     case 'GET /production/work-sessions/{workSessionId}/events':
+    case 'GET /production/work-sessions/{workSessionId}/workers':
     case 'POST /production/work-sessions/{workSessionId}/events':
+    case 'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave':
     case 'POST /production/work-sessions/{workSessionId}:end':
       await ownSession(request.params.workSessionId);
       break;
+    case 'POST /production/work-sessions/{workSessionId}/workers': {
+      await ownSession(request.params.workSessionId);
+      // 함께 일할 사람도 이 단말 공장의 재직 작업자여야 한다.
+      const workerId = positiveId(body.workerId);
+      if (workerId === null || !await prisma.worker.findFirst({
+        where: { worker_id: workerId, plant_id: terminal.plantId, is_active: true }, select: { worker_id: true },
+      })) throw denied();
+      break;
+    }
     case 'POST /production/precheck-decisions': {
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
       if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();

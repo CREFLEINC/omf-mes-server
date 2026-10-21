@@ -73,7 +73,6 @@ const EXISTENCE_CHECKED = [
   'production/repair-execution/repair-execution.service.ts',
   'production/work-session/work-session-end.service.ts',
   'production/work-session/work-session-event.service.ts',
-  'production/work-session/work-session.service.ts',
   'trace/serial-number/serial-number-create.service.ts',
 ];
 
@@ -83,6 +82,8 @@ const ID_RESOLVED = [
   'maintenance/tool-usage/tool-usage-create.service.ts',
   'production/material-consumption/material-consumption.service.ts',
   'production/production-result/production-result.service.ts',
+  // 작업을 시작한 사람이 세션의 주작업자 행이 된다(P-86).
+  'production/work-session/work-session.service.ts',
 ];
 
 /**

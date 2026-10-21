@@ -203,18 +203,26 @@ describe('WorkSessionService.create', () => {
     expect(it0.created[0]).toMatchObject({ idempotency_key: 'HEADER-VALUE' });
   });
 
-  it('workerIds 가 비면 work_session_worker 를 만들지 않는다', async () => {
+  it('workerIds 가 비면 주작업자 한 행만 만든다', async () => {
     const it0 = stub();
     await it0.service.create(body({ workerIds: [] }), context());
-    expect(it0.workers).toEqual([]);
+    // 부작업자가 없어도 작업을 시작한 사람이 주작업자로 선다.
+    expect(it0.workers).toEqual([expect.objectContaining({ worker_id: 1n, worker_role_code: 'MAIN' })]);
   });
 
-  it('workerIds 로 만든 참여 행의 역할은 물리 기본값 OPERATOR 다', async () => {
-    // 설계 미정 — 문의 056
+  it('시작한 사람이 주작업자(MAIN), workerIds 가 부작업자(SUB)다', async () => {
     const it0 = stub();
     await it0.service.create(body({ workerIds: [7, 8] }), context());
-    expect(it0.workers).toHaveLength(2);
-    for (const row of it0.workers) expect(row).not.toHaveProperty('worker_role_code');
+    expect(it0.workers.map((row) => [row.worker_id, row.worker_role_code])).toEqual([[1n, 'MAIN'], [7n, 'SUB'], [8n, 'SUB']]);
+  });
+
+  it('workerIds 에 시작한 사람이 있거나 동시 참여 상한을 넘으면 400 이고 세션을 만들지 않는다', async () => {
+    for (const workerIds of [[1, 7], [7, 8, 9, 10]]) {
+      const it0 = stub();
+      const error = (await it0.service.create(body({ workerIds }), context()).catch((e: unknown) => e)) as ContractException;
+      expect(error.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID' });
+      expect(it0.workers).toEqual([]);
+    }
   });
 
   it('controlOverride.note 는 저장하지 않는다 — 담을 칸이 없다', async () => {
