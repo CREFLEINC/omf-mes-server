@@ -337,7 +337,7 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
-  // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-96).
+  // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-100).
   describe('초과분 잇기', () => {
     const excessApi = (path: string, method: 'get' | 'post' = 'get', as = cookie): request.Test =>
       request(app.getHttpServer())[method](`/api/logistics/inbound-excesses${path}`).set('Cookie', as);
