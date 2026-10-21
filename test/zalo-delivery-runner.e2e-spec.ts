@@ -228,15 +228,37 @@ describe('Zalo 발송 러너 (e2e · 대역)', () => {
     expect(sends()).toHaveLength(0);
   });
 
-  it('연결이 ACTIVE 가 아니면 보내지 않고 만료 처리만 한다', async () => {
-    await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { status_code: 'NOT_CONFIGURED' } });
-    const waiting = await delivery();
-    const stale = await delivery({ expires_at: new Date(NOW.getTime() - 1000) });
-    await runner.tick(NOW);
+  it.each(['NOT_CONFIGURED', 'REAUTH_REQUIRED'])(
+    'FR-032 연결이 %s 이면 보내지 않고 만료는 처리하며, 남은 대기 건에 CONNECTION_NOT_READY 를 남긴다(시도 수 그대로)',
+    async (status) => {
+      await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { status_code: status } });
+      const waiting = await delivery();
+      const retried = await delivery();
+      await prisma.zalo_delivery.update({ where: { zalo_delivery_id: retried }, data: { attempt_count: 2, last_error_code: 'HTTP_500' } });
+      const stale = await delivery({ expires_at: new Date(NOW.getTime() - 1000) });
+      await runner.tick(NOW);
 
-    expect(await row(waiting)).toMatchObject({ status_code: 'PENDING', attempt_count: 0 });
-    expect(await row(stale)).toMatchObject({ status_code: 'EXPIRED' });
-    expect(stub.requests).toHaveLength(0);
+      expect(await row(waiting)).toMatchObject({ status_code: 'PENDING', attempt_count: 0, last_error_code: 'CONNECTION_NOT_READY' });
+      expect(await row(retried)).toMatchObject({ status_code: 'PENDING', attempt_count: 2, last_error_code: 'CONNECTION_NOT_READY' });
+      expect(await row(stale)).toMatchObject({ status_code: 'EXPIRED' });
+      expect(stub.requests).toHaveLength(0);
+
+      // 보류 중에도 만료 시간은 흐른다.
+      await runner.tick(new Date(NOW.getTime() + 25 * HOUR));
+      expect(await row(waiting)).toMatchObject({ status_code: 'EXPIRED' });
+    },
+  );
+
+  it('FR-032 연결이 다시 ACTIVE 가 되면 보류했던 건을 평소대로 보낸다', async () => {
+    await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { status_code: 'REAUTH_REQUIRED' } });
+    const id = await delivery();
+    await runner.tick(NOW);
+    expect(await row(id)).toMatchObject({ status_code: 'PENDING', last_error_code: 'CONNECTION_NOT_READY' });
+
+    await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { status_code: 'ACTIVE' } });
+    await runner.tick(new Date(NOW.getTime() + 60_000));
+    expect(await row(id)).toMatchObject({ status_code: 'SENT', attempt_count: 1, last_error_code: null });
+    expect(sends()).toHaveLength(1);
   });
 
   it('템플릿 ID 가 없는 이벤트는 FAILED TEMPLATE_NOT_SET 이다', async () => {
