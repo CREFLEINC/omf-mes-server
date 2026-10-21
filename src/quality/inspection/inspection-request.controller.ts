@@ -7,6 +7,7 @@ import { PagedResponse } from '../../common/pagination';
 import { InspectionHistory, InspectionHistoryService } from './inspection-history.service';
 import { InspectionRequestListQuery, InspectionRequestService } from './inspection-request.service';
 import { InspectionRequestView } from './inspection-request-view';
+import { OqcSerialQueryService } from './oqc-serial-query.service';
 
 /** 검사 의뢰 조회 2건(I-19 PR ②). 등록 경로는 두지 않는다 — 서버가 입고·실적에서 만든다(계약). */
 @Controller('quality/inspection-requests')
@@ -14,6 +15,7 @@ export class InspectionRequestController {
   constructor(
     private readonly requests: InspectionRequestService,
     private readonly histories: InspectionHistoryService,
+    private readonly oqcSerials: OqcSerialQueryService,
   ) {}
 
   @Get()
@@ -34,5 +36,12 @@ export class InspectionRequestController {
   @Contract('GET /quality/inspection-requests/{inspectionRequestId}/history')
   history(@Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number): Promise<InspectionHistory> {
     return this.histories.history(inspectionRequestId);
+  }
+
+  /** 시리얼 OQC — 이 의뢰의 회차들이 쓴 시리얼 판정(omf-all-around#68 · 장부 P-101). */
+  @Get(':inspectionRequestId/oqc-serials')
+  @Contract('GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials')
+  oqcSerialsOf(@Param('inspectionRequestId', ParseIntPipe) inspectionRequestId: number) {
+    return this.oqcSerials.ofRequest(inspectionRequestId);
   }
 }

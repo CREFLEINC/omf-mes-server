@@ -18,6 +18,9 @@ export const TERMINAL_QUALITY_READ_OPERATIONS: Readonly<Record<string, readonly 
   // PQC 패널이 작성중 회차를 되살린다(omf-all-around#107 · 장부 P-49) — 볼 수 있는 의뢰의 회차·측정치만.
   'GET /quality/inspection-results': ['POP'],
   'GET /quality/inspection-results/{inspectionResultId}/measurements': ['POP'],
+  // 시리얼 OQC(P-04-06 · omf-all-around#68 · 장부 P-101) — 단말 공장의 시리얼·의뢰만.
+  'GET /quality/oqc-serials/{serialNo}': ['POP'],
+  'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials': ['POP'],
   'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}': ['POP'],
   'GET /quality/inspection-plan-versions/{inspectionPlanVersionId}/items': ['POP'],
   'GET /quality/inspection-plans/{inspectionPlanId}': ['POP'],
@@ -134,6 +137,17 @@ export async function assertTerminalQualityReadScope(
     case 'GET /quality/inspection-requests/{inspectionRequestId}':
       await ownPopInspectionRequest(request.params.inspectionRequestId);
       break;
+    case 'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials':
+      await ownPopInspectionRequest(request.params.inspectionRequestId);
+      break;
+    case 'GET /quality/oqc-serials/{serialNo}': {
+      // 없는 시리얼은 서비스가 404 로 답한다. 있으면 그 LOT 이 단말 공장의 것이어야 한다 — 의뢰는 서비스가 좁힌다.
+      const serial = await prisma.serial_number.findUnique({
+        where: { serial_no: String(request.params.serialNo) }, select: { lot: { select: { plant_id: true } } },
+      });
+      if (serial !== null && serial.lot.plant_id !== scope.plantId) throw denied();
+      break;
+    }
     case 'GET /quality/inspection-results':
       // 회차 이력 — 볼 수 있는 의뢰 하나로만 연다.
       await ownPopInspectionRequest(query.inspectionRequestId);

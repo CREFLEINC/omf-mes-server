@@ -38,6 +38,7 @@ import {
   remarksWithJudgmentChange,
 } from './inspection-rules';
 import { reopenInspectionRequestWithin } from './inspection-request-reopen';
+import { prepareOqcSerials, recordOqcSerialsWithin } from './oqc-serials';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
 const NUMBERING_DOCUMENT = 'INSPECTION_RESULT';
@@ -94,6 +95,7 @@ export class InspectionResultWriteService {
     const remarks = changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks);
     const fourMChange = await prepareFourMChange(this.prisma, BigInt(body.inspectionRequestId), body.fourMChange);
     const defectTarget = await prepareRejectionDefects(this.prisma, this.defects, body, born !== undefined);
+    const serials = await prepareOqcSerials(this.prisma, body);
     // 확정으로 태어나는 IQC 불합격은 부적합 번호도 미리 받는다(P-41 · 채번은 트랜잭션 밖).
     const nonconformanceNo =
       born === undefined
@@ -151,6 +153,14 @@ export class InspectionResultWriteService {
           );
         }
         await writeFourMChangeWithin(tx, fourMChange, context.appUserId);
+        if (serials !== null) {
+          await recordOqcSerialsWithin(tx, serials, {
+            inspectionResultId: created.inspection_result_id,
+            inspectedAt,
+            workerId: inspectorId,
+            appUserId: context.appUserId === undefined ? null : BigInt(context.appUserId),
+          });
+        }
         if (born !== undefined) {
           await this.confirms.applyConfirmEffects(tx, {
             ...born,
