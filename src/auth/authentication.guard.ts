@@ -19,6 +19,7 @@ import { TERMINAL_QUALITY_READ_OPERATIONS, assertTerminalQualityReadScope } from
 import { TERMINAL_QUALITY_WRITE_OPERATIONS, assertTerminalQualityWriteScope } from './terminal-quality-write-scope';
 import { TERMINAL_MOBILE_PRODUCTION_OPERATIONS, assertTerminalMobileProductionScope } from './terminal-mobile-production-scope';
 import { TERMINAL_LOT_WRITE_OPERATIONS, assertTerminalLotWriteScope } from './terminal-lot-write-scope';
+import { TERMINAL_INSPECTION_SHEET_OPERATIONS, assertTerminalInspectionSheetScope } from './terminal-inspection-sheet-scope';
 import { resolveTerminalContext } from './terminal-token';
 import { TERMINAL_ACCESSIBLE_SCREENS_OPERATION, TERMINAL_REGISTRATION_OPERATION } from './terminal-registration-operation';
 
@@ -106,7 +107,8 @@ export class AuthenticationGuard implements CanActivate {
       ?? TERMINAL_PRODUCTION_OPERATIONS[key] ?? inventoryTypes
       ?? TERMINAL_MAINTENANCE_OPERATIONS[key] ?? TERMINAL_APP_READ_OPERATIONS[key]
       ?? TERMINAL_APP_WRITE_OPERATIONS[key] ?? TERMINAL_QUALITY_WRITE_OPERATIONS[key]
-      ?? TERMINAL_MOBILE_PRODUCTION_OPERATIONS[key] ?? TERMINAL_LOT_WRITE_OPERATIONS[key];
+      ?? TERMINAL_MOBILE_PRODUCTION_OPERATIONS[key] ?? TERMINAL_LOT_WRITE_OPERATIONS[key]
+      ?? TERMINAL_INSPECTION_SHEET_OPERATIONS[key];
     if (!terminalTypes || !request.headers.authorization) throw loginRequired();
     let terminal;
     try {
@@ -126,6 +128,7 @@ export class AuthenticationGuard implements CanActivate {
     else if (TERMINAL_QUALITY_WRITE_OPERATIONS[key]) await assertTerminalQualityWriteScope(this.prisma, request, key, terminal);
     else if (TERMINAL_MOBILE_PRODUCTION_OPERATIONS[key]) await assertTerminalMobileProductionScope(this.prisma, request, key, terminal);
     else if (TERMINAL_LOT_WRITE_OPERATIONS[key]) await assertTerminalLotWriteScope(this.prisma, request, key, terminal);
+    else if (TERMINAL_INSPECTION_SHEET_OPERATIONS[key]) await assertTerminalInspectionSheetScope(this.prisma, request, key, terminal);
     else if (TERMINAL_APP_READ_OPERATIONS[key]) await assertTerminalAppReadScope(this.prisma, request, key, terminal);
     else await assertTerminalAppWriteScope(this.prisma, request, key, terminal);
     attachTerminal(request, terminal);

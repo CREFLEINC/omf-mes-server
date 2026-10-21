@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { IdempotencyModule } from '../common/idempotency';
 import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
+import { InspectionSheetModule } from '../core/inspection-sheet';
 import { InventoryPostingModule } from '../core/inventory-posting';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
@@ -28,6 +29,13 @@ import { InspectionPlanVersionController } from './inspection-plan/inspection-pl
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
 import { InspectionPlanService } from './inspection-plan/inspection-plan.service';
+import { InspectionSheetTemplateController } from './inspection-sheet-template/inspection-sheet-template.controller';
+import { InspectionSheetTemplateService } from './inspection-sheet-template/inspection-sheet-template.service';
+import { InspectionSheetController, InspectionSheetOpenController } from './inspection-sheet/inspection-sheet.controller';
+import { InspectionSheetAccess } from './inspection-sheet/inspection-sheet-access';
+import { InspectionSheetEntryService } from './inspection-sheet/inspection-sheet-entry.service';
+import { InspectionSheetQueryService } from './inspection-sheet/inspection-sheet-query.service';
+import { InspectionSheetSignService } from './inspection-sheet/inspection-sheet-sign.service';
 import { InspectionConfirmService } from './inspection/inspection-confirm.service';
 import { InspectionRequestController } from './inspection/inspection-request.controller';
 import { InspectionHistoryService } from './inspection/inspection-history.service';
@@ -67,11 +75,15 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     DocumentStateModule,
     InventoryPostingModule,
     LotRegistryModule,
+    InspectionSheetModule,
   ],
   controllers: [
     DefectCodeController,
     CauseCodeController,
     InspectionPlanController,
+    InspectionSheetTemplateController,
+    InspectionSheetController,
+    InspectionSheetOpenController,
     InspectionPlanVersionController,
     InspectionRequestController,
     OqcSerialController,
@@ -95,6 +107,11 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     CauseCodeService,
     DefectCodeProcessService,
     InspectionPlanService,
+    InspectionSheetTemplateService,
+    InspectionSheetEntryService,
+    InspectionSheetAccess,
+    InspectionSheetQueryService,
+    InspectionSheetSignService,
     InspectionPlanVersionService,
     InspectionRequestService,
     InspectionHistoryService,

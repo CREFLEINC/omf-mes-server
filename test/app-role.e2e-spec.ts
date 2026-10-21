@@ -128,7 +128,8 @@ describe('역할·기능 권한 (e2e)', () => {
     // P-04-06(OQC 출하검사 판정)(장부 P-80) ·
     // W-03-12(검사 수준 관리)(장부 P-87) ·
     // W-CO-12·W-CO-13(알림 연결 설정·발송 이력)(장부 P-92).
-    expect(response.body.items).toHaveLength(133);
+    // W-06-24(검사표 기준)·P-02-15(제품 검사표 입력)·W-03-13(제품 검사표 조회·출력)·W-03-14(제품 검사표 서명·승인)(장부 P-102).
+    expect(response.body.items).toHaveLength(137);
     // 이 화면 자신의 권한이 목록에 있어야 격자에서 관리자를 만들 수 있다.
     expect(response.body.items.map((p: { code: string }) => p.code)).toContain('W-CO-02');
     expect(response.body.page).toBeUndefined();

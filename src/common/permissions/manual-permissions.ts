@@ -122,6 +122,20 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 알림 발송 이력 — 설계 밖 화면 W-CO-13(알림 발송 이력)의 두 목록이다(omf-all-around#160 · 장부 P-98).
   'GET /app/notification-dispatches': ['W-CO-13'],
   'GET /app/zalo-deliveries': ['W-CO-13'],
+  // OA 제품 검사표 기준 등록·수정·확정 — 검사표 기준 화면의 조작이다(omf-all-around#89 · 장부 P-102).
+  'POST /quality/inspection-sheet-templates': ['W-06-24'],
+  'PUT /quality/inspection-sheet-templates/{inspectionSheetTemplateId}': ['W-06-24'],
+  'POST /quality/inspection-sheet-templates/{inspectionSheetTemplateId}:confirm': ['W-06-24'],
+  // OA 제품 검사표 열기·머리·단계·NG — POP 제품 검사표 입력과 관리웹 제품 검사표 조회의 조작이다(#89 · 장부 P-102).
+  'POST /quality/inspection-sheets:open-by-serial': ['P-02-15', 'W-03-13'],
+  'PUT /quality/inspection-sheets/{inspectionSheetId}/header': ['P-02-15', 'W-03-13'],
+  'PUT /quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}': ['P-02-15', 'W-03-13'],
+  'PUT /quality/inspection-sheets/{inspectionSheetId}/ngs': ['P-02-15', 'W-03-13'],
+  // 단계 서명·승인·확인·승인 취소 — 서명 권한이 있는 관리자만(#89 · 장부 P-102 · 담당자 결정 ②③⑦).
+  'POST /quality/inspection-sheets/{inspectionSheetId}/steps/{stepCode}:sign': ['W-03-14'],
+  'POST /quality/inspection-sheets/{inspectionSheetId}:approve': ['W-03-14'],
+  'POST /quality/inspection-sheets/{inspectionSheetId}:check': ['W-03-14'],
+  'POST /quality/inspection-sheets/{inspectionSheetId}:reopen': ['W-03-14'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.

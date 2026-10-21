@@ -91,6 +91,19 @@ model app_user {
   item_inspection_level_history          item_inspection_level_history[]
   oqc_serial_result_created_byToapp_user                 oqc_serial_result[]                @relation("oqc_serial_result_created_byToapp_user")
   oqc_serial_result_updated_byToapp_user                 oqc_serial_result[]                @relation("oqc_serial_result_updated_byToapp_user")
+  inspection_sheet_template_confirmed_byToapp_user inspection_sheet_template[] @relation("inspection_sheet_template_confirmed_byToapp_user")
+  inspection_sheet_template_created_byToapp_user inspection_sheet_template[] @relation("inspection_sheet_template_created_byToapp_user")
+  inspection_sheet_template_updated_byToapp_user inspection_sheet_template[] @relation("inspection_sheet_template_updated_byToapp_user")
+  inspection_sheet_approved_byToapp_user inspection_sheet[] @relation("inspection_sheet_approved_byToapp_user")
+  inspection_sheet_checked_byToapp_user inspection_sheet[] @relation("inspection_sheet_checked_byToapp_user")
+  inspection_sheet_created_byToapp_user inspection_sheet[] @relation("inspection_sheet_created_byToapp_user")
+  inspection_sheet_updated_byToapp_user inspection_sheet[] @relation("inspection_sheet_updated_byToapp_user")
+  inspection_sheet_step_result_signed_byToapp_user inspection_sheet_step_result[] @relation("inspection_sheet_step_result_signed_byToapp_user")
+  inspection_sheet_step_result_created_byToapp_user inspection_sheet_step_result[] @relation("inspection_sheet_step_result_created_byToapp_user")
+  inspection_sheet_step_result_updated_byToapp_user inspection_sheet_step_result[] @relation("inspection_sheet_step_result_updated_byToapp_user")
+  inspection_sheet_ng_created_byToapp_user inspection_sheet_ng[] @relation("inspection_sheet_ng_created_byToapp_user")
+  inspection_sheet_ng_updated_byToapp_user inspection_sheet_ng[] @relation("inspection_sheet_ng_updated_byToapp_user")
+  inspection_sheet_event_acted_byToapp_user inspection_sheet_event[] @relation("inspection_sheet_event_acted_byToapp_user")
 
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
@@ -1757,6 +1770,7 @@ model business_unit {
   worker                                                                 worker[]
   production_order                                                       production_order[]
   notification_subscription_recipient                                    notification_subscription_recipient[]
+  inspection_sheet_template inspection_sheet_template[]
 
   @@unique([legal_entity_id, business_unit_code], map: "uq_business_unit")
   @@schema("mdm")
@@ -2007,6 +2021,9 @@ model item {
   item_resource_map                                    item_resource_map[]
   item_inspection_level                                item_inspection_level?
   item_inspection_level_history                        item_inspection_level_history[]
+  inspection_sheet_template_item_idToitem inspection_sheet_template[] @relation("inspection_sheet_template_item_idToitem")
+  inspection_sheet_template_lot_source_item_idToitem inspection_sheet_template_lot_source[] @relation("inspection_sheet_template_lot_source_item_idToitem")
+  inspection_sheet_item_idToitem inspection_sheet[] @relation("inspection_sheet_item_idToitem")
 
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
@@ -2607,6 +2624,11 @@ model worker {
   sorting_result                 sorting_result[]
   item_inspection_level_history  item_inspection_level_history[]
   oqc_serial_result              oqc_serial_result[]
+  inspection_sheet_written_worker_idToworker inspection_sheet[] @relation("inspection_sheet_written_worker_idToworker")
+  inspection_sheet_step_result_inspected_worker_idToworker inspection_sheet_step_result[] @relation("inspection_sheet_step_result_inspected_worker_idToworker")
+  inspection_sheet_ng_repair_worker_idToworker inspection_sheet_ng[] @relation("inspection_sheet_ng_repair_worker_idToworker")
+  inspection_sheet_ng_recheck_worker_idToworker inspection_sheet_ng[] @relation("inspection_sheet_ng_recheck_worker_idToworker")
+  inspection_sheet_event_acted_worker_idToworker inspection_sheet_event[] @relation("inspection_sheet_event_acted_worker_idToworker")
 
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
@@ -3236,6 +3258,7 @@ model work_order {
   nonconformance_nonconformance_work_order_idTowork_order                           nonconformance[]                 @relation("nonconformance_work_order_idTowork_order")
   repair_result                                                                     repair_result[]
   serial_component_relation                                                         serial_component_relation[]
+  inspection_sheet inspection_sheet[]
 
   @@index([production_plan_id, routing_operation_id], map: "ix_work_order_plan")
   @@index([default_fg_location_id], map: "ix_work_order_default_fg_location")
@@ -3726,6 +3749,246 @@ model item_inspection_level_history {
   @@schema("quality")
 }
 
+/// OA 제품 검사표 기준 — 모델(품목)마다 확정본 하나(omf-all-around#89 · 장부 P-102). 확정 뒤에는 고치지 않고 새 판을 만든다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_template {
+  inspection_sheet_template_id                               BigInt                                   @id @default(autoincrement())
+  item_id                                                    BigInt
+  template_version                                           Int
+  business_unit_id                                           BigInt
+  form_layout_code                                           String                                   @db.VarChar(20)
+  status_code                                                String                                   @default("DRAFT") @db.VarChar(20)
+  material_text                                              String?                                  @db.VarChar(500)
+  structure_text                                             String?                                  @db.VarChar(500)
+  rohs_flag                                                  Boolean                                  @default(false)
+  product_name_text                                          String?                                  @db.VarChar(200)
+  power_text                                                 String?                                  @db.VarChar(200)
+  motor_text                                                 String?                                  @db.VarChar(200)
+  remarks                                                    String?                                  @db.VarChar(500)
+  confirmed_by                                               BigInt?
+  confirmed_at                                               DateTime?                                @db.Timestamptz(6)
+  created_at                                                 DateTime                                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                                 BigInt?
+  updated_at                                                 DateTime                                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                                 BigInt?
+  version_no                                                 Int                                      @default(1)
+  inspection_sheet                                           inspection_sheet[]
+  lot_sources                                                inspection_sheet_template_lot_source[]
+  steps                                                      inspection_sheet_template_step[]
+  item                                                       item                                     @relation("inspection_sheet_template_item_idToitem", fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  business_unit                                              business_unit                            @relation(fields: [business_unit_id], references: [business_unit_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_template_confirmed_byToapp_user  app_user?                                @relation("inspection_sheet_template_confirmed_byToapp_user", fields: [confirmed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_template_created_byToapp_user    app_user?                                @relation("inspection_sheet_template_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_template_updated_byToapp_user    app_user?                                @relation("inspection_sheet_template_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([item_id, template_version], map: "uq_inspection_sheet_template_item_version")
+  @@schema("quality")
+}
+
+/// 검사표 머리 LOT 칸(PCB 기판·SD·스테이플)의 후보 자재 품목.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_template_lot_source {
+  inspection_sheet_template_lot_source_id BigInt                    @id @default(autoincrement())
+  inspection_sheet_template_id            BigInt
+  slot_code                               String                    @db.VarChar(20)
+  item_id                                 BigInt
+  template                                inspection_sheet_template @relation(fields: [inspection_sheet_template_id], references: [inspection_sheet_template_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                    item                      @relation("inspection_sheet_template_lot_source_item_idToitem", fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inspection_sheet_template_id, slot_code, item_id], map: "uq_inspection_sheet_template_lot_source")
+  @@schema("quality")
+}
+
+/// 검사표 단계 — `step_code` 는 공통코드 `INSPECTION_SHEET_STEP`.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_template_step {
+  inspection_sheet_template_step_id BigInt                           @id @default(autoincrement())
+  inspection_sheet_template_id      BigInt
+  step_code                         String                           @db.VarChar(30)
+  sequence_no                       Int
+  name_ko                           String                           @db.VarChar(100)
+  name_vi                           String?                          @db.VarChar(100)
+  sign_required                     Boolean                          @default(false)
+  template                          inspection_sheet_template        @relation(fields: [inspection_sheet_template_id], references: [inspection_sheet_template_id], onDelete: NoAction, onUpdate: NoAction)
+  items                             inspection_sheet_template_item[]
+
+  @@unique([inspection_sheet_template_id, step_code], map: "uq_inspection_sheet_template_step_code")
+  @@unique([inspection_sheet_template_id, sequence_no], map: "uq_inspection_sheet_template_step_seq")
+  @@schema("quality")
+}
+
+/// 검사표 단계의 검사 항목 — 양식의 「항목 번호」·이름·전수/발취.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_template_item {
+  inspection_sheet_template_item_id BigInt                         @id @default(autoincrement())
+  inspection_sheet_template_step_id BigInt
+  sequence_no                       Int
+  check_item_code                   String                         @db.VarChar(30)
+  name_ko                           String                         @db.VarChar(200)
+  name_vi                           String?                        @db.VarChar(200)
+  method_code                       String                         @db.VarChar(20)
+  step                              inspection_sheet_template_step @relation(fields: [inspection_sheet_template_step_id], references: [inspection_sheet_template_step_id], onDelete: NoAction, onUpdate: NoAction)
+  item_results                      inspection_sheet_item_result[]
+
+  @@unique([inspection_sheet_template_step_id, sequence_no], map: "uq_inspection_sheet_template_item_seq")
+  @@schema("quality")
+}
+
+/// OA 제품 검사표 — 시리얼 1대에 1장(omf-all-around#89 · 장부 P-102).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet {
+  inspection_sheet_id                             BigInt                         @id @default(autoincrement())
+  serial_number_id                                BigInt                         @unique(map: "uq_inspection_sheet_serial")
+  inspection_sheet_template_id                    BigInt
+  item_id                                         BigInt
+  lot_id                                          BigInt
+  work_order_id                                   BigInt?
+  model_text                                      String?                        @db.VarChar(200)
+  spec_text                                       String?                        @db.VarChar(200)
+  destination_text                                String?                        @db.VarChar(200)
+  pcb_lot_no                                      String?                        @db.VarChar(100)
+  sd_lot_no                                       String?                        @db.VarChar(100)
+  staple_lot_no                                   String?                        @db.VarChar(100)
+  fw_production_version                           String?                        @db.VarChar(50)
+  fw_quality_version                              String?                        @db.VarChar(50)
+  material_text                                   String?                        @db.VarChar(500)
+  structure_text                                  String?                        @db.VarChar(500)
+  rohs_flag                                       Boolean                        @default(false)
+  product_name_text                               String?                        @db.VarChar(200)
+  power_text                                      String?                        @db.VarChar(200)
+  motor_text                                      String?                        @db.VarChar(200)
+  temp_pack_note                                  String?                        @db.VarChar(500)
+  overall_result_code                             String?                        @db.VarChar(10)
+  status_code                                     String                         @default("IN_PROGRESS") @db.VarChar(20)
+  written_worker_id                               BigInt?
+  approved_by                                     BigInt?
+  approved_at                                     DateTime?                      @db.Timestamptz(6)
+  checked_by                                      BigInt?
+  checked_at                                      DateTime?                      @db.Timestamptz(6)
+  created_at                                      DateTime                       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                      BigInt?
+  updated_at                                      DateTime                       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                      BigInt?
+  version_no                                      Int                            @default(1)
+  serial_number                                   serial_number                  @relation(fields: [serial_number_id], references: [serial_number_id], onDelete: NoAction, onUpdate: NoAction)
+  template                                        inspection_sheet_template      @relation(fields: [inspection_sheet_template_id], references: [inspection_sheet_template_id], onDelete: NoAction, onUpdate: NoAction)
+  item                                            item                           @relation("inspection_sheet_item_idToitem", fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  lot                                             lot                            @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  work_order                                      work_order?                    @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
+  written_worker                                  worker?                        @relation("inspection_sheet_written_worker_idToworker", fields: [written_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_approved_byToapp_user app_user?                      @relation("inspection_sheet_approved_byToapp_user", fields: [approved_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_checked_byToapp_user  app_user?                      @relation("inspection_sheet_checked_byToapp_user", fields: [checked_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_created_byToapp_user  app_user?                      @relation("inspection_sheet_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_updated_byToapp_user  app_user?                      @relation("inspection_sheet_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  step_results                                    inspection_sheet_step_result[]
+  item_results                                    inspection_sheet_item_result[]
+  ngs                                             inspection_sheet_ng[]
+  events                                          inspection_sheet_event[]
+
+  @@index([lot_id], map: "ix_inspection_sheet_lot")
+  @@index([work_order_id], map: "ix_inspection_sheet_work_order")
+  @@schema("quality")
+}
+
+/// 검사표 단계 판정 — 한 단계에 한 줄. 「출하검사」 줄은 시리얼 OQC(#68)도 쓴다(`source_code=OQC`).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_step_result {
+  inspection_sheet_step_result_id                             BigInt             @id @default(autoincrement())
+  inspection_sheet_id                                         BigInt
+  step_code                                                   String             @db.VarChar(30)
+  first_judgment_code                                         String             @db.VarChar(10)
+  final_judgment_code                                         String             @db.VarChar(10)
+  source_code                                                 String             @db.VarChar(20)
+  inspected_worker_id                                         BigInt?
+  inspected_at                                                DateTime           @db.Timestamptz(6)
+  inspection_result_id                                        BigInt?
+  signed_by                                                   BigInt?
+  signed_at                                                   DateTime?          @db.Timestamptz(6)
+  created_at                                                  DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                                  BigInt?
+  updated_at                                                  DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                                  BigInt?
+  version_no                                                  Int                @default(1)
+  sheet                                                       inspection_sheet   @relation(fields: [inspection_sheet_id], references: [inspection_sheet_id], onDelete: NoAction, onUpdate: NoAction)
+  inspected_worker                                            worker?            @relation("inspection_sheet_step_result_inspected_worker_idToworker", fields: [inspected_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_result                                           inspection_result? @relation(fields: [inspection_result_id], references: [inspection_result_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_step_result_signed_byToapp_user   app_user?          @relation("inspection_sheet_step_result_signed_byToapp_user", fields: [signed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_step_result_created_byToapp_user  app_user?          @relation("inspection_sheet_step_result_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_step_result_updated_byToapp_user  app_user?          @relation("inspection_sheet_step_result_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inspection_sheet_id, step_code], map: "uq_inspection_sheet_step_result")
+  @@schema("quality")
+}
+
+/// 검사표 항목 판정 — 입력한 항목만 줄이 있다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_item_result {
+  inspection_sheet_item_result_id   BigInt                         @id @default(autoincrement())
+  inspection_sheet_id               BigInt
+  inspection_sheet_template_item_id BigInt
+  judgment_code                     String                         @db.VarChar(10)
+  updated_at                        DateTime                       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  sheet                             inspection_sheet               @relation(fields: [inspection_sheet_id], references: [inspection_sheet_id], onDelete: NoAction, onUpdate: NoAction)
+  template_item                     inspection_sheet_template_item @relation(fields: [inspection_sheet_template_item_id], references: [inspection_sheet_template_item_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inspection_sheet_id, inspection_sheet_template_item_id], map: "uq_inspection_sheet_item_result")
+  @@schema("quality")
+}
+
+/// 검사표 NG 블록 — `quality.defect_record` 를 만들지 않는다(#89 담당자 결정 ⑥).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_ng {
+  inspection_sheet_ng_id                            BigInt           @id @default(autoincrement())
+  inspection_sheet_id                               BigInt
+  sequence_no                                       Int
+  found_department_code                             String?          @db.VarChar(20)
+  found_step_code                                   String?          @db.VarChar(30)
+  occurrence_process_text                           String?          @db.VarChar(200)
+  standard_no                                       String?          @db.VarChar(50)
+  check_item_code                                   String?          @db.VarChar(30)
+  ng_content                                        String           @db.VarChar(1000)
+  investigation_text                                String?          @db.VarChar(1000)
+  ng_type_code                                      String?          @db.VarChar(20)
+  repair_department_code                            String?          @db.VarChar(20)
+  repair_worker_id                                  BigInt?
+  repaired_at                                       DateTime?        @db.Timestamptz(6)
+  recheck_result_code                               String?          @db.VarChar(10)
+  recheck_worker_id                                 BigInt?
+  rechecked_at                                      DateTime?        @db.Timestamptz(6)
+  created_at                                        DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                        BigInt?
+  updated_at                                        DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                        BigInt?
+  version_no                                        Int              @default(1)
+  sheet                                             inspection_sheet @relation(fields: [inspection_sheet_id], references: [inspection_sheet_id], onDelete: NoAction, onUpdate: NoAction)
+  repair_worker                                     worker?          @relation("inspection_sheet_ng_repair_worker_idToworker", fields: [repair_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  recheck_worker                                    worker?          @relation("inspection_sheet_ng_recheck_worker_idToworker", fields: [recheck_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_ng_created_byToapp_user app_user?        @relation("inspection_sheet_ng_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_inspection_sheet_ng_updated_byToapp_user app_user?        @relation("inspection_sheet_ng_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([inspection_sheet_id, sequence_no], map: "uq_inspection_sheet_ng_seq")
+  @@schema("quality")
+}
+
+/// 검사표 서명·승인·확인·승인 취소 이력(#89 담당자 결정 ⑦).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inspection_sheet_event {
+  inspection_sheet_event_id BigInt           @id @default(autoincrement())
+  inspection_sheet_id       BigInt
+  event_code                String           @db.VarChar(20)
+  step_code                 String?          @db.VarChar(30)
+  reason                    String?          @db.VarChar(500)
+  acted_by                  BigInt?
+  acted_worker_id           BigInt?
+  acted_at                  DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  sheet                     inspection_sheet @relation(fields: [inspection_sheet_id], references: [inspection_sheet_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                  app_user?        @relation("inspection_sheet_event_acted_byToapp_user", fields: [acted_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  acted_worker              worker?          @relation("inspection_sheet_event_acted_worker_idToworker", fields: [acted_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inspection_sheet_id], map: "ix_inspection_sheet_event_sheet")
+  @@schema("quality")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model inspection_result {
   inspection_result_id       BigInt                   @id @default(autoincrement())
@@ -3762,6 +4025,7 @@ model inspection_result {
   uom                        uom                      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance             nonconformance[]
   oqc_serial_results         oqc_serial_result[]
+  inspection_sheet_step_result inspection_sheet_step_result[]
 
   @@unique([inspection_request_id, inspection_round], map: "uq_inspection_round")
   @@schema("quality")
@@ -3945,6 +4209,7 @@ model lot {
   lot_relation_lot_relation_target_lot_idTolot     lot_relation[]                       @relation("lot_relation_target_lot_idTolot")
   lot_status_event                                 lot_status_event[]
   serial_number                                    serial_number[]
+  inspection_sheet inspection_sheet[]
 
   @@unique([plant_id, lot_no], map: "uq_lot")
   @@index([item_id, created_at(sort: Desc)], map: "ix_lot_item")
@@ -4062,6 +4327,7 @@ model serial_number {
   item                                                                                          item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                                                                           lot                         @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
   oqc_serial_result oqc_serial_result?
+  inspection_sheet inspection_sheet?
 
   @@schema("trace")
 }

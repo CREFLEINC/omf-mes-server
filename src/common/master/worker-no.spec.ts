@@ -145,6 +145,7 @@ const WORKER_TABLE_READERS = [
   // 단말 경계의 사번/ID 판정. 활성·공장 검사는 각각의 정확한 오퍼레이션 범위에 묶인다.
   'auth/terminal-app-read-scope.ts',
   'auth/terminal-app-write-scope.ts',
+  'auth/terminal-inspection-sheet-scope.ts',
   'auth/terminal-inventory-scope.ts',
   'auth/terminal-logistics-scope.ts',
   'auth/terminal-lot-write-scope.ts',
@@ -171,6 +172,8 @@ const WORKER_TABLE_READERS = [
   'production/work-session/work-session.service.ts',
   // 불량 기록의 귀속 작업자 — 계정에 연결된 작업자(omf-all-around#106 · P-42). 사번 헤더 판정이 아니다.
   'quality/defect/defect-record-write.service.ts',
+  // 검사표 NG 블록의 수리·재검 담당 — 본문 사번을 작업자로 푼다(#89 · P-102). 사번 헤더 판정이 아니다.
+  'quality/inspection-sheet/inspection-sheet-entry.service.ts',
   'quality/inspection/inspection-result-write-rules.ts',
   'trace/lot/lot-complete.service.ts',
   'trace/serial-number/serial-number-write-context.ts',
