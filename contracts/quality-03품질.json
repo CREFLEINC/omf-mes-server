@@ -2941,6 +2941,335 @@
     },
     "x-internal-note": "서버가 계약보다 앞서 적은 경로다(장부 P-33 · 선례 P-30). If-Match 는 W/O 가 아니라 **부적합 상세의 ETag** 다 — 잠그는 대상이 부적합이라서다(판정 저장과 같은 규율)."
    }
+  },
+  "/quality/item-inspection-levels": {
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "품목 검사 수준 목록",
+    "description": "품목 코드 순. q 는 품목 코드·이름을 훑는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "parameters": [
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "inspectionLevelCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NONE",
+        "REDUCED",
+        "NORMAL",
+        "TIGHTENED"
+       ]
+      },
+      "description": "수준"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "품목 코드·이름"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ItemInspectionLevel"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "품목 검사 수준 지정",
+    "description": "없는 품목이면 400 itemId INVALID, 이미 지정된 품목이면 400 UNIQUE_VIOLATION. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ItemInspectionLevelCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "지정됨",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ItemInspectionLevel"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-03-12",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/item-inspection-levels/{itemInspectionLevelId}": {
+   "parameters": [
+    {
+     "name": "itemInspectionLevelId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "put": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "품목 검사 수준 수동 변경",
+    "description": "수준이 바뀌는데 사유가 없으면 400 reason REQUIRED. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ItemInspectionLevelUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "수정됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 행의 version_no",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ItemInspectionLevel"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음. 근거: W-03-12",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 검사 수준",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "낙관적 잠금 충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/QualityConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/item-inspection-level-histories": {
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사 수준 전환 이력",
+    "description": "최근 것부터. from·to 는 전환 일시(UTC) 범위. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "parameters": [
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "품목"
+     },
+     {
+      "name": "changeTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "AUTO",
+        "MANUAL"
+       ]
+      }
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "이 시각부터"
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "이 시각 전까지"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "1 부터"
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      },
+      "description": "기본 50"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/ItemInspectionLevelHistory"
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -4080,6 +4409,17 @@
      "fourMChange": {
       "$ref": "#/components/schemas/FourMChangeView",
       "description": "⭐ 의뢰 LOT 의 4M 변경품 기록 — 변경품이 아니면 칸이 없다. 서버 선행 · 장부 P-86 · omf-all-around#63"
+     },
+     "inspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "IQC 검사 수준 — 확정된 의뢰는 검사한 그 수준(기록값), 아직이면 품목의 현재 수준. 수준 미설정 품목·IQC 밖 의뢰는 생략된다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+      "example": "NORMAL"
      }
     },
     "required": [
@@ -5621,6 +5961,242 @@
      "changeTypeCode"
     ],
     "description": "4M 변경품 기록(읽기). 서버 선행 · 장부 P-86"
+   },
+   "ItemInspectionLevel": {
+    "type": "object",
+    "description": "품목별 IQC 검사 수준과 자동 전환 상태. 행이 없는 품목은 수준 미설정이다(지금처럼 동작). 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "required": [
+     "itemInspectionLevelId",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "inspectionLevelCode",
+     "autoSwitchEnabled",
+     "consecutiveAcceptCount",
+     "updatedAt",
+     "versionNo"
+    ],
+    "properties": {
+     "itemInspectionLevelId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "검사 수준 식별자"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "itemCode": {
+      "type": "string",
+      "description": "품목 코드(표시용)"
+     },
+     "itemName": {
+      "type": "string",
+      "description": "품목 이름(표시용)"
+     },
+     "inspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "현재 검사 수준",
+      "example": "NORMAL"
+     },
+     "autoSwitchEnabled": {
+      "type": "boolean",
+      "description": "자동 전환 사용 — IQC 첫 확정 판정으로 센다. 합격 연속 15 → 수월(보통에서), 불합격 → 엄격, 엄격에서 합격 연속 5 → 보통. 무검사는 자동 전환 대상이 아니다"
+     },
+     "consecutiveAcceptCount": {
+      "type": "integer",
+      "description": "지금 수준에서의 연속 합격 LOT 수. 전환·수동 변경·불합격이면 0"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "versionNo": {
+      "type": "integer",
+      "description": "수정의 If-Match 값 — 행마다 수정하므로 목록에서 바로 쓴다"
+     }
+    }
+   },
+   "ItemInspectionLevelCreate": {
+    "type": "object",
+    "description": "품목 검사 수준 최초 지정 — 전환 이력에 수동(MANUAL) 1건이 남는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "required": [
+     "itemId",
+     "inspectionLevelCode",
+     "reason"
+    ],
+    "properties": {
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "inspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "지정할 수준",
+      "example": "NORMAL"
+     },
+     "autoSwitchEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "자동 전환 사용"
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "지정 사유(필수)"
+     }
+    }
+   },
+   "ItemInspectionLevelUpdate": {
+    "type": "object",
+    "description": "수동 변경. 생략 = 유지. 수준이 바뀌면 사유가 필수이고 이력 1건이 남으며 연속 합격 수가 0 이 된다. 품목은 바꾸지 않는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "properties": {
+     "inspectionLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "새 수준",
+      "example": "NORMAL"
+     },
+     "autoSwitchEnabled": {
+      "type": "boolean",
+      "description": "자동 전환 사용"
+     },
+     "reason": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "변경 사유 — 수준이 바뀔 때 필수"
+     }
+    }
+   },
+   "ItemInspectionLevelHistory": {
+    "type": "object",
+    "description": "검사 수준 전환 이력. 자동(AUTO)은 연속 합격 수(consecutiveAcceptCount) 또는 불합격 의뢰(inspectionRequestNo)를, 수동(MANUAL)은 입력 사유(reason)를 싣는다. 최초 지정은 fromLevelCode 가 null 이다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "required": [
+     "itemInspectionLevelHistoryId",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "fromLevelCode",
+     "toLevelCode",
+     "changeTypeCode",
+     "consecutiveAcceptCount",
+     "inspectionRequestId",
+     "inspectionRequestNo",
+     "reason",
+     "changedAt",
+     "changedByName"
+    ],
+    "properties": {
+     "itemInspectionLevelHistoryId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "품목"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "fromLevelCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED",
+       null
+      ],
+      "description": "이전 수준 — 최초 지정이면 null",
+      "example": "NORMAL"
+     },
+     "toLevelCode": {
+      "type": "string",
+      "enum": [
+       "NONE",
+       "REDUCED",
+       "NORMAL",
+       "TIGHTENED"
+      ],
+      "description": "새 수준",
+      "example": "NORMAL"
+     },
+     "changeTypeCode": {
+      "type": "string",
+      "enum": [
+       "AUTO",
+       "MANUAL"
+      ],
+      "description": "AUTO(IQC 판정으로 자동) · MANUAL(수동)"
+     },
+     "consecutiveAcceptCount": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "자동 전환을 일으킨 연속 합격 LOT 수 — 합격 연속 전환에만"
+     },
+     "inspectionRequestId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "자동 전환을 일으킨 IQC 의뢰"
+     },
+     "inspectionRequestNo": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "그 의뢰 번호(표시용) — 불합격 전환의 사유로 쓴다"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "수동 사유"
+     },
+     "changedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "changedByName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "처리자 — 계정 이름 또는 단말 작업자 이름"
+     }
+    }
    }
   }
  }
