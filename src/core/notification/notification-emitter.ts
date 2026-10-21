@@ -90,7 +90,12 @@ export class NotificationEmitter {
         department_id: input.departmentId,
         dispatch_status_code: skipReason === null ? 'NOTIFIED' : 'SKIPPED',
         skip_reason_code: skipReason,
-        payload: { ...input.refs, ...input.values } as Prisma.InputJsonObject,
+        payload: {
+          ...input.refs,
+          ...input.values,
+          // 번호가 없어 Zalo 건을 만들지 않은 수신자 수 — 건이 없어 발송 이력(W-CO-13)이 따로 셀 수 없다(data-model §5).
+          ...(zaloEnabled ? { zaloSkippedNoPhone: recipients.filter((r) => r.phone_number === null).length } : {}),
+        } as Prisma.InputJsonObject,
       },
       select: { notification_event_id: true },
     });

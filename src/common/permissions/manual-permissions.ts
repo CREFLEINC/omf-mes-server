@@ -116,6 +116,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // Zalo 연결 설정 — 설계 밖 화면 W-CO-12(알림 연결 설정)의 조회·저장이다(omf-all-around#160 · 장부 P-95).
   'GET /app/zalo-connection': ['W-CO-12'],
   'PUT /app/zalo-connection': ['W-CO-12'],
+  // 알림 발송 이력 — 설계 밖 화면 W-CO-13(알림 발송 이력)의 두 목록이다(omf-all-around#160 · 장부 P-97).
+  'GET /app/notification-dispatches': ['W-CO-13'],
+  'GET /app/zalo-deliveries': ['W-CO-13'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.
