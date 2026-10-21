@@ -31,6 +31,9 @@ type Delivery = {
   attempt_count: number;
 };
 
+const CONNECTION_NOT_READY = 'CONNECTION_NOT_READY';
+const CONNECTION_NOT_READY_MESSAGE = 'Zalo 연결이 설정되지 않았거나 재인증이 필요합니다.';
+
 class Stopping extends Error {}
 class LeaseLost extends Error {}
 
@@ -91,8 +94,11 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
       where: { zalo_connection_id: ZALO_CONNECTION_ID },
       select: { status_code: true },
     });
-    // 연결이 준비되지 않았으면 보내지 않는다 — 만료 처리만 하고 대기 건은 그대로 둔다(data-model §3).
-    if (connection?.status_code !== 'ACTIVE') return;
+    // 연결이 준비되지 않았으면 보내지 않는다 — 만료는 위에서 흘렀고, 남은 대기 건에 이유를 남긴다(data-model §3 · FR-032).
+    if (connection?.status_code !== 'ACTIVE') {
+      await this.holdForConnection(now);
+      return;
+    }
     let access = await this.tokens.access(now);
     if (access === null) return;
 
@@ -104,7 +110,7 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
           const next = await this.deliver(delivery, templates, access, now);
           if (next === null) {
             // 토큰을 다시 받지 못했다 — 남은 건을 대기로 돌려놓고 회차를 마친다.
-            await this.release(claimed.slice(index + 1), 'CONNECTION_NOT_READY', '연결 재인증이 필요합니다.');
+            await this.release(claimed.slice(index + 1), CONNECTION_NOT_READY, '연결 재인증이 필요합니다.');
             return;
           }
           access = next;
@@ -140,7 +146,7 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
       // -124 — 갱신하고 같은 tick 에서 한 번 더 보낸다. 토큰 문제는 시도로 세지 않는다.
       const renewed = await this.tokens.access(new Date(), true);
       if (renewed === null) {
-        await this.finish(delivery, { status_code: 'PENDING', last_error_code: 'CONNECTION_NOT_READY', last_error_message: '연결 재인증이 필요합니다.' });
+        await this.finish(delivery, { status_code: 'PENDING', last_error_code: CONNECTION_NOT_READY, last_error_message: '연결 재인증이 필요합니다.' });
         return null;
       }
       access = renewed;
@@ -202,6 +208,22 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
       },
     });
     if (settled.count > 0) this.logger.warn(`결과를 모르는 Zalo 발송 ${settled.count}건을 FAILED(UNKNOWN_OUTCOME)로 끝냈다`);
+  }
+
+  /**
+   * 연결 미설정·재인증 필요 동안의 대기 건 — `PENDING`(`CONNECTION_NOT_READY`)으로 보류한다. 시도 수는 그대로이고
+   * 만료(24h)는 흐른다. 이유가 없으면 발송 이력(W-CO-13)에서 왜 안 나갔는지 보이지 않는다.
+   * 이미 그 이유인 건은 건드리지 않는다 — 회차마다 같은 행을 다시 쓰지 않게.
+   */
+  private async holdForConnection(now: Date): Promise<void> {
+    await this.prisma.zalo_delivery.updateMany({
+      where: {
+        status_code: 'PENDING',
+        expires_at: { gt: now },
+        OR: [{ last_error_code: null }, { last_error_code: { not: CONNECTION_NOT_READY } }],
+      },
+      data: { last_error_code: CONNECTION_NOT_READY, last_error_message: CONNECTION_NOT_READY_MESSAGE, updated_at: new Date() },
+    });
   }
 
   private async expire(now: Date): Promise<void> {
