@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import { participatedMinutes } from './crew';
 import { REASON_GROUP_BY_EVENT_TYPE } from './work-session.constants';
 
 /** 이벤트 목록의 계약 정렬 — `occurred_at` 오름차순, 동률은 PK 오름차순(§8). */
@@ -16,7 +17,9 @@ export const WORK_SESSION_WORKER_ORDER_BY: Prisma.work_session_workerOrderByWith
 
 export type WorkSessionRow = Prisma.work_sessionGetPayload<object>;
 export type WorkSessionEventRow = Prisma.work_session_eventGetPayload<object>;
-export type WorkSessionWorkerRow = Prisma.work_session_workerGetPayload<object>;
+/** 참여자 표시에 필요한 사람 칸 — 사번·이름은 화면이 사람을 알아보는 값이다. */
+export const WORK_SESSION_WORKER_INCLUDE = { worker: { select: { worker_no: true, worker_name: true } } } as const;
+export type WorkSessionWorkerRow = Prisma.work_session_workerGetPayload<{ include: typeof WORK_SESSION_WORKER_INCLUDE }>;
 export type WorkSessionView = ReturnType<typeof workSessionView>;
 export type WorkSessionEventView = ReturnType<typeof workSessionEventView>;
 export type WorkSessionWorkerView = ReturnType<typeof workSessionWorkerView>;
@@ -58,14 +61,20 @@ export function workSessionEventView(row: WorkSessionEventRow, reasonName: strin
   });
 }
 
-/** 계약 `WorkSessionWorker`(4칸 · required 4)로 옮기는 자리. */
-export function workSessionWorkerView(row: WorkSessionWorkerRow) {
+/**
+ * 계약 `WorkSessionWorker` 로 옮기는 자리. `participatedMinutes` 는 저장하지 않고 이 참여 구간에서 계산한다 —
+ * 떠나지 않았으면 세션 종료까지, 세션도 열려 있으면 `now` 까지.
+ */
+export function workSessionWorkerView(row: WorkSessionWorkerRow, sessionEndedAt: Date | null, now: Date) {
   return omitEmpty({
     workSessionWorkerId: Number(row.work_session_worker_id),
     workerId: Number(row.worker_id),
+    workerNo: row.worker.worker_no,
+    workerName: row.worker.worker_name,
     workerRoleCode: row.worker_role_code,
     joinedAt: row.joined_at.toISOString(),
     leftAt: row.left_at === null ? undefined : row.left_at.toISOString(),
+    participatedMinutes: participatedMinutes(row.joined_at, row.left_at, sessionEndedAt, now),
   });
 }
 

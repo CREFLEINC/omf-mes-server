@@ -8,7 +8,11 @@ const terminal: TerminalContext = {
   terminalId: 7n, terminalCode: 'POP-7', plantId: 3n, terminalTypeCode: 'POP', equipmentId: 5n,
 };
 const prisma = {
-  worker: { findFirst: jest.fn().mockResolvedValue({ worker_id: 19n }) },
+  // `count` 는 「함께 일할 사람」 명단 중 단말 공장 재직자 수 — 기본은 명단 전원이다.
+  worker: {
+    findFirst: jest.fn().mockResolvedValue({ worker_id: 19n }),
+    count: jest.fn(async ({ where }: { where: { worker_id: { in: bigint[] } } }) => where.worker_id.in.length),
+  },
   work_order: { findFirst: jest.fn().mockResolvedValue({ work_order_id: 11n }) },
   work_session: { findFirst: jest.fn().mockResolvedValue({ work_session_id: 29n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
@@ -90,6 +94,31 @@ describe('POP production terminal scope', () => {
       await expect(start({})).resolves.toBeUndefined();
       await expect(start({ equipmentId: 8 })).rejects.toMatchObject({ status: 401 });
     });
+  });
+
+  it('세션 시작의 부작업자(workerIds)도 단말 공장 재직자여야 한다', async () => {
+    const start = (workerIds: unknown[]) => assertTerminalProductionScope(prisma,
+      request({ workOrderId: 11, workerIds }, {}, '900028'), 'POST /production/work-sessions', terminal);
+    await expect(start([19, 20])).resolves.toBeUndefined();
+    expect(prisma.worker.count).toHaveBeenLastCalledWith({ where: { worker_id: { in: [19n, 20n] }, plant_id: 3n, is_active: true } });
+    (prisma.worker.count as jest.Mock).mockResolvedValueOnce(1);
+    await expect(start([19, 20])).rejects.toMatchObject({ status: 401 });
+    await expect(start(['x'])).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('공동 작업자 참여·이탈·목록은 자기 세션이고, 참여하는 사람은 단말 공장의 재직 작업자다', async () => {
+    const join = (workerId: number) => assertTerminalProductionScope(prisma,
+      request({ workerId, joinedAt: '2026-09-07T02:00:00.000Z' }, { workSessionId: '29' }, '900028'),
+      'POST /production/work-sessions/{workSessionId}/workers', terminal);
+    await expect(join(19)).resolves.toBeUndefined();
+    (prisma.worker.count as jest.Mock).mockResolvedValueOnce(0);
+    await expect(join(20)).rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalProductionScope(prisma, request({}, { workSessionId: '29' }),
+      'GET /production/work-sessions/{workSessionId}/workers', terminal)).resolves.toBeUndefined();
+    (prisma.work_session.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    await expect(assertTerminalProductionScope(prisma,
+      request({ leftAt: '2026-09-07T03:00:00.000Z' }, { workSessionId: '29', workSessionWorkerId: '5' }, '900028'),
+      'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave', terminal)).rejects.toMatchObject({ status: 401 });
   });
 
   it('requires its own work session for read events and writes', async () => {

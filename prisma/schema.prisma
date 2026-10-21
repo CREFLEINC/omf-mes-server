@@ -2572,6 +2572,7 @@ model worker {
   work_order                     work_order[]
   work_order_resource_assignment work_order_resource_assignment[]
   work_session_worker            work_session_worker[]
+  production_result_worker_allocation production_result_worker_allocation[]
   defect_record                  defect_record[]
   inspection_result              inspection_result[]
   requested_approval_requests    approval_request[]
@@ -3081,6 +3082,7 @@ model production_result {
   work_session                     work_session?                      @relation(fields: [work_session_id], references: [work_session_id], onDelete: NoAction, onUpdate: NoAction)
   worker                           worker                             @relation(fields: [worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   production_result_lot_allocation production_result_lot_allocation[]
+  production_result_worker_allocation production_result_worker_allocation[]
   defect_record                    defect_record[]
   inspection_request               inspection_request[]
 
@@ -3090,6 +3092,28 @@ model production_result {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model production_result_worker_allocation {
+  production_result_worker_allocation_id BigInt            @id @default(autoincrement())
+  production_result_id                   BigInt
+  worker_id                              BigInt
+  worker_role_code                       String            @db.VarChar(50)
+  participated_minutes                   Decimal           @db.Decimal(12, 2)
+  share_ratio                            Decimal           @db.Decimal(12, 10)
+  good_qty                               Decimal           @default(0) @db.Decimal(20, 6)
+  defect_qty                             Decimal           @default(0) @db.Decimal(20, 6)
+  hold_qty                               Decimal           @default(0) @db.Decimal(20, 6)
+  scrap_qty                              Decimal           @default(0) @db.Decimal(20, 6)
+  rework_qty                             Decimal           @default(0) @db.Decimal(20, 6)
+  created_at                             DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                             BigInt?
+  production_result                      production_result @relation(fields: [production_result_id], references: [production_result_id], onDelete: Cascade, onUpdate: NoAction)
+  worker                                 worker            @relation(fields: [worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([production_result_id, worker_id], map: "uq_production_result_worker")
+  @@index([worker_id, production_result_id], map: "ix_production_result_worker_worker")
+  @@schema("production")
+}
+
 model production_result_lot_allocation {
   production_result_lot_allocation_id BigInt            @id @default(autoincrement())
   production_result_id                BigInt
