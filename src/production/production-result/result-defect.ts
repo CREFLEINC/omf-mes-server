@@ -105,7 +105,8 @@ export async function assertDefectCodes(
 /**
  * 실적과 «같은 트랜잭션»에서 유형별 불량 기록을 남긴다 — 실적만 서고 기록이 빠지는 일이 없다.
  * ⛔ LOT 은 비운다 — 불량품은 그 실적의 양품 LOT 에 들어 있지 않아, 달면 추적(S32)이 거짓말을 한다(사용자 결정 2026-10-21).
- * 작업자·설비·금형·시각은 실적 행 값 그대로다.
+ * 작업자·설비·금형·시각은 실적 행 값 그대로다. 실적에 설비·금형이 비었으면 그 작업 세션의 것을 쓴다 — POP 은 세션을
+ * 실어도 본문 설비를 생략하곤 해, 비워 두면 설비별 불량을 셀 수 없다. 실적 행 자체는 채우지 않는다.
  */
 export async function writeDefects(
   tx: Prisma.TransactionClient,
@@ -115,6 +116,13 @@ export async function writeDefects(
   appUserId: number | undefined,
 ): Promise<void> {
   if (defects.length === 0 || processId === null) return;
+  const session =
+    row.work_session_id === null || (row.equipment_id !== null && row.mold_id !== null)
+      ? null
+      : await tx.work_session.findUnique({
+          where: { work_session_id: row.work_session_id },
+          select: { equipment_id: true, mold_id: true },
+        });
   await tx.defect_record.createMany({
     data: defects.map((defect) => ({
       source_type_code: FIELD_SOURCE,
@@ -126,8 +134,8 @@ export async function writeDefects(
       occurrence_process_id: processId,
       detection_process_id: processId,
       worker_id: row.worker_id,
-      equipment_id: row.equipment_id,
-      mold_id: row.mold_id,
+      equipment_id: row.equipment_id ?? session?.equipment_id ?? null,
+      mold_id: row.mold_id ?? session?.mold_id ?? null,
       occurred_at: row.occurred_at,
       detected_at: row.occurred_at,
       created_by: appUserId ?? null,

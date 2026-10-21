@@ -86,6 +86,7 @@ describe('생산 실적 불량 유형', () => {
     const row = {
       production_result_id: 501n,
       work_order_id: 900n,
+      work_session_id: null,
       uom_id: 7n,
       worker_id: 11n,
       equipment_id: 21n,
@@ -113,5 +114,38 @@ describe('생산 실적 불량 유형', () => {
     });
     expect(data.defect_qty.toNumber()).toBe(2);
     expect(data).not.toHaveProperty('lot_id');
+  });
+
+  it('실적에 설비·금형이 비었으면 불량 기록은 그 작업 세션의 설비·금형을 쓴다 — 실적에 있는 값이 먼저다', async () => {
+    const createMany = jest.fn().mockResolvedValue({ count: 1 });
+    const findUnique = jest.fn().mockResolvedValue({ equipment_id: 41n, mold_id: 42n });
+    const tx = { defect_record: { createMany }, work_session: { findUnique } } as unknown as Prisma.TransactionClient;
+    const row = {
+      production_result_id: 501n,
+      work_order_id: 900n,
+      work_session_id: 70n,
+      uom_id: 7n,
+      worker_id: 11n,
+      equipment_id: 21n,
+      mold_id: null,
+      occurred_at: new Date('2026-10-21T01:00:00Z'),
+    } as unknown as ProductionResultRow;
+
+    await writeDefects(tx, row, [{ defectCodeId: 4, qty: 2 }], PROCESS_ID, 3);
+
+    expect(createMany.mock.calls[0][0].data[0]).toMatchObject({ equipment_id: 21n, mold_id: 42n });
+  });
+
+  it('실적에 설비·금형이 다 있으면 세션을 읽지 않는다', async () => {
+    const findUnique = jest.fn();
+    const tx = {
+      defect_record: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      work_session: { findUnique },
+    } as unknown as Prisma.TransactionClient;
+    const row = { work_session_id: 70n, equipment_id: 21n, mold_id: 22n, occurred_at: new Date() } as unknown as ProductionResultRow;
+
+    await writeDefects(tx, row, [{ defectCodeId: 4, qty: 2 }], PROCESS_ID, 3);
+
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });
