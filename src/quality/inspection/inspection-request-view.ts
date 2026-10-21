@@ -16,7 +16,8 @@ export const FOUR_M_CHANGE_INCLUDE = {
 
 export type InspectionRequestView = ReturnType<typeof inspectionRequestView>;
 
-export function inspectionRequestView(row: InspectionRequestRow) {
+/** `inspectionLevelCode` — IQC 검사 수준(#64 · 장부 P-85). 고르는 규칙은 `iqcInspectionLevels` 가 갖는다. */
+export function inspectionRequestView(row: InspectionRequestRow, inspectionLevelCode?: string) {
   return omitEmpty({
     inspectionRequestId: Number(row.inspection_request_id),
     inspectionRequestNo: row.inspection_request_no,
@@ -39,5 +40,6 @@ export function inspectionRequestView(row: InspectionRequestRow) {
     requestedAt: row.requested_at.toISOString(),
     versionNo: row.version_no,
     fourMChange: fourMChangeView(row.lot?.lot_four_m_change),
+    inspectionLevelCode,
   });
 }

@@ -10,7 +10,9 @@ import { InspectionConfirmService } from './inspection-confirm.service';
 it('uses the real terminal worker for IQC LOT transition and hold release', async () => {
   const tx = { inspection_request: { update: jest.fn().mockResolvedValue({
     lot_id: 3n, work_order_id: null, inspection_type_code: 'IQC', inspection_plan_version: null,
-  }) } } as unknown as Prisma.TransactionClient;
+  }) },
+  // 검사 수준 미설정 품목(#64) — 수준 셈은 아무것도 하지 않는다.
+  $queryRaw: jest.fn().mockResolvedValue([]) } as unknown as Prisma.TransactionClient;
   const holds = {
     lockLotsWithin: jest.fn().mockResolvedValue([{ lot_id: 3n }]),
     releaseWithin: jest.fn().mockResolvedValue({ openAfter: 0 }),
