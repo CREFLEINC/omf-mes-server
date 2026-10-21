@@ -4008,6 +4008,249 @@
      }
     }
    }
+  },
+  "/app/notification-dispatches": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "알림 발송 이력 — 이벤트 단위",
+    "description": "알림 사건마다 처리 결과·알리지 않은 이유·알림센터 건수·Zalo 집계(FR-032). 최근 발생 순. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "example": "2026-10-14T00:00:00+07:00",
+      "description": "이상(포함). RFC3339. to 와 함께 필수, 최대 31일 — 넘으면 400 to RANGE"
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "example": "2026-10-21T00:00:00+07:00",
+      "description": "미만(제외). from 보다 뒤여야 한다"
+     },
+     {
+      "name": "eventCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+     },
+     {
+      "name": "departmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1001
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "NOTIFIED",
+        "SKIPPED"
+       ]
+      },
+      "example": "SKIPPED"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 1
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 50
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationDispatchPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/app/zalo-deliveries": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "Zalo 발송 이력 — 수신자 단위",
+    "description": "Zalo 발송 1건(이벤트×수신자)의 상태·시도 횟수·마지막 오류(FR-030·031). 기간은 사건 발생 시각 기준. ⛔ 전화번호는 가운데를 가린 phoneMasked 로만. 최근 생성 순. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "example": "2026-10-14T00:00:00+07:00",
+      "description": "이상(포함). RFC3339. to 와 함께 필수, 최대 31일 — 넘으면 400 to RANGE"
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "example": "2026-10-21T00:00:00+07:00",
+      "description": "미만(제외). from 보다 뒤여야 한다"
+     },
+     {
+      "name": "eventCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+     },
+     {
+      "name": "departmentId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1001
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "PENDING",
+        "SENDING",
+        "SENT",
+        "FAILED",
+        "EXPIRED"
+       ]
+      },
+      "example": "FAILED"
+     },
+     {
+      "name": "notificationEventId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 17
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 1
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 50
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ZaloDeliveryPage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5985,6 +6228,291 @@
        }
       },
       "description": "바꿀 이벤트만 담아도 된다. templateId null = 지움. 모르는·겹친 eventCode 는 400 templates"
+     }
+    }
+   },
+   "NotificationDispatchPage": {
+    "type": "object",
+    "required": [
+     "items",
+     "page"
+    ],
+    "description": "알림 발송 이력(이벤트 단위) 쪽. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "notificationEventId",
+        "eventCode",
+        "occurredAt",
+        "departmentId",
+        "departmentName",
+        "targetTypeCode",
+        "targetId",
+        "targetLabel",
+        "dispatchStatus",
+        "skipReasonCode",
+        "notificationCount",
+        "zalo"
+       ],
+       "properties": {
+        "notificationEventId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 17
+        },
+        "eventCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+        },
+        "occurredAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-10-21T07:30:00Z"
+        },
+        "departmentId": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "format": "int64",
+         "example": 1001,
+         "description": "판정된 부서. 판정 실패면 null"
+        },
+        "departmentName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "생산1팀"
+        },
+        "targetTypeCode": {
+         "type": "string",
+         "enum": [
+          "WORK_ORDER",
+          "EQUIPMENT",
+          "APPROVAL_REQUEST"
+         ],
+         "example": "WORK_ORDER"
+        },
+        "targetId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 42
+        },
+        "targetLabel": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "WO-20261021-003",
+         "description": "W/O 번호 · 설비 코드 이름 · 결재 요청 번호"
+        },
+        "dispatchStatus": {
+         "type": "string",
+         "enum": [
+          "NOTIFIED",
+          "SKIPPED"
+         ],
+         "example": "NOTIFIED"
+        },
+        "skipReasonCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "enum": [
+          "DEPARTMENT_UNRESOLVED",
+          "EVENT_DISABLED",
+          "NO_RECIPIENTS",
+          "REPORTER_OPTED_OUT",
+          "APPROVER_INACTIVE",
+          null
+         ],
+         "example": "EVENT_DISABLED",
+         "description": "SKIPPED 일 때만 값이 있다(data-model §5)"
+        },
+        "notificationCount": {
+         "type": "integer",
+         "example": 0,
+         "description": "알림센터 알림 건수(수신자 수)"
+        },
+        "zalo": {
+         "type": "object",
+         "required": [
+          "pending",
+          "sent",
+          "failed",
+          "expired",
+          "skippedNoPhone"
+         ],
+         "properties": {
+          "pending": {
+           "type": "integer",
+           "example": 0,
+           "description": "대기(러너가 잡은 SENDING 포함)"
+          },
+          "sent": {
+           "type": "integer",
+           "example": 0,
+           "description": "성공"
+          },
+          "failed": {
+           "type": "integer",
+           "example": 0,
+           "description": "실패"
+          },
+          "expired": {
+           "type": "integer",
+           "example": 0,
+           "description": "만료(24시간)"
+          },
+          "skippedNoPhone": {
+           "type": "integer",
+           "example": 0,
+           "description": "Zalo 가 켜졌지만 전화번호가 없어 건을 만들지 않은 수신자 수"
+          }
+         }
+        }
+       }
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
+     }
+    }
+   },
+   "ZaloDeliveryPage": {
+    "type": "object",
+    "required": [
+     "items",
+     "page"
+    ],
+    "description": "Zalo 발송 이력(수신자 단위) 쪽. 근거: 서버 선행 · 장부 P-98 · omf-all-around#160(피처 001 W-CO-13)",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "zaloDeliveryId",
+        "notificationEventId",
+        "eventCode",
+        "occurredAt",
+        "departmentName",
+        "targetLabel",
+        "recipientUserId",
+        "recipientName",
+        "phoneMasked",
+        "status",
+        "attemptCount",
+        "lastErrorCode",
+        "lastErrorMessage",
+        "sentAt",
+        "trackingId"
+       ],
+       "properties": {
+        "zaloDeliveryId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 301
+        },
+        "notificationEventId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 17
+        },
+        "eventCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+        },
+        "occurredAt": {
+         "type": "string",
+         "format": "date-time",
+         "example": "2026-10-21T07:30:00Z",
+         "description": "사건 발생 시각"
+        },
+        "departmentName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "생산1팀"
+        },
+        "targetLabel": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "WO-20261021-003"
+        },
+        "recipientUserId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 9
+        },
+        "recipientName": {
+         "type": "string",
+         "example": "홍길동"
+        },
+        "phoneMasked": {
+         "type": "string",
+         "example": "091*****78",
+         "description": "발생 시점 번호를 국내형으로 바꿔 앞 3자리·끝 2자리만 남긴다. 원문은 내리지 않는다"
+        },
+        "status": {
+         "type": "string",
+         "enum": [
+          "PENDING",
+          "SENDING",
+          "SENT",
+          "FAILED",
+          "EXPIRED"
+         ],
+         "example": "SENT"
+        },
+        "attemptCount": {
+         "type": "integer",
+         "example": 1,
+         "description": "실제로 Zalo 에 보낸 횟수(최대 4)"
+        },
+        "lastErrorCode": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "-108",
+         "description": "Zalo error 또는 내부 코드(NETWORK·HTTP_5xx·TEMPLATE_NOT_SET·CONNECTION_NOT_READY·UNKNOWN_OUTCOME 등)"
+        },
+        "lastErrorMessage": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "Phone number is invalid"
+        },
+        "sentAt": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "format": "date-time",
+         "example": "2026-10-21T07:30:12Z"
+        },
+        "trackingId": {
+         "type": "string",
+         "example": "zd-301",
+         "description": "Zalo 측 기록과 대조하는 키"
+        }
+       }
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
      }
     }
    },

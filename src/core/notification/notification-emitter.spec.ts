@@ -99,6 +99,7 @@ describe('NotificationEmitter', () => {
       expires_at: new Date('2026-10-22T07:30:00.000Z'),
     });
     expect(written.deliveries[0].template_data).toMatchObject({ wo_no: 'WO-1', item: 'P100 ', event_time: '21/10' });
+    expect(written.events[0].payload).toMatchObject({ zaloSkippedNoPhone: 1 });
   });
 
   it.each([
