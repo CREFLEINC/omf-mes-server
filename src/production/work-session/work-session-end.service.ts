@@ -21,8 +21,8 @@ export interface WorkSessionEnd {
 }
 /**
  * 세션 닫기(§4). ⛔ `work_order` 무변경 — 세션 층과 W/O 층은 다르고 W/O 는 `:close` 가 닫는다.
- * ⛔ `terminal_process` 게이팅을 안 건다(계약이 이 자리에 `can_*` 를 안 적었다 · R-5) ·
- * ⛔ 참여자의 `left_at` 을 자동으로 안 찍는다(계약 침묵 · 문의 058).
+ * ⛔ `terminal_process` 게이팅을 안 건다(계약이 이 자리에 `can_*` 를 안 적었다 · R-5).
+ * 남은 참여자는 종료 시각으로 닫는다 — 주작업자는 작업 중에 떠날 수 없어 여기서만 닫히고, 공수가 종료에서 멈춘다.
  */
 @Injectable()
 export class WorkSessionEndService {
@@ -61,6 +61,11 @@ export class WorkSessionEndService {
           updated_by: context.appUserId ?? null,
         },
       });
+      // 종료 뒤에 참여한 행이 있어도 참여 시각보다 앞서 닫지 않는다(`ck_work_session_worker_dates`).
+      await tx.$executeRaw`
+        UPDATE production.work_session_worker
+           SET left_at = GREATEST(joined_at, ${endedAt})
+         WHERE work_session_id = ${row.work_session_id} AND left_at IS NULL`;
       await tx.work_session_event.create({
         // `terminal_id` 는 토큰이 오면 채우고 없으면 비운다 — 게이팅은 안 건다(R-1 C).
         data: {
