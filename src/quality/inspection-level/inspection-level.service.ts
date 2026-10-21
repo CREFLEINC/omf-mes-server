@@ -41,7 +41,8 @@ export interface ItemInspectionLevelCreate {
   itemId: number;
   inspectionLevelCode: InspectionLevelCode;
   autoSwitchEnabled?: boolean;
-  reason: string;
+  /** 선택 — 비우면 이력의 사유도 비워 둔다. */
+  reason?: string;
 }
 
 /** 생략 = 유지. 수준이 바뀌면 사유 필수. */
@@ -125,7 +126,7 @@ export class InspectionLevelService {
   }
 
   async create(input: ItemInspectionLevelCreate, appUserId: number | undefined): Promise<ItemInspectionLevelView> {
-    const reason = requiredReason(input.reason);
+    const reason = input.reason?.trim() || null;
     const item = await this.prisma.item.findUnique({ where: { item_id: input.itemId }, select: { item_id: true } });
     if (!item) throw one(field('itemId', ERROR_CODE.INVALID, '없는 품목입니다.'));
     const id = await this.prisma

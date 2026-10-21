@@ -66,12 +66,13 @@ describe('InspectionLevelService — 지정(POST)', () => {
     expect(view).toMatchObject({ itemInspectionLevelId: 5, itemCode: 'OA-001', inspectionLevelCode: 'NORMAL', versionNo: 3 });
   });
 
-  it('사유가 공백이면 400 reason REQUIRED', async () => {
-    const { service, prisma } = harness();
-    await expect(service.create({ itemId: 10, inspectionLevelCode: 'NORMAL', reason: '  ' }, 1)).rejects.toMatchObject({
-      response: { errors: [expect.objectContaining({ field: 'reason', code: 'REQUIRED' })] },
-    });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+  it.each([
+    ['생략', undefined],
+    ['공백', '  '],
+  ])('사유가 %s 이면 그대로 지정하고 이력의 사유를 비워 둔다', async (_label, reason) => {
+    const { service, histories } = harness();
+    await service.create({ itemId: 10, inspectionLevelCode: 'NORMAL', reason }, 1);
+    expect(histories).toEqual([expect.objectContaining({ from_level_code: null, change_type_code: 'MANUAL', reason: null })]);
   });
 
   it('없는 품목이면 400 itemId INVALID', async () => {

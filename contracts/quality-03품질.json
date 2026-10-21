@@ -6029,8 +6029,7 @@
     "description": "품목 검사 수준 최초 지정 — 전환 이력에 수동(MANUAL) 1건이 남는다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "required": [
      "itemId",
-     "inspectionLevelCode",
-     "reason"
+     "inspectionLevelCode"
     ],
     "properties": {
      "itemId": {
@@ -6056,9 +6055,8 @@
      },
      "reason": {
       "type": "string",
-      "minLength": 1,
       "maxLength": 500,
-      "description": "지정 사유(필수)"
+      "description": "지정 사유(선택) — 비우면 이력의 사유가 null"
      }
     }
    },
@@ -6090,7 +6088,7 @@
    },
    "ItemInspectionLevelHistory": {
     "type": "object",
-    "description": "검사 수준 전환 이력. 자동(AUTO)은 연속 합격 수(consecutiveAcceptCount) 또는 불합격 의뢰(inspectionRequestNo)를, 수동(MANUAL)은 입력 사유(reason)를 싣는다. 최초 지정은 fromLevelCode 가 null 이다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "검사 수준 전환 이력. 자동(AUTO)은 연속 합격 수(consecutiveAcceptCount) 또는 불합격 의뢰(inspectionRequestNo)를, 수동(MANUAL)은 입력 사유(reason)를 싣는다. 최초 지정은 fromLevelCode 가 null 이고 사유가 비어 있을 수 있다. 근거: 서버 선행 · 장부 P-85 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "required": [
      "itemInspectionLevelHistoryId",
      "itemId",
@@ -6183,7 +6181,7 @@
        "string",
        "null"
       ],
-      "description": "수동 사유"
+      "description": "수동 사유 — 최초 지정은 null 일 수 있다"
      },
      "changedAt": {
       "type": "string",
