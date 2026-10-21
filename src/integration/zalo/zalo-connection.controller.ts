@@ -8,7 +8,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { ZaloConnectionReplace, ZaloConnectionService, ZaloConnectionView } from './zalo-connection.service';
 
-/** Zalo 연결 설정(W-CO-12 · 장부 P-95). 비밀값은 응답에 «설정됨» 여부로만 보인다. */
+/** Zalo 연결 설정(W-CO-12 · 장부 P-96). 비밀값은 응답에 «설정됨» 여부로만 보인다. */
 @Controller('app/zalo-connection')
 export class ZaloConnectionController {
   constructor(

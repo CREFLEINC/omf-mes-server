@@ -44,7 +44,7 @@ export interface ZaloConnectionReplace {
 type ConnectionRow = Prisma.zalo_connectionGetPayload<object>;
 
 /**
- * Zalo 연결 정보(W-CO-12 · 장부 P-95). ⛔ 비밀값 원문은 응답·감사·로그 어디에도 싣지 않는다(FR-028).
+ * Zalo 연결 정보(W-CO-12 · 장부 P-96). ⛔ 비밀값 원문은 응답·감사·로그 어디에도 싣지 않는다(FR-028).
  * 시스템에 1행(id=1)이다 — 행이 없으면 미설정으로 읽고 GET 은 행을 만들지 않는다.
  */
 @Injectable()

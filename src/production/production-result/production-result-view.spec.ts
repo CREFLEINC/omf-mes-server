@@ -44,7 +44,7 @@ function row(overrides: Partial<ProductionResultRow> = {}): ProductionResultRow 
 
 describe('생산 실적 뷰 (I-7 PR ①)', () => {
   it('뷰 — 값 없는 칸은 키를 생략한다(널을 안 보낸다)', () => {
-    const view = productionResultView(row(), []);
+    const view = productionResultView(row(), [], []);
 
     // 선택 9칸이 전부 NULL 인 행 — 널을 내리면 계약의 「선택 필드」와 뜻이 갈린다.
     for (const key of [
@@ -66,7 +66,7 @@ describe('생산 실적 뷰 (I-7 PR ①)', () => {
   });
 
   it('뷰 — required 14 는 값이 0 이어도 «값»으로 낸다', () => {
-    const view = productionResultView(row(), []);
+    const view = productionResultView(row(), [], []);
 
     // 다섯 수량이 0 이라도 키가 살아 있어야 계약 required 를 만족한다.
     expect(view).toEqual({
@@ -88,12 +88,14 @@ describe('생산 실적 뷰 (I-7 PR ①)', () => {
       statusCode: 'CONFIRMED',
       // 배분이 없어도 빈 배열로 싣는다 — 화면이 그때 실적의 workerId 로 센다.
       workerAllocations: [],
+      // 불량 유형이 없어도 빈 배열로 싣는다.
+      defects: [],
     });
   });
 
   it('뷰 — `shiftId` 가 NULL 이면 키가 없다', () => {
     // D1 이 NOT NULL 을 풀었고 계약 `ProductionResultCreate` 에 칸이 없어 새 행은 늘 비운다.
-    expect(Object.keys(productionResultView(row({ shift_id: null }), []))).not.toContain('shiftId');
-    expect(productionResultView(row({ shift_id: 3n }), [])).toMatchObject({ shiftId: 3 });
+    expect(Object.keys(productionResultView(row({ shift_id: null }), [], []))).not.toContain('shiftId');
+    expect(productionResultView(row({ shift_id: 3n }), [], [])).toMatchObject({ shiftId: 3 });
   });
 });

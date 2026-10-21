@@ -45,6 +45,9 @@ const EMPTY_FIGURES: NonconformanceFigures = {
 export const CONFIRMED_INSPECTION_RECORD = Prisma.sql`(dr.inspection_result_id IS NULL OR EXISTS (
   SELECT 1 FROM quality.inspection_result ir
   WHERE ir.inspection_result_id = dr.inspection_result_id AND ir.status_code = 'CONFIRMED'))`;
+/** `defect-view.ts` 의 `LATEST_RESULT_ONLY` 와 같은 뜻 — 정정된 실적의 유형별 내역(FIELD)은 정정본 것만 센다. */
+export const LATEST_RESULT_RECORD = Prisma.sql`(dr.source_type_code IS DISTINCT FROM 'FIELD' OR dr.production_result_id IS NULL
+  OR NOT EXISTS (SELECT 1 FROM production.production_result c WHERE c.corrects_production_result_id = dr.production_result_id))`;
 
 @Injectable()
 export class DashboardNonconformanceService {
@@ -110,6 +113,7 @@ export class DashboardNonconformanceService {
         WHERE ${coarseRange(Prisma.sql`dr.detected_at`, period.from, period.to)}
           AND ${localDate(Prisma.sql`dr.detected_at`)} BETWEEN ${period.from}::date AND ${period.to}::date
           AND ${CONFIRMED_INSPECTION_RECORD}
+          AND ${LATEST_RESULT_RECORD}
       )`;
     const phenomena = await tx.$queryRaw<
       { defect_code_id: bigint; defect_code: string; defect_name: string; qty: string }[]

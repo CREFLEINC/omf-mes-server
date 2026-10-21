@@ -6341,6 +6341,15 @@
       "description": "지정하면 그 대분류의 상세만"
      },
      {
+      "name": "processId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "지정하면 그 공정에 매핑된(defect_code_process) 상세와 그 상세들의 대분류 행(parentDefectCodeId 없음)만 — 고를 수 있는 것은 상세뿐이고 생산 실적 불량 유형이 받는 코드와 같은 기준이다. 대분류는 묶음 머리다. 장부 P-95"
+     },
+     {
       "name": "includeInactive",
       "in": "query",
       "schema": {
