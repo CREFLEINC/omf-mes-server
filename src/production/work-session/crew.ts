@@ -41,6 +41,7 @@ export interface WorkerShare {
 /**
  * 실적 구간 `[from, to)` 의 작업자별 몫 — 참여 시간 비율이다. 같은 사람이 나갔다 다시 들어온 구간은 합친다.
  * 참여 시간이 모두 0 이면 주작업자가 전부다(주작업자가 없으면 먼저 들어온 사람). 주작업자를 맨 앞에 둔다.
+ * 몫이 0 인 사람은 빼고 낸다 — 그 구간에 일하지 않은 사람에게 배분 행을 남기지 않는다.
  */
 export function workerShares(rows: readonly Participation[], from: Date, to: Date): WorkerShare[] {
   const byWorker = new Map<bigint, { roleCode: string; ms: number; firstJoined: number }>();
@@ -59,7 +60,7 @@ export function workerShares(rows: readonly Participation[], from: Date, to: Dat
     .map(([workerId, value]) => ({ workerId, ...value }))
     .sort((a, b) => Number(b.roleCode === WORKER_ROLE.MAIN) - Number(a.roleCode === WORKER_ROLE.MAIN) || a.firstJoined - b.firstJoined);
   const total = ordered.reduce((sum, item) => sum + item.ms, 0);
-  return ordered.map((item, index) => ({
+  const shares = ordered.map((item, index) => ({
     workerId: item.workerId,
     roleCode: item.roleCode,
     participatedMinutes: toMinutes(item.ms),
@@ -68,10 +69,12 @@ export function workerShares(rows: readonly Participation[], from: Date, to: Dat
         ? new Prisma.Decimal(index === 0 ? 1 : 0)
         : new Prisma.Decimal(item.ms).dividedBy(total).toDecimalPlaces(10, Prisma.Decimal.ROUND_HALF_UP),
   }));
+  return shares.filter((share) => share.ratio.gt(0));
 }
 
 /**
- * 수량을 몫대로 나눈다 — 각자 소수 여섯째 자리 반올림, 나머지 끝전은 맨 앞(주작업자)에게 얹어 합이 원래 수량과 같다.
+ * 수량을 몫대로 나눈다 — 각자 소수 여섯째 자리 반올림, 나머지 끝전은 몫이 가장 큰 사람(동률이면 앞 사람 — 주작업자가 맨 앞)에게
+ * 얹어 합이 원래 수량과 같다. ⛔ 몫이 작은 사람에게 주면 반올림이 넘친 만큼 음수가 되어 수량 도메인(`qty_t`)이 거부한다.
  * `shares` 는 `workerShares` 순서(주작업자 먼저)여야 한다.
  */
 export function splitQuantities<K extends string>(
@@ -79,6 +82,7 @@ export function splitQuantities<K extends string>(
   shares: readonly Pick<WorkerShare, 'ratio'>[],
 ): Record<K, Prisma.Decimal>[] {
   const result = shares.map(() => ({}) as Record<K, Prisma.Decimal>);
+  const anchor = shares.reduce((best, share, index) => (share.ratio.gt(shares[best].ratio) ? index : best), 0);
   for (const key of Object.keys(quantities) as K[]) {
     const total = quantities[key];
     let assigned = new Prisma.Decimal(0);
@@ -87,7 +91,7 @@ export function splitQuantities<K extends string>(
       result[index][key] = part;
       assigned = assigned.plus(part);
     });
-    if (shares.length > 0) result[0][key] = result[0][key].plus(total.minus(assigned));
+    if (shares.length > 0) result[anchor][key] = result[anchor][key].plus(total.minus(assigned));
   }
   return result;
 }

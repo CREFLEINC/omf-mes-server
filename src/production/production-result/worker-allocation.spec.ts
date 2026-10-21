@@ -20,11 +20,19 @@ function result(overrides: Row = {}) {
   } as unknown as Prisma.production_resultGetPayload<object>;
 }
 
-function txOf(options: { previous?: Date; participants?: Row[]; original?: Row[] } = {}) {
+function txOf(options: { previous?: Date; sameTime?: bigint; participants?: Row[]; original?: Row[] } = {}) {
   const written: Row[] = [];
   const tx = {
     work_session: { findUniqueOrThrow: () => Promise.resolve({ started_at: at('01:00') }) },
-    production_result: { findFirst: () => Promise.resolve(options.previous ? { occurred_at: options.previous } : null) },
+    production_result: {
+      // 같은 시각 조회는 `occurred_at` 이 날짜 그대로, 직전 실적 조회는 `{ lt }` 다.
+      findFirst: ({ where }: { where: { occurred_at: unknown } }) =>
+        Promise.resolve(
+          where.occurred_at instanceof Date
+            ? (options.sameTime === undefined ? null : { production_result_id: options.sameTime })
+            : (options.previous ? { occurred_at: options.previous } : null),
+        ),
+    },
     work_session_worker: { findMany: () => Promise.resolve(options.participants ?? []) },
     production_result_worker_allocation: {
       findMany: () => Promise.resolve(options.original ?? []),
@@ -59,7 +67,20 @@ describe('worker-allocation — 실적의 작업자별 배분 저장', () => {
     ]);
   });
 
-  it('정정은 원 배분의 비율을 쓰고 끝전을 주작업자에게 준다', async () => {
+  it('같은 시각의 실적이 이미 있으면 다시 재지 않고 그 비율을 쓴다', async () => {
+    const it0 = txOf({
+      sameTime: 49n,
+      participants: [main, sub],
+      original: [
+        { worker_id: 1n, worker_role_code: 'MAIN', participated_minutes: D(60), share_ratio: D('0.5') },
+        { worker_id: 2n, worker_role_code: 'SUB', participated_minutes: D(60), share_ratio: D('0.5') },
+      ],
+    });
+    await allocateBySession(it0.tx, result({ good_qty: D(2) }), 5);
+    expect(it0.written.map((row) => [row.worker_id, (row.good_qty as Prisma.Decimal).toString()])).toEqual([[1n, '1'], [2n, '1']]);
+  });
+
+  it('정정은 원 배분의 비율을 쓰고 끝전을 몫이 가장 큰 주작업자에게 준다', async () => {
     const it0 = txOf({
       original: [
         { worker_id: 2n, worker_role_code: 'SUB', participated_minutes: D(20), share_ratio: D('0.3333333333') },

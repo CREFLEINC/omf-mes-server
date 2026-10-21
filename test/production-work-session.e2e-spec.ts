@@ -882,23 +882,26 @@ describe('작업 세션 조회 4건 (e2e)', () => {
           ]);
         });
 
-        it('둘째 실적은 직전 실적 이후 구간만 본다 — 떠난 사람은 몫이 0 이다', async () => {
+        it('둘째 실적은 직전 실적 이후 구간만 본다 — 그 구간에 없던 사람은 배분 행이 없다', async () => {
           const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: '2026-09-07T05:30:00.000Z', goodQty: 3 }).expect(201);
           // 04:30~05:30 — W1·W3 60분씩, W2 는 이미 떠났다.
           expect(shapeOf(response.body.workerAllocations)).toEqual([
             [Number(ids.worker1), 'MAIN', 60, 0.5, 1.5, 0],
-            [Number(ids.worker2), 'SUB', 0, 0, 0, 0],
             [Number(ids.worker3), 'SUB', 60, 0.5, 1.5, 0],
+          ]);
+        });
+
+        it('같은 시각의 둘째 실적은 앞 실적과 같은 구간이라 그 비율을 쓴다', async () => {
+          const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: '2026-09-07T05:30:00.000Z', goodQty: 2 }).expect(201);
+          expect(shapeOf(response.body.workerAllocations)).toEqual([
+            [Number(ids.worker1), 'MAIN', 60, 0.5, 1, 0],
+            [Number(ids.worker3), 'SUB', 60, 0.5, 1, 0],
           ]);
         });
 
         it('구간에 참여 시간이 없으면 주작업자가 전부다', async () => {
           const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: START_AT, goodQty: 4 }).expect(201);
-          expect(shapeOf(response.body.workerAllocations).map((row) => [row[0], row[3], row[4]])).toEqual([
-            [Number(ids.worker1), 1, 4],
-            [Number(ids.worker2), 0, 0],
-            [Number(ids.worker3), 0, 0],
-          ]);
+          expect(shapeOf(response.body.workerAllocations).map((row) => [row[0], row[3], row[4]])).toEqual([[Number(ids.worker1), 1, 4]]);
         });
 
         it('정정 실적은 원 실적의 비율로 정정 수량을 나눈다', async () => {
@@ -931,7 +934,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         it('목록·상세가 배분을 싣고, 세션 없는 실적은 빈 배열이다', async () => {
           const listed = await request(app.getHttpServer()).get(RESULTS).query({ workOrderId }).set('Cookie', cookie).expect(200);
           expect(validator('GET /production/production-results')(listed.body)).toBe(true);
-          expect(listed.body.items.every((item: { workerAllocations: unknown[] }) => item.workerAllocations.length === 3)).toBe(true);
+          expect(listed.body.items.every((item: { workerAllocations: unknown[] }) => item.workerAllocations.length > 0)).toBe(true);
 
           const lone = await postResult({ workOrderId, occurredAt: '2026-09-07T06:00:00.000Z', goodQty: 1 }).expect(201);
           const detail = await request(app.getHttpServer()).get(`${RESULTS}/${lone.body.productionResultId}`).set('Cookie', cookie).expect(200);
