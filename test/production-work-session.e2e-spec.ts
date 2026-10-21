@@ -26,7 +26,8 @@ const NOPERM_ID = 'e2e-wse-noperm';
 const PASSWORD = 'WSE-작업세션-비밀번호';
 const ROLE = 'E2E_WORK_SESSION';
 /** 세션 열기 P-02-01 · `:end`·`:hold` P-02-10 · W/O 발행 W-02-02 · 배포 W-02-04 · 토큰 M-CO-01. */
-const PERMISSIONS = ['P-02-01', 'P-02-10', 'W-02-02', 'W-02-03', 'W-02-04', 'M-CO-01'];
+// 실적 등록(P-02-03)·정정(W-02-05)은 공동 작업자 실적 배분을 보려고 함께 준다.
+const PERMISSIONS = ['P-02-01', 'P-02-03', 'P-02-10', 'W-02-02', 'W-02-03', 'W-02-04', 'W-02-05', 'M-CO-01'];
 const PREFIX = 'WSE2E';
 const BASE = '/api/production/work-sessions';
 const WORK_ORDERS = '/api/production/work-orders';
@@ -843,6 +844,101 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         expect((await workersOf(id, false)).map((row) => row.participatedMinutes)).toEqual([300, 300]);
         await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(400);
       });
+
+      describe('생산 실적의 작업자별 배분', () => {
+        const RESULTS = '/api/production/production-results';
+        type Allocation = { workerId: number; workerRoleCode: string; participatedMinutes: number; shareRatio: number; goodQty: number; defectQty: number };
+        const postResult = (body: Record<string, unknown>) =>
+          request(app.getHttpServer())
+            .post(RESULTS)
+            .set('Cookie', cookie)
+            .set('Idempotency-Key', idem())
+            .set('X-Worker-No', `${PREFIX}-W1`)
+            .send({ uomId: Number(ids.uom), resultSourceCode: 'MANUAL', ...body });
+        const shapeOf = (allocations: Allocation[]) =>
+          allocations.map((item) => [item.workerId, item.workerRoleCode, item.participatedMinutes, item.shareRatio, item.goodQty, item.defectQty]);
+        let sessionId = 0;
+        let workOrderId = 0;
+        let firstResultId = 0;
+
+        beforeAll(async () => {
+          // 02:30 시작(W1 주 · W2 부) → 03:30 W2 이탈 · W3 참여.
+          ({ id: sessionId, workOrderId } = await running({ workerIds: [Number(ids.worker2)] }));
+          const w2 = await subOf(sessionId, ids.worker2);
+          await leaveWorker(sessionId, w2.workSessionWorkerId, { leftAt: '2026-09-07T03:30:00.000Z' }).expect(200);
+          await joinWorker(sessionId, { workerId: Number(ids.worker3), joinedAt: '2026-09-07T03:30:00.000Z' }).expect(201);
+        });
+
+        it('첫 실적은 세션 시작부터의 참여 시간 비율로 나누고, 주작업자가 먼저다', async () => {
+          const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: '2026-09-07T04:30:00.000Z', goodQty: 10, defectQty: 1 }).expect(201);
+          firstResultId = response.body.productionResultId as number;
+
+          expect(validator('POST /production/production-results', 201)(response.body)).toBe(true);
+          // 02:30~04:30 — W1 120분 · W2 60분 · W3 60분.
+          expect(shapeOf(response.body.workerAllocations)).toEqual([
+            [Number(ids.worker1), 'MAIN', 120, 0.5, 5, 0.5],
+            [Number(ids.worker2), 'SUB', 60, 0.25, 2.5, 0.25],
+            [Number(ids.worker3), 'SUB', 60, 0.25, 2.5, 0.25],
+          ]);
+        });
+
+        it('둘째 실적은 직전 실적 이후 구간만 본다 — 떠난 사람은 몫이 0 이다', async () => {
+          const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: '2026-09-07T05:30:00.000Z', goodQty: 3 }).expect(201);
+          // 04:30~05:30 — W1·W3 60분씩, W2 는 이미 떠났다.
+          expect(shapeOf(response.body.workerAllocations)).toEqual([
+            [Number(ids.worker1), 'MAIN', 60, 0.5, 1.5, 0],
+            [Number(ids.worker2), 'SUB', 0, 0, 0, 0],
+            [Number(ids.worker3), 'SUB', 60, 0.5, 1.5, 0],
+          ]);
+        });
+
+        it('구간에 참여 시간이 없으면 주작업자가 전부다', async () => {
+          const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: START_AT, goodQty: 4 }).expect(201);
+          expect(shapeOf(response.body.workerAllocations).map((row) => [row[0], row[3], row[4]])).toEqual([
+            [Number(ids.worker1), 1, 4],
+            [Number(ids.worker2), 0, 0],
+            [Number(ids.worker3), 0, 0],
+          ]);
+        });
+
+        it('정정 실적은 원 실적의 비율로 정정 수량을 나눈다', async () => {
+          // 수량을 바꾸는 정정은 승인이 필요하다 — 승인된 요청을 심는다.
+          await prisma.approval_request.create({
+            data: {
+              approval_request_no: `${PREFIX}-AR-${firstResultId}`,
+              approval_type_code: 'PRODUCTION_RESULT_CORRECT',
+              target_type_code: 'PRODUCTION_RESULT',
+              target_id: BigInt(firstResultId),
+              requested_worker_id: ids.worker1,
+              requested_at: new Date(START_AT),
+              status_code: 'APPROVED',
+              reason: '공동 작업자 배분 검사',
+            },
+          });
+          const corrected = await request(app.getHttpServer())
+            .post(`${RESULTS}/${firstResultId}:correct`)
+            .set('Cookie', cookie)
+            .set('Idempotency-Key', idem())
+            .send({ reasonCode: 'QTY_MISCOUNT', goodQty: 8 })
+            .expect(201);
+          expect(shapeOf(corrected.body.workerAllocations)).toEqual([
+            [Number(ids.worker1), 'MAIN', 120, 0.5, 4, 0.5],
+            [Number(ids.worker2), 'SUB', 60, 0.25, 2, 0.25],
+            [Number(ids.worker3), 'SUB', 60, 0.25, 2, 0.25],
+          ]);
+        });
+
+        it('목록·상세가 배분을 싣고, 세션 없는 실적은 빈 배열이다', async () => {
+          const listed = await request(app.getHttpServer()).get(RESULTS).query({ workOrderId }).set('Cookie', cookie).expect(200);
+          expect(validator('GET /production/production-results')(listed.body)).toBe(true);
+          expect(listed.body.items.every((item: { workerAllocations: unknown[] }) => item.workerAllocations.length === 3)).toBe(true);
+
+          const lone = await postResult({ workOrderId, occurredAt: '2026-09-07T06:00:00.000Z', goodQty: 1 }).expect(201);
+          const detail = await request(app.getHttpServer()).get(`${RESULTS}/${lone.body.productionResultId}`).set('Cookie', cookie).expect(200);
+          expect(validator('GET /production/production-results/{productionResultId}')(detail.body)).toBe(true);
+          expect(detail.body.workerAllocations).toEqual([]);
+        });
+      });
     });
   });
 
@@ -1250,6 +1346,9 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     const plantScope = { plant: { plant_code: { startsWith: PREFIX } } };
     // ⚠ API 로 연 세션의 `idempotency_key` 는 UUID 라 접두어로 못 잡는다 — W/O 축으로 지운다.
     const sessionScope = { work_order: { production_plan: { plan_no: { startsWith: PREFIX } } } };
+    // 실적을 지우면 작업자 배분도 함께 지워진다(FK CASCADE).
+    await prisma.production_result.deleteMany({ where: { work_order: { production_plan: { plan_no: { startsWith: PREFIX } } } } });
+    await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: PREFIX } } });
     await prisma.work_session_event.deleteMany({ where: { work_session: sessionScope } });
     await prisma.work_session_worker.deleteMany({ where: { work_session: sessionScope } });
     await prisma.work_session.deleteMany({ where: sessionScope });
