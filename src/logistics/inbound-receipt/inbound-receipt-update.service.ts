@@ -14,6 +14,7 @@ import {
 } from './inbound-receipt-rules';
 import {
   InboundReceiptLineView,
+  INBOUND_LINE_INCLUDE,
   InboundReceiptView,
   inboundReceiptLineView,
   inboundReceiptView,
@@ -156,6 +157,7 @@ export class InboundReceiptUpdateService {
       const rows = await tx.inbound_receipt_line.findMany({
         where: { inbound_receipt_id: inboundReceiptId },
         orderBy: { line_no: 'asc' },
+        include: INBOUND_LINE_INCLUDE,
       });
       return rows.map(inboundReceiptLineView);
     }, TRANSACTION_OPTIONS);
