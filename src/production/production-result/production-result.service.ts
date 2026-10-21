@@ -24,6 +24,7 @@ import {
   resultQuantities,
 } from './production-result-rules';
 import { ProductionResultView, productionResultView } from './production-result-view';
+import { allocateBySession, loadAllocations } from './worker-allocation';
 
 /** 채번 문서 유형 — `app.numbering_rule` 에 `PR-{YYMMDD}-{SEQ4}` 가 등재돼 있다. */
 export const NUMBERING_DOCUMENT = 'PRODUCTION_RESULT';
@@ -133,7 +134,8 @@ export class ProductionResultService {
       changedAt: occurredAt,
     });
     await this.releaseUninspectedLots(tx, prepared);
-    return productionResultView(row);
+    await allocateBySession(tx, row, context.appUserId);
+    return productionResultView(row, (await loadAllocations(tx, [row.production_result_id])).get(row.production_result_id) ?? []);
   }
 
   /**

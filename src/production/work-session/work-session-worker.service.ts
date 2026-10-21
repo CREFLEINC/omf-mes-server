@@ -2,14 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ERROR_CODE, field, one } from '../../common/errors';
-import { assertCodeValues } from '../../common/master';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EMPLOYED_WORKER, MAX_OPEN_WORKERS, NOT_EMPLOYED_MESSAGE, WORKER_ROLE } from './crew';
 import { assertLeftAfterJoined, assertSessionVersion, lockWorkSession } from './work-session-rules';
-import { WorkSessionWorkerView, workSessionWorkerView } from './work-session-view';
+import { WORK_SESSION_WORKER_INCLUDE, WorkSessionWorkerView, workSessionWorkerView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
-const WORKER_ROLE_GROUP = 'WORK_SESSION_WORKER_ROLE';
 const SESSION_ENDED = 'ENDED';
-/** 계약 `WorkSessionWorkerJoin` — required 둘. `workerRoleCode` 는 물리 기본값(`OPERATOR`)을 탄다. */
+/** 계약 `WorkSessionWorkerJoin` — required 둘. 작업 중 참여는 부작업자뿐이다(주작업자는 작업을 시작한 사람 하나). */
 export interface WorkSessionWorkerJoin {
   workerId: number;
   workerRoleCode?: string;
@@ -37,13 +36,16 @@ export class WorkSessionWorkerService {
     body: WorkSessionWorkerJoin,
     context: WorkSessionWorkerContext,
   ): Promise<WorkSessionWorkerView> {
-    if ((await this.prisma.worker.count({ where: { worker_id: BigInt(body.workerId) } })) === 0) {
-      throw one(field('workerId', ERROR_CODE.INVALID, '없는 참조입니다.'));
+    const worker = await this.prisma.worker.findUnique({
+      where: { worker_id: BigInt(body.workerId) }, select: { is_active: true },
+    });
+    if (worker === null) throw one(field('workerId', ERROR_CODE.INVALID, '없는 참조입니다.'));
+    if (worker.is_active !== EMPLOYED_WORKER.is_active) {
+      throw one(field('workerId', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
     }
-    // 안 오면 검사도 하지 않는다 — `assertCodeValues` 가 `undefined` 를 건너뛴다.
-    await assertCodeValues(this.prisma, [
-      { field: 'workerRoleCode', value: body.workerRoleCode, groupCode: WORKER_ROLE_GROUP },
-    ]);
+    if (body.workerRoleCode !== undefined && body.workerRoleCode !== WORKER_ROLE.SUB) {
+      throw one(field('workerRoleCode', ERROR_CODE.INVALID, '작업 중에는 부작업자로만 참여합니다.'));
+    }
     return this.prisma.$transaction((tx: Tx) => this.commitJoin(tx, workSessionId, body, context));
   }
   private async commitJoin(
@@ -67,22 +69,26 @@ export class WorkSessionWorkerService {
     if (joined > 0) {
       throw one(field('workerId', ERROR_CODE.STATE_LOCKED, '이미 참여 중인 작업자입니다.'));
     }
+    const open = await tx.work_session_worker.count({ where: { work_session_id: BigInt(workSessionId), left_at: null } });
+    if (open >= MAX_OPEN_WORKERS) {
+      throw one(field('workerId', ERROR_CODE.INVALID, `동시에 참여할 수 있는 작업자는 ${MAX_OPEN_WORKERS}명까지입니다.`));
+    }
     const row = await tx.work_session_worker.create({
       data: {
         work_session_id: BigInt(workSessionId),
         worker_id: workerId,
-        // 값이 없으면 칸을 «안 넣는다» — 물리 기본값 `OPERATOR` 를 탄다(설계 미정 — 문의 056).
-        ...(body.workerRoleCode === undefined ? {} : { worker_role_code: body.workerRoleCode }),
+        worker_role_code: WORKER_ROLE.SUB,
         joined_at: new Date(body.joinedAt),
         created_by: context.appUserId,
       },
+      include: WORK_SESSION_WORKER_INCLUDE,
     });
-    return workSessionWorkerView(row);
+    return workSessionWorkerView(row, null, new Date());
   }
   /**
    * 떠난 시각을 찍는다 — 행을 지우지 않는다(계약). ⛔ If-Match 를 읽지 않는다(계약에 없다).
-   * ⭐ **종료된 세션에서도 허용한다** — `:end` 가 `left_at` 을 자동으로 안 찍으므로 이 경로를
-   *    닫으면 「영원히 참여 중」이 확정된다(설계 미정 — 문의 058).
+   * 주작업자는 세션이 열린 동안 떠날 수 없다 — 작업의 책임자가 비면 실적 배분의 끝전을 받을 사람이 없다.
+   * 종료된 세션에서도 허용한다 — `:end` 가 남은 참여자를 닫기 전의 옛 행이 남아 있을 수 있다.
    */
   async leave(
     workSessionId: number,
@@ -101,13 +107,20 @@ export class WorkSessionWorkerService {
       if (row.left_at !== null) {
         throw one(field('workSessionWorkerId', ERROR_CODE.STATE_LOCKED, '이미 이탈한 작업자입니다.'));
       }
+      const session = await tx.work_session.findUniqueOrThrow({
+        where: { work_session_id: row.work_session_id }, select: { ended_at: true },
+      });
+      if (row.worker_role_code === WORKER_ROLE.MAIN && session.ended_at === null) {
+        throw one(field('workSessionWorkerId', ERROR_CODE.STATE_LOCKED, '주작업자는 작업 중에 이탈할 수 없습니다.'));
+      }
       const leftAt = new Date(body.leftAt);
       assertLeftAfterJoined(leftAt, row.joined_at);
       const updated = await tx.work_session_worker.update({
         where: { work_session_worker_id: row.work_session_worker_id },
         data: { left_at: leftAt },
+        include: WORK_SESSION_WORKER_INCLUDE,
       });
-      return workSessionWorkerView(updated);
+      return workSessionWorkerView(updated, session.ended_at, new Date());
     });
   }
 }

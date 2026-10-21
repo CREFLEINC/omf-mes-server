@@ -56,6 +56,7 @@ function workerRow(overrides: Partial<WorkSessionWorkerRow> = {}): WorkSessionWo
     left_at: null,
     created_at: new Date('2026-09-07T01:00:00.000Z'),
     created_by: null,
+    worker: { worker_no: 'W-0040', worker_name: '작업자40' },
     ...overrides,
   } as WorkSessionWorkerRow;
 }
@@ -126,12 +127,21 @@ describe('reasonKey', () => {
 });
 
 describe('workSessionWorkerView', () => {
-  it('leftAt 이 NULL 이면 키를 생략한다', () => {
-    expect(workSessionWorkerView(workerRow())).not.toHaveProperty('leftAt');
+  const now = new Date('2026-09-07T02:30:00.000Z');
+
+  it('leftAt 이 NULL 이면 키를 생략하고, 열린 세션이면 지금까지를 참여 분으로 낸다', () => {
+    const view = workSessionWorkerView(workerRow(), null, now);
+    expect(view).not.toHaveProperty('leftAt');
+    expect(view).toMatchObject({ workerNo: 'W-0040', workerName: '작업자40', participatedMinutes: 90 });
   });
 
-  it('leftAt 이 있으면 싣는다', () => {
-    const view = workSessionWorkerView(workerRow({ left_at: new Date('2026-09-07T05:00:00.000Z') }));
-    expect(view.leftAt).toBe('2026-09-07T05:00:00.000Z');
+  it('leftAt 이 있으면 싣고 떠난 시각까지를 센다', () => {
+    const view = workSessionWorkerView(workerRow({ left_at: new Date('2026-09-07T01:45:30.000Z') }), null, now);
+    expect(view.leftAt).toBe('2026-09-07T01:45:30.000Z');
+    expect(view.participatedMinutes).toBe(45.5);
+  });
+
+  it('떠나지 않았는데 세션이 끝났으면 종료 시각까지를 센다', () => {
+    expect(workSessionWorkerView(workerRow(), new Date('2026-09-07T02:00:00.000Z'), now).participatedMinutes).toBe(60);
   });
 });

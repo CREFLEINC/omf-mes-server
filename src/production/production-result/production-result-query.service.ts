@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductionResultView, productionResultView } from './production-result-view';
+import { loadAllocations } from './worker-allocation';
 
 /** 계약 질의 8 전건 — 필수는 하나도 없다. 형·기본값은 `@Contract` 가드가 이미 맞춰 둔다. */
 export interface ProductionResultListQuery {
@@ -60,7 +61,8 @@ export class ProductionResultQueryService {
       this.prisma.production_result.findMany({ where, orderBy: PRODUCTION_RESULT_ORDER_BY, skip: page.skip, take: page.take }),
       this.prisma.production_result.count({ where }),
     ]);
-    return pagedResponse(rows.map(productionResultView), total, page);
+    const allocations = await loadAllocations(this.prisma, rows.map((row) => row.production_result_id));
+    return pagedResponse(rows.map((row) => productionResultView(row, allocations.get(row.production_result_id) ?? [])), total, page);
   }
 
   async detail(productionResultId: number): Promise<ProductionResultView> {
@@ -68,6 +70,7 @@ export class ProductionResultQueryService {
       where: { production_result_id: BigInt(productionResultId) },
     });
     if (row === null) throw new NotFoundException('없는 생산 실적입니다.');
-    return productionResultView(row);
+    const allocations = await loadAllocations(this.prisma, [row.production_result_id]);
+    return productionResultView(row, allocations.get(row.production_result_id) ?? []);
   }
 }
