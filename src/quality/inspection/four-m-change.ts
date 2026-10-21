@@ -93,8 +93,13 @@ export async function writeFourMChangeWithin(
   });
 }
 
+export interface FourMChangeRow {
+  change_type_code: string;
+  remarks: string | null;
+}
+
 /** 조회 응답의 모양 — 변경품이 아니면 칸이 없다. */
-export function fourMChangeView(row: { change_type_code: string; remarks: string | null } | null | undefined) {
+export function fourMChangeView(row: FourMChangeRow | null | undefined) {
   if (row === null || row === undefined) return undefined;
   return { changeTypeCode: row.change_type_code, ...(row.remarks === null ? {} : { remarks: row.remarks }) };
 }

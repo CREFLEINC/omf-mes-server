@@ -11691,7 +11691,7 @@
       "required": [
        "changeTypeCode"
       ],
-      "description": "⭐ 4M 변경품 — IQC 판정 때 이 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 목록(GET /trace/lots)만 싣는다 — POP 자재 투입 스캔이 투입 전에 알린다. ⚠ 내부 「4M 자원배정」과 다른 말이다. 서버 선행 · 장부 P-86 · omf-all-around#63"
+      "description": "⭐ 4M 변경품 — IQC 판정 때 이 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 목록(GET /trace/lots)·단건(GET /trace/lots/{lotId}) 이 싣는다 — POP 자재 투입 스캔·러닝 체인지·LOT 상태 상세가 알린다. ⚠ 내부 「4M 자원배정」과 다른 말이다. 서버 선행 · 장부 P-86 · omf-all-around#63"
      }
     },
     "x-internal-note": "입하 시점의 LOT 은 Hold 로 생긴다 — 가용 재고가 아니다(M-01-01 §5-4 · ✓확정 §재정의 #5). 📨 「W/O 내 순번」(별도 속성 — 선발행 슬롯 구간 지정용)은 계약이 앞서 세울 자리이고 저장 컬럼은 통지 대상이다 — 기다리지 않는다. 근거: 02-SW설계사양서 §4.6 · omf-mes#46."
