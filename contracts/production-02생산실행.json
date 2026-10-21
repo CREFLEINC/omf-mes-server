@@ -6241,6 +6241,16 @@
       "type": "string",
       "example": "값"
      },
+     "nameKo": {
+      "type": "string",
+      "description": "한국어 이름 — 불량코드 마스터에 있을 때만",
+      "example": "긁힘"
+     },
+     "nameVi": {
+      "type": "string",
+      "description": "베트남어 이름 — 불량코드 마스터에 있을 때만",
+      "example": "Trầy xước"
+     },
      "parentDefectCodeId": {
       "type": "integer",
       "format": "int64",

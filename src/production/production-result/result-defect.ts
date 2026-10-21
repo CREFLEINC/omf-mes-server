@@ -17,6 +17,8 @@ export interface ResultDefectView {
   defectCodeId: number;
   defectCode: string;
   defectName: string;
+  nameKo?: string;
+  nameVi?: string;
   parentDefectCodeId?: number;
   parentDefectCode?: string;
   parentDefectName?: string;
@@ -142,6 +144,8 @@ export async function loadDefects(
         select: {
           defect_code: true,
           defect_name: true,
+          name_ko: true,
+          name_vi: true,
           parent_defect_code: { select: { defect_code_id: true, defect_code: true, defect_name: true } },
         },
       },
@@ -155,6 +159,8 @@ export async function loadDefects(
       defectCodeId: Number(row.defect_code_id),
       defectCode: row.defect_code.defect_code,
       defectName: row.defect_code.defect_name,
+      ...(row.defect_code.name_ko === null ? {} : { nameKo: row.defect_code.name_ko }),
+      ...(row.defect_code.name_vi === null ? {} : { nameVi: row.defect_code.name_vi }),
       ...(parent === null
         ? {}
         : {

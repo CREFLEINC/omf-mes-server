@@ -78,7 +78,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     expect(response.body).toMatchObject({ goodQty: 10, defectQty: 3 });
     expect(response.body.defects).toEqual([
       expect.objectContaining({
-        defectCodeId: Number(ids.scratch), defectCode: `${PREFIX}-SCR`, defectName: '긁힘', qty: 2,
+        defectCodeId: Number(ids.scratch), defectCode: `${PREFIX}-SCR`, defectName: '긁힘', nameVi: '긁힘-vi', qty: 2,
         parentDefectCodeId: Number(ids.parent), parentDefectCode: `${PREFIX}-APP`, parentDefectName: '외관',
       }),
       expect.objectContaining({ defectCodeId: Number(ids.dent), qty: 1 }),
@@ -203,7 +203,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     ids.otherProcess = (await prisma.process.create({ data: { process_code: `${PREFIX}-PR2`, process_name: '실적불량조립', process_type_code: 'PRODUCTION' } })).process_id;
 
     const code = async (suffix: string, name: string, parentId: bigint | null) => (await prisma.defect_code.create({ data: {
-      defect_code: `${PREFIX}-${suffix}`, defect_name: name, parent_defect_code_id: parentId,
+      defect_code: `${PREFIX}-${suffix}`, defect_name: name, name_vi: `${name}-vi`, parent_defect_code_id: parentId,
     } })).defect_code_id;
     ids.parent = await code('APP', '외관', null);
     ids.scratch = await code('SCR', '긁힘', ids.parent);
