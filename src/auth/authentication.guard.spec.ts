@@ -107,12 +107,13 @@ describe('FR-004/005 terminal bearer authentication', () => {
       accessibleScreensContext(`Bearer ${pop.token}`).execution))).toBe(401);
   });
 
-  it('keeps the 44 reviewed generic and quality read keys disjoint', () => {
+  // 품질 +2 — POP 시리얼 OQC 스캔·의뢰의 시리얼 판정(omf-all-around#68 · 장부 P-101): 44 → 46.
+  it('keeps the 46 reviewed generic and quality read keys disjoint', () => {
     const generic = Object.keys(TERMINAL_READ_OPERATIONS);
     const quality = Object.keys(TERMINAL_QUALITY_READ_OPERATIONS);
     expect(generic).toHaveLength(32);
-    expect(quality).toHaveLength(12);
-    expect(new Set([...generic, ...quality]).size).toBe(44);
+    expect(quality).toHaveLength(14);
+    expect(new Set([...generic, ...quality]).size).toBe(46);
     expect([...generic, ...quality].every((key) => key.startsWith('GET '))).toBe(true);
   });
 
