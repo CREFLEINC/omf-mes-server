@@ -6,7 +6,7 @@ type Row = Record<string, unknown>;
 const JOINED = new Date('2026-09-07T02:00:00.000Z');
 
 /** 세션 하나 — `open` 명이 이미 참여 중이고 `ended` 면 종료된 세션이다. 참여 행 7 은 `role` 이다. */
-function stub(options: { open?: number; ended?: boolean; role?: string; status?: string } = {}) {
+function stub(options: { open?: number; ended?: boolean; role?: string; active?: boolean } = {}) {
   const created: Row[] = [];
   const tx = {
     $queryRaw: () => Promise.resolve([{ status_code: options.ended ? 'ENDED' : 'RUNNING', version_no: 1 }]),
@@ -25,7 +25,7 @@ function stub(options: { open?: number; ended?: boolean; role?: string; status?:
     },
   };
   const prisma = {
-    worker: { findUnique: () => Promise.resolve({ status_code: options.status ?? 'EMPLOYED', is_active: true }) },
+    worker: { findUnique: () => Promise.resolve({ is_active: options.active ?? true }) },
     $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
   return { service: new WorkSessionWorkerService(prisma), created };
@@ -44,7 +44,7 @@ describe('WorkSessionWorkerService — 공동 작업자 규칙', () => {
   });
 
   it('재직 중이 아닌 작업자는 참여하지 못한다', async () => {
-    const it0 = stub({ status: 'RESIGNED' });
+    const it0 = stub({ active: false });
     const error = await errorOf(join(it0.service));
     expect(error.errors[0]).toMatchObject({ field: 'workerId', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
     expect(it0.created).toEqual([]);

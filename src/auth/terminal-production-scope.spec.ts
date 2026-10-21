@@ -100,7 +100,7 @@ describe('POP production terminal scope', () => {
     const start = (workerIds: unknown[]) => assertTerminalProductionScope(prisma,
       request({ workOrderId: 11, workerIds }, {}, '900028'), 'POST /production/work-sessions', terminal);
     await expect(start([19, 20])).resolves.toBeUndefined();
-    expect(prisma.worker.count).toHaveBeenLastCalledWith({ where: { worker_id: { in: [19n, 20n] }, plant_id: 3n, status_code: 'EMPLOYED', is_active: true } });
+    expect(prisma.worker.count).toHaveBeenLastCalledWith({ where: { worker_id: { in: [19n, 20n] }, plant_id: 3n, is_active: true } });
     (prisma.worker.count as jest.Mock).mockResolvedValueOnce(1);
     await expect(start([19, 20])).rejects.toMatchObject({ status: 401 });
     await expect(start(['x'])).rejects.toMatchObject({ status: 401 });

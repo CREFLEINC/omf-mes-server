@@ -1141,9 +1141,9 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         data: { worker_no: `${PREFIX}-W${no}`, worker_name: `작업세션검사작업자${no}`, business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
       })).worker_id;
     }
-    // 퇴사자 — 사용 중 표시가 남아 있어도 상태로 막혀야 한다.
+    // 퇴사자 — 재직 판정의 정본은 is_active 다.
     ids.resigned = (await prisma.worker.create({
-      data: { worker_no: `${PREFIX}-W-OUT`, worker_name: '작업세션검사퇴사자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'RESIGNED', is_active: true },
+      data: { worker_no: `${PREFIX}-W-OUT`, worker_name: '작업세션검사퇴사자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'RESIGNED', is_active: false },
     })).worker_id;
 
     const order = await prisma.production_order.create({

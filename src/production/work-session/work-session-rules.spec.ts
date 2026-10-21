@@ -73,7 +73,7 @@ describe('work-session-rules', () => {
       },
     };
     const prisma = {
-      worker: { findUnique: () => Promise.resolve({ status_code: 'EMPLOYED', is_active: true }) },
+      worker: { findUnique: () => Promise.resolve({ is_active: true }) },
       code_value: codeValues([]),
       $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
     } as unknown as PrismaService;

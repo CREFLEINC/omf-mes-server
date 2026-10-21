@@ -37,10 +37,10 @@ export class WorkSessionWorkerService {
     context: WorkSessionWorkerContext,
   ): Promise<WorkSessionWorkerView> {
     const worker = await this.prisma.worker.findUnique({
-      where: { worker_id: BigInt(body.workerId) }, select: { status_code: true, is_active: true },
+      where: { worker_id: BigInt(body.workerId) }, select: { is_active: true },
     });
     if (worker === null) throw one(field('workerId', ERROR_CODE.INVALID, '없는 참조입니다.'));
-    if (worker.status_code !== EMPLOYED_WORKER.status_code || !worker.is_active) {
+    if (worker.is_active !== EMPLOYED_WORKER.is_active) {
       throw one(field('workerId', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
     }
     if (body.workerRoleCode !== undefined && body.workerRoleCode !== WORKER_ROLE.SUB) {
