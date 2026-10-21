@@ -340,6 +340,47 @@ describe('InboundReceiptService.create', () => {
     });
   });
 
+  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄을 싣는다(장부 P-93).
+  it('귀속 — 같은 P/O 라인을 가리키는 줄 여럿은 수량을 합쳐 한 번 올린다', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(
+      input({
+        lines: [
+          line({ receivedQty: 10, supplierLotNo: '040101-00022S|10|260806|100019|0002' }),
+          line({ receivedQty: 20, supplierLotNo: '040101-00022S|20|260806|100019|0003' }),
+        ],
+      }),
+      99,
+    );
+
+    expect(recorded.increments).toHaveLength(1);
+    expect(recorded.increments[0].purchaseOrderLineId).toBe(101n);
+    expect(String(recorded.increments[0].increment)).toBe('30');
+  });
+
+  it('귀속 — 같은 P/O 라인 줄들의 «합계»가 한도를 넘으면 그 라인의 첫 줄을 짚는 400 QTY_EXCEEDS_ORDERED', async () => {
+    // 줄 하나씩은 발주 100 안이다 — 합계 110 만 넘는다.
+    const { service, recorded } = fake();
+
+    const error = await thrown(() =>
+      service.create(
+        input({
+          lines: [
+            line({ receivedQty: 60, supplierLotNo: '040101-00022S|60|260806|100019|0002' }),
+            line({ receivedQty: 50, supplierLotNo: '040101-00022S|50|260806|100019|0003' }),
+          ],
+        }),
+        99,
+      ),
+    );
+
+    expect((error as ContractException).errors).toEqual([
+      expect.objectContaining({ field: 'lines.0.receivedQty', code: ERROR_CODE.QTY_EXCEEDS_ORDERED }),
+    ]);
+    expect(recorded.increments).toHaveLength(0);
+  });
+
   it('귀속 — purchaseOrderLineId 가 빈 라인은 잠금 목록에도 없다(무발주·초과분)', async () => {
     const { service, recorded } = fake();
 
