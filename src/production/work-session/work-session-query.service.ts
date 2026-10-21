@@ -7,6 +7,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   WORK_SESSION_EVENT_ORDER_BY,
+  WORK_SESSION_WORKER_INCLUDE,
   WORK_SESSION_WORKER_ORDER_BY,
   WorkSessionEventRow,
   WorkSessionEventView,
@@ -88,13 +89,15 @@ export class WorkSessionQueryService {
 
   /** 세션 존재 확인 뒤 배열. `active ?? true` → `left_at: null`(여집합). */
   async workers(workSessionId: number, query: { active?: boolean }): Promise<WorkSessionWorkerView[]> {
-    await this.loadSession(workSessionId);
+    const session = await this.loadSession(workSessionId);
     const active = query.active ?? true;
     const rows = await this.prisma.work_session_worker.findMany({
       where: { work_session_id: BigInt(workSessionId), left_at: active ? null : { not: null } },
       orderBy: WORK_SESSION_WORKER_ORDER_BY,
+      include: WORK_SESSION_WORKER_INCLUDE,
     });
-    return rows.map(workSessionWorkerView);
+    const now = new Date();
+    return rows.map((row) => workSessionWorkerView(row, session.ended_at, now));
   }
 
   private async loadSession(workSessionId: number) {

@@ -122,6 +122,8 @@ function stub(options: StubOptions = {}) {
         return Promise.resolve({ count: data.length });
       },
     },
+    // 세션 없는 실적은 작업자 배분이 없다 — 읽기만 한다.
+    production_result_worker_allocation: { findMany: () => Promise.resolve([]) },
   };
 
   const prisma = {

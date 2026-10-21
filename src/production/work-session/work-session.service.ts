@@ -2,10 +2,11 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
-import { assertCodeValues, assertWorkerNoExists } from '../../common/master';
+import { assertCodeValues, resolveWorkerId } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
+import { EMPLOYED_WORKER, MAX_OPEN_WORKERS, NOT_EMPLOYED_MESSAGE, WORKER_ROLE } from './crew';
 import { resolveShiftId } from './shift-resolver';
 import { EVENT_TYPE } from './work-session.constants';
 import { WorkSessionView, workSessionView } from './work-session-view';
@@ -43,13 +44,17 @@ export class WorkSessionService {
     private readonly documentState: DocumentStateService,
   ) {}
   async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
-    await assertWorkerNoExists(this.prisma, context.workerNo);
-    await this.assertReferences(body);
+    // 작업을 시작하는 사람이 이 세션의 주작업자다.
+    const mainWorkerId = await resolveWorkerId(this.prisma, context.workerNo);
+    if ((await this.prisma.worker.count({ where: { worker_id: mainWorkerId, ...EMPLOYED_WORKER } })) === 0) {
+      throw one(field('X-Worker-No', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
+    }
+    await this.assertReferences(body, mainWorkerId);
     await this.assertControlOverride(body);
     // `runIdempotent` 가 tx 를 넘겨주지 않는다 — 서비스가 자기 트랜잭션을 연다(I-9 R-10).
-    return this.prisma.$transaction((tx) => this.commit(tx, body, context));
+    return this.prisma.$transaction((tx) => this.commit(tx, body, context, mainWorkerId));
   }
-  private async commit(tx: Tx, body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
+  private async commit(tx: Tx, body: WorkSessionCreate, context: WorkSessionContext, mainWorkerId: bigint): Promise<WorkSessionView> {
     const workOrderId = BigInt(body.workOrderId);
     const locked = await lockWorkOrder(tx, body.workOrderId);
     assertVersion(locked, context.version);
@@ -81,7 +86,7 @@ export class WorkSessionService {
         created_by: context.appUserId,
       },
     });
-    await this.insertChildren(tx, row.work_session_id, body, context, startedAt);
+    await this.insertChildren(tx, row.work_session_id, body, context, startedAt, mainWorkerId);
     // ⭐ 상태가 이미 같으면 UPDATE 를 건너뛴다 — 둘째 세션마다 `version_no` 가 올라 화면의
     //    If-Match 토큰이 낡는 부작용을 없앤다(R-4).
     if (locked.status_code !== transition.to) {
@@ -93,9 +98,9 @@ export class WorkSessionService {
     return workSessionView(row);
   }
   // START(+우회면 CONTROL_OVERRIDE) 사건과 참여 행. START 는 `reason_code` 를 안 쓰고(A-25),
-  // 우회 `note` 는 담을 칸이 0이라 버리며(ⓖ), `worker_role_code` 는 물리 기본값을 탄다(056).
+  // 우회 `note` 는 담을 칸이 0이라 버린다(ⓖ). 참여 행은 시작한 사람이 주작업자, 본문 사람들이 부작업자다.
   private async insertChildren(
-    tx: Tx, sessionId: bigint, body: WorkSessionCreate, context: WorkSessionContext, startedAt: Date,
+    tx: Tx, sessionId: bigint, body: WorkSessionCreate, context: WorkSessionContext, startedAt: Date, mainWorkerId: bigint,
   ): Promise<void> {
     const override = body.controlOverride;
     const common = {
@@ -110,11 +115,13 @@ export class WorkSessionService {
         ...(override ? [{ ...common, event_type_code: EVENT_TYPE.CONTROL_OVERRIDE, reason_code: override.reasonCode }] : []),
       ],
     });
-    const workerIds = body.workerIds ?? [];
-    if (workerIds.length === 0) return;
+    const crew = [
+      { workerId: mainWorkerId, role: WORKER_ROLE.MAIN },
+      ...(body.workerIds ?? []).map((workerId) => ({ workerId: BigInt(workerId), role: WORKER_ROLE.SUB })),
+    ];
     await tx.work_session_worker.createMany({
-      data: workerIds.map((workerId) => ({
-        work_session_id: sessionId, worker_id: BigInt(workerId), joined_at: startedAt, created_by: context.appUserId,
+      data: crew.map(({ workerId, role }) => ({
+        work_session_id: sessionId, worker_id: workerId, worker_role_code: role, joined_at: startedAt, created_by: context.appUserId,
       })),
     });
   }
@@ -143,8 +150,8 @@ export class WorkSessionService {
       return null;
     }
   }
-  /** FK 존재 + 배열 중복. 400 은 모아 던진다 — 화면이 한 번에 표시한다. */
-  private async assertReferences(body: WorkSessionCreate): Promise<void> {
+  /** FK 존재 + 배열 중복 + 동시 참여 상한. 400 은 모아 던진다 — 화면이 한 번에 표시한다. */
+  private async assertReferences(body: WorkSessionCreate, mainWorkerId: bigint): Promise<void> {
     const errors: ErrorItem[] = [];
     const absent = async (name: string, value: number | undefined, count: (id: bigint) => Promise<number>) => {
       if (value !== undefined && (await count(BigInt(value))) === 0) errors.push(field(name, ERROR_CODE.INVALID, MISSING_REF));
@@ -155,9 +162,17 @@ export class WorkSessionService {
     const workerIds = body.workerIds ?? [];
     if (new Set(workerIds).size !== workerIds.length) {
       errors.push(field('workerIds', ERROR_CODE.INVALID, '같은 작업자를 두 번 넣을 수 없습니다.'));
+    } else if (workerIds.some((workerId) => BigInt(workerId) === mainWorkerId)) {
+      errors.push(field('workerIds', ERROR_CODE.INVALID, '작업을 시작하는 작업자는 이미 주작업자로 참여합니다.'));
+    } else if (1 + workerIds.length > MAX_OPEN_WORKERS) {
+      errors.push(field('workerIds', ERROR_CODE.INVALID, `동시에 참여할 수 있는 작업자는 ${MAX_OPEN_WORKERS}명까지입니다.`));
     } else if (workerIds.length > 0) {
-      const found = await this.prisma.worker.count({ where: { worker_id: { in: workerIds.map(BigInt) } } });
+      const ids = { worker_id: { in: workerIds.map(BigInt) } };
+      const found = await this.prisma.worker.count({ where: ids });
       if (found !== workerIds.length) errors.push(field('workerIds', ERROR_CODE.INVALID, MISSING_REF));
+      else if ((await this.prisma.worker.count({ where: { ...ids, ...EMPLOYED_WORKER } })) !== workerIds.length) {
+        errors.push(field('workerIds', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
+      }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
