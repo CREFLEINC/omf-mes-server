@@ -23,9 +23,11 @@ import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
 import { PagedResponse } from '../../common/pagination';
 import {
+  PurchaseOrderListItem,
   PurchaseOrderQuery,
   PurchaseOrderQueryService,
 } from './purchase-order-query.service';
+import { parseOrderListExtras } from './purchase-order-line-list';
 import { PurchaseOrderDetail, PurchaseOrderLineView, PurchaseOrderView } from './purchase-order-view';
 import {
   PurchaseOrderCreateInput,
@@ -45,8 +47,10 @@ export class PurchaseOrderController {
 
   @Get()
   @Contract('GET /logistics/purchase-orders')
-  list(@Req() request: Request, @Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderView>> {
-    return this.queries.list(plantQuery(query, request));
+  list(@Req() request: Request, @Query() query: PurchaseOrderQuery): Promise<PagedResponse<PurchaseOrderListItem>> {
+    // 납기 범위·지연만·공급사 검색은 계약 밖 조건이라 가드가 보지 않는다(장부 P-85) — 여기서 검사해 덮는다.
+    const extras = parseOrderListExtras(query as unknown as Record<string, unknown>);
+    return this.queries.list(plantQuery({ ...query, ...extras }, request));
   }
 
   @Get(':purchaseOrderId')

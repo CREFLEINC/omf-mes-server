@@ -36,6 +36,10 @@ const lineRow = (overrides: Args = {}): Args => ({
   ...overrides,
 });
 
+/** 목록이 읽는 모양 — 헤더 + 공급사 + 라인(묶음 값용). */
+const listRow = (lines: Args[] = []): Args =>
+  orderRow({ partner: { partner_code: 'S-1', partner_name: '공급사' }, purchase_order_line: lines });
+
 const ORDERED_QTY_FIELD_REF = { modelName: 'purchase_order_line', name: 'ordered_qty' }; // Prisma `fields` 참조 스텁
 
 /** `list()` 하나가 필요로 하는 만큼만 답하는 최소 prisma 스텁 — 넘어온 `where` 를 그대로 잡는다. */
@@ -50,6 +54,12 @@ function listStub(overrides: { rows?: Args[] } = {}) {
       count: async () => (overrides.rows ?? []).length,
     },
     purchase_order_line: { fields: { ordered_qty: ORDERED_QTY_FIELD_REF } },
+    plant: {
+      findMany: async () => [
+        { plant_id: 30n, timezone_code: 'Asia/Ho_Chi_Minh' },
+        { plant_id: 31n, timezone_code: 'Asia/Seoul' },
+      ],
+    },
   };
   return { prisma: prisma as unknown as PrismaService, calls };
 }
@@ -102,11 +112,79 @@ describe('PurchaseOrderQueryService', () => {
     });
 
     it('목록 — 기간 없이도 조회된다(기간 필수가 아니다)', async () => {
-      const { prisma, calls } = listStub({ rows: [orderRow()] });
+      const { prisma, calls } = listStub({ rows: [listRow()] });
       const result = await new PurchaseOrderQueryService(prisma).list({});
 
       expect(result.items).toHaveLength(1);
       expect(calls.where).not.toHaveProperty('order_date');
+    });
+
+    it('⭐ 목록 행에 공급사 코드·이름과 라인 묶음 값을 싣는다 · itemId 로 찾으면 그 품목 라인 수도', async () => {
+      const qty = (value: string) => new Prisma.Decimal(value);
+      const lines = [
+        { item_id: 42n, uom_id: 5n, ordered_qty: qty('100'), received_qty: qty('40'), cancelled_at: null, uom: { uom_code: 'KG' } },
+        { item_id: 43n, uom_id: 5n, ordered_qty: qty('50'), received_qty: qty('0'), cancelled_at: null, uom: { uom_code: 'KG' } },
+      ];
+      const { prisma } = listStub({ rows: [listRow(lines)] });
+      const result = await new PurchaseOrderQueryService(prisma).list({ itemId: 42 });
+
+      expect(result.items[0]).toMatchObject({
+        purchaseOrderId: 1,
+        supplierCode: 'S-1',
+        supplierName: '공급사',
+        lineCount: 2,
+        openLineCount: 2,
+        matchedLineCount: 1,
+        uomId: 5,
+        uomCode: 'KG',
+        orderedQtyTotal: 150,
+        receivedQtyTotal: 40,
+        remainingQtyTotal: 110,
+        receiptStatusCode: 'PARTIAL',
+      });
+      const plain = await new PurchaseOrderQueryService(listStub({ rows: [listRow(lines)] }).prisma).list({});
+      expect(plain.items[0]).toMatchObject({ matchedLineCount: null });
+    });
+
+    it('목록 — 납기 범위는 날짜 그대로 비교한다 · 공급사 검색은 코드·이름 부분 일치다', async () => {
+      const { prisma, calls } = listStub();
+      await new PurchaseOrderQueryService(prisma).list({
+        expectedReceiptDateFrom: '2026-10-20',
+        expectedReceiptDateTo: '2026-10-20',
+        supplierQ: ' 하노이 ',
+      });
+
+      expect(calls.where?.expected_receipt_date).toEqual({
+        gte: new Date('2026-10-20T00:00:00.000Z'),
+        lte: new Date('2026-10-20T00:00:00.000Z'),
+      });
+      expect(calls.where?.AND).toEqual([
+        {
+          partner: {
+            OR: [
+              { partner_code: { contains: '하노이', mode: 'insensitive' } },
+              { partner_name: { contains: '하노이', mode: 'insensitive' } },
+            ],
+          },
+        },
+      ]);
+    });
+
+    it('⭐ overdueOnly 는 남은 P/O 조건과 공장별 현지 오늘 앞의 납기를 함께 건다', async () => {
+      const { prisma, calls } = listStub();
+      // UTC 2026-10-20 16:30 = 하노이 23:30(20일) · 서울 01:30(21일).
+      await new PurchaseOrderQueryService(prisma).list({ overdueOnly: true }, new Date('2026-10-20T16:30:00.000Z'));
+
+      expect(calls.where?.AND).toEqual([
+        { status_code: { notIn: ['CLOSED', 'CANCELLED'] },
+          purchase_order_line: { some: { cancelled_at: null, received_qty: { lt: ORDERED_QTY_FIELD_REF } } } },
+        {
+          OR: [
+            { plant_id: 30n, expected_receipt_date: { lt: new Date('2026-10-20T00:00:00.000Z') } },
+            { plant_id: 31n, expected_receipt_date: { lt: new Date('2026-10-21T00:00:00.000Z') } },
+          ],
+        },
+      ]);
     });
 
     it('목록 — q 는 MES 발주번호만 검색한다(ERP 번호는 안 본다)', async () => {

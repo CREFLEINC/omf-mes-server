@@ -2,8 +2,9 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
-import { lineListItem, parseLineListQuery, receiptStatusOf } from './purchase-order-line-list';
+import { lineListItem, parseLineListQuery, parseOrderListExtras } from './purchase-order-line-list';
 import { PurchaseOrderLineListService } from './purchase-order-line-list.service';
+import { lineReceiptStatus, orderReceiptSummary } from './purchase-order-receipt';
 
 type Row = Parameters<typeof lineListItem>[0];
 
@@ -21,6 +22,8 @@ const row = (line: Partial<Row> = {}, order: Partial<Row['purchase_order']> = {}
     erp_storage_location_code: null,
     cancelled_at: null,
     version_no: 1,
+    item: { item_code: 'RM-1', item_name: '판재' },
+    uom: { uom_code: 'KG', uom_name: '킬로그램' },
     ...line,
     purchase_order: {
       purchase_order_id: 1n,
@@ -32,6 +35,7 @@ const row = (line: Partial<Row> = {}, order: Partial<Row['purchase_order']> = {}
       order_date: new Date('2026-10-01T00:00:00.000Z'),
       expected_receipt_date: new Date('2026-10-25T00:00:00.000Z'),
       status_code: 'REGISTERED',
+      partner: { partner_code: 'S-1', partner_name: '공급사' },
       ...order,
     },
   }) as Row;
@@ -54,6 +58,7 @@ describe('입하 예정 라인 목록 — 질의', () => {
   it('값을 받아 형에 맞춰 옮긴다 · q 는 다듬고 빈 q 는 버린다', () => {
     expect(
       parseLineListQuery({
+        purchaseOrderId: '9',
         supplierId: '10',
         plantId: '30',
         itemId: '100',
@@ -66,6 +71,7 @@ describe('입하 예정 라인 목록 — 질의', () => {
         size: '20',
       }),
     ).toEqual({
+      purchaseOrderId: 9n,
       supplierId: 10n,
       plantId: 30n,
       itemId: 100n,
@@ -99,6 +105,46 @@ describe('입하 예정 라인 목록 — 질의', () => {
   });
 });
 
+const receiptStatusOf = (r: Row) => lineReceiptStatus(r, r.purchase_order.status_code);
+
+describe('P/O 목록 — 계약 밖 조건(P-85)', () => {
+  it('문자열로 온 납기 범위·지연만·공급사 검색을 형에 맞춰 옮기고, 없으면 키를 undefined 로 싣는다', () => {
+    expect(
+      parseOrderListExtras({
+        expectedReceiptDateFrom: '2026-10-20',
+        expectedReceiptDateTo: '2026-10-20',
+        overdueOnly: 'true',
+        supplierQ: ' 하노이 ',
+      }),
+    ).toEqual({
+      expectedReceiptDateFrom: '2026-10-20',
+      expectedReceiptDateTo: '2026-10-20',
+      overdueOnly: true,
+      supplierQ: '하노이',
+    });
+    expect(parseOrderListExtras({ supplierQ: '  ' })).toEqual({
+      expectedReceiptDateFrom: undefined,
+      expectedReceiptDateTo: undefined,
+      overdueOnly: undefined,
+      supplierQ: undefined,
+    });
+  });
+
+  it('⛔ 틀린 값은 칸마다 400 INVALID 다', () => {
+    let errors: unknown;
+    try {
+      parseOrderListExtras({ expectedReceiptDateFrom: '2026-02-30', overdueOnly: 'yes', supplierQ: ['a'] });
+    } catch (error) {
+      errors = ((error as ContractException).getResponse() as { errors: unknown }).errors;
+    }
+    expect(errors).toEqual([
+      expect.objectContaining({ field: 'expectedReceiptDateFrom', code: 'INVALID' }),
+      expect.objectContaining({ field: 'overdueOnly', code: 'INVALID' }),
+      expect.objectContaining({ field: 'supplierQ', code: 'INVALID' }),
+    ]);
+  });
+});
+
 describe('입하 예정 라인 목록 — 입하 진행 판정', () => {
   it('받은 것이 없으면 NOT_STARTED · 일부면 PARTIAL · 발주 수량에 닿으면 COMPLETED', () => {
     expect(receiptStatusOf(row())).toBe('NOT_STARTED');
@@ -128,13 +174,19 @@ describe('입하 예정 라인 목록 — 행', () => {
       purchaseOrderNo: 'PO-1',
       erpPurchaseOrderNo: 'ERP-1',
       supplierId: 10,
+      supplierCode: 'S-1',
+      supplierName: '공급사',
       plantId: 30,
       orderDate: '2026-10-01',
       expectedReceiptDate: '2026-10-25',
       purchaseOrderStatusCode: 'REGISTERED',
       lineNo: 2,
       itemId: 100,
+      itemCode: 'RM-1',
+      itemName: '판재',
       uomId: 5,
+      uomCode: 'KG',
+      uomName: '킬로그램',
       orderedQty: 100,
       receivedQty: 40,
       remainingQty: 60,
@@ -231,6 +283,11 @@ describe('입하 예정 라인 목록 — 거르기', () => {
     ]);
   });
 
+  it('purchaseOrderId 를 주면 그 P/O 의 라인만 건다', async () => {
+    const where = await service().service.where(parseLineListQuery({ purchaseOrderId: '9', openOnly: 'false' }), new Date());
+    expect(where).toEqual({ purchase_order_id: 9n, AND: [{ purchase_order: { is: {} } }] });
+  });
+
   it('공장을 고르면 그 공장의 오늘만 본다', async () => {
     const { service: s, plantWhere } = service();
     const where = await s.where(parseLineListQuery({ plantId: '31', overdueOnly: 'true' }), new Date('2026-10-20T16:30:00.000Z'));
@@ -238,5 +295,64 @@ describe('입하 예정 라인 목록 — 거르기', () => {
     expect((where.AND as unknown[])[1]).toEqual({
       OR: [{ purchase_order: { is: { plant_id: 31n, expected_receipt_date: { lt: new Date('2026-10-21T00:00:00.000Z') } } } }],
     });
+  });
+});
+
+describe('P/O 묶음 값', () => {
+  const line = (ordered: string, received: string, uomId = 5n, cancelled = false) => ({
+    ordered_qty: new Prisma.Decimal(ordered),
+    received_qty: new Prisma.Decimal(received),
+    cancelled_at: cancelled ? new Date('2026-10-10T00:00:00.000Z') : null,
+    uom_id: uomId,
+    uom: { uom_code: uomId === 5n ? 'KG' : 'EA' },
+  });
+
+  it('취소되지 않은 라인만 더한다 · 남은 수량은 라인마다 0 아래를 자른 뒤 더한다', () => {
+    expect(orderReceiptSummary('REGISTERED', [line('100', '104'), line('50', '20'), line('30', '0', 5n, true)])).toEqual({
+      lineCount: 3,
+      openLineCount: 1,
+      uomId: 5,
+      uomCode: 'KG',
+      orderedQtyTotal: 150,
+      receivedQtyTotal: 124,
+      remainingQtyTotal: 30,
+      receiptStatusCode: 'PARTIAL',
+    });
+  });
+
+  it('⭐ 단위가 섞이면 합계와 단위를 모두 비운다 — 취소된 라인의 단위는 세지 않는다', () => {
+    expect(orderReceiptSummary('REGISTERED', [line('10', '0'), line('5', '0', 6n)])).toMatchObject({
+      uomId: null,
+      uomCode: null,
+      orderedQtyTotal: null,
+      receivedQtyTotal: null,
+      remainingQtyTotal: null,
+    });
+    expect(orderReceiptSummary('REGISTERED', [line('10', '0'), line('5', '0', 6n, true)])).toMatchObject({
+      uomId: 5,
+      orderedQtyTotal: 10,
+    });
+  });
+
+  it('진행: 다 들어오면 COMPLETED · 하나도 없으면 NOT_STARTED · 라인이 없어도 NOT_STARTED', () => {
+    expect(orderReceiptSummary('REGISTERED', [line('10', '10'), line('5', '0', 5n, true)]).receiptStatusCode).toBe(
+      'COMPLETED',
+    );
+    expect(orderReceiptSummary('REGISTERED', [line('10', '0'), line('5', '0')]).receiptStatusCode).toBe('NOT_STARTED');
+    expect(orderReceiptSummary('REGISTERED', [])).toMatchObject({
+      lineCount: 0,
+      uomId: null,
+      orderedQtyTotal: null,
+      receiptStatusCode: 'NOT_STARTED',
+    });
+  });
+
+  it('헤더가 취소됐거나 모든 라인이 취소면 CANCELLED 이고 남은 라인은 없다', () => {
+    expect(orderReceiptSummary('CANCELLED', [line('10', '0')])).toMatchObject({
+      receiptStatusCode: 'CANCELLED',
+      openLineCount: 0,
+      remainingQtyTotal: 0,
+    });
+    expect(orderReceiptSummary('REGISTERED', [line('10', '0', 5n, true)]).receiptStatusCode).toBe('CANCELLED');
   });
 });
