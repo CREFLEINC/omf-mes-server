@@ -8,6 +8,7 @@ import { TerminalQualityReadScope } from '../../auth/terminal-quality-read-scope
 import {
   assertDetectedPeriodRequired,
   CONFIRMED_INSPECTION_ONLY,
+  LATEST_RESULT_ONLY,
   DefectRecordView,
   defectRecordView,
   detectedAtWhere,
@@ -46,6 +47,7 @@ export class DefectRecordService {
       ...(scope === undefined ? {} : { lot: { plant_id: scope.plantId } }),
       // 한 결과로 좁힌 조회는 작성중 회차의 사유도 돌려준다 — 판정 화면이 임시 저장한 사유를 되살린다(#122).
       ...(query.inspectionResultId === undefined ? CONFIRMED_INSPECTION_ONLY : {}),
+      ...LATEST_RESULT_ONLY,
     };
     // 기본 정렬 detected_at DESC 고정 — 계약에 sort 질의가 없다. 동률은 defect_record_id 로
     // 깬다(R-10 자리) — 안 그러면 반환 순서가 보장되지 않는다(I-24 선례).

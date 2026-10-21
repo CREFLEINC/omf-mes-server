@@ -54,6 +54,8 @@ interface StubOptions {
   missing?: boolean;
   /** 원본을 가리키는 정정본 수. 없으면 0 이다. */
   correctedCount?: number;
+  /** 원본의 유형별 내역(FIELD 기록). 없으면 0건이다. */
+  originalDefects?: Row[];
 }
 
 function stub(options: StubOptions = {}) {
@@ -61,6 +63,7 @@ function stub(options: StubOptions = {}) {
   const created: Row[] = [];
   const updated: Row[] = [];
   const allocated: Row[] = [];
+  const defectsWritten: Row[] = [];
   const approvalWheres: Row[] = [];
   const sequenceWheres: Row[] = [];
   const numbered: unknown[][] = [];
@@ -124,7 +127,15 @@ function stub(options: StubOptions = {}) {
     },
     // 세션 없는 실적은 작업자 배분이 없다 — 읽기만 한다.
     production_result_worker_allocation: { findMany: () => Promise.resolve([]) },
-    defect_record: { findMany: () => Promise.resolve([]) },
+    defect_record: {
+      // 원본 내역 복사는 원본 id 하나로, 응답의 내역 읽기는 `in` 으로 묻는다 — 응답 쪽은 여기서 보지 않는다.
+      findMany: ({ where }: { where: { production_result_id: unknown } }) =>
+        Promise.resolve(typeof where.production_result_id === 'bigint' ? (options.originalDefects ?? []) : []),
+      createMany: ({ data }: { data: Row[] }) => {
+        defectsWritten.push(...data);
+        return Promise.resolve({ count: data.length });
+      },
+    },
   };
 
   const prisma = {
@@ -132,6 +143,18 @@ function stub(options: StubOptions = {}) {
       findUnique: () =>
         Promise.resolve(
           options.missing === true ? null : { work_order_id: original.work_order_id, occurred_at: original.occurred_at },
+        ),
+    },
+    work_order: { findUnique: () => Promise.resolve({ routing_operation: { process_id: 30n } }) },
+    defect_code: {
+      findMany: ({ where }: { where: { defect_code_id: { in: bigint[] } } }) =>
+        Promise.resolve(
+          where.defect_code_id.in.map((id) => ({
+            defect_code_id: id,
+            is_active: true,
+            parent_defect_code_id: 1n,
+            defect_code_process: [{ defect_code_process_id: 9n }],
+          })),
         ),
     },
     $transaction: (work: (client: typeof tx) => Promise<unknown>) => {
@@ -151,6 +174,7 @@ function stub(options: StubOptions = {}) {
     created,
     updated,
     allocated,
+    defectsWritten,
     approvalWheres,
     sequenceWheres,
     numbered,
@@ -321,5 +345,84 @@ describe('생산 실적 정정 (I-7 PR ③)', () => {
     // 승계한 넷이 0 이라 합이 0 이 된다 — `ck_production_result_nonzero` 를 앞당겨 막는다.
     expect(errorsOf(caught)).toMatchObject([{ field: 'goodQty', code: ERROR_CODE.INVALID }]);
     expect(harness.created).toEqual([]);
+  });
+
+  describe('불량 유형 내역', () => {
+    const fieldRecord = (defectCodeId: bigint, qty: number): Row => ({
+      defect_record_id: 80n + defectCodeId,
+      source_type_code: 'FIELD',
+      production_result_id: BigInt(ORIGINAL_ID),
+      work_order_id: BigInt(WORK_ORDER),
+      defect_code_id: defectCodeId,
+      defect_qty: new Prisma.Decimal(qty),
+      uom_id: 3n,
+      occurrence_process_id: 30n,
+      detection_process_id: 30n,
+      worker_id: 55n,
+      equipment_id: null,
+      mold_id: null,
+      occurred_at: OCCURRED_AT,
+      detected_at: OCCURRED_AT,
+      created_by: null,
+    });
+
+    it('정정이 불량수량을 그대로 두면 원본의 FIELD 기록을 정정본에 복사한다', async () => {
+      const { service, defectsWritten } = stub({ originalDefects: [fieldRecord(4n, 1), fieldRecord(5n, 1)] });
+
+      await service.correct(ORIGINAL_ID, body({ goodQty: 10 }), context());
+
+      expect(defectsWritten.map((row) => [row.defect_code_id, Number(row.defect_qty)])).toEqual([
+        [4n, 1],
+        [5n, 1],
+      ]);
+      // 정정본에 붙고, 남긴 사람은 정정한 사람이다.
+      expect(defectsWritten[0]).toMatchObject({ source_type_code: 'FIELD', created_by: 9, occurrence_process_id: 30n });
+      expect(defectsWritten[0]).not.toHaveProperty('defect_record_id');
+    });
+
+    it('불량수량을 바꾸고 defects 가 없으면 내역 없이 수량만 정정한다 — 원본에 유형 기록이 있어도', async () => {
+      const { service, defectsWritten, created } = stub({ originalDefects: [fieldRecord(4n, 2)], requests: approved });
+
+      await service.correct(ORIGINAL_ID, body({ defectQty: 3 }), context());
+
+      expect(created[0]).toMatchObject({ defect_qty: 3 });
+      expect(defectsWritten).toEqual([]);
+    });
+
+    it('원본에 유형 기록이 없으면 수량만 정정한다', async () => {
+      const { service, defectsWritten } = stub();
+
+      await service.correct(ORIGINAL_ID, body({ goodQty: 10 }), context());
+
+      expect(defectsWritten).toEqual([]);
+    });
+
+    it('defects 만 실은 정정은 그 합이 불량수량이고 그 내역을 정정본에 남긴다', async () => {
+      const { service, defectsWritten, created } = stub({ originalDefects: [fieldRecord(4n, 2)], requests: approved });
+
+      await service.correct(ORIGINAL_ID, body({ defects: [{ defectCodeId: 6, qty: 1 }, { defectCodeId: 7, qty: 2 }] }), context());
+
+      expect(created[0]).toMatchObject({ defect_qty: 3 });
+      expect(defectsWritten.map((row) => row.defect_code_id)).toEqual([6n, 7n]);
+    });
+
+    it('수량은 같고 유형 구성만 바꾸는 정정은 승인 없이 된다', async () => {
+      const { service, defectsWritten } = stub({ originalDefects: [fieldRecord(4n, 2)] });
+
+      await service.correct(ORIGINAL_ID, body({ defects: [{ defectCodeId: 6, qty: 2 }] }), context());
+
+      expect(defectsWritten.map((row) => row.defect_code_id)).toEqual([6n]);
+    });
+
+    it('정정 defects 도 등록과 같은 검사를 받는다 — 불량수량과 합이 다르면 400', async () => {
+      const { service, created } = stub();
+
+      const caught = await service
+        .correct(ORIGINAL_ID, body({ defectQty: 5, defects: [{ defectCodeId: 6, qty: 1 }] }), context())
+        .catch((error: unknown) => error);
+
+      expect(errorsOf(caught)[0]).toMatchObject({ field: 'defects', code: ERROR_CODE.INVALID });
+      expect(created).toEqual([]);
+    });
   });
 });

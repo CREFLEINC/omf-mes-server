@@ -6403,6 +6403,13 @@
       "type": "number",
       "format": "double",
       "example": 120.0
+     },
+     "defects": {
+      "type": "array",
+      "description": "정정본의 불량 유형별 수량 — 등록과 같은 검사(합·중복·W/O 공정에 매핑된 사용 중인 상세). 실으면 정정본의 내역이 되고 defectQty 를 생략하면 합이 defectQty 다. 안 실으면 불량수량이 원본과 같을 때 원본 내역을 옮기고, 바뀌면 내역 없이 수량만 남는다. 원본 내역은 이력으로 남는다. 장부 P-95",
+      "items": {
+       "$ref": "#/components/schemas/ProductionResultDefectInput"
+      }
      }
     },
     "required": [

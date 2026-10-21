@@ -22,8 +22,10 @@ import { PrismaService } from '../src/prisma/prisma.service';
 const PREFIX = 'PRDEF';
 const RESULTS = '/api/production/production-results';
 const OCCURRED_AT = '2026-10-21T02:00:00.000Z';
-/** 관리웹 조회 계정 — 실적 조회는 단말 범위 밖이고 403 을 선언하지 않아 역할 없이 읽는다. */
+/** 관리웹 계정 — 실적 조회·정정(W-02-05)·대시보드(W-CO-05). 실적 조회는 단말 범위 밖이다. */
 const LOGIN_ID = 'e2e-prdef-viewer';
+const ROLE = 'E2E_PRDEF';
+const PERMISSIONS = ['W-02-05', 'W-CO-05'];
 const PASSWORD = 'PRDEF-불량실적-비밀번호';
 
 function validator(file: string, operation: string, status: number): ValidateFunction {
@@ -43,10 +45,12 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
   let token: string;
   let workerNo: string;
   let cookie: string[];
+  /** 정정 복사 시험의 원본 — 집계 시험이 이어서 본다. */
+  let bubbleResultId: number;
   const keys: string[] = [];
   const ids = {
     uom: 0n, worker: 0n, terminal: 0n, process: 0n, otherProcess: 0n, workOrder: 0n, equipment: 0n,
-    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, session: 0n, mold: 0n,
+    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, bubble: 0n, gas: 0n, oil: 0n, plant: 0n, session: 0n, mold: 0n,
   };
 
   beforeAll(async () => {
@@ -170,12 +174,121 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
 
     const codes = response.body.items.map((row: { defectCode: string }) => row.defectCode).sort();
     // 다른 공정에만 매핑된 상세와, 고를 상세가 없는 대분류는 빠진다. 비활성 대분류 APP 은 실린 상세가 있어 나온다.
-    expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-DNT`, `${PREFIX}-SCR`]);
+    expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-BUB`, `${PREFIX}-DNT`, `${PREFIX}-GAS`, `${PREFIX}-OIL`, `${PREFIX}-SCR`]);
     const parent = response.body.items.find((row: { defectCode: string }) => row.defectCode === `${PREFIX}-APP`);
     expect(parent.parentDefectCodeId).toBeNull();
   });
 
+  describe('정정', () => {
+    it('정정에 defects 를 실으면 정정본에 새 기록이 붙고 원본 기록은 남는다', async () => {
+      const original = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.scratch), qty: 2 }] }).expect(201);
+
+      // 수량은 같고 유형 구성만 바꾼다 — 승인 없이 된다.
+      const corrected = await correct(original.body.productionResultId, { defects: [{ defectCodeId: Number(ids.dent), qty: 2 }] }).expect(201);
+
+      expect(validator('production-02생산실행.json', 'POST /production/production-results/{productionResultId}:correct', 201)(corrected.body)).toBe(true);
+      expect(corrected.body.defects).toEqual([expect.objectContaining({ defectCodeId: Number(ids.dent), qty: 2 })]);
+      const kept = await request(app.getHttpServer()).get(`${RESULTS}/${original.body.productionResultId}`).set('Cookie', cookie).expect(200);
+      expect(kept.body.defects).toEqual([expect.objectContaining({ defectCodeId: Number(ids.scratch), qty: 2 })]);
+    });
+
+    it('불량수량을 안 바꾼 정정은 원본 FIELD 기록을 복사한다 — 다른 원천 기록은 원본에 남는다', async () => {
+      const original = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.bubble), qty: 2 }] }).expect(201);
+      bubbleResultId = original.body.productionResultId;
+      await prisma.defect_record.create({ data: {
+        source_type_code: 'PQC', production_result_id: BigInt(bubbleResultId), work_order_id: ids.workOrder,
+        defect_code_id: ids.bubble, defect_qty: 1, uom_id: ids.uom, occurrence_process_id: ids.process,
+        detection_process_id: ids.process, detected_at: new Date(OCCURRED_AT),
+      } });
+
+      const corrected = await correct(bubbleResultId, { note: '사유만 고침' }).expect(201);
+
+      expect(corrected.body.defects).toEqual([expect.objectContaining({ defectCodeId: Number(ids.bubble), qty: 2 })]);
+      const copied = await prisma.defect_record.findMany({ where: { production_result_id: BigInt(corrected.body.productionResultId) } });
+      expect(copied.map((row) => row.source_type_code)).toEqual(['FIELD']);
+    });
+
+    it('불량 기록 목록·분포·대시보드는 정정된 실적의 FIELD 기록을 세지 않는다 — 다른 원천은 센다', async () => {
+      // 정정본의 FIELD 2 와 원본에 단 PQC 1 — 원본의 FIELD 2 는 빠진다.
+      expect(await counted(ids.bubble, 'BUB')).toEqual({ rows: [['FIELD', 2], ['PQC', 1]], node: { recordCount: 2, defectQty: 3 }, dashboardQty: 3 });
+    });
+
+    it('정정의 정정(A←B←C) 뒤 목록·분포·대시보드는 C 의 FIELD 만 센다', async () => {
+      const a = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.gas), qty: 2 }] }).expect(201);
+      const b = await correct(a.body.productionResultId, { note: '첫 정정' }).expect(201);
+      const c = await correct(b.body.productionResultId, { note: '둘째 정정' }).expect(201);
+
+      expect(c.body.defects).toEqual([expect.objectContaining({ defectCodeId: Number(ids.gas), qty: 2 })]);
+      expect(await counted(ids.gas, 'GAS')).toEqual({ rows: [['FIELD', 2]], node: { recordCount: 1, defectQty: 2 }, dashboardQty: 2 });
+    });
+
+    it('실적에 달린 원천 없는 기록은 정정 뒤에도 센다', async () => {
+      const original = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.oil), qty: 2 }] }).expect(201);
+      await prisma.defect_record.create({ data: {
+        production_result_id: BigInt(original.body.productionResultId), work_order_id: ids.workOrder,
+        defect_code_id: ids.oil, defect_qty: 1, uom_id: ids.uom, occurrence_process_id: ids.process,
+        detection_process_id: ids.process, detected_at: new Date(OCCURRED_AT),
+      } });
+
+      await correct(original.body.productionResultId, { note: '사유만 고침' }).expect(201);
+
+      // 정정본에 옮긴 FIELD 2 와 원본의 원천 없는 1 — 원본의 FIELD 2 만 빠진다.
+      expect(await counted(ids.oil, 'OIL')).toEqual({ rows: [['-', 1], ['FIELD', 2]], node: { recordCount: 2, defectQty: 3 }, dashboardQty: 3 });
+    });
+
+    it('불량수량만 바꾼 정정은 유형 내역 없이 수량만 남긴다', async () => {
+      const original = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.scratch), qty: 1 }] }).expect(201);
+      // 수량을 바꾸는 정정은 승인이 필요하다 — 승인된 요청을 심는다.
+      await prisma.approval_request.create({ data: {
+        approval_request_no: `${PREFIX}-AR-${String(original.body.productionResultId)}`, approval_type_code: 'PRODUCTION_RESULT_CORRECT',
+        target_type_code: 'PRODUCTION_RESULT', target_id: BigInt(original.body.productionResultId),
+        requested_worker_id: ids.worker, requested_at: new Date(OCCURRED_AT), status_code: 'APPROVED', reason: 'e2e',
+      } });
+
+      const corrected = await correct(original.body.productionResultId, { defectQty: 3 }).expect(201);
+
+      expect(corrected.body).toMatchObject({ defectQty: 3, defects: [] });
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** 한 불량 코드가 목록(원천·수량)·분포(건수·합)·대시보드 불량 현상(합)에 어떻게 세어지는가. */
+  async function counted(defectCodeId: bigint, suffix: string) {
+    const period = { detectedFrom: '2026-10-21T00:00:00.000Z', detectedTo: '2026-10-22T00:00:00.000Z' };
+    const list = await request(app.getHttpServer())
+      .get('/api/quality/defect-records')
+      .query({ ...period, workOrderId: String(ids.workOrder), defectCodeId: String(defectCodeId), size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    const distribution = await request(app.getHttpServer())
+      .get('/api/quality/defect-records/distribution')
+      .query({ ...period, groupBy: 'defectCode' })
+      .set('Cookie', cookie)
+      .expect(200);
+    const summary = await request(app.getHttpServer())
+      .get('/api/app/dashboard-summary')
+      .query({ plantId: String(ids.plant), baseDate: '2026-10-21' })
+      .set('Cookie', cookie)
+      .expect(200);
+    const node = distribution.body.nodes.find((row: { defectCodeId: number }) => row.defectCodeId === Number(defectCodeId));
+    const phenomena = summary.body.quality.nonconformance.phenomena as { defectCode: string; qty: number }[];
+    return {
+      rows: list.body.items
+        .map((row: { sourceCode?: string; defectQty: number }) => [row.sourceCode ?? '-', row.defectQty])
+        .sort(),
+      node: { recordCount: node?.recordCount, defectQty: node?.defectQty },
+      dashboardQty: phenomena.find((row) => row.defectCode === `${PREFIX}-${suffix}`)?.qty,
+    };
+  }
+
+  function correct(resultId: number, body: Record<string, unknown>): request.Test {
+    return request(app.getHttpServer())
+      .post(`${RESULTS}/${String(resultId)}:correct`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', newKey())
+      .send({ reasonCode: 'MISCOUNT', ...body });
+  }
 
   function record(body: Record<string, unknown>, key = newKey()): request.Test {
     return asPop(request(app.getHttpServer()).post(RESULTS).set('Idempotency-Key', key)).send({
@@ -208,6 +321,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     const plant = await prisma.plant.create({ data: {
       legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P1`, plant_name: '실적불량공장', timezone_code: 'Asia/Ho_Chi_Minh',
     } });
+    ids.plant = plant.plant_id;
     const uom = await prisma.uom.findFirstOrThrow({ where: { decimal_scale: 0 } });
     ids.uom = uom.uom_id;
     const item = await prisma.item.create({ data: {
@@ -225,6 +339,10 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     ids.scratch = await code('SCR', '긁힘', ids.parent);
     ids.dent = await code('DNT', '찍힘', ids.parent);
     ids.otherProcessCode = await code('BRK', '파손', ids.parent);
+    // 정정 집계 시험 전용 — 다른 시험의 기록과 섞이지 않게 따로 둔다.
+    ids.bubble = await code('BUB', '기포', ids.parent);
+    ids.gas = await code('GAS', '가스', ids.parent);
+    ids.oil = await code('OIL', '유분', ids.parent);
     // 자기는 이 공정에 매핑됐지만 상세가 다른 공정에만 매핑된 대분류 — 고를 상세가 없어 조회에서 빠진다.
     const otherParent = await code('STR', '구조', null);
     const crack = await code('CRK', '균열', otherParent);
@@ -232,6 +350,9 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       { defect_code_id: ids.parent, process_id: ids.process },
       { defect_code_id: ids.scratch, process_id: ids.process },
       { defect_code_id: ids.dent, process_id: ids.process },
+      { defect_code_id: ids.bubble, process_id: ids.process },
+      { defect_code_id: ids.gas, process_id: ids.process },
+      { defect_code_id: ids.oil, process_id: ids.process },
       { defect_code_id: ids.otherProcessCode, process_id: ids.otherProcess },
       { defect_code_id: otherParent, process_id: ids.process },
       { defect_code_id: crack, process_id: ids.otherProcess },
@@ -278,6 +399,10 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
 
     const user = await prisma.app_user.create({ data: { login_id: LOGIN_ID, user_name: '실적불량조회', status_code: 'EMPLOYED' } });
     await prisma.user_credential.create({ data: { app_user_id: user.app_user_id, password_hash: await hashPassword(PASSWORD) } });
+    // ⚠ 역할을 «먼저» 붙이고 로그인한다 — 세션이 그때의 권한을 담는다.
+    const role = await prisma.role.create({ data: { role_code: ROLE, role_name: '실적불량검사용' } });
+    await prisma.role_permission.createMany({ data: PERMISSIONS.map((permission_code) => ({ role_id: role.role_id, permission_code })) });
+    await prisma.user_role.create({ data: { app_user_id: user.app_user_id, role_id: role.role_id } });
     const session = await request(app.getHttpServer())
       .post('/api/app/sessions')
       .set('Idempotency-Key', randomUUID())
@@ -297,6 +422,8 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     const workOrders = `SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`;
     for (const sql of [
       `DELETE FROM quality.defect_record WHERE work_order_id IN (${workOrders})`,
+      `DELETE FROM app.approval_request WHERE target_type_code = 'PRODUCTION_RESULT'
+        AND target_id IN (SELECT production_result_id FROM production.production_result WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`,
@@ -322,8 +449,11 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     const user = await prisma.app_user.findUnique({ where: { login_id: LOGIN_ID } });
     if (user) {
       await prisma.idempotency_record.deleteMany({ where: { app_user_id: user.app_user_id } });
+      await prisma.user_role.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.user_credential.deleteMany({ where: { app_user_id: user.app_user_id } });
       await prisma.app_user.delete({ where: { app_user_id: user.app_user_id } });
     }
+    await prisma.role_permission.deleteMany({ where: { role: { role_code: ROLE } } });
+    await prisma.role.deleteMany({ where: { role_code: ROLE } });
   }
 });

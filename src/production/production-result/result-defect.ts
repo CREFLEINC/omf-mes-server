@@ -27,7 +27,7 @@ export interface ResultDefectView {
   qty: number;
 }
 
-/** 현장에서 발견한 불량 — 공통코드 `DEFECT_RECORD_SOURCE` 의 값이다. */
+/** 현장에서 발견한 불량 — 공통코드 `DEFECT_RECORD_SOURCE` 의 값이다. 집계의 잎 규칙(`defect-view.ts` `LATEST_RESULT_ONLY`)이 이 원천만 본다. */
 const FIELD_SOURCE = 'FIELD';
 
 /**
@@ -138,6 +138,41 @@ export async function writeDefects(
       mold_id: row.mold_id ?? session?.mold_id ?? null,
       occurred_at: row.occurred_at,
       detected_at: row.occurred_at,
+      created_by: appUserId ?? null,
+    })),
+  });
+}
+
+/**
+ * 원본 실적의 유형별 내역(FIELD 기록)을 정정본에 옮겨 적는다 — 원본 기록은 이력으로 남고 집계는 정정본 것을 센다.
+ * ⛔ 코드를 다시 검증하지 않는다 — 그 사이 코드가 비활성·매핑 해제됐어도 원본의 사실이다.
+ */
+export async function copyDefects(
+  tx: Prisma.TransactionClient,
+  row: ProductionResultRow,
+  originalId: bigint,
+  appUserId: number | undefined,
+): Promise<void> {
+  const original = await tx.defect_record.findMany({
+    where: { production_result_id: originalId, source_type_code: FIELD_SOURCE },
+    orderBy: { defect_record_id: 'asc' },
+  });
+  if (original.length === 0) return;
+  await tx.defect_record.createMany({
+    data: original.map((record) => ({
+      source_type_code: FIELD_SOURCE,
+      production_result_id: row.production_result_id,
+      work_order_id: record.work_order_id,
+      defect_code_id: record.defect_code_id,
+      defect_qty: record.defect_qty,
+      uom_id: record.uom_id,
+      occurrence_process_id: record.occurrence_process_id,
+      detection_process_id: record.detection_process_id,
+      worker_id: record.worker_id,
+      equipment_id: record.equipment_id,
+      mold_id: record.mold_id,
+      occurred_at: record.occurred_at,
+      detected_at: record.detected_at,
       created_by: appUserId ?? null,
     })),
   });
