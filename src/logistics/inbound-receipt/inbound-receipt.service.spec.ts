@@ -340,7 +340,7 @@ describe('InboundReceiptService.create', () => {
     });
   });
 
-  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄을 싣는다(장부 P-93).
+  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄을 싣는다(장부 P-95).
   it('귀속 — 같은 P/O 라인을 가리키는 줄 여럿은 수량을 합쳐 한 번 올린다', async () => {
     const { service, recorded } = fake();
 

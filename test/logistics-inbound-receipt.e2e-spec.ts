@@ -266,7 +266,7 @@ describe('입하 등록 (e2e)', () => {
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(65);
   });
 
-  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄이고 LOT 도 줄마다 선다(장부 P-93).
+  // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄이고 LOT 도 줄마다 선다(장부 P-95).
   it('입하 — 같은 P/O 라인 줄 여럿(라벨마다 한 줄)은 LOT 이 줄마다 서고 received_qty 는 합계만큼 오른다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
 
