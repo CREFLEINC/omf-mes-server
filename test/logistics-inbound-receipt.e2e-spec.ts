@@ -318,6 +318,23 @@ describe('입하 등록 (e2e)', () => {
 
       expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' })]);
     });
+
+    it('초과분 — 라인 치환이 초과분을 바꾸면 P/O 에 넣은 몫과 초과분 기록이 함께 바뀐다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 120, excessQty: 20 }],
+      });
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(100);
+
+      const items = await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { excessQty: 30 })]);
+
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(90);
+      expect((items[0] as LineBody & { excessQty: number }).excessQty).toBe(30);
+      const rows = await prisma.inbound_receipt_excess.findMany({
+        where: { inbound_receipt_line_id: BigInt(detail.lines[0].inboundReceiptLineId) },
+      });
+      expect(rows.map((row) => Number(row.excess_qty))).toEqual([30]);
+    });
   });
 
   it('⭐ 입하 등록과 P/O 라인 치환을 동시에 걸어도 500 이 없다(부모 FOR UPDATE 로 직렬화된다)', async () => {
