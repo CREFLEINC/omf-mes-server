@@ -53,7 +53,9 @@ export async function startZaloStub(port = 0): Promise<ZaloStub> {
     req.on('end', () => {
       const body = Buffer.concat(chunks).toString('utf8');
       const path = (req.url ?? '').split('?')[0];
-      void handle(req.method ?? '', path, req.headers, body, res);
+      handle(req.method ?? '', path, req.headers, body, res).catch((error: unknown) =>
+        reply(res, 400, { message: error instanceof Error ? error.message : String(error) }),
+      );
     });
   });
 

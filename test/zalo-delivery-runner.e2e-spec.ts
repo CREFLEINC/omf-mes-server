@@ -146,6 +146,21 @@ describe('Zalo 발송 러너 (e2e · 대역)', () => {
     expect(stub.requests).toHaveLength(0);
   });
 
+  it('-124 뒤 갱신이 일시 장애로 실패하면 연결은 ACTIVE 로 두고 무효 접속 토큰을 버려 다음 회차는 갱신부터 한다', async () => {
+    const id = await delivery();
+    stub.queue({ send: ['token-invalid'], refresh: ['http500'] });
+    await runner.tick(NOW);
+
+    const saved = await prisma.zalo_connection.findUniqueOrThrow({ where: { zalo_connection_id: 1 } });
+    expect(saved).toMatchObject({ status_code: 'ACTIVE', access_token_enc: null, last_error_code: 'HTTP_500' });
+    expect(await row(id)).toMatchObject({ status_code: 'PENDING', attempt_count: 0, last_error_code: 'CONNECTION_NOT_READY' });
+
+    stub.reset();
+    await runner.tick(new Date(NOW.getTime() + 60_000));
+    expect(stub.requests.map((r) => r.path)).toEqual(['/v4/oa/access_token', '/message/template']);
+    expect(await row(id)).toMatchObject({ status_code: 'SENT' });
+  });
+
   it('US7-2 접속 토큰 만료 5분 전이면 보내기 전에 갱신한다', async () => {
     await prisma.zalo_connection.update({ where: { zalo_connection_id: 1 }, data: { access_token_expires_at: new Date(NOW.getTime() + 4 * 60_000) } });
     await delivery();

@@ -64,6 +64,8 @@ export class ZaloTokenService {
       where: { zalo_connection_id: ZALO_CONNECTION_ID, version_no: row.version_no },
       data: {
         ...(result.transient ? {} : { status_code: 'REAUTH_REQUIRED' }),
+        // -124 로 무효임을 안 접속 토큰은 버린다 — 남겨 두면 갱신이 될 때까지 회차마다 같은 토큰으로 보내고 -124 를 받는다.
+        ...(force ? { access_token_enc: null, access_token_expires_at: null } : {}),
         last_error_code: result.code.slice(0, 20),
         last_error_message: result.message || null,
         updated_at: new Date(),

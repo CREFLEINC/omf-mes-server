@@ -15,6 +15,7 @@ describe('classifyZaloError', () => {
       (code) => [code, 'FAIL_CONFIG'],
     ),
     ['-999', 'RETRY'],
+    ['HTTP_404', 'FAIL_CONFIG'],
   ])('%s → %s (research R-3)', (code, expected) => {
     expect(classifyZaloError(code)).toBe(expected);
   });

@@ -79,10 +79,15 @@ export class ZaloClient {
       const timedOut = name === 'TimeoutError' || name === 'AbortError';
       return { ok: false, code: 'NETWORK', message: timedOut ? '응답 시간 초과' : '연결 실패' };
     }
-    if (response.status >= 500) return { ok: false, code: `HTTP_${response.status}`, message: `HTTP ${response.status}` };
+    if (response.status >= 500) {
+      // 본문을 버린다 — 읽지 않은 본문은 소켓을 붙잡는다.
+      await response.body?.cancel().catch(() => undefined);
+      return { ok: false, code: `HTTP_${response.status}`, message: `HTTP ${response.status}` };
+    }
     try {
       return { ok: true, body: await response.json() };
     } catch {
+      // JSON 이 아닌 4xx(잘못된 주소 등)는 설정 오류다 — 다시 보내도 같다.
       return { ok: false, code: `HTTP_${response.status}`, message: '응답 본문을 읽지 못했다' };
     }
   }

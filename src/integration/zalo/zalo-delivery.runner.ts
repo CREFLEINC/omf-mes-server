@@ -19,6 +19,8 @@ export const LEASE_TTL_MS = 120_000;
 /** 최초 1회 + 재시도 3회 = 최대 4회 시도. 재시도 간격 1분 → 5분 → 15분(data-model §3). */
 export const MAX_ATTEMPTS = 4;
 export const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
+/** 리스 연장 간격 — TTL(120초)보다 넉넉히 짧게. 건마다 늘리면 묶음마다 쓰기가 20번이다. */
+export const LEASE_EXTEND_MS = 30_000;
 
 type Delivery = {
   zalo_delivery_id: bigint;
@@ -44,6 +46,7 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
   private timer?: NodeJS.Timeout;
   private running?: Promise<void>;
   private stopping = false;
+  private leaseExtendedAt = 0;
 
   constructor(
     private readonly enabled: boolean,
@@ -80,6 +83,7 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
   /** 한 회차. 검사는 이것을 직접 부른다. */
   async tick(now: Date = new Date()): Promise<void> {
     if (!(await this.lease.acquire().catch(() => false))) return;
+    this.leaseExtendedAt = Date.now();
     await this.settleOrphans(now);
     await this.expire(now);
 
@@ -93,7 +97,7 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
     if (access === null) return;
 
     try {
-      for (let claimed = await this.claim(now); claimed.length > 0; claimed = await this.claim(new Date())) {
+      for (let claimed = await this.claim(now); claimed.length > 0; claimed = await this.claim(now)) {
         const templates = await this.templates();
         for (const [index, delivery] of claimed.entries()) {
           await this.keepGoing(claimed.slice(index));
@@ -236,9 +240,13 @@ export class ZaloDeliveryRunner implements OnApplicationBootstrap, OnApplication
     });
   }
 
-  /** 건마다 — 멈출 때인지 보고 리스를 늘린다. 멈추면 잡아 둔 건을 대기로 돌린다. */
+  /** 건마다 멈출 때인지 보고, 30초가 지났으면 리스를 늘린다. 멈추면 잡아 둔 건을 대기로 돌린다. */
   private async keepGoing(remaining: Delivery[]): Promise<void> {
-    const reason = this.stopping ? new Stopping() : (await this.lease.acquire().catch(() => false)) ? null : new LeaseLost();
+    let reason: Error | null = this.stopping ? new Stopping() : null;
+    if (reason === null && Date.now() - this.leaseExtendedAt >= LEASE_EXTEND_MS) {
+      if (await this.lease.acquire().catch(() => false)) this.leaseExtendedAt = Date.now();
+      else reason = new LeaseLost();
+    }
     if (reason === null) return;
     await this.release(remaining, 'INTERRUPTED', '러너가 멈춰 다음 회차로 넘겼습니다.');
     throw reason;
