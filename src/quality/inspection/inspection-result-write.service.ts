@@ -8,6 +8,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DefectRecordWriteService } from '../defect/defect-record-write.service';
+import { prepareFourMChange, prepareFourMChangeOfResult, writeFourMChangeWithin } from './four-m-change';
 import { InspectionConfirmService } from './inspection-confirm.service';
 import { prepareDraftDefects, prepareRejectionDefects, replaceDraftDefectsWithin } from './inspection-rejection-defects';
 import { allocateIqcNonconformanceNo } from './iqc-nonconformance';
@@ -91,6 +92,7 @@ export class InspectionResultWriteService {
             reason: body.judgmentChangeReason,
           });
     const remarks = changeReason === undefined ? body.remarks : remarksWithJudgmentChange(changeReason, body.remarks);
+    const fourMChange = await prepareFourMChange(this.prisma, BigInt(body.inspectionRequestId), body.fourMChange);
     const defectTarget = await prepareRejectionDefects(this.prisma, this.defects, body, born !== undefined);
     // 확정으로 태어나는 IQC 불합격은 부적합 번호도 미리 받는다(P-41 · 채번은 트랜잭션 밖).
     const nonconformanceNo =
@@ -148,6 +150,7 @@ export class InspectionResultWriteService {
             { appUserId: context.appUserId, workerId: inspectorId },
           );
         }
+        await writeFourMChangeWithin(tx, fourMChange, context.appUserId);
         if (born !== undefined) {
           await this.confirms.applyConfirmEffects(tx, {
             ...born,
@@ -194,6 +197,7 @@ export class InspectionResultWriteService {
         ? await assertAccountWorker(this.prisma, context.appUserId)
         : null;
     const draftDefects = await prepareDraftDefects(this.prisma, this.defects, inspectionResultId, body);
+    const fourMChange = await prepareFourMChangeOfResult(this.prisma, BigInt(inspectionResultId), body.fourMChange);
     // 불량 기록을 쓰는 저장만 귀속 작업자를 POST 와 같이 푼다(단말은 사번 헤더 · #122 리뷰 m3). 사유 없는 PUT 은 종전 그대로다.
     const workerId =
       draftDefects?.prepared != null ? await resolveInspector(this.prisma, context) : accountWorkerId;
@@ -243,6 +247,7 @@ export class InspectionResultWriteService {
           actor: { appUserId: context.appUserId, workerId },
         });
       }
+      await writeFourMChangeWithin(tx, fourMChange, context.appUserId);
       return { view: await this.reread(tx, BigInt(inspectionResultId)), versionNo: current.version_no + 1 };
     });
   }

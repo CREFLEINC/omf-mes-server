@@ -4550,6 +4550,24 @@
    "MaterialConsumption": {
     "type": "object",
     "properties": {
+     "fourMChange": {
+      "type": "object",
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "description": "공통코드 FOUR_M_CHANGE_TYPE",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 투입 LOT 의 4M 변경품 — IQC 판정 때 그 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 작업지시의 「4M 변경 자재 투입」 표시가 읽는다. 서버 선행 · 장부 P-86 · omf-all-around#63"
+     },
      "materialConsumptionId": {
       "type": "integer",
       "format": "int64",

@@ -5,7 +5,7 @@ import { filter } from '../../common/master';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TerminalQualityReadScope, terminalInspectionRequestWhere } from '../../auth/terminal-quality-read-scope';
-import { InspectionRequestView, inspectionRequestView } from './inspection-request-view';
+import { FOUR_M_CHANGE_INCLUDE, InspectionRequestView, inspectionRequestView } from './inspection-request-view';
 
 /** 조회 2건(I-19 PR ②). */
 export interface InspectionRequestListQuery {
@@ -40,7 +40,9 @@ export class InspectionRequestService {
       ? buildWhere(query)
       : { AND: [buildWhere(query), await terminalInspectionRequestWhere(this.prisma, scope)] };
     const [rows, total] = await Promise.all([
-      this.prisma.inspection_request.findMany({ where, orderBy: ORDER_BY, skip: page.skip, take: page.take }),
+      this.prisma.inspection_request.findMany({
+        where, orderBy: ORDER_BY, skip: page.skip, take: page.take, include: FOUR_M_CHANGE_INCLUDE,
+      }),
       this.prisma.inspection_request.count({ where }),
     ]);
     return pagedResponse(rows.map(inspectionRequestView), total, page);
@@ -50,6 +52,7 @@ export class InspectionRequestService {
     const byId: Prisma.inspection_requestWhereInput = { inspection_request_id: inspectionRequestId };
     const row = await this.prisma.inspection_request.findFirst({
       where: scope === undefined ? byId : { AND: [byId, await terminalInspectionRequestWhere(this.prisma, scope)] },
+      include: FOUR_M_CHANGE_INCLUDE,
     });
     if (!row) throw new NotFoundException('없는 검사 의뢰입니다.');
     return inspectionRequestView(row);
