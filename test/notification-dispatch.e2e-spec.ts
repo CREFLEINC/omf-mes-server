@@ -150,10 +150,25 @@ describe('알림 발송 이력 (e2e)', () => {
     expect((await deliveries({ status: 'FAILED' }).expect(200)).body.page.total).toBe(1);
   });
 
-  it('W-CO-13 권한이 없으면 403 이다', async () => {
+  it('W-CO-13 권한이 없으면 두 경로 모두 403 계약 봉투다', async () => {
     const query = { from: FROM, to: TO };
-    await request(app.getHttpServer()).get('/api/app/notification-dispatches').query(query).set('Cookie', deniedCookie).expect(403);
-    await request(app.getHttpServer()).get('/api/app/zalo-deliveries').query(query).set('Cookie', deniedCookie).expect(403);
+    for (const path of ['/app/notification-dispatches', '/app/zalo-deliveries']) {
+      const response = await request(app.getHttpServer()).get(`/api${path}`).query(query).set('Cookie', deniedCookie).expect(403);
+      const forbidden = ajv.compile({
+        $ref: `https://omf-mes.invalid/contract#/paths/${path.replace(/\//g, '~1')}/get/responses/403/content/application~1json/schema`,
+      });
+      expect(forbidden(response.body)).toBe(true);
+      expect(response.body.errors[0]).toMatchObject({ code: 'PERMISSION_DENIED' });
+    }
+  });
+
+  it('W-CO-13 권한만 있어도 화면의 부서 드롭다운(GET /mdm/departments)을 부를 수 있다', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/mdm/departments')
+      .query({ includeInactive: true, q: PREFIX, size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(response.body.items.map((d: { departmentCode: string }) => d.departmentCode).sort()).toEqual([`${PREFIX}-D`, `${PREFIX}-O`]);
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
