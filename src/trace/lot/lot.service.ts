@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
+import { omitEmpty } from '../../common/http/omit-empty';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse, pageRequest } from '../../common/pagination';
 import {
@@ -31,6 +32,7 @@ import {
   workOrderWhere,
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
+import { fourMChangeView } from '../../quality/inspection/four-m-change';
 import { LotDetail, LotRow, LotView, holdView, identifierView, lotView } from './lot-view';
 import type { LotWriteActor } from './lot-write-actor';
 
@@ -142,14 +144,18 @@ export class LotService {
       this.prisma.lot.findMany({
         where,
         // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
-        include: { lot_hold: true },
+        include: { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } } },
         orderBy: [{ created_at: 'desc' }, { lot_id: 'desc' }],
         skip: page.skip,
         take: page.take,
       }),
       this.prisma.lot.count({ where }),
     ]);
-    return pagedResponse(rows.map(lotView), total, page);
+    return pagedResponse(
+      rows.map((row) => omitEmpty({ ...lotView(row), fourMChange: fourMChangeView(row.lot_four_m_change) })),
+      total,
+      page,
+    );
   }
 
   /** `withProgress` 는 **단건에만** 있다 — 계약이 ⌜목록에서는 LOT 마다 세게 되므로 기본은 끈다⌝. */

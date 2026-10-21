@@ -1,4 +1,5 @@
 import type { InspectionDefectInput } from '../defect/defect-record-write.service';
+import type { FourMChangeInput } from './four-m-change';
 
 /**
  * 검사 결과 쓰기 두 경로(`POST`·`PUT`)의 **계약 본문 타입**과 본문 밖 컨텍스트.
@@ -45,6 +46,11 @@ export interface InspectionResultCreate {
    * (omf-all-around#125·#126 · 장부 P-70). 작성중이거나 판정이 같으면 버린다.
    */
   judgmentChangeReason?: string;
+  /**
+   * 4M 변경품(omf-all-around#63 · 장부 P-86) — 생략하면 손대지 않고, `null` 이면 변경품이 아니다(줄 삭제),
+   * 값이면 그 의뢰 LOT 의 한 줄을 갈아 끼운다. 자재 LOT 이 있는 IQC 에만.
+   */
+  fourMChange?: FourMChangeInput | null;
 }
 
 /**
@@ -68,6 +74,11 @@ export interface InspectionResultUpdate {
    * 생략하면 손대지 않는다. 1줄 이상은 IQC 불합격 판정에만.
    */
   defects?: InspectionDefectInput[];
+  /**
+   * 4M 변경품(omf-all-around#63 · 장부 P-86) — 생략하면 손대지 않고, `null` 이면 변경품이 아니다(줄 삭제),
+   * 값이면 그 의뢰 LOT 의 한 줄을 갈아 끼운다. 자재 LOT 이 있는 IQC 에만.
+   */
+  fourMChange?: FourMChangeInput | null;
 }
 
 /** 본문 밖에서 오는 것. `version`(If-Match)은 `POST` 에서 **선택**이고 `PUT` 에서 필수다. */
