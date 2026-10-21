@@ -29,6 +29,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "zalo:stub": "ts-node --transpile-only test/support/zalo-stub.ts",
     "workflow:bootstrap": "node scripts/workflow/bootstrap.mjs",
     "workflow:sync-design": "node scripts/workflow/bootstrap.mjs --sync-design"
   },
