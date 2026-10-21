@@ -1,3 +1,4 @@
+import { ApprovalNotifier } from '../../core/notification';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -7,6 +8,8 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibility, CancelEligibilityService } from './cancel-eligibility.service';
 import { CancelableDocumentType, DocumentCancelService } from './document-cancel.service';
+
+const NOTIFIER = { notifyCurrentStep: () => Promise.resolve() } as unknown as ApprovalNotifier;
 
 const DOC_ID = 11n;
 const USER = 7;
@@ -89,7 +92,7 @@ function fake(seed: Seed = {}) {
   const documentState = new DocumentStateService();
   const service = new DocumentCancelService(
     prisma,
-    new ApprovalService(documentState),
+    new ApprovalService(documentState, NOTIFIER),
     numbering,
     documentState,
     eligibility,

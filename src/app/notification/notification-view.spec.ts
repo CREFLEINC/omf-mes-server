@@ -20,6 +20,9 @@ const ROW: NotificationRow = {
       message: '다른 내용',
     },
     created_at: new Date('2026-09-07T11:00:00.000Z'),
+    department_id: null,
+    dispatch_status_code: 'NOTIFIED',
+    skip_reason_code: null,
   },
 };
 

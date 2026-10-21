@@ -5,6 +5,7 @@ import { ConflictException, ContractException, ERROR_CODE, ErrorItem, field, one
 import { assertCodeValues, resolveWorkerId } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkOrderNotifier } from '../work-order/work-order-notice';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
 import { EMPLOYED_WORKER, MAX_OPEN_WORKERS, NOT_EMPLOYED_MESSAGE, WORKER_ROLE } from './crew';
 import { resolveShiftId } from './shift-resolver';
@@ -42,6 +43,7 @@ export class WorkSessionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly documentState: DocumentStateService,
+    private readonly notifier: WorkOrderNotifier,
   ) {}
   async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
     // 작업을 시작하는 사람이 이 세션의 주작업자다.
@@ -95,6 +97,10 @@ export class WorkSessionService {
         data: { status_code: transition.to, version_no: { increment: 1 }, updated_by: context.appUserId ?? null },
       });
     }
+    // 재시작마다 보낸다 — START 사건 시각이 달라 같은 W/O 의 여러 시작이 겹치지 않는다(research R-6).
+    await this.notifier.notify(tx, 'WORK_SESSION_STARTED', workOrderId, startedAt, {
+      appUserId: context.appUserId, workerNo: context.workerNo,
+    });
     return workSessionView(row);
   }
   // START(+우회면 CONTROL_OVERRIDE) 사건과 참여 행. START 는 `reason_code` 를 안 쓰고(A-25),

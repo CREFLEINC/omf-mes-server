@@ -1,3 +1,4 @@
+import { WorkOrderNotifier } from '../work-order/work-order-notice';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException, ContractException } from '../../common/errors';
@@ -147,7 +148,7 @@ function stub(options: { status?: string; maxSessionNo?: number | null; openSess
     $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
 
-  const service = new WorkSessionService(prisma, new DocumentStateService());
+  const service = new WorkSessionService(prisma, new DocumentStateService(), { notify: () => Promise.resolve() } as unknown as WorkOrderNotifier);
   return { service, created, events, workers, updates, calls, touched };
 }
 
