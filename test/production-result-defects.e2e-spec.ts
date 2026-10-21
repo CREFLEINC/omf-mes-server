@@ -79,7 +79,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     expect(response.body.defects).toEqual([
       expect.objectContaining({
         defectCodeId: Number(ids.scratch), defectCode: `${PREFIX}-SCR`, defectName: '긁힘', nameVi: '긁힘-vi', qty: 2,
-        parentDefectCodeId: Number(ids.parent), parentDefectCode: `${PREFIX}-APP`, parentDefectName: '외관',
+        parentDefectCodeId: Number(ids.parent), parentDefectCode: `${PREFIX}-APP`, parentDefectName: '외관', parentNameVi: '외관-vi',
       }),
       expect.objectContaining({ defectCodeId: Number(ids.dent), qty: 1 }),
     ]);
