@@ -22,6 +22,8 @@ export interface ResultDefectView {
   parentDefectCodeId?: number;
   parentDefectCode?: string;
   parentDefectName?: string;
+  parentNameKo?: string;
+  parentNameVi?: string;
   qty: number;
 }
 
@@ -185,7 +187,9 @@ export async function loadDefects(
           defect_name: true,
           name_ko: true,
           name_vi: true,
-          parent_defect_code: { select: { defect_code_id: true, defect_code: true, defect_name: true } },
+          parent_defect_code: {
+            select: { defect_code_id: true, defect_code: true, defect_name: true, name_ko: true, name_vi: true },
+          },
         },
       },
     },
@@ -206,6 +210,8 @@ export async function loadDefects(
             parentDefectCodeId: Number(parent.defect_code_id),
             parentDefectCode: parent.defect_code,
             parentDefectName: parent.defect_name,
+            ...(parent.name_ko === null ? {} : { parentNameKo: parent.name_ko }),
+            ...(parent.name_vi === null ? {} : { parentNameVi: parent.name_vi }),
           }),
       qty: row.defect_qty.toNumber(),
     };

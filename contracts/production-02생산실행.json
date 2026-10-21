@@ -6264,6 +6264,16 @@
       "type": "string",
       "example": "값"
      },
+     "parentNameKo": {
+      "type": "string",
+      "description": "대분류의 한국어 이름 — 마스터에 있을 때만",
+      "example": "외관"
+     },
+     "parentNameVi": {
+      "type": "string",
+      "description": "대분류의 베트남어 이름 — 마스터에 있을 때만",
+      "example": "Ngoại quan"
+     },
      "qty": {
       "type": "number",
       "format": "double",
