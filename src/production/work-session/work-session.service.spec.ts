@@ -129,11 +129,11 @@ function stub(options: { status?: string; maxSessionNo?: number | null; openSess
     worker: {
       // 헤더 축(`assertWorkerNoExists`)은 `findUnique`, 아래 `count` 는 본문 `workerIds` «명단» 축이다.
       findUnique: () => Promise.resolve({ worker_id: 1n }),
-      // `status_code` 가 걸린 조회는 재직자만 센다 — `notEmployed` 에 든 사람은 빠진다.
+      // `is_active` 가 걸린 조회는 재직자만 센다 — `notEmployed` 에 든 사람은 빠진다.
       count: ({ where }: { where: Row }) => {
         const target = where.worker_id as { in?: bigint[] } | bigint;
         const ids = typeof target === 'bigint' ? [target] : (target.in ?? []);
-        const employedOnly = where.status_code !== undefined;
+        const employedOnly = where.is_active !== undefined;
         return Promise.resolve(ids.filter((id) => !employedOnly || !(options.notEmployed ?? []).includes(id)).length);
       },
     },

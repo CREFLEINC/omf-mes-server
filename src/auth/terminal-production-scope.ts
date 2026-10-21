@@ -65,7 +65,7 @@ export async function assertTerminalProductionScope(
     const unique = [...new Set(ids as bigint[])];
     if (unique.length === 0) return;
     const found = await prisma.worker.count({
-      where: { worker_id: { in: unique }, plant_id: terminal.plantId, status_code: 'EMPLOYED', is_active: true },
+      where: { worker_id: { in: unique }, plant_id: terminal.plantId, is_active: true },
     });
     if (found !== unique.length) throw denied();
   };
