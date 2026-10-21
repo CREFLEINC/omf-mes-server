@@ -233,6 +233,8 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
         'C',
       ]);
       expect(Object.keys(await orders({ overdueOnly: 'true' }))).toEqual(['A']);
+      // 문자열 'false' 를 참으로 읽으면 안 된다 — 계약 밖 질의라 가드가 형을 바꿔 주지 않는다.
+      expect(Object.keys(await orders({ overdueOnly: 'false' })).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
       expect(Object.keys(await orders({ supplierQ: '공급사2' }))).toEqual(['D']);
       expect(Object.keys(await orders({ supplierQ: `${PREFIX.toLowerCase()}-sup2` }))).toEqual(['D']);
     });
