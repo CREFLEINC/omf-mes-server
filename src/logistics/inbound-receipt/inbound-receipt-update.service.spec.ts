@@ -43,7 +43,6 @@ interface Options {
   existing?: typeof EXISTING;
   poLines?: typeof PO_LINES;
   successors?: number;
-  linkedExcesses?: number;
 }
 
 function fake(options: Options = {}) {
@@ -57,7 +56,6 @@ function fake(options: Options = {}) {
     headerData: {} as Args,
     written: [] as Args[],
     deleted: [] as bigint[],
-    excesses: [] as Args[],
     transactionOptions: undefined as unknown,
   };
 
@@ -117,11 +115,7 @@ function fake(options: Options = {}) {
               lot_id: null,
               inbound_receipt_excess: [],
             }))
-          : existing.map((row) => ({
-              inbound_receipt_excess: [],
-              ...row,
-              received_qty: new Prisma.Decimal(row.received_qty),
-            })),
+          : existing.map((row) => ({ ...row, received_qty: new Prisma.Decimal(row.received_qty) })),
       deleteMany: async ({ where }: { where: Args }) => {
         recorded.calls.push('delete');
         recorded.deleted = (where.inbound_receipt_line_id as Args).in as bigint[];
@@ -146,14 +140,6 @@ function fake(options: Options = {}) {
     },
     goods_receipt_line: { count: async () => options.successors ?? 0 },
     inbound_variance: { count: async () => 0 },
-    inbound_receipt_excess: {
-      count: async () => options.linkedExcesses ?? 0,
-      deleteMany: async () => ({ count: 0 }),
-      create: async ({ data }: { data: Args }) => {
-        recorded.calls.push('excess');
-        recorded.excesses.push(data);
-      },
-    },
     purchase_order: { count: async () => 0 },
     item: { findMany: async () => [{ item_id: 40n, inspection_required: true }] },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -266,30 +252,6 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
       [101n, '-10'],
       [102n, '10'],
     ]);
-  });
-
-  // 옛 줄 901 은 20 을 받아 초과분 5 를 남겼다 — P/O 101 에는 15 가 들어가 있다(장부 P-96).
-  const WITH_EXCESS = [
-    { ...EXISTING[0], received_qty: 20, inbound_receipt_excess: [{ excess_qty: new Prisma.Decimal(5) }] },
-  ] as unknown as typeof EXISTING;
-
-  it('초과분 — 치환은 옛 줄의 초과분을 뺀 몫을 내리고 새 초과분을 뺀 몫을 올린 뒤 초과분을 다시 적는다', async () => {
-    const { service, recorded } = fake({ existing: WITH_EXCESS });
-
-    await service.replaceLines(500, 1, [item({ receivedQty: 20, excessQty: 8 })], 99);
-
-    expect(recorded.increments.map((row) => [row.purchaseOrderLineId, String(row.increment)])).toEqual([[101n, '-3']]);
-    expect(recorded.excesses).toEqual([expect.objectContaining({ inbound_receipt_line_id: 901n })]);
-    expect(String(recorded.excesses[0].excess_qty)).toBe('8');
-  });
-
-  it('초과분 — 초과분이 다른 P/O 라인에 이어진 줄은 초과분을 바꿀 수 없다(400 SUCCESSOR_EXISTS)', async () => {
-    const { service, recorded } = fake({ existing: WITH_EXCESS, linkedExcesses: 1 });
-
-    const error = await thrown(() => service.replaceLines(500, 1, [item({ receivedQty: 20, excessQty: 8 })], 99));
-
-    expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.SUCCESSOR_EXISTS });
-    expect(recorded.excesses).toEqual([]);
   });
 
   it('치환 — 잠글 부모는 옛 집합과 새 집합의 합집합이다(내리는 쪽도 잠근다)', async () => {
