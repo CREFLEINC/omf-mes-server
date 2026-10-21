@@ -131,7 +131,7 @@ export class InspectionSheetTemplateService {
     input: InspectionSheetTemplateUpdate,
     actor: TemplateActor,
   ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
-    const row = await this.loadDraft(id, actor);
+    const row = await this.loadDraft(id);
     await this.assertContent(row.form_layout_code, input);
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.inspection_sheet_template.updateMany({
@@ -159,7 +159,7 @@ export class InspectionSheetTemplateService {
     version: number,
     actor: TemplateActor,
   ): Promise<{ inspectionSheetTemplate: InspectionSheetTemplateView; versionNo: number }> {
-    const row = await this.loadDraft(id, actor);
+    const row = await this.loadDraft(id);
     const stepCount = await this.prisma.inspection_sheet_template_step.count({
       where: { inspection_sheet_template_id: id },
     });
@@ -186,7 +186,7 @@ export class InspectionSheetTemplateService {
     return this.get(id);
   }
 
-  private async loadDraft(id: number, actor: TemplateActor) {
+  private async loadDraft(id: number) {
     const row = await this.prisma.inspection_sheet_template.findUnique({
       where: { inspection_sheet_template_id: id },
       select: { item_id: true, form_layout_code: true, status_code: true },
