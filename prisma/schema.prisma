@@ -83,6 +83,9 @@ model app_user {
   item_resource_map_updated_byToapp_user item_resource_map[] @relation("item_resource_map_updated_byToapp_user")
   lot_four_m_change_created_byToapp_user lot_four_m_change[] @relation("lot_four_m_change_created_byToapp_user")
   lot_four_m_change_updated_byToapp_user lot_four_m_change[] @relation("lot_four_m_change_updated_byToapp_user")
+  item_inspection_level_created_byToapp_user item_inspection_level[] @relation("item_inspection_level_created_byToapp_user")
+  item_inspection_level_updated_byToapp_user item_inspection_level[] @relation("item_inspection_level_updated_byToapp_user")
+  item_inspection_level_history          item_inspection_level_history[]
 
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
@@ -1972,6 +1975,8 @@ model item {
   lot                                                  lot[]
   serial_number                                        serial_number[]
   item_resource_map                                    item_resource_map[]
+  item_inspection_level                                item_inspection_level?
+  item_inspection_level_history                        item_inspection_level_history[]
 
   @@index([item_type_code, is_active], map: "ix_item_type")
   @@schema("mdm")
@@ -2566,6 +2571,7 @@ model worker {
   released_lot_holds             lot_hold[]                       @relation("lot_hold_released_worker")
   repair_result                  repair_result[]
   sorting_result                 sorting_result[]
+  item_inspection_level_history  item_inspection_level_history[]
 
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
@@ -3583,6 +3589,7 @@ model inspection_request {
   updated_at                 DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   updated_by                 BigInt?
   version_no                 Int                      @default(1)
+  inspection_level_code      String?                  @db.VarChar(50)
   inspection_plan_version    inspection_plan_version? @relation(fields: [inspection_plan_version_id], references: [inspection_plan_version_id], onDelete: NoAction, onUpdate: NoAction)
   item                       item                     @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                        lot?                     @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3591,6 +3598,7 @@ model inspection_request {
   work_order                 work_order?              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_result          inspection_result[]
   lot_four_m_change          lot_four_m_change[]
+  item_inspection_level_history item_inspection_level_history[]
 
   @@schema("quality")
 }
@@ -3613,6 +3621,50 @@ model lot_four_m_change {
   app_user_lot_four_m_change_updated_byToapp_user app_user?          @relation("lot_four_m_change_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([inspection_request_id], map: "ix_lot_four_m_change_request")
+  @@schema("quality")
+}
+
+/// 품목별 IQC 검사 수준과 자동 전환 상태(omf-all-around#64 · 장부 P-85). 행이 없는 품목은 수준 미설정이다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model item_inspection_level {
+  item_inspection_level_id                            BigInt    @id @default(autoincrement())
+  item_id                                             BigInt    @unique(map: "uq_item_inspection_level_item")
+  inspection_level_code                               String    @db.VarChar(50)
+  auto_switch_enabled                                 Boolean   @default(true)
+  consecutive_accept_count                            Int       @default(0)
+  created_at                                          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                          BigInt?
+  updated_at                                          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                          BigInt?
+  version_no                                          Int       @default(1)
+  item                                                item      @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_item_inspection_level_created_byToapp_user app_user? @relation("item_inspection_level_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_item_inspection_level_updated_byToapp_user app_user? @relation("item_inspection_level_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("quality")
+}
+
+/// 검사 수준 전환 이력(장부 P-85). AUTO 는 연속 합격 수 또는 불합격 의뢰, MANUAL 은 사유를 남긴다.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model item_inspection_level_history {
+  item_inspection_level_history_id BigInt              @id @default(autoincrement())
+  item_id                          BigInt
+  from_level_code                  String?             @db.VarChar(50)
+  to_level_code                    String              @db.VarChar(50)
+  change_type_code                 String              @db.VarChar(50)
+  consecutive_accept_count         Int?
+  inspection_request_id            BigInt?
+  reason                           String?
+  changed_at                       DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  changed_by                       BigInt?
+  changed_worker_id                BigInt?
+  item                             item                @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_request               inspection_request? @relation(fields: [inspection_request_id], references: [inspection_request_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                         app_user?           @relation(fields: [changed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                           worker?             @relation(fields: [changed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([item_id, changed_at(sort: Desc)], map: "ix_item_inspection_level_history_item")
+  @@index([changed_at(sort: Desc)], map: "ix_item_inspection_level_history_changed_at")
   @@schema("quality")
 }
 
