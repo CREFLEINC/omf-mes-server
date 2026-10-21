@@ -10,6 +10,7 @@ import { CORRECT_APPROVAL_TARGET_TYPE, CORRECT_APPROVAL_TYPE, lockResult } from 
 import { QTY_COLUMNS, resultQuantities } from './production-result-rules';
 import { NUMBERING_DOCUMENT, RESULT_STATUS } from './production-result.service';
 import { ProductionResultRow, ProductionResultView, productionResultView } from './production-result-view';
+import { allocateLikeOriginal, loadAllocations } from './worker-allocation';
 
 /** required 1. 다섯 수량은 «정정 후 값»이고, 안 준 칸은 원본을 승계한다(§5-3). */
 export interface ProductionResultCorrect {
@@ -32,8 +33,8 @@ export interface CorrectContext {
  * 실적 정정(I-7 PR ③ · §5). 원본을 고치지 않고 «새 행»을 덧붙인다(G-18).
  *
  * ⛔ 원본을 UPDATE 하지 않는다 — 잠글 것이 없어 If-Match 도 ETag 도 없다.
- * ⛔ 배분을 만들지도 복사하지도 않는다 — 계약 본문에 칸이 없고, 복사하면 `:complete` 의
- *    누적 양품이 두 배가 된다(§5-6 · 문의 044).
+ * ⛔ LOT 배분을 만들지도 복사하지도 않는다 — 계약 본문에 칸이 없고, 복사하면 `:complete` 의
+ *    누적 양품이 두 배가 된다(§5-6 · 문의 044). 작업자 배분은 원 실적의 비율로 정정 수량을 다시 나눈다.
  * ⛔ L1(`moveWithin`)을 부르지 않는다 — 배분이 없어 옮길 슬롯이 없다. 빈 배열로도 안 부른다.
  */
 @Injectable()
@@ -128,7 +129,8 @@ export class ProductionResultCorrectService {
         created_by: context.appUserId,
       },
     });
-    return productionResultView(row);
+    await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
+    return productionResultView(row, (await loadAllocations(tx, [row.production_result_id])).get(row.production_result_id) ?? []);
   }
 }
 

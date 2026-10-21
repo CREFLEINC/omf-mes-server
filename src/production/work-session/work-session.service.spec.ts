@@ -29,7 +29,7 @@ const context = (extra: Partial<WorkSessionContext> = {}): WorkSessionContext =>
   ...extra,
 });
 
-function stub(options: { status?: string; maxSessionNo?: number | null; openSession?: boolean; canStartWork?: boolean | null; timezone?: string } = {}) {
+function stub(options: { status?: string; maxSessionNo?: number | null; openSession?: boolean; canStartWork?: boolean | null; timezone?: string; notEmployed?: bigint[] } = {}) {
   const created: Row[] = [];
   const events: Row[] = [];
   const workers: Row[] = [];
@@ -130,9 +130,12 @@ function stub(options: { status?: string; maxSessionNo?: number | null; openSess
     worker: {
       // 헤더 축(`assertWorkerNoExists`)은 `findUnique`, 아래 `count` 는 본문 `workerIds` «명단» 축이다.
       findUnique: () => Promise.resolve({ worker_id: 1n }),
+      // `is_active` 가 걸린 조회는 재직자만 센다 — `notEmployed` 에 든 사람은 빠진다.
       count: ({ where }: { where: Row }) => {
-        const ids = (where.worker_id as { in?: unknown[] } | undefined)?.in;
-        return Promise.resolve(ids === undefined ? 1 : ids.length);
+        const target = where.worker_id as { in?: bigint[] } | bigint;
+        const ids = typeof target === 'bigint' ? [target] : (target.in ?? []);
+        const employedOnly = where.is_active !== undefined;
+        return Promise.resolve(ids.filter((id) => !employedOnly || !(options.notEmployed ?? []).includes(id)).length);
       },
     },
     shift: { count: () => Promise.resolve(1) },
@@ -204,18 +207,36 @@ describe('WorkSessionService.create', () => {
     expect(it0.created[0]).toMatchObject({ idempotency_key: 'HEADER-VALUE' });
   });
 
-  it('workerIds 가 비면 work_session_worker 를 만들지 않는다', async () => {
+  it('workerIds 가 비면 주작업자 한 행만 만든다', async () => {
     const it0 = stub();
     await it0.service.create(body({ workerIds: [] }), context());
-    expect(it0.workers).toEqual([]);
+    // 부작업자가 없어도 작업을 시작한 사람이 주작업자로 선다.
+    expect(it0.workers).toEqual([expect.objectContaining({ worker_id: 1n, worker_role_code: 'MAIN' })]);
   });
 
-  it('workerIds 로 만든 참여 행의 역할은 물리 기본값 OPERATOR 다', async () => {
-    // 설계 미정 — 문의 056
+  it('시작한 사람이 주작업자(MAIN), workerIds 가 부작업자(SUB)다', async () => {
     const it0 = stub();
     await it0.service.create(body({ workerIds: [7, 8] }), context());
-    expect(it0.workers).toHaveLength(2);
-    for (const row of it0.workers) expect(row).not.toHaveProperty('worker_role_code');
+    expect(it0.workers.map((row) => [row.worker_id, row.worker_role_code])).toEqual([[1n, 'MAIN'], [7n, 'SUB'], [8n, 'SUB']]);
+  });
+
+  it('workerIds 에 시작한 사람이 있거나 동시 참여 상한을 넘으면 400 이고 세션을 만들지 않는다', async () => {
+    for (const workerIds of [[1, 7], [7, 8, 9, 10]]) {
+      const it0 = stub();
+      const error = (await it0.service.create(body({ workerIds }), context()).catch((e: unknown) => e)) as ContractException;
+      expect(error.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID' });
+      expect(it0.workers).toEqual([]);
+    }
+  });
+
+  it('재직 중이 아닌 사람은 주작업자(X-Worker-No)도 부작업자(workerIds)도 될 수 없다', async () => {
+    const main = stub({ notEmployed: [1n] });
+    const mainError = (await main.service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
+    expect(mainError.errors[0]).toMatchObject({ field: 'X-Worker-No', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+    const sub = stub({ notEmployed: [8n] });
+    const subError = (await sub.service.create(body({ workerIds: [7, 8] }), context()).catch((e: unknown) => e)) as ContractException;
+    expect(subError.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID', message: '재직 중인 작업자가 아닙니다.' });
+    expect(sub.workers).toEqual([]);
   });
 
   it('controlOverride.note 는 저장하지 않는다 — 담을 칸이 없다', async () => {
