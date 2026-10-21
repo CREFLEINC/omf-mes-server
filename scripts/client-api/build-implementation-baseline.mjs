@@ -16,24 +16,21 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(SCRIPT_DIR, "../..");
 const CONTRACT_DIR = join(ROOT_DIR, "contracts");
-const GENERATED_ON = "2026-09-17";
+const GENERATED_ON = "2026-10-21";
 const OUTPUT_DIR = join(ROOT_DIR, `docs/client-api/${GENERATED_ON}`);
 const OPENAPI_DIR = join(OUTPUT_DIR, "openapi");
 
-// 기준 커밋이 태그보다 앞선다 — v0.1.3 뒤의 미출시 지점이라 「-next」로 적는다.
+// 기준 커밋이 태그보다 앞선다 — v0.1.21 뒤의 미출시 지점이라 「-next」로 적는다.
 // 정확한 지점은 SERVER_COMMIT 이 고정한다.
 //
-// ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 이 저장소는 PR 을 squash 로 병합하므로
-// 작업 브랜치의 커밋 해시는 병합과 함께 사라진다(원격 브랜치도 자동 삭제된다). 사라진
-// 해시를 적어 두면 아래 assertSourceMatchesServerCommit 의 `git rev-parse <sha>:src` 가
-// 새 클론에서 죽는다 — 지금 로컬에서 돌아가는 것은 객체가 아직 남아 있어서일 뿐이다.
-// 그래서 전달본은 «병합된 뒤» 그 병합 커밋을 적어 다시 뽑는다.
-// ⚠ **지금 적힌 것은 «브랜치» 커밋이다**(SHIP-UNIT-01 `final-routine/ship-unit-01-server`).
-// 위 경고대로 squash 병합이면 이 해시가 사라지므로, **병합 뒤 그 병합 커밋으로 다시 뽑는다.**
-// 클라이언트가 `gen:api` 를 지금 돌려야 해서 통합 결정으로 먼저 낸 임시 기준이다.
-const SERVER_VERSION = "v0.1.3-next";
-const SERVER_COMMIT = "2e9f234b4a4937704fb2d48195215787c3289164";
-const GENERATED_VERSION = "0.1.3-next-server.20260917";
+// ⛔ **main 히스토리에 «남을» 커밋을 적는다.** 작업 브랜치의 커밋을 적으면 squash 병합이나
+// 브랜치 자동 삭제로 해시가 사라질 수 있고, 그러면 아래 assertSourceMatchesServerCommit 의
+// `git rev-parse <sha>:src` 가 새 클론에서 죽는다. 그래서 전달본은 «병합된 뒤» main 의 커밋을 적어 뽑는다.
+// 지금 적힌 것은 main 의 병합 커밋이다 — 피처 001 이벤트 알림(omf-all-around#160) 서버 PR 8개가 모두 들어간
+// 지점(#783 병합 e1b0ad5).
+const SERVER_VERSION = "v0.1.21-next";
+const SERVER_COMMIT = "e1b0ad5c2462a92634616c98dba075c933abcadf";
+const GENERATED_VERSION = "0.1.21-next-server.20261021";
 const CONTRACT_COMMIT = readFileSync(
   join(CONTRACT_DIR, "COMMIT.txt"),
   "utf8",
@@ -788,9 +785,10 @@ function build() {
   //    FR-005 이행 공장 지정 PUT 1건이 들어왔는데 여기만 487 로 남았다(실측: 선반영 직전이
   //    이미 488). SHIP-UNIT-01 출하 단위 6건(장부 P-24)을 더해 **494** 다.
   //    `contract-registry.spec.ts`·`contract-coverage.spec.ts` 의 같은 수치와 맞춘다.
+  //    2026-10-21 전달본: 그 사이 장부 P-항목들이 더한 오퍼레이션을 합쳐 **523** 이다(피처 001 P-92·P-96·P-98 포함).
   assert(
-    documentsByOperation.size === 494,
-    `계약 오퍼레이션 수가 494가 아닙니다: ${documentsByOperation.size}`,
+    documentsByOperation.size === 523,
+    `계약 오퍼레이션 수가 523이 아닙니다: ${documentsByOperation.size}`,
   );
 
   const missingOperations = [...documentsByOperation.keys()].filter(
