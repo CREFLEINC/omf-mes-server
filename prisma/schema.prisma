@@ -89,6 +89,8 @@ model app_user {
   item_inspection_level_created_byToapp_user item_inspection_level[] @relation("item_inspection_level_created_byToapp_user")
   item_inspection_level_updated_byToapp_user item_inspection_level[] @relation("item_inspection_level_updated_byToapp_user")
   item_inspection_level_history          item_inspection_level_history[]
+  oqc_serial_result_created_byToapp_user                 oqc_serial_result[]                @relation("oqc_serial_result_created_byToapp_user")
+  oqc_serial_result_updated_byToapp_user                 oqc_serial_result[]                @relation("oqc_serial_result_updated_byToapp_user")
 
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
@@ -2604,6 +2606,7 @@ model worker {
   repair_result                  repair_result[]
   sorting_result                 sorting_result[]
   item_inspection_level_history  item_inspection_level_history[]
+  oqc_serial_result              oqc_serial_result[]
 
   @@index([department_id], map: "ix_worker_department")
   @@schema("mdm")
@@ -3758,6 +3761,7 @@ model inspection_result {
   terminal                   terminal?                @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
   uom                        uom                      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   nonconformance             nonconformance[]
+  oqc_serial_results         oqc_serial_result[]
 
   @@unique([inspection_request_id, inspection_round], map: "uq_inspection_round")
   @@schema("quality")
@@ -4057,6 +4061,7 @@ model serial_number {
   serial_component_relation_serial_component_relation_parent_serial_number_idToserial_number    serial_component_relation[] @relation("serial_component_relation_parent_serial_number_idToserial_number")
   item                                                                                          item                        @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   lot                                                                                           lot                         @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  oqc_serial_result oqc_serial_result?
 
   @@schema("trace")
 }
@@ -5489,4 +5494,28 @@ model zalo_delivery {
   @@index([status_code, next_attempt_at], map: "ix_zalo_delivery_due")
   @@index([created_at], map: "ix_zalo_delivery_created")
   @@schema("app")
+}
+
+/// 시리얼 OQC(omf-all-around#68 · 장부 P-101) — 시리얼당 한 줄. 재검 회차는 1차를 두고 최종·마지막 회차만 바꾼다.
+model oqc_serial_result {
+  oqc_serial_result_id                            BigInt            @id @default(autoincrement())
+  serial_number_id                                BigInt            @unique(map: "uq_oqc_serial_result_serial")
+  inspection_result_id                            BigInt
+  first_judgment_code                             String            @db.VarChar(10)
+  final_judgment_code                             String            @db.VarChar(10)
+  inspected_worker_id                             BigInt?
+  inspected_at                                    DateTime          @db.Timestamptz(6)
+  created_at                                      DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                      BigInt?
+  updated_at                                      DateTime          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                      BigInt?
+  version_no                                      Int               @default(1)
+  serial_number                                   serial_number     @relation(fields: [serial_number_id], references: [serial_number_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_result                               inspection_result @relation(fields: [inspection_result_id], references: [inspection_result_id], onDelete: NoAction, onUpdate: NoAction)
+  inspected_worker                                worker?           @relation(fields: [inspected_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_oqc_serial_result_created_byToapp_user app_user?         @relation("oqc_serial_result_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_oqc_serial_result_updated_byToapp_user app_user?         @relation("oqc_serial_result_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inspection_result_id], map: "ix_oqc_serial_result_inspection_result")
+  @@schema("quality")
 }
