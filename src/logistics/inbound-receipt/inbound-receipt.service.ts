@@ -16,10 +16,17 @@ import {
   MATERIAL_LOT_TYPE,
   assertWritable,
   attachesLot,
+  attributedQtyOf,
   dayOrNull,
+  excessQtyOf,
   supplierLotLabelAttached,
 } from './inbound-receipt-rules';
-import { InboundReceiptDetail, inboundReceiptLineView, inboundReceiptView } from './inbound-receipt-view';
+import {
+  INBOUND_LINE_INCLUDE,
+  InboundReceiptDetail,
+  inboundReceiptLineView,
+  inboundReceiptView,
+} from './inbound-receipt-view';
 
 /**
  * 입하 등록 — 화면 `M-01-01`. 「입하·라인·자재 LOT 이 **한 트랜잭션**으로 만들어진다」
@@ -125,6 +132,16 @@ export class InboundReceiptService {
           created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
         },
       });
+      const excessQty = excessQtyOf(line);
+      if (excessQty.greaterThan(0)) {
+        await tx.inbound_receipt_excess.create({
+          data: {
+            inbound_receipt_line_id: created.inbound_receipt_line_id,
+            excess_qty: excessQty,
+            created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
+          },
+        });
+      }
 
       if (!attachesLot(line)) continue;
       // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의
@@ -229,7 +246,8 @@ export class InboundReceiptService {
       const key = BigInt(line.purchaseOrderLineId);
       const carried = deltas.get(key);
       deltas.set(key, {
-        qty: (carried?.qty ?? new Prisma.Decimal(0)).plus(line.receivedQty),
+        // 초과분은 P/O 라인에 넣지 않는다 — 한도 검사도 그 몫을 뺀 수량으로 한다(장부 P-96).
+        qty: (carried?.qty ?? new Prisma.Decimal(0)).plus(attributedQtyOf(line)),
         index: carried?.index ?? index,
       });
     }
@@ -283,6 +301,7 @@ export class InboundReceiptService {
     const lines = await this.prisma.inbound_receipt_line.findMany({
       where: { inbound_receipt_id: inboundReceiptId },
       orderBy: { line_no: 'asc' },
+      include: INBOUND_LINE_INCLUDE,
     });
     return {
       detail: {

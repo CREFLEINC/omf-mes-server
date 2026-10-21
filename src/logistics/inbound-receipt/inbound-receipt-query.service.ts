@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   InboundReceiptDetail,
   InboundReceiptLineView,
+  INBOUND_LINE_INCLUDE,
   InboundReceiptView,
   inboundReceiptLineView,
   inboundReceiptView,
@@ -135,6 +136,7 @@ export class InboundReceiptQueryService {
         ...(lineFilters.length === 0 ? {} : { AND: lineFilters }),
       },
       orderBy: { line_no: 'asc' },
+      include: INBOUND_LINE_INCLUDE,
     });
     // 입고 화면이 기본 수량·선별 불량분 줄을 세우는 근거(장부 P-56) — 라인 LOT 마다 한 번에 센다.
     const lotIds = rows.flatMap((row) => (row.lot_id === null ? [] : [row.lot_id]));

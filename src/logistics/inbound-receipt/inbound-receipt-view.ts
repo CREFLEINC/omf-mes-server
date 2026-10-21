@@ -10,7 +10,19 @@ import { toDateString } from '../../common/master';
  */
 
 export type InboundReceiptRow = Prisma.inbound_receiptGetPayload<object>;
-export type InboundReceiptLineRow = Prisma.inbound_receipt_lineGetPayload<object>;
+/** 줄을 읽는 곳은 초과분을 함께 읽는다(장부 P-96). */
+export const INBOUND_LINE_INCLUDE = {
+  inbound_receipt_excess: { orderBy: { inbound_receipt_excess_id: 'asc' } },
+} satisfies Prisma.inbound_receipt_lineInclude;
+export type InboundReceiptLineRow = Prisma.inbound_receipt_lineGetPayload<{ include: typeof INBOUND_LINE_INCLUDE }>;
+
+/** 계약 밖(장부 P-96) — 줄의 초과분 한 몫과 이어진 P/O 라인. */
+export interface InboundReceiptExcessView {
+  inboundReceiptExcessId: number;
+  excessQty: number;
+  purchaseOrderLineId: number | null;
+  linkedAt: string | null;
+}
 
 export interface InboundReceiptView {
   inboundReceiptId: number;
@@ -53,6 +65,9 @@ export interface InboundReceiptLineView {
    * 라인 목록(`GET …/lines`·상세)만 싣는다.
    */
   receivableQty?: number | null;
+  /** 계약 밖(장부 P-96) — `receivedQty` 중 P/O 라인에 넣지 않은 몫의 합. 없으면 0. */
+  excessQty: number;
+  excesses: InboundReceiptExcessView[];
   /** 서버 선행 P-56 — 이 라인 LOT 에서 선별로 떼어 낸 자식 LOT(불량분). 없으면 빈 배열. */
   splitLots?: SplitLotView[];
 }
@@ -101,6 +116,13 @@ export function inboundReceiptLineView(row: InboundReceiptLineRow): InboundRecei
     inspectionRequired: row.inspection_required,
     statusCode: row.status_code,
     lotId: id(row.lot_id),
+    excessQty: row.inbound_receipt_excess.reduce((sum, excess) => sum.plus(excess.excess_qty), new Prisma.Decimal(0)).toNumber(),
+    excesses: row.inbound_receipt_excess.map((excess) => ({
+      inboundReceiptExcessId: Number(excess.inbound_receipt_excess_id),
+      excessQty: Number(excess.excess_qty),
+      purchaseOrderLineId: id(excess.purchase_order_line_id),
+      linkedAt: excess.linked_at?.toISOString() ?? null,
+    })),
   };
 }
 

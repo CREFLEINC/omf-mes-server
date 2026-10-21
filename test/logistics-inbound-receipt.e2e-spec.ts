@@ -266,6 +266,77 @@ describe('입하 등록 (e2e)', () => {
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(65);
   });
 
+  // 발주 5,000 — 500 을 먼저 받고, 공급사 포장 사정으로 라벨 한 장 5,000 이 더 왔다. 그 LOT 이 IQC 한 단위라
+  // 줄 하나로 받고, 남은 4,500 만 P/O 에 넣고 500 은 ERP 추가 P/O 를 기다리는 초과분으로 남긴다(장부 P-96).
+  describe('초과분 — 한 LOT 의 일부만 P/O 에 넣는다', () => {
+    it('초과분 — 줄·LOT 은 5,000 그대로이고 P/O 에는 4,500 만 오르며 초과분 500 이 안 이어진 채 남는다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(5000);
+      await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 500 }] });
+
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 5000, excessQty: 500 }],
+      });
+
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(5000);
+      const line = detail.lines[0] as LineBody & { excessQty: number; excesses: object[] };
+      expect(line.receivedQty).toBe(5000);
+      expect(line.excessQty).toBe(500);
+      expect(line.excesses).toEqual([expect.objectContaining({ excessQty: 500, purchaseOrderLineId: null, linkedAt: null })]);
+      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
+      expect(Number(lot.initial_qty)).toBe(5000);
+    });
+
+    it('초과분 — 칸이 틀리면 400 이 그 칸을 짚고 아무것도 남지 않는다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const before = await prisma.inbound_receipt_excess.count();
+
+      const rejected = await send(
+        await body({
+          lines: [
+            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: '5' },
+            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 50 },
+          ],
+        }),
+      ).expect(400);
+
+      expect(rejected.body.errors).toEqual([
+        expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' }),
+        expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' }),
+      ]);
+      expect(await prisma.inbound_receipt_excess.count()).toBe(before);
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
+    });
+
+    it('초과분 — 무발주 줄에는 초과분을 쓸 수 없다(400 INVALID)', async () => {
+      const rejected = await send(
+        await body({
+          exceptionTypeCode: 'CUSTOMER_SUPPLY',
+          exceptionReason: '고객사급 자재',
+          lines: [{ ...(await lineDraft()), purchaseOrderLineId: null, excessQty: 1 }],
+        }),
+      ).expect(400);
+
+      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: 'INVALID' })]);
+    });
+
+    it('초과분 — 라인 치환이 초과분을 바꾸면 P/O 에 넣은 몫과 초과분 기록이 함께 바뀐다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 120, excessQty: 20 }],
+      });
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(100);
+
+      const items = await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { excessQty: 30 })]);
+
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(90);
+      expect((items[0] as LineBody & { excessQty: number }).excessQty).toBe(30);
+      const rows = await prisma.inbound_receipt_excess.findMany({
+        where: { inbound_receipt_line_id: BigInt(detail.lines[0].inboundReceiptLineId) },
+      });
+      expect(rows.map((row) => Number(row.excess_qty))).toEqual([30]);
+    });
+  });
+
   it('⭐ 입하 등록과 P/O 라인 치환을 동시에 걸어도 500 이 없다(부모 FOR UPDATE 로 직렬화된다)', async () => {
     const order = await createOrder();
     const purchaseOrderLineId = order.lines[0].purchaseOrderLineId;

@@ -31,7 +31,11 @@ interface Seed {
   /** `(source_document_*)` 로 걸리는 원 원장. */
   ledger?: LedgerRow[];
   /** 입하 라인 — 발주 라인 귀속과 수취 수량. */
-  inboundLines?: { purchase_order_line_id: bigint | null; received_qty: Prisma.Decimal }[];
+  inboundLines?: {
+    purchase_order_line_id: bigint | null;
+    received_qty: Prisma.Decimal;
+    inbound_receipt_excess?: { excess_qty: Prisma.Decimal; purchase_order_line_id: bigint | null }[];
+  }[];
   /** 되돌린 «뒤»의 발주 라인 수취 누계. */
   afterQty?: Prisma.Decimal[];
 }
@@ -78,7 +82,9 @@ function fake(seed: Seed = {}) {
     },
     inbound_receipt_line: {
       ...writable('inbound_receipt_line'),
-      findMany: rec('inbound_receipt_line.findMany', () => seed.inboundLines ?? []),
+      findMany: rec('inbound_receipt_line.findMany', () =>
+        (seed.inboundLines ?? []).map((line) => ({ inbound_receipt_excess: [], ...line })),
+      ),
     },
     purchase_order_line: {
       update: rec('purchase_order_line.update', () => ({})),
@@ -276,6 +282,31 @@ describe('DocumentCancelExecuteService', () => {
 
     // 클라이언트가 고칠 수 있는 것이 아니라 400 이 아니다 — 평범한 Error(500)다(§6-4).
     await expect(cancel(service)).rejects.toThrow(/한 문서에 원장이 2 행이다/);
+  });
+
+  it('어댑터 — 입하 취소는 초과분을 뺀 몫을 줄의 P/O 라인에서, 이어진 초과분을 그 P/O 라인에서 되돌린다(장부 P-96)', async () => {
+    const { service, args } = fake({
+      locked: requested,
+      inboundLines: [
+        {
+          purchase_order_line_id: 5n,
+          received_qty: decimal(10),
+          inbound_receipt_excess: [
+            { excess_qty: decimal(3), purchase_order_line_id: 6n },
+            { excess_qty: decimal(1), purchase_order_line_id: null },
+          ],
+        },
+      ],
+      afterQty: [decimal(0)],
+    });
+
+    await cancel(service, 'INBOUND_RECEIPT');
+
+    const updates = (args['purchase_order_line.update'] ?? []) as { where: { purchase_order_line_id: bigint }; data: { received_qty: { decrement: unknown } } }[];
+    expect(updates.map((call) => [call.where.purchase_order_line_id, String(call.data.received_qty.decrement)])).toEqual([
+      [5n, '6'],
+      [6n, '3'],
+    ]);
   });
 
   it('어댑터 — 입하 취소는 부모 P/O 를 id 오름차순으로 잠그고 received_qty 를 되돌린다', async () => {
