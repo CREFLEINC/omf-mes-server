@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../document-state';
+import { ApprovalNotifier } from '../notification/approval-notice';
 
 /** 결재선 한 단계 — 전개에 필요한 칸만. */
 export interface RouteStep {
@@ -58,7 +59,10 @@ function badRequest(code: string, message: string): ContractException {
  */
 @Injectable()
 export class ApprovalService {
-  constructor(private readonly documentState: DocumentStateService) {}
+  constructor(
+    private readonly documentState: DocumentStateService,
+    private readonly notifier: ApprovalNotifier,
+  ) {}
 
   /**
    * 상신. 「진행 중 요청은 하나」를 보고, 결재선을 골라 요청과 단계를 한 트랜잭션으로 만든다.
@@ -74,6 +78,7 @@ export class ApprovalService {
     if ((input.requestedBy === undefined) === (input.requestedWorkerId === undefined)) {
       throw new Error('승인 요청에는 계정 또는 작업자 주체 하나가 필요합니다.');
     }
+    const requestedAt = new Date();
     await this.assertNoOpenRequest(tx, input.targetTypeCode, input.targetId, input.approvalTypeCode);
     const { approvalRouteId } = await this.selectRoute(tx, input.approvalTypeCode, input.businessUnitId);
     // `target_summary`·`decided_at`·`decided_by` 는 비운다 — 계약이 안 받는 칸(I-1.md §2-3).
@@ -85,13 +90,14 @@ export class ApprovalService {
         target_id: input.targetId,
         requested_by: input.requestedBy ?? null,
         requested_worker_id: input.requestedWorkerId ?? null,
-        requested_at: new Date(),
+        requested_at: requestedAt,
         status_code: 'PENDING',
         reason: input.reason,
       },
       select: { approval_request_id: true },
     });
     await this.expandSteps(tx, approvalRouteId, created.approval_request_id);
+    await this.notifier.notifyCurrentStep(tx, created.approval_request_id, requestedAt);
     return { approvalRequestId: created.approval_request_id };
   }
 
@@ -307,6 +313,8 @@ export class ApprovalService {
       data: { version_no: { increment: 1 }, ...(closes ? decided : {}) },
     });
     assertUpdated(updated.count);
+    // 중간 승인이면 다음 단계 결재자 차례가 됐다 — 마지막 승인·반려 뒤에는 더 알리지 않는다.
+    if (!closes) await this.notifier.notifyCurrentStep(tx, id, decidedAt);
 
     return {
       requestId: id,

@@ -496,15 +496,25 @@ describe('설비 고장 I-30 ③·⑥~⑧ (e2e)', () => {
     expect(counter.last_value).toBeGreaterThanOrEqual(1n);
   });
 
-  it('E-B12 notifyAssignee 생략=true·명시 false를 유지하고 알림 행은 만들지 않는다', async () => {
+  it('E-B12 notifyAssignee 생략=true·명시 false를 유지하고, 수신자 없는 설비라 알림 행은 만들지 않는다', async () => {
     const before = await notificationCounts();
-    const omitted = await postBreakdown(createBody()).expect(201);
+    // 보고 시각을 따로 준다 — 같은 설비·같은 보고 시각의 사건은 하나로 본다(`uq_notification_event`).
+    const omitted = await postBreakdown(createBody({ reportedAt: '2026-09-12T00:30:00+07:00' })).expect(201);
     const disabled = await postBreakdown(
-      createBody({ notifyAssignee: false }),
+      createBody({ notifyAssignee: false, reportedAt: '2026-09-12T00:31:00+07:00' }),
     ).expect(201);
     expect(omitted.body.notifyAssignee).toBe(true);
     expect(disabled.body.notifyAssignee).toBe(false);
-    expect(await notificationCounts()).toEqual(before);
+    // ⭐ 생성기(omf-all-around#160 · 장부 P-94)가 사건은 남긴다 — 라인 없는 설비라 부서 미확인,
+    //    보고자가 끄면 그 이유로. 알림센터 행과 연계 메시지는 그대로 0건이다.
+    const [notifications, events, messages] = await notificationCounts();
+    expect([notifications, events, messages]).toEqual([before[0], before[1] + 2, before[2]]);
+    const skipped = await prisma.notification_event.findMany({
+      where: { event_type_code: 'EQUIPMENT_BREAKDOWN_OCCURRED', aggregate_id: ids.equipment },
+      orderBy: { notification_event_id: 'desc' },
+      take: 2,
+    });
+    expect(skipped.map((e) => e.skip_reason_code).sort()).toEqual(['DEPARTMENT_UNRESOLVED', 'REPORTER_OPTED_OUT']);
   });
 
   it('E-B13 stoppedAt은 선택이며 ABNORMAL 명시값도 startedAt으로 바꾸지 않는다', async () => {

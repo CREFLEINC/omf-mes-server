@@ -24,6 +24,7 @@ import {
   resultQuantities,
 } from './production-result-rules';
 import { ProductionResultView, productionResultView } from './production-result-view';
+import { assertDefectCodes, loadDefects, resolveDefectQty, writeDefects } from './result-defect';
 import { allocateBySession, loadAllocations } from './worker-allocation';
 
 /** 채번 문서 유형 — `app.numbering_rule` 에 `PR-{YYMMDD}-{SEQ4}` 가 등재돼 있다. */
@@ -62,6 +63,8 @@ interface PreparedResult {
   allocations: readonly ResultLotAllocation[];
   occurredAt: Date;
   productionResultNo: string;
+  /** 불량 유형이 있을 때만 정해진다 — 발생·검출 공정(W/O 공정). */
+  defectProcessId: bigint | null;
 }
 
 /**
@@ -81,13 +84,14 @@ export class ProductionResultService {
 
   async create(body: ProductionResultCreate, context: ProductionResultContext): Promise<ProductionResultView> {
     const workerId = await resolveWorkerId(this.prisma, context.workerNo);
-    const quantities = resultQuantities(body);
+    const quantities = resultQuantities({ ...body, defectQty: resolveDefectQty(body) });
     const allocations = body.lotAllocations ?? [];
     assertAllocations(allocations, quantities.good_qty);
     // 지연 사유는 그룹 값이 **0건**이라 대조를 걸지 않는다 — 걸면 모든 값이 400 이 된다(I-6 §9-1 #2).
     const late = body.lateEntryReasonCode;
     if (late !== undefined) assertNotBlank([['lateEntryReasonCode', late]]);
     await this.assertReferences(body);
+    const defectProcessId = await assertDefectCodes(this.prisma, body.workOrderId, body.defects ?? []);
     const occurredAt = new Date(body.occurredAt);
     // ⛔ 채번은 `$transaction` 을 «열기 전»이다 — 안에서 부르면 커넥션을 둘 쥐고 풀이 마르면
     //    `P2024` 로 죽는다. 결번은 허용한다(I-2 R-2).
@@ -95,7 +99,16 @@ export class ProductionResultService {
     //    기간은 `occurredAt` 의 UTC 날짜(서버가 「오늘」로 다시 잡으면 재전송이 하루 뒤 번호를 받는다).
     const period = occurredAt.toISOString().slice(0, 10);
     const productionResultNo = await this.numbering.next(NUMBERING_DOCUMENT, null, period);
-    const prepared: PreparedResult = { body, context, workerId, quantities, allocations, occurredAt, productionResultNo };
+    const prepared: PreparedResult = {
+      body,
+      context,
+      workerId,
+      quantities,
+      allocations,
+      occurredAt,
+      productionResultNo,
+      defectProcessId,
+    };
     return this.prisma.$transaction((tx) => this.commit(tx, prepared));
   }
 
@@ -135,7 +148,11 @@ export class ProductionResultService {
     });
     await this.releaseUninspectedLots(tx, prepared);
     await allocateBySession(tx, row, context.appUserId);
-    return productionResultView(row, (await loadAllocations(tx, [row.production_result_id])).get(row.production_result_id) ?? []);
+    await writeDefects(tx, row, body.defects ?? [], prepared.defectProcessId, context.appUserId);
+    const ids = [row.production_result_id];
+    const workers = await loadAllocations(tx, ids);
+    const defects = await loadDefects(tx, ids);
+    return productionResultView(row, workers.get(row.production_result_id) ?? [], defects.get(row.production_result_id) ?? []);
   }
 
   /**

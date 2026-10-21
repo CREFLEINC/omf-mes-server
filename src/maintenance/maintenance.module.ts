@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { IdempotencyModule } from "../common/idempotency";
 import { DocumentStateModule } from "../core/document-state";
+import { NotificationCoreModule } from "../core/notification";
 import { NumberingModule } from "../core/numbering";
 import { PrismaModule } from "../prisma/prisma.module";
 import { BreakdownController } from "./breakdown/breakdown.controller";
@@ -49,6 +50,7 @@ import { ToolUsageQueryService } from "./tool-usage/tool-usage-query.service";
     IdempotencyModule,
     NumberingModule,
     DocumentStateModule,
+    NotificationCoreModule,
   ],
   controllers: [
     InspectionController,

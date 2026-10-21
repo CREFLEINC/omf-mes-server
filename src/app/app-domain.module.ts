@@ -39,6 +39,8 @@ import { NotificationEventController } from './notification/notification-event.c
 import { NotificationController } from './notification/notification.controller';
 import { NotificationPreviewController } from './notification/notification-preview.controller';
 import { NotificationPreviewService } from './notification/notification-preview.service';
+import { NotificationSettingController } from './notification/notification-setting.controller';
+import { NotificationSettingService } from './notification/notification-setting.service';
 import { NotificationQueryService } from './notification/notification-query.service';
 import { NotificationSubscriptionController } from './notification/notification-subscription.controller';
 import { NotificationSubscriptionService } from './notification/notification-subscription.service';
@@ -80,6 +82,7 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     NotificationEventController,
     NotificationController,
     NotificationPreviewController,
+    NotificationSettingController,
     NotificationSubscriptionController,
     NotificationWriteController,
     ApprovalRouteController,
@@ -112,6 +115,7 @@ import { UserWorkerLinkService } from './access/user-worker-link.service';
     NoticeService,
     NotificationQueryService,
     NotificationPreviewService,
+    NotificationSettingService,
     NotificationSubscriptionService,
     NotificationWriteService,
     ApprovalRouteService,

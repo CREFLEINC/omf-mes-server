@@ -15,6 +15,12 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const PREFIX = `E2E_I28_EVENT_${randomUUID().slice(0, 8)}`;
 const PATH = '/api/app/notification-events';
+const REMOVED_EVENTS = [
+  'MOLD_RECOMMENDED_SHOTS_EXCEEDED',
+  'CALIBRATION_EXPIRY_APPROACHING',
+  'PURCHASE_ORDER_CHANGE_RECEIVED',
+  'INTEGRATION_FAILED',
+];
 
 function responseValidator(): ValidateFunction {
   const contract = JSON.parse(
@@ -97,27 +103,69 @@ describe('알림 이벤트 정본 (I-28)', () => {
     await app.close();
   });
 
-  it('결정 — 통보 099: 화면 정본 6개를 고정 순서와 계약 모양으로 반환한다', async () => {
+  it('US4-7 SC-010 이벤트는 정확히 6개이고 고정 순서·이름·계약 모양이다', async () => {
     const response = await request(app.getHttpServer()).get(PATH).set('Cookie', cookie).expect(200);
 
     expect(validateResponse(response.body)).toBe(true);
     expect(response.body.items.map((item: { eventCode: string }) => item.eventCode)).toEqual([
+      'WORK_SESSION_STARTED',
+      'WORK_SESSION_STOPPED',
+      'WORK_SESSION_ENDED',
+      'WORK_ORDER_CLOSED',
       'EQUIPMENT_BREAKDOWN_OCCURRED',
-      'MOLD_RECOMMENDED_SHOTS_EXCEEDED',
-      'CALIBRATION_EXPIRY_APPROACHING',
-      'PURCHASE_ORDER_CHANGE_RECEIVED',
-      'INTEGRATION_FAILED',
       'APPROVAL_ACTION_REQUIRED',
     ]);
     expect(response.body.items.map((item: { eventName: string }) => item.eventName)).toEqual([
+      '생산 실행',
+      '생산 중단',
+      '작업 종료',
+      '생산 마감',
       '설비 고장 발생',
-      '적정타수 초과',
-      '검교정 만료 임박',
-      'P/O 변경 수신',
-      '연계 실패',
       '승인 요청·결재 도착',
     ]);
   });
+
+  it('US4-7 recipientMode 는 결재만 APPROVER 이고 나머지는 CONFIGURED 다', async () => {
+    const response = await request(app.getHttpServer()).get(PATH).set('Cookie', cookie).expect(200);
+
+    const modes = Object.fromEntries(
+      response.body.items.map((item: { eventCode: string; recipientMode: string }) => [
+        item.eventCode,
+        item.recipientMode,
+      ]),
+    );
+    expect(modes).toEqual({
+      WORK_SESSION_STARTED: 'CONFIGURED',
+      WORK_SESSION_STOPPED: 'CONFIGURED',
+      WORK_SESSION_ENDED: 'CONFIGURED',
+      WORK_ORDER_CLOSED: 'CONFIGURED',
+      EQUIPMENT_BREAKDOWN_OCCURRED: 'CONFIGURED',
+      APPROVAL_ACTION_REQUIRED: 'APPROVER',
+    });
+  });
+
+  it.each(REMOVED_EVENTS)(
+    'SC-010 뺀 코드 %s 는 기존 구독 조회에 안 나오고 저장은 400 이다',
+    async (eventCode) => {
+      // ⚠ 기존 구독 GET 은 목록에 없는 코드를 빈 목록으로 돌려준다(계약에 400 이 없다 · 동작 보존).
+      const listed = await request(app.getHttpServer())
+        .get('/api/app/notification-subscriptions')
+        .query({ eventCode })
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(listed.body).toEqual({ items: [] });
+
+      const saved = await request(app.getHttpServer())
+        .put('/api/app/notification-subscriptions')
+        .query({ eventCode })
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('If-Match', '1')
+        .send({ recipients: [] })
+        .expect(400);
+      expect(saved.body.errors.map((e: { field: string }) => e.field)).toEqual(['eventCode']);
+    },
+  );
 
   it('발생 이력과 기존 사용자별 구독의 임의 코드를 이벤트 정본에 섞지 않는다', async () => {
     const response = await request(app.getHttpServer()).get(PATH).set('Cookie', cookie).expect(200);

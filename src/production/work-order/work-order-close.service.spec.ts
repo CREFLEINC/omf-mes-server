@@ -1,3 +1,4 @@
+import { WorkOrderNotifier } from './work-order-notice';
 import { Prisma } from '@prisma/client';
 
 import { ConflictException } from '../../common/errors';
@@ -90,7 +91,7 @@ function stub(options: { status?: string; goodSum?: number; openSession?: boolea
 
   const documentState = new DocumentStateService();
   return {
-    close: new WorkOrderCloseService(prisma, documentState, lots, outbox),
+    close: new WorkOrderCloseService(prisma, documentState, lots, outbox, { notify: () => Promise.resolve() } as unknown as WorkOrderNotifier),
     cancel: new WorkOrderCancelService(prisma, documentState, lots),
     updates,
     creates,

@@ -246,7 +246,7 @@ export class InboundReceiptService {
       const key = BigInt(line.purchaseOrderLineId);
       const carried = deltas.get(key);
       deltas.set(key, {
-        // 초과분은 P/O 라인에 넣지 않는다 — 한도 검사도 그 몫을 뺀 수량으로 한다(장부 P-96).
+        // 초과분은 P/O 라인에 넣지 않는다 — 한도 검사도 그 몫을 뺀 수량으로 한다(장부 P-100).
         qty: (carried?.qty ?? new Prisma.Decimal(0)).plus(attributedQtyOf(line)),
         index: carried?.index ?? index,
       });

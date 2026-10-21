@@ -2013,7 +2013,7 @@
       }
      }
     },
-    "x-internal-note": "발생 지점 — 설비 고장 발생 = POST /maintenance/breakdowns(equipment-05) 뒤 · 적정타수 초과 = POST /maintenance/tool-usages 저장 뒤 서버가 적정타수 대비 비율을 판정 · P/O 변경 수신 = ERP 수신 메시지가 P/O 변경을 담을 때 · 연계 실패 = 연계 메시지가 실패로 떨어질 때 · 승인 요청·결재 도착 = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. ⛔ 검교정 만료 임박 = 미확정 — 시간 트리거(배치)이고 임박 일수 기준이 정해진 적이 없다. 소관 화면 W-05-10 에는 「알림」이라는 낱말이 0건이다. ⛔ eventCode 에 enum 을 넣지 않는다 — 코드 문자열 자체가 아직 확정된 적이 없어 이 표는 «이벤트명»으로만 적는다. 각 쓰기 쪽 계약에 「이 쓰기 뒤에 이벤트 X 가 난다」를 적는 것은 이 지시서 밖(A7·A8 소관)이다."
+    "x-internal-note": "⭐ 2026-10-21 피처 001(omf-all-around#160 · 장부 P-91)이 목록을 6종으로 바꿨다 — 생산 실행(WORK_SESSION_STARTED) = 작업 시작·재시작 · 생산 중단(WORK_SESSION_STOPPED) = 진행 중 작업 중단 · 작업 종료(WORK_SESSION_ENDED) = 작업 종료 · 생산 마감(WORK_ORDER_CLOSED) = MES W/O 마감 · 설비 고장 발생(EQUIPMENT_BREAKDOWN_OCCURRED) = POST /maintenance/breakdowns 뒤 · 승인 요청·결재 도착(APPROVAL_ACTION_REQUIRED) = 도메인 :request-approval 이 단계를 전개할 때와 앞 단계가 승인돼 다음 결재자 차례가 될 때. 적정타수 초과·검교정 만료 임박·P/O 변경 수신·연계 실패 4종은 뺐다(발생기가 없어 과거 알림 0건). ⛔ eventCode 에 enum 을 넣지 않는다 — 목록 정본은 이 오퍼레이션 응답이다."
    }
   },
   "/app/notification-subscriptions": {
@@ -3567,6 +3567,333 @@
      }
     ]
    }
+  },
+  "/app/notification-settings": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "부서별 알림 설정 요약",
+    "description": "한 부서의 이벤트 6종 요약. 행이 없는 이벤트는 끔·끔·0명으로 읽고 행을 만들지 않는다. ETag 없음. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "parameters": [
+     {
+      "name": "departmentId",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1001
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "요약",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationSettingSummary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/app/notification-settings/recipient-candidates": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "알림 수신자 후보",
+    "description": "활성 사용자 전체(부서 무관 · FR-014). ⛔ 전화번호 원문은 내리지 않고 hasPhone 만 준다(FR-019). 이름순. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "parameters": [
+     {
+      "name": "keyword",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "maxLength": 100
+      },
+      "description": "로그인ID·이름 부분 일치(대소문자 무시).",
+      "example": "홍"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 1
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "example": 50
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "후보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RecipientCandidatePage"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/app/notification-settings/{departmentId}/{eventCode}": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "부서×이벤트 알림 설정 상세",
+    "description": "행이 없으면 끔·끔·수신자 없음·ETag \"1\" 로 읽고 행을 만들지 않는다. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "parameters": [
+     {
+      "name": "departmentId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1001
+     },
+     {
+      "name": "eventCode",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "description": "GET /app/notification-events 의 eventCode. 목록에 없으면 400 eventCode INVALID.",
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "상세",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationSetting"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(부서×이벤트 한 행의 version). 행이 없으면 \"1\" — 첫 저장의 If-Match 가 이 값을 담는다.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "app"
+    ],
+    "summary": "부서×이벤트 알림 설정 저장",
+    "description": "켬/끔·Zalo·수신자를 통째로 바꾼다(빠진 수신자는 지워진다). 행이 없으면 만든다. 헤더 UPSERT → FOR UPDATE → version 대조 → 수신자 치환 → version+1 이 한 트랜잭션이다. zaloEnabled 는 enabled=false 여도 저장하되 효과가 없다. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "parameters": [
+     {
+      "name": "departmentId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "minimum": 1
+      },
+      "example": 1001
+     },
+     {
+      "name": "eventCode",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "maxLength": 60,
+       "x-no-example": true
+      },
+      "description": "GET /app/notification-events 의 eventCode. 목록에 없으면 400 eventCode INVALID.",
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotificationSettingReplace"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "저장됨. 새 ETag",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationSetting"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(부서×이벤트 한 행의 version). 행이 없으면 \"1\" — 첫 저장의 If-Match 가 이 값을 담는다.",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "대상 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5102,7 +5429,8 @@
     "type": "object",
     "required": [
      "eventCode",
-     "eventName"
+     "eventName",
+     "recipientMode"
     ],
     "description": "알림 이벤트 목록. ⭐ 이 목록의 정본은 계약이다 — 공통코드 마스터에 두면 편집 가능해지는데, 코드가 바뀌면 보내는 쪽이 깨진다. 근거: W-CO-03 §8-3",
     "properties": {
@@ -5118,6 +5446,245 @@
      "description": {
       "type": "string",
       "example": "출하검사에서 불합격 판정이 저장됐을 때"
+     },
+     "recipientMode": {
+      "type": "string",
+      "enum": [
+       "CONFIGURED",
+       "APPROVER"
+      ],
+      "description": "CONFIGURED = 부서×이벤트 설정의 수신자에게 · APPROVER = 그 차례 결재자 한 명에게(설정에 수신자 목록이 없다 · FR-010). 근거: 서버 선행 · 장부 P-91",
+      "example": "CONFIGURED"
+     }
+    }
+   },
+   "NotificationSettingSummary": {
+    "type": "object",
+    "required": [
+     "departmentId",
+     "departmentName",
+     "zaloStatus",
+     "items"
+    ],
+    "description": "한 부서의 이벤트 6종 요약(W-CO-11). 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "properties": {
+     "departmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "departmentName": {
+      "type": "string",
+      "example": "생산1팀"
+     },
+     "zaloStatus": {
+      "type": "string",
+      "enum": [
+       "NOT_CONFIGURED",
+       "ACTIVE",
+       "REAUTH_REQUIRED"
+      ],
+      "description": "Zalo 연결 상태만 — W-CO-12 권한 없이 안내 배너를 띄우기 위함. 연결 행이 없으면 NOT_CONFIGURED.",
+      "example": "NOT_CONFIGURED"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "eventCode",
+        "enabled",
+        "zaloEnabled",
+        "recipientCount",
+        "noPhoneCount"
+       ],
+       "properties": {
+        "eventCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+        },
+        "enabled": {
+         "type": "boolean",
+         "example": false
+        },
+        "zaloEnabled": {
+         "type": "boolean",
+         "example": false
+        },
+        "recipientCount": {
+         "type": "integer",
+         "description": "활성 수신자 수(비활성 사용자는 발생 때 빠지므로 세지 않는다). 결재 이벤트는 0.",
+         "example": 3
+        },
+        "noPhoneCount": {
+         "type": "integer",
+         "description": "활성 수신자 중 전화번호가 없는 수(알림센터로만 받는다).",
+         "example": 1
+        }
+       }
+      }
+     }
+    }
+   },
+   "NotificationSetting": {
+    "type": "object",
+    "required": [
+     "departmentId",
+     "eventCode",
+     "enabled",
+     "zaloEnabled",
+     "recipients"
+    ],
+    "description": "부서×이벤트 설정 한 행. 결재 이벤트(recipientMode=APPROVER)는 recipients 가 늘 []. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "properties": {
+     "departmentId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "eventCode": {
+      "type": "string",
+      "x-no-example": true,
+      "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+     },
+     "enabled": {
+      "type": "boolean",
+      "example": true
+     },
+     "zaloEnabled": {
+      "type": "boolean",
+      "example": false
+     },
+     "recipients": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "appUserId",
+        "loginId",
+        "userName",
+        "departmentName",
+        "active",
+        "hasPhone"
+       ],
+       "properties": {
+        "appUserId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 9
+        },
+        "loginId": {
+         "type": "string",
+         "example": "hong"
+        },
+        "userName": {
+         "type": "string",
+         "example": "홍길동"
+        },
+        "departmentName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "수신자 본인의 부서 이름. 없으면 null.",
+         "example": "생산1팀"
+        },
+        "active": {
+         "type": "boolean",
+         "description": "false 면 발생 때 빠진다.",
+         "example": true
+        },
+        "hasPhone": {
+         "type": "boolean",
+         "description": "전화번호 원문은 내리지 않는다(FR-019).",
+         "example": true
+        }
+       }
+      }
+     }
+    }
+   },
+   "NotificationSettingReplace": {
+    "type": "object",
+    "required": [
+     "enabled",
+     "zaloEnabled",
+     "recipientUserIds"
+    ],
+    "description": "부서×이벤트 설정 통째 교체. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "example": true
+     },
+     "zaloEnabled": {
+      "type": "boolean",
+      "example": false
+     },
+     "recipientUserIds": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "example": [
+       9,
+       12
+      ],
+      "description": "수신자 사용자 ID. 중복·없는·사용 중지 사용자는 400 recipientUserIds INVALID. 결재 이벤트(recipientMode=APPROVER)는 비어 있어야 한다 — 아니면 400 recipientUserIds RECIPIENTS_NOT_ALLOWED."
+     }
+    }
+   },
+   "RecipientCandidatePage": {
+    "type": "object",
+    "required": [
+     "items",
+     "page"
+    ],
+    "description": "알림 수신자 후보 쪽. 근거: 서버 선행 · 장부 P-92 · omf-all-around#160(피처 001 이벤트 알림)",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "appUserId",
+        "loginId",
+        "userName",
+        "departmentName",
+        "hasPhone"
+       ],
+       "properties": {
+        "appUserId": {
+         "type": "integer",
+         "format": "int64",
+         "example": 9
+        },
+        "loginId": {
+         "type": "string",
+         "example": "hong"
+        },
+        "userName": {
+         "type": "string",
+         "example": "홍길동"
+        },
+        "departmentName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "example": "생산1팀"
+        },
+        "hasPhone": {
+         "type": "boolean",
+         "example": false
+        }
+       }
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
      }
     }
    },

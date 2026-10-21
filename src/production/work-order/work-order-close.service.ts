@@ -9,6 +9,7 @@ import { IF_WO_CLOSE, OutboxService, outboxMessageKey } from '../../core/outbox'
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderClose, assertCloseBody, closePayload } from './close-rules';
 import { judgeCompletion } from './completion';
+import { WorkOrderNotifier } from './work-order-notice';
 import { ACTIVE_RESULT_WHERE } from './work-order-progress';
 import { assertVersion, lockWorkOrder } from './work-order-write.service';
 
@@ -33,6 +34,7 @@ export class WorkOrderCloseService {
     private readonly documentState: DocumentStateService,
     private readonly lots: LotLifecycleService,
     private readonly outbox: OutboxService,
+    private readonly notifier: WorkOrderNotifier,
   ) {}
 
   async close(workOrderId: number, version: number, body: WorkOrderClose, appUserId?: number): Promise<void> {
@@ -96,6 +98,10 @@ export class WorkOrderCloseService {
         closedAt,
         erpSendItems: body.erpSendItems ?? [],
       }),
+    });
+    // W/O 당 한 번 — 재마감은 `trg_work_order_closed_immutable` 이 막는다. 양품은 위에서 센 합을 쓴다.
+    await this.notifier.notify(tx, 'WORK_ORDER_CLOSED', BigInt(workOrderId), closedAt, {
+      appUserId, quantities: { goodQty: goodSum },
     });
   }
 

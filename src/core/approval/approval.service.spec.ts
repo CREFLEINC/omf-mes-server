@@ -1,9 +1,12 @@
+import { ApprovalNotifier } from '../notification/approval-notice';
 import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { DocumentStateService } from '../document-state';
 import { ApprovalRequestInput, ApprovalService } from './approval.service';
+
+const NOTIFIER = { notifyCurrentStep: () => Promise.resolve() } as unknown as ApprovalNotifier;
 
 const KIM = 11n;
 const LEE = 22n;
@@ -121,7 +124,7 @@ const thrown = (run: () => Promise<unknown>): Promise<ContractException> =>
   );
 
 describe('ApprovalService', () => {
-  const service = new ApprovalService(new DocumentStateService());
+  const service = new ApprovalService(new DocumentStateService(), NOTIFIER);
   const twoSteps: Seed = {
     request: { status_code: 'PENDING', version_no: 3 },
     steps: [pending(1, KIM), pending(2, LEE)],
@@ -457,7 +460,7 @@ describe('ApprovalService', () => {
 
   describe('전이', () => {
     it('등록되지 않은 (칸, 액션) 은 던진다(F-6)', async () => {
-      const bare = new ApprovalService(new DocumentStateService({}));
+      const bare = new ApprovalService(new DocumentStateService({}), NOTIFIER);
       const { tx } = fake(twoSteps);
 
       await expect(bare.approve(tx, REQUEST_ID, 3, KIM)).rejects.toThrow(
