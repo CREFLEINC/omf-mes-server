@@ -13,8 +13,14 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { SESSION_COOKIE } from '../src/auth/session-cookie';
+import { SecretBox } from '../src/core/crypto/secret-box';
 import { NotificationEmitter, formatEventTime } from '../src/core/notification';
+import { SyncLease } from '../src/integration/erp/sync-lease';
+import { ZaloClient } from '../src/integration/zalo/zalo-client';
+import { ZaloDeliveryRunner } from '../src/integration/zalo/zalo-delivery.runner';
+import { ZaloTokenService } from '../src/integration/zalo/zalo-token.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { startZaloStub } from './support/zalo-stub';
 
 const PREFIX = `NPRD${randomUUID().slice(0, 6)}`;
 const SESSIONS = '/api/production/work-sessions';
@@ -213,6 +219,43 @@ describe('생산 알림 (e2e)', () => {
     await start(wo, '2026-10-21T12:00:00.000Z').expect(201);
     expect(await recipientsOf((await eventOf('WORK_SESSION_STARTED', wo)).notification_event_id)).toHaveLength(2);
     expect((await deliveriesOf('WORK_SESSION_STARTED', wo)).map((d) => d.status_code)).toEqual(['PENDING']);
+  });
+
+  it('US1-9 SC-005 Zalo 연결은 켜졌지만 대역이 멈춰 있어도 업무는 성공하고, 러너는 그 건을 재시도 대기로 둔다', async () => {
+    // 대역을 띄웠다 닫아 «응답하지 않는» 주소를 얻는다 — 실제 Zalo 장애 흉내.
+    const stub = await startZaloStub();
+    const deadUrl = stub.url;
+    await stub.close();
+    const box = new SecretBox(process.env.ZALO_CREDENTIAL_KEY as string);
+    await prisma.zalo_connection.deleteMany();
+    await prisma.zalo_connection.create({
+      data: {
+        zalo_connection_id: 1, app_id: 'APP-1', secret_key_enc: box.seal('s'), refresh_token_enc: box.seal('r'),
+        access_token_enc: box.seal('a'), access_token_expires_at: new Date(Date.now() + 20 * 60 * 60 * 1000), last_refreshed_at: new Date(), status_code: 'ACTIVE',
+      },
+    });
+    await prisma.zalo_template.upsert({
+      where: { event_type_code: 'WORK_SESSION_STARTED' }, create: { event_type_code: 'WORK_SESSION_STARTED', template_id: 'TPL' }, update: {},
+    });
+    try {
+      const wo = await workOrder('Z2', ids.lineA);
+      const startedAt = new Date();
+      startedAt.setUTCMilliseconds(0);
+      // 업무 경로는 Zalo 를 부르지 않는다 — 대역이 죽어 있어도 바로 201 이다.
+      await start(wo, startedAt.toISOString()).expect(201);
+      expect(await recipientsOf((await eventOf('WORK_SESSION_STARTED', wo)).notification_event_id)).toHaveLength(2);
+
+      const client = new ZaloClient({ apiBaseUrl: deadUrl, oauthBaseUrl: deadUrl, timeoutMs: 1000 });
+      const runner = new ZaloDeliveryRunner(true, prisma, new SyncLease(prisma, `${PREFIX}-lease`), client, new ZaloTokenService(prisma, box, client));
+      await runner.tick(new Date());
+      const [delivery] = await deliveriesOf('WORK_SESSION_STARTED', wo);
+      expect(delivery).toMatchObject({ status_code: 'PENDING', attempt_count: 1, last_error_code: 'NETWORK' });
+      expect((await prisma.zalo_connection.findUniqueOrThrow({ where: { zalo_connection_id: 1 } })).status_code).toBe('ACTIVE');
+    } finally {
+      await prisma.$executeRaw`DELETE FROM integration.sync_lease WHERE lease_name = ${`${PREFIX}-lease`}`;
+      await prisma.zalo_template.deleteMany();
+      await prisma.zalo_connection.deleteMany();
+    }
   });
 
   it('FR-008 마감에서 생성기를 부른 «뒤»에 실패하면 알림·발송·W/O 변경이 모두 롤백된다', async () => {
