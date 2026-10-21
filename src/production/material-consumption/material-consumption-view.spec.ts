@@ -51,4 +51,15 @@ describe('materialConsumptionView', () => {
     // required 라 «값이 0 이어도» 키가 남는다(`omitEmpty` 는 undefined 만 거른다).
     expect(materialConsumptionView(baseRow()).actualConsumedQty).toBe(0);
   });
+
+  /** omf-all-around#63 2단계 · 장부 P-86 — 투입 LOT 이 4M 변경품이면 그 기록을 싣고, 아니면 칸이 없다. */
+  it('투입 LOT 의 4M 변경품을 싣는다', () => {
+    expect(materialConsumptionView(baseRow())).not.toHaveProperty('fourMChange');
+    expect(
+      materialConsumptionView({
+        ...baseRow(),
+        lot: { lot_four_m_change: { change_type_code: 'MATERIAL', remarks: null } },
+      }),
+    ).toHaveProperty('fourMChange', { changeTypeCode: 'MATERIAL' });
+  });
 });

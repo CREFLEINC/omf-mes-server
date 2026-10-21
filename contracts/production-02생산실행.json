@@ -3996,7 +3996,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-86"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4105,7 +4105,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-86"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4570,6 +4570,24 @@
    "MaterialConsumption": {
     "type": "object",
     "properties": {
+     "fourMChange": {
+      "type": "object",
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "description": "공통코드 FOUR_M_CHANGE_TYPE",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 투입 LOT 의 4M 변경품 — IQC 판정 때 그 LOT 에 적은 변경 종류·비고. 변경품이 아니면 칸이 없다. 작업지시의 「4M 변경 자재 투입」 표시가 읽는다. 서버 선행 · 장부 P-86 · omf-all-around#63"
+     },
      "materialConsumptionId": {
       "type": "integer",
       "format": "int64",
@@ -7658,12 +7676,12 @@
      "workerNo": {
       "type": "string",
       "example": "900028",
-      "description": "참여한 사람의 사번. 장부 P-86"
+      "description": "참여한 사람의 사번. 장부 P-87"
      },
      "workerName": {
       "type": "string",
       "example": "값",
-      "description": "참여한 사람의 이름. 장부 P-86"
+      "description": "참여한 사람의 이름. 장부 P-87"
      },
      "workerRoleCode": {
       "type": "string",
@@ -7680,7 +7698,7 @@
      "participatedMinutes": {
       "type": "number",
       "example": 45.5,
-      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-86"
+      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-87"
      },
      "leftAt": {
       "type": "string",

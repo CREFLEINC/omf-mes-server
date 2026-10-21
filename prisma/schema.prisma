@@ -81,6 +81,8 @@ model app_user {
   shipping_unit_handling_unit                            shipping_unit_handling_unit[]
   item_resource_map_created_byToapp_user item_resource_map[] @relation("item_resource_map_created_byToapp_user")
   item_resource_map_updated_byToapp_user item_resource_map[] @relation("item_resource_map_updated_byToapp_user")
+  lot_four_m_change_created_byToapp_user lot_four_m_change[] @relation("lot_four_m_change_created_byToapp_user")
+  lot_four_m_change_updated_byToapp_user lot_four_m_change[] @relation("lot_four_m_change_updated_byToapp_user")
 
   @@index([department_id], map: "ix_app_user_department")
   @@schema("app")
@@ -3588,7 +3590,29 @@ model inspection_request {
   uom                        uom                      @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
   work_order                 work_order?              @relation(fields: [work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   inspection_result          inspection_result[]
+  lot_four_m_change          lot_four_m_change[]
 
+  @@schema("quality")
+}
+
+/// 4M 변경품 — IQC 판정 때 자재 LOT 하나에 적는다(omf-all-around#63 · 장부 P-86). 변경품이 아니면 줄이 없다.
+model lot_four_m_change {
+  lot_four_m_change_id                            BigInt             @id @default(autoincrement())
+  lot_id                                          BigInt             @unique(map: "uq_lot_four_m_change_lot")
+  inspection_request_id                           BigInt
+  change_type_code                                String             @db.VarChar(50)
+  remarks                                         String?            @db.VarChar(500)
+  created_at                                      DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                                      BigInt?
+  updated_at                                      DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                                      BigInt?
+  version_no                                      Int                @default(1)
+  lot                                             lot                @relation(fields: [lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)
+  inspection_request                              inspection_request @relation(fields: [inspection_request_id], references: [inspection_request_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_lot_four_m_change_created_byToapp_user app_user?          @relation("lot_four_m_change_created_byToapp_user", fields: [created_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user_lot_four_m_change_updated_byToapp_user app_user?          @relation("lot_four_m_change_updated_byToapp_user", fields: [updated_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([inspection_request_id], map: "ix_lot_four_m_change_request")
   @@schema("quality")
 }
 
@@ -3796,6 +3820,7 @@ model lot {
   sorting_result_sorting_result_defect_lot_idTolot sorting_result[]                     @relation("sorting_result_defect_lot_idTolot")
   sorting_result_sorting_result_good_lot_idTolot   sorting_result[]                     @relation("sorting_result_good_lot_idTolot")
   impact_analysis                                  impact_analysis[]
+  lot_four_m_change                                lot_four_m_change?
   bom                                              bom?                                 @relation(fields: [bom_id], references: [bom_id], onDelete: NoAction, onUpdate: NoAction)
   item                                             item                                 @relation(fields: [item_id], references: [item_id], onDelete: NoAction, onUpdate: NoAction)
   parent_lot                                       lot?                                 @relation("lotTolot", fields: [parent_lot_id], references: [lot_id], onDelete: NoAction, onUpdate: NoAction)

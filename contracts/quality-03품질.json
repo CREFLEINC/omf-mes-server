@@ -4076,6 +4076,10 @@
      "versionNo": {
       "type": "integer",
       "example": 1
+     },
+     "fourMChange": {
+      "$ref": "#/components/schemas/FourMChangeView",
+      "description": "⭐ 의뢰 LOT 의 4M 변경품 기록 — 변경품이 아니면 칸이 없다. 서버 선행 · 장부 P-86 · omf-all-around#63"
      }
     },
     "required": [
@@ -4286,6 +4290,30 @@
       "maxLength": 500,
       "description": "⭐ IQC·OQC 판정 변경 사유. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
+     },
+     "fourMChange": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "maxLength": 50,
+        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "변경 내용·특이사항. 비우면 없음",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
      }
     },
     "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 독립 경로를 두지 않는다(결정 10 · B-8)"
@@ -4377,6 +4405,30 @@
       "maxLength": 500,
       "description": "⭐ IQC·OQC 판정 변경 사유 — statusCode=CONFIRMED 저장(오프라인 큐)에만 본다(작성중이면 무시). `:confirm` 과 같은 규칙이다. 의뢰의 검사기준 버전에 합격판정개수(acceptanceNumber)가 있으면 서버가 수량으로 자동 판정을 낸다 — 불합격 수량 > 합격판정개수 → REJECTED, 아니면 보류 수량 > 0 → HELD, 아니면 ACCEPTED. 확정 판정이 그와 다르면 이 칸이 필수다(없거나 공백만이면 400 field=judgmentChangeReason, code=REQUIRED). 실린 사유는 검사 비고(remarks) 맨 앞에 「[판정 변경 사유] 사유」 다음 줄 원래 비고로 남는다. 판정이 같거나 합격판정개수가 없거나 IQC·OQC 가 아니면(PQC) 무시한다. 서버 선행 · 장부 P-70 · omf-all-around#125·#126",
       "example": "육안 재확인 결과 경미한 외관 불량으로 사용 가능"
+     },
+     "fourMChange": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "maxLength": 50,
+        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "변경 내용·특이사항. 비우면 없음",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
      }
     },
     "required": [
@@ -4442,6 +4494,30 @@
        "$ref": "#/components/schemas/InspectionDefectInput"
       },
       "description": "⭐ IQC 불합격 사유의 임시 저장. 실으면 그 회차의 IQC 불량 기록을 이 값으로 갈아 끼우고(빈 배열이면 지운다), 생략하면 손대지 않는다. 1줄 이상은 IQC 결과이면서 판정(본문, 없으면 저장값)이 REJECTED 일 때만 — 아니면 400 INVALID. 갈아 끼울 기록에 수리 이력(수리 결과·수리 실행)이 붙어 있으면 지우지 않고 400 STATE_LOCKED. 작성중 회차의 기록은 불량 집계·기간 목록에 잡히지 않는다(확정이 갈아 끼우거나 지운다). 서버 선행 · 장부 P-48 · omf-all-around#122"
+     },
+     "fourMChange": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "maxLength": 50,
+        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "example": "MATERIAL"
+       },
+       "remarks": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "변경 내용·특이사항. 비우면 없음",
+        "example": "원자재 공급처 변경(10/15부)"
+       }
+      },
+      "required": [
+       "changeTypeCode"
+      ],
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
@@ -5528,6 +5604,23 @@
       "format": "int64"
      }
     }
+   },
+   "FourMChangeView": {
+    "type": "object",
+    "properties": {
+     "changeTypeCode": {
+      "type": "string",
+      "example": "MATERIAL"
+     },
+     "remarks": {
+      "type": "string",
+      "example": "원자재 공급처 변경(10/15부)"
+     }
+    },
+    "required": [
+     "changeTypeCode"
+    ],
+    "description": "4M 변경품 기록(읽기). 서버 선행 · 장부 P-86"
    }
   }
  }
