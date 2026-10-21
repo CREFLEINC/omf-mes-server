@@ -347,7 +347,7 @@ describe('InboundReceiptService.create', () => {
     });
   });
 
-  it('초과분 — P/O 라인에는 받은 수량에서 초과분을 뺀 몫만 올리고 초과분은 따로 남긴다(장부 P-96)', async () => {
+  it('초과분 — P/O 라인에는 받은 수량에서 초과분을 뺀 몫만 올리고 초과분은 따로 남긴다(장부 P-100)', async () => {
     // 발주 100 에 120 이 왔다 — 한도 검사도 100 으로 한다.
     const { service, recorded } = fake();
 

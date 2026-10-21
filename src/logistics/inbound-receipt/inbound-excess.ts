@@ -5,7 +5,7 @@ import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/er
 import { toDateString } from '../../common/master';
 
 /**
- * 입하 초과분 잇기(장부 P-96) — 한 LOT 의 일부를 P/O 라인에 넣지 않고 남긴 몫을, ERP 가 만든 추가 P/O 라인에 잇는다.
+ * 입하 초과분 잇기(장부 P-100) — 한 LOT 의 일부를 P/O 라인에 넣지 않고 남긴 몫을, ERP 가 만든 추가 P/O 라인에 잇는다.
  * 계약 사본에 없는 경로라 질의·본문을 여기서 손으로 검사한다(가드가 보지 않는다). 오류 모양은 가드와 같다.
  */
 

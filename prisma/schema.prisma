@@ -15,6 +15,7 @@ model app_user {
   user_name                                              String                             @db.VarChar(200)
   department_id                                          BigInt?
   email                                                  String?                            @db.VarChar(200)
+  phone_number                                           String?                            @db.VarChar(20)
   status_code                                            String                             @default("EMPLOYED") @db.VarChar(50)
   is_active                                              Boolean                            @default(true)
   created_at                                             DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -40,6 +41,8 @@ model app_user {
   notification                                           notification[]
   notification_subscription                              notification_subscription[]
   notification_subscription_recipient                    notification_subscription_recipient[]
+  notification_department_recipient                      notification_department_recipient[]
+  zalo_delivery                                          zalo_delivery[]
   user_credential                                        user_credential?
   user_data_scope                                        user_data_scope[]
   user_role                                              user_role[]
@@ -1824,6 +1827,9 @@ model department {
   worker               worker[]
   defect_record        defect_record[]
   nonconformance       nonconformance[]
+  production_line      production_line[]
+  notification_event   notification_event[]
+  notification_department_setting notification_department_setting[]
 
   @@index([parent_department_id], map: "ix_department_parent")
   @@schema("mdm")
@@ -2317,6 +2323,7 @@ model production_line {
   default_wip_location_id         BigInt?
   default_fg_location_id          BigInt?
   default_scrap_location_id       BigInt?
+  department_id                   BigInt?
   created_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                      BigInt?
   updated_at                      DateTime                          @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
@@ -2333,8 +2340,10 @@ model production_line {
   default_wip_location            location?                         @relation("production_line_default_wip_location_idTolocation", fields: [default_wip_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   default_fg_location             location?                         @relation("production_line_default_fg_location_idTolocation", fields: [default_fg_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
   default_scrap_location          location?                         @relation("production_line_default_scrap_location_idTolocation", fields: [default_scrap_location_id], references: [location_id], onDelete: NoAction, onUpdate: NoAction)
+  department                      department?                       @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([plant_id, line_code], map: "uq_production_line")
+  @@index([department_id], map: "ix_production_line_department")
   @@schema("mdm")
 }
 
@@ -4203,15 +4212,21 @@ model notification {
   @@schema("app")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model notification_event {
-  notification_event_id BigInt         @id @default(autoincrement())
-  event_type_code       String         @db.VarChar(50)
-  aggregate_type_code   String         @db.VarChar(50)
+  notification_event_id BigInt          @id @default(autoincrement())
+  event_type_code       String          @db.VarChar(50)
+  aggregate_type_code   String          @db.VarChar(50)
   aggregate_id          BigInt
-  occurred_at           DateTime       @db.Timestamptz(6)
-  payload               Json           @default("{}")
-  created_at            DateTime       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  occurred_at           DateTime        @db.Timestamptz(6)
+  payload               Json            @default("{}")
+  created_at            DateTime        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  department_id         BigInt?
+  dispatch_status_code  String          @default("NOTIFIED") @db.VarChar(30)
+  skip_reason_code      String?         @db.VarChar(40)
   notification          notification[]
+  department            department?     @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  zalo_delivery         zalo_delivery[]
 
   @@unique([event_type_code, aggregate_type_code, aggregate_id, occurred_at], map: "uq_notification_event")
   @@schema("app")
@@ -5383,4 +5398,95 @@ model handling_unit_repack_event_line {
   @@unique([handling_unit_repack_event_id, line_no], map: "uq_handling_unit_repack_event_line")
   @@index([handling_unit_id, handling_unit_repack_event_id], map: "ix_handling_unit_repack_event_line_hu")
   @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model notification_department_setting {
+  notification_department_setting_id BigInt                              @id @default(autoincrement())
+  department_id                      BigInt
+  event_type_code                    String                              @db.VarChar(60)
+  is_enabled                         Boolean                             @default(false)
+  zalo_enabled                       Boolean                             @default(false)
+  version_no                         Int                                 @default(1)
+  created_at                         DateTime                            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                         BigInt?
+  updated_at                         DateTime                            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by                         BigInt?
+  department                         department                          @relation(fields: [department_id], references: [department_id], onDelete: NoAction, onUpdate: NoAction)
+  recipients                         notification_department_recipient[]
+
+  @@unique([department_id, event_type_code], map: "uq_notification_department_setting")
+  @@schema("app")
+}
+
+model notification_department_recipient {
+  notification_department_recipient_id BigInt                          @id @default(autoincrement())
+  notification_department_setting_id   BigInt
+  app_user_id                          BigInt
+  created_at                           DateTime                        @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  created_by                           BigInt?
+  setting                              notification_department_setting @relation(fields: [notification_department_setting_id], references: [notification_department_setting_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user                             app_user                        @relation(fields: [app_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([notification_department_setting_id, app_user_id], map: "uq_notification_department_recipient")
+  @@index([app_user_id], map: "ix_notification_department_recipient_user")
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model zalo_connection {
+  zalo_connection_id      Int       @id @db.SmallInt
+  app_id                  String?   @db.VarChar(40)
+  secret_key_enc          String?
+  refresh_token_enc       String?
+  access_token_enc        String?
+  access_token_expires_at DateTime? @db.Timestamptz(6)
+  status_code             String    @default("NOT_CONFIGURED") @db.VarChar(30)
+  last_error_code         String?   @db.VarChar(20)
+  last_error_message      String?   @db.VarChar(500)
+  last_refreshed_at       DateTime? @db.Timestamptz(6)
+  param_max_length        Int       @default(100)
+  version_no              Int       @default(1)
+  updated_at              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by              BigInt?
+
+  @@schema("app")
+}
+
+model zalo_template {
+  event_type_code String   @id @db.VarChar(60)
+  template_id     String   @db.VarChar(40)
+  updated_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_by      BigInt?
+
+  @@schema("app")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model zalo_delivery {
+  zalo_delivery_id      BigInt             @id @default(autoincrement())
+  notification_event_id BigInt
+  recipient_user_id     BigInt
+  phone_number          String             @db.VarChar(20)
+  event_type_code       String             @db.VarChar(60)
+  department_id         BigInt?
+  template_data         Json
+  tracking_id           String             @unique(map: "uq_zalo_delivery_tracking") @db.VarChar(48)
+  status_code           String             @default("PENDING") @db.VarChar(20)
+  attempt_count         Int                @default(0)
+  next_attempt_at       DateTime           @default(now()) @db.Timestamptz(6)
+  expires_at            DateTime           @db.Timestamptz(6)
+  last_error_code       String?            @db.VarChar(20)
+  last_error_message    String?            @db.VarChar(500)
+  zalo_msg_id           String?            @db.VarChar(60)
+  sent_at               DateTime?          @db.Timestamptz(6)
+  created_at            DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at            DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  notification_event    notification_event @relation(fields: [notification_event_id], references: [notification_event_id], onDelete: NoAction, onUpdate: NoAction)
+  app_user              app_user           @relation(fields: [recipient_user_id], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([notification_event_id, recipient_user_id], map: "uq_zalo_delivery_recipient")
+  @@index([status_code, next_attempt_at], map: "ix_zalo_delivery_due")
+  @@index([created_at], map: "ix_zalo_delivery_created")
+  @@schema("app")
 }

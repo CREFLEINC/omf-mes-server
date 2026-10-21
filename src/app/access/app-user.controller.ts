@@ -28,6 +28,8 @@ import {
   AppUserQuery,
   AppUserService,
   AppUserUpdate,
+  PHONE_VISIBLE_PERMISSION,
+  withoutPhone,
 } from './app-user.service';
 import { ScopeInput, UserAssignmentService } from './user-assignment.service';
 import { UserWorkerLinkService } from './user-worker-link.service';
@@ -69,10 +71,16 @@ export class AppUserController {
     await this.sessionResolver.reissue(request, response);
   }
 
+  /**
+   * ⛔ 결재선·결재함 권한으로도 열리는 목록이라 휴대폰 번호는 `W-CO-02` 가 있을 때만 싣는다.
+   * 쓰기 경로(등록·수정·전이)는 `W-CO-02` 로만 열려 그대로 둔다.
+   */
   @Get()
   @Contract('GET /app/users')
-  list(@Query() query: AppUserQuery): Promise<PagedResponse<unknown>> {
-    return this.users.list(query);
+  async list(@Req() request: Request, @Query() query: AppUserQuery): Promise<PagedResponse<unknown>> {
+    const page = await this.users.list(query);
+    if (canSeePhone(request)) return page;
+    return { ...page, items: page.items.map(withoutPhone) };
   }
 
   @Get(':appUserId')
@@ -93,13 +101,15 @@ export class AppUserController {
     }
 
     const { appUser, editability, versionNo } = await this.users.get(appUserId);
+    // 본인 조회는 W-CO-02 가 없어도 열린다 — 번호는 그래도 W-CO-02 몫이다.
+    const shown = canSeePhone(request) ? appUser : withoutPhone(appUser);
     // 개인정보 응답은 브라우저에 저장하지 않는다. 예전 버전 ETag 의 조건부 요청도
     // Express 가 304 로 바꾸지 못하게 무시하고, 항상 현재 본문을 다시 보낸다.
     response.setHeader('Cache-Control', 'private, no-store');
     delete request.headers['if-none-match'];
     // 계약이 이 자리에 ETag 를 선언했다 — 다음 쓰기의 If-Match 가 이 값을 담는다.
     setEtag(response, versionNo);
-    return { appUser, editability };
+    return { appUser: shown, editability };
   }
 
   /**
@@ -237,4 +247,8 @@ export class AppUserController {
       this.users.setActive(appUserId, version, false),
     );
   }
+}
+
+function canSeePhone(request: Request): boolean {
+  return currentSession(request)?.permissions.includes(PHONE_VISIBLE_PERMISSION) === true;
 }

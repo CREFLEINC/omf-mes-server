@@ -19,7 +19,7 @@ import { InboundExcessService } from './inbound-excess.service';
 const OPERATION = 'POST /logistics/inbound-receipts:split';
 
 /**
- * 입하 초과분 잇기(장부 P-96). ⛔ 이 경로들은 계약 사본에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가
+ * 입하 초과분 잇기(장부 P-100). ⛔ 이 경로들은 계약 사본에 없어 `@Contract` 를 달 수 없고, 그래서 인증·권한 가드가
  * 이 핸들러를 보지 않는다. 가드가 쓰는 같은 함수(세션 해석 · 로그인 필요 401 · 오퍼레이션 권한 403)를 여기서 부른다
  * (P-58 과 같은 길). 정본에 경로가 실려 오면 `@Contract` 를 달고 이 수동 인증·검사를 지운다.
  */

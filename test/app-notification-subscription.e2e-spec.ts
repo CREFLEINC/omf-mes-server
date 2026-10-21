@@ -17,11 +17,11 @@ import { PrismaService } from '../src/prisma/prisma.service';
 const PREFIX = `E2E_I28_SUB_${randomUUID().slice(0, 8)}`;
 const PATH = '/api/app/notification-subscriptions';
 const EVENT = 'EQUIPMENT_BREAKDOWN_OCCURRED';
-const EMPTY_EVENT = 'MOLD_RECOMMENDED_SHOTS_EXCEEDED';
-const CONCURRENT_EVENT = 'PURCHASE_ORDER_CHANGE_RECEIVED';
-const OTHER_EVENT = 'CALIBRATION_EXPIRY_APPROACHING';
+const EMPTY_EVENT = 'WORK_SESSION_STARTED';
+const CONCURRENT_EVENT = 'WORK_SESSION_STOPPED';
+const OTHER_EVENT = 'WORK_SESSION_ENDED';
 const INVALID_REFERENCE_EVENT = 'APPROVAL_ACTION_REQUIRED';
-const DENIED_EVENT = 'INTEGRATION_FAILED';
+const DENIED_EVENT = 'WORK_ORDER_CLOSED';
 const HEADER_EVENTS = [
   EVENT,
   EMPTY_EVENT,
@@ -188,7 +188,9 @@ describe('알림 구독 조회 (I-28)', () => {
     expect(validateOk(response.body)).toBe(true);
     expect(response.headers.etag).toBeUndefined();
     expect(response.body.items).toHaveLength(6);
-    expect(response.body.items[0]).toEqual({
+    expect(
+      response.body.items.find((item: { eventCode: string }) => item.eventCode === EVENT),
+    ).toEqual({
       eventCode: EVENT,
       recipients: [
         { recipientTypeCode: 'ROLE', businessUnitId: Number(businessUnitId), roleId: Number(recipientRoleId) },

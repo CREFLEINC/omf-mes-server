@@ -55,6 +55,7 @@ export interface DefectCodeWrite {
 
 export interface DefectCodeQuery extends ReferenceQuery {
   parentDefectCodeId?: number;
+  processId?: number;
 }
 
 type DefectCodeRow = Prisma.defect_codeGetPayload<object>;
@@ -72,10 +73,11 @@ export class DefectCodeService {
 
   async list(query: DefectCodeQuery): Promise<PagedResponse<DefectCodeView>> {
     const page = referencePage(query);
+    // 공정별 조회는 사용 여부를 상세에만 건다(`byProcess`) — 대분류 행은 묶음 머리라 자기 사용 여부와 무관하다.
     const where = referenceWhere(
-      query,
+      query.processId === undefined ? query : { ...query, includeInactive: true },
       { code: 'defect_code', name: 'defect_name' },
-      filter('parent_defect_code_id', query.parentDefectCodeId),
+      { ...byProcess(query), ...filter('parent_defect_code_id', query.parentDefectCodeId) },
     );
     const [rows, total] = await Promise.all([
       this.prisma.defect_code.findMany({
@@ -266,4 +268,21 @@ function view(row: DefectCodeRow): DefectCodeView {
       : { dispositionTypeCode: row.disposition_type_code }),
     isActive: row.is_active,
   };
+}
+
+/**
+ * 공정별 불량 코드 — 정본은 `defect_code_process` 매핑이다(`defect_code.process_id` 가 아니다).
+ * 고를 수 있는 것은 매핑된 상세뿐이다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-95).
+ * 그 상세의 대분류 행도 함께 내린다 — POP 이 상세를 대분류로 묶어 보여 주는데 이름을 얻을 다른 길이 없다.
+ * 대분류 자신의 매핑·사용 여부는 보지 않는다 — 실린 상세가 있으면 그 이름을 보여야 하고, 고를 상세가 없으면 빈 묶음이다.
+ * ⛔ `AND` 로 감싼다 — `referenceWhere` 의 검색어가 최상위 `OR` 을 쓴다.
+ */
+function byProcess(query: DefectCodeQuery): Prisma.defect_codeWhereInput {
+  if (query.processId === undefined) return {};
+  const mappedDetail: Prisma.defect_codeWhereInput = {
+    parent_defect_code_id: { not: null },
+    defect_code_process: { some: { process_id: query.processId } },
+    ...(query.includeInactive ? {} : { is_active: true }),
+  };
+  return { AND: [{ OR: [mappedDetail, { parent_defect_code_id: null, child_defect_codes: { some: mappedDetail } }] }] };
 }

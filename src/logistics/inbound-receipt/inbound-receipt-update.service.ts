@@ -339,7 +339,7 @@ function attributionsOf(existing: ExistingLine[], items: InboundReceiptLineWrite
     const sum = (carried?.qty ?? new Prisma.Decimal(0)).plus(qty);
     attributions.set(key, { qty: sum, index: carried?.index ?? index });
   };
-  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어간다(장부 P-96).
+  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어간다(장부 P-100).
   for (const row of existing) add(row.purchase_order_line_id, excessOf(row).minus(row.received_qty));
   for (const [index, item] of items.entries()) {
     add(item.purchaseOrderLineId == null ? null : BigInt(item.purchaseOrderLineId), attributedQtyOf(item), index);
@@ -347,7 +347,7 @@ function attributionsOf(existing: ExistingLine[], items: InboundReceiptLineWrite
   return attributions;
 }
 
-/** 수량·초과분·P/O 라인이 달라진 «기존» 라인 — 삭제와 같은 자물쇠를 받는다(§7-4 · 장부 P-96). */
+/** 수량·초과분·P/O 라인이 달라진 «기존» 라인 — 삭제와 같은 자물쇠를 받는다(§7-4 · 장부 P-100). */
 function changed(items: InboundReceiptLineWriteInput[], known: Map<number, ExistingLine>): bigint[] {
   const ids: bigint[] = [];
   for (const item of items) {
@@ -408,7 +408,7 @@ async function assertNoSuccessor(tx: Prisma.TransactionClient, lineIds: bigint[]
   const successors =
     (await tx.goods_receipt_line.count({ where })) +
     (await tx.inbound_variance.count({ where })) +
-    // 초과분이 다른 P/O 라인에 이어졌으면 그 라인의 받은 수량이 이 줄을 근거로 한다(장부 P-96).
+    // 초과분이 다른 P/O 라인에 이어졌으면 그 라인의 받은 수량이 이 줄을 근거로 한다(장부 P-100).
     (await tx.inbound_receipt_excess.count({ where: { ...where, purchase_order_line_id: { not: null } } })) +
     (await tx.purchase_order.count({
       where: { source_inbound_receipt_line_id: { in: lineIds } },

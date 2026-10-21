@@ -27,7 +27,7 @@ export async function cancelInboundReceipt(
       inbound_receipt_excess: { select: { excess_qty: true, purchase_order_line_id: true } },
     },
   });
-  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어갔고, 이어진 초과분은 그 P/O 라인에 들어갔다(장부 P-96).
+  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어갔고, 이어진 초과분은 그 P/O 라인에 들어갔다(장부 P-100).
   const attributed = lines.flatMap((line) => [
     ...(line.purchase_order_line_id === null
       ? []

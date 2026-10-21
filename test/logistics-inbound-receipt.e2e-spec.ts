@@ -267,7 +267,7 @@ describe('입하 등록 (e2e)', () => {
   });
 
   // 발주 5,000 — 500 을 먼저 받고, 공급사 포장 사정으로 라벨 한 장 5,000 이 더 왔다. 그 LOT 이 IQC 한 단위라
-  // 줄 하나로 받고, 남은 4,500 만 P/O 에 넣고 500 은 ERP 추가 P/O 를 기다리는 초과분으로 남긴다(장부 P-96).
+  // 줄 하나로 받고, 남은 4,500 만 P/O 에 넣고 500 은 ERP 추가 P/O 를 기다리는 초과분으로 남긴다(장부 P-100).
   describe('초과분 — 한 LOT 의 일부만 P/O 에 넣는다', () => {
     it('초과분 — 줄·LOT 은 5,000 그대로이고 P/O 에는 4,500 만 오르며 초과분 500 이 안 이어진 채 남는다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(5000);
@@ -337,7 +337,7 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
-  // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-96).
+  // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-100).
   describe('초과분 잇기', () => {
     const excessApi = (path: string, method: 'get' | 'post' = 'get', as = cookie): request.Test =>
       request(app.getHttpServer())[method](`/api/logistics/inbound-excesses${path}`).set('Cookie', as);

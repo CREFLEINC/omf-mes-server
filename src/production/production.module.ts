@@ -6,6 +6,7 @@ import { ApprovalModule } from '../core/approval';
 import { DocumentStateModule } from '../core/document-state';
 import { LotRegistryModule } from '../core/lot';
 import { NumberingModule } from '../core/numbering';
+import { NotificationCoreModule } from '../core/notification';
 import { OutboxModule } from '../core/outbox';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MaterialConsumptionQueryService } from './material-consumption/material-consumption-query.service';
@@ -31,6 +32,7 @@ import { ProductionResultService } from './production-result/production-result.s
 import { ProductionResultController } from './production-result/production-result.controller';
 import { WorkOrderCancelService } from './work-order/work-order-cancel.service';
 import { WorkOrderCloseService } from './work-order/work-order-close.service';
+import { WorkOrderNotifier } from './work-order/work-order-notice';
 import { WorkOrderQueryService } from './work-order/work-order-query.service';
 import { WorkOrderReleaseService } from './work-order/work-order-release.service';
 import { WorkOrderResourcePlanService } from './work-order/work-order-resource-plan.service';
@@ -71,6 +73,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     LotRegistryModule,
     OutboxModule,
     ApprovalModule,
+    NotificationCoreModule,
   ],
   controllers: [
     WorkOrderController,
@@ -88,6 +91,7 @@ import { WorkSessionService } from './work-session/work-session.service';
     WorkOrderTransitionService,
     WorkOrderReleaseService,
     WorkOrderCloseService,
+    WorkOrderNotifier,
     WorkOrderCancelService,
     WorkOrderResourcePlanService,
     ProductionResultQueryService,

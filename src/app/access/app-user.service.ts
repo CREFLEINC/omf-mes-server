@@ -17,6 +17,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { PagedResponse, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertAdminRemains } from './last-admin';
+import { readPhone } from './phone';
 
 /**
  * `loginId` 는 **언제나 잠긴다.**
@@ -42,8 +43,21 @@ interface AppUserView {
   userName: string;
   departmentId: number | null;
   email: string | null;
+  /** 표준형 `84…`. 요청자에게 `W-CO-02` 가 없으면 칸째 뺀다(`withoutPhone`). */
+  phoneNumber?: string | null;
   statusCode: string;
   isActive: boolean;
+}
+
+/**
+ * 휴대폰 번호를 볼 수 있는 권한. `GET /app/users` 는 결재선·결재함(`W-06-15`·`W-CO-09`)으로도
+ * 열리므로 칸을 늘 실으면 결재 담당자에게 전 직원 번호가 보인다(FR-019 · 장부 P-89).
+ */
+export const PHONE_VISIBLE_PERMISSION = 'W-CO-02';
+
+export function withoutPhone<T extends AppUserView>(user: T): Omit<T, 'phoneNumber'> {
+  const { phoneNumber: _hidden, ...rest } = user;
+  return rest;
 }
 
 export interface AppUserCreate {
@@ -51,6 +65,8 @@ export interface AppUserCreate {
   userName: string;
   departmentId?: number | null;
   email?: string | null;
+  /** 생략 = 없음. 형식은 `readPhone` 이 검사한다. */
+  phoneNumber?: string | null;
   statusCode?: string;
   /**
    * 관리자가 직접 정하는 초기 비밀번호. 생략하면 서버가 임시 비밀번호를 뽑는다
@@ -73,6 +89,8 @@ export interface AppUserUpdate {
   statusCode: string;
   departmentId?: number | null;
   email?: string | null;
+  /** 생략 = 유지, null = 지움. */
+  phoneNumber?: string | null;
 }
 
 export interface AppUserQuery extends ReferenceQuery {
@@ -132,6 +150,7 @@ export class AppUserService {
       ['userName', input.userName],
     ]);
     const chosen = readPassword(input.password);
+    const phone = readPhone(input.phoneNumber);
     await this.assertReferences(input.statusCode, input.departmentId);
     await this.assertLoginIdFree(input.loginId);
 
@@ -146,6 +165,7 @@ export class AppUserService {
           user_name: input.userName,
           ...optional('department_id', input.departmentId),
           ...optional('email', input.email),
+          ...optional('phone_number', phone),
           // 안 보내면 물리 모델 DEFAULT('EMPLOYED')가 채운다(계약).
           ...optional('status_code', input.statusCode),
         },
@@ -170,6 +190,7 @@ export class AppUserService {
   /** ⛔ `loginId` 는 본문에 없다 — 한 번 만들면 고치지 않는다(계약 `AppUserUpdate`). */
   async update(appUserId: number, version: number, input: AppUserUpdate): Promise<AppUserResult> {
     assertNotBlank([['userName', input.userName]]);
+    const phone = readPhone(input.phoneNumber);
     await this.assertReferences(input.statusCode, input.departmentId);
 
     const updated = await this.prisma.app_user.updateMany({
@@ -180,6 +201,7 @@ export class AppUserService {
         status_code: input.statusCode,
         ...optional('department_id', input.departmentId),
         ...optional('email', input.email),
+        ...optional('phone_number', phone),
         version_no: { increment: 1 },
       },
     });
@@ -279,6 +301,7 @@ function view(row: AppUserRow): AppUserView {
     userName: row.user_name,
     departmentId: row.department_id === null ? null : Number(row.department_id),
     email: row.email,
+    phoneNumber: row.phone_number,
     statusCode: row.status_code,
     isActive: row.is_active,
   };
