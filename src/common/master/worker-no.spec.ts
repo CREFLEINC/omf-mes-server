@@ -165,6 +165,8 @@ const WORKER_TABLE_READERS = [
   'mdm/organization/worker.service.ts',
   // 4M 작업자 추천(P-68) — 후보의 공장·활성만 본다. 사번 헤더 판정이 아니다.
   'production/work-order/crew-recommendation.ts',
+  // 생산 알림의 실행한 사람 이름(omf-all-around#160 · P-93) — 이름만 읽는다. 사번 헤더 판정이 아니다.
+  'production/work-order/work-order-notice.ts',
   'production/work-session/work-session-worker.service.ts',
   'production/work-session/work-session.service.ts',
   // 불량 기록의 귀속 작업자 — 계정에 연결된 작업자(omf-all-around#106 · P-42). 사번 헤더 판정이 아니다.
