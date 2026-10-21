@@ -1,3 +1,4 @@
+import { WorkOrderNotifier } from '../work-order/work-order-notice';
 import { ContractException } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -66,7 +67,7 @@ function stub(options: { status?: string } = {}) {
     $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
 
-  return { service: new WorkSessionEndService(prisma, new DocumentStateService()), updates, events, touched, closed };
+  return { service: new WorkSessionEndService(prisma, new DocumentStateService(), { notify: () => Promise.resolve() } as unknown as WorkOrderNotifier), updates, events, touched, closed };
 }
 
 describe('WorkSessionEndService.end', () => {
