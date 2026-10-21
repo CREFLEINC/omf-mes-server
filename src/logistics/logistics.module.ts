@@ -23,6 +23,8 @@ import {
   InboundReceiptController,
   InboundReceiptSplitController,
 } from './inbound-receipt/inbound-receipt.controller';
+import { InboundExcessController } from './inbound-receipt/inbound-excess.controller';
+import { InboundExcessService } from './inbound-receipt/inbound-excess.service';
 import { InboundReceiptSplitService } from './inbound-receipt/inbound-receipt-split.service';
 import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-update.service';
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
@@ -113,6 +115,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     AsnController,
     InboundReceiptController,
     InboundReceiptSplitController,
+    InboundExcessController,
     InboundVarianceController,
     MaterialIssueRequestController,
     RecycleEntryController,
@@ -152,6 +155,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptQueryService,
     InboundReceiptUpdateService,
     InboundReceiptSplitService,
+    InboundExcessService,
     InboundVarianceService,
     MaterialIssueRequestQueryService,
     MaterialIssueShortageService,

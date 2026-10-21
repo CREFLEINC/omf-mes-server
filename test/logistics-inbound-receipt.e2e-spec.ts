@@ -337,6 +337,68 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
+  // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-100).
+  describe('초과분 잇기', () => {
+    const excessApi = (path: string, method: 'get' | 'post' = 'get', as = cookie): request.Test =>
+      request(app.getHttpServer())[method](`/api/logistics/inbound-excesses${path}`).set('Cookie', as);
+
+    /** 발주 A 에서 받은 수량을 다 채우고 초과분 `excess` 를 남긴 줄 하나. */
+    async function excessOf(ordered: number, excess: number) {
+      const source = await seedOrderLine(ordered);
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: ordered + excess, excessQty: excess }],
+      });
+      const line = detail.lines[0] as LineBody & { excesses: { inboundReceiptExcessId: number }[] };
+      return { source, detail, excessId: line.excesses[0].inboundReceiptExcessId };
+    }
+
+    it('후보 — 남은 수량이 딱 맞는 라인이 먼저이고, 다 못 받는 라인과 초과분이 나온 라인은 빠진다', async () => {
+      const { source, excessId } = await excessOf(5000, 500);
+      const exact = await seedOrderLine(500);
+      const roomy = await seedOrderLine(1000);
+      const small = await seedOrderLine(300);
+
+      const response = await excessApi(`/${excessId}/candidates`).expect(200);
+
+      const ids = (response.body.items as { purchaseOrderLineId: number; exactMatch: boolean }[]).map((row) => row.purchaseOrderLineId);
+      expect(ids.indexOf(exact.purchaseOrderLineId)).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf(exact.purchaseOrderLineId)).toBeLessThan(ids.indexOf(roomy.purchaseOrderLineId));
+      expect(ids).not.toContain(small.purchaseOrderLineId);
+      expect(ids).not.toContain(source.purchaseOrderLineId);
+    });
+
+    it('목록 — 안 이어진 초과분이 입하·줄·처음 P/O 라인·품목·LOT 과 함께 보인다', async () => {
+      const { source, detail, excessId } = await excessOf(5000, 500);
+
+      const response = await excessApi('?linked=false&size=200').expect(200);
+
+      const row = (response.body.items as { inboundReceiptExcessId: number }[]).find((item) => item.inboundReceiptExcessId === excessId);
+      expect(row).toMatchObject({
+        excessQty: 500,
+        linkedOrderLine: null,
+        inboundReceiptId: detail.inboundReceipt.inboundReceiptId,
+        receivedQty: 5500,
+        sourceOrderLine: { purchaseOrderLineId: source.purchaseOrderLineId },
+        itemCode: ITEM_CODE,
+        lotId: detail.lines[0].lotId,
+      });
+      const linked = await excessApi('?linked=true&size=200').expect(200);
+      expect((linked.body.items as { inboundReceiptExcessId: number }[]).map((item) => item.inboundReceiptExcessId)).not.toContain(excessId);
+    });
+
+    it('권한 — 로그인 없으면 401, W-01-03 권한이 없으면 403 이다', async () => {
+      await request(app.getHttpServer()).get('/api/logistics/inbound-excesses').expect(401);
+      await excessApi('', 'get', noPermCookie).expect(403);
+    });
+
+    it('검사 — 틀린 질의는 400 이 그 칸을 짚고, 없는 초과분은 404 다', async () => {
+      const query = await excessApi('?linked=yes&plantId=0').expect(400);
+      await excessApi('/999999999/candidates').expect(404);
+
+      expect((query.body.errors as { field: string }[]).map((error) => error.field).sort()).toEqual(['linked', 'plantId']);
+    });
+  });
+
   // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄이고 LOT 도 줄마다 선다(장부 P-99).
   it('입하 — 같은 P/O 라인 줄 여럿(라벨마다 한 줄)은 LOT 이 줄마다 서고 received_qty 는 합계만큼 오른다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
