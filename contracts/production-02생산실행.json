@@ -6170,6 +6170,13 @@
        "$ref": "#/components/schemas/ProductionResultWorkerAllocation"
       }
      },
+     "defects": {
+      "type": "array",
+      "description": "이 실적의 불량 기록 — 늘 싣는다(없으면 빈 배열). 유형 없이 불량수량만 남은 실적이 있어 합이 defectQty 보다 작을 수 있다. 장부 P-95",
+      "items": {
+       "$ref": "#/components/schemas/ProductionResultDefect"
+      }
+     },
      "remarks": {
       "type": "string",
       "example": "값"
@@ -6192,6 +6199,94 @@
      "statusCode"
     ],
     "description": "수량은 다섯 컬럼 그대로 내려준다. 정본이 3원(양품/불량/손실)이라는 지적이 열려 있으나(omf-mes#60) 계약이 임의로 접지 않는다."
+   },
+   "ProductionResultDefectInput": {
+    "type": "object",
+    "properties": {
+     "defectCodeId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 3
+     }
+    },
+    "required": [
+     "defectCodeId",
+     "qty"
+    ]
+   },
+   "ProductionResultDefect": {
+    "type": "object",
+    "description": "생산 실적에 매달린 불량 기록 한 줄. 대분류 칸은 상세 코드일 때 실린다. 장부 P-95",
+    "properties": {
+     "defectRecordId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "defectCodeId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "defectCode": {
+      "type": "string",
+      "example": "SCR-01"
+     },
+     "defectName": {
+      "type": "string",
+      "example": "값"
+     },
+     "nameKo": {
+      "type": "string",
+      "description": "한국어 이름 — 불량코드 마스터에 있을 때만",
+      "example": "긁힘"
+     },
+     "nameVi": {
+      "type": "string",
+      "description": "베트남어 이름 — 불량코드 마스터에 있을 때만",
+      "example": "Trầy xước"
+     },
+     "parentDefectCodeId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "parentDefectCode": {
+      "type": "string",
+      "example": "SCR"
+     },
+     "parentDefectName": {
+      "type": "string",
+      "example": "값"
+     },
+     "parentNameKo": {
+      "type": "string",
+      "description": "대분류의 한국어 이름 — 마스터에 있을 때만",
+      "example": "외관"
+     },
+     "parentNameVi": {
+      "type": "string",
+      "description": "대분류의 베트남어 이름 — 마스터에 있을 때만",
+      "example": "Ngoại quan"
+     },
+     "qty": {
+      "type": "number",
+      "format": "double",
+      "example": 3
+     }
+    },
+    "required": [
+     "defectRecordId",
+     "defectCodeId",
+     "defectCode",
+     "defectName",
+     "qty"
+    ]
    },
    "ProductionResultWorkerAllocation": {
     "type": "object",
@@ -6394,6 +6489,13 @@
        "$ref": "#/components/schemas/ResultLotAllocation"
       },
       "description": "실적↔LOT 배분은 본문에 싣는다 — 독립 경로를 두지 않는다"
+     },
+     "defects": {
+      "type": "array",
+      "description": "불량 유형별 수량 — 유형마다 불량 기록(원천 FIELD)이 실적과 함께 남는다. defectQty 를 함께 주면 합과 같아야 하고, 이것만 주면 합이 defectQty 다. 코드는 그 W/O 공정에 매핑된 사용 중인 상세 코드, 같은 코드는 한 번. 없으면 불량 기록 없이 수량만 남는다. 장부 P-95",
+      "items": {
+       "$ref": "#/components/schemas/ProductionResultDefectInput"
+      }
      },
      "remarks": {
       "type": "string",

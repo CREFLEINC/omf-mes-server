@@ -1,5 +1,7 @@
 import { ERROR_CODE, field, one } from '../../common/errors';
 
+import { ResultDefectInput } from './result-defect';
+
 export interface ResultLotAllocation {
   lotId: number;
   allocatedQty: number;
@@ -21,6 +23,7 @@ export interface ProductionResultCreate {
   equipmentId?: number;
   moldId?: number;
   lotAllocations?: ResultLotAllocation[];
+  defects?: ResultDefectInput[];
   remarks?: string;
 }
 

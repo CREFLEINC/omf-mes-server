@@ -10,6 +10,7 @@ import { CORRECT_APPROVAL_TARGET_TYPE, CORRECT_APPROVAL_TYPE, lockResult } from 
 import { QTY_COLUMNS, resultQuantities } from './production-result-rules';
 import { NUMBERING_DOCUMENT, RESULT_STATUS } from './production-result.service';
 import { ProductionResultRow, ProductionResultView, productionResultView } from './production-result-view';
+import { loadDefects } from './result-defect';
 import { allocateLikeOriginal, loadAllocations } from './worker-allocation';
 
 /** required 1. 다섯 수량은 «정정 후 값»이고, 안 준 칸은 원본을 승계한다(§5-3). */
@@ -130,7 +131,10 @@ export class ProductionResultCorrectService {
       },
     });
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
-    return productionResultView(row, (await loadAllocations(tx, [row.production_result_id])).get(row.production_result_id) ?? []);
+    const ids = [row.production_result_id];
+    const allocations = await loadAllocations(tx, ids);
+    const defects = await loadDefects(tx, ids);
+    return productionResultView(row, allocations.get(row.production_result_id) ?? [], defects.get(row.production_result_id) ?? []);
   }
 }
 
