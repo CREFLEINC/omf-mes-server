@@ -45,6 +45,9 @@ interface EquipmentGroupView {
   defaultWipLocationId: number | null;
   defaultFgLocationId: number | null;
   defaultScrapLocationId: number | null;
+  /** 라인 담당 부서 — 알림 부서 판정 기준. 상위 그룹에서 상속하지 않는다(장부 P-90). */
+  departmentId: number | null;
+  departmentName: string | null;
 }
 
 /** 라인 기본 위치 셋 — 계획 확정·4M 라인 선택 때 W/O 기본 위치로 복사된다. 생략 = 유지, null = 비움. */
@@ -66,6 +69,7 @@ export interface EquipmentGroupCreate extends LineDefaultLocations {
   groupName: string;
   groupTypeCode: string;
   parentGroupId?: number | null;
+  departmentId?: number | null;
 }
 
 export interface EquipmentGroupUpdate extends LineDefaultLocations {
@@ -73,6 +77,8 @@ export interface EquipmentGroupUpdate extends LineDefaultLocations {
   groupName: string;
   groupTypeCode: string;
   parentGroupId?: number | null;
+  /** 생략 = 유지, null = 해제. */
+  departmentId?: number | null;
 }
 
 export interface EquipmentGroupQuery extends ReferenceQuery {
@@ -80,7 +86,9 @@ export interface EquipmentGroupQuery extends ReferenceQuery {
   parentGroupId?: number;
 }
 
-type LineRow = Prisma.production_lineGetPayload<object>;
+const WITH_DEPARTMENT = { department: { select: { department_name: true } } } as const;
+
+type LineRow = Prisma.production_lineGetPayload<{ include: typeof WITH_DEPARTMENT }>;
 
 export type EquipmentGroupResult = {
   equipmentGroup: EquipmentGroupView;
@@ -104,6 +112,7 @@ export class EquipmentGroupService {
         where,
         // 코드는 공장 안에서만 유일하다(uq_production_line) — 공장을 앞세운다.
         orderBy: [{ plant_id: 'asc' }, { line_code: 'asc' }],
+        include: WITH_DEPARTMENT,
         skip: page.skip,
         take: page.take,
       }),
@@ -115,6 +124,7 @@ export class EquipmentGroupService {
   async get(equipmentGroupId: number): Promise<EquipmentGroupResult> {
     const row = await this.prisma.production_line.findUnique({
       where: { production_line_id: equipmentGroupId },
+      include: WITH_DEPARTMENT,
     });
     if (!row) throw new NotFoundException('없는 설비 그룹입니다.');
 
@@ -142,6 +152,7 @@ export class EquipmentGroupService {
       await this.assertParent(input.plantId, input.parentGroupId, null);
     }
     await this.assertDefaultLocations(input.plantId, input);
+    await this.assertDepartment(input.departmentId);
     return view(
       await this.prisma.production_line.create({
         data: {
@@ -150,8 +161,10 @@ export class EquipmentGroupService {
           line_name: input.groupName,
           line_type_code: input.groupTypeCode,
           ...optional('parent_line_id', input.parentGroupId),
+          ...optional('department_id', input.departmentId),
           ...defaultLocationData(input),
         },
+        include: WITH_DEPARTMENT,
       }),
     );
   }
@@ -171,6 +184,7 @@ export class EquipmentGroupService {
       await this.assertParent(Number(current.plant_id), input.parentGroupId, equipmentGroupId);
     }
     await this.assertDefaultLocations(Number(current.plant_id), input);
+    await this.assertDepartment(input.departmentId);
 
     const updated = await this.prisma.production_line.updateMany({
       // ⛔ version_no 를 조건에 건다. 0행이면 그 사이 누가 먼저 저장했다.
@@ -180,6 +194,7 @@ export class EquipmentGroupService {
         line_type_code: input.groupTypeCode,
         ...optional('line_code', input.groupCode),
         ...optional('parent_line_id', input.parentGroupId),
+        ...optional('department_id', input.departmentId),
         ...defaultLocationData(input),
         version_no: { increment: 1 },
       },
@@ -264,6 +279,24 @@ export class EquipmentGroupService {
     }
   }
 
+  /** 사용 중지된 부서는 새로 지정하지 못한다 — 판정 때 부서 미확인(`DEPARTMENT_UNRESOLVED`)이 된다. */
+  private async assertDepartment(departmentId: number | null | undefined): Promise<void> {
+    if (departmentId === undefined || departmentId === null) return;
+    const department = await this.prisma.department.findUnique({
+      where: { department_id: departmentId },
+      select: { is_active: true },
+    });
+    if (department?.is_active) return;
+    throw new ContractException(HttpStatus.BAD_REQUEST, [
+      {
+        scope: 'field',
+        field: 'departmentId',
+        code: ERROR_CODE.INVALID,
+        message: department ? '사용 중지된 부서입니다.' : '없는 부서입니다.',
+      },
+    ]);
+  }
+
   /** 0행이 「없다」인지 「낡았다」인지 가른다 — 화면이 받는 상태 코드가 갈린다. */
   private async assertExists(equipmentGroupId: number, count: number): Promise<void> {
     if (count > 0) return;
@@ -315,5 +348,7 @@ function view(row: LineRow): EquipmentGroupView {
     defaultWipLocationId: idOrNull(row.default_wip_location_id),
     defaultFgLocationId: idOrNull(row.default_fg_location_id),
     defaultScrapLocationId: idOrNull(row.default_scrap_location_id),
+    departmentId: idOrNull(row.department_id),
+    departmentName: row.department?.department_name ?? null,
   };
 }

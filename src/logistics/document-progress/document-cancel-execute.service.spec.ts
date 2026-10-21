@@ -1,3 +1,4 @@
+import { ApprovalNotifier } from '../../core/notification';
 import { Prisma } from '@prisma/client';
 
 import { ApprovalService } from '../../core/approval';
@@ -7,6 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibility, CancelEligibilityService } from './cancel-eligibility.service';
 import { CancelableDocumentType, DocumentCancelService } from './document-cancel.service';
 import { DocumentCancelExecuteService } from './document-cancel-execute.service';
+
+const NOTIFIER = { notifyCurrentStep: () => Promise.resolve() } as unknown as ApprovalNotifier;
 
 const DOC_ID = 11n;
 const USER = 7;
@@ -120,12 +123,12 @@ function fake(seed: Seed = {}) {
     // 잠금·상태 쓰기 두 문장은 요청 서비스의 «진짜»를 쓴다 — 표·칸 이름이 그 안에 있다.
     new DocumentCancelService(
       prisma,
-      new ApprovalService(documentState),
+      new ApprovalService(documentState, NOTIFIER),
       { next: async () => 'AP-1' } as never,
       documentState,
       { evaluate: async () => ({}) } as never,
     ),
-    new ApprovalService(documentState),
+    new ApprovalService(documentState, NOTIFIER),
     documentState,
     { evaluate } as unknown as CancelEligibilityService,
     { reverse } as unknown as InventoryPostingService,

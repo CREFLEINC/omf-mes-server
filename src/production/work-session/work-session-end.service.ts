@@ -6,6 +6,7 @@ import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkOrderNotifier } from '../work-order/work-order-notice';
 import { VERSION_CONFLICT } from '../work-order/work-order-write.service';
 import { EVENT_TYPE } from './work-session.constants';
 import { WorkSessionContext } from './work-session.service';
@@ -29,6 +30,7 @@ export class WorkSessionEndService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly documentState: DocumentStateService,
+    private readonly notifier: WorkOrderNotifier,
   ) {}
   async end(
     workSessionId: number,
@@ -75,6 +77,10 @@ export class WorkSessionEndService {
           performed_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
           terminal_id: context.terminalId,
         },
+      });
+      // 양품은 종료 시점까지의 W/O 누계 스냅샷이다 — 최종값은 마감 알림이 싣는다(research R-13).
+      await this.notifier.notify(tx, 'WORK_SESSION_ENDED', row.work_order_id, endedAt, {
+        appUserId: context.appUserId, workerNo: context.workerNo, quantities: {},
       });
       return workSessionView(row);
     });

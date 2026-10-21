@@ -14916,6 +14916,16 @@
       "maxLength": 200,
       "example": "문자열"
      },
+     "phoneNumber": {
+      "x-source-column": "phone_number",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20,
+      "example": "84912345678",
+      "description": "표준형 84XXXXXXXXX 또는 null. ⛔ 요청자 세션에 W-CO-02 권한이 있을 때만 싣고, 없으면 칸 자체를 뺀다 — GET /app/users 가 결재선·결재함(W-06-15·W-CO-09) 권한으로도 열리기 때문이다(FR-019). 근거: 서버 선행 · 장부 P-89 · omf-all-around#160"
+     },
      "statusCode": {
       "x-source-column": "status_code",
       "type": "string",
@@ -14977,6 +14987,16 @@
       "description": "형식 검증은 화면 책임 — DB 제약 없음",
       "example": "문자열"
      },
+     "phoneNumber": {
+      "x-source-column": "phone_number",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20,
+      "example": "0912 345 678",
+      "description": "베트남 휴대폰 번호. 요청은 0…·+84…·84… 와 공백·하이픈을 받고, 서버(readPhone)가 표준형 84XXXXXXXXX(84 + 3|5|7|8|9 + 8자리)로 바꿔 저장한다. 형식이 틀리면 400 phoneNumber INVALID. 생략하면 없음. 근거: 서버 선행 · 장부 P-89"
+     },
      "statusCode": {
       "x-source-column": "status_code",
       "type": "string",
@@ -15019,6 +15039,16 @@
       ],
       "maxLength": 200,
       "example": "문자열"
+     },
+     "phoneNumber": {
+      "x-source-column": "phone_number",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20,
+      "example": "0912 345 678",
+      "description": "베트남 휴대폰 번호. 요청은 0…·+84…·84… 와 공백·하이픈을 받고, 서버(readPhone)가 표준형 84XXXXXXXXX(84 + 3|5|7|8|9 + 8자리)로 바꿔 저장한다. 형식이 틀리면 400 phoneNumber INVALID. 생략하면 그대로 두고 null 이면 지운다. 근거: 서버 선행 · 장부 P-89"
      },
      "statusCode": {
       "x-source-column": "status_code",
@@ -19865,6 +19895,26 @@
       "format": "int64",
       "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
+     },
+     "departmentId": {
+      "x-source-column": "department_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "라인(설비 그룹) 노드 자신의 담당 부서. 알림 부서 판정 기준이고 상위 그룹에서 상속하지 않는다. 사용 중지·없는 부서면 400 INVALID. 근거: 서버 선행 · 장부 P-90 · omf-all-around#160"
+     },
+     "departmentName": {
+      "x-source-column": "mdm.department.department_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "example": "생산1팀",
+      "description": "담당 부서 이름(응답 전용). 부서가 없으면 null. 근거: 서버 선행 · 장부 P-90"
      }
     },
     "x-internal-note": " ⧉ 공개 설명에서 걷은 근거 표기(client#102 · 2026-08-12): 06-API-요구서 §4-3"
@@ -21012,6 +21062,26 @@
       "format": "int64",
       "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
+     },
+     "departmentId": {
+      "x-source-column": "department_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "라인(설비 그룹) 노드 자신의 담당 부서. 알림 부서 판정 기준이고 상위 그룹에서 상속하지 않는다. 사용 중지·없는 부서면 400 INVALID. 근거: 서버 선행 · 장부 P-90 · omf-all-around#160"
+     },
+     "departmentName": {
+      "x-source-column": "mdm.department.department_name",
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 200,
+      "example": "생산1팀",
+      "description": "담당 부서 이름(응답 전용). 부서가 없으면 null. 근거: 서버 선행 · 장부 P-90"
      }
     }
    },
@@ -21088,6 +21158,16 @@
       "format": "int64",
       "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
+     },
+     "departmentId": {
+      "x-source-column": "department_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "라인(설비 그룹) 노드 자신의 담당 부서. 알림 부서 판정 기준이고 상위 그룹에서 상속하지 않는다. 사용 중지·없는 부서면 400 INVALID. 생략하면 없음. 근거: 서버 선행 · 장부 P-90 · omf-all-around#160"
      }
     }
    },
@@ -21158,6 +21238,16 @@
       "format": "int64",
       "description": "라인 기본 스크랩 위치. 계획 확정·4M 라인 선택 때 W/O defaultScrapLocationId 로 복사한다. 그 라인 공장의, 자재창고가 아닌 위치여야 한다(아니면 400 INVALID). 생략하면 그대로 두고 null 이면 비운다. 근거: 서버 선행 · 장부 P-46",
       "x-source-column": "default_scrap_location_id"
+     },
+     "departmentId": {
+      "x-source-column": "department_id",
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "example": 1001,
+      "description": "라인(설비 그룹) 노드 자신의 담당 부서. 알림 부서 판정 기준이고 상위 그룹에서 상속하지 않는다. 사용 중지·없는 부서면 400 INVALID. 생략하면 그대로 두고 null 이면 해제한다. 근거: 서버 선행 · 장부 P-90 · omf-all-around#160"
      }
     }
    },
