@@ -376,7 +376,7 @@ export class PurchaseOrderService {
    */
   private async assertNoSuccessor(tx: Prisma.TransactionClient, lineIds: number[]): Promise<void> {
     const where = { purchase_order_line_id: { in: lineIds.map((lineId) => BigInt(lineId)) } };
-    // 입하 초과분이 이어진 라인도 붙은 것이다(장부 P-96) — 안 보면 FK 위반이 500 으로 샌다.
+    // 입하 초과분이 이어진 라인도 붙은 것이다(장부 P-100) — 안 보면 FK 위반이 500 으로 샌다.
     const successors =
       (await tx.inbound_receipt_line.count({ where })) +
       (await tx.asn_line.count({ where })) +
