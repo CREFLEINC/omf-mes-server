@@ -6172,7 +6172,7 @@
      },
      "defects": {
       "type": "array",
-      "description": "이 실적의 불량 기록 — 늘 싣는다(없으면 빈 배열). 유형 없이 불량수량만 남은 실적이 있어 합이 defectQty 보다 작을 수 있다. 장부 P-89",
+      "description": "이 실적의 불량 기록 — 늘 싣는다(없으면 빈 배열). 유형 없이 불량수량만 남은 실적이 있어 합이 defectQty 보다 작을 수 있다. 장부 P-95",
       "items": {
        "$ref": "#/components/schemas/ProductionResultDefect"
       }
@@ -6221,7 +6221,7 @@
    },
    "ProductionResultDefect": {
     "type": "object",
-    "description": "생산 실적에 매달린 불량 기록 한 줄. 대분류 칸은 상세 코드일 때 실린다. 장부 P-89",
+    "description": "생산 실적에 매달린 불량 기록 한 줄. 대분류 칸은 상세 코드일 때 실린다. 장부 P-95",
     "properties": {
      "defectRecordId": {
       "type": "integer",
@@ -6492,7 +6492,7 @@
      },
      "defects": {
       "type": "array",
-      "description": "불량 유형별 수량 — 유형마다 불량 기록(원천 FIELD)이 실적과 함께 남는다. defectQty 를 함께 주면 합과 같아야 하고, 이것만 주면 합이 defectQty 다. 코드는 그 W/O 공정에 매핑된 사용 중인 상세 코드, 같은 코드는 한 번. 없으면 불량 기록 없이 수량만 남는다. 장부 P-89",
+      "description": "불량 유형별 수량 — 유형마다 불량 기록(원천 FIELD)이 실적과 함께 남는다. defectQty 를 함께 주면 합과 같아야 하고, 이것만 주면 합이 defectQty 다. 코드는 그 W/O 공정에 매핑된 사용 중인 상세 코드, 같은 코드는 한 번. 없으면 불량 기록 없이 수량만 남는다. 장부 P-95",
       "items": {
        "$ref": "#/components/schemas/ProductionResultDefectInput"
       }
