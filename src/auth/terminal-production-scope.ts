@@ -58,6 +58,15 @@ export async function assertTerminalProductionScope(
     });
     if (!row) throw denied();
   };
+  /** 함께 일할 사람(시작 때의 부작업자·작업 중 참여)도 이 단말 공장의 재직 작업자여야 한다. */
+  const plantWorkers = async (values: unknown[]): Promise<void> => {
+    const ids = values.map(positiveId);
+    if (ids.some((id) => id === null)) throw denied();
+    const unique = [...new Set(ids as bigint[])];
+    if (unique.length === 0) return;
+    const found = await prisma.worker.count({ where: { worker_id: { in: unique }, plant_id: terminal.plantId, is_active: true } });
+    if (found !== unique.length) throw denied();
+  };
   const ownLot = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.lot.findFirst({
@@ -75,15 +84,10 @@ export async function assertTerminalProductionScope(
     case 'POST /production/work-sessions/{workSessionId}:end':
       await ownSession(request.params.workSessionId);
       break;
-    case 'POST /production/work-sessions/{workSessionId}/workers': {
+    case 'POST /production/work-sessions/{workSessionId}/workers':
       await ownSession(request.params.workSessionId);
-      // 함께 일할 사람도 이 단말 공장의 재직 작업자여야 한다.
-      const workerId = positiveId(body.workerId);
-      if (workerId === null || !await prisma.worker.findFirst({
-        where: { worker_id: workerId, plant_id: terminal.plantId, is_active: true }, select: { worker_id: true },
-      })) throw denied();
+      await plantWorkers([body.workerId]);
       break;
-    }
     case 'POST /production/precheck-decisions': {
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
       if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
@@ -91,6 +95,7 @@ export async function assertTerminalProductionScope(
     }
     case 'POST /production/work-sessions': {
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      await plantWorkers(array(body.workerIds));
       if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
       if (body.moldId !== undefined) {
         const moldId = positiveId(body.moldId);

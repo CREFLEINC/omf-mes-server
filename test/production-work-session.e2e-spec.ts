@@ -999,6 +999,15 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(session.equipment_id).toBeNull();
     });
 
+    it('POP 단말이 작업을 시작할 때 부작업자도 단말 공장 재직자여야 한다', async () => {
+      expect((await terminalPost(BASE, { workOrderId: listed.other, startedAt: START_AT, workerIds: [Number(farWorkerId)] })).status).toBe(401);
+      const opened = await terminalPost(BASE, { workOrderId: listed.other, startedAt: START_AT, workerIds: [Number(ids.worker4)] }).expect(201);
+      expect(
+        (await prisma.work_session_worker.findMany({ where: { work_session_id: BigInt(opened.body.workSessionId as number) }, orderBy: { work_session_worker_id: 'asc' } }))
+          .map((row) => [row.worker_id, row.worker_role_code]),
+      ).toEqual([[ids.worker1, 'MAIN'], [ids.worker4, 'SUB']]);
+    });
+
     it('POP 단말이 단말 토큰으로 공동 작업자를 넣고 본다 — 다른 공장 작업자는 막힌다', async () => {
       const opened = await terminalPost(BASE, { workOrderId: listed.own, startedAt: START_AT }).expect(201);
       const sessionId = opened.body.workSessionId as number;
