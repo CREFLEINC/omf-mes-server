@@ -52,9 +52,7 @@ describe('work-session-rules', () => {
     expect(await reject(assertEventPair(prisma, 'toString', undefined))).toBe('eventTypeCode:INVALID');
   });
 
-  it('workerIds 로 만든 참여 행의 역할은 물리 기본값 OPERATOR 다', async () => {
-    // 설계 미정 — 문의 056. `/workers` 참여도 같다 — 값이 없으면 칸을 «안 넣어» 물리
-    // 기본값을 타므로, 계약이 세운 `MAIN`/`SUB` 둘 중 어느 것도 되지 않는다.
+  it('작업 중 참여는 부작업자(SUB)로 넣는다', async () => {
     const created: Row[] = [];
     const tx = {
       $queryRaw: () => Promise.resolve([{ status_code: 'RUNNING', version_no: 1 }]),
@@ -66,15 +64,16 @@ describe('work-session-rules', () => {
             work_session_worker_id: 1n,
             work_session_id: 3n,
             worker_id: 7n,
-            worker_role_code: 'OPERATOR',
+            worker_role_code: data.worker_role_code,
             joined_at: new Date('2026-09-07T02:00:00.000Z'),
             left_at: null,
+            worker: { worker_no: 'W-7', worker_name: '작업자7' },
           });
         },
       },
     };
     const prisma = {
-      worker: { count: () => Promise.resolve(1) },
+      worker: { findUnique: () => Promise.resolve({ is_active: true }) },
       code_value: codeValues([]),
       $transaction: (work: (client: unknown) => Promise<unknown>) => work(tx),
     } as unknown as PrismaService;
@@ -84,7 +83,7 @@ describe('work-session-rules', () => {
       { workerId: 7, joinedAt: '2026-09-07T02:00:00.000Z' },
       { version: undefined, appUserId: 5 },
     );
-    expect(Object.keys(created[0])).not.toContain('worker_role_code');
-    expect(view.workerRoleCode).toBe('OPERATOR');
+    expect(created[0]).toMatchObject({ worker_role_code: 'SUB' });
+    expect(view).toMatchObject({ workerRoleCode: 'SUB', workerNo: 'W-7' });
   });
 });

@@ -8,6 +8,9 @@ import type { TerminalContext } from './terminal-context';
 /** POP production actions supported by an installed terminal, never administrator actions. */
 export const TERMINAL_PRODUCTION_OPERATIONS: Readonly<Record<string, readonly ('POP' | 'MOBILE')[]>> = {
   'GET /production/work-sessions/{workSessionId}/events': ['POP'],
+  'GET /production/work-sessions/{workSessionId}/workers': ['POP'],
+  'POST /production/work-sessions/{workSessionId}/workers': ['POP'],
+  'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['POP'],
   'POST /production/precheck-decisions': ['POP'],
   'POST /production/work-sessions': ['POP'],
   'POST /production/work-orders/{workOrderId}:hold': ['POP'],
@@ -55,6 +58,17 @@ export async function assertTerminalProductionScope(
     });
     if (!row) throw denied();
   };
+  /** 함께 일할 사람(시작 때의 부작업자·작업 중 참여)도 이 단말 공장의 재직 작업자여야 한다. */
+  const plantWorkers = async (values: unknown[]): Promise<void> => {
+    const ids = values.map(positiveId);
+    if (ids.some((id) => id === null)) throw denied();
+    const unique = [...new Set(ids as bigint[])];
+    if (unique.length === 0) return;
+    const found = await prisma.worker.count({
+      where: { worker_id: { in: unique }, plant_id: terminal.plantId, is_active: true },
+    });
+    if (found !== unique.length) throw denied();
+  };
   const ownLot = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.lot.findFirst({
@@ -66,9 +80,15 @@ export async function assertTerminalProductionScope(
   if (key.startsWith('POST ')) await activeWorker(prisma, request, terminal.plantId);
   switch (key) {
     case 'GET /production/work-sessions/{workSessionId}/events':
+    case 'GET /production/work-sessions/{workSessionId}/workers':
     case 'POST /production/work-sessions/{workSessionId}/events':
+    case 'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave':
     case 'POST /production/work-sessions/{workSessionId}:end':
       await ownSession(request.params.workSessionId);
+      break;
+    case 'POST /production/work-sessions/{workSessionId}/workers':
+      await ownSession(request.params.workSessionId);
+      await plantWorkers([body.workerId]);
       break;
     case 'POST /production/precheck-decisions': {
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
@@ -77,6 +97,7 @@ export async function assertTerminalProductionScope(
     }
     case 'POST /production/work-sessions': {
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      await plantWorkers(array(body.workerIds));
       if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
       if (body.moldId !== undefined) {
         const moldId = positiveId(body.moldId);
