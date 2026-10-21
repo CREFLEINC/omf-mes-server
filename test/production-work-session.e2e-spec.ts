@@ -351,19 +351,30 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(events[0].performed_by).not.toBeNull();
     });
 
-    it('workerIds 가 work_session_worker 로 들어가고 역할이 OPERATOR 다', async () => {
+    it('작업을 시작한 사람(X-Worker-No)이 주작업자, workerIds 가 부작업자로 들어간다', async () => {
       const workOrderId = await workOrder('RELEASED');
       const response = await openSession({
         workOrderId,
         startedAt: START_AT,
-        workerIds: [Number(ids.worker1), Number(ids.worker2)],
+        workerIds: [Number(ids.worker2), Number(ids.worker3)],
       }).expect(201);
       const rows = await prisma.work_session_worker.findMany({
         where: { work_session_id: BigInt(response.body.workSessionId as number) },
         orderBy: { work_session_worker_id: 'asc' },
       });
-      expect(rows.map((row) => row.worker_role_code)).toEqual(['OPERATOR', 'OPERATOR']);
-      expect(rows.map((row) => row.joined_at.toISOString())).toEqual([START_AT, START_AT]);
+      expect(rows.map((row) => [row.worker_id, row.worker_role_code])).toEqual([
+        [ids.worker1, 'MAIN'], [ids.worker2, 'SUB'], [ids.worker3, 'SUB'],
+      ]);
+      expect(rows.map((row) => row.joined_at.toISOString())).toEqual([START_AT, START_AT, START_AT]);
+    });
+
+    it('workerIds 에 시작한 사람이 있거나 함께 4명을 넘으면 400 이고 세션을 열지 않는다', async () => {
+      for (const workerIds of [[ids.worker1, ids.worker2], [ids.worker2, ids.worker3, ids.worker4, ids.worker5]]) {
+        const workOrderId = await workOrder('RELEASED');
+        const response = await openSession({ workOrderId, startedAt: START_AT, workerIds: workerIds.map(Number) }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'workerIds', code: 'INVALID' });
+        expect(await prisma.work_session.count({ where: { work_order_id: BigInt(workOrderId) } })).toBe(0);
+      }
     });
 
     it('설비 없는 POP 단말이 equipmentId 없이 세션을 연다 — 세션 설비가 비어 있다', async () => {
@@ -377,15 +388,15 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(session.equipment_id).toBeNull();
     });
 
-    it('workerIds 없이 연 세션은 workers 가 0건이다', async () => {
-      // 설계 미정 — 문의 057
+    it('workerIds 없이 연 세션은 시작한 사람 한 명(주작업자)이 참여자다', async () => {
       const workOrderId = await workOrder('RELEASED');
       const response = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
       const workers = await request(app.getHttpServer())
         .get(`${BASE}/${response.body.workSessionId}/workers`)
         .set('Cookie', cookie)
         .expect(200);
-      expect(workers.body).toEqual([]);
+      expect(validator('GET /production/work-sessions/{workSessionId}/workers')(workers.body)).toBe(true);
+      expect(workers.body).toEqual([expect.objectContaining({ workerId: Number(ids.worker1), workerNo: `${PREFIX}-W1`, workerRoleCode: 'MAIN' })]);
     });
 
     it('controlOverride 를 보내면 CONTROL_OVERRIDE 이벤트가 함께 선다', async () => {
@@ -606,7 +617,10 @@ describe('작업 세션 조회 4건 (e2e)', () => {
             .get(`${BASE}/${workSessionId}/workers${active === undefined ? '' : `?active=${active}`}`)
             .set('Cookie', cookie)
             .expect(200)
-        ).body as { workSessionWorkerId: number; workerId: number; leftAt?: string }[];
+        ).body as { workSessionWorkerId: number; workerId: number; workerRoleCode: string; leftAt?: string; participatedMinutes: number }[];
+      /** 시작한 주작업자(W1)가 아닌 참여 행. */
+      const subOf = async (workSessionId: number, workerId: bigint) =>
+        (await workersOf(workSessionId)).find((row) => row.workerId === Number(workerId)) as { workSessionWorkerId: number };
 
       it('STOP 이 세션을 STOPPED 로 옮기고 RESUME 이 되돌린다 — session_no 는 그대로다', async () => {
         const { id } = await running();
@@ -708,65 +722,88 @@ describe('작업 세션 조회 4건 (e2e)', () => {
         ).expect(403);
       });
 
-      it('작업자 참여 뒤 workers 목록에 뜬다', async () => {
+      it('작업자 참여 뒤 workers 목록에 부작업자로 뜨고, 사번·이름·참여 분이 실린다', async () => {
         const { id } = await running();
         const response = await joinWorker(id, {
-          workerId: Number(ids.worker1),
-          workerRoleCode: 'MAIN',
+          workerId: Number(ids.worker2),
+          workerRoleCode: 'SUB',
           joinedAt: START_AT,
         }).expect(201);
         expect(validator('POST /production/work-sessions/{workSessionId}/workers', 201)(response.body)).toBe(true);
         expect(response.body).toMatchObject({
-          workerId: Number(ids.worker1),
-          workerRoleCode: 'MAIN',
+          workerId: Number(ids.worker2),
+          workerNo: `${PREFIX}-W2`,
+          workerName: '작업세션검사작업자2',
+          workerRoleCode: 'SUB',
           joinedAt: START_AT,
         });
         expect(response.body.leftAt).toBeUndefined();
-        expect((await workersOf(id)).map((row) => row.workerId)).toEqual([Number(ids.worker1)]);
+        const listed = await workersOf(id);
+        expect(listed.map((row) => [row.workerId, row.workerRoleCode])).toEqual([[Number(ids.worker1), 'MAIN'], [Number(ids.worker2), 'SUB']]);
+        // 세션이 열려 있으면 지금까지를 센다 — 시작 시각이 과거라 0 보다 크다.
+        expect(listed[0].participatedMinutes).toBeGreaterThan(0);
+      });
+
+      it('작업 중 주작업자 역할로 참여하면 400, 동시 참여 4명이 차면 다섯째는 400', async () => {
+        const { id } = await running({ workerIds: [Number(ids.worker2), Number(ids.worker3)] });
+        const asMain = await joinWorker(id, { workerId: Number(ids.worker4), workerRoleCode: 'MAIN', joinedAt: START_AT }).expect(400);
+        expect(asMain.body.errors[0]).toMatchObject({ field: 'workerRoleCode', code: 'INVALID' });
+        await joinWorker(id, { workerId: Number(ids.worker4), joinedAt: START_AT }).expect(201);
+        const fifth = await joinWorker(id, { workerId: Number(ids.worker5), joinedAt: START_AT }).expect(400);
+        expect(fifth.body.errors[0]).toMatchObject({ field: 'workerId', code: 'INVALID' });
+      });
+
+      it('주작업자는 세션이 열린 동안 이탈할 수 없다', async () => {
+        const { id } = await running();
+        const [main] = await workersOf(id);
+        const response = await leaveWorker(id, main.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(400);
+        expect(response.body.errors[0]).toMatchObject({ field: 'workSessionWorkerId', code: 'STATE_LOCKED' });
       });
 
       it('POST …/workers 는 If-Match 를 받되 version_no 를 올리지 않는다', async () => {
         const { id } = await running();
         expect((await sessionOf(id)).version_no).toBe(1);
-        await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }, '"1"').expect(201);
+        await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: START_AT }, '"1"').expect(201);
         // 세션 행을 UPDATE 하지 않으므로 화면의 If-Match 토큰이 낡지 않는다(알려둘 것 ⓘ).
         expect((await sessionOf(id)).version_no).toBe(1);
       });
 
       it('이미 참여 중인 작업자를 다시 넣으면 400 STATE_LOCKED', async () => {
         const { id } = await running();
-        await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(201);
-        const response = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: RESUME_AT }).expect(400);
+        await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: START_AT }).expect(201);
+        const response = await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: RESUME_AT }).expect(400);
         expect(response.body.errors[0]).toMatchObject({ field: 'workerId', code: 'STATE_LOCKED' });
-        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(1);
+        // 주작업자 한 줄 + 부작업자 한 줄.
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(2);
       });
 
       it('떠난 작업자는 다시 참여할 수 있다', async () => {
         const { id } = await running();
-        const first = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(201);
+        const first = await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: START_AT }).expect(201);
         await leaveWorker(id, first.body.workSessionWorkerId as number, { leftAt: LEAVE_AT }).expect(200);
-        const again = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: LEAVE_AT }).expect(201);
+        const again = await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: LEAVE_AT }).expect(201);
         expect(again.body.workSessionWorkerId).not.toBe(first.body.workSessionWorkerId);
-        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(2);
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(3);
       });
 
       it('종료된 세션에 참여하면 400 STATE_LOCKED', async () => {
         const { id } = await running();
         await endSession(id, { endedAt: END_AT }).expect(200);
-        const response = await joinWorker(id, { workerId: Number(ids.worker1), joinedAt: START_AT }).expect(400);
+        const response = await joinWorker(id, { workerId: Number(ids.worker2), joinedAt: START_AT }).expect(400);
         expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
       });
 
       it(':leave 가 left_at 만 찍고 행을 지우지 않는다', async () => {
-        const { id } = await running({ workerIds: [Number(ids.worker1)] });
-        const [joined] = await workersOf(id);
+        const { id } = await running({ workerIds: [Number(ids.worker2)] });
+        const joined = await subOf(id, ids.worker2);
         const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
         expect(
           validator('POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave')(response.body),
         ).toBe(true);
-        expect(response.body).toMatchObject({ workSessionWorkerId: joined.workSessionWorkerId, leftAt: LEAVE_AT });
-        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(1);
-        expect(await workersOf(id)).toEqual([]);
+        // 시작 02:30 ~ 이탈 05:00 = 150분.
+        expect(response.body).toMatchObject({ workSessionWorkerId: joined.workSessionWorkerId, leftAt: LEAVE_AT, participatedMinutes: 150 });
+        expect(await prisma.work_session_worker.count({ where: { work_session_id: BigInt(id) } })).toBe(2);
+        expect((await workersOf(id)).map((row) => row.workerId)).toEqual([Number(ids.worker1)]);
         expect((await workersOf(id, false)).map((row) => row.workSessionWorkerId)).toEqual([
           joined.workSessionWorkerId,
         ]);
@@ -775,35 +812,36 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       });
 
       it('이미 떠난 사람을 다시 :leave 하면 400 STATE_LOCKED', async () => {
-        const { id } = await running({ workerIds: [Number(ids.worker1)] });
-        const [joined] = await workersOf(id);
+        const { id } = await running({ workerIds: [Number(ids.worker2)] });
+        const joined = await subOf(id, ids.worker2);
         await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
         const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: END_AT }).expect(400);
         expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
       });
 
       it('leftAt 이 joinedAt 보다 앞서면 400 RANGE', async () => {
-        const { id } = await running({ workerIds: [Number(ids.worker1)] });
-        const [joined] = await workersOf(id);
+        const { id } = await running({ workerIds: [Number(ids.worker2)] });
+        const joined = await subOf(id, ids.worker2);
         const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: T0 }).expect(400);
         expect(response.body.errors[0]).toMatchObject({ field: 'leftAt', code: 'RANGE' });
       });
 
       it('남의 세션의 참여 행을 경로로 물으면 404', async () => {
-        const mine = await running({ workerIds: [Number(ids.worker1)] });
+        const mine = await running({ workerIds: [Number(ids.worker2)] });
         const other = await running();
-        const [joined] = await workersOf(mine.id);
+        const joined = await subOf(mine.id, ids.worker2);
         await leaveWorker(other.id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(404);
       });
 
-      it('종료된 세션의 참여자도 :leave 할 수 있다', async () => {
-        // 설계 미정 — 문의 058. `:end` 가 `left_at` 을 자동으로 안 찍으므로 이 길을 닫으면
-        // 「영원히 참여 중」이 확정된다 — 참여(400)와 이탈(200)이 비대칭인 이유다.
-        const { id } = await running({ workerIds: [Number(ids.worker1)] });
-        const [joined] = await workersOf(id);
+      it(':end 가 남은 참여자(주작업자 포함)를 종료 시각으로 닫는다 — 그 뒤 :leave 는 이미 떠난 것이다', async () => {
+        const { id } = await running({ workerIds: [Number(ids.worker2)] });
+        const joined = await subOf(id, ids.worker2);
         await endSession(id, { endedAt: END_AT }).expect(200);
-        const response = await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(200);
-        expect(response.body.leftAt).toBe(LEAVE_AT);
+        const rows = await prisma.work_session_worker.findMany({ where: { work_session_id: BigInt(id) } });
+        expect(rows.map((row) => row.left_at?.toISOString())).toEqual([END_AT, END_AT]);
+        // 시작 02:30 ~ 종료 07:30 = 300분.
+        expect((await workersOf(id, false)).map((row) => row.participatedMinutes)).toEqual([300, 300]);
+        await leaveWorker(id, joined.workSessionWorkerId, { leftAt: LEAVE_AT }).expect(400);
       });
     });
   });
@@ -812,6 +850,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     let equipmentId = 0n;
     let otherEquipmentId = 0n;
     let farEquipmentId = 0n;
+    let farWorkerId = 0n;
     let equippedToken = '';
     const listed: Record<string, number> = {};
 
@@ -828,6 +867,10 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       const farPlant = await prisma.plant.create({
         data: { legal_entity_id: home.legal_entity_id, plant_code: `${PREFIX}-P2`, plant_name: '작업세션검사다른공장', timezone_code: 'Asia/Ho_Chi_Minh' },
       });
+      const unitId = (await prisma.worker.findUniqueOrThrow({ where: { worker_id: ids.worker1 } })).business_unit_id;
+      farWorkerId = (await prisma.worker.create({
+        data: { worker_no: `${PREFIX}-W-FAR`, worker_name: '다른공장작업자', business_unit_id: unitId, plant_id: farPlant.plant_id, status_code: 'EMPLOYED' },
+      })).worker_id;
       farEquipmentId = (await prisma.equipment.create({
         data: { plant_id: farPlant.plant_id, equipment_code: `${PREFIX}-EQ-FAR`, equipment_name: '다른공장설비', equipment_type_code: 'PRESS', status_code: 'IN_SERVICE' },
       })).equipment_id;
@@ -955,6 +998,22 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       const session = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(opened.body.workSessionId) } });
       expect(session.equipment_id).toBeNull();
     });
+
+    it('POP 단말이 단말 토큰으로 공동 작업자를 넣고 본다 — 다른 공장 작업자는 막힌다', async () => {
+      const opened = await terminalPost(BASE, { workOrderId: listed.own, startedAt: START_AT }).expect(201);
+      const sessionId = opened.body.workSessionId as number;
+
+      await terminalPost(`${BASE}/${sessionId}/workers`, { workerId: Number(ids.worker3), joinedAt: START_AT }).expect(201);
+      expect((await terminalPost(`${BASE}/${sessionId}/workers`, { workerId: Number(farWorkerId), joinedAt: START_AT })).status).toBe(401);
+
+      const listedWorkers = await request(app.getHttpServer())
+        .get(`${BASE}/${sessionId}/workers`)
+        .set('Authorization', `Bearer ${terminalToken}`)
+        .expect(200);
+      expect((listedWorkers.body as { workerId: number; workerRoleCode: string }[]).map((row) => [row.workerId, row.workerRoleCode])).toEqual([
+        [Number(ids.worker1), 'MAIN'], [Number(ids.worker3), 'SUB'],
+      ]);
+    });
   });
 
   async function makeFixtures(): Promise<void> {
@@ -1049,6 +1108,13 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       data: { worker_no: `${PREFIX}-W2`, worker_name: '작업세션검사작업자2', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
     });
     ids.worker2 = worker2.worker_id;
+    // 공동 작업자 상한(동시 4명)을 넘겨 보려면 사람이 더 필요하다.
+    for (const key of ['worker3', 'worker4', 'worker5']) {
+      const no = key.slice(-1);
+      ids[key] = (await prisma.worker.create({
+        data: { worker_no: `${PREFIX}-W${no}`, worker_name: `작업세션검사작업자${no}`, business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED' },
+      })).worker_id;
+    }
 
     const order = await prisma.production_order.create({
       data: { production_order_no: `${PREFIX}-PO`, business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, item_id: item.item_id, order_qty: 100, uom_id: uom.uom_id, status_code: 'CONFIRMED' },
