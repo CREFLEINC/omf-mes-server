@@ -6,7 +6,7 @@ import { assertCodeValues, resolveWorkerId } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertVersion, lockWorkOrder } from '../work-order/work-order-write.service';
-import { MAX_OPEN_WORKERS, WORKER_ROLE } from './crew';
+import { EMPLOYED_WORKER, MAX_OPEN_WORKERS, NOT_EMPLOYED_MESSAGE, WORKER_ROLE } from './crew';
 import { resolveShiftId } from './shift-resolver';
 import { EVENT_TYPE } from './work-session.constants';
 import { WorkSessionView, workSessionView } from './work-session-view';
@@ -46,6 +46,9 @@ export class WorkSessionService {
   async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
     // 작업을 시작하는 사람이 이 세션의 주작업자다.
     const mainWorkerId = await resolveWorkerId(this.prisma, context.workerNo);
+    if ((await this.prisma.worker.count({ where: { worker_id: mainWorkerId, ...EMPLOYED_WORKER } })) === 0) {
+      throw one(field('X-Worker-No', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
+    }
     await this.assertReferences(body, mainWorkerId);
     await this.assertControlOverride(body);
     // `runIdempotent` 가 tx 를 넘겨주지 않는다 — 서비스가 자기 트랜잭션을 연다(I-9 R-10).
@@ -164,8 +167,12 @@ export class WorkSessionService {
     } else if (1 + workerIds.length > MAX_OPEN_WORKERS) {
       errors.push(field('workerIds', ERROR_CODE.INVALID, `동시에 참여할 수 있는 작업자는 ${MAX_OPEN_WORKERS}명까지입니다.`));
     } else if (workerIds.length > 0) {
-      const found = await this.prisma.worker.count({ where: { worker_id: { in: workerIds.map(BigInt) } } });
+      const ids = { worker_id: { in: workerIds.map(BigInt) } };
+      const found = await this.prisma.worker.count({ where: ids });
       if (found !== workerIds.length) errors.push(field('workerIds', ERROR_CODE.INVALID, MISSING_REF));
+      else if ((await this.prisma.worker.count({ where: { ...ids, ...EMPLOYED_WORKER } })) !== workerIds.length) {
+        errors.push(field('workerIds', ERROR_CODE.INVALID, NOT_EMPLOYED_MESSAGE));
+      }
     }
     if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
   }
