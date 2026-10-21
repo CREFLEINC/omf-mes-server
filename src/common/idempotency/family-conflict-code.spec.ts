@@ -120,7 +120,7 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     expect(extra).toEqual([]);
   });
 
-  it('넘긴 호출부가 48건이다 — ERP W/O 자동 계획 재시도까지 계열 전건', () => {
+  it('넘긴 호출부가 49건이다 — 품목 검사 수준 수동 변경까지 계열 전건', () => {
     // ⭐ I-23 이 `POST /logistics/shipments` 를 더했다. 이 슬라이스는 계열 오퍼레이션이 넷
     //    더 온다(`:confirm`·`:request-cancel`·`:cancel`·재등록) ⇒ 그때마다 여기가 먼저 빨개진다.
     //    ⛔ 그것이 이 표의 뜻이다 — 넘기는 것을 잊으면 409 봉투에서 required `code` 가 빠지고
@@ -133,7 +133,8 @@ describe('계열 봉투의 `code` — 호출부 배정', () => {
     // 테스트용 ERP W/O 등록이 계열 409(`DUPLICATE_KEY`)를 쓴다(장부 P-30): 45 → 46.
     // 재작업 W/O 발행이 계열 409(`DISPOSITION_QTY_EXCEEDED`·`INVALID_STATE`)를 쓴다(장부 P-33): 46 → 47.
     // ERP W/O 자동 계획 재시도가 확정의 계열 409 를 그대로 낸다(장부 P-67): 47 → 48.
-    expect(sites.filter((site) => site.passes)).toHaveLength(48);
+    // 품목 검사 수준 수동 변경 PUT 이 계열 409 를 쓴다(#64 · 장부 P-87): 48 → 49.
+    expect(sites.filter((site) => site.passes)).toHaveLength(49);
   });
 
   it('⭐ 두 값이 계열 네 enum «전부»에 있다 — 계약에서 직접 읽는다', () => {
