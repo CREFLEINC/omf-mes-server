@@ -107,6 +107,9 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
   'POST /quality/item-inspection-levels': ['W-03-12'],
   'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
+  // 시리얼 OQC 스캔·의뢰의 시리얼 판정 — OQC 출하검사 판정 화면(관리웹·POP)의 조회다(omf-all-around#68 · 장부 P-101).
+  'GET /quality/oqc-serials/{serialNo}': ['W-04-03', 'P-04-06'],
+  'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials': ['W-04-03', 'P-04-06'],
   // 부서×이벤트 알림 설정 — W-CO-11(알람 수신자 설정)이 재설계로 이 경로로 옮겨 간다. 기존 구독
   // 경로를 대신하는 같은 화면의 조회·저장·수신자 후보다(omf-all-around#160 · 장부 P-92).
   'GET /app/notification-settings': ['W-CO-11'],

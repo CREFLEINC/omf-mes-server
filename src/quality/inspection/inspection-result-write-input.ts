@@ -1,5 +1,6 @@
 import type { InspectionDefectInput } from '../defect/defect-record-write.service';
 import type { FourMChangeInput } from './four-m-change';
+import type { OqcSerialJudgmentInput } from './oqc-serials';
 
 /**
  * 검사 결과 쓰기 두 경로(`POST`·`PUT`)의 **계약 본문 타입**과 본문 밖 컨텍스트.
@@ -51,6 +52,11 @@ export interface InspectionResultCreate {
    * 값이면 그 의뢰 LOT 의 한 줄을 갈아 끼운다. 자재 LOT 이 있는 IQC 에만.
    */
   fourMChange?: FourMChangeInput | null;
+  /**
+   * 시리얼 OQC(omf-all-around#68 · 장부 P-101) — 출하작업지시 OQC 를 확정으로 저장할 때만. 시리얼마다
+   * `quality.oqc_serial_result` 에 한 줄로 남는다(`oqc-serials.ts`).
+   */
+  serials?: OqcSerialJudgmentInput[];
 }
 
 /**

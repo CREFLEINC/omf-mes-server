@@ -35,9 +35,10 @@ const popInspection = { OR: [
 ] };
 
 describe('terminal quality read scope', () => {
-  it('contains only the twelve client quality/repair GETs with exact channels', () => {
+  it('contains only the fourteen client quality/repair GETs with exact channels', () => {
     // +2 — PQC 패널이 작성중 회차·측정치를 되살린다(omf-all-around#107 · 장부 P-49).
-    expect(Object.keys(TERMINAL_QUALITY_READ_OPERATIONS)).toHaveLength(12);
+    // +2 — 시리얼 OQC 스캔·의뢰의 시리얼 판정(omf-all-around#68 · 장부 P-101).
+    expect(Object.keys(TERMINAL_QUALITY_READ_OPERATIONS)).toHaveLength(14);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-results']).toEqual(['POP']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/inspection-requests']).toEqual(['POP']);
     expect(TERMINAL_QUALITY_READ_OPERATIONS['GET /quality/defect-records']).toEqual(['MOBILE']);
@@ -56,6 +57,31 @@ describe('terminal quality read scope', () => {
     (db.inspection_request.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(assertTerminalQualityReadScope(db, request({}, { inspectionRequestId: '43' }),
       'GET /quality/inspection-requests/{inspectionRequestId}', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('opens a POP serial OQC scan for own-plant or unknown serials only (#68 · 장부 P-101)', async () => {
+    const db = { ...prisma(), serial_number: { findUnique: jest.fn().mockResolvedValue({ lot: { plant_id: 3n } }) } } as unknown as PrismaService;
+    await assertTerminalQualityReadScope(db, request({}, { serialNo: 'SN-1' }), 'GET /quality/oqc-serials/{serialNo}', terminal('POP'));
+    expect(db.serial_number.findUnique).toHaveBeenCalledWith({
+      where: { serial_no: 'SN-1' }, select: { lot: { select: { plant_id: true } } },
+    });
+    // 없는 시리얼은 막지 않는다 — 서비스가 404 로 답한다.
+    (db.serial_number.findUnique as jest.Mock).mockResolvedValueOnce(null);
+    await assertTerminalQualityReadScope(db, request({}, { serialNo: 'SN-X' }), 'GET /quality/oqc-serials/{serialNo}', terminal('POP'));
+    (db.serial_number.findUnique as jest.Mock).mockResolvedValueOnce({ lot: { plant_id: 4n } });
+    await expect(assertTerminalQualityReadScope(db, request({}, { serialNo: 'SN-2' }),
+      'GET /quality/oqc-serials/{serialNo}', terminal('POP'))).rejects.toMatchObject({ status: 401 });
+    await expect(assertTerminalQualityReadScope(db, request({}, { serialNo: 'SN-1' }),
+      'GET /quality/oqc-serials/{serialNo}', terminal('MOBILE'))).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('opens POP serial judgments of one visible inspection request only (#68 · 장부 P-101)', async () => {
+    const db = prisma();
+    await assertTerminalQualityReadScope(db, request({}, { inspectionRequestId: '42' }),
+      'GET /quality/inspection-requests/{inspectionRequestId}/oqc-serials', terminal('POP'));
+    expect(db.inspection_request.findFirst).toHaveBeenCalledWith({
+      where: { AND: [{ inspection_request_id: 42n }, popInspection] }, select: { inspection_request_id: true },
+    });
   });
 
   it('opens the POP OQC queue without a W/O but keeps other W/O-less lists closed', async () => {

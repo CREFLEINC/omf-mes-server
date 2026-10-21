@@ -3270,6 +3270,113 @@
      }
     }
    }
+  },
+  "/quality/oqc-serials/{serialNo}": {
+   "parameters": [
+    {
+     "name": "serialNo",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 150
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "시리얼 OQC 스캔 조회",
+    "description": "스캔한 시리얼의 품목·LOT, 지금의 OQC 기록, 그 LOT 을 피킹한 열린 OQC 의뢰를 한 번에 낸다. POP 은 단말 공장의 시리얼만. 서버 선행(omf-all-around#68 · 장부 P-101).",
+    "responses": {
+     "200": {
+      "description": "스캔 결과",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OqcSerialScan"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음(W-04-03 · P-04-06)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 시리얼",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/quality/inspection-requests/{inspectionRequestId}/oqc-serials": {
+   "parameters": [
+    {
+     "name": "inspectionRequestId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "quality"
+    ],
+    "summary": "검사 의뢰의 시리얼 판정",
+    "description": "이 의뢰의 회차들이 쓴 시리얼 출하검사 줄 — 시리얼 번호순. ⚠ 한계: 시리얼당 한 줄이다 — 재검 회차가 같은 줄을 고치므로 회차별 이력은 남지 않는다. 1차 판정은 처음 기록한 값 그대로이고, 최종 판정과 마지막으로 쓴 회차만 바뀐다. 서버 선행(omf-all-around#68 · 장부 P-101).",
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/OqcSerialRecord"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음(W-04-03 · P-04-06)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -4769,6 +4876,13 @@
        "changeTypeCode"
       ],
       "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
+     },
+     "serials": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InspectionSerialJudgmentInput"
+      },
+      "description": "시리얼 OQC — 출하작업지시 OQC 를 statusCode=CONFIRMED 로 저장할 때만 싣는다(다른 유형·작성중이면 400 serials·INVALID). 시리얼마다 결과와 같은 트랜잭션으로 한 줄씩 남는다. 막는 것(모두 400 serials·INVALID): 없는 시리얼 · 다른 품목 · 이 출하작업지시가 피킹하지 않은 LOT · 같은 시리얼 두 번 · 시리얼 수 > 검사 수량 · NG 수 > 불합격 수량. 이미 기록된 시리얼이면 1차는 그대로 두고 최종만 바꾼다 — 1차 OK 를 NG 로는 못 바꾼다(400 serials·INVALID). 하나라도 막히면 결과째 저장되지 않는다. ⚠ 한계: 시리얼당 한 줄이다 — 재검 회차가 같은 줄을 고치므로 회차별 이력은 남지 않는다. 1차 판정은 처음 기록한 값 그대로이고, 최종 판정과 마지막으로 쓴 회차만 바뀐다. 서버 선행(omf-all-around#68 · 장부 P-101)."
      }
     },
     "required": [
@@ -6193,6 +6307,207 @@
        "null"
       ],
       "description": "처리자 — 계정 이름 또는 단말 작업자 이름"
+     }
+    }
+   },
+   "InspectionSerialJudgmentInput": {
+    "type": "object",
+    "required": [
+     "serialNumberId",
+     "judgmentCode"
+    ],
+    "description": "시리얼 한 대의 출하검사 판정(서버 선행 · 장부 P-101).",
+    "properties": {
+     "serialNumberId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "judgmentCode": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NG"
+      ]
+     }
+    }
+   },
+   "OqcSerialStep": {
+    "type": "object",
+    "required": [
+     "firstJudgmentCode",
+     "finalJudgmentCode",
+     "inspectedAt"
+    ],
+    "description": "시리얼의 OQC 기록. ⚠ 한계: 시리얼당 한 줄이다 — 재검 회차가 같은 줄을 고치므로 회차별 이력은 남지 않는다. 1차 판정은 처음 기록한 값 그대로이고, 최종 판정과 마지막으로 쓴 회차만 바뀐다.",
+    "properties": {
+     "firstJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NG"
+      ]
+     },
+     "finalJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NG"
+      ]
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "inspectorName": {
+      "type": "string"
+     },
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "마지막으로 쓴 OQC 회차"
+     },
+     "inspectionRound": {
+      "type": "integer"
+     }
+    }
+   },
+   "OqcSerialScan": {
+    "type": "object",
+    "required": [
+     "serialNumberId",
+     "serialNo",
+     "itemId",
+     "itemCode",
+     "itemName",
+     "lotId",
+     "lotNo",
+     "pickedRequests"
+    ],
+    "description": "시리얼 OQC 스캔 한 번의 답(서버 선행 · 장부 P-101).",
+    "properties": {
+     "serialNumberId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "serialNo": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "producedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "workOrderId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "생산 LOT 이면 그 MES W/O"
+     },
+     "shipmentStep": {
+      "$ref": "#/components/schemas/OqcSerialStep"
+     },
+     "pickedRequests": {
+      "type": "array",
+      "description": "이 시리얼의 LOT 을 피킹한 검사 대상 라인의 OQC 의뢰 — 대기·진행·완료(생략은 뺀다). 완료된 의뢰도 담는다: 재검 회차에서 같은 시리얼을 다시 찍는다. 시리얼로 의뢰를 열 때는 화면이 대기·진행만 고른다. POP 은 단말 공장 것만.",
+      "items": {
+       "type": "object",
+       "required": [
+        "inspectionRequestId",
+        "inspectionRequestNo",
+        "shipmentRequestId",
+        "statusCode"
+       ],
+       "properties": {
+        "inspectionRequestId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "inspectionRequestNo": {
+         "type": "string"
+        },
+        "shipmentRequestId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "statusCode": {
+         "type": "string",
+         "description": "REQUESTED · IN_PROGRESS · COMPLETED"
+        }
+       }
+      }
+     }
+    }
+   },
+   "OqcSerialRecord": {
+    "type": "object",
+    "required": [
+     "serialNumberId",
+     "serialNo",
+     "lotId",
+     "lotNo",
+     "firstJudgmentCode",
+     "finalJudgmentCode",
+     "inspectedAt"
+    ],
+    "description": "의뢰 하나의 시리얼 판정 한 줄. ⚠ 한계: 시리얼당 한 줄이다 — 재검 회차가 같은 줄을 고치므로 회차별 이력은 남지 않는다. 1차 판정은 처음 기록한 값 그대로이고, 최종 판정과 마지막으로 쓴 회차만 바뀐다.",
+    "properties": {
+     "serialNumberId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "serialNo": {
+      "type": "string"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "firstJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NG"
+      ]
+     },
+     "finalJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "OK",
+       "NG"
+      ]
+     },
+     "inspectedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "inspectorName": {
+      "type": "string"
+     },
+     "inspectionResultId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "마지막으로 쓴 OQC 회차"
+     },
+     "inspectionRound": {
+      "type": "integer"
      }
     }
    }
