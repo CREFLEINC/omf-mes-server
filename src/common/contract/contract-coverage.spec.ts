@@ -27,7 +27,7 @@ describe('계약 커버리지', () => {
     expect(duplicated).toEqual([]);
   });
 
-  it('⭐ 구현 커버리지를 보고한다 (n/519)', async () => {
+  it('⭐ 구현 커버리지를 보고한다 (n/521)', async () => {
     const bindings = await collectContractBindings(SRC);
     const implemented = new Set(bindings.map((binding) => binding.key)).size;
 
@@ -55,7 +55,8 @@ describe('계약 커버리지', () => {
     // OQC 생략 요청·실행 2 오퍼레이션(#119 · 장부 P-83): 509 → 511.
     // 품목 검사 수준 3 오퍼레이션 + 전환 이력 1(#64 · 장부 P-87): 511 → 515.
     // 부서×이벤트 알림 설정 4 오퍼레이션(#160 · 장부 P-92): 515 → 519.
-    expect(registry.size).toBe(519);
+    // Zalo 연결 2 오퍼레이션(#160 · 장부 P-95): 519 → 521.
+    expect(registry.size).toBe(521);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

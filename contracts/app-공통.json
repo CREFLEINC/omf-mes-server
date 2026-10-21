@@ -3894,6 +3894,120 @@
      }
     }
    }
+  },
+  "/app/zalo-connection": {
+   "get": {
+    "tags": [
+     "app"
+    ],
+    "summary": "Zalo 연결 정보 조회",
+    "description": "⛔ 비밀값 원문은 내리지 않는다 — secretKeySet·refreshTokenSet 만(FR-028). 행이 없으면 미설정으로 읽고 행을 만들지 않는다. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "responses": {
+     "200": {
+      "description": "연결 정보",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ZaloConnection"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(연결 행 version). 행이 없으면 \"1\".",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "app"
+    ],
+    "summary": "Zalo 연결 정보 저장",
+    "description": "비밀 키·갱신 토큰은 보낼 때만 교체하고 서버가 AES-256-GCM 으로 암호화해 둔다. 갱신 토큰을 교체하면 접속 토큰을 비운다. appId·비밀 키·갱신 토큰이 모두 있으면 ACTIVE, 하나라도 없으면 NOT_CONFIGURED — 단 REAUTH_REQUIRED 는 자격(appId·비밀 키·갱신 토큰) 중 하나를 바꿔야 풀린다. templates 의 templateId 가 null 이면 그 이벤트 템플릿을 지운다. 감사에는 바뀐 칸 이름만 남는다. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ZaloConnectionReplace"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "저장됨. 새 ETag",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ZaloConnection"
+        }
+       }
+      },
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰(연결 행 version). 행이 없으면 \"1\".",
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한·단말 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5684,6 +5798,192 @@
      },
      "page": {
       "$ref": "#/components/schemas/PageMeta"
+     }
+    }
+   },
+   "ZaloConnection": {
+    "type": "object",
+    "required": [
+     "appId",
+     "secretKeySet",
+     "refreshTokenSet",
+     "status",
+     "accessTokenExpiresAt",
+     "lastRefreshedAt",
+     "lastErrorCode",
+     "lastErrorMessage",
+     "paramMaxLength",
+     "templates",
+     "deliveryEnabled"
+    ],
+    "description": "Zalo ZBS 연결 정보(시스템 1행). 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "properties": {
+     "appId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 40,
+      "example": "1234567890"
+     },
+     "secretKeySet": {
+      "type": "boolean",
+      "example": true
+     },
+     "refreshTokenSet": {
+      "type": "boolean",
+      "example": true
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "NOT_CONFIGURED",
+       "ACTIVE",
+       "REAUTH_REQUIRED"
+      ],
+      "description": "NOT_CONFIGURED = 앱 ID·비밀 키·갱신 토큰 중 하나라도 없음 · ACTIVE = 셋 다 있고 마지막 갱신이 성공했거나 아직 시도 전 · REAUTH_REQUIRED = 갱신 토큰 무효·만료 또는 비밀 키 오류(-104)",
+      "example": "ACTIVE"
+     },
+     "accessTokenExpiresAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "접속 토큰 만료 시각",
+      "example": "2026-10-21T07:30:00Z"
+     },
+     "lastRefreshedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "마지막 토큰 갱신 성공 시각",
+      "example": "2026-10-21T07:30:00Z"
+     },
+     "lastErrorCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 20,
+      "example": "-124",
+      "description": "마지막 설정·토큰 오류의 Zalo 코드"
+     },
+     "lastErrorMessage": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 500,
+      "example": "Access token is invalid",
+      "description": "토큰이 섞이지 않은 문구"
+     },
+     "paramMaxLength": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 400,
+      "example": 100,
+      "description": "템플릿 값 자르기 길이"
+     },
+     "templates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "eventCode",
+        "templateId"
+       ],
+       "properties": {
+        "eventCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+        },
+        "templateId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "maxLength": 40,
+         "example": "231234",
+         "description": "고객사가 Zalo 에 등록한 템플릿 ID. 템플릿 파라미터 이름은 서버가 고정한다(data-model §6)."
+        }
+       }
+      },
+      "description": "이벤트 6종 전부. 미설정이면 templateId null"
+     },
+     "deliveryEnabled": {
+      "type": "boolean",
+      "example": false,
+      "description": "서버 env ZALO_DELIVERY_ENABLED(읽기 전용)"
+     }
+    }
+   },
+   "ZaloConnectionReplace": {
+    "type": "object",
+    "required": [
+     "appId",
+     "paramMaxLength",
+     "templates"
+    ],
+    "description": "Zalo 연결 정보 저장. 근거: 서버 선행 · 장부 P-95 · omf-all-around#160(피처 001 W-CO-12)",
+    "properties": {
+     "appId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "maxLength": 40,
+      "example": "1234567890"
+     },
+     "secretKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "format": "password",
+      "description": "보낼 때만 교체. 생략하면 유지. 빈 문자열은 400"
+     },
+     "refreshToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "format": "password",
+      "description": "보낼 때만 교체. 교체하면 접속 토큰을 비우고 status=ACTIVE. 빈 문자열은 400"
+     },
+     "paramMaxLength": {
+      "type": "integer",
+      "minimum": 20,
+      "maximum": 400,
+      "example": 100
+     },
+     "templates": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "eventCode",
+        "templateId"
+       ],
+       "properties": {
+        "eventCode": {
+         "type": "string",
+         "x-no-example": true,
+         "x-no-code-key": "코드 그룹이 아니다 — 알림 이벤트는 «전용 마스터»(GET /app/notification-events)가 목록을 갖는다."
+        },
+        "templateId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "maxLength": 40,
+         "example": "231234",
+         "description": "고객사가 Zalo 에 등록한 템플릿 ID. 템플릿 파라미터 이름은 서버가 고정한다(data-model §6)."
+        }
+       }
+      },
+      "description": "바꿀 이벤트만 담아도 된다. templateId null = 지움. 모르는·겹친 eventCode 는 400 templates"
      }
     }
    },

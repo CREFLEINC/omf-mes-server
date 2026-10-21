@@ -35,6 +35,8 @@ function disableErpSync(): void {
   // Zalo 발송 러너도 같은 이유로 끈다 — 켜 두면 검사가 만든 발송 대기 건을 실제 Zalo 로 보낸다.
   // 러너 검사는 러너를 직접 만들어 tick 을 부른다(omf-all-around#160).
   process.env.ZALO_DELIVERY_ENABLED = 'false';
+  // 연결 정보 저장(W-CO-12)은 암호화 키가 있어야 한다 — 검사용 고정 키(운영 값이 아니다).
+  process.env.ZALO_CREDENTIAL_KEY ||= Buffer.alloc(32, 7).toString('base64');
 }
 
 /**
