@@ -50,7 +50,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
   const keys: string[] = [];
   const ids = {
     uom: 0n, worker: 0n, terminal: 0n, process: 0n, otherProcess: 0n, workOrder: 0n, equipment: 0n,
-    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, bubble: 0n, plant: 0n,
+    parent: 0n, scratch: 0n, dent: 0n, otherProcessCode: 0n, bubble: 0n, gas: 0n, oil: 0n, plant: 0n,
   };
 
   beforeAll(async () => {
@@ -162,7 +162,7 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
 
     const codes = response.body.items.map((row: { defectCode: string }) => row.defectCode).sort();
     // 다른 공정에만 매핑된 상세와, 고를 상세가 없는 대분류는 빠진다. 비활성 대분류 APP 은 실린 상세가 있어 나온다.
-    expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-BUB`, `${PREFIX}-DNT`, `${PREFIX}-SCR`]);
+    expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-BUB`, `${PREFIX}-DNT`, `${PREFIX}-GAS`, `${PREFIX}-OIL`, `${PREFIX}-SCR`]);
     const parent = response.body.items.find((row: { defectCode: string }) => row.defectCode === `${PREFIX}-APP`);
     expect(parent.parentDefectCodeId).toBeNull();
   });
@@ -197,33 +197,31 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     });
 
     it('불량 기록 목록·분포·대시보드는 정정된 실적의 FIELD 기록을 세지 않는다 — 다른 원천은 센다', async () => {
-      const period = { detectedFrom: '2026-10-21T00:00:00.000Z', detectedTo: '2026-10-22T00:00:00.000Z' };
-      const list = await request(app.getHttpServer())
-        .get('/api/quality/defect-records')
-        .query({ ...period, workOrderId: String(ids.workOrder), defectCodeId: String(ids.bubble), size: 100 })
-        .set('Cookie', cookie)
-        .expect(200);
       // 정정본의 FIELD 2 와 원본에 단 PQC 1 — 원본의 FIELD 2 는 빠진다.
-      expect(list.body.items.map((row: { sourceCode: string; defectQty: number }) => [row.sourceCode, row.defectQty]).sort()).toEqual([
-        ['FIELD', 2],
-        ['PQC', 1],
-      ]);
+      expect(await counted(ids.bubble, 'BUB')).toEqual({ rows: [['FIELD', 2], ['PQC', 1]], node: { recordCount: 2, defectQty: 3 }, dashboardQty: 3 });
+    });
 
-      const distribution = await request(app.getHttpServer())
-        .get('/api/quality/defect-records/distribution')
-        .query({ ...period, groupBy: 'defectCode' })
-        .set('Cookie', cookie)
-        .expect(200);
-      const node = distribution.body.nodes.find((row: { defectCodeId: number }) => row.defectCodeId === Number(ids.bubble));
-      expect(node).toMatchObject({ recordCount: 2, defectQty: 3 });
+    it('정정의 정정(A←B←C) 뒤 목록·분포·대시보드는 C 의 FIELD 만 센다', async () => {
+      const a = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.gas), qty: 2 }] }).expect(201);
+      const b = await correct(a.body.productionResultId, { note: '첫 정정' }).expect(201);
+      const c = await correct(b.body.productionResultId, { note: '둘째 정정' }).expect(201);
 
-      const summary = await request(app.getHttpServer())
-        .get('/api/app/dashboard-summary')
-        .query({ plantId: String(ids.plant), baseDate: '2026-10-21' })
-        .set('Cookie', cookie)
-        .expect(200);
-      const phenomena = summary.body.quality.nonconformance.phenomena as { defectCode: string; qty: number }[];
-      expect(phenomena.find((row) => row.defectCode === `${PREFIX}-BUB`)).toMatchObject({ qty: 3 });
+      expect(c.body.defects).toEqual([expect.objectContaining({ defectCodeId: Number(ids.gas), qty: 2 })]);
+      expect(await counted(ids.gas, 'GAS')).toEqual({ rows: [['FIELD', 2]], node: { recordCount: 1, defectQty: 2 }, dashboardQty: 2 });
+    });
+
+    it('실적에 달린 원천 없는 기록은 정정 뒤에도 센다', async () => {
+      const original = await record({ goodQty: 5, defects: [{ defectCodeId: Number(ids.oil), qty: 2 }] }).expect(201);
+      await prisma.defect_record.create({ data: {
+        production_result_id: BigInt(original.body.productionResultId), work_order_id: ids.workOrder,
+        defect_code_id: ids.oil, defect_qty: 1, uom_id: ids.uom, occurrence_process_id: ids.process,
+        detection_process_id: ids.process, detected_at: new Date(OCCURRED_AT),
+      } });
+
+      await correct(original.body.productionResultId, { note: '사유만 고침' }).expect(201);
+
+      // 정정본에 옮긴 FIELD 2 와 원본의 원천 없는 1 — 원본의 FIELD 2 만 빠진다.
+      expect(await counted(ids.oil, 'OIL')).toEqual({ rows: [['-', 1], ['FIELD', 2]], node: { recordCount: 2, defectQty: 3 }, dashboardQty: 3 });
     });
 
     it('불량수량만 바꾼 정정은 유형 내역 없이 수량만 남긴다', async () => {
@@ -242,6 +240,35 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  /** 한 불량 코드가 목록(원천·수량)·분포(건수·합)·대시보드 불량 현상(합)에 어떻게 세어지는가. */
+  async function counted(defectCodeId: bigint, suffix: string) {
+    const period = { detectedFrom: '2026-10-21T00:00:00.000Z', detectedTo: '2026-10-22T00:00:00.000Z' };
+    const list = await request(app.getHttpServer())
+      .get('/api/quality/defect-records')
+      .query({ ...period, workOrderId: String(ids.workOrder), defectCodeId: String(defectCodeId), size: 100 })
+      .set('Cookie', cookie)
+      .expect(200);
+    const distribution = await request(app.getHttpServer())
+      .get('/api/quality/defect-records/distribution')
+      .query({ ...period, groupBy: 'defectCode' })
+      .set('Cookie', cookie)
+      .expect(200);
+    const summary = await request(app.getHttpServer())
+      .get('/api/app/dashboard-summary')
+      .query({ plantId: String(ids.plant), baseDate: '2026-10-21' })
+      .set('Cookie', cookie)
+      .expect(200);
+    const node = distribution.body.nodes.find((row: { defectCodeId: number }) => row.defectCodeId === Number(defectCodeId));
+    const phenomena = summary.body.quality.nonconformance.phenomena as { defectCode: string; qty: number }[];
+    return {
+      rows: list.body.items
+        .map((row: { sourceCode?: string; defectQty: number }) => [row.sourceCode ?? '-', row.defectQty])
+        .sort(),
+      node: { recordCount: node?.recordCount, defectQty: node?.defectQty },
+      dashboardQty: phenomena.find((row) => row.defectCode === `${PREFIX}-${suffix}`)?.qty,
+    };
+  }
 
   function correct(resultId: number, body: Record<string, unknown>): request.Test {
     return request(app.getHttpServer())
@@ -302,6 +329,8 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     ids.otherProcessCode = await code('BRK', '파손', ids.parent);
     // 정정 집계 시험 전용 — 다른 시험의 기록과 섞이지 않게 따로 둔다.
     ids.bubble = await code('BUB', '기포', ids.parent);
+    ids.gas = await code('GAS', '가스', ids.parent);
+    ids.oil = await code('OIL', '유분', ids.parent);
     // 자기는 이 공정에 매핑됐지만 상세가 다른 공정에만 매핑된 대분류 — 고를 상세가 없어 조회에서 빠진다.
     const otherParent = await code('STR', '구조', null);
     const crack = await code('CRK', '균열', otherParent);
@@ -310,6 +339,8 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       { defect_code_id: ids.scratch, process_id: ids.process },
       { defect_code_id: ids.dent, process_id: ids.process },
       { defect_code_id: ids.bubble, process_id: ids.process },
+      { defect_code_id: ids.gas, process_id: ids.process },
+      { defect_code_id: ids.oil, process_id: ids.process },
       { defect_code_id: ids.otherProcessCode, process_id: ids.otherProcess },
       { defect_code_id: otherParent, process_id: ids.process },
       { defect_code_id: crack, process_id: ids.otherProcess },
