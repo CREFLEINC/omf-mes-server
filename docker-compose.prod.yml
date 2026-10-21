@@ -80,6 +80,11 @@ x-api: &api
     ERP_DB_ENCRYPT: ${ERP_DB_ENCRYPT:-true}
     ERP_SYNC_MASTER_INTERVAL_SEC: ${ERP_SYNC_MASTER_INTERVAL_SEC:-43200}
     ERP_SYNC_ORDER_INTERVAL_SEC: ${ERP_SYNC_ORDER_INTERVAL_SEC:-900}
+    # Zalo 알림 발송(omf-all-around#160). 기본은 꺼짐이고, 켜면 암호화 키가 비었을 때 api 가 기동하지 않는다.
+    ZALO_DELIVERY_ENABLED: ${ZALO_DELIVERY_ENABLED:-false}
+    ZALO_API_BASE_URL: ${ZALO_API_BASE_URL:-https://business.openapi.zalo.me}
+    ZALO_OAUTH_BASE_URL: ${ZALO_OAUTH_BASE_URL:-https://oauth.zaloapp.com}
+    ZALO_CREDENTIAL_KEY: ${ZALO_CREDENTIAL_KEY:-}
   # 두 쪽이 «같은» 볼륨을 건다 — 전환 뒤에도 올린 파일을 그대로 내려받는다.
   # 파일은 uuid 키에 새 파일로만 쓰고 DB 행은 쓴 뒤 커밋되므로 함께 떠 있어도 안전하다.
   volumes:
