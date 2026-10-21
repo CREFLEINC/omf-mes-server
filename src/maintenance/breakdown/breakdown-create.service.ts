@@ -9,8 +9,10 @@ import {
   field,
 } from '../../common/errors';
 import { assertNotBlank } from '../../common/master';
+import { NotificationEmitter } from '../../core/notification';
 import { parseMaintenanceInstant } from '../maintenance-instant';
 import { NumberedMaintenanceWrite } from '../numbered-maintenance-write';
+import { breakdownNotice } from './breakdown-notice';
 import {
   BREAKDOWN_INCLUDE,
   BreakdownView,
@@ -31,7 +33,10 @@ export interface BreakdownCreate {
 
 @Injectable()
 export class BreakdownCreateService {
-  constructor(private readonly numbered: NumberedMaintenanceWrite) {}
+  constructor(
+    private readonly numbered: NumberedMaintenanceWrite,
+    private readonly notifications: NotificationEmitter,
+  ) {}
 
   create(
     input: BreakdownCreate,
@@ -77,7 +82,7 @@ export class BreakdownCreateService {
     const [worker, occurrenceState] = await Promise.all([
       tx.worker.findUnique({
         where: { worker_no: context.workerNo },
-        select: { worker_id: true },
+        select: { worker_id: true, worker_name: true },
       }),
       tx.code_value.findFirst({
         where: {
@@ -136,6 +141,17 @@ export class BreakdownCreateService {
     if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
       actor: context.terminalAudit, targetTypeCode: 'BREAKDOWN', targetId: row.breakdown_id,
       eventTypeCode: 'CREATED',
+    });
+    // 대상은 설비다(계약 targetType). 보고자가 「설비 담당에게 알림」을 끄면 사건만 남긴다.
+    const notice = await breakdownNotice(tx, row.equipment_id, input.symptom, worker?.worker_name);
+    await this.notifications.emit(tx, {
+      eventCode: 'EQUIPMENT_BREAKDOWN_OCCURRED',
+      aggregateTypeCode: 'EQUIPMENT',
+      aggregateId: row.equipment_id,
+      occurredAt: row.reported_at,
+      optOut: row.notify_assignee === false,
+      refs: { breakdownId: Number(row.breakdown_id) },
+      ...notice,
     });
     const created = await tx.breakdown.findUnique({
       where: { breakdown_id: row.breakdown_id },

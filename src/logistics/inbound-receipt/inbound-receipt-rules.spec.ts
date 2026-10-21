@@ -277,7 +277,7 @@ describe('입하 등록 검사', () => {
   });
 });
 
-// 한 LOT 의 일부를 P/O 라인에 넣지 않고 초과분으로 남긴다(장부 P-96).
+// 한 LOT 의 일부를 P/O 라인에 넣지 않고 초과분으로 남긴다(장부 P-100).
 describe('초과분 칸 검사', () => {
   const errorsOf = (overrides: Partial<InboundReceiptLineWriteInput>): ErrorItem[] => {
     const errors: ErrorItem[] = [];

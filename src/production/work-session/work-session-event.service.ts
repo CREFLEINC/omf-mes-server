@@ -4,11 +4,13 @@ import { Prisma } from '@prisma/client';
 import { assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WorkOrderNotifier } from '../work-order/work-order-notice';
 import { assertEventPair, assertSessionVersion, lockWorkSession } from './work-session-rules';
 import { WorkSessionContext } from './work-session.service';
 import { WorkSessionEventRow, WorkSessionEventView, reasonKey, workSessionEventView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
 const STATUS_COLUMN = 'production.work_session.status_code';
+const STOP = 'STOP';
 /** 계약 `WorkSessionEventCreate` — required 둘. `reasonCode` 의 필수 여부는 유형이 가른다(A-25). */
 export interface WorkSessionEventCreate {
   eventTypeCode: string;
@@ -25,6 +27,7 @@ export class WorkSessionEventService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly documentState: DocumentStateService,
+    private readonly notifier: WorkOrderNotifier,
   ) {}
   async create(
     workSessionId: number,
@@ -61,11 +64,21 @@ export class WorkSessionEventService {
         terminal_id: context.terminalId,
       },
     });
-    await tx.work_session.update({
+    const session = await tx.work_session.update({
       where: { work_session_id: BigInt(workSessionId) },
       data: { status_code: transition.to, version_no: { increment: 1 }, updated_by: context.appUserId ?? null },
+      select: { work_order_id: true },
     });
-    return workSessionEventView(row, await reasonName(tx, row));
+    const name = await reasonName(tx, row);
+    // ⛔ STOP 만 알린다(RESUME 은 아니다). W/O `:hold` 에는 걸지 않는다 — 단말이 `:hold` 와 STOP 을
+    //    따로 보내므로 둘 다 걸면 한 번의 중단이 두 번 알려진다(research R-6 · FR-007).
+    if (row.event_type_code === STOP) {
+      // 단말이 보낸 조작 시각 — 늦게 도착한 큐도 그때 시각으로 알린다.
+      await this.notifier.notify(tx, 'WORK_SESSION_STOPPED', session.work_order_id, row.occurred_at, {
+        appUserId: context.appUserId, workerNo: context.workerNo, reason: name ?? row.reason_code ?? undefined,
+      });
+    }
+    return workSessionEventView(row, name);
   }
 }
 /** 파생 칸 — 조회 서비스와 «같은» 「그룹:코드」 키로 한 건만 찾는다. 없으면 키를 생략한다(§1-4). */

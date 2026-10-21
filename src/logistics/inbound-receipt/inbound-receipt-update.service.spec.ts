@@ -268,7 +268,7 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
     ]);
   });
 
-  // 옛 줄 901 은 20 을 받아 초과분 5 를 남겼다 — P/O 101 에는 15 가 들어가 있다(장부 P-96).
+  // 옛 줄 901 은 20 을 받아 초과분 5 를 남겼다 — P/O 101 에는 15 가 들어가 있다(장부 P-100).
   const WITH_EXCESS = [
     { ...EXISTING[0], received_qty: 20, inbound_receipt_excess: [{ excess_qty: new Prisma.Decimal(5) }] },
   ] as unknown as typeof EXISTING;

@@ -145,6 +145,7 @@ export class ReferenceService {
       this.prisma.production_line.findMany({
         where,
         orderBy: { line_code: 'asc' },
+        include: { department: { select: { department_name: true } } },
         skip: page.skip,
         take: page.take,
       }),
@@ -164,6 +165,8 @@ export class ReferenceService {
         defaultWipLocationId: row.default_wip_location_id === null ? null : Number(row.default_wip_location_id),
         defaultFgLocationId: row.default_fg_location_id === null ? null : Number(row.default_fg_location_id),
         defaultScrapLocationId: row.default_scrap_location_id === null ? null : Number(row.default_scrap_location_id),
+        departmentId: row.department_id === null ? null : Number(row.department_id),
+        departmentName: row.department?.department_name ?? null,
       })),
       total,
       page,

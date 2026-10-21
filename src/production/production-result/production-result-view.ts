@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import { ResultDefectView } from './result-defect';
 import { WorkerAllocationView } from './worker-allocation';
 
 /**
@@ -17,8 +18,15 @@ import { WorkerAllocationView } from './worker-allocation';
 export type ProductionResultRow = Prisma.production_resultGetPayload<object>;
 export type ProductionResultView = ReturnType<typeof productionResultView>;
 
-/** `workerAllocations` 는 배분이 없어도 늘 싣는다(빈 배열) — 화면이 그때 실적의 `workerId` 로 센다. */
-export function productionResultView(row: ProductionResultRow, workerAllocations: WorkerAllocationView[]) {
+/**
+ * `workerAllocations` 는 배분이 없어도 늘 싣는다(빈 배열) — 화면이 그때 실적의 `workerId` 로 센다.
+ * `defects` 도 늘 싣는다 — 유형 없이 불량수량만 남은 실적이 있어 합이 `defectQty` 보다 작을 수 있다.
+ */
+export function productionResultView(
+  row: ProductionResultRow,
+  workerAllocations: WorkerAllocationView[],
+  defects: ResultDefectView[],
+) {
   return omitEmpty({
     productionResultId: Number(row.production_result_id),
     productionResultNo: row.production_result_no,
@@ -46,6 +54,7 @@ export function productionResultView(row: ProductionResultRow, workerAllocations
     statusCode: row.status_code,
     remarks: row.remarks ?? undefined,
     workerAllocations,
+    defects,
   });
 }
 

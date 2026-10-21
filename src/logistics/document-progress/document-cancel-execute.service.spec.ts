@@ -1,3 +1,4 @@
+import { ApprovalNotifier } from '../../core/notification';
 import { Prisma } from '@prisma/client';
 
 import { ApprovalService } from '../../core/approval';
@@ -7,6 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibility, CancelEligibilityService } from './cancel-eligibility.service';
 import { CancelableDocumentType, DocumentCancelService } from './document-cancel.service';
 import { DocumentCancelExecuteService } from './document-cancel-execute.service';
+
+const NOTIFIER = { notifyCurrentStep: () => Promise.resolve() } as unknown as ApprovalNotifier;
 
 const DOC_ID = 11n;
 const USER = 7;
@@ -126,12 +129,12 @@ function fake(seed: Seed = {}) {
     // 잠금·상태 쓰기 두 문장은 요청 서비스의 «진짜»를 쓴다 — 표·칸 이름이 그 안에 있다.
     new DocumentCancelService(
       prisma,
-      new ApprovalService(documentState),
+      new ApprovalService(documentState, NOTIFIER),
       { next: async () => 'AP-1' } as never,
       documentState,
       { evaluate: async () => ({}) } as never,
     ),
-    new ApprovalService(documentState),
+    new ApprovalService(documentState, NOTIFIER),
     documentState,
     { evaluate } as unknown as CancelEligibilityService,
     { reverse } as unknown as InventoryPostingService,
@@ -284,7 +287,7 @@ describe('DocumentCancelExecuteService', () => {
     await expect(cancel(service)).rejects.toThrow(/한 문서에 원장이 2 행이다/);
   });
 
-  it('어댑터 — 입하 취소는 초과분을 뺀 몫을 줄의 P/O 라인에서, 이어진 초과분을 그 P/O 라인에서 되돌린다(장부 P-96)', async () => {
+  it('어댑터 — 입하 취소는 초과분을 뺀 몫을 줄의 P/O 라인에서, 이어진 초과분을 그 P/O 라인에서 되돌린다(장부 P-100)', async () => {
     const { service, args } = fake({
       locked: requested,
       inboundLines: [

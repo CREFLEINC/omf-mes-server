@@ -107,6 +107,12 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // 품목별 IQC 검사 수준 지정·수동 변경 — 검사 수준 관리 화면의 조작이다(omf-all-around#64 · 장부 P-87).
   'POST /quality/item-inspection-levels': ['W-03-12'],
   'PUT /quality/item-inspection-levels/{itemInspectionLevelId}': ['W-03-12'],
+  // 부서×이벤트 알림 설정 — W-CO-11(알람 수신자 설정)이 재설계로 이 경로로 옮겨 간다. 기존 구독
+  // 경로를 대신하는 같은 화면의 조회·저장·수신자 후보다(omf-all-around#160 · 장부 P-92).
+  'GET /app/notification-settings': ['W-CO-11'],
+  'GET /app/notification-settings/recipient-candidates': ['W-CO-11'],
+  'GET /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
+  'PUT /app/notification-settings/{departmentId}/{eventCode}': ['W-CO-11'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이
   // 도출표에서 빠졌다. 셋 다 W-CO-04(공지 관리)가 부르는 «관리자» 동작이고, 확인 현황도
   // 계약이 「확인을 요구한 공지에서만 «관리자»가 본다」로 적었다.
