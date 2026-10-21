@@ -36,7 +36,7 @@ export const EMPTY_PARAM = '-';
  * ⚠ 현장 시각(UTC+7, 베트남 하노이 · 일광절약 없음)으로 고정한다 — 설계가 메시지 시각을 UTC+7 로 정했다
  * (data-model §6). 공장마다 `plant.timezone_code` 를 푸는 일은 알림 범위 밖이다.
  */
-const SITE_OFFSET_MS = 7 * 60 * 60 * 1000;
+export const SITE_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export type NotificationValues = Record<string, string | number | null | undefined>;
 
