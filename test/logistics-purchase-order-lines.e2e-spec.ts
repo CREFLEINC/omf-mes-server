@@ -1,7 +1,7 @@
 /**
- * 입하 예정 — 구매발주 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-78 · #741).
- * 계약 사본에 없는 경로라 인증·질의 검증을 컨트롤러가 직접 한다 — 401·400 도 여기서 본다.
- * 발주 목록 `openOnly` 가 ERP 취소 라인만 남은 발주를 빼는 것(같은 기준)도 함께 본다.
+ * 입하 예정(W-01-09) — 오른쪽 표 P/O 라인 목록 `GET /logistics/purchase-order-lines`(장부 P-78 · P-85 · #741)와
+ * 왼쪽 표 P/O 목록 `GET /logistics/purchase-orders` 에 더한 묶음 값·조건(P-85). 두 표가 같은 기준(남은 라인·지연)을 쓰는지 함께 본다.
+ * 라인 목록은 계약 사본에 없는 경로라 인증·질의 검증을 컨트롤러가 직접 한다 — 401·400 도 여기서 본다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -21,6 +21,7 @@ const SOON = '2099-01-01';
 const LATER = '2099-12-01';
 
 interface Item {
+  purchaseOrderId: number;
   purchaseOrderNo: string;
   lineNo: number;
   remainingQty: number;
@@ -38,6 +39,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
   let prisma: PrismaService;
   let cookie: string;
   const ids: Record<string, bigint> = {};
+  let uoms: { uom_id: bigint; uom_code: string; uom_name: string }[] = [];
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -79,11 +81,18 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
       .query({ plantId: 'abc', expectedReceiptDateTo: '2026-02-30', openOnly: 'yes' })
       .set('Cookie', cookie)
       .expect(400);
-    expect(response.body.errors.map((e: { field: string; code: string }) => `${e.field}:${e.code}`)).toEqual([
-      'plantId:INVALID',
-      'expectedReceiptDateTo:INVALID',
-      'openOnly:INVALID',
-    ]);
+    const errors = response.body.errors.map((e: { field: string; code: string }) => `${e.field}:${e.code}`);
+    expect(errors.sort()).toEqual(['expectedReceiptDateTo:INVALID', 'openOnly:INVALID', 'plantId:INVALID']);
+  });
+
+  it('⛔ P/O 목록에 더한 조건(계약 밖)도 서버가 검사한다', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/logistics/purchase-orders')
+      .query({ expectedReceiptDateFrom: '2026-02-30', overdueOnly: 'yes' })
+      .set('Cookie', cookie)
+      .expect(400);
+    const errors = response.body.errors.map((e: { field: string; code: string }) => `${e.field}:${e.code}`);
+    expect(errors.sort()).toEqual(['expectedReceiptDateFrom:INVALID', 'overdueOnly:INVALID']);
   });
 
   it('⭐ 기본은 남은 라인만 — 다 받은·ERP 취소·취소 헤더 라인을 빼고 납기 순(없으면 뒤)이다', async () => {
@@ -101,7 +110,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
 
   it('openOnly=false 면 끝난 라인도 판정과 함께 싣는다 — 취소 라인의 남은 수량은 0', async () => {
     const page = await list({ openOnly: 'false' });
-    expect(keys(page)).toEqual(['A#1', 'A#2', 'A#3', 'A#4', 'C#1', 'D#1', 'B#1', 'E#1']);
+    expect(keys(page)).toEqual(['A#1', 'A#2', 'A#3', 'A#4', 'C#1', 'D#1', 'B#1', 'E#1', 'F#1', 'F#2']);
     expect(page.items.map((i) => `${i.receiptStatusCode}:${i.remainingQty}`)).toEqual([
       'NOT_STARTED:100',
       'PARTIAL:30',
@@ -111,6 +120,8 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
       'NOT_STARTED:8',
       'NOT_STARTED:5',
       'CANCELLED:0',
+      'NOT_STARTED:4',
+      'NOT_STARTED:6',
     ]);
   });
 
@@ -128,6 +139,24 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     expect(byErp.items[0].erpPurchaseOrderNo).toBe(`${PREFIX}-ERP-A`);
   });
 
+  it('⭐ 라인 행에 품목·공급사·단위의 코드와 이름을 싣는다', async () => {
+    const [first] = (await list({})).items as unknown as Record<string, unknown>[];
+    expect(first).toMatchObject({
+      itemCode: `${PREFIX}-IT1`,
+      itemName: `${PREFIX} 품목1`,
+      supplierCode: `${PREFIX}-SUP1`,
+      supplierName: `${PREFIX} 공급사1`,
+      uomCode: uoms[0].uom_code,
+      uomName: uoms[0].uom_name,
+    });
+  });
+
+  it('⭐ purchaseOrderId 로 고른 P/O 의 라인만 받는다 — 다 보려면 openOnly=false', async () => {
+    const id = ids.orderA.toString();
+    expect(keys(await list({ purchaseOrderId: id }))).toEqual(['A#1', 'A#2']);
+    expect(keys(await list({ purchaseOrderId: id, openOnly: 'false' }))).toEqual(['A#1', 'A#2', 'A#3', 'A#4']);
+  });
+
   it('쪽을 나눠도 순서가 이어진다', async () => {
     const second = await list({ page: '2', size: '1' });
     expect(keys(second)).toEqual(['A#2']);
@@ -142,6 +171,71 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
       .expect(200);
     const numbers = (response.body.items as { purchaseOrderNo: string }[]).map((o) => o.purchaseOrderNo.slice(PREFIX.length + 1));
     expect(numbers.sort()).toEqual(['A', 'B', 'D']);
+  });
+
+  describe('P/O 목록 — 묶음 값', () => {
+    interface Order {
+      purchaseOrderNo: string;
+      [key: string]: unknown;
+    }
+    const orders = async (query: Record<string, string>): Promise<Record<string, Order>> => {
+      const response = await request(app.getHttpServer())
+        .get('/api/logistics/purchase-orders')
+        .query({ plantId: ids.plant.toString(), ...query })
+        .set('Cookie', cookie)
+        .expect(200);
+      return Object.fromEntries(
+        (response.body.items as Order[]).map((o) => [o.purchaseOrderNo.slice(PREFIX.length + 1), o]),
+      );
+    };
+
+    it('⭐ 행마다 공급사 코드·이름, 라인 수·남은 라인 수, 취소 안 된 라인의 합계, 진행 상태를 싣는다', async () => {
+      const all = await orders({});
+      expect(Object.keys(all).sort()).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+      expect(all.A).toMatchObject({
+        supplierCode: `${PREFIX}-SUP1`,
+        supplierName: `${PREFIX} 공급사1`,
+        lineCount: 4,
+        openLineCount: 2,
+        matchedLineCount: null,
+        uomId: Number(uoms[0].uom_id),
+        uomCode: uoms[0].uom_code,
+        // 취소된 A#4(30)는 빼고 100 + 50 + 10.
+        orderedQtyTotal: 160,
+        receivedQtyTotal: 30,
+        remainingQtyTotal: 130,
+        receiptStatusCode: 'PARTIAL',
+      });
+      expect(all.C).toMatchObject({ receiptStatusCode: 'CANCELLED', openLineCount: 0, remainingQtyTotal: 0 });
+      expect(all.E).toMatchObject({ receiptStatusCode: 'CANCELLED', lineCount: 1, uomId: null, orderedQtyTotal: null });
+    });
+
+    it('⭐ 단위가 섞인 P/O 는 합계와 단위를 비운다', async () => {
+      expect((await orders({})).F).toMatchObject({
+        lineCount: 2,
+        uomId: null,
+        uomCode: null,
+        orderedQtyTotal: null,
+        receivedQtyTotal: null,
+        remainingQtyTotal: null,
+        receiptStatusCode: 'NOT_STARTED',
+      });
+    });
+
+    it('품목으로 찾으면 그 품목 라인 수를 싣는다', async () => {
+      const found = await orders({ itemId: ids.item2.toString() });
+      expect(Object.keys(found)).toEqual(['A']);
+      expect(found.A.matchedLineCount).toBe(1);
+    });
+
+    it('⭐ 납기 범위 · 지연만 · 공급사 이름 검색으로 거른다', async () => {
+      expect(Object.keys(await orders({ expectedReceiptDateFrom: SOON, expectedReceiptDateTo: SOON })).sort()).toEqual([
+        'C',
+      ]);
+      expect(Object.keys(await orders({ overdueOnly: 'true' }))).toEqual(['A']);
+      expect(Object.keys(await orders({ supplierQ: '공급사2' }))).toEqual(['D']);
+      expect(Object.keys(await orders({ supplierQ: `${PREFIX.toLowerCase()}-sup2` }))).toEqual(['D']);
+    });
   });
 
   async function fixtures(): Promise<void> {
@@ -168,21 +262,27 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
         },
       })
     ).plant_id;
-    const uom = await prisma.uom.findFirstOrThrow();
+    uoms = await prisma.uom.findMany({ orderBy: { uom_id: 'asc' }, take: 2 });
+    const uom = uoms[0];
     ids.uom = uom.uom_id;
     for (const n of ['1', '2']) {
       ids[`item${n}`] = (
         await prisma.item.create({
-          data: { item_code: `${PREFIX}-IT${n}`, item_name: PREFIX, item_type_code: 'RAW_MATERIAL', base_uom_id: uom.uom_id },
+          data: {
+            item_code: `${PREFIX}-IT${n}`,
+            item_name: `${PREFIX} 품목${n}`,
+            item_type_code: 'RAW_MATERIAL',
+            base_uom_id: uom.uom_id,
+          },
         })
       ).item_id;
       ids[`supplier${n}`] = (
-        await prisma.partner.create({ data: { partner_code: `${PREFIX}-SUP${n}`, partner_name: PREFIX } })
+        await prisma.partner.create({ data: { partner_code: `${PREFIX}-SUP${n}`, partner_name: `${PREFIX} 공급사${n}` } })
       ).partner_id;
     }
 
     // A: 납기 지남 — 미입하 · 일부 · 다 받음 · ERP 취소
-    await order('A', PAST, 'REGISTERED', ids.supplier1, `${PREFIX}-ERP-A`, [
+    ids.orderA = await order('A', PAST, 'REGISTERED', ids.supplier1, `${PREFIX}-ERP-A`, [
       { qty: '100' },
       { qty: '50', received: '20', item: ids.item2 },
       { qty: '10', received: '10' },
@@ -194,6 +294,8 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     await order('D', LATER, 'REGISTERED', ids.supplier2, null, [{ qty: '8' }]);
     // E: 남은 라인이 ERP 취소 하나뿐 — 발주 목록 openOnly 에서도 빠져야 한다.
     await order('E', null, 'REGISTERED', ids.supplier1, null, [{ qty: '9', cancelled: true }]);
+    // F: 단위가 섞였다 — 묶음 합계가 비어야 한다. 헤더가 종료라 남은 라인 목록에는 안 나온다.
+    await order('F', null, 'CLOSED', ids.supplier1, null, [{ qty: '4' }, { qty: '6', uom: uoms[1].uom_id }]);
   }
 
   async function order(
@@ -202,9 +304,9 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
     status: string,
     supplier: bigint,
     erpNo: string | null,
-    lines: { qty: string; received?: string; cancelled?: boolean; item?: bigint }[],
-  ): Promise<void> {
-    await prisma.purchase_order.create({
+    lines: { qty: string; received?: string; cancelled?: boolean; item?: bigint; uom?: bigint }[],
+  ): Promise<bigint> {
+    const created = await prisma.purchase_order.create({
       data: {
         purchase_order_no: `${PREFIX}-${name}`,
         erp_purchase_order_no: erpNo,
@@ -218,7 +320,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
           create: lines.map((line, index) => ({
             line_no: index + 1,
             item_id: line.item ?? ids.item1,
-            uom_id: ids.uom,
+            uom_id: line.uom ?? ids.uom,
             ordered_qty: new Prisma.Decimal(line.qty),
             received_qty: new Prisma.Decimal(line.received ?? '0'),
             cancelled_at: line.cancelled ? new Date('2026-10-10T00:00:00.000Z') : null,
@@ -226,6 +328,7 @@ describe('입하 예정 — 구매발주 라인 목록 (e2e)', () => {
         },
       },
     });
+    return created.purchase_order_id;
   }
 
   async function cleanup(): Promise<void> {
