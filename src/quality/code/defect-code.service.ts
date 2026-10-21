@@ -76,7 +76,7 @@ export class DefectCodeService {
     const where = referenceWhere(
       query,
       { code: 'defect_code', name: 'defect_name' },
-      { ...byProcess(query.processId), ...filter('parent_defect_code_id', query.parentDefectCodeId) },
+      { ...byProcess(query), ...filter('parent_defect_code_id', query.parentDefectCodeId) },
     );
     const [rows, total] = await Promise.all([
       this.prisma.defect_code.findMany({
@@ -271,9 +271,17 @@ function view(row: DefectCodeRow): DefectCodeView {
 
 /**
  * 공정별 불량 코드 — 정본은 `defect_code_process` 매핑이다(`defect_code.process_id` 가 아니다).
- * 상세만 내린다 — 실적에 싣는 불량 유형이 상세 코드라서다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-89).
+ * 고를 수 있는 것은 매핑된 상세뿐이다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-89).
+ * 그 상세의 대분류 행도 함께 내린다 — POP 이 상세를 대분류로 묶어 보여 주는데 이름을 얻을 다른 길이 없다.
+ * 대분류 자신의 매핑은 보지 않는다 — 고를 상세가 없는 대분류는 빈 묶음이다.
+ * ⛔ `AND` 로 감싼다 — `referenceWhere` 의 검색어가 최상위 `OR` 을 쓴다.
  */
-function byProcess(processId: number | undefined): Prisma.defect_codeWhereInput {
-  if (processId === undefined) return {};
-  return { parent_defect_code_id: { not: null }, defect_code_process: { some: { process_id: processId } } };
+function byProcess(query: DefectCodeQuery): Prisma.defect_codeWhereInput {
+  if (query.processId === undefined) return {};
+  const mappedDetail: Prisma.defect_codeWhereInput = {
+    parent_defect_code_id: { not: null },
+    defect_code_process: { some: { process_id: query.processId } },
+    ...(query.includeInactive ? {} : { is_active: true }),
+  };
+  return { AND: [{ OR: [mappedDetail, { parent_defect_code_id: null, child_defect_codes: { some: mappedDetail } }] }] };
 }

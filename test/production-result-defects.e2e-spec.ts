@@ -150,15 +150,17 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     expect(await prisma.defect_record.count({ where: { production_result_id: BigInt(first.body.productionResultId) } })).toBe(1);
   });
 
-  it('GET /quality/defect-codes?processId= 는 그 공정에 매핑된 상세 코드만 내린다', async () => {
+  it('GET /quality/defect-codes?processId= 는 그 공정에 매핑된 상세와 그 대분류 행만 내린다', async () => {
     const response = await request(app.getHttpServer())
       .get(`/api/quality/defect-codes?processId=${String(ids.process)}&size=100`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
     const codes = response.body.items.map((row: { defectCode: string }) => row.defectCode).sort();
-    // 대분류(매핑돼 있어도)와 다른 공정의 코드는 빠진다.
-    expect(codes).toEqual([`${PREFIX}-DNT`, `${PREFIX}-SCR`]);
+    // 다른 공정에만 매핑된 상세와, 고를 상세가 없는 대분류는 빠진다.
+    expect(codes).toEqual([`${PREFIX}-APP`, `${PREFIX}-DNT`, `${PREFIX}-SCR`]);
+    const parent = response.body.items.find((row: { defectCode: string }) => row.defectCode === `${PREFIX}-APP`);
+    expect(parent.parentDefectCodeId).toBeNull();
   });
 
   // ── 도우미 ──────────────────────────────────────────────────────────────
@@ -209,11 +211,16 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
     ids.scratch = await code('SCR', '긁힘', ids.parent);
     ids.dent = await code('DNT', '찍힘', ids.parent);
     ids.otherProcessCode = await code('BRK', '파손', ids.parent);
+    // 자기는 이 공정에 매핑됐지만 상세가 다른 공정에만 매핑된 대분류 — 고를 상세가 없어 조회에서 빠진다.
+    const otherParent = await code('STR', '구조', null);
+    const crack = await code('CRK', '균열', otherParent);
     await prisma.defect_code_process.createMany({ data: [
       { defect_code_id: ids.parent, process_id: ids.process },
       { defect_code_id: ids.scratch, process_id: ids.process },
       { defect_code_id: ids.dent, process_id: ids.process },
       { defect_code_id: ids.otherProcessCode, process_id: ids.otherProcess },
+      { defect_code_id: otherParent, process_id: ids.process },
+      { defect_code_id: crack, process_id: ids.otherProcess },
     ] });
 
     const terminal = await prisma.terminal.create({ data: {
