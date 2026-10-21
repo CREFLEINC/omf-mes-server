@@ -3996,7 +3996,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-88"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4105,7 +4105,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-87"
+      "description": "현장 단말(POP)이 단말 토큰으로 부를 때 필수 — 그 단말 공장의 재직 작업자 사번이다(작업 시작과 같다). 관리웹은 보내지 않는다. 장부 P-88"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -6165,7 +6165,7 @@
      },
      "workerAllocations": {
       "type": "array",
-      "description": "이 실적을 그 구간에 참여한 작업자에게 나눈 몫 — 늘 싣는다(없으면 빈 배열: 세션 없는 실적·참여자 없는 세션). 구간은 같은 세션의 직전 실적(정정본 제외 · 앞선 시각)부터 이 실적까지, 첫 실적이면 세션 시작부터. 같은 시각의 실적이 이미 있으면 그 비율을, 정정 실적은 원 실적의 비율을 쓴다. 그 구간에 일하지 않은 사람은 없다. 주작업자가 먼저다. 장부 P-87",
+      "description": "이 실적을 그 구간에 참여한 작업자에게 나눈 몫 — 늘 싣는다(없으면 빈 배열: 세션 없는 실적·참여자 없는 세션). 구간은 같은 세션의 직전 실적(정정본 제외 · 앞선 시각)부터 이 실적까지, 첫 실적이면 세션 시작부터. 같은 시각의 실적이 이미 있으면 그 비율을, 정정 실적은 원 실적의 비율을 쓴다. 그 구간에 일하지 않은 사람은 없다. 주작업자가 먼저다. 장부 P-88",
       "items": {
        "$ref": "#/components/schemas/ProductionResultWorkerAllocation"
       }
@@ -6195,7 +6195,7 @@
    },
    "ProductionResultWorkerAllocation": {
     "type": "object",
-    "description": "생산 실적 한 건의 작업자별 몫 — 실적 구간에 참여한 시간 비율로 다섯 수량을 나눴다(소수 여섯째 자리 반올림, 끝전은 몫이 가장 큰 사람 — 동률이면 주작업자). 참여 시간이 모두 0 이면 주작업자가 전부다. 장부 P-87",
+    "description": "생산 실적 한 건의 작업자별 몫 — 실적 구간에 참여한 시간 비율로 다섯 수량을 나눴다(소수 여섯째 자리 반올림, 끝전은 몫이 가장 큰 사람 — 동률이면 주작업자). 참여 시간이 모두 0 이면 주작업자가 전부다. 장부 P-88",
     "properties": {
      "workerId": {
       "type": "integer",
@@ -7761,12 +7761,12 @@
      "workerNo": {
       "type": "string",
       "example": "900028",
-      "description": "참여한 사람의 사번. 장부 P-87"
+      "description": "참여한 사람의 사번. 장부 P-88"
      },
      "workerName": {
       "type": "string",
       "example": "값",
-      "description": "참여한 사람의 이름. 장부 P-87"
+      "description": "참여한 사람의 이름. 장부 P-88"
      },
      "workerRoleCode": {
       "type": "string",
@@ -7783,7 +7783,7 @@
      "participatedMinutes": {
       "type": "number",
       "example": 45.5,
-      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-87"
+      "description": "이 참여 구간의 분(소수 둘째 자리) — 저장하지 않고 서버가 계산한다: (leftAt, 없으면 세션 종료 시각, 세션도 열려 있으면 지금) − joinedAt. 같은 사람이 다시 참여하면 행이 둘이다. 장부 P-88"
      },
      "leftAt": {
       "type": "string",

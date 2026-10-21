@@ -22,6 +22,8 @@ import { DispositionController } from './disposition/disposition.controller';
 import { DispositionSortService } from './disposition/disposition-sort';
 import { DispositionWriteService } from './disposition/disposition-write.service';
 import { ReworkWorkOrderService } from './disposition/rework-work-order.service';
+import { InspectionLevelController } from './inspection-level/inspection-level.controller';
+import { InspectionLevelService } from './inspection-level/inspection-level.service';
 import { InspectionPlanVersionController } from './inspection-plan/inspection-plan-version.controller';
 import { InspectionPlanVersionService } from './inspection-plan/inspection-plan-version.service';
 import { InspectionPlanController } from './inspection-plan/inspection-plan.controller';
@@ -82,6 +84,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     // `decisions` 라 아래 컨트롤러와 세그먼트가 달라 순서 함정이 없다 · §7-2).
     NonconformanceController,
     DispositionController, // `disposition-decisions`·`:dispositionDecisionId`(②a″)·`nonconformances/:nonconformanceId/disposition-decisions`(②b) — `PrismaService` 만 쓰고 별도 provider 가 없다.
+    InspectionLevelController, // `item-inspection-levels`·`item-inspection-level-histories`(#64 · P-87) — 다른 세그먼트라 순서 함정이 없다.
     ConcessionController, // `concessions`·`concessions/:concessionId`(I-21 PR ⑤) — `PrismaService` 원시 SQL, 다른 세그먼트라 순서 함정이 없다. ⛔ 이 표는 writer 0 — 운영에서 목록이 늘 빈다(통보 089 §2).
   ],
   providers: [
@@ -110,6 +113,7 @@ import { NonconformanceWriteService } from './nonconformance/nonconformance-writ
     DispositionSortService,
     ConcessionWriteService,
     ReworkWorkOrderService,
+    InspectionLevelService,
   ],
 })
 export class QualityModule {}

@@ -82,7 +82,7 @@ const ID_RESOLVED = [
   'maintenance/tool-usage/tool-usage-create.service.ts',
   'production/material-consumption/material-consumption.service.ts',
   'production/production-result/production-result.service.ts',
-  // 작업을 시작한 사람이 세션의 주작업자 행이 된다(P-87).
+  // 작업을 시작한 사람이 세션의 주작업자 행이 된다(P-88).
   'production/work-session/work-session.service.ts',
 ];
 
