@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import type { InspectionSheetFourMView } from './inspection-sheet-four-m';
+import { type OqcRecord, SHIPMENT_STEP, shipmentSigned } from './inspection-sheet-oqc';
 
 const WORKER = { select: { worker_no: true, worker_name: true } } as const;
 const USER = { select: { user_name: true } } as const;
@@ -34,11 +35,49 @@ export type SheetDetailRow = Prisma.inspection_sheetGetPayload<{ include: typeof
 const iso = (value: Date | null) => value?.toISOString() ?? null;
 const id = (value: bigint | null) => (value === null ? null : Number(value));
 
-/** 계약 `InspectionSheet` 과 동형. 단계는 기준의 단계 전부 — 아직 안 쓴 단계는 `result` 가 null 이다. */
+type StepResultRow = SheetDetailRow['step_results'][number];
+
+/** 단계 결과 — 출하검사는 시리얼 OQC 기록이 있으면 그 판정(원천 OQC)과, 그 기록에 대한 서명만 싣는다. */
+function stepResultView(stepCode: string, result: StepResultRow | undefined, oqc: OqcRecord | null) {
+  const signer = (row: StepResultRow) => ({
+    signedBy: id(row.signed_by),
+    signedByName: row.app_user_inspection_sheet_step_result_signed_byToapp_user?.user_name ?? null,
+    signedAt: iso(row.signed_at),
+  });
+  if (stepCode === SHIPMENT_STEP && oqc !== null) {
+    return {
+      firstJudgmentCode: oqc.first_judgment_code,
+      finalJudgmentCode: oqc.final_judgment_code,
+      sourceCode: 'OQC',
+      inspectedWorkerNo: oqc.inspected_worker?.worker_no ?? null,
+      inspectedWorkerName: oqc.inspected_worker?.worker_name ?? null,
+      inspectedAt: oqc.inspected_at.toISOString(),
+      ...(result !== undefined && shipmentSigned(result, oqc)
+        ? signer(result)
+        : { signedBy: null, signedByName: null, signedAt: null }),
+    };
+  }
+  if (result === undefined) return null;
+  return {
+    firstJudgmentCode: result.first_judgment_code,
+    finalJudgmentCode: result.final_judgment_code,
+    sourceCode: result.source_code,
+    inspectedWorkerNo: result.inspected_worker?.worker_no ?? null,
+    inspectedWorkerName: result.inspected_worker?.worker_name ?? null,
+    inspectedAt: result.inspected_at.toISOString(),
+    ...signer(result),
+  };
+}
+
+/**
+ * 계약 `InspectionSheet` 과 동형. 단계는 기준의 단계 전부 — 아직 안 쓴 단계는 `result` 가 null 이다.
+ * `oqc` — 그 시리얼의 OQC 기록(있으면 출하검사 줄의 정본).
+ */
 export function sheetDetailView(
   row: SheetDetailRow,
   lotCandidates: Map<string, string[]>,
   fourMChanges: InspectionSheetFourMView[],
+  oqc: OqcRecord | null,
 ) {
   const judgments = new Map(row.item_results.map((r) => [r.inspection_sheet_template_item_id, r.judgment_code]));
   return {
@@ -96,20 +135,7 @@ export function sheetDetailView(
         nameKo: step.name_ko,
         nameVi: step.name_vi,
         signRequired: step.sign_required,
-        result:
-          result === undefined
-            ? null
-            : {
-                firstJudgmentCode: result.first_judgment_code,
-                finalJudgmentCode: result.final_judgment_code,
-                sourceCode: result.source_code,
-                inspectedWorkerNo: result.inspected_worker?.worker_no ?? null,
-                inspectedWorkerName: result.inspected_worker?.worker_name ?? null,
-                inspectedAt: result.inspected_at.toISOString(),
-                signedBy: id(result.signed_by),
-                signedByName: result.app_user_inspection_sheet_step_result_signed_byToapp_user?.user_name ?? null,
-                signedAt: iso(result.signed_at),
-              },
+        result: stepResultView(step.step_code, result, oqc),
         items: step.items.map((item) => ({
           inspectionSheetTemplateItemId: Number(item.inspection_sheet_template_item_id),
           sequenceNo: item.sequence_no,

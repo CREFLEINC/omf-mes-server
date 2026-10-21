@@ -5,6 +5,7 @@ import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InspectionSheetEntryService, SheetResult } from './inspection-sheet-entry.service';
+import { effectiveResults, oqcOf, SHIPMENT_STEP } from './inspection-sheet-oqc';
 
 type Decision = 'APPROVE' | 'CHECK';
 
@@ -20,10 +21,38 @@ export class InspectionSheetSignService {
     private readonly entries: InspectionSheetEntryService,
   ) {}
 
-  /** 기록된 단계에만 서명한다. 이미 서명된 단계면 서명자·시각을 새로 남긴다. */
+  /**
+   * 기록된 단계에만 서명한다. 이미 서명된 단계면 서명자·시각을 새로 남긴다.
+   * 출하검사를 시리얼 OQC 가 기록했으면 그 판정을 단계 줄(원천 OQC)에 옮겨 적고 서명한다(#68 · 장부 P-102).
+   */
   async signStep(id: number, stepCode: string, version: number, actorId: number): Promise<SheetResult> {
     await this.prisma.$transaction(async (tx) => {
-      await bumpInProgress(tx, id, version, actorId);
+      const serialNumberId = await bumpInProgress(tx, id, version, actorId);
+      const oqc = stepCode === SHIPMENT_STEP ? await oqcOf(tx, serialNumberId) : null;
+      if (oqc !== null) {
+        const now = new Date();
+        const values = {
+          first_judgment_code: oqc.first_judgment_code,
+          final_judgment_code: oqc.final_judgment_code,
+          source_code: 'OQC',
+          inspected_worker_id: oqc.inspected_worker_id,
+          inspected_at: oqc.inspected_at,
+          inspection_result_id: oqc.inspection_result_id,
+          signed_by: actorId,
+          signed_at: now,
+          updated_by: actorId,
+          updated_at: now,
+        };
+        await tx.inspection_sheet_step_result.upsert({
+          where: { inspection_sheet_id_step_code: { inspection_sheet_id: id, step_code: stepCode } },
+          create: { inspection_sheet_id: id, step_code: stepCode, created_by: actorId, ...values },
+          update: { ...values, version_no: { increment: 1 } },
+        });
+        await tx.inspection_sheet_event.create({
+          data: { inspection_sheet_id: id, event_code: 'SIGN_STEP', step_code: stepCode, acted_by: actorId },
+        });
+        return;
+      }
       const signed = await tx.inspection_sheet_step_result.updateMany({
         where: { inspection_sheet_id: id, step_code: stepCode },
         data: { signed_by: actorId, signed_at: new Date(), updated_by: actorId, updated_at: new Date(), version_no: { increment: 1 } },
@@ -45,16 +74,19 @@ export class InspectionSheetSignService {
       const sheet = await tx.inspection_sheet.findUnique({
         where: { inspection_sheet_id: id },
         select: {
+          serial_number_id: true,
           status_code: true,
           approved_by: true,
           checked_by: true,
           template: { select: { steps: { select: { step_code: true, name_ko: true, sign_required: true } } } },
-          step_results: { select: { step_code: true, final_judgment_code: true, signed_at: true } },
+          step_results: { select: { step_code: true, source_code: true, final_judgment_code: true, signed_at: true } },
         },
       });
       if (sheet === null) throw new NotFoundException('없는 검사표입니다.');
       if (sheet.status_code === 'COMPLETED') throw locked(null, '이미 완료된 검사표입니다.');
-      assertDecidable(sheet.template.steps, sheet.step_results);
+      const oqc = await oqcOf(tx, sheet.serial_number_id);
+      const stepCodes = sheet.template.steps.map((step) => step.step_code);
+      assertDecidable(sheet.template.steps, effectiveResults(sheet.step_results, oqc, stepCodes));
       const now = new Date();
       const approved = decision === 'APPROVE' || sheet.approved_by !== null;
       const checked = decision === 'CHECK' || sheet.checked_by !== null;
@@ -111,9 +143,12 @@ export class InspectionSheetSignService {
   }
 }
 
-/** 서명은 작성중인 검사표에만 — 완료된 검사표는 400, 버전이 다르면 409. */
-async function bumpInProgress(tx: Prisma.TransactionClient, id: number, version: number, actorId: number): Promise<void> {
-  const sheet = await tx.inspection_sheet.findUnique({ where: { inspection_sheet_id: id }, select: { status_code: true } });
+/** 서명은 작성중인 검사표에만 — 완료된 검사표는 400, 버전이 다르면 409. 검사표의 시리얼을 돌려준다. */
+async function bumpInProgress(tx: Prisma.TransactionClient, id: number, version: number, actorId: number): Promise<bigint> {
+  const sheet = await tx.inspection_sheet.findUnique({
+    where: { inspection_sheet_id: id },
+    select: { status_code: true, serial_number_id: true },
+  });
   if (sheet === null) throw new NotFoundException('없는 검사표입니다.');
   if (sheet.status_code === 'COMPLETED') throw locked(null, '완료된 검사표입니다. 승인 취소 뒤에 서명하세요.');
   const updated = await tx.inspection_sheet.updateMany({
@@ -121,6 +156,7 @@ async function bumpInProgress(tx: Prisma.TransactionClient, id: number, version:
     data: { updated_by: actorId, updated_at: new Date(), version_no: { increment: 1 } },
   });
   assertUpdated(updated.count);
+  return sheet.serial_number_id;
 }
 
 /** 문구는 단계 이름(기준의 한국어 이름)으로 — 화면이 서버 문구를 그대로 보인다. */

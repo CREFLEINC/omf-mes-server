@@ -22,6 +22,7 @@ function harness(
     },
     inspection_sheet_step_result: { upsert: jest.fn() },
     inspection_sheet_item_result: { upsert: jest.fn() },
+    oqc_serial_result: { findUnique: jest.fn().mockResolvedValue(null) },
     inspection_sheet_ng: { deleteMany: jest.fn(), createMany: jest.fn() },
     inspection_sheet_event: { create: jest.fn() },
     worker: { findMany: jest.fn().mockResolvedValue(workers) },
@@ -126,6 +127,16 @@ describe('InspectionSheetEntryService', () => {
     expect(
       await errorOf(service.writeStep(9, 'PROCESS_1', 1, { items: [{ inspectionSheetTemplateItemId: 999, judgmentCode: 'OK' }] }, { workerId: 8n })),
     ).toMatchObject({ field: 'items', code: 'INVALID' });
+  });
+
+  it('시리얼 OQC 가 출하검사를 기록한 시리얼은 검사표에서 출하검사를 쓸 수 없다 — 400 stepCode STATE_LOCKED', async () => {
+    const { service, tx } = harness();
+    tx.oqc_serial_result.findUnique.mockResolvedValue({ final_judgment_code: 'OK' });
+
+    expect(
+      await errorOf(service.writeStep(9, 'SHIPMENT', 1, { firstJudgmentCode: 'OK', finalJudgmentCode: 'OK', items: [] }, { workerId: 8n })),
+    ).toMatchObject({ field: 'stepCode', code: 'STATE_LOCKED' });
+    expect(tx.inspection_sheet_step_result.upsert).not.toHaveBeenCalled();
   });
 
   it('NG 블록은 통째로 갈아 끼우고, 수리 담당은 사번을 작업자로 푼다', async () => {

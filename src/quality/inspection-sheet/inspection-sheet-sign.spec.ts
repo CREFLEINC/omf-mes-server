@@ -10,20 +10,32 @@ const STEPS = [
 ];
 const signed = new Date('2026-10-21T03:00:00Z');
 
-function harness(sheet: Record<string, unknown> = {}, locked = 1, stepUpdated = 1) {
+const OQC = {
+  first_judgment_code: 'NG',
+  final_judgment_code: 'OK',
+  inspection_result_id: 41n,
+  inspected_worker_id: 8n,
+  inspected_at: new Date('2026-10-21T04:00:00Z'),
+  updated_at: new Date('2026-10-21T04:00:00Z'),
+  inspected_worker: null,
+};
+
+function harness(sheet: Record<string, unknown> = {}, locked = 1, stepUpdated = 1, oqc: typeof OQC | null = null) {
   const tx = {
     inspection_sheet: {
       findUnique: jest.fn().mockResolvedValue({
+        serial_number_id: 3n,
         status_code: 'IN_PROGRESS',
         approved_by: null,
         checked_by: null,
         template: { steps: STEPS },
-        step_results: [{ step_code: 'PROCESS_1', final_judgment_code: 'OK', signed_at: signed }],
+        step_results: [{ step_code: 'PROCESS_1', source_code: 'SHEET', final_judgment_code: 'OK', signed_at: signed }],
         ...sheet,
       }),
       updateMany: jest.fn().mockResolvedValue({ count: locked }),
     },
-    inspection_sheet_step_result: { updateMany: jest.fn().mockResolvedValue({ count: stepUpdated }) },
+    inspection_sheet_step_result: { updateMany: jest.fn().mockResolvedValue({ count: stepUpdated }), upsert: jest.fn() },
+    oqc_serial_result: { findUnique: jest.fn().mockResolvedValue(oqc) },
     inspection_sheet_event: { create: jest.fn() },
   };
   const prisma = { $transaction: jest.fn().mockImplementation((work: (client: typeof tx) => unknown) => work(tx)) };
@@ -122,5 +134,43 @@ describe('InspectionSheetSignService', () => {
     const { service } = harness();
 
     await expect(errorOf(service.reopen(9, 5, '사유', 7))).resolves.toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('출하검사를 시리얼 OQC 가 기록했으면 그 판정을 단계 줄(원천 OQC)에 옮겨 적고 서명한다 — #68 연결', async () => {
+    const { service, tx } = harness({}, 1, 1, OQC);
+
+    await service.signStep(9, 'SHIPMENT', 3, 7);
+
+    const upsert = tx.inspection_sheet_step_result.upsert.mock.calls[0][0];
+    expect(upsert.create).toMatchObject({
+      step_code: 'SHIPMENT',
+      source_code: 'OQC',
+      first_judgment_code: 'NG',
+      final_judgment_code: 'OK',
+      inspection_result_id: 41n,
+      signed_by: 7,
+    });
+    expect(tx.inspection_sheet_step_result.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('승인 판단은 출하검사를 OQC 최종 판정으로 본다 — OQC 최종 NG 면 400', async () => {
+    const { service } = harness({}, 1, 1, { ...OQC, final_judgment_code: 'NG' });
+
+    expect(await errorOf(service.decide(9, 'APPROVE', 3, 7))).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('OQC 재검으로 기록이 서명보다 늦게 바뀌면 출하검사 서명은 풀린 것으로 본다', async () => {
+    const steps = [{ step_code: 'SHIPMENT', name_ko: '출하검사', sign_required: true }];
+    const { service } = harness(
+      {
+        template: { steps },
+        step_results: [{ step_code: 'SHIPMENT', source_code: 'OQC', final_judgment_code: 'OK', signed_at: signed }],
+      },
+      1,
+      1,
+      { ...OQC, updated_at: new Date('2026-10-21T05:00:00Z') },
+    );
+
+    expect(await errorOf(service.decide(9, 'APPROVE', 3, 7))).toMatchObject({ code: 'STATE_LOCKED' });
   });
 });

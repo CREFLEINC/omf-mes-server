@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { InspectionSheetService, SheetActor, SheetJudgment, lotCandidates } from '../../core/inspection-sheet';
 import { PrismaService } from '../../prisma/prisma.service';
 import { fourMChangesOf } from './inspection-sheet-four-m';
+import { oqcOf, SHIPMENT_STEP } from './inspection-sheet-oqc';
 import { InspectionSheetView, SHEET_DETAIL_INCLUDE, sheetDetailView } from './inspection-sheet-view';
 
 /** 계약 `InspectionSheetHeaderUpdate` — 머리 값은 자동으로 채운 뒤 사람이 고친다(담당자 결정 ①). */
@@ -94,7 +95,8 @@ export class InspectionSheetEntryService {
     const candidates =
       row.work_order_id === null ? new Map<string, string[]>() : await lotCandidates(this.prisma, row.work_order_id, row.template.lot_sources);
     const fourMChanges = await fourMChangesOf(this.prisma, row.work_order_id);
-    return { inspectionSheet: sheetDetailView(row, candidates, fourMChanges), versionNo: row.version_no };
+    const oqc = await oqcOf(this.prisma, row.serial_number_id);
+    return { inspectionSheet: sheetDetailView(row, candidates, fourMChanges, oqc), versionNo: row.version_no };
   }
 
   async updateHeader(id: number, version: number, input: InspectionSheetHeaderUpdate, actor: SheetActor): Promise<SheetResult> {
@@ -132,6 +134,10 @@ export class InspectionSheetEntryService {
     }
     await this.prisma.$transaction(async (tx) => {
       const serialNumberId = await bumpOpenSheet(tx, id, version, actor);
+      // 시리얼 OQC 가 기록한 출하검사는 그 기록이 정본이다(#68 · 장부 P-102) — 검사표에서 따로 적지 않는다.
+      if (stepCode === SHIPMENT_STEP && (await oqcOf(tx, serialNumberId)) !== null) {
+        throw fieldError('stepCode', ERROR_CODE.STATE_LOCKED, '출하검사는 OQC 출하검사 판정에서 기록했습니다. 여기서 고칠 수 없습니다.');
+      }
       if (firstJudgmentCode === undefined || finalJudgmentCode === undefined) {
         await saveItemDraft(tx, id, stepCode, input.items);
         return;
