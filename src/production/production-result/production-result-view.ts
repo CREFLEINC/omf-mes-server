@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
+import { WorkerAllocationView } from './worker-allocation';
 
 /**
  * 계약 `ProductionResult`(23칸 · required 14)로 옮기는 자리. 목록·단건이 **같은 매퍼**를
@@ -16,7 +17,8 @@ import { omitEmpty } from '../../common/http/omit-empty';
 export type ProductionResultRow = Prisma.production_resultGetPayload<object>;
 export type ProductionResultView = ReturnType<typeof productionResultView>;
 
-export function productionResultView(row: ProductionResultRow) {
+/** `workerAllocations` 는 배분이 없어도 늘 싣는다(빈 배열) — 화면이 그때 실적의 `workerId` 로 센다. */
+export function productionResultView(row: ProductionResultRow, workerAllocations: WorkerAllocationView[]) {
   return omitEmpty({
     productionResultId: Number(row.production_result_id),
     productionResultNo: row.production_result_no,
@@ -43,6 +45,7 @@ export function productionResultView(row: ProductionResultRow) {
     // `x-no-code-key` — 값 목록이 없다. 이 칸으로 «아무것도 거르지 않는다»(§2-3).
     statusCode: row.status_code,
     remarks: row.remarks ?? undefined,
+    workerAllocations,
   });
 }
 

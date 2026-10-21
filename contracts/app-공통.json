@@ -5786,7 +5786,8 @@
     "type": "object",
     "required": [
      "eventCode",
-     "eventName"
+     "eventName",
+     "recipientMode"
     ],
     "description": "알림 이벤트 목록. ⭐ 이 목록의 정본은 계약이다 — 공통코드 마스터에 두면 편집 가능해지는데, 코드가 바뀌면 보내는 쪽이 깨진다. 근거: W-CO-03 §8-3",
     "properties": {
