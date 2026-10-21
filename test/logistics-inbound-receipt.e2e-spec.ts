@@ -337,7 +337,6 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
-<<<<<<< HEAD
   // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-100).
   describe('초과분 잇기', () => {
     const excessApi = (path: string, method: 'get' | 'post' = 'get', as = cookie): request.Test =>
@@ -398,7 +397,8 @@ describe('입하 등록 (e2e)', () => {
 
       expect((query.body.errors as { field: string }[]).map((error) => error.field).sort()).toEqual(['linked', 'plantId']);
     });
-=======
+  });
+
   // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄이고 LOT 도 줄마다 선다(장부 P-99).
   it('입하 — 같은 P/O 라인 줄 여럿(라벨마다 한 줄)은 LOT 이 줄마다 서고 received_qty 는 합계만큼 오른다', async () => {
     const { purchaseOrderLineId } = await seedOrderLine(100);
@@ -434,7 +434,6 @@ describe('입하 등록 (e2e)', () => {
     ]);
     expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
     expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
->>>>>>> origin/feat/inbound-excess-replace
   });
 
   it('⭐ 입하 등록과 P/O 라인 치환을 동시에 걸어도 500 이 없다(부모 FOR UPDATE 로 직렬화된다)', async () => {
