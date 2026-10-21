@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { loginRequired } from '../../auth/authentication.guard';
@@ -11,6 +11,7 @@ import {
   InboundExcessView,
   parseExcessId,
   parseExcessQuery,
+  parseLinkBody,
 } from './inbound-excess';
 import { InboundExcessService } from './inbound-excess.service';
 
@@ -39,6 +40,24 @@ export class InboundExcessController {
   async candidates(@Req() request: Request, @Param('inboundReceiptExcessId') id: string): Promise<{ items: ExcessCandidateView[] }> {
     await this.authorize(request);
     return { items: await this.excesses.candidates(parseExcessId(id)) };
+  }
+
+  @Post(':inboundReceiptExcessId\\:link')
+  @HttpCode(HttpStatus.OK)
+  async link(
+    @Req() request: Request,
+    @Param('inboundReceiptExcessId') id: string,
+    @Body() body: unknown,
+  ): Promise<InboundExcessView> {
+    const session = await this.authorize(request);
+    return this.excesses.link(parseExcessId(id), parseLinkBody(body), session.userId);
+  }
+
+  @Post(':inboundReceiptExcessId\\:unlink')
+  @HttpCode(HttpStatus.OK)
+  async unlink(@Req() request: Request, @Param('inboundReceiptExcessId') id: string): Promise<InboundExcessView> {
+    const session = await this.authorize(request);
+    return this.excesses.unlink(parseExcessId(id), session.userId);
   }
 
   private async authorize(request: Request): Promise<Session> {

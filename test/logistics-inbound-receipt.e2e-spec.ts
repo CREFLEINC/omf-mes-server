@@ -367,6 +367,70 @@ describe('입하 등록 (e2e)', () => {
       expect(ids).not.toContain(source.purchaseOrderLineId);
     });
 
+    it('잇기 — 고른 P/O 라인의 받은 수량이 초과분만큼 오르고 목록이 안 이어진 쪽에서 이어진 쪽으로 옮겨 간다', async () => {
+      const { excessId } = await excessOf(5000, 500);
+      const added = await seedOrderLine(500);
+      const unlinked = async (linked: boolean) =>
+        ((await excessApi(`?linked=${linked}&size=200`).expect(200)).body.items as { inboundReceiptExcessId: number }[]).map(
+          (row) => row.inboundReceiptExcessId,
+        );
+      expect(await unlinked(false)).toContain(excessId);
+
+      const linked = await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId }).expect(200);
+
+      expect(linked.body).toMatchObject({ excessQty: 500, linkedOrderLine: { purchaseOrderLineId: added.purchaseOrderLineId } });
+      expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(500);
+      expect(await unlinked(false)).not.toContain(excessId);
+      expect(await unlinked(true)).toContain(excessId);
+      const again = await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId }).expect(400);
+      expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    });
+
+    it('잇기 — 다 못 받는 라인은 400 QTY_EXCEEDS_ORDERED, 초과분이 나온 라인은 400 INVALID 다', async () => {
+      const { source, excessId } = await excessOf(5000, 500);
+      const small = await seedOrderLine(300);
+
+      const tooSmall = await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: small.purchaseOrderLineId }).expect(400);
+      const own = await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: source.purchaseOrderLineId }).expect(400);
+
+      expect(tooSmall.body.errors[0]).toMatchObject({ field: 'purchaseOrderLineId', code: 'QTY_EXCEEDS_ORDERED' });
+      expect(own.body.errors[0]).toMatchObject({ field: 'purchaseOrderLineId', code: 'INVALID' });
+      expect(Number((await poLine(small.purchaseOrderLineId)).received_qty)).toBe(0);
+    });
+
+    it('풀기 — 받은 수량이 되돌아가고 안 이어진 초과분으로 돌아간다 · 안 이어진 것을 풀면 400 STATE_LOCKED', async () => {
+      const { excessId } = await excessOf(5000, 500);
+      const added = await seedOrderLine(500);
+      await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId }).expect(200);
+
+      const unlinked = await excessApi(`/${excessId}:unlink`, 'post').expect(200);
+
+      expect(unlinked.body).toMatchObject({ linkedOrderLine: null, linkedAt: null });
+      expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(0);
+      const again = await excessApi(`/${excessId}:unlink`, 'post').expect(400);
+      expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    });
+
+    it('잇기 — 이어진 초과분이 있으면 그 입하 줄도, 이어진 P/O 라인도 바꾸거나 지울 수 없다(400 SUCCESSOR_EXISTS)', async () => {
+      const { detail, excessId } = await excessOf(100, 20);
+      const order = await createOrder();
+      await excessApi(`/${excessId}:link`, 'post').send({ purchaseOrderLineId: order.lines[0].purchaseOrderLineId }).expect(200);
+
+      const receiptLine = await putLines(detail.inboundReceipt.inboundReceiptId, await receiptEtag(detail.inboundReceipt.inboundReceiptId), [
+        itemOf(detail.lines[0], { excessQty: 10 }),
+      ]).expect(400);
+      const orderLine = await request(app.getHttpServer())
+        .put(`/api/logistics/purchase-orders/${order.purchaseOrder.purchaseOrderId}/lines`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key())
+        .set('If-Match', await orderEtag(order.purchaseOrder.purchaseOrderId))
+        .send({ items: [{ itemId, orderedQty: 100, uomId }] })
+        .expect(400);
+
+      expect(receiptLine.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+      expect(orderLine.body.errors[0]).toMatchObject({ code: 'SUCCESSOR_EXISTS' });
+    });
+
     it('목록 — 안 이어진 초과분이 입하·줄·처음 P/O 라인·품목·LOT 과 함께 보인다', async () => {
       const { source, detail, excessId } = await excessOf(5000, 500);
 
@@ -389,13 +453,16 @@ describe('입하 등록 (e2e)', () => {
     it('권한 — 로그인 없으면 401, W-01-03 권한이 없으면 403 이다', async () => {
       await request(app.getHttpServer()).get('/api/logistics/inbound-excesses').expect(401);
       await excessApi('', 'get', noPermCookie).expect(403);
+      await excessApi('/1:link', 'post', noPermCookie).send({ purchaseOrderLineId: 1 }).expect(403);
     });
 
-    it('검사 — 틀린 질의는 400 이 그 칸을 짚고, 없는 초과분은 404 다', async () => {
+    it('검사 — 틀린 질의·본문은 400 이 그 칸을 짚고, 없는 초과분은 404 다', async () => {
       const query = await excessApi('?linked=yes&plantId=0').expect(400);
+      const bodyless = await excessApi('/1:link', 'post').send({}).expect(400);
       await excessApi('/999999999/candidates').expect(404);
 
       expect((query.body.errors as { field: string }[]).map((error) => error.field).sort()).toEqual(['linked', 'plantId']);
+      expect(bodyless.body.errors[0]).toMatchObject({ field: 'purchaseOrderLineId', code: 'REQUIRED' });
     });
   });
 

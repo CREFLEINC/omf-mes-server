@@ -53,6 +53,14 @@ export function parseExcessId(raw: string): bigint {
   return value;
 }
 
+/** `:link` 본문 — `{ purchaseOrderLineId }`. JSON 숫자로 온다. */
+export function parseLinkBody(body: unknown): bigint {
+  const value = (body as { purchaseOrderLineId?: unknown } | null)?.purchaseOrderLineId;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return BigInt(value);
+  const code = value === undefined ? ERROR_CODE.REQUIRED : ERROR_CODE.INVALID;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [field('purchaseOrderLineId', code, '양의 정수여야 합니다.')]);
+}
+
 function readId(value: unknown): bigint | undefined {
   if (typeof value !== 'string' || !/^[1-9]\d{0,18}$/.test(value)) return undefined;
   const id = BigInt(value);
