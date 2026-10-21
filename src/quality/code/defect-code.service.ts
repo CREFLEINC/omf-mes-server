@@ -272,7 +272,7 @@ function view(row: DefectCodeRow): DefectCodeView {
 
 /**
  * 공정별 불량 코드 — 정본은 `defect_code_process` 매핑이다(`defect_code.process_id` 가 아니다).
- * 고를 수 있는 것은 매핑된 상세뿐이다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-89).
+ * 고를 수 있는 것은 매핑된 상세뿐이다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-95).
  * 그 상세의 대분류 행도 함께 내린다 — POP 이 상세를 대분류로 묶어 보여 주는데 이름을 얻을 다른 길이 없다.
  * 대분류 자신의 매핑·사용 여부는 보지 않는다 — 실린 상세가 있으면 그 이름을 보여야 하고, 고를 상세가 없으면 빈 묶음이다.
  * ⛔ `AND` 로 감싼다 — `referenceWhere` 의 검색어가 최상위 `OR` 을 쓴다.

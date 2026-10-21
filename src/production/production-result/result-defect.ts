@@ -32,7 +32,7 @@ const FIELD_SOURCE = 'FIELD';
 
 /**
  * 유형별 수량을 검사하고 불량수량을 정한다. `defects` 만 오면 그 합이 불량수량이다.
- * ⭐ `defects` 없이 불량수량만 오는 실적은 그대로 받는다 — 기존 단말·오프라인 재전송이 깨지지 않게(장부 P-89).
+ * ⭐ `defects` 없이 불량수량만 오는 실적은 그대로 받는다 — 기존 단말·오프라인 재전송이 깨지지 않게(장부 P-95).
  * 합은 소수 여섯째 자리(qty_t)로 견준다 — 0.1 + 0.2 같은 부동소수 끝전이 400 이 되지 않게.
  */
 export function resolveDefectQty(body: { defectQty?: number; defects?: readonly ResultDefectInput[] }): number | undefined {
