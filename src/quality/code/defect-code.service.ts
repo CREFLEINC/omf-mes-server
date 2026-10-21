@@ -55,6 +55,7 @@ export interface DefectCodeWrite {
 
 export interface DefectCodeQuery extends ReferenceQuery {
   parentDefectCodeId?: number;
+  processId?: number;
 }
 
 type DefectCodeRow = Prisma.defect_codeGetPayload<object>;
@@ -75,7 +76,7 @@ export class DefectCodeService {
     const where = referenceWhere(
       query,
       { code: 'defect_code', name: 'defect_name' },
-      filter('parent_defect_code_id', query.parentDefectCodeId),
+      { ...byProcess(query.processId), ...filter('parent_defect_code_id', query.parentDefectCodeId) },
     );
     const [rows, total] = await Promise.all([
       this.prisma.defect_code.findMany({
@@ -266,4 +267,13 @@ function view(row: DefectCodeRow): DefectCodeView {
       : { dispositionTypeCode: row.disposition_type_code }),
     isActive: row.is_active,
   };
+}
+
+/**
+ * 공정별 불량 코드 — 정본은 `defect_code_process` 매핑이다(`defect_code.process_id` 가 아니다).
+ * 상세만 내린다 — 실적에 싣는 불량 유형이 상세 코드라서다(`result-defect.ts` 의 `assertDefectCodes` 와 같은 기준 · 장부 P-89).
+ */
+function byProcess(processId: number | undefined): Prisma.defect_codeWhereInput {
+  if (processId === undefined) return {};
+  return { parent_defect_code_id: { not: null }, defect_code_process: { some: { process_id: processId } } };
 }

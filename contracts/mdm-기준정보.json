@@ -6341,6 +6341,15 @@
       "description": "지정하면 그 대분류의 상세만"
      },
      {
+      "name": "processId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "지정하면 그 공정에 매핑된(defect_code_process) 상세만 — 생산 실적 불량 유형이 받는 코드와 같은 기준. 장부 P-89"
+     },
+     {
       "name": "includeInactive",
       "in": "query",
       "schema": {
