@@ -80,25 +80,39 @@ export function workerShares(rows: readonly Participation[], from: Date, to: Dat
 }
 
 /**
- * 수량을 몫대로 나눈다 — 각자 소수 여섯째 자리 반올림, 나머지 끝전은 몫이 가장 큰 사람(동률이면 앞 사람 — 주작업자가 맨 앞)에게
- * 얹어 합이 원래 수량과 같다. ⛔ 몫이 작은 사람에게 주면 반올림이 넘친 만큼 음수가 되어 수량 도메인(`qty_t`)이 거부한다.
- * `shares` 는 `workerShares` 순서(주작업자 먼저)여야 한다.
+ * 수량을 몫대로 나눈다 — 합은 늘 원래 수량과 같다. `shares` 는 `workerShares` 순서(주작업자 먼저)여야 한다.
+ * - 소수 단위: 각자 소수 여섯째 자리 반올림, 끝전은 몫이 가장 큰 사람(동률이면 앞 사람 — 주작업자)에게.
+ *   ⛔ 몫이 작은 사람에게 주면 반올림이 넘친 만큼 음수가 되어 수량 도메인(`qty_t`)이 거부한다.
+ * - 개수 단위(`integer`): 각자 내림하고, 남은 개수를 소수 부분이 큰 사람부터 하나씩 준다(동률이면 몫이 큰 사람, 그다음 앞 사람).
+ *   수량 자체에 소수가 있으면 그 소수는 몫이 가장 큰 사람에게 간다.
  */
 export function splitQuantities<K extends string>(
   quantities: Readonly<Record<K, Prisma.Decimal>>,
   shares: readonly Pick<WorkerShare, 'ratio'>[],
+  integer = false,
 ): Record<K, Prisma.Decimal>[] {
   const result = shares.map(() => ({}) as Record<K, Prisma.Decimal>);
+  if (shares.length === 0) return result;
   const anchor = shares.reduce((best, share, index) => (share.ratio.gt(shares[best].ratio) ? index : best), 0);
   for (const key of Object.keys(quantities) as K[]) {
     const total = quantities[key];
-    let assigned = new Prisma.Decimal(0);
-    shares.forEach((share, index) => {
-      const part = total.times(share.ratio).toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
+    const raw = shares.map((share) => total.times(share.ratio));
+    const parts = raw.map((value) => (integer ? value.floor() : value.toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP)));
+    let left = total.minus(parts.reduce((sum, part) => sum.plus(part), new Prisma.Decimal(0)));
+    if (integer) {
+      const order = shares
+        .map((share, index) => ({ index, fraction: raw[index].minus(parts[index]), ratio: share.ratio }))
+        .sort((a, b) => b.fraction.comparedTo(a.fraction) || b.ratio.comparedTo(a.ratio) || a.index - b.index);
+      for (const { index } of order) {
+        if (left.lt(1)) break;
+        parts[index] = parts[index].plus(1);
+        left = left.minus(1);
+      }
+    }
+    parts[anchor] = parts[anchor].plus(left);
+    parts.forEach((part, index) => {
       result[index][key] = part;
-      assigned = assigned.plus(part);
     });
-    if (shares.length > 0) result[anchor][key] = result[anchor][key].plus(total.minus(assigned));
   }
   return result;
 }

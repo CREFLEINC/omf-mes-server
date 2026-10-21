@@ -891,20 +891,23 @@ describe('작업 세션 조회 4건 (e2e)', () => {
           firstResultId = response.body.productionResultId as number;
 
           expect(validator('POST /production/production-results', 201)(response.body)).toBe(true);
-          // 02:30~04:30 — W1 120분 · W2 60분 · W3 60분.
+          // 02:30~04:30 — W1 120분 · W2 60분 · W3 60분. 단위가 개수(EA)라 정수로 나눈다:
+          // 양품 10 → 5 · 2.5 · 2.5 → 내림 5·2·2, 남은 1개는 소수 부분·몫이 같은 둘 중 앞사람(W2).
+          // 불량 1 → 0.5 · 0.25 · 0.25 → 내림 0·0·0, 남은 1개는 소수 부분이 가장 큰 W1.
           expect(shapeOf(response.body.workerAllocations)).toEqual([
-            [Number(ids.worker1), 'MAIN', 120, 0.5, 5, 0.5],
-            [Number(ids.worker2), 'SUB', 60, 0.25, 2.5, 0.25],
-            [Number(ids.worker3), 'SUB', 60, 0.25, 2.5, 0.25],
+            [Number(ids.worker1), 'MAIN', 120, 0.5, 5, 1],
+            [Number(ids.worker2), 'SUB', 60, 0.25, 3, 0],
+            [Number(ids.worker3), 'SUB', 60, 0.25, 2, 0],
           ]);
         });
 
         it('둘째 실적은 직전 실적 이후 구간만 본다 — 그 구간에 없던 사람은 배분 행이 없다', async () => {
           const response = await postResult({ workOrderId, workSessionId: sessionId, occurredAt: '2026-09-07T05:30:00.000Z', goodQty: 3 }).expect(201);
           // 04:30~05:30 — W1·W3 60분씩, W2 는 이미 떠났다.
+          // 양품 3 → 1.5 · 1.5 → 내림 1·1, 남은 1개는 동률이라 주작업자.
           expect(shapeOf(response.body.workerAllocations)).toEqual([
-            [Number(ids.worker1), 'MAIN', 60, 0.5, 1.5, 0],
-            [Number(ids.worker3), 'SUB', 60, 0.5, 1.5, 0],
+            [Number(ids.worker1), 'MAIN', 60, 0.5, 2, 0],
+            [Number(ids.worker3), 'SUB', 60, 0.5, 1, 0],
           ]);
         });
 
@@ -941,10 +944,11 @@ describe('작업 세션 조회 4건 (e2e)', () => {
             .set('Idempotency-Key', idem())
             .send({ reasonCode: 'QTY_MISCOUNT', goodQty: 8 })
             .expect(201);
+          // 정정도 같은 정수 규칙 — 양품 8 → 4·2·2, 승계한 불량 1 → 1·0·0.
           expect(shapeOf(corrected.body.workerAllocations)).toEqual([
-            [Number(ids.worker1), 'MAIN', 120, 0.5, 4, 0.5],
-            [Number(ids.worker2), 'SUB', 60, 0.25, 2, 0.25],
-            [Number(ids.worker3), 'SUB', 60, 0.25, 2, 0.25],
+            [Number(ids.worker1), 'MAIN', 120, 0.5, 4, 1],
+            [Number(ids.worker2), 'SUB', 60, 0.25, 2, 0],
+            [Number(ids.worker3), 'SUB', 60, 0.25, 2, 0],
           ]);
         });
 
@@ -1180,7 +1184,8 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     ids.wipLocation = wip.location_id;
     ids.fgLocation = fg.location_id;
     ids.scrapLocation = scrap.location_id;
-    const uom = await prisma.uom.findFirstOrThrow();
+    // 개수 단위(소수 자리 0)라야 실적 배분 기대값이 정수 규칙을 탄다.
+    const uom = await prisma.uom.findFirstOrThrow({ where: { uom_code: 'EA' } });
     const item = await prisma.item.create({
       data: { item_code: `${PREFIX}-IT`, item_name: '작업세션검사품목', item_type_code: 'FINISHED_GOODS', base_uom_id: uom.uom_id, lot_controlled: true },
     });

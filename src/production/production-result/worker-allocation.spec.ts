@@ -20,9 +20,11 @@ function result(overrides: Row = {}) {
   } as unknown as Prisma.production_resultGetPayload<object>;
 }
 
-function txOf(options: { previous?: Date; sameTime?: bigint; participants?: Row[]; original?: Row[] } = {}) {
+function txOf(options: { previous?: Date; sameTime?: bigint; participants?: Row[]; original?: Row[]; decimalScale?: number } = {}) {
   const written: Row[] = [];
   const tx = {
+    // 실적 단위의 소수 자리 — 0 이면 개수 단위라 정수로 나눈다. 기본은 소수 단위(kg 같은 3자리).
+    uom: { findUnique: () => Promise.resolve({ decimal_scale: options.decimalScale ?? 3 }) },
     work_session: { findUniqueOrThrow: () => Promise.resolve({ started_at: at('01:00') }) },
     production_result: {
       // 같은 시각 조회는 `occurred_at` 이 날짜 그대로, 직전 실적 조회는 `{ lt }` 다.
@@ -91,6 +93,21 @@ describe('worker-allocation — 실적의 작업자별 배분 저장', () => {
     expect(it0.written.map((row) => [row.worker_id, (row.good_qty as Prisma.Decimal).toString()])).toEqual([
       [1n, '0.666667'],
       [2n, '0.333333'],
+    ]);
+  });
+
+  it('개수 단위(소수 자리 0) 실적은 정수로 나눈다 — 정정 재사용도 같다', async () => {
+    const it0 = txOf({
+      decimalScale: 0,
+      original: [
+        { worker_id: 1n, worker_role_code: 'MAIN', participated_minutes: D(40), share_ratio: D('0.6666666667') },
+        { worker_id: 2n, worker_role_code: 'SUB', participated_minutes: D(20), share_ratio: D('0.3333333333') },
+      ],
+    });
+    await allocateLikeOriginal(it0.tx, result({ good_qty: D(10) }), 40n, 5);
+    expect(it0.written.map((row) => [row.worker_id, (row.good_qty as Prisma.Decimal).toString()])).toEqual([
+      [1n, '7'],
+      [2n, '3'],
     ]);
   });
 });

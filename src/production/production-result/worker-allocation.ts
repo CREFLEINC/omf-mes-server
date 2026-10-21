@@ -77,9 +77,11 @@ export async function allocateLikeOriginal(tx: Tx, row: ResultRow, originalId: b
   await writeAllocations(tx, row, shares, appUserId);
 }
 
+/** 실적 단위가 개수 단위(소수 자리 0 — EA·PC·BOX 등)면 사람마다 정수로 나눈다. 판정은 단위 마스터의 `decimal_scale` 이다. */
 async function writeAllocations(tx: Tx, row: ResultRow, shares: readonly WorkerShare[], appUserId: number | undefined): Promise<void> {
   const quantities = Object.fromEntries(Object.values(QTY_COLUMNS).map((column) => [column, row[column]])) as Quantities;
-  const parts = splitQuantities(quantities, shares);
+  const uom = await tx.uom.findUnique({ where: { uom_id: row.uom_id }, select: { decimal_scale: true } });
+  const parts = splitQuantities(quantities, shares, uom?.decimal_scale === 0);
   await tx.production_result_worker_allocation.createMany({
     data: shares.map((share, index) => ({
       production_result_id: row.production_result_id,

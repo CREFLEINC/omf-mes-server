@@ -57,6 +57,21 @@ describe('crew — 실적 배분', () => {
     expect(shares[0].workerId).toBe(4n);
   });
 
+  it('개수 단위는 내림하고 남은 개수를 소수 부분이 큰 사람부터 하나씩 준다 — 60 → 17·17·17·9', () => {
+    const ratio = [D('0.2828333333'), D('0.2828333333'), D('0.2828333333'), D('0.1515000001')];
+    const parts = splitQuantities({ good_qty: D(60) }, ratio.map((r) => ({ ratio: r })), true);
+    expect(parts.map((part) => part.good_qty.toString())).toEqual(['17', '17', '17', '9']);
+  });
+
+  it('개수 단위에서 소수 부분이 같으면 몫이 큰 사람, 그다음 앞 사람(주작업자)이 먼저 받는다', () => {
+    // 1 을 셋이 나누면 각자 0.33… — 남은 1개는 몫이 같으니 맨 앞(주작업자)이 받는다.
+    const even = splitQuantities({ good_qty: D(1) }, [{ ratio: D('0.3333333333') }, { ratio: D('0.3333333333') }, { ratio: D('0.3333333333') }], true);
+    expect(even.map((part) => part.good_qty.toString())).toEqual(['1', '0', '0']);
+    // 5 를 0.5·0.5 로 — 2.5 둘, 소수 부분·몫이 같아 앞사람이 3.
+    const half = splitQuantities({ good_qty: D(5) }, [{ ratio: D('0.5') }, { ratio: D('0.5') }], true);
+    expect(half.map((part) => part.good_qty.toString())).toEqual(['3', '2']);
+  });
+
   it('끝전은 몫이 가장 큰 사람에게 — 반올림이 넘쳐도 아무도 음수가 되지 않는다', () => {
     const parts = splitQuantities({ good_qty: D(1) }, [{ ratio: D('0.1666666667') }, { ratio: D('0.1666666667') }, { ratio: D('0.6666666667') }]);
     expect(parts.map((part) => part.good_qty.toString())).toEqual(['0.166667', '0.166667', '0.666666']);
