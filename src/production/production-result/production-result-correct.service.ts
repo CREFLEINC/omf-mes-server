@@ -10,7 +10,7 @@ import { CORRECT_APPROVAL_TARGET_TYPE, CORRECT_APPROVAL_TYPE, lockResult } from 
 import { QTY_COLUMNS, resultQuantities } from './production-result-rules';
 import { NUMBERING_DOCUMENT, RESULT_STATUS } from './production-result.service';
 import { ProductionResultRow, ProductionResultView, productionResultView } from './production-result-view';
-import { loadDefects } from './result-defect';
+import { ResultDefectInput, assertDefectCodes, copyDefects, loadDefects, resolveDefectQty, writeDefects } from './result-defect';
 import { allocateLikeOriginal, loadAllocations } from './worker-allocation';
 
 /** required 1. 다섯 수량은 «정정 후 값»이고, 안 준 칸은 원본을 승계한다(§5-3). */
@@ -22,6 +22,7 @@ export interface ProductionResultCorrect {
   holdQty?: number;
   scrapQty?: number;
   reworkQty?: number;
+  defects?: ResultDefectInput[];
 }
 
 /** 본문 밖에서 오는 것. ⛔ If-Match·X-Worker-No 는 계약이 이 오퍼레이션에서 걷었다(§1-1). */
@@ -66,8 +67,10 @@ export class ProductionResultCorrectService {
       original.occurred_at.toISOString().slice(0, 10),
     );
     const workOrderId = Number(original.work_order_id);
+    const defectQty = resolveDefectQty(body);
+    const defectProcessId = await assertDefectCodes(this.prisma, workOrderId, body.defects ?? []);
     return this.prisma.$transaction((tx) =>
-      this.commit(tx, { productionResultId, workOrderId, body, context, productionResultNo }),
+      this.commit(tx, { productionResultId, workOrderId, body, context, productionResultNo, defectQty, defectProcessId }),
     );
   }
 
@@ -92,7 +95,7 @@ export class ProductionResultCorrectService {
 
     const quantities = resultQuantities({
       goodQty: body.goodQty ?? original.good_qty.toNumber(),
-      defectQty: body.defectQty ?? original.defect_qty.toNumber(),
+      defectQty: prepared.defectQty ?? original.defect_qty.toNumber(),
       holdQty: body.holdQty ?? original.hold_qty.toNumber(),
       scrapQty: body.scrapQty ?? original.scrap_qty.toNumber(),
       reworkQty: body.reworkQty ?? original.rework_qty.toNumber(),
@@ -131,6 +134,11 @@ export class ProductionResultCorrectService {
       },
     });
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
+    // 유형을 실으면 그것이 정정본의 내역이다. 안 실으면 불량수량이 같을 때만 원본 내역을 옮긴다 — 수량이 바뀌면
+    // 옛 내역과 합이 어긋나 내역 없이 수량만 남긴다(관리웹 정정 화면이 유형을 받지 않는다 · 장부 P-89).
+    const inputs = body.defects ?? [];
+    if (inputs.length > 0) await writeDefects(tx, row, inputs, prepared.defectProcessId, context.appUserId);
+    else if (row.defect_qty.equals(original.defect_qty)) await copyDefects(tx, row, original.production_result_id, context.appUserId);
     const ids = [row.production_result_id];
     const allocations = await loadAllocations(tx, ids);
     const defects = await loadDefects(tx, ids);
@@ -144,6 +152,9 @@ interface PreparedCorrection {
   body: ProductionResultCorrect;
   context: CorrectContext;
   productionResultNo: string;
+  /** 본문 `defectQty`, 없으면 `defects` 합 — 둘 다 없으면 원본을 승계한다. */
+  defectQty: number | undefined;
+  defectProcessId: bigint | null;
 }
 
 /**

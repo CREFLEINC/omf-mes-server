@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { omitEmpty } from '../../common/http/omit-empty';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertDetectedPeriodRequired, CONFIRMED_INSPECTION_ONLY, detectedAtWhere } from './defect-view';
+import { assertDetectedPeriodRequired, CONFIRMED_INSPECTION_ONLY, detectedAtWhere, LATEST_RESULT_ONLY } from './defect-view';
 
 export type DefectDistributionGroupBy = 'defectCode' | 'occurrenceProcess' | 'detectionProcess';
 
@@ -164,6 +164,7 @@ function buildDistributionWhere(query: DefectDistributionQuery): Prisma.defect_r
     ...(query.itemId === undefined ? {} : { lot: { item_id: query.itemId } }),
     ...detectedAtWhere(query.detectedFrom as string, query.detectedTo as string),
     ...CONFIRMED_INSPECTION_ONLY,
+    ...LATEST_RESULT_ONLY,
   };
 }
 
