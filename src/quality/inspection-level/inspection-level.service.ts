@@ -70,6 +70,7 @@ export interface ItemInspectionLevelHistoryQuery {
 }
 
 const MANUAL = 'MANUAL';
+const VERSION_CONFLICT = 'VERSION_CONFLICT';
 const ITEM = { select: { item_code: true, item_name: true } } as const;
 const HISTORY_INCLUDE = {
   item: ITEM,
@@ -181,7 +182,7 @@ export class InspectionLevelService {
           version_no: { increment: 1 },
         },
       });
-      assertUpdated(updated.count);
+      assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion: String(current.version_no) });
       if (!levelChanged) return;
       await tx.item_inspection_level_history.create({
         data: {

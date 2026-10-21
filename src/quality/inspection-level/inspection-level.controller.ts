@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import { Contract } from '../../common/contract';
-import { IdempotencyService } from '../../common/idempotency';
+import { FAMILY_CONFLICT_CODE, IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { PagedResponse } from '../../common/pagination';
 import {
@@ -52,6 +52,7 @@ export class InspectionLevelController {
       response,
       'itemInspectionLevel',
       (version) => this.levels.update(id, version, body, currentSession(request)?.userId),
+      FAMILY_CONFLICT_CODE,
     );
   }
 

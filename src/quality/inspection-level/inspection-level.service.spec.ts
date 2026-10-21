@@ -127,9 +127,11 @@ describe('InspectionLevelService — 수동 변경(PUT)', () => {
     expect(histories).toEqual([]);
   });
 
-  it('버전이 다르면(사이에 자동 전환·다른 사용자) 409', async () => {
+  it('버전이 다르면(사이에 자동 전환·다른 사용자) 409 VERSION_CONFLICT', async () => {
     const { service, histories } = harness({ updated: 0 });
-    await expect(service.update(5, 2, { inspectionLevelCode: 'TIGHTENED', reason: 'x' }, 1)).rejects.toBeInstanceOf(ConflictException);
+    const error = await service.update(5, 2, { inspectionLevelCode: 'TIGHTENED', reason: 'x' }, 1).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error).toMatchObject({ response: { code: 'VERSION_CONFLICT', currentVersion: '3' } });
     expect(histories).toEqual([]);
   });
 
