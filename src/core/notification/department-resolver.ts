@@ -24,6 +24,7 @@ export async function resolveByUser(tx: Tx, appUserId: bigint): Promise<bigint |
   return activeDepartment(user?.department ?? null);
 }
 
-function activeDepartment(department: { department_id: bigint; is_active: boolean } | null): bigint | null {
+/** 판정 규칙 한 곳 — 라인을 이미 읽은 호출자도 이것으로 부서를 고른다. */
+export function activeDepartment(department: { department_id: bigint; is_active: boolean } | null): bigint | null {
   return department?.is_active ? department.department_id : null;
 }

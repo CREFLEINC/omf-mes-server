@@ -34,6 +34,11 @@ describe('message-format', () => {
     expect(data.process).toBe(EMPTY_PARAM);
   });
 
+  it('자르기는 코드 포인트 단위다 — 이모지를 반으로 자르지 않는다', () => {
+    const data = templateData('EQUIPMENT_BREAKDOWN_OCCURRED', { symptom: 'ab😀cd' }, AT, 3);
+    expect(data.symptom).toBe('ab😀');
+  });
+
   it('message 는 값을 · 로 잇고 중단 사유·수량에만 한국어 라벨을 붙인다', () => {
     const base = { wo_no: 'WO-20261021-003', item: 'P100 사출 커버', process: '사출', line: 'L1', actor: '홍길동' };
     expect(notificationMessage('WORK_SESSION_STOPPED', { ...base, reason: '금형 이상' }, AT)).toBe(

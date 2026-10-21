@@ -97,12 +97,13 @@ export class NotificationEmitter {
     const eventId = created.notification_event_id;
     if (skipReason !== null) return { notificationEventId: eventId, skipReason, notificationCount: 0, zaloCount: 0 };
 
+    const message = notificationMessage(input.eventCode, input.values, input.occurredAt);
     await tx.notification.createMany({
       data: recipients.map((recipient) => ({
         notification_event_id: eventId,
         recipient_user_id: recipient.app_user_id,
         title: event.eventName,
-        message: notificationMessage(input.eventCode, input.values, input.occurredAt),
+        message,
       })),
     });
     // 번호가 없는 수신자는 건을 만들지 않는다 — 알림센터는 이미 받았다(data-model §5).
@@ -123,7 +124,12 @@ export class NotificationEmitter {
 
     const setting = await tx.notification_department_setting.findUnique({
       where: { department_id_event_type_code: { department_id: input.departmentId, event_type_code: input.eventCode } },
-      select: { is_enabled: true, zalo_enabled: true, recipients: { select: { app_user: { select: RECIPIENT_SELECT } } } },
+      select: {
+        is_enabled: true,
+        zalo_enabled: true,
+        // 결재자 모드는 설정에 수신자가 없다 — 읽지 않는다.
+        recipients: { take: mode === 'APPROVER' ? 0 : undefined, select: { app_user: { select: RECIPIENT_SELECT } } },
+      },
     });
     if (setting === null || !setting.is_enabled) return skip('EVENT_DISABLED');
 

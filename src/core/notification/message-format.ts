@@ -89,7 +89,8 @@ export function templateData(
   const data: Record<string, string> = {};
   for (const key of [...paramsOf(eventCode), ...COMMON_PARAMS]) {
     const value = text(all[key]);
-    data[key] = value === '' ? EMPTY_PARAM : value.slice(0, maxLength);
+    // 코드 포인트로 자른다 — UTF-16 단위로 자르면 이모지 한가운데가 잘려 홀로 남은 서로게이트가 실린다.
+    data[key] = value === '' ? EMPTY_PARAM : Array.from(value).slice(0, maxLength).join('');
   }
   return data;
 }

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { NotificationEmitter, NotificationValues, resolveByLine } from '../../core/notification';
+import { NotificationEmitter, NotificationValues, activeDepartment } from '../../core/notification';
 import { ACTIVE_RESULT_WHERE } from './work-order-progress';
 
 type Tx = Prisma.TransactionClient;
@@ -52,10 +52,9 @@ export async function workOrderNotice(
     select: {
       work_order_no: true,
       order_qty: true,
-      production_line_id: true,
       item: { select: { item_code: true, item_name: true } },
       routing_operation: { select: { process: { select: { process_name: true } } } },
-      production_line: { select: { line_name: true } },
+      production_line: { select: { line_name: true, department: { select: { department_id: true, is_active: true } } } },
     },
   });
   const values: NotificationValues = {
@@ -70,7 +69,8 @@ export async function workOrderNotice(
     values.plan_qty = workOrder.order_qty.toString();
     values.good_qty = (options.quantities.goodQty ?? (await goodQty(tx, workOrderId))).toString();
   }
-  return { departmentId: await resolveByLine(tx, workOrder.production_line_id), values };
+  // `resolveByLine` 과 같은 규칙 — 라인을 이미 읽었으니 다시 읽지 않는다.
+  return { departmentId: activeDepartment(workOrder.production_line?.department ?? null), values };
 }
 
 async function actorName(tx: Tx, options: WorkOrderNoticeOptions): Promise<string | undefined> {
