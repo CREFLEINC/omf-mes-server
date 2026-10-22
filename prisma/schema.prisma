@@ -456,6 +456,7 @@ model integration_message {
   completed_at                     DateTime?                          @db.Timestamptz(6)
   locked_at                        DateTime?                          @db.Timestamptz(6)
   locked_by                        String?                            @db.VarChar(100)
+  erp_outbound_row                 erp_outbound_row[]
   record_provenance                record_provenance[]
   production_order_acknowledgement production_order_acknowledgement[]
 
@@ -487,6 +488,34 @@ model erp_sync_state {
   next_run_at        DateTime? @db.Timestamptz(6)
   updated_at         DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
 
+  @@schema("integration")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model erp_outbound_row {
+  erp_outbound_row_id    BigInt              @id @default(autoincrement())
+  integration_message_id BigInt
+  relay_table_name       String              @db.VarChar(50)
+  document_no            String              @db.VarChar(50)
+  relay_key              String              @db.VarChar(200)
+  if_seq                 Int?
+  create_type_code       String              @db.Char(1)
+  cancels_row_id         BigInt?
+  row_values             Json
+  status_code            String              @db.VarChar(20)
+  relay_inf_id           BigInt?
+  erp_document_no        String?             @db.VarChar(30)
+  erp_error_message      String?
+  inserted_at            DateTime?           @db.Timestamptz(6)
+  erp_applied_at         DateTime?           @db.Timestamptz(6)
+  created_at             DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  erp_outbound_row       erp_outbound_row?   @relation("erp_outbound_rowToerp_outbound_row", fields: [cancels_row_id], references: [erp_outbound_row_id], onDelete: NoAction, onUpdate: NoAction)
+  other_erp_outbound_row erp_outbound_row[]  @relation("erp_outbound_rowToerp_outbound_row")
+  integration_message    integration_message @relation(fields: [integration_message_id], references: [integration_message_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([relay_table_name, relay_key], map: "uq_erp_outbound_row_key")
+  @@index([relay_table_name, document_no], map: "ix_erp_outbound_row_document")
+  @@index([integration_message_id], map: "ix_erp_outbound_row_message")
   @@schema("integration")
 }
 
