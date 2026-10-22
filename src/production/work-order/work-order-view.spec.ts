@@ -43,6 +43,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     cancellation_reason_code: null,
     po_mismatch: false,
     closed_worker_id: null,
+    close_judgment_code: null,
     production_plan: null,
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001' },
@@ -96,14 +97,19 @@ describe('WorkOrder 뷰', () => {
         completion_variance_reason_code: 'MATERIAL_SHORTAGE',
         closed_worker_id: 9n,
         closed_worker: { worker_no: '900009', worker_name: '작업자나' },
+        close_judgment_code: 'UNDER',
       }),
       { erpMessageQueued: true, voidedLotCount: 2 },
     );
 
     expect(view).toMatchObject({
       closedAt: '2026-10-22T03:00:00.000Z', closeDispositionCode: 'WRITE_OFF', completionVarianceReasonCode: 'MATERIAL_SHORTAGE',
-      closedWorkerId: 9, closedWorkerNo: '900009', closedWorkerName: '작업자나', voidedLotCount: 2,
+      closeJudgmentCode: 'UNDER', closedWorkerId: 9, closedWorkerNo: '900009', closedWorkerName: '작업자나', voidedLotCount: 2,
     });
+    expect(view).not.toHaveProperty('closedByUserId');
+    // 관리웹 마감은 계정이 마감자다.
+    expect(workOrderView(workOrderRow(), { erpMessageQueued: true, closedByUser: { id: 4n, name: '관리자' } }))
+      .toMatchObject({ closedByUserId: 4, closedByUserName: '관리자' });
   });
 
   it('뷰 — 표시용 파생 넷은 계획 → ERP W/O 조인으로 낸다', () => {

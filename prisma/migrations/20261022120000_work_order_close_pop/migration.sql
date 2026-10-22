@@ -18,3 +18,21 @@ SELECT cg.code_group_id, 'FORCE_END', '강제 종료', 60
 FROM mdm.code_group cg
 WHERE cg.group_code = 'WORK_SESSION_EVENT_TYPE'
 ON CONFLICT (code_group_id, code) DO NOTHING;
+
+-- 마감 시점 판정 — 조회의 progress 판정은 마감 뒤 지연 실적으로 바뀔 수 있어 마감 결과로 따로 남긴다.
+ALTER TABLE production.work_order
+    ADD COLUMN close_judgment_code varchar(10)
+        CONSTRAINT ck_work_order_close_judgment CHECK (close_judgment_code IN ('UNDER', 'NORMAL', 'OVER'));
+
+-- 이미 마감된 W/O 는 마감이 적재한 ERP 실적 메시지의 판정으로 채운다(없으면 비운다).
+-- ⚠ 마감 W/O 의 UPDATE 를 막는 트리거를 이 채움 동안만 끈다 — 같은 트랜잭션 안이라 다른 쓰기가 끼지 않는다.
+ALTER TABLE production.work_order DISABLE TRIGGER trg_work_order_closed_immutable;
+UPDATE production.work_order wo
+   SET close_judgment_code = m.payload -> 'header' ->> 'completionJudgmentCode'
+  FROM integration.integration_message m
+ WHERE wo.closed_at IS NOT NULL
+   AND m.interface_code = 'IF-WO-CLOSE-SEND'
+   AND m.target_type_code = 'WORK_ORDER'
+   AND m.target_id = wo.work_order_id
+   AND m.payload -> 'header' ->> 'completionJudgmentCode' IN ('UNDER', 'NORMAL', 'OVER');
+ALTER TABLE production.work_order ENABLE TRIGGER trg_work_order_closed_immutable;

@@ -7165,6 +7165,27 @@
       "description": "마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 에만 있다. 마감은 실적이 없는 대기(WAITING) LOT 만 폐번한다. ⭐ 진행 중(ACTIVE, 실적 일부) LOT 이 있어도 마감되고, 그 LOT 은 생명주기 ACTIVE·completedAt 빈 채로 남는다 — 마감은 LOT 을 완료하지 않는다. 장부 P-104",
       "example": 1
      },
+     "closeJudgmentCode": {
+      "type": "string",
+      "enum": [
+       "UNDER",
+       "NORMAL",
+       "OVER"
+      ],
+      "description": "마감 시점 판정 — 마감할 때 서버가 낸 미달·정상·초과. ⭐ progress.completionJudgmentCode 는 «지금» 판정이라 마감 뒤 지연 실적으로 바뀔 수 있다 — 마감 결과로는 이 칸을 본다. 기능 이전에 마감된 W/O 는 ERP 실적 메시지의 판정으로 채웠고 없으면 없다. 장부 P-104",
+      "example": "UNDER",
+      "x-code-key": "CD-COMPLETION-JUDGMENT"
+     },
+     "closedByUserId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "관리웹에서 마감한 계정 — POP 마감(closedWorker*)이면 없다. 장부 P-104",
+      "example": 1001
+     },
+     "closedByUserName": {
+      "type": "string",
+      "example": "값"
+     },
      "erpMessageQueued": {
       "type": [
        "boolean",
