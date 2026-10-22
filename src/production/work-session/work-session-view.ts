@@ -37,7 +37,7 @@ export type WorkSessionView = ReturnType<typeof workSessionView>;
 export type WorkSessionEventView = ReturnType<typeof workSessionEventView>;
 export type WorkSessionWorkerView = ReturnType<typeof workSessionWorkerView>;
 
-/** 계약 `WorkSession`(11칸 · required 6)으로 옮기는 자리. ⛔ 값 없는 칸은 키를 생략한다. */
+/** 계약 `WorkSession` 으로 옮기는 자리. ⛔ 값 없는 칸은 키를 생략한다. */
 export function workSessionView(row: WorkSessionRow & Partial<Pick<WorkSessionDisplay, 'terminal' | 'work_session_worker'>>) {
   const worker = row.work_session_worker?.[0]?.worker;
   return omitEmpty({
