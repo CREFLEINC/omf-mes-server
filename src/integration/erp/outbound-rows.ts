@@ -7,10 +7,14 @@ import { RcvTable } from './rcv-tables';
 export type RelayValue = string | number | null;
 export type RelayValues = Record<string, RelayValue>;
 
-/** 바꾸개가 만든 행 하나 — 업무 칸만. IF_SEQ·CREATE_TYPE·처리 표시는 예약이 채운다. */
+/**
+ * 바꾸개가 만든 행 하나 — 업무 칸만. IF_SEQ·CREATE_TYPE·처리 표시는 예약이 채운다.
+ * `cancels` 가 있으면 그 행의 취소 행(C)이다 — 처음 넣은 값·IF_SEQ 그대로 CREATE_TYPE 만 C 다.
+ */
 export interface RowDraft {
   table: RcvTable;
   values: RelayValues;
+  cancels?: ReservedRow;
 }
 
 /** `integration.erp_outbound_row.status_code` — DB CHECK 와 같은 넷. */
@@ -24,6 +28,7 @@ export const OUTBOUND_ROW_STATUS = {
 
 /** CREATE_TYPE — A 생성, C 취소. */
 const CREATE = 'A';
+const CANCEL = 'C';
 
 export interface ReservedRow {
   id: bigint;
@@ -88,6 +93,20 @@ export function relayKeyOf(table: RcvTable, values: RelayValues): string {
 
 export class OutboundRows {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** 그 건에 넣은 생성 행(A) 중 아직 취소 행이 없는 것 — 입고 취소가 이것마다 C 를 보낸다. */
+  async uncancelled(tableName: string, documentNo: string): Promise<ReservedRow[]> {
+    const rows = await this.prisma.erp_outbound_row.findMany({
+      where: {
+        relay_table_name: tableName,
+        document_no: documentNo,
+        create_type_code: CREATE,
+        other_erp_outbound_row: { none: {} },
+      },
+      orderBy: { erp_outbound_row_id: 'asc' },
+    });
+    return rows.map(reservedRow);
+  }
 
   /** 그 메시지에 이미 적은 행. 없으면 []. */
   async of(messageId: bigint): Promise<ReservedRow[]> {
@@ -186,7 +205,22 @@ export class OutboundRows {
 
       const issued = new Map<string, number>();
       const data: Prisma.erp_outbound_rowCreateManyInput[] = [];
-      for (const { table, values: fields } of drafts) {
+      for (const { table, values: fields, cancels } of drafts) {
+        if (cancels !== undefined) {
+          const values: RelayValues = { ...cancels.values, CREATE_TYPE: CANCEL, ...table.initialFlags };
+          data.push({
+            integration_message_id: messageId,
+            relay_table_name: table.name,
+            document_no: documentNoOf(table, values),
+            relay_key: relayKeyOf(table, values),
+            if_seq: Number(cancels.values.IF_SEQ),
+            create_type_code: CANCEL,
+            cancels_row_id: cancels.id,
+            row_values: values,
+            status_code: OUTBOUND_ROW_STATUS.RESERVED,
+          });
+          continue;
+        }
         const documentNo = documentNoOf(table, fields);
         const counter = `${table.name}|${documentNo}`;
         const previous = issued.get(counter);

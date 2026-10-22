@@ -9,12 +9,15 @@ import { inboundLineOfLot } from './lot-receivable';
 export const MATERIAL_RECEIPT = 'MATERIAL';
 /** 특채가 적용된 상태(`quality.concession` · 장부 P-79). */
 const APPLIED_CONCESSION = 'APPROVED';
-const POSTED = 'POSTED';
+/** 아직 취소되지 않은 입고 — 취소 요청 중이어도 결재가 반려되면 그대로 남는다. */
+const LIVE_RECEIPT_STATUSES = ['POSTED', 'CANCEL_REQUESTED'];
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** 선별의 선별을 따라가는 깊이 — `inboundLineOfLot` 과 같다. */
 const MAX_DEPTH = 10;
 /** 초과분 묶음의 대상 — 초과분 하나가 한 묶음이다(P-100). */
 export const EXCESS_TARGET = 'INBOUND_RECEIPT_EXCESS';
+/** 입고 취소 묶음의 대상 — 그 입고로 보낸 행마다 취소 행(C)이 간다. */
+export const RECEIPT_CANCEL_TARGET = 'GOODS_RECEIPT_CANCEL';
 
 /** 초과분 묶음의 키 — 초과분마다 한 번만 적재된다. */
 export function excessMessageKey(excessId: bigint): string {
@@ -70,7 +73,7 @@ export interface ErpReceiptLine {
 }
 
 /**
- * 입하 줄 하나에서 ERP 구매입고로 가는 입고 줄 — 전기된 자재 입고이고, 불량창고가 아니고, 특채 LOT 이 아니다.
+ * 입하 줄 하나에서 ERP 구매입고로 가는 입고 줄 — 취소되지 않은 자재 입고이고, 불량창고가 아니고, 특채 LOT 이 아니다.
  * 그 입하 줄의 LOT 과 선별로 떼어 낸 자손을 본다(P-56). 입하 줄의 몫(P-100)을 나눌 때 쓴다.
  */
 export async function erpReceiptLinesOf(db: Db, inboundLineId: bigint): Promise<ErpReceiptLine[]> {
@@ -93,7 +96,11 @@ export async function erpReceiptLinesOf(db: Db, inboundLineId: bigint): Promise<
   const lines = await db.goods_receipt_line.findMany({
     where: {
       OR: [{ inbound_receipt_line_id: inboundLineId }, { lot_id: { in: lots } }],
-      goods_receipt: { status_code: POSTED, receipt_type_code: MATERIAL_RECEIPT, warehouse: { is_defect: false } },
+      goods_receipt: {
+        status_code: { in: LIVE_RECEIPT_STATUSES },
+        receipt_type_code: MATERIAL_RECEIPT,
+        warehouse: { is_defect: false },
+      },
     },
     orderBy: { goods_receipt_line_id: 'asc' },
     select: {
@@ -149,4 +156,30 @@ export async function enqueueLinkedExcesses(
       payload: { inboundReceiptExcessId: Number(excessId) },
     });
   }
+}
+
+/**
+ * 입고 취소를 ERP 에 알릴 일을 적재한다(사용자 결정 2026-10-22 · 장부 P-104) — 그 입고를 구매입고로 적재했을 때만.
+ * 보내기 전에 취소되면 입고 묶음은 보낼 것이 없고 취소 묶음도 보낼 것이 없다(둘 다 바로 완료).
+ */
+export async function enqueueReceiptCancel(
+  tx: Prisma.TransactionClient,
+  outbox: OutboxService,
+  goodsReceiptId: bigint,
+): Promise<void> {
+  const { goods_receipt_no: receiptNo } = await tx.goods_receipt.findUniqueOrThrow({
+    where: { goods_receipt_id: goodsReceiptId },
+    select: { goods_receipt_no: true },
+  });
+  const queued = await tx.integration_message.count({
+    where: { message_key: outboxMessageKey(IF_GOODS_RECEIPT, receiptNo) },
+  });
+  if (queued === 0) return;
+  await outbox.enqueue(tx, {
+    interfaceCode: IF_GOODS_RECEIPT,
+    messageKey: outboxMessageKey(IF_GOODS_RECEIPT, `CANCEL:${receiptNo}`),
+    targetTypeCode: RECEIPT_CANCEL_TARGET,
+    targetId: goodsReceiptId,
+    payload: { goodsReceiptNo: receiptNo },
+  });
 }

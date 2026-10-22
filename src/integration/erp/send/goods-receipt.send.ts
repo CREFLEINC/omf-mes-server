@@ -1,16 +1,21 @@
 import { Prisma } from '@prisma/client';
 
 import { IF_GOODS_RECEIPT } from '../../../core/outbox/outbox.service';
-import { EXCESS_TARGET, erpInboundLines, erpReceiptLinesOf } from '../../../logistics/goods-receipt/erp-receipt';
+import {
+  EXCESS_TARGET,
+  RECEIPT_CANCEL_TARGET,
+  erpInboundLines,
+  erpReceiptLinesOf,
+} from '../../../logistics/goods-receipt/erp-receipt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboundBuilder, OutboundMessage } from '../outbound-builder';
-import { RowDraft } from '../outbound-rows';
+import { OUTBOUND_ROW_STATUS, OutboundRows, RowDraft } from '../outbound-rows';
 import { GR_INFOR } from '../rcv-tables';
 import { relayDateTime } from './relay-time';
 
 /** 인터페이스 키(POP_INF_KEY) 칸 길이. MES 입고번호를 그대로 쓴다. */
 const POP_INF_KEY_LENGTH = 25;
-const POSTED = 'POSTED';
+const CANCELLED = 'CANCELLED';
 
 const ORDER_LINE = {
   purchase_order_line_id: true,
@@ -50,6 +55,7 @@ interface Share {
  * - 수불유형·창고·공급처·구매그룹은 발주에서 이어받는다(컬럼 정의서). 입고 일시는 공장 현지 시각이다.
  * - 통관번호는 고객 답(질문 5) 전까지 빈 값, 순번 칸은 0 이다(NOT NULL).
  * 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 그 입하 줄이 들어간 입고의 번호·일시로 보낸다.
+ * 입고 취소 묶음(`GOODS_RECEIPT_CANCEL`)은 그 입고번호로 넣은 행(입고 행·초과분 행)마다 취소 행(C)이다.
  */
 export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
   return { interfaceCode: IF_GOODS_RECEIPT, build: (message) => build(prisma, message) };
@@ -57,6 +63,7 @@ export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
 
 async function build(prisma: PrismaService, message: OutboundMessage): Promise<RowDraft[]> {
   if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, message.targetId);
+  if (message.targetTypeCode === RECEIPT_CANCEL_TARGET) return cancelRows(prisma, message.targetId);
   const receipt = await prisma.goods_receipt.findUniqueOrThrow({
     where: { goods_receipt_id: message.targetId },
     select: {
@@ -79,8 +86,8 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
       },
     },
   });
-  // 보내기 전에 취소된 입고는 보낼 것이 없다.
-  if (receipt.status_code !== POSTED || receipt.warehouse.is_defect) return [];
+  // 보내기 전에 취소된 입고는 보낼 것이 없다. 취소 요청 중이면 그대로 보낸다 — 반려되면 입고가 남는다.
+  if (receipt.status_code === CANCELLED || receipt.warehouse.is_defect) return [];
   if (receipt.goods_receipt_no.length > POP_INF_KEY_LENGTH) {
     throw new Error(`입고번호 ${receipt.goods_receipt_no} 가 인터페이스 키 칸(${POP_INF_KEY_LENGTH}자)보다 길다`);
   }
@@ -207,6 +214,22 @@ async function excessRows(prisma: PrismaService, excessId: bigint): Promise<RowD
       inspected: inbound.inspection_required,
     }),
   ];
+}
+
+/**
+ * 입고 취소 — 그 입고번호로 넣은 생성 행마다 취소 행. 넣는 중인 행(키만 적었다)이 있으면 다음에 다시 한다 —
+ * 지금 C 를 보내면 그 행이 C 보다 늦게 들어갈 수 있다.
+ */
+async function cancelRows(prisma: PrismaService, goodsReceiptId: bigint): Promise<RowDraft[]> {
+  const { goods_receipt_no: receiptNo } = await prisma.goods_receipt.findUniqueOrThrow({
+    where: { goods_receipt_id: goodsReceiptId },
+    select: { goods_receipt_no: true },
+  });
+  const sent = await new OutboundRows(prisma).uncancelled(GR_INFOR.name, receiptNo);
+  if (sent.some((row) => row.statusCode === OUTBOUND_ROW_STATUS.RESERVED)) {
+    throw new Error(`입고 ${receiptNo} 의 구매입고를 넣는 중이다 — 넣은 뒤 취소를 다시 한다`);
+  }
+  return sent.map((row) => ({ table: GR_INFOR, values: row.values, cancels: row }));
 }
 
 function rowOf(receipt: Receipt, share: Share): RowDraft {
