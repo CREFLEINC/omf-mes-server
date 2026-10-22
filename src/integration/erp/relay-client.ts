@@ -1,6 +1,6 @@
 import * as mssql from 'mssql';
 
-import { RelayValue, RelayValues } from './outbound-rows';
+import { RelayValue, RelayValues, relayKeyOf } from './outbound-rows';
 import { RcvTable } from './rcv-tables';
 import { RelayRow, RelayTable, orderColumns } from './relay-tables';
 
@@ -21,6 +21,16 @@ export interface RelayInsert {
   table: RcvTable;
   values: RelayValues;
 }
+
+/** 넣은 행의 ERP 처리 결과. */
+export interface RelayReply {
+  applied: boolean;
+  documentNo: string | null;
+  error: string | null;
+}
+
+/** 한 번에 키로 찾는 행 수 — 키 칸 7개(구매입고) × 50 = 매개변수 350, SQL Server 상한 2100 안이다. */
+const REPLY_CHUNK = 50;
 
 /** 중계 DB 에 남는 MES 쪽 작성·수정자. */
 const MES_USER = 'MES';
@@ -125,6 +135,37 @@ export class RelayClient {
     return Number(result.recordset[0]?.LAST_IF_SEQ ?? 0);
   }
 
+  /**
+   * 넣은 행의 ERP 처리 결과 — `relay_key` → 결과. 행마다 PK 로 찾는다: MES_INF_ID 에는 인덱스가 없어 그것으로 찾으면
+   * 고객 표를 통째로 훑는다. 중계 표에서 사라진 행은 결과에 없다.
+   */
+  async replies(table: RcvTable, rows: readonly RelayValues[]): Promise<Map<string, RelayReply>> {
+    const replies = new Map<string, RelayReply>();
+    const pool = await this.connect();
+    for (let start = 0; start < rows.length; start += REPLY_CHUNK) {
+      const request = pool.request();
+      const where = rows.slice(start, start + REPLY_CHUNK).map((values, row) => {
+        const terms = table.keyColumns.map((column, index) => {
+          bind(request, `k${row}_${index}`, values[column] ?? null);
+          return `${column} = @k${row}_${index}`;
+        });
+        return `(${terms.join(' AND ')})`;
+      });
+      const result = await request.query<RelayValues>(
+        `SELECT ${table.keyColumns.join(', ')}, ${table.appliedFlag} AS APPLIED_FLAG, ` +
+          `${table.replyColumn} AS REPLY_NO, ERP_APPLY_ERROR FROM dbo.${table.name} WHERE ${where.join(' OR ')}`,
+      );
+      for (const found of result.recordset) {
+        replies.set(relayKeyOf(table, found), {
+          applied: found.APPLIED_FLAG === 'Y',
+          documentNo: blankToNull(found.REPLY_NO),
+          error: blankToNull(found.ERP_APPLY_ERROR),
+        });
+      }
+    }
+    return replies;
+  }
+
   async close(): Promise<void> {
     const pool = this.pool;
     this.pool = undefined;
@@ -194,6 +235,22 @@ async function insertOnce(transaction: mssql.Transaction, { table, values }: Rel
       'SELECT CAST(SCOPE_IDENTITY() AS bigint) AS MES_INF_ID',
   );
   return Number(inserted.recordset[0].MES_INF_ID);
+}
+
+/**
+ * 중계 DB 에 못 닿았거나 도중에 끊겼다 — 다시 하면 될 일이다. SQL Server 가 «거절»한 것(`EREQUEST` — 칸 길이·형식 등)은
+ * 데이터 문제라 사람이 본다. 교착(1205)·잠금 시간 초과(1222)는 거절이 아니라 다시 할 일이다.
+ */
+export function relayUnreachable(error: unknown): boolean {
+  if (error instanceof mssql.ConnectionError || error instanceof mssql.TransactionError) return true;
+  if (error instanceof mssql.RequestError) {
+    return error.code !== 'EREQUEST' || error.number === 1205 || error.number === 1222;
+  }
+  return false;
+}
+
+function blankToNull(value: RelayValue): string | null {
+  return value === null || String(value).trim() === '' ? null : String(value).trim();
 }
 
 /** 칸 이름은 SQL 에 그대로 들어간다 — 바꾸개가 만든 이름이라도 대문자·숫자·밑줄만 받는다. */

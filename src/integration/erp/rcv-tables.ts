@@ -18,6 +18,10 @@ export interface RcvTable {
   ifSeq: 'perRow' | 'perSend';
   /** 넣을 때의 처리 표시. ERP 가 반영하면서 바꾼다. */
   initialFlags: Readonly<Record<string, string>>;
+  /** ERP 가 반영을 마치며 'Y' 로 올리는 칸. 오류는 어느 표나 `ERP_APPLY_ERROR` 에 적고 이 칸은 그대로 둔다. */
+  appliedFlag: string;
+  /** ERP 가 반영하며 돌려 적는 전표번호 칸. */
+  replyColumn: string;
 }
 
 /** 생산입고. 키에 양품·불량 구분이 없어 양품 한 행과 불량유형마다 한 행이 IF_SEQ 로만 갈린다. */
@@ -27,6 +31,8 @@ export const PROD_RSLT: RcvTable = {
   documentColumns: ['PLANT_CD', 'PRODT_ORDER_NO'],
   ifSeq: 'perRow',
   initialFlags: { ERP_APPLY_FLAG: 'N' },
+  appliedFlag: 'ERP_APPLY_FLAG',
+  replyColumn: 'RCPT_ITEM_DOCUMENT_NO',
 };
 
 /** 제품출하. 라인은 DN_REQ_SEQ 로 갈린다. */
@@ -37,6 +43,8 @@ export const GOODS_ISSUE: RcvTable = {
   ifSeq: 'perSend',
   // 이 표만 두 단계다 — ERP 가 출하전표(DN_NO)를 발번하며 1 을, 출하를 확정하며 2 를 올린다. 처음 값은 'N' 이 아니라 빈 값이다.
   initialFlags: { ERP_APPLY_FLAG1: '', ERP_APPLY_FLAG2: '' },
+  appliedFlag: 'ERP_APPLY_FLAG2',
+  replyColumn: 'DN_NO',
 };
 
 /** 구매입고. POP_INF_KEY 는 MES 가 매기는 건 번호다. */
@@ -46,6 +54,15 @@ export const GR_INFOR: RcvTable = {
   documentColumns: ['POP_INF_KEY'],
   ifSeq: 'perSend',
   initialFlags: { ERP_APPLY_FLAG: 'N' },
+  appliedFlag: 'ERP_APPLY_FLAG',
+  replyColumn: 'GM_NO',
 };
 
 export const RCV_TABLES: readonly RcvTable[] = [PROD_RSLT, GOODS_ISSUE, GR_INFOR];
+
+/** 적어 둔 표 이름 → 표. */
+export function tableNamed(tables: readonly RcvTable[], name: string): RcvTable {
+  const table = tables.find((candidate) => candidate.name === name);
+  if (table === undefined) throw new Error(`보내는 표가 아니다: ${name}`);
+  return table;
+}

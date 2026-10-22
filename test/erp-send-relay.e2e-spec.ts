@@ -4,11 +4,12 @@
 import * as mssql from 'mssql';
 
 import { RelayValues } from '../src/integration/erp/outbound-rows';
-import { PROD_RSLT } from '../src/integration/erp/rcv-tables';
+import { GOODS_ISSUE, PROD_RSLT } from '../src/integration/erp/rcv-tables';
 import { RelayClient, RelayInsert } from '../src/integration/erp/relay-client';
 import { RELAY, connectSa, createCopy, describeRelay, dropCopy } from './erp-relay.fixture';
 
 const RESULT = { ...PROD_RSLT, name: 'E2E_IF_RCV_PROD_RSLT_KO324' };
+const ISSUE = { ...GOODS_ISSUE, name: 'E2E_IF_RCV_GOODS_ISSUE_KO324' };
 
 const result = (order: string, ifSeq: number, changes: RelayValues = {}): RelayInsert => ({
   table: RESULT,
@@ -37,6 +38,7 @@ describeRelay('ERP 보내기 — 중계 DB 넣기 (e2e · 중계 DB)', () => {
   beforeAll(async () => {
     sa = await connectSa();
     await createCopy(sa, RESULT.name, PROD_RSLT.name);
+    await createCopy(sa, ISSUE.name, GOODS_ISSUE.name);
     // 고객 DB 의 받는 표에 트리거가 있어도 넣어져야 한다 — `OUTPUT` 절은 트리거가 있으면 실패한다.
     await sa
       .request()
@@ -47,6 +49,7 @@ describeRelay('ERP 보내기 — 중계 DB 넣기 (e2e · 중계 DB)', () => {
   afterAll(async () => {
     await relay?.close();
     await dropCopy(sa, RESULT.name);
+    await dropCopy(sa, ISSUE.name);
     await sa?.close();
   });
 
@@ -114,6 +117,47 @@ describeRelay('ERP 보내기 — 중계 DB 넣기 (e2e · 중계 DB)', () => {
     await expect(relay.insertRows([{ table: RESULT, values: withoutIfSeq }])).rejects.toThrow(
       `${RESULT.name} 에 키 칸 IF_SEQ 이 없다`,
     );
+  });
+
+  it('ERP 처리 결과를 PK 로 읽는다 — 반영(Y)·전표번호·오류, 사라진 행은 없다', async () => {
+    await sa.request().query(
+      `UPDATE dbo.${RESULT.name} SET ERP_APPLY_FLAG = 'Y', RCPT_ITEM_DOCUMENT_NO = 'PR2610220001' ` +
+        `WHERE PRODT_ORDER_NO = 'E2E-WO-2' AND IF_SEQ = 1; ` +
+        `UPDATE dbo.${RESULT.name} SET ERP_APPLY_ERROR = '품목이 없습니다' WHERE PRODT_ORDER_NO = 'E2E-WO-2' AND IF_SEQ = 2`,
+    );
+
+    const replies = await relay.replies(RESULT, [
+      result('E2E-WO-2', 1).values,
+      result('E2E-WO-2', 2).values,
+      result('E2E-WO-1', 1).values,
+      result('E2E-GONE', 1).values,
+    ]);
+
+    expect(Object.fromEntries(replies)).toEqual({
+      'PL11|E2E-WO-2|1|A': { applied: true, documentNo: 'PR2610220001', error: null },
+      'PL11|E2E-WO-2|2|A': { applied: false, documentNo: null, error: '품목이 없습니다' },
+      'PL11|E2E-WO-1|1|A': { applied: false, documentNo: null, error: null },
+    });
+  });
+
+  it('제품출하는 두 단계의 끝(2)이 Y 여야 반영이다 — 1단계에서 발번한 DN_NO 는 먼저 읽는다', async () => {
+    const issue: RelayInsert = {
+      table: ISSUE,
+      values: {
+        DN_REQ_NO: 'E2E-DN-1', IF_SEQ: 1, CREATE_TYPE: 'A', DN_REQ_SEQ: 1, MOV_TYPE: 'I31', SHIP_TO_PARTY: 'C001',
+        ACTUAL_GI_DT: '2026-10-22 10:00:00', PLANT_CD: 'PL11', SL_CD: 'S210', ITEM_CD: 'ITEM-1', LOT_NO: '',
+        LOT_SUB_NO: 0, GI_UNIT: 'EA', REQ_QTY: '5', GI_QTY: '5', REF_NO1: '', REF_NO2: '', DN_SEQ_NO: 1,
+        ERP_APPLY_FLAG1: '', ERP_APPLY_FLAG2: '',
+      },
+    };
+    await relay.insertRows([issue]);
+    const read = async () => (await relay.replies(ISSUE, [issue.values])).get('E2E-DN-1|1|A|1');
+
+    await sa.request().query(`UPDATE dbo.${ISSUE.name} SET ERP_APPLY_FLAG1 = 'Y', DN_NO = 'DN2610220001'`);
+    expect(await read()).toEqual({ applied: false, documentNo: 'DN2610220001', error: null });
+
+    await sa.request().query(`UPDATE dbo.${ISSUE.name} SET ERP_APPLY_FLAG2 = 'Y'`);
+    expect(await read()).toEqual({ applied: true, documentNo: 'DN2610220001', error: null });
   });
 
   it('그 건의 마지막 IF_SEQ 를 읽는다 — 없으면 0', async () => {
