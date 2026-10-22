@@ -20,7 +20,7 @@ import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertOqcPicked, oqcPickedLots } from '../../logistics/shipment-request/shipment-oqc-lots';
 import { DefectRecordWriteService, InspectionDefectInput } from '../defect/defect-record-write.service';
-import { countIqcJudgmentWithin } from '../inspection-level/inspection-level-switch';
+import { recordIqcInspectionLevelWithin } from '../inspection-level/inspection-level-switch';
 import type { TerminalWorkerAuditActor } from '../../audit/terminal-worker-audit';
 import { INSPECTION_RESULT_JOIN, InspectionResultView, inspectionResultView } from './inspection-result-view';
 import { assertAccountWorker, assertJudgmentChange, assertPqcAfterProduction } from './inspection-result-write-rules';
@@ -250,14 +250,10 @@ export class InspectionConfirmService {
       sourceDocumentTypeCode: SOURCE_DOCUMENT_TYPE,
       sourceDocumentId: input.inspectionResultId,
     };
-    await countIqcJudgmentWithin(tx, {
+    await recordIqcInspectionLevelWithin(tx, {
       inspectionRequestId: input.inspectionRequestId,
       inspectionTypeCode: request.inspection_type_code,
       itemId: request.item_id,
-      judgment: input.judgment,
-      changedAt: input.changedAt,
-      appUserId: input.appUserId,
-      workerId: terminalAudit?.workerId,
     });
     await this.moveTargetLot(tx, request, input.judgment, action, moveContext);
     await this.movePickedOqcLots(tx, request, input.judgment, moveContext);

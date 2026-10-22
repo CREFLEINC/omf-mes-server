@@ -5,6 +5,7 @@ import { recordTerminalWorkerAudit, type TerminalWorkerAuditActor } from '../../
 import { ContractException, ERROR_CODE, ErrorItem, field, one } from '../../common/errors';
 import { optional, resolveWorkerId } from '../../common/master';
 import { BOM_COMPONENT_SELECT } from '../../core/bom';
+import { recordLateInputGenealogyWithin } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MaterialConsumptionView, materialConsumptionView } from './material-consumption-view';
@@ -57,10 +58,10 @@ interface Resolved {
 }
 
 /**
- * 자재 투입 등록 — I-10 의 심장(§3). ⛔ 원장을 지나지 않고(`plan.md` §5 #8) ⛔ 계보
- * (`trace.lot_relation`)·배분(`material_usage_allocation`)을 만들지 않으며(§3-9·§3-10 —
- * `target_lot_id` 를 가릴 축이 계약·화면·물리 어디에도 없다 · 문의 052) ⛔ `FOR UPDATE`·
- * `lot_lifecycle_history`·ETag 가 없다(§3-13).
+ * 자재 투입 등록 — I-10 의 심장(§3). ⛔ 원장을 지나지 않고(`plan.md` §5 #8) ⛔ 배분
+ * (`material_usage_allocation`)을 만들지 않으며 ⛔ `FOR UPDATE`·`lot_lifecycle_history`·ETag 가 없다(§3-13).
+ * 계보(`trace.lot_relation`)는 투입 시점에 생산 LOT 을 모르므로 실적이 남긴다 — 지연 입력만 여기서 더한다
+ * (문의 052 결정 변경 · #166 · P-107).
  * ⛔ 다른 전표의 service 를 부르지 않는다 — `resolveWorker` 는 **복제**한다(§3-7).
  */
 @Injectable()
@@ -87,7 +88,7 @@ export class MaterialConsumptionService {
     return this.prisma.$transaction((tx) => this.write(tx, body, context, resolved, consumptionNo));
   }
 
-  /** ⑧ INSERT → ⑨ 같은 tx 되읽기(§3-1). 잠금도 원장도 계보도 없다. */
+  /** ⑧ INSERT → 지연 입력 계보 → ⑨ 같은 tx 되읽기(§3-1). 잠금도 원장도 없다. */
   private async write(
     tx: Prisma.TransactionClient,
     body: MaterialConsumptionCreate,
@@ -130,6 +131,8 @@ export class MaterialConsumptionService {
       },
       select: { material_consumption_id: true },
     });
+    // 계보는 실적이 남긴다(#166 · P-107). 이미 그 시각 이후 실적이 있으면(지연 입력) 그 실적들에 «더한다».
+    await recordLateInputGenealogyWithin(tx, BigInt(body.workOrderId), resolved.occurredAt, context.appUserId);
     if (context.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
       actor: { ...context.terminalAudit, workerId: resolved.workerId },
       targetTypeCode: 'MATERIAL_CONSUMPTION', targetId: created.material_consumption_id,

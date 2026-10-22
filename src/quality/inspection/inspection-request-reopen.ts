@@ -1,6 +1,7 @@
 import { Tx } from '../../core/lot';
 
 const IQC = 'IQC';
+const REQUESTED = 'REQUESTED';
 const COMPLETED = 'COMPLETED';
 const IN_PROGRESS = 'IN_PROGRESS';
 
@@ -20,6 +21,22 @@ export async function reopenInspectionRequestWithin(
 ): Promise<void> {
   await tx.inspection_request.updateMany({
     where: { inspection_request_id: inspectionRequestId, status_code: COMPLETED },
+    data: { status_code: IN_PROGRESS, updated_by: appUserId ?? null, version_no: { increment: 1 } },
+  });
+}
+
+/**
+ * 대기 의뢰를 «진행»으로 옮긴다(`REQUESTED → IN_PROGRESS` · omf-all-around#164) — 계약 「첫 임시 저장이 IN_PROGRESS」.
+ * IQC·OQC·PQC 모두 작성중 회차를 이 저장 경로로 만든다. ⛔ 대기 의뢰만 옮긴다(조건부 UPDATE) — 이미 진행·끝난 의뢰는 그대로다.
+ * ⛔ 되돌리는 전이(`IN_PROGRESS → REQUESTED`)는 없다 — 작성중 회차를 지우는 경로가 없다.
+ */
+export async function startInspectionRequestWithin(
+  tx: Tx,
+  inspectionRequestId: bigint,
+  appUserId: number | undefined,
+): Promise<void> {
+  await tx.inspection_request.updateMany({
+    where: { inspection_request_id: inspectionRequestId, status_code: REQUESTED },
     data: { status_code: IN_PROGRESS, updated_by: appUserId ?? null, version_no: { increment: 1 } },
   });
 }
