@@ -17,7 +17,7 @@ export const WORK_SESSION_WORKER_ORDER_BY: Prisma.work_session_workerOrderByWith
 
 export type WorkSessionRow = Prisma.work_sessionGetPayload<object>;
 /**
- * 어느 단말·누구의 세션인지 — 열린 세션을 「어디서 끝낼지」 안내하는 칸이다(장부 P-104). 작업자는 주작업자이고,
+ * 어느 단말·누구의 세션인지 — 열린 세션을 「어디서 끝낼지」 안내하는 칸이다(장부 P-105). 작업자는 주작업자이고,
  * 역할이 없던 옛 세션은 비운다. 조회만 읽는다 — 시작·종료 응답에는 키가 없다.
  */
 export const WORK_SESSION_DISPLAY_INCLUDE = {

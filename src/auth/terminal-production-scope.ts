@@ -46,7 +46,7 @@ export async function assertTerminalProductionScope(
     return row.planned_equipment_id ?? null;
   };
   /**
-   * 마감은 작업 시작과 다른 권한이다 — 그 W/O 공정 매핑의 「작업지시 마감」(`can_close_work_order`)으로 가른다(장부 P-104).
+   * 마감은 작업 시작과 다른 권한이다 — 그 W/O 공정 매핑의 「작업지시 마감」(`can_close_work_order`)으로 가른다(장부 P-105).
    * 권한만 빠진 경우는 조치를 알려 준다 — 「범위 밖」만으로는 관리자가 무엇을 켜야 할지 모른다.
    */
   const closableWorkOrder = async (value: unknown): Promise<void> => {

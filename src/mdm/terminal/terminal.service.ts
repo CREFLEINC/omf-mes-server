@@ -339,7 +339,7 @@ export class TerminalService {
           can_print_label: item.canPrintLabel ?? false,
           can_cancel_input: item.canCancelInput ?? false,
           can_return_material: item.canReturnMaterial ?? false,
-          // ⭐ 이 권한만 기본 «열림»이다 — 사용자 결정(장부 P-104). 끄려면 false 를 보낸다.
+          // ⭐ 이 권한만 기본 «열림»이다 — 사용자 결정(장부 P-105). 끄려면 false 를 보낸다.
           can_close_work_order: item.canCloseWorkOrder ?? true,
           ...(appUserId === undefined ? {} : { created_by: appUserId }),
         })),
