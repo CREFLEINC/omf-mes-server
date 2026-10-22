@@ -5643,20 +5643,21 @@
        "changeTypeCode": {
         "type": "string",
         "maxLength": 50,
-        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "description": "변경 종류(선택 · #133) — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
         "example": "MATERIAL"
        },
        "remarks": {
         "type": "string",
         "maxLength": 500,
-        "description": "변경 내용·특이사항. 비우면 없음",
-        "example": "원자재 공급처 변경(10/15부)"
+        "description": "변경 내용·특이사항 — 필수. 앞뒤 공백을 뺀 값이 비면 400 field=fourMChange.remarks, code=REQUIRED(#133)",
+        "example": "원자재 공급처 변경(10/15부)",
+        "minLength": 1
        }
       },
       "required": [
-       "changeTypeCode"
+       "remarks"
       ],
-      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86·P-103 · omf-all-around#63·#133"
      }
     },
     "description": "작성중 → 확정. ⭐ 이 순간 Lot Status 가 전이한다 — 독립 경로를 두지 않는다(결정 10 · B-8)"
@@ -5758,20 +5759,21 @@
        "changeTypeCode": {
         "type": "string",
         "maxLength": 50,
-        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "description": "변경 종류(선택 · #133) — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
         "example": "MATERIAL"
        },
        "remarks": {
         "type": "string",
         "maxLength": 500,
-        "description": "변경 내용·특이사항. 비우면 없음",
-        "example": "원자재 공급처 변경(10/15부)"
+        "description": "변경 내용·특이사항 — 필수. 앞뒤 공백을 뺀 값이 비면 400 field=fourMChange.remarks, code=REQUIRED(#133)",
+        "example": "원자재 공급처 변경(10/15부)",
+        "minLength": 1
        }
       },
       "required": [
-       "changeTypeCode"
+       "remarks"
       ],
-      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86·P-103 · omf-all-around#63·#133"
      },
      "serials": {
       "type": "array",
@@ -5854,20 +5856,21 @@
        "changeTypeCode": {
         "type": "string",
         "maxLength": 50,
-        "description": "변경 종류 — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
+        "description": "변경 종류(선택 · #133) — 공통코드 그룹 FOUR_M_CHANGE_TYPE(기본 MAN·MACHINE·MATERIAL·METHOD). ⛔ enum 으로 못박지 않는다 — 기준정보에서 더하고 고친다. 없거나 사용 중지된 값이면 400",
         "example": "MATERIAL"
        },
        "remarks": {
         "type": "string",
         "maxLength": 500,
-        "description": "변경 내용·특이사항. 비우면 없음",
-        "example": "원자재 공급처 변경(10/15부)"
+        "description": "변경 내용·특이사항 — 필수. 앞뒤 공백을 뺀 값이 비면 400 field=fourMChange.remarks, code=REQUIRED(#133)",
+        "example": "원자재 공급처 변경(10/15부)",
+        "minLength": 1
        }
       },
       "required": [
-       "changeTypeCode"
+       "remarks"
       ],
-      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86 · omf-all-around#63"
+      "description": "⭐ 4M 변경품 — 생략하면 손대지 않는다. null 이면 변경품이 아니다(그 LOT 의 기록을 지운다). 값이면 의뢰 LOT 의 한 줄을 이 값으로 갈아 끼운다(결과와 한 트랜잭션). 자재 LOT 이 있는 IQC 의뢰가 아니면 400 field=fourMChange, code=INVALID. 서버 선행 · 장부 P-86·P-103 · omf-all-around#63·#133"
      }
     },
     "description": "작성중인 결과만 고칠 수 있다. 확정된 것은 409 INVALID_STATE — 고치는 것이 아니라 재검이다(B-10) ⭐ 검사자·단말은 «보내지 않는다» — 서버가 인증 주체에서 채운다(관리웹은 계정 토큰, 현장 단말·모바일은 사번 귀속 헤더).",
@@ -6967,10 +6970,7 @@
       "example": "원자재 공급처 변경(10/15부)"
      }
     },
-    "required": [
-     "changeTypeCode"
-    ],
-    "description": "4M 변경품 기록(읽기). 서버 선행 · 장부 P-86"
+    "description": "4M 변경품 기록(읽기). 서버 선행 · 장부 P-86 · 변경 종류 선택(#133 · 장부 P-103)"
    },
    "ItemInspectionLevel": {
     "type": "object",
@@ -7672,7 +7672,6 @@
         "lotNo",
         "itemCode",
         "itemName",
-        "changeTypeCode",
         "remarks"
        ],
        "properties": {
@@ -7695,7 +7694,8 @@
           "null"
          ]
         }
-       }
+       },
+       "description": "변경품 한 줄. 변경 종류가 비면 changeTypeCode 키가 없다(#133 · 장부 P-103)"
       }
      },
      "writtenWorkerNo": {

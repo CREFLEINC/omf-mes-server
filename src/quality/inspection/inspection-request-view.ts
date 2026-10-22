@@ -6,7 +6,7 @@ import { fourMChangeView } from './four-m-change';
 /** 계약 `InspectionRequest`(17칸) 매퍼 — 결손 0, 물리와 1:1(§2-1). */
 export type InspectionRequestRow = Prisma.inspection_requestGetPayload<object> & {
   /** 4M 변경품(장부 P-86) — 조회가 `FOUR_M_CHANGE_INCLUDE` 로 실을 때만 있다. */
-  lot?: { lot_four_m_change: { change_type_code: string; remarks: string | null } | null } | null;
+  lot?: { lot_four_m_change: { change_type_code: string | null; remarks: string | null } | null } | null;
 };
 
 /** 의뢰 LOT 의 4M 변경품 한 줄(omf-all-around#63 · 장부 P-86). */

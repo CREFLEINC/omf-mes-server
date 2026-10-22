@@ -5,7 +5,8 @@ export interface InspectionSheetFourMView {
   lotNo: string;
   itemCode: string;
   itemName: string;
-  changeTypeCode: string;
+  /** 변경 종류 — 비면 키가 없다(#133 · P-103). */
+  changeTypeCode?: string;
   remarks: string | null;
 }
 
@@ -38,7 +39,9 @@ export async function fourMChangesOf(prisma: PrismaService, workOrderId: bigint 
         lotNo: lot.lot_no,
         itemCode: lot.item.item_code,
         itemName: lot.item.item_name,
-        changeTypeCode: lot.lot_four_m_change.change_type_code,
+        ...(lot.lot_four_m_change.change_type_code === null
+          ? {}
+          : { changeTypeCode: lot.lot_four_m_change.change_type_code }),
         remarks: lot.lot_four_m_change.remarks,
       },
     ];
