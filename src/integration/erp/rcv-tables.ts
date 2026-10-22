@@ -47,3 +47,5 @@ export const GR_INFOR: RcvTable = {
   ifSeq: 'perSend',
   initialFlags: { ERP_APPLY_FLAG: 'N' },
 };
+
+export const RCV_TABLES: readonly RcvTable[] = [PROD_RSLT, GOODS_ISSUE, GR_INFOR];

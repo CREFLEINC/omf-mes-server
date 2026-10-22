@@ -4,6 +4,8 @@ import { RelayConfig } from './relay-client';
 
 export interface ErpSyncConfig {
   enabled: boolean;
+  /** 보내기(MES→ERP). 받기와 따로 켠다 — 받기만 켜 두고 보내기는 고객 확인 뒤에 켤 수 있다. */
+  sendEnabled: boolean;
   relay: RelayConfig;
   masterIntervalMs: number;
   orderIntervalMs: number;
@@ -21,15 +23,18 @@ const ORDER_INTERVAL_SEC = 900;
  */
 export function erpSyncConfig(config: ConfigService): ErpSyncConfig {
   const enabled = config.get<string>('ERP_SYNC_ENABLED') === 'true';
+  const sendEnabled = config.get<string>('ERP_SEND_ENABLED') === 'true';
   const value = (name: string): string => {
     const found = config.get<string>(name)?.trim() ?? '';
-    if (enabled && found === '') {
-      throw new Error(`ERP_SYNC_ENABLED=true 인데 ${name} 이 비어 있다 (.env.prod.example 참조)`);
+    if ((enabled || sendEnabled) && found === '') {
+      const flag = enabled ? 'ERP_SYNC_ENABLED' : 'ERP_SEND_ENABLED';
+      throw new Error(`${flag}=true 인데 ${name} 이 비어 있다 (.env.prod.example 참조)`);
     }
     return found;
   };
   return {
     enabled,
+    sendEnabled,
     relay: {
       host: value('ERP_DB_HOST'),
       port: Number(config.get('ERP_DB_PORT')) || 1433,

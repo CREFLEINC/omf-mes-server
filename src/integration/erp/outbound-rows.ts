@@ -46,6 +46,37 @@ export function documentNoOf(table: RcvTable, values: RelayValues): string {
 export class OutboundRows {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** 그 메시지에 이미 적은 행. 없으면 []. */
+  async of(messageId: bigint): Promise<ReservedRow[]> {
+    const rows = await this.prisma.erp_outbound_row.findMany({
+      where: { integration_message_id: messageId },
+      orderBy: { erp_outbound_row_id: 'asc' },
+    });
+    return rows.map(reservedRow);
+  }
+
+  /** 중계 DB 에 넣었다 — 그 행의 MES_INF_ID 와 함께. */
+  async markInserted(rows: readonly { id: bigint; relayInfId: bigint }[], at: Date): Promise<void> {
+    await this.prisma.$transaction(
+      rows.map((row) =>
+        this.prisma.erp_outbound_row.update({
+          where: { erp_outbound_row_id: row.id },
+          data: { status_code: OUTBOUND_ROW_STATUS.INSERTED, relay_inf_id: row.relayInfId, inserted_at: at },
+        }),
+      ),
+    );
+  }
+
+  /**
+   * 중계 DB 가 거절한 묶음의 예약을 지운다 — 한 트랜잭션이라 하나도 들어가지 않았다. 남겨 두면 재처리가 같은 값을
+   * 다시 넣다 같은 이유로 또 거절당한다. 지우면 재처리가 고친 데이터로 새로 바꾼다.
+   */
+  async discard(messageId: bigint): Promise<void> {
+    await this.prisma.erp_outbound_row.deleteMany({
+      where: { integration_message_id: messageId, status_code: OUTBOUND_ROW_STATUS.RESERVED },
+    });
+  }
+
   /**
    * 메시지 하나의 행에 키를 매겨 적는다 — 중계 DB 에 넣기 «전에» 부른다.
    * 이미 적은 메시지면 적은 그대로 돌려준다 — 넣다 끊겨 다시 잡혀도 키도 값도 바뀌지 않는다.

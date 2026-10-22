@@ -72,6 +72,7 @@ x-api: &api
     # ERP 연동. 기본은 꺼짐이고, 켜면 접속 정보가 비었을 때 api 가 기동하지 않는다.
     # ⛔ CORS_ORIGINS 와 같은 이유로 여기 적어야 컨테이너가 본다.
     ERP_SYNC_ENABLED: ${ERP_SYNC_ENABLED:-false}
+    ERP_SEND_ENABLED: ${ERP_SEND_ENABLED:-false}
     ERP_DB_HOST: ${ERP_DB_HOST:-}
     ERP_DB_PORT: ${ERP_DB_PORT:-1433}
     ERP_DB_USER: ${ERP_DB_USER:-}
