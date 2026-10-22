@@ -29,6 +29,7 @@ import {
 } from './lot-external-identifier.service';
 import { LotHoldListService } from './lot-hold-list.service';
 import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
+import { InputMaterials, LotGenealogyQueryService, UsedSerials } from './lot-genealogy-query.service';
 import { LotImpactService, type AffectedProductionLots } from './lot-impact.service';
 import { LotIqcSkipService } from './lot-iqc-skip.service';
 import { bool } from './lot-rules';
@@ -48,6 +49,7 @@ export class LotController {
     private readonly iqcSkips: LotIqcSkipService,
     private readonly iqcSkipExecutes: LotIqcSkipExecuteService,
     private readonly impacts: LotImpactService,
+    private readonly genealogy: LotGenealogyQueryService,
   ) {}
 
   @Get()
@@ -68,11 +70,28 @@ export class LotController {
     return detail;
   }
 
-  /** 자재 LOT 이 들어간 생산 LOT — 작업지시 기준 추정(장부 P-52 · omf-all-around#108). */
+  /** 자재 LOT 이 들어간 생산 LOT — 계보 기준 추정(장부 P-52 · omf-all-around#108 · #166 P-107). */
   @Get(':lotId/affected-production-lots')
   @Contract('GET /trace/lots/{lotId}/affected-production-lots')
   affectedProductionLots(@Param('lotId', ParseIntPipe) lotId: number): Promise<AffectedProductionLots> {
     return this.impacts.affectedProductionLots(lotId);
+  }
+
+  /** 생산 LOT 의 투입 자재(omf-all-around#166 · 장부 P-107). */
+  @Get(':lotId/input-materials')
+  @Contract('GET /trace/lots/{lotId}/input-materials')
+  inputMaterials(@Param('lotId', ParseIntPipe) lotId: number): Promise<InputMaterials> {
+    return this.genealogy.ofProductionLot(lotId);
+  }
+
+  /** 자재 LOT 이 들어간 시리얼(omf-all-around#166 · 장부 P-107). */
+  @Get(':lotId/used-serials')
+  @Contract('GET /trace/lots/{lotId}/used-serials')
+  usedSerials(
+    @Param('lotId', ParseIntPipe) lotId: number,
+    @Query() query: { page?: number; size?: number },
+  ): Promise<UsedSerials> {
+    return this.genealogy.usedSerials(lotId, query);
   }
 
   @Get(':lotId/external-identifiers')

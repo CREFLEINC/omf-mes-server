@@ -37,7 +37,7 @@ import {
   assertQuantityBounds,
   remarksWithJudgmentChange,
 } from './inspection-rules';
-import { reopenInspectionRequestWithin } from './inspection-request-reopen';
+import { reopenInspectionRequestWithin, startInspectionRequestWithin } from './inspection-request-reopen';
 import { prepareOqcSerials, recordOqcSerialsWithin } from './oqc-serials';
 
 /** 채번 문서 유형 — `DEFAULT_PREFIX` 의 `IRS`(규칙 미등재 · §1-5). */
@@ -139,9 +139,13 @@ export class InspectionResultWriteService {
           select: { inspection_result_id: true },
         });
         await this.writeMeasurements(tx, created.inspection_result_id, body.measurements, context.appUserId);
-        // 재검사 회차를 작성중으로 더하면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43). 확정으로 태어나면 아래가 닫는다.
-        if (born === undefined && body.previousResultId !== undefined) {
-          await reopenInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
+        // 작성중 회차를 쓰면 대기 의뢰가 «진행»이고(계약 · #164), 재검사 회차면 끝난 의뢰가 다시 «진행»이다(계약 · 장부 P-43).
+        // 확정으로 태어나면 아래가 닫는다.
+        if (born === undefined) {
+          await startInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
+          if (body.previousResultId !== undefined) {
+            await reopenInspectionRequestWithin(tx, BigInt(body.inspectionRequestId), context.appUserId);
+          }
         }
         // 사유가 확정 효과(LOT 전이)보다 «먼저» 선다 — `:confirm` 이 불량 기록을 먼저 요구하는 것과 같은 순서다.
         if (defectTarget !== null) {
@@ -215,7 +219,7 @@ export class InspectionResultWriteService {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.inspection_result.findUnique({
         where: { inspection_result_id: inspectionResultId },
-        select: { status_code: true, version_no: true },
+        select: { status_code: true, version_no: true, inspection_request_id: true },
       });
       if (current === null) throw new NotFoundException('없는 검사 결과입니다.');
       const currentVersion = String(current.version_no);
@@ -243,6 +247,8 @@ export class InspectionResultWriteService {
       });
       // 위 대조를 지난 뒤 같은 행을 누가 옮겼을 때의 둘째 그물 — 조건부 UPDATE 가 0행이면 그것이다.
       assertUpdated(updated.count, 'user', { code: VERSION_CONFLICT, currentVersion });
+      // 작성중 회차를 다시 저장해도 대기 의뢰는 «진행»이다 — POST 이전에 만든 작성중 회차도 여기서 옮겨진다(#164).
+      await startInspectionRequestWithin(tx, current.inspection_request_id, context.appUserId);
       // ⭐ **치환**이다 — 실으면 그 결과의 측정치 전건을 갈아 끼우고, **생략하면 손대지 않는다**
       //    (빈 배열과 다르다 · §1-3). 부분 병합이 아니다 — 계약이 「부분」을 적지 않았다.
       if (body.measurements !== undefined) {
