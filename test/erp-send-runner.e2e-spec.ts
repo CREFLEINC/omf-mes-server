@@ -8,7 +8,7 @@ import { ErpSendRunner, LOCK_TTL_MS } from '../src/integration/erp/erp-send.runn
 import { OutboundBuilder, OutboundMessage } from '../src/integration/erp/outbound-builder';
 import { OutboundRows, RowDraft } from '../src/integration/erp/outbound-rows';
 import { GOODS_ISSUE, PROD_RSLT, RCV_TABLES } from '../src/integration/erp/rcv-tables';
-import { RelayClient, RelayInsert } from '../src/integration/erp/relay-client';
+import { RelayClient, RelayInsert, RelayReply } from '../src/integration/erp/relay-client';
 import { SyncLease } from '../src/integration/erp/sync-lease';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RELAY, connectSa, createCopy, describeRelay, dropCopy, insertRow } from './erp-relay.fixture';
@@ -25,6 +25,8 @@ const READY = () => new Date(Date.now() - 1_000);
 class FakeRelay {
   inserted: RelayInsert[][] = [];
   insertFailure?: Error;
+  /** 넣은 행마다 돌려줄 ERP 처리 결과. 없으면 회신 없음. */
+  reply?: RelayReply;
   calledInTransaction = false;
   private nextId = 5000;
 
@@ -40,6 +42,13 @@ class FakeRelay {
   async lastIfSeq(): Promise<number> {
     this.calledInTransaction ||= this.openTransactions() > 0;
     return 0;
+  }
+
+  async replies(table: { keyColumns: readonly string[] }, rows: readonly Record<string, unknown>[]) {
+    this.calledInTransaction ||= this.openTransactions() > 0;
+    const reply = this.reply;
+    const keys = rows.map((row) => table.keyColumns.map((column) => String(row[column])).join('|'));
+    return new Map(reply === undefined ? [] : keys.map((key) => [key, reply]));
   }
 
   close = (): Promise<void> => Promise.resolve();
@@ -144,6 +153,19 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
     const state = await stateOf(id);
     expect(state).toMatchObject({ status_code: 'PROCESSING', locked_by: null, completed_at: null, retry_count: 0 });
     expect(state.sent_at).not.toBeNull();
+  });
+
+  it('넣은 회차 끝에 ERP 회신도 읽는다 — 반영됐으면 바로 완료', async () => {
+    const id = await message();
+    build = async () => [result(`${RUN}-R`, 'G')];
+    relay.reply = { applied: true, documentNo: 'PR2610220001', error: null };
+
+    await runner.tick();
+
+    expect(await stateOf(id)).toMatchObject({ status_code: 'DONE', locked_by: null });
+    expect(await rowsOf(id)).toEqual([
+      expect.objectContaining({ status_code: 'APPLIED', erp_document_no: 'PR2610220001' }),
+    ]);
   });
 
   it('보낼 행이 없으면 바로 완료한다', async () => {

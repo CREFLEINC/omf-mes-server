@@ -27,12 +27,23 @@ const CREATE = 'A';
 
 export interface ReservedRow {
   id: bigint;
+  messageId: bigint;
   tableName: string;
   relayKey: string;
   /** 넣을 칸과 값 전부 — 업무 칸에 IF_SEQ·CREATE_TYPE·처리 표시를 더한 것. */
   values: RelayValues;
   statusCode: string;
   relayInfId: bigint | null;
+  erpDocumentNo: string | null;
+  erpErrorMessage: string | null;
+}
+
+/** ERP 처리 결과를 읽어 바뀐 행. */
+export interface RowReply {
+  id: bigint;
+  statusCode: string;
+  erpDocumentNo: string | null;
+  erpErrorMessage: string | null;
 }
 
 /** 중계 표에 이미 있는 그 건의 마지막 IF_SEQ. 없으면 0. */
@@ -41,6 +52,11 @@ export type RelayLastIfSeq = (table: RcvTable, documentNo: string) => number;
 /** 건 하나를 가르는 값 — `relay_key` 처럼 칸 값을 '|' 로 잇는다. */
 export function documentNoOf(table: RcvTable, values: RelayValues): string {
   return joinValues(table, table.documentColumns, values);
+}
+
+/** `relay_key` — 중계 표 PK 값을 PK 순서대로 '|' 로 잇는다. 중계 표에서 읽은 행도 같은 값이 된다. */
+export function relayKeyOf(table: RcvTable, values: RelayValues): string {
+  return joinValues(table, table.keyColumns, values);
 }
 
 export class OutboundRows {
@@ -53,6 +69,39 @@ export class OutboundRows {
       orderBy: { erp_outbound_row_id: 'asc' },
     });
     return rows.map(reservedRow);
+  }
+
+  /**
+   * ERP 회신을 기다리는 행 — 넣었거나 ERP 가 거절한 행. 거절된 행도 본다: ERP 쪽에서 원인을 고치면 같은 행을 다시
+   * 처리해 반영된다. 주어진 표의 행만, 오래된 것부터 `limit` 개.
+   */
+  async waiting(tableNames: readonly string[], limit: number): Promise<ReservedRow[]> {
+    const rows = await this.prisma.erp_outbound_row.findMany({
+      where: {
+        relay_table_name: { in: [...tableNames] },
+        status_code: { in: [OUTBOUND_ROW_STATUS.INSERTED, OUTBOUND_ROW_STATUS.REJECTED] },
+      },
+      orderBy: { erp_outbound_row_id: 'asc' },
+      take: limit,
+    });
+    return rows.map(reservedRow);
+  }
+
+  /** 읽은 ERP 처리 결과를 적는다. 반영 시각은 확인한 시각이다 — 중계 표의 ERP_APPLY_DT 는 시간대가 없다(고객 질문 9). */
+  async recordReplies(replies: readonly RowReply[], at: Date): Promise<void> {
+    await this.prisma.$transaction(
+      replies.map((reply) =>
+        this.prisma.erp_outbound_row.update({
+          where: { erp_outbound_row_id: reply.id },
+          data: {
+            status_code: reply.statusCode,
+            erp_document_no: reply.erpDocumentNo,
+            erp_error_message: reply.erpErrorMessage,
+            erp_applied_at: reply.statusCode === OUTBOUND_ROW_STATUS.APPLIED ? at : null,
+          },
+        }),
+      ),
+    );
   }
 
   /** 중계 DB 에 넣었다 — 그 행의 MES_INF_ID 와 함께. */
@@ -114,7 +163,7 @@ export class OutboundRows {
           integration_message_id: messageId,
           relay_table_name: table.name,
           document_no: documentNo,
-          relay_key: joinValues(table, table.keyColumns, values),
+          relay_key: relayKeyOf(table, values),
           if_seq: ifSeq,
           create_type_code: CREATE,
           row_values: values,
@@ -156,10 +205,13 @@ function joinValues(table: RcvTable, columns: readonly string[], values: RelayVa
 function reservedRow(row: erp_outbound_row): ReservedRow {
   return {
     id: row.erp_outbound_row_id,
+    messageId: row.integration_message_id,
     tableName: row.relay_table_name,
     relayKey: row.relay_key,
     values: row.row_values as RelayValues,
     statusCode: row.status_code,
     relayInfId: row.relay_inf_id,
+    erpDocumentNo: row.erp_document_no,
+    erpErrorMessage: row.erp_error_message,
   };
 }

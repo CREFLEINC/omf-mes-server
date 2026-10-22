@@ -1,11 +1,11 @@
 import { Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import * as mssql from 'mssql';
 
 import { OUTBOX_DIRECTION } from '../../core/outbox/outbox.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MESSAGE_STATUS } from '../message/integration-message.service';
 import { OutboundBuilder, OutboundMessage } from './outbound-builder';
+import { OutboundReplies } from './outbound-replies';
 import {
   OUTBOUND_ROW_STATUS,
   OutboundRows,
@@ -14,8 +14,8 @@ import {
   RowDraft,
   documentNoOf,
 } from './outbound-rows';
-import { RcvTable } from './rcv-tables';
-import { RelayClient } from './relay-client';
+import { RcvTable, tableNamed } from './rcv-tables';
+import { RelayClient, relayUnreachable } from './relay-client';
 import { SyncLease } from './sync-lease';
 
 export const ERP_SEND_LEASE = 'erp-send';
@@ -44,13 +44,14 @@ class LeaseLost extends Error {}
  * 받기 실행기와 따로 돈다(2026-10-21 사용자 결정) — 받기가 BOM 2만 행을 읽는 동안 보내기가 기다리지 않는다.
  * 골격은 Zalo 발송 러너와 같다: `setTimeout` 연쇄, 리스로 한 쪽만, `SKIP LOCKED` 로 잡고 건마다 리스 연장.
  *
- * 한 건 = 바꾸기(바꾸개) → 키 적기(예약) → 넣기(한 트랜잭션) → 처리중·`sent_at`. ERP 가 반영하면 완료다(회신 읽기).
+ * 한 건 = 바꾸기(바꾸개) → 키 적기(예약) → 넣기(한 트랜잭션) → 처리중·`sent_at`. 회차 끝에 ERP 회신을 읽어 완료·실패를 적는다.
  * ⛔ PG 트랜잭션 안에서 중계 DB 를 부르지 않는다 — 중계 표의 마지막 번호는 예약 «전에» 읽는다.
  */
 export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(ErpSendRunner.name);
   private readonly builders: Map<string, OutboundBuilder>;
   private readonly rows: OutboundRows;
+  private readonly replies: OutboundReplies;
   private timer?: NodeJS.Timeout;
   private running?: Promise<void>;
   private stopping = false;
@@ -60,13 +61,14 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     private readonly enabled: boolean,
     private readonly prisma: PrismaService,
     private readonly lease: Pick<SyncLease, 'acquire' | 'release' | 'owner'>,
-    private readonly relay: Pick<RelayClient, 'insertRows' | 'lastIfSeq' | 'close'>,
+    private readonly relay: Pick<RelayClient, 'insertRows' | 'lastIfSeq' | 'replies' | 'close'>,
     builders: readonly OutboundBuilder[],
     /** 예약에 적힌 표 이름 → 표. 다시 잡힌 메시지는 바꾸지 않고 적은 행을 넣는다. */
     private readonly tables: readonly RcvTable[],
   ) {
     this.builders = new Map(builders.map((builder) => [builder.interfaceCode, builder]));
     this.rows = new OutboundRows(prisma);
+    this.replies = new OutboundReplies(prisma, relay, tables);
   }
 
   onApplicationBootstrap(): void {
@@ -101,21 +103,33 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     this.leaseExtendedAt = Date.now();
     await this.releaseOrphans(now);
     try {
-      for (let claimed = await this.claim(now); claimed.length > 0; claimed = await this.claim(now)) {
-        for (const [index, message] of claimed.entries()) {
-          await this.keepGoing(claimed.slice(index));
-          if (!(await this.send(message, now))) {
-            // 중계 DB 에 못 닿는다 — 남은 건은 시도 없이 돌려놓고 회차를 마친다.
-            await this.release(claimed.slice(index + 1));
-            return;
-          }
-        }
-        if (claimed.length < BATCH_SIZE) return;
-      }
+      // 중계 DB 에 못 닿았으면 회신도 못 읽는다 — 다음 회차에 둘 다 다시 한다.
+      if (!(await this.sendPending(now))) return;
+      await this.keepGoing([]);
+      await this.replies.read().catch((error: unknown) => {
+        if (!relayUnreachable(error)) throw error;
+        this.logger.warn(`ERP 회신을 못 읽었다 — ${messageOf(error)}`);
+      });
     } catch (error) {
       if (error instanceof Stopping || error instanceof LeaseLost) return;
       throw error;
     }
+  }
+
+  /** 대기 메시지를 묶음씩 보낸다. 중계 DB 에 못 닿았으면 false. */
+  private async sendPending(now: Date): Promise<boolean> {
+    for (let claimed = await this.claim(now); claimed.length > 0; claimed = await this.claim(now)) {
+      for (const [index, message] of claimed.entries()) {
+        await this.keepGoing(claimed.slice(index));
+        if (!(await this.send(message, now))) {
+          // 남은 건은 시도 없이 돌려놓고 회차를 마친다.
+          await this.release(claimed.slice(index + 1));
+          return false;
+        }
+      }
+      if (claimed.length < BATCH_SIZE) return true;
+    }
+    return true;
   }
 
   /** 한 건. 중계 DB 에 못 닿았으면 false. */
@@ -124,7 +138,7 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     try {
       reserved = await this.reserved(message);
     } catch (error) {
-      if (relayDown(error)) return this.postpone(message, error, now);
+      if (relayUnreachable(error)) return this.postpone(message, error, now);
       await this.fail(message, error);
       return true;
     }
@@ -137,10 +151,10 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
       let ids: number[];
       try {
         ids = await this.relay.insertRows(
-          waiting.map((row) => ({ table: this.table(row.tableName), values: row.values })),
+          waiting.map((row) => ({ table: tableNamed(this.tables, row.tableName), values: row.values })),
         );
       } catch (error) {
-        if (relayDown(error)) return this.postpone(message, error, now);
+        if (relayUnreachable(error)) return this.postpone(message, error, now);
         // 중계 DB 가 거절했다 — 한 트랜잭션이라 하나도 들어가지 않았다.
         await this.rows.discard(message.id);
         await this.fail(message, error);
@@ -270,12 +284,6 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     });
   }
 
-  private table(name: string): RcvTable {
-    const table = this.tables.find((candidate) => candidate.name === name);
-    if (table === undefined) throw new Error(`보내는 표가 아니다: ${name}`);
-    return table;
-  }
-
   /** 건마다 멈출 때인지 보고, 30초가 지났으면 리스를 늘린다. 멈추면 잡아 둔 건을 대기로 돌린다. */
   private async keepGoing(remaining: Claimed[]): Promise<void> {
     let reason: Error | null = this.stopping ? new Stopping() : null;
@@ -287,18 +295,6 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     await this.release(remaining);
     throw reason;
   }
-}
-
-/**
- * 중계 DB 에 못 닿았거나 도중에 끊겼다 — 다시 하면 될 일이다. SQL Server 가 «거절»한 것(`EREQUEST` — 칸 길이·형식 등)은
- * 데이터 문제라 사람이 본다. 교착(1205)·잠금 시간 초과(1222)는 거절이 아니라 다시 할 일이다.
- */
-function relayDown(error: unknown): boolean {
-  if (error instanceof mssql.ConnectionError || error instanceof mssql.TransactionError) return true;
-  if (error instanceof mssql.RequestError) {
-    return error.code !== 'EREQUEST' || error.number === 1205 || error.number === 1222;
-  }
-  return false;
 }
 
 function messageOf(error: unknown): string {
