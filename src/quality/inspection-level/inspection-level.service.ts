@@ -136,7 +136,8 @@ export class InspectionLevelService {
           data: {
             item_id: input.itemId,
             inspection_level_code: input.inspectionLevelCode,
-            auto_switch_enabled: input.autoSwitchEnabled ?? true,
+            // 자동 전환은 없앴다(#133) — 칸은 계약 호환으로만 남아 아무 동작도 하지 않는다.
+            auto_switch_enabled: input.autoSwitchEnabled ?? false,
             created_by: appUserId ?? null,
             updated_by: appUserId ?? null,
           },

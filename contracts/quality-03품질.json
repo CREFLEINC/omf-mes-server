@@ -7018,11 +7018,11 @@
      },
      "autoSwitchEnabled": {
       "type": "boolean",
-      "description": "자동 전환 사용 — IQC 첫 확정 판정으로 센다. 합격 연속 15 → 수월(보통에서), 불합격 → 엄격, 엄격에서 합격 연속 5 → 보통. 무검사는 자동 전환 대상이 아니다"
+      "description": "자동 전환 사용 — IQC 첫 확정 판정으로 센다. 합격 연속 15 → 수월(보통에서), 불합격 → 엄격, 엄격에서 합격 연속 5 → 보통. 무검사는 자동 전환 대상이 아니다 ⛔ omf-all-around#133 이후 자동 전환 없음 — 이 값은 저장만 되고 무시된다(장부 P-103)."
      },
      "consecutiveAcceptCount": {
       "type": "integer",
-      "description": "지금 수준에서의 연속 합격 LOT 수. 전환·수동 변경·불합격이면 0"
+      "description": "지금 수준에서의 연속 합격 LOT 수. 전환·수동 변경·불합격이면 0 ⛔ #133 이후 세지 않는다 — 수동 변경이면 0, 그 밖에는 그대로(장부 P-103)"
      },
      "updatedAt": {
       "type": "string",
@@ -7060,8 +7060,8 @@
      },
      "autoSwitchEnabled": {
       "type": "boolean",
-      "default": true,
-      "description": "자동 전환 사용"
+      "default": false,
+      "description": "자동 전환 사용 ⛔ omf-all-around#133 이후 자동 전환 없음 — 이 값은 저장만 되고 무시된다(장부 P-103)."
      },
      "reason": {
       "type": "string",
@@ -7087,7 +7087,7 @@
      },
      "autoSwitchEnabled": {
       "type": "boolean",
-      "description": "자동 전환 사용"
+      "description": "자동 전환 사용 ⛔ omf-all-around#133 이후 자동 전환 없음 — 이 값은 저장만 되고 무시된다(장부 P-103)."
      },
      "reason": {
       "type": "string",
