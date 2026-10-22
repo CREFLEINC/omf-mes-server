@@ -3222,6 +3222,16 @@
       }
      },
      {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "현장 단말(POP)이 단말 토큰으로 마감할 때 필수 — 그 단말 공장의 재직 작업자 사번이고, 마감 작업자(closedWorkerId)로 남는다. 관리웹은 보내지 않는다(계정이 남는다). ⭐ POP 마감도 If-Match 가 필수라 온라인에서만 된다. 단말은 그 W/O 공정 매핑의 작업지시 마감 권한(canCloseWorkOrder)이 있어야 한다 — 없으면 401 PERMISSION_DENIED. 장부 P-104"
+     },
+     {
       "$ref": "#/components/parameters/IdempotencyKey"
      },
      {
@@ -7125,6 +7135,35 @@
       "format": "date-time",
       "example": "2026-08-11T09:12:00+09:00"
      },
+     "closeDispositionCode": {
+      "type": "string",
+      "enum": [
+       "CARRY_OVER",
+       "WRITE_OFF"
+      ],
+      "description": "마감에서 고른 잔량 처분 — 미달 마감일 때만 있다. ⛔ 이월이어도 잔량 W/O 는 만들어지지 않는다(기록만). 장부 P-104",
+      "example": "WRITE_OFF",
+      "x-code-key": "CD-REMAINDER-DISPOSITION"
+     },
+     "closedWorkerId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "POP 에서 마감한 작업자(X-Worker-No) — 관리웹 마감이면 없다. 장부 P-104",
+      "example": 1001
+     },
+     "closedWorkerNo": {
+      "type": "string",
+      "example": "900028"
+     },
+     "closedWorkerName": {
+      "type": "string",
+      "example": "값"
+     },
+     "voidedLotCount": {
+      "type": "integer",
+      "description": "마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 에만 있다. 마감은 실적이 없는 대기(WAITING) LOT 만 폐번한다. ⭐ 진행 중(ACTIVE, 실적 일부) LOT 이 있어도 마감되고, 그 LOT 은 생명주기 ACTIVE·completedAt 빈 채로 남는다 — 마감은 LOT 을 완료하지 않는다. 장부 P-104",
+      "example": 1
+     },
      "erpMessageQueued": {
       "type": [
        "boolean",
@@ -7661,6 +7700,25 @@
       "format": "int64",
       "example": 1001
      },
+     "terminalCode": {
+      "type": "string",
+      "description": "세션을 연 단말의 코드 — 조회(목록·단건)에만 있다. 단말 이름 칸은 없다. 장부 P-104",
+      "example": "POP-01"
+     },
+     "workerId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "그 세션의 주작업자 — 조회에만 있고, 역할이 없던 옛 세션은 없다. 장부 P-104",
+      "example": 1001
+     },
+     "workerNo": {
+      "type": "string",
+      "example": "900028"
+     },
+     "workerName": {
+      "type": "string",
+      "example": "값"
+     },
      "startedAt": {
       "type": "string",
       "format": "date-time",
@@ -7946,6 +8004,56 @@
      "leftAt"
     ]
    },
+   "OpenWorkSession": {
+    "type": "object",
+    "description": "마감을 막은 열린 작업 세션 한 건. 작업자는 그 세션의 주작업자이고 역할이 없던 옛 세션은 비운다. 장부 P-104",
+    "properties": {
+     "workSessionId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "terminalId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "terminalCode": {
+      "type": "string",
+      "example": "POP-01"
+     },
+     "workerId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "workerNo": {
+      "type": "string",
+      "example": "900028"
+     },
+     "workerName": {
+      "type": "string",
+      "example": "값"
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-08-11T09:12:00+09:00"
+     },
+     "statusCode": {
+      "type": "string",
+      "description": "RUNNING(진행) · STOPPED(중단)",
+      "example": "RUNNING"
+     }
+    },
+    "required": [
+     "workSessionId",
+     "terminalId",
+     "terminalCode",
+     "startedAt",
+     "statusCode"
+    ]
+   },
    "ProductionConflictResponse": {
     "type": "object",
     "properties": {
@@ -7974,6 +8082,13 @@
       "type": "string",
       "description": "VERSION_CONFLICT 일 때 서버의 현재 version_no",
       "example": "값"
+     },
+     "openSessions": {
+      "type": "array",
+      "description": "OPEN_SESSION_EXISTS 일 때 그 W/O 의 열린 작업 세션들(중단 포함, 시작 순) — 화면이 「어느 단말에서 끝낼지」를 안내한다. 그 단말에서 작업을 종료하거나 관리웹에서 강제 종료한 뒤 다시 마감한다. 장부 P-104",
+      "items": {
+       "$ref": "#/components/schemas/OpenWorkSession"
+      }
      },
      "conflictCause": {
       "type": "string",

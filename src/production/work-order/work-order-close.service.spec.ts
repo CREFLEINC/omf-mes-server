@@ -1,7 +1,7 @@
 import { WorkOrderNotifier } from './work-order-notice';
 import { Prisma } from '@prisma/client';
 
-import { ConflictException } from '../../common/errors';
+import { ConflictException, ContractException } from '../../common/errors';
 import { DocumentStateService } from '../../core/document-state';
 import { LotLifecycleService, LotMoveInput } from '../../core/lot';
 import { OutboxEnqueueInput, OutboxService } from '../../core/outbox';
@@ -36,7 +36,16 @@ function stub(options: { status?: string; goodSum?: number; openSession?: boolea
         },
       ]),
     work_session: {
-      findFirst: () => Promise.resolve(options.openSession === true ? { work_session_id: 1n } : null),
+      findMany: () =>
+        Promise.resolve(
+          options.openSession === true
+            ? [{
+                work_session_id: 1n, terminal_id: 5n, started_at: new Date('2026-09-06T01:00:00.000Z'), status_code: 'RUNNING',
+                terminal: { terminal_code: 'POP-01' },
+                work_session_worker: [{ worker: { worker_id: 3n, worker_no: '900001', worker_name: '작업자가' } }],
+              }]
+            : [],
+        ),
     },
     production_result: {
       aggregate: ({ where }: { where: Row }) => {
@@ -72,6 +81,7 @@ function stub(options: { status?: string; goodSum?: number; openSession?: boolea
           { code: 'PLAN_CHANGE', code_group: { group_code: 'WORK_ORDER_CANCEL_REASON' } },
         ]),
     },
+    worker: { findUnique: () => Promise.resolve({ worker_id: 3n }) },
     $transaction: (work: (client: typeof tx) => Promise<unknown>) => work(tx),
   } as unknown as PrismaService;
 
@@ -106,7 +116,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
   it('마감 — 누적 양품은 실적 상태로 거르지 않는다', async () => {
     const harness = stub({ goodSum: ORDER_QTY });
 
-    await harness.close.close(WORK_ORDER, 1, {}, 7);
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
 
     // ⛔ `PRODUCTION_RESULT_STATUS` 그룹이 폐기돼 거를 값이 없다 — `status_code` 를 조건에
     //    넣으면 조회(`progressOf`)와 마감이 다른 양품 합을 낸다(§5-2 · F-6).
@@ -120,7 +130,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
   it('마감 — `:close` 의 누적 양품이 `ACTIVE_RESULT_WHERE` 를 쓴다', async () => {
     const harness = stub({ goodSum: ORDER_QTY });
 
-    await harness.close.close(WORK_ORDER, 1, {}, 7);
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
 
     // ⭐ 조회(`work-order-query.service.ts` 세 자리)와 «같은» 상수다 — 정의가 갈리면 마감이
     //    정정된 원본까지 세어 조회와 다른 값을 낸다(I-7 §5-3 · R-3).
@@ -135,7 +145,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
       WORK_ORDER,
       1,
       { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' },
-      7,
+      { appUserId: 7 },
     );
 
     expect(harness.enqueued[0].payload).toMatchObject({
@@ -150,7 +160,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
   it('마감 — `closed_at` 을 찍는 UPDATE 는 한 번뿐이다(트리거가 두 번째를 막는다)', async () => {
     const harness = stub({ goodSum: ORDER_QTY, slots: [10n] });
 
-    await harness.close.close(WORK_ORDER, 1, {}, 7);
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
 
     // `trg_work_order_closed_immutable` 이 `OLD.closed_at IS NOT NULL` 인 UPDATE 를 막는다 —
     // 슬롯 폐번·아웃박스 적재가 뒤에 오지만 그 둘은 «다른 표»라 괜찮다.
@@ -170,7 +180,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
       WORK_ORDER,
       1,
       { remainderDispositionCode: 'CARRY_OVER', reasonCode: 'MATERIAL_SHORTAGE' },
-      7,
+      { appUserId: 7 },
     );
 
     // 계약 자인 — ⌜이월이 잔량 W/O 를 «자동으로» 만드는지는 아직 정해지지 않았다⌝.
@@ -182,7 +192,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
     // 상태가 전이표의 `from` 밖(`PLANNED`)이면서 세션도 열려 있다 — 둘 다 걸리는 자리다.
     const harness = stub({ status: 'PLANNED', openSession: true });
 
-    const rejected = await harness.close.close(WORK_ORDER, 1, {}, 7).catch((error: unknown) => error);
+    const rejected = await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 }).catch((error: unknown) => error);
 
     // 400 `STATE_LOCKED` 가 아니라 409 다 — 계약이 이 자리에만 봉투를 지정했다(§5-1).
     expect(rejected).toBeInstanceOf(ConflictException);
@@ -190,10 +200,39 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
     expect(harness.updates).toEqual([]);
   });
 
+  it('마감 — 열린 세션 409 가 단말·작업자·시작 시각을 싣는다', async () => {
+    const rejected = await stub({ openSession: true }).close.close(WORK_ORDER, 1, {}, { appUserId: 7 }).catch((error: unknown) => error);
+
+    expect((rejected as ConflictException).conflict).toMatchObject({
+      code: 'OPEN_SESSION_EXISTS',
+      openSessions: [{
+        workSessionId: 1, terminalId: 5, terminalCode: 'POP-01', workerId: 3, workerNo: '900001', workerName: '작업자가',
+        startedAt: '2026-09-06T01:00:00.000Z', statusCode: 'RUNNING',
+      }],
+    });
+    expect((rejected as ConflictException).conflict.message).toContain('강제 종료');
+  });
+
+  it('마감 — 단말 마감은 closed_worker_id 에 작업자를 남기고 계정은 비운다', async () => {
+    const harness = stub({ goodSum: ORDER_QTY });
+
+    await harness.close.close(WORK_ORDER, 1, {}, { workerNo: '900001' });
+
+    expect(harness.updates[0]).toMatchObject({ closed_worker_id: 3n, updated_by: null });
+  });
+
+  it('마감 — 마감할 수 없는 상태는 상태별 조치를 문구에 싣는다', async () => {
+    const rejected = await stub({ status: 'SUSPENDED', goodSum: ORDER_QTY }).close.close(WORK_ORDER, 1, {}, { appUserId: 7 })
+      .catch((error: unknown) => error);
+
+    expect((rejected as ContractException).errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect((rejected as ContractException).errors[0].message).toContain('재개');
+  });
+
   it('마감 — 슬롯 대상이 실적 없는 `WAITING` 뿐이고 빈 목록이면 코어를 부르지 않는다', async () => {
     const harness = stub({ goodSum: ORDER_QTY });
 
-    await harness.close.close(WORK_ORDER, 1, {}, 7);
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
 
     expect(harness.lotWheres).toEqual([
       {
@@ -216,7 +255,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
   it('마감 — L2 이력의 `sourceDocumentTypeCode` 는 `WORK_ORDER_CLOSING` 이고 아웃박스 `targetTypeCode` 는 `WORK_ORDER` 그대로다', async () => {
     const harness = stub({ goodSum: ORDER_QTY, slots: [10n] });
 
-    await harness.close.close(WORK_ORDER, 1, {}, 7);
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
 
     // 계약 `LotLifecycleHistoryEvent.sourceDocumentTypeCode` enum 이 전이별 값을 못박았다 —
     // L2 대기→폐번은 `WORK_ORDER_CLOSING` 이고 `WORK_ORDER` 는 L3 취소의 값이다(I-7 R-2).

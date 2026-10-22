@@ -47,6 +47,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001' },
     equipment: null,
+    closed_worker: null,
     ...overrides,
   };
 }
@@ -84,6 +85,25 @@ describe('WorkOrder 뷰', () => {
     expect(Object.keys(view)).not.toContain('erpMessageQueued');
     // 값이 있는 칸은 0·false 여도 그대로 낸다.
     expect(view).toMatchObject({ workOrderId: 7, poMismatch: false, versionNo: 3, itemCode: 'ITM-0001' });
+  });
+
+  it('뷰 — 마감 결과(잔량 처분·사유·마감 작업자·폐번 LOT 수)를 싣는다', () => {
+    const view = workOrderView(
+      workOrderRow({
+        status_code: 'CLOSED',
+        closed_at: new Date('2026-10-22T03:00:00.000Z'),
+        close_disposition_code: 'WRITE_OFF',
+        completion_variance_reason_code: 'MATERIAL_SHORTAGE',
+        closed_worker_id: 9n,
+        closed_worker: { worker_no: '900009', worker_name: '작업자나' },
+      }),
+      { erpMessageQueued: true, voidedLotCount: 2 },
+    );
+
+    expect(view).toMatchObject({
+      closedAt: '2026-10-22T03:00:00.000Z', closeDispositionCode: 'WRITE_OFF', completionVarianceReasonCode: 'MATERIAL_SHORTAGE',
+      closedWorkerId: 9, closedWorkerNo: '900009', closedWorkerName: '작업자나', voidedLotCount: 2,
+    });
   });
 
   it('뷰 — 표시용 파생 넷은 계획 → ERP W/O 조인으로 낸다', () => {

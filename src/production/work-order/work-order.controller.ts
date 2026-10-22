@@ -28,7 +28,7 @@ import { WorkOrderClose } from './close-rules';
 import { ResourceRecommendations, recommendResources } from './resource-recommendation';
 import { ValidationReport, validateWorkOrder } from './validation';
 import { WorkOrderCancel, WorkOrderCancelService } from './work-order-cancel.service';
-import { WorkOrderCloseService } from './work-order-close.service';
+import { WorkOrderCloseActor, WorkOrderCloseService } from './work-order-close.service';
 import { WorkOrderListQuery } from './work-order-list-where';
 import { WorkOrderDetailQuery, WorkOrderListItem, WorkOrderQueryService } from './work-order-query.service';
 import { WorkOrderResourcePlanCreate, WorkOrderResourcePlanService } from './work-order-resource-plan.service';
@@ -189,7 +189,7 @@ export class WorkOrderController {
   ): Promise<WorkOrderView> {
     const version = versionOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, async () => {
-      await this.closes.close(workOrderId, version, body, currentSession(request)?.userId);
+      await this.closes.close(workOrderId, version, body, closeActor(request));
       return (await this.queries.detail(workOrderId, {})).view;
     }, FAMILY_CONFLICT_CODE);
   }
@@ -262,6 +262,14 @@ function versionOf(request: Request): number {
     throw new Error('If-Match 가 없는데 가드를 지났다 — 계약 선언과 가드가 어긋났다');
   }
   return version;
+}
+
+/** 관리웹은 계정, POP 은 단말 작업자 — 단말 요청에는 계정이 없다(`terminal-production-scope.ts` 가 사번을 이미 확인했다). */
+function closeActor(request: Request): WorkOrderCloseActor {
+  const session = currentSession(request);
+  if (session !== undefined) return { appUserId: session.userId };
+  const workerNo = request.headers['x-worker-no'];
+  return { workerNo: typeof workerNo === 'string' ? workerNo : undefined };
 }
 
 /** 선발행 슬롯의 `created_by` 가 NOT NULL 이라 세션이 반드시 필요하다(`lot.controller.ts` 선례). */

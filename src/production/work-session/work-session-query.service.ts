@@ -7,6 +7,7 @@ import { PagedResponse, pageRequest, pagedResponse } from '../../common/paginati
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   WORK_SESSION_EVENT_ORDER_BY,
+  WORK_SESSION_DISPLAY_INCLUDE,
   WORK_SESSION_WORKER_INCLUDE,
   WORK_SESSION_WORKER_ORDER_BY,
   WorkSessionEventRow,
@@ -62,7 +63,9 @@ export class WorkSessionQueryService {
     };
 
     const [rows, total] = await Promise.all([
-      this.prisma.work_session.findMany({ where, orderBy: WORK_SESSION_ORDER_BY, skip: page.skip, take: page.take }),
+      this.prisma.work_session.findMany({
+        where, orderBy: WORK_SESSION_ORDER_BY, skip: page.skip, take: page.take, include: WORK_SESSION_DISPLAY_INCLUDE,
+      }),
       this.prisma.work_session.count({ where }),
     ]);
     return pagedResponse(rows.map(workSessionView), total, page);
@@ -101,7 +104,10 @@ export class WorkSessionQueryService {
   }
 
   private async loadSession(workSessionId: number) {
-    const row = await this.prisma.work_session.findUnique({ where: { work_session_id: BigInt(workSessionId) } });
+    const row = await this.prisma.work_session.findUnique({
+      where: { work_session_id: BigInt(workSessionId) },
+      include: WORK_SESSION_DISPLAY_INCLUDE,
+    });
     if (row === null) throw new NotFoundException('없는 작업 세션입니다.');
     return row;
   }

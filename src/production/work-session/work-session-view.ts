@@ -16,6 +16,19 @@ export const WORK_SESSION_WORKER_ORDER_BY: Prisma.work_session_workerOrderByWith
 ];
 
 export type WorkSessionRow = Prisma.work_sessionGetPayload<object>;
+/**
+ * 어느 단말·누구의 세션인지 — 열린 세션을 「어디서 끝낼지」 안내하는 칸이다(장부 P-104). 작업자는 주작업자이고,
+ * 역할이 없던 옛 세션은 비운다. 조회만 읽는다 — 시작·종료 응답에는 키가 없다.
+ */
+export const WORK_SESSION_DISPLAY_INCLUDE = {
+  terminal: { select: { terminal_code: true } },
+  work_session_worker: {
+    where: { worker_role_code: 'MAIN' },
+    take: 1,
+    select: { worker: { select: { worker_id: true, worker_no: true, worker_name: true } } },
+  },
+} as const;
+type WorkSessionDisplay = Prisma.work_sessionGetPayload<{ include: typeof WORK_SESSION_DISPLAY_INCLUDE }>;
 export type WorkSessionEventRow = Prisma.work_session_eventGetPayload<object>;
 /** 참여자 표시에 필요한 사람 칸 — 사번·이름은 화면이 사람을 알아보는 값이다. */
 export const WORK_SESSION_WORKER_INCLUDE = { worker: { select: { worker_no: true, worker_name: true } } } as const;
@@ -25,7 +38,8 @@ export type WorkSessionEventView = ReturnType<typeof workSessionEventView>;
 export type WorkSessionWorkerView = ReturnType<typeof workSessionWorkerView>;
 
 /** 계약 `WorkSession`(11칸 · required 6)으로 옮기는 자리. ⛔ 값 없는 칸은 키를 생략한다. */
-export function workSessionView(row: WorkSessionRow) {
+export function workSessionView(row: WorkSessionRow & Partial<Pick<WorkSessionDisplay, 'terminal' | 'work_session_worker'>>) {
+  const worker = row.work_session_worker?.[0]?.worker;
   return omitEmpty({
     workSessionId: Number(row.work_session_id),
     workOrderId: Number(row.work_order_id),
@@ -34,6 +48,10 @@ export function workSessionView(row: WorkSessionRow) {
     equipmentId: id(row.equipment_id),
     moldId: id(row.mold_id),
     terminalId: Number(row.terminal_id),
+    terminalCode: row.terminal?.terminal_code,
+    workerId: worker === undefined ? undefined : Number(worker.worker_id),
+    workerNo: worker?.worker_no,
+    workerName: worker?.worker_name,
     startedAt: row.started_at.toISOString(),
     endedAt: row.ended_at === null ? undefined : row.ended_at.toISOString(),
     statusCode: row.status_code,

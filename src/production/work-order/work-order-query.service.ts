@@ -217,12 +217,13 @@ export class WorkOrderQueryService {
     const row = await this.prisma.work_order.findUnique({ where: { work_order_id: workOrderId }, include: DISPLAY_JOIN });
     if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
 
-    const [progress, preIssuedLots, erpMessageQueued] = await Promise.all([
+    const [progress, preIssuedLots, erpMessageQueued, voidedLotCount] = await Promise.all([
       query.withProgress === false ? undefined : this.progress(row),
       query.withPreIssuedLots === true ? this.preIssuedLots(row.work_order_id) : undefined,
       this.erpQueued(row.work_order_id),
+      row.closed_at === null ? undefined : this.voidedLots(row.work_order_id),
     ]);
-    return { view: workOrderView(row, { progress, preIssuedLots, erpMessageQueued }), versionNo: row.version_no };
+    return { view: workOrderView(row, { progress, preIssuedLots, erpMessageQueued, voidedLotCount }), versionNo: row.version_no };
   }
 
   /** 404 는 계약 미선언이나 낸다 — 없는 W/O 의 빈 배열과 「배정이 없다」를 가른다(§7-3 · 선례). */
@@ -252,6 +253,13 @@ export class WorkOrderQueryService {
       completedAt: row.completed_at,
       sums: _sum,
       now: new Date(),
+    });
+  }
+
+  /** 마감된 W/O 의 폐번 슬롯 — 취소된 W/O 는 마감되지 않으므로 이 수는 마감이 폐번한 것이다. */
+  private voidedLots(workOrderId: bigint): Promise<number> {
+    return this.prisma.lot.count({
+      where: { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: workOrderId, lifecycle_status_code: 'VOIDED' },
     });
   }
 

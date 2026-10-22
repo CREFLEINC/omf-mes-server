@@ -121,6 +121,19 @@ describe('POP production terminal scope', () => {
       'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave', terminal)).rejects.toMatchObject({ status: 401 });
   });
 
+  it('작업지시 마감은 그 W/O 공정 매핑의 마감 권한으로 가르고, 권한만 꺼졌으면 켤 곳을 알려 준다', async () => {
+    const closing = (flag: boolean | null) => {
+      const mapping = flag === null ? [] : [{ can_close_work_order: flag }];
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValueOnce({ routing_operation: { process: { terminal_process: mapping } } });
+      return assertTerminalProductionScope(prisma, request({}, { workOrderId: '11' }, '900028'),
+        'POST /production/work-orders/{workOrderId}:close', terminal);
+    };
+
+    await expect(closing(true)).resolves.toBeUndefined();
+    await expect(closing(false)).rejects.toMatchObject({ status: 401, errors: [expect.objectContaining({ message: expect.stringContaining('작업지시 마감') })] });
+    await expect(closing(null)).rejects.toMatchObject({ status: 401 });
+  });
+
   it('requires its own work session for read events and writes', async () => {
     await assertTerminalProductionScope(prisma,
       request({}, { workSessionId: '29' }),

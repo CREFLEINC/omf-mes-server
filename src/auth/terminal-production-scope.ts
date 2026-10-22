@@ -15,6 +15,7 @@ export const TERMINAL_PRODUCTION_OPERATIONS: Readonly<Record<string, readonly ('
   'POST /production/work-sessions': ['POP'],
   'POST /production/work-orders/{workOrderId}:hold': ['POP'],
   'POST /production/work-orders/{workOrderId}:resume': ['POP'],
+  'POST /production/work-orders/{workOrderId}:close': ['POP'],
   'POST /production/work-sessions/{workSessionId}/events': ['POP'],
   'POST /production/production-results': ['POP'],
   'POST /trace/serial-numbers': ['POP'],
@@ -43,6 +44,28 @@ export async function assertTerminalProductionScope(
     });
     if (!row) throw denied();
     return row.planned_equipment_id ?? null;
+  };
+  /**
+   * 마감은 작업 시작과 다른 권한이다 — 그 W/O 공정 매핑의 「작업지시 마감」(`can_close_work_order`)으로 가른다(장부 P-104).
+   * 권한만 빠진 경우는 조치를 알려 준다 — 「범위 밖」만으로는 관리자가 무엇을 켜야 할지 모른다.
+   */
+  const closableWorkOrder = async (value: unknown): Promise<void> => {
+    const id = positiveId(value);
+    const row = id === null ? null : await prisma.work_order.findFirst({
+      where: { work_order_id: id, production_line: { plant_id: terminal.plantId },
+        released_at: { not: null }, closed_at: null, NOT: { status_code: 'CANCELLED' } },
+      select: { routing_operation: { select: { process: { select: { terminal_process: {
+        where: { terminal_id: terminal.terminalId }, select: { can_close_work_order: true },
+      } } } } } },
+    });
+    const mapping = row?.routing_operation.process.terminal_process[0];
+    if (mapping === undefined) throw denied();
+    if (!mapping.can_close_work_order) {
+      throw new ContractException(HttpStatus.UNAUTHORIZED, [{
+        scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
+        message: '이 단말에는 이 W/O 공정의 작업지시 마감 권한이 없습니다. 관리웹 단말 관리에서 해당 공정의 「작업지시 마감」을 켜세요.',
+      }]);
+    }
   };
   /**
    * 이 단말이 그 W/O 에 걸 수 있는 설비 — 설비 단말은 자기 설비, 설비 없는 단말은 W/O 의 계획 설비다.
@@ -110,6 +133,9 @@ export async function assertTerminalProductionScope(
     case 'POST /production/work-orders/{workOrderId}:hold':
     case 'POST /production/work-orders/{workOrderId}:resume':
       await ownWorkOrder(request.params.workOrderId);
+      break;
+    case 'POST /production/work-orders/{workOrderId}:close':
+      await closableWorkOrder(request.params.workOrderId);
       break;
     case 'POST /production/production-results':
       await ownWorkOrder(body.workOrderId);

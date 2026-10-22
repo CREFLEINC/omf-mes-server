@@ -82,6 +82,17 @@ describe('workSessionView', () => {
   it('terminalId 는 항상 채워진다', () => {
     expect(workSessionView(sessionRow()).terminalId).toBe(30);
   });
+
+  it('조회가 단말·주작업자를 함께 읽으면 단말 코드와 작업자를 싣고, 주작업자가 없으면 작업자 키가 없다', () => {
+    const terminal = { terminal_code: 'POP-30' };
+    const worker = { worker_id: 9n, worker_no: '900009', worker_name: '작업자나' };
+
+    expect(workSessionView({ ...sessionRow(), terminal, work_session_worker: [{ worker }] }))
+      .toMatchObject({ terminalCode: 'POP-30', workerId: 9, workerNo: '900009', workerName: '작업자나' });
+    const without = workSessionView({ ...sessionRow(), terminal, work_session_worker: [] });
+    expect(without).toMatchObject({ terminalCode: 'POP-30' });
+    expect(without).not.toHaveProperty('workerId');
+  });
 });
 
 describe('workSessionEventView', () => {
