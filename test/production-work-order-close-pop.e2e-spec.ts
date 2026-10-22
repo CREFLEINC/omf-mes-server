@@ -157,8 +157,9 @@ describe('POP 작업지시 마감 (e2e)', () => {
   });
 
   describe('관리웹 작업 세션 강제 종료', () => {
-    it('관리웹이 다른 단말의 열린 세션을 사유와 함께 강제 종료한다 — 사건 FORCE_END 에 계정·사유가 남고 참여자가 닫힌 뒤 마감된다', async () => {
+    it('관리웹이 다른 단말의 중단 세션을 사유와 함께 강제 종료한다 — 사건 FORCE_END 에 계정·사유가 남고 참여자가 닫힌 뒤 중단된 W/O 가 미달 마감된다', async () => {
       const workOrderId = await workOrderWithLots('F');
+      await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: 'SUSPENDED' } });
       const session = await openSession(workOrderId, 'F', 'STOPPED');
 
       const ended = await forceEnd(session, { reason: '단말 고장으로 종료하지 못함' }).expect(200);
