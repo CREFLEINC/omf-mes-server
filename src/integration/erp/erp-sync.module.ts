@@ -21,6 +21,7 @@ import { ErpSyncRunner, Lane } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
 import { RCV_TABLES } from './rcv-tables';
 import { goodsIssueBuilder } from './send/goods-issue.send';
+import { goodsReceiptBuilder } from './send/goods-receipt.send';
 import { productionReceiptBuilder } from './send/production-receipt.send';
 import { RelayClient } from './relay-client';
 import { SyncLease } from './sync-lease';
@@ -83,13 +84,12 @@ import { SyncState } from './sync-state';
       useFactory: (config: ConfigService, prisma: PrismaService): ErpSendRunner => {
         const settings = erpSyncConfig(config);
         // 연결 풀을 받기와 나눈다 — 한쪽의 긴 회차가 다른 쪽 연결을 붙들지 않게.
-        // 바꾸개는 표마다 따로 더한다 — 구매입고는 아직 없다.
         return new ErpSendRunner(
           settings.sendEnabled,
           prisma,
           new SyncLease(prisma, ERP_SEND_LEASE),
           new RelayClient(settings.relay),
-          [productionReceiptBuilder(prisma), goodsIssueBuilder(prisma)],
+          [productionReceiptBuilder(prisma), goodsIssueBuilder(prisma), goodsReceiptBuilder(prisma)],
           RCV_TABLES,
         );
       },

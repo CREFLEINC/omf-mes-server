@@ -4,15 +4,21 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
+import * as mssql from 'mssql';
+
 import { AppModule } from '../src/app.module';
+import { RowDraft } from '../src/integration/erp/outbound-rows';
+import { GR_INFOR } from '../src/integration/erp/rcv-tables';
+import { RelayClient } from '../src/integration/erp/relay-client';
+import { goodsReceiptBuilder } from '../src/integration/erp/send/goods-receipt.send';
 import { GoodsReceiptService } from '../src/logistics/goods-receipt/goods-receipt.service';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { ensurePlant } from './erp-relay.fixture';
+import { RELAY, connectSa, createCopy, describeRelay, dropCopy, ensurePlant } from './erp-relay.fixture';
 
 const PREFIX = `GR${Date.now().toString(36).toUpperCase()}`;
 const RECEIVED_AT = new Date('2026-10-21T18:30:00.000Z');
 
-describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
+describe('ERP 보내기 — 구매입고 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let receipts: GoodsReceiptService;
@@ -93,18 +99,20 @@ describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
           },
         })
       ).purchase_order_id;
-      ids[`${key}Line`] = (
-        await prisma.purchase_order_line.create({
-          data: {
-            purchase_order_id: ids[key],
-            line_no: 1,
-            item_id: ids.item,
-            ordered_qty: 1000,
-            uom_id: ids.uom,
-            erp_storage_location_code: 'S240',
-          },
-        })
-      ).purchase_order_line_id;
+      for (const lineNo of [1, 2]) {
+        ids[`${key}Line${lineNo === 1 ? '' : lineNo}`] = (
+          await prisma.purchase_order_line.create({
+            data: {
+              purchase_order_id: ids[key],
+              line_no: lineNo,
+              item_id: ids.item,
+              ordered_qty: 1000,
+              uom_id: ids.uom,
+              erp_storage_location_code: lineNo === 1 ? 'S240' : 'S230',
+            },
+          })
+        ).purchase_order_line_id;
+      }
     }
     ids.inbound = (
       await prisma.inbound_receipt.create({
@@ -119,8 +127,12 @@ describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
     ).inbound_receipt_id;
   }
 
-  /** ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. */
-  async function inboundLot(orderLine: bigint, qty: number): Promise<{ inboundLineId: bigint; lotId: bigint }> {
+  /** ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. 초과분은 다른 P/O 라인에 이었거나(`orderLine`) 아직 안 이었다. */
+  async function inboundLot(
+    orderLine: bigint,
+    qty: number,
+    excesses: { qty: number; orderLine: bigint | null }[] = [],
+  ): Promise<{ inboundLineId: bigint; lotId: bigint }> {
     sequence += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -135,6 +147,16 @@ describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
         status_code: 'REGISTERED',
       },
     });
+    for (const excess of excesses) {
+      await prisma.inbound_receipt_excess.create({
+        data: {
+          inbound_receipt_line_id: line.inbound_receipt_line_id,
+          excess_qty: excess.qty,
+          purchase_order_line_id: excess.orderLine,
+          linked_at: excess.orderLine === null ? null : RECEIVED_AT,
+        },
+      });
+    }
     const lot = await prisma.lot.create({
       data: {
         lot_no: `${PREFIX}-L${sequence}`,
@@ -217,6 +239,205 @@ describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
 
     expect(details.map((detail) => detail.goodsReceipt.erpMessageQueued)).toEqual([false, false, false, false]);
     for (const detail of details) expect(await messageOf(detail.goodsReceipt.goodsReceiptNo)).toBeNull();
+  });
+
+  /** 선별로 떼어 낸 자식 LOT — 입고 줄에 입하 연결이 없고 조상(부모)의 입하 줄을 따른다(P-56). */
+  async function splitLot(parentLotId: bigint, qty: number): Promise<bigint> {
+    sequence += 1;
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-S${sequence}`,
+        item_id: ids.item,
+        lot_type_code: 'MATERIAL',
+        plant_id: ids.plant,
+        initial_qty: qty,
+        uom_id: ids.uom,
+        source_type_code: 'LOT_SPLIT',
+        source_id: parentLotId,
+        parent_lot_id: parentLotId,
+        status_code: 'NORMAL',
+      },
+    });
+    return lot.lot_id;
+  }
+
+  const build = (goodsReceiptId: number): Promise<RowDraft[]> =>
+    goodsReceiptBuilder(prisma).build({
+      id: 1n,
+      interfaceCode: 'IF-GR-SEND',
+      targetTypeCode: 'GOODS_RECEIPT',
+      targetId: BigInt(goodsReceiptId),
+      payload: {},
+    });
+  const summary = (rows: RowDraft[]) =>
+    rows.map((row) => [row.values.PO_NO, row.values.PO_SEQ_NO, row.values.SL_CD, row.values.GR_QTY]);
+
+  it('구매입고 행 — 입하 줄의 P/O 라인 몫만, 같은 라인은 합친다 · 초과분은 따로 가고 특채 LOT 은 빠진다', async () => {
+    const linked = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
+    const waiting = await inboundLot(ids.erpOrderLine, 50, [{ qty: 10, orderLine: null }]);
+    const conceded = await inboundLot(ids.erpOrderLine, 10);
+    await concede(conceded.lotId);
+
+    const detail = await receive('warehouse', [
+      { ...linked, qty: 100 },
+      { ...waiting, qty: 50 },
+      { ...conceded, qty: 10 },
+    ]);
+    const rows = await build(detail.goodsReceipt.goodsReceiptId);
+
+    // P/O 라인 1 = 80 + 40(같은 라인은 합친다). 이어진 초과분 20·안 이어진 10 은 초과분 묶음으로, 특채 LOT 10 은 없다.
+    expect(summary(rows)).toEqual([[`${PREFIX}-PO`, 1, 'S240', '120']]);
+    expect(rows[0].values).toEqual({
+      POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo,
+      PLANT_CD: 'PL11',
+      ITEM_CD: `${PREFIX}-IT`,
+      PO_NO: `${PREFIX}-PO`,
+      PO_SEQ_NO: 1,
+      GR_QTY: '120',
+      GR_UNIT: 'EA',
+      SL_CD: 'S240',
+      TRACKING_NO: '',
+      LOT_NO: '',
+      LOT_SUB_NO: 0,
+      MAKER_LOT_NO: null,
+      MAKER_LOT_SUB_NO: 0,
+      // 하노이 2026-10-22 01:30 — UTC 로는 아직 21일이다.
+      RCPT_DT: '2026-10-22 01:30:00',
+      BP_CD: 'S0001',
+      PUR_GRP_CD: 'P01',
+      IO_TYPE_CD: 'DGR',
+      INSPECT_FLAG: 'N',
+      INSPECT_METHOD_CD: null,
+      CC_NO: '',
+      CC_SEQ_NO: 0,
+      LLC_SEQ_NO: 0,
+      IV_SEQ_NO: 0,
+      GM_SUB_SEQ_NO: 0,
+    });
+  });
+
+  it('선별로 떼어 낸 LOT 은 조상의 입하 줄을 따르고, 입고가 적으면 P/O 라인 몫부터 채운다', async () => {
+    const parent = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
+    const child = await splitLot(parent.lotId, 90);
+
+    const detail = await receipts.create(
+      {
+        receiptTypeCode: 'MATERIAL',
+        plantId: Number(ids.plant),
+        warehouseId: Number(ids.warehouse),
+        receiptDatetime: RECEIVED_AT.toISOString(),
+        businessDate: '2026-10-22',
+        lines: [
+          {
+            itemId: Number(ids.item),
+            lotId: Number(child),
+            receiptQty: 90,
+            uomId: Number(ids.uom),
+            qualityStatusCode: 'NORMAL',
+            inventoryStatusCode: 'AVAILABLE',
+            destinationLocationId: Number(ids.warehouseLocation),
+          },
+        ],
+      },
+      userId,
+    );
+    received.push(detail.goodsReceipt.goodsReceiptNo);
+
+    expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '80']]);
+  });
+
+  it('입하 줄 하나가 ERP 로 가는 입고 여럿에 나뉘면 실패한다 — 부분 입고는 생기지 않는다', async () => {
+    const parent = await inboundLot(ids.erpOrderLine, 100);
+    const [first, second] = [await splitLot(parent.lotId, 50), await splitLot(parent.lotId, 50)];
+    const receiveChild = async (lotId: bigint) => {
+      const detail = await receipts.create(
+        {
+          receiptTypeCode: 'MATERIAL',
+          plantId: Number(ids.plant),
+          warehouseId: Number(ids.warehouse),
+          receiptDatetime: RECEIVED_AT.toISOString(),
+          businessDate: '2026-10-22',
+          lines: [
+            {
+              itemId: Number(ids.item),
+              lotId: Number(lotId),
+              receiptQty: 50,
+              uomId: Number(ids.uom),
+              qualityStatusCode: 'NORMAL',
+              inventoryStatusCode: 'AVAILABLE',
+              destinationLocationId: Number(ids.warehouseLocation),
+            },
+          ],
+        },
+        userId,
+      );
+      received.push(detail.goodsReceipt.goodsReceiptNo);
+      return detail.goodsReceipt;
+    };
+    const [a, b] = [await receiveChild(first), await receiveChild(second)];
+
+    await expect(build(b.goodsReceiptId)).rejects.toThrow(
+      `입고 ${b.goodsReceiptNo} 입하 줄 ${parent.inboundLineId} — 다른 입고(${a.goodsReceiptNo})에도 들어가 P/O 몫을 나눌 수 없다`,
+    );
+  });
+
+  it('발주에 구매그룹이 없으면 실패한다 — 입고 쪽 칸은 NOT NULL 이다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 5);
+    const detail = await receive('warehouse', [{ ...lot, qty: 5 }]);
+    await prisma.purchase_order.update({ where: { purchase_order_id: ids.erpOrder }, data: { erp_purchase_group_code: null } });
+
+    try {
+      await expect(build(detail.goodsReceipt.goodsReceiptId)).rejects.toThrow(
+        `입고 ${detail.goodsReceipt.goodsReceiptNo} — ERP 발주 ${PREFIX}-PO 라인 1 — 발주에 구매그룹(PUR_GRP_CD)이 없다`,
+      );
+    } finally {
+      await prisma.purchase_order.update({ where: { purchase_order_id: ids.erpOrder }, data: { erp_purchase_group_code: 'P01' } });
+    }
+  });
+
+  it('보내기 전에 취소된 입고는 보낼 것이 없다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 5);
+    const detail = await receive('warehouse', [{ ...lot, qty: 5 }]);
+    await prisma.goods_receipt.update({
+      where: { goods_receipt_id: BigInt(detail.goodsReceipt.goodsReceiptId) },
+      data: { status_code: 'CANCELLED' },
+    });
+
+    expect(await build(detail.goodsReceipt.goodsReceiptId)).toEqual([]);
+  });
+
+  describeRelay('중계 DB', () => {
+    const COPY = { ...GR_INFOR, name: 'E2E_IF_RCV_GR_INFOR_SEND' };
+    let sa: mssql.ConnectionPool;
+    let relay: RelayClient;
+
+    beforeAll(async () => {
+      sa = await connectSa();
+      await createCopy(sa, COPY.name, GR_INFOR.name);
+      relay = new RelayClient(RELAY);
+    });
+
+    afterAll(async () => {
+      await relay?.close();
+      await dropCopy(sa, COPY.name);
+      await sa?.close();
+    });
+
+    it('만든 행이 중계 표에 그대로 들어간다 — 비어서는 안 되는 칸이 다 찼다', async () => {
+      const lot = await inboundLot(ids.erpOrderLine, 30);
+      const detail = await receive('warehouse', [{ ...lot, qty: 30 }]);
+      const rows = await build(detail.goodsReceipt.goodsReceiptId);
+
+      await relay.insertRows(
+        rows.map((row) => ({ table: COPY, values: { ...row.values, IF_SEQ: 1, CREATE_TYPE: 'A', ...GR_INFOR.initialFlags } })),
+      );
+
+      const stored = await sa.request().query(`SELECT PO_SEQ_NO, GR_QTY, RCPT_DT, ERP_APPLY_FLAG FROM dbo.${COPY.name}`);
+      expect(stored.recordset).toEqual([
+        { PO_SEQ_NO: 1, GR_QTY: 30, RCPT_DT: new Date('2026-10-22T01:30:00.000Z'), ERP_APPLY_FLAG: 'N' },
+      ]);
+    });
   });
 
   /** 특채가 적용된 LOT — 부적합·결재 요청·특채(APPROVED)를 그대로 세운다(P-79). */
