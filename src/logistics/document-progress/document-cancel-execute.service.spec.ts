@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { ApprovalService } from '../../core/approval';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { OutboxService } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibility, CancelEligibilityService } from './cancel-eligibility.service';
 import { CancelableDocumentType, DocumentCancelService } from './document-cancel.service';
@@ -41,6 +42,8 @@ interface Seed {
   }[];
   /** 되돌린 «뒤»의 발주 라인 수취 누계. */
   afterQty?: Prisma.Decimal[];
+  /** 입고를 ERP 구매입고로 적재했는가(장부 P-104). */
+  erpQueued?: boolean;
 }
 
 const decimal = (value: number): Prisma.Decimal => new Prisma.Decimal(value);
@@ -69,7 +72,13 @@ function fake(seed: Seed = {}) {
   let poRead = 0;
   const tx = {
     inbound_receipt: writable('inbound_receipt'),
-    goods_receipt: writable('goods_receipt'),
+    goods_receipt: {
+      ...writable('goods_receipt'),
+      findUniqueOrThrow: rec('goods_receipt.findUniqueOrThrow', () => ({ goods_receipt_no: 'GR-20260504-0001' })),
+    },
+    integration_message: {
+      count: rec('integration_message.count', () => (seed.erpQueued === true ? 1 : 0)),
+    },
     goods_issue: writable('goods_issue'),
     putaway_task: writable('putaway_task'),
     lot: writable('lot'),
@@ -138,6 +147,13 @@ function fake(seed: Seed = {}) {
     documentState,
     { evaluate } as unknown as CancelEligibilityService,
     { reverse } as unknown as InventoryPostingService,
+    {
+      // 둘째 인자(적재 내용)를 적는다 — 첫째는 트랜잭션이다.
+      enqueue: async (_tx: unknown, input: Args) => {
+        (args['outbox.enqueue'] ??= []).push(input);
+        return { integrationMessageId: 1n, alreadyQueued: false };
+      },
+    } as unknown as OutboxService,
   );
   const at = (name: string, index = 0) => args[name]?.[index];
   return { service, args, at, evaluate, reverse };
@@ -393,5 +409,30 @@ describe('DocumentCancelExecuteService', () => {
     expect(args['putaway_task.update']).toBeUndefined();
     expect(args['putaway_task.updateMany']).toBeUndefined();
     expect(args['putaway_task.deleteMany']).toBeUndefined();
+  });
+  it('입고 취소 — ERP 구매입고로 적재한 입고면 취소 묶음을 같은 트랜잭션에 적재한다(장부 P-104)', async () => {
+    const { service, at } = fake({
+      locked: requested,
+      ledger: [ledgerRow(500n)],
+      erpQueued: true,
+    });
+
+    await cancel(service);
+
+    expect(at('integration_message.count')).toEqual({ where: { message_key: 'IF-GR-SEND:GR-20260504-0001' } });
+    expect(at('outbox.enqueue')).toMatchObject({
+      interfaceCode: 'IF-GR-SEND',
+      messageKey: 'IF-GR-SEND:CANCEL:GR-20260504-0001',
+      targetTypeCode: 'GOODS_RECEIPT_CANCEL',
+      targetId: DOC_ID,
+    });
+  });
+
+  it('입고 취소 — 적재하지 않은 입고·입하·출고 취소는 적재하지 않는다', async () => {
+    for (const [typeCode, erpQueued] of [['GOODS_RECEIPT', false], ['GOODS_ISSUE', true]] as const) {
+      const { service, at } = fake({ locked: requested, ledger: [ledgerRow(500n)], erpQueued });
+      await cancel(service, typeCode);
+      expect(at('outbox.enqueue')).toBeUndefined();
+    }
   });
 });

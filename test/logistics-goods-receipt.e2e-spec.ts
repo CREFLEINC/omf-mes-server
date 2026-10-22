@@ -290,7 +290,7 @@ describe('입고 (e2e)', () => {
     expect(task.applied_putaway_rule_id).toBeNull();
   });
 
-  it('⛔ ERP 송신 적재는 하지 않는다 — 한도승인을 가를 축이 물리에 없다', async () => {
+  it('⛔ 입하·ERP 발주에 이어지지 않은 입고는 ERP 송신을 적재하지 않는다(장부 P-104)', async () => {
     const detail = await create();
     expect(detail.goodsReceipt.erpMessageQueued).toBe(false);
   });
@@ -416,7 +416,9 @@ describe('입고 (e2e)', () => {
         initial_qty: 100,
         uom_id: uomId,
         source_type_code: 'INBOUND_RECEIPT_LINE',
-        source_id: 1,
+        // 없는 입하 줄 — 1번은 다른 검사가 만든 줄이라 ERP 발주에 이어져 있으면 송신을 적재하고,
+        // IQC 대상이면 입고가 막힌다. 이 검사는 입하 줄과 상관없는 입고만 본다.
+        source_id: 0,
         status_code: 'INSPECTION_PENDING',
       },
     });

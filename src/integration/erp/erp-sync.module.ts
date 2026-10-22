@@ -14,10 +14,15 @@ import { productionOrderTable } from './apply/production-order.apply';
 import { purchaseOrderTable } from './apply/purchase-order.apply';
 import { salesOrderTable } from './apply/sales-order.apply';
 import { ERP_SYNC_LANES, ErpSyncStatusService } from './erp-sync-status.service';
+import { ERP_SEND_LEASE, ErpSendRunner } from './erp-send.runner';
 import { erpSyncConfig } from './erp-sync.config';
 import { ErpSyncController } from './erp-sync.controller';
 import { ErpSyncRunner, Lane } from './erp-sync.runner';
 import { InboundCycle } from './inbound-cycle';
+import { RCV_TABLES } from './rcv-tables';
+import { goodsIssueBuilder } from './send/goods-issue.send';
+import { goodsReceiptBuilder } from './send/goods-receipt.send';
+import { productionReceiptBuilder } from './send/production-receipt.send';
 import { RelayClient } from './relay-client';
 import { SyncLease } from './sync-lease';
 import { SyncState } from './sync-state';
@@ -70,6 +75,22 @@ import { SyncState } from './sync-state';
           new SyncLease(prisma),
           relay,
           new SyncState(prisma),
+        );
+      },
+    },
+    {
+      provide: ErpSendRunner,
+      inject: [ConfigService, PrismaService],
+      useFactory: (config: ConfigService, prisma: PrismaService): ErpSendRunner => {
+        const settings = erpSyncConfig(config);
+        // 연결 풀을 받기와 나눈다 — 한쪽의 긴 회차가 다른 쪽 연결을 붙들지 않게.
+        return new ErpSendRunner(
+          settings.sendEnabled,
+          prisma,
+          new SyncLease(prisma, ERP_SEND_LEASE),
+          new RelayClient(settings.relay),
+          [productionReceiptBuilder(prisma), goodsIssueBuilder(prisma), goodsReceiptBuilder(prisma)],
+          RCV_TABLES,
         );
       },
     },
