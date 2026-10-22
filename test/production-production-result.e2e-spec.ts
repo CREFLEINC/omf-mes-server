@@ -963,6 +963,140 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     });
   });
 
+  /**
+   * omf-all-around#166 · 장부 P-107 — 실적이 투입 자재 LOT → 생산 LOT 계보를 남기고, 조회가 그것을 읽는다.
+   * 투입은 픽스처로 바로 심는다(투입 등록 경로 자체는 `production-material-consumption` e2e 가 본다).
+   */
+  describe('투입 자재 계보 (#166)', () => {
+    const at = (hour: number) => `2026-09-06T${String(hour).padStart(2, '0')}:00:00.000Z`;
+
+    it('실적 구간의 투입 LOT 을 배분 생산 LOT 에 잇고, 생산 LOT·시리얼·자재 LOT 조회가 계보를 읽는다', async () => {
+      const workOrderId = BigInt(recordingWorkOrderId);
+      const slot = await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-LOT-G1`,
+          item_id: ids.item,
+          lot_type_code: 'PRODUCT',
+          plant_id: ids.plant,
+          initial_qty: 50,
+          uom_id: ids.uom,
+          source_type_code: LOT_SOURCE,
+          source_id: workOrderId,
+          status_code: 'NORMAL',
+          lifecycle_status_code: 'WAITING',
+          work_order_lot_seq: 9,
+        },
+      });
+      const material = (suffix: string) =>
+        prisma.lot.create({
+          data: {
+            lot_no: `${PREFIX}-ML-${suffix}`,
+            item_id: ids.item,
+            lot_type_code: 'PRODUCT',
+            plant_id: ids.plant,
+            initial_qty: 100,
+            uom_id: ids.uom,
+            source_type_code: 'E2E',
+            source_id: 0n,
+            status_code: 'NORMAL',
+          },
+        });
+      const [first, second] = [await material('A'), await material('B')];
+      const consume = (suffix: string, lotId: bigint, hour: number) =>
+        prisma.material_consumption.create({
+          data: {
+            consumption_no: `${PREFIX}-MC-${suffix}`,
+            work_order_id: workOrderId,
+            item_id: ids.item,
+            lot_id: lotId,
+            consumption_type_code: 'NORMAL',
+            input_qty: 10,
+            uom_id: ids.uom,
+            occurred_at: new Date(at(hour)),
+            worker_id: ids.worker,
+            status_code: 'RECORDED',
+            idempotency_key: `${PREFIX}-MC-${suffix}-${randomUUID()}`,
+          },
+        });
+      // 앞선 실적(03시) 뒤로 A 를 넣고 06시에 B 로 바꿨다 — 10시 실적 구간에 둘 다 든다.
+      await consume('A', first.lot_id, 4);
+      await consume('B', second.lot_id, 6);
+
+      const created = await request(app.getHttpServer())
+        .post(RESULTS)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', randomUUID())
+        .set('X-Worker-No', `${PREFIX}-WK`)
+        .send({
+          workOrderId: recordingWorkOrderId,
+          uomId: Number(ids.uom),
+          resultSourceCode: 'MANUAL',
+          occurredAt: at(10),
+          goodQty: 8,
+          lotAllocations: [{ lotId: Number(slot.lot_id), allocatedQty: 8 }],
+        })
+        .expect(201);
+
+      const relations = await prisma.lot_relation.findMany({
+        where: { target_lot_id: slot.lot_id },
+        orderBy: { source_lot_id: 'asc' },
+      });
+      expect(relations.map((row) => row.source_lot_id)).toEqual([first.lot_id, second.lot_id]);
+      expect(relations[0]).toMatchObject({
+        relation_type_code: 'CONSUMED',
+        allocation_method_code: 'INPUT_TIME_WINDOW',
+        trace_accuracy_code: 'ESTIMATED',
+        source_event_type_code: 'PRODUCTION_RESULT',
+        source_event_id: BigInt(created.body.productionResultId),
+      });
+      expect(Number(relations[0].relation_qty)).toBe(8);
+
+      const inputs = await request(app.getHttpServer())
+        .get(`${LOTS}/${String(slot.lot_id)}/input-materials`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(inputs.body).toMatchObject({ basis: 'LOT_GENEALOGY_ESTIMATE' });
+      expect(inputs.body.items.map((row: { lotNo: string }) => row.lotNo)).toEqual([`${PREFIX}-ML-A`, `${PREFIX}-ML-B`]);
+      expect(validator('logistics-01자재창고.json', 'GET /trace/lots/{lotId}/input-materials', 200)(inputs.body)).toBe(true);
+
+      // 05시에 만든 시리얼은 A 만 썼다.
+      await prisma.serial_number.create({
+        data: {
+          serial_no: `${PREFIX}-SN-G1`,
+          item_id: ids.item,
+          lot_id: slot.lot_id,
+          status_code: 'REGISTERED',
+          produced_at: new Date(at(5)),
+        },
+      });
+      const serialInputs = await request(app.getHttpServer())
+        .get(`/api/trace/serial-numbers/${PREFIX}-SN-G1/input-materials`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(serialInputs.body.items.map((row: { lotNo: string }) => row.lotNo)).toEqual([`${PREFIX}-ML-A`]);
+
+      const used = await request(app.getHttpServer())
+        .get(`${LOTS}/${String(first.lot_id)}/used-serials`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(used.body).toMatchObject({ basis: 'LOT_GENEALOGY_ESTIMATE', page: { total: 1 } });
+      expect(used.body.items[0]).toMatchObject({ serialNo: `${PREFIX}-SN-G1`, lotId: Number(slot.lot_id) });
+      expect(validator('logistics-01자재창고.json', 'GET /trace/lots/{lotId}/used-serials', 200)(used.body)).toBe(true);
+      const unused = await request(app.getHttpServer())
+        .get(`${LOTS}/${String(second.lot_id)}/used-serials`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(unused.body.page.total).toBe(0);
+
+      const affected = await request(app.getHttpServer())
+        .get(`${LOTS}/${String(first.lot_id)}/affected-production-lots`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(affected.body.basis).toBe('LOT_GENEALOGY_ESTIMATE');
+      expect(affected.body.items.map((row: { lotId: number }) => row.lotId)).toEqual([Number(slot.lot_id)]);
+    });
+  });
+
   async function makeFixtures(): Promise<void> {
     const entity = await prisma.legal_entity.create({
       data: {
@@ -1372,6 +1506,14 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
     });
     await prisma.approval_route.deleteMany({ where: { approval_type_code: CORRECT_APPROVAL_TYPE } });
     await prisma.lot_lifecycle_history.deleteMany({ where: { lot: plantScope } });
+    // 실적이 검사대기 → 정상으로 올린 기록(#105) — 남으면 LOT 을 못 지워 다음 회차 준비부터 깨진다.
+    await prisma.lot_status_event.deleteMany({ where: { lot: plantScope } });
+    // 계보(#166) — 생산 LOT·자재 LOT 보다 먼저 지운다.
+    await prisma.lot_relation.deleteMany({
+      where: { OR: [{ lot_lot_relation_source_lot_idTolot: plantScope }, { lot_lot_relation_target_lot_idTolot: plantScope }] },
+    });
+    await prisma.serial_number.deleteMany({ where: { lot: plantScope } });
+    await prisma.material_consumption.deleteMany({ where: { work_order: orderScope } });
     await prisma.production_result_lot_allocation.deleteMany({
       where: { production_result: { work_order: orderScope } },
     });
