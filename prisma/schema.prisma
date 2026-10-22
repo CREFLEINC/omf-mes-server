@@ -3718,7 +3718,7 @@ model lot_four_m_change {
   lot_four_m_change_id                            BigInt             @id @default(autoincrement())
   lot_id                                          BigInt             @unique(map: "uq_lot_four_m_change_lot")
   inspection_request_id                           BigInt
-  change_type_code                                String             @db.VarChar(50)
+  change_type_code                                String?            @db.VarChar(50)
   remarks                                         String?            @db.VarChar(500)
   created_at                                      DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by                                      BigInt?

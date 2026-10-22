@@ -104,12 +104,13 @@ describe('InspectionLevelService — 수동 변경(PUT)', () => {
     ]);
   });
 
-  it('수준이 바뀌는데 사유가 없으면 400 reason REQUIRED — 저장하지 않는다', async () => {
-    const { service, prisma } = harness();
-    await expect(service.update(5, 3, { inspectionLevelCode: 'REDUCED' }, 1)).rejects.toMatchObject({
-      response: { errors: [expect.objectContaining({ field: 'reason', code: 'REQUIRED' })] },
-    });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+  it('수준이 바뀌는데 사유가 없어도 저장한다 — 이력 사유는 비어 있다(omf-all-around#133)', async () => {
+    const { service, histories } = harness();
+    await service.update(5, 3, { inspectionLevelCode: 'REDUCED', reason: '  ' }, 1);
+
+    expect(histories).toEqual([
+      expect.objectContaining({ from_level_code: 'NORMAL', to_level_code: 'REDUCED', change_type_code: 'MANUAL', reason: null }),
+    ]);
   });
 
   it('자동 전환만 끄면 사유 없이 저장하고 이력·연속 수는 그대로다', async () => {

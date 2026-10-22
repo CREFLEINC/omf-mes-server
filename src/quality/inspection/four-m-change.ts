@@ -6,14 +6,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 4M 변경품(omf-all-around#63 · 장부 P-86) — IQC 판정 때 자재 LOT 하나에 «변경품»과 변경 종류·비고를 적는다.
+ * 변경 종류는 선택, 비고는 필수다(omf-all-around#133 · 장부 P-105 — IQC 화면은 비고만 받는다).
  * ⚠ 내부 「4M 자원배정」(W/O 자원 배정)과 다른 말이다.
  *
  * 검사 결과 쓰기 세 경로(`POST`·`PUT`·`:confirm`)가 같은 칸을 받는다 — 생략하면 손대지 않고, `null` 이면
  * 변경품이 아니다(줄 삭제), 값이면 그 LOT 의 한 줄을 갈아 끼운다. 결과 행과 같은 트랜잭션에서 쓴다.
  */
 export interface FourMChangeInput {
-  changeTypeCode: string;
-  remarks?: string;
+  changeTypeCode?: string;
+  remarks: string;
 }
 
 export interface PreparedFourMChange {
@@ -41,9 +42,14 @@ export async function prepareFourMChange(
     throw one(field('fourMChange', ERROR_CODE.INVALID, '4M 변경품은 자재 LOT 이 있는 IQC 검사에만 적을 수 있습니다.'));
   }
   if (input !== null) {
-    await assertCodeValues(prisma, [
-      { field: 'fourMChange.changeTypeCode', value: input.changeTypeCode, groupCode: CHANGE_TYPE_GROUP },
-    ]);
+    if (input.remarks.trim() === '') {
+      throw one(field('fourMChange.remarks', ERROR_CODE.REQUIRED, '4M 변경품의 비고를 입력해 주세요.'));
+    }
+    if (input.changeTypeCode !== undefined) {
+      await assertCodeValues(prisma, [
+        { field: 'fourMChange.changeTypeCode', value: input.changeTypeCode, groupCode: CHANGE_TYPE_GROUP },
+      ]);
+    }
   }
   return { lotId: request.lot_id, inspectionRequestId, value: input };
 }
@@ -72,19 +78,20 @@ export async function writeFourMChangeWithin(
     await tx.lot_four_m_change.deleteMany({ where: { lot_id: prepared.lotId } });
     return;
   }
-  const remarks = prepared.value.remarks?.trim() || null;
+  const remarks = prepared.value.remarks.trim();
+  const changeTypeCode = prepared.value.changeTypeCode ?? null;
   await tx.lot_four_m_change.upsert({
     where: { lot_id: prepared.lotId },
     create: {
       lot_id: prepared.lotId,
       inspection_request_id: prepared.inspectionRequestId,
-      change_type_code: prepared.value.changeTypeCode,
+      change_type_code: changeTypeCode,
       remarks,
       created_by: appUserId ?? null,
     },
     update: {
       inspection_request_id: prepared.inspectionRequestId,
-      change_type_code: prepared.value.changeTypeCode,
+      change_type_code: changeTypeCode,
       remarks,
       updated_at: new Date(),
       updated_by: appUserId ?? null,
@@ -94,12 +101,15 @@ export async function writeFourMChangeWithin(
 }
 
 export interface FourMChangeRow {
-  change_type_code: string;
+  change_type_code: string | null;
   remarks: string | null;
 }
 
-/** 조회 응답의 모양 — 변경품이 아니면 칸이 없다. */
+/** 조회 응답의 모양 — 변경품이 아니면 칸이 없다. 변경 종류·비고가 비면 그 키가 없다(#133). */
 export function fourMChangeView(row: FourMChangeRow | null | undefined) {
   if (row === null || row === undefined) return undefined;
-  return { changeTypeCode: row.change_type_code, ...(row.remarks === null ? {} : { remarks: row.remarks }) };
+  return {
+    ...(row.change_type_code === null ? {} : { changeTypeCode: row.change_type_code }),
+    ...(row.remarks === null ? {} : { remarks: row.remarks }),
+  };
 }

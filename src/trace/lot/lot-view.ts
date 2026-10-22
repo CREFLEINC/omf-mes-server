@@ -37,7 +37,7 @@ export interface LotView {
    *  부르는 쪽(`lot.service.ts`)이 얹는다. */
   progress?: LotProgressView;
   /** 4M 변경품(장부 P-86 · omf-all-around#63) — 목록 조회만 싣는다. 변경품이 아니면 키가 없다. POP 투입 스캔이 읽는다. */
-  fourMChange?: { changeTypeCode: string; remarks?: string };
+  fourMChange?: { changeTypeCode?: string; remarks?: string };
 }
 
 export interface ExternalIdentifierView {
