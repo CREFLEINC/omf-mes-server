@@ -30,6 +30,7 @@ describe('POP 작업지시 마감 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cookie: string;
+  let noPermCookie: string;
   let open: Pop;
   let closedFlag: Pop;
   let workerNo: string;
@@ -136,7 +137,75 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(off.body.items[0]).toMatchObject({ canCloseWorkOrder: false });
   });
 
+  describe('관리웹 작업 세션 강제 종료', () => {
+    it('관리웹이 다른 단말의 열린 세션을 사유와 함께 강제 종료한다 — 사건 FORCE_END 에 계정·사유가 남고 참여자가 닫힌 뒤 마감된다', async () => {
+      const workOrderId = await workOrderWithLots('F');
+      const session = await openSession(workOrderId, 'F', 'STOPPED');
+
+      const ended = await forceEnd(session, { reason: '단말 고장으로 종료하지 못함' }).expect(200);
+
+      expect(ended.body).toMatchObject({ statusCode: 'ENDED' });
+      const event = await prisma.work_session_event.findFirstOrThrow({ where: { work_session_id: session, event_type_code: 'FORCE_END' } });
+      expect(event).toMatchObject({ performed_by: ids.user, terminal_id: null, remarks: '단말 고장으로 종료하지 못함' });
+      expect((await prisma.work_session_worker.findFirstOrThrow({ where: { work_session_id: session } })).left_at).not.toBeNull();
+      const events = await request(app.getHttpServer())
+        .get(`/api/production/work-sessions/${String(session)}/events`).set('Cookie', cookie).expect(200);
+      expect(events.body).toEqual(expect.arrayContaining([
+        expect.objectContaining({ eventTypeCode: 'FORCE_END', performedBy: Number(ids.user), remarks: '단말 고장으로 종료하지 못함' }),
+      ]));
+
+      // 마감을 막던 세션이 닫혀 관리웹 마감이 된다.
+      await request(app.getHttpServer()).post(`${WORK_ORDERS}/${String(workOrderId)}:close`)
+        .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', `"${String(versions.get(workOrderId))}"`)
+        .send({ remainderDispositionCode: 'CARRY_OVER', reasonCode: 'MATERIAL_SHORTAGE' })
+        .expect(200);
+    });
+
+    it('강제 종료된 세션에 단말이 보낸 종료는 400 이고 작업 시작을 다시 하라고 알려 준다', async () => {
+      const session = await openSession(await workOrderWithLots('G'), 'G', 'RUNNING');
+      await forceEnd(session, { reason: '관리자 종료' }).expect(200);
+
+      const response = await asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session)}:end`), open)
+        .set('Idempotency-Key', randomUUID())
+        .send({ endedAt: new Date().toISOString() })
+        .expect(400);
+
+      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      expect(response.body.errors[0].message).toContain('작업 시작을 다시');
+    });
+
+    it('이미 종료된 세션·빈 사유는 400, 권한 없는 계정은 403', async () => {
+      const session = await openSession(await workOrderWithLots('H'), 'H', 'RUNNING');
+
+      await forceEnd(session, { reason: '' }).expect(400);
+      await forceEnd(session, { reason: '   ' }).expect(400);
+      await request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session)}:force-end`)
+        .set('Cookie', noPermCookie).set('Idempotency-Key', randomUUID()).send({ reason: '권한 없음' })
+        .expect(403);
+      await forceEnd(session, { reason: '관리자 종료' }).expect(200);
+      const again = await forceEnd(session, { reason: '관리자 종료' }).expect(400);
+      expect(again.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
+
+  function forceEnd(workSessionId: bigint, body: Record<string, unknown>): request.Test {
+    return request(app.getHttpServer()).post(`/api/production/work-sessions/${String(workSessionId)}:force-end`)
+      .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).send(body);
+  }
+
+  /** 단말 1 에서 연 세션 — 주작업자가 붙어 있다. */
+  async function openSession(workOrderId: bigint, key: string, status: string): Promise<bigint> {
+    const session = await prisma.work_session.create({ data: {
+      work_order_id: workOrderId, session_no: 1, terminal_id: open.terminalId, started_at: STARTED_AT,
+      status_code: status, idempotency_key: `${PREFIX}-WS-${key}`,
+    } });
+    await prisma.work_session_worker.create({ data: {
+      work_session_id: session.work_session_id, worker_id: ids.worker, worker_role_code: 'MAIN', joined_at: STARTED_AT,
+    } });
+    return session.work_session_id;
+  }
 
   function asPop(test: request.Test, pop: Pop): request.Test {
     return test.set('Authorization', `Bearer ${pop.token}`).set('X-Worker-No', workerNo);
@@ -182,6 +251,8 @@ describe('POP 작업지시 마감 (e2e)', () => {
     await prisma.role_permission.createMany({ data: ['W-02-05', 'W-CO-06'].map((permission_code) => ({ role_id: ids.role, permission_code })) });
     await prisma.user_role.create({ data: { app_user_id: ids.user, role_id: ids.role } });
     cookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(ids.user), typ: 'session' })}`;
+    const noPerm = await prisma.app_user.create({ data: { login_id: `${PREFIX}-NOPERM`, user_name: `${PREFIX}-NOPERM`, status_code: 'EMPLOYED' } });
+    noPermCookie = `${SESSION_COOKIE}=${app.get(JwtService).sign({ sub: Number(noPerm.app_user_id), typ: 'session' })}`;
 
     const entity = await prisma.legal_entity.create({ data: {
       legal_entity_code: `${PREFIX}-LE`, legal_entity_name: PREFIX, country_code: 'VN', timezone_code: 'Asia/Ho_Chi_Minh',
@@ -243,6 +314,7 @@ describe('POP 작업지시 마감 (e2e)', () => {
       `DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%')`,
       `DELETE FROM production.production_result_lot_allocation WHERE production_result_id IN (SELECT production_result_id FROM production.production_result WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
+      `DELETE FROM production.work_session_event WHERE work_session_id IN (SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.work_session_worker WHERE work_session_id IN (SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%'`,
