@@ -5941,7 +5941,7 @@
        "type": "boolean",
        "default": false
       },
-      "description": "true 면 그 W/O 의 «현재» 생산 LOT 한 건만 낸다(items 0~1건 · page·size 무시) — 완료되지 않고 폐번되지 않은(생명주기 ACTIVE·WAITING) 생산 LOT 중 진행 중(ACTIVE)이 먼저, 그 안에서 선발행 회차(W/O 안 LOT 순번)가 가장 앞선 것. 진행 중이 둘 이상이어도 막지 않는다. workOrderId 가 필수 — 없으면 400 REQUIRED. POP 실적·완료가 다음 LOT 으로 넘어가는 축이다. 장부 P-103"
+      "description": "true 면 그 W/O 의 «현재» 생산 LOT 한 건만 낸다(items 0~1건 · 받은 page·size 는 무시하고 page 메타는 page 1·size 1) — 완료되지 않고 폐번되지 않은(생명주기 ACTIVE·WAITING) 생산 LOT 중 진행 중(ACTIVE)이 먼저, 그 안에서 선발행 회차(W/O 안 LOT 순번)가 가장 앞선 것. 진행 중이 둘 이상이어도 막지 않는다. 다른 질의(completed·lotTypeCode 등)는 이 조건과 함께(AND) 걸려 후보를 넓히지 못한다. workOrderId 가 필수 — 없으면 400 REQUIRED. POP 실적·완료가 다음 LOT 으로 넘어가는 축이다. 장부 P-103"
      },
      {
       "name": "unreceivedOnly",

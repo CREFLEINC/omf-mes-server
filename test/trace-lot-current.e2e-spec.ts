@@ -50,7 +50,21 @@ describe('현재 생산 LOT 조회 (e2e)', () => {
     const response = await current(workOrderId).expect(200);
 
     expect(response.body.items.map((row: { lotNo: string }) => row.lotNo)).toEqual([`${PREFIX}-A-2`]);
-    expect(response.body.page.total).toBe(1);
+    expect(response.body.page).toMatchObject({ page: 1, size: 1, total: 1 });
+  });
+
+  it('다른 질의는 후보 조건과 함께 걸려 후보를 넓히지 못한다 — completed=true·비생산 lotTypeCode 면 빈 목록', async () => {
+    const workOrderId = await workOrderWith('F', [['ACTIVE', 1], ['WAITING', 2]]);
+    await prisma.lot.updateMany({ where: { lot_no: `${PREFIX}-F-1` }, data: { completed_at: new Date() } });
+    // 같은 W/O 원천의 비생산 LOT — 생산 LOT 조건이 덮이면 이것이 현재로 잡힌다.
+    await prisma.lot.create({ data: {
+      lot_no: `${PREFIX}-F-M`, item_id: ids.item, lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: 5, uom_id: ids.uom,
+      source_type_code: 'WORK_ORDER', source_id: workOrderId, status_code: 'NORMAL', lifecycle_status_code: 'ACTIVE',
+    } });
+
+    expect(lotNos(await current(workOrderId).query({ completed: 'true' }).expect(200))).toEqual([]);
+    expect(lotNos(await current(workOrderId).query({ lotTypeCode: 'MATERIAL' }).expect(200))).toEqual([]);
+    expect(lotNos(await current(workOrderId).expect(200))).toEqual([`${PREFIX}-F-2`]);
   });
 
   it('진행 중이 없으면 회차가 가장 앞선 대기 LOT 을 낸다', async () => {
