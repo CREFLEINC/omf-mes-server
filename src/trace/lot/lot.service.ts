@@ -24,11 +24,13 @@ import {
   assertNumberSource,
   bool,
   completedWhere,
+  CURRENT_LOT_WHERE,
   duplicateLotNo,
   expiryWhere,
   isDuplicateLotNo,
   loose,
   optional,
+  pickCurrentLot,
   workOrderWhere,
 } from './lot-rules';
 import { LotProgressView, lotProgress } from './lot-progress';
@@ -92,6 +94,7 @@ export interface LotQuery {
   completed?: boolean | string;
   unreceivedOnly?: boolean | string;
   awaitingReceiptOnly?: boolean | string;
+  currentOnly?: boolean | string;
   page?: number;
   size?: number;
 }
@@ -109,7 +112,13 @@ export class LotService {
       page: loose(query.page),
       size: loose(query.size),
     });
-    const where: Prisma.lotWhereInput = {
+    const currentOnly = bool(query.currentOnly) === true;
+    if (currentOnly && query.workOrderId === undefined) {
+      throw new ContractException(HttpStatus.BAD_REQUEST, [
+        field('workOrderId', ERROR_CODE.REQUIRED, '현재 생산 LOT 을 보려면 MES W/O 를 먼저 고르세요.'),
+      ]);
+    }
+    const base: Prisma.lotWhereInput = {
       ...optional('item_id', assertId('itemId', query.itemId)),
       ...optional('plant_id', assertId('plantId', query.plantId)),
       ...optional('lot_type_code', query.lotTypeCode),
@@ -140,11 +149,25 @@ export class LotService {
           }),
     };
 
+    // ⛔ 펼쳐 합치지 않는다 — 같은 칸(`completed_at`·`lot_type_code`)을 쓰는 질의가 후보 조건을 덮어써 완료·비생산 LOT 이 현재가 된다.
+    const where: Prisma.lotWhereInput = currentOnly ? { AND: [base, CURRENT_LOT_WHERE] } : base;
+
+    // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
+    const include = { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } } } as const;
+    if (currentOnly) {
+      // 한 W/O 의 선발행 슬롯만이라 후보가 적다 — 다 읽고 고른다. 받은 쪽(page·size)은 보지 않고 1쪽·1건으로 답한다.
+      const current = pickCurrentLot(await this.prisma.lot.findMany({ where, include }));
+      const items = current === undefined ? [] : [current];
+      return pagedResponse(
+        items.map((row) => omitEmpty({ ...lotView(row), fourMChange: fourMChangeView(row.lot_four_m_change) })),
+        items.length,
+        pageRequest({ page: 1, size: 1 }),
+      );
+    }
     const [rows, total] = await Promise.all([
       this.prisma.lot.findMany({
         where,
-        // 목록의 `lotView` 는 보류를 `some()` 불리언으로만 쓴다 — 순서가 나가지 않아 정렬하지 않는다.
-        include: { lot_hold: true, lot_four_m_change: { select: { change_type_code: true, remarks: true } } },
+        include,
         orderBy: [{ created_at: 'desc' }, { lot_id: 'desc' }],
         skip: page.skip,
         take: page.take,
