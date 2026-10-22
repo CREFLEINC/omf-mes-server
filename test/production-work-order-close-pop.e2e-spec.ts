@@ -112,6 +112,38 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(detail.body).toMatchObject({ closeJudgmentCode: 'UNDER', progress: { completionJudgmentCode: 'NORMAL' } });
   });
 
+  it('다른 공장의 W/O·단말에 매핑되지 않은 공정의 W/O 는 401 이다', async () => {
+    const entity = await prisma.plant.findUniqueOrThrow({ where: { plant_id: ids.plant }, select: { legal_entity_id: true } });
+    const otherPlant = await prisma.plant.create({ data: {
+      legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    const otherLine = await prisma.production_line.create({ data: { plant_id: otherPlant.plant_id, line_code: `${PREFIX}-LINE2`, line_name: PREFIX } });
+    const unmappedProcess = await prisma.process.create({ data: { process_code: `${PREFIX}-PR2`, process_name: PREFIX, process_type_code: 'PRODUCTION' } });
+    const routing = await prisma.routing.findFirstOrThrow({ where: { routing_code: `${PREFIX}-RT` } });
+    const unmappedOperation = await prisma.routing_operation.create({ data: {
+      routing_id: routing.routing_id, operation_seq: 20, process_id: unmappedProcess.process_id, operation_name: PREFIX,
+    } });
+    const workOrder = async (key: string, data: { production_line_id?: bigint; routing_operation_id?: bigint }) => {
+      const row = await prisma.work_order.create({ data: {
+        work_order_no: `${PREFIX}-WO-${key}`, routing_operation_id: ids.operation, item_id: ids.item, order_qty: 10, uom_id: ids.uom,
+        status_code: 'IN_PROGRESS', production_line_id: ids.line, released_at: STARTED_AT, ...data,
+      } });
+      versions.set(row.work_order_id, row.version_no);
+      return row.work_order_id;
+    };
+    const body = { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' };
+
+    await close(open, await workOrder('P2', { production_line_id: otherLine.production_line_id }), body).expect(401);
+    await close(open, await workOrder('UNMAPPED', { routing_operation_id: unmappedOperation.routing_operation_id }), body).expect(401);
+  });
+
+  it('마감된 W/O 는 다시 UPDATE 할 수 없다 — 마이그레이션의 판정 채움 뒤 마감 불변 트리거가 다시 켜져 있다', async () => {
+    const workOrderId = await workOrderWithLots('IMM');
+    await close(open, workOrderId, { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' }).expect(200);
+
+    await expect(prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { remarks: '마감 뒤 수정' } })).rejects.toThrow();
+  });
+
   it('If-Match 없는 POP 마감은 받지 않는다 — 온라인 전용', async () => {
     const workOrderId = await workOrderWithLots('B');
 

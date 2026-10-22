@@ -230,6 +230,14 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
     expect((rejected as ContractException).errors[0].message).toContain('취소');
   });
 
+  it('마감 — 상태 검사가 본문 검사보다 앞이다(RELEASED + 빈 본문 + 미달 → STATE_LOCKED)', async () => {
+    const rejected = await stub({ status: 'RELEASED', goodSum: 10 }).close.close(WORK_ORDER, 1, {}, { appUserId: 7 })
+      .catch((error: unknown) => error);
+
+    // 미달인데 처분이 없다 — 본문이 먼저였다면 REMAINDER_DISPOSITION_REQUIRED 였다.
+    expect((rejected as ContractException).errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
   it('마감 — 중단(SUSPENDED) W/O 도 마감한다', async () => {
     const harness = stub({ status: 'SUSPENDED', goodSum: ORDER_QTY });
 

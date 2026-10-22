@@ -373,7 +373,7 @@ const SEED: CodeGroupSeed[] = [
       { code: 'RESUME', codeName: '재개', order: 30 },
       { code: 'END', codeName: '종료', order: 40 },
       { code: 'CONTROL_OVERRIDE', codeName: '통제 우회', order: 50 },
-      // 관리웹 강제 종료(omf-all-around#96) — 마이그 20261022120000 에도 같은 줄이 있다.
+      // 관리웹 강제 종료 — 마이그 20261022120000 에도 같은 줄이 있다.
       { code: 'FORCE_END', codeName: '강제 종료', order: 60 },
     ],
     retired: ['PAUSE'],
