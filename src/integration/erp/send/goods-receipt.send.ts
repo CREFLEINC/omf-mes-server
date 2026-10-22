@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { IF_GOODS_RECEIPT } from '../../../core/outbox/outbox.service';
-import { erpInboundLines, erpReceiptLinesOf } from '../../../logistics/goods-receipt/erp-receipt';
+import { EXCESS_TARGET, erpInboundLines, erpReceiptLinesOf } from '../../../logistics/goods-receipt/erp-receipt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboundBuilder, OutboundMessage } from '../outbound-builder';
 import { RowDraft } from '../outbound-rows';
@@ -28,6 +28,12 @@ const ORDER_LINE = {
 } satisfies Prisma.purchase_order_lineSelect;
 type OrderLine = Prisma.purchase_order_lineGetPayload<{ select: typeof ORDER_LINE }>;
 
+interface Receipt {
+  goods_receipt_no: string;
+  receipt_datetime: Date;
+  plant: { plant_code: string; timezone_code: string };
+}
+
 interface Share {
   orderLine: OrderLine;
   itemCode: string;
@@ -43,12 +49,14 @@ interface Share {
  *   따로 보낸다(초과분마다 한 묶음). 같은 P/O 라인의 몫은 합친다(키가 P/O 라인이다).
  * - 수불유형·창고·공급처·구매그룹은 발주에서 이어받는다(컬럼 정의서). 입고 일시는 공장 현지 시각이다.
  * - 통관번호는 고객 답(질문 5) 전까지 빈 값, 순번 칸은 0 이다(NOT NULL).
+ * 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 그 입하 줄이 들어간 입고의 번호·일시로 보낸다.
  */
 export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
   return { interfaceCode: IF_GOODS_RECEIPT, build: (message) => build(prisma, message) };
 }
 
 async function build(prisma: PrismaService, message: OutboundMessage): Promise<RowDraft[]> {
+  if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, message.targetId);
   const receipt = await prisma.goods_receipt.findUniqueOrThrow({
     where: { goods_receipt_id: message.targetId },
     select: {
@@ -139,41 +147,102 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
     });
   }
 
-  return [...shares.values()].map((share) => {
-    const { orderLine } = share;
-    const order = orderLine.purchase_order;
-    const at = `입고 ${receipt.goods_receipt_no} — ERP 발주 ${order.erp_purchase_order_no} 라인 ${orderLine.line_no}`;
-    if (orderLine.erp_storage_location_code === null) throw new Error(`${at} 에 창고(SL_CD)가 없다`);
-    if (order.erp_purchase_group_code === null) throw new Error(`${at} — 발주에 구매그룹(PUR_GRP_CD)이 없다`);
-    if (order.partner.erp_partner_code === null) throw new Error(`${at} — 공급사에 ERP 거래처 코드가 없다`);
-    return {
-      table: GR_INFOR,
-      values: {
-        POP_INF_KEY: receipt.goods_receipt_no,
-        PLANT_CD: receipt.plant.plant_code,
-        ITEM_CD: share.itemCode,
-        PO_NO: order.erp_purchase_order_no,
-        PO_SEQ_NO: orderLine.line_no,
-        GR_QTY: share.qty.toFixed(),
-        GR_UNIT: share.uomCode,
-        SL_CD: orderLine.erp_storage_location_code,
-        TRACKING_NO: '',
-        LOT_NO: '',
-        LOT_SUB_NO: 0,
-        MAKER_LOT_NO: null,
-        MAKER_LOT_SUB_NO: 0,
-        RCPT_DT: relayDateTime(receipt.receipt_datetime, receipt.plant.timezone_code),
-        BP_CD: order.partner.erp_partner_code,
-        PUR_GRP_CD: order.erp_purchase_group_code,
-        IO_TYPE_CD: order.erp_io_type_code,
-        INSPECT_FLAG: share.inspected ? 'Y' : 'N',
-        INSPECT_METHOD_CD: null,
-        CC_NO: '',
-        CC_SEQ_NO: 0,
-        LLC_SEQ_NO: 0,
-        IV_SEQ_NO: 0,
-        GM_SUB_SEQ_NO: 0,
+  return [...shares.values()].map((share) => rowOf(receipt, share));
+}
+
+/** 초과분 하나의 몫 — 입고 수량으로 P/O 라인 몫부터 채우고 남은 수량을 초과분 순서대로 나눈다(P-100). */
+async function excessRows(prisma: PrismaService, excessId: bigint): Promise<RowDraft[]> {
+  const excess = await prisma.inbound_receipt_excess.findUniqueOrThrow({
+    where: { inbound_receipt_excess_id: excessId },
+    select: {
+      inbound_receipt_line_id: true,
+      purchase_order_line: { select: ORDER_LINE },
+      inbound_receipt_line: {
+        select: {
+          received_qty: true,
+          inspection_required: true,
+          uom_id: true,
+          item: { select: { item_code: true, base_uom_id: true } },
+          uom: { select: { uom_code: true } },
+          inbound_receipt_excess: {
+            orderBy: { inbound_receipt_excess_id: 'asc' },
+            select: { inbound_receipt_excess_id: true, excess_qty: true },
+          },
+        },
       },
-    };
+    },
   });
+  const orderLine = excess.purchase_order_line;
+  if (orderLine === null || orderLine.purchase_order.erp_purchase_order_no === null) return [];
+  const inbound = excess.inbound_receipt_line;
+  const at = `초과분 ${excessId}`;
+  if (inbound.uom_id !== inbound.item.base_uom_id || orderLine.uom_id !== inbound.uom_id) {
+    throw new Error(`${at} — 단위가 품목 기본단위·발주 라인과 달라 환산이 필요하다`);
+  }
+  const taken = await erpReceiptLinesOf(prisma, excess.inbound_receipt_line_id);
+  const receiptNos = [...new Set(taken.map((line) => line.goodsReceiptNo))];
+  if (receiptNos.length === 0) return [];
+  if (receiptNos.length > 1) throw new Error(`${at} — 입하 줄이 ERP 로 가는 입고 여럿(${receiptNos.join(', ')})에 나뉘어 몫을 나눌 수 없다`);
+
+  const received = taken.reduce((sum, line) => sum.plus(line.receiptQty), new Prisma.Decimal(0));
+  const excessTotal = inbound.inbound_receipt_excess.reduce((sum, row) => sum.plus(row.excess_qty), new Prisma.Decimal(0));
+  let rest = received.minus(Prisma.Decimal.min(received, inbound.received_qty.minus(excessTotal)));
+  let mine = new Prisma.Decimal(0);
+  for (const row of inbound.inbound_receipt_excess) {
+    const share = Prisma.Decimal.min(rest, row.excess_qty);
+    rest = rest.minus(share);
+    if (row.inbound_receipt_excess_id === excessId) mine = share;
+  }
+  if (mine.lessThanOrEqualTo(0)) return [];
+  const receipt = await prisma.goods_receipt.findUniqueOrThrow({
+    where: { goods_receipt_id: taken[0].goodsReceiptId },
+    select: { goods_receipt_no: true, receipt_datetime: true, plant: { select: { plant_code: true, timezone_code: true } } },
+  });
+  return [
+    rowOf(receipt, {
+      orderLine,
+      itemCode: inbound.item.item_code,
+      uomCode: inbound.uom.uom_code,
+      qty: mine,
+      inspected: inbound.inspection_required,
+    }),
+  ];
+}
+
+function rowOf(receipt: Receipt, share: Share): RowDraft {
+  const { orderLine } = share;
+  const order = orderLine.purchase_order;
+  const at = `입고 ${receipt.goods_receipt_no} — ERP 발주 ${order.erp_purchase_order_no} 라인 ${orderLine.line_no}`;
+  if (orderLine.erp_storage_location_code === null) throw new Error(`${at} 에 창고(SL_CD)가 없다`);
+  if (order.erp_purchase_group_code === null) throw new Error(`${at} — 발주에 구매그룹(PUR_GRP_CD)이 없다`);
+  if (order.partner.erp_partner_code === null) throw new Error(`${at} — 공급사에 ERP 거래처 코드가 없다`);
+  return {
+    table: GR_INFOR,
+    values: {
+      POP_INF_KEY: receipt.goods_receipt_no,
+      PLANT_CD: receipt.plant.plant_code,
+      ITEM_CD: share.itemCode,
+      PO_NO: order.erp_purchase_order_no,
+      PO_SEQ_NO: orderLine.line_no,
+      GR_QTY: share.qty.toFixed(),
+      GR_UNIT: share.uomCode,
+      SL_CD: orderLine.erp_storage_location_code,
+      TRACKING_NO: '',
+      LOT_NO: '',
+      LOT_SUB_NO: 0,
+      MAKER_LOT_NO: null,
+      MAKER_LOT_SUB_NO: 0,
+      RCPT_DT: relayDateTime(receipt.receipt_datetime, receipt.plant.timezone_code),
+      BP_CD: order.partner.erp_partner_code,
+      PUR_GRP_CD: order.erp_purchase_group_code,
+      IO_TYPE_CD: order.erp_io_type_code,
+      INSPECT_FLAG: share.inspected ? 'Y' : 'N',
+      INSPECT_METHOD_CD: null,
+      CC_NO: '',
+      CC_SEQ_NO: 0,
+      LLC_SEQ_NO: 0,
+      IV_SEQ_NO: 0,
+      GM_SUB_SEQ_NO: 0,
+    },
+  };
 }

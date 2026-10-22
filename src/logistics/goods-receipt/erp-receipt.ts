@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { LOT_SPLIT_SOURCE } from '../../core/lot';
+import { IF_GOODS_RECEIPT, OutboxService, outboxMessageKey } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { inboundLineOfLot } from './lot-receivable';
 
@@ -12,6 +13,13 @@ const POSTED = 'POSTED';
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** 선별의 선별을 따라가는 깊이 — `inboundLineOfLot` 과 같다. */
 const MAX_DEPTH = 10;
+/** 초과분 묶음의 대상 — 초과분 하나가 한 묶음이다(P-100). */
+export const EXCESS_TARGET = 'INBOUND_RECEIPT_EXCESS';
+
+/** 초과분 묶음의 키 — 초과분마다 한 번만 적재된다. */
+export function excessMessageKey(excessId: bigint): string {
+  return outboxMessageKey(IF_GOODS_RECEIPT, `EXCESS:${excessId}`);
+}
 
 type Db = Pick<
   PrismaService,
@@ -111,4 +119,34 @@ export async function erpReceiptLinesOf(db: Db, inboundLineId: bigint): Promise<
       lotId: line.lot_id,
       receiptQty: line.receipt_qty,
     }));
+}
+
+/**
+ * 입하 줄의 이어진 초과분을 ERP 구매입고로 보낼 일을 적재한다(P-100 · 장부 P-104) — 초과분마다 한 묶음.
+ * 그 입하 줄이 ERP 로 가는 입고에 들어갔을 때만이다: 입고 전에 이은 초과분은 입고할 때, 입고 뒤에 이은 초과분은
+ * 이을 때 적재된다. 이미 적재한 초과분은 그대로 둔다(키가 같다). ERP 발주 라인에 이은 초과분만 간다.
+ */
+export async function enqueueLinkedExcesses(
+  tx: Prisma.TransactionClient,
+  outbox: OutboxService,
+  inboundLineId: bigint,
+): Promise<void> {
+  const excesses = await tx.inbound_receipt_excess.findMany({
+    where: {
+      inbound_receipt_line_id: inboundLineId,
+      purchase_order_line: { purchase_order: { erp_purchase_order_no: { not: null } } },
+    },
+    orderBy: { inbound_receipt_excess_id: 'asc' },
+    select: { inbound_receipt_excess_id: true },
+  });
+  if (excesses.length === 0 || (await erpReceiptLinesOf(tx, inboundLineId)).length === 0) return;
+  for (const { inbound_receipt_excess_id: excessId } of excesses) {
+    await outbox.enqueue(tx, {
+      interfaceCode: IF_GOODS_RECEIPT,
+      messageKey: excessMessageKey(excessId),
+      targetTypeCode: EXCESS_TARGET,
+      targetId: excessId,
+      payload: { inboundReceiptExcessId: Number(excessId) },
+    });
+  }
 }
