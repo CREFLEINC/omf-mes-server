@@ -1,10 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
+import { CONSUMED_RELATION, WORK_ORDER_LOT_SOURCE, tracedWorkOrders } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
-
-/** 영향 범위를 무엇으로 셌는가 — 화면이 「추정」이라고 밝히는 근거다. */
-export const IMPACT_BASIS = 'WORK_ORDER_ESTIMATE';
+import { GENEALOGY_BASIS, TraceBasis, WORK_ORDER_BASIS } from './lot-genealogy-query.service';
 
 export interface AffectedProductionLot {
   lotId: number;
@@ -16,7 +14,7 @@ export interface AffectedProductionLot {
 }
 
 export interface AffectedProductionLots {
-  basis: typeof IMPACT_BASIS;
+  basis: TraceBasis;
   workOrders: { workOrderId: number; workOrderNo: string }[];
   items: AffectedProductionLot[];
 }
@@ -24,9 +22,8 @@ export interface AffectedProductionLots {
 /**
  * 자재 LOT → 생산 LOT 영향 범위(omf-all-around#108 · 장부 P-52).
  *
- * ⚠ **추정이다.** 자재 투입은 LOT 계보(`trace.lot_relation`)를 만들지 않아(I-10 §3-9 · 문의 052) 어느 생산
- * LOT 에 들어갔는지 모른다. 그래서 「그 자재가 투입된 작업지시의 생산 LOT **전부**」를 낸다(사용자 결정
- * 2026-10-16) — 실제보다 넓다. 계보가 서면 이 서비스가 그것으로 바뀐다.
+ * 계보(`trace.lot_relation` · #166 · P-103)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만 낸다 — 투입 시각 기준이라
+ * 여전히 「추정」이다. 계보가 없는 W/O(#166 배포 전 실적)는 그 W/O 의 생산 LOT **전부**다(사용자 결정 2026-10-16).
  */
 @Injectable()
 export class LotImpactService {
@@ -48,17 +45,28 @@ export class LotImpactService {
     }));
     const noOf = new Map(workOrders.map((wo) => [wo.workOrderId, wo.workOrderNo]));
 
+    const ids = workOrders.map((wo) => BigInt(wo.workOrderId));
+    const traced = await tracedWorkOrders(this.prisma, ids);
+    const legacy = ids.filter((id) => !traced.has(id));
+    const related = traced.size === 0 ? [] : await this.prisma.lot_relation.findMany({
+      where: { source_lot_id: BigInt(lotId), relation_type_code: CONSUMED_RELATION },
+      distinct: ['target_lot_id'],
+      select: { target_lot_id: true },
+    });
     const lots = workOrders.length === 0 ? [] : await this.prisma.lot.findMany({
       where: {
         source_type_code: WORK_ORDER_LOT_SOURCE,
-        source_id: { in: workOrders.map((wo) => BigInt(wo.workOrderId)) },
+        OR: [
+          { source_id: { in: legacy } },
+          { source_id: { in: [...traced] }, lot_id: { in: related.map((row) => row.target_lot_id) } },
+        ],
       },
       orderBy: [{ source_id: 'asc' }, { lot_id: 'asc' }],
       select: { lot_id: true, lot_no: true, item_id: true, status_code: true, source_id: true },
     });
 
     return {
-      basis: IMPACT_BASIS,
+      basis: legacy.length === 0 ? GENEALOGY_BASIS : WORK_ORDER_BASIS,
       workOrders,
       items: lots.map((row) => ({
         lotId: Number(row.lot_id),

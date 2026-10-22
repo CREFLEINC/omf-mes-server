@@ -4445,6 +4445,109 @@
     },
     "x-internal-note": "409 인 이유가 자재 LOT 과 반대다. serial_no 는 서버가 채번하므로 중복이 나도 사용자가 고칠 수 없다 — 다시 부르면 풀린다. 반면 M-01-02 의 자재 LOT 번호는 스캔한 값이 그대로 번호라 재시도해도 안 풀려서 400 이다(01 계약 §3-1). itemId 를 본문으로 받지 않는 근거 — trace.lot.item_id 가 NOT NULL 이라 LOT 하나가 품목 하나를 정한다. 받으면 LOT 과 어긋난 품목이 들어올 자리가 생긴다. ⚠ 채번 규칙 자체는 아직 미정이다 — app.numbering_rule 에 인식표 규칙이 정의됐는지 확인되지 않았다(P-02-05 §8-2). 계약은 「서버가 매긴다」까지만 정하고 규칙을 정하지 않는다."
    }
+  },
+  "/trace/serial-numbers/{serialNo}/input-materials": {
+   "parameters": [
+    {
+     "name": "serialNo",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "string"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "시리얼 투입 자재(계보 기준 추정)",
+    "description": "시리얼에 들어간 자재 LOT 을 4M 변경품 표시와 함께 낸다 — 같은 W/O·같은 자재에서 다음 LOT 투입 전까지를 그 LOT 의 구간으로 보고, 시리얼의 생산 시각(없으면 발번 시각)이 든 구간의 LOT 이다. 정확히 교체 시각이면 둘 다. 근거: omf-all-around#166 (서버 선행 · 장부 P-103)",
+    "responses": {
+     "200": {
+      "description": "투입 자재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "basis",
+          "items"
+         ],
+         "properties": {
+          "basis": {
+           "type": "string",
+           "enum": [
+            "LOT_GENEALOGY_ESTIMATE",
+            "WORK_ORDER_ESTIMATE"
+           ],
+           "description": "LOT_GENEALOGY_ESTIMATE = 시리얼의 생산 시각(없으면 발번 시각)에 쓰던 자재 LOT(투입 시각 기준 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전)라 그 W/O 투입 전부"
+          },
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "lotId",
+             "lotNo",
+             "itemId",
+             "itemCode",
+             "itemName"
+            ],
+            "properties": {
+             "lotId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "lotNo": {
+              "type": "string"
+             },
+             "itemId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "itemCode": {
+              "type": "string"
+             },
+             "itemName": {
+              "type": "string"
+             },
+             "fourMChange": {
+              "type": "object",
+              "required": [
+               "changeTypeCode"
+              ],
+              "description": "4M 변경품이면 싣는다(장부 P-86 · #63).",
+              "properties": {
+               "changeTypeCode": {
+                "type": "string"
+               },
+               "remarks": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 시리얼",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-103."
+   }
   }
  },
  "components": {

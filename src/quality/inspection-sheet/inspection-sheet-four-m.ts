@@ -1,3 +1,4 @@
+import { INPUT_ROW_SELECT, inputWindows, lotsAt, madeAt, tracedWorkOrders } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `InspectionSheet.fourMChanges` 한 줄 — 그 W/O 에 투입된 4M 변경품 자재 LOT. */
@@ -11,14 +12,35 @@ export interface InspectionSheetFourMView {
 }
 
 /**
- * 검사표 머리의 「변경품」(omf-all-around#89 S4 · #63 의 자재 LOT 4M 기록) — 시리얼의 W/O 에 투입된 자재 LOT 중
- * 4M 변경품인 것. ⚠ 시리얼별 투입 기록이 없어 W/O 단위다(#63 의 생산 LOT 추정과 같은 근거 · 설계 문의 052).
- * 같은 LOT 을 여러 번 투입했어도 한 줄이다.
+ * 검사표 머리의 「변경품」(omf-all-around#89 S4 · #63 의 자재 LOT 4M 기록) — 그 시리얼에 들어간 자재 LOT 중 4M 변경품인 것.
+ * 투입 시각 기준 계보(#166 · P-103)로 시리얼의 생산 시각에 쓰던 LOT 을 고른다. 계보가 없는 W/O(#166 배포 전)는
+ * 그 W/O 에 투입된 것 전부다(W/O 단위). 같은 LOT 을 여러 번 투입했어도 한 줄이다.
  */
-export async function fourMChangesOf(prisma: PrismaService, workOrderId: bigint | null): Promise<InspectionSheetFourMView[]> {
+export async function fourMChangesOf(
+  prisma: PrismaService,
+  workOrderId: bigint | null,
+  serialNumberId: bigint,
+): Promise<InspectionSheetFourMView[]> {
   if (workOrderId === null) return [];
+  const [serial, traced] = await Promise.all([
+    prisma.serial_number.findUniqueOrThrow({
+      where: { serial_number_id: serialNumberId },
+      select: { produced_at: true, created_at: true },
+    }),
+    tracedWorkOrders(prisma, [workOrderId]),
+  ]);
+  const lotIds = traced.has(workOrderId)
+    ? lotsAt(
+        inputWindows(await prisma.material_consumption.findMany({ where: { work_order_id: workOrderId }, select: INPUT_ROW_SELECT })),
+        madeAt(serial),
+      ).map((w) => w.lotId)
+    : undefined;
   const rows = await prisma.material_consumption.findMany({
-    where: { work_order_id: workOrderId, lot: { lot_four_m_change: { isNot: null } } },
+    where: {
+      work_order_id: workOrderId,
+      lot: { lot_four_m_change: { isNot: null } },
+      ...(lotIds === undefined ? {} : { lot_id: { in: lotIds } }),
+    },
     select: {
       lot: {
         select: {
