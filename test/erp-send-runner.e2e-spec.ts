@@ -16,6 +16,11 @@ import { RELAY, connectSa, createCopy, describeRelay, dropCopy, insertRow } from
 const RUN = `S${Date.now().toString(36).toUpperCase()}`;
 const CODE = `E2E-IF-SEND-${RUN}`;
 const LEASE = `e2e-erp-send-${RUN}`;
+/**
+ * 만든 메시지를 바로 잡을 수 있게 1초 앞으로 둔다 — 기본값은 DB 시계(`clock_timestamp()`)인데 실행기는 Node 시계로 견준다.
+ * Docker 안 DB 시계가 몇 ms 앞서면 그 회차에 안 잡힌다(운영은 다음 회차에 잡는다).
+ */
+const READY = () => new Date(Date.now() - 1_000);
 
 class FakeRelay {
   inserted: RelayInsert[][] = [];
@@ -105,6 +110,7 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
         target_id: 1n,
         payload: {},
         status_code: 'PENDING',
+        available_at: READY(),
       },
     });
     return created.integration_message_id;
@@ -318,6 +324,7 @@ describeRelay('ERP 보내기 실행기 (e2e · 중계 DB)', () => {
         target_id: 1n,
         payload: {},
         status_code: 'PENDING',
+        available_at: READY(),
       },
     });
     await runner.tick();
