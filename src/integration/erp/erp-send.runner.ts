@@ -10,9 +10,11 @@ import {
   OUTBOUND_ROW_STATUS,
   OutboundRows,
   RelayLastIfSeq,
+  RelayValues,
   ReservedRow,
   RowDraft,
   documentNoOf,
+  rewriteRejected,
 } from './outbound-rows';
 import { RcvTable, tableNamed } from './rcv-tables';
 import { RelayClient, relayUnreachable } from './relay-client';
@@ -61,7 +63,7 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     private readonly enabled: boolean,
     private readonly prisma: PrismaService,
     private readonly lease: Pick<SyncLease, 'acquire' | 'release' | 'owner'>,
-    private readonly relay: Pick<RelayClient, 'insertRows' | 'lastIfSeq' | 'replies' | 'close'>,
+    private readonly relay: Pick<RelayClient, 'insertRows' | 'updateRows' | 'lastIfSeq' | 'replies' | 'close'>,
     builders: readonly OutboundBuilder[],
     /** 예약에 적힌 표 이름 → 표. 다시 잡힌 메시지는 바꾸지 않고 적은 행을 넣는다. */
     private readonly tables: readonly RcvTable[],
@@ -146,6 +148,9 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
       await this.finish(message, { status_code: MESSAGE_STATUS.DONE, completed_at: new Date() });
       return true;
     }
+    if (reserved.some((row) => row.statusCode === OUTBOUND_ROW_STATUS.REJECTED)) {
+      return this.rewrite(message, reserved, now);
+    }
     const waiting = reserved.filter((row) => row.statusCode === OUTBOUND_ROW_STATUS.RESERVED);
     if (waiting.length > 0) {
       let ids: number[];
@@ -170,15 +175,47 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
     return true;
   }
 
+  /**
+   * ERP 가 거절한 행을 다시 바꾼 값으로 그 자리에서 고친다(2026-10-22 사용자 결정 · 고객 답 — ERP 가 아직 처리하지
+   * 않은 행은 고쳐도 된다). 오류 칸을 비우면 ERP 가 다음 주기에 다시 처리한다. 거절되지 않은 행은 그대로 둔다.
+   * 그 사이 ERP 가 처리 표시를 바꾼 행은 고치지 않는다 — 회신 읽기가 그 상태를 적는다.
+   */
+  private async rewrite(message: Claimed, reserved: ReservedRow[], now: Date): Promise<boolean> {
+    let fixes: { row: ReservedRow; values: RelayValues }[];
+    try {
+      fixes = rewriteRejected(reserved, await this.builder(message).build(message));
+    } catch (error) {
+      await this.fail(message, error);
+      return true;
+    }
+    let counts: number[];
+    try {
+      counts = await this.relay.updateRows(
+        fixes.map(({ row, values }) => ({ table: tableNamed(this.tables, row.tableName), values })),
+      );
+    } catch (error) {
+      if (relayUnreachable(error)) return this.postpone(message, error, now);
+      await this.fail(message, error);
+      return true;
+    }
+    await this.rows.markRewritten(fixes.filter((_, index) => counts[index] > 0).map(({ row, values }) => ({ id: row.id, values })));
+    await this.finish(message, { status_code: MESSAGE_STATUS.PROCESSING, sent_at: new Date() });
+    return true;
+  }
+
   /** 적은 행 — 없으면 바꿔서 적는다. 다시 잡힌 메시지는 바꾸지 않는다(키도 값도 처음 그대로). */
   private async reserved(message: Claimed): Promise<ReservedRow[]> {
     const existing = await this.rows.of(message.id);
     if (existing.length > 0) return existing;
-    const builder = this.builders.get(message.interfaceCode);
-    if (builder === undefined) throw new Error(`바꾸개가 없다: ${message.interfaceCode}`);
-    const drafts = await builder.build(message);
+    const drafts = await this.builder(message).build(message);
     if (drafts.length === 0) return [];
     return this.rows.reserve(message.id, drafts, await this.relayLast(drafts));
+  }
+
+  private builder(message: Claimed): OutboundBuilder {
+    const builder = this.builders.get(message.interfaceCode);
+    if (builder === undefined) throw new Error(`바꾸개가 없다: ${message.interfaceCode}`);
+    return builder;
   }
 
   /** 건마다 중계 표의 마지막 IF_SEQ — 예약이 MES 기록과 견준다. */

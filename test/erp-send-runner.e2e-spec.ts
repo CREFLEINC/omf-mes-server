@@ -27,6 +27,9 @@ class FakeRelay {
   insertFailure?: Error;
   /** 넣은 행마다 돌려줄 ERP 처리 결과. 없으면 회신 없음. */
   reply?: RelayReply;
+  updated: RelayInsert[][] = [];
+  /** 고치기가 돌려줄 행 수. 0 이면 그 사이 ERP 가 처리한 행이다. */
+  updatedCount = 1;
   calledInTransaction = false;
   private nextId = 5000;
 
@@ -37,6 +40,12 @@ class FakeRelay {
     if (this.insertFailure !== undefined) throw this.insertFailure;
     this.inserted.push([...rows]);
     return rows.map(() => this.nextId++);
+  }
+
+  async updateRows(rows: readonly RelayInsert[]): Promise<number[]> {
+    this.calledInTransaction ||= this.openTransactions() > 0;
+    this.updated.push([...rows]);
+    return rows.map(() => this.updatedCount);
   }
 
   async lastIfSeq(): Promise<number> {
@@ -166,6 +175,73 @@ describe('ERP 보내기 실행기 (e2e · 대역)', () => {
     expect(await rowsOf(id)).toEqual([
       expect.objectContaining({ status_code: 'APPLIED', erp_document_no: 'PR2610220001' }),
     ]);
+  });
+
+  /** ERP 가 둘째 행을 거절해 실패로 둔 묶음을 사람이 재처리했다. */
+  async function rejectedThenRetried(order: string): Promise<bigint> {
+    const id = await message();
+    build = async () => [result(order, 'G'), result(order, 'B')];
+    await runner.tick();
+    const [first, second] = await rowsOf(id);
+    await prisma.erp_outbound_row.update({ where: { erp_outbound_row_id: first.erp_outbound_row_id }, data: { status_code: 'APPLIED' } });
+    await prisma.erp_outbound_row.update({
+      where: { erp_outbound_row_id: second.erp_outbound_row_id },
+      data: { status_code: 'REJECTED', erp_error_message: '수량이 맞지 않습니다' },
+    });
+    await prisma.integration_message.update({ where: { integration_message_id: id }, data: { status_code: 'PENDING' } });
+    return id;
+  }
+
+  it('ERP 가 거절한 묶음을 재처리하면 거절된 행만 다시 바꾼 값으로 그 자리에서 고친다', async () => {
+    const id = await rejectedThenRetried(`${RUN}-W`);
+    build = async () => [result(`${RUN}-W`, 'G'), { ...result(`${RUN}-W`, 'B'), values: { ...result(`${RUN}-W`, 'B').values, PROD_QTY_IN_ORDER_UNIT: '3' } }];
+
+    await runner.tick();
+
+    expect(relay.updated.flat().map((row) => row.values)).toEqual([
+      expect.objectContaining({ REPORT_TYPE: 'B', PROD_QTY_IN_ORDER_UNIT: '3', IF_SEQ: 2, CREATE_TYPE: 'A', ERP_APPLY_FLAG: 'N' }),
+    ]);
+    expect((await rowsOf(id)).map((row) => [row.status_code, row.erp_error_message, (row.row_values as { PROD_QTY_IN_ORDER_UNIT: string }).PROD_QTY_IN_ORDER_UNIT])).toEqual([
+      ['APPLIED', null, '10'],
+      ['INSERTED', null, '3'],
+    ]);
+    expect(await stateOf(id)).toMatchObject({ status_code: 'PROCESSING', locked_by: null });
+    expect(relay.inserted).toHaveLength(1);
+  });
+
+  it('다시 만든 행이 처음과 다르면 고치지 않고 실패로 둔다', async () => {
+    const id = await rejectedThenRetried(`${RUN}-X`);
+    build = async () => [result(`${RUN}-X`, 'G'), result(`${RUN}-X`, 'B'), result(`${RUN}-X`, 'B')];
+
+    await runner.tick();
+
+    expect(relay.updated).toEqual([]);
+    expect(await stateOf(id)).toMatchObject({
+      status_code: 'FAILED',
+      last_error_message: '다시 만든 행 수(3)가 처음(2)과 달라 그 자리에서 고칠 수 없다',
+    });
+  });
+
+  it('다시 만든 행의 키가 달라졌으면 고치지 않고 실패로 둔다 — 중계 표의 PK 는 못 바꾼다', async () => {
+    const id = await rejectedThenRetried(`${RUN}-Z`);
+    build = async () => [result(`${RUN}-Z`, 'G'), result(`${RUN}-Z2`, 'B')];
+
+    await runner.tick();
+
+    expect(relay.updated).toEqual([]);
+    expect((await stateOf(id)).last_error_message).toBe(
+      `다시 만든 행의 키가 처음(PL11|${RUN}-Z|2|A)과 달라 그 자리에서 고칠 수 없다`,
+    );
+  });
+
+  it('그 사이 ERP 가 처리한 행은 고친 것으로 적지 않는다 — 회신 읽기가 맞춘다', async () => {
+    const id = await rejectedThenRetried(`${RUN}-Y`);
+    relay.updatedCount = 0;
+
+    await runner.tick();
+
+    expect((await rowsOf(id)).map((row) => row.status_code)).toEqual(['APPLIED', 'REJECTED']);
+    expect((await stateOf(id)).status_code).toBe('PROCESSING');
   });
 
   it('보낼 행이 없으면 바로 완료한다', async () => {
