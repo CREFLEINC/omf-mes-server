@@ -5,7 +5,7 @@ export interface InspectionSheetFourMView {
   lotNo: string;
   itemCode: string;
   itemName: string;
-  /** 변경 종류 — 비면 키가 없다(#133 · P-103). */
+  /** 변경 종류 — 비면 키가 없다(#133 · P-105). */
   changeTypeCode?: string;
   remarks: string | null;
 }

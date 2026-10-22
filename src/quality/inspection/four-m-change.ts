@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 4M 변경품(omf-all-around#63 · 장부 P-86) — IQC 판정 때 자재 LOT 하나에 «변경품»과 변경 종류·비고를 적는다.
- * 변경 종류는 선택, 비고는 필수다(omf-all-around#133 · 장부 P-103 — IQC 화면은 비고만 받는다).
+ * 변경 종류는 선택, 비고는 필수다(omf-all-around#133 · 장부 P-105 — IQC 화면은 비고만 받는다).
  * ⚠ 내부 「4M 자원배정」(W/O 자원 배정)과 다른 말이다.
  *
  * 검사 결과 쓰기 세 경로(`POST`·`PUT`·`:confirm`)가 같은 칸을 받는다 — 생략하면 손대지 않고, `null` 이면

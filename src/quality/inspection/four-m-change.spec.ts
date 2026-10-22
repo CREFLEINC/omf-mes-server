@@ -4,7 +4,7 @@ import { ContractException } from '../../common/errors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { fourMChangeView, prepareFourMChange, writeFourMChangeWithin } from './four-m-change';
 
-/** omf-all-around#63 · 장부 P-86 — IQC 판정 때 자재 LOT 의 4M 변경품. #133 · P-103 — 변경 종류 선택, 비고 필수. */
+/** omf-all-around#63 · 장부 P-86 — IQC 판정 때 자재 LOT 의 4M 변경품. #133 · P-105 — 변경 종류 선택, 비고 필수. */
 function harness(request: { inspection_type_code: string; lot_id: bigint | null } | null, activeCodes = ['MATERIAL']) {
   return {
     inspection_request: { findUnique: jest.fn().mockResolvedValue(request) },
