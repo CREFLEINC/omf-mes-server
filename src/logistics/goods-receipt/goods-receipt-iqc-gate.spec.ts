@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { ContractException } from '../../common/errors';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { NumberingService } from '../../core/numbering';
+import { OutboxService } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GoodsReceiptService } from './goods-receipt.service';
 import { GoodsReceiptCreate } from './receipt-posting';
@@ -61,6 +62,7 @@ function stub(lot: Record<string, unknown>, inspectionRequired: boolean | null, 
     prisma as unknown as PrismaService,
     {} as InventoryPostingService,
     numbering as unknown as NumberingService,
+    {} as OutboxService,
   );
 }
 

@@ -290,7 +290,7 @@ describe('입고 (e2e)', () => {
     expect(task.applied_putaway_rule_id).toBeNull();
   });
 
-  it('⛔ ERP 송신 적재는 하지 않는다 — 한도승인을 가를 축이 물리에 없다', async () => {
+  it('⛔ 입하·ERP 발주에 이어지지 않은 입고는 ERP 송신을 적재하지 않는다(장부 P-104)', async () => {
     const detail = await create();
     expect(detail.goodsReceipt.erpMessageQueued).toBe(false);
   });

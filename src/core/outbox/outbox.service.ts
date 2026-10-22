@@ -26,6 +26,11 @@ export const IF_WO_CLOSE = 'IF-WO-CLOSE-SEND';
  * 21 = 122 ≤ `message_key` 150 이라 `resync` 처럼 id 로 갈아탈 이유도 없다.
  */
 export const IF_SHIPMENT_PGI = 'IF-SHIPMENT-PGI-SEND';
+/**
+ * 구매입고 송신 인터페이스 — 입고 전표 하나가 한 묶음(장부 P-104 · 사용자 결정 2026-10-22).
+ * ⚠ `interface_definition` 0행. 키는 `outboxMessageKey()` 그대로다 — 입고번호는 유일하고 한 입고는 한 번 적재된다.
+ */
+export const IF_GOODS_RECEIPT = 'IF-GR-SEND';
 
 export type Tx = Prisma.TransactionClient;
 

@@ -1,0 +1,255 @@
+/**
+ * ERP 보내기 — 구매입고(장부 P-104). 입고 서비스로 실제 입고를 만들어, ERP 발주에 이어진 자재 입고만 적재되는지 본다.
+ */
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+
+import { AppModule } from '../src/app.module';
+import { GoodsReceiptService } from '../src/logistics/goods-receipt/goods-receipt.service';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { ensurePlant } from './erp-relay.fixture';
+
+const PREFIX = `GR${Date.now().toString(36).toUpperCase()}`;
+const RECEIVED_AT = new Date('2026-10-21T18:30:00.000Z');
+
+describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let receipts: GoodsReceiptService;
+  const createdPlants: bigint[] = [];
+  const ids: Record<string, bigint> = {};
+  let userId: number;
+  let sequence = 0;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = app.get(PrismaService);
+    receipts = app.get(GoodsReceiptService);
+    await ensurePlant(prisma, 'PL11', createdPlants);
+    await seed();
+  });
+
+  afterAll(async () => {
+    // 적재한 메시지는 지운다 — 남기면 이 DB 에서 보내기를 켤 때 실제로 나간다. 입고·원장은 접두어로 남는다.
+    await prisma.integration_message.deleteMany({ where: { message_key: { in: received.map((no) => `IF-GR-SEND:${no}`) } } });
+    await app.close();
+  });
+
+  const received: string[] = [];
+
+  async function seed(): Promise<void> {
+    userId = Number((await prisma.app_user.findFirstOrThrow({ orderBy: { app_user_id: 'asc' } })).app_user_id);
+    const plant = await prisma.plant.findFirstOrThrow({ where: { plant_code: 'PL11' } });
+    ids.plant = plant.plant_id;
+    const businessUnitId = plant.business_unit_id ?? (await prisma.business_unit.findFirstOrThrow()).business_unit_id;
+    ids.uom = (await prisma.uom.findFirstOrThrow({ where: { uom_code: 'EA' } })).uom_id;
+    ids.item = (
+      await prisma.item.create({
+        data: { item_code: `${PREFIX}-IT`, item_name: '구매입고 검사 자재', item_type_code: 'RAW_MATERIAL', base_uom_id: ids.uom },
+      })
+    ).item_id;
+    ids.supplier = (
+      await prisma.partner.create({ data: { partner_code: `${PREFIX}-S`, partner_name: '구매입고 검사 공급사', erp_partner_code: 'S0001' } })
+    ).partner_id;
+    for (const [key, isDefect] of [['warehouse', false], ['defectWarehouse', true]] as const) {
+      ids[key] = (
+        await prisma.warehouse.create({
+          data: {
+            plant_id: plant.plant_id,
+            business_unit_id: businessUnitId,
+            warehouse_code: `${PREFIX}-${key === 'warehouse' ? 'WH' : 'NG'}`,
+            warehouse_name: `구매입고 검사 ${key}`,
+            warehouse_type_code: 'RAW',
+            management_level_code: 'LOCATION',
+            is_defect: isDefect,
+          },
+        })
+      ).warehouse_id;
+      ids[`${key}Location`] = (
+        await prisma.location.create({
+          data: { warehouse_id: ids[key], location_code: `${PREFIX}-${key}-L`, location_name: '구매입고 검사 위치', location_type_code: 'BIN' },
+        })
+      ).location_id;
+    }
+    for (const [key, erpNo] of [['erpOrder', `${PREFIX}-PO`], ['mesOrder', null]] as const) {
+      ids[key] = (
+        await prisma.purchase_order.create({
+          data: {
+            purchase_order_no: `${PREFIX}-${key}`,
+            erp_purchase_order_no: erpNo,
+            supplier_id: ids.supplier,
+            business_unit_id: businessUnitId,
+            plant_id: plant.plant_id,
+            order_date: new Date('2026-10-01T00:00:00.000Z'),
+            status_code: 'CONFIRMED',
+            erp_purchase_group_code: 'P01',
+            erp_io_type_code: 'DGR',
+          },
+        })
+      ).purchase_order_id;
+      ids[`${key}Line`] = (
+        await prisma.purchase_order_line.create({
+          data: {
+            purchase_order_id: ids[key],
+            line_no: 1,
+            item_id: ids.item,
+            ordered_qty: 1000,
+            uom_id: ids.uom,
+            erp_storage_location_code: 'S240',
+          },
+        })
+      ).purchase_order_line_id;
+    }
+    ids.inbound = (
+      await prisma.inbound_receipt.create({
+        data: {
+          inbound_receipt_no: `${PREFIX}-IR`,
+          supplier_id: ids.supplier,
+          plant_id: plant.plant_id,
+          receipt_datetime: RECEIVED_AT,
+          status_code: 'REGISTERED',
+        },
+      })
+    ).inbound_receipt_id;
+  }
+
+  /** ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. */
+  async function inboundLot(orderLine: bigint, qty: number): Promise<{ inboundLineId: bigint; lotId: bigint }> {
+    sequence += 1;
+    const line = await prisma.inbound_receipt_line.create({
+      data: {
+        inbound_receipt_id: ids.inbound,
+        line_no: sequence,
+        purchase_order_line_id: orderLine,
+        item_id: ids.item,
+        received_qty: qty,
+        uom_id: ids.uom,
+        inspection_required: false,
+        supplier_lot_label_attached: true,
+        status_code: 'REGISTERED',
+      },
+    });
+    const lot = await prisma.lot.create({
+      data: {
+        lot_no: `${PREFIX}-L${sequence}`,
+        item_id: ids.item,
+        lot_type_code: 'MATERIAL',
+        plant_id: ids.plant,
+        initial_qty: qty,
+        uom_id: ids.uom,
+        source_type_code: 'INBOUND_RECEIPT_LINE',
+        source_id: line.inbound_receipt_line_id,
+        status_code: 'NORMAL',
+      },
+    });
+    return { inboundLineId: line.inbound_receipt_line_id, lotId: lot.lot_id };
+  }
+
+  async function receive(
+    warehouse: 'warehouse' | 'defectWarehouse',
+    lots: { inboundLineId: bigint; lotId: bigint; qty: number }[],
+    receiptTypeCode = 'MATERIAL',
+  ) {
+    const detail = await receipts.create(
+      {
+        receiptTypeCode,
+        plantId: Number(ids.plant),
+        warehouseId: Number(ids[warehouse]),
+        receiptDatetime: RECEIVED_AT.toISOString(),
+        businessDate: '2026-10-22',
+        lines: lots.map((lot) => ({
+          inboundReceiptLineId: Number(lot.inboundLineId),
+          itemId: Number(ids.item),
+          lotId: Number(lot.lotId),
+          receiptQty: lot.qty,
+          uomId: Number(ids.uom),
+          qualityStatusCode: 'NORMAL',
+          inventoryStatusCode: 'AVAILABLE',
+          destinationLocationId: Number(ids[`${warehouse}Location`]),
+        })),
+      },
+      userId,
+    );
+    received.push(detail.goodsReceipt.goodsReceiptNo);
+    return detail;
+  }
+
+  const messageOf = (goodsReceiptNo: string) =>
+    prisma.integration_message.findUnique({ where: { message_key: `IF-GR-SEND:${goodsReceiptNo}` } });
+
+  it('ERP 발주에 이어진 자재 입고는 같은 트랜잭션에서 구매입고를 적재하고 erpMessageQueued 가 참이다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 100);
+
+    const detail = await receive('warehouse', [{ ...lot, qty: 100 }]);
+
+    expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
+    expect(await messageOf(detail.goodsReceipt.goodsReceiptNo)).toMatchObject({
+      interface_code: 'IF-GR-SEND',
+      direction_code: 'OUTBOUND',
+      target_type_code: 'GOODS_RECEIPT',
+      target_id: BigInt(detail.goodsReceipt.goodsReceiptId),
+      status_code: 'PENDING',
+      payload: { goodsReceiptNo: detail.goodsReceipt.goodsReceiptNo },
+    });
+    const listed = await receipts.list({ q: detail.goodsReceipt.goodsReceiptNo });
+    expect(listed.items.map((item) => item.erpMessageQueued)).toEqual([true]);
+  });
+
+  it('MES 발주에만 이어진 입고·불량창고 입고·특채 LOT 입고·자재 입고가 아닌 입고는 적재하지 않는다', async () => {
+    const mes = await inboundLot(ids.mesOrderLine, 10);
+    const rejected = await inboundLot(ids.erpOrderLine, 10);
+    const conceded = await inboundLot(ids.erpOrderLine, 10);
+    const product = await inboundLot(ids.erpOrderLine, 10);
+    await concede(conceded.lotId);
+
+    const details = [
+      await receive('warehouse', [{ ...mes, qty: 10 }]),
+      await receive('defectWarehouse', [{ ...rejected, qty: 10 }]),
+      await receive('warehouse', [{ ...conceded, qty: 10 }]),
+      await receive('warehouse', [{ ...product, qty: 10 }], 'PRODUCT'),
+    ];
+
+    expect(details.map((detail) => detail.goodsReceipt.erpMessageQueued)).toEqual([false, false, false, false]);
+    for (const detail of details) expect(await messageOf(detail.goodsReceipt.goodsReceiptNo)).toBeNull();
+  });
+
+  /** 특채가 적용된 LOT — 부적합·결재 요청·특채(APPROVED)를 그대로 세운다(P-79). */
+  async function concede(lotId: bigint): Promise<void> {
+    const nonconformance = await prisma.nonconformance.create({
+      data: {
+        nonconformance_no: `${PREFIX}-NC${sequence}`,
+        item_id: ids.item,
+        severity_code: 'MAJOR',
+        description: 'IQC 불합격',
+        status_code: 'CLOSED',
+        opened_at: RECEIVED_AT,
+      },
+    });
+    const approval = await prisma.approval_request.create({
+      data: {
+        approval_request_no: `${PREFIX}-AR${sequence}`,
+        approval_type_code: 'CONCESSION',
+        target_type_code: 'NONCONFORMANCE',
+        target_id: nonconformance.nonconformance_id,
+        requested_by: BigInt(userId),
+        requested_at: RECEIVED_AT,
+        status_code: 'APPROVED',
+        reason: '특채',
+      },
+    });
+    await prisma.concession.create({
+      data: {
+        concession_no: `${PREFIX}-CN${sequence}`,
+        nonconformance_id: nonconformance.nonconformance_id,
+        lot_id: lotId,
+        approved_qty: 10,
+        uom_id: ids.uom,
+        valid_from: new Date('2026-10-01T00:00:00.000Z'),
+        approval_request_id: approval.approval_request_id,
+        status_code: 'APPROVED',
+      },
+    });
+  }
+});
