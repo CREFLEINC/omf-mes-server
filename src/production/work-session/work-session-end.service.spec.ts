@@ -119,5 +119,34 @@ describe('WorkSessionEndService.end', () => {
     const error = (await it0.service.end(SESSION, { endedAt: ENDED_AT }, context).catch((e: unknown) => e)) as ContractException;
     expect(error.getStatus()).toBe(400);
     expect(error.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    // 관리웹 강제 종료 뒤 단말이 보낸 종료가 여기 닿는다 — 다시 할 일을 알려 준다.
+    expect(error.errors[0].message).toContain('작업 시작을 다시');
+  });
+});
+
+describe('WorkSessionEndService.forceEnd', () => {
+  it('관리웹 강제 종료는 서버 시각으로 닫고 사건 FORCE_END 에 계정·사유를 남긴다 — 단말은 비운다', async () => {
+    const it0 = stub({ status: 'STOPPED' });
+    const before = Date.now();
+
+    const view = await it0.service.forceEnd(SESSION, { reason: '단말 고장' }, 5);
+
+    expect(view.statusCode).toBe('ENDED');
+    expect(it0.events[0]).toMatchObject({ event_type_code: 'FORCE_END', performed_by: 5n, terminal_id: null, remarks: '단말 고장' });
+    const endedAt = it0.updates[0].ended_at as Date;
+    expect(endedAt.getTime()).toBeGreaterThanOrEqual(before);
+    // 남은 참여자도 같은 시각으로 닫는다.
+    expect(it0.closed[0]).toContain(endedAt);
+  });
+
+  it('이미 종료된 세션은 400 STATE_LOCKED 이고 새로 고치라고 알려 준다', async () => {
+    const error = await stub({ status: 'ENDED' }).service.forceEnd(SESSION, { reason: '단말 고장' }, 5).catch((e: unknown) => e);
+
+    expect((error as ContractException).errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect((error as ContractException).errors[0].message).toContain('새로 고쳐');
+  });
+
+  it('사유가 비면 400 이다', async () => {
+    await expect(stub().service.forceEnd(SESSION, { reason: '  ' }, 5)).rejects.toBeInstanceOf(ContractException);
   });
 });

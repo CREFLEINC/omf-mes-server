@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 
@@ -10,7 +10,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { WorkSessionEnd, WorkSessionEndService } from './work-session-end.service';
+import { WorkSessionEnd, WorkSessionEndService, WorkSessionForceEnd } from './work-session-end.service';
 import { WorkSessionEventCreate, WorkSessionEventService } from './work-session-event.service';
 import {
   WorkSessionWorkerJoin,
@@ -92,6 +92,20 @@ export class WorkSessionController {
   ): Promise<WorkSessionView> {
     const context = await this.contextOf(request);
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () => this.ends.end(workSessionId, body, context), FAMILY_CONFLICT_CODE);
+  }
+  /** 관리웹 강제 종료 — 계정만 부른다(단말 범위에 없다). 계약 응답이 200 이다. */
+  @Post(':workSessionId\\:force-end')
+  @Contract('POST /production/work-sessions/{workSessionId}:force-end')
+  @HttpCode(HttpStatus.OK)
+  async forceEnd(
+    @Req() request: Request,
+    @Param('workSessionId', ParseIntPipe) workSessionId: number,
+    @Body() body: WorkSessionForceEnd,
+  ): Promise<WorkSessionView> {
+    const session = currentSession(request);
+    if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
+    return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
+      this.ends.forceEnd(workSessionId, body, session.userId), FAMILY_CONFLICT_CODE);
   }
   /** 세션 구간 «안»의 사건(STOP·RESUME). 201 이라 `@HttpCode` 를 되돌리지 않는다. */
   @Post(':workSessionId/events')

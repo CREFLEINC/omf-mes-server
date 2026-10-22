@@ -5,7 +5,7 @@ import { assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderNotifier } from '../work-order/work-order-notice';
-import { assertEventPair, assertSessionVersion, lockWorkSession } from './work-session-rules';
+import { assertEventPair, assertNotEnded, assertSessionVersion, lockWorkSession } from './work-session-rules';
 import { WorkSessionContext } from './work-session.service';
 import { WorkSessionEventRow, WorkSessionEventView, reasonKey, workSessionEventView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
@@ -46,8 +46,9 @@ export class WorkSessionEventService {
     action: string,
   ): Promise<WorkSessionEventView> {
     const locked = await lockWorkSession(tx, workSessionId);
+    // 종료된 세션은 버전 대조보다 먼저 400 이다 — `:end` 와 같은 이유(강제 종료가 버전을 올린다).
+    assertNotEnded(locked.status_code);
     assertSessionVersion(locked, context.version);
-    // 종료된 세션도 여기서 400 `STATE_LOCKED` 다 — `ENDED` 는 어느 액션의 `from` 에도 없다.
     // ⚠ R-7 ⓐ: W/O `:hold` 는 세션에 손대지 않으므로 화면 [재개]가 `RUNNING` 세션에
     //    `RESUME` 을 보내면 여기서 막힌다 — 설계 미정(문의 035)이라 그대로 둔다.
     const transition = this.documentState.assertTransition(

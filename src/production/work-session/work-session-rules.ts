@@ -1,7 +1,7 @@
-import { NotFoundException } from '@nestjs/common';
+import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { ERROR_CODE, field, one } from '../../common/errors';
+import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -83,3 +83,17 @@ export function assertSessionVersion(locked: LockedWorkSession, version: number 
     assertUpdated(0, 'user', { code: VERSION_CONFLICT });
   }
 }
+
+/**
+ * 이미 종료된 세션에 온 종료·중단·재개 — 관리웹 강제 종료 뒤 단말이 보낸 요청이 여기 닿는다(장부 P-108).
+ * 상태 이름만으로는 단말 작업자가 무엇을 할지 몰라 다음 할 일을 싣는다. 전이 표의 400 `STATE_LOCKED` 와 같은 봉투다.
+ */
+export function assertNotEnded(statusCode: string): void {
+  if (statusCode !== 'ENDED') return;
+  throw new ContractException(HttpStatus.BAD_REQUEST, [{
+    scope: 'screen',
+    code: ERROR_CODE.STATE_LOCKED,
+    message: '이미 종료된 작업 세션입니다(관리웹에서 종료됐을 수 있습니다). 작업을 계속하려면 작업 시작을 다시 하세요.',
+  }]);
+}
+
