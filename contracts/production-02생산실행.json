@@ -4229,36 +4229,46 @@
        }
       }
      },
-    "400": {
-     "description": "검증 실패 · 이미 종료된 세션",
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ErrorResponse"
+     "400": {
+      "description": "검증 실패 · 이미 종료된 세션",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한(W-02-05)이 없다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 작업 세션",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "충돌 — 같은 Idempotency-Key 로 다른 본문이 왔다 등",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProductionConflictResponse"
+        }
        }
       }
      }
-    },
-    "403": {
-     "description": "권한(W-02-05)이 없다",
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ErrorResponse"
-       }
-      }
-     }
-    },
-    "404": {
-     "description": "없는 작업 세션",
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/ErrorResponse"
-       }
-      }
-     }
-    }
     }
    }
   },

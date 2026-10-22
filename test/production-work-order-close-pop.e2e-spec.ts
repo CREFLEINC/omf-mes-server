@@ -234,17 +234,45 @@ describe('POP 작업지시 마감 (e2e)', () => {
         .expect(200);
     });
 
-    it('강제 종료된 세션에 단말이 보낸 종료는 400 이고 작업 시작을 다시 하라고 알려 준다', async () => {
-      const session = await openSession(await workOrderWithLots('G'), 'G', 'RUNNING');
+    it('강제 종료된 세션에 단말이 보낸 종료·중단·재개는 400 이고 작업 시작을 다시 하라고 알려 준다 — 옛 If-Match 를 실어도 409 가 아니다', async () => {
+      const workOrderId = await workOrderWithLots('G');
+      const session = await openSession(workOrderId, 'G', 'RUNNING');
+      const before = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: session } });
+      await forceEnd(session, { reason: '관리자 종료' }).expect(200);
+      const sessionPath = `/api/production/work-sessions/${String(session)}`;
+      const ended = (response: request.Response) => {
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+        expect(response.body.errors[0].message).toContain('작업 시작을 다시');
+      };
+
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}:end`), open)
+        .set('Idempotency-Key', randomUUID()).send({ endedAt: new Date().toISOString() }).expect(400));
+      // 강제 종료가 버전을 올렸다 — 단말이 들고 있던 옛 토큰이어도 409 가 아니라 400 이다.
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}:end`), open)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', `"${String(before.version_no)}"`)
+        .send({ endedAt: new Date().toISOString() }).expect(400));
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}/events`), open)
+        .set('Idempotency-Key', randomUUID())
+        .send({ eventTypeCode: 'STOP', occurredAt: new Date().toISOString(), reasonCode: 'EQUIPMENT_FAILURE' }).expect(400));
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}/events`), open)
+        .set('Idempotency-Key', randomUUID())
+        .send({ eventTypeCode: 'RESUME', occurredAt: new Date().toISOString() }).expect(400));
+    });
+
+    it('강제 종료된 세션 id 를 실은 실적은 그대로 받는다 — 오프라인에 쌓인 실적을 잃지 않는다', async () => {
+      const workOrderId = await workOrderWithLots('K');
+      const session = await openSession(workOrderId, 'K', 'RUNNING');
       await forceEnd(session, { reason: '관리자 종료' }).expect(200);
 
-      const response = await asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session)}:end`), open)
+      const response = await asPop(request(app.getHttpServer()).post('/api/production/production-results'), open)
         .set('Idempotency-Key', randomUUID())
-        .send({ endedAt: new Date().toISOString() })
-        .expect(400);
+        .send({
+          workOrderId: Number(workOrderId), workSessionId: Number(session), goodQty: 1, uomId: Number(ids.uom),
+          resultSourceCode: 'MANUAL', occurredAt: new Date().toISOString(),
+        })
+        .expect(201);
 
-      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
-      expect(response.body.errors[0].message).toContain('작업 시작을 다시');
+      expect(response.body).toMatchObject({ workSessionId: Number(session), goodQty: 1 });
     });
 
     it('이미 종료된 세션·빈 사유는 400, 권한 없는 계정은 403', async () => {

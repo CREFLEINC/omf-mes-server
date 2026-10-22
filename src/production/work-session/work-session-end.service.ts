@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { assertNotBlank, assertWorkerNoExists } from '../../common/master';
+import { assertWorkerNoExists } from '../../common/master';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -46,12 +46,13 @@ export class WorkSessionEndService {
     await assertWorkerNoExists(this.prisma, context.workerNo);
     return this.prisma.$transaction(async (tx: Tx) => {
       const locked = await lockSession(tx, workSessionId);
+      // 이미 ENDED 면 400 `STATE_LOCKED` — 재로드해도 풀리지 않는다. 버전 대조보다 먼저다: 강제 종료가 버전을 올려
+      // 단말의 옛 토큰이 409 를 받으면 「다시 불러 재시도」로 읽혀 끝나지 않는 재시도가 된다.
+      assertNotEnded(locked.status_code);
       // If-Match 가 없으면 대조를 건너뛴다 — 큐에 쌓인 요청은 토큰을 싣지 않는다(C-9).
       if (context.version !== undefined && locked.version_no !== context.version) {
         assertUpdated(0, 'user', { code: VERSION_CONFLICT });
       }
-      // 이미 ENDED 면 400 `STATE_LOCKED` — 재로드해도 풀리지 않는다.
-      assertNotEnded(locked.status_code);
       const transition = this.documentState.assertTransition(
         STATUS_COLUMN, END_ACTION, locked.status_code, HttpStatus.BAD_REQUEST,
       );
@@ -74,7 +75,9 @@ export class WorkSessionEndService {
    * ⚠ 세션만 닫는다 — 중단(SUSPENDED)된 W/O 는 그대로다.
    */
   async forceEnd(workSessionId: number, body: WorkSessionForceEnd, appUserId: number): Promise<WorkSessionView> {
-    assertNotBlank([['reason', body.reason]]);
+    if (body.reason.trim() === '') {
+      throw one(field('reason', ERROR_CODE.REQUIRED, '강제 종료 사유를 입력하세요 — 누가 왜 세션을 닫았는지 기록으로 남습니다.'));
+    }
     return this.prisma.$transaction(async (tx: Tx) => {
       const locked = await lockSession(tx, workSessionId);
       if (locked.status_code === 'ENDED') {
