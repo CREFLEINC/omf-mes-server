@@ -28,6 +28,8 @@ export interface WorkOrderListQuery {
   withPreIssuedLots?: boolean;
   withSummary?: boolean;
   withValidation?: boolean;
+  /** 마감 3분류 판정 — 저장 칸이 없는 계산값이라 서비스가 DB 로 좁힌다(장부 P-104). */
+  completionJudgmentCode?: 'UNDER' | 'NORMAL' | 'OVER';
 }
 
 /** `releasable` ⓐⓑ+유형 — ⓒ(4M 점검 BLOCK 0)만 DB 호출이 필요해 서비스가 후보를 좁힌다. */
@@ -94,7 +96,7 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     eq('production_plan_id', query.productionPlanId),
     // ⚠ 직접 칸이 없다 — 계획을 경유해 잇는다(계약 ⌜서버가 계획을 경유해 잇는다⌝).
     query.productionOrderId === undefined ? {} : { production_plan: { production_order_id: query.productionOrderId } },
-    eq('status_code', query.statusCode),
+    statusWhere(query.statusCode),
     // `false` 도 «비어 있다»의 여집합이다 — 미지정과 다르다.
     query.released === undefined ? {} : { released_at: query.released ? { not: null } : null },
     // ⛔ 중단 구간을 담을 표가 없어 상태 문자열로 근사한다 — 설계 미정(문의 035 · R-19).
@@ -140,6 +142,16 @@ function plannedStartWhere(from?: string, to?: string): Prisma.work_orderWhereIn
       ...(to === undefined ? {} : { lt: new Date(to) }),
     },
   };
+}
+
+/**
+ * 쉼표로 여러 상태를 받는다(장부 P-104) — 「진행·완료」처럼 묶어 보는 기본 필터가 한 값으로는 서지 않는다.
+ * 값 하나면 지금과 같은 일치다.
+ */
+function statusWhere(statusCode: string | undefined): Prisma.work_orderWhereInput {
+  if (statusCode === undefined) return {};
+  const codes = statusCode.split(',').map((code) => code.trim()).filter((code) => code !== '');
+  return codes.length === 1 ? { status_code: codes[0] } : { status_code: { in: codes } };
 }
 
 function eq(column: string, value: unknown): Prisma.work_orderWhereInput {

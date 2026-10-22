@@ -5,6 +5,7 @@ import { PagedResponse, pageRequest } from '../../common/pagination';
 import type { TerminalContext } from '../../auth/terminal-context';
 import { WORK_ORDER_LOT_SOURCE } from '../../core/lot';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CLOSE_TOLERANCE } from './completion';
 import { ValidationSummary, summarize, validateWorkOrder } from './validation';
 import {
   RELEASABLE_ELIGIBLE_WHERE,
@@ -68,7 +69,7 @@ export class WorkOrderQueryService {
           ...(terminalProcessIds === undefined ? []
             : [{ routing_operation: { process_id: { in: terminalProcessIds } } }]),
         ] };
-    const where = await this.releasableWhere(scopedWhere, query.releasable);
+    const where = await this.judgmentWhere(await this.releasableWhere(scopedWhere, query.releasable), query.completionJudgmentCode);
     const now = new Date();
 
     // `withSummary` 는 목록·건수·요약을 «같은 트랜잭션»에서 낸다(계약).
@@ -149,6 +150,35 @@ export class WorkOrderQueryService {
     // `releasable=false` 는 그 여집합이다 — 후보 밖(이미 배포됐거나 자원 미배정·긴급)도 포함한다.
     const idFilter = releasable ? { work_order_id: { in: passingIds } } : { work_order_id: { notIn: passingIds } };
     return { AND: [base, idFilter] };
+  }
+
+  /**
+   * 판정 필터 — 조회의 `progress.completionJudgmentCode` 와 «같은» 식(정정된 원본을 뺀 양품 합 vs 지시수량,
+   * 허용 오차 `CLOSE_TOLERANCE`)을 SQL 로 옮겨 쪽·총계가 맞게 거른다. 후보는 다른 질의로 먼저 좁힌다.
+   */
+  private async judgmentWhere(
+    base: Prisma.work_orderWhereInput,
+    judgment: WorkOrderListQuery['completionJudgmentCode'],
+  ): Promise<Prisma.work_orderWhereInput> {
+    if (judgment === undefined) return base;
+    const candidates = (await this.prisma.work_order.findMany({ where: base, select: { work_order_id: true } }))
+      .map((row) => row.work_order_id);
+    if (candidates.length === 0) return { AND: [base, { work_order_id: { in: [] } }] };
+    const rows = await this.prisma.$queryRaw<{ work_order_id: bigint }[]>`
+      SELECT wo.work_order_id
+        FROM production.work_order wo
+        CROSS JOIN LATERAL (
+          SELECT COALESCE(SUM(pr.good_qty), 0) AS good
+            FROM production.production_result pr
+           WHERE pr.work_order_id = wo.work_order_id
+             AND NOT EXISTS (SELECT 1 FROM production.production_result c
+                              WHERE c.corrects_production_result_id = pr.production_result_id)
+        ) s
+       WHERE wo.work_order_id = ANY(${candidates})
+         AND CASE WHEN s.good < wo.order_qty - ${CLOSE_TOLERANCE} THEN 'UNDER'
+                  WHEN s.good > wo.order_qty + ${CLOSE_TOLERANCE} THEN 'OVER'
+                  ELSE 'NORMAL' END = ${judgment}`;
+    return { AND: [base, { work_order_id: { in: rows.map((row) => row.work_order_id) } }] };
   }
 
   private async summaryOf(

@@ -14,6 +14,11 @@ describe('work-order-list-where', () => {
       expect(buildWorkOrderWhere({ includeUnplannedEquipment: true })).toEqual({});
     });
 
+    it('where — statusCode 는 쉼표로 여러 값을 받고, 값 하나면 그대로 일치다', () => {
+      expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS, COMPLETED' })).toEqual({ AND: [{ status_code: { in: ['IN_PROGRESS', 'COMPLETED'] } }] });
+      expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS' })).toEqual({ AND: [{ status_code: 'IN_PROGRESS' }] });
+    });
+
     it('where — released=false 는 released_at IS NULL 이고 미지정과 다르다', () => {
       expect(buildWorkOrderWhere({ released: false })).toEqual({ AND: [{ released_at: null }] });
       // 미지정은 그 축을 아예 안 건다 — false 와 같은 뜻이 아니다.
