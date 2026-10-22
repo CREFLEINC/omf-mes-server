@@ -3,10 +3,8 @@ import { Prisma } from '@prisma/client';
 /**
  * 계약 `GoodsReceipt`·`GoodsReceiptLine` 으로 옮기는 자리.
  *
- * ⛔ `erpMessageQueued` 는 **거짓 고정**이다. 계약 §5-4 가 ERP 송신 적재를 트랜잭션 안
- * 다섯째로 두었으나, 그것을 «거는지 마는지» 가르는 축(`receiptDispositionCode` — 한도승인
- * 건은 적재하지 않는다 · W-01-10 §5-5)이 **물리에도 요청에도 없다.** 정의 유무로만 가르면
- * 한도승인 건이 ERP 로 새고, 승인자가 「반영됐다」로 읽는다 — 되돌림 §Z-9.
+ * `erpMessageQueued` 는 구매입고 적재(`IF-GR-SEND`)가 있는지다 — 한도승인(특채) 건을 가르는 축이 없어 거짓으로
+ * 고정했던 것(되돌림 §Z-9)을 특채 기록으로 가르게 되어 풀었다(장부 P-104).
  */
 
 export type ReceiptRow = Prisma.goods_receiptGetPayload<object>;
@@ -55,7 +53,7 @@ export interface GoodsReceiptDetail {
   lines: GoodsReceiptLineView[];
 }
 
-export function receiptView(row: ReceiptRow): GoodsReceiptView {
+export function receiptView(row: ReceiptRow, erpMessageQueued: boolean): GoodsReceiptView {
   return {
     goodsReceiptId: Number(row.goods_receipt_id),
     goodsReceiptNo: row.goods_receipt_no,
@@ -70,7 +68,7 @@ export function receiptView(row: ReceiptRow): GoodsReceiptView {
     sourceDocumentId: id(row.source_document_id),
     reasonCode: row.reason_code,
     remarks: row.remarks,
-    erpMessageQueued: false,
+    erpMessageQueued,
   };
 }
 

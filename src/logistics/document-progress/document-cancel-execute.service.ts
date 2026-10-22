@@ -4,11 +4,13 @@ import { Prisma } from '@prisma/client';
 import { ApprovalService } from '../../core/approval';
 import { DocumentStateService } from '../../core/document-state';
 import { InventoryPostingService } from '../../core/inventory-posting';
+import { OutboxService } from '../../core/outbox';
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { omitEmpty } from '../../common/http/omit-empty';
 import { assertUpdated } from '../../common/optimistic-lock';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CancelEligibilityService } from './cancel-eligibility.service';
+import { enqueueReceiptCancel } from '../goods-receipt/erp-receipt';
 import { cancelInboundReceipt } from './adapters/inbound-receipt-cancel.adapter';
 import { CancelableDocumentType, DocumentCancelService } from './document-cancel.service';
 import { DOCUMENT_SCHEMA, DOCUMENT_TYPES } from './document-type-registry';
@@ -49,6 +51,7 @@ export class DocumentCancelExecuteService {
     private readonly documentState: DocumentStateService,
     private readonly eligibility: CancelEligibilityService,
     private readonly posting: InventoryPostingService,
+    private readonly outbox: OutboxService,
   ) {}
 
   /** 취소 실행. ⛔ 채번을 안 부른다 — 역행 번호는 `{원 번호}-R` 파생이다(§3-5). */
@@ -107,6 +110,8 @@ export class DocumentCancelExecuteService {
       } else {
         reversal = await this.reverseLedger(tx, typeCode, documentId, occurredAt, appUserId);
       }
+      // ERP 로 보낸 입고면 취소 행(C)을 보낼 일이 같은 트랜잭션에 적재된다(장부 P-104).
+      if (typeCode === 'GOODS_RECEIPT') await enqueueReceiptCancel(tx, this.outbox, documentId);
 
       await this.requests.applyStatus(tx, mapping, documentId, version, transition.to);
       return { statusCode: transition.to, reversal };

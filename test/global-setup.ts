@@ -32,6 +32,8 @@ export default async function globalSetup(): Promise<void> {
  */
 function disableErpSync(): void {
   process.env.ERP_SYNC_ENABLED = 'false';
+  // 보내기도 끈다 — 켜 두면 검사가 마감한 W/O 의 실적을 개발용 중계 DB 에 넣는다.
+  process.env.ERP_SEND_ENABLED = 'false';
   // Zalo 발송 러너도 같은 이유로 끈다 — 켜 두면 검사가 만든 발송 대기 건을 실제 Zalo 로 보낸다.
   // 러너 검사는 러너를 직접 만들어 tick 을 부른다(omf-all-around#160).
   process.env.ZALO_DELIVERY_ENABLED = 'false';
