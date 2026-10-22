@@ -96,6 +96,8 @@ export class WorkOrderCloseService {
         ...(body.remarks === undefined ? {} : { remarks: body.remarks }),
         updated_by: appUserId ?? null,
         closed_worker_id: closedWorkerId,
+        // 마감 시점 판정 — 조회의 progress 판정은 마감 뒤 지연 실적으로 바뀔 수 있다.
+        close_judgment_code: judgment,
         version_no: { increment: 1 },
       },
       select: { work_order_no: true, item_id: true },

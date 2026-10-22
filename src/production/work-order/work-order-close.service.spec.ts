@@ -218,7 +218,7 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
 
     await harness.close.close(WORK_ORDER, 1, {}, { workerNo: '900001' });
 
-    expect(harness.updates[0]).toMatchObject({ closed_worker_id: 3n, updated_by: null });
+    expect(harness.updates[0]).toMatchObject({ closed_worker_id: 3n, updated_by: null, close_judgment_code: 'NORMAL' });
   });
 
   it('마감 — 마감할 수 없는 상태는 상태별 조치를 문구에 싣는다', async () => {

@@ -85,11 +85,12 @@ export class WorkOrderQueryService {
     });
     const ids = rows.map((row) => row.work_order_id);
 
-    const [progress, preIssuedLots, erpQueued, validation] = await Promise.all([
+    const [progress, preIssuedLots, erpQueued, validation, closers] = await Promise.all([
       query.withProgress === false ? undefined : this.progressMany(rows),
       query.withPreIssuedLots === true ? this.preIssuedLotsMany(ids) : undefined,
       this.erpQueuedMany(ids),
       query.withValidation === true ? this.validationMany(ids) : undefined,
+      this.closersOf(rows),
     ]);
 
     const items: WorkOrderListItem[] = rows.map((row) => {
@@ -97,6 +98,7 @@ export class WorkOrderQueryService {
         progress: progress?.get(row.work_order_id),
         preIssuedLots: query.withPreIssuedLots === true ? (preIssuedLots?.get(row.work_order_id) ?? preIssuedLotsOf([], [])) : undefined,
         erpMessageQueued: erpQueued.has(row.work_order_id),
+        closedByUser: closedByUserOf(row, closers),
       });
       return query.withValidation === true ? { ...view, validation: validation?.get(row.work_order_id) } : view;
     });
@@ -247,13 +249,15 @@ export class WorkOrderQueryService {
     const row = await this.prisma.work_order.findUnique({ where: { work_order_id: workOrderId }, include: DISPLAY_JOIN });
     if (!row) throw new NotFoundException('없는 MES W/O 입니다.');
 
-    const [progress, preIssuedLots, erpMessageQueued, voidedLotCount] = await Promise.all([
+    const [progress, preIssuedLots, erpMessageQueued, voidedLotCount, closers] = await Promise.all([
       query.withProgress === false ? undefined : this.progress(row),
       query.withPreIssuedLots === true ? this.preIssuedLots(row.work_order_id) : undefined,
       this.erpQueued(row.work_order_id),
       row.closed_at === null ? undefined : this.voidedLots(row.work_order_id),
+      this.closersOf([row]),
     ]);
-    return { view: workOrderView(row, { progress, preIssuedLots, erpMessageQueued, voidedLotCount }), versionNo: row.version_no };
+    const closedByUser = closedByUserOf(row, closers);
+    return { view: workOrderView(row, { progress, preIssuedLots, erpMessageQueued, voidedLotCount, closedByUser }), versionNo: row.version_no };
   }
 
   /** 404 는 계약 미선언이나 낸다 — 없는 W/O 의 빈 배열과 「배정이 없다」를 가른다(§7-3 · 선례). */
@@ -286,6 +290,20 @@ export class WorkOrderQueryService {
     });
   }
 
+  /**
+   * 관리웹 마감자 — 마감된 W/O 는 `trg_work_order_closed_immutable` 이 UPDATE 를 막아 `updated_by` 가 곧 마감한 계정이다.
+   * POP 마감(`closed_worker_id`)은 계정이 없어 읽지 않는다.
+   */
+  private async closersOf(rows: WorkOrderRow[]): Promise<Map<bigint, string>> {
+    const userIds = [...new Set(rows.filter(isWebClosed).map((row) => row.updated_by as bigint))];
+    if (userIds.length === 0) return new Map();
+    const users = await this.prisma.app_user.findMany({
+      where: { app_user_id: { in: userIds } },
+      select: { app_user_id: true, user_name: true },
+    });
+    return new Map(users.map((user) => [user.app_user_id, user.user_name]));
+  }
+
   /** 마감된 W/O 의 폐번 슬롯 — 취소된 W/O 는 마감되지 않으므로 이 수는 마감이 폐번한 것이다. */
   private voidedLots(workOrderId: bigint): Promise<number> {
     return this.prisma.lot.count({
@@ -312,4 +330,12 @@ export class WorkOrderQueryService {
     const queued = await this.prisma.integration_message.findFirst({ where, select: { integration_message_id: true } });
     return queued !== null;
   }
+}
+
+function isWebClosed(row: WorkOrderRow): boolean {
+  return row.closed_at !== null && row.closed_worker_id === null && row.updated_by !== null;
+}
+
+function closedByUserOf(row: WorkOrderRow, closers: Map<bigint, string>): { id: bigint; name?: string } | undefined {
+  return isWebClosed(row) ? { id: row.updated_by as bigint, name: closers.get(row.updated_by as bigint) } : undefined;
 }
