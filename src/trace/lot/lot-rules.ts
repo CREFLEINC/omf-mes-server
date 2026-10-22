@@ -76,6 +76,26 @@ export function workOrderWhere(workOrderId: number | undefined): Prisma.lotWhere
   return workOrderId === undefined ? {} : { source_type_code: WORK_ORDER_LOT_SOURCE, source_id: workOrderId };
 }
 
+/** 「현재 생산 LOT」 후보 — 그 W/O 의 선발행 생산 LOT 중 완료되지 않고 폐번되지 않은 것(장부 P-103). */
+export const CURRENT_LOT_WHERE: Prisma.lotWhereInput = {
+  lot_type_code: 'PRODUCTION',
+  completed_at: null,
+  lifecycle_status_code: { in: ['ACTIVE', 'WAITING'] },
+};
+
+/**
+ * 후보 중 «현재» 한 건 — 진행 중(ACTIVE)이 대기(WAITING)보다 먼저, 그 안에서 회차가 가장 앞선 것.
+ * ⭐ 진행 중이 둘 이상이어도 막지 않는다 — 한 실적을 두 LOT 에 나눠 배분하면 둘 다 진행 중이 되는 정상 흐름이고,
+ *    앞 회차를 완료하면 다음이 현재가 된다(사용자 결정 2026-10-22).
+ */
+export function pickCurrentLot<T extends { lot_id: bigint; lifecycle_status_code: string | null; work_order_lot_seq: number | null }>(
+  rows: readonly T[],
+): T | undefined {
+  const rank = (row: T) => (row.lifecycle_status_code === 'ACTIVE' ? 0 : 1);
+  const seq = (row: T) => row.work_order_lot_seq ?? Number.MAX_SAFE_INTEGER;
+  return [...rows].sort((a, b) => rank(a) - rank(b) || seq(a) - seq(b) || Number(a.lot_id - b.lot_id))[0];
+}
+
 /** 「false 면 completedAt 이 비어 있는 것만, true 면 값이 있는 것만」(계약). */
 export function completedWhere(completed: boolean | undefined): Prisma.lotWhereInput {
   if (completed === undefined) return {};
