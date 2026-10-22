@@ -317,6 +317,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // ⚠ 참여·이탈을 «부르는» 화면은 0건이다 — 화면이 정해지면 그때 옮긴다(설계 미정 — 문의 057).
   'POST /production/work-sessions/{workSessionId}/workers': ['P-02-01'],
   'POST /production/work-sessions/{workSessionId}/workers/{workSessionWorkerId}:leave': ['P-02-01'],
+  // 작업 세션 강제 종료 — W/O 마감 화면(`W-02-05`)이 마감을 막는 열린 세션을 닫는다(장부 P-104).
+  'POST /production/work-sessions/{workSessionId}:force-end': ['W-02-05'],
 
   // `P-05-02` 비가동 실적 입력 — 요구서 §3은 등록·종료만 적어 수정이 도출되지 않았다.
   // 같은 화면이 자기 비가동 행의 사유·종료시각·고장 연결·메모를 편집한다(I-32 110 통보).

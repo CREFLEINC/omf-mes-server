@@ -76,6 +76,8 @@ export function workSessionEventView(row: WorkSessionEventRow, reasonName: strin
     reasonName,
     performedBy: id(row.performed_by),
     terminalId: id(row.terminal_id),
+    // 강제 종료 사유 — 그 사건에만 있다(장부 P-104).
+    remarks: row.remarks ?? undefined,
   });
 }
 

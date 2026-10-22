@@ -4185,6 +4185,82 @@
     }
    }
   },
+  "/production/work-sessions/{workSessionId}:force-end": {
+   "post": {
+    "tags": [
+     "production"
+    ],
+    "summary": "작업 세션 강제 종료(관리웹)",
+    "description": "관리웹이 열린 작업 세션(진행·중단)을 닫는다 — 다른 단말에 열린 세션이 W/O 마감(:close 409 OPEN_SESSION_EXISTS)을 막을 때 쓴다. 단말 :end 와 다른 점: 어느 단말의 세션이든 닫는다 · 종료 시각은 서버 수신 시각이다(본문에 시각이 없다) · 사유가 필수다 · 세션 사건 FORCE_END 에 계정(performedBy)·시각(occurredAt)·사유(remarks)가 남는다. 남은 참여자를 종료 시각으로 닫고 세션 종료 알림을 내는 것은 :end 와 같다. 세션만 닫는다 — 중단(SUSPENDED)된 W/O 의 상태는 바뀌지 않는다. 온라인 전용이라 If-Match 를 받지 않는다(세션을 잠그고 상태로 판정). 이미 종료된 세션은 400 STATE_LOCKED. 그 뒤 그 단말의 :end·중단·재개는 400 STATE_LOCKED 「이미 종료된 작업 세션입니다 …」를 받고, 그 세션 id 를 실은 실적·투입은 그대로 받는다(오프라인 실적 유실 방지). 권한 W-02-05. 장부 P-104",
+    "parameters": [
+     {
+      "name": "workSessionId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     },
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/WorkSessionForceEnd"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "닫힘",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkSession"
+        }
+       }
+      }
+     },
+    "400": {
+     "description": "검증 실패 · 이미 종료된 세션",
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ErrorResponse"
+       }
+      }
+     }
+    },
+    "403": {
+     "description": "권한(W-02-05)이 없다",
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ErrorResponse"
+       }
+      }
+     }
+    },
+    "404": {
+     "description": "없는 작업 세션",
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ErrorResponse"
+       }
+      }
+     }
+    }
+    }
+   }
+  },
   "/production/work-sessions/{workSessionId}:end": {
    "post": {
     "tags": [
@@ -7811,6 +7887,21 @@
     ],
     "x-internal-note": "shiftId 를 required 에서 뺀 것은 2026-08-18 사용자 확정(「교대는 설계가 정의하는 값이 아니다」)의 미이행분이다. 근거: 공유계약 L-2(반올림·자정 넘김·공장 경계가 화면마다 갈린다) · A-21(어느 교대에도 안 드는 시각) · P-02-01 §4 도면에 교대 선택 칸 0건 · 정본 S7 트리거 「회차·교대 무관」. ⚠ 단말→공장 경로 부재(omf-mes#262)는 그대로 남지만 이 처리로 화면이 막히지는 않는다. ⛔ 속성은 남기되 화면이 이 값에 의존해서는 안 된다."
    },
+   "WorkSessionForceEnd": {
+    "type": "object",
+    "properties": {
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "강제 종료 사유 — 자유 텍스트, 필수. 세션 사건 FORCE_END 의 remarks 로 남는다. 장부 P-104",
+      "example": "단말 고장으로 종료하지 못한 세션"
+     }
+    },
+    "required": [
+     "reason"
+    ]
+   },
    "WorkSessionEnd": {
     "type": "object",
     "properties": {
@@ -7872,6 +7963,11 @@
       "type": "integer",
       "format": "int64",
       "example": 1001
+     },
+     "remarks": {
+      "type": "string",
+      "description": "강제 종료(FORCE_END) 사유 — 그 사건에만 있다. 장부 P-104",
+      "example": "단말 고장으로 종료하지 못한 세션"
      },
      "terminalId": {
       "type": "integer",
