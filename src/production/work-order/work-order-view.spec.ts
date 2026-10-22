@@ -42,6 +42,7 @@ function workOrderRow(overrides: Partial<WorkOrderRow> = {}): WorkOrderRow {
     close_disposition_code: null,
     cancellation_reason_code: null,
     po_mismatch: false,
+    closed_worker_id: null,
     production_plan: null,
     routing_operation: { operation_name: '사출', process: { process_id: 41n, process_code: 'PR-INJ', process_name: '사출공정' } },
     item: { item_code: 'ITM-0001' },

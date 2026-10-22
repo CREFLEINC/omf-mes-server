@@ -2443,6 +2443,7 @@ model terminal_process {
   can_return_material  Boolean  @default(false)
   created_at           DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   created_by           BigInt?
+  can_close_work_order Boolean  @default(true)
   process              process  @relation(fields: [process_id], references: [process_id], onDelete: NoAction, onUpdate: NoAction)
   terminal             terminal @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -2610,7 +2611,8 @@ model worker {
   worker_qualification           worker_qualification[]
   material_consumption           material_consumption[]
   production_result              production_result[]
-  work_order                     work_order[]
+  work_order                     work_order[]                     @relation("work_order_responsible_worker")
+  closed_work_order              work_order[]                     @relation("work_order_closed_worker")
   work_order_resource_assignment work_order_resource_assignment[]
   work_session_worker            work_session_worker[]
   production_result_worker_allocation production_result_worker_allocation[]
@@ -3218,6 +3220,7 @@ model work_order {
   close_disposition_code                                                            String?                          @db.VarChar(50)
   cancellation_reason_code                                                          String?                          @db.VarChar(50)
   po_mismatch                                                                       Boolean                          @default(false)
+  closed_worker_id                                                                  BigInt?
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
@@ -3243,7 +3246,8 @@ model work_order {
   shift                                                                             shift?                           @relation(fields: [planned_shift_id], references: [shift_id], onDelete: NoAction, onUpdate: NoAction)
   production_line                                                                   production_line?                 @relation(fields: [production_line_id], references: [production_line_id], onDelete: NoAction, onUpdate: NoAction)
   production_plan                                                                   production_plan?                 @relation(fields: [production_plan_id], references: [production_plan_id], onDelete: NoAction, onUpdate: NoAction)
-  worker                                                                            worker?                          @relation(fields: [responsible_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  worker                                                                            worker?                          @relation("work_order_responsible_worker", fields: [responsible_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
+  closed_worker                                                                     worker?                          @relation("work_order_closed_worker", fields: [closed_worker_id], references: [worker_id], onDelete: NoAction, onUpdate: NoAction)
   work_order_work_order_rework_source_work_order_idTowork_order                     work_order?                      @relation("work_order_rework_source_work_order_idTowork_order", fields: [rework_source_work_order_id], references: [work_order_id], onDelete: NoAction, onUpdate: NoAction)
   other_work_order_work_order_rework_source_work_order_idTowork_order               work_order[]                     @relation("work_order_rework_source_work_order_idTowork_order")
   routing_operation                                                                 routing_operation                @relation(fields: [routing_operation_id], references: [routing_operation_id], onDelete: NoAction, onUpdate: NoAction)
@@ -3325,6 +3329,7 @@ model work_session_event {
   reason_code           String?      @db.VarChar(50)
   performed_by          BigInt?
   terminal_id           BigInt?
+  remarks               String?
   created_at            DateTime     @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
   app_user              app_user?    @relation(fields: [performed_by], references: [app_user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_work_session_event_performed_by")
   terminal              terminal?    @relation(fields: [terminal_id], references: [terminal_id], onDelete: NoAction, onUpdate: NoAction)
