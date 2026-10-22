@@ -70,21 +70,21 @@ export class LotController {
     return detail;
   }
 
-  /** 자재 LOT 이 들어간 생산 LOT — 계보 기준 추정(장부 P-52 · omf-all-around#108 · #166 P-103). */
+  /** 자재 LOT 이 들어간 생산 LOT — 계보 기준 추정(장부 P-52 · omf-all-around#108 · #166 P-107). */
   @Get(':lotId/affected-production-lots')
   @Contract('GET /trace/lots/{lotId}/affected-production-lots')
   affectedProductionLots(@Param('lotId', ParseIntPipe) lotId: number): Promise<AffectedProductionLots> {
     return this.impacts.affectedProductionLots(lotId);
   }
 
-  /** 생산 LOT 의 투입 자재(omf-all-around#166 · 장부 P-103). */
+  /** 생산 LOT 의 투입 자재(omf-all-around#166 · 장부 P-107). */
   @Get(':lotId/input-materials')
   @Contract('GET /trace/lots/{lotId}/input-materials')
   inputMaterials(@Param('lotId', ParseIntPipe) lotId: number): Promise<InputMaterials> {
     return this.genealogy.ofProductionLot(lotId);
   }
 
-  /** 자재 LOT 이 들어간 시리얼(omf-all-around#166 · 장부 P-103). */
+  /** 자재 LOT 이 들어간 시리얼(omf-all-around#166 · 장부 P-107). */
   @Get(':lotId/used-serials')
   @Contract('GET /trace/lots/{lotId}/used-serials')
   usedSerials(

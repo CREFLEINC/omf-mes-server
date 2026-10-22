@@ -3,7 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LotGenealogyQueryService } from './lot-genealogy-query.service';
 
-/** omf-all-around#166 · 장부 P-103 — 투입 자재 계보 조회. */
+/** omf-all-around#166 · 장부 P-107 — 투입 자재 계보 조회. */
 const hour = (h: number) => new Date(Date.UTC(2026, 9, 22, h));
 const input = (id: bigint, lotId: bigint, h: number) => ({
   material_consumption_id: id,

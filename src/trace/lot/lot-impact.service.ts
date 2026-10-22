@@ -22,7 +22,7 @@ export interface AffectedProductionLots {
 /**
  * 자재 LOT → 생산 LOT 영향 범위(omf-all-around#108 · 장부 P-52).
  *
- * 계보(`trace.lot_relation` · #166 · P-103)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만 낸다 — 투입 시각 기준이라
+ * 계보(`trace.lot_relation` · #166 · P-107)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만 낸다 — 투입 시각 기준이라
  * 여전히 「추정」이다. 계보가 없는 W/O(#166 배포 전 실적)는 그 W/O 의 생산 LOT **전부**다(사용자 결정 2026-10-16).
  */
 @Injectable()

@@ -13,7 +13,7 @@ export interface InspectionSheetFourMView {
 
 /**
  * 검사표 머리의 「변경품」(omf-all-around#89 S4 · #63 의 자재 LOT 4M 기록) — 그 시리얼에 들어간 자재 LOT 중 4M 변경품인 것.
- * 투입 시각 기준 계보(#166 · P-103)로 시리얼의 생산 시각에 쓰던 LOT 을 고른다. 계보가 없는 W/O(#166 배포 전)는
+ * 투입 시각 기준 계보(#166 · P-107)로 시리얼의 생산 시각에 쓰던 LOT 을 고른다. 계보가 없는 W/O(#166 배포 전)는
  * 그 W/O 에 투입된 것 전부다(W/O 단위). 같은 LOT 을 여러 번 투입했어도 한 줄이다.
  */
 export async function fourMChangesOf(

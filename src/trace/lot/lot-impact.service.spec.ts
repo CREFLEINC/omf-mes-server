@@ -3,7 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LotImpactService } from './lot-impact.service';
 
-/** omf-all-around#108 — 자재 LOT → 생산 LOT(장부 P-52) · 계보 기준(#166 · P-103). */
+/** omf-all-around#108 — 자재 LOT → 생산 LOT(장부 P-52) · 계보 기준(#166 · P-107). */
 describe('LotImpactService', () => {
   const service = (consumptions: unknown[], lots: unknown[], exists = true, traced: bigint[] = [], related: bigint[] = []) => {
     const lotFindMany = jest.fn().mockResolvedValue(lots);

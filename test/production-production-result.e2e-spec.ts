@@ -964,7 +964,7 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
   });
 
   /**
-   * omf-all-around#166 · 장부 P-103 — 실적이 투입 자재 LOT → 생산 LOT 계보를 남기고, 조회가 그것을 읽는다.
+   * omf-all-around#166 · 장부 P-107 — 실적이 투입 자재 LOT → 생산 LOT 계보를 남기고, 조회가 그것을 읽는다.
    * 투입은 픽스처로 바로 심는다(투입 등록 경로 자체는 `production-material-consumption` e2e 가 본다).
    */
   describe('투입 자재 계보 (#166)', () => {

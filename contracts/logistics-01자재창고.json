@@ -6371,7 +6371,7 @@
      "trace"
     ],
     "summary": "자재 LOT 영향 생산 LOT(계보 기준 추정)",
-    "description": "자재 LOT 이 이어진 생산 LOT 을 낸다. 계보(trace.lot_relation)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만, 계보가 없는 W/O(#166 배포 전 실적)는 그 W/O 의 생산 LOT 전부다. 투입 시각 기준이라 어느 쪽이든 «추정»이다 — basis 가 그 사실을 말한다. 근거: omf-all-around#108 (장부 P-52) · #166 (장부 P-103)",
+    "description": "자재 LOT 이 이어진 생산 LOT 을 낸다. 계보(trace.lot_relation)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만, 계보가 없는 W/O(#166 배포 전 실적)는 그 W/O 의 생산 LOT 전부다. 투입 시각 기준이라 어느 쪽이든 «추정»이다 — basis 가 그 사실을 말한다. 근거: omf-all-around#108 (장부 P-52) · #166 (장부 P-107)",
     "responses": {
      "200": {
       "description": "영향 범위",
@@ -6394,7 +6394,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-52 · P-103. 계보는 생산 실적 등록(POST /production/production-results)이 같은 트랜잭션으로 만든다."
+    "x-internal-note": "서버 선행 · 장부 P-52 · P-107. 계보는 생산 실적 등록(POST /production/production-results)이 같은 트랜잭션으로 만든다."
    }
   },
   "/trace/lots/{lotId}/input-materials": {
@@ -6414,7 +6414,7 @@
      "trace"
     ],
     "summary": "생산 LOT 투입 자재(계보 기준 추정)",
-    "description": "생산 LOT 에 들어간 자재 LOT 을 4M 변경품 표시와 함께 낸다. 생산 실적이 남긴 계보(trace.lot_relation · relation_type CONSUMED · 투입 시각 기준 · 정확도 ESTIMATED)를 읽는다. 계보가 없는 W/O(#166 배포 전)는 그 W/O 투입 전부(basis=WORK_ORDER_ESTIMATE). 생산 LOT 이 아니면 빈 목록. 근거: omf-all-around#166 (서버 선행 · 장부 P-103)",
+    "description": "생산 LOT 에 들어간 자재 LOT 을 4M 변경품 표시와 함께 낸다. 생산 실적이 남긴 계보(trace.lot_relation · relation_type CONSUMED · 투입 시각 기준 · 정확도 ESTIMATED)를 읽는다. 계보가 없는 W/O(#166 배포 전)는 그 W/O 투입 전부(basis=WORK_ORDER_ESTIMATE). 생산 LOT 이 아니면 빈 목록. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)",
     "responses": {
      "200": {
       "description": "투입 자재",
@@ -6437,7 +6437,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-103."
+    "x-internal-note": "서버 선행 · 장부 P-107."
    }
   },
   "/trace/lots/{lotId}/used-serials": {
@@ -6457,7 +6457,7 @@
      "trace"
     ],
     "summary": "자재 LOT 이 들어간 시리얼(계보 기준 추정)",
-    "description": "자재 LOT 을 투입한 W/O 의 시리얼 중 생산 시각(없으면 발번 시각)이 그 LOT 의 투입 구간(그 LOT 투입 ~ 같은 자재 다른 LOT 투입)에 든 것. 계보가 없는 W/O(#166 배포 전)는 그 W/O 시리얼 전부(basis=WORK_ORDER_ESTIMATE). 근거: omf-all-around#166 (서버 선행 · 장부 P-103)",
+    "description": "자재 LOT 을 투입한 W/O 의 시리얼 중 생산 시각(없으면 발번 시각)이 그 LOT 의 투입 구간(그 LOT 투입 ~ 같은 자재 다른 LOT 투입)에 든 것. 계보가 없는 W/O(#166 배포 전)는 그 W/O 시리얼 전부(basis=WORK_ORDER_ESTIMATE). 근거: omf-all-around#166 (서버 선행 · 장부 P-107)",
     "parameters": [
      {
       "name": "page",
@@ -6498,7 +6498,7 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-103."
+    "x-internal-note": "서버 선행 · 장부 P-107."
    }
   },
   "/trace/lot-status-events": {
@@ -14764,7 +14764,7 @@
      "workOrders",
      "items"
     ],
-    "description": "자재 LOT 영향 범위(서버 선행 · 장부 P-52 · omf-all-around#108 · 계보 기준 #166 P-103).",
+    "description": "자재 LOT 영향 범위(서버 선행 · 장부 P-52 · omf-all-around#108 · 계보 기준 #166 P-107).",
     "properties": {
      "basis": {
       "type": "string",
@@ -14772,7 +14772,7 @@
        "LOT_GENEALOGY_ESTIMATE",
        "WORK_ORDER_ESTIMATE"
       ],
-      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-103)"
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
      },
      "workOrders": {
       "type": "array",
@@ -14842,7 +14842,7 @@
      "itemCode",
      "itemName"
     ],
-    "description": "투입 자재 LOT 한 줄(서버 선행 · 장부 P-103 · omf-all-around#166).",
+    "description": "투입 자재 LOT 한 줄(서버 선행 · 장부 P-107 · omf-all-around#166).",
     "properties": {
      "lotId": {
       "type": "integer",
@@ -14885,7 +14885,7 @@
      "basis",
      "items"
     ],
-    "description": "생산 LOT·시리얼의 투입 자재(서버 선행 · 장부 P-103 · omf-all-around#166).",
+    "description": "생산 LOT·시리얼의 투입 자재(서버 선행 · 장부 P-107 · omf-all-around#166).",
     "properties": {
      "basis": {
       "type": "string",
@@ -14893,7 +14893,7 @@
        "LOT_GENEALOGY_ESTIMATE",
        "WORK_ORDER_ESTIMATE"
       ],
-      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-103)"
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
      },
      "items": {
       "type": "array",
@@ -14910,7 +14910,7 @@
      "items",
      "page"
     ],
-    "description": "자재 LOT 이 들어간 시리얼(서버 선행 · 장부 P-103 · omf-all-around#166).",
+    "description": "자재 LOT 이 들어간 시리얼(서버 선행 · 장부 P-107 · omf-all-around#166).",
     "properties": {
      "basis": {
       "type": "string",
@@ -14918,7 +14918,7 @@
        "LOT_GENEALOGY_ESTIMATE",
        "WORK_ORDER_ESTIMATE"
       ],
-      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-103)"
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
      },
      "items": {
       "type": "array",

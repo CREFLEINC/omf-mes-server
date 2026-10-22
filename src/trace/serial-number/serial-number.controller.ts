@@ -35,7 +35,7 @@ export class SerialNumberController {
     return this.serialNumbers.list(query);
   }
 
-  /** 시리얼의 투입 자재 — 생산 시각에 쓰던 자재 LOT(omf-all-around#166 · 장부 P-103). */
+  /** 시리얼의 투입 자재 — 생산 시각에 쓰던 자재 LOT(omf-all-around#166 · 장부 P-107). */
   @Get(':serialNo/input-materials')
   @Contract('GET /trace/serial-numbers/{serialNo}/input-materials')
   inputMaterials(@Param('serialNo') serialNo: string): Promise<InputMaterials> {

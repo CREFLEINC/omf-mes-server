@@ -2,7 +2,7 @@ import { WORK_ORDER_LOT_SOURCE } from './lot-source';
 import type { Tx } from './lot-registry.service';
 
 /**
- * 투입 자재 LOT → 생산 LOT 계보(omf-all-around#166 · 장부 P-103 · 문의 052 결정 변경 2026-10-22).
+ * 투입 자재 LOT → 생산 LOT 계보(omf-all-around#166 · 장부 P-107 · 문의 052 결정 변경 2026-10-22).
  * 현장 스캔 없이 «투입 시각»으로 잇는다 — 같은 W/O·같은 자재에서 다른 LOT 이 투입되기 전까지 만든
  * 제품에 그 LOT 이 들어갔다고 본다(선입선출 가정). 그래서 정확도는 언제나 「추정」이다.
  */

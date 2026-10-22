@@ -14,7 +14,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { fourMChangeView } from '../../quality/inspection/four-m-change';
 
-/** 투입 시각 기준 계보로 셌다(omf-all-around#166 · 장부 P-103) — 그래도 「추정」이다. */
+/** 투입 시각 기준 계보로 셌다(omf-all-around#166 · 장부 P-107) — 그래도 「추정」이다. */
 export const GENEALOGY_BASIS = 'LOT_GENEALOGY_ESTIMATE';
 /** 계보가 없는 W/O(#166 배포 전 실적) — 그 W/O 의 투입 전부·생산 LOT 전부로 센다(#108 방식). */
 export const WORK_ORDER_BASIS = 'WORK_ORDER_ESTIMATE';
@@ -46,7 +46,7 @@ export type UsedSerials = PagedResponse<UsedSerialView> & { basis: TraceBasis };
 
 
 /**
- * 투입 자재 계보 조회(omf-all-around#166 · 장부 P-103) — 생산 LOT·시리얼의 투입 자재와 자재 LOT 이 들어간 시리얼.
+ * 투입 자재 계보 조회(omf-all-around#166 · 장부 P-107) — 생산 LOT·시리얼의 투입 자재와 자재 LOT 이 들어간 시리얼.
  * 생산 LOT 은 실적이 남긴 `trace.lot_relation` 을 읽고, 시리얼은 같은 규칙(`lotsAt`)을 생산 시각에 대어 그 자리에서 센다.
  */
 @Injectable()
