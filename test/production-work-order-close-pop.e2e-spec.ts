@@ -112,6 +112,38 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(detail.body).toMatchObject({ closeJudgmentCode: 'UNDER', progress: { completionJudgmentCode: 'NORMAL' } });
   });
 
+  it('다른 공장의 W/O·단말에 매핑되지 않은 공정의 W/O 는 401 이다', async () => {
+    const entity = await prisma.plant.findUniqueOrThrow({ where: { plant_id: ids.plant }, select: { legal_entity_id: true } });
+    const otherPlant = await prisma.plant.create({ data: {
+      legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    const otherLine = await prisma.production_line.create({ data: { plant_id: otherPlant.plant_id, line_code: `${PREFIX}-LINE2`, line_name: PREFIX } });
+    const unmappedProcess = await prisma.process.create({ data: { process_code: `${PREFIX}-PR2`, process_name: PREFIX, process_type_code: 'PRODUCTION' } });
+    const routing = await prisma.routing.findFirstOrThrow({ where: { routing_code: `${PREFIX}-RT` } });
+    const unmappedOperation = await prisma.routing_operation.create({ data: {
+      routing_id: routing.routing_id, operation_seq: 20, process_id: unmappedProcess.process_id, operation_name: PREFIX,
+    } });
+    const workOrder = async (key: string, data: { production_line_id?: bigint; routing_operation_id?: bigint }) => {
+      const row = await prisma.work_order.create({ data: {
+        work_order_no: `${PREFIX}-WO-${key}`, routing_operation_id: ids.operation, item_id: ids.item, order_qty: 10, uom_id: ids.uom,
+        status_code: 'IN_PROGRESS', production_line_id: ids.line, released_at: STARTED_AT, ...data,
+      } });
+      versions.set(row.work_order_id, row.version_no);
+      return row.work_order_id;
+    };
+    const body = { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' };
+
+    await close(open, await workOrder('P2', { production_line_id: otherLine.production_line_id }), body).expect(401);
+    await close(open, await workOrder('UNMAPPED', { routing_operation_id: unmappedOperation.routing_operation_id }), body).expect(401);
+  });
+
+  it('마감된 W/O 는 다시 UPDATE 할 수 없다 — 마이그레이션의 판정 채움 뒤 마감 불변 트리거가 다시 켜져 있다', async () => {
+    const workOrderId = await workOrderWithLots('IMM');
+    await close(open, workOrderId, { remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' }).expect(200);
+
+    await expect(prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { remarks: '마감 뒤 수정' } })).rejects.toThrow();
+  });
+
   it('If-Match 없는 POP 마감은 받지 않는다 — 온라인 전용', async () => {
     const workOrderId = await workOrderWithLots('B');
 
@@ -202,17 +234,45 @@ describe('POP 작업지시 마감 (e2e)', () => {
         .expect(200);
     });
 
-    it('강제 종료된 세션에 단말이 보낸 종료는 400 이고 작업 시작을 다시 하라고 알려 준다', async () => {
-      const session = await openSession(await workOrderWithLots('G'), 'G', 'RUNNING');
+    it('강제 종료된 세션에 단말이 보낸 종료·중단·재개는 400 이고 작업 시작을 다시 하라고 알려 준다 — 옛 If-Match 를 실어도 409 가 아니다', async () => {
+      const workOrderId = await workOrderWithLots('G');
+      const session = await openSession(workOrderId, 'G', 'RUNNING');
+      const before = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: session } });
+      await forceEnd(session, { reason: '관리자 종료' }).expect(200);
+      const sessionPath = `/api/production/work-sessions/${String(session)}`;
+      const ended = (response: request.Response) => {
+        expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+        expect(response.body.errors[0].message).toContain('작업 시작을 다시');
+      };
+
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}:end`), open)
+        .set('Idempotency-Key', randomUUID()).send({ endedAt: new Date().toISOString() }).expect(400));
+      // 강제 종료가 버전을 올렸다 — 단말이 들고 있던 옛 토큰이어도 409 가 아니라 400 이다.
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}:end`), open)
+        .set('Idempotency-Key', randomUUID()).set('If-Match', `"${String(before.version_no)}"`)
+        .send({ endedAt: new Date().toISOString() }).expect(400));
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}/events`), open)
+        .set('Idempotency-Key', randomUUID())
+        .send({ eventTypeCode: 'STOP', occurredAt: new Date().toISOString(), reasonCode: 'EQUIPMENT_FAILURE' }).expect(400));
+      ended(await asPop(request(app.getHttpServer()).post(`${sessionPath}/events`), open)
+        .set('Idempotency-Key', randomUUID())
+        .send({ eventTypeCode: 'RESUME', occurredAt: new Date().toISOString() }).expect(400));
+    });
+
+    it('강제 종료된 세션 id 를 실은 실적은 그대로 받는다 — 오프라인에 쌓인 실적을 잃지 않는다', async () => {
+      const workOrderId = await workOrderWithLots('K');
+      const session = await openSession(workOrderId, 'K', 'RUNNING');
       await forceEnd(session, { reason: '관리자 종료' }).expect(200);
 
-      const response = await asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session)}:end`), open)
+      const response = await asPop(request(app.getHttpServer()).post('/api/production/production-results'), open)
         .set('Idempotency-Key', randomUUID())
-        .send({ endedAt: new Date().toISOString() })
-        .expect(400);
+        .send({
+          workOrderId: Number(workOrderId), workSessionId: Number(session), goodQty: 1, uomId: Number(ids.uom),
+          resultSourceCode: 'MANUAL', occurredAt: new Date().toISOString(),
+        })
+        .expect(201);
 
-      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
-      expect(response.body.errors[0].message).toContain('작업 시작을 다시');
+      expect(response.body).toMatchObject({ workSessionId: Number(session), goodQty: 1 });
     });
 
     it('이미 종료된 세션·빈 사유는 400, 권한 없는 계정은 403', async () => {

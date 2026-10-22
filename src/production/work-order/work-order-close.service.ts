@@ -76,11 +76,12 @@ export class WorkOrderCloseService {
     // ⭐ 열린 세션 검사가 전이 검사보다 «먼저»다 — 계약이 이 자리에만 409 봉투를 지정했고,
     //    전이가 먼저 걸리면 진행 중인 W/O 가 400 을 받아 화면이 띄울 문구를 잃는다(§5-1).
     await assertNoOpenSession(tx, workOrderId);
+    // 상태가 본문보다 먼저다 — 마감할 수 없는 W/O 에 「처분을 고르라」를 먼저 보이면 고쳐도 다시 막힌다.
+    const transition = this.assertClosable(locked.status_code);
 
     const goodSum = await goodQty(tx, workOrderId);
     const judgment = judgeCompletion(goodSum, locked.order_qty);
     assertCloseBody(judgment, body, { goodQty: goodSum, orderQty: locked.order_qty });
-    const transition = this.assertClosable(locked.status_code);
 
     const closedAt = new Date();
     // ⛔ `closed_at` 을 찍는 UPDATE 는 **한 번뿐**이다 — `trg_work_order_closed_immutable` 이

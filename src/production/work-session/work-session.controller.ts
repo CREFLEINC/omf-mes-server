@@ -105,7 +105,7 @@ export class WorkSessionController {
     const session = currentSession(request);
     if (session === undefined) throw new UnauthorizedException('로그인이 필요합니다.');
     return runIdempotent(this.idempotency, request, HttpStatus.OK, () =>
-      this.ends.forceEnd(workSessionId, body, session.userId));
+      this.ends.forceEnd(workSessionId, body, session.userId), FAMILY_CONFLICT_CODE);
   }
   /** 세션 구간 «안»의 사건(STOP·RESUME). 201 이라 `@HttpCode` 를 되돌리지 않는다. */
   @Post(':workSessionId/events')
