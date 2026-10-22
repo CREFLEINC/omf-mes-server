@@ -289,6 +289,57 @@ describe('POP 작업지시 마감 (e2e)', () => {
     });
   });
 
+  describe('W/O 목록 판정 필터', () => {
+    it('판정 필터가 미달·정상·초과 W/O 만 내고 총계가 맞으며, statusCode 는 쉼표로 여러 값을 받는다', async () => {
+      const under = await workOrderWithLots('J1');
+      const normal = await workOrderWithLots('J2');
+      const over = await workOrderWithLots('J3');
+      await prisma.production_result.updateMany({ where: { work_order_id: normal }, data: { good_qty: 10 } });
+      await prisma.production_result.updateMany({ where: { work_order_id: over }, data: { good_qty: 12 } });
+      await prisma.work_order.update({ where: { work_order_id: over }, data: { status_code: 'SUSPENDED' } });
+      const list = (query: Record<string, string>) => request(app.getHttpServer())
+        .get(WORK_ORDERS).query({ q: `${PREFIX}-WO-J`, size: '50', ...query }).set('Cookie', cookie).expect(200);
+      const ids = (response: request.Response) => response.body.items.map((row: { workOrderId: number }) => row.workOrderId);
+
+      for (const [judgment, expected] of [['UNDER', under], ['NORMAL', normal], ['OVER', over]] as const) {
+        // 마감 대상 목록의 기본 질의 — 끝나지 않은 상태만이라 기간 없이 받는다.
+        const response = await list({ statusCode: 'IN_PROGRESS,SUSPENDED', completionJudgmentCode: judgment });
+        expect(ids(response)).toEqual([Number(expected)]);
+        expect(response.body.page.total).toBe(1);
+        expect(response.body.items[0].progress.completionJudgmentCode).toBe(judgment);
+      }
+      expect(ids(await list({ statusCode: 'IN_PROGRESS,SUSPENDED' })).sort()).toEqual([under, normal, over].map(Number).sort());
+      expect(ids(await list({ statusCode: 'IN_PROGRESS' })).sort()).toEqual([under, normal].map(Number).sort());
+      await request(app.getHttpServer()).get(WORK_ORDERS).query({ completionJudgmentCode: 'LATE' }).set('Cookie', cookie).expect(400);
+    });
+
+    it('대상을 묶지 않은 판정 필터·빈 statusCode 는 400 이다', async () => {
+      const scope = await request(app.getHttpServer()).get(WORK_ORDERS).query({ completionJudgmentCode: 'UNDER' }).set('Cookie', cookie).expect(400);
+      expect(scope.body.errors[0]).toMatchObject({ field: 'completionJudgmentCode', code: 'INVALID' });
+      const empty = await request(app.getHttpServer()).get(WORK_ORDERS).query({ statusCode: '' }).set('Cookie', cookie).expect(400);
+      expect(empty.body.errors[0]).toMatchObject({ field: 'statusCode' });
+    });
+
+    it('정정 실적이 있는 W/O 도 필터 판정과 progress 판정이 같다 — 정정된 원본은 세지 않는다', async () => {
+      const workOrderId = await workOrderWithLots('J4');
+      const original = await prisma.production_result.findFirstOrThrow({ where: { work_order_id: workOrderId } });
+      // 양품 4 를 10 으로 정정 — 정정본만 세면 정상, 원본까지 세면 초과다.
+      await prisma.production_result.create({ data: {
+        production_result_no: `${PREFIX}-PR-J4C`, work_order_id: workOrderId, result_sequence: 2, good_qty: 10, uom_id: ids.uom,
+        result_source_code: 'MANUAL', occurred_at: STARTED_AT, worker_id: ids.worker, status_code: 'CONFIRMED',
+        idempotency_key: `${PREFIX}-PR-J4C`, corrects_production_result_id: original.production_result_id,
+      } });
+      const judged = async (judgment: string) => (await request(app.getHttpServer()).get(WORK_ORDERS)
+        .query({ q: `${PREFIX}-WO-J4`, statusCode: 'IN_PROGRESS', completionJudgmentCode: judgment }).set('Cookie', cookie).expect(200)).body;
+
+      const normal = await judged('NORMAL');
+      expect(normal.items.map((row: { workOrderId: number }) => row.workOrderId)).toEqual([Number(workOrderId)]);
+      expect(normal.items[0].progress.completionJudgmentCode).toBe('NORMAL');
+      expect((await judged('OVER')).items).toEqual([]);
+      expect((await judged('UNDER')).items).toEqual([]);
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function forceEnd(workSessionId: bigint, body: Record<string, unknown>): request.Test {

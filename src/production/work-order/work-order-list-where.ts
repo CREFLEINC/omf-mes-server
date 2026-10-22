@@ -28,6 +28,8 @@ export interface WorkOrderListQuery {
   withPreIssuedLots?: boolean;
   withSummary?: boolean;
   withValidation?: boolean;
+  /** 마감 3분류 판정 — 저장 칸이 없는 계산값이라 서비스가 DB 로 좁힌다(장부 P-108). */
+  completionJudgmentCode?: 'UNDER' | 'NORMAL' | 'OVER';
 }
 
 /** `releasable` ⓐⓑ+유형 — ⓒ(4M 점검 BLOCK 0)만 DB 호출이 필요해 서비스가 후보를 좁힌다. */
@@ -94,7 +96,7 @@ export function buildWorkOrderWhere(query: WorkOrderListQuery): Prisma.work_orde
     eq('production_plan_id', query.productionPlanId),
     // ⚠ 직접 칸이 없다 — 계획을 경유해 잇는다(계약 ⌜서버가 계획을 경유해 잇는다⌝).
     query.productionOrderId === undefined ? {} : { production_plan: { production_order_id: query.productionOrderId } },
-    eq('status_code', query.statusCode),
+    statusWhere(query.statusCode),
     // `false` 도 «비어 있다»의 여집합이다 — 미지정과 다르다.
     query.released === undefined ? {} : { released_at: query.released ? { not: null } : null },
     // ⛔ 중단 구간을 담을 표가 없어 상태 문자열로 근사한다 — 설계 미정(문의 035 · R-19).
@@ -140,6 +142,43 @@ function plannedStartWhere(from?: string, to?: string): Prisma.work_orderWhereIn
       ...(to === undefined ? {} : { lt: new Date(to) }),
     },
   };
+}
+
+/**
+ * 쉼표로 여러 상태를 받는다(장부 P-108) — 「진행·완료」처럼 묶어 보는 기본 필터가 한 값으로는 서지 않는다.
+ * 값 하나면 지금과 같은 일치다.
+ */
+function statusWhere(statusCode: string | undefined): Prisma.work_orderWhereInput {
+  const codes = statusCodesOf(statusCode);
+  if (codes === undefined) return {};
+  return codes.length === 1 ? { status_code: codes[0] } : { status_code: { in: codes } };
+}
+
+function statusCodesOf(statusCode: string | undefined): string[] | undefined {
+  if (statusCode === undefined) return undefined;
+  const codes = statusCode.split(',').map((code) => code.trim()).filter((code) => code !== '');
+  if (codes.length === 0) {
+    throw one(field('statusCode', ERROR_CODE.INVALID, '상태가 비어 있습니다. 상태를 하나 이상 고르거나 이 조건을 빼세요.'));
+  }
+  return codes;
+}
+
+/** 끝난 W/O 는 쌓이기만 한다 — 이 상태들만 고르면 대상이 늘 작다. */
+const OPEN_STATUSES: readonly string[] = ['PLANNED', 'CONFIRMED', 'RELEASED', 'IN_PROGRESS', 'SUSPENDED', 'COMPLETED'];
+
+/**
+ * 판정 필터는 실적 합을 W/O 마다 세므로 대상을 묶는다 — 달성률 정렬과 같은 기간(계획 시작 92일 이하)이 있거나,
+ * 끝나지 않은 상태만 골랐을 때만 받는다. 마감 대상 목록(진행·중단 + 판정)은 기간 없이 쓰인다(장부 P-108).
+ */
+export function assertJudgmentScope(query: WorkOrderListQuery): void {
+  if (query.completionJudgmentCode === undefined) return;
+  const codes = statusCodesOf(query.statusCode);
+  if (codes !== undefined && codes.every((code) => OPEN_STATUSES.includes(code))) return;
+  const from = query.plannedStartFrom === undefined ? NaN : new Date(query.plannedStartFrom).getTime();
+  const to = query.plannedStartTo === undefined ? NaN : new Date(query.plannedStartTo).getTime();
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from && to - from <= 92 * 86_400_000) return;
+  throw one(field('completionJudgmentCode', ERROR_CODE.INVALID,
+    '판정으로 거르려면 계획 시작 기간(92일 이하)을 정하거나, 마감·취소를 뺀 상태만 고르세요.'));
 }
 
 function eq(column: string, value: unknown): Prisma.work_orderWhereInput {

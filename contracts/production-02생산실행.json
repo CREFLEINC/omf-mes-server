@@ -2565,6 +2565,20 @@
      "description": "W/O 번호·계획 시작 시각·상태·우선순위 및 달성률(achievementRate)을 받는다. 방향은 asc·desc이며 생략하면 asc다. 달성률 정렬은 plannedStartFrom과 plannedStartTo를 모두 지정한 92일 이하의 계획 시작기간에서만 허용한다. 전체 필터 결과의 실적 합계/지시량으로 정렬한 다음 페이지를 나눈다."
      },
      {
+      "name": "completionJudgmentCode",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "UNDER",
+        "NORMAL",
+        "OVER"
+       ]
+      },
+      "description": "마감 3분류 판정으로 거른다 — progress.completionJudgmentCode 와 같은 식(정정된 원본을 뺀 양품 합 vs 지시 수량)이다. 저장 칸이 없는 계산값이지만 서버가 걸러 쪽·총계가 맞다. ⚠ 대상을 묶어야 한다 — 끝나지 않은 상태(마감·취소 제외)만 골랐거나 계획 시작 기간(plannedStartFrom~To)이 92일 이하일 때만 받고, 아니면 400 INVALID. 마감 대상 목록(statusCode=IN_PROGRESS,SUSPENDED + 판정)은 기간 없이 된다. ⭐ statusCode 는 쉼표로 여러 값을 받는다(예: IN_PROGRESS,SUSPENDED) — 값 하나면 지금과 같은 일치, 비면 400. 장부 P-108",
+      "x-code-key": "CD-COMPLETION-JUDGMENT"
+     },
+     {
       "name": "withProgress",
       "in": "query",
       "schema": {
