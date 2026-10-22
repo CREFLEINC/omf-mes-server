@@ -169,7 +169,8 @@ export class InspectionLevelService {
     if (!current) throw new NotFoundException('없는 검사 수준입니다.');
     const levelChanged =
       input.inspectionLevelCode !== undefined && input.inspectionLevelCode !== current.inspection_level_code;
-    const reason = levelChanged ? requiredReason(input.reason) : undefined;
+    // 사유는 선택이다(omf-all-around#133) — 비우면 이력에 사유 없이 남는다.
+    const reason = levelChanged ? input.reason?.trim() || null : undefined;
 
     await this.prisma.$transaction(async (tx) => {
       // ⛔ version_no 를 조건에 건다 — 자동 전환(IQC 확정)도 이 행의 버전을 올리므로 그 사이의 전환과도 충돌로 갈린다.
@@ -225,12 +226,6 @@ export class InspectionLevelService {
     ]);
     return pagedResponse(rows.map(historyView), total, page);
   }
-}
-
-function requiredReason(reason: string | undefined): string {
-  const trimmed = reason?.trim() ?? '';
-  if (trimmed === '') throw one(field('reason', ERROR_CODE.REQUIRED, '변경 사유를 입력하세요.'));
-  return trimmed;
 }
 
 function rethrowDuplicate(error: unknown): never {

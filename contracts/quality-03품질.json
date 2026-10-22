@@ -3098,7 +3098,7 @@
      "quality"
     ],
     "summary": "품목 검사 수준 수동 변경",
-    "description": "수준이 바뀌는데 사유가 없으면 400 reason REQUIRED. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "사유는 선택이다(장부 P-103 · omf-all-around#133 — 예전에는 수준이 바뀌는데 사유가 없으면 400 reason REQUIRED). 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "parameters": [
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -7072,7 +7072,7 @@
    },
    "ItemInspectionLevelUpdate": {
     "type": "object",
-    "description": "수동 변경. 생략 = 유지. 수준이 바뀌면 사유가 필수이고 이력 1건이 남으며 연속 합격 수가 0 이 된다. 품목은 바꾸지 않는다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
+    "description": "수동 변경. 생략 = 유지. 수준이 바뀌면 이력 1건이 남으며(사유는 선택 · P-103) 연속 합격 수가 0 이 된다. 품목은 바꾸지 않는다. 근거: 서버 선행 · 장부 P-87 · omf-all-around#64 · W-03-12 검사 수준 관리",
     "properties": {
      "inspectionLevelCode": {
       "type": "string",
@@ -7092,7 +7092,7 @@
      "reason": {
       "type": "string",
       "maxLength": 500,
-      "description": "변경 사유 — 수준이 바뀔 때 필수"
+      "description": "변경 사유 — 선택(비우면 이력 사유 없음 · P-103)"
      }
     }
    },
