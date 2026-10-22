@@ -12,6 +12,7 @@ import { GR_INFOR } from '../src/integration/erp/rcv-tables';
 import { RelayClient } from '../src/integration/erp/relay-client';
 import { goodsReceiptBuilder } from '../src/integration/erp/send/goods-receipt.send';
 import { GoodsReceiptService } from '../src/logistics/goods-receipt/goods-receipt.service';
+import { InboundExcessService } from '../src/logistics/inbound-receipt/inbound-excess.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RELAY, connectSa, createCopy, describeRelay, dropCopy, ensurePlant } from './erp-relay.fixture';
 
@@ -22,6 +23,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let receipts: GoodsReceiptService;
+  let excesses: InboundExcessService;
   const createdPlants: bigint[] = [];
   const ids: Record<string, bigint> = {};
   let userId: number;
@@ -33,13 +35,16 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     receipts = app.get(GoodsReceiptService);
+    excesses = app.get(InboundExcessService);
     await ensurePlant(prisma, 'PL11', createdPlants);
     await seed();
   });
 
   afterAll(async () => {
     // 적재한 메시지는 지운다 — 남기면 이 DB 에서 보내기를 켤 때 실제로 나간다. 입고·원장은 접두어로 남는다.
-    await prisma.integration_message.deleteMany({ where: { message_key: { in: received.map((no) => `IF-GR-SEND:${no}`) } } });
+    await prisma.integration_message.deleteMany({
+      where: { message_key: { in: [...received.map((no) => `IF-GR-SEND:${no}`), ...excessIds.map((id) => `IF-GR-SEND:EXCESS:${id}`)] } },
+    });
     // 특채는 지운다 — 남기면 특채 목록 검사(quality-concession)의 «쓸 수 있는 특채»에 섞인다.
     await prisma.concession.deleteMany({ where: { concession_no: { startsWith: PREFIX } } });
     await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: PREFIX } } });
@@ -48,6 +53,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   });
 
   const received: string[] = [];
+  const excessIds: bigint[] = [];
 
   async function seed(): Promise<void> {
     userId = Number((await prisma.app_user.findFirstOrThrow({ orderBy: { app_user_id: 'asc' } })).app_user_id);
@@ -132,7 +138,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     orderLine: bigint,
     qty: number,
     excesses: { qty: number; orderLine: bigint | null }[] = [],
-  ): Promise<{ inboundLineId: bigint; lotId: bigint }> {
+  ): Promise<{ inboundLineId: bigint; lotId: bigint; excessIds: bigint[] }> {
     sequence += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -147,8 +153,9 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
         status_code: 'REGISTERED',
       },
     });
+    const created: bigint[] = [];
     for (const excess of excesses) {
-      await prisma.inbound_receipt_excess.create({
+      const row = await prisma.inbound_receipt_excess.create({
         data: {
           inbound_receipt_line_id: line.inbound_receipt_line_id,
           excess_qty: excess.qty,
@@ -156,7 +163,9 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
           linked_at: excess.orderLine === null ? null : RECEIVED_AT,
         },
       });
+      created.push(row.inbound_receipt_excess_id);
     }
+    excessIds.push(...created);
     const lot = await prisma.lot.create({
       data: {
         lot_no: `${PREFIX}-L${sequence}`,
@@ -170,7 +179,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
         status_code: 'NORMAL',
       },
     });
-    return { inboundLineId: line.inbound_receipt_line_id, lotId: lot.lot_id };
+    return { inboundLineId: line.inbound_receipt_line_id, lotId: lot.lot_id, excessIds: created };
   }
 
   async function receive(
@@ -345,6 +354,8 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
 
     expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
     expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '80']]);
+    // 초과분 20 중 받은 것은 90 − 80 = 10 이다.
+    expect(summary(await buildExcess(parent.excessIds[0]))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '10']]);
   });
 
   it('입하 줄 하나가 ERP 로 가는 입고 여럿에 나뉘면 실패한다 — 부분 입고는 생기지 않는다', async () => {
@@ -405,6 +416,62 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     });
 
     expect(await build(detail.goodsReceipt.goodsReceiptId)).toEqual([]);
+  });
+
+  function buildExcess(excessId: bigint): Promise<RowDraft[]> {
+    return goodsReceiptBuilder(prisma).build({
+      id: 1n,
+      interfaceCode: 'IF-GR-SEND',
+      targetTypeCode: 'INBOUND_RECEIPT_EXCESS',
+      targetId: excessId,
+      payload: {},
+    });
+  }
+  const excessMessage = (excessId: bigint) =>
+    prisma.integration_message.findUnique({ where: { message_key: `IF-GR-SEND:EXCESS:${excessId}` } });
+
+  it('입고 전에 이은 초과분은 입고할 때 따로 적재하고, 그 묶음은 초과분 몫 한 행이다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
+    const [excessId] = lot.excessIds;
+
+    const detail = await receive('warehouse', [{ ...lot, qty: 100 }]);
+
+    expect(await excessMessage(excessId)).toMatchObject({
+      interface_code: 'IF-GR-SEND',
+      target_type_code: 'INBOUND_RECEIPT_EXCESS',
+      target_id: excessId,
+      status_code: 'PENDING',
+    });
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '80']]);
+    const rows = await buildExcess(excessId);
+    expect(summary(rows)).toEqual([[`${PREFIX}-PO`, 2, 'S230', '20']]);
+    expect(rows[0].values).toMatchObject({ POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo, RCPT_DT: '2026-10-22 01:30:00' });
+  });
+
+  it('입고 뒤에 이은 초과분은 이을 때 적재하고, 그 뒤에는 풀지 못한다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 50, [{ qty: 10, orderLine: null }]);
+    const [excessId] = lot.excessIds;
+    await receive('warehouse', [{ ...lot, qty: 50 }]);
+    expect(await excessMessage(excessId)).toBeNull();
+
+    await excesses.link(excessId, ids.erpOrderLine2, userId);
+
+    expect(await excessMessage(excessId)).not.toBeNull();
+    expect(summary(await buildExcess(excessId))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '10']]);
+    await expect(excesses.unlink(excessId, userId)).rejects.toMatchObject({
+      response: { errors: [expect.objectContaining({ code: 'STATE_LOCKED', message: 'ERP 구매입고로 보낸 초과분입니다.' })] },
+    });
+  });
+
+  it('입고 전에는 이어도 적재하지 않고 풀 수 있다 — 입고할 때 함께 간다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 30, [{ qty: 5, orderLine: null }]);
+    const [excessId] = lot.excessIds;
+
+    await excesses.link(excessId, ids.erpOrderLine2, userId);
+    expect(await excessMessage(excessId)).toBeNull();
+
+    await excesses.unlink(excessId, userId);
+    expect((await prisma.inbound_receipt_excess.findUniqueOrThrow({ where: { inbound_receipt_excess_id: excessId } })).purchase_order_line_id).toBeNull();
   });
 
   describeRelay('중계 DB', () => {

@@ -19,7 +19,7 @@ import {
   receiptLineView,
   receiptView,
 } from './goods-receipt-view';
-import { MATERIAL_RECEIPT, erpInboundLines } from './erp-receipt';
+import { MATERIAL_RECEIPT, enqueueLinkedExcesses, erpInboundLines } from './erp-receipt';
 import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
@@ -134,7 +134,8 @@ export class GoodsReceiptService {
         const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
           const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos);
           // ⭐ 적재는 본 트랜잭션의 꼬리다(계약 §5-4 다섯째) — 단독이면 「입고됐는데 적재가 안 된」 창이 열린다.
-          if (await this.goesToErp(tx, input)) {
+          const erpLines = await this.erpLines(tx, input);
+          if (erpLines.length > 0) {
             await this.outbox.enqueue(tx, {
               interfaceCode: IF_GOODS_RECEIPT,
               messageKey: outboxMessageKey(IF_GOODS_RECEIPT, receiptNo),
@@ -142,6 +143,8 @@ export class GoodsReceiptService {
               targetId: id,
               payload: { goodsReceiptNo: receiptNo },
             });
+            // 입고 전에 이은 초과분은 지금 따로 간다 — 입고 행에는 P/O 라인 몫만 실린다(P-100).
+            for (const inboundLineId of erpLines) await enqueueLinkedExcesses(tx, this.outbox, inboundLineId);
           }
           if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
             actor: actor.terminalAudit, targetTypeCode: 'GOODS_RECEIPT', targetId: id, eventTypeCode: 'CREATE',
@@ -159,21 +162,22 @@ export class GoodsReceiptService {
   }
 
   /**
-   * ERP 구매입고로 갈 입고인가(장부 P-104) — 자재 입고이고, 불량창고가 아니고(IQC 불합격분 · 고객 질문 8 전까지
-   * 합격 입고만), ERP 발주에 이어진 줄이 하나라도 있다. 줄을 고르는 일은 보낼 때 바꾸개가 다시 한다.
+   * ERP 구매입고로 갈 입고 줄의 입하 줄(겹침 없이) — 자재 입고이고, 불량창고가 아니고(IQC 불합격분 · 고객 질문 8
+   * 전까지 합격 입고만), ERP 발주에 이어진 줄(장부 P-104). 없으면 적재하지 않는다. 줄을 고르는 일은 보낼 때 바꾸개가 다시 한다.
    */
-  private async goesToErp(tx: Prisma.TransactionClient, input: GoodsReceiptCreate): Promise<boolean> {
-    if (input.receiptTypeCode !== MATERIAL_RECEIPT) return false;
+  private async erpLines(tx: Prisma.TransactionClient, input: GoodsReceiptCreate): Promise<bigint[]> {
+    if (input.receiptTypeCode !== MATERIAL_RECEIPT) return [];
     const warehouse = await tx.warehouse.findUnique({
       where: { warehouse_id: BigInt(input.warehouseId) },
       select: { is_defect: true },
     });
-    if (warehouse === null || warehouse.is_defect) return false;
+    if (warehouse === null || warehouse.is_defect) return [];
     const lines = input.lines.map((line) => ({
       lotId: BigInt(line.lotId),
       inboundReceiptLineId: line.inboundReceiptLineId == null ? null : BigInt(line.inboundReceiptLineId),
     }));
-    return (await erpInboundLines(tx, lines)).some((inboundLineId) => inboundLineId !== null);
+    const found = (await erpInboundLines(tx, lines)).filter((inboundLineId) => inboundLineId !== null);
+    return [...new Set(found)];
   }
 
   /** ERP 송신 대기열에 적재된 입고 — 적재이지 전송이 아니다(계약 `erpMessageQueued`). */

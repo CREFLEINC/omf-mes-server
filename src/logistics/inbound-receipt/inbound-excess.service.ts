@@ -2,8 +2,10 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
+import { OutboxService } from '../../core/outbox';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { enqueueLinkedExcesses, excessMessageKey } from '../goods-receipt/erp-receipt';
 import { CLOSED_ORDER_STATUSES } from '../purchase-order/purchase-order-receipt';
 import {
   EXCESS_INCLUDE,
@@ -25,7 +27,10 @@ const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
  */
 @Injectable()
 export class InboundExcessService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: OutboxService,
+  ) {}
 
   async list(query: InboundExcessQuery): Promise<PagedResponse<InboundExcessView>> {
     const page = pageRequest(query);
@@ -119,16 +124,21 @@ export class InboundExcessService {
           version_no: { increment: 1 },
         },
       });
+      // 이미 ERP 로 입고된 입하 줄이면 이은 초과분이 지금 구매입고로 간다(P-100 · 장부 P-104).
+      await enqueueLinkedExcesses(tx, this.outbox, excess.inbound_receipt_line_id);
     }, TRANSACTION_OPTIONS);
     return excessView(await this.find(excessId));
   }
 
-  /** 잘못 이었을 때 되돌린다. ⚠ ERP 구매입고를 보낸 뒤에는 막아야 한다 — 보내기가 서면 함께 건다. */
+  /** 잘못 이었을 때 되돌린다. ERP 구매입고로 보낼 일이 적재된 초과분은 풀지 못한다(P-100 · 장부 P-104). */
   async unlink(excessId: bigint, appUserId: number): Promise<InboundExcessView> {
     await this.prisma.$transaction(async (tx) => {
       const excess = await this.lockReceiptOf(tx, excessId);
       if (excess.purchase_order_line_id === null) {
         throw one(field('inboundReceiptExcessId', ERROR_CODE.STATE_LOCKED, '이어진 P/O 라인이 없는 초과분입니다.'));
+      }
+      if ((await tx.integration_message.count({ where: { message_key: excessMessageKey(excessId) } })) > 0) {
+        throw one(field('inboundReceiptExcessId', ERROR_CODE.STATE_LOCKED, 'ERP 구매입고로 보낸 초과분입니다.'));
       }
       await lockOrderLine(tx, excess.purchase_order_line_id);
       await tx.purchase_order_line.update({
