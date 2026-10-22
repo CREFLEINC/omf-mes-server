@@ -28,7 +28,7 @@ export interface WorkOrderListQuery {
   withPreIssuedLots?: boolean;
   withSummary?: boolean;
   withValidation?: boolean;
-  /** 마감 3분류 판정 — 저장 칸이 없는 계산값이라 서비스가 DB 로 좁힌다(장부 P-104). */
+  /** 마감 3분류 판정 — 저장 칸이 없는 계산값이라 서비스가 DB 로 좁힌다(장부 P-105). */
   completionJudgmentCode?: 'UNDER' | 'NORMAL' | 'OVER';
 }
 
@@ -145,7 +145,7 @@ function plannedStartWhere(from?: string, to?: string): Prisma.work_orderWhereIn
 }
 
 /**
- * 쉼표로 여러 상태를 받는다(장부 P-104) — 「진행·완료」처럼 묶어 보는 기본 필터가 한 값으로는 서지 않는다.
+ * 쉼표로 여러 상태를 받는다(장부 P-105) — 「진행·완료」처럼 묶어 보는 기본 필터가 한 값으로는 서지 않는다.
  * 값 하나면 지금과 같은 일치다.
  */
 function statusWhere(statusCode: string | undefined): Prisma.work_orderWhereInput {
@@ -168,7 +168,7 @@ const OPEN_STATUSES: readonly string[] = ['PLANNED', 'CONFIRMED', 'RELEASED', 'I
 
 /**
  * 판정 필터는 실적 합을 W/O 마다 세므로 대상을 묶는다 — 달성률 정렬과 같은 기간(계획 시작 92일 이하)이 있거나,
- * 끝나지 않은 상태만 골랐을 때만 받는다. 마감 대상 목록(진행·중단 + 판정)은 기간 없이 쓰인다(장부 P-104).
+ * 끝나지 않은 상태만 골랐을 때만 받는다. 마감 대상 목록(진행·중단 + 판정)은 기간 없이 쓰인다(장부 P-105).
  */
 export function assertJudgmentScope(query: WorkOrderListQuery): void {
   if (query.completionJudgmentCode === undefined) return;
