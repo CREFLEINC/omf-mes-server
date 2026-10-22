@@ -26,7 +26,6 @@ const NOT_CLOSABLE: Record<string, string> = {
   PLANNED: '편성 상태입니다. 배포·작업 시작 전의 W/O 는 마감하지 않고 취소합니다.',
   CONFIRMED: '확정 상태입니다. 배포·작업 시작 전의 W/O 는 마감하지 않고 취소합니다.',
   RELEASED: '배포 상태입니다. 작업을 시작한 적 없는 W/O 는 마감하지 않고 취소합니다.',
-  SUSPENDED: '중단 상태입니다. 작업을 재개한 뒤 작업을 종료하고 마감하세요.',
   CLOSED: '이미 마감된 W/O 입니다. 목록을 새로 고쳐 확인하세요.',
   CANCELLED: '취소된 W/O 입니다. 목록을 새로 고쳐 확인하세요.',
 };
@@ -131,7 +130,7 @@ export class WorkOrderCloseService {
       return this.documentState.assertTransition(STATUS_COLUMN, CLOSE_ACTION, statusCode, HttpStatus.BAD_REQUEST);
     } catch (error) {
       if (!(error instanceof ContractException)) throw error;
-      const message = `마감할 수 없는 W/O 입니다 — ${NOT_CLOSABLE[statusCode] ?? `${statusCode} 상태입니다. 진행 중인 W/O 만 마감됩니다.`}`;
+      const message = `진행 중이거나 중단된 W/O 만 마감됩니다 — ${NOT_CLOSABLE[statusCode] ?? `${statusCode} 상태입니다. W/O 상태를 확인하세요.`}`;
       throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message }]);
     }
   }

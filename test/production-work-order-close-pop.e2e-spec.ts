@@ -72,6 +72,25 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(detail.body).toMatchObject({ closeDispositionCode: 'WRITE_OFF', closedWorkerName: WORKER_NAME, voidedLotCount: 1 });
   });
 
+  it('중단된 W/O 를 세션 종료 뒤 미달 마감한다 — 중단 세션이 열려 있으면 먼저 409', async () => {
+    const workOrderId = await workOrderWithLots('S');
+    await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: 'SUSPENDED' } });
+    const session = await prisma.work_session.create({ data: {
+      work_order_id: workOrderId, session_no: 1, terminal_id: open.terminalId, started_at: STARTED_AT,
+      status_code: 'STOPPED', idempotency_key: `${PREFIX}-WS-S`,
+    } });
+    const body = { remainderDispositionCode: 'CARRY_OVER', reasonCode: 'MATERIAL_SHORTAGE' };
+
+    await close(open, workOrderId, body).expect(409);
+    await asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session.work_session_id)}:end`), open)
+      .set('Idempotency-Key', randomUUID())
+      .send({ endedAt: new Date().toISOString() })
+      .expect(200);
+    const closed = await close(open, workOrderId, body).expect(200);
+
+    expect(closed.body).toMatchObject({ statusCode: 'CLOSED', closeDispositionCode: 'CARRY_OVER', closedWorkerNo: workerNo });
+  });
+
   it('If-Match 없는 POP 마감은 받지 않는다 — 온라인 전용', async () => {
     const workOrderId = await workOrderWithLots('B');
 
@@ -138,8 +157,9 @@ describe('POP 작업지시 마감 (e2e)', () => {
   });
 
   describe('관리웹 작업 세션 강제 종료', () => {
-    it('관리웹이 다른 단말의 열린 세션을 사유와 함께 강제 종료한다 — 사건 FORCE_END 에 계정·사유가 남고 참여자가 닫힌 뒤 마감된다', async () => {
+    it('관리웹이 다른 단말의 중단 세션을 사유와 함께 강제 종료한다 — 사건 FORCE_END 에 계정·사유가 남고 참여자가 닫힌 뒤 중단된 W/O 가 미달 마감된다', async () => {
       const workOrderId = await workOrderWithLots('F');
+      await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: 'SUSPENDED' } });
       const session = await openSession(workOrderId, 'F', 'STOPPED');
 
       const ended = await forceEnd(session, { reason: '단말 고장으로 종료하지 못함' }).expect(200);

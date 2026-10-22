@@ -3223,6 +3223,7 @@
      "production"
     ],
     "summary": "마감 · ERP 실적 송신",
+    "x-server-note": "⭐ 진행 중(IN_PROGRESS)뿐 아니라 중단(SUSPENDED) W/O 도 마감한다 — 중단한 채 미달 마감이 현장 흐름이다. 열린 세션 검사(409 OPEN_SESSION_EXISTS)가 먼저라 중단 세션은 단말 :end 또는 관리웹 강제 종료를 거쳐야 닫힌다. 그 밖의 상태는 400 STATE_LOCKED 「진행 중이거나 중단된 W/O 만 마감됩니다 — …」. 장부 P-104",
     "description": "잔량 처분을 함께 정한다. 미달 슬롯은 이 시점에 자동 폐번된다. ERP 실제 전송만 트랜잭션 밖이다. 근거: W-02-05 §5 · R27·R82\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /production/work-orders/{workOrderId} 의 ETag 를 그대로 싣는다. 마감은 관리웹 온라인 전제이고 되돌릴 수 없는 전이라(재오픈 금지 · R83) 형제 전이 :hold·:resume 처럼 선택으로 두지 않는다 — 그 둘은 POP 오프라인 대상이라 큐가 토큰을 싣지 못해 선택이다(공유계약 C-9). 근거: W-02-05 §6\n\n⭐ ERP 생산 실적 송신 — 이 마감이 대기열에 적재한다. 품목이 개발품이면 제외한다(판정 축은 품목이다). ⚠ 개발품 여부를 담을 컬럼이 아직 없어 서버는 그때까지 전건을 적재한다. 실제 전송과 재처리는 이 계약 밖이다.\n\n⭐ 본문 검증 — 서버가 스스로 낸 마감 3분류 판정과 본문을 대조한다(판정은 WorkOrderProgress.completionJudgmentCode 와 같은 식이다).\n  · 미달인데 remainderDispositionCode 가 없다 → 400\n  · 정상·초과인데 remainderDispositionCode 가 있다 → 400 (넘길 잔량도 없앨 잔량도 없다)\n  · 미달·초과인데 reasonCode 가 없다 → 400 (미달·초과 사유는 R80 이 요구한다)\n  · 정상은 두 칸을 다 비운다\n⚠ 「정상」의 폭(허용 오차)은 서버 정책이 정한다 — 규칙은 그대로고 미달의 경계만 움직인다(W-02-05 §5-1·§8-1)\n⛔ 같은 W/O 에 열린 작업 세션이 있으면 409 OPEN_SESSION_EXISTS 로 거절한다 — 화면은 그 문구를 띄운다.\n⭐ 잔량 처분의 결과 — 이월은 새 W/O 로 표현되고 그 W/O 가 parentWorkOrderId 로 원본을 가리킨다. 소멸은 아무 자원도 만들지 않으므로 본문 remarks 에 사유를 남긴다. ⚠ 이월이 잔량 W/O 를 «자동으로» 만드는지는 아직 정해지지 않았다 — 정해지기 전까지 이 오퍼레이션은 만들지 않는다.",
     "parameters": [
      {
