@@ -26,7 +26,7 @@ export interface InputMaterialView {
   itemId: number;
   itemCode: string;
   itemName: string;
-  fourMChange?: { changeTypeCode: string; remarks?: string };
+  fourMChange?: { changeTypeCode?: string; remarks?: string };
 }
 
 export interface InputMaterials {

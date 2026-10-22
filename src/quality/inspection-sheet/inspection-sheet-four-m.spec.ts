@@ -64,7 +64,7 @@ describe('fourMChangesOf', () => {
   it('변경 종류가 없으면 종류 칸이 없다(#133)', async () => {
     const { prisma } = harness([lot('L-1', { change_type_code: null, remarks: '공급처 변경' })]);
 
-    await expect(fourMChangesOf(prisma, 70n)).resolves.toEqual([
+    await expect(fourMChangesOf(prisma, 70n, 1n)).resolves.toEqual([
       { lotNo: 'L-1', itemCode: 'F537', itemName: 'PCB ASSY', remarks: '공급처 변경' },
     ]);
   });
