@@ -21,7 +21,7 @@ export interface WorkSessionEnd {
   endedAt: string;
   stopReasonCode?: string;
 }
-/** 계약 `WorkSessionForceEnd`(장부 P-105) — 사유는 자유 텍스트, 필수(1~500 은 계약 검증이 본다). */
+/** 계약 `WorkSessionForceEnd`(장부 P-108) — 사유는 자유 텍스트, 필수(1~500 은 계약 검증이 본다). */
 export interface WorkSessionForceEnd {
   reason: string;
 }
@@ -69,7 +69,7 @@ export class WorkSessionEndService {
   }
 
   /**
-   * 관리웹 강제 종료(장부 P-105) — 다른 단말에 열린 세션이 마감을 막을 때 관리자가 닫는다.
+   * 관리웹 강제 종료(장부 P-108) — 다른 단말에 열린 세션이 마감을 막을 때 관리자가 닫는다.
    * `:end` 와 다른 점: 시각은 서버 수신 시각(현장 시각이 없다) · 어느 단말 세션이든 · 사유 필수 ·
    * 사건 `FORCE_END` 에 계정·사유가 남는다(누가·언제·왜). 남은 참여자를 닫는 것과 알림은 같다.
    * ⚠ 세션만 닫는다 — 중단(SUSPENDED)된 W/O 는 그대로다.
