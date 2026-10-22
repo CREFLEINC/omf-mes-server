@@ -16,6 +16,20 @@ const config = (values: Record<string, string>): ConfigService =>
 describe('erpSyncConfig', () => {
   it('기본은 꺼짐이고, 꺼져 있으면 접속 정보가 없어도 된다', () => {
     expect(erpSyncConfig(config({})).enabled).toBe(false);
+    expect(erpSyncConfig(config({})).sendEnabled).toBe(false);
+  });
+
+  it('보내기는 받기와 따로 켠다', () => {
+    expect(erpSyncConfig(config(FULL))).toMatchObject({ enabled: true, sendEnabled: false });
+    expect(
+      erpSyncConfig(config({ ...FULL, ERP_SYNC_ENABLED: 'false', ERP_SEND_ENABLED: 'true' })),
+    ).toMatchObject({ enabled: false, sendEnabled: true });
+  });
+
+  it('보내기만 켜도 접속 정보가 비면 부팅에서 실패한다', () => {
+    expect(() =>
+      erpSyncConfig(config({ ...FULL, ERP_SYNC_ENABLED: 'false', ERP_SEND_ENABLED: 'true', ERP_DB_HOST: '' })),
+    ).toThrow('ERP_SEND_ENABLED=true 인데 ERP_DB_HOST 이 비어 있다');
   });
 
   it.each(['ERP_DB_HOST', 'ERP_DB_USER', 'ERP_DB_PASSWORD', 'ERP_DB_NAME'])(
