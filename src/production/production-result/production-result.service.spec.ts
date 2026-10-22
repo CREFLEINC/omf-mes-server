@@ -57,6 +57,8 @@ interface StubOptions {
   }[];
   /** 다른 열린 보류가 있는 LOT — 정상으로 올리지 않는다(#105 리뷰). */
   heldLotIds?: bigint[];
+  /** 그 W/O 의 투입 — 계보(#166)가 읽는다. */
+  inputs?: Row[];
 }
 
 function stub(options: StubOptions = {}) {
@@ -68,6 +70,7 @@ function stub(options: StubOptions = {}) {
   const workerWheres: Row[] = [];
   const resultWheres: Row[] = [];
   const lotWheres: Row[] = [];
+  const relations: Row[] = [];
   /** 부른 «차례»를 그대로 적는다 — 채번·잠금·순번의 앞뒤가 판정 대상이다. */
   const order: string[] = [];
 
@@ -99,6 +102,13 @@ function stub(options: StubOptions = {}) {
         resultWheres.push(where);
         return Promise.resolve({ _max: { result_sequence: options.maxSequence ?? null } });
       },
+      findUniqueOrThrow: () =>
+        Promise.resolve({
+          work_order_id: BigInt(WORK_ORDER),
+          occurred_at: new Date(OCCURRED_AT),
+          production_result_lot_allocation: allocated,
+        }),
+      findFirst: () => Promise.resolve(null),
       create: ({ data }: { data: Row }) => {
         created.push(data);
         return Promise.resolve({
@@ -115,6 +125,13 @@ function stub(options: StubOptions = {}) {
     production_result_lot_allocation: {
       createMany: ({ data }: { data: Row[] }) => {
         allocated.push(...data);
+        return Promise.resolve({ count: data.length });
+      },
+    },
+    material_consumption: { findMany: () => Promise.resolve(options.inputs ?? []) },
+    lot_relation: {
+      createMany: ({ data }: { data: Row[] }) => {
+        relations.push(...data);
         return Promise.resolve({ count: data.length });
       },
     },
@@ -167,6 +184,7 @@ function stub(options: StubOptions = {}) {
     qualityMoves,
     created,
     allocated,
+    relations,
     moves,
     numbered,
     workerWheres,
@@ -366,6 +384,44 @@ describe('생산 실적 등록 (I-7 PR ②)', () => {
     // `check_violation` 은 공용 그물에 안 걸려 500 이 샌다 — 손으로 앞당겨 막는다.
     expect(errorsOf(caught)).toMatchObject([{ field: 'lotAllocations', code: ERROR_CODE.INVALID }]);
     expect(harness.next).not.toHaveBeenCalled();
+  });
+
+  it('계보 — 배분한 생산 LOT 에 그 시각까지 투입된 자재 LOT 을 「추정」으로 잇는다(#166)', async () => {
+    const input = (id: bigint, lot: bigint, at: string) => ({
+      material_consumption_id: id,
+      item_id: 41n,
+      lot_id: lot,
+      occurred_at: new Date(at),
+      corrects_consumption_id: null,
+    });
+    const harness = stub({
+      slots: [slot(501n)],
+      inputs: [input(1n, 77n, '2026-09-06T00:00:00.000Z'), input(2n, 78n, '2026-09-06T03:00:00.000Z')],
+    });
+
+    await harness.service.create(body({ lotAllocations: [{ lotId: 501, allocatedQty: 10 }] }), context());
+
+    expect(harness.relations).toEqual([
+      expect.objectContaining({
+        source_lot_id: 77n,
+        target_lot_id: 501n,
+        relation_type_code: 'CONSUMED',
+        allocation_method_code: 'INPUT_TIME_WINDOW',
+        trace_accuracy_code: 'ESTIMATED',
+        source_event_type_code: 'PRODUCTION_RESULT',
+        source_event_id: 7001n,
+      }),
+    ]);
+  });
+
+  it('계보 — 배분이 없는 실적은 잇지 않는다', async () => {
+    const harness = stub({
+      inputs: [{ material_consumption_id: 1n, item_id: 41n, lot_id: 77n, occurred_at: new Date(0), corrects_consumption_id: null }],
+    });
+
+    await harness.service.create(body(), context());
+
+    expect(harness.relations).toEqual([]);
   });
 
   it('상태 — `PLANNED`·`CONFIRMED`·`CANCELLED` 는 400 이다', async () => {

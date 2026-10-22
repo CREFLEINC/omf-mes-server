@@ -6370,8 +6370,8 @@
     "tags": [
      "trace"
     ],
-    "summary": "자재 LOT 영향 생산 LOT(작업지시 기준 추정)",
-    "description": "자재 LOT 이 투입된 작업지시의 생산 LOT 전부를 낸다. ⚠ 추정이다 — 자재 투입이 LOT 계보를 만들지 않아(I-10 §3-9 · 문의 052) 실제로 들어간 생산 LOT 보다 넓다. basis=WORK_ORDER_ESTIMATE 가 그 사실을 말하고 화면은 「작업지시 기준 추정」으로 밝힌다. 근거: omf-all-around#108 (서버 선행 · 장부 P-52)",
+    "summary": "자재 LOT 영향 생산 LOT(계보 기준 추정)",
+    "description": "자재 LOT 이 이어진 생산 LOT 을 낸다. 계보(trace.lot_relation)가 있는 W/O 는 그 자재 LOT 이 이어진 생산 LOT 만, 계보가 없는 W/O(#166 배포 전 실적)는 그 W/O 의 생산 LOT 전부다. 투입 시각 기준이라 어느 쪽이든 «추정»이다 — basis 가 그 사실을 말한다. 근거: omf-all-around#108 (장부 P-52) · #166 (장부 P-107)",
     "responses": {
      "200": {
       "description": "영향 범위",
@@ -6394,7 +6394,111 @@
       }
      }
     },
-    "x-internal-note": "서버 선행 · 장부 P-52. 계보가 서면 이 경로가 계보 기준으로 바뀐다."
+    "x-internal-note": "서버 선행 · 장부 P-52 · P-107. 계보는 생산 실적 등록(POST /production/production-results)이 같은 트랜잭션으로 만든다."
+   }
+  },
+  "/trace/lots/{lotId}/input-materials": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "생산 LOT 투입 자재(계보 기준 추정)",
+    "description": "생산 LOT 에 들어간 자재 LOT 을 4M 변경품 표시와 함께 낸다. 생산 실적이 남긴 계보(trace.lot_relation · relation_type CONSUMED · 투입 시각 기준 · 정확도 ESTIMATED)를 읽는다. 계보가 없는 W/O(#166 배포 전)는 그 W/O 투입 전부(basis=WORK_ORDER_ESTIMATE). 생산 LOT 이 아니면 빈 목록. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)",
+    "responses": {
+     "200": {
+      "description": "투입 자재",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InputMaterials"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-107."
+   }
+  },
+  "/trace/lots/{lotId}/used-serials": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 LOT 이 들어간 시리얼(계보 기준 추정)",
+    "description": "자재 LOT 을 투입한 W/O 의 시리얼 중 생산 시각(없으면 발번 시각)이 그 LOT 의 투입 구간(그 LOT 투입 ~ 같은 자재 다른 LOT 투입)에 든 것. 계보가 없는 W/O(#166 배포 전)는 그 W/O 시리얼 전부(basis=WORK_ORDER_ESTIMATE). 근거: omf-all-around#166 (서버 선행 · 장부 P-107)",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "시리얼",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UsedSerials"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-107."
    }
   },
   "/trace/lot-status-events": {
@@ -14660,14 +14764,15 @@
      "workOrders",
      "items"
     ],
-    "description": "자재 LOT 영향 범위(서버 선행 · 장부 P-52 · omf-all-around#108).",
+    "description": "자재 LOT 영향 범위(서버 선행 · 장부 P-52 · omf-all-around#108 · 계보 기준 #166 P-107).",
     "properties": {
      "basis": {
       "type": "string",
       "enum": [
+       "LOT_GENEALOGY_ESTIMATE",
        "WORK_ORDER_ESTIMATE"
       ],
-      "description": "어떻게 셌는가 — 지금은 작업지시 기준 추정 하나다."
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
      },
      "workOrders": {
       "type": "array",
@@ -14725,6 +14830,128 @@
         }
        }
       }
+     }
+    }
+   },
+   "InputMaterial": {
+    "type": "object",
+    "required": [
+     "lotId",
+     "lotNo",
+     "itemId",
+     "itemCode",
+     "itemName"
+    ],
+    "description": "투입 자재 LOT 한 줄(서버 선행 · 장부 P-107 · omf-all-around#166).",
+    "properties": {
+     "lotId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "lotNo": {
+      "type": "string"
+     },
+     "itemId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "itemCode": {
+      "type": "string"
+     },
+     "itemName": {
+      "type": "string"
+     },
+     "fourMChange": {
+      "type": "object",
+      "description": "4M 변경품이면 싣는다(장부 P-86 · #63). 아니면 칸이 없다. 변경 종류는 선택 — 없으면 키가 없다(#133 · 장부 P-105).",
+      "properties": {
+       "changeTypeCode": {
+        "type": "string",
+        "description": "값 목록은 GET /mdm/code-values?codeGroupCode=FOUR_M_CHANGE_TYPE"
+       },
+       "remarks": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "InputMaterials": {
+    "type": "object",
+    "required": [
+     "basis",
+     "items"
+    ],
+    "description": "생산 LOT·시리얼의 투입 자재(서버 선행 · 장부 P-107 · omf-all-around#166).",
+    "properties": {
+     "basis": {
+      "type": "string",
+      "enum": [
+       "LOT_GENEALOGY_ESTIMATE",
+       "WORK_ORDER_ESTIMATE"
+      ],
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InputMaterial"
+      }
+     }
+    }
+   },
+   "UsedSerials": {
+    "type": "object",
+    "required": [
+     "basis",
+     "items",
+     "page"
+    ],
+    "description": "자재 LOT 이 들어간 시리얼(서버 선행 · 장부 P-107 · omf-all-around#166).",
+    "properties": {
+     "basis": {
+      "type": "string",
+      "enum": [
+       "LOT_GENEALOGY_ESTIMATE",
+       "WORK_ORDER_ESTIMATE"
+      ],
+      "description": "어떻게 셌는가 — LOT_GENEALOGY_ESTIMATE = 투입 시각 기준 계보(같은 W/O·같은 자재에서 다음 LOT 투입 전까지 · 추정) · WORK_ORDER_ESTIMATE = 계보가 없는 W/O(#166 배포 전 실적)가 섞여 그 W/O 의 생산 LOT 전부를 냈다. 근거: omf-all-around#166 (서버 선행 · 장부 P-107)"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "serialNumberId",
+        "serialNo",
+        "lotId",
+        "lotNo"
+       ],
+       "properties": {
+        "serialNumberId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "serialNo": {
+         "type": "string"
+        },
+        "lotId": {
+         "type": "integer",
+         "format": "int64"
+        },
+        "lotNo": {
+         "type": "string",
+         "description": "시리얼의 생산 LOT 번호"
+        },
+        "producedAt": {
+         "type": "string",
+         "format": "date-time"
+        }
+       }
+      }
+     },
+     "page": {
+      "$ref": "#/components/schemas/PageMeta"
      }
     }
    }

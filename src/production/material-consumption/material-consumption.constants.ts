@@ -7,9 +7,8 @@
  * ⛔ 조회는 이 값들을 **대조하지 않는다** — 목록 질의는 받은 문자를 그대로 건다(I-10 §5-1).
  *    등록(`POST`)은 본문에 값이 오면 그대로 저장하고 없을 때만 기본값을 넣는다(§3-6 ⓐ).
  *
- * ⛔ 계보(`trace.lot_relation`)의 `source_event_type_code` 후보는 `'MATERIAL_CONSUMPTION'`
- *    (`app.entity_type_registry` 에 실재 — `seed.ts:1418`)이지만 **상수로 두지 않는다** —
- *    이 슬라이스가 계보 행을 만들지 않아 사용처가 0이다. 계보는 문의 052 뒤 — I-10 §3-9.
+ * 계보(`trace.lot_relation`)의 원천은 투입이 아니라 생산 실적이다(`PRODUCTION_RESULT` · `core/lot/lot-genealogy.ts`
+ *    · 문의 052 결정 변경 · #166).
  */
 export const CONSUMPTION_TYPE_DEFAULT = 'NORMAL';
 export const CONSUMPTION_STATUS = 'RECORDED';

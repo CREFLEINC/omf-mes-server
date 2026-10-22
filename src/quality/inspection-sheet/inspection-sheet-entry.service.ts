@@ -94,7 +94,7 @@ export class InspectionSheetEntryService {
     if (row === null) throw new NotFoundException('없는 검사표입니다.');
     const candidates =
       row.work_order_id === null ? new Map<string, string[]>() : await lotCandidates(this.prisma, row.work_order_id, row.template.lot_sources);
-    const fourMChanges = await fourMChangesOf(this.prisma, row.work_order_id);
+    const fourMChanges = await fourMChangesOf(this.prisma, row.work_order_id, row.serial_number_id);
     const oqc = await oqcOf(this.prisma, row.serial_number_id);
     return { inspectionSheet: sheetDetailView(row, candidates, fourMChanges, oqc), versionNo: row.version_no };
   }

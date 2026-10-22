@@ -8,6 +8,7 @@ import {
   LotQualityStatusService,
   lotsFreeOfOpenHolds,
   pqcAcceptanceExceeded,
+  recordResultGenealogyWithin,
   Tx,
   WORK_ORDER_LOT_SOURCE,
 } from '../../core/lot';
@@ -146,6 +147,8 @@ export class ProductionResultService {
       // 전이 시각은 단말이 보낸 «사건» 시각 — 수신 시각을 쓰면 재전송이 하루 뒤 이력을 찍는다.
       changedAt: occurredAt,
     });
+    // 투입 자재 LOT → 생산 LOT 계보(#166 · P-107) — 같은 트랜잭션이다. 배분이 없으면 잇지 않는다.
+    await recordResultGenealogyWithin(tx, row.production_result_id, context.appUserId);
     await this.releaseUninspectedLots(tx, prepared);
     await allocateBySession(tx, row, context.appUserId);
     await writeDefects(tx, row, body.defects ?? [], prepared.defectProcessId, context.appUserId);
