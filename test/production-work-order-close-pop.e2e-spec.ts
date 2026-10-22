@@ -71,6 +71,25 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(detail.body).toMatchObject({ closeDispositionCode: 'WRITE_OFF', closedWorkerName: WORKER_NAME, voidedLotCount: 1 });
   });
 
+  it('중단된 W/O 를 세션 종료 뒤 미달 마감한다 — 중단 세션이 열려 있으면 먼저 409', async () => {
+    const workOrderId = await workOrderWithLots('S');
+    await prisma.work_order.update({ where: { work_order_id: workOrderId }, data: { status_code: 'SUSPENDED' } });
+    const session = await prisma.work_session.create({ data: {
+      work_order_id: workOrderId, session_no: 1, terminal_id: open.terminalId, started_at: STARTED_AT,
+      status_code: 'STOPPED', idempotency_key: `${PREFIX}-WS-S`,
+    } });
+    const body = { remainderDispositionCode: 'CARRY_OVER', reasonCode: 'MATERIAL_SHORTAGE' };
+
+    await close(open, workOrderId, body).expect(409);
+    await asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(session.work_session_id)}:end`), open)
+      .set('Idempotency-Key', randomUUID())
+      .send({ endedAt: new Date().toISOString() })
+      .expect(200);
+    const closed = await close(open, workOrderId, body).expect(200);
+
+    expect(closed.body).toMatchObject({ statusCode: 'CLOSED', closeDispositionCode: 'CARRY_OVER', closedWorkerNo: workerNo });
+  });
+
   it('If-Match 없는 POP 마감은 받지 않는다 — 온라인 전용', async () => {
     const workOrderId = await workOrderWithLots('B');
 
@@ -243,6 +262,7 @@ describe('POP 작업지시 마감 (e2e)', () => {
       `DELETE FROM trace.lot_lifecycle_history WHERE lot_id IN (SELECT lot_id FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%')`,
       `DELETE FROM production.production_result_lot_allocation WHERE production_result_id IN (SELECT production_result_id FROM production.production_result WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
+      `DELETE FROM production.work_session_event WHERE work_session_id IN (SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.work_session_worker WHERE work_session_id IN (SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders}))`,
       `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%'`,
