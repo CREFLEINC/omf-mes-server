@@ -44,7 +44,7 @@ export interface ConflictExtra {
   remainingQtyUomId?: number;
   /**
    * `ProductionConflictResponse.openSessions` — `OPEN_SESSION_EXISTS` 일 때 W/O 의 열린 세션들. 화면이
-   * 「어느 단말에서 끝내라」를 안내할 축이다(장부 P-105).
+   * 「어느 단말에서 끝내라」를 안내할 축이다(장부 P-108).
    */
   openSessions?: OpenSessionView[];
 }

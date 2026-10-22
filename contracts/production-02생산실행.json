@@ -2575,7 +2575,7 @@
         "OVER"
        ]
       },
-      "description": "마감 3분류 판정으로 거른다 — progress.completionJudgmentCode 와 같은 식(정정된 원본을 뺀 양품 합 vs 지시 수량)이다. 저장 칸이 없는 계산값이지만 서버가 걸러 쪽·총계가 맞다. ⚠ 대상을 묶어야 한다 — 끝나지 않은 상태(마감·취소 제외)만 골랐거나 계획 시작 기간(plannedStartFrom~To)이 92일 이하일 때만 받고, 아니면 400 INVALID. 마감 대상 목록(statusCode=IN_PROGRESS,SUSPENDED + 판정)은 기간 없이 된다. ⭐ statusCode 는 쉼표로 여러 값을 받는다(예: IN_PROGRESS,SUSPENDED) — 값 하나면 지금과 같은 일치, 비면 400. 장부 P-105",
+      "description": "마감 3분류 판정으로 거른다 — progress.completionJudgmentCode 와 같은 식(정정된 원본을 뺀 양품 합 vs 지시 수량)이다. 저장 칸이 없는 계산값이지만 서버가 걸러 쪽·총계가 맞다. ⚠ 대상을 묶어야 한다 — 끝나지 않은 상태(마감·취소 제외)만 골랐거나 계획 시작 기간(plannedStartFrom~To)이 92일 이하일 때만 받고, 아니면 400 INVALID. 마감 대상 목록(statusCode=IN_PROGRESS,SUSPENDED + 판정)은 기간 없이 된다. ⭐ statusCode 는 쉼표로 여러 값을 받는다(예: IN_PROGRESS,SUSPENDED) — 값 하나면 지금과 같은 일치, 비면 400. 장부 P-108",
       "x-code-key": "CD-COMPLETION-JUDGMENT"
      },
      {
@@ -3223,7 +3223,7 @@
      "production"
     ],
     "summary": "마감 · ERP 실적 송신",
-    "x-server-note": "⭐ 진행 중(IN_PROGRESS)뿐 아니라 중단(SUSPENDED) W/O 도 마감한다 — 중단한 채 미달 마감이 현장 흐름이다. 열린 세션 검사(409 OPEN_SESSION_EXISTS)가 먼저라 중단 세션은 단말 :end 또는 관리웹 강제 종료를 거쳐야 닫힌다. 그 밖의 상태는 400 STATE_LOCKED 「진행 중이거나 중단된 W/O 만 마감됩니다 — …」. 장부 P-105",
+    "x-server-note": "⭐ 진행 중(IN_PROGRESS)뿐 아니라 중단(SUSPENDED) W/O 도 마감한다 — 중단한 채 미달 마감이 현장 흐름이다. 열린 세션 검사(409 OPEN_SESSION_EXISTS)가 먼저라 중단 세션은 단말 :end 또는 관리웹 강제 종료를 거쳐야 닫힌다. 그 밖의 상태는 400 STATE_LOCKED 「진행 중이거나 중단된 W/O 만 마감됩니다 — …」. 장부 P-108",
     "description": "잔량 처분을 함께 정한다. 미달 슬롯은 이 시점에 자동 폐번된다. ERP 실제 전송만 트랜잭션 밖이다. 근거: W-02-05 §5 · R27·R82\n\n⭐ 저장 충돌 보호 — If-Match 는 필수다. 토큰은 GET /production/work-orders/{workOrderId} 의 ETag 를 그대로 싣는다. 마감은 관리웹 온라인 전제이고 되돌릴 수 없는 전이라(재오픈 금지 · R83) 형제 전이 :hold·:resume 처럼 선택으로 두지 않는다 — 그 둘은 POP 오프라인 대상이라 큐가 토큰을 싣지 못해 선택이다(공유계약 C-9). 근거: W-02-05 §6\n\n⭐ ERP 생산 실적 송신 — 이 마감이 대기열에 적재한다. 품목이 개발품이면 제외한다(판정 축은 품목이다). ⚠ 개발품 여부를 담을 컬럼이 아직 없어 서버는 그때까지 전건을 적재한다. 실제 전송과 재처리는 이 계약 밖이다.\n\n⭐ 본문 검증 — 서버가 스스로 낸 마감 3분류 판정과 본문을 대조한다(판정은 WorkOrderProgress.completionJudgmentCode 와 같은 식이다).\n  · 미달인데 remainderDispositionCode 가 없다 → 400\n  · 정상·초과인데 remainderDispositionCode 가 있다 → 400 (넘길 잔량도 없앨 잔량도 없다)\n  · 미달·초과인데 reasonCode 가 없다 → 400 (미달·초과 사유는 R80 이 요구한다)\n  · 정상은 두 칸을 다 비운다\n⚠ 「정상」의 폭(허용 오차)은 서버 정책이 정한다 — 규칙은 그대로고 미달의 경계만 움직인다(W-02-05 §5-1·§8-1)\n⛔ 같은 W/O 에 열린 작업 세션이 있으면 409 OPEN_SESSION_EXISTS 로 거절한다 — 화면은 그 문구를 띄운다.\n⭐ 잔량 처분의 결과 — 이월은 새 W/O 로 표현되고 그 W/O 가 parentWorkOrderId 로 원본을 가리킨다. 소멸은 아무 자원도 만들지 않으므로 본문 remarks 에 사유를 남긴다. ⚠ 이월이 잔량 W/O 를 «자동으로» 만드는지는 아직 정해지지 않았다 — 정해지기 전까지 이 오퍼레이션은 만들지 않는다.",
     "parameters": [
      {
@@ -3244,7 +3244,7 @@
        "type": "string",
        "maxLength": 50
       },
-      "description": "현장 단말(POP)이 단말 토큰으로 마감할 때 필수 — 그 단말 공장의 재직 작업자 사번이고, 마감 작업자(closedWorkerId)로 남는다. 관리웹은 보내지 않는다(계정이 남는다). ⭐ POP 마감도 If-Match 가 필수라 온라인에서만 된다. 단말은 그 W/O 공정 매핑의 작업지시 마감 권한(canCloseWorkOrder)이 있어야 한다 — 없으면 401 PERMISSION_DENIED. 장부 P-105"
+      "description": "현장 단말(POP)이 단말 토큰으로 마감할 때 필수 — 그 단말 공장의 재직 작업자 사번이고, 마감 작업자(closedWorkerId)로 남는다. 관리웹은 보내지 않는다(계정이 남는다). ⭐ POP 마감도 If-Match 가 필수라 온라인에서만 된다. 단말은 그 W/O 공정 매핑의 작업지시 마감 권한(canCloseWorkOrder)이 있어야 한다 — 없으면 401 PERMISSION_DENIED. 장부 P-108"
      },
      {
       "$ref": "#/components/parameters/IdempotencyKey"
@@ -4206,7 +4206,7 @@
      "production"
     ],
     "summary": "작업 세션 강제 종료(관리웹)",
-    "description": "관리웹이 열린 작업 세션(진행·중단)을 닫는다 — 다른 단말에 열린 세션이 W/O 마감(:close 409 OPEN_SESSION_EXISTS)을 막을 때 쓴다. 단말 :end 와 다른 점: 어느 단말의 세션이든 닫는다 · 종료 시각은 서버 수신 시각이다(본문에 시각이 없다) · 사유가 필수다 · 세션 사건 FORCE_END 에 계정(performedBy)·시각(occurredAt)·사유(remarks)가 남는다. 남은 참여자를 종료 시각으로 닫고 세션 종료 알림을 내는 것은 :end 와 같다. 세션만 닫는다 — 중단(SUSPENDED)된 W/O 의 상태는 바뀌지 않는다. 온라인 전용이라 If-Match 를 받지 않는다(세션을 잠그고 상태로 판정). 이미 종료된 세션은 400 STATE_LOCKED. 그 뒤 그 단말의 :end·중단·재개는 400 STATE_LOCKED 「이미 종료된 작업 세션입니다 …」를 받고, 그 세션 id 를 실은 실적·투입은 그대로 받는다(오프라인 실적 유실 방지). 권한 W-02-05. 장부 P-105",
+    "description": "관리웹이 열린 작업 세션(진행·중단)을 닫는다 — 다른 단말에 열린 세션이 W/O 마감(:close 409 OPEN_SESSION_EXISTS)을 막을 때 쓴다. 단말 :end 와 다른 점: 어느 단말의 세션이든 닫는다 · 종료 시각은 서버 수신 시각이다(본문에 시각이 없다) · 사유가 필수다 · 세션 사건 FORCE_END 에 계정(performedBy)·시각(occurredAt)·사유(remarks)가 남는다. 남은 참여자를 종료 시각으로 닫고 세션 종료 알림을 내는 것은 :end 와 같다. 세션만 닫는다 — 중단(SUSPENDED)된 W/O 의 상태는 바뀌지 않는다. 온라인 전용이라 If-Match 를 받지 않는다(세션을 잠그고 상태로 판정). 이미 종료된 세션은 400 STATE_LOCKED. 그 뒤 그 단말의 :end·중단·재개는 400 STATE_LOCKED 「이미 종료된 작업 세션입니다 …」를 받고, 그 세션 id 를 실은 실적·투입은 그대로 받는다(오프라인 실적 유실 방지). 권한 W-02-05. 장부 P-108",
     "parameters": [
      {
       "name": "workSessionId",
@@ -7242,14 +7242,14 @@
        "CARRY_OVER",
        "WRITE_OFF"
       ],
-      "description": "마감에서 고른 잔량 처분 — 미달 마감일 때만 있다. ⛔ 이월이어도 잔량 W/O 는 만들어지지 않는다(기록만). 장부 P-105",
+      "description": "마감에서 고른 잔량 처분 — 미달 마감일 때만 있다. ⛔ 이월이어도 잔량 W/O 는 만들어지지 않는다(기록만). 장부 P-108",
       "example": "WRITE_OFF",
       "x-code-key": "CD-REMAINDER-DISPOSITION"
      },
      "closedWorkerId": {
       "type": "integer",
       "format": "int64",
-      "description": "POP 에서 마감한 작업자(X-Worker-No) — 관리웹 마감이면 없다. 장부 P-105",
+      "description": "POP 에서 마감한 작업자(X-Worker-No) — 관리웹 마감이면 없다. 장부 P-108",
       "example": 1001
      },
      "closedWorkerNo": {
@@ -7262,7 +7262,7 @@
      },
      "voidedLotCount": {
       "type": "integer",
-      "description": "마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 에만 있다. 마감은 실적이 없는 대기(WAITING) LOT 만 폐번한다. ⭐ 진행 중(ACTIVE, 실적 일부) LOT 이 있어도 마감되고, 그 LOT 은 생명주기 ACTIVE·completedAt 빈 채로 남는다 — 마감은 LOT 을 완료하지 않는다. 장부 P-105",
+      "description": "마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 에만 있다. 마감은 실적이 없는 대기(WAITING) LOT 만 폐번한다. ⭐ 진행 중(ACTIVE, 실적 일부) LOT 이 있어도 마감되고, 그 LOT 은 생명주기 ACTIVE·completedAt 빈 채로 남는다 — 마감은 LOT 을 완료하지 않는다. 장부 P-108",
       "example": 1
      },
      "closeJudgmentCode": {
@@ -7272,14 +7272,14 @@
        "NORMAL",
        "OVER"
       ],
-      "description": "마감 시점 판정 — 마감할 때 서버가 낸 미달·정상·초과. ⭐ progress.completionJudgmentCode 는 «지금» 판정이라 마감 뒤 지연 실적으로 바뀔 수 있다 — 마감 결과로는 이 칸을 본다. 기능 이전에 마감된 W/O 는 ERP 실적 메시지의 판정으로 채웠고 없으면 없다. 장부 P-105",
+      "description": "마감 시점 판정 — 마감할 때 서버가 낸 미달·정상·초과. ⭐ progress.completionJudgmentCode 는 «지금» 판정이라 마감 뒤 지연 실적으로 바뀔 수 있다 — 마감 결과로는 이 칸을 본다. 기능 이전에 마감된 W/O 는 ERP 실적 메시지의 판정으로 채웠고 없으면 없다. 장부 P-108",
       "example": "UNDER",
       "x-code-key": "CD-COMPLETION-JUDGMENT"
      },
      "closedByUserId": {
       "type": "integer",
       "format": "int64",
-      "description": "관리웹에서 마감한 계정 — POP 마감(closedWorker*)이면 없다. 장부 P-105",
+      "description": "관리웹에서 마감한 계정 — POP 마감(closedWorker*)이면 없다. 장부 P-108",
       "example": 1001
      },
      "closedByUserName": {
@@ -7824,13 +7824,13 @@
      },
      "terminalCode": {
       "type": "string",
-      "description": "세션을 연 단말의 코드 — 조회(목록·단건)에만 있다. 단말 이름 칸은 없다. 장부 P-105",
+      "description": "세션을 연 단말의 코드 — 조회(목록·단건)에만 있다. 단말 이름 칸은 없다. 장부 P-108",
       "example": "POP-01"
      },
      "workerId": {
       "type": "integer",
       "format": "int64",
-      "description": "그 세션의 주작업자 — 조회에만 있고, 역할이 없던 옛 세션은 없다. 장부 P-105",
+      "description": "그 세션의 주작업자 — 조회에만 있고, 역할이 없던 옛 세션은 없다. 장부 P-108",
       "example": 1001
      },
      "workerNo": {
@@ -7940,7 +7940,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 500,
-      "description": "강제 종료 사유 — 자유 텍스트, 필수. 세션 사건 FORCE_END 의 remarks 로 남는다. 장부 P-105",
+      "description": "강제 종료 사유 — 자유 텍스트, 필수. 세션 사건 FORCE_END 의 remarks 로 남는다. 장부 P-108",
       "example": "단말 고장으로 종료하지 못한 세션"
      }
     },
@@ -8012,7 +8012,7 @@
      },
      "remarks": {
       "type": "string",
-      "description": "강제 종료(FORCE_END) 사유 — 그 사건에만 있다. 장부 P-105",
+      "description": "강제 종료(FORCE_END) 사유 — 그 사건에만 있다. 장부 P-108",
       "example": "단말 고장으로 종료하지 못한 세션"
      },
      "terminalId": {
@@ -8148,7 +8148,7 @@
    },
    "OpenWorkSession": {
     "type": "object",
-    "description": "마감을 막은 열린 작업 세션 한 건. 작업자는 그 세션의 주작업자이고 역할이 없던 옛 세션은 비운다. 장부 P-105",
+    "description": "마감을 막은 열린 작업 세션 한 건. 작업자는 그 세션의 주작업자이고 역할이 없던 옛 세션은 비운다. 장부 P-108",
     "properties": {
      "workSessionId": {
       "type": "integer",
@@ -8227,7 +8227,7 @@
      },
      "openSessions": {
       "type": "array",
-      "description": "OPEN_SESSION_EXISTS 일 때 그 W/O 의 열린 작업 세션들(중단 포함, 시작 순) — 화면이 「어느 단말에서 끝낼지」를 안내한다. 그 단말에서 작업을 종료하거나 관리웹에서 강제 종료한 뒤 다시 마감한다. 장부 P-105",
+      "description": "OPEN_SESSION_EXISTS 일 때 그 W/O 의 열린 작업 세션들(중단 포함, 시작 순) — 화면이 「어느 단말에서 끝낼지」를 안내한다. 그 단말에서 작업을 종료하거나 관리웹에서 강제 종료한 뒤 다시 마감한다. 장부 P-108",
       "items": {
        "$ref": "#/components/schemas/OpenWorkSession"
       }
