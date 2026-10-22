@@ -12,6 +12,7 @@ import {
   WorkOrderListQuery,
   achievementOrderedIds,
   achievementSortDirection,
+  assertJudgmentScope,
   buildOrderBy,
   buildWorkOrderWhere,
 } from './work-order-list-where';
@@ -56,6 +57,7 @@ export class WorkOrderQueryService {
   async list(query: WorkOrderListQuery, terminal?: TerminalContext): Promise<PagedResponse<WorkOrderListItem> & { summary?: WorkOrderListSummary }> {
     const page = pageRequest(query);
     const achievementDirection = achievementSortDirection(query);
+    assertJudgmentScope(query);
     const orderBy = achievementDirection === null ? buildOrderBy(query.sort) : undefined;
     const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
       ? (await this.prisma.terminal_process.findMany({
@@ -163,6 +165,7 @@ export class WorkOrderQueryService {
     judgment: WorkOrderListQuery['completionJudgmentCode'],
   ): Promise<Prisma.work_orderWhereInput> {
     if (judgment === undefined) return base;
+    const tolerance = new Prisma.Decimal(CLOSE_TOLERANCE);
     const candidates = (await this.prisma.work_order.findMany({ where: base, select: { work_order_id: true } }))
       .map((row) => row.work_order_id);
     if (candidates.length === 0) return { AND: [base, { work_order_id: { in: [] } }] };
@@ -177,8 +180,8 @@ export class WorkOrderQueryService {
                               WHERE c.corrects_production_result_id = pr.production_result_id)
         ) s
        WHERE wo.work_order_id = ANY(${candidates})
-         AND CASE WHEN s.good < wo.order_qty - ${CLOSE_TOLERANCE} THEN 'UNDER'
-                  WHEN s.good > wo.order_qty + ${CLOSE_TOLERANCE} THEN 'OVER'
+         AND CASE WHEN s.good < wo.order_qty - ${tolerance} THEN 'UNDER'
+                  WHEN s.good > wo.order_qty + ${tolerance} THEN 'OVER'
                   ELSE 'NORMAL' END = ${judgment}`;
     return { AND: [base, { work_order_id: { in: rows.map((row) => row.work_order_id) } }] };
   }

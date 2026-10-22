@@ -1,7 +1,7 @@
 import { ContractException } from '../../common/errors';
 import { Prisma } from '@prisma/client';
 import { RELEASABLE_ELIGIBLE_WHERE, achievementOrderedIds, achievementSortDirection,
-  buildOrderBy, buildWorkOrderWhere } from './work-order-list-where';
+  assertJudgmentScope, buildOrderBy, buildWorkOrderWhere } from './work-order-list-where';
 
 describe('work-order-list-where', () => {
   describe('buildWorkOrderWhere', () => {
@@ -17,6 +17,22 @@ describe('work-order-list-where', () => {
     it('where — statusCode 는 쉼표로 여러 값을 받고, 값 하나면 그대로 일치다', () => {
       expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS, COMPLETED' })).toEqual({ AND: [{ status_code: { in: ['IN_PROGRESS', 'COMPLETED'] } }] });
       expect(buildWorkOrderWhere({ statusCode: 'IN_PROGRESS' })).toEqual({ AND: [{ status_code: 'IN_PROGRESS' }] });
+    });
+
+    it('where — statusCode 가 비면(쉼표뿐 포함) 400 이다', () => {
+      expect(() => buildWorkOrderWhere({ statusCode: '' })).toThrow(ContractException);
+      expect(() => buildWorkOrderWhere({ statusCode: ' , ' })).toThrow(ContractException);
+    });
+
+    it('판정 필터 — 끝나지 않은 상태만 골랐거나 계획 시작 기간이 92일 이하면 받고, 아니면 400', () => {
+      expect(() => assertJudgmentScope({ completionJudgmentCode: 'UNDER', statusCode: 'IN_PROGRESS,SUSPENDED' })).not.toThrow();
+      expect(() => assertJudgmentScope({
+        completionJudgmentCode: 'UNDER', statusCode: 'CLOSED',
+        plannedStartFrom: '2026-10-01T00:00:00Z', plannedStartTo: '2026-11-01T00:00:00Z',
+      })).not.toThrow();
+      expect(() => assertJudgmentScope({ completionJudgmentCode: 'UNDER' })).toThrow(ContractException);
+      expect(() => assertJudgmentScope({ completionJudgmentCode: 'UNDER', statusCode: 'IN_PROGRESS,CLOSED' })).toThrow(ContractException);
+      expect(() => assertJudgmentScope({ statusCode: 'CLOSED' })).not.toThrow();
     });
 
     it('where — released=false 는 released_at IS NULL 이고 미지정과 다르다', () => {
