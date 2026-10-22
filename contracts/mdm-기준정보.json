@@ -21134,7 +21134,7 @@
       "x-source-column": "can_close_work_order",
       "type": "boolean",
       "example": true,
-      "description": "작업지시 마감(POST /production/work-orders/{workOrderId}:close)을 이 단말에서 할 수 있나. ⭐ 다른 권한과 달리 기본은 «열림»이다(사용자 결정 2026-10-22). 장부 P-104"
+      "description": "작업지시 마감(POST /production/work-orders/{workOrderId}:close)을 이 단말에서 할 수 있나. ⭐ 다른 권한과 달리 기본은 «열림»이다(사용자 결정 2026-10-22). 장부 P-105"
      },
      "canReturnMaterial": {
       "x-source-column": "can_return_material",
@@ -21209,7 +21209,7 @@
       "x-source-column": "can_close_work_order",
       "type": "boolean",
       "example": true,
-      "description": "작업지시 마감 권한. ⭐ 생략하면 true(열림)다 — 다른 권한은 생략하면 닫힘이다. 끄려면 false 를 보낸다. 이 권한만 켠 줄은 「기능을 하나 이상 켜야 합니다」 검사를 통과하지 못한다. 장부 P-104"
+      "description": "작업지시 마감 권한. ⭐ 생략하면 true(열림)다 — 다른 권한은 생략하면 닫힘이다. 끄려면 false 를 보낸다. 이 권한만 켠 줄은 「기능을 하나 이상 켜야 합니다」 검사를 통과하지 못한다. 장부 P-105"
      },
      "canReturnMaterial": {
       "x-source-column": "can_return_material",
