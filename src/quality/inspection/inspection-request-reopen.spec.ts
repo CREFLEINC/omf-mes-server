@@ -1,5 +1,5 @@
 import { Tx } from '../../core/lot';
-import { reopenInspectionRequestWithin, reopenIqcRequestForReworkWithin } from './inspection-request-reopen';
+import { reopenInspectionRequestWithin, reopenIqcRequestForReworkWithin, startInspectionRequestWithin } from './inspection-request-reopen';
 
 /** 끝난 의뢰를 다시 여는 두 갈래(장부 P-43) — 재검사 회차 추가 · 처분 재작업. */
 const txWith = (request: { inspection_request_id: bigint; inspection_type_code: string; lot_id: bigint | null } | null) => {
@@ -20,6 +20,19 @@ describe('reopenInspectionRequestWithin', () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: { inspection_request_id: 7n, status_code: 'COMPLETED' },
       data: { status_code: 'IN_PROGRESS', updated_by: 3, version_no: { increment: 1 } },
+    });
+  });
+});
+
+describe('startInspectionRequestWithin', () => {
+  it('⭐ 대기(REQUESTED) 의뢰만 진행(IN_PROGRESS)으로 옮긴다 — 조건부 UPDATE · 판 번호를 올린다(#164)', async () => {
+    const { tx, updateMany } = txWith(null);
+
+    await startInspectionRequestWithin(tx, 7n, undefined);
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { inspection_request_id: 7n, status_code: 'REQUESTED' },
+      data: { status_code: 'IN_PROGRESS', updated_by: null, version_no: { increment: 1 } },
     });
   });
 });
