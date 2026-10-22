@@ -34,6 +34,10 @@ describe('ERP 보내기 — 구매입고 적재 (e2e)', () => {
   afterAll(async () => {
     // 적재한 메시지는 지운다 — 남기면 이 DB 에서 보내기를 켤 때 실제로 나간다. 입고·원장은 접두어로 남는다.
     await prisma.integration_message.deleteMany({ where: { message_key: { in: received.map((no) => `IF-GR-SEND:${no}`) } } });
+    // 특채는 지운다 — 남기면 특채 목록 검사(quality-concession)의 «쓸 수 있는 특채»에 섞인다.
+    await prisma.concession.deleteMany({ where: { concession_no: { startsWith: PREFIX } } });
+    await prisma.approval_request.deleteMany({ where: { approval_request_no: { startsWith: PREFIX } } });
+    await prisma.nonconformance.deleteMany({ where: { nonconformance_no: { startsWith: PREFIX } } });
     await app.close();
   });
 
