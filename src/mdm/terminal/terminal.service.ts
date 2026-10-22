@@ -53,6 +53,7 @@ interface TerminalProcessView {
   canPrintLabel: boolean;
   canCancelInput: boolean;
   canReturnMaterial: boolean;
+  canCloseWorkOrder: boolean;
 }
 
 export interface TerminalProcessInput {
@@ -65,6 +66,7 @@ export interface TerminalProcessInput {
   canPrintLabel?: boolean;
   canCancelInput?: boolean;
   canReturnMaterial?: boolean;
+  canCloseWorkOrder?: boolean;
 }
 
 export interface TerminalCreate {
@@ -337,6 +339,8 @@ export class TerminalService {
           can_print_label: item.canPrintLabel ?? false,
           can_cancel_input: item.canCancelInput ?? false,
           can_return_material: item.canReturnMaterial ?? false,
+          // ⭐ 이 권한만 기본 «열림»이다 — 사용자 결정(장부 P-108). 끄려면 false 를 보낸다.
+          can_close_work_order: item.canCloseWorkOrder ?? true,
           ...(appUserId === undefined ? {} : { created_by: appUserId }),
         })),
       });
@@ -382,6 +386,7 @@ export class TerminalService {
       canPrintLabel: row.can_print_label,
       canCancelInput: row.can_cancel_input,
       canReturnMaterial: row.can_return_material,
+      canCloseWorkOrder: row.can_close_work_order,
     }));
   }
 
@@ -405,6 +410,7 @@ export class TerminalService {
   }
 }
 
+/** ⛔ `canCloseWorkOrder` 는 넣지 않는다 — 기본 열림이라 넣으면 아무것도 안 켠 빈 줄이 통과한다. */
 const CAPABILITY_FLAGS = [
   'canStartWork',
   'canCompleteWork',

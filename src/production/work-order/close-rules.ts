@@ -21,22 +21,30 @@ const REASON = 'reasonCode';
  * 있다)는 ⌜정상은 두 칸을 다 비운다⌝ 의 뒷 절반 — 조용히 버리면 화면이 사유를 적었다고
  * 믿는다(R-10).
  */
-export function assertCloseBody(judgment: CompletionJudgment, body: WorkOrderClose): void {
+export function assertCloseBody(
+  judgment: CompletionJudgment,
+  body: WorkOrderClose,
+  quantities?: { goodQty: Prisma.Decimal; orderQty: Prisma.Decimal },
+): void {
   const hasDisposition = body.remainderDispositionCode !== undefined;
   const hasReason = body.reasonCode !== undefined;
+  // 판정의 근거를 문구에 싣는다 — 화면이 판정과 다른 값을 보고 있었다면 무엇이 어긋났는지 보인다.
+  const basis = quantities === undefined ? '' : `(양품 ${quantities.goodQty.toString()} / 지시 ${quantities.orderQty.toString()})`;
 
   if (judgment === 'UNDER' && !hasDisposition) {
-    throw one(field(DISPOSITION, ERROR_CODE.REMAINDER_DISPOSITION_REQUIRED, '미달 마감은 잔량 처분을 함께 정해야 합니다.'));
+    throw one(field(DISPOSITION, ERROR_CODE.REMAINDER_DISPOSITION_REQUIRED,
+      `미달 마감입니다${basis}. 잔량 처분(이월 또는 소멸)을 골라 다시 마감하세요.`));
   }
   if (judgment !== 'UNDER' && hasDisposition) {
     // ⌜넘길 잔량도 없앨 잔량도 없다⌝ — 계약이 정상·초과용 세 번째 값을 두지 않은 이유다.
-    throw one(field(DISPOSITION, ERROR_CODE.REMAINDER_DISPOSITION_NOT_ALLOWED, '정상·초과 마감에는 잔량 처분을 담지 않습니다.'));
+    throw one(field(DISPOSITION, ERROR_CODE.REMAINDER_DISPOSITION_NOT_ALLOWED,
+      `정상·초과 마감입니다${basis}. 잔량 처분을 비우고 다시 마감하세요.`));
   }
   if (judgment !== 'NORMAL' && !hasReason) {
-    throw one(field(REASON, ERROR_CODE.REQUIRED, '미달·초과 마감은 사유가 필요합니다.'));
+    throw one(field(REASON, ERROR_CODE.REQUIRED, `미달·초과 마감은 사유가 필요합니다${basis}. 미달·초과 사유를 골라 다시 마감하세요.`));
   }
   if (judgment === 'NORMAL' && hasReason) {
-    throw one(field(REASON, ERROR_CODE.INVALID, '정상 마감에는 사유를 담지 않습니다.'));
+    throw one(field(REASON, ERROR_CODE.INVALID, `정상 마감에는 사유를 넣지 않습니다${basis}. 사유를 비우고 다시 마감하세요.`));
   }
 }
 

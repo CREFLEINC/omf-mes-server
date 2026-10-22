@@ -19,6 +19,8 @@ export const DISPLAY_JOIN = {
   item: { select: { item_code: true } },
   // 설비 없는 단말이 W/O 의 계획 설비로 작업 전 점검을 할 때 화면이 그 설비를 보인다.
   equipment: { select: { equipment_code: true, equipment_name: true } },
+  // POP 마감의 주체 — 관리웹 마감은 비어 있다.
+  closed_worker: { select: { worker_no: true, worker_name: true } },
 } as const;
 
 export type WorkOrderRow = Prisma.work_orderGetPayload<{ include: typeof DISPLAY_JOIN }>;
@@ -26,7 +28,15 @@ export type WorkOrderView = ReturnType<typeof workOrderView>;
 
 export function workOrderView(
   row: WorkOrderRow,
-  extras: { progress?: WorkOrderProgressView; preIssuedLots?: PreIssuedLotSummaryView; erpMessageQueued: boolean },
+  extras: {
+    progress?: WorkOrderProgressView;
+    preIssuedLots?: PreIssuedLotSummaryView;
+    erpMessageQueued: boolean;
+    /** 마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 만 센다. */
+    voidedLotCount?: number;
+    /** 관리웹 마감 계정 — POP 마감이면 없다. */
+    closedByUser?: { id: bigint; name?: string };
+  },
 ) {
   return omitEmpty({
     workOrderId: Number(row.work_order_id),
@@ -58,6 +68,14 @@ export function workOrderView(
     completedAt: at(row.completed_at),
     completionVarianceReasonCode: row.completion_variance_reason_code ?? undefined,
     closedAt: at(row.closed_at),
+    closeDispositionCode: row.close_disposition_code ?? undefined,
+    closeJudgmentCode: row.close_judgment_code ?? undefined,
+    closedByUserId: id(extras.closedByUser?.id ?? null),
+    closedByUserName: extras.closedByUser?.name,
+    closedWorkerId: id(row.closed_worker_id),
+    closedWorkerNo: row.closed_worker?.worker_no,
+    closedWorkerName: row.closed_worker?.worker_name,
+    voidedLotCount: extras.voidedLotCount,
     // 마감 전에는 키가 «없다» — 계약 ⌜마감 전에는 비어 있다⌝. 널·false 를 내리지 않는다.
     erpMessageQueued: extras.erpMessageQueued ? true : undefined,
     remarks: row.remarks ?? undefined,
