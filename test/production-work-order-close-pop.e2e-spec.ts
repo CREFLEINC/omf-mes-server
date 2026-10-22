@@ -62,7 +62,9 @@ describe('POP 작업지시 마감 (e2e)', () => {
     expect(closed.body).toMatchObject({
       statusCode: 'CLOSED', closeDispositionCode: 'WRITE_OFF', completionVarianceReasonCode: 'MATERIAL_SHORTAGE',
       closedWorkerId: Number(ids.worker), closedWorkerNo: workerNo, closedWorkerName: WORKER_NAME, voidedLotCount: 1,
+      closeJudgmentCode: 'UNDER',
     });
+    expect(closed.body).not.toHaveProperty('closedByUserId');
     const lots = await prisma.lot.findMany({ where: { lot_no: { startsWith: `${PREFIX}-A-` } }, orderBy: { lot_no: 'asc' } });
     expect(lots.map((lot) => [lot.lot_no, lot.lifecycle_status_code, lot.completed_at])).toEqual([
       [`${PREFIX}-A-1`, 'ACTIVE', null],
@@ -89,6 +91,25 @@ describe('POP 작업지시 마감 (e2e)', () => {
     const closed = await close(open, workOrderId, body).expect(200);
 
     expect(closed.body).toMatchObject({ statusCode: 'CLOSED', closeDispositionCode: 'CARRY_OVER', closedWorkerNo: workerNo });
+  });
+
+  it('관리웹 마감은 계정이 마감자이고, 마감 시점 판정은 지연 실적이 와도 그대로다', async () => {
+    const workOrderId = await workOrderWithLots('W');
+
+    const closed = await request(app.getHttpServer()).post(`${WORK_ORDERS}/${String(workOrderId)}:close`)
+      .set('Cookie', cookie).set('Idempotency-Key', randomUUID()).set('If-Match', `"${String(versions.get(workOrderId))}"`)
+      .send({ remainderDispositionCode: 'WRITE_OFF', reasonCode: 'MATERIAL_SHORTAGE' })
+      .expect(200);
+    expect(closed.body).toMatchObject({ closeJudgmentCode: 'UNDER', closedByUserId: Number(ids.user), closedByUserName: PREFIX });
+    expect(closed.body).not.toHaveProperty('closedWorkerId');
+
+    // 마감 뒤 지연 실적 — 지금 판정은 정상이 되지만 마감 결과는 미달로 남는다.
+    await prisma.production_result.create({ data: {
+      production_result_no: `${PREFIX}-PR-W2`, work_order_id: workOrderId, result_sequence: 2, good_qty: 6, uom_id: ids.uom,
+      result_source_code: 'MANUAL', occurred_at: STARTED_AT, worker_id: ids.worker, status_code: 'CONFIRMED', idempotency_key: `${PREFIX}-PR-W2`,
+    } });
+    const detail = await request(app.getHttpServer()).get(`${WORK_ORDERS}/${String(workOrderId)}`).set('Cookie', cookie).expect(200);
+    expect(detail.body).toMatchObject({ closeJudgmentCode: 'UNDER', progress: { completionJudgmentCode: 'NORMAL' } });
   });
 
   it('If-Match 없는 POP 마감은 받지 않는다 — 온라인 전용', async () => {

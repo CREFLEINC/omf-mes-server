@@ -34,6 +34,8 @@ export function workOrderView(
     erpMessageQueued: boolean;
     /** 마감으로 폐번된 선발행 LOT 수 — 상세의 마감된 W/O 만 센다. */
     voidedLotCount?: number;
+    /** 관리웹 마감 계정 — POP 마감이면 없다. */
+    closedByUser?: { id: bigint; name?: string };
   },
 ) {
   return omitEmpty({
@@ -67,6 +69,9 @@ export function workOrderView(
     completionVarianceReasonCode: row.completion_variance_reason_code ?? undefined,
     closedAt: at(row.closed_at),
     closeDispositionCode: row.close_disposition_code ?? undefined,
+    closeJudgmentCode: row.close_judgment_code ?? undefined,
+    closedByUserId: id(extras.closedByUser?.id ?? null),
+    closedByUserName: extras.closedByUser?.name,
     closedWorkerId: id(row.closed_worker_id),
     closedWorkerNo: row.closed_worker?.worker_no,
     closedWorkerName: row.closed_worker?.worker_name,

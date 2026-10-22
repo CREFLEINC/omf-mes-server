@@ -3221,6 +3221,7 @@ model work_order {
   cancellation_reason_code                                                          String?                          @db.VarChar(50)
   po_mismatch                                                                       Boolean                          @default(false)
   closed_worker_id                                                                  BigInt?
+  close_judgment_code                                                               String?                          @db.VarChar(10)
   notice                                                                            notice[]
   material_issue_request                                                            material_issue_request[]
   shopfloor_receipt                                                                 shopfloor_receipt[]
