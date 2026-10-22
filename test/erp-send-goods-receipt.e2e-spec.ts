@@ -7,10 +7,12 @@ import { Test } from '@nestjs/testing';
 import * as mssql from 'mssql';
 
 import { AppModule } from '../src/app.module';
-import { RowDraft } from '../src/integration/erp/outbound-rows';
+import { OutboxService } from '../src/core/outbox';
+import { OutboundRows, RowDraft } from '../src/integration/erp/outbound-rows';
 import { GR_INFOR } from '../src/integration/erp/rcv-tables';
 import { RelayClient } from '../src/integration/erp/relay-client';
 import { goodsReceiptBuilder } from '../src/integration/erp/send/goods-receipt.send';
+import { enqueueReceiptCancel } from '../src/logistics/goods-receipt/erp-receipt';
 import { GoodsReceiptService } from '../src/logistics/goods-receipt/goods-receipt.service';
 import { InboundExcessService } from '../src/logistics/inbound-receipt/inbound-excess.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -42,8 +44,17 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
 
   afterAll(async () => {
     // 적재한 메시지는 지운다 — 남기면 이 DB 에서 보내기를 켤 때 실제로 나간다. 입고·원장은 접두어로 남는다.
+    await prisma.erp_outbound_row.deleteMany({ where: { document_no: { in: received } } });
     await prisma.integration_message.deleteMany({
-      where: { message_key: { in: [...received.map((no) => `IF-GR-SEND:${no}`), ...excessIds.map((id) => `IF-GR-SEND:EXCESS:${id}`)] } },
+      where: {
+        message_key: {
+          in: [
+            ...received.map((no) => `IF-GR-SEND:${no}`),
+            ...received.map((no) => `IF-GR-SEND:CANCEL:${no}`),
+            ...excessIds.map((id) => `IF-GR-SEND:EXCESS:${id}`),
+          ],
+        },
+      },
     });
     // 특채는 지운다 — 남기면 특채 목록 검사(quality-concession)의 «쓸 수 있는 특채»에 섞인다.
     await prisma.concession.deleteMany({ where: { concession_no: { startsWith: PREFIX } } });
@@ -427,6 +438,14 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
       payload: {},
     });
   }
+  const buildCancel = (goodsReceiptId: number): Promise<RowDraft[]> =>
+    goodsReceiptBuilder(prisma).build({
+      id: 1n,
+      interfaceCode: 'IF-GR-SEND',
+      targetTypeCode: 'GOODS_RECEIPT_CANCEL',
+      targetId: BigInt(goodsReceiptId),
+      payload: {},
+    });
   const excessMessage = (excessId: bigint) =>
     prisma.integration_message.findUnique({ where: { message_key: `IF-GR-SEND:EXCESS:${excessId}` } });
 
@@ -472,6 +491,70 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
 
     await excesses.unlink(excessId, userId);
     expect((await prisma.inbound_receipt_excess.findUniqueOrThrow({ where: { inbound_receipt_excess_id: excessId } })).purchase_order_line_id).toBeNull();
+  });
+
+  /** 그 메시지를 바꾸고 키를 적고(넣었다면) 넣었다고 표시한다 — 실행기가 하는 일을 손으로. */
+  async function send(messageKey: string, drafts: RowDraft[], inserted = true) {
+    const message = await prisma.integration_message.findUniqueOrThrow({ where: { message_key: messageKey } });
+    const rows = new OutboundRows(prisma);
+    const reserved = await rows.reserve(message.integration_message_id, drafts, () => 0);
+    if (inserted) await rows.markInserted(reserved.map((row, index) => ({ id: row.id, relayInfId: BigInt(index + 1) })), new Date());
+    return { message, reserved };
+  }
+
+  async function cancelReceipt(goodsReceiptId: number): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      await tx.goods_receipt.update({ where: { goods_receipt_id: BigInt(goodsReceiptId) }, data: { status_code: 'CANCELLED' } });
+      await enqueueReceiptCancel(tx, app.get(OutboxService), BigInt(goodsReceiptId));
+    });
+  }
+
+  it('보낸 입고를 취소하면 그 입고번호로 넣은 행마다 취소 행(C)을 보낸다 — IF_SEQ 는 처음 그대로', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
+    const detail = await receive('warehouse', [{ ...lot, qty: 100 }]);
+    const { goodsReceiptId, goodsReceiptNo } = detail.goodsReceipt;
+    await send(`IF-GR-SEND:${goodsReceiptNo}`, await build(goodsReceiptId));
+    await send(`IF-GR-SEND:EXCESS:${lot.excessIds[0]}`, await buildExcess(lot.excessIds[0]));
+
+    await cancelReceipt(goodsReceiptId);
+
+    const cancelKey = `IF-GR-SEND:CANCEL:${goodsReceiptNo}`;
+    expect(await prisma.integration_message.findUnique({ where: { message_key: cancelKey } })).toMatchObject({
+      target_type_code: 'GOODS_RECEIPT_CANCEL',
+      target_id: BigInt(goodsReceiptId),
+    });
+    const drafts = await buildCancel(goodsReceiptId);
+    const { reserved } = await send(cancelKey, drafts);
+    expect(reserved.map((row) => row.relayKey)).toEqual([
+      `${goodsReceiptNo}|PL11|${PREFIX}-IT|${PREFIX}-PO|1|1|C`,
+      `${goodsReceiptNo}|PL11|${PREFIX}-IT|${PREFIX}-PO|2|2|C`,
+    ]);
+    expect(reserved[0].values).toMatchObject({ GR_QTY: '80', CREATE_TYPE: 'C', ERP_APPLY_FLAG: 'N' });
+    // 다 취소했으니 다시 바꿔도 보낼 것이 없다.
+    expect(await buildCancel(goodsReceiptId)).toEqual([]);
+  });
+
+  it('넣는 중(키만 적은) 행이 있으면 취소는 다음에 다시 한다 — 그 행이 C 보다 늦게 들어갈 수 있다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 10);
+    const detail = await receive('warehouse', [{ ...lot, qty: 10 }]);
+    await send(`IF-GR-SEND:${detail.goodsReceipt.goodsReceiptNo}`, await build(detail.goodsReceipt.goodsReceiptId), false);
+    await cancelReceipt(detail.goodsReceipt.goodsReceiptId);
+
+    await expect(buildCancel(detail.goodsReceipt.goodsReceiptId)).rejects.toThrow(
+      `입고 ${detail.goodsReceipt.goodsReceiptNo} 의 구매입고를 넣는 중이다 — 넣은 뒤 취소를 다시 한다`,
+    );
+  });
+
+  it('취소 요청 중인 입고는 그대로 보낸다 — 결재가 반려되면 입고가 남는다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 12, [{ qty: 2, orderLine: ids.erpOrderLine2 }]);
+    const detail = await receive('warehouse', [{ ...lot, qty: 12 }]);
+    await prisma.goods_receipt.update({
+      where: { goods_receipt_id: BigInt(detail.goodsReceipt.goodsReceiptId) },
+      data: { status_code: 'CANCEL_REQUESTED' },
+    });
+
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '10']]);
+    expect(summary(await buildExcess(lot.excessIds[0]))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '2']]);
   });
 
   describeRelay('중계 DB', () => {

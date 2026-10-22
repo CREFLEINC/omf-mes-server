@@ -221,7 +221,9 @@ export class ErpSendRunner implements OnApplicationBootstrap, OnApplicationShutd
   /** 건마다 중계 표의 마지막 IF_SEQ — 예약이 MES 기록과 견준다. */
   private async relayLast(drafts: RowDraft[]): Promise<RelayLastIfSeq> {
     const last = new Map<string, number>();
-    for (const { table, values } of drafts) {
+    for (const { table, values, cancels } of drafts) {
+      // 취소 행은 처음 행의 IF_SEQ 를 쓴다.
+      if (cancels !== undefined) continue;
       const key = `${table.name}|${documentNoOf(table, values)}`;
       if (!last.has(key)) last.set(key, await this.relay.lastIfSeq(table, values));
     }
