@@ -54,6 +54,33 @@ export function documentNoOf(table: RcvTable, values: RelayValues): string {
   return joinValues(table, table.documentColumns, values);
 }
 
+/**
+ * 다시 바꾼 행으로 ERP 가 거절한 행의 새 값을 만든다 — 처음 적은 순서대로 짝짓는다. IF_SEQ·CREATE_TYPE·처리 표시는 처음
+ * 그대로다. 행 수나 키가 달라졌으면 그 자리에서 고칠 수 없다(중계 표의 PK 는 못 바꾼다).
+ */
+export function rewriteRejected(
+  reserved: readonly ReservedRow[],
+  drafts: readonly RowDraft[],
+): { row: ReservedRow; values: RelayValues }[] {
+  if (drafts.length !== reserved.length) {
+    throw new Error(`다시 만든 행 수(${drafts.length})가 처음(${reserved.length})과 달라 그 자리에서 고칠 수 없다`);
+  }
+  return reserved.flatMap((row, index) => {
+    if (row.statusCode !== OUTBOUND_ROW_STATUS.REJECTED) return [];
+    const { table, values: fields } = drafts[index];
+    const values: RelayValues = {
+      ...fields,
+      IF_SEQ: row.values.IF_SEQ,
+      CREATE_TYPE: row.values.CREATE_TYPE,
+      ...table.initialFlags,
+    };
+    if (table.name !== row.tableName || relayKeyOf(table, values) !== row.relayKey) {
+      throw new Error(`다시 만든 행의 키가 처음(${row.relayKey})과 달라 그 자리에서 고칠 수 없다`);
+    }
+    return [{ row, values }];
+  });
+}
+
 /** `relay_key` — 중계 표 PK 값을 PK 순서대로 '|' 로 잇는다. 중계 표에서 읽은 행도 같은 값이 된다. */
 export function relayKeyOf(table: RcvTable, values: RelayValues): string {
   return joinValues(table, table.keyColumns, values);
@@ -99,6 +126,18 @@ export class OutboundRows {
             erp_error_message: reply.erpErrorMessage,
             erp_applied_at: reply.statusCode === OUTBOUND_ROW_STATUS.APPLIED ? at : null,
           },
+        }),
+      ),
+    );
+  }
+
+  /** 거절된 행을 중계 표에서 고쳤다 — ERP 가 다시 처리하기를 기다린다. */
+  async markRewritten(rows: readonly { id: bigint; values: RelayValues }[]): Promise<void> {
+    await this.prisma.$transaction(
+      rows.map((row) =>
+        this.prisma.erp_outbound_row.update({
+          where: { erp_outbound_row_id: row.id },
+          data: { status_code: OUTBOUND_ROW_STATUS.INSERTED, row_values: row.values, erp_error_message: null },
         }),
       ),
     );

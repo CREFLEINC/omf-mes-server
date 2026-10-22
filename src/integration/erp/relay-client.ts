@@ -122,6 +122,24 @@ export class RelayClient {
     }
   }
 
+  /**
+   * ERP 가 거절한 행을 그 자리에서 고친다 — 키 칸 밖의 값을 덮고 오류 칸을 비운다. 처리 표시가 처음 값 그대로인 행만
+   * 고친다: 그 사이 ERP 가 처리했으면 돌려주는 수가 0 이다. 한 트랜잭션이다.
+   */
+  async updateRows(rows: readonly RelayInsert[]): Promise<number[]> {
+    const transaction = new mssql.Transaction(await this.connect());
+    await transaction.begin();
+    try {
+      const counts: number[] = [];
+      for (const row of rows) counts.push(await updateUntouched(transaction, row));
+      await transaction.commit();
+      return counts;
+    } catch (error) {
+      await transaction.rollback().catch(() => undefined);
+      throw error;
+    }
+  }
+
   /** 그 건(`documentColumns`)의 마지막 IF_SEQ. 없으면 0. */
   async lastIfSeq(table: RcvTable, values: RelayValues): Promise<number> {
     const request = (await this.connect()).request();
@@ -251,6 +269,22 @@ export function relayUnreachable(error: unknown): boolean {
 
 function blankToNull(value: RelayValue): string | null {
   return value === null || String(value).trim() === '' ? null : String(value).trim();
+}
+
+async function updateUntouched(transaction: mssql.Transaction, { table, values }: RelayInsert): Promise<number> {
+  const request = transaction.request();
+  const columns = Object.keys(values).map(columnName);
+  columns.forEach((column, index) => bind(request, `v${index}`, values[column]));
+  const param = (column: string): string => `@v${columns.indexOf(column)}`;
+  const flags = Object.keys(table.initialFlags);
+  const set = columns.filter((column) => !table.keyColumns.includes(column) && !flags.includes(column));
+  const where = [...table.keyColumns, ...flags].map((column) => `${column} = ${param(column)}`);
+  request.input('user', mssql.VarChar(20), MES_USER);
+  const result = await request.query(
+    `UPDATE dbo.${table.name} SET ${set.map((column) => `${column} = ${param(column)}`).join(', ')}, ` +
+      `ERP_APPLY_ERROR = NULL, UPDT_USER_ID = @user, UPDT_DT = GETDATE() WHERE ${where.join(' AND ')}`,
+  );
+  return result.rowsAffected[0] ?? 0;
 }
 
 /** 칸 이름은 SQL 에 그대로 들어간다 — 바꾸개가 만든 이름이라도 대문자·숫자·밑줄만 받는다. */

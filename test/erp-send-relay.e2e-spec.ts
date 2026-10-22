@@ -140,6 +140,22 @@ describeRelay('ERP 보내기 — 중계 DB 넣기 (e2e · 중계 DB)', () => {
     });
   });
 
+  it('거절된 행을 그 자리에서 고친다 — 오류를 비우고, ERP 가 이미 처리한 행은 건드리지 않는다', async () => {
+    // 앞 검사가 E2E-WO-2 의 1 은 반영(Y), 2 는 거절(오류)로 두었다.
+    const counts = await relay.updateRows([
+      result('E2E-WO-2', 2, { PROD_QTY_IN_ORDER_UNIT: '7' }),
+      result('E2E-WO-2', 1, { PROD_QTY_IN_ORDER_UNIT: '8' }),
+    ]);
+
+    expect(counts).toEqual([1, 0]);
+    const rows = await rowsOf('E2E-WO-2');
+    expect(rows.map((row) => [row.IF_SEQ, row.PROD_QTY_IN_ORDER_UNIT, row.ERP_APPLY_FLAG, row.ERP_APPLY_ERROR])).toEqual([
+      [1, 10, 'Y', null],
+      [2, 7, 'N', null],
+    ]);
+    expect(rows[1]).toMatchObject({ UPDT_USER_ID: 'MES' });
+  });
+
   it('제품출하는 두 단계의 끝(2)이 Y 여야 반영이다 — 1단계에서 발번한 DN_NO 는 먼저 읽는다', async () => {
     const issue: RelayInsert = {
       table: ISSUE,
