@@ -228,7 +228,8 @@ api 안에서 주기로 돈다(`src/integration/erp/`). 기본은 꺼져 있다.
 | 변수 | 기본 | 뜻 |
 |---|---|---|
 | `ERP_SYNC_ENABLED` | `false` | `true` 면 돈다. 꺼져 있으면 MSSQL 에 연결하지 않는다 |
-| `ERP_DB_HOST`·`ERP_DB_USER`·`ERP_DB_PASSWORD`·`ERP_DB_NAME` | — | 켜져 있는데 하나라도 비면 api 가 기동하지 않는다 |
+| `ERP_SEND_ENABLED` | `false` | MES→ERP 보내기. 받기와 따로 켠다. 10초마다 아웃박스의 대기 묶음을 중계 DB 에 넣는다 |
+| `ERP_DB_HOST`·`ERP_DB_USER`·`ERP_DB_PASSWORD`·`ERP_DB_NAME` | — | 받기·보내기 중 하나라도 켜져 있는데 하나라도 비면 api 가 기동하지 않는다 |
 | `ERP_DB_PORT` | `1433` | |
 | `ERP_DB_ENCRYPT` | `true` | `false` 일 때만 TLS 를 끈다. 서버 인증서는 검사하지 않는다 |
 | `ERP_SYNC_MASTER_INTERVAL_SEC` | `43200` | 기준정보 5종(공통코드·사원·품목·거래처·BOM). 회차가 끝나고 이만큼 뒤에 다음 회차 |

@@ -5,6 +5,7 @@ import { ApprovalModule } from '../../core/approval';
 import { DocumentStateModule } from '../../core/document-state';
 import { InventoryPostingModule } from '../../core/inventory-posting';
 import { NumberingModule } from '../../core/numbering';
+import { OutboxModule } from '../../core/outbox';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CancelEligibilityService } from './cancel-eligibility.service';
 import { DocumentCancelExecuteService } from './document-cancel-execute.service';
@@ -27,6 +28,7 @@ import { DocumentTypeRegistryChecker } from './document-type-registry';
     NumberingModule,
     DocumentStateModule,
     InventoryPostingModule,
+    OutboxModule,
   ],
   controllers: [DocumentProgressController],
   providers: [
