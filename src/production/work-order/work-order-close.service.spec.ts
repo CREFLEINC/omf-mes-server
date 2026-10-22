@@ -222,11 +222,20 @@ describe('W/O 마감·취소 (I-6 PR ⑥b)', () => {
   });
 
   it('마감 — 마감할 수 없는 상태는 상태별 조치를 문구에 싣는다', async () => {
-    const rejected = await stub({ status: 'SUSPENDED', goodSum: ORDER_QTY }).close.close(WORK_ORDER, 1, {}, { appUserId: 7 })
+    const rejected = await stub({ status: 'RELEASED', goodSum: ORDER_QTY }).close.close(WORK_ORDER, 1, {}, { appUserId: 7 })
       .catch((error: unknown) => error);
 
     expect((rejected as ContractException).errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
-    expect((rejected as ContractException).errors[0].message).toContain('재개');
+    expect((rejected as ContractException).errors[0].message).toContain('진행 중이거나 중단된 W/O 만 마감됩니다');
+    expect((rejected as ContractException).errors[0].message).toContain('취소');
+  });
+
+  it('마감 — 중단(SUSPENDED) W/O 도 마감한다', async () => {
+    const harness = stub({ status: 'SUSPENDED', goodSum: ORDER_QTY });
+
+    await harness.close.close(WORK_ORDER, 1, {}, { appUserId: 7 });
+
+    expect(harness.updates[0]).toMatchObject({ status_code: 'CLOSED' });
   });
 
   it('마감 — 슬롯 대상이 실적 없는 `WAITING` 뿐이고 빈 목록이면 코어를 부르지 않는다', async () => {

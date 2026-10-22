@@ -315,7 +315,9 @@ export const TRANSITIONS: TransitionRegistry = {
       sourceOperation: 'POST /production/work-orders/{workOrderId}:hold' },
     'work-order-resume':  { from: ['SUSPENDED'], to: 'IN_PROGRESS',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:resume' },
-    'work-order-close':   { from: ['COMPLETED', 'IN_PROGRESS'], to: 'CLOSED',
+    // `SUSPENDED` — 중단한 채 미달 마감이 현장 흐름이다(사용자 결정 2026-10-22 · 장부 P-104). 열린 세션 검사가 먼저라
+    // 중단 세션은 종료(또는 관리웹 강제 종료)를 거쳐야 닫힌다.
+    'work-order-close':   { from: ['COMPLETED', 'IN_PROGRESS', 'SUSPENDED'], to: 'CLOSED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:close' },
     'work-order-cancel':  { from: ['PLANNED','CONFIRMED','RELEASED','IN_PROGRESS','SUSPENDED'], to: 'CANCELLED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel' },
