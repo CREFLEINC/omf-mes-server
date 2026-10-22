@@ -80,6 +80,8 @@ function stub(options: StubOptions = {}) {
   const receiptLines = options.receiptLines ?? [];
 
   const tx = {
+    // 지연 입력 계보(#166) — 이 시각 이후 실적이 없다.
+    production_result: { findMany: () => Promise.resolve([]) },
     material_consumption: {
       create: ({ data }: { data: Row }) => {
         order.push('insert');
