@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { InventoryPostingService } from '../../core/inventory-posting';
 import { LOT_SPLIT_SOURCE } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
+import { IF_GOODS_RECEIPT, OutboxService, outboxMessageKey } from '../../core/outbox';
 import { ConflictException, ContractException, ERROR_CODE, ErrorItem } from '../../common/errors';
 import { assertCodeValues } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
@@ -18,6 +19,7 @@ import {
   receiptLineView,
   receiptView,
 } from './goods-receipt-view';
+import { MATERIAL_RECEIPT, erpInboundLines } from './erp-receipt';
 import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
@@ -32,6 +34,7 @@ import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
 /** 채번이 부딪히는 것은 사용자가 고칠 수 없는 값이라 다시 뽑는다 — LOT 과 같은 판정이다. */
 const NUMBER_RETRY = 3;
+const GOODS_RECEIPT_TARGET = 'GOODS_RECEIPT';
 const INBOUND_LOT_SOURCE = 'INBOUND_RECEIPT_LINE';
 /** IQC 합격 확정이 LOT 을 옮기는 상태(시드 `LOT_STATUS` · 전이 C4). */
 const IQC_PASSED_LOT_STATUS = 'NORMAL';
@@ -56,6 +59,7 @@ export class GoodsReceiptService {
     private readonly prisma: PrismaService,
     private readonly posting: InventoryPostingService,
     private readonly numbering: NumberingService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async list(query: GoodsReceiptQuery): Promise<PagedResponse<GoodsReceiptView>> {
@@ -81,7 +85,12 @@ export class GoodsReceiptService {
       }),
       this.prisma.goods_receipt.count({ where }),
     ]);
-    return pagedResponse(rows.map(receiptView), total, page);
+    const queued = await this.erpQueued(rows.map((row) => row.goods_receipt_id));
+    return pagedResponse(
+      rows.map((row) => receiptView(row, queued.has(row.goods_receipt_id))),
+      total,
+      page,
+    );
   }
 
   async get(goodsReceiptId: number): Promise<{ detail: GoodsReceiptDetail; versionNo: number }> {
@@ -90,7 +99,10 @@ export class GoodsReceiptService {
     });
     if (!row) throw new NotFoundException('없는 입고 전표입니다.');
     return {
-      detail: { goodsReceipt: receiptView(row), lines: await this.lines(goodsReceiptId) },
+      detail: {
+        goodsReceipt: receiptView(row, (await this.erpQueued([row.goods_receipt_id])).has(row.goods_receipt_id)),
+        lines: await this.lines(goodsReceiptId),
+      },
       versionNo: row.version_no,
     };
   }
@@ -121,6 +133,16 @@ export class GoodsReceiptService {
         }
         const goodsReceiptId = await this.prisma.$transaction(async (tx) => {
           const id = await postReceipt(tx, this.posting, input, actor.appUserId, receiptNo, putawayNos);
+          // ⭐ 적재는 본 트랜잭션의 꼬리다(계약 §5-4 다섯째) — 단독이면 「입고됐는데 적재가 안 된」 창이 열린다.
+          if (await this.goesToErp(tx, input)) {
+            await this.outbox.enqueue(tx, {
+              interfaceCode: IF_GOODS_RECEIPT,
+              messageKey: outboxMessageKey(IF_GOODS_RECEIPT, receiptNo),
+              targetTypeCode: GOODS_RECEIPT_TARGET,
+              targetId: id,
+              payload: { goodsReceiptNo: receiptNo },
+            });
+          }
           if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
             actor: actor.terminalAudit, targetTypeCode: 'GOODS_RECEIPT', targetId: id, eventTypeCode: 'CREATE',
           });
@@ -134,6 +156,38 @@ export class GoodsReceiptService {
         }
       }
     }
+  }
+
+  /**
+   * ERP 구매입고로 갈 입고인가(장부 P-104) — 자재 입고이고, 불량창고가 아니고(IQC 불합격분 · 고객 질문 8 전까지
+   * 합격 입고만), ERP 발주에 이어진 줄이 하나라도 있다. 줄을 고르는 일은 보낼 때 바꾸개가 다시 한다.
+   */
+  private async goesToErp(tx: Prisma.TransactionClient, input: GoodsReceiptCreate): Promise<boolean> {
+    if (input.receiptTypeCode !== MATERIAL_RECEIPT) return false;
+    const warehouse = await tx.warehouse.findUnique({
+      where: { warehouse_id: BigInt(input.warehouseId) },
+      select: { is_defect: true },
+    });
+    if (warehouse === null || warehouse.is_defect) return false;
+    const lines = input.lines.map((line) => ({
+      lotId: BigInt(line.lotId),
+      inboundReceiptLineId: line.inboundReceiptLineId == null ? null : BigInt(line.inboundReceiptLineId),
+    }));
+    return (await erpInboundLines(tx, lines)).some((inboundLineId) => inboundLineId !== null);
+  }
+
+  /** ERP 송신 대기열에 적재된 입고 — 적재이지 전송이 아니다(계약 `erpMessageQueued`). */
+  private async erpQueued(goodsReceiptIds: bigint[]): Promise<Set<bigint>> {
+    if (goodsReceiptIds.length === 0) return new Set();
+    const rows = await this.prisma.integration_message.findMany({
+      where: {
+        interface_code: IF_GOODS_RECEIPT,
+        target_type_code: GOODS_RECEIPT_TARGET,
+        target_id: { in: goodsReceiptIds },
+      },
+      select: { target_id: true },
+    });
+    return new Set(rows.map((row) => row.target_id));
   }
 
   /**
