@@ -255,6 +255,63 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     });
   });
 
+  describe('실적의 설비·금형·세션도 단말 범위로 — 남의 것과 없는 것은 같은 401, 다른 W/O 세션은 400', () => {
+    const resultWorkOrder = async (suffix: string) => (await prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-WO-R${suffix}`, routing_operation_id: ids.operation, item_id: ids.item, order_qty: 100, uom_id: ids.uom,
+      status_code: 'RELEASED', production_line_id: ids.line, released_at: STARTED_AT, planned_equipment_id: ids.equipment,
+    } })).work_order_id;
+    const open = async (token: string, workOrderId: bigint) => (await asPop(request(app.getHttpServer()).post('/api/production/work-sessions'), token)
+      .send({ workOrderId: Number(workOrderId), equipmentId: Number(ids.equipment), startedAt: new Date().toISOString() }).expect(201))
+      .body.workSessionId as number;
+    const both = () => ({ [String(ids.process)]: { can_start_work: true, can_input_result: true } });
+
+    it('이 단말이 연 세션·이 공장 설비·금형이면 201 — 그사이 강제 종료된 세션도 받는다(오프라인 큐 유실 방지)', async () => {
+      const token = await terminal('RS1', both());
+      const workOrderId = await resultWorkOrder('1');
+      const workSessionId = await open(token, workOrderId);
+      const save = () => saveResult(token, {
+        workOrderId: Number(workOrderId), workSessionId, equipmentId: Number(ids.equipment), moldId: Number(ids.mold),
+      });
+
+      await save().expect(201);
+      // 관리웹 강제 종료가 남기는 끝 상태 — 범위 판정은 열림 여부를 보지 않는다.
+      await prisma.work_session.update({ where: { work_session_id: BigInt(workSessionId) }, data: { status_code: 'ENDED', ended_at: new Date() } });
+      await save().expect(201);
+    });
+
+    it('남의 공장 설비·금형, 다른 단말 세션은 없는 id 와 같은 401 이고 까닭과 조치를 알린다', async () => {
+      const token = await terminal('RS2', both());
+      const workOrderId = await resultWorkOrder('2');
+      await open(token, workOrderId);
+      const other = await terminal('RS3', both());
+      const othersSession = await open(other, await resultWorkOrder('3'));
+      const rejected = async (extra: Record<string, unknown>) =>
+        (await saveResult(token, { workOrderId: Number(workOrderId), ...extra }).expect(401)).body as { errors: { message: string }[] };
+
+      const equipment = await rejected({ equipmentId: Number(ids.foreignEquipment) });
+      expect(await rejected({ equipmentId: 999_999_999 })).toEqual(equipment);
+      expect(equipment.errors[0].message).toContain('고른 설비가 이 단말 공장의 설비가 아닙니다.');
+      const mold = await rejected({ moldId: Number(ids.foreignMold) });
+      expect(await rejected({ moldId: 999_999_999 })).toEqual(mold);
+      expect(mold.errors[0].message).toContain('고른 금형이 이 단말 공장의 금형이 아닙니다.');
+      const session = await rejected({ workSessionId: othersSession });
+      expect(await rejected({ workSessionId: 999_999_999 })).toEqual(session);
+      expect(session.errors[0].message).toContain('고른 작업 세션은 이 단말이 연 세션이 아닙니다');
+      expect(await prisma.production_result.count({ where: { work_order_id: workOrderId } })).toBe(0);
+    });
+
+    it('이 단말의 다른 W/O 세션이면 400 이고 저장하지 않는다', async () => {
+      const token = await terminal('RS4', both());
+      const workOrderId = await resultWorkOrder('4');
+      const elsewhere = await open(token, await resultWorkOrder('5'));
+
+      const response = await saveResult(token, { workOrderId: Number(workOrderId), workSessionId: elsewhere }).expect(400);
+      expect(response.body.errors[0]).toMatchObject({ field: 'workSessionId', code: 'INVALID' });
+      expect(response.body.errors[0].message).toContain('이 작업 세션은 이 W/O 의 세션이 아닙니다');
+      expect(await prisma.production_result.count({ where: { work_order_id: workOrderId } })).toBe(0);
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function asPop(test: request.Test, token: string): request.Test {
@@ -314,6 +371,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const operation = await prisma.routing_operation.create({ data: {
       routing_id: routing.routing_id, operation_seq: 10, process_id: ids.process, operation_name: PREFIX,
     } });
+    ids.operation = operation.routing_operation_id;
     await reworkFixtures(entity.legal_entity_id, unit.business_unit_id, routing.routing_id, operation.routing_operation_id, line.production_line_id);
     ids.workOrder = (await prisma.work_order.create({ data: {
       work_order_no: `${PREFIX}-WO`, routing_operation_id: operation.routing_operation_id, item_id: ids.item, order_qty: 100,
@@ -353,6 +411,9 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       plant_id: otherPlant.plant_id, production_line_id: foreignLine.production_line_id, equipment_code: `${PREFIX}-EQX`, equipment_name: PREFIX,
       equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',
     } })).equipment_id;
+    ids.mold = (await prisma.mold.create({ data: {
+      plant_id: ids.plant, mold_code: `${PREFIX}-MOLD1`, mold_name: PREFIX, status_code: 'ACTIVE', tool_type_code: 'MOLD',
+    } })).mold_id;
     ids.foreignMold = (await prisma.mold.create({ data: {
       plant_id: otherPlant.plant_id, mold_code: `${PREFIX}-MOLD`, mold_name: PREFIX, status_code: 'ACTIVE', tool_type_code: 'MOLD',
     } })).mold_id;
@@ -395,10 +456,10 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const workOrders = `SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`;
     const sessions = `SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders})`;
     for (const sql of [
+      `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.work_session_event WHERE work_session_id IN (${sessions})`,
       `DELETE FROM production.work_session_worker WHERE work_session_id IN (${sessions})`,
       `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
-      `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.material_consumption WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%'`,
       `DELETE FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`,

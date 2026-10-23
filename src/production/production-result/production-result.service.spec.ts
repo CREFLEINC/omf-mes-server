@@ -59,6 +59,8 @@ interface StubOptions {
   heldLotIds?: bigint[];
   /** 그 W/O 의 투입 — 계보(#166)가 읽는다. */
   inputs?: Row[];
+  /** 본문 세션이 그 W/O 의 세션인가 — 아니면 W/O 조건을 단 세션 count 가 0 이다. */
+  sessionOfWorkOrder?: boolean;
 }
 
 function stub(options: StubOptions = {}) {
@@ -73,6 +75,7 @@ function stub(options: StubOptions = {}) {
   const relations: Row[] = [];
   /** 부른 «차례»를 그대로 적는다 — 채번·잠금·순번의 앞뒤가 판정 대상이다. */
   const order: string[] = [];
+  const sessionWheres: Row[] = [];
 
   const tx = {
     inspection_request: { findMany: () => Promise.resolve(options.pqc ?? []) },
@@ -150,7 +153,12 @@ function stub(options: StubOptions = {}) {
     uom: { count: () => Promise.resolve(1) },
     equipment: { count: () => Promise.resolve(1) },
     mold: { count: () => Promise.resolve(1) },
-    work_session: { count: () => Promise.resolve(1) },
+    work_session: {
+      count: ({ where }: { where: Row }) => {
+        sessionWheres.push(where);
+        return Promise.resolve('work_order_id' in where && options.sessionOfWorkOrder === false ? 0 : 1);
+      },
+    },
     $transaction: (work: (client: typeof tx) => Promise<unknown>) => {
       order.push('transaction');
       return work(tx);
@@ -192,6 +200,7 @@ function stub(options: StubOptions = {}) {
     lotWheres,
     order,
     next,
+    sessionWheres,
   };
 }
 
@@ -517,5 +526,29 @@ describe('생산 실적 등록 (I-7 PR ②)', () => {
     expect(view.statusCode).toBe('CONFIRMED');
     expect(harness.resultWheres).toEqual([{ work_order_id: BigInt(WORK_ORDER) }]);
     expect(JSON.stringify(harness.lotWheres)).not.toContain('CONFIRMED');
+  });
+
+  describe('세션은 그 W/O 의 것이어야 한다', () => {
+    it('있는 세션이라도 다른 W/O 의 것이면 400 workSessionId 이고 저장하지 않는다', async () => {
+      const harness = stub({ sessionOfWorkOrder: false });
+
+      const caught = await harness.service.create(body({ workSessionId: 29 }), context()).catch((e: unknown) => e);
+
+      expect(errorsOf(caught)).toMatchObject([{ field: 'workSessionId', code: ERROR_CODE.INVALID }]);
+      expect(harness.sessionWheres).toEqual([
+        { work_session_id: 29n },
+        { work_session_id: 29n, work_order_id: BigInt(WORK_ORDER) },
+      ]);
+      expect(harness.created).toEqual([]);
+    });
+
+    it('세션을 싣지 않으면 세션을 세지 않는다', async () => {
+      const harness = stub({ sessionOfWorkOrder: false });
+
+      await harness.service.create(body(), context());
+
+      expect(harness.sessionWheres).toEqual([]);
+      expect(harness.created).toHaveLength(1);
+    });
   });
 });
