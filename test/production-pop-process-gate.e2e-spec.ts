@@ -297,6 +297,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       const session = await rejected({ workSessionId: othersSession });
       expect(await rejected({ workSessionId: 999_999_999 })).toEqual(session);
       expect(session.errors[0].message).toContain('고른 작업 세션은 이 단말이 연 세션이 아닙니다');
+      expect(await prisma.production_result.count({ where: { work_order_id: workOrderId } })).toBe(0);
     });
 
     it('이 단말의 다른 W/O 세션이면 400 이고 저장하지 않는다', async () => {
