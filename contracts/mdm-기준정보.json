@@ -64,6 +64,15 @@
       "description": "코드·명칭 검색"
      },
      {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장으로 거른다 — 창고 목록의 공장 필터와 다른 화면의 창고 선택 목록이 그 공장 창고만 보인다. 현장 단말(POP·MOBILE)은 원래 자기 공장 창고만 받으므로 다른 공장을 보내면 빈 목록이다. 장부 P-109"
+     },
+     {
       "name": "warehouseTypeCode",
       "in": "query",
       "schema": {

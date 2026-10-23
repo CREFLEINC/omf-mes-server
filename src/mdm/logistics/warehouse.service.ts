@@ -11,6 +11,7 @@ import {
   assertCodeValues,
   assertNotBlank,
   countReferences,
+  filter,
   optional,
   referencePage,
   referenceWhere,
@@ -79,6 +80,7 @@ interface WarehouseUpdate {
 }
 
 export interface WarehouseQuery extends ReferenceQuery {
+  plantId?: number;
   warehouseTypeCode?: string;
   isDefect?: boolean;
   dividedOnly?: boolean;
@@ -99,7 +101,11 @@ export class WarehouseService {
   async list(query: WarehouseQuery, terminalPlantId?: bigint): Promise<PagedResponse<WarehouseView>> {
     const page = referencePage(query);
     const where = referenceWhere(query, { code: 'warehouse_code', name: 'warehouse_name' }, {
-      ...(terminalPlantId === undefined ? {} : { plant_id: terminalPlantId }),
+      // 단말 공장과 질의 공장을 «둘 다» 건다 — 단말이 남의 공장을 보내면 빈 목록이다(장부 P-109).
+      AND: [
+        terminalPlantId === undefined ? {} : { plant_id: terminalPlantId },
+        filter('plant_id', query.plantId),
+      ],
       ...(query.warehouseTypeCode === undefined
         ? {}
         : { warehouse_type_code: query.warehouseTypeCode }),
