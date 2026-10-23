@@ -198,7 +198,7 @@ describe('WorkSessionService.create', () => {
     const error = (await it0.service.create(body(), context()).catch((e: unknown) => e)) as ConflictException;
     expect(error).toBeInstanceOf(ConflictException);
     expect(error.conflict).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
-    expect(error.conflict.message).toContain('목록을 새로 고친 뒤 [재개]를 누르세요');
+    expect(error.conflict.message).toContain('[재개] 또는 [작업 이어하기]로 그 세션을 이어 가세요');
     expect(it0.updates).toEqual([]);
   });
 

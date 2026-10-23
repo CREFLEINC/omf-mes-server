@@ -179,11 +179,22 @@ describe('POP production terminal scope', () => {
     await expect(closing(null)).rejects.toMatchObject({ status: 401 });
   });
 
-  it('requires its own work session for read events and writes', async () => {
+  it('세션 읽기는 W/O 단위 조회 기준(다른 단말 세션도), 쓰기는 자기 단말 세션만이다', async () => {
     await assertTerminalProductionScope(prisma,
       request({}, { workSessionId: '29' }),
-      'GET /production/work-sessions/{workSessionId}/events', terminal);
+      'GET /production/work-sessions/{workSessionId}/workers', terminal);
     expect(prisma.work_session.findFirst).toHaveBeenCalledWith({
+      where: { work_session_id: 29n, work_order: { production_line: { plant_id: 3n },
+        routing_operation: { process: { terminal_process: { some: {
+          terminal_id: 7n,
+          OR: [{ can_start_work: true }, { can_input_material: true }, { can_input_result: true }],
+        } } } } } },
+      select: { work_session_id: true },
+    });
+    await assertTerminalProductionScope(prisma,
+      request({ eventTypeCode: 'STOP' }, { workSessionId: '29' }, '900028'),
+      'POST /production/work-sessions/{workSessionId}/events', terminal);
+    expect(prisma.work_session.findFirst).toHaveBeenLastCalledWith({
       where: { work_session_id: 29n, terminal_id: 7n,
         work_order: { production_line: { plant_id: 3n } } },
       select: { work_session_id: true },

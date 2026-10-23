@@ -96,7 +96,7 @@ describe("W/O 중단·재개 (I-6 PR ④)", () => {
     await expect(
       service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
     ).rejects.toMatchObject({
-      errors: [expect.objectContaining({ code: ERROR_CODE.STATE_LOCKED, message: expect.stringContaining("CLOSED") })],
+      errors: [expect.objectContaining({ code: ERROR_CODE.STATE_LOCKED, message: expect.stringContaining("마감된 W/O 는 중단할 수 없습니다") })],
     });
   });
 
@@ -106,5 +106,15 @@ describe("W/O 중단·재개 (I-6 PR ④)", () => {
     await service.resume(WORK_ORDER, 1);
 
     expect(updated[0]).toMatchObject({ status_code: "IN_PROGRESS" });
+  });
+
+  it("중단 — 이미 중단된 W/O 는 상태 코드 대신 할 일을 알린다", async () => {
+    const { service } = stub("SUSPENDED", 1);
+
+    await expect(
+      service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
+    ).rejects.toMatchObject({
+      errors: [expect.objectContaining({ message: "이미 중단된 W/O 입니다. 작업 시작 화면에서 [재개]하세요." })],
+    });
   });
 });

@@ -79,7 +79,7 @@ export class WorkSessionService {
     if (open !== null) {
       throw new ConflictException(
         'user',
-        '이 MES W/O 에 이미 열린 작업 세션이 있습니다. 목록을 새로 고친 뒤 [재개]를 누르세요 — '
+        '이 MES W/O 에 이미 열린 작업 세션이 있습니다. 목록을 새로 고친 뒤 [재개] 또는 [작업 이어하기]로 그 세션을 이어 가세요 — '
           + '다른 단말의 세션이면 그 단말에서 재개·종료하거나 관리웹에서 강제 종료하세요.',
         { code: ERROR_CODE.OPEN_SESSION_EXISTS },
       );

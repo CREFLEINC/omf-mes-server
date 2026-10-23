@@ -23,6 +23,8 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
   let prisma: PrismaService;
   let token: string;
   let workerNo: string;
+  /** 같은 공장·같은 공정에 실적 입력만 켠 다른 단말. */
+  let otherToken: string;
   const ids: Record<string, bigint> = {};
 
   beforeAll(async () => {
@@ -89,7 +91,7 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     const response = await start(workOrderId).expect(409);
 
     expect(response.body).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
-    expect(response.body.message).toContain('목록을 새로 고친 뒤 [재개]를 누르세요');
+    expect(response.body.message).toContain('[재개] 또는 [작업 이어하기]로 그 세션을 이어 가세요');
     expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe('SUSPENDED');
   });
 
@@ -118,6 +120,61 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     expect(planned.body.errors[0].message).toContain('배포한 뒤 시작하세요');
   });
 
+  it('중단 W/O 의 중단 세션을 [재개](세션 RESUME)하면 W/O 도 진행으로 돌아온다 — 버전은 한 번 오른다', async () => {
+    const workOrderId = await workOrder('R', 'RELEASED');
+    const session = await start(workOrderId).expect(201);
+    await hold(workOrderId).expect(200);
+    await event(session.body.workSessionId, 'STOP').expect(201);
+    const held = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+
+    await event(session.body.workSessionId, 'RESUME').expect(201);
+
+    expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } }))
+      .toMatchObject({ status_code: 'IN_PROGRESS', version_no: held.version_no + 1 });
+    expect((await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(session.body.workSessionId) } })).status_code)
+      .toBe('RUNNING');
+  });
+
+  it(':resume 뒤의 세션 RESUME 은 W/O 를 다시 건드리지 않는다(이미 진행)', async () => {
+    const workOrderId = await workOrder('Q', 'RELEASED');
+    const session = await start(workOrderId).expect(201);
+    await hold(workOrderId).expect(200);
+    await event(session.body.workSessionId, 'STOP').expect(201);
+    await asPop(request(app.getHttpServer()).post(`/api/production/work-orders/${String(workOrderId)}:resume`))
+      .send({ occurredAt: new Date().toISOString() }).expect(200);
+    const resumed = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+
+    await event(session.body.workSessionId, 'RESUME').expect(201);
+
+    expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } }))
+      .toMatchObject({ status_code: 'IN_PROGRESS', version_no: resumed.version_no });
+  });
+
+  it('다른 단말이 연 세션의 참여자를 읽는다 — 같은 W/O 공정에 매핑된 단말이면', async () => {
+    const workOrderId = await workOrder('O', 'RELEASED');
+    const session = await start(workOrderId).expect(201);
+
+    await request(app.getHttpServer()).get(`/api/production/work-sessions/${String(session.body.workSessionId)}/workers`)
+      .set('Authorization', `Bearer ${otherToken}`).expect(200);
+  });
+
+  it('단말 범위 밖인 까닭이 W/O 상태면 401 이 까닭과 할 일을 알린다 · 이미 중단된 W/O 의 중단은 한글 안내', async () => {
+    const closed = await workOrder('X', 'CLOSED');
+    await prisma.work_order.update({ where: { work_order_id: closed }, data: { closed_at: new Date() } });
+    const unreleased = (await prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-WO-Y`, routing_operation_id: ids.operation, item_id: ids.item, order_qty: 10, uom_id: ids.uom,
+      status_code: 'PLANNED', production_line_id: ids.line,
+    } })).work_order_id;
+
+    expect((await hold(closed).expect(401)).body.errors[0].message).toContain('이 W/O 는 마감됐습니다');
+    expect((await start(unreleased).expect(401)).body.errors[0].message).toContain('관리웹에서 배포한 뒤 작업하세요');
+    const suspended = await workOrder('Z', 'RELEASED');
+    const session = await start(suspended).expect(201);
+    await hold(suspended).expect(200);
+    await event(session.body.workSessionId, 'STOP').expect(201);
+    expect((await hold(suspended).expect(400)).body.errors[0].message).toBe('이미 중단된 W/O 입니다. 작업 시작 화면에서 [재개]하세요.');
+  });
+
   it('작업 전 점검은 중단 W/O 에서도 작업 시작과 같다 — 상태로 막지 않는다', async () => {
     const workOrderId = await workOrder('E', 'SUSPENDED');
 
@@ -138,6 +195,11 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
   function hold(workOrderId: bigint): request.Test {
     return asPop(request(app.getHttpServer()).post(`/api/production/work-orders/${String(workOrderId)}:hold`))
       .send({ reasonCode: 'EQUIPMENT_FAILURE', occurredAt: new Date().toISOString() });
+  }
+
+  function event(workSessionId: number, eventTypeCode: 'STOP' | 'RESUME'): request.Test {
+    return asPop(request(app.getHttpServer()).post(`/api/production/work-sessions/${String(workSessionId)}/events`))
+      .send({ eventTypeCode, occurredAt: new Date().toISOString(), ...(eventTypeCode === 'STOP' ? { reasonCode: 'EQUIPMENT_FAILURE' } : {}) });
   }
 
   function start(workOrderId: bigint): request.Test {
@@ -187,6 +249,13 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     } });
     ids.terminal = terminal.terminal_id;
     await prisma.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true } });
+    const other = await prisma.terminal.create({ data: {
+      terminal_code: `${PREFIX}-POP2`, plant_id: ids.plant, terminal_type_code: 'POP', status_code: 'RUNNING',
+    } });
+    await prisma.terminal_process.create({ data: { terminal_id: other.terminal_id, process_id: ids.process, can_input_result: true } });
+    otherToken = app.get(JwtService).sign({
+      sub: Number(other.terminal_id), typ: 'terminal', tv: other.token_version, terminalCode: other.terminal_code, plantId: Number(ids.plant),
+    });
     token = app.get(JwtService).sign({
       sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code,
       plantId: Number(ids.plant), equipmentId: Number(ids.equipment),

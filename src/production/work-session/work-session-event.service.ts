@@ -5,12 +5,17 @@ import { assertWorkerNoExists } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkOrderNotifier } from '../work-order/work-order-notice';
+import { lockWorkOrder } from '../work-order/work-order-write.service';
 import { assertEventPair, assertNotEnded, assertSessionVersion, lockWorkSession } from './work-session-rules';
 import { WorkSessionContext } from './work-session.service';
 import { WorkSessionEventRow, WorkSessionEventView, reasonKey, workSessionEventView } from './work-session-view';
 type Tx = Prisma.TransactionClient;
 const STATUS_COLUMN = 'production.work_session.status_code';
 const STOP = 'STOP';
+const RESUME = 'RESUME';
+const SUSPENDED = 'SUSPENDED';
+const WORK_ORDER_STATUS_COLUMN = 'production.work_order.status_code';
+const RESUME_WORK_ORDER = 'work-order-resume';
 /** 계약 `WorkSessionEventCreate` — required 둘. `reasonCode` 의 필수 여부는 유형이 가른다(A-25). */
 export interface WorkSessionEventCreate {
   eventTypeCode: string;
@@ -45,6 +50,8 @@ export class WorkSessionEventService {
     context: Omit<WorkSessionContext, 'idempotencyKey'>,
     action: string,
   ): Promise<WorkSessionEventView> {
+    // RESUME 은 W/O 도 되돌릴 수 있다 — 잠금 순서를 작업 시작과 같게 W/O → 세션으로 둔다(교착 방지).
+    const workOrder = body.eventTypeCode === RESUME ? await lockSessionWorkOrder(tx, workSessionId) : null;
     const locked = await lockWorkSession(tx, workSessionId);
     // 종료된 세션은 버전 대조보다 먼저 400 이다 — `:end` 와 같은 이유(강제 종료가 버전을 올린다).
     assertNotEnded(locked.status_code);
@@ -70,6 +77,15 @@ export class WorkSessionEventService {
       data: { status_code: transition.to, version_no: { increment: 1 }, updated_by: context.appUserId ?? null },
       select: { work_order_id: true },
     });
+    // :hold 와 대칭 — 중단(SUSPENDED) W/O 의 세션을 재개하면 W/O 도 같은 트랜잭션에서 진행으로 되돌린다. POP [재개]는 세션
+    // RESUME 만 보내고 `:resume` 을 부르지 않는다. `:resume` → RESUME 순서(작업 중단 화면)는 W/O 가 이미 진행이라 그대로다.
+    if (workOrder !== null && workOrder.status_code === SUSPENDED) {
+      const resumed = this.documentState.assertTransition(WORK_ORDER_STATUS_COLUMN, RESUME_WORK_ORDER, workOrder.status_code, HttpStatus.BAD_REQUEST);
+      await tx.work_order.update({
+        where: { work_order_id: session.work_order_id },
+        data: { status_code: resumed.to, version_no: { increment: 1 }, updated_by: context.appUserId ?? null },
+      });
+    }
     const name = await reasonName(tx, row);
     // ⛔ STOP 만 알린다(RESUME 은 아니다). W/O `:hold` 에는 걸지 않는다 — 단말이 `:hold` 와 STOP 을
     //    따로 보내므로 둘 다 걸면 한 번의 중단이 두 번 알려진다(research R-6 · FR-007).
@@ -93,3 +109,10 @@ async function reasonName(tx: Tx, row: WorkSessionEventRow): Promise<string | un
   });
   return found?.code_name;
 }
+
+/** 세션의 W/O 를 잠근다 — 없는 세션은 뒤의 세션 잠금이 404 로 답한다. */
+async function lockSessionWorkOrder(tx: Tx, workSessionId: number): Promise<{ status_code: string } | null> {
+  const session = await tx.work_session.findUnique({ where: { work_session_id: BigInt(workSessionId) }, select: { work_order_id: true } });
+  return session === null ? null : lockWorkOrder(tx, Number(session.work_order_id));
+}
+

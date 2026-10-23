@@ -21,6 +21,15 @@ export interface WorkOrderResume {
 }
 
 const STATUS_COLUMN = 'production.work_order.status_code';
+/** 중단할 수 없는 상태마다 할 일 — 상태 코드 대신 현장이 알아듣는 말로 알린다(전이표 `work-order-hold` 의 from 밖). */
+const NOT_HOLDABLE: Readonly<Record<string, string>> = {
+  SUSPENDED: '이미 중단된 W/O 입니다. 작업 시작 화면에서 [재개]하세요.',
+  PLANNED: '배포 전 W/O 는 중단할 수 없습니다. 배포·작업 시작 뒤에 중단하세요.',
+  CONFIRMED: '배포 전 W/O 는 중단할 수 없습니다. 배포·작업 시작 뒤에 중단하세요.',
+  COMPLETED: '완료된 W/O 는 중단할 수 없습니다. W/O 목록을 새로 고쳐 확인하세요.',
+  CLOSED: '마감된 W/O 는 중단할 수 없습니다. W/O 목록을 새로 고쳐 확인하세요.',
+  CANCELLED: '취소된 W/O 는 중단할 수 없습니다. W/O 목록을 새로 고쳐 확인하세요.',
+};
 type Tx = Prisma.TransactionClient;
 
 /**
@@ -49,7 +58,7 @@ export class WorkOrderTransitionService {
     //    대조를 켜면 «모든» `:hold` 가 400 이 된다. 값이 오면 그때 켠다(문의 035 ⓓ).
     //    `occurredAt` 은 계약 검증(`format: date-time`)이 이미 봤다 — 다시 파싱하지 않는다.
     assertNotBlank([['reasonCode', body.reasonCode]]);
-    await this.move(workOrderId, version, 'work-order-hold', appUserId, assertWorking);
+    await this.move(workOrderId, version, 'work-order-hold', appUserId, assertWorking, NOT_HOLDABLE);
   }
 
   resume(
@@ -70,11 +79,16 @@ export class WorkOrderTransitionService {
     action: string,
     appUserId: number | undefined,
     check?: (tx: Tx, workOrderId: number) => Promise<void>,
+    notAllowed?: Readonly<Record<string, string>>,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const locked = await lockWorkOrder(tx, workOrderId);
       assertVersion(locked, version);
       // ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(§1-6 · `approval.service.ts:263`).
+      const notAllowedMessage = notAllowed?.[locked.status_code];
+      if (notAllowedMessage !== undefined) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code: ERROR_CODE.STATE_LOCKED, message: notAllowedMessage }]);
+      }
       const transition = this.documentState.assertTransition(
         STATUS_COLUMN,
         action,
