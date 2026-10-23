@@ -265,8 +265,16 @@ export class ProductionResultService {
       if (value === undefined) continue;
       if ((await count(BigInt(value))) === 0) throw one(field(name, ERROR_CODE.INVALID, '없는 참조입니다.'));
     }
+    // 세션은 참여자 배분·설비 귀속의 근거라 그 W/O 의 세션이어야 한다 — 다른 W/O 세션이면 배분이 엉뚱한 작업에 붙는다(장부 P-114).
+    if (body.workSessionId !== undefined && (await this.prisma.work_session.count({
+      where: { work_session_id: BigInt(body.workSessionId), work_order_id: BigInt(body.workOrderId) },
+    })) === 0) {
+      throw one(field('workSessionId', ERROR_CODE.INVALID, OTHER_WORK_ORDER_SESSION));
+    }
   }
 }
+
+const OTHER_WORK_ORDER_SESSION = '이 작업 세션은 이 W/O 의 세션이 아닙니다 — 실적 화면에서 W/O 를 다시 고른 뒤 다시 등록하세요.';
 
 /** 선택 FK — 본문의 `int64` 를 옮기되 없으면 칸 자체를 안 넣는다. */
 function ref(column: string, value: number | undefined): Record<string, unknown> {

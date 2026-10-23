@@ -313,4 +313,28 @@ describe('POP production terminal scope', () => {
       requiredInteger(components.schemas[allocation], 'lotId');
     });
   });
+
+  describe('실적의 설비·금형·세션도 범위로 가른다', () => {
+    const save = (body: Record<string, unknown>) => assertTerminalProductionScope(prisma,
+      request({ workOrderId: 11, ...body }, {}, '900028'), 'POST /production/production-results', terminal);
+
+    it('이 공장 설비·이 공장 금형·이 단말 세션이면 지난다 — 세션은 열림 여부를 보지 않는다', async () => {
+      await expect(save({ equipmentId: 61, moldId: 53, workSessionId: 29 })).resolves.toBeUndefined();
+      expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({ where: { equipment_id: 61n, plant_id: 3n }, select: { equipment_id: true } });
+      expect(prisma.work_session.findFirst).toHaveBeenLastCalledWith({
+        where: { work_session_id: 29n, terminal_id: 7n, work_order: { production_line: { plant_id: 3n } } },
+        select: { work_session_id: true },
+      });
+    });
+
+    it('남의 공장 설비·금형·다른 단말 세션은 까닭과 조치를 담은 401 이다', async () => {
+      const message = (text: string) => ({ status: 401, errors: [expect.objectContaining({ message: expect.stringContaining(text) })] });
+      (prisma.equipment.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      await expect(save({ equipmentId: 8 })).rejects.toMatchObject(message('고른 설비가 이 단말 공장의 설비가 아닙니다.'));
+      (prisma.mold.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      await expect(save({ moldId: 54 })).rejects.toMatchObject(message('고른 금형이 이 단말 공장의 금형이 아닙니다.'));
+      (prisma.work_session.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      await expect(save({ workSessionId: 30 })).rejects.toMatchObject(message('고른 작업 세션은 이 단말이 연 세션이 아닙니다'));
+    });
+  });
 });

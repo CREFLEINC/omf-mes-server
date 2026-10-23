@@ -96,6 +96,13 @@ export async function assertTerminalProductionScope(
       assertEquipment(terminal.equipmentId, equipmentId);
       return;
     }
+    await plantEquipment(equipmentId);
+  };
+  /**
+   * 단말 공장의 설비 — 없는 설비와 남의 공장 설비가 같은 401 이다.
+   * 실적은 이것만 본다: 실적이 싣는 설비는 그 세션이 시작 때 받은 설비라, 그 뒤 단말 설비나 W/O 계획 설비가 바뀌어도 막지 않는다.
+   */
+  const plantEquipment = async (equipmentId: unknown): Promise<void> => {
     const id = positiveId(equipmentId);
     if (id === null || !await prisma.equipment.findFirst({
       where: { equipment_id: id, plant_id: terminal.plantId }, select: { equipment_id: true },
@@ -138,14 +145,25 @@ export async function assertTerminalProductionScope(
     });
     if (!row) throw denied();
   };
-  const ownSession = async (value: unknown): Promise<void> => {
+  /**
+   * 이 단말이 연 세션 — 열림 여부는 보지 않는다. 오프라인 큐에 쌓인 실적·투입은 그사이 강제 종료된 세션 id 를 실을 수 있고,
+   * 그것은 그대로 받는다(유실 방지 · `production-pop-process-gate.e2e-spec.ts` 가 지킨다).
+   */
+  const ownSession = async (value: unknown, message?: string): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_session.findFirst({
       where: { work_session_id: id, terminal_id: terminal.terminalId,
         work_order: { production_line: { plant_id: terminal.plantId } } },
       select: { work_session_id: true },
     });
-    if (!row) throw denied();
+    if (!row) throw message === undefined ? denied() : scopeDenied(message);
+  };
+  /** 없는 금형과 남의 공장 금형이 같은 401 이다 — 남의 공장 금형이 있는지 드러나지 않는다. */
+  const ownMold = async (value: unknown): Promise<void> => {
+    const id = positiveId(value);
+    if (id === null || !await prisma.mold.findFirst({
+      where: { mold_id: id, plant_id: terminal.plantId }, select: { mold_id: true },
+    })) throw scopeDenied(FOREIGN_MOLD);
   };
   /** 함께 일할 사람(시작 때의 부작업자·작업 중 참여)도 이 단말 공장의 재직 작업자여야 한다. */
   const plantWorkers = async (values: unknown[]): Promise<void> => {
@@ -187,12 +205,7 @@ export async function assertTerminalProductionScope(
     case 'POST /production/work-sessions': {
       await startEquipment(body.workOrderId, body.equipmentId);
       await plantWorkers(array(body.workerIds).filter(given));
-      if (given(body.moldId)) {
-        const moldId = positiveId(body.moldId);
-        if (moldId === null || !await prisma.mold.findFirst({
-          where: { mold_id: moldId, plant_id: terminal.plantId }, select: { mold_id: true },
-        })) throw scopeDenied(FOREIGN_MOLD);
-      }
+      if (given(body.moldId)) await ownMold(body.moldId);
       break;
     }
     case 'POST /production/work-orders/{workOrderId}:hold':
@@ -204,10 +217,13 @@ export async function assertTerminalProductionScope(
       break;
     case 'POST /production/production-results':
       if (given(body.workOrderId)) await ownWorkOrder(body.workOrderId, 'can_input_result');
+      if (given(body.equipmentId)) await plantEquipment(body.equipmentId);
       for (const allocation of array(body.lotAllocations)) {
         const lotId = object(allocation).lotId;
         if (given(lotId)) await ownLot(lotId);
       }
+      if (given(body.moldId)) await ownMold(body.moldId);
+      if (given(body.workSessionId)) await ownSession(body.workSessionId, FOREIGN_SESSION);
       break;
     case 'POST /trace/serial-numbers':
       if (given(body.lotId)) await ownLot(body.lotId);
@@ -271,6 +287,7 @@ function flagDenied(name: string): ContractException {
 }
 
 const FOREIGN_MOLD = '고른 금형이 이 단말 공장의 금형이 아닙니다. 관리웹 기준정보 관리 › 툴·금형 › 툴/금형/지그 마스터에서 금형의 공장을 확인하거나 다른 금형을 고르세요.';
+const FOREIGN_SESSION = '고른 작업 세션은 이 단말이 연 세션이 아닙니다 — 이 단말의 작업 시작 화면에서 세션을 다시 연 뒤 실적을 다시 등록하세요.';
 const FOREIGN_EQUIPMENT = '고른 설비가 이 단말 공장의 설비가 아닙니다. 관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터에서 설비의 공장을 확인하거나 다른 설비를 고르세요.';
 const NO_EQUIPMENT = '이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어 설비를 실을 수 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 연결하세요.';
 const OTHER_EQUIPMENT = '고른 설비가 이 단말의 설비(단말에 설비가 없으면 W/O 의 계획 설비)가 아닙니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 확인하거나 그 설비의 단말에서 작업하세요.';
