@@ -101,10 +101,13 @@ export async function assertTerminalReadScope(
     case 'GET /production/work-orders':
       if (terminal.terminalTypeCode === 'POP') {
         // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다) — 설비를 걸 때만 자기 설비여야 한다.
-        if (query.open !== 'true'
+        // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-109).
+        //   고르기·저장은 여전히 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
+        const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
+        if ((query.open !== 'true' && !plannedRework)
           || (query.plannedEquipmentId !== undefined
             && (terminal.equipmentId === null || positiveId(query.plannedEquipmentId) !== terminal.equipmentId))) throw denied();
-        // The query service intersects the list with this terminal's can_start_work processes.
+        // 목록 서비스가 이 단말의 공정 매핑으로 좁힌다 — 재작업은 실적 입력, 그 밖은 작업 시작 공정이다.
       } else {
         await ownWorkOrder(query.successorOfWorkOrderId);
       }

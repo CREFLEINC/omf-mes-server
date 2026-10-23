@@ -186,6 +186,10 @@ describe('FR-004/005 terminal bearer authentication', () => {
     const all = context('GET /production/work-orders', { open: 'true' }, {}, `Bearer ${token}`);
     expect(await guard.canActivate(all.execution)).toBe(true);
     expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { open: 'false' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    // 재작업 실적 화면의 배포 전 재작업 W/O 목록 — 재작업·PLANNED 짝일 때만 연다.
+    expect(await guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'PLANNED' }, {}, `Bearer ${token}`).execution)).toBe(true);
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { statusCode: 'PLANNED' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'CLOSED' }, {}, `Bearer ${token}`).execution))).toBe(401);
     expect(await guard.canActivate(context('GET /production/work-orders/{workOrderId}', {}, { workOrderId: '11' }, `Bearer ${token}`).execution)).toBe(true);
     expect(prisma.work_order.findFirst).toHaveBeenCalledWith({
       where: { work_order_id: 11n, production_line: { plant_id: 3n },

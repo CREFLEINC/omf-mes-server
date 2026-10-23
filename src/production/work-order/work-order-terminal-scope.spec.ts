@@ -23,8 +23,26 @@ describe('POP work-order list scope', () => {
     expect(findMany.mock.calls[0][0].where).toEqual({ AND: [
       { AND: [{ released_at: { not: null }, completed_at: null, closed_at: null,
         NOT: { status_code: 'CANCELLED' } }] },
-      { production_line: { plant_id: 3n } },
+      { OR: [
+        { production_line: { plant_id: 3n } },
+        { production_line_id: null, production_plan: { production_order: { plant_id: 3n } } },
+      ] },
       { routing_operation: { process_id: { in: [13n, 17n] } } },
     ] });
+  });
+
+  it('재작업 목록은 실적 입력이 켜진 공정으로 좁힌다 — 재작업 실적 화면의 기능 플래그다', async () => {
+    const prisma = {
+      terminal_process: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn(async (work: (tx: unknown) => Promise<unknown>) =>
+        work({ work_order: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) } })),
+      integration_message: { findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as PrismaService;
+
+    await new WorkOrderQueryService(prisma).list({ workOrderTypeCode: 'REWORK', statusCode: 'PLANNED', withProgress: false }, terminal);
+
+    expect(prisma.terminal_process.findMany).toHaveBeenCalledWith({
+      where: { terminal_id: 7n, can_input_result: true }, select: { process_id: true },
+    });
   });
 });
