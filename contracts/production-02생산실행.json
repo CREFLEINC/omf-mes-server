@@ -3707,7 +3707,7 @@
      "production"
     ],
     "summary": "작업 시작 — 세션 열기",
-    "x-server-note": "⭐ 중단(SUSPENDED)·열린 세션 없음 W/O 도 받는다 — 같은 트랜잭션에서 W/O 를 IN_PROGRESS 로 재개하고 새 세션을 연다(재개는 세션 사건을 남기지 않고 START 만). 그때 응답 WorkSession 에 resumedWorkOrder: true. 열린 세션(중단 STOPPED 포함)이 있으면 상태 검사보다 먼저 409 OPEN_SESSION_EXISTS — 그 세션의 RESUME 사건으로 재개한다. 그 밖에 시작할 수 없는 상태는 400 STATE_LOCKED 「작업을 시작할 수 없는 W/O 입니다 — …」. 장부 P-111",
+    "x-server-note": "⭐ 중단(SUSPENDED)·열린 세션 없음 W/O 도 받는다 — 같은 트랜잭션에서 W/O 를 IN_PROGRESS 로 재개하고 새 세션을 연다(재개는 세션 사건을 남기지 않고 START 만). 응답은 WorkSession 그대로. 열린 세션(중단 STOPPED 포함)이 있으면 상태 검사보다 먼저 409 OPEN_SESSION_EXISTS — 그 세션의 RESUME 사건으로 재개한다(다른 단말 세션이면 그 단말에서 재개·종료하거나 관리웹 강제 종료). 그 밖에 시작할 수 없는 상태는 400 STATE_LOCKED 「작업을 시작할 수 없는 W/O 입니다 — …」. 장부 P-111",
     "description": "단말 게이팅(can_start_work)을 서버가 강제한다. 통제 우회는 controlOverride 로 함께 보낸다. ⛔ 오프라인 대상이 아니다 — 이 오퍼레이션을 부르는 화면은 온라인에서만 세션을 연다 (P-02-01 §6-1 · P-02-02 §6-1). 여는 조건이 전부 «판정값»이라(can_start_work · 점검 이력 · W/O 상태) 캐시하면 차단해야 할 작업이 열린다 — 공유계약 C-14 가 그렇게 가르고, C-18 이 이 화면을 소비자 쪽 대표 사례로 이름 붙였다. ⛔ 셸의 outbox 에 담지 않는다. ⛔ 큐 접수 202 를 두지 않는다 — 오프라인이면 HTTP 요청 자체가 일어나지 않아 서버가 202 를 보낼 자리가 없다 (2026-08-12 정정 · omf-mes-client#97). Idempotency-Key 는 필수다 — 오프라인 큐 때문이 아니라 재시도 중복을 막기 위해서다(공유계약 C-8). If-Match 는 선택이다 — 신규 생성이라 대조할 version_no 가 아직 없다(공유계약 C-9 의 큐 조항과는 무관하다). 근거: P-02-01 §5-1·§6-1 · P-02-02 §6-1 · 공유계약 F-1·F-6·C-14·C-18",
     "parameters": [
      {
@@ -7942,11 +7942,6 @@
      "workerName": {
       "type": "string",
       "example": "값"
-     },
-     "resumedWorkOrder": {
-      "type": "boolean",
-      "description": "작업 시작이 중단(SUSPENDED) W/O 를 재개하며 새 세션을 열었을 때만 true 로 실린다 — 화면이 「중단된 작업지시를 재개하고 작업을 시작했습니다」를 알린다. 시작 응답에만 있다. 장부 P-111",
-      "example": true
      },
      "startedAt": {
       "type": "string",

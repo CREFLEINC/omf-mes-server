@@ -39,8 +39,6 @@ export interface WorkSessionCreate {
   workerIds?: number[];
   controlOverride?: { reasonCode: string; note?: string };
 }
-/** 작업 시작 응답 — 중단 W/O 를 재개하며 시작했으면 `resumedWorkOrder` 가 실린다(계약 `WorkSession` 선택 칸). */
-export type WorkSessionStarted = WorkSessionView & { resumedWorkOrder?: true };
 /** 본문 밖에서 오는 것. `terminalId` 는 단말 토큰이 준다 — 안 보냈으면 `null` 이다(R-1). */
 export interface WorkSessionContext {
   workerNo: string | undefined;
@@ -57,7 +55,7 @@ export class WorkSessionService {
     private readonly documentState: DocumentStateService,
     private readonly notifier: WorkOrderNotifier,
   ) {}
-  async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionStarted> {
+  async create(body: WorkSessionCreate, context: WorkSessionContext): Promise<WorkSessionView> {
     // 작업을 시작하는 사람이 이 세션의 주작업자다.
     const mainWorkerId = await resolveWorkerId(this.prisma, context.workerNo);
     if ((await this.prisma.worker.count({ where: { worker_id: mainWorkerId, ...EMPLOYED_WORKER } })) === 0) {
@@ -68,7 +66,7 @@ export class WorkSessionService {
     // `runIdempotent` 가 tx 를 넘겨주지 않는다 — 서비스가 자기 트랜잭션을 연다(I-9 R-10).
     return this.prisma.$transaction((tx) => this.commit(tx, body, context, mainWorkerId));
   }
-  private async commit(tx: Tx, body: WorkSessionCreate, context: WorkSessionContext, mainWorkerId: bigint): Promise<WorkSessionStarted> {
+  private async commit(tx: Tx, body: WorkSessionCreate, context: WorkSessionContext, mainWorkerId: bigint): Promise<WorkSessionView> {
     const workOrderId = BigInt(body.workOrderId);
     const locked = await lockWorkOrder(tx, body.workOrderId);
     assertVersion(locked, context.version);
@@ -76,7 +74,12 @@ export class WorkSessionService {
     //    새 세션이 아니라 그 세션의 RESUME 으로 재개해야 해서, 상태 400 보다 이 409 가 할 일을 정확히 알린다(장부 P-111).
     const open = await tx.work_session.findFirst({ where: { work_order_id: workOrderId, ended_at: null } });
     if (open !== null) {
-      throw new ConflictException('user', '이 MES W/O 에 열린 세션이 이미 있습니다.', { code: ERROR_CODE.OPEN_SESSION_EXISTS });
+      throw new ConflictException(
+        'user',
+        '이 MES W/O 에 이미 열린 작업 세션이 있습니다. 목록을 새로 고친 뒤 그 세션을 이어서 하기로 재개하세요 — '
+          + '다른 단말의 세션이면 그 단말에서 재개·종료하거나 관리웹에서 강제 종료하세요.',
+        { code: ERROR_CODE.OPEN_SESSION_EXISTS },
+      );
     }
     // ⭐ 중단·열린 세션 없음 W/O 는 같은 트랜잭션에서 재개하고 시작한다 — 따로 부르면 재개만 되고 시작이 실패하는
     //    부분 실패가 남는다(사용자 결정 2026-10-23 · 장부 P-111). 재개는 세션 사건을 남기지 않는다(START 만).
@@ -118,7 +121,7 @@ export class WorkSessionService {
     await this.notifier.notify(tx, 'WORK_SESSION_STARTED', workOrderId, startedAt, {
       appUserId: context.appUserId, workerNo: context.workerNo,
     });
-    return { ...workSessionView(row), ...(resumed ? { resumedWorkOrder: true as const } : {}) };
+    return workSessionView(row);
   }
 
   /** ⛔ 400 이다 — CLOSED 등이 여기서 막혀 마감 트리거에 닿지 않는다. 문구만 상태별 조치로 바꾼다. */

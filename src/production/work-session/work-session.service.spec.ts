@@ -187,7 +187,7 @@ describe('WorkSessionService.create', () => {
   it('중단·세션 없음 W/O 의 작업 시작은 같은 트랜잭션에서 재개하고 새 세션을 연다 — 버전은 한 번만 오른다', async () => {
     const it0 = stub({ status: 'SUSPENDED' });
     const view = await it0.service.create(body(), context());
-    expect(view).toMatchObject({ statusCode: 'RUNNING', resumedWorkOrder: true });
+    expect(view).toMatchObject({ statusCode: 'RUNNING' });
     expect(it0.updates).toEqual([{ status_code: 'IN_PROGRESS', version_no: { increment: 1 }, updated_by: 5 }]);
     // 재개는 세션 사건을 남기지 않는다 — START 만.
     expect(it0.events.map((event) => event.event_type_code)).toEqual(['START']);
@@ -198,11 +198,11 @@ describe('WorkSessionService.create', () => {
     const error = (await it0.service.create(body(), context()).catch((e: unknown) => e)) as ConflictException;
     expect(error).toBeInstanceOf(ConflictException);
     expect(error.conflict).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
+    expect(error.conflict.message).toContain('이어서 하기로 재개하세요');
     expect(it0.updates).toEqual([]);
   });
 
-  it('보통 시작에는 resumedWorkOrder 가 없고, 시작할 수 없는 상태는 할 일을 알린다', async () => {
-    await expect(stub({ status: 'RELEASED' }).service.create(body(), context())).resolves.not.toHaveProperty('resumedWorkOrder');
+  it('시작할 수 없는 상태는 할 일을 알린다', async () => {
     const error = (await stub({ status: 'PLANNED' }).service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
     expect(error.errors[0].message).toContain('배포한 뒤 시작하세요');
   });

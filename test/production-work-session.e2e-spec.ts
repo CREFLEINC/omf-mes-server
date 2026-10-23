@@ -488,7 +488,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
     it('열린 세션 없는 SUSPENDED W/O 는 재개하며 연다(장부 P-111)', async () => {
       const workOrderId = await workOrder('SUSPENDED');
       const response = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
-      expect(response.body).toMatchObject({ resumedWorkOrder: true });
+      expect(response.body).toMatchObject({ statusCode: 'RUNNING' });
     });
 
     it('X-Worker-No 가 없으면 400 REQUIRED', async () => {
@@ -569,7 +569,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       // 옛 경로로 세션 없이 중단된 W/O(데이터) — 작업 시작이 재개하며 연다.
       await prisma.work_order.update({ where: { work_order_id: BigInt(workOrderId) }, data: { status_code: 'SUSPENDED' } });
       const reopened = await openSession({ workOrderId, startedAt: END_AT }).expect(201);
-      expect(reopened.body).toMatchObject({ sessionNo: 2, resumedWorkOrder: true });
+      expect(reopened.body).toMatchObject({ sessionNo: 2 });
     });
 
     it('⛔ 201·200 응답에 ETag 가 없다', async () => {

@@ -68,14 +68,11 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
 
     const response = await start(workOrderId).expect(201);
 
-    expect(response.body).toMatchObject({ statusCode: 'RUNNING', resumedWorkOrder: true });
+    expect(response.body).toMatchObject({ statusCode: 'RUNNING', workOrderId: Number(workOrderId) });
     const after = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
     expect(after).toMatchObject({ status_code: 'IN_PROGRESS', version_no: before.version_no + 1 });
     const events = await prisma.work_session_event.findMany({ where: { work_session_id: BigInt(response.body.workSessionId) } });
     expect(events.map((event) => event.event_type_code)).toEqual(['START']);
-    // 보통 시작에는 그 칸이 없다.
-    const plain = await start(await workOrder('C2', 'RELEASED')).expect(201);
-    expect(plain.body).not.toHaveProperty('resumedWorkOrder');
   });
 
   it('중단 세션이 열려 있으면 작업 시작은 409 다 — 그 세션의 재개로', async () => {
@@ -89,6 +86,7 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     const response = await start(workOrderId).expect(409);
 
     expect(response.body).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
+    expect(response.body.message).toContain('관리웹에서 강제 종료하세요');
     expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe('SUSPENDED');
   });
 
