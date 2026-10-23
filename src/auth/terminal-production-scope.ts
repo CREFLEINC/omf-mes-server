@@ -77,6 +77,30 @@ export async function assertTerminalProductionScope(
    * 둘 다 없으면 걸 설비가 없다(작업 전 점검 없이 시작한다).
    */
   const usableEquipment = (plannedEquipmentId: bigint | null): bigint | null => terminal.equipmentId ?? plannedEquipmentId;
+  const assertEquipment = (usable: bigint | null, value: unknown): void => {
+    if (usable === null) throw scopeDenied(NO_EQUIPMENT);
+    if (positiveId(value) !== usable) throw scopeDenied(OTHER_EQUIPMENT);
+  };
+  /**
+   * 작업 시작·작업 전 점검의 W/O 와 설비 — 칸마다 따로 가른다. W/O 를 가를 수 없어도 설비는 본다: 단말 설비가 있으면 그 설비,
+   * 없으면 단말 공장의 설비여야 한다. 없는 설비와 남의 공장 설비가 같은 401 이라 남의 공장 설비가 있는지 드러나지 않는다.
+   */
+  const startEquipment = async (workOrderId: unknown, equipmentId: unknown): Promise<void> => {
+    if (given(workOrderId)) {
+      const usable = usableEquipment(await ownWorkOrder(workOrderId, 'can_start_work'));
+      if (given(equipmentId)) assertEquipment(usable, equipmentId);
+      return;
+    }
+    if (!given(equipmentId)) return;
+    if (terminal.equipmentId !== null) {
+      assertEquipment(terminal.equipmentId, equipmentId);
+      return;
+    }
+    const id = positiveId(equipmentId);
+    if (id === null || !await prisma.equipment.findFirst({
+      where: { equipment_id: id, plant_id: terminal.plantId }, select: { equipment_id: true },
+    })) throw scopeDenied(FOREIGN_EQUIPMENT);
+  };
   /**
    * 범위 밖인 까닭이 W/O 상태(배포 전·완료·마감·취소)뿐이면 그 까닭과 할 일을 알린다 — 단말 공장의 W/O 이고 이 단말이
    * 그 공정에 매핑돼 있을 때만이다(남의 공장·매핑 없는 W/O 의 상태를 알려 주지 않는다). 그 밖은 「범위 밖」 그대로다.
@@ -155,22 +179,19 @@ export async function assertTerminalProductionScope(
       break;
     case 'POST /production/work-sessions/{workSessionId}/workers':
       await ownSession(request.params.workSessionId);
-      await plantWorkers([body.workerId]);
+      if (given(body.workerId)) await plantWorkers([body.workerId]);
       break;
-    case 'POST /production/precheck-decisions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
-      if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
+    case 'POST /production/precheck-decisions':
+      await startEquipment(body.workOrderId, body.equipmentId);
       break;
-    }
     case 'POST /production/work-sessions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
-      await plantWorkers(array(body.workerIds));
-      if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
-      if (body.moldId !== undefined) {
+      await startEquipment(body.workOrderId, body.equipmentId);
+      await plantWorkers(array(body.workerIds).filter(given));
+      if (given(body.moldId)) {
         const moldId = positiveId(body.moldId);
         if (moldId === null || !await prisma.mold.findFirst({
           where: { mold_id: moldId, plant_id: terminal.plantId }, select: { mold_id: true },
-        })) throw denied();
+        })) throw scopeDenied(FOREIGN_MOLD);
       }
       break;
     }
@@ -182,16 +203,19 @@ export async function assertTerminalProductionScope(
       await closableWorkOrder(request.params.workOrderId);
       break;
     case 'POST /production/production-results':
-      await ownWorkOrder(body.workOrderId, 'can_input_result');
-      for (const allocation of array(body.lotAllocations)) await ownLot(object(allocation).lotId);
+      if (given(body.workOrderId)) await ownWorkOrder(body.workOrderId, 'can_input_result');
+      for (const allocation of array(body.lotAllocations)) {
+        const lotId = object(allocation).lotId;
+        if (given(lotId)) await ownLot(lotId);
+      }
       break;
     case 'POST /trace/serial-numbers':
-      await ownLot(body.lotId);
+      if (given(body.lotId)) await ownLot(body.lotId);
       break;
     case 'POST /production/material-consumptions':
-      await ownWorkOrder(body.workOrderId, 'can_input_material');
-      await ownLot(body.lotId);
-      if (body.workSessionId !== undefined) await ownSession(body.workSessionId);
+      if (given(body.workOrderId)) await ownWorkOrder(body.workOrderId, 'can_input_material');
+      if (given(body.lotId)) await ownLot(body.lotId);
+      if (given(body.workSessionId)) await ownSession(body.workSessionId);
       break;
     case 'POST /trace/lots/{lotId}:complete':
       await ownLot(request.params.lotId);
@@ -216,6 +240,16 @@ function positiveId(value: unknown): bigint | null {
   const id = BigInt(text);
   return id > 0n && id < 9223372036854775808n ? id : null;
 }
+/**
+ * 본문 id 칸을 범위로 가를 수 있는지 — 양의 정수(number)면 늘 범위를 본다. 빠졌거나 null·문자열·소수·0·음수처럼 계약상 틀린
+ * 값은 «그 칸만» 범위로 가르지 않고 계약 검증(뒤 가드)·업무 검증에 넘긴다 — 범위 판정이 인증 가드 안이라 계약 검증보다 먼저
+ * 돌아, 여기서 틀린 값을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
+ * ⛔ 칸마다 따로 가른다. 한 칸이 틀렸다고 다른 칸의 범위 판정까지 건너뛰면, 범위 밖 W/O 가 있는지가 업무 검증 응답으로 드러난다.
+ * ⚠ 큰 정수(int64 를 넘는 값)도 정수라 범위로 넘긴다 — `positiveId` 가 null 로 읽어 범위 밖(401)이 된다. 여기서 건너뛰면
+ *   계약(본문 int64 는 범위를 보지 않는다)을 지나 DB 까지 가 500 이 난다.
+ * ⚠ 건너뛴 필수 칸은 계약이 required·non-null 정수라 뒤 가드가 막는다 — `terminal-production-scope.spec.ts` 가 계약 사본으로 지킨다.
+ */
+function given(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value > 0; }
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -234,6 +268,15 @@ function flagDenied(name: string): ContractException {
     scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
     message: `이 단말에는 이 W/O 공정의 ${name} 권한이 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 해당 공정의 「${name}」을 켜세요.`,
   }]);
+}
+
+const FOREIGN_MOLD = '고른 금형이 이 단말 공장의 금형이 아닙니다. 관리웹 기준정보 관리 › 툴·금형 › 툴/금형/지그 마스터에서 금형의 공장을 확인하거나 다른 금형을 고르세요.';
+const FOREIGN_EQUIPMENT = '고른 설비가 이 단말 공장의 설비가 아닙니다. 관리웹 기준정보 관리 › 설비 › 설비·설비그룹 마스터에서 설비의 공장을 확인하거나 다른 설비를 고르세요.';
+const NO_EQUIPMENT = '이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어 설비를 실을 수 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 연결하세요.';
+const OTHER_EQUIPMENT = '고른 설비가 이 단말의 설비(단말에 설비가 없으면 W/O 의 계획 설비)가 아닙니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 확인하거나 그 설비의 단말에서 작업하세요.';
+
+function scopeDenied(message: string): ContractException {
+  return new ContractException(HttpStatus.UNAUTHORIZED, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message }]);
 }
 
 function denied(): ContractException {

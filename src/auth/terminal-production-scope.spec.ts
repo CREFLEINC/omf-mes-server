@@ -1,5 +1,6 @@
 import type { Request } from 'express';
 
+import { ContractRegistry } from '../common/contract/contract-registry';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TerminalContext } from './terminal-context';
 import { assertTerminalProductionScope } from './terminal-production-scope';
@@ -22,6 +23,7 @@ const prisma = {
   work_session: { findFirst: jest.fn().mockResolvedValue({ work_session_id: 29n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
   mold: { findFirst: jest.fn().mockResolvedValue({ mold_id: 53n }) },
+  equipment: { findFirst: jest.fn().mockResolvedValue({ equipment_id: 61n }) },
 } as unknown as PrismaService;
 
 function request(body: Record<string, unknown> = {}, params: Record<string, string> = {}, workerNo?: string): Request {
@@ -36,6 +38,7 @@ describe('POP production terminal scope', () => {
     (prisma.work_session.findFirst as jest.Mock).mockResolvedValue({ work_session_id: 29n });
     (prisma.lot.findFirst as jest.Mock).mockResolvedValue({ lot_id: 43n });
     (prisma.mold.findFirst as jest.Mock).mockResolvedValue({ mold_id: 53n });
+    (prisma.equipment.findFirst as jest.Mock).mockResolvedValue({ equipment_id: 61n });
   });
 
   it('allows a mapped same-plant W/O and actual terminal equipment for session start', async () => {
@@ -148,7 +151,8 @@ describe('POP production terminal scope', () => {
     expect(prisma.worker.count).toHaveBeenLastCalledWith({ where: { worker_id: { in: [19n, 20n] }, plant_id: 3n, is_active: true } });
     (prisma.worker.count as jest.Mock).mockResolvedValueOnce(1);
     await expect(start([19, 20])).rejects.toMatchObject({ status: 401 });
-    await expect(start(['x'])).rejects.toMatchObject({ status: 401 });
+    // 정수 id 로 읽을 수 없는 값은 범위로 가르지 않는다 — 계약 검증이 400 으로 막는다.
+    await expect(start(['x'])).resolves.toBeUndefined();
   });
 
   it('공동 작업자 참여·이탈·목록은 자기 세션이고, 참여하는 사람은 단말 공장의 재직 작업자다', async () => {
@@ -236,5 +240,77 @@ describe('POP production terminal scope', () => {
     await expect(assertTerminalProductionScope(prisma,
       request({ lotId: 43 }, {}, '900028'),
       'POST /trace/serial-numbers', terminal)).rejects.toMatchObject({ status: 401 });
+  });
+
+  describe('본문 id 칸은 정수일 때만 범위로 가른다 — 틀린 값은 그 칸만 계약·업무 검증으로', () => {
+    const start = (body: Record<string, unknown>) => assertTerminalProductionScope(prisma,
+      request({ workOrderId: 11, ...body }, {}, '900028'), 'POST /production/work-sessions', terminal);
+
+    it.each([0, -1, 1.5, null, '53'])('moldId %p 는 범위로 가르지 않는다', async (moldId) => {
+      await expect(start({ moldId })).resolves.toBeUndefined();
+      expect(prisma.mold.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('2^53 을 넘는 정수도 범위를 본다 — int64 를 넘으면 범위 밖 401 이다', async () => {
+      await expect(start({ moldId: 2 ** 53 + 2 })).resolves.toBeUndefined();
+      expect(prisma.mold.findFirst).toHaveBeenCalled();
+      await expect(start({ moldId: 1e19 })).rejects.toMatchObject({ status: 401 });
+      await expect(start({ workerIds: [1e19] })).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('틀린 값이 섞인 명단도 남은 정수 id 는 범위를 본다', async () => {
+      (prisma.worker.count as jest.Mock).mockResolvedValueOnce(0);
+      await expect(start({ workerIds: [19, 'x'] })).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('한 칸이 틀려도 다른 칸은 범위를 본다 — 범위 밖 W/O 는 lotId·equipmentId 가 0 이어도 401', async () => {
+      (prisma.work_order.findFirst as jest.Mock).mockResolvedValue(null);
+      await expect(assertTerminalProductionScope(prisma, request({ workOrderId: 11, lotId: 0 }, {}, '900028'),
+        'POST /production/material-consumptions', terminal)).rejects.toMatchObject({ status: 401 });
+      await expect(assertTerminalProductionScope(prisma, request({ workOrderId: 11, equipmentId: 0 }, {}, '900028'),
+        'POST /production/precheck-decisions', terminal)).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('W/O 를 가를 수 없어도 설비는 본다 — 단말 설비가 있으면 그 설비, 없으면 단말 공장 설비', async () => {
+      const check = (equipmentId: number, context: TerminalContext) => assertTerminalProductionScope(prisma,
+        request({ workOrderId: 0, equipmentId }, {}, '900028'), 'POST /production/precheck-decisions', context);
+
+      await expect(check(5, terminal)).resolves.toBeUndefined();
+      await expect(check(61, terminal)).rejects.toMatchObject({ status: 401 });
+      const bare = { ...terminal, equipmentId: null };
+      await expect(check(61, bare)).resolves.toBeUndefined();
+      expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({ where: { equipment_id: 61n, plant_id: 3n }, select: { equipment_id: true } });
+      (prisma.equipment.findFirst as jest.Mock).mockResolvedValue(null);
+      await expect(check(61, bare)).rejects.toMatchObject({ status: 401 });
+      expect(prisma.work_order.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('범위로 가르지 못해 건너뛰는 필수 칸은 계약이 required·null 불가 정수다 — 뒤 계약 검증이 400 으로 막는 전제', () => {
+      const registry = ContractRegistry.load();
+      const schemaOf = (key: string): Record<string, unknown> => {
+        const contract = registry.get(key);
+        if (contract === undefined) throw new Error(`계약에 없는 오퍼레이션: ${key}`);
+        const body = contract.operation.requestBody as { content: Record<string, { schema: { $ref: string } }> };
+        const name = body.content['application/json'].schema.$ref.split('/').pop() as string;
+        return (contract.document.components as { schemas: Record<string, Record<string, unknown>> }).schemas[name];
+      };
+      const requiredInteger = (schema: Record<string, unknown>, field: string) => {
+        expect(schema.required).toContain(field);
+        expect((schema.properties as Record<string, { type: unknown }>)[field].type).toBe('integer');
+      };
+      const cases: [string, string[]][] = [
+        ['POST /production/precheck-decisions', ['workOrderId', 'equipmentId']],
+        ['POST /production/work-sessions', ['workOrderId']],
+        ['POST /production/work-sessions/{workSessionId}/workers', ['workerId']],
+        ['POST /production/production-results', ['workOrderId']],
+        ['POST /production/material-consumptions', ['workOrderId', 'lotId']],
+        ['POST /trace/serial-numbers', ['lotId']],
+      ];
+      for (const [key, fields] of cases) for (const field of fields) requiredInteger(schemaOf(key), field);
+      const allocation = (schemaOf('POST /production/production-results').properties as Record<string, { items: { $ref: string } }>)
+        .lotAllocations.items.$ref.split('/').pop() as string;
+      const components = registry.get('POST /production/production-results')?.document.components as { schemas: Record<string, Record<string, unknown>> };
+      requiredInteger(components.schemas[allocation], 'lotId');
+    });
   });
 });
