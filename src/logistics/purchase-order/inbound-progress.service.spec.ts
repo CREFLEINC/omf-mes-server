@@ -175,6 +175,37 @@ describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)',
     expect(row.putaway).toMatchObject({ putawayTaskNo: 'PT-60', locationCode: null });
   });
 
+  it('LOT 이 없는 입하 라인은 라벨 대기 줄 하나다 — 수량·단위는 라인의 것이고 LOT 칸은 비어 있다', async () => {
+    const rows = await service({
+      lines: [inboundLine({ inbound_receipt_line_id: 8n, lot_id: null, received_qty: decimal('120'), uom: { uom_code: 'KG' } }), inboundLine()],
+      lots: [lotRow(10n, 'L-10', 'NORMAL', '50')],
+      receivable: [[10n, '50']],
+    }).ofPurchaseOrder(1);
+    expect(rows.map((row) => [row.inboundReceiptLineId, row.lotNo, row.stageCode])).toEqual([
+      [8, null, 'LABEL_PENDING'],
+      [7, 'L-10', 'RECEIPT_READY'],
+    ]);
+    expect(rows[0]).toEqual({
+      purchaseOrderLineId: 3,
+      inboundReceiptId: 5,
+      inboundReceiptNo: 'IR-1',
+      inboundReceiptLineId: 8,
+      receiptDatetime: '2026-10-22T01:00:00.000Z',
+      lotId: null,
+      lotNo: null,
+      receivedQty: 120,
+      receivableQty: null,
+      uomCode: 'KG',
+      lotStatusCode: null,
+      stageCode: 'LABEL_PENDING',
+      nextActionCode: 'ISSUE_LABEL',
+      blockedReasons: [],
+      inspection: null,
+      goodsReceipt: null,
+      putaway: null,
+    });
+  });
+
   it('입하 전표가 취소 요청 중이면 CANCELLED 다', async () => {
     const [row] = await service({
       lines: [inboundLine({ inbound_receipt: { ...(inboundLine().inbound_receipt as Args), status_code: 'CANCEL_REQUESTED' } })],
