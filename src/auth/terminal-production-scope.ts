@@ -31,7 +31,7 @@ export async function assertTerminalProductionScope(
   const body = object(request.body);
   /**
    * 단말 범위 안의 W/O 면 그 계획 설비를 돌려준다. 그 W/O 공정의 이 단말 매핑에서 그 일의 기능 플래그를 본다 —
-   * 화면 후보(`terminal-accessible-screens.ts`)와 같은 플래그라, 화면에 들어갈 수 있으면 저장도 된다(장부 P-109).
+   * 화면 후보(`terminal-accessible-screens.ts`)와 같은 플래그라, 화면에 들어갈 수 있으면 저장도 된다(장부 P-113).
    * 매핑이 없으면 범위 밖, 매핑은 있는데 플래그만 꺼졌으면 켤 곳을 알려 준다.
    */
   const ownWorkOrder = async (value: unknown, flag: WorkOrderFlag): Promise<bigint | null> => {
@@ -99,7 +99,7 @@ export async function assertTerminalProductionScope(
   };
   /**
    * 세션 사건·참여자 «읽기»는 다른 단말이 연 세션도 읽는다 — 같은 W/O 를 고른 단말이 「누가 이미 작업 중인지」를 보여야 한다.
-   * 기준은 W/O 단위 조회와 같다(그 W/O 공정에 작업 시작·자재 투입·실적 입력 중 하나라도 켠 매핑 · 장부 P-109). 쓰기는 자기 세션만이다.
+   * 기준은 W/O 단위 조회와 같다(그 W/O 공정에 작업 시작·자재 투입·실적 입력 중 하나라도 켠 매핑 · 장부 P-113). 쓰기는 자기 세션만이다.
    */
   const readableSession = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
