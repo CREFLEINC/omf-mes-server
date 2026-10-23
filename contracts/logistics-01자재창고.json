@@ -4432,6 +4432,110 @@
     "x-internal-note": "초과 입하 분리에서 이어지는 진입이 있다(W-01-03 §5-1 → W-01-11 §5-3)."
    }
   },
+  "/logistics/purchase-orders:inbound-stage-counts": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입고 단계 칩의 수",
+    "description": "입고 관리 허브(W-01-09) 탭 줄의 「검사 대기 N · 보류 N · 입고 대기 N · 적치 대기 N」 — 발주 목록(GET /logistics/purchase-orders)과 같은 조건에 맞는 발주 «전체»의 LOT 을 묶음별로 센다. 쪽(page·size)과 inboundStage 는 보지 않는다 — 칩으로 좁힌 뒤에도 다른 칩의 수가 남는다. 목록의 계약 밖 조건(expectedReceiptDateFrom·expectedReceiptDateTo·overdueOnly·supplierQ · 장부 P-85)도 목록과 같이 받는다. 묶음: INSPECTION = INSPECTION_REQUIRED·INSPECTION_REQUESTED·INSPECTION_IN_PROGRESS · HELD = INSPECTION_HELD · RECEIPT = RECEIPT_READY · PUTAWAY = PUTAWAY_PENDING·PUTAWAY_TEMPORARY. 완료·취소는 세지 않는다. 판정은 GET …/{purchaseOrderId}/inbound-progress 의 stageCode 와 같다. 장부 P-110",
+    "parameters": [
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "물류 전표의 진행 상태로 거른다 — 등록(REGISTERED) · 전기완료(POSTED) · 취소요청(CANCEL_REQUESTED) · 취소완료(CANCELLED). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOGISTICS_DOCUMENT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "x-code-key": "CD-LOGISTICS-DOCUMENT-STATUS"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 품목이 라인에 있는 P/O 만"
+     },
+     {
+      "name": "orderDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "발주일 시작"
+     },
+     {
+      "name": "orderDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "발주일 종료"
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "아직 입하가 끝나지 않은 건만"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "발주번호 검색"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "묶음별 LOT 수",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundStageCountResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 계약 밖 조건의 형식 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/purchase-orders/{purchaseOrderId}": {
    "parameters": [
     {
@@ -4672,6 +4776,48 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/logistics/purchase-orders/{purchaseOrderId}/inbound-progress": {
+   "parameters": [
+    {
+     "name": "purchaseOrderId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "발주 하나의 입고 진행(LOT 단계)",
+    "description": "입고 관리 허브(W-01-09)가 발주를 고르면 부른다 — 그 발주 라인에 연결된 입하 라인의 자재 LOT 마다 한 줄. 선별(P-53)로 떼어 낸 자식 LOT 도 한 줄이고 조상의 입하 라인을 따른다. LOT 을 아직 발행하지 않은 입하 라인(라벨 없는 입하)은 줄이 없다. 단계(stageCode)와 다음 할 일(nextActionCode)은 서버가 정한다(C-17) — 화면은 규칙을 베끼지 않는다. 정렬은 화면이 한다. 권한은 형제 경로(발주 목록·상세)처럼 묻지 않는다. 장부 P-110",
+    "responses": {
+     "200": {
+      "description": "LOT 진행",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundLotProgressListResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 P/O",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
         }
        }
       }
@@ -14952,6 +15098,328 @@
      },
      "page": {
       "$ref": "#/components/schemas/PageMeta"
+     }
+    }
+   },
+   "InboundLotProgress": {
+    "type": "object",
+    "description": "입고 관리 허브의 LOT 한 줄 — 입하·검사·입고·적치를 한 줄로 모은다. 장부 P-110",
+    "required": [
+     "purchaseOrderLineId",
+     "inboundReceiptId",
+     "inboundReceiptNo",
+     "inboundReceiptLineId",
+     "receiptDatetime",
+     "lotId",
+     "lotNo",
+     "receivedQty",
+     "receivableQty",
+     "uomCode",
+     "lotStatusCode",
+     "stageCode",
+     "nextActionCode",
+     "blockedReasons",
+     "inspection",
+     "goodsReceipt",
+     "putaway"
+    ],
+    "properties": {
+     "purchaseOrderLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "GET /logistics/purchase-order-lines 의 purchaseOrderLineId 와 같다 — 화면이 그 라인 아래에 묶는다"
+     },
+     "inboundReceiptId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "GET /logistics/inbound-receipts/{inboundReceiptId} 로 입고 처리 창을 연다"
+     },
+     "inboundReceiptNo": {
+      "type": "string",
+      "example": "IR-20261022-0001"
+     },
+     "inboundReceiptLineId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001,
+      "description": "선별 자식은 조상 LOT 의 입하 라인"
+     },
+     "receiptDatetime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "입하 일시"
+     },
+     "lotId": {
+      "type": "integer",
+      "format": "int64",
+      "example": 1001
+     },
+     "lotNo": {
+      "type": "string",
+      "description": "저장된 번호 그대로",
+      "example": "AD9001-00041|50|261016|100001|0001"
+     },
+     "receivedQty": {
+      "type": "number",
+      "description": "이 LOT 의 입하 수량 — 선별 자식은 떼어 낸 수량",
+      "example": 50
+     },
+     "receivableQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "입고 가능 수량(P-56) — 입고 처리 창의 상한. 입고 검사와 같은 계산",
+      "example": 35
+     },
+     "uomCode": {
+      "type": "string",
+      "example": "EA"
+     },
+     "lotStatusCode": {
+      "type": "string",
+      "description": "LOT_STATUS",
+      "example": "INSPECTION_PENDING"
+     },
+     "stageCode": {
+      "type": "string",
+      "enum": [
+       "INSPECTION_REQUIRED",
+       "INSPECTION_REQUESTED",
+       "INSPECTION_IN_PROGRESS",
+       "INSPECTION_HELD",
+       "RECEIPT_READY",
+       "PUTAWAY_PENDING",
+       "PUTAWAY_TEMPORARY",
+       "COMPLETED",
+       "CANCELLED"
+      ],
+      "description": "위에서부터 처음 맞는 줄 — 입하 취소(취소 요청 포함)는 CANCELLED · 입고할 수량이 남았으면: 폐기 LOT 은 CANCELLED, 검사 대기 LOT 은 검사 대상이면 의뢰 상태대로(없음 INSPECTION_REQUIRED · REQUESTED · IN_PROGRESS) 그 밖(판정 보류·합격 뒤 남은 보류·무검사 품목에 건 보류)은 INSPECTION_HELD, 합격·무검사·불량(불량창고로만)은 RECEIPT_READY · 다 입고했으면 살아 있는 입고의 적치 작업이 대기면 PUTAWAY_PENDING, 임시 적치면 PUTAWAY_TEMPORARY, 아니면 COMPLETED. 일부만 입고한 LOT 은 RECEIPT_READY 다(가장 뒤처진 단계 하나)"
+     },
+     "nextActionCode": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "REQUEST_IQC",
+       "POST_RECEIPT",
+       "PUTAWAY",
+       null
+      ],
+      "description": "서버가 정한 다음 할 일. ⚠ REQUEST_IQC 는 지금 주지 않는다 — 의뢰 생성 경로를 미뤘다(사용자 결정 2026-10-23)"
+     },
+     "blockedReasons": {
+      "type": "array",
+      "description": "INSPECTION_HELD 를 만든 열린 보류의 사유(공통코드 LOT_HOLD_REASON 이름까지). 그 밖은 빈 배열",
+      "items": {
+       "type": "object",
+       "required": [
+        "code",
+        "name"
+       ],
+       "properties": {
+        "code": {
+         "type": "string",
+         "example": "INCOMING_INSPECTION_WAIT"
+        },
+        "name": {
+         "type": "string",
+         "example": "수입검사 대기"
+        }
+       }
+      }
+     },
+     "inspection": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "가장 최근 IQC 의뢰 — 선별 자식은 자기 의뢰가 없으면 조상의 것. 무검사 품목은 null",
+      "required": [
+       "inspectionRequestId",
+       "inspectionRequestNo",
+       "statusCode",
+       "requestedAt",
+       "judgmentCode",
+       "judgedAt"
+      ],
+      "properties": {
+       "inspectionRequestId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "inspectionRequestNo": {
+        "type": "string"
+       },
+       "statusCode": {
+        "type": "string",
+        "description": "INSPECTION_REQUEST_STATUS"
+       },
+       "requestedAt": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "judgmentCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "enum": [
+         "ACCEPTED",
+         "REJECTED",
+         "HELD",
+         null
+        ],
+        "description": "의뢰가 끝났을(COMPLETED) 때만 — 재검사 중에는 null"
+       },
+       "judgedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "판정 확정 시각"
+       }
+      }
+     },
+     "goodsReceipt": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "가장 최근 입고(취소 완료 제외 — 취소 요청 중은 보인다)",
+      "required": [
+       "goodsReceiptId",
+       "goodsReceiptNo",
+       "receiptDatetime",
+       "statusCode"
+      ],
+      "properties": {
+       "goodsReceiptId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "goodsReceiptNo": {
+        "type": "string"
+       },
+       "receiptDatetime": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "statusCode": {
+        "type": "string"
+       }
+      }
+     },
+     "putaway": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "살아 있는(POSTED) 입고의 적치 작업 중 가장 뒤처진 것(대기 → 임시 → 완료)",
+      "required": [
+       "putawayTaskId",
+       "putawayTaskNo",
+       "statusCode",
+       "locationCode",
+       "locationName",
+       "completedAt"
+      ],
+      "properties": {
+       "putawayTaskId": {
+        "type": "integer",
+        "format": "int64",
+        "example": 1001
+       },
+       "putawayTaskNo": {
+        "type": "string"
+       },
+       "statusCode": {
+        "type": "string"
+       },
+       "locationCode": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "적치한 위치 — 대기면 null"
+       },
+       "locationName": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "completedAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       }
+      }
+     }
+    }
+   },
+   "InboundLotProgressListResponse": {
+    "type": "object",
+    "required": [
+     "items"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/InboundLotProgress"
+      }
+     }
+    }
+   },
+   "InboundStageCountResponse": {
+    "type": "object",
+    "required": [
+     "counts"
+    ],
+    "properties": {
+     "counts": {
+      "type": "object",
+      "required": [
+       "INSPECTION",
+       "HELD",
+       "RECEIPT",
+       "PUTAWAY"
+      ],
+      "properties": {
+       "INSPECTION": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "검사 대기",
+        "example": 3
+       },
+       "HELD": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "보류",
+        "example": 1
+       },
+       "RECEIPT": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "입고 대기",
+        "example": 5
+       },
+       "PUTAWAY": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "적치 대기",
+        "example": 2
+       }
+      }
      }
     }
    }

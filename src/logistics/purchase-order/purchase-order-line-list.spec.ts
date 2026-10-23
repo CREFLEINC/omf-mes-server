@@ -143,6 +143,17 @@ describe('P/O 목록 — 계약 밖 조건(P-85)', () => {
       expect.objectContaining({ field: 'supplierQ', code: 'INVALID' }),
     ]);
   });
+
+  it('inboundStage 는 네 묶음 중 하나다 — 밖이면 400 INVALID(장부 P-110)', () => {
+    expect(parseOrderListExtras({ inboundStage: 'HELD' }).inboundStage).toBe('HELD');
+    let errors: unknown;
+    try {
+      parseOrderListExtras({ inboundStage: 'COMPLETED' });
+    } catch (error) {
+      errors = ((error as ContractException).getResponse() as { errors: unknown }).errors;
+    }
+    expect(errors).toEqual([expect.objectContaining({ field: 'inboundStage', code: 'INVALID' })]);
+  });
 });
 
 describe('입하 예정 라인 목록 — 입하 진행 판정', () => {
