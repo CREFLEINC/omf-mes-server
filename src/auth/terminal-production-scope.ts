@@ -161,16 +161,18 @@ export async function assertTerminalProductionScope(
       await ownSession(request.params.workSessionId);
       if (given(body.workerId)) await plantWorkers([body.workerId]);
       break;
-    case 'POST /production/precheck-decisions': {
-      if (!given(body.workOrderId) || !given(body.equipmentId)) break;
-      assertEquipment(usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work')), body.equipmentId);
+    case 'POST /production/precheck-decisions':
+      if (given(body.workOrderId)) {
+        const usable = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
+        if (given(body.equipmentId)) assertEquipment(usable, body.equipmentId);
+      }
       break;
-    }
     case 'POST /production/work-sessions': {
-      if (!given(body.workOrderId)) break;
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
+      if (given(body.workOrderId)) {
+        const usable = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
+        if (given(body.equipmentId)) assertEquipment(usable, body.equipmentId);
+      }
       await plantWorkers(array(body.workerIds).filter(given));
-      if (given(body.equipmentId)) assertEquipment(equipmentId, body.equipmentId);
       if (given(body.moldId)) {
         const moldId = positiveId(body.moldId);
         if (moldId === null || !await prisma.mold.findFirst({
@@ -187,8 +189,7 @@ export async function assertTerminalProductionScope(
       await closableWorkOrder(request.params.workOrderId);
       break;
     case 'POST /production/production-results':
-      if (!given(body.workOrderId)) break;
-      await ownWorkOrder(body.workOrderId, 'can_input_result');
+      if (given(body.workOrderId)) await ownWorkOrder(body.workOrderId, 'can_input_result');
       for (const allocation of array(body.lotAllocations)) {
         const lotId = object(allocation).lotId;
         if (given(lotId)) await ownLot(lotId);
@@ -198,9 +199,8 @@ export async function assertTerminalProductionScope(
       if (given(body.lotId)) await ownLot(body.lotId);
       break;
     case 'POST /production/material-consumptions':
-      if (!given(body.workOrderId) || !given(body.lotId)) break;
-      await ownWorkOrder(body.workOrderId, 'can_input_material');
-      await ownLot(body.lotId);
+      if (given(body.workOrderId)) await ownWorkOrder(body.workOrderId, 'can_input_material');
+      if (given(body.lotId)) await ownLot(body.lotId);
       if (given(body.workSessionId)) await ownSession(body.workSessionId);
       break;
     case 'POST /trace/lots/{lotId}:complete':
@@ -227,13 +227,15 @@ function positiveId(value: unknown): bigint | null {
   return id > 0n && id < 9223372036854775808n ? id : null;
 }
 /**
- * 본문 id 칸을 범위로 가를 수 있는지 — 양의 정수일 때만 범위를 본다. 빠졌거나 null·문자열·소수·0·음수처럼 계약상 틀린 값은
- * 범위로 가르지 않고 계약 검증(뒤 가드)·업무 검증에 넘긴다.
- * 범위 판정이 인증 가드 안이라 계약 검증보다 먼저 돈다 — 여기서 틀린 값을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
- * ⛔ 필수 칸을 가를 수 없으면 그 요청의 범위 판정을 건너뛴다 — 뒤 가드가 null·문자열·소수를 400 으로 막고, 0·음수는 그런
- *    행이 없어 업무 검증이 막는다는 것이 전제다. 그 칸을 nullable 로 바꾸면 여기서 범위를 다시 봐야 한다.
+ * 본문 id 칸을 범위로 가를 수 있는지 — 양의 정수(number)면 늘 범위를 본다. 빠졌거나 null·문자열·소수·0·음수처럼 계약상 틀린
+ * 값은 «그 칸만» 범위로 가르지 않고 계약 검증(뒤 가드)·업무 검증에 넘긴다 — 범위 판정이 인증 가드 안이라 계약 검증보다 먼저
+ * 돌아, 여기서 틀린 값을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
+ * ⛔ 칸마다 따로 가른다. 한 칸이 틀렸다고 다른 칸의 범위 판정까지 건너뛰면, 범위 밖 W/O 가 있는지가 업무 검증 응답으로 드러난다.
+ * ⚠ 큰 정수(int64 를 넘는 값)도 정수라 범위로 넘긴다 — `positiveId` 가 null 로 읽어 범위 밖(401)이 된다. 여기서 건너뛰면
+ *   계약(본문 int64 는 범위를 보지 않는다)을 지나 DB 까지 가 500 이 난다.
+ * ⚠ 건너뛴 필수 칸은 계약이 required·non-null 정수라 뒤 가드가 막는다 — `terminal-production-scope.spec.ts` 가 계약 사본으로 지킨다.
  */
-function given(value: unknown): boolean { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
+function given(value: unknown): boolean { return typeof value === 'number' && Number.isInteger(value) && value > 0; }
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

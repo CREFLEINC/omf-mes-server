@@ -182,6 +182,45 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       expect(fieldOf(response)).toContainEqual(['workSessionId', 'INVALID']);
     });
 
+    it('작업 전 점검·실적·참여의 null 칸도 400 이다', async () => {
+      const token = await terminal('NUL4', { [String(ids.process)]: { can_start_work: true, can_input_result: true } });
+      const precheck = (extra: Record<string, unknown>) => asPop(request(app.getHttpServer()).post('/api/production/precheck-decisions'), token)
+        .send({ workOrderId: Number(ids.workOrder), equipmentId: Number(ids.equipment), decidedAt: new Date().toISOString(),
+          controlLevelCode: 'WARN', decisionCode: 'PASSED', ...extra });
+
+      expect(fieldOf(await precheck({ workOrderId: null }).expect(400))).toContainEqual(['workOrderId', 'INVALID']);
+      expect(fieldOf(await precheck({ equipmentId: null }).expect(400))).toContainEqual(['equipmentId', 'INVALID']);
+      expect(fieldOf(await saveResult(token, { workOrderId: null }).expect(400))).toContainEqual(['workOrderId', 'INVALID']);
+      const allocations = await saveResult(token, { lotAllocations: [{ lotId: null, allocatedQty: 1 }] }).expect(400);
+      expect(allocations.body.errors[0].code).toBe('INVALID');
+
+      const session = await begin(token, {}).expect(201);
+      const joined = await asPop(request(app.getHttpServer())
+        .post(`/api/production/work-sessions/${String(session.body.workSessionId)}/workers`), token)
+        .send({ workerId: null, joinedAt: new Date().toISOString() }).expect(400);
+      expect(fieldOf(joined)).toContainEqual(['workerId', 'INVALID']);
+    });
+
+    it('범위 밖 W/O 는 다른 칸이 틀려도 401 이다 — 그 W/O 가 있는지 업무 검증 응답으로 드러나지 않는다', async () => {
+      const token = await terminal('HIDE', { [String(ids.process)]: { can_start_work: true, can_input_material: true } });
+      const hidden = (await prisma.work_order.create({ data: {
+        work_order_no: `${PREFIX}-WO-HIDDEN`, routing_operation_id: ids.otherOperation, item_id: ids.item, order_qty: 10,
+        uom_id: ids.uom, status_code: 'IN_PROGRESS', production_line_id: ids.line, released_at: STARTED_AT,
+      } })).work_order_id;
+
+      await consume(token, { workOrderId: Number(hidden), lotId: 0 }).expect(401);
+      await asPop(request(app.getHttpServer()).post('/api/production/precheck-decisions'), token)
+        .send({ workOrderId: Number(hidden), equipmentId: 0, decidedAt: new Date().toISOString(), controlLevelCode: 'WARN', decisionCode: 'PASSED' })
+        .expect(401);
+    });
+
+    it('int64 를 넘는 id 는 500 이 아니라 범위 밖 401 이다', async () => {
+      const token = await terminal('BIG', { [String(ids.process)]: { can_start_work: true } });
+
+      await begin(token, { workOrderId: 1e19 }).expect(401);
+      await begin(token, { moldId: 1e19 }).expect(401);
+    });
+
     it('다른 공장 금형이면 401 이고 그 금형 코드는 알리지 않는다', async () => {
       const token = await terminal('MOLD', { [String(ids.process)]: { can_start_work: true } });
 
@@ -215,10 +254,10 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     });
   }
 
-  function saveResult(token: string): request.Test {
+  function saveResult(token: string, extra: Record<string, unknown> = {}): request.Test {
     return asPop(request(app.getHttpServer()).post('/api/production/production-results'), token).send({
       workOrderId: Number(ids.workOrder), goodQty: 1, uomId: Number(ids.uom), resultSourceCode: 'MANUAL',
-      occurredAt: new Date().toISOString(),
+      occurredAt: new Date().toISOString(), ...extra,
     });
   }
 
@@ -335,7 +374,11 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       .map((row) => row.terminal_id);
     await prisma.audit_event.deleteMany({ where: { terminal_id: { in: terminalIds } } });
     const workOrders = `SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`;
+    const sessions = `SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders})`;
     for (const sql of [
+      `DELETE FROM production.work_session_event WHERE work_session_id IN (${sessions})`,
+      `DELETE FROM production.work_session_worker WHERE work_session_id IN (${sessions})`,
+      `DELETE FROM production.work_session WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.production_result WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.material_consumption WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM trace.lot WHERE lot_no LIKE '${PREFIX}-%'`,
