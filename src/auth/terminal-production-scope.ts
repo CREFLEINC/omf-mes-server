@@ -34,7 +34,7 @@ export async function assertTerminalProductionScope(
    * 화면 후보(`terminal-accessible-screens.ts`)와 같은 플래그라, 화면에 들어갈 수 있으면 저장도 된다(장부 P-109).
    * 매핑이 없으면 범위 밖, 매핑은 있는데 플래그만 꺼졌으면 켤 곳을 알려 준다.
    */
-  const ownWorkOrder = async (value: unknown, flag: WorkOrderFlag = 'can_start_work'): Promise<bigint | null> => {
+  const ownWorkOrder = async (value: unknown, flag: WorkOrderFlag): Promise<bigint | null> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_order.findFirst({
       where: { work_order_id: id, production_line: { plant_id: terminal.plantId },
@@ -117,12 +117,12 @@ export async function assertTerminalProductionScope(
       await plantWorkers([body.workerId]);
       break;
     case 'POST /production/precheck-decisions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
       if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
       break;
     }
     case 'POST /production/work-sessions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
       await plantWorkers(array(body.workerIds));
       if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
       if (body.moldId !== undefined) {
@@ -135,7 +135,7 @@ export async function assertTerminalProductionScope(
     }
     case 'POST /production/work-orders/{workOrderId}:hold':
     case 'POST /production/work-orders/{workOrderId}:resume':
-      await ownWorkOrder(request.params.workOrderId);
+      await ownWorkOrder(request.params.workOrderId, 'can_start_work');
       break;
     case 'POST /production/work-orders/{workOrderId}:close':
       await closableWorkOrder(request.params.workOrderId);

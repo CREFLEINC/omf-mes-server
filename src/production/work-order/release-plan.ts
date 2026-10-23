@@ -120,7 +120,8 @@ export async function releasePlan(
  * 배포 전 생산라인 검사(omf-all-around#36 · 사용자 2026-09-19). 배포·출고는 계획의 공장
  * 한 축으로 돌지만(R-7) 단말 권한 검사는 `work_order.production_line.plant_id` 로 판정한다.
  * 두 길이 갈리면 관리웹에서는 배포·출고까지 되고 현장 단말에서만 전부 막힌다 — 배포에서 막는다.
- * ⛔ 단말 권한 검사 쪽 기준은 바꾸지 않는다.
+ * ⛔ 단말 권한 검사 쪽 기준은 바꾸지 않는다. 라인이 없는 배포 전 W/O 를 단말 목록이 어느 공장으로 보는지는
+ *   `work-order-query.service.ts` 의 `terminalPlantWhere` 다.
  */
 function lineErrors(row: ReleaseRow, plan: NonNullable<ReleaseRow['production_plan']>) {
   if (row.production_line_id === null || row.production_line === null) {

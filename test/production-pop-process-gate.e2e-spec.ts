@@ -81,6 +81,35 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     expect(result.body.errors[0].message).toContain('「실적 입력」');
   });
 
+  describe('W/O 단위 조회 — 화면에 들어갈 수 있으면 읽는다', () => {
+    const read = (token: string, path: string, query: Record<string, string> = {}) =>
+      request(app.getHttpServer()).get(path).query(query).set('Authorization', `Bearer ${token}`);
+
+    it('실적만 켠 다공정 단말 — 배포된 W/O 의 상세·투입 목록·LOT 목록을 읽는다', async () => {
+      const token = await terminal('READ', {
+        [String(ids.otherProcess)]: { can_start_work: true },
+        [String(ids.process)]: { can_input_result: true },
+      });
+      const workOrderId = String(ids.workOrder);
+
+      await read(token, `/api/production/work-orders/${workOrderId}`).expect(200);
+      await read(token, '/api/production/material-consumptions', { workOrderId }).expect(200);
+      await read(token, '/api/trace/lots', { workOrderId }).expect(200);
+    });
+
+    it('그 W/O 공정에 매핑이 없으면 401 이다', async () => {
+      const token = await terminal('READ2', { [String(ids.process)]: { can_input_result: true } });
+      const unmapped = (await prisma.work_order.create({ data: {
+        work_order_no: `${PREFIX}-WO-UNMAPPED`, routing_operation_id: ids.otherOperation, item_id: ids.item, order_qty: 10,
+        uom_id: ids.uom, status_code: 'IN_PROGRESS', production_line_id: ids.line, released_at: STARTED_AT,
+      } })).work_order_id;
+
+      await read(token, `/api/production/work-orders/${String(unmapped)}`).expect(401);
+      await read(token, '/api/production/material-consumptions', { workOrderId: String(unmapped) }).expect(401);
+      await read(token, '/api/trace/lots', { workOrderId: String(unmapped) }).expect(401);
+    });
+  });
+
   describe('재작업 실적(P-04-03)의 재작업 W/O 목록', () => {
     const list = (token: string, query: Record<string, string>) => request(app.getHttpServer())
       .get('/api/production/work-orders').query({ q: `${PREFIX}-RW`, size: '50', ...query }).set('Authorization', `Bearer ${token}`);
@@ -220,6 +249,8 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const otherOperation = await prisma.routing_operation.create({ data: {
       routing_id: routingId, operation_seq: 20, process_id: ids.otherProcess, operation_name: PREFIX,
     } });
+    ids.otherOperation = otherOperation.routing_operation_id;
+    ids.line = lineId;
     const rework = (suffix: string, data: Record<string, unknown>) => prisma.work_order.create({ data: {
       work_order_no: `${PREFIX}-RW-${suffix}`, routing_operation_id: operationId, item_id: ids.item, order_qty: 10, uom_id: ids.uom,
       work_order_type_code: 'REWORK', status_code: 'PLANNED', production_plan_id: ownPlan, ...data,

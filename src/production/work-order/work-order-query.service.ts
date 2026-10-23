@@ -345,7 +345,7 @@ function closedByUserOf(row: WorkOrderRow, closers: Map<bigint, string>): { id: 
 }
 
 /**
- * 단말 공장의 W/O — 라인의 공장이 기준이다. 라인은 배포 때 정해지므로(`release-plan.ts`) 배포 전 W/O(재작업 발행 직후 등)는
+ * 단말 공장의 W/O — 라인의 공장이 기준이다. 라인은 배포 때 정해지므로(`release-plan.ts` 의 `lineErrors`) 배포 전 W/O(재작업 발행 직후 등)는
  * 라인이 없어 계획의 ERP W/O 공장으로 본다 — 그래야 현장이 배포 전 지시를 볼 수 있다.
  */
 function terminalPlantWhere(plantId: bigint): Prisma.work_orderWhereInput {
@@ -356,4 +356,3 @@ function terminalPlantWhere(plantId: bigint): Prisma.work_orderWhereInput {
     ],
   };
 }
-
