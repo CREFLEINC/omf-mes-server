@@ -66,7 +66,9 @@ describe('POP production terminal scope', () => {
     };
     const CONSUME = 'POST /production/material-consumptions';
     const RESULT = 'POST /production/production-results';
-    const denied = (name: string) => ({ status: 401, errors: [expect.objectContaining({ message: expect.stringContaining(`「${name}」`) })] });
+    const denied = (name: string) => ({ status: 401, errors: [expect.objectContaining({
+      message: expect.stringContaining(`관리웹 시스템 관리 › 단말기-공정 매핑에서 해당 공정의 「${name}」을 켜세요.`),
+    })] });
 
     it('투입만 켠 매핑 — 투입은 되고 실적은 401(실적 입력을 켜라)', async () => {
       const only = { can_start_work: false, can_input_material: true, can_input_result: false };

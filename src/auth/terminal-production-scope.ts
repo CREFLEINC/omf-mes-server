@@ -181,7 +181,7 @@ function object(value: unknown): Record<string, unknown> {
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 /** W/O 단위 일의 기능 플래그 — 마감(`can_close_work_order`)은 미완료 조건이 달라 `closableWorkOrder` 가 따로 본다. */
 type WorkOrderFlag = 'can_start_work' | 'can_input_material' | 'can_input_result';
-/** 관리웹 단말 관리 화면의 기능 이름 — 문구가 켤 칸을 짚는다. */
+/** 관리웹 시스템 관리 › 단말기-공정 매핑 화면의 기능 이름 — 문구가 켤 칸을 짚는다. */
 const FLAG_NAME: Record<WorkOrderFlag, string> = {
   can_start_work: '작업 시작',
   can_input_material: '자재 투입',
@@ -191,7 +191,7 @@ const FLAG_NAME: Record<WorkOrderFlag, string> = {
 function flagDenied(name: string): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [{
     scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
-    message: `이 단말에는 이 W/O 공정의 ${name} 권한이 없습니다. 관리웹 단말 관리에서 해당 공정의 「${name}」을 켜세요.`,
+    message: `이 단말에는 이 W/O 공정의 ${name} 권한이 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 해당 공정의 「${name}」을 켜세요.`,
   }]);
 }
 

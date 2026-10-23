@@ -51,6 +51,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     expect(passed.body.errors?.[0]?.code).not.toBe('PERMISSION_DENIED');
     const result = await saveResult(token).expect(401);
     expect(result.body.errors[0].message).toContain('「실적 입력」');
+    expect(result.body.errors[0].message).toContain('관리웹 시스템 관리 › 단말기-공정 매핑에서');
   });
 
   it('실적만 켠 단말 — 실적은 저장되고 투입은 401(「자재 투입」을 켜라)', async () => {
