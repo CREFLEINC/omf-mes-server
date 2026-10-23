@@ -311,6 +311,8 @@ export const TRANSITIONS: TransitionRegistry = {
   'production.work_order.status_code': {
     'work-order-release': { from: ['PLANNED', 'CONFIRMED'], to: 'RELEASED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:release' },
+    // `RELEASED` 는 사실상 닿지 않는다 — 중단은 열린 세션이 있어야 하고(`work-order-transition.service.ts`), 첫 세션이
+    // 열리면 W/O 는 `IN_PROGRESS` 다.
     'work-order-hold':    { from: ['RELEASED', 'IN_PROGRESS'], to: 'SUSPENDED',
       sourceOperation: 'POST /production/work-orders/{workOrderId}:hold' },
     'work-order-resume':  { from: ['SUSPENDED'], to: 'IN_PROGRESS',
@@ -323,8 +325,8 @@ export const TRANSITIONS: TransitionRegistry = {
       sourceOperation: 'POST /production/work-orders/{workOrderId}:cancel' },
     // `IN_PROGRESS` 도 `from` 에 있다 — 계약 `sessionNo` ⌜`:end` 한 뒤 다시 시작⌝ 이
     // 둘째 세션을 `IN_PROGRESS` 에서 연다.
-    // `SUSPENDED` 는 없다 — 중단된 W/O 는 새 세션이 아니라 같은 세션의 RESUME 로만
-    // 돌아온다(`P-02-01` §5-5).
+    // `SUSPENDED` 는 없다 — 중단 세션이 열린 W/O 는 같은 세션의 RESUME 로 돌아온다(`P-02-01` §5-5).
+    // 열린 세션 없이 중단된 W/O 는 작업 시작이 `work-order-resume` 을 먼저 적용한 뒤 이 전이를 탄다(`work-session.service.ts`).
     'work-session-start': { from: ['RELEASED', 'IN_PROGRESS'], to: 'IN_PROGRESS',
       sourceOperation: 'POST /production/work-sessions' },
   },

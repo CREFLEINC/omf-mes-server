@@ -73,6 +73,9 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     expect(after).toMatchObject({ status_code: 'IN_PROGRESS', version_no: before.version_no + 1 });
     const events = await prisma.work_session_event.findMany({ where: { work_session_id: BigInt(response.body.workSessionId) } });
     expect(events.map((event) => event.event_type_code)).toEqual(['START']);
+    // 재시작도 작업 시작 알림 한 건이다 — 재개가 따로 알리지 않는다.
+    const notices = await prisma.notification_event.findMany({ where: { aggregate_type_code: 'WORK_ORDER', aggregate_id: workOrderId } });
+    expect(notices.map((notice) => notice.event_type_code)).toEqual(['WORK_SESSION_STARTED']);
   });
 
   it('중단 세션이 열려 있으면 작업 시작은 409 다 — 그 세션의 재개로', async () => {
@@ -86,8 +89,33 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     const response = await start(workOrderId).expect(409);
 
     expect(response.body).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
-    expect(response.body.message).toContain('관리웹에서 강제 종료하세요');
+    expect(response.body.message).toContain('목록을 새로 고친 뒤 [재개]를 누르세요');
     expect((await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } })).status_code).toBe('SUSPENDED');
+  });
+
+  it('낡은 If-Match 로 중단 W/O 를 시작하면 409 이고 W/O 는 그대로다', async () => {
+    const workOrderId = await workOrder('F', 'SUSPENDED');
+    const before = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+
+    await start(workOrderId).set('If-Match', `"${String(before.version_no + 5)}"`).expect(409);
+
+    expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } }))
+      .toMatchObject({ status_code: 'SUSPENDED', version_no: before.version_no });
+    expect(await prisma.work_session.count({ where: { work_order_id: workOrderId } })).toBe(0);
+  });
+
+  it('마감·편성 W/O 의 작업 시작은 400 이고 할 일을 알린다 — 열린 세션보다 상태가 먼저다', async () => {
+    // 마감 W/O 에 세션이 열려 있어도 상태 문구가 먼저다(취소 W/O 는 단말 범위가 먼저 401 로 막는다).
+    const closedId = await workOrder('G', 'CLOSED');
+    await prisma.work_session.create({ data: {
+      work_order_id: closedId, session_no: 1, terminal_id: ids.terminal, started_at: RELEASED_AT, status_code: 'STOPPED',
+      idempotency_key: `${PREFIX}-WS-G`,
+    } });
+    const closed = await start(closedId).expect(400);
+    expect(closed.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+    expect(closed.body.errors[0].message).toContain('마감된 W/O 입니다');
+    const planned = await start(await workOrder('H', 'PLANNED')).expect(400);
+    expect(planned.body.errors[0].message).toContain('배포한 뒤 시작하세요');
   });
 
   it('작업 전 점검은 중단 W/O 에서도 작업 시작과 같다 — 상태로 막지 않는다', async () => {
@@ -157,6 +185,7 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     const terminal = await prisma.terminal.create({ data: {
       terminal_code: `${PREFIX}-POP`, plant_id: ids.plant, terminal_type_code: 'POP', status_code: 'RUNNING', equipment_id: ids.equipment,
     } });
+    ids.terminal = terminal.terminal_id;
     await prisma.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true } });
     token = app.get(JwtService).sign({
       sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code,
@@ -172,6 +201,7 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     const workOrders = `SELECT work_order_id FROM production.work_order WHERE work_order_no LIKE '${PREFIX}%'`;
     const sessions = `SELECT work_session_id FROM production.work_session WHERE work_order_id IN (${workOrders})`;
     for (const sql of [
+      `DELETE FROM app.notification_event WHERE aggregate_type_code = 'WORK_ORDER' AND aggregate_id IN (${workOrders})`,
       `DELETE FROM production.precheck_decision WHERE work_order_id IN (${workOrders})`,
       `DELETE FROM production.work_session_event WHERE work_session_id IN (${sessions})`,
       `DELETE FROM production.work_session_worker WHERE work_session_id IN (${sessions})`,

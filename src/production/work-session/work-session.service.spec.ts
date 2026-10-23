@@ -198,8 +198,14 @@ describe('WorkSessionService.create', () => {
     const error = (await it0.service.create(body(), context()).catch((e: unknown) => e)) as ConflictException;
     expect(error).toBeInstanceOf(ConflictException);
     expect(error.conflict).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
-    expect(error.conflict.message).toContain('이어서 하기로 재개하세요');
+    expect(error.conflict.message).toContain('목록을 새로 고친 뒤 [재개]를 누르세요');
     expect(it0.updates).toEqual([]);
+  });
+
+  it('시작도 재개도 할 수 없는 상태는 열린 세션보다 상태 400 이 먼저다', async () => {
+    const error = (await stub({ status: 'CLOSED', openSession: true }).service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
+    expect(error).toBeInstanceOf(ContractException);
+    expect(error.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
   });
 
   it('시작할 수 없는 상태는 할 일을 알린다', async () => {

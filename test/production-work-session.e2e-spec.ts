@@ -485,7 +485,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ field: 'Authorization', code: 'INVALID' });
     });
 
-    it('열린 세션 없는 SUSPENDED W/O 는 재개하며 연다(장부 P-111)', async () => {
+    it('열린 세션 없는 SUSPENDED W/O 는 재개하며 연다', async () => {
       const workOrderId = await workOrder('SUSPENDED');
       const response = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
       expect(response.body).toMatchObject({ statusCode: 'RUNNING' });
@@ -555,7 +555,7 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(row.stop_reason_code).toBeNull();
     });
 
-    it('세션이 끝난 W/O 는 중단할 수 없고, 중단·세션 없음 W/O 는 둘째 세션을 재개하며 연다(장부 P-111)', async () => {
+    it('세션이 끝난 W/O 는 중단할 수 없고, 중단·세션 없음 W/O 는 둘째 세션을 재개하며 연다', async () => {
       const workOrderId = await workOrder('RELEASED');
       const opened = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
       await endSession(opened.body.workSessionId as number, { endedAt: END_AT }).expect(200);

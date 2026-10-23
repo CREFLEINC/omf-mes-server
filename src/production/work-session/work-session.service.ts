@@ -70,20 +70,22 @@ export class WorkSessionService {
     const workOrderId = BigInt(body.workOrderId);
     const locked = await lockWorkOrder(tx, body.workOrderId);
     assertVersion(locked, context.version);
-    // ⛔ `status_code` 를 안 본다 — STOPPED 도 열린 세션이다(G-16). 상태 검사보다 먼저다: 중단 세션이 열린 중단 W/O 는
-    //    새 세션이 아니라 그 세션의 RESUME 으로 재개해야 해서, 상태 400 보다 이 409 가 할 일을 정확히 알린다(장부 P-111).
+    const resumed = locked.status_code === SUSPENDED;
+    // 시작도 재개도 할 수 없는 상태(편성·마감·취소 등)는 상태 문구가 먼저다 — 열린 세션은 그 다음 문제다.
+    if (!resumed) this.assertStartable(locked.status_code);
+    // ⛔ `status_code` 를 안 본다 — STOPPED 도 열린 세션이다(G-16). 중단 W/O 에서는 상태보다 먼저다: 중단 세션이 열려
+    //    있으면 새 세션이 아니라 그 세션의 RESUME 으로 재개해야 해서 이 409 가 할 일을 정확히 알린다.
     const open = await tx.work_session.findFirst({ where: { work_order_id: workOrderId, ended_at: null } });
     if (open !== null) {
       throw new ConflictException(
         'user',
-        '이 MES W/O 에 이미 열린 작업 세션이 있습니다. 목록을 새로 고친 뒤 그 세션을 이어서 하기로 재개하세요 — '
+        '이 MES W/O 에 이미 열린 작업 세션이 있습니다. 목록을 새로 고친 뒤 [재개]를 누르세요 — '
           + '다른 단말의 세션이면 그 단말에서 재개·종료하거나 관리웹에서 강제 종료하세요.',
         { code: ERROR_CODE.OPEN_SESSION_EXISTS },
       );
     }
     // ⭐ 중단·열린 세션 없음 W/O 는 같은 트랜잭션에서 재개하고 시작한다 — 따로 부르면 재개만 되고 시작이 실패하는
-    //    부분 실패가 남는다(사용자 결정 2026-10-23 · 장부 P-111). 재개는 세션 사건을 남기지 않는다(START 만).
-    const resumed = locked.status_code === SUSPENDED;
+    //    부분 실패가 남는다. 재개는 세션 사건을 남기지 않는다(START 만).
     const from = resumed
       ? this.documentState.assertTransition(STATUS_COLUMN, RESUME_ACTION, locked.status_code, HttpStatus.BAD_REQUEST).to
       : locked.status_code;

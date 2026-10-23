@@ -90,6 +90,16 @@ describe("W/O 중단·재개 (I-6 PR ④)", () => {
     expect(updated).toEqual([]);
   });
 
+  it("중단 — 상태로 막히는 W/O 는 세션 검사보다 상태 문구가 먼저다", async () => {
+    const { service } = stub("CLOSED", 0);
+
+    await expect(
+      service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
+    ).rejects.toMatchObject({
+      errors: [expect.objectContaining({ code: ERROR_CODE.STATE_LOCKED, message: expect.stringContaining("CLOSED") })],
+    });
+  });
+
   it("재개 — 열린 세션을 보지 않는다(세션 없는 중단 W/O 도 재개된다)", async () => {
     const { service, updated } = stub("SUSPENDED", 0);
 

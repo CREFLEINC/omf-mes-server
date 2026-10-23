@@ -164,7 +164,8 @@ describe('생산 알림 (e2e)', () => {
     const alone = await workOrder('H2', ids.lineA);
     await start(alone, '2026-10-21T08:00:00.000Z').expect(201);
     await hold(alone).expect(200);
-    expect(await prisma.notification_event.count({ where: { aggregate_id: alone, event_type_code: 'WORK_SESSION_STOPPED' } })).toBe(0);
+    const events = await prisma.notification_event.findMany({ where: { aggregate_id: alone, aggregate_type_code: 'WORK_ORDER' } });
+    expect(events.map((event) => event.event_type_code)).toEqual(['WORK_SESSION_STARTED']);
   });
 
   it('늦게 도착한 STOP 은 보낸 조작 시각으로 알린다 — 서버 수신 시각이 아니다', async () => {
