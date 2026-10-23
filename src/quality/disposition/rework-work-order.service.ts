@@ -139,16 +139,7 @@ export class ReworkWorkOrderService {
         ]);
       }
 
-      const operation = await tx.routing_operation.findUnique({
-        where: { routing_operation_id: BigInt(body.routingOperationId) },
-        select: { routing_operation_id: true },
-      });
-      /* 공정은 담당자가 고른다 — 원천 라우팅으로 좁히지 않는다(수리 공정이 따로 있다). 있기만 하면 된다. */
-      if (operation === null) {
-        throw new ContractException(HttpStatus.BAD_REQUEST, [
-          field('routingOperationId', ERROR_CODE.INVALID, '없는 공정입니다.'),
-        ]);
-      }
+      await assertItemRoutingOperation(tx, scope.itemId, body.routingOperationId);
 
       const created = await tx.work_order.create({
         data: {
@@ -263,3 +254,37 @@ async function readReworkScope(tx: Tx, id: bigint): Promise<ReworkScope> {
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+/**
+ * 공정은 담당자가 고르되 «그 품목의» 사용 중인 Routing 공정이어야 한다 — 확정(CONFIRMED)이고 오늘이 유효 기간 안
+ * (`effective_from` 이하 · `effective_to` 이상, 빈 칸은 열림). 다른 품목의 Routing 공정을 받으면 그 품목에 없는 공정의
+ * 재작업 지시가 나간다(장부 P-112). 수리 공정도 그 품목 Routing 에 있어야 고를 수 있다.
+ * ⚠ 오늘은 UTC 날짜다 — Routing 유효 기간은 날짜 단위라 공장 시간대와 하루가 어긋나는 경계만 다를 수 있다.
+ */
+async function assertItemRoutingOperation(tx: Prisma.TransactionClient, itemId: bigint, routingOperationId: number): Promise<void> {
+  const today = new Date(new Date().toISOString().slice(0, 10));
+  const usable = await tx.routing_operation.count({
+    where: {
+      routing_operation_id: BigInt(routingOperationId),
+      routing: {
+        item_id: itemId,
+        status_code: 'CONFIRMED',
+        AND: [
+          { OR: [{ effective_from: null }, { effective_from: { lte: today } }] },
+          { OR: [{ effective_to: null }, { effective_to: { gte: today } }] },
+        ],
+      },
+    },
+  });
+  if (usable > 0) return;
+  const item = await tx.item.findUnique({ where: { item_id: itemId }, select: { item_code: true } });
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    field(
+      'routingOperationId',
+      ERROR_CODE.INVALID,
+      `이 부적합 품목(${item?.item_code ?? itemId.toString()})의 사용 중인 Routing 공정이 아닙니다. `
+        + '기준정보 관리 › 공정(Routing)에서 그 품목의 확정·유효 Routing 을 확인해 그 공정을 고르세요.',
+    ),
+  ]);
+}
+

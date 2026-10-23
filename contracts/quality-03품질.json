@@ -2858,6 +2858,7 @@
      "quality"
     ],
     "summary": "재작업 W/O 발행",
+    "x-server-note": "⭐ routingOperationId 는 그 부적합 품목의 사용 중인 Routing 공정이어야 한다 — Routing 이 확정(CONFIRMED)이고 오늘이 유효 기간(effectiveFrom~effectiveTo, 빈 칸은 열림) 안. 아니면 400 routingOperationId INVALID 「이 부적합 품목(…)의 사용 중인 Routing 공정이 아닙니다. 기준정보 관리 › 공정(Routing)에서 그 품목의 확정·유효 Routing 을 확인해 그 공정을 고르세요.」 이고 W/O 는 생기지 않는다. 수리 공정도 그 품목 Routing 에 있어야 고를 수 있다. 장부 P-112",
     "description": "처분 판정이 재작업(REWORK)으로 확정된 부적합을 근거로 **재작업 작업지시를 발행한다**. ⛔ 판정만으로 자동 생성하지 않는다 — 수량·공정·시점을 담당자가 정해 발행한다(사용자 결정 2026-09-21). ⭐ 발행된 W/O 는 `workOrderTypeCode=REWORK` 이고 `reworkSourceNonconformanceId` 에 이 부적합이 실린다 — P-04-03(재작업 실적 등록)이 그 축으로 대상을 찾는다. 수량은 그 부적합의 **재작업 판정 수량 합에서 이미 발행한 재작업 W/O 수량을 뺀 잔량** 이하여야 한다. 공정은 담당자가 고른다 — 원천 LOT 의 공정이 기본값이나 수리 공정으로 발행할 수 있다. 근거: W-03-10 · omf-all-around#47",
     "parameters": [
      {
