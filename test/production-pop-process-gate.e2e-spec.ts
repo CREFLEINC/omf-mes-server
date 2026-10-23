@@ -161,6 +161,13 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       expect(fieldOf(await begin(token, { equipmentId: null }).expect(400))).toEqual([['equipmentId', 'INVALID']]);
     });
 
+    it('정수 id 로 읽을 수 없는 값(문자열·소수)도 401 이 아니라 400 이다', async () => {
+      const token = await terminal('BAD', { [String(ids.process)]: { can_start_work: true } });
+
+      expect(fieldOf(await begin(token, { moldId: String(ids.foreignMold) }).expect(400))).toEqual([['moldId', 'INVALID']]);
+      expect(fieldOf(await begin(token, { workOrderId: 1.5 }).expect(400))).toContainEqual(['workOrderId', 'INVALID']);
+    });
+
     it('필수 칸 workOrderId 가 null 이어도 401 이 아니라 400 이다', async () => {
       const token = await terminal('NUL2', { [String(ids.process)]: { can_start_work: true } });
 

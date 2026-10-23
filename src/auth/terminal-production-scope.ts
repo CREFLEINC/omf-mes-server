@@ -227,12 +227,13 @@ function positiveId(value: unknown): bigint | null {
   return id > 0n && id < 9223372036854775808n ? id : null;
 }
 /**
- * 본문 id 칸이 실렸는지 — `null` 은 범위로 가르지 않고 계약 검증(뒤 가드)에 넘긴다.
- * 범위 판정이 인증 가드 안이라 계약 검증보다 먼저 돈다 — 여기서 `null` 을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
- * ⛔ 필수 칸이 `null` 이면 그 요청의 범위 판정을 건너뛴다 — 계약이 그 칸을 nullable 이 아닌 정수로 두어 뒤 가드가 반드시
- *    400 으로 막는다는 것이 전제다. 그 칸을 nullable 로 바꾸면 여기서 범위를 다시 봐야 한다.
+ * 본문 id 칸을 범위로 가를 수 있는지 — 양의 정수일 때만 범위를 본다. 빠졌거나 null·문자열·소수·0·음수처럼 계약상 틀린 값은
+ * 범위로 가르지 않고 계약 검증(뒤 가드)·업무 검증에 넘긴다.
+ * 범위 판정이 인증 가드 안이라 계약 검증보다 먼저 돈다 — 여기서 틀린 값을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
+ * ⛔ 필수 칸을 가를 수 없으면 그 요청의 범위 판정을 건너뛴다 — 뒤 가드가 null·문자열·소수를 400 으로 막고, 0·음수는 그런
+ *    행이 없어 업무 검증이 막는다는 것이 전제다. 그 칸을 nullable 로 바꾸면 여기서 범위를 다시 봐야 한다.
  */
-function given(value: unknown): boolean { return value !== undefined && value !== null; }
+function given(value: unknown): boolean { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

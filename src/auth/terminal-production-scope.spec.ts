@@ -148,7 +148,8 @@ describe('POP production terminal scope', () => {
     expect(prisma.worker.count).toHaveBeenLastCalledWith({ where: { worker_id: { in: [19n, 20n] }, plant_id: 3n, is_active: true } });
     (prisma.worker.count as jest.Mock).mockResolvedValueOnce(1);
     await expect(start([19, 20])).rejects.toMatchObject({ status: 401 });
-    await expect(start(['x'])).rejects.toMatchObject({ status: 401 });
+    // 정수 id 로 읽을 수 없는 값은 범위로 가르지 않는다 — 계약 검증이 400 으로 막는다.
+    await expect(start(['x'])).resolves.toBeUndefined();
   });
 
   it('공동 작업자 참여·이탈·목록은 자기 세션이고, 참여하는 사람은 단말 공장의 재직 작업자다', async () => {
