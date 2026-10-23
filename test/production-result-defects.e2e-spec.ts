@@ -362,8 +362,8 @@ describe('POP 생산 실적 불량 유형 (e2e)', () => {
       terminal_code: `${PREFIX}-POP`, plant_id: plant.plant_id, terminal_type_code: 'POP', status_code: 'RUNNING',
     } });
     ids.terminal = terminal.terminal_id;
-    // 단말이 실적을 받으려면 W/O 공정에서 작업을 시작할 수 있어야 한다(`terminal-production-scope.ts`).
-    await prisma.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true } });
+    // 단말이 실적을 저장하려면 W/O 공정 매핑에 실적 입력이 켜져 있어야 한다(`terminal-production-scope.ts`).
+    await prisma.terminal_process.create({ data: { terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true, can_input_result: true } });
     const worker = await prisma.worker.create({ data: {
       worker_no: `${PREFIX}-W1`, worker_name: '실적불량작업자', business_unit_id: unit.business_unit_id, plant_id: plant.plant_id, status_code: 'EMPLOYED',
     } });

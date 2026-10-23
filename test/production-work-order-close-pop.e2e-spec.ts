@@ -202,10 +202,10 @@ describe('POP 작업지시 마감 (e2e)', () => {
       .set('If-Match', `"${String(version)}"`)
       .send({ items });
 
-    const omitted = await put([{ processId: Number(ids.process), canStartWork: true }], terminal.version_no).expect(200);
+    const omitted = await put([{ processId: Number(ids.process), canStartWork: true, canInputResult: true }], terminal.version_no).expect(200);
     expect(omitted.body.items[0]).toMatchObject({ canStartWork: true, canCloseWorkOrder: true });
     const after = await prisma.terminal.findUniqueOrThrow({ where: { terminal_id: open.terminalId } });
-    const off = await put([{ processId: Number(ids.process), canStartWork: true, canCloseWorkOrder: false }], after.version_no).expect(200);
+    const off = await put([{ processId: Number(ids.process), canStartWork: true, canInputResult: true, canCloseWorkOrder: false }], after.version_no).expect(200);
     expect(off.body.items[0]).toMatchObject({ canCloseWorkOrder: false });
   });
 
@@ -438,7 +438,7 @@ describe('POP 작업지시 마감 (e2e)', () => {
         terminal_code: `${PREFIX}-POP-${suffix}`, plant_id: ids.plant, terminal_type_code: 'POP', status_code: 'RUNNING',
       } });
       await prisma.terminal_process.create({ data: {
-        terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true, can_close_work_order: canClose,
+        terminal_id: terminal.terminal_id, process_id: ids.process, can_start_work: true, can_input_result: true, can_close_work_order: canClose,
       } });
       return {
         terminalId: terminal.terminal_id,

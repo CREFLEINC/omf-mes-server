@@ -53,6 +53,11 @@ export async function assertTerminalReadScope(
   const query = request.query as Record<string, unknown>;
   const plantId = terminal.plantId;
 
+  /**
+   * POP 의 W/O 단위 조회 — 그 W/O 공정의 이 단말 매핑에서 작업 시작·자재 투입·실적 입력 중 하나라도 켜져 있으면 읽는다.
+   * 세 화면(작업 시작·투입·실적)이 모두 이 조회로 W/O 공정을 찾으므로, 화면에 들어갈 수 있는 단말은 읽어야 한다(장부 P-109).
+   * 저장은 그 일의 플래그 하나만 본다(`terminal-production-scope.ts`).
+   */
   const ownWorkOrder = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_order.findFirst({
@@ -61,7 +66,8 @@ export async function assertTerminalReadScope(
           ? { released_at: { not: null }, completed_at: null, closed_at: null,
               NOT: { status_code: 'CANCELLED' },
               routing_operation: { process: { terminal_process: { some: {
-                terminal_id: terminal.terminalId, can_start_work: true,
+                terminal_id: terminal.terminalId,
+                OR: [{ can_start_work: true }, { can_input_material: true }, { can_input_result: true }],
               } } } } } : {}) },
       select: { work_order_id: true },
     });
@@ -101,10 +107,13 @@ export async function assertTerminalReadScope(
     case 'GET /production/work-orders':
       if (terminal.terminalTypeCode === 'POP') {
         // 설비 없는 POP 도 목록을 본다(설비가 정해지지 않은 W/O 를 시작한다) — 설비를 걸 때만 자기 설비여야 한다.
-        if (query.open !== 'true'
+        // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-109).
+        //   고르기·저장은 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
+        const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
+        if ((query.open !== 'true' && !plannedRework)
           || (query.plannedEquipmentId !== undefined
             && (terminal.equipmentId === null || positiveId(query.plannedEquipmentId) !== terminal.equipmentId))) throw denied();
-        // The query service intersects the list with this terminal's can_start_work processes.
+        // 목록 서비스가 이 단말의 공정 매핑으로 좁힌다 — 재작업은 실적 입력, 그 밖은 작업 시작 공정이다.
       } else {
         await ownWorkOrder(query.successorOfWorkOrderId);
       }
@@ -115,22 +124,7 @@ export async function assertTerminalReadScope(
       await ownWorkOrder(query.workOrderId);
       break;
     case 'GET /production/work-orders/{workOrderId}':
-      if (terminal.terminalTypeCode === 'POP') {
-        const id = positiveId(request.params.workOrderId);
-        const row = id === null ? null : await prisma.work_order.findFirst({
-          where: { work_order_id: id, production_line: { plant_id: plantId },
-            released_at: { not: null }, completed_at: null, closed_at: null,
-            NOT: { status_code: 'CANCELLED' },
-            routing_operation: { process: { terminal_process: {
-              some: { terminal_id: terminal.terminalId, can_start_work: true },
-            } } },
-          },
-          select: { work_order_id: true },
-        });
-        if (!row) throw denied();
-      } else {
-        await ownWorkOrder(request.params.workOrderId);
-      }
+      await ownWorkOrder(request.params.workOrderId);
       break;
     case 'GET /trace/lots':
       if (!nonempty(query.lotNo) && !nonempty(query.q) && positiveId(query.itemId) === null

@@ -29,20 +29,28 @@ export async function assertTerminalProductionScope(
 ): Promise<void> {
   if (terminal.terminalTypeCode !== 'POP' || !TERMINAL_PRODUCTION_OPERATIONS[key]) throw denied();
   const body = object(request.body);
-  /** 단말 범위 안의 W/O 면 그 계획 설비를 돌려준다. */
-  const ownWorkOrder = async (value: unknown): Promise<bigint | null> => {
+  /**
+   * 단말 범위 안의 W/O 면 그 계획 설비를 돌려준다. 그 W/O 공정의 이 단말 매핑에서 그 일의 기능 플래그를 본다 —
+   * 화면 후보(`terminal-accessible-screens.ts`)와 같은 플래그라, 화면에 들어갈 수 있으면 저장도 된다(장부 P-109).
+   * 매핑이 없으면 범위 밖, 매핑은 있는데 플래그만 꺼졌으면 켤 곳을 알려 준다.
+   */
+  const ownWorkOrder = async (value: unknown, flag: WorkOrderFlag): Promise<bigint | null> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_order.findFirst({
       where: { work_order_id: id, production_line: { plant_id: terminal.plantId },
         released_at: { not: null }, completed_at: null, closed_at: null,
         NOT: { status_code: 'CANCELLED' },
-        routing_operation: { process: { terminal_process: {
-          some: { terminal_id: terminal.terminalId, can_start_work: true },
-        } } },
       },
-      select: { work_order_id: true, planned_equipment_id: true },
+      select: {
+        planned_equipment_id: true,
+        routing_operation: { select: { process: { select: { terminal_process: {
+          where: { terminal_id: terminal.terminalId }, select: { [flag]: true },
+        } } } } },
+      },
     });
-    if (!row) throw denied();
+    const mapping = row?.routing_operation.process.terminal_process[0] as Partial<Record<WorkOrderFlag, boolean>> | undefined;
+    if (!row || mapping === undefined) throw denied();
+    if (mapping[flag] !== true) throw flagDenied(FLAG_NAME[flag]);
     return row.planned_equipment_id ?? null;
   };
   /**
@@ -60,12 +68,7 @@ export async function assertTerminalProductionScope(
     });
     const mapping = row?.routing_operation.process.terminal_process[0];
     if (mapping === undefined) throw denied();
-    if (!mapping.can_close_work_order) {
-      throw new ContractException(HttpStatus.UNAUTHORIZED, [{
-        scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
-        message: '이 단말에는 이 W/O 공정의 작업지시 마감 권한이 없습니다. 관리웹 단말 관리에서 해당 공정의 「작업지시 마감」을 켜세요.',
-      }]);
-    }
+    if (!mapping.can_close_work_order) throw flagDenied('작업지시 마감');
   };
   /**
    * 이 단말이 그 W/O 에 걸 수 있는 설비 — 설비 단말은 자기 설비, 설비 없는 단말은 W/O 의 계획 설비다.
@@ -114,12 +117,12 @@ export async function assertTerminalProductionScope(
       await plantWorkers([body.workerId]);
       break;
     case 'POST /production/precheck-decisions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
       if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
       break;
     }
     case 'POST /production/work-sessions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId));
+      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
       await plantWorkers(array(body.workerIds));
       if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
       if (body.moldId !== undefined) {
@@ -132,20 +135,20 @@ export async function assertTerminalProductionScope(
     }
     case 'POST /production/work-orders/{workOrderId}:hold':
     case 'POST /production/work-orders/{workOrderId}:resume':
-      await ownWorkOrder(request.params.workOrderId);
+      await ownWorkOrder(request.params.workOrderId, 'can_start_work');
       break;
     case 'POST /production/work-orders/{workOrderId}:close':
       await closableWorkOrder(request.params.workOrderId);
       break;
     case 'POST /production/production-results':
-      await ownWorkOrder(body.workOrderId);
+      await ownWorkOrder(body.workOrderId, 'can_input_result');
       for (const allocation of array(body.lotAllocations)) await ownLot(object(allocation).lotId);
       break;
     case 'POST /trace/serial-numbers':
       await ownLot(body.lotId);
       break;
     case 'POST /production/material-consumptions':
-      await ownWorkOrder(body.workOrderId);
+      await ownWorkOrder(body.workOrderId, 'can_input_material');
       await ownLot(body.lotId);
       if (body.workSessionId !== undefined) await ownSession(body.workSessionId);
       break;
@@ -176,6 +179,22 @@ function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
+/** W/O 단위 일의 기능 플래그 — 마감(`can_close_work_order`)은 미완료 조건이 달라 `closableWorkOrder` 가 따로 본다. */
+type WorkOrderFlag = 'can_start_work' | 'can_input_material' | 'can_input_result';
+/** 관리웹 시스템 관리 › 단말기-공정 매핑 화면의 기능 이름 — 문구가 켤 칸을 짚는다. */
+const FLAG_NAME: Record<WorkOrderFlag, string> = {
+  can_start_work: '작업 시작',
+  can_input_material: '자재 투입',
+  can_input_result: '실적 입력',
+};
+
+function flagDenied(name: string): ContractException {
+  return new ContractException(HttpStatus.UNAUTHORIZED, [{
+    scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
+    message: `이 단말에는 이 W/O 공정의 ${name} 권한이 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 해당 공정의 「${name}」을 켜세요.`,
+  }]);
+}
+
 function denied(): ContractException {
   return new ContractException(HttpStatus.UNAUTHORIZED, [
     { scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message: '단말 인증 범위 밖입니다.' },

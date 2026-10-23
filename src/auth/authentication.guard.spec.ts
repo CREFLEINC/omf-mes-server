@@ -186,13 +186,21 @@ describe('FR-004/005 terminal bearer authentication', () => {
     const all = context('GET /production/work-orders', { open: 'true' }, {}, `Bearer ${token}`);
     expect(await guard.canActivate(all.execution)).toBe(true);
     expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { open: 'false' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    // 재작업 실적 화면의 배포 전 재작업 W/O 목록 — 재작업·PLANNED 짝일 때만 연다.
+    expect(await guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'PLANNED' }, {}, `Bearer ${token}`).execution)).toBe(true);
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { statusCode: 'PLANNED' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'CLOSED' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    // 짝은 PLANNED «하나»다 — 쉼표 다중 값으로 다른 상태를 끼워 넣지 못한다.
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'PLANNED,IN_PROGRESS' }, {}, `Bearer ${token}`).execution))).toBe(401);
+    expect(await statusOf(guard.canActivate(context('GET /production/work-orders', { workOrderTypeCode: 'REWORK', statusCode: 'PLANNED,' }, {}, `Bearer ${token}`).execution))).toBe(401);
     expect(await guard.canActivate(context('GET /production/work-orders/{workOrderId}', {}, { workOrderId: '11' }, `Bearer ${token}`).execution)).toBe(true);
     expect(prisma.work_order.findFirst).toHaveBeenCalledWith({
       where: { work_order_id: 11n, production_line: { plant_id: 3n },
         released_at: { not: null }, completed_at: null, closed_at: null,
         NOT: { status_code: 'CANCELLED' },
+        // W/O 단위 조회는 작업 시작·자재 투입·실적 입력 중 하나라도 켠 매핑이면 읽는다 — 세 화면이 이 조회로 W/O 공정을 찾는다.
         routing_operation: { process: { terminal_process: {
-          some: { terminal_id: 7n, can_start_work: true },
+          some: { terminal_id: 7n, OR: [{ can_start_work: true }, { can_input_material: true }, { can_input_result: true }] },
         } } },
       },
       select: { work_order_id: true },

@@ -59,15 +59,16 @@ export class WorkOrderQueryService {
     const achievementDirection = achievementSortDirection(query);
     assertJudgmentScope(query);
     const orderBy = achievementDirection === null ? buildOrderBy(query.sort) : undefined;
+    // POP 은 그 화면의 기능 플래그가 켜진 공정만 — 재작업 실적(P-04-03)은 실적 입력, 작업 시작 목록은 작업 시작(장부 P-109).
     const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
       ? (await this.prisma.terminal_process.findMany({
-          where: { terminal_id: terminal.terminalId, can_start_work: true },
+          where: { terminal_id: terminal.terminalId, ...(query.workOrderTypeCode === 'REWORK' ? { can_input_result: true } : { can_start_work: true }) },
           select: { process_id: true },
         })).map((row) => row.process_id)
       : undefined;
     const scopedWhere: Prisma.work_orderWhereInput = terminal === undefined
       ? buildWorkOrderWhere(query)
-      : { AND: [buildWorkOrderWhere(query), { production_line: { plant_id: terminal.plantId } },
+      : { AND: [buildWorkOrderWhere(query), terminalPlantWhere(terminal.plantId),
           ...(terminalProcessIds === undefined ? []
             : [{ routing_operation: { process_id: { in: terminalProcessIds } } }]),
         ] };
@@ -341,4 +342,17 @@ function isWebClosed(row: WorkOrderRow): boolean {
 
 function closedByUserOf(row: WorkOrderRow, closers: Map<bigint, string>): { id: bigint; name?: string } | undefined {
   return isWebClosed(row) ? { id: row.updated_by as bigint, name: closers.get(row.updated_by as bigint) } : undefined;
+}
+
+/**
+ * 단말 공장의 W/O — 라인의 공장이 기준이다. 라인은 배포 때 정해지므로(`release-plan.ts` 의 `lineErrors`) 배포 전 W/O(재작업 발행 직후 등)는
+ * 라인이 없어 계획의 ERP W/O 공장으로 본다 — 그래야 현장이 배포 전 지시를 볼 수 있다.
+ */
+function terminalPlantWhere(plantId: bigint): Prisma.work_orderWhereInput {
+  return {
+    OR: [
+      { production_line: { plant_id: plantId } },
+      { production_line_id: null, production_plan: { production_order: { plant_id: plantId } } },
+    ],
+  };
 }
