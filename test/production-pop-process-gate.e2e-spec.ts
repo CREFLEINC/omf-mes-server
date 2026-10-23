@@ -149,16 +149,62 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     });
   });
 
+  describe('본문 id 칸의 null 은 범위가 아니라 계약 검증으로 — 범위 밖 금형·설비는 까닭과 조치로', () => {
+    const begin = (token: string, extra: Record<string, unknown>) => asPop(request(app.getHttpServer()).post('/api/production/work-sessions'), token)
+      .send({ workOrderId: Number(ids.workOrder), startedAt: new Date().toISOString(), ...extra });
+    const fieldOf = (response: request.Response) => response.body.errors.map((error: { field?: string; code: string }) => [error.field, error.code]);
+
+    it('작업 시작의 선택 칸 moldId·equipmentId 가 null 이면 400 이고 그 칸을 짚는다', async () => {
+      const token = await terminal('NUL1', { [String(ids.process)]: { can_start_work: true } });
+
+      expect(fieldOf(await begin(token, { moldId: null }).expect(400))).toEqual([['moldId', 'INVALID']]);
+      expect(fieldOf(await begin(token, { equipmentId: null }).expect(400))).toEqual([['equipmentId', 'INVALID']]);
+    });
+
+    it('필수 칸 workOrderId 가 null 이어도 401 이 아니라 400 이다', async () => {
+      const token = await terminal('NUL2', { [String(ids.process)]: { can_start_work: true } });
+
+      const response = await begin(token, { workOrderId: null }).expect(400);
+      expect(fieldOf(response)).toContainEqual(['workOrderId', 'INVALID']);
+    });
+
+    it('자재 투입의 선택 칸 workSessionId 가 null 이면 400 이다', async () => {
+      const token = await terminal('NUL3', { [String(ids.process)]: { can_input_material: true } });
+
+      const response = await consume(token, { workSessionId: null }).expect(400);
+      expect(fieldOf(response)).toContainEqual(['workSessionId', 'INVALID']);
+    });
+
+    it('다른 공장 금형이면 401 이고 그 금형 코드는 알리지 않는다', async () => {
+      const token = await terminal('MOLD', { [String(ids.process)]: { can_start_work: true } });
+
+      const response = await begin(token, { moldId: Number(ids.foreignMold) }).expect(401);
+      expect(response.body.errors[0].message).toContain('고른 금형이 이 단말 공장의 금형이 아닙니다.');
+      expect(response.body.errors[0].message).toContain('관리웹 기준정보 관리 › 툴·금형 › 툴/금형/지그 마스터');
+      expect(response.body.errors[0].message).not.toContain(`${PREFIX}-MOLD`);
+    });
+
+    it('설비가 단말·W/O 에 없거나 다르면 401 이고 단말기-공정 매핑을 짚는다', async () => {
+      const token = await terminal('EQ', { [String(ids.process)]: { can_start_work: true } });
+
+      const none = await begin(token, { equipmentId: Number(ids.equipment) }).expect(401);
+      expect(none.body.errors[0].message).toContain('이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어');
+      const other = await begin(token, { workOrderId: Number(ids.plannedWorkOrder), equipmentId: Number(ids.otherEquipment) }).expect(401);
+      expect(other.body.errors[0].message).toContain('고른 설비가 이 단말의 설비');
+      expect(other.body.errors[0].message).toContain('관리웹 시스템 관리 › 단말기-공정 매핑');
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function asPop(test: request.Test, token: string): request.Test {
     return test.set('Authorization', `Bearer ${token}`).set('X-Worker-No', workerNo).set('Idempotency-Key', randomUUID());
   }
 
-  function consume(token: string): request.Test {
+  function consume(token: string, extra: Record<string, unknown> = {}): request.Test {
     return asPop(request(app.getHttpServer()).post('/api/production/material-consumptions'), token).send({
       workOrderId: Number(ids.workOrder), itemId: Number(ids.material), lotId: Number(ids.materialLot),
-      inputQty: 1, uomId: Number(ids.uom), occurredAt: new Date().toISOString(),
+      inputQty: 1, uomId: Number(ids.uom), occurredAt: new Date().toISOString(), ...extra,
     });
   }
 
@@ -217,6 +263,17 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       lot_no: `${PREFIX}-MLOT`, item_id: ids.material, lot_type_code: 'MATERIAL', plant_id: ids.plant, initial_qty: 100,
       uom_id: ids.uom, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: 990001n, status_code: 'NORMAL',
     } })).lot_id;
+    const equipment = (code: string) => prisma.equipment.create({ data: {
+      plant_id: ids.plant, production_line_id: line.production_line_id, equipment_code: `${PREFIX}-${code}`, equipment_name: PREFIX,
+      equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',
+    } });
+    ids.equipment = (await equipment('EQ1')).equipment_id;
+    ids.otherEquipment = (await equipment('EQ2')).equipment_id;
+    ids.plannedWorkOrder = (await prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-WO-EQ`, routing_operation_id: operation.routing_operation_id, item_id: ids.item, order_qty: 100,
+      uom_id: ids.uom, status_code: 'RELEASED', production_line_id: line.production_line_id, released_at: STARTED_AT,
+      planned_equipment_id: ids.equipment,
+    } })).work_order_id;
     const worker = await prisma.worker.create({ data: {
       worker_no: `${PREFIX}-W1`, worker_name: `${PREFIX}-작업자`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, status_code: 'EMPLOYED',
     } });
@@ -231,6 +288,9 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const otherPlant = await prisma.plant.create({ data: {
       legal_entity_id: legalEntityId, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
     } });
+    ids.foreignMold = (await prisma.mold.create({ data: {
+      plant_id: otherPlant.plant_id, mold_code: `${PREFIX}-MOLD`, mold_name: PREFIX, status_code: 'ACTIVE', tool_type_code: 'MOLD',
+    } })).mold_id;
     const bom = await prisma.bom.create({ data: {
       parent_item_id: ids.item, bom_code: `${PREFIX}-BOM`, bom_version: 1, status_code: 'ACTIVE',
       effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: ids.uom,
@@ -281,6 +341,8 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     await prisma.bom.deleteMany({ where: { bom_code: { startsWith: `${PREFIX}-` } } });
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
+    await prisma.equipment.deleteMany({ where: { equipment_code: { startsWith: PREFIX } } });
+    await prisma.mold.deleteMany({ where: { mold_code: { startsWith: PREFIX } } });
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
     await prisma.terminal_process.deleteMany({ where: { terminal_id: { in: terminalIds } } });
     await prisma.terminal.deleteMany({ where: { terminal_id: { in: terminalIds } } });

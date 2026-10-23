@@ -77,6 +77,10 @@ export async function assertTerminalProductionScope(
    * 둘 다 없으면 걸 설비가 없다(작업 전 점검 없이 시작한다).
    */
   const usableEquipment = (plannedEquipmentId: bigint | null): bigint | null => terminal.equipmentId ?? plannedEquipmentId;
+  const assertEquipment = (usable: bigint | null, value: unknown): void => {
+    if (usable === null) throw scopeDenied(NO_EQUIPMENT);
+    if (positiveId(value) !== usable) throw scopeDenied(OTHER_EQUIPMENT);
+  };
   /**
    * 범위 밖인 까닭이 W/O 상태(배포 전·완료·마감·취소)뿐이면 그 까닭과 할 일을 알린다 — 단말 공장의 W/O 이고 이 단말이
    * 그 공정에 매핑돼 있을 때만이다(남의 공장·매핑 없는 W/O 의 상태를 알려 주지 않는다). 그 밖은 「범위 밖」 그대로다.
@@ -155,22 +159,23 @@ export async function assertTerminalProductionScope(
       break;
     case 'POST /production/work-sessions/{workSessionId}/workers':
       await ownSession(request.params.workSessionId);
-      await plantWorkers([body.workerId]);
+      if (given(body.workerId)) await plantWorkers([body.workerId]);
       break;
     case 'POST /production/precheck-decisions': {
-      const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
-      if (equipmentId === null || positiveId(body.equipmentId) !== equipmentId) throw denied();
+      if (!given(body.workOrderId) || !given(body.equipmentId)) break;
+      assertEquipment(usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work')), body.equipmentId);
       break;
     }
     case 'POST /production/work-sessions': {
+      if (!given(body.workOrderId)) break;
       const equipmentId = usableEquipment(await ownWorkOrder(body.workOrderId, 'can_start_work'));
-      await plantWorkers(array(body.workerIds));
-      if (body.equipmentId !== undefined && (equipmentId === null || positiveId(body.equipmentId) !== equipmentId)) throw denied();
-      if (body.moldId !== undefined) {
+      await plantWorkers(array(body.workerIds).filter(given));
+      if (given(body.equipmentId)) assertEquipment(equipmentId, body.equipmentId);
+      if (given(body.moldId)) {
         const moldId = positiveId(body.moldId);
         if (moldId === null || !await prisma.mold.findFirst({
           where: { mold_id: moldId, plant_id: terminal.plantId }, select: { mold_id: true },
-        })) throw denied();
+        })) throw scopeDenied(FOREIGN_MOLD);
       }
       break;
     }
@@ -182,16 +187,21 @@ export async function assertTerminalProductionScope(
       await closableWorkOrder(request.params.workOrderId);
       break;
     case 'POST /production/production-results':
+      if (!given(body.workOrderId)) break;
       await ownWorkOrder(body.workOrderId, 'can_input_result');
-      for (const allocation of array(body.lotAllocations)) await ownLot(object(allocation).lotId);
+      for (const allocation of array(body.lotAllocations)) {
+        const lotId = object(allocation).lotId;
+        if (given(lotId)) await ownLot(lotId);
+      }
       break;
     case 'POST /trace/serial-numbers':
-      await ownLot(body.lotId);
+      if (given(body.lotId)) await ownLot(body.lotId);
       break;
     case 'POST /production/material-consumptions':
+      if (!given(body.workOrderId) || !given(body.lotId)) break;
       await ownWorkOrder(body.workOrderId, 'can_input_material');
       await ownLot(body.lotId);
-      if (body.workSessionId !== undefined) await ownSession(body.workSessionId);
+      if (given(body.workSessionId)) await ownSession(body.workSessionId);
       break;
     case 'POST /trace/lots/{lotId}:complete':
       await ownLot(request.params.lotId);
@@ -216,6 +226,13 @@ function positiveId(value: unknown): bigint | null {
   const id = BigInt(text);
   return id > 0n && id < 9223372036854775808n ? id : null;
 }
+/**
+ * 본문 id 칸이 실렸는지 — `null` 은 범위로 가르지 않고 계약 검증(뒤 가드)에 넘긴다.
+ * 범위 판정이 인증 가드 안이라 계약 검증보다 먼저 돈다 — 여기서 `null` 을 범위 밖으로 보면 400 이어야 할 본문이 401 이 된다.
+ * ⛔ 필수 칸이 `null` 이면 그 요청의 범위 판정을 건너뛴다 — 계약이 그 칸을 nullable 이 아닌 정수로 두어 뒤 가드가 반드시
+ *    400 으로 막는다는 것이 전제다. 그 칸을 nullable 로 바꾸면 여기서 범위를 다시 봐야 한다.
+ */
+function given(value: unknown): boolean { return value !== undefined && value !== null; }
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -234,6 +251,14 @@ function flagDenied(name: string): ContractException {
     scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED,
     message: `이 단말에는 이 W/O 공정의 ${name} 권한이 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 해당 공정의 「${name}」을 켜세요.`,
   }]);
+}
+
+const FOREIGN_MOLD = '고른 금형이 이 단말 공장의 금형이 아닙니다. 관리웹 기준정보 관리 › 툴·금형 › 툴/금형/지그 마스터에서 금형의 공장을 확인하거나 다른 금형을 고르세요.';
+const NO_EQUIPMENT = '이 단말에 연결된 설비도, 이 W/O 의 계획 설비도 없어 설비를 실을 수 없습니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 연결하세요.';
+const OTHER_EQUIPMENT = '고른 설비가 이 단말의 설비(단말에 설비가 없으면 W/O 의 계획 설비)가 아닙니다. 관리웹 시스템 관리 › 단말기-공정 매핑에서 이 단말의 설비를 확인하거나 그 설비의 단말에서 작업하세요.';
+
+function scopeDenied(message: string): ContractException {
+  return new ContractException(HttpStatus.UNAUTHORIZED, [{ scope: 'screen', code: ERROR_CODE.PERMISSION_DENIED, message }]);
 }
 
 function denied(): ContractException {
