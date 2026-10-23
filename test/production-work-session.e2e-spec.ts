@@ -485,10 +485,10 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(response.body.errors[0]).toMatchObject({ field: 'Authorization', code: 'INVALID' });
     });
 
-    it('SUSPENDED W/O 면 400 STATE_LOCKED', async () => {
+    it('열린 세션 없는 SUSPENDED W/O 는 재개하며 연다(장부 P-111)', async () => {
       const workOrderId = await workOrder('SUSPENDED');
-      const response = await openSession({ workOrderId, startedAt: START_AT }).expect(400);
-      expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      const response = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
+      expect(response.body).toMatchObject({ resumedWorkOrder: true });
     });
 
     it('X-Worker-No 가 없으면 400 REQUIRED', async () => {
@@ -555,19 +555,21 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(row.stop_reason_code).toBeNull();
     });
 
-    it('SUSPENDED 로 남은 W/O 는 :end 뒤 둘째 세션을 못 연다', async () => {
-      // 문의 035 — [재개] 한 버튼이 W/O 층 «중단»과 세션 층 «중단»을 묶어 본다.
+    it('세션이 끝난 W/O 는 중단할 수 없고, 중단·세션 없음 W/O 는 둘째 세션을 재개하며 연다(장부 P-111)', async () => {
       const workOrderId = await workOrder('RELEASED');
       const opened = await openSession({ workOrderId, startedAt: START_AT }).expect(201);
       await endSession(opened.body.workSessionId as number, { endedAt: END_AT }).expect(200);
-      await request(app.getHttpServer())
+      const held = await request(app.getHttpServer())
         .post(`${WORK_ORDERS}/${workOrderId}:hold`)
         .set('Cookie', cookie)
         .set('Idempotency-Key', idem())
         .send({ reasonCode: 'MATERIAL_SHORTAGE', occurredAt: END_AT })
-        .expect(200);
-      const blocked = await openSession({ workOrderId, startedAt: END_AT }).expect(400);
-      expect(blocked.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+        .expect(400);
+      expect(held.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+      // 옛 경로로 세션 없이 중단된 W/O(데이터) — 작업 시작이 재개하며 연다.
+      await prisma.work_order.update({ where: { work_order_id: BigInt(workOrderId) }, data: { status_code: 'SUSPENDED' } });
+      const reopened = await openSession({ workOrderId, startedAt: END_AT }).expect(201);
+      expect(reopened.body).toMatchObject({ sessionNo: 2, resumedWorkOrder: true });
     });
 
     it('⛔ 201·200 응답에 ETag 가 없다', async () => {

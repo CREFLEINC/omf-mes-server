@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 
+import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertNotBlank } from '../../common/master';
 import { DocumentStateService } from '../../core/document-state';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -46,7 +47,7 @@ export class WorkOrderTransitionService {
     //    대조를 켜면 «모든» `:hold` 가 400 이 된다. 값이 오면 그때 켠다(문의 035 ⓓ).
     //    `occurredAt` 은 계약 검증(`format: date-time`)이 이미 봤다 — 다시 파싱하지 않는다.
     assertNotBlank([['reasonCode', body.reasonCode]]);
-    await this.move(workOrderId, version, 'work-order-hold', appUserId);
+    await this.move(workOrderId, version, 'work-order-hold', appUserId, true);
   }
 
   resume(
@@ -63,10 +64,19 @@ export class WorkOrderTransitionService {
     version: number | undefined,
     action: string,
     appUserId: number | undefined,
+    requireOpenSession = false,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const locked = await lockWorkOrder(tx, workOrderId);
       assertVersion(locked, version);
+      // 중단은 작업 중일 때만이다 — 세션 없이 중단하면 POP 이 다시 시작할 길이 없는 W/O 가 남는다(장부 P-111).
+      //   중단(STOPPED) 세션도 열린 세션이다(`ended_at` 이 비었다).
+      if (requireOpenSession && (await tx.work_session.count({ where: { work_order_id: BigInt(workOrderId), ended_at: null } })) === 0) {
+        throw new ContractException(HttpStatus.BAD_REQUEST, [{
+          scope: 'screen', code: ERROR_CODE.STATE_LOCKED,
+          message: '작업 중인 세션이 없어 W/O 를 중단할 수 없습니다. 작업을 시작한 뒤에 중단하세요.',
+        }]);
+      }
       // ⛔ 400 이다 — 409 는 If-Match 저장 충돌이 쓴다(§1-6 · `approval.service.ts:263`).
       const transition = this.documentState.assertTransition(
         STATUS_COLUMN,
