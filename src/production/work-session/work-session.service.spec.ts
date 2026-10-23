@@ -184,6 +184,35 @@ describe('WorkSessionService.create', () => {
     expect(it0.updates).toEqual([]);
   });
 
+  it('중단·세션 없음 W/O 의 작업 시작은 같은 트랜잭션에서 재개하고 새 세션을 연다 — 버전은 한 번만 오른다', async () => {
+    const it0 = stub({ status: 'SUSPENDED' });
+    const view = await it0.service.create(body(), context());
+    expect(view).toMatchObject({ statusCode: 'RUNNING' });
+    expect(it0.updates).toEqual([{ status_code: 'IN_PROGRESS', version_no: { increment: 1 }, updated_by: 5 }]);
+    // 재개는 세션 사건을 남기지 않는다 — START 만.
+    expect(it0.events.map((event) => event.event_type_code)).toEqual(['START']);
+  });
+
+  it('중단 세션이 열린 중단 W/O 는 상태 400 이 아니라 409 다 — 그 세션의 재개로 안내한다', async () => {
+    const it0 = stub({ status: 'SUSPENDED', openSession: true });
+    const error = (await it0.service.create(body(), context()).catch((e: unknown) => e)) as ConflictException;
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.conflict).toMatchObject({ code: 'OPEN_SESSION_EXISTS' });
+    expect(error.conflict.message).toContain('[재개] 또는 [작업 이어하기]로 그 세션을 이어 가세요');
+    expect(it0.updates).toEqual([]);
+  });
+
+  it('시작도 재개도 할 수 없는 상태는 열린 세션보다 상태 400 이 먼저다', async () => {
+    const error = (await stub({ status: 'CLOSED', openSession: true }).service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
+    expect(error).toBeInstanceOf(ContractException);
+    expect(error.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
+  });
+
+  it('시작할 수 없는 상태는 할 일을 알린다', async () => {
+    const error = (await stub({ status: 'PLANNED' }).service.create(body(), context()).catch((e: unknown) => e)) as ContractException;
+    expect(error.errors[0].message).toContain('배포한 뒤 시작하세요');
+  });
+
   it('열린 세션 판정은 ended_at IS NULL 이다 — status_code 를 안 본다', async () => {
     const it0 = stub({ openSession: true });
     const error = (await it0.service.create(body(), context()).catch((e: unknown) => e)) as ConflictException;

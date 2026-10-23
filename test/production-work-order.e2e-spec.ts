@@ -388,6 +388,23 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
       return id;
     }
 
+    /** 작업 중(열린 세션)인 배포 W/O — 중단은 열린 세션이 있을 때만 된다(장부 P-111). */
+    async function working(): Promise<number> {
+      const id = await released();
+      await prisma.work_session.create({
+        data: {
+          work_order_id: BigInt(id),
+          session_no: 1,
+          shift_id: ids.shift,
+          terminal_id: ids.terminal,
+          started_at: new Date('2026-09-06T01:00:00.000Z'),
+          status_code: 'RUNNING',
+          idempotency_key: `${PREFIX}-${randomUUID()}`,
+        },
+      });
+      return id;
+    }
+
     async function issue(): Promise<number> {
       const response = await request(app.getHttpServer())
         .post(base)
@@ -470,7 +487,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
 
     it('중단 — If-Match 가 없어도 200 이다(선택)', async () => {
-      const workOrder = await released();
+      const workOrder = await working();
 
       const held = await request(app.getHttpServer())
         .post(`${base}/${workOrder}:hold`)
@@ -484,7 +501,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
 
     it('중단 — 낡은 토큰을 실으면 409 다', async () => {
-      const workOrder = await released();
+      const workOrder = await working();
       await request(app.getHttpServer())
         .post(`${base}/${workOrder}:hold`)
         .set('Cookie', cookie)
@@ -509,7 +526,7 @@ describe('W/O 상세·4M 계획 배정 조회 (e2e)', () => {
     });
 
     it('중단 — `X-Worker-No` 가 없어도 400 이 아니다', async () => {
-      const workOrder = await released();
+      const workOrder = await working();
 
       // 계약이 헤더를 선언했지만 담을 칸이 없어 서버가 읽지 않는다(§6-2 ⓔ · 출고 선례).
       await request(app.getHttpServer())
