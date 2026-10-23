@@ -64,7 +64,8 @@ describe('계약 커버리지', () => {
     // 투입 자재 계보 조회 3 오퍼레이션(#166 · 장부 P-107): 540 → 543.
     // 작업 세션 강제 종료 1 오퍼레이션(장부 P-108): 543 → 544.
     // 발주 하나의 입고 진행 1 오퍼레이션(#805 · 장부 P-110): 544 → 545.
-    expect(registry.size).toBe(545);
+    // 입고 단계 칩의 수 1 오퍼레이션(#805 · 장부 P-110): 545 → 546.
+    expect(registry.size).toBe(546);
     expect(implemented).toBeLessThanOrEqual(registry.size);
   });
 });

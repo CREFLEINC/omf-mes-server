@@ -43,6 +43,7 @@ import { PutawayRuleService } from './putaway/putaway-rule.service';
 import { PutawayTaskController } from './putaway/putaway-task.controller';
 import { PutawayTaskService } from './putaway/putaway-task.service';
 import { InboundProgressService } from './purchase-order/inbound-progress.service';
+import { InboundStageCountController } from './purchase-order/inbound-stage-count.controller';
 import { PurchaseOrderQueryService } from './purchase-order/purchase-order-query.service';
 import { PurchaseOrderLineListController } from './purchase-order/purchase-order-line-list.controller';
 import { PurchaseOrderLineListService } from './purchase-order/purchase-order-line-list.service';
@@ -107,6 +108,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     PutawayTaskController,
     PurchaseOrderController,
     PurchaseOrderLineListController,
+    InboundStageCountController,
     SalesOrderController,
     ShipmentAllocationController,
     ShippingUnitController,

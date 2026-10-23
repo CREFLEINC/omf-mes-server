@@ -42,16 +42,14 @@ interface Row {
   putaway: { statusCode: string; locationCode: string | null } | null;
 }
 
-function responseValidator(): ValidateFunction {
+function responseValidator(path = '~1logistics~1purchase-orders~1{purchaseOrderId}~1inbound-progress'): ValidateFunction {
   const contract = JSON.parse(readFileSync(join(__dirname, '../contracts/logistics-01자재창고.json'), 'utf8')) as object;
   const ajv = new Ajv2020({ strict: false, allErrors: true });
   addFormats(ajv);
   for (const format of ['int64', 'int32', 'double', 'float']) ajv.addFormat(format, true);
   ajv.addSchema(contract, 'https://omf-mes.invalid/contract');
   return ajv.compile({
-    $ref:
-      'https://omf-mes.invalid/contract#/paths/' +
-      '~1logistics~1purchase-orders~1{purchaseOrderId}~1inbound-progress/get/responses/200/content/application~1json/schema',
+    $ref: `https://omf-mes.invalid/contract#/paths/${path}/get/responses/200/content/application~1json/schema`,
   });
 }
 
@@ -80,7 +78,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 한 LOT 이 검사 → 입고 → 적치 단계를 차례로 바꾼다 — 응답이 계약 모양이다', async () => {
-    const { lotId, lineId, requestId } = await registerLot('iqcItem', 'orderLine', 10);
+    const { lotId, lineId, requestId } = await registerLot('iqcItem', ids.orderLine, 10);
     expect(await rowOf(lotId)).toMatchObject({
       stageCode: 'INSPECTION_REQUESTED',
       nextActionCode: null,
@@ -124,7 +122,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 세 id 가 입하 상세·발주 라인 목록과 같다 — 화면이 라인 아래에 묶고 입고 처리 창을 연다', async () => {
-    const { lotId, lineId } = await registerLot('iqcItem', 'orderLine', 5);
+    const { lotId, lineId } = await registerLot('iqcItem', ids.orderLine, 5);
     const row = await rowOf(lotId);
     expect(row).toMatchObject({ inboundReceiptId: Number(ids.receipt), inboundReceiptLineId: lineId });
 
@@ -145,7 +143,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 판정 보류면 INSPECTION_HELD 이고 열린 보류 사유가 공통코드 이름으로 실린다', async () => {
-    const { lotId, requestId } = await registerLot('iqcItem', 'orderLine', 3);
+    const { lotId, requestId } = await registerLot('iqcItem', ids.orderLine, 3);
     await confirm(await draft(requestId, 3), 'HELD').expect(200);
 
     const name = await prisma.code_value.findFirstOrThrow({
@@ -161,7 +159,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 무검사 품목 LOT 은 의뢰 없이 RECEIPT_READY 다', async () => {
-    const { lotId } = await registerLot('plainItem', 'plainLine', 7);
+    const { lotId } = await registerLot('plainItem', ids.plainLine, 7);
     expect(await rowOf(lotId)).toMatchObject({
       stageCode: 'RECEIPT_READY',
       nextActionCode: 'POST_RECEIPT',
@@ -171,7 +169,7 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 선별 자식 LOT 도 한 줄이고 조상의 입하 라인·의뢰를 따른다', async () => {
-    const parent = await registerLot('iqcItem', 'orderLine', 8);
+    const parent = await registerLot('iqcItem', ids.orderLine, 8);
     const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(parent.lotId) } });
     const child = await prisma.lot.create({
       data: {
@@ -194,8 +192,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   });
 
   it('⭐ 다른 발주의 LOT 은 섞이지 않는다 — LOT 이 없는 입하 라인은 줄이 없다', async () => {
-    const other = await registerLot('iqcItem', 'otherLine', 4);
-    const unlabeled = await inboundLine('iqcItem', 'orderLine', 9);
+    const other = await registerLot('iqcItem', ids.otherLine, 4);
+    const unlabeled = await inboundLine('iqcItem', ids.orderLine, 9);
 
     const rows = await progress(ids.order);
     expect(rows.map((row) => row.lotId)).not.toContain(other.lotId);
@@ -208,6 +206,83 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       .get('/api/logistics/purchase-orders/999999999/inbound-progress')
       .set('Cookie', cookie)
       .expect(404);
+  });
+
+  describe('단계 칩 — 목록의 묶음 수 · inboundStage · 건수 경로', () => {
+    const Q = `${PREFIX}-S-`;
+    const validateCounts = responseValidator('~1logistics~1purchase-orders:inbound-stage-counts');
+
+    /** S-1: 검사 의뢰 1 · 입고 대기 1 · S-2: 판정 보류 1 · S-3: LOT 없음. */
+    beforeAll(async () => {
+      const [s1, s2] = [await makeOrder('S-1', ['iqcItem', 'plainItem']), await makeOrder('S-2', ['iqcItem'])];
+      await makeOrder('S-3', ['iqcItem']);
+      await registerLot('iqcItem', s1[0], 2);
+      await registerLot('plainItem', s1[1], 2);
+      const held = await registerLot('iqcItem', s2[0], 2);
+      await confirm(await draft(held.requestId, 2), 'HELD').expect(200);
+    });
+
+    it('⭐ 목록 줄마다 inboundStageCounts 가 그 발주 LOT 의 묶음 수다 — LOT 이 없으면 {}', async () => {
+      const response = await list({ q: Q }).expect(200);
+      const counts = Object.fromEntries(
+        (response.body.items as { purchaseOrderNo: string; inboundStageCounts: object }[]).map((item) => [item.purchaseOrderNo, item.inboundStageCounts]),
+      );
+      expect(counts).toEqual({ [`${Q}1`]: { INSPECTION: 1, RECEIPT: 1 }, [`${Q}2`]: { HELD: 1 }, [`${Q}3`]: {} });
+    });
+
+    it('⭐ inboundStage 로 거르면 그 묶음 LOT 이 있는 발주만 오고 쪽·총계가 맞다', async () => {
+      const numbers = async (query: Record<string, unknown>) => {
+        const response = await list({ q: Q, ...query }).expect(200);
+        return { nos: (response.body.items as { purchaseOrderNo: string }[]).map((item) => item.purchaseOrderNo), total: response.body.page.total as number };
+      };
+      expect(await numbers({ inboundStage: 'INSPECTION' })).toEqual({ nos: [`${Q}1`], total: 1 });
+      expect(await numbers({ inboundStage: 'HELD', size: 1 })).toEqual({ nos: [`${Q}2`], total: 1 });
+      expect(await numbers({ inboundStage: 'PUTAWAY' })).toEqual({ nos: [], total: 0 });
+    });
+
+    it('⭐ 건수 경로는 page·size·inboundStage 를 빼고 조건 전체를 센다 — 응답이 계약 모양이다', async () => {
+      const response = await stageCounts({ q: Q, page: 1, size: 1, inboundStage: 'HELD' }).expect(200);
+      expect(validateCounts(response.body)).toBe(true);
+      expect(validateCounts.errors ?? []).toEqual([]);
+      expect(response.body).toEqual({ counts: { INSPECTION: 1, HELD: 1, RECEIPT: 1, PUTAWAY: 0 } });
+      // 계약 밖 조건도 목록처럼 형을 맞춘다 — 글자 'false' 를 참으로 읽으면 납기 없는 발주가 모두 빠진다.
+      const unfiltered = await stageCounts({ q: Q, overdueOnly: 'false' }).expect(200);
+      expect(unfiltered.body).toEqual(response.body);
+    });
+
+    it('⛔ inboundStage 가 네 값 밖이면 400 이다 — 건수 경로도 목록과 같은 조건을 검사한다', async () => {
+      await list({ q: Q, inboundStage: 'COMPLETED' }).expect(400);
+      await stageCounts({ q: Q, expectedReceiptDateFrom: '2026-02-30' }).expect(400);
+      await stageCounts({ q: Q, plantId: 'abc' }).expect(400);
+    });
+
+    function list(query: Record<string, unknown>): request.Test {
+      return request(app.getHttpServer()).get('/api/logistics/purchase-orders').query(query).set('Cookie', cookie);
+    }
+
+    function stageCounts(query: Record<string, unknown>): request.Test {
+      return request(app.getHttpServer())
+        .get('/api/logistics/purchase-orders:inbound-stage-counts')
+        .query(query)
+        .set('Cookie', cookie);
+    }
+
+    async function makeOrder(no: string, items: string[]): Promise<bigint[]> {
+      const order = await prisma.purchase_order.create({
+        data: {
+          purchase_order_no: `${PREFIX}-${no}`, supplier_id: ids.supplier, business_unit_id: ids.unit, plant_id: ids.plant,
+          order_date: new Date(`${DAY}T00:00:00.000Z`), status_code: 'CONFIRMED',
+        },
+      });
+      const lines: bigint[] = [];
+      for (const [index, item] of items.entries()) {
+        const line = await prisma.purchase_order_line.create({
+          data: { purchase_order_id: order.purchase_order_id, line_no: index + 1, item_id: ids[item], ordered_qty: 1000, uom_id: ids.uom },
+        });
+        lines.push(line.purchase_order_line_id);
+      }
+      return lines;
+    }
   });
 
   async function progress(orderId: bigint): Promise<Row[]> {
@@ -226,11 +301,11 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     return row;
   }
 
-  async function inboundLine(item: string, orderLine: string, qty: number): Promise<number> {
+  async function inboundLine(item: string, orderLineId: bigint, qty: number): Promise<number> {
     lineNo += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
-        inbound_receipt_id: ids.receipt, line_no: lineNo, item_id: ids[item], purchase_order_line_id: ids[orderLine],
+        inbound_receipt_id: ids.receipt, line_no: lineNo, item_id: ids[item], purchase_order_line_id: orderLineId,
         received_qty: qty, uom_id: ids.uom, supplier_lot_label_attached: false,
         inspection_required: item === 'iqcItem', status_code: 'REGISTERED',
       },
@@ -239,8 +314,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
   }
 
   /** 입하 라인 + LOT 등록(실제 API) — 검사 대상 품목이면 의뢰가 함께 선다. */
-  async function registerLot(item: string, orderLine: string, qty: number) {
-    const lineId = await inboundLine(item, orderLine, qty);
+  async function registerLot(item: string, orderLineId: bigint, qty: number) {
+    const lineId = await inboundLine(item, orderLineId, qty);
     const created = await request(app.getHttpServer())
       .post('/api/trace/lots')
       .set('Cookie', cookie)

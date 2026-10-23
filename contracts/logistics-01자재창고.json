@@ -4432,6 +4432,110 @@
     "x-internal-note": "초과 입하 분리에서 이어지는 진입이 있다(W-01-03 §5-1 → W-01-11 §5-3)."
    }
   },
+  "/logistics/purchase-orders:inbound-stage-counts": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입고 단계 칩의 수",
+    "description": "입고 관리 허브(W-01-09) 탭 줄의 「검사 대기 N · 보류 N · 입고 대기 N · 적치 대기 N」 — 발주 목록(GET /logistics/purchase-orders)과 같은 조건에 맞는 발주 «전체»의 LOT 을 묶음별로 센다. 쪽(page·size)과 inboundStage 는 보지 않는다 — 칩으로 좁힌 뒤에도 다른 칩의 수가 남는다. 목록의 계약 밖 조건(expectedReceiptDateFrom·expectedReceiptDateTo·overdueOnly·supplierQ · 장부 P-85)도 목록과 같이 받는다. 묶음: INSPECTION = INSPECTION_REQUIRED·INSPECTION_REQUESTED·INSPECTION_IN_PROGRESS · HELD = INSPECTION_HELD · RECEIPT = RECEIPT_READY · PUTAWAY = PUTAWAY_PENDING·PUTAWAY_TEMPORARY. 완료·취소는 세지 않는다. 판정은 GET …/{purchaseOrderId}/inbound-progress 의 stageCode 와 같다. 장부 P-110",
+    "parameters": [
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공급사"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "공장"
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "물류 전표의 진행 상태로 거른다 — 등록(REGISTERED) · 전기완료(POSTED) · 취소요청(CANCEL_REQUESTED) · 취소완료(CANCELLED). ⭐ 값 목록은 GET /mdm/code-values?codeGroupCode=LOGISTICS_DOCUMENT_STATUS 로 받는다(공유계약 G-32). ⚠ 채번 식별자(codeGroupId)를 하드코딩하지 않는다 — 환경마다 다르다.",
+      "x-code-key": "CD-LOGISTICS-DOCUMENT-STATUS"
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "이 품목이 라인에 있는 P/O 만"
+     },
+     {
+      "name": "orderDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "발주일 시작"
+     },
+     {
+      "name": "orderDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "발주일 종료"
+     },
+     {
+      "name": "openOnly",
+      "in": "query",
+      "schema": {
+       "type": "boolean",
+       "default": false
+      },
+      "description": "아직 입하가 끝나지 않은 건만"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "발주번호 검색"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "묶음별 LOT 수",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InboundStageCountResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 계약 밖 조건의 형식 포함",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/logistics/purchase-orders/{purchaseOrderId}": {
    "parameters": [
     {
@@ -15272,6 +15376,49 @@
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/InboundLotProgress"
+      }
+     }
+    }
+   },
+   "InboundStageCountResponse": {
+    "type": "object",
+    "required": [
+     "counts"
+    ],
+    "properties": {
+     "counts": {
+      "type": "object",
+      "required": [
+       "INSPECTION",
+       "HELD",
+       "RECEIPT",
+       "PUTAWAY"
+      ],
+      "properties": {
+       "INSPECTION": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "검사 대기",
+        "example": 3
+       },
+       "HELD": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "보류",
+        "example": 1
+       },
+       "RECEIPT": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "입고 대기",
+        "example": 5
+       },
+       "PUTAWAY": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "적치 대기",
+        "example": 2
+       }
       }
      }
     }
