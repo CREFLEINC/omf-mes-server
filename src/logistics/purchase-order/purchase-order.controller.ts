@@ -27,6 +27,7 @@ import {
   PurchaseOrderQuery,
   PurchaseOrderQueryService,
 } from './purchase-order-query.service';
+import { InboundLotProgress, InboundProgressService } from './inbound-progress.service';
 import { parseOrderListExtras } from './purchase-order-line-list';
 import { PurchaseOrderDetail, PurchaseOrderLineView, PurchaseOrderView } from './purchase-order-view';
 import {
@@ -36,13 +37,14 @@ import {
   PurchaseOrderUpdateInput,
 } from './purchase-order.service';
 
-/** P/O 7 오퍼레이션 전건 — 조회 3 + 쓰기 4. 화면 `W-01-09`(목록)·`W-01-03`·`W-01-11`(상세·등록·수정·상신). */
+/** P/O 8 오퍼레이션 — 조회 4(입고 진행 · 장부 P-110 포함) + 쓰기 4. 화면 `W-01-09`(목록·입고 진행)·`W-01-03`·`W-01-11`(상세·등록·수정·상신). */
 @Controller('logistics/purchase-orders')
 export class PurchaseOrderController {
   constructor(
     private readonly purchaseOrders: PurchaseOrderService,
     private readonly queries: PurchaseOrderQueryService,
     private readonly idempotency: IdempotencyService,
+    private readonly inboundProgress: InboundProgressService,
   ) {}
 
   @Get()
@@ -70,6 +72,15 @@ export class PurchaseOrderController {
     @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
   ): Promise<{ items: PurchaseOrderLineView[] }> {
     return { items: await this.queries.lines(purchaseOrderId) };
+  }
+
+  /** 입고 관리 허브(W-01-09)의 LOT 줄 — 단계와 다음 할 일은 서버가 정한다(장부 P-110). */
+  @Get(':purchaseOrderId/inbound-progress')
+  @Contract('GET /logistics/purchase-orders/{purchaseOrderId}/inbound-progress')
+  async inboundProgressOf(
+    @Param('purchaseOrderId', ParseIntPipe) purchaseOrderId: number,
+  ): Promise<{ items: InboundLotProgress[] }> {
+    return { items: await this.inboundProgress.ofPurchaseOrder(purchaseOrderId) };
   }
 
   @Post()
@@ -153,7 +164,8 @@ function userOf(request: Request): number {
   return session.userId;
 }
 
-function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
+/** 단말은 자기 공장의 것만 — 단계 칩의 수(`inbound-stage-count.controller.ts`)도 같은 조건을 쓴다. */
+export function plantQuery<T extends { plantId?: number }>(query: T, request: Request): T {
   const plantId = currentTerminal(request)?.plantId;
   return plantId === undefined ? query : { ...query, plantId: Number(plantId) };
 }

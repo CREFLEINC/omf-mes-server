@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { toDateString } from '../../common/master';
+import { INBOUND_STAGE_GROUPS, InboundStageGroup } from './inbound-stage';
 import { ReceiptStatusCode, dateOnly, lineReceiptStatus, remainingQtyOf } from './purchase-order-receipt';
 
 /**
@@ -76,6 +77,8 @@ export interface OrderListExtras {
   expectedReceiptDateTo?: string;
   overdueOnly?: boolean;
   supplierQ?: string;
+  /** 그 묶음의 LOT 이 하나라도 있는 발주만(입고 관리 허브의 단계 칩 · 장부 P-110). */
+  inboundStage?: InboundStageGroup;
 }
 
 export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExtras {
@@ -86,6 +89,7 @@ export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExt
     expectedReceiptDateTo: readDate(raw, 'expectedReceiptDateTo', errors),
     overdueOnly: readFlag(raw, 'overdueOnly', errors),
     supplierQ: readText(raw, 'supplierQ', errors),
+    inboundStage: readStage(raw, errors),
   };
 
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
@@ -105,6 +109,15 @@ function readFlag(raw: Record<string, unknown>, name: string, errors: ErrorItem[
   if (value === undefined) return undefined;
   if (value === 'true' || value === 'false') return value === 'true';
   errors.push(invalid(name, 'true 나 false 여야 합니다.'));
+  return undefined;
+}
+
+function readStage(raw: Record<string, unknown>, errors: ErrorItem[]): InboundStageGroup | undefined {
+  const value = raw.inboundStage;
+  if (value === undefined) return undefined;
+  const stage = INBOUND_STAGE_GROUPS.find((group) => group === value);
+  if (stage !== undefined) return stage;
+  errors.push(invalid('inboundStage', `${INBOUND_STAGE_GROUPS.join('·')} 중 하나입니다.`));
   return undefined;
 }
 
