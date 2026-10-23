@@ -7,13 +7,14 @@ const WORK_ORDER = 700;
 
 type Row = Record<string, unknown>;
 
-function stub(statusCode = "RELEASED") {
+function stub(statusCode = "RELEASED", openSessions = 1) {
   const updated: Row[] = [];
   const tx = {
     $queryRaw: () =>
       Promise.resolve([
         { status_code: statusCode, released_at: new Date(), version_no: 1 },
       ]),
+    work_session: { count: () => Promise.resolve(openSessions) },
     work_order: {
       update: ({ data }: { data: Row }) => {
         updated.push(data);
@@ -76,5 +77,44 @@ describe("W/O 중단·재개 (I-6 PR ④)", () => {
         updated_by: null,
       },
     ]);
+  });
+
+  it("중단 — 열린 세션이 없으면 400 이고 W/O 를 바꾸지 않는다", async () => {
+    const { service, updated } = stub("IN_PROGRESS", 0);
+
+    await expect(
+      service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
+    ).rejects.toMatchObject({
+      errors: [expect.objectContaining({ code: ERROR_CODE.STATE_LOCKED, message: expect.stringContaining("작업을 시작한 뒤에 중단하세요") })],
+    });
+    expect(updated).toEqual([]);
+  });
+
+  it("중단 — 상태로 막히는 W/O 는 세션 검사보다 상태 문구가 먼저다", async () => {
+    const { service } = stub("CLOSED", 0);
+
+    await expect(
+      service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
+    ).rejects.toMatchObject({
+      errors: [expect.objectContaining({ code: ERROR_CODE.STATE_LOCKED, message: expect.stringContaining("마감된 W/O 는 중단할 수 없습니다") })],
+    });
+  });
+
+  it("재개 — 열린 세션을 보지 않는다(세션 없는 중단 W/O 도 재개된다)", async () => {
+    const { service, updated } = stub("SUSPENDED", 0);
+
+    await service.resume(WORK_ORDER, 1);
+
+    expect(updated[0]).toMatchObject({ status_code: "IN_PROGRESS" });
+  });
+
+  it("중단 — 이미 중단된 W/O 는 상태 코드 대신 할 일을 알린다", async () => {
+    const { service } = stub("SUSPENDED", 1);
+
+    await expect(
+      service.hold(WORK_ORDER, 1, { reasonCode: "EQUIPMENT_FAILURE", occurredAt: "2026-10-23T01:00:00.000Z" }),
+    ).rejects.toMatchObject({
+      errors: [expect.objectContaining({ message: "이미 중단된 W/O 입니다. 작업 시작 화면에서 [재개]하세요." })],
+    });
   });
 });
