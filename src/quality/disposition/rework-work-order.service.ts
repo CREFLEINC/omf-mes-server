@@ -259,7 +259,7 @@ function today(): string {
 /**
  * 공정은 담당자가 고르되 «그 품목의» 사용 중인 Routing 공정이어야 한다 — 사용 중의 정의는 Routing 목록 `usableOnly` 와
  * 같은 `usableWhere`(확정 · 오늘이 유효 기간 안)다. 다른 품목의 Routing 공정을 받으면 그 품목에 없는 공정의 재작업 지시가
- * 나간다(장부 P-112). 수리 공정도 그 품목 Routing 에 있어야 고를 수 있다.
+ * 나간다(장부 P-112). 그 품목의 Routing 이면 기본이 아니어도 된다 — 수리 공정은 그 품목의 별도 Routing 으로 둘 수 있다.
  */
 async function assertItemRoutingOperation(tx: Prisma.TransactionClient, itemId: bigint, routingOperationId: number): Promise<void> {
   const usable = await tx.routing_operation.count({

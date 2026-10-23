@@ -150,6 +150,15 @@ describe('재작업 W/O 발행 (e2e)', () => {
     expect(response.body).toMatchObject({ code: 'VERSION_CONFLICT' });
   });
 
+  /* ⭐ 그 품목의 Routing 이면 기본이 아니어도 된다 — 수리 공정은 그 품목의 별도 Routing 으로 둔다. */
+  it('⭐ 그 품목의 기본이 아닌 확정 Routing(수리용) 공정으로도 발행된다', async () => {
+    const nc = await prisma.nonconformance.findUniqueOrThrow({ where: { nonconformance_id: BigInt(ncIds.rework) } });
+
+    const response = await issue(ncIds.rework, nc.version_no).send(body({ routingOperationId: Number(ids.repairOperation), orderQty: 1 })).expect(201);
+
+    expect(response.body).toMatchObject({ routingOperationId: Number(ids.repairOperation) });
+  });
+
   // ─────────────────────────────── 픽스처 ───────────────────────────────
 
   async function login(loginId: string): Promise<string[]> {
@@ -227,6 +236,7 @@ describe('재작업 W/O 발행 (e2e)', () => {
         routing_version: 1,
         status_code: 'CONFIRMED',
         effective_from: new Date('2026-01-01T00:00:00.000Z'),
+        is_default: true,
       },
     });
     const operation = await prisma.routing_operation.create({
@@ -411,7 +421,10 @@ describe('재작업 W/O 발행 (e2e)', () => {
     }
   }
 
-  /** 고를 수 없는 공정 셋 — 다른 품목의 확정 Routing · 이 품목의 폐기 Routing · 이 품목의 기간 지난 Routing. */
+  /**
+   * 고를 수 없는 공정 셋 — 다른 품목의 확정 Routing · 이 품목의 폐기 Routing · 이 품목의 기간 지난 Routing.
+   * 그리고 고를 수 있는 이 품목의 기본이 아닌 확정 Routing(수리용) 공정 하나.
+   */
   async function rejectedOperations(itemId: bigint, processId: bigint): Promise<void> {
     const other = await prisma.item.create({ data: {
       item_code: `${PREFIX}-IT-OTHER`, item_name: '다른품목', item_type_code: 'FINISHED_GOODS', base_uom_id: ids.uom,
@@ -426,6 +439,7 @@ describe('재작업 W/O 발행 (e2e)', () => {
     };
     ids.otherItemOperation = await operationOf('RT-OTHER', { item_id: other.item_id, status_code: 'CONFIRMED' });
     ids.obsoleteOperation = await operationOf('RT-OBS', { item_id: itemId, status_code: 'OBSOLETE' });
+    ids.repairOperation = await operationOf('RT-REPAIR', { item_id: itemId, status_code: 'CONFIRMED' });
     ids.expiredOperation = await operationOf('RT-EXP', {
       item_id: itemId, status_code: 'CONFIRMED', effective_to: new Date('2026-02-01T00:00:00.000Z'),
     });
