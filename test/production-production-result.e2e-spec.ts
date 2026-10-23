@@ -827,19 +827,24 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       await record(workOrderId, slots[0].lot_id, 50).expect(201);
       expect(await lifecyclesOf(slots.map((slot) => slot.lot_id))).toEqual(['ACTIVE', 'WAITING']);
 
-      const response = await complete(slots[0].lot_id, {}, { ifMatch: await etagOf(slots[0].lot_id) }).expect(200);
+      const before = await prisma.lot.findUniqueOrThrow({
+        where: { lot_id: slots[0].lot_id },
+        select: { status_code: true, version_no: true },
+      });
+      const response = await complete(slots[0].lot_id, {}, { ifMatch: String(before.version_no) }).expect(200);
 
       // ⛔ 완료가 옮기는 것은 «시각 칸» 하나다 — `LOT_LIFECYCLE_STATUS` 3값에 「완료」가 없다.
       expect(response.body).toMatchObject({
         lotId: Number(slots[0].lot_id),
         completedAt: COMPLETED_AT,
         lifecycleStatusCode: 'ACTIVE',
-        // 배포가 심은 품질 판정 그대로다 — `:complete` 는 그 축도 안 건드린다(03 품질 계약 소관).
-        statusCode: 'INSPECTION_PENDING',
+        // 품질 판정은 완료 전 그대로다 — `:complete` 는 그 축을 안 건드린다(03 품질 계약 소관).
+        // 실적 등록이 PQC 유무에 따라 판정을 옮길 수 있어 고정값 대신 완료 전 값과 대조한다.
+        statusCode: before.status_code,
       });
-      // 계약이 200 에 ETag 를 안 선언했다 — `version_no` 는 3 으로 올라가지만 토큰은 다시 읽어야 받는다(ⓦ).
+      // 계약이 200 에 ETag 를 안 선언했다 — `version_no` 는 완료 한 번만큼 오르지만 토큰은 다시 읽어야 받는다(ⓦ).
       expect(response.headers.etag).not.toMatch(/^"?\d+"?$/);
-      expect(await etagOf(slots[0].lot_id)).toBe('3');
+      expect(await etagOf(slots[0].lot_id)).toBe(String(before.version_no + 1));
       expect(validator('logistics-01자재창고.json', 'POST /trace/lots/{lotId}:complete')(response.body)).toBe(true);
     });
 
@@ -879,8 +884,9 @@ describe('생산 실적 조회 · LOT 생명주기 이력 (e2e)', () => {
       await record(workOrderId, slots[0].lot_id, 100).expect(201);
       const afterResult = await etagOf(slots[0].lot_id);
 
-      // ⭐ `moveWithin`(L1)이 같은 행의 `version_no` 를 올린다 — 실적 전 토큰은 이미 낡았다.
-      expect([beforeResult, afterResult]).toEqual(['1', '2']);
+      // ⭐ 실적 등록이 같은 행의 `version_no` 를 올린다 — 실적 전 토큰은 이미 낡았다.
+      // 몇 번 오르는지는 PQC 유무에 달려(L1·검사 없음 정상 전환) 오름만 본다.
+      expect(Number(afterResult)).toBeGreaterThan(Number(beforeResult));
       const stale = await complete(slots[0].lot_id, {}, { ifMatch: beforeResult }).expect(409);
       // ⛔ 이 오퍼레이션만 «일반» `ConflictResponse` 다 — `code` 를 안 싣는다(§8-4).
       expect(stale.body).toMatchObject({ conflictCause: 'user' });
