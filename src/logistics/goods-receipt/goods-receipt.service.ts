@@ -303,7 +303,19 @@ export class GoodsReceiptService {
           ? await inboundLineOfLot(this.prisma, BigInt(line.lotId))
           : null;
     if (inboundLineId !== null) await this.assertReceivable(line, at, errors, lotTotal);
-    // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17).
+    // ⭐ 불량 LOT 은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) — 불량 자재를
+    //    불량창고로 옮겨 처분·반품을 기다린다. 검사 대상 여부와 상관없다 — 무검사 품목에 건 클레임 재Hold(C9)도
+    //    불량이다(사용자 결정 2026-10-23).
+    if (inboundLineId !== null && lot.status_code === DEFECTIVE_LOT_STATUS) {
+      const toDefectWarehouse =
+        (await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { is_defect: true } }))
+          ?.is_defect === true;
+      if (!toDefectWarehouse) {
+        errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, '불량 LOT 은 불량창고로만 입고할 수 있습니다.'));
+      }
+      return;
+    }
+    // IQC 대상 입하 LOT 은 합격(LOT 정상) 전에 입고하지 않는다(omf-all-around#100 · C17). 검사 대기는 어디로도 안 된다.
     // 대상 여부는 입하 라인의 표식으로 본다 — 무검사 품목 LOT 은 이 검사를 타지 않는다.
     if (inboundLineId !== null && lot.status_code !== IQC_PASSED_LOT_STATUS) {
       const inbound = await this.prisma.inbound_receipt_line.findUnique({
@@ -311,23 +323,7 @@ export class GoodsReceiptService {
         select: { inspection_required: true },
       });
       if (inbound?.inspection_required === true) {
-        // ⭐ 예외: IQC 불합격(LOT 불량)은 «불량창고»로만 입고할 수 있다(omf-all-around#84 · 2026-10-16 결정 · 장부 P-45) —
-        //    불합격 자재를 불량창고로 옮겨 처분·반품을 기다린다. 일반 창고는 계속 막는다. 검사 대기는 어디로도 안 된다.
-        const toDefectWarehouse =
-          lot.status_code === DEFECTIVE_LOT_STATUS &&
-          (await this.prisma.warehouse.findUnique({ where: { warehouse_id: warehouseId }, select: { is_defect: true } }))
-            ?.is_defect === true;
-        if (!toDefectWarehouse) {
-          errors.push(
-            field(
-              `${at}.lotId`,
-              ERROR_CODE.STATE_LOCKED,
-              lot.status_code === DEFECTIVE_LOT_STATUS
-                ? 'IQC 불합격 LOT 은 불량창고로만 입고할 수 있습니다.'
-                : 'IQC 수입검사 합격 전인 LOT 은 입고할 수 없습니다.',
-            ),
-          );
-        }
+        errors.push(field(`${at}.lotId`, ERROR_CODE.STATE_LOCKED, 'IQC 수입검사 합격 전인 LOT 은 입고할 수 없습니다.'));
       }
     }
   }
