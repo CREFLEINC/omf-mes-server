@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { Tx } from '../../core/lot';
 import { WORK_ORDER_INITIAL_STATUS } from '../../core/work-order/defaults';
+import { usableWhere } from '../../planning/routing/routing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `ReworkWorkOrderIssue` — required 둘. */
@@ -256,25 +257,13 @@ function today(): string {
 }
 
 /**
- * 공정은 담당자가 고르되 «그 품목의» 사용 중인 Routing 공정이어야 한다 — 확정(CONFIRMED)이고 오늘이 유효 기간 안
- * (`effective_from` 이하 · `effective_to` 이상, 빈 칸은 열림). 다른 품목의 Routing 공정을 받으면 그 품목에 없는 공정의
- * 재작업 지시가 나간다(장부 P-112). 수리 공정도 그 품목 Routing 에 있어야 고를 수 있다.
- * ⚠ 오늘은 UTC 날짜다 — Routing 유효 기간은 날짜 단위라 공장 시간대와 하루가 어긋나는 경계만 다를 수 있다.
+ * 공정은 담당자가 고르되 «그 품목의» 사용 중인 Routing 공정이어야 한다 — 사용 중의 정의는 Routing 목록 `usableOnly` 와
+ * 같은 `usableWhere`(확정 · 오늘이 유효 기간 안)다. 다른 품목의 Routing 공정을 받으면 그 품목에 없는 공정의 재작업 지시가
+ * 나간다(장부 P-112). 수리 공정도 그 품목 Routing 에 있어야 고를 수 있다.
  */
 async function assertItemRoutingOperation(tx: Prisma.TransactionClient, itemId: bigint, routingOperationId: number): Promise<void> {
-  const today = new Date(new Date().toISOString().slice(0, 10));
   const usable = await tx.routing_operation.count({
-    where: {
-      routing_operation_id: BigInt(routingOperationId),
-      routing: {
-        item_id: itemId,
-        status_code: 'CONFIRMED',
-        AND: [
-          { OR: [{ effective_from: null }, { effective_from: { lte: today } }] },
-          { OR: [{ effective_to: null }, { effective_to: { gte: today } }] },
-        ],
-      },
-    },
+    where: { routing_operation_id: BigInt(routingOperationId), routing: { item_id: itemId, ...usableWhere() } },
   });
   if (usable > 0) return;
   const item = await tx.item.findUnique({ where: { item_id: itemId }, select: { item_code: true } });
