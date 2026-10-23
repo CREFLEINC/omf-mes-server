@@ -102,14 +102,14 @@ describe('재작업 W/O 발행 (e2e)', () => {
     ).toBe(true);
   });
 
-  /* ⛔ 공정은 그 부적합 품목의 사용 중인 Routing 공정이어야 한다 — 다른 품목·폐기·기간 지난 Routing 공정은 400. */
+  /* ⛔ 공정은 그 부적합 품목의 사용 중인 Routing 공정이어야 한다 — 다른 품목·초안·폐기·기간 전·기간 지난 Routing 공정은 400. */
   it('⛔ 부적합 품목의 사용 중인 Routing 공정이 아니면 400 이고 W/O 가 서지 않는다', async () => {
     const before = await prisma.work_order.count({ where: { rework_source_nonconformance_id: BigInt(ncIds.exceed) } });
 
-    for (const operationId of [ids.otherItemOperation, ids.obsoleteOperation, ids.expiredOperation]) {
+    for (const operationId of [ids.otherItemOperation, ids.draftOperation, ids.obsoleteOperation, ids.futureOperation, ids.expiredOperation]) {
       const response = await issue(ncIds.exceed, 1).send(body({ routingOperationId: Number(operationId), orderQty: 1 })).expect(400);
       expect(response.body.errors[0]).toMatchObject({ field: 'routingOperationId', code: 'INVALID' });
-      expect(response.body.errors[0].message).toContain(`${PREFIX}-IT`);
+      expect(response.body.errors[0].message).toContain(`(${PREFIX}-IT)`);
       expect(response.body.errors[0].message).toContain('기준정보 관리 › 공정(Routing)');
     }
     expect(await prisma.work_order.count({ where: { rework_source_nonconformance_id: BigInt(ncIds.exceed) } })).toBe(before);
@@ -422,14 +422,14 @@ describe('재작업 W/O 발행 (e2e)', () => {
   }
 
   /**
-   * 고를 수 없는 공정 셋 — 다른 품목의 확정 Routing · 이 품목의 폐기 Routing · 이 품목의 기간 지난 Routing.
+   * 고를 수 없는 공정들 — 다른 품목의 확정 Routing · 이 품목의 초안·폐기 Routing · 이 품목의 기간 전·기간 지난 Routing.
    * 그리고 고를 수 있는 이 품목의 기본이 아닌 확정 Routing(수리용) 공정 하나.
    */
   async function rejectedOperations(itemId: bigint, processId: bigint): Promise<void> {
     const other = await prisma.item.create({ data: {
       item_code: `${PREFIX}-IT-OTHER`, item_name: '다른품목', item_type_code: 'FINISHED_GOODS', base_uom_id: ids.uom,
     } });
-    const operationOf = async (code: string, data: { item_id: bigint; status_code: string; effective_to?: Date }) => {
+    const operationOf = async (code: string, data: { item_id: bigint; status_code: string; effective_from?: Date; effective_to?: Date }) => {
       const routing = await prisma.routing.create({ data: {
         routing_code: `${PREFIX}-${code}`, routing_version: 1, effective_from: new Date('2026-01-01T00:00:00.000Z'), ...data,
       } });
@@ -438,7 +438,11 @@ describe('재작업 W/O 발행 (e2e)', () => {
       } })).routing_operation_id;
     };
     ids.otherItemOperation = await operationOf('RT-OTHER', { item_id: other.item_id, status_code: 'CONFIRMED' });
+    ids.draftOperation = await operationOf('RT-DRAFT', { item_id: itemId, status_code: 'DRAFT' });
     ids.obsoleteOperation = await operationOf('RT-OBS', { item_id: itemId, status_code: 'OBSOLETE' });
+    ids.futureOperation = await operationOf('RT-FUT', {
+      item_id: itemId, status_code: 'CONFIRMED', effective_from: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    });
     ids.repairOperation = await operationOf('RT-REPAIR', { item_id: itemId, status_code: 'CONFIRMED' });
     ids.expiredOperation = await operationOf('RT-EXP', {
       item_id: itemId, status_code: 'CONFIRMED', effective_to: new Date('2026-02-01T00:00:00.000Z'),

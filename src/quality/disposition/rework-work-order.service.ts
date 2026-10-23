@@ -80,7 +80,8 @@ export class ReworkWorkOrderService {
    * 201 + ETag(부적합의 **새** `version_no`) — 판정 저장과 같은 토큰이다.
    *
    * 갈래 순서: 존재(404) → 재작업 판정 없음(409 `INVALID_STATE`) → 단위 다름(400) → 잔량
-   * 초과(409 `DISPOSITION_QTY_EXCEEDED`) → 공정 없음(400) → 판 번호(409 `VERSION_CONFLICT`).
+   * 초과(409 `DISPOSITION_QTY_EXCEEDED`) → 원천 W/O 없음(400) → 그 품목의 사용 중인 Routing
+   * 공정 아님(400) → 판 번호(409 `VERSION_CONFLICT`).
    *
    * ⛔ **채번은 트랜잭션 «밖»이다** — 안에서 부르면 한 요청이 커넥션을 둘 쥔다(저장소 관례).
    *    실패하면 번호가 결번으로 남지만 계약이 번호의 연속을 요구하지 않는다.
@@ -276,4 +277,3 @@ async function assertItemRoutingOperation(tx: Prisma.TransactionClient, itemId: 
     ),
   ]);
 }
-

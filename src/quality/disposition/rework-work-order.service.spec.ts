@@ -172,7 +172,7 @@ describe('재작업 W/O 발행 (omf-all-around#47)', () => {
     expect(harness.created).toEqual([]);
   });
 
-  it('그 품목의 사용 중인 Routing 공정이 아니면 400 이고 W/O 를 만들지 않는다 — 켤 곳을 알려 준다', async () => {
+  it('그 품목의 사용 중인 Routing 공정이 아니면 400 이고 W/O 를 만들지 않는다 — 확인할 곳을 알려 준다', async () => {
     const harness = stub({ operationExists: false });
 
     const error = await issue(harness).catch((caught: unknown) => caught);
