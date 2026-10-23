@@ -179,12 +179,34 @@ describe('POP production terminal scope', () => {
     await expect(closing(null)).rejects.toMatchObject({ status: 401 });
   });
 
+  it('범위 밖 까닭은 단말 공장·이 단말 매핑이 있는 W/O 의 상태로만 찾는다 — 남의 공장·매핑 없는 W/O 는 일반 문구', async () => {
+    const findFirst = prisma.work_order.findFirst as jest.Mock;
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      status_code: 'CLOSED', released_at: new Date(), completed_at: null, closed_at: new Date(),
+    });
+
+    await expect(assertTerminalProductionScope(prisma, request({}, { workOrderId: '11' }, '900028'),
+      'POST /production/work-orders/{workOrderId}:hold', terminal))
+      .rejects.toMatchObject({ status: 401, errors: [expect.objectContaining({ message: expect.stringContaining('마감됐습니다') })] });
+    expect(findFirst).toHaveBeenLastCalledWith({
+      where: { work_order_id: 11n, production_line: { plant_id: 3n },
+        routing_operation: { process: { terminal_process: { some: { terminal_id: 7n } } } } },
+      select: { status_code: true, released_at: true, completed_at: true, closed_at: true },
+    });
+
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    await expect(assertTerminalProductionScope(prisma, request({}, { workOrderId: '11' }, '900028'),
+      'POST /production/work-orders/{workOrderId}:hold', terminal))
+      .rejects.toMatchObject({ status: 401, errors: [expect.objectContaining({ message: '단말 인증 범위 밖입니다.' })] });
+  });
+
   it('세션 읽기는 W/O 단위 조회 기준(다른 단말 세션도), 쓰기는 자기 단말 세션만이다', async () => {
     await assertTerminalProductionScope(prisma,
       request({}, { workSessionId: '29' }),
       'GET /production/work-sessions/{workSessionId}/workers', terminal);
     expect(prisma.work_session.findFirst).toHaveBeenCalledWith({
       where: { work_session_id: 29n, work_order: { production_line: { plant_id: 3n },
+        released_at: { not: null }, completed_at: null, closed_at: null, NOT: { status_code: 'CANCELLED' },
         routing_operation: { process: { terminal_process: { some: {
           terminal_id: 7n,
           OR: [{ can_start_work: true }, { can_input_material: true }, { can_input_result: true }],

@@ -24,7 +24,8 @@ export interface WorkSessionEventCreate {
 }
 /**
  * 세션 사건 적재(§5) — 단말이 보내는 것은 `STOP`·`RESUME` 둘뿐이다.
- * ⛔ **`work_order` 를 건드리지 않는다** — 계약 ⌜`…:resume` 를 부르지 않는다⌝ 의 대칭이다.
+ * ⭐ RESUME 은 중단(SUSPENDED) W/O 를 같은 트랜잭션에서 진행으로 되돌린다(`:hold` 와 대칭) — 세션을 연 단말은 그 세션의
+ *    재개로 W/O 를 되돌릴 수 있다. STOP 은 `work_order` 를 건드리지 않는다(W/O 중단은 `:hold` 가 한다).
  * ⛔ `terminal_process` 게이팅 0(계약이 이 자리에 `can_*` 를 안 적었다 · R-1 C) · ETag 0 · 409 도메인 0.
  */
 @Injectable()
@@ -115,4 +116,3 @@ async function lockSessionWorkOrder(tx: Tx, workSessionId: number): Promise<{ st
   const session = await tx.work_session.findUnique({ where: { work_session_id: BigInt(workSessionId) }, select: { work_order_id: true } });
   return session === null ? null : lockWorkOrder(tx, Number(session.work_order_id));
 }
-

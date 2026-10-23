@@ -25,6 +25,9 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
   let workerNo: string;
   /** 같은 공장·같은 공정에 실적 입력만 켠 다른 단말. */
   let otherToken: string;
+  /** 다른 공장의 단말과 그 공장 작업자 — 같은 공정에 작업 시작을 켰다. */
+  let foreignToken: string;
+  let foreignWorkerNo: string;
   const ids: Record<string, bigint> = {};
 
   beforeAll(async () => {
@@ -127,12 +130,51 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     await event(session.body.workSessionId, 'STOP').expect(201);
     const held = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
 
+    const noticesBefore = await prisma.notification_event.count({ where: { aggregate_type_code: 'WORK_ORDER', aggregate_id: workOrderId } });
+
     await event(session.body.workSessionId, 'RESUME').expect(201);
 
     expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } }))
       .toMatchObject({ status_code: 'IN_PROGRESS', version_no: held.version_no + 1 });
+    // W/O 재개는 따로 알리지 않는다 — RESUME 도 알림이 없다.
+    expect(await prisma.notification_event.count({ where: { aggregate_type_code: 'WORK_ORDER', aggregate_id: workOrderId } })).toBe(noticesBefore);
     expect((await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(session.body.workSessionId) } })).status_code)
       .toBe('RUNNING');
+  });
+
+  it('RESUME 이 거부되면 W/O 재개도 되돌린다 — 진행 중 세션의 RESUME 400 · 낡은 세션 If-Match 409', async () => {
+    const workOrderId = await workOrder('RB', 'RELEASED');
+    const session = await start(workOrderId).expect(201);
+    await hold(workOrderId).expect(200);
+    const held = await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } });
+    const unchanged = async () => expect(await prisma.work_order.findUniqueOrThrow({ where: { work_order_id: workOrderId } }))
+      .toMatchObject({ status_code: 'SUSPENDED', version_no: held.version_no });
+
+    // 세션은 아직 진행(RUNNING)이라 RESUME 이 전이표에서 막힌다.
+    await event(session.body.workSessionId, 'RESUME').expect(400);
+    await unchanged();
+
+    const before = await prisma.work_session.findUniqueOrThrow({ where: { work_session_id: BigInt(session.body.workSessionId) } });
+    await event(session.body.workSessionId, 'STOP').expect(201);
+    await event(session.body.workSessionId, 'RESUME').set('If-Match', `"${String(before.version_no)}"`).expect(409);
+    await unchanged();
+  });
+
+  it('다른 공장 단말은 그 세션 참여자를 읽지 못하고, 마감 W/O 중단도 일반 문구다(남의 W/O 상태를 알리지 않는다)', async () => {
+    const workOrderId = await workOrder('FP', 'RELEASED');
+    const session = await start(workOrderId).expect(201);
+    const closed = await workOrder('FPX', 'CLOSED');
+    await prisma.work_order.update({ where: { work_order_id: closed }, data: { closed_at: new Date() } });
+
+    const workers = await request(app.getHttpServer()).get(`/api/production/work-sessions/${String(session.body.workSessionId)}/workers`)
+      .set('Authorization', `Bearer ${foreignToken}`).expect(401);
+    expect(workers.body.errors[0].message).toBe('단말 인증 범위 밖입니다.');
+    const held = await request(app.getHttpServer()).post(`/api/production/work-orders/${String(closed)}:hold`)
+      .set('Authorization', `Bearer ${foreignToken}`).set('X-Worker-No', foreignWorkerNo).set('Idempotency-Key', randomUUID())
+      .send({ reasonCode: 'EQUIPMENT_FAILURE', occurredAt: new Date().toISOString() })
+      .expect(401);
+    expect(held.body.errors[0].message).toBe('단말 인증 범위 밖입니다.');
+    expect(held.body.errors[0].message).not.toContain('마감');
   });
 
   it(':resume 뒤의 세션 RESUME 은 W/O 를 다시 건드리지 않는다(이미 진행)', async () => {
@@ -255,6 +297,19 @@ describe('세션 없는 중단 막기 · 중단 W/O 재시작 (e2e)', () => {
     await prisma.terminal_process.create({ data: { terminal_id: other.terminal_id, process_id: ids.process, can_input_result: true } });
     otherToken = app.get(JwtService).sign({
       sub: Number(other.terminal_id), typ: 'terminal', tv: other.token_version, terminalCode: other.terminal_code, plantId: Number(ids.plant),
+    });
+    const foreignPlant = await prisma.plant.create({ data: {
+      legal_entity_id: entity.legal_entity_id, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    const foreign = await prisma.terminal.create({ data: {
+      terminal_code: `${PREFIX}-POP3`, plant_id: foreignPlant.plant_id, terminal_type_code: 'POP', status_code: 'RUNNING',
+    } });
+    await prisma.terminal_process.create({ data: { terminal_id: foreign.terminal_id, process_id: ids.process, can_start_work: true } });
+    foreignWorkerNo = (await prisma.worker.create({ data: {
+      worker_no: `${PREFIX}-W2`, worker_name: `${PREFIX}-작업자2`, business_unit_id: unit.business_unit_id, plant_id: foreignPlant.plant_id, status_code: 'EMPLOYED',
+    } })).worker_no;
+    foreignToken = app.get(JwtService).sign({
+      sub: Number(foreign.terminal_id), typ: 'terminal', tv: foreign.token_version, terminalCode: foreign.terminal_code, plantId: Number(foreignPlant.plant_id),
     });
     token = app.get(JwtService).sign({
       sub: Number(terminal.terminal_id), typ: 'terminal', tv: terminal.token_version, terminalCode: terminal.terminal_code,

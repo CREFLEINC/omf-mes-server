@@ -105,6 +105,7 @@ export async function assertTerminalProductionScope(
     const id = positiveId(value);
     const row = id === null ? null : await prisma.work_session.findFirst({
       where: { work_session_id: id, work_order: { production_line: { plant_id: terminal.plantId },
+        released_at: { not: null }, completed_at: null, closed_at: null, NOT: { status_code: 'CANCELLED' },
         routing_operation: { process: { terminal_process: { some: {
           terminal_id: terminal.terminalId,
           OR: [{ can_start_work: true }, { can_input_material: true }, { can_input_result: true }],

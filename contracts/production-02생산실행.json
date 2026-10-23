@@ -3868,6 +3868,7 @@
      "production"
     ],
     "summary": "세션 이벤트 적재",
+    "x-server-note": "⭐ RESUME 이고 그 세션의 W/O 가 중단(SUSPENDED)이면 같은 트랜잭션에서 W/O 를 IN_PROGRESS 로 되돌린다(버전 +1 · :hold 와 대칭). STOP 은 W/O 를 건드리지 않는다. 종료된 세션은 버전 대조보다 먼저 400 STATE_LOCKED. 장부 P-111",
     "description": "중단·재개를 기록한다. occurredAt 은 단말이 보낸다. 오프라인 대상 오퍼레이션이다 — Idempotency-Key 는 필수이고 If-Match 는 선택이다. 큐는 낙관적 잠금 토큰을 싣지 않는다(공유계약 C-9). ⛔ 오프라인일 때는 이 오퍼레이션이 호출되지 않는다 — 셸의 outbox 가 들고 있다가 연결되면 그때 보낸다. 그래서 서버 응답은 온라인일 때의 것 하나뿐이다. 미확정 표식은 셸이 붙인다(공유계약 C-7 — 화면 조항). ⚠ 세션이 먼저 서야 한다 — 큐에서는 세션 열기와 묶음으로 간다(C-10). 사건 유형은 다섯이다 — START(시작)·STOP(중단)·RESUME(재개)·END(종료)·CONTROL_OVERRIDE(통제 우회). ⭐ 이 오퍼레이션으로 단말이 적재하는 것은 구간 «안의» 사건인 STOP·RESUME 뿐이다. 구간의 «경계»(START·END)와 통제 우회는 세션을 열고 닫는 오퍼레이션이 같은 트랜잭션으로 만든다 — 따로 보내지 않는다. 유형별로 reasonCode 에 어느 코드 그룹을 쓰는지는 공유계약 A-25 가 정한다. ⭐ P-02-01(작업 시작) 의 [재개] 도 이 경로다 — 중단된 W/O 를 재개할 때 새 세션을 열지 않고 같은 세션에 RESUME 을 적재한다(P-02-01 §5-4 · 공유계약 G-16 보완). ⛔ /production/work-orders/{workOrderId}:resume 를 부르지 않는다. 근거: P-02-10 §5-2 · 공유계약 C-12",
     "parameters": [
      {
