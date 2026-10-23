@@ -138,6 +138,15 @@ describe('GoodsReceiptService — IQC 합격 전 입고 차단 (omf-all-around#1
     expect((error as Error).message).toBe('PASSED_VALIDATION');
   });
 
+  /* 사용자 결정 2026-10-23 — 불량은 검사 대상 여부와 상관없이 불량창고로만(무검사 품목에 건 클레임 재Hold 도 불량이다). */
+  it('IQC 비대상 입하 LOT 도 불량(DEFECTIVE)이면 일반 창고로 막는다 — 불량창고는 통과한다', async () => {
+    const blocked = await errorOf(stub(inboundLot('DEFECTIVE'), false, false));
+    expect(JSON.stringify((blocked as ContractException).getResponse())).toContain('불량창고로만');
+
+    const passed = await errorOf(stub(inboundLot('DEFECTIVE'), false, true));
+    expect((passed as Error).message).toBe('PASSED_VALIDATION');
+  });
+
   it('IQC 비대상 입하 LOT 은 검사 대기여도 기존대로 통과한다', async () => {
     const error = await errorOf(stub(inboundLot('INSPECTION_PENDING'), false));
     expect((error as Error).message).toBe('PASSED_VALIDATION');

@@ -91,6 +91,17 @@ describe('IQC 불합격 → 처분 → 입고 (e2e)', () => {
     expect(await lotStatus(lotId)).toBe('DEFECTIVE');
   });
 
+  it('⭐ 무검사 품목의 불량 LOT 도 불량창고로만 입고된다(사용자 결정 2026-10-23 · P-45) — 일반 창고는 거부', async () => {
+    const { lotId, lineId } = await registerIqcLot(10);
+    // 무검사 품목 LOT 에 클레임 재Hold(C9)가 걸린 그 상태 — 입하 라인은 검사 대상이 아니고 LOT 은 불량이다.
+    await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: BigInt(lineId) }, data: { inspection_required: false } });
+    await prisma.lot.update({ where: { lot_id: BigInt(lotId) }, data: { status_code: 'DEFECTIVE' } });
+
+    const rejected = await receive(lotId, lineId, 10).expect(400);
+    expect(JSON.stringify(rejected.body)).toContain('불량창고로만');
+    await receive(lotId, lineId, 10, { warehouseId: defectWarehouseId, locationId: defectLocationId }).expect(201);
+  });
+
   it('⭐ 경로 ① 처분 정상 → 보류 해제 → 입고', async () => {
     const { lotId, lineId } = await rejectedLot(10);
     const nc = await openNonconformance(lotId);
