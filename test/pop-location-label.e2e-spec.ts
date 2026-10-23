@@ -77,6 +77,20 @@ describe('POP 창고 적재 위치 라벨 (장부 P-28 e2e)', () => {
       .toEqual([Number(ids.warehouse)]);
   });
 
+  it('⛔ POP 단말이 남의 공장을 plantId 로 보내면 빈 목록이다 — 질의가 단말 공장을 넘지 못한다(장부 P-109)', async () => {
+    const plantOf = async (warehouseId: bigint): Promise<string> =>
+      String((await prisma.warehouse.findUniqueOrThrow({ where: { warehouse_id: warehouseId } })).plant_id);
+
+    const foreignPlant = await asPop(get('/api/mdm/warehouses', { plantId: await plantOf(ids.foreignWarehouse) }), own)
+      .expect(200);
+    const ownPlant = await asPop(get('/api/mdm/warehouses', { plantId: await plantOf(ids.warehouse) }), own)
+      .expect(200);
+
+    expect(foreignPlant.body.items).toEqual([]);
+    expect(ownPlant.body.items.map((row: { warehouseId: number }) => row.warehouseId))
+      .toEqual([Number(ids.warehouse)]);
+  });
+
   it('⭐ POP 단말은 자기 공장 창고의 위치 목록을 받는다', async () => {
     const query = { warehouseId: String(ids.warehouse), includeInactive: 'true', page: 1, size: 50 };
     const response = await asPop(get('/api/mdm/locations', query), own).expect(200);

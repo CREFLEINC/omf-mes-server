@@ -276,6 +276,40 @@ describe('창고 마스터 (e2e)', () => {
     expect(codes).not.toContain(`${PREFIX}-NORMAL`);
   });
 
+  it('⭐ plantId 로 그 공장 창고만 거른다 — 창고 선택 목록이 공장으로 좁힌다(장부 P-109)', async () => {
+    const first = await prisma.plant.findUniqueOrThrow({ where: { plant_id: plantId } });
+    const other = await prisma.plant.create({
+      data: {
+        legal_entity_id: first.legal_entity_id,
+        plant_code: `${PREFIX}-P2`,
+        plant_name: '창고검사 둘째 공장',
+        timezone_code: first.timezone_code,
+      },
+    });
+    await createWarehouse(`${PREFIX}-HERE`);
+    await createWarehouse(`${PREFIX}-THERE`, { plantId: Number(other.plant_id) });
+
+    const codesOf = async (plant: number): Promise<string[]> => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/mdm/warehouses?q=${PREFIX}&plantId=${plant}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      return response.body.items.map((w: { warehouseCode: string }) => w.warehouseCode);
+    };
+
+    expect(await codesOf(Number(other.plant_id))).toEqual([`${PREFIX}-THERE`]);
+    const here = await codesOf(plantId);
+    expect(here).toContain(`${PREFIX}-HERE`);
+    expect(here).not.toContain(`${PREFIX}-THERE`);
+  });
+
+  it('⛔ plantId 가 정수가 아니면 400 이다 — 계약 사본의 질의 칸이 검증한다', async () => {
+    await request(app.getHttpServer())
+      .get('/api/mdm/warehouses?plantId=abc')
+      .set('Cookie', cookie)
+      .expect(400);
+  });
+
   it('⭐ dividedOnly 는 «활성 위치가 둘 이상»인 창고다 — 하나짜리는 안 걸린다', async () => {
     const locationTypeCode = await firstCode('LOCATION_TYPE');
     const one = await createWarehouse(`${PREFIX}-ONE`);
@@ -423,6 +457,7 @@ describe('창고 마스터 (e2e)', () => {
       where: { warehouse_id: { in: warehouses.map((w) => w.warehouse_id) } },
     });
     await prisma.warehouse.deleteMany({ where: { warehouse_code: { startsWith: PREFIX } } });
+    await prisma.plant.deleteMany({ where: { plant_code: { startsWith: PREFIX } } });
     await prisma.code_value.deleteMany({ where: { code: { startsWith: PREFIX } } });
     for (const id of [LOGIN_ID, NOPERM_ID]) {
       const target = await prisma.app_user.findUnique({ where: { login_id: id } });
