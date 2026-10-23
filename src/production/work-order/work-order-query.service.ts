@@ -59,7 +59,7 @@ export class WorkOrderQueryService {
     const achievementDirection = achievementSortDirection(query);
     assertJudgmentScope(query);
     const orderBy = achievementDirection === null ? buildOrderBy(query.sort) : undefined;
-    // POP 은 그 화면의 기능 플래그가 켜진 공정만 — 재작업 실적(P-04-03)은 실적 입력, 작업 시작 목록은 작업 시작(장부 P-109).
+    // POP 은 그 화면의 기능 플래그가 켜진 공정만 — 재작업 실적(P-04-03)은 실적 입력, 작업 시작 목록은 작업 시작(장부 P-113).
     const terminalProcessIds = terminal?.terminalTypeCode === 'POP'
       ? (await this.prisma.terminal_process.findMany({
           where: { terminal_id: terminal.terminalId, ...(query.workOrderTypeCode === 'REWORK' ? { can_input_result: true } : { can_start_work: true }) },
