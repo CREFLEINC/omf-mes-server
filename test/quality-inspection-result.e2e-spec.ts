@@ -1389,7 +1389,8 @@ describe('검사 의뢰·결과 (e2e)', () => {
       const response = await confirm(inspectionResultId, { overallJudgmentCode: 'ACCEPTED' }, 1).expect(400);
       expect(response.body.errors[0]).toMatchObject({ code: 'STATE_LOCKED' });
 
-      // 트랜잭션이 통째로 되돌아간다 — 결과·의뢰·LOT 셋 다 그대로다(부분 확정이 없다).
+      // 트랜잭션이 통째로 되돌아간다 — 결과·의뢰·LOT 셋 다 확정 전 그대로다(부분 확정이 없다).
+      // 의뢰는 작성중 저장이 이미 진행(IN_PROGRESS)으로 옮겨 두었다(장부 P-106).
       const [result, requestRow] = await Promise.all([
         prisma.inspection_result.findUniqueOrThrow({
           where: { inspection_result_id: BigInt(inspectionResultId) },
@@ -1401,7 +1402,7 @@ describe('검사 의뢰·결과 (e2e)', () => {
         }),
       ]);
       expect(result).toEqual({ status_code: 'DRAFT', version_no: 1, confirmed_at: null });
-      expect(requestRow.status_code).toBe('REQUESTED');
+      expect(requestRow.status_code).toBe('IN_PROGRESS');
       expect(await lotOfId(lotId)).toEqual({ status_code: 'DEFECTIVE', version_no: 1 });
     });
 
