@@ -81,6 +81,44 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     expect(result.body.errors[0].message).toContain('「실적 입력」');
   });
 
+  describe('재작업 실적(P-04-03)의 재작업 W/O 목록', () => {
+    const list = (token: string, query: Record<string, string>) => request(app.getHttpServer())
+      .get('/api/production/work-orders').query({ q: `${PREFIX}-RW`, size: '50', ...query }).set('Authorization', `Bearer ${token}`);
+    const nos = (response: request.Response) => response.body.items.map((row: { workOrderNo: string }) => row.workOrderNo).sort();
+
+    it('배포 전 재작업 W/O 를 단말 토큰으로 본다 — 그 공장·실적 입력이 켜진 공정의 재작업 W/O 만', async () => {
+      const token = await terminal('RW1', {
+        [String(ids.process)]: { can_input_result: true },
+        [String(ids.otherProcess)]: { can_start_work: true },
+      });
+
+      const planned = await list(token, { workOrderTypeCode: 'REWORK', statusCode: 'PLANNED' }).expect(200);
+
+      // 라인 없는 배포 전 W/O 는 계획의 ERP W/O 공장으로 본다. 다른 공장·실적 입력이 꺼진 공정·일반 W/O 는 빠진다.
+      expect(nos(planned)).toEqual([`${PREFIX}-RW-PLANNED`]);
+      const open = await list(token, { workOrderTypeCode: 'REWORK', open: 'true' }).expect(200);
+      expect(nos(open)).toEqual([`${PREFIX}-RW-RELEASED`]);
+    });
+
+    it('재작업·PLANNED 짝이 아니면 여전히 401 이다', async () => {
+      const token = await terminal('RW2', { [String(ids.process)]: { can_input_result: true } });
+
+      await list(token, { statusCode: 'PLANNED' }).expect(401);
+      await list(token, { workOrderTypeCode: 'REWORK', statusCode: 'CLOSED' }).expect(401);
+    });
+
+    it('정상 흐름 — 배포된 재작업 W/O 를 골라 실적을 저장한다(배포 전 W/O 는 실적을 받지 않는다)', async () => {
+      const token = await terminal('RW3', { [String(ids.process)]: { can_input_result: true } });
+      const result = (workOrderId: bigint) => asPop(request(app.getHttpServer()).post('/api/production/production-results'), token).send({
+        workOrderId: Number(workOrderId), goodQty: 1, uomId: Number(ids.uom), resultSourceCode: 'MANUAL', occurredAt: new Date().toISOString(),
+      });
+
+      await result(ids.reworkReleased).expect(201);
+      // 배포 전 W/O 는 단말 범위(배포됨)에서 먼저 막힌다 — 목록에서 보이기만 하는 이유다.
+      await result(ids.reworkPlanned).expect(401);
+    });
+  });
+
   // ── 도우미 ──────────────────────────────────────────────────────────────
 
   function asPop(test: request.Test, token: string): request.Test {
@@ -140,6 +178,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const operation = await prisma.routing_operation.create({ data: {
       routing_id: routing.routing_id, operation_seq: 10, process_id: ids.process, operation_name: PREFIX,
     } });
+    await reworkFixtures(entity.legal_entity_id, unit.business_unit_id, routing.routing_id, operation.routing_operation_id, line.production_line_id);
     ids.workOrder = (await prisma.work_order.create({ data: {
       work_order_no: `${PREFIX}-WO`, routing_operation_id: operation.routing_operation_id, item_id: ids.item, order_qty: 100,
       uom_id: ids.uom, status_code: 'IN_PROGRESS', production_line_id: line.production_line_id, released_at: STARTED_AT,
@@ -152,6 +191,43 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       worker_no: `${PREFIX}-W1`, worker_name: `${PREFIX}-작업자`, business_unit_id: unit.business_unit_id, plant_id: ids.plant, status_code: 'EMPLOYED',
     } });
     workerNo = worker.worker_no;
+  }
+
+  /**
+   * 재작업 W/O 넷 — 배포 전(라인 없음, 이 공장 계획) · 배포됨(라인 있음) · 다른 공장 계획의 배포 전 · 실적 입력이 꺼진 공정의 배포 전.
+   * 배포 전 재작업 W/O 는 발행 직후라 라인이 없다(`rework-work-order.service.ts`).
+   */
+  async function reworkFixtures(legalEntityId: bigint, unitId: bigint, routingId: bigint, operationId: bigint, lineId: bigint): Promise<void> {
+    const otherPlant = await prisma.plant.create({ data: {
+      legal_entity_id: legalEntityId, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
+    } });
+    const bom = await prisma.bom.create({ data: {
+      parent_item_id: ids.item, bom_code: `${PREFIX}-BOM`, bom_version: 1, status_code: 'ACTIVE',
+      effective_from: new Date('2026-01-01T00:00:00.000Z'), base_qty: 1, base_uom_id: ids.uom,
+    } });
+    const plan = async (suffix: string, plantId: bigint) => {
+      const order = await prisma.production_order.create({ data: {
+        production_order_no: `${PREFIX}-PO-${suffix}`, business_unit_id: unitId, plant_id: plantId, item_id: ids.item,
+        order_qty: 100, uom_id: ids.uom, status_code: 'CONFIRMED',
+      } });
+      return (await prisma.production_plan.create({ data: {
+        production_order_id: order.production_order_id, plan_no: `${PREFIX}-PP-${suffix}`, plan_date: new Date('2026-10-23T00:00:00.000Z'),
+        planned_qty: 100, uom_id: ids.uom, bom_id: bom.bom_id, routing_id: routingId, status_code: 'CONFIRMED',
+      } })).production_plan_id;
+    };
+    const ownPlan = await plan('OWN', ids.plant);
+    const otherPlan = await plan('OTHER', otherPlant.plant_id);
+    const otherOperation = await prisma.routing_operation.create({ data: {
+      routing_id: routingId, operation_seq: 20, process_id: ids.otherProcess, operation_name: PREFIX,
+    } });
+    const rework = (suffix: string, data: Record<string, unknown>) => prisma.work_order.create({ data: {
+      work_order_no: `${PREFIX}-RW-${suffix}`, routing_operation_id: operationId, item_id: ids.item, order_qty: 10, uom_id: ids.uom,
+      work_order_type_code: 'REWORK', status_code: 'PLANNED', production_plan_id: ownPlan, ...data,
+    } });
+    ids.reworkPlanned = (await rework('PLANNED', {})).work_order_id;
+    ids.reworkReleased = (await rework('RELEASED', { status_code: 'IN_PROGRESS', production_line_id: lineId, released_at: STARTED_AT })).work_order_id;
+    await rework('OTHERPLANT', { production_plan_id: otherPlan });
+    await rework('NORESULT', { routing_operation_id: otherOperation.routing_operation_id });
   }
 
   async function cleanup(): Promise<void> {
@@ -168,6 +244,9 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     ]) {
       await prisma.$executeRawUnsafe(sql);
     }
+    await prisma.production_plan.deleteMany({ where: { plan_no: { startsWith: `${PREFIX}-` } } });
+    await prisma.production_order.deleteMany({ where: { production_order_no: { startsWith: `${PREFIX}-` } } });
+    await prisma.bom.deleteMany({ where: { bom_code: { startsWith: `${PREFIX}-` } } });
     await prisma.routing_operation.deleteMany({ where: { routing: { routing_code: { startsWith: PREFIX } } } });
     await prisma.routing.deleteMany({ where: { routing_code: { startsWith: PREFIX } } });
     await prisma.production_line.deleteMany({ where: { line_code: { startsWith: PREFIX } } });
