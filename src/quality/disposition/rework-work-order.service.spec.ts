@@ -32,6 +32,7 @@ function stub(options: {
   const created: Row[] = [];
   const calls: string[] = [];
 
+  const operationWheres: Row[] = [];
   const tx = {
     $queryRaw: () => Promise.resolve([{ version_no: 3 }]),
     nonconformance: {
@@ -69,11 +70,12 @@ function stub(options: {
       },
     },
     routing_operation: {
-      findUnique: () =>
-        Promise.resolve(
-          options.operationExists === false ? null : { routing_operation_id: BigInt(ROUTING_OPERATION) },
-        ),
+      count: ({ where }: { where: Row }) => {
+        operationWheres.push(where);
+        return Promise.resolve(options.operationExists === false ? 0 : 1);
+      },
     },
+    item: { findUnique: () => Promise.resolve({ item_code: 'ITEM-REWORK' }) },
   };
 
   const prisma = {
@@ -90,7 +92,7 @@ function stub(options: {
     },
   } as unknown as NumberingService;
 
-  return { service: new ReworkWorkOrderService(prisma, numbering), created, calls };
+  return { service: new ReworkWorkOrderService(prisma, numbering), created, calls, operationWheres };
 }
 
 const issue = (harness: ReturnType<typeof stub>, orderQty = 40) =>
@@ -170,11 +172,27 @@ describe('재작업 W/O 발행 (omf-all-around#47)', () => {
     expect(harness.created).toEqual([]);
   });
 
-  it('없는 공정으로는 발행하지 못한다', async () => {
+  it('그 품목의 사용 중인 Routing 공정이 아니면 400 이고 W/O 를 만들지 않는다 — 확인할 곳을 알려 준다', async () => {
     const harness = stub({ operationExists: false });
 
-    await expect(issue(harness)).rejects.toBeInstanceOf(ContractException);
+    const error = await issue(harness).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ContractException);
+    expect((error as ContractException).errors[0]).toMatchObject({ field: 'routingOperationId', code: 'INVALID' });
+    expect((error as ContractException).errors[0].message).toContain('기준정보 관리 › 공정(Routing)');
     expect(harness.created).toEqual([]);
+  });
+
+  it('공정 판정은 부적합 품목·확정·유효 기간으로 좁힌다', async () => {
+    const harness = stub({});
+
+    await issue(harness);
+
+    const where = harness.operationWheres[0] as { routing: Row };
+    expect(where.routing).toMatchObject({ status_code: 'CONFIRMED' });
+    expect(where.routing.item_id).toBeDefined();
+    expect(JSON.stringify(where.routing.AND)).toContain('effective_from');
+    expect(JSON.stringify(where.routing.AND)).toContain('effective_to');
   });
 
   /* ⛔ 낡은 토큰으로 온 발행은 막는다 — 그사이 다른 사람이 잔량을 썼을 수 있다. */

@@ -6,6 +6,7 @@ import { assertUpdated } from '../../common/optimistic-lock';
 import { NumberingService } from '../../core/numbering';
 import { Tx } from '../../core/lot';
 import { WORK_ORDER_INITIAL_STATUS } from '../../core/work-order/defaults';
+import { usableWhere } from '../../planning/routing/routing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** 계약 `ReworkWorkOrderIssue` — required 둘. */
@@ -79,7 +80,8 @@ export class ReworkWorkOrderService {
    * 201 + ETag(부적합의 **새** `version_no`) — 판정 저장과 같은 토큰이다.
    *
    * 갈래 순서: 존재(404) → 재작업 판정 없음(409 `INVALID_STATE`) → 단위 다름(400) → 잔량
-   * 초과(409 `DISPOSITION_QTY_EXCEEDED`) → 공정 없음(400) → 판 번호(409 `VERSION_CONFLICT`).
+   * 초과(409 `DISPOSITION_QTY_EXCEEDED`) → 원천 W/O 없음(400) → 그 품목의 사용 중인 Routing
+   * 공정 아님(400) → 판 번호(409 `VERSION_CONFLICT`).
    *
    * ⛔ **채번은 트랜잭션 «밖»이다** — 안에서 부르면 한 요청이 커넥션을 둘 쥔다(저장소 관례).
    *    실패하면 번호가 결번으로 남지만 계약이 번호의 연속을 요구하지 않는다.
@@ -139,16 +141,7 @@ export class ReworkWorkOrderService {
         ]);
       }
 
-      const operation = await tx.routing_operation.findUnique({
-        where: { routing_operation_id: BigInt(body.routingOperationId) },
-        select: { routing_operation_id: true },
-      });
-      /* 공정은 담당자가 고른다 — 원천 라우팅으로 좁히지 않는다(수리 공정이 따로 있다). 있기만 하면 된다. */
-      if (operation === null) {
-        throw new ContractException(HttpStatus.BAD_REQUEST, [
-          field('routingOperationId', ERROR_CODE.INVALID, '없는 공정입니다.'),
-        ]);
-      }
+      await assertItemRoutingOperation(tx, scope.itemId, body.routingOperationId);
 
       const created = await tx.work_order.create({
         data: {
@@ -262,4 +255,25 @@ async function readReworkScope(tx: Tx, id: bigint): Promise<ReworkScope> {
 /** 채번 기간 키 — 본문에 날짜 칸이 없어 서버 날짜를 쓴다(W/O 발행과 같다). */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * 공정은 담당자가 고르되 «그 품목의» 사용 중인 Routing 공정이어야 한다 — 사용 중의 정의는 Routing 목록 `usableOnly` 와
+ * 같은 `usableWhere`(확정 · 오늘이 유효 기간 안)다. 다른 품목의 Routing 공정을 받으면 그 품목에 없는 공정의 재작업 지시가
+ * 나간다(장부 P-112). 그 품목의 Routing 이면 기본이 아니어도 된다 — 수리 공정은 그 품목의 별도 Routing 으로 둘 수 있다.
+ */
+async function assertItemRoutingOperation(tx: Prisma.TransactionClient, itemId: bigint, routingOperationId: number): Promise<void> {
+  const usable = await tx.routing_operation.count({
+    where: { routing_operation_id: BigInt(routingOperationId), routing: { item_id: itemId, ...usableWhere() } },
+  });
+  if (usable > 0) return;
+  const item = await tx.item.findUnique({ where: { item_id: itemId }, select: { item_code: true } });
+  throw new ContractException(HttpStatus.BAD_REQUEST, [
+    field(
+      'routingOperationId',
+      ERROR_CODE.INVALID,
+      `이 부적합 품목(${item?.item_code ?? itemId.toString()})의 사용 중인 Routing 공정이 아닙니다. `
+        + '기준정보 관리 › 공정(Routing)에서 그 품목의 확정·유효 Routing 을 확인해 그 공정을 고르세요.',
+    ),
+  ]);
 }
