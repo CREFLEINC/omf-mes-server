@@ -209,9 +209,23 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
       } })).work_order_id;
 
       await consume(token, { workOrderId: Number(hidden), lotId: 0 }).expect(401);
+      await saveResult(token, { workOrderId: Number(hidden), lotAllocations: [{ lotId: 0, allocatedQty: 1 }] }).expect(401);
       await asPop(request(app.getHttpServer()).post('/api/production/precheck-decisions'), token)
         .send({ workOrderId: Number(hidden), equipmentId: 0, decidedAt: new Date().toISOString(), controlLevelCode: 'WARN', decisionCode: 'PASSED' })
         .expect(401);
+    });
+
+    it('W/O 를 가를 수 없어도 설비는 본다 — 남의 공장 설비와 없는 설비가 같은 401 이다', async () => {
+      const token = await terminal('EQ0', { [String(ids.process)]: { can_start_work: true } });
+      const precheck = (equipmentId: number) => asPop(request(app.getHttpServer()).post('/api/production/precheck-decisions'), token)
+        .send({ workOrderId: 0, equipmentId, decidedAt: new Date().toISOString(), controlLevelCode: 'WARN', decisionCode: 'PASSED' });
+
+      for (const equipmentId of [Number(ids.foreignEquipment), 999_999_999]) {
+        const checked = await precheck(equipmentId).expect(401);
+        const started = await begin(token, { workOrderId: 0, equipmentId }).expect(401);
+        expect(checked.body).toEqual(started.body);
+        expect(checked.body.errors[0].message).toContain('고른 설비가 이 단말 공장의 설비가 아닙니다.');
+      }
     });
 
     it('int64 를 넘는 id 는 500 이 아니라 범위 밖 401 이다', async () => {
@@ -334,6 +348,11 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
     const otherPlant = await prisma.plant.create({ data: {
       legal_entity_id: legalEntityId, plant_code: `${PREFIX}-P2`, plant_name: PREFIX, timezone_code: 'Asia/Ho_Chi_Minh',
     } });
+    const foreignLine = await prisma.production_line.create({ data: { plant_id: otherPlant.plant_id, line_code: `${PREFIX}-LINE2`, line_name: PREFIX } });
+    ids.foreignEquipment = (await prisma.equipment.create({ data: {
+      plant_id: otherPlant.plant_id, production_line_id: foreignLine.production_line_id, equipment_code: `${PREFIX}-EQX`, equipment_name: PREFIX,
+      equipment_type_code: 'PRESS', status_code: 'IN_SERVICE',
+    } })).equipment_id;
     ids.foreignMold = (await prisma.mold.create({ data: {
       plant_id: otherPlant.plant_id, mold_code: `${PREFIX}-MOLD`, mold_name: PREFIX, status_code: 'ACTIVE', tool_type_code: 'MOLD',
     } })).mold_id;

@@ -23,6 +23,7 @@ const prisma = {
   work_session: { findFirst: jest.fn().mockResolvedValue({ work_session_id: 29n }) },
   lot: { findFirst: jest.fn().mockResolvedValue({ lot_id: 43n }) },
   mold: { findFirst: jest.fn().mockResolvedValue({ mold_id: 53n }) },
+  equipment: { findFirst: jest.fn().mockResolvedValue({ equipment_id: 61n }) },
 } as unknown as PrismaService;
 
 function request(body: Record<string, unknown> = {}, params: Record<string, string> = {}, workerNo?: string): Request {
@@ -37,6 +38,7 @@ describe('POP production terminal scope', () => {
     (prisma.work_session.findFirst as jest.Mock).mockResolvedValue({ work_session_id: 29n });
     (prisma.lot.findFirst as jest.Mock).mockResolvedValue({ lot_id: 43n });
     (prisma.mold.findFirst as jest.Mock).mockResolvedValue({ mold_id: 53n });
+    (prisma.equipment.findFirst as jest.Mock).mockResolvedValue({ equipment_id: 61n });
   });
 
   it('allows a mapped same-plant W/O and actual terminal equipment for session start', async () => {
@@ -267,6 +269,20 @@ describe('POP production terminal scope', () => {
         'POST /production/material-consumptions', terminal)).rejects.toMatchObject({ status: 401 });
       await expect(assertTerminalProductionScope(prisma, request({ workOrderId: 11, equipmentId: 0 }, {}, '900028'),
         'POST /production/precheck-decisions', terminal)).rejects.toMatchObject({ status: 401 });
+    });
+
+    it('W/O 를 가를 수 없어도 설비는 본다 — 단말 설비가 있으면 그 설비, 없으면 단말 공장 설비', async () => {
+      const check = (equipmentId: number, context: TerminalContext) => assertTerminalProductionScope(prisma,
+        request({ workOrderId: 0, equipmentId }, {}, '900028'), 'POST /production/precheck-decisions', context);
+
+      await expect(check(5, terminal)).resolves.toBeUndefined();
+      await expect(check(61, terminal)).rejects.toMatchObject({ status: 401 });
+      const bare = { ...terminal, equipmentId: null };
+      await expect(check(61, bare)).resolves.toBeUndefined();
+      expect(prisma.equipment.findFirst).toHaveBeenLastCalledWith({ where: { equipment_id: 61n, plant_id: 3n }, select: { equipment_id: true } });
+      (prisma.equipment.findFirst as jest.Mock).mockResolvedValue(null);
+      await expect(check(61, bare)).rejects.toMatchObject({ status: 401 });
+      expect(prisma.work_order.findFirst).not.toHaveBeenCalled();
     });
 
     it('범위로 가르지 못해 건너뛰는 필수 칸은 계약이 required·null 불가 정수다 — 뒤 계약 검증이 400 으로 막는 전제', () => {
