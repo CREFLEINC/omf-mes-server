@@ -2,10 +2,13 @@ import { Prisma } from '@prisma/client';
 
 import { IF_GOODS_RECEIPT } from '../../../core/outbox/outbox.service';
 import {
+  ALLOCATION_TARGET,
   EXCESS_TARGET,
   RECEIPT_CANCEL_TARGET,
+  allocationMessageKey,
   erpInboundLines,
   erpReceiptLinesOf,
+  receiptShares,
 } from '../../../logistics/goods-receipt/erp-receipt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboundBuilder, OutboundMessage } from '../outbound-builder';
@@ -33,6 +36,12 @@ const ORDER_LINE = {
 } satisfies Prisma.purchase_order_lineSelect;
 type OrderLine = Prisma.purchase_order_lineGetPayload<{ select: typeof ORDER_LINE }>;
 
+const ALLOCATION = {
+  inbound_receipt_po_allocation_id: true,
+  allocated_qty: true,
+  purchase_order_line: { select: ORDER_LINE },
+} satisfies Prisma.inbound_receipt_po_allocationSelect;
+
 interface Receipt {
   goods_receipt_no: string;
   receipt_datetime: Date;
@@ -50,11 +59,13 @@ interface Share {
 /**
  * 구매입고(`T_IF_RCV_GR_INFOR_KO324`) — 입고 하나(`IF-GR-SEND`)를 ERP 발주 라인마다 한 행으로 바꾼다(장부 P-104).
  * - 보낼 줄은 `erpInboundLines` 가 고른다 — 입하를 거쳐 ERP 발주 라인에 이어진 줄, 특채 LOT 은 빠진다.
- * - 입하 줄의 몫(P-100): 입고 수량으로 P/O 라인 몫부터 채우고 나머지가 초과분이다. 초과분은 이어진 P/O 라인으로
- *   따로 보낸다(초과분마다 한 묶음). 같은 P/O 라인의 몫은 합친다(키가 P/O 라인이다).
+ * - 입하 줄의 몫: 입고 수량을 배정 순서대로 채운다(`receiptShares`) — 배정 몫 하나가 ERP 발주 라인 한 행이고, 같은
+ *   P/O 라인의 몫은 합친다(키가 P/O 라인이다). 미배정 몫·MES 발주 몫은 가지 않는다.
+ * - 입고 뒤에 더한 몫은 자기 묶음(`INBOUND_RECEIPT_PO_ALLOCATION` · `ALLOC:{id}`)으로 간다 — 입고 묶음은 그 키가 없는
+ *   몫만 싣는다. 시각 비교 없이 갈린다.
  * - 수불유형·창고·공급처·구매그룹은 발주에서 이어받는다(컬럼 정의서). 입고 일시는 공장 현지 시각이다.
  * - 통관번호는 고객 답(질문 5) 전까지 빈 값, 순번 칸은 0 이다(NOT NULL).
- * 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 그 입하 줄이 들어간 입고의 번호·일시로 보낸다.
+ * 옛 초과분 묶음(`INBOUND_RECEIPT_EXCESS`)은 그 초과분의 몫 한 행이다 — 배정으로 옮기기 전에 적재된 것만 남았다.
  * 입고 취소 묶음(`GOODS_RECEIPT_CANCEL`)은 그 입고번호로 넣은 행(입고 행·초과분 행)마다 취소 행(C)이다.
  */
 export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
@@ -62,6 +73,8 @@ export function goodsReceiptBuilder(prisma: PrismaService): OutboundBuilder {
 }
 
 async function build(prisma: PrismaService, message: OutboundMessage): Promise<RowDraft[]> {
+  if (message.targetTypeCode === ALLOCATION_TARGET) return allocationRows(prisma, message.targetId);
+  // 옛 초과분 묶음 — 배정으로 옮기기 전에 적재된 것만 남아 있다(새로 적재하지 않는다).
   if (message.targetTypeCode === EXCESS_TARGET) return excessRows(prisma, message.targetId);
   if (message.targetTypeCode === RECEIPT_CANCEL_TARGET) return cancelRows(prisma, message.targetId);
   const receipt = await prisma.goods_receipt.findUniqueOrThrow({
@@ -127,34 +140,91 @@ async function build(prisma: PrismaService, message: OutboundMessage): Promise<R
     if (others.size > 0) throw new Error(`${at} — 다른 입고(${[...others].join(', ')})에도 들어가 P/O 몫을 나눌 수 없다`);
     const inbound = await prisma.inbound_receipt_line.findUniqueOrThrow({
       where: { inbound_receipt_line_id: inboundLineId },
-      select: {
-        received_qty: true,
-        inspection_required: true,
-        purchase_order_line: { select: ORDER_LINE },
-        inbound_receipt_excess: { select: { excess_qty: true } },
-      },
+      select: { inspection_required: true, inbound_receipt_po_allocation: { select: ALLOCATION } },
     });
-    const orderLine = inbound.purchase_order_line;
-    if (orderLine === null || orderLine.purchase_order.erp_purchase_order_no === null) continue;
-    if (orderLine.uom_id !== received.uomId) throw new Error(`${at} — 단위가 발주 라인과 달라 환산이 필요하다`);
-    // 입고 수량으로 P/O 라인 몫부터 채운다 — 나머지는 초과분이고, 초과분은 따로 보낸다(P-100).
-    const excessTotal = inbound.inbound_receipt_excess.reduce(
-      (sum, excess) => sum.plus(excess.excess_qty),
-      new Prisma.Decimal(0),
-    );
-    const qty = Prisma.Decimal.min(received.qty, inbound.received_qty.minus(excessTotal));
-    if (qty.lessThanOrEqualTo(0)) continue;
-    const share = shares.get(orderLine.purchase_order_line_id);
-    shares.set(orderLine.purchase_order_line_id, {
-      orderLine,
-      itemCode: received.itemCode,
-      uomCode: received.uomCode,
-      qty: (share?.qty ?? new Prisma.Decimal(0)).plus(qty),
-      inspected: (share?.inspected ?? false) || inbound.inspection_required,
-    });
+    // 입고 뒤에 더한 몫은 자기 묶음(`ALLOC`)으로 간다 — 그 키가 있는 몫은 여기서 싣지 않는다(두 번 가지 않게).
+    const own = await ownBundles(prisma, inbound.inbound_receipt_po_allocation);
+    const filled = receiptShares(received.qty, inbound.inbound_receipt_po_allocation);
+    for (const allocation of inbound.inbound_receipt_po_allocation) {
+      const orderLine = allocation.purchase_order_line;
+      const qty = filled.get(allocation.inbound_receipt_po_allocation_id) ?? new Prisma.Decimal(0);
+      if (own.has(allocation.inbound_receipt_po_allocation_id) || orderLine.purchase_order.erp_purchase_order_no === null) continue;
+      if (qty.lessThanOrEqualTo(0)) continue;
+      if (orderLine.uom_id !== received.uomId) throw new Error(`${at} — 단위가 발주 라인과 달라 환산이 필요하다`);
+      // 같은 P/O 라인의 몫은 합친다 — 행의 키가 P/O 라인이다.
+      const share = shares.get(orderLine.purchase_order_line_id);
+      shares.set(orderLine.purchase_order_line_id, {
+        orderLine,
+        itemCode: received.itemCode,
+        uomCode: received.uomCode,
+        qty: (share?.qty ?? new Prisma.Decimal(0)).plus(qty),
+        inspected: (share?.inspected ?? false) || inbound.inspection_required,
+      });
+    }
   }
 
   return [...shares.values()].map((share) => rowOf(receipt, share));
+}
+
+/** 배정 몫 하나 — 입고 뒤에 더한 몫이다. 그 입하 줄이 들어간 입고의 번호·일시로, 입고 수량을 배정 순서로 나눈 이 몫. */
+async function allocationRows(prisma: PrismaService, allocationId: bigint): Promise<RowDraft[]> {
+  const allocation = await prisma.inbound_receipt_po_allocation.findUniqueOrThrow({
+    where: { inbound_receipt_po_allocation_id: allocationId },
+    select: {
+      inbound_receipt_line_id: true,
+      purchase_order_line: { select: ORDER_LINE },
+      inbound_receipt_line: {
+        select: {
+          inspection_required: true,
+          uom_id: true,
+          item: { select: { item_code: true, base_uom_id: true } },
+          uom: { select: { uom_code: true } },
+          inbound_receipt_po_allocation: { select: { inbound_receipt_po_allocation_id: true, allocated_qty: true } },
+        },
+      },
+    },
+  });
+  const orderLine = allocation.purchase_order_line;
+  if (orderLine.purchase_order.erp_purchase_order_no === null) return [];
+  const inbound = allocation.inbound_receipt_line;
+  const at = `배정 ${allocationId}`;
+  if (inbound.uom_id !== inbound.item.base_uom_id || orderLine.uom_id !== inbound.uom_id) {
+    throw new Error(`${at} — 단위가 품목 기본단위·발주 라인과 달라 환산이 필요하다`);
+  }
+  const taken = await erpReceiptLinesOf(prisma, allocation.inbound_receipt_line_id);
+  const receiptNos = [...new Set(taken.map((line) => line.goodsReceiptNo))];
+  if (receiptNos.length === 0) return [];
+  if (receiptNos.length > 1) throw new Error(`${at} — 입하 줄이 ERP 로 가는 입고 여럿(${receiptNos.join(', ')})에 나뉘어 몫을 나눌 수 없다`);
+  const received = taken.reduce((sum, line) => sum.plus(line.receiptQty), new Prisma.Decimal(0));
+  const mine = receiptShares(received, inbound.inbound_receipt_po_allocation).get(allocationId) ?? new Prisma.Decimal(0);
+  if (mine.lessThanOrEqualTo(0)) return [];
+  const receipt = await prisma.goods_receipt.findUniqueOrThrow({
+    where: { goods_receipt_id: taken[0].goodsReceiptId },
+    select: { goods_receipt_no: true, receipt_datetime: true, plant: { select: { plant_code: true, timezone_code: true } } },
+  });
+  return [
+    rowOf(receipt, {
+      orderLine,
+      itemCode: inbound.item.item_code,
+      uomCode: inbound.uom.uom_code,
+      qty: mine,
+      inspected: inbound.inspection_required,
+    }),
+  ];
+}
+
+/** 자기 묶음(`ALLOC`)이 적재된 배정 — 입고 뒤에 더한 몫이다. */
+async function ownBundles(
+  prisma: PrismaService,
+  allocations: readonly { inbound_receipt_po_allocation_id: bigint }[],
+): Promise<Set<bigint>> {
+  if (allocations.length === 0) return new Set();
+  const keys = new Map(allocations.map((row) => [allocationMessageKey(row.inbound_receipt_po_allocation_id), row.inbound_receipt_po_allocation_id]));
+  const queued = await prisma.integration_message.findMany({
+    where: { message_key: { in: [...keys.keys()] } },
+    select: { message_key: true },
+  });
+  return new Set(queued.map((row) => keys.get(row.message_key) as bigint));
 }
 
 /** 초과분 하나의 몫 — 입고 수량으로 P/O 라인 몫부터 채우고 남은 수량을 초과분 순서대로 나눈다(P-100). */

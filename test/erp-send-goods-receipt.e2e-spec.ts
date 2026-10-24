@@ -51,7 +51,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
           in: [
             ...received.map((no) => `IF-GR-SEND:${no}`),
             ...received.map((no) => `IF-GR-SEND:CANCEL:${no}`),
-            ...excessIds.map((id) => `IF-GR-SEND:EXCESS:${id}`),
+            ...allocationIds.map((id) => `IF-GR-SEND:ALLOC:${id}`),
           ],
         },
       },
@@ -64,7 +64,8 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   });
 
   const received: string[] = [];
-  const excessIds: bigint[] = [];
+  /** 이 파일이 만든 배정 — 지울 `ALLOC` 묶음 키를 찾는다. */
+  const allocationIds: bigint[] = [];
 
   async function seed(): Promise<void> {
     userId = Number((await prisma.app_user.findFirstOrThrow({ orderBy: { app_user_id: 'asc' } })).app_user_id);
@@ -144,7 +145,10 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     ).inbound_receipt_id;
   }
 
-  /** ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. 초과분은 다른 P/O 라인에 이었거나(`orderLine`) 아직 안 이었다. */
+  /**
+   * ERP·MES 발주 라인에 이은 입하 줄 하나와 그 LOT. 초과분은 다른 P/O 라인에 이었거나(`orderLine`) 아직 안 이었다.
+   * 쓰기 경로처럼 배정도 적는다 — 줄의 P/O 몫(받은 수량 − 초과분) 하나와 이은 초과분마다 하나.
+   */
   async function inboundLot(
     orderLine: bigint,
     qty: number,
@@ -176,7 +180,16 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
       });
       created.push(row.inbound_receipt_excess_id);
     }
-    excessIds.push(...created);
+    const shares = [
+      { orderLine, qty: qty - excesses.reduce((sum, excess) => sum + excess.qty, 0) },
+      ...excesses.flatMap((excess) => (excess.orderLine === null ? [] : [{ orderLine: excess.orderLine, qty: excess.qty }])),
+    ];
+    for (const share of shares.filter((row) => row.qty > 0)) {
+      const row = await prisma.inbound_receipt_po_allocation.create({
+        data: { inbound_receipt_line_id: line.inbound_receipt_line_id, purchase_order_line_id: share.orderLine, allocated_qty: share.qty },
+      });
+      allocationIds.push(row.inbound_receipt_po_allocation_id);
+    }
     const lot = await prisma.lot.create({
       data: {
         lot_no: `${PREFIX}-L${sequence}`,
@@ -292,7 +305,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
   const summary = (rows: RowDraft[]) =>
     rows.map((row) => [row.values.PO_NO, row.values.PO_SEQ_NO, row.values.SL_CD, row.values.GR_QTY]);
 
-  it('구매입고 행 — 입하 줄의 P/O 라인 몫만, 같은 라인은 합친다 · 초과분은 따로 가고 특채 LOT 은 빠진다', async () => {
+  it('구매입고 행 — 배정 몫마다 그 P/O 라인으로, 같은 라인은 합친다 · 미배정 몫과 특채 LOT 은 빠진다', async () => {
     const linked = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
     const waiting = await inboundLot(ids.erpOrderLine, 50, [{ qty: 10, orderLine: null }]);
     const conceded = await inboundLot(ids.erpOrderLine, 10);
@@ -305,8 +318,12 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     ]);
     const rows = await build(detail.goodsReceipt.goodsReceiptId);
 
-    // P/O 라인 1 = 80 + 40(같은 라인은 합친다). 이어진 초과분 20·안 이어진 10 은 초과분 묶음으로, 특채 LOT 10 은 없다.
-    expect(summary(rows)).toEqual([[`${PREFIX}-PO`, 1, 'S240', '120']]);
+    // P/O 라인 1 = 80 + 40(같은 라인은 합친다) · 입고 전에 다른 라인에 이은 20 은 라인 2 로 같이 간다.
+    // 안 이은 10 은 미배정이라 없고, 특채 LOT 10 도 없다.
+    expect(summary(rows)).toEqual([
+      [`${PREFIX}-PO`, 1, 'S240', '120'],
+      [`${PREFIX}-PO`, 2, 'S230', '20'],
+    ]);
     expect(rows[0].values).toEqual({
       POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo,
       PLANT_CD: 'PL11',
@@ -336,7 +353,7 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     });
   });
 
-  it('선별로 떼어 낸 LOT 은 조상의 입하 줄을 따르고, 입고가 적으면 P/O 라인 몫부터 채운다', async () => {
+  it('선별로 떼어 낸 LOT 은 조상의 입하 줄을 따르고, 입고가 적으면 먼저 만든 배정 몫부터 채운다', async () => {
     const parent = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
     const child = await splitLot(parent.lotId, 90);
 
@@ -364,9 +381,11 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     received.push(detail.goodsReceipt.goodsReceiptNo);
 
     expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
-    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '80']]);
-    // 초과분 20 중 받은 것은 90 − 80 = 10 이다.
-    expect(summary(await buildExcess(parent.excessIds[0]))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '10']]);
+    // 라인 2 몫 20 중 받은 것은 90 − 80 = 10 이다.
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([
+      [`${PREFIX}-PO`, 1, 'S240', '80'],
+      [`${PREFIX}-PO`, 2, 'S230', '10'],
+    ]);
   });
 
   it('입하 줄 하나가 ERP 로 가는 입고 여럿에 나뉘면 실패한다 — 부분 입고는 생기지 않는다', async () => {
@@ -429,14 +448,23 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     expect(await build(detail.goodsReceipt.goodsReceiptId)).toEqual([]);
   });
 
-  function buildExcess(excessId: bigint): Promise<RowDraft[]> {
+  function buildAllocation(allocationId: bigint): Promise<RowDraft[]> {
     return goodsReceiptBuilder(prisma).build({
       id: 1n,
       interfaceCode: 'IF-GR-SEND',
-      targetTypeCode: 'INBOUND_RECEIPT_EXCESS',
-      targetId: excessId,
+      targetTypeCode: 'INBOUND_RECEIPT_PO_ALLOCATION',
+      targetId: allocationId,
       payload: {},
     });
+  }
+  /** 그 줄의 그 P/O 라인 배정 — 가장 최근 것. */
+  async function allocationOf(inboundLineId: bigint, orderLine: bigint): Promise<bigint> {
+    const row = await prisma.inbound_receipt_po_allocation.findFirstOrThrow({
+      where: { inbound_receipt_line_id: inboundLineId, purchase_order_line_id: orderLine },
+      orderBy: { inbound_receipt_po_allocation_id: 'desc' },
+    });
+    allocationIds.push(row.inbound_receipt_po_allocation_id);
+    return row.inbound_receipt_po_allocation_id;
   }
   const buildCancel = (goodsReceiptId: number): Promise<RowDraft[]> =>
     goodsReceiptBuilder(prisma).build({
@@ -446,39 +474,44 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
       targetId: BigInt(goodsReceiptId),
       payload: {},
     });
-  const excessMessage = (excessId: bigint) =>
-    prisma.integration_message.findUnique({ where: { message_key: `IF-GR-SEND:EXCESS:${excessId}` } });
+  const allocationMessage = (allocationId: bigint) =>
+    prisma.integration_message.findUnique({ where: { message_key: `IF-GR-SEND:ALLOC:${allocationId}` } });
 
-  it('입고 전에 이은 초과분은 입고할 때 따로 적재하고, 그 묶음은 초과분 몫 한 행이다', async () => {
+  it('입고 전에 더한 몫은 입고 묶음에 함께 실린다 — 자기 묶음(ALLOC)을 세우지 않는다', async () => {
     const lot = await inboundLot(ids.erpOrderLine, 100, [{ qty: 20, orderLine: ids.erpOrderLine2 }]);
-    const [excessId] = lot.excessIds;
 
     const detail = await receive('warehouse', [{ ...lot, qty: 100 }]);
 
-    expect(await excessMessage(excessId)).toMatchObject({
-      interface_code: 'IF-GR-SEND',
-      target_type_code: 'INBOUND_RECEIPT_EXCESS',
-      target_id: excessId,
-      status_code: 'PENDING',
-    });
-    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '80']]);
-    const rows = await buildExcess(excessId);
-    expect(summary(rows)).toEqual([[`${PREFIX}-PO`, 2, 'S230', '20']]);
-    expect(rows[0].values).toMatchObject({ POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo, RCPT_DT: '2026-10-22 01:30:00' });
+    expect(await allocationMessage(await allocationOf(lot.inboundLineId, ids.erpOrderLine2))).toBeNull();
+    const rows = await build(detail.goodsReceipt.goodsReceiptId);
+    expect(summary(rows)).toEqual([
+      [`${PREFIX}-PO`, 1, 'S240', '80'],
+      [`${PREFIX}-PO`, 2, 'S230', '20'],
+    ]);
+    expect(rows[1].values).toMatchObject({ POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo, RCPT_DT: '2026-10-22 01:30:00' });
   });
 
-  it('입고 뒤에 이은 초과분은 이을 때 적재하고, 그 뒤에는 풀지 못한다', async () => {
+  it('입고 뒤에 이은 몫은 이을 때 자기 묶음을 적재하고 입고 묶음에서는 빠진다 · 그 뒤에는 풀지 못한다', async () => {
     const lot = await inboundLot(ids.erpOrderLine, 50, [{ qty: 10, orderLine: null }]);
     const [excessId] = lot.excessIds;
-    await receive('warehouse', [{ ...lot, qty: 50 }]);
-    expect(await excessMessage(excessId)).toBeNull();
+    const detail = await receive('warehouse', [{ ...lot, qty: 50 }]);
 
     await excesses.link(excessId, ids.erpOrderLine2, userId);
 
-    expect(await excessMessage(excessId)).not.toBeNull();
-    expect(summary(await buildExcess(excessId))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '10']]);
+    const allocationId = await allocationOf(lot.inboundLineId, ids.erpOrderLine2);
+    expect(await allocationMessage(allocationId)).toMatchObject({
+      interface_code: 'IF-GR-SEND',
+      target_type_code: 'INBOUND_RECEIPT_PO_ALLOCATION',
+      target_id: allocationId,
+      status_code: 'PENDING',
+    });
+    const rows = await buildAllocation(allocationId);
+    expect(summary(rows)).toEqual([[`${PREFIX}-PO`, 2, 'S230', '10']]);
+    expect(rows[0].values).toMatchObject({ POP_INF_KEY: detail.goodsReceipt.goodsReceiptNo });
+    // 입고 묶음이 늦게 바뀌어도 같은 몫을 두 번 싣지 않는다.
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '40']]);
     await expect(excesses.unlink(excessId, userId)).rejects.toMatchObject({
-      response: { errors: [expect.objectContaining({ code: 'STATE_LOCKED', message: 'ERP 구매입고로 보낸 초과분입니다.' })] },
+      response: { errors: [expect.objectContaining({ code: 'STATE_LOCKED', message: 'ERP 구매입고로 보낸 배정입니다.' })] },
     });
   });
 
@@ -487,10 +520,22 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     const [excessId] = lot.excessIds;
 
     await excesses.link(excessId, ids.erpOrderLine2, userId);
-    expect(await excessMessage(excessId)).toBeNull();
+    expect(await allocationMessage(await allocationOf(lot.inboundLineId, ids.erpOrderLine2))).toBeNull();
 
     await excesses.unlink(excessId, userId);
     expect((await prisma.inbound_receipt_excess.findUniqueOrThrow({ where: { inbound_receipt_excess_id: excessId } })).purchase_order_line_id).toBeNull();
+    expect(await prisma.inbound_receipt_po_allocation.count({ where: { inbound_receipt_line_id: lot.inboundLineId, purchase_order_line_id: ids.erpOrderLine2 } })).toBe(0);
+  });
+
+  it('전부 미배정으로 입고한 줄 — 입고 묶음은 서되 행이 없고, 새 ERP 발주에 배정하면 그 몫이 자기 묶음으로 간다', async () => {
+    const lot = await inboundLot(ids.erpOrderLine, 15, [{ qty: 15, orderLine: null }]);
+    const detail = await receive('warehouse', [{ ...lot, qty: 15 }]);
+    expect(detail.goodsReceipt.erpMessageQueued).toBe(true);
+    expect(await build(detail.goodsReceipt.goodsReceiptId)).toEqual([]);
+
+    await excesses.link(lot.excessIds[0], ids.erpOrderLine2, userId);
+
+    expect(summary(await buildAllocation(await allocationOf(lot.inboundLineId, ids.erpOrderLine2)))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '15']]);
   });
 
   /** 그 메시지를 바꾸고 키를 적고(넣었다면) 넣었다고 표시한다 — 실행기가 하는 일을 손으로. */
@@ -514,7 +559,6 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     const detail = await receive('warehouse', [{ ...lot, qty: 100 }]);
     const { goodsReceiptId, goodsReceiptNo } = detail.goodsReceipt;
     await send(`IF-GR-SEND:${goodsReceiptNo}`, await build(goodsReceiptId));
-    await send(`IF-GR-SEND:EXCESS:${lot.excessIds[0]}`, await buildExcess(lot.excessIds[0]));
 
     await cancelReceipt(goodsReceiptId);
 
@@ -527,7 +571,8 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
     const { reserved } = await send(cancelKey, drafts);
     expect(reserved.map((row) => row.relayKey)).toEqual([
       `${goodsReceiptNo}|PL11|${PREFIX}-IT|${PREFIX}-PO|1|1|C`,
-      `${goodsReceiptNo}|PL11|${PREFIX}-IT|${PREFIX}-PO|2|2|C`,
+      // 두 몫이 한 묶음에 실려 라인마다 처음 순번(1)을 받았다 — 취소 행은 그 순번을 그대로 쓴다.
+      `${goodsReceiptNo}|PL11|${PREFIX}-IT|${PREFIX}-PO|2|1|C`,
     ]);
     expect(reserved[0].values).toMatchObject({ GR_QTY: '80', CREATE_TYPE: 'C', ERP_APPLY_FLAG: 'N' });
     // 다 취소했으니 다시 바꿔도 보낼 것이 없다.
@@ -553,8 +598,10 @@ describe('ERP 보내기 — 구매입고 (e2e)', () => {
       data: { status_code: 'CANCEL_REQUESTED' },
     });
 
-    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([[`${PREFIX}-PO`, 1, 'S240', '10']]);
-    expect(summary(await buildExcess(lot.excessIds[0]))).toEqual([[`${PREFIX}-PO`, 2, 'S230', '2']]);
+    expect(summary(await build(detail.goodsReceipt.goodsReceiptId))).toEqual([
+      [`${PREFIX}-PO`, 1, 'S240', '10'],
+      [`${PREFIX}-PO`, 2, 'S230', '2'],
+    ]);
   });
 
   describeRelay('중계 DB', () => {

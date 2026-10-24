@@ -407,7 +407,7 @@ describe('입하 등록 (e2e)', () => {
         ],
       });
       // 이 파일의 기본 입하는 예외 유형을 싣는다 — 행이 그 유형을 그대로 낸다(화면이 가릴 수 있게).
-      expect(typeof (row as { exceptionTypeCode: unknown }).exceptionTypeCode).toBe('string');
+      expect(typeof (row as unknown as { exceptionTypeCode: unknown }).exceptionTypeCode).toBe('string');
 
       const candidates = await api(`/inbound-receipt-lines/${lineId}/allocation-candidates`).expect(200);
       const ids = (candidates.body.items as { purchaseOrderLineId: number }[]).map((item) => item.purchaseOrderLineId);

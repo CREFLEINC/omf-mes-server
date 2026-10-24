@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { LOT_SPLIT_SOURCE } from '../../core/lot';
 import { IF_GOODS_RECEIPT, OutboxService, outboxMessageKey } from '../../core/outbox';
 import { PrismaService } from '../../prisma/prisma.service';
+import { unallocatedQtyOf } from '../inbound-receipt/inbound-allocation';
 import { inboundLineOfLot } from './lot-receivable';
 
 /** 자재 입고 — 입하(P/O)에서 온 자재를 받는다. ERP 구매입고는 이 유형만 간다. */
@@ -43,7 +44,9 @@ export interface ReceiptLineRef {
 
 /**
  * ERP 구매입고로 갈 입고 줄의 입하 줄 — 줄마다, 가지 않을 줄은 `null`(장부 P-104 · 사용자 결정 2026-10-22).
- * - 입하 줄이 ERP 발주 라인에 이어져야 한다. 선별로 떼어 낸 LOT 은 조상의 입하 줄을 따른다(P-56).
+ * - 입하 줄에 ERP 발주 라인 배정이 있거나 미배정 몫이 남아야 한다 — 미배정 몫은 나중에 ERP 발주에 배정되면 이 입고의
+ *   번호로 간다(`ALLOC` 묶음). 그래서 입고 묶음을 세워 둔다 — 실을 행이 없어도 입고 취소가 C 행을 보낼 자리가 된다.
+ *   MES 발주에만 다 배정된 줄은 가지 않는다. 선별로 떼어 낸 LOT 은 조상의 입하 줄을 따른다(P-56).
  * - 특채(한도승인)가 적용된 LOT 은 가지 않는다 — ERP G/R 은 합격품 한정이다(QA #1 · W-01-10 §5-5).
  *   처분 '정상'으로 풀린 LOT 은 합격으로 본다.
  */
@@ -58,17 +61,43 @@ export async function erpInboundLines(db: Db, lines: readonly ReceiptLineRef[]):
     const inboundLineId = conceded.has(line.lotId)
       ? null
       : (line.inboundReceiptLineId ?? (await inboundLineOfLot(db, line.lotId)));
+    const inbound =
+      inboundLineId === null
+        ? null
+        : await db.inbound_receipt_line.findUnique({
+            where: { inbound_receipt_line_id: inboundLineId },
+            select: {
+              received_qty: true,
+              inbound_receipt_po_allocation: {
+                select: { allocated_qty: true, purchase_order_line: { select: { purchase_order: { select: { erp_purchase_order_no: true } } } } },
+              },
+            },
+          });
     const toErp =
-      inboundLineId !== null &&
-      (await db.inbound_receipt_line.count({
-        where: {
-          inbound_receipt_line_id: inboundLineId,
-          purchase_order_line: { purchase_order: { erp_purchase_order_no: { not: null } } },
-        },
-      })) > 0;
+      inbound !== null &&
+      (inbound.inbound_receipt_po_allocation.some((row) => row.purchase_order_line.purchase_order.erp_purchase_order_no !== null) ||
+        unallocatedQtyOf(inbound.received_qty, inbound.inbound_receipt_po_allocation).greaterThan(0));
     found.push(toErp ? inboundLineId : null);
   }
   return found;
+}
+
+/**
+ * 입고 수량을 배정 몫에 나눈다 — 배정을 만든 순서대로 채우고, 남는 것은 미배정 몫이다(P-100 의 「P/O 몫 먼저」와 같다).
+ * 선별로 불량분을 떼어 내 입고가 받은 수량보다 적으면 뒤 몫부터 덜 받는다. 돌려주는 것은 배정 id → 이 입고가 채운 수량.
+ */
+export function receiptShares(
+  receiptQty: Prisma.Decimal,
+  allocations: readonly { inbound_receipt_po_allocation_id: bigint; allocated_qty: Prisma.Decimal }[],
+): Map<bigint, Prisma.Decimal> {
+  const shares = new Map<bigint, Prisma.Decimal>();
+  let rest = receiptQty;
+  for (const row of [...allocations].sort((a, b) => (a.inbound_receipt_po_allocation_id < b.inbound_receipt_po_allocation_id ? -1 : 1))) {
+    const share = Prisma.Decimal.min(rest, row.allocated_qty);
+    shares.set(row.inbound_receipt_po_allocation_id, share);
+    rest = rest.minus(share);
+  }
+  return shares;
 }
 
 export interface ErpReceiptLine {
@@ -133,36 +162,6 @@ export async function erpReceiptLinesOf(db: Db, inboundLineId: bigint): Promise<
       lotId: line.lot_id,
       receiptQty: line.receipt_qty,
     }));
-}
-
-/**
- * 입하 줄의 이어진 초과분을 ERP 구매입고로 보낼 일을 적재한다(P-100 · 장부 P-104) — 초과분마다 한 묶음.
- * 그 입하 줄이 ERP 로 가는 입고에 들어갔을 때만이다: 입고 전에 이은 초과분은 입고할 때, 입고 뒤에 이은 초과분은
- * 이을 때 적재된다. 이미 적재한 초과분은 그대로 둔다(키가 같다). ERP 발주 라인에 이은 초과분만 간다.
- */
-export async function enqueueLinkedExcesses(
-  tx: Prisma.TransactionClient,
-  outbox: OutboxService,
-  inboundLineId: bigint,
-): Promise<void> {
-  const excesses = await tx.inbound_receipt_excess.findMany({
-    where: {
-      inbound_receipt_line_id: inboundLineId,
-      purchase_order_line: { purchase_order: { erp_purchase_order_no: { not: null } } },
-    },
-    orderBy: { inbound_receipt_excess_id: 'asc' },
-    select: { inbound_receipt_excess_id: true },
-  });
-  if (excesses.length === 0 || (await erpReceiptLinesOf(tx, inboundLineId)).length === 0) return;
-  for (const { inbound_receipt_excess_id: excessId } of excesses) {
-    await outbox.enqueue(tx, {
-      interfaceCode: IF_GOODS_RECEIPT,
-      messageKey: excessMessageKey(excessId),
-      targetTypeCode: EXCESS_TARGET,
-      targetId: excessId,
-      payload: { inboundReceiptExcessId: Number(excessId) },
-    });
-  }
 }
 
 /**
