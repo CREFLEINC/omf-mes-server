@@ -21,12 +21,14 @@ import { GoodsReceiptService } from './goods-receipt/goods-receipt.service';
 import { InboundReceiptQueryService } from './inbound-receipt/inbound-receipt-query.service';
 import {
   InboundReceiptController,
+  InboundReceiptPerLineController,
   InboundReceiptSplitController,
 } from './inbound-receipt/inbound-receipt.controller';
 import { InboundAllocationController } from './inbound-receipt/inbound-allocation.controller';
 import { InboundExcessController } from './inbound-receipt/inbound-excess.controller';
 import { InboundAllocationService } from './inbound-receipt/inbound-allocation.service';
 import { InboundExcessService } from './inbound-receipt/inbound-excess.service';
+import { InboundReceiptPerLineService } from './inbound-receipt/inbound-receipt-per-line.service';
 import { InboundReceiptSplitService } from './inbound-receipt/inbound-receipt-split.service';
 import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-update.service';
 import { InboundReceiptService } from './inbound-receipt/inbound-receipt.service';
@@ -119,6 +121,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     StockReinstatementController,
     AsnController,
     InboundReceiptController,
+    InboundReceiptPerLineController,
     InboundReceiptSplitController,
     InboundAllocationController,
     InboundExcessController,
@@ -161,6 +164,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptService,
     InboundReceiptQueryService,
     InboundReceiptUpdateService,
+    InboundReceiptPerLineService,
     InboundReceiptSplitService,
     InboundAllocationService,
     InboundExcessService,

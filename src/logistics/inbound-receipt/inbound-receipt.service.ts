@@ -307,7 +307,8 @@ export class InboundReceiptService {
     return deltas;
   }
 
-  private async read(inboundReceiptId: number): Promise<{ detail: InboundReceiptDetail; versionNo: number }> {
+  /** 등록 응답 한 벌(상세 + 버전). 줄마다 한 건 등록(`inbound-receipt-per-line.service.ts`)도 쓴다. */
+  async read(inboundReceiptId: number): Promise<{ detail: InboundReceiptDetail; versionNo: number }> {
     const row = await this.prisma.inbound_receipt.findUniqueOrThrow({
       where: { inbound_receipt_id: inboundReceiptId },
     });
