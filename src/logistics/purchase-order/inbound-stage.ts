@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
  * 화면이 규칙을 베끼지 않게 서버가 정한다(C-17 · 장부 P-110).
  */
 export type InboundStageCode =
+  | 'LABEL_PENDING'
   | 'INSPECTION_REQUIRED'
   | 'INSPECTION_REQUESTED'
   | 'INSPECTION_IN_PROGRESS'
@@ -15,8 +16,11 @@ export type InboundStageCode =
   | 'COMPLETED'
   | 'CANCELLED';
 
-/** ⚠ `REQUEST_IQC` 는 아직 주지 않는다 — 의뢰 생성 경로를 미뤘다(사용자 결정 2026-10-23). */
-export type InboundNextActionCode = 'POST_RECEIPT' | 'PUTAWAY' | null;
+/**
+ * ⚠ `REQUEST_IQC` 는 아직 주지 않는다 — 의뢰 생성 경로를 미뤘다(사용자 결정 2026-10-23).
+ * `ISSUE_LABEL` 은 POP 「자재LOT 등록·라벨 발행」의 일이다 — 관리웹은 글자로만 보인다.
+ */
+export type InboundNextActionCode = 'ISSUE_LABEL' | 'POST_RECEIPT' | 'PUTAWAY' | null;
 
 export interface BlockedReason {
   code: string;
@@ -46,12 +50,13 @@ export interface LotStage {
   blockedReasons: BlockedReason[];
 }
 
-/** 목록·칩의 네 묶음. 완료·취소는 어느 묶음에도 들지 않는다. */
-export type InboundStageGroup = 'INSPECTION' | 'HELD' | 'RECEIPT' | 'PUTAWAY';
+/** 목록·칩의 다섯 묶음 — 흐름 순서다. 완료·취소는 어느 묶음에도 들지 않는다. */
+export type InboundStageGroup = 'LABEL' | 'INSPECTION' | 'HELD' | 'RECEIPT' | 'PUTAWAY';
 
-export const INBOUND_STAGE_GROUPS: readonly InboundStageGroup[] = ['INSPECTION', 'HELD', 'RECEIPT', 'PUTAWAY'];
+export const INBOUND_STAGE_GROUPS: readonly InboundStageGroup[] = ['LABEL', 'INSPECTION', 'HELD', 'RECEIPT', 'PUTAWAY'];
 
 const GROUP_OF: Readonly<Partial<Record<InboundStageCode, InboundStageGroup>>> = {
+  LABEL_PENDING: 'LABEL',
   INSPECTION_REQUIRED: 'INSPECTION',
   INSPECTION_REQUESTED: 'INSPECTION',
   INSPECTION_IN_PROGRESS: 'INSPECTION',
@@ -78,6 +83,14 @@ export function lotStage(facts: LotStageFacts): LotStage {
   if (facts.putawayStatusCodes.includes('PENDING')) return stage('PUTAWAY_PENDING', 'PUTAWAY');
   if (facts.putawayStatusCodes.includes('COMPLETED_TEMPORARY')) return stage('PUTAWAY_TEMPORARY', 'PUTAWAY');
   return stage('COMPLETED', null);
+}
+
+/**
+ * LOT 이 아직 없는 입하 라인(라벨 미부착 입하). 라벨 발행이 라인 수량 전체로 LOT 하나를 만들어
+ * 라인에 붙이므로(`lot-registry.service.ts` attach) 라인 하나가 줄 하나다.
+ */
+export function labelStage(receiptCancelled: boolean): LotStage {
+  return receiptCancelled ? stage('CANCELLED', null) : stage('LABEL_PENDING', 'ISSUE_LABEL');
 }
 
 function beforeReceipt(facts: LotStageFacts): LotStage {

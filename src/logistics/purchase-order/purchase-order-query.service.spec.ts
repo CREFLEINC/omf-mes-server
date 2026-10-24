@@ -209,6 +209,7 @@ describe('PurchaseOrderQueryService', () => {
       }) as unknown as InboundProgressService;
     const orders = [1n, 2n, 3n].map((id) => ({ ...listRow(), purchase_order_id: id }));
     const STAGES: [bigint, string][] = [
+      [1n, 'LABEL_PENDING'],
       [1n, 'INSPECTION_REQUESTED'],
       [1n, 'RECEIPT_READY'],
       [1n, 'RECEIPT_READY'],
@@ -223,7 +224,7 @@ describe('PurchaseOrderQueryService', () => {
       const result = await new PurchaseOrderQueryService(prisma, lots(STAGES)).list({});
 
       expect(result.items.map((item) => item.inboundStageCounts)).toEqual([
-        { INSPECTION: 1, RECEIPT: 2 },
+        { LABEL: 1, INSPECTION: 1, RECEIPT: 2 },
         { HELD: 1, PUTAWAY: 1 },
         {},
       ]);
@@ -240,7 +241,7 @@ describe('PurchaseOrderQueryService', () => {
       const { prisma } = listStub({ rows: orders });
       const counts = await new PurchaseOrderQueryService(prisma, lots(STAGES)).inboundStageCounts({ inboundStage: 'HELD' });
 
-      expect(counts).toEqual({ INSPECTION: 1, HELD: 1, RECEIPT: 2, PUTAWAY: 1 });
+      expect(counts).toEqual({ LABEL: 1, INSPECTION: 1, HELD: 1, RECEIPT: 2, PUTAWAY: 1 });
     });
   });
 
