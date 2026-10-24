@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { LotStageFacts, lotStage, stageGroupOf } from './inbound-stage';
+import { LotStageFacts, labelStage, lotStage, stageGroupOf } from './inbound-stage';
 
 const IQC_HOLD = { code: 'INCOMING_INSPECTION_WAIT', name: '수입검사 대기' };
 const CLAIM_HOLD = { code: 'CLAIM_RECALL', name: '클레임·리콜' };
@@ -140,8 +140,19 @@ describe('lotStage — 입고 관리 허브의 LOT 단계(장부 P-110)', () => 
   });
 });
 
-describe('stageGroupOf — 칩의 네 묶음', () => {
-  it('검사 셋은 INSPECTION, 보류는 HELD, 입고 대기는 RECEIPT, 적치 둘은 PUTAWAY 다', () => {
+describe('labelStage — LOT 이 없는 입하 라인', () => {
+  it('라벨 발행 대기이고 다음 할 일은 라벨 발행이다', () => {
+    expect(labelStage(false)).toEqual({ stageCode: 'LABEL_PENDING', nextActionCode: 'ISSUE_LABEL', blockedReasons: [] });
+  });
+
+  it('입하가 취소됐거나 취소 요청 중이면 CANCELLED 다', () => {
+    expect(labelStage(true)).toEqual({ stageCode: 'CANCELLED', nextActionCode: null, blockedReasons: [] });
+  });
+});
+
+describe('stageGroupOf — 칩의 다섯 묶음', () => {
+  it('라벨 대기는 LABEL, 검사 셋은 INSPECTION, 보류는 HELD, 입고 대기는 RECEIPT, 적치 둘은 PUTAWAY 다', () => {
+    expect(stageGroupOf('LABEL_PENDING')).toBe('LABEL');
     expect(stageGroupOf('INSPECTION_REQUIRED')).toBe('INSPECTION');
     expect(stageGroupOf('INSPECTION_REQUESTED')).toBe('INSPECTION');
     expect(stageGroupOf('INSPECTION_IN_PROGRESS')).toBe('INSPECTION');

@@ -144,8 +144,9 @@ describe('P/O 목록 — 계약 밖 조건(P-85)', () => {
     ]);
   });
 
-  it('inboundStage 는 네 묶음 중 하나다 — 밖이면 400 INVALID(장부 P-110)', () => {
+  it('inboundStage 는 다섯 묶음 중 하나다 — 밖이면 400 INVALID(장부 P-110)', () => {
     expect(parseOrderListExtras({ inboundStage: 'HELD' }).inboundStage).toBe('HELD');
+    expect(parseOrderListExtras({ inboundStage: 'LABEL' }).inboundStage).toBe('LABEL');
     let errors: unknown;
     try {
       parseOrderListExtras({ inboundStage: 'COMPLETED' });
