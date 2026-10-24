@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { Contract } from '../../common/contract';
+import { Contract, ContractAlias } from '../../common/contract';
 import { IdempotencyService } from '../../common/idempotency';
 import { runIdempotent, runVersioned } from '../../common/master';
 import { ifMatchVersion, setEtag } from '../../common/optimistic-lock';
@@ -27,6 +27,7 @@ import {
   InboundReceiptQueryService,
 } from './inbound-receipt-query.service';
 import { InboundReceiptCreateInput, InboundReceiptLineWriteInput } from './inbound-receipt-rules';
+import { InboundReceiptPerLineService } from './inbound-receipt-per-line.service';
 import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
 import { InboundReceiptUpdateInput, InboundReceiptUpdateService } from './inbound-receipt-update.service';
 import { InboundReceiptDetail, InboundReceiptLineView, InboundReceiptView } from './inbound-receipt-view';
@@ -146,6 +147,26 @@ export class InboundReceiptSplitController {
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.splits.create(body, actor),
     );
+  }
+}
+
+/**
+ * 줄마다 입하 한 건(장부 P-117) — 본문은 입하 등록과 같고, 검사(인증·단말 범위·권한·본문·멱등 키)도 입하 등록과
+ * 같다(`@ContractAlias`). 계약 사본에 없는 경로라 `@Contract` 를 달지 않는다.
+ */
+@Controller('logistics')
+export class InboundReceiptPerLineController {
+  constructor(
+    private readonly perLine: InboundReceiptPerLineService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
+
+  @Post('inbound-receipts\\:per-line')
+  @ContractAlias('POST /logistics/inbound-receipts')
+  create(@Req() request: Request, @Body() body: InboundReceiptCreateInput): Promise<{ created: InboundReceiptDetail[] }> {
+    // 단말 감사·작업자 판정은 입하 등록 오퍼레이션 이름으로 남긴다 — 같은 화면·같은 권한이다.
+    const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');
+    return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.perLine.create(body, actor));
   }
 }
 

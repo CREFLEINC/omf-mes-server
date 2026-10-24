@@ -1209,6 +1209,72 @@ describe('입하 등록 (e2e)', () => {
     expect(await prisma.lot.count({ where: { plant_id: plantId } })).toBe(lotsBefore);
   });
 
+  // 줄마다 입하 한 건(장부 P-117) — 일괄 입하도 품목마다 입하번호가 따로 붙는다(사용자 결정 2026-10-24).
+  describe('줄마다 입하 한 건 (:per-line)', () => {
+    function sendPerLine(draft: object, as = cookie): request.Test {
+      return request(app.getHttpServer())
+        .post('/api/logistics/inbound-receipts:per-line')
+        .set('Cookie', as)
+        .set('Idempotency-Key', key())
+        .set('X-Worker-No', 'W-0001')
+        .send(draft);
+    }
+
+    it('줄 셋이면 입하 세 건 — 입하번호가 모두 다르고 건마다 줄 하나·헤더 값은 같다 · P/O 받은 수량·배정도 줄마다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const lines = [
+        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
+        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 20 },
+        { ...(await lineDraft()), receivedQty: 5 },
+      ];
+
+      const response = await sendPerLine(await body({ lines })).expect(201);
+
+      const created = (response.body as { created: Detail[] }).created;
+      expect(created).toHaveLength(3);
+      const numbers = created.map((detail) => detail.inboundReceipt.inboundReceiptNo);
+      expect(new Set(numbers).size).toBe(3);
+      expect(created.map((detail) => detail.lines.map((line) => [line.lineNo, line.receivedQty]))).toEqual([[[1, 10]], [[1, 20]], [[1, 5]]]);
+      const headers = created.map((detail) => detail.inboundReceipt as ReceiptBody & { supplierId: number; receiptDatetime: string });
+      expect(new Set(headers.map((header) => `${header.supplierId}|${header.receiptDatetime}`)).size).toBe(1);
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(30);
+      expect(await allocationsOf(created[1].lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 20]]);
+      // 건마다 따로 조회된다 — 상세가 그 건의 줄 하나만 낸다.
+      const detail = await request(app.getHttpServer())
+        .get(`/api/logistics/inbound-receipts/${created[2].inboundReceipt.inboundReceiptId}`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect((detail.body as Detail).lines).toHaveLength(1);
+    });
+
+    it('한 줄이라도 막히면 아무것도 서지 않는다 — 400 이 그 줄(lines.{i})을 짚는다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(25);
+      const before = await prisma.inbound_receipt.count({ where: { plant_id: plantId } });
+      const lines = [
+        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
+        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
+        // 앞 두 줄이 20 을 올린 뒤라 이 줄이 한도(25)를 넘는다.
+        { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 10 },
+      ];
+
+      const rejected = await sendPerLine(await body({ lines })).expect(400);
+
+      expect(rejected.body.errors).toEqual([expect.objectContaining({ field: 'lines.2.receivedQty', code: 'QTY_EXCEEDS_ORDERED' })]);
+      expect(await prisma.inbound_receipt.count({ where: { plant_id: plantId } })).toBe(before);
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
+    });
+
+    it('검사는 입하 등록과 같다 — 본문 형식 400 · 줄 없음 LINE_REQUIRED · 권한 없음 403 · 로그인 없음 401', async () => {
+      const invalid = await sendPerLine(await body({ lines: [{ ...(await lineDraft()), receivedQty: 'x' }] })).expect(400);
+      // 계약 검증기가 막았다(입하 등록과 같은 모양 — 검증기의 칸 표기 lines[0]).
+      expect(invalid.body.errors[0]).toMatchObject({ field: 'lines[0].receivedQty' });
+      const empty = await sendPerLine(await body({ lines: [] })).expect(400);
+      expect(empty.body.errors[0]).toMatchObject({ code: 'LINE_REQUIRED' });
+      await sendPerLine(await body(), noPermCookie).expect(403);
+      await request(app.getHttpServer()).post('/api/logistics/inbound-receipts:per-line').send(await body()).expect(401);
+    });
+  });
+
   it('분리 — 권한 없는 사용자의 POST 는 403', async () => {
     await request(app.getHttpServer())
       .post('/api/logistics/inbound-receipts:split')

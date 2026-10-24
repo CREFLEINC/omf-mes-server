@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
 import { ContractException } from '../errors';
-import { CONTRACT_OPERATION } from './contract.decorator';
+import { contractOperationOf } from './contract.decorator';
 import { ContractValidator } from './contract-validator';
 
 /**
@@ -23,10 +23,7 @@ export class ContractValidationGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const key = this.reflector.get<string | undefined>(
-      CONTRACT_OPERATION,
-      context.getHandler(),
-    );
+    const key = contractOperationOf(this.reflector, context.getHandler());
     if (!key) return true;
 
     const request = context.switchToHttp().getRequest<Request>();

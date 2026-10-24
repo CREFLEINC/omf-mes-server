@@ -4,7 +4,7 @@ import type { Request } from 'express';
 
 import { currentSession } from '../../auth/session-resolver.service';
 import type { Session } from '../../auth/session.types';
-import { CONTRACT_OPERATION, ContractRegistry } from '../contract';
+import { ContractRegistry, contractOperationOf } from '../contract';
 import { ContractException, ERROR_CODE } from '../errors';
 import { OPERATION_PERMISSIONS } from './operation-permissions';
 
@@ -57,7 +57,7 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const key = this.reflector.get<string | undefined>(CONTRACT_OPERATION, context.getHandler());
+    const key = contractOperationOf(this.reflector, context.getHandler());
     if (!key) return true;
 
     // ⛔ 계약이 403 을 선언한 자리에서만 본다. 선언하지 않은 곳에서 403 을 내면 계약과

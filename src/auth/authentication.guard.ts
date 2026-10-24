@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 
-import { CONTRACT_OPERATION } from '../common/contract';
+import { contractOperationOf } from '../common/contract';
 import { ContractException, ERROR_CODE } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { SessionResolver, attachSession } from './session-resolver.service';
@@ -88,7 +88,7 @@ export class AuthenticationGuard implements CanActivate {
       attachTerminal(request, terminal);
       return true;
     }
-    const key = this.reflector.get<string | undefined>(CONTRACT_OPERATION, context.getHandler());
+    const key = contractOperationOf(this.reflector, context.getHandler());
     // 계약에 묶이지 않은 자리(헬스체크 등)는 이 가드의 대상이 아니다.
     if (!key || ANONYMOUS.has(key)) return true;
 
