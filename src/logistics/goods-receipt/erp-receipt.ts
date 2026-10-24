@@ -24,6 +24,13 @@ export function excessMessageKey(excessId: bigint): string {
   return outboxMessageKey(IF_GOODS_RECEIPT, `EXCESS:${excessId}`);
 }
 
+/** 배정 몫 묶음의 대상 — 몫 하나가 ERP 구매입고 한 행이다. 초과분 묶음을 대신한다. */
+export const ALLOCATION_TARGET = 'INBOUND_RECEIPT_PO_ALLOCATION';
+/** 배정 몫 묶음의 키 — 몫마다 한 번만 적재된다. 이 키가 있는 몫은 빼지 못한다. */
+export function allocationMessageKey(allocationId: bigint): string {
+  return outboxMessageKey(IF_GOODS_RECEIPT, `ALLOC:${allocationId}`);
+}
+
 type Db = Pick<
   PrismaService,
   'lot' | 'concession' | 'inbound_receipt_line' | 'goods_receipt_line' | 'inventory_transaction_line'

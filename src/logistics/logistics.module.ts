@@ -24,6 +24,7 @@ import {
   InboundReceiptSplitController,
 } from './inbound-receipt/inbound-receipt.controller';
 import { InboundExcessController } from './inbound-receipt/inbound-excess.controller';
+import { InboundAllocationService } from './inbound-receipt/inbound-allocation.service';
 import { InboundExcessService } from './inbound-receipt/inbound-excess.service';
 import { InboundReceiptSplitService } from './inbound-receipt/inbound-receipt-split.service';
 import { InboundReceiptUpdateService } from './inbound-receipt/inbound-receipt-update.service';
@@ -159,6 +160,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     InboundReceiptQueryService,
     InboundReceiptUpdateService,
     InboundReceiptSplitService,
+    InboundAllocationService,
     InboundExcessService,
     InboundVarianceService,
     MaterialIssueRequestQueryService,
