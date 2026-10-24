@@ -58,6 +58,7 @@ function fake(options: Options = {}) {
     written: [] as Args[],
     deleted: [] as bigint[],
     excesses: [] as Args[],
+    allocations: [] as Args[],
     transactionOptions: undefined as unknown,
   };
 
@@ -152,6 +153,16 @@ function fake(options: Options = {}) {
       create: async ({ data }: { data: Args }) => {
         recorded.calls.push('excess');
         recorded.excesses.push(data);
+      },
+    },
+    inbound_receipt_po_allocation: {
+      deleteMany: async ({ where }: { where: Args }) => {
+        recorded.calls.push(`allocation-clear:${where.inbound_receipt_line_id}`);
+        return { count: 0 };
+      },
+      create: async ({ data }: { data: Args }) => {
+        recorded.calls.push('allocation');
+        recorded.allocations.push(data);
       },
     },
     purchase_order: { count: async () => 0 },
@@ -281,6 +292,37 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
     expect(recorded.increments.map((row) => [row.purchaseOrderLineId, String(row.increment)])).toEqual([[101n, '-3']]);
     expect(recorded.excesses).toEqual([expect.objectContaining({ inbound_receipt_line_id: 901n })]);
     expect(String(recorded.excesses[0].excess_qty)).toBe('8');
+    // 배정 표(이중 쓰기) — 그 줄의 배정을 지우고 새 몫(20 − 8)을 다시 적는다.
+    expect(recorded.calls.filter((call) => call.startsWith('allocation'))).toEqual(['allocation-clear:901', 'allocation']);
+    expect(recorded.allocations).toEqual([expect.objectContaining({ inbound_receipt_line_id: 901n, purchase_order_line_id: 101n })]);
+    expect(String(recorded.allocations[0].allocated_qty)).toBe('12');
+  });
+
+  it('배정 — 받은 수량만 바뀐 줄도 배정을 다시 적는다(몫 = 받은 수량 − 초과분). 초과분은 그대로다', async () => {
+    const { service, recorded } = fake({ existing: [EXISTING[0]] });
+
+    await service.replaceLines(500, 1, [item({ receivedQty: 12 })], 99);
+
+    expect(recorded.calls.filter((call) => call.startsWith('excess'))).toEqual([]);
+    expect(recorded.calls.filter((call) => call.startsWith('allocation'))).toEqual(['allocation-clear:901', 'allocation']);
+    expect(String(recorded.allocations[0].allocated_qty)).toBe('12');
+  });
+
+  it('배정 — 바뀌지 않은 줄은 배정도 건드리지 않는다', async () => {
+    const { service, recorded } = fake({ existing: [EXISTING[0]] });
+
+    await service.replaceLines(500, 1, [item()], 99);
+
+    expect(recorded.calls.filter((call) => call.startsWith('allocation'))).toEqual([]);
+  });
+
+  it('배정 — 줄 전체를 초과분으로 바꾸면 배정 행이 없어진다(전부 미배정)', async () => {
+    const { service, recorded } = fake({ existing: [EXISTING[0]] });
+
+    await service.replaceLines(500, 1, [item({ receivedQty: 10, excessQty: 10 })], 99);
+
+    expect(recorded.increments.map((row) => [row.purchaseOrderLineId, String(row.increment)])).toEqual([[101n, '-10']]);
+    expect(recorded.calls.filter((call) => call.startsWith('allocation'))).toEqual(['allocation-clear:901']);
   });
 
   it('초과분 — 초과분이 다른 P/O 라인에 이어진 줄은 초과분을 바꿀 수 없다(400 SUCCESSOR_EXISTS)', async () => {
@@ -290,6 +332,7 @@ describe('InboundReceiptUpdateService.replaceLines', () => {
 
     expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.SUCCESSOR_EXISTS });
     expect(recorded.excesses).toEqual([]);
+    expect(recorded.allocations).toEqual([]);
   });
 
   it('치환 — 잠글 부모는 옛 집합과 새 집합의 합집합이다(내리는 쪽도 잠근다)', async () => {

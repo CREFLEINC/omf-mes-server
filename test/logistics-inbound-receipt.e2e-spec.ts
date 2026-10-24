@@ -284,17 +284,36 @@ describe('입하 등록 (e2e)', () => {
       expect(line.excesses).toEqual([expect.objectContaining({ excessQty: 500, purchaseOrderLineId: null, linkedAt: null })]);
       const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
       expect(Number(lot.initial_qty)).toBe(5000);
+      // 배정 표(이중 쓰기) — 줄의 P/O 몫 4,500 하나. 초과분 500 은 미배정이라 행이 없다.
+      expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 4500]]);
+    });
+
+    it('초과분 — 줄 전체가 초과분이어도 된다: P/O 에는 0 이 오르고 배정 없이 전부 미배정으로 남는다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 1000, excessQty: 1000 }],
+      });
+
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
+      const line = detail.lines[0] as LineBody & { excessQty: number; excesses: object[] };
+      expect(line.excessQty).toBe(1000);
+      expect(line.excesses).toEqual([expect.objectContaining({ excessQty: 1000, purchaseOrderLineId: null })]);
+      expect(await allocationsOf(line.inboundReceiptLineId)).toEqual([]);
+      const lot = await prisma.lot.findUniqueOrThrow({ where: { lot_id: BigInt(line.lotId as number) } });
+      expect(Number(lot.initial_qty)).toBe(1000);
     });
 
     it('초과분 — 칸이 틀리면 400 이 그 칸을 짚고 아무것도 남지 않는다', async () => {
       const { purchaseOrderLineId } = await seedOrderLine(100);
       const before = await prisma.inbound_receipt_excess.count();
+      const allocationsBefore = await prisma.inbound_receipt_po_allocation.count();
 
       const rejected = await send(
         await body({
           lines: [
             { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: '5' },
-            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 50 },
+            { ...(await lineDraft()), purchaseOrderLineId, receivedQty: 50, excessQty: 51 },
           ],
         }),
       ).expect(400);
@@ -304,6 +323,7 @@ describe('입하 등록 (e2e)', () => {
         expect.objectContaining({ field: 'lines.1.excessQty', code: 'RANGE' }),
       ]);
       expect(await prisma.inbound_receipt_excess.count()).toBe(before);
+      expect(await prisma.inbound_receipt_po_allocation.count()).toBe(allocationsBefore);
       expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(0);
     });
 
@@ -334,6 +354,19 @@ describe('입하 등록 (e2e)', () => {
         where: { inbound_receipt_line_id: BigInt(detail.lines[0].inboundReceiptLineId) },
       });
       expect(rows.map((row) => Number(row.excess_qty))).toEqual([30]);
+      // 배정도 다시 적힌다 — 몫 120 − 30.
+      expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 90]]);
+    });
+
+    it('배정 — 라인 치환이 받은 수량만 바꿔도 몫이 따라간다', async () => {
+      const { purchaseOrderLineId } = await seedOrderLine(100);
+      const detail = await create({ lines: [{ ...(await lineDraft()), purchaseOrderLineId, receivedQty: 60 }] });
+      expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 60]]);
+
+      await replace(detail.inboundReceipt.inboundReceiptId, [itemOf(detail.lines[0], { receivedQty: 70 })]);
+
+      expect(Number((await poLine(purchaseOrderLineId)).received_qty)).toBe(70);
+      expect(await allocationsOf(detail.lines[0].inboundReceiptLineId)).toEqual([[purchaseOrderLineId, 70]]);
     });
   });
 
@@ -1383,6 +1416,15 @@ function supplierLotNoOf(seq: number): string {
     return prisma.purchase_order_line.findUniqueOrThrow({
       where: { purchase_order_line_id: BigInt(purchaseOrderLineId) },
     });
+  }
+
+  /** 줄의 배정 몫 — `[P/O 라인, 수량]` 쌍, 만든 순서. */
+  async function allocationsOf(inboundReceiptLineId: number): Promise<[number, number][]> {
+    const rows = await prisma.inbound_receipt_po_allocation.findMany({
+      where: { inbound_receipt_line_id: BigInt(inboundReceiptLineId) },
+      orderBy: { inbound_receipt_po_allocation_id: 'asc' },
+    });
+    return rows.map((row) => [Number(row.purchase_order_line_id), Number(row.allocated_qty)]);
   }
 
   /** 귀속 대상 P/O 는 직접 INSERT 다 — 등록 API 는 이 슬라이스 밖이다. */

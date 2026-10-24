@@ -368,8 +368,10 @@ function excessChanged(row: ExistingLine, item: InboundReceiptLineWriteInput): b
   return !excessOf(row).equals(excessQtyOf(item)) || row.purchase_order_line_id !== lineId;
 }
 
-/** 초과분을 요청대로 다시 적는다. 이어진 초과분이 있는 줄은 바뀌었으면 `assertNoSuccessor` 가
- *  이미 막았으니, 여기 닿는 바뀐 줄의 초과분은 모두 안 이어진 것이다. */
+/** 초과분·배정을 요청대로 다시 적는다. 이어진 초과분이 있는 줄은 바뀌었으면 `assertNoSuccessor` 가
+ *  이미 막았으니, 여기 닿는 바뀐 줄의 초과분은 모두 안 이어진 것이고 배정은 줄 자신의 P/O 몫 하나다.
+ *  배정은 이중 쓰기다 — 옛 P/O 칸·초과분과 나란히 적는다(읽기가 모두 배정으로 옮겨 가면 옛 쓰기를 뗀다).
+ *  초과분은 초과분·P/O 라인이 바뀐 줄만, 배정은 받은 수량이 바뀐 줄도 다시 적는다(몫 = 받은 수량 − 초과분). */
 async function writeExcesses(
   tx: Prisma.TransactionClient,
   inboundReceiptId: number,
@@ -387,15 +389,32 @@ async function writeExcesses(
   });
   for (const [index, item] of items.entries()) {
     const row = item.inboundReceiptLineId === undefined ? undefined : known.get(item.inboundReceiptLineId);
-    if (row !== undefined && !excessChanged(row, item)) continue;
+    const excessStale = row === undefined || excessChanged(row, item);
+    const allocationStale = row === undefined || excessStale || !row.received_qty.equals(item.receivedQty);
+    if (!allocationStale) continue;
     const lineId = row?.inbound_receipt_line_id ?? created.find((line) => line.line_no === index + 1)?.inbound_receipt_line_id;
     if (lineId === undefined) continue;
-    if (row !== undefined) await tx.inbound_receipt_excess.deleteMany({ where: { inbound_receipt_line_id: lineId } });
-    const excessQty = excessQtyOf(item);
-    if (excessQty.isZero()) continue;
-    await tx.inbound_receipt_excess.create({
-      data: { inbound_receipt_line_id: lineId, excess_qty: excessQty, created_by: BigInt(appUserId) },
-    });
+    if (excessStale) {
+      if (row !== undefined) await tx.inbound_receipt_excess.deleteMany({ where: { inbound_receipt_line_id: lineId } });
+      const excessQty = excessQtyOf(item);
+      if (!excessQty.isZero()) {
+        await tx.inbound_receipt_excess.create({
+          data: { inbound_receipt_line_id: lineId, excess_qty: excessQty, created_by: BigInt(appUserId) },
+        });
+      }
+    }
+    if (row !== undefined) await tx.inbound_receipt_po_allocation.deleteMany({ where: { inbound_receipt_line_id: lineId } });
+    const attributed = attributedQtyOf(item);
+    if (item.purchaseOrderLineId != null && attributed.greaterThan(0)) {
+      await tx.inbound_receipt_po_allocation.create({
+        data: {
+          inbound_receipt_line_id: lineId,
+          purchase_order_line_id: BigInt(item.purchaseOrderLineId),
+          allocated_qty: attributed,
+          created_by: BigInt(appUserId),
+        },
+      });
+    }
   }
 }
 

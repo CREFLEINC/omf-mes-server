@@ -305,8 +305,12 @@ describe('초과분 칸 검사', () => {
     ]);
   });
 
-  it('초과분 — 받은 수량 이상이면 400 RANGE 다', () => {
-    expect(errorsOf({ excessQty: 5000 })).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: ERROR_CODE.RANGE })]);
+  it('초과분 — 받은 수량을 넘으면 400 RANGE 다', () => {
+    expect(errorsOf({ excessQty: 5001 })).toEqual([expect.objectContaining({ field: 'lines.0.excessQty', code: ERROR_CODE.RANGE })]);
+  });
+
+  it('초과분 — 받은 수량과 같아도 된다(줄 전체가 초과분 · 사용자 결정 2026-10-24)', () => {
+    expect(errorsOf({ excessQty: 5000 })).toEqual([]);
   });
 });
 
