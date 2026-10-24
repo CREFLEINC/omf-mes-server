@@ -154,7 +154,7 @@ export class InboundReceiptQueryService {
 
 /** `receipt_datetime` 은 `timestamptz` 다 — 공장 없이 로컬 하루 경계를 못 푼다. UTC
  *  경계로 자른다(입고 `goods-receipt.service.ts:receiptDateWhere` 선례 · CLAUDE.md). */
-function receiptDateWhere(from?: string, to?: string): Prisma.inbound_receiptWhereInput {
+export function receiptDateWhere(from?: string, to?: string): Prisma.inbound_receiptWhereInput {
   if (from === undefined && to === undefined) return {};
   const start = from === undefined ? undefined : new Date(`${from}T00:00:00.000Z`);
   const end = to === undefined ? undefined : new Date(`${to}T00:00:00.000Z`);
@@ -175,7 +175,7 @@ function labelIssuedHeaderWhere(value: boolean | undefined): Prisma.inbound_rece
 }
 
 /** 라인 목록의 `labelIssued` — 라인 자신의 LOT 을 본다(헤더 축과 관계 깊이가 다르다). */
-function labelIssuedLineWhere(value: boolean | undefined): Prisma.inbound_receipt_lineWhereInput {
+export function labelIssuedLineWhere(value: boolean | undefined): Prisma.inbound_receipt_lineWhereInput {
   if (value === undefined) return {};
   return value ? LABEL_ISSUED : { NOT: LABEL_ISSUED };
 }

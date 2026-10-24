@@ -1275,6 +1275,87 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
+  // 입하 건을 가로지르는 줄 목록 · 공급사별 수(장부 P-118) — POP 자재 LOT 라벨 발행(P-01-01).
+  describe('입하 줄 목록 (라벨 발행 대기)', () => {
+    // 다른 검사의 줄과 섞이지 않게 이 묶음만의 입하 날짜로 거른다.
+    const DAY = '2031-03-04';
+    const window = `receiptDateFrom=${DAY}&receiptDateTo=${DAY}`;
+    const lotless = async (receivedQty: number) => ({
+      ...(await lineDraft()), receivedQty, supplierLotNo: null, supplierLotMissing: true, substituteLotReasonCode: 'NO_LABEL',
+    });
+    const get = (path: string, as = cookie) => request(app.getHttpServer()).get(`/api/logistics/${path}`).set('Cookie', as);
+    type Row = { inboundReceiptLineId: number; inboundReceiptNo: string; lineNo: number; lotId: number | null; lastLabelIssue: object | null };
+
+    let first: Detail;
+    let second: Detail;
+    beforeAll(async () => {
+      first = await create({ receiptDatetime: `${DAY}T01:00:00Z`, lines: [await lotless(3), await lotless(4)] });
+      // 둘째 건은 미부착 하나 + 라벨이 붙어 온 줄 하나(이 줄은 대기가 아니다).
+      second = await create({ receiptDatetime: `${DAY}T02:00:00Z`, lines: [await lotless(5), await lineDraft()] });
+    });
+
+    it('대기 줄 — 미부착이고 발행 기록이 없는 줄이 입하 일시 → 줄 번호 순으로 건을 가로질러 나온다', async () => {
+      const response = await get(`inbound-receipt-lines?labelIssued=false&supplierLotLabelAttached=false&${window}`).expect(200);
+      const rows = response.body.items as Row[];
+      expect(rows.map((row) => [row.inboundReceiptNo, row.lineNo])).toEqual([
+        [first.inboundReceipt.inboundReceiptNo, 1],
+        [first.inboundReceipt.inboundReceiptNo, 2],
+        [second.inboundReceipt.inboundReceiptNo, 1],
+      ]);
+      expect(rows[0]).toMatchObject({ supplierId, plantId, itemId, receivedQty: 3, uomId, lotId: null, lotNo: null, lastLabelIssue: null });
+      expect(response.body.page.total).toBe(3);
+    });
+
+    it('LOT 만 등록하고 인쇄하지 못한 줄은 대기에 남고, 발행 기록이 생기면 빠져 labelIssued=true 쪽에 마지막 회차와 함께 나온다', async () => {
+      const lineId = first.lines[1].inboundReceiptLineId;
+      const lot = await prisma.lot.create({
+        data: {
+          lot_no: `${PREFIX}-LBL-${lotSeq}`, item_id: itemId, lot_type_code: 'MATERIAL', plant_id: plantId, initial_qty: 4,
+          uom_id: uomId, source_type_code: 'INBOUND_RECEIPT_LINE', source_id: lineId, status_code: 'NORMAL',
+        },
+      });
+      await prisma.inbound_receipt_line.update({ where: { inbound_receipt_line_id: lineId }, data: { lot_id: lot.lot_id } });
+      const pending = async () =>
+        ((await get(`inbound-receipt-lines?labelIssued=false&supplierLotLabelAttached=false&${window}`).expect(200)).body.items as Row[])
+          .find((row) => row.inboundReceiptLineId === lineId);
+      expect(await pending()).toMatchObject({ lotId: Number(lot.lot_id), lastLabelIssue: null });
+
+      // 발행은 P-01-01 의 몫이라 기록을 직접 남긴다 — 처음 발행과 다시 인쇄 한 번.
+      const user = await prisma.app_user.findUniqueOrThrow({ where: { login_id: LOGIN_ID } });
+      for (const seq of [1, 2]) {
+        await prisma.document_issue_log.create({
+          data: {
+            document_type_code: 'MATERIAL_LOT_LABEL', target_type_code: 'LOT', target_id: lot.lot_id, lot_id: lot.lot_id,
+            issue_seq: seq, issued_by: user.app_user_id, ...(seq > 1 ? { reissue_reason_code: 'DAMAGED' } : {}),
+          },
+        });
+      }
+
+      expect(await pending()).toBeUndefined();
+      const issued = (await get(`inbound-receipt-lines?labelIssued=true&${window}`).expect(200)).body.items as Row[];
+      expect(issued.find((row) => row.inboundReceiptLineId === lineId)).toMatchObject({
+        lotNo: lot.lot_no, lotStatusCode: 'NORMAL', lastLabelIssue: { issueSeq: 2, issuedAt: expect.any(String) },
+      });
+    });
+
+    it('공급사별 수 — 같은 조건의 줄을 공급사로 묶고 가장 먼저 입하된 시각을 싣는다 · 취소한 입하는 빠진다', async () => {
+      const counts = async () =>
+        (await get(`inbound-receipt-lines:supplier-counts?labelIssued=false&supplierLotLabelAttached=false&${window}`).expect(200)).body;
+      // 앞 검사가 한 줄을 발행했다 — 남은 대기는 첫 건 1 + 둘째 건 1.
+      expect(await counts()).toEqual({
+        items: [expect.objectContaining({ supplierId, pendingCount: 2, firstReceiptDatetime: `${DAY}T01:00:00.000Z` })],
+      });
+      await prisma.inbound_receipt.update({ where: { inbound_receipt_id: BigInt(second.inboundReceipt.inboundReceiptId) }, data: { status_code: 'CANCELLED' } });
+      expect((await counts()).items[0]).toMatchObject({ pendingCount: 1 });
+    });
+
+    it('검사는 입하 목록과 같다 — 질의 형식 400 · 로그인 없음 401', async () => {
+      await get(`inbound-receipt-lines?labelIssued=maybe`).expect(400);
+      await get(`inbound-receipt-lines:supplier-counts?receiptDateFrom=2031-02-30`).expect(400);
+      await request(app.getHttpServer()).get('/api/logistics/inbound-receipt-lines').expect(401);
+    });
+  });
+
   it('분리 — 권한 없는 사용자의 POST 는 403', async () => {
     await request(app.getHttpServer())
       .post('/api/logistics/inbound-receipts:split')

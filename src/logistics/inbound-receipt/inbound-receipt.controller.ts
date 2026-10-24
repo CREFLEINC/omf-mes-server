@@ -27,6 +27,12 @@ import {
   InboundReceiptQueryService,
 } from './inbound-receipt-query.service';
 import { InboundReceiptCreateInput, InboundReceiptLineWriteInput } from './inbound-receipt-rules';
+import {
+  InboundReceiptLineListItem,
+  InboundReceiptLineListQuery,
+  InboundReceiptLineListService,
+  SupplierLabelCount,
+} from './inbound-receipt-line-list.service';
 import { InboundReceiptPerLineService } from './inbound-receipt-per-line.service';
 import { InboundReceiptSplitInput, InboundReceiptSplitService } from './inbound-receipt-split.service';
 import { InboundReceiptUpdateInput, InboundReceiptUpdateService } from './inbound-receipt-update.service';
@@ -167,6 +173,27 @@ export class InboundReceiptPerLineController {
     // 단말 감사·작업자 판정은 입하 등록 오퍼레이션 이름으로 남긴다 — 같은 화면·같은 권한이다.
     const actor = logisticsWriteActorOf(request, 'POST /logistics/inbound-receipts');
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () => this.perLine.create(body, actor));
+  }
+}
+
+/**
+ * 입하 건을 가로지르는 입하 줄 목록·공급사별 수(장부 P-118) — POP 자재 LOT 라벨 발행(P-01-01)이 쓴다. 검사(인증·단말
+ * 범위·권한·질의 형식)는 입하 목록과 같다(`@ContractAlias`). POP 단말은 그 공장으로 좁힌다.
+ */
+@Controller('logistics')
+export class InboundReceiptLineListController {
+  constructor(private readonly lineList: InboundReceiptLineListService) {}
+
+  @Get('inbound-receipt-lines')
+  @ContractAlias('GET /logistics/inbound-receipts')
+  list(@Req() request: Request, @Query() query: InboundReceiptLineListQuery): Promise<PagedResponse<InboundReceiptLineListItem>> {
+    return this.lineList.list(plantQuery(query, request));
+  }
+
+  @Get('inbound-receipt-lines\\:supplier-counts')
+  @ContractAlias('GET /logistics/inbound-receipts')
+  supplierCounts(@Req() request: Request, @Query() query: InboundReceiptLineListQuery): Promise<{ items: SupplierLabelCount[] }> {
+    return this.lineList.supplierCounts(plantQuery(query, request));
   }
 }
 
