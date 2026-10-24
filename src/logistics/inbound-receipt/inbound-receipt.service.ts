@@ -142,6 +142,19 @@ export class InboundReceiptService {
           },
         });
       }
+      // 배정 표(이중 쓰기 — 옛 P/O 칸·초과분과 나란히 적는다. 읽기가 모두 배정으로 옮겨 가면 옛 쓰기를 뗀다).
+      // 줄 전체가 초과분이면 몫이 0 이라 배정이 없다 — 미배정으로 남는다.
+      const attributed = attributedQtyOf(line);
+      if (line.purchaseOrderLineId != null && attributed.greaterThan(0)) {
+        await tx.inbound_receipt_po_allocation.create({
+          data: {
+            inbound_receipt_line_id: created.inbound_receipt_line_id,
+            purchase_order_line_id: BigInt(line.purchaseOrderLineId),
+            allocated_qty: attributed,
+            created_by: actor.appUserId == null ? null : BigInt(actor.appUserId),
+          },
+        });
+      }
 
       if (!attachesLot(line)) continue;
       // ⛔ `POST /trace/lots` 를 HTTP 로 부르지 않는다 — 같은 `tx` 안에 서야 한다. 라인의

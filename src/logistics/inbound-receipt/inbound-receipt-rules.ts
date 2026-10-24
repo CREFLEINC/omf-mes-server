@@ -87,9 +87,10 @@ export function collectExcessErrors(at: string, line: InboundReceiptLineWriteInp
     errors.push(field(`${at}.excessQty`, ERROR_CODE.INVALID, 'P/O 라인이 있는 줄만 초과분을 나눠 적습니다.'));
     return;
   }
-  // 초과분이 줄 전체면 P/O 라인에 넣을 몫이 없다 — 그때는 무발주 줄로 보낸다.
-  if (new Prisma.Decimal(value).greaterThanOrEqualTo(line.receivedQty)) {
-    errors.push(field(`${at}.excessQty`, ERROR_CODE.RANGE, '받은 수량보다 작아야 합니다.'));
+  // 초과분이 줄 전체여도 된다(사용자 결정 2026-10-24) — P/O 라인에 넣는 몫이 0 이고 전부 미배정으로 남아
+  // 나중에 온 P/O 에 잇는다. 「발주 없이 들어오는 것은 없다. 초과된 것을 나중에 새 발주에 연결하는 것은 있어도.」
+  if (new Prisma.Decimal(value).greaterThan(line.receivedQty)) {
+    errors.push(field(`${at}.excessQty`, ERROR_CODE.RANGE, '받은 수량 이하여야 합니다.'));
   }
 }
 

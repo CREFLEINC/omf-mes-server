@@ -62,9 +62,12 @@ const PUTAWAY_ORDER = ['PENDING', 'COMPLETED_TEMPORARY', 'COMPLETED'];
 
 const LINE_SELECT = {
   inbound_receipt_line_id: true,
-  purchase_order_line_id: true,
   inspection_required: true,
-  purchase_order_line: { select: { purchase_order_id: true } },
+  // 줄이 어느 발주의 것인지는 배정이 안다 — 한 줄(LOT 하나)이 발주 둘에 걸칠 수 있다.
+  inbound_receipt_po_allocation: {
+    select: { purchase_order_line_id: true, purchase_order_line: { select: { purchase_order_id: true } } },
+    orderBy: { inbound_receipt_po_allocation_id: 'asc' },
+  },
   inbound_receipt: {
     select: { inbound_receipt_id: true, inbound_receipt_no: true, receipt_datetime: true, status_code: true },
   },
@@ -95,12 +98,13 @@ export class InboundProgressService {
 
   async lotsOf(purchaseOrderIds: readonly bigint[]): Promise<InboundLotRow[]> {
     if (purchaseOrderIds.length === 0) return [];
+    const wanted = new Set(purchaseOrderIds);
     const lines = await this.prisma.inbound_receipt_line.findMany({
-      where: { purchase_order_line: { purchase_order_id: { in: [...purchaseOrderIds] } } },
+      where: { inbound_receipt_po_allocation: { some: { purchase_order_line: { purchase_order_id: { in: [...wanted] } } } } },
       select: { ...LINE_SELECT, lot_id: true, received_qty: true, uom: { select: { uom_code: true } } },
       orderBy: { inbound_receipt_line_id: 'asc' },
     });
-    const labelRows = lines.flatMap((line) => (line.lot_id === null ? labelRow(line) : []));
+    const labelRows = lines.flatMap((line) => (line.lot_id === null ? labelRow(line, wanted) : []));
     const origins = await this.withSplitChildren(lines);
     const lotIds = [...origins.keys()];
     const [lots, receivable, inspections, holds, receipts] = await Promise.all([
@@ -118,8 +122,8 @@ export class InboundProgressService {
       const origin = origins.get(lot.lot_id);
       if (origin === undefined) return [];
       const { line, rootLotId } = origin;
-      const orderLine = line.purchase_order_line;
-      if (orderLine === null) return [];
+      const orders = ordersOf(line, wanted);
+      if (orders.size === 0) return [];
       const header = line.inbound_receipt;
       const inspection = inspections.get(lot.lot_id) ?? inspections.get(rootLotId) ?? null;
       const receivableQty = receivable.get(lot.lot_id) ?? new Prisma.Decimal(0);
@@ -133,7 +137,7 @@ export class InboundProgressService {
         receivableQty,
         putawayStatusCodes: putawayTasks.map((task) => task.statusCode),
       });
-      const progress: InboundLotProgress = {
+      const progress: Omit<InboundLotProgress, 'purchaseOrderLineId'> = {
         ...lineFields(line),
         lotId: Number(lot.lot_id),
         lotNo: lot.lot_no,
@@ -146,7 +150,7 @@ export class InboundProgressService {
         goodsReceipt,
         putaway: putawayTasks[0] ?? null,
       };
-      return [{ purchaseOrderId: orderLine.purchase_order_id, progress }];
+      return perOrder(orders, progress);
     });
     return [...labelRows, ...lotRows];
   }
@@ -299,11 +303,30 @@ function byPutawayOrder(a: PutawayView, b: PutawayView): number {
   return (b.completedAt ?? '').localeCompare(a.completedAt ?? '');
 }
 
+/**
+ * 물은 발주마다 그 발주의 라인 — 한 줄(LOT 하나)이 발주 둘에 배정되면 두 발주 아래에 다 보인다.
+ * 같은 발주의 라인 둘에 배정됐으면 먼저 배정한 라인으로 묶는다.
+ */
+function ordersOf(line: InboundLine, wanted: ReadonlySet<bigint>): Map<bigint, bigint> {
+  const orders = new Map<bigint, bigint>();
+  for (const allocation of line.inbound_receipt_po_allocation) {
+    const orderId = allocation.purchase_order_line.purchase_order_id;
+    if (wanted.has(orderId) && !orders.has(orderId)) orders.set(orderId, allocation.purchase_order_line_id);
+  }
+  return orders;
+}
+
+function perOrder(orders: Map<bigint, bigint>, progress: Omit<InboundLotProgress, 'purchaseOrderLineId'>): InboundLotRow[] {
+  return [...orders].map(([purchaseOrderId, purchaseOrderLineId]) => ({
+    purchaseOrderId,
+    progress: { purchaseOrderLineId: Number(purchaseOrderLineId), ...progress },
+  }));
+}
+
 function lineFields(line: InboundLine): Pick<InboundLotProgress,
-  'purchaseOrderLineId' | 'inboundReceiptId' | 'inboundReceiptNo' | 'inboundReceiptLineId' | 'receiptDatetime'> {
+  'inboundReceiptId' | 'inboundReceiptNo' | 'inboundReceiptLineId' | 'receiptDatetime'> {
   const header = line.inbound_receipt;
   return {
-    purchaseOrderLineId: Number(line.purchase_order_line_id),
     inboundReceiptId: Number(header.inbound_receipt_id),
     inboundReceiptNo: header.inbound_receipt_no,
     inboundReceiptLineId: Number(line.inbound_receipt_line_id),
@@ -312,10 +335,10 @@ function lineFields(line: InboundLine): Pick<InboundLotProgress,
 }
 
 /** LOT 이 없는 입하 라인 — 수량·단위는 라인의 것이고 LOT·검사·입고·적치 칸은 비어 있다. */
-function labelRow(line: LabelLine): InboundLotRow[] {
-  const orderLine = line.purchase_order_line;
-  if (orderLine === null) return [];
-  const progress: InboundLotProgress = {
+function labelRow(line: LabelLine, wanted: ReadonlySet<bigint>): InboundLotRow[] {
+  const orders = ordersOf(line, wanted);
+  if (orders.size === 0) return [];
+  const progress: Omit<InboundLotProgress, 'purchaseOrderLineId'> = {
     ...lineFields(line),
     lotId: null,
     lotNo: null,
@@ -328,5 +351,5 @@ function labelRow(line: LabelLine): InboundLotRow[] {
     goodsReceipt: null,
     putaway: null,
   };
-  return [{ purchaseOrderId: orderLine.purchase_order_id, progress }];
+  return perOrder(orders, progress);
 }

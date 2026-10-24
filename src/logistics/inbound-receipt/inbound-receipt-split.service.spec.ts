@@ -142,6 +142,8 @@ function fake(codeValues?: string[]) {
       findUniqueOrThrow: async () => ({ lot_id: 7000n, lot_hold: [] }),
     },
     lot_hold: { create: async () => undefined },
+    // 배정 표(이중 쓰기) — 이 spec 은 몫의 수량을 보지 않는다(등록 spec 이 본다).
+    inbound_receipt_po_allocation: { create: async () => ({}) },
   };
 
   const prisma = {

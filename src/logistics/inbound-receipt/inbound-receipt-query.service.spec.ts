@@ -9,6 +9,7 @@ type Args = Record<string, unknown>;
 
 const lineRow = (overrides: Args = {}): Args => ({
   inbound_receipt_excess: [],
+  inbound_receipt_po_allocation: [],
   inbound_receipt_line_id: 1n,
   inbound_receipt_id: 1n,
   line_no: 1,
@@ -225,6 +226,25 @@ describe('InboundReceiptQueryService', () => {
 
       expect(view).toHaveProperty('lotId', null);
       expect(view).toHaveProperty('purchaseOrderLineId', null);
+    });
+
+    it('매퍼 — allocations 는 만든 순서의 몫이고 unallocatedQty 는 받은 수량 − 배정 합이다(배정 없으면 전체)', () => {
+      const at = new Date('2026-10-24T01:00:00.000Z');
+      const view = inboundReceiptLineView(
+        lineRow({
+          inbound_receipt_po_allocation: [
+            { inbound_receipt_po_allocation_id: 70n, purchase_order_line_id: 3n, allocated_qty: new Prisma.Decimal('6'), created_at: at },
+            { inbound_receipt_po_allocation_id: 71n, purchase_order_line_id: 8n, allocated_qty: new Prisma.Decimal('4.25'), created_at: at },
+          ],
+        }) as never,
+      );
+
+      expect(view.allocations).toEqual([
+        { inboundReceiptPoAllocationId: 70, purchaseOrderLineId: 3, allocatedQty: 6, allocatedAt: at.toISOString() },
+        { inboundReceiptPoAllocationId: 71, purchaseOrderLineId: 8, allocatedQty: 4.25, allocatedAt: at.toISOString() },
+      ]);
+      expect(view.unallocatedQty).toBe(0.25);
+      expect(inboundReceiptLineView(lineRow() as never)).toMatchObject({ allocations: [], unallocatedQty: 10.5 });
     });
   });
 

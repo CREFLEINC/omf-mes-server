@@ -198,6 +198,20 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     expect((await progress(ids.otherOrder)).map((row) => row.lotId)).toEqual([other.lotId]);
   });
 
+  it('⭐ 몫을 다른 발주에도 배정한 LOT 은 두 발주 아래에 다 보인다 — 줄마다 그 발주의 라인을 가리킨다', async () => {
+    // 받은 9 중 5 는 이 발주, 4 는 나중에 온 다른 발주에 배정했다(사용자 결정 2026-10-24).
+    const shared = await registerLot('iqcItem', ids.orderLine, 9, 5);
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: BigInt(shared.lineId), purchase_order_line_id: ids.otherLine, allocated_qty: 4 },
+    });
+
+    const mine = (await progress(ids.order)).find((row) => row.lotId === shared.lotId);
+    const theirs = (await progress(ids.otherOrder)).find((row) => row.lotId === shared.lotId);
+
+    expect(mine).toMatchObject({ purchaseOrderLineId: Number(ids.orderLine), receivedQty: 9 });
+    expect(theirs).toMatchObject({ purchaseOrderLineId: Number(ids.otherLine), receivedQty: 9 });
+  });
+
   it('⭐ LOT 이 없는 입하 라인은 라벨 대기 한 줄이고, 라벨을 발행하면 그 줄이 LOT 줄로 바뀐다', async () => {
     const lineId = await inboundLine('iqcItem', ids.orderLine, 9);
     const linesOf = async () => (await progress(ids.order)).filter((row) => row.inboundReceiptLineId === lineId);
@@ -225,6 +239,9 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
         inbound_receipt_id: receipt.inbound_receipt_id, line_no: 1, item_id: ids.plainItem, purchase_order_line_id: ids.plainLine,
         received_qty: 3, uom_id: ids.uom, supplier_lot_label_attached: false, inspection_required: false, status_code: 'REGISTERED',
       },
+    });
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: line.inbound_receipt_line_id, purchase_order_line_id: ids.plainLine, allocated_qty: 3 },
     });
     const row = (await progress(ids.order)).find((item) => item.inboundReceiptLineId === Number(line.inbound_receipt_line_id));
     expect(row).toMatchObject({ lotId: null, stageCode: 'CANCELLED', nextActionCode: null });
@@ -334,7 +351,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     return row;
   }
 
-  async function inboundLine(item: string, orderLineId: bigint, qty: number): Promise<number> {
+  /** 입하 라인 — 등록 경로처럼 그 발주 라인에 `allocated`(기본 전량)를 배정한다. 허브는 배정으로 발주의 줄을 찾는다. */
+  async function inboundLine(item: string, orderLineId: bigint, qty: number, allocated = qty): Promise<number> {
     lineNo += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -343,12 +361,15 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
         inspection_required: item === 'iqcItem', status_code: 'REGISTERED',
       },
     });
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: line.inbound_receipt_line_id, purchase_order_line_id: orderLineId, allocated_qty: allocated },
+    });
     return Number(line.inbound_receipt_line_id);
   }
 
   /** 입하 라인 + LOT 등록(실제 API) — 검사 대상 품목이면 의뢰가 함께 선다. */
-  async function registerLot(item: string, orderLineId: bigint, qty: number) {
-    return issueLabel(item, await inboundLine(item, orderLineId, qty), qty);
+  async function registerLot(item: string, orderLineId: bigint, qty: number, allocated = qty) {
+    return issueLabel(item, await inboundLine(item, orderLineId, qty, allocated), qty);
   }
 
   /** POP 「자재LOT 등록·라벨 발행」 — 라인 수량 전체로 LOT 하나. */

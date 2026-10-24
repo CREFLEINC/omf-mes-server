@@ -2,10 +2,9 @@ import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, field, one } from '../../common/errors';
-import { OutboxService } from '../../core/outbox';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
-import { enqueueLinkedExcesses, excessMessageKey } from '../goods-receipt/erp-receipt';
+import { InboundAllocationService } from './inbound-allocation.service';
 import { CLOSED_ORDER_STATUSES } from '../purchase-order/purchase-order-receipt';
 import {
   EXCESS_INCLUDE,
@@ -29,7 +28,7 @@ const TRANSACTION_OPTIONS = { timeout: 15_000, maxWait: 5_000 };
 export class InboundExcessService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly outbox: OutboxService,
+    private readonly allocations: InboundAllocationService,
   ) {}
 
   async list(query: InboundExcessQuery): Promise<PagedResponse<InboundExcessView>> {
@@ -110,9 +109,13 @@ export class InboundExcessService {
       if (excess.excess_qty.greaterThan(roomOf(target))) {
         throw one(field('purchaseOrderLineId', ERROR_CODE.QTY_EXCEEDS_ORDERED, '발주 수량과 허용치를 넘습니다.'));
       }
-      await tx.purchase_order_line.update({
-        where: { purchase_order_line_id: purchaseOrderLineId },
-        data: { received_qty: { increment: excess.excess_qty }, updated_by: BigInt(appUserId) },
+      // 받은 수량·ERP 적재는 배정이 한다 — 이은 초과분은 그 P/O 라인의 배정 몫 하나다(입고 뒤면 `ALLOC` 묶음이 선다).
+      await this.allocations.add(tx, {
+        inboundReceiptLineId: excess.inbound_receipt_line_id,
+        purchaseOrderLineId,
+        qty: excess.excess_qty,
+        appUserId,
+        fields: { target: 'purchaseOrderLineId', qty: 'purchaseOrderLineId' },
       });
       await tx.inbound_receipt_excess.update({
         where: { inbound_receipt_excess_id: excessId },
@@ -124,8 +127,6 @@ export class InboundExcessService {
           version_no: { increment: 1 },
         },
       });
-      // 이미 ERP 로 입고된 입하 줄이면 이은 초과분이 지금 구매입고로 간다(P-100 · 장부 P-104).
-      await enqueueLinkedExcesses(tx, this.outbox, excess.inbound_receipt_line_id);
     }, TRANSACTION_OPTIONS);
     return excessView(await this.find(excessId));
   }
@@ -137,14 +138,18 @@ export class InboundExcessService {
       if (excess.purchase_order_line_id === null) {
         throw one(field('inboundReceiptExcessId', ERROR_CODE.STATE_LOCKED, '이어진 P/O 라인이 없는 초과분입니다.'));
       }
-      if ((await tx.integration_message.count({ where: { message_key: excessMessageKey(excessId) } })) > 0) {
-        throw one(field('inboundReceiptExcessId', ERROR_CODE.STATE_LOCKED, 'ERP 구매입고로 보낸 초과분입니다.'));
-      }
-      await lockOrderLine(tx, excess.purchase_order_line_id);
-      await tx.purchase_order_line.update({
-        where: { purchase_order_line_id: excess.purchase_order_line_id },
-        data: { received_qty: { decrement: excess.excess_qty }, updated_by: BigInt(appUserId) },
+      // 이을 때 만든 배정 몫을 뺀다 — ERP 로 간 몫이면 배정이 STATE_LOCKED 로 막는다.
+      const allocation = await tx.inbound_receipt_po_allocation.findFirst({
+        where: {
+          inbound_receipt_line_id: excess.inbound_receipt_line_id,
+          purchase_order_line_id: excess.purchase_order_line_id,
+          allocated_qty: excess.excess_qty,
+        },
+        orderBy: { inbound_receipt_po_allocation_id: 'desc' },
+        select: { inbound_receipt_po_allocation_id: true },
       });
+      if (allocation === null) throw new Error(`초과분 ${excessId} 를 이을 때 만든 배정이 없다`);
+      await this.allocations.remove(tx, allocation.inbound_receipt_po_allocation_id, appUserId);
       await tx.inbound_receipt_excess.update({
         where: { inbound_receipt_excess_id: excessId },
         data: {

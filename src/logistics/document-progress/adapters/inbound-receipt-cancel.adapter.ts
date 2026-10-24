@@ -19,28 +19,14 @@ export async function cancelInboundReceipt(
   tx: Prisma.TransactionClient,
   documentId: bigint,
 ): Promise<void> {
-  const lines = await tx.inbound_receipt_line.findMany({
-    where: { inbound_receipt_id: documentId },
-    select: {
-      purchase_order_line_id: true,
-      received_qty: true,
-      inbound_receipt_excess: { select: { excess_qty: true, purchase_order_line_id: true } },
-    },
+  // P/O 라인에 들어간 몫은 배정 표가 전부 안다 — 줄의 P/O 몫도, 나중에 다른 P/O 에 이은 몫도 한 줄씩이다.
+  // 배정 행은 지우지 않는다 — 「어느 P/O 몫으로 들어왔나」는 취소 뒤에도 남는다(옛 P/O 칸을 비우지 않던 것과 같다).
+  const allocations = await tx.inbound_receipt_po_allocation.findMany({
+    where: { inbound_receipt_line: { inbound_receipt_id: documentId } },
+    select: { purchase_order_line_id: true, allocated_qty: true },
+    orderBy: { inbound_receipt_po_allocation_id: 'asc' },
   });
-  // 줄의 P/O 라인에는 초과분을 뺀 몫만 들어갔고, 이어진 초과분은 그 P/O 라인에 들어갔다(장부 P-100).
-  const attributed = lines.flatMap((line) => [
-    ...(line.purchase_order_line_id === null
-      ? []
-      : [
-          {
-            lineId: line.purchase_order_line_id,
-            qty: line.inbound_receipt_excess.reduce((qty, excess) => qty.minus(excess.excess_qty), line.received_qty),
-          },
-        ]),
-    ...line.inbound_receipt_excess.flatMap((excess) =>
-      excess.purchase_order_line_id === null ? [] : [{ lineId: excess.purchase_order_line_id, qty: excess.excess_qty }],
-    ),
-  ]);
+  const attributed = allocations.map((row) => ({ lineId: row.purchase_order_line_id, qty: row.allocated_qty }));
   if (attributed.length === 0) return;
   const lineIds = attributed.map((line) => line.lineId);
 

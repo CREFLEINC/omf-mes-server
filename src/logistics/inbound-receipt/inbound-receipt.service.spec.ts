@@ -65,6 +65,7 @@ function fake(options: Options = {}) {
     inspectionRequests: [] as Args[],
     increments: [] as { purchaseOrderLineId: bigint; increment: unknown }[],
     excesses: [] as Args[],
+    allocations: [] as Args[],
     transactionOptions: undefined as unknown,
     audits: [] as Args[],
     committed: false,
@@ -142,6 +143,11 @@ function fake(options: Options = {}) {
         recorded.excesses.push(data);
       },
     },
+    inbound_receipt_po_allocation: {
+      create: async ({ data }: { data: Args }) => {
+        recorded.allocations.push(data);
+      },
+    },
     lot: {
       count: async () => 0,
       create: async ({ data }: { data: Args }) => {
@@ -198,7 +204,10 @@ function fake(options: Options = {}) {
           inbound_receipt_line_id: BigInt(901 + index),
           lot_id: null,
           version_no: 1,
+          // 뷰는 Prisma 가 주는 Decimal 을 기대한다 — 기록은 요청 숫자 그대로라 여기서만 감싼다.
+          received_qty: new Prisma.Decimal(data.received_qty as number),
           inbound_receipt_excess: [],
+          inbound_receipt_po_allocation: [],
         })),
     },
     item: {
@@ -358,6 +367,40 @@ describe('InboundReceiptService.create', () => {
     expect(recorded.lots[0]).toMatchObject({ initial_qty: 120 });
     expect(recorded.excesses).toEqual([expect.objectContaining({ inbound_receipt_line_id: 901n })]);
     expect(String(recorded.excesses[0].excess_qty)).toBe('20');
+    // 배정 표(이중 쓰기) — 줄의 P/O 몫 하나, 초과분은 미배정이라 행이 없다.
+    expect(recorded.allocations).toEqual([
+      expect.objectContaining({ inbound_receipt_line_id: 901n, purchase_order_line_id: 101n, created_by: 99n }),
+    ]);
+    expect(String(recorded.allocations[0].allocated_qty)).toBe('100');
+  });
+
+  it('배정 — 초과분 없는 줄은 받은 수량 전부가 그 P/O 라인의 몫이다', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(input({ lines: [line({ receivedQty: 60 })] }), 99);
+
+    expect(String(recorded.allocations[0].allocated_qty)).toBe('60');
+  });
+
+  it('배정 — 줄 전체가 초과분이면 P/O 라인에 0 을 올리고 배정 행을 만들지 않는다(전부 미배정)', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(input({ lines: [line({ receivedQty: 120, excessQty: 120 })] }), 99);
+
+    expect(recorded.increments.map((row) => String(row.increment))).toEqual(['0']);
+    expect(String(recorded.excesses[0].excess_qty)).toBe('120');
+    expect(recorded.allocations).toEqual([]);
+  });
+
+  it('배정 — P/O 라인이 없는 줄(무발주)은 배정 행이 없다', async () => {
+    const { service, recorded } = fake();
+
+    await service.create(
+      input({ exceptionTypeCode: 'CUSTOMER_SUPPLY', exceptionReason: '고객사급 자재', lines: [line({ purchaseOrderLineId: null })] }),
+      99,
+    );
+
+    expect(recorded.allocations).toEqual([]);
   });
 
   it('초과분 — 초과분을 뺀 몫이 한도를 넘으면 400 QTY_EXCEEDS_ORDERED 다', async () => {
@@ -369,6 +412,7 @@ describe('InboundReceiptService.create', () => {
 
     expect((error as ContractException).errors[0]).toMatchObject({ code: ERROR_CODE.QTY_EXCEEDS_ORDERED });
     expect(recorded.excesses).toEqual([]);
+    expect(recorded.allocations).toEqual([]);
   });
 
   // 한 P/O 라인에 공급사 라벨 여러 장 — 라벨마다 한 줄을 싣는다(장부 P-99).

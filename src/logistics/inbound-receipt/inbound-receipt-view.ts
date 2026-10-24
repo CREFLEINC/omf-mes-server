@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { SplitLotView } from '../goods-receipt/lot-receivable';
 
 import { toDateString } from '../../common/master';
+import { unallocatedQtyOf } from './inbound-allocation';
 
 /**
  * 계약 `InboundReceipt`·`InboundReceiptLine` 으로 옮기는 자리.
@@ -10,9 +11,10 @@ import { toDateString } from '../../common/master';
  */
 
 export type InboundReceiptRow = Prisma.inbound_receiptGetPayload<object>;
-/** 줄을 읽는 곳은 초과분을 함께 읽는다(장부 P-100). */
+/** 줄을 읽는 곳은 초과분(장부 P-100)과 배정을 함께 읽는다. */
 export const INBOUND_LINE_INCLUDE = {
   inbound_receipt_excess: { orderBy: { inbound_receipt_excess_id: 'asc' } },
+  inbound_receipt_po_allocation: { orderBy: { inbound_receipt_po_allocation_id: 'asc' } },
 } satisfies Prisma.inbound_receipt_lineInclude;
 export type InboundReceiptLineRow = Prisma.inbound_receipt_lineGetPayload<{ include: typeof INBOUND_LINE_INCLUDE }>;
 
@@ -22,6 +24,14 @@ export interface InboundReceiptExcessView {
   excessQty: number;
   purchaseOrderLineId: number | null;
   linkedAt: string | null;
+}
+
+/** 계약 밖 — 줄의 받은 수량 중 한 P/O 라인에 배정한 몫. */
+export interface InboundReceiptAllocationView {
+  inboundReceiptPoAllocationId: number;
+  purchaseOrderLineId: number;
+  allocatedQty: number;
+  allocatedAt: string;
 }
 
 export interface InboundReceiptView {
@@ -68,6 +78,10 @@ export interface InboundReceiptLineView {
   /** 계약 밖(장부 P-100) — `receivedQty` 중 P/O 라인에 넣지 않은 몫의 합. 없으면 0. */
   excessQty: number;
   excesses: InboundReceiptExcessView[];
+  /** 계약 밖 — P/O 라인별 배정 몫(만든 순서). 무발주 줄은 빈 배열. */
+  allocations: InboundReceiptAllocationView[];
+  /** 계약 밖 — `receivedQty` − 배정 합. 아직 어느 P/O 에도 넣지 않은 몫. */
+  unallocatedQty: number;
   /** 서버 선행 P-56 — 이 라인 LOT 에서 선별로 떼어 낸 자식 LOT(불량분). 없으면 빈 배열. */
   splitLots?: SplitLotView[];
 }
@@ -123,6 +137,13 @@ export function inboundReceiptLineView(row: InboundReceiptLineRow): InboundRecei
       purchaseOrderLineId: id(excess.purchase_order_line_id),
       linkedAt: excess.linked_at?.toISOString() ?? null,
     })),
+    allocations: row.inbound_receipt_po_allocation.map((allocation) => ({
+      inboundReceiptPoAllocationId: Number(allocation.inbound_receipt_po_allocation_id),
+      purchaseOrderLineId: Number(allocation.purchase_order_line_id),
+      allocatedQty: Number(allocation.allocated_qty),
+      allocatedAt: allocation.created_at.toISOString(),
+    })),
+    unallocatedQty: unallocatedQtyOf(row.received_qty, row.inbound_receipt_po_allocation).toNumber(),
   };
 }
 

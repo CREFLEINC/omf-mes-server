@@ -19,7 +19,7 @@ import {
   receiptLineView,
   receiptView,
 } from './goods-receipt-view';
-import { MATERIAL_RECEIPT, enqueueLinkedExcesses, erpInboundLines } from './erp-receipt';
+import { MATERIAL_RECEIPT, erpInboundLines } from './erp-receipt';
 import { inboundLineOfLot, receivableQtyOf } from './lot-receivable';
 import { GoodsReceiptCreate, postReceipt } from './receipt-posting';
 
@@ -143,8 +143,6 @@ export class GoodsReceiptService {
               targetId: id,
               payload: { goodsReceiptNo: receiptNo },
             });
-            // 입고 전에 이은 초과분은 지금 따로 간다 — 입고 행에는 P/O 라인 몫만 실린다(P-100).
-            for (const inboundLineId of erpLines) await enqueueLinkedExcesses(tx, this.outbox, inboundLineId);
           }
           if (actor.terminalAudit !== undefined) await recordTerminalWorkerAudit(tx, {
             actor: actor.terminalAudit, targetTypeCode: 'GOODS_RECEIPT', targetId: id, eventTypeCode: 'CREATE',
