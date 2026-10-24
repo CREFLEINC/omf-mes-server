@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { OutboxService } from '../../core/outbox';
+import { PrismaService } from '../../prisma/prisma.service';
 import { erpReceiptLinesOf } from '../goods-receipt/erp-receipt';
 import { InboundAllocationService } from './inbound-allocation.service';
 
@@ -36,8 +37,6 @@ interface Options {
   receipted?: boolean;
   /** 빼려는 배정 — 없으면 `null`. */
   allocation?: null | { purchaseOrderLineId: bigint; qty: number };
-  /** 그 배정의 ERP 적재 메시지 수. */
-  queued?: number;
 }
 
 function fake(options: Options = {}) {
@@ -100,20 +99,24 @@ function fake(options: Options = {}) {
       findUnique: async () =>
         options.allocation === null || options.allocation === undefined
           ? null
-          : { purchase_order_line_id: options.allocation.purchaseOrderLineId, allocated_qty: d(options.allocation.qty) },
+          : {
+              inbound_receipt_line_id: 901n,
+              purchase_order_line_id: options.allocation.purchaseOrderLineId,
+              allocated_qty: d(options.allocation.qty),
+            },
       delete: async (args: Args) => {
         calls.push('delete');
         deleted.push((args.where as Args).inbound_receipt_po_allocation_id as bigint);
         return {};
       },
     },
-    integration_message: { count: async () => options.queued ?? 0 },
   } as unknown as Prisma.TransactionClient;
   const outbox = { enqueue: jest.fn(async () => ({ integrationMessageId: 1n, alreadyQueued: false })) };
   (erpReceiptLinesOf as jest.Mock).mockResolvedValue(
     options.receipted ? [{ goodsReceiptNo: 'GR-1', receiptQty: d(1) }] : [],
   );
-  const service = new InboundAllocationService(outbox as unknown as OutboxService);
+  // 트랜잭션 안의 두 동작만 본다 — 경로 메서드(목록·후보·잠금)는 e2e 가 본다.
+  const service = new InboundAllocationService({} as unknown as PrismaService, outbox as unknown as OutboxService);
   return { service, tx, outbox, calls, updates, created, deleted };
 }
 
@@ -220,11 +223,18 @@ describe('InboundAllocationService.remove — 몫을 뺀다', () => {
     expect(f.deleted).toEqual([7001n]);
   });
 
-  it('ERP 구매입고로 보낼 일이 적재된 몫은 STATE_LOCKED 다', async () => {
-    const f = fake({ allocation: { purchaseOrderLineId: 101n, qty: 500 }, queued: 1 });
+  it('줄이 ERP 로 가는 입고에 들어갔고 대상이 ERP 발주면 STATE_LOCKED 다 — 그 몫은 구매입고로 갔다', async () => {
+    const f = fake({ allocation: { purchaseOrderLineId: 101n, qty: 500 }, receipted: true });
     const error = await failure(f.service.remove(f.tx, 7001n, 7));
     expect(error.errors[0]).toMatchObject({ field: 'inboundReceiptPoAllocationId', code: ERROR_CODE.STATE_LOCKED });
-    expect(f.calls).toEqual([]);
+    // 잠근 뒤 판단한다 — 되돌리기·삭제는 없다.
+    expect(f.calls).toEqual(['lock:900', 'reread']);
+  });
+
+  it('입고 뒤여도 MES 에서만 만든 P/O(ERP 번호 없음)의 몫은 뺄 수 있다 — ERP 로 간 것이 없다', async () => {
+    const f = fake({ allocation: { purchaseOrderLineId: 101n, qty: 500 }, receipted: true, target: { erpNo: null } });
+    await f.service.remove(f.tx, 7001n, 7);
+    expect(f.deleted).toEqual([7001n]);
   });
 
   it('없는 배정은 404 다', async () => {

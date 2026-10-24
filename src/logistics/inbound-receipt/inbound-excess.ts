@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { toDateString } from '../../common/master';
+import { roomOf } from './inbound-allocation';
 
 /**
  * 입하 초과분 잇기(장부 P-100) — 한 LOT 의 일부를 P/O 라인에 넣지 않고 남긴 몫을, ERP 가 만든 추가 P/O 라인에 잇는다.
@@ -182,9 +183,7 @@ export type CandidateRow = Prisma.purchase_order_lineGetPayload<{
   include: { purchase_order: true };
 }>;
 
-export function roomOf(row: { ordered_qty: Prisma.Decimal; tolerance_over_qty: Prisma.Decimal; received_qty: Prisma.Decimal }): Prisma.Decimal {
-  return row.ordered_qty.plus(row.tolerance_over_qty).minus(row.received_qty);
-}
+export { roomOf } from './inbound-allocation';
 
 export function candidateView(row: CandidateRow, excessQty: Prisma.Decimal): ExcessCandidateView {
   return {

@@ -201,6 +201,20 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     expect((await progress(ids.otherOrder)).map((row) => row.lotId)).toEqual([other.lotId]);
   });
 
+  it('⭐ 몫을 다른 발주에도 배정한 LOT 은 두 발주 아래에 다 보인다 — 줄마다 그 발주의 라인을 가리킨다', async () => {
+    // 받은 9 중 5 는 이 발주, 4 는 나중에 온 다른 발주에 배정했다(사용자 결정 2026-10-24).
+    const shared = await registerLot('iqcItem', ids.orderLine, 9, 5);
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: BigInt(shared.lineId), purchase_order_line_id: ids.otherLine, allocated_qty: 4 },
+    });
+
+    const mine = (await progress(ids.order)).find((row) => row.lotId === shared.lotId);
+    const theirs = (await progress(ids.otherOrder)).find((row) => row.lotId === shared.lotId);
+
+    expect(mine).toMatchObject({ purchaseOrderLineId: Number(ids.orderLine), receivedQty: 9 });
+    expect(theirs).toMatchObject({ purchaseOrderLineId: Number(ids.otherLine), receivedQty: 9 });
+  });
+
   it('⛔ 없는 발주는 404 다', async () => {
     await request(app.getHttpServer())
       .get('/api/logistics/purchase-orders/999999999/inbound-progress')
@@ -301,7 +315,8 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
     return row;
   }
 
-  async function inboundLine(item: string, orderLineId: bigint, qty: number): Promise<number> {
+  /** 입하 라인 — 등록 경로처럼 그 발주 라인에 `allocated`(기본 전량)를 배정한다. 허브는 배정으로 발주의 줄을 찾는다. */
+  async function inboundLine(item: string, orderLineId: bigint, qty: number, allocated = qty): Promise<number> {
     lineNo += 1;
     const line = await prisma.inbound_receipt_line.create({
       data: {
@@ -310,12 +325,15 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
         inspection_required: item === 'iqcItem', status_code: 'REGISTERED',
       },
     });
+    await prisma.inbound_receipt_po_allocation.create({
+      data: { inbound_receipt_line_id: line.inbound_receipt_line_id, purchase_order_line_id: orderLineId, allocated_qty: allocated },
+    });
     return Number(line.inbound_receipt_line_id);
   }
 
   /** 입하 라인 + LOT 등록(실제 API) — 검사 대상 품목이면 의뢰가 함께 선다. */
-  async function registerLot(item: string, orderLineId: bigint, qty: number) {
-    const lineId = await inboundLine(item, orderLineId, qty);
+  async function registerLot(item: string, orderLineId: bigint, qty: number, allocated = qty) {
+    const lineId = await inboundLine(item, orderLineId, qty, allocated);
     const created = await request(app.getHttpServer())
       .post('/api/trace/lots')
       .set('Cookie', cookie)

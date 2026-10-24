@@ -14,10 +14,10 @@ const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
 /** 입하 라인 하나(LOT 10) — 검사 대상, 입하 전표 IR-1. */
 const inboundLine = (overrides: Args = {}): Args => ({
   inbound_receipt_line_id: 7n,
-  purchase_order_line_id: 3n,
   lot_id: 10n,
   inspection_required: true,
-  purchase_order_line: { purchase_order_id: 1n },
+  // 줄이 어느 발주의 것인지는 배정이 안다 — 발주 1 의 라인 3 에 한 몫.
+  inbound_receipt_po_allocation: [{ purchase_order_line_id: 3n, purchase_order_line: { purchase_order_id: 1n } }],
   inbound_receipt: {
     inbound_receipt_id: 5n,
     inbound_receipt_no: 'IR-1',
@@ -104,6 +104,25 @@ const receiptLine = (lotId: bigint, id: bigint, statusCode: string, tasks: Args[
 describe('InboundProgressService — 발주 하나의 LOT 진행(장부 P-110)', () => {
   it('없는 발주는 404 다', async () => {
     await expect(service({}).ofPurchaseOrder(2)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('두 발주에 배정된 줄은 «물은 발주»마다 한 줄이고 그 발주의 라인을 가리킨다 — 묻지 않은 발주의 몫은 줄이 되지 않는다', async () => {
+    const shared = inboundLine({
+      inbound_receipt_po_allocation: [
+        { purchase_order_line_id: 3n, purchase_order_line: { purchase_order_id: 1n } },
+        { purchase_order_line_id: 8n, purchase_order_line: { purchase_order_id: 2n } },
+      ],
+    });
+    const fixture = { lines: [shared], lots: [lotRow(10n, 'L-10', 'NORMAL', '9')], receivable: [[10n, '9']] as [bigint, string][] };
+
+    const mine = await service(fixture).lotsOf([1n]);
+    const both = await service(fixture).lotsOf([1n, 2n]);
+
+    expect(mine.map((row) => [row.purchaseOrderId, row.progress.purchaseOrderLineId])).toEqual([[1n, 3]]);
+    expect(both.map((row) => [row.purchaseOrderId, row.progress.purchaseOrderLineId])).toEqual([
+      [1n, 3],
+      [2n, 8],
+    ]);
   });
 
   it('선별 자식 LOT 은 조상 입하 라인을 따르고, 자기 의뢰가 없으면 조상의 의뢰를 보여 준다', async () => {

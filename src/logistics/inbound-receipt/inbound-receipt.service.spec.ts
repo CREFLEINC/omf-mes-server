@@ -204,7 +204,10 @@ function fake(options: Options = {}) {
           inbound_receipt_line_id: BigInt(901 + index),
           lot_id: null,
           version_no: 1,
+          // 뷰는 Prisma 가 주는 Decimal 을 기대한다 — 기록은 요청 숫자 그대로라 여기서만 감싼다.
+          received_qty: new Prisma.Decimal(data.received_qty as number),
           inbound_receipt_excess: [],
+          inbound_receipt_po_allocation: [],
         })),
     },
     item: {

@@ -61,9 +61,12 @@ const PUTAWAY_ORDER = ['PENDING', 'COMPLETED_TEMPORARY', 'COMPLETED'];
 
 const LINE_SELECT = {
   inbound_receipt_line_id: true,
-  purchase_order_line_id: true,
   inspection_required: true,
-  purchase_order_line: { select: { purchase_order_id: true } },
+  // 줄이 어느 발주의 것인지는 배정이 안다 — 한 줄(LOT 하나)이 발주 둘에 걸칠 수 있다.
+  inbound_receipt_po_allocation: {
+    select: { purchase_order_line_id: true, purchase_order_line: { select: { purchase_order_id: true } } },
+    orderBy: { inbound_receipt_po_allocation_id: 'asc' },
+  },
   inbound_receipt: {
     select: { inbound_receipt_id: true, inbound_receipt_no: true, receipt_datetime: true, status_code: true },
   },
@@ -93,8 +96,12 @@ export class InboundProgressService {
 
   async lotsOf(purchaseOrderIds: readonly bigint[]): Promise<InboundLotRow[]> {
     if (purchaseOrderIds.length === 0) return [];
+    const wanted = new Set(purchaseOrderIds);
     const lines = await this.prisma.inbound_receipt_line.findMany({
-      where: { purchase_order_line: { purchase_order_id: { in: [...purchaseOrderIds] } }, lot_id: { not: null } },
+      where: {
+        inbound_receipt_po_allocation: { some: { purchase_order_line: { purchase_order_id: { in: [...wanted] } } } },
+        lot_id: { not: null },
+      },
       select: { ...LINE_SELECT, lot_id: true },
       orderBy: { inbound_receipt_line_id: 'asc' },
     });
@@ -115,8 +122,13 @@ export class InboundProgressService {
       const origin = origins.get(lot.lot_id);
       if (origin === undefined) return [];
       const { line, rootLotId } = origin;
-      const orderLine = line.purchase_order_line;
-      if (orderLine === null) return [];
+      // 발주마다 한 줄 — 한 줄이 같은 발주의 라인 둘에 배정됐으면 먼저 배정한 라인으로 묶는다.
+      const orders = new Map<bigint, bigint>();
+      for (const allocation of line.inbound_receipt_po_allocation) {
+        const orderId = allocation.purchase_order_line.purchase_order_id;
+        if (wanted.has(orderId) && !orders.has(orderId)) orders.set(orderId, allocation.purchase_order_line_id);
+      }
+      if (orders.size === 0) return [];
       const header = line.inbound_receipt;
       const inspection = inspections.get(lot.lot_id) ?? inspections.get(rootLotId) ?? null;
       const receivableQty = receivable.get(lot.lot_id) ?? new Prisma.Decimal(0);
@@ -130,8 +142,7 @@ export class InboundProgressService {
         receivableQty,
         putawayStatusCodes: putawayTasks.map((task) => task.statusCode),
       });
-      const progress: InboundLotProgress = {
-        purchaseOrderLineId: Number(line.purchase_order_line_id),
+      const progress: Omit<InboundLotProgress, 'purchaseOrderLineId'> = {
         inboundReceiptId: Number(header.inbound_receipt_id),
         inboundReceiptNo: header.inbound_receipt_no,
         inboundReceiptLineId: Number(line.inbound_receipt_line_id),
@@ -147,7 +158,10 @@ export class InboundProgressService {
         goodsReceipt,
         putaway: putawayTasks[0] ?? null,
       };
-      return [{ purchaseOrderId: orderLine.purchase_order_id, progress }];
+      return [...orders].map(([purchaseOrderId, purchaseOrderLineId]) => ({
+        purchaseOrderId,
+        progress: { purchaseOrderLineId: Number(purchaseOrderLineId), ...progress },
+      }));
     });
   }
 

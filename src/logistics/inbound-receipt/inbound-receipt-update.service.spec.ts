@@ -117,9 +117,11 @@ function fake(options: Options = {}) {
               status_code: 'REGISTERED',
               lot_id: null,
               inbound_receipt_excess: [],
+              inbound_receipt_po_allocation: [],
             }))
           : existing.map((row) => ({
               inbound_receipt_excess: [],
+              inbound_receipt_po_allocation: [],
               ...row,
               received_qty: new Prisma.Decimal(row.received_qty),
             })),

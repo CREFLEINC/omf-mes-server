@@ -23,6 +23,7 @@ import {
   InboundReceiptController,
   InboundReceiptSplitController,
 } from './inbound-receipt/inbound-receipt.controller';
+import { InboundAllocationController } from './inbound-receipt/inbound-allocation.controller';
 import { InboundExcessController } from './inbound-receipt/inbound-excess.controller';
 import { InboundAllocationService } from './inbound-receipt/inbound-allocation.service';
 import { InboundExcessService } from './inbound-receipt/inbound-excess.service';
@@ -119,6 +120,7 @@ import { TransferArriveService } from './stock-transfer/transfer-arrive.service'
     AsnController,
     InboundReceiptController,
     InboundReceiptSplitController,
+    InboundAllocationController,
     InboundExcessController,
     InboundVarianceController,
     MaterialIssueRequestController,

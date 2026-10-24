@@ -370,6 +370,110 @@ describe('입하 등록 (e2e)', () => {
     });
   });
 
+  // 입하 줄 ↔ P/O 라인 배정 경로 — 미배정으로 남긴 몫을 나중에 온 P/O 에 잇는다(사용자 결정 2026-10-24 · 초과분 잇기를 대신한다).
+  describe('배정 경로', () => {
+    const api = (path: string, method: 'get' | 'post' | 'delete' = 'get', as = cookie): request.Test =>
+      request(app.getHttpServer())[method](`/api/logistics${path}`).set('Cookie', as);
+    const detailOf = async (inboundReceiptId: number): Promise<Detail> =>
+      (await request(app.getHttpServer()).get(`/api/logistics/inbound-receipts/${inboundReceiptId}`).set('Cookie', cookie).expect(200)).body as Detail;
+    type AllocatedLine = LineBody & { unallocatedQty: number; allocations: { purchaseOrderLineId: number; allocatedQty: number }[] };
+
+    /** 발주 `ordered` 에 `allocated` 만 넣고 `excess` 를 미배정으로 남긴 줄 하나. */
+    async function unallocatedOf(ordered: number, allocated: number, excess: number) {
+      const source = await seedOrderLine(ordered);
+      const detail = await create({
+        lines: [{ ...(await lineDraft()), purchaseOrderLineId: source.purchaseOrderLineId, receivedQty: allocated + excess, excessQty: excess }],
+      });
+      return { source, detail, lineId: detail.lines[0].inboundReceiptLineId };
+    }
+
+    it('목록·후보 — 미배정이 남은 줄이 배정과 함께 보이고, 후보는 딱 맞는 라인 먼저이며 줄 자신의 P/O 라인도 들어간다', async () => {
+      // 발주 5,000 에 4,500 만 넣었다 — 남은 500 이 있어 자신의 라인도 300 을 더 받을 수 있다.
+      const { source, lineId } = await unallocatedOf(5000, 4500, 300);
+      const exact = await seedOrderLine(300);
+      const roomy = await seedOrderLine(1000);
+      const small = await seedOrderLine(200);
+
+      const list = await api('/inbound-unallocated?size=200').expect(200);
+      const row = (list.body.items as { inboundReceiptLineId: number }[]).find((item) => item.inboundReceiptLineId === lineId);
+      expect(row).toMatchObject({
+        receivedQty: 4800,
+        unallocatedQty: 300,
+        allocations: [
+          expect.objectContaining({
+            allocatedQty: 4500,
+            orderLine: expect.objectContaining({ purchaseOrderLineId: source.purchaseOrderLineId }),
+          }),
+        ],
+      });
+      // 이 파일의 기본 입하는 예외 유형을 싣는다 — 행이 그 유형을 그대로 낸다(화면이 가릴 수 있게).
+      expect(typeof (row as { exceptionTypeCode: unknown }).exceptionTypeCode).toBe('string');
+
+      const candidates = await api(`/inbound-receipt-lines/${lineId}/allocation-candidates`).expect(200);
+      const ids = (candidates.body.items as { purchaseOrderLineId: number }[]).map((item) => item.purchaseOrderLineId);
+      expect(ids).toContain(source.purchaseOrderLineId);
+      expect(ids).not.toContain(small.purchaseOrderLineId);
+      expect(ids.indexOf(exact.purchaseOrderLineId)).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf(exact.purchaseOrderLineId)).toBeLessThan(ids.indexOf(roomy.purchaseOrderLineId));
+    });
+
+    it('더하기 — 새 P/O 라인의 received_qty 가 오르고 줄의 allocations·unallocatedQty 가 바뀌며 목록에서 빠진다 · 미배정을 넘으면 400 RANGE', async () => {
+      const { detail, lineId } = await unallocatedOf(5000, 5000, 500);
+      const added = await seedOrderLine(500);
+
+      const created = await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post')
+        .send({ purchaseOrderLineId: added.purchaseOrderLineId, qty: 500 })
+        .expect(201);
+
+      expect(created.body).toMatchObject({ inboundReceiptLineId: lineId, allocatedQty: 500, orderLine: { purchaseOrderLineId: added.purchaseOrderLineId } });
+      expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(500);
+      const line = (await detailOf(detail.inboundReceipt.inboundReceiptId)).lines[0] as AllocatedLine;
+      expect(line.unallocatedQty).toBe(0);
+      expect(line.allocations.map((row) => [row.purchaseOrderLineId, row.allocatedQty])).toEqual([
+        [detail.lines[0].purchaseOrderLineId, 5000],
+        [added.purchaseOrderLineId, 500],
+      ]);
+      const listed = ((await api('/inbound-unallocated?size=200').expect(200)).body.items as { inboundReceiptLineId: number }[]).map((item) => item.inboundReceiptLineId);
+      expect(listed).not.toContain(lineId);
+      const over = await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId, qty: 1 }).expect(400);
+      expect(over.body.errors[0]).toMatchObject({ field: 'qty', code: 'RANGE' });
+    });
+
+    it('빼기 — received_qty 가 되돌아가고 미배정으로 돌아간다 · 없는 배정은 404 · 본문이 틀리면 400 이 칸을 짚는다', async () => {
+      const { lineId } = await unallocatedOf(5000, 5000, 500);
+      const added = await seedOrderLine(500);
+      const created = await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId, qty: 500 }).expect(201);
+      const allocationId = created.body.inboundReceiptPoAllocationId as number;
+
+      await api(`/inbound-receipt-lines/${lineId}/allocations/${allocationId}`, 'delete').expect(204);
+
+      expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(0);
+      expect(await allocationsOf(lineId)).toHaveLength(1);
+      await api(`/inbound-receipt-lines/${lineId}/allocations/${allocationId}`, 'delete').expect(404);
+      const bad = await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post').send({ qty: 'x' }).expect(400);
+      expect(bad.body.errors).toEqual([
+        expect.objectContaining({ field: 'purchaseOrderLineId', code: 'REQUIRED' }),
+        expect.objectContaining({ field: 'qty', code: 'INVALID' }),
+      ]);
+    });
+
+    it('전부 미배정으로 받은 줄을 새 P/O 에 통째로 잇는다 — 처음 P/O 에는 아무것도 남지 않는다', async () => {
+      const { source, lineId } = await unallocatedOf(100, 0, 1000);
+      const added = await seedOrderLine(1000);
+
+      await api(`/inbound-receipt-lines/${lineId}/allocations`, 'post').send({ purchaseOrderLineId: added.purchaseOrderLineId, qty: 1000 }).expect(201);
+
+      expect(Number((await poLine(added.purchaseOrderLineId)).received_qty)).toBe(1000);
+      expect(Number((await poLine(source.purchaseOrderLineId)).received_qty)).toBe(0);
+      expect(await allocationsOf(lineId)).toEqual([[added.purchaseOrderLineId, 1000]]);
+    });
+
+    it('권한 — 로그인 없으면 401, 화면 권한이 없으면 403', async () => {
+      await request(app.getHttpServer()).get('/api/logistics/inbound-unallocated').expect(401);
+      await api('/inbound-unallocated', 'get', noPermCookie).expect(403);
+    });
+  });
+
   // ERP 가 초과분으로 만든 추가 P/O 라인에 초과분을 잇는다 — 서버가 후보를 주고 사람이 고른다(장부 P-100).
   describe('초과분 잇기', () => {
     const excessApi = (path: string, method: 'get' | 'post' = 'get', as = cookie): request.Test =>

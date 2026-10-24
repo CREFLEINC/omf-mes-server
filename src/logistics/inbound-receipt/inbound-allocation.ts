@@ -29,6 +29,11 @@ export function unallocatedQtyOf(
   return allocations.reduce((rest, row) => rest.minus(row.allocated_qty), receivedQty);
 }
 
+/** 발주 + 초과 허용치 − 받은 수량 — 이 라인에 더 넣을 수 있는 몫. 입하 등록의 한도 검사와 같은 기준이다. */
+export function roomOf(row: Pick<AllocationTarget, 'ordered_qty' | 'tolerance_over_qty' | 'received_qty'>): Prisma.Decimal {
+  return row.ordered_qty.plus(row.tolerance_over_qty).minus(row.received_qty);
+}
+
 /**
  * 이 줄을 그 P/O 라인에 배정할 수 있나 — 같은 공장·공급사·품목·단위이고 취소·닫힘이 아니어야 한다.
  * 줄이 이미 배정된 P/O 라인도 된다(초과분 잇기와 다른 점) — ERP 가 추가 P/O 를 만드는 대신 원래 P/O 수량을

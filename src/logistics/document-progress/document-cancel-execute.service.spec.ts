@@ -34,12 +34,8 @@ interface Seed {
   approvals?: { status_code: string }[];
   /** `(source_document_*)` 로 걸리는 원 원장. */
   ledger?: LedgerRow[];
-  /** 입하 라인 — 발주 라인 귀속과 수취 수량. */
-  inboundLines?: {
-    purchase_order_line_id: bigint | null;
-    received_qty: Prisma.Decimal;
-    inbound_receipt_excess?: { excess_qty: Prisma.Decimal; purchase_order_line_id: bigint | null }[];
-  }[];
+  /** 입하 줄들의 배정 몫 — 어느 발주 라인에 얼마. 취소는 이것만 보고 되돌린다. */
+  allocations?: { purchase_order_line_id: bigint; allocated_qty: Prisma.Decimal }[];
   /** 되돌린 «뒤»의 발주 라인 수취 누계. */
   afterQty?: Prisma.Decimal[];
   /** 입고를 ERP 구매입고로 적재했는가(장부 P-104). */
@@ -92,11 +88,9 @@ function fake(seed: Seed = {}) {
     inventory_transaction: {
       findMany: rec('inventory_transaction.findMany', () => seed.ledger ?? []),
     },
-    inbound_receipt_line: {
-      ...writable('inbound_receipt_line'),
-      findMany: rec('inbound_receipt_line.findMany', () =>
-        (seed.inboundLines ?? []).map((line) => ({ inbound_receipt_excess: [], ...line })),
-      ),
+    inbound_receipt_line: writable('inbound_receipt_line'),
+    inbound_receipt_po_allocation: {
+      findMany: rec('inbound_receipt_po_allocation.findMany', () => seed.allocations ?? []),
     },
     purchase_order_line: {
       update: rec('purchase_order_line.update', () => ({})),
@@ -303,18 +297,13 @@ describe('DocumentCancelExecuteService', () => {
     await expect(cancel(service)).rejects.toThrow(/한 문서에 원장이 2 행이다/);
   });
 
-  it('어댑터 — 입하 취소는 초과분을 뺀 몫을 줄의 P/O 라인에서, 이어진 초과분을 그 P/O 라인에서 되돌린다(장부 P-100)', async () => {
+  it('어댑터 — 입하 취소는 배정 몫마다 그 P/O 라인에서 되돌린다 — 줄의 P/O 몫도, 나중에 다른 P/O 에 이은 몫도 한 줄씩', async () => {
+    // 받은 10 중 6 은 P/O 라인 5, 3 은 나중에 이은 라인 6, 1 은 미배정(되돌릴 것이 없다).
     const { service, args } = fake({
       locked: requested,
-      inboundLines: [
-        {
-          purchase_order_line_id: 5n,
-          received_qty: decimal(10),
-          inbound_receipt_excess: [
-            { excess_qty: decimal(3), purchase_order_line_id: 6n },
-            { excess_qty: decimal(1), purchase_order_line_id: null },
-          ],
-        },
+      allocations: [
+        { purchase_order_line_id: 5n, allocated_qty: decimal(6) },
+        { purchase_order_line_id: 6n, allocated_qty: decimal(3) },
       ],
       afterQty: [decimal(0)],
     });
@@ -331,10 +320,8 @@ describe('DocumentCancelExecuteService', () => {
   it('어댑터 — 입하 취소는 부모 P/O 를 id 오름차순으로 잠그고 received_qty 를 되돌린다', async () => {
     const { service, args, at } = fake({
       locked: requested,
-      inboundLines: [
-        { purchase_order_line_id: 5n, received_qty: decimal(10) },
-        { purchase_order_line_id: null, received_qty: decimal(3) },
-      ],
+      // 무발주 줄(받은 3)은 배정이 없어 여기 나오지 않는다 — 되돌릴 부모가 없다.
+      allocations: [{ purchase_order_line_id: 5n, allocated_qty: decimal(10) }],
       afterQty: [decimal(0)],
     });
 
@@ -358,7 +345,7 @@ describe('DocumentCancelExecuteService', () => {
   it('어댑터 — 입하 취소가 수취 누계를 음수로 만들면 400 RANGE 다(Decimal 비교)', async () => {
     const { service } = fake({
       locked: requested,
-      inboundLines: [{ purchase_order_line_id: 5n, received_qty: decimal(10) }],
+      allocations: [{ purchase_order_line_id: 5n, allocated_qty: decimal(10) }],
       // 0.000001 이라도 음수면 막는다 — Number() 로 접으면 이 경계가 흔들린다.
       afterQty: [decimal(-0.000001)],
     });
@@ -372,7 +359,7 @@ describe('DocumentCancelExecuteService', () => {
   it('어댑터 — 입하 취소는 lot_id 와 LOT 을 손대지 않는다(I-3 R-12 ⓒ)', async () => {
     const { service, args } = fake({
       locked: requested,
-      inboundLines: [{ purchase_order_line_id: 5n, received_qty: decimal(10) }],
+      allocations: [{ purchase_order_line_id: 5n, allocated_qty: decimal(10) }],
       afterQty: [decimal(0)],
     });
 
