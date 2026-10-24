@@ -5,6 +5,7 @@ import { filter } from '../../common/master';
 import { PagedResponse, pageRequest, pagedResponse } from '../../common/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InboundProgressService } from './inbound-progress.service';
+import { OrderSort, isComputedSort, orderByOf, sortComputed } from './purchase-order-list-sort';
 import { INBOUND_STAGE_GROUPS, InboundStageGroup, stageGroupOf } from './inbound-stage';
 import {
   CLOSED_ORDER_STATUSES,
@@ -21,6 +22,23 @@ import {
   purchaseOrderLineView,
   purchaseOrderView,
 } from './purchase-order-view';
+
+const LIST_INCLUDE = {
+  partner: { select: { partner_code: true, partner_name: true } },
+  // 지연 판정(정렬 `overdue`)이 공장 현지 오늘을 쓴다.
+  plant: { select: { timezone_code: true } },
+  purchase_order_line: {
+    select: {
+      item_id: true,
+      uom_id: true,
+      ordered_qty: true,
+      received_qty: true,
+      cancelled_at: true,
+      uom: { select: { uom_code: true } },
+    },
+  },
+} satisfies Prisma.purchase_orderInclude;
+type ListRow = Prisma.purchase_orderGetPayload<{ include: typeof LIST_INCLUDE }>;
 
 export interface PurchaseOrderQuery {
   supplierId?: number;
@@ -39,6 +57,8 @@ export interface PurchaseOrderQuery {
   q?: string;
   /** 그 묶음의 LOT 이 하나라도 있는 발주만(장부 P-110). 건수 경로는 이 조건을 보지 않는다. */
   inboundStage?: InboundStageGroup;
+  /** 열 정렬(장부 P-116). 건수 경로는 보지 않는다. */
+  sort?: OrderSort;
   page?: number;
   size?: number;
 }
@@ -77,31 +97,29 @@ export class PurchaseOrderQueryService {
       where = { purchase_order_id: { in: [...counts].filter(([, count]) => (count[stage] ?? 0) > 0).map(([id]) => id) } };
     }
 
-    const [rows, total] = await Promise.all([
-      this.prisma.purchase_order.findMany({
-        where,
-        orderBy: [{ order_date: 'desc' }, { purchase_order_id: 'desc' }],
-        include: {
-          partner: { select: { partner_code: true, partner_name: true } },
-          purchase_order_line: {
-            select: {
-              item_id: true,
-              uom_id: true,
-              ordered_qty: true,
-              received_qty: true,
-              cancelled_at: true,
-              uom: { select: { uom_code: true } },
-            },
-          },
-        },
-        skip: page.skip,
-        take: page.take,
-      }),
-      this.prisma.purchase_order.count({ where }),
-    ]);
+    let rows: ListRow[];
+    let total: number;
+    if (isComputedSort(query.sort)) {
+      // 계산 열 — 조건에 맞는 발주를 모두 읽어 판정·정렬한 뒤 쪽을 자른다(쪽을 넘는 순서가 맞게).
+      const all = await this.prisma.purchase_order.findMany({ where, include: LIST_INCLUDE });
+      if (query.sort.key === 'inboundStage') counts ??= await this.stageCountsByOrder(all.map((row) => row.purchase_order_id));
+      rows = sortComputed(all, query.sort, now, counts ?? new Map()).slice(page.skip, page.skip + page.take);
+      total = all.length;
+    } else {
+      [rows, total] = await Promise.all([
+        this.prisma.purchase_order.findMany({
+          where,
+          orderBy: orderByOf(query.sort),
+          include: LIST_INCLUDE,
+          skip: page.skip,
+          take: page.take,
+        }),
+        this.prisma.purchase_order.count({ where }),
+      ]);
+    }
     counts ??= await this.stageCountsByOrder(rows.map((row) => row.purchase_order_id));
     const itemId = query.itemId === undefined ? null : BigInt(query.itemId);
-    const items = rows.map(({ partner, purchase_order_line: lines, ...row }) => ({
+    const items = rows.map(({ partner, purchase_order_line: lines, plant: _plant, ...row }) => ({
       ...purchaseOrderView(row),
       supplierCode: partner.partner_code,
       supplierName: partner.partner_name,

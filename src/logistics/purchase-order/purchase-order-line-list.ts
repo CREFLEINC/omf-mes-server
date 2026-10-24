@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE, ErrorItem, field } from '../../common/errors';
 import { toDateString } from '../../common/master';
+import { OrderSort, readSort } from './purchase-order-list-sort';
 import { INBOUND_STAGE_GROUPS, InboundStageGroup } from './inbound-stage';
 import { ReceiptStatusCode, dateOnly, lineReceiptStatus, remainingQtyOf } from './purchase-order-receipt';
 
@@ -79,6 +80,8 @@ export interface OrderListExtras {
   supplierQ?: string;
   /** 그 묶음의 LOT 이 하나라도 있는 발주만(입고 관리 허브의 단계 칩 · 장부 P-110). */
   inboundStage?: InboundStageGroup;
+  /** 열 정렬 `sort=열,방향`(장부 P-116). 없으면 발주일 최신순. */
+  sort?: OrderSort;
 }
 
 export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExtras {
@@ -90,6 +93,7 @@ export function parseOrderListExtras(raw: Record<string, unknown>): OrderListExt
     overdueOnly: readFlag(raw, 'overdueOnly', errors),
     supplierQ: readText(raw, 'supplierQ', errors),
     inboundStage: readStage(raw, errors),
+    sort: readSort(raw, errors),
   };
 
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);

@@ -300,6 +300,33 @@ describe('입고 관리 허브 — 발주 하나의 LOT 진행 (e2e · 장부 P-
       expect(unfiltered.body).toEqual(response.body);
     });
 
+    it('⭐ sort — 쪽을 넘어도 순서가 맞다 · 진행은 가장 뒤처진 묶음 순, 묶음 없는 발주는 방향과 상관없이 맨 뒤(장부 P-116)', async () => {
+      const nos = async (query: Record<string, unknown>) => {
+        const response = await list({ q: Q, ...query }).expect(200);
+        return { nos: (response.body.items as { purchaseOrderNo: string }[]).map((item) => item.purchaseOrderNo.slice(Q.length)), total: response.body.page.total as number };
+      };
+      // S-4 라벨 대기 · S-1 검사 · S-2 보류 · S-3 묶음 없음.
+      expect(await nos({ sort: 'inboundStage,asc', size: 2 })).toEqual({ nos: ['4', '1'], total: 4 });
+      expect(await nos({ sort: 'inboundStage,asc', size: 2, page: 2 })).toEqual({ nos: ['2', '3'], total: 4 });
+      expect((await nos({ sort: 'inboundStage,desc' })).nos).toEqual(['2', '1', '4', '3']);
+      // 묶음 수는 정렬과 상관없이 그대로 실린다.
+      const rows = (await list({ q: Q, sort: 'inboundStage,asc' }).expect(200)).body.items as { inboundStageCounts: object }[];
+      expect(rows[0].inboundStageCounts).toEqual({ LABEL: 1 });
+      expect((await nos({ sort: 'purchaseOrderNo,asc', size: 3, page: 2 })).nos).toEqual(['4']);
+      // 미입고 품목 수 — S-1 만 둘, 나머지 하나는 id 내림.
+      expect((await nos({ sort: 'openLineCount,desc' })).nos).toEqual(['1', '4', '3', '2']);
+      // 상태 — 모두 납기가 없어 정상이다 → id 내림.
+      expect((await nos({ sort: 'overdue' })).nos).toEqual(['4', '3', '2', '1']);
+      // 정렬이 inboundStage 필터와 함께 걸린다.
+      expect(await nos({ sort: 'purchaseOrderNo,desc', inboundStage: 'LABEL' })).toEqual({ nos: ['4'], total: 1 });
+    });
+
+    it('⛔ sort 가 열·방향 밖이면 400 sort INVALID 다', async () => {
+      const response = await list({ q: Q, sort: 'orderDate,sideways' }).expect(400);
+      expect(response.body.errors).toEqual([expect.objectContaining({ field: 'sort', code: 'INVALID' })]);
+      await list({ q: Q, sort: 'nope' }).expect(400);
+    });
+
     it('⛔ inboundStage 가 다섯 값 밖이면 400 이다 — 건수 경로도 목록과 같은 조건을 검사한다', async () => {
       await list({ q: Q, inboundStage: 'COMPLETED' }).expect(400);
       await stageCounts({ q: Q, expectedReceiptDateFrom: '2026-02-30' }).expect(400);
