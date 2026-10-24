@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, HttpStatus, Injectable } from '@nestjs/c
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
-import { CONTRACT_OPERATION, ContractRegistry } from '../contract';
+import { ContractRegistry, contractOperationOf } from '../contract';
 import { ContractException, ERROR_CODE } from '../errors';
 
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
@@ -25,7 +25,7 @@ export class IdempotencyGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const key = this.reflector.get<string | undefined>(CONTRACT_OPERATION, context.getHandler());
+    const key = contractOperationOf(this.reflector, context.getHandler());
     if (!key || !this.requiresIdempotency(key)) return true;
 
     const request = context.switchToHttp().getRequest<Request>();

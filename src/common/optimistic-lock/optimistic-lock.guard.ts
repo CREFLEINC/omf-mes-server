@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, HttpStatus, Injectable } from '@nestjs/c
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
-import { CONTRACT_OPERATION, ContractRegistry } from '../contract';
+import { ContractRegistry, contractOperationOf } from '../contract';
 import { ContractException, ERROR_CODE } from '../errors';
 import { IF_MATCH_HEADER, parseIfMatch, rememberIfMatch } from './optimistic-lock';
 
@@ -26,7 +26,7 @@ export class OptimisticLockGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const key = this.reflector.get<string | undefined>(CONTRACT_OPERATION, context.getHandler());
+    const key = contractOperationOf(this.reflector, context.getHandler());
     if (!key) return true;
 
     const requirement = this.requirement(key);
