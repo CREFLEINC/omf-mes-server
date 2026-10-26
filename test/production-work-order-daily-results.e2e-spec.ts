@@ -55,14 +55,14 @@ describe('W/O 일자별 실적 (e2e)', () => {
       orderQty: 20,
       items: [
         {
-          businessDate: '2026-10-21', goodQty: 9, ...zeros, resultCount: 2, correctedCount: 1,
+          workDate: '2026-10-21', goodQty: 9, ...zeros, resultCount: 2, correctedCount: 1,
           firstAt: local('2026-10-21T23:00:00').toISOString(), lastAt: local('2026-10-22T02:00:00').toISOString(),
           byShift: [{ shiftId: Number(ids.night), shiftName: `${PREFIX} 야간`, goodQty: 9, ...zeros, resultCount: 2, correctedCount: 1 }],
         },
         {
-          businessDate: '2026-10-22', goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0,
+          workDate: '2026-10-22', goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0,
           firstAt: local('2026-10-22T10:00:00').toISOString(), lastAt: local('2026-10-22T10:00:00').toISOString(),
-          byShift: [{ goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0 }],
+          byShift: [{ shiftId: null, shiftName: '교대 없음', goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0 }],
         },
       ],
       totals: { goodQty: 11, ...zeros, resultCount: 3, correctedCount: 1 },

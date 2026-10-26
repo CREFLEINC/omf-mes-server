@@ -3134,7 +3134,7 @@
      "production"
     ],
     "summary": "W/O 일자별 실적",
-    "description": "W/O 마감 상세의 일자별 표. 수량은 W/O 누계(WorkOrderProgress)와 같은 규칙으로 센다 — 정정된 원본은 빼고 정정본(잎)만 센다. 실적에는 취소 상태가 없고 0 수량 정정이 그 자리다. 일자(businessDate)는 공장 현지 날짜이되, 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다 — 교대는 실적의 교대, 없으면 그 실적 작업 세션의 교대다. 교대가 없으면 공장 현지 날짜. 영업일 오름차순. 근거: 서버 선행 · 장부 P-122",
+    "description": "W/O 마감 상세의 일자별 표. 수량은 W/O 누계(WorkOrderProgress)와 같은 규칙으로 센다 — 정정된 원본은 빼고 정정본(잎)만 센다. 실적에는 취소 상태가 없고 0 수량 정정이 그 자리다. 일자(workDate)는 공장 현지 날짜이되, 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다 — 교대는 실적의 교대, 없으면 그 실적 작업 세션의 교대다. 교대가 없으면 공장 현지 날짜, 공장을 찾지 못하면 Asia/Ho_Chi_Minh. 영업일 오름차순. 근거: 서버 선행 · 장부 P-122",
     "parameters": [
      {
       "name": "workOrderId",
@@ -8454,7 +8454,7 @@
    "WorkOrderDailyResult": {
     "type": "object",
     "required": [
-     "businessDate",
+     "workDate",
      "goodQty",
      "defectQty",
      "holdQty",
@@ -8467,10 +8467,10 @@
      "byShift"
     ],
     "properties": {
-     "businessDate": {
+     "workDate": {
       "type": "string",
       "format": "date",
-      "description": "공장 현지 영업일 — 자정을 넘는 교대의 새벽 실적은 교대 시작일. ⚠ 조회용 묶음 날짜다 — 재고 원장 business_date(클라이언트가 보내는 값)와 다른 축"
+      "description": "교대 시작일 기준 조회용 날짜(자정을 넘는 교대는 시작한 날). 재고 원장 business_date 와 다른 축이며 저장·쓰기에 쓰지 않는다"
      },
      "goodQty": {
       "type": "number",
@@ -8517,7 +8517,7 @@
      },
      "byShift": {
       "type": "array",
-      "description": "교대별 — 교대 id 순, 교대 없는 실적은 shiftId·shiftName 없이 맨 뒤",
+      "description": "교대별 — 교대 id 순, 교대가 정해지지 않은 실적은 shiftId null · shiftName 「교대 없음」 한 줄로 맨 뒤",
       "items": {
        "$ref": "#/components/schemas/WorkOrderDailyShiftResult"
       }
@@ -8527,6 +8527,8 @@
    "WorkOrderDailyShiftResult": {
     "type": "object",
     "required": [
+     "shiftId",
+     "shiftName",
      "goodQty",
      "defectQty",
      "holdQty",
@@ -8537,11 +8539,16 @@
     ],
     "properties": {
      "shiftId": {
-      "type": "integer",
-      "format": "int64"
+      "type": [
+       "integer",
+       "null"
+      ],
+      "format": "int64",
+      "description": "교대가 정해지지 않은 실적을 모은 줄은 null"
      },
      "shiftName": {
-      "type": "string"
+      "type": "string",
+      "description": "교대 이름. 교대가 정해지지 않은 줄은 「교대 없음」"
      },
      "goodQty": {
       "type": "number",

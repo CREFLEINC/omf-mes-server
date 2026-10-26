@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { DailyResultRow, ResultShift, businessDateOf, dailyResultsOf } from './daily-results';
+import { DailyResultRow, ResultShift, workDateOf, dailyResultsOf } from './daily-results';
 
 const TZ = 'Asia/Ho_Chi_Minh';
 const time = (hhmmss: string) => new Date(`1970-01-01T${hhmmss}.000Z`);
@@ -18,28 +18,28 @@ function row(at: string, shift: ResultShift | null, good: number, extra: Partial
   };
 }
 
-describe('businessDateOf', () => {
+describe('workDateOf', () => {
   it('교대가 없으면 공장 현지 날짜다 — UTC 날짜가 아니다', () => {
-    expect(businessDateOf(local('2026-10-21T06:30:00'), TZ, null)).toBe('2026-10-21');
-    expect(businessDateOf(local('2026-10-21T23:59:59'), TZ, null)).toBe('2026-10-21');
+    expect(workDateOf(local('2026-10-21T06:30:00'), TZ, null)).toBe('2026-10-21');
+    expect(workDateOf(local('2026-10-21T23:59:59'), TZ, null)).toBe('2026-10-21');
   });
 
   it('자정을 넘는 교대의 새벽 실적은 교대 시작일이다', () => {
-    expect(businessDateOf(local('2026-10-21T22:00:00'), TZ, NIGHT)).toBe('2026-10-21');
-    expect(businessDateOf(local('2026-10-22T00:00:00'), TZ, NIGHT)).toBe('2026-10-21');
-    expect(businessDateOf(local('2026-10-22T07:59:59'), TZ, NIGHT)).toBe('2026-10-21');
+    expect(workDateOf(local('2026-10-21T22:00:00'), TZ, NIGHT)).toBe('2026-10-21');
+    expect(workDateOf(local('2026-10-22T00:00:00'), TZ, NIGHT)).toBe('2026-10-21');
+    expect(workDateOf(local('2026-10-22T07:59:59'), TZ, NIGHT)).toBe('2026-10-21');
   });
 
   it('교대 끝 시각 정각부터는 그날이다(반열림)', () => {
-    expect(businessDateOf(local('2026-10-22T08:00:00'), TZ, NIGHT)).toBe('2026-10-22');
+    expect(workDateOf(local('2026-10-22T08:00:00'), TZ, NIGHT)).toBe('2026-10-22');
   });
 
   it('자정을 넘지 않는 교대는 현지 날짜 그대로다', () => {
-    expect(businessDateOf(local('2026-10-22T07:00:00'), TZ, DAY)).toBe('2026-10-22');
+    expect(workDateOf(local('2026-10-22T07:00:00'), TZ, DAY)).toBe('2026-10-22');
   });
 
   it('월 첫날 새벽의 야간 실적은 전달 말일이다', () => {
-    expect(businessDateOf(local('2026-11-01T02:00:00'), TZ, NIGHT)).toBe('2026-10-31');
+    expect(workDateOf(local('2026-11-01T02:00:00'), TZ, NIGHT)).toBe('2026-10-31');
   });
 });
 
@@ -51,7 +51,7 @@ describe('dailyResultsOf', () => {
       row('2026-10-22T03:00:00', NIGHT, 2),
     ], TZ);
 
-    expect(result.items.map((item) => [item.businessDate, item.goodQty, item.resultCount])).toEqual([
+    expect(result.items.map((item) => [item.workDate, item.goodQty, item.resultCount])).toEqual([
       ['2026-10-21', 5, 2],
       ['2026-10-22', 5, 1],
     ]);
@@ -72,7 +72,7 @@ describe('dailyResultsOf', () => {
     expect(result.items[0]).toMatchObject({ goodQty: 10, defectQty: 1, resultCount: 2, correctedCount: 1 });
   });
 
-  it('교대별은 교대 id 순, 교대 없는 실적은 shiftId 없이 맨 뒤다', () => {
+  it('교대별은 교대 id 순, 교대 없는 실적은 shiftId null 「교대 없음」 한 줄로 맨 뒤다', () => {
     const result = dailyResultsOf([
       row('2026-10-21T10:00:00', null, 1),
       row('2026-10-21T21:00:00', NIGHT, 2),
@@ -83,7 +83,7 @@ describe('dailyResultsOf', () => {
     expect(result.items[0].byShift).toEqual([
       { shiftId: 1, shiftName: '주간', goodQty: 7, defectQty: 0, holdQty: 0, scrapQty: 0, reworkQty: 0, resultCount: 2, correctedCount: 0 },
       { shiftId: 2, shiftName: '야간', goodQty: 2, defectQty: 0, holdQty: 0, scrapQty: 0, reworkQty: 0, resultCount: 1, correctedCount: 0 },
-      { goodQty: 1, defectQty: 0, holdQty: 0, scrapQty: 0, reworkQty: 0, resultCount: 1, correctedCount: 0 },
+      { shiftId: null, shiftName: '교대 없음', goodQty: 1, defectQty: 0, holdQty: 0, scrapQty: 0, reworkQty: 0, resultCount: 1, correctedCount: 0 },
     ]);
   });
 

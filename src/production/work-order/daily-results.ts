@@ -1,6 +1,5 @@
 import { Prisma } from '@prisma/client';
 
-import { omitEmpty } from '../../common/http/omit-empty';
 import { localDate } from '../../planning/production-plan/plan-window';
 import { localTimeOf, timeOf } from '../work-session/shift-resolver';
 
@@ -27,7 +26,7 @@ export interface ResultShift {
  * 조회 화면의 일자 — 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다. 교대가 없으면 공장 현지 날짜다.
  * ⛔ 재고 원장 `business_date`(클라이언트가 보내는 값 · server-architecture C-3) 도출이 아니다 — 쓰기 경로에서 날짜를 잡는 데 쓰지 않는다.
  */
-export function businessDateOf(occurredAt: Date, timezone: string, shift: ResultShift | null): string {
+export function workDateOf(occurredAt: Date, timezone: string, shift: ResultShift | null): string {
   const date = localDate(occurredAt, timezone);
   if (shift === null || !shift.crosses_midnight) return date;
   // 교대 경계는 반열림(시작 이상 · 끝 미만)이라 끝 시각 정각은 다음 교대 몫이다(`pickShift` 와 같다).
@@ -87,13 +86,16 @@ interface Day {
   shifts: Map<string, { shift: ResultShift | null; tally: Tally }>;
 }
 
+/** 교대가 정해지지 않은 실적을 모은 줄의 이름 — 화면이 그대로 보인다. */
+export const NO_SHIFT_NAME = '교대 없음';
+
 /** 영업일 오름차순, 그 안의 교대는 교대 없음이 맨 뒤이고 나머지는 교대 id 순이다. */
 export function dailyResultsOf(rows: readonly DailyResultRow[], timezone: string) {
   const days = new Map<string, Day>();
   let total = emptyTally();
   for (const row of rows) {
     total = add(total, row);
-    const key = businessDateOf(row.occurred_at, timezone, row.shift);
+    const key = workDateOf(row.occurred_at, timezone, row.shift);
     const day = days.get(key) ?? { tally: emptyTally(), firstAt: row.occurred_at, lastAt: row.occurred_at, shifts: new Map() };
     day.tally = add(day.tally, row);
     if (row.occurred_at < day.firstAt) day.firstAt = row.occurred_at;
@@ -106,14 +108,14 @@ export function dailyResultsOf(rows: readonly DailyResultRow[], timezone: string
   }
   const items = [...days.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([businessDate, day]) => ({
-      businessDate,
+    .map(([workDate, day]) => ({
+      workDate,
       ...quantities(day.tally),
       firstAt: day.firstAt.toISOString(),
       lastAt: day.lastAt.toISOString(),
-      byShift: [...day.shifts.values()].sort(byShiftOrder).map(({ shift, tally }) => omitEmpty({
-        shiftId: shift === null ? undefined : Number(shift.shift_id),
-        shiftName: shift?.shift_name,
+      byShift: [...day.shifts.values()].sort(byShiftOrder).map(({ shift, tally }) => ({
+        shiftId: shift === null ? null : Number(shift.shift_id),
+        shiftName: shift === null ? NO_SHIFT_NAME : shift.shift_name,
         ...quantities(tally),
       })),
     }));
