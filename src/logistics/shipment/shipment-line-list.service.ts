@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriod, localPeriodSql } from '../../common/period/plant-local-period';
+import { localPeriod, localPeriodSql, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, Named, PagedWithTotals, UomTotalRow, lineTotals, named } from '../line-list';
 
@@ -54,7 +54,7 @@ const FROM = `
   JOIN mdm.plant p ON p.plant_id = w.plant_id
   JOIN logistics.shipment_request sr ON sr.shipment_request_id = s.shipment_request_id`;
 
-export function shipmentLineWhere(query: ShipmentLineListQuery, today?: Date): BuiltSql {
+export function shipmentLineWhere(query: ShipmentLineListQuery, today: string): BuiltSql {
   const period = localPeriod(query.shipDateFrom, query.shipDateTo,
     { from: 'shipDateFrom', to: 'shipDateTo', label: '출하일' }, today);
   const params: unknown[] = [];
@@ -110,7 +110,7 @@ export class ShipmentLineListService {
   /** 출하 일시 내림차순 → 출하 → 줄 번호 — 최근 것부터 본다. */
   async list(query: ShipmentLineListQuery): Promise<PagedWithTotals<ShipmentLineListItem>> {
     const page = pageRequest(query);
-    const where = shipmentLineWhere(query);
+    const where = shipmentLineWhere(query, await plantToday(this.prisma, query.plantId));
     const next = where.params.length;
     const [rows, totals] = await Promise.all([
       this.prisma.$queryRawUnsafe<LineRow[]>(

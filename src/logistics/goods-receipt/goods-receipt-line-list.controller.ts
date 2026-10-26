@@ -1,9 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
 
 import { Contract } from '../../common/contract';
-import { PagedWithTotals } from '../line-list';
+import { PagedResponseWith } from '../line-list';
 import {
   GoodsReceiptLineListItem,
+  GoodsReceiptLineTotals,
   GoodsReceiptLineListQuery,
   GoodsReceiptLineListService,
 } from './goods-receipt-line-list.service';
@@ -15,7 +16,7 @@ export class GoodsReceiptLineListController {
 
   @Get()
   @Contract('GET /logistics/goods-receipt-lines')
-  list(@Query() query: GoodsReceiptLineListQuery): Promise<PagedWithTotals<GoodsReceiptLineListItem>> {
+  list(@Query() query: GoodsReceiptLineListQuery): Promise<PagedResponseWith<GoodsReceiptLineListItem, GoodsReceiptLineTotals>> {
     return this.lines.list(query);
   }
 }

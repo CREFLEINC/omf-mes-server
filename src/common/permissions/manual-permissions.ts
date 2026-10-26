@@ -136,7 +136,7 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   'POST /quality/inspection-sheets/{inspectionSheetId}:approve': ['W-03-14'],
   'POST /quality/inspection-sheets/{inspectionSheetId}:check': ['W-03-14'],
   'POST /quality/inspection-sheets/{inspectionSheetId}:reopen': ['W-03-14'],
-  // LOT 추적 화면의 입고·출고 현황 — 설계 밖 화면이라 그 화면만 연다(omf-all-around#73 · 장부 P-119).
+  // LOT 추적 화면의 입고·출고 현황 — 설계 밖 화면이라 그 화면만 연다(장부 P-119).
   'GET /logistics/goods-receipt-lines': ['W-02-09'],
   'GET /logistics/shipment-lines': ['W-02-09'],
   // 공지 — 요구서 §3 이 「작성·확인·닫기」만 액션으로 적어 게시·종료·수정·확인현황이

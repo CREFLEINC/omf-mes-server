@@ -1,16 +1,16 @@
 import { goodsReceiptLineWhere } from './goods-receipt-line-list.service';
 
-const TODAY = new Date('2026-10-26T03:00:00Z');
+const TODAY = '2026-10-26';
 
 describe('입고 줄 목록의 조건', () => {
-  it('상태를 고르지 않으면 취소·취소요청을 뺀다 — 고르면 그 값만 본다', () => {
+  it('상태를 고르지 않으면 취소 완료만 뺀다(취소 요청은 남는다) — 고르면 그 값만 본다', () => {
     const plain = goodsReceiptLineWhere({ receiptDateFrom: '2026-10-01' }, TODAY);
-    expect(plain.sql).toContain('gr.status_code <> ALL($2::text[])');
-    expect(plain.params[1]).toEqual(['CANCELLED', 'CANCEL_REQUESTED']);
+    expect(plain.sql).toContain('gr.status_code <> $2');
+    expect(plain.params[1]).toBe('CANCELLED');
 
     const cancelled = goodsReceiptLineWhere({ receiptDateFrom: '2026-10-01', statusCode: 'CANCELLED' }, TODAY);
     expect(cancelled.sql).toContain('gr.status_code = $2');
-    expect(cancelled.sql).not.toContain('<> ALL');
+    expect(cancelled.sql).not.toContain('gr.status_code <>');
   });
 
   it('유형·공장·창고·품목·공급사·검색어를 모두 AND 로 건다', () => {
@@ -25,7 +25,7 @@ describe('입고 줄 목록의 조건', () => {
     expect(sql).toContain('l.item_id = $7::bigint');
     expect(sql).toContain('ir.supplier_id = $8::bigint');
     expect(sql).toContain('(gr.goods_receipt_no ILIKE $9 OR lt.lot_no ILIKE $9)');
-    expect(params).toEqual(['2026-10-01', '2026-10-26', ['CANCELLED', 'CANCEL_REQUESTED'], 'MATERIAL', 1, 2, 3, 4, '%GR-1%']);
+    expect(params).toEqual(['2026-10-01', '2026-10-26', 'CANCELLED', 'MATERIAL', 1, 2, 3, 4, '%GR-1%']);
   });
 
   it('기간 시작이 없으면 SQL 을 만들기 전에 400 이다', () => {

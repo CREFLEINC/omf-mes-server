@@ -1,6 +1,6 @@
 import { shipmentLineWhere } from './shipment-line-list.service';
 
-const TODAY = new Date('2026-10-26T03:00:00Z');
+const TODAY = '2026-10-26';
 
 describe('출하 줄 목록의 조건', () => {
   it('기간은 출하 창고 공장의 현지 날짜로 shipped_at 에 건다', () => {

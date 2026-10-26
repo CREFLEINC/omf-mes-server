@@ -1,3 +1,4 @@
+import { PrismaService } from '../../prisma/prisma.service';
 import { ERROR_CODE, field, one } from '../errors';
 
 /** 현황·추적 목록이 한 번에 훑는 기간의 상한 — 기간 없이 부르면 표 전체를 훑는다. */
@@ -19,10 +20,10 @@ export interface LocalPeriod {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 공장 현지 날짜 기간을 받는다. 시작은 필수, 종료는 선택(없으면 오늘까지로 길이를 잰다), 양 끝 포함.
+ * 공장 현지 날짜 기간을 받는다. 시작은 필수, 종료는 선택(없으면 `today` 까지로 길이를 잰다), 양 끝 포함.
  * 형식(YYYY-MM-DD)은 계약 검증이 이미 봤다.
  */
-export function localPeriod(from: string | undefined, to: string | undefined, fields: PeriodFields, today = new Date()): LocalPeriod {
+export function localPeriod(from: string | undefined, to: string | undefined, fields: PeriodFields, today: string): LocalPeriod {
   if (from === undefined) {
     throw one(field(fields.from, ERROR_CODE.REQUIRED,
       `${fields.label} 시작(${fields.from})이 비었습니다. 시작일을 넣어 다시 조회하세요 — 기간은 최대 ${MAX_PERIOD_DAYS}일입니다.`));
@@ -31,7 +32,7 @@ export function localPeriod(from: string | undefined, to: string | undefined, fi
     throw one(field(fields.to, ERROR_CODE.INVALID,
       `${fields.label} 종료(${to})가 시작(${from})보다 앞섭니다. 종료일을 시작일 이후로 고쳐 다시 조회하세요.`));
   }
-  const end = to ?? today.toISOString().slice(0, 10);
+  const end = to ?? today;
   const days = Math.round((Date.parse(end) - Date.parse(from)) / DAY_MS) + 1;
   if (days > MAX_PERIOD_DAYS) {
     throw one(field(to === undefined ? fields.from : fields.to, ERROR_CODE.RANGE,
@@ -39,6 +40,18 @@ export function localPeriod(from: string | undefined, to: string | undefined, fi
         (to === undefined ? ' — 종료일을 넣지 않으면 오늘까지로 셉니다.' : '.')));
   }
   return to === undefined ? { from } : { from, to };
+}
+
+/**
+ * 공장 현지 오늘(YYYY-MM-DD). 공장을 고르지 않았으면 가장 앞선 공장의 오늘 — 기간 길이만 재는 데 쓰니 하루 넉넉한 쪽이다.
+ */
+export async function plantToday(prisma: PrismaService, plantId?: number): Promise<string> {
+  const [row] = await prisma.$queryRawUnsafe<{ today: string | null }[]>(
+    `SELECT to_char(MAX((now() AT TIME ZONE p.timezone_code)::date), 'YYYY-MM-DD') AS today
+       FROM mdm.plant p ${plantId === undefined ? '' : 'WHERE p.plant_id = $1::bigint'}`,
+    ...(plantId === undefined ? [] : [plantId]),
+  );
+  return row?.today ?? new Date().toISOString().slice(0, 10);
 }
 
 /**

@@ -6,8 +6,8 @@
 CREATE INDEX ix_goods_receipt_line_lot ON logistics.goods_receipt_line (lot_id);
 -- 입고 현황의 품목 필터.
 CREATE INDEX ix_goods_receipt_line_item ON logistics.goods_receipt_line (item_id);
--- 입고 현황·정방향 목록의 입고 유형 + 기간.
-CREATE INDEX ix_goods_receipt_type_datetime ON logistics.goods_receipt (receipt_type_code, receipt_datetime);
+-- 입고 현황·정방향 목록의 기간(+ 입고 유형). 기간이 앞이라 유형을 고르지 않은 조회와 유형별 건수도 탄다.
+CREATE INDEX ix_goods_receipt_datetime_type ON logistics.goods_receipt (receipt_datetime, receipt_type_code);
 -- 생산 LOT → 그 LOT 을 담은 포장(취급 단위). 유일 키는 handling_unit_id 가 앞이라 LOT 으로는 못 탄다.
 CREATE INDEX ix_handling_unit_content_lot ON inventory.handling_unit_content (lot_id);
 -- W/O → 그 W/O 를 원천으로 발행한 생산 LOT.

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { pageRequest, pagedResponse } from '../../common/pagination';
-import { localPeriod, localPeriodSql } from '../../common/period/plant-local-period';
+import { localPeriod, localPeriodSql, plantToday } from '../../common/period/plant-local-period';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BuiltSql, LineTotals, Named, PagedResponseWith, UomTotalRow, lineTotals, named } from '../line-list';
 
@@ -46,8 +46,12 @@ export interface GoodsReceiptLineListItem {
   workOrder: { workOrderId: number; workOrderNo: string } | null;
 }
 
-/** 상태를 고르지 않으면 취소(요청)된 입고는 뺀다 — 현황은 실제로 들어온 것을 센다. */
-const CANCEL_STATUSES = ['CANCELLED', 'CANCEL_REQUESTED'];
+/**
+ * 상태를 고르지 않으면 취소 완료만 뺀다. 취소 요청 중인 입고는 재고가 그대로이고 반려되면 그대로 남는다 —
+ * ERP 구매입고가 「살아 있는 입고」로 보는 범위(`erp-receipt.ts` 의 POSTED·CANCEL_REQUESTED)와 같다
+ * (입고는 생성과 전기가 같은 순간이라 REGISTERED 로 머물지 않는다).
+ */
+const CANCELLED = 'CANCELLED';
 const WORK_ORDER_LOT_SOURCE = 'WORK_ORDER';
 
 const FROM = `
@@ -56,14 +60,14 @@ const FROM = `
   JOIN mdm.plant p ON p.plant_id = gr.plant_id
   JOIN trace.lot lt ON lt.lot_id = l.lot_id`;
 
-export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today?: Date): BuiltSql {
+export function goodsReceiptLineWhere(query: GoodsReceiptLineListQuery, today: string): BuiltSql {
   const period = localPeriod(query.receiptDateFrom, query.receiptDateTo,
     { from: 'receiptDateFrom', to: 'receiptDateTo', label: '입고일' }, today);
   const params: unknown[] = [];
   const bind = (value: unknown): string => `$${params.push(value)}`;
   const and = [localPeriodSql('gr.receipt_datetime', 'p.timezone_code', period, bind)];
   and.push(query.statusCode === undefined
-    ? `gr.status_code <> ALL(${bind(CANCEL_STATUSES)}::text[])`
+    ? `gr.status_code <> ${bind(CANCELLED)}`
     : `gr.status_code = ${bind(query.statusCode)}`);
   if (query.receiptTypeCode !== undefined) and.push(`gr.receipt_type_code = ${bind(query.receiptTypeCode)}`);
   if (query.plantId !== undefined) and.push(`gr.plant_id = ${bind(query.plantId)}::bigint`);
@@ -118,7 +122,7 @@ export class GoodsReceiptLineListService {
   /** 입고 일시 내림차순 → 입고 → 줄 번호 — 최근 것부터 본다. */
   async list(query: GoodsReceiptLineListQuery): Promise<PagedResponseWith<GoodsReceiptLineListItem, GoodsReceiptLineTotals>> {
     const page = pageRequest(query);
-    const where = goodsReceiptLineWhere(query);
+    const where = goodsReceiptLineWhere(query, await plantToday(this.prisma, query.plantId));
     const next = where.params.length;
     const [rows, totals, byType] = await Promise.all([
       this.prisma.$queryRawUnsafe<LineRow[]>(
