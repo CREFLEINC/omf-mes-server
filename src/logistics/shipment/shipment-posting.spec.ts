@@ -61,6 +61,8 @@ interface Seed {
   missingLot?: number;
   /** LOT 별 그 창고의 피킹분 — 없으면 넉넉하다. */
   picked?: Record<number, number>;
+  /** LOT 별 «다른» 창고의 피킹분 — 창고 조건 없이 읽으면 이 값이 섞인다. */
+  pickedElsewhere?: Record<number, number>;
   /** 출고 코어가 소진에서 던질 400 — 경로를 출하 본문으로 옮기는지 본다. */
   consumeError?: ContractException;
 }
@@ -98,11 +100,17 @@ function fake(seed: Seed = {}): {
         ),
     },
     inventory_balance: {
-      findMany: ({ where }: { where: { lot_id: { in: bigint[] } } }) =>
-        Promise.resolve(where.lot_id.in.map((id) => ({
-          lot_id: id,
-          picked_qty: new Prisma.Decimal(seed.picked?.[Number(id)] ?? 1000),
-        }))),
+      findMany: ({ where }: { where: { warehouse_id?: bigint; lot_id: { in: bigint[] } } }) => {
+        const rows = where.lot_id.in.flatMap((id) => [
+          { warehouse_id: BigInt(WAREHOUSE_ID), lot_id: id, picked_qty: new Prisma.Decimal(seed.picked?.[Number(id)] ?? 1000) },
+          ...(seed.pickedElsewhere?.[Number(id)] === undefined ? [] : [
+            { warehouse_id: BigInt(WAREHOUSE_ID + 1), lot_id: id, picked_qty: new Prisma.Decimal(seed.pickedElsewhere[Number(id)]) },
+          ]),
+        ]);
+        return Promise.resolve(rows
+          .filter((row) => where.warehouse_id === undefined || row.warehouse_id === where.warehouse_id)
+          .map(({ lot_id, picked_qty }) => ({ lot_id, picked_qty })));
+      },
     },
     judgment_type_control: { findFirst: () => Promise.resolve(null) },
     warehouse: {
@@ -534,7 +542,7 @@ describe('postShipment — 피킹분 확인과 출하 본문 경로', () => {
     }],
   });
 
-  it('피킹되지 않은 LOT 은 그 배분의 allocatedQty 를 짚고 M-04-01 조치를 싣는다 — 출고 전표를 세우기 전이다', async () => {
+  it('남은 피킹분이 없는 LOT 은 그 배분의 allocatedQty 를 짚고 M-04-01 조치를 싣는다 — 출고 전표를 세우기 전이다', async () => {
     const { tx, posting, recorded } = fake({ picked: { [LOT_A]: 0 } });
 
     const failure = await caught(() => postShipment(tx, posting, write()));
@@ -542,7 +550,7 @@ describe('postShipment — 피킹분 확인과 출하 본문 경로', () => {
     expect(failure.getStatus()).toBe(400);
     expect(failure.errors).toEqual([expect.objectContaining({
       field: 'lines[0].allocations[0].allocatedQty', code: 'NEGATIVE_BALANCE',
-      message: expect.stringMatching(/^LOT LOT-501 은 피킹되지 않았습니다\..*M-04-01/),
+      message: expect.stringMatching(/^LOT LOT-501: 남은 피킹분이 없습니다\(아직 피킹하지 않았거나 이미 출하에 썼습니다\)\. .*M-04-01/),
     })]);
     expect(recorded.order).not.toContain('goods_issue.create');
   });
@@ -554,8 +562,16 @@ describe('postShipment — 피킹분 확인과 출하 본문 경로', () => {
 
     expect(failure.errors).toEqual([expect.objectContaining({
       field: 'lines[0].allocations[1].allocatedQty',
-      message: expect.stringContaining('피킹된 수량(6)보다 많이 배분했습니다(배분 7)'),
+      message: expect.stringContaining('LOT LOT-501: 피킹된 수량(6)보다 많이 배분했습니다(배분 7)'),
     })]);
+  });
+
+  it('다른 창고의 피킹분은 세지 않는다 — 이 창고에 피킹분이 없으면 막는다', async () => {
+    const { tx, posting } = fake({ picked: { [LOT_A]: 0 }, pickedElsewhere: { [LOT_A]: 100 } });
+
+    const failure = await caught(() => postShipment(tx, posting, write()));
+
+    expect(failure.errors).toEqual([expect.objectContaining({ field: 'lines[0].allocations[0].allocatedQty' })]);
   });
 
   it('피킹분 안의 배분은 통과한다 — 경계값(같은 양)도', async () => {
@@ -586,9 +602,22 @@ describe('postShipment — 피킹분 확인과 출하 본문 경로', () => {
     expect(failure.errors).toEqual([
       expect.objectContaining({
         field: 'lines[0].allocations[1].allocatedQty',
-        message: expect.stringMatching(/^보유 수량보다 많이 낼 수 없습니다\. .*배분 수량을 줄이세요\.$/),
+        message: '보유 수량보다 많이 낼 수 없습니다. 재고 현황·상태 조회(W-01-07)에서 LOT LOT-502 의 이 창고 가용 수량을 확인하고 배분 수량을 줄이세요.',
       }),
       expect.objectContaining({ field: 'lines[0].allocations[0].lotId', message: '재고 차원이 둘 이상이라 어느 것을 낼지 정할 수 없습니다.' }),
+    ]);
+  });
+
+  it('보유 수량 문구가 아닌 수량 칸 오류는 경로만 옮기고 문구는 그대로다', async () => {
+    const consumeError = new ContractException(HttpStatus.BAD_REQUEST, [
+      field('lines[0].issueQty', ERROR_CODE.NEGATIVE_BALANCE, '소진할 피킹분이 모자랍니다.'),
+    ]);
+    const { tx, posting } = fake({ consumeError });
+
+    const failure = await caught(() => postShipment(tx, posting, write()));
+
+    expect(failure.errors).toEqual([
+      expect.objectContaining({ field: 'lines[0].allocations[0].allocatedQty', message: '소진할 피킹분이 모자랍니다.' }),
     ]);
   });
 });

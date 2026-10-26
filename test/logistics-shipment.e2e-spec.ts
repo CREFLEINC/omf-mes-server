@@ -781,11 +781,12 @@ describe('출하 목록 (e2e)', () => {
   });
 
   // ── 피킹분 확인 — 오류는 출하 본문의 배분 칸을 짚고 조치(M-04-01)를 싣는다 ─────────────
-  const allocate = (lotId: bigint, qty: number): CreateBody =>
+  const allocate = (lotId: bigint, qty: number, requestId = made.postRequest, lineId = made.postRequestLine): CreateBody =>
     body({
+      shipmentRequestId: requestId,
       lines: [
         {
-          shipmentRequestLineId: made.postRequestLine,
+          shipmentRequestLineId: lineId,
           shippedQty: qty,
           uomId: Number(ids.uom),
           allocations: [{ lotId: Number(lotId), allocatedQty: qty, uomId: Number(ids.uom) }],
@@ -800,7 +801,7 @@ describe('출하 목록 (e2e)', () => {
       expect.objectContaining({
         field: 'lines[0].allocations[0].allocatedQty',
         code: 'NEGATIVE_BALANCE',
-        message: `LOT ${PREFIX}-LOT-NOPICK 은 피킹되지 않았습니다. 모바일 출하 피킹(M-04-01)에서 이 LOT 을 먼저 피킹하거나, 피킹된 LOT 으로 배분을 바꾸세요.`,
+        message: `LOT ${PREFIX}-LOT-NOPICK: 남은 피킹분이 없습니다(아직 피킹하지 않았거나 이미 출하에 썼습니다). 모바일 출하 피킹(M-04-01)에서 이 LOT 을 먼저 피킹하거나, 피킹된 LOT 으로 배분을 바꾸세요.`,
       }),
     ]);
   });
@@ -811,21 +812,22 @@ describe('출하 목록 (e2e)', () => {
     expect(failed.errors).toEqual([
       expect.objectContaining({
         field: 'lines[0].allocations[0].allocatedQty',
-        message: expect.stringContaining(`LOT ${PREFIX}-LOT-PARTIAL 을 피킹된 수량(3)보다 많이 배분했습니다(배분 4)`),
+        message: expect.stringContaining(`LOT ${PREFIX}-LOT-PARTIAL: 피킹된 수량(3)보다 많이 배분했습니다(배분 4)`),
       }),
     ]);
   });
 
   it('F-3 모바일 출하 — 피킹(M-04-01)한 수량만큼 출하하면 201 이고 피킹분이 소진된다', async () => {
+    // 전용 지시 라인 — 공용 라인의 배정·출하 누계가 앞 시험 순서에 따라 달라지지 않게 한다.
     await request(app.getHttpServer())
-      .post(`/api/logistics/shipment-requests/${made.postRequest}/lines/${made.postRequestLine}:pick`)
+      .post(`/api/logistics/shipment-requests/${made.pickRequest}/lines/${made.pickRequestLine}:pick`)
       .set('Cookie', cookie)
       .set('Idempotency-Key', randomUUID())
       .set('X-Worker-No', `${PREFIX}-W1`)
       .send({ lotId: Number(ids.lotPick), pickedQty: 5, uomId: Number(ids.uom) })
       .expect(200);
 
-    await post(allocate(ids.lotPick, 5));
+    await post(allocate(ids.lotPick, 5, made.pickRequest, made.pickRequestLine));
 
     const row = await prisma.inventory_balance.findFirstOrThrow({
       where: { lot_id: ids.lotPick, warehouse_id: ids.warehouse },
@@ -1644,6 +1646,22 @@ describe('출하 목록 (e2e)', () => {
     });
     made.postRequest = Number(header.shipment_request_id);
     made.postRequestLine = Number(header.shipment_request_line[0].shipment_request_line_id);
+
+    // F-3(모바일 피킹 뒤 출하) 전용 — 수주 없는 지시 라인 하나.
+    const pickHeader = await prisma.shipment_request.create({
+      data: {
+        shipment_request_no: `${PREFIX}-PICK`,
+        fulfillment_plant_id: ids.plant,
+        customer_id: ids.customer,
+        ship_to_partner_id: ids.customer,
+        requested_ship_date: new Date('2026-09-01T00:00:00.000Z'),
+        status_code: 'REGISTERED',
+        shipment_request_line: { create: [{ line_no: 1, item_id: ids.item, uom_id: ids.uom, requested_qty: 5, allocated_qty: 5 }] },
+      },
+      include: { shipment_request_line: true },
+    });
+    made.pickRequest = Number(pickHeader.shipment_request_id);
+    made.pickRequestLine = Number(pickHeader.shipment_request_line[0].shipment_request_line_id);
 
     // ⭐ 「배정은 넉넉한데 수주가 모자란」 지시 — 두 한도를 «따로» 반증하는 축이다(P-7b).
     const tightOrder = await prisma.sales_order.create({

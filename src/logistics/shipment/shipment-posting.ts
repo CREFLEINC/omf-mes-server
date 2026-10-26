@@ -182,7 +182,7 @@ export async function postShipment(
   }
 
   // ⭐ 원장·소진·손검사·되짚기가 여기 한 줄에 다 있다. ⛔ 이 안을 복제하지 않는다.
-  await onShipmentPaths(input, () => postIssue(
+  await onShipmentPaths(input, lots, () => postIssue(
     tx,
     posting,
     {
@@ -446,19 +446,21 @@ async function assertPicked(tx: Tx, input: ShipmentCreateWrite, lots: Map<string
     const lotNo = (lots.get(key) as LotRow).lot_no;
     const path = `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}].allocatedQty`;
     errors.push(field(path, ERROR_CODE.NEGATIVE_BALANCE, available.isZero()
-      ? `LOT ${lotNo} 은 피킹되지 않았습니다. ${PICK_ACTION}`
-      : `LOT ${lotNo} 을 피킹된 수량(${available.toString()})보다 많이 배분했습니다(배분 ${sum.toString()}). ${PICK_ACTION}`));
+      ? `LOT ${lotNo}: 남은 피킹분이 없습니다(아직 피킹하지 않았거나 이미 출하에 썼습니다). ${PICK_ACTION}`
+      : `LOT ${lotNo}: 피킹된 수량(${available.toString()})보다 많이 배분했습니다(배분 ${sum.toString()}). ${PICK_ACTION}`));
   }
   if (errors.length > 0) throw new ContractException(HttpStatus.BAD_REQUEST, errors);
 }
 
 const ISSUE_LINE_FIELD = /^lines\[(\d+)\]\.(issueQty|lotId)$/;
+/** 출고 코어의 보유 수량 초과 문구 — 이 문구일 때만 확인 위치·조치를 붙인다. */
+const SHORT_ON_HAND = '보유 수량';
 
 /**
  * 출고 코어의 400 은 출고 전표 줄(`lines[i]`)을 짚는다 — 출고 줄은 배분마다 하나라 배분 경로로 옮긴다.
  * ⛔ 코어의 문구·경로는 피킹 출고 등이 같이 쓰므로 그쪽을 고치지 않는다.
  */
-async function onShipmentPaths<T>(input: ShipmentCreateWrite, run: () => Promise<T>): Promise<T> {
+async function onShipmentPaths<T>(input: ShipmentCreateWrite, lots: Map<string, LotRow>, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
@@ -469,9 +471,12 @@ async function onShipmentPaths<T>(input: ShipmentCreateWrite, run: () => Promise
       const entry = match === null ? undefined : flat[Number(match[1])];
       if (match === null || entry === undefined) return item;
       const at = `lines[${entry.lineIndex}].allocations[${entry.allocationIndex}]`;
-      return match[2] === 'lotId'
-        ? { ...item, field: `${at}.lotId` }
-        : { ...item, field: `${at}.allocatedQty`, message: `${item.message} 이 창고의 그 LOT 가용 수량을 재고 현황에서 확인하고 배분 수량을 줄이세요.` };
+      if (match[2] === 'lotId') return { ...item, field: `${at}.lotId` };
+      const lotNo = lots.get(String(entry.allocation.lotId))?.lot_no;
+      const message = item.message.startsWith(SHORT_ON_HAND) && lotNo !== undefined
+        ? `${item.message} 재고 현황·상태 조회(W-01-07)에서 LOT ${lotNo} 의 이 창고 가용 수량을 확인하고 배분 수량을 줄이세요.`
+        : item.message;
+      return { ...item, field: `${at}.allocatedQty`, message };
     }));
   }
 }
