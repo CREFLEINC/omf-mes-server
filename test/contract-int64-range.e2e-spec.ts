@@ -145,7 +145,7 @@ describe('int64 범위 (e2e)', () => {
       expect.objectContaining({ scope: 'field', field: 'handlingUnitId', code: 'INVALID' }),
     ]);
     expect(response.body.errors[0].message).toBe(
-      'handlingUnitId 칸은 -2^63 초과 2^63 미만의 정수여야 합니다. 소수·문자 없이 범위 안의 정수로 보내세요.',
+      'handlingUnitId 칸은 너무 크거나 작은 정수입니다. 대략 ±9.22×10^18 미만의 정수로 보내세요.',
     );
   });
 
@@ -161,7 +161,7 @@ describe('int64 범위 (e2e)', () => {
         expect.objectContaining({ field: 'handlingUnitId', code: 'INVALID' }),
       ]);
       expect(response.body.errors[0].message).toBe(
-        'handlingUnitId 칸은 정수여야 합니다. 정수로 보내고, 값이 없으면 칸을 빼고 보내세요.',
+        'handlingUnitId 칸은 정수여야 합니다. 정수로 보내세요.',
       );
     }
   });

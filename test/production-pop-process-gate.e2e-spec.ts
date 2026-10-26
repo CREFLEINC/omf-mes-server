@@ -159,7 +159,7 @@ describe('POP 저장 API 의 단말 공정 판정 (e2e)', () => {
 
       const mold = await begin(token, { moldId: null }).expect(400);
       expect(fieldOf(mold)).toEqual([['moldId', 'INVALID']]);
-      expect(mold.body.errors[0].message).toBe('moldId 칸은 정수여야 합니다. 정수로 보내고, 값이 없으면 칸을 빼고 보내세요.');
+      expect(mold.body.errors[0].message).toBe('moldId 칸은 정수여야 합니다. 정수로 보내세요.');
       expect(fieldOf(await begin(token, { equipmentId: null }).expect(400))).toEqual([['equipmentId', 'INVALID']]);
     });
 
