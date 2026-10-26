@@ -567,6 +567,7 @@ model handling_unit_content {
   uom                      uom           @relation(fields: [uom_id], references: [uom_id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([handling_unit_id, item_id, lot_id], map: "uq_handling_unit_content")
+  @@index([lot_id], map: "ix_handling_unit_content_lot")
   @@schema("inventory")
 }
 
@@ -943,6 +944,7 @@ model goods_receipt {
   subcontract_receipt       subcontract_receipt[]
 
   @@index([warehouse_id], map: "ix_goods_receipt_warehouse")
+  @@index([receipt_type_code, receipt_datetime], map: "ix_goods_receipt_type_datetime")
   @@schema("logistics")
 }
 
@@ -978,6 +980,8 @@ model goods_receipt_line {
 
   @@unique([goods_receipt_id, line_no], map: "uq_goods_receipt_line")
   @@index([destination_location_id], map: "ix_goods_receipt_line_destination_location")
+  @@index([lot_id], map: "ix_goods_receipt_line_lot")
+  @@index([item_id], map: "ix_goods_receipt_line_item")
   @@schema("logistics")
 }
 
@@ -1440,6 +1444,7 @@ model shipment {
   shipping_unit                            shipping_unit[]
 
   @@index([warehouse_id], map: "ix_shipment_warehouse")
+  @@index([shipped_at], map: "ix_shipment_shipped_at")
   @@schema("logistics")
 }
 
@@ -1499,6 +1504,7 @@ model shipment_line {
   shipment_lot_allocation  shipment_lot_allocation[]
 
   @@unique([shipment_id, line_no], map: "uq_shipment_line")
+  @@index([item_id], map: "ix_shipment_line_item")
   @@schema("logistics")
 }
 
@@ -4269,6 +4275,7 @@ model lot {
   @@unique([plant_id, lot_no], map: "uq_lot")
   @@index([item_id, created_at(sort: Desc)], map: "ix_lot_item")
   @@index([bom_id], map: "ix_lot_bom")
+  @@index([source_type_code, source_id], map: "ix_lot_source")
   @@schema("trace")
 }
 
