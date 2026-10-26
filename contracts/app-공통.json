@@ -5085,6 +5085,13 @@
      "printOutcome"
     ],
     "properties": {
+     "labelQty": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "발행 때 찍은 LOT 라벨 수량(생산 LOT·자재 LOT 라벨) — 그 밖의 문서나 이 칸이 서기 전 발행이면 싣지 않는다. 같은 발행 기록을 다시 그려도 이 수량이 나온다. 근거: 서버 선행 · 장부 P-120"
+     },
      "issuedWorkerId": {
       "type": ["integer", "null"],
       "format": "int64",

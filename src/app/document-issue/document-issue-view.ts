@@ -46,6 +46,8 @@ export interface DocumentIssueView {
   printerName: string | null;
   printOutcome: (typeof PRINT_OUTCOMES)[number];
   remarks: string | null;
+  /** 발행 때 찍은 LOT 라벨 수량(장부 P-120) — LOT 라벨이 아니거나 그 칸이 서기 전 발행이면 싣지 않는다. */
+  labelQty?: number;
 }
 
 export const DOCUMENT_ISSUE_INCLUDE = {
@@ -120,6 +122,7 @@ export function documentIssueView(
       'printOutcome',
     ),
     remarks: row.remarks,
+    labelQty: row.label_qty == null ? undefined : row.label_qty.toNumber(),
   });
 }
 

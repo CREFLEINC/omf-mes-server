@@ -20,7 +20,7 @@ import { runIdempotent } from '../../common/master';
 import { ifMatchVersion } from '../../common/optimistic-lock';
 import type { PagedResponse } from '../../common/pagination';
 import { ProductionResultApprovalService } from './production-result-approval.service';
-import { ProductionResultCorrect, ProductionResultCorrectService } from './production-result-correct.service';
+import { ProductionResultCorrect, ProductionResultCorrection, ProductionResultCorrectService } from './production-result-correct.service';
 import { ProductionResultListQuery, ProductionResultQueryService } from './production-result-query.service';
 import { ProductionResultCreate } from './production-result-rules';
 import { ProductionResultService } from './production-result.service';
@@ -81,7 +81,7 @@ export class ProductionResultController {
     @Req() request: Request,
     @Param('productionResultId', ParseIntPipe) productionResultId: number,
     @Body() body: ProductionResultCorrect,
-  ): Promise<ProductionResultView> {
+  ): Promise<ProductionResultCorrection> {
     const context = { idempotencyKey: String(request.headers['idempotency-key']), appUserId: currentSession(request)?.userId };
     return runIdempotent(this.idempotency, request, HttpStatus.CREATED, () =>
       this.corrections.correct(productionResultId, body, context), FAMILY_CONFLICT_CODE);

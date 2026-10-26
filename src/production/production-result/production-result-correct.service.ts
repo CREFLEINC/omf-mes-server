@@ -6,8 +6,9 @@ import { Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { lockWorkOrder } from '../work-order/work-order-write.service';
-import { CORRECT_APPROVAL_TARGET_TYPE, CORRECT_APPROVAL_TYPE, lockResult } from './production-result-approval.service';
-import { QTY_COLUMNS, resultQuantities } from './production-result-rules';
+import { AffectedLot, CORRECTION_CLOSED_STATUSES, affectedLots, assertLotsNotMovedOn, changedLotIds, correctionAllocations, liveLotQuantities } from './correction-lots';
+import { lockResult } from './production-result-approval.service';
+import { ResultLotAllocation, assertAllocations, resultQuantities } from './production-result-rules';
 import { NUMBERING_DOCUMENT, RESULT_STATUS } from './production-result.service';
 import { ProductionResultRow, ProductionResultView, productionResultView } from './production-result-view';
 import { ResultDefectInput, assertDefectCodes, copyDefects, loadDefects, resolveDefectQty, writeDefects } from './result-defect';
@@ -23,7 +24,11 @@ export interface ProductionResultCorrect {
   scrapQty?: number;
   reworkQty?: number;
   defects?: ResultDefectInput[];
+  /** 정정 후 LOT 배분 — 원본이 배분한 LOT 안에서만. 생략하면 서버가 원본에서 정한다(`correctionAllocations`). */
+  lotAllocations?: ResultLotAllocation[];
 }
+
+export type ProductionResultCorrection = ProductionResultView & { affectedLots: AffectedLot[] };
 
 /** 본문 밖에서 오는 것. ⛔ If-Match·X-Worker-No 는 계약이 이 오퍼레이션에서 걷었다(§1-1). */
 export interface CorrectContext {
@@ -32,12 +37,14 @@ export interface CorrectContext {
 }
 
 /**
- * 실적 정정(I-7 PR ③ · §5). 원본을 고치지 않고 «새 행»을 덧붙인다(G-18).
+ * 실적 정정(I-7 PR ③ · §5 · 장부 P-120). 원본을 고치지 않고 «새 행»을 덧붙인다(G-18).
  *
  * ⛔ 원본을 UPDATE 하지 않는다 — 잠글 것이 없어 If-Match 도 ETag 도 없다.
- * ⛔ LOT 배분을 만들지도 복사하지도 않는다 — 계약 본문에 칸이 없고, 복사하면 `:complete` 의
- *    누적 양품이 두 배가 된다(§5-6 · 문의 044). 작업자 배분은 원 실적의 비율로 정정 수량을 다시 나눈다.
- * ⛔ L1(`moveWithin`)을 부르지 않는다 — 배분이 없어 옮길 슬롯이 없다. 빈 배열로도 안 부른다.
+ * ⭐ 정정본이 LOT 배분을 갖는다 — LOT 수량은 잎(정정 안 된 실적)의 배분만 세므로(`LIVE_ALLOCATION`) 원본 배분과
+ *    두 번 세지 않고, LOT 수량·완료 판정·라벨이 정정을 따른다. 원본이 배분한 LOT 안에서만 고친다.
+ * ⛔ W/O 마감 뒤에는 막는다 — 마감 때 ERP 로 생산입고가 나간다. 마감 전 수량 정정은 승인 없이, 사유가 필수다
+ *    (사용자 결정 2026-10-26).
+ * ⛔ L1(`moveWithin`)을 부르지 않는다 — 원본 LOT 안에서만 고쳐 새로 옮길 슬롯이 없다.
  */
 @Injectable()
 export class ProductionResultCorrectService {
@@ -50,7 +57,7 @@ export class ProductionResultCorrectService {
     productionResultId: number,
     body: ProductionResultCorrect,
     context: CorrectContext,
-  ): Promise<ProductionResultView> {
+  ): Promise<ProductionResultCorrection> {
     // 정정 사유는 그룹 값이 **0건**이라 대조를 걸지 않는다 — 걸면 모든 값이 400 이 된다
     // (I-6 §9-1 #2). ⚠ `plan-uiux.md` §9-4 Q 와 어긋나는 것을 알고 고른 쪽이다(R-20).
     assertNotBlank([['reasonCode', body.reasonCode]]);
@@ -74,11 +81,12 @@ export class ProductionResultCorrectService {
     );
   }
 
-  private async commit(tx: Tx, prepared: PreparedCorrection): Promise<ProductionResultView> {
+  private async commit(tx: Tx, prepared: PreparedCorrection): Promise<ProductionResultCorrection> {
     const { productionResultId, workOrderId, body, context } = prepared;
     // ⭐ 자물쇠 «순서»가 W/O → 실적이다 — 두 자물쇠를 반대로 쥐면 등록(PR ②)과 교착한다
     //    (I-4 R-1 「잠금 오름차순」의 이 도메인판).
-    await lockWorkOrder(tx, workOrderId);
+    const workOrder = await lockWorkOrder(tx, workOrderId);
+    await assertWorkOrderOpen(tx, workOrderId, workOrder.status_code);
     await lockResult(tx, productionResultId);
     const original = await tx.production_result.findUniqueOrThrow({
       where: { production_result_id: BigInt(productionResultId) },
@@ -100,7 +108,12 @@ export class ProductionResultCorrectService {
       scrapQty: body.scrapQty ?? original.scrap_qty.toNumber(),
       reworkQty: body.reworkQty ?? original.rework_qty.toNumber(),
     });
-    if (isGradeA(original, quantities)) await assertCorrectionApproved(tx, productionResultId);
+    const originals = await originalAllocations(tx, original.production_result_id);
+    const allocations = correctionAllocations(originals, body.lotAllocations, original.good_qty.toNumber(), quantities.good_qty);
+    assertAllocations(allocations, quantities.good_qty);
+    const changed = changedLotIds(originals, allocations);
+    await assertLotsNotMovedOn(tx, changed);
+    const lotQtyBefore = await liveLotQuantities(tx, changed);
 
     const max = await tx.production_result.aggregate({
       where: { work_order_id: original.work_order_id },
@@ -133,16 +146,40 @@ export class ProductionResultCorrectService {
         created_by: context.appUserId,
       },
     });
+    if (allocations.length > 0) {
+      await tx.production_result_lot_allocation.createMany({
+        data: allocations.map((allocation) => ({
+          production_result_id: row.production_result_id,
+          lot_id: BigInt(allocation.lotId),
+          allocated_qty: allocation.allocatedQty,
+          uom_id: original.uom_id,
+          created_by: context.appUserId,
+        })),
+      });
+    }
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
+    await tx.audit_event.create({ data: {
+      occurred_at: new Date(),
+      target_type_code: 'PRODUCTION_RESULT',
+      target_id: original.production_result_id,
+      event_type_code: 'RESULT_CORRECTED',
+      before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: originals },
+      after_value: { productionResultId: Number(row.production_result_id), ...quantitiesOf(row), lotAllocations: allocations.map((allocation) => ({ ...allocation })) },
+      reason: [body.reasonCode, body.note].filter((part) => part !== undefined && part !== '').join(' · '),
+      performed_by: context.appUserId === undefined ? null : BigInt(context.appUserId),
+    } });
     // 유형을 실으면 그것이 정정본의 내역이다. 안 실으면 불량수량이 같을 때만 원본 내역을 옮긴다 — 수량이 바뀌면
     // 옛 내역과 합이 어긋나 내역 없이 수량만 남긴다(관리웹 정정 화면이 유형을 받지 않는다 · 장부 P-95).
     const inputs = body.defects ?? [];
     if (inputs.length > 0) await writeDefects(tx, row, inputs, prepared.defectProcessId, context.appUserId);
     else if (row.defect_qty.equals(original.defect_qty)) await copyDefects(tx, row, original.production_result_id, context.appUserId);
     const ids = [row.production_result_id];
-    const allocations = await loadAllocations(tx, ids);
+    const workers = await loadAllocations(tx, ids);
     const defects = await loadDefects(tx, ids);
-    return productionResultView(row, allocations.get(row.production_result_id) ?? [], defects.get(row.production_result_id) ?? []);
+    return {
+      ...productionResultView(row, workers.get(row.production_result_id) ?? [], defects.get(row.production_result_id) ?? []),
+      affectedLots: await affectedLots(tx, changed, lotQtyBefore),
+    };
   }
 }
 
@@ -157,39 +194,6 @@ interface PreparedCorrection {
   defectProcessId: bigint | null;
 }
 
-/**
- * A급 = ⌜수불에 영향을 준다⌝의 가장 좁은 해석 — 본문이 담는 것이 사유·비고·다섯 수량뿐이라
- * 서버가 볼 수 있는 경계는 「수량이 바뀌는가」 하나다. ⭐ 판정은 **승계 «뒤»** 다섯 칸 전체를
- * 견준다 — 「준 칸만 비교」로 하면 원본과 같은 값을 명시로 보낸 요청이 A급이 된다(R-9).
- */
-function isGradeA(original: ProductionResultRow, quantities: Record<string, number>): boolean {
-  return Object.values(QTY_COLUMNS).some((column) => !original[column].equals(quantities[column]));
-}
-
-/**
- * A급 승인 게이트(§5-5). ⛔ 코어 `ApprovalService.assertApproved` 를 쓰지 않는다 — 그쪽은
- * ⌜요청이 0건이면 통과⌝ 라(`approval.service.ts:155`) 상신을 한 번도 안 한 A급 정정을 열어 준다.
- * 이쪽은 「승인이 **필수**」라 뜻이 반대다. 합치는 것은 문의 030 이 답한 뒤다.
- * ⚠ 승인 한 건이 정정 몇 건을 여는지는 세지 않는다 — 소진 축이 데이터에 없다(문의 041 ⓑ).
- */
-async function assertCorrectionApproved(tx: Tx, productionResultId: number): Promise<void> {
-  // 다형 축 — 조회 인덱스는 I-1 A6 이 깐 `ix_approval_request_target` 이다.
-  const requests = await tx.approval_request.findMany({
-    where: {
-      target_type_code: CORRECT_APPROVAL_TARGET_TYPE,
-      target_id: BigInt(productionResultId),
-      approval_type_code: CORRECT_APPROVAL_TYPE,
-    },
-    select: { status_code: true },
-  });
-  if (requests.some((row) => row.status_code === 'APPROVED')) return;
-  // 섞여 있으면 `PENDING` 이 이긴다 — 「기다려라」가 「다시 올려라」보다 정확하다. 0건·반려는 아래로 떨어진다.
-  if (requests.some((row) => row.status_code === 'PENDING')) {
-    throw badRequest(ERROR_CODE.APPROVAL_IN_PROGRESS, '진행 중인 승인 요청이 이미 있습니다.');
-  }
-  throw badRequest(ERROR_CODE.APPROVAL_REQUIRED, '수량을 바꾸는 정정은 승인이 필요합니다. 먼저 상신하십시오.');
-}
-
 function badRequest(code: string, message: string): ContractException {
   return new ContractException(HttpStatus.BAD_REQUEST, [{ scope: 'screen', code, message }]);
 }
@@ -197,4 +201,31 @@ function badRequest(code: string, message: string): ContractException {
 /** 사건 칸 승계 — 원본이 비운 칸은 정정본도 비운다(널을 명시로 넣지 않는다). */
 function inherited(column: string, value: bigint | null): Record<string, unknown> {
   return optional(column, value ?? undefined);
+}
+
+/** W/O 마감·취소 뒤에는 정정하지 않는다 — 마감 때 ERP 로 생산입고가 나가 실적과 어긋난다. */
+async function assertWorkOrderOpen(tx: Tx, workOrderId: number, statusCode: string): Promise<void> {
+  if (!CORRECTION_CLOSED_STATUSES.includes(statusCode)) return;
+  const workOrder = await tx.work_order.findUniqueOrThrow({
+    where: { work_order_id: BigInt(workOrderId) }, select: { work_order_no: true },
+  });
+  const when = statusCode === 'CLOSED' ? '마감돼 ERP 로 생산입고가 이미 나갔습니다' : '취소됐습니다';
+  throw badRequest(ERROR_CODE.STATE_LOCKED,
+    `W/O ${workOrder.work_order_no} 는 ${when}(W/O 진행 상세에서 확인). 실적을 고칠 수 없습니다 — 수량 차이는 재고 조정으로 맞추세요.`);
+}
+
+async function originalAllocations(tx: Tx, productionResultId: bigint) {
+  const rows = await tx.production_result_lot_allocation.findMany({
+    where: { production_result_id: productionResultId },
+    select: { lot_id: true, allocated_qty: true, lot: { select: { lot_no: true } } },
+    orderBy: { lot_id: 'asc' },
+  });
+  return rows.map((row) => ({ lotId: Number(row.lot_id), lotNo: row.lot.lot_no, allocatedQty: row.allocated_qty.toNumber() }));
+}
+
+function quantitiesOf(row: ProductionResultRow): Record<string, number> {
+  return {
+    goodQty: row.good_qty.toNumber(), defectQty: row.defect_qty.toNumber(), holdQty: row.hold_qty.toNumber(),
+    scrapQty: row.scrap_qty.toNumber(), reworkQty: row.rework_qty.toNumber(),
+  };
 }
