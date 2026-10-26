@@ -32,6 +32,7 @@ import { LotIqcSkipExecuteService } from './lot-iqc-skip-execute.service';
 import { InputMaterials, LotGenealogyQueryService, UsedSerials } from './lot-genealogy-query.service';
 import { LotImpactService, type AffectedProductionLots } from './lot-impact.service';
 import { LotIqcSkipService } from './lot-iqc-skip.service';
+import { LotQtyCorrect, LotQtyCorrectService } from './lot-qty-correct.service';
 import { bool } from './lot-rules';
 import { ExternalIdentifierView, HoldView, LotView } from './lot-view';
 import { LotCreate, LotQuery, LotService, LotUpdate } from './lot.service';
@@ -49,6 +50,7 @@ export class LotController {
     private readonly iqcSkips: LotIqcSkipService,
     private readonly iqcSkipExecutes: LotIqcSkipExecuteService,
     private readonly impacts: LotImpactService,
+    private readonly qtyCorrects: LotQtyCorrectService,
     private readonly genealogy: LotGenealogyQueryService,
   ) {}
 
@@ -130,6 +132,21 @@ export class LotController {
   ): Promise<unknown> {
     return runVersioned(this.idempotency, request, response, 'detail', (version) =>
       this.lots.update(lotId, version, body),
+    );
+  }
+
+  @Post(':lotId\\:correct-qty')
+  @Contract('POST /trace/lots/{lotId}:correct-qty')
+  @HttpCode(HttpStatus.OK)
+  correctQty(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+    @Param('lotId', ParseIntPipe) lotId: number,
+    @Body() body: LotQtyCorrect,
+  ): Promise<unknown> {
+    const actor = lotWriteActorOf(request, 'POST /trace/lots/{lotId}:correct-qty');
+    return runVersioned(this.idempotency, request, response, 'detail', (version) =>
+      this.qtyCorrects.correct(lotId, version, body, actor),
     );
   }
 

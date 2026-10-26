@@ -7319,6 +7319,115 @@
     "x-internal-note": "서버 선행 · 장부 P-119."
    }
   },
+  "/trace/lots/{lotId}:correct-qty": {
+   "parameters": [
+    {
+     "name": "lotId",
+     "in": "path",
+     "required": true,
+     "schema": {
+      "type": "integer",
+      "format": "int64"
+     }
+    }
+   ],
+   "post": {
+    "tags": [
+     "trace"
+    ],
+    "summary": "자재 LOT 수량 정정",
+    "description": "IQC 검사가 시작되기 전(의뢰가 검사 중·완료·생략이 아닐 때)의 자재 LOT 수량을 사유와 함께 고친다. 입하 줄의 받은 수량과 아직 시작하지 않은 IQC 의뢰의 대상 수량이 함께 바뀌고 입하 버전이 오른다. 막는 경우(400): 생산 LOT(실적 정정에서 고친다) · IQC 시작 · 입고나 재고 원장에 들어감 · 입하가 작성중이 아님 · 입하 줄에 차이 등록·초과분 P/O 가 이어짐 · P/O 배정 합보다 작게 줄임. 근거: 서버 선행 · 장부 P-121(사용자 결정 2026-10-26)",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/IdempotencyKey"
+     },
+     {
+      "$ref": "#/components/parameters/IfMatchVersion"
+     },
+     {
+      "name": "X-Worker-No",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 50
+      },
+      "description": "단말(POP·모바일) 토큰으로 부를 때 필수 — 정정한 작업자 사번(그 단말 공장의 재직 작업자). 관리웹 세션은 보내지 않는다(정정한 계정이 남는다). 근거: 서버 선행 · 장부 P-121"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LotQtyCorrect"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "정정됨",
+      "headers": {
+       "ETag": {
+        "description": "낙관적 잠금 토큰 — 이 LOT 의 version_no",
+        "schema": {
+         "type": "string"
+        }
+       }
+      },
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LotQtyCorrection"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 LOT",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "저장 충돌. 다시 읽어 오면 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "이력은 audit.audit_event(LOT · LOT_QTY_CORRECTED, before/after 수량·사유·계정 또는 단말·작업자). 장부 P-121."
+   }
+  },
   "/trace/lots": {
    "get": {
     "tags": [
@@ -9702,6 +9811,55 @@
      }
     ],
     "description": "역방향 사슬의 투입 자재 LOT"
+   },
+   "LotQtyCorrect": {
+    "type": "object",
+    "required": [
+     "qty",
+     "reason"
+    ],
+    "description": "자재 LOT 수량 정정 요청. 근거: 서버 선행 · 장부 P-121",
+    "properties": {
+     "qty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "고친 뒤의 LOT 수량",
+      "example": 95
+     },
+     "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "정정 사유 — 이력에 남는다",
+      "example": "포장 단위 오기"
+     }
+    }
+   },
+   "LotQtyCorrection": {
+    "description": "정정 뒤의 LOT 상세(상세 GET 과 같은 꼴)와 정정 결과. 근거: 서버 선행 · 장부 P-121",
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/LotDetailResponse"
+     },
+     {
+      "type": "object",
+      "required": [
+       "qtyBefore",
+       "labelReissueNeeded"
+      ],
+      "properties": {
+       "qtyBefore": {
+        "type": "number",
+        "description": "정정 전 수량",
+        "example": 100
+       },
+       "labelReissueNeeded": {
+        "type": "boolean",
+        "description": "이 LOT 의 자재 LOT 라벨·IQC 라벨이 발행돼 있고 수량이 바뀌었다 — 라벨을 수량 변경 사유로 재발행해야 한다"
+       }
+      }
+     }
+    ]
    },
    "ErrorResponse": {
     "type": "object",

@@ -87,6 +87,8 @@ export const MANUAL_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   // LOT 수정 — 요구서 §3 이 「등록·라벨발행」만 액션으로 적어 수정이 도출표에서 빠졌다.
   // 만드는 화면이 고치는 것이 자연스럽다(M-01-02 자재LOT 스캔등록 · P-01-01 LOT 등록).
   'PUT /trace/lots/{lotId}': ['M-01-02', 'P-01-01'],
+  // 자재 LOT 수량 정정 — 등록한 화면(M-01-02 · P-01-01)과 입고 전 LOT 을 보는 입고 관리(W-01-10)의 조작이다.
+  'POST /trace/lots/{lotId}:correct-qty': ['M-01-02', 'P-01-01', 'W-01-10'],
   // 외부 식별자 치환 — 계약이 이 자식 자원의 조회에 「근거: M-01-02 §4」라 적었고, 요구서가
   // 「부모의 화면이 곧 이 오퍼레이션의 화면」이라 답했다(`plan-uiux.md:852`). 부모를 소유한
   // 화면 하나만 적는다.
