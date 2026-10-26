@@ -267,7 +267,7 @@ function issueKey(
 }
 
 /**
- * 발행 순간의 라벨 수량(장부 P-120) — 렌더와 같은 값이다. 생산 LOT 은 잎 배분 합계(없으면 계획 수량),
+ * 발행 순간의 라벨 수량(장부 P-120). 생산 LOT 은 잎 배분 합계(0 으로 정정됐으면 0 — 계획 수량으로 갈음하지 않는다),
  * 자재 LOT 은 초기 수량. 생산 LOT 수량은 실적 정정으로 바뀌므로 찍힌 수량을 남겨 「재발행 필요」를 가린다.
  */
 async function labelQuantities(
@@ -280,6 +280,7 @@ async function labelQuantities(
   const lots = await tx.lot.findMany({ where: { lot_id: { in: ids } }, select: { lot_id: true, initial_qty: true } });
   const quantities = new Map(lots.map((lot) => [lot.lot_id, lot.initial_qty]));
   if (documentTypeCode !== PRODUCTION_LOT_LABEL) return quantities;
+  for (const lotId of ids) quantities.set(lotId, new Prisma.Decimal(0));
   const sums = await tx.production_result_lot_allocation.groupBy({
     by: ['lot_id'], where: { lot_id: { in: ids }, ...LIVE_ALLOCATION }, _sum: { allocated_qty: true },
   });

@@ -94,9 +94,14 @@ function stub(options: StubOptions = {}) {
           : [{ production_result_id: BigInt(ORIGINAL_ID) }],
       );
     },
-    work_order: { findUniqueOrThrow: () => Promise.resolve({ work_order_no: 'WO-0900' }) },
+    work_order: {
+      findUniqueOrThrow: () => Promise.resolve({ work_order_no: 'WO-0900', completion_variance_reason_code: null }),
+      update: () => Promise.resolve({}),
+    },
     lot: {
-      findMany: () => Promise.resolve((options.originalAllocations ?? []).map((row) => ({ lot_id: BigInt(row.lotId), lot_no: row.lotNo }))),
+      // 완료된 LOT 은 이 픽스처에 없다 — 완료 재판정 조회(`completed_at`)는 0건이다.
+      findMany: ({ where }: { where: Row }) =>
+        Promise.resolve('completed_at' in where ? [] : (options.originalAllocations ?? []).map((row) => ({ lot_id: BigInt(row.lotId), lot_no: row.lotNo }))),
     },
     document_issue_log: { findMany: () => Promise.resolve([]) },
     audit_event: {
@@ -106,7 +111,11 @@ function stub(options: StubOptions = {}) {
       },
     },
     production_result: {
-      findUniqueOrThrow: () => Promise.resolve(original),
+      // 원본 체인을 거슬러 오를 때는 원본의 원본 — 이 픽스처에선 배분 없는 맨 앞 행이다.
+      findUniqueOrThrow: ({ where }: { where: { production_result_id: bigint } }) =>
+        Promise.resolve(where.production_result_id === original.production_result_id
+          ? original
+          : { good_qty: original.good_qty, corrects_production_result_id: null }),
       count: () => Promise.resolve(options.correctedCount ?? 0),
       aggregate: ({ where }: { where: Row }) => {
         sequenceWheres.push(where);
@@ -232,12 +241,12 @@ describe('생산 실적 정정 (I-7 PR ③)', () => {
     expect(harness.allocated.map((row) => [row.lot_id, row.allocated_qty])).toEqual([[501n, 6], [502n, 4]]);
   });
 
-  it('정정 — 원본 LOT 이 여럿인데 양품이 바뀌면 lotAllocations 를 요구한다', async () => {
+  it('정정 — 원본 LOT 이 여럿인데 양품이 바뀌면 LOT 별 수량을 요구한다(배분을 안 보냈으니 양품 칸을 짚는다)', async () => {
     const harness = stub({ originalAllocations: TWO_LOTS });
 
     const caught = await harness.service.correct(ORIGINAL_ID, body({ goodQty: 8 }), context()).catch((e: unknown) => e);
 
-    expect(errorsOf(caught)).toMatchObject([{ field: 'lotAllocations', code: ERROR_CODE.REQUIRED }]);
+    expect(errorsOf(caught)).toMatchObject([{ field: 'goodQty', code: ERROR_CODE.REQUIRED }]);
     expect(harness.created).toEqual([]);
   });
 
@@ -269,8 +278,8 @@ describe('생산 실적 정정 (I-7 PR ③)', () => {
     const caught = await harness.service.correct(ORIGINAL_ID, body({ goodQty: 12 }), context()).catch((e: unknown) => e);
 
     expect(errorsOf(caught)).toEqual([{
-      scope: 'field', field: 'lotAllocations', code: ERROR_CODE.STATE_LOCKED,
-      message: 'LOT L-501 은 이미 생산입고 GR-1 로 창고에 들어갔습니다(LOT 추적에서 확인). 실적 수량을 고칠 수 없습니다 — 생산입고를 취소한 뒤 정정하거나, 재고 조정으로 맞추세요.',
+      scope: 'field', field: 'goodQty', code: ERROR_CODE.STATE_LOCKED,
+      message: 'LOT L-501 은 이미 생산입고 GR-1 로 창고에 들어갔습니다(LOT 추적에서 확인). 생산입고를 취소한 뒤 정정하세요.',
     }]);
   });
 
@@ -351,14 +360,13 @@ describe('생산 실적 정정 (I-7 PR ③)', () => {
     expect(harness.created).toEqual([]);
   });
 
-  it('정정 — 정정 뒤 합이 0 이면 400 이다', async () => {
-    const harness = stub({ original: originalRow({ defect_qty: new Prisma.Decimal(0) }) });
+  it('정정 — 다섯 수량을 모두 0 으로 정정할 수 있고 그때 LOT 배분은 없다(잘못 넣은 실적 지우기)', async () => {
+    const harness = stub({ original: originalRow({ defect_qty: new Prisma.Decimal(0) }), originalAllocations: [{ lotId: 501, lotNo: 'L-501', qty: 6 }, { lotId: 502, lotNo: 'L-502', qty: 4 }] });
 
-    const caught = await harness.service.correct(ORIGINAL_ID, body({ goodQty: 0 }), context()).catch((e: unknown) => e);
+    await harness.service.correct(ORIGINAL_ID, body({ goodQty: 0 }), context());
 
-    // 승계한 넷이 0 이라 합이 0 이 된다 — `ck_production_result_nonzero` 를 앞당겨 막는다.
-    expect(errorsOf(caught)).toMatchObject([{ field: 'goodQty', code: ERROR_CODE.INVALID }]);
-    expect(harness.created).toEqual([]);
+    expect(harness.created[0]).toMatchObject({ good_qty: 0, defect_qty: 0, hold_qty: 0, scrap_qty: 0, rework_qty: 0 });
+    expect(harness.allocated).toEqual([]);
   });
 
   describe('불량 유형 내역', () => {

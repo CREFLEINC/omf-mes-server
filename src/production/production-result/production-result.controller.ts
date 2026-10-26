@@ -2,14 +2,12 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
   Post,
   Query,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -97,18 +95,11 @@ export class ProductionResultController {
       this.corrections.correct(productionResultId, body, context), FAMILY_CONFLICT_CODE);
   }
 
-  /** ⭐ 202 다 — 요청을 «접수»할 뿐 결재는 결재함이 한다. 등급·승인 유형은 서버가 낸다. */
+  /** 더 받지 않는다 — 마감 전 수량 정정은 승인 없이 저장한다(장부 P-120). 계약에 남은 자리라 400 으로 알린다. */
   @Post(':productionResultId\\:request-approval')
   @Contract('POST /production/production-results/{productionResultId}:request-approval')
-  @HttpCode(HttpStatus.ACCEPTED)
-  requestApproval(
-    @Req() request: Request,
-    @Param('productionResultId', ParseIntPipe) productionResultId: number,
-    @Body() body: { reason: string },
-  ): Promise<{ approvalRequestId: number }> {
-    const session = currentSession(request);
-    if (session === undefined) throw new UnauthorizedException('세션이 없습니다.');
-    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () =>
-      this.approvals.requestApproval(productionResultId, body.reason, session.userId), FAMILY_CONFLICT_CODE);
+  requestApproval(@Req() request: Request): Promise<{ approvalRequestId: number }> {
+    return runIdempotent(this.idempotency, request, HttpStatus.ACCEPTED, () => this.approvals.requestApproval(), FAMILY_CONFLICT_CODE);
   }
+
 }

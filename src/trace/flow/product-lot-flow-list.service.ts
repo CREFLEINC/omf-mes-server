@@ -102,9 +102,10 @@ export function stagedSql(query: ProductLotFlowQuery, bind: (value: unknown) => 
   return `
     WITH produced AS (
       SELECT lt.lot_id, lt.plant_id, lt.source_id AS work_order_id, MIN(pr.occurred_at) AS first_produced_at,
-             MAX(pr.occurred_at) AS last_produced_at, SUM(pa.allocated_qty) AS produced_qty
+             MAX(pr.occurred_at) AS last_produced_at, COALESCE(SUM(pa.allocated_qty) FILTER (WHERE ${liveAllocationSql('pa')}), 0) AS produced_qty
         FROM trace.lot lt
-        JOIN production.production_result_lot_allocation pa ON pa.lot_id = lt.lot_id AND ${liveAllocationSql('pa')}
+        -- 배분이 한 번이라도 있었던 LOT 이 대상이다(0 으로 정정된 LOT 은 「생산 0」) · 수량은 잎 배분만 센다.
+        JOIN production.production_result_lot_allocation pa ON pa.lot_id = lt.lot_id
         JOIN production.production_result pr ON pr.production_result_id = pa.production_result_id
        WHERE ${and.join(' AND ')}
        GROUP BY lt.lot_id, lt.plant_id, lt.source_id

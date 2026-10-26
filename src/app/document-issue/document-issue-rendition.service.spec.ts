@@ -60,6 +60,14 @@ describe('DocumentIssueRenditionService', () => {
     expect(prisma.document_issue_log.findUnique).toHaveBeenCalledTimes(2);
   });
 
+  it('발행 때 찍은 라벨 수량이 있으면 그 수량을 그린다 — 뒤에 LOT 수량이 바뀌어도 그 발행은 그때 수량이다(장부 P-120)', async () => {
+    const prisma = {
+      document_issue_log: { findUnique: jest.fn().mockResolvedValue({ ...materialLotIssue, label_qty: new Prisma.Decimal(1000) }) },
+    } as unknown as PrismaService;
+    const text = (await new DocumentIssueRenditionService(prisma).rendition(7, 'tspl')).toString('ascii');
+    expect(text).toContain('"QTY: 1,000 EA"');
+  });
+
   /* omf-all-around#110 — IQC 라벨은 자재 판을 쓰고 유형 칸만 IQC 다(양식은 #86 확정 후 교체 · P-40). */
   it('IQC 라벨 TSPL 은 자재 라벨 판에 유형 IQC 를 찍는다', async () => {
     const iqcIssue = { ...materialLotIssue, document_type_code: 'IQC_LABEL' };

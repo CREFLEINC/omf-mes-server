@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { ContractException, ERROR_CODE } from '../../common/errors';
 import { assertNotBlank, optional, resolveWorkerId } from '../../common/master';
@@ -6,7 +7,10 @@ import { Tx } from '../../core/lot';
 import { NumberingService } from '../../core/numbering';
 import { PrismaService } from '../../prisma/prisma.service';
 import { lockWorkOrder } from '../work-order/work-order-write.service';
-import { AffectedLot, CORRECTION_CLOSED_STATUSES, affectedLots, assertLotsNotMovedOn, changedLotIds, correctionAllocations, liveLotQuantities } from './correction-lots';
+import {
+  AffectedLot, CORRECTION_CLOSED_STATUSES, affectedLots, assertLotsNotMovedOn, changedLotIds, correctionAllocations, liveLotQuantities,
+  originalShare, recheckCompletion,
+} from './correction-lots';
 import { lockResult } from './production-result-approval.service';
 import { ResultLotAllocation, assertAllocations, resultQuantities } from './production-result-rules';
 import { NUMBERING_DOCUMENT, RESULT_STATUS } from './production-result.service';
@@ -44,8 +48,7 @@ export interface CorrectContext {
  * ⛔ 원본을 UPDATE 하지 않는다 — 잠글 것이 없어 If-Match 도 ETag 도 없다.
  * ⭐ 정정본이 LOT 배분을 갖는다 — LOT 수량은 잎(정정 안 된 실적)의 배분만 세므로(`LIVE_ALLOCATION`) 원본 배분과
  *    두 번 세지 않고, LOT 수량·완료 판정·라벨이 정정을 따른다. 원본이 배분한 LOT 안에서만 고친다.
- * ⛔ W/O 마감 뒤에는 막는다 — 마감 때 ERP 로 생산입고가 나간다. 마감 전 수량 정정은 승인 없이, 사유가 필수다
- *    (사용자 결정 2026-10-26).
+ * ⛔ W/O 마감 뒤에는 막는다 — 마감 때 ERP 로 생산입고가 나간다. 마감 전 수량 정정은 승인 없이, 사유가 필수다.
  * ⛔ L1(`moveWithin`)을 부르지 않는다 — 원본 LOT 안에서만 고쳐 새로 옮길 슬롯이 없다.
  */
 @Injectable()
@@ -106,17 +109,19 @@ export class ProductionResultCorrectService {
     }
 
     const quantities = resultQuantities({
+      // 정정은 다섯 칸이 모두 0 이어도 된다 — 잘못 넣은 실적을 지우거나 다른 LOT 으로 옮기는 길이다.
+      allowZero: true,
       goodQty: body.goodQty ?? original.good_qty.toNumber(),
       defectQty: prepared.defectQty ?? original.defect_qty.toNumber(),
       holdQty: body.holdQty ?? original.hold_qty.toNumber(),
       scrapQty: body.scrapQty ?? original.scrap_qty.toNumber(),
       reworkQty: body.reworkQty ?? original.rework_qty.toNumber(),
     });
-    const originals = await originalAllocations(tx, original.production_result_id);
-    const allocations = correctionAllocations(originals, body.lotAllocations, original.good_qty.toNumber(), quantities.good_qty);
+    const share = await originalShare(tx, original.production_result_id);
+    const allocations = correctionAllocations(share, body.lotAllocations, new Prisma.Decimal(quantities.good_qty));
     assertAllocations(allocations, quantities.good_qty);
-    const changed = changedLotIds(originals, allocations);
-    await assertLotsNotMovedOn(tx, changed);
+    const changed = changedLotIds(share.allocations, allocations);
+    await assertLotsNotMovedOn(tx, changed, body.lotAllocations === undefined ? 'goodQty' : 'lotAllocations');
     const lotQtyBefore = await liveLotQuantities(tx, changed);
 
     const max = await tx.production_result.aggregate({
@@ -146,7 +151,6 @@ export class ProductionResultCorrectService {
         // ⚠ 계약이 이름을 달리 적었다 — 본문 `note` 가 물리 `remarks` 다(§5-2 ⓖ).
         ...optional('remarks', body.note),
         idempotency_key: context.idempotencyKey,
-        // 정정한 사람은 인증 주체로 남는다 — 이 오퍼레이션은 사번을 받지 않는다.
         created_by: context.appUserId,
       },
     });
@@ -162,12 +166,13 @@ export class ProductionResultCorrectService {
       });
     }
     await allocateLikeOriginal(tx, row, original.production_result_id, context.appUserId);
+    const completionReset = await recheckCompletion(tx, original.work_order_id, changed);
     await tx.audit_event.create({ data: {
       occurred_at: new Date(),
       target_type_code: 'PRODUCTION_RESULT',
       target_id: original.production_result_id,
       event_type_code: 'RESULT_CORRECTED',
-      before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: originals },
+      before_value: { productionResultId: Number(original.production_result_id), ...quantitiesOf(original), lotAllocations: share.allocations.map((row) => ({ ...row })) },
       after_value: {
         productionResultId: Number(row.production_result_id), ...quantitiesOf(row),
         lotAllocations: allocations.map((allocation) => ({ ...allocation })),
@@ -188,7 +193,7 @@ export class ProductionResultCorrectService {
     const defects = await loadDefects(tx, ids);
     return {
       ...productionResultView(row, workers.get(row.production_result_id) ?? [], defects.get(row.production_result_id) ?? []),
-      affectedLots: await affectedLots(tx, changed, lotQtyBefore),
+      affectedLots: await affectedLots(tx, changed, lotQtyBefore, completionReset),
     };
   }
 }
@@ -226,14 +231,6 @@ async function assertWorkOrderOpen(tx: Tx, workOrderId: number, statusCode: stri
     `W/O ${workOrder.work_order_no} 는 ${when}(W/O 진행 상세에서 확인). 실적을 고칠 수 없습니다 — 수량 차이는 재고 조정으로 맞추세요.`);
 }
 
-async function originalAllocations(tx: Tx, productionResultId: bigint) {
-  const rows = await tx.production_result_lot_allocation.findMany({
-    where: { production_result_id: productionResultId },
-    select: { lot_id: true, allocated_qty: true, lot: { select: { lot_no: true } } },
-    orderBy: { lot_id: 'asc' },
-  });
-  return rows.map((row) => ({ lotId: Number(row.lot_id), lotNo: row.lot.lot_no, allocatedQty: row.allocated_qty.toNumber() }));
-}
 
 function quantitiesOf(row: ProductionResultRow): Record<string, number> {
   return {
