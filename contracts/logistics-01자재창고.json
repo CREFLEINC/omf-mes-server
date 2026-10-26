@@ -2896,6 +2896,346 @@
     "x-internal-note": "결재선 조회·결재 오퍼레이션은 app-공통 파일 소관이다. 이 트랙은 요청 생성까지만 덮는다."
    }
   },
+  "/logistics/goods-receipt-lines": {
+   "get": {
+    "tags": [
+     "logistics"
+    ],
+    "summary": "입고 줄 목록(자재입고·생산입고 현황)",
+    "description": "입고 건을 가로지르는 줄 목록. 입고 목록은 머리글 단위라 품목·수량이 없다. 기간은 공장 현지 날짜(양 끝 포함)이고 시작이 필수, 최대 366일이다 — 입고 목록의 receiptDateFrom/To(UTC 날짜)와 다르다. 상태를 고르지 않으면 취소·취소요청 입고는 뺀다. 정렬: 입고 일시 내림차순 → 입고 → 줄 번호. 근거: 서버 선행 · 장부 P-119 · omf-all-around#73",
+    "parameters": [
+     {
+      "name": "receiptTypeCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입고 유형(공통코드 RECEIPT_TYPE) — 자재입고 MATERIAL · 생산입고 PRODUCT"
+     },
+     {
+      "name": "receiptDateFrom",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입고일 시작(공장 현지 날짜) · 필수"
+     },
+     {
+      "name": "receiptDateTo",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "format": "date"
+      },
+      "description": "입고일 종료(공장 현지 날짜, 포함)"
+     },
+     {
+      "name": "plantId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "warehouseId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "itemId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      }
+     },
+     {
+      "name": "supplierId",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "format": "int64"
+      },
+      "description": "입하 줄에서 온 입고(자재입고)의 공급사"
+     },
+     {
+      "name": "statusCode",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "물류 전표 상태(LOGISTICS_DOCUMENT_STATUS). 주면 취소도 그 값으로 고른다"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "입고 번호·LOT 번호 부분 검색"
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "size",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "목록",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "items",
+          "page",
+          "totals"
+         ],
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "required": [
+             "goodsReceiptLineId",
+             "goodsReceiptId",
+             "goodsReceiptNo",
+             "lineNo",
+             "receiptTypeCode",
+             "receiptDatetime",
+             "statusCode",
+             "plantId",
+             "warehouse",
+             "item",
+             "lotId",
+             "lotNo",
+             "receiptQty",
+             "uomId",
+             "uomCode",
+             "supplier",
+             "workOrder"
+            ],
+            "properties": {
+             "goodsReceiptLineId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "goodsReceiptId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "goodsReceiptNo": {
+              "type": "string"
+             },
+             "lineNo": {
+              "type": "integer"
+             },
+             "receiptTypeCode": {
+              "type": "string"
+             },
+             "receiptDatetime": {
+              "type": "string",
+              "format": "date-time"
+             },
+             "statusCode": {
+              "type": "string"
+             },
+             "plantId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "warehouse": {
+              "type": "object",
+              "required": [
+               "id",
+               "code",
+               "name"
+              ],
+              "description": "입고 창고",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "code": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               }
+              }
+             },
+             "item": {
+              "type": "object",
+              "required": [
+               "id",
+               "code",
+               "name"
+              ],
+              "description": "품목",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "code": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               }
+              }
+             },
+             "lotId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "lotNo": {
+              "type": "string"
+             },
+             "receiptQty": {
+              "type": "number"
+             },
+             "uomId": {
+              "type": "integer",
+              "format": "int64"
+             },
+             "uomCode": {
+              "type": "string"
+             },
+             "supplier": {
+              "type": [
+               "object",
+               "null"
+              ],
+              "required": [
+               "id",
+               "code",
+               "name"
+              ],
+              "description": "입하 줄에서 온 입고(자재입고)만 — 그 입하의 공급사. 아니면 null",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "code": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               }
+              }
+             },
+             "workOrder": {
+              "type": [
+               "object",
+               "null"
+              ],
+              "required": [
+               "workOrderId",
+               "workOrderNo"
+              ],
+              "description": "LOT 원천이 W/O 인 입고(생산입고)만. 아니면 null",
+              "properties": {
+               "workOrderId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "workOrderNo": {
+                "type": "string"
+               }
+              }
+             }
+            }
+           }
+          },
+          "page": {
+           "$ref": "#/components/schemas/PageMeta"
+          },
+          "totals": {
+           "type": "object",
+           "required": [
+            "lineCount",
+            "qtyByUom"
+           ],
+           "description": "필터 전체(쪽과 무관)의 합계. 단위가 섞이면 더할 수 없어 단위마다 둔다.",
+           "properties": {
+            "lineCount": {
+             "type": "integer",
+             "description": "줄 수 — page.total 과 같다"
+            },
+            "qtyByUom": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "required": [
+               "uomId",
+               "uomCode",
+               "qty"
+              ],
+              "properties": {
+               "uomId": {
+                "type": "integer",
+                "format": "int64"
+               },
+               "uomCode": {
+                "type": "string"
+               },
+               "qty": {
+                "type": "number"
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "검증 실패 — 기간 시작 없음·종료가 시작보다 앞섬·366일 초과. 고쳐야 풀린다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "권한 없음 — 입하~출고 추적 화면 권한",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    },
+    "x-internal-note": "서버 선행 · 장부 P-119 · omf-all-around#73."
+   }
+  },
   "/logistics/goods-receipts": {
    "get": {
     "tags": [
