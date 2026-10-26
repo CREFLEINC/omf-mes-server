@@ -7,6 +7,9 @@ import { TerminalContext } from './terminal-context';
 
 type TerminalType = 'POP' | 'MOBILE';
 
+/** POP 이 보는 설비 상태 — 가동 중인 설비만 작업을 시작한다. */
+const IN_SERVICE = 'IN_SERVICE';
+
 /** Explicit terminal GETs; each additional FR-005 group is reviewed for resource scope. */
 export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly TerminalType[]>> = {
   'GET /mdm/workers': ['POP', 'MOBILE'],
@@ -35,7 +38,8 @@ export const TERMINAL_READ_OPERATIONS: Readonly<Record<string, readonly Terminal
   'GET /mdm/molds': ['POP'],
   'GET /mdm/molds/{moldId}': ['POP'],
   'GET /mdm/partners': ['POP', 'MOBILE'],
-  'GET /mdm/equipments': ['MOBILE'],
+  // POP 은 같은 공장의 가동 설비 목록만 — 옆 설비의 W/O 를 찾아 대신 시작하는 현장 흐름(장부 P-123).
+  'GET /mdm/equipments': ['POP', 'MOBILE'],
   'GET /mdm/locations/{locationId}': ['MOBILE'],
   'GET /maintenance/breakdowns': ['POP', 'MOBILE'],
   'GET /maintenance/downtimes': ['POP'],
@@ -87,6 +91,13 @@ export async function assertTerminalReadScope(
     });
     if (!row) throw denied();
   };
+  const plantEquipment = async (value: unknown): Promise<void> => {
+    const id = positiveId(value);
+    const row = id === null ? null : await prisma.equipment.findFirst({
+      where: { equipment_id: id, plant_id: plantId }, select: { equipment_id: true },
+    });
+    if (!row) throw denied();
+  };
   const ownLot = async (value: unknown): Promise<void> => {
     const id = positiveId(value);
     const row = id === null ? null : await prisma.lot.findFirst({
@@ -110,9 +121,9 @@ export async function assertTerminalReadScope(
         // 재작업 실적(P-04-03)은 배포 전(PLANNED) 재작업 W/O 도 «보이기만» 한다 — 지시가 났는지 현장이 알게(장부 P-113).
         //   고르기·저장은 배포된 것만이다(실적 저장이 PLANNED 를 받지 않는다).
         const plannedRework = query.workOrderTypeCode === 'REWORK' && query.statusCode === 'PLANNED';
-        if ((query.open !== 'true' && !plannedRework)
-          || (query.plannedEquipmentId !== undefined
-            && (terminal.equipmentId === null || positiveId(query.plannedEquipmentId) !== terminal.equipmentId))) throw denied();
+        if (query.open !== 'true' && !plannedRework) throw denied();
+        // 설비를 걸면 단말 공장의 설비여야 한다 — 옆 설비의 W/O 도 찾는다(장부 P-123). 없는 설비와 남의 공장 설비는 같은 401 이다.
+        if (query.plannedEquipmentId !== undefined) await plantEquipment(query.plannedEquipmentId);
         // 목록 서비스가 이 단말의 공정 매핑으로 좁힌다 — 재작업은 실적 입력, 그 밖은 작업 시작 공정이다.
       } else {
         await ownWorkOrder(query.successorOfWorkOrderId);
@@ -172,8 +183,11 @@ export async function assertTerminalReadScope(
       break;
     }
     case 'GET /mdm/molds':
+      requirePlantQuery(request, plantId);
+      break;
     case 'GET /mdm/equipments':
       requirePlantQuery(request, plantId);
+      if (terminal.terminalTypeCode === 'POP') forceQuery(request, { statusCode: IN_SERVICE, includeInactive: undefined });
       break;
     case 'GET /mdm/molds/{moldId}': {
       const moldId = positiveId(request.params.moldId);
@@ -214,9 +228,14 @@ export async function assertTerminalReadScope(
 function requirePlantQuery(request: Request, plantId: bigint): void {
   const query = request.query as Record<string, unknown>;
   if (query.plantId !== undefined && positiveId(query.plantId) !== plantId) throw denied();
-  Object.defineProperty(request, 'query', {
-    value: { ...query, plantId: Number(plantId) }, writable: true, configurable: true,
-  });
+  forceQuery(request, { plantId: Number(plantId) });
+}
+
+/** 질의 칸을 덮어쓴다 — `undefined` 는 그 칸을 지운다. */
+function forceQuery(request: Request, values: Record<string, unknown>): void {
+  const query = { ...(request.query as Record<string, unknown>), ...values };
+  for (const key of Object.keys(values)) if (values[key] === undefined) delete query[key];
+  Object.defineProperty(request, 'query', { value: query, writable: true, configurable: true });
 }
 
 function positiveId(value: unknown): bigint | null {

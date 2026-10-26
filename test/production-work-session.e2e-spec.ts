@@ -1073,10 +1073,10 @@ describe('작업 세션 조회 4건 (e2e)', () => {
       expect(found).not.toContain(listed.otherProcess);
     });
 
-    it('설비 없는 POP 단말이 설비를 걸면 막힌다', async () => {
-      const response = await list(terminalToken, { plannedEquipmentId: Number(equipmentId) });
-
-      expect(response.status).not.toBe(200);
+    // 장부 P-123 — 단말 공장의 설비면 걸 수 있다(옆 설비의 W/O 를 찾는다). 다른 공장·없는 설비는 401 이다.
+    it('설비 없는 POP 단말도 단말 공장의 설비를 걸어 목록을 본다 — 없는 설비는 401', async () => {
+      await list(terminalToken, { plannedEquipmentId: Number(equipmentId) }).expect(200);
+      await list(terminalToken, { plannedEquipmentId: 999_999_999 }).expect(401);
     });
 
     /** 단말 토큰만 싣는 생산 쓰기 — 단말 범위(`terminal-production-scope.ts`)를 탄다. */

@@ -8525,6 +8525,7 @@
     ],
     "summary": "설비 목록",
     "description": "설비 선택 목록과 설비 마스터 화면이 함께 쓴다. 유효성 판정은 서버가 하며 기본은 유효한 것만 내린다. 과거 데이터 표시용은 includeInactive=true 로 켜고 isActive 표식을 함께 본다. 계측기 화면은 equipmentTypeCode 로 거른다. 근거: W-05-12 §5-1 · W-05-11 §3-2 · W-06-02 §4-C 지정 검사장비",
+    "x-server-note": "⭐ POP 단말도 읽는다 — 옆 설비의 W/O 를 찾아 대신 시작하는 현장 흐름(P-02-01). POP 이면 plantId 를 단말 공장으로, statusCode 를 IN_SERVICE 로 덮어쓰고 includeInactive 는 무시한다. 다른 공장 plantId 를 실으면 401. MOBILE 은 그대로(plantId 만 단말 공장). 장부 P-123",
     "parameters": [
      {
       "name": "q",

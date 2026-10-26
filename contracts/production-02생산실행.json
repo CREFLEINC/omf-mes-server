@@ -2395,6 +2395,7 @@
     ],
     "summary": "W/O 목록·진행현황",
     "description": "집계 열(실적 누계)을 함께 내려준다. 근거: W-02-08 §3·§5",
+    "x-server-note": "⭐ POP 단말의 plannedEquipmentId 는 단말 공장의 설비면 어느 것이든 받는다 — 옆 설비의 W/O 를 찾는다(P-02-01). 다른 공장 설비·없는 설비는 같은 401(있는지 드러내지 않는다). 읽기만이다 — 작업 시작의 설비 판정은 그대로 단말 설비(없으면 W/O 계획 설비)다. 장부 P-123",
     "parameters": [
      {
       "name": "productionOrderId",
