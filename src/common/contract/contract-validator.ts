@@ -14,7 +14,7 @@ import { toErrorItems } from './validation-error.mapper';
  * OpenAPI 고유 format. JSON Schema 에는 없어 ajv 가 모른다. 무연산으로 등록해 둔다 —
  * `validateFormats: false` 로 통째로 끄면 date·date-time·uuid 검사까지 같이 죽는다.
  */
-const OPENAPI_FORMATS = ['int32', 'double', 'float', 'binary', 'password'];
+export const OPENAPI_FORMATS = ['int32', 'double', 'float', 'binary', 'password'];
 
 /**
  * `int64` 만 «무연산이 아니다» — 실제로 범위를 본다.
@@ -184,7 +184,7 @@ function csvQueryNames(
 
 /**
  * 계약이 `explode: false` 로 적은 배열 질의는 쉼표로 이은 한 문자열이다(OpenAPI form 스타일).
- * 검증 «전»에 나눠야 `must be array` 로 막히지 않는다. 같은 키를 반복해 이미 배열로 온 값은
+ * 검증 «전»에 나눠야 「목록(배열)이어야 합니다」 400 으로 막히지 않는다. 같은 키를 반복해 이미 배열로 온 값은
  * 원소 안의 쉼표를 다시 나누지 않는다 — 빈 토큰도 버리지 않아 계약 검증이 400 으로 가른다.
  */
 function splitCsvQuery(query: Record<string, unknown>, names: string[] | undefined): void {

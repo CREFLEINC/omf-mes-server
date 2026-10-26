@@ -4,7 +4,7 @@
  * ⭐ `ETag` 노출이 이 파일의 본체다 — 빠뜨리면 화면이 낙관적 잠금 토큰을 못 읽어
  * 모든 수정이 `If-Match` 없이 나가고, 도메인 전체의 편집이 죽는다.
  */
-import { Controller, Get, INestApplication, Module, Res } from '@nestjs/common';
+import { Body, Controller, Get, INestApplication, Module, Post, Res } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Response } from 'express';
 import request from 'supertest';
@@ -20,6 +20,11 @@ class CorsProbeController {
   etag(@Res({ passthrough: true }) response: Response): unknown {
     response.setHeader('ETag', '7');
     return { ok: true };
+  }
+
+  @Post('echo')
+  echo(@Body() body: unknown): unknown {
+    return body;
   }
 }
 
@@ -223,6 +228,27 @@ describe('CORS (e2e)', () => {
 
       expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
       expect(response.headers['access-control-expose-headers']).toContain('ETag');
+    });
+
+    /**
+     * ⛔ 본문 해석 오류도 CORS 헤더를 단다 — 빠지면 브라우저가 응답을 network 오류로 바꿔
+     * 한국어 문구가 화면에 안 보이고, 보내기 대기열은 같은 요청을 끝없이 다시 보낸다.
+     * CORS 층이 해석기보다 «앞»에 있어야 한다(`configureApp`).
+     */
+    it.each([
+      ['깨진 JSON', '{"a":', 400],
+      ['크기 초과', JSON.stringify({ a: 'x'.repeat(200 * 1024) }), 413],
+    ])('⛔ 본문 해석 오류(%s)에도 받은 오리진을 돌려준다', async (_label, body, status) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/probe/echo')
+        .set('Origin', STRANGER)
+        .set('Content-Type', 'application/json')
+        .send(body)
+        .expect(status);
+
+      expect(response.headers['access-control-allow-origin']).toBe(STRANGER);
+      expect(response.headers['access-control-allow-credentials']).toBe('true');
+      expect(response.body.errors[0].scope).toBe('screen');
     });
   });
 
