@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { localDate } from '../../planning/production-plan/plan-window';
-import { localTimeOf, timeOf } from '../work-session/shift-resolver';
+import { localTimeOf, pickShift, timeOf } from '../work-session/shift-resolver';
 
 /** 실적 한 행에서 일자별 묶음에 쓰는 칸 — 잎(정정되지 않은 행)만 들어온다. */
 export interface DailyResultRow {
@@ -12,14 +12,28 @@ export interface DailyResultRow {
   rework_qty: Prisma.Decimal;
   occurred_at: Date;
   corrects_production_result_id: bigint | null;
+  /** 실적이 난 공장의 시간대. */
+  timezone: string;
   shift: ResultShift | null;
 }
 
 export interface ResultShift {
   shift_id: bigint;
   shift_name: string;
+  start_time: Date;
   end_time: Date;
   crosses_midnight: boolean;
+}
+
+/**
+ * 실적의 교대 — 실적에 적힌 교대(정정본은 원본 것을 물려받는다), 없으면 실적 시각을 그 공장의 교대 정의로 다시 판정한다.
+ * ⚠ 세션의 교대는 쓰지 않는다 — 세션 시작 시각으로 정한 교대라 세션이 교대를 넘겨 이어지면 실적 시각과 어긋난다.
+ * ⚠ 교대 정의는 지금 것이다 — 교대 시각이 바뀌면 지난 실적도 새 정의로 판정한다.
+ */
+export function shiftOfResult(own: ResultShift | null, occurredAt: Date, timezone: string, plantShifts: readonly ResultShift[]): ResultShift | null {
+  if (own !== null) return own;
+  const id = pickShift([...plantShifts], localTimeOf(occurredAt, timezone));
+  return plantShifts.find((shift) => shift.shift_id === id) ?? null;
 }
 
 /**
@@ -89,13 +103,13 @@ interface Day {
 /** 교대가 정해지지 않은 실적을 모은 줄의 이름 — 화면이 그대로 보인다. */
 export const NO_SHIFT_NAME = '교대 없음';
 
-/** 영업일 오름차순, 그 안의 교대는 교대 없음이 맨 뒤이고 나머지는 교대 id 순이다. */
-export function dailyResultsOf(rows: readonly DailyResultRow[], timezone: string) {
+/** 영업일 오름차순, 그 안의 교대는 교대 시작 시각 순이고 교대 없음이 맨 뒤다. */
+export function dailyResultsOf(rows: readonly DailyResultRow[]) {
   const days = new Map<string, Day>();
   let total = emptyTally();
   for (const row of rows) {
     total = add(total, row);
-    const key = workDateOf(row.occurred_at, timezone, row.shift);
+    const key = workDateOf(row.occurred_at, row.timezone, row.shift);
     const day = days.get(key) ?? { tally: emptyTally(), firstAt: row.occurred_at, lastAt: row.occurred_at, shifts: new Map() };
     day.tally = add(day.tally, row);
     if (row.occurred_at < day.firstAt) day.firstAt = row.occurred_at;
@@ -124,5 +138,6 @@ export function dailyResultsOf(rows: readonly DailyResultRow[], timezone: string
 
 function byShiftOrder(a: { shift: ResultShift | null }, b: { shift: ResultShift | null }): number {
   if (a.shift === null || b.shift === null) return Number(a.shift === null) - Number(b.shift === null);
-  return a.shift.shift_id < b.shift.shift_id ? -1 : a.shift.shift_id > b.shift.shift_id ? 1 : 0;
+  return timeOf(a.shift.start_time).localeCompare(timeOf(b.shift.start_time))
+    || (a.shift.shift_id < b.shift.shift_id ? -1 : a.shift.shift_id > b.shift.shift_id ? 1 : 0);
 }

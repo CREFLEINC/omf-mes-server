@@ -2,7 +2,7 @@
  * W/O 일자별 실적 — 마감 상세의 일자별 표(장부 P-122) (e2e).
  *
  * 정정된 원본은 빼고 정정본만 세며(W/O 누계와 같은 값), 자정을 넘는 야간 교대의 새벽 실적은 교대 시작일로 묶인다.
- * 교대는 실적에 비어 있고 작업 세션이 갖는다 — 세션의 교대로 판정하는지 함께 본다.
+ * 실적에 교대가 비어 있으면 실적 시각을 공장 교대로 다시 판정한다 — 야간 세션이 다음 날 낮까지 열려 있어도 낮 실적은 야간이 아니다.
  */
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -44,7 +44,7 @@ describe('W/O 일자별 실적 (e2e)', () => {
     }
   });
 
-  it('야간 새벽 실적은 교대 시작일로, 정정된 원본은 빼고 정정본만 센다 — 합계가 W/O 누계와 같다', async () => {
+  it('야간 새벽 실적은 교대 시작일로, 정정된 원본은 빼고 정정본만 센다 — 열린 야간 세션의 낮 실적은 교대 없음, 합계는 W/O 누계와 같다', async () => {
     const response = await request(app.getHttpServer())
       .get(`${WORK_ORDERS}/${String(ids.workOrder)}/daily-results`).set('Cookie', cookie).expect(200);
 
@@ -55,9 +55,9 @@ describe('W/O 일자별 실적 (e2e)', () => {
       orderQty: 20,
       items: [
         {
-          workDate: '2026-10-21', goodQty: 9, ...zeros, resultCount: 2, correctedCount: 1,
+          workDate: '2026-10-21', goodQty: 9, ...zeros, defectQty: 1, scrapQty: 2, resultCount: 2, correctedCount: 1,
           firstAt: local('2026-10-21T23:00:00').toISOString(), lastAt: local('2026-10-22T02:00:00').toISOString(),
-          byShift: [{ shiftId: Number(ids.night), shiftName: `${PREFIX} 야간`, goodQty: 9, ...zeros, resultCount: 2, correctedCount: 1 }],
+          byShift: [{ shiftId: Number(ids.night), shiftName: `${PREFIX} 야간`, goodQty: 9, ...zeros, defectQty: 1, scrapQty: 2, resultCount: 2, correctedCount: 1 }],
         },
         {
           workDate: '2026-10-22', goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0,
@@ -65,12 +65,13 @@ describe('W/O 일자별 실적 (e2e)', () => {
           byShift: [{ shiftId: null, shiftName: '교대 없음', goodQty: 2, ...zeros, resultCount: 1, correctedCount: 0 }],
         },
       ],
-      totals: { goodQty: 11, ...zeros, resultCount: 3, correctedCount: 1 },
+      totals: { goodQty: 11, ...zeros, defectQty: 1, scrapQty: 2, resultCount: 3, correctedCount: 1 },
     });
 
     const detail = await request(app.getHttpServer())
       .get(`${WORK_ORDERS}/${String(ids.workOrder)}?withProgress=true`).set('Cookie', cookie).expect(200);
-    expect(detail.body.progress.goodQty).toBe(response.body.totals.goodQty);
+    const { goodQty, defectQty, holdQty, scrapQty, reworkQty } = response.body.totals;
+    expect(detail.body.progress).toMatchObject({ goodQty, defectQty, holdQty, scrapQty, reworkQty });
   });
 
   it('실적이 없는 W/O 는 빈 목록과 0 합계다', async () => {
@@ -147,7 +148,7 @@ describe('W/O 일자별 실적 (e2e)', () => {
     } })).work_session_id;
 
     let sequence = 0;
-    const result = async (at: string, good: number, data: { work_session_id?: bigint; corrects_production_result_id?: bigint } = {}) => {
+    const result = async (at: string, good: number, data: { work_session_id?: bigint; corrects_production_result_id?: bigint; defect_qty?: number; scrap_qty?: number } = {}) => {
       sequence += 1;
       const key = `${PREFIX}-PR-${String(sequence)}`;
       return (await prisma.production_result.create({ data: {
@@ -155,10 +156,11 @@ describe('W/O 일자별 실적 (e2e)', () => {
         result_source_code: 'MANUAL', occurred_at: local(at), worker_id: workerId, status_code: 'CONFIRMED', idempotency_key: key, ...data,
       } })).production_result_id;
     };
-    await result('2026-10-21T23:00:00', 5, { work_session_id: sessionId });
+    await result('2026-10-21T23:00:00', 5, { work_session_id: sessionId, defect_qty: 1, scrap_qty: 2 });
     const corrected = await result('2026-10-22T02:00:00', 3, { work_session_id: sessionId });
     await result('2026-10-22T02:00:00', 4, { work_session_id: sessionId, corrects_production_result_id: corrected });
-    await result('2026-10-22T10:00:00', 2);
+    // 야간 세션을 닫지 않은 채 다음 날 낮에 넣은 실적 — 이 공장에는 야간만 있어 교대 없음이다.
+    await result('2026-10-22T10:00:00', 2, { work_session_id: sessionId });
   }
 
   async function cleanup(): Promise<void> {

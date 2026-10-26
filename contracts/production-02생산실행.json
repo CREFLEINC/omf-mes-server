@@ -3134,7 +3134,7 @@
      "production"
     ],
     "summary": "W/O 일자별 실적",
-    "description": "W/O 마감 상세의 일자별 표. 수량은 W/O 누계(WorkOrderProgress)와 같은 규칙으로 센다 — 정정된 원본은 빼고 정정본(잎)만 센다. 실적에는 취소 상태가 없고 0 수량 정정이 그 자리다. 일자(workDate)는 공장 현지 날짜이되, 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다 — 교대는 실적의 교대, 없으면 그 실적 작업 세션의 교대다. 교대가 없으면 공장 현지 날짜, 공장을 찾지 못하면 Asia/Ho_Chi_Minh. 영업일 오름차순. 근거: 서버 선행 · 장부 P-122",
+    "description": "W/O 마감 상세의 일자별 표. 수량은 W/O 누계(WorkOrderProgress)와 같은 규칙으로 센다 — 정정된 원본은 빼고 정정본(잎)만 센다. 실적에는 취소 상태가 없고 0 수량 정정이 그 자리다 — 수량 0 정정도 resultCount·correctedCount 에 실적 하나로 센다. 일자(workDate)는 공장 현지 날짜이되, 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다 — 교대는 실적의 교대(정정본은 원본 것), 없으면 실적 시각을 그 공장의 지금 교대 정의로 판정한다(작업 세션의 교대는 쓰지 않는다). 공장은 실적 단말의 공장, 없으면 W/O 의 공장(ERP W/O → 라인). 교대가 없으면 공장 현지 날짜, 공장을 찾지 못하면 Asia/Ho_Chi_Minh. 영업일 오름차순. 근거: 서버 선행 · 장부 P-122",
     "parameters": [
      {
       "name": "workOrderId",
@@ -8499,11 +8499,11 @@
      },
      "resultCount": {
       "type": "integer",
-      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외) — 수량 0 정정(취소)도 하나로 센다"
      },
      "correctedCount": {
       "type": "integer",
-      "description": "그중 정정이 반영된 실적(정정본) 수"
+      "description": "그중 정정이 반영된 실적(정정본) 수 — 수량 0 정정(취소) 포함"
      },
      "firstAt": {
       "type": "string",
@@ -8517,7 +8517,7 @@
      },
      "byShift": {
       "type": "array",
-      "description": "교대별 — 교대 id 순, 교대가 정해지지 않은 실적은 shiftId null · shiftName 「교대 없음」 한 줄로 맨 뒤",
+      "description": "교대별 — 교대 시작 시각 순, 교대가 정해지지 않은 실적은 shiftId null · shiftName 「교대 없음」 한 줄로 맨 뒤",
       "items": {
        "$ref": "#/components/schemas/WorkOrderDailyShiftResult"
       }
@@ -8577,11 +8577,11 @@
      },
      "resultCount": {
       "type": "integer",
-      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외) — 수량 0 정정(취소)도 하나로 센다"
      },
      "correctedCount": {
       "type": "integer",
-      "description": "그중 정정이 반영된 실적(정정본) 수"
+      "description": "그중 정정이 반영된 실적(정정본) 수 — 수량 0 정정(취소) 포함"
      }
     }
    },
@@ -8625,11 +8625,11 @@
      },
      "resultCount": {
       "type": "integer",
-      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외) — 수량 0 정정(취소)도 하나로 센다"
      },
      "correctedCount": {
       "type": "integer",
-      "description": "그중 정정이 반영된 실적(정정본) 수"
+      "description": "그중 정정이 반영된 실적(정정본) 수 — 수량 0 정정(취소) 포함"
      }
     }
    },
