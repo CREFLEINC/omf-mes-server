@@ -3128,6 +3128,69 @@
     }
    }
   },
+  "/production/work-orders/{workOrderId}/daily-results": {
+   "get": {
+    "tags": [
+     "production"
+    ],
+    "summary": "W/O 일자별 실적",
+    "description": "W/O 마감 상세의 일자별 표. 수량은 W/O 누계(WorkOrderProgress)와 같은 규칙으로 센다 — 정정된 원본은 빼고 정정본(잎)만 센다. 실적에는 취소 상태가 없고 0 수량 정정이 그 자리다. 일자(businessDate)는 공장 현지 날짜이되, 자정을 넘는 교대의 새벽 실적은 그 교대가 시작한 날로 묶는다 — 교대는 실적의 교대, 없으면 그 실적 작업 세션의 교대다. 교대가 없으면 공장 현지 날짜. 영업일 오름차순. 근거: 서버 선행 · 장부 P-122",
+    "parameters": [
+     {
+      "name": "workOrderId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "format": "int64",
+       "example": 1001
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "일자별 실적",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkOrderDailyResults"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "경로의 workOrderId 형식이 틀렸다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "단말·권한 게이팅에 막혔다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "없는 W/O — 문구가 W/O 목록을 새로 고쳐 다시 고르라고 안내한다",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ErrorResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/production/work-orders/{workOrderId}:cancel": {
    "post": {
     "tags": [
@@ -8352,6 +8415,216 @@
      "message"
     ],
     "x-internal-note": "이름을 가른 이유: 앞 계열(app-공통·logistics-01·mdm)의 ConflictResponse 는 저장 충돌의 «원인»만 말하고, 이쪽은 거부의 «업무 사유»를 말한다. 두 축은 직교하며 겹치는 지점은 VERSION_CONFLICT ↔ conflictCause=user 하나다. 한 이름으로 두면 계약 병합이 멈춘다(구현팀 회신 omf-mes#166)."
+   },
+   "WorkOrderDailyResults": {
+    "type": "object",
+    "description": "W/O 일자별 실적. 근거: 장부 P-122",
+    "required": [
+     "uomId",
+     "uomCode",
+     "orderQty",
+     "items",
+     "totals"
+    ],
+    "properties": {
+     "uomId": {
+      "type": "integer",
+      "format": "int64",
+      "description": "W/O 단위"
+     },
+     "uomCode": {
+      "type": "string"
+     },
+     "orderQty": {
+      "type": "number",
+      "format": "double",
+      "description": "지시 수량"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/WorkOrderDailyResult"
+      }
+     },
+     "totals": {
+      "$ref": "#/components/schemas/WorkOrderDailyResultTotals"
+     }
+    }
+   },
+   "WorkOrderDailyResult": {
+    "type": "object",
+    "required": [
+     "businessDate",
+     "goodQty",
+     "defectQty",
+     "holdQty",
+     "scrapQty",
+     "reworkQty",
+     "resultCount",
+     "correctedCount",
+     "firstAt",
+     "lastAt",
+     "byShift"
+    ],
+    "properties": {
+     "businessDate": {
+      "type": "string",
+      "format": "date",
+      "description": "공장 현지 영업일 — 자정을 넘는 교대의 새벽 실적은 교대 시작일. ⚠ 조회용 묶음 날짜다 — 재고 원장 business_date(클라이언트가 보내는 값)와 다른 축"
+     },
+     "goodQty": {
+      "type": "number",
+      "format": "double",
+      "description": "양품 합계"
+     },
+     "defectQty": {
+      "type": "number",
+      "format": "double",
+      "description": "불량 합계"
+     },
+     "holdQty": {
+      "type": "number",
+      "format": "double",
+      "description": "보류 합계"
+     },
+     "scrapQty": {
+      "type": "number",
+      "format": "double",
+      "description": "스크랩 합계"
+     },
+     "reworkQty": {
+      "type": "number",
+      "format": "double",
+      "description": "재작업 합계"
+     },
+     "resultCount": {
+      "type": "integer",
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+     },
+     "correctedCount": {
+      "type": "integer",
+      "description": "그중 정정이 반영된 실적(정정본) 수"
+     },
+     "firstAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "그날 첫 실적 발생 시각"
+     },
+     "lastAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "그날 마지막 실적 발생 시각"
+     },
+     "byShift": {
+      "type": "array",
+      "description": "교대별 — 교대 id 순, 교대 없는 실적은 shiftId·shiftName 없이 맨 뒤",
+      "items": {
+       "$ref": "#/components/schemas/WorkOrderDailyShiftResult"
+      }
+     }
+    }
+   },
+   "WorkOrderDailyShiftResult": {
+    "type": "object",
+    "required": [
+     "goodQty",
+     "defectQty",
+     "holdQty",
+     "scrapQty",
+     "reworkQty",
+     "resultCount",
+     "correctedCount"
+    ],
+    "properties": {
+     "shiftId": {
+      "type": "integer",
+      "format": "int64"
+     },
+     "shiftName": {
+      "type": "string"
+     },
+     "goodQty": {
+      "type": "number",
+      "format": "double",
+      "description": "양품 합계"
+     },
+     "defectQty": {
+      "type": "number",
+      "format": "double",
+      "description": "불량 합계"
+     },
+     "holdQty": {
+      "type": "number",
+      "format": "double",
+      "description": "보류 합계"
+     },
+     "scrapQty": {
+      "type": "number",
+      "format": "double",
+      "description": "스크랩 합계"
+     },
+     "reworkQty": {
+      "type": "number",
+      "format": "double",
+      "description": "재작업 합계"
+     },
+     "resultCount": {
+      "type": "integer",
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+     },
+     "correctedCount": {
+      "type": "integer",
+      "description": "그중 정정이 반영된 실적(정정본) 수"
+     }
+    }
+   },
+   "WorkOrderDailyResultTotals": {
+    "type": "object",
+    "description": "전체 합 — W/O 누계(WorkOrderProgress)의 다섯 수량과 같다",
+    "required": [
+     "goodQty",
+     "defectQty",
+     "holdQty",
+     "scrapQty",
+     "reworkQty",
+     "resultCount",
+     "correctedCount"
+    ],
+    "properties": {
+     "goodQty": {
+      "type": "number",
+      "format": "double",
+      "description": "양품 합계"
+     },
+     "defectQty": {
+      "type": "number",
+      "format": "double",
+      "description": "불량 합계"
+     },
+     "holdQty": {
+      "type": "number",
+      "format": "double",
+      "description": "보류 합계"
+     },
+     "scrapQty": {
+      "type": "number",
+      "format": "double",
+      "description": "스크랩 합계"
+     },
+     "reworkQty": {
+      "type": "number",
+      "format": "double",
+      "description": "재작업 합계"
+     },
+     "resultCount": {
+      "type": "integer",
+      "description": "센 실적 수(정정본 포함, 정정된 원본 제외)"
+     },
+     "correctedCount": {
+      "type": "integer",
+      "description": "그중 정정이 반영된 실적(정정본) 수"
+     }
+    }
    },
    "WorkOrderProgress": {
     "type": "object",
