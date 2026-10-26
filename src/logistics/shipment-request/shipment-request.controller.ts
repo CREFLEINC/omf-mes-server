@@ -65,7 +65,7 @@ export class ShipmentRequestController {
   /**
    * ⛔⛔ **`@Get(':shipmentRequestId')` «앞»에 있어야 한다.** Nest 는 선언 순서대로 라우트를
    * 등록하고 Express 가 먼저 맞는 것을 잡는다 — 뒤에 두면 `summary` 가 경로 파라미터로 잡혀
-   * `{field:'shipmentRequestId', code:'INVALID', message:'must be integer'}` 400 이 나간다
+   * `{field:'shipmentRequestId', code:'INVALID'}` 400(「정수여야 합니다」)이 나간다
    * (PR ③b 에서 실제로 그랬다). e2e L-53 이 이 순서를 잠근다. ⛔ 아래로 옮기지 마라.
    */
   @Get('summary')

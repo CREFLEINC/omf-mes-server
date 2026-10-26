@@ -144,6 +144,9 @@ describe('int64 범위 (e2e)', () => {
     expect(response.body.errors).toEqual([
       expect.objectContaining({ scope: 'field', field: 'handlingUnitId', code: 'INVALID' }),
     ]);
+    expect(response.body.errors[0].message).toBe(
+      'handlingUnitId 칸은 -2^63 초과 2^63 미만의 정수여야 합니다. 소수·문자 없이 범위 안의 정수로 보내세요.',
+    );
   });
 
   it('평범한 id 는 그대로 404 다 · 정상 목록은 200 이다', async () => {
@@ -157,6 +160,9 @@ describe('int64 범위 (e2e)', () => {
       expect(response.body.errors).toEqual([
         expect.objectContaining({ field: 'handlingUnitId', code: 'INVALID' }),
       ]);
+      expect(response.body.errors[0].message).toBe(
+        'handlingUnitId 칸은 정수여야 합니다. 정수로 보내고, 값이 없으면 칸을 빼고 보내세요.',
+      );
     }
   });
 
